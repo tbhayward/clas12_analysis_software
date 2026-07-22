@@ -3,12 +3,9 @@
 Report the percentage of e pi+ events with 8 <= e_theta <= 14 degrees
 for the four RGC calibration periods.
 
-Fa22 is stored in one ROOT file. Its two solenoid configurations are separated
-using runnum:
-    Fa22, solenoid -1: 16843-17183
-    Fa22, solenoid +1: 17185-17408
-
-The four logical periods are processed concurrently with four workers.
+The input files and run-period definitions match the momentum-correction
+scripts. Fa22 uses one ROOT file and is split by runnum into the two solenoid
+configurations.
 """
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -24,6 +21,12 @@ ROOT_DIR = Path(
     "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+"
 )
 
+INPUT_FILES = {
+    "su22": ROOT_DIR / "rgc_su22_inb_NH3_epi+.root",
+    "fa22": ROOT_DIR / "rgc_fa22_inb_NH3_epi+.root",
+    "sp23": ROOT_DIR / "rgc_sp23_inb_NH3_epi+.root",
+}
+
 TREE_NAME = "PhysicsEvents"
 THETA_BRANCH = "e_theta"
 RUN_BRANCH = "runnum"
@@ -33,9 +36,6 @@ THETA_MAX_DEG = 14.0
 
 N_WORKERS = 4
 STEP_SIZE = "250 MB"
-
-# e_theta is expected to be in radians in the analysis trees.
-# Keep "auto" to verify this from the data and convert accordingly.
 INPUT_UNITS = "auto"
 
 
@@ -43,60 +43,25 @@ INPUT_UNITS = "auto"
 class Period:
     label: str
     source_key: str
-    run_min: int | None = None
-    run_max: int | None = None
+    run_min: int
+    run_max: int
 
 
 PERIODS = (
-    Period("Su22", "su22"),
+    Period("Su22", "su22", 16042, 16788),
     Period("Fa22, solenoid -1", "fa22", 16843, 17183),
     Period("Fa22, solenoid +1", "fa22", 17185, 17408),
-    Period("Sp23", "sp23"),
+    Period("Sp23", "sp23", 17477, 17811),
 )
 
 
-# Several plausible filename forms are accepted. Exactly one file must be found
-# for each physical source period.
-SOURCE_PATTERNS = {
-    "su22": (
-        "*su22*NH3*epi+*.root",
-        "*Su22*NH3*epi+*.root",
-        "*su22*epi+*.root",
-    ),
-    "fa22": (
-        "*fa22*NH3*epi+*.root",
-        "*Fa22*NH3*epi+*.root",
-        "*fa22*epi+*.root",
-    ),
-    "sp23": (
-        "*sp23*NH3*epi+*.root",
-        "*Sp23*NH3*epi+*.root",
-        "*sp23*epi+*.root",
-    ),
-}
-
-
-def find_source_file(source_key: str) -> Path:
-    matches: set[Path] = set()
-
-    for pattern in SOURCE_PATTERNS[source_key]:
-        matches.update(ROOT_DIR.glob(pattern))
-
-    matches = {path.resolve() for path in matches if path.is_file()}
-
-    if len(matches) != 1:
-        formatted = "\n".join(f"  {path}" for path in sorted(matches))
-        patterns = "\n".join(
-            f"  {pattern}" for pattern in SOURCE_PATTERNS[source_key]
+def validate_inputs() -> None:
+    missing = [path for path in INPUT_FILES.values() if not path.is_file()]
+    if missing:
+        raise FileNotFoundError(
+            "Missing required input file(s):\n"
+            + "\n".join(f"  {path}" for path in missing)
         )
-        raise RuntimeError(
-            f"Expected exactly one {source_key} e pi+ ROOT file in\n"
-            f"  {ROOT_DIR}\n"
-            f"using patterns:\n{patterns}\n"
-            f"but found {len(matches)} unique files:\n{formatted}"
-        )
-
-    return next(iter(matches))
 
 
 def infer_units(values: np.ndarray) -> str:
@@ -116,43 +81,52 @@ def to_degrees(values: np.ndarray, units: str) -> np.ndarray:
     raise ValueError(f"Unsupported angular units: {units}")
 
 
-def analyze_period(period: Period, source_path: str) -> dict:
-    path = Path(source_path)
-    expressions = [THETA_BRANCH]
+def analyze_period(period: Period) -> dict:
+    path = INPUT_FILES[period.source_key]
+    source = f"{path}:{TREE_NAME}"
 
-    if period.run_min is not None:
-        expressions.append(RUN_BRANCH)
-
-    total_selected = 0
+    total_in_file = 0
+    total_in_period = 0
     inside = 0
-    rejected_by_run = 0
     nonfinite = 0
 
+    run_seen_min = math.inf
+    run_seen_max = -math.inf
     raw_min = math.inf
     raw_max = -math.inf
     deg_min = math.inf
     deg_max = -math.inf
 
-    diagnostic_samples: list[np.ndarray] = []
+    diagnostic_samples = []
     diagnostic_count = 0
-    units: str | None = None
+    units = None
 
     for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
+        source,
+        expressions=[RUN_BRANCH, THETA_BRANCH],
         step_size=STEP_SIZE,
         library="np",
     ):
+        runnum = np.asarray(arrays[RUN_BRANCH], dtype=np.int64)
         theta_raw = np.asarray(arrays[THETA_BRANCH], dtype=np.float64)
 
-        if period.run_min is not None:
-            runnum = np.asarray(arrays[RUN_BRANCH], dtype=np.int64)
-            run_mask = (
-                (runnum >= period.run_min)
-                & (runnum <= period.run_max)
+        if runnum.size != theta_raw.size:
+            raise RuntimeError(
+                f"{period.label}: runnum and e_theta lengths differ."
             )
-            rejected_by_run += int(np.count_nonzero(~run_mask))
-            theta_raw = theta_raw[run_mask]
+
+        total_in_file += int(runnum.size)
+
+        if runnum.size:
+            run_seen_min = min(run_seen_min, int(np.min(runnum)))
+            run_seen_max = max(run_seen_max, int(np.max(runnum)))
+
+        period_mask = (
+            (runnum >= period.run_min)
+            & (runnum <= period.run_max)
+        )
+        theta_raw = theta_raw[period_mask]
+        total_in_period += int(theta_raw.size)
 
         finite_mask = np.isfinite(theta_raw)
         nonfinite += int(np.count_nonzero(~finite_mask))
@@ -170,7 +144,6 @@ def analyze_period(period: Period, source_path: str) -> dict:
 
         theta_deg = to_degrees(theta_raw, units)
 
-        total_selected += int(theta_deg.size)
         inside += int(
             np.count_nonzero(
                 (theta_deg >= THETA_MIN_DEG)
@@ -188,9 +161,18 @@ def analyze_period(period: Period, source_path: str) -> dict:
             diagnostic_samples.append(theta_deg[:take])
             diagnostic_count += take
 
-    if total_selected == 0:
+    finite_total = total_in_period - nonfinite
+
+    if total_in_period == 0:
         raise RuntimeError(
-            f"{period.label}: no finite events remained after period selection."
+            f"{period.label}: no events found in run range "
+            f"{period.run_min}-{period.run_max}. File run range was "
+            f"{run_seen_min}-{run_seen_max}."
+        )
+
+    if finite_total == 0:
+        raise RuntimeError(
+            f"{period.label}: all selected e_theta values are nonfinite."
         )
 
     sample = np.concatenate(diagnostic_samples)
@@ -201,12 +183,15 @@ def analyze_period(period: Period, source_path: str) -> dict:
         "file": str(path),
         "run_min": period.run_min,
         "run_max": period.run_max,
-        "units": units,
+        "file_entries": total_in_file,
+        "selected_entries": total_in_period,
+        "finite_entries": finite_total,
         "inside": inside,
-        "total": total_selected,
-        "percent": 100.0 * inside / total_selected,
-        "rejected_by_run": rejected_by_run,
+        "percent": 100.0 * inside / finite_total,
         "nonfinite": nonfinite,
+        "units": units,
+        "file_run_min": int(run_seen_min),
+        "file_run_max": int(run_seen_max),
         "raw_min": raw_min,
         "raw_max": raw_max,
         "deg_min": deg_min,
@@ -218,25 +203,18 @@ def analyze_period(period: Period, source_path: str) -> dict:
 
 
 def main() -> None:
-    source_files = {
-        key: find_source_file(key)
-        for key in SOURCE_PATTERNS
-    }
+    validate_inputs()
 
-    results: dict[str, dict] = {}
+    results = {}
 
     with ProcessPoolExecutor(max_workers=N_WORKERS) as executor:
-        futures = {
-            executor.submit(
-                analyze_period,
-                period,
-                str(source_files[period.source_key]),
-            ): period.label
+        future_map = {
+            executor.submit(analyze_period, period): period.label
             for period in PERIODS
         }
 
-        for future in as_completed(futures):
-            label = futures[future]
+        for future in as_completed(future_map):
+            label = future_map[future]
             results[label] = future.result()
 
     print(
@@ -244,10 +222,10 @@ def main() -> None:
         f"{THETA_MIN_DEG:g} <= e_theta <= {THETA_MAX_DEG:g} degrees\n"
     )
     print(
-        f"{'Period':<24} {'Inside':>14} {'Total':>14} "
+        f"{'Period':<24} {'Inside':>14} {'Finite total':>14} "
         f"{'Percent':>12} {'Input':>8}"
     )
-    print("-" * 78)
+    print("-" * 82)
 
     combined_inside = 0
     combined_total = 0
@@ -255,17 +233,17 @@ def main() -> None:
     for period in PERIODS:
         result = results[period.label]
         combined_inside += result["inside"]
-        combined_total += result["total"]
+        combined_total += result["finite_entries"]
 
         print(
             f"{period.label:<24} "
             f"{result['inside']:>14,d} "
-            f"{result['total']:>14,d} "
+            f"{result['finite_entries']:>14,d} "
             f"{result['percent']:>11.3f}% "
             f"{result['units']:>8}"
         )
 
-    print("-" * 78)
+    print("-" * 82)
     print(
         f"{'Combined':<24} "
         f"{combined_inside:>14,d} "
@@ -281,18 +259,21 @@ def main() -> None:
 
         print(f"\n{period.label}")
         print(f"  File: {result['file']}")
-
-        if result["run_min"] is not None:
-            print(
-                f"  Run selection: "
-                f"{result['run_min']}-{result['run_max']}"
-            )
-            print(
-                f"  Entries outside run range: "
-                f"{result['rejected_by_run']:,}"
-            )
-
-        print(f"  Inferred input units: {result['units']}")
+        print(
+            f"  Requested run range: "
+            f"{result['run_min']}-{result['run_max']}"
+        )
+        print(
+            f"  Full file run range: "
+            f"{result['file_run_min']}-{result['file_run_max']}"
+        )
+        print(f"  Full file entries: {result['file_entries']:,}")
+        print(
+            f"  Entries in requested run range: "
+            f"{result['selected_entries']:,}"
+        )
+        print(f"  Nonfinite e_theta entries: {result['nonfinite']:,}")
+        print(f"  Inferred e_theta units: {result['units']}")
         print(
             f"  Raw e_theta range: "
             f"{result['raw_min']:.6g} to {result['raw_max']:.6g}"
@@ -307,7 +288,6 @@ def main() -> None:
             f"{result['q50']:.3f}, "
             f"{result['q99']:.3f}"
         )
-        print(f"  Nonfinite selected entries: {result['nonfinite']:,}")
 
 
 if __name__ == "__main__":
