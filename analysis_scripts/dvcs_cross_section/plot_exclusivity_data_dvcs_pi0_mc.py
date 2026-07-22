@@ -4208,6 +4208,11 @@ def draw_iterative_cut_canvas(
                 f"signal eff={100.0 * step.dvcs_mc_efficiency:.1f}%"
             )
             if channel == "dvcs":
+                production_status = (
+                    "accepted"
+                    if step.accepted_for_production
+                    else "rejected"
+                )
                 annotation += (
                     f"\npi0 eff="
                     f"{100.0 * step.pi0_mc_efficiency:.1f}%"
@@ -4215,8 +4220,13 @@ def draw_iterative_cut_canvas(
                     f" -> {step.f_pi0_after:.3f}"
                     f"\nFoM: {step.fom_before:.5g}"
                     f" -> {step.fom_after:.5g}"
-                    f"\nproduction=accepted"
+                    f"\nproduction={production_status}"
                 )
+                if (
+                    not step.accepted_for_production
+                    and step.stop_reason
+                ):
+                    annotation += f"\n{step.stop_reason}"
             # endif
         else:
             annotation = (
