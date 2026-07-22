@@ -901,18 +901,39 @@ def highest_stable_interval(group: pd.DataFrame, args) -> dict:
                 current_count += 1
             current_high = row.theta_high_deg
         else:
-            if current_count > 0 and current_high > best_high if np.isfinite(best_high) else True:
-                best_low, best_high, best_count = (
-                    current_low, current_high, current_count
+            if current_count > 0:
+                candidate_is_better = (
+                    best_high is None
+                    or not np.isfinite(float(best_high))
+                    or (
+                        current_high is not None
+                        and float(current_high) > float(best_high)
+                    )
                 )
+                if candidate_is_better:
+                    best_low, best_high, best_count = (
+                        float(current_low),
+                        float(current_high),
+                        int(current_count),
+                    )
             current_low = None
             current_high = None
             current_count = 0
 
     if current_count > 0:
-        if not np.isfinite(best_high) or current_high > best_high:
+        candidate_is_better = (
+            best_high is None
+            or not np.isfinite(float(best_high))
+            or (
+                current_high is not None
+                and float(current_high) > float(best_high)
+            )
+        )
+        if candidate_is_better:
             best_low, best_high, best_count = (
-                current_low, current_high, current_count
+                float(current_low),
+                float(current_high),
+                int(current_count),
             )
 
     highest_any = (
