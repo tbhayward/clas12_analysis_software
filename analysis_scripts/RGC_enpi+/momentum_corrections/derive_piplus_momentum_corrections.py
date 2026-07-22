@@ -152,6 +152,7 @@ BRANCH_ALIASES = {
     "e_p": ("e_p", "electron_p"),
     "e_theta": ("e_theta", "electron_theta"),
     "e_phi": ("e_phi", "electron_phi"),
+    "x": ("x", "xB", "x_b", "xb"),
     "pip_p": (
         "p_p",
         "pip_p",
@@ -596,6 +597,7 @@ def read_period_events(
         e_p = values["e_p"][period_mask].astype(float)
         e_theta = values["e_theta"][period_mask].astype(float)
         e_phi = values["e_phi"][period_mask].astype(float)
+        x_b = values["x"][period_mask].astype(float)
         pip_p = values["pip_p"][period_mask].astype(float)
         pip_theta = values["pip_theta"][period_mask].astype(float)
         pip_phi = values["pip_phi"][period_mask].astype(float)
@@ -609,6 +611,7 @@ def read_period_events(
             np.isfinite(e_p)
             & np.isfinite(e_theta)
             & np.isfinite(e_phi)
+            & np.isfinite(x_b)
             & np.isfinite(pip_p)
             & np.isfinite(pip_theta)
             & np.isfinite(pip_phi)
@@ -634,6 +637,7 @@ def read_period_events(
         e_p = e_p[selected]
         e_theta = e_theta[selected]
         e_phi = e_phi[selected]
+        x_b = x_b[selected]
         pip_p = pip_p[selected]
         pip_theta = pip_theta[selected]
         pip_phi = pip_phi[selected]
@@ -673,6 +677,7 @@ def read_period_events(
                 "e_theta_rad": e_theta[mx2_mask],
                 "e_theta_deg": e_theta_deg[mx2_mask],
                 "e_phi_rad": e_phi[mx2_mask],
+                "x_b": x_b[mx2_mask],
                 "pip_p_gev": pip_p[mx2_mask],
                 "pip_theta_rad": pip_theta[mx2_mask],
                 "pip_theta_deg": pip_theta_deg[mx2_mask],
@@ -2692,6 +2697,90 @@ def save_kinematic_residual_summary(
     )
     plt.close(figure)
 
+
+def save_kinematic_width_summary(
+    frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    variable_column: str,
+    variable_label: str,
+    binning: str,
+    bin_count: int,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+) -> None:
+    """Compare fitted missing-neutron widths versus one diagnostic variable."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(
+        2, 3, figsize=(15.0, 9.0), sharey=True, constrained_layout=True
+    )
+    stage_definitions = (
+        ("uncorrected", "o", "No corrections"),
+        ("electron_corrected", "s", "Electron corrected"),
+        ("electron_pion_corrected", "^", r"Electron + $\pi^+$ corrected"),
+    )
+
+    fd = frame.loc[frame["pion_region"] == "FD"].copy()
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        sample = fd.loc[fd["pion_sector"] == sector].copy()
+        values = sample[variable_column].to_numpy(dtype=float)
+        if binning == "equal_population":
+            edges = equal_population_edges(values, bin_count)
+        elif binning == "equal_width":
+            edges = _diagnostic_equal_width_edges(values, bin_count)
+        else:
+            raise ValueError(f"Unsupported diagnostic binning: {binning}")
+
+        for stage, marker, label in stage_definitions:
+            mx2_column = stage_column(stage)
+            x_values, y_values, y_errors = [], [], []
+            for index in range(len(edges) - 1):
+                low = float(edges[index])
+                high = float(edges[index + 1])
+                if index == len(edges) - 2:
+                    mask = (
+                        (sample[variable_column] >= low)
+                        & (sample[variable_column] <= high)
+                    )
+                else:
+                    mask = (
+                        (sample[variable_column] >= low)
+                        & (sample[variable_column] < high)
+                    )
+                cell = sample.loc[mask]
+                fit_result, _ = fit_mx2_peak(
+                    cell[mx2_column].to_numpy(),
+                    histogram_range,
+                    fit_range,
+                    histogram_bins,
+                    minimum_events_cell,
+                )
+                if fit_result["success"]:
+                    x_values.append(float(cell[variable_column].mean()))
+                    y_values.append(fit_result["sigma_gev2"])
+                    y_errors.append(fit_result["sigma_error_gev2"])
+
+            axis.errorbar(
+                x_values, y_values, yerr=y_errors, fmt=marker, label=label
+            )
+
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel(variable_label)
+        axis.set_ylabel(r"Fitted $\sigma_{M_X^2}$ (GeV$^2$)")
+        if sector == 1:
+            axis.legend(fontsize=8)
+
+    figure.suptitle(
+        f"{period.label}: missing-neutron resolution versus {variable_label}"
+    )
+    figure.savefig(
+        output_path, dpi=180, bbox_inches="tight", pad_inches=0.06
+    )
+    plt.close(figure)
+
+
 def save_run_stability(
     frame: pd.DataFrame,
     period: CalibrationPeriod,
@@ -3089,6 +3178,34 @@ def process_period(
         histogram_bins=histogram_bins,
         minimum_events_cell=minimum_events_cell,
     )
+    save_kinematic_residual_summary(
+        frame=frame,
+        period=period,
+        variable_column="x_b",
+        variable_label=r"Mean $x_B$",
+        binning="equal_width",
+        bin_count=8,
+        output_path=plot_directories["x_residuals"]
+        / f"{period.key}_fd_xb_peak_residuals.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
+    )
+    save_kinematic_width_summary(
+        frame=frame,
+        period=period,
+        variable_column="x_b",
+        variable_label=r"Mean $x_B$",
+        binning="equal_width",
+        bin_count=8,
+        output_path=plot_directories["x_residuals"]
+        / f"{period.key}_fd_xb_peak_widths.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
+    )
 
     if not skip_run_stability:
         for stage in stages:
@@ -3320,6 +3437,8 @@ def main() -> int:
             plot_root / "closure" / "electron_momentum_residuals",
         "electron_theta_residuals":
             plot_root / "closure" / "electron_theta_residuals",
+        "x_residuals":
+            plot_root / "closure" / "x_residuals",
         "correction_models":
             plot_root / "correction_models",
     }

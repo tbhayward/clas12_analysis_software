@@ -2569,6 +2569,117 @@ def save_before_after_kinematic_diagnostic(
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
 
+
+def save_before_after_kinematic_width_diagnostic(
+    period: CalibrationPeriod,
+    uncorrected_frame: pd.DataFrame,
+    corrected_frame: pd.DataFrame,
+    variable_column: str,
+    variable_label: str,
+    binning: str,
+    bin_count: int,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+) -> None:
+    """Plot freely fitted elastic-W widths versus one diagnostic variable."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(
+        2, 3, figsize=(15.0, 9.0), sharey=True, constrained_layout=True
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        before_sector = uncorrected_frame.loc[
+            uncorrected_frame["sector"] == sector
+        ].copy()
+        after_sector = corrected_frame.loc[
+            corrected_frame["sector"] == sector
+        ].copy()
+
+        values = before_sector[variable_column].to_numpy(dtype=float)
+        if binning == "equal_population":
+            edges = build_equal_population_theta_edges(values, bin_count)
+        elif binning == "equal_width":
+            edges = _strict_equal_width_edges(values, bin_count)
+        else:
+            raise ValueError(f"Unsupported diagnostic binning: {binning}")
+
+        before_x, before_y, before_ey = [], [], []
+        after_x, after_y, after_ey = [], [], []
+
+        for index in range(len(edges) - 1):
+            low = float(edges[index])
+            high = float(edges[index + 1])
+            if index == len(edges) - 2:
+                before_mask = (
+                    (before_sector[variable_column] >= low)
+                    & (before_sector[variable_column] <= high)
+                )
+                after_mask = (
+                    (after_sector[variable_column] >= low)
+                    & (after_sector[variable_column] <= high)
+                )
+            else:
+                before_mask = (
+                    (before_sector[variable_column] >= low)
+                    & (before_sector[variable_column] < high)
+                )
+                after_mask = (
+                    (after_sector[variable_column] >= low)
+                    & (after_sector[variable_column] < high)
+                )
+
+            before_cell = before_sector.loc[before_mask]
+            after_cell = after_sector.loc[after_mask]
+            before_fit, _ = fit_w_peak(
+                before_cell["w_recalculated"].to_numpy(),
+                histogram_range=histogram_range,
+                fit_range=fit_range,
+                histogram_bins=histogram_bins,
+                minimum_events=minimum_events_cell,
+                fixed_sigma_gev=None,
+            )
+            after_fit, _ = fit_w_peak(
+                after_cell["w_corrected"].to_numpy(),
+                histogram_range=histogram_range,
+                fit_range=fit_range,
+                histogram_bins=histogram_bins,
+                minimum_events=minimum_events_cell,
+                fixed_sigma_gev=None,
+            )
+
+            if before_fit.success:
+                before_x.append(float(before_cell[variable_column].mean()))
+                before_y.append(before_fit.peak_sigma_gev)
+                before_ey.append(before_fit.peak_sigma_error_gev)
+            if after_fit.success:
+                after_x.append(float(after_cell[variable_column].mean()))
+                after_y.append(after_fit.peak_sigma_gev)
+                after_ey.append(after_fit.peak_sigma_error_gev)
+
+        axis.errorbar(
+            before_x, before_y, yerr=before_ey, fmt="o",
+            label="Before correction",
+        )
+        axis.errorbar(
+            after_x, after_y, yerr=after_ey, fmt="s",
+            label="After correction",
+        )
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel(variable_label)
+        axis.set_ylabel(r"Freely fitted $\sigma_W$ (GeV)")
+        if sector == 1:
+            axis.legend(fontsize=8)
+
+    figure.suptitle(
+        f"{period.label}: elastic-peak resolution versus {variable_label}"
+    )
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
+
 def build_closure_summary(
     period: CalibrationPeriod,
     uncorrected_records: list[dict[str, Any]],
@@ -2853,6 +2964,37 @@ def process_calibration_period(
         histogram_bins=histogram_bins,
         minimum_events_cell=minimum_events_cell,
     )
+    if "x" in period_frame.columns:
+        save_before_after_kinematic_diagnostic(
+            period=period,
+            uncorrected_frame=period_frame,
+            corrected_frame=corrected_frame,
+            variable_column="x",
+            variable_label=r"Mean $x_B$",
+            binning="equal_width",
+            bin_count=8,
+            output_path=plot_directories["closure_x"]
+            / f"{period.key}_xb_closure.png",
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events_cell=minimum_events_cell,
+        )
+        save_before_after_kinematic_width_diagnostic(
+            period=period,
+            uncorrected_frame=period_frame,
+            corrected_frame=corrected_frame,
+            variable_column="x",
+            variable_label=r"Mean $x_B$",
+            binning="equal_width",
+            bin_count=8,
+            output_path=plot_directories["closure_x"]
+            / f"{period.key}_xb_closure_widths.png",
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events_cell=minimum_events_cell,
+        )
 
     if not skip_run_stability:
         save_run_stability_plot(
@@ -4016,6 +4158,7 @@ def main() -> int:
         "closure_theta": plot_root / "closure" / "theta_residuals",
         "closure_momentum": plot_root / "closure" / "momentum_residuals",
         "closure_phi": plot_root / "closure" / "phi_residuals",
+        "closure_x": plot_root / "closure" / "x_residuals",
         "before_after_w": plot_root / "closure" / "before_after_w",
         "corrected_run_stability": (
             plot_root / "closure" / "run_stability"
