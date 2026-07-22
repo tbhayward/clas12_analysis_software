@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_electron_momentum_corrections_v18.py
+derive_electron_momentum_corrections_v19.py
 
 Diagnostic and provisional calibration extraction for RGC electron momentum
 corrections using inclusive NH3 eX data.
@@ -2316,6 +2316,132 @@ def save_before_after_integrated_w_plot(
     plt.close(figure)
 
 
+
+def _strict_equal_width_edges(values: np.ndarray, bin_count: int) -> np.ndarray:
+    """Return equal-width edges spanning the finite observed minimum and maximum."""
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return np.linspace(0.0, 1.0, bin_count + 1)
+    low = float(np.min(finite))
+    high = float(np.max(finite))
+    if not high > low:
+        high = low + 1.0e-6
+    return np.linspace(low, high, bin_count + 1)
+
+
+def save_before_after_kinematic_diagnostic(
+    period: CalibrationPeriod,
+    uncorrected_frame: pd.DataFrame,
+    corrected_frame: pd.DataFrame,
+    variable_column: str,
+    variable_label: str,
+    binning: str,
+    bin_count: int,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+) -> None:
+    """
+    Plot fitted W closure versus a diagnostic kinematic variable.
+
+    These fits are diagnostic only. They do not enter correction extraction,
+    model selection, or event-by-event correction application. Momentum uses
+    eight equal-width bins spanning the observed sector minimum and maximum;
+    local phi uses three equal-population bins independently in each sector.
+    The same event boundaries are used before and after correction.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(
+        2, 3, figsize=(15.0, 9.0), sharey=True, constrained_layout=True
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        before_sector = uncorrected_frame.loc[
+            uncorrected_frame["sector"] == sector
+        ].copy()
+        after_sector = corrected_frame.loc[
+            corrected_frame["sector"] == sector
+        ].copy()
+
+        values = before_sector[variable_column].to_numpy(dtype=float)
+        if binning == "equal_population":
+            edges = build_equal_population_theta_edges(values, bin_count)
+        elif binning == "equal_width":
+            edges = _strict_equal_width_edges(values, bin_count)
+        else:
+            raise ValueError(f"Unsupported diagnostic binning: {binning}")
+
+        before_x, before_y, before_ey = [], [], []
+        after_x, after_y, after_ey = [], [], []
+        for index in range(len(edges) - 1):
+            low = float(edges[index])
+            high = float(edges[index + 1])
+            if index == len(edges) - 2:
+                before_mask = (
+                    (before_sector[variable_column] >= low)
+                    & (before_sector[variable_column] <= high)
+                )
+                after_mask = (
+                    (after_sector[variable_column] >= low)
+                    & (after_sector[variable_column] <= high)
+                )
+            else:
+                before_mask = (
+                    (before_sector[variable_column] >= low)
+                    & (before_sector[variable_column] < high)
+                )
+                after_mask = (
+                    (after_sector[variable_column] >= low)
+                    & (after_sector[variable_column] < high)
+                )
+
+            before_cell = before_sector.loc[before_mask]
+            after_cell = after_sector.loc[after_mask]
+            before_fit, _ = fit_w_peak(
+                before_cell["w_recalculated"].to_numpy(),
+                histogram_range=histogram_range,
+                fit_range=fit_range,
+                histogram_bins=histogram_bins,
+                minimum_events=minimum_events_cell,
+            )
+            after_fit, _ = fit_w_peak(
+                after_cell["w_corrected"].to_numpy(),
+                histogram_range=histogram_range,
+                fit_range=fit_range,
+                histogram_bins=histogram_bins,
+                minimum_events=minimum_events_cell,
+            )
+            if before_fit.success:
+                before_x.append(float(before_cell[variable_column].mean()))
+                before_y.append(before_fit.peak_mean_gev)
+                before_ey.append(before_fit.peak_mean_error_gev)
+            if after_fit.success:
+                after_x.append(float(after_cell[variable_column].mean()))
+                after_y.append(after_fit.peak_mean_gev)
+                after_ey.append(after_fit.peak_mean_error_gev)
+
+        axis.errorbar(before_x, before_y, yerr=before_ey, fmt="o", label="Before correction")
+        axis.errorbar(after_x, after_y, yerr=after_ey, fmt="s", label="After correction")
+        axis.axhline(
+            PROTON_MASS_GEV, color="black", linestyle="--", linewidth=1.0,
+            label=r"$m_p$" if sector == 1 else None,
+        )
+        axis.set_ylim(0.85, 1.05)
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel(variable_label)
+        axis.set_ylabel(r"Fitted $\mu_W$ (GeV)")
+        if sector == 1:
+            axis.legend(fontsize=8)
+
+    figure.suptitle(
+        f"{period.label}: electron momentum-correction closure versus {variable_label}"
+    )
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
 def build_closure_summary(
     period: CalibrationPeriod,
     uncorrected_records: list[dict[str, Any]],
@@ -2557,6 +2683,36 @@ def process_calibration_period(
         / f"{period.key}_integrated_w_before_after.png",
         histogram_range,
         histogram_bins,
+    )
+    save_before_after_kinematic_diagnostic(
+        period=period,
+        uncorrected_frame=period_frame,
+        corrected_frame=corrected_frame,
+        variable_column="e_p",
+        variable_label=r"Mean electron $p$ (GeV)",
+        binning="equal_width",
+        bin_count=8,
+        output_path=plot_directories["closure_momentum"]
+        / f"{period.key}_electron_momentum_closure.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
+    )
+    save_before_after_kinematic_diagnostic(
+        period=period,
+        uncorrected_frame=period_frame,
+        corrected_frame=corrected_frame,
+        variable_column="local_phi_deg",
+        variable_label=r"Mean electron local $\phi$ (deg)",
+        binning="equal_population",
+        bin_count=3,
+        output_path=plot_directories["closure_phi"]
+        / f"{period.key}_electron_phi_closure.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
     )
 
     if not skip_run_stability:
@@ -3719,6 +3875,8 @@ def main() -> int:
             plot_root / "closure" / "integrated_w"
         ),
         "closure_theta": plot_root / "closure" / "theta_residuals",
+        "closure_momentum": plot_root / "closure" / "momentum_residuals",
+        "closure_phi": plot_root / "closure" / "phi_residuals",
         "before_after_w": plot_root / "closure" / "before_after_w",
         "corrected_run_stability": (
             plot_root / "closure" / "run_stability"

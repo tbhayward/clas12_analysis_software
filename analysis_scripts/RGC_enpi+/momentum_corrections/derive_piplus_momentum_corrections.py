@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_piplus_momentum_corrections_v8.py
+derive_piplus_momentum_corrections_v9.py
 
 Derive and validate FD pi+ momentum corrections for the RGC exclusive-pi+
 analysis using inclusive e pi+ X data and the missing-neutron peak
@@ -2502,6 +2502,115 @@ def save_theta_residual_summary(
     plt.close(figure)
 
 
+
+def _diagnostic_equal_width_edges(values: np.ndarray, bin_count: int) -> np.ndarray:
+    """Return equal-width edges spanning the finite observed range."""
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return np.linspace(0.0, 1.0, bin_count + 1)
+    low = float(np.min(finite))
+    high = float(np.max(finite))
+    if not high > low:
+        high = low + 1.0e-6
+    return np.linspace(low, high, bin_count + 1)
+
+
+def save_kinematic_residual_summary(
+    frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    variable_column: str,
+    variable_label: str,
+    binning: str,
+    bin_count: int,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+) -> None:
+    """
+    Compare fitted neutron-peak positions versus a diagnostic variable.
+
+    The diagnostic fits are fully independent of correction extraction and
+    model selection. Pion local phi uses three equal-population bins in each
+    pion sector. Momentum and electron-theta diagnostics use eight equal-width
+    bins spanning the observed minimum and maximum in each pion sector. The
+    same event boundaries are used for all three reconstruction stages.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(
+        2, 3, figsize=(15.0, 9.0), sharey=True, constrained_layout=True
+    )
+    stage_definitions = (
+        ("uncorrected", "o", "No corrections"),
+        ("electron_corrected", "s", "Electron corrected"),
+        ("electron_pion_corrected", "^", r"Electron + $\pi^+$ corrected"),
+    )
+
+    fd = frame.loc[frame["pion_region"] == "FD"].copy()
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        sample = fd.loc[fd["pion_sector"] == sector].copy()
+        values = sample[variable_column].to_numpy(dtype=float)
+        if binning == "equal_population":
+            edges = equal_population_edges(values, bin_count)
+        elif binning == "equal_width":
+            edges = _diagnostic_equal_width_edges(values, bin_count)
+        else:
+            raise ValueError(f"Unsupported diagnostic binning: {binning}")
+
+        for stage, marker, label in stage_definitions:
+            mx2_column = stage_column(stage)
+            x_values, y_values, y_errors = [], [], []
+            for index in range(len(edges) - 1):
+                low = float(edges[index])
+                high = float(edges[index + 1])
+                if index == len(edges) - 2:
+                    mask = (
+                        (sample[variable_column] >= low)
+                        & (sample[variable_column] <= high)
+                    )
+                else:
+                    mask = (
+                        (sample[variable_column] >= low)
+                        & (sample[variable_column] < high)
+                    )
+                cell = sample.loc[mask]
+                fit_result, _ = fit_mx2_peak(
+                    cell[mx2_column].to_numpy(),
+                    histogram_range,
+                    fit_range,
+                    histogram_bins,
+                    minimum_events_cell,
+                )
+                if fit_result["success"]:
+                    x_values.append(float(cell[variable_column].mean()))
+                    y_values.append(fit_result["mean_gev2"])
+                    y_errors.append(fit_result["mean_error_gev2"])
+
+            axis.errorbar(
+                x_values, y_values, yerr=y_errors, fmt=marker, label=label
+            )
+
+        axis.axhline(
+            NEUTRON_MASS2_GEV2, color="black", linestyle="--", linewidth=1.0,
+            label=r"$m_n^2$" if sector == 1 else None,
+        )
+        axis.set_ylim(0.8, 1.0)
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel(variable_label)
+        axis.set_ylabel(r"Fitted $\mu_{M_X^2}$ (GeV$^2$)")
+        if sector == 1:
+            axis.legend(fontsize=8)
+
+    figure.suptitle(
+        f"{period.label}: pion momentum-correction closure versus {variable_label}"
+    )
+    figure.savefig(
+        output_path, dpi=180, bbox_inches="tight", pad_inches=0.06
+    )
+    plt.close(figure)
+
 def save_run_stability(
     frame: pd.DataFrame,
     period: CalibrationPeriod,
@@ -2837,6 +2946,62 @@ def process_period(
         plot_directories["theta_residuals"]
         / f"{period.key}_fd_theta_residuals.png",
     )
+    save_kinematic_residual_summary(
+        frame=frame,
+        period=period,
+        variable_column="pip_p_gev",
+        variable_label=r"Mean pion $p$ (GeV)",
+        binning="equal_width",
+        bin_count=8,
+        output_path=plot_directories["pion_momentum_residuals"]
+        / f"{period.key}_fd_pion_momentum_residuals.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
+    )
+    save_kinematic_residual_summary(
+        frame=frame,
+        period=period,
+        variable_column="pion_local_phi_deg",
+        variable_label=r"Mean pion local $\phi$ (deg)",
+        binning="equal_population",
+        bin_count=3,
+        output_path=plot_directories["pion_phi_residuals"]
+        / f"{period.key}_fd_pion_phi_residuals.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
+    )
+    save_kinematic_residual_summary(
+        frame=frame,
+        period=period,
+        variable_column="e_p_gev",
+        variable_label=r"Mean electron $p$ (GeV)",
+        binning="equal_width",
+        bin_count=8,
+        output_path=plot_directories["electron_momentum_residuals"]
+        / f"{period.key}_fd_electron_momentum_residuals.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
+    )
+    save_kinematic_residual_summary(
+        frame=frame,
+        period=period,
+        variable_column="e_theta_deg",
+        variable_label=r"Mean electron $\theta$ (deg)",
+        binning="equal_width",
+        bin_count=8,
+        output_path=plot_directories["electron_theta_residuals"]
+        / f"{period.key}_fd_electron_theta_residuals.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
+    )
 
     if not skip_run_stability:
         for stage in stages:
@@ -3060,6 +3225,14 @@ def main() -> int:
             plot_root / "closure" / "integrated_mx2",
         "theta_residuals":
             plot_root / "closure" / "theta_residuals",
+        "pion_momentum_residuals":
+            plot_root / "closure" / "pion_momentum_residuals",
+        "pion_phi_residuals":
+            plot_root / "closure" / "pion_phi_residuals",
+        "electron_momentum_residuals":
+            plot_root / "closure" / "electron_momentum_residuals",
+        "electron_theta_residuals":
+            plot_root / "closure" / "electron_theta_residuals",
         "correction_models":
             plot_root / "correction_models",
     }
