@@ -2243,6 +2243,133 @@ def save_before_after_theta_plot(
     plt.close(figure)
 
 
+def save_before_after_theta_width_plot(
+    period: CalibrationPeriod,
+    uncorrected_frame: pd.DataFrame,
+    corrected_frame: pd.DataFrame,
+    uncorrected_records: list[dict[str, Any]],
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+) -> None:
+    """
+    Compare the freely fitted Gaussian W widths before and after correction.
+
+    The production closure-cell fits intentionally use a sector-integrated
+    fixed width. For this resolution-only diagnostic, every theta cell is
+    therefore refitted independently with the Gaussian width free. These fits
+    do not enter correction extraction, model selection, or closure decisions.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        sharey=True,
+        constrained_layout=True,
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        theta_edges = theta_edges_from_uncorrected_records(
+            uncorrected_records,
+            sector,
+        )
+        before_sector = uncorrected_frame.loc[
+            uncorrected_frame["sector"] == sector
+        ]
+        after_sector = corrected_frame.loc[
+            corrected_frame["sector"] == sector
+        ]
+
+        before_x: list[float] = []
+        before_y: list[float] = []
+        before_yerr: list[float] = []
+        after_x: list[float] = []
+        after_y: list[float] = []
+        after_yerr: list[float] = []
+
+        for theta_index in range(max(len(theta_edges) - 1, 0)):
+            theta_low = float(theta_edges[theta_index])
+            theta_high = float(theta_edges[theta_index + 1])
+            is_final = theta_index == len(theta_edges) - 2
+
+            if is_final:
+                before_mask = (
+                    (before_sector["e_theta_deg"] >= theta_low)
+                    & (before_sector["e_theta_deg"] <= theta_high)
+                )
+                after_mask = (
+                    (after_sector["e_theta_deg"] >= theta_low)
+                    & (after_sector["e_theta_deg"] <= theta_high)
+                )
+            else:
+                before_mask = (
+                    (before_sector["e_theta_deg"] >= theta_low)
+                    & (before_sector["e_theta_deg"] < theta_high)
+                )
+                after_mask = (
+                    (after_sector["e_theta_deg"] >= theta_low)
+                    & (after_sector["e_theta_deg"] < theta_high)
+                )
+
+            before_cell = before_sector.loc[before_mask]
+            after_cell = after_sector.loc[after_mask]
+
+            before_fit, _ = fit_w_peak(
+                before_cell["w_recalculated"].to_numpy(),
+                histogram_range=histogram_range,
+                fit_range=fit_range,
+                histogram_bins=histogram_bins,
+                minimum_events=minimum_events_cell,
+                fixed_sigma_gev=None,
+            )
+            after_fit, _ = fit_w_peak(
+                after_cell["w_corrected"].to_numpy(),
+                histogram_range=histogram_range,
+                fit_range=fit_range,
+                histogram_bins=histogram_bins,
+                minimum_events=minimum_events_cell,
+                fixed_sigma_gev=None,
+            )
+
+            if before_fit.success:
+                before_x.append(float(before_cell["e_theta_deg"].mean()))
+                before_y.append(before_fit.peak_sigma_gev)
+                before_yerr.append(before_fit.peak_sigma_error_gev)
+            if after_fit.success:
+                after_x.append(float(after_cell["e_theta_deg"].mean()))
+                after_y.append(after_fit.peak_sigma_gev)
+                after_yerr.append(after_fit.peak_sigma_error_gev)
+
+        axis.errorbar(
+            before_x,
+            before_y,
+            yerr=before_yerr,
+            fmt="o",
+            label="Before correction",
+        )
+        axis.errorbar(
+            after_x,
+            after_y,
+            yerr=after_yerr,
+            fmt="s",
+            label="After correction",
+        )
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel("Mean electron theta (deg)")
+        axis.set_ylabel(r"Freely fitted $\sigma_W$ (GeV)")
+        if sector == 1:
+            axis.legend(fontsize=8)
+
+    figure.suptitle(
+        f"{period.label}: elastic-peak width versus electron theta"
+    )
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+
+
 def save_before_after_integrated_w_plot(
     uncorrected_frame: pd.DataFrame,
     corrected_frame: pd.DataFrame,
@@ -2674,6 +2801,18 @@ def process_calibration_period(
         corrected_records,
         plot_directories["closure_theta"]
         / f"{period.key}_theta_closure.png",
+    )
+    save_before_after_theta_width_plot(
+        period=period,
+        uncorrected_frame=period_frame,
+        corrected_frame=corrected_frame,
+        uncorrected_records=uncorrected_records,
+        output_path=plot_directories["closure_theta"]
+        / f"{period.key}_theta_closure_widths.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events_cell=minimum_events_cell,
     )
     save_before_after_integrated_w_plot(
         period_frame,

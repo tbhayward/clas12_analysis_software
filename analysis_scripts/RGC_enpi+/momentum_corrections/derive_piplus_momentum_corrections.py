@@ -1081,6 +1081,8 @@ def fit_one_model(
     )
     mean = float(parameters[1])
     mean_error = float(errors[1])
+    sigma_gev2 = float(abs(parameters[2]))
+    sigma_error_gev2 = float(errors[2])
 
     mean_low = bounds[0][1]
     mean_high = bounds[1][1]
@@ -1133,6 +1135,8 @@ def fit_one_model(
         "covariance": covariance.tolist(),
         "mean_gev2": mean,
         "mean_error_gev2": mean_error,
+        "sigma_gev2": sigma_gev2,
+        "sigma_error_gev2": sigma_error_gev2,
         "chi2": chi2,
         "ndf": int(ndf),
         "chi2_ndf": chi2_ndf,
@@ -1237,6 +1241,8 @@ def fit_mx2_peak(
         "selected_model": "gaussian",
         "mean_gev2": selected["mean_gev2"],
         "mean_error_gev2": selected["mean_error_gev2"],
+        "sigma_gev2": selected["sigma_gev2"],
+        "sigma_error_gev2": selected["sigma_error_gev2"],
         "chi2": selected["chi2"],
         "ndf": selected["ndf"],
         "chi2_ndf": selected["chi2_ndf"],
@@ -1336,6 +1342,11 @@ def cell_record(
         "peak_residual_gev2": (
             fit_result.get("mean_gev2", math.nan)
             - NEUTRON_MASS2_GEV2
+        ),
+        "peak_sigma_gev2": fit_result.get("sigma_gev2", math.nan),
+        "peak_sigma_error_gev2": fit_result.get(
+            "sigma_error_gev2",
+            math.nan,
         ),
         "chi2": fit_result.get("chi2", math.nan),
         "ndf": fit_result.get("ndf", 0),
@@ -2503,6 +2514,76 @@ def save_theta_residual_summary(
 
 
 
+def save_theta_width_summary(
+    period: CalibrationPeriod,
+    fit_records: pd.DataFrame,
+    output_path: Path,
+) -> None:
+    """
+    Compare fitted Gaussian missing-neutron peak widths for all three stages.
+
+    This is a closure diagnostic only and does not affect the pion correction
+    extraction or model selection.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    figure, axes = plt.subplots(
+        2,
+        3,
+        figsize=(15.0, 9.0),
+        sharey=True,
+        constrained_layout=True,
+    )
+
+    stage_definitions = (
+        ("uncorrected", "o", "No corrections"),
+        ("electron_corrected", "s", "Electron corrected"),
+        (
+            "electron_pion_corrected",
+            "^",
+            r"Electron + $\pi^+$ corrected",
+        ),
+    )
+
+    for sector, axis in zip(range(1, 7), axes.ravel()):
+        for stage, marker, label in stage_definitions:
+            cells = fit_records.loc[
+                (fit_records["period_key"] == period.key)
+                & (fit_records["stage"] == stage)
+                & (fit_records["pion_region"] == "FD")
+                & (fit_records["pion_sector"] == sector)
+                & (fit_records["cell_type"] == "theta")
+                & fit_records["success"]
+            ].sort_values("mean_theta_deg")
+
+            axis.errorbar(
+                cells["mean_theta_deg"],
+                cells["peak_sigma_gev2"],
+                yerr=cells["peak_sigma_error_gev2"],
+                fmt=marker,
+                label=label,
+            )
+
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlabel(r"Mean pion $\theta$ (deg)")
+        axis.set_ylabel(
+            r"Fitted $\sigma_{M_X^2}$ (GeV$^2$)"
+        )
+        if sector == 1:
+            axis.legend(fontsize=8)
+
+    figure.suptitle(
+        f"{period.label}: missing-neutron peak width versus pion theta"
+    )
+    figure.savefig(
+        output_path,
+        dpi=180,
+        bbox_inches="tight",
+        pad_inches=0.06,
+    )
+    plt.close(figure)
+
+
 def _diagnostic_equal_width_edges(values: np.ndarray, bin_count: int) -> np.ndarray:
     """Return equal-width edges spanning the finite observed range."""
     finite = np.asarray(values, dtype=float)
@@ -2945,6 +3026,12 @@ def process_period(
         fit_frame,
         plot_directories["theta_residuals"]
         / f"{period.key}_fd_theta_residuals.png",
+    )
+    save_theta_width_summary(
+        period,
+        fit_frame,
+        plot_directories["theta_residuals"]
+        / f"{period.key}_fd_theta_widths.png",
     )
     save_kinematic_residual_summary(
         frame=frame,
