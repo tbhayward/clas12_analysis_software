@@ -1,65 +1,71 @@
 #!/usr/bin/env python3
 """
-plot_calibration_ft_v2.py
+plot_calibration_v3.py
 
-Fast, streamlined Forward Tagger photon-occupancy diagnostics for the CLAS12
-calibration ROOT trees.
+Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
-For each run period, the script creates exactly one 2x2 summary figure:
+Current modules
+---------------
+1. Forward Tagger photon occupancy
+   - One 2x2 summary per run period.
+   - Data before/after the FT fiducial cut on the top row.
+   - Reconstructed MC before/after on the bottom row.
 
-    top left:     data before the FT fiducial cut
-    top right:    data after the FT fiducial cut
-    bottom left:  reconstructed MC before the FT fiducial cut
-    bottom right: reconstructed MC after the FT fiducial cut
+2. Electromagnetic-calorimeter strip matching
+   - Separate output directories for PCal, ECin, and ECout.
+   - Separate electron and photon summaries.
+   - Six sectors by three strip coordinates: lu, lv, and lw.
+   - Data and reconstructed MC are overlaid as independently normalized
+     one-dimensional strip-coordinate distributions.
+   - Existing fiducial exclusion intervals are shaded but are NOT applied to
+     the plotted samples, so data/GEMC mismodeling remains visible.
+   - The RGA Sp19-only PCal sector-2 lv exclusion is overlaid only for Sp19.
 
-The five RGA run periods are processed by default.  The --rgc override instead
-processes the three RGC data sets.  Since no corresponding RGC MC files are
-configured, the lower two panels are marked "MC not available."
+Performance model
+-----------------
+One worker process handles one complete run period.  Each ROOT file is read
+once, and the FT and calorimeter histograms are accumulated in the same chunk
+loop.  At most five period workers are used.
 
-Run periods are parallelized with at most five worker processes.  Each worker
-handles one complete period, reading its data and MC files sequentially.  This
-keeps ROOT-file access simple while using all available period-level
-parallelism.
+Default RGA input
+-----------------
+/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/dvcs_calibration/
 
-Only these branches are read:
+Default RGC input
+-----------------
+/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/calibration/
 
-    particle_pid
-    ft_x
-    ft_y
-
-Default input locations
------------------------
-RGA:
-  /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/dvcs_calibration/
-
-RGC:
-  /work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/calibration/
-
-Default output location
------------------------
-  output/calibration/forward_tagger/
+Default outputs
+---------------
+output/calibration/forward_tagger/
+output/calibration/calorimeter/pcal/
+output/calibration/calorimeter/ecin/
+output/calibration/calorimeter/ecout/
 
 Examples
 --------
-Process all five RGA periods with up to five workers:
+All five RGA periods:
 
-  python3 external_scripts/plot_calibration_ft_v2.py
+  python3 external_scripts/plot_calibration_v3.py
 
-Process the three RGC periods:
+RGC data:
 
-  python3 external_scripts/plot_calibration_ft_v2.py --rgc
+  python3 external_scripts/plot_calibration_v3.py --rgc
 
-Process selected periods only:
+One period, limited test:
 
-  python3 external_scripts/plot_calibration_ft_v2.py \
+  python3 external_scripts/plot_calibration_v3.py \
       --period rga_sp18_inb \
-      --period rga_fa18_inb
-
-Limit processing for a quick test:
-
-  python3 external_scripts/plot_calibration_ft_v2.py \
       --max-events 5000000 \
-      --workers 2
+      --workers 1
+
+Only calorimeter plots:
+
+  python3 external_scripts/plot_calibration_v3.py --skip-ft
+
+Only FT plots:
+
+  python3 external_scripts/plot_calibration_v3.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -72,7 +78,6 @@ import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import matplotlib
 
@@ -93,7 +98,7 @@ except ImportError as exc:
 
 
 # =============================================================================
-# Configuration
+# Global configuration
 # =============================================================================
 
 TREE_NAME_DEFAULT = "PhysicsEvents"
@@ -104,18 +109,34 @@ RGA_INPUT_DIR_DEFAULT = Path(
 RGC_INPUT_DIR_DEFAULT = Path(
     "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/calibration"
 )
-OUTPUT_DIR_DEFAULT = Path("output/calibration/forward_tagger")
+OUTPUT_BASE_DEFAULT = Path("output/calibration")
 
-FT_BRANCHES = ("particle_pid", "ft_x", "ft_y")
 PHOTON_PID = 22
+ELECTRON_PID = 11
 INVALID_SENTINEL = -9999.0
 MAX_WORKERS_HARD_LIMIT = 5
+
+PARTICLE_KEYS = ("electron", "photon")
+PARTICLE_PIDS = np.asarray((ELECTRON_PID, PHOTON_PID), dtype=np.int32)
+
+LAYER_KEYS = ("pcal", "ecin", "ecout")
+LAYER_NUMBERS = (1, 4, 7)
+LAYER_LABELS = {
+    "pcal": "PCal",
+    "ecin": "ECin",
+    "ecout": "ECout",
+}
+
+COORD_KEYS = ("lu", "lv", "lw")
+COORD_LABELS = {
+    "lu": r"$lu$ (cm)",
+    "lv": r"$lv$ (cm)",
+    "lw": r"$lw$ (cm)",
+}
 
 
 @dataclass(frozen=True)
 class Dataset:
-    """Input files and display metadata for one run period."""
-
     key: str
     label: str
     data_file: str
@@ -124,8 +145,6 @@ class Dataset:
 
 @dataclass(frozen=True)
 class FTFiducialConfig:
-    """FT annulus and excluded circular regions."""
-
     inner_radius_cm: float = 8.5
     outer_radius_cm: float = 15.5
     holes: tuple[tuple[float, float, float], ...] = (
@@ -138,28 +157,37 @@ class FTFiducialConfig:
 
 @dataclass(frozen=True)
 class HistogramConfig:
-    """FT coordinate histogram binning."""
-
-    bins: int = 100
-    xy_min_cm: float = -20.0
-    xy_max_cm: float = 20.0
+    ft_bins: int = 100
+    ft_xy_min_cm: float = -20.0
+    ft_xy_max_cm: float = 20.0
+    cal_bins: int = 150
+    cal_min_cm: float = 0.0
+    cal_max_cm: float = 450.0
 
     @property
-    def edges(self) -> np.ndarray:
+    def ft_edges(self) -> np.ndarray:
         return np.linspace(
-            self.xy_min_cm,
-            self.xy_max_cm,
-            self.bins + 1,
+            self.ft_xy_min_cm,
+            self.ft_xy_max_cm,
+            self.ft_bins + 1,
+            dtype=np.float64,
+        )
+
+    @property
+    def cal_edges(self) -> np.ndarray:
+        return np.linspace(
+            self.cal_min_cm,
+            self.cal_max_cm,
+            self.cal_bins + 1,
             dtype=np.float64,
         )
 
 
 @dataclass
-class OccupancyResult:
-    """Accumulated before/after occupancy and counters for one ROOT file."""
-
-    before: np.ndarray
-    after: np.ndarray
+class SampleResult:
+    ft_before: np.ndarray
+    ft_after: np.ndarray
+    cal_counts: np.ndarray
     rows_read: int
     photon_rows: int
     valid_ft_photons: int
@@ -169,77 +197,173 @@ class OccupancyResult:
 
 @dataclass
 class PeriodResult:
-    """Data and optional MC results for one run period."""
-
     dataset: Dataset
-    data: OccupancyResult
-    mc: OccupancyResult | None
+    data: SampleResult
+    mc: SampleResult | None
     worker_pid: int
     elapsed_seconds: float
 
 
 RGA_DATASETS: tuple[Dataset, ...] = (
     Dataset(
-        key="rga_sp18_inb",
-        label="RGA Sp18 Inb",
-        data_file="DVCSWagon_rga_sp18_inb.root",
-        mc_file="dvcsgen_rga_sp18_inb.root",
+        "rga_sp18_inb",
+        "RGA Sp18 Inb",
+        "DVCSWagon_rga_sp18_inb.root",
+        "dvcsgen_rga_sp18_inb.root",
     ),
     Dataset(
-        key="rga_sp18_out",
-        label="RGA Sp18 Out",
-        data_file="DVCSWagon_rga_sp18_out.root",
-        mc_file="dvcsgen_rga_sp18_out.root",
+        "rga_sp18_out",
+        "RGA Sp18 Out",
+        "DVCSWagon_rga_sp18_out.root",
+        "dvcsgen_rga_sp18_out.root",
     ),
     Dataset(
-        key="rga_fa18_inb",
-        label="RGA Fa18 Inb",
-        data_file="DVCSWagon_rga_fa18_inb.root",
-        mc_file="dvcsgen_rga_fa18_inb.root",
+        "rga_fa18_inb",
+        "RGA Fa18 Inb",
+        "DVCSWagon_rga_fa18_inb.root",
+        "dvcsgen_rga_fa18_inb.root",
     ),
     Dataset(
-        key="rga_fa18_out",
-        label="RGA Fa18 Out",
-        data_file="DVCSWagon_rga_fa18_out.root",
-        mc_file="dvcsgen_rga_fa18_out.root",
+        "rga_fa18_out",
+        "RGA Fa18 Out",
+        "DVCSWagon_rga_fa18_out.root",
+        "dvcsgen_rga_fa18_out.root",
     ),
     Dataset(
-        key="rga_sp19_inb",
-        label="RGA Sp19 Inb",
-        data_file="DVCSWagon_rga_sp19_inb.root",
-        mc_file="dvcsgen_rga_sp19_inb.root",
+        "rga_sp19_inb",
+        "RGA Sp19 Inb",
+        "DVCSWagon_rga_sp19_inb.root",
+        "dvcsgen_rga_sp19_inb.root",
     ),
 )
 
 RGC_DATASETS: tuple[Dataset, ...] = (
     Dataset(
-        key="rgc_su22_inb",
-        label="RGC Su22 Inb",
-        data_file="rgc_su22_inb_NH3_epi+X_calibration.root",
+        "rgc_su22_inb",
+        "RGC Su22 Inb",
+        "rgc_su22_inb_NH3_epi+X_calibration.root",
     ),
     Dataset(
-        key="rgc_fa22_inb",
-        label="RGC Fa22 Inb",
-        data_file="rgc_fa22_inb_NH3_epi+X_calibration.root",
+        "rgc_fa22_inb",
+        "RGC Fa22 Inb",
+        "rgc_fa22_inb_NH3_epi+X_calibration.root",
     ),
     Dataset(
-        key="rgc_sp23_inb",
-        label="RGC Sp23 Inb",
-        data_file="rgc_sp23_inb_NH3_epi+X_calibration.root",
+        "rgc_sp23_inb",
+        "RGC Sp23 Inb",
+        "rgc_sp23_inb_NH3_epi+X_calibration.root",
     ),
 )
 
 
 # =============================================================================
-# Command-line interface
+# Existing calorimeter exclusions
+# =============================================================================
+
+# Each tuple is:
+#   (layer key, sector, coordinate key, lower bound, upper bound, applicability)
+#
+# "all_rga" means every configured RGA period.
+# "sp19_only" means only RGA Sp19 Inb.
+#
+# Bounds are preserved exactly from the Java cut supplied with this script
+# update.  These regions are drawn, not applied, in the matching plots.
+DEAD_STRIP_EXCLUSIONS: tuple[
+    tuple[str, int, str, float, float, str], ...
+] = (
+    ("pcal", 1, "lw", 72.0, 94.5, "all_rga"),
+    ("pcal", 1, "lw", 220.5, 234.0, "all_rga"),
+    ("ecin", 1, "lv", 67.5, 94.5, "all_rga"),
+    ("ecout", 1, "lv", 0.0, 40.5, "all_rga"),
+    ("pcal", 2, "lv", 99.0, 117.0, "all_rga"),
+    ("pcal", 3, "lw", 346.5, 378.0, "all_rga"),
+    ("pcal", 4, "lw", 0.0, 13.5, "all_rga"),
+    ("pcal", 4, "lv", 229.5, 243.0, "all_rga"),
+    ("ecin", 5, "lv", 0.0, 23.5, "all_rga"),
+    ("ecout", 5, "lu", 193.5, 216.0, "all_rga"),
+    ("pcal", 6, "lw", 166.5, 193.5, "all_rga"),
+    ("pcal", 2, "lv", 31.5, 49.5, "sp19_only"),
+)
+
+
+def pcal_edge_threshold_cm(strictness: int) -> float:
+    if strictness == 1:
+        return 9.0
+    #endif
+    if strictness == 2:
+        return 13.5
+    #endif
+    if strictness == 3:
+        return 18.0
+    #endif
+    raise ValueError(f"Unsupported calorimeter strictness: {strictness}")
+
+
+def exclusion_intervals(
+    dataset_key: str,
+    layer_key: str,
+    sector: int,
+    coordinate_key: str,
+    strictness: int,
+    is_rgc: bool,
+) -> list[tuple[float, float, str]]:
+    """
+    Return currently implemented exclusion intervals for one panel.
+
+    The generic PCal edge cut is included for lv and lw.  The RGA dead-strip
+    removals are included only for strictness >= 2, matching the Java logic.
+    """
+
+    intervals: list[tuple[float, float, str]] = []
+
+    if layer_key == "pcal" and coordinate_key in ("lv", "lw"):
+        intervals.append(
+            (0.0, pcal_edge_threshold_cm(strictness), "PCal edge")
+        )
+    #endif
+
+    if strictness < 2 or is_rgc:
+        return intervals
+    #endif
+
+    for (
+        cut_layer,
+        cut_sector,
+        cut_coordinate,
+        lower,
+        upper,
+        applicability,
+    ) in DEAD_STRIP_EXCLUSIONS:
+        if cut_layer != layer_key:
+            continue
+        #endif
+        if cut_sector != sector:
+            continue
+        #endif
+        if cut_coordinate != coordinate_key:
+            continue
+        #endif
+        if applicability == "sp19_only" and dataset_key != "rga_sp19_inb":
+            continue
+        #endif
+
+        label = "Sp19-only exclusion" if applicability == "sp19_only" else "RGA exclusion"
+        intervals.append((lower, upper, label))
+    #endfor
+
+    return intervals
+
+
+# =============================================================================
+# Command line
 # =============================================================================
 
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Create one four-panel FT occupancy summary for each configured "
-            "RGA or RGC run period."
+            "Create FT occupancy and calorimeter strip-matching diagnostics "
+            "for the configured RGA or RGC calibration trees."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -248,25 +372,25 @@ def parse_arguments() -> argparse.Namespace:
     mode.add_argument(
         "--rga",
         action="store_true",
-        help="Process the five RGA data/MC periods; this is the default.",
+        help="Process the five RGA periods; this is the default.",
     )
     mode.add_argument(
         "--rgc",
         action="store_true",
-        help="Process the three RGC data periods instead.",
+        help="Process the three RGC data periods.",
     )
 
     parser.add_argument(
         "--input-dir",
         type=Path,
         default=None,
-        help="Override the input directory for the selected mode.",
+        help="Override the selected mode's input directory.",
     )
     parser.add_argument(
-        "--output-dir",
+        "--output-base",
         type=Path,
-        default=OUTPUT_DIR_DEFAULT,
-        help="Single directory receiving all FT summary figures.",
+        default=OUTPUT_BASE_DEFAULT,
+        help="Base directory under which calibration modules are written.",
     )
     parser.add_argument(
         "--tree",
@@ -278,54 +402,86 @@ def parse_arguments() -> argparse.Namespace:
         action="append",
         default=[],
         metavar="KEY",
-        help=(
-            "Process only this period key. May be repeated. "
-            "Use --list-periods to display valid keys."
-        ),
+        help="Select one period key; may be repeated.",
     )
     parser.add_argument(
         "--list-periods",
         action="store_true",
-        help="Print valid period keys for the selected mode and exit.",
+        help="List valid period keys and exit.",
     )
     parser.add_argument(
         "--workers",
         type=int,
         default=MAX_WORKERS_HARD_LIMIT,
-        help=(
-            "Requested number of period-level worker processes. The effective "
-            "value is capped at five and at the number of selected periods."
-        ),
+        help="Requested period workers; always capped at five.",
     )
     parser.add_argument(
         "--chunk-size",
         type=int,
         default=1_000_000,
-        help="ROOT rows read per uproot chunk.",
+        help="Rows per uproot chunk.",
     )
     parser.add_argument(
         "--max-events",
         type=int,
         default=None,
-        help="Optional maximum rows read from each data or MC file.",
+        help="Optional per-file row limit for tests.",
     )
     parser.add_argument(
-        "--bins",
+        "--skip-ft",
+        action="store_true",
+        help="Do not create FT plots or read FT branches.",
+    )
+    parser.add_argument(
+        "--skip-calorimeter",
+        action="store_true",
+        help="Do not create calorimeter plots or read calorimeter branches.",
+    )
+    parser.add_argument(
+        "--ft-bins",
         type=int,
         default=100,
-        help="Number of bins along each FT coordinate axis.",
+        help="FT bins per coordinate.",
     )
     parser.add_argument(
-        "--xy-min",
+        "--ft-xy-min",
         type=float,
         default=-20.0,
-        help="Minimum plotted FT coordinate in cm.",
+        help="Minimum FT coordinate in cm.",
     )
     parser.add_argument(
-        "--xy-max",
+        "--ft-xy-max",
         type=float,
         default=20.0,
-        help="Maximum plotted FT coordinate in cm.",
+        help="Maximum FT coordinate in cm.",
+    )
+    parser.add_argument(
+        "--cal-bins",
+        type=int,
+        default=150,
+        help="Calorimeter strip-coordinate bins.",
+    )
+    parser.add_argument(
+        "--cal-min",
+        type=float,
+        default=0.0,
+        help="Minimum calorimeter coordinate in cm.",
+    )
+    parser.add_argument(
+        "--cal-max",
+        type=float,
+        default=450.0,
+        help="Maximum calorimeter coordinate in cm.",
+    )
+    parser.add_argument(
+        "--calorimeter-strictness",
+        type=int,
+        choices=(1, 2, 3),
+        default=3,
+        help=(
+            "Strictness whose existing PCal edge and dead-strip exclusions "
+            "are overlaid. Histograms themselves remain uncut."
+        ),
     )
     parser.add_argument(
         "--dpi",
@@ -336,6 +492,9 @@ def parse_arguments() -> argparse.Namespace:
 
     args = parser.parse_args()
 
+    if args.skip_ft and args.skip_calorimeter:
+        parser.error("--skip-ft and --skip-calorimeter cannot both be set")
+    #endif
     if args.workers <= 0:
         parser.error("--workers must be positive")
     #endif
@@ -345,11 +504,14 @@ def parse_arguments() -> argparse.Namespace:
     if args.max_events is not None and args.max_events <= 0:
         parser.error("--max-events must be positive when supplied")
     #endif
-    if args.bins <= 0:
-        parser.error("--bins must be positive")
+    if args.ft_bins <= 0 or args.cal_bins <= 0:
+        parser.error("histogram bin counts must be positive")
     #endif
-    if args.xy_max <= args.xy_min:
-        parser.error("--xy-max must exceed --xy-min")
+    if args.ft_xy_max <= args.ft_xy_min:
+        parser.error("--ft-xy-max must exceed --ft-xy-min")
+    #endif
+    if args.cal_max <= args.cal_min:
+        parser.error("--cal-max must exceed --cal-min")
     #endif
     if args.dpi <= 0:
         parser.error("--dpi must be positive")
@@ -361,20 +523,22 @@ def parse_arguments() -> argparse.Namespace:
 def choose_datasets(
     args: argparse.Namespace,
 ) -> tuple[tuple[Dataset, ...], Path, str]:
-    use_rgc = bool(args.rgc)
-    datasets = RGC_DATASETS if use_rgc else RGA_DATASETS
-    default_input_dir = RGC_INPUT_DIR_DEFAULT if use_rgc else RGA_INPUT_DIR_DEFAULT
-    input_dir = args.input_dir if args.input_dir is not None else default_input_dir
-    mode_label = "RGC" if use_rgc else "RGA"
+    is_rgc = bool(args.rgc)
+    datasets = RGC_DATASETS if is_rgc else RGA_DATASETS
+    input_dir = (
+        args.input_dir
+        if args.input_dir is not None
+        else (RGC_INPUT_DIR_DEFAULT if is_rgc else RGA_INPUT_DIR_DEFAULT)
+    )
+    mode_label = "RGC" if is_rgc else "RGA"
 
     if args.period:
         by_key = {dataset.key: dataset for dataset in datasets}
         unknown = sorted(set(args.period) - set(by_key))
         if unknown:
-            valid = ", ".join(by_key)
             raise ValueError(
                 f"Unknown {mode_label} period key(s): {', '.join(unknown)}. "
-                f"Valid keys: {valid}"
+                f"Valid keys: {', '.join(by_key)}"
             )
         #endif
 
@@ -388,43 +552,61 @@ def choose_datasets(
 
 
 # =============================================================================
-# Fast occupancy accumulation
+# ROOT reading and accumulation
 # =============================================================================
 
 
-def validate_root_tree(file_path: Path, tree_name: str) -> int:
-    """Validate one ROOT input and return its tree entry count."""
+def required_branches(
+    do_ft: bool,
+    do_calorimeter: bool,
+) -> tuple[str, ...]:
+    branches: list[str] = ["particle_pid"]
 
+    if do_ft:
+        branches.extend(("ft_x", "ft_y"))
+    #endif
+
+    if do_calorimeter:
+        branches.append("cal_sector")
+        for layer_number in LAYER_NUMBERS:
+            for coordinate_key in COORD_KEYS:
+                branches.append(f"cal_{coordinate_key}_{layer_number}")
+            #endfor
+        #endfor
+    #endif
+
+    return tuple(branches)
+
+
+def validate_root_tree(
+    file_path: Path,
+    tree_name: str,
+    branches: tuple[str, ...],
+) -> int:
     if not file_path.is_file():
         raise FileNotFoundError(f"Input ROOT file does not exist: {file_path}")
     #endif
 
-    try:
-        with uproot.open(file_path) as root_file:
-            if tree_name not in root_file:
-                keys = ", ".join(str(key) for key in root_file.keys())
-                raise KeyError(
-                    f"Tree '{tree_name}' is absent from {file_path}. "
-                    f"Available top-level keys: {keys}"
-                )
-            #endif
+    with uproot.open(file_path) as root_file:
+        if tree_name not in root_file:
+            keys = ", ".join(str(key) for key in root_file.keys())
+            raise KeyError(
+                f"Tree '{tree_name}' is absent from {file_path}. "
+                f"Available keys: {keys}"
+            )
+        #endif
 
-            tree = root_file[tree_name]
-            available_branches = set(tree.keys())
-            missing = [
-                branch for branch in FT_BRANCHES
-                if branch not in available_branches
-            ]
-            if missing:
-                raise KeyError(
-                    f"Tree '{tree_name}' in {file_path} is missing required "
-                    f"branch(es): {', '.join(missing)}"
-                )
-            #endif
+        tree = root_file[tree_name]
+        available = set(tree.keys())
+        missing = [branch for branch in branches if branch not in available]
+        if missing:
+            raise KeyError(
+                f"Tree '{tree_name}' in {file_path} is missing: "
+                f"{', '.join(missing)}"
+            )
+        #endif
 
-            return int(tree.num_entries)
-    except OSError as exc:
-        raise OSError(f"Could not open ROOT file {file_path}: {exc}") from exc
+        return int(tree.num_entries)
 
 
 def ft_fiducial_mask(
@@ -432,12 +614,6 @@ def ft_fiducial_mask(
     y_cm: np.ndarray,
     config: FTFiducialConfig,
 ) -> np.ndarray:
-    """
-    Return the FT annulus-plus-hole mask.
-
-    Squared distances are used throughout to avoid unnecessary square roots.
-    """
-
     radius_squared = x_cm * x_cm + y_cm * y_cm
     accepted = (
         (radius_squared >= config.inner_radius_cm**2)
@@ -456,23 +632,42 @@ def ft_fiducial_mask(
     return accepted
 
 
-def accumulate_occupancy(
+def empty_cal_counts(histogram_config: HistogramConfig) -> np.ndarray:
+    # Axes:
+    #   particle, layer, sector, coordinate, histogram bin
+    return np.zeros(
+        (
+            len(PARTICLE_KEYS),
+            len(LAYER_KEYS),
+            6,
+            len(COORD_KEYS),
+            histogram_config.cal_bins,
+        ),
+        dtype=np.uint64,
+    )
+
+
+def accumulate_sample(
     file_path: Path,
     tree_name: str,
     histogram_config: HistogramConfig,
     fiducial_config: FTFiducialConfig,
     chunk_size: int,
     max_events: int | None,
-) -> OccupancyResult:
-    """Read one ROOT file and accumulate only the required occupancy maps."""
-
+    do_ft: bool,
+    do_calorimeter: bool,
+) -> SampleResult:
     start_time = time.perf_counter()
-    validate_root_tree(file_path, tree_name)
+    branches = required_branches(do_ft, do_calorimeter)
+    validate_root_tree(file_path, tree_name, branches)
 
-    edges = histogram_config.edges
-    shape = (histogram_config.bins, histogram_config.bins)
-    before = np.zeros(shape, dtype=np.uint64)
-    after = np.zeros(shape, dtype=np.uint64)
+    ft_shape = (histogram_config.ft_bins, histogram_config.ft_bins)
+    ft_before = np.zeros(ft_shape, dtype=np.uint64)
+    ft_after = np.zeros(ft_shape, dtype=np.uint64)
+    cal_counts = empty_cal_counts(histogram_config)
+
+    ft_edges = histogram_config.ft_edges
+    cal_edges = histogram_config.cal_edges
 
     rows_read = 0
     photon_rows = 0
@@ -481,65 +676,121 @@ def accumulate_occupancy(
 
     iterator = uproot.iterate(
         f"{file_path}:{tree_name}",
-        expressions=list(FT_BRANCHES),
+        expressions=list(branches),
         step_size=chunk_size,
         entry_stop=max_events,
         library="np",
     )
 
     for arrays in iterator:
-        pid = np.asarray(arrays["particle_pid"])
-        x_cm = np.asarray(arrays["ft_x"], dtype=np.float64)
-        y_cm = np.asarray(arrays["ft_y"], dtype=np.float64)
-
+        pid = np.asarray(arrays["particle_pid"], dtype=np.int32)
         rows_read += int(pid.size)
 
-        photon_mask = pid == PHOTON_PID
-        photon_rows += int(np.count_nonzero(photon_mask))
+        if do_ft:
+            photon_mask = pid == PHOTON_PID
+            photon_rows += int(np.count_nonzero(photon_mask))
 
-        valid_mask = (
-            photon_mask
-            & np.isfinite(x_cm)
-            & np.isfinite(y_cm)
-            & (x_cm != INVALID_SENTINEL)
-            & (y_cm != INVALID_SENTINEL)
-        )
+            ft_x = np.asarray(arrays["ft_x"], dtype=np.float64)
+            ft_y = np.asarray(arrays["ft_y"], dtype=np.float64)
 
-        if not np.any(valid_mask):
-            continue
+            valid_ft_mask = (
+                photon_mask
+                & np.isfinite(ft_x)
+                & np.isfinite(ft_y)
+                & (ft_x != INVALID_SENTINEL)
+                & (ft_y != INVALID_SENTINEL)
+            )
+
+            if np.any(valid_ft_mask):
+                valid_x = ft_x[valid_ft_mask]
+                valid_y = ft_y[valid_ft_mask]
+                valid_ft_photons += int(valid_x.size)
+
+                accepted = ft_fiducial_mask(
+                    valid_x,
+                    valid_y,
+                    fiducial_config,
+                )
+                fiducial_ft_photons += int(np.count_nonzero(accepted))
+
+                chunk_before, _, _ = np.histogram2d(
+                    valid_x,
+                    valid_y,
+                    bins=(ft_edges, ft_edges),
+                )
+                ft_before += chunk_before.astype(np.uint64, copy=False)
+
+                if np.any(accepted):
+                    chunk_after, _, _ = np.histogram2d(
+                        valid_x[accepted],
+                        valid_y[accepted],
+                        bins=(ft_edges, ft_edges),
+                    )
+                    ft_after += chunk_after.astype(np.uint64, copy=False)
+                #endif
+            #endif
         #endif
 
-        valid_x = x_cm[valid_mask]
-        valid_y = y_cm[valid_mask]
-        valid_ft_photons += int(valid_x.size)
+        if do_calorimeter:
+            sectors = np.asarray(arrays["cal_sector"], dtype=np.int16)
+            valid_sector = (sectors >= 1) & (sectors <= 6)
 
-        accepted_mask = ft_fiducial_mask(
-            valid_x,
-            valid_y,
-            fiducial_config,
-        )
-        fiducial_ft_photons += int(np.count_nonzero(accepted_mask))
+            for particle_index, particle_pid in enumerate(PARTICLE_PIDS):
+                particle_mask = valid_sector & (pid == particle_pid)
+                if not np.any(particle_mask):
+                    continue
+                #endif
 
-        chunk_before, _, _ = np.histogram2d(
-            valid_x,
-            valid_y,
-            bins=(edges, edges),
-        )
-        before += chunk_before.astype(np.uint64, copy=False)
+                for layer_index, layer_number in enumerate(LAYER_NUMBERS):
+                    for coordinate_index, coordinate_key in enumerate(COORD_KEYS):
+                        values = np.asarray(
+                            arrays[f"cal_{coordinate_key}_{layer_number}"],
+                            dtype=np.float64,
+                        )
+                        valid = (
+                            particle_mask
+                            & np.isfinite(values)
+                            & (values != INVALID_SENTINEL)
+                            & (values >= histogram_config.cal_min_cm)
+                            & (values <= histogram_config.cal_max_cm)
+                        )
 
-        if np.any(accepted_mask):
-            chunk_after, _, _ = np.histogram2d(
-                valid_x[accepted_mask],
-                valid_y[accepted_mask],
-                bins=(edges, edges),
-            )
-            after += chunk_after.astype(np.uint64, copy=False)
+                        if not np.any(valid):
+                            continue
+                        #endif
+
+                        selected_values = values[valid]
+                        selected_sectors = sectors[valid]
+
+                        for sector in range(1, 7):
+                            sector_values = selected_values[
+                                selected_sectors == sector
+                            ]
+                            if sector_values.size == 0:
+                                continue
+                            #endif
+
+                            counts, _ = np.histogram(
+                                sector_values,
+                                bins=cal_edges,
+                            )
+                            cal_counts[
+                                particle_index,
+                                layer_index,
+                                sector - 1,
+                                coordinate_index,
+                            ] += counts.astype(np.uint64, copy=False)
+                        #endfor
+                    #endfor
+                #endfor
+            #endfor
         #endif
     #endfor
 
-    return OccupancyResult(
-        before=before,
-        after=after,
+    return SampleResult(
+        ft_before=ft_before,
+        ft_after=ft_after,
+        cal_counts=cal_counts,
         rows_read=rows_read,
         photon_rows=photon_rows,
         valid_ft_photons=valid_ft_photons,
@@ -556,43 +807,47 @@ def process_period(
     fiducial_config: FTFiducialConfig,
     chunk_size: int,
     max_events: int | None,
+    do_ft: bool,
+    do_calorimeter: bool,
 ) -> PeriodResult:
-    """Worker entry point: process one complete run period."""
-
     start_time = time.perf_counter()
 
-    data_result = accumulate_occupancy(
-        file_path=input_dir / dataset.data_file,
-        tree_name=tree_name,
-        histogram_config=histogram_config,
-        fiducial_config=fiducial_config,
-        chunk_size=chunk_size,
-        max_events=max_events,
+    data = accumulate_sample(
+        input_dir / dataset.data_file,
+        tree_name,
+        histogram_config,
+        fiducial_config,
+        chunk_size,
+        max_events,
+        do_ft,
+        do_calorimeter,
     )
 
-    mc_result = None
+    mc = None
     if dataset.mc_file is not None:
-        mc_result = accumulate_occupancy(
-            file_path=input_dir / dataset.mc_file,
-            tree_name=tree_name,
-            histogram_config=histogram_config,
-            fiducial_config=fiducial_config,
-            chunk_size=chunk_size,
-            max_events=max_events,
+        mc = accumulate_sample(
+            input_dir / dataset.mc_file,
+            tree_name,
+            histogram_config,
+            fiducial_config,
+            chunk_size,
+            max_events,
+            do_ft,
+            do_calorimeter,
         )
     #endif
 
     return PeriodResult(
         dataset=dataset,
-        data=data_result,
-        mc=mc_result,
+        data=data,
+        mc=mc,
         worker_pid=os.getpid(),
         elapsed_seconds=time.perf_counter() - start_time,
     )
 
 
 # =============================================================================
-# Plotting
+# FT plotting
 # =============================================================================
 
 
@@ -600,8 +855,6 @@ def draw_ft_boundaries(
     axis: plt.Axes,
     config: FTFiducialConfig,
 ) -> None:
-    """Overlay the complete FT fiducial geometry."""
-
     for radius_cm in (config.inner_radius_cm, config.outer_radius_cm):
         axis.add_patch(
             Circle(
@@ -628,20 +881,14 @@ def draw_ft_boundaries(
     #endfor
 
 
-def configure_xy_axis(
+def configure_ft_axis(
     axis: plt.Axes,
-    histogram_config: HistogramConfig,
+    config: HistogramConfig,
 ) -> None:
     axis.set_xlabel(r"FT $x$ (cm)")
     axis.set_ylabel(r"FT $y$ (cm)")
-    axis.set_xlim(
-        histogram_config.xy_min_cm,
-        histogram_config.xy_max_cm,
-    )
-    axis.set_ylim(
-        histogram_config.xy_min_cm,
-        histogram_config.xy_max_cm,
-    )
+    axis.set_xlim(config.ft_xy_min_cm, config.ft_xy_max_cm)
+    axis.set_ylim(config.ft_xy_min_cm, config.ft_xy_max_cm)
     axis.set_aspect("equal", adjustable="box")
 
 
@@ -649,21 +896,14 @@ def shared_log_norm(
     first: np.ndarray,
     second: np.ndarray,
 ) -> LogNorm | None:
-    """
-    Construct one logarithmic normalization for a before/after row.
-
-    Sharing the normalization makes the occupancy loss visually meaningful.
-    """
-
     maximum = max(float(np.max(first)), float(np.max(second)))
     if maximum <= 0.0:
         return None
     #endif
-
     return LogNorm(vmin=1.0, vmax=max(1.0, maximum))
 
 
-def draw_occupancy_panel(
+def draw_ft_panel(
     axis: plt.Axes,
     histogram: np.ndarray,
     title: str,
@@ -672,12 +912,11 @@ def draw_occupancy_panel(
     norm: LogNorm | None,
 ):
     extent = (
-        histogram_config.xy_min_cm,
-        histogram_config.xy_max_cm,
-        histogram_config.xy_min_cm,
-        histogram_config.xy_max_cm,
+        histogram_config.ft_xy_min_cm,
+        histogram_config.ft_xy_max_cm,
+        histogram_config.ft_xy_min_cm,
+        histogram_config.ft_xy_max_cm,
     )
-
     image = axis.imshow(
         histogram.T,
         origin="lower",
@@ -687,19 +926,18 @@ def draw_occupancy_panel(
         norm=norm,
         rasterized=True,
     )
-
     axis.set_title(title)
-    configure_xy_axis(axis, histogram_config)
+    configure_ft_axis(axis, histogram_config)
     draw_ft_boundaries(axis, fiducial_config)
     return image
 
 
-def efficiency_text(result: OccupancyResult) -> str:
+def ft_efficiency_text(result: SampleResult) -> str:
     if result.valid_ft_photons <= 0:
         return "0 / 0 valid FT photons"
     #endif
 
-    efficiency_percent = (
+    efficiency = (
         100.0
         * result.fiducial_ft_photons
         / result.valid_ft_photons
@@ -707,39 +945,37 @@ def efficiency_text(result: OccupancyResult) -> str:
     return (
         f"{result.fiducial_ft_photons:,} / "
         f"{result.valid_ft_photons:,} valid FT photons "
-        f"({efficiency_percent:.2f}%)"
+        f"({efficiency:.2f}%)"
     )
 
 
-def draw_missing_mc_panel(
+def draw_missing_mc_ft_panel(
     axis: plt.Axes,
     title: str,
     histogram_config: HistogramConfig,
     fiducial_config: FTFiducialConfig,
 ) -> None:
     axis.set_title(title)
-    configure_xy_axis(axis, histogram_config)
+    configure_ft_axis(axis, histogram_config)
     draw_ft_boundaries(axis, fiducial_config)
     axis.text(
         0.5,
         0.5,
-        "MC not available\nfor this RGC mode",
+        "MC not available\nfor RGC mode",
         transform=axis.transAxes,
-        horizontalalignment="center",
-        verticalalignment="center",
-        fontsize=15,
+        ha="center",
+        va="center",
+        fontsize=14,
     )
 
 
-def save_period_summary(
+def save_ft_summary(
     result: PeriodResult,
-    output_dir: Path,
+    output_base: Path,
     histogram_config: HistogramConfig,
     fiducial_config: FTFiducialConfig,
     dpi: int,
 ) -> Path:
-    """Create the only plot emitted for one run period."""
-
     figure, axes = plt.subplots(
         2,
         2,
@@ -748,77 +984,73 @@ def save_period_summary(
     )
 
     data_norm = shared_log_norm(
-        result.data.before,
-        result.data.after,
+        result.data.ft_before,
+        result.data.ft_after,
     )
-
-    data_before_image = draw_occupancy_panel(
-        axis=axes[0, 0],
-        histogram=result.data.before,
-        title="Data before FT fiducial cut",
-        histogram_config=histogram_config,
-        fiducial_config=fiducial_config,
-        norm=data_norm,
+    data_image = draw_ft_panel(
+        axes[0, 0],
+        result.data.ft_before,
+        "Data before FT fiducial cut",
+        histogram_config,
+        fiducial_config,
+        data_norm,
     )
-    draw_occupancy_panel(
-        axis=axes[0, 1],
-        histogram=result.data.after,
-        title="Data after FT fiducial cut",
-        histogram_config=histogram_config,
-        fiducial_config=fiducial_config,
-        norm=data_norm,
+    draw_ft_panel(
+        axes[0, 1],
+        result.data.ft_after,
+        "Data after FT fiducial cut",
+        histogram_config,
+        fiducial_config,
+        data_norm,
     )
-
-    data_colorbar = figure.colorbar(
-        data_before_image,
+    colorbar = figure.colorbar(
+        data_image,
         ax=axes[0, :],
         pad=0.015,
         fraction=0.035,
     )
-    data_colorbar.set_label("Photon entries per bin")
+    colorbar.set_label("Photon entries per bin")
 
     if result.mc is not None:
         mc_norm = shared_log_norm(
-            result.mc.before,
-            result.mc.after,
+            result.mc.ft_before,
+            result.mc.ft_after,
         )
-
-        mc_before_image = draw_occupancy_panel(
-            axis=axes[1, 0],
-            histogram=result.mc.before,
-            title="MC before FT fiducial cut",
-            histogram_config=histogram_config,
-            fiducial_config=fiducial_config,
-            norm=mc_norm,
+        mc_image = draw_ft_panel(
+            axes[1, 0],
+            result.mc.ft_before,
+            "MC before FT fiducial cut",
+            histogram_config,
+            fiducial_config,
+            mc_norm,
         )
-        draw_occupancy_panel(
-            axis=axes[1, 1],
-            histogram=result.mc.after,
-            title="MC after FT fiducial cut",
-            histogram_config=histogram_config,
-            fiducial_config=fiducial_config,
-            norm=mc_norm,
+        draw_ft_panel(
+            axes[1, 1],
+            result.mc.ft_after,
+            "MC after FT fiducial cut",
+            histogram_config,
+            fiducial_config,
+            mc_norm,
         )
-
-        mc_colorbar = figure.colorbar(
-            mc_before_image,
+        colorbar = figure.colorbar(
+            mc_image,
             ax=axes[1, :],
             pad=0.015,
             fraction=0.035,
         )
-        mc_colorbar.set_label("Photon entries per bin")
+        colorbar.set_label("Photon entries per bin")
     else:
-        draw_missing_mc_panel(
-            axis=axes[1, 0],
-            title="MC before FT fiducial cut",
-            histogram_config=histogram_config,
-            fiducial_config=fiducial_config,
+        draw_missing_mc_ft_panel(
+            axes[1, 0],
+            "MC before FT fiducial cut",
+            histogram_config,
+            fiducial_config,
         )
-        draw_missing_mc_panel(
-            axis=axes[1, 1],
-            title="MC after FT fiducial cut",
-            histogram_config=histogram_config,
-            fiducial_config=fiducial_config,
+        draw_missing_mc_ft_panel(
+            axes[1, 1],
+            "MC after FT fiducial cut",
+            histogram_config,
+            fiducial_config,
         )
     #endif
 
@@ -827,49 +1059,282 @@ def save_period_summary(
         fontsize=17,
     )
 
-    data_caption = f"Data: {efficiency_text(result.data)}"
-    if result.mc is not None:
-        mc_caption = f"MC: {efficiency_text(result.mc)}"
-    else:
-        mc_caption = "MC: not available"
-    #endif
-
+    data_caption = f"Data: {ft_efficiency_text(result.data)}"
+    mc_caption = (
+        f"MC: {ft_efficiency_text(result.mc)}"
+        if result.mc is not None
+        else "MC: not available"
+    )
     figure.text(
         0.5,
-        0.006,
+        0.005,
         f"{data_caption}    |    {mc_caption}",
-        horizontalalignment="center",
-        verticalalignment="bottom",
+        ha="center",
+        va="bottom",
         fontsize=10,
     )
 
+    output_dir = output_base / "forward_tagger"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{result.dataset.key}_ft_summary.png"
-    figure.savefig(
-        output_path,
-        dpi=dpi,
-        bbox_inches="tight",
-    )
+    figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(figure)
-
     return output_path
 
 
 # =============================================================================
-# Main execution
+# Calorimeter strip-matching plotting
+# =============================================================================
+
+
+def normalized_histogram(
+    counts: np.ndarray,
+    bin_width_cm: float,
+) -> np.ndarray:
+    total = float(np.sum(counts))
+    if total <= 0.0:
+        return np.zeros_like(counts, dtype=np.float64)
+    #endif
+    return counts.astype(np.float64) / (total * bin_width_cm)
+
+
+def draw_exclusions(
+    axis: plt.Axes,
+    intervals: list[tuple[float, float, str]],
+) -> None:
+    for lower, upper, _ in intervals:
+        axis.axvspan(
+            lower,
+            upper,
+            alpha=0.18,
+            hatch="//",
+            edgecolor="black",
+            linewidth=0.8,
+        )
+    #endfor
+
+
+def save_calorimeter_matching_summary(
+    result: PeriodResult,
+    output_base: Path,
+    histogram_config: HistogramConfig,
+    layer_index: int,
+    particle_index: int,
+    strictness: int,
+    is_rgc: bool,
+    dpi: int,
+) -> Path:
+    layer_key = LAYER_KEYS[layer_index]
+    layer_label = LAYER_LABELS[layer_key]
+    particle_key = PARTICLE_KEYS[particle_index]
+    particle_label = particle_key.capitalize()
+
+    edges = histogram_config.cal_edges
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    bin_width_cm = float(edges[1] - edges[0])
+
+    figure, axes = plt.subplots(
+        6,
+        3,
+        figsize=(17.0, 20.0),
+        sharex=True,
+        constrained_layout=True,
+    )
+
+    legend_handles = None
+    any_exclusion = False
+
+    for sector_index in range(6):
+        sector = sector_index + 1
+
+        for coordinate_index, coordinate_key in enumerate(COORD_KEYS):
+            axis = axes[sector_index, coordinate_index]
+
+            data_counts = result.data.cal_counts[
+                particle_index,
+                layer_index,
+                sector_index,
+                coordinate_index,
+            ]
+            data_density = normalized_histogram(
+                data_counts,
+                bin_width_cm,
+            )
+
+            data_line = axis.step(
+                centers,
+                data_density,
+                where="mid",
+                linewidth=1.35,
+                label="Data",
+            )[0]
+
+            mc_line = None
+            if result.mc is not None:
+                mc_counts = result.mc.cal_counts[
+                    particle_index,
+                    layer_index,
+                    sector_index,
+                    coordinate_index,
+                ]
+                mc_density = normalized_histogram(
+                    mc_counts,
+                    bin_width_cm,
+                )
+                mc_line = axis.step(
+                    centers,
+                    mc_density,
+                    where="mid",
+                    linewidth=1.25,
+                    label="MC",
+                )[0]
+            #endif
+
+            intervals = exclusion_intervals(
+                dataset_key=result.dataset.key,
+                layer_key=layer_key,
+                sector=sector,
+                coordinate_key=coordinate_key,
+                strictness=strictness,
+                is_rgc=is_rgc,
+            )
+            if intervals:
+                any_exclusion = True
+                draw_exclusions(axis, intervals)
+            #endif
+
+            if sector_index == 0:
+                axis.set_title(COORD_LABELS[coordinate_key], fontsize=13)
+            #endif
+
+            if coordinate_index == 0:
+                axis.set_ylabel(
+                    f"Sector {sector}\nNormalized entries",
+                    fontsize=10,
+                )
+            #endif
+
+            axis.set_xlim(
+                histogram_config.cal_min_cm,
+                histogram_config.cal_max_cm,
+            )
+            axis.set_ylim(bottom=0.0)
+            axis.grid(alpha=0.18)
+
+            data_entries = int(np.sum(data_counts))
+            if result.mc is not None:
+                mc_entries = int(
+                    np.sum(
+                        result.mc.cal_counts[
+                            particle_index,
+                            layer_index,
+                            sector_index,
+                            coordinate_index,
+                        ]
+                    )
+                )
+                entry_text = f"D {data_entries:,}\nMC {mc_entries:,}"
+            else:
+                entry_text = f"D {data_entries:,}"
+            #endif
+
+            axis.text(
+                0.985,
+                0.95,
+                entry_text,
+                transform=axis.transAxes,
+                ha="right",
+                va="top",
+                fontsize=7.5,
+            )
+
+            if legend_handles is None:
+                legend_handles = (
+                    [data_line, mc_line]
+                    if mc_line is not None
+                    else [data_line]
+                )
+            #endif
+        #endfor
+    #endfor
+
+    for axis in axes[-1, :]:
+        axis.set_xlabel("Strip coordinate (cm)")
+    #endfor
+
+    subtitle = (
+        "Independent unit-area normalization in every panel; "
+        "shaded intervals are displayed but not applied"
+    )
+    if not any_exclusion:
+        subtitle = (
+            "Independent unit-area normalization in every panel; "
+            "no period-specific dead-strip exclusions are configured"
+        )
+    #endif
+
+    figure.suptitle(
+        f"{result.dataset.label}: {layer_label} {particle_label} "
+        f"data/MC strip matching\n{subtitle}",
+        fontsize=17,
+    )
+
+    if legend_handles is not None:
+        legend_labels = [
+            handle.get_label()
+            for handle in legend_handles
+            if handle is not None
+        ]
+        legend_handles = [
+            handle for handle in legend_handles if handle is not None
+        ]
+        figure.legend(
+            legend_handles,
+            legend_labels,
+            loc="upper right",
+            bbox_to_anchor=(0.985, 0.985),
+            frameon=True,
+        )
+    #endif
+
+    figure.text(
+        0.012,
+        0.005,
+        (
+            f"Overlay strictness = {strictness}. "
+            "Raw valid calorimeter-coordinate entries are plotted; "
+            "fiducial exclusions are not imposed."
+        ),
+        ha="left",
+        va="bottom",
+        fontsize=9,
+    )
+
+    output_dir = output_base / "calorimeter" / layer_key
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / (
+        f"{result.dataset.key}_{layer_key}_{particle_key}_strip_matching.png"
+    )
+    figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(figure)
+    return output_path
+
+
+# =============================================================================
+# Main
 # =============================================================================
 
 
 def format_sample_report(
-    sample_label: str,
-    result: OccupancyResult,
+    label: str,
+    sample: SampleResult,
 ) -> str:
     return (
-        f"{sample_label}: rows={result.rows_read:,}, "
-        f"PID-22 rows={result.photon_rows:,}, "
-        f"valid FT photons={result.valid_ft_photons:,}, "
-        f"fiducial={result.fiducial_ft_photons:,}, "
-        f"time={result.elapsed_seconds:.1f} s"
+        f"{label}: rows={sample.rows_read:,}, "
+        f"PID-22 rows={sample.photon_rows:,}, "
+        f"valid FT photons={sample.valid_ft_photons:,}, "
+        f"FT fiducial={sample.fiducial_ft_photons:,}, "
+        f"time={sample.elapsed_seconds:.1f} s"
     )
 
 
@@ -892,14 +1357,21 @@ def main() -> int:
     #endif
 
     if not datasets:
-        print("ERROR: no run periods were selected.", file=sys.stderr)
+        print("ERROR: no run periods selected.", file=sys.stderr)
         return 2
     #endif
 
+    do_ft = not args.skip_ft
+    do_calorimeter = not args.skip_calorimeter
+    is_rgc = mode_label == "RGC"
+
     histogram_config = HistogramConfig(
-        bins=args.bins,
-        xy_min_cm=args.xy_min,
-        xy_max_cm=args.xy_max,
+        ft_bins=args.ft_bins,
+        ft_xy_min_cm=args.ft_xy_min,
+        ft_xy_max_cm=args.ft_xy_max,
+        cal_bins=args.cal_bins,
+        cal_min_cm=args.cal_min,
+        cal_max_cm=args.cal_max,
     )
     fiducial_config = FTFiducialConfig()
 
@@ -909,22 +1381,23 @@ def main() -> int:
         len(datasets),
     )
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-
-    print("=" * 78)
-    print("Forward Tagger occupancy diagnostics")
-    print("=" * 78)
-    print(f"Mode:             {mode_label}")
-    print(f"Input directory:  {input_dir}")
-    print(f"Output directory: {args.output_dir}")
-    print(f"Tree:             {args.tree}")
-    print(f"Periods:          {len(datasets)}")
-    print(f"Workers:          {effective_workers}")
-    print(f"Chunk size:       {args.chunk_size:,} rows")
+    print("=" * 80)
+    print("CLAS12 calibration diagnostics")
+    print("=" * 80)
+    print(f"Mode:                   {mode_label}")
+    print(f"Input directory:        {input_dir}")
+    print(f"Output base:            {args.output_base}")
+    print(f"Tree:                   {args.tree}")
+    print(f"Periods:                {len(datasets)}")
+    print(f"Workers:                {effective_workers}")
+    print(f"Chunk size:             {args.chunk_size:,}")
+    print(f"FT enabled:             {do_ft}")
+    print(f"Calorimeter enabled:    {do_calorimeter}")
+    print(f"Calorimeter strictness: {args.calorimeter_strictness}")
     if args.max_events is not None:
-        print(f"Per-file limit:   {args.max_events:,} rows")
+        print(f"Per-file row limit:     {args.max_events:,}")
     #endif
-    print("=" * 78)
+    print("=" * 80)
 
     overall_start = time.perf_counter()
     completed: dict[str, PeriodResult] = {}
@@ -941,6 +1414,8 @@ def main() -> int:
                 fiducial_config,
                 args.chunk_size,
                 args.max_events,
+                do_ft,
+                do_calorimeter,
             ): dataset
             for dataset in datasets
         }
@@ -956,7 +1431,8 @@ def main() -> int:
                     f"{traceback.format_exc()}"
                 )
                 print(
-                    f"[FAILED] {dataset.label}: {type(exc).__name__}: {exc}",
+                    f"[FAILED] {dataset.label}: "
+                    f"{type(exc).__name__}: {exc}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -965,8 +1441,8 @@ def main() -> int:
 
             completed[dataset.key] = result
             print(
-                f"[READ] {dataset.label} completed by PID {result.worker_pid} "
-                f"in {result.elapsed_seconds:.1f} s",
+                f"[READ] {dataset.label} completed by PID "
+                f"{result.worker_pid} in {result.elapsed_seconds:.1f} s",
                 flush=True,
             )
             print(
@@ -982,25 +1458,45 @@ def main() -> int:
         #endfor
     #endwith
 
-    # Plot in configured run-period order for deterministic output and logs.
+    # Plot in configured period order for deterministic filenames and logs.
     for dataset in datasets:
         result = completed.get(dataset.key)
         if result is None:
             continue
         #endif
 
-        output_path = save_period_summary(
-            result=result,
-            output_dir=args.output_dir,
-            histogram_config=histogram_config,
-            fiducial_config=fiducial_config,
-            dpi=args.dpi,
-        )
-        print(f"[PLOT] {output_path}", flush=True)
+        if do_ft:
+            output_path = save_ft_summary(
+                result,
+                args.output_base,
+                histogram_config,
+                fiducial_config,
+                args.dpi,
+            )
+            print(f"[PLOT] {output_path}", flush=True)
+        #endif
+
+        if do_calorimeter:
+            for layer_index in range(len(LAYER_KEYS)):
+                for particle_index in range(len(PARTICLE_KEYS)):
+                    output_path = save_calorimeter_matching_summary(
+                        result=result,
+                        output_base=args.output_base,
+                        histogram_config=histogram_config,
+                        layer_index=layer_index,
+                        particle_index=particle_index,
+                        strictness=args.calorimeter_strictness,
+                        is_rgc=is_rgc,
+                        dpi=args.dpi,
+                    )
+                    print(f"[PLOT] {output_path}", flush=True)
+                #endfor
+            #endfor
+        #endif
     #endfor
 
     elapsed = time.perf_counter() - overall_start
-    print("=" * 78)
+    print("=" * 80)
     print(
         f"Completed {len(completed)} of {len(datasets)} period(s) "
         f"in {elapsed:.1f} s."
@@ -1013,9 +1509,8 @@ def main() -> int:
             if failure is None:
                 continue
             #endif
-            first_line = failure.splitlines()[0]
             print(
-                f"  {dataset.label}: {first_line}",
+                f"  {dataset.label}: {failure.splitlines()[0]}",
                 file=sys.stderr,
             )
         #endfor
