@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-apply_epi_momentum_corrections_v4.py
+apply_epi_momentum_corrections_v5.py
 
-Rewrite an existing e pi+ X ROOT tree after applying the finalized RGC
-electron and FD pi+ momentum corrections. The electron and pion directions are
-held fixed; only their momentum magnitudes are corrected.
+Rewrite an existing e pi+ X ROOT tree after selecting Forward Detector pion
+events (detector == 1) and applying the finalized RGC electron and FD pi+
+momentum corrections. The electron and pion directions are held fixed; only
+their momentum magnitudes are corrected.
 
 The output tree contains the requested reduced branch set:
 
@@ -53,11 +54,11 @@ For pion detector != 1, no pion calibration exists; p_p is retained unchanged.
 The electron correction is still applied.
 
 Example:
-    python3 apply_epi_momentum_corrections_v4.py \
+    python3 apply_epi_momentum_corrections_v5.py \
         input.root output_corrected.root
 
 Example without the default Mx2 skim:
-    python3 apply_epi_momentum_corrections_v4.py \
+    python3 apply_epi_momentum_corrections_v5.py \
         input.root output_corrected.root --no-mx2-skim
 
 Dependencies:
@@ -515,8 +516,7 @@ def apply_momentum_corrections(
 
     counters = {
         "electron_corrected": int(len(run)),
-        "fd_pion_corrected": int(np.count_nonzero(detector == 1)),
-        "non_fd_pion_unchanged": int(np.count_nonzero(detector != 1)),
+        "fd_pion_corrected": int(len(run)),
     }
     return corrected_e_p, corrected_p_p, counters
 
@@ -809,10 +809,34 @@ def process_chunk(
     apply_mx2_skim: bool,
     mx2_max: float,
 ) -> tuple[dict[str, np.ndarray], dict[str, int]]:
-    raw = {
+    raw_all = {
         name: ak.to_numpy(arrays[name])
         for name in REQUIRED_INPUT_BRANCHES
     }
+
+    detector_mask = np.asarray(raw_all["detector"]) == 1
+    detector_rejected = int(np.count_nonzero(~detector_mask))
+    raw = {
+        name: np.asarray(values)[detector_mask]
+        for name, values in raw_all.items()
+    }
+
+    if len(raw["runnum"]) == 0:
+        return (
+            {
+                name: np.asarray([], dtype=dtype)
+                for name, dtype in OUTPUT_BRANCH_DTYPES.items()
+            },
+            {
+                "input": int(len(raw_all["runnum"])),
+                "written": 0,
+                "detector_rejected": detector_rejected,
+                "nonfinite_rejected": 0,
+                "mx2_rejected": 0,
+                "electron_corrected": 0,
+                "fd_pion_corrected": 0,
+            },
+        )
 
     corrected_e_p, corrected_p_p, correction_counts = (
         apply_momentum_corrections(
@@ -870,8 +894,9 @@ def process_chunk(
 
     selected = cast_and_select(output, valid)
     counters = {
-        "input": int(len(raw["runnum"])),
+        "input": int(len(raw_all["runnum"])),
         "written": int(np.count_nonzero(valid)),
+        "detector_rejected": detector_rejected,
         "nonfinite_rejected": finite_rejected,
         "mx2_rejected": skim_rejected,
         **correction_counts,
@@ -882,8 +907,8 @@ def process_chunk(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Apply RGC electron and FD pi+ momentum corrections to an existing "
-            "e pi+ X ROOT tree and rewrite corrected kinematics."
+            "Select detector == 1 pions and apply RGC electron and FD pi+ "
+            "momentum corrections while rewriting corrected kinematics."
         )
     )
     parser.add_argument("input_root", type=Path)
@@ -964,11 +989,11 @@ def main() -> int:
     totals = {
         "input": 0,
         "written": 0,
+        "detector_rejected": 0,
         "nonfinite_rejected": 0,
         "mx2_rejected": 0,
         "electron_corrected": 0,
         "fd_pion_corrected": 0,
-        "non_fd_pion_unchanged": 0,
     }
 
     source = f"{args.input_root}:{input_tree_name}"
@@ -1022,6 +1047,7 @@ def main() -> int:
     print(f"Input:  {args.input_root}:{input_tree_name}")
     print(f"Output: {args.output_root}:{output_tree_name}")
     print(f"Input events:                 {totals['input']:,}")
+    print(f"Non-FD pion events rejected:  {totals['detector_rejected']:,}")
     print(f"Written events:               {totals['written']:,}")
     print(f"Non-finite rejected:          {totals['nonfinite_rejected']:,}")
     if args.no_mx2_skim:
