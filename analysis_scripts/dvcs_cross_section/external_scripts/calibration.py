@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v7.py
+plot_calibration_v8.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -24,7 +24,9 @@ Current modules
      the plotted samples, so data/GEMC mismodeling remains visible.
    - The RGA Sp19-only PCal sector-2 lv exclusion is overlaid only for Sp19.
    - PCal-electron mean momentum and mean scattering-angle maps are made
-     versus lu-lv and lu-lw before and after the calorimeter cuts.
+     versus lu-lv, lu-lw, and lv-lw before and after the cuts.
+   - Sector-resolved one-dimensional mean momentum and mean theta curves
+     are also made versus lu, lv, and lw.
 
 Performance model
 -----------------
@@ -54,26 +56,26 @@ Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v7.py
+  python3 external_scripts/plot_calibration_v8.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v7.py --rgc
+  python3 external_scripts/plot_calibration_v8.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v7.py \
+  python3 external_scripts/plot_calibration_v8.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v7.py --skip-ft
+  python3 external_scripts/plot_calibration_v8.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v7.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v8.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -148,9 +150,9 @@ PAIR_DEFINITIONS: tuple[tuple[str, str, str], ...] = (
     ("lw_lv", "lw", "lv"),
 )
 
-# The kinematic maps requested here are limited to the two PCal coordinate
-# pairs involving lu. Values are indices into PAIR_DEFINITIONS.
-KINEMATIC_PAIR_INDICES: tuple[int, ...] = (0, 1)
+# PCal electron kinematic maps use all three coordinate-pair projections.
+# Values are indices into PAIR_DEFINITIONS.
+KINEMATIC_PAIR_INDICES: tuple[int, ...] = (0, 1, 2)
 
 KINEMATIC_KEYS: tuple[str, ...] = ("momentum", "theta")
 KINEMATIC_LABELS = {
@@ -234,6 +236,10 @@ class SampleResult:
     pcal_electron_kin_counts_after: np.ndarray
     pcal_electron_kin_sums_before: np.ndarray
     pcal_electron_kin_sums_after: np.ndarray
+    pcal_electron_kin_1d_counts_before: np.ndarray
+    pcal_electron_kin_1d_counts_after: np.ndarray
+    pcal_electron_kin_1d_sums_before: np.ndarray
+    pcal_electron_kin_1d_sums_after: np.ndarray
     rows_read: int
     photon_rows: int
     valid_ft_photons: int
@@ -822,6 +828,37 @@ def empty_pcal_electron_kinematic_sums(
     )
 
 
+def empty_pcal_electron_kinematic_1d_counts(
+    histogram_config: HistogramConfig,
+) -> np.ndarray:
+    # Axes:
+    #   sector, coordinate, histogram bin
+    return np.zeros(
+        (
+            6,
+            len(COORD_KEYS),
+            histogram_config.cal_bins,
+        ),
+        dtype=np.uint32,
+    )
+
+
+def empty_pcal_electron_kinematic_1d_sums(
+    histogram_config: HistogramConfig,
+) -> np.ndarray:
+    # Axes:
+    #   kinematic quantity, sector, coordinate, histogram bin
+    return np.zeros(
+        (
+            len(KINEMATIC_KEYS),
+            6,
+            len(COORD_KEYS),
+            histogram_config.cal_bins,
+        ),
+        dtype=np.float64,
+    )
+
+
 def accumulate_sample(
     file_path: Path,
     tree_name: str,
@@ -857,6 +894,18 @@ def accumulate_sample(
     )
     pcal_electron_kin_sums_after = (
         empty_pcal_electron_kinematic_sums(histogram_config)
+    )
+    pcal_electron_kin_1d_counts_before = (
+        empty_pcal_electron_kinematic_1d_counts(histogram_config)
+    )
+    pcal_electron_kin_1d_counts_after = (
+        empty_pcal_electron_kinematic_1d_counts(histogram_config)
+    )
+    pcal_electron_kin_1d_sums_before = (
+        empty_pcal_electron_kinematic_1d_sums(histogram_config)
+    )
+    pcal_electron_kin_1d_sums_after = (
+        empty_pcal_electron_kinematic_1d_sums(histogram_config)
     )
 
     ft_edges = histogram_config.ft_edges
@@ -1071,6 +1120,119 @@ def accumulate_sample(
                                 & (electron_theta >= 0.0)
                             )
 
+                            for coordinate_index, coordinate_key in enumerate(
+                                COORD_KEYS
+                            ):
+                                coordinate_values = layer_arrays[
+                                    coordinate_key
+                                ]
+                                valid_coordinate_1d = (
+                                    np.isfinite(coordinate_values)
+                                    & (
+                                        coordinate_values
+                                        != INVALID_SENTINEL
+                                    )
+                                    & (
+                                        coordinate_values
+                                        >= histogram_config.cal_min_cm
+                                    )
+                                    & (
+                                        coordinate_values
+                                        <= histogram_config.cal_max_cm
+                                    )
+                                )
+                                valid_kinematics_1d = (
+                                    valid_coordinate_1d
+                                    & valid_momentum
+                                    & valid_theta
+                                )
+
+                                before_1d_mask = (
+                                    sector_mask & valid_kinematics_1d
+                                )
+                                if np.any(before_1d_mask):
+                                    counts_1d, _ = np.histogram(
+                                        coordinate_values[before_1d_mask],
+                                        bins=cal_edges,
+                                    )
+                                    momentum_sum_1d, _ = np.histogram(
+                                        coordinate_values[before_1d_mask],
+                                        bins=cal_edges,
+                                        weights=electron_momentum[
+                                            before_1d_mask
+                                        ],
+                                    )
+                                    theta_sum_1d, _ = np.histogram(
+                                        coordinate_values[before_1d_mask],
+                                        bins=cal_edges,
+                                        weights=electron_theta[
+                                            before_1d_mask
+                                        ],
+                                    )
+
+                                    pcal_electron_kin_1d_counts_before[
+                                        sector - 1,
+                                        coordinate_index,
+                                    ] += counts_1d.astype(
+                                        np.uint32,
+                                        copy=False,
+                                    )
+                                    pcal_electron_kin_1d_sums_before[
+                                        0,
+                                        sector - 1,
+                                        coordinate_index,
+                                    ] += momentum_sum_1d
+                                    pcal_electron_kin_1d_sums_before[
+                                        1,
+                                        sector - 1,
+                                        coordinate_index,
+                                    ] += theta_sum_1d
+                                #endif
+
+                                after_1d_mask = (
+                                    sector_after_mask
+                                    & valid_kinematics_1d
+                                )
+                                if np.any(after_1d_mask):
+                                    counts_1d, _ = np.histogram(
+                                        coordinate_values[after_1d_mask],
+                                        bins=cal_edges,
+                                    )
+                                    momentum_sum_1d, _ = np.histogram(
+                                        coordinate_values[after_1d_mask],
+                                        bins=cal_edges,
+                                        weights=electron_momentum[
+                                            after_1d_mask
+                                        ],
+                                    )
+                                    theta_sum_1d, _ = np.histogram(
+                                        coordinate_values[after_1d_mask],
+                                        bins=cal_edges,
+                                        weights=electron_theta[
+                                            after_1d_mask
+                                        ],
+                                    )
+
+                                    pcal_electron_kin_1d_counts_after[
+                                        sector - 1,
+                                        coordinate_index,
+                                    ] += counts_1d.astype(
+                                        np.uint32,
+                                        copy=False,
+                                    )
+                                    pcal_electron_kin_1d_sums_after[
+                                        0,
+                                        sector - 1,
+                                        coordinate_index,
+                                    ] += momentum_sum_1d
+                                    pcal_electron_kin_1d_sums_after[
+                                        1,
+                                        sector - 1,
+                                        coordinate_index,
+                                    ] += theta_sum_1d
+                                #endif
+                            #endfor
+
                             for kin_pair_slot, pair_index in enumerate(
                                 KINEMATIC_PAIR_INDICES
                             ):
@@ -1218,6 +1380,18 @@ def accumulate_sample(
         ),
         pcal_electron_kin_sums_before=pcal_electron_kin_sums_before,
         pcal_electron_kin_sums_after=pcal_electron_kin_sums_after,
+        pcal_electron_kin_1d_counts_before=(
+            pcal_electron_kin_1d_counts_before
+        ),
+        pcal_electron_kin_1d_counts_after=(
+            pcal_electron_kin_1d_counts_after
+        ),
+        pcal_electron_kin_1d_sums_before=(
+            pcal_electron_kin_1d_sums_before
+        ),
+        pcal_electron_kin_1d_sums_after=(
+            pcal_electron_kin_1d_sums_after
+        ),
         rows_read=rows_read,
         photon_rows=photon_rows,
         valid_ft_photons=valid_ft_photons,
@@ -2338,11 +2512,197 @@ def save_pcal_electron_kinematic_summary(
         y=0.965,
     )
 
-    output_dir = output_base / "calorimeter" / cut_stage / "pcal"
+    output_dir = (
+        output_base
+        / "calorimeter"
+        / cut_stage
+        / "pcal"
+        / "kinematics"
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / (
         f"{result.dataset.key}_pcal_electron_{pair_key}_"
         f"{KINEMATIC_FILENAME_KEYS[kinematic_key]}.png"
+    )
+    figure.savefig(
+        output_path,
+        dpi=dpi,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
+    plt.close(figure)
+    return output_path
+
+
+def mean_1d_values(
+    sums: np.ndarray,
+    counts: np.ndarray,
+    minimum_count: int,
+) -> np.ma.MaskedArray:
+    valid = counts >= minimum_count
+    means = np.zeros_like(sums, dtype=np.float64)
+    np.divide(
+        sums,
+        counts,
+        out=means,
+        where=valid,
+    )
+    return np.ma.array(means, mask=~valid)
+
+
+def save_pcal_electron_kinematic_1d_summary(
+    result: PeriodResult,
+    output_base: Path,
+    histogram_config: HistogramConfig,
+    coordinate_index: int,
+    kinematic_index: int,
+    strictness: int,
+    is_rgc: bool,
+    cut_stage: str,
+    minimum_bin_count: int,
+    dpi: int,
+) -> Path:
+    if cut_stage not in ("before_cuts", "after_cuts"):
+        raise ValueError(f"Unknown calorimeter cut stage: {cut_stage}")
+    #endif
+
+    coordinate_key = COORD_KEYS[coordinate_index]
+    kinematic_key = KINEMATIC_KEYS[kinematic_index]
+    kinematic_label = KINEMATIC_LABELS[kinematic_key]
+
+    data_counts = (
+        result.data.pcal_electron_kin_1d_counts_before
+        if cut_stage == "before_cuts"
+        else result.data.pcal_electron_kin_1d_counts_after
+    )
+    data_sums = (
+        result.data.pcal_electron_kin_1d_sums_before
+        if cut_stage == "before_cuts"
+        else result.data.pcal_electron_kin_1d_sums_after
+    )
+
+    mc_counts = None
+    mc_sums = None
+    if result.mc is not None:
+        mc_counts = (
+            result.mc.pcal_electron_kin_1d_counts_before
+            if cut_stage == "before_cuts"
+            else result.mc.pcal_electron_kin_1d_counts_after
+        )
+        mc_sums = (
+            result.mc.pcal_electron_kin_1d_sums_before
+            if cut_stage == "before_cuts"
+            else result.mc.pcal_electron_kin_1d_sums_after
+        )
+    #endif
+
+    edges = histogram_config.cal_edges
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    figure, axes = plt.subplots(
+        3,
+        2,
+        figsize=(13.0, 11.0),
+        sharex=True,
+        constrained_layout=True,
+    )
+    axes_flat = axes.ravel()
+
+    for sector_index, axis in enumerate(axes_flat):
+        sector = sector_index + 1
+
+        data_mean = mean_1d_values(
+            data_sums[
+                kinematic_index,
+                sector_index,
+                coordinate_index,
+            ],
+            data_counts[sector_index, coordinate_index],
+            minimum_bin_count,
+        )
+        axis.plot(
+            centers,
+            data_mean,
+            marker="o",
+            markersize=2.5,
+            linewidth=1.1,
+            label="Data",
+        )
+
+        if result.mc is not None:
+            assert mc_counts is not None
+            assert mc_sums is not None
+            mc_mean = mean_1d_values(
+                mc_sums[
+                    kinematic_index,
+                    sector_index,
+                    coordinate_index,
+                ],
+                mc_counts[sector_index, coordinate_index],
+                minimum_bin_count,
+            )
+            axis.plot(
+                centers,
+                mc_mean,
+                marker="o",
+                markersize=2.5,
+                linewidth=1.1,
+                label="MC",
+            )
+        #endif
+
+        intervals = exclusion_intervals(
+            dataset_key=result.dataset.key,
+            layer_key="pcal",
+            sector=sector,
+            coordinate_key=coordinate_key,
+            strictness=strictness,
+            is_rgc=is_rgc,
+        )
+        draw_exclusions(axis, intervals)
+
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlim(
+            histogram_config.cal_min_cm,
+            histogram_config.cal_max_cm,
+        )
+        axis.set_ylabel(kinematic_label)
+        axis.grid(alpha=0.20)
+
+        if sector_index >= 4:
+            axis.set_xlabel(COORD_LABELS[coordinate_key])
+        #endif
+
+        if sector_index == 0:
+            axis.legend()
+        #endif
+    #endfor
+
+    cut_description = (
+        "fiducial exclusions are displayed but not applied"
+        if cut_stage == "before_cuts"
+        else "complete calorimeter fiducial cuts are applied"
+    )
+
+    figure.suptitle(
+        f"{result.dataset.label}: PCal electron {kinematic_key} "
+        f"versus {coordinate_key}\n"
+        f"4.5 cm strip bins; minimum {minimum_bin_count} entries per bin; "
+        f"{cut_description}",
+        fontsize=15,
+    )
+
+    output_dir = (
+        output_base
+        / "calorimeter"
+        / cut_stage
+        / "pcal"
+        / "kinematics"
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / (
+        f"{result.dataset.key}_pcal_electron_{coordinate_key}_"
+        f"{KINEMATIC_FILENAME_KEYS[kinematic_key]}_1d.png"
     )
     figure.savefig(
         output_path,
@@ -2518,6 +2878,28 @@ def main() -> int:
 
         if do_calorimeter:
             for cut_stage in ("before_cuts", "after_cuts"):
+                for coordinate_index in range(len(COORD_KEYS)):
+                    for kinematic_index in range(len(KINEMATIC_KEYS)):
+                        output_path = (
+                            save_pcal_electron_kinematic_1d_summary(
+                                result=result,
+                                output_base=args.output_base,
+                                histogram_config=histogram_config,
+                                coordinate_index=coordinate_index,
+                                kinematic_index=kinematic_index,
+                                strictness=args.calorimeter_strictness,
+                                is_rgc=is_rgc,
+                                cut_stage=cut_stage,
+                                minimum_bin_count=(
+                                    args.kinematic_min_bin_count
+                                ),
+                                dpi=args.dpi,
+                            )
+                        )
+                        print(f"[PLOT] {output_path}", flush=True)
+                    #endfor
+                #endfor
+
                 for pair_slot in range(len(KINEMATIC_PAIR_INDICES)):
                     for kinematic_index in range(len(KINEMATIC_KEYS)):
                         output_path = save_pcal_electron_kinematic_summary(
