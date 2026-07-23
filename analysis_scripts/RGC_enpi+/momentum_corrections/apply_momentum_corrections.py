@@ -311,31 +311,106 @@ def _normalise_pion_period_models(
     raw_period: Any,
 ) -> Iterable[tuple[int, dict[str, Any]]]:
     """
-    Accept the dictionary representation written by the pion extraction script,
-    while also tolerating a future list representation.
+    Yield the successful FD pion models for one calibration period.
+
+    Supported JSON layouts include:
+
+      periods[period][sector] = model
+      periods[period]["FD"][sector] = model
+      periods[period] = [model, ...]
+
+    Region containers such as "CD" are ignored because the finalized pion
+    momentum correction is defined only for FD pions.
     """
-    if isinstance(raw_period, dict):
-        for raw_sector, model in raw_period.items():
-            if not isinstance(model, dict):
-                continue
-            sector = int(model.get("pion_sector", raw_sector))
-            yield sector, model
-        return
+
+    def parse_sector(value: Any) -> int | None:
+        try:
+            sector = int(value)
+        except (TypeError, ValueError):
+            return None
+        return sector if 1 <= sector <= 6 else None
 
     if isinstance(raw_period, list):
         for model in raw_period:
             if not isinstance(model, dict):
                 continue
-            sector_value = model.get("pion_sector", model.get("sector"))
-            if sector_value is None:
+
+            region = str(
+                model.get("pion_region", model.get("region", "FD"))
+            ).upper()
+            if region != "FD":
                 continue
-            yield int(sector_value), model
+
+            sector = parse_sector(
+                model.get("pion_sector", model.get("sector"))
+            )
+            if sector is not None:
+                yield sector, model
         return
 
-    raise TypeError(
-        f"Unexpected pion-model container for period {period_key}: "
-        f"{type(raw_period).__name__}"
+    if not isinstance(raw_period, dict):
+        raise TypeError(
+            f"Unexpected pion-model container for period {period_key}: "
+            f"{type(raw_period).__name__}"
+        )
+
+    # Newer correction JSONs may explicitly group models by detector region.
+    # Select only FD; never attempt to interpret "CD" as a sector number.
+    for fd_key in ("FD", "fd", "Forward Detector", "forward_detector"):
+        if fd_key in raw_period:
+            yield from _normalise_pion_period_models(
+                period_key,
+                raw_period[fd_key],
+            )
+            return
+
+    # A dictionary can itself be a single model.
+    direct_sector = parse_sector(
+        raw_period.get("pion_sector", raw_period.get("sector"))
     )
+    if direct_sector is not None and (
+        "coefficients" in raw_period or "success" in raw_period
+    ):
+        region = str(
+            raw_period.get("pion_region", raw_period.get("region", "FD"))
+        ).upper()
+        if region == "FD":
+            yield direct_sector, raw_period
+        return
+
+    for raw_sector, model in raw_period.items():
+        # Explicit non-FD region wrappers are not calibration models.
+        if str(raw_sector).upper() in {
+            "CD",
+            "CENTRAL DETECTOR",
+            "CENTRAL_DETECTOR",
+            "FT",
+            "FORWARD TAGGER",
+            "FORWARD_TAGGER",
+        }:
+            continue
+
+        if not isinstance(model, (dict, list)):
+            continue
+
+        if isinstance(model, dict):
+            region = str(
+                model.get("pion_region", model.get("region", "FD"))
+            ).upper()
+            if region != "FD":
+                continue
+
+            sector = parse_sector(
+                model.get("pion_sector", model.get("sector", raw_sector))
+            )
+            if sector is not None and (
+                "coefficients" in model or "success" in model
+            ):
+                yield sector, model
+                continue
+
+        # Tolerate an additional harmless nesting level.
+        yield from _normalise_pion_period_models(period_key, model)
 
 
 def load_pion_models(
