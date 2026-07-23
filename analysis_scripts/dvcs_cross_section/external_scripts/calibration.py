@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
 """
-plot_calibration_ft_v1.py
+plot_calibration_ft_v2.py
 
-First-stage calibration diagnostics for the CLAS12 Forward Tagger (FT)
-calorimeter fiducial selection.
+Fast, streamlined Forward Tagger photon-occupancy diagnostics for the CLAS12
+calibration ROOT trees.
 
-The script is intentionally organized so that later detector-calibration and
-fiducial-cut studies can be added as independent analysis modules.  Version 1
-contains only the FT photon diagnostics adapted from the legacy calibration.cpp:
+For each run period, the script creates exactly one 2x2 summary figure:
 
-  1. FT photon hit occupancy before the fiducial selection.
-  2. FT photon hit occupancy after the fiducial selection.
-  3. Mean FT energy in each (x_FT, y_FT) bin.
-  4. Mean FT energy with low-response bins highlighted.
-  5. A four-panel overview containing all of the above.
+    top left:     data before the FT fiducial cut
+    top right:    data after the FT fiducial cut
+    bottom left:  reconstructed MC before the FT fiducial cut
+    bottom right: reconstructed MC after the FT fiducial cut
 
-By default, all five RGA run periods are processed.  The --rgc override instead
-processes the three RGC enpi+ calibration data sets.  RGA data and DVCS MC are
-both plotted; the currently available RGC inputs contain data only.
+The five RGA run periods are processed by default.  The --rgc override instead
+processes the three RGC data sets.  Since no corresponding RGC MC files are
+configured, the lower two panels are marked "MC not available."
+
+Run periods are parallelized with at most five worker processes.  Each worker
+handles one complete period, reading its data and MC files sequentially.  This
+keeps ROOT-file access simple while using all available period-level
+parallelism.
+
+Only these branches are read:
+
+    particle_pid
+    ft_x
+    ft_y
 
 Default input locations
 -----------------------
@@ -33,28 +41,38 @@ Default output location
 
 Examples
 --------
-  python3 external_scripts/plot_calibration_ft_v1.py
+Process all five RGA periods with up to five workers:
 
-  python3 external_scripts/plot_calibration_ft_v1.py --rgc
+  python3 external_scripts/plot_calibration_ft_v2.py
 
-  python3 external_scripts/plot_calibration_ft_v1.py \
-      --max-events 5000000 --chunk-size 250000
+Process the three RGC periods:
 
-  python3 external_scripts/plot_calibration_ft_v1.py \
-      --period rga_sp18_inb --period rga_fa18_inb
+  python3 external_scripts/plot_calibration_ft_v2.py --rgc
 
-Dependencies
-------------
-  numpy, matplotlib, uproot
+Process selected periods only:
+
+  python3 external_scripts/plot_calibration_ft_v2.py \
+      --period rga_sp18_inb \
+      --period rga_fa18_inb
+
+Limit processing for a quick test:
+
+  python3 external_scripts/plot_calibration_ft_v2.py \
+      --max-events 5000000 \
+      --workers 2
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import time
+import traceback
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Sequence
 
 import matplotlib
 
@@ -69,7 +87,8 @@ try:
     import uproot
 except ImportError as exc:
     raise SystemExit(
-        "ERROR: uproot is required. Install it with `python3 -m pip install uproot`."
+        "ERROR: uproot is required. Install it with "
+        "`python3 -m pip install uproot`."
     ) from exc
 
 
@@ -87,9 +106,10 @@ RGC_INPUT_DIR_DEFAULT = Path(
 )
 OUTPUT_DIR_DEFAULT = Path("output/calibration/forward_tagger")
 
-FT_BRANCHES = ("particle_pid", "ft_x", "ft_y", "ft_energy")
-INVALID_SENTINEL = -9999.0
+FT_BRANCHES = ("particle_pid", "ft_x", "ft_y")
 PHOTON_PID = 22
+INVALID_SENTINEL = -9999.0
+MAX_WORKERS_HARD_LIMIT = 5
 
 
 @dataclass(frozen=True)
@@ -104,7 +124,7 @@ class Dataset:
 
 @dataclass(frozen=True)
 class FTFiducialConfig:
-    """Definition of the FT annulus and excluded circular regions."""
+    """FT annulus and excluded circular regions."""
 
     inner_radius_cm: float = 8.5
     outer_radius_cm: float = 15.5
@@ -118,7 +138,7 @@ class FTFiducialConfig:
 
 @dataclass(frozen=True)
 class HistogramConfig:
-    """Binning and display range for all FT x-y histograms."""
+    """FT coordinate histogram binning."""
 
     bins: int = 100
     xy_min_cm: float = -20.0
@@ -126,42 +146,36 @@ class HistogramConfig:
 
     @property
     def edges(self) -> np.ndarray:
-        return np.linspace(self.xy_min_cm, self.xy_max_cm, self.bins + 1)
+        return np.linspace(
+            self.xy_min_cm,
+            self.xy_max_cm,
+            self.bins + 1,
+            dtype=np.float64,
+        )
 
 
 @dataclass
-class FTHistograms:
-    """Accumulated FT histograms and event counters for one input sample."""
+class OccupancyResult:
+    """Accumulated before/after occupancy and counters for one ROOT file."""
 
-    occupancy_all: np.ndarray
-    occupancy_pass: np.ndarray
-    energy_sum: np.ndarray
-    energy_count: np.ndarray
-    rows_read: int = 0
-    photon_rows: int = 0
-    valid_ft_photons: int = 0
-    fiducial_ft_photons: int = 0
+    before: np.ndarray
+    after: np.ndarray
+    rows_read: int
+    photon_rows: int
+    valid_ft_photons: int
+    fiducial_ft_photons: int
+    elapsed_seconds: float
 
-    @classmethod
-    def empty(cls, bins: int) -> "FTHistograms":
-        shape = (bins, bins)
-        return cls(
-            occupancy_all=np.zeros(shape, dtype=np.float64),
-            occupancy_pass=np.zeros(shape, dtype=np.float64),
-            energy_sum=np.zeros(shape, dtype=np.float64),
-            energy_count=np.zeros(shape, dtype=np.float64),
-        )
 
-    @property
-    def mean_energy(self) -> np.ndarray:
-        result = np.full_like(self.energy_sum, np.nan, dtype=np.float64)
-        np.divide(
-            self.energy_sum,
-            self.energy_count,
-            out=result,
-            where=self.energy_count > 0.0,
-        )
-        return result
+@dataclass
+class PeriodResult:
+    """Data and optional MC results for one run period."""
+
+    dataset: Dataset
+    data: OccupancyResult
+    mc: OccupancyResult | None
+    worker_pid: int
+    elapsed_seconds: float
 
 
 RGA_DATASETS: tuple[Dataset, ...] = (
@@ -217,15 +231,15 @@ RGC_DATASETS: tuple[Dataset, ...] = (
 
 
 # =============================================================================
-# Command-line handling
+# Command-line interface
 # =============================================================================
 
 
 def parse_arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Create FT calorimeter occupancy, mean-energy, and fiducial-cut "
-            "diagnostics for all configured RGA periods or, with --rgc, RGC periods."
+            "Create one four-panel FT occupancy summary for each configured "
+            "RGA or RGC run period."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -234,25 +248,25 @@ def parse_arguments() -> argparse.Namespace:
     mode.add_argument(
         "--rga",
         action="store_true",
-        help="Process the five RGA DVCS data/MC pairs (the default mode).",
+        help="Process the five RGA data/MC periods; this is the default.",
     )
     mode.add_argument(
         "--rgc",
         action="store_true",
-        help="Process the three RGC enpi+ calibration data files instead.",
+        help="Process the three RGC data periods instead.",
     )
 
     parser.add_argument(
         "--input-dir",
         type=Path,
         default=None,
-        help="Override the default input directory for the selected mode.",
+        help="Override the input directory for the selected mode.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=OUTPUT_DIR_DEFAULT,
-        help="Top-level output directory for this FT study.",
+        help="Single directory receiving all FT summary figures.",
     )
     parser.add_argument(
         "--tree",
@@ -265,20 +279,29 @@ def parse_arguments() -> argparse.Namespace:
         default=[],
         metavar="KEY",
         help=(
-            "Process only the requested period key. May be repeated. "
+            "Process only this period key. May be repeated. "
             "Use --list-periods to display valid keys."
         ),
     )
     parser.add_argument(
         "--list-periods",
         action="store_true",
-        help="Print the period keys for the selected mode and exit.",
+        help="Print valid period keys for the selected mode and exit.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=MAX_WORKERS_HARD_LIMIT,
+        help=(
+            "Requested number of period-level worker processes. The effective "
+            "value is capped at five and at the number of selected periods."
+        ),
     )
     parser.add_argument(
         "--chunk-size",
         type=int,
-        default=500_000,
-        help="Number of tree rows read per uproot chunk.",
+        default=1_000_000,
+        help="ROOT rows read per uproot chunk.",
     )
     parser.add_argument(
         "--max-events",
@@ -296,32 +319,13 @@ def parse_arguments() -> argparse.Namespace:
         "--xy-min",
         type=float,
         default=-20.0,
-        help="Minimum plotted x_FT and y_FT coordinate in cm.",
+        help="Minimum plotted FT coordinate in cm.",
     )
     parser.add_argument(
         "--xy-max",
         type=float,
         default=20.0,
-        help="Maximum plotted x_FT and y_FT coordinate in cm.",
-    )
-    parser.add_argument(
-        "--minimum-energy-bin-count",
-        type=int,
-        default=1,
-        help=(
-            "Minimum photons required in an x-y bin before that bin enters the "
-            "mean-energy statistics and low-response classification. A value of "
-            "1 reproduces the legacy behavior."
-        ),
-    )
-    parser.add_argument(
-        "--low-response-sigma",
-        type=float,
-        default=1.0,
-        help=(
-            "Flag populated x-y bins whose mean energy lies this many standard "
-            "deviations below the unweighted mean over populated bins."
-        ),
+        help="Maximum plotted FT coordinate in cm.",
     )
     parser.add_argument(
         "--dpi",
@@ -332,30 +336,31 @@ def parse_arguments() -> argparse.Namespace:
 
     args = parser.parse_args()
 
+    if args.workers <= 0:
+        parser.error("--workers must be positive")
+    #endif
     if args.chunk_size <= 0:
         parser.error("--chunk-size must be positive")
+    #endif
     if args.max_events is not None and args.max_events <= 0:
         parser.error("--max-events must be positive when supplied")
+    #endif
     if args.bins <= 0:
         parser.error("--bins must be positive")
+    #endif
     if args.xy_max <= args.xy_min:
-        parser.error("--xy-max must be larger than --xy-min")
-    if args.minimum_energy_bin_count <= 0:
-        parser.error("--minimum-energy-bin-count must be positive")
-    if args.low_response_sigma < 0.0:
-        parser.error("--low-response-sigma cannot be negative")
+        parser.error("--xy-max must exceed --xy-min")
+    #endif
     if args.dpi <= 0:
         parser.error("--dpi must be positive")
+    #endif
 
     return args
 
 
-# =============================================================================
-# Input validation and histogram accumulation
-# =============================================================================
-
-
-def choose_datasets(args: argparse.Namespace) -> tuple[tuple[Dataset, ...], Path, str]:
+def choose_datasets(
+    args: argparse.Namespace,
+) -> tuple[tuple[Dataset, ...], Path, str]:
     use_rgc = bool(args.rgc)
     datasets = RGC_DATASETS if use_rgc else RGA_DATASETS
     default_input_dir = RGC_INPUT_DIR_DEFAULT if use_rgc else RGA_INPUT_DIR_DEFAULT
@@ -363,23 +368,33 @@ def choose_datasets(args: argparse.Namespace) -> tuple[tuple[Dataset, ...], Path
     mode_label = "RGC" if use_rgc else "RGA"
 
     if args.period:
-        available = {dataset.key: dataset for dataset in datasets}
-        unknown = sorted(set(args.period) - set(available))
+        by_key = {dataset.key: dataset for dataset in datasets}
+        unknown = sorted(set(args.period) - set(by_key))
         if unknown:
-            valid = ", ".join(available)
+            valid = ", ".join(by_key)
             raise ValueError(
                 f"Unknown {mode_label} period key(s): {', '.join(unknown)}. "
                 f"Valid keys: {valid}"
             )
         #endif
+
         requested = set(args.period)
-        datasets = tuple(dataset for dataset in datasets if dataset.key in requested)
+        datasets = tuple(
+            dataset for dataset in datasets if dataset.key in requested
+        )
     #endif
 
     return datasets, input_dir, mode_label
 
 
+# =============================================================================
+# Fast occupancy accumulation
+# =============================================================================
+
+
 def validate_root_tree(file_path: Path, tree_name: str) -> int:
+    """Validate one ROOT input and return its tree entry count."""
+
     if not file_path.is_file():
         raise FileNotFoundError(f"Input ROOT file does not exist: {file_path}")
     #endif
@@ -387,19 +402,22 @@ def validate_root_tree(file_path: Path, tree_name: str) -> int:
     try:
         with uproot.open(file_path) as root_file:
             if tree_name not in root_file:
-                available = ", ".join(str(key) for key in root_file.keys())
+                keys = ", ".join(str(key) for key in root_file.keys())
                 raise KeyError(
                     f"Tree '{tree_name}' is absent from {file_path}. "
-                    f"Available top-level keys: {available}"
+                    f"Available top-level keys: {keys}"
                 )
             #endif
 
             tree = root_file[tree_name]
-            branch_names = set(tree.keys())
-            missing = [name for name in FT_BRANCHES if name not in branch_names]
+            available_branches = set(tree.keys())
+            missing = [
+                branch for branch in FT_BRANCHES
+                if branch not in available_branches
+            ]
             if missing:
                 raise KeyError(
-                    f"Tree '{tree_name}' in {file_path} is missing required FT "
+                    f"Tree '{tree_name}' in {file_path} is missing required "
                     f"branch(es): {', '.join(missing)}"
                 )
             #endif
@@ -414,37 +432,58 @@ def ft_fiducial_mask(
     y_cm: np.ndarray,
     config: FTFiducialConfig,
 ) -> np.ndarray:
-    radius_cm = np.hypot(x_cm, y_cm)
+    """
+    Return the FT annulus-plus-hole mask.
+
+    Squared distances are used throughout to avoid unnecessary square roots.
+    """
+
+    radius_squared = x_cm * x_cm + y_cm * y_cm
     accepted = (
-        (radius_cm >= config.inner_radius_cm)
-        & (radius_cm <= config.outer_radius_cm)
+        (radius_squared >= config.inner_radius_cm**2)
+        & (radius_squared <= config.outer_radius_cm**2)
     )
 
     for center_x_cm, center_y_cm, hole_radius_cm in config.holes:
-        distance_cm = np.hypot(x_cm - center_x_cm, y_cm - center_y_cm)
-        accepted &= distance_cm >= hole_radius_cm
+        delta_x = x_cm - center_x_cm
+        delta_y = y_cm - center_y_cm
+        accepted &= (
+            delta_x * delta_x + delta_y * delta_y
+            >= hole_radius_cm**2
+        )
     #endfor
 
     return accepted
 
 
-def accumulate_ft_histograms(
+def accumulate_occupancy(
     file_path: Path,
     tree_name: str,
     histogram_config: HistogramConfig,
     fiducial_config: FTFiducialConfig,
     chunk_size: int,
     max_events: int | None,
-) -> FTHistograms:
-    histograms = FTHistograms.empty(histogram_config.bins)
-    edges = histogram_config.edges
+) -> OccupancyResult:
+    """Read one ROOT file and accumulate only the required occupancy maps."""
 
-    entry_stop = max_events
+    start_time = time.perf_counter()
+    validate_root_tree(file_path, tree_name)
+
+    edges = histogram_config.edges
+    shape = (histogram_config.bins, histogram_config.bins)
+    before = np.zeros(shape, dtype=np.uint64)
+    after = np.zeros(shape, dtype=np.uint64)
+
+    rows_read = 0
+    photon_rows = 0
+    valid_ft_photons = 0
+    fiducial_ft_photons = 0
+
     iterator = uproot.iterate(
         f"{file_path}:{tree_name}",
         expressions=list(FT_BRANCHES),
         step_size=chunk_size,
-        entry_stop=entry_stop,
+        entry_stop=max_events,
         library="np",
     )
 
@@ -452,64 +491,104 @@ def accumulate_ft_histograms(
         pid = np.asarray(arrays["particle_pid"])
         x_cm = np.asarray(arrays["ft_x"], dtype=np.float64)
         y_cm = np.asarray(arrays["ft_y"], dtype=np.float64)
-        energy_gev = np.asarray(arrays["ft_energy"], dtype=np.float64)
 
-        histograms.rows_read += int(pid.size)
+        rows_read += int(pid.size)
 
-        photon = pid == PHOTON_PID
-        histograms.photon_rows += int(np.count_nonzero(photon))
+        photon_mask = pid == PHOTON_PID
+        photon_rows += int(np.count_nonzero(photon_mask))
 
-        valid = (
-            photon
+        valid_mask = (
+            photon_mask
             & np.isfinite(x_cm)
             & np.isfinite(y_cm)
-            & np.isfinite(energy_gev)
             & (x_cm != INVALID_SENTINEL)
             & (y_cm != INVALID_SENTINEL)
-            & (energy_gev != INVALID_SENTINEL)
         )
 
-        if not np.any(valid):
+        if not np.any(valid_mask):
             continue
         #endif
 
-        valid_x = x_cm[valid]
-        valid_y = y_cm[valid]
-        valid_energy = energy_gev[valid]
-        histograms.valid_ft_photons += int(valid_x.size)
+        valid_x = x_cm[valid_mask]
+        valid_y = y_cm[valid_mask]
+        valid_ft_photons += int(valid_x.size)
 
-        accepted = ft_fiducial_mask(valid_x, valid_y, fiducial_config)
-        histograms.fiducial_ft_photons += int(np.count_nonzero(accepted))
+        accepted_mask = ft_fiducial_mask(
+            valid_x,
+            valid_y,
+            fiducial_config,
+        )
+        fiducial_ft_photons += int(np.count_nonzero(accepted_mask))
 
-        occupancy_all, _, _ = np.histogram2d(
+        chunk_before, _, _ = np.histogram2d(
             valid_x,
             valid_y,
             bins=(edges, edges),
         )
-        occupancy_pass, _, _ = np.histogram2d(
-            valid_x[accepted],
-            valid_y[accepted],
-            bins=(edges, edges),
-        )
-        energy_sum, _, _ = np.histogram2d(
-            valid_x,
-            valid_y,
-            bins=(edges, edges),
-            weights=valid_energy,
-        )
-        energy_count, _, _ = np.histogram2d(
-            valid_x,
-            valid_y,
-            bins=(edges, edges),
-        )
+        before += chunk_before.astype(np.uint64, copy=False)
 
-        histograms.occupancy_all += occupancy_all
-        histograms.occupancy_pass += occupancy_pass
-        histograms.energy_sum += energy_sum
-        histograms.energy_count += energy_count
+        if np.any(accepted_mask):
+            chunk_after, _, _ = np.histogram2d(
+                valid_x[accepted_mask],
+                valid_y[accepted_mask],
+                bins=(edges, edges),
+            )
+            after += chunk_after.astype(np.uint64, copy=False)
+        #endif
     #endfor
 
-    return histograms
+    return OccupancyResult(
+        before=before,
+        after=after,
+        rows_read=rows_read,
+        photon_rows=photon_rows,
+        valid_ft_photons=valid_ft_photons,
+        fiducial_ft_photons=fiducial_ft_photons,
+        elapsed_seconds=time.perf_counter() - start_time,
+    )
+
+
+def process_period(
+    dataset: Dataset,
+    input_dir: Path,
+    tree_name: str,
+    histogram_config: HistogramConfig,
+    fiducial_config: FTFiducialConfig,
+    chunk_size: int,
+    max_events: int | None,
+) -> PeriodResult:
+    """Worker entry point: process one complete run period."""
+
+    start_time = time.perf_counter()
+
+    data_result = accumulate_occupancy(
+        file_path=input_dir / dataset.data_file,
+        tree_name=tree_name,
+        histogram_config=histogram_config,
+        fiducial_config=fiducial_config,
+        chunk_size=chunk_size,
+        max_events=max_events,
+    )
+
+    mc_result = None
+    if dataset.mc_file is not None:
+        mc_result = accumulate_occupancy(
+            file_path=input_dir / dataset.mc_file,
+            tree_name=tree_name,
+            histogram_config=histogram_config,
+            fiducial_config=fiducial_config,
+            chunk_size=chunk_size,
+            max_events=max_events,
+        )
+    #endif
+
+    return PeriodResult(
+        dataset=dataset,
+        data=data_result,
+        mc=mc_result,
+        worker_pid=os.getpid(),
+        elapsed_seconds=time.perf_counter() - start_time,
+    )
 
 
 # =============================================================================
@@ -517,27 +596,24 @@ def accumulate_ft_histograms(
 # =============================================================================
 
 
-def draw_ft_boundaries(axis: plt.Axes, config: FTFiducialConfig) -> None:
-    axis.add_patch(
-        Circle(
-            (0.0, 0.0),
-            config.inner_radius_cm,
-            fill=False,
-            linewidth=1.6,
-            linestyle="--",
-            edgecolor="black",
+def draw_ft_boundaries(
+    axis: plt.Axes,
+    config: FTFiducialConfig,
+) -> None:
+    """Overlay the complete FT fiducial geometry."""
+
+    for radius_cm in (config.inner_radius_cm, config.outer_radius_cm):
+        axis.add_patch(
+            Circle(
+                (0.0, 0.0),
+                radius_cm,
+                fill=False,
+                linewidth=1.5,
+                linestyle="--",
+                edgecolor="black",
+            )
         )
-    )
-    axis.add_patch(
-        Circle(
-            (0.0, 0.0),
-            config.outer_radius_cm,
-            fill=False,
-            linewidth=1.6,
-            linestyle="--",
-            edgecolor="black",
-        )
-    )
+    #endfor
 
     for center_x_cm, center_y_cm, radius_cm in config.holes:
         axis.add_patch(
@@ -545,485 +621,255 @@ def draw_ft_boundaries(axis: plt.Axes, config: FTFiducialConfig) -> None:
                 (center_x_cm, center_y_cm),
                 radius_cm,
                 fill=False,
-                linewidth=1.6,
+                linewidth=1.5,
                 edgecolor="black",
             )
         )
     #endfor
 
 
-def configure_xy_axis(axis: plt.Axes, histogram_config: HistogramConfig) -> None:
+def configure_xy_axis(
+    axis: plt.Axes,
+    histogram_config: HistogramConfig,
+) -> None:
     axis.set_xlabel(r"FT $x$ (cm)")
     axis.set_ylabel(r"FT $y$ (cm)")
-    axis.set_xlim(histogram_config.xy_min_cm, histogram_config.xy_max_cm)
-    axis.set_ylim(histogram_config.xy_min_cm, histogram_config.xy_max_cm)
+    axis.set_xlim(
+        histogram_config.xy_min_cm,
+        histogram_config.xy_max_cm,
+    )
+    axis.set_ylim(
+        histogram_config.xy_min_cm,
+        histogram_config.xy_max_cm,
+    )
     axis.set_aspect("equal", adjustable="box")
 
 
-def nonempty_lognorm(histogram: np.ndarray) -> LogNorm | None:
-    positive = histogram[histogram > 0.0]
-    if positive.size == 0:
+def shared_log_norm(
+    first: np.ndarray,
+    second: np.ndarray,
+) -> LogNorm | None:
+    """
+    Construct one logarithmic normalization for a before/after row.
+
+    Sharing the normalization makes the occupancy loss visually meaningful.
+    """
+
+    maximum = max(float(np.max(first)), float(np.max(second)))
+    if maximum <= 0.0:
         return None
     #endif
-    return LogNorm(vmin=max(1.0, float(np.min(positive))), vmax=float(np.max(positive)))
+
+    return LogNorm(vmin=1.0, vmax=max(1.0, maximum))
 
 
-def draw_occupancy(
-    figure: plt.Figure,
+def draw_occupancy_panel(
     axis: plt.Axes,
     histogram: np.ndarray,
     title: str,
     histogram_config: HistogramConfig,
     fiducial_config: FTFiducialConfig,
-) -> None:
+    norm: LogNorm | None,
+):
     extent = (
         histogram_config.xy_min_cm,
         histogram_config.xy_max_cm,
         histogram_config.xy_min_cm,
         histogram_config.xy_max_cm,
     )
-    norm = nonempty_lognorm(histogram)
+
     image = axis.imshow(
         histogram.T,
         origin="lower",
         extent=extent,
         interpolation="nearest",
+        cmap="viridis",
         norm=norm,
-        cmap="viridis",
+        rasterized=True,
     )
-    colorbar = figure.colorbar(image, ax=axis, pad=0.02)
-    colorbar.set_label("Photon entries per bin")
+
     axis.set_title(title)
     configure_xy_axis(axis, histogram_config)
     draw_ft_boundaries(axis, fiducial_config)
+    return image
 
 
-def energy_bin_statistics(
-    histograms: FTHistograms,
-    minimum_bin_count: int,
-) -> tuple[np.ndarray, np.ndarray, float, float]:
-    mean_energy = histograms.mean_energy
-    eligible = (
-        np.isfinite(mean_energy)
-        & (histograms.energy_count >= float(minimum_bin_count))
-    )
-
-    values = mean_energy[eligible]
-    if values.size == 0:
-        return mean_energy, eligible, float("nan"), float("nan")
+def efficiency_text(result: OccupancyResult) -> str:
+    if result.valid_ft_photons <= 0:
+        return "0 / 0 valid FT photons"
     #endif
 
-    global_mean = float(np.mean(values))
-    global_std = float(np.std(values, ddof=0))
-    return mean_energy, eligible, global_mean, global_std
+    efficiency_percent = (
+        100.0
+        * result.fiducial_ft_photons
+        / result.valid_ft_photons
+    )
+    return (
+        f"{result.fiducial_ft_photons:,} / "
+        f"{result.valid_ft_photons:,} valid FT photons "
+        f"({efficiency_percent:.2f}%)"
+    )
 
 
-def draw_mean_energy(
-    figure: plt.Figure,
+def draw_missing_mc_panel(
     axis: plt.Axes,
-    histograms: FTHistograms,
     title: str,
     histogram_config: HistogramConfig,
     fiducial_config: FTFiducialConfig,
-    minimum_bin_count: int,
-    low_response_sigma: float,
-    highlight_low_response: bool,
-) -> tuple[float, float, int]:
-    mean_energy, eligible, global_mean, global_std = energy_bin_statistics(
-        histograms,
-        minimum_bin_count,
-    )
-
-    displayed = np.ma.masked_where(~eligible, mean_energy)
-    extent = (
-        histogram_config.xy_min_cm,
-        histogram_config.xy_max_cm,
-        histogram_config.xy_min_cm,
-        histogram_config.xy_max_cm,
-    )
-    image = axis.imshow(
-        displayed.T,
-        origin="lower",
-        extent=extent,
-        interpolation="nearest",
-        cmap="viridis",
-    )
-    colorbar = figure.colorbar(image, ax=axis, pad=0.02)
-    colorbar.set_label("Mean FT energy (GeV)")
-
-    low_response = np.zeros_like(eligible, dtype=bool)
-    if np.isfinite(global_mean) and np.isfinite(global_std):
-        threshold = global_mean - low_response_sigma * global_std
-        low_response = eligible & (mean_energy < threshold)
-
-        if highlight_low_response and np.any(low_response):
-            low_overlay = np.ma.masked_where(~low_response, np.ones_like(mean_energy))
-            axis.imshow(
-                low_overlay.T,
-                origin="lower",
-                extent=extent,
-                interpolation="nearest",
-                cmap="Reds",
-                alpha=0.72,
-                vmin=0.0,
-                vmax=1.0,
-            )
-        #endif
-    #endif
-
+) -> None:
     axis.set_title(title)
     configure_xy_axis(axis, histogram_config)
     draw_ft_boundaries(axis, fiducial_config)
-
-    if np.isfinite(global_mean):
-        annotation = (
-            f"Populated-bin mean = {global_mean:.3f} GeV\n"
-            f"Populated-bin std. dev. = {global_std:.3f} GeV\n"
-            f"Eligible bins = {np.count_nonzero(eligible):,}"
-        )
-        if highlight_low_response:
-            annotation += f"\nFlagged bins = {np.count_nonzero(low_response):,}"
-        #endif
-        axis.text(
-            0.02,
-            0.98,
-            annotation,
-            transform=axis.transAxes,
-            ha="left",
-            va="top",
-            fontsize=8.5,
-            bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "none"},
-        )
-    #endif
-
-    return global_mean, global_std, int(np.count_nonzero(low_response))
-
-
-def save_single_occupancy_plot(
-    output_path: Path,
-    histogram: np.ndarray,
-    title: str,
-    histogram_config: HistogramConfig,
-    fiducial_config: FTFiducialConfig,
-    dpi: int,
-) -> None:
-    figure, axis = plt.subplots(figsize=(7.4, 6.4), constrained_layout=True)
-    draw_occupancy(
-        figure,
-        axis,
-        histogram,
-        title,
-        histogram_config,
-        fiducial_config,
-    )
-    figure.savefig(output_path, dpi=dpi)
-    plt.close(figure)
-
-
-def save_single_energy_plot(
-    output_path: Path,
-    histograms: FTHistograms,
-    title: str,
-    histogram_config: HistogramConfig,
-    fiducial_config: FTFiducialConfig,
-    minimum_bin_count: int,
-    low_response_sigma: float,
-    highlight_low_response: bool,
-    dpi: int,
-) -> tuple[float, float, int]:
-    figure, axis = plt.subplots(figsize=(7.4, 6.4), constrained_layout=True)
-    statistics = draw_mean_energy(
-        figure,
-        axis,
-        histograms,
-        title,
-        histogram_config,
-        fiducial_config,
-        minimum_bin_count,
-        low_response_sigma,
-        highlight_low_response,
-    )
-    figure.savefig(output_path, dpi=dpi)
-    plt.close(figure)
-    return statistics
-
-
-def save_overview_plot(
-    output_path: Path,
-    histograms: FTHistograms,
-    period_label: str,
-    sample_label: str,
-    histogram_config: HistogramConfig,
-    fiducial_config: FTFiducialConfig,
-    minimum_bin_count: int,
-    low_response_sigma: float,
-    dpi: int,
-) -> None:
-    figure, axes = plt.subplots(
-        2,
-        2,
-        figsize=(13.0, 11.0),
-        constrained_layout=True,
-    )
-    figure.suptitle(f"{period_label}: Forward Tagger photon diagnostics ({sample_label})")
-
-    draw_occupancy(
-        figure,
-        axes[0, 0],
-        histograms.occupancy_all,
-        "FT hit occupancy before fiducial cut",
-        histogram_config,
-        fiducial_config,
-    )
-    draw_occupancy(
-        figure,
-        axes[0, 1],
-        histograms.occupancy_pass,
-        "FT hit occupancy after fiducial cut",
-        histogram_config,
-        fiducial_config,
-    )
-    draw_mean_energy(
-        figure,
-        axes[1, 0],
-        histograms,
-        "Mean FT energy by hit position",
-        histogram_config,
-        fiducial_config,
-        minimum_bin_count,
-        low_response_sigma,
-        False,
-    )
-    draw_mean_energy(
-        figure,
-        axes[1, 1],
-        histograms,
-        (
-            "Low-response bins: mean energy below "
-            f"global mean - {low_response_sigma:g} sigma"
-        ),
-        histogram_config,
-        fiducial_config,
-        minimum_bin_count,
-        low_response_sigma,
-        True,
-    )
-
-    acceptance = (
-        histograms.fiducial_ft_photons / histograms.valid_ft_photons
-        if histograms.valid_ft_photons > 0
-        else float("nan")
-    )
-    figure.text(
+    axis.text(
         0.5,
-        0.005,
-        (
-            f"Rows read: {histograms.rows_read:,}    |    "
-            f"PID 22 rows: {histograms.photon_rows:,}    |    "
-            f"Valid FT photons: {histograms.valid_ft_photons:,}    |    "
-            f"Fiducial-pass photons: {histograms.fiducial_ft_photons:,} "
-            f"({100.0 * acceptance:.2f}%)"
-        ),
-        ha="center",
-        va="bottom",
-        fontsize=10,
-    )
-    figure.savefig(output_path, dpi=dpi)
-    plt.close(figure)
-
-
-def write_summary_file(
-    output_path: Path,
-    dataset: Dataset,
-    sample_label: str,
-    input_path: Path,
-    total_tree_entries: int,
-    histograms: FTHistograms,
-    global_mean_energy: float,
-    global_std_energy: float,
-    low_response_bins: int,
-    minimum_bin_count: int,
-    low_response_sigma: float,
-    fiducial_config: FTFiducialConfig,
-) -> None:
-    acceptance = (
-        histograms.fiducial_ft_photons / histograms.valid_ft_photons
-        if histograms.valid_ft_photons > 0
-        else float("nan")
-    )
-
-    lines = [
-        f"Period: {dataset.label}",
-        f"Sample: {sample_label}",
-        f"Input file: {input_path}",
-        f"Tree entries: {total_tree_entries}",
-        f"Rows read: {histograms.rows_read}",
-        f"PID 22 rows: {histograms.photon_rows}",
-        f"Valid FT photons: {histograms.valid_ft_photons}",
-        f"Fiducial-pass FT photons: {histograms.fiducial_ft_photons}",
-        f"Fiducial-pass fraction: {acceptance:.10f}",
-        f"Mean over eligible mean-energy bins (GeV): {global_mean_energy:.10g}",
-        f"Std. dev. over eligible mean-energy bins (GeV): {global_std_energy:.10g}",
-        f"Low-response bins: {low_response_bins}",
-        f"Minimum energy-bin count: {minimum_bin_count}",
-        f"Low-response threshold (sigma): {low_response_sigma}",
-        f"FT inner radius (cm): {fiducial_config.inner_radius_cm}",
-        f"FT outer radius (cm): {fiducial_config.outer_radius_cm}",
-        "Excluded holes (x_cm, y_cm, radius_cm):",
-    ]
-    lines.extend(
-        f"  {x_cm:.6g}, {y_cm:.6g}, {radius_cm:.6g}"
-        for x_cm, y_cm, radius_cm in fiducial_config.holes
-    )
-    output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
-def make_sample_plots(
-    dataset: Dataset,
-    sample_label: str,
-    input_path: Path,
-    total_tree_entries: int,
-    histograms: FTHistograms,
-    period_output_dir: Path,
-    histogram_config: HistogramConfig,
-    fiducial_config: FTFiducialConfig,
-    minimum_bin_count: int,
-    low_response_sigma: float,
-    dpi: int,
-) -> None:
-    sample_key = sample_label.lower()
-    sample_output_dir = period_output_dir / sample_key
-    sample_output_dir.mkdir(parents=True, exist_ok=True)
-
-    prefix = f"{dataset.key}_{sample_key}_ft"
-
-    save_single_occupancy_plot(
-        sample_output_dir / f"{prefix}_hit_occupancy_before_cut.png",
-        histograms.occupancy_all,
-        f"{dataset.label}: FT photon hit occupancy ({sample_label}, before cut)",
-        histogram_config,
-        fiducial_config,
-        dpi,
-    )
-    save_single_occupancy_plot(
-        sample_output_dir / f"{prefix}_hit_occupancy_after_cut.png",
-        histograms.occupancy_pass,
-        f"{dataset.label}: FT photon hit occupancy ({sample_label}, after cut)",
-        histogram_config,
-        fiducial_config,
-        dpi,
-    )
-    global_mean, global_std, _ = save_single_energy_plot(
-        sample_output_dir / f"{prefix}_mean_energy.png",
-        histograms,
-        f"{dataset.label}: mean FT energy ({sample_label})",
-        histogram_config,
-        fiducial_config,
-        minimum_bin_count,
-        low_response_sigma,
-        False,
-        dpi,
-    )
-    _, _, low_response_bins = save_single_energy_plot(
-        sample_output_dir / f"{prefix}_mean_energy_low_response.png",
-        histograms,
-        (
-            f"{dataset.label}: low-response FT bins ({sample_label}; "
-            f"below mean - {low_response_sigma:g} sigma)"
-        ),
-        histogram_config,
-        fiducial_config,
-        minimum_bin_count,
-        low_response_sigma,
-        True,
-        dpi,
-    )
-    save_overview_plot(
-        sample_output_dir / f"{prefix}_overview.png",
-        histograms,
-        dataset.label,
-        sample_label,
-        histogram_config,
-        fiducial_config,
-        minimum_bin_count,
-        low_response_sigma,
-        dpi,
-    )
-    write_summary_file(
-        sample_output_dir / f"{prefix}_summary.txt",
-        dataset,
-        sample_label,
-        input_path,
-        total_tree_entries,
-        histograms,
-        global_mean,
-        global_std,
-        low_response_bins,
-        minimum_bin_count,
-        low_response_sigma,
-        fiducial_config,
+        0.5,
+        "MC not available\nfor this RGC mode",
+        transform=axis.transAxes,
+        horizontalalignment="center",
+        verticalalignment="center",
+        fontsize=15,
     )
 
 
-# =============================================================================
-# Main driver
-# =============================================================================
-
-
-def process_sample(
-    dataset: Dataset,
-    sample_label: str,
-    input_path: Path,
-    tree_name: str,
+def save_period_summary(
+    result: PeriodResult,
     output_dir: Path,
     histogram_config: HistogramConfig,
     fiducial_config: FTFiducialConfig,
-    chunk_size: int,
-    max_events: int | None,
-    minimum_bin_count: int,
-    low_response_sigma: float,
     dpi: int,
-) -> None:
-    total_entries = validate_root_tree(input_path, tree_name)
-    rows_to_read = min(total_entries, max_events) if max_events is not None else total_entries
+) -> Path:
+    """Create the only plot emitted for one run period."""
 
-    print(
-        f"  [{sample_label}] {input_path.name}: "
-        f"reading {rows_to_read:,} of {total_entries:,} tree rows"
+    figure, axes = plt.subplots(
+        2,
+        2,
+        figsize=(13.5, 11.5),
+        constrained_layout=True,
     )
 
-    histograms = accumulate_ft_histograms(
-        input_path,
-        tree_name,
-        histogram_config,
-        fiducial_config,
-        chunk_size,
-        max_events,
+    data_norm = shared_log_norm(
+        result.data.before,
+        result.data.after,
     )
 
-    period_output_dir = output_dir / dataset.key
-    make_sample_plots(
-        dataset,
-        sample_label,
-        input_path,
-        total_entries,
-        histograms,
-        period_output_dir,
-        histogram_config,
-        fiducial_config,
-        minimum_bin_count,
-        low_response_sigma,
-        dpi,
+    data_before_image = draw_occupancy_panel(
+        axis=axes[0, 0],
+        histogram=result.data.before,
+        title="Data before FT fiducial cut",
+        histogram_config=histogram_config,
+        fiducial_config=fiducial_config,
+        norm=data_norm,
+    )
+    draw_occupancy_panel(
+        axis=axes[0, 1],
+        histogram=result.data.after,
+        title="Data after FT fiducial cut",
+        histogram_config=histogram_config,
+        fiducial_config=fiducial_config,
+        norm=data_norm,
     )
 
-    fraction = (
-        100.0 * histograms.fiducial_ft_photons / histograms.valid_ft_photons
-        if histograms.valid_ft_photons > 0
-        else float("nan")
+    data_colorbar = figure.colorbar(
+        data_before_image,
+        ax=axes[0, :],
+        pad=0.015,
+        fraction=0.035,
     )
-    print(
-        f"    valid FT photons = {histograms.valid_ft_photons:,}; "
-        f"fiducial pass = {histograms.fiducial_ft_photons:,} ({fraction:.2f}%)"
+    data_colorbar.set_label("Photon entries per bin")
+
+    if result.mc is not None:
+        mc_norm = shared_log_norm(
+            result.mc.before,
+            result.mc.after,
+        )
+
+        mc_before_image = draw_occupancy_panel(
+            axis=axes[1, 0],
+            histogram=result.mc.before,
+            title="MC before FT fiducial cut",
+            histogram_config=histogram_config,
+            fiducial_config=fiducial_config,
+            norm=mc_norm,
+        )
+        draw_occupancy_panel(
+            axis=axes[1, 1],
+            histogram=result.mc.after,
+            title="MC after FT fiducial cut",
+            histogram_config=histogram_config,
+            fiducial_config=fiducial_config,
+            norm=mc_norm,
+        )
+
+        mc_colorbar = figure.colorbar(
+            mc_before_image,
+            ax=axes[1, :],
+            pad=0.015,
+            fraction=0.035,
+        )
+        mc_colorbar.set_label("Photon entries per bin")
+    else:
+        draw_missing_mc_panel(
+            axis=axes[1, 0],
+            title="MC before FT fiducial cut",
+            histogram_config=histogram_config,
+            fiducial_config=fiducial_config,
+        )
+        draw_missing_mc_panel(
+            axis=axes[1, 1],
+            title="MC after FT fiducial cut",
+            histogram_config=histogram_config,
+            fiducial_config=fiducial_config,
+        )
+    #endif
+
+    figure.suptitle(
+        f"{result.dataset.label}: Forward Tagger photon occupancy",
+        fontsize=17,
+    )
+
+    data_caption = f"Data: {efficiency_text(result.data)}"
+    if result.mc is not None:
+        mc_caption = f"MC: {efficiency_text(result.mc)}"
+    else:
+        mc_caption = "MC: not available"
+    #endif
+
+    figure.text(
+        0.5,
+        0.006,
+        f"{data_caption}    |    {mc_caption}",
+        horizontalalignment="center",
+        verticalalignment="bottom",
+        fontsize=10,
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / f"{result.dataset.key}_ft_summary.png"
+    figure.savefig(
+        output_path,
+        dpi=dpi,
+        bbox_inches="tight",
+    )
+    plt.close(figure)
+
+    return output_path
+
+
+# =============================================================================
+# Main execution
+# =============================================================================
+
+
+def format_sample_report(
+    sample_label: str,
+    result: OccupancyResult,
+) -> str:
+    return (
+        f"{sample_label}: rows={result.rows_read:,}, "
+        f"PID-22 rows={result.photon_rows:,}, "
+        f"valid FT photons={result.valid_ft_photons:,}, "
+        f"fiducial={result.fiducial_ft_photons:,}, "
+        f"time={result.elapsed_seconds:.1f} s"
     )
 
 
@@ -1035,13 +881,19 @@ def main() -> int:
     except ValueError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
+    #endtry
 
     if args.list_periods:
-        print(f"Available {mode_label} period keys:")
+        print(f"{mode_label} period keys:")
         for dataset in datasets:
             print(f"  {dataset.key:<16} {dataset.label}")
         #endfor
         return 0
+    #endif
+
+    if not datasets:
+        print("ERROR: no run periods were selected.", file=sys.stderr)
+        return 2
     #endif
 
     histogram_config = HistogramConfig(
@@ -1051,78 +903,127 @@ def main() -> int:
     )
     fiducial_config = FTFiducialConfig()
 
+    effective_workers = min(
+        MAX_WORKERS_HARD_LIMIT,
+        args.workers,
+        len(datasets),
+    )
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"FT calibration mode: {mode_label}")
-    print(f"Input directory: {input_dir}")
+    print("=" * 78)
+    print("Forward Tagger occupancy diagnostics")
+    print("=" * 78)
+    print(f"Mode:             {mode_label}")
+    print(f"Input directory:  {input_dir}")
     print(f"Output directory: {args.output_dir}")
-    print(f"Tree: {args.tree}")
-    print(f"Periods: {', '.join(dataset.label for dataset in datasets)}")
+    print(f"Tree:             {args.tree}")
+    print(f"Periods:          {len(datasets)}")
+    print(f"Workers:          {effective_workers}")
+    print(f"Chunk size:       {args.chunk_size:,} rows")
+    if args.max_events is not None:
+        print(f"Per-file limit:   {args.max_events:,} rows")
+    #endif
+    print("=" * 78)
 
-    failures: list[str] = []
+    overall_start = time.perf_counter()
+    completed: dict[str, PeriodResult] = {}
+    failures: dict[str, str] = {}
 
-    for dataset in datasets:
-        print(f"\nProcessing {dataset.label}")
+    with ProcessPoolExecutor(max_workers=effective_workers) as executor:
+        future_to_dataset = {
+            executor.submit(
+                process_period,
+                dataset,
+                input_dir,
+                args.tree,
+                histogram_config,
+                fiducial_config,
+                args.chunk_size,
+                args.max_events,
+            ): dataset
+            for dataset in datasets
+        }
 
-        data_path = input_dir / dataset.data_file
-        try:
-            process_sample(
-                dataset=dataset,
-                sample_label="Data",
-                input_path=data_path,
-                tree_name=args.tree,
-                output_dir=args.output_dir,
-                histogram_config=histogram_config,
-                fiducial_config=fiducial_config,
-                chunk_size=args.chunk_size,
-                max_events=args.max_events,
-                minimum_bin_count=args.minimum_energy_bin_count,
-                low_response_sigma=args.low_response_sigma,
-                dpi=args.dpi,
-            )
-        except Exception as exc:
-            message = f"{dataset.label} data: {exc}"
-            failures.append(message)
-            print(f"  ERROR: {message}", file=sys.stderr)
-        #endtry
+        for future in as_completed(future_to_dataset):
+            dataset = future_to_dataset[future]
 
-        if dataset.mc_file is not None:
-            mc_path = input_dir / dataset.mc_file
             try:
-                process_sample(
-                    dataset=dataset,
-                    sample_label="MC",
-                    input_path=mc_path,
-                    tree_name=args.tree,
-                    output_dir=args.output_dir,
-                    histogram_config=histogram_config,
-                    fiducial_config=fiducial_config,
-                    chunk_size=args.chunk_size,
-                    max_events=args.max_events,
-                    minimum_bin_count=args.minimum_energy_bin_count,
-                    low_response_sigma=args.low_response_sigma,
-                    dpi=args.dpi,
-                )
+                result = future.result()
             except Exception as exc:
-                message = f"{dataset.label} MC: {exc}"
-                failures.append(message)
-                print(f"  ERROR: {message}", file=sys.stderr)
+                failures[dataset.key] = (
+                    f"{type(exc).__name__}: {exc}\n"
+                    f"{traceback.format_exc()}"
+                )
+                print(
+                    f"[FAILED] {dataset.label}: {type(exc).__name__}: {exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                continue
             #endtry
+
+            completed[dataset.key] = result
+            print(
+                f"[READ] {dataset.label} completed by PID {result.worker_pid} "
+                f"in {result.elapsed_seconds:.1f} s",
+                flush=True,
+            )
+            print(
+                f"       {format_sample_report('data', result.data)}",
+                flush=True,
+            )
+            if result.mc is not None:
+                print(
+                    f"       {format_sample_report('MC', result.mc)}",
+                    flush=True,
+                )
+            #endif
+        #endfor
+    #endwith
+
+    # Plot in configured run-period order for deterministic output and logs.
+    for dataset in datasets:
+        result = completed.get(dataset.key)
+        if result is None:
+            continue
         #endif
+
+        output_path = save_period_summary(
+            result=result,
+            output_dir=args.output_dir,
+            histogram_config=histogram_config,
+            fiducial_config=fiducial_config,
+            dpi=args.dpi,
+        )
+        print(f"[PLOT] {output_path}", flush=True)
     #endfor
 
+    elapsed = time.perf_counter() - overall_start
+    print("=" * 78)
+    print(
+        f"Completed {len(completed)} of {len(datasets)} period(s) "
+        f"in {elapsed:.1f} s."
+    )
+
     if failures:
-        print("\nFT calibration completed with failures:", file=sys.stderr)
-        for failure in failures:
-            print(f"  - {failure}", file=sys.stderr)
+        print(f"{len(failures)} period(s) failed:", file=sys.stderr)
+        for dataset in datasets:
+            failure = failures.get(dataset.key)
+            if failure is None:
+                continue
+            #endif
+            first_line = failure.splitlines()[0]
+            print(
+                f"  {dataset.label}: {first_line}",
+                file=sys.stderr,
+            )
         #endfor
         return 1
     #endif
 
-    print("\nFT calibration plots completed successfully.")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-#endif
