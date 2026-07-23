@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v3.py
+plot_calibration_v4.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -15,8 +15,10 @@ Current modules
    - Separate output directories for PCal, ECin, and ECout.
    - Separate electron and photon summaries.
    - Six sectors by three strip coordinates: lu, lv, and lw.
-   - Data and reconstructed MC are overlaid as independently normalized
-     one-dimensional strip-coordinate distributions.
+   - One-dimensional data/MC overlays use 4.5 cm strip-width bins and
+     logarithmic vertical axes.
+   - Original-style two-dimensional lu-lv, lu-lw, and lw-lv occupancy
+     maps are also produced with logarithmic color scales.
    - Existing fiducial exclusion intervals are shaded but are NOT applied to
      the plotted samples, so data/GEMC mismodeling remains visible.
    - The RGA Sp19-only PCal sector-2 lv exclusion is overlaid only for Sp19.
@@ -46,26 +48,26 @@ Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v3.py
+  python3 external_scripts/plot_calibration_v4.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v3.py --rgc
+  python3 external_scripts/plot_calibration_v4.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v3.py \
+  python3 external_scripts/plot_calibration_v4.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v3.py --skip-ft
+  python3 external_scripts/plot_calibration_v4.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v3.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v4.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -134,6 +136,12 @@ COORD_LABELS = {
     "lw": r"$lw$ (cm)",
 }
 
+PAIR_DEFINITIONS: tuple[tuple[str, str, str], ...] = (
+    ("lu_lv", "lu", "lv"),
+    ("lu_lw", "lu", "lw"),
+    ("lw_lv", "lw", "lv"),
+)
+
 
 @dataclass(frozen=True)
 class Dataset:
@@ -160,7 +168,7 @@ class HistogramConfig:
     ft_bins: int = 100
     ft_xy_min_cm: float = -20.0
     ft_xy_max_cm: float = 20.0
-    cal_bins: int = 150
+    cal_bin_width_cm: float = 4.5
     cal_min_cm: float = 0.0
     cal_max_cm: float = 450.0
 
@@ -175,12 +183,23 @@ class HistogramConfig:
 
     @property
     def cal_edges(self) -> np.ndarray:
-        return np.linspace(
-            self.cal_min_cm,
-            self.cal_max_cm,
-            self.cal_bins + 1,
+        span = self.cal_max_cm - self.cal_min_cm
+        bins_float = span / self.cal_bin_width_cm
+        bins = int(round(bins_float))
+        if not np.isclose(bins_float, bins, rtol=0.0, atol=1.0e-10):
+            raise ValueError(
+                "Calorimeter range must be an integer multiple of "
+                "the requested strip width."
+            )
+        #endif
+        return self.cal_min_cm + self.cal_bin_width_cm * np.arange(
+            bins + 1,
             dtype=np.float64,
         )
+
+    @property
+    def cal_bins(self) -> int:
+        return self.cal_edges.size - 1
 
 
 @dataclass
@@ -188,6 +207,7 @@ class SampleResult:
     ft_before: np.ndarray
     ft_after: np.ndarray
     cal_counts: np.ndarray
+    cal_pair_counts: np.ndarray
     rows_read: int
     photon_rows: int
     valid_ft_photons: int
@@ -456,10 +476,10 @@ def parse_arguments() -> argparse.Namespace:
         help="Maximum FT coordinate in cm.",
     )
     parser.add_argument(
-        "--cal-bins",
-        type=int,
-        default=150,
-        help="Calorimeter strip-coordinate bins.",
+        "--cal-bin-width",
+        type=float,
+        default=4.5,
+        help="Calorimeter strip-coordinate bin width in cm.",
     )
     parser.add_argument(
         "--cal-min",
@@ -477,7 +497,7 @@ def parse_arguments() -> argparse.Namespace:
         "--calorimeter-strictness",
         type=int,
         choices=(1, 2, 3),
-        default=3,
+        default=2,
         help=(
             "Strictness whose existing PCal edge and dead-strip exclusions "
             "are overlaid. Histograms themselves remain uncut."
@@ -504,8 +524,11 @@ def parse_arguments() -> argparse.Namespace:
     if args.max_events is not None and args.max_events <= 0:
         parser.error("--max-events must be positive when supplied")
     #endif
-    if args.ft_bins <= 0 or args.cal_bins <= 0:
-        parser.error("histogram bin counts must be positive")
+    if args.ft_bins <= 0:
+        parser.error("--ft-bins must be positive")
+    #endif
+    if args.cal_bin_width <= 0.0:
+        parser.error("--cal-bin-width must be positive")
     #endif
     if args.ft_xy_max <= args.ft_xy_min:
         parser.error("--ft-xy-max must exceed --ft-xy-min")
@@ -647,6 +670,24 @@ def empty_cal_counts(histogram_config: HistogramConfig) -> np.ndarray:
     )
 
 
+def empty_cal_pair_counts(
+    histogram_config: HistogramConfig,
+) -> np.ndarray:
+    # Axes:
+    #   particle, layer, sector, coordinate pair, x bin, y bin
+    return np.zeros(
+        (
+            len(PARTICLE_KEYS),
+            len(LAYER_KEYS),
+            6,
+            len(PAIR_DEFINITIONS),
+            histogram_config.cal_bins,
+            histogram_config.cal_bins,
+        ),
+        dtype=np.uint32,
+    )
+
+
 def accumulate_sample(
     file_path: Path,
     tree_name: str,
@@ -665,6 +706,7 @@ def accumulate_sample(
     ft_before = np.zeros(ft_shape, dtype=np.uint64)
     ft_after = np.zeros(ft_shape, dtype=np.uint64)
     cal_counts = empty_cal_counts(histogram_config)
+    cal_pair_counts = empty_cal_pair_counts(histogram_config)
 
     ft_edges = histogram_config.ft_edges
     cal_edges = histogram_config.cal_edges
@@ -742,36 +784,35 @@ def accumulate_sample(
                 #endif
 
                 for layer_index, layer_number in enumerate(LAYER_NUMBERS):
-                    for coordinate_index, coordinate_key in enumerate(COORD_KEYS):
-                        values = np.asarray(
+                    coordinate_arrays = {
+                        coordinate_key: np.asarray(
                             arrays[f"cal_{coordinate_key}_{layer_number}"],
                             dtype=np.float64,
                         )
-                        valid = (
-                            particle_mask
-                            & np.isfinite(values)
-                            & (values != INVALID_SENTINEL)
-                            & (values >= histogram_config.cal_min_cm)
-                            & (values <= histogram_config.cal_max_cm)
-                        )
+                        for coordinate_key in COORD_KEYS
+                    }
 
-                        if not np.any(valid):
+                    for sector in range(1, 7):
+                        base_mask = particle_mask & (sectors == sector)
+                        if not np.any(base_mask):
                             continue
                         #endif
 
-                        selected_values = values[valid]
-                        selected_sectors = sectors[valid]
-
-                        for sector in range(1, 7):
-                            sector_values = selected_values[
-                                selected_sectors == sector
-                            ]
-                            if sector_values.size == 0:
+                        for coordinate_index, coordinate_key in enumerate(COORD_KEYS):
+                            values = coordinate_arrays[coordinate_key]
+                            valid = (
+                                base_mask
+                                & np.isfinite(values)
+                                & (values != INVALID_SENTINEL)
+                                & (values >= histogram_config.cal_min_cm)
+                                & (values <= histogram_config.cal_max_cm)
+                            )
+                            if not np.any(valid):
                                 continue
                             #endif
 
                             counts, _ = np.histogram(
-                                sector_values,
+                                values[valid],
                                 bins=cal_edges,
                             )
                             cal_counts[
@@ -780,6 +821,37 @@ def accumulate_sample(
                                 sector - 1,
                                 coordinate_index,
                             ] += counts.astype(np.uint64, copy=False)
+                        #endfor
+
+                        for pair_index, (_, x_key, y_key) in enumerate(PAIR_DEFINITIONS):
+                            x_values = coordinate_arrays[x_key]
+                            y_values = coordinate_arrays[y_key]
+                            valid_pair = (
+                                base_mask
+                                & np.isfinite(x_values)
+                                & np.isfinite(y_values)
+                                & (x_values != INVALID_SENTINEL)
+                                & (y_values != INVALID_SENTINEL)
+                                & (x_values >= histogram_config.cal_min_cm)
+                                & (x_values <= histogram_config.cal_max_cm)
+                                & (y_values >= histogram_config.cal_min_cm)
+                                & (y_values <= histogram_config.cal_max_cm)
+                            )
+                            if not np.any(valid_pair):
+                                continue
+                            #endif
+
+                            pair_counts, _, _ = np.histogram2d(
+                                x_values[valid_pair],
+                                y_values[valid_pair],
+                                bins=(cal_edges, cal_edges),
+                            )
+                            cal_pair_counts[
+                                particle_index,
+                                layer_index,
+                                sector - 1,
+                                pair_index,
+                            ] += pair_counts.astype(np.uint32, copy=False)
                         #endfor
                     #endfor
                 #endfor
@@ -791,6 +863,7 @@ def accumulate_sample(
         ft_before=ft_before,
         ft_after=ft_after,
         cal_counts=cal_counts,
+        cal_pair_counts=cal_pair_counts,
         rows_read=rows_read,
         photon_rows=photon_rows,
         valid_ft_photons=valid_ft_photons,
@@ -1114,6 +1187,17 @@ def draw_exclusions(
     #endfor
 
 
+def positive_minimum(*arrays: np.ndarray) -> float | None:
+    minima: list[float] = []
+    for array in arrays:
+        positive = np.asarray(array)[np.asarray(array) > 0.0]
+        if positive.size > 0:
+            minima.append(float(np.min(positive)))
+        #endif
+    #endfor
+    return min(minima) if minima else None
+
+
 def save_calorimeter_matching_summary(
     result: PeriodResult,
     output_base: Path,
@@ -1131,7 +1215,7 @@ def save_calorimeter_matching_summary(
 
     edges = histogram_config.cal_edges
     centers = 0.5 * (edges[:-1] + edges[1:])
-    bin_width_cm = float(edges[1] - edges[0])
+    bin_width_cm = histogram_config.cal_bin_width_cm
 
     figure, axes = plt.subplots(
         6,
@@ -1156,10 +1240,7 @@ def save_calorimeter_matching_summary(
                 sector_index,
                 coordinate_index,
             ]
-            data_density = normalized_histogram(
-                data_counts,
-                bin_width_cm,
-            )
+            data_density = normalized_histogram(data_counts, bin_width_cm)
 
             data_line = axis.step(
                 centers,
@@ -1170,6 +1251,7 @@ def save_calorimeter_matching_summary(
             )[0]
 
             mc_line = None
+            mc_density = np.zeros_like(data_density)
             if result.mc is not None:
                 mc_counts = result.mc.cal_counts[
                     particle_index,
@@ -1177,10 +1259,7 @@ def save_calorimeter_matching_summary(
                     sector_index,
                     coordinate_index,
                 ]
-                mc_density = normalized_histogram(
-                    mc_counts,
-                    bin_width_cm,
-                )
+                mc_density = normalized_histogram(mc_counts, bin_width_cm)
                 mc_line = axis.step(
                     centers,
                     mc_density,
@@ -1209,7 +1288,7 @@ def save_calorimeter_matching_summary(
 
             if coordinate_index == 0:
                 axis.set_ylabel(
-                    f"Sector {sector}\nNormalized entries",
+                    f"Sector {sector}\nNormalized entries / cm",
                     fontsize=10,
                 )
             #endif
@@ -1218,8 +1297,16 @@ def save_calorimeter_matching_summary(
                 histogram_config.cal_min_cm,
                 histogram_config.cal_max_cm,
             )
-            axis.set_ylim(bottom=0.0)
-            axis.grid(alpha=0.18)
+            axis.set_yscale("log")
+            minimum = positive_minimum(data_density, mc_density)
+            maximum = max(float(np.max(data_density)), float(np.max(mc_density)))
+            if minimum is not None and maximum > 0.0:
+                axis.set_ylim(
+                    max(minimum * 0.5, 1.0e-8),
+                    maximum * 2.0,
+                )
+            #endif
+            axis.grid(alpha=0.18, which="both")
 
             data_entries = int(np.sum(data_counts))
             if result.mc is not None:
@@ -1263,13 +1350,13 @@ def save_calorimeter_matching_summary(
     #endfor
 
     subtitle = (
-        "Independent unit-area normalization in every panel; "
+        f"4.5 cm bins; logarithmic scale; independent unit-area normalization; "
         "shaded intervals are displayed but not applied"
     )
     if not any_exclusion:
         subtitle = (
-            "Independent unit-area normalization in every panel; "
-            "no period-specific dead-strip exclusions are configured"
+            "4.5 cm bins; logarithmic scale; independent unit-area "
+            "normalization; no dead-strip exclusions configured"
         )
     #endif
 
@@ -1280,14 +1367,10 @@ def save_calorimeter_matching_summary(
     )
 
     if legend_handles is not None:
-        legend_labels = [
-            handle.get_label()
-            for handle in legend_handles
-            if handle is not None
-        ]
         legend_handles = [
             handle for handle in legend_handles if handle is not None
         ]
+        legend_labels = [handle.get_label() for handle in legend_handles]
         figure.legend(
             legend_handles,
             legend_labels,
@@ -1314,6 +1397,229 @@ def save_calorimeter_matching_summary(
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / (
         f"{result.dataset.key}_{layer_key}_{particle_key}_strip_matching.png"
+    )
+    figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    plt.close(figure)
+    return output_path
+
+
+def normalized_2d_histogram(counts: np.ndarray) -> np.ndarray:
+    total = float(np.sum(counts))
+    if total <= 0.0:
+        return np.zeros_like(counts, dtype=np.float64)
+    #endif
+    return counts.astype(np.float64) / total
+
+
+def draw_2d_exclusions(
+    axis: plt.Axes,
+    x_intervals: list[tuple[float, float, str]],
+    y_intervals: list[tuple[float, float, str]],
+) -> None:
+    for lower, upper, _ in x_intervals:
+        axis.axvspan(
+            lower,
+            upper,
+            alpha=0.12,
+            hatch="//",
+            edgecolor="white",
+            linewidth=0.6,
+        )
+    #endfor
+    for lower, upper, _ in y_intervals:
+        axis.axhspan(
+            lower,
+            upper,
+            alpha=0.12,
+            hatch="\\\\",
+            edgecolor="white",
+            linewidth=0.6,
+        )
+    #endfor
+
+
+def save_calorimeter_2d_matching_summary(
+    result: PeriodResult,
+    output_base: Path,
+    histogram_config: HistogramConfig,
+    layer_index: int,
+    particle_index: int,
+    pair_index: int,
+    strictness: int,
+    is_rgc: bool,
+    dpi: int,
+) -> Path:
+    layer_key = LAYER_KEYS[layer_index]
+    layer_label = LAYER_LABELS[layer_key]
+    particle_key = PARTICLE_KEYS[particle_index]
+    particle_label = particle_key.capitalize()
+    pair_key, x_key, y_key = PAIR_DEFINITIONS[pair_index]
+
+    number_of_rows = 2 if result.mc is not None else 1
+    figure, axes = plt.subplots(
+        number_of_rows,
+        6,
+        figsize=(22.0, 8.5 if number_of_rows == 2 else 4.8),
+        squeeze=False,
+        constrained_layout=True,
+    )
+
+    normalized_maps: list[np.ndarray] = []
+    for sector_index in range(6):
+        normalized_maps.append(
+            normalized_2d_histogram(
+                result.data.cal_pair_counts[
+                    particle_index,
+                    layer_index,
+                    sector_index,
+                    pair_index,
+                ]
+            )
+        )
+        if result.mc is not None:
+            normalized_maps.append(
+                normalized_2d_histogram(
+                    result.mc.cal_pair_counts[
+                        particle_index,
+                        layer_index,
+                        sector_index,
+                        pair_index,
+                    ]
+                )
+            )
+        #endif
+    #endfor
+
+    positive_values = [
+        values[values > 0.0]
+        for values in normalized_maps
+        if np.any(values > 0.0)
+    ]
+    if positive_values:
+        global_minimum = min(float(np.min(values)) for values in positive_values)
+        global_maximum = max(float(np.max(values)) for values in positive_values)
+        norm = LogNorm(
+            vmin=max(global_minimum, 1.0e-8),
+            vmax=max(global_maximum, global_minimum),
+        )
+    else:
+        norm = None
+    #endif
+
+    extent = (
+        histogram_config.cal_min_cm,
+        histogram_config.cal_max_cm,
+        histogram_config.cal_min_cm,
+        histogram_config.cal_max_cm,
+    )
+    first_image = None
+
+    for sector_index in range(6):
+        sector = sector_index + 1
+
+        data_map = normalized_2d_histogram(
+            result.data.cal_pair_counts[
+                particle_index,
+                layer_index,
+                sector_index,
+                pair_index,
+            ]
+        )
+        axis = axes[0, sector_index]
+        image = axis.imshow(
+            data_map.T,
+            origin="lower",
+            extent=extent,
+            interpolation="nearest",
+            aspect="equal",
+            cmap="viridis",
+            norm=norm,
+            rasterized=True,
+        )
+        if first_image is None:
+            first_image = image
+        #endif
+        axis.set_title(f"Sector {sector}")
+        if sector_index == 0:
+            axis.set_ylabel(f"Data\n{COORD_LABELS[y_key]}")
+        else:
+            axis.set_ylabel(COORD_LABELS[y_key])
+        #endif
+        axis.set_xlabel(COORD_LABELS[x_key])
+
+        x_intervals = exclusion_intervals(
+            result.dataset.key,
+            layer_key,
+            sector,
+            x_key,
+            strictness,
+            is_rgc,
+        )
+        y_intervals = exclusion_intervals(
+            result.dataset.key,
+            layer_key,
+            sector,
+            y_key,
+            strictness,
+            is_rgc,
+        )
+        draw_2d_exclusions(axis, x_intervals, y_intervals)
+
+        if result.mc is not None:
+            mc_map = normalized_2d_histogram(
+                result.mc.cal_pair_counts[
+                    particle_index,
+                    layer_index,
+                    sector_index,
+                    pair_index,
+                ]
+            )
+            axis = axes[1, sector_index]
+            axis.imshow(
+                mc_map.T,
+                origin="lower",
+                extent=extent,
+                interpolation="nearest",
+                aspect="equal",
+                cmap="viridis",
+                norm=norm,
+                rasterized=True,
+            )
+            if sector_index == 0:
+                axis.set_ylabel(f"MC\n{COORD_LABELS[y_key]}")
+            else:
+                axis.set_ylabel(COORD_LABELS[y_key])
+            #endif
+            axis.set_xlabel(COORD_LABELS[x_key])
+            draw_2d_exclusions(axis, x_intervals, y_intervals)
+        #endif
+    #endfor
+
+    if first_image is not None:
+        colorbar = figure.colorbar(
+            first_image,
+            ax=axes,
+            pad=0.01,
+            fraction=0.018,
+        )
+        colorbar.set_label(
+            "Fraction of entries per 4.5 cm × 4.5 cm bin"
+        )
+    #endif
+
+    figure.suptitle(
+        f"{result.dataset.label}: {layer_label} {particle_label} "
+        f"{x_key}-{y_key} occupancy\n"
+        "Independent unit-area normalization by panel; logarithmic color scale; "
+        "shaded exclusions are displayed but not applied",
+        fontsize=16,
+    )
+
+    output_dir = output_base / "calorimeter" / layer_key
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / (
+        f"{result.dataset.key}_{layer_key}_{particle_key}_"
+        f"{pair_key}_2d_matching.png"
     )
     figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
     plt.close(figure)
@@ -1369,7 +1675,7 @@ def main() -> int:
         ft_bins=args.ft_bins,
         ft_xy_min_cm=args.ft_xy_min,
         ft_xy_max_cm=args.ft_xy_max,
-        cal_bins=args.cal_bins,
+        cal_bin_width_cm=args.cal_bin_width,
         cal_min_cm=args.cal_min,
         cal_max_cm=args.cal_max,
     )
@@ -1393,6 +1699,7 @@ def main() -> int:
     print(f"Chunk size:             {args.chunk_size:,}")
     print(f"FT enabled:             {do_ft}")
     print(f"Calorimeter enabled:    {do_calorimeter}")
+    print(f"Calorimeter bin width:  {args.cal_bin_width:.3f} cm")
     print(f"Calorimeter strictness: {args.calorimeter_strictness}")
     if args.max_events is not None:
         print(f"Per-file row limit:     {args.max_events:,}")
@@ -1490,6 +1797,21 @@ def main() -> int:
                         dpi=args.dpi,
                     )
                     print(f"[PLOT] {output_path}", flush=True)
+
+                    for pair_index in range(len(PAIR_DEFINITIONS)):
+                        output_path = save_calorimeter_2d_matching_summary(
+                            result=result,
+                            output_base=args.output_base,
+                            histogram_config=histogram_config,
+                            layer_index=layer_index,
+                            particle_index=particle_index,
+                            pair_index=pair_index,
+                            strictness=args.calorimeter_strictness,
+                            is_rgc=is_rgc,
+                            dpi=args.dpi,
+                        )
+                        print(f"[PLOT] {output_path}", flush=True)
+                    #endfor
                 #endfor
             #endfor
         #endif
