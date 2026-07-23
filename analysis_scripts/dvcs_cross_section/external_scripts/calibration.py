@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v4.py
+plot_calibration_v5.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -18,7 +18,8 @@ Current modules
    - One-dimensional data/MC overlays use 4.5 cm strip-width bins and
      logarithmic vertical axes.
    - Original-style two-dimensional lu-lv, lu-lw, and lw-lv occupancy
-     maps are also produced with logarithmic color scales.
+     maps are also produced with logarithmic color scales. Raw counts are
+     used, with independent data and MC scales.
    - Existing fiducial exclusion intervals are shaded but are NOT applied to
      the plotted samples, so data/GEMC mismodeling remains visible.
    - The RGA Sp19-only PCal sector-2 lv exclusion is overlaid only for Sp19.
@@ -48,26 +49,26 @@ Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v4.py
+  python3 external_scripts/plot_calibration_v5.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v4.py --rgc
+  python3 external_scripts/plot_calibration_v5.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v4.py \
+  python3 external_scripts/plot_calibration_v5.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v4.py --skip-ft
+  python3 external_scripts/plot_calibration_v5.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v4.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v5.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -1403,12 +1404,41 @@ def save_calorimeter_matching_summary(
     return output_path
 
 
-def normalized_2d_histogram(counts: np.ndarray) -> np.ndarray:
-    total = float(np.sum(counts))
-    if total <= 0.0:
-        return np.zeros_like(counts, dtype=np.float64)
+def row_log_norm(
+    histograms: list[np.ndarray],
+) -> LogNorm | None:
+    """
+    Build one logarithmic normalization for one complete data or MC row.
+
+    Zero-count bins are ignored. The resulting normalization is shared across
+    all six sectors in that row so sector-to-sector occupancy differences
+    remain visible, while data and MC use independent scales.
+    """
+
+    positive_minima: list[float] = []
+    maxima: list[float] = []
+
+    for histogram in histograms:
+        positive = histogram[histogram > 0]
+        if positive.size == 0:
+            continue
+        #endif
+
+        positive_minima.append(float(np.min(positive)))
+        maxima.append(float(np.max(positive)))
+    #endfor
+
+    if not maxima:
+        return None
     #endif
-    return counts.astype(np.float64) / total
+
+    minimum = min(positive_minima)
+    maximum = max(maxima)
+
+    return LogNorm(
+        vmin=max(1.0, minimum),
+        vmax=max(maximum, minimum),
+    )
 
 
 def draw_2d_exclusions(
@@ -1426,6 +1456,7 @@ def draw_2d_exclusions(
             linewidth=0.6,
         )
     #endfor
+
     for lower, upper, _ in y_intervals:
         axis.axhspan(
             lower,
@@ -1455,55 +1486,53 @@ def save_calorimeter_2d_matching_summary(
     particle_label = particle_key.capitalize()
     pair_key, x_key, y_key = PAIR_DEFINITIONS[pair_index]
 
-    number_of_rows = 2 if result.mc is not None else 1
+    has_mc = result.mc is not None
+    number_of_rows = 2 if has_mc else 1
+
+    # Manual spacing is used here rather than constrained_layout because the
+    # latter leaves excessive vertical and horizontal gaps for a 2x6 canvas.
     figure, axes = plt.subplots(
         number_of_rows,
         6,
-        figsize=(22.0, 8.5 if number_of_rows == 2 else 4.8),
+        figsize=(19.5, 6.9 if has_mc else 3.9),
         squeeze=False,
-        constrained_layout=True,
+        sharex=True,
+        sharey=True,
+    )
+    figure.subplots_adjust(
+        left=0.050,
+        right=0.925,
+        bottom=0.105,
+        top=0.835,
+        wspace=0.075,
+        hspace=0.090,
     )
 
-    normalized_maps: list[np.ndarray] = []
-    for sector_index in range(6):
-        normalized_maps.append(
-            normalized_2d_histogram(
-                result.data.cal_pair_counts[
-                    particle_index,
-                    layer_index,
-                    sector_index,
-                    pair_index,
-                ]
-            )
-        )
-        if result.mc is not None:
-            normalized_maps.append(
-                normalized_2d_histogram(
-                    result.mc.cal_pair_counts[
-                        particle_index,
-                        layer_index,
-                        sector_index,
-                        pair_index,
-                    ]
-                )
-            )
-        #endif
-    #endfor
-
-    positive_values = [
-        values[values > 0.0]
-        for values in normalized_maps
-        if np.any(values > 0.0)
+    data_histograms = [
+        result.data.cal_pair_counts[
+            particle_index,
+            layer_index,
+            sector_index,
+            pair_index,
+        ]
+        for sector_index in range(6)
     ]
-    if positive_values:
-        global_minimum = min(float(np.min(values)) for values in positive_values)
-        global_maximum = max(float(np.max(values)) for values in positive_values)
-        norm = LogNorm(
-            vmin=max(global_minimum, 1.0e-8),
-            vmax=max(global_maximum, global_minimum),
-        )
-    else:
-        norm = None
+    data_norm = row_log_norm(data_histograms)
+
+    mc_histograms: list[np.ndarray] = []
+    mc_norm = None
+    if has_mc:
+        assert result.mc is not None
+        mc_histograms = [
+            result.mc.cal_pair_counts[
+                particle_index,
+                layer_index,
+                sector_index,
+                pair_index,
+            ]
+            for sector_index in range(6)
+        ]
+        mc_norm = row_log_norm(mc_histograms)
     #endif
 
     extent = (
@@ -1512,40 +1541,12 @@ def save_calorimeter_2d_matching_summary(
         histogram_config.cal_min_cm,
         histogram_config.cal_max_cm,
     )
-    first_image = None
+
+    first_data_image = None
+    first_mc_image = None
 
     for sector_index in range(6):
         sector = sector_index + 1
-
-        data_map = normalized_2d_histogram(
-            result.data.cal_pair_counts[
-                particle_index,
-                layer_index,
-                sector_index,
-                pair_index,
-            ]
-        )
-        axis = axes[0, sector_index]
-        image = axis.imshow(
-            data_map.T,
-            origin="lower",
-            extent=extent,
-            interpolation="nearest",
-            aspect="equal",
-            cmap="viridis",
-            norm=norm,
-            rasterized=True,
-        )
-        if first_image is None:
-            first_image = image
-        #endif
-        axis.set_title(f"Sector {sector}")
-        if sector_index == 0:
-            axis.set_ylabel(f"Data\n{COORD_LABELS[y_key]}")
-        else:
-            axis.set_ylabel(COORD_LABELS[y_key])
-        #endif
-        axis.set_xlabel(COORD_LABELS[x_key])
 
         x_intervals = exclusion_intervals(
             result.dataset.key,
@@ -1563,56 +1564,101 @@ def save_calorimeter_2d_matching_summary(
             strictness,
             is_rgc,
         )
-        draw_2d_exclusions(axis, x_intervals, y_intervals)
 
-        if result.mc is not None:
-            mc_map = normalized_2d_histogram(
-                result.mc.cal_pair_counts[
-                    particle_index,
-                    layer_index,
-                    sector_index,
-                    pair_index,
-                ]
+        data_axis = axes[0, sector_index]
+        data_image = data_axis.imshow(
+            data_histograms[sector_index].T,
+            origin="lower",
+            extent=extent,
+            interpolation="nearest",
+            aspect="equal",
+            cmap="viridis",
+            norm=data_norm,
+            rasterized=True,
+        )
+        if first_data_image is None:
+            first_data_image = data_image
+        #endif
+
+        data_axis.set_title(f"Sector {sector}", fontsize=11, pad=4)
+        data_axis.set_xlabel(COORD_LABELS[x_key], fontsize=9)
+        if sector_index == 0:
+            data_axis.set_ylabel(
+                f"Data\n{COORD_LABELS[y_key]}",
+                fontsize=9,
             )
-            axis = axes[1, sector_index]
-            axis.imshow(
-                mc_map.T,
+        #endif
+        data_axis.tick_params(labelsize=8)
+        draw_2d_exclusions(data_axis, x_intervals, y_intervals)
+
+        if has_mc:
+            assert result.mc is not None
+            mc_axis = axes[1, sector_index]
+            mc_image = mc_axis.imshow(
+                mc_histograms[sector_index].T,
                 origin="lower",
                 extent=extent,
                 interpolation="nearest",
                 aspect="equal",
                 cmap="viridis",
-                norm=norm,
+                norm=mc_norm,
                 rasterized=True,
             )
-            if sector_index == 0:
-                axis.set_ylabel(f"MC\n{COORD_LABELS[y_key]}")
-            else:
-                axis.set_ylabel(COORD_LABELS[y_key])
+            if first_mc_image is None:
+                first_mc_image = mc_image
             #endif
-            axis.set_xlabel(COORD_LABELS[x_key])
-            draw_2d_exclusions(axis, x_intervals, y_intervals)
+
+            mc_axis.set_xlabel(COORD_LABELS[x_key], fontsize=9)
+            if sector_index == 0:
+                mc_axis.set_ylabel(
+                    f"MC\n{COORD_LABELS[y_key]}",
+                    fontsize=9,
+                )
+            #endif
+            mc_axis.tick_params(labelsize=8)
+            draw_2d_exclusions(mc_axis, x_intervals, y_intervals)
         #endif
     #endfor
 
-    if first_image is not None:
-        colorbar = figure.colorbar(
-            first_image,
-            ax=axes,
-            pad=0.01,
-            fraction=0.018,
+    # Separate colorbars preserve the very different absolute statistics in
+    # data and MC. Each bar applies to all six sectors in its corresponding row.
+    if first_data_image is not None:
+        data_colorbar_axis = figure.add_axes(
+            [0.942, 0.535 if has_mc else 0.175, 0.012, 0.300 if has_mc else 0.625]
         )
-        colorbar.set_label(
-            "Fraction of entries per 4.5 cm × 4.5 cm bin"
+        data_colorbar = figure.colorbar(
+            first_data_image,
+            cax=data_colorbar_axis,
         )
+        data_colorbar.set_label(
+            "Data entries per 4.5 cm × 4.5 cm bin",
+            fontsize=9,
+        )
+        data_colorbar.ax.tick_params(labelsize=8)
+    #endif
+
+    if has_mc and first_mc_image is not None:
+        mc_colorbar_axis = figure.add_axes(
+            [0.942, 0.105, 0.012, 0.300]
+        )
+        mc_colorbar = figure.colorbar(
+            first_mc_image,
+            cax=mc_colorbar_axis,
+        )
+        mc_colorbar.set_label(
+            "MC entries per 4.5 cm × 4.5 cm bin",
+            fontsize=9,
+        )
+        mc_colorbar.ax.tick_params(labelsize=8)
     #endif
 
     figure.suptitle(
         f"{result.dataset.label}: {layer_label} {particle_label} "
         f"{x_key}-{y_key} occupancy\n"
-        "Independent unit-area normalization by panel; logarithmic color scale; "
+        "Raw entries; logarithmic color scales are independent for data and MC; "
         "shaded exclusions are displayed but not applied",
-        fontsize=16,
+        fontsize=14,
+        y=0.965,
     )
 
     output_dir = output_base / "calorimeter" / layer_key
@@ -1621,7 +1667,12 @@ def save_calorimeter_2d_matching_summary(
         f"{result.dataset.key}_{layer_key}_{particle_key}_"
         f"{pair_key}_2d_matching.png"
     )
-    figure.savefig(output_path, dpi=dpi, bbox_inches="tight")
+    figure.savefig(
+        output_path,
+        dpi=dpi,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
     plt.close(figure)
     return output_path
 
