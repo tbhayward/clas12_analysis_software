@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v5.py
+plot_calibration_v6.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -41,34 +41,37 @@ Default RGC input
 Default outputs
 ---------------
 output/calibration/forward_tagger/
-output/calibration/calorimeter/pcal/
-output/calibration/calorimeter/ecin/
-output/calibration/calorimeter/ecout/
+output/calibration/calorimeter/before_cuts/pcal/
+output/calibration/calorimeter/before_cuts/ecin/
+output/calibration/calorimeter/before_cuts/ecout/
+output/calibration/calorimeter/after_cuts/pcal/
+output/calibration/calorimeter/after_cuts/ecin/
+output/calibration/calorimeter/after_cuts/ecout/
 
 Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v5.py
+  python3 external_scripts/plot_calibration_v6.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v5.py --rgc
+  python3 external_scripts/plot_calibration_v6.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v5.py \
+  python3 external_scripts/plot_calibration_v6.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v5.py --skip-ft
+  python3 external_scripts/plot_calibration_v6.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v5.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v6.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -207,8 +210,10 @@ class HistogramConfig:
 class SampleResult:
     ft_before: np.ndarray
     ft_after: np.ndarray
-    cal_counts: np.ndarray
-    cal_pair_counts: np.ndarray
+    cal_counts_before: np.ndarray
+    cal_counts_after: np.ndarray
+    cal_pair_counts_before: np.ndarray
+    cal_pair_counts_after: np.ndarray
     rows_read: int
     photon_rows: int
     valid_ft_photons: int
@@ -373,6 +378,69 @@ def exclusion_intervals(
     #endfor
 
     return intervals
+
+
+def calorimeter_fiducial_mask(
+    particle_mask: np.ndarray,
+    sectors: np.ndarray,
+    coordinate_arrays: dict[tuple[str, str], np.ndarray],
+    dataset_key: str,
+    strictness: int,
+    is_rgc: bool,
+) -> np.ndarray:
+    """
+    Apply the complete particle-level calorimeter fiducial decision.
+
+    This reproduces the supplied Java logic:
+      * PCal lv and lw must exceed the strictness-dependent edge threshold.
+      * For strictness >= 2, applicable RGA dead-strip intervals are removed.
+      * The Sp19-only interval is applied only to RGA Sp19 Inb.
+
+    The result is calculated once per particle species and ROOT chunk, then
+    reused for every layer, sector, coordinate, and 2D coordinate pair.
+    """
+
+    accepted = particle_mask.copy()
+    threshold_cm = pcal_edge_threshold_cm(strictness)
+
+    pcal_lv = coordinate_arrays[("pcal", "lv")]
+    pcal_lw = coordinate_arrays[("pcal", "lw")]
+
+    accepted &= np.isfinite(pcal_lv)
+    accepted &= np.isfinite(pcal_lw)
+    accepted &= pcal_lv != INVALID_SENTINEL
+    accepted &= pcal_lw != INVALID_SENTINEL
+    accepted &= pcal_lv >= threshold_cm
+    accepted &= pcal_lw >= threshold_cm
+
+    if strictness < 2 or is_rgc:
+        return accepted
+    #endif
+
+    for (
+        layer_key,
+        sector,
+        coordinate_key,
+        lower,
+        upper,
+        applicability,
+    ) in DEAD_STRIP_EXCLUSIONS:
+        if applicability == "sp19_only" and dataset_key != "rga_sp19_inb":
+            continue
+        #endif
+
+        values = coordinate_arrays[(layer_key, coordinate_key)]
+        in_interval = (
+            (sectors == sector)
+            & np.isfinite(values)
+            & (values != INVALID_SENTINEL)
+            & (values > lower)
+            & (values < upper)
+        )
+        accepted &= ~in_interval
+    #endfor
+
+    return accepted
 
 
 # =============================================================================
@@ -698,6 +766,9 @@ def accumulate_sample(
     max_events: int | None,
     do_ft: bool,
     do_calorimeter: bool,
+    dataset_key: str,
+    calorimeter_strictness: int,
+    is_rgc: bool,
 ) -> SampleResult:
     start_time = time.perf_counter()
     branches = required_branches(do_ft, do_calorimeter)
@@ -706,8 +777,10 @@ def accumulate_sample(
     ft_shape = (histogram_config.ft_bins, histogram_config.ft_bins)
     ft_before = np.zeros(ft_shape, dtype=np.uint64)
     ft_after = np.zeros(ft_shape, dtype=np.uint64)
-    cal_counts = empty_cal_counts(histogram_config)
-    cal_pair_counts = empty_cal_pair_counts(histogram_config)
+    cal_counts_before = empty_cal_counts(histogram_config)
+    cal_counts_after = empty_cal_counts(histogram_config)
+    cal_pair_counts_before = empty_cal_pair_counts(histogram_config)
+    cal_pair_counts_after = empty_cal_pair_counts(histogram_config)
 
     ft_edges = histogram_config.ft_edges
     cal_edges = histogram_config.cal_edges
@@ -778,58 +851,95 @@ def accumulate_sample(
             sectors = np.asarray(arrays["cal_sector"], dtype=np.int16)
             valid_sector = (sectors >= 1) & (sectors <= 6)
 
+            # Read each calorimeter coordinate array exactly once per chunk.
+            coordinate_arrays = {
+                (layer_key, coordinate_key): np.asarray(
+                    arrays[f"cal_{coordinate_key}_{layer_number}"],
+                    dtype=np.float64,
+                )
+                for layer_key, layer_number in zip(
+                    LAYER_KEYS,
+                    LAYER_NUMBERS,
+                )
+                for coordinate_key in COORD_KEYS
+            }
+
             for particle_index, particle_pid in enumerate(PARTICLE_PIDS):
                 particle_mask = valid_sector & (pid == particle_pid)
                 if not np.any(particle_mask):
                     continue
                 #endif
 
-                for layer_index, layer_number in enumerate(LAYER_NUMBERS):
-                    coordinate_arrays = {
-                        coordinate_key: np.asarray(
-                            arrays[f"cal_{coordinate_key}_{layer_number}"],
-                            dtype=np.float64,
-                        )
+                after_cut_mask = calorimeter_fiducial_mask(
+                    particle_mask=particle_mask,
+                    sectors=sectors,
+                    coordinate_arrays=coordinate_arrays,
+                    dataset_key=dataset_key,
+                    strictness=calorimeter_strictness,
+                    is_rgc=is_rgc,
+                )
+
+                for layer_index, layer_key in enumerate(LAYER_KEYS):
+                    layer_arrays = {
+                        coordinate_key: coordinate_arrays[
+                            (layer_key, coordinate_key)
+                        ]
                         for coordinate_key in COORD_KEYS
                     }
 
                     for sector in range(1, 7):
-                        base_mask = particle_mask & (sectors == sector)
-                        if not np.any(base_mask):
+                        sector_mask = particle_mask & (sectors == sector)
+                        sector_after_mask = (
+                            after_cut_mask & (sectors == sector)
+                        )
+
+                        if not np.any(sector_mask):
                             continue
                         #endif
 
                         for coordinate_index, coordinate_key in enumerate(COORD_KEYS):
-                            values = coordinate_arrays[coordinate_key]
-                            valid = (
-                                base_mask
-                                & np.isfinite(values)
+                            values = layer_arrays[coordinate_key]
+                            valid_coordinate = (
+                                np.isfinite(values)
                                 & (values != INVALID_SENTINEL)
                                 & (values >= histogram_config.cal_min_cm)
                                 & (values <= histogram_config.cal_max_cm)
                             )
-                            if not np.any(valid):
-                                continue
+
+                            before_mask = sector_mask & valid_coordinate
+                            if np.any(before_mask):
+                                counts, _ = np.histogram(
+                                    values[before_mask],
+                                    bins=cal_edges,
+                                )
+                                cal_counts_before[
+                                    particle_index,
+                                    layer_index,
+                                    sector - 1,
+                                    coordinate_index,
+                                ] += counts.astype(np.uint64, copy=False)
                             #endif
 
-                            counts, _ = np.histogram(
-                                values[valid],
-                                bins=cal_edges,
-                            )
-                            cal_counts[
-                                particle_index,
-                                layer_index,
-                                sector - 1,
-                                coordinate_index,
-                            ] += counts.astype(np.uint64, copy=False)
+                            after_mask = sector_after_mask & valid_coordinate
+                            if np.any(after_mask):
+                                counts, _ = np.histogram(
+                                    values[after_mask],
+                                    bins=cal_edges,
+                                )
+                                cal_counts_after[
+                                    particle_index,
+                                    layer_index,
+                                    sector - 1,
+                                    coordinate_index,
+                                ] += counts.astype(np.uint64, copy=False)
+                            #endif
                         #endfor
 
                         for pair_index, (_, x_key, y_key) in enumerate(PAIR_DEFINITIONS):
-                            x_values = coordinate_arrays[x_key]
-                            y_values = coordinate_arrays[y_key]
+                            x_values = layer_arrays[x_key]
+                            y_values = layer_arrays[y_key]
                             valid_pair = (
-                                base_mask
-                                & np.isfinite(x_values)
+                                np.isfinite(x_values)
                                 & np.isfinite(y_values)
                                 & (x_values != INVALID_SENTINEL)
                                 & (y_values != INVALID_SENTINEL)
@@ -838,21 +948,36 @@ def accumulate_sample(
                                 & (y_values >= histogram_config.cal_min_cm)
                                 & (y_values <= histogram_config.cal_max_cm)
                             )
-                            if not np.any(valid_pair):
-                                continue
+
+                            before_pair_mask = sector_mask & valid_pair
+                            if np.any(before_pair_mask):
+                                pair_counts, _, _ = np.histogram2d(
+                                    x_values[before_pair_mask],
+                                    y_values[before_pair_mask],
+                                    bins=(cal_edges, cal_edges),
+                                )
+                                cal_pair_counts_before[
+                                    particle_index,
+                                    layer_index,
+                                    sector - 1,
+                                    pair_index,
+                                ] += pair_counts.astype(np.uint32, copy=False)
                             #endif
 
-                            pair_counts, _, _ = np.histogram2d(
-                                x_values[valid_pair],
-                                y_values[valid_pair],
-                                bins=(cal_edges, cal_edges),
-                            )
-                            cal_pair_counts[
-                                particle_index,
-                                layer_index,
-                                sector - 1,
-                                pair_index,
-                            ] += pair_counts.astype(np.uint32, copy=False)
+                            after_pair_mask = sector_after_mask & valid_pair
+                            if np.any(after_pair_mask):
+                                pair_counts, _, _ = np.histogram2d(
+                                    x_values[after_pair_mask],
+                                    y_values[after_pair_mask],
+                                    bins=(cal_edges, cal_edges),
+                                )
+                                cal_pair_counts_after[
+                                    particle_index,
+                                    layer_index,
+                                    sector - 1,
+                                    pair_index,
+                                ] += pair_counts.astype(np.uint32, copy=False)
+                            #endif
                         #endfor
                     #endfor
                 #endfor
@@ -863,8 +988,10 @@ def accumulate_sample(
     return SampleResult(
         ft_before=ft_before,
         ft_after=ft_after,
-        cal_counts=cal_counts,
-        cal_pair_counts=cal_pair_counts,
+        cal_counts_before=cal_counts_before,
+        cal_counts_after=cal_counts_after,
+        cal_pair_counts_before=cal_pair_counts_before,
+        cal_pair_counts_after=cal_pair_counts_after,
         rows_read=rows_read,
         photon_rows=photon_rows,
         valid_ft_photons=valid_ft_photons,
@@ -883,6 +1010,8 @@ def process_period(
     max_events: int | None,
     do_ft: bool,
     do_calorimeter: bool,
+    calorimeter_strictness: int,
+    is_rgc: bool,
 ) -> PeriodResult:
     start_time = time.perf_counter()
 
@@ -895,6 +1024,9 @@ def process_period(
         max_events,
         do_ft,
         do_calorimeter,
+        dataset.key,
+        calorimeter_strictness,
+        is_rgc,
     )
 
     mc = None
@@ -908,6 +1040,9 @@ def process_period(
             max_events,
             do_ft,
             do_calorimeter,
+            dataset.key,
+            calorimeter_strictness,
+            is_rgc,
         )
     #endif
 
@@ -1207,8 +1342,13 @@ def save_calorimeter_matching_summary(
     particle_index: int,
     strictness: int,
     is_rgc: bool,
+    cut_stage: str,
     dpi: int,
 ) -> Path:
+    if cut_stage not in ("before_cuts", "after_cuts"):
+        raise ValueError(f"Unknown calorimeter cut stage: {cut_stage}")
+    #endif
+
     layer_key = LAYER_KEYS[layer_index]
     layer_label = LAYER_LABELS[layer_key]
     particle_key = PARTICLE_KEYS[particle_index]
@@ -1235,7 +1375,12 @@ def save_calorimeter_matching_summary(
         for coordinate_index, coordinate_key in enumerate(COORD_KEYS):
             axis = axes[sector_index, coordinate_index]
 
-            data_counts = result.data.cal_counts[
+            data_counts_array = (
+                result.data.cal_counts_before
+                if cut_stage == "before_cuts"
+                else result.data.cal_counts_after
+            )
+            data_counts = data_counts_array[
                 particle_index,
                 layer_index,
                 sector_index,
@@ -1254,7 +1399,12 @@ def save_calorimeter_matching_summary(
             mc_line = None
             mc_density = np.zeros_like(data_density)
             if result.mc is not None:
-                mc_counts = result.mc.cal_counts[
+                mc_counts_array = (
+                    result.mc.cal_counts_before
+                    if cut_stage == "before_cuts"
+                    else result.mc.cal_counts_after
+                )
+                mc_counts = mc_counts_array[
                     particle_index,
                     layer_index,
                     sector_index,
@@ -1313,7 +1463,7 @@ def save_calorimeter_matching_summary(
             if result.mc is not None:
                 mc_entries = int(
                     np.sum(
-                        result.mc.cal_counts[
+                        mc_counts_array[
                             particle_index,
                             layer_index,
                             sector_index,
@@ -1350,14 +1500,19 @@ def save_calorimeter_matching_summary(
         axis.set_xlabel("Strip coordinate (cm)")
     #endfor
 
+    cut_description = (
+        "fiducial exclusions are displayed but not applied"
+        if cut_stage == "before_cuts"
+        else "complete calorimeter fiducial cuts are applied"
+    )
     subtitle = (
-        f"4.5 cm bins; logarithmic scale; independent unit-area normalization; "
-        "shaded intervals are displayed but not applied"
+        "4.5 cm bins; logarithmic scale; independent unit-area "
+        f"normalization; {cut_description}"
     )
     if not any_exclusion:
         subtitle = (
             "4.5 cm bins; logarithmic scale; independent unit-area "
-            "normalization; no dead-strip exclusions configured"
+            f"normalization; {cut_description}"
         )
     #endif
 
@@ -1386,15 +1541,20 @@ def save_calorimeter_matching_summary(
         0.005,
         (
             f"Overlay strictness = {strictness}. "
-            "Raw valid calorimeter-coordinate entries are plotted; "
-            "fiducial exclusions are not imposed."
+            + (
+                "Raw valid calorimeter-coordinate entries are plotted; "
+                "fiducial exclusions are not imposed."
+                if cut_stage == "before_cuts"
+                else "The complete particle-level calorimeter fiducial "
+                "selection is imposed."
+            )
         ),
         ha="left",
         va="bottom",
         fontsize=9,
     )
 
-    output_dir = output_base / "calorimeter" / layer_key
+    output_dir = output_base / "calorimeter" / cut_stage / layer_key
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / (
         f"{result.dataset.key}_{layer_key}_{particle_key}_strip_matching.png"
@@ -1478,8 +1638,13 @@ def save_calorimeter_2d_matching_summary(
     pair_index: int,
     strictness: int,
     is_rgc: bool,
+    cut_stage: str,
     dpi: int,
 ) -> Path:
+    if cut_stage not in ("before_cuts", "after_cuts"):
+        raise ValueError(f"Unknown calorimeter cut stage: {cut_stage}")
+    #endif
+
     layer_key = LAYER_KEYS[layer_index]
     layer_label = LAYER_LABELS[layer_key]
     particle_key = PARTICLE_KEYS[particle_index]
@@ -1508,8 +1673,13 @@ def save_calorimeter_2d_matching_summary(
         hspace=0.090,
     )
 
+    data_pair_counts = (
+        result.data.cal_pair_counts_before
+        if cut_stage == "before_cuts"
+        else result.data.cal_pair_counts_after
+    )
     data_histograms = [
-        result.data.cal_pair_counts[
+        data_pair_counts[
             particle_index,
             layer_index,
             sector_index,
@@ -1523,8 +1693,13 @@ def save_calorimeter_2d_matching_summary(
     mc_norm = None
     if has_mc:
         assert result.mc is not None
+        mc_pair_counts = (
+            result.mc.cal_pair_counts_before
+            if cut_stage == "before_cuts"
+            else result.mc.cal_pair_counts_after
+        )
         mc_histograms = [
-            result.mc.cal_pair_counts[
+            mc_pair_counts[
                 particle_index,
                 layer_index,
                 sector_index,
@@ -1581,7 +1756,11 @@ def save_calorimeter_2d_matching_summary(
         #endif
 
         data_axis.set_title(f"Sector {sector}", fontsize=11, pad=4)
-        data_axis.set_xlabel(COORD_LABELS[x_key], fontsize=9)
+        if not has_mc:
+            data_axis.set_xlabel(COORD_LABELS[x_key], fontsize=9)
+        else:
+            data_axis.tick_params(labelbottom=False)
+        #endif
         if sector_index == 0:
             data_axis.set_ylabel(
                 f"Data\n{COORD_LABELS[y_key]}",
@@ -1656,12 +1835,16 @@ def save_calorimeter_2d_matching_summary(
         f"{result.dataset.label}: {layer_label} {particle_label} "
         f"{x_key}-{y_key} occupancy\n"
         "Raw entries; logarithmic color scales are independent for data and MC; "
-        "shaded exclusions are displayed but not applied",
+        + (
+            "shaded exclusions are displayed but not applied"
+            if cut_stage == "before_cuts"
+            else "complete calorimeter fiducial cuts are applied"
+        ),
         fontsize=14,
         y=0.965,
     )
 
-    output_dir = output_base / "calorimeter" / layer_key
+    output_dir = output_base / "calorimeter" / cut_stage / layer_key
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / (
         f"{result.dataset.key}_{layer_key}_{particle_key}_"
@@ -1774,6 +1957,8 @@ def main() -> int:
                 args.max_events,
                 do_ft,
                 do_calorimeter,
+                args.calorimeter_strictness,
+                is_rgc,
             ): dataset
             for dataset in datasets
         }
@@ -1835,33 +2020,37 @@ def main() -> int:
         #endif
 
         if do_calorimeter:
-            for layer_index in range(len(LAYER_KEYS)):
-                for particle_index in range(len(PARTICLE_KEYS)):
-                    output_path = save_calorimeter_matching_summary(
-                        result=result,
-                        output_base=args.output_base,
-                        histogram_config=histogram_config,
-                        layer_index=layer_index,
-                        particle_index=particle_index,
-                        strictness=args.calorimeter_strictness,
-                        is_rgc=is_rgc,
-                        dpi=args.dpi,
-                    )
-                    print(f"[PLOT] {output_path}", flush=True)
-
-                    for pair_index in range(len(PAIR_DEFINITIONS)):
-                        output_path = save_calorimeter_2d_matching_summary(
+            for cut_stage in ("before_cuts", "after_cuts"):
+                for layer_index in range(len(LAYER_KEYS)):
+                    for particle_index in range(len(PARTICLE_KEYS)):
+                        output_path = save_calorimeter_matching_summary(
                             result=result,
                             output_base=args.output_base,
                             histogram_config=histogram_config,
                             layer_index=layer_index,
                             particle_index=particle_index,
-                            pair_index=pair_index,
                             strictness=args.calorimeter_strictness,
                             is_rgc=is_rgc,
+                            cut_stage=cut_stage,
                             dpi=args.dpi,
                         )
                         print(f"[PLOT] {output_path}", flush=True)
+
+                        for pair_index in range(len(PAIR_DEFINITIONS)):
+                            output_path = save_calorimeter_2d_matching_summary(
+                                result=result,
+                                output_base=args.output_base,
+                                histogram_config=histogram_config,
+                                layer_index=layer_index,
+                                particle_index=particle_index,
+                                pair_index=pair_index,
+                                strictness=args.calorimeter_strictness,
+                                is_rgc=is_rgc,
+                                cut_stage=cut_stage,
+                                dpi=args.dpi,
+                            )
+                            print(f"[PLOT] {output_path}", flush=True)
+                        #endfor
                     #endfor
                 #endfor
             #endfor
