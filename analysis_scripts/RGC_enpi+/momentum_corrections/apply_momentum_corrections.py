@@ -37,7 +37,8 @@ tree producer.
 `phi` is the Trento pion azimuth on [0, 2 pi). `isrTheta` and `isrPhi` are
 copied without modification.
 
-By default, only corrected events satisfying Mx2 < 1.5 GeV^2 are written.
+Corrected events are required to satisfy 0.1 < x < 0.6.
+By default, they must also satisfy Mx2 < 1.5 GeV^2.
 Use --no-mx2-skim to retain every successfully reconstructed event.
 
 Momentum-model conventions reproduced from the extraction scripts:
@@ -885,6 +886,10 @@ def process_chunk(
     valid = finite_output_mask(output)
     finite_rejected = int(np.count_nonzero(~valid))
 
+    x_mask = (output["x"] > 0.1) & (output["x"] < 0.6)
+    x_rejected = int(np.count_nonzero(valid & ~x_mask))
+    valid &= x_mask
+
     if apply_mx2_skim:
         skim_mask = output["Mx2"] < mx2_max
         skim_rejected = int(np.count_nonzero(valid & ~skim_mask))
@@ -898,6 +903,7 @@ def process_chunk(
         "written": int(np.count_nonzero(valid)),
         "detector_rejected": detector_rejected,
         "nonfinite_rejected": finite_rejected,
+        "x_rejected": x_rejected,
         "mx2_rejected": skim_rejected,
         **correction_counts,
     }
@@ -991,6 +997,7 @@ def main() -> int:
         "written": 0,
         "detector_rejected": 0,
         "nonfinite_rejected": 0,
+        "x_rejected": 0,
         "mx2_rejected": 0,
         "electron_corrected": 0,
         "fd_pion_corrected": 0,
@@ -1039,6 +1046,7 @@ def main() -> int:
                 f"input={counters['input']:,}, "
                 f"written={counters['written']:,}, "
                 f"nonfinite={counters['nonfinite_rejected']:,}, "
+                f"x skim={counters['x_rejected']:,}, "
                 f"Mx2 skim={counters['mx2_rejected']:,}"
             )
 
@@ -1050,6 +1058,10 @@ def main() -> int:
     print(f"Non-FD pion events rejected:  {totals['detector_rejected']:,}")
     print(f"Written events:               {totals['written']:,}")
     print(f"Non-finite rejected:          {totals['nonfinite_rejected']:,}")
+    print(
+        f"x <= 0.1 or x >= 0.6 rejected: "
+        f"{totals['x_rejected']:,}"
+    )
     if args.no_mx2_skim:
         print("Corrected-Mx2 skim:           disabled")
     else:
