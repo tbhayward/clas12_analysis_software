@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
 """
-derive_piplus_momentum_corrections_v9.py
+derive_piplus_momentum_corrections_v10.py
 
-Derive and validate FD pi+ momentum corrections for the RGC exclusive-pi+
+Derive and validate FD and CD pi+ momentum corrections for the RGC exclusive-pi+
 analysis using inclusive e pi+ X data and the missing-neutron peak
 
     Mx2(e pi+) = (p_beam + p_target - p_e' - p_pi+)^2.
 
-The finalized electron correction is applied first.  Central-detector pions
-are excluded because the diagnostic spectra do not contain a resolvable
-missing-neutron peak.
+The finalized electron correction is applied first.  Central-detector pions are now calibrated and validated independently in three azimuthal sectors.
 
 For each of four calibration periods and six FD sectors the script:
 
@@ -35,7 +33,7 @@ The output explicitly compares three reconstruction stages:
 
 The one-hadron ROOT branches p_p, p_theta, and p_phi are interpreted as pi+
 kinematics.  The detector branch identifies the pion detector, and only
-detector == 1 events enter this FD calibration.
+detector == 1 events enter the FD calibration and detector == 2 events enter the CD calibration.
 
 Primary output:
     output/piplus_diagnostics/
@@ -239,6 +237,30 @@ def fd_local_phi_deg(
 
     local_phi = np.mod(phi_deg - lower_edge, 360.0)
     local_phi[(local_phi < 0.0) | (local_phi >= 60.0)] = np.nan
+    return local_phi
+
+
+def cd_sector_from_phi_rad(phi_rad: np.ndarray) -> np.ndarray:
+    """Assign the three CD azimuthal sectors used by the pi+ analysis."""
+    phi_deg = wrap_phi_deg(np.asarray(phi_rad, dtype=float) * RAD2DEG)
+    sector = np.full(phi_deg.shape, -1, dtype=np.int16)
+    sector[(phi_deg >= 272.5) | (phi_deg < 32.5)] = 1
+    sector[(phi_deg >= 32.5) & (phi_deg < 150.5)] = 2
+    sector[(phi_deg >= 150.5) & (phi_deg < 272.5)] = 3
+    return sector
+
+
+def cd_local_phi_deg(
+    phi_rad: np.ndarray,
+    sector: np.ndarray,
+) -> np.ndarray:
+    """Return azimuth measured from the lower edge of each CD sector."""
+    phi_deg = wrap_phi_deg(np.asarray(phi_rad, dtype=float) * RAD2DEG)
+    sector = np.asarray(sector, dtype=int)
+    local_phi = np.full(phi_deg.shape, np.nan, dtype=float)
+    local_phi[sector == 1] = np.mod(phi_deg[sector == 1] - 272.5, 360.0)
+    local_phi[sector == 2] = phi_deg[sector == 2] - 32.5
+    local_phi[sector == 3] = phi_deg[sector == 3] - 150.5
     return local_phi
 
 
@@ -665,8 +687,10 @@ def read_period_events(
             continue
         # endif
 
-        pion_sector = fd_sector_from_phi_rad(pip_phi)
-        pion_local_phi = fd_local_phi_deg(pip_phi, pion_sector)
+        fd_sector = fd_sector_from_phi_rad(pip_phi)
+        fd_local_phi = fd_local_phi_deg(pip_phi, fd_sector)
+        cd_sector = cd_sector_from_phi_rad(pip_phi)
+        cd_local_phi = cd_local_phi_deg(pip_phi, cd_sector)
 
         frame = pd.DataFrame(
             {
@@ -690,13 +714,13 @@ def read_period_events(
                 ),
                 "pion_sector": np.where(
                     pip_detector[mx2_mask] == 1,
-                    pion_sector[mx2_mask],
-                    0,
+                    fd_sector[mx2_mask],
+                    cd_sector[mx2_mask],
                 ),
                 "pion_local_phi_deg": np.where(
                     pip_detector[mx2_mask] == 1,
-                    pion_local_phi[mx2_mask],
-                    np.nan,
+                    fd_local_phi[mx2_mask],
+                    cd_local_phi[mx2_mask],
                 ),
                 "mx2_uncorrected_gev2": mx2_uncorrected[mx2_mask],
             }
@@ -1402,19 +1426,15 @@ def fit_region_cells(
     region_frame = frame.loc[frame["pion_region"] == region].copy()
     records: list[dict[str, Any]] = []
 
-    sectors = range(1, 7) if region == "FD" else [0]
+    sectors = range(1, 7) if region == "FD" else range(1, 4)
     theta_bin_count = (
         fd_theta_bins if region == "FD" else cd_theta_bins
     )
 
     for sector in sectors:
-        if region == "FD":
-            sample = region_frame.loc[
-                region_frame["pion_sector"] == sector
-            ].copy()
-        else:
-            sample = region_frame.copy()
-        # endif
+        sample = region_frame.loc[
+            region_frame["pion_sector"] == sector
+        ].copy()
 
         theta_edges = equal_population_edges(
             sample["pip_theta_deg"].to_numpy()
@@ -1460,8 +1480,6 @@ def fit_region_cells(
                     f"{period.label}, {region}"
                     + (
                         f", sector {sector}"
-                        if region == "FD"
-                        else ""
                     )
                     + f", integrated, {stage.replace('_', ' ')}"
                 ),
@@ -1863,6 +1881,7 @@ def derive_fd_pion_models(
             record = {
                 "period_key": period.key,
                 "period_label": period.label,
+                "pion_region": "FD",
                 "pion_sector": sector,
                 "theta_bin_index": theta_index,
                 "theta_low_deg": low,
@@ -2930,15 +2949,11 @@ def save_run_stability(
     records: list[dict[str, Any]] = []
     all_runs: list[float] = []
 
-    sectors = range(1, 7) if region == "FD" else [0]
+    sectors = range(1, 7) if region == "FD" else range(1, 4)
     for sector in sectors:
-        if region == "FD":
-            sample = region_frame.loc[
-                region_frame["pion_sector"] == sector
-            ].copy()
-        else:
-            sample = region_frame.copy()
-        # endif
+        sample = region_frame.loc[
+            region_frame["pion_sector"] == sector
+        ].copy()
 
         if sample.empty:
             continue
@@ -3077,6 +3092,280 @@ def save_run_stability(
     return records
 
 
+
+def derive_cd_pion_models(
+    frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    cd_theta_bins: int,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events_cell: int,
+    derivative_step: float,
+    maximum_abs_correction: float,
+    aicc_promotion_threshold: float,
+) -> tuple[list[dict[str, Any]], dict[int, dict[str, Any]]]:
+    """Extract theta-cell corrections and smooth models for three CD sectors."""
+    records: list[dict[str, Any]] = []
+    models: dict[int, dict[str, Any]] = {}
+    cd = frame.loc[frame["pion_region"] == "CD"].copy()
+
+    for sector in range(1, 4):
+        sample = cd.loc[cd["pion_sector"] == sector].copy()
+        edges = equal_population_edges(
+            sample["pip_theta_deg"].to_numpy(), cd_theta_bins
+        )
+        sector_records: list[dict[str, Any]] = []
+
+        for theta_index in range(cd_theta_bins):
+            low = float(edges[theta_index])
+            high = float(edges[theta_index + 1])
+            if theta_index == cd_theta_bins - 1:
+                mask = (
+                    (sample["pip_theta_deg"] >= low)
+                    & (sample["pip_theta_deg"] <= high)
+                )
+            else:
+                mask = (
+                    (sample["pip_theta_deg"] >= low)
+                    & (sample["pip_theta_deg"] < high)
+                )
+            cell = sample.loc[mask].copy()
+            solution = solve_cell_pion_scale(
+                cell,
+                histogram_range,
+                fit_range,
+                histogram_bins,
+                minimum_events_cell,
+                derivative_step,
+                maximum_abs_correction,
+            )
+            record = {
+                "period_key": period.key,
+                "period_label": period.label,
+                "pion_region": "CD",
+                "pion_sector": sector,
+                "theta_bin_index": theta_index,
+                "theta_low_deg": low,
+                "theta_high_deg": high,
+                "mean_theta_deg": float(cell["pip_theta_deg"].mean()),
+                "mean_pion_momentum_gev": float(cell["pip_p_gev"].mean()),
+                "n_events": int(len(cell)),
+                "success": bool(solution["success"]),
+                "status": solution["status"],
+                "fractional_correction": solution.get("fractional_correction", math.nan),
+                "correction_percent": 100.0 * solution.get("fractional_correction", math.nan),
+                "fractional_correction_error": solution.get("fractional_correction_error", math.nan),
+                "correction_error_percent": 100.0 * solution.get("fractional_correction_error", math.nan),
+                "final_peak_mean_gev2": solution.get("final_peak_mean_gev2", math.nan),
+                "final_peak_mean_error_gev2": solution.get("final_peak_mean_error_gev2", math.nan),
+                "final_residual_gev2": solution.get("final_residual_gev2", math.nan),
+                "dmean_dscale_gev2": solution.get("dmean_dscale_gev2", math.nan),
+                "solver_history_json": json.dumps(
+                    sanitize_json_value(solution.get("history", [])), sort_keys=True
+                ),
+            }
+            records.append(record)
+            sector_records.append(record)
+
+        successful = [
+            record for record in sector_records
+            if record["success"] and np.isfinite(record["fractional_correction"])
+        ]
+        if len(successful) < 4:
+            models[sector] = {
+                "success": False,
+                "status": "insufficient_successful_cells",
+                "period_key": period.key,
+                "pion_region": "CD",
+                "pion_sector": sector,
+            }
+            continue
+
+        theta = np.asarray([record["mean_theta_deg"] for record in successful])
+        correction = np.asarray([record["fractional_correction"] for record in successful])
+        correction_error = np.asarray([
+            record["fractional_correction_error"] for record in successful
+        ])
+        model = select_correction_polynomial(
+            theta, correction, correction_error, aicc_promotion_threshold
+        )
+        model.update({
+            "success": True,
+            "status": "success",
+            "period_key": period.key,
+            "period_label": period.label,
+            "pion_region": "CD",
+            "pion_sector": sector,
+            "theta_valid_min_deg": float(np.min(theta)),
+            "theta_valid_max_deg": float(np.max(theta)),
+            "n_calibration_cells": len(successful),
+        })
+        models[sector] = model
+
+    return records, models
+
+
+def apply_fd_cd_pion_corrections(
+    frame: pd.DataFrame,
+    fd_models: dict[int, dict[str, Any]],
+    cd_models: dict[int, dict[str, Any]],
+) -> pd.DataFrame:
+    """Apply the independently derived FD and CD correction models."""
+    result = frame.copy()
+    correction = np.zeros(len(result), dtype=float)
+    regions = result["pion_region"].to_numpy()
+    sectors = result["pion_sector"].to_numpy()
+
+    for region, sector_count, models in (("FD", 6, fd_models), ("CD", 3, cd_models)):
+        for sector in range(1, sector_count + 1):
+            mask = (regions == region) & (sectors == sector)
+            if not np.any(mask):
+                continue
+            model = models.get(sector, {})
+            if not model.get("success", False):
+                raise RuntimeError(
+                    f"No valid pion correction model for {region} sector {sector}"
+                )
+            correction[mask] = evaluate_pion_model(
+                result.loc[mask, "pip_theta_deg"].to_numpy(), model
+            )
+
+    result["pion_fractional_correction"] = correction
+    result["pip_p_electron_pion_corrected_gev"] = (
+        result["pip_p_gev"].to_numpy() * (1.0 + correction)
+    )
+    result["mx2_electron_pion_corrected_gev2"] = calculate_mx2_epi(
+        result["beam_energy_gev"].to_numpy(),
+        result["e_p_electron_corrected_gev"].to_numpy(),
+        result["e_theta_rad"].to_numpy(),
+        result["e_phi_rad"].to_numpy(),
+        result["pip_p_electron_pion_corrected_gev"].to_numpy(),
+        result["pip_theta_rad"].to_numpy(),
+        result["pip_phi_rad"].to_numpy(),
+    )
+    return result
+
+
+def save_cd_correction_model_plot(period, correction_records, models, output_path):
+    """Plot the three CD correction models on one 1x3 canvas."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(1, 3, figsize=(15.0, 4.8), sharey=True, constrained_layout=True)
+    for sector, axis in zip(range(1, 4), axes):
+        cells = correction_records.loc[
+            (correction_records["period_key"] == period.key)
+            & (correction_records["pion_region"] == "CD")
+            & (correction_records["pion_sector"] == sector)
+            & correction_records["success"]
+        ].sort_values("mean_theta_deg")
+        if not cells.empty:
+            axis.errorbar(
+                cells["mean_theta_deg"], 100.0 * cells["fractional_correction"],
+                yerr=100.0 * cells["fractional_correction_error"], fmt="o", label="Calibration cells"
+            )
+        model = models.get(sector, {})
+        if model.get("success", False):
+            theta = np.linspace(model["theta_valid_min_deg"], model["theta_valid_max_deg"], 300)
+            axis.plot(theta, 100.0 * evaluate_pion_model(theta, model), label=f"Order {model['selected_order']}")
+        axis.axhline(0.0, linestyle="--", linewidth=1.0)
+        axis.set_title(f"CD sector {sector}")
+        axis.set_xlabel(r"Pion $\theta$ (deg)")
+        axis.set_ylabel("Momentum correction (%)")
+        axis.legend(fontsize=8)
+    figure.suptitle(f"{period.label}: CD pion momentum-correction models")
+    figure.savefig(output_path, dpi=180, bbox_inches="tight", pad_inches=0.06)
+    plt.close(figure)
+
+
+def save_cd_three_stage_integrated_plot(frame, period, fit_records, output_path, histogram_range, histogram_bins):
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(1, 3, figsize=(15.0, 4.8), sharex=True, constrained_layout=True)
+    definitions = (
+        ("uncorrected", "mx2_uncorrected_gev2", "No corrections"),
+        ("electron_corrected", "mx2_electron_corrected_gev2", "Electron corrected"),
+        ("electron_pion_corrected", "mx2_electron_pion_corrected_gev2", r"Electron + $\pi^+$ corrected"),
+    )
+    for sector, axis in zip(range(1, 4), axes):
+        sample = frame.loc[(frame["pion_region"] == "CD") & (frame["pion_sector"] == sector)]
+        for stage, column, label in definitions:
+            counts, edges = np.histogram(sample[column], bins=histogram_bins, range=histogram_range)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            record = fit_records.loc[
+                (fit_records["period_key"] == period.key) & (fit_records["stage"] == stage)
+                & (fit_records["pion_region"] == "CD") & (fit_records["pion_sector"] == sector)
+                & (fit_records["cell_type"] == "integrated") & fit_records["success"]
+            ]
+            plot_label = label
+            if not record.empty:
+                plot_label += rf" ($\mu$={float(record.iloc[0]['peak_mean_gev2']):.4f})"
+            axis.step(centers, counts, where="mid", linewidth=1.15, label=plot_label)
+        axis.axvline(NEUTRON_MASS2_GEV2, linestyle="--", linewidth=1.0, label=r"$m_n^2$")
+        axis.set_title(f"CD sector {sector}")
+        axis.set_xlabel(r"$M_X^2(e\pi^+)$ (GeV$^2$)")
+        axis.set_ylabel("Counts")
+        axis.set_xlim(*histogram_range)
+        axis.legend(fontsize=7.5)
+    figure.suptitle(f"{period.label}: CD integrated missing-neutron distributions")
+    figure.savefig(output_path, dpi=180, bbox_inches="tight", pad_inches=0.06)
+    plt.close(figure)
+
+
+def save_cd_sector_summary(frame, period, fit_records, output_path, quantity, variable_column=None,
+                           variable_label=None, binning=None, bin_count=None,
+                           histogram_range=None, fit_range=None, histogram_bins=None,
+                           minimum_events_cell=None):
+    """Generic 1x3 CD closure summary for theta or another kinematic variable."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    figure, axes = plt.subplots(1, 3, figsize=(15.0, 4.8), sharey=True, constrained_layout=True)
+    stages = (("uncorrected", "o", "No corrections"),
+              ("electron_corrected", "s", "Electron corrected"),
+              ("electron_pion_corrected", "^", r"Electron + $\pi^+$ corrected"))
+    for sector, axis in zip(range(1, 4), axes):
+        sample = frame.loc[(frame["pion_region"] == "CD") & (frame["pion_sector"] == sector)].copy()
+        if variable_column is None:
+            for stage, marker, label in stages:
+                cells = fit_records.loc[
+                    (fit_records["period_key"] == period.key) & (fit_records["stage"] == stage)
+                    & (fit_records["pion_region"] == "CD") & (fit_records["pion_sector"] == sector)
+                    & (fit_records["cell_type"] == "theta") & fit_records["success"]
+                ].sort_values("mean_theta_deg")
+                ycol = "peak_mean_gev2" if quantity == "mean" else "peak_sigma_gev2"
+                ecol = "peak_mean_error_gev2" if quantity == "mean" else "peak_sigma_error_gev2"
+                axis.errorbar(cells["mean_theta_deg"], cells[ycol], yerr=cells[ecol], fmt=marker, label=label)
+            xlabel = r"Mean pion $\theta$ (deg)"
+        else:
+            values = sample[variable_column].to_numpy(dtype=float)
+            edges = equal_population_edges(values, bin_count) if binning == "equal_population" else _diagnostic_equal_width_edges(values, bin_count)
+            for stage, marker, label in stages:
+                xs, ys, es = [], [], []
+                for index in range(len(edges)-1):
+                    low, high = float(edges[index]), float(edges[index+1])
+                    mask = ((sample[variable_column] >= low) &
+                            (sample[variable_column] <= high if index == len(edges)-2 else sample[variable_column] < high))
+                    cell = sample.loc[mask]
+                    fit, _ = fit_mx2_peak(cell[stage_column(stage)].to_numpy(), histogram_range, fit_range,
+                                          histogram_bins, minimum_events_cell)
+                    if fit["success"]:
+                        xs.append(float(cell[variable_column].mean()))
+                        ys.append(float(fit["mean_gev2"] if quantity == "mean" else fit["sigma_gev2"]))
+                        es.append(float(fit["mean_error_gev2"] if quantity == "mean" else fit["sigma_error_gev2"]))
+                axis.errorbar(xs, ys, yerr=es, fmt=marker, label=label)
+            xlabel = variable_label
+        if quantity == "mean":
+            axis.axhline(NEUTRON_MASS2_GEV2, linestyle="--", linewidth=1.0, label=r"$m_n^2$" if sector == 1 else None)
+            axis.set_ylim(0.8, 1.0)
+            axis.set_ylabel(r"Fitted $\mu_{M_X^2}$ (GeV$^2$)")
+        else:
+            axis.set_ylabel(r"Fitted $\sigma_{M_X^2}$ (GeV$^2$)")
+        axis.set_title(f"CD sector {sector}")
+        axis.set_xlabel(xlabel)
+        if sector == 1:
+            axis.legend(fontsize=8)
+    figure.suptitle(f"{period.label}: CD missing-neutron closure")
+    figure.savefig(output_path, dpi=180, bbox_inches="tight", pad_inches=0.06)
+    plt.close(figure)
+
+
 # -----------------------------------------------------------------------------
 # One-period worker
 # -----------------------------------------------------------------------------
@@ -3096,6 +3385,7 @@ def process_period(
     pip_theta_min_deg: float,
     pip_theta_max_deg: float,
     fd_theta_bins: int,
+    cd_theta_bins: int,
     histogram_range: tuple[float, float],
     fit_range: tuple[float, float],
     histogram_bins: int,
@@ -3110,244 +3400,172 @@ def process_period(
     skip_run_stability: bool,
     plot_directories: dict[str, Path],
 ) -> dict[str, Any]:
-    """Process one calibration period from input through FD closure."""
+    """Process one calibration period through independent FD and CD closure."""
     tree_name = find_tree(file_path, requested_tree)
-    branch_map = resolve_branches(
-        file_path,
-        tree_name,
-        branch_overrides,
-    )
-    print(
-        f"[worker:{period.key}] {file_path}:{tree_name}; "
-        f"branches={branch_map}",
-        flush=True,
-    )
+    branch_map = resolve_branches(file_path, tree_name, branch_overrides)
+    print(f"[worker:{period.key}] {file_path}:{tree_name}; branches={branch_map}", flush=True)
 
     frame = read_period_events(
-        file_path,
-        tree_name,
-        branch_map,
-        period,
-        step_size,
-        mx2_preselection_min,
-        mx2_preselection_max,
-        e_theta_min_deg,
-        e_theta_max_deg,
-        pip_theta_min_deg,
-        pip_theta_max_deg,
+        file_path, tree_name, branch_map, period, step_size,
+        mx2_preselection_min, mx2_preselection_max,
+        e_theta_min_deg, e_theta_max_deg,
+        pip_theta_min_deg, pip_theta_max_deg,
     )
-    frame = frame.loc[frame["pion_region"] == "FD"].copy()
     if frame.empty:
         return {
-            "period_key": period.key,
-            "success": False,
-            "status": "no_selected_fd_events",
-            "fit_records": [],
-            "run_records": [],
-            "correction_records": [],
-            "correction_models": {},
-            "branch_map": branch_map,
-            "n_events": 0,
+            "period_key": period.key, "success": False,
+            "status": "no_selected_events", "fit_records": [],
+            "run_records": [], "correction_records": [],
+            "correction_models": {}, "branch_map": branch_map,
+            "n_events": 0, "fd_events": 0, "cd_events": 0,
         }
 
-    frame = apply_electron_correction(
-        frame,
-        period,
-        electron_model_map,
-    )
+    frame = apply_electron_correction(frame, period, electron_model_map)
     frame["mx2_electron_corrected_gev2"] = calculate_mx2_epi(
         frame["beam_energy_gev"].to_numpy(),
         frame["e_p_electron_corrected_gev"].to_numpy(),
-        frame["e_theta_rad"].to_numpy(),
-        frame["e_phi_rad"].to_numpy(),
-        frame["pip_p_gev"].to_numpy(),
-        frame["pip_theta_rad"].to_numpy(),
+        frame["e_theta_rad"].to_numpy(), frame["e_phi_rad"].to_numpy(),
+        frame["pip_p_gev"].to_numpy(), frame["pip_theta_rad"].to_numpy(),
         frame["pip_phi_rad"].to_numpy(),
     )
 
-    correction_records, correction_models = derive_fd_pion_models(
-        frame,
-        period,
-        fd_theta_bins,
-        histogram_range,
-        fit_range,
-        histogram_bins,
-        minimum_events_cell,
-        derivative_step,
-        maximum_abs_correction,
-        aicc_promotion_threshold,
+    fd_records, fd_models = derive_fd_pion_models(
+        frame, period, fd_theta_bins, histogram_range, fit_range,
+        histogram_bins, minimum_events_cell, derivative_step,
+        maximum_abs_correction, aicc_promotion_threshold,
     )
-    invalid_sectors = [
-        sector
-        for sector, model in correction_models.items()
-        if not model.get("success", False)
-    ]
-    if invalid_sectors:
+    cd_records, cd_models = derive_cd_pion_models(
+        frame, period, cd_theta_bins, histogram_range, fit_range,
+        histogram_bins, minimum_events_cell, derivative_step,
+        maximum_abs_correction, aicc_promotion_threshold,
+    )
+
+    invalid_fd = [s for s, m in fd_models.items() if not m.get("success", False)]
+    invalid_cd = [s for s, m in cd_models.items() if not m.get("success", False)]
+    if invalid_fd or invalid_cd:
         raise RuntimeError(
-            f"{period.label}: failed to derive correction models for "
-            f"FD sectors {invalid_sectors}"
+            f"{period.label}: invalid correction models; "
+            f"FD sectors={invalid_fd}, CD sectors={invalid_cd}"
         )
 
-    frame = apply_fd_pion_correction(frame, correction_models)
-
+    frame = apply_fd_cd_pion_corrections(frame, fd_models, cd_models)
+    correction_records = fd_records + cd_records
     correction_frame = pd.DataFrame(correction_records)
+
     save_period_correction_model_plot(
-        period,
-        correction_frame,
-        correction_models,
-        plot_directories["correction_models"]
-        / f"{period.key}_fd_pion_correction_models.png",
+        period, correction_frame.loc[correction_frame["pion_region"] == "FD"],
+        fd_models, plot_directories["correction_models"] /
+        f"{period.key}_fd_pion_correction_models.png",
+    )
+    save_cd_correction_model_plot(
+        period, correction_frame, cd_models,
+        plot_directories["cd_correction_models"] /
+        f"{period.key}_cd_pion_correction_models.png",
     )
 
     fit_records: list[dict[str, Any]] = []
     run_records: list[dict[str, Any]] = []
-    stages = (
-        "uncorrected",
-        "electron_corrected",
-        "electron_pion_corrected",
-    )
-    for stage in stages:
-        fit_records.extend(
-            fit_region_cells(
-                frame,
-                period,
-                stage,
-                "FD",
-                fd_theta_bins,
-                2,
-                histogram_range,
-                fit_range,
-                histogram_bins,
-                minimum_events_integrated,
-                minimum_events_cell,
-                plot_directories[f"{stage}_individual_fits"],
+    stages = ("uncorrected", "electron_corrected", "electron_pion_corrected")
+    for region, theta_bins, prefix in (("FD", fd_theta_bins, ""), ("CD", cd_theta_bins, "cd_")):
+        for stage in stages:
+            fit_records.extend(fit_region_cells(
+                frame, period, stage, region, fd_theta_bins, cd_theta_bins,
+                histogram_range, fit_range, histogram_bins,
+                minimum_events_integrated, minimum_events_cell,
+                plot_directories[f"{prefix}{stage}_individual_fits"],
                 save_individual_fits,
-            )
-        )
+            ))
 
     fit_frame = pd.DataFrame(fit_records)
+
+    # Existing FD diagnostics.
     save_three_stage_integrated_plot(
-        frame,
-        period,
-        fit_frame,
-        plot_directories["integrated_mx2"]
-        / f"{period.key}_fd_integrated_three_stage.png",
-        histogram_range,
-        histogram_bins,
+        frame, period, fit_frame,
+        plot_directories["integrated_mx2"] / f"{period.key}_fd_integrated_three_stage.png",
+        histogram_range, histogram_bins,
     )
-    save_theta_residual_summary(
-        period,
-        fit_frame,
-        plot_directories["theta_residuals"]
-        / f"{period.key}_fd_theta_residuals.png",
-    )
-    save_theta_width_summary(
-        period,
-        fit_frame,
-        plot_directories["theta_residuals"]
-        / f"{period.key}_fd_theta_widths.png",
-    )
-    save_kinematic_residual_summary(
-        frame=frame,
-        period=period,
-        variable_column="pip_p_gev",
-        variable_label=r"Mean pion $p$ (GeV)",
-        binning="equal_width",
-        bin_count=8,
-        output_path=plot_directories["pion_momentum_residuals"]
-        / f"{period.key}_fd_pion_momentum_residuals.png",
-        histogram_range=histogram_range,
-        fit_range=fit_range,
-        histogram_bins=histogram_bins,
-        minimum_events_cell=minimum_events_cell,
-    )
-    save_kinematic_residual_summary(
-        frame=frame,
-        period=period,
-        variable_column="pion_local_phi_deg",
-        variable_label=r"Mean pion local $\phi$ (deg)",
-        binning="equal_population",
-        bin_count=3,
-        output_path=plot_directories["pion_phi_residuals"]
-        / f"{period.key}_fd_pion_phi_residuals.png",
-        histogram_range=histogram_range,
-        fit_range=fit_range,
-        histogram_bins=histogram_bins,
-        minimum_events_cell=minimum_events_cell,
-    )
-    save_kinematic_residual_summary(
-        frame=frame,
-        period=period,
-        variable_column="e_p_gev",
-        variable_label=r"Mean electron $p$ (GeV)",
-        binning="equal_width",
-        bin_count=8,
-        output_path=plot_directories["electron_momentum_residuals"]
-        / f"{period.key}_fd_electron_momentum_residuals.png",
-        histogram_range=histogram_range,
-        fit_range=fit_range,
-        histogram_bins=histogram_bins,
-        minimum_events_cell=minimum_events_cell,
-    )
-    save_kinematic_residual_summary(
-        frame=frame,
-        period=period,
-        variable_column="e_theta_deg",
-        variable_label=r"Mean electron $\theta$ (deg)",
-        binning="equal_width",
-        bin_count=8,
-        output_path=plot_directories["electron_theta_residuals"]
-        / f"{period.key}_fd_electron_theta_residuals.png",
-        histogram_range=histogram_range,
-        fit_range=fit_range,
-        histogram_bins=histogram_bins,
-        minimum_events_cell=minimum_events_cell,
-    )
+    save_theta_residual_summary(period, fit_frame,
+        plot_directories["theta_residuals"] / f"{period.key}_fd_theta_residuals.png")
+    save_theta_width_summary(period, fit_frame,
+        plot_directories["theta_residuals"] / f"{period.key}_fd_theta_widths.png")
+    for variable_column, variable_label, binning, bin_count, key, suffix in (
+        ("pip_p_gev", r"Mean pion $p$ (GeV)", "equal_width", 8, "pion_momentum_residuals", "pion_momentum_residuals"),
+        ("pion_local_phi_deg", r"Mean pion local $\phi$ (deg)", "equal_population", 3, "pion_phi_residuals", "pion_phi_residuals"),
+        ("e_p_gev", r"Mean electron $p$ (GeV)", "equal_width", 8, "electron_momentum_residuals", "electron_momentum_residuals"),
+        ("e_theta_deg", r"Mean electron $\theta$ (deg)", "equal_width", 8, "electron_theta_residuals", "electron_theta_residuals"),
+    ):
+        save_kinematic_residual_summary(
+            frame, period, variable_column, variable_label, binning, bin_count,
+            plot_directories[key] / f"{period.key}_fd_{suffix}.png",
+            histogram_range, fit_range, histogram_bins, minimum_events_cell,
+        )
     save_integrated_xb_peak_and_width_summary(
-        frame=frame,
-        period=period,
-        output_path=plot_directories["x_residuals"]
-        / f"{period.key}_fd_sector_integrated_xb_peak_and_width.png",
-        histogram_range=histogram_range,
-        fit_range=fit_range,
-        histogram_bins=histogram_bins,
-        minimum_events_cell=minimum_events_cell,
-        bin_count=8,
+        frame, period,
+        plot_directories["x_residuals"] / f"{period.key}_fd_sector_integrated_xb_peak_and_width.png",
+        histogram_range, fit_range, histogram_bins, minimum_events_cell, 8,
+    )
+
+    # New CD diagnostics in a completely separate directory tree.
+    save_cd_three_stage_integrated_plot(
+        frame, period, fit_frame,
+        plot_directories["cd_integrated_mx2"] / f"{period.key}_cd_integrated_three_stage.png",
+        histogram_range, histogram_bins,
+    )
+    save_cd_sector_summary(
+        frame, period, fit_frame,
+        plot_directories["cd_theta_residuals"] / f"{period.key}_cd_theta_residuals.png",
+        "mean",
+    )
+    save_cd_sector_summary(
+        frame, period, fit_frame,
+        plot_directories["cd_theta_residuals"] / f"{period.key}_cd_theta_widths.png",
+        "width",
+    )
+    for variable_column, variable_label, binning, bin_count, key, suffix in (
+        ("pip_p_gev", r"Mean pion $p$ (GeV)", "equal_width", 8, "cd_pion_momentum_residuals", "pion_momentum_residuals"),
+        ("pion_local_phi_deg", r"Mean pion local $\phi$ (deg)", "equal_population", 3, "cd_pion_phi_residuals", "pion_phi_residuals"),
+        ("e_p_gev", r"Mean electron $p$ (GeV)", "equal_width", 8, "cd_electron_momentum_residuals", "electron_momentum_residuals"),
+        ("e_theta_deg", r"Mean electron $\theta$ (deg)", "equal_width", 8, "cd_electron_theta_residuals", "electron_theta_residuals"),
+    ):
+        save_cd_sector_summary(
+            frame, period, fit_frame,
+            plot_directories[key] / f"{period.key}_cd_{suffix}.png",
+            "mean", variable_column, variable_label, binning, bin_count,
+            histogram_range, fit_range, histogram_bins, minimum_events_cell,
+        )
+
+    cd_for_x = frame.loc[frame["pion_region"] == "CD"].copy()
+    cd_for_x["pion_region"] = "FD"
+    save_integrated_xb_peak_and_width_summary(
+        cd_for_x, period,
+        plot_directories["cd_x_residuals"] /
+        f"{period.key}_cd_sector_integrated_xb_peak_and_width.png",
+        histogram_range, fit_range, histogram_bins, minimum_events_cell, 8,
     )
 
     if not skip_run_stability:
-        for stage in stages:
-            run_records.extend(
-                save_run_stability(
-                    frame,
-                    period,
-                    stage,
-                    "FD",
-                    plot_directories[f"{stage}_run_stability"]
-                    / f"{period.key}_fd_run_stability.png",
-                    histogram_range,
-                    fit_range,
-                    histogram_bins,
-                    minimum_events_run,
-                    run_bin_width,
-                )
-            )
+        for region, prefix in (("FD", ""), ("CD", "cd_")):
+            for stage in stages:
+                run_records.extend(save_run_stability(
+                    frame, period, stage, region,
+                    plot_directories[f"{prefix}{stage}_run_stability"] /
+                    f"{period.key}_{region.lower()}_run_stability.png",
+                    histogram_range, fit_range, histogram_bins,
+                    minimum_events_run, run_bin_width,
+                ))
 
     model_payload = {
-        str(sector): sanitize_json_value(model)
-        for sector, model in correction_models.items()
+        "FD": {str(k): sanitize_json_value(v) for k, v in fd_models.items()},
+        "CD": {str(k): sanitize_json_value(v) for k, v in cd_models.items()},
     }
+    fd_events = int(np.count_nonzero(frame["pion_region"].to_numpy() == "FD"))
+    cd_events = int(np.count_nonzero(frame["pion_region"].to_numpy() == "CD"))
     return {
-        "period_key": period.key,
-        "success": True,
-        "status": "success",
-        "fit_records": fit_records,
-        "run_records": run_records,
+        "period_key": period.key, "success": True, "status": "success",
+        "fit_records": fit_records, "run_records": run_records,
         "correction_records": correction_records,
-        "correction_models": model_payload,
-        "branch_map": branch_map,
-        "n_events": int(len(frame)),
-        "fd_events": int(len(frame)),
+        "correction_models": model_payload, "branch_map": branch_map,
+        "n_events": int(len(frame)), "fd_events": fd_events, "cd_events": cd_events,
     }
 
 
@@ -3399,6 +3617,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--pip-theta-min", type=float, default=5.0)
     parser.add_argument("--pip-theta-max", type=float, default=45.0)
     parser.add_argument("--fd-theta-bins", type=int, default=8)
+    parser.add_argument("--cd-theta-bins", type=int, default=8)
 
     parser.add_argument("--mx2-preselection-min", type=float, default=-0.5)
     parser.add_argument("--mx2-preselection-max", type=float, default=2.0)
@@ -3452,6 +3671,8 @@ def validate_arguments(arguments: argparse.Namespace) -> None:
         raise ValueError("--workers must be positive.")
     if arguments.fd_theta_bins < 4:
         raise ValueError("--fd-theta-bins must be at least 4.")
+    if arguments.cd_theta_bins < 4:
+        raise ValueError("--cd-theta-bins must be at least 4.")
     if not arguments.mx2_preselection_min < arguments.mx2_preselection_max:
         raise ValueError("Invalid Mx2 preselection range.")
     if not arguments.mx2_hist_min < arguments.mx2_hist_max:
@@ -3549,6 +3770,34 @@ def main() -> int:
             plot_root / "closure" / "x_residuals",
         "correction_models":
             plot_root / "correction_models",
+        "cd_uncorrected_individual_fits":
+            plot_root / "cd_pions" / "uncorrected" / "individual_fits",
+        "cd_uncorrected_run_stability":
+            plot_root / "cd_pions" / "uncorrected" / "run_stability",
+        "cd_electron_corrected_individual_fits":
+            plot_root / "cd_pions" / "electron_corrected" / "individual_fits",
+        "cd_electron_corrected_run_stability":
+            plot_root / "cd_pions" / "electron_corrected" / "run_stability",
+        "cd_electron_pion_corrected_individual_fits":
+            plot_root / "cd_pions" / "electron_pion_corrected" / "individual_fits",
+        "cd_electron_pion_corrected_run_stability":
+            plot_root / "cd_pions" / "electron_pion_corrected" / "run_stability",
+        "cd_integrated_mx2":
+            plot_root / "cd_pions" / "closure" / "integrated_mx2",
+        "cd_theta_residuals":
+            plot_root / "cd_pions" / "closure" / "theta_residuals",
+        "cd_pion_momentum_residuals":
+            plot_root / "cd_pions" / "closure" / "pion_momentum_residuals",
+        "cd_pion_phi_residuals":
+            plot_root / "cd_pions" / "closure" / "pion_phi_residuals",
+        "cd_electron_momentum_residuals":
+            plot_root / "cd_pions" / "closure" / "electron_momentum_residuals",
+        "cd_electron_theta_residuals":
+            plot_root / "cd_pions" / "closure" / "electron_theta_residuals",
+        "cd_x_residuals":
+            plot_root / "cd_pions" / "closure" / "x_residuals",
+        "cd_correction_models":
+            plot_root / "cd_pions" / "correction_models",
     }
     for directory in plot_directories.values():
         directory.mkdir(parents=True, exist_ok=True)
@@ -3587,6 +3836,7 @@ def main() -> int:
                 arguments.pip_theta_min,
                 arguments.pip_theta_max,
                 arguments.fd_theta_bins,
+                arguments.cd_theta_bins,
                 histogram_range,
                 fit_range,
                 arguments.mx2_bins,
@@ -3634,7 +3884,7 @@ def main() -> int:
             if result["success"]:
                 print(
                     f"[complete] {period.label}: "
-                    f"{result['fd_events']:,} FD events"
+                    f"{result['fd_events']:,} FD events; {result['cd_events']:,} CD events"
                 )
             else:
                 print(
@@ -3670,15 +3920,21 @@ def main() -> int:
 
     model_payload = {
         "metadata": {
-            "script": "derive_piplus_momentum_corrections_v8.py",
+            "script": "derive_piplus_momentum_corrections_v10.py",
             "neutron_mass_gev": NEUTRON_MASS_GEV,
             "neutron_mass2_gev2": NEUTRON_MASS2_GEV2,
             "fit_model": "Gaussian signal plus quadratic background",
-            "detector_scope": "FD only; CD is not calibrated",
+            "detector_scope": "FD and CD calibrated independently by azimuthal sector",
             "electron_correction_json": str(
                 arguments.electron_correction_json
             ),
             "fd_theta_bins": arguments.fd_theta_bins,
+            "cd_theta_bins": arguments.cd_theta_bins,
+            "cd_sector_definition_deg": {
+                "1": "272.5 <= phi < 360 or 0 <= phi < 32.5",
+                "2": "32.5 <= phi < 150.5",
+                "3": "150.5 <= phi < 272.5",
+            },
             "theta_extrapolation": (
                 "clamp to minimum/maximum calibration-cell mean theta"
             ),
@@ -3709,7 +3965,7 @@ def main() -> int:
     )
 
     print("")
-    print("FD pi+ momentum-correction extraction and closure complete.")
+    print("FD and CD pi+ momentum-correction extraction and closure complete.")
     print(f"Output directory: {output_directory}")
     print(f"Calibration cells: {len(correction_frame):,}")
     print(f"Mx2 fit records: {len(fit_frame):,}")
