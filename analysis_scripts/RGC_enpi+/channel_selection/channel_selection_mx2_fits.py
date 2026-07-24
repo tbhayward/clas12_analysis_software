@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-channel_selection_mx2_fit_stability_v6.py
+channel_selection_mx2_fits_v3.py
 
 Deterministic pass-1 fit-stability study of the missing-neutron Mx2 peak used for the RGC
 exclusive e pi+ channel selection.
@@ -10,14 +10,13 @@ corrections, the script:
 
   1. reads xB, tprime, and Mx2 from the PhysicsEvents ROOT tree;
   2. divides the sample into the fixed 4 xB by 6 (-tprime) bins;
-  3. fits each Mx2 distribution with a Gaussian signal and five deterministic
+  3. fits each Mx2 distribution with a Gaussian signal and four deterministic
      background hypotheses:
 
          linear polynomial,
          quadratic polynomial,
          cubic polynomial,
-         quartic polynomial,
-         exponential;
+         quartic polynomial;
 
      The script also recommends the lowest polynomial order from quadratic
      through quartic that gives an acceptable signal-region fit, with the
@@ -130,7 +129,6 @@ BACKGROUND_LABELS = {
     "quadratic": "Quadratic background",
     "cubic": "Cubic background",
     "quartic": "Quartic background",
-    "exponential": "Exponential background",
 }
 
 BACKGROUND_MODELS: tuple[str, ...] = (
@@ -138,7 +136,6 @@ BACKGROUND_MODELS: tuple[str, ...] = (
     "quadratic",
     "cubic",
     "quartic",
-    "exponential",
 )
 
 ALTERNATIVE_BACKGROUND_MODELS: tuple[str, ...] = tuple(
@@ -193,6 +190,7 @@ class FitJob:
     fit_min_gev2: float
     fit_max_gev2: float
     minimum_events: int
+    corrected_mean_max_gev2: float
 
 
 # =============================================================================
@@ -532,17 +530,6 @@ def quartic_background(
     return c0 + c1 * dx + c2 * dx**2 + c3 * dx**3 + c4 * dx**4
 
 
-def exponential_background(
-    x: np.ndarray,
-    log_amplitude: float,
-    slope_per_gev2: float,
-) -> np.ndarray:
-    """Positive exponential background centered at the neutron mass squared."""
-    dx = np.asarray(x, dtype=float) - NEUTRON_MASS2_GEV2
-    exponent = np.clip(log_amplitude + slope_per_gev2 * dx, -50.0, 50.0)
-    return np.exp(exponent)
-
-
 
 def build_total_model(
     background_model: str,
@@ -635,29 +622,6 @@ def build_total_model(
         return model
     # endif
 
-    if background_model == "exponential":
-        def model(
-            x: np.ndarray,
-            signal_yield: float,
-            mean_gev2: float,
-            sigma_gev2: float,
-            log_amplitude: float,
-            slope_per_gev2: float,
-        ) -> np.ndarray:
-            return gaussian_signal_from_yield(
-                x,
-                signal_yield,
-                mean_gev2,
-                sigma_gev2,
-                histogram_bin_width_gev2,
-            ) + exponential_background(
-                x,
-                log_amplitude,
-                slope_per_gev2,
-            )
-        # enddef
-        return model
-    # endif
 
 
     raise ValueError(f"Unknown background model: {background_model}")
@@ -681,9 +645,6 @@ def evaluate_background(
     if background_model == "quartic":
         return quartic_background(x, *parameters[3:8])
     # endif
-    if background_model == "exponential":
-        return exponential_background(x, *parameters[3:5])
-    # endif
     raise ValueError(background_model)
 
 
@@ -694,6 +655,8 @@ def initial_values_and_bounds(
     histogram_bin_width_gev2: float,
     fit_min_gev2: float,
     fit_max_gev2: float,
+    stage: str,
+    corrected_mean_max_gev2: float,
 ) -> tuple[list[float], tuple[list[float], list[float]]]:
     """Construct stable initial values and bounded parameter ranges."""
     if fit_x.size == 0:
@@ -707,18 +670,33 @@ def initial_values_and_bounds(
     )
 
     if np.any(peak_window):
-        local_x = fit_x[peak_window]
         local_y = fit_y[peak_window]
-        mean_guess = float(local_x[int(np.argmax(local_y))])
         peak_height = max(float(np.max(local_y) - baseline), 1.0)
     else:
-        mean_guess = NEUTRON_MASS2_GEV2
         peak_height = max(float(np.max(fit_y) - baseline), 1.0)
     # endif
 
+    # Initialize every Gaussian at the physical neutron mass squared rather
+    # than at the largest local histogram bin. The latter can be captured by
+    # a broad continuum structure in the difficult low-tprime bins.
+    mean_guess = NEUTRON_MASS2_GEV2
+
     mean_low = max(fit_min_gev2, NEUTRON_MASS2_GEV2 - 0.20)
-    mean_high = min(fit_max_gev2, NEUTRON_MASS2_GEV2 + 0.20)
-    mean_guess = float(np.clip(mean_guess, mean_low + 1.0e-4, mean_high - 1.0e-4))
+    if stage == "after":
+        mean_high = min(fit_max_gev2, corrected_mean_max_gev2)
+    else:
+        # Before-correction fits are diagnostic and can have genuinely shifted
+        # peaks, so retain the wider historical upper bound.
+        mean_high = min(fit_max_gev2, NEUTRON_MASS2_GEV2 + 0.20)
+    # endif
+
+    mean_guess = float(
+        np.clip(
+            mean_guess,
+            mean_low + 1.0e-4,
+            mean_high - 1.0e-4,
+        )
+    )
 
     sigma_guess = 0.075
     yield_guess = (
@@ -795,11 +773,6 @@ def initial_values_and_bounds(
             750.0 * background_scale,
             4000.0 * background_scale,
         ]
-    elif background_model == "exponential":
-        log_baseline = math.log(max(baseline, 0.5))
-        initial = [*common_initial, log_baseline, 0.0]
-        lower = [*common_lower, math.log(1.0e-4), -25.0]
-        upper = [*common_upper, math.log(10.0 * background_scale), 25.0]
     else:
         raise ValueError(background_model)
     # endif
@@ -828,6 +801,8 @@ def fit_background_model(
     histogram_bin_width_gev2: float,
     fit_min_gev2: float,
     fit_max_gev2: float,
+    stage: str,
+    corrected_mean_max_gev2: float,
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     """Fit one histogram with a Gaussian and one background family."""
     fit_x = np.asarray(centers[fit_mask], dtype=float)
@@ -847,6 +822,8 @@ def fit_background_model(
             histogram_bin_width_gev2=histogram_bin_width_gev2,
             fit_min_gev2=fit_min_gev2,
             fit_max_gev2=fit_max_gev2,
+            stage=stage,
+            corrected_mean_max_gev2=corrected_mean_max_gev2,
         )
         parameters, covariance = curve_fit(
             model_function,
@@ -964,6 +941,27 @@ def fit_background_model(
     )
     background_minimum = float(np.min(dense_background))
 
+    fitted_mean = float(parameters[1])
+    fitted_sigma = float(abs(parameters[2]))
+    dense_signal_mask_2sigma = (
+        (dense_x >= fitted_mean - 2.0 * fitted_sigma)
+        & (dense_x <= fitted_mean + 2.0 * fitted_sigma)
+    )
+    dense_signal_mask_3sigma = (
+        (dense_x >= fitted_mean - 3.0 * fitted_sigma)
+        & (dense_x <= fitted_mean + 3.0 * fitted_sigma)
+    )
+    background_minimum_2sigma = (
+        float(np.min(dense_background[dense_signal_mask_2sigma]))
+        if np.any(dense_signal_mask_2sigma)
+        else math.nan
+    )
+    background_minimum_3sigma = (
+        float(np.min(dense_background[dense_signal_mask_3sigma]))
+        if np.any(dense_signal_mask_3sigma)
+        else math.nan
+    )
+
     peak_signal = float(
         gaussian_signal_from_yield(
             np.asarray([mean_gev2]),
@@ -979,6 +977,15 @@ def fit_background_model(
             np.asarray([mean_gev2]),
             parameters,
         )[0]
+    )
+    characteristic_count_scale = max(
+        float(np.max(fit_y)) if fit_y.size else 0.0,
+        abs(background_at_peak),
+        1.0,
+    )
+    background_negativity_tolerance = max(
+        1.0,
+        0.01 * characteristic_count_scale,
     )
     peak_significance_proxy = peak_signal / math.sqrt(
         max(peak_signal + abs(background_at_peak), 1.0)
@@ -1009,8 +1016,16 @@ def fit_background_model(
     if peak_significance_proxy < 5.0:
         review_reasons.append("weak_peak")
     # endif
-    if background_model in {"linear", "quadratic", "cubic", "quartic"} and background_minimum < -1.0:
-        review_reasons.append("negative_background")
+    if background_model in {"linear", "quadratic", "cubic", "quartic"}:
+        if (
+            np.isfinite(background_minimum_3sigma)
+            and background_minimum_3sigma < -background_negativity_tolerance
+        ):
+            review_reasons.append("negative_background_in_3sigma_region")
+        # endif
+        if background_minimum < -background_negativity_tolerance:
+            review_reasons.append("negative_background_global_diagnostic")
+        # endif
     # endif
 
     bound_names = ["signal_yield", "mean", "sigma"]
@@ -1049,6 +1064,9 @@ def fit_background_model(
         "aicc": float(aicc),
         "peak_significance_proxy": peak_significance_proxy,
         "background_minimum_in_fit_range": background_minimum,
+        "background_minimum_in_2sigma_region": background_minimum_2sigma,
+        "background_minimum_in_3sigma_region": background_minimum_3sigma,
+        "background_negativity_tolerance": background_negativity_tolerance,
         "parameters": parameters.tolist(),
         "parameter_errors": errors.tolist(),
         "covariance": covariance.tolist(),
@@ -1066,7 +1084,7 @@ def fit_background_model(
 
 
 def fit_one_job(job: FitJob) -> dict[str, Any]:
-    """Fit all five deterministic hypotheses for one period-stage-kinematic bin."""
+    """Fit four deterministic polynomial hypotheses for one kinematic bin."""
     values = np.asarray(job.values, dtype=float)
     values = values[np.isfinite(values)]
 
@@ -1126,41 +1144,69 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
             histogram_bin_width_gev2=histogram_bin_width_gev2,
             fit_min_gev2=job.fit_min_gev2,
             fit_max_gev2=job.fit_max_gev2,
+            stage=job.stage,
+            corrected_mean_max_gev2=job.corrected_mean_max_gev2,
         )
         base["models"][model_name] = fit_result
     # endfor
 
     polynomial_candidates = ("quadratic", "cubic", "quartic")
-    acceptable_candidates: list[str] = []
+    hard_rejection_reasons = {
+        "nonfinite_parameters",
+        "nonfinite_covariance",
+        "signal_yield_at_bound",
+        "mean_at_bound",
+        "sigma_at_bound",
+        "negative_background_in_3sigma_region",
+    }
+
+    viable_candidates: list[str] = []
+    passing_candidates: list[str] = []
+
     for model_name in polynomial_candidates:
         candidate = base["models"][model_name]
         reasons = set(candidate.get("review_reasons", []))
-        if (
+        local_score = candidate.get(
+            "signal_region_chi2_ndf_approx",
+            math.nan,
+        )
+        is_viable = (
             candidate.get("success", False)
-            and "negative_background" not in reasons
-            and np.isfinite(candidate.get("signal_region_chi2_ndf_approx", math.nan))
-            and candidate["signal_region_chi2_ndf_approx"] <= 2.0
-        ):
-            acceptable_candidates.append(model_name)
+            and np.isfinite(local_score)
+            and not bool(reasons & hard_rejection_reasons)
+        )
+        if is_viable:
+            viable_candidates.append(model_name)
+            if local_score <= 2.0:
+                passing_candidates.append(model_name)
+            # endif
         # endif
     # endfor
 
-    if acceptable_candidates:
-        recommended_model = acceptable_candidates[0]
+    if passing_candidates:
+        recommended_model = passing_candidates[0]
         recommendation_reason = (
-            "lowest polynomial order with signal-region chi2/ndf <= 2.0 "
-            "and nonnegative fitted background"
+            "lowest viable polynomial order with signal-region "
+            "chi2/ndf_approx <= 2.0"
+        )
+    elif viable_candidates:
+        recommended_model = min(
+            viable_candidates,
+            key=lambda model_name: (
+                base["models"][model_name]["signal_region_chi2_ndf_approx"],
+                base["models"][model_name]["aicc"],
+            ),
+        )
+        recommendation_reason = (
+            "no viable polynomial reached signal-region chi2/ndf_approx <= 2.0; "
+            "selected the viable polynomial with the smallest local score"
         )
     else:
-        viable_candidates = [
+        fallback_candidates = [
             model_name
             for model_name in polynomial_candidates
             if (
                 base["models"][model_name].get("success", False)
-                and "negative_background"
-                not in set(
-                    base["models"][model_name].get("review_reasons", [])
-                )
                 and np.isfinite(
                     base["models"][model_name].get(
                         "signal_region_chi2_ndf_approx",
@@ -1169,25 +1215,22 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
                 )
             )
         ]
-        if viable_candidates:
+        if fallback_candidates:
             recommended_model = min(
-                viable_candidates,
+                fallback_candidates,
                 key=lambda model_name: (
-                    base["models"][model_name][
-                        "signal_region_chi2_ndf_approx"
-                    ],
+                    base["models"][model_name]["signal_region_chi2_ndf_approx"],
                     base["models"][model_name]["aicc"],
                 ),
             )
             recommendation_reason = (
-                "no polynomial reached signal-region chi2/ndf <= 2.0; "
-                "selected the viable polynomial with the smallest signal-region "
-                "chi2/ndf, using AICc as the tie-breaker"
+                "no polynomial passed the hard viability criteria; selected "
+                "the successful polynomial with the smallest local score"
             )
         else:
-            recommended_model = NOMINAL_BACKGROUND_MODEL
+            recommended_model = None
             recommendation_reason = (
-                "no viable adaptive polynomial candidate; fell back to quadratic"
+                "no successful polynomial fit with a finite signal-region score"
             )
         # endif
     # endif
@@ -1200,8 +1243,39 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
     }.get(recommended_model)
     base["recommendation_reason"] = recommendation_reason
 
+    if recommended_model is None:
+        base["status"] = "fit_failed"
+        base["fit_accepted"] = False
+        base["fit_acceptance_reason"] = "no recommended polynomial fit"
+        return base
+    # endif
+
     nominal = base["models"][recommended_model]
-    base["status"] = nominal.get("status", "fit_failed")
+    recommended_reasons = set(nominal.get("review_reasons", []))
+    recommended_local_score = nominal.get(
+        "signal_region_chi2_ndf_approx",
+        math.nan,
+    )
+    fit_accepted = (
+        nominal.get("success", False)
+        and np.isfinite(recommended_local_score)
+        and recommended_local_score <= 3.0
+        and not bool(recommended_reasons & hard_rejection_reasons)
+    )
+    base["fit_accepted"] = bool(fit_accepted)
+    if fit_accepted:
+        base["status"] = "accepted"
+        base["fit_acceptance_reason"] = (
+            "recommended fit passes the hard viability criteria and has "
+            "signal-region chi2/ndf_approx <= 3.0"
+        )
+    else:
+        base["status"] = "recommended_but_unresolved"
+        base["fit_acceptance_reason"] = (
+            "recommended fit is the best available extraction but does not "
+            "pass the final acceptance criteria"
+        )
+    # endif
 
     if nominal.get("success", False):
         base["recommended_selection_windows_gev2"] = {
@@ -1324,6 +1398,7 @@ def build_fit_jobs(
 def execute_fit_jobs(jobs: list[FitJob], workers: int) -> list[dict[str, Any]]:
     """Run all deterministic fits with at most seven worker processes."""
     actual_workers = max(1, min(int(workers), 7, os.cpu_count() or 1))
+    print("Running channel_selection_mx2_fits_v3.py", flush=True)
     print(
         f"Running {len(jobs)} kinematic-bin jobs with {actual_workers} worker(s).",
         flush=True,
@@ -1405,6 +1480,11 @@ def flatten_results(results: list[dict[str, Any]]) -> pd.DataFrame:
                 math.nan,
             ),
             "recommendation_reason": item.get("recommendation_reason", ""),
+            "fit_accepted": bool(item.get("fit_accepted", False)),
+            "fit_acceptance_reason": item.get(
+                "fit_acceptance_reason",
+                "",
+            ),
         }
         for model_name in BACKGROUND_MODELS:
             fit = item["models"][model_name]
@@ -1457,6 +1537,18 @@ def flatten_results(results: list[dict[str, Any]]) -> pd.DataFrame:
                 ),
                 "background_minimum_in_fit_range": fit.get(
                     "background_minimum_in_fit_range",
+                    math.nan,
+                ),
+                "background_minimum_in_2sigma_region": fit.get(
+                    "background_minimum_in_2sigma_region",
+                    math.nan,
+                ),
+                "background_minimum_in_3sigma_region": fit.get(
+                    "background_minimum_in_3sigma_region",
+                    math.nan,
+                ),
+                "background_negativity_tolerance": fit.get(
+                    "background_negativity_tolerance",
                     math.nan,
                 ),
             }
@@ -1522,7 +1614,7 @@ def write_latex_nominal_tables(frame: pd.DataFrame, output_path: Path) -> None:
     ].copy()
 
     lines: list[str] = []
-    lines.append("% Auto-generated by channel_selection_mx2_fit_stability_v6.py")
+    lines.append("% Auto-generated by channel_selection_mx2_fits_v3.py")
     lines.append("% Corrected Gaussian fits with adaptively selected polynomial backgrounds.")
     lines.append("")
 
@@ -1536,8 +1628,8 @@ def write_latex_nominal_tables(frame: pd.DataFrame, output_path: Path) -> None:
                 "\\small",
                 "\\caption{Missing-neutron peak fit results for "
                 f"{PERIOD_LABELS[period]} after momentum corrections. "
-                "The nominal model is a Gaussian signal plus quadratic "
-                "background.}",
+                "Each bin uses the adaptively recommended quadratic, cubic, "
+                "or quartic background.}",
                 f"\\label{{tab:mx2_peak_{period}}}",
                 "\\begin{tabular}{cccccccc}",
                 "\\hline",
@@ -1675,10 +1767,10 @@ def plot_spectrum_canvases(
                     )
 
                     x_dense = np.linspace(fit_min_gev2, fit_max_gev2, 500)
-                    selected_model = item.get(
-                        "recommended_background_model",
-                        NOMINAL_BACKGROUND_MODEL,
-                    )
+                    selected_model = item.get("recommended_background_model")
+                    if selected_model is None:
+                        selected_model = NOMINAL_BACKGROUND_MODEL
+                    # endif
                     evaluated = evaluate_model_dense(
                         item,
                         selected_model,
@@ -1711,8 +1803,9 @@ def plot_spectrum_canvases(
                             f"$\\mu$={mean:.4f}\n"
                             f"$\\sigma$={sigma:.4f}\n"
                             f"model={selected_model}\n"
-                            f"$\\chi^2$/ndf$_{{\\pm2\\sigma}}$="
-                            f"{nominal['signal_region_chi2_ndf_approx']:.2f}"
+                            f"$\\chi^2$/ndf$_{{\\pm2\\sigma,approx}}$="
+                            f"{nominal['signal_region_chi2_ndf_approx']:.2f}\n"
+                            f"{'ACCEPTED' if item.get('fit_accepted', False) else 'UNRESOLVED'}"
                         )
                     else:
                         annotation = nominal.get("status", "fit failed")
@@ -1903,159 +1996,201 @@ def symmetric_limits(values: np.ndarray, fractional_padding: float = 0.10) -> tu
     return -maximum, maximum
 
 def plot_before_after_summary(frame: pd.DataFrame, output_dir: Path) -> None:
-    """Plot nominal mu and sigma before versus after momentum corrections."""
+    """Plot recommended mu and sigma before versus after momentum corrections."""
     ensure_directory(output_dir)
-    nominal = frame[
-        (frame["background_model"] == NOMINAL_BACKGROUND_MODEL)
-        & frame["success"]
-    ].copy()
+    recommended = frame[frame["is_recommended"] & frame["success"]].copy()
 
     mu_low, mu_high = padded_limits(
         np.concatenate(
             [
-                nominal["mean_gev2"].to_numpy(dtype=float),
+                recommended["mean_gev2"].to_numpy(dtype=float),
                 np.asarray([NEUTRON_MASS2_GEV2], dtype=float),
             ]
         ),
         fractional_padding=0.08,
     )
     sigma_low, sigma_high = padded_limits(
-        nominal["sigma_gev2"].to_numpy(dtype=float),
+        recommended["sigma_gev2"].to_numpy(dtype=float),
         fractional_padding=0.10,
     )
     sigma_low = max(0.0, sigma_low)
 
     for period in ("su22", "fa22", "sp23"):
-        period_frame = nominal[nominal["period"] == period]
+        period_frame = recommended[recommended["period"] == period]
 
-        fig, ax = plt.subplots(figsize=(12, 5.5))
-        for stage in ("before", "after"):
-            selected = period_frame[period_frame["stage"] == stage].sort_values(
-                "bin_number"
-            )
-            ax.errorbar(
-                selected["bin_number"],
-                selected["mean_gev2"],
-                yerr=selected["mean_error_gev2"],
-                fmt="o",
-                markersize=4,
-                capsize=2,
-                label=STAGE_LABELS[stage],
-            )
-        # endfor
-        ax.axhline(
-            NEUTRON_MASS2_GEV2,
-            linewidth=1.0,
-            linestyle="--",
-            label="$m_n^2$",
-        )
-        ax.set_xlabel("Kinematic bin")
-        ax.set_ylabel("Gaussian mean $\\mu$ (GeV$^2$)")
-        ax.set_title(f"{PERIOD_LABELS[period]} missing-neutron peak mean")
-        ax.set_xlim(0.5, 24.5)
-        ax.set_ylim(mu_low, mu_high)
-        ax.set_xticks(np.arange(1, 25))
-        ax.grid(True, alpha=0.4)
-        ax.legend()
-        fig.tight_layout()
-        fig.savefig(output_dir / f"mu_before_after_{period}.png", dpi=180)
-        plt.close(fig)
+        for quantity, error, ylabel, title_word, limits, filename_prefix in (
+            (
+                "mean_gev2",
+                "mean_error_gev2",
+                "Gaussian mean $\\mu$ (GeV$^2$)",
+                "mean",
+                (mu_low, mu_high),
+                "mu",
+            ),
+            (
+                "sigma_gev2",
+                "sigma_error_gev2",
+                "Gaussian width $\\sigma$ (GeV$^2$)",
+                "width",
+                (sigma_low, sigma_high),
+                "sigma",
+            ),
+        ):
+            fig, ax = plt.subplots(figsize=(12, 5.5))
+            for stage in ("before", "after"):
+                selected = period_frame[
+                    period_frame["stage"] == stage
+                ].sort_values("bin_number")
+                accepted = selected[selected["fit_accepted"]]
+                unresolved = selected[~selected["fit_accepted"]]
 
-        fig, ax = plt.subplots(figsize=(12, 5.5))
-        for stage in ("before", "after"):
-            selected = period_frame[period_frame["stage"] == stage].sort_values(
-                "bin_number"
+                ax.errorbar(
+                    accepted["bin_number"],
+                    accepted[quantity],
+                    yerr=accepted[error],
+                    fmt="o",
+                    markersize=4,
+                    capsize=2,
+                    label=f"{STAGE_LABELS[stage]} accepted",
+                )
+                ax.errorbar(
+                    unresolved["bin_number"],
+                    unresolved[quantity],
+                    yerr=unresolved[error],
+                    fmt="o",
+                    markerfacecolor="none",
+                    markersize=5,
+                    capsize=2,
+                    label=f"{STAGE_LABELS[stage]} unresolved",
+                )
+            # endfor
+
+            if quantity == "mean_gev2":
+                ax.axhline(
+                    NEUTRON_MASS2_GEV2,
+                    linewidth=1.0,
+                    linestyle="--",
+                    label="$m_n^2$",
+                )
+            # endif
+
+            ax.set_xlabel("Kinematic bin")
+            ax.set_ylabel(ylabel)
+            ax.set_title(
+                f"{PERIOD_LABELS[period]} missing-neutron peak {title_word}"
             )
-            ax.errorbar(
-                selected["bin_number"],
-                selected["sigma_gev2"],
-                yerr=selected["sigma_error_gev2"],
-                fmt="o",
-                markersize=4,
-                capsize=2,
-                label=STAGE_LABELS[stage],
+            ax.set_xlim(0.5, 24.5)
+            ax.set_ylim(*limits)
+            ax.set_xticks(np.arange(1, 25))
+            ax.grid(True, alpha=0.4)
+            ax.legend(ncol=2)
+            fig.tight_layout()
+            fig.savefig(
+                output_dir / f"{filename_prefix}_before_after_{period}.png",
+                dpi=180,
             )
+            plt.close(fig)
         # endfor
-        ax.set_xlabel("Kinematic bin")
-        ax.set_ylabel("Gaussian width $\\sigma$ (GeV$^2$)")
-        ax.set_title(f"{PERIOD_LABELS[period]} missing-neutron peak width")
-        ax.set_xlim(0.5, 24.5)
-        ax.set_ylim(sigma_low, sigma_high)
-        ax.set_xticks(np.arange(1, 25))
-        ax.grid(True, alpha=0.4)
-        ax.legend()
-        fig.tight_layout()
-        fig.savefig(output_dir / f"sigma_before_after_{period}.png", dpi=180)
-        plt.close(fig)
     # endfor
 
 
 def plot_corrected_period_summary(frame: pd.DataFrame, output_dir: Path) -> None:
-    """Compare corrected nominal mu and sigma among the three run periods."""
+    """Compare corrected recommended mu and sigma among the run periods."""
     ensure_directory(output_dir)
     selected = frame[
         (frame["stage"] == "after")
-        & (frame["background_model"] == NOMINAL_BACKGROUND_MODEL)
+        & frame["is_recommended"]
         & frame["success"]
     ].copy()
 
-    fig, ax = plt.subplots(figsize=(12, 5.5))
-    for period in ("su22", "fa22", "sp23"):
-        period_frame = selected[selected["period"] == period].sort_values(
-            "bin_number"
-        )
-        ax.errorbar(
-            period_frame["bin_number"],
-            period_frame["mean_gev2"],
-            yerr=period_frame["mean_error_gev2"],
-            fmt="o",
-            markersize=4,
-            capsize=2,
-            label=PERIOD_LABELS[period],
-        )
-    # endfor
-    ax.axhline(
-        NEUTRON_MASS2_GEV2,
-        linewidth=1.0,
-        linestyle="--",
-        label="$m_n^2$",
+    mu_low, mu_high = padded_limits(
+        np.concatenate(
+            [
+                selected["mean_gev2"].to_numpy(dtype=float),
+                np.asarray([NEUTRON_MASS2_GEV2], dtype=float),
+            ]
+        ),
+        fractional_padding=0.08,
     )
-    ax.set_xlabel("Kinematic bin")
-    ax.set_ylabel("Gaussian mean $\\mu$ (GeV$^2$)")
-    ax.set_title("Corrected missing-neutron peak mean by run period")
-    ax.set_xlim(0.5, 24.5)
-    ax.set_xticks(np.arange(1, 25))
-    ax.grid(True, alpha=0.4)
-    ax.legend(ncol=4)
-    fig.tight_layout()
-    fig.savefig(output_dir / "mu_corrected_period_comparison.png", dpi=180)
-    plt.close(fig)
+    sigma_low, sigma_high = padded_limits(
+        selected["sigma_gev2"].to_numpy(dtype=float),
+        fractional_padding=0.10,
+    )
+    sigma_low = max(0.0, sigma_low)
 
-    fig, ax = plt.subplots(figsize=(12, 5.5))
-    for period in ("su22", "fa22", "sp23"):
-        period_frame = selected[selected["period"] == period].sort_values(
-            "bin_number"
+    for quantity, error, ylabel, title_word, limits, filename_prefix in (
+        (
+            "mean_gev2",
+            "mean_error_gev2",
+            "Gaussian mean $\\mu$ (GeV$^2$)",
+            "mean",
+            (mu_low, mu_high),
+            "mu",
+        ),
+        (
+            "sigma_gev2",
+            "sigma_error_gev2",
+            "Gaussian width $\\sigma$ (GeV$^2$)",
+            "width",
+            (sigma_low, sigma_high),
+            "sigma",
+        ),
+    ):
+        fig, ax = plt.subplots(figsize=(12, 5.5))
+        for period in ("su22", "fa22", "sp23"):
+            period_frame = selected[
+                selected["period"] == period
+            ].sort_values("bin_number")
+            accepted = period_frame[period_frame["fit_accepted"]]
+            unresolved = period_frame[~period_frame["fit_accepted"]]
+
+            ax.errorbar(
+                accepted["bin_number"],
+                accepted[quantity],
+                yerr=accepted[error],
+                fmt="o",
+                markersize=4,
+                capsize=2,
+                label=f"{PERIOD_LABELS[period]} accepted",
+            )
+            ax.errorbar(
+                unresolved["bin_number"],
+                unresolved[quantity],
+                yerr=unresolved[error],
+                fmt="o",
+                markerfacecolor="none",
+                markersize=5,
+                capsize=2,
+                label=f"{PERIOD_LABELS[period]} unresolved",
+            )
+        # endfor
+
+        if quantity == "mean_gev2":
+            ax.axhline(
+                NEUTRON_MASS2_GEV2,
+                linewidth=1.0,
+                linestyle="--",
+                label="$m_n^2$",
+            )
+        # endif
+
+        ax.set_xlabel("Kinematic bin")
+        ax.set_ylabel(ylabel)
+        ax.set_title(
+            f"Corrected missing-neutron peak {title_word} by run period"
         )
-        ax.errorbar(
-            period_frame["bin_number"],
-            period_frame["sigma_gev2"],
-            yerr=period_frame["sigma_error_gev2"],
-            fmt="o",
-            markersize=4,
-            capsize=2,
-            label=PERIOD_LABELS[period],
+        ax.set_xlim(0.5, 24.5)
+        ax.set_ylim(*limits)
+        ax.set_xticks(np.arange(1, 25))
+        ax.grid(True, alpha=0.4)
+        ax.legend(ncol=2)
+        fig.tight_layout()
+        fig.savefig(
+            output_dir / f"{filename_prefix}_corrected_period_comparison.png",
+            dpi=180,
         )
+        plt.close(fig)
     # endfor
-    ax.set_xlabel("Kinematic bin")
-    ax.set_ylabel("Gaussian width $\\sigma$ (GeV$^2$)")
-    ax.set_title("Corrected missing-neutron peak width by run period")
-    ax.set_xlim(0.5, 24.5)
-    ax.set_xticks(np.arange(1, 25))
-    ax.grid(True, alpha=0.4)
-    ax.legend(ncol=3)
-    fig.tight_layout()
-    fig.savefig(output_dir / "sigma_corrected_period_comparison.png", dpi=180)
-    plt.close(fig)
 
 
 def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
@@ -2187,6 +2322,163 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
     # endfor
 
 
+
+def plot_problem_bin_pull_diagnostics(
+    results: list[dict[str, Any]],
+    output_dir: Path,
+    fit_min_gev2: float,
+    fit_max_gev2: float,
+) -> None:
+    """Plot corrected spectra and pulls for difficult bins 1, 7, 13, and 19."""
+    ensure_directory(output_dir)
+    lookup = result_lookup(results)
+    problem_bins = (1, 7, 13, 19)
+
+    for period in ("su22", "fa22", "sp23"):
+        fig, axes = plt.subplots(
+            len(problem_bins),
+            2,
+            figsize=(13, 13),
+            squeeze=False,
+        )
+
+        for row_index, bin_number in enumerate(problem_bins):
+            x_index = (bin_number - 1) // len(MINUS_TPRIME_BINS_GEV2)
+            t_index = (bin_number - 1) % len(MINUS_TPRIME_BINS_GEV2)
+            item = lookup[(period, "after", x_index, t_index)]
+            model_name = item.get("recommended_background_model")
+            spectrum_ax, pull_ax = axes[row_index]
+
+            if model_name is None:
+                spectrum_ax.text(
+                    0.5,
+                    0.5,
+                    "No recommended fit",
+                    ha="center",
+                    va="center",
+                    transform=spectrum_ax.transAxes,
+                )
+                pull_ax.axis("off")
+                continue
+            # endif
+
+            fit = item["models"][model_name]
+            counts = np.asarray(item["counts"], dtype=float)
+            edges = np.asarray(item["edges"], dtype=float)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            errors = np.sqrt(np.maximum(counts, 1.0))
+
+            spectrum_ax.errorbar(
+                centers,
+                counts,
+                yerr=errors,
+                fmt=".",
+                markersize=3,
+                linewidth=0.6,
+                label="Data",
+            )
+
+            x_dense = np.linspace(fit_min_gev2, fit_max_gev2, 600)
+            evaluated = evaluate_model_dense(item, model_name, x_dense)
+            if evaluated is not None:
+                total, signal, background = evaluated
+                spectrum_ax.plot(x_dense, total, linewidth=1.2, label="Total fit")
+                spectrum_ax.plot(
+                    x_dense,
+                    signal,
+                    linewidth=1.0,
+                    linestyle="--",
+                    label="Gaussian",
+                )
+                spectrum_ax.plot(
+                    x_dense,
+                    background,
+                    linewidth=1.0,
+                    linestyle=":",
+                    label="Background",
+                )
+            # endif
+
+            mean = float(fit["mean_gev2"])
+            sigma = float(fit["sigma_gev2"])
+            spectrum_ax.axvline(mean - 2.0 * sigma, linestyle="--", linewidth=0.8)
+            spectrum_ax.axvline(mean + 2.0 * sigma, linestyle="--", linewidth=0.8)
+
+            fit_mask = (
+                (centers >= fit_min_gev2)
+                & (centers <= fit_max_gev2)
+            )
+            fit_centers = centers[fit_mask]
+            fit_counts = counts[fit_mask]
+            fit_errors = errors[fit_mask]
+            model = build_total_model(
+                model_name,
+                float(item["histogram_bin_width_gev2"]),
+            )
+            parameters = np.asarray(fit["parameters"], dtype=float)
+            pulls = (
+                fit_counts - model(fit_centers, *parameters)
+            ) / fit_errors
+
+            pull_ax.axhline(0.0, linewidth=0.9)
+            pull_ax.axhline(2.0, linewidth=0.7, linestyle=":")
+            pull_ax.axhline(-2.0, linewidth=0.7, linestyle=":")
+            pull_ax.plot(
+                fit_centers,
+                pulls,
+                marker="o",
+                markersize=3,
+                linewidth=0.8,
+            )
+            pull_ax.axvspan(
+                mean - 2.0 * sigma,
+                mean + 2.0 * sigma,
+                alpha=0.10,
+            )
+            pull_ax.set_ylim(-8.0, 8.0)
+
+            status = "accepted" if item.get("fit_accepted", False) else "unresolved"
+            spectrum_ax.set_title(
+                f"Bin {bin_number}: {model_name}, {status}\\n"
+                f"$\\\\chi^2$/ndf$_{{\\\\pm2\\\\sigma,approx}}$="
+                f"{fit['signal_region_chi2_ndf_approx']:.2f}",
+                fontsize=9,
+            )
+            pull_ax.set_title("Pulls over full fit range", fontsize=9)
+            spectrum_ax.set_ylabel("Counts")
+            pull_ax.set_ylabel("(Data - fit) / uncertainty")
+            spectrum_ax.grid(True, alpha=0.35)
+            pull_ax.grid(True, alpha=0.35)
+
+            if row_index == len(problem_bins) - 1:
+                spectrum_ax.set_xlabel("$M_x^2$ (GeV$^2$)")
+                pull_ax.set_xlabel("$M_x^2$ (GeV$^2$)")
+            # endif
+        # endfor
+
+        handles, labels = axes[0][0].get_legend_handles_labels()
+        if handles:
+            fig.legend(
+                handles,
+                labels,
+                loc="upper center",
+                ncol=4,
+                fontsize=9,
+            )
+        # endif
+        fig.suptitle(
+            f"{PERIOD_LABELS[period]} corrected difficult-bin diagnostics",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.965))
+        fig.savefig(
+            output_dir / f"problem_bin_pulls_{period}_after.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    # endfor
+
+
 def write_fit_status_summary(frame: pd.DataFrame, output_path: Path) -> None:
     """Write a concise text report of fit success and flagged bins."""
     lines: list[str] = []
@@ -2206,6 +2498,23 @@ def write_fit_status_summary(frame: pd.DataFrame, output_path: Path) -> None:
             f"{model_name:11s} : successful={successful:2d}/24, "
             f"flagged={flagged:2d}, failed={failed:2d}"
         )
+    # endfor
+
+    lines.append("")
+    recommended = frame[frame["is_recommended"]].copy()
+    for period in ("su22", "fa22", "sp23"):
+        for stage in ("before", "after"):
+            group = recommended[
+                (recommended["period"] == period)
+                & (recommended["stage"] == stage)
+            ]
+            accepted = int(group["fit_accepted"].sum())
+            unresolved = int(len(group) - accepted)
+            lines.append(
+                f"{PERIOD_LABELS[period]:4s} | {stage:6s} | recommended fits: "
+                f"accepted={accepted:2d}/24, unresolved={unresolved:2d}"
+            )
+        # endfor
     # endfor
 
     lines.append("")
@@ -2272,11 +2581,17 @@ def build_compact_json(
             "background_models": list(BACKGROUND_MODELS),
             "adaptive_polynomial_selection": {
                 "candidate_orders": [2, 3, 4],
-                "acceptance_threshold_signal_region_chi2_ndf_approx": 2.0,
+                "preferred_threshold_signal_region_chi2_ndf_approx": 2.0,
+                "final_acceptance_threshold_signal_region_chi2_ndf_approx": 3.0,
+                "background_positivity_region": "fitted mean +/- 3 fitted sigma",
+                "background_negativity_tolerance": (
+                    "max(1 count, 1 percent of the characteristic count scale)"
+                ),
                 "policy": (
-                    "Choose the lowest polynomial order satisfying the threshold "
-                    "with a nonnegative background; otherwise choose the viable "
-                    "order with the smallest signal-region chi2/ndf."
+                    "Choose the lowest viable polynomial order satisfying the "
+                    "preferred local threshold. If none passes, choose the viable "
+                    "order with the smallest local score. Recommendation and final "
+                    "acceptance are stored separately."
                 ),
             },
             "signal_region_fit_quality": {
@@ -2405,7 +2720,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--hist-bins",
         type=int,
         default=60,
-        help="Number of Mx2 histogram bins (default: 80).",
+        help="Number of Mx2 histogram bins (default: 60).",
     )
     parser.add_argument(
         "--fit-min",
@@ -2417,7 +2732,16 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--fit-max",
         type=float,
         default=1.35,
-        help="Mx2 total-fit maximum in GeV^2 (default: 1.40).",
+        help="Mx2 total-fit maximum in GeV^2 (default: 1.35).",
+    )
+    parser.add_argument(
+        "--corrected-mean-max",
+        type=float,
+        default=0.910,
+        help=(
+            "Upper bound on the corrected-data Gaussian mean in GeV^2 "
+            "(default: 0.910). Before-correction fits retain a wider bound."
+        ),
     )
     parser.add_argument(
         "--minimum-events",
@@ -2482,6 +2806,7 @@ def main() -> int:
         spectrum_dir = plot_dir / "spectra"
         model_canvas_dir = plot_dir / "background_models"
         summary_dir = plot_dir / "summaries"
+        pull_diagnostic_dir = plot_dir / "problem_bin_diagnostics"
         for path in (
             output_dir,
             table_dir,
@@ -2489,6 +2814,7 @@ def main() -> int:
             spectrum_dir,
             model_canvas_dir,
             summary_dir,
+            pull_diagnostic_dir,
         ):
             ensure_directory(path)
         # endfor
@@ -2506,10 +2832,10 @@ def main() -> int:
         results = execute_fit_jobs(jobs=jobs, workers=args.workers)
         frame = flatten_results(results)
 
-        csv_path = table_dir / "mx2_peak_fit_results_v6.csv"
-        json_path = table_dir / "mx2_peak_fit_results_v6.json"
-        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v6.tex"
-        status_path = table_dir / "mx2_peak_fit_status_v6.txt"
+        csv_path = table_dir / "mx2_peak_fit_results_v3.csv"
+        json_path = table_dir / "mx2_peak_fit_results_v3.json"
+        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v3.tex"
+        status_path = table_dir / "mx2_peak_fit_status_v3.txt"
 
         frame.to_csv(csv_path, index=False)
         compact_json = build_compact_json(
@@ -2540,16 +2866,25 @@ def main() -> int:
         plot_before_after_summary(frame, summary_dir)
         plot_corrected_period_summary(frame, summary_dir)
         plot_model_variations(frame, summary_dir)
+        plot_problem_bin_pull_diagnostics(
+            results=results,
+            output_dir=pull_diagnostic_dir,
+            fit_min_gev2=args.fit_min,
+            fit_max_gev2=args.fit_max,
+        )
 
-        nominal_after = frame[
+        recommended_after = frame[
             (frame["stage"] == "after")
-            & (frame["background_model"] == NOMINAL_BACKGROUND_MODEL)
+            & frame["is_recommended"]
         ]
-        successful_nominal_after = int(nominal_after["success"].sum())
-        flagged_nominal_after = int(
-            np.count_nonzero(
-                nominal_after["status"] == "success_flagged_for_review"
-            )
+        successful_recommended_after = int(
+            recommended_after["success"].sum()
+        )
+        accepted_recommended_after = int(
+            recommended_after["fit_accepted"].sum()
+        )
+        unresolved_recommended_after = int(
+            len(recommended_after) - accepted_recommended_after
         )
 
         print("")
@@ -2560,9 +2895,10 @@ def main() -> int:
         print(f"LaTeX tables:      {latex_path}")
         print(f"Status report:     {status_path}")
         print(
-            "Corrected nominal fits: "
-            f"{successful_nominal_after}/72 successful; "
-            f"{flagged_nominal_after} flagged for review."
+            "Corrected recommended fits: "
+            f"{successful_recommended_after}/72 successful; "
+            f"{accepted_recommended_after} accepted; "
+            f"{unresolved_recommended_after} unresolved."
         )
         return 0
     except Exception as exc:
