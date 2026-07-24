@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-channel_selection_mx2_fit_stability_v3.py
+channel_selection_mx2_fit_stability_v4.py
 
 Deterministic pass-1 fit-stability study of the missing-neutron Mx2 peak used for the RGC
 exclusive e pi+ channel selection.
@@ -10,12 +10,13 @@ corrections, the script:
 
   1. reads xB, tprime, and Mx2 from the PhysicsEvents ROOT tree;
   2. divides the sample into the fixed 4 xB by 6 (-tprime) bins;
-  3. fits each Mx2 distribution with a Gaussian signal and each of three smooth
-     background models:
+  3. fits each Mx2 distribution with a Gaussian signal and each of four
+     deterministic background hypotheses:
 
          nominal:     quadratic polynomial,
          alternative: linear polynomial,
-         alternative: exponential;
+         alternative: exponential,
+         alternative: quadratic polynomial plus an N-pi threshold component;
 
   4. extracts the Gaussian mean, width, and signal yield;
   5. records fit quality, covariance information, model differences, and
@@ -58,6 +59,10 @@ import uproot
 
 NEUTRON_MASS_GEV = 0.9395654133
 NEUTRON_MASS2_GEV2 = NEUTRON_MASS_GEV**2
+NEUTRAL_PION_MASS_GEV = 0.1349768
+NPI_THRESHOLD_MASS_GEV = NEUTRON_MASS_GEV + NEUTRAL_PION_MASS_GEV
+NPI_THRESHOLD_MASS2_GEV2 = NPI_THRESHOLD_MASS_GEV**2
+NPI_THRESHOLD_POWER = 1.5
 
 XB_BINS: tuple[tuple[float, float], ...] = (
     (0.10, 0.25),
@@ -123,12 +128,18 @@ BACKGROUND_LABELS = {
     "quadratic": "Quadratic background",
     "linear": "Linear background",
     "exponential": "Exponential background",
+    "quadratic_npi_threshold": r"Quadratic + N$\pi$ threshold background",
 }
 
 BACKGROUND_MODELS: tuple[str, ...] = (
     "quadratic",
     "linear",
     "exponential",
+    "quadratic_npi_threshold",
+)
+
+ALTERNATIVE_BACKGROUND_MODELS: tuple[str, ...] = tuple(
+    model for model in BACKGROUND_MODELS if model != "quadratic"
 )
 
 NOMINAL_BACKGROUND_MODEL = "quadratic"
@@ -504,6 +515,30 @@ def exponential_background(
     return np.exp(exponent)
 
 
+def npi_threshold_background(
+    x: np.ndarray,
+    log_amplitude: float,
+    falloff_per_gev: float,
+) -> np.ndarray:
+    """Empirical positive N-pi threshold component expressed in missing mass.
+
+    The component turns on at the physical n + pi0 threshold and uses a fixed
+    threshold power of 3/2. It is intentionally phenomenological: it tests
+    whether a clipped broad continuum above the neutron peak stabilizes the
+    neutron Gaussian, without claiming that the observed structure is a pure
+    Delta0 resonance.
+    """
+    x_array = np.asarray(x, dtype=float)
+    missing_mass = np.sqrt(np.clip(x_array, 0.0, None))
+    excess_mass = np.clip(missing_mass - NPI_THRESHOLD_MASS_GEV, 0.0, None)
+    amplitude = np.exp(np.clip(log_amplitude, -50.0, 50.0))
+    return (
+        amplitude
+        * excess_mass**NPI_THRESHOLD_POWER
+        * np.exp(-np.clip(falloff_per_gev, 0.0, 100.0) * excess_mass)
+    )
+
+
 def build_total_model(
     background_model: str,
     histogram_bin_width_gev2: float,
@@ -574,6 +609,37 @@ def build_total_model(
         return model
     # endif
 
+    if background_model == "quadratic_npi_threshold":
+        def model(
+            x: np.ndarray,
+            signal_yield: float,
+            mean_gev2: float,
+            sigma_gev2: float,
+            c0: float,
+            c1: float,
+            c2: float,
+            log_threshold_amplitude: float,
+            threshold_falloff_per_gev: float,
+        ) -> np.ndarray:
+            return (
+                gaussian_signal_from_yield(
+                    x,
+                    signal_yield,
+                    mean_gev2,
+                    sigma_gev2,
+                    histogram_bin_width_gev2,
+                )
+                + quadratic_background(x, c0, c1, c2)
+                + npi_threshold_background(
+                    x,
+                    log_threshold_amplitude,
+                    threshold_falloff_per_gev,
+                )
+            )
+        # enddef
+        return model
+    # endif
+
     raise ValueError(f"Unknown background model: {background_model}")
 
 
@@ -591,6 +657,12 @@ def evaluate_background(
     # endif
     if background_model == "exponential":
         return exponential_background(x, *parameters[3:5])
+    # endif
+    if background_model == "quadratic_npi_threshold":
+        return (
+            quadratic_background(x, *parameters[3:6])
+            + npi_threshold_background(x, *parameters[6:8])
+        )
     # endif
     raise ValueError(background_model)
 
@@ -674,6 +746,54 @@ def initial_values_and_bounds(
         initial = [*common_initial, log_baseline, 0.0]
         lower = [*common_lower, math.log(1.0e-4), -25.0]
         upper = [*common_upper, math.log(10.0 * background_scale), 25.0]
+    elif background_model == "quadratic_npi_threshold":
+        threshold_region = fit_x >= NPI_THRESHOLD_MASS2_GEV2
+        if np.any(threshold_region):
+            threshold_counts_scale = max(
+                float(np.percentile(fit_y[threshold_region], 70.0)) - baseline,
+                1.0,
+            )
+            representative_mass = float(
+                np.sqrt(np.median(fit_x[threshold_region]))
+            )
+            representative_excess = max(
+                representative_mass - NPI_THRESHOLD_MASS_GEV,
+                0.02,
+            )
+            threshold_shape_scale = (
+                representative_excess**NPI_THRESHOLD_POWER
+                * math.exp(-4.0 * representative_excess)
+            )
+            threshold_amplitude_guess = (
+                threshold_counts_scale / max(threshold_shape_scale, 1.0e-6)
+            )
+        else:
+            threshold_amplitude_guess = max(10.0 * background_scale, 1.0)
+        # endif
+        initial = [
+            *common_initial,
+            baseline,
+            0.0,
+            0.0,
+            math.log(threshold_amplitude_guess),
+            4.0,
+        ]
+        lower = [
+            *common_lower,
+            -0.50 * background_scale,
+            -30.0 * background_scale,
+            -150.0 * background_scale,
+            math.log(1.0e-6),
+            0.0,
+        ]
+        upper = [
+            *common_upper,
+            3.00 * background_scale,
+            30.0 * background_scale,
+            150.0 * background_scale,
+            math.log(1.0e5 * background_scale),
+            40.0,
+        ]
     else:
         raise ValueError(background_model)
     # endif
@@ -853,7 +973,7 @@ def fit_background_model(
     if peak_significance_proxy < 5.0:
         review_reasons.append("weak_peak")
     # endif
-    if background_model in {"linear", "quadratic"} and background_minimum < -1.0:
+    if background_model in {"linear", "quadratic", "quadratic_npi_threshold"} and background_minimum < -1.0:
         review_reasons.append("negative_background")
     # endif
 
@@ -904,7 +1024,7 @@ def fit_background_model(
 
 
 def fit_one_job(job: FitJob) -> dict[str, Any]:
-    """Fit all three background models for one period-stage-kinematic bin."""
+    """Fit all four deterministic hypotheses for one period-stage-kinematic bin."""
     values = np.asarray(job.values, dtype=float)
     values = values[np.isfinite(values)]
 
@@ -988,7 +1108,7 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
         }
 
         model_differences: dict[str, Any] = {}
-        for alternative in ("linear", "exponential"):
+        for alternative in ALTERNATIVE_BACKGROUND_MODELS:
             alt = base["models"][alternative]
             if alt.get("success", False):
                 model_differences[alternative] = {
@@ -1784,7 +1904,7 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
     ensure_directory(output_dir)
     selected = frame[
         (frame["stage"] == "after")
-        & frame["background_model"].isin(["linear", "exponential"])
+        & frame["background_model"].isin(ALTERNATIVE_BACKGROUND_MODELS)
         & frame["success"]
     ].copy()
 
@@ -1808,7 +1928,7 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
         period_frame = selected[selected["period"] == period]
 
         fig, ax = plt.subplots(figsize=(12, 5.5))
-        for model_name in ("linear", "exponential"):
+        for model_name in ALTERNATIVE_BACKGROUND_MODELS:
             model_frame = period_frame[
                 period_frame["background_model"] == model_name
             ].sort_values("bin_number")
@@ -1843,7 +1963,7 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
         plt.close(fig)
 
         fig, ax = plt.subplots(figsize=(12, 5.5))
-        for model_name in ("linear", "exponential"):
+        for model_name in ALTERNATIVE_BACKGROUND_MODELS:
             model_frame = period_frame[
                 period_frame["background_model"] == model_name
             ].sort_values("bin_number")
@@ -1875,7 +1995,7 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
         plt.close(fig)
 
         fig, ax = plt.subplots(figsize=(12, 5.5))
-        for model_name in ("linear", "exponential"):
+        for model_name in ALTERNATIVE_BACKGROUND_MODELS:
             model_frame = period_frame[
                 period_frame["background_model"] == model_name
             ].sort_values("bin_number")
@@ -1990,6 +2110,15 @@ def build_compact_json(
             "signal_model": "Gaussian parameterized by integrated yield",
             "nominal_background_model": NOMINAL_BACKGROUND_MODEL,
             "background_models": list(BACKGROUND_MODELS),
+            "npi_threshold_component": {
+                "threshold_mass_gev": NPI_THRESHOLD_MASS_GEV,
+                "threshold_mass2_gev2": NPI_THRESHOLD_MASS2_GEV2,
+                "threshold_power": NPI_THRESHOLD_POWER,
+                "interpretation": (
+                    "Empirical broad-continuum test; not identified as a pure "
+                    "Delta0 resonance."
+                ),
+            },
             "replicas_performed": False,
         },
         "execution": {
@@ -2112,14 +2241,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fit-min",
         type=float,
-        default=0.30,
-        help="Mx2 total-fit minimum in GeV^2 (default: 0.30).",
+        default=0.50,
+        help="Mx2 total-fit minimum in GeV^2 (default: 0.50).",
     )
     parser.add_argument(
         "--fit-max",
         type=float,
-        default=1.50,
-        help="Mx2 total-fit maximum in GeV^2 (default: 1.50).",
+        default=1.40,
+        help="Mx2 total-fit maximum in GeV^2 (default: 1.40).",
     )
     parser.add_argument(
         "--minimum-events",
@@ -2208,10 +2337,10 @@ def main() -> int:
         results = execute_fit_jobs(jobs=jobs, workers=args.workers)
         frame = flatten_results(results)
 
-        csv_path = table_dir / "mx2_peak_fit_results_v3.csv"
-        json_path = table_dir / "mx2_peak_fit_results_v3.json"
-        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v3.tex"
-        status_path = table_dir / "mx2_peak_fit_status_v3.txt"
+        csv_path = table_dir / "mx2_peak_fit_results_v4.csv"
+        json_path = table_dir / "mx2_peak_fit_results_v4.json"
+        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v4.tex"
+        status_path = table_dir / "mx2_peak_fit_status_v4.txt"
 
         frame.to_csv(csv_path, index=False)
         compact_json = build_compact_json(
