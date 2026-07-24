@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-channel_selection_mx2_fits_v7.py
+channel_selection_mx2_fits_v9.py
 
 Deterministic pass-1 fit-stability study of the missing-neutron Mx2 peak used for the RGC
 exclusive e pi+ channel selection.
@@ -27,9 +27,18 @@ corrections, the script:
      quality-control flags;
   6. writes compact JSON, flat CSV, LaTeX tables, and diagnostic plots.
 
-This is intentionally the deterministic first pass. It does not perform the
-Poisson-replica study, Carbon subtraction, or the Mx2-window asymmetry
-systematic. Those are later stages.
+Corrected data are fitted jointly across Su22, Fa22, and Sp23 in each
+kinematic bin. The corrected Gaussian mean is shared across periods, while
+each period retains an independent signal yield, Gaussian width, and
+background coefficients. Before-correction spectra remain independent
+diagnostic fits.
+
+The script includes sideband-based background initialization, adaptive
+quadratic/cubic/quartic selection with an AICc and local-quality improvement
+requirement, accepted/marginal/unresolved classifications, deterministic
+fit-range stability checks, and a neighboring-bin fixed-mean fallback for
+otherwise unresolved corrected bins. Carbon subtraction and the final
+Mx2-window asymmetry systematic remain later stages.
 
 The branch tprime is negated explicitly before applying the requested -tprime
 binning.
@@ -53,7 +62,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.optimize import curve_fit
+from scipy.optimize import curve_fit, least_squares
 import uproot
 
 
@@ -129,7 +138,6 @@ BACKGROUND_LABELS = {
     "quadratic": "Quadratic background",
     "cubic": "Cubic background",
     "quartic": "Quartic background",
-    "quintic": "Quintic background",
 }
 
 BACKGROUND_MODELS: tuple[str, ...] = (
@@ -137,7 +145,6 @@ BACKGROUND_MODELS: tuple[str, ...] = (
     "quadratic",
     "cubic",
     "quartic",
-    "quintic",
 )
 
 ALTERNATIVE_BACKGROUND_MODELS: tuple[str, ...] = tuple(
@@ -193,6 +200,22 @@ class FitJob:
     fit_max_gev2: float
     minimum_events: int
     corrected_mean_max_gev2: float
+
+@dataclass(frozen=True)
+class JointFitConfig:
+    """Configuration for corrected-data simultaneous fits."""
+
+    aicc_improvement_required: float
+    local_improvement_fraction: float
+    accepted_local_score_max: float
+    marginal_local_score_max: float
+    sideband_exclusion_min_gev2: float
+    sideband_exclusion_max_gev2: float
+    range_study_maxima_gev2: tuple[float, ...]
+    enable_neighbor_mean_fallback: bool
+    replicas: int
+    replica_seed: int
+
 
 
 # =============================================================================
@@ -532,27 +555,6 @@ def quartic_background(
     return c0 + c1 * dx + c2 * dx**2 + c3 * dx**3 + c4 * dx**4
 
 
-def quintic_background(
-    x: np.ndarray,
-    c0: float,
-    c1: float,
-    c2: float,
-    c3: float,
-    c4: float,
-    c5: float,
-) -> np.ndarray:
-    """Fifth-order background centered at the neutron mass squared."""
-    dx = np.asarray(x, dtype=float) - NEUTRON_MASS2_GEV2
-    return (
-        c0
-        + c1 * dx
-        + c2 * dx**2
-        + c3 * dx**3
-        + c4 * dx**4
-        + c5 * dx**5
-    )
-
-
 
 def build_total_model(
     background_model: str,
@@ -645,29 +647,6 @@ def build_total_model(
         return model
     # endif
 
-    if background_model == "quintic":
-        def model(
-            x: np.ndarray,
-            signal_yield: float,
-            mean_gev2: float,
-            sigma_gev2: float,
-            c0: float,
-            c1: float,
-            c2: float,
-            c3: float,
-            c4: float,
-            c5: float,
-        ) -> np.ndarray:
-            return gaussian_signal_from_yield(
-                x,
-                signal_yield,
-                mean_gev2,
-                sigma_gev2,
-                histogram_bin_width_gev2,
-            ) + quintic_background(x, c0, c1, c2, c3, c4, c5)
-        # enddef
-        return model
-    # endif
 
 
 
@@ -692,10 +671,115 @@ def evaluate_background(
     if background_model == "quartic":
         return quartic_background(x, *parameters[3:8])
     # endif
-    if background_model == "quintic":
-        return quintic_background(x, *parameters[3:9])
-    # endif
     raise ValueError(background_model)
+
+
+
+
+def polynomial_parameter_count(background_model: str) -> int:
+    """Return the number of polynomial coefficients."""
+    return {
+        "linear": 2,
+        "quadratic": 3,
+        "cubic": 4,
+        "quartic": 5,
+    }[background_model]
+
+
+def sideband_background_initial(
+    background_model: str,
+    fit_x: np.ndarray,
+    fit_y: np.ndarray,
+    exclusion_min_gev2: float = 0.74,
+    exclusion_max_gev2: float = 1.04,
+) -> list[float]:
+    """Estimate polynomial coefficients from lower and upper sidebands.
+
+    Coefficients are returned in ascending powers of
+    dx = Mx2 - neutron_mass_squared, matching the background functions.
+    """
+    fit_x = np.asarray(fit_x, dtype=float)
+    fit_y = np.asarray(fit_y, dtype=float)
+    coefficient_count = polynomial_parameter_count(background_model)
+    degree = coefficient_count - 1
+
+    sideband_mask = (
+        (fit_x < exclusion_min_gev2)
+        | (fit_x > exclusion_max_gev2)
+    )
+    sideband_mask &= np.isfinite(fit_x) & np.isfinite(fit_y)
+
+    if np.count_nonzero(sideband_mask) < degree + 2:
+        baseline = max(float(np.percentile(fit_y, 20.0)), 0.0)
+        return [baseline, *([0.0] * degree)]
+    # endif
+
+    dx = fit_x[sideband_mask] - NEUTRON_MASS2_GEV2
+    y = fit_y[sideband_mask]
+    weights = 1.0 / np.sqrt(np.maximum(y, 1.0))
+
+    try:
+        descending = np.polyfit(
+            dx,
+            y,
+            deg=degree,
+            w=weights,
+        )
+        ascending = descending[::-1]
+    except (ValueError, np.linalg.LinAlgError, FloatingPointError):
+        baseline = max(float(np.percentile(fit_y, 20.0)), 0.0)
+        return [baseline, *([0.0] * degree)]
+    # endtry
+
+    if not np.all(np.isfinite(ascending)):
+        baseline = max(float(np.percentile(fit_y, 20.0)), 0.0)
+        return [baseline, *([0.0] * degree)]
+    # endif
+
+    return [float(value) for value in ascending]
+
+
+def polynomial_bounds(
+    background_model: str,
+    background_scale: float,
+) -> tuple[list[float], list[float]]:
+    """Return broad deterministic bounds for polynomial coefficients."""
+    scale = max(float(background_scale), 1.0)
+    lower_by_order = {
+        "linear": [-0.50 * scale, -30.0 * scale],
+        "quadratic": [-0.50 * scale, -30.0 * scale, -150.0 * scale],
+        "cubic": [
+            -0.50 * scale,
+            -30.0 * scale,
+            -150.0 * scale,
+            -750.0 * scale,
+        ],
+        "quartic": [
+            -0.50 * scale,
+            -30.0 * scale,
+            -150.0 * scale,
+            -750.0 * scale,
+            -4000.0 * scale,
+        ],
+    }
+    upper_by_order = {
+        "linear": [3.00 * scale, 30.0 * scale],
+        "quadratic": [3.00 * scale, 30.0 * scale, 150.0 * scale],
+        "cubic": [
+            3.00 * scale,
+            30.0 * scale,
+            150.0 * scale,
+            750.0 * scale,
+        ],
+        "quartic": [
+            3.00 * scale,
+            30.0 * scale,
+            150.0 * scale,
+            750.0 * scale,
+            4000.0 * scale,
+        ],
+    }
+    return lower_by_order[background_model], upper_by_order[background_model]
 
 
 def initial_values_and_bounds(
@@ -714,6 +798,11 @@ def initial_values_and_bounds(
     # endif
 
     baseline = max(float(np.percentile(fit_y, 20.0)), 0.0)
+    background_initial = sideband_background_initial(
+        background_model=background_model,
+        fit_x=fit_x,
+        fit_y=fit_y,
+    )
     peak_window = (
         (fit_x >= max(fit_min_gev2, NEUTRON_MASS2_GEV2 - 0.16))
         & (fit_x <= min(fit_max_gev2, NEUTRON_MASS2_GEV2 + 0.16))
@@ -764,7 +853,7 @@ def initial_values_and_bounds(
     common_upper = [yield_upper, mean_high, 0.180]
 
     if background_model == "linear":
-        initial = [*common_initial, baseline, 0.0]
+        initial = [*common_initial, *background_initial]
         lower = [
             *common_lower,
             -0.50 * background_scale,
@@ -776,7 +865,7 @@ def initial_values_and_bounds(
             30.0 * background_scale,
         ]
     elif background_model == "quadratic":
-        initial = [*common_initial, baseline, 0.0, 0.0]
+        initial = [*common_initial, *background_initial]
         lower = [
             *common_lower,
             -0.50 * background_scale,
@@ -790,7 +879,7 @@ def initial_values_and_bounds(
             150.0 * background_scale,
         ]
     elif background_model == "cubic":
-        initial = [*common_initial, baseline, 0.0, 0.0, 0.0]
+        initial = [*common_initial, *background_initial]
         lower = [
             *common_lower,
             -0.50 * background_scale,
@@ -806,7 +895,7 @@ def initial_values_and_bounds(
             750.0 * background_scale,
         ]
     elif background_model == "quartic":
-        initial = [*common_initial, baseline, 0.0, 0.0, 0.0, 0.0]
+        initial = [*common_initial, *background_initial]
         lower = [
             *common_lower,
             -0.50 * background_scale,
@@ -822,26 +911,6 @@ def initial_values_and_bounds(
             150.0 * background_scale,
             750.0 * background_scale,
             4000.0 * background_scale,
-        ]
-    elif background_model == "quintic":
-        initial = [*common_initial, baseline, 0.0, 0.0, 0.0, 0.0, 0.0]
-        lower = [
-            *common_lower,
-            -0.50 * background_scale,
-            -30.0 * background_scale,
-            -150.0 * background_scale,
-            -750.0 * background_scale,
-            -4000.0 * background_scale,
-            -22000.0 * background_scale,
-        ]
-        upper = [
-            *common_upper,
-            3.00 * background_scale,
-            30.0 * background_scale,
-            150.0 * background_scale,
-            750.0 * background_scale,
-            4000.0 * background_scale,
-            22000.0 * background_scale,
         ]
     else:
         raise ValueError(background_model)
@@ -1086,7 +1155,7 @@ def fit_background_model(
     if peak_significance_proxy < 5.0:
         review_reasons.append("weak_peak")
     # endif
-    if background_model in {"linear", "quadratic", "cubic", "quartic", "quintic"}:
+    if background_model in {"linear", "quadratic", "cubic", "quartic"}:
         if (
             np.isfinite(background_minimum_3sigma)
             and background_minimum_3sigma < -background_negativity_tolerance
@@ -1154,7 +1223,7 @@ def fit_background_model(
 
 
 def fit_one_job(job: FitJob) -> dict[str, Any]:
-    """Fit five deterministic polynomial hypotheses for one kinematic bin."""
+    """Fit four deterministic polynomial hypotheses for one kinematic bin."""
     values = np.asarray(job.values, dtype=float)
     values = values[np.isfinite(values)]
 
@@ -1220,7 +1289,7 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
         base["models"][model_name] = fit_result
     # endfor
 
-    polynomial_candidates = ("quadratic", "cubic", "quartic", "quintic")
+    polynomial_candidates = ("quadratic", "cubic", "quartic")
     hard_rejection_reasons = {
         "nonfinite_parameters",
         "nonfinite_covariance",
@@ -1310,7 +1379,6 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
         "quadratic": 2,
         "cubic": 3,
         "quartic": 4,
-        "quintic": 5,
     }.get(recommended_model)
     base["recommendation_reason"] = recommendation_reason
 
@@ -1397,6 +1465,1456 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
     return base
 
 
+
+
+# =============================================================================
+# Joint corrected-data fits
+# =============================================================================
+
+def histogram_for_job(
+    job: FitJob,
+    fit_max_override_gev2: float | None = None,
+) -> dict[str, Any]:
+    """Build a deterministic histogram and fit mask for one job."""
+    values = np.asarray(job.values, dtype=float)
+    values = values[np.isfinite(values)]
+    counts, edges = np.histogram(
+        values,
+        bins=job.histogram_bins,
+        range=(job.histogram_min_gev2, job.histogram_max_gev2),
+    )
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    fit_max = (
+        float(fit_max_override_gev2)
+        if fit_max_override_gev2 is not None
+        else float(job.fit_max_gev2)
+    )
+    fit_mask = (
+        (centers >= job.fit_min_gev2)
+        & (centers <= fit_max)
+    )
+    return {
+        "values": values,
+        "counts": np.asarray(counts, dtype=float),
+        "edges": np.asarray(edges, dtype=float),
+        "centers": np.asarray(centers, dtype=float),
+        "fit_mask": np.asarray(fit_mask, dtype=bool),
+        "fit_min_gev2": float(job.fit_min_gev2),
+        "fit_max_gev2": fit_max,
+        "histogram_bin_width_gev2": float(edges[1] - edges[0]),
+    }
+
+
+def joint_parameter_layout(
+    background_model: str,
+    periods: tuple[str, ...],
+    fixed_mean_gev2: float | None,
+) -> dict[str, Any]:
+    """Describe the deterministic joint-parameter vector."""
+    coefficient_count = polynomial_parameter_count(background_model)
+    cursor = 0
+    mean_index: int | None = None
+    if fixed_mean_gev2 is None:
+        mean_index = cursor
+        cursor += 1
+    # endif
+
+    period_slices: dict[str, dict[str, Any]] = {}
+    for period in periods:
+        yield_index = cursor
+        sigma_index = cursor + 1
+        coefficient_slice = slice(
+            cursor + 2,
+            cursor + 2 + coefficient_count,
+        )
+        period_slices[period] = {
+            "yield_index": yield_index,
+            "sigma_index": sigma_index,
+            "coefficient_slice": coefficient_slice,
+        }
+        cursor += 2 + coefficient_count
+    # endfor
+
+    return {
+        "mean_index": mean_index,
+        "period_slices": period_slices,
+        "number_of_parameters": cursor,
+        "coefficient_count": coefficient_count,
+    }
+
+
+def evaluate_polynomial_coefficients(
+    background_model: str,
+    x: np.ndarray,
+    coefficients: np.ndarray,
+) -> np.ndarray:
+    """Evaluate one polynomial from ascending coefficients."""
+    if background_model == "linear":
+        return linear_background(x, *coefficients)
+    # endif
+    if background_model == "quadratic":
+        return quadratic_background(x, *coefficients)
+    # endif
+    if background_model == "cubic":
+        return cubic_background(x, *coefficients)
+    # endif
+    if background_model == "quartic":
+        return quartic_background(x, *coefficients)
+    # endif
+    raise ValueError(background_model)
+
+
+def joint_initial_values_and_bounds(
+    background_model: str,
+    jobs_by_period: dict[str, FitJob],
+    histograms: dict[str, dict[str, Any]],
+    periods: tuple[str, ...],
+    corrected_mean_max_gev2: float,
+    fixed_mean_gev2: float | None,
+    sideband_exclusion_min_gev2: float,
+    sideband_exclusion_max_gev2: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, dict[str, Any]]:
+    """Build sideband-initialized joint parameters and bounds."""
+    layout = joint_parameter_layout(
+        background_model=background_model,
+        periods=periods,
+        fixed_mean_gev2=fixed_mean_gev2,
+    )
+
+    initial: list[float] = []
+    lower: list[float] = []
+    upper: list[float] = []
+
+    if fixed_mean_gev2 is None:
+        mean_low = max(
+            max(job.fit_min_gev2 for job in jobs_by_period.values()),
+            NEUTRON_MASS2_GEV2 - 0.08,
+        )
+        mean_high = min(
+            min(job.fit_max_gev2 for job in jobs_by_period.values()),
+            corrected_mean_max_gev2,
+        )
+        initial.append(
+            float(
+                np.clip(
+                    NEUTRON_MASS2_GEV2,
+                    mean_low + 1.0e-4,
+                    mean_high - 1.0e-4,
+                )
+            )
+        )
+        lower.append(mean_low)
+        upper.append(mean_high)
+    # endif
+
+    for period in periods:
+        histogram = histograms[period]
+        fit_mask = histogram["fit_mask"]
+        fit_x = histogram["centers"][fit_mask]
+        fit_y = histogram["counts"][fit_mask]
+        bin_width = histogram["histogram_bin_width_gev2"]
+
+        baseline = max(float(np.percentile(fit_y, 20.0)), 0.0)
+        peak_mask = (
+            (fit_x >= NEUTRON_MASS2_GEV2 - 0.16)
+            & (fit_x <= NEUTRON_MASS2_GEV2 + 0.16)
+        )
+        peak_height = max(
+            float(np.max(fit_y[peak_mask]) - baseline)
+            if np.any(peak_mask)
+            else float(np.max(fit_y) - baseline),
+            1.0,
+        )
+        sigma_guess = 0.075
+        yield_guess = (
+            peak_height
+            * sigma_guess
+            * math.sqrt(2.0 * math.pi)
+            / bin_width
+        )
+        total_counts = max(float(np.sum(fit_y)), 1.0)
+        yield_upper = max(3.0 * total_counts, 10.0 * yield_guess, 100.0)
+        background_scale = max(float(np.max(fit_y)), 1.0)
+        background_initial = sideband_background_initial(
+            background_model=background_model,
+            fit_x=fit_x,
+            fit_y=fit_y,
+            exclusion_min_gev2=sideband_exclusion_min_gev2,
+            exclusion_max_gev2=sideband_exclusion_max_gev2,
+        )
+        background_lower, background_upper = polynomial_bounds(
+            background_model=background_model,
+            background_scale=background_scale,
+        )
+
+        initial.extend([yield_guess, sigma_guess, *background_initial])
+        lower.extend([0.0, 0.010, *background_lower])
+        upper.extend([yield_upper, 0.180, *background_upper])
+    # endfor
+
+    return (
+        np.asarray(initial, dtype=float),
+        np.asarray(lower, dtype=float),
+        np.asarray(upper, dtype=float),
+        layout,
+    )
+
+
+def fit_joint_background_model(
+    background_model: str,
+    jobs: list[FitJob],
+    config: JointFitConfig,
+    fit_max_override_gev2: float | None = None,
+    fixed_mean_gev2: float | None = None,
+    counts_override: dict[str, np.ndarray] | None = None,
+) -> dict[str, Any]:
+    """Fit corrected Su22/Fa22/Sp23 spectra with one shared Gaussian mean."""
+    jobs_by_period = {job.period: job for job in jobs}
+    periods = tuple(
+        period for period in ("su22", "fa22", "sp23")
+        if period in jobs_by_period
+    )
+    if len(periods) != 3:
+        return {
+            "background_model": background_model,
+            "success": False,
+            "status": "joint_fit_requires_three_periods",
+            "review_reasons": ["missing_period"],
+            "period_results": {},
+        }
+    # endif
+
+    histograms = {
+        period: histogram_for_job(
+            jobs_by_period[period],
+            fit_max_override_gev2=fit_max_override_gev2,
+        )
+        for period in periods
+    }
+    if counts_override is not None:
+        for period in periods:
+            histograms[period]["counts"] = np.asarray(
+                counts_override[period],
+                dtype=float,
+            )
+        # endfor
+    # endif
+
+    if any(
+        histograms[period]["values"].size
+        < jobs_by_period[period].minimum_events
+        for period in periods
+    ):
+        return {
+            "background_model": background_model,
+            "success": False,
+            "status": "insufficient_events",
+            "review_reasons": ["insufficient_events"],
+            "period_results": {},
+        }
+    # endif
+
+    try:
+        initial, lower, upper, layout = joint_initial_values_and_bounds(
+            background_model=background_model,
+            jobs_by_period=jobs_by_period,
+            histograms=histograms,
+            periods=periods,
+            corrected_mean_max_gev2=min(
+                job.corrected_mean_max_gev2 for job in jobs
+            ),
+            fixed_mean_gev2=fixed_mean_gev2,
+            sideband_exclusion_min_gev2=(
+                config.sideband_exclusion_min_gev2
+            ),
+            sideband_exclusion_max_gev2=(
+                config.sideband_exclusion_max_gev2
+            ),
+        )
+
+        def residual_function(parameters: np.ndarray) -> np.ndarray:
+            if fixed_mean_gev2 is None:
+                mean_gev2 = float(
+                    parameters[layout["mean_index"]]
+                )
+            else:
+                mean_gev2 = float(fixed_mean_gev2)
+            # endif
+
+            residual_blocks: list[np.ndarray] = []
+            for period in periods:
+                period_layout = layout["period_slices"][period]
+                histogram = histograms[period]
+                mask = histogram["fit_mask"]
+                fit_x = histogram["centers"][mask]
+                fit_y = histogram["counts"][mask]
+                fit_error = np.sqrt(np.maximum(fit_y, 1.0))
+                signal_yield = float(
+                    parameters[period_layout["yield_index"]]
+                )
+                sigma_gev2 = float(
+                    parameters[period_layout["sigma_index"]]
+                )
+                coefficients = parameters[
+                    period_layout["coefficient_slice"]
+                ]
+                predicted = gaussian_signal_from_yield(
+                    fit_x,
+                    signal_yield,
+                    mean_gev2,
+                    sigma_gev2,
+                    histogram["histogram_bin_width_gev2"],
+                ) + evaluate_polynomial_coefficients(
+                    background_model,
+                    fit_x,
+                    coefficients,
+                )
+                residual_blocks.append((fit_y - predicted) / fit_error)
+            # endfor
+            return np.concatenate(residual_blocks)
+        # enddef
+
+        optimization = least_squares(
+            residual_function,
+            x0=initial,
+            bounds=(lower, upper),
+            max_nfev=250000,
+            method="trf",
+            x_scale="jac",
+        )
+        if not optimization.success:
+            raise RuntimeError(optimization.message)
+        # endif
+
+        parameters = np.asarray(optimization.x, dtype=float)
+        pulls_all = residual_function(parameters)
+        chi2 = float(np.sum(pulls_all**2))
+        number_of_points = int(pulls_all.size)
+        number_of_parameters = int(parameters.size)
+        ndf = number_of_points - number_of_parameters
+        chi2_ndf = chi2 / ndf if ndf > 0 else math.nan
+
+        jacobian = np.asarray(optimization.jac, dtype=float)
+        covariance = np.linalg.pinv(jacobian.T @ jacobian)
+        errors = np.sqrt(
+            np.where(np.diag(covariance) >= 0.0, np.diag(covariance), np.nan)
+        )
+
+        if number_of_points > number_of_parameters + 1:
+            aicc = (
+                chi2
+                + 2.0 * number_of_parameters
+                + (
+                    2.0
+                    * number_of_parameters
+                    * (number_of_parameters + 1)
+                    / (
+                        number_of_points
+                        - number_of_parameters
+                        - 1
+                    )
+                )
+            )
+        else:
+            aicc = math.inf
+        # endif
+    except (
+        RuntimeError,
+        ValueError,
+        np.linalg.LinAlgError,
+        FloatingPointError,
+        OverflowError,
+    ) as exc:
+        return {
+            "background_model": background_model,
+            "success": False,
+            "status": f"joint_fit_failed:{type(exc).__name__}",
+            "review_reasons": ["fit_failed"],
+            "period_results": {},
+        }
+    # endtry
+
+    if fixed_mean_gev2 is None:
+        mean_index = layout["mean_index"]
+        mean_gev2 = float(parameters[mean_index])
+        mean_error_gev2 = float(errors[mean_index])
+    else:
+        mean_gev2 = float(fixed_mean_gev2)
+        mean_error_gev2 = 0.0
+    # endif
+
+    joint_review_reasons: list[str] = []
+    if not np.all(np.isfinite(parameters)):
+        joint_review_reasons.append("nonfinite_parameters")
+    # endif
+    if not np.all(np.isfinite(covariance)):
+        joint_review_reasons.append("nonfinite_covariance")
+    # endif
+    if fixed_mean_gev2 is None and parameter_at_bound(
+        mean_gev2,
+        float(lower[layout["mean_index"]]),
+        float(upper[layout["mean_index"]]),
+    ):
+        joint_review_reasons.append("mean_at_bound")
+    # endif
+    if not np.isfinite(mean_error_gev2) or mean_error_gev2 > 0.025:
+        joint_review_reasons.append("large_mean_error")
+    # endif
+
+    period_results: dict[str, dict[str, Any]] = {}
+    local_chi2_total = 0.0
+    local_npoints_total = 0
+
+    for period in periods:
+        period_layout = layout["period_slices"][period]
+        histogram = histograms[period]
+        mask = histogram["fit_mask"]
+        fit_x = histogram["centers"][mask]
+        fit_y = histogram["counts"][mask]
+        fit_error = np.sqrt(np.maximum(fit_y, 1.0))
+        signal_yield = float(
+            parameters[period_layout["yield_index"]]
+        )
+        sigma_gev2 = float(
+            parameters[period_layout["sigma_index"]]
+        )
+        coefficients = np.asarray(
+            parameters[period_layout["coefficient_slice"]],
+            dtype=float,
+        )
+        signal_yield_error = float(
+            errors[period_layout["yield_index"]]
+        )
+        sigma_error_gev2 = float(
+            errors[period_layout["sigma_index"]]
+        )
+
+        fit_signal = gaussian_signal_from_yield(
+            fit_x,
+            signal_yield,
+            mean_gev2,
+            sigma_gev2,
+            histogram["histogram_bin_width_gev2"],
+        )
+        fit_background = evaluate_polynomial_coefficients(
+            background_model,
+            fit_x,
+            coefficients,
+        )
+        fit_total = fit_signal + fit_background
+        pulls = (fit_y - fit_total) / fit_error
+        period_chi2 = float(np.sum(pulls**2))
+        period_npoints = int(fit_x.size)
+        period_parameter_count_approx = (
+            2 + polynomial_parameter_count(background_model)
+            + 1.0 / len(periods)
+        )
+        period_ndf_approx = max(
+            int(round(period_npoints - period_parameter_count_approx)),
+            1,
+        )
+        period_chi2_ndf_approx = period_chi2 / period_ndf_approx
+
+        local_mask = (
+            (fit_x >= mean_gev2 - 2.0 * sigma_gev2)
+            & (fit_x <= mean_gev2 + 2.0 * sigma_gev2)
+        )
+        local_chi2 = float(np.sum(pulls[local_mask] ** 2))
+        local_npoints = int(np.count_nonzero(local_mask))
+        local_score = (
+            local_chi2 / local_npoints
+            if local_npoints > 0
+            else math.nan
+        )
+        local_ndf_approx = max(local_npoints - 2, 1)
+        local_chi2_ndf_approx = local_chi2 / local_ndf_approx
+        local_chi2_total += local_chi2
+        local_npoints_total += local_npoints
+
+        dense_x = np.linspace(
+            histogram["fit_min_gev2"],
+            histogram["fit_max_gev2"],
+            2000,
+        )
+        dense_background = evaluate_polynomial_coefficients(
+            background_model,
+            dense_x,
+            coefficients,
+        )
+        region_2sigma = (
+            (dense_x >= mean_gev2 - 2.0 * sigma_gev2)
+            & (dense_x <= mean_gev2 + 2.0 * sigma_gev2)
+        )
+        region_3sigma = (
+            (dense_x >= mean_gev2 - 3.0 * sigma_gev2)
+            & (dense_x <= mean_gev2 + 3.0 * sigma_gev2)
+        )
+        background_minimum = float(np.min(dense_background))
+        background_minimum_2sigma = (
+            float(np.min(dense_background[region_2sigma]))
+            if np.any(region_2sigma)
+            else math.nan
+        )
+        background_minimum_3sigma = (
+            float(np.min(dense_background[region_3sigma]))
+            if np.any(region_3sigma)
+            else math.nan
+        )
+        background_scale = max(float(np.max(fit_y)), 1.0)
+        negativity_tolerance = max(1.0, 0.01 * background_scale)
+
+        period_review_reasons = list(joint_review_reasons)
+        if parameter_at_bound(
+            signal_yield,
+            float(lower[period_layout["yield_index"]]),
+            float(upper[period_layout["yield_index"]]),
+        ):
+            period_review_reasons.append("signal_yield_at_bound")
+        # endif
+        if parameter_at_bound(
+            sigma_gev2,
+            float(lower[period_layout["sigma_index"]]),
+            float(upper[period_layout["sigma_index"]]),
+        ):
+            period_review_reasons.append("sigma_at_bound")
+        # endif
+        if (
+            np.isfinite(background_minimum_3sigma)
+            and background_minimum_3sigma < -negativity_tolerance
+        ):
+            period_review_reasons.append(
+                "negative_background_in_3sigma_region"
+            )
+        # endif
+        if background_minimum < -negativity_tolerance:
+            period_review_reasons.append(
+                "negative_background_global_diagnostic"
+            )
+        # endif
+        if not np.isfinite(sigma_error_gev2) or sigma_error_gev2 > 0.025:
+            period_review_reasons.append("large_sigma_error")
+        # endif
+        if not np.isfinite(local_score) or local_score >= 3.0:
+            period_review_reasons.append("poor_signal_region_chi2")
+        # endif
+
+        signal_plus_background = np.maximum(fit_total, 1.0)
+        peak_significance_proxy = (
+            signal_yield
+            / math.sqrt(float(np.sum(signal_plus_background)))
+            if signal_yield > 0.0
+            else 0.0
+        )
+        if peak_significance_proxy < 5.0:
+            period_review_reasons.append("weak_peak")
+        # endif
+
+        local_parameters = np.asarray(
+            [
+                signal_yield,
+                mean_gev2,
+                sigma_gev2,
+                *coefficients.tolist(),
+            ],
+            dtype=float,
+        )
+        local_errors = np.asarray(
+            [
+                signal_yield_error,
+                mean_error_gev2,
+                sigma_error_gev2,
+                *errors[
+                    period_layout["coefficient_slice"]
+                ].tolist(),
+            ],
+            dtype=float,
+        )
+
+        period_results[period] = {
+            "background_model": background_model,
+            "success": True,
+            "status": (
+                "success"
+                if not period_review_reasons
+                else "success_flagged_for_review"
+            ),
+            "review_reasons": sorted(set(period_review_reasons)),
+            "signal_yield": signal_yield,
+            "signal_yield_error": signal_yield_error,
+            "mean_gev2": mean_gev2,
+            "mean_error_gev2": mean_error_gev2,
+            "sigma_gev2": sigma_gev2,
+            "sigma_error_gev2": sigma_error_gev2,
+            "chi2": period_chi2,
+            "ndf": period_ndf_approx,
+            "chi2_ndf": period_chi2_ndf_approx,
+            "signal_region_definition": "shared mean +/- 2 period sigma",
+            "signal_region_chi2": local_chi2,
+            "signal_region_npoints": local_npoints,
+            "signal_region_ndf_approx": local_ndf_approx,
+            "signal_region_chi2_ndf_approx": local_chi2_ndf_approx,
+            "signal_region_chi2_per_bin": local_score,
+            "aicc": float(aicc),
+            "joint_aicc": float(aicc),
+            "joint_chi2": chi2,
+            "joint_ndf": int(ndf),
+            "joint_chi2_ndf": chi2_ndf,
+            "peak_significance_proxy": peak_significance_proxy,
+            "background_minimum_in_fit_range": background_minimum,
+            "background_minimum_in_2sigma_region": (
+                background_minimum_2sigma
+            ),
+            "background_minimum_in_3sigma_region": (
+                background_minimum_3sigma
+            ),
+            "background_negativity_tolerance": negativity_tolerance,
+            "parameters": local_parameters.tolist(),
+            "parameter_errors": local_errors.tolist(),
+            "covariance": covariance.tolist(),
+            "shared_mean": True,
+            "shared_mean_fixed": fixed_mean_gev2 is not None,
+            "parameter_source": (
+                "fixed_neighbor_mean"
+                if fixed_mean_gev2 is not None
+                else "joint_fit"
+            ),
+        }
+    # endfor
+
+    aggregate_local_score = (
+        local_chi2_total / local_npoints_total
+        if local_npoints_total > 0
+        else math.nan
+    )
+    maximum_period_local_score = max(
+        (
+            result["signal_region_chi2_per_bin"]
+            for result in period_results.values()
+            if np.isfinite(result["signal_region_chi2_per_bin"])
+        ),
+        default=math.nan,
+    )
+
+    hard_rejection_reasons = {
+        "nonfinite_parameters",
+        "nonfinite_covariance",
+        "signal_yield_at_bound",
+        "mean_at_bound",
+        "sigma_at_bound",
+        "negative_background_in_3sigma_region",
+    }
+    viable = all(
+        result["success"]
+        and not bool(
+            set(result["review_reasons"])
+            & hard_rejection_reasons
+        )
+        for result in period_results.values()
+    )
+
+    return {
+        "background_model": background_model,
+        "success": True,
+        "status": "success" if viable else "success_flagged_for_review",
+        "review_reasons": sorted(set(joint_review_reasons)),
+        "period_results": period_results,
+        "periods": list(periods),
+        "shared_mean_gev2": mean_gev2,
+        "shared_mean_error_gev2": mean_error_gev2,
+        "shared_mean_fixed": fixed_mean_gev2 is not None,
+        "joint_chi2": chi2,
+        "joint_ndf": int(ndf),
+        "joint_chi2_ndf": chi2_ndf,
+        "aicc": float(aicc),
+        "aggregate_local_score": aggregate_local_score,
+        "maximum_period_local_score": maximum_period_local_score,
+        "viable": bool(viable),
+        "fit_max_gev2": (
+            fit_max_override_gev2
+            if fit_max_override_gev2 is not None
+            else jobs[0].fit_max_gev2
+        ),
+        "parameters": parameters.tolist(),
+        "parameter_errors": errors.tolist(),
+        "covariance": covariance.tolist(),
+    }
+
+
+def choose_joint_background_model(
+    models: dict[str, dict[str, Any]],
+    config: JointFitConfig,
+) -> tuple[str | None, str]:
+    """Choose the lowest justified corrected-data polynomial order."""
+    candidates = ("quadratic", "cubic", "quartic")
+    viable = [
+        model_name
+        for model_name in candidates
+        if (
+            models[model_name].get("success", False)
+            and models[model_name].get("viable", False)
+            and np.isfinite(
+                models[model_name].get(
+                    "aggregate_local_score",
+                    math.nan,
+                )
+            )
+            and np.isfinite(models[model_name].get("aicc", math.nan))
+        )
+    ]
+    if not viable:
+        successful = [
+            model_name
+            for model_name in candidates
+            if (
+                models[model_name].get("success", False)
+                and np.isfinite(
+                    models[model_name].get(
+                        "aggregate_local_score",
+                        math.nan,
+                    )
+                )
+            )
+        ]
+        if not successful:
+            return None, "no successful corrected joint polynomial fit"
+        # endif
+        selected = min(
+            successful,
+            key=lambda name: (
+                models[name]["maximum_period_local_score"],
+                models[name]["aicc"],
+            ),
+        )
+        return (
+            selected,
+            "no model passed hard viability checks; selected the successful "
+            "model with the smallest worst-period local score",
+        )
+    # endif
+
+    selected = viable[0]
+    selection_steps = [f"started from {selected}"]
+    selected_index = candidates.index(selected)
+
+    for next_name in candidates[selected_index + 1:]:
+        if next_name not in viable:
+            continue
+        # endif
+        current = models[selected]
+        challenger = models[next_name]
+        delta_aicc = challenger["aicc"] - current["aicc"]
+        current_local = current["aggregate_local_score"]
+        challenger_local = challenger["aggregate_local_score"]
+        improvement_fraction = (
+            (current_local - challenger_local) / current_local
+            if current_local > 0.0
+            else 0.0
+        )
+        earned_complexity = (
+            delta_aicc <= -config.aicc_improvement_required
+            and improvement_fraction
+            >= config.local_improvement_fraction
+        )
+        rescue_unresolved = (
+            current["maximum_period_local_score"]
+            >= config.marginal_local_score_max
+            and challenger["maximum_period_local_score"]
+            < current["maximum_period_local_score"]
+            and delta_aicc <= -config.aicc_improvement_required
+        )
+
+        if earned_complexity or rescue_unresolved:
+            selected = next_name
+            selection_steps.append(
+                f"promoted to {next_name}: delta AICc={delta_aicc:.2f}, "
+                f"aggregate local improvement={100.0 * improvement_fraction:.1f}%"
+            )
+        else:
+            selection_steps.append(
+                f"stopped before {next_name}: delta AICc={delta_aicc:.2f}, "
+                f"aggregate local improvement={100.0 * improvement_fraction:.1f}%"
+            )
+            break
+        # endif
+    # endfor
+
+    return selected, "; ".join(selection_steps)
+
+
+def classify_joint_fit(
+    selected_joint: dict[str, Any],
+    config: JointFitConfig,
+) -> tuple[str, bool, str]:
+    """Classify one corrected joint fit."""
+    if not selected_joint.get("success", False):
+        return "unresolved", False, "selected joint fit failed"
+    # endif
+    if not selected_joint.get("viable", False):
+        return (
+            "unresolved",
+            False,
+            "selected joint fit failed hard viability criteria",
+        )
+    # endif
+
+    worst_score = selected_joint.get(
+        "maximum_period_local_score",
+        math.nan,
+    )
+    if not np.isfinite(worst_score):
+        return "unresolved", False, "nonfinite local fit-quality score"
+    # endif
+    if worst_score < config.accepted_local_score_max:
+        return (
+            "accepted",
+            True,
+            "all periods have local chi2 per signal-region bin below "
+            f"{config.accepted_local_score_max:.2f}",
+        )
+    # endif
+    if worst_score < config.marginal_local_score_max:
+        return (
+            "marginal",
+            True,
+            "hard viability criteria pass and the worst-period local score "
+            f"is below {config.marginal_local_score_max:.2f}",
+        )
+    # endif
+    return (
+        "unresolved",
+        False,
+        "worst-period local score exceeds the marginal threshold",
+    )
+
+
+def base_result_from_job(
+    job: FitJob,
+    histogram: dict[str, Any],
+) -> dict[str, Any]:
+    """Create the common per-period result record."""
+    return {
+        "period": job.period,
+        "stage": job.stage,
+        "period_label": PERIOD_LABELS[job.period],
+        "stage_label": STAGE_LABELS[job.stage],
+        "x_index": job.x_index,
+        "t_index": job.t_index,
+        "bin_id": bin_identifier(job.x_index, job.t_index),
+        "bin_number": combined_bin_number(job.x_index, job.t_index),
+        "xB_min": job.x_min,
+        "xB_max": job.x_max,
+        "minus_tprime_min_gev2": job.minus_tprime_min_gev2,
+        "minus_tprime_max_gev2": job.minus_tprime_max_gev2,
+        "number_of_events": int(histogram["values"].size),
+        "histogram_entries": int(np.sum(histogram["counts"])),
+        "histogram_bin_width_gev2": (
+            histogram["histogram_bin_width_gev2"]
+        ),
+        "counts": histogram["counts"].astype(int).tolist(),
+        "edges": histogram["edges"].tolist(),
+        "models": {},
+    }
+
+
+def assemble_joint_period_results(
+    jobs: list[FitJob],
+    joint_models: dict[str, dict[str, Any]],
+    selected_model: str | None,
+    recommendation_reason: str,
+    config: JointFitConfig,
+    fit_range_stability: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Convert one joint corrected fit into three legacy-compatible records."""
+    jobs_by_period = {job.period: job for job in jobs}
+    histograms = {
+        period: histogram_for_job(job)
+        for period, job in jobs_by_period.items()
+    }
+
+    if selected_model is None:
+        output: list[dict[str, Any]] = []
+        for period, job in jobs_by_period.items():
+            base = base_result_from_job(job, histograms[period])
+            base["models"] = {
+                model_name: joint_models[model_name].get(
+                    "period_results",
+                    {},
+                ).get(
+                    period,
+                    {
+                        "background_model": model_name,
+                        "success": False,
+                        "status": joint_models[model_name].get(
+                            "status",
+                            "fit_failed",
+                        ),
+                        "review_reasons": joint_models[model_name].get(
+                            "review_reasons",
+                            ["fit_failed"],
+                        ),
+                    },
+                )
+                for model_name in BACKGROUND_MODELS
+            }
+            base["recommended_background_model"] = None
+            base["recommended_background_order"] = None
+            base["recommendation_reason"] = recommendation_reason
+            base["fit_quality_class"] = "unresolved"
+            base["fit_accepted"] = False
+            base["status"] = "unresolved"
+            base["fit_acceptance_reason"] = (
+                "no corrected joint model could be selected"
+            )
+            output.append(base)
+        # endfor
+        return output
+    # endif
+
+    selected_joint = joint_models[selected_model]
+    quality_class, fit_accepted, acceptance_reason = classify_joint_fit(
+        selected_joint=selected_joint,
+        config=config,
+    )
+
+    output = []
+    for period, job in jobs_by_period.items():
+        base = base_result_from_job(job, histograms[period])
+        base["models"] = {}
+        for model_name in BACKGROUND_MODELS:
+            joint_model = joint_models[model_name]
+            base["models"][model_name] = joint_model.get(
+                "period_results",
+                {},
+            ).get(
+                period,
+                {
+                    "background_model": model_name,
+                    "success": False,
+                    "status": joint_model.get("status", "fit_failed"),
+                    "review_reasons": joint_model.get(
+                        "review_reasons",
+                        ["fit_failed"],
+                    ),
+                },
+            )
+        # endfor
+
+        base["recommended_background_model"] = selected_model
+        base["recommended_background_order"] = {
+            "quadratic": 2,
+            "cubic": 3,
+            "quartic": 4,
+        }[selected_model]
+        base["recommendation_reason"] = recommendation_reason
+        base["fit_quality_class"] = quality_class
+        base["fit_accepted"] = fit_accepted
+        base["status"] = quality_class
+        base["fit_acceptance_reason"] = acceptance_reason
+        base["joint_fit"] = {
+            "shared_mean_gev2": selected_joint["shared_mean_gev2"],
+            "shared_mean_error_gev2": (
+                selected_joint["shared_mean_error_gev2"]
+            ),
+            "shared_mean_fixed": selected_joint["shared_mean_fixed"],
+            "background_model": selected_model,
+            "joint_chi2": selected_joint["joint_chi2"],
+            "joint_ndf": selected_joint["joint_ndf"],
+            "joint_chi2_ndf": selected_joint["joint_chi2_ndf"],
+            "joint_aicc": selected_joint["aicc"],
+            "aggregate_local_score": (
+                selected_joint["aggregate_local_score"]
+            ),
+            "maximum_period_local_score": (
+                selected_joint["maximum_period_local_score"]
+            ),
+            "parameter_source": base["models"][selected_model].get(
+                "parameter_source",
+                "joint_fit",
+            ),
+        }
+        if fit_range_stability is not None:
+            base["fit_range_stability"] = fit_range_stability
+        # endif
+
+        nominal = base["models"][selected_model]
+        if nominal.get("success", False):
+            base["recommended_selection_windows_gev2"] = {
+                label: {
+                    "minimum": (
+                        nominal["mean_gev2"]
+                        - multiplier * nominal["sigma_gev2"]
+                    ),
+                    "maximum": (
+                        nominal["mean_gev2"]
+                        + multiplier * nominal["sigma_gev2"]
+                    ),
+                }
+                for label, multiplier in (
+                    ("1.5_sigma", 1.5),
+                    ("2.0_sigma", 2.0),
+                    ("3.0_sigma", 3.0),
+                )
+            }
+
+            differences: dict[str, Any] = {}
+            for alternative in BACKGROUND_MODELS:
+                if alternative == selected_model:
+                    continue
+                # endif
+                alt = base["models"][alternative]
+                if alt.get("success", False):
+                    differences[alternative] = {
+                        "delta_mean_gev2": (
+                            alt["mean_gev2"] - nominal["mean_gev2"]
+                        ),
+                        "delta_sigma_gev2": (
+                            alt["sigma_gev2"] - nominal["sigma_gev2"]
+                        ),
+                        "delta_signal_yield": (
+                            alt["signal_yield"]
+                            - nominal["signal_yield"]
+                        ),
+                        "relative_signal_yield_difference": (
+                            (
+                                alt["signal_yield"]
+                                - nominal["signal_yield"]
+                            )
+                            / nominal["signal_yield"]
+                            if nominal["signal_yield"] != 0.0
+                            else math.nan
+                        ),
+                        "delta_aicc": (
+                            alt["aicc"] - nominal["aicc"]
+                        ),
+                    }
+                else:
+                    differences[alternative] = {
+                        "status": alt.get("status", "fit_failed")
+                    }
+                # endif
+            # endfor
+            base["model_differences_from_recommended"] = differences
+        # endif
+
+        output.append(base)
+    # endfor
+
+    return output
+
+
+def fit_one_joint_corrected_bin(
+    jobs: list[FitJob],
+    config: JointFitConfig,
+) -> list[dict[str, Any]]:
+    """Fit one corrected kinematic bin across all three periods."""
+    joint_models = {
+        model_name: fit_joint_background_model(
+            background_model=model_name,
+            jobs=jobs,
+            config=config,
+        )
+        for model_name in BACKGROUND_MODELS
+    }
+    selected_model, reason = choose_joint_background_model(
+        models=joint_models,
+        config=config,
+    )
+
+    range_stability: dict[str, Any] = {}
+    if selected_model is not None:
+        nominal = joint_models[selected_model]
+        for fit_max in config.range_study_maxima_gev2:
+            varied = fit_joint_background_model(
+                background_model=selected_model,
+                jobs=jobs,
+                config=config,
+                fit_max_override_gev2=fit_max,
+            )
+            if varied.get("success", False):
+                range_stability[f"{fit_max:.2f}"] = {
+                    "fit_max_gev2": fit_max,
+                    "shared_mean_gev2": varied["shared_mean_gev2"],
+                    "delta_shared_mean_gev2": (
+                        varied["shared_mean_gev2"]
+                        - nominal["shared_mean_gev2"]
+                    ),
+                    "periods": {
+                        period: {
+                            "sigma_gev2": varied["period_results"][
+                                period
+                            ]["sigma_gev2"],
+                            "delta_sigma_gev2": (
+                                varied["period_results"][period][
+                                    "sigma_gev2"
+                                ]
+                                - nominal["period_results"][period][
+                                    "sigma_gev2"
+                                ]
+                            ),
+                            "signal_yield": varied["period_results"][
+                                period
+                            ]["signal_yield"],
+                            "relative_signal_yield_change": (
+                                (
+                                    varied["period_results"][period][
+                                        "signal_yield"
+                                    ]
+                                    - nominal["period_results"][period][
+                                        "signal_yield"
+                                    ]
+                                )
+                                / nominal["period_results"][period][
+                                    "signal_yield"
+                                ]
+                                if nominal["period_results"][period][
+                                    "signal_yield"
+                                ] != 0.0
+                                else math.nan
+                            ),
+                        }
+                        for period in ("su22", "fa22", "sp23")
+                    },
+                }
+            else:
+                range_stability[f"{fit_max:.2f}"] = {
+                    "fit_max_gev2": fit_max,
+                    "status": varied.get("status", "fit_failed"),
+                }
+            # endif
+        # endfor
+    # endif
+
+    return assemble_joint_period_results(
+        jobs=jobs,
+        joint_models=joint_models,
+        selected_model=selected_model,
+        recommendation_reason=reason,
+        config=config,
+        fit_range_stability=range_stability,
+    )
+
+
+def neighboring_shared_mean(
+    x_index: int,
+    t_index: int,
+    corrected_results: list[dict[str, Any]],
+) -> float | None:
+    """Interpolate a shared mean from accepted neighboring t-prime bins."""
+    unique_by_bin: dict[tuple[int, int], dict[str, Any]] = {}
+    for item in corrected_results:
+        key = (item["x_index"], item["t_index"])
+        unique_by_bin.setdefault(key, item)
+    # endfor
+
+    neighbors: list[tuple[int, float, float]] = []
+    for (candidate_x, candidate_t), item in unique_by_bin.items():
+        if candidate_x != x_index:
+            continue
+        # endif
+        if item.get("fit_quality_class") == "unresolved":
+            continue
+        # endif
+        joint = item.get("joint_fit", {})
+        mean = joint.get("shared_mean_gev2", math.nan)
+        error = joint.get("shared_mean_error_gev2", math.nan)
+        if np.isfinite(mean):
+            neighbors.append(
+                (
+                    candidate_t,
+                    float(mean),
+                    float(error) if np.isfinite(error) else 0.010,
+                )
+            )
+        # endif
+    # endfor
+
+    if not neighbors:
+        return None
+    # endif
+
+    neighbors.sort(key=lambda value: value[0])
+    lower = [value for value in neighbors if value[0] < t_index]
+    upper = [value for value in neighbors if value[0] > t_index]
+
+    if lower and upper:
+        t0, mean0, _ = lower[-1]
+        t1, mean1, _ = upper[0]
+        fraction = (t_index - t0) / (t1 - t0)
+        return float(mean0 + fraction * (mean1 - mean0))
+    # endif
+
+    nearest = min(neighbors, key=lambda value: abs(value[0] - t_index))
+    return float(nearest[1])
+
+
+def apply_neighbor_mean_fallbacks(
+    corrected_results: list[dict[str, Any]],
+    corrected_groups: list[list[FitJob]],
+    config: JointFitConfig,
+) -> list[dict[str, Any]]:
+    """Refit unresolved corrected bins with a neighboring shared mean fixed."""
+    if not config.enable_neighbor_mean_fallback:
+        return corrected_results
+    # endif
+
+    results_by_key: dict[tuple[str, int, int], dict[str, Any]] = {
+        (item["period"], item["x_index"], item["t_index"]): item
+        for item in corrected_results
+    }
+
+    for jobs in corrected_groups:
+        x_index = jobs[0].x_index
+        t_index = jobs[0].t_index
+        representative = results_by_key[
+            ("su22", x_index, t_index)
+        ]
+        if representative.get("fit_quality_class") != "unresolved":
+            continue
+        # endif
+
+        fixed_mean = neighboring_shared_mean(
+            x_index=x_index,
+            t_index=t_index,
+            corrected_results=list(results_by_key.values()),
+        )
+        if fixed_mean is None:
+            continue
+        # endif
+
+        selected_model = representative.get(
+            "recommended_background_model"
+        )
+        if selected_model not in {"quadratic", "cubic", "quartic"}:
+            selected_model = "quartic"
+        # endif
+
+        fixed_joint = fit_joint_background_model(
+            background_model=selected_model,
+            jobs=jobs,
+            config=config,
+            fixed_mean_gev2=fixed_mean,
+        )
+        if not fixed_joint.get("success", False):
+            continue
+        # endif
+
+        quality_class, accepted, reason = classify_joint_fit(
+            selected_joint=fixed_joint,
+            config=config,
+        )
+        if quality_class == "unresolved":
+            continue
+        # endif
+
+        original_models = {
+            model_name: {
+                "background_model": model_name,
+                "success": False,
+                "status": "not_refit_in_neighbor_fallback",
+                "review_reasons": ["not_refit_in_neighbor_fallback"],
+                "period_results": {},
+            }
+            for model_name in BACKGROUND_MODELS
+        }
+        original_models[selected_model] = fixed_joint
+        replacement = assemble_joint_period_results(
+            jobs=jobs,
+            joint_models=original_models,
+            selected_model=selected_model,
+            recommendation_reason=(
+                "original free-mean joint fit was unresolved; refit with "
+                f"neighbor-interpolated shared mean fixed at {fixed_mean:.6f} GeV^2"
+            ),
+            config=config,
+            fit_range_stability=representative.get(
+                "fit_range_stability",
+                {},
+            ),
+        )
+        for item in replacement:
+            item["fit_quality_class"] = quality_class
+            item["fit_accepted"] = accepted
+            item["status"] = quality_class
+            item["fit_acceptance_reason"] = reason
+            item["fallback_applied"] = True
+            results_by_key[
+                (item["period"], item["x_index"], item["t_index"])
+            ] = item
+        # endfor
+    # endfor
+
+    return sorted(
+        results_by_key.values(),
+        key=lambda item: (
+            item["period"],
+            item["stage"],
+            item["x_index"],
+            item["t_index"],
+        ),
+    )
+
+
+def run_joint_replicas(
+    corrected_results: list[dict[str, Any]],
+    corrected_groups: list[list[FitJob]],
+    config: JointFitConfig,
+) -> None:
+    """Run optional fixed-model Poisson replicas in place."""
+    if config.replicas <= 0:
+        return
+    # endif
+
+    rng = np.random.default_rng(config.replica_seed)
+    results_by_key = {
+        (item["period"], item["x_index"], item["t_index"]): item
+        for item in corrected_results
+    }
+
+    for group_index, jobs in enumerate(corrected_groups, start=1):
+        representative = results_by_key[
+            ("su22", jobs[0].x_index, jobs[0].t_index)
+        ]
+        model_name = representative.get("recommended_background_model")
+        if model_name not in {"quadratic", "cubic", "quartic"}:
+            continue
+        # endif
+
+        fixed_mean = None
+        parameter_source = representative.get(
+            "joint_fit",
+            {},
+        ).get("parameter_source", "joint_fit")
+        if parameter_source == "fixed_neighbor_mean":
+            fixed_mean = representative["joint_fit"]["shared_mean_gev2"]
+        # endif
+
+        histograms = {
+            job.period: histogram_for_job(job)
+            for job in jobs
+        }
+        nominal_period_results = {
+            period: results_by_key[
+                (period, jobs[0].x_index, jobs[0].t_index)
+            ]["models"][model_name]
+            for period in ("su22", "fa22", "sp23")
+        }
+
+        expected_counts: dict[str, np.ndarray] = {}
+        for period, histogram in histograms.items():
+            nominal = nominal_period_results[period]
+            parameters = np.asarray(nominal["parameters"], dtype=float)
+            centers = histogram["centers"]
+            expected = (
+                gaussian_signal_from_yield(
+                    centers,
+                    parameters[0],
+                    parameters[1],
+                    parameters[2],
+                    histogram["histogram_bin_width_gev2"],
+                )
+                + evaluate_background(
+                    model_name,
+                    centers,
+                    parameters,
+                )
+            )
+            expected_counts[period] = np.maximum(expected, 0.0)
+        # endfor
+
+        replica_values = {
+            period: {
+                "mean": [],
+                "sigma": [],
+                "yield": [],
+            }
+            for period in ("su22", "fa22", "sp23")
+        }
+        successful = 0
+
+        for _ in range(config.replicas):
+            fluctuated = {
+                period: rng.poisson(expected_counts[period]).astype(float)
+                for period in ("su22", "fa22", "sp23")
+            }
+            replica = fit_joint_background_model(
+                background_model=model_name,
+                jobs=jobs,
+                config=config,
+                fixed_mean_gev2=fixed_mean,
+                counts_override=fluctuated,
+            )
+            if not replica.get("success", False):
+                continue
+            # endif
+            successful += 1
+            for period in ("su22", "fa22", "sp23"):
+                period_fit = replica["period_results"][period]
+                replica_values[period]["mean"].append(
+                    period_fit["mean_gev2"]
+                )
+                replica_values[period]["sigma"].append(
+                    period_fit["sigma_gev2"]
+                )
+                replica_values[period]["yield"].append(
+                    period_fit["signal_yield"]
+                )
+            # endfor
+        # endfor
+
+        for period in ("su22", "fa22", "sp23"):
+            item = results_by_key[
+                (period, jobs[0].x_index, jobs[0].t_index)
+            ]
+            summary: dict[str, Any] = {
+                "requested": config.replicas,
+                "successful": successful,
+                "model_order_fixed": True,
+                "background_model": model_name,
+            }
+            for quantity in ("mean", "sigma", "yield"):
+                values = np.asarray(
+                    replica_values[period][quantity],
+                    dtype=float,
+                )
+                summary[quantity] = {
+                    "mean": (
+                        float(np.mean(values))
+                        if values.size > 0
+                        else math.nan
+                    ),
+                    "standard_deviation": (
+                        float(np.std(values, ddof=1))
+                        if values.size > 1
+                        else math.nan
+                    ),
+                    "p16": (
+                        float(np.percentile(values, 16.0))
+                        if values.size > 0
+                        else math.nan
+                    ),
+                    "median": (
+                        float(np.percentile(values, 50.0))
+                        if values.size > 0
+                        else math.nan
+                    ),
+                    "p84": (
+                        float(np.percentile(values, 84.0))
+                        if values.size > 0
+                        else math.nan
+                    ),
+                }
+            # endfor
+            item["replica_summary"] = summary
+        # endfor
+
+        print(
+            f"Completed replica bin {group_index}/{len(corrected_groups)} "
+            f"({successful}/{config.replicas} successful)",
+            flush=True,
+        )
+    # endfor
+
+
 # =============================================================================
 # Job construction and execution
 # =============================================================================
@@ -1468,47 +2986,129 @@ def build_fit_jobs(
     return jobs, loading_metadata
 
 
-def execute_fit_jobs(jobs: list[FitJob], workers: int) -> list[dict[str, Any]]:
-    """Run all deterministic fits with at most seven worker processes."""
+def execute_fit_jobs(
+    jobs: list[FitJob],
+    workers: int,
+    joint_config: JointFitConfig,
+) -> list[dict[str, Any]]:
+    """Fit before-correction jobs independently and corrected bins jointly."""
     actual_workers = max(1, min(int(workers), 7, os.cpu_count() or 1))
-    print("Running channel_selection_mx2_fits_v7.py", flush=True)
+    print("Running channel_selection_mx2_fits_v9.py", flush=True)
+
+    before_jobs = [job for job in jobs if job.stage == "before"]
+    after_jobs = [job for job in jobs if job.stage == "after"]
+
+    corrected_group_map: dict[tuple[int, int], list[FitJob]] = {}
+    for job in after_jobs:
+        corrected_group_map.setdefault(
+            (job.x_index, job.t_index),
+            [],
+        ).append(job)
+    # endfor
+    corrected_groups = [
+        sorted(group, key=lambda item: item.period)
+        for _, group in sorted(corrected_group_map.items())
+    ]
+
     print(
-        f"Running {len(jobs)} kinematic-bin jobs with {actual_workers} worker(s).",
+        f"Running {len(before_jobs)} independent before-correction jobs and "
+        f"{len(corrected_groups)} three-period corrected joint jobs with "
+        f"{actual_workers} worker(s).",
         flush=True,
     )
 
+    before_results: list[dict[str, Any]] = []
     if actual_workers == 1:
-        results = []
-        for index, job in enumerate(jobs, start=1):
-            results.append(fit_one_job(job))
-            print(f"Completed fit job {index}/{len(jobs)}", flush=True)
+        for index, job in enumerate(before_jobs, start=1):
+            before_results.append(fit_one_job(job))
+            print(
+                f"Completed before-correction fit {index}/{len(before_jobs)}",
+                flush=True,
+            )
         # endfor
-        return results
+    else:
+        with ProcessPoolExecutor(max_workers=actual_workers) as executor:
+            future_map = {
+                executor.submit(fit_one_job, job): job
+                for job in before_jobs
+            }
+            completed = 0
+            for future in as_completed(future_map):
+                job = future_map[future]
+                try:
+                    before_results.append(future.result())
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Before-correction worker failed for {job.period}, "
+                        f"x index {job.x_index}, t index {job.t_index}."
+                    ) from exc
+                # endtry
+                completed += 1
+                print(
+                    f"Completed before-correction fit "
+                    f"{completed}/{len(before_jobs)}",
+                    flush=True,
+                )
+            # endfor
+        # endwith
     # endif
 
-    results: list[dict[str, Any]] = []
-    with ProcessPoolExecutor(max_workers=actual_workers) as executor:
-        future_map = {
-            executor.submit(fit_one_job, job): job
-            for job in jobs
-        }
-        completed = 0
-        for future in as_completed(future_map):
-            job = future_map[future]
-            try:
-                result = future.result()
-            except Exception as exc:
-                raise RuntimeError(
-                    f"Fit worker failed for {job.period} {job.stage} "
-                    f"x index {job.x_index}, t index {job.t_index}."
-                ) from exc
-            # endtry
-            results.append(result)
-            completed += 1
-            print(f"Completed fit job {completed}/{len(jobs)}", flush=True)
+    corrected_results: list[dict[str, Any]] = []
+    if actual_workers == 1:
+        for index, group in enumerate(corrected_groups, start=1):
+            corrected_results.extend(
+                fit_one_joint_corrected_bin(group, joint_config)
+            )
+            print(
+                f"Completed corrected joint fit "
+                f"{index}/{len(corrected_groups)}",
+                flush=True,
+            )
         # endfor
-    # endwith
+    else:
+        with ProcessPoolExecutor(max_workers=actual_workers) as executor:
+            future_map = {
+                executor.submit(
+                    fit_one_joint_corrected_bin,
+                    group,
+                    joint_config,
+                ): group
+                for group in corrected_groups
+            }
+            completed = 0
+            for future in as_completed(future_map):
+                group = future_map[future]
+                try:
+                    corrected_results.extend(future.result())
+                except Exception as exc:
+                    raise RuntimeError(
+                        "Corrected joint worker failed for "
+                        f"x index {group[0].x_index}, "
+                        f"t index {group[0].t_index}."
+                    ) from exc
+                # endtry
+                completed += 1
+                print(
+                    f"Completed corrected joint fit "
+                    f"{completed}/{len(corrected_groups)}",
+                    flush=True,
+                )
+            # endfor
+        # endwith
+    # endif
 
+    corrected_results = apply_neighbor_mean_fallbacks(
+        corrected_results=corrected_results,
+        corrected_groups=corrected_groups,
+        config=joint_config,
+    )
+    run_joint_replicas(
+        corrected_results=corrected_results,
+        corrected_groups=corrected_groups,
+        config=joint_config,
+    )
+
+    results = [*before_results, *corrected_results]
     results.sort(
         key=lambda item: (
             item["period"],
@@ -1558,6 +3158,41 @@ def flatten_results(results: list[dict[str, Any]]) -> pd.DataFrame:
                 "fit_acceptance_reason",
                 "",
             ),
+            "fit_quality_class": item.get(
+                "fit_quality_class",
+                item.get("status", ""),
+            ),
+            "shared_mean_fit": bool(
+                item.get("joint_fit", {}).get("shared_mean_gev2") is not None
+            ),
+            "shared_mean_gev2": item.get(
+                "joint_fit",
+                {},
+            ).get("shared_mean_gev2", math.nan),
+            "shared_mean_error_gev2": item.get(
+                "joint_fit",
+                {},
+            ).get("shared_mean_error_gev2", math.nan),
+            "joint_chi2_ndf": item.get(
+                "joint_fit",
+                {},
+            ).get("joint_chi2_ndf", math.nan),
+            "joint_aicc": item.get(
+                "joint_fit",
+                {},
+            ).get("joint_aicc", math.nan),
+            "joint_aggregate_local_score": item.get(
+                "joint_fit",
+                {},
+            ).get("aggregate_local_score", math.nan),
+            "joint_maximum_period_local_score": item.get(
+                "joint_fit",
+                {},
+            ).get("maximum_period_local_score", math.nan),
+            "parameter_source": item.get(
+                "joint_fit",
+                {},
+            ).get("parameter_source", "independent_fit"),
         }
         for model_name in BACKGROUND_MODELS:
             fit = item["models"][model_name]
@@ -1687,8 +3322,8 @@ def write_latex_nominal_tables(frame: pd.DataFrame, output_path: Path) -> None:
     ].copy()
 
     lines: list[str] = []
-    lines.append("% Auto-generated by channel_selection_mx2_fits_v7.py")
-    lines.append("% Corrected Gaussian fits with adaptively selected polynomial backgrounds.")
+    lines.append("% Auto-generated by channel_selection_mx2_fits_v9.py")
+    lines.append("% Corrected simultaneous three-period Gaussian fits with a shared mean and adaptively selected polynomial backgrounds.")
     lines.append("")
 
     for period in ("su22", "fa22", "sp23"):
@@ -1878,7 +3513,7 @@ def plot_spectrum_canvases(
                             f"model={selected_model}\n"
                             f"$\\chi^2$/ndf$_{{\\pm2\\sigma,approx}}$="
                             f"{nominal['signal_region_chi2_ndf_approx']:.2f}\n"
-                            f"{'ACCEPTED' if item.get('fit_accepted', False) else 'UNRESOLVED'}"
+                            f"{item.get('fit_quality_class', 'accepted').upper()}"
                         )
                     else:
                         annotation = nominal.get("status", "fit failed")
@@ -1921,9 +3556,18 @@ def plot_spectrum_canvases(
                     frameon=True,
                 )
             # endif
+            fit_strategy_label = (
+                "Joint shared-mean Gaussian signal plus adaptively selected "
+                "polynomial background"
+                if stage == "after"
+                else (
+                    "Independent Gaussian signal plus adaptively selected "
+                    "polynomial background"
+                )
+            )
             fig.suptitle(
                 f"{PERIOD_LABELS[period]}: {STAGE_LABELS[stage]}\n"
-                "Gaussian signal plus adaptively selected polynomial background",
+                f"{fit_strategy_label}",
                 fontsize=15,
                 y=0.995,
             )
@@ -2652,31 +4296,69 @@ def build_compact_json(
             "reference_background_model": NOMINAL_BACKGROUND_MODEL,
             "production_fit_per_bin": "recommended_background_model",
             "background_models": list(BACKGROUND_MODELS),
+            "corrected_fit_strategy": {
+                "method": (
+                    "simultaneous Su22/Fa22/Sp23 fit in each kinematic bin"
+                ),
+                "shared_parameter": "Gaussian mean",
+                "period_specific_parameters": (
+                    "signal yield, Gaussian sigma, and background coefficients"
+                ),
+                "initial_mean_gev2": NEUTRON_MASS2_GEV2,
+                "corrected_mean_upper_guardrail_gev2": (
+                    args.corrected_mean_max
+                ),
+                "neighbor_mean_fallback_enabled": (
+                    not args.disable_neighbor_mean_fallback
+                ),
+            },
+            "background_initialization": {
+                "method": "weighted polynomial sideband fit",
+                "excluded_region_gev2": [
+                    args.sideband_exclusion_min,
+                    args.sideband_exclusion_max,
+                ],
+                "coefficients_remain_free_in_full_fit": True,
+            },
             "adaptive_polynomial_selection": {
-                "candidate_orders": [2, 3, 4, 5],
-                "preferred_threshold_signal_region_chi2_ndf_approx": 2.0,
-                "final_acceptance_threshold_signal_region_chi2_ndf_approx": 3.0,
-                "background_positivity_region": "fitted mean +/- 3 fitted sigma",
+                "candidate_orders": [2, 3, 4],
+                "minimum_aicc_improvement": (
+                    args.joint_aicc_improvement
+                ),
+                "minimum_fractional_local_improvement": (
+                    args.joint_local_improvement_fraction
+                ),
+                "accepted_worst_period_local_score_max": (
+                    args.accepted_local_score_max
+                ),
+                "marginal_worst_period_local_score_max": (
+                    args.marginal_local_score_max
+                ),
+                "background_positivity_region": (
+                    "shared mean +/- 3 period-specific sigma"
+                ),
                 "background_negativity_tolerance": (
                     "max(1 count, 1 percent of the characteristic count scale)"
                 ),
                 "policy": (
-                    "Choose the lowest viable polynomial order satisfying the "
-                    "preferred local threshold. If none passes, choose the viable "
-                    "order with the smallest local score. Recommendation and final "
-                    "acceptance are stored separately."
+                    "Start with the lowest viable order and increase complexity "
+                    "only when the AICc and aggregate local-score improvements "
+                    "meet the configured thresholds. Stop at quartic."
                 ),
             },
             "signal_region_fit_quality": {
-                "definition": "fitted mean +/- 2 fitted sigma",
-                "ndf_convention": (
-                    "number of histogram bins in the signal region minus the "
-                    "three Gaussian parameters; this is a local diagnostic, not "
-                    "a strict independent goodness-of-fit probability"
+                "definition": (
+                    "shared mean +/- 2 period-specific fitted sigma"
                 ),
-                "global_chi2_ndf_also_stored": True,
+                "primary_local_score": (
+                    "chi2 divided by the number of signal-region histogram bins"
+                ),
+                "global_joint_chi2_ndf_also_stored": True,
             },
-            "replicas_performed": False,
+            "fit_range_study_maxima_gev2": [1.30, 1.35, 1.40],
+            "replicas_performed": args.replicas > 0,
+            "replicas_per_corrected_bin": args.replicas,
+            "replica_model_selection_repeated": False,
         },
         "execution": {
             "requested_workers": args.workers,
@@ -2810,10 +4492,11 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--corrected-mean-max",
         type=float,
-        default=0.900,
+        default=0.930,
         help=(
             "Upper bound on the corrected-data Gaussian mean in GeV^2 "
-            "(default: 0.900). Before-correction fits retain a wider bound."
+            "(default: 0.930). This is a diagnostic guardrail rather than a "
+            "physics constraint; before-correction fits retain a wider bound."
         ),
     )
     parser.add_argument(
@@ -2821,6 +4504,83 @@ def build_argument_parser() -> argparse.ArgumentParser:
         type=int,
         default=150,
         help="Minimum events required in a kinematic bin (default: 150).",
+    )
+    parser.add_argument(
+        "--joint-aicc-improvement",
+        type=float,
+        default=10.0,
+        help=(
+            "Minimum AICc decrease required before increasing the corrected "
+            "background order (default: 10.0)."
+        ),
+    )
+    parser.add_argument(
+        "--joint-local-improvement-fraction",
+        type=float,
+        default=0.20,
+        help=(
+            "Minimum fractional improvement in the aggregate corrected local "
+            "score before increasing background order (default: 0.20)."
+        ),
+    )
+    parser.add_argument(
+        "--accepted-local-score-max",
+        type=float,
+        default=2.0,
+        help=(
+            "Worst-period local chi2-per-bin threshold for accepted corrected "
+            "fits (default: 2.0)."
+        ),
+    )
+    parser.add_argument(
+        "--marginal-local-score-max",
+        type=float,
+        default=3.0,
+        help=(
+            "Worst-period local chi2-per-bin threshold for marginal corrected "
+            "fits (default: 3.0)."
+        ),
+    )
+    parser.add_argument(
+        "--sideband-exclusion-min",
+        type=float,
+        default=0.74,
+        help=(
+            "Lower edge of the provisional neutron region excluded during "
+            "background initialization in GeV^2 (default: 0.74)."
+        ),
+    )
+    parser.add_argument(
+        "--sideband-exclusion-max",
+        type=float,
+        default=1.04,
+        help=(
+            "Upper edge of the provisional neutron region excluded during "
+            "background initialization in GeV^2 (default: 1.04)."
+        ),
+    )
+    parser.add_argument(
+        "--disable-neighbor-mean-fallback",
+        action="store_true",
+        help=(
+            "Disable the deterministic neighboring-bin fixed-mean fallback "
+            "for unresolved corrected bins."
+        ),
+    )
+    parser.add_argument(
+        "--replicas",
+        type=int,
+        default=0,
+        help=(
+            "Optional Poisson replicas per corrected bin after model freezing "
+            "(default: 0). Use 100 for development and 1000 or more for final."
+        ),
+    )
+    parser.add_argument(
+        "--replica-seed",
+        type=int,
+        default=20260724,
+        help="Random seed for optional Poisson replicas.",
     )
     return parser
 
@@ -2844,6 +4604,32 @@ def validate_arguments(args: argparse.Namespace) -> None:
     # endif
     if args.minimum_events < 1:
         raise ValueError("--minimum-events must be positive.")
+    # endif
+    if args.joint_aicc_improvement < 0.0:
+        raise ValueError("--joint-aicc-improvement must be nonnegative.")
+    # endif
+    if not 0.0 <= args.joint_local_improvement_fraction <= 1.0:
+        raise ValueError(
+            "--joint-local-improvement-fraction must lie between 0 and 1."
+        )
+    # endif
+    if args.accepted_local_score_max <= 0.0:
+        raise ValueError("--accepted-local-score-max must be positive.")
+    # endif
+    if args.marginal_local_score_max <= args.accepted_local_score_max:
+        raise ValueError(
+            "--marginal-local-score-max must exceed "
+            "--accepted-local-score-max."
+        )
+    # endif
+    if args.sideband_exclusion_min >= args.sideband_exclusion_max:
+        raise ValueError(
+            "--sideband-exclusion-min must be below "
+            "--sideband-exclusion-max."
+        )
+    # endif
+    if args.replicas < 0:
+        raise ValueError("--replicas must be nonnegative.")
     # endif
 
 
@@ -2903,13 +4689,33 @@ def main() -> int:
             corrected_mean_max_gev2=args.corrected_mean_max,
             step_size=args.step_size,
         )
-        results = execute_fit_jobs(jobs=jobs, workers=args.workers)
+        joint_config = JointFitConfig(
+            aicc_improvement_required=args.joint_aicc_improvement,
+            local_improvement_fraction=(
+                args.joint_local_improvement_fraction
+            ),
+            accepted_local_score_max=args.accepted_local_score_max,
+            marginal_local_score_max=args.marginal_local_score_max,
+            sideband_exclusion_min_gev2=args.sideband_exclusion_min,
+            sideband_exclusion_max_gev2=args.sideband_exclusion_max,
+            range_study_maxima_gev2=(1.30, 1.35, 1.40),
+            enable_neighbor_mean_fallback=(
+                not args.disable_neighbor_mean_fallback
+            ),
+            replicas=args.replicas,
+            replica_seed=args.replica_seed,
+        )
+        results = execute_fit_jobs(
+            jobs=jobs,
+            workers=args.workers,
+            joint_config=joint_config,
+        )
         frame = flatten_results(results)
 
-        csv_path = table_dir / "mx2_peak_fit_results_v7.csv"
-        json_path = table_dir / "mx2_peak_fit_results_v7.json"
-        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v7.tex"
-        status_path = table_dir / "mx2_peak_fit_status_v7.txt"
+        csv_path = table_dir / "mx2_peak_fit_results_v9.csv"
+        json_path = table_dir / "mx2_peak_fit_results_v9.json"
+        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v9.tex"
+        status_path = table_dir / "mx2_peak_fit_status_v9.txt"
 
         frame.to_csv(csv_path, index=False)
         compact_json = build_compact_json(
