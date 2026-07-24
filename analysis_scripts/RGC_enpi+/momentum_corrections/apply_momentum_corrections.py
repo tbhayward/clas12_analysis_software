@@ -1146,10 +1146,6 @@ def main() -> int:
         )
     print(f"Electron-corrected events:    {totals['electron_corrected']:,}")
     print(f"FD-pion-corrected events:     {totals['fd_pion_corrected']:,}")
-    print(
-        f"Non-FD pion momentum unchanged: "
-        f"{totals['non_fd_pion_unchanged']:,}"
-    )
     return 0
 
 

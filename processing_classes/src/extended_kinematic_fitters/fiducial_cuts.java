@@ -136,7 +136,7 @@ public class fiducial_cuts {
                     if (lv_4 > 67.5 && lv_4 < 94.5) {
                         return false;
                     }
-                    if (lv_7 > 0 && lv_7 < 40.5) {
+                    if (lv_7 > 0 && lv_7 < 67.5) {
                         return false;
                     }
                     break;
