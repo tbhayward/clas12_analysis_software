@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-channel_selection_mx2_fits_v6.py
+channel_selection_mx2_fits_v7.py
 
 Deterministic pass-1 fit-stability study of the missing-neutron Mx2 peak used for the RGC
 exclusive e pi+ channel selection.
@@ -129,6 +129,7 @@ BACKGROUND_LABELS = {
     "quadratic": "Quadratic background",
     "cubic": "Cubic background",
     "quartic": "Quartic background",
+    "quintic": "Quintic background",
 }
 
 BACKGROUND_MODELS: tuple[str, ...] = (
@@ -136,6 +137,7 @@ BACKGROUND_MODELS: tuple[str, ...] = (
     "quadratic",
     "cubic",
     "quartic",
+    "quintic",
 )
 
 ALTERNATIVE_BACKGROUND_MODELS: tuple[str, ...] = tuple(
@@ -530,6 +532,27 @@ def quartic_background(
     return c0 + c1 * dx + c2 * dx**2 + c3 * dx**3 + c4 * dx**4
 
 
+def quintic_background(
+    x: np.ndarray,
+    c0: float,
+    c1: float,
+    c2: float,
+    c3: float,
+    c4: float,
+    c5: float,
+) -> np.ndarray:
+    """Fifth-order background centered at the neutron mass squared."""
+    dx = np.asarray(x, dtype=float) - NEUTRON_MASS2_GEV2
+    return (
+        c0
+        + c1 * dx
+        + c2 * dx**2
+        + c3 * dx**3
+        + c4 * dx**4
+        + c5 * dx**5
+    )
+
+
 
 def build_total_model(
     background_model: str,
@@ -622,6 +645,30 @@ def build_total_model(
         return model
     # endif
 
+    if background_model == "quintic":
+        def model(
+            x: np.ndarray,
+            signal_yield: float,
+            mean_gev2: float,
+            sigma_gev2: float,
+            c0: float,
+            c1: float,
+            c2: float,
+            c3: float,
+            c4: float,
+            c5: float,
+        ) -> np.ndarray:
+            return gaussian_signal_from_yield(
+                x,
+                signal_yield,
+                mean_gev2,
+                sigma_gev2,
+                histogram_bin_width_gev2,
+            ) + quintic_background(x, c0, c1, c2, c3, c4, c5)
+        # enddef
+        return model
+    # endif
+
 
 
     raise ValueError(f"Unknown background model: {background_model}")
@@ -644,6 +691,9 @@ def evaluate_background(
     # endif
     if background_model == "quartic":
         return quartic_background(x, *parameters[3:8])
+    # endif
+    if background_model == "quintic":
+        return quintic_background(x, *parameters[3:9])
     # endif
     raise ValueError(background_model)
 
@@ -772,6 +822,26 @@ def initial_values_and_bounds(
             150.0 * background_scale,
             750.0 * background_scale,
             4000.0 * background_scale,
+        ]
+    elif background_model == "quintic":
+        initial = [*common_initial, baseline, 0.0, 0.0, 0.0, 0.0, 0.0]
+        lower = [
+            *common_lower,
+            -0.50 * background_scale,
+            -30.0 * background_scale,
+            -150.0 * background_scale,
+            -750.0 * background_scale,
+            -4000.0 * background_scale,
+            -22000.0 * background_scale,
+        ]
+        upper = [
+            *common_upper,
+            3.00 * background_scale,
+            30.0 * background_scale,
+            150.0 * background_scale,
+            750.0 * background_scale,
+            4000.0 * background_scale,
+            22000.0 * background_scale,
         ]
     else:
         raise ValueError(background_model)
@@ -1016,7 +1086,7 @@ def fit_background_model(
     if peak_significance_proxy < 5.0:
         review_reasons.append("weak_peak")
     # endif
-    if background_model in {"linear", "quadratic", "cubic", "quartic"}:
+    if background_model in {"linear", "quadratic", "cubic", "quartic", "quintic"}:
         if (
             np.isfinite(background_minimum_3sigma)
             and background_minimum_3sigma < -background_negativity_tolerance
@@ -1084,7 +1154,7 @@ def fit_background_model(
 
 
 def fit_one_job(job: FitJob) -> dict[str, Any]:
-    """Fit four deterministic polynomial hypotheses for one kinematic bin."""
+    """Fit five deterministic polynomial hypotheses for one kinematic bin."""
     values = np.asarray(job.values, dtype=float)
     values = values[np.isfinite(values)]
 
@@ -1150,7 +1220,7 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
         base["models"][model_name] = fit_result
     # endfor
 
-    polynomial_candidates = ("quadratic", "cubic", "quartic")
+    polynomial_candidates = ("quadratic", "cubic", "quartic", "quintic")
     hard_rejection_reasons = {
         "nonfinite_parameters",
         "nonfinite_covariance",
@@ -1240,6 +1310,7 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
         "quadratic": 2,
         "cubic": 3,
         "quartic": 4,
+        "quintic": 5,
     }.get(recommended_model)
     base["recommendation_reason"] = recommendation_reason
 
@@ -1400,7 +1471,7 @@ def build_fit_jobs(
 def execute_fit_jobs(jobs: list[FitJob], workers: int) -> list[dict[str, Any]]:
     """Run all deterministic fits with at most seven worker processes."""
     actual_workers = max(1, min(int(workers), 7, os.cpu_count() or 1))
-    print("Running channel_selection_mx2_fits_v6.py", flush=True)
+    print("Running channel_selection_mx2_fits_v7.py", flush=True)
     print(
         f"Running {len(jobs)} kinematic-bin jobs with {actual_workers} worker(s).",
         flush=True,
@@ -1616,7 +1687,7 @@ def write_latex_nominal_tables(frame: pd.DataFrame, output_path: Path) -> None:
     ].copy()
 
     lines: list[str] = []
-    lines.append("% Auto-generated by channel_selection_mx2_fits_v6.py")
+    lines.append("% Auto-generated by channel_selection_mx2_fits_v7.py")
     lines.append("% Corrected Gaussian fits with adaptively selected polynomial backgrounds.")
     lines.append("")
 
@@ -2582,7 +2653,7 @@ def build_compact_json(
             "production_fit_per_bin": "recommended_background_model",
             "background_models": list(BACKGROUND_MODELS),
             "adaptive_polynomial_selection": {
-                "candidate_orders": [2, 3, 4],
+                "candidate_orders": [2, 3, 4, 5],
                 "preferred_threshold_signal_region_chi2_ndf_approx": 2.0,
                 "final_acceptance_threshold_signal_region_chi2_ndf_approx": 3.0,
                 "background_positivity_region": "fitted mean +/- 3 fitted sigma",
@@ -2739,10 +2810,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--corrected-mean-max",
         type=float,
-        default=0.910,
+        default=0.900,
         help=(
             "Upper bound on the corrected-data Gaussian mean in GeV^2 "
-            "(default: 0.910). Before-correction fits retain a wider bound."
+            "(default: 0.900). Before-correction fits retain a wider bound."
         ),
     )
     parser.add_argument(
@@ -2835,10 +2906,10 @@ def main() -> int:
         results = execute_fit_jobs(jobs=jobs, workers=args.workers)
         frame = flatten_results(results)
 
-        csv_path = table_dir / "mx2_peak_fit_results_v6.csv"
-        json_path = table_dir / "mx2_peak_fit_results_v6.json"
-        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v6.tex"
-        status_path = table_dir / "mx2_peak_fit_status_v6.txt"
+        csv_path = table_dir / "mx2_peak_fit_results_v7.csv"
+        json_path = table_dir / "mx2_peak_fit_results_v7.json"
+        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v7.tex"
+        status_path = table_dir / "mx2_peak_fit_status_v7.txt"
 
         frame.to_csv(csv_path, index=False)
         compact_json = build_compact_json(
