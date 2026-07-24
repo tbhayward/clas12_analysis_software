@@ -1388,6 +1388,18 @@ def plot_spectrum_canvases(
                         capsize=0.0,
                         label="Data",
                     )
+                    ax.axvline(
+                        fit_min_gev2,
+                        linewidth=0.7,
+                        linestyle=":",
+                        alpha=0.55,
+                    )
+                    ax.axvline(
+                        fit_max_gev2,
+                        linewidth=0.7,
+                        linestyle=":",
+                        alpha=0.55,
+                    )
 
                     x_dense = np.linspace(fit_min_gev2, fit_max_gev2, 500)
                     evaluated = evaluate_model_dense(
@@ -1458,6 +1470,7 @@ def plot_spectrum_canvases(
                     handles,
                     labels,
                     loc="upper center",
+                    bbox_to_anchor=(0.5, 0.955),
                     ncol=4,
                     fontsize=9,
                     frameon=True,
@@ -1469,7 +1482,7 @@ def plot_spectrum_canvases(
                 fontsize=15,
                 y=0.995,
             )
-            fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.955))
+            fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.900))
             output_path = output_dir / f"mx2_fits_{period}_{stage}.png"
             fig.savefig(output_path, dpi=180)
             plt.close(fig)
@@ -1506,6 +1519,18 @@ def plot_background_model_canvases(
                     linewidth=0.6,
                     capsize=0.0,
                     label="Data",
+                )
+                ax.axvline(
+                    fit_min_gev2,
+                    linewidth=0.7,
+                    linestyle=":",
+                    alpha=0.55,
+                )
+                ax.axvline(
+                    fit_max_gev2,
+                    linewidth=0.7,
+                    linestyle=":",
+                    alpha=0.55,
                 )
 
                 x_dense = np.linspace(fit_min_gev2, fit_max_gev2, 500)
@@ -1545,6 +1570,7 @@ def plot_background_model_canvases(
                 handles,
                 labels,
                 loc="upper center",
+                bbox_to_anchor=(0.5, 0.955),
                 ncol=4,
                 fontsize=9,
                 frameon=True,
@@ -1556,7 +1582,7 @@ def plot_background_model_canvases(
             fontsize=15,
             y=0.995,
         )
-        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.955))
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.900))
         fig.savefig(
             output_dir / f"mx2_background_models_{period}_after.png",
             dpi=180,
@@ -2012,8 +2038,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hist-bins",
         type=int,
-        default=100,
-        help="Number of Mx2 histogram bins (default: 100).",
+        default=80,
+        help="Number of Mx2 histogram bins (default: 80).",
     )
     parser.add_argument(
         "--fit-min",
@@ -2114,10 +2140,10 @@ def main() -> int:
         results = execute_fit_jobs(jobs=jobs, workers=args.workers)
         frame = flatten_results(results)
 
-        csv_path = table_dir / "mx2_peak_fit_results_v1.csv"
-        json_path = table_dir / "mx2_peak_fit_results_v1.json"
-        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v1.tex"
-        status_path = table_dir / "mx2_peak_fit_status_v1.txt"
+        csv_path = table_dir / "mx2_peak_fit_results_v2.csv"
+        json_path = table_dir / "mx2_peak_fit_results_v2.json"
+        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v2.tex"
+        status_path = table_dir / "mx2_peak_fit_status_v2.txt"
 
         frame.to_csv(csv_path, index=False)
         compact_json = build_compact_json(
