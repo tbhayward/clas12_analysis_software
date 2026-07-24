@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-channel_selection_mx2_fit_stability_v1.py
+channel_selection_mx2_fit_stability_v3.py
 
-Deterministic pass-1 study of the missing-neutron Mx2 peak used for the RGC
+Deterministic pass-1 fit-stability study of the missing-neutron Mx2 peak used for the RGC
 exclusive e pi+ channel selection.
 
 For each of the three RGC run periods, before and after the finalized momentum
@@ -1591,6 +1591,38 @@ def plot_background_model_canvases(
     # endfor
 
 
+
+def padded_limits(values: np.ndarray, fractional_padding: float = 0.08) -> tuple[float, float]:
+    """Return finite padded limits for a family of matching summary plots."""
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return (0.0, 1.0)
+    # endif
+    low = float(np.min(finite))
+    high = float(np.max(finite))
+    span = high - low
+    if span <= 0.0:
+        span = max(abs(low), 1.0) * 0.10
+    # endif
+    padding = fractional_padding * span
+    return low - padding, high + padding
+
+
+def symmetric_limits(values: np.ndarray, fractional_padding: float = 0.10) -> tuple[float, float]:
+    """Return symmetric limits about zero for matching variation plots."""
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return (-1.0, 1.0)
+    # endif
+    maximum = float(np.max(np.abs(finite)))
+    if maximum <= 0.0:
+        maximum = 1.0
+    # endif
+    maximum *= 1.0 + fractional_padding
+    return -maximum, maximum
+
 def plot_before_after_summary(frame: pd.DataFrame, output_dir: Path) -> None:
     """Plot nominal mu and sigma before versus after momentum corrections."""
     ensure_directory(output_dir)
@@ -1598,6 +1630,21 @@ def plot_before_after_summary(frame: pd.DataFrame, output_dir: Path) -> None:
         (frame["background_model"] == NOMINAL_BACKGROUND_MODEL)
         & frame["success"]
     ].copy()
+
+    mu_low, mu_high = padded_limits(
+        np.concatenate(
+            [
+                nominal["mean_gev2"].to_numpy(dtype=float),
+                np.asarray([NEUTRON_MASS2_GEV2], dtype=float),
+            ]
+        ),
+        fractional_padding=0.08,
+    )
+    sigma_low, sigma_high = padded_limits(
+        nominal["sigma_gev2"].to_numpy(dtype=float),
+        fractional_padding=0.10,
+    )
+    sigma_low = max(0.0, sigma_low)
 
     for period in ("su22", "fa22", "sp23"):
         period_frame = nominal[nominal["period"] == period]
@@ -1627,6 +1674,7 @@ def plot_before_after_summary(frame: pd.DataFrame, output_dir: Path) -> None:
         ax.set_ylabel("Gaussian mean $\\mu$ (GeV$^2$)")
         ax.set_title(f"{PERIOD_LABELS[period]} missing-neutron peak mean")
         ax.set_xlim(0.5, 24.5)
+        ax.set_ylim(mu_low, mu_high)
         ax.set_xticks(np.arange(1, 25))
         ax.grid(True, alpha=0.4)
         ax.legend()
@@ -1653,6 +1701,7 @@ def plot_before_after_summary(frame: pd.DataFrame, output_dir: Path) -> None:
         ax.set_ylabel("Gaussian width $\\sigma$ (GeV$^2$)")
         ax.set_title(f"{PERIOD_LABELS[period]} missing-neutron peak width")
         ax.set_xlim(0.5, 24.5)
+        ax.set_ylim(sigma_low, sigma_high)
         ax.set_xticks(np.arange(1, 25))
         ax.grid(True, alpha=0.4)
         ax.legend()
@@ -1739,6 +1788,22 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
         & frame["success"]
     ].copy()
 
+    yield_low, yield_high = symmetric_limits(
+        100.0
+        * selected[
+            "relative_signal_yield_difference_from_nominal"
+        ].to_numpy(dtype=float),
+        fractional_padding=0.10,
+    )
+    mu_delta_low, mu_delta_high = symmetric_limits(
+        selected["delta_mean_from_nominal_gev2"].to_numpy(dtype=float),
+        fractional_padding=0.10,
+    )
+    sigma_delta_low, sigma_delta_high = symmetric_limits(
+        selected["delta_sigma_from_nominal_gev2"].to_numpy(dtype=float),
+        fractional_padding=0.10,
+    )
+
     for period in ("su22", "fa22", "sp23"):
         period_frame = selected[selected["period"] == period]
 
@@ -1762,6 +1827,7 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
         ax.axhline(0.0, linewidth=1.0, linestyle="--")
         ax.set_xlabel("Kinematic bin")
         ax.set_ylabel("Signal-yield difference from quadratic model (%)")
+        ax.set_ylim(yield_low, yield_high)
         ax.set_title(
             f"{PERIOD_LABELS[period]} corrected background-model dependence"
         )
@@ -1793,6 +1859,7 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
         ax.axhline(0.0, linewidth=1.0, linestyle="--")
         ax.set_xlabel("Kinematic bin")
         ax.set_ylabel("$\\mu_{model}-\\mu_{quadratic}$ (GeV$^2$)")
+        ax.set_ylim(mu_delta_low, mu_delta_high)
         ax.set_title(
             f"{PERIOD_LABELS[period]} corrected mean dependence on background"
         )
@@ -1824,6 +1891,7 @@ def plot_model_variations(frame: pd.DataFrame, output_dir: Path) -> None:
         ax.axhline(0.0, linewidth=1.0, linestyle="--")
         ax.set_xlabel("Kinematic bin")
         ax.set_ylabel("$\\sigma_{model}-\\sigma_{quadratic}$ (GeV$^2$)")
+        ax.set_ylim(sigma_delta_low, sigma_delta_high)
         ax.set_title(
             f"{PERIOD_LABELS[period]} corrected width dependence on background"
         )
@@ -2044,14 +2112,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fit-min",
         type=float,
-        default=0.55,
-        help="Mx2 fit minimum in GeV^2 (default: 0.55).",
+        default=0.30,
+        help="Mx2 total-fit minimum in GeV^2 (default: 0.30).",
     )
     parser.add_argument(
         "--fit-max",
         type=float,
-        default=1.20,
-        help="Mx2 fit maximum in GeV^2 (default: 1.20).",
+        default=1.50,
+        help="Mx2 total-fit maximum in GeV^2 (default: 1.50).",
     )
     parser.add_argument(
         "--minimum-events",
@@ -2140,10 +2208,10 @@ def main() -> int:
         results = execute_fit_jobs(jobs=jobs, workers=args.workers)
         frame = flatten_results(results)
 
-        csv_path = table_dir / "mx2_peak_fit_results_v2.csv"
-        json_path = table_dir / "mx2_peak_fit_results_v2.json"
-        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v2.tex"
-        status_path = table_dir / "mx2_peak_fit_status_v2.txt"
+        csv_path = table_dir / "mx2_peak_fit_results_v3.csv"
+        json_path = table_dir / "mx2_peak_fit_results_v3.json"
+        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v3.tex"
+        status_path = table_dir / "mx2_peak_fit_status_v3.txt"
 
         frame.to_csv(csv_path, index=False)
         compact_json = build_compact_json(
