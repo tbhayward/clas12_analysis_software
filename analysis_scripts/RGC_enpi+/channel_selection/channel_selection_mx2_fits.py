@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-channel_selection_mx2_fit_stability_v4.py
+channel_selection_mx2_fit_stability_v5.py
 
 Deterministic pass-1 fit-stability study of the missing-neutron Mx2 peak used for the RGC
 exclusive e pi+ channel selection.
@@ -10,13 +10,18 @@ corrections, the script:
 
   1. reads xB, tprime, and Mx2 from the PhysicsEvents ROOT tree;
   2. divides the sample into the fixed 4 xB by 6 (-tprime) bins;
-  3. fits each Mx2 distribution with a Gaussian signal and each of four
-     deterministic background hypotheses:
+  3. fits each Mx2 distribution with a Gaussian signal and five deterministic
+     background hypotheses:
 
-         nominal:     quadratic polynomial,
-         alternative: linear polynomial,
-         alternative: exponential,
-         alternative: quadratic polynomial plus an N-pi threshold component;
+         linear polynomial,
+         quadratic polynomial,
+         cubic polynomial,
+         quartic polynomial,
+         exponential;
+
+     The script also recommends the lowest polynomial order from quadratic
+     through quartic that gives an acceptable signal-region fit, with the
+     signal region defined from the fitted Gaussian as mu +/- 2 sigma;
 
   4. extracts the Gaussian mean, width, and signal yield;
   5. records fit quality, covariance information, model differences, and
@@ -59,10 +64,6 @@ import uproot
 
 NEUTRON_MASS_GEV = 0.9395654133
 NEUTRON_MASS2_GEV2 = NEUTRON_MASS_GEV**2
-NEUTRAL_PION_MASS_GEV = 0.1349768
-NPI_THRESHOLD_MASS_GEV = NEUTRON_MASS_GEV + NEUTRAL_PION_MASS_GEV
-NPI_THRESHOLD_MASS2_GEV2 = NPI_THRESHOLD_MASS_GEV**2
-NPI_THRESHOLD_POWER = 1.5
 
 XB_BINS: tuple[tuple[float, float], ...] = (
     (0.10, 0.25),
@@ -125,17 +126,19 @@ STAGE_LABELS = {
 }
 
 BACKGROUND_LABELS = {
-    "quadratic": "Quadratic background",
     "linear": "Linear background",
+    "quadratic": "Quadratic background",
+    "cubic": "Cubic background",
+    "quartic": "Quartic background",
     "exponential": "Exponential background",
-    "quadratic_npi_threshold": r"Quadratic + N$\pi$ threshold background",
 }
 
 BACKGROUND_MODELS: tuple[str, ...] = (
-    "quadratic",
     "linear",
+    "quadratic",
+    "cubic",
+    "quartic",
     "exponential",
-    "quadratic_npi_threshold",
 )
 
 ALTERNATIVE_BACKGROUND_MODELS: tuple[str, ...] = tuple(
@@ -504,6 +507,31 @@ def quadratic_background(
     return c0 + c1 * dx + c2 * dx**2
 
 
+def cubic_background(
+    x: np.ndarray,
+    c0: float,
+    c1: float,
+    c2: float,
+    c3: float,
+) -> np.ndarray:
+    """Cubic background centered at the neutron mass squared."""
+    dx = np.asarray(x, dtype=float) - NEUTRON_MASS2_GEV2
+    return c0 + c1 * dx + c2 * dx**2 + c3 * dx**3
+
+
+def quartic_background(
+    x: np.ndarray,
+    c0: float,
+    c1: float,
+    c2: float,
+    c3: float,
+    c4: float,
+) -> np.ndarray:
+    """Quartic background centered at the neutron mass squared."""
+    dx = np.asarray(x, dtype=float) - NEUTRON_MASS2_GEV2
+    return c0 + c1 * dx + c2 * dx**2 + c3 * dx**3 + c4 * dx**4
+
+
 def exponential_background(
     x: np.ndarray,
     log_amplitude: float,
@@ -514,29 +542,6 @@ def exponential_background(
     exponent = np.clip(log_amplitude + slope_per_gev2 * dx, -50.0, 50.0)
     return np.exp(exponent)
 
-
-def npi_threshold_background(
-    x: np.ndarray,
-    log_amplitude: float,
-    falloff_per_gev: float,
-) -> np.ndarray:
-    """Empirical positive N-pi threshold component expressed in missing mass.
-
-    The component turns on at the physical n + pi0 threshold and uses a fixed
-    threshold power of 3/2. It is intentionally phenomenological: it tests
-    whether a clipped broad continuum above the neutron peak stabilizes the
-    neutron Gaussian, without claiming that the observed structure is a pure
-    Delta0 resonance.
-    """
-    x_array = np.asarray(x, dtype=float)
-    missing_mass = np.sqrt(np.clip(x_array, 0.0, None))
-    excess_mass = np.clip(missing_mass - NPI_THRESHOLD_MASS_GEV, 0.0, None)
-    amplitude = np.exp(np.clip(log_amplitude, -50.0, 50.0))
-    return (
-        amplitude
-        * excess_mass**NPI_THRESHOLD_POWER
-        * np.exp(-np.clip(falloff_per_gev, 0.0, 100.0) * excess_mass)
-    )
 
 
 def build_total_model(
@@ -585,6 +590,51 @@ def build_total_model(
         return model
     # endif
 
+    if background_model == "cubic":
+        def model(
+            x: np.ndarray,
+            signal_yield: float,
+            mean_gev2: float,
+            sigma_gev2: float,
+            c0: float,
+            c1: float,
+            c2: float,
+            c3: float,
+        ) -> np.ndarray:
+            return gaussian_signal_from_yield(
+                x,
+                signal_yield,
+                mean_gev2,
+                sigma_gev2,
+                histogram_bin_width_gev2,
+            ) + cubic_background(x, c0, c1, c2, c3)
+        # enddef
+        return model
+    # endif
+
+    if background_model == "quartic":
+        def model(
+            x: np.ndarray,
+            signal_yield: float,
+            mean_gev2: float,
+            sigma_gev2: float,
+            c0: float,
+            c1: float,
+            c2: float,
+            c3: float,
+            c4: float,
+        ) -> np.ndarray:
+            return gaussian_signal_from_yield(
+                x,
+                signal_yield,
+                mean_gev2,
+                sigma_gev2,
+                histogram_bin_width_gev2,
+            ) + quartic_background(x, c0, c1, c2, c3, c4)
+        # enddef
+        return model
+    # endif
+
     if background_model == "exponential":
         def model(
             x: np.ndarray,
@@ -609,36 +659,6 @@ def build_total_model(
         return model
     # endif
 
-    if background_model == "quadratic_npi_threshold":
-        def model(
-            x: np.ndarray,
-            signal_yield: float,
-            mean_gev2: float,
-            sigma_gev2: float,
-            c0: float,
-            c1: float,
-            c2: float,
-            log_threshold_amplitude: float,
-            threshold_falloff_per_gev: float,
-        ) -> np.ndarray:
-            return (
-                gaussian_signal_from_yield(
-                    x,
-                    signal_yield,
-                    mean_gev2,
-                    sigma_gev2,
-                    histogram_bin_width_gev2,
-                )
-                + quadratic_background(x, c0, c1, c2)
-                + npi_threshold_background(
-                    x,
-                    log_threshold_amplitude,
-                    threshold_falloff_per_gev,
-                )
-            )
-        # enddef
-        return model
-    # endif
 
     raise ValueError(f"Unknown background model: {background_model}")
 
@@ -655,14 +675,14 @@ def evaluate_background(
     if background_model == "quadratic":
         return quadratic_background(x, *parameters[3:6])
     # endif
+    if background_model == "cubic":
+        return cubic_background(x, *parameters[3:7])
+    # endif
+    if background_model == "quartic":
+        return quartic_background(x, *parameters[3:8])
+    # endif
     if background_model == "exponential":
         return exponential_background(x, *parameters[3:5])
-    # endif
-    if background_model == "quadratic_npi_threshold":
-        return (
-            quadratic_background(x, *parameters[3:6])
-            + npi_threshold_background(x, *parameters[6:8])
-        )
     # endif
     raise ValueError(background_model)
 
@@ -741,59 +761,45 @@ def initial_values_and_bounds(
             30.0 * background_scale,
             150.0 * background_scale,
         ]
-    elif background_model == "exponential":
-        log_baseline = math.log(max(baseline, 0.5))
-        initial = [*common_initial, log_baseline, 0.0]
-        lower = [*common_lower, math.log(1.0e-4), -25.0]
-        upper = [*common_upper, math.log(10.0 * background_scale), 25.0]
-    elif background_model == "quadratic_npi_threshold":
-        threshold_region = fit_x >= NPI_THRESHOLD_MASS2_GEV2
-        if np.any(threshold_region):
-            threshold_counts_scale = max(
-                float(np.percentile(fit_y[threshold_region], 70.0)) - baseline,
-                1.0,
-            )
-            representative_mass = float(
-                np.sqrt(np.median(fit_x[threshold_region]))
-            )
-            representative_excess = max(
-                representative_mass - NPI_THRESHOLD_MASS_GEV,
-                0.02,
-            )
-            threshold_shape_scale = (
-                representative_excess**NPI_THRESHOLD_POWER
-                * math.exp(-4.0 * representative_excess)
-            )
-            threshold_amplitude_guess = (
-                threshold_counts_scale / max(threshold_shape_scale, 1.0e-6)
-            )
-        else:
-            threshold_amplitude_guess = max(10.0 * background_scale, 1.0)
-        # endif
-        initial = [
-            *common_initial,
-            baseline,
-            0.0,
-            0.0,
-            math.log(threshold_amplitude_guess),
-            4.0,
-        ]
+    elif background_model == "cubic":
+        initial = [*common_initial, baseline, 0.0, 0.0, 0.0]
         lower = [
             *common_lower,
             -0.50 * background_scale,
             -30.0 * background_scale,
             -150.0 * background_scale,
-            math.log(1.0e-6),
-            0.0,
+            -750.0 * background_scale,
         ]
         upper = [
             *common_upper,
             3.00 * background_scale,
             30.0 * background_scale,
             150.0 * background_scale,
-            math.log(1.0e5 * background_scale),
-            40.0,
+            750.0 * background_scale,
         ]
+    elif background_model == "quartic":
+        initial = [*common_initial, baseline, 0.0, 0.0, 0.0, 0.0]
+        lower = [
+            *common_lower,
+            -0.50 * background_scale,
+            -30.0 * background_scale,
+            -150.0 * background_scale,
+            -750.0 * background_scale,
+            -4000.0 * background_scale,
+        ]
+        upper = [
+            *common_upper,
+            3.00 * background_scale,
+            30.0 * background_scale,
+            150.0 * background_scale,
+            750.0 * background_scale,
+            4000.0 * background_scale,
+        ]
+    elif background_model == "exponential":
+        log_baseline = math.log(max(baseline, 0.5))
+        initial = [*common_initial, log_baseline, 0.0]
+        lower = [*common_lower, math.log(1.0e-4), -25.0]
+        upper = [*common_upper, math.log(10.0 * background_scale), 25.0]
     else:
         raise ValueError(background_model)
     # endif
@@ -904,6 +910,30 @@ def fit_background_model(
     ndf = number_of_points - number_of_parameters
     chi2_ndf = chi2 / ndf if ndf > 0 else math.nan
 
+    fitted_mean = float(parameters[1])
+    fitted_sigma = float(abs(parameters[2]))
+    signal_region_mask = (
+        (fit_x >= fitted_mean - 2.0 * fitted_sigma)
+        & (fit_x <= fitted_mean + 2.0 * fitted_sigma)
+    )
+    signal_region_chi2 = float(np.sum(pulls[signal_region_mask] ** 2))
+    signal_region_npoints = int(np.count_nonzero(signal_region_mask))
+
+    # This is an intentionally local diagnostic. The background parameters are
+    # constrained by the complete fit range, so a mathematically exact local
+    # number of degrees of freedom is not uniquely defined. Subtracting the
+    # three Gaussian parameters gives a transparent and reproducible
+    # approximation for comparing models in the signal region.
+    signal_region_ndf_approx = max(signal_region_npoints - 3, 1)
+    signal_region_chi2_ndf_approx = (
+        signal_region_chi2 / signal_region_ndf_approx
+    )
+    signal_region_chi2_per_bin = (
+        signal_region_chi2 / signal_region_npoints
+        if signal_region_npoints > 0
+        else math.nan
+    )
+
     if number_of_points > number_of_parameters + 1:
         aicc = (
             chi2
@@ -961,8 +991,14 @@ def fit_background_model(
     if not np.all(np.isfinite(covariance)):
         review_reasons.append("nonfinite_covariance")
     # endif
-    if not np.isfinite(chi2_ndf) or chi2_ndf > 3.0:
-        review_reasons.append("poor_chi2")
+    if (
+        not np.isfinite(signal_region_chi2_ndf_approx)
+        or signal_region_chi2_ndf_approx > 3.0
+    ):
+        review_reasons.append("poor_signal_region_chi2")
+    # endif
+    if not np.isfinite(chi2_ndf) or chi2_ndf > 5.0:
+        review_reasons.append("poor_global_chi2_diagnostic")
     # endif
     if not np.isfinite(mean_error_gev2) or mean_error_gev2 > 0.025:
         review_reasons.append("large_mean_error")
@@ -973,7 +1009,7 @@ def fit_background_model(
     if peak_significance_proxy < 5.0:
         review_reasons.append("weak_peak")
     # endif
-    if background_model in {"linear", "quadratic", "quadratic_npi_threshold"} and background_minimum < -1.0:
+    if background_model in {"linear", "quadratic", "cubic", "quartic"} and background_minimum < -1.0:
         review_reasons.append("negative_background")
     # endif
 
@@ -1004,6 +1040,12 @@ def fit_background_model(
         "chi2": chi2,
         "ndf": int(ndf),
         "chi2_ndf": chi2_ndf,
+        "signal_region_definition": "fitted mean +/- 2 fitted sigma",
+        "signal_region_chi2": signal_region_chi2,
+        "signal_region_npoints": signal_region_npoints,
+        "signal_region_ndf_approx": signal_region_ndf_approx,
+        "signal_region_chi2_ndf_approx": signal_region_chi2_ndf_approx,
+        "signal_region_chi2_per_bin": signal_region_chi2_per_bin,
         "aicc": float(aicc),
         "peak_significance_proxy": peak_significance_proxy,
         "background_minimum_in_fit_range": background_minimum,
@@ -1024,7 +1066,7 @@ def fit_background_model(
 
 
 def fit_one_job(job: FitJob) -> dict[str, Any]:
-    """Fit all four deterministic hypotheses for one period-stage-kinematic bin."""
+    """Fit all five deterministic hypotheses for one period-stage-kinematic bin."""
     values = np.asarray(job.values, dtype=float)
     values = values[np.isfinite(values)]
 
@@ -1088,11 +1130,81 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
         base["models"][model_name] = fit_result
     # endfor
 
-    nominal = base["models"][NOMINAL_BACKGROUND_MODEL]
+    polynomial_candidates = ("quadratic", "cubic", "quartic")
+    acceptable_candidates: list[str] = []
+    for model_name in polynomial_candidates:
+        candidate = base["models"][model_name]
+        reasons = set(candidate.get("review_reasons", []))
+        if (
+            candidate.get("success", False)
+            and "negative_background" not in reasons
+            and np.isfinite(candidate.get("signal_region_chi2_ndf_approx", math.nan))
+            and candidate["signal_region_chi2_ndf_approx"] <= 2.0
+        ):
+            acceptable_candidates.append(model_name)
+        # endif
+    # endfor
+
+    if acceptable_candidates:
+        recommended_model = acceptable_candidates[0]
+        recommendation_reason = (
+            "lowest polynomial order with signal-region chi2/ndf <= 2.0 "
+            "and nonnegative fitted background"
+        )
+    else:
+        viable_candidates = [
+            model_name
+            for model_name in polynomial_candidates
+            if (
+                base["models"][model_name].get("success", False)
+                and "negative_background"
+                not in set(
+                    base["models"][model_name].get("review_reasons", [])
+                )
+                and np.isfinite(
+                    base["models"][model_name].get(
+                        "signal_region_chi2_ndf_approx",
+                        math.nan,
+                    )
+                )
+            )
+        ]
+        if viable_candidates:
+            recommended_model = min(
+                viable_candidates,
+                key=lambda model_name: (
+                    base["models"][model_name][
+                        "signal_region_chi2_ndf_approx"
+                    ],
+                    base["models"][model_name]["aicc"],
+                ),
+            )
+            recommendation_reason = (
+                "no polynomial reached signal-region chi2/ndf <= 2.0; "
+                "selected the viable polynomial with the smallest signal-region "
+                "chi2/ndf, using AICc as the tie-breaker"
+            )
+        else:
+            recommended_model = NOMINAL_BACKGROUND_MODEL
+            recommendation_reason = (
+                "no viable adaptive polynomial candidate; fell back to quadratic"
+            )
+        # endif
+    # endif
+
+    base["recommended_background_model"] = recommended_model
+    base["recommended_background_order"] = {
+        "quadratic": 2,
+        "cubic": 3,
+        "quartic": 4,
+    }.get(recommended_model)
+    base["recommendation_reason"] = recommendation_reason
+
+    nominal = base["models"][recommended_model]
     base["status"] = nominal.get("status", "fit_failed")
 
     if nominal.get("success", False):
-        base["nominal_selection_windows_gev2"] = {
+        base["recommended_selection_windows_gev2"] = {
             "1.5_sigma": {
                 "minimum": nominal["mean_gev2"] - 1.5 * nominal["sigma_gev2"],
                 "maximum": nominal["mean_gev2"] + 1.5 * nominal["sigma_gev2"],
@@ -1108,7 +1220,10 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
         }
 
         model_differences: dict[str, Any] = {}
-        for alternative in ALTERNATIVE_BACKGROUND_MODELS:
+        for alternative in BACKGROUND_MODELS:
+            if alternative == recommended_model:
+                continue
+            # endif
             alt = base["models"][alternative]
             if alt.get("success", False):
                 model_differences[alternative] = {
@@ -1131,7 +1246,7 @@ def fit_one_job(job: FitJob) -> dict[str, Any]:
                 }
             # endif
         # endfor
-        base["model_differences_from_nominal"] = model_differences
+        base["model_differences_from_recommended"] = model_differences
     # endif
 
     return base
@@ -1281,6 +1396,15 @@ def flatten_results(results: list[dict[str, Any]]) -> pd.DataFrame:
             "number_of_events": item["number_of_events"],
             "histogram_entries": item["histogram_entries"],
             "histogram_bin_width_gev2": item["histogram_bin_width_gev2"],
+            "recommended_background_model": item.get(
+                "recommended_background_model",
+                NOMINAL_BACKGROUND_MODEL,
+            ),
+            "recommended_background_order": item.get(
+                "recommended_background_order",
+                math.nan,
+            ),
+            "recommendation_reason": item.get("recommendation_reason", ""),
         }
         for model_name in BACKGROUND_MODELS:
             fit = item["models"][model_name]
@@ -1288,7 +1412,12 @@ def flatten_results(results: list[dict[str, Any]]) -> pd.DataFrame:
                 **common,
                 "background_model": model_name,
                 "background_label": BACKGROUND_LABELS[model_name],
-                "is_nominal": model_name == NOMINAL_BACKGROUND_MODEL,
+                "is_nominal_quadratic": model_name == NOMINAL_BACKGROUND_MODEL,
+                "is_recommended": model_name
+                == item.get(
+                    "recommended_background_model",
+                    NOMINAL_BACKGROUND_MODEL,
+                ),
                 "success": fit.get("success", False),
                 "status": fit.get("status", "unknown"),
                 "review_reasons": ";".join(fit.get("review_reasons", [])),
@@ -1301,6 +1430,26 @@ def flatten_results(results: list[dict[str, Any]]) -> pd.DataFrame:
                 "chi2": fit.get("chi2", math.nan),
                 "ndf": fit.get("ndf", math.nan),
                 "chi2_ndf": fit.get("chi2_ndf", math.nan),
+                "signal_region_chi2": fit.get(
+                    "signal_region_chi2",
+                    math.nan,
+                ),
+                "signal_region_npoints": fit.get(
+                    "signal_region_npoints",
+                    math.nan,
+                ),
+                "signal_region_ndf_approx": fit.get(
+                    "signal_region_ndf_approx",
+                    math.nan,
+                ),
+                "signal_region_chi2_ndf_approx": fit.get(
+                    "signal_region_chi2_ndf_approx",
+                    math.nan,
+                ),
+                "signal_region_chi2_per_bin": fit.get(
+                    "signal_region_chi2_per_bin",
+                    math.nan,
+                ),
                 "aicc": fit.get("aicc", math.nan),
                 "peak_significance_proxy": fit.get(
                     "peak_significance_proxy",
@@ -1312,32 +1461,36 @@ def flatten_results(results: list[dict[str, Any]]) -> pd.DataFrame:
                 ),
             }
 
-            differences = item.get("model_differences_from_nominal", {}).get(
-                model_name,
+            differences = item.get(
+                "model_differences_from_recommended",
                 {},
+            ).get(model_name, {})
+            is_recommended = model_name == item.get(
+                "recommended_background_model",
+                NOMINAL_BACKGROUND_MODEL,
             )
-            row["delta_mean_from_nominal_gev2"] = differences.get(
+            row["delta_mean_from_recommended_gev2"] = differences.get(
                 "delta_mean_gev2",
-                0.0 if model_name == NOMINAL_BACKGROUND_MODEL else math.nan,
+                0.0 if is_recommended else math.nan,
             )
-            row["delta_sigma_from_nominal_gev2"] = differences.get(
+            row["delta_sigma_from_recommended_gev2"] = differences.get(
                 "delta_sigma_gev2",
-                0.0 if model_name == NOMINAL_BACKGROUND_MODEL else math.nan,
+                0.0 if is_recommended else math.nan,
             )
-            row["delta_signal_yield_from_nominal"] = differences.get(
+            row["delta_signal_yield_from_recommended"] = differences.get(
                 "delta_signal_yield",
-                0.0 if model_name == NOMINAL_BACKGROUND_MODEL else math.nan,
+                0.0 if is_recommended else math.nan,
             )
-            row["relative_signal_yield_difference_from_nominal"] = differences.get(
+            row["relative_signal_yield_difference_from_recommended"] = differences.get(
                 "relative_signal_yield_difference",
-                0.0 if model_name == NOMINAL_BACKGROUND_MODEL else math.nan,
+                0.0 if is_recommended else math.nan,
             )
-            row["delta_aicc_from_nominal"] = differences.get(
+            row["delta_aicc_from_recommended"] = differences.get(
                 "delta_aicc",
-                0.0 if model_name == NOMINAL_BACKGROUND_MODEL else math.nan,
+                0.0 if is_recommended else math.nan,
             )
 
-            windows = item.get("nominal_selection_windows_gev2", {})
+            windows = item.get("recommended_selection_windows_gev2", {})
             for window_name in ("1.5_sigma", "2.0_sigma", "3.0_sigma"):
                 row[f"window_{window_name}_min_gev2"] = windows.get(
                     window_name,
@@ -1362,15 +1515,15 @@ def flatten_results(results: list[dict[str, Any]]) -> pd.DataFrame:
 
 
 def write_latex_nominal_tables(frame: pd.DataFrame, output_path: Path) -> None:
-    """Write corrected nominal mu/sigma tables for all three periods."""
+    """Write corrected adaptively selected mu/sigma tables."""
     selected = frame[
         (frame["stage"] == "after")
-        & (frame["background_model"] == NOMINAL_BACKGROUND_MODEL)
+        & frame["is_recommended"]
     ].copy()
 
     lines: list[str] = []
-    lines.append("% Auto-generated by channel_selection_mx2_fit_stability_v1.py")
-    lines.append("% Corrected nominal Gaussian + quadratic-background fits.")
+    lines.append("% Auto-generated by channel_selection_mx2_fit_stability_v5.py")
+    lines.append("% Corrected Gaussian fits with adaptively selected polynomial backgrounds.")
     lines.append("")
 
     for period in ("su22", "fa22", "sp23"):
@@ -1482,7 +1635,7 @@ def plot_spectrum_canvases(
     fit_min_gev2: float,
     fit_max_gev2: float,
 ) -> None:
-    """Make one 4 x 6 nominal-fit canvas for every period and stage."""
+    """Make one 4 x 6 adaptively selected polynomial-fit canvas per dataset."""
     lookup = result_lookup(results)
     ensure_directory(output_dir)
 
@@ -1522,12 +1675,16 @@ def plot_spectrum_canvases(
                     )
 
                     x_dense = np.linspace(fit_min_gev2, fit_max_gev2, 500)
+                    selected_model = item.get(
+                        "recommended_background_model",
+                        NOMINAL_BACKGROUND_MODEL,
+                    )
                     evaluated = evaluate_model_dense(
                         item,
-                        NOMINAL_BACKGROUND_MODEL,
+                        selected_model,
                         x_dense,
                     )
-                    nominal = item["models"][NOMINAL_BACKGROUND_MODEL]
+                    nominal = item["models"][selected_model]
                     if evaluated is not None:
                         total, signal, background = evaluated
                         ax.plot(x_dense, total, linewidth=1.2, label="Total fit")
@@ -1553,7 +1710,9 @@ def plot_spectrum_canvases(
                         annotation = (
                             f"$\\mu$={mean:.4f}\n"
                             f"$\\sigma$={sigma:.4f}\n"
-                            f"$\\chi^2$/ndf={nominal['chi2_ndf']:.2f}"
+                            f"model={selected_model}\n"
+                            f"$\\chi^2$/ndf$_{{\\pm2\\sigma}}$="
+                            f"{nominal['signal_region_chi2_ndf_approx']:.2f}"
                         )
                     else:
                         annotation = nominal.get("status", "fit failed")
@@ -1598,7 +1757,7 @@ def plot_spectrum_canvases(
             # endif
             fig.suptitle(
                 f"{PERIOD_LABELS[period]}: {STAGE_LABELS[stage]}\n"
-                "Gaussian signal plus quadratic background",
+                "Gaussian signal plus adaptively selected polynomial background",
                 fontsize=15,
                 y=0.995,
             )
@@ -2108,16 +2267,26 @@ def build_compact_json(
             "maximum_gev2": args.fit_max,
             "minimum_events": args.minimum_events,
             "signal_model": "Gaussian parameterized by integrated yield",
-            "nominal_background_model": NOMINAL_BACKGROUND_MODEL,
+            "reference_background_model": NOMINAL_BACKGROUND_MODEL,
+            "production_fit_per_bin": "recommended_background_model",
             "background_models": list(BACKGROUND_MODELS),
-            "npi_threshold_component": {
-                "threshold_mass_gev": NPI_THRESHOLD_MASS_GEV,
-                "threshold_mass2_gev2": NPI_THRESHOLD_MASS2_GEV2,
-                "threshold_power": NPI_THRESHOLD_POWER,
-                "interpretation": (
-                    "Empirical broad-continuum test; not identified as a pure "
-                    "Delta0 resonance."
+            "adaptive_polynomial_selection": {
+                "candidate_orders": [2, 3, 4],
+                "acceptance_threshold_signal_region_chi2_ndf_approx": 2.0,
+                "policy": (
+                    "Choose the lowest polynomial order satisfying the threshold "
+                    "with a nonnegative background; otherwise choose the viable "
+                    "order with the smallest signal-region chi2/ndf."
                 ),
+            },
+            "signal_region_fit_quality": {
+                "definition": "fitted mean +/- 2 fitted sigma",
+                "ndf_convention": (
+                    "number of histogram bins in the signal region minus the "
+                    "three Gaussian parameters; this is a local diagnostic, not "
+                    "a strict independent goodness-of-fit probability"
+                ),
+                "global_chi2_ndf_also_stored": True,
             },
             "replicas_performed": False,
         },
@@ -2235,7 +2404,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--hist-bins",
         type=int,
-        default=80,
+        default=60,
         help="Number of Mx2 histogram bins (default: 80).",
     )
     parser.add_argument(
@@ -2247,7 +2416,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--fit-max",
         type=float,
-        default=1.40,
+        default=1.35,
         help="Mx2 total-fit maximum in GeV^2 (default: 1.40).",
     )
     parser.add_argument(
@@ -2337,10 +2506,10 @@ def main() -> int:
         results = execute_fit_jobs(jobs=jobs, workers=args.workers)
         frame = flatten_results(results)
 
-        csv_path = table_dir / "mx2_peak_fit_results_v4.csv"
-        json_path = table_dir / "mx2_peak_fit_results_v4.json"
-        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v4.tex"
-        status_path = table_dir / "mx2_peak_fit_status_v4.txt"
+        csv_path = table_dir / "mx2_peak_fit_results_v5.csv"
+        json_path = table_dir / "mx2_peak_fit_results_v5.json"
+        latex_path = table_dir / "mx2_peak_nominal_corrected_tables_v5.tex"
+        status_path = table_dir / "mx2_peak_fit_status_v5.txt"
 
         frame.to_csv(csv_path, index=False)
         compact_json = build_compact_json(
