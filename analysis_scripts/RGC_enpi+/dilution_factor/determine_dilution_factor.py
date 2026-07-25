@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v4.py
+determine_dilution_factor_v5.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -1137,6 +1137,121 @@ def scalar_record(summary: dict[str, np.ndarray], index: tuple[int, ...]) -> dic
     }
 
 
+
+def relative_method_half_difference(
+    method1: np.ndarray,
+    method2: np.ndarray,
+) -> np.ndarray:
+    """
+    Return |f1-f2|/(f1+f2), the relative half-difference about their average.
+
+    Since f_rec=(f1+f2)/2 and delta=(|f1-f2|)/2, delta/f_rec is exactly
+    |f1-f2|/(f1+f2).
+    """
+    denominator = method1 + method2
+    result = np.full_like(denominator, np.nan, dtype=float)
+    valid = (
+        np.isfinite(method1)
+        & np.isfinite(method2)
+        & np.isfinite(denominator)
+        & (denominator > 0.0)
+    )
+    result[valid] = np.abs(method1[valid] - method2[valid]) / denominator[valid]
+    return result
+
+
+def fit_constant_scale(
+    values: np.ndarray,
+    uncertainties: np.ndarray,
+) -> dict[str, float]:
+    """Fit a constant to finite positive-uncertainty values."""
+    values = np.asarray(values, dtype=float)
+    uncertainties = np.asarray(uncertainties, dtype=float)
+    valid = (
+        np.isfinite(values)
+        & np.isfinite(uncertainties)
+        & (uncertainties > 0.0)
+    )
+    if np.count_nonzero(valid) < 2:
+        finite_values = values[np.isfinite(values)]
+        value = (
+            float(np.nanmean(finite_values))
+            if finite_values.size
+            else math.nan
+        )
+        return {
+            "value": value,
+            "uncertainty": math.nan,
+            "chi2": math.nan,
+            "ndf": 0,
+            "chi2_ndf": math.nan,
+            "number_of_bins": int(np.count_nonzero(valid)),
+        }
+    # endif
+
+    weights = 1.0 / uncertainties[valid] ** 2
+    weight_sum = float(np.sum(weights))
+    fitted = float(np.sum(weights * values[valid]) / weight_sum)
+    fitted_uncertainty = math.sqrt(1.0 / weight_sum)
+    chi2 = float(
+        np.sum(
+            ((values[valid] - fitted) / uncertainties[valid]) ** 2
+        )
+    )
+    ndf = int(np.count_nonzero(valid) - 1)
+    return {
+        "value": fitted,
+        "uncertainty": fitted_uncertainty,
+        "chi2": chi2,
+        "ndf": ndf,
+        "chi2_ndf": chi2 / ndf if ndf > 0 else math.nan,
+        "number_of_bins": int(np.count_nonzero(valid)),
+    }
+
+
+def build_method_scale_summary(
+    central_method1: np.ndarray,
+    central_method2: np.ndarray,
+    replica_method1: np.ndarray,
+    replica_method2: np.ndarray,
+) -> dict[str, Any]:
+    """
+    Build per-bin relative half-differences and period-wide constant fits.
+
+    Arrays have shape (bin, cut) for central values and (replica, bin, cut)
+    for replicas.
+    """
+    central_relative = relative_method_half_difference(
+        central_method1,
+        central_method2,
+    )
+    replica_relative = relative_method_half_difference(
+        replica_method1,
+        replica_method2,
+    )
+    replica_uncertainty = np.nanstd(
+        replica_relative,
+        axis=0,
+        ddof=1,
+    )
+
+    fits: list[dict[str, float]] = []
+    for cut_index, variation in enumerate(CUT_VARIATIONS):
+        fit = fit_constant_scale(
+            central_relative[:, cut_index],
+            replica_uncertainty[:, cut_index],
+        )
+        fit["cut_variation"] = variation
+        fits.append(fit)
+    # endfor
+
+    return {
+        "relative_half_difference": central_relative,
+        "relative_half_difference_stat_uncertainty": replica_uncertainty,
+        "constant_fits": fits,
+    }
+
+
 def build_output_tables(
     observed: np.ndarray,
     central_results: dict[str, dict[str, Any]],
@@ -1154,8 +1269,11 @@ def build_output_tables(
         replicas = bootstrap_results[period]
         recommended_central = 0.5 * (central["method1"] + central["method2"])
         recommended_replicas = 0.5 * (replicas["method1"] + replicas["method2"])
-        dilution_model_systematic = 0.5 * np.abs(
-            central["method2"] - central["method1"]
+        method_scale_summary = build_method_scale_summary(
+            central_method1=central["method1"],
+            central_method2=central["method2"],
+            replica_method1=replicas["method1"],
+            replica_method2=replicas["method2"],
         )
         summaries = {
             "method1": summarize_replicas(central["method1"], replicas["method1"]),
@@ -1176,6 +1294,7 @@ def build_output_tables(
             np.asarray(replicas["method1_alpha"]),
         )
         summaries["method1_alpha"] = alpha_summary
+        summaries["method_scale"] = method_scale_summary
         summaries_by_period[period] = summaries
 
         period_bins: list[dict[str, Any]] = []
@@ -1202,9 +1321,46 @@ def build_output_tables(
                 recommended_record = scalar_record(
                     summaries["recommended"], (b, cut_index)
                 )
-                recommended_record["dilution_model_systematic"] = float(
-                    dilution_model_systematic[b, cut_index]
+                scale_fit = method_scale_summary["constant_fits"][cut_index]
+                scale_fraction = float(scale_fit["value"])
+                local_relative_half_difference = float(
+                    method_scale_summary["relative_half_difference"][
+                        b,
+                        cut_index,
+                    ]
                 )
+                local_relative_half_difference_uncertainty = float(
+                    method_scale_summary[
+                        "relative_half_difference_stat_uncertainty"
+                    ][b, cut_index]
+                )
+                recommended_record["dilution_model_scale_fraction"] = (
+                    scale_fraction
+                )
+                recommended_record["dilution_model_scale_percent"] = (
+                    100.0 * scale_fraction
+                )
+                recommended_record["dilution_model_scale_uncertainty"] = float(
+                    scale_fit["uncertainty"]
+                )
+                recommended_record["dilution_model_scale_chi2"] = float(
+                    scale_fit["chi2"]
+                )
+                recommended_record["dilution_model_scale_ndf"] = int(
+                    scale_fit["ndf"]
+                )
+                recommended_record["dilution_model_scale_chi2_ndf"] = float(
+                    scale_fit["chi2_ndf"]
+                )
+                recommended_record["dilution_model_systematic"] = (
+                    scale_fraction * recommended_record["value"]
+                )
+                recommended_record[
+                    "local_method_relative_half_difference"
+                ] = local_relative_half_difference
+                recommended_record[
+                    "local_method_relative_half_difference_stat_uncertainty"
+                ] = local_relative_half_difference_uncertainty
                 recommended_record["total_uncertainty_quadrature"] = float(
                     math.hypot(
                         recommended_record["stat_uncertainty"],
@@ -1212,8 +1368,10 @@ def build_output_tables(
                     )
                 )
                 recommended_record["definition"] = (
-                    "Average of Method 1 and Method 2; dilution-model systematic "
-                    "is half their absolute difference."
+                    "Average of Method 1 and Method 2. The dilution-model "
+                    "uncertainty is a period-wide multiplicative scale obtained "
+                    "from a constant fit to |f1-f2|/(f1+f2) across all 24 bins. "
+                    "The scale is fully correlated among bins in the period."
                 )
                 pf_bin_record = scalar_record(
                     summaries["packing_fraction_bin"], (b, cut_index)
@@ -1283,6 +1441,36 @@ def build_output_tables(
                     ]
                     row[f"{label}_flags"] = ";".join(record["flags"])
                 # endfor
+                row[
+                    "recommended_dilution_model_scale_fraction"
+                ] = recommended_record[
+                    "dilution_model_scale_fraction"
+                ]
+                row[
+                    "recommended_dilution_model_scale_percent"
+                ] = recommended_record[
+                    "dilution_model_scale_percent"
+                ]
+                row[
+                    "recommended_dilution_model_systematic_absolute"
+                ] = recommended_record[
+                    "dilution_model_systematic"
+                ]
+                row[
+                    "recommended_dilution_model_scale_chi2_ndf"
+                ] = recommended_record[
+                    "dilution_model_scale_chi2_ndf"
+                ]
+                row[
+                    "recommended_local_method_relative_half_difference"
+                ] = recommended_record[
+                    "local_method_relative_half_difference"
+                ]
+                row[
+                    "recommended_local_method_relative_half_difference_stat_uncertainty"
+                ] = recommended_record[
+                    "local_method_relative_half_difference_stat_uncertainty"
+                ]
                 row["recommended_dilution_model_systematic"] = recommended_record[
                     "dilution_model_systematic"
                 ]
@@ -1324,9 +1512,26 @@ def build_output_tables(
             )
         # endfor
 
+        method_scale_by_cut = {
+            fit["cut_variation"]: {
+                "fraction": float(fit["value"]),
+                "percent": 100.0 * float(fit["value"]),
+                "fit_uncertainty": float(fit["uncertainty"]),
+                "chi2": float(fit["chi2"]),
+                "ndf": int(fit["ndf"]),
+                "chi2_ndf": float(fit["chi2_ndf"]),
+                "number_of_bins": int(fit["number_of_bins"]),
+                "correlation_scope": (
+                    "Fully correlated among all 24 kinematic bins within "
+                    "this period and cut variation."
+                ),
+            }
+            for fit in method_scale_summary["constant_fits"]
+        }
         master_periods[period] = {
             "charge_fractions": charge_fractions[period],
             "method1_period_carbon_scale": scalar_record(alpha_summary, ()),
+            "dilution_model_scale_by_cut": method_scale_by_cut,
             "period_packing_fraction_by_cut": {
                 variation: scalar_record(
                     summaries["packing_fraction_period"], (cut_index,)
@@ -1338,6 +1543,7 @@ def build_output_tables(
         compact_periods[period] = {
             "charge_fractions": charge_fractions[period],
             "recommended_nominal_method": "average_of_method1_and_method2",
+            "dilution_model_scale_by_cut": method_scale_by_cut,
             "period_packing_fraction_by_cut": master_periods[period][
                 "period_packing_fraction_by_cut"
             ],
@@ -1372,7 +1578,7 @@ def write_covariance_products(
                 cut_samples = samples[:, :, cut_index]
                 covariance = pairwise_covariance(cut_samples)
                 correlation = covariance_to_correlation(covariance)
-                stem = f"{method_key}_{period}_{variation}_v4"
+                stem = f"{method_key}_{period}_{variation}_v5"
                 cov_path = output_dir / f"{stem}_covariance.json"
                 corr_path = output_dir / f"{stem}_correlation.json"
                 write_json(
@@ -1446,7 +1652,7 @@ def plot_three_method_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v4.png"
+    path = output_dir / f"three_method_comparison_{period}_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1491,7 +1697,7 @@ def plot_three_period_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_period_comparison_{method_key}_v4.png"
+    path = output_dir / f"three_period_comparison_{method_key}_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1535,7 +1741,7 @@ def plot_packing_fraction_summary(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v4.png"
+    path = output_dir / f"packing_fraction_summary_{period}_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1561,7 +1767,7 @@ def plot_method1_control_summary(
     ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.00 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v4.png"
+    path = output_dir / "method1_period_carbon_scales_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1603,7 +1809,7 @@ def plot_nominal_method_comparison(
     ax.legend(ncol=3)
     ax.set_title(f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison")
     fig.tight_layout()
-    path = output_dir / f"nominal_method_comparison_{period}_v4.png"
+    path = output_dir / f"nominal_method_comparison_{period}_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1647,7 +1853,7 @@ def plot_nominal_period_comparison(
         "Nominal-cut run-period comparison — " + method_titles[method_key]
     )
     fig.tight_layout()
-    path = output_dir / f"nominal_period_comparison_{method_key}_v4.png"
+    path = output_dir / f"nominal_period_comparison_{method_key}_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1687,7 +1893,7 @@ def plot_nominal_packing_fraction_period_comparison(
     ax.legend(ncol=3)
     ax.set_title("Nominal-cut packing-fraction comparison by run period")
     fig.tight_layout()
-    path = output_dir / "nominal_packing_fraction_period_comparison_v4.png"
+    path = output_dir / "nominal_packing_fraction_period_comparison_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1698,41 +1904,76 @@ def plot_nominal_method_differences(
     summaries_by_period: dict[str, Any],
     bootstrap_results: dict[str, dict[str, np.ndarray]],
 ) -> str:
-    """Show nominal differences among all three methods for each period."""
+    """
+    Plot the Method-1/Method-2 relative half-difference and scale fit.
+
+    The plotted quantity is 100*|f1-f2|/(f1+f2), equal to the fractional
+    half-difference about the recommended average.
+    """
     ensure_directory(output_dir)
     bins = np.arange(1, NUMBER_OF_BINS + 1)
     nominal_index = CUT_VARIATIONS.index("nominal")
     fig, axes = plt.subplots(3, 1, figsize=(17, 13), sharex=True)
+
     for ax, period in zip(axes, PERIODS):
-        m1 = summaries_by_period[period]["method1"]["central"][:, nominal_index]
-        m2 = summaries_by_period[period]["method2"]["central"][:, nominal_index]
-        m3 = summaries_by_period[period]["method3"]["central"][:, nominal_index]
-        replica_m1 = bootstrap_results[period]["method1"][:, :, nominal_index]
-        replica_m2 = bootstrap_results[period]["method2"][:, :, nominal_index]
-        replica_m3 = bootstrap_results[period]["method3"][:, :, nominal_index]
-        differences = (
-            (m2 - m1, np.nanstd(replica_m2 - replica_m1, axis=0, ddof=1),
-             "o", "Direct auxiliary − carbon"),
-            (m3 - m1, np.nanstd(replica_m3 - replica_m1, axis=0, ddof=1),
-             "s", "Packing-fraction − carbon"),
-            (m3 - m2, np.nanstd(replica_m3 - replica_m2, axis=0, ddof=1),
-             "^", "Packing-fraction − direct auxiliary"),
+        scale_summary = summaries_by_period[period]["method_scale"]
+        values = (
+            100.0
+            * scale_summary["relative_half_difference"][:, nominal_index]
         )
-        for values, errors, marker, label in differences:
-            ax.errorbar(
-                bins, values, yerr=errors, marker=marker, linestyle="none",
-                markersize=4, capsize=2, label=label,
+        errors = (
+            100.0
+            * scale_summary[
+                "relative_half_difference_stat_uncertainty"
+            ][:, nominal_index]
+        )
+        fit = scale_summary["constant_fits"][nominal_index]
+        fit_percent = 100.0 * float(fit["value"])
+        fit_error_percent = 100.0 * float(fit["uncertainty"])
+
+        ax.errorbar(
+            bins,
+            values,
+            yerr=errors,
+            marker="o",
+            linestyle="none",
+            markersize=4,
+            capsize=2,
+            label=(
+                r"$100\,|f_1-f_2|/(f_1+f_2)$"
+            ),
+        )
+        ax.axhline(
+            fit_percent,
+            linewidth=1.2,
+            label=f"Constant fit: {fit_percent:.2f}%",
+        )
+        if np.isfinite(fit_error_percent):
+            ax.axhspan(
+                fit_percent - fit_error_percent,
+                fit_percent + fit_error_percent,
+                alpha=0.16,
+                label="Fit uncertainty",
             )
-        ax.axhline(0.0, linewidth=1.0)
-        ax.set_ylabel(r"$\Delta f$")
-        ax.set_title(PERIOD_LABELS[period])
+        # endif
+        ax.set_ylabel("Relative half-difference (%)")
+        ax.set_title(
+            f"{PERIOD_LABELS[period]}: "
+            f"{fit_percent:.2f}% scale, "
+            f"$\\chi^2/\\mathrm{{ndf}}$="
+            f"{fit['chi2']:.1f}/{fit['ndf']}"
+        )
         ax.grid(alpha=0.25)
         ax.legend(ncol=3)
+    # endfor
+
     axes[-1].set_xlabel("Combined kinematic-bin number")
     axes[-1].set_xticks(bins)
-    fig.suptitle("Nominal-cut differences among dilution-factor methods")
+    fig.suptitle(
+        "Nominal Method-1/Method-2 dilution-model scale systematic"
+    )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / "nominal_method_differences_v4.png"
+    path = output_dir / "nominal_method_scale_systematic_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1742,28 +1983,54 @@ def plot_nominal_recommended_dilution(
     output_dir: Path,
     summaries_by_period: dict[str, Any],
 ) -> str:
-    """Plot recommended average with statistical and method-spread errors."""
+    """
+    Plot recommended averages with statistical bars and correlated scale bands.
+
+    The translucent envelope for each period uses the same period color and
+    represents one fully correlated fractional scale uncertainty, not
+    independent point-to-point errors.
+    """
     ensure_directory(output_dir)
     bins = np.arange(1, NUMBER_OF_BINS + 1)
     offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
     nominal_index = CUT_VARIATIONS.index("nominal")
     fig, ax = plt.subplots(figsize=(17, 6.5))
+
     for period in PERIODS:
-        m1 = summaries_by_period[period]["method1"]["central"][:, nominal_index]
-        m2 = summaries_by_period[period]["method2"]["central"][:, nominal_index]
         rec = summaries_by_period[period]["recommended"]
+        scale_summary = summaries_by_period[period]["method_scale"]
+        scale_fraction = float(
+            scale_summary["constant_fits"][nominal_index]["value"]
+        )
         values = rec["central"][:, nominal_index]
         stat = rec["stat_uncertainty"][:, nominal_index]
-        systematic = 0.5 * np.abs(m2 - m1)
+        systematic = scale_fraction * values
         x = bins + offsets[period]
-        ax.errorbar(
-            x, values, yerr=systematic, marker="none", linestyle="none",
-            capsize=4, linewidth=1.4,
+
+        line = ax.errorbar(
+            x,
+            values,
+            yerr=stat,
+            marker="o",
+            linestyle="none",
+            markersize=4,
+            capsize=2,
+            label=(
+                f"{PERIOD_LABELS[period]} "
+                f"({100.0 * scale_fraction:.2f}% scale)"
+            ),
         )
-        ax.errorbar(
-            x, values, yerr=stat, marker="o", linestyle="none",
-            markersize=4, capsize=2, label=PERIOD_LABELS[period],
+        color = line[0].get_color()
+        ax.fill_between(
+            x,
+            values - systematic,
+            values + systematic,
+            color=color,
+            alpha=0.14,
+            step="mid",
         )
+    # endfor
+
     ax.set_ylim(0.1, 0.6)
     ax.set_xlabel("Combined kinematic-bin number")
     ax.set_ylabel("Recommended dilution factor")
@@ -1772,13 +2039,15 @@ def plot_nominal_recommended_dilution(
     ax.legend(ncol=3)
     ax.set_title(
         "Nominal recommended dilution factor: Method-1/Method-2 average\n"
-        "inner bars: statistical; outer bars: half-difference systematic"
+        "error bars: statistical; same-color envelopes: "
+        "period-wide correlated method-scale systematic"
     )
     fig.tight_layout()
-    path = output_dir / "nominal_recommended_dilution_factor_v4.png"
+    path = output_dir / "nominal_recommended_dilution_factor_v5.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
+
 
 def write_plots(
     output_dir: Path,
@@ -1959,7 +2228,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v4.csv"
+    count_path = tables_dir / "target_counts_all_selections_v5.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -1986,7 +2255,7 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v4.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods_v5.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
 
     covariance_manifest = write_covariance_products(
@@ -2003,7 +2272,7 @@ def main() -> int:
 
     provenance = {
         "script": Path(__file__).name,
-        "schema_version": 4,
+        "schema_version": 5,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -2049,7 +2318,7 @@ def main() -> int:
     }
 
     master_payload = {
-        "schema_version": 4,
+        "schema_version": 5,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
             "All three methods are active. Method 2 uses the exact thermally corrected "
@@ -2069,20 +2338,22 @@ def main() -> int:
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v4.json"
+    master_json_path = output_dir / "dilution_factors_v5.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
-        "schema_version": 4,
+        "schema_version": 5,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
         "recommended_nominal_method": "average_of_method1_and_method2",
         "note": (
             "Loose, nominal, and tight values are all carried downstream. "
             "The recommended dilution factor is the average of Methods 1 and 2. "
             "Its statistical uncertainty is propagated with common bootstrap "
-            "replicas, and half the Method-1/Method-2 difference is stored as a "
-            "separate dilution-model systematic. No exclusivity-cut systematic "
-            "is assigned at this stage."
+            "replicas. The Method-1/Method-2 disagreement is represented by a "
+            "period-wide multiplicative scale systematic obtained from a constant "
+            "fit to |f1-f2|/(f1+f2) across the 24 nominal bins; it is fully "
+            "correlated among bins. No exclusivity-cut systematic is assigned "
+            "at this stage."
         ),
         "binning": master_payload["binning"],
         "periods": compact_periods,
@@ -2090,10 +2361,10 @@ def main() -> int:
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v4.json"
+    compact_json_path = output_dir / "dilution_factors_production_v5.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v4.json"
+    configuration_path = output_dir / "configuration_v5.json"
     write_json(configuration_path, provenance)
 
     print()
