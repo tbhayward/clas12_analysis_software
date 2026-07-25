@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v7.py
+determine_dilution_factor_v9.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -140,6 +140,7 @@ DEFAULT_SEED = 7302026
 
 DEFAULT_OUTPUT_DIR = Path("output/dilution_factor_determination")
 DEFAULT_EPOCH_DEFINITIONS = Path(__file__).resolve().with_name("epoch_definitions.xlsx")
+DEFAULT_RUN_INFO_CSV = Path(__file__).resolve().with_name("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
     "../channel_selection/output/channel_selection_mx2_fit_stability/"
     "final_carbon_assisted_cuts/tables/"
@@ -436,6 +437,146 @@ def resolve_branch(tree: uproot.behaviors.TTree.TTree, aliases: Iterable[str]) -
 
 
 
+
+@dataclass(frozen=True)
+class RunChargeRecord:
+    """One run entry from clas12_run_info.csv."""
+
+    period: str
+    target: str
+    run: int
+    charge: float
+
+
+def parse_run_info_csv(path: Path) -> dict[tuple[str, str], dict[int, float]]:
+    """
+    Parse the sectioned CLAS12 run-information CSV.
+
+    The first numeric field is run number. Accumulated charge is defined as
+    the sum of the third and fourth CSV columns, matching the requested
+    helicity-positive plus helicity-negative charge convention. Only the RGC
+    Su22, Fa22, and Sp23 NH3/C/CH2/He/ET sections are retained.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing run-information CSV: {path}")
+    # endif
+
+    period_lookup = {
+        "Su22": "su22",
+        "Fa22": "fa22",
+        "Sp23": "sp23",
+    }
+    target_lookup = {
+        "NH3": "NH3",
+        "C": "C",
+        "CH2": "CH2",
+        "He": "He",
+        "ET": "ET",
+    }
+
+    result: dict[tuple[str, str], dict[int, float]] = {
+        (period, target): {}
+        for period in PERIODS
+        for target in TARGETS
+    }
+    current_key: tuple[str, str] | None = None
+
+    for line_number, raw_line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        line = raw_line.strip()
+        if not line:
+            continue
+        # endif
+        if line.startswith("#"):
+            current_key = None
+            header = line[1:].strip()
+            match = re.fullmatch(
+                r"RGC\s+(Su22|Fa22|Sp23)\s+(NH3|C|CH2|He|ET)",
+                header,
+            )
+            if match is not None:
+                current_key = (
+                    period_lookup[match.group(1)],
+                    target_lookup[match.group(2)],
+                )
+            # endif
+            continue
+        # endif
+        if current_key is None:
+            continue
+        # endif
+
+        fields = [field.strip() for field in line.split(",")]
+        if len(fields) < 4:
+            raise RuntimeError(
+                f"Malformed run-info row at line {line_number}: {raw_line}"
+            )
+        # endif
+        try:
+            run = int(fields[0])
+            charge_column_3 = float(fields[2])
+            charge_column_4 = float(fields[3])
+            charge = charge_column_3 + charge_column_4
+        except ValueError as exc:
+            raise RuntimeError(
+                f"Invalid run/charge at line {line_number}: {raw_line}"
+            ) from exc
+        # endtry
+        if not math.isfinite(charge) or charge <= 0.0:
+            raise RuntimeError(
+                f"Invalid accumulated charge at line {line_number}: {charge}"
+            )
+        # endif
+        if run in result[current_key]:
+            raise RuntimeError(
+                f"Duplicate run {run} in section {current_key}."
+            )
+        # endif
+        result[current_key][run] = charge
+    # endfor
+
+    for key, run_map in result.items():
+        if not run_map:
+            raise RuntimeError(
+                f"No run-charge entries found for {key[0]}/{key[1]} in {path}."
+            )
+        # endif
+    # endfor
+    return result
+
+
+def full_period_absolute_charges(
+    run_charges: dict[tuple[str, str], dict[int, float]],
+) -> dict[str, dict[str, float]]:
+    """Sum absolute accumulated charge for every period and target."""
+    return {
+        period: {
+            target: float(sum(run_charges[(period, target)].values()))
+            for target in TARGETS
+        }
+        for period in PERIODS
+    }
+
+
+def normalized_charge_fractions_from_absolute(
+    absolute_charges: dict[str, float],
+) -> dict[str, float]:
+    """Normalize positive absolute target charges to fractions summing to one."""
+    total = float(sum(absolute_charges[target] for target in TARGETS))
+    if not math.isfinite(total) or total <= 0.0:
+        raise RuntimeError("Absolute target-charge total is not positive.")
+    # endif
+    fractions = {
+        target: float(absolute_charges[target]) / total
+        for target in TARGETS
+    }
+    return fractions
+
+
+
+
 @dataclass(frozen=True)
 class EpochDefinition:
     period: str
@@ -461,9 +602,7 @@ def read_epoch_spreadsheet(path: Path) -> list[EpochDefinition]:
     """
     Read NH3 epoch definitions from the supplied XLSX using only stdlib XML.
 
-    Relative epoch exposure is taken from the spreadsheet's Number of Events
-    column. This is used only to partition the period-wide NH3 charge fraction
-    for the epoch stability diagnostic.
+    The spreadsheet supplies epoch boundaries and polarization metadata. Accumulated charge is taken from clas12_run_info.csv.
     """
     if not path.is_file():
         raise FileNotFoundError(f"Missing epoch-definition spreadsheet: {path}")
@@ -616,9 +755,22 @@ def count_integrated_epoch_nh3(
     cuts: dict[tuple[str, int, int], CutEntry],
     control_min_gev2: float,
     control_max_gev2: float,
-) -> tuple[int, int]:
-    """Count integrated control and nominal selections for one NH3 epoch."""
-    run_mask = np.isin(dataset.runnum, np.asarray(epoch.runs, dtype=np.int64))
+) -> tuple[int, int, tuple[int, ...]]:
+    """
+    Count integrated control and nominal NH3 selections for one epoch.
+
+    Epoch membership is defined by the inclusive run-number range. The actual
+    runs are taken from the ROOT runnum branch, rather than inferred from the
+    spreadsheet event totals.
+    """
+    run_mask = (
+        (dataset.runnum >= epoch.run_min)
+        & (dataset.runnum <= epoch.run_max)
+    )
+    runs_found = tuple(
+        int(run)
+        for run in np.unique(dataset.runnum[run_mask])
+    )
     control_count = 0
     nominal_count = 0
     for x_index, (x_min, x_max) in enumerate(XB_BINS):
@@ -637,21 +789,23 @@ def count_integrated_epoch_nh3(
                     & (values < control_max_gev2)
                 )
             )
-            low, high = cuts[(epoch.period, x_index, t_index)].interval("nominal")
+            low, high = cuts[
+                (epoch.period, x_index, t_index)
+            ].interval("nominal")
             nominal_count += int(
                 np.count_nonzero((values >= low) & (values < high))
             )
         # endfor
     # endfor
-    return control_count, nominal_count
+    return control_count, nominal_count, runs_found
 
 
 def calculate_epoch_diagnostics(
     loaded: dict[tuple[str, str], LoadedDataset],
     observed_counts: np.ndarray,
     cuts: dict[tuple[str, int, int], CutEntry],
-    charge_fractions: dict[str, dict[str, float]],
     definitions: list[EpochDefinition],
+    run_charges: dict[tuple[str, str], dict[int, float]],
     control_min_gev2: float,
     control_max_gev2: float,
     replicas: int,
@@ -660,27 +814,56 @@ def calculate_epoch_diagnostics(
     """
     Calculate nominal dilution and packing-fraction diagnostics by NH3 epoch.
 
-    Auxiliary-target yields remain period integrated. The period-wide NH3
-    charge fraction is partitioned among epochs using the spreadsheet event
-    totals as a relative exposure proxy.
+    For each epoch:
+      * NH3 counts and charge use only NH3 runs in that epoch's run range.
+      * The actual NH3 runs are read from the ROOT runnum branch.
+      * C, CH2, He, and ET counts and charges remain full-period quantities.
+      * Charge fractions are recomputed from those five absolute charges.
+      * Method 1 is renormalized directly from epoch NH3 control counts to the
+        same full-period carbon control sample; no exposure proxy is used.
     """
     rows: list[dict[str, Any]] = []
     nominal_selection_index = SELECTION_NAMES.index("nominal")
     control_selection_index = SELECTION_NAMES.index("control")
     rng = np.random.default_rng(seed + 9107)
+    full_charges = full_period_absolute_charges(run_charges)
 
     period_epoch_counter = {period: 0 for period in PERIODS}
     for epoch in definitions:
         epoch_index = period_epoch_counter[epoch.period]
         period_epoch_counter[epoch.period] += 1
         p_index = PERIODS.index(epoch.period)
-        nh3_control, nh3_nominal = count_integrated_epoch_nh3(
+
+        (
+            nh3_control,
+            nh3_nominal,
+            root_runs_found,
+        ) = count_integrated_epoch_nh3(
             loaded[(epoch.period, "NH3")],
             epoch,
             cuts,
             control_min_gev2,
             control_max_gev2,
         )
+        if not root_runs_found:
+            continue
+        # endif
+
+        nh3_charge_map = run_charges[(epoch.period, "NH3")]
+        missing_charge_runs = [
+            run for run in root_runs_found
+            if run not in nh3_charge_map
+        ]
+        if missing_charge_runs:
+            raise RuntimeError(
+                f"Missing NH3 accumulated charge for {epoch.period} "
+                f"{epoch.epoch} ROOT runs: {missing_charge_runs}"
+            )
+        # endif
+        epoch_nh3_charge = float(
+            sum(nh3_charge_map[run] for run in root_runs_found)
+        )
+
         period_counts = {
             target: int(
                 np.sum(
@@ -694,16 +877,6 @@ def calculate_epoch_diagnostics(
             )
             for target in TARGETS
         }
-        period_control_nh3 = int(
-            np.sum(
-                observed_counts[
-                    p_index,
-                    TARGETS.index("NH3"),
-                    :,
-                    control_selection_index,
-                ]
-            )
-        )
         period_control_c = int(
             np.sum(
                 observed_counts[
@@ -714,48 +887,60 @@ def calculate_epoch_diagnostics(
                 ]
             )
         )
-        alpha = (
-            period_control_nh3 / period_control_c
+
+        # Method 1 uses the epoch NH3 control sample and the unchanged
+        # full-period carbon control and nominal samples.
+        alpha_epoch = (
+            nh3_control / period_control_c
             if period_control_c > 0
             else math.nan
         )
-        scaled_carbon_epoch = (
-            alpha * epoch.exposure_fraction * period_counts["C"]
-        )
         method1 = (
-            1.0 - scaled_carbon_epoch / nh3_nominal
+            1.0
+            - alpha_epoch * period_counts["C"] / nh3_nominal
             if nh3_nominal > 0
             else math.nan
         )
 
         epoch_counts = dict(period_counts)
         epoch_counts["NH3"] = nh3_nominal
-        epoch_charge = dict(charge_fractions[epoch.period])
-        epoch_charge["NH3"] = (
-            charge_fractions[epoch.period]["NH3"] * epoch.exposure_fraction
+
+        epoch_absolute_charges = dict(full_charges[epoch.period])
+        epoch_absolute_charges["NH3"] = epoch_nh3_charge
+        epoch_charge_fractions = (
+            normalized_charge_fractions_from_absolute(
+                epoch_absolute_charges
+            )
         )
+
         scalar_counts = {
             target: np.asarray(value, dtype=np.float64)
             for target, value in epoch_counts.items()
         }
         method2 = float(
-            method2_equation10_from_counts(scalar_counts, epoch_charge)
+            method2_equation10_from_counts(
+                scalar_counts,
+                epoch_charge_fractions,
+            )
         )
         packing_fraction = float(
             packing_fraction_equation11_from_counts(
                 scalar_counts,
-                epoch_charge,
+                epoch_charge_fractions,
             )
         )
         recommended = 0.5 * (method1 + method2)
 
-        # Independent-Poisson epoch diagnostic. The global analysis bootstrap
-        # remains the authoritative covariance treatment for binned results.
+        # Independent-Poisson epoch diagnostic. The full-period auxiliary
+        # samples are redrawn for every epoch because they enter every epoch
+        # estimate, while only NH3 changes with epoch.
         draws = min(max(replicas, 500), 10000)
-        replica_nh3_control = rng.poisson(nh3_control, size=draws)
-        replica_nh3_nominal = rng.poisson(nh3_nominal, size=draws)
-        replica_period_control_nh3 = rng.poisson(
-            period_control_nh3,
+        replica_nh3_control = rng.poisson(
+            nh3_control,
+            size=draws,
+        )
+        replica_nh3_nominal = rng.poisson(
+            nh3_nominal,
             size=draws,
         )
         replica_period_control_c = rng.poisson(
@@ -763,27 +948,28 @@ def calculate_epoch_diagnostics(
             size=draws,
         )
         replica_counts = {
-            target: rng.poisson(period_counts[target], size=draws).astype(float)
+            target: rng.poisson(
+                period_counts[target],
+                size=draws,
+            ).astype(float)
             for target in TARGETS
         }
         replica_counts["NH3"] = replica_nh3_nominal.astype(float)
         replica_alpha = safe_divide(
-            replica_period_control_nh3,
+            replica_nh3_control,
             replica_period_control_c,
         )
         replica_method1 = 1.0 - safe_divide(
-            replica_alpha
-            * epoch.exposure_fraction
-            * replica_counts["C"],
+            replica_alpha * replica_counts["C"],
             replica_nh3_nominal,
         )
         replica_method2 = method2_equation10_from_counts(
             replica_counts,
-            epoch_charge,
+            epoch_charge_fractions,
         )
         replica_pf = packing_fraction_equation11_from_counts(
             replica_counts,
-            epoch_charge,
+            epoch_charge_fractions,
         )
         replica_recommended = 0.5 * (
             replica_method1 + replica_method2
@@ -797,26 +983,66 @@ def calculate_epoch_diagnostics(
                 "epoch_index_within_period": epoch_index,
                 "run_min": epoch.run_min,
                 "run_max": epoch.run_max,
-                "number_of_runs": len(epoch.runs),
-                "runs": ",".join(str(run) for run in epoch.runs),
-                "weighted_target_polarization": epoch.weighted_polarization,
-                "spreadsheet_event_count": epoch.spreadsheet_event_count,
-                "epoch_exposure_fraction_proxy": epoch.exposure_fraction,
+                "number_of_root_runs_found": len(root_runs_found),
+                "root_runs_found": ",".join(
+                    str(run) for run in root_runs_found
+                ),
+                "weighted_target_polarization": (
+                    epoch.weighted_polarization
+                ),
+                "nh3_accumulated_charge": epoch_nh3_charge,
+                "full_period_c_charge": (
+                    full_charges[epoch.period]["C"]
+                ),
+                "full_period_ch2_charge": (
+                    full_charges[epoch.period]["CH2"]
+                ),
+                "full_period_he_charge": (
+                    full_charges[epoch.period]["He"]
+                ),
+                "full_period_et_charge": (
+                    full_charges[epoch.period]["ET"]
+                ),
+                "charge_fraction_nh3": (
+                    epoch_charge_fractions["NH3"]
+                ),
+                "charge_fraction_c": (
+                    epoch_charge_fractions["C"]
+                ),
+                "charge_fraction_ch2": (
+                    epoch_charge_fractions["CH2"]
+                ),
+                "charge_fraction_he": (
+                    epoch_charge_fractions["He"]
+                ),
+                "charge_fraction_et": (
+                    epoch_charge_fractions["ET"]
+                ),
                 "nh3_control_count": nh3_control,
                 "nh3_nominal_count": nh3_nominal,
+                "full_period_c_control_count": period_control_c,
+                "full_period_c_nominal_count": (
+                    period_counts["C"]
+                ),
+                "method1_epoch_carbon_scale": alpha_epoch,
                 "method1_value": method1,
                 "method2_value": method2,
                 "recommended_dilution_factor": recommended,
                 "recommended_stat_uncertainty": float(
-                    np.nanstd(replica_recommended, ddof=1)
+                    np.nanstd(
+                        replica_recommended,
+                        ddof=1,
+                    )
                 ),
                 "packing_fraction": packing_fraction,
                 "packing_fraction_stat_uncertainty": float(
                     np.nanstd(replica_pf, ddof=1)
                 ),
                 "exposure_note": (
-                    "NH3 period charge fraction partitioned by spreadsheet "
-                    "Number of Events; auxiliary targets remain period integrated."
+                    "NH3 counts and charge are epoch-specific. C, CH2, He, "
+                    "and ET counts and charges are unchanged full-period "
+                    "quantities. Charge fractions are recomputed for every "
+                    "epoch from those absolute charges."
                 ),
             }
         )
@@ -836,13 +1062,13 @@ def plot_epoch_diagnostics(
             "recommended_dilution_factor",
             "recommended_stat_uncertainty",
             "Recommended dilution factor",
-            "dilution_factor_by_epoch_v7.png",
+            "dilution_factor_by_epoch_v9.png",
         ),
         (
             "packing_fraction",
             "packing_fraction_stat_uncertainty",
             "Packing fraction",
-            "packing_fraction_by_epoch_v7.png",
+            "packing_fraction_by_epoch_v9.png",
         ),
     ):
         fig, axes = plt.subplots(3, 1, figsize=(17, 12), sharex=False)
@@ -2078,7 +2304,7 @@ def write_covariance_products(
                 cut_samples = samples[:, :, cut_index]
                 covariance = pairwise_covariance(cut_samples)
                 correlation = covariance_to_correlation(covariance)
-                stem = f"{method_key}_{period}_{variation}_v7"
+                stem = f"{method_key}_{period}_{variation}_v9"
                 cov_path = output_dir / f"{stem}_covariance.json"
                 corr_path = output_dir / f"{stem}_correlation.json"
                 write_json(
@@ -2152,7 +2378,7 @@ def plot_three_method_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v7.png"
+    path = output_dir / f"three_method_comparison_{period}_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2197,7 +2423,7 @@ def plot_three_period_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_period_comparison_{method_key}_v7.png"
+    path = output_dir / f"three_period_comparison_{method_key}_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2241,7 +2467,7 @@ def plot_packing_fraction_summary(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v7.png"
+    path = output_dir / f"packing_fraction_summary_{period}_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2267,7 +2493,7 @@ def plot_method1_control_summary(
     ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.00 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v7.png"
+    path = output_dir / "method1_period_carbon_scales_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2309,7 +2535,7 @@ def plot_nominal_method_comparison(
     ax.legend(ncol=3)
     ax.set_title(f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison")
     fig.tight_layout()
-    path = output_dir / f"nominal_method_comparison_{period}_v7.png"
+    path = output_dir / f"nominal_method_comparison_{period}_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2353,7 +2579,7 @@ def plot_nominal_period_comparison(
         "Nominal-cut run-period comparison — " + method_titles[method_key]
     )
     fig.tight_layout()
-    path = output_dir / f"nominal_period_comparison_{method_key}_v7.png"
+    path = output_dir / f"nominal_period_comparison_{method_key}_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2393,7 +2619,7 @@ def plot_nominal_packing_fraction_period_comparison(
     ax.legend(ncol=3)
     ax.set_title("Nominal-cut packing-fraction comparison by run period")
     fig.tight_layout()
-    path = output_dir / "nominal_packing_fraction_period_comparison_v7.png"
+    path = output_dir / "nominal_packing_fraction_period_comparison_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2484,7 +2710,7 @@ def plot_nominal_method_differences(
         f"(adopted global scale: {global_percent:.2f}%)"
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / "nominal_method_scale_systematic_v7.png"
+    path = output_dir / "nominal_method_scale_systematic_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2533,7 +2759,7 @@ def plot_nominal_recommended_dilution(
         f"{global_scale['percent']:.2f}%"
     )
     fig.tight_layout()
-    path = output_dir / "nominal_recommended_dilution_factor_v7.png"
+    path = output_dir / "nominal_recommended_dilution_factor_v9.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2647,6 +2873,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Worker processes; hard-capped at 7 (default: 7).",
     )
     parser.add_argument(
+        "--run-info-csv",
+        type=Path,
+        default=DEFAULT_RUN_INFO_CSV,
+        help=(
+            "Sectioned CLAS12 run-information CSV containing accumulated "
+            "charge by run (default: clas12_run_info.csv beside the script)."
+        ),
+    )
+    parser.add_argument(
         "--epoch-definitions",
         type=Path,
         default=DEFAULT_EPOCH_DEFINITIONS,
@@ -2719,8 +2954,10 @@ def main() -> int:
     print(f"Working directory:       {Path.cwd()}")
     print(f"Exclusivity JSON:        {cut_json}")
     epoch_path = args.epoch_definitions.resolve()
+    run_info_path = args.run_info_csv.resolve()
     print(f"Output directory:        {output_dir}")
     print(f"Epoch definitions:       {epoch_path}")
+    print(f"Run information:         {run_info_path}")
     print(f"Tree:                    {args.tree}")
     print(f"Workers:                 {workers} (hard maximum {MAXIMUM_WORKERS})")
     print(f"Poisson replicas/period: {args.replicas:,}")
@@ -2738,7 +2975,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v7.csv"
+    count_path = tables_dir / "target_counts_all_selections_v9.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -2765,31 +3002,35 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v7.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods_v9.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
 
     epoch_definitions = read_epoch_spreadsheet(epoch_path)
+    run_charges = parse_run_info_csv(run_info_path)
     epoch_frame = calculate_epoch_diagnostics(
         loaded=loaded,
         observed_counts=observed_counts,
         cuts=cuts,
-        charge_fractions=charge_fractions,
         definitions=epoch_definitions,
+        run_charges=run_charges,
         control_min_gev2=args.control_min,
         control_max_gev2=args.control_max,
         replicas=args.replicas,
         seed=args.seed,
     )
-    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics_v7.csv"
-    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics_v7.json"
+    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics_v9.csv"
+    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics_v9.json"
     epoch_frame.to_csv(epoch_csv_path, index=False)
     write_json(
         epoch_json_path,
         {
             "definition": (
-                "NH3 epochs are read from the supplied run table. Epoch "
-                "exposure fractions partition the period-wide NH3 charge "
-                "fraction using the spreadsheet Number of Events column."
+                "NH3 epochs are defined by inclusive run ranges from the "
+                "spreadsheet. Actual NH3 runs are taken from the ROOT runnum "
+                "branch, and their accumulated charge is summed from "
+                "clas12_run_info.csv. All C, CH2, He, and ET counts and charges "
+                "remain full-period values for every epoch. Charge fractions "
+                "are recomputed separately for each epoch."
             ),
             "rows": epoch_frame.to_dict(orient="records"),
         },
@@ -2812,7 +3053,7 @@ def main() -> int:
 
     provenance = {
         "script": Path(__file__).name,
-        "schema_version": 7,
+        "schema_version": 9,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -2825,9 +3066,16 @@ def main() -> int:
         "control_region_gev2": [args.control_min, args.control_max],
         "epoch_definitions_xlsx": str(epoch_path),
         "epoch_definitions_xlsx_sha256": sha256_file(epoch_path),
-        "epoch_exposure_proxy": (
-            "Spreadsheet Number of Events partitions the period-wide NH3 "
-            "charge fraction among epochs."
+        "run_info_csv": str(run_info_path),
+        "run_info_csv_sha256": sha256_file(run_info_path),
+        "run_info_charge_definition": (
+            "Accumulated charge per run is CSV column 3 plus CSV column 4."
+        ),
+        "epoch_charge_treatment": (
+            "NH3 charge is the sum of clas12_run_info.csv charges for the "
+            "actual ROOT runnum values inside each epoch range. C, CH2, He, "
+            "and ET retain their full-period charges. Fractions are "
+            "renormalized for each epoch."
         ),
         "root_inputs": {
             period: {
@@ -2868,7 +3116,7 @@ def main() -> int:
     }
 
     master_payload = {
-        "schema_version": 7,
+        "schema_version": 9,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
             "All three methods are active. Method 2 uses the exact thermally corrected "
@@ -2893,11 +3141,11 @@ def main() -> int:
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v7.json"
+    master_json_path = output_dir / "dilution_factors_v9.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
-        "schema_version": 7,
+        "schema_version": 9,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
         "recommended_nominal_method": "average_of_method1_and_method2",
         "note": (
@@ -2921,10 +3169,10 @@ def main() -> int:
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v7.json"
+    compact_json_path = output_dir / "dilution_factors_production_v9.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v7.json"
+    configuration_path = output_dir / "configuration_v9.json"
     write_json(configuration_path, provenance)
 
     print()
