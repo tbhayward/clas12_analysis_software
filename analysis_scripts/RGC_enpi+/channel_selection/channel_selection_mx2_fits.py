@@ -5657,17 +5657,26 @@ def plot_master_cut_summary(
     ax_bounds.legend(ncol=3, fontsize=9)
 
     ax_width = axes[1]
+    period_offsets = {
+        "su22": -0.12,
+        "fa22": 0.00,
+        "sp23": 0.12,
+    }
     for period in ("su22", "fa22", "sp23"):
+        x_values = bins.astype(float) + period_offsets[period]
         ax_width.errorbar(
-            bins,
+            x_values,
             frame[f"sigma_{period}_gev2"],
             yerr=frame[f"sigma_{period}_error_gev2"],
             marker="o",
             linestyle="none",
-            linewidth=0.0,
+            linewidth=1.0,
+            elinewidth=1.0,
             markersize=4,
-            capsize=2,
+            capsize=3,
+            capthick=1.0,
             label=f"{PERIOD_LABELS[period]} $\\sigma$",
+            zorder=3,
         )
     # endfor
     ax_width.set_xlabel("Combined kinematic-bin number")
