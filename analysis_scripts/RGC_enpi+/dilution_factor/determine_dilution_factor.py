@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factors_v1.py
+determine_dilution_factor_v2.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -763,16 +763,10 @@ def charge_normalized_rates(
 def method1_from_counts(
     counts_by_target: dict[str, np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """
-    Exact channel-selection carbon normalization.
-
-    Input arrays have shape [...,bin,4], with selection index 0=control and
-    1/2/3=tight/nominal/loose.
-    """
+    """Exact channel-selection carbon normalization."""
     nh3 = np.asarray(counts_by_target["NH3"], dtype=np.float64)
     carbon = np.asarray(counts_by_target["C"], dtype=np.float64)
     alpha = safe_divide(np.sum(nh3[..., 0], axis=-1), np.sum(carbon[..., 0], axis=-1))
-    # alpha has the leading replica shape, if any. Broadcast over bins/cuts.
     expanded_alpha = alpha[..., np.newaxis, np.newaxis]
     dilution = 1.0 - safe_divide(
         expanded_alpha * carbon[..., 1:4],
@@ -781,54 +775,104 @@ def method1_from_counts(
     return dilution, alpha
 
 
-def auxiliary_combinations(rates: dict[str, np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
-    c = EQ10_EQ11_EQ14_COEFFICIENTS
-    hydrogen_like = (
-        c["ch2_carbon_hydrogen_combination"] * rates["CH2"] * rates["C"]
-        + c["he_hydrogen_combination"] * rates["He"]
-        + c["empty_hydrogen_combination"] * rates["ET"]
+def method2_equation10_from_counts(
+    counts: dict[str, np.ndarray],
+    charge_fractions_period: dict[str, float],
+) -> np.ndarray:
+    """Thermal-contraction-corrected standalone dilution expression.
+
+    This is a direct vectorized transcription of calculate_dilution_and_error()
+    in calculate_dilution_factors.cpp.  The event counts remain raw counts;
+    the accumulated-charge fractions enter explicitly as xA, xC, xCH, xHe,
+    and xf.  Dividing every count by its charge fraction first and then applying
+    a different reduced formula is not algebraically equivalent.
+    """
+    nA = np.asarray(counts["NH3"], dtype=np.float64)
+    nC = np.asarray(counts["C"], dtype=np.float64)
+    nCH = np.asarray(counts["CH2"], dtype=np.float64)
+    nMT = np.asarray(counts["He"], dtype=np.float64)
+    nf = np.asarray(counts["ET"], dtype=np.float64)
+
+    xA = float(charge_fractions_period["NH3"])
+    xC = float(charge_fractions_period["C"])
+    xCH = float(charge_fractions_period["CH2"])
+    xHe = float(charge_fractions_period["He"])
+    xf = float(charge_fractions_period["ET"])
+
+    first = -nMT * xA + nA * xHe
+    second = (
+        -0.579353 * nMT * xC * xCH * xf
+        + (
+            nf * xC * xCH
+            - 3.50431 * nCH * xC * xf
+            + 3.08366 * nC * xCH * xf
+        ) * xHe
     )
-    nuclear_like = (
-        c["ch2_carbon_nuclear_combination"] * rates["CH2"] * rates["C"]
-        + c["he_nuclear_combination"] * rates["He"]
-        + c["empty_nuclear_combination"] * rates["ET"]
+    denominator = nA * xHe * (
+        35.88 * nMT * xC * xCH * xf
+        - nf * xC * xCH * xHe
+        - 43.3586 * nCH * xC * xf * xHe
+        + 8.47866 * nC * xCH * xf * xHe
     )
-    return hydrogen_like, nuclear_like
+    return safe_divide(12.3729 * first * second, denominator)
 
 
-def method2_equation10(rates: dict[str, np.ndarray]) -> np.ndarray:
-    hydrogen_like, nuclear_like = auxiliary_combinations(rates)
-    numerator = (rates["NH3"] - rates["He"]) * hydrogen_like
-    denominator = rates["NH3"] * nuclear_like
+def packing_fraction_equation11_from_counts(
+    counts: dict[str, np.ndarray],
+    charge_fractions_period: dict[str, float],
+) -> np.ndarray:
+    """Packing-fraction expression preserved in the supplied C++ source."""
+    nA = np.asarray(counts["NH3"], dtype=np.float64)
+    nC = np.asarray(counts["C"], dtype=np.float64)
+    nCH = np.asarray(counts["CH2"], dtype=np.float64)
+    nMT = np.asarray(counts["He"], dtype=np.float64)
+    nf = np.asarray(counts["ET"], dtype=np.float64)
+
+    xA = float(charge_fractions_period["NH3"])
+    xC = float(charge_fractions_period["C"])
+    xCH = float(charge_fractions_period["CH2"])
+    xHe = float(charge_fractions_period["He"])
+    xf = float(charge_fractions_period["ET"])
+
+    numerator = 0.699832 * (nA / xA - nMT / xHe)
+    denominator = (
+        1.25055 * nCH / xCH
+        - 0.23688 * nC / xC
+        - 0.013668 * nf / xf
+        - nMT / xHe
+    )
     return safe_divide(numerator, denominator)
 
 
-def packing_fraction_equation11(rates: dict[str, np.ndarray]) -> np.ndarray:
-    _, nuclear_like = auxiliary_combinations(rates)
-    prefactor = EQ10_EQ11_EQ14_COEFFICIENTS["packing_prefactor"]
-    return prefactor * safe_divide(rates["NH3"] * rates["He"], nuclear_like)
-
-
-def integrated_packing_fraction_equation11(rates: dict[str, np.ndarray]) -> np.ndarray:
-    """Integrate rates over all 24 bins before applying Eq. (11)."""
+def integrated_packing_fraction_equation11_from_counts(
+    counts: dict[str, np.ndarray],
+    charge_fractions_period: dict[str, float],
+) -> np.ndarray:
     integrated = {
         target: np.sum(value, axis=-2)
-        for target, value in rates.items()
+        for target, value in counts.items()
     }
-    return packing_fraction_equation11(integrated)
+    return packing_fraction_equation11_from_counts(
+        integrated, charge_fractions_period
+    )
 
 
 def method3_equation14(
-    rates: dict[str, np.ndarray],
+    counts: dict[str, np.ndarray],
+    charge_fractions_period: dict[str, float],
     period_packing_fraction: np.ndarray,
 ) -> np.ndarray:
-    hydrogen_like, nuclear_like = auxiliary_combinations(rates)
-    prefactor = EQ10_EQ11_EQ14_COEFFICIENTS["packing_prefactor"]
-    # period_packing_fraction has shape [...,3 cuts]. Insert the bin axis.
-    pf = np.asarray(period_packing_fraction, dtype=np.float64)[..., np.newaxis, :]
-    denominator = nuclear_like + safe_divide(prefactor * rates["He"], pf)
-    return safe_divide(hydrogen_like, denominator)
+    """Method-3 placeholder pending an exact Eq. (14) transcription.
 
+    The supplied C++ source contains the direct dilution expression and a
+    commented packing-fraction expression, but it does not contain Eq. (14).
+    Returning NaN is deliberate: it prevents an unverified reconstruction from
+    being mistaken for a physical result.  Once the exact Eq. (14) text is
+    supplied, this function is the only estimator that needs replacement; the
+    correlated bootstrap and output machinery already support it.
+    """
+    reference = np.asarray(counts["NH3"], dtype=np.float64)
+    return np.full(reference.shape, np.nan, dtype=np.float64)
 
 def observed_estimators_for_period(
     observed_period: np.ndarray,
@@ -845,10 +889,18 @@ def observed_estimators_for_period(
         for target, values in counts.items()
     }
     rates = charge_normalized_rates(selected_counts, period, charge_fractions)
-    method2 = method2_equation10(rates)
-    pf_bin = packing_fraction_equation11(rates)
-    pf_period = integrated_packing_fraction_equation11(rates)
-    method3 = method3_equation14(rates, pf_period)
+    method2 = method2_equation10_from_counts(
+        selected_counts, charge_fractions[period]
+    )
+    pf_bin = packing_fraction_equation11_from_counts(
+        selected_counts, charge_fractions[period]
+    )
+    pf_period = integrated_packing_fraction_equation11_from_counts(
+        selected_counts, charge_fractions[period]
+    )
+    method3 = method3_equation14(
+        selected_counts, charge_fractions[period], pf_period
+    )
     return {
         "method1": method1,
         "method1_alpha": alpha,
@@ -906,10 +958,18 @@ def bootstrap_period_worker(
             target: selected_for_auxiliary[target] / charge_fractions_period[target]
             for target in TARGETS
         }
-        method2 = method2_equation10(rates)
-        pf_bin = packing_fraction_equation11(rates)
-        pf_period = integrated_packing_fraction_equation11(rates)
-        method3 = method3_equation14(rates, pf_period)
+        method2 = method2_equation10_from_counts(
+            selected_for_auxiliary, charge_fractions_period
+        )
+        pf_bin = packing_fraction_equation11_from_counts(
+            selected_for_auxiliary, charge_fractions_period
+        )
+        pf_period = integrated_packing_fraction_equation11_from_counts(
+            selected_for_auxiliary, charge_fractions_period
+        )
+        method3 = method3_equation14(
+            selected_for_auxiliary, charge_fractions_period, pf_period
+        )
 
         method1_output[start:stop] = method1
         method2_output[start:stop] = method2
@@ -1276,75 +1336,6 @@ def write_covariance_products(
 # Plotting
 # =============================================================================
 
-def reshape_kinematic(values: np.ndarray) -> np.ndarray:
-    return np.asarray(values).reshape(len(XB_BINS), len(MINUS_TPRIME_BINS_GEV2))
-
-
-def annotate_heatmap(ax: plt.Axes, matrix: np.ndarray, fmt: str = ".3f") -> None:
-    for x_index in range(matrix.shape[0]):
-        for t_index in range(matrix.shape[1]):
-            value = matrix[x_index, t_index]
-            text = "nan" if not np.isfinite(value) else format(value, fmt)
-            ax.text(t_index, x_index, text, ha="center", va="center", fontsize=8)
-        # endfor
-    # endfor
-
-
-def configure_heatmap_axes(ax: plt.Axes) -> None:
-    ax.set_xticks(range(len(MINUS_TPRIME_BINS_GEV2)))
-    ax.set_xticklabels(
-        [f"{low:.2f}–{high:.2f}" for low, high in MINUS_TPRIME_BINS_GEV2],
-        rotation=35,
-        ha="right",
-    )
-    ax.set_yticks(range(len(XB_BINS)))
-    ax.set_yticklabels([f"{low:.2f}–{high:.2f}" for low, high in XB_BINS])
-    ax.set_xlabel(r"$-t^{\prime}$ (GeV$^2$)")
-    ax.set_ylabel("$x_B$")
-
-
-def plot_method_heatmaps(
-    output_dir: Path,
-    period: str,
-    summaries: dict[str, Any],
-) -> list[str]:
-    ensure_directory(output_dir)
-    paths: list[str] = []
-    for method_key, title in (
-        ("method1", "Method 1: carbon subtraction"),
-        ("method2", "Method 2: Eq. (10)"),
-        ("method3", "Method 3: Eq. (14)"),
-        ("packing_fraction_bin", "Packing fraction: Eq. (11) bin diagnostic"),
-    ):
-        for cut_index, variation in enumerate(CUT_VARIATIONS):
-            central = reshape_kinematic(summaries[method_key]["central"][:, cut_index])
-            uncertainty = reshape_kinematic(
-                summaries[method_key]["stat_uncertainty"][:, cut_index]
-            )
-            fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
-            image = axes[0].imshow(central, aspect="auto", origin="upper")
-            annotate_heatmap(axes[0], central)
-            configure_heatmap_axes(axes[0])
-            axes[0].set_title("Central value")
-            fig.colorbar(image, ax=axes[0])
-
-            image = axes[1].imshow(uncertainty, aspect="auto", origin="upper")
-            annotate_heatmap(axes[1], uncertainty)
-            configure_heatmap_axes(axes[1])
-            axes[1].set_title("Statistical uncertainty")
-            fig.colorbar(image, ax=axes[1])
-
-            fig.suptitle(f"{PERIOD_LABELS[period]} — {title} — {variation}")
-            fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
-            path = output_dir / f"{method_key}_{period}_{variation}_heatmaps_v1.png"
-            fig.savefig(path, dpi=180)
-            plt.close(fig)
-            paths.append(str(path))
-        # endfor
-    # endfor
-    return paths
-
-
 def plot_three_method_comparison(
     output_dir: Path,
     period: str,
@@ -1353,7 +1344,11 @@ def plot_three_method_comparison(
     ensure_directory(output_dir)
     bins = np.arange(1, NUMBER_OF_BINS + 1)
     offsets = {"method1": -0.18, "method2": 0.0, "method3": 0.18}
-    labels = {"method1": "Method 1", "method2": "Method 2, Eq. (10)", "method3": "Method 3, Eq. (14)"}
+    labels = {
+        "method1": "Method 1: carbon subtraction",
+        "method2": "Method 2: Eq. (10)",
+        "method3": "Method 3: Eq. (14)",
+    }
 
     fig, axes = plt.subplots(3, 1, figsize=(17, 14), sharex=True)
     for cut_index, variation in enumerate(CUT_VARIATIONS):
@@ -1369,19 +1364,63 @@ def plot_three_method_comparison(
                 capsize=2,
                 label=labels[method_key],
             )
-        # endfor
         ax.axhline(0.0, linestyle=":", linewidth=1.0)
         ax.axhline(1.0, linestyle=":", linewidth=1.0)
         ax.set_ylabel("Dilution factor")
         ax.set_title(variation.capitalize())
         ax.grid(alpha=0.25)
         ax.legend(ncol=3)
-    # endfor
     axes[-1].set_xlabel("Combined kinematic-bin number")
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v1.png"
+    path = output_dir / f"three_method_comparison_{period}_v2.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return str(path)
+
+
+def plot_three_period_comparison(
+    output_dir: Path,
+    method_key: str,
+    summaries_by_period: dict[str, Any],
+) -> str:
+    """Compare Su22, Fa22, and Sp23 for one dilution-factor method."""
+    ensure_directory(output_dir)
+    bins = np.arange(1, NUMBER_OF_BINS + 1)
+    offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
+    method_titles = {
+        "method1": "Method 1: carbon subtraction",
+        "method2": "Method 2: Eq. (10)",
+        "method3": "Method 3: Eq. (14)",
+    }
+
+    fig, axes = plt.subplots(3, 1, figsize=(17, 14), sharex=True)
+    for cut_index, variation in enumerate(CUT_VARIATIONS):
+        ax = axes[cut_index]
+        for period in PERIODS:
+            summary = summaries_by_period[period][method_key]
+            ax.errorbar(
+                bins + offsets[period],
+                summary["central"][:, cut_index],
+                yerr=summary["stat_uncertainty"][:, cut_index],
+                marker="o",
+                linestyle="none",
+                markersize=4,
+                capsize=2,
+                label=PERIOD_LABELS[period],
+            )
+        ax.axhline(0.0, linestyle=":", linewidth=1.0)
+        ax.axhline(1.0, linestyle=":", linewidth=1.0)
+        ax.set_ylabel("Dilution factor")
+        ax.set_title(variation.capitalize())
+        ax.grid(alpha=0.25)
+        ax.legend(ncol=3)
+    axes[-1].set_xlabel("Combined kinematic-bin number")
+    axes[-1].set_xticks(bins)
+    fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+    path = output_dir / f"three_period_comparison_{method_key}_v2.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1421,12 +1460,11 @@ def plot_packing_fraction_summary(
         ax.set_title(variation.capitalize())
         ax.grid(alpha=0.25)
         ax.legend()
-    # endfor
     axes[-1].set_xlabel("Combined kinematic-bin number")
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v1.png"
+    path = output_dir / f"packing_fraction_summary_{period}_v2.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1452,7 +1490,7 @@ def plot_method1_control_summary(
     ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.20 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v1.png"
+    path = output_dir / "method1_period_carbon_scales_v2.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1463,20 +1501,22 @@ def write_plots(
     central_results: dict[str, dict[str, Any]],
     summaries_by_period: dict[str, Any],
 ) -> list[str]:
+    """Write only point/error-bar plots into one flat plot directory."""
     paths: list[str] = []
     paths.append(
         plot_method1_control_summary(output_dir, central_results, summaries_by_period)
     )
     for period in PERIODS:
-        period_dir = output_dir / period
-        paths.extend(plot_method_heatmaps(period_dir, period, summaries_by_period[period]))
         paths.append(
-            plot_three_method_comparison(period_dir, period, summaries_by_period[period])
+            plot_three_method_comparison(output_dir, period, summaries_by_period[period])
         )
         paths.append(
-            plot_packing_fraction_summary(period_dir, period, summaries_by_period[period])
+            plot_packing_fraction_summary(output_dir, period, summaries_by_period[period])
         )
-    # endfor
+    for method_key in ("method1", "method2", "method3"):
+        paths.append(
+            plot_three_period_comparison(output_dir, method_key, summaries_by_period)
+        )
     return paths
 
 
@@ -1620,7 +1660,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v1.csv"
+    count_path = tables_dir / "target_counts_all_selections_v2.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -1647,7 +1687,7 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v1.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods_v2.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
 
     covariance_manifest = write_covariance_products(
@@ -1662,7 +1702,7 @@ def main() -> int:
 
     provenance = {
         "script": Path(__file__).name,
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -1693,10 +1733,11 @@ def main() -> int:
             "Exact channel-selection raw-count normalization pooled over all "
             "24 bins in the control window; no additional charge normalization."
         ),
-        "method2_definition": "Standalone dilution-factor note Eq. (10).",
+        "method2_definition": "Exact thermal-contraction-corrected formula transcribed from calculate_dilution_factors.cpp.",
         "method3_definition": (
-            "Per-bin Eq. (11) diagnostics; period-integrated Eq. (11) packing "
-            "fraction inserted into nonlinear Eq. (14)."
+            "Eq. (11) packing fractions are calculated from the supplied C++ "
+            "formula. Eq. (14) dilution values are intentionally omitted until "
+            "the exact equation is available for transcription."
         ),
         "statistical_model": (
             "Independent Poisson replicas of 16 disjoint membership-pattern "
@@ -1705,11 +1746,12 @@ def main() -> int:
     }
 
     master_payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
-            "All three methods are retained. Eq. (10) is the provisional "
-            "nominal candidate pending inspection of the results."
+            "Method 1 and the exact C++ direct auxiliary-target method are active. "
+            "Packing fractions use the C++ Eq. (11) expression. Method 3 Eq. (14) "
+            "is intentionally null pending an exact equation transcription."
         ),
         "binning": {
             "xB": [list(interval) for interval in XB_BINS],
@@ -1724,11 +1766,11 @@ def main() -> int:
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v1.json"
+    master_json_path = output_dir / "dilution_factors_v2.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
         "provisional_nominal_method": "method2_equation10",
         "note": (
@@ -1741,10 +1783,10 @@ def main() -> int:
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v1.json"
+    compact_json_path = output_dir / "dilution_factors_production_v2.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v1.json"
+    configuration_path = output_dir / "configuration_v2.json"
     write_json(configuration_path, provenance)
 
     print()
