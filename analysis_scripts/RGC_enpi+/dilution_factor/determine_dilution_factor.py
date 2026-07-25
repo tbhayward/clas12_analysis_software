@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v3.py
+determine_dilution_factor_v4.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -1152,10 +1152,18 @@ def build_output_tables(
     for p_index, period in enumerate(PERIODS):
         central = central_results[period]
         replicas = bootstrap_results[period]
+        recommended_central = 0.5 * (central["method1"] + central["method2"])
+        recommended_replicas = 0.5 * (replicas["method1"] + replicas["method2"])
+        dilution_model_systematic = 0.5 * np.abs(
+            central["method2"] - central["method1"]
+        )
         summaries = {
             "method1": summarize_replicas(central["method1"], replicas["method1"]),
             "method2": summarize_replicas(central["method2"], replicas["method2"]),
             "method3": summarize_replicas(central["method3"], replicas["method3"]),
+            "recommended": summarize_replicas(
+                recommended_central, recommended_replicas
+            ),
             "packing_fraction_bin": summarize_replicas(
                 central["packing_fraction_bin"], replicas["packing_fraction_bin"]
             ),
@@ -1191,6 +1199,22 @@ def build_output_tables(
                 method1_record = scalar_record(summaries["method1"], (b, cut_index))
                 method2_record = scalar_record(summaries["method2"], (b, cut_index))
                 method3_record = scalar_record(summaries["method3"], (b, cut_index))
+                recommended_record = scalar_record(
+                    summaries["recommended"], (b, cut_index)
+                )
+                recommended_record["dilution_model_systematic"] = float(
+                    dilution_model_systematic[b, cut_index]
+                )
+                recommended_record["total_uncertainty_quadrature"] = float(
+                    math.hypot(
+                        recommended_record["stat_uncertainty"],
+                        recommended_record["dilution_model_systematic"],
+                    )
+                )
+                recommended_record["definition"] = (
+                    "Average of Method 1 and Method 2; dilution-model systematic "
+                    "is half their absolute difference."
+                )
                 pf_bin_record = scalar_record(
                     summaries["packing_fraction_bin"], (b, cut_index)
                 )
@@ -1207,12 +1231,14 @@ def build_output_tables(
                     "method2_equation10": method2_record,
                     "packing_fraction_equation11_bin_diagnostic": pf_bin_record,
                     "packing_fraction_equation11_period_integrated": pf_period_record,
-                    "method3_equation14": method3_record,
+                    "method3_packing_fraction_constrained": method3_record,
+                    "recommended_method1_method2_average": recommended_record,
                 }
                 compact_cut_payload[variation] = {
                     "method1": method1_record,
                     "method2": method2_record,
                     "method3": method3_record,
+                    "recommended": recommended_record,
                     "packing_fraction_used_by_method3": pf_period_record,
                 }
 
@@ -1243,6 +1269,7 @@ def build_output_tables(
                     ("method1", method1_record),
                     ("method2", method2_record),
                     ("method3", method3_record),
+                    ("recommended", recommended_record),
                     ("packing_fraction_bin", pf_bin_record),
                     ("packing_fraction_period", pf_period_record),
                 ):
@@ -1256,6 +1283,12 @@ def build_output_tables(
                     ]
                     row[f"{label}_flags"] = ";".join(record["flags"])
                 # endfor
+                row["recommended_dilution_model_systematic"] = recommended_record[
+                    "dilution_model_systematic"
+                ]
+                row["recommended_total_uncertainty_quadrature"] = recommended_record[
+                    "total_uncertainty_quadrature"
+                ]
                 flat_rows.append(row)
             # endfor
 
@@ -1304,7 +1337,7 @@ def build_output_tables(
         }
         compact_periods[period] = {
             "charge_fractions": charge_fractions[period],
-            "recommended_nominal_method": "method2_equation10_pending_result_review",
+            "recommended_nominal_method": "average_of_method1_and_method2",
             "period_packing_fraction_by_cut": master_periods[period][
                 "period_packing_fraction_by_cut"
             ],
@@ -1324,14 +1357,22 @@ def write_covariance_products(
     manifest: dict[str, Any] = {}
     for period in PERIODS:
         manifest[period] = {}
-        for method_key in ("method1", "method2", "method3", "packing_fraction_bin"):
+        for method_key in (
+            "method1", "method2", "method3", "recommended", "packing_fraction_bin"
+        ):
             manifest[period][method_key] = {}
-            samples = bootstrap_results[period][method_key]
+            if method_key == "recommended":
+                samples = 0.5 * (
+                    bootstrap_results[period]["method1"]
+                    + bootstrap_results[period]["method2"]
+                )
+            else:
+                samples = bootstrap_results[period][method_key]
             for cut_index, variation in enumerate(CUT_VARIATIONS):
                 cut_samples = samples[:, :, cut_index]
                 covariance = pairwise_covariance(cut_samples)
                 correlation = covariance_to_correlation(covariance)
-                stem = f"{method_key}_{period}_{variation}_v3"
+                stem = f"{method_key}_{period}_{variation}_v4"
                 cov_path = output_dir / f"{stem}_covariance.json"
                 corr_path = output_dir / f"{stem}_correlation.json"
                 write_json(
@@ -1378,8 +1419,8 @@ def plot_three_method_comparison(
     offsets = {"method1": -0.18, "method2": 0.0, "method3": 0.18}
     labels = {
         "method1": "Method 1: carbon subtraction",
-        "method2": "Method 2: Eq. (10)",
-        "method3": "Method 3: Eq. (14)",
+        "method2": "Method 2: direct auxiliary-target subtraction",
+        "method3": "Method 3: packing-fraction constrained subtraction",
     }
 
     fig, axes = plt.subplots(3, 1, figsize=(17, 14), sharex=True)
@@ -1405,7 +1446,7 @@ def plot_three_method_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v3.png"
+    path = output_dir / f"three_method_comparison_{period}_v4.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1422,8 +1463,8 @@ def plot_three_period_comparison(
     offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
     method_titles = {
         "method1": "Method 1: carbon subtraction",
-        "method2": "Method 2: Eq. (10)",
-        "method3": "Method 3: Eq. (14)",
+        "method2": "Method 2: direct auxiliary-target subtraction",
+        "method3": "Method 3: packing-fraction constrained subtraction",
     }
 
     fig, axes = plt.subplots(3, 1, figsize=(17, 14), sharex=True)
@@ -1450,7 +1491,7 @@ def plot_three_period_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_period_comparison_{method_key}_v3.png"
+    path = output_dir / f"three_period_comparison_{method_key}_v4.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1478,9 +1519,9 @@ def plot_packing_fraction_summary(
             linestyle="none",
             markersize=4,
             capsize=2,
-            label="Per-bin Eq. (11)",
+            label="Per-bin auxiliary-target packing fraction",
         )
-        ax.axhline(period_value, linewidth=1.2, label="Period-integrated Eq. (11)")
+        ax.axhline(period_value, linewidth=1.2, label="Period-integrated packing fraction")
         ax.axhspan(
             period_value - period_uncertainty,
             period_value + period_uncertainty,
@@ -1494,7 +1535,7 @@ def plot_packing_fraction_summary(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v3.png"
+    path = output_dir / f"packing_fraction_summary_{period}_v4.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1520,22 +1561,239 @@ def plot_method1_control_summary(
     ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.00 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v3.png"
+    path = output_dir / "method1_period_carbon_scales_v4.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
 
 
+
+def plot_nominal_method_comparison(
+    output_dir: Path,
+    period: str,
+    summaries: dict[str, Any],
+) -> str:
+    """Nominal-cut comparison of the three dilution-factor methods."""
+    ensure_directory(output_dir)
+    bins = np.arange(1, NUMBER_OF_BINS + 1)
+    offsets = {"method1": -0.18, "method2": 0.0, "method3": 0.18}
+    labels = {
+        "method1": "Method 1: carbon-template subtraction",
+        "method2": "Method 2: direct auxiliary-target subtraction",
+        "method3": "Method 3: packing-fraction constrained subtraction",
+    }
+    nominal_index = CUT_VARIATIONS.index("nominal")
+    fig, ax = plt.subplots(figsize=(17, 6.5))
+    for method_key in ("method1", "method2", "method3"):
+        ax.errorbar(
+            bins + offsets[method_key],
+            summaries[method_key]["central"][:, nominal_index],
+            yerr=summaries[method_key]["stat_uncertainty"][:, nominal_index],
+            marker="o",
+            linestyle="none",
+            markersize=4,
+            capsize=2,
+            label=labels[method_key],
+        )
+    ax.set_ylim(0.1, 0.6)
+    ax.set_xlabel("Combined kinematic-bin number")
+    ax.set_ylabel("Dilution factor")
+    ax.set_xticks(bins)
+    ax.grid(alpha=0.25)
+    ax.legend(ncol=3)
+    ax.set_title(f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison")
+    fig.tight_layout()
+    path = output_dir / f"nominal_method_comparison_{period}_v4.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return str(path)
+
+
+def plot_nominal_period_comparison(
+    output_dir: Path,
+    method_key: str,
+    summaries_by_period: dict[str, Any],
+) -> str:
+    """Nominal-cut comparison of all periods for one method."""
+    ensure_directory(output_dir)
+    bins = np.arange(1, NUMBER_OF_BINS + 1)
+    offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
+    method_titles = {
+        "method1": "carbon-template subtraction",
+        "method2": "direct auxiliary-target subtraction",
+        "method3": "packing-fraction constrained subtraction",
+    }
+    nominal_index = CUT_VARIATIONS.index("nominal")
+    fig, ax = plt.subplots(figsize=(17, 6.5))
+    for period in PERIODS:
+        summary = summaries_by_period[period][method_key]
+        ax.errorbar(
+            bins + offsets[period],
+            summary["central"][:, nominal_index],
+            yerr=summary["stat_uncertainty"][:, nominal_index],
+            marker="o",
+            linestyle="none",
+            markersize=4,
+            capsize=2,
+            label=PERIOD_LABELS[period],
+        )
+    ax.set_ylim(0.1, 0.6)
+    ax.set_xlabel("Combined kinematic-bin number")
+    ax.set_ylabel("Dilution factor")
+    ax.set_xticks(bins)
+    ax.grid(alpha=0.25)
+    ax.legend(ncol=3)
+    ax.set_title(
+        "Nominal-cut run-period comparison — " + method_titles[method_key]
+    )
+    fig.tight_layout()
+    path = output_dir / f"nominal_period_comparison_{method_key}_v4.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return str(path)
+
+
+def plot_nominal_packing_fraction_period_comparison(
+    output_dir: Path,
+    summaries_by_period: dict[str, Any],
+) -> str:
+    """Compare nominal per-bin and period-integrated packing fractions."""
+    ensure_directory(output_dir)
+    bins = np.arange(1, NUMBER_OF_BINS + 1)
+    offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
+    nominal_index = CUT_VARIATIONS.index("nominal")
+    fig, ax = plt.subplots(figsize=(17, 6.5))
+    for period in PERIODS:
+        per_bin = summaries_by_period[period]["packing_fraction_bin"]
+        period_pf = summaries_by_period[period]["packing_fraction_period"]
+        ax.errorbar(
+            bins + offsets[period],
+            per_bin["central"][:, nominal_index],
+            yerr=per_bin["stat_uncertainty"][:, nominal_index],
+            marker="o",
+            linestyle="none",
+            markersize=4,
+            capsize=2,
+            label=f"{PERIOD_LABELS[period]} per-bin",
+        )
+        value = period_pf["central"][nominal_index]
+        error = period_pf["stat_uncertainty"][nominal_index]
+        ax.axhline(value, linewidth=1.0, linestyle="--")
+        ax.axhspan(value - error, value + error, alpha=0.08)
+    ax.set_xlabel("Combined kinematic-bin number")
+    ax.set_ylabel("Packing fraction")
+    ax.set_xticks(bins)
+    ax.grid(alpha=0.25)
+    ax.legend(ncol=3)
+    ax.set_title("Nominal-cut packing-fraction comparison by run period")
+    fig.tight_layout()
+    path = output_dir / "nominal_packing_fraction_period_comparison_v4.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return str(path)
+
+
+def plot_nominal_method_differences(
+    output_dir: Path,
+    summaries_by_period: dict[str, Any],
+    bootstrap_results: dict[str, dict[str, np.ndarray]],
+) -> str:
+    """Show nominal differences among all three methods for each period."""
+    ensure_directory(output_dir)
+    bins = np.arange(1, NUMBER_OF_BINS + 1)
+    nominal_index = CUT_VARIATIONS.index("nominal")
+    fig, axes = plt.subplots(3, 1, figsize=(17, 13), sharex=True)
+    for ax, period in zip(axes, PERIODS):
+        m1 = summaries_by_period[period]["method1"]["central"][:, nominal_index]
+        m2 = summaries_by_period[period]["method2"]["central"][:, nominal_index]
+        m3 = summaries_by_period[period]["method3"]["central"][:, nominal_index]
+        replica_m1 = bootstrap_results[period]["method1"][:, :, nominal_index]
+        replica_m2 = bootstrap_results[period]["method2"][:, :, nominal_index]
+        replica_m3 = bootstrap_results[period]["method3"][:, :, nominal_index]
+        differences = (
+            (m2 - m1, np.nanstd(replica_m2 - replica_m1, axis=0, ddof=1),
+             "o", "Direct auxiliary − carbon"),
+            (m3 - m1, np.nanstd(replica_m3 - replica_m1, axis=0, ddof=1),
+             "s", "Packing-fraction − carbon"),
+            (m3 - m2, np.nanstd(replica_m3 - replica_m2, axis=0, ddof=1),
+             "^", "Packing-fraction − direct auxiliary"),
+        )
+        for values, errors, marker, label in differences:
+            ax.errorbar(
+                bins, values, yerr=errors, marker=marker, linestyle="none",
+                markersize=4, capsize=2, label=label,
+            )
+        ax.axhline(0.0, linewidth=1.0)
+        ax.set_ylabel(r"$\Delta f$")
+        ax.set_title(PERIOD_LABELS[period])
+        ax.grid(alpha=0.25)
+        ax.legend(ncol=3)
+    axes[-1].set_xlabel("Combined kinematic-bin number")
+    axes[-1].set_xticks(bins)
+    fig.suptitle("Nominal-cut differences among dilution-factor methods")
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+    path = output_dir / "nominal_method_differences_v4.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return str(path)
+
+
+def plot_nominal_recommended_dilution(
+    output_dir: Path,
+    summaries_by_period: dict[str, Any],
+) -> str:
+    """Plot recommended average with statistical and method-spread errors."""
+    ensure_directory(output_dir)
+    bins = np.arange(1, NUMBER_OF_BINS + 1)
+    offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
+    nominal_index = CUT_VARIATIONS.index("nominal")
+    fig, ax = plt.subplots(figsize=(17, 6.5))
+    for period in PERIODS:
+        m1 = summaries_by_period[period]["method1"]["central"][:, nominal_index]
+        m2 = summaries_by_period[period]["method2"]["central"][:, nominal_index]
+        rec = summaries_by_period[period]["recommended"]
+        values = rec["central"][:, nominal_index]
+        stat = rec["stat_uncertainty"][:, nominal_index]
+        systematic = 0.5 * np.abs(m2 - m1)
+        x = bins + offsets[period]
+        ax.errorbar(
+            x, values, yerr=systematic, marker="none", linestyle="none",
+            capsize=4, linewidth=1.4,
+        )
+        ax.errorbar(
+            x, values, yerr=stat, marker="o", linestyle="none",
+            markersize=4, capsize=2, label=PERIOD_LABELS[period],
+        )
+    ax.set_ylim(0.1, 0.6)
+    ax.set_xlabel("Combined kinematic-bin number")
+    ax.set_ylabel("Recommended dilution factor")
+    ax.set_xticks(bins)
+    ax.grid(alpha=0.25)
+    ax.legend(ncol=3)
+    ax.set_title(
+        "Nominal recommended dilution factor: Method-1/Method-2 average\n"
+        "inner bars: statistical; outer bars: half-difference systematic"
+    )
+    fig.tight_layout()
+    path = output_dir / "nominal_recommended_dilution_factor_v4.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return str(path)
+
 def write_plots(
     output_dir: Path,
     central_results: dict[str, dict[str, Any]],
     summaries_by_period: dict[str, Any],
+    bootstrap_results: dict[str, dict[str, np.ndarray]],
 ) -> list[str]:
-    """Write only point/error-bar plots into one flat plot directory."""
+    """Write point/error-bar plots into one flat plot directory."""
     paths: list[str] = []
     for period in PERIODS:
         paths.append(
             plot_three_method_comparison(output_dir, period, summaries_by_period[period])
+        )
+        paths.append(
+            plot_nominal_method_comparison(output_dir, period, summaries_by_period[period])
         )
         paths.append(
             plot_packing_fraction_summary(output_dir, period, summaries_by_period[period])
@@ -1544,6 +1802,20 @@ def write_plots(
         paths.append(
             plot_three_period_comparison(output_dir, method_key, summaries_by_period)
         )
+        paths.append(
+            plot_nominal_period_comparison(output_dir, method_key, summaries_by_period)
+        )
+    paths.append(
+        plot_nominal_packing_fraction_period_comparison(
+            output_dir, summaries_by_period
+        )
+    )
+    paths.append(
+        plot_nominal_method_differences(
+            output_dir, summaries_by_period, bootstrap_results
+        )
+    )
+    paths.append(plot_nominal_recommended_dilution(output_dir, summaries_by_period))
     return paths
 
 
@@ -1687,7 +1959,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v3.csv"
+    count_path = tables_dir / "target_counts_all_selections_v4.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -1714,7 +1986,7 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v3.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods_v4.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
 
     covariance_manifest = write_covariance_products(
@@ -1724,12 +1996,14 @@ def main() -> int:
 
     plot_paths: list[str] = []
     if not args.skip_plots:
-        plot_paths = write_plots(plots_dir, central_results, summaries_by_period)
+        plot_paths = write_plots(
+            plots_dir, central_results, summaries_by_period, bootstrap_results
+        )
     # endif
 
     provenance = {
         "script": Path(__file__).name,
-        "schema_version": 3,
+        "schema_version": 4,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -1775,7 +2049,7 @@ def main() -> int:
     }
 
     master_payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
             "All three methods are active. Method 2 uses the exact thermally corrected "
@@ -1795,16 +2069,20 @@ def main() -> int:
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v3.json"
+    master_json_path = output_dir / "dilution_factors_v4.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
-        "provisional_nominal_method": "method2_equation10",
+        "recommended_nominal_method": "average_of_method1_and_method2",
         "note": (
             "Loose, nominal, and tight values are all carried downstream. "
-            "No exclusivity-cut systematic is assigned at this stage."
+            "The recommended dilution factor is the average of Methods 1 and 2. "
+            "Its statistical uncertainty is propagated with common bootstrap "
+            "replicas, and half the Method-1/Method-2 difference is stored as a "
+            "separate dilution-model systematic. No exclusivity-cut systematic "
+            "is assigned at this stage."
         ),
         "binning": master_payload["binning"],
         "periods": compact_periods,
@@ -1812,10 +2090,10 @@ def main() -> int:
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v3.json"
+    compact_json_path = output_dir / "dilution_factors_production_v4.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v3.json"
+    configuration_path = output_dir / "configuration_v4.json"
     write_json(configuration_path, provenance)
 
     print()
