@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v5.py
+determine_dilution_factor_v7.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -73,6 +73,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import zipfile
+import xml.etree.ElementTree as ET
 import math
 import os
 from pathlib import Path
@@ -137,6 +139,7 @@ DEFAULT_REPLICAS = 10000
 DEFAULT_SEED = 7302026
 
 DEFAULT_OUTPUT_DIR = Path("output/dilution_factor_determination")
+DEFAULT_EPOCH_DEFINITIONS = Path(__file__).resolve().with_name("epoch_definitions.xlsx")
 DEFAULT_CUT_JSON = Path(
     "../channel_selection/output/channel_selection_mx2_fit_stability/"
     "final_carbon_assisted_cuts/tables/"
@@ -187,6 +190,7 @@ DEFAULT_CHARGE_FRACTIONS: dict[str, dict[str, float]] = {
 BRANCH_ALIASES: dict[str, tuple[str, ...]] = {
     "xB": ("xB", "x", "xb", "x_b"),
     "tprime": ("tprime", "t_prime", "tp", "tPrime"),
+    "runnum": ("runnum", "run", "run_number", "RunNumber"),
     "Mx2": (
         "Mx2",
         "mx2",
@@ -236,6 +240,8 @@ class LoadedDataset:
     x_branch: str
     tprime_branch: str
     mx2_branch: str
+    run_branch: str
+    runnum: np.ndarray
     xB: np.ndarray
     minus_tprime_gev2: np.ndarray
     mx2_gev2: np.ndarray
@@ -429,6 +435,454 @@ def resolve_branch(tree: uproot.behaviors.TTree.TTree, aliases: Iterable[str]) -
     )
 
 
+
+@dataclass(frozen=True)
+class EpochDefinition:
+    period: str
+    epoch: str
+    runs: tuple[int, ...]
+    run_min: int
+    run_max: int
+    spreadsheet_event_count: int
+    exposure_fraction: float
+    weighted_polarization: float
+
+
+def _xlsx_column_index(reference: str) -> int:
+    letters = "".join(character for character in reference if character.isalpha())
+    value = 0
+    for character in letters:
+        value = value * 26 + (ord(character.upper()) - ord("A") + 1)
+    # endfor
+    return value - 1
+
+
+def read_epoch_spreadsheet(path: Path) -> list[EpochDefinition]:
+    """
+    Read NH3 epoch definitions from the supplied XLSX using only stdlib XML.
+
+    Relative epoch exposure is taken from the spreadsheet's Number of Events
+    column. This is used only to partition the period-wide NH3 charge fraction
+    for the epoch stability diagnostic.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing epoch-definition spreadsheet: {path}")
+    # endif
+
+    namespace = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+    with zipfile.ZipFile(path) as archive:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            for item in root.findall("x:si", namespace):
+                shared_strings.append(
+                    "".join(node.text or "" for node in item.findall(".//x:t", namespace))
+                )
+            # endfor
+        # endif
+        sheet = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+    # endwith
+
+    table: list[list[Any]] = []
+    for row_node in sheet.findall(".//x:sheetData/x:row", namespace):
+        values: dict[int, Any] = {}
+        for cell in row_node.findall("x:c", namespace):
+            reference = cell.attrib.get("r", "A1")
+            column = _xlsx_column_index(reference)
+            value_node = cell.find("x:v", namespace)
+            if value_node is None:
+                value: Any = ""
+            else:
+                raw = value_node.text or ""
+                if cell.attrib.get("t") == "s":
+                    value = shared_strings[int(raw)]
+                elif cell.attrib.get("t") == "b":
+                    value = bool(int(raw))
+                else:
+                    try:
+                        numeric = float(raw)
+                        value = int(numeric) if numeric.is_integer() else numeric
+                    except ValueError:
+                        value = raw
+                    # endtry
+                # endif
+            # endif
+            values[column] = value
+        # endfor
+        if values:
+            width = max(values) + 1
+            table.append([values.get(index, "") for index in range(width)])
+        # endif
+    # endfor
+
+    if not table:
+        raise RuntimeError(f"No rows found in epoch spreadsheet: {path}")
+    # endif
+    headers = [str(value).strip() for value in table[0]]
+    required = {
+        "Run Number",
+        "Target",
+        "Approx. Beam Energy",
+        "Number of Events",
+        "Target Polarization",
+        "Epoch Number",
+    }
+    missing = required - set(headers)
+    if missing:
+        raise RuntimeError(
+            f"Epoch spreadsheet is missing columns: {sorted(missing)}"
+        )
+    # endif
+    column = {name: headers.index(name) for name in required}
+
+    energy_to_period = {
+        10.5473: "su22",
+        10.5563: "fa22",
+        10.5593: "sp23",
+    }
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for row in table[1:]:
+        if len(row) <= max(column.values()):
+            continue
+        # endif
+        if str(row[column["Target"]]).strip().upper() != "NH3":
+            continue
+        # endif
+        epoch = str(row[column["Epoch Number"]]).strip().strip("()")
+        if not epoch or not epoch.upper().startswith("P"):
+            continue
+        # endif
+        energy = float(row[column["Approx. Beam Energy"]])
+        period = min(
+            energy_to_period,
+            key=lambda candidate: abs(candidate - energy),
+        )
+        if abs(period - energy) > 0.01:
+            continue
+        # endif
+        period_name = energy_to_period[period]
+        grouped.setdefault((period_name, epoch), []).append(
+            {
+                "run": int(row[column["Run Number"]]),
+                "events": int(row[column["Number of Events"]]),
+                "polarization": float(row[column["Target Polarization"]]),
+            }
+        )
+    # endfor
+
+    period_totals = {
+        period: sum(
+            item["events"]
+            for (candidate_period, _), rows in grouped.items()
+            if candidate_period == period
+            for item in rows
+        )
+        for period in PERIODS
+    }
+    definitions: list[EpochDefinition] = []
+    for (period, epoch), rows in sorted(
+        grouped.items(),
+        key=lambda item: (PERIODS.index(item[0][0]), min(row["run"] for row in item[1])),
+    ):
+        event_count = sum(row["events"] for row in rows)
+        weighted_polarization = safe_divide(
+            sum(row["events"] * row["polarization"] for row in rows),
+            event_count,
+        )
+        runs = tuple(sorted(row["run"] for row in rows))
+        definitions.append(
+            EpochDefinition(
+                period=period,
+                epoch=epoch,
+                runs=runs,
+                run_min=min(runs),
+                run_max=max(runs),
+                spreadsheet_event_count=event_count,
+                exposure_fraction=(
+                    event_count / period_totals[period]
+                    if period_totals[period] > 0
+                    else math.nan
+                ),
+                weighted_polarization=float(weighted_polarization),
+            )
+        )
+    # endfor
+    return definitions
+
+
+def count_integrated_epoch_nh3(
+    dataset: LoadedDataset,
+    epoch: EpochDefinition,
+    cuts: dict[tuple[str, int, int], CutEntry],
+    control_min_gev2: float,
+    control_max_gev2: float,
+) -> tuple[int, int]:
+    """Count integrated control and nominal selections for one NH3 epoch."""
+    run_mask = np.isin(dataset.runnum, np.asarray(epoch.runs, dtype=np.int64))
+    control_count = 0
+    nominal_count = 0
+    for x_index, (x_min, x_max) in enumerate(XB_BINS):
+        for t_index, (t_min, t_max) in enumerate(MINUS_TPRIME_BINS_GEV2):
+            mask = (
+                run_mask
+                & (dataset.xB >= x_min)
+                & (dataset.xB < x_max)
+                & (dataset.minus_tprime_gev2 >= t_min)
+                & (dataset.minus_tprime_gev2 < t_max)
+            )
+            values = dataset.mx2_gev2[mask]
+            control_count += int(
+                np.count_nonzero(
+                    (values >= control_min_gev2)
+                    & (values < control_max_gev2)
+                )
+            )
+            low, high = cuts[(epoch.period, x_index, t_index)].interval("nominal")
+            nominal_count += int(
+                np.count_nonzero((values >= low) & (values < high))
+            )
+        # endfor
+    # endfor
+    return control_count, nominal_count
+
+
+def calculate_epoch_diagnostics(
+    loaded: dict[tuple[str, str], LoadedDataset],
+    observed_counts: np.ndarray,
+    cuts: dict[tuple[str, int, int], CutEntry],
+    charge_fractions: dict[str, dict[str, float]],
+    definitions: list[EpochDefinition],
+    control_min_gev2: float,
+    control_max_gev2: float,
+    replicas: int,
+    seed: int,
+) -> pd.DataFrame:
+    """
+    Calculate nominal dilution and packing-fraction diagnostics by NH3 epoch.
+
+    Auxiliary-target yields remain period integrated. The period-wide NH3
+    charge fraction is partitioned among epochs using the spreadsheet event
+    totals as a relative exposure proxy.
+    """
+    rows: list[dict[str, Any]] = []
+    nominal_selection_index = SELECTION_NAMES.index("nominal")
+    control_selection_index = SELECTION_NAMES.index("control")
+    rng = np.random.default_rng(seed + 9107)
+
+    period_epoch_counter = {period: 0 for period in PERIODS}
+    for epoch in definitions:
+        epoch_index = period_epoch_counter[epoch.period]
+        period_epoch_counter[epoch.period] += 1
+        p_index = PERIODS.index(epoch.period)
+        nh3_control, nh3_nominal = count_integrated_epoch_nh3(
+            loaded[(epoch.period, "NH3")],
+            epoch,
+            cuts,
+            control_min_gev2,
+            control_max_gev2,
+        )
+        period_counts = {
+            target: int(
+                np.sum(
+                    observed_counts[
+                        p_index,
+                        TARGETS.index(target),
+                        :,
+                        nominal_selection_index,
+                    ]
+                )
+            )
+            for target in TARGETS
+        }
+        period_control_nh3 = int(
+            np.sum(
+                observed_counts[
+                    p_index,
+                    TARGETS.index("NH3"),
+                    :,
+                    control_selection_index,
+                ]
+            )
+        )
+        period_control_c = int(
+            np.sum(
+                observed_counts[
+                    p_index,
+                    TARGETS.index("C"),
+                    :,
+                    control_selection_index,
+                ]
+            )
+        )
+        alpha = (
+            period_control_nh3 / period_control_c
+            if period_control_c > 0
+            else math.nan
+        )
+        scaled_carbon_epoch = (
+            alpha * epoch.exposure_fraction * period_counts["C"]
+        )
+        method1 = (
+            1.0 - scaled_carbon_epoch / nh3_nominal
+            if nh3_nominal > 0
+            else math.nan
+        )
+
+        epoch_counts = dict(period_counts)
+        epoch_counts["NH3"] = nh3_nominal
+        epoch_charge = dict(charge_fractions[epoch.period])
+        epoch_charge["NH3"] = (
+            charge_fractions[epoch.period]["NH3"] * epoch.exposure_fraction
+        )
+        scalar_counts = {
+            target: np.asarray(value, dtype=np.float64)
+            for target, value in epoch_counts.items()
+        }
+        method2 = float(
+            method2_equation10_from_counts(scalar_counts, epoch_charge)
+        )
+        packing_fraction = float(
+            packing_fraction_equation11_from_counts(
+                scalar_counts,
+                epoch_charge,
+            )
+        )
+        recommended = 0.5 * (method1 + method2)
+
+        # Independent-Poisson epoch diagnostic. The global analysis bootstrap
+        # remains the authoritative covariance treatment for binned results.
+        draws = min(max(replicas, 500), 10000)
+        replica_nh3_control = rng.poisson(nh3_control, size=draws)
+        replica_nh3_nominal = rng.poisson(nh3_nominal, size=draws)
+        replica_period_control_nh3 = rng.poisson(
+            period_control_nh3,
+            size=draws,
+        )
+        replica_period_control_c = rng.poisson(
+            period_control_c,
+            size=draws,
+        )
+        replica_counts = {
+            target: rng.poisson(period_counts[target], size=draws).astype(float)
+            for target in TARGETS
+        }
+        replica_counts["NH3"] = replica_nh3_nominal.astype(float)
+        replica_alpha = safe_divide(
+            replica_period_control_nh3,
+            replica_period_control_c,
+        )
+        replica_method1 = 1.0 - safe_divide(
+            replica_alpha
+            * epoch.exposure_fraction
+            * replica_counts["C"],
+            replica_nh3_nominal,
+        )
+        replica_method2 = method2_equation10_from_counts(
+            replica_counts,
+            epoch_charge,
+        )
+        replica_pf = packing_fraction_equation11_from_counts(
+            replica_counts,
+            epoch_charge,
+        )
+        replica_recommended = 0.5 * (
+            replica_method1 + replica_method2
+        )
+
+        rows.append(
+            {
+                "period": epoch.period,
+                "period_label": PERIOD_LABELS[epoch.period],
+                "epoch": epoch.epoch,
+                "epoch_index_within_period": epoch_index,
+                "run_min": epoch.run_min,
+                "run_max": epoch.run_max,
+                "number_of_runs": len(epoch.runs),
+                "runs": ",".join(str(run) for run in epoch.runs),
+                "weighted_target_polarization": epoch.weighted_polarization,
+                "spreadsheet_event_count": epoch.spreadsheet_event_count,
+                "epoch_exposure_fraction_proxy": epoch.exposure_fraction,
+                "nh3_control_count": nh3_control,
+                "nh3_nominal_count": nh3_nominal,
+                "method1_value": method1,
+                "method2_value": method2,
+                "recommended_dilution_factor": recommended,
+                "recommended_stat_uncertainty": float(
+                    np.nanstd(replica_recommended, ddof=1)
+                ),
+                "packing_fraction": packing_fraction,
+                "packing_fraction_stat_uncertainty": float(
+                    np.nanstd(replica_pf, ddof=1)
+                ),
+                "exposure_note": (
+                    "NH3 period charge fraction partitioned by spreadsheet "
+                    "Number of Events; auxiliary targets remain period integrated."
+                ),
+            }
+        )
+    # endfor
+    return pd.DataFrame(rows)
+
+
+def plot_epoch_diagnostics(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> list[str]:
+    """Plot recommended dilution factor and packing fraction by NH3 epoch."""
+    ensure_directory(output_dir)
+    paths: list[str] = []
+    for quantity, error, ylabel, stem in (
+        (
+            "recommended_dilution_factor",
+            "recommended_stat_uncertainty",
+            "Recommended dilution factor",
+            "dilution_factor_by_epoch_v7.png",
+        ),
+        (
+            "packing_fraction",
+            "packing_fraction_stat_uncertainty",
+            "Packing fraction",
+            "packing_fraction_by_epoch_v7.png",
+        ),
+    ):
+        fig, axes = plt.subplots(3, 1, figsize=(17, 12), sharex=False)
+        for ax, period in zip(axes, PERIODS):
+            subset = frame[frame["period"] == period].sort_values("run_min")
+            x = np.arange(len(subset))
+            ax.errorbar(
+                x,
+                subset[quantity],
+                yerr=subset[error],
+                marker="o",
+                linestyle="none",
+                capsize=3,
+            )
+            ax.set_xticks(x)
+            ax.set_xticklabels(
+                [
+                    f"{row.epoch}\n{row.run_min}-{row.run_max}"
+                    for row in subset.itertuples(index=False)
+                ],
+                rotation=35,
+                ha="right",
+            )
+            ax.set_ylabel(ylabel)
+            ax.set_title(PERIOD_LABELS[period])
+            ax.grid(alpha=0.25)
+        # endfor
+        axes[-1].set_xlabel("NH$_3$ epoch (run range)")
+        fig.suptitle(
+            f"{ylabel} versus NH$_3$ target/polarization epoch"
+        )
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+        path = output_dir / stem
+        fig.savefig(path, dpi=180)
+        plt.close(fig)
+        paths.append(str(path))
+    # endfor
+    return paths
+
+
 # =============================================================================
 # Input loading and cut parsing
 # =============================================================================
@@ -451,8 +905,9 @@ def load_one_dataset(spec: DatasetSpec) -> LoadedDataset:
         x_branch = resolve_branch(tree, BRANCH_ALIASES["xB"])
         tprime_branch = resolve_branch(tree, BRANCH_ALIASES["tprime"])
         mx2_branch = resolve_branch(tree, BRANCH_ALIASES["Mx2"])
+        run_branch = resolve_branch(tree, BRANCH_ALIASES["runnum"])
         arrays = tree.arrays(
-            [x_branch, tprime_branch, mx2_branch],
+            [x_branch, tprime_branch, mx2_branch, run_branch],
             library="np",
         )
     # endwith
@@ -460,7 +915,12 @@ def load_one_dataset(spec: DatasetSpec) -> LoadedDataset:
     xB = np.asarray(arrays[x_branch], dtype=np.float64)
     minus_tprime = -np.asarray(arrays[tprime_branch], dtype=np.float64)
     mx2 = np.asarray(arrays[mx2_branch], dtype=np.float64)
-    finite = np.isfinite(xB) & np.isfinite(minus_tprime) & np.isfinite(mx2)
+    runnum = np.asarray(arrays[run_branch], dtype=np.int64)
+    finite = (
+        np.isfinite(xB)
+        & np.isfinite(minus_tprime)
+        & np.isfinite(mx2)
+    )
 
     return LoadedDataset(
         period=spec.period,
@@ -470,6 +930,8 @@ def load_one_dataset(spec: DatasetSpec) -> LoadedDataset:
         x_branch=x_branch,
         tprime_branch=tprime_branch,
         mx2_branch=mx2_branch,
+        run_branch=run_branch,
+        runnum=runnum[finite],
         xB=xB[finite],
         minus_tprime_gev2=minus_tprime[finite],
         mx2_gev2=mx2[finite],
@@ -1264,17 +1726,53 @@ def build_output_tables(
     compact_periods: dict[str, Any] = {}
     summaries_by_period: dict[str, Any] = {}
 
+    method_scale_summaries = {
+        period: build_method_scale_summary(
+            central_method1=central_results[period]["method1"],
+            central_method2=central_results[period]["method2"],
+            replica_method1=bootstrap_results[period]["method1"],
+            replica_method2=bootstrap_results[period]["method2"],
+        )
+        for period in PERIODS
+    }
+    global_method_scale_by_cut: list[dict[str, Any]] = []
+    for cut_index, variation in enumerate(CUT_VARIATIONS):
+        period_values = np.asarray(
+            [
+                method_scale_summaries[period]["constant_fits"][cut_index]["value"]
+                for period in PERIODS
+            ],
+            dtype=float,
+        )
+        global_method_scale_by_cut.append(
+            {
+                "cut_variation": variation,
+                "fraction": float(np.nanmean(period_values)),
+                "percent": 100.0 * float(np.nanmean(period_values)),
+                "period_scale_fractions": {
+                    period: float(
+                        method_scale_summaries[period]["constant_fits"][cut_index]["value"]
+                    )
+                    for period in PERIODS
+                },
+                "definition": (
+                    "Arithmetic mean of the three period-specific constant-fit "
+                    "Method-1/Method-2 relative half-difference scales."
+                ),
+                "correlation_scope": (
+                    "One global multiplicative scale fully correlated across "
+                    "all periods and kinematic bins."
+                ),
+            }
+        )
+    # endfor
+
     for p_index, period in enumerate(PERIODS):
         central = central_results[period]
         replicas = bootstrap_results[period]
         recommended_central = 0.5 * (central["method1"] + central["method2"])
         recommended_replicas = 0.5 * (replicas["method1"] + replicas["method2"])
-        method_scale_summary = build_method_scale_summary(
-            central_method1=central["method1"],
-            central_method2=central["method2"],
-            replica_method1=replicas["method1"],
-            replica_method2=replicas["method2"],
-        )
+        method_scale_summary = method_scale_summaries[period]
         summaries = {
             "method1": summarize_replicas(central["method1"], replicas["method1"]),
             "method2": summarize_replicas(central["method2"], replicas["method2"]),
@@ -1322,7 +1820,8 @@ def build_output_tables(
                     summaries["recommended"], (b, cut_index)
                 )
                 scale_fit = method_scale_summary["constant_fits"][cut_index]
-                scale_fraction = float(scale_fit["value"])
+                global_scale = global_method_scale_by_cut[cut_index]
+                scale_fraction = float(global_scale["fraction"])
                 local_relative_half_difference = float(
                     method_scale_summary["relative_half_difference"][
                         b,
@@ -1340,18 +1839,16 @@ def build_output_tables(
                 recommended_record["dilution_model_scale_percent"] = (
                     100.0 * scale_fraction
                 )
-                recommended_record["dilution_model_scale_uncertainty"] = float(
-                    scale_fit["uncertainty"]
-                )
-                recommended_record["dilution_model_scale_chi2"] = float(
-                    scale_fit["chi2"]
-                )
-                recommended_record["dilution_model_scale_ndf"] = int(
-                    scale_fit["ndf"]
-                )
-                recommended_record["dilution_model_scale_chi2_ndf"] = float(
-                    scale_fit["chi2_ndf"]
-                )
+                recommended_record["dilution_model_scale_uncertainty"] = math.nan
+                recommended_record["dilution_model_scale_chi2"] = math.nan
+                recommended_record[
+                    "period_specific_scale_fit_chi2_diagnostic"
+                ] = float(scale_fit["chi2"])
+                recommended_record["dilution_model_scale_ndf"] = 0
+                recommended_record["dilution_model_scale_chi2_ndf"] = math.nan
+                recommended_record[
+                    "period_specific_scale_fit_chi2_ndf_diagnostic"
+                ] = float(scale_fit["chi2_ndf"])
                 recommended_record["dilution_model_systematic"] = (
                     scale_fraction * recommended_record["value"]
                 )
@@ -1369,9 +1866,10 @@ def build_output_tables(
                 )
                 recommended_record["definition"] = (
                     "Average of Method 1 and Method 2. The dilution-model "
-                    "uncertainty is a period-wide multiplicative scale obtained "
-                    "from a constant fit to |f1-f2|/(f1+f2) across all 24 bins. "
-                    "The scale is fully correlated among bins in the period."
+                    "uncertainty is one global multiplicative scale, equal to "
+                    "the arithmetic mean of the three period-specific constant "
+                    "fits to |f1-f2|/(f1+f2). It is fully correlated across all "
+                    "periods and kinematic bins."
                 )
                 pf_bin_record = scalar_record(
                     summaries["packing_fraction_bin"], (b, cut_index)
@@ -1513,20 +2011,19 @@ def build_output_tables(
         # endfor
 
         method_scale_by_cut = {
-            fit["cut_variation"]: {
-                "fraction": float(fit["value"]),
-                "percent": 100.0 * float(fit["value"]),
-                "fit_uncertainty": float(fit["uncertainty"]),
-                "chi2": float(fit["chi2"]),
-                "ndf": int(fit["ndf"]),
-                "chi2_ndf": float(fit["chi2_ndf"]),
-                "number_of_bins": int(fit["number_of_bins"]),
-                "correlation_scope": (
-                    "Fully correlated among all 24 kinematic bins within "
-                    "this period and cut variation."
+            global_fit["cut_variation"]: {
+                "fraction": float(global_fit["fraction"]),
+                "percent": float(global_fit["percent"]),
+                "period_specific_scale_fraction_diagnostic": float(
+                    method_scale_summary["constant_fits"][cut_index]["value"]
                 ),
+                "period_specific_scale_percent_diagnostic": 100.0 * float(
+                    method_scale_summary["constant_fits"][cut_index]["value"]
+                ),
+                "correlation_scope": global_fit["correlation_scope"],
+                "definition": global_fit["definition"],
             }
-            for fit in method_scale_summary["constant_fits"]
+            for cut_index, global_fit in enumerate(global_method_scale_by_cut)
         }
         master_periods[period] = {
             "charge_fractions": charge_fractions[period],
@@ -1551,6 +2048,9 @@ def build_output_tables(
         }
     # endfor
 
+    summaries_by_period["_global_method_scale_by_cut"] = (
+        global_method_scale_by_cut
+    )
     frame = pd.DataFrame(flat_rows)
     return frame, master_periods, compact_periods, summaries_by_period
 
@@ -1578,7 +2078,7 @@ def write_covariance_products(
                 cut_samples = samples[:, :, cut_index]
                 covariance = pairwise_covariance(cut_samples)
                 correlation = covariance_to_correlation(covariance)
-                stem = f"{method_key}_{period}_{variation}_v5"
+                stem = f"{method_key}_{period}_{variation}_v7"
                 cov_path = output_dir / f"{stem}_covariance.json"
                 corr_path = output_dir / f"{stem}_correlation.json"
                 write_json(
@@ -1652,7 +2152,7 @@ def plot_three_method_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v5.png"
+    path = output_dir / f"three_method_comparison_{period}_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1697,7 +2197,7 @@ def plot_three_period_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_period_comparison_{method_key}_v5.png"
+    path = output_dir / f"three_period_comparison_{method_key}_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1741,7 +2241,7 @@ def plot_packing_fraction_summary(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v5.png"
+    path = output_dir / f"packing_fraction_summary_{period}_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1767,7 +2267,7 @@ def plot_method1_control_summary(
     ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.00 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v5.png"
+    path = output_dir / "method1_period_carbon_scales_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1809,7 +2309,7 @@ def plot_nominal_method_comparison(
     ax.legend(ncol=3)
     ax.set_title(f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison")
     fig.tight_layout()
-    path = output_dir / f"nominal_method_comparison_{period}_v5.png"
+    path = output_dir / f"nominal_method_comparison_{period}_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1853,7 +2353,7 @@ def plot_nominal_period_comparison(
         "Nominal-cut run-period comparison — " + method_titles[method_key]
     )
     fig.tight_layout()
-    path = output_dir / f"nominal_period_comparison_{method_key}_v5.png"
+    path = output_dir / f"nominal_period_comparison_{method_key}_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1893,7 +2393,7 @@ def plot_nominal_packing_fraction_period_comparison(
     ax.legend(ncol=3)
     ax.set_title("Nominal-cut packing-fraction comparison by run period")
     fig.tight_layout()
-    path = output_dir / "nominal_packing_fraction_period_comparison_v5.png"
+    path = output_dir / "nominal_packing_fraction_period_comparison_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1914,6 +2414,10 @@ def plot_nominal_method_differences(
     bins = np.arange(1, NUMBER_OF_BINS + 1)
     nominal_index = CUT_VARIATIONS.index("nominal")
     fig, axes = plt.subplots(3, 1, figsize=(17, 13), sharex=True)
+    global_scale = summaries_by_period[
+        "_global_method_scale_by_cut"
+    ][nominal_index]
+    global_percent = float(global_scale["percent"])
 
     for ax, period in zip(axes, PERIODS):
         scale_summary = summaries_by_period[period]["method_scale"]
@@ -1946,7 +2450,13 @@ def plot_nominal_method_differences(
         ax.axhline(
             fit_percent,
             linewidth=1.2,
-            label=f"Constant fit: {fit_percent:.2f}%",
+            label=f"Period constant fit: {fit_percent:.2f}%",
+        )
+        ax.axhline(
+            global_percent,
+            linewidth=1.0,
+            linestyle="--",
+            label=f"Adopted global scale: {global_percent:.2f}%",
         )
         if np.isfinite(fit_error_percent):
             ax.axhspan(
@@ -1970,10 +2480,11 @@ def plot_nominal_method_differences(
     axes[-1].set_xlabel("Combined kinematic-bin number")
     axes[-1].set_xticks(bins)
     fig.suptitle(
-        "Nominal Method-1/Method-2 dilution-model scale systematic"
+        "Nominal Method-1/Method-2 relative half-difference "
+        f"(adopted global scale: {global_percent:.2f}%)"
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / "nominal_method_scale_systematic_v5.png"
+    path = output_dir / "nominal_method_scale_systematic_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1983,31 +2494,22 @@ def plot_nominal_recommended_dilution(
     output_dir: Path,
     summaries_by_period: dict[str, Any],
 ) -> str:
-    """
-    Plot recommended averages with statistical bars and correlated scale bands.
-
-    The translucent envelope for each period uses the same period color and
-    represents one fully correlated fractional scale uncertainty, not
-    independent point-to-point errors.
-    """
+    """Plot recommended averages with statistical bars only."""
     ensure_directory(output_dir)
     bins = np.arange(1, NUMBER_OF_BINS + 1)
     offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
     nominal_index = CUT_VARIATIONS.index("nominal")
+    global_scale = summaries_by_period[
+        "_global_method_scale_by_cut"
+    ][nominal_index]
     fig, ax = plt.subplots(figsize=(17, 6.5))
 
     for period in PERIODS:
         rec = summaries_by_period[period]["recommended"]
-        scale_summary = summaries_by_period[period]["method_scale"]
-        scale_fraction = float(
-            scale_summary["constant_fits"][nominal_index]["value"]
-        )
         values = rec["central"][:, nominal_index]
         stat = rec["stat_uncertainty"][:, nominal_index]
-        systematic = scale_fraction * values
         x = bins + offsets[period]
-
-        line = ax.errorbar(
+        ax.errorbar(
             x,
             values,
             yerr=stat,
@@ -2015,19 +2517,7 @@ def plot_nominal_recommended_dilution(
             linestyle="none",
             markersize=4,
             capsize=2,
-            label=(
-                f"{PERIOD_LABELS[period]} "
-                f"({100.0 * scale_fraction:.2f}% scale)"
-            ),
-        )
-        color = line[0].get_color()
-        ax.fill_between(
-            x,
-            values - systematic,
-            values + systematic,
-            color=color,
-            alpha=0.14,
-            step="mid",
+            label=PERIOD_LABELS[period],
         )
     # endfor
 
@@ -2039,11 +2529,11 @@ def plot_nominal_recommended_dilution(
     ax.legend(ncol=3)
     ax.set_title(
         "Nominal recommended dilution factor: Method-1/Method-2 average\n"
-        "error bars: statistical; same-color envelopes: "
-        "period-wide correlated method-scale systematic"
+        f"error bars: statistical; global correlated dilution-model scale: "
+        f"{global_scale['percent']:.2f}%"
     )
     fig.tight_layout()
-    path = output_dir / "nominal_recommended_dilution_factor_v5.png"
+    path = output_dir / "nominal_recommended_dilution_factor_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2157,6 +2647,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Worker processes; hard-capped at 7 (default: 7).",
     )
     parser.add_argument(
+        "--epoch-definitions",
+        type=Path,
+        default=DEFAULT_EPOCH_DEFINITIONS,
+        help=(
+            "XLSX run/target/polarization epoch table located beside the "
+            "script by default."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=DEFAULT_OUTPUT_DIR,
@@ -2188,7 +2687,16 @@ def main() -> int:
     tables_dir = output_dir / "tables"
     covariance_dir = output_dir / "covariance"
     plots_dir = output_dir / "plots"
-    for directory in (output_dir, tables_dir, covariance_dir, plots_dir):
+    epoch_dir = output_dir / "epochs"
+    epoch_plots_dir = epoch_dir / "plots"
+    for directory in (
+        output_dir,
+        tables_dir,
+        covariance_dir,
+        plots_dir,
+        epoch_dir,
+        epoch_plots_dir,
+    ):
         ensure_directory(directory)
     # endfor
 
@@ -2210,7 +2718,9 @@ def main() -> int:
     print("=" * 78)
     print(f"Working directory:       {Path.cwd()}")
     print(f"Exclusivity JSON:        {cut_json}")
+    epoch_path = args.epoch_definitions.resolve()
     print(f"Output directory:        {output_dir}")
+    print(f"Epoch definitions:       {epoch_path}")
     print(f"Tree:                    {args.tree}")
     print(f"Workers:                 {workers} (hard maximum {MAXIMUM_WORKERS})")
     print(f"Poisson replicas/period: {args.replicas:,}")
@@ -2228,7 +2738,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v5.csv"
+    count_path = tables_dir / "target_counts_all_selections_v7.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -2255,8 +2765,35 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v5.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods_v7.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
+
+    epoch_definitions = read_epoch_spreadsheet(epoch_path)
+    epoch_frame = calculate_epoch_diagnostics(
+        loaded=loaded,
+        observed_counts=observed_counts,
+        cuts=cuts,
+        charge_fractions=charge_fractions,
+        definitions=epoch_definitions,
+        control_min_gev2=args.control_min,
+        control_max_gev2=args.control_max,
+        replicas=args.replicas,
+        seed=args.seed,
+    )
+    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics_v7.csv"
+    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics_v7.json"
+    epoch_frame.to_csv(epoch_csv_path, index=False)
+    write_json(
+        epoch_json_path,
+        {
+            "definition": (
+                "NH3 epochs are read from the supplied run table. Epoch "
+                "exposure fractions partition the period-wide NH3 charge "
+                "fraction using the spreadsheet Number of Events column."
+            ),
+            "rows": epoch_frame.to_dict(orient="records"),
+        },
+    )
 
     covariance_manifest = write_covariance_products(
         covariance_dir,
@@ -2268,11 +2805,14 @@ def main() -> int:
         plot_paths = write_plots(
             plots_dir, central_results, summaries_by_period, bootstrap_results
         )
+        plot_paths.extend(
+            plot_epoch_diagnostics(epoch_frame, epoch_plots_dir)
+        )
     # endif
 
     provenance = {
         "script": Path(__file__).name,
-        "schema_version": 5,
+        "schema_version": 7,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -2283,6 +2823,12 @@ def main() -> int:
         "exclusivity_json": str(cut_json),
         "exclusivity_json_sha256": sha256_file(cut_json),
         "control_region_gev2": [args.control_min, args.control_max],
+        "epoch_definitions_xlsx": str(epoch_path),
+        "epoch_definitions_xlsx_sha256": sha256_file(epoch_path),
+        "epoch_exposure_proxy": (
+            "Spreadsheet Number of Events partitions the period-wide NH3 "
+            "charge fraction among epochs."
+        ),
         "root_inputs": {
             period: {
                 target: {
@@ -2291,6 +2837,7 @@ def main() -> int:
                         "xB": loaded[(period, target)].x_branch,
                         "tprime": loaded[(period, target)].tprime_branch,
                         "Mx2": loaded[(period, target)].mx2_branch,
+                        "runnum": loaded[(period, target)].run_branch,
                     },
                 }
                 for target in TARGETS
@@ -2298,6 +2845,9 @@ def main() -> int:
             for period in PERIODS
         },
         "charge_fractions": charge_fractions,
+        "global_dilution_model_scale_by_cut": summaries_by_period[
+            "_global_method_scale_by_cut"
+        ],
         "equation_coefficients": EQ10_EQ11_EQ14_COEFFICIENTS,
         "method1_definition": (
             "Exact channel-selection raw-count normalization pooled over all "
@@ -2318,7 +2868,7 @@ def main() -> int:
     }
 
     master_payload = {
-        "schema_version": 5,
+        "schema_version": 7,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
             "All three methods are active. Method 2 uses the exact thermally corrected "
@@ -2334,15 +2884,20 @@ def main() -> int:
         },
         "cut_variations": list(CUT_VARIATIONS),
         "provenance": provenance,
+        "global_dilution_model_scale_by_cut": summaries_by_period[
+            "_global_method_scale_by_cut"
+        ],
+        "epoch_diagnostics_csv": str(epoch_csv_path),
+        "epoch_diagnostics_json": str(epoch_json_path),
         "periods": master_periods,
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v5.json"
+    master_json_path = output_dir / "dilution_factors_v7.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
-        "schema_version": 5,
+        "schema_version": 7,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
         "recommended_nominal_method": "average_of_method1_and_method2",
         "note": (
@@ -2350,24 +2905,30 @@ def main() -> int:
             "The recommended dilution factor is the average of Methods 1 and 2. "
             "Its statistical uncertainty is propagated with common bootstrap "
             "replicas. The Method-1/Method-2 disagreement is represented by a "
-            "period-wide multiplicative scale systematic obtained from a constant "
-            "fit to |f1-f2|/(f1+f2) across the 24 nominal bins; it is fully "
-            "correlated among bins. No exclusivity-cut systematic is assigned "
+            "single global multiplicative scale systematic obtained by averaging "
+            "the three period-specific constant fits to |f1-f2|/(f1+f2); it is "
+            "fully correlated across all periods and bins. No exclusivity-cut "
+            "systematic is assigned "
             "at this stage."
         ),
         "binning": master_payload["binning"],
+        "global_dilution_model_scale_by_cut": summaries_by_period[
+            "_global_method_scale_by_cut"
+        ],
+        "epoch_diagnostics_json": str(epoch_json_path),
         "periods": compact_periods,
         "source_master_json": str(master_json_path),
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v5.json"
+    compact_json_path = output_dir / "dilution_factors_production_v7.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v5.json"
+    configuration_path = output_dir / "configuration_v7.json"
     write_json(configuration_path, provenance)
 
     print()
+    print(f"Epoch diagnostics:  {epoch_csv_path}")
     print("Dilution-factor calculation complete.")
     print(f"  Master JSON:       {master_json_path}")
     print(f"  Downstream JSON:   {compact_json_path}")
