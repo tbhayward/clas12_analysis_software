@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v11.py
+determine_dilution_factor_v12.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -1152,58 +1152,146 @@ def plot_epoch_diagnostics(
     frame: pd.DataFrame,
     output_dir: Path,
 ) -> list[str]:
-    """Plot recommended dilution factor and packing fraction by NH3 epoch."""
+    """
+    Plot epoch diagnostics on one common epoch-number axis from 1 through 24.
+
+    Periods are distinguished by color. Colored dash-dot vertical boundaries
+    mark the run-period ranges, and inverse-variance weighted period averages
+    are shown as horizontal lines with one-standard-deviation bands.
+    """
     ensure_directory(output_dir)
     paths: list[str] = []
-    for quantity, error, ylabel, stem in (
+
+    period_colors = {
+        "su22": "tab:blue",
+        "fa22": "tab:orange",
+        "sp23": "tab:green",
+    }
+    period_epoch_ranges = {
+        "su22": (1, 12),
+        "fa22": (13, 21),
+        "sp23": (22, 24),
+    }
+
+    plot_frame = frame.copy()
+    plot_frame["epoch_number"] = plot_frame["epoch"].map(
+        lambda value: int(
+            re.search(r"(\d+)", str(value)).group(1)
+        )
+    )
+
+    for quantity, error, ylabel, stem, title in (
         (
             "recommended_dilution_factor",
             "recommended_stat_uncertainty",
             "Recommended dilution factor",
-            "dilution_factor_by_epoch_v11.png",
+            "dilution_factor_by_epoch_v12.png",
+            "Recommended dilution factor versus NH$_3$ target/polarization epoch",
         ),
         (
             "packing_fraction",
             "packing_fraction_stat_uncertainty",
             "Packing fraction",
-            "packing_fraction_by_epoch_v11.png",
+            "packing_fraction_by_epoch_v12.png",
+            "Packing fraction versus NH$_3$ target/polarization epoch",
         ),
     ):
-        fig, axes = plt.subplots(3, 1, figsize=(17, 12), sharex=False)
-        for ax, period in zip(axes, PERIODS):
-            subset = frame[frame["period"] == period].sort_values("run_min")
-            x = np.arange(len(subset))
+        fig, ax = plt.subplots(figsize=(16, 8))
+
+        for period in PERIODS:
+            subset = plot_frame[
+                plot_frame["period"] == period
+            ].sort_values("epoch_number")
+            if subset.empty:
+                continue
+            # endif
+
+            color = period_colors[period]
+            x = subset["epoch_number"].to_numpy(dtype=float)
+            y = subset[quantity].to_numpy(dtype=float)
+            yerr = subset[error].to_numpy(dtype=float)
+
             ax.errorbar(
                 x,
-                subset[quantity],
-                yerr=subset[error],
-                marker="o",
+                y,
+                yerr=yerr,
+                marker="s",
                 linestyle="none",
+                markersize=5,
                 capsize=3,
+                color="black",
+                ecolor="black",
+                label=None,
+                zorder=4,
             )
-            ax.set_xticks(x)
-            ax.set_xticklabels(
-                [
-                    f"{row.epoch}\n{row.run_min}-{row.run_max}"
-                    for row in subset.itertuples(index=False)
-                ],
-                rotation=35,
-                ha="right",
+
+            valid = (
+                np.isfinite(y)
+                & np.isfinite(yerr)
+                & (yerr > 0.0)
             )
-            ax.set_ylabel(ylabel)
-            ax.set_title(PERIOD_LABELS[period])
-            ax.grid(alpha=0.25)
+            if np.count_nonzero(valid) >= 1:
+                weights = 1.0 / yerr[valid] ** 2
+                weighted_mean = float(
+                    np.sum(weights * y[valid]) / np.sum(weights)
+                )
+                weighted_error = math.sqrt(
+                    1.0 / float(np.sum(weights))
+                )
+                epoch_min, epoch_max = period_epoch_ranges[period]
+                ax.hlines(
+                    weighted_mean,
+                    epoch_min,
+                    epoch_max,
+                    color=color,
+                    linewidth=1.6,
+                    label=(
+                        f"{PERIOD_LABELS[period]} weighted mean"
+                    ),
+                    zorder=2,
+                )
+                ax.fill_between(
+                    [epoch_min, epoch_max],
+                    weighted_mean - weighted_error,
+                    weighted_mean + weighted_error,
+                    color=color,
+                    alpha=0.16,
+                    zorder=1,
+                )
+            # endif
+
+            epoch_min, epoch_max = period_epoch_ranges[period]
+            ax.axvline(
+                epoch_min - 0.5,
+                color=color,
+                linestyle="-.",
+                linewidth=1.4,
+                zorder=0,
+            )
+            ax.axvline(
+                epoch_max + 0.5,
+                color=color,
+                linestyle="-.",
+                linewidth=1.4,
+                zorder=0,
+            )
         # endfor
-        axes[-1].set_xlabel("NH$_3$ epoch (run range)")
-        fig.suptitle(
-            f"{ylabel} versus NH$_3$ target/polarization epoch"
-        )
-        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
+
+        ax.set_xlim(0.5, 24.5)
+        ax.set_xticks(np.arange(1, 25))
+        ax.set_xlabel("NH$_3$ epoch")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(alpha=0.25, linestyle="--")
+        ax.legend(ncol=3, loc="best")
+        fig.tight_layout()
+
         path = output_dir / stem
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
     # endfor
+
     return paths
 
 
@@ -2402,7 +2490,7 @@ def write_covariance_products(
                 cut_samples = samples[:, :, cut_index]
                 covariance = pairwise_covariance(cut_samples)
                 correlation = covariance_to_correlation(covariance)
-                stem = f"{method_key}_{period}_{variation}_v11"
+                stem = f"{method_key}_{period}_{variation}_v12"
                 cov_path = output_dir / f"{stem}_covariance.json"
                 corr_path = output_dir / f"{stem}_correlation.json"
                 write_json(
@@ -2476,7 +2564,7 @@ def plot_three_method_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v11.png"
+    path = output_dir / f"three_method_comparison_{period}_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2521,7 +2609,7 @@ def plot_three_period_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_period_comparison_{method_key}_v11.png"
+    path = output_dir / f"three_period_comparison_{method_key}_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2565,7 +2653,7 @@ def plot_packing_fraction_summary(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v11.png"
+    path = output_dir / f"packing_fraction_summary_{period}_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2591,7 +2679,7 @@ def plot_method1_control_summary(
     ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.00 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v11.png"
+    path = output_dir / "method1_period_carbon_scales_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2633,7 +2721,7 @@ def plot_nominal_method_comparison(
     ax.legend(ncol=3)
     ax.set_title(f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison")
     fig.tight_layout()
-    path = output_dir / f"nominal_method_comparison_{period}_v11.png"
+    path = output_dir / f"nominal_method_comparison_{period}_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2677,7 +2765,7 @@ def plot_nominal_period_comparison(
         "Nominal-cut run-period comparison — " + method_titles[method_key]
     )
     fig.tight_layout()
-    path = output_dir / f"nominal_period_comparison_{method_key}_v11.png"
+    path = output_dir / f"nominal_period_comparison_{method_key}_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2717,7 +2805,7 @@ def plot_nominal_packing_fraction_period_comparison(
     ax.legend(ncol=3)
     ax.set_title("Nominal-cut packing-fraction comparison by run period")
     fig.tight_layout()
-    path = output_dir / "nominal_packing_fraction_period_comparison_v11.png"
+    path = output_dir / "nominal_packing_fraction_period_comparison_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2808,7 +2896,7 @@ def plot_nominal_method_differences(
         f"(adopted global scale: {global_percent:.2f}%)"
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / "nominal_method_scale_systematic_v11.png"
+    path = output_dir / "nominal_method_scale_systematic_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2857,7 +2945,7 @@ def plot_nominal_recommended_dilution(
         f"{global_scale['percent']:.2f}%"
     )
     fig.tight_layout()
-    path = output_dir / "nominal_recommended_dilution_factor_v11.png"
+    path = output_dir / "nominal_recommended_dilution_factor_v12.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -3073,7 +3161,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v11.csv"
+    count_path = tables_dir / "target_counts_all_selections_v12.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -3100,7 +3188,7 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v11.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods_v12.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
 
     epoch_definitions = read_epoch_spreadsheet(epoch_path)
@@ -3116,8 +3204,8 @@ def main() -> int:
         replicas=args.replicas,
         seed=args.seed,
     )
-    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics_v11.csv"
-    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics_v11.json"
+    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics_v12.csv"
+    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics_v12.json"
     epoch_frame.to_csv(epoch_csv_path, index=False)
     write_json(
         epoch_json_path,
@@ -3151,7 +3239,7 @@ def main() -> int:
 
     provenance = {
         "script": Path(__file__).name,
-        "schema_version": 11,
+        "schema_version": 12,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -3214,7 +3302,7 @@ def main() -> int:
     }
 
     master_payload = {
-        "schema_version": 11,
+        "schema_version": 12,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
             "All three methods are active. Method 2 uses the exact thermally corrected "
@@ -3239,11 +3327,11 @@ def main() -> int:
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v11.json"
+    master_json_path = output_dir / "dilution_factors_v12.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
-        "schema_version": 11,
+        "schema_version": 12,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
         "recommended_nominal_method": "average_of_method1_and_method2",
         "note": (
@@ -3267,10 +3355,10 @@ def main() -> int:
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v11.json"
+    compact_json_path = output_dir / "dilution_factors_production_v12.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v11.json"
+    configuration_path = output_dir / "configuration_v12.json"
     write_json(configuration_path, provenance)
 
     print()
