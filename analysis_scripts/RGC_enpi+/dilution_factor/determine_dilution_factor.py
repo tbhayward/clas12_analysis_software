@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v9.py
+determine_dilution_factor_v10.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -73,6 +73,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
+import re
 import zipfile
 import xml.etree.ElementTree as ET
 import math
@@ -1062,13 +1063,13 @@ def plot_epoch_diagnostics(
             "recommended_dilution_factor",
             "recommended_stat_uncertainty",
             "Recommended dilution factor",
-            "dilution_factor_by_epoch_v9.png",
+            "dilution_factor_by_epoch_v10.png",
         ),
         (
             "packing_fraction",
             "packing_fraction_stat_uncertainty",
             "Packing fraction",
-            "packing_fraction_by_epoch_v9.png",
+            "packing_fraction_by_epoch_v10.png",
         ),
     ):
         fig, axes = plt.subplots(3, 1, figsize=(17, 12), sharex=False)
@@ -2304,7 +2305,7 @@ def write_covariance_products(
                 cut_samples = samples[:, :, cut_index]
                 covariance = pairwise_covariance(cut_samples)
                 correlation = covariance_to_correlation(covariance)
-                stem = f"{method_key}_{period}_{variation}_v9"
+                stem = f"{method_key}_{period}_{variation}_v10"
                 cov_path = output_dir / f"{stem}_covariance.json"
                 corr_path = output_dir / f"{stem}_correlation.json"
                 write_json(
@@ -2378,7 +2379,7 @@ def plot_three_method_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v9.png"
+    path = output_dir / f"three_method_comparison_{period}_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2423,7 +2424,7 @@ def plot_three_period_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_period_comparison_{method_key}_v9.png"
+    path = output_dir / f"three_period_comparison_{method_key}_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2467,7 +2468,7 @@ def plot_packing_fraction_summary(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v9.png"
+    path = output_dir / f"packing_fraction_summary_{period}_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2493,7 +2494,7 @@ def plot_method1_control_summary(
     ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.00 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v9.png"
+    path = output_dir / "method1_period_carbon_scales_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2535,7 +2536,7 @@ def plot_nominal_method_comparison(
     ax.legend(ncol=3)
     ax.set_title(f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison")
     fig.tight_layout()
-    path = output_dir / f"nominal_method_comparison_{period}_v9.png"
+    path = output_dir / f"nominal_method_comparison_{period}_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2579,7 +2580,7 @@ def plot_nominal_period_comparison(
         "Nominal-cut run-period comparison — " + method_titles[method_key]
     )
     fig.tight_layout()
-    path = output_dir / f"nominal_period_comparison_{method_key}_v9.png"
+    path = output_dir / f"nominal_period_comparison_{method_key}_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2619,7 +2620,7 @@ def plot_nominal_packing_fraction_period_comparison(
     ax.legend(ncol=3)
     ax.set_title("Nominal-cut packing-fraction comparison by run period")
     fig.tight_layout()
-    path = output_dir / "nominal_packing_fraction_period_comparison_v9.png"
+    path = output_dir / "nominal_packing_fraction_period_comparison_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2710,7 +2711,7 @@ def plot_nominal_method_differences(
         f"(adopted global scale: {global_percent:.2f}%)"
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / "nominal_method_scale_systematic_v9.png"
+    path = output_dir / "nominal_method_scale_systematic_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2759,7 +2760,7 @@ def plot_nominal_recommended_dilution(
         f"{global_scale['percent']:.2f}%"
     )
     fig.tight_layout()
-    path = output_dir / "nominal_recommended_dilution_factor_v9.png"
+    path = output_dir / "nominal_recommended_dilution_factor_v10.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2975,7 +2976,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v9.csv"
+    count_path = tables_dir / "target_counts_all_selections_v10.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -3002,7 +3003,7 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v9.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods_v10.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
 
     epoch_definitions = read_epoch_spreadsheet(epoch_path)
@@ -3018,8 +3019,8 @@ def main() -> int:
         replicas=args.replicas,
         seed=args.seed,
     )
-    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics_v9.csv"
-    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics_v9.json"
+    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics_v10.csv"
+    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics_v10.json"
     epoch_frame.to_csv(epoch_csv_path, index=False)
     write_json(
         epoch_json_path,
@@ -3053,7 +3054,7 @@ def main() -> int:
 
     provenance = {
         "script": Path(__file__).name,
-        "schema_version": 9,
+        "schema_version": 10,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -3116,7 +3117,7 @@ def main() -> int:
     }
 
     master_payload = {
-        "schema_version": 9,
+        "schema_version": 10,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
             "All three methods are active. Method 2 uses the exact thermally corrected "
@@ -3141,11 +3142,11 @@ def main() -> int:
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v9.json"
+    master_json_path = output_dir / "dilution_factors_v10.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
-        "schema_version": 9,
+        "schema_version": 10,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
         "recommended_nominal_method": "average_of_method1_and_method2",
         "note": (
@@ -3169,10 +3170,10 @@ def main() -> int:
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v9.json"
+    compact_json_path = output_dir / "dilution_factors_production_v10.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v9.json"
+    configuration_path = output_dir / "configuration_v10.json"
     write_json(configuration_path, provenance)
 
     print()
