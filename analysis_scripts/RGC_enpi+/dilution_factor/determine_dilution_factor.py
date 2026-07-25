@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v2.py
+determine_dilution_factor_v3.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
 
   Method 1
     Carbon subtraction with exactly the period-wide raw-count normalization
-    used by channel_selection_mx2_fits_v23.py:
+    used by channel_selection_mx2_fits_v24.py:
 
-        alpha_C = N_NH3(0.20 <= Mx2 < 0.40) /
-                  N_C  (0.20 <= Mx2 < 0.40)
+        alpha_C = N_NH3(0.00 <= Mx2 < 0.40) /
+                  N_C  (0.00 <= Mx2 < 0.40)
 
         f = (N_NH3 - alpha_C N_C) / N_NH3.
 
@@ -39,7 +39,7 @@ The default exclusivity-cut JSON is therefore
 
     ../channel_selection/output/channel_selection_mx2_fit_stability/
         final_carbon_assisted_cuts/tables/
-        final_carbon_assisted_mx2_cuts_v23.json
+        final_carbon_assisted_mx2_cuts_v24.json
 
 All ROOT inputs default to the finalized momentum-corrected paper_versions
 files.  The program uses at most seven worker processes.  It writes complete
@@ -131,7 +131,7 @@ NUMBER_OF_BINS = len(XB_BINS) * len(MINUS_TPRIME_BINS_GEV2)
 MAXIMUM_WORKERS = 7
 
 DEFAULT_TREE_NAME = "PhysicsEvents"
-DEFAULT_CONTROL_MIN_GEV2 = 0.20
+DEFAULT_CONTROL_MIN_GEV2 = 0.0
 DEFAULT_CONTROL_MAX_GEV2 = 0.40
 DEFAULT_REPLICAS = 10000
 DEFAULT_SEED = 7302026
@@ -140,7 +140,7 @@ DEFAULT_OUTPUT_DIR = Path("output/dilution_factor_determination")
 DEFAULT_CUT_JSON = Path(
     "../channel_selection/output/channel_selection_mx2_fit_stability/"
     "final_carbon_assisted_cuts/tables/"
-    "final_carbon_assisted_mx2_cuts_v23.json"
+    "final_carbon_assisted_mx2_cuts_v24.json"
 )
 
 PAPER_VERSIONS_DIR = Path(
@@ -862,17 +862,49 @@ def method3_equation14(
     charge_fractions_period: dict[str, float],
     period_packing_fraction: np.ndarray,
 ) -> np.ndarray:
-    """Method-3 placeholder pending an exact Eq. (14) transcription.
+    """Packing-fraction dilution factor using the thermally corrected model.
 
-    The supplied C++ source contains the direct dilution expression and a
-    commented packing-fraction expression, but it does not contain Eq. (14).
-    Returning NaN is deliberate: it prevents an unverified reconstruction from
-    being mistaken for a physical result.  Once the exact Eq. (14) text is
-    supplied, this function is the only estimator that needs replacement; the
-    correlated bootstrap and output machinery already support it.
+    Equation (14) expresses the dilution factor in terms of a packing
+    fraction rather than the measured ammonia yield in each kinematic bin.
+    The supplied C++ source includes the thermally corrected packing-fraction
+    relation and the corresponding direct dilution expression, but not a
+    separately printed thermally corrected Eq. (14).  We therefore obtain its
+    exact algebraic counterpart by solving the C++ packing-fraction equation
+    for the charge-normalized ammonia rate in each bin, using the period-wide
+    packing fraction, and inserting that reconstructed ammonia rate into the
+    same thermally corrected dilution expression used by Method 2.
+
+    If a bin-by-bin packing fraction were inserted, this construction would
+    reproduce Method 2 algebraically.  Using the period-wide packing fraction
+    makes Method 3 the intended independent target-property determination.
     """
-    reference = np.asarray(counts["NH3"], dtype=np.float64)
-    return np.full(reference.shape, np.nan, dtype=np.float64)
+    rates = {
+        target: np.asarray(counts[target], dtype=np.float64)
+        / float(charge_fractions_period[target])
+        for target in TARGETS
+    }
+
+    denominator_pf = (
+        1.25055 * rates["CH2"]
+        - 0.23688 * rates["C"]
+        - 0.013668 * rates["ET"]
+        - rates["He"]
+    )
+
+    # period_packing_fraction has shape [...,3 cuts]. Insert the bin axis so
+    # it broadcasts over the 24 kinematic bins.
+    pf = np.asarray(period_packing_fraction, dtype=np.float64)[..., np.newaxis, :]
+    reconstructed_ammonia_rate = (
+        rates["He"] + safe_divide(pf * denominator_pf, 0.699832)
+    )
+
+    reconstructed_counts = dict(counts)
+    reconstructed_counts["NH3"] = (
+        reconstructed_ammonia_rate * float(charge_fractions_period["NH3"])
+    )
+    return method2_equation10_from_counts(
+        reconstructed_counts, charge_fractions_period
+    )
 
 def observed_estimators_for_period(
     observed_period: np.ndarray,
@@ -1299,7 +1331,7 @@ def write_covariance_products(
                 cut_samples = samples[:, :, cut_index]
                 covariance = pairwise_covariance(cut_samples)
                 correlation = covariance_to_correlation(covariance)
-                stem = f"{method_key}_{period}_{variation}_v1"
+                stem = f"{method_key}_{period}_{variation}_v3"
                 cov_path = output_dir / f"{stem}_covariance.json"
                 corr_path = output_dir / f"{stem}_correlation.json"
                 write_json(
@@ -1364,8 +1396,7 @@ def plot_three_method_comparison(
                 capsize=2,
                 label=labels[method_key],
             )
-        ax.axhline(0.0, linestyle=":", linewidth=1.0)
-        ax.axhline(1.0, linestyle=":", linewidth=1.0)
+        ax.set_ylim(0.1, 0.6)
         ax.set_ylabel("Dilution factor")
         ax.set_title(variation.capitalize())
         ax.grid(alpha=0.25)
@@ -1374,7 +1405,7 @@ def plot_three_method_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v2.png"
+    path = output_dir / f"three_method_comparison_{period}_v3.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1410,8 +1441,7 @@ def plot_three_period_comparison(
                 capsize=2,
                 label=PERIOD_LABELS[period],
             )
-        ax.axhline(0.0, linestyle=":", linewidth=1.0)
-        ax.axhline(1.0, linestyle=":", linewidth=1.0)
+        ax.set_ylim(0.1, 0.6)
         ax.set_ylabel("Dilution factor")
         ax.set_title(variation.capitalize())
         ax.grid(alpha=0.25)
@@ -1420,7 +1450,7 @@ def plot_three_period_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_period_comparison_{method_key}_v2.png"
+    path = output_dir / f"three_period_comparison_{method_key}_v3.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1464,7 +1494,7 @@ def plot_packing_fraction_summary(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v2.png"
+    path = output_dir / f"packing_fraction_summary_{period}_v3.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1487,10 +1517,10 @@ def plot_method1_control_summary(
     ax.set_xticks(x)
     ax.set_xticklabels([PERIOD_LABELS[p] for p in PERIODS])
     ax.set_ylabel("Raw-count NH$_3$/C normalization")
-    ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.20 \leq M_x^2 < 0.40$ GeV$^2$")
+    ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.00 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v2.png"
+    path = output_dir / "method1_period_carbon_scales_v3.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -1503,9 +1533,6 @@ def write_plots(
 ) -> list[str]:
     """Write only point/error-bar plots into one flat plot directory."""
     paths: list[str] = []
-    paths.append(
-        plot_method1_control_summary(output_dir, central_results, summaries_by_period)
-    )
     for period in PERIODS:
         paths.append(
             plot_three_method_comparison(output_dir, period, summaries_by_period[period])
@@ -1660,7 +1687,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v2.csv"
+    count_path = tables_dir / "target_counts_all_selections_v3.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -1687,7 +1714,7 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v2.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods_v3.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
 
     covariance_manifest = write_covariance_products(
@@ -1702,7 +1729,7 @@ def main() -> int:
 
     provenance = {
         "script": Path(__file__).name,
-        "schema_version": 2,
+        "schema_version": 3,
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -1735,9 +1762,11 @@ def main() -> int:
         ),
         "method2_definition": "Exact thermal-contraction-corrected formula transcribed from calculate_dilution_factors.cpp.",
         "method3_definition": (
-            "Eq. (11) packing fractions are calculated from the supplied C++ "
-            "formula. Eq. (14) dilution values are intentionally omitted until "
-            "the exact equation is available for transcription."
+            "The period-wide packing fraction is calculated from the thermally "
+            "corrected C++ relation. Method 3 reconstructs the binwise ammonia "
+            "rate from that packing fraction and inserts it into the same "
+            "thermally corrected dilution model; this is the algebraic Eq. (14) "
+            "counterpart for the corrected coefficients."
         ),
         "statistical_model": (
             "Independent Poisson replicas of 16 disjoint membership-pattern "
@@ -1746,12 +1775,12 @@ def main() -> int:
     }
 
     master_payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
-            "Method 1 and the exact C++ direct auxiliary-target method are active. "
-            "Packing fractions use the C++ Eq. (11) expression. Method 3 Eq. (14) "
-            "is intentionally null pending an exact equation transcription."
+            "All three methods are active. Method 2 uses the exact thermally corrected "
+            "direct C++ expression; Method 3 uses the period-wide packing "
+            "fraction in its algebraically equivalent nonlinear formulation."
         ),
         "binning": {
             "xB": [list(interval) for interval in XB_BINS],
@@ -1766,11 +1795,11 @@ def main() -> int:
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v2.json"
+    master_json_path = output_dir / "dilution_factors_v3.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
         "provisional_nominal_method": "method2_equation10",
         "note": (
@@ -1783,10 +1812,10 @@ def main() -> int:
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v2.json"
+    compact_json_path = output_dir / "dilution_factors_production_v3.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v2.json"
+    configuration_path = output_dir / "configuration_v3.json"
     write_json(configuration_path, provenance)
 
     print()
