@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-extract_structure_function_ratios_v1.py
+extract_structure_function_ratios_v2.py
 
 Initial standalone event-level asymmetry extraction for the RGC exclusive
 e p -> e' n pi+ analysis.
@@ -190,7 +190,7 @@ MAXIMUM_WORKERS = 7
 DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_CHUNK_SIZE = "250 MB"
 DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction")
-DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v1.npz"
+DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v2.npz"
 
 DEFAULT_RUN_INFO_CSV = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
@@ -491,17 +491,37 @@ def parse_run_info_csv(path: Path) -> dict[int, RunRecord]:
         if not (
             math.isfinite(charge_plus)
             and math.isfinite(charge_minus)
-            and charge_plus > 0.0
-            and charge_minus > 0.0
+            and charge_plus >= 0.0
+            and charge_minus >= 0.0
         ):
             raise RuntimeError(
                 f"Run {run} has invalid helicity charges: "
-                f"Q+={charge_plus}, Q-={charge_minus}."
+                f"Q+={charge_plus}, Q-={charge_minus}. Charges must be "
+                "finite and nonnegative."
             )
         # endif
-        if not math.isfinite(target_polarization) or target_polarization == 0.0:
+
+        disabled_by_qa = charge_plus == 0.0 and charge_minus == 0.0
+        only_one_helicity_disabled = (charge_plus == 0.0) != (charge_minus == 0.0)
+        if only_one_helicity_disabled:
             raise RuntimeError(
-                f"Run {run} has invalid target polarization "
+                f"Run {run} has only one zero helicity charge: "
+                f"Q+={charge_plus}, Q-={charge_minus}. The current likelihood "
+                "expects either two positive helicity charges or a fully "
+                "QA-disabled run with both charges set to zero."
+            )
+        # endif
+
+        # Fully QA-disabled runs are intentionally retained in the CSV with
+        # Q+ = Q- = 0.  They are valid bookkeeping rows but must never enter
+        # the likelihood.  A nonzero finite target polarization is required
+        # only for active runs.
+        if not disabled_by_qa and (
+            not math.isfinite(target_polarization)
+            or target_polarization == 0.0
+        ):
+            raise RuntimeError(
+                f"Active run {run} has invalid target polarization "
                 f"{target_polarization}."
             )
         # endif
@@ -517,8 +537,16 @@ def parse_run_info_csv(path: Path) -> dict[int, RunRecord]:
     # endfor
 
     for period in PERIODS:
-        if not any(record.period == period for record in records.values()):
-            raise RuntimeError(f"No NH3 run records found for {period}.")
+        if not any(
+            record.period == period
+            and record.charge_plus > 0.0
+            and record.charge_minus > 0.0
+            for record in records.values()
+        ):
+            raise RuntimeError(
+                f"No active NH3 run records with positive Q+ and Q- were "
+                f"found for {period}."
+            )
         # endif
     # endfor
 
@@ -534,7 +562,11 @@ def run_state_arrays(
             (
                 record
                 for record in run_records.values()
-                if record.period == period
+                if (
+                    record.period == period
+                    and record.charge_plus > 0.0
+                    and record.charge_minus > 0.0
+                )
             ),
             key=lambda record: record.run,
         )
@@ -887,6 +919,9 @@ def build_event_cache(
         total_selected = 0
         total_zero_helicity = 0
         total_missing_run = 0
+        total_zero_charge_run_events = 0
+        missing_run_event_counts: dict[int, int] = {}
+        zero_charge_run_event_counts: dict[int, int] = {}
 
         source = f"{path}:{tree_name}"
         for arrays in uproot.iterate(
@@ -946,8 +981,59 @@ def build_event_cache(
                 count=runnum.size,
                 dtype=bool,
             )
-            total_missing_run += int(np.count_nonzero(~known_run))
+            active_run = np.fromiter(
+                (
+                    int(run) in run_records
+                    and run_records[int(run)].period == period
+                    and run_records[int(run)].charge_plus > 0.0
+                    and run_records[int(run)].charge_minus > 0.0
+                    for run in runnum
+                ),
+                count=runnum.size,
+                dtype=bool,
+            )
+            zero_charge_run = known_run & ~active_run
+
+            missing_mask = ~known_run
+            total_missing_run += int(np.count_nonzero(missing_mask))
+            total_zero_charge_run_events += int(
+                np.count_nonzero(zero_charge_run)
+            )
             total_zero_helicity += int(np.count_nonzero(helicity == 0))
+
+            if np.any(missing_mask):
+                missing_runs, missing_counts = np.unique(
+                    runnum[missing_mask],
+                    return_counts=True,
+                )
+                for missing_run, missing_count in zip(
+                    missing_runs,
+                    missing_counts,
+                ):
+                    key = int(missing_run)
+                    missing_run_event_counts[key] = (
+                        missing_run_event_counts.get(key, 0)
+                        + int(missing_count)
+                    )
+                # endfor
+            # endif
+
+            if np.any(zero_charge_run):
+                disabled_runs, disabled_counts = np.unique(
+                    runnum[zero_charge_run],
+                    return_counts=True,
+                )
+                for disabled_run, disabled_count in zip(
+                    disabled_runs,
+                    disabled_counts,
+                ):
+                    key = int(disabled_run)
+                    zero_charge_run_event_counts[key] = (
+                        zero_charge_run_event_counts.get(key, 0)
+                        + int(disabled_count)
+                    )
+                # endfor
+            # endif
 
             finite = (
                 np.isfinite(xB)
@@ -965,7 +1051,7 @@ def build_event_cache(
             )
             base = (
                 finite
-                & known_run
+                & active_run
                 & np.isin(helicity, (-1, 1))
                 & (bin_number >= 1)
                 & (dep_a > 0.0)
@@ -1012,11 +1098,47 @@ def build_event_cache(
             collected["rW"].append(dep_w[selected] / dep_a[selected])
         # endfor
 
+        if missing_run_event_counts:
+            details = ", ".join(
+                f"{run}: {count:,} events"
+                for run, count in sorted(missing_run_event_counts.items())
+            )
+            raise RuntimeError(
+                f"{period} ROOT input contains events from runs absent from "
+                f"the NH3 section of the run-information CSV: {details}."
+            )
+        # endif
+
+        if zero_charge_run_event_counts:
+            details = ", ".join(
+                f"{run}: {count:,} events"
+                for run, count in sorted(
+                    zero_charge_run_event_counts.items()
+                )
+            )
+            raise RuntimeError(
+                f"{period} ROOT input contains events from QA-disabled runs "
+                f"whose CSV charges are Q+=Q-=0: {details}. Zero-charge rows "
+                "are allowed in clas12_run_info.csv, but no event from those "
+                "runs may enter the ROOT input used for asymmetry extraction."
+            )
+        # endif
+
         period_statistics[period] = {
             "events_seen": total_seen,
             "events_selected": total_selected,
             "helicity_zero_events_ignored": total_zero_helicity,
             "events_with_missing_run_info": total_missing_run,
+            "events_from_zero_charge_runs": total_zero_charge_run_events,
+            "active_runs_in_likelihood": sum(
+                1
+                for record in run_records.values()
+                if (
+                    record.period == period
+                    and record.charge_plus > 0.0
+                    and record.charge_minus > 0.0
+                )
+            ),
         }
     # endfor
 
@@ -1767,7 +1889,7 @@ def plot_parameter_summaries(
         ax.grid(alpha=0.25)
         ax.legend()
         fig.tight_layout()
-        path = output_dir / f"{parameter}_summary_v1.png"
+        path = output_dir / f"{parameter}_summary_v2.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2058,14 +2180,14 @@ def main() -> int:
 
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
-    csv_path = tables_dir / "structure_function_ratios_v1.csv"
+    csv_path = tables_dir / "structure_function_ratios_v2.csv"
     frame.to_csv(csv_path, index=False)
 
-    detailed_json_path = json_dir / "structure_function_ratios_v1.json"
+    detailed_json_path = json_dir / "structure_function_ratios_v2.json"
     write_json(
         detailed_json_path,
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "fit_policy": (
@@ -2118,16 +2240,16 @@ def main() -> int:
             continue
         # endif
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v1.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v2.npy",
             np.asarray(nominal["covariance"], dtype=np.float64),
         )
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v1.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v2.npy",
             np.asarray(nominal["correlation"], dtype=np.float64),
         )
     # endfor
 
-    latex_path = latex_dir / "structure_function_ratios_v1.tex"
+    latex_path = latex_dir / "structure_function_ratios_v2.tex"
     write_latex_table(frame, latex_path)
 
     plot_paths: list[str] = []
@@ -2135,11 +2257,11 @@ def main() -> int:
         plot_paths = plot_parameter_summaries(frame, plots_dir)
     # endif
 
-    manifest_path = output_dir / "asymmetry_extraction_manifest_v1.json"
+    manifest_path = output_dir / "asymmetry_extraction_manifest_v2.json"
     write_json(
         manifest_path,
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "script": str(Path(__file__).resolve()),
             "workers": workers,
             "products": {
