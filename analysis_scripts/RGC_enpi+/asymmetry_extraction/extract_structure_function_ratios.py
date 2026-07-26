@@ -3035,7 +3035,17 @@ def plot_period_consistency_heatmap(
 def write_latex_table(
     frame: pd.DataFrame,
     path: Path,
+    *,
+    include_target_axis_uncertainty: bool,
+    sample_variant: str,
 ) -> None:
+    """Write a LaTeX table appropriate for the selected sample variant.
+
+    The nominal extraction includes the target-axis envelope as a second
+    uncertainty.  The ISR extraction intentionally omits the target-axis
+    study, so its table contains only the statistical uncertainty rather than
+    attempting to convert the corresponding ``None`` values to floats.
+    """
     ensure_directory(path.parent)
     lines = [
         r"\begin{table}[htbp]",
@@ -3060,26 +3070,44 @@ def write_latex_table(
         for parameter in PHYSICS_PARAMETERS:
             value = float(getattr(row, parameter))
             stat = float(getattr(row, f"{parameter}_stat"))
-            axis = float(getattr(row, f"{parameter}_target_axis_sys"))
-            entries.append(
-                rf"${value:.5f}\pm{stat:.5f}\pm{axis:.5f}$"
-            )
+            if include_target_axis_uncertainty:
+                axis_raw = getattr(row, f"{parameter}_target_axis_sys")
+                axis = float(axis_raw)
+                entries.append(
+                    rf"${value:.5f}\pm{stat:.5f}\pm{axis:.5f}$"
+                )
+            else:
+                entries.append(rf"${value:.5f}\pm{stat:.5f}$")
+            # endif
         # endfor
         lines.append(" & ".join(entries) + r" \\")
     # endfor
+
+    if include_target_axis_uncertainty:
+        caption = (
+            r"Nominal simultaneous unbinned-likelihood results. "
+            r"The first uncertainty is statistical and includes the "
+            r"Gaussian-constrained dilution-factor statistical uncertainty. "
+            r"The second is the target-axis treatment envelope. "
+            r"Polarization and dilution-model scale uncertainties are not "
+            r"included."
+        )
+    else:
+        caption = (
+            rf"{sample_variant.upper()} simultaneous unbinned-likelihood "
+            r"diagnostic results. The quoted uncertainty is statistical and "
+            r"includes the Gaussian-constrained dilution-factor statistical "
+            r"uncertainty. No target-axis envelope is evaluated for the ISR "
+            r"sample. Polarization and dilution-model scale uncertainties "
+            r"are not included."
+        )
+    # endif
 
     lines.extend(
         [
             r"\hline",
             r"\end{tabular}",
-            (
-                r"\caption{Nominal simultaneous unbinned-likelihood results. "
-                r"The first uncertainty is statistical and includes the "
-                r"Gaussian-constrained dilution-factor statistical uncertainty. "
-                r"The second is the target-axis treatment envelope. "
-                r"Polarization and dilution-model scale uncertainties are not "
-                r"included.}"
-            ),
+            rf"\caption{{{caption}}}",
             r"\end{table}",
         ]
     )
@@ -3268,7 +3296,12 @@ def run_analysis_variant(
         # endif
     # endfor
     latex_path = latex_dir / "structure_function_ratios.tex"
-    write_latex_table(frame, latex_path)
+    write_latex_table(
+        frame,
+        latex_path,
+        include_target_axis_uncertainty=include_target_axis_study,
+        sample_variant=sample_variant,
+    )
     plot_paths = {"all_bins": [], "aggregated": [], "aggregated_by_period": [], "target_axis_variants": [], "period_stability": []}
     if not skip_plots:
         plot_paths["all_bins"] = plot_parameter_summaries(frame, all_bins_plots_dir)
