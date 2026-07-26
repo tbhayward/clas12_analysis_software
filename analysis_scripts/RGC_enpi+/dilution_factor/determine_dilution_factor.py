@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v7.py
+determine_dilution_factor_v8.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -162,6 +162,20 @@ DEFAULT_INPUTS: dict[str, dict[str, Path]] = {
     }
     for period in PERIODS
 }
+
+DEFAULT_ISR_INPUTS: dict[str, dict[str, Path]] = {
+    period: {
+        target: PAPER_VERSIONS_DIR
+        / f"rgc_{period}_inb_{target}_epi+_ISR_mom_corrections.root"
+        for target in TARGETS
+    }
+    for period in PERIODS
+}
+
+DEFAULT_CHANNEL_SELECTION_MANIFEST = Path(
+    "../channel_selection/output/channel_selection_mx2_fit_stability/"
+    "channel_selection_manifest.json"
+)
 
 # Relative accumulated-charge fractions supplied for this analysis.  They are
 # sufficient because the auxiliary-target equations are homogeneous in the
@@ -375,6 +389,62 @@ def parse_input_override(text: str) -> tuple[str, str, Path]:
         )
     # endif
     return period, target_lookup[target.strip().lower()], Path(path_text).expanduser()
+
+
+
+def resolve_isr_cut_json(
+    explicit_path: Path | None,
+    channel_selection_manifest: Path,
+) -> Path:
+    """
+    Resolve the ISR-specific channel-selection cut JSON.
+
+    Preference order:
+      1. --isr-exclusivity-json
+      2. channel-selection manifest diagnostics/retained ISR manifest
+      3. ../channel_selection/.../isr/analysis_variant_manifest.json
+    """
+    if explicit_path is not None:
+        path = explicit_path.expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Explicit ISR cut JSON does not exist: {path}")
+        return path
+
+    manifest_path = channel_selection_manifest.expanduser().resolve()
+    candidate_variant_manifest: Path | None = None
+    if manifest_path.is_file():
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        retained = payload.get("retained_analysis_products", {})
+        isr_root = retained.get("isr")
+        if isr_root:
+            candidate_variant_manifest = Path(isr_root) / "analysis_variant_manifest.json"
+
+    if candidate_variant_manifest is None:
+        candidate_variant_manifest = (
+            manifest_path.parent / "isr" / "analysis_variant_manifest.json"
+        )
+
+    if not candidate_variant_manifest.is_file():
+        raise FileNotFoundError(
+            "Could not locate the ISR channel-selection variant manifest. "
+            f"Checked: {candidate_variant_manifest}. Run channel selection with "
+            "its ISR workflow first, or pass --isr-exclusivity-json explicitly."
+        )
+
+    variant_payload = json.loads(
+        candidate_variant_manifest.read_text(encoding="utf-8")
+    )
+    cut_json_text = variant_payload.get("final_cut_json")
+    if not cut_json_text:
+        raise RuntimeError(
+            f"ISR variant manifest has no final_cut_json: {candidate_variant_manifest}"
+        )
+    cut_path = Path(cut_json_text).expanduser().resolve()
+    if not cut_path.is_file():
+        raise FileNotFoundError(
+            f"ISR cut JSON listed in the variant manifest does not exist: {cut_path}"
+        )
+    return cut_path
 
 
 def validate_fraction_table(fractions: dict[str, dict[str, float]]) -> None:
@@ -2991,6 +3061,137 @@ def write_plots(
     return paths
 
 
+
+
+def write_nominal_isr_comparison_products(
+    output_dir: Path,
+    nominal_central: dict[str, dict[str, np.ndarray]],
+    nominal_summaries: dict[str, Any],
+    isr_central: dict[str, dict[str, np.ndarray]],
+    isr_summaries: dict[str, Any],
+) -> dict[str, str]:
+    """Write compact nominal-versus-ISR numerical and graphical diagnostics."""
+    ensure_directory(output_dir)
+    tables_dir = output_dir / "tables"
+    plots_dir = output_dir / "plots"
+    ensure_directory(tables_dir)
+    ensure_directory(plots_dir)
+
+    rows: list[dict[str, Any]] = []
+    methods = ("method1", "method2", "method3", "recommended")
+    for period in PERIODS:
+        for method in methods:
+            n_summary = nominal_summaries[period][method]
+            i_summary = isr_summaries[period][method]
+            for cut_index, cut in enumerate(CUT_VARIATIONS):
+                for b in range(NUMBER_OF_BINS):
+                    nval = float(n_summary["central"][b, cut_index])
+                    ival = float(i_summary["central"][b, cut_index])
+                    rows.append(
+                        {
+                            "period": period,
+                            "period_label": PERIOD_LABELS[period],
+                            "method": method,
+                            "cut": cut,
+                            "bin_number": b + 1,
+                            "x_index": b // len(MINUS_TPRIME_BINS_GEV2),
+                            "t_index": b % len(MINUS_TPRIME_BINS_GEV2),
+                            "nominal_value": nval,
+                            "isr_value": ival,
+                            "isr_minus_nominal": ival - nval,
+                            "isr_over_nominal": (
+                                ival / nval
+                                if math.isfinite(nval) and nval != 0.0
+                                else math.nan
+                            ),
+                            "nominal_stat_uncertainty": float(
+                                n_summary["stat_uncertainty"][b, cut_index]
+                            ),
+                            "isr_stat_uncertainty": float(
+                                i_summary["stat_uncertainty"][b, cut_index]
+                            ),
+                        }
+                    )
+    frame = pd.DataFrame(rows)
+    csv_path = tables_dir / "nominal_vs_isr_dilution_factor_comparison.csv"
+    json_path = tables_dir / "nominal_vs_isr_dilution_factor_comparison.json"
+    frame.to_csv(csv_path, index=False)
+    write_json(
+        json_path,
+        {
+            "definition": (
+                "ISR-minus-nominal dilution-factor diagnostics. The two samples "
+                "are processed independently with their own channel-selection "
+                "cut tables and identical dilution-factor machinery. These "
+                "differences are diagnostic only and are not assigned as a "
+                "systematic uncertainty here."
+            ),
+            "rows": frame.to_dict(orient="records"),
+        },
+    )
+
+    nominal_index = CUT_VARIATIONS.index("nominal")
+    bins = np.arange(1, NUMBER_OF_BINS + 1)
+    fig, axes = plt.subplots(3, 2, figsize=(18, 12), sharex=True)
+    for row_index, period in enumerate(PERIODS):
+        n = nominal_summaries[period]["recommended"]
+        i = isr_summaries[period]["recommended"]
+        nval = n["central"][:, nominal_index]
+        ival = i["central"][:, nominal_index]
+        nerr = n["stat_uncertainty"][:, nominal_index]
+        ierr = i["stat_uncertainty"][:, nominal_index]
+
+        axes[row_index, 0].errorbar(
+            bins - 0.10, nval, yerr=nerr, marker="o", linestyle="none",
+            capsize=2, label="Nominal sample",
+        )
+        axes[row_index, 0].errorbar(
+            bins + 0.10, ival, yerr=ierr, marker="s", linestyle="none",
+            capsize=2, label="ISR sample",
+        )
+        axes[row_index, 0].set_ylim(0.1, 0.6)
+        axes[row_index, 0].set_ylabel("Dilution factor")
+        axes[row_index, 0].set_title(
+            f"{PERIOD_LABELS[period]} recommended dilution factor"
+        )
+        axes[row_index, 0].grid(alpha=0.25)
+        axes[row_index, 0].legend(loc="best")
+
+        difference = ival - nval
+        axes[row_index, 1].axhline(0.0, linewidth=1.0, linestyle="--")
+        axes[row_index, 1].plot(
+            bins, difference, marker="o", linestyle="none"
+        )
+        finite = difference[np.isfinite(difference)]
+        if finite.size:
+            span = max(0.01, 1.25 * float(np.max(np.abs(finite))))
+            axes[row_index, 1].set_ylim(-span, span)
+        axes[row_index, 1].set_ylabel("$f_{ISR}-f_{nominal}$")
+        axes[row_index, 1].set_title(
+            f"{PERIOD_LABELS[period]} ISR-minus-nominal"
+        )
+        axes[row_index, 1].grid(alpha=0.25)
+
+    axes[-1, 0].set_xlabel("Combined kinematic-bin number")
+    axes[-1, 1].set_xlabel("Combined kinematic-bin number")
+    for ax in axes.flat:
+        ax.set_xticks(bins)
+    fig.suptitle(
+        "Nominal-versus-ISR dilution-factor summary\n"
+        "recommended result = average of carbon-template and direct auxiliary-target methods"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    plot_path = plots_dir / "nominal_vs_isr_recommended_summary.png"
+    fig.savefig(plot_path, dpi=180)
+    plt.close(fig)
+
+    return {
+        "comparison_csv": str(csv_path),
+        "comparison_json": str(json_path),
+        "summary_plot": str(plot_path),
+    }
+
+
 # =============================================================================
 # Command-line interface and main program
 # =============================================================================
@@ -3084,6 +3285,38 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"Stable output directory (default: {DEFAULT_OUTPUT_DIR}).",
     )
     parser.add_argument(
+        "--isr-input",
+        action="append",
+        default=[],
+        metavar="PERIOD:TARGET=PATH",
+        help=(
+            "Override one ISR momentum-corrected ROOT input. May be repeated. "
+            "Defaults use *_ISR_mom_corrections.root for all five targets."
+        ),
+    )
+    parser.add_argument(
+        "--isr-exclusivity-json",
+        type=Path,
+        default=None,
+        help=(
+            "ISR-specific final channel-selection cut JSON. By default this is "
+            "resolved from the sibling channel-selection ISR manifest."
+        ),
+    )
+    parser.add_argument(
+        "--channel-selection-manifest",
+        type=Path,
+        default=DEFAULT_CHANNEL_SELECTION_MANIFEST,
+        help=(
+            "Channel-selection manifest used to locate the retained ISR cut table."
+        ),
+    )
+    parser.add_argument(
+        "--disable-isr",
+        action="store_true",
+        help="Disable the completely separate ISR dilution-factor diagnostic.",
+    )
+    parser.add_argument(
         "--skip-plots",
         action="store_true",
         help="Write numerical products without rendering plots.",
@@ -3167,6 +3400,12 @@ def main() -> int:
     epoch_dir = analysis_dir / "epochs"
     epoch_plots_dir = epoch_dir / "plots"
 
+    isr_dir = output_dir / "isr"
+    isr_tables_dir = isr_dir / "tables"
+    isr_covariance_dir = isr_dir / "covariance"
+    isr_plots_dir = isr_dir / "plots"
+    diagnostics_dir = output_dir / "diagnostics"
+
     production_dir = output_dir / "production"
     production_tables_dir = production_dir / "tables"
     production_metadata_dir = production_dir / "metadata"
@@ -3179,6 +3418,11 @@ def main() -> int:
         plots_dir,
         epoch_dir,
         epoch_plots_dir,
+        isr_dir,
+        isr_tables_dir,
+        isr_covariance_dir,
+        isr_plots_dir,
+        diagnostics_dir,
         production_dir,
         production_tables_dir,
         production_metadata_dir,
@@ -3304,6 +3548,183 @@ def main() -> int:
         )
     # endif
 
+    # -------------------------------------------------------------------------
+    # Completely separate ISR diagnostic workflow
+    # -------------------------------------------------------------------------
+    isr_payload: dict[str, Any] | None = None
+    comparison_products: dict[str, str] | None = None
+    if not args.disable_isr:
+        isr_input_paths = {
+            period: dict(targets)
+            for period, targets in DEFAULT_ISR_INPUTS.items()
+        }
+        for override_text in args.isr_input:
+            period, target, path = parse_input_override(override_text)
+            isr_input_paths[period][target] = path
+
+        isr_cut_json = resolve_isr_cut_json(
+            args.isr_exclusivity_json,
+            args.channel_selection_manifest,
+        )
+        isr_cuts = load_exclusivity_cuts(isr_cut_json)
+
+        print()
+        print("-" * 78)
+        print("Starting completely separate ISR dilution-factor diagnostic")
+        print("-" * 78)
+        print(f"ISR exclusivity JSON:    {isr_cut_json}")
+        print(f"ISR output directory:    {isr_dir}")
+
+        isr_loaded = load_all_datasets(isr_input_paths, args.tree, workers)
+        (
+            isr_pattern_counts,
+            isr_observed_counts,
+            isr_count_rows,
+        ) = build_count_arrays(
+            isr_loaded,
+            isr_cuts,
+            args.control_min,
+            args.control_max,
+        )
+        isr_count_path = isr_tables_dir / "target_counts_all_selections.csv"
+        pd.DataFrame(isr_count_rows).to_csv(isr_count_path, index=False)
+
+        isr_central_results = {
+            period: observed_estimators_for_period(
+                isr_observed_counts[p_index],
+                period,
+                charge_fractions,
+            )
+            for p_index, period in enumerate(PERIODS)
+        }
+        isr_bootstrap_results = run_bootstrap(
+            isr_pattern_counts,
+            charge_fractions,
+            args.replicas,
+            args.seed + 1000003,
+            workers,
+        )
+        (
+            isr_flat_frame,
+            isr_master_periods,
+            isr_compact_periods,
+            isr_summaries_by_period,
+        ) = build_output_tables(
+            isr_observed_counts,
+            isr_central_results,
+            isr_bootstrap_results,
+            charge_fractions,
+            isr_cuts,
+        )
+        isr_flat_csv_path = (
+            isr_tables_dir / "dilution_factors_all_methods.csv"
+        )
+        isr_flat_frame.to_csv(isr_flat_csv_path, index=False)
+
+        isr_covariance_manifest = write_covariance_products(
+            isr_covariance_dir,
+            isr_bootstrap_results,
+        )
+        isr_plot_paths: list[str] = []
+        if not args.skip_plots:
+            isr_plot_paths = write_plots(
+                isr_plots_dir,
+                isr_central_results,
+                isr_summaries_by_period,
+                isr_bootstrap_results,
+            )
+
+        isr_master_json_path = isr_dir / "dilution_factors.json"
+        isr_compact_json_path = isr_dir / "dilution_factors_production.json"
+        isr_configuration_path = isr_dir / "configuration.json"
+        isr_provenance = {
+            "sample_variant": "ISR",
+            "diagnostic_only": True,
+            "generated_utc": datetime.now(timezone.utc).isoformat(),
+            "tree_name": args.tree,
+            "workers_used": workers,
+            "bootstrap_replicas_per_period": args.replicas,
+            "bootstrap_seed": args.seed + 1000003,
+            "exclusivity_json": str(isr_cut_json),
+            "exclusivity_json_sha256": sha256_file(isr_cut_json),
+            "control_region_gev2": [args.control_min, args.control_max],
+            "charge_fractions": charge_fractions,
+            "root_inputs": {
+                period: {
+                    target: {
+                        "path": isr_loaded[(period, target)].file_path,
+                        "branches": {
+                            "xB": isr_loaded[(period, target)].x_branch,
+                            "tprime": isr_loaded[(period, target)].tprime_branch,
+                            "Mx2": isr_loaded[(period, target)].mx2_branch,
+                            "runnum": isr_loaded[(period, target)].run_branch,
+                        },
+                    }
+                    for target in TARGETS
+                }
+                for period in PERIODS
+            },
+        }
+        write_json(isr_configuration_path, isr_provenance)
+        write_json(
+            isr_master_json_path,
+            {
+                "schema_version": 1,
+                "analysis": "RGC exclusive enpi+ ISR dilution-factor diagnostic",
+                "diagnostic_only": True,
+                "binning": {
+                    "xB": [list(interval) for interval in XB_BINS],
+                    "minus_tprime_gev2": [
+                        list(interval) for interval in MINUS_TPRIME_BINS_GEV2
+                    ],
+                    "combined_bin_order": (
+                        "x_index major, t_index minor, one-based bin_number"
+                    ),
+                },
+                "cut_variations": list(CUT_VARIATIONS),
+                "provenance": isr_provenance,
+                "global_dilution_model_scale_by_cut": isr_summaries_by_period[
+                    "_global_method_scale_by_cut"
+                ],
+                "periods": isr_master_periods,
+                "covariance_manifest": isr_covariance_manifest,
+                "plot_paths": isr_plot_paths,
+            },
+        )
+        write_json(
+            isr_compact_json_path,
+            {
+                "schema_version": 1,
+                "analysis": (
+                    "RGC exclusive enpi+ ISR dilution factors; diagnostic only"
+                ),
+                "diagnostic_only": True,
+                "recommended_nominal_method": "average_of_method1_and_method2",
+                "periods": isr_compact_periods,
+                "source_master_json": str(isr_master_json_path),
+                "source_exclusivity_json": str(isr_cut_json),
+            },
+        )
+
+        comparison_products = write_nominal_isr_comparison_products(
+            diagnostics_dir,
+            central_results,
+            summaries_by_period,
+            isr_central_results,
+            isr_summaries_by_period,
+        )
+        isr_payload = {
+            "root": str(isr_dir),
+            "master_json": str(isr_master_json_path),
+            "downstream_json": str(isr_compact_json_path),
+            "all_methods_csv": str(isr_flat_csv_path),
+            "target_counts_csv": str(isr_count_path),
+            "covariance": str(isr_covariance_dir),
+            "plots": str(isr_plots_dir),
+            "exclusivity_json": str(isr_cut_json),
+            "comparison_products": comparison_products,
+        }
+
     provenance = {
         "script": Path(__file__).name,
         "schema_version": 12,
@@ -3333,6 +3754,8 @@ def main() -> int:
             "and ET retain their full-period charges. Fractions are "
             "renormalized for each epoch."
         ),
+        "isr_diagnostic_enabled": not args.disable_isr,
+        "isr_diagnostic": isr_payload,
         "root_inputs": {
             period: {
                 target: {
@@ -3396,6 +3819,8 @@ def main() -> int:
         "periods": master_periods,
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
+        "isr_diagnostic": isr_payload,
+        "nominal_isr_comparison_products": comparison_products,
     }
     master_json_path = analysis_dir / "dilution_factors.json"
     write_json(master_json_path, master_payload)
@@ -3459,6 +3884,10 @@ def main() -> int:
             "covariance": str(covariance_dir),
             "plots": str(plots_dir),
             "epochs": str(epoch_dir),
+            "isr": str(isr_dir) if not args.disable_isr else None,
+            "nominal_isr_comparisons": (
+                str(diagnostics_dir) if not args.disable_isr else None
+            ),
         },
         "production_products": production_products,
         "recommended_nominal_method": "average_of_method1_and_method2",
@@ -3478,6 +3907,13 @@ def main() -> int:
     if not args.skip_plots:
         print(f"  Plot directory:        {plots_dir}")
     # endif
+    if not args.disable_isr:
+        print(f"  ISR diagnostic:        {isr_dir}")
+        if comparison_products is not None:
+            print(
+                "  Nominal/ISR summary:   "
+                f"{comparison_products['summary_plot']}"
+            )
     print(f"  Production directory:  {production_dir}")
     print(
         "  Canonical downstream:  "
