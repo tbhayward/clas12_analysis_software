@@ -2572,6 +2572,7 @@ def period_fit_quality_mask(
 def plot_parameter_summaries(
     frame: pd.DataFrame,
     output_dir: Path,
+    include_target_axis_uncertainty: bool,
 ) -> list[str]:
     """Write the original one-parameter, all-24-bin summary plots."""
     ensure_directory(output_dir)
@@ -2589,16 +2590,24 @@ def plot_parameter_summaries(
             capsize=2,
             label="Statistical uncertainty",
         )
-        ax.errorbar(
-            bins,
-            frame[parameter],
-            yerr=frame[f"{parameter}_target_axis_sys"],
-            marker="none",
-            linestyle="none",
-            capsize=4,
-            linewidth=1.0,
-            label="Target-axis systematic",
-        )
+        if include_target_axis_uncertainty:
+            target_axis_uncertainty = pd.to_numeric(
+                frame[f"{parameter}_target_axis_sys"],
+                errors="coerce",
+            ).to_numpy(dtype=float)
+            if np.isfinite(target_axis_uncertainty).any():
+                ax.errorbar(
+                    bins,
+                    frame[parameter],
+                    yerr=target_axis_uncertainty,
+                    marker="none",
+                    linestyle="none",
+                    capsize=4,
+                    linewidth=1.0,
+                    label="Target-axis systematic",
+                )
+            # endif
+        # endif
         ax.axhline(0.0, linewidth=0.8)
         ax.set_xlabel("Combined kinematic-bin number")
         ax.set_ylabel(PARAMETER_LABELS[parameter])
@@ -2618,6 +2627,7 @@ def plot_parameter_summaries(
 def plot_aggregated_by_x(
     frame: pd.DataFrame,
     output_dir: Path,
+    include_target_axis_uncertainty: bool,
 ) -> list[str]:
     """
     Write one physics-ordered 3x3 canvas per xB bin.
@@ -2651,16 +2661,24 @@ def plot_aggregated_by_x(
                 capsize=2,
                 label="Statistical uncertainty",
             )
-            ax.errorbar(
-                x_values,
-                subset[parameter],
-                yerr=subset[f"{parameter}_target_axis_sys"],
-                marker="none",
-                linestyle="none",
-                capsize=4,
-                linewidth=1.0,
-                label="Target-axis systematic",
-            )
+            if include_target_axis_uncertainty:
+                target_axis_uncertainty = pd.to_numeric(
+                    subset[f"{parameter}_target_axis_sys"],
+                    errors="coerce",
+                ).to_numpy(dtype=float)
+                if np.isfinite(target_axis_uncertainty).any():
+                    ax.errorbar(
+                        x_values,
+                        subset[parameter],
+                        yerr=target_axis_uncertainty,
+                        marker="none",
+                        linestyle="none",
+                        capsize=4,
+                        linewidth=1.0,
+                        label="Target-axis systematic",
+                    )
+                # endif
+            # endif
             ax.axhline(0.0, linewidth=0.8)
             ax.set_ylabel(PARAMETER_LABELS[parameter])
             apply_parameter_y_limits(ax, parameter)
@@ -3304,8 +3322,16 @@ def run_analysis_variant(
     )
     plot_paths = {"all_bins": [], "aggregated": [], "aggregated_by_period": [], "target_axis_variants": [], "period_stability": []}
     if not skip_plots:
-        plot_paths["all_bins"] = plot_parameter_summaries(frame, all_bins_plots_dir)
-        plot_paths["aggregated"] = plot_aggregated_by_x(frame, aggregated_plots_dir)
+        plot_paths["all_bins"] = plot_parameter_summaries(
+            frame,
+            all_bins_plots_dir,
+            include_target_axis_uncertainty=include_target_axis_study,
+        )
+        plot_paths["aggregated"] = plot_aggregated_by_x(
+            frame,
+            aggregated_plots_dir,
+            include_target_axis_uncertainty=include_target_axis_study,
+        )
         plot_paths["aggregated_by_period"] = plot_aggregated_by_period(frame, period_plots_dir)
         plot_paths["aggregated_by_period"].append(plot_period_consistency_heatmap(frame, period_plots_dir))
         plot_paths["period_stability"] = plot_period_stability(frame, period_stability_dir)
