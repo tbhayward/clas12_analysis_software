@@ -39,7 +39,7 @@ The default exclusivity-cut JSON is therefore
 
     ../channel_selection/output/channel_selection_mx2_fit_stability/
         final_carbon_assisted_cuts/tables/
-        final_carbon_assisted_mx2_cuts_v24.json
+        final_carbon_assisted_mx2_cuts.json
 
 All ROOT inputs default to the finalized momentum-corrected paper_versions
 files.  The program uses at most seven worker processes.  It writes complete
@@ -145,7 +145,7 @@ DEFAULT_RUN_INFO_CSV = Path(__file__).resolve().with_name("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
     "../channel_selection/output/channel_selection_mx2_fit_stability/"
     "final_carbon_assisted_cuts/tables/"
-    "final_carbon_assisted_mx2_cuts_v24.json"
+    "final_carbon_assisted_mx2_cuts.json"
 )
 
 PAPER_VERSIONS_DIR = Path(
