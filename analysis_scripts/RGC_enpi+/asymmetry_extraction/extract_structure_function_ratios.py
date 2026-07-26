@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-extract_structure_function_ratios_v5.py
+extract_structure_function_ratios_v6.py
 
 Initial standalone event-level asymmetry extraction for the RGC exclusive
 e p -> e' n pi+ analysis.
@@ -190,7 +190,7 @@ MAXIMUM_WORKERS = 8
 DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_CHUNK_SIZE = "250 MB"
 DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction")
-DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v5.npz"
+DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v6.npz"
 
 DEFAULT_RUN_INFO_CSV = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
@@ -258,14 +258,24 @@ PARAMETER_LABELS: dict[str, str] = {
 }
 
 PARAMETER_Y_LIMITS: dict[str, tuple[float, float] | None] = {
-    "u1": None,
-    "u2": None,
-    "lu1": (-0.4, 0.4),
-    "ul1": (-0.4, 0.4),
-    "ul2": (-0.4, 0.4),
+    "u1": (-1.0, 1.0),
+    "u2": (-1.0, 1.0),
+    "lu1": (-0.5, 0.5),
+    "ul1": (-0.5, 0.5),
+    "ul2": (-0.5, 0.5),
     "ll0": (-1.0, 1.0),
     "ll1": (-1.0, 1.0),
 }
+
+# Physics-motivated panel layout:
+#   top row:    unpolarized cosine modulations
+#   middle row: beam- and target-single-spin ratios
+#   bottom row: double-spin ratios
+AGGREGATED_PANEL_ORDER: tuple[str | None, ...] = (
+    "u1", "u2", None,
+    "lu1", "ul1", "ul2",
+    "ll0", "ll1", None,
+)
 
 PROBABILITY_FLOOR = 1.0e-300
 CROSS_SECTION_FLOOR = 1.0e-10
@@ -1964,19 +1974,34 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         ),
     }
 
+    projection_systematic: dict[str, float] = {}
+    transverse_half_width_systematic: dict[str, float] = {}
     systematics: dict[str, float] = {}
     for parameter in PHYSICS_PARAMETERS:
         nominal_value = nominal["values"][parameter]
+
+        # The no-projection fit is a one-sided alternative to the preferred
+        # virtual-photon-axis treatment, so its uncertainty is the absolute
+        # displacement from nominal.
+        projection_systematic[parameter] = abs(
+            no_projection["values"][parameter] - nominal_value
+        )
+
+        # The T+ and T- fits are deliberately constructed as a symmetric
+        # two-sided stress test.  Their natural systematic scale is therefore
+        # the half-width of the two fitted results, not the larger displacement
+        # of either endpoint from the nominal solution.
+        transverse_half_width_systematic[parameter] = 0.5 * abs(
+            longitudinal_scaled_transverse_plus["values"][parameter]
+            - longitudinal_scaled_transverse_minus["values"][parameter]
+        )
+
+        # Both variations probe the same target-axis ambiguity, so retain one
+        # conservative correlated target-axis uncertainty by taking the larger
+        # of the projection and transverse-leakage components.
         systematics[parameter] = max(
-            abs(no_projection["values"][parameter] - nominal_value),
-            abs(
-                longitudinal_scaled_transverse_plus["values"][parameter]
-                - nominal_value
-            ),
-            abs(
-                longitudinal_scaled_transverse_minus["values"][parameter]
-                - nominal_value
-            ),
+            projection_systematic[parameter],
+            transverse_half_width_systematic[parameter],
         )
     # endfor
 
@@ -2039,6 +2064,10 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         "period_fits": period_fits,
         "period_consistency": period_consistency,
         "target_axis_systematic": systematics,
+        "projection_systematic": projection_systematic,
+        "transverse_half_width_systematic": (
+            transverse_half_width_systematic
+        ),
         "transverse_scales": transverse_scales,
     }
 
@@ -2092,6 +2121,15 @@ def flatten_fit_results(
 
             period_fit = result["period_fits"][period]
             row[f"period_fit_valid_{period}"] = period_fit["valid"]
+            row[f"period_fit_accurate_covariance_{period}"] = period_fit[
+                "accurate_covariance"
+            ]
+            row[f"period_fit_positive_definite_covariance_{period}"] = (
+                period_fit["positive_definite_covariance"]
+            )
+            row[f"period_fit_parameters_at_limit_{period}"] = period_fit[
+                "parameters_at_limit"
+            ]
             row[f"period_fit_nll_{period}"] = period_fit["minimum_nll"]
             row[f"period_fit_edm_{period}"] = period_fit["edm"]
             row[f"period_delta_nll_{period}"] = result[
@@ -2102,6 +2140,12 @@ def flatten_fit_results(
         for parameter in PHYSICS_PARAMETERS:
             row[parameter] = nominal["values"][parameter]
             row[f"{parameter}_stat"] = nominal["errors"][parameter]
+            row[f"{parameter}_projection_sys"] = result[
+                "projection_systematic"
+            ][parameter]
+            row[f"{parameter}_transverse_half_width_sys"] = result[
+                "transverse_half_width_systematic"
+            ][parameter]
             row[f"{parameter}_target_axis_sys"] = result[
                 "target_axis_systematic"
             ][parameter]
@@ -2132,6 +2176,25 @@ def apply_parameter_y_limits(ax: plt.Axes, parameter: str) -> None:
     # endif
 
 
+def period_fit_quality_mask(
+    frame: pd.DataFrame,
+    period: str,
+) -> np.ndarray:
+    """Return True only for trustworthy period-only diagnostic fits."""
+    return (
+        frame[f"period_fit_valid_{period}"].astype(bool).to_numpy()
+        & frame[
+            f"period_fit_accurate_covariance_{period}"
+        ].astype(bool).to_numpy()
+        & frame[
+            f"period_fit_positive_definite_covariance_{period}"
+        ].astype(bool).to_numpy()
+        & ~frame[
+            f"period_fit_parameters_at_limit_{period}"
+        ].astype(bool).to_numpy()
+    )
+
+
 def plot_parameter_summaries(
     frame: pd.DataFrame,
     output_dir: Path,
@@ -2160,7 +2223,7 @@ def plot_parameter_summaries(
             linestyle="none",
             capsize=4,
             linewidth=1.0,
-            label="Target-axis envelope",
+            label="Target-axis systematic",
         )
         ax.axhline(0.0, linewidth=0.8)
         ax.set_xlabel("Combined kinematic-bin number")
@@ -2170,7 +2233,7 @@ def plot_parameter_summaries(
         ax.grid(alpha=0.25)
         ax.legend()
         fig.tight_layout()
-        path = output_dir / f"{parameter}_summary_v5.png"
+        path = output_dir / f"{parameter}_summary_v6.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2183,9 +2246,11 @@ def plot_aggregated_by_x(
     output_dir: Path,
 ) -> list[str]:
     """
-    Write one seven-panel canvas per xB bin, showing the combined result versus
-    mean -tprime.  Statistical and target-axis uncertainties are drawn
-    separately.
+    Write one physics-ordered 3x3 canvas per xB bin.
+
+    Top row: unpolarized cosine modulations.
+    Middle row: LU, UL sin(phi), and UL sin(2phi).
+    Bottom row: LL and LL cos(phi).
     """
     ensure_directory(output_dir)
     paths: list[str] = []
@@ -2195,8 +2260,13 @@ def plot_aggregated_by_x(
         fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
         axes_flat = axes.ravel()
 
-        for panel, parameter in enumerate(PHYSICS_PARAMETERS):
+        for panel, parameter in enumerate(AGGREGATED_PANEL_ORDER):
             ax = axes_flat[panel]
+            if parameter is None:
+                ax.axis("off")
+                continue
+            # endif
+
             x_values = subset["mean_minus_tprime_gev2"]
             ax.errorbar(
                 x_values,
@@ -2215,7 +2285,7 @@ def plot_aggregated_by_x(
                 linestyle="none",
                 capsize=4,
                 linewidth=1.0,
-                label="Target-axis envelope",
+                label="Target-axis systematic",
             )
             ax.axhline(0.0, linewidth=0.8)
             ax.set_ylabel(PARAMETER_LABELS[parameter])
@@ -2226,42 +2296,53 @@ def plot_aggregated_by_x(
             # endif
         # endfor
 
-        axes_flat[7].axis("off")
-        axes_flat[8].axis("off")
         handles, labels = axes_flat[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="lower right", bbox_to_anchor=(0.96, 0.06))
+        fig.legend(
+            handles,
+            labels,
+            loc="lower right",
+            bbox_to_anchor=(0.96, 0.06),
+        )
         fig.suptitle(
             rf"${x_low:.2f} \leq x_B < {x_high:.2f}$",
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_combined_v5.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_combined_v6.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
     # endfor
     return paths
 
-
 def plot_aggregated_by_period(
     frame: pd.DataFrame,
     output_dir: Path,
 ) -> list[str]:
     """
-    Write one seven-panel canvas per xB bin with independent Su22, Fa22, Sp23,
-    and simultaneous-combination nominal fits on the same axes.
+    Write physics-ordered 3x3 canvases comparing the simultaneous result with
+    independent Su22, Fa22, and Sp23 diagnostic fits.
+
+    Invalid or covariance-defective period fits are not drawn as ordinary
+    error bars.  Their central values are marked with an x so they cannot be
+    mistaken for precise measurements with zero or misleading Hesse errors.
     """
     ensure_directory(output_dir)
     paths: list[str] = []
 
     for x_index, (x_low, x_high) in enumerate(XB_BINS):
         subset = frame.loc[frame["x_index"] == x_index].sort_values("t_index")
-        x_values = subset["mean_minus_tprime_gev2"]
+        x_values = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
         fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
         axes_flat = axes.ravel()
 
-        for panel, parameter in enumerate(PHYSICS_PARAMETERS):
+        for panel, parameter in enumerate(AGGREGATED_PANEL_ORDER):
             ax = axes_flat[panel]
+            if parameter is None:
+                ax.axis("off")
+                continue
+            # endif
+
             ax.errorbar(
                 x_values,
                 subset[parameter],
@@ -2269,19 +2350,42 @@ def plot_aggregated_by_period(
                 marker="o",
                 linestyle="-",
                 capsize=2,
-                label="Combined",
+                label="Simultaneous",
             )
+
             for period in PERIODS:
-                ax.errorbar(
-                    x_values,
-                    subset[f"{parameter}_{period}"],
-                    yerr=subset[f"{parameter}_stat_{period}"],
-                    marker="o",
-                    linestyle="none",
-                    capsize=2,
-                    label=PERIOD_LABELS[period],
-                )
+                quality = period_fit_quality_mask(subset, period)
+                values = subset[f"{parameter}_{period}"].to_numpy(dtype=float)
+                errors = subset[
+                    f"{parameter}_stat_{period}"
+                ].to_numpy(dtype=float)
+
+                if np.any(quality):
+                    ax.errorbar(
+                        x_values[quality],
+                        values[quality],
+                        yerr=errors[quality],
+                        marker="o",
+                        linestyle="none",
+                        capsize=2,
+                        label=PERIOD_LABELS[period],
+                    )
+                # endif
+
+                invalid = ~quality
+                if np.any(invalid):
+                    ax.plot(
+                        x_values[invalid],
+                        values[invalid],
+                        marker="x",
+                        linestyle="none",
+                        markersize=8,
+                        markeredgewidth=1.8,
+                        label=f"{PERIOD_LABELS[period]} invalid",
+                    )
+                # endif
             # endfor
+
             ax.axhline(0.0, linewidth=0.8)
             ax.set_ylabel(PARAMETER_LABELS[parameter])
             apply_parameter_y_limits(ax, parameter)
@@ -2291,23 +2395,35 @@ def plot_aggregated_by_period(
             # endif
         # endfor
 
-        axes_flat[7].axis("off")
-        axes_flat[8].axis("off")
-        handles, labels = axes_flat[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc="lower right", bbox_to_anchor=(0.96, 0.06))
+        # Deduplicate legend entries produced in every panel.
+        handles: list[Any] = []
+        labels: list[str] = []
+        for ax in axes_flat:
+            panel_handles, panel_labels = ax.get_legend_handles_labels()
+            for handle, label in zip(panel_handles, panel_labels):
+                if label not in labels:
+                    handles.append(handle)
+                    labels.append(label)
+                # endif
+            # endfor
+        # endfor
+        fig.legend(
+            handles,
+            labels,
+            loc="lower right",
+            bbox_to_anchor=(0.96, 0.06),
+        )
         fig.suptitle(
-            rf"${x_low:.2f} \leq x_B < {x_high:.2f}$: period consistency",
+            rf"${x_low:.2f} \leq x_B < {x_high:.2f}$: period diagnostics",
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_by_period_v5.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_by_period_v6.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
     # endfor
     return paths
-
-
 
 def plot_period_consistency_heatmap(
     frame: pd.DataFrame,
@@ -2338,7 +2454,7 @@ def plot_period_consistency_heatmap(
         r"-\mathrm{NLL}_{p,\min}$"
     )
     fig.tight_layout()
-    path = output_dir / "period_consistency_delta_nll_v5.png"
+    path = output_dir / "period_consistency_delta_nll_v6.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2640,14 +2756,14 @@ def main() -> int:
 
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
-    csv_path = tables_dir / "structure_function_ratios_v5.csv"
+    csv_path = tables_dir / "structure_function_ratios_v6.csv"
     frame.to_csv(csv_path, index=False)
 
-    detailed_json_path = json_dir / "structure_function_ratios_v5.json"
+    detailed_json_path = json_dir / "structure_function_ratios_v6.json"
     write_json(
         detailed_json_path,
         {
-            "schema_version": 5,
+            "schema_version": 6,
             "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "fit_policy": (
@@ -2655,10 +2771,10 @@ def main() -> int:
                 "simultaneously to Su22, Fa22, and Sp23 in each kinematic bin."
             ),
             "target_axis_systematic_definition": (
-                "For each fitted longitudinal observable, the systematic is the "
-                "largest absolute displacement from nominal among no_projection, "
-                "longitudinal_scaled_transverse_plus, and "
-                "longitudinal_scaled_transverse_minus."
+                "The projection component is the absolute no_projection-minus-nominal "
+                "displacement. The transverse component is half the fitted "
+                "T+ minus T- span. The quoted target-axis systematic is the "
+                "larger of those two correlated components."
             ),
             "transverse_stress_model_warning": (
                 "The two transverse stress variants use the signed nominal "
@@ -2703,16 +2819,16 @@ def main() -> int:
             continue
         # endif
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v5.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v6.npy",
             np.asarray(nominal["covariance"], dtype=np.float64),
         )
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v5.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v6.npy",
             np.asarray(nominal["correlation"], dtype=np.float64),
         )
     # endfor
 
-    latex_path = latex_dir / "structure_function_ratios_v5.tex"
+    latex_path = latex_dir / "structure_function_ratios_v6.tex"
     write_latex_table(frame, latex_path)
 
     plot_paths: dict[str, list[str]] = {
@@ -2735,11 +2851,11 @@ def main() -> int:
         )
     # endif
 
-    manifest_path = output_dir / "asymmetry_extraction_manifest_v5.json"
+    manifest_path = output_dir / "asymmetry_extraction_manifest_v6.json"
     write_json(
         manifest_path,
         {
-            "schema_version": 5,
+            "schema_version": 6,
             "script": str(Path(__file__).resolve()),
             "workers": workers,
             "products": {
@@ -2758,6 +2874,29 @@ def main() -> int:
         for row in frame.itertuples(index=False)
         if not bool(row.nominal_fit_valid)
     ]
+    invalid_period_fits: list[str] = []
+    for row in frame.itertuples(index=False):
+        for period in PERIODS:
+            valid = bool(getattr(row, f"period_fit_valid_{period}"))
+            accurate = bool(
+                getattr(row, f"period_fit_accurate_covariance_{period}")
+            )
+            positive = bool(
+                getattr(
+                    row,
+                    f"period_fit_positive_definite_covariance_{period}",
+                )
+            )
+            at_limit = bool(
+                getattr(row, f"period_fit_parameters_at_limit_{period}")
+            )
+            if not (valid and accurate and positive and not at_limit):
+                invalid_period_fits.append(
+                    f"bin {int(row.bin_number):02d} {PERIOD_LABELS[period]}"
+                )
+            # endif
+        # endfor
+    # endfor
 
     print()
     print("Asymmetry extraction complete.")
@@ -2766,6 +2905,12 @@ def main() -> int:
     print(f"  Detailed JSON:   {detailed_json_path}")
     print(f"  LaTeX:           {latex_path}")
     print(f"  Manifest:        {manifest_path}")
+    if invalid_period_fits:
+        print(
+            "  WARNING: invalid or covariance-defective period-only "
+            f"diagnostic fits: {', '.join(invalid_period_fits)}"
+        )
+    # endif
     if invalid_bins:
         print(f"  WARNING: invalid nominal fits in bins {invalid_bins}")
         return 2
