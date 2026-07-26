@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-extract_structure_function_ratios_v2.py
+extract_structure_function_ratios_v3.py
 
 Initial standalone event-level asymmetry extraction for the RGC exclusive
 e p -> e' n pi+ analysis.
@@ -190,13 +190,13 @@ MAXIMUM_WORKERS = 7
 DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_CHUNK_SIZE = "250 MB"
 DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction")
-DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v2.npz"
+DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v3.npz"
 
 DEFAULT_RUN_INFO_CSV = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
     "../channel_selection/output/channel_selection_mx2_fit_stability/"
     "final_carbon_assisted_cuts/tables/"
-    "final_carbon_assisted_mx2_cuts_v24.json"
+    "final_carbon_assisted_mx2_cuts.json"
 )
 
 DEFAULT_DILUTION_DIR = Path(
@@ -1889,7 +1889,7 @@ def plot_parameter_summaries(
         ax.grid(alpha=0.25)
         ax.legend()
         fig.tight_layout()
-        path = output_dir / f"{parameter}_summary_v2.png"
+        path = output_dir / f"{parameter}_summary_v3.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2180,14 +2180,14 @@ def main() -> int:
 
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
-    csv_path = tables_dir / "structure_function_ratios_v2.csv"
+    csv_path = tables_dir / "structure_function_ratios_v3.csv"
     frame.to_csv(csv_path, index=False)
 
-    detailed_json_path = json_dir / "structure_function_ratios_v2.json"
+    detailed_json_path = json_dir / "structure_function_ratios_v3.json"
     write_json(
         detailed_json_path,
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "fit_policy": (
@@ -2240,16 +2240,16 @@ def main() -> int:
             continue
         # endif
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v2.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v3.npy",
             np.asarray(nominal["covariance"], dtype=np.float64),
         )
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v2.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v3.npy",
             np.asarray(nominal["correlation"], dtype=np.float64),
         )
     # endfor
 
-    latex_path = latex_dir / "structure_function_ratios_v2.tex"
+    latex_path = latex_dir / "structure_function_ratios_v3.tex"
     write_latex_table(frame, latex_path)
 
     plot_paths: list[str] = []
@@ -2257,11 +2257,11 @@ def main() -> int:
         plot_paths = plot_parameter_summaries(frame, plots_dir)
     # endif
 
-    manifest_path = output_dir / "asymmetry_extraction_manifest_v2.json"
+    manifest_path = output_dir / "asymmetry_extraction_manifest_v3.json"
     write_json(
         manifest_path,
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "script": str(Path(__file__).resolve()),
             "workers": workers,
             "products": {
