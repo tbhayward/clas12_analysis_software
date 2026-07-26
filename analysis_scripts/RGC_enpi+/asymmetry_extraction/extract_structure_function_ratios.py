@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-extract_structure_function_ratios_v3.py
+extract_structure_function_ratios_v5.py
 
 Initial standalone event-level asymmetry extraction for the RGC exclusive
 e p -> e' n pi+ analysis.
@@ -58,20 +58,20 @@ Four fits are performed in every kinematic bin.
   no_projection
     P_L = P_t, P_T = 0.
 
-  transverse_plus
-    P_L = P_t cos(theta_gamma), P_T = P_t sin(theta_gamma), and every
-    transverse-target structure-function ratio included in the stress model
-    is fixed coherently to +0.5.
+  longitudinal_scaled_transverse_plus
+    P_L = P_t cos(theta_gamma), P_T = P_t sin(theta_gamma).  The transverse
+    stress amplitudes are fixed from the signed nominal longitudinal amplitudes
+    in the same bin using the documented harmonic mapping.
 
-  transverse_minus
-    Same as transverse_plus, but every transverse-target ratio is fixed
-    coherently to -0.5.
+  longitudinal_scaled_transverse_minus
+    Same geometry and magnitudes as longitudinal_scaled_transverse_plus, but
+    every mapped transverse amplitude has the opposite sign.
 
-The +/-0.5 variants are deliberately conservative stress tests.  They are not
-physical models asserting that all transverse modulations have equal magnitude
-and sign.  For each fitted longitudinal observable, the transverse-axis
-systematic is the largest absolute displacement from the nominal result among
-the other three treatments.
+These longitudinal-scale variants are loose, data-driven stress tests.  They
+are not physical models asserting equality between longitudinal and transverse
+amplitudes.  For each fitted observable, the target-axis systematic is the
+largest absolute displacement from nominal among no_projection and the two
+opposite-sign longitudinal-scaled transverse fits.
 
 The transverse stress terms use the standard one-hadron harmonic/depolarization
 mapping evaluated for a beam-axis target, phi_S = 0 with the signed target
@@ -109,7 +109,7 @@ Parallelism
 -----------
 ROOT input is read once in a serial preprocessing pass and written to a compact
 cache.  Independent kinematic-bin fits are then distributed across at most
-seven worker processes.
+eight worker processes.
 """
 
 from __future__ import annotations
@@ -186,11 +186,11 @@ MINUS_TPRIME_BINS_GEV2: tuple[tuple[float, float], ...] = (
 )
 
 NUMBER_OF_BINS = len(XB_BINS) * len(MINUS_TPRIME_BINS_GEV2)
-MAXIMUM_WORKERS = 7
+MAXIMUM_WORKERS = 8
 DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_CHUNK_SIZE = "250 MB"
 DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction")
-DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v3.npz"
+DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v5.npz"
 
 DEFAULT_RUN_INFO_CSV = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
@@ -217,9 +217,10 @@ DEFAULT_INPUTS: dict[str, Path] = {
 FIT_VARIANTS: tuple[str, ...] = (
     "nominal",
     "no_projection",
-    "transverse_plus",
-    "transverse_minus",
+    "longitudinal_scaled_transverse_plus",
+    "longitudinal_scaled_transverse_minus",
 )
+
 
 PHYSICS_PARAMETERS: tuple[str, ...] = (
     "u1",
@@ -243,6 +244,27 @@ PARAMETER_INITIAL_VALUES: dict[str, float] = {
 
 PARAMETER_LIMITS: dict[str, tuple[float, float]] = {
     name: (-1.5, 1.5) for name in PHYSICS_PARAMETERS
+}
+
+
+PARAMETER_LABELS: dict[str, str] = {
+    "u1": r"$F_{UU}^{\cos\phi}/F_{UU}$",
+    "u2": r"$F_{UU}^{\cos2\phi}/F_{UU}$",
+    "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
+    "ul1": r"$F_{UL}^{\sin\phi}/F_{UU}$",
+    "ul2": r"$F_{UL}^{\sin2\phi}/F_{UU}$",
+    "ll0": r"$F_{LL}/F_{UU}$",
+    "ll1": r"$F_{LL}^{\cos\phi}/F_{UU}$",
+}
+
+PARAMETER_Y_LIMITS: dict[str, tuple[float, float] | None] = {
+    "u1": None,
+    "u2": None,
+    "lu1": (-0.4, 0.4),
+    "ul1": (-0.4, 0.4),
+    "ul2": (-0.4, 0.4),
+    "ll0": (-1.0, 1.0),
+    "ll1": (-1.0, 1.0),
 }
 
 PROBABILITY_FLOOR = 1.0e-300
@@ -1183,39 +1205,58 @@ def load_event_cache(path: Path) -> dict[str, np.ndarray]:
 # Likelihood
 # =============================================================================
 
-def transverse_target_terms(
-    variant: str,
+def longitudinal_scaled_transverse_terms(
     phi: np.ndarray,
     r_b: np.ndarray,
     r_c: np.ndarray,
     r_v: np.ndarray,
     r_w: np.ndarray,
+    scales: Mapping[str, float] | None,
+    sign: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Return fixed UT and LT stress-model angular factors.
+    Return the transverse-target stress-model angular factors.
 
-    Every listed transverse structure-function ratio is fixed coherently to
-    +0.5 or -0.5.  The returned factors do not yet contain P_T, dilution,
-    beam polarization, or beam helicity.
+    The scales are taken from the nominal fitted longitudinal amplitudes in the
+    same kinematic bin.  This is a deliberately loose, data-driven estimate of
+    the possible transverse leakage; it is not an assertion that the transverse
+    amplitudes equal the longitudinal amplitudes.
+
+    Mapping used:
+      UT sin(phi-phi_S)       <- UL sin(phi)
+      UT sin(phi+phi_S)       <- UL sin(phi)
+      UT sin(3phi-phi_S)      <- UL sin(2phi)
+      UT sin(phi_S)           <- UL sin(phi) [vanishes at phi_S = 0]
+      UT sin(2phi-phi_S)      <- UL sin(2phi)
+
+      LT cos(phi-phi_S)       <- LL cos(phi)
+      LT cos(phi_S)           <- LL constant
+      LT cos(2phi-phi_S)      <- LL cos(phi)
+
+    The plus stress test preserves the observed nominal signs.  The minus
+    stress test reverses every mapped transverse amplitude coherently.
     """
-    if variant not in ("transverse_plus", "transverse_minus"):
+    if scales is None:
         zeros = np.zeros(phi.shape, dtype=np.float64)
         return zeros, zeros
     # endif
 
-    fixed = 0.5 if variant == "transverse_plus" else -0.5
+    ul1_scale = sign * float(scales["ul1"])
+    ul2_scale = sign * float(scales["ul2"])
+    ll0_scale = sign * float(scales["ll0"])
+    ll1_scale = sign * float(scales["ll1"])
 
-    # phi_S = 0.  The sin(phi_S) term is identically zero.
-    ut = fixed * (
-        np.sin(phi)
-        + r_b * np.sin(phi)
-        + r_b * np.sin(3.0 * phi)
-        + r_v * np.sin(2.0 * phi)
+    # Beam-axis target: phi_S = 0.  The sin(phi_S) term vanishes.
+    ut = (
+        ul1_scale * np.sin(phi)
+        + r_b * ul1_scale * np.sin(phi)
+        + r_b * ul2_scale * np.sin(3.0 * phi)
+        + r_v * ul2_scale * np.sin(2.0 * phi)
     )
-    lt = fixed * (
-        r_c * np.cos(phi)
-        + r_w
-        + r_w * np.cos(2.0 * phi)
+    lt = (
+        r_c * ll1_scale * np.cos(phi)
+        + r_w * ll0_scale
+        + r_w * ll1_scale * np.cos(2.0 * phi)
     )
     return ut, lt
 
@@ -1234,6 +1275,7 @@ def evaluate_cross_section_factor(
     beam_polarization: float,
     target_polarization: np.ndarray | float,
     dilution: float,
+    transverse_scales: Mapping[str, float] | None,
     u1: float,
     u2: float,
     lu1: float,
@@ -1253,55 +1295,52 @@ def evaluate_cross_section_factor(
         p_transverse = pt * sin_theta_gamma
     # endif
 
-    unpolarized = (
-        1.0
-        + r_v * u1 * np.cos(phi)
-        + r_b * u2 * np.cos(2.0 * phi)
-    )
+    cos_phi = np.cos(phi)
+    sin_phi = np.sin(phi)
+    cos_2phi = np.cos(2.0 * phi)
+    sin_2phi = np.sin(2.0 * phi)
 
-    beam_spin = (
-        h
-        * beam_polarization
-        * r_w
-        * lu1
-        * np.sin(phi)
-    )
-
+    unpolarized = 1.0 + r_v * u1 * cos_phi + r_b * u2 * cos_2phi
+    beam_spin = h * beam_polarization * r_w * lu1 * sin_phi
     target_longitudinal = (
         dilution
         * p_longitudinal
-        * (
-            r_v * ul1 * np.sin(phi)
-            + r_b * ul2 * np.sin(2.0 * phi)
-        )
+        * (r_v * ul1 * sin_phi + r_b * ul2 * sin_2phi)
     )
-
     double_longitudinal = (
         h
         * beam_polarization
         * dilution
         * p_longitudinal
-        * (
-            r_c * ll0
-            + r_w * ll1 * np.cos(phi)
-        )
+        * (r_c * ll0 + r_w * ll1 * cos_phi)
     )
 
-    ut_fixed, lt_fixed = transverse_target_terms(
-        variant,
-        phi,
-        r_b,
-        r_c,
-        r_v,
-        r_w,
-    )
+    if variant in (
+        "longitudinal_scaled_transverse_plus",
+        "longitudinal_scaled_transverse_minus",
+    ):
+        transverse_sign = (
+            1.0
+            if variant == "longitudinal_scaled_transverse_plus"
+            else -1.0
+        )
+        ut_fixed, lt_fixed = longitudinal_scaled_transverse_terms(
+            phi,
+            r_b,
+            r_c,
+            r_v,
+            r_w,
+            transverse_scales,
+            transverse_sign,
+        )
+    else:
+        ut_fixed = np.zeros(phi.shape, dtype=np.float64)
+        lt_fixed = np.zeros(phi.shape, dtype=np.float64)
+    # endif
+
     target_transverse = dilution * p_transverse * ut_fixed
     double_transverse = (
-        h
-        * beam_polarization
-        * dilution
-        * p_transverse
-        * lt_fixed
+        h * beam_polarization * dilution * p_transverse * lt_fixed
     )
 
     return (
@@ -1320,26 +1359,37 @@ def make_bin_nll(
     dilution_records: Mapping[tuple[str, int], DilutionRecord],
     bin_number: int,
     variant: str,
+    active_periods: tuple[str, ...] = PERIODS,
+    transverse_scales: Mapping[str, float] | None = None,
 ):
     mask = events["bin_number"] == bin_number
+    if len(active_periods) != len(PERIODS):
+        allowed_indices = np.asarray(
+            [PERIOD_INDEX[period] for period in active_periods],
+            dtype=np.int8,
+        )
+        mask &= np.isin(events["period_index"], allowed_indices)
+    # endif
     if not np.any(mask):
-        raise RuntimeError(f"Bin {bin_number} has no selected events.")
+        raise RuntimeError(
+            f"Bin {bin_number} has no selected events for {active_periods}."
+        )
     # endif
 
-    period_index = events["period_index"][mask].astype(np.int8)
-    runnum = events["runnum"][mask].astype(np.int32)
-    helicity = events["helicity"][mask].astype(np.int8)
-    phi = events["phi"][mask].astype(np.float64)
-    sin_theta = events["sin_theta_gamma"][mask].astype(np.float64)
-    cos_theta = events["cos_theta_gamma"][mask].astype(np.float64)
-    r_b = events["rB"][mask].astype(np.float64)
-    r_c = events["rC"][mask].astype(np.float64)
-    r_v = events["rV"][mask].astype(np.float64)
-    r_w = events["rW"][mask].astype(np.float64)
+    period_index = events["period_index"][mask].astype(np.int8, copy=False)
+    runnum = events["runnum"][mask].astype(np.int32, copy=False)
+    helicity = events["helicity"][mask].astype(np.int8, copy=False)
+    phi = events["phi"][mask].astype(np.float64, copy=False)
+    sin_theta = events["sin_theta_gamma"][mask].astype(np.float64, copy=False)
+    cos_theta = events["cos_theta_gamma"][mask].astype(np.float64, copy=False)
+    r_b = events["rB"][mask].astype(np.float64, copy=False)
+    r_c = events["rC"][mask].astype(np.float64, copy=False)
+    r_v = events["rV"][mask].astype(np.float64, copy=False)
+    r_w = events["rW"][mask].astype(np.float64, copy=False)
 
     period_event_indices = {
         period: np.flatnonzero(period_index == PERIOD_INDEX[period])
-        for period in PERIODS
+        for period in active_periods
     }
 
     run_lookup = {
@@ -1347,26 +1397,74 @@ def make_bin_nll(
             int(run): index
             for index, run in enumerate(run_states[period]["run"])
         }
-        for period in PERIODS
+        for period in active_periods
     }
 
     observed_run_indices: dict[str, np.ndarray] = {}
-    for period in PERIODS:
+    for period in active_periods:
         indices = period_event_indices[period]
-        observed_run_indices[period] = np.asarray(
-            [run_lookup[period][int(run)] for run in runnum[indices]],
+        observed_run_indices[period] = np.fromiter(
+            (run_lookup[period][int(run)] for run in runnum[indices]),
+            count=indices.size,
             dtype=np.int32,
         )
     # endfor
 
     dilution_central = {
         period: dilution_records[(period, bin_number)].value
-        for period in PERIODS
+        for period in active_periods
     }
     dilution_sigma = {
         period: dilution_records[(period, bin_number)].stat_uncertainty
-        for period in PERIODS
+        for period in active_periods
     }
+
+    # Precompute all parameter-independent event arrays and run-state charge
+    # moments once.  The previous implementation recomputed several of these
+    # quantities at every Minuit function call.
+    period_data: dict[str, dict[str, Any]] = {}
+    for period in active_periods:
+        indices = period_event_indices[period]
+        event_phi = phi[indices]
+        state = run_states[period]
+        state_pt = state["pt"]
+        state_q_plus = state["q_plus"]
+        state_q_minus = state["q_minus"]
+        observed_state_index = observed_run_indices[period]
+        event_h = helicity[indices].astype(np.float64, copy=False)
+
+        period_data[period] = {
+            "phi": event_phi,
+            "sin_phi": np.sin(event_phi),
+            "cos_phi": np.cos(event_phi),
+            "sin_2phi": np.sin(2.0 * event_phi),
+            "cos_2phi": np.cos(2.0 * event_phi),
+            "sin_3phi": np.sin(3.0 * event_phi),
+            "r_b": r_b[indices],
+            "r_c": r_c[indices],
+            "r_v": r_v[indices],
+            "r_w": r_w[indices],
+            "sin_theta": sin_theta[indices],
+            "cos_theta": cos_theta[indices],
+            "h": event_h,
+            "observed_pt": state_pt[observed_state_index],
+            "observed_charge": np.where(
+                event_h > 0.0,
+                state_q_plus[observed_state_index],
+                state_q_minus[observed_state_index],
+            ),
+            "charge_sum": float(np.sum(state_q_plus + state_q_minus)),
+            "helicity_charge_sum": float(
+                np.sum(state_q_plus - state_q_minus)
+            ),
+            "target_charge_sum": float(
+                np.sum(state_pt * (state_q_plus + state_q_minus))
+            ),
+            "helicity_target_charge_sum": float(
+                np.sum(state_pt * (state_q_plus - state_q_minus))
+            ),
+        }
+    # endfor
 
     def nll(
         u1: float,
@@ -1392,12 +1490,7 @@ def make_bin_nll(
         }
         total = 0.0
 
-        for period in PERIODS:
-            indices = period_event_indices[period]
-            if indices.size == 0:
-                continue
-            # endif
-
+        for period in active_periods:
             dilution = dilution_by_period[period]
             sigma = dilution_sigma[period]
             central = dilution_central[period]
@@ -1410,27 +1503,15 @@ def make_bin_nll(
                 return INVALID_NLL
             # endif
 
-            event_phi = phi[indices]
-            event_r_b = r_b[indices]
-            event_r_c = r_c[indices]
-            event_r_v = r_v[indices]
-            event_r_w = r_w[indices]
-            event_sin = sin_theta[indices]
-            event_cos = cos_theta[indices]
-            event_h = helicity[indices].astype(np.float64)
-
-            state = run_states[period]
-            state_pt = state["pt"]
-            state_q_plus = state["q_plus"]
-            state_q_minus = state["q_minus"]
-
-            observed_state_index = observed_run_indices[period]
-            observed_pt = state_pt[observed_state_index]
-            observed_charge = np.where(
-                event_h > 0.0,
-                state_q_plus[observed_state_index],
-                state_q_minus[observed_state_index],
-            )
+            data = period_data[period]
+            event_phi = data["phi"]
+            event_r_b = data["r_b"]
+            event_r_c = data["r_c"]
+            event_r_v = data["r_v"]
+            event_r_w = data["r_w"]
+            event_sin = data["sin_theta"]
+            event_cos = data["cos_theta"]
+            event_h = data["h"]
 
             numerator_factor = evaluate_cross_section_factor(
                 variant=variant,
@@ -1443,8 +1524,9 @@ def make_bin_nll(
                 cos_theta_gamma=event_cos,
                 helicity=event_h,
                 beam_polarization=BEAM_POLARIZATION[period],
-                target_polarization=observed_pt,
+                target_polarization=data["observed_pt"],
                 dilution=dilution,
+                transverse_scales=transverse_scales,
                 u1=u1,
                 u2=u2,
                 lu1=lu1,
@@ -1460,37 +1542,16 @@ def make_bin_nll(
                 return INVALID_NLL
             # endif
 
-            # The cross-section factor is linear in beam helicity h and
-            # signed target polarization P_t.  Therefore the state sum over all
-            # runs can be evaluated exactly from four charge moments instead of
-            # looping over every run during every minimizer call:
-            #
-            #   S0  = sum_r (Q_r+ + Q_r-)
-            #   Sh  = sum_r (Q_r+ - Q_r-)
-            #   St  = sum_r P_t,r (Q_r+ + Q_r-)
-            #   Sht = sum_r P_t,r (Q_r+ - Q_r-).
-            #
-            # This is algebraically identical to the explicit run/state sum and
-            # is critical for practical fit speed.
-            charge_sum = float(np.sum(state_q_plus + state_q_minus))
-            helicity_charge_sum = float(np.sum(state_q_plus - state_q_minus))
-            target_charge_sum = float(
-                np.sum(state_pt * (state_q_plus + state_q_minus))
-            )
-            helicity_target_charge_sum = float(
-                np.sum(state_pt * (state_q_plus - state_q_minus))
-            )
-
             unpolarized = (
                 1.0
-                + event_r_v * u1 * np.cos(event_phi)
-                + event_r_b * u2 * np.cos(2.0 * event_phi)
+                + event_r_v * u1 * data["cos_phi"]
+                + event_r_b * u2 * data["cos_2phi"]
             )
             beam_coefficient = (
                 BEAM_POLARIZATION[period]
                 * event_r_w
                 * lu1
-                * np.sin(event_phi)
+                * data["sin_phi"]
             )
 
             if variant == "no_projection":
@@ -1505,8 +1566,8 @@ def make_bin_nll(
                 dilution
                 * longitudinal_geometry
                 * (
-                    event_r_v * ul1 * np.sin(event_phi)
-                    + event_r_b * ul2 * np.sin(2.0 * event_phi)
+                    event_r_v * ul1 * data["sin_phi"]
+                    + event_r_b * ul2 * data["sin_2phi"]
                 )
             )
             double_longitudinal_coefficient = (
@@ -1515,27 +1576,48 @@ def make_bin_nll(
                 * longitudinal_geometry
                 * (
                     event_r_c * ll0
-                    + event_r_w * ll1 * np.cos(event_phi)
+                    + event_r_w * ll1 * data["cos_phi"]
                 )
             )
 
-            ut_fixed, lt_fixed = transverse_target_terms(
-                variant,
-                event_phi,
-                event_r_b,
-                event_r_c,
-                event_r_v,
-                event_r_w,
-            )
-            target_transverse_coefficient = (
-                dilution * transverse_geometry * ut_fixed
-            )
-            double_transverse_coefficient = (
-                BEAM_POLARIZATION[period]
-                * dilution
-                * transverse_geometry
-                * lt_fixed
-            )
+            if variant in (
+                "longitudinal_scaled_transverse_plus",
+                "longitudinal_scaled_transverse_minus",
+            ):
+                scales = transverse_scales or {}
+                transverse_sign = (
+                    1.0
+                    if variant == "longitudinal_scaled_transverse_plus"
+                    else -1.0
+                )
+                ul1_scale = transverse_sign * float(scales["ul1"])
+                ul2_scale = transverse_sign * float(scales["ul2"])
+                ll0_scale = transverse_sign * float(scales["ll0"])
+                ll1_scale = transverse_sign * float(scales["ll1"])
+                ut_fixed = (
+                    ul1_scale * data["sin_phi"]
+                    + event_r_b * ul1_scale * data["sin_phi"]
+                    + event_r_b * ul2_scale * data["sin_3phi"]
+                    + event_r_v * ul2_scale * data["sin_2phi"]
+                )
+                lt_fixed = (
+                    event_r_c * ll1_scale * data["cos_phi"]
+                    + event_r_w * ll0_scale
+                    + event_r_w * ll1_scale * data["cos_2phi"]
+                )
+                target_transverse_coefficient = (
+                    dilution * transverse_geometry * ut_fixed
+                )
+                double_transverse_coefficient = (
+                    BEAM_POLARIZATION[period]
+                    * dilution
+                    * transverse_geometry
+                    * lt_fixed
+                )
+            else:
+                target_transverse_coefficient = 0.0
+                double_transverse_coefficient = 0.0
+            # endif
 
             target_coefficient = (
                 target_longitudinal_coefficient
@@ -1547,10 +1629,10 @@ def make_bin_nll(
             )
 
             denominator = (
-                charge_sum * unpolarized
-                + helicity_charge_sum * beam_coefficient
-                + target_charge_sum * target_coefficient
-                + helicity_target_charge_sum * double_coefficient
+                data["charge_sum"] * unpolarized
+                + data["helicity_charge_sum"] * beam_coefficient
+                + data["target_charge_sum"] * target_coefficient
+                + data["helicity_target_charge_sum"] * double_coefficient
             )
             if (
                 np.any(~np.isfinite(denominator))
@@ -1559,7 +1641,7 @@ def make_bin_nll(
                 return INVALID_NLL
             # endif
 
-            numerator = observed_charge * numerator_factor
+            numerator = data["observed_charge"] * numerator_factor
             probability = numerator / denominator
             if (
                 np.any(~np.isfinite(probability))
@@ -1576,13 +1658,26 @@ def make_bin_nll(
         return total
 
     metadata = {
+        "active_periods": list(active_periods),
         "number_of_events": int(np.count_nonzero(mask)),
         "events_by_period": {
-            period: int(period_event_indices[period].size)
+            period: int(period_event_indices.get(period, np.empty(0)).size)
             for period in PERIODS
         },
-        "dilution_central": dilution_central,
-        "dilution_stat_uncertainty": dilution_sigma,
+        "dilution_central": {
+            period: (
+                dilution_records[(period, bin_number)].value
+                if period in active_periods else None
+            )
+            for period in PERIODS
+        },
+        "dilution_stat_uncertainty": {
+            period: (
+                dilution_records[(period, bin_number)].stat_uncertainty
+                if period in active_periods else None
+            )
+            for period in PERIODS
+        },
         "mean_sin_theta_gamma": float(np.mean(sin_theta)),
         "rms_sin_theta_gamma": float(np.std(sin_theta, ddof=1))
         if sin_theta.size > 1 else 0.0,
@@ -1657,6 +1752,9 @@ def fit_one_variant(
     dilution_records: Mapping[tuple[str, int], DilutionRecord],
     bin_number: int,
     variant: str,
+    active_periods: tuple[str, ...] = PERIODS,
+    transverse_scales: Mapping[str, float] | None = None,
+    initial_values: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
         events,
@@ -1664,43 +1762,89 @@ def fit_one_variant(
         dilution_records,
         bin_number,
         variant,
+        active_periods=active_periods,
+        transverse_scales=transverse_scales,
     )
 
     initial = dict(PARAMETER_INITIAL_VALUES)
+    if initial_values is not None:
+        for name in PHYSICS_PARAMETERS:
+            if name in initial_values:
+                initial[name] = float(initial_values[name])
+            # endif
+        # endfor
+    # endif
     initial.update(
         {
-            "f_su22": dilution_records[("su22", bin_number)].value,
-            "f_fa22": dilution_records[("fa22", bin_number)].value,
-            "f_sp23": dilution_records[("sp23", bin_number)].value,
+            f"f_{period}": dilution_records[(period, bin_number)].value
+            for period in PERIODS
         }
     )
 
-    minuit = Minuit(nll, **initial)
-    minuit.errordef = Minuit.LIKELIHOOD
-    minuit.print_level = 0
-    minuit.strategy = 1
+    def configured_minuit(start_values: Mapping[str, float]) -> Minuit:
+        candidate = Minuit(nll, **dict(start_values))
+        candidate.errordef = Minuit.LIKELIHOOD
+        candidate.print_level = 0
+        candidate.strategy = 1
 
-    for name in PHYSICS_PARAMETERS:
-        minuit.limits[name] = PARAMETER_LIMITS[name]
-    # endfor
-    for period in PERIODS:
-        name = f"f_{period}"
-        central = dilution_records[(period, bin_number)].value
-        sigma = dilution_records[(period, bin_number)].stat_uncertainty
-        width = max(8.0 * sigma, 0.20 * central, 0.02)
-        minuit.limits[name] = (
-            max(1.0e-6, central - width),
-            central + width,
-        )
-        if sigma == 0.0:
-            minuit.fixed[name] = True
+        for parameter_name in PHYSICS_PARAMETERS:
+            candidate.limits[parameter_name] = PARAMETER_LIMITS[
+                parameter_name
+            ]
+        # endfor
+        for period in PERIODS:
+            nuisance_name = f"f_{period}"
+            central = dilution_records[(period, bin_number)].value
+            sigma = dilution_records[(period, bin_number)].stat_uncertainty
+            width = max(8.0 * sigma, 0.20 * central, 0.02)
+            candidate.limits[nuisance_name] = (
+                max(1.0e-6, central - width),
+                central + width,
+            )
+            if period not in active_periods or sigma == 0.0:
+                candidate.fixed[nuisance_name] = True
+            # endif
+        # endfor
+        return candidate
+
+    start_candidates: list[dict[str, float]] = [dict(initial)]
+    zero_start = dict(initial)
+    zero_start.update({name: 0.0 for name in PHYSICS_PARAMETERS})
+    start_candidates.append(zero_start)
+
+    # A deterministic midpoint start is useful for difficult low-statistics
+    # bins without introducing run-to-run randomness.
+    midpoint_start = dict(initial)
+    midpoint_start.update(
+        {
+            name: 0.5 * float(initial[name])
+            for name in PHYSICS_PARAMETERS
+        }
+    )
+    start_candidates.append(midpoint_start)
+
+    attempted: list[Minuit] = []
+    for attempt_index, start_values in enumerate(start_candidates):
+        candidate = configured_minuit(start_values)
+        candidate.migrad(ncall=50000)
+        if not candidate.fmin.is_valid:
+            candidate.simplex(ncall=50000)
+            candidate.strategy = 2
+            candidate.migrad(ncall=100000)
+        # endif
+        attempted.append(candidate)
+        if candidate.fmin.is_valid:
+            break
         # endif
     # endfor
 
-    minuit.migrad(ncall=50000)
-    if not minuit.fmin.is_valid:
-        minuit.strategy = 2
-        minuit.migrad(ncall=100000)
+    valid_attempts = [
+        candidate for candidate in attempted if candidate.fmin.is_valid
+    ]
+    if valid_attempts:
+        minuit = min(valid_attempts, key=lambda candidate: candidate.fval)
+    else:
+        minuit = min(attempted, key=lambda candidate: candidate.fval)
     # endif
     minuit.hesse()
 
@@ -1709,27 +1853,39 @@ def fit_one_variant(
         {
             "bin_number": bin_number,
             "variant": variant,
+            "active_periods": list(active_periods),
+            "transverse_scales": (
+                dict(transverse_scales)
+                if transverse_scales is not None else None
+            ),
             "metadata": metadata,
         }
     )
     return result
 
 
-def fit_bin_worker(
+_WORKER_EVENTS: dict[str, np.ndarray] | None = None
+_WORKER_RUN_STATES: dict[str, dict[str, np.ndarray]] | None = None
+_WORKER_DILUTION_RECORDS: dict[tuple[str, int], DilutionRecord] | None = None
+
+
+def initialize_fit_worker(
     cache_path_text: str,
     run_state_payload: dict[str, dict[str, list[float] | list[int]]],
-    dilution_payload: dict[str, dict[str, float | int]],
-    bin_number: int,
-) -> dict[str, Any]:
-    events = load_event_cache(Path(cache_path_text))
-    run_states = {
+    dilution_payload: dict[str, dict[str, dict[str, float | int]]],
+) -> None:
+    """Load immutable fit inputs once per worker process."""
+    global _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS
+
+    _WORKER_EVENTS = load_event_cache(Path(cache_path_text))
+    _WORKER_RUN_STATES = {
         period: {
             key: np.asarray(values)
             for key, values in state.items()
         }
         for period, state in run_state_payload.items()
     }
-    dilution_records = {
+    _WORKER_DILUTION_RECORDS = {
         (period, int(bin_text)): DilutionRecord(
             period=period,
             bin_number=int(bin_text),
@@ -1742,38 +1898,148 @@ def fit_bin_worker(
         for bin_text, record in period_payload.items()
     }
 
-    variants: dict[str, Any] = {}
-    for variant in FIT_VARIANTS:
-        variants[variant] = fit_one_variant(
-            events,
-            run_states,
-            dilution_records,
-            bin_number,
-            variant,
-        )
-    # endfor
 
-    nominal = variants["nominal"]
+def fit_bin_worker(bin_number: int) -> dict[str, Any]:
+    if (
+        _WORKER_EVENTS is None
+        or _WORKER_RUN_STATES is None
+        or _WORKER_DILUTION_RECORDS is None
+    ):
+        raise RuntimeError("Fit worker was not initialized.")
+    # endif
+
+    events = _WORKER_EVENTS
+    run_states = _WORKER_RUN_STATES
+    dilution_records = _WORKER_DILUTION_RECORDS
+
+    nominal = fit_one_variant(
+        events,
+        run_states,
+        dilution_records,
+        bin_number,
+        "nominal",
+    )
+    no_projection = fit_one_variant(
+        events,
+        run_states,
+        dilution_records,
+        bin_number,
+        "no_projection",
+        initial_values=nominal["values"],
+    )
+
+    transverse_scales = {
+        "ul1": nominal["values"]["ul1"],
+        "ul2": nominal["values"]["ul2"],
+        "ll0": nominal["values"]["ll0"],
+        "ll1": nominal["values"]["ll1"],
+    }
+    longitudinal_scaled_transverse_plus = fit_one_variant(
+        events,
+        run_states,
+        dilution_records,
+        bin_number,
+        "longitudinal_scaled_transverse_plus",
+        transverse_scales=transverse_scales,
+        initial_values=nominal["values"],
+    )
+    longitudinal_scaled_transverse_minus = fit_one_variant(
+        events,
+        run_states,
+        dilution_records,
+        bin_number,
+        "longitudinal_scaled_transverse_minus",
+        transverse_scales=transverse_scales,
+        initial_values=nominal["values"],
+    )
+
+    variants = {
+        "nominal": nominal,
+        "no_projection": no_projection,
+        "longitudinal_scaled_transverse_plus": (
+            longitudinal_scaled_transverse_plus
+        ),
+        "longitudinal_scaled_transverse_minus": (
+            longitudinal_scaled_transverse_minus
+        ),
+    }
+
     systematics: dict[str, float] = {}
     for parameter in PHYSICS_PARAMETERS:
         nominal_value = nominal["values"][parameter]
         systematics[parameter] = max(
+            abs(no_projection["values"][parameter] - nominal_value),
             abs(
-                variants[variant]["values"][parameter]
+                longitudinal_scaled_transverse_plus["values"][parameter]
                 - nominal_value
-            )
-            for variant in (
-                "no_projection",
-                "transverse_plus",
-                "transverse_minus",
+            ),
+            abs(
+                longitudinal_scaled_transverse_minus["values"][parameter]
+                - nominal_value
+            ),
+        )
+    # endfor
+
+    # Independent nominal fits for period-consistency plots.  These do not
+    # enter the quoted combined result or its target-axis systematic.
+    period_fits = {
+        period: fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "nominal",
+            active_periods=(period,),
+            initial_values=nominal["values"],
+        )
+        for period in PERIODS
+    }
+
+    # Quantify each period's tension with the simultaneous solution.  For each
+    # period, compare its nominal NLL at the combined best-fit point with the
+    # independently minimized period-only NLL.  The difference is nonnegative
+    # up to minimizer precision and is a compact period-consistency diagnostic.
+    period_consistency: dict[str, dict[str, float]] = {}
+    for period in PERIODS:
+        period_nll, _ = make_bin_nll(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "nominal",
+            active_periods=(period,),
+        )
+        combined_nll_for_period = float(
+            period_nll(
+                **{
+                    name: nominal["values"][name]
+                    for name in (
+                        *PHYSICS_PARAMETERS,
+                        "f_su22",
+                        "f_fa22",
+                        "f_sp23",
+                    )
+                }
             )
         )
+        period_minimum_nll = float(period_fits[period]["minimum_nll"])
+        period_consistency[period] = {
+            "nll_at_combined_solution": combined_nll_for_period,
+            "period_only_minimum_nll": period_minimum_nll,
+            "delta_nll": max(
+                0.0,
+                combined_nll_for_period - period_minimum_nll,
+            ),
+        }
     # endfor
 
     return {
         "bin_number": bin_number,
         "variants": variants,
+        "period_fits": period_fits,
+        "period_consistency": period_consistency,
         "target_axis_systematic": systematics,
+        "transverse_scales": transverse_scales,
     }
 
 
@@ -1823,6 +2089,14 @@ def flatten_fit_results(
             row[f"fitted_dilution_error_{period}"] = nominal[
                 "errors"
             ][f"f_{period}"]
+
+            period_fit = result["period_fits"][period]
+            row[f"period_fit_valid_{period}"] = period_fit["valid"]
+            row[f"period_fit_nll_{period}"] = period_fit["minimum_nll"]
+            row[f"period_fit_edm_{period}"] = period_fit["edm"]
+            row[f"period_delta_nll_{period}"] = result[
+                "period_consistency"
+            ][period]["delta_nll"]
         # endfor
 
         for parameter in PHYSICS_PARAMETERS:
@@ -1836,29 +2110,36 @@ def flatten_fit_results(
                     "variants"
                 ][variant]["values"][parameter]
             # endfor
+            for period in PERIODS:
+                period_fit = result["period_fits"][period]
+                row[f"{parameter}_{period}"] = period_fit[
+                    "values"
+                ][parameter]
+                row[f"{parameter}_stat_{period}"] = period_fit[
+                    "errors"
+                ][parameter]
+            # endfor
         # endfor
         rows.append(row)
     # endfor
     return pd.DataFrame(rows)
 
 
+def apply_parameter_y_limits(ax: plt.Axes, parameter: str) -> None:
+    limits = PARAMETER_Y_LIMITS[parameter]
+    if limits is not None:
+        ax.set_ylim(*limits)
+    # endif
+
+
 def plot_parameter_summaries(
     frame: pd.DataFrame,
     output_dir: Path,
 ) -> list[str]:
+    """Write the original one-parameter, all-24-bin summary plots."""
     ensure_directory(output_dir)
     paths: list[str] = []
     bins = frame["bin_number"].to_numpy()
-
-    labels = {
-        "u1": r"$F_{UU}^{\cos\phi}/F_{UU}$",
-        "u2": r"$F_{UU}^{\cos2\phi}/F_{UU}$",
-        "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
-        "ul1": r"$F_{UL}^{\sin\phi}/F_{UU}$",
-        "ul2": r"$F_{UL}^{\sin2\phi}/F_{UU}$",
-        "ll0": r"$F_{LL}/F_{UU}$",
-        "ll1": r"$F_{LL}^{\cos\phi}/F_{UU}$",
-    }
 
     for parameter in PHYSICS_PARAMETERS:
         fig, ax = plt.subplots(figsize=(14, 5.5))
@@ -1871,11 +2152,10 @@ def plot_parameter_summaries(
             capsize=2,
             label="Statistical uncertainty",
         )
-        systematic = frame[f"{parameter}_target_axis_sys"].to_numpy()
         ax.errorbar(
             bins,
             frame[parameter],
-            yerr=systematic,
+            yerr=frame[f"{parameter}_target_axis_sys"],
             marker="none",
             linestyle="none",
             capsize=4,
@@ -1884,18 +2164,184 @@ def plot_parameter_summaries(
         )
         ax.axhline(0.0, linewidth=0.8)
         ax.set_xlabel("Combined kinematic-bin number")
-        ax.set_ylabel(labels[parameter])
+        ax.set_ylabel(PARAMETER_LABELS[parameter])
         ax.set_xticks(bins)
+        apply_parameter_y_limits(ax, parameter)
         ax.grid(alpha=0.25)
         ax.legend()
         fig.tight_layout()
-        path = output_dir / f"{parameter}_summary_v3.png"
+        path = output_dir / f"{parameter}_summary_v5.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
     # endfor
     return paths
 
+
+def plot_aggregated_by_x(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> list[str]:
+    """
+    Write one seven-panel canvas per xB bin, showing the combined result versus
+    mean -tprime.  Statistical and target-axis uncertainties are drawn
+    separately.
+    """
+    ensure_directory(output_dir)
+    paths: list[str] = []
+
+    for x_index, (x_low, x_high) in enumerate(XB_BINS):
+        subset = frame.loc[frame["x_index"] == x_index].sort_values("t_index")
+        fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
+        axes_flat = axes.ravel()
+
+        for panel, parameter in enumerate(PHYSICS_PARAMETERS):
+            ax = axes_flat[panel]
+            x_values = subset["mean_minus_tprime_gev2"]
+            ax.errorbar(
+                x_values,
+                subset[parameter],
+                yerr=subset[f"{parameter}_stat"],
+                marker="o",
+                linestyle="none",
+                capsize=2,
+                label="Statistical uncertainty",
+            )
+            ax.errorbar(
+                x_values,
+                subset[parameter],
+                yerr=subset[f"{parameter}_target_axis_sys"],
+                marker="none",
+                linestyle="none",
+                capsize=4,
+                linewidth=1.0,
+                label="Target-axis envelope",
+            )
+            ax.axhline(0.0, linewidth=0.8)
+            ax.set_ylabel(PARAMETER_LABELS[parameter])
+            apply_parameter_y_limits(ax, parameter)
+            ax.grid(alpha=0.25)
+            if panel >= 6:
+                ax.set_xlabel(r"Mean $-t^\prime$ (GeV$^2$)")
+            # endif
+        # endfor
+
+        axes_flat[7].axis("off")
+        axes_flat[8].axis("off")
+        handles, labels = axes_flat[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="lower right", bbox_to_anchor=(0.96, 0.06))
+        fig.suptitle(
+            rf"${x_low:.2f} \leq x_B < {x_high:.2f}$",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
+        path = output_dir / f"xB_bin_{x_index + 1}_combined_v5.png"
+        fig.savefig(path, dpi=180)
+        plt.close(fig)
+        paths.append(str(path))
+    # endfor
+    return paths
+
+
+def plot_aggregated_by_period(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> list[str]:
+    """
+    Write one seven-panel canvas per xB bin with independent Su22, Fa22, Sp23,
+    and simultaneous-combination nominal fits on the same axes.
+    """
+    ensure_directory(output_dir)
+    paths: list[str] = []
+
+    for x_index, (x_low, x_high) in enumerate(XB_BINS):
+        subset = frame.loc[frame["x_index"] == x_index].sort_values("t_index")
+        x_values = subset["mean_minus_tprime_gev2"]
+        fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
+        axes_flat = axes.ravel()
+
+        for panel, parameter in enumerate(PHYSICS_PARAMETERS):
+            ax = axes_flat[panel]
+            ax.errorbar(
+                x_values,
+                subset[parameter],
+                yerr=subset[f"{parameter}_stat"],
+                marker="o",
+                linestyle="-",
+                capsize=2,
+                label="Combined",
+            )
+            for period in PERIODS:
+                ax.errorbar(
+                    x_values,
+                    subset[f"{parameter}_{period}"],
+                    yerr=subset[f"{parameter}_stat_{period}"],
+                    marker="o",
+                    linestyle="none",
+                    capsize=2,
+                    label=PERIOD_LABELS[period],
+                )
+            # endfor
+            ax.axhline(0.0, linewidth=0.8)
+            ax.set_ylabel(PARAMETER_LABELS[parameter])
+            apply_parameter_y_limits(ax, parameter)
+            ax.grid(alpha=0.25)
+            if panel >= 6:
+                ax.set_xlabel(r"Mean $-t^\prime$ (GeV$^2$)")
+            # endif
+        # endfor
+
+        axes_flat[7].axis("off")
+        axes_flat[8].axis("off")
+        handles, labels = axes_flat[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="lower right", bbox_to_anchor=(0.96, 0.06))
+        fig.suptitle(
+            rf"${x_low:.2f} \leq x_B < {x_high:.2f}$: period consistency",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
+        path = output_dir / f"xB_bin_{x_index + 1}_by_period_v5.png"
+        fig.savefig(path, dpi=180)
+        plt.close(fig)
+        paths.append(str(path))
+    # endfor
+    return paths
+
+
+
+def plot_period_consistency_heatmap(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> str:
+    """Plot Delta NLL for each period and combined kinematic bin."""
+    ensure_directory(output_dir)
+    matrix = np.asarray(
+        [
+            frame[f"period_delta_nll_{period}"].to_numpy(dtype=float)
+            for period in PERIODS
+        ],
+        dtype=float,
+    )
+
+    fig, ax = plt.subplots(figsize=(15, 3.8))
+    image = ax.imshow(matrix, aspect="auto", origin="upper")
+    ax.set_xticks(np.arange(NUMBER_OF_BINS))
+    ax.set_xticklabels(frame["bin_number"].astype(int).tolist())
+    ax.set_yticks(np.arange(len(PERIODS)))
+    ax.set_yticklabels([PERIOD_LABELS[period] for period in PERIODS])
+    ax.set_xlabel("Combined kinematic-bin number")
+    ax.set_ylabel("Run period")
+    colorbar = fig.colorbar(image, ax=ax)
+    colorbar.set_label(
+        r"$\Delta\mathrm{NLL}_p="
+        r"\mathrm{NLL}_p(\widehat{\theta}_{\mathrm{combined}})"
+        r"-\mathrm{NLL}_{p,\min}$"
+    )
+    fig.tight_layout()
+    path = output_dir / "period_consistency_delta_nll_v5.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return str(path)
 
 def write_latex_table(
     frame: pd.DataFrame,
@@ -2079,12 +2525,18 @@ def main() -> int:
     json_dir = output_dir / "json"
     covariance_dir = output_dir / "covariance"
     plots_dir = output_dir / "plots"
+    all_bins_plots_dir = plots_dir / "all_bins"
+    aggregated_plots_dir = plots_dir / "aggregated"
+    period_plots_dir = aggregated_plots_dir / "by_period"
     latex_dir = output_dir / "latex"
     for directory in (
         tables_dir,
         json_dir,
         covariance_dir,
         plots_dir,
+        all_bins_plots_dir,
+        aggregated_plots_dir,
+        period_plots_dir,
         latex_dir,
     ):
         ensure_directory(directory)
@@ -2152,15 +2604,17 @@ def main() -> int:
     }
 
     results: list[dict[str, Any]] = []
-    with ProcessPoolExecutor(max_workers=workers) as executor:
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        initializer=initialize_fit_worker,
+        initargs=(
+            str(cache_path),
+            run_state_payload,
+            dilution_payload,
+        ),
+    ) as executor:
         futures = {
-            executor.submit(
-                fit_bin_worker,
-                str(cache_path),
-                run_state_payload,
-                dilution_payload,
-                bin_number,
-            ): bin_number
+            executor.submit(fit_bin_worker, bin_number): bin_number
             for bin_number in range(1, NUMBER_OF_BINS + 1)
         }
         for future in as_completed(futures):
@@ -2168,26 +2622,32 @@ def main() -> int:
             result = future.result()
             results.append(result)
             nominal = result["variants"]["nominal"]
+            period_validity = ",".join(
+                f"{PERIOD_LABELS[period]}="
+                f"{result['period_fits'][period]['valid']}"
+                for period in PERIODS
+            )
             print(
                 f"[bin {bin_number:02d}] "
                 f"N={nominal['metadata']['number_of_events']:,}; "
-                f"valid={nominal['valid']}; "
+                f"combined_valid={nominal['valid']}; "
                 f"NLL={nominal['minimum_nll']:.6f}; "
-                f"EDM={nominal['edm']:.3e}"
+                f"EDM={nominal['edm']:.3e}; "
+                f"period_fits({period_validity})"
             )
         # endfor
     # endwith
 
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
-    csv_path = tables_dir / "structure_function_ratios_v3.csv"
+    csv_path = tables_dir / "structure_function_ratios_v5.csv"
     frame.to_csv(csv_path, index=False)
 
-    detailed_json_path = json_dir / "structure_function_ratios_v3.json"
+    detailed_json_path = json_dir / "structure_function_ratios_v5.json"
     write_json(
         detailed_json_path,
         {
-            "schema_version": 3,
+            "schema_version": 5,
             "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "fit_policy": (
@@ -2197,12 +2657,15 @@ def main() -> int:
             "target_axis_systematic_definition": (
                 "For each fitted longitudinal observable, the systematic is the "
                 "largest absolute displacement from nominal among no_projection, "
-                "transverse_plus, and transverse_minus."
+                "longitudinal_scaled_transverse_plus, and "
+                "longitudinal_scaled_transverse_minus."
             ),
             "transverse_stress_model_warning": (
-                "The coherent +/-0.5 transverse variants are deliberately "
-                "conservative stress tests and are not physical models asserting "
-                "equal signs and magnitudes for all transverse modulations."
+                "The two transverse stress variants use the signed nominal "
+                "longitudinal amplitudes as scales for corresponding transverse "
+                "harmonics. One preserves all mapped signs and one reverses them. "
+                "They are loose data-driven systematic estimates, not physical "
+                "equality assumptions."
             ),
             "polarization_uncertainty_policy": (
                 "Beam- and target-polarization uncertainties are not included. "
@@ -2240,28 +2703,43 @@ def main() -> int:
             continue
         # endif
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v3.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v5.npy",
             np.asarray(nominal["covariance"], dtype=np.float64),
         )
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v3.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v5.npy",
             np.asarray(nominal["correlation"], dtype=np.float64),
         )
     # endfor
 
-    latex_path = latex_dir / "structure_function_ratios_v3.tex"
+    latex_path = latex_dir / "structure_function_ratios_v5.tex"
     write_latex_table(frame, latex_path)
 
-    plot_paths: list[str] = []
+    plot_paths: dict[str, list[str]] = {
+        "all_bins": [],
+        "aggregated": [],
+        "aggregated_by_period": [],
+    }
     if not args.skip_plots:
-        plot_paths = plot_parameter_summaries(frame, plots_dir)
+        plot_paths["all_bins"] = plot_parameter_summaries(
+            frame, all_bins_plots_dir
+        )
+        plot_paths["aggregated"] = plot_aggregated_by_x(
+            frame, aggregated_plots_dir
+        )
+        plot_paths["aggregated_by_period"] = plot_aggregated_by_period(
+            frame, period_plots_dir
+        )
+        plot_paths["aggregated_by_period"].append(
+            plot_period_consistency_heatmap(frame, period_plots_dir)
+        )
     # endif
 
-    manifest_path = output_dir / "asymmetry_extraction_manifest_v3.json"
+    manifest_path = output_dir / "asymmetry_extraction_manifest_v5.json"
     write_json(
         manifest_path,
         {
-            "schema_version": 3,
+            "schema_version": 5,
             "script": str(Path(__file__).resolve()),
             "workers": workers,
             "products": {
