@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-extract_structure_function_ratios_v8.py
+extract_structure_function_ratios.py
 
 Initial standalone event-level asymmetry extraction for the RGC exclusive
 e p -> e' n pi+ analysis.
@@ -77,21 +77,14 @@ The transverse stress terms use the standard one-hadron harmonic/depolarization
 mapping evaluated for a beam-axis target, phi_S = 0 with the signed target
 polarization carrying the target orientation:
 
-  UT:
-    A_UT^{sin(phi-phi_S)}                 coefficient 1
-    A_UT^{sin(phi+phi_S)}                 coefficient DepB/DepA
-    A_UT^{sin(3phi-phi_S)}                coefficient DepB/DepA
-    A_UT^{sin(phi_S)}                     coefficient DepV/DepA
-    A_UT^{sin(2phi-phi_S)}                coefficient DepV/DepA
+  Restricted UT/LT leakage model:
+    F_UL^{sin(phi)}       -> F_UT^{sin(phi)}
+    F_LL                  -> F_LT^{cos(0 phi)}
+    F_LL^{cos(phi)}       -> F_LT^{cos(phi)}
 
-  LT:
-    A_LT^{cos(phi-phi_S)}                 coefficient DepC/DepA
-    A_LT^{cos(phi_S)}                     coefficient DepW/DepA
-    A_LT^{cos(2phi-phi_S)}                coefficient DepW/DepA
-
-At phi_S = 0, sin(phi_S) vanishes.  Several remaining transverse terms are
-degenerate with longitudinal harmonics; they are therefore fixed rather than
-fitted and are used only to estimate the leakage envelope.
+No transverse sin(2phi), sin(3phi), or cos(2phi) term is populated.  The
+mapping is a loose stress test, not a claim that the corresponding transverse
+and longitudinal structure functions are equal.
 
 Dilution-factor uncertainty
 ---------------------------
@@ -210,7 +203,7 @@ MAXIMUM_WORKERS = 8
 DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_CHUNK_SIZE = "250 MB"
 DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction")
-DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v8.npz"
+DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events.npz"
 
 DEFAULT_RUN_INFO_CSV = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
@@ -1243,26 +1236,27 @@ def longitudinal_scaled_transverse_terms(
     scales: Mapping[str, float] | None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Return the transverse-target stress-model angular factors.
+    Return the restricted longitudinal-scaled transverse leakage model.
 
-    The scales are taken from the nominal fitted longitudinal amplitudes in the
-    same kinematic bin.  This is a deliberately loose, data-driven estimate of
-    the possible transverse leakage; it is not an assertion that the transverse
-    amplitudes equal the longitudinal amplitudes.
+    Only directly corresponding harmonics are populated:
 
-    Mapping used:
-      UT sin(phi-phi_S)       <- UL sin(phi)
-      UT sin(phi+phi_S)       <- UL sin(phi)
-      UT sin(3phi-phi_S)      <- UL sin(2phi)
-      UT sin(phi_S)           <- UL sin(phi) [vanishes at phi_S = 0]
-      UT sin(2phi-phi_S)      <- UL sin(2phi)
+      F_UL^{sin(phi)} / F_UU
+          -> F_UT^{sin(phi)} / F_UU
 
-      LT cos(phi-phi_S)       <- LL cos(phi)
-      LT cos(phi_S)           <- LL constant
-      LT cos(2phi-phi_S)      <- LL cos(phi)
+      F_LL / F_UU
+          -> F_LT^{cos(0 phi)} / F_UU
 
-    The mapped amplitudes preserve the signs of the corresponding nominal
-    fitted longitudinal amplitudes.
+      F_LL^{cos(phi)} / F_UU
+          -> F_LT^{cos(phi)} / F_UU
+
+    No transverse sin(2phi), sin(3phi), or cos(2phi) amplitude is generated.
+    Consequently F_UL^{sin(2phi)} and any absent F_LL^{cos(2phi)} term receive
+    no direct leakage assignment.  They may still move indirectly in the
+    refit through correlations with the populated harmonics.
+
+    This remains a deliberately loose stress model.  It does not assert that
+    the transverse and longitudinal structure-function ratios are physically
+    equal.
     """
     if scales is None:
         zeros = np.zeros(phi.shape, dtype=np.float64)
@@ -1270,21 +1264,22 @@ def longitudinal_scaled_transverse_terms(
     # endif
 
     ul1_scale = float(scales["ul1"])
-    ul2_scale = float(scales["ul2"])
     ll0_scale = float(scales["ll0"])
     ll1_scale = float(scales["ll1"])
 
-    # Beam-axis target: phi_S = 0.  The sin(phi_S) term vanishes.
-    ut = (
-        ul1_scale * np.sin(phi)
-        + r_b * ul1_scale * np.sin(phi)
-        + r_b * ul2_scale * np.sin(3.0 * phi)
-        + r_v * ul2_scale * np.sin(2.0 * phi)
-    )
+    # Effective beam-axis transverse harmonics used for the leakage study.
+    # The LT depolarization factors follow the standard cos(phi_S) and
+    # cos(phi-phi_S) terms at phi_S = 0:
+    #
+    #   LT cos(0 phi): rW
+    #   LT cos(phi):   rC
+    #
+    # The single UT sin(phi) leakage term is represented by its leading
+    # sin(phi-phi_S) harmonic at phi_S = 0.
+    ut = ul1_scale * np.sin(phi)
     lt = (
-        r_c * ll1_scale * np.cos(phi)
-        + r_w * ll0_scale
-        + r_w * ll1_scale * np.cos(2.0 * phi)
+        r_w * ll0_scale
+        + r_c * ll1_scale * np.cos(phi)
     )
     return ut, lt
 
@@ -2020,7 +2015,6 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
 
     transverse_scales = {
         "ul1": nominal["values"]["ul1"],
-        "ul2": nominal["values"]["ul2"],
         "ll0": nominal["values"]["ll0"],
         "ll1": nominal["values"]["ll1"],
     }
@@ -2265,6 +2259,17 @@ def flatten_fit_results(
             # endfor
         # endfor
 
+        ll0_value = float(nominal["values"]["ll0"])
+        ll0_error = float(nominal["errors"]["ll0"])
+        row["ll0_central_outside_unit_interval"] = abs(ll0_value) > 1.0
+        row["ll0_stat_interval_crosses_unit_boundary"] = (
+            ll0_value - ll0_error < -1.0
+            or ll0_value + ll0_error > 1.0
+        )
+        row["ll0_distance_to_nearest_unit_boundary"] = (
+            1.0 - abs(ll0_value)
+        )
+
         for parameter in PHYSICS_PARAMETERS:
             row[parameter] = nominal["values"][parameter]
             row[f"{parameter}_stat"] = nominal["errors"][parameter]
@@ -2380,7 +2385,7 @@ def plot_parameter_summaries(
         ax.grid(alpha=0.25)
         ax.legend()
         fig.tight_layout()
-        path = output_dir / f"{parameter}_summary_v8.png"
+        path = output_dir / f"{parameter}_summary.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2455,7 +2460,7 @@ def plot_aggregated_by_x(
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_combined_v8.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_combined.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2568,7 +2573,58 @@ def plot_aggregated_by_period(
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_by_period_v8.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_by_period.png"
+        fig.savefig(path, dpi=180)
+        plt.close(fig)
+        paths.append(str(path))
+    # endfor
+    return paths
+
+
+def plot_ll0_physical_boundary(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> list[str]:
+    """
+    Show F_LL/F_UU with statistical uncertainties and the formal +/-1
+    boundaries without clipping the displayed interval at the physical limit.
+    """
+    ensure_directory(output_dir)
+    paths: list[str] = []
+
+    for x_index, (x_low, x_high) in enumerate(XB_BINS):
+        subset = frame.loc[
+            frame["x_index"] == x_index
+        ].sort_values("t_index")
+        x_values = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
+        values = subset["ll0"].to_numpy(dtype=float)
+        errors = subset["ll0_stat"].to_numpy(dtype=float)
+
+        fig, ax = plt.subplots(figsize=(8.5, 5.5))
+        ax.errorbar(
+            x_values,
+            values,
+            yerr=errors,
+            marker="o",
+            linestyle="-",
+            capsize=3,
+            label=r"$F_{LL}/F_{UU}$, statistical",
+        )
+        ax.axhline(1.0, linestyle="--", linewidth=1.0, label="Formal boundary")
+        ax.axhline(-1.0, linestyle="--", linewidth=1.0)
+        ax.axhline(0.0, linewidth=0.8)
+
+        displayed_low = min(-1.10, float(np.min(values - errors)) - 0.05)
+        displayed_high = max(1.10, float(np.max(values + errors)) + 0.05)
+        ax.set_ylim(displayed_low, displayed_high)
+        ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
+        ax.set_ylabel(PARAMETER_LABELS["ll0"])
+        ax.set_title(rf"${x_low:.2f} \leq x_B < {x_high:.2f}$")
+        ax.grid(alpha=0.25)
+        ax.legend()
+        fig.tight_layout()
+
+        path = output_dir / f"xB_bin_{x_index + 1}_ll0_physical_boundary.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2649,7 +2705,7 @@ def plot_target_axis_variants(
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_target_axis_variants_v8.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_target_axis_variants.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2742,7 +2798,7 @@ def plot_period_stability(
             fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
             path = (
                 output_dir
-                / f"{period}_xB_bin_{x_index + 1}_stability_v8.png"
+                / f"{period}_xB_bin_{x_index + 1}_stability.png"
             )
             fig.savefig(path, dpi=180)
             plt.close(fig)
@@ -2781,7 +2837,7 @@ def plot_period_consistency_heatmap(
         r"-\mathrm{NLL}_{p,\min}$"
     )
     fig.tight_layout()
-    path = output_dir / "period_consistency_delta_nll_v8.png"
+    path = output_dir / "period_consistency_delta_nll.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2973,6 +3029,7 @@ def main() -> int:
     period_plots_dir = aggregated_plots_dir / "by_period"
     target_axis_variants_dir = plots_dir / "target_axis_variants"
     period_stability_dir = plots_dir / "period_stability"
+    physical_bounds_dir = plots_dir / "physical_bounds"
     latex_dir = output_dir / "latex"
     for directory in (
         tables_dir,
@@ -2984,6 +3041,7 @@ def main() -> int:
         period_plots_dir,
         target_axis_variants_dir,
         period_stability_dir,
+        physical_bounds_dir,
         latex_dir,
     ):
         ensure_directory(directory)
@@ -3087,14 +3145,14 @@ def main() -> int:
 
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
-    csv_path = tables_dir / "structure_function_ratios_v8.csv"
+    csv_path = tables_dir / "structure_function_ratios.csv"
     frame.to_csv(csv_path, index=False)
 
-    detailed_json_path = json_dir / "structure_function_ratios_v8.json"
+    detailed_json_path = json_dir / "structure_function_ratios.json"
     write_json(
         detailed_json_path,
         {
-            "schema_version": 8,
+            "schema_version": 1,
             "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "fit_policy": (
@@ -3107,6 +3165,13 @@ def main() -> int:
                 "transverse minus nominal span. The quoted target-axis systematic is the "
                 "larger of those two correlated components."
             ),
+            "transverse_leakage_mapping": {
+                "F_UL_sin_phi_to_F_UT_sin_phi": True,
+                "F_LL_to_F_LT_cos_0phi": True,
+                "F_LL_cos_phi_to_F_LT_cos_phi": True,
+                "F_UL_sin_2phi_to_transverse": False,
+                "F_LL_cos_2phi_from_transverse": False,
+            },
             "transverse_stress_model_warning": (
                 "The two transverse stress variants use the signed nominal "
                 "longitudinal amplitudes as scales for corresponding transverse "
@@ -3150,16 +3215,16 @@ def main() -> int:
             continue
         # endif
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v8.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance.npy",
             np.asarray(nominal["covariance"], dtype=np.float64),
         )
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v8.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation.npy",
             np.asarray(nominal["correlation"], dtype=np.float64),
         )
     # endfor
 
-    latex_path = latex_dir / "structure_function_ratios_v8.tex"
+    latex_path = latex_dir / "structure_function_ratios.tex"
     write_latex_table(frame, latex_path)
 
     plot_paths: dict[str, list[str]] = {
@@ -3168,6 +3233,7 @@ def main() -> int:
         "aggregated_by_period": [],
         "target_axis_variants": [],
         "period_stability": [],
+        "physical_bounds": [],
     }
     if not args.skip_plots:
         plot_paths["all_bins"] = plot_parameter_summaries(
@@ -3190,13 +3256,17 @@ def main() -> int:
             frame,
             period_stability_dir,
         )
+        plot_paths["physical_bounds"] = plot_ll0_physical_boundary(
+            frame,
+            physical_bounds_dir,
+        )
     # endif
 
-    manifest_path = output_dir / "asymmetry_extraction_manifest_v8.json"
+    manifest_path = output_dir / "asymmetry_extraction_manifest.json"
     write_json(
         manifest_path,
         {
-            "schema_version": 8,
+            "schema_version": 1,
             "script": str(Path(__file__).resolve()),
             "workers": workers,
             "products": {
@@ -3246,6 +3316,28 @@ def main() -> int:
     print(f"  Detailed JSON:   {detailed_json_path}")
     print(f"  LaTeX:           {latex_path}")
     print(f"  Manifest:        {manifest_path}")
+    ll0_outside_bins = frame.loc[
+        frame["ll0_central_outside_unit_interval"],
+        "bin_number",
+    ].astype(int).tolist()
+    ll0_crossing_bins = frame.loc[
+        frame["ll0_stat_interval_crosses_unit_boundary"],
+        "bin_number",
+    ].astype(int).tolist()
+
+    if ll0_outside_bins:
+        print(
+            "  NOTE: nominal F_LL/F_UU central values outside [-1, 1] in "
+            f"bins {ll0_outside_bins}; see plots/physical_bounds/."
+        )
+    # endif
+    if ll0_crossing_bins:
+        print(
+            "  NOTE: nominal statistical intervals cross a formal +/-1 "
+            f"boundary in bins {ll0_crossing_bins}."
+        )
+    # endif
+
     if invalid_period_fits:
         print(
             "  WARNING: invalid or covariance-defective period-only "
