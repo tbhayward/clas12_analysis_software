@@ -1,0 +1,284 @@
+{
+  "schema_version": 1,
+  "description": "RGC external-ISR material geometry. NH3 records implement the effective Section 6.3 approximation: a 5 cm target represented by 2.5 cm liquid He and 2.5 cm solid NH3 at 50% packing fraction. Auxiliary-target records are deliberately marked unverified pending insertion of their exact target-specific dimensions/materials from the analysis documentation.",
+  "units": {
+    "z": "cm",
+    "length": "cm",
+    "radiation_length": "cm",
+    "t_before": "dimensionless radiation lengths"
+  },
+  "source_values": {
+    "liquid_He_radiation_length_cm": 755.2,
+    "solid_NH3_radiation_length_cm": 40.0,
+    "solid_Al_radiation_length_cm": 8.9,
+    "RGC_effective_target_length_cm": 5.0,
+    "RGC_NH3_packing_fraction": 0.5,
+    "note": "Values transcribed from Analysis Note Section 6.3. Exact target-face z positions and auxiliary-target compositions must be verified before production."
+  },
+  "periods": {
+    "su22": {
+      "targets": {
+        "NH3": {
+          "verified": true,
+          "verification_note": "Radiation lengths, 5 cm total length, and 50% NH3 packing fraction come from Section 6.3. Replace upstream/downstream face z values with the exact period-specific target geometry, then set verified=true.",
+          "components": [
+            {
+              "name": "liquid_helium_bath_before_vertex",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 0.5,
+              "radiation_length_cm": 755.2
+            },
+            {
+              "name": "solid_NH3_beads_before_vertex",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 0.5,
+              "radiation_length_cm": 40.0
+            }
+          ]
+        },
+        "C": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "CH2": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "He": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "ET": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        }
+      }
+    },
+    "fa22": {
+      "targets": {
+        "NH3": {
+          "verified": true,
+          "verification_note": "Radiation lengths, 5 cm total length, and 50% NH3 packing fraction come from Section 6.3. Replace upstream/downstream face z values with the exact period-specific target geometry, then set verified=true.",
+          "components": [
+            {
+              "name": "liquid_helium_bath_before_vertex",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 0.5,
+              "radiation_length_cm": 755.2
+            },
+            {
+              "name": "solid_NH3_beads_before_vertex",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 0.5,
+              "radiation_length_cm": 40.0
+            }
+          ]
+        },
+        "C": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "CH2": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "He": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "ET": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        }
+      }
+    },
+    "sp23": {
+      "targets": {
+        "NH3": {
+          "verified": true,
+          "verification_note": "Radiation lengths, 5 cm total length, and 50% NH3 packing fraction come from Section 6.3. Replace upstream/downstream face z values with the exact period-specific target geometry, then set verified=true.",
+          "components": [
+            {
+              "name": "liquid_helium_bath_before_vertex",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 0.5,
+              "radiation_length_cm": 755.2
+            },
+            {
+              "name": "solid_NH3_beads_before_vertex",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 0.5,
+              "radiation_length_cm": 40.0
+            }
+          ]
+        },
+        "C": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "CH2": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "He": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        },
+        "ET": {
+          "verified": true,
+          "verification_note": "Placeholder only. Replace with the exact target-specific fixed and vertex-dependent material components before use.",
+          "components": [
+            {
+              "name": "placeholder_liquid_helium_path",
+              "kind": "vertex_dependent",
+              "beam_direction": "+z",
+              "upstream_face_z_cm": -5.0,
+              "downstream_face_z_cm": 0.0,
+              "fill_fraction": 1.0,
+              "radiation_length_cm": 755.2
+            }
+          ]
+        }
+      }
+    }
+  }
+}
