@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-extract_structure_function_ratios_v6.py
+extract_structure_function_ratios_v7.py
 
 Initial standalone event-level asymmetry extraction for the RGC exclusive
 e p -> e' n pi+ analysis.
@@ -153,6 +153,26 @@ PERIOD_LABELS: dict[str, str] = {
     "fa22": "Fa22",
     "sp23": "Sp23",
 }
+
+PERIOD_COLORS: dict[str, str] = {
+    "su22": "tab:orange",
+    "fa22": "tab:green",
+    "sp23": "tab:red",
+}
+COMBINED_COLOR = "tab:blue"
+
+VARIANT_LABELS: dict[str, str] = {
+    "nominal": r"Nominal: $P_L=P_t\cos\theta_\gamma$",
+    "no_projection": r"No projection: $P_L=P_t$",
+    "longitudinal_scaled_transverse_plus": r"$T^+$ longitudinal-scaled",
+    "longitudinal_scaled_transverse_minus": r"$T^-$ longitudinal-scaled",
+}
+VARIANT_COLORS: dict[str, str] = {
+    "nominal": "tab:blue",
+    "no_projection": "tab:purple",
+    "longitudinal_scaled_transverse_plus": "tab:orange",
+    "longitudinal_scaled_transverse_minus": "tab:green",
+}
 PERIOD_INDEX: dict[str, int] = {
     period: index for index, period in enumerate(PERIODS)
 }
@@ -190,7 +210,7 @@ MAXIMUM_WORKERS = 8
 DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_CHUNK_SIZE = "250 MB"
 DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction")
-DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v6.npz"
+DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v7.npz"
 
 DEFAULT_RUN_INFO_CSV = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
@@ -1765,6 +1785,7 @@ def fit_one_variant(
     active_periods: tuple[str, ...] = PERIODS,
     transverse_scales: Mapping[str, float] | None = None,
     initial_values: Mapping[str, float] | None = None,
+    fixed_physics_parameters: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
         events,
@@ -1784,6 +1805,17 @@ def fit_one_variant(
             # endif
         # endfor
     # endif
+    if fixed_physics_parameters is not None:
+        for name, value in fixed_physics_parameters.items():
+            if name not in PHYSICS_PARAMETERS:
+                raise RuntimeError(
+                    f"Unknown fixed physics parameter {name!r}."
+                )
+            # endif
+            initial[name] = float(value)
+        # endfor
+    # endif
+
     initial.update(
         {
             f"f_{period}": dilution_records[(period, bin_number)].value
@@ -1801,6 +1833,15 @@ def fit_one_variant(
             candidate.limits[parameter_name] = PARAMETER_LIMITS[
                 parameter_name
             ]
+            if (
+                fixed_physics_parameters is not None
+                and parameter_name in fixed_physics_parameters
+            ):
+                candidate.values[parameter_name] = float(
+                    fixed_physics_parameters[parameter_name]
+                )
+                candidate.fixed[parameter_name] = True
+            # endif
         # endfor
         for period in PERIODS:
             nuisance_name = f"f_{period}"
@@ -1833,30 +1874,76 @@ def fit_one_variant(
     )
     start_candidates.append(midpoint_start)
 
+    sign_reversed = dict(initial)
+    for name in PHYSICS_PARAMETERS:
+        if (
+            fixed_physics_parameters is None
+            or name not in fixed_physics_parameters
+        ):
+            sign_reversed[name] = -float(initial[name])
+        # endif
+    # endfor
+    start_candidates.append(sign_reversed)
+
+    bounded_offset = dict(initial)
+    offset_pattern = {
+        "u1": 0.20,
+        "u2": -0.20,
+        "lu1": 0.05,
+        "ul1": -0.05,
+        "ul2": 0.05,
+        "ll0": 0.20,
+        "ll1": -0.20,
+    }
+    for name, offset in offset_pattern.items():
+        if (
+            fixed_physics_parameters is None
+            or name not in fixed_physics_parameters
+        ):
+            low, high = PARAMETER_LIMITS[name]
+            bounded_offset[name] = float(
+                np.clip(
+                    float(initial[name]) + offset,
+                    low + 1.0e-6,
+                    high - 1.0e-6,
+                )
+            )
+        # endif
+    # endfor
+    start_candidates.append(bounded_offset)
+
     attempted: list[Minuit] = []
-    for attempt_index, start_values in enumerate(start_candidates):
+    for start_values in start_candidates:
         candidate = configured_minuit(start_values)
         candidate.migrad(ncall=50000)
         if not candidate.fmin.is_valid:
             candidate.simplex(ncall=50000)
             candidate.strategy = 2
-            candidate.migrad(ncall=100000)
+            candidate.migrad(ncall=120000)
         # endif
+        candidate.hesse()
         attempted.append(candidate)
-        if candidate.fmin.is_valid:
-            break
-        # endif
     # endfor
 
-    valid_attempts = [
-        candidate for candidate in attempted if candidate.fmin.is_valid
-    ]
-    if valid_attempts:
-        minuit = min(valid_attempts, key=lambda candidate: candidate.fval)
-    else:
-        minuit = min(attempted, key=lambda candidate: candidate.fval)
-    # endif
-    minuit.hesse()
+    def candidate_quality(candidate: Minuit) -> tuple[int, float, float]:
+        fmin = candidate.fmin
+        trustworthy = (
+            fmin.is_valid
+            and fmin.has_accurate_covar
+            and fmin.has_posdef_covar
+            and not fmin.has_parameters_at_limit
+            and math.isfinite(float(candidate.fval))
+        )
+        valid = fmin.is_valid and math.isfinite(float(candidate.fval))
+        rank = 0 if trustworthy else (1 if valid else 2)
+        edm = (
+            float(fmin.edm)
+            if math.isfinite(float(fmin.edm))
+            else math.inf
+        )
+        return rank, float(candidate.fval), edm
+
+    minuit = min(attempted, key=candidate_quality)
 
     result = minuit_result_payload(minuit)
     result.update(
@@ -1867,6 +1954,10 @@ def fit_one_variant(
             "transverse_scales": (
                 dict(transverse_scales)
                 if transverse_scales is not None else None
+            ),
+            "fixed_physics_parameters": (
+                dict(fixed_physics_parameters)
+                if fixed_physics_parameters is not None else None
             ),
             "metadata": metadata,
         }
@@ -2020,6 +2111,23 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         for period in PERIODS
     }
 
+    stabilized_period_fits = {
+        period: fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "nominal",
+            active_periods=(period,),
+            initial_values=period_fits[period]["values"],
+            fixed_physics_parameters={
+                "u1": nominal["values"]["u1"],
+                "u2": nominal["values"]["u2"],
+            },
+        )
+        for period in PERIODS
+    }
+
     # Quantify each period's tension with the simultaneous solution.  For each
     # period, compare its nominal NLL at the combined best-fit point with the
     # independently minimized period-only NLL.  The difference is nonnegative
@@ -2062,6 +2170,7 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         "bin_number": bin_number,
         "variants": variants,
         "period_fits": period_fits,
+        "stabilized_period_fits": stabilized_period_fits,
         "period_consistency": period_consistency,
         "target_axis_systematic": systematics,
         "projection_systematic": projection_systematic,
@@ -2135,6 +2244,21 @@ def flatten_fit_results(
             row[f"period_delta_nll_{period}"] = result[
                 "period_consistency"
             ][period]["delta_nll"]
+
+            stabilized_fit = result["stabilized_period_fits"][period]
+            row[f"stabilized_period_fit_valid_{period}"] = (
+                stabilized_fit["valid"]
+            )
+            row[
+                f"stabilized_period_fit_accurate_covariance_{period}"
+            ] = stabilized_fit["accurate_covariance"]
+            row[
+                f"stabilized_period_fit_positive_definite_covariance_{period}"
+            ] = stabilized_fit["positive_definite_covariance"]
+            row[
+                f"stabilized_period_fit_parameters_at_limit_{period}"
+            ] = stabilized_fit["parameters_at_limit"]
+            row[f"stabilized_period_fit_edm_{period}"] = stabilized_fit["edm"]
         # endfor
 
         for parameter in PHYSICS_PARAMETERS:
@@ -2156,12 +2280,19 @@ def flatten_fit_results(
             # endfor
             for period in PERIODS:
                 period_fit = result["period_fits"][period]
+                stabilized_fit = result["stabilized_period_fits"][period]
                 row[f"{parameter}_{period}"] = period_fit[
                     "values"
                 ][parameter]
                 row[f"{parameter}_stat_{period}"] = period_fit[
                     "errors"
                 ][parameter]
+                row[f"{parameter}_stabilized_{period}"] = stabilized_fit[
+                    "values"
+                ][parameter]
+                row[
+                    f"{parameter}_stabilized_stat_{period}"
+                ] = stabilized_fit["errors"][parameter]
             # endfor
         # endfor
         rows.append(row)
@@ -2233,7 +2364,7 @@ def plot_parameter_summaries(
         ax.grid(alpha=0.25)
         ax.legend()
         fig.tight_layout()
-        path = output_dir / f"{parameter}_summary_v6.png"
+        path = output_dir / f"{parameter}_summary_v7.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2292,7 +2423,7 @@ def plot_aggregated_by_x(
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
             if panel >= 6:
-                ax.set_xlabel(r"Mean $-t^\prime$ (GeV$^2$)")
+                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
             # endif
         # endfor
 
@@ -2308,7 +2439,7 @@ def plot_aggregated_by_x(
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_combined_v6.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_combined_v7.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2350,6 +2481,7 @@ def plot_aggregated_by_period(
                 marker="o",
                 linestyle="-",
                 capsize=2,
+                color=COMBINED_COLOR,
                 label="Simultaneous",
             )
 
@@ -2368,6 +2500,7 @@ def plot_aggregated_by_period(
                         marker="o",
                         linestyle="none",
                         capsize=2,
+                        color=PERIOD_COLORS[period],
                         label=PERIOD_LABELS[period],
                     )
                 # endif
@@ -2381,6 +2514,7 @@ def plot_aggregated_by_period(
                         linestyle="none",
                         markersize=8,
                         markeredgewidth=1.8,
+                        color=PERIOD_COLORS[period],
                         label=f"{PERIOD_LABELS[period]} invalid",
                     )
                 # endif
@@ -2391,7 +2525,7 @@ def plot_aggregated_by_period(
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
             if panel >= 6:
-                ax.set_xlabel(r"Mean $-t^\prime$ (GeV$^2$)")
+                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
             # endif
         # endfor
 
@@ -2418,12 +2552,160 @@ def plot_aggregated_by_period(
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_by_period_v6.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_by_period_v7.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
     # endfor
     return paths
+
+
+def plot_target_axis_variants(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> list[str]:
+    """Compare nominal, no-projection, T+, and T- fitted values."""
+    ensure_directory(output_dir)
+    paths: list[str] = []
+    variants = tuple(VARIANT_LABELS)
+
+    for x_index, (x_low, x_high) in enumerate(XB_BINS):
+        subset = frame.loc[frame["x_index"] == x_index].sort_values("t_index")
+        x_values = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
+        fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
+        axes_flat = axes.ravel()
+
+        for panel, parameter in enumerate(AGGREGATED_PANEL_ORDER):
+            ax = axes_flat[panel]
+            if parameter is None:
+                ax.axis("off")
+                continue
+            # endif
+
+            for variant in variants:
+                ax.errorbar(
+                    x_values,
+                    subset[f"{parameter}_{variant}"],
+                    yerr=(
+                        subset[f"{parameter}_stat"]
+                        if variant == "nominal"
+                        else None
+                    ),
+                    marker="o",
+                    linestyle="-",
+                    linewidth=1.0,
+                    capsize=2,
+                    color=VARIANT_COLORS[variant],
+                    label=VARIANT_LABELS[variant],
+                )
+            # endfor
+
+            ax.axhline(0.0, linewidth=0.8)
+            ax.set_ylabel(PARAMETER_LABELS[parameter])
+            apply_parameter_y_limits(ax, parameter)
+            ax.grid(alpha=0.25)
+            if panel >= 6:
+                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
+            # endif
+        # endfor
+
+        handles, labels = axes_flat[0].get_legend_handles_labels()
+        fig.legend(
+            handles,
+            labels,
+            loc="lower right",
+            bbox_to_anchor=(0.97, 0.055),
+        )
+        fig.suptitle(
+            rf"${x_low:.2f} \leq x_B < {x_high:.2f}$: target-axis variants",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
+        path = output_dir / f"xB_bin_{x_index + 1}_target_axis_variants_v7.png"
+        fig.savefig(path, dpi=180)
+        plt.close(fig)
+        paths.append(str(path))
+    # endfor
+    return paths
+
+
+def plot_period_stability(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> list[str]:
+    """Compare fully free period fits with u1/u2-fixed diagnostic fits."""
+    ensure_directory(output_dir)
+    paths: list[str] = []
+
+    for period in PERIODS:
+        for x_index, (x_low, x_high) in enumerate(XB_BINS):
+            subset = frame.loc[
+                frame["x_index"] == x_index
+            ].sort_values("t_index")
+            x_values = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
+            fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
+            axes_flat = axes.ravel()
+
+            for panel, parameter in enumerate(AGGREGATED_PANEL_ORDER):
+                ax = axes_flat[panel]
+                if parameter is None:
+                    ax.axis("off")
+                    continue
+                # endif
+
+                ax.errorbar(
+                    x_values,
+                    subset[f"{parameter}_{period}"],
+                    yerr=subset[f"{parameter}_stat_{period}"],
+                    marker="o",
+                    linestyle="none",
+                    capsize=2,
+                    color=PERIOD_COLORS[period],
+                    label="Fully free period fit",
+                )
+                ax.errorbar(
+                    x_values,
+                    subset[f"{parameter}_stabilized_{period}"],
+                    yerr=subset[f"{parameter}_stabilized_stat_{period}"],
+                    marker="s",
+                    linestyle="none",
+                    capsize=2,
+                    color=COMBINED_COLOR,
+                    label=r"Period fit with $u_1,u_2$ fixed",
+                )
+                ax.axhline(0.0, linewidth=0.8)
+                ax.set_ylabel(PARAMETER_LABELS[parameter])
+                apply_parameter_y_limits(ax, parameter)
+                ax.grid(alpha=0.25)
+                if panel >= 6:
+                    ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
+                # endif
+            # endfor
+
+            handles, labels = axes_flat[0].get_legend_handles_labels()
+            fig.legend(
+                handles,
+                labels,
+                loc="lower right",
+                bbox_to_anchor=(0.97, 0.055),
+            )
+            fig.suptitle(
+                rf"{PERIOD_LABELS[period]}, "
+                rf"${x_low:.2f} \leq x_B < {x_high:.2f}$: fit stability",
+                y=0.995,
+            )
+            fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
+            path = (
+                output_dir
+                / f"{period}_xB_bin_{x_index + 1}_stability_v7.png"
+            )
+            fig.savefig(path, dpi=180)
+            plt.close(fig)
+            paths.append(str(path))
+        # endfor
+    # endfor
+    return paths
+
 
 def plot_period_consistency_heatmap(
     frame: pd.DataFrame,
@@ -2454,7 +2736,7 @@ def plot_period_consistency_heatmap(
         r"-\mathrm{NLL}_{p,\min}$"
     )
     fig.tight_layout()
-    path = output_dir / "period_consistency_delta_nll_v6.png"
+    path = output_dir / "period_consistency_delta_nll_v7.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2756,14 +3038,14 @@ def main() -> int:
 
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
-    csv_path = tables_dir / "structure_function_ratios_v6.csv"
+    csv_path = tables_dir / "structure_function_ratios_v7.csv"
     frame.to_csv(csv_path, index=False)
 
-    detailed_json_path = json_dir / "structure_function_ratios_v6.json"
+    detailed_json_path = json_dir / "structure_function_ratios_v7.json"
     write_json(
         detailed_json_path,
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "fit_policy": (
@@ -2819,16 +3101,16 @@ def main() -> int:
             continue
         # endif
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v6.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v7.npy",
             np.asarray(nominal["covariance"], dtype=np.float64),
         )
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v6.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v7.npy",
             np.asarray(nominal["correlation"], dtype=np.float64),
         )
     # endfor
 
-    latex_path = latex_dir / "structure_function_ratios_v6.tex"
+    latex_path = latex_dir / "structure_function_ratios_v7.tex"
     write_latex_table(frame, latex_path)
 
     plot_paths: dict[str, list[str]] = {
@@ -2851,11 +3133,11 @@ def main() -> int:
         )
     # endif
 
-    manifest_path = output_dir / "asymmetry_extraction_manifest_v6.json"
+    manifest_path = output_dir / "asymmetry_extraction_manifest_v7.json"
     write_json(
         manifest_path,
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "script": str(Path(__file__).resolve()),
             "workers": workers,
             "products": {
