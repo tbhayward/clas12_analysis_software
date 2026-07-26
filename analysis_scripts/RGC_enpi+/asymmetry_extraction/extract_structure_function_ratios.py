@@ -442,6 +442,26 @@ DEFAULT_INPUTS: dict[str, Path] = {
     for period in PERIODS
 }
 
+DEFAULT_ISR_INPUTS: dict[str, Path] = {
+    period: PAPER_VERSIONS_DIR
+    / f"rgc_{period}_inb_NH3_epi+_ISR_mom_corrections.root"
+    for period in PERIODS
+}
+
+DEFAULT_CHANNEL_SELECTION_MANIFEST = Path(
+    "../channel_selection/output/channel_selection_mx2_fit_stability/"
+    "channel_selection_manifest.json"
+)
+DEFAULT_ISR_CUT_JSON = Path(
+    "../channel_selection/output/channel_selection_mx2_fit_stability/"
+    "isr/final_carbon_assisted_cuts/tables/"
+    "final_carbon_assisted_mx2_cuts.json"
+)
+DEFAULT_ISR_DILUTION_JSON = Path(
+    "../dilution_factor/output/dilution_factor_determination/"
+    "isr/dilution_factors_production.json"
+)
+
 FIT_VARIANTS: tuple[str, ...] = (
     "nominal",
     "no_projection",
@@ -2178,7 +2198,10 @@ def initialize_fit_worker(
     }
 
 
-def fit_bin_worker(bin_number: int) -> dict[str, Any]:
+def fit_bin_worker(
+    bin_number: int,
+    include_target_axis_study: bool = True,
+) -> dict[str, Any]:
     if (
         _WORKER_EVENTS is None
         or _WORKER_RUN_STATES is None
@@ -2198,54 +2221,61 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         bin_number,
         "nominal",
     )
-    no_projection = fit_one_variant(
-        events,
-        run_states,
-        dilution_records,
-        bin_number,
-        "no_projection",
-        initial_values=nominal["values"],
-    )
-
-    external_data_informed = fit_one_variant(
-        events,
-        run_states,
-        dilution_records,
-        bin_number,
-        "external_data_informed",
-        initial_values=nominal["values"],
-    )
-
-    variants = {
-        "nominal": nominal,
-        "no_projection": no_projection,
-        "external_data_informed": external_data_informed,
+    variants = {"nominal": nominal}
+    projection_systematic: dict[str, float | None] = {
+        parameter: None for parameter in PHYSICS_PARAMETERS
+    }
+    external_data_systematic: dict[str, float | None] = {
+        parameter: None for parameter in PHYSICS_PARAMETERS
+    }
+    full_three_fit_spread: dict[str, float | None] = {
+        parameter: None for parameter in PHYSICS_PARAMETERS
+    }
+    systematics: dict[str, float | None] = {
+        parameter: None for parameter in PHYSICS_PARAMETERS
     }
 
-    projection_systematic: dict[str, float] = {}
-    external_data_systematic: dict[str, float] = {}
-    full_three_fit_spread: dict[str, float] = {}
-    systematics: dict[str, float] = {}
-    for parameter in PHYSICS_PARAMETERS:
-        nominal_value = nominal["values"][parameter]
-        no_projection_value = no_projection["values"][parameter]
-        external_value = external_data_informed["values"][parameter]
-
-        projection_systematic[parameter] = abs(
-            no_projection_value - nominal_value
+    if include_target_axis_study:
+        no_projection = fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "no_projection",
+            initial_values=nominal["values"],
         )
-        external_data_systematic[parameter] = abs(
-            external_value - nominal_value
+        external_data_informed = fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "external_data_informed",
+            initial_values=nominal["values"],
         )
-        systematics[parameter] = max(
-            projection_systematic[parameter],
-            external_data_systematic[parameter],
-        )
-        full_three_fit_spread[parameter] = (
-            max(nominal_value, no_projection_value, external_value)
-            - min(nominal_value, no_projection_value, external_value)
-        )
-    # endfor
+        variants.update({
+            "no_projection": no_projection,
+            "external_data_informed": external_data_informed,
+        })
+        for parameter in PHYSICS_PARAMETERS:
+            nominal_value = nominal["values"][parameter]
+            no_projection_value = no_projection["values"][parameter]
+            external_value = external_data_informed["values"][parameter]
+            projection_systematic[parameter] = abs(
+                no_projection_value - nominal_value
+            )
+            external_data_systematic[parameter] = abs(
+                external_value - nominal_value
+            )
+            systematics[parameter] = max(
+                projection_systematic[parameter],
+                external_data_systematic[parameter],
+            )
+            full_three_fit_spread[parameter] = (
+                max(nominal_value, no_projection_value, external_value)
+                - min(nominal_value, no_projection_value, external_value)
+            )
+        # endfor
+    # endif
 
     # Independent nominal fits for period-consistency plots.  These do not
     # enter the quoted combined result or its target-axis systematic.
@@ -2358,7 +2388,10 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         "projection_systematic": projection_systematic,
         "external_data_systematic": external_data_systematic,
         "full_three_fit_spread": full_three_fit_spread,
-        "external_transverse_inputs": EXTERNAL_TRANSVERSE_INPUTS,
+        "external_transverse_inputs": (
+            EXTERNAL_TRANSVERSE_INPUTS if include_target_axis_study else None
+        ),
+        "target_axis_study_performed": include_target_axis_study,
     }
 
 
@@ -2472,9 +2505,12 @@ def flatten_fit_results(
                 "target_axis_systematic"
             ][parameter]
             for variant in FIT_VARIANTS:
-                row[f"{parameter}_{variant}"] = result[
-                    "variants"
-                ][variant]["values"][parameter]
+                variant_fit = result["variants"].get(variant)
+                row[f"{parameter}_{variant}"] = (
+                    variant_fit["values"][parameter]
+                    if variant_fit is not None
+                    else np.nan
+                )
             # endfor
             for period in PERIODS:
                 period_fit = result["period_fits"][period]
@@ -2760,57 +2796,6 @@ def plot_aggregated_by_period(
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
         path = output_dir / f"xB_bin_{x_index + 1}_by_period.png"
-        fig.savefig(path, dpi=180)
-        plt.close(fig)
-        paths.append(str(path))
-    # endfor
-    return paths
-
-
-def plot_ll0_physical_boundary(
-    frame: pd.DataFrame,
-    output_dir: Path,
-) -> list[str]:
-    """
-    Show F_LL/F_UU with statistical uncertainties and the formal +/-1
-    boundaries without clipping the displayed interval at the physical limit.
-    """
-    ensure_directory(output_dir)
-    paths: list[str] = []
-
-    for x_index, (x_low, x_high) in enumerate(XB_BINS):
-        subset = frame.loc[
-            frame["x_index"] == x_index
-        ].sort_values("t_index")
-        x_values = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
-        values = subset["ll0"].to_numpy(dtype=float)
-        errors = subset["ll0_stat"].to_numpy(dtype=float)
-
-        fig, ax = plt.subplots(figsize=(8.5, 5.5))
-        ax.errorbar(
-            x_values,
-            values,
-            yerr=errors,
-            marker="o",
-            linestyle="-",
-            capsize=3,
-            label=r"$F_{LL}/F_{UU}$, statistical",
-        )
-        ax.axhline(1.0, linestyle="--", linewidth=1.0, label="Formal boundary")
-        ax.axhline(-1.0, linestyle="--", linewidth=1.0)
-        ax.axhline(0.0, linewidth=0.8)
-
-        displayed_low = min(-1.10, float(np.min(values - errors)) - 0.05)
-        displayed_high = max(1.10, float(np.max(values + errors)) + 0.05)
-        ax.set_ylim(displayed_low, displayed_high)
-        ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
-        ax.set_ylabel(PARAMETER_LABELS["ll0"])
-        ax.set_title(rf"${x_low:.2f} \leq x_B < {x_high:.2f}$")
-        ax.grid(alpha=0.25)
-        ax.legend()
-        fig.tight_layout()
-
-        path = output_dir / f"xB_bin_{x_index + 1}_ll0_physical_boundary.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -3155,126 +3140,47 @@ def write_external_transverse_input_tables(
 # Command line
 # =============================================================================
 
-def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Fit RGC exclusive-pi+ structure-function ratios with a simultaneous "
-            "three-period unbinned conditional likelihood."
-        )
-    )
-    parser.add_argument(
-        "--tree",
-        default=DEFAULT_TREE_NAME,
-        help=f"ROOT tree name (default: {DEFAULT_TREE_NAME}).",
-    )
-    parser.add_argument(
-        "--input",
-        action="append",
-        default=[],
-        type=parse_input_override,
-        metavar="PERIOD=FILE",
-        help=(
-            "Override one NH3 ROOT input. Repeat for multiple periods, e.g. "
-            "--input su22=/path/file.root."
-        ),
-    )
-    parser.add_argument(
-        "--run-info-csv",
-        type=Path,
-        default=DEFAULT_RUN_INFO_CSV,
-        help=f"Run-information CSV (default: {DEFAULT_RUN_INFO_CSV}).",
-    )
-    parser.add_argument(
-        "--cut-json",
-        type=Path,
-        default=DEFAULT_CUT_JSON,
-        help=f"Channel-selection cut JSON (default: {DEFAULT_CUT_JSON}).",
-    )
-    parser.add_argument(
-        "--dilution-json",
-        type=Path,
-        default=None,
-        help=(
-            "Production dilution-factor JSON. By default the newest "
-            "dilution_factors_production*.json is found under "
-            f"{DEFAULT_DILUTION_DIR}."
-        ),
-    )
-    parser.add_argument(
-        "--dilution-dir",
-        type=Path,
-        default=DEFAULT_DILUTION_DIR,
-        help=f"Dilution-factor output directory (default: {DEFAULT_DILUTION_DIR}).",
-    )
-    parser.add_argument(
-        "--output-dir",
-        type=Path,
-        default=DEFAULT_OUTPUT_DIR,
-        help=f"Output directory (default: {DEFAULT_OUTPUT_DIR}).",
-    )
-    parser.add_argument(
-        "--cache",
-        type=Path,
-        default=DEFAULT_CACHE_PATH,
-        help=f"Selected-event cache path (default: {DEFAULT_CACHE_PATH}).",
-    )
-    parser.add_argument(
-        "--reuse-cache",
-        action="store_true",
-        help="Reuse an existing selected-event cache without rereading ROOT.",
-    )
-    parser.add_argument(
-        "--chunk-size",
-        default=DEFAULT_CHUNK_SIZE,
-        help=f"uproot iterate chunk size (default: {DEFAULT_CHUNK_SIZE}).",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=MAXIMUM_WORKERS,
-        help=f"Worker processes, hard-limited to {MAXIMUM_WORKERS}.",
-    )
-    parser.add_argument(
-        "--skip-plots",
-        action="store_true",
-        help="Skip summary plot production.",
-    )
-    return parser
+def resolve_isr_cut_json(explicit_path: Path | None) -> Path:
+    if explicit_path is not None:
+        path = explicit_path.expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"Explicit ISR cut JSON does not exist: {path}")
+        return path
+    # endif
+    manifest = DEFAULT_CHANNEL_SELECTION_MANIFEST.expanduser().resolve()
+    if manifest.is_file():
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+        retained = payload.get("retained_analysis_products", {})
+        isr_root = retained.get("isr")
+        if isr_root:
+            candidate = Path(isr_root) / "final_carbon_assisted_cuts/tables/final_carbon_assisted_mx2_cuts.json"
+            if candidate.is_file():
+                return candidate.resolve()
+            # endif
+        # endif
+    # endif
+    path = DEFAULT_ISR_CUT_JSON.expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"Could not resolve ISR channel-selection JSON: {path}")
+    return path
 
 
-def main() -> int:
-    parser = build_argument_parser()
-    args = parser.parse_args()
-
-    workers = max(
-        1,
-        min(
-            int(args.workers),
-            MAXIMUM_WORKERS,
-            os.cpu_count() or 1,
-            NUMBER_OF_BINS,
-        ),
-    )
-
-    input_paths = {period: Path(path) for period, path in DEFAULT_INPUTS.items()}
-    for period, path in args.input:
-        input_paths[period] = path
-    # endfor
-
-    run_info_path = args.run_info_csv.expanduser().resolve()
-    cut_json_path = args.cut_json.expanduser().resolve()
-    output_dir = args.output_dir.expanduser().resolve()
-    cache_path = args.cache.expanduser().resolve()
-
-    dilution_json_path = (
-        args.dilution_json.expanduser().resolve()
-        if args.dilution_json is not None
-        else find_default_dilution_json(
-            args.dilution_dir.expanduser().resolve()
-        ).resolve()
-    )
-
-    ensure_directory(output_dir)
+def run_analysis_variant(
+    *,
+    sample_variant: str,
+    input_paths: dict[str, Path],
+    run_info_path: Path,
+    cut_json_path: Path,
+    dilution_json_path: Path,
+    output_dir: Path,
+    cache_path: Path,
+    tree_name: str,
+    chunk_size: str,
+    workers: int,
+    reuse_cache: bool,
+    skip_plots: bool,
+    include_target_axis_study: bool,
+) -> dict[str, Any]:
     tables_dir = output_dir / "tables"
     json_dir = output_dir / "json"
     covariance_dir = output_dir / "covariance"
@@ -3284,345 +3190,184 @@ def main() -> int:
     period_plots_dir = aggregated_plots_dir / "by_period"
     target_axis_variants_dir = plots_dir / "target_axis_variants"
     period_stability_dir = plots_dir / "period_stability"
-    physical_bounds_dir = plots_dir / "physical_bounds"
     latex_dir = output_dir / "latex"
     for directory in (
-        tables_dir,
-        json_dir,
-        covariance_dir,
-        plots_dir,
-        all_bins_plots_dir,
-        aggregated_plots_dir,
-        period_plots_dir,
-        target_axis_variants_dir,
-        period_stability_dir,
-        physical_bounds_dir,
-        latex_dir,
+        output_dir, tables_dir, json_dir, covariance_dir, plots_dir,
+        all_bins_plots_dir, aggregated_plots_dir, period_plots_dir,
+        period_stability_dir, latex_dir,
     ):
         ensure_directory(directory)
     # endfor
+    if include_target_axis_study:
+        ensure_directory(target_axis_variants_dir)
+    # endif
 
-    print("=" * 78)
-    print("RGC exclusive enpi+ structure-function-ratio extraction")
-    print("=" * 78)
-    print(f"Working directory:    {Path.cwd()}")
-    print(f"Tree:                 {args.tree}")
-    print(f"Run information:      {run_info_path}")
+    print("-" * 78)
+    print(f"Starting {sample_variant} structure-function-ratio analysis")
+    print("-" * 78)
     print(f"Channel cuts:         {cut_json_path}")
     print(f"Dilution factors:     {dilution_json_path}")
     print(f"Output directory:     {output_dir}")
     print(f"Selected-event cache: {cache_path}")
-    print(f"Workers:              {workers} (hard maximum {MAXIMUM_WORKERS})")
-    print("Fit policy:           one common PDF/parameter set across all three periods")
-    print()
+    print(f"Target-axis study:    {include_target_axis_study}")
 
     run_records = parse_run_info_csv(run_info_path)
     run_states = run_state_arrays(run_records)
     cuts = load_nominal_cuts(cut_json_path)
     dilution_records = load_dilution_factors(dilution_json_path)
-
-    cache_summary: dict[str, Any]
-    if args.reuse_cache:
+    if reuse_cache:
         events = load_event_cache(cache_path)
-        cache_summary = {
-            "cache_path": str(cache_path),
-            "number_of_selected_events": int(events["runnum"].size),
-            "reused": True,
-        }
+        cache_summary = {"cache_path": str(cache_path), "number_of_selected_events": int(events["runnum"].size), "reused": True}
     else:
-        cache_summary = build_event_cache(
-            input_paths=input_paths,
-            tree_name=args.tree,
-            chunk_size=args.chunk_size,
-            run_records=run_records,
-            cuts=cuts,
-            cache_path=cache_path,
-        )
+        cache_summary = build_event_cache(input_paths=input_paths, tree_name=tree_name, chunk_size=chunk_size, run_records=run_records, cuts=cuts, cache_path=cache_path)
         cache_summary["reused"] = False
         events = load_event_cache(cache_path)
     # endif
 
-    run_state_payload = {
-        period: {
-            key: values.tolist()
-            for key, values in state.items()
-        }
-        for period, state in run_states.items()
-    }
-    dilution_payload = {
-        period: {
-            str(bin_number): {
-                "x_index": record.x_index,
-                "t_index": record.t_index,
-                "value": record.value,
-                "stat_uncertainty": record.stat_uncertainty,
-            }
-            for (record_period, bin_number), record in dilution_records.items()
-            if record_period == period
-        }
-        for period in PERIODS
-    }
-
-    results: list[dict[str, Any]] = []
-    with ProcessPoolExecutor(
-        max_workers=workers,
-        initializer=initialize_fit_worker,
-        initargs=(
-            str(cache_path),
-            run_state_payload,
-            dilution_payload,
-        ),
-    ) as executor:
-        futures = {
-            executor.submit(fit_bin_worker, bin_number): bin_number
-            for bin_number in range(1, NUMBER_OF_BINS + 1)
-        }
+    run_state_payload = {period: {key: values.tolist() for key, values in state.items()} for period, state in run_states.items()}
+    dilution_payload = {period: {str(bin_number): {"x_index": record.x_index, "t_index": record.t_index, "value": record.value, "stat_uncertainty": record.stat_uncertainty} for (record_period, bin_number), record in dilution_records.items() if record_period == period} for period in PERIODS}
+    results = []
+    with ProcessPoolExecutor(max_workers=workers, initializer=initialize_fit_worker, initargs=(str(cache_path), run_state_payload, dilution_payload)) as executor:
+        futures = {executor.submit(fit_bin_worker, bin_number, include_target_axis_study): bin_number for bin_number in range(1, NUMBER_OF_BINS + 1)}
         for future in as_completed(futures):
-            bin_number = futures[future]
             result = future.result()
             results.append(result)
             nominal = result["variants"]["nominal"]
-            period_validity = ",".join(
-                f"{PERIOD_LABELS[period]}="
-                f"{result['period_fits'][period]['valid']}"
-                for period in PERIODS
-            )
-            print(
-                f"[bin {bin_number:02d}] "
-                f"N={nominal['metadata']['number_of_events']:,}; "
-                f"combined_valid={nominal['valid']}; "
-                f"NLL={nominal['minimum_nll']:.6f}; "
-                f"EDM={nominal['edm']:.3e}; "
-                f"period_fits({period_validity})"
-            )
+            print(f"[{sample_variant} bin {result['bin_number']:02d}] N={nominal['metadata']['number_of_events']:,}; valid={nominal['valid']}; NLL={nominal['minimum_nll']:.6f}; EDM={nominal['edm']:.3e}")
         # endfor
     # endwith
-
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
     csv_path = tables_dir / "structure_function_ratios.csv"
     frame.to_csv(csv_path, index=False)
-
-    external_input_csv_path = (
-        tables_dir / "external_transverse_inputs.csv"
-    )
-    external_input_json_path = (
-        json_dir / "external_transverse_inputs.json"
-    )
-    write_external_transverse_input_tables(
-        external_input_csv_path,
-        external_input_json_path,
-    )
-
     detailed_json_path = json_dir / "structure_function_ratios.json"
-    write_json(
-        detailed_json_path,
-        {
-            "schema_version": 1,
-            "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
-            "created_utc": datetime.now(timezone.utc).isoformat(),
-            "fit_policy": (
-                "One common set of structure-function ratios is fitted "
-                "simultaneously to Su22, Fa22, and Sp23 in each kinematic bin."
-            ),
-            "target_axis_systematic_definition": (
-                "The projection component is the absolute no_projection-minus-"
-                "nominal displacement. The external-data-informed component is "
-                "the absolute external_data_informed-minus-nominal displacement. "
-                "The quoted target-axis systematic is the larger of those two "
-                "correlated components."
-            ),
-            "external_transverse_leakage_mapping": {
-                "F_UL_sin_phi_to_F_UT_sin_phi": True,
-                "F_UL_sin_2phi_to_F_UT_sin_2phi": True,
-                "F_LL_to_F_LT_cos_0phi": True,
-                "F_LL_cos_phi_to_F_LT_cos_phi": True,
-                "F_UT_sin_3phi_included": False,
-                "F_LT_cos_2phi_included": False,
-            },
-            "external_transverse_inputs": EXTERNAL_TRANSVERSE_INPUTS,
-            "external_data_informed_model_note": (
-                "The UT amplitudes are direct weighted averages of measured "
-                "exclusive-pi+ HERMES amplitudes. The LT amplitudes are rounded "
-                "estimates from open highest-z HERMES SIDIS pi+ points and are "
-                "used as a controlled leakage model. No factor of two is applied."
-            ),
-            "polarization_uncertainty_policy": (
-                "Beam- and target-polarization uncertainties are not included. "
-                "They will be imposed later as correlated scale systematics."
-            ),
-            "dilution_uncertainty_policy": (
-                "Only the recommended dilution-factor bootstrap statistical "
-                "uncertainties are included through Gaussian-constrained "
-                "period-specific nuisance parameters. The correlated dilution "
-                "model scale is not included."
-            ),
-            "beam_polarization": BEAM_POLARIZATION,
-            "beam_energy_gev": BEAM_ENERGY_GEV,
-            "cache": cache_summary,
-            "inputs": {
-                "root_files": {
-                    period: str(input_paths[period].expanduser().resolve())
-                    for period in PERIODS
-                },
-                "run_info_csv": str(run_info_path),
-                "run_info_csv_sha256": sha256_file(run_info_path),
-                "channel_cut_json": str(cut_json_path),
-                "channel_cut_json_sha256": sha256_file(cut_json_path),
-                "dilution_json": str(dilution_json_path),
-                "dilution_json_sha256": sha256_file(dilution_json_path),
-            },
-            "results": results,
+    write_json(detailed_json_path, {
+        "schema_version": 2,
+        "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
+        "sample_variant": sample_variant,
+        "diagnostic_only": sample_variant == "isr",
+        "target_axis_study_performed": include_target_axis_study,
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "beam_polarization": BEAM_POLARIZATION,
+        "beam_energy_gev": BEAM_ENERGY_GEV,
+        "cache": cache_summary,
+        "inputs": {
+            "root_files": {period: str(input_paths[period].expanduser().resolve()) for period in PERIODS},
+            "run_info_csv": str(run_info_path), "run_info_csv_sha256": sha256_file(run_info_path),
+            "channel_cut_json": str(cut_json_path), "channel_cut_json_sha256": sha256_file(cut_json_path),
+            "dilution_json": str(dilution_json_path), "dilution_json_sha256": sha256_file(dilution_json_path),
         },
-    )
-
+        "results": results,
+    })
     for result in results:
-        bin_number = result["bin_number"]
         nominal = result["variants"]["nominal"]
-        if nominal["covariance"] is None:
-            continue
+        if nominal["covariance"] is not None:
+            b = result["bin_number"]
+            np.save(covariance_dir / f"bin_{b:02d}_nominal_covariance.npy", np.asarray(nominal["covariance"], dtype=np.float64))
+            np.save(covariance_dir / f"bin_{b:02d}_nominal_correlation.npy", np.asarray(nominal["correlation"], dtype=np.float64))
         # endif
-        np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance.npy",
-            np.asarray(nominal["covariance"], dtype=np.float64),
-        )
-        np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation.npy",
-            np.asarray(nominal["correlation"], dtype=np.float64),
-        )
     # endfor
-
     latex_path = latex_dir / "structure_function_ratios.tex"
     write_latex_table(frame, latex_path)
-
-    plot_paths: dict[str, list[str]] = {
-        "all_bins": [],
-        "aggregated": [],
-        "aggregated_by_period": [],
-        "target_axis_variants": [],
-        "period_stability": [],
-        "physical_bounds": [],
-    }
-    if not args.skip_plots:
-        plot_paths["all_bins"] = plot_parameter_summaries(
-            frame, all_bins_plots_dir
-        )
-        plot_paths["aggregated"] = plot_aggregated_by_x(
-            frame, aggregated_plots_dir
-        )
-        plot_paths["aggregated_by_period"] = plot_aggregated_by_period(
-            frame, period_plots_dir
-        )
-        plot_paths["aggregated_by_period"].append(
-            plot_period_consistency_heatmap(frame, period_plots_dir)
-        )
-        plot_paths["target_axis_variants"] = plot_target_axis_variants(
-            frame,
-            target_axis_variants_dir,
-        )
-        plot_paths["period_stability"] = plot_period_stability(
-            frame,
-            period_stability_dir,
-        )
-        plot_paths["physical_bounds"] = plot_ll0_physical_boundary(
-            frame,
-            physical_bounds_dir,
-        )
+    plot_paths = {"all_bins": [], "aggregated": [], "aggregated_by_period": [], "target_axis_variants": [], "period_stability": []}
+    if not skip_plots:
+        plot_paths["all_bins"] = plot_parameter_summaries(frame, all_bins_plots_dir)
+        plot_paths["aggregated"] = plot_aggregated_by_x(frame, aggregated_plots_dir)
+        plot_paths["aggregated_by_period"] = plot_aggregated_by_period(frame, period_plots_dir)
+        plot_paths["aggregated_by_period"].append(plot_period_consistency_heatmap(frame, period_plots_dir))
+        plot_paths["period_stability"] = plot_period_stability(frame, period_stability_dir)
+        if include_target_axis_study:
+            plot_paths["target_axis_variants"] = plot_target_axis_variants(frame, target_axis_variants_dir)
+        # endif
     # endif
+    manifest_path = output_dir / "analysis_variant_manifest.json"
+    write_json(manifest_path, {"schema_version": 2, "sample_variant": sample_variant, "diagnostic_only": sample_variant == "isr", "target_axis_study_performed": include_target_axis_study, "products": {"csv": str(csv_path), "detailed_json": str(detailed_json_path), "latex": str(latex_path), "covariance_directory": str(covariance_dir), "plots": plot_paths, "cache": str(cache_path)}})
+    invalid_bins = frame.loc[~frame["nominal_fit_valid"].astype(bool), "bin_number"].astype(int).tolist()
+    return {"sample_variant": sample_variant, "frame": frame, "results": results, "events": int(events["runnum"].size), "csv": str(csv_path), "json": str(detailed_json_path), "latex": str(latex_path), "manifest": str(manifest_path), "invalid_bins": invalid_bins}
 
-    manifest_path = output_dir / "asymmetry_extraction_manifest.json"
-    write_json(
-        manifest_path,
-        {
-            "schema_version": 1,
-            "script": str(Path(__file__).resolve()),
-            "workers": workers,
-            "products": {
-                "csv": str(csv_path),
-                "external_transverse_inputs_csv": str(
-                    external_input_csv_path
-                ),
-                "external_transverse_inputs_json": str(
-                    external_input_json_path
-                ),
-                "detailed_json": str(detailed_json_path),
-                "latex": str(latex_path),
-                "covariance_directory": str(covariance_dir),
-                "plots": plot_paths,
-                "cache": str(cache_path),
-            },
-        },
-    )
 
-    invalid_bins = [
-        int(row.bin_number)
-        for row in frame.itertuples(index=False)
-        if not bool(row.nominal_fit_valid)
-    ]
-    invalid_period_fits: list[str] = []
-    for row in frame.itertuples(index=False):
-        for period in PERIODS:
-            valid = bool(getattr(row, f"period_fit_valid_{period}"))
-            accurate = bool(
-                getattr(row, f"period_fit_accurate_covariance_{period}")
-            )
-            positive = bool(
-                getattr(
-                    row,
-                    f"period_fit_positive_definite_covariance_{period}",
-                )
-            )
-            at_limit = bool(
-                getattr(row, f"period_fit_parameters_at_limit_{period}")
-            )
-            if not (valid and accurate and positive and not at_limit):
-                invalid_period_fits.append(
-                    f"bin {int(row.bin_number):02d} {PERIOD_LABELS[period]}"
-                )
-            # endif
-        # endfor
+def write_nominal_isr_comparison_products(nominal: pd.DataFrame, isr: pd.DataFrame, output_dir: Path) -> dict[str, str]:
+    tables_dir = output_dir / "tables"
+    plots_dir = output_dir / "plots"
+    ensure_directory(tables_dir); ensure_directory(plots_dir)
+    keys = ["bin_number", "x_index", "t_index"]
+    keep = keys + ["mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2", "number_of_events"] + [item for p in PHYSICS_PARAMETERS for item in (p, f"{p}_stat")]
+    merged = nominal[keep].merge(isr[keep], on=keys, suffixes=("_nominal", "_isr"), validate="one_to_one")
+    for parameter in PHYSICS_PARAMETERS:
+        merged[f"{parameter}_isr_minus_nominal"] = merged[f"{parameter}_isr"] - merged[f"{parameter}_nominal"]
+        merged[f"{parameter}_absolute_isr_systematic"] = merged[f"{parameter}_isr_minus_nominal"].abs()
+        merged[f"{parameter}_combined_stat_uncertainty"] = np.hypot(merged[f"{parameter}_stat_nominal"], merged[f"{parameter}_stat_isr"])
+        merged[f"{parameter}_difference_pull"] = merged[f"{parameter}_isr_minus_nominal"] / merged[f"{parameter}_combined_stat_uncertainty"].replace(0.0, np.nan)
     # endfor
+    csv_path = tables_dir / "nominal_vs_isr_structure_function_ratios.csv"
+    json_path = tables_dir / "nominal_vs_isr_structure_function_ratios.json"
+    merged.to_csv(csv_path, index=False)
+    write_json(json_path, {"schema_version": 1, "systematic_convention": "absolute point-by-point ISR systematic is abs(ISR - nominal)", "rows": merged.to_dict(orient="records")})
+    plot_paths=[]
+    x=merged["bin_number"].to_numpy()
+    for parameter in PHYSICS_PARAMETERS:
+        fig, axes = plt.subplots(2,1,figsize=(11,8),sharex=True)
+        axes[0].errorbar(x, merged[f"{parameter}_nominal"], yerr=merged[f"{parameter}_stat_nominal"], fmt="o", capsize=2, label="Nominal")
+        axes[0].errorbar(x, merged[f"{parameter}_isr"], yerr=merged[f"{parameter}_stat_isr"], fmt="s", capsize=2, label="ISR")
+        axes[0].set_ylabel(PARAMETER_LABELS[parameter]); axes[0].legend(); axes[0].grid(alpha=0.25)
+        axes[1].axhline(0.0, linewidth=1)
+        axes[1].errorbar(x, merged[f"{parameter}_isr_minus_nominal"], yerr=merged[f"{parameter}_combined_stat_uncertainty"], fmt="o", capsize=2)
+        axes[1].set_xlabel("Combined kinematic-bin number"); axes[1].set_ylabel("ISR - nominal"); axes[1].grid(alpha=0.25)
+        fig.tight_layout()
+        path=plots_dir / f"nominal_vs_isr_{parameter}.png"; fig.savefig(path,dpi=200); plt.close(fig); plot_paths.append(str(path))
+    # endfor
+    return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths}
 
-    print()
-    print("Asymmetry extraction complete.")
-    print(f"  Selected events: {events['runnum'].size:,}")
-    print(f"  CSV:             {csv_path}")
-    print(f"  Detailed JSON:   {detailed_json_path}")
-    print(f"  LaTeX:           {latex_path}")
-    print(f"  Manifest:        {manifest_path}")
-    ll0_outside_bins = frame.loc[
-        frame["ll0_central_outside_unit_interval"],
-        "bin_number",
-    ].astype(int).tolist()
-    ll0_crossing_bins = frame.loc[
-        frame["ll0_stat_interval_crosses_unit_boundary"],
-        "bin_number",
-    ].astype(int).tolist()
 
-    if ll0_outside_bins:
-        print(
-            "  NOTE: nominal F_LL/F_UU central values outside [-1, 1] in "
-            f"bins {ll0_outside_bins}; see plots/physical_bounds/."
-        )
-    # endif
-    if ll0_crossing_bins:
-        print(
-            "  NOTE: nominal statistical intervals cross a formal +/-1 "
-            f"boundary in bins {ll0_crossing_bins}."
-        )
-    # endif
+def build_argument_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Fit nominal and ISR RGC exclusive-pi+ structure-function ratios.")
+    parser.add_argument("--tree", default=DEFAULT_TREE_NAME)
+    parser.add_argument("--input", action="append", default=[], type=parse_input_override, metavar="PERIOD=FILE")
+    parser.add_argument("--isr-input", action="append", default=[], type=parse_input_override, metavar="PERIOD=FILE")
+    parser.add_argument("--run-info-csv", type=Path, default=DEFAULT_RUN_INFO_CSV)
+    parser.add_argument("--cut-json", type=Path, default=DEFAULT_CUT_JSON)
+    parser.add_argument("--isr-cut-json", type=Path, default=None)
+    parser.add_argument("--dilution-json", type=Path, default=None)
+    parser.add_argument("--dilution-dir", type=Path, default=DEFAULT_DILUTION_DIR)
+    parser.add_argument("--isr-dilution-json", type=Path, default=DEFAULT_ISR_DILUTION_JSON)
+    parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument("--cache", type=Path, default=None, help="Legacy nominal-cache override.")
+    parser.add_argument("--reuse-cache", action="store_true")
+    parser.add_argument("--disable-isr", action="store_true")
+    parser.add_argument("--chunk-size", default=DEFAULT_CHUNK_SIZE)
+    parser.add_argument("--workers", type=int, default=MAXIMUM_WORKERS)
+    parser.add_argument("--skip-plots", action="store_true")
+    return parser
 
-    if invalid_period_fits:
-        print(
-            "  WARNING: invalid or covariance-defective period-only "
-            f"diagnostic fits: {', '.join(invalid_period_fits)}"
-        )
+
+def main() -> int:
+    args = build_argument_parser().parse_args()
+    workers=max(1,min(int(args.workers),MAXIMUM_WORKERS,os.cpu_count() or 1,NUMBER_OF_BINS))
+    root=args.output_dir.expanduser().resolve(); nominal_dir=root/"nominal"; isr_dir=root/"isr"; diagnostics_dir=root/"diagnostics"
+    for d in (root,nominal_dir,isr_dir,diagnostics_dir): ensure_directory(d)
+    nominal_inputs={p:Path(v) for p,v in DEFAULT_INPUTS.items()}
+    for period,path in args.input: nominal_inputs[period]=path
+    nominal_dilution=(args.dilution_json.expanduser().resolve() if args.dilution_json else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve())
+    nominal_cache=(args.cache.expanduser().resolve() if args.cache else nominal_dir/"cache/selected_events.npz")
+    nominal_result=run_analysis_variant(sample_variant="nominal", input_paths=nominal_inputs, run_info_path=args.run_info_csv.expanduser().resolve(), cut_json_path=args.cut_json.expanduser().resolve(), dilution_json_path=nominal_dilution, output_dir=nominal_dir, cache_path=nominal_cache, tree_name=args.tree, chunk_size=args.chunk_size, workers=workers, reuse_cache=args.reuse_cache, skip_plots=args.skip_plots, include_target_axis_study=True)
+    isr_result=None; comparison=None
+    if not args.disable_isr:
+        isr_inputs={p:Path(v) for p,v in DEFAULT_ISR_INPUTS.items()}
+        for period,path in args.isr_input: isr_inputs[period]=path
+        isr_cut=resolve_isr_cut_json(args.isr_cut_json)
+        isr_dilution=args.isr_dilution_json.expanduser().resolve()
+        if not isr_dilution.is_file(): raise FileNotFoundError(f"ISR dilution JSON does not exist: {isr_dilution}")
+        isr_result=run_analysis_variant(sample_variant="isr", input_paths=isr_inputs, run_info_path=args.run_info_csv.expanduser().resolve(), cut_json_path=isr_cut, dilution_json_path=isr_dilution, output_dir=isr_dir, cache_path=isr_dir/"cache/selected_events.npz", tree_name=args.tree, chunk_size=args.chunk_size, workers=workers, reuse_cache=args.reuse_cache, skip_plots=args.skip_plots, include_target_axis_study=False)
+        comparison=write_nominal_isr_comparison_products(nominal_result["frame"],isr_result["frame"],diagnostics_dir)
     # endif
-    if invalid_bins:
-        print(f"  WARNING: invalid nominal fits in bins {invalid_bins}")
-        return 2
-    # endif
-    return 0
+    manifest_path=root/"asymmetry_extraction_manifest.json"
+    write_json(manifest_path,{"schema_version":3,"production_policy":"Nominal results are production. ISR results are a separate point-by-point diagnostic. Target-axis leakage is evaluated only for nominal data.","nominal":{k:v for k,v in nominal_result.items() if k not in ("frame","results")},"isr":({k:v for k,v in isr_result.items() if k not in ("frame","results")} if isr_result else None),"nominal_isr_comparison":comparison})
+    print("\nStructure-function-ratio study complete.")
+    print(f"  Nominal:    {nominal_dir}")
+    if isr_result: print(f"  ISR:        {isr_dir}\n  Comparison: {diagnostics_dir}")
+    print(f"  Manifest:   {manifest_path}")
+    invalid=nominal_result["invalid_bins"] + ([] if isr_result is None else isr_result["invalid_bins"])
+    return 2 if invalid else 0
 
 
 if __name__ == "__main__":
