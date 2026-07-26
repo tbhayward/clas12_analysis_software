@@ -59,24 +59,29 @@ Three fits are performed in every kinematic bin.
     P_L = P_t, P_T = 0.
 
   external_data_informed
-    P_L = P_t cos(theta_gamma), P_T = P_t sin(theta_gamma).  The three
-    transverse amplitudes are fixed to conservative external-data values:
+    P_L = P_t cos(theta_gamma), P_T = P_t sin(theta_gamma).  Four fixed
+    transverse amplitudes are supplied from external HERMES measurements:
 
-      F_UT^{sin(phi)} / F_UU       = -0.438
-      F_LT^{cos(0 phi)} / F_UU     = -0.240
-      F_LT^{cos(phi)} / F_UU       = -0.360
+      F_UT^{sin(phi)} / F_UU        = -0.117
+      F_UT^{sin(2phi)} / F_UU       = +0.109
+      F_LT^{cos(0 phi)} / F_UU      = -0.150
+      F_LT^{cos(phi)} / F_UU        = -0.150
 
-    Each input is twice the magnitude-preserving central value of the selected
-    HERMES measurement.  The exclusive-pi+ result is used for the UT term.
-    The two LT terms use the highest-z pi+ SIDIS points in the HERMES data set,
-    whose accepted x range extends to x = 0.600.  The high-z SIDIS values are
-    read from the published figures and are therefore documented as digitized
-    estimates rather than exact tabulated numbers.
+    The two UT inputs are inverse-total-variance weighted averages of measured
+    HERMES exclusive-pi+ amplitudes over 0.07 < x_B < 0.35, omitting the
+    lowest-x_B bin. Statistical and systematic uncertainties are combined in
+    quadrature for the weights. No factor of two is applied.
 
-Only the like-for-like harmonics are populated.  There is no transverse
-sin(2phi), sin(3phi), or cos(2phi) input.  The external-data-informed fit is a
-deliberately conservative leakage study, not a claim that the SIDIS amplitudes
-equal the exclusive amplitudes at CLAS12 kinematics.
+    The two LT inputs are rounded estimates from the open highest-z HERMES
+    SIDIS pi+ points in 0.84 < z < 1.20. Those points are closest to the
+    exclusive z -> 1 limit and are not included in the ordinary x and P_hT
+    projections. They are documented as digitized/rounded estimates rather
+    than exact tabulated values. No factor of two is applied.
+
+Only the directly corresponding harmonics are populated. There is no
+transverse sin(3phi) or cos(2phi) input. The external-data-informed fit is a
+controlled leakage study, not a claim that the SIDIS amplitudes equal the
+exclusive amplitudes at CLAS12 kinematics.
 
 For each observable a, the target-axis systematic is
 
@@ -165,21 +170,70 @@ VARIANT_COLORS: dict[str, str] = {
     "external_data_informed": "tab:orange",
 }
 
-# External transverse amplitudes used in the leakage fit.  Values are
-# structure-function-ratio amplitudes after applying the stated factor of two.
+# External transverse amplitudes used in the leakage fit.
+#
+# Exclusive UT reference:
+#   A. Airapetian et al. (HERMES),
+#   "Single-spin azimuthal asymmetry in exclusive electroproduction of pi+
+#   mesons on transversely polarized protons,"
+#   Phys. Lett. B 682 (2010) 345-350,
+#   DOI: 10.1016/j.physletb.2009.11.039,
+#   arXiv:0907.2596.
+#   Official HERMES ASCII data file: ivana.AUTexclpi-1.dat.
+#
+# SIDIS LT reference:
+#   A. Airapetian et al. (HERMES),
+#   "Azimuthal single- and double-spin asymmetries in semi-inclusive
+#   deep-inelastic lepton scattering by transversely polarized protons,"
+#   JHEP 12 (2020) 010,
+#   DOI: 10.1007/JHEP12(2020)010,
+#   arXiv:2007.07755.
+#
+# The UT values below are direct inverse-total-variance weighted averages of
+# exact tabulated exclusive-pi+ measurements. The LT values are rounded
+# estimates from the open highest-z pi+ points (0.84 < z < 1.20), which are not
+# included in the ordinary x and P_hT projections. No factor of two is applied
+# to any of the four inputs.
 EXTERNAL_TRANSVERSE_INPUTS: dict[str, dict[str, Any]] = {
     "ut_sin_phi": {
-        "value": -0.438,
-        "measured_central_value": -0.219,
-        "scale_factor": 2.0,
+        "value": -0.117,
+        "measured_central_value": -0.11729214289950972,
+        "scale_factor": 1.0,
         "observable": "A_UT,l^{sin(phi-phi_S)}",
         "channel": "exclusive pi+",
         "kinematic_selection": {
-            "xB_bin": [0.15, 0.35],
-            "mean_xB": 0.21,
-            "mean_minus_tprime_gev2": 0.22,
-            "mean_Q2_gev2": 3.91,
-            "exclusive_z_interpretation": "z approximately 1",
+            "averaging_policy": (
+                "Inverse-total-variance weighted average over the HERMES "
+                "x_B bins 0.07-0.10, 0.10-0.15, and 0.15-0.35; the "
+                "0.03-0.07 bin is omitted. Statistical and systematic "
+                "uncertainties are combined in quadrature."
+            ),
+            "xB_range_used": [0.07, 0.35],
+            "weighted_mean_xB": 0.13848440446760085,
+            "weighted_mean_uncertainty": 0.09362561740330531,
+            "input_rows": [
+                {
+                    "xB_bin": [0.07, 0.10],
+                    "mean_xB": 0.09,
+                    "asymmetry": -0.071,
+                    "stat_uncertainty": 0.180,
+                    "syst_uncertainty": 0.022,
+                },
+                {
+                    "xB_bin": [0.10, 0.15],
+                    "mean_xB": 0.13,
+                    "asymmetry": -0.093,
+                    "stat_uncertainty": 0.130,
+                    "syst_uncertainty": 0.029,
+                },
+                {
+                    "xB_bin": [0.15, 0.35],
+                    "mean_xB": 0.21,
+                    "asymmetry": -0.219,
+                    "stat_uncertainty": 0.180,
+                    "syst_uncertainty": 0.065,
+                },
+            ],
         },
         "reference": {
             "collaboration": "HERMES",
@@ -193,21 +247,86 @@ EXTERNAL_TRANSVERSE_INPUTS: dict[str, dict[str, Any]] = {
             ),
             "doi": "10.1016/j.physletb.2009.11.039",
             "arxiv": "0907.2596",
-            "data_note": "Exact tabulated HERMES value.",
+            "data_source": "Official HERMES ASCII file ivana.AUTexclpi-1.dat",
+            "data_note": (
+                "Direct weighted average of exact tabulated exclusive-pi+ "
+                "measurements; no doubling factor."
+            ),
+        },
+    },
+    "ut_sin_2phi": {
+        "value": 0.109,
+        "measured_central_value": 0.10930777687298002,
+        "scale_factor": 1.0,
+        "observable": "A_UT,l^{sin(2phi-phi_S)}",
+        "channel": "exclusive pi+",
+        "kinematic_selection": {
+            "averaging_policy": (
+                "Inverse-total-variance weighted average over the HERMES "
+                "x_B bins 0.07-0.10, 0.10-0.15, and 0.15-0.35; the "
+                "0.03-0.07 bin is omitted. Statistical and systematic "
+                "uncertainties are combined in quadrature."
+            ),
+            "xB_range_used": [0.07, 0.35],
+            "weighted_mean_xB": 0.13896698591627263,
+            "weighted_mean_uncertainty": 0.09952058355881978,
+            "input_rows": [
+                {
+                    "xB_bin": [0.07, 0.10],
+                    "mean_xB": 0.09,
+                    "asymmetry": -0.196,
+                    "stat_uncertainty": 0.181,
+                    "syst_uncertainty": 0.106,
+                },
+                {
+                    "xB_bin": [0.10, 0.15],
+                    "mean_xB": 0.13,
+                    "asymmetry": 0.178,
+                    "stat_uncertainty": 0.132,
+                    "syst_uncertainty": 0.024,
+                },
+                {
+                    "xB_bin": [0.15, 0.35],
+                    "mean_xB": 0.21,
+                    "asymmetry": 0.247,
+                    "stat_uncertainty": 0.192,
+                    "syst_uncertainty": 0.085,
+                },
+            ],
+        },
+        "reference": {
+            "collaboration": "HERMES",
+            "citation": (
+                "A. Airapetian et al., Phys. Lett. B 682 (2010) 345-350"
+            ),
+            "title": (
+                "Single-spin azimuthal asymmetry in exclusive "
+                "electroproduction of pi+ mesons on transversely "
+                "polarized protons"
+            ),
+            "doi": "10.1016/j.physletb.2009.11.039",
+            "arxiv": "0907.2596",
+            "data_source": "Official HERMES ASCII file ivana.AUTexclpi-1.dat",
+            "data_note": (
+                "Direct weighted average of exact tabulated exclusive-pi+ "
+                "measurements; no doubling factor."
+            ),
         },
     },
     "lt_cos_0phi": {
-        "value": -0.240,
-        "measured_central_value": -0.120,
-        "scale_factor": 2.0,
+        "value": -0.150,
+        "measured_central_value": -0.150,
+        "scale_factor": 1.0,
         "observable": "2<cos(phi_S)>/sqrt(2 epsilon (1-epsilon))",
         "channel": "SIDIS pi+",
         "kinematic_selection": {
             "z_bin": [0.84, 1.20],
             "x_acceptance": [0.023, 0.600],
             "selection_note": (
-                "Highest-z open point in the one-dimensional z projection; "
-                "the point is integrated over x."
+                "Open highest-z point in the one-dimensional pi+ z "
+                "projection. This point is not included in the ordinary "
+                "x and P_hT projections and is used as the closest "
+                "available SIDIS proxy for z approximately 1."
             ),
         },
         "reference": {
@@ -222,23 +341,25 @@ EXTERNAL_TRANSVERSE_INPUTS: dict[str, dict[str, Any]] = {
             "arxiv": "2007.07755",
             "figure": 31,
             "data_note": (
-                "Central value digitized from the published figure; "
-                "used only as a deliberately loose bound."
+                "Digitized/rounded estimate from the open highest-z pi+ "
+                "point; not an exact tabulated value; no doubling factor."
             ),
         },
     },
     "lt_cos_phi": {
-        "value": -0.360,
-        "measured_central_value": -0.180,
-        "scale_factor": 2.0,
+        "value": -0.150,
+        "measured_central_value": -0.150,
+        "scale_factor": 1.0,
         "observable": "2<cos(phi-phi_S)>/sqrt(1-epsilon^2)",
         "channel": "SIDIS pi+",
         "kinematic_selection": {
             "z_bin": [0.84, 1.20],
             "x_acceptance": [0.023, 0.600],
             "selection_note": (
-                "Highest-z open point in the one-dimensional z projection; "
-                "the point is integrated over x."
+                "Open highest-z point in the one-dimensional pi+ z "
+                "projection. This point is not included in the ordinary "
+                "x and P_hT projections and is used as the closest "
+                "available SIDIS proxy for z approximately 1."
             ),
         },
         "reference": {
@@ -253,8 +374,8 @@ EXTERNAL_TRANSVERSE_INPUTS: dict[str, dict[str, Any]] = {
             "arxiv": "2007.07755",
             "figure": 21,
             "data_note": (
-                "Central value digitized from the published figure; "
-                "used only as a deliberately loose bound."
+                "Digitized/rounded estimate from the open highest-z pi+ "
+                "point; not an exact tabulated value; no doubling factor."
             ),
         },
     },
@@ -1334,16 +1455,27 @@ def external_data_informed_transverse_terms(
     The restricted harmonic mapping is
 
       F_UT^{sin(phi)} / F_UU
+      F_UT^{sin(2phi)} / F_UU
       F_LT^{cos(0 phi)} / F_UU
       F_LT^{cos(phi)} / F_UU
 
-    with no sin(2phi), sin(3phi), or cos(2phi) transverse input.
+    with no sin(3phi) or cos(2phi) transverse input.
+
+    The HERMES A_UT,l^{sin(phi-phi_S)} term carries no extra
+    depolarization factor in this convention. The
+    A_UT,l^{sin(2phi-phi_S)} term carries r_v.
     """
     ut_sin_phi = float(EXTERNAL_TRANSVERSE_INPUTS["ut_sin_phi"]["value"])
+    ut_sin_2phi = float(
+        EXTERNAL_TRANSVERSE_INPUTS["ut_sin_2phi"]["value"]
+    )
     lt_cos_0phi = float(EXTERNAL_TRANSVERSE_INPUTS["lt_cos_0phi"]["value"])
     lt_cos_phi = float(EXTERNAL_TRANSVERSE_INPUTS["lt_cos_phi"]["value"])
 
-    ut = ut_sin_phi * np.sin(phi)
+    ut = (
+        ut_sin_phi * np.sin(phi)
+        + r_v * ut_sin_2phi * np.sin(2.0 * phi)
+    )
     lt = (
         r_w * lt_cos_0phi
         + r_c * lt_cos_phi * np.cos(phi)
@@ -1664,13 +1796,19 @@ def make_bin_nll(
                 ut_sin_phi = float(
                     EXTERNAL_TRANSVERSE_INPUTS["ut_sin_phi"]["value"]
                 )
+                ut_sin_2phi = float(
+                    EXTERNAL_TRANSVERSE_INPUTS["ut_sin_2phi"]["value"]
+                )
                 lt_cos_0phi = float(
                     EXTERNAL_TRANSVERSE_INPUTS["lt_cos_0phi"]["value"]
                 )
                 lt_cos_phi = float(
                     EXTERNAL_TRANSVERSE_INPUTS["lt_cos_phi"]["value"]
                 )
-                ut_fixed = ut_sin_phi * data["sin_phi"]
+                ut_fixed = (
+                    ut_sin_phi * data["sin_phi"]
+                    + event_r_v * ut_sin_2phi * data["sin_2phi"]
+                )
                 lt_fixed = (
                     event_r_w * lt_cos_0phi
                     + event_r_c * lt_cos_phi * data["cos_phi"]
@@ -3002,8 +3140,10 @@ def write_external_transverse_input_tables(
         json_path,
         {
             "policy": (
-                "Each fixed transverse input is twice the selected external "
-                "central value, preserving its measured sign."
+                "The UT inputs are direct inverse-total-variance weighted "
+                "averages of exclusive-pi+ measurements. The LT inputs are "
+                "rounded estimates from the open highest-z SIDIS pi+ points. "
+                "No factor of two is applied."
             ),
             "inputs": EXTERNAL_TRANSVERSE_INPUTS,
         },
@@ -3286,25 +3426,26 @@ def main() -> int:
                 "simultaneously to Su22, Fa22, and Sp23 in each kinematic bin."
             ),
             "target_axis_systematic_definition": (
-                "The projection component is the absolute no_projection-minus-nominal "
-                "displacement. The transverse component is half the fitted "
-                "transverse minus nominal span. The quoted target-axis systematic is the "
-                "larger of those two correlated components."
+                "The projection component is the absolute no_projection-minus-"
+                "nominal displacement. The external-data-informed component is "
+                "the absolute external_data_informed-minus-nominal displacement. "
+                "The quoted target-axis systematic is the larger of those two "
+                "correlated components."
             ),
             "external_transverse_leakage_mapping": {
                 "F_UL_sin_phi_to_F_UT_sin_phi": True,
+                "F_UL_sin_2phi_to_F_UT_sin_2phi": True,
                 "F_LL_to_F_LT_cos_0phi": True,
                 "F_LL_cos_phi_to_F_LT_cos_phi": True,
-                "F_UL_sin_2phi_to_transverse": False,
-                "F_LL_cos_2phi_from_transverse": False,
+                "F_UT_sin_3phi_included": False,
+                "F_LT_cos_2phi_included": False,
             },
             "external_transverse_inputs": EXTERNAL_TRANSVERSE_INPUTS,
-            "transverse_stress_model_warning": (
-                "The two transverse stress variants use the signed nominal "
-                "longitudinal amplitudes as scales for corresponding transverse "
-                "harmonics. One preserves all mapped signs and one reverses them. "
-                "They are loose data-driven systematic estimates, not physical "
-                "equality assumptions."
+            "external_data_informed_model_note": (
+                "The UT amplitudes are direct weighted averages of measured "
+                "exclusive-pi+ HERMES amplitudes. The LT amplitudes are rounded "
+                "estimates from open highest-z HERMES SIDIS pi+ points and are "
+                "used as a controlled leakage model. No factor of two is applied."
             ),
             "polarization_uncertainty_policy": (
                 "Beam- and target-polarization uncertainties are not included. "
