@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-extract_structure_function_ratios_v7.py
+extract_structure_function_ratios_v8.py
 
 Initial standalone event-level asymmetry extraction for the RGC exclusive
 e p -> e' n pi+ analysis.
@@ -164,14 +164,14 @@ COMBINED_COLOR = "tab:blue"
 VARIANT_LABELS: dict[str, str] = {
     "nominal": r"Nominal: $P_L=P_t\cos\theta_\gamma$",
     "no_projection": r"No projection: $P_L=P_t$",
-    "longitudinal_scaled_transverse_plus": r"$T^+$ longitudinal-scaled",
-    "longitudinal_scaled_transverse_minus": r"$T^-$ longitudinal-scaled",
+    "longitudinal_scaled_transverse": (
+        r"Longitudinal-scaled transverse leakage"
+    ),
 }
 VARIANT_COLORS: dict[str, str] = {
     "nominal": "tab:blue",
     "no_projection": "tab:purple",
-    "longitudinal_scaled_transverse_plus": "tab:orange",
-    "longitudinal_scaled_transverse_minus": "tab:green",
+    "longitudinal_scaled_transverse": "tab:orange",
 }
 PERIOD_INDEX: dict[str, int] = {
     period: index for index, period in enumerate(PERIODS)
@@ -210,7 +210,7 @@ MAXIMUM_WORKERS = 8
 DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_CHUNK_SIZE = "250 MB"
 DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction")
-DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v7.npz"
+DEFAULT_CACHE_PATH = DEFAULT_OUTPUT_DIR / "cache/selected_events_v8.npz"
 
 DEFAULT_RUN_INFO_CSV = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = Path(
@@ -237,8 +237,7 @@ DEFAULT_INPUTS: dict[str, Path] = {
 FIT_VARIANTS: tuple[str, ...] = (
     "nominal",
     "no_projection",
-    "longitudinal_scaled_transverse_plus",
-    "longitudinal_scaled_transverse_minus",
+    "longitudinal_scaled_transverse",
 )
 
 
@@ -1242,7 +1241,6 @@ def longitudinal_scaled_transverse_terms(
     r_v: np.ndarray,
     r_w: np.ndarray,
     scales: Mapping[str, float] | None,
-    sign: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Return the transverse-target stress-model angular factors.
@@ -1263,18 +1261,18 @@ def longitudinal_scaled_transverse_terms(
       LT cos(phi_S)           <- LL constant
       LT cos(2phi-phi_S)      <- LL cos(phi)
 
-    The plus stress test preserves the observed nominal signs.  The minus
-    stress test reverses every mapped transverse amplitude coherently.
+    The mapped amplitudes preserve the signs of the corresponding nominal
+    fitted longitudinal amplitudes.
     """
     if scales is None:
         zeros = np.zeros(phi.shape, dtype=np.float64)
         return zeros, zeros
     # endif
 
-    ul1_scale = sign * float(scales["ul1"])
-    ul2_scale = sign * float(scales["ul2"])
-    ll0_scale = sign * float(scales["ll0"])
-    ll1_scale = sign * float(scales["ll1"])
+    ul1_scale = float(scales["ul1"])
+    ul2_scale = float(scales["ul2"])
+    ll0_scale = float(scales["ll0"])
+    ll1_scale = float(scales["ll1"])
 
     # Beam-axis target: phi_S = 0.  The sin(phi_S) term vanishes.
     ut = (
@@ -1345,15 +1343,7 @@ def evaluate_cross_section_factor(
         * (r_c * ll0 + r_w * ll1 * cos_phi)
     )
 
-    if variant in (
-        "longitudinal_scaled_transverse_plus",
-        "longitudinal_scaled_transverse_minus",
-    ):
-        transverse_sign = (
-            1.0
-            if variant == "longitudinal_scaled_transverse_plus"
-            else -1.0
-        )
+    if variant == "longitudinal_scaled_transverse":
         ut_fixed, lt_fixed = longitudinal_scaled_transverse_terms(
             phi,
             r_b,
@@ -1361,7 +1351,6 @@ def evaluate_cross_section_factor(
             r_v,
             r_w,
             transverse_scales,
-            transverse_sign,
         )
     else:
         ut_fixed = np.zeros(phi.shape, dtype=np.float64)
@@ -2035,21 +2024,12 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         "ll0": nominal["values"]["ll0"],
         "ll1": nominal["values"]["ll1"],
     }
-    longitudinal_scaled_transverse_plus = fit_one_variant(
+    longitudinal_scaled_transverse = fit_one_variant(
         events,
         run_states,
         dilution_records,
         bin_number,
-        "longitudinal_scaled_transverse_plus",
-        transverse_scales=transverse_scales,
-        initial_values=nominal["values"],
-    )
-    longitudinal_scaled_transverse_minus = fit_one_variant(
-        events,
-        run_states,
-        dilution_records,
-        bin_number,
-        "longitudinal_scaled_transverse_minus",
+        "longitudinal_scaled_transverse",
         transverse_scales=transverse_scales,
         initial_values=nominal["values"],
     )
@@ -2057,42 +2037,33 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
     variants = {
         "nominal": nominal,
         "no_projection": no_projection,
-        "longitudinal_scaled_transverse_plus": (
-            longitudinal_scaled_transverse_plus
-        ),
-        "longitudinal_scaled_transverse_minus": (
-            longitudinal_scaled_transverse_minus
-        ),
+        "longitudinal_scaled_transverse": longitudinal_scaled_transverse,
     }
 
     projection_systematic: dict[str, float] = {}
-    transverse_half_width_systematic: dict[str, float] = {}
+    transverse_systematic: dict[str, float] = {}
+    full_three_fit_spread: dict[str, float] = {}
     systematics: dict[str, float] = {}
     for parameter in PHYSICS_PARAMETERS:
         nominal_value = nominal["values"][parameter]
+        no_projection_value = no_projection["values"][parameter]
+        transverse_value = longitudinal_scaled_transverse[
+            "values"
+        ][parameter]
 
-        # The no-projection fit is a one-sided alternative to the preferred
-        # virtual-photon-axis treatment, so its uncertainty is the absolute
-        # displacement from nominal.
         projection_systematic[parameter] = abs(
-            no_projection["values"][parameter] - nominal_value
+            no_projection_value - nominal_value
         )
-
-        # The T+ and T- fits are deliberately constructed as a symmetric
-        # two-sided stress test.  Their natural systematic scale is therefore
-        # the half-width of the two fitted results, not the larger displacement
-        # of either endpoint from the nominal solution.
-        transverse_half_width_systematic[parameter] = 0.5 * abs(
-            longitudinal_scaled_transverse_plus["values"][parameter]
-            - longitudinal_scaled_transverse_minus["values"][parameter]
+        transverse_systematic[parameter] = abs(
+            transverse_value - nominal_value
         )
-
-        # Both variations probe the same target-axis ambiguity, so retain one
-        # conservative correlated target-axis uncertainty by taking the larger
-        # of the projection and transverse-leakage components.
         systematics[parameter] = max(
             projection_systematic[parameter],
-            transverse_half_width_systematic[parameter],
+            transverse_systematic[parameter],
+        )
+        full_three_fit_spread[parameter] = (
+            max(nominal_value, no_projection_value, transverse_value)
+            - min(nominal_value, no_projection_value, transverse_value)
         )
     # endfor
 
@@ -2111,8 +2082,40 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         for period in PERIODS
     }
 
-    stabilized_period_fits = {
-        period: fit_one_variant(
+    period_constraint_fits: dict[
+        str,
+        dict[str, dict[str, Any]],
+    ] = {
+        "fix_u1": {},
+        "fix_u2": {},
+        "fix_u1_u2": {},
+    }
+    for period in PERIODS:
+        period_constraint_fits["fix_u1"][period] = fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "nominal",
+            active_periods=(period,),
+            initial_values=period_fits[period]["values"],
+            fixed_physics_parameters={
+                "u1": nominal["values"]["u1"],
+            },
+        )
+        period_constraint_fits["fix_u2"][period] = fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "nominal",
+            active_periods=(period,),
+            initial_values=period_fits[period]["values"],
+            fixed_physics_parameters={
+                "u2": nominal["values"]["u2"],
+            },
+        )
+        period_constraint_fits["fix_u1_u2"][period] = fit_one_variant(
             events,
             run_states,
             dilution_records,
@@ -2125,8 +2128,7 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
                 "u2": nominal["values"]["u2"],
             },
         )
-        for period in PERIODS
-    }
+    # endfor
 
     # Quantify each period's tension with the simultaneous solution.  For each
     # period, compare its nominal NLL at the combined best-fit point with the
@@ -2170,13 +2172,12 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         "bin_number": bin_number,
         "variants": variants,
         "period_fits": period_fits,
-        "stabilized_period_fits": stabilized_period_fits,
+        "period_constraint_fits": period_constraint_fits,
         "period_consistency": period_consistency,
         "target_axis_systematic": systematics,
         "projection_systematic": projection_systematic,
-        "transverse_half_width_systematic": (
-            transverse_half_width_systematic
-        ),
+        "transverse_systematic": transverse_systematic,
+        "full_three_fit_spread": full_three_fit_spread,
         "transverse_scales": transverse_scales,
     }
 
@@ -2245,20 +2246,23 @@ def flatten_fit_results(
                 "period_consistency"
             ][period]["delta_nll"]
 
-            stabilized_fit = result["stabilized_period_fits"][period]
-            row[f"stabilized_period_fit_valid_{period}"] = (
-                stabilized_fit["valid"]
-            )
-            row[
-                f"stabilized_period_fit_accurate_covariance_{period}"
-            ] = stabilized_fit["accurate_covariance"]
-            row[
-                f"stabilized_period_fit_positive_definite_covariance_{period}"
-            ] = stabilized_fit["positive_definite_covariance"]
-            row[
-                f"stabilized_period_fit_parameters_at_limit_{period}"
-            ] = stabilized_fit["parameters_at_limit"]
-            row[f"stabilized_period_fit_edm_{period}"] = stabilized_fit["edm"]
+            for constraint_name in ("fix_u1", "fix_u2", "fix_u1_u2"):
+                constrained_fit = result["period_constraint_fits"][
+                    constraint_name
+                ][period]
+                prefix = f"{constraint_name}_period_fit"
+                row[f"{prefix}_valid_{period}"] = constrained_fit["valid"]
+                row[f"{prefix}_accurate_covariance_{period}"] = (
+                    constrained_fit["accurate_covariance"]
+                )
+                row[
+                    f"{prefix}_positive_definite_covariance_{period}"
+                ] = constrained_fit["positive_definite_covariance"]
+                row[f"{prefix}_parameters_at_limit_{period}"] = (
+                    constrained_fit["parameters_at_limit"]
+                )
+                row[f"{prefix}_edm_{period}"] = constrained_fit["edm"]
+            # endfor
         # endfor
 
         for parameter in PHYSICS_PARAMETERS:
@@ -2267,8 +2271,11 @@ def flatten_fit_results(
             row[f"{parameter}_projection_sys"] = result[
                 "projection_systematic"
             ][parameter]
-            row[f"{parameter}_transverse_half_width_sys"] = result[
-                "transverse_half_width_systematic"
+            row[f"{parameter}_transverse_sys"] = result[
+                "transverse_systematic"
+            ][parameter]
+            row[f"{parameter}_three_fit_full_spread"] = result[
+                "full_three_fit_spread"
             ][parameter]
             row[f"{parameter}_target_axis_sys"] = result[
                 "target_axis_systematic"
@@ -2280,19 +2287,28 @@ def flatten_fit_results(
             # endfor
             for period in PERIODS:
                 period_fit = result["period_fits"][period]
-                stabilized_fit = result["stabilized_period_fits"][period]
                 row[f"{parameter}_{period}"] = period_fit[
                     "values"
                 ][parameter]
                 row[f"{parameter}_stat_{period}"] = period_fit[
                     "errors"
                 ][parameter]
-                row[f"{parameter}_stabilized_{period}"] = stabilized_fit[
-                    "values"
-                ][parameter]
-                row[
-                    f"{parameter}_stabilized_stat_{period}"
-                ] = stabilized_fit["errors"][parameter]
+
+                for constraint_name in (
+                    "fix_u1",
+                    "fix_u2",
+                    "fix_u1_u2",
+                ):
+                    constrained_fit = result["period_constraint_fits"][
+                        constraint_name
+                    ][period]
+                    row[
+                        f"{parameter}_{constraint_name}_{period}"
+                    ] = constrained_fit["values"][parameter]
+                    row[
+                        f"{parameter}_{constraint_name}_stat_{period}"
+                    ] = constrained_fit["errors"][parameter]
+                # endfor
             # endfor
         # endfor
         rows.append(row)
@@ -2364,7 +2380,7 @@ def plot_parameter_summaries(
         ax.grid(alpha=0.25)
         ax.legend()
         fig.tight_layout()
-        path = output_dir / f"{parameter}_summary_v7.png"
+        path = output_dir / f"{parameter}_summary_v8.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2439,7 +2455,7 @@ def plot_aggregated_by_x(
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_combined_v7.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_combined_v8.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2552,7 +2568,7 @@ def plot_aggregated_by_period(
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_by_period_v7.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_by_period_v8.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2564,7 +2580,7 @@ def plot_target_axis_variants(
     frame: pd.DataFrame,
     output_dir: Path,
 ) -> list[str]:
-    """Compare nominal, no-projection, T+, and T- fitted values."""
+    """Compare nominal, no-projection, and longitudinal-scaled T fits."""
     ensure_directory(output_dir)
     paths: list[str] = []
     variants = tuple(VARIANT_LABELS)
@@ -2600,6 +2616,18 @@ def plot_target_axis_variants(
                 )
             # endfor
 
+            ax.errorbar(
+                x_values,
+                subset[parameter],
+                yerr=subset[f"{parameter}_target_axis_sys"],
+                marker="none",
+                linestyle="none",
+                capsize=4,
+                linewidth=1.0,
+                color="black",
+                label="Quoted target-axis systematic",
+            )
+
             ax.axhline(0.0, linewidth=0.8)
             ax.set_ylabel(PARAMETER_LABELS[parameter])
             apply_parameter_y_limits(ax, parameter)
@@ -2621,7 +2649,7 @@ def plot_target_axis_variants(
             y=0.995,
         )
         fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
-        path = output_dir / f"xB_bin_{x_index + 1}_target_axis_variants_v7.png"
+        path = output_dir / f"xB_bin_{x_index + 1}_target_axis_variants_v8.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         paths.append(str(path))
@@ -2633,9 +2661,19 @@ def plot_period_stability(
     frame: pd.DataFrame,
     output_dir: Path,
 ) -> list[str]:
-    """Compare fully free period fits with u1/u2-fixed diagnostic fits."""
+    """
+    Compare fully free period fits with diagnostic fits fixing u1 only,
+    u2 only, or both u1 and u2 to the simultaneous values.
+    """
     ensure_directory(output_dir)
     paths: list[str] = []
+
+    constraint_specs = (
+        ("free", "Fully free period fit", "o", None),
+        ("fix_u1", r"$u_1$ fixed", "s", "tab:purple"),
+        ("fix_u2", r"$u_2$ fixed", "^", "tab:brown"),
+        ("fix_u1_u2", r"$u_1,u_2$ fixed", "D", COMBINED_COLOR),
+    )
 
     for period in PERIODS:
         for x_index, (x_low, x_high) in enumerate(XB_BINS):
@@ -2653,26 +2691,33 @@ def plot_period_stability(
                     continue
                 # endif
 
-                ax.errorbar(
-                    x_values,
-                    subset[f"{parameter}_{period}"],
-                    yerr=subset[f"{parameter}_stat_{period}"],
-                    marker="o",
-                    linestyle="none",
-                    capsize=2,
-                    color=PERIOD_COLORS[period],
-                    label="Fully free period fit",
-                )
-                ax.errorbar(
-                    x_values,
-                    subset[f"{parameter}_stabilized_{period}"],
-                    yerr=subset[f"{parameter}_stabilized_stat_{period}"],
-                    marker="s",
-                    linestyle="none",
-                    capsize=2,
-                    color=COMBINED_COLOR,
-                    label=r"Period fit with $u_1,u_2$ fixed",
-                )
+                for constraint_name, label, marker, color in constraint_specs:
+                    if constraint_name == "free":
+                        values = subset[f"{parameter}_{period}"]
+                        errors = subset[f"{parameter}_stat_{period}"]
+                        draw_color = PERIOD_COLORS[period]
+                    else:
+                        values = subset[
+                            f"{parameter}_{constraint_name}_{period}"
+                        ]
+                        errors = subset[
+                            f"{parameter}_{constraint_name}_stat_{period}"
+                        ]
+                        draw_color = color
+                    # endif
+
+                    ax.errorbar(
+                        x_values,
+                        values,
+                        yerr=errors,
+                        marker=marker,
+                        linestyle="none",
+                        capsize=2,
+                        color=draw_color,
+                        label=label,
+                    )
+                # endfor
+
                 ax.axhline(0.0, linewidth=0.8)
                 ax.set_ylabel(PARAMETER_LABELS[parameter])
                 apply_parameter_y_limits(ax, parameter)
@@ -2697,7 +2742,7 @@ def plot_period_stability(
             fig.tight_layout(rect=(0.0, 0.04, 1.0, 0.98))
             path = (
                 output_dir
-                / f"{period}_xB_bin_{x_index + 1}_stability_v7.png"
+                / f"{period}_xB_bin_{x_index + 1}_stability_v8.png"
             )
             fig.savefig(path, dpi=180)
             plt.close(fig)
@@ -2736,7 +2781,7 @@ def plot_period_consistency_heatmap(
         r"-\mathrm{NLL}_{p,\min}$"
     )
     fig.tight_layout()
-    path = output_dir / "period_consistency_delta_nll_v7.png"
+    path = output_dir / "period_consistency_delta_nll_v8.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2926,6 +2971,8 @@ def main() -> int:
     all_bins_plots_dir = plots_dir / "all_bins"
     aggregated_plots_dir = plots_dir / "aggregated"
     period_plots_dir = aggregated_plots_dir / "by_period"
+    target_axis_variants_dir = plots_dir / "target_axis_variants"
+    period_stability_dir = plots_dir / "period_stability"
     latex_dir = output_dir / "latex"
     for directory in (
         tables_dir,
@@ -2935,6 +2982,8 @@ def main() -> int:
         all_bins_plots_dir,
         aggregated_plots_dir,
         period_plots_dir,
+        target_axis_variants_dir,
+        period_stability_dir,
         latex_dir,
     ):
         ensure_directory(directory)
@@ -3038,14 +3087,14 @@ def main() -> int:
 
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
-    csv_path = tables_dir / "structure_function_ratios_v7.csv"
+    csv_path = tables_dir / "structure_function_ratios_v8.csv"
     frame.to_csv(csv_path, index=False)
 
-    detailed_json_path = json_dir / "structure_function_ratios_v7.json"
+    detailed_json_path = json_dir / "structure_function_ratios_v8.json"
     write_json(
         detailed_json_path,
         {
-            "schema_version": 7,
+            "schema_version": 8,
             "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
             "created_utc": datetime.now(timezone.utc).isoformat(),
             "fit_policy": (
@@ -3055,7 +3104,7 @@ def main() -> int:
             "target_axis_systematic_definition": (
                 "The projection component is the absolute no_projection-minus-nominal "
                 "displacement. The transverse component is half the fitted "
-                "T+ minus T- span. The quoted target-axis systematic is the "
+                "transverse minus nominal span. The quoted target-axis systematic is the "
                 "larger of those two correlated components."
             ),
             "transverse_stress_model_warning": (
@@ -3101,22 +3150,24 @@ def main() -> int:
             continue
         # endif
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v7.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_covariance_v8.npy",
             np.asarray(nominal["covariance"], dtype=np.float64),
         )
         np.save(
-            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v7.npy",
+            covariance_dir / f"bin_{bin_number:02d}_nominal_correlation_v8.npy",
             np.asarray(nominal["correlation"], dtype=np.float64),
         )
     # endfor
 
-    latex_path = latex_dir / "structure_function_ratios_v7.tex"
+    latex_path = latex_dir / "structure_function_ratios_v8.tex"
     write_latex_table(frame, latex_path)
 
     plot_paths: dict[str, list[str]] = {
         "all_bins": [],
         "aggregated": [],
         "aggregated_by_period": [],
+        "target_axis_variants": [],
+        "period_stability": [],
     }
     if not args.skip_plots:
         plot_paths["all_bins"] = plot_parameter_summaries(
@@ -3131,13 +3182,21 @@ def main() -> int:
         plot_paths["aggregated_by_period"].append(
             plot_period_consistency_heatmap(frame, period_plots_dir)
         )
+        plot_paths["target_axis_variants"] = plot_target_axis_variants(
+            frame,
+            target_axis_variants_dir,
+        )
+        plot_paths["period_stability"] = plot_period_stability(
+            frame,
+            period_stability_dir,
+        )
     # endif
 
-    manifest_path = output_dir / "asymmetry_extraction_manifest_v7.json"
+    manifest_path = output_dir / "asymmetry_extraction_manifest_v8.json"
     write_json(
         manifest_path,
         {
-            "schema_version": 7,
+            "schema_version": 8,
             "script": str(Path(__file__).resolve()),
             "workers": workers,
             "products": {
