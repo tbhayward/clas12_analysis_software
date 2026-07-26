@@ -50,7 +50,7 @@ The unpolarized cosine modulations u1 and u2 float in the nominal fit.
 
 Target-axis treatments
 ----------------------
-Four fits are performed in every kinematic bin.
+Three fits are performed in every kinematic bin.
 
   nominal
     P_L = P_t cos(theta_gamma), P_T = 0.
@@ -58,33 +58,33 @@ Four fits are performed in every kinematic bin.
   no_projection
     P_L = P_t, P_T = 0.
 
-  longitudinal_scaled_transverse_plus
-    P_L = P_t cos(theta_gamma), P_T = P_t sin(theta_gamma).  The transverse
-    stress amplitudes are fixed from the signed nominal longitudinal amplitudes
-    in the same bin using the documented harmonic mapping.
+  external_data_informed
+    P_L = P_t cos(theta_gamma), P_T = P_t sin(theta_gamma).  The three
+    transverse amplitudes are fixed to conservative external-data values:
 
-  longitudinal_scaled_transverse_minus
-    Same geometry and magnitudes as longitudinal_scaled_transverse_plus, but
-    every mapped transverse amplitude has the opposite sign.
+      F_UT^{sin(phi)} / F_UU       = -0.438
+      F_LT^{cos(0 phi)} / F_UU     = -0.240
+      F_LT^{cos(phi)} / F_UU       = -0.360
 
-These longitudinal-scale variants are loose, data-driven stress tests.  They
-are not physical models asserting equality between longitudinal and transverse
-amplitudes.  For each fitted observable, the target-axis systematic is the
-largest absolute displacement from nominal among no_projection and the two
-opposite-sign longitudinal-scaled transverse fits.
+    Each input is twice the magnitude-preserving central value of the selected
+    HERMES measurement.  The exclusive-pi+ result is used for the UT term.
+    The two LT terms use the highest-z pi+ SIDIS points in the HERMES data set,
+    whose accepted x range extends to x = 0.600.  The high-z SIDIS values are
+    read from the published figures and are therefore documented as digitized
+    estimates rather than exact tabulated numbers.
 
-The transverse stress terms use the standard one-hadron harmonic/depolarization
-mapping evaluated for a beam-axis target, phi_S = 0 with the signed target
-polarization carrying the target orientation:
+Only the like-for-like harmonics are populated.  There is no transverse
+sin(2phi), sin(3phi), or cos(2phi) input.  The external-data-informed fit is a
+deliberately conservative leakage study, not a claim that the SIDIS amplitudes
+equal the exclusive amplitudes at CLAS12 kinematics.
 
-  Restricted UT/LT leakage model:
-    F_UL^{sin(phi)}       -> F_UT^{sin(phi)}
-    F_LL                  -> F_LT^{cos(0 phi)}
-    F_LL^{cos(phi)}       -> F_LT^{cos(phi)}
+For each observable a, the target-axis systematic is
 
-No transverse sin(2phi), sin(3phi), or cos(2phi) term is populated.  The
-mapping is a loose stress test, not a claim that the corresponding transverse
-and longitudinal structure functions are equal.
+    max(
+        abs(a_no_projection - a_nominal),
+        abs(a_external_data_informed - a_nominal)
+    ).
+
 
 Dilution-factor uncertainty
 ---------------------------
@@ -157,15 +157,109 @@ COMBINED_COLOR = "tab:blue"
 VARIANT_LABELS: dict[str, str] = {
     "nominal": r"Nominal: $P_L=P_t\cos\theta_\gamma$",
     "no_projection": r"No projection: $P_L=P_t$",
-    "longitudinal_scaled_transverse": (
-        r"Longitudinal-scaled transverse leakage"
-    ),
+    "external_data_informed": r"External-data-informed transverse leakage",
 }
 VARIANT_COLORS: dict[str, str] = {
     "nominal": "tab:blue",
     "no_projection": "tab:purple",
-    "longitudinal_scaled_transverse": "tab:orange",
+    "external_data_informed": "tab:orange",
 }
+
+# External transverse amplitudes used in the leakage fit.  Values are
+# structure-function-ratio amplitudes after applying the stated factor of two.
+EXTERNAL_TRANSVERSE_INPUTS: dict[str, dict[str, Any]] = {
+    "ut_sin_phi": {
+        "value": -0.438,
+        "measured_central_value": -0.219,
+        "scale_factor": 2.0,
+        "observable": "A_UT,l^{sin(phi-phi_S)}",
+        "channel": "exclusive pi+",
+        "kinematic_selection": {
+            "xB_bin": [0.15, 0.35],
+            "mean_xB": 0.21,
+            "mean_minus_tprime_gev2": 0.22,
+            "mean_Q2_gev2": 3.91,
+            "exclusive_z_interpretation": "z approximately 1",
+        },
+        "reference": {
+            "collaboration": "HERMES",
+            "citation": (
+                "A. Airapetian et al., Phys. Lett. B 682 (2010) 345-350"
+            ),
+            "title": (
+                "Single-spin azimuthal asymmetry in exclusive "
+                "electroproduction of pi+ mesons on transversely "
+                "polarized protons"
+            ),
+            "doi": "10.1016/j.physletb.2009.11.039",
+            "arxiv": "0907.2596",
+            "data_note": "Exact tabulated HERMES value.",
+        },
+    },
+    "lt_cos_0phi": {
+        "value": -0.240,
+        "measured_central_value": -0.120,
+        "scale_factor": 2.0,
+        "observable": "2<cos(phi_S)>/sqrt(2 epsilon (1-epsilon))",
+        "channel": "SIDIS pi+",
+        "kinematic_selection": {
+            "z_bin": [0.84, 1.20],
+            "x_acceptance": [0.023, 0.600],
+            "selection_note": (
+                "Highest-z open point in the one-dimensional z projection; "
+                "the point is integrated over x."
+            ),
+        },
+        "reference": {
+            "collaboration": "HERMES",
+            "citation": "A. Airapetian et al., JHEP 12 (2020) 010",
+            "title": (
+                "Azimuthal single- and double-spin asymmetries in "
+                "semi-inclusive deep-inelastic lepton scattering by "
+                "transversely polarized protons"
+            ),
+            "doi": "10.1007/JHEP12(2020)010",
+            "arxiv": "2007.07755",
+            "figure": 31,
+            "data_note": (
+                "Central value digitized from the published figure; "
+                "used only as a deliberately loose bound."
+            ),
+        },
+    },
+    "lt_cos_phi": {
+        "value": -0.360,
+        "measured_central_value": -0.180,
+        "scale_factor": 2.0,
+        "observable": "2<cos(phi-phi_S)>/sqrt(1-epsilon^2)",
+        "channel": "SIDIS pi+",
+        "kinematic_selection": {
+            "z_bin": [0.84, 1.20],
+            "x_acceptance": [0.023, 0.600],
+            "selection_note": (
+                "Highest-z open point in the one-dimensional z projection; "
+                "the point is integrated over x."
+            ),
+        },
+        "reference": {
+            "collaboration": "HERMES",
+            "citation": "A. Airapetian et al., JHEP 12 (2020) 010",
+            "title": (
+                "Azimuthal single- and double-spin asymmetries in "
+                "semi-inclusive deep-inelastic lepton scattering by "
+                "transversely polarized protons"
+            ),
+            "doi": "10.1007/JHEP12(2020)010",
+            "arxiv": "2007.07755",
+            "figure": 21,
+            "data_note": (
+                "Central value digitized from the published figure; "
+                "used only as a deliberately loose bound."
+            ),
+        },
+    },
+}
+
 PERIOD_INDEX: dict[str, int] = {
     period: index for index, period in enumerate(PERIODS)
 }
@@ -230,7 +324,7 @@ DEFAULT_INPUTS: dict[str, Path] = {
 FIT_VARIANTS: tuple[str, ...] = (
     "nominal",
     "no_projection",
-    "longitudinal_scaled_transverse",
+    "external_data_informed",
 )
 
 
@@ -1227,59 +1321,32 @@ def load_event_cache(path: Path) -> dict[str, np.ndarray]:
 # Likelihood
 # =============================================================================
 
-def longitudinal_scaled_transverse_terms(
+def external_data_informed_transverse_terms(
     phi: np.ndarray,
     r_b: np.ndarray,
     r_c: np.ndarray,
     r_v: np.ndarray,
     r_w: np.ndarray,
-    scales: Mapping[str, float] | None,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Return the restricted longitudinal-scaled transverse leakage model.
+    Return the fixed external-data-informed transverse leakage terms.
 
-    Only directly corresponding harmonics are populated:
+    The restricted harmonic mapping is
 
-      F_UL^{sin(phi)} / F_UU
-          -> F_UT^{sin(phi)} / F_UU
+      F_UT^{sin(phi)} / F_UU
+      F_LT^{cos(0 phi)} / F_UU
+      F_LT^{cos(phi)} / F_UU
 
-      F_LL / F_UU
-          -> F_LT^{cos(0 phi)} / F_UU
-
-      F_LL^{cos(phi)} / F_UU
-          -> F_LT^{cos(phi)} / F_UU
-
-    No transverse sin(2phi), sin(3phi), or cos(2phi) amplitude is generated.
-    Consequently F_UL^{sin(2phi)} and any absent F_LL^{cos(2phi)} term receive
-    no direct leakage assignment.  They may still move indirectly in the
-    refit through correlations with the populated harmonics.
-
-    This remains a deliberately loose stress model.  It does not assert that
-    the transverse and longitudinal structure-function ratios are physically
-    equal.
+    with no sin(2phi), sin(3phi), or cos(2phi) transverse input.
     """
-    if scales is None:
-        zeros = np.zeros(phi.shape, dtype=np.float64)
-        return zeros, zeros
-    # endif
+    ut_sin_phi = float(EXTERNAL_TRANSVERSE_INPUTS["ut_sin_phi"]["value"])
+    lt_cos_0phi = float(EXTERNAL_TRANSVERSE_INPUTS["lt_cos_0phi"]["value"])
+    lt_cos_phi = float(EXTERNAL_TRANSVERSE_INPUTS["lt_cos_phi"]["value"])
 
-    ul1_scale = float(scales["ul1"])
-    ll0_scale = float(scales["ll0"])
-    ll1_scale = float(scales["ll1"])
-
-    # Effective beam-axis transverse harmonics used for the leakage study.
-    # The LT depolarization factors follow the standard cos(phi_S) and
-    # cos(phi-phi_S) terms at phi_S = 0:
-    #
-    #   LT cos(0 phi): rW
-    #   LT cos(phi):   rC
-    #
-    # The single UT sin(phi) leakage term is represented by its leading
-    # sin(phi-phi_S) harmonic at phi_S = 0.
-    ut = ul1_scale * np.sin(phi)
+    ut = ut_sin_phi * np.sin(phi)
     lt = (
-        r_w * ll0_scale
-        + r_c * ll1_scale * np.cos(phi)
+        r_w * lt_cos_0phi
+        + r_c * lt_cos_phi * np.cos(phi)
     )
     return ut, lt
 
@@ -1338,14 +1405,13 @@ def evaluate_cross_section_factor(
         * (r_c * ll0 + r_w * ll1 * cos_phi)
     )
 
-    if variant == "longitudinal_scaled_transverse":
-        ut_fixed, lt_fixed = longitudinal_scaled_transverse_terms(
+    if variant == "external_data_informed":
+        ut_fixed, lt_fixed = external_data_informed_transverse_terms(
             phi,
             r_b,
             r_c,
             r_v,
             r_w,
-            transverse_scales,
         )
     else:
         ut_fixed = np.zeros(phi.shape, dtype=np.float64)
@@ -1594,30 +1660,20 @@ def make_bin_nll(
                 )
             )
 
-            if variant in (
-                "longitudinal_scaled_transverse_plus",
-                "longitudinal_scaled_transverse_minus",
-            ):
-                scales = transverse_scales or {}
-                transverse_sign = (
-                    1.0
-                    if variant == "longitudinal_scaled_transverse_plus"
-                    else -1.0
+            if variant == "external_data_informed":
+                ut_sin_phi = float(
+                    EXTERNAL_TRANSVERSE_INPUTS["ut_sin_phi"]["value"]
                 )
-                ul1_scale = transverse_sign * float(scales["ul1"])
-                ul2_scale = transverse_sign * float(scales["ul2"])
-                ll0_scale = transverse_sign * float(scales["ll0"])
-                ll1_scale = transverse_sign * float(scales["ll1"])
-                ut_fixed = (
-                    ul1_scale * data["sin_phi"]
-                    + event_r_b * ul1_scale * data["sin_phi"]
-                    + event_r_b * ul2_scale * data["sin_3phi"]
-                    + event_r_v * ul2_scale * data["sin_2phi"]
+                lt_cos_0phi = float(
+                    EXTERNAL_TRANSVERSE_INPUTS["lt_cos_0phi"]["value"]
                 )
+                lt_cos_phi = float(
+                    EXTERNAL_TRANSVERSE_INPUTS["lt_cos_phi"]["value"]
+                )
+                ut_fixed = ut_sin_phi * data["sin_phi"]
                 lt_fixed = (
-                    event_r_c * ll1_scale * data["cos_phi"]
-                    + event_r_w * ll0_scale
-                    + event_r_w * ll1_scale * data["cos_2phi"]
+                    event_r_w * lt_cos_0phi
+                    + event_r_c * lt_cos_phi * data["cos_phi"]
                 )
                 target_transverse_coefficient = (
                     dilution * transverse_geometry * ut_fixed
@@ -2013,51 +2069,43 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         initial_values=nominal["values"],
     )
 
-    transverse_scales = {
-        "ul1": nominal["values"]["ul1"],
-        "ll0": nominal["values"]["ll0"],
-        "ll1": nominal["values"]["ll1"],
-    }
-    longitudinal_scaled_transverse = fit_one_variant(
+    external_data_informed = fit_one_variant(
         events,
         run_states,
         dilution_records,
         bin_number,
-        "longitudinal_scaled_transverse",
-        transverse_scales=transverse_scales,
+        "external_data_informed",
         initial_values=nominal["values"],
     )
 
     variants = {
         "nominal": nominal,
         "no_projection": no_projection,
-        "longitudinal_scaled_transverse": longitudinal_scaled_transverse,
+        "external_data_informed": external_data_informed,
     }
 
     projection_systematic: dict[str, float] = {}
-    transverse_systematic: dict[str, float] = {}
+    external_data_systematic: dict[str, float] = {}
     full_three_fit_spread: dict[str, float] = {}
     systematics: dict[str, float] = {}
     for parameter in PHYSICS_PARAMETERS:
         nominal_value = nominal["values"][parameter]
         no_projection_value = no_projection["values"][parameter]
-        transverse_value = longitudinal_scaled_transverse[
-            "values"
-        ][parameter]
+        external_value = external_data_informed["values"][parameter]
 
         projection_systematic[parameter] = abs(
             no_projection_value - nominal_value
         )
-        transverse_systematic[parameter] = abs(
-            transverse_value - nominal_value
+        external_data_systematic[parameter] = abs(
+            external_value - nominal_value
         )
         systematics[parameter] = max(
             projection_systematic[parameter],
-            transverse_systematic[parameter],
+            external_data_systematic[parameter],
         )
         full_three_fit_spread[parameter] = (
-            max(nominal_value, no_projection_value, transverse_value)
-            - min(nominal_value, no_projection_value, transverse_value)
+            max(nominal_value, no_projection_value, external_value)
+            - min(nominal_value, no_projection_value, external_value)
         )
     # endfor
 
@@ -2170,9 +2218,9 @@ def fit_bin_worker(bin_number: int) -> dict[str, Any]:
         "period_consistency": period_consistency,
         "target_axis_systematic": systematics,
         "projection_systematic": projection_systematic,
-        "transverse_systematic": transverse_systematic,
+        "external_data_systematic": external_data_systematic,
         "full_three_fit_spread": full_three_fit_spread,
-        "transverse_scales": transverse_scales,
+        "external_transverse_inputs": EXTERNAL_TRANSVERSE_INPUTS,
     }
 
 
@@ -2276,8 +2324,8 @@ def flatten_fit_results(
             row[f"{parameter}_projection_sys"] = result[
                 "projection_systematic"
             ][parameter]
-            row[f"{parameter}_transverse_sys"] = result[
-                "transverse_systematic"
+            row[f"{parameter}_external_data_sys"] = result[
+                "external_data_systematic"
             ][parameter]
             row[f"{parameter}_three_fit_full_spread"] = result[
                 "full_three_fit_spread"
@@ -2636,7 +2684,7 @@ def plot_target_axis_variants(
     frame: pd.DataFrame,
     output_dir: Path,
 ) -> list[str]:
-    """Compare nominal, no-projection, and longitudinal-scaled T fits."""
+    """Compare nominal, no-projection, and external-data-informed T fits."""
     ensure_directory(output_dir)
     paths: list[str] = []
     variants = tuple(VARIANT_LABELS)
@@ -2672,17 +2720,36 @@ def plot_target_axis_variants(
                 )
             # endfor
 
-            ax.errorbar(
-                x_values,
-                subset[parameter],
-                yerr=subset[f"{parameter}_target_axis_sys"],
-                marker="none",
-                linestyle="none",
-                capsize=4,
-                linewidth=1.0,
-                color="black",
-                label="Quoted target-axis systematic",
-            )
+            # Draw the quoted target-axis systematic as narrow, non-overlapping
+            # gray rectangles centered on the nominal points.
+            x_array = np.asarray(x_values, dtype=np.float64)
+            y_array = subset[parameter].to_numpy(dtype=np.float64)
+            sys_array = subset[
+                f"{parameter}_target_axis_sys"
+            ].to_numpy(dtype=np.float64)
+            if x_array.size > 1:
+                separations = np.diff(np.sort(x_array))
+                half_width = 0.10 * float(np.min(separations))
+            else:
+                half_width = 0.015
+            # endif
+            for point_index, (x_point, y_point, y_sys) in enumerate(
+                zip(x_array, y_array, sys_array)
+            ):
+                ax.fill_between(
+                    [x_point - half_width, x_point + half_width],
+                    [y_point - y_sys, y_point - y_sys],
+                    [y_point + y_sys, y_point + y_sys],
+                    color="0.65",
+                    alpha=0.45,
+                    linewidth=0.0,
+                    label=(
+                        "Quoted target-axis systematic"
+                        if point_index == 0 else None
+                    ),
+                    zorder=1,
+                )
+            # endfor
 
             ax.axhline(0.0, linewidth=0.8)
             ax.set_ylabel(PARAMETER_LABELS[parameter])
@@ -2894,6 +2961,54 @@ def write_latex_table(
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+
+def write_external_transverse_input_tables(
+    csv_path: Path,
+    json_path: Path,
+) -> None:
+    """Write the fixed external leakage inputs and full provenance."""
+    rows: list[dict[str, Any]] = []
+    for term, payload in EXTERNAL_TRANSVERSE_INPUTS.items():
+        reference = payload["reference"]
+        kinematics = payload["kinematic_selection"]
+        rows.append(
+            {
+                "term": term,
+                "input_value": payload["value"],
+                "measured_central_value": payload[
+                    "measured_central_value"
+                ],
+                "scale_factor": payload["scale_factor"],
+                "observable": payload["observable"],
+                "channel": payload["channel"],
+                "kinematic_selection_json": json.dumps(
+                    kinematics,
+                    sort_keys=True,
+                ),
+                "citation": reference["citation"],
+                "title": reference["title"],
+                "doi": reference["doi"],
+                "arxiv": reference["arxiv"],
+                "figure": reference.get("figure"),
+                "data_note": reference["data_note"],
+            }
+        )
+    # endfor
+    ensure_directory(csv_path.parent)
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    write_json(
+        json_path,
+        {
+            "policy": (
+                "Each fixed transverse input is twice the selected external "
+                "central value, preserving its measured sign."
+            ),
+            "inputs": EXTERNAL_TRANSVERSE_INPUTS,
+        },
+    )
+
 
 
 # =============================================================================
@@ -3148,6 +3263,17 @@ def main() -> int:
     csv_path = tables_dir / "structure_function_ratios.csv"
     frame.to_csv(csv_path, index=False)
 
+    external_input_csv_path = (
+        tables_dir / "external_transverse_inputs.csv"
+    )
+    external_input_json_path = (
+        json_dir / "external_transverse_inputs.json"
+    )
+    write_external_transverse_input_tables(
+        external_input_csv_path,
+        external_input_json_path,
+    )
+
     detailed_json_path = json_dir / "structure_function_ratios.json"
     write_json(
         detailed_json_path,
@@ -3165,13 +3291,14 @@ def main() -> int:
                 "transverse minus nominal span. The quoted target-axis systematic is the "
                 "larger of those two correlated components."
             ),
-            "transverse_leakage_mapping": {
+            "external_transverse_leakage_mapping": {
                 "F_UL_sin_phi_to_F_UT_sin_phi": True,
                 "F_LL_to_F_LT_cos_0phi": True,
                 "F_LL_cos_phi_to_F_LT_cos_phi": True,
                 "F_UL_sin_2phi_to_transverse": False,
                 "F_LL_cos_2phi_from_transverse": False,
             },
+            "external_transverse_inputs": EXTERNAL_TRANSVERSE_INPUTS,
             "transverse_stress_model_warning": (
                 "The two transverse stress variants use the signed nominal "
                 "longitudinal amplitudes as scales for corresponding transverse "
@@ -3271,6 +3398,12 @@ def main() -> int:
             "workers": workers,
             "products": {
                 "csv": str(csv_path),
+                "external_transverse_inputs_csv": str(
+                    external_input_csv_path
+                ),
+                "external_transverse_inputs_json": str(
+                    external_input_json_path
+                ),
                 "detailed_json": str(detailed_json_path),
                 "latex": str(latex_path),
                 "covariance_directory": str(covariance_dir),
