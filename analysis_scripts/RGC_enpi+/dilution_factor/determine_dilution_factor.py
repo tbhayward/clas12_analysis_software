@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v12.py
+determine_dilution_factor_v7.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -78,6 +78,7 @@ import zipfile
 import xml.etree.ElementTree as ET
 import math
 import os
+import shutil
 from pathlib import Path
 import sys
 from typing import Any, Iterable
@@ -1185,14 +1186,14 @@ def plot_epoch_diagnostics(
             "recommended_dilution_factor",
             "recommended_stat_uncertainty",
             "Recommended dilution factor",
-            "dilution_factor_by_epoch_v12.png",
+            "dilution_factor_by_epoch.png",
             "Recommended dilution factor versus NH$_3$ target/polarization epoch",
         ),
         (
             "packing_fraction",
             "packing_fraction_stat_uncertainty",
             "Packing fraction",
-            "packing_fraction_by_epoch_v12.png",
+            "packing_fraction_by_epoch.png",
             "Packing fraction versus NH$_3$ target/polarization epoch",
         ),
     ):
@@ -2564,7 +2565,7 @@ def plot_three_method_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} dilution-factor method comparison")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_method_comparison_{period}_v12.png"
+    path = output_dir / f"three_method_comparison_{period}.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2609,7 +2610,7 @@ def plot_three_period_comparison(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"Run-period comparison — {method_titles[method_key]}")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"three_period_comparison_{method_key}_v12.png"
+    path = output_dir / f"three_period_comparison_{method_key}.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2653,7 +2654,7 @@ def plot_packing_fraction_summary(
     axes[-1].set_xticks(bins)
     fig.suptitle(f"{PERIOD_LABELS[period]} packing-fraction diagnostics")
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / f"packing_fraction_summary_{period}_v12.png"
+    path = output_dir / f"packing_fraction_summary_{period}.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2679,7 +2680,7 @@ def plot_method1_control_summary(
     ax.set_title(r"Method-1 period-wide carbon normalization" "\n" r"$0.00 \leq M_x^2 < 0.40$ GeV$^2$")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    path = output_dir / "method1_period_carbon_scales_v12.png"
+    path = output_dir / "method1_period_carbon_scales.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2721,7 +2722,7 @@ def plot_nominal_method_comparison(
     ax.legend(ncol=3)
     ax.set_title(f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison")
     fig.tight_layout()
-    path = output_dir / f"nominal_method_comparison_{period}_v12.png"
+    path = output_dir / f"nominal_method_comparison_{period}.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2765,7 +2766,7 @@ def plot_nominal_period_comparison(
         "Nominal-cut run-period comparison — " + method_titles[method_key]
     )
     fig.tight_layout()
-    path = output_dir / f"nominal_period_comparison_{method_key}_v12.png"
+    path = output_dir / f"nominal_period_comparison_{method_key}.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2805,7 +2806,7 @@ def plot_nominal_packing_fraction_period_comparison(
     ax.legend(ncol=3)
     ax.set_title("Nominal-cut packing-fraction comparison by run period")
     fig.tight_layout()
-    path = output_dir / "nominal_packing_fraction_period_comparison_v12.png"
+    path = output_dir / "nominal_packing_fraction_period_comparison.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2896,7 +2897,7 @@ def plot_nominal_method_differences(
         f"(adopted global scale: {global_percent:.2f}%)"
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
-    path = output_dir / "nominal_method_scale_systematic_v12.png"
+    path = output_dir / "nominal_method_scale_systematic.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2945,7 +2946,7 @@ def plot_nominal_recommended_dilution(
         f"{global_scale['percent']:.2f}%"
     )
     fig.tight_layout()
-    path = output_dir / "nominal_recommended_dilution_factor_v12.png"
+    path = output_dir / "nominal_recommended_dilution_factor.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -3090,6 +3091,60 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+
+def publish_canonical_production_products(
+    *,
+    master_json_path: Path,
+    compact_json_path: Path,
+    flat_csv_path: Path,
+    count_path: Path,
+    configuration_path: Path,
+    production_tables_dir: Path,
+    production_metadata_dir: Path,
+) -> dict[str, str]:
+    """Publish stable, version-independent downstream products."""
+    ensure_directory(production_tables_dir)
+    ensure_directory(production_metadata_dir)
+
+    destinations = {
+        "master_json": production_tables_dir / "dilution_factors.json",
+        "downstream_json": (
+            production_tables_dir / "dilution_factors_production.json"
+        ),
+        "all_methods_csv": (
+            production_tables_dir / "dilution_factors_all_methods.csv"
+        ),
+        "target_counts_csv": (
+            production_tables_dir / "target_counts_all_selections.csv"
+        ),
+        "configuration_json": (
+            production_metadata_dir / "configuration.json"
+        ),
+    }
+    sources = {
+        "master_json": master_json_path,
+        "downstream_json": compact_json_path,
+        "all_methods_csv": flat_csv_path,
+        "target_counts_csv": count_path,
+        "configuration_json": configuration_path,
+    }
+
+    for key, source in sources.items():
+        source_resolved = source.resolve()
+        destination = destinations[key]
+        destination_resolved = destination.resolve()
+        if source_resolved != destination_resolved:
+            temporary_path = destination.with_suffix(
+                destination.suffix + ".tmp"
+            )
+            shutil.copy2(source_resolved, temporary_path)
+            temporary_path.replace(destination)
+        # endif
+    # endfor
+
+    return {key: str(path) for key, path in destinations.items()}
+
+
 def main() -> int:
     args = build_parser().parse_args()
 
@@ -3105,18 +3160,28 @@ def main() -> int:
 
     workers = max(1, min(int(args.workers), MAXIMUM_WORKERS, os.cpu_count() or 1))
     output_dir = args.output_dir.resolve()
-    tables_dir = output_dir / "tables"
-    covariance_dir = output_dir / "covariance"
-    plots_dir = output_dir / "plots"
-    epoch_dir = output_dir / "epochs"
+    analysis_dir = output_dir / "analysis"
+    tables_dir = analysis_dir / "tables"
+    covariance_dir = analysis_dir / "covariance"
+    plots_dir = analysis_dir / "plots"
+    epoch_dir = analysis_dir / "epochs"
     epoch_plots_dir = epoch_dir / "plots"
+
+    production_dir = output_dir / "production"
+    production_tables_dir = production_dir / "tables"
+    production_metadata_dir = production_dir / "metadata"
+
     for directory in (
         output_dir,
+        analysis_dir,
         tables_dir,
         covariance_dir,
         plots_dir,
         epoch_dir,
         epoch_plots_dir,
+        production_dir,
+        production_tables_dir,
+        production_metadata_dir,
     ):
         ensure_directory(directory)
     # endfor
@@ -3141,7 +3206,9 @@ def main() -> int:
     print(f"Exclusivity JSON:        {cut_json}")
     epoch_path = args.epoch_definitions.resolve()
     run_info_path = args.run_info_csv.resolve()
-    print(f"Output directory:        {output_dir}")
+    print(f"Output root:             {output_dir}")
+    print(f"Persistent analysis:     {analysis_dir}")
+    print(f"Canonical production:    {production_dir}")
     print(f"Epoch definitions:       {epoch_path}")
     print(f"Run information:         {run_info_path}")
     print(f"Tree:                    {args.tree}")
@@ -3161,7 +3228,7 @@ def main() -> int:
         args.control_max,
     )
     count_frame = pd.DataFrame(count_rows)
-    count_path = tables_dir / "target_counts_all_selections_v12.csv"
+    count_path = tables_dir / "target_counts_all_selections.csv"
     count_frame.to_csv(count_path, index=False)
 
     central_results = {
@@ -3188,7 +3255,7 @@ def main() -> int:
         charge_fractions,
         cuts,
     )
-    flat_csv_path = tables_dir / "dilution_factors_all_methods_v12.csv"
+    flat_csv_path = tables_dir / "dilution_factors_all_methods.csv"
     flat_frame.to_csv(flat_csv_path, index=False)
 
     epoch_definitions = read_epoch_spreadsheet(epoch_path)
@@ -3204,8 +3271,8 @@ def main() -> int:
         replicas=args.replicas,
         seed=args.seed,
     )
-    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics_v12.csv"
-    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics_v12.json"
+    epoch_csv_path = epoch_dir / "nh3_epoch_diagnostics.csv"
+    epoch_json_path = epoch_dir / "nh3_epoch_diagnostics.json"
     epoch_frame.to_csv(epoch_csv_path, index=False)
     write_json(
         epoch_json_path,
@@ -3240,6 +3307,9 @@ def main() -> int:
     provenance = {
         "script": Path(__file__).name,
         "schema_version": 12,
+        "output_filename_policy": "stable_version_independent",
+        "analysis_products_directory": str(analysis_dir),
+        "production_products_directory": str(production_dir),
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "working_directory": str(Path.cwd()),
         "tree_name": args.tree,
@@ -3327,7 +3397,7 @@ def main() -> int:
         "covariance_manifest": covariance_manifest,
         "plot_paths": plot_paths,
     }
-    master_json_path = output_dir / "dilution_factors_v12.json"
+    master_json_path = analysis_dir / "dilution_factors.json"
     write_json(master_json_path, master_payload)
 
     compact_payload = {
@@ -3355,23 +3425,65 @@ def main() -> int:
         "source_exclusivity_json": str(cut_json),
         "source_exclusivity_json_sha256": provenance["exclusivity_json_sha256"],
     }
-    compact_json_path = output_dir / "dilution_factors_production_v12.json"
+    compact_json_path = analysis_dir / "dilution_factors_production.json"
     write_json(compact_json_path, compact_payload)
 
-    configuration_path = output_dir / "configuration_v12.json"
+    configuration_path = analysis_dir / "configuration.json"
     write_json(configuration_path, provenance)
 
+    production_products = publish_canonical_production_products(
+        master_json_path=master_json_path,
+        compact_json_path=compact_json_path,
+        flat_csv_path=flat_csv_path,
+        count_path=count_path,
+        configuration_path=configuration_path,
+        production_tables_dir=production_tables_dir,
+        production_metadata_dir=production_metadata_dir,
+    )
+
+    manifest_path = output_dir / "determine_dilution_factor_manifest.json"
+    manifest_payload = {
+        "schema_version": 1,
+        "analysis": "RGC exclusive enpi+ dilution-factor determination",
+        "production_policy": (
+            "The complete analysis is retained under analysis/. Downstream "
+            "consumers use the stable files under production/."
+        ),
+        "source_channel_selection_json": str(cut_json),
+        "source_channel_selection_json_sha256": provenance[
+            "exclusivity_json_sha256"
+        ],
+        "retained_analysis_products": {
+            "root": str(analysis_dir),
+            "tables": str(tables_dir),
+            "covariance": str(covariance_dir),
+            "plots": str(plots_dir),
+            "epochs": str(epoch_dir),
+        },
+        "production_products": production_products,
+        "recommended_nominal_method": "average_of_method1_and_method2",
+        "filenames_are_version_independent": True,
+    }
+    write_json(manifest_path, manifest_payload)
+
     print()
-    print(f"Epoch diagnostics:  {epoch_csv_path}")
+    print(f"Epoch diagnostics:       {epoch_csv_path}")
     print("Dilution-factor calculation complete.")
-    print(f"  Master JSON:       {master_json_path}")
-    print(f"  Downstream JSON:   {compact_json_path}")
-    print(f"  Flat CSV:          {flat_csv_path}")
-    print(f"  Count CSV:         {count_path}")
-    print(f"  Covariance dir:    {covariance_dir}")
+    print(f"  Complete analysis:     {analysis_dir}")
+    print(f"  Master JSON:           {master_json_path}")
+    print(f"  Downstream JSON:       {compact_json_path}")
+    print(f"  Flat CSV:              {flat_csv_path}")
+    print(f"  Count CSV:             {count_path}")
+    print(f"  Covariance directory:  {covariance_dir}")
     if not args.skip_plots:
-        print(f"  Plot directory:    {plots_dir}")
+        print(f"  Plot directory:        {plots_dir}")
     # endif
+    print(f"  Production directory:  {production_dir}")
+    print(
+        "  Canonical downstream:  "
+        f"{production_products['downstream_json']}"
+    )
+    print(f"  Manifest:              {manifest_path}")
     return 0
 
 
