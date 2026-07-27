@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-apply_external_isr_v2.py
+apply_external_isr_v4.py
 
 Apply one additional, deterministic external-ISR draw to an existing
 internal-ISR RGC e pi+ ROOT tree.
@@ -50,7 +50,7 @@ import uproot
 
 TREE_DEFAULT = "PhysicsEvents"
 STEP_SIZE_DEFAULT = "250 MB"
-MODEL_VERSION = "external-isr-v2"
+MODEL_VERSION = "external-isr-v4"
 
 ELECTRON_MASS_GEV = 0.00051099895
 PROTON_MASS_GEV = 0.9382720813
@@ -772,6 +772,7 @@ def main() -> int:
     absolute_start = 0
     written_entries = 0
     invalid_events = 0
+    endpoint_capped_events = 0
 
     with uproot.recreate(output_path, compression=uproot.ZLIB(9)) as output_file:
         output_tree = output_file.mktree(tree_name, output_schema)
@@ -820,14 +821,33 @@ def main() -> int:
                 (uniform[positive_thickness] - 1.0)
                 / t_before[positive_thickness]
             )
+
+            # Mathematically, for the sequential default, exp((u-1)/t) is
+            # strictly smaller than one because u is sampled on the open
+            # interval (0,1).  For extremely small (1-u)/t, however, exp can
+            # round to exactly 1.0 in float64.  That would consume all of the
+            # remaining beam energy and produce E_eff <= m_e for a tiny number
+            # of events.  Apply only the physical/numerical endpoint cap here:
+            # leave the effective incident electron energy strictly above m_e.
+            max_external_egamma = np.nextafter(
+                remaining_after_internal - ELECTRON_MASS_GEV,
+                -np.inf,
+            )
+            endpoint_capped = external_egamma > max_external_egamma
+            external_egamma = np.minimum(external_egamma, max_external_egamma)
+
+            endpoint_capped_events += int(np.count_nonzero(endpoint_capped))
+
             total_egamma = internal_egamma + external_egamma
             effective_beam = nominal_beam - total_egamma
 
             valid_beam = effective_beam > ELECTRON_MASS_GEV
             if not np.all(valid_beam):
+                first = entries[~valid_beam][:20]
                 raise RuntimeError(
-                    f"{np.count_nonzero(~valid_beam)} events have nonpositive "
-                    "effective beam energy after external ISR."
+                    f"{np.count_nonzero(~valid_beam)} events still have "
+                    "nonpositive effective beam energy after the endpoint cap; "
+                    f"first absolute entries: {first}."
                 )
 
             before = {
@@ -908,7 +928,7 @@ def main() -> int:
         "input_file_fingerprint": fingerprint,
         "input_tree": tree_name,
         "output_file": str(output_path),
-        "output_tree": TREE_DEFAULT,
+        "output_tree": tree_name,
         "geometry_json": str(geometry_path),
         "period": identity.period,
         "target": identity.target,
@@ -926,6 +946,7 @@ def main() -> int:
         "input_entries": input_entries,
         "output_entries": written_entries,
         "nonfinite_recalculated_events": invalid_events,
+        "external_energy_endpoint_capped_events": endpoint_capped_events,
         "recalculated_branches": [
             name for name in RECALCULATED_BRANCHES if name in branches
         ],
@@ -956,6 +977,7 @@ def main() -> int:
     print(f"Validation   : {validation_dir}")
     print(f"Period/target: {identity.period}/{identity.target}")
     print(f"Entries      : {written_entries}")
+    print(f"Endpoint caps: {endpoint_capped_events}")
     return 0
 
 
