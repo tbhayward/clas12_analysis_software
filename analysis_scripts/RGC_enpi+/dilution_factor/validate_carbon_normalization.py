@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-validate_carbon_normalization_v4.py
+validate_carbon_normalization_v5.py
 
 Dedicated validation and stress-test program for the RGC exclusive e pi+
 carbon-normalization dilution-factor method.
@@ -124,6 +124,11 @@ REQUIRED_SCALE_GRID = 241
 TEMPLATE_FIT_MIN = -0.20
 TEMPLATE_FIT_MAX = 1.35
 TEMPLATE_POLYNOMIAL_ORDER = 2
+NOMINAL_R_CN = 6.0 / 7.0
+DEFAULT_R_CN_MIN = 0.50
+DEFAULT_R_CN_MAX = 1.10
+DEFAULT_R_CN_POINTS = 121
+R_CN_BISECTION_ITERATIONS = 48
 
 
 @dataclass(frozen=True)
@@ -459,6 +464,71 @@ def method2_values(
     return module.method2_equation10_from_counts(signal_counts, charge_fractions[period])
 
 
+
+def method2_with_rcn(
+    signal_counts: dict[str, np.ndarray],
+    charge_fractions_period: dict[str, float],
+    module: Any,
+    r_cn: float | np.ndarray,
+    nominal_r_cn: float = NOMINAL_R_CN,
+) -> np.ndarray:
+    """Evaluate Method 2 for an adjustable carbon-to-nitrogen relation.
+
+    The vetted production expression is normalized at
+
+        sigma_C = nominal_r_cn * sigma_N.
+
+    Holding the measured pure-carbon yield fixed, changing the assumed ratio to
+    ``r_cn`` changes the nitrogen cross section inferred from that carbon proxy
+    by ``nominal_r_cn / r_cn``.  The production expression is therefore
+    reevaluated with an effective carbon-proxy yield
+
+        N_C(effective) = N_C * nominal_r_cn / r_cn.
+
+    At ``r_cn == nominal_r_cn`` this reproduces the production Method-2 value
+    exactly.  This is a controlled one-parameter study of the fixed C--N
+    relation; it is not a Faraday-cup or target-yield renormalization.
+    """
+    r = np.asarray(r_cn, dtype=float)
+    scale = ratio(nominal_r_cn, r)
+    shifted = {target: np.asarray(values, dtype=float) for target, values in signal_counts.items()}
+    shifted = dict(shifted)
+    shifted["C"] = shifted["C"] * scale
+    return module.method2_equation10_from_counts(shifted, charge_fractions_period)
+
+
+def solve_required_rcn(
+    signal_counts: dict[str, np.ndarray],
+    target_method1: np.ndarray,
+    charge_fractions_period: dict[str, float],
+    module: Any,
+    r_min: float,
+    r_max: float,
+    nominal_r_cn: float = NOMINAL_R_CN,
+) -> np.ndarray:
+    """Solve f2(r_CN) = f1 with vectorized bisection.
+
+    Elements without a finite sign-changing bracket are returned as NaN.
+    """
+    target = np.asarray(target_method1, dtype=float)
+    low = np.full(target.shape, float(r_min), dtype=float)
+    high = np.full(target.shape, float(r_max), dtype=float)
+    f_low = method2_with_rcn(signal_counts, charge_fractions_period, module, low, nominal_r_cn) - target
+    f_high = method2_with_rcn(signal_counts, charge_fractions_period, module, high, nominal_r_cn) - target
+    valid = np.isfinite(target) & np.isfinite(f_low) & np.isfinite(f_high) & (f_low * f_high <= 0.0)
+    for _ in range(R_CN_BISECTION_ITERATIONS):
+        mid = 0.5 * (low + high)
+        f_mid = method2_with_rcn(signal_counts, charge_fractions_period, module, mid, nominal_r_cn) - target
+        same_side = np.signbit(f_mid) == np.signbit(f_low)
+        update_low = valid & same_side
+        update_high = valid & ~same_side
+        low = np.where(update_low, mid, low)
+        f_low = np.where(update_low, f_mid, f_low)
+        high = np.where(update_high, mid, high)
+        f_high = np.where(update_high, f_mid, f_high)
+    answer = 0.5 * (low + high)
+    return np.where(valid, answer, np.nan)
+
 def summarize(samples: np.ndarray) -> dict[str, np.ndarray]:
     finite = np.isfinite(samples)
     valid = np.mean(finite, axis=0)
@@ -498,6 +568,8 @@ def validation_bootstrap_worker(
     alpha_required = np.full((replicas, n_bins, 3), np.nan)
     transfer_ratio = np.full((replicas, n_bins, 3), np.nan)
     kappa_period = np.full((replicas, 3), np.nan)
+    required_rcn = np.full((replicas, n_bins, 3), np.nan)
+    required_rcn_period = np.full((replicas, 3), np.nan)
     alpha = {
         grouping: np.full((replicas, n_bins, n_windows), np.nan)
         for grouping in groupings
@@ -571,6 +643,37 @@ def validation_bootstrap_worker(
             np.sum(required_background, axis=1),
             np.sum(predicted_background, axis=1),
         )
+        nominal_m1 = method1[PERIOD_GROUP][
+            start:stop, :, nominal_window_index, :
+        ]
+        required_rcn[start:stop] = solve_required_rcn(
+            signal_by_target,
+            nominal_m1,
+            charge_fractions_period,
+            module,
+            DEFAULT_R_CN_MIN,
+            DEFAULT_R_CN_MAX,
+        )
+        integrated_counts = {
+            target: np.sum(values, axis=1)
+            for target, values in signal_by_target.items()
+        }
+        integrated_m1 = ratio(
+            np.sum(signal_by_target["NH3"], axis=1)
+            - np.sum(
+                nominal_period_alpha[..., np.newaxis] * signal_by_target["C"],
+                axis=1,
+            ),
+            np.sum(signal_by_target["NH3"], axis=1),
+        )
+        required_rcn_period[start:stop] = solve_required_rcn(
+            integrated_counts,
+            integrated_m1,
+            charge_fractions_period,
+            module,
+            DEFAULT_R_CN_MIN,
+            DEFAULT_R_CN_MAX,
+        )
 
     return {
         "period": period,
@@ -581,6 +684,8 @@ def validation_bootstrap_worker(
         "alpha_required": alpha_required,
         "transfer_ratio": transfer_ratio,
         "kappa_period": kappa_period,
+        "required_rcn": required_rcn,
+        "required_rcn_period": required_rcn_period,
     }
 
 
@@ -669,6 +774,12 @@ def run_bootstrap(
             "kappa_period": np.concatenate(
                 [item["kappa_period"] for item in ordered], axis=0
             ),
+            "required_rcn": np.concatenate(
+                [item["required_rcn"] for item in ordered], axis=0
+            ),
+            "required_rcn_period": np.concatenate(
+                [item["required_rcn_period"] for item in ordered], axis=0
+            ),
         }
         print(f"Assembled {replicas:,} validation replicas for {period}.")
     return output
@@ -710,6 +821,22 @@ def central_estimators(
         result["kappa_period"] = ratio(
             np.sum(required_background, axis=0),
             np.sum(predicted_nominal_background, axis=0),
+        )
+        nominal_m1 = result["method1"][PERIOD_GROUP][:, nominal_window_index, :]
+        result["required_rcn"] = solve_required_rcn(
+            signals, nominal_m1, charge_fractions[period], module,
+            DEFAULT_R_CN_MIN, DEFAULT_R_CN_MAX,
+        )
+        integrated_counts = {target: np.sum(values, axis=0) for target, values in signals.items()}
+        integrated_m1 = ratio(
+            np.sum(signals["NH3"], axis=0)
+            - np.sum(nominal_period_alpha[:, np.newaxis] * signals["C"], axis=0),
+            np.sum(signals["NH3"], axis=0),
+        )
+        result["integrated_method1"] = integrated_m1
+        result["required_rcn_period"] = solve_required_rcn(
+            integrated_counts, integrated_m1, charge_fractions[period], module,
+            DEFAULT_R_CN_MIN, DEFAULT_R_CN_MAX,
         )
         output[period] = result
     return output
@@ -1664,6 +1791,179 @@ def plot_empirical_template_fits(output: Path, summary: pd.DataFrame, curves: pd
     plt.close(fig)
 
 
+
+def build_required_rcn_table(module: Any, central: dict[str, Any], bootstrap: dict[str, Any]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    n_t = len(module.MINUS_TPRIME_BINS_GEV2)
+    for period in module.PERIODS:
+        for cut_index, cut in enumerate(module.CUT_VARIATIONS):
+            period_samples = bootstrap[period]["required_rcn_period"][:, cut_index]
+            rows.append({
+                "period": period,
+                "bin_number": 0,
+                "x_index": -1,
+                "tprime_index": -1,
+                "cut": cut,
+                "required_r_cn": central[period]["required_rcn_period"][cut_index],
+                "required_r_cn_stat_uncertainty": np.nanstd(period_samples, ddof=1),
+                "valid_replica_fraction": np.mean(np.isfinite(period_samples)),
+                "nominal_r_cn": NOMINAL_R_CN,
+                "required_over_nominal_r_cn": float(ratio(central[period]["required_rcn_period"][cut_index], NOMINAL_R_CN)),
+                "scope": "period-integrated",
+            })
+            for bin_index in range(module.NUMBER_OF_BINS):
+                ix, it = divmod(bin_index, n_t)
+                samples = bootstrap[period]["required_rcn"][:, bin_index, cut_index]
+                value = central[period]["required_rcn"][bin_index, cut_index]
+                rows.append({
+                    "period": period,
+                    "bin_number": bin_index + 1,
+                    "x_index": ix,
+                    "tprime_index": it,
+                    "cut": cut,
+                    "required_r_cn": value,
+                    "required_r_cn_stat_uncertainty": np.nanstd(samples, ddof=1),
+                    "valid_replica_fraction": np.mean(np.isfinite(samples)),
+                    "nominal_r_cn": NOMINAL_R_CN,
+                    "required_over_nominal_r_cn": float(ratio(value, NOMINAL_R_CN)),
+                    "scope": "bin",
+                })
+    return pd.DataFrame(rows)
+
+
+def build_rcn_fit_summary(table: pd.DataFrame, module: Any) -> pd.DataFrame:
+    selected = table[(table.cut == "nominal") & (table.bin_number > 0)].copy()
+    rows: list[dict[str, Any]] = []
+    for scope, local in [(period, selected[selected.period == period]) for period in module.PERIODS] + [("all-periods", selected)]:
+        y = local.required_r_cn.to_numpy(float)
+        sigma = local.required_r_cn_stat_uncertainty.to_numpy(float)
+        finite = np.isfinite(y) & np.isfinite(sigma) & (sigma > 0)
+        w = np.where(finite, 1.0 / sigma**2, 0.0)
+        sw = np.sum(w)
+        constant = float(np.sum(w * np.nan_to_num(y)) / sw) if sw > 0 else math.nan
+        error = float(math.sqrt(1.0 / sw)) if sw > 0 else math.nan
+        chi2 = float(np.sum(((y[finite] - constant) / sigma[finite]) ** 2)) if np.isfinite(constant) else math.nan
+        record = {
+            "scope": scope,
+            "constant_r_cn": constant,
+            "constant_uncertainty": error,
+            "constant_chi2": chi2,
+            "constant_ndf": int(np.count_nonzero(finite) - 1),
+            "nominal_r_cn": NOMINAL_R_CN,
+            "constant_over_nominal": float(ratio(constant, NOMINAL_R_CN)),
+        }
+        if scope != "all-periods":
+            xfit = weighted_linear_fit(local.x_index.to_numpy(float), y, sigma)
+            tfit = weighted_linear_fit(local.tprime_index.to_numpy(float), y, sigma)
+            record.update({
+                "x_index_slope": xfit["slope"],
+                "x_index_slope_uncertainty": xfit["slope_uncertainty"],
+                "x_fit_chi2": xfit["chi2"],
+                "x_fit_ndf": xfit["ndf"],
+                "tprime_index_slope": tfit["slope"],
+                "tprime_index_slope_uncertainty": tfit["slope_uncertainty"],
+                "tprime_fit_chi2": tfit["chi2"],
+                "tprime_fit_ndf": tfit["ndf"],
+            })
+        rows.append(record)
+    return pd.DataFrame(rows)
+
+
+def build_rcn_scan_table(
+    counts: dict[tuple[str, str], ValidationCounts],
+    module: Any,
+    charge_fractions: dict[str, dict[str, float]],
+    central: dict[str, Any],
+    r_min: float,
+    r_max: float,
+    points: int,
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    grid = np.linspace(r_min, r_max, points)
+    nominal_cut = list(module.CUT_VARIATIONS).index("nominal")
+    for period in module.PERIODS:
+        integrated = {
+            target: np.sum(counts[(period, target)].signal.astype(float), axis=0)
+            for target in module.TARGETS
+        }
+        target_f1 = central[period]["integrated_method1"][nominal_cut]
+        for value in grid:
+            f2 = float(method2_with_rcn(
+                {target: values[nominal_cut] for target, values in integrated.items()},
+                charge_fractions[period], module, value,
+            ))
+            rows.append({
+                "period": period,
+                "r_cn": value,
+                "method2": f2,
+                "method1_reference": target_f1,
+                "method2_minus_method1": f2 - target_f1,
+            })
+    return pd.DataFrame(rows)
+
+
+def plot_required_rcn(output: Path, table: pd.DataFrame, module: Any) -> None:
+    nominal = table[(table.cut == "nominal") & (table.bin_number > 0)]
+    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(14, 11), sharex=True, sharey=True)
+    labels = flatten_bin_labels(module)
+    for ax, period in zip(axes, module.PERIODS):
+        local = nominal[nominal.period == period].sort_values("bin_number")
+        ax.errorbar(local.bin_number, local.required_r_cn, yerr=local.required_r_cn_stat_uncertainty, fmt="o")
+        integrated = table[(table.period == period) & (table.cut == "nominal") & (table.bin_number == 0)].iloc[0]
+        ax.axhline(NOMINAL_R_CN, linewidth=1, linestyle="--", label=r"Nominal $6/7$")
+        ax.axhline(integrated.required_r_cn, linewidth=1, label="Period-integrated required value")
+        ax.set_ylabel(r"Required $r_{CN}$")
+        ax.set_title(module.PERIOD_LABELS[period])
+        ax.grid(alpha=0.25)
+        ax.legend()
+    axes[-1].set_xlabel(r"Kinematic bin ($x_B$ row:$-t'$ column)")
+    axes[-1].set_xticks(np.arange(1, module.NUMBER_OF_BINS + 1), labels, rotation=90)
+    fig.suptitle(r"Carbon-to-nitrogen ratio required for $f_2(r_{CN})=f_1$")
+    fig.tight_layout()
+    fig.savefig(output / "required_r_cn_by_bin.png", dpi=180)
+    plt.close(fig)
+
+    fig, axes = plt.subplots(len(module.PERIODS), 2, figsize=(14, 11), sharex="col", sharey=True)
+    for row, period in enumerate(module.PERIODS):
+        local = nominal[nominal.period == period]
+        for column, key in enumerate(("x_index", "tprime_index")):
+            grouped = local.groupby(key, as_index=False).apply(
+                lambda frame: pd.Series({
+                    "value": np.average(frame.required_r_cn, weights=1.0 / frame.required_r_cn_stat_uncertainty**2),
+                    "error": math.sqrt(1.0 / np.sum(1.0 / frame.required_r_cn_stat_uncertainty**2)),
+                }), include_groups=False
+            ).reset_index(drop=True)
+            axes[row, column].errorbar(grouped[key] + 1, grouped.value, yerr=grouped.error, fmt="o-")
+            axes[row, column].axhline(NOMINAL_R_CN, linewidth=1, linestyle="--")
+            axes[row, column].grid(alpha=0.25)
+        axes[row, 0].set_ylabel(module.PERIOD_LABELS[period] + "\n" + r"Required $r_{CN}$")
+    axes[0, 0].set_title(r"Dependence on $x_B$ row")
+    axes[0, 1].set_title(r"Dependence on $-t'$ column")
+    axes[-1, 0].set_xlabel(r"$x_B$ row index")
+    axes[-1, 1].set_xlabel(r"$-t'$ column index")
+    fig.suptitle(r"Kinematic dependence of the required C--N relation")
+    fig.tight_layout()
+    fig.savefig(output / "required_r_cn_kinematic_dependence.png", dpi=180)
+    plt.close(fig)
+
+
+def plot_rcn_scan(output: Path, scan: pd.DataFrame, module: Any) -> None:
+    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(11, 10), sharex=True, sharey=True)
+    for ax, period in zip(axes, module.PERIODS):
+        local = scan[scan.period == period]
+        ax.plot(local.r_cn, local.method2, label=r"Method 2, $f_2(r_{CN})$")
+        ax.plot(local.r_cn, local.method1_reference, linestyle="--", label="Method 1 reference")
+        ax.axvline(NOMINAL_R_CN, linewidth=1, linestyle=":", label=r"Nominal $r_{CN}=6/7$")
+        ax.set_ylabel("Dilution factor")
+        ax.set_title(module.PERIOD_LABELS[period])
+        ax.grid(alpha=0.25)
+        ax.legend()
+    axes[-1].set_xlabel(r"Assumed $r_{CN}=\sigma_C/\sigma_N$")
+    fig.suptitle(r"Period-integrated Method 2 response to the C--N relation")
+    fig.tight_layout()
+    fig.savefig(output / "method2_r_cn_scan.png", dpi=180)
+    plt.close(fig)
+
 def build_flat_results(
     module: Any,
     windows: list[tuple[float, float]],
@@ -1770,6 +2070,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Override standard input as period:target=/path.root")
     parser.add_argument("--template-fit-min", type=float, default=TEMPLATE_FIT_MIN)
     parser.add_argument("--template-fit-max", type=float, default=TEMPLATE_FIT_MAX)
+    parser.add_argument("--r-cn-min", type=float, default=DEFAULT_R_CN_MIN)
+    parser.add_argument("--r-cn-max", type=float, default=DEFAULT_R_CN_MAX)
+    parser.add_argument("--r-cn-points", type=int, default=DEFAULT_R_CN_POINTS)
     parser.add_argument("--run-isr", action="store_true",
                         help="Repeat the complete validation using ISR inputs and ISR cut JSON")
     parser.add_argument("--isr-cut-json", type=Path, default=None)
@@ -1841,6 +2144,16 @@ def run_one_variant(
     transfer_fit = build_transfer_fit_summary(transfer, module)
     transfer_fit.to_csv(tables / "required_carbon_transfer_fit_summary.csv", index=False)
 
+    required_rcn = build_required_rcn_table(module, central, bootstrap)
+    required_rcn.to_csv(tables / "required_r_cn.csv", index=False)
+    rcn_fit = build_rcn_fit_summary(required_rcn, module)
+    rcn_fit.to_csv(tables / "required_r_cn_fit_summary.csv", index=False)
+    rcn_scan = build_rcn_scan_table(
+        counts, module, charge_fractions, central,
+        args.r_cn_min, args.r_cn_max, args.r_cn_points,
+    )
+    rcn_scan.to_csv(tables / "method2_r_cn_scan.csv", index=False)
+
     cumulative_background = build_cumulative_background_comparison(
         counts, module, charge_fractions, spectrum_edges, cumulative_edges
     )
@@ -1884,6 +2197,14 @@ def run_one_variant(
         "cumulative_upper_edges": cumulative_edges,
         "method2_target_sensitivity_fraction": SENSITIVITY_FRACTION,
         "required_target_scale_scan": [REQUIRED_SCALE_MIN, REQUIRED_SCALE_MAX, REQUIRED_SCALE_GRID],
+        "carbon_to_nitrogen_study": {
+            "nominal_r_cn": NOMINAL_R_CN,
+            "scan_range": [args.r_cn_min, args.r_cn_max],
+            "scan_points": args.r_cn_points,
+            "definition": "r_cn = sigma_C / sigma_N",
+            "implementation": "effective pure-carbon proxy N_C * (nominal_r_cn / r_cn), exact at r_cn=6/7",
+            "thermal_contraction_variations": False,
+        },
         "empirical_template_fit": {
             "fit_range": [TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX],
             "control_region": [0.0, 0.4],
@@ -1900,6 +2221,8 @@ def run_one_variant(
     plot_low_region_closure(plots, closure, module)
     plot_required_transfer_factor(plots, transfer, module)
     plot_required_transfer_kinematics(plots, transfer, module)
+    plot_required_rcn(plots, required_rcn, module)
+    plot_rcn_scan(plots, rcn_scan, module)
     plot_cumulative_background_comparison(plots, cumulative_background, module)
     plot_target_sensitivity(plots, target_sensitivity, module)
     plot_required_target_scales(plots, required_target_scales, module)
@@ -1918,9 +2241,15 @@ def main() -> int:
         raise ValueError("--spectrum-min must be below --spectrum-max")
     if not args.template_fit_min < args.template_fit_max:
         raise ValueError("--template-fit-min must be below --template-fit-max")
-    global TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX
+    global TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX, DEFAULT_R_CN_MIN, DEFAULT_R_CN_MAX
     TEMPLATE_FIT_MIN = float(args.template_fit_min)
     TEMPLATE_FIT_MAX = float(args.template_fit_max)
+    if not 0.0 < args.r_cn_min < args.r_cn_max:
+        raise ValueError("Require 0 < --r-cn-min < --r-cn-max")
+    if args.r_cn_points < 3:
+        raise ValueError("--r-cn-points must be at least 3")
+    DEFAULT_R_CN_MIN = float(args.r_cn_min)
+    DEFAULT_R_CN_MAX = float(args.r_cn_max)
 
     module_path = args.dilution_module.resolve()
     module = import_production_module(module_path)
