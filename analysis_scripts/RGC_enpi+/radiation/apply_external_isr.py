@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-apply_external_isr_v1.py
+apply_external_isr_v2.py
 
 Apply one additional, deterministic external-ISR draw to an existing
 internal-ISR RGC e pi+ ROOT tree.
@@ -15,7 +15,7 @@ Required packages:
     python3 -m pip install numpy awkward uproot matplotlib
 
 Example:
-    python3 apply_external_isr_v1.py \
+    python3 apply_external_isr_v2.py \
         rgc_fa22_inb_NH3_epi+_ISR_mom_corrections.root \
         --geometry-json external_radiation_geometry_v1.json
 
@@ -50,7 +50,7 @@ import uproot
 
 TREE_DEFAULT = "PhysicsEvents"
 STEP_SIZE_DEFAULT = "250 MB"
-MODEL_VERSION = "external-isr-v1"
+MODEL_VERSION = "external-isr-v2"
 
 ELECTRON_MASS_GEV = 0.00051099895
 PROTON_MASS_GEV = 0.9382720813
@@ -701,7 +701,21 @@ def main() -> int:
             entry_stop=min(tree.num_entries, 1_000_000), library="np"
         )
         input_entries = int(tree.num_entries)
-        input_typenames = tree.typenames()
+        input_branch_dtypes: dict[str, np.dtype] = {}
+        unsupported_branches: list[str] = []
+        for branch_name in tree.keys():
+            branch = tree[branch_name]
+            try:
+                input_branch_dtypes[branch_name] = np.dtype(
+                    branch.interpretation.numpy_dtype
+                )
+            except Exception:
+                unsupported_branches.append(branch_name)
+        if unsupported_branches:
+            raise TypeError(
+                "The input tree contains branches whose NumPy dtype could not "
+                "be determined: " + ", ".join(sorted(unsupported_branches))
+            )
 
     identity = resolve_identity(
         input_path, run_sample, args.period, args.target
@@ -739,11 +753,11 @@ def main() -> int:
     )
 
     output_schema: dict[str, Any] = {}
-    for name, typename in input_typenames.items():
+    for name, dtype in input_branch_dtypes.items():
         if name in RECALCULATED_BRANCHES:
-            output_schema[name] = np.float64
+            output_schema[name] = np.dtype(np.float64)
         else:
-            output_schema[name] = typename
+            output_schema[name] = dtype
     for name, dtype in ADDED_BRANCH_DTYPES.items():
         if name in output_schema:
             raise RuntimeError(
@@ -757,7 +771,7 @@ def main() -> int:
     invalid_events = 0
 
     with uproot.recreate(output_path, compression=uproot.ZLIB(9)) as output_file:
-        output_tree = output_file.mktree(TREE_DEFAULT, output_schema)
+        output_tree = output_file.mktree(tree_name, output_schema)
 
         for arrays in uproot.iterate(
             f"{input_path}:{tree_name}",
