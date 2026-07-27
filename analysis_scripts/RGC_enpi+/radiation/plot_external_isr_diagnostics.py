@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_external_isr_diagnostics_v2.py
+plot_external_isr_diagnostics_v3.py
 
 Produce an analysis-note-oriented diagnostic package for the additional
 external-ISR transformation applied to RGC exclusive e n pi+ data.
@@ -75,12 +75,18 @@ import argparse
 import csv
 import json
 import math
+import os
 import re
 import sys
+import time
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import uproot
@@ -115,6 +121,7 @@ class PairData:
     output_entries: int
     removed_entries: int
     endpoint_caps: int
+    derived: dict[str, np.ndarray]
 
 
 def parse_args() -> argparse.Namespace:
@@ -154,6 +161,12 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--dpi", type=int, default=180)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=7,
+        help="Maximum parallel workers (hard-capped at 7).",
+    )
     return parser.parse_args()
 
 
@@ -290,6 +303,7 @@ def deterministic_subsample(data: PairData, maximum: int) -> PairData:
         output_entries=data.output_entries,
         removed_entries=data.removed_entries,
         endpoint_caps=data.endpoint_caps,
+        derived={name: values[idx] for name, values in data.derived.items()},
     )
 
 
@@ -330,8 +344,8 @@ def load_pair(pair: FilePair, tree_name: str, max_events: int) -> PairData:
             pair.before,
             provenance_name=provenance.get("input_tree"),
         )
-        require_branches(before_tree, before_branches + ["runnum"], pair.before)
-        before = safe_take_source(before_tree, entries, before_branches + ["runnum"])
+        require_branches(before_tree, before_branches, pair.before)
+        before = safe_take_source(before_tree, entries, before_branches)
         input_entries_tree = int(before_tree.num_entries)
 
     input_entries = int(provenance.get("input_entries", input_entries_tree))
@@ -368,8 +382,11 @@ def load_pair(pair: FilePair, tree_name: str, max_events: int) -> PairData:
         output_entries=output_entries,
         removed_entries=removed,
         endpoint_caps=endpoint_caps,
+        derived={},
     )
-    return deterministic_subsample(loaded, max_events)
+    loaded = deterministic_subsample(loaded, max_events)
+    cache_derived_quantities(loaded)
+    return loaded
 
 
 def finite(values: np.ndarray) -> np.ndarray:
@@ -416,16 +433,36 @@ def analysis_mask(values: dict[str, np.ndarray], q2_min: float, w_min: float, y_
 
 
 def delta(data: PairData, name: str) -> np.ndarray:
+    key = f"delta_{name}"
+    if key in data.derived:
+        return data.derived[key]
     return np.asarray(data.after[name], dtype=float) - np.asarray(data.before[name], dtype=float)
 
 
 def fractional_delta(data: PairData, name: str, absolute_denominator: bool = False) -> np.ndarray:
+    key = "frac_t_abs" if (name == "t" and absolute_denominator) else f"frac_{name}"
+    if key in data.derived:
+        return data.derived[key]
     before = np.asarray(data.before[name], dtype=float)
     denom = np.abs(before) if absolute_denominator else before
     out = np.full_like(before, np.nan, dtype=float)
     valid = np.isfinite(before) & np.isfinite(data.after[name]) & (np.abs(denom) > 1e-12)
     out[valid] = (np.asarray(data.after[name], dtype=float)[valid] - before[valid]) / denom[valid]
     return out
+
+
+def cache_derived_quantities(data: PairData) -> None:
+    """Compute all reused migrations once per period."""
+    derived: dict[str, np.ndarray] = {}
+    for name in ("Q2", "W", "x", "t", "Mx2", "DepA"):
+        derived[f"delta_{name}"] = (
+            np.asarray(data.after[name], dtype=float)
+            - np.asarray(data.before[name], dtype=float)
+        )
+    for name in ("Q2", "W", "x", "DepA"):
+        derived[f"frac_{name}"] = fractional_delta(data, name)
+    derived["frac_t_abs"] = fractional_delta(data, "t", absolute_denominator=True)
+    data.derived = derived
 
 
 def combined_arrays(data_list: list[PairData], source: str, name: str) -> np.ndarray:
@@ -847,6 +884,31 @@ def write_summary(data_list: list[PairData], output_dir: Path, args: argparse.Na
             })
 
 
+_PLOT_DATA_LIST: list[PairData] | None = None
+_PLOT_REPRESENTATIVE: PairData | None = None
+_PLOT_ARGS: argparse.Namespace | None = None
+_PLOT_OUTPUT_DIR: Path | None = None
+
+
+def _plot_job(job: str) -> str:
+    """Run one independent figure in a forked worker."""
+    assert _PLOT_DATA_LIST is not None
+    assert _PLOT_REPRESENTATIVE is not None
+    assert _PLOT_ARGS is not None
+    assert _PLOT_OUTPUT_DIR is not None
+    jobs = {
+        "01": lambda: plot_beam_energy(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "01_beam_energy_evolution.png", _PLOT_ARGS.dpi),
+        "02": lambda: plot_external_energy(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "02_external_photon_energy.png", _PLOT_ARGS.dpi),
+        "03": lambda: plot_absolute_migrations(_PLOT_REPRESENTATIVE, _PLOT_OUTPUT_DIR / "03_absolute_kinematic_migrations.png", _PLOT_ARGS.dpi),
+        "04": lambda: plot_fractional_migrations(_PLOT_REPRESENTATIVE, _PLOT_OUTPUT_DIR / "04_fractional_kinematic_migrations.png", _PLOT_ARGS.dpi),
+        "05": lambda: plot_correlations(_PLOT_REPRESENTATIVE, _PLOT_OUTPUT_DIR / "05_kinematic_correlations.png", _PLOT_ARGS.dpi),
+        "06": lambda: plot_period_comparison(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "06_period_comparison.png", _PLOT_ARGS.dpi),
+        "07": lambda: plot_survival(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "07_survival_summary.png", _PLOT_ARGS),
+    }
+    jobs[job]()
+    return job
+
+
 def main() -> int:
     args = parse_args()
     input_dir = args.input_dir.expanduser().resolve()
@@ -860,11 +922,26 @@ def main() -> int:
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    workers = max(1, min(7, args.workers, os.cpu_count() or 1))
     pairs = discover_pairs(input_dir, args.target, args.periods)
-    data_list = [
-        load_pair(pair, args.tree_name, args.max_events_per_period)
-        for pair in pairs
-    ]
+
+    load_start = time.perf_counter()
+    # Independent ROOT pairs are read concurrently. Threads avoid copying the
+    # large NumPy payloads and work well here because most time is ROOT I/O and
+    # decompression performed outside the Python interpreter.
+    loaded_by_period: dict[str, PairData] = {}
+    with ThreadPoolExecutor(max_workers=min(workers, len(pairs))) as executor:
+        futures = {
+            executor.submit(load_pair, pair, args.tree_name, args.max_events_per_period): pair
+            for pair in pairs
+        }
+        for future in as_completed(futures):
+            pair = futures[future]
+            loaded_by_period[pair.period] = future.result()
+            print(f"Loaded {PERIOD_LABELS[pair.period]} {pair.target}", flush=True)
+    data_list = [loaded_by_period[p.period] for p in pairs]
+    load_seconds = time.perf_counter() - load_start
+
     by_period = {item.pair.period: item for item in data_list}
     if args.representative_period not in by_period:
         raise RuntimeError(
@@ -872,32 +949,40 @@ def main() -> int:
         )
     representative = by_period[args.representative_period]
 
-    plot_beam_energy(data_list, output_dir / "01_beam_energy_evolution.png", args.dpi)
-    plot_external_energy(data_list, output_dir / "02_external_photon_energy.png", args.dpi)
-    plot_absolute_migrations(
-        representative,
-        output_dir / "03_absolute_kinematic_migrations.png",
-        args.dpi,
-    )
-    plot_fractional_migrations(
-        representative,
-        output_dir / "04_fractional_kinematic_migrations.png",
-        args.dpi,
-    )
-    plot_correlations(
-        representative,
-        output_dir / "05_kinematic_correlations.png",
-        args.dpi,
-    )
-    plot_period_comparison(data_list, output_dir / "06_period_comparison.png", args.dpi)
-    plot_survival(data_list, output_dir / "07_survival_summary.png", args)
+    # Summaries are inexpensive and deterministic; write them in the parent.
     write_summary(data_list, output_dir, args)
+
+    global _PLOT_DATA_LIST, _PLOT_REPRESENTATIVE, _PLOT_ARGS, _PLOT_OUTPUT_DIR
+    _PLOT_DATA_LIST = data_list
+    _PLOT_REPRESENTATIVE = representative
+    _PLOT_ARGS = args
+    _PLOT_OUTPUT_DIR = output_dir
+
+    plot_start = time.perf_counter()
+    jobs = ["01", "02", "03", "04", "05", "06", "07"]
+    if workers == 1:
+        for job in jobs:
+            _plot_job(job)
+    else:
+        # Linux/farm optimization: fork lets workers share the already-loaded
+        # arrays copy-on-write, avoiding costly serialization of millions of
+        # events. Each worker creates exactly one independent matplotlib figure.
+        context = mp.get_context("fork")
+        with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), mp_context=context) as executor:
+            futures = {executor.submit(_plot_job, job): job for job in jobs}
+            for future in as_completed(futures):
+                job = future.result()
+                print(f"Finished figure {job}", flush=True)
+    plot_seconds = time.perf_counter() - plot_start
 
     print("\nExternal-ISR diagnostic package complete")
     print("=" * 72)
     print(f"Target:                 {args.target}")
     print(f"Periods:                {', '.join(args.periods)}")
     print(f"Representative period: {args.representative_period}")
+    print(f"Workers:                {workers}")
+    print(f"ROOT loading time:      {load_seconds:.1f} s")
+    print(f"Plotting time:          {plot_seconds:.1f} s")
     print(f"Output directory:       {output_dir}")
     print("Created:")
     for path in sorted(output_dir.iterdir()):
