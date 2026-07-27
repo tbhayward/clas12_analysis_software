@@ -286,9 +286,12 @@ def calculate_t_before(vz: np.ndarray, geometry: dict[str, Any]) -> np.ndarray:
         raise RuntimeError("Geometry record must contain a non-empty components list.")
     for component in components:
         total += component_thickness(vz, component)
-    if np.any(~np.isfinite(total)) or np.any(total <= 0.0):
-        bad = total[(~np.isfinite(total)) | (total <= 0.0)][:20]
-        raise RuntimeError(f"Nonpositive/nonfinite t_before values: {bad}")
+    if np.any(~np.isfinite(total)) or np.any(total < 0.0):
+        bad = total[(~np.isfinite(total)) | (total < 0.0)][:20]
+        raise RuntimeError(f"Negative/nonfinite t_before values: {bad}")
+    # A zero value is physically allowed for a vertex at or upstream of the
+    # first modeled material boundary.  Such an event receives zero sampled
+    # external-radiation loss below, corresponding to the t -> 0 limit.
     return total
 
 
@@ -811,7 +814,12 @@ def main() -> int:
                 if args.external_reference_energy == "remaining_after_internal"
                 else nominal_beam
             )
-            external_egamma = reference * np.exp((uniform - 1.0) / t_before)
+            external_egamma = np.zeros_like(reference, dtype=np.float64)
+            positive_thickness = t_before > 0.0
+            external_egamma[positive_thickness] = reference[positive_thickness] * np.exp(
+                (uniform[positive_thickness] - 1.0)
+                / t_before[positive_thickness]
+            )
             total_egamma = internal_egamma + external_egamma
             effective_beam = nominal_beam - total_egamma
 
