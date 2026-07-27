@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-validate_carbon_normalization_v3.py
+validate_carbon_normalization_v4.py
 
 Dedicated validation and stress-test program for the RGC exclusive e pi+
 carbon-normalization dilution-factor method.
@@ -32,6 +32,11 @@ The diagnostics answer four questions:
      a period-dependent correction, or a kinematic dependence?
   6. Do cumulative low-side background integrals from scaled carbon and the
      direct five-target method agree without the unstable narrow-bin ratios?
+  7. Which auxiliary-target normalization most strongly controls Method 2,
+     and what coherent shift would be required to reproduce Method 1?
+  8. Can a CH2-minus-carbon empirical hydrogen template describe the NH3
+     spectrum, and does an independent template fit prefer a reduced carbon
+     transfer factor beneath the neutron region?
 
 No high-side NH3/carbon closure requirement is imposed.  Above the neutron
 region, NH3 can contain real hydrogen-origin events from channels other than
@@ -112,6 +117,13 @@ XB_GROUP = "xB-row"
 TPRIME_GROUP = "tprime-column"
 BIN_GROUP = "bin-local"
 GROUPINGS = (PERIOD_GROUP, XB_GROUP, TPRIME_GROUP, BIN_GROUP)
+SENSITIVITY_FRACTION = 0.01
+REQUIRED_SCALE_MIN = 0.20
+REQUIRED_SCALE_MAX = 2.50
+REQUIRED_SCALE_GRID = 241
+TEMPLATE_FIT_MIN = -0.20
+TEMPLATE_FIT_MAX = 1.35
+TEMPLATE_POLYNOMIAL_ORDER = 2
 
 
 @dataclass(frozen=True)
@@ -1272,6 +1284,386 @@ def plot_cumulative_background_comparison(output: Path, table: pd.DataFrame, mod
     plt.close(fig)
 
 
+
+def _method2_with_target_scale(
+    signal_counts: dict[str, np.ndarray],
+    target: str,
+    scale: float,
+    charge_fractions_period: dict[str, float],
+    module: Any,
+) -> np.ndarray:
+    shifted = {
+        name: np.asarray(values, dtype=float) * (scale if name == target else 1.0)
+        for name, values in signal_counts.items()
+    }
+    return module.method2_equation10_from_counts(shifted, charge_fractions_period)
+
+
+def build_target_sensitivity_table(
+    counts: dict[tuple[str, str], ValidationCounts],
+    module: Any,
+    charge_fractions: dict[str, dict[str, float]],
+    central: dict[str, Any],
+    windows: list[tuple[float, float]],
+) -> pd.DataFrame:
+    """Finite-difference sensitivity of Method 2 to coherent target normalization.
+
+    S_T = d f2 / d ln N_T is evaluated with symmetric +/-1% changes.  The table
+    also reports the approximate percent target-normalization shift needed to
+    move Method 2 to Method 1 under the local linear approximation.
+    """
+    rows: list[dict[str, Any]] = []
+    nominal_window_index = windows.index((0.0, 0.4))
+    n_t = len(module.MINUS_TPRIME_BINS_GEV2)
+    eps = SENSITIVITY_FRACTION
+    for period in module.PERIODS:
+        signals = {
+            target: counts[(period, target)].signal.astype(float)
+            for target in module.TARGETS
+        }
+        f2 = central[period]["method2"]
+        f1 = central[period]["method1"][PERIOD_GROUP][:, nominal_window_index, :]
+        for target in module.TARGETS:
+            plus = _method2_with_target_scale(
+                signals, target, 1.0 + eps, charge_fractions[period], module
+            )
+            minus = _method2_with_target_scale(
+                signals, target, 1.0 - eps, charge_fractions[period], module
+            )
+            sensitivity = (plus - minus) / (2.0 * eps)
+            required_linear_fraction = ratio(f1 - f2, sensitivity)
+            for bin_index in range(module.NUMBER_OF_BINS):
+                ix, it = divmod(bin_index, n_t)
+                for cut_index, cut in enumerate(module.CUT_VARIATIONS):
+                    rows.append({
+                        "period": period,
+                        "bin_number": bin_index + 1,
+                        "x_index": ix,
+                        "tprime_index": it,
+                        "cut": cut,
+                        "target": target,
+                        "method1_value": f1[bin_index, cut_index],
+                        "method2_value": f2[bin_index, cut_index],
+                        "d_method2_d_ln_target_yield": sensitivity[bin_index, cut_index],
+                        "method2_shift_for_plus_1_percent": plus[bin_index, cut_index] - f2[bin_index, cut_index],
+                        "linear_required_fractional_target_shift": required_linear_fraction[bin_index, cut_index],
+                        "linear_required_percent_target_shift": 100.0 * required_linear_fraction[bin_index, cut_index],
+                    })
+    return pd.DataFrame(rows)
+
+
+def _solve_required_scale_one(
+    signal_counts: dict[str, np.ndarray],
+    target: str,
+    desired: float,
+    charge_fractions_period: dict[str, float],
+    module: Any,
+) -> float:
+    if not np.isfinite(desired):
+        return math.nan
+    grid = np.linspace(REQUIRED_SCALE_MIN, REQUIRED_SCALE_MAX, REQUIRED_SCALE_GRID)
+    values = []
+    for scale in grid:
+        f2 = float(_method2_with_target_scale(
+            signal_counts, target, float(scale), charge_fractions_period, module
+        ))
+        values.append(f2 - desired)
+    values = np.asarray(values, dtype=float)
+    finite = np.isfinite(values)
+    for index in range(len(grid) - 1):
+        if not finite[index] or not finite[index + 1]:
+            continue
+        if values[index] == 0:
+            return float(grid[index])
+        if values[index] * values[index + 1] > 0:
+            continue
+        lo, hi = float(grid[index]), float(grid[index + 1])
+        flo, fhi = float(values[index]), float(values[index + 1])
+        for _ in range(60):
+            mid = 0.5 * (lo + hi)
+            fmid = float(_method2_with_target_scale(
+                signal_counts, target, mid, charge_fractions_period, module
+            )) - desired
+            if not np.isfinite(fmid):
+                break
+            if abs(fmid) < 1e-12:
+                return mid
+            if flo * fmid <= 0:
+                hi, fhi = mid, fmid
+            else:
+                lo, flo = mid, fmid
+        return 0.5 * (lo + hi)
+    return math.nan
+
+
+def build_required_target_scale_table(
+    counts: dict[tuple[str, str], ValidationCounts],
+    module: Any,
+    charge_fractions: dict[str, dict[str, float]],
+    central: dict[str, Any],
+    windows: list[tuple[float, float]],
+) -> pd.DataFrame:
+    """Solve for a coherent target-yield factor that would force f2=f1."""
+    rows: list[dict[str, Any]] = []
+    nominal_window_index = windows.index((0.0, 0.4))
+    n_t = len(module.MINUS_TPRIME_BINS_GEV2)
+    for period in module.PERIODS:
+        full = {
+            target: counts[(period, target)].signal.astype(float)
+            for target in module.TARGETS
+        }
+        f1 = central[period]["method1"][PERIOD_GROUP][:, nominal_window_index, :]
+        for target in module.TARGETS:
+            for bin_index in range(module.NUMBER_OF_BINS):
+                ix, it = divmod(bin_index, n_t)
+                for cut_index, cut in enumerate(module.CUT_VARIATIONS):
+                    scalar_counts = {
+                        name: np.asarray(values[bin_index, cut_index], dtype=float)
+                        for name, values in full.items()
+                    }
+                    solved = _solve_required_scale_one(
+                        scalar_counts, target, float(f1[bin_index, cut_index]),
+                        charge_fractions[period], module
+                    )
+                    rows.append({
+                        "period": period,
+                        "bin_number": bin_index + 1,
+                        "x_index": ix,
+                        "tprime_index": it,
+                        "cut": cut,
+                        "target": target,
+                        "required_yield_scale": solved,
+                        "required_percent_shift": 100.0 * (solved - 1.0) if np.isfinite(solved) else math.nan,
+                        "solution_in_scan_range": bool(np.isfinite(solved)),
+                    })
+            # Yield-weighted period-integrated solution for each cut.
+            for cut_index, cut in enumerate(module.CUT_VARIATIONS):
+                scalar_counts = {
+                    name: np.asarray(np.sum(values[:, cut_index]), dtype=float)
+                    for name, values in full.items()
+                }
+                nh3 = scalar_counts["NH3"]
+                carbon = scalar_counts["C"]
+                alpha = central[period]["alpha"][PERIOD_GROUP][0, nominal_window_index]
+                desired = float((nh3 - alpha * carbon) / nh3) if nh3 else math.nan
+                solved = _solve_required_scale_one(
+                    scalar_counts, target, desired, charge_fractions[period], module
+                )
+                rows.append({
+                    "period": period,
+                    "bin_number": 0,
+                    "x_index": -1,
+                    "tprime_index": -1,
+                    "cut": cut,
+                    "target": target,
+                    "required_yield_scale": solved,
+                    "required_percent_shift": 100.0 * (solved - 1.0) if np.isfinite(solved) else math.nan,
+                    "solution_in_scan_range": bool(np.isfinite(solved)),
+                })
+    return pd.DataFrame(rows)
+
+
+def plot_target_sensitivity(output: Path, table: pd.DataFrame, module: Any) -> None:
+    selected = table[table.cut == "nominal"].copy()
+    summary = selected.groupby(["period", "target"], as_index=False).agg(
+        sensitivity=("d_method2_d_ln_target_yield", "mean"),
+        rms=("d_method2_d_ln_target_yield", lambda x: float(np.sqrt(np.nanmean(np.asarray(x) ** 2)))),
+    )
+    targets = list(module.TARGETS)
+    fig, axes = plt.subplots(1, len(module.PERIODS), figsize=(16, 5), sharey=True)
+    all_values = summary.sensitivity.to_numpy(dtype=float)
+    limit = 1.15 * np.nanmax(np.abs(all_values)) if np.any(np.isfinite(all_values)) else 1.0
+    for ax, period in zip(axes, module.PERIODS):
+        local = summary[summary.period == period].set_index("target").reindex(targets)
+        ax.bar(np.arange(len(targets)), local.sensitivity)
+        ax.axhline(0.0, linewidth=1)
+        ax.set_xticks(np.arange(len(targets)), targets, rotation=35, ha="right")
+        ax.set_ylim(-limit, limit)
+        ax.set_title(module.PERIOD_LABELS[period])
+        ax.grid(axis="y", alpha=0.25)
+    axes[0].set_ylabel(r"$\partial f_2/\partial\ln N_T$")
+    fig.suptitle("Method-2 sensitivity to coherent target-yield normalization")
+    fig.tight_layout()
+    fig.savefig(output / "method2_target_normalization_sensitivity.png", dpi=180)
+    plt.close(fig)
+
+
+def plot_required_target_scales(output: Path, table: pd.DataFrame, module: Any) -> None:
+    selected = table[(table.cut == "nominal") & (table.bin_number == 0)].copy()
+    targets = list(module.TARGETS)
+    fig, ax = plt.subplots(figsize=(12, 6))
+    width = 0.24
+    x = np.arange(len(targets))
+    for index, period in enumerate(module.PERIODS):
+        local = selected[selected.period == period].set_index("target").reindex(targets)
+        ax.bar(x + (index - 1) * width, local.required_percent_shift, width, label=module.PERIOD_LABELS[period])
+    ax.axhline(0.0, linewidth=1)
+    ax.set_xticks(x, targets)
+    ax.set_ylabel("Required coherent target-yield shift (%)")
+    ax.set_title("Target normalization change required to force Method 2 to Method 1")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(output / "required_target_normalization_shifts.png", dpi=180)
+    plt.close(fig)
+
+
+def _weighted_linear_solution(design: np.ndarray, y: np.ndarray, variance: np.ndarray) -> tuple[np.ndarray, np.ndarray, float, int]:
+    good = np.all(np.isfinite(design), axis=1) & np.isfinite(y) & np.isfinite(variance) & (variance > 0)
+    x = design[good]
+    yy = y[good]
+    vv = variance[good]
+    if len(yy) <= x.shape[1]:
+        return np.full(x.shape[1], np.nan), np.full((x.shape[1], x.shape[1]), np.nan), math.nan, 0
+    w = 1.0 / vv
+    normal = x.T @ (w[:, None] * x)
+    rhs = x.T @ (w * yy)
+    try:
+        covariance = np.linalg.inv(normal)
+        parameters = covariance @ rhs
+    except np.linalg.LinAlgError:
+        covariance = np.linalg.pinv(normal)
+        parameters = covariance @ rhs
+    residual = yy - x @ parameters
+    chi2 = float(np.sum(w * residual * residual))
+    return parameters, covariance, chi2, len(yy) - x.shape[1]
+
+
+def build_empirical_template_fit(
+    counts: dict[tuple[str, str], ValidationCounts],
+    module: Any,
+    spectrum_edges: np.ndarray,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Fit period-integrated NH3 spectra with C and CH2-C empirical templates.
+
+    beta is measured from CH2/C in the nominal low-side control region, making
+    H_aux = CH2 - beta*C have zero integral there.  The absolute normalization
+    of H_aux is arbitrary; its fitted coefficient absorbs it.  Four linear
+    fit variants probe carbon fixing/freeing and the polynomial boundary.
+    """
+    centers = 0.5 * (spectrum_edges[:-1] + spectrum_edges[1:])
+    fit_mask = (centers >= TEMPLATE_FIT_MIN) & (centers < TEMPLATE_FIT_MAX)
+    control_mask = (centers >= 0.0) & (centers < 0.4)
+    above = centers >= 0.4
+    hinge = np.clip(centers - 0.4, 0.0, None)
+    rows: list[dict[str, Any]] = []
+    curves: list[dict[str, Any]] = []
+    for period in module.PERIODS:
+        spectra = {
+            target: np.sum(counts[(period, target)].spectrum.astype(float), axis=0)
+            for target in module.TARGETS
+        }
+        alpha_control = float(ratio(np.sum(spectra["NH3"][control_mask]), np.sum(spectra["C"][control_mask])))
+        beta_ch2_c = float(ratio(np.sum(spectra["CH2"][control_mask]), np.sum(spectra["C"][control_mask])))
+        hydrogen = spectra["CH2"] - beta_ch2_c * spectra["C"]
+        y = spectra["NH3"]
+        variance = np.maximum(y, 1.0)
+        polynomial_anchored = np.column_stack([hinge ** order for order in range(1, TEMPLATE_POLYNOMIAL_ORDER + 1)])
+        polynomial_free = np.column_stack([above.astype(float), polynomial_anchored])
+        variants = {
+            "fixed_C_plus_H": (False, np.empty((len(centers), 0))),
+            "fixed_C_plus_H_plus_anchored_poly": (False, polynomial_anchored),
+            "free_C_plus_H_plus_anchored_poly": (True, polynomial_anchored),
+            "free_C_plus_H_plus_free_intercept_poly": (True, polynomial_free),
+        }
+        for variant, (free_carbon, poly) in variants.items():
+            fixed = np.zeros_like(y)
+            columns = []
+            names = []
+            if free_carbon:
+                columns.append(spectra["C"])
+                names.append("carbon_scale")
+            else:
+                fixed = alpha_control * spectra["C"]
+            columns.append(hydrogen)
+            names.append("hydrogen_template_scale")
+            for index in range(poly.shape[1]):
+                columns.append(poly[:, index])
+                names.append(f"polynomial_coefficient_{index}")
+            design = np.column_stack(columns)
+            parameters, covariance, chi2, ndf = _weighted_linear_solution(
+                design[fit_mask], (y - fixed)[fit_mask], variance[fit_mask]
+            )
+            prediction = fixed + design @ parameters
+            parameter_map = {name: parameters[i] for i, name in enumerate(names)}
+            carbon_scale = parameter_map.get("carbon_scale", alpha_control)
+            carbon_scale_unc = (
+                math.sqrt(max(covariance[names.index("carbon_scale"), names.index("carbon_scale")], 0.0))
+                if "carbon_scale" in names and np.all(np.isfinite(covariance)) else 0.0
+            )
+            rows.append({
+                "period": period,
+                "variant": variant,
+                "alpha_control": alpha_control,
+                "beta_ch2_over_c_control": beta_ch2_c,
+                "fitted_carbon_scale": carbon_scale,
+                "fitted_carbon_scale_uncertainty": carbon_scale_unc,
+                "fitted_over_control_carbon_scale": float(ratio(carbon_scale, alpha_control)),
+                "hydrogen_template_scale": parameter_map.get("hydrogen_template_scale", math.nan),
+                "chi2": chi2,
+                "ndf": ndf,
+                "chi2_per_ndf": chi2 / ndf if ndf > 0 else math.nan,
+            })
+            for index, center in enumerate(centers):
+                curves.append({
+                    "period": period,
+                    "variant": variant,
+                    "mx2_center": center,
+                    "nh3": y[index],
+                    "carbon_component": carbon_scale * spectra["C"][index],
+                    "hydrogen_template": hydrogen[index],
+                    "prediction": prediction[index],
+                    "residual": y[index] - prediction[index],
+                })
+    return pd.DataFrame(rows), pd.DataFrame(curves)
+
+
+def plot_empirical_template_fits(output: Path, summary: pd.DataFrame, curves: pd.DataFrame, module: Any) -> None:
+    preferred = "free_C_plus_H_plus_free_intercept_poly"
+    fig, axes = plt.subplots(len(module.PERIODS), 2, figsize=(15, 11), sharex=True, sharey="col")
+    y_max = float(np.nanmax(curves.nh3)) * 1.08
+    residual_limit = float(np.nanpercentile(np.abs(curves.residual), 99)) * 1.2
+    for row, period in enumerate(module.PERIODS):
+        local = curves[(curves.period == period) & (curves.variant == preferred)]
+        axes[row, 0].step(local.mx2_center, local.nh3, where="mid", label="NH3")
+        axes[row, 0].plot(local.mx2_center, local.prediction, label="Template fit")
+        axes[row, 0].plot(local.mx2_center, local.carbon_component, label="Carbon component")
+        axes[row, 1].axhline(0.0, linewidth=1)
+        axes[row, 1].plot(local.mx2_center, local.residual)
+        for ax in axes[row]:
+            ax.axvline(0.4, linewidth=1, linestyle="--")
+            ax.grid(alpha=0.25)
+        axes[row, 0].set_ylim(0, y_max)
+        axes[row, 1].set_ylim(-residual_limit, residual_limit)
+        axes[row, 0].set_ylabel(module.PERIOD_LABELS[period])
+        axes[row, 0].legend()
+    axes[0, 0].set_title("NH3 empirical-template decomposition")
+    axes[0, 1].set_title("NH3 - fitted model")
+    axes[-1, 0].set_xlabel(r"$M_X^2$ (GeV$^2$)")
+    axes[-1, 1].set_xlabel(r"$M_X^2$ (GeV$^2$)")
+    fig.suptitle("CH2-minus-carbon hydrogen template and carbon-transfer fit")
+    fig.tight_layout()
+    fig.savefig(output / "empirical_hydrogen_template_fit.png", dpi=180)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    variants = list(summary.variant.drop_duplicates())
+    x = np.arange(len(variants))
+    width = 0.24
+    for index, period in enumerate(module.PERIODS):
+        local = summary[summary.period == period].set_index("variant").reindex(variants)
+        ax.bar(x + (index - 1) * width, local.fitted_over_control_carbon_scale, width, label=module.PERIOD_LABELS[period])
+    ax.axhline(1.0, linewidth=1, linestyle="--")
+    ax.set_xticks(x, variants, rotation=20, ha="right")
+    ax.set_ylabel("Fitted carbon scale / control-region scale")
+    ax.set_title("Independent empirical-template carbon transfer factors")
+    ax.legend()
+    ax.grid(axis="y", alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(output / "empirical_template_carbon_transfer_summary.png", dpi=180)
+    plt.close(fig)
+
+
 def build_flat_results(
     module: Any,
     windows: list[tuple[float, float]],
@@ -1376,6 +1768,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cumulative-upper-step", type=float, default=DEFAULT_CUMULATIVE_UPPER_STEP)
     parser.add_argument("--input", action="append", default=[],
                         help="Override standard input as period:target=/path.root")
+    parser.add_argument("--template-fit-min", type=float, default=TEMPLATE_FIT_MIN)
+    parser.add_argument("--template-fit-max", type=float, default=TEMPLATE_FIT_MAX)
     parser.add_argument("--run-isr", action="store_true",
                         help="Repeat the complete validation using ISR inputs and ISR cut JSON")
     parser.add_argument("--isr-cut-json", type=Path, default=None)
@@ -1452,6 +1846,22 @@ def run_one_variant(
     )
     cumulative_background.to_csv(tables / "cumulative_background_comparison.csv", index=False)
 
+    target_sensitivity = build_target_sensitivity_table(
+        counts, module, charge_fractions, central, windows
+    )
+    target_sensitivity.to_csv(tables / "method2_target_normalization_sensitivity.csv", index=False)
+
+    required_target_scales = build_required_target_scale_table(
+        counts, module, charge_fractions, central, windows
+    )
+    required_target_scales.to_csv(tables / "required_target_normalization_shifts.csv", index=False)
+
+    template_summary, template_curves = build_empirical_template_fit(
+        counts, module, spectrum_edges
+    )
+    template_summary.to_csv(tables / "empirical_hydrogen_template_fit_summary.csv", index=False)
+    template_curves.to_csv(tables / "empirical_hydrogen_template_fit_curves.csv", index=False)
+
     write_summary_json(metadata / "summary.json", module, windows, flat)
     write_json(metadata / "configuration.json", json_safe({
         "variant": label,
@@ -1472,6 +1882,14 @@ def run_one_variant(
         "spectrum_range": [args.spectrum_min, args.spectrum_max],
         "spectrum_bins": args.spectrum_bins,
         "cumulative_upper_edges": cumulative_edges,
+        "method2_target_sensitivity_fraction": SENSITIVITY_FRACTION,
+        "required_target_scale_scan": [REQUIRED_SCALE_MIN, REQUIRED_SCALE_MAX, REQUIRED_SCALE_GRID],
+        "empirical_template_fit": {
+            "fit_range": [TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX],
+            "control_region": [0.0, 0.4],
+            "polynomial_order": TEMPLATE_POLYNOMIAL_ORDER,
+            "hydrogen_template": "CH2 - beta*C, with beta from the control region",
+        },
         "inputs": {p: {t: str(v) for t, v in d.items()} for p, d in input_paths.items()},
     }))
 
@@ -1483,6 +1901,9 @@ def run_one_variant(
     plot_required_transfer_factor(plots, transfer, module)
     plot_required_transfer_kinematics(plots, transfer, module)
     plot_cumulative_background_comparison(plots, cumulative_background, module)
+    plot_target_sensitivity(plots, target_sensitivity, module)
+    plot_required_target_scales(plots, required_target_scales, module)
+    plot_empirical_template_fits(plots, template_summary, template_curves, module)
 
     print(f"[{label}] Validation products written to {root.resolve()}")
 
@@ -1495,6 +1916,11 @@ def main() -> int:
         raise ValueError("--spectrum-bins must be at least 10")
     if not args.spectrum_min < args.spectrum_max:
         raise ValueError("--spectrum-min must be below --spectrum-max")
+    if not args.template_fit_min < args.template_fit_max:
+        raise ValueError("--template-fit-min must be below --template-fit-max")
+    global TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX
+    TEMPLATE_FIT_MIN = float(args.template_fit_min)
+    TEMPLATE_FIT_MAX = float(args.template_fit_max)
 
     module_path = args.dilution_module.resolve()
     module = import_production_module(module_path)
