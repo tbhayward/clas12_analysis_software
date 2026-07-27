@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_external_isr_diagnostics_v3.py
+plot_external_isr_diagnostics_v4.py
 
 Produce an analysis-note-oriented diagnostic package for the additional
 external-ISR transformation applied to RGC exclusive e n pi+ data.
@@ -49,15 +49,15 @@ Outputs
 
 Typical usage
 -------------
-  python3 plot_external_isr_diagnostics_v2.py
+  python3 plot_external_isr_diagnostics_v4.py
 
 Explicit directory and target:
-  python3 plot_external_isr_diagnostics_v2.py \
+  python3 plot_external_isr_diagnostics_v4.py \
       --input-dir /work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions \
       --target NH3
 
 Representative-period note plots only (while still summarizing all periods):
-  python3 plot_external_isr_diagnostics_v2.py --representative-period fa22
+  python3 plot_external_isr_diagnostics_v4.py --representative-period fa22
 
 Notes
 -----
@@ -67,6 +67,8 @@ Notes
   and y < 0.8. They are configurable from the command line.
 * The event survival fraction is taken from the provenance JSON when present,
   because events rejected as nonphysical do not appear in the output tree.
+* Unless --output-dir is supplied, outputs are written beneath
+  ./output/external_isr_diagnostics/ relative to the launch directory.
 """
 
 from __future__ import annotations
@@ -96,7 +98,7 @@ DEFAULT_INPUT_DIR = Path(
     "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions"
 )
 DEFAULT_TREE = "PhysicsEvents"
-DEFAULT_OUTPUT_SUBDIR = "external_isr_note_diagnostics"
+DEFAULT_OUTPUT_DIR = Path("output") / "external_isr_diagnostics"
 PERIOD_ORDER = ("su22", "fa22", "sp23")
 PERIOD_LABELS = {"su22": "Su22", "fa22": "Fa22", "sp23": "Sp23"}
 PERIOD_BEAM_ENERGIES = {"su22": 10.5473, "fa22": 10.5563, "sp23": 10.5593}
@@ -915,10 +917,13 @@ def main() -> int:
     if not input_dir.is_dir():
         raise NotADirectoryError(f"Input directory does not exist: {input_dir}")
 
+    # By default, keep all generated artifacts local to the directory from
+    # which the script is launched.  An explicit --output-dir still overrides
+    # this location.
     output_dir = (
         args.output_dir.expanduser().resolve()
         if args.output_dir
-        else input_dir / DEFAULT_OUTPUT_SUBDIR / args.target
+        else DEFAULT_OUTPUT_DIR.resolve()
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
