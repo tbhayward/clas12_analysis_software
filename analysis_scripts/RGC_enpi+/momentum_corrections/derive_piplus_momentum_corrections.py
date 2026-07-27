@@ -2275,119 +2275,294 @@ def save_integrated_region_plot(
 
 
 
-def save_fully_integrated_missing_neutron_summary(
-    frame: pd.DataFrame,
-    period: CalibrationPeriod,
-    output_path: Path,
+
+def fit_mx2_local_summary_peak(
+    values: np.ndarray,
     histogram_range: tuple[float, float],
-    fit_range: tuple[float, float],
     histogram_bins: int,
     minimum_events: int,
-) -> None:
+) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     """
-    Save the final all-sector missing-neutron closure summary.
+    Fit the integrated missing-neutron peak in a local signal window.
 
-    All six FD pion sectors are combined before fitting. The legend reports
-    the fitted Gaussian mean and width for the uncorrected,
-    electron-corrected, and fully corrected stages. The fully corrected label
-    also reports the relative resolution improvement with respect to the
-    uncorrected width,
-
-        100 * (sigma_before - sigma_after) / sigma_before.
-
-    This is a diagnostic only and does not affect correction extraction.
+    The ordinary calibration fits span the broader analysis fit range because
+    they must remain uniform across many smaller cells. For the final
+    all-sector resolution summary, the strongly rising continuum above about
+    1.1 GeV^2 can bias a broad quadratic-background fit. This diagnostic fit
+    therefore uses a local Gaussian-plus-linear-background model over
+    0.68--1.08 GeV^2. It is used only for the final summary plots and never
+    enters correction extraction or model selection.
     """
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
 
+    counts, edges = np.histogram(
+        values,
+        bins=histogram_bins,
+        range=histogram_range,
+    )
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    local_low = max(histogram_range[0], 0.68)
+    local_high = min(histogram_range[1], 1.08)
+    fit_mask = (centers >= local_low) & (centers <= local_high)
+    fit_x = centers[fit_mask]
+    fit_y = counts[fit_mask]
+    fit_error = np.sqrt(np.maximum(fit_y, 1.0))
+
+    empty = {
+        "counts": counts,
+        "edges": edges,
+        "centers": centers,
+        "fit_x": np.asarray([], dtype=float),
+        "fit_model": np.asarray([], dtype=float),
+        "fit_signal": np.asarray([], dtype=float),
+        "fit_background": np.asarray([], dtype=float),
+    }
+
+    if values.size < minimum_events or fit_x.size < 8:
+        return {
+            "success": False,
+            "status": "insufficient_events",
+        }, empty
+
+    def model(
+        x: np.ndarray,
+        amplitude: float,
+        mean: float,
+        sigma: float,
+        c0: float,
+        c1: float,
+    ) -> np.ndarray:
+        return (
+            gaussian_signal(x, amplitude, mean, sigma)
+            + c0
+            + c1 * (x - NEUTRON_MASS2_GEV2)
+        )
+
+    sideband = (
+        (fit_x < NEUTRON_MASS2_GEV2 - 0.12)
+        | (fit_x > NEUTRON_MASS2_GEV2 + 0.12)
+    )
+    if np.count_nonzero(sideband) >= 2:
+        background_guess = np.polyfit(
+            fit_x[sideband] - NEUTRON_MASS2_GEV2,
+            fit_y[sideband],
+            1,
+        )
+        c1_guess = float(background_guess[0])
+        c0_guess = float(background_guess[1])
+    else:
+        c0_guess = float(np.percentile(fit_y, 20.0))
+        c1_guess = 0.0
+
+    peak_window = (
+        (fit_x >= NEUTRON_MASS2_GEV2 - 0.12)
+        & (fit_x <= NEUTRON_MASS2_GEV2 + 0.12)
+    )
+    peak_index = np.argmax(
+        np.where(peak_window, fit_y, -np.inf)
+    )
+    mean_guess = float(fit_x[peak_index])
+    amplitude_guess = max(
+        float(fit_y[peak_index] - c0_guess),
+        1.0,
+    )
+
+    lower = [
+        0.0,
+        NEUTRON_MASS2_GEV2 - 0.12,
+        0.025,
+        -np.inf,
+        -np.inf,
+    ]
+    upper = [
+        np.inf,
+        NEUTRON_MASS2_GEV2 + 0.12,
+        0.18,
+        np.inf,
+        np.inf,
+    ]
+
+    try:
+        parameters, covariance = curve_fit(
+            model,
+            fit_x,
+            fit_y,
+            p0=[
+                amplitude_guess,
+                mean_guess,
+                0.075,
+                c0_guess,
+                c1_guess,
+            ],
+            bounds=(lower, upper),
+            sigma=fit_error,
+            absolute_sigma=True,
+            maxfev=100000,
+        )
+    except (
+        RuntimeError,
+        ValueError,
+        np.linalg.LinAlgError,
+        FloatingPointError,
+    ) as exc:
+        return {
+            "success": False,
+            "status": f"fit_failed:{type(exc).__name__}",
+        }, empty
+
+    errors = np.sqrt(np.maximum(np.diag(covariance), 0.0))
+    fit_model = model(fit_x, *parameters)
+    fit_signal = gaussian_signal(fit_x, *parameters[:3])
+    fit_background = (
+        parameters[3]
+        + parameters[4] * (fit_x - NEUTRON_MASS2_GEV2)
+    )
+    chi2 = float(
+        np.sum(((fit_y - fit_model) / fit_error) ** 2)
+    )
+    ndf = int(fit_x.size - len(parameters))
+
+    return {
+        "success": True,
+        "status": "success",
+        "mean_gev2": float(parameters[1]),
+        "mean_error_gev2": float(errors[1]),
+        "sigma_gev2": float(abs(parameters[2])),
+        "sigma_error_gev2": float(errors[2]),
+        "chi2": chi2,
+        "ndf": ndf,
+        "chi2_ndf": chi2 / ndf if ndf > 0 else math.nan,
+        "fit_range_low_gev2": local_low,
+        "fit_range_high_gev2": local_high,
+    }, {
+        "counts": counts,
+        "edges": edges,
+        "centers": centers,
+        "fit_x": fit_x,
+        "fit_model": fit_model,
+        "fit_signal": fit_signal,
+        "fit_background": fit_background,
+    }
+
+
+def build_integrated_missing_neutron_summary_payload(
+    frame: pd.DataFrame,
+    histogram_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events: int,
+) -> dict[str, Any]:
+    """Build the compact payload used by individual and combined summaries."""
     sample = frame.loc[frame["pion_region"] == "FD"].copy()
-    stages = (
+    stage_definitions = (
         (
+            "uncorrected",
             "No corrections",
             "mx2_uncorrected_gev2",
-            "-",
+            "tab:blue",
         ),
         (
+            "electron_corrected",
             "Electron corrected",
             "mx2_electron_corrected_gev2",
-            "--",
+            "tab:orange",
         ),
         (
+            "electron_pion_corrected",
             r"Electron + $\pi^+$ corrected",
             "mx2_electron_pion_corrected_gev2",
-            "-.",
+            "tab:green",
         ),
     )
 
-    fit_results: dict[str, dict[str, Any]] = {}
-    diagnostics_by_stage: dict[str, dict[str, np.ndarray]] = {}
-
-    for label, column, _ in stages:
-        fit_result, diagnostics = fit_mx2_peak(
+    stages: list[dict[str, Any]] = []
+    for key, label, column, color in stage_definitions:
+        fit_result, diagnostics = fit_mx2_local_summary_peak(
             sample[column].to_numpy(),
             histogram_range=histogram_range,
-            fit_range=fit_range,
             histogram_bins=histogram_bins,
             minimum_events=minimum_events,
         )
-        fit_results[label] = fit_result
-        diagnostics_by_stage[label] = diagnostics
+        stages.append({
+            "key": key,
+            "label": label,
+            "color": color,
+            "fit_result": fit_result,
+            "centers": diagnostics["centers"].tolist(),
+            "counts": diagnostics["counts"].tolist(),
+            "fit_x": diagnostics["fit_x"].tolist(),
+            "fit_model": diagnostics["fit_model"].tolist(),
+        })
 
-    before_fit = fit_results["No corrections"]
-    final_label = r"Electron + $\pi^+$ corrected"
-    after_fit = fit_results[final_label]
+    before = stages[0]["fit_result"]
+    after = stages[-1]["fit_result"]
     if (
-        before_fit.get("success", False)
-        and after_fit.get("success", False)
-        and np.isfinite(before_fit.get("sigma_gev2", math.nan))
-        and before_fit["sigma_gev2"] > 0.0
+        before.get("success", False)
+        and after.get("success", False)
+        and before.get("sigma_gev2", 0.0) > 0.0
     ):
-        improvement_percent = (
+        improvement = (
             100.0
             * (
-                before_fit["sigma_gev2"]
-                - after_fit["sigma_gev2"]
+                before["sigma_gev2"]
+                - after["sigma_gev2"]
             )
-            / before_fit["sigma_gev2"]
+            / before["sigma_gev2"]
         )
     else:
-        improvement_percent = math.nan
+        improvement = math.nan
 
-    figure, axis = plt.subplots(
-        figsize=(9.4, 6.3),
-        constrained_layout=True,
+    return {
+        "histogram_range": list(histogram_range),
+        "stages": stages,
+        "resolution_improvement_percent": improvement,
+    }
+
+
+def plot_integrated_missing_neutron_summary_axis(
+    axis: plt.Axes,
+    period: CalibrationPeriod,
+    payload: dict[str, Any],
+    show_title: bool = True,
+) -> None:
+    """Draw one period's integrated summary on a supplied axis."""
+    improvement = float(
+        payload.get("resolution_improvement_percent", math.nan)
     )
 
-    for label, _, linestyle in stages:
-        fit_result = fit_results[label]
-        diagnostics = diagnostics_by_stage[label]
-        centers = diagnostics["centers"]
-        counts = diagnostics["counts"]
-
-        legend_label = label
+    for stage in payload["stages"]:
+        fit_result = stage["fit_result"]
+        label = stage["label"]
         if fit_result.get("success", False):
-            legend_label += (
+            label += (
                 rf": $\mu={fit_result['mean_gev2']:.5f}$ GeV$^2$, "
                 rf"$\sigma={fit_result['sigma_gev2']:.5f}$ GeV$^2$"
             )
-            if label == final_label and np.isfinite(improvement_percent):
-                legend_label += (
-                    rf", resolution improvement $={improvement_percent:.1f}\%$"
+            if (
+                stage["key"] == "electron_pion_corrected"
+                and np.isfinite(improvement)
+            ):
+                label += (
+                    rf", improvement $={improvement:.1f}\%$"
                 )
 
         axis.step(
-            centers,
-            counts,
+            np.asarray(stage["centers"], dtype=float),
+            np.asarray(stage["counts"], dtype=float),
             where="mid",
             linewidth=1.25,
-            label=legend_label,
+            color=stage["color"],
+            label=label,
         )
 
-        if diagnostics["fit_x"].size:
+        fit_x = np.asarray(stage["fit_x"], dtype=float)
+        fit_model = np.asarray(stage["fit_model"], dtype=float)
+        if fit_x.size:
             axis.plot(
-                diagnostics["fit_x"],
-                diagnostics["fit_model"],
-                linestyle=linestyle,
-                linewidth=1.5,
+                fit_x,
+                fit_model,
+                linewidth=1.7,
+                color=stage["color"],
             )
 
     axis.axvline(
@@ -2397,15 +2572,101 @@ def save_fully_integrated_missing_neutron_summary(
         linewidth=1.1,
         label=r"$m_n^2$",
     )
-    axis.set_xlim(*histogram_range)
+    axis.set_xlim(*payload["histogram_range"])
     axis.margins(x=0.0, y=0.05)
     axis.set_xlabel(r"$M_X^2(e\pi^+)$ (GeV$^2$)")
     axis.set_ylabel("Counts")
+    if show_title:
+        axis.set_title(period.label)
+    axis.legend(fontsize=7.2)
+
+
+def save_fully_integrated_missing_neutron_summary(
+    frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events: int,
+) -> dict[str, Any]:
+    """
+    Save one period's all-sector integrated summary and return its payload.
+
+    The summary fit is deliberately local to the neutron peak so that the
+    high-Mx2 continuum does not distort the fitted Gaussian width.
+    """
+    del fit_range  # The dedicated local summary fit defines its own window.
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = build_integrated_missing_neutron_summary_payload(
+        frame=frame,
+        histogram_range=histogram_range,
+        histogram_bins=histogram_bins,
+        minimum_events=minimum_events,
+    )
+
+    figure, axis = plt.subplots(
+        figsize=(9.4, 6.3),
+        constrained_layout=True,
+    )
+    plot_integrated_missing_neutron_summary_axis(
+        axis,
+        period,
+        payload,
+        show_title=False,
+    )
     axis.set_title(
         f"{period.label}: all-sector integrated missing-neutron peak"
     )
-    axis.legend(fontsize=8.2)
+    figure.savefig(
+        output_path,
+        dpi=180,
+        bbox_inches="tight",
+        pad_inches=0.06,
+    )
+    plt.close(figure)
+    return payload
 
+
+def save_combined_integrated_missing_neutron_summary(
+    payloads: dict[str, dict[str, Any]],
+    output_path: Path,
+) -> None:
+    """Save the requested 2x2 all-period integrated closure canvas."""
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    figure, axes = plt.subplots(
+        2,
+        2,
+        figsize=(16.0, 11.5),
+        constrained_layout=True,
+    )
+
+    for period, axis in zip(CALIBRATION_PERIODS, axes.ravel()):
+        payload = payloads.get(period.key)
+        if payload is None:
+            axis.text(
+                0.5,
+                0.5,
+                "Summary unavailable",
+                ha="center",
+                va="center",
+                transform=axis.transAxes,
+            )
+            axis.set_title(period.label)
+            continue
+
+        plot_integrated_missing_neutron_summary_axis(
+            axis,
+            period,
+            payload,
+            show_title=True,
+        )
+
+    figure.suptitle(
+        "All-sector integrated missing-neutron peak closure"
+    )
     figure.savefig(
         output_path,
         dpi=180,
@@ -3248,6 +3509,7 @@ def process_period(
             "branch_map": branch_map,
             "n_events": 0,
             "fd_events": 0,
+            "integrated_summary_payload": None,
         }
 
     frame = apply_electron_correction(frame, period, electron_model_map)
@@ -3332,15 +3594,20 @@ def process_period(
         histogram_range,
         histogram_bins,
     )
-    save_fully_integrated_missing_neutron_summary(
-        frame=frame,
-        period=period,
-        output_path=plot_directories["final_summary"]
-        / f"{period.key}_all_sector_integrated_missing_neutron_summary.png",
-        histogram_range=histogram_range,
-        fit_range=fit_range,
-        histogram_bins=histogram_bins,
-        minimum_events=minimum_events_integrated,
+    integrated_summary_payload = (
+        save_fully_integrated_missing_neutron_summary(
+            frame=frame,
+            period=period,
+            output_path=plot_directories["final_summary"]
+            / (
+                f"{period.key}_all_sector_integrated_"
+                "missing_neutron_summary.png"
+            ),
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events=minimum_events_integrated,
+        )
     )
     save_theta_residual_summary(
         period,
@@ -3451,6 +3718,7 @@ def process_period(
         "branch_map": branch_map,
         "n_events": fd_events,
         "fd_events": fd_events,
+        "integrated_summary_payload": integrated_summary_payload,
     }
 
 
@@ -3673,6 +3941,7 @@ def main() -> int:
     all_correction_records: list[dict[str, Any]] = []
     all_models: dict[str, Any] = {}
     period_summaries: list[dict[str, Any]] = []
+    integrated_summary_payloads: dict[str, dict[str, Any]] = {}
 
     with ProcessPoolExecutor(max_workers=worker_count) as executor:
         future_map = {}
@@ -3724,6 +3993,10 @@ def main() -> int:
             all_run_records.extend(result["run_records"])
             all_correction_records.extend(result["correction_records"])
             all_models[period.key] = result["correction_models"]
+            if result.get("integrated_summary_payload") is not None:
+                integrated_summary_payloads[period.key] = result[
+                    "integrated_summary_payload"
+                ]
             period_summaries.append(
                 {
                     key: value
@@ -3733,6 +4006,7 @@ def main() -> int:
                         "run_records",
                         "correction_records",
                         "correction_models",
+                        "integrated_summary_payload",
                     }
                 }
             )
@@ -3751,6 +4025,12 @@ def main() -> int:
     run_frame = pd.DataFrame(all_run_records)
     correction_frame = pd.DataFrame(all_correction_records)
     summary_frame = pd.DataFrame(period_summaries)
+
+    save_combined_integrated_missing_neutron_summary(
+        integrated_summary_payloads,
+        plot_directories["final_summary"]
+        / "all_periods_all_sector_integrated_missing_neutron_summary.png",
+    )
 
     fit_frame.to_csv(
         csv_directory / "mx2_fit_results.csv",
