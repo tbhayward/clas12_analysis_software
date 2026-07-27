@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-apply_epi_momentum_corrections_v5.py
+apply_epi_momentum_corrections_v6.py
 
 Rewrite an existing e pi+ X ROOT tree after selecting Forward Detector pion
 events (detector == 1) and applying the finalized RGC electron and FD pi+
@@ -15,6 +15,10 @@ The output tree contains the requested reduced branch set:
     isrTheta, isrPhi,
     Q2, W, Mx2, x, y, t, tmin, tprime, phi,
     DepA, DepB, DepC, DepV, DepW
+
+For ISR inputs containing an Egamma branch, Egamma is copied event by
+event into the output tree after applying exactly the same event-selection
+mask as every other branch. Nominal inputs without Egamma remain supported.
 
 Definitions after correction:
 
@@ -55,11 +59,11 @@ For pion detector != 1, no pion calibration exists; p_p is retained unchanged.
 The electron correction is still applied.
 
 Example:
-    python3 apply_epi_momentum_corrections_v5.py \
+    python3 apply_epi_momentum_corrections_v6.py \
         input.root output_corrected.root
 
 Example without the default Mx2 skim:
-    python3 apply_epi_momentum_corrections_v5.py \
+    python3 apply_epi_momentum_corrections_v6.py \
         input.root output_corrected.root --no-mx2-skim
 
 Dependencies:
@@ -101,7 +105,7 @@ DEFAULT_PION_JSON = Path(
     "output/piplus_diagnostics/json/pion_correction_models.json"
 )
 
-OUTPUT_BRANCH_DTYPES: dict[str, np.dtype] = {
+BASE_OUTPUT_BRANCH_DTYPES: dict[str, np.dtype] = {
     "runnum": np.dtype(np.int32),
     "evnum": np.dtype(np.int32),
     "helicity": np.dtype(np.int32),
@@ -134,8 +138,12 @@ OUTPUT_BRANCH_DTYPES: dict[str, np.dtype] = {
     "DepW": np.dtype(np.float64),
 }
 
+OPTIONAL_PASSTHROUGH_BRANCH_DTYPES: dict[str, np.dtype] = {
+    "Egamma": np.dtype(np.float64),
+}
+
 REQUIRED_INPUT_BRANCHES = tuple(
-    name for name in OUTPUT_BRANCH_DTYPES.keys()
+    name for name in BASE_OUTPUT_BRANCH_DTYPES.keys()
     if name != "tprime"
 )
 COPIED_INPUT_BRANCHES = (
@@ -256,6 +264,31 @@ def validate_input_branches(file_path: Path, tree_name: str) -> None:
             "Input tree is missing required branches: "
             + ", ".join(missing)
         )
+
+
+def available_optional_passthrough_branches(
+    file_path: Path,
+    tree_name: str,
+) -> tuple[str, ...]:
+    """Return supported optional branches that exist in the input tree."""
+    with uproot.open(file_path) as root_file:
+        available = set(root_file[tree_name].keys())
+
+    return tuple(
+        name
+        for name in OPTIONAL_PASSTHROUGH_BRANCH_DTYPES
+        if name in available
+    )
+
+
+def build_output_branch_dtypes(
+    optional_branches: Iterable[str],
+) -> dict[str, np.dtype]:
+    """Construct the output schema, including present optional branches."""
+    result = dict(BASE_OUTPUT_BRANCH_DTYPES)
+    for name in optional_branches:
+        result[name] = OPTIONAL_PASSTHROUGH_BRANCH_DTYPES[name]
+    return result
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -855,11 +888,14 @@ def calculate_kinematics(
 # Chunk processing and output
 # =============================================================================
 
-def finite_output_mask(output: dict[str, np.ndarray]) -> np.ndarray:
-    """Reject events for which any corrected floating branch is non-finite."""
+def finite_output_mask(
+    output: dict[str, np.ndarray],
+    output_branch_dtypes: dict[str, np.dtype],
+) -> np.ndarray:
+    """Reject events for which any output floating branch is non-finite."""
     floating_names = [
         name
-        for name, dtype in OUTPUT_BRANCH_DTYPES.items()
+        for name, dtype in output_branch_dtypes.items()
         if np.issubdtype(dtype, np.floating)
     ]
     mask = np.ones(len(output["runnum"]), dtype=bool)
@@ -871,10 +907,11 @@ def finite_output_mask(output: dict[str, np.ndarray]) -> np.ndarray:
 def cast_and_select(
     output: dict[str, np.ndarray],
     mask: np.ndarray,
+    output_branch_dtypes: dict[str, np.dtype],
 ) -> dict[str, np.ndarray]:
     return {
         name: np.asarray(output[name][mask], dtype=dtype)
-        for name, dtype in OUTPUT_BRANCH_DTYPES.items()
+        for name, dtype in output_branch_dtypes.items()
     }
 
 
@@ -884,10 +921,13 @@ def process_chunk(
     pion_models: dict[tuple[str, int], dict[str, Any]],
     apply_mx2_skim: bool,
     mx2_max: float,
+    optional_passthrough_branches: tuple[str, ...],
+    output_branch_dtypes: dict[str, np.dtype],
 ) -> tuple[dict[str, np.ndarray], dict[str, int]]:
+    input_branches = REQUIRED_INPUT_BRANCHES + optional_passthrough_branches
     raw_all = {
         name: ak.to_numpy(arrays[name])
-        for name in REQUIRED_INPUT_BRANCHES
+        for name in input_branches
     }
 
     detector_mask = np.asarray(raw_all["detector"]) == 1
@@ -901,7 +941,7 @@ def process_chunk(
         return (
             {
                 name: np.asarray([], dtype=dtype)
-                for name, dtype in OUTPUT_BRANCH_DTYPES.items()
+                for name, dtype in output_branch_dtypes.items()
             },
             {
                 "input": int(len(raw_all["runnum"])),
@@ -951,6 +991,8 @@ def process_chunk(
     output: dict[str, np.ndarray] = {}
     for name in COPIED_INPUT_BRANCHES:
         output[name] = np.asarray(raw[name])
+    for name in optional_passthrough_branches:
+        output[name] = np.asarray(raw[name])
 
     output["e_phi"] = wrap_phi_rad(output["e_phi"])
     output["p_phi"] = wrap_phi_rad(output["p_phi"])
@@ -958,7 +1000,7 @@ def process_chunk(
     output["p_p"] = corrected_p_p
     output.update(derived)
 
-    valid = finite_output_mask(output)
+    valid = finite_output_mask(output, output_branch_dtypes)
     finite_rejected = int(np.count_nonzero(~valid))
 
     x_mask = (output["x"] > 0.1) & (output["x"] < 0.6)
@@ -972,7 +1014,7 @@ def process_chunk(
     else:
         skim_rejected = 0
 
-    selected = cast_and_select(output, valid)
+    selected = cast_and_select(output, valid, output_branch_dtypes)
     counters = {
         "input": int(len(raw_all["runnum"])),
         "written": int(np.count_nonzero(valid)),
@@ -1059,6 +1101,13 @@ def main() -> int:
     input_tree_name = find_tree(args.input_root, args.tree_name)
     output_tree_name = args.output_tree_name or args.tree_name
     validate_input_branches(args.input_root, input_tree_name)
+    optional_passthrough_branches = available_optional_passthrough_branches(
+        args.input_root,
+        input_tree_name,
+    )
+    output_branch_dtypes = build_output_branch_dtypes(
+        optional_passthrough_branches
+    )
 
     electron_models = load_electron_models(args.electron_correction_json)
     pion_models = load_pion_models(args.pion_correction_json)
@@ -1079,7 +1128,9 @@ def main() -> int:
     }
 
     source = f"{args.input_root}:{input_tree_name}"
-    expressions = list(REQUIRED_INPUT_BRANCHES)
+    expressions = list(
+        REQUIRED_INPUT_BRANCHES + optional_passthrough_branches
+    )
 
     with uproot.recreate(
         args.output_root,
@@ -1087,7 +1138,7 @@ def main() -> int:
     ) as output_file:
         output_tree = output_file.mktree(
             output_tree_name,
-            OUTPUT_BRANCH_DTYPES,
+            output_branch_dtypes,
             title=(
                 "RGC e pi+ X data with electron/FD-pion momentum corrections "
                 "and recalculated mesonic kinematics including tprime = t - tmin"
@@ -1109,6 +1160,8 @@ def main() -> int:
                 pion_models,
                 apply_mx2_skim=not args.no_mx2_skim,
                 mx2_max=args.mx2_max,
+                optional_passthrough_branches=optional_passthrough_branches,
+                output_branch_dtypes=output_branch_dtypes,
             )
             if counters["written"] > 0:
                 output_tree.extend(selected)
@@ -1129,6 +1182,13 @@ def main() -> int:
     print("Momentum-corrected e pi+ X tree complete.")
     print(f"Input:  {args.input_root}:{input_tree_name}")
     print(f"Output: {args.output_root}:{output_tree_name}")
+    if optional_passthrough_branches:
+        print(
+            "Optional branches preserved:     "
+            + ", ".join(optional_passthrough_branches)
+        )
+    else:
+        print("Optional branches preserved:     none")
     print(f"Input events:                 {totals['input']:,}")
     print(f"Non-FD pion events rejected:  {totals['detector_rejected']:,}")
     print(f"Written events:               {totals['written']:,}")
