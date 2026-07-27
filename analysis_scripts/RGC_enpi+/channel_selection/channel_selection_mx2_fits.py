@@ -163,30 +163,30 @@ DEFAULT_CARBON_INPUTS: dict[str, dict[str, Path]] = {
 DEFAULT_ISR_INPUTS: dict[str, dict[str, Path]] = {
     "su22": {
         "before": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_NH3_epi+_ISR_2.root"),
-        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_su22_inb_NH3_epi+_ISR_mom_corrections.root"),
+        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_su22_inb_NH3_epi+_ISR_externalISR_mom_corrections.root"),
     },
     "fa22": {
         "before": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_NH3_epi+_ISR_2.root"),
-        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_fa22_inb_NH3_epi+_ISR_mom_corrections.root"),
+        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_fa22_inb_NH3_epi+_ISR_externalISR_mom_corrections.root"),
     },
     "sp23": {
         "before": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_NH3_epi+_ISR_2.root"),
-        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_sp23_inb_NH3_epi+_ISR_mom_corrections.root"),
+        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_sp23_inb_NH3_epi+_ISR_externalISR_mom_corrections.root"),
     },
 }
 
 DEFAULT_ISR_CARBON_INPUTS: dict[str, dict[str, Path]] = {
     "su22": {
         "before": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_su22_inb_C_epi+_ISR_2.root"),
-        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_su22_inb_C_epi+_ISR_mom_corrections.root"),
+        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_su22_inb_C_epi+_ISR_externalISR_mom_corrections.root"),
     },
     "fa22": {
         "before": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_fa22_inb_C_epi+_ISR_2.root"),
-        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_fa22_inb_C_epi+_ISR_mom_corrections.root"),
+        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_fa22_inb_C_epi+_ISR_externalISR_mom_corrections.root"),
     },
     "sp23": {
         "before": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+/rgc_sp23_inb_C_epi+_ISR_2.root"),
-        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_sp23_inb_C_epi+_ISR_mom_corrections.root"),
+        "after": Path("/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions/rgc_sp23_inb_C_epi+_ISR_externalISR_mom_corrections.root"),
     },
 }
 
@@ -7265,7 +7265,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Override one default ISR carbon input. Uncorrected defaults use "
             "*_ISR_2.root and corrected defaults use "
-            "*_ISR_mom_corrections.root."
+            "*_ISR_externalISR_mom_corrections.root."
         ),
     )
     parser.add_argument(

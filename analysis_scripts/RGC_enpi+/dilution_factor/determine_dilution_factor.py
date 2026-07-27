@@ -166,7 +166,7 @@ DEFAULT_INPUTS: dict[str, dict[str, Path]] = {
 DEFAULT_ISR_INPUTS: dict[str, dict[str, Path]] = {
     period: {
         target: PAPER_VERSIONS_DIR
-        / f"rgc_{period}_inb_{target}_epi+_ISR_mom_corrections.root"
+        / f"rgc_{period}_inb_{target}_epi+_ISR_externalISR_mom_corrections.root"
         for target in TARGETS
     }
     for period in PERIODS
@@ -3291,7 +3291,7 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="PERIOD:TARGET=PATH",
         help=(
             "Override one ISR momentum-corrected ROOT input. May be repeated. "
-            "Defaults use *_ISR_mom_corrections.root for all five targets."
+            "Defaults use *_ISR_externalISR_mom_corrections.root for all five targets."
         ),
     )
     parser.add_argument(
