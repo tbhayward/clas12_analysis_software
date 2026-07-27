@@ -50,7 +50,7 @@ import uproot
 
 TREE_DEFAULT = "PhysicsEvents"
 STEP_SIZE_DEFAULT = "250 MB"
-MODEL_VERSION = "external-isr-v4"
+MODEL_VERSION = "external-isr-v5"
 
 ELECTRON_MASS_GEV = 0.00051099895
 PROTON_MASS_GEV = 0.9382720813
@@ -870,53 +870,54 @@ def main() -> int:
                 finite_mask &= np.isfinite(values)
             invalid = int(np.count_nonzero(~finite_mask))
             invalid_events += invalid
-            if invalid and not args.keep_nonfinite:
-                first = entries[~finite_mask][:20]
-                raise RuntimeError(
-                    f"Found {invalid} events with nonfinite recalculated "
-                    f"kinematics; first absolute entries: {first}. "
-                    "Use --keep-nonfinite only for diagnosis."
-                )
 
-            output: dict[str, Any] = dict(raw)
+            # A sufficiently hard added external-radiation draw can make the
+            # already measured final state kinematically impossible at the new
+            # effective beam energy (for example E_e' >= E_beam, Q2 <= 0, or
+            # an undefined gamma*-p center-of-mass boost).  Such events cannot
+            # belong to the reradiated sample.  Remove them rather than writing
+            # NaNs or aborting the entire production.  This is the event-loss
+            # component of the additional-radiation response.
+            write_mask = finite_mask
+            if args.keep_nonfinite:
+                write_mask = np.ones(count, dtype=bool)
+
+            output: dict[str, Any] = {
+                name: np.asarray(values)[write_mask]
+                for name, values in raw.items()
+            }
             for name, values in after.items():
                 if name in branches:
-                    output[name] = np.asarray(values, dtype=np.float64)
+                    output[name] = np.asarray(values, dtype=np.float64)[write_mask]
             output.update({
-                "Egamma_external": external_egamma,
-                "Egamma_total": total_egamma,
-                "external_radiator_thickness": t_before,
-                "external_radiation_uniform": uniform,
-                "effective_beam_energy_externalISR": effective_beam,
+                "Egamma_external": external_egamma[write_mask],
+                "Egamma_total": total_egamma[write_mask],
+                "external_radiator_thickness": t_before[write_mask],
+                "external_radiation_uniform": uniform[write_mask],
+                "effective_beam_energy_externalISR": effective_beam[write_mask],
                 "external_radiation_seed_ensemble": np.full(
-                    count, args.seed_ensemble, dtype=np.int32
+                    int(np.count_nonzero(write_mask)), args.seed_ensemble, dtype=np.int32
                 ),
-                "external_radiation_entry": entries,
+                "external_radiation_entry": entries[write_mask],
             })
 
-            # Preserve all branches; uproot accepts NumPy/Awkward arrays here.
             output_tree.extend(output)
-            written_entries += count
+            written_entries += int(np.count_nonzero(write_mask))
 
             append_sample(accumulator, {
-                "vz_e": vz,
-                "t_before": t_before,
-                "egamma_internal": internal_egamma,
-                "egamma_external": external_egamma,
-                "egamma_total": total_egamma,
-                "effective_beam": effective_beam,
-                "mx2_before": before.get("Mx2", np.full(count, np.nan)),
-                "mx2_after": after["Mx2"],
-                "delta_mx2": after["Mx2"] - before.get("Mx2", np.full(count, np.nan)),
-                "delta_x": after["x"] - before.get("x", np.full(count, np.nan)),
-                "delta_tprime": after["tprime"] - before.get("tprime", np.full(count, np.nan)),
+                "vz_e": vz[finite_mask],
+                "t_before": t_before[finite_mask],
+                "egamma_internal": internal_egamma[finite_mask],
+                "egamma_external": external_egamma[finite_mask],
+                "egamma_total": total_egamma[finite_mask],
+                "effective_beam": effective_beam[finite_mask],
+                "mx2_before": before.get("Mx2", np.full(count, np.nan))[finite_mask],
+                "mx2_after": after["Mx2"][finite_mask],
+                "delta_mx2": (after["Mx2"] - before.get("Mx2", np.full(count, np.nan)))[finite_mask],
+                "delta_x": (after["x"] - before.get("x", np.full(count, np.nan)))[finite_mask],
+                "delta_tprime": (after["tprime"] - before.get("tprime", np.full(count, np.nan)))[finite_mask],
             })
             absolute_start += count
-
-    if written_entries != input_entries:
-        raise RuntimeError(
-            f"Entry-count mismatch: input={input_entries}, output={written_entries}"
-        )
 
     samples = concatenate_samples(accumulator)
     validation_files = make_validation_plots(samples, validation_dir)
@@ -945,7 +946,7 @@ def main() -> int:
         ),
         "input_entries": input_entries,
         "output_entries": written_entries,
-        "nonfinite_recalculated_events": invalid_events,
+        "removed_nonphysical_recalculated_events": invalid_events,
         "external_energy_endpoint_capped_events": endpoint_capped_events,
         "recalculated_branches": [
             name for name in RECALCULATED_BRANCHES if name in branches
@@ -976,8 +977,10 @@ def main() -> int:
     print(f"Provenance   : {provenance_path}")
     print(f"Validation   : {validation_dir}")
     print(f"Period/target: {identity.period}/{identity.target}")
-    print(f"Entries      : {written_entries}")
-    print(f"Endpoint caps: {endpoint_capped_events}")
+    print(f"Input entries : {input_entries}")
+    print(f"Output entries: {written_entries}")
+    print(f"Removed       : {invalid_events}")
+    print(f"Endpoint caps : {endpoint_capped_events}")
     return 0
 
 
