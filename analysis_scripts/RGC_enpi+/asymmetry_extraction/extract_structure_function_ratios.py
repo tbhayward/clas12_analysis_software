@@ -2,7 +2,7 @@
 """
 extract_structure_function_ratios.py
 
-Initial standalone event-level asymmetry extraction for the RGC exclusive
+Standalone event-level asymmetry extraction for the RGC exclusive
 e p -> e' n pi+ analysis.
 
 Run this program from
@@ -96,7 +96,18 @@ Dilution-factor uncertainty
 The recommended nominal dilution factor, the average of Methods 1 and 2, is
 read from the nominal production dilution-factor JSON.  The same nominal
 dilution-factor values and bootstrap statistical uncertainties are used for
-both the nominal extraction and the ISR/external-ISR radiation diagnostic.
+the nominal extraction and the ISR/external-ISR radiation diagnostic.
+
+Channel-selection uncertainty
+-----------------------------
+The ordinary data are also refitted with the matched tight, nominal, and loose
+Mx2 windows (mu +/- 2 sigma, 3 sigma, and 4 sigma). Each extraction uses the
+corresponding dilution factor determined with the same window. The loose cache
+is built once from ROOT and the nominal and tight caches are derived from that
+superset. For each observable, the recommended pointwise uncertainty is the RMS
+of the tight-minus-nominal and loose-minus-nominal shifts. The complete signed
+variation vectors and their outer-product covariance are retained for coherent
+propagation across bins.
 
 A separately recalculated radiation-sample dilution factor is intentionally not
 used here because Method 1 is not valid for that diagnostic under the present
@@ -873,7 +884,10 @@ def run_state_arrays(
 # Channel-selection cuts
 # =============================================================================
 
-def load_nominal_cuts(path: Path) -> dict[tuple[str, int], CutRecord]:
+def load_channel_cuts(
+    path: Path,
+    cut_label: str = "nominal",
+) -> dict[tuple[str, int], CutRecord]:
     if not path.is_file():
         raise FileNotFoundError(f"Missing channel-selection cut JSON: {path}")
     # endif
@@ -899,20 +913,20 @@ def load_nominal_cuts(path: Path) -> dict[tuple[str, int], CutRecord]:
             bin_number = int(
                 row.get("bin_number", combined_bin_number(x_index, t_index))
             )
-            nominal = row.get("nominal")
-            if not isinstance(nominal, list) or len(nominal) != 2:
+            interval = row.get(cut_label)
+            if not isinstance(interval, list) or len(interval) != 2:
                 raise RuntimeError(
-                    f"Missing nominal cut interval for {period}, bin {bin_number}."
+                    f"Missing {cut_label} cut interval for {period}, bin {bin_number}."
                 )
             # endif
-            low, high = float(nominal[0]), float(nominal[1])
+            low, high = float(interval[0]), float(interval[1])
             if not (
                 math.isfinite(low)
                 and math.isfinite(high)
                 and high > low
             ):
                 raise RuntimeError(
-                    f"Invalid nominal cut for {period}, bin {bin_number}: "
+                    f"Invalid {cut_label} cut for {period}, bin {bin_number}: "
                     f"[{low}, {high}]."
                 )
             # endif
@@ -1010,7 +1024,10 @@ def _extract_recommended_record(cut_payload: Mapping[str, Any]) -> tuple[float, 
     return value, uncertainty
 
 
-def load_dilution_factors(path: Path) -> dict[tuple[str, int], DilutionRecord]:
+def load_dilution_factors(
+    path: Path,
+    cut_label: str = "nominal",
+) -> dict[tuple[str, int], DilutionRecord]:
     if not path.is_file():
         raise FileNotFoundError(f"Missing dilution-factor JSON: {path}")
     # endif
@@ -1041,13 +1058,13 @@ def load_dilution_factors(path: Path) -> dict[tuple[str, int], DilutionRecord]:
                 row.get("bin_number", combined_bin_number(x_index, t_index))
             )
             cuts = row.get("cuts")
-            if not isinstance(cuts, Mapping) or "nominal" not in cuts:
+            if not isinstance(cuts, Mapping) or cut_label not in cuts:
                 raise RuntimeError(
-                    f"Dilution JSON lacks nominal cut for {period}, "
+                    f"Dilution JSON lacks {cut_label} cut for {period}, "
                     f"bin {bin_number}."
                 )
             # endif
-            value, uncertainty = _extract_recommended_record(cuts["nominal"])
+            value, uncertainty = _extract_recommended_record(cuts[cut_label])
             if not (
                 math.isfinite(value)
                 and math.isfinite(uncertainty)
@@ -1505,6 +1522,50 @@ def build_event_cache(
         "cache_path": str(cache_path.resolve()),
         "number_of_selected_events": int(cache["runnum"].size),
         "period_statistics": period_statistics,
+    }
+
+
+
+def derive_event_cache(
+    *,
+    source_cache_path: Path,
+    cuts: Mapping[tuple[str, int], CutRecord],
+    cache_path: Path,
+) -> dict[str, Any]:
+    """Filter a previously selected superset cache without rereading ROOT."""
+    source = load_event_cache(source_cache_path)
+    selected = np.zeros(source["runnum"].shape, dtype=bool)
+    period_index = np.asarray(source["period_index"], dtype=np.int8)
+    bin_number = np.asarray(source["bin_number"], dtype=np.int16)
+    mx2 = np.asarray(source["Mx2"], dtype=np.float64)
+
+    for period in PERIODS:
+        period_mask = period_index == PERIOD_INDEX[period]
+        for current_bin in range(1, NUMBER_OF_BINS + 1):
+            cut = cuts[(period, current_bin)]
+            selected |= (
+                period_mask
+                & (bin_number == current_bin)
+                & (mx2 >= cut.low_gev2)
+                & (mx2 < cut.high_gev2)
+            )
+        # endfor
+    # endfor
+
+    if not np.any(selected):
+        raise RuntimeError(
+            f"No events survived cache-derived selection for {cache_path}."
+        )
+    # endif
+
+    ensure_directory(cache_path.parent)
+    filtered = {name: values[selected] for name, values in source.items()}
+    np.savez_compressed(cache_path, **filtered)
+    return {
+        "cache_path": str(cache_path.resolve()),
+        "number_of_selected_events": int(np.count_nonzero(selected)),
+        "number_of_source_events": int(selected.size),
+        "derived_from_cache": str(source_cache_path.resolve()),
     }
 
 
@@ -3296,6 +3357,8 @@ def run_analysis_variant(
     reuse_cache: bool,
     skip_plots: bool,
     include_target_axis_study: bool,
+    cut_label: str = "nominal",
+    source_cache_path: Path | None = None,
 ) -> dict[str, Any]:
     tables_dir = output_dir / "tables"
     json_dir = output_dir / "json"
@@ -3326,17 +3389,41 @@ def run_analysis_variant(
     print(f"Output directory:     {output_dir}")
     print(f"Selected-event cache: {cache_path}")
     print(f"Target-axis study:    {include_target_axis_study}")
+    print(f"Exclusivity window:   {cut_label}")
 
     run_records = parse_run_info_csv(run_info_path)
     run_states = run_state_arrays(run_records)
-    cuts = load_nominal_cuts(cut_json_path)
-    dilution_records = load_dilution_factors(dilution_json_path)
+    cuts = load_channel_cuts(cut_json_path, cut_label=cut_label)
+    dilution_records = load_dilution_factors(
+        dilution_json_path, cut_label=cut_label
+    )
     if reuse_cache:
         events = load_event_cache(cache_path)
-        cache_summary = {"cache_path": str(cache_path), "number_of_selected_events": int(events["runnum"].size), "reused": True}
-    else:
-        cache_summary = build_event_cache(input_paths=input_paths, tree_name=tree_name, chunk_size=chunk_size, run_records=run_records, cuts=cuts, cache_path=cache_path)
+        cache_summary = {
+            "cache_path": str(cache_path),
+            "number_of_selected_events": int(events["runnum"].size),
+            "reused": True,
+            "derived_from_cache": None,
+        }
+    elif source_cache_path is not None:
+        cache_summary = derive_event_cache(
+            source_cache_path=source_cache_path,
+            cuts=cuts,
+            cache_path=cache_path,
+        )
         cache_summary["reused"] = False
+        events = load_event_cache(cache_path)
+    else:
+        cache_summary = build_event_cache(
+            input_paths=input_paths,
+            tree_name=tree_name,
+            chunk_size=chunk_size,
+            run_records=run_records,
+            cuts=cuts,
+            cache_path=cache_path,
+        )
+        cache_summary["reused"] = False
+        cache_summary["derived_from_cache"] = None
         events = load_event_cache(cache_path)
     # endif
 
@@ -3361,7 +3448,8 @@ def run_analysis_variant(
         "schema_version": 2,
         "analysis": "RGC exclusive enpi+ structure-function-ratio extraction",
         "sample_variant": sample_variant,
-        "diagnostic_only": sample_variant == "isr",
+        "diagnostic_only": sample_variant != "nominal",
+        "exclusivity_window": cut_label,
         "target_axis_study_performed": include_target_axis_study,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "beam_polarization": BEAM_POLARIZATION,
@@ -3410,7 +3498,7 @@ def run_analysis_variant(
         # endif
     # endif
     manifest_path = output_dir / "analysis_variant_manifest.json"
-    write_json(manifest_path, {"schema_version": 2, "sample_variant": sample_variant, "diagnostic_only": sample_variant == "isr", "target_axis_study_performed": include_target_axis_study, "products": {"csv": str(csv_path), "detailed_json": str(detailed_json_path), "latex": str(latex_path), "covariance_directory": str(covariance_dir), "plots": plot_paths, "cache": str(cache_path)}})
+    write_json(manifest_path, {"schema_version": 3, "sample_variant": sample_variant, "diagnostic_only": sample_variant != "nominal", "exclusivity_window": cut_label, "target_axis_study_performed": include_target_axis_study, "products": {"csv": str(csv_path), "detailed_json": str(detailed_json_path), "latex": str(latex_path), "covariance_directory": str(covariance_dir), "plots": plot_paths, "cache": str(cache_path)}})
     invalid_bins = frame.loc[~frame["nominal_fit_valid"].astype(bool), "bin_number"].astype(int).tolist()
     return {"sample_variant": sample_variant, "frame": frame, "results": results, "events": int(events["runnum"].size), "csv": str(csv_path), "json": str(detailed_json_path), "latex": str(latex_path), "manifest": str(manifest_path), "invalid_bins": invalid_bins}
 
@@ -3448,6 +3536,134 @@ def write_nominal_isr_comparison_products(nominal: pd.DataFrame, isr: pd.DataFra
     return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths}
 
 
+
+def write_channel_selection_comparison_products(
+    *,
+    tight: pd.DataFrame,
+    nominal: pd.DataFrame,
+    loose: pd.DataFrame,
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Write loose/nominal/tight diagnostics and coherent systematic products."""
+    tables_dir = output_dir / "tables"
+    plots_dir = output_dir / "plots"
+    covariance_dir = output_dir / "covariance"
+    for directory in (tables_dir, plots_dir, covariance_dir):
+        ensure_directory(directory)
+    # endfor
+
+    keys = ["bin_number", "x_index", "t_index"]
+    keep = keys + [
+        "mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2",
+        "number_of_events",
+    ] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
+    merged = nominal[keep].merge(
+        tight[keep], on=keys, suffixes=("_nominal", "_tight"), validate="one_to_one"
+    ).merge(
+        loose[keep], on=keys, validate="one_to_one"
+    )
+    merged = merged.rename(columns={
+        column: f"{column}_loose"
+        for column in keep if column not in keys
+    })
+
+    covariance_products: dict[str, str] = {}
+    plot_paths: list[str] = []
+    x = merged["bin_number"].to_numpy(dtype=int)
+    for parameter in PHYSICS_PARAMETERS:
+        delta_tight = (
+            merged[f"{parameter}_tight"] - merged[f"{parameter}_nominal"]
+        )
+        delta_loose = (
+            merged[f"{parameter}_loose"] - merged[f"{parameter}_nominal"]
+        )
+        merged[f"{parameter}_tight_minus_nominal"] = delta_tight
+        merged[f"{parameter}_loose_minus_nominal"] = delta_loose
+        merged[f"{parameter}_channel_selection_rms_systematic"] = np.sqrt(
+            0.5 * (delta_tight**2 + delta_loose**2)
+        )
+        merged[f"{parameter}_channel_selection_envelope"] = np.maximum(
+            np.abs(delta_tight), np.abs(delta_loose)
+        )
+        merged[f"{parameter}_full_spread"] = (
+            merged[[f"{parameter}_tight", f"{parameter}_nominal", f"{parameter}_loose"]]
+            .max(axis=1)
+            - merged[[f"{parameter}_tight", f"{parameter}_nominal", f"{parameter}_loose"]]
+            .min(axis=1)
+        )
+
+        dt = delta_tight.to_numpy(dtype=np.float64)
+        dl = delta_loose.to_numpy(dtype=np.float64)
+        covariance = 0.5 * (np.outer(dt, dt) + np.outer(dl, dl))
+        covariance_path = covariance_dir / f"{parameter}_channel_selection_covariance.npy"
+        np.save(covariance_path, covariance)
+        covariance_products[parameter] = str(covariance_path)
+
+        fig, axes = plt.subplots(2, 1, figsize=(11, 8), sharex=True)
+        axes[0].errorbar(
+            x, merged[f"{parameter}_tight"],
+            yerr=merged[f"{parameter}_stat_tight"], fmt="^", capsize=2,
+            label=r"Tight ($\mu\pm2\sigma$)",
+        )
+        axes[0].errorbar(
+            x, merged[f"{parameter}_nominal"],
+            yerr=merged[f"{parameter}_stat_nominal"], fmt="o", capsize=2,
+            label=r"Nominal ($\mu\pm3\sigma$)",
+        )
+        axes[0].errorbar(
+            x, merged[f"{parameter}_loose"],
+            yerr=merged[f"{parameter}_stat_loose"], fmt="s", capsize=2,
+            label=r"Loose ($\mu\pm4\sigma$)",
+        )
+        axes[0].set_ylabel(PARAMETER_LABELS[parameter])
+        axes[0].legend()
+        axes[0].grid(alpha=0.25)
+
+        axes[1].axhline(0.0, linewidth=1.0)
+        axes[1].plot(x, delta_tight, "^", label="Tight - nominal")
+        axes[1].plot(x, delta_loose, "s", label="Loose - nominal")
+        axes[1].errorbar(
+            x, np.zeros_like(x, dtype=float),
+            yerr=merged[f"{parameter}_channel_selection_rms_systematic"],
+            fmt="none", capsize=2, label="Recommended RMS systematic",
+        )
+        axes[1].set_xlabel("Combined kinematic-bin number")
+        axes[1].set_ylabel("Variation - nominal")
+        axes[1].legend()
+        axes[1].grid(alpha=0.25)
+        fig.tight_layout()
+        path = plots_dir / f"channel_selection_{parameter}.png"
+        fig.savefig(path, dpi=200)
+        plt.close(fig)
+        plot_paths.append(str(path))
+    # endfor
+
+    csv_path = tables_dir / "channel_selection_structure_function_ratios.csv"
+    json_path = tables_dir / "channel_selection_structure_function_ratios.json"
+    merged.to_csv(csv_path, index=False)
+    write_json(json_path, {
+        "schema_version": 1,
+        "recommended_systematic": (
+            "For each observable and kinematic bin, use RMS(tight-nominal, "
+            "loose-nominal). Preserve the complete tight and loose shifts as "
+            "two coherent alternatives; the supplied covariance is one half "
+            "of the sum of their outer products."
+        ),
+        "statistical_note": (
+            "The three event samples are nested and strongly correlated. No "
+            "independent-sample statistical subtraction or pull is applied."
+        ),
+        "rows": merged.to_dict(orient="records"),
+    })
+    return {
+        "csv": str(csv_path),
+        "json": str(json_path),
+        "plots_directory": str(plots_dir),
+        "plots": plot_paths,
+        "covariance": covariance_products,
+    }
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Fit nominal and ISR/external-ISR RGC exclusive-pi+ structure-function ratios.")
     parser.add_argument("--tree", default=DEFAULT_TREE_NAME)
@@ -3462,6 +3678,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache", type=Path, default=None, help="Legacy nominal-cache override.")
     parser.add_argument("--reuse-cache", action="store_true")
     parser.add_argument("--disable-isr", action="store_true")
+    parser.add_argument(
+        "--disable-channel-selection", action="store_true",
+        help="Skip the tight/nominal/loose exclusivity-window study.",
+    )
     parser.add_argument("--chunk-size", default=DEFAULT_CHUNK_SIZE)
     parser.add_argument("--workers", type=int, default=MAXIMUM_WORKERS)
     parser.add_argument("--skip-plots", action="store_true")
@@ -3470,32 +3690,239 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_argument_parser().parse_args()
-    workers=max(1,min(int(args.workers),MAXIMUM_WORKERS,os.cpu_count() or 1,NUMBER_OF_BINS))
-    root=args.output_dir.expanduser().resolve(); nominal_dir=root/"nominal"; isr_dir=root/"isr"; diagnostics_dir=root/"diagnostics"
-    for d in (root,nominal_dir,isr_dir,diagnostics_dir): ensure_directory(d)
-    nominal_inputs={p:Path(v) for p,v in DEFAULT_INPUTS.items()}
-    for period,path in args.input: nominal_inputs[period]=path
-    nominal_dilution=(args.dilution_json.expanduser().resolve() if args.dilution_json else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve())
-    nominal_cache=(args.cache.expanduser().resolve() if args.cache else nominal_dir/"cache/selected_events.npz")
-    nominal_result=run_analysis_variant(sample_variant="nominal", input_paths=nominal_inputs, run_info_path=args.run_info_csv.expanduser().resolve(), cut_json_path=args.cut_json.expanduser().resolve(), dilution_json_path=nominal_dilution, output_dir=nominal_dir, cache_path=nominal_cache, tree_name=args.tree, chunk_size=args.chunk_size, workers=workers, reuse_cache=args.reuse_cache, skip_plots=args.skip_plots, include_target_axis_study=True)
-    isr_result=None; comparison=None
-    if not args.disable_isr:
-        isr_inputs={p:Path(v) for p,v in DEFAULT_ISR_INPUTS.items()}
-        for period,path in args.isr_input: isr_inputs[period]=path
-        isr_cut=resolve_isr_cut_json(args.isr_cut_json)
-        # Deliberately reuse the nominal production dilution factors for the
-        # ISR/external-ISR systematic diagnostic.  A radiation-specific Method-1
-        # dilution factor is not valid with the present normalization.
-        isr_result=run_analysis_variant(sample_variant="isr", input_paths=isr_inputs, run_info_path=args.run_info_csv.expanduser().resolve(), cut_json_path=isr_cut, dilution_json_path=nominal_dilution, output_dir=isr_dir, cache_path=isr_dir/"cache/selected_events.npz", tree_name=args.tree, chunk_size=args.chunk_size, workers=workers, reuse_cache=args.reuse_cache, skip_plots=args.skip_plots, include_target_axis_study=False)
-        comparison=write_nominal_isr_comparison_products(nominal_result["frame"],isr_result["frame"],diagnostics_dir)
+    workers = max(
+        1,
+        min(int(args.workers), MAXIMUM_WORKERS, os.cpu_count() or 1, NUMBER_OF_BINS),
+    )
+    root = args.output_dir.expanduser().resolve()
+    nominal_dir = root / "nominal"
+    isr_dir = root / "isr"
+    channel_dir = root / "channel_selection"
+    diagnostics_dir = root / "diagnostics"
+    for directory in (root, nominal_dir, isr_dir, channel_dir, diagnostics_dir):
+        ensure_directory(directory)
+    # endfor
+
+    nominal_inputs = {period: Path(value) for period, value in DEFAULT_INPUTS.items()}
+    for period, path in args.input:
+        nominal_inputs[period] = path
+    # endfor
+    nominal_dilution = (
+        args.dilution_json.expanduser().resolve()
+        if args.dilution_json
+        else find_default_dilution_json(
+            args.dilution_dir.expanduser().resolve()
+        ).resolve()
+    )
+    nominal_cache = (
+        args.cache.expanduser().resolve()
+        if args.cache
+        else nominal_dir / "cache/selected_events.npz"
+    )
+
+    channel_loose_cache = channel_dir / "loose/cache/selected_events.npz"
+    nominal_source_cache: Path | None = None
+    channel_loose_cache_ready = False
+    if not args.disable_channel_selection:
+        if args.reuse_cache:
+            if not channel_loose_cache.is_file():
+                raise FileNotFoundError(
+                    "--reuse-cache was requested, but the loose channel-selection "
+                    f"cache is missing: {channel_loose_cache}"
+                )
+            # endif
+            channel_loose_cache_ready = True
+        else:
+            run_records_for_cache = parse_run_info_csv(
+                args.run_info_csv.expanduser().resolve()
+            )
+            loose_cuts_for_cache = load_channel_cuts(
+                args.cut_json.expanduser().resolve(), cut_label="loose"
+            )
+            build_event_cache(
+                input_paths=nominal_inputs,
+                tree_name=args.tree,
+                chunk_size=args.chunk_size,
+                run_records=run_records_for_cache,
+                cuts=loose_cuts_for_cache,
+                cache_path=channel_loose_cache,
+            )
+            channel_loose_cache_ready = True
+        # endif
+        nominal_source_cache = channel_loose_cache
     # endif
-    manifest_path=root/"asymmetry_extraction_manifest.json"
-    write_json(manifest_path,{"schema_version":3,"production_policy":"Nominal results are production. ISR/external-ISR results are a separate point-by-point radiation diagnostic. The radiation diagnostic deliberately reuses the nominal production dilution factors because radiation-sample Method 1 is not valid under the present normalization. Target-axis leakage is evaluated only for nominal data.","nominal":{k:v for k,v in nominal_result.items() if k not in ("frame","results")},"isr":({k:v for k,v in isr_result.items() if k not in ("frame","results")} if isr_result else None),"nominal_isr_comparison":comparison})
+
+    nominal_result = run_analysis_variant(
+        sample_variant="nominal",
+        input_paths=nominal_inputs,
+        run_info_path=args.run_info_csv.expanduser().resolve(),
+        cut_json_path=args.cut_json.expanduser().resolve(),
+        dilution_json_path=nominal_dilution,
+        output_dir=nominal_dir,
+        cache_path=nominal_cache,
+        tree_name=args.tree,
+        chunk_size=args.chunk_size,
+        workers=workers,
+        reuse_cache=args.reuse_cache,
+        skip_plots=args.skip_plots,
+        include_target_axis_study=True,
+        cut_label="nominal",
+        source_cache_path=(None if args.reuse_cache else nominal_source_cache),
+    )
+
+    isr_result = None
+    isr_comparison = None
+    if not args.disable_isr:
+        isr_inputs = {period: Path(value) for period, value in DEFAULT_ISR_INPUTS.items()}
+        for period, path in args.isr_input:
+            isr_inputs[period] = path
+        # endfor
+        isr_cut = resolve_isr_cut_json(args.isr_cut_json)
+        isr_result = run_analysis_variant(
+            sample_variant="isr",
+            input_paths=isr_inputs,
+            run_info_path=args.run_info_csv.expanduser().resolve(),
+            cut_json_path=isr_cut,
+            dilution_json_path=nominal_dilution,
+            output_dir=isr_dir,
+            cache_path=isr_dir / "cache/selected_events.npz",
+            tree_name=args.tree,
+            chunk_size=args.chunk_size,
+            workers=workers,
+            reuse_cache=args.reuse_cache,
+            skip_plots=args.skip_plots,
+            include_target_axis_study=False,
+            cut_label="nominal",
+        )
+        isr_comparison = write_nominal_isr_comparison_products(
+            nominal_result["frame"], isr_result["frame"], diagnostics_dir
+        )
+    # endif
+
+    channel_results: dict[str, Any] = {}
+    channel_comparison = None
+    if not args.disable_channel_selection:
+        loose_dir = channel_dir / "loose"
+        nominal_window_dir = channel_dir / "nominal"
+        tight_dir = channel_dir / "tight"
+
+        # The loose cache was built once before the production nominal fit. It
+        # is a strict superset, so all narrower selections are derived without
+        # any additional ROOT pass.
+        loose_result = run_analysis_variant(
+            sample_variant="channel_selection_loose",
+            input_paths=nominal_inputs,
+            run_info_path=args.run_info_csv.expanduser().resolve(),
+            cut_json_path=args.cut_json.expanduser().resolve(),
+            dilution_json_path=nominal_dilution,
+            output_dir=loose_dir,
+            cache_path=channel_loose_cache,
+            tree_name=args.tree,
+            chunk_size=args.chunk_size,
+            workers=workers,
+            reuse_cache=channel_loose_cache_ready,
+            skip_plots=args.skip_plots,
+            include_target_axis_study=False,
+            cut_label="loose",
+        )
+        nominal_window_result = run_analysis_variant(
+            sample_variant="channel_selection_nominal",
+            input_paths=nominal_inputs,
+            run_info_path=args.run_info_csv.expanduser().resolve(),
+            cut_json_path=args.cut_json.expanduser().resolve(),
+            dilution_json_path=nominal_dilution,
+            output_dir=nominal_window_dir,
+            cache_path=nominal_window_dir / "cache/selected_events.npz",
+            tree_name=args.tree,
+            chunk_size=args.chunk_size,
+            workers=workers,
+            reuse_cache=args.reuse_cache,
+            skip_plots=args.skip_plots,
+            include_target_axis_study=False,
+            cut_label="nominal",
+            source_cache_path=channel_loose_cache,
+        )
+        tight_result = run_analysis_variant(
+            sample_variant="channel_selection_tight",
+            input_paths=nominal_inputs,
+            run_info_path=args.run_info_csv.expanduser().resolve(),
+            cut_json_path=args.cut_json.expanduser().resolve(),
+            dilution_json_path=nominal_dilution,
+            output_dir=tight_dir,
+            cache_path=tight_dir / "cache/selected_events.npz",
+            tree_name=args.tree,
+            chunk_size=args.chunk_size,
+            workers=workers,
+            reuse_cache=args.reuse_cache,
+            skip_plots=args.skip_plots,
+            include_target_axis_study=False,
+            cut_label="tight",
+            source_cache_path=channel_loose_cache,
+        )
+        channel_results = {
+            "tight": tight_result,
+            "nominal": nominal_window_result,
+            "loose": loose_result,
+        }
+        channel_comparison = write_channel_selection_comparison_products(
+            tight=tight_result["frame"],
+            nominal=nominal_window_result["frame"],
+            loose=loose_result["frame"],
+            output_dir=channel_dir / "diagnostics",
+        )
+    # endif
+
+    manifest_path = root / "asymmetry_extraction_manifest.json"
+    write_json(manifest_path, {
+        "schema_version": 4,
+        "production_policy": (
+            "Nominal results are production. ISR/external-ISR results are a "
+            "separate radiation diagnostic. Channel selection is evaluated "
+            "with matched tight, nominal, and loose dilution factors. The "
+            "recommended per-bin channel-selection uncertainty is the RMS of "
+            "the tight-minus-nominal and loose-minus-nominal shifts, while the "
+            "complete variation vectors are retained as coherent alternatives."
+        ),
+        "nominal": {
+            key: value for key, value in nominal_result.items()
+            if key not in ("frame", "results")
+        },
+        "isr": (
+            {
+                key: value for key, value in isr_result.items()
+                if key not in ("frame", "results")
+            }
+            if isr_result else None
+        ),
+        "nominal_isr_comparison": isr_comparison,
+        "channel_selection": {
+            label: {
+                key: value for key, value in result.items()
+                if key not in ("frame", "results")
+            }
+            for label, result in channel_results.items()
+        } if channel_results else None,
+        "channel_selection_comparison": channel_comparison,
+    })
+
     print("\nStructure-function-ratio study complete.")
-    print(f"  Nominal:    {nominal_dir}")
-    if isr_result: print(f"  ISR:        {isr_dir}\n  Comparison: {diagnostics_dir}")
-    print(f"  Manifest:   {manifest_path}")
-    invalid=nominal_result["invalid_bins"] + ([] if isr_result is None else isr_result["invalid_bins"])
+    print(f"  Nominal:           {nominal_dir}")
+    if isr_result:
+        print(f"  ISR:               {isr_dir}")
+        print(f"  ISR comparison:    {diagnostics_dir}")
+    # endif
+    if channel_results:
+        print(f"  Channel selection: {channel_dir}")
+    # endif
+    print(f"  Manifest:          {manifest_path}")
+
+    invalid = nominal_result["invalid_bins"]
+    if isr_result is not None:
+        invalid += isr_result["invalid_bins"]
+    # endif
+    for result in channel_results.values():
+        invalid += result["invalid_bins"]
+    # endfor
     return 2 if invalid else 0
 
 
