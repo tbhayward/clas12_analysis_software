@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_external_isr_diagnostics_v1.py
+plot_external_isr_diagnostics_v2.py
 
 Produce an analysis-note-oriented diagnostic package for the additional
 external-ISR transformation applied to RGC exclusive e n pi+ data.
@@ -49,15 +49,15 @@ Outputs
 
 Typical usage
 -------------
-  python3 plot_external_isr_diagnostics_v1.py
+  python3 plot_external_isr_diagnostics_v2.py
 
 Explicit directory and target:
-  python3 plot_external_isr_diagnostics_v1.py \
+  python3 plot_external_isr_diagnostics_v2.py \
       --input-dir /work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions \
       --target NH3
 
 Representative-period note plots only (while still summarizing all periods):
-  python3 plot_external_isr_diagnostics_v1.py --representative-period fa22
+  python3 plot_external_isr_diagnostics_v2.py --representative-period fa22
 
 Notes
 -----
@@ -204,6 +204,50 @@ def discover_pairs(input_dir: Path, target: str, periods: Iterable[str]) -> list
     return sorted(pairs, key=lambda p: PERIOD_ORDER.index(p.period))
 
 
+def resolve_tree(
+    root_file: uproot.ReadOnlyDirectory,
+    requested: str,
+    path: Path,
+    provenance_name: str | None = None,
+) -> uproot.behaviors.TTree.TTree:
+    """Resolve a TTree robustly, including files written with a cycle in its name."""
+    candidates_to_try: list[str] = []
+    for name in (requested, provenance_name):
+        if not name:
+            continue
+        candidates_to_try.extend([name, str(name).split(";")[0]])
+
+    seen: set[str] = set()
+    for name in candidates_to_try:
+        if name in seen:
+            continue
+        seen.add(name)
+        try:
+            obj = root_file[name]
+        except (KeyError, uproot.KeyInFileError):
+            continue
+        if hasattr(obj, "arrays") and hasattr(obj, "num_entries"):
+            return obj
+
+    tree_like: list[tuple[str, Any]] = []
+    for key in root_file.keys():
+        try:
+            obj = root_file[key]
+        except Exception:
+            continue
+        if hasattr(obj, "arrays") and hasattr(obj, "num_entries"):
+            tree_like.append((str(key), obj))
+
+    if len(tree_like) == 1:
+        return tree_like[0][1]
+
+    available = [name for name, _ in tree_like]
+    raise KeyError(
+        f"Tree {requested!r} not found unambiguously in {path}. "
+        f"Tree-like objects: {available}"
+    )
+
+
 def require_branches(tree: uproot.behaviors.TTree.TTree, names: Iterable[str], path: Path) -> None:
     available = set(tree.keys())
     missing = [name for name in names if name not in available]
@@ -264,9 +308,12 @@ def load_pair(pair: FilePair, tree_name: str, max_events: int) -> PairData:
         provenance = json.loads(pair.provenance.read_text(encoding="utf-8"))
 
     with uproot.open(pair.after) as f_after:
-        if tree_name not in f_after:
-            raise KeyError(f"Tree {tree_name!r} not found in {pair.after}")
-        after_tree = f_after[tree_name]
+        after_tree = resolve_tree(
+            f_after,
+            tree_name,
+            pair.after,
+            provenance_name=provenance.get("output_tree"),
+        )
         require_branches(after_tree, after_branches, pair.after)
         after = {
             name: np.asarray(values)
@@ -277,9 +324,12 @@ def load_pair(pair: FilePair, tree_name: str, max_events: int) -> PairData:
     entries = np.asarray(after.pop("external_radiation_entry"), dtype=np.int64)
 
     with uproot.open(pair.before) as f_before:
-        if tree_name not in f_before:
-            raise KeyError(f"Tree {tree_name!r} not found in {pair.before}")
-        before_tree = f_before[tree_name]
+        before_tree = resolve_tree(
+            f_before,
+            tree_name,
+            pair.before,
+            provenance_name=provenance.get("input_tree"),
+        )
         require_branches(before_tree, before_branches + ["runnum"], pair.before)
         before = safe_take_source(before_tree, entries, before_branches + ["runnum"])
         input_entries_tree = int(before_tree.num_entries)
