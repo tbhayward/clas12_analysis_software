@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-validate_carbon_normalization_v5.py
+validate_carbon_normalization_v6.py
 
 Dedicated validation and stress-test program for the RGC exclusive e pi+
 carbon-normalization dilution-factor method.
@@ -1869,6 +1869,341 @@ def build_rcn_fit_summary(table: pd.DataFrame, module: Any) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _replica_weighted_constant(samples: np.ndarray, weights: np.ndarray) -> np.ndarray:
+    """Fit one constant to every bootstrap replica using fixed bin weights."""
+    values = np.asarray(samples, dtype=float)
+    base_weights = np.asarray(weights, dtype=float)
+    finite = np.isfinite(values) & np.isfinite(base_weights)[np.newaxis, :] & (base_weights[np.newaxis, :] > 0)
+    effective_weights = np.where(finite, base_weights[np.newaxis, :], 0.0)
+    denominator = np.sum(effective_weights, axis=1)
+    numerator = np.sum(effective_weights * np.where(finite, values, 0.0), axis=1)
+    return np.divide(
+        numerator,
+        denominator,
+        out=np.full(values.shape[0], np.nan, dtype=float),
+        where=denominator > 0,
+    )
+
+
+def _replica_weighted_linear(
+    x: np.ndarray,
+    samples: np.ndarray,
+    weights: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Fit intercept and slope to every replica with fixed inverse-variance weights."""
+    x_values = np.asarray(x, dtype=float)
+    values = np.asarray(samples, dtype=float)
+    base_weights = np.asarray(weights, dtype=float)
+    finite = (
+        np.isfinite(values)
+        & np.isfinite(x_values)[np.newaxis, :]
+        & np.isfinite(base_weights)[np.newaxis, :]
+        & (base_weights[np.newaxis, :] > 0)
+    )
+    w = np.where(finite, base_weights[np.newaxis, :], 0.0)
+    y = np.where(finite, values, 0.0)
+    x_row = x_values[np.newaxis, :]
+
+    sw = np.sum(w, axis=1)
+    sx = np.sum(w * x_row, axis=1)
+    sy = np.sum(w * y, axis=1)
+    sxx = np.sum(w * x_row * x_row, axis=1)
+    sxy = np.sum(w * x_row * y, axis=1)
+    determinant = sw * sxx - sx * sx
+
+    intercept = np.full(values.shape[0], np.nan, dtype=float)
+    slope = np.full(values.shape[0], np.nan, dtype=float)
+    valid = determinant > 0
+    intercept[valid] = (
+        sxx[valid] * sy[valid] - sx[valid] * sxy[valid]
+    ) / determinant[valid]
+    slope[valid] = (
+        sw[valid] * sxy[valid] - sx[valid] * sy[valid]
+    ) / determinant[valid]
+    return intercept, slope
+
+
+def _distribution_summary(samples: np.ndarray) -> dict[str, float]:
+    values = np.asarray(samples, dtype=float)
+    finite = np.isfinite(values)
+    if np.count_nonzero(finite) < 2:
+        return {
+            "bootstrap_mean": math.nan,
+            "bootstrap_std": math.nan,
+            "bootstrap_p16": math.nan,
+            "bootstrap_median": math.nan,
+            "bootstrap_p84": math.nan,
+            "valid_replica_fraction": float(np.mean(finite)),
+        }
+    selected = values[finite]
+    return {
+        "bootstrap_mean": float(np.mean(selected)),
+        "bootstrap_std": float(np.std(selected, ddof=1)),
+        "bootstrap_p16": float(np.percentile(selected, 16)),
+        "bootstrap_median": float(np.percentile(selected, 50)),
+        "bootstrap_p84": float(np.percentile(selected, 84)),
+        "valid_replica_fraction": float(np.mean(finite)),
+    }
+
+
+def build_rcn_replica_fit_summary(
+    table: pd.DataFrame,
+    bootstrap: dict[str, Any],
+    module: Any,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Fit the required r_CN replica by replica.
+
+    Fixed inverse-variance weights are obtained from the ensemble standard
+    deviations in required_r_cn.csv.  Applying those same weights to every
+    correlated replica preserves the bin-to-bin covariance in the fitted
+    constant and slopes.  The spread of the replica-level fit parameters is
+    therefore the quoted statistical uncertainty.
+    """
+    nominal_cut = list(module.CUT_VARIATIONS).index("nominal")
+    selected = table[(table.cut == "nominal") & (table.bin_number > 0)].copy()
+    summary_rows: list[dict[str, Any]] = []
+    replica_rows: list[dict[str, Any]] = []
+    period_payload: dict[str, dict[str, Any]] = {}
+
+    for period in module.PERIODS:
+        local = selected[selected.period == period].sort_values("bin_number")
+        central_y = local.required_r_cn.to_numpy(float)
+        sigma = local.required_r_cn_stat_uncertainty.to_numpy(float)
+        weights = np.where(np.isfinite(sigma) & (sigma > 0), 1.0 / sigma**2, 0.0)
+        samples = np.asarray(
+            bootstrap[period]["required_rcn"][:, :, nominal_cut],
+            dtype=float,
+        )
+        x_index = local.x_index.to_numpy(float)
+        t_index = local.tprime_index.to_numpy(float)
+
+        constant_samples = _replica_weighted_constant(samples, weights)
+        x_intercept_samples, x_slope_samples = _replica_weighted_linear(
+            x_index, samples, weights
+        )
+        t_intercept_samples, t_slope_samples = _replica_weighted_linear(
+            t_index, samples, weights
+        )
+
+        central_constant = _replica_weighted_constant(
+            central_y[np.newaxis, :], weights
+        )[0]
+        central_x = weighted_linear_fit(x_index, central_y, sigma)
+        central_t = weighted_linear_fit(t_index, central_y, sigma)
+
+        constant_stats = _distribution_summary(constant_samples)
+        x_slope_stats = _distribution_summary(x_slope_samples)
+        t_slope_stats = _distribution_summary(t_slope_samples)
+        x_intercept_stats = _distribution_summary(x_intercept_samples)
+        t_intercept_stats = _distribution_summary(t_intercept_samples)
+
+        finite = np.isfinite(central_y) & np.isfinite(sigma) & (sigma > 0)
+        constant_chi2 = (
+            float(np.sum(((central_y[finite] - central_constant) / sigma[finite]) ** 2))
+            if np.isfinite(central_constant)
+            else math.nan
+        )
+        summary_rows.append({
+            "scope": period,
+            "fit_type": "period",
+            "constant_r_cn": central_constant,
+            "constant_stat_uncertainty": constant_stats["bootstrap_std"],
+            "constant_bootstrap_mean": constant_stats["bootstrap_mean"],
+            "constant_bootstrap_median": constant_stats["bootstrap_median"],
+            "constant_bootstrap_p16": constant_stats["bootstrap_p16"],
+            "constant_bootstrap_p84": constant_stats["bootstrap_p84"],
+            "constant_valid_replica_fraction": constant_stats["valid_replica_fraction"],
+            "constant_chi2_using_marginal_errors": constant_chi2,
+            "constant_ndf": int(np.count_nonzero(finite) - 1),
+            "nominal_r_cn": NOMINAL_R_CN,
+            "constant_over_nominal": float(ratio(central_constant, NOMINAL_R_CN)),
+            "x_index_intercept": central_x["intercept"],
+            "x_index_intercept_stat_uncertainty": x_intercept_stats["bootstrap_std"],
+            "x_index_slope": central_x["slope"],
+            "x_index_slope_stat_uncertainty": x_slope_stats["bootstrap_std"],
+            "x_index_slope_bootstrap_p16": x_slope_stats["bootstrap_p16"],
+            "x_index_slope_bootstrap_p84": x_slope_stats["bootstrap_p84"],
+            "x_index_slope_valid_replica_fraction": x_slope_stats["valid_replica_fraction"],
+            "x_fit_chi2_using_marginal_errors": central_x["chi2"],
+            "x_fit_ndf": central_x["ndf"],
+            "tprime_index_intercept": central_t["intercept"],
+            "tprime_index_intercept_stat_uncertainty": t_intercept_stats["bootstrap_std"],
+            "tprime_index_slope": central_t["slope"],
+            "tprime_index_slope_stat_uncertainty": t_slope_stats["bootstrap_std"],
+            "tprime_index_slope_bootstrap_p16": t_slope_stats["bootstrap_p16"],
+            "tprime_index_slope_bootstrap_p84": t_slope_stats["bootstrap_p84"],
+            "tprime_index_slope_valid_replica_fraction": t_slope_stats["valid_replica_fraction"],
+            "tprime_fit_chi2_using_marginal_errors": central_t["chi2"],
+            "tprime_fit_ndf": central_t["ndf"],
+        })
+
+        period_payload[period] = {
+            "central": central_y,
+            "sigma": sigma,
+            "weights": weights,
+            "samples": samples,
+            "x_index": x_index,
+            "t_index": t_index,
+            "constant_samples": constant_samples,
+            "x_slope_samples": x_slope_samples,
+            "t_slope_samples": t_slope_samples,
+        }
+        for replica_index in range(samples.shape[0]):
+            replica_rows.append({
+                "scope": period,
+                "replica": replica_index,
+                "constant_r_cn": constant_samples[replica_index],
+                "x_index_intercept": x_intercept_samples[replica_index],
+                "x_index_slope": x_slope_samples[replica_index],
+                "tprime_index_intercept": t_intercept_samples[replica_index],
+                "tprime_index_slope": t_slope_samples[replica_index],
+            })
+
+    # Pair replica indices across periods.  The period bootstraps are
+    # statistically independent, so this constructs the proper joint
+    # statistical ensemble for a common all-period fit.
+    replica_count = min(
+        payload["samples"].shape[0] for payload in period_payload.values()
+    )
+    all_central = np.concatenate(
+        [period_payload[period]["central"] for period in module.PERIODS]
+    )
+    all_sigma = np.concatenate(
+        [period_payload[period]["sigma"] for period in module.PERIODS]
+    )
+    all_weights = np.where(
+        np.isfinite(all_sigma) & (all_sigma > 0),
+        1.0 / all_sigma**2,
+        0.0,
+    )
+    all_samples = np.concatenate(
+        [
+            period_payload[period]["samples"][:replica_count]
+            for period in module.PERIODS
+        ],
+        axis=1,
+    )
+    all_constant_samples = _replica_weighted_constant(all_samples, all_weights)
+    all_central_constant = _replica_weighted_constant(
+        all_central[np.newaxis, :], all_weights
+    )[0]
+    all_stats = _distribution_summary(all_constant_samples)
+    all_finite = np.isfinite(all_central) & np.isfinite(all_sigma) & (all_sigma > 0)
+    all_chi2 = (
+        float(np.sum(
+            ((all_central[all_finite] - all_central_constant) / all_sigma[all_finite]) ** 2
+        ))
+        if np.isfinite(all_central_constant)
+        else math.nan
+    )
+    summary_rows.append({
+        "scope": "all-periods",
+        "fit_type": "common",
+        "constant_r_cn": all_central_constant,
+        "constant_stat_uncertainty": all_stats["bootstrap_std"],
+        "constant_bootstrap_mean": all_stats["bootstrap_mean"],
+        "constant_bootstrap_median": all_stats["bootstrap_median"],
+        "constant_bootstrap_p16": all_stats["bootstrap_p16"],
+        "constant_bootstrap_p84": all_stats["bootstrap_p84"],
+        "constant_valid_replica_fraction": all_stats["valid_replica_fraction"],
+        "constant_chi2_using_marginal_errors": all_chi2,
+        "constant_ndf": int(np.count_nonzero(all_finite) - 1),
+        "nominal_r_cn": NOMINAL_R_CN,
+        "constant_over_nominal": float(ratio(all_central_constant, NOMINAL_R_CN)),
+        "x_index_intercept": math.nan,
+        "x_index_intercept_stat_uncertainty": math.nan,
+        "x_index_slope": math.nan,
+        "x_index_slope_stat_uncertainty": math.nan,
+        "x_index_slope_bootstrap_p16": math.nan,
+        "x_index_slope_bootstrap_p84": math.nan,
+        "x_index_slope_valid_replica_fraction": math.nan,
+        "x_fit_chi2_using_marginal_errors": math.nan,
+        "x_fit_ndf": 0,
+        "tprime_index_intercept": math.nan,
+        "tprime_index_intercept_stat_uncertainty": math.nan,
+        "tprime_index_slope": math.nan,
+        "tprime_index_slope_stat_uncertainty": math.nan,
+        "tprime_index_slope_bootstrap_p16": math.nan,
+        "tprime_index_slope_bootstrap_p84": math.nan,
+        "tprime_index_slope_valid_replica_fraction": math.nan,
+        "tprime_fit_chi2_using_marginal_errors": math.nan,
+        "tprime_fit_ndf": 0,
+    })
+    for replica_index in range(replica_count):
+        replica_rows.append({
+            "scope": "all-periods",
+            "replica": replica_index,
+            "constant_r_cn": all_constant_samples[replica_index],
+            "x_index_intercept": math.nan,
+            "x_index_slope": math.nan,
+            "tprime_index_intercept": math.nan,
+            "tprime_index_slope": math.nan,
+        })
+
+    return pd.DataFrame(summary_rows), pd.DataFrame(replica_rows)
+
+
+def plot_rcn_replica_fit_summary(
+    output: Path,
+    summary: pd.DataFrame,
+    module: Any,
+) -> None:
+    """Plot covariance-aware constant and slope results."""
+    period_rows = summary[summary.scope.isin(module.PERIODS)].set_index("scope")
+    common = summary[summary.scope == "all-periods"].iloc[0]
+
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    x = np.arange(len(module.PERIODS))
+    labels = [module.PERIOD_LABELS[period] for period in module.PERIODS]
+
+    constants = period_rows.loc[list(module.PERIODS), "constant_r_cn"].to_numpy(float)
+    constant_errors = period_rows.loc[
+        list(module.PERIODS), "constant_stat_uncertainty"
+    ].to_numpy(float)
+    axes[0].errorbar(x, constants, yerr=constant_errors, fmt="o", label="Period fits")
+    axes[0].axhline(common.constant_r_cn, linewidth=1, label="Common fit")
+    axes[0].axhspan(
+        common.constant_r_cn - common.constant_stat_uncertainty,
+        common.constant_r_cn + common.constant_stat_uncertainty,
+        alpha=0.15,
+    )
+    axes[0].axhline(NOMINAL_R_CN, linewidth=1, linestyle="--", label=r"Nominal $6/7$")
+    axes[0].set_xticks(x, labels, rotation=20)
+    axes[0].set_ylabel(r"Required $r_{CN}$")
+    axes[0].set_title("Replica-level constant fits")
+    axes[0].legend()
+
+    x_slopes = period_rows.loc[list(module.PERIODS), "x_index_slope"].to_numpy(float)
+    x_errors = period_rows.loc[
+        list(module.PERIODS), "x_index_slope_stat_uncertainty"
+    ].to_numpy(float)
+    axes[1].errorbar(x, x_slopes, yerr=x_errors, fmt="o")
+    axes[1].axhline(0.0, linewidth=1, linestyle="--")
+    axes[1].set_xticks(x, labels, rotation=20)
+    axes[1].set_ylabel(r"Slope in $r_{CN}$ per $x_B$ row")
+    axes[1].set_title(r"$x_B$-row dependence")
+
+    t_slopes = period_rows.loc[
+        list(module.PERIODS), "tprime_index_slope"
+    ].to_numpy(float)
+    t_errors = period_rows.loc[
+        list(module.PERIODS), "tprime_index_slope_stat_uncertainty"
+    ].to_numpy(float)
+    axes[2].errorbar(x, t_slopes, yerr=t_errors, fmt="o")
+    axes[2].axhline(0.0, linewidth=1, linestyle="--")
+    axes[2].set_xticks(x, labels, rotation=20)
+    axes[2].set_ylabel(r"Slope in $r_{CN}$ per $-t'$ column")
+    axes[2].set_title(r"$-t'$-column dependence")
+
+    for ax in axes:
+        ax.grid(alpha=0.25)
+    fig.suptitle(r"Replica-by-replica fits of the required C--N relation")
+    fig.tight_layout()
+    fig.savefig(output / "required_r_cn_replica_fit_summary.png", dpi=180)
+    plt.close(fig)
+
+
 def build_rcn_scan_table(
     counts: dict[tuple[str, str], ValidationCounts],
     module: Any,
@@ -2147,7 +2482,16 @@ def run_one_variant(
     required_rcn = build_required_rcn_table(module, central, bootstrap)
     required_rcn.to_csv(tables / "required_r_cn.csv", index=False)
     rcn_fit = build_rcn_fit_summary(required_rcn, module)
-    rcn_fit.to_csv(tables / "required_r_cn_fit_summary.csv", index=False)
+    rcn_fit.to_csv(tables / "required_r_cn_fit_summary_legacy_independent_bins.csv", index=False)
+    rcn_replica_fit, rcn_replica_parameters = build_rcn_replica_fit_summary(
+        required_rcn, bootstrap, module
+    )
+    rcn_replica_fit.to_csv(
+        tables / "required_r_cn_fit_summary.csv", index=False
+    )
+    rcn_replica_parameters.to_csv(
+        tables / "required_r_cn_replica_fit_parameters.csv", index=False
+    )
     rcn_scan = build_rcn_scan_table(
         counts, module, charge_fractions, central,
         args.r_cn_min, args.r_cn_max, args.r_cn_points,
@@ -2203,6 +2547,8 @@ def run_one_variant(
             "scan_points": args.r_cn_points,
             "definition": "r_cn = sigma_C / sigma_N",
             "implementation": "effective pure-carbon proxy N_C * (nominal_r_cn / r_cn), exact at r_cn=6/7",
+            "fit_uncertainties": "required r_cn constant and slope fits are repeated replica by replica with fixed inverse-marginal-variance weights; the replica spread is quoted",
+            "legacy_independent_bin_fit_table": "required_r_cn_fit_summary_legacy_independent_bins.csv",
             "thermal_contraction_variations": False,
         },
         "empirical_template_fit": {
@@ -2222,6 +2568,7 @@ def run_one_variant(
     plot_required_transfer_factor(plots, transfer, module)
     plot_required_transfer_kinematics(plots, transfer, module)
     plot_required_rcn(plots, required_rcn, module)
+    plot_rcn_replica_fit_summary(plots, rcn_replica_fit, module)
     plot_rcn_scan(plots, rcn_scan, module)
     plot_cumulative_background_comparison(plots, cumulative_background, module)
     plot_target_sensitivity(plots, target_sensitivity, module)
