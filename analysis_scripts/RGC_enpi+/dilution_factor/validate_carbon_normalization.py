@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-validate_carbon_normalization_v1.py
+validate_carbon_normalization_v2.py
 
 Dedicated validation and stress-test program for the RGC exclusive e pi+
 carbon-normalization dilution-factor method.
@@ -26,8 +26,12 @@ The diagnostics answer four questions:
      bin-local scales required?
   3. Does scaled carbon close between disjoint low-Mx2 subregions that are not
      expected to contain the exclusive neutron signal?
-  4. How does the scaled-carbon background compare with the direct five-target
-     background estimate as a function of Mx2 and in the final signal window?
+  4. What carbon transfer factor would be required in the signal window for
+     Method 1 to reproduce Method 2?
+  5. Is that required transfer factor consistent with one common correction,
+     a period-dependent correction, or a kinematic dependence?
+  6. Do cumulative low-side background integrals from scaled carbon and the
+     direct five-target method agree without the unstable narrow-bin ratios?
 
 No high-side NH3/carbon closure requirement is imposed.  Above the neutron
 region, NH3 can contain real hydrogen-origin events from channels other than
@@ -99,6 +103,9 @@ DEFAULT_LOW_REGIONS: tuple[tuple[float, float], ...] = (
 
 DEFAULT_SPECTRUM_RANGE = (-0.20, 1.40)
 DEFAULT_SPECTRUM_BINS = 80
+DEFAULT_CUMULATIVE_UPPER_MIN = 0.15
+DEFAULT_CUMULATIVE_UPPER_MAX = 0.65
+DEFAULT_CUMULATIVE_UPPER_STEP = 0.025
 PERIOD_GROUP = "period"
 XB_GROUP = "xB-row"
 TPRIME_GROUP = "tprime-column"
@@ -169,13 +176,34 @@ def parse_window(text: str) -> tuple[float, float]:
     return low, high
 
 
-def canonical_windows(values: list[tuple[float, float]] | None) -> list[tuple[float, float]]:
+def cumulative_upper_edges(minimum: float, maximum: float, step: float) -> list[float]:
+    if step <= 0:
+        raise ValueError("Cumulative upper-edge step must be positive")
+    if not minimum < maximum:
+        raise ValueError("Cumulative upper-edge minimum must be below maximum")
+    count = int(round((maximum - minimum) / step))
+    values = [minimum + i * step for i in range(count + 1)]
+    if values[-1] < maximum - 1e-10:
+        values.append(maximum)
+    return [round(value, 10) for value in values]
+
+
+def canonical_windows(
+    values: list[tuple[float, float]] | None,
+    cumulative_edges: list[float],
+) -> list[tuple[float, float]]:
     source = list(DEFAULT_CONTROL_WINDOWS if not values else values)
+    source.extend((0.0, upper) for upper in cumulative_edges)
     unique = sorted({(round(a, 10), round(b, 10)) for a, b in source})
     if (0.0, 0.4) not in unique:
         unique.append((0.0, 0.4))
         unique.sort()
     return unique
+
+
+def structured_windows(windows: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    requested = set(DEFAULT_CONTROL_WINDOWS)
+    return [window for window in windows if window in requested]
 
 
 def combined_indices(number_of_bins: int, n_t: int) -> tuple[np.ndarray, np.ndarray]:
@@ -416,6 +444,9 @@ def validation_bootstrap_worker(
         for grouping in groupings
     }
     method2 = np.full((replicas, n_bins, 3), np.nan)
+    alpha_required = np.full((replicas, n_bins, 3), np.nan)
+    transfer_ratio = np.full((replicas, n_bins, 3), np.nan)
+    kappa_period = np.full((replicas, 3), np.nan)
     alpha = {
         grouping: np.full((replicas, n_bins, n_windows), np.nan)
         for grouping in groupings
@@ -450,11 +481,38 @@ def validation_bootstrap_worker(
                 signal_by_target["NH3"], signal_by_target["C"], scale
             )
 
-        method2[start:stop] = module.method2_equation10_from_counts(
+        m2_batch = module.method2_equation10_from_counts(
             signal_by_target, charge_fractions_period
         )
+        method2[start:stop] = m2_batch
 
-    return {"period": period, "method1": method1, "method2": method2, "alpha": alpha}
+        required = ratio(
+            signal_by_target["NH3"] * (1.0 - m2_batch),
+            signal_by_target["C"],
+        )
+        alpha_required[start:stop] = required
+        nominal_window_index = windows.index((0.0, 0.4))
+        nominal_period_alpha = alpha[PERIOD_GROUP][start:stop, :, nominal_window_index]
+        transfer_ratio[start:stop] = ratio(required, nominal_period_alpha[..., np.newaxis])
+
+        predicted_nominal_background = (
+            nominal_period_alpha[..., np.newaxis] * signal_by_target["C"]
+        )
+        required_background = signal_by_target["NH3"] * (1.0 - m2_batch)
+        kappa_period[start:stop] = ratio(
+            np.sum(required_background, axis=1),
+            np.sum(predicted_nominal_background, axis=1),
+        )
+
+    return {
+        "period": period,
+        "method1": method1,
+        "method2": method2,
+        "alpha": alpha,
+        "alpha_required": alpha_required,
+        "transfer_ratio": transfer_ratio,
+        "kappa_period": kappa_period,
+    }
 
 
 def run_bootstrap(
@@ -525,6 +583,22 @@ def central_estimators(
             result["alpha"][grouping] = scale
             result["method1"][grouping] = method1_values(signals["NH3"], signals["C"], scale)
         result["method2"] = method2_values(signals, period, module, charge_fractions)
+        result["alpha_required"] = ratio(
+            signals["NH3"] * (1.0 - result["method2"]),
+            signals["C"],
+        )
+        nominal_window_index = windows.index((0.0, 0.4))
+        nominal_period_alpha = result["alpha"][PERIOD_GROUP][:, nominal_window_index]
+        result["transfer_ratio"] = ratio(
+            result["alpha_required"],
+            nominal_period_alpha[:, np.newaxis],
+        )
+        predicted_nominal_background = nominal_period_alpha[:, np.newaxis] * signals["C"]
+        required_background = signals["NH3"] * (1.0 - result["method2"])
+        result["kappa_period"] = ratio(
+            np.sum(required_background, axis=0),
+            np.sum(predicted_nominal_background, axis=0),
+        )
         output[period] = result
     return output
 
@@ -550,14 +624,18 @@ def plot_window_scan_summary(
 ) -> None:
     nominal_window = windows.index((0.0, 0.4))
     nominal_cut = list(module.CUT_VARIATIONS).index("nominal")
-    x = np.arange(len(windows))
+    display_windows = structured_windows(windows)
+    display_indices = [windows.index(window) for window in display_windows]
+    x = np.arange(len(display_windows))
     fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(14, 11), sharex=True)
     for ax, period in zip(axes, module.PERIODS):
-        values = central[period]["method1"][PERIOD_GROUP][:, :, nominal_cut]
-        reference = values[:, nominal_window][:, np.newaxis]
+        all_values = central[period]["method1"][PERIOD_GROUP][:, :, nominal_cut]
+        values = all_values[:, display_indices]
+        reference = all_values[:, nominal_window][:, np.newaxis]
         shift = values - reference
-        replicas = bootstrap[period]["method1"][PERIOD_GROUP][:, :, :, nominal_cut]
-        replica_shift = replicas - replicas[:, :, nominal_window][:, :, np.newaxis]
+        all_replicas = bootstrap[period]["method1"][PERIOD_GROUP][:, :, :, nominal_cut]
+        replicas = all_replicas[:, :, display_indices]
+        replica_shift = replicas - all_replicas[:, :, nominal_window][:, :, np.newaxis]
         mean_shift = np.nanmean(shift, axis=0)
         max_shift = np.nanmax(np.abs(shift), axis=0)
         mean_rep = np.nanmean(replica_shift, axis=1)
@@ -570,7 +648,7 @@ def plot_window_scan_summary(
         ax.grid(alpha=0.25)
         ax.legend()
     axes[-1].set_xticks(x)
-    axes[-1].set_xticklabels([window_label(w) for w in windows], rotation=45, ha="right")
+    axes[-1].set_xticklabels([window_label(w) for w in display_windows], rotation=45, ha="right")
     axes[-1].set_xlabel(r"Carbon normalization window in $M_X^2$ (GeV$^2$)")
     fig.suptitle("Method-1 sensitivity to both carbon-control boundaries")
     fig.tight_layout()
@@ -781,6 +859,319 @@ def plot_spectrum_comparison(output: Path, table: pd.DataFrame, module: Any) -> 
         plt.close(fig)
 
 
+
+def plot_cumulative_window_scan(
+    output: Path,
+    module: Any,
+    windows: list[tuple[float, float]],
+    cumulative_edges: list[float],
+    central: dict[str, Any],
+    bootstrap: dict[str, Any],
+) -> None:
+    cut = list(module.CUT_VARIATIONS).index("nominal")
+    indices = [windows.index((0.0, upper)) for upper in cumulative_edges]
+    fig, axes = plt.subplots(len(module.PERIODS), 3, figsize=(17, 11), sharex=True)
+    for row, period in enumerate(module.PERIODS):
+        alpha = central[period]["alpha"][PERIOD_GROUP][:, indices]
+        f1 = central[period]["method1"][PERIOD_GROUP][:, indices, cut]
+        f2 = central[period]["method2"][:, cut]
+        alpha_mean = np.nanmean(alpha, axis=0)
+        f1_mean = np.nanmean(f1, axis=0)
+        delta_mean = np.nanmean(f1 - f2[:, np.newaxis], axis=0)
+
+        alpha_rep = bootstrap[period]["alpha"][PERIOD_GROUP][:, :, indices]
+        f1_rep = bootstrap[period]["method1"][PERIOD_GROUP][:, :, indices, cut]
+        f2_rep = bootstrap[period]["method2"][:, :, cut]
+        alpha_err = np.nanstd(np.nanmean(alpha_rep, axis=1), axis=0, ddof=1)
+        f1_err = np.nanstd(np.nanmean(f1_rep, axis=1), axis=0, ddof=1)
+        delta_err = np.nanstd(np.nanmean(f1_rep - f2_rep[:, :, np.newaxis], axis=1), axis=0, ddof=1)
+
+        axes[row, 0].errorbar(cumulative_edges, alpha_mean, yerr=alpha_err, fmt="o-")
+        axes[row, 1].errorbar(cumulative_edges, f1_mean, yerr=f1_err, fmt="o-")
+        axes[row, 2].errorbar(cumulative_edges, delta_mean, yerr=delta_err, fmt="o-")
+        axes[row, 2].axhline(0.0, linewidth=1)
+        for ax in axes[row]:
+            ax.axvline(0.4, linewidth=1, linestyle="--")
+            ax.grid(alpha=0.25)
+        axes[row, 0].set_ylabel(module.PERIOD_LABELS[period])
+
+    axes[0, 0].set_title(r"Period carbon scale $\alpha_C(0,u)$")
+    axes[0, 1].set_title(r"Mean Method-1 dilution $\langle f_1\rangle$")
+    axes[0, 2].set_title(r"Mean difference $\langle f_1-f_2\rangle$")
+    for ax in axes[-1]:
+        ax.set_xlabel(r"Upper control edge $u$ in $M_X^2$ (GeV$^2$)")
+    fig.suptitle("Dense cumulative carbon-normalization scan with lower edge fixed at zero")
+    fig.tight_layout()
+    fig.savefig(output / "cumulative_upper_edge_scan.png", dpi=180)
+    plt.close(fig)
+
+
+def build_required_transfer_table(
+    module: Any,
+    central: dict[str, Any],
+    bootstrap: dict[str, Any],
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    n_t = len(module.MINUS_TPRIME_BINS_GEV2)
+    for period in module.PERIODS:
+        for bin_index in range(module.NUMBER_OF_BINS):
+            ix, it = divmod(bin_index, n_t)
+            for cut_index, cut in enumerate(module.CUT_VARIATIONS):
+                required_rep = bootstrap[period]["alpha_required"][:, bin_index, cut_index]
+                ratio_rep = bootstrap[period]["transfer_ratio"][:, bin_index, cut_index]
+                rows.append({
+                    "period": period,
+                    "bin_number": bin_index + 1,
+                    "x_index": ix,
+                    "tprime_index": it,
+                    "cut": cut,
+                    "alpha_required": central[period]["alpha_required"][bin_index, cut_index],
+                    "alpha_required_stat_uncertainty": np.nanstd(required_rep, ddof=1),
+                    "required_over_control_alpha": central[period]["transfer_ratio"][bin_index, cut_index],
+                    "required_over_control_stat_uncertainty": np.nanstd(ratio_rep, ddof=1),
+                    "valid_required_fraction": np.mean(np.isfinite(required_rep)),
+                    "valid_ratio_fraction": np.mean(np.isfinite(ratio_rep)),
+                })
+        for cut_index, cut in enumerate(module.CUT_VARIATIONS):
+            kappa_rep = bootstrap[period]["kappa_period"][:, cut_index]
+            rows.append({
+                "period": period,
+                "bin_number": 0,
+                "x_index": -1,
+                "tprime_index": -1,
+                "cut": cut,
+                "alpha_required": np.nan,
+                "alpha_required_stat_uncertainty": np.nan,
+                "required_over_control_alpha": central[period]["kappa_period"][cut_index],
+                "required_over_control_stat_uncertainty": np.nanstd(kappa_rep, ddof=1),
+                "valid_required_fraction": np.nan,
+                "valid_ratio_fraction": np.mean(np.isfinite(kappa_rep)),
+            })
+    return pd.DataFrame(rows)
+
+
+def plot_required_transfer_factor(
+    output: Path,
+    table: pd.DataFrame,
+    module: Any,
+) -> None:
+    selected = table[(table.cut == "nominal") & (table.bin_number > 0)]
+    x = np.arange(1, module.NUMBER_OF_BINS + 1)
+    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(16, 11), sharex=True)
+    for ax, period in zip(axes, module.PERIODS):
+        rows = selected[selected.period == period].sort_values("bin_number")
+        ax.errorbar(
+            x,
+            rows.required_over_control_alpha,
+            yerr=rows.required_over_control_stat_uncertainty,
+            fmt="o",
+            capsize=2,
+            label=r"$\alpha_C^{\rm required}/\alpha_C^{\rm control}$",
+        )
+        summary = table[
+            (table.period == period) & (table.cut == "nominal") & (table.bin_number == 0)
+        ].iloc[0]
+        ax.axhline(summary.required_over_control_alpha, linewidth=1.5, label="Period-integrated transfer factor")
+        ax.axhline(1.0, linewidth=1, linestyle="--")
+        ax.set_ylabel(r"$R_\alpha$")
+        ax.set_title(
+            f"{module.PERIOD_LABELS[period]}: integrated $\\kappa$ = "
+            f"{summary.required_over_control_alpha:.4f} ± "
+            f"{summary.required_over_control_stat_uncertainty:.4f}"
+        )
+        ax.grid(alpha=0.25)
+        ax.legend()
+    axes[-1].set_xlabel("Combined kinematic-bin number")
+    axes[-1].set_xticks(x)
+    fig.suptitle("Signal-window carbon transfer required for Method 1 to reproduce Method 2")
+    fig.tight_layout()
+    fig.savefig(output / "required_carbon_transfer_factor.png", dpi=180)
+    plt.close(fig)
+
+
+def plot_required_transfer_kinematics(
+    output: Path,
+    table: pd.DataFrame,
+    module: Any,
+) -> None:
+    selected = table[(table.cut == "nominal") & (table.bin_number > 0)]
+    fig, axes = plt.subplots(len(module.PERIODS), 2, figsize=(15, 11))
+    for row, period in enumerate(module.PERIODS):
+        rows = selected[selected.period == period]
+        by_x = rows.groupby("x_index").agg(
+            value=("required_over_control_alpha", "mean"),
+            error=("required_over_control_stat_uncertainty", lambda x: float(np.sqrt(np.nansum(np.asarray(x) ** 2)) / max(1, np.count_nonzero(np.isfinite(x))))),
+        )
+        by_t = rows.groupby("tprime_index").agg(
+            value=("required_over_control_alpha", "mean"),
+            error=("required_over_control_stat_uncertainty", lambda x: float(np.sqrt(np.nansum(np.asarray(x) ** 2)) / max(1, np.count_nonzero(np.isfinite(x))))),
+        )
+        axes[row, 0].errorbar(by_x.index + 1, by_x.value, yerr=by_x.error, fmt="o-")
+        axes[row, 1].errorbar(by_t.index + 1, by_t.value, yerr=by_t.error, fmt="o-")
+        for ax in axes[row]:
+            ax.axhline(1.0, linewidth=1, linestyle="--")
+            ax.grid(alpha=0.25)
+        axes[row, 0].set_ylabel(module.PERIOD_LABELS[period])
+    axes[0, 0].set_title(r"Mean $R_\alpha$ by $x_B$ row")
+    axes[0, 1].set_title(r"Mean $R_\alpha$ by $-t'$ column")
+    axes[-1, 0].set_xlabel(r"$x_B$ row index")
+    axes[-1, 1].set_xlabel(r"$-t'$ column index")
+    fig.suptitle("Kinematic structure of the required carbon transfer factor")
+    fig.tight_layout()
+    fig.savefig(output / "required_carbon_transfer_kinematic_dependence.png", dpi=180)
+    plt.close(fig)
+
+
+
+def weighted_linear_fit(x: np.ndarray, y: np.ndarray, sigma: np.ndarray) -> dict[str, float]:
+    finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(sigma) & (sigma > 0)
+    x = x[finite]
+    y = y[finite]
+    sigma = sigma[finite]
+    if x.size < 2:
+        return {"intercept": math.nan, "slope": math.nan, "intercept_uncertainty": math.nan,
+                "slope_uncertainty": math.nan, "chi2": math.nan, "ndf": 0}
+    design = np.column_stack([np.ones_like(x), x - np.mean(x)])
+    weight = 1.0 / sigma**2
+    normal = design.T @ (weight[:, np.newaxis] * design)
+    try:
+        covariance = np.linalg.inv(normal)
+    except np.linalg.LinAlgError:
+        return {"intercept": math.nan, "slope": math.nan, "intercept_uncertainty": math.nan,
+                "slope_uncertainty": math.nan, "chi2": math.nan, "ndf": 0}
+    parameters = covariance @ (design.T @ (weight * y))
+    residual = y - design @ parameters
+    chi2 = float(np.sum((residual / sigma) ** 2))
+    return {
+        "intercept": float(parameters[0]),
+        "slope": float(parameters[1]),
+        "intercept_uncertainty": float(math.sqrt(max(covariance[0, 0], 0.0))),
+        "slope_uncertainty": float(math.sqrt(max(covariance[1, 1], 0.0))),
+        "chi2": chi2,
+        "ndf": int(x.size - 2),
+    }
+
+
+def build_transfer_fit_summary(table: pd.DataFrame, module: Any) -> pd.DataFrame:
+    selected = table[(table.cut == "nominal") & (table.bin_number > 0)].copy()
+    rows: list[dict[str, Any]] = []
+    for period in module.PERIODS:
+        period_rows = selected[selected.period == period]
+        y = period_rows.required_over_control_alpha.to_numpy(float)
+        sigma = period_rows.required_over_control_stat_uncertainty.to_numpy(float)
+        finite = np.isfinite(y) & np.isfinite(sigma) & (sigma > 0)
+        weights = np.zeros_like(sigma)
+        weights[finite] = 1.0 / sigma[finite] ** 2
+        constant = float(np.sum(weights * np.nan_to_num(y)) / np.sum(weights)) if np.sum(weights) > 0 else math.nan
+        constant_error = float(math.sqrt(1.0 / np.sum(weights))) if np.sum(weights) > 0 else math.nan
+        chi2 = float(np.sum(((y[finite] - constant) / sigma[finite]) ** 2)) if np.isfinite(constant) else math.nan
+        xfit = weighted_linear_fit(period_rows.x_index.to_numpy(float), y, sigma)
+        tfit = weighted_linear_fit(period_rows.tprime_index.to_numpy(float), y, sigma)
+        rows.append({
+            "scope": period,
+            "constant_transfer_factor": constant,
+            "constant_uncertainty": constant_error,
+            "constant_chi2": chi2,
+            "constant_ndf": int(np.count_nonzero(finite) - 1),
+            "x_index_slope": xfit["slope"],
+            "x_index_slope_uncertainty": xfit["slope_uncertainty"],
+            "x_fit_chi2": xfit["chi2"],
+            "x_fit_ndf": xfit["ndf"],
+            "tprime_index_slope": tfit["slope"],
+            "tprime_index_slope_uncertainty": tfit["slope_uncertainty"],
+            "tprime_fit_chi2": tfit["chi2"],
+            "tprime_fit_ndf": tfit["ndf"],
+        })
+    all_y = selected.required_over_control_alpha.to_numpy(float)
+    all_sigma = selected.required_over_control_stat_uncertainty.to_numpy(float)
+    finite = np.isfinite(all_y) & np.isfinite(all_sigma) & (all_sigma > 0)
+    weights = np.zeros_like(all_sigma)
+    weights[finite] = 1.0 / all_sigma[finite] ** 2
+    constant = float(np.sum(weights * np.nan_to_num(all_y)) / np.sum(weights)) if np.sum(weights) > 0 else math.nan
+    error = float(math.sqrt(1.0 / np.sum(weights))) if np.sum(weights) > 0 else math.nan
+    chi2 = float(np.sum(((all_y[finite] - constant) / all_sigma[finite]) ** 2)) if np.isfinite(constant) else math.nan
+    rows.append({
+        "scope": "all-periods",
+        "constant_transfer_factor": constant,
+        "constant_uncertainty": error,
+        "constant_chi2": chi2,
+        "constant_ndf": int(np.count_nonzero(finite) - 1),
+        "x_index_slope": math.nan,
+        "x_index_slope_uncertainty": math.nan,
+        "x_fit_chi2": math.nan,
+        "x_fit_ndf": 0,
+        "tprime_index_slope": math.nan,
+        "tprime_index_slope_uncertainty": math.nan,
+        "tprime_fit_chi2": math.nan,
+        "tprime_fit_ndf": 0,
+    })
+    return pd.DataFrame(rows)
+
+
+def build_cumulative_background_comparison(
+    counts: dict[tuple[str, str], ValidationCounts],
+    module: Any,
+    charge_fractions: dict[str, dict[str, float]],
+    spectrum_edges: np.ndarray,
+    cumulative_edges: list[float],
+) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    centers = 0.5 * (spectrum_edges[:-1] + spectrum_edges[1:])
+    nominal_mask = (centers >= 0.0) & (centers < 0.4)
+    for period in module.PERIODS:
+        period_spectra = {
+            target: np.sum(counts[(period, target)].spectrum.astype(float), axis=0)
+            for target in module.TARGETS
+        }
+        alpha = float(ratio(
+            np.sum(period_spectra["NH3"][nominal_mask]),
+            np.sum(period_spectra["C"][nominal_mask]),
+        ))
+        for upper in cumulative_edges:
+            mask = (centers >= 0.0) & (centers < upper)
+            cumulative = {
+                target: np.asarray(np.sum(values[mask]), dtype=float)
+                for target, values in period_spectra.items()
+            }
+            f2 = float(module.method2_equation10_from_counts(cumulative, charge_fractions[period]))
+            five_background = cumulative["NH3"] * (1.0 - f2)
+            carbon_background = alpha * cumulative["C"]
+            rows.append({
+                "period": period,
+                "upper_edge": upper,
+                "nh3_cumulative": cumulative["NH3"],
+                "scaled_carbon_cumulative_background": carbon_background,
+                "five_target_cumulative_background": five_background,
+                "scaled_carbon_over_five_target": float(ratio(carbon_background, five_background)),
+                "method2_cumulative_dilution": f2,
+                "nominal_control_alpha": alpha,
+            })
+    return pd.DataFrame(rows)
+
+
+def plot_cumulative_background_comparison(output: Path, table: pd.DataFrame, module: Any) -> None:
+    fig, axes = plt.subplots(len(module.PERIODS), 2, figsize=(15, 11), sharex=True)
+    for row, period in enumerate(module.PERIODS):
+        selected = table[table.period == period]
+        axes[row, 0].plot(selected.upper_edge, selected.scaled_carbon_cumulative_background, "o-", label="Scaled carbon")
+        axes[row, 0].plot(selected.upper_edge, selected.five_target_cumulative_background, "s-", label="Direct five-target")
+        axes[row, 1].plot(selected.upper_edge, selected.scaled_carbon_over_five_target, "o-")
+        axes[row, 1].axhline(1.0, linewidth=1, linestyle="--")
+        for ax in axes[row]:
+            ax.axvline(0.4, linewidth=1, linestyle="--")
+            ax.grid(alpha=0.25)
+        axes[row, 0].set_ylabel(module.PERIOD_LABELS[period])
+        axes[row, 0].legend()
+    axes[0, 0].set_title("Cumulative inferred background from 0 to upper edge")
+    axes[0, 1].set_title("Scaled carbon / direct five-target background")
+    axes[-1, 0].set_xlabel(r"Upper edge in $M_X^2$ (GeV$^2$)")
+    axes[-1, 1].set_xlabel(r"Upper edge in $M_X^2$ (GeV$^2$)")
+    fig.suptitle("Stable cumulative background comparison; narrow-bin nonlinear ratios removed")
+    fig.tight_layout()
+    fig.savefig(output / "cumulative_background_comparison.png", dpi=180)
+    plt.close(fig)
+
+
 def build_flat_results(
     module: Any,
     windows: list[tuple[float, float]],
@@ -823,6 +1214,10 @@ def build_flat_results(
                             "difference_stat_uncertainty": np.nanstd(rep_delta, ddof=1),
                             "alpha": central[period]["alpha"][grouping][bin_index, window_index],
                             "alpha_stat_uncertainty": np.nanstd(bootstrap[period]["alpha"][grouping][:, bin_index, window_index], ddof=1),
+                            "alpha_required_signal": central[period]["alpha_required"][bin_index, cut_index],
+                            "alpha_required_signal_stat_uncertainty": np.nanstd(bootstrap[period]["alpha_required"][:, bin_index, cut_index], ddof=1),
+                            "required_over_nominal_period_alpha": central[period]["transfer_ratio"][bin_index, cut_index],
+                            "required_over_nominal_period_alpha_stat_uncertainty": np.nanstd(bootstrap[period]["transfer_ratio"][:, bin_index, cut_index], ddof=1),
                         })
     return pd.DataFrame(rows)
 
@@ -876,6 +1271,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--spectrum-min", type=float, default=DEFAULT_SPECTRUM_RANGE[0])
     parser.add_argument("--spectrum-max", type=float, default=DEFAULT_SPECTRUM_RANGE[1])
     parser.add_argument("--spectrum-bins", type=int, default=DEFAULT_SPECTRUM_BINS)
+    parser.add_argument("--cumulative-upper-min", type=float, default=DEFAULT_CUMULATIVE_UPPER_MIN)
+    parser.add_argument("--cumulative-upper-max", type=float, default=DEFAULT_CUMULATIVE_UPPER_MAX)
+    parser.add_argument("--cumulative-upper-step", type=float, default=DEFAULT_CUMULATIVE_UPPER_STEP)
     parser.add_argument("--input", action="append", default=[],
                         help="Override standard input as period:target=/path.root")
     parser.add_argument("--run-isr", action="store_true",
@@ -912,6 +1310,7 @@ def run_one_variant(
     charge_fractions: dict[str, dict[str, float]],
     args: argparse.Namespace,
     windows: list[tuple[float, float]],
+    cumulative_edges: list[float],
 ) -> None:
     root = args.output_dir / label
     tables = root / "tables"
@@ -943,10 +1342,15 @@ def run_one_variant(
     closure = low_region_closure_table(counts, module, DEFAULT_LOW_REGIONS)
     closure.to_csv(tables / "low_mx2_transfer_closure.csv", index=False)
 
-    spectrum = build_spectrum_comparison(
-        counts, module, charge_fractions, spectrum_edges, (0.0, 0.4)
+    transfer = build_required_transfer_table(module, central, bootstrap)
+    transfer.to_csv(tables / "required_carbon_transfer_factor.csv", index=False)
+    transfer_fit = build_transfer_fit_summary(transfer, module)
+    transfer_fit.to_csv(tables / "required_carbon_transfer_fit_summary.csv", index=False)
+
+    cumulative_background = build_cumulative_background_comparison(
+        counts, module, charge_fractions, spectrum_edges, cumulative_edges
     )
-    spectrum.to_csv(tables / "background_shape_comparison.csv", index=False)
+    cumulative_background.to_csv(tables / "cumulative_background_comparison.csv", index=False)
 
     write_summary_json(metadata / "summary.json", module, windows, flat)
     write_json(metadata / "configuration.json", json_safe({
@@ -961,14 +1365,18 @@ def run_one_variant(
         "low_mx2_closure_regions": DEFAULT_LOW_REGIONS,
         "spectrum_range": [args.spectrum_min, args.spectrum_max],
         "spectrum_bins": args.spectrum_bins,
+        "cumulative_upper_edges": cumulative_edges,
         "inputs": {p: {t: str(v) for t, v in d.items()} for p, d in input_paths.items()},
     }))
 
     plot_window_scan_summary(plots, module, windows, central, bootstrap)
+    plot_cumulative_window_scan(plots, module, windows, cumulative_edges, central, bootstrap)
     plot_grouping_comparison(plots, module, windows, central, bootstrap)
     plot_method_difference_summary(plots, module, windows, central, bootstrap)
     plot_low_region_closure(plots, closure, module)
-    plot_spectrum_comparison(plots, spectrum, module)
+    plot_required_transfer_factor(plots, transfer, module)
+    plot_required_transfer_kinematics(plots, transfer, module)
+    plot_cumulative_background_comparison(plots, cumulative_background, module)
 
     print(f"[{label}] Validation products written to {root.resolve()}")
 
@@ -984,7 +1392,10 @@ def main() -> int:
 
     module_path = args.dilution_module.resolve()
     module = import_production_module(module_path)
-    windows = canonical_windows(args.control_window)
+    cumulative_edges = cumulative_upper_edges(
+        args.cumulative_upper_min, args.cumulative_upper_max, args.cumulative_upper_step
+    )
+    windows = canonical_windows(args.control_window, cumulative_edges)
     charge_fractions = module.load_charge_fractions(args.charge_fractions_json)
     module.validate_fraction_table(charge_fractions)
 
@@ -992,7 +1403,7 @@ def main() -> int:
     standard_cuts = resolve_cut_json(module, args, isr=False)
     run_one_variant(
         "nominal", module, module_path, standard_inputs, standard_cuts,
-        charge_fractions, args, windows
+        charge_fractions, args, windows, cumulative_edges
     )
 
     if args.run_isr:
@@ -1000,7 +1411,7 @@ def main() -> int:
         isr_cuts = resolve_cut_json(module, args, isr=True)
         run_one_variant(
             "isr", module, module_path, isr_inputs, isr_cuts,
-            charge_fractions, args, windows
+            charge_fractions, args, windows, cumulative_edges
         )
 
     print("\nCarbon-normalization validation complete.")
