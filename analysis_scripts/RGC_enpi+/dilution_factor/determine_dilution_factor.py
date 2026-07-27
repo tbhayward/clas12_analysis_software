@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v8.py
+determine_dilution_factor_v13.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -505,6 +505,75 @@ def resolve_branch(tree: uproot.behaviors.TTree.TTree, aliases: Iterable[str]) -
     raise RuntimeError(
         f"None of the branch aliases {tuple(aliases)} exists. "
         f"Available branches include: {sorted(available)[:80]}"
+    )
+
+
+def resolve_tree(
+    root_file: uproot.reading.ReadOnlyDirectory,
+    requested_name: str,
+    path: Path,
+):
+    """
+    Resolve a ROOT tree robustly.
+
+    Some external-ISR files are written with key metadata for which
+    ``requested_name in root_file`` is false even though
+    ``root_file.keys()`` visibly contains the requested tree. Direct lookup
+    still succeeds in those files, so membership testing is not used as the
+    gatekeeper.
+    """
+    lookup_names: list[str] = [requested_name]
+
+    for key in root_file.keys():
+        key_text = str(key)
+        base_name = key_text.split(";")[0]
+        if base_name == requested_name:
+            lookup_names.extend((key_text, base_name))
+        # endif
+    # endfor
+
+    seen: set[str] = set()
+    lookup_errors: list[str] = []
+    for name in lookup_names:
+        if name in seen:
+            continue
+        # endif
+        seen.add(name)
+        try:
+            obj = root_file[name]
+        except Exception as exc:
+            lookup_errors.append(f"{name!r}: {exc}")
+            continue
+        # endtry
+
+        if hasattr(obj, "arrays") and hasattr(obj, "keys"):
+            return obj
+        # endif
+    # endfor
+
+    tree_like: list[tuple[str, Any]] = []
+    for key in root_file.keys():
+        key_text = str(key)
+        try:
+            obj = root_file[key_text]
+        except Exception:
+            continue
+        # endtry
+        if hasattr(obj, "arrays") and hasattr(obj, "keys"):
+            tree_like.append((key_text, obj))
+        # endif
+    # endfor
+
+    if len(tree_like) == 1:
+        return tree_like[0][1]
+    # endif
+
+    available = [str(key) for key in root_file.keys()]
+    details = "; ".join(lookup_errors[:5])
+    raise RuntimeError(
+        f"Tree {requested_name!r} not found in {path}. "
+        f"Available keys: {available}. "
+        f"Direct-lookup diagnostics: {details}"
     )
 
 
@@ -1377,14 +1446,7 @@ def load_one_dataset(spec: DatasetSpec) -> LoadedDataset:
     # endif
 
     with uproot.open(path) as root_file:
-        if spec.tree_name not in root_file:
-            available = [str(key).split(";")[0] for key in root_file.keys()]
-            raise RuntimeError(
-                f"Tree {spec.tree_name!r} not found in {path}. "
-                f"Available keys: {available}"
-            )
-        # endif
-        tree = root_file[spec.tree_name]
+        tree = resolve_tree(root_file, spec.tree_name, path)
         x_branch = resolve_branch(tree, BRANCH_ALIASES["xB"])
         tprime_branch = resolve_branch(tree, BRANCH_ALIASES["tprime"])
         mx2_branch = resolve_branch(tree, BRANCH_ALIASES["Mx2"])
