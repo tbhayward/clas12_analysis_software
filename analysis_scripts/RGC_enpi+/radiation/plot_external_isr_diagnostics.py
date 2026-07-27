@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_external_isr_diagnostics_v4.py
+plot_external_isr_diagnostics_v5.py
 
 Produce an analysis-note-oriented diagnostic package for the additional
 external-ISR transformation applied to RGC exclusive e n pi+ data.
@@ -39,7 +39,13 @@ Outputs
       Period-by-period external photon energy and fractional migration checks.
 
   07_survival_summary.png
-      Input/output survival, endpoint-cap counts, and analysis-cut migration.
+      Tabulated input/output survival and analysis-cut migration.
+
+  08_mean_migration_vs_kinematics.png
+      Mean Delta Q2 and Delta xB versus xB, Q2, and |t|.
+
+  09_removal_fraction_maps.png
+      Removed-event fraction in (xB,Q2) and (xB,|t|).
 
   external_isr_summary.json
       Machine-readable statistics suitable for analysis-note prose.
@@ -49,15 +55,15 @@ Outputs
 
 Typical usage
 -------------
-  python3 plot_external_isr_diagnostics_v4.py
+  python3 plot_external_isr_diagnostics_v5.py
 
 Explicit directory and target:
-  python3 plot_external_isr_diagnostics_v4.py \
+  python3 plot_external_isr_diagnostics_v5.py \
       --input-dir /work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/paper_versions \
       --target NH3
 
 Representative-period note plots only (while still summarizing all periods):
-  python3 plot_external_isr_diagnostics_v4.py --representative-period fa22
+  python3 plot_external_isr_diagnostics_v5.py --representative-period fa22
 
 Notes
 -----
@@ -67,8 +73,6 @@ Notes
   and y < 0.8. They are configurable from the command line.
 * The event survival fraction is taken from the provenance JSON when present,
   because events rejected as nonphysical do not appear in the output tree.
-* Unless --output-dir is supplied, outputs are written beneath
-  ./output/external_isr_diagnostics/ relative to the launch directory.
 """
 
 from __future__ import annotations
@@ -124,6 +128,7 @@ class PairData:
     removed_entries: int
     endpoint_caps: int
     derived: dict[str, np.ndarray]
+    full_before: dict[str, np.ndarray]
 
 
 def parse_args() -> argparse.Namespace:
@@ -163,6 +168,8 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--dpi", type=int, default=180)
+    parser.add_argument("--relative-t-min", type=float, default=0.2, help="Minimum |t| (GeV^2) used for relative-t diagnostics.")
+    parser.add_argument("--relative-x-min", type=float, default=0.1, help="Minimum x_B used for relative-x diagnostics.")
     parser.add_argument(
         "--workers",
         type=int,
@@ -306,6 +313,7 @@ def deterministic_subsample(data: PairData, maximum: int) -> PairData:
         removed_entries=data.removed_entries,
         endpoint_caps=data.endpoint_caps,
         derived={name: values[idx] for name, values in data.derived.items()},
+        full_before=data.full_before,
     )
 
 
@@ -347,7 +355,16 @@ def load_pair(pair: FilePair, tree_name: str, max_events: int) -> PairData:
             provenance_name=provenance.get("input_tree"),
         )
         require_branches(before_tree, before_branches, pair.before)
-        before = safe_take_source(before_tree, entries, before_branches)
+        # Read the source branches once. The matched arrays support event-by-event
+        # migration plots, while the retained full arrays permit true removal maps.
+        before_all = {
+            name: np.asarray(values)
+            for name, values in before_tree.arrays(before_branches, library="np").items()
+        }
+        if entries.size and (entries.min() < 0 or entries.max() >= before_tree.num_entries):
+            raise RuntimeError(f"external_radiation_entry is out of range for {pair.before}")
+        before = {name: values[entries] for name, values in before_all.items()}
+        full_before = {name: before_all[name] for name in ("Q2", "W", "x", "y", "t")}
         input_entries_tree = int(before_tree.num_entries)
 
     input_entries = int(provenance.get("input_entries", input_entries_tree))
@@ -385,6 +402,7 @@ def load_pair(pair: FilePair, tree_name: str, max_events: int) -> PairData:
         removed_entries=removed,
         endpoint_caps=endpoint_caps,
         derived={},
+        full_before=full_before,
     )
     loaded = deterministic_subsample(loaded, max_events)
     cache_derived_quantities(loaded)
@@ -493,24 +511,30 @@ def annotate_stats(ax: plt.Axes, values: np.ndarray, unit: str = "") -> None:
 
 
 def plot_beam_energy(data_list: list[PairData], output: Path, dpi: int) -> None:
-    nominal = combined_arrays(data_list, "after", "beam_nominal")
     internal = combined_arrays(data_list, "after", "beam_internal")
     external = combined_arrays(data_list, "after", "effective_beam_energy_externalISR")
 
     fig, ax = plt.subplots(figsize=(8.2, 5.6))
     lo = max(0.0, min(np.percentile(internal, 0.1), np.percentile(external, 0.1)) - 0.1)
-    hi = max(nominal) + 0.03
+    hi = max(PERIOD_BEAM_ENERGIES[d.pair.period] for d in data_list) + 0.03
     bins = np.linspace(lo, hi, 170)
     hist_step(
         ax,
-        [nominal, internal, external],
-        ["Nominal beam", "After internal ISR", "After internal + external ISR"],
+        [internal, external],
+        ["After internal ISR", "After internal + external ISR"],
         bins,
         density=True,
     )
+    for i, data in enumerate(data_list):
+        ax.axvline(
+            PERIOD_BEAM_ENERGIES[data.pair.period],
+            linestyle="--",
+            linewidth=1.2,
+            label="Nominal beam energy" if i == 0 else None,
+        )
     ax.set_yscale("log")
     ax.set_xlabel("Effective incident-electron energy (GeV)")
-    ax.set_ylabel("Normalized event density")
+    ax.set_ylabel("Probability density (GeV$^{-1}$)")
     ax.set_title(f"{data_list[0].pair.target}: beam-energy evolution")
     ax.legend()
     ax.grid(alpha=0.25)
@@ -531,9 +555,19 @@ def plot_external_energy(data_list: list[PairData], output: Path, dpi: int) -> N
     ax.set_xlabel(r"Additional external-radiation energy $E_{\gamma}^{\rm ext}$ (GeV)")
     ax.set_ylabel("Events")
     ax.set_title(f"{data_list[0].pair.target}: sampled external ISR")
-    annotate_stats(ax, arr, " GeV")
+    stats = (
+        f"Mean = {np.mean(arr):.4g} GeV\n"
+        f"RMS = {np.std(arr):.4g} GeV\n"
+        f"90th percentile = {np.percentile(arr, 90):.4g} GeV\n"
+        f"99th percentile = {np.percentile(arr, 99):.4g} GeV"
+    )
+    ax.text(
+        0.98, 0.96, stats, transform=ax.transAxes, ha="right", va="top", fontsize=9,
+        bbox={"boxstyle": "round", "facecolor": "white", "alpha": 0.85},
+    )
     thresholds = (0.05, 0.10, 0.25, 0.50)
-    lines = [f"P(Eγext > {int(t*1000)} MeV) = {np.mean(arr > t):.3%}" for t in thresholds]
+    lines = [rf"P($E_\gamma^{{\rm ext}}$ < 1 MeV) = {np.mean(arr < 0.001):.3%}"]
+    lines += [rf"P($E_\gamma^{{\rm ext}}$ > {int(t*1000)} MeV) = {np.mean(arr > t):.3%}" for t in thresholds]
     ax.text(
         0.98,
         0.60,
@@ -565,6 +599,7 @@ def plot_absolute_migrations(data: PairData, output: Path, dpi: int) -> None:
         lo, hi = symmetric_limits(values)
         ax.hist(finite(values), bins=np.linspace(lo, hi, 120), histtype="step", linewidth=1.3)
         ax.axvline(0.0, linestyle="--", linewidth=1.0)
+        ax.set_yscale("log")
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Events")
         ax.grid(alpha=0.25)
@@ -578,21 +613,24 @@ def plot_absolute_migrations(data: PairData, output: Path, dpi: int) -> None:
     plt.close(fig)
 
 
-def plot_fractional_migrations(data: PairData, output: Path, dpi: int) -> None:
-    values = {
-        "Q2": 100.0 * fractional_delta(data, "Q2"),
-        "W": 100.0 * fractional_delta(data, "W"),
-        "x": 100.0 * fractional_delta(data, "x"),
-        "t": 100.0 * fractional_delta(data, "t", absolute_denominator=True),
-        # Mx2 can cross zero, so display Delta Mx2 rather than a singular ratio.
-        "Mx2": delta(data, "Mx2"),
-        "DepA": 100.0 * fractional_delta(data, "DepA"),
-    }
+def plot_fractional_migrations(data: PairData, output: Path, args: argparse.Namespace) -> None:
+    q2 = 100.0 * fractional_delta(data, "Q2")
+    w = 100.0 * fractional_delta(data, "W")
+    x = 100.0 * fractional_delta(data, "x")
+    t = 100.0 * fractional_delta(data, "t", absolute_denominator=True)
+    depa = 100.0 * fractional_delta(data, "DepA")
+
+    x_before = np.asarray(data.before["x"], dtype=float)
+    t_before = np.asarray(data.before["t"], dtype=float)
+    x = np.where(x_before >= args.relative_x_min, x, np.nan)
+    t = np.where(np.abs(t_before) >= args.relative_t_min, t, np.nan)
+
+    values = {"Q2": q2, "W": w, "x": x, "t": t, "Mx2": delta(data, "Mx2"), "DepA": depa}
     specs = [
         ("Q2", r"$100\,\Delta Q^2/Q^2$ (%)"),
         ("W", r"$100\,\Delta W/W$ (%)"),
-        ("x", r"$100\,\Delta x_B/x_B$ (%)"),
-        ("t", r"$100\,\Delta t/|t|$ (%)"),
+        ("x", rf"$100\,\Delta x_B/x_B$ (%)  ($x_B\geq {args.relative_x_min:g}$)"),
+        ("t", rf"$100\,\Delta t/|t|$ (%)  ($|t|\geq {args.relative_t_min:g}$ GeV$^2$)"),
         ("Mx2", r"$\Delta M_X^2$ (GeV$^2$)"),
         ("DepA", r"$100\,\Delta D_A/D_A$ (%)"),
     ]
@@ -602,6 +640,7 @@ def plot_fractional_migrations(data: PairData, output: Path, dpi: int) -> None:
         lo, hi = symmetric_limits(arr)
         ax.hist(finite(arr), bins=np.linspace(lo, hi, 120), histtype="step", linewidth=1.3)
         ax.axvline(0.0, linestyle="--", linewidth=1.0)
+        ax.set_yscale("log")
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Events")
         ax.grid(alpha=0.25)
@@ -611,7 +650,7 @@ def plot_fractional_migrations(data: PairData, output: Path, dpi: int) -> None:
         y=0.995,
     )
     fig.tight_layout()
-    fig.savefig(output, dpi=dpi)
+    fig.savefig(output, dpi=args.dpi)
     plt.close(fig)
 
 
@@ -632,6 +671,7 @@ def plot_correlations(data: PairData, output: Path, dpi: int) -> None:
         ax.plot([lo, hi], [lo, hi], linestyle="--", linewidth=1.0)
         ax.set_xlim(lo, hi)
         ax.set_ylim(lo, hi)
+        ax.set_aspect("equal", adjustable="box")
         ax.set_xlabel(f"Internal ISR: {label}")
         ax.set_ylabel(f"Internal + external ISR: {label}")
         fig.colorbar(h[3], ax=ax, label="Events")
@@ -678,68 +718,147 @@ def plot_period_comparison(data_list: list[PairData], output: Path, dpi: int) ->
 
 
 def cut_migration_counts(data: PairData, args: argparse.Namespace) -> dict[str, int]:
-    before_mask = analysis_mask(data.before, args.q2_min, args.w_min, args.y_max)
+    before_full_mask = analysis_mask(data.full_before, args.q2_min, args.w_min, args.y_max)
+    before_matched_mask = analysis_mask(data.before, args.q2_min, args.w_min, args.y_max)
     after_mask = analysis_mask(data.after, args.q2_min, args.w_min, args.y_max)
     return {
-        "before_pass": int(np.count_nonzero(before_mask)),
+        "before_pass": int(np.count_nonzero(before_full_mask)),
         "after_pass": int(np.count_nonzero(after_mask)),
-        "pass_to_fail": int(np.count_nonzero(before_mask & ~after_mask)),
-        "fail_to_pass": int(np.count_nonzero(~before_mask & after_mask)),
-        "pass_both": int(np.count_nonzero(before_mask & after_mask)),
+        "pass_to_fail_among_survivors": int(np.count_nonzero(before_matched_mask & ~after_mask)),
+        "fail_to_pass_among_survivors": int(np.count_nonzero(~before_matched_mask & after_mask)),
+        "pass_both": int(np.count_nonzero(before_matched_mask & after_mask)),
     }
 
 
 def plot_survival(data_list: list[PairData], output: Path, args: argparse.Namespace) -> None:
-    labels = [PERIOD_LABELS[d.pair.period] for d in data_list]
-    input_counts = np.array([d.input_entries for d in data_list], dtype=float)
-    output_counts = np.array([d.output_entries for d in data_list], dtype=float)
-    survival = 100.0 * output_counts / input_counts
-    cut_counts = [cut_migration_counts(d, args) for d in data_list]
-    before_cut = np.array([item["before_pass"] for item in cut_counts], dtype=float)
-    after_cut = np.array([item["after_pass"] for item in cut_counts], dtype=float)
-    cut_ratio = np.divide(100.0 * after_cut, before_cut, out=np.full_like(after_cut, np.nan), where=before_cut > 0)
+    rows: list[list[str]] = []
+    for data in data_list:
+        cuts = cut_migration_counts(data, args)
+        survival = 100.0 * data.output_entries / data.input_entries
+        cut_retention = 100.0 * cuts["after_pass"] / cuts["before_pass"] if cuts["before_pass"] else float("nan")
+        rows.append([
+            PERIOD_LABELS[data.pair.period],
+            f"{data.input_entries:,}",
+            f"{data.output_entries:,}",
+            f"{data.removed_entries:,}",
+            f"{survival:.3f}%",
+            f"{cuts['before_pass']:,}",
+            f"{cuts['after_pass']:,}",
+            f"{cut_retention:.3f}%",
+        ])
 
-    x = np.arange(len(data_list))
-    width = 0.36
-    fig, axes = plt.subplots(1, 2, figsize=(12.4, 5.0))
-
-    axes[0].bar(x - width / 2, input_counts, width, label="Input ISR entries")
-    axes[0].bar(x + width / 2, output_counts, width, label="Surviving external-ISR entries")
-    axes[0].set_xticks(x, labels)
-    axes[0].set_ylabel("Events")
-    axes[0].set_title("Tree-level survival")
-    axes[0].legend()
-    axes[0].grid(axis="y", alpha=0.25)
-    for i, value in enumerate(survival):
-        axes[0].text(i, output_counts[i], f"{value:.3f}%", ha="center", va="bottom", fontsize=9)
-
-    axes[1].bar(x - width / 2, before_cut, width, label="Pass before")
-    axes[1].bar(x + width / 2, after_cut, width, label="Pass after")
-    axes[1].set_xticks(x, labels)
-    axes[1].set_ylabel("Events")
-    axes[1].set_title(
-        rf"DIS-cut migration: $Q^2>{args.q2_min:g}$ GeV$^2$, $W>{args.w_min:g}$ GeV, $y<{args.y_max:g}$"
+    fig, ax = plt.subplots(figsize=(13.8, 3.8))
+    ax.axis("off")
+    columns = [
+        "Period", "Input ISR", "Surviving", "Removed", "Tree survival",
+        "Pass DIS before", "Pass DIS after", "DIS retention",
+    ]
+    table = ax.table(cellText=rows, colLabels=columns, loc="center", cellLoc="center")
+    table.auto_set_font_size(False)
+    table.set_fontsize(9)
+    table.scale(1.0, 1.7)
+    ax.set_title(
+        rf"{data_list[0].pair.target}: external-ISR survival and DIS-cut migration "
+        rf"($Q^2>{args.q2_min:g}$ GeV$^2$, $W>{args.w_min:g}$ GeV, $y<{args.y_max:g}$)",
+        pad=18,
     )
-    axes[1].legend()
-    axes[1].grid(axis="y", alpha=0.25)
-    for i, value in enumerate(cut_ratio):
-        axes[1].text(i, after_cut[i], f"{value:.3f}%", ha="center", va="bottom", fontsize=9)
-
-    fig.suptitle(f"{data_list[0].pair.target}: external-ISR event survival and cut migration")
     fig.tight_layout()
-    fig.savefig(output, dpi=args.dpi)
+    fig.savefig(output, dpi=args.dpi, bbox_inches="tight")
+    plt.close(fig)
+
+
+
+def binned_mean(x: np.ndarray, y: np.ndarray, bins: int = 10) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    valid = np.isfinite(x) & np.isfinite(y)
+    x = np.asarray(x, dtype=float)[valid]
+    y = np.asarray(y, dtype=float)[valid]
+    if x.size == 0:
+        return np.array([]), np.array([]), np.array([])
+    edges = np.unique(np.quantile(x, np.linspace(0.0, 1.0, bins + 1)))
+    if edges.size < 2:
+        return np.array([]), np.array([]), np.array([])
+    centers, means, errors = [], [], []
+    for i in range(edges.size - 1):
+        mask = (x >= edges[i]) & (x < edges[i + 1] if i < edges.size - 2 else x <= edges[i + 1])
+        if np.count_nonzero(mask) < 2:
+            continue
+        centers.append(float(np.mean(x[mask])))
+        means.append(float(np.mean(y[mask])))
+        errors.append(float(np.std(y[mask]) / math.sqrt(np.count_nonzero(mask))))
+    return np.asarray(centers), np.asarray(means), np.asarray(errors)
+
+
+def plot_mean_migration_vs_kinematics(data: PairData, output: Path, dpi: int) -> None:
+    xvars = [
+        ("x", np.asarray(data.before["x"], dtype=float), r"Internal ISR: $x_B$"),
+        ("Q2", np.asarray(data.before["Q2"], dtype=float), r"Internal ISR: $Q^2$ (GeV$^2$)"),
+        ("t", np.abs(np.asarray(data.before["t"], dtype=float)), r"Internal ISR: $|t|$ (GeV$^2$)"),
+    ]
+    yvars = [
+        (delta(data, "Q2"), r"$\langle\Delta Q^2\rangle$ (GeV$^2$)"),
+        (delta(data, "x"), r"$\langle\Delta x_B\rangle$"),
+    ]
+    fig, axes = plt.subplots(2, 3, figsize=(14.2, 8.0))
+    for row, (y, ylabel) in enumerate(yvars):
+        for col, (_, x, xlabel) in enumerate(xvars):
+            ax = axes[row, col]
+            centers, means, errors = binned_mean(x, y, bins=10)
+            ax.errorbar(centers, means, yerr=errors, marker="o", linestyle="-")
+            ax.axhline(0.0, linestyle="--", linewidth=1.0)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(ylabel)
+            ax.grid(alpha=0.25)
+    fig.suptitle(
+        f"{PERIOD_LABELS[data.pair.period]} {data.pair.target}: mean external-ISR migration versus kinematics",
+        y=0.995,
+    )
+    fig.tight_layout()
+    fig.savefig(output, dpi=dpi)
+    plt.close(fig)
+
+
+def plot_removal_fraction_maps(data_list: list[PairData], output: Path, dpi: int) -> None:
+    full_x = np.concatenate([np.asarray(d.full_before["x"], dtype=float) for d in data_list])
+    full_q2 = np.concatenate([np.asarray(d.full_before["Q2"], dtype=float) for d in data_list])
+    full_t = np.concatenate([np.abs(np.asarray(d.full_before["t"], dtype=float)) for d in data_list])
+    surviving_x = np.concatenate([np.asarray(d.before["x"], dtype=float) for d in data_list])
+    surviving_q2 = np.concatenate([np.asarray(d.before["Q2"], dtype=float) for d in data_list])
+    surviving_t = np.concatenate([np.abs(np.asarray(d.before["t"], dtype=float)) for d in data_list])
+
+    x_edges = np.linspace(*np.percentile(full_x[np.isfinite(full_x)], [0.2, 99.8]), 31)
+    q2_edges = np.linspace(*np.percentile(full_q2[np.isfinite(full_q2)], [0.2, 99.8]), 31)
+    t_edges = np.linspace(*np.percentile(full_t[np.isfinite(full_t)], [0.2, 99.8]), 31)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+    for ax, full_y, surviving_y, y_edges, ylabel in [
+        (axes[0], full_q2, surviving_q2, q2_edges, r"Internal ISR: $Q^2$ (GeV$^2$)"),
+        (axes[1], full_t, surviving_t, t_edges, r"Internal ISR: $|t|$ (GeV$^2$)"),
+    ]:
+        h_all, _, _ = np.histogram2d(full_x, full_y, bins=(x_edges, y_edges))
+        h_surv, _, _ = np.histogram2d(surviving_x, surviving_y, bins=(x_edges, y_edges))
+        frac = np.full_like(h_all, np.nan, dtype=float)
+        valid = h_all >= 50
+        frac[valid] = 100.0 * (1.0 - h_surv[valid] / h_all[valid])
+        mesh = ax.pcolormesh(x_edges, y_edges, frac.T, shading="auto")
+        ax.set_xlabel(r"Internal ISR: $x_B$")
+        ax.set_ylabel(ylabel)
+        fig.colorbar(mesh, ax=ax, label="Removed events (%)")
+    fig.suptitle(f"{data_list[0].pair.target}: kinematic dependence of external-ISR event removal")
+    fig.tight_layout()
+    fig.savefig(output, dpi=dpi)
     plt.close(fig)
 
 
 def summarize_array(values: np.ndarray) -> dict[str, float]:
     arr = finite(values)
     if arr.size == 0:
-        return {key: float("nan") for key in ("mean", "std", "median", "p05", "p95", "p99", "min", "max")}
+        return {key: float("nan") for key in ("mean", "std", "median", "p05", "p90", "p95", "p99", "min", "max")}
     return {
         "mean": float(np.mean(arr)),
         "std": float(np.std(arr)),
         "median": float(np.median(arr)),
         "p05": float(np.percentile(arr, 5)),
+        "p90": float(np.percentile(arr, 90)),
         "p95": float(np.percentile(arr, 95)),
         "p99": float(np.percentile(arr, 99)),
         "min": float(np.min(arr)),
@@ -751,8 +870,10 @@ def period_summary(data: PairData, args: argparse.Namespace) -> dict[str, Any]:
     ext = np.asarray(data.after["Egamma_external"], dtype=float)
     d_q2 = 100.0 * fractional_delta(data, "Q2")
     d_x = 100.0 * fractional_delta(data, "x")
+    d_x = np.where(np.asarray(data.before["x"], dtype=float) >= args.relative_x_min, d_x, np.nan)
     d_w = 100.0 * fractional_delta(data, "W")
     d_t = 100.0 * fractional_delta(data, "t", absolute_denominator=True)
+    d_t = np.where(np.abs(np.asarray(data.before["t"], dtype=float)) >= args.relative_t_min, d_t, np.nan)
     d_mx2 = delta(data, "Mx2")
     d_depa = 100.0 * fractional_delta(data, "DepA")
     cuts = cut_migration_counts(data, args)
@@ -770,6 +891,7 @@ def period_summary(data: PairData, args: argparse.Namespace) -> dict[str, Any]:
         "endpoint_capped_entries": data.endpoint_caps,
         "external_photon_energy_GeV": summarize_array(ext),
         "external_photon_tail_fractions": {
+            "below_1_MeV": float(np.mean(ext < 0.001)),
             "above_50_MeV": float(np.mean(ext > 0.050)),
             "above_100_MeV": float(np.mean(ext > 0.100)),
             "above_250_MeV": float(np.mean(ext > 0.250)),
@@ -821,6 +943,7 @@ def write_summary(data_list: list[PairData], output_dir: Path, args: argparse.Na
         ),
         "external_photon_energy_GeV": summarize_array(all_ext),
         "external_photon_tail_fractions": {
+            "below_1_MeV": float(np.mean(all_ext < 0.001)),
             "above_50_MeV": float(np.mean(all_ext > 0.050)),
             "above_100_MeV": float(np.mean(all_ext > 0.100)),
             "above_250_MeV": float(np.mean(all_ext > 0.250)),
@@ -857,8 +980,8 @@ def write_summary(data_list: list[PairData], output_dir: Path, args: argparse.Na
         "rms_delta_xB_over_xB_percent",
         "before_DIS_cut_entries",
         "after_DIS_cut_entries",
-        "pass_to_fail",
-        "fail_to_pass",
+        "pass_to_fail_among_survivors",
+        "fail_to_pass_among_survivors",
     ]
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -881,8 +1004,8 @@ def write_summary(data_list: list[PairData], output_dir: Path, args: argparse.Na
                 "rms_delta_xB_over_xB_percent": item["fractional_migrations_percent"]["xB"]["std"],
                 "before_DIS_cut_entries": item["analysis_cut_counts"]["before_pass"],
                 "after_DIS_cut_entries": item["analysis_cut_counts"]["after_pass"],
-                "pass_to_fail": item["analysis_cut_counts"]["pass_to_fail"],
-                "fail_to_pass": item["analysis_cut_counts"]["fail_to_pass"],
+                "pass_to_fail_among_survivors": item["analysis_cut_counts"]["pass_to_fail_among_survivors"],
+                "fail_to_pass_among_survivors": item["analysis_cut_counts"]["fail_to_pass_among_survivors"],
             })
 
 
@@ -902,10 +1025,12 @@ def _plot_job(job: str) -> str:
         "01": lambda: plot_beam_energy(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "01_beam_energy_evolution.png", _PLOT_ARGS.dpi),
         "02": lambda: plot_external_energy(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "02_external_photon_energy.png", _PLOT_ARGS.dpi),
         "03": lambda: plot_absolute_migrations(_PLOT_REPRESENTATIVE, _PLOT_OUTPUT_DIR / "03_absolute_kinematic_migrations.png", _PLOT_ARGS.dpi),
-        "04": lambda: plot_fractional_migrations(_PLOT_REPRESENTATIVE, _PLOT_OUTPUT_DIR / "04_fractional_kinematic_migrations.png", _PLOT_ARGS.dpi),
+        "04": lambda: plot_fractional_migrations(_PLOT_REPRESENTATIVE, _PLOT_OUTPUT_DIR / "04_fractional_kinematic_migrations.png", _PLOT_ARGS),
         "05": lambda: plot_correlations(_PLOT_REPRESENTATIVE, _PLOT_OUTPUT_DIR / "05_kinematic_correlations.png", _PLOT_ARGS.dpi),
         "06": lambda: plot_period_comparison(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "06_period_comparison.png", _PLOT_ARGS.dpi),
         "07": lambda: plot_survival(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "07_survival_summary.png", _PLOT_ARGS),
+        "08": lambda: plot_mean_migration_vs_kinematics(_PLOT_REPRESENTATIVE, _PLOT_OUTPUT_DIR / "08_mean_migration_vs_kinematics.png", _PLOT_ARGS.dpi),
+        "09": lambda: plot_removal_fraction_maps(_PLOT_DATA_LIST, _PLOT_OUTPUT_DIR / "09_removal_fraction_maps.png", _PLOT_ARGS.dpi),
     }
     jobs[job]()
     return job
@@ -917,13 +1042,10 @@ def main() -> int:
     if not input_dir.is_dir():
         raise NotADirectoryError(f"Input directory does not exist: {input_dir}")
 
-    # By default, keep all generated artifacts local to the directory from
-    # which the script is launched.  An explicit --output-dir still overrides
-    # this location.
     output_dir = (
         args.output_dir.expanduser().resolve()
         if args.output_dir
-        else DEFAULT_OUTPUT_DIR.resolve()
+        else (Path.cwd() / DEFAULT_OUTPUT_DIR).resolve()
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -964,7 +1086,7 @@ def main() -> int:
     _PLOT_OUTPUT_DIR = output_dir
 
     plot_start = time.perf_counter()
-    jobs = ["01", "02", "03", "04", "05", "06", "07"]
+    jobs = ["01", "02", "03", "04", "05", "06", "07", "08", "09"]
     if workers == 1:
         for job in jobs:
             _plot_job(job)
