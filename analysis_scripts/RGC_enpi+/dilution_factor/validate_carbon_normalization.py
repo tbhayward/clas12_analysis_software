@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-validate_carbon_normalization_v2.py
+validate_carbon_normalization_v3.py
 
 Dedicated validation and stress-test program for the RGC exclusive e pi+
 carbon-normalization dilution-factor method.
@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from collections import defaultdict
 from dataclasses import dataclass
 import importlib.util
 import json
@@ -276,30 +277,60 @@ def count_dataset(
     low_regions: tuple[tuple[float, float], ...],
     spectrum_edges: np.ndarray,
 ) -> ValidationCounts:
-    n_bins = len(xb_bins) * len(t_bins)
-    atomic = np.zeros((n_bins, len(atomic_edges) - 1), dtype=np.int64)
+    """Vectorized counting for one target sample.
+
+    Events are assigned to the fixed xB and -t' bins once with searchsorted.
+    Two-dimensional bincount histograms then replace the former repeated
+    24-bin masking and histogram loop.  Only the bin-dependent signal windows
+    require a short loop over the 24 analysis bins.
+    """
+    n_x = len(xb_bins)
+    n_t = len(t_bins)
+    n_bins = n_x * n_t
+    x_edges = np.asarray([xb_bins[0][0], *[value[1] for value in xb_bins]], dtype=float)
+    t_edges = np.asarray([t_bins[0][0], *[value[1] for value in t_bins]], dtype=float)
+
+    x = np.asarray(dataset["xB"], dtype=float)
+    t = np.asarray(dataset["minus_tprime_gev2"], dtype=float)
+    mx2 = np.asarray(dataset["mx2_gev2"], dtype=float)
+    ix = np.searchsorted(x_edges, x, side="right") - 1
+    it = np.searchsorted(t_edges, t, side="right") - 1
+    valid = (ix >= 0) & (ix < n_x) & (it >= 0) & (it < n_t) & np.isfinite(mx2)
+    combined = (ix[valid] * n_t + it[valid]).astype(np.int64, copy=False)
+    values = mx2[valid]
+
+    def histogram_by_analysis_bin(edges: np.ndarray) -> np.ndarray:
+        interval = np.searchsorted(edges, values, side="right") - 1
+        good = (interval >= 0) & (interval < len(edges) - 1)
+        flat = combined[good] * (len(edges) - 1) + interval[good]
+        return np.bincount(
+            flat, minlength=n_bins * (len(edges) - 1)
+        ).reshape(n_bins, len(edges) - 1).astype(np.int64, copy=False)
+
+    atomic = histogram_by_analysis_bin(atomic_edges)
+    spectrum = histogram_by_analysis_bin(spectrum_edges)
+    low = np.stack([
+        np.bincount(
+            combined[(values >= lo) & (values < hi)], minlength=n_bins
+        )
+        for lo, hi in low_regions
+    ], axis=1).astype(np.int64, copy=False)
+
     signal = np.zeros((n_bins, 3), dtype=np.int64)
-    low = np.zeros((n_bins, len(low_regions)), dtype=np.int64)
-    spectrum = np.zeros((n_bins, len(spectrum_edges) - 1), dtype=np.int64)
-
-    index = 0
-    for ix, xb_range in enumerate(xb_bins):
-        for it, t_range in enumerate(t_bins):
-            base = bin_mask(dataset, xb_range, t_range)
-            values = dataset["mx2_gev2"][base]
-            atomic[index], _ = np.histogram(values, bins=atomic_edges)
-            spectrum[index], _ = np.histogram(values, bins=spectrum_edges)
-            for region_index, (lo, hi) in enumerate(low_regions):
-                low[index, region_index] = int(np.count_nonzero((values >= lo) & (values < hi)))
-
-            cut = cuts[(period, ix, it)]
-            for cut_index, name in enumerate(("tight", "nominal", "loose")):
-                lo, hi = cut[name]
-                signal[index, cut_index] = int(np.count_nonzero((values >= lo) & (values < hi)))
-            index += 1
+    order = ("tight", "nominal", "loose")
+    for bin_index in range(n_bins):
+        bin_values = values[combined == bin_index]
+        ix_bin, it_bin = divmod(bin_index, n_t)
+        cut = cuts[(period, ix_bin, it_bin)]
+        lows = np.asarray([cut[name][0] for name in order])
+        highs = np.asarray([cut[name][1] for name in order])
+        signal[bin_index] = np.count_nonzero(
+            (bin_values[:, np.newaxis] >= lows)
+            & (bin_values[:, np.newaxis] < highs),
+            axis=0,
+        )
 
     return ValidationCounts(atomic, signal, low, spectrum)
-
 
 def count_worker(args: tuple[Any, ...]) -> tuple[tuple[str, str], ValidationCounts]:
     (
@@ -358,17 +389,23 @@ def build_all_counts(
     return output
 
 
+def control_projection_matrix(
+    atomic_edges: np.ndarray,
+    windows: list[tuple[float, float]],
+) -> np.ndarray:
+    """Return an atomic-interval to control-window incidence matrix."""
+    return np.stack(
+        [window_interval_mask(atomic_edges, window) for window in windows], axis=1
+    ).astype(np.int8, copy=False)
+
+
 def controls_for_windows(
     atomic: np.ndarray,
     atomic_edges: np.ndarray,
     windows: list[tuple[float, float]],
 ) -> np.ndarray:
-    values = []
-    for window in windows:
-        selected = window_interval_mask(atomic_edges, window)
-        values.append(np.sum(atomic[..., selected], axis=-1))
-    return np.stack(values, axis=-1)
-
+    projection = control_projection_matrix(atomic_edges, windows)
+    return np.einsum("...i,iw->...w", atomic, projection, optimize=True)
 
 def scales_for_grouping(
     nh3_control: np.ndarray,
@@ -434,7 +471,9 @@ def validation_bootstrap_worker(
     replicas: int,
     seed: int,
     module_path: str,
+    chunk_index: int,
 ) -> dict[str, Any]:
+    """Generate one independent bootstrap chunk for one period."""
     module = import_production_module(Path(module_path))
     rng = np.random.default_rng(seed)
     n_bins = n_x * n_t
@@ -451,31 +490,47 @@ def validation_bootstrap_worker(
         grouping: np.full((replicas, n_bins, n_windows), np.nan)
         for grouping in groupings
     }
-    batch_size = min(250, replicas)
 
-    interval_masks = [window_interval_mask(atomic_edges, window) for window in windows]
+    projection = control_projection_matrix(atomic_edges, windows)
+    nominal_window_index = windows.index((0.0, 0.4))
+    grouping_metadata = {}
+    for grouping in groupings:
+        gids = group_ids(grouping, n_bins, n_t)
+        n_groups = group_count(grouping, n_x, n_t)
+        membership = np.equal.outer(np.arange(n_groups), gids).astype(np.int8)
+        grouping_metadata[grouping] = (gids, membership)
 
+    # Keep transient Poisson arrays bounded while using vectorized linear
+    # algebra within each batch.
+    batch_size = min(512, replicas)
     for start in range(0, replicas, batch_size):
         stop = min(replicas, start + batch_size)
         batch = stop - start
         control_by_target: dict[str, np.ndarray] = {}
         signal_by_target: dict[str, np.ndarray] = {}
         for target, arrays in observed.items():
-            atomic_rep = rng.poisson(arrays["atomic"][np.newaxis, ...], size=(batch,) + arrays["atomic"].shape)
-            signal_rep = rng.poisson(arrays["signal"][np.newaxis, ...], size=(batch,) + arrays["signal"].shape)
-            control_by_target[target] = np.stack(
-                [np.sum(atomic_rep[..., mask], axis=-1) for mask in interval_masks], axis=-1
+            atomic_rep = rng.poisson(
+                arrays["atomic"][np.newaxis, ...],
+                size=(batch,) + arrays["atomic"].shape,
             )
-            signal_by_target[target] = signal_rep
+            signal_by_target[target] = rng.poisson(
+                arrays["signal"][np.newaxis, ...],
+                size=(batch,) + arrays["signal"].shape,
+            )
+            control_by_target[target] = np.einsum(
+                "bni,iw->bnw", atomic_rep, projection, optimize=True
+            )
 
         for grouping in groupings:
-            scale = np.full((batch, n_bins, n_windows), np.nan)
-            gids = group_ids(grouping, n_bins, n_t)
-            for gid in range(group_count(grouping, n_x, n_t)):
-                members = gids == gid
-                nh3_sum = np.sum(control_by_target["NH3"][:, members, :], axis=1)
-                c_sum = np.sum(control_by_target["C"][:, members, :], axis=1)
-                scale[:, members, :] = ratio(nh3_sum, c_sum)[:, np.newaxis, :]
+            gids, membership = grouping_metadata[grouping]
+            nh3_group = np.einsum(
+                "gn,bnw->bgw", membership, control_by_target["NH3"], optimize=True
+            )
+            carbon_group = np.einsum(
+                "gn,bnw->bgw", membership, control_by_target["C"], optimize=True
+            )
+            scale_by_group = ratio(nh3_group, carbon_group)
+            scale = scale_by_group[:, gids, :]
             alpha[grouping][start:stop] = scale
             method1[grouping][start:stop] = method1_values(
                 signal_by_target["NH3"], signal_by_target["C"], scale
@@ -485,27 +540,29 @@ def validation_bootstrap_worker(
             signal_by_target, charge_fractions_period
         )
         method2[start:stop] = m2_batch
-
         required = ratio(
             signal_by_target["NH3"] * (1.0 - m2_batch),
             signal_by_target["C"],
         )
         alpha_required[start:stop] = required
-        nominal_window_index = windows.index((0.0, 0.4))
-        nominal_period_alpha = alpha[PERIOD_GROUP][start:stop, :, nominal_window_index]
-        transfer_ratio[start:stop] = ratio(required, nominal_period_alpha[..., np.newaxis])
-
-        predicted_nominal_background = (
+        nominal_period_alpha = alpha[PERIOD_GROUP][
+            start:stop, :, nominal_window_index
+        ]
+        transfer_ratio[start:stop] = ratio(
+            required, nominal_period_alpha[..., np.newaxis]
+        )
+        predicted_background = (
             nominal_period_alpha[..., np.newaxis] * signal_by_target["C"]
         )
         required_background = signal_by_target["NH3"] * (1.0 - m2_batch)
         kappa_period[start:stop] = ratio(
             np.sum(required_background, axis=1),
-            np.sum(predicted_nominal_background, axis=1),
+            np.sum(predicted_background, axis=1),
         )
 
     return {
         "period": period,
+        "chunk_index": chunk_index,
         "method1": method1,
         "method2": method2,
         "alpha": alpha,
@@ -513,6 +570,12 @@ def validation_bootstrap_worker(
         "transfer_ratio": transfer_ratio,
         "kappa_period": kappa_period,
     }
+
+
+def _replica_chunks(replicas: int, jobs: int) -> list[int]:
+    jobs = max(1, min(jobs, replicas))
+    base, remainder = divmod(replicas, jobs)
+    return [base + (index < remainder) for index in range(jobs)]
 
 
 def run_bootstrap(
@@ -526,12 +589,22 @@ def run_bootstrap(
     seed: int,
     workers: int,
 ) -> dict[str, Any]:
-    output: dict[str, Any] = {}
+    """Parallel bootstrap across period/replica chunks, capped at seven workers."""
     n_x = len(module.XB_BINS)
     n_t = len(module.MINUS_TPRIME_BINS_GEV2)
-    with ProcessPoolExecutor(max_workers=min(workers, len(module.PERIODS))) as executor:
-        futures = {}
-        for period_index, period in enumerate(module.PERIODS):
+    workers = max(1, min(MAXIMUM_WORKERS, workers))
+
+    # Use enough chunks to occupy every available worker while keeping each
+    # returned object reasonably large.  Replica order has no statistical
+    # significance, but chunks are reassembled deterministically.
+    chunks_per_period = max(1, math.ceil(workers / len(module.PERIODS)))
+    chunk_sizes = _replica_chunks(replicas, chunks_per_period)
+    seed_sequence = np.random.SeedSequence(seed)
+    child_seeds = iter(seed_sequence.spawn(len(module.PERIODS) * chunks_per_period))
+
+    futures = {}
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        for period in module.PERIODS:
             observed = {
                 target: {
                     "atomic": counts[(period, target)].atomic_control,
@@ -539,27 +612,54 @@ def run_bootstrap(
                 }
                 for target in module.TARGETS
             }
-            future = executor.submit(
-                validation_bootstrap_worker,
-                period,
-                observed,
-                windows,
-                atomic_edges,
-                GROUPINGS,
-                n_x,
-                n_t,
-                charge_fractions[period],
-                replicas,
-                seed + 100003 * period_index,
-                str(module_path),
-            )
-            futures[future] = period
-        for future in as_completed(futures):
-            period = futures[future]
-            output[period] = future.result()
-            print(f"Completed {replicas:,} validation replicas for {period}.")
-    return output
+            for chunk_index, chunk_size in enumerate(chunk_sizes):
+                child_seed = int(next(child_seeds).generate_state(1, dtype=np.uint64)[0])
+                future = executor.submit(
+                    validation_bootstrap_worker,
+                    period, observed, windows, atomic_edges, GROUPINGS,
+                    n_x, n_t, charge_fractions[period], chunk_size, child_seed,
+                    str(module_path), chunk_index,
+                )
+                futures[future] = (period, chunk_index, chunk_size)
 
+        chunks: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for future in as_completed(futures):
+            period, chunk_index, chunk_size = futures[future]
+            chunks[period].append(future.result())
+            print(
+                f"Completed bootstrap chunk {chunk_index + 1}/{chunks_per_period} "
+                f"for {period} ({chunk_size:,} replicas)."
+            )
+
+    output: dict[str, Any] = {}
+    for period in module.PERIODS:
+        ordered = sorted(chunks[period], key=lambda item: item["chunk_index"])
+        output[period] = {
+            "method1": {
+                grouping: np.concatenate(
+                    [item["method1"][grouping] for item in ordered], axis=0
+                )
+                for grouping in GROUPINGS
+            },
+            "method2": np.concatenate([item["method2"] for item in ordered], axis=0),
+            "alpha": {
+                grouping: np.concatenate(
+                    [item["alpha"][grouping] for item in ordered], axis=0
+                )
+                for grouping in GROUPINGS
+            },
+            "alpha_required": np.concatenate(
+                [item["alpha_required"] for item in ordered], axis=0
+            ),
+            "transfer_ratio": np.concatenate(
+                [item["transfer_ratio"] for item in ordered], axis=0
+            ),
+            "kappa_period": np.concatenate(
+                [item["kappa_period"] for item in ordered], axis=0
+            ),
+        }
+        print(f"Assembled {replicas:,} validation replicas for {period}.")
+    return output
 
 def central_estimators(
     counts: dict[tuple[str, str], ValidationCounts],
@@ -627,7 +727,7 @@ def plot_window_scan_summary(
     display_windows = structured_windows(windows)
     display_indices = [windows.index(window) for window in display_windows]
     x = np.arange(len(display_windows))
-    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(14, 11), sharex=True)
+    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(14, 11), sharex=True, sharey=True)
     for ax, period in zip(axes, module.PERIODS):
         all_values = central[period]["method1"][PERIOD_GROUP][:, :, nominal_cut]
         values = all_values[:, display_indices]
@@ -698,7 +798,7 @@ def plot_method_difference_summary(
     w = windows.index((0.0, 0.4))
     cut = list(module.CUT_VARIATIONS).index("nominal")
     x = np.arange(1, module.NUMBER_OF_BINS + 1)
-    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(16, 11), sharex=True)
+    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(16, 11), sharex=True, sharey=True)
     for ax, period in zip(axes, module.PERIODS):
         for grouping in GROUPINGS:
             delta = central[period]["method1"][grouping][:, w, cut] - central[period]["method2"][:, cut]
@@ -870,7 +970,7 @@ def plot_cumulative_window_scan(
 ) -> None:
     cut = list(module.CUT_VARIATIONS).index("nominal")
     indices = [windows.index((0.0, upper)) for upper in cumulative_edges]
-    fig, axes = plt.subplots(len(module.PERIODS), 3, figsize=(17, 11), sharex=True)
+    fig, axes = plt.subplots(len(module.PERIODS), 3, figsize=(17, 11), sharex=True, sharey="col")
     for row, period in enumerate(module.PERIODS):
         alpha = central[period]["alpha"][PERIOD_GROUP][:, indices]
         f1 = central[period]["method1"][PERIOD_GROUP][:, indices, cut]
@@ -957,7 +1057,7 @@ def plot_required_transfer_factor(
 ) -> None:
     selected = table[(table.cut == "nominal") & (table.bin_number > 0)]
     x = np.arange(1, module.NUMBER_OF_BINS + 1)
-    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(16, 11), sharex=True)
+    fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(16, 11), sharex=True, sharey=True)
     for ax, period in zip(axes, module.PERIODS):
         rows = selected[selected.period == period].sort_values("bin_number")
         ax.errorbar(
@@ -995,7 +1095,7 @@ def plot_required_transfer_kinematics(
     module: Any,
 ) -> None:
     selected = table[(table.cut == "nominal") & (table.bin_number > 0)]
-    fig, axes = plt.subplots(len(module.PERIODS), 2, figsize=(15, 11))
+    fig, axes = plt.subplots(len(module.PERIODS), 2, figsize=(15, 11), sharey="col")
     for row, period in enumerate(module.PERIODS):
         rows = selected[selected.period == period]
         by_x = rows.groupby("x_index").agg(
@@ -1150,7 +1250,7 @@ def build_cumulative_background_comparison(
 
 
 def plot_cumulative_background_comparison(output: Path, table: pd.DataFrame, module: Any) -> None:
-    fig, axes = plt.subplots(len(module.PERIODS), 2, figsize=(15, 11), sharex=True)
+    fig, axes = plt.subplots(len(module.PERIODS), 2, figsize=(15, 11), sharex=True, sharey="col")
     for row, period in enumerate(module.PERIODS):
         selected = table[table.period == period]
         axes[row, 0].plot(selected.upper_edge, selected.scaled_carbon_cumulative_background, "o-", label="Scaled carbon")
@@ -1361,6 +1461,12 @@ def run_one_variant(
         "workers": workers,
         "replicas": args.replicas,
         "seed": args.seed,
+        "performance": {
+            "vectorized_event_binning": True,
+            "vectorized_control_window_projection": True,
+            "bootstrap_replica_chunk_parallelism": True,
+            "maximum_workers": MAXIMUM_WORKERS,
+        },
         "control_windows": windows,
         "low_mx2_closure_regions": DEFAULT_LOW_REGIONS,
         "spectrum_range": [args.spectrum_min, args.spectrum_max],
