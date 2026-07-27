@@ -94,10 +94,16 @@ For each observable a, the target-axis systematic is
 Dilution-factor uncertainty
 ---------------------------
 The recommended nominal dilution factor, the average of Methods 1 and 2, is
-read from the production dilution-factor JSON.  Its bootstrap statistical
-uncertainty is included through one Gaussian-constrained dilution nuisance
-parameter per run period and kinematic bin.  The correlated dilution-model
-scale uncertainty is intentionally not included here and will be imposed later.
+read from the nominal production dilution-factor JSON.  The same nominal
+dilution-factor values and bootstrap statistical uncertainties are used for
+both the nominal extraction and the ISR/external-ISR radiation diagnostic.
+
+A separately recalculated radiation-sample dilution factor is intentionally not
+used here because Method 1 is not valid for that diagnostic under the present
+normalization treatment.  Reusing the nominal dilution factor is a controlled
+small approximation for estimating the point-to-point radiation systematic.
+The correlated dilution-model scale uncertainty is intentionally not included
+here and will be imposed later.
 
 Beam- and target-polarization uncertainties are intentionally ignored by this
 program.  Their statistical and systematic components will be combined later
@@ -444,7 +450,7 @@ DEFAULT_INPUTS: dict[str, Path] = {
 
 DEFAULT_ISR_INPUTS: dict[str, Path] = {
     period: PAPER_VERSIONS_DIR
-    / f"rgc_{period}_inb_NH3_epi+_ISR_mom_corrections.root"
+    / f"rgc_{period}_inb_NH3_epi+_ISR_externalISR_mom_corrections.root"
     for period in PERIODS
 }
 
@@ -457,11 +463,6 @@ DEFAULT_ISR_CUT_JSON = Path(
     "isr/final_carbon_assisted_cuts/tables/"
     "final_carbon_assisted_mx2_cuts.json"
 )
-DEFAULT_ISR_DILUTION_JSON = Path(
-    "../dilution_factor/output/dilution_factor_determination/"
-    "isr/dilution_factors_production.json"
-)
-
 FIT_VARIANTS: tuple[str, ...] = (
     "nominal",
     "no_projection",
@@ -1099,6 +1100,70 @@ def parse_input_override(text: str) -> tuple[str, Path]:
     return period, Path(path_text).expanduser()
 
 
+def resolve_tree(
+    root_file: uproot.reading.ReadOnlyDirectory,
+    requested_name: str,
+    path: Path,
+):
+    """Resolve a ROOT tree without relying on Uproot membership testing."""
+    lookup_names: list[str] = [requested_name]
+
+    for key in root_file.keys():
+        key_text = str(key)
+        base_name = key_text.split(";")[0]
+        if base_name == requested_name:
+            lookup_names.extend((key_text, base_name))
+        # endif
+    # endfor
+
+    attempted: set[str] = set()
+    lookup_errors: list[str] = []
+
+    for name in lookup_names:
+        if name in attempted:
+            continue
+        # endif
+        attempted.add(name)
+
+        try:
+            obj = root_file[name]
+        except Exception as exc:
+            lookup_errors.append(f"{name!r}: {exc}")
+            continue
+        # endtry
+
+        if hasattr(obj, "arrays") and hasattr(obj, "keys"):
+            return obj
+        # endif
+    # endfor
+
+    tree_like: list[tuple[str, Any]] = []
+    for key in root_file.keys():
+        key_text = str(key)
+        try:
+            obj = root_file[key_text]
+        except Exception:
+            continue
+        # endtry
+
+        if hasattr(obj, "arrays") and hasattr(obj, "keys"):
+            tree_like.append((key_text, obj))
+        # endif
+    # endfor
+
+    if len(tree_like) == 1:
+        return tree_like[0][1]
+    # endif
+
+    available = [str(key) for key in root_file.keys()]
+    details = "; ".join(lookup_errors[:5])
+    raise RuntimeError(
+        f"Tree {requested_name!r} not found in {path}. "
+        f"Available keys: {available}. "
+        f"Direct-lookup diagnostics: {details}"
+    )
+
+
 def resolve_tree_branches(
     path: Path,
     tree_name: str,
@@ -1108,14 +1173,7 @@ def resolve_tree_branches(
     # endif
 
     with uproot.open(path) as root_file:
-        if tree_name not in root_file:
-            available = [str(key).split(";")[0] for key in root_file.keys()]
-            raise RuntimeError(
-                f"Tree {tree_name!r} not found in {path}. "
-                f"Available keys: {available}"
-            )
-        # endif
-        tree = root_file[tree_name]
+        tree = resolve_tree(root_file, tree_name, path)
         return {
             logical_name: resolve_branch(tree, aliases)
             for logical_name, aliases in BRANCH_ALIASES.items()
@@ -3379,7 +3437,7 @@ def write_nominal_isr_comparison_products(nominal: pd.DataFrame, isr: pd.DataFra
 
 
 def build_argument_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Fit nominal and ISR RGC exclusive-pi+ structure-function ratios.")
+    parser = argparse.ArgumentParser(description="Fit nominal and ISR/external-ISR RGC exclusive-pi+ structure-function ratios.")
     parser.add_argument("--tree", default=DEFAULT_TREE_NAME)
     parser.add_argument("--input", action="append", default=[], type=parse_input_override, metavar="PERIOD=FILE")
     parser.add_argument("--isr-input", action="append", default=[], type=parse_input_override, metavar="PERIOD=FILE")
@@ -3388,7 +3446,6 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--isr-cut-json", type=Path, default=None)
     parser.add_argument("--dilution-json", type=Path, default=None)
     parser.add_argument("--dilution-dir", type=Path, default=DEFAULT_DILUTION_DIR)
-    parser.add_argument("--isr-dilution-json", type=Path, default=DEFAULT_ISR_DILUTION_JSON)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--cache", type=Path, default=None, help="Legacy nominal-cache override.")
     parser.add_argument("--reuse-cache", action="store_true")
@@ -3414,13 +3471,14 @@ def main() -> int:
         isr_inputs={p:Path(v) for p,v in DEFAULT_ISR_INPUTS.items()}
         for period,path in args.isr_input: isr_inputs[period]=path
         isr_cut=resolve_isr_cut_json(args.isr_cut_json)
-        isr_dilution=args.isr_dilution_json.expanduser().resolve()
-        if not isr_dilution.is_file(): raise FileNotFoundError(f"ISR dilution JSON does not exist: {isr_dilution}")
-        isr_result=run_analysis_variant(sample_variant="isr", input_paths=isr_inputs, run_info_path=args.run_info_csv.expanduser().resolve(), cut_json_path=isr_cut, dilution_json_path=isr_dilution, output_dir=isr_dir, cache_path=isr_dir/"cache/selected_events.npz", tree_name=args.tree, chunk_size=args.chunk_size, workers=workers, reuse_cache=args.reuse_cache, skip_plots=args.skip_plots, include_target_axis_study=False)
+        # Deliberately reuse the nominal production dilution factors for the
+        # ISR/external-ISR systematic diagnostic.  A radiation-specific Method-1
+        # dilution factor is not valid with the present normalization.
+        isr_result=run_analysis_variant(sample_variant="isr", input_paths=isr_inputs, run_info_path=args.run_info_csv.expanduser().resolve(), cut_json_path=isr_cut, dilution_json_path=nominal_dilution, output_dir=isr_dir, cache_path=isr_dir/"cache/selected_events.npz", tree_name=args.tree, chunk_size=args.chunk_size, workers=workers, reuse_cache=args.reuse_cache, skip_plots=args.skip_plots, include_target_axis_study=False)
         comparison=write_nominal_isr_comparison_products(nominal_result["frame"],isr_result["frame"],diagnostics_dir)
     # endif
     manifest_path=root/"asymmetry_extraction_manifest.json"
-    write_json(manifest_path,{"schema_version":3,"production_policy":"Nominal results are production. ISR results are a separate point-by-point diagnostic. Target-axis leakage is evaluated only for nominal data.","nominal":{k:v for k,v in nominal_result.items() if k not in ("frame","results")},"isr":({k:v for k,v in isr_result.items() if k not in ("frame","results")} if isr_result else None),"nominal_isr_comparison":comparison})
+    write_json(manifest_path,{"schema_version":3,"production_policy":"Nominal results are production. ISR/external-ISR results are a separate point-by-point radiation diagnostic. The radiation diagnostic deliberately reuses the nominal production dilution factors because radiation-sample Method 1 is not valid under the present normalization. Target-axis leakage is evaluated only for nominal data.","nominal":{k:v for k,v in nominal_result.items() if k not in ("frame","results")},"isr":({k:v for k,v in isr_result.items() if k not in ("frame","results")} if isr_result else None),"nominal_isr_comparison":comparison})
     print("\nStructure-function-ratio study complete.")
     print(f"  Nominal:    {nominal_dir}")
     if isr_result: print(f"  ISR:        {isr_dir}\n  Comparison: {diagnostics_dir}")
