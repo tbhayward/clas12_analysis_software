@@ -3053,6 +3053,17 @@ def process_calibration_period(
         histogram_range,
         histogram_bins,
     )
+    save_fully_integrated_elastic_summary(
+        uncorrected_frame=period_frame,
+        corrected_frame=corrected_frame,
+        period=period,
+        output_path=plot_directories["final_summary"]
+        / f"{period.key}_all_sector_integrated_elastic_summary.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events=minimum_events_integrated,
+    )
     save_before_after_kinematic_diagnostic(
         period=period,
         uncorrected_frame=period_frame,
@@ -3297,6 +3308,139 @@ def save_peak_fit_plot(
     figure.savefig(output_path, dpi=180)
     plt.close(figure)
 
+
+
+
+def save_fully_integrated_elastic_summary(
+    uncorrected_frame: pd.DataFrame,
+    corrected_frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events: int,
+) -> None:
+    """
+    Save the final all-sector elastic-peak closure summary.
+
+    All six electron sectors are combined before fitting. The legend reports
+    the fitted Gaussian mean and width for each stage. The corrected-stage
+    label also reports the relative resolution improvement,
+
+        100 * (sigma_before - sigma_after) / sigma_before.
+
+    This is a diagnostic only and does not affect correction extraction.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    stages = (
+        (
+            "Before correction",
+            uncorrected_frame["w_recalculated"].to_numpy(),
+            "-",
+        ),
+        (
+            "After electron correction",
+            corrected_frame["w_corrected"].to_numpy(),
+            "--",
+        ),
+    )
+
+    fit_results: dict[str, PeakFitResult] = {}
+    diagnostics_by_stage: dict[str, dict[str, np.ndarray]] = {}
+
+    for label, values, _ in stages:
+        fit_result, diagnostics = fit_w_peak(
+            values,
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events=minimum_events,
+            fixed_sigma_gev=None,
+        )
+        fit_results[label] = fit_result
+        diagnostics_by_stage[label] = diagnostics
+
+    before_fit = fit_results["Before correction"]
+    after_fit = fit_results["After electron correction"]
+    if (
+        before_fit.success
+        and after_fit.success
+        and np.isfinite(before_fit.peak_sigma_gev)
+        and before_fit.peak_sigma_gev > 0.0
+    ):
+        improvement_percent = (
+            100.0
+            * (before_fit.peak_sigma_gev - after_fit.peak_sigma_gev)
+            / before_fit.peak_sigma_gev
+        )
+    else:
+        improvement_percent = math.nan
+
+    figure, axis = plt.subplots(
+        figsize=(9.2, 6.2),
+        constrained_layout=True,
+    )
+
+    for label, _, linestyle in stages:
+        fit_result = fit_results[label]
+        diagnostics = diagnostics_by_stage[label]
+        centers = diagnostics["centers"]
+        counts = diagnostics["counts"]
+
+        legend_label = label
+        if fit_result.success:
+            legend_label += (
+                rf": $\mu={fit_result.peak_mean_gev:.5f}$ GeV, "
+                rf"$\sigma={fit_result.peak_sigma_gev:.5f}$ GeV"
+            )
+            if label == "After electron correction" and np.isfinite(
+                improvement_percent
+            ):
+                legend_label += (
+                    rf", resolution improvement $={improvement_percent:.1f}\%$"
+                )
+
+        axis.step(
+            centers,
+            counts,
+            where="mid",
+            linewidth=1.25,
+            label=legend_label,
+        )
+
+        if diagnostics["fit_x"].size:
+            axis.plot(
+                diagnostics["fit_x"],
+                diagnostics["fit_y"],
+                linestyle=linestyle,
+                linewidth=1.5,
+            )
+
+    axis.axvline(
+        PROTON_MASS_GEV,
+        color="black",
+        linestyle=":",
+        linewidth=1.1,
+        label=r"$m_p$",
+    )
+    axis.set_xlim(*histogram_range)
+    axis.margins(x=0.0, y=0.05)
+    axis.set_xlabel("W (GeV)")
+    axis.set_ylabel("Counts")
+    axis.set_title(
+        f"{period.label}: all-sector integrated elastic peak"
+    )
+    axis.legend(fontsize=8.5)
+
+    figure.savefig(
+        output_path,
+        dpi=180,
+        bbox_inches="tight",
+        pad_inches=0.06,
+    )
+    plt.close(figure)
 
 
 def save_period_integrated_w_plot(
@@ -4261,6 +4405,7 @@ def main() -> int:
         "closure_phi": plot_root / "closure" / "phi_residuals",
         "closure_x": plot_root / "closure" / "x_residuals",
         "before_after_w": plot_root / "closure" / "before_after_w",
+        "final_summary": plot_root / "closure" / "final_summary",
         "corrected_run_stability": (
             plot_root / "closure" / "run_stability"
         ),

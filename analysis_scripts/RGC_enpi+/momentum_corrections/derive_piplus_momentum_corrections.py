@@ -2274,6 +2274,147 @@ def save_integrated_region_plot(
     plt.close(figure)
 
 
+
+def save_fully_integrated_missing_neutron_summary(
+    frame: pd.DataFrame,
+    period: CalibrationPeriod,
+    output_path: Path,
+    histogram_range: tuple[float, float],
+    fit_range: tuple[float, float],
+    histogram_bins: int,
+    minimum_events: int,
+) -> None:
+    """
+    Save the final all-sector missing-neutron closure summary.
+
+    All six FD pion sectors are combined before fitting. The legend reports
+    the fitted Gaussian mean and width for the uncorrected,
+    electron-corrected, and fully corrected stages. The fully corrected label
+    also reports the relative resolution improvement with respect to the
+    uncorrected width,
+
+        100 * (sigma_before - sigma_after) / sigma_before.
+
+    This is a diagnostic only and does not affect correction extraction.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    sample = frame.loc[frame["pion_region"] == "FD"].copy()
+    stages = (
+        (
+            "No corrections",
+            "mx2_uncorrected_gev2",
+            "-",
+        ),
+        (
+            "Electron corrected",
+            "mx2_electron_corrected_gev2",
+            "--",
+        ),
+        (
+            r"Electron + $\pi^+$ corrected",
+            "mx2_electron_pion_corrected_gev2",
+            "-.",
+        ),
+    )
+
+    fit_results: dict[str, dict[str, Any]] = {}
+    diagnostics_by_stage: dict[str, dict[str, np.ndarray]] = {}
+
+    for label, column, _ in stages:
+        fit_result, diagnostics = fit_mx2_peak(
+            sample[column].to_numpy(),
+            histogram_range=histogram_range,
+            fit_range=fit_range,
+            histogram_bins=histogram_bins,
+            minimum_events=minimum_events,
+        )
+        fit_results[label] = fit_result
+        diagnostics_by_stage[label] = diagnostics
+
+    before_fit = fit_results["No corrections"]
+    final_label = r"Electron + $\pi^+$ corrected"
+    after_fit = fit_results[final_label]
+    if (
+        before_fit.get("success", False)
+        and after_fit.get("success", False)
+        and np.isfinite(before_fit.get("sigma_gev2", math.nan))
+        and before_fit["sigma_gev2"] > 0.0
+    ):
+        improvement_percent = (
+            100.0
+            * (
+                before_fit["sigma_gev2"]
+                - after_fit["sigma_gev2"]
+            )
+            / before_fit["sigma_gev2"]
+        )
+    else:
+        improvement_percent = math.nan
+
+    figure, axis = plt.subplots(
+        figsize=(9.4, 6.3),
+        constrained_layout=True,
+    )
+
+    for label, _, linestyle in stages:
+        fit_result = fit_results[label]
+        diagnostics = diagnostics_by_stage[label]
+        centers = diagnostics["centers"]
+        counts = diagnostics["counts"]
+
+        legend_label = label
+        if fit_result.get("success", False):
+            legend_label += (
+                rf": $\mu={fit_result['mean_gev2']:.5f}$ GeV$^2$, "
+                rf"$\sigma={fit_result['sigma_gev2']:.5f}$ GeV$^2$"
+            )
+            if label == final_label and np.isfinite(improvement_percent):
+                legend_label += (
+                    rf", resolution improvement $={improvement_percent:.1f}\%$"
+                )
+
+        axis.step(
+            centers,
+            counts,
+            where="mid",
+            linewidth=1.25,
+            label=legend_label,
+        )
+
+        if diagnostics["fit_x"].size:
+            axis.plot(
+                diagnostics["fit_x"],
+                diagnostics["fit_model"],
+                linestyle=linestyle,
+                linewidth=1.5,
+            )
+
+    axis.axvline(
+        NEUTRON_MASS2_GEV2,
+        color="black",
+        linestyle=":",
+        linewidth=1.1,
+        label=r"$m_n^2$",
+    )
+    axis.set_xlim(*histogram_range)
+    axis.margins(x=0.0, y=0.05)
+    axis.set_xlabel(r"$M_X^2(e\pi^+)$ (GeV$^2$)")
+    axis.set_ylabel("Counts")
+    axis.set_title(
+        f"{period.label}: all-sector integrated missing-neutron peak"
+    )
+    axis.legend(fontsize=8.2)
+
+    figure.savefig(
+        output_path,
+        dpi=180,
+        bbox_inches="tight",
+        pad_inches=0.06,
+    )
+    plt.close(figure)
+
+
 def save_three_stage_integrated_plot(
     frame: pd.DataFrame,
     period: CalibrationPeriod,
@@ -3191,6 +3332,16 @@ def process_period(
         histogram_range,
         histogram_bins,
     )
+    save_fully_integrated_missing_neutron_summary(
+        frame=frame,
+        period=period,
+        output_path=plot_directories["final_summary"]
+        / f"{period.key}_all_sector_integrated_missing_neutron_summary.png",
+        histogram_range=histogram_range,
+        fit_range=fit_range,
+        histogram_bins=histogram_bins,
+        minimum_events=minimum_events_integrated,
+    )
     save_theta_residual_summary(
         period,
         fit_frame,
@@ -3487,6 +3638,8 @@ def main() -> int:
             plot_root / "electron_pion_corrected" / "run_stability",
         "integrated_mx2":
             plot_root / "closure" / "integrated_mx2",
+        "final_summary":
+            plot_root / "closure" / "final_summary",
         "theta_residuals":
             plot_root / "closure" / "theta_residuals",
         "pion_momentum_residuals":
