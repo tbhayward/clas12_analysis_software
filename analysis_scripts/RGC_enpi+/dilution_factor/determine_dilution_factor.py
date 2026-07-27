@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v13.py
+determine_dilution_factor_v16.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -2366,7 +2366,6 @@ def build_output_tables(
                 )
                 scale_fit = method_scale_summary["constant_fits"][cut_index]
                 global_scale = global_method_scale_by_cut[cut_index]
-                scale_fraction = float(global_scale["fraction"])
                 local_relative_half_difference = float(
                     method_scale_summary["relative_half_difference"][
                         b,
@@ -2378,11 +2377,14 @@ def build_output_tables(
                         "relative_half_difference_stat_uncertainty"
                     ][b, cut_index]
                 )
+                local_absolute_half_difference = 0.5 * abs(
+                    method1_record["value"] - method2_record["value"]
+                )
                 recommended_record["dilution_model_scale_fraction"] = (
-                    scale_fraction
+                    local_relative_half_difference
                 )
                 recommended_record["dilution_model_scale_percent"] = (
-                    100.0 * scale_fraction
+                    100.0 * local_relative_half_difference
                 )
                 recommended_record["dilution_model_scale_uncertainty"] = math.nan
                 recommended_record["dilution_model_scale_chi2"] = math.nan
@@ -2395,7 +2397,15 @@ def build_output_tables(
                     "period_specific_scale_fit_chi2_ndf_diagnostic"
                 ] = float(scale_fit["chi2_ndf"])
                 recommended_record["dilution_model_systematic"] = (
-                    scale_fraction * recommended_record["value"]
+                    local_absolute_half_difference
+                )
+                recommended_record["dilution_model_method1_value"] = method1_record["value"]
+                recommended_record["dilution_model_method2_value"] = method2_record["value"]
+                recommended_record["dilution_model_global_scale_fraction_diagnostic"] = float(
+                    global_scale["fraction"]
+                )
+                recommended_record["dilution_model_global_scale_percent_diagnostic"] = float(
+                    global_scale["percent"]
                 )
                 recommended_record[
                     "local_method_relative_half_difference"
@@ -2410,11 +2420,10 @@ def build_output_tables(
                     )
                 )
                 recommended_record["definition"] = (
-                    "Average of Method 1 and Method 2. The dilution-model "
-                    "uncertainty is one global multiplicative scale, equal to "
-                    "the arithmetic mean of the three period-specific constant "
-                    "fits to |f1-f2|/(f1+f2). It is fully correlated across all "
-                    "periods and kinematic bins."
+                    "Arithmetic midpoint of Method 1 and Method 2. The assigned "
+                    "dilution-model systematic is one symmetric absolute uncertainty, "
+                    "evaluated bin by bin as |f1-f2|/2 and treated as correlated "
+                    "across bins."
                 )
                 pf_bin_record = scalar_record(
                     summaries["packing_fraction_bin"], (b, cut_index)
@@ -2499,6 +2508,9 @@ def build_output_tables(
                 ] = recommended_record[
                     "dilution_model_systematic"
                 ]
+                row["recommended_dilution_model_global_scale_fraction_diagnostic"] = recommended_record[
+                    "dilution_model_global_scale_fraction_diagnostic"
+                ]
                 row[
                     "recommended_dilution_model_scale_chi2_ndf"
                 ] = recommended_record[
@@ -2565,15 +2577,26 @@ def build_output_tables(
                 "period_specific_scale_percent_diagnostic": 100.0 * float(
                     method_scale_summary["constant_fits"][cut_index]["value"]
                 ),
-                "correlation_scope": global_fit["correlation_scope"],
-                "definition": global_fit["definition"],
+                "correlation_scope": (
+                    "Diagnostic only. The assigned production uncertainty is one "
+                    "symmetric absolute half-difference, treated as correlated across bins."
+                ),
+                "definition": (
+                    "Diagnostic constant fit to the relative half-difference; it does "
+                    "not define the assigned production systematic."
+                ),
             }
             for cut_index, global_fit in enumerate(global_method_scale_by_cut)
         }
         master_periods[period] = {
             "charge_fractions": charge_fractions[period],
             "method1_period_carbon_scale": scalar_record(alpha_summary, ()),
-            "dilution_model_scale_by_cut": method_scale_by_cut,
+            "dilution_model_scale_by_cut_diagnostic": method_scale_by_cut,
+            "assigned_dilution_model_systematic": {
+                "central": "(method1 + method2) / 2",
+                "absolute_systematic": "abs(method1 - method2) / 2",
+                "correlation_scope": "one symmetric systematic correlated across bins",
+            },
             "period_packing_fraction_by_cut": {
                 variation: scalar_record(
                     summaries["packing_fraction_period"], (cut_index,)
@@ -2585,7 +2608,12 @@ def build_output_tables(
         compact_periods[period] = {
             "charge_fractions": charge_fractions[period],
             "recommended_nominal_method": "average_of_method1_and_method2",
-            "dilution_model_scale_by_cut": method_scale_by_cut,
+            "dilution_model_scale_by_cut_diagnostic": method_scale_by_cut,
+            "assigned_dilution_model_systematic": {
+                "central": "(method1 + method2) / 2",
+                "absolute_systematic": "abs(method1 - method2) / 2",
+                "correlation_scope": "one symmetric systematic correlated across bins",
+            },
             "period_packing_fraction_by_cut": master_periods[period][
                 "period_packing_fraction_by_cut"
             ],
@@ -3001,7 +3029,7 @@ def plot_nominal_method_differences(
             global_percent,
             linewidth=1.0,
             linestyle="--",
-            label=f"Adopted global scale: {global_percent:.2f}%",
+            label=f"Global constant-fit diagnostic: {global_percent:.2f}%",
         )
         if np.isfinite(fit_error_percent):
             ax.axhspan(
@@ -3026,7 +3054,7 @@ def plot_nominal_method_differences(
     axes[-1].set_xticks(bins)
     fig.suptitle(
         "Nominal Method-1/Method-2 relative half-difference "
-        f"(adopted global scale: {global_percent:.2f}%)"
+        f"(global constant-fit diagnostic: {global_percent:.2f}%)"
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
     path = output_dir / "nominal_method_scale_systematic.png"
@@ -3073,9 +3101,9 @@ def plot_nominal_recommended_dilution(
     ax.grid(alpha=0.25)
     ax.legend(ncol=3)
     ax.set_title(
-        "Nominal recommended dilution factor: Method-1/Method-2 average\n"
-        f"error bars: statistical; global correlated dilution-model scale: "
-        f"{global_scale['percent']:.2f}%"
+        "Nominal recommended dilution factor: Method-1/Method-2 midpoint\n"
+        "error bars: statistical; method systematic is the binwise absolute "
+        "half-difference, propagated as coherent Method-1/Method-2 alternatives"
     )
     fig.tight_layout()
     path = output_dir / "nominal_recommended_dilution_factor.png"
