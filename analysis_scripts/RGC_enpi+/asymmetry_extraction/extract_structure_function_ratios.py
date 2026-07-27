@@ -1250,8 +1250,10 @@ def build_event_cache(
 
     for period in PERIODS:
         path = input_paths[period].expanduser().resolve()
-        branches = resolve_tree_branches(path, tree_name)
-        expressions = list(dict.fromkeys(branches.values()))
+        if not path.is_file():
+            raise FileNotFoundError(f"Missing ROOT input: {path}")
+        # endif
+
         total_seen = 0
         total_selected = 0
         total_zero_helicity = 0
@@ -1260,206 +1262,216 @@ def build_event_cache(
         missing_run_event_counts: dict[int, int] = {}
         zero_charge_run_event_counts: dict[int, int] = {}
 
-        source = f"{path}:{tree_name}"
-        for arrays in uproot.iterate(
-            source,
-            expressions=expressions,
-            step_size=chunk_size,
-            library="np",
-        ):
-            n_chunk = len(arrays[branches["runnum"]])
-            total_seen += n_chunk
+        # Iterate the resolved TTree object directly.  The external-radiation
+        # files can carry a nonstandard key such as ``PhysicsEvents;1;1``;
+        # reconstructing a ``path:PhysicsEvents`` source string loses that
+        # resolved key and makes Uproot fail even though the tree was found.
+        with uproot.open(path) as root_file:
+            tree = resolve_tree(root_file, tree_name, path)
+            branches = {
+                logical_name: resolve_branch(tree, aliases)
+                for logical_name, aliases in BRANCH_ALIASES.items()
+            }
+            expressions = list(dict.fromkeys(branches.values()))
 
-            runnum = np.asarray(
-                arrays[branches["runnum"]],
-                dtype=np.int64,
-            )
-            helicity = np.asarray(
-                arrays[branches["helicity"]],
-                dtype=np.int8,
-            )
-            xB = np.asarray(arrays[branches["xB"]], dtype=np.float64)
-            minus_tprime = -np.asarray(
-                arrays[branches["tprime"]],
-                dtype=np.float64,
-            )
-            mx2 = np.asarray(arrays[branches["Mx2"]], dtype=np.float64)
-            phi_raw = np.asarray(arrays[branches["phi"]], dtype=np.float64)
-            phi = angle_to_radians(phi_raw, branches["phi"])
-            phi = np.mod(phi, 2.0 * math.pi)
-            q2 = np.asarray(arrays[branches["Q2"]], dtype=np.float64)
-            e_p = np.asarray(arrays[branches["e_p"]], dtype=np.float64)
-            e_theta_raw = np.asarray(
-                arrays[branches["e_theta"]],
-                dtype=np.float64,
-            )
-            e_theta = angle_to_radians(e_theta_raw, branches["e_theta"])
+            for arrays in tree.iterate(
+                expressions=expressions,
+                step_size=chunk_size,
+                library="np",
+            ):
+                n_chunk = len(arrays[branches["runnum"]])
+                total_seen += n_chunk
 
-            dep_a = np.asarray(arrays[branches["DepA"]], dtype=np.float64)
-            dep_b = np.asarray(arrays[branches["DepB"]], dtype=np.float64)
-            dep_c = np.asarray(arrays[branches["DepC"]], dtype=np.float64)
-            dep_v = np.asarray(arrays[branches["DepV"]], dtype=np.float64)
-            dep_w = np.asarray(arrays[branches["DepW"]], dtype=np.float64)
-
-            sin_theta_gamma, cos_theta_gamma = compute_theta_gamma(
-                e_p,
-                e_theta,
-                BEAM_ENERGY_GEV[period],
-            )
-
-            _, _, bin_number = bin_indices(xB, minus_tprime)
-
-            known_run = np.fromiter(
-                (
-                    int(run) in run_records
-                    and run_records[int(run)].period == period
-                    for run in runnum
-                ),
-                count=runnum.size,
-                dtype=bool,
-            )
-            active_run = np.fromiter(
-                (
-                    int(run) in run_records
-                    and run_records[int(run)].period == period
-                    and run_records[int(run)].charge_plus > 0.0
-                    and run_records[int(run)].charge_minus > 0.0
-                    for run in runnum
-                ),
-                count=runnum.size,
-                dtype=bool,
-            )
-            zero_charge_run = known_run & ~active_run
-
-            missing_mask = ~known_run
-            total_missing_run += int(np.count_nonzero(missing_mask))
-            total_zero_charge_run_events += int(
-                np.count_nonzero(zero_charge_run)
-            )
-            total_zero_helicity += int(np.count_nonzero(helicity == 0))
-
-            if np.any(missing_mask):
-                missing_runs, missing_counts = np.unique(
-                    runnum[missing_mask],
-                    return_counts=True,
+                runnum = np.asarray(
+                    arrays[branches["runnum"]],
+                    dtype=np.int64,
                 )
-                for missing_run, missing_count in zip(
-                    missing_runs,
-                    missing_counts,
-                ):
-                    key = int(missing_run)
-                    missing_run_event_counts[key] = (
-                        missing_run_event_counts.get(key, 0)
-                        + int(missing_count)
-                    )
-                # endfor
-            # endif
-
-            if np.any(zero_charge_run):
-                disabled_runs, disabled_counts = np.unique(
-                    runnum[zero_charge_run],
-                    return_counts=True,
-                )
-                for disabled_run, disabled_count in zip(
-                    disabled_runs,
-                    disabled_counts,
-                ):
-                    key = int(disabled_run)
-                    zero_charge_run_event_counts[key] = (
-                        zero_charge_run_event_counts.get(key, 0)
-                        + int(disabled_count)
-                    )
-                # endfor
-            # endif
-
-            finite = (
-                np.isfinite(xB)
-                & np.isfinite(minus_tprime)
-                & np.isfinite(mx2)
-                & np.isfinite(phi)
-                & np.isfinite(q2)
-                & np.isfinite(sin_theta_gamma)
-                & np.isfinite(cos_theta_gamma)
-                & np.isfinite(dep_a)
-                & np.isfinite(dep_b)
-                & np.isfinite(dep_c)
-                & np.isfinite(dep_v)
-                & np.isfinite(dep_w)
-            )
-            base = (
-                finite
-                & active_run
-                & np.isin(helicity, (-1, 1))
-                & (bin_number >= 1)
-                & (dep_a > 0.0)
-            )
-
-            selected = np.zeros(base.shape, dtype=bool)
-            for current_bin in range(1, NUMBER_OF_BINS + 1):
-                cut = cuts[(period, current_bin)]
-                selected |= (
-                    base
-                    & (bin_number == current_bin)
-                    & (mx2 >= cut.low_gev2)
-                    & (mx2 < cut.high_gev2)
-                )
-            # endfor
-
-            if not np.any(selected):
-                continue
-            # endif
-
-            total_selected += int(np.count_nonzero(selected))
-            collected["period_index"].append(
-                np.full(
-                    int(np.count_nonzero(selected)),
-                    PERIOD_INDEX[period],
+                helicity = np.asarray(
+                    arrays[branches["helicity"]],
                     dtype=np.int8,
                 )
-            )
-            collected["runnum"].append(runnum[selected].astype(np.int32))
-            collected["helicity"].append(helicity[selected].astype(np.int8))
-            collected["bin_number"].append(
-                bin_number[selected].astype(np.int16)
-            )
-            collected["xB"].append(xB[selected])
-            collected["minus_tprime"].append(minus_tprime[selected])
-            collected["Mx2"].append(mx2[selected])
-            collected["phi"].append(phi[selected])
-            collected["Q2"].append(q2[selected])
-            collected["sin_theta_gamma"].append(sin_theta_gamma[selected])
-            collected["cos_theta_gamma"].append(cos_theta_gamma[selected])
-            collected["rB"].append(dep_b[selected] / dep_a[selected])
-            collected["rC"].append(dep_c[selected] / dep_a[selected])
-            collected["rV"].append(dep_v[selected] / dep_a[selected])
-            collected["rW"].append(dep_w[selected] / dep_a[selected])
-        # endfor
-
-        if missing_run_event_counts:
-            details = ", ".join(
-                f"{run}: {count:,} events"
-                for run, count in sorted(missing_run_event_counts.items())
-            )
-            raise RuntimeError(
-                f"{period} ROOT input contains events from runs absent from "
-                f"the NH3 section of the run-information CSV: {details}."
-            )
-        # endif
-
-        if zero_charge_run_event_counts:
-            details = ", ".join(
-                f"{run}: {count:,} events"
-                for run, count in sorted(
-                    zero_charge_run_event_counts.items()
+                xB = np.asarray(arrays[branches["xB"]], dtype=np.float64)
+                minus_tprime = -np.asarray(
+                    arrays[branches["tprime"]],
+                    dtype=np.float64,
                 )
-            )
-            raise RuntimeError(
-                f"{period} ROOT input contains events from QA-disabled runs "
-                f"whose CSV charges are Q+=Q-=0: {details}. Zero-charge rows "
-                "are allowed in clas12_run_info.csv, but no event from those "
-                "runs may enter the ROOT input used for asymmetry extraction."
-            )
-        # endif
+                mx2 = np.asarray(arrays[branches["Mx2"]], dtype=np.float64)
+                phi_raw = np.asarray(arrays[branches["phi"]], dtype=np.float64)
+                phi = angle_to_radians(phi_raw, branches["phi"])
+                phi = np.mod(phi, 2.0 * math.pi)
+                q2 = np.asarray(arrays[branches["Q2"]], dtype=np.float64)
+                e_p = np.asarray(arrays[branches["e_p"]], dtype=np.float64)
+                e_theta_raw = np.asarray(
+                    arrays[branches["e_theta"]],
+                    dtype=np.float64,
+                )
+                e_theta = angle_to_radians(e_theta_raw, branches["e_theta"])
+
+                dep_a = np.asarray(arrays[branches["DepA"]], dtype=np.float64)
+                dep_b = np.asarray(arrays[branches["DepB"]], dtype=np.float64)
+                dep_c = np.asarray(arrays[branches["DepC"]], dtype=np.float64)
+                dep_v = np.asarray(arrays[branches["DepV"]], dtype=np.float64)
+                dep_w = np.asarray(arrays[branches["DepW"]], dtype=np.float64)
+
+                sin_theta_gamma, cos_theta_gamma = compute_theta_gamma(
+                    e_p,
+                    e_theta,
+                    BEAM_ENERGY_GEV[period],
+                )
+
+                _, _, bin_number = bin_indices(xB, minus_tprime)
+
+                known_run = np.fromiter(
+                    (
+                        int(run) in run_records
+                        and run_records[int(run)].period == period
+                        for run in runnum
+                    ),
+                    count=runnum.size,
+                    dtype=bool,
+                )
+                active_run = np.fromiter(
+                    (
+                        int(run) in run_records
+                        and run_records[int(run)].period == period
+                        and run_records[int(run)].charge_plus > 0.0
+                        and run_records[int(run)].charge_minus > 0.0
+                        for run in runnum
+                    ),
+                    count=runnum.size,
+                    dtype=bool,
+                )
+                zero_charge_run = known_run & ~active_run
+
+                missing_mask = ~known_run
+                total_missing_run += int(np.count_nonzero(missing_mask))
+                total_zero_charge_run_events += int(
+                    np.count_nonzero(zero_charge_run)
+                )
+                total_zero_helicity += int(np.count_nonzero(helicity == 0))
+
+                if np.any(missing_mask):
+                    missing_runs, missing_counts = np.unique(
+                        runnum[missing_mask],
+                        return_counts=True,
+                    )
+                    for missing_run, missing_count in zip(
+                        missing_runs,
+                        missing_counts,
+                    ):
+                        key = int(missing_run)
+                        missing_run_event_counts[key] = (
+                            missing_run_event_counts.get(key, 0)
+                            + int(missing_count)
+                        )
+                    # endfor
+                # endif
+
+                if np.any(zero_charge_run):
+                    disabled_runs, disabled_counts = np.unique(
+                        runnum[zero_charge_run],
+                        return_counts=True,
+                    )
+                    for disabled_run, disabled_count in zip(
+                        disabled_runs,
+                        disabled_counts,
+                    ):
+                        key = int(disabled_run)
+                        zero_charge_run_event_counts[key] = (
+                            zero_charge_run_event_counts.get(key, 0)
+                            + int(disabled_count)
+                        )
+                    # endfor
+                # endif
+
+                finite = (
+                    np.isfinite(xB)
+                    & np.isfinite(minus_tprime)
+                    & np.isfinite(mx2)
+                    & np.isfinite(phi)
+                    & np.isfinite(q2)
+                    & np.isfinite(sin_theta_gamma)
+                    & np.isfinite(cos_theta_gamma)
+                    & np.isfinite(dep_a)
+                    & np.isfinite(dep_b)
+                    & np.isfinite(dep_c)
+                    & np.isfinite(dep_v)
+                    & np.isfinite(dep_w)
+                )
+                base = (
+                    finite
+                    & active_run
+                    & np.isin(helicity, (-1, 1))
+                    & (bin_number >= 1)
+                    & (dep_a > 0.0)
+                )
+
+                selected = np.zeros(base.shape, dtype=bool)
+                for current_bin in range(1, NUMBER_OF_BINS + 1):
+                    cut = cuts[(period, current_bin)]
+                    selected |= (
+                        base
+                        & (bin_number == current_bin)
+                        & (mx2 >= cut.low_gev2)
+                        & (mx2 < cut.high_gev2)
+                    )
+                # endfor
+
+                if not np.any(selected):
+                    continue
+                # endif
+
+                total_selected += int(np.count_nonzero(selected))
+                collected["period_index"].append(
+                    np.full(
+                        int(np.count_nonzero(selected)),
+                        PERIOD_INDEX[period],
+                        dtype=np.int8,
+                    )
+                )
+                collected["runnum"].append(runnum[selected].astype(np.int32))
+                collected["helicity"].append(helicity[selected].astype(np.int8))
+                collected["bin_number"].append(
+                    bin_number[selected].astype(np.int16)
+                )
+                collected["xB"].append(xB[selected])
+                collected["minus_tprime"].append(minus_tprime[selected])
+                collected["Mx2"].append(mx2[selected])
+                collected["phi"].append(phi[selected])
+                collected["Q2"].append(q2[selected])
+                collected["sin_theta_gamma"].append(sin_theta_gamma[selected])
+                collected["cos_theta_gamma"].append(cos_theta_gamma[selected])
+                collected["rB"].append(dep_b[selected] / dep_a[selected])
+                collected["rC"].append(dep_c[selected] / dep_a[selected])
+                collected["rV"].append(dep_v[selected] / dep_a[selected])
+                collected["rW"].append(dep_w[selected] / dep_a[selected])
+            # endfor
+
+            if missing_run_event_counts:
+                details = ", ".join(
+                    f"{run}: {count:,} events"
+                    for run, count in sorted(missing_run_event_counts.items())
+                )
+                raise RuntimeError(
+                    f"{period} ROOT input contains events from runs absent from "
+                    f"the NH3 section of the run-information CSV: {details}."
+                )
+            # endif
+
+            if zero_charge_run_event_counts:
+                details = ", ".join(
+                    f"{run}: {count:,} events"
+                    for run, count in sorted(
+                        zero_charge_run_event_counts.items()
+                    )
+                )
+                raise RuntimeError(
+                    f"{period} ROOT input contains events from QA-disabled runs "
+                    f"whose CSV charges are Q+=Q-=0: {details}. Zero-charge rows "
+                    "are allowed in clas12_run_info.csv, but no event from those "
+                    "runs may enter the ROOT input used for asymmetry extraction."
+                )
+            # endif
 
         period_statistics[period] = {
             "events_seen": total_seen,
