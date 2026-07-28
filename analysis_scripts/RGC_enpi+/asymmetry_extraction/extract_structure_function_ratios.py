@@ -4221,7 +4221,12 @@ def write_target_axis_barlow_products(
     nominal_frame: pd.DataFrame,
     output_dir: Path,
 ) -> dict[str, Any]:
-    """Write target-axis tables, plots, covariance, and Barlow diagnostics."""
+    """Write target-axis tables, plots, covariance, and Barlow diagnostics.
+
+    The output table is assembled from a dictionary of complete columns and
+    materialized once.  This avoids pandas DataFrame fragmentation from
+    repeatedly inserting columns inside the parameter/variation loops.
+    """
     tables_dir = output_dir / "tables"
     plots_dir = output_dir / "plots"
     covariance_dir = output_dir / "covariance"
@@ -4229,50 +4234,183 @@ def write_target_axis_barlow_products(
     for directory in (tables_dir, plots_dir, covariance_dir, summary_dir):
         ensure_directory(directory)
     # endfor
-    keys = ["bin_number", "x_index", "t_index", "mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2"]
-    frame = nominal_frame[keys].copy()
+
+    keys = [
+        "bin_number",
+        "x_index",
+        "t_index",
+        "mean_xB",
+        "mean_Q2_gev2",
+        "mean_minus_tprime_gev2",
+    ]
+
+    column_data: dict[str, Any] = {
+        key: nominal_frame[key].to_numpy(copy=True)
+        for key in keys
+    }
     records: list[dict[str, Any]] = []
     covariance_products: dict[str, dict[str, str]] = {}
+
     for parameter in PHYSICS_PARAMETERS:
-        frame[f"{parameter}_nominal"] = nominal_frame[parameter]
-        frame[f"{parameter}_stat_nominal"] = nominal_frame[f"{parameter}_stat"]
+        nominal_values = nominal_frame[parameter].to_numpy(dtype=np.float64, copy=True)
+        nominal_stat = nominal_frame[f"{parameter}_stat"].to_numpy(
+            dtype=np.float64, copy=True
+        )
+
+        column_data[f"{parameter}_nominal"] = nominal_values
+        column_data[f"{parameter}_stat_nominal"] = nominal_stat
         covariance_products[parameter] = {}
+
+        variation_results: dict[str, dict[str, np.ndarray]] = {}
         for variation in ("no_projection", "external_data_informed"):
-            frame[f"{parameter}_{variation}"] = nominal_frame[f"{parameter}_{variation}"]
-            frame[f"{parameter}_stat_{variation}"] = nominal_frame[f"{parameter}_stat_{variation}"]
-            barlow = calculate_barlow_arrays(frame[f"{parameter}_nominal"], frame[f"{parameter}_{variation}"], frame[f"{parameter}_stat_nominal"], frame[f"{parameter}_stat_{variation}"])
+            variation_values = nominal_frame[f"{parameter}_{variation}"].to_numpy(
+                dtype=np.float64, copy=True
+            )
+            variation_stat = nominal_frame[
+                f"{parameter}_stat_{variation}"
+            ].to_numpy(dtype=np.float64, copy=True)
+
+            column_data[f"{parameter}_{variation}"] = variation_values
+            column_data[f"{parameter}_stat_{variation}"] = variation_stat
+
+            barlow = calculate_barlow_arrays(
+                nominal_values,
+                variation_values,
+                nominal_stat,
+                variation_stat,
+            )
             prefix = f"{parameter}_{variation}_barlow"
-            frame[f"{prefix}_difference"] = barlow["difference"]
-            frame[f"{prefix}_statistical_scale"] = barlow["denominator"]
-            frame[f"{prefix}_value"] = barlow["barlow"]
-            frame[f"{prefix}_passes"] = barlow["passed"]
-            frame[f"{prefix}_status"] = barlow["status"]
-            records.append(summarize_barlow_status(frame, effect="target_axis", variation=f"{variation}_minus_nominal", parameter=parameter, barlow_column=f"{prefix}_value", status_column=f"{prefix}_status"))
-            vector = frame[f"{prefix}_difference"].to_numpy(dtype=np.float64)
-            covariance_path = covariance_dir / f"{parameter}_{variation}_covariance.npy"
+            column_data[f"{prefix}_difference"] = np.asarray(
+                barlow["difference"]
+            )
+            column_data[f"{prefix}_statistical_scale"] = np.asarray(
+                barlow["denominator"]
+            )
+            column_data[f"{prefix}_value"] = np.asarray(barlow["barlow"])
+            column_data[f"{prefix}_passes"] = np.asarray(barlow["passed"])
+            column_data[f"{prefix}_status"] = np.asarray(
+                barlow["status"], dtype=object
+            )
+
+            variation_results[variation] = {
+                "difference": np.asarray(barlow["difference"]),
+                "status": np.asarray(barlow["status"], dtype=object),
+            }
+
+            summary_frame = pd.DataFrame(
+                {
+                    f"{prefix}_value": column_data[f"{prefix}_value"],
+                    f"{prefix}_status": column_data[f"{prefix}_status"],
+                }
+            )
+            records.append(
+                summarize_barlow_status(
+                    summary_frame,
+                    effect="target_axis",
+                    variation=f"{variation}_minus_nominal",
+                    parameter=parameter,
+                    barlow_column=f"{prefix}_value",
+                    status_column=f"{prefix}_status",
+                )
+            )
+
+            vector = variation_results[variation]["difference"].astype(
+                np.float64, copy=False
+            )
+            covariance_path = (
+                covariance_dir / f"{parameter}_{variation}_covariance.npy"
+            )
             np.save(covariance_path, np.outer(vector, vector))
             covariance_products[parameter][variation] = str(covariance_path)
         # endfor
-        no_abs = frame[f"{parameter}_no_projection_barlow_difference"].abs()
-        ext_abs = frame[f"{parameter}_external_data_informed_barlow_difference"].abs()
+
+        no_difference = variation_results["no_projection"]["difference"]
+        ext_difference = variation_results["external_data_informed"][
+            "difference"
+        ]
+        no_abs = np.abs(no_difference)
+        ext_abs = np.abs(ext_difference)
         choose_no = no_abs >= ext_abs
-        frame[f"{parameter}_target_axis_systematic"] = np.maximum(no_abs, ext_abs)
-        frame[f"{parameter}_target_axis_systematic_to_nominal_stat"] = np.divide(frame[f"{parameter}_target_axis_systematic"], frame[f"{parameter}_stat_nominal"])
-        frame[f"{parameter}_target_axis_selected_variation"] = np.where(choose_no, "no_projection", "external_data_informed")
-        frame[f"{parameter}_target_axis_barlow_status"] = np.where(choose_no, frame[f"{parameter}_no_projection_barlow_status"], frame[f"{parameter}_external_data_informed_barlow_status"])
+        target_axis_systematic = np.maximum(no_abs, ext_abs)
+
+        systematic_to_stat = np.divide(
+            target_axis_systematic,
+            nominal_stat,
+            out=np.full_like(target_axis_systematic, np.nan, dtype=np.float64),
+            where=np.isfinite(nominal_stat) & (nominal_stat > 0.0),
+        )
+
+        no_status = variation_results["no_projection"]["status"]
+        ext_status = variation_results["external_data_informed"]["status"]
+
+        column_data[f"{parameter}_target_axis_systematic"] = (
+            target_axis_systematic
+        )
+        column_data[
+            f"{parameter}_target_axis_systematic_to_nominal_stat"
+        ] = systematic_to_stat
+        column_data[f"{parameter}_target_axis_selected_variation"] = np.where(
+            choose_no, "no_projection", "external_data_informed"
+        )
+        column_data[f"{parameter}_target_axis_barlow_status"] = np.where(
+            choose_no, no_status, ext_status
+        )
     # endfor
+
+    frame = pd.DataFrame(column_data)
+
     x = frame["bin_number"].to_numpy(dtype=float)
-    definition = r"$\delta_{\rm axis}=\max(|a_{\rm no\ proj}-a_{\rm nom}|,|a_{\rm ext}-a_{\rm nom}|)$"
-    def draw(parameter: str, axes: np.ndarray, *, show_legends: bool, show_xlabel: bool) -> None:
-        draw_systematic_comparison(axes, x=x, parameter=parameter, top_series=[
-            {"values": frame[f"{parameter}_nominal"], "errors": frame[f"{parameter}_stat_nominal"], "fmt": "o", "label": "Nominal projection"},
-            {"values": frame[f"{parameter}_no_projection"], "errors": frame[f"{parameter}_stat_no_projection"], "fmt": "^", "label": "No projection"},
-            {"values": frame[f"{parameter}_external_data_informed"], "errors": frame[f"{parameter}_stat_external_data_informed"], "fmt": "s", "label": "External-data-informed"},
-        ], systematic=frame[f"{parameter}_target_axis_systematic"], status=frame[f"{parameter}_target_axis_barlow_status"], systematic_definition=definition, show_legends=show_legends, show_xlabel=show_xlabel)
+    definition = (
+        r"$\delta_{\rm axis}=\max(|a_{\rm no\ proj}-a_{\rm nom}|,"
+        r"|a_{\rm ext}-a_{\rm nom}|)$"
+    )
+
+    def draw(
+        parameter: str,
+        axes: np.ndarray,
+        *,
+        show_legends: bool,
+        show_xlabel: bool,
+    ) -> None:
+        draw_systematic_comparison(
+            axes,
+            x=x,
+            parameter=parameter,
+            top_series=[
+                {
+                    "values": frame[f"{parameter}_nominal"],
+                    "errors": frame[f"{parameter}_stat_nominal"],
+                    "fmt": "o",
+                    "label": "Nominal projection",
+                },
+                {
+                    "values": frame[f"{parameter}_no_projection"],
+                    "errors": frame[f"{parameter}_stat_no_projection"],
+                    "fmt": "^",
+                    "label": "No projection",
+                },
+                {
+                    "values": frame[f"{parameter}_external_data_informed"],
+                    "errors": frame[
+                        f"{parameter}_stat_external_data_informed"
+                    ],
+                    "fmt": "s",
+                    "label": "External-data-informed",
+                },
+            ],
+            systematic=frame[f"{parameter}_target_axis_systematic"],
+            status=frame[f"{parameter}_target_axis_barlow_status"],
+            systematic_definition=definition,
+            show_legends=show_legends,
+            show_xlabel=show_xlabel,
+        )
     # enddef
+
     plot_paths: list[str] = []
     for parameter in PHYSICS_PARAMETERS:
-        fig, axes = plt.subplots(3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True)
+        fig, axes = plt.subplots(
+            3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True
+        )
         draw(parameter, axes, show_legends=True, show_xlabel=True)
         fig.tight_layout()
         path = plots_dir / f"target_axis_{parameter}.png"
@@ -4280,12 +4418,52 @@ def write_target_axis_barlow_products(
         plt.close(fig)
         plot_paths.append(str(path))
     # endfor
-    summary = write_systematic_summary_canvas(output_dir=summary_dir, filename_stem="target_axis_systematic_summary", draw_parameter=draw)
+
+    summary = write_systematic_summary_canvas(
+        output_dir=summary_dir,
+        filename_stem="target_axis_systematic_summary",
+        draw_parameter=draw,
+    )
     csv_path = tables_dir / "target_axis_barlow_criteria.csv"
     json_path = tables_dir / "target_axis_barlow_criteria.json"
     frame.to_csv(csv_path, index=False)
-    write_json(json_path, {"schema_version": 3, "systematic_definition": "delta_axis = max(abs(no_projection-nominal), abs(external_data_informed-nominal))", "selected_barlow_marker_rule": "The marker state is taken from the variation that supplies the envelope in that bin.", "middle_panel": "Assigned target-axis envelope with Barlow marker state.", "bottom_panel": "Assigned target-axis envelope divided by nominal statistical uncertainty.", "plot_axis_convention": "Top and middle axes are common by parameter family; normalized-size axis is logarithmic from 1e-2 to 1e2.", "summary": records, "rows": frame.to_dict(orient="records")})
-    return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary_canvas": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": records}
+    write_json(
+        json_path,
+        {
+            "schema_version": 3,
+            "systematic_definition": (
+                "delta_axis = max(abs(no_projection-nominal), "
+                "abs(external_data_informed-nominal))"
+            ),
+            "selected_barlow_marker_rule": (
+                "The marker state is taken from the variation that supplies "
+                "the envelope in that bin."
+            ),
+            "middle_panel": (
+                "Assigned target-axis envelope with Barlow marker state."
+            ),
+            "bottom_panel": (
+                "Assigned target-axis envelope divided by nominal statistical "
+                "uncertainty."
+            ),
+            "plot_axis_convention": (
+                "Top and middle axes are common by parameter family; "
+                "normalized-size axis is logarithmic from 1e-2 to 1e2."
+            ),
+            "summary": records,
+            "rows": frame.to_dict(orient="records"),
+        },
+    )
+    return {
+        "csv": str(csv_path),
+        "json": str(json_path),
+        "plots_directory": str(plots_dir),
+        "plots": plot_paths,
+        "summary_canvas": summary,
+        "covariance_directory": str(covariance_dir),
+        "covariance": covariance_products,
+        "barlow_summary": records,
+    }
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
