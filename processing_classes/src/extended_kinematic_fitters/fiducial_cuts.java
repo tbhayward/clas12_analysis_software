@@ -60,11 +60,11 @@ public class fiducial_cuts {
     }
 
     public boolean pcal_fiducial_cut(
-            int particle_Index,
-            int strictness,
-            HipoDataBank run_Bank,
-            HipoDataBank rec_Bank,
-            HipoDataBank cal_Bank) {
+        int particle_Index,
+        int strictness,
+        HipoDataBank run_Bank,
+        HipoDataBank rec_Bank,
+        HipoDataBank cal_Bank) {
 
         int runnum = run_Bank.getInt("run", 0);
 
@@ -83,26 +83,31 @@ public class fiducial_cuts {
         int sector = 0;
 
         // Loop through each row of the calorimeter bank.
-        for (int current_Row = 0; current_Row < cal_Bank.rows(); current_Row++) {
+        for (int current_Row = 0;
+                current_Row < cal_Bank.rows();
+                current_Row++) {
+
             int pindex = cal_Bank.getInt("pindex", current_Row);
             int layerRow = cal_Bank.getInt("layer", current_Row);
 
-            if (pindex == particle_Index) {
-                sector = cal_Bank.getInt("sector", current_Row);
+            if (pindex != particle_Index) {
+                continue;
+            }
 
-                if (layerRow == 1) {
-                    lv_1 = cal_Bank.getFloat("lv", current_Row);
-                    lw_1 = cal_Bank.getFloat("lw", current_Row);
-                    lu_1 = cal_Bank.getFloat("lu", current_Row);
-                } else if (layerRow == 4) {
-                    lv_4 = cal_Bank.getFloat("lv", current_Row);
-                    lw_4 = cal_Bank.getFloat("lw", current_Row);
-                    lu_4 = cal_Bank.getFloat("lu", current_Row);
-                } else if (layerRow == 7) {
-                    lv_7 = cal_Bank.getFloat("lv", current_Row);
-                    lw_7 = cal_Bank.getFloat("lw", current_Row);
-                    lu_7 = cal_Bank.getFloat("lu", current_Row);
-                }
+            sector = cal_Bank.getInt("sector", current_Row);
+
+            if (layerRow == 1) {
+                lv_1 = cal_Bank.getFloat("lv", current_Row);
+                lw_1 = cal_Bank.getFloat("lw", current_Row);
+                lu_1 = cal_Bank.getFloat("lu", current_Row);
+            } else if (layerRow == 4) {
+                lv_4 = cal_Bank.getFloat("lv", current_Row);
+                lw_4 = cal_Bank.getFloat("lw", current_Row);
+                lu_4 = cal_Bank.getFloat("lu", current_Row);
+            } else if (layerRow == 7) {
+                lv_7 = cal_Bank.getFloat("lv", current_Row);
+                lw_7 = cal_Bank.getFloat("lw", current_Row);
+                lu_7 = cal_Bank.getFloat("lu", current_Row);
             }
         }
 
@@ -130,7 +135,8 @@ public class fiducial_cuts {
                 return false;
         }
 
-        // Do not apply localized dead-channel exclusions at strictness 1.
+        // Do not apply the localized data/MC-matching exclusions
+        // for strictness 1.
         if (strictness < 2) {
             return true;
         }
@@ -143,76 +149,92 @@ public class fiducial_cuts {
 
         boolean isRga = isRgaSp18 || isRgaFa18 || isRgaSp19;
 
-        if (isRga) {
-            switch (sector) {
-                case 1:
-                    // PCal
-                    if ((lw_1 > 72.0 && lw_1 < 94.5)
-                            || (lw_1 > 220.5 && lw_1 < 234.0)) {
-                        return false;
-                    }
+        if (!isRga) {
+            return true;
+        }
 
-                    // ECin
-                    if (lv_4 > 67.5 && lv_4 < 94.5) {
-                        return false;
-                    }
+        switch (sector) {
+            case 1:
+                // PCal exclusions common to all RGA periods.
+                if ((lw_1 > 72.0 && lw_1 < 94.5)
+                        || (lw_1 > 220.5 && lw_1 < 234.0)) {
+                    return false;
+                }
 
-                    // ECout
-                    if (lv_7 > 0.0 && lv_7 < 67.5) {
-                        return false;
-                    }
-                    break;
+                // Additional PCal exclusion for Spring 2018.
+                if (isRgaSp18
+                        && lw_1 > 333.0 && lw_1 < 346.5) {
+                    return false;
+                }
 
-                case 2:
-                    // Spring 2018 and Spring 2019.
-                    if ((isRgaSp18 || isRgaSp19)
-                            && lv_1 > 31.5 && lv_1 < 49.5) {
-                        return false;
-                    }
+                // ECin exclusion common to all RGA periods.
+                if (lv_4 > 67.5 && lv_4 < 94.5) {
+                    return false;
+                }
 
-                    // Fall 2018 and Spring 2019.
-                    if ((isRgaFa18 || isRgaSp19)
-                            && lv_1 > 99.0 && lv_1 < 117.0) {
-                        return false;
-                    }
-                    break;
+                // ECout exclusion common to all RGA periods.
+                if (lv_7 > 0.0 && lv_7 < 67.5) {
+                    return false;
+                }
+                break;
 
-                case 3:
-                    // PCal
+            case 2:
+                // PCal exclusion for Spring 2018 and Spring 2019.
+                if ((isRgaSp18 || isRgaSp19)
+                        && lv_1 > 31.5 && lv_1 < 49.5) {
+                    return false;
+                }
+
+                // PCal exclusion for Fall 2018 and Spring 2019.
+                if ((isRgaFa18 || isRgaSp19)
+                        && lv_1 > 99.0 && lv_1 < 117.0) {
+                    return false;
+                }
+
+                // ECout exclusion for Spring 2018.
+                if (isRgaSp18
+                        && lw_7 > 306.0 && lw_7 < 328.5) {
+                    return false;
+                }
+                break;
+
+            case 3:
+                // This exclusion is absent for Sp18 Inb.
+                if (!isRgaSp18 || runnum > 4325) {
                     if (lw_1 > 346.5 && lw_1 < 378.0) {
                         return false;
                     }
-                    break;
+                }
+                break;
 
-                case 4:
-                    // PCal
-                    if (lv_1 > 229.5 && lv_1 < 243.0) {
-                        return false;
-                    }
+            case 4:
+                // PCal exclusion common to all RGA periods.
+                if (lv_1 > 229.5 && lv_1 < 243.0) {
+                    return false;
+                }
 
-                    // ECin
-                    if (lv_4 > 0.0 && lv_4 < 23.5) {
-                        return false;
-                    }
-                    break;
+                // ECin exclusion common to all RGA periods.
+                if (lv_4 > 0.0 && lv_4 < 23.5) {
+                    return false;
+                }
+                break;
 
-                case 5:
-                    // ECout
-                    if (lu_7 > 198.0 && lu_7 < 220.5) {
-                        return false;
-                    }
-                    break;
+            case 5:
+                // ECout exclusion common to all RGA periods.
+                if (lu_7 > 198.0 && lu_7 < 220.5) {
+                    return false;
+                }
+                break;
 
-                case 6:
-                    // PCal
-                    if (lw_1 > 166.5 && lw_1 < 193.5) {
-                        return false;
-                    }
-                    break;
+            case 6:
+                // PCal exclusion common to all RGA periods.
+                if (lw_1 > 166.5 && lw_1 < 193.5) {
+                    return false;
+                }
+                break;
 
-                default:
-                    break;
-            }
+            default:
+                break;
         }
 
         return true;

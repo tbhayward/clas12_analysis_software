@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v9.py
+plot_calibration_v10.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -56,26 +56,26 @@ Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v9.py
+  python3 external_scripts/plot_calibration_v10.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v9.py --rgc
+  python3 external_scripts/plot_calibration_v10.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v9.py \
+  python3 external_scripts/plot_calibration_v10.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v9.py --skip-ft
+  python3 external_scripts/plot_calibration_v10.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v9.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v10.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -337,27 +337,40 @@ FA18_AND_SP19_DATASET_KEYS: frozenset[str] = (
     FA18_DATASET_KEYS | SP19_DATASET_KEYS
 )
 
+SP18_OUT_FA18_SP19_DATASET_KEYS: frozenset[str] = frozenset(
+    (
+        "rga_sp18_out",
+        "rga_fa18_inb",
+        "rga_fa18_out",
+        "rga_sp19_inb",
+    )
+)
+
 DEAD_STRIP_EXCLUSIONS: tuple[
     tuple[str, int, str, float, float, frozenset[str]], ...
 ] = (
-    # Common PCal exclusions.
+    # PCal exclusions common to all five RGA periods.
     ("pcal", 1, "lw", 72.0, 94.5, ALL_RGA_DATASET_KEYS),
     ("pcal", 1, "lw", 220.5, 234.0, ALL_RGA_DATASET_KEYS),
-    ("pcal", 3, "lw", 346.5, 378.0, ALL_RGA_DATASET_KEYS),
     ("pcal", 4, "lv", 229.5, 243.0, ALL_RGA_DATASET_KEYS),
     ("pcal", 6, "lw", 166.5, 193.5, ALL_RGA_DATASET_KEYS),
 
-    # Period-dependent PCal sector-2 exclusions.
+    # Period-dependent PCal exclusions.
+    ("pcal", 1, "lw", 333.0, 346.5, SP18_DATASET_KEYS),
     ("pcal", 2, "lv", 31.5, 49.5, SP18_AND_SP19_DATASET_KEYS),
     ("pcal", 2, "lv", 99.0, 117.0, FA18_AND_SP19_DATASET_KEYS),
+    ("pcal", 3, "lw", 346.5, 378.0, SP18_OUT_FA18_SP19_DATASET_KEYS),
 
-    # Common ECin exclusions.
+    # ECin exclusions common to all five RGA periods.
     ("ecin", 1, "lv", 67.5, 94.5, ALL_RGA_DATASET_KEYS),
     ("ecin", 4, "lv", 0.0, 23.5, ALL_RGA_DATASET_KEYS),
 
-    # Common ECout exclusions.
+    # ECout exclusions common to all five RGA periods.
     ("ecout", 1, "lv", 0.0, 67.5, ALL_RGA_DATASET_KEYS),
     ("ecout", 5, "lu", 198.0, 220.5, ALL_RGA_DATASET_KEYS),
+
+    # Spring-2018-specific ECout exclusion.
+    ("ecout", 2, "lw", 306.0, 328.5, SP18_DATASET_KEYS),
 )
 
 
