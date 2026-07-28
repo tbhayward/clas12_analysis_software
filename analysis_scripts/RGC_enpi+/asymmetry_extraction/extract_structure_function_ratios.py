@@ -143,7 +143,7 @@ uncertainties sigma_v and sigma_0, this program defines
 A variation passes the criterion when B >= 1.  A zero denominator with a
 nonzero shift is treated as B = infinity and therefore passes; a zero
 denominator with a zero shift is reported as undefined.  The complete Barlow
-values, thresholds, and pass/fail/undefined states are written for target-axis,
+values and pass/fail/undefined states are written for target-axis,
 ISR, momentum-correction, and channel-selection variations.  The Barlow decision is diagnostic and
 does not silently delete a requested systematic; both the raw variation and
 the criterion result are retained.
@@ -574,9 +574,12 @@ SINGLE_SPIN_PARAMETERS = frozenset(("lu1", "ul1", "ul2"))
 UNPOLARIZED_DOUBLE_SPIN_PARAMETERS = frozenset(("u1", "u2", "ll0", "ll1"))
 SYSTEMATIC_COMPARISON_SINGLE_SPIN_Y_LIMITS = (-0.5, 0.5)
 SYSTEMATIC_COMPARISON_UNPOLARIZED_DOUBLE_Y_LIMITS = (-1.0, 1.0)
-BARLOW_PLOT_Y_LIMITS = (1.0e-3, 1.0e2)
+SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS = (1.0e-2, 1.0e2)
 SYSTEMATIC_COMPARISON_FIGSIZE = (11, 10)
 SYSTEMATIC_COMPARISON_DPI = 200
+PUBLISHED_SYSTEMATIC_PARAMETERS: tuple[str, ...] = (
+    "lu1", "ul1", "ul2", "ll0", "ll1",
+)
 
 # Physics-motivated panel layout:
 #   top row:    unpolarized cosine modulations
@@ -2945,49 +2948,62 @@ def systematic_comparison_y_limits(parameter: str) -> tuple[float, float]:
     raise KeyError(f"No systematic-comparison axis family for {parameter!r}.")
 
 
+def systematic_size_y_limits(parameter: str) -> tuple[float, float]:
+    """Return a common positive scale for assigned systematic magnitudes."""
+    if parameter in SINGLE_SPIN_PARAMETERS:
+        return (0.0, 0.5)
+    # endif
+    if parameter in UNPOLARIZED_DOUBLE_SPIN_PARAMETERS:
+        return (0.0, 1.0)
+    # endif
+    raise KeyError(f"No systematic-size axis family for {parameter!r}.")
+
+
 def configure_systematic_comparison_axes(
     axes: np.ndarray,
     parameter: str,
 ) -> None:
     """Apply identical axes to every three-panel systematic canvas."""
-    y_limits = systematic_comparison_y_limits(parameter)
-    axes[0].set_ylim(*y_limits)
-    axes[1].set_ylim(*y_limits)
+    axes[0].set_ylim(*systematic_comparison_y_limits(parameter))
+    axes[1].set_ylim(*systematic_size_y_limits(parameter))
     axes[2].set_yscale("log")
-    axes[2].set_ylim(*BARLOW_PLOT_Y_LIMITS)
+    axes[2].set_ylim(*SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS)
     for ax in axes:
         ax.grid(alpha=0.25, which="both")
     # endfor
 
 
-def barlow_values_for_fixed_log_axis(values: Any) -> tuple[np.ndarray, int, int]:
-    """Prepare Barlow values for the fixed 1e-3--1e2 logarithmic axis.
-
-    Defined finite values outside the visible range and positive infinity are
-    clipped to the nearest boundary so that outliers remain visible without
-    changing the scale from one canvas to another.  Undefined values remain
-    NaN.  The returned counts can be shown on the panel.
-    """
+def values_for_fixed_log_axis(values: Any) -> tuple[np.ndarray, int, int]:
+    """Clip positive values to the fixed 1e-2--1e2 logarithmic axis."""
     raw = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(dtype=float)
     plotted = np.full(raw.shape, np.nan, dtype=float)
-    defined = np.isfinite(raw) | np.isposinf(raw)
-    positive = defined & (raw > 0.0)
+    positive = np.isfinite(raw) & (raw > 0.0)
     plotted[positive] = np.clip(
-        raw[positive], BARLOW_PLOT_Y_LIMITS[0], BARLOW_PLOT_Y_LIMITS[1]
+        raw[positive],
+        SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS[0],
+        SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS[1],
     )
-    number_below = int(np.count_nonzero(positive & (raw < BARLOW_PLOT_Y_LIMITS[0])))
-    number_above = int(np.count_nonzero(np.isposinf(raw) | (raw > BARLOW_PLOT_Y_LIMITS[1])))
+    number_below = int(np.count_nonzero(
+        positive & (raw < SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS[0])
+    ))
+    number_above = int(np.count_nonzero(
+        positive & (raw > SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS[1])
+    ))
     return plotted, number_below, number_above
 
 
-def annotate_barlow_clipping(ax: plt.Axes, below: int, above: int) -> None:
-    """Annotate Barlow values clipped by the standardized plotting range."""
+def annotate_log_clipping(ax: plt.Axes, below: int, above: int) -> None:
+    """Annotate values clipped by the standardized logarithmic range."""
     notes: list[str] = []
     if below:
-        notes.append(f"{below} below {BARLOW_PLOT_Y_LIMITS[0]:g}")
+        notes.append(
+            f"{below} below {SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS[0]:g}"
+        )
     # endif
     if above:
-        notes.append(f"{above} above {BARLOW_PLOT_Y_LIMITS[1]:g}")
+        notes.append(
+            f"{above} above {SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS[1]:g}"
+        )
     # endif
     if notes:
         ax.text(
@@ -2996,6 +3012,148 @@ def annotate_barlow_clipping(ax: plt.Axes, below: int, above: int) -> None:
             bbox={"facecolor": "white", "alpha": 0.75, "edgecolor": "0.7"},
         )
     # endif
+
+
+def status_masks(status_values: Any) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return pass, fail, and undefined masks from Barlow status strings."""
+    status = pd.Series(status_values, dtype="object").fillna("undefined")
+    passed = status.eq("pass").to_numpy(dtype=bool)
+    failed = status.eq("fail").to_numpy(dtype=bool)
+    undefined = ~(passed | failed)
+    return passed, failed, undefined
+
+
+def plot_systematic_status_markers(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    status_values: Any,
+    *,
+    label_prefix: str = "",
+) -> None:
+    """Plot filled pass markers, open fail markers, and x for undefined."""
+    passed, failed, undefined = status_masks(status_values)
+    prefix = f"{label_prefix}: " if label_prefix else ""
+    if np.any(passed):
+        ax.plot(
+            x[passed], y[passed], "o", color="C0",
+            label=f"{prefix}passes Barlow",
+        )
+    # endif
+    if np.any(failed):
+        line = ax.plot(
+            x[failed], y[failed], "o", color="C0", markerfacecolor="none",
+            label=f"{prefix}fails Barlow",
+        )[0]
+        line.set_markeredgewidth(1.5)
+    # endif
+    if np.any(undefined):
+        ax.plot(
+            x[undefined], y[undefined], "x", color="C0",
+            label=f"{prefix}Barlow undefined",
+        )
+    # endif
+
+
+def draw_systematic_comparison(
+    axes: np.ndarray,
+    *,
+    x: np.ndarray,
+    parameter: str,
+    top_series: list[dict[str, Any]],
+    systematic: Any,
+    status: Any,
+    systematic_definition: str,
+    show_legends: bool = True,
+    show_xlabel: bool = True,
+) -> None:
+    """Draw the common value, assigned-systematic, and normalized-size panels."""
+    for series in top_series:
+        axes[0].errorbar(
+            x,
+            np.asarray(series["values"], dtype=float),
+            yerr=np.asarray(series["errors"], dtype=float),
+            fmt=series.get("fmt", "o"),
+            capsize=2,
+            label=series["label"],
+        )
+    # endfor
+    axes[0].set_ylabel(PARAMETER_LABELS[parameter])
+    if show_legends:
+        axes[0].legend()
+    # endif
+
+    systematic_array = np.asarray(systematic, dtype=float)
+    plot_systematic_status_markers(
+        axes[1], x, systematic_array, status,
+    )
+    axes[1].set_ylabel("Assigned systematic")
+    axes[1].text(
+        0.02, 0.95, systematic_definition,
+        transform=axes[1].transAxes, ha="left", va="top", fontsize=9,
+        bbox={"facecolor": "white", "alpha": 0.80, "edgecolor": "0.7"},
+    )
+    if show_legends:
+        axes[1].legend()
+    # endif
+
+    nominal_errors = np.asarray(top_series[0]["errors"], dtype=float)
+    ratio = np.divide(
+        systematic_array,
+        nominal_errors,
+        out=np.full(systematic_array.shape, np.nan, dtype=float),
+        where=np.isfinite(nominal_errors) & (nominal_errors > 0.0),
+    )
+    ratio_plot, below, above = values_for_fixed_log_axis(ratio)
+    plot_systematic_status_markers(axes[2], x, ratio_plot, status)
+    axes[2].axhline(
+        1.0, linewidth=1.0, linestyle="--",
+        label=r"$\delta_{\rm syst}/\sigma_{\rm stat}=1$",
+    )
+    annotate_log_clipping(axes[2], below, above)
+    axes[2].set_ylabel(r"$\delta_{\rm syst}/\sigma_{\rm stat}$")
+    if show_xlabel:
+        axes[2].set_xlabel("Combined kinematic-bin number")
+    # endif
+    if show_legends:
+        axes[2].legend()
+    # endif
+    configure_systematic_comparison_axes(axes, parameter)
+
+
+def write_systematic_summary_canvas(
+    *,
+    output_dir: Path,
+    filename_stem: str,
+    draw_parameter: Any,
+) -> dict[str, str]:
+    """Write a 3x5 overview canvas excluding unpolarized modulations."""
+    ensure_directory(output_dir)
+    ncols = len(PUBLISHED_SYSTEMATIC_PARAMETERS)
+    fig, axes = plt.subplots(
+        3, ncols, figsize=(4.8 * ncols, 10.5), sharex="col", squeeze=False,
+    )
+    for column, parameter in enumerate(PUBLISHED_SYSTEMATIC_PARAMETERS):
+        draw_parameter(
+            parameter,
+            axes[:, column],
+            show_legends=(column == 0),
+            show_xlabel=True,
+        )
+        axes[0, column].set_title(PARAMETER_LABELS[parameter])
+        if column != 0:
+            for row in range(3):
+                axes[row, column].set_ylabel("")
+            # endfor
+        # endif
+    # endfor
+    fig.tight_layout()
+    png_path = output_dir / f"{filename_stem}.png"
+    pdf_path = output_dir / f"{filename_stem}.pdf"
+    fig.savefig(png_path, dpi=SYSTEMATIC_COMPARISON_DPI)
+    fig.savefig(pdf_path)
+    plt.close(fig)
+    return {"png": str(png_path), "pdf": str(pdf_path)}
 
 
 def period_fit_quality_mask(
@@ -3825,11 +3983,12 @@ def write_nominal_isr_comparison_products(
     isr: pd.DataFrame,
     output_dir: Path,
 ) -> dict[str, Any]:
-    """Write nominal-versus-ISR products using the common systematic layout."""
+    """Write nominal-versus-ISR products using the common layout."""
     tables_dir = output_dir / "tables"
     plots_dir = output_dir / "plots"
     covariance_dir = output_dir / "covariance"
-    for directory in (tables_dir, plots_dir, covariance_dir):
+    summary_dir = output_dir / "summary"
+    for directory in (tables_dir, plots_dir, covariance_dir, summary_dir):
         ensure_directory(directory)
     # endfor
 
@@ -3850,17 +4009,17 @@ def write_nominal_isr_comparison_products(
     covariance_products: dict[str, str] = {}
     for parameter in PHYSICS_PARAMETERS:
         shift_column = f"{parameter}_isr_minus_nominal"
+        systematic_column = f"{parameter}_absolute_isr_systematic"
         merged[shift_column] = (
             merged[f"{parameter}_isr"] - merged[f"{parameter}_nominal"]
         )
-        merged[f"{parameter}_absolute_isr_systematic"] = merged[
-            shift_column
-        ].abs()
+        merged[systematic_column] = merged[shift_column].abs()
+        merged[f"{parameter}_isr_systematic_to_nominal_stat"] = np.divide(
+            merged[systematic_column], merged[f"{parameter}_stat_nominal"],
+        )
         barlow = calculate_barlow_arrays(
-            merged[f"{parameter}_nominal"],
-            merged[f"{parameter}_isr"],
-            merged[f"{parameter}_stat_nominal"],
-            merged[f"{parameter}_stat_isr"],
+            merged[f"{parameter}_nominal"], merged[f"{parameter}_isr"],
+            merged[f"{parameter}_stat_nominal"], merged[f"{parameter}_stat_isr"],
         )
         prefix = f"{parameter}_isr_barlow"
         merged[f"{prefix}_statistical_scale"] = barlow["denominator"]
@@ -3868,248 +4027,122 @@ def write_nominal_isr_comparison_products(
         merged[f"{prefix}_passes"] = barlow["passed"]
         merged[f"{prefix}_status"] = barlow["status"]
         barlow_records.append(summarize_barlow_status(
-            merged,
-            effect="ISR",
-            variation="isr_minus_nominal",
-            parameter=parameter,
-            barlow_column=f"{prefix}_value",
+            merged, effect="ISR", variation="isr_minus_nominal",
+            parameter=parameter, barlow_column=f"{prefix}_value",
             status_column=f"{prefix}_status",
         ))
-
         shift = merged[shift_column].to_numpy(dtype=np.float64)
         covariance_path = covariance_dir / f"{parameter}_isr_covariance.npy"
         np.save(covariance_path, np.outer(shift, shift))
         covariance_products[parameter] = str(covariance_path)
     # endfor
 
-    csv_path = tables_dir / "nominal_vs_isr_structure_function_ratios.csv"
-    json_path = tables_dir / "nominal_vs_isr_structure_function_ratios.json"
-    merged.to_csv(csv_path, index=False)
-    write_json(json_path, {
-        "schema_version": 3,
-        "systematic_convention": (
-            "Absolute point-by-point ISR systematic is abs(ISR - nominal); "
-            "the complete signed shift is retained as one coherent alternative."
-        ),
-        "barlow_definition": (
-            "B = abs(ISR - nominal) / "
-            "sqrt(abs(sigma_ISR^2 - sigma_nominal^2)); pass if B >= 1."
-        ),
-        "plot_axis_convention": (
-            "Single-spin panels use [-0.5, 0.5]; unpolarized/double-spin "
-            "panels use [-1, 1]; Barlow panels use log scale [1e-3, 1e2]."
-        ),
-        "barlow_summary": barlow_records,
-        "rows": merged.to_dict(orient="records"),
-    })
+    x = merged["bin_number"].to_numpy(dtype=float)
+    definition = r"$\delta_{\rm ISR}=|a_{\rm ISR}-a_{\rm nominal}|$"
+
+    def draw(parameter: str, axes: np.ndarray, *, show_legends: bool, show_xlabel: bool) -> None:
+        draw_systematic_comparison(
+            axes, x=x, parameter=parameter,
+            top_series=[
+                {"values": merged[f"{parameter}_nominal"], "errors": merged[f"{parameter}_stat_nominal"], "fmt": "o", "label": "Nominal"},
+                {"values": merged[f"{parameter}_isr"], "errors": merged[f"{parameter}_stat_isr"], "fmt": "s", "label": "ISR"},
+            ],
+            systematic=merged[f"{parameter}_absolute_isr_systematic"],
+            status=merged[f"{parameter}_isr_barlow_status"],
+            systematic_definition=definition,
+            show_legends=show_legends, show_xlabel=show_xlabel,
+        )
+    # enddef
 
     plot_paths: list[str] = []
-    x = merged["bin_number"].to_numpy(dtype=float)
     for parameter in PHYSICS_PARAMETERS:
-        fig, axes = plt.subplots(
-            3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True
-        )
-        axes[0].errorbar(
-            x, merged[f"{parameter}_nominal"],
-            yerr=merged[f"{parameter}_stat_nominal"], fmt="o", capsize=2,
-            label="Nominal",
-        )
-        axes[0].errorbar(
-            x, merged[f"{parameter}_isr"],
-            yerr=merged[f"{parameter}_stat_isr"], fmt="s", capsize=2,
-            label="ISR",
-        )
-        axes[0].set_ylabel(PARAMETER_LABELS[parameter])
-        axes[0].legend()
-
-        axes[1].axhline(0.0, linewidth=1.0)
-        axes[1].errorbar(
-            x, merged[f"{parameter}_isr_minus_nominal"],
-            yerr=merged[f"{parameter}_isr_barlow_statistical_scale"],
-            fmt="o", capsize=2,
-        )
-        axes[1].set_ylabel("ISR - nominal")
-
-        plotted, below, above = barlow_values_for_fixed_log_axis(
-            merged[f"{parameter}_isr_barlow_value"]
-        )
-        axes[2].axhline(
-            BARLOW_PASS_THRESHOLD, linewidth=1.0, linestyle="--",
-            label=r"Barlow threshold $B=1$",
-        )
-        axes[2].plot(x, plotted, "o")
-        annotate_barlow_clipping(axes[2], below, above)
-        axes[2].set_xlabel("Combined kinematic-bin number")
-        axes[2].set_ylabel(r"Barlow $B$")
-        axes[2].legend()
-        configure_systematic_comparison_axes(axes, parameter)
+        fig, axes = plt.subplots(3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True)
+        draw(parameter, axes, show_legends=True, show_xlabel=True)
         fig.tight_layout()
         path = plots_dir / f"nominal_vs_isr_{parameter}.png"
         fig.savefig(path, dpi=SYSTEMATIC_COMPARISON_DPI)
         plt.close(fig)
         plot_paths.append(str(path))
     # endfor
-    return {
-        "csv": str(csv_path),
-        "json": str(json_path),
-        "plots_directory": str(plots_dir),
-        "plots": plot_paths,
-        "covariance_directory": str(covariance_dir),
-        "covariance": covariance_products,
-        "barlow_summary": barlow_records,
-    }
+    summary = write_systematic_summary_canvas(
+        output_dir=summary_dir, filename_stem="isr_systematic_summary",
+        draw_parameter=draw,
+    )
 
+    csv_path = tables_dir / "nominal_vs_isr_structure_function_ratios.csv"
+    json_path = tables_dir / "nominal_vs_isr_structure_function_ratios.json"
+    merged.to_csv(csv_path, index=False)
+    write_json(json_path, {
+        "schema_version": 4,
+        "systematic_definition": "delta_ISR = abs(ISR - nominal)",
+        "middle_panel": "Assigned systematic; filled marker passes Barlow, open marker fails Barlow.",
+        "bottom_panel": "Assigned systematic divided by nominal statistical uncertainty.",
+        "plot_axis_convention": "Top and middle axes are common by parameter family; normalized-size axis is logarithmic from 1e-2 to 1e2.",
+        "barlow_summary": barlow_records,
+        "rows": merged.to_dict(orient="records"),
+    })
+    return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": barlow_records}
 
 def write_momentum_correction_comparison_products(
     corrected: pd.DataFrame,
     uncorrected: pd.DataFrame,
     output_dir: Path,
 ) -> dict[str, Any]:
-    """Write corrected-versus-uncorrected products in the common layout."""
+    """Write corrected-versus-uncorrected products using the common layout."""
     tables_dir = output_dir / "tables"
     plots_dir = output_dir / "plots"
     covariance_dir = output_dir / "covariance"
-    for directory in (tables_dir, plots_dir, covariance_dir):
+    summary_dir = output_dir / "summary"
+    for directory in (tables_dir, plots_dir, covariance_dir, summary_dir):
         ensure_directory(directory)
     # endfor
-
     keys = ["bin_number", "x_index", "t_index"]
-    keep = keys + [
-        "mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2",
-        "number_of_events",
-    ] + [
-        item for parameter in PHYSICS_PARAMETERS
-        for item in (parameter, f"{parameter}_stat")
-    ]
-    merged = corrected[keep].merge(
-        uncorrected[keep], on=keys,
-        suffixes=("_corrected", "_uncorrected"), validate="one_to_one",
-    )
-
+    keep = keys + ["mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
+    merged = corrected[keep].merge(uncorrected[keep], on=keys, suffixes=("_corrected", "_uncorrected"), validate="one_to_one")
     barlow_records: list[dict[str, Any]] = []
     covariance_products: dict[str, str] = {}
     for parameter in PHYSICS_PARAMETERS:
-        shift_column = f"{parameter}_uncorrected_minus_corrected"
-        merged[shift_column] = (
-            merged[f"{parameter}_uncorrected"]
-            - merged[f"{parameter}_corrected"]
-        )
-        merged[f"{parameter}_absolute_momentum_correction_systematic"] = (
-            merged[shift_column].abs()
-        )
-        barlow = calculate_barlow_arrays(
-            merged[f"{parameter}_corrected"],
-            merged[f"{parameter}_uncorrected"],
-            merged[f"{parameter}_stat_corrected"],
-            merged[f"{parameter}_stat_uncorrected"],
-        )
+        shift = merged[f"{parameter}_uncorrected"] - merged[f"{parameter}_corrected"]
+        merged[f"{parameter}_uncorrected_minus_corrected"] = shift
+        systematic_column = f"{parameter}_absolute_momentum_correction_systematic"
+        merged[systematic_column] = shift.abs()
+        merged[f"{parameter}_momentum_systematic_to_nominal_stat"] = np.divide(merged[systematic_column], merged[f"{parameter}_stat_corrected"])
+        barlow = calculate_barlow_arrays(merged[f"{parameter}_corrected"], merged[f"{parameter}_uncorrected"], merged[f"{parameter}_stat_corrected"], merged[f"{parameter}_stat_uncorrected"])
         prefix = f"{parameter}_momentum_correction_barlow"
         merged[f"{prefix}_statistical_scale"] = barlow["denominator"]
         merged[f"{prefix}_value"] = barlow["barlow"]
         merged[f"{prefix}_passes"] = barlow["passed"]
         merged[f"{prefix}_status"] = barlow["status"]
-        barlow_records.append(summarize_barlow_status(
-            merged,
-            effect="momentum_corrections",
-            variation="uncorrected_minus_corrected",
-            parameter=parameter,
-            barlow_column=f"{prefix}_value",
-            status_column=f"{prefix}_status",
-        ))
-
-        shift = merged[shift_column].to_numpy(dtype=np.float64)
-        covariance_path = (
-            covariance_dir / f"{parameter}_momentum_correction_covariance.npy"
-        )
-        np.save(covariance_path, np.outer(shift, shift))
+        barlow_records.append(summarize_barlow_status(merged, effect="momentum_corrections", variation="uncorrected_minus_corrected", parameter=parameter, barlow_column=f"{prefix}_value", status_column=f"{prefix}_status"))
+        covariance_path = covariance_dir / f"{parameter}_momentum_correction_covariance.npy"
+        vector = shift.to_numpy(dtype=np.float64)
+        np.save(covariance_path, np.outer(vector, vector))
         covariance_products[parameter] = str(covariance_path)
     # endfor
-
-    plot_paths: list[str] = []
     x = merged["bin_number"].to_numpy(dtype=float)
+    definition = r"$\delta_{\rm mom}=|a_{\rm uncorrected}-a_{\rm corrected}|$"
+    def draw(parameter: str, axes: np.ndarray, *, show_legends: bool, show_xlabel: bool) -> None:
+        draw_systematic_comparison(axes, x=x, parameter=parameter, top_series=[
+            {"values": merged[f"{parameter}_corrected"], "errors": merged[f"{parameter}_stat_corrected"], "fmt": "o", "label": "Momentum corrected (nominal)"},
+            {"values": merged[f"{parameter}_uncorrected"], "errors": merged[f"{parameter}_stat_uncorrected"], "fmt": "s", "label": "No momentum corrections"},
+        ], systematic=merged[f"{parameter}_absolute_momentum_correction_systematic"], status=merged[f"{parameter}_momentum_correction_barlow_status"], systematic_definition=definition, show_legends=show_legends, show_xlabel=show_xlabel)
+    # enddef
+    plot_paths: list[str] = []
     for parameter in PHYSICS_PARAMETERS:
-        fig, axes = plt.subplots(
-            3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True
-        )
-        axes[0].errorbar(
-            x, merged[f"{parameter}_corrected"],
-            yerr=merged[f"{parameter}_stat_corrected"], fmt="o", capsize=2,
-            label="Momentum corrected",
-        )
-        axes[0].errorbar(
-            x, merged[f"{parameter}_uncorrected"],
-            yerr=merged[f"{parameter}_stat_uncorrected"], fmt="s", capsize=2,
-            label="No momentum corrections",
-        )
-        axes[0].set_ylabel(PARAMETER_LABELS[parameter])
-        axes[0].legend()
-
-        shift_column = f"{parameter}_uncorrected_minus_corrected"
-        axes[1].axhline(0.0, linewidth=1.0)
-        axes[1].errorbar(
-            x, merged[shift_column],
-            yerr=merged[
-                f"{parameter}_momentum_correction_barlow_statistical_scale"
-            ],
-            fmt="o", capsize=2,
-        )
-        axes[1].set_ylabel("Uncorrected - corrected")
-
-        plotted, below, above = barlow_values_for_fixed_log_axis(
-            merged[f"{parameter}_momentum_correction_barlow_value"]
-        )
-        axes[2].axhline(
-            BARLOW_PASS_THRESHOLD, linewidth=1.0, linestyle="--",
-            label=r"Barlow threshold $B=1$",
-        )
-        axes[2].plot(x, plotted, "o")
-        annotate_barlow_clipping(axes[2], below, above)
-        axes[2].set_xlabel("Combined kinematic-bin number")
-        axes[2].set_ylabel(r"Barlow $B$")
-        axes[2].legend()
-        configure_systematic_comparison_axes(axes, parameter)
+        fig, axes = plt.subplots(3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True)
+        draw(parameter, axes, show_legends=True, show_xlabel=True)
         fig.tight_layout()
         path = plots_dir / f"momentum_corrections_{parameter}.png"
         fig.savefig(path, dpi=SYSTEMATIC_COMPARISON_DPI)
         plt.close(fig)
         plot_paths.append(str(path))
     # endfor
-
+    summary = write_systematic_summary_canvas(output_dir=summary_dir, filename_stem="momentum_corrections_systematic_summary", draw_parameter=draw)
     csv_path = tables_dir / "momentum_correction_structure_function_ratios.csv"
     json_path = tables_dir / "momentum_correction_structure_function_ratios.json"
     merged.to_csv(csv_path, index=False)
-    write_json(json_path, {
-        "schema_version": 2,
-        "recommended_systematic": (
-            "Use abs(no-momentum-corrections - momentum-corrected) in each "
-            "observable and kinematic bin. Preserve the signed variation as "
-            "one coherent alternative; covariance is its outer product."
-        ),
-        "statistical_note": (
-            "The corrected and uncorrected samples contain the same measured "
-            "events and are strongly correlated."
-        ),
-        "barlow_definition": (
-            "B = abs(uncorrected - corrected) / "
-            "sqrt(abs(sigma_uncorrected^2 - sigma_corrected^2)); pass if B >= 1."
-        ),
-        "plot_axis_convention": (
-            "Single-spin panels use [-0.5, 0.5]; unpolarized/double-spin "
-            "panels use [-1, 1]; Barlow panels use log scale [1e-3, 1e2]."
-        ),
-        "barlow_summary": barlow_records,
-        "rows": merged.to_dict(orient="records"),
-    })
-    return {
-        "csv": str(csv_path),
-        "json": str(json_path),
-        "plots_directory": str(plots_dir),
-        "plots": plot_paths,
-        "covariance_directory": str(covariance_dir),
-        "covariance": covariance_products,
-        "barlow_summary": barlow_records,
-    }
-
+    write_json(json_path, {"schema_version": 3, "systematic_definition": "delta_mom = abs(uncorrected - corrected)", "middle_panel": "Assigned systematic; filled marker passes Barlow, open marker fails Barlow.", "bottom_panel": "Assigned systematic divided by corrected nominal statistical uncertainty.", "plot_axis_convention": "Top and middle axes are common by parameter family; normalized-size axis is logarithmic from 1e-2 to 1e2.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
+    return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": barlow_records}
 
 def write_channel_selection_comparison_products(
     *,
@@ -4118,176 +4151,71 @@ def write_channel_selection_comparison_products(
     loose: pd.DataFrame,
     output_dir: Path,
 ) -> dict[str, Any]:
-    """Write loose/nominal/tight products in the common systematic layout."""
+    """Write channel-selection products using the common layout."""
     tables_dir = output_dir / "tables"
     plots_dir = output_dir / "plots"
     covariance_dir = output_dir / "covariance"
-    for directory in (tables_dir, plots_dir, covariance_dir):
+    summary_dir = output_dir / "summary"
+    for directory in (tables_dir, plots_dir, covariance_dir, summary_dir):
         ensure_directory(directory)
     # endfor
-
     keys = ["bin_number", "x_index", "t_index"]
-    keep = keys + [
-        "mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2",
-        "number_of_events",
-    ] + [
-        item for parameter in PHYSICS_PARAMETERS
-        for item in (parameter, f"{parameter}_stat")
-    ]
-    merged = nominal[keep].merge(
-        tight[keep], on=keys, suffixes=("_nominal", "_tight"),
-        validate="one_to_one",
-    ).merge(loose[keep], on=keys, validate="one_to_one")
-    merged = merged.rename(columns={
-        column: f"{column}_loose" for column in keep if column not in keys
-    })
-
+    keep = keys + ["mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
+    merged = nominal[keep].merge(tight[keep], on=keys, suffixes=("_nominal", "_tight"), validate="one_to_one").merge(loose[keep], on=keys, validate="one_to_one")
+    merged = merged.rename(columns={column: f"{column}_loose" for column in keep if column not in keys})
     covariance_products: dict[str, str] = {}
-    plot_paths: list[str] = []
     barlow_records: list[dict[str, Any]] = []
-    x = merged["bin_number"].to_numpy(dtype=float)
     for parameter in PHYSICS_PARAMETERS:
         delta_tight = merged[f"{parameter}_tight"] - merged[f"{parameter}_nominal"]
         delta_loose = merged[f"{parameter}_loose"] - merged[f"{parameter}_nominal"]
         merged[f"{parameter}_tight_minus_nominal"] = delta_tight
         merged[f"{parameter}_loose_minus_nominal"] = delta_loose
-        merged[f"{parameter}_channel_selection_rms_systematic"] = np.sqrt(
-            0.5 * (delta_tight**2 + delta_loose**2)
-        )
-        merged[f"{parameter}_channel_selection_envelope"] = np.maximum(
-            np.abs(delta_tight), np.abs(delta_loose)
-        )
-        merged[f"{parameter}_full_spread"] = (
-            merged[[f"{parameter}_tight", f"{parameter}_nominal", f"{parameter}_loose"]]
-            .max(axis=1)
-            - merged[[f"{parameter}_tight", f"{parameter}_nominal", f"{parameter}_loose"]]
-            .min(axis=1)
-        )
-
+        syst = np.sqrt(0.5 * (delta_tight**2 + delta_loose**2))
+        merged[f"{parameter}_channel_selection_rms_systematic"] = syst
+        merged[f"{parameter}_channel_selection_systematic_to_nominal_stat"] = np.divide(syst, merged[f"{parameter}_stat_nominal"])
         for variation in ("tight", "loose"):
-            barlow = calculate_barlow_arrays(
-                merged[f"{parameter}_nominal"],
-                merged[f"{parameter}_{variation}"],
-                merged[f"{parameter}_stat_nominal"],
-                merged[f"{parameter}_stat_{variation}"],
-            )
+            barlow = calculate_barlow_arrays(merged[f"{parameter}_nominal"], merged[f"{parameter}_{variation}"], merged[f"{parameter}_stat_nominal"], merged[f"{parameter}_stat_{variation}"])
             prefix = f"{parameter}_{variation}_barlow"
             merged[f"{prefix}_statistical_scale"] = barlow["denominator"]
             merged[f"{prefix}_value"] = barlow["barlow"]
             merged[f"{prefix}_passes"] = barlow["passed"]
             merged[f"{prefix}_status"] = barlow["status"]
-            barlow_records.append(summarize_barlow_status(
-                merged,
-                effect="channel_selection",
-                variation=f"{variation}_minus_nominal",
-                parameter=parameter,
-                barlow_column=f"{prefix}_value",
-                status_column=f"{prefix}_status",
-            ))
+            barlow_records.append(summarize_barlow_status(merged, effect="channel_selection", variation=f"{variation}_minus_nominal", parameter=parameter, barlow_column=f"{prefix}_value", status_column=f"{prefix}_status"))
         # endfor
-
+        tight_status = merged[f"{parameter}_tight_barlow_status"].astype(str)
+        loose_status = merged[f"{parameter}_loose_barlow_status"].astype(str)
+        merged[f"{parameter}_channel_selection_barlow_status"] = np.where((tight_status == "pass") | (loose_status == "pass"), "pass", np.where((tight_status == "fail") & (loose_status == "fail"), "fail", "undefined"))
         dt = delta_tight.to_numpy(dtype=np.float64)
         dl = delta_loose.to_numpy(dtype=np.float64)
-        covariance = 0.5 * (np.outer(dt, dt) + np.outer(dl, dl))
         covariance_path = covariance_dir / f"{parameter}_channel_selection_covariance.npy"
-        np.save(covariance_path, covariance)
+        np.save(covariance_path, 0.5 * (np.outer(dt, dt) + np.outer(dl, dl)))
         covariance_products[parameter] = str(covariance_path)
-
-        fig, axes = plt.subplots(
-            3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True
-        )
-        axes[0].errorbar(
-            x, merged[f"{parameter}_tight"],
-            yerr=merged[f"{parameter}_stat_tight"], fmt="^", capsize=2,
-            label=r"Tight ($\mu\pm2\sigma$)",
-        )
-        axes[0].errorbar(
-            x, merged[f"{parameter}_nominal"],
-            yerr=merged[f"{parameter}_stat_nominal"], fmt="o", capsize=2,
-            label=r"Nominal ($\mu\pm3\sigma$)",
-        )
-        axes[0].errorbar(
-            x, merged[f"{parameter}_loose"],
-            yerr=merged[f"{parameter}_stat_loose"], fmt="s", capsize=2,
-            label=r"Loose ($\mu\pm4\sigma$)",
-        )
-        axes[0].set_ylabel(PARAMETER_LABELS[parameter])
-        axes[0].legend()
-
-        axes[1].axhline(0.0, linewidth=1.0)
-        axes[1].plot(x, delta_tight, "^", label="Tight - nominal")
-        axes[1].plot(x, delta_loose, "s", label="Loose - nominal")
-        axes[1].errorbar(
-            x, np.zeros_like(x),
-            yerr=merged[f"{parameter}_channel_selection_rms_systematic"],
-            fmt="none", capsize=2, label="Recommended RMS systematic",
-        )
-        axes[1].set_ylabel("Variation - nominal")
-        axes[1].legend()
-
-        tight_plot, tight_below, tight_above = barlow_values_for_fixed_log_axis(
-            merged[f"{parameter}_tight_barlow_value"]
-        )
-        loose_plot, loose_below, loose_above = barlow_values_for_fixed_log_axis(
-            merged[f"{parameter}_loose_barlow_value"]
-        )
-        axes[2].axhline(
-            BARLOW_PASS_THRESHOLD, linewidth=1.0, linestyle="--",
-            label=r"Barlow threshold $B=1$",
-        )
-        axes[2].plot(x, tight_plot, "^", label="Tight - nominal")
-        axes[2].plot(x, loose_plot, "s", label="Loose - nominal")
-        annotate_barlow_clipping(
-            axes[2], tight_below + loose_below, tight_above + loose_above
-        )
-        axes[2].set_xlabel("Combined kinematic-bin number")
-        axes[2].set_ylabel(r"Barlow $B$")
-        axes[2].legend()
-        configure_systematic_comparison_axes(axes, parameter)
+    # endfor
+    x = merged["bin_number"].to_numpy(dtype=float)
+    definition = r"$\delta_{\rm ch}=\sqrt{(\Delta_{\rm tight}^2+\Delta_{\rm loose}^2)/2}$"
+    def draw(parameter: str, axes: np.ndarray, *, show_legends: bool, show_xlabel: bool) -> None:
+        draw_systematic_comparison(axes, x=x, parameter=parameter, top_series=[
+            {"values": merged[f"{parameter}_nominal"], "errors": merged[f"{parameter}_stat_nominal"], "fmt": "o", "label": r"Nominal ($\mu\pm3\sigma$)"},
+            {"values": merged[f"{parameter}_tight"], "errors": merged[f"{parameter}_stat_tight"], "fmt": "^", "label": r"Tight ($\mu\pm2\sigma$)"},
+            {"values": merged[f"{parameter}_loose"], "errors": merged[f"{parameter}_stat_loose"], "fmt": "s", "label": r"Loose ($\mu\pm4\sigma$)"},
+        ], systematic=merged[f"{parameter}_channel_selection_rms_systematic"], status=merged[f"{parameter}_channel_selection_barlow_status"], systematic_definition=definition, show_legends=show_legends, show_xlabel=show_xlabel)
+    # enddef
+    plot_paths: list[str] = []
+    for parameter in PHYSICS_PARAMETERS:
+        fig, axes = plt.subplots(3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True)
+        draw(parameter, axes, show_legends=True, show_xlabel=True)
         fig.tight_layout()
         path = plots_dir / f"channel_selection_{parameter}.png"
         fig.savefig(path, dpi=SYSTEMATIC_COMPARISON_DPI)
         plt.close(fig)
         plot_paths.append(str(path))
     # endfor
-
+    summary = write_systematic_summary_canvas(output_dir=summary_dir, filename_stem="channel_selection_systematic_summary", draw_parameter=draw)
     csv_path = tables_dir / "channel_selection_structure_function_ratios.csv"
     json_path = tables_dir / "channel_selection_structure_function_ratios.json"
     merged.to_csv(csv_path, index=False)
-    write_json(json_path, {
-        "schema_version": 3,
-        "recommended_systematic": (
-            "For each observable and kinematic bin, use RMS(tight-nominal, "
-            "loose-nominal). Preserve the complete tight and loose shifts as "
-            "two coherent alternatives; the supplied covariance is one half "
-            "of the sum of their outer products."
-        ),
-        "statistical_note": (
-            "The three event samples are nested and strongly correlated. The "
-            "Barlow denominator therefore uses sqrt(abs(sigma_variation^2 - "
-            "sigma_nominal^2)), not an independent-error quadrature sum."
-        ),
-        "barlow_definition": (
-            "B = abs(variation - nominal) / "
-            "sqrt(abs(sigma_variation^2 - sigma_nominal^2)); pass if B >= 1."
-        ),
-        "plot_axis_convention": (
-            "Single-spin panels use [-0.5, 0.5]; unpolarized/double-spin "
-            "panels use [-1, 1]; Barlow panels use log scale [1e-3, 1e2]."
-        ),
-        "barlow_summary": barlow_records,
-        "rows": merged.to_dict(orient="records"),
-    })
-    return {
-        "csv": str(csv_path),
-        "json": str(json_path),
-        "plots_directory": str(plots_dir),
-        "plots": plot_paths,
-        "covariance_directory": str(covariance_dir),
-        "covariance": covariance_products,
-        "barlow_summary": barlow_records,
-    }
-
+    write_json(json_path, {"schema_version": 4, "systematic_definition": "delta_ch = sqrt(((tight-nominal)^2 + (loose-nominal)^2)/2)", "combined_barlow_marker_rule": "Filled if either tight or loose variation passes Barlow; open only if both defined variations fail; x if unresolved/undefined.", "middle_panel": "Assigned RMS systematic with Barlow marker state.", "bottom_panel": "Assigned RMS systematic divided by nominal statistical uncertainty.", "plot_axis_convention": "Top and middle axes are common by parameter family; normalized-size axis is logarithmic from 1e-2 to 1e2.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
+    return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": barlow_records}
 
 def write_target_axis_barlow_products(
     nominal_frame: pd.DataFrame,
@@ -4297,146 +4225,67 @@ def write_target_axis_barlow_products(
     tables_dir = output_dir / "tables"
     plots_dir = output_dir / "plots"
     covariance_dir = output_dir / "covariance"
-    for directory in (tables_dir, plots_dir, covariance_dir):
+    summary_dir = output_dir / "summary"
+    for directory in (tables_dir, plots_dir, covariance_dir, summary_dir):
         ensure_directory(directory)
     # endfor
-
-    keys = [
-        "bin_number", "x_index", "t_index", "mean_xB",
-        "mean_Q2_gev2", "mean_minus_tprime_gev2",
-    ]
+    keys = ["bin_number", "x_index", "t_index", "mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2"]
     frame = nominal_frame[keys].copy()
     records: list[dict[str, Any]] = []
     covariance_products: dict[str, dict[str, str]] = {}
-    plot_paths: list[str] = []
-    x = frame["bin_number"].to_numpy(dtype=float)
-
     for parameter in PHYSICS_PARAMETERS:
         frame[f"{parameter}_nominal"] = nominal_frame[parameter]
         frame[f"{parameter}_stat_nominal"] = nominal_frame[f"{parameter}_stat"]
         covariance_products[parameter] = {}
         for variation in ("no_projection", "external_data_informed"):
-            frame[f"{parameter}_{variation}"] = nominal_frame[
-                f"{parameter}_{variation}"
-            ]
-            frame[f"{parameter}_stat_{variation}"] = nominal_frame[
-                f"{parameter}_stat_{variation}"
-            ]
-            barlow = calculate_barlow_arrays(
-                frame[f"{parameter}_nominal"],
-                frame[f"{parameter}_{variation}"],
-                frame[f"{parameter}_stat_nominal"],
-                frame[f"{parameter}_stat_{variation}"],
-            )
+            frame[f"{parameter}_{variation}"] = nominal_frame[f"{parameter}_{variation}"]
+            frame[f"{parameter}_stat_{variation}"] = nominal_frame[f"{parameter}_stat_{variation}"]
+            barlow = calculate_barlow_arrays(frame[f"{parameter}_nominal"], frame[f"{parameter}_{variation}"], frame[f"{parameter}_stat_nominal"], frame[f"{parameter}_stat_{variation}"])
             prefix = f"{parameter}_{variation}_barlow"
             frame[f"{prefix}_difference"] = barlow["difference"]
             frame[f"{prefix}_statistical_scale"] = barlow["denominator"]
             frame[f"{prefix}_value"] = barlow["barlow"]
             frame[f"{prefix}_passes"] = barlow["passed"]
             frame[f"{prefix}_status"] = barlow["status"]
-            records.append(summarize_barlow_status(
-                frame,
-                effect="target_axis",
-                variation=f"{variation}_minus_nominal",
-                parameter=parameter,
-                barlow_column=f"{prefix}_value",
-                status_column=f"{prefix}_status",
-            ))
-            shift = frame[f"{prefix}_difference"].to_numpy(dtype=np.float64)
-            covariance_path = (
-                covariance_dir / f"{parameter}_{variation}_covariance.npy"
-            )
-            np.save(covariance_path, np.outer(shift, shift))
+            records.append(summarize_barlow_status(frame, effect="target_axis", variation=f"{variation}_minus_nominal", parameter=parameter, barlow_column=f"{prefix}_value", status_column=f"{prefix}_status"))
+            vector = frame[f"{prefix}_difference"].to_numpy(dtype=np.float64)
+            covariance_path = covariance_dir / f"{parameter}_{variation}_covariance.npy"
+            np.save(covariance_path, np.outer(vector, vector))
             covariance_products[parameter][variation] = str(covariance_path)
         # endfor
-
-        fig, axes = plt.subplots(
-            3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True
-        )
-        axes[0].errorbar(
-            x, frame[f"{parameter}_nominal"],
-            yerr=frame[f"{parameter}_stat_nominal"], fmt="o", capsize=2,
-            label="Nominal projection",
-        )
-        axes[0].errorbar(
-            x, frame[f"{parameter}_no_projection"],
-            yerr=frame[f"{parameter}_stat_no_projection"], fmt="^", capsize=2,
-            label="No projection",
-        )
-        axes[0].errorbar(
-            x, frame[f"{parameter}_external_data_informed"],
-            yerr=frame[f"{parameter}_stat_external_data_informed"],
-            fmt="s", capsize=2, label="External-data-informed",
-        )
-        axes[0].set_ylabel(PARAMETER_LABELS[parameter])
-        axes[0].legend()
-
-        axes[1].axhline(0.0, linewidth=1.0)
-        axes[1].plot(
-            x, frame[f"{parameter}_no_projection_barlow_difference"],
-            "^", label="No projection - nominal",
-        )
-        axes[1].plot(
-            x, frame[f"{parameter}_external_data_informed_barlow_difference"],
-            "s", label="External-data-informed - nominal",
-        )
-        axes[1].set_ylabel("Variation - nominal")
-        axes[1].legend()
-
-        no_plot, no_below, no_above = barlow_values_for_fixed_log_axis(
-            frame[f"{parameter}_no_projection_barlow_value"]
-        )
-        ext_plot, ext_below, ext_above = barlow_values_for_fixed_log_axis(
-            frame[f"{parameter}_external_data_informed_barlow_value"]
-        )
-        axes[2].axhline(
-            BARLOW_PASS_THRESHOLD, linewidth=1.0, linestyle="--",
-            label=r"Barlow threshold $B=1$",
-        )
-        axes[2].plot(x, no_plot, "^", label="No projection - nominal")
-        axes[2].plot(
-            x, ext_plot, "s", label="External-data-informed - nominal"
-        )
-        annotate_barlow_clipping(
-            axes[2], no_below + ext_below, no_above + ext_above
-        )
-        axes[2].set_xlabel("Combined kinematic-bin number")
-        axes[2].set_ylabel(r"Barlow $B$")
-        axes[2].legend()
-        configure_systematic_comparison_axes(axes, parameter)
+        no_abs = frame[f"{parameter}_no_projection_barlow_difference"].abs()
+        ext_abs = frame[f"{parameter}_external_data_informed_barlow_difference"].abs()
+        choose_no = no_abs >= ext_abs
+        frame[f"{parameter}_target_axis_systematic"] = np.maximum(no_abs, ext_abs)
+        frame[f"{parameter}_target_axis_systematic_to_nominal_stat"] = np.divide(frame[f"{parameter}_target_axis_systematic"], frame[f"{parameter}_stat_nominal"])
+        frame[f"{parameter}_target_axis_selected_variation"] = np.where(choose_no, "no_projection", "external_data_informed")
+        frame[f"{parameter}_target_axis_barlow_status"] = np.where(choose_no, frame[f"{parameter}_no_projection_barlow_status"], frame[f"{parameter}_external_data_informed_barlow_status"])
+    # endfor
+    x = frame["bin_number"].to_numpy(dtype=float)
+    definition = r"$\delta_{\rm axis}=\max(|a_{\rm no\ proj}-a_{\rm nom}|,|a_{\rm ext}-a_{\rm nom}|)$"
+    def draw(parameter: str, axes: np.ndarray, *, show_legends: bool, show_xlabel: bool) -> None:
+        draw_systematic_comparison(axes, x=x, parameter=parameter, top_series=[
+            {"values": frame[f"{parameter}_nominal"], "errors": frame[f"{parameter}_stat_nominal"], "fmt": "o", "label": "Nominal projection"},
+            {"values": frame[f"{parameter}_no_projection"], "errors": frame[f"{parameter}_stat_no_projection"], "fmt": "^", "label": "No projection"},
+            {"values": frame[f"{parameter}_external_data_informed"], "errors": frame[f"{parameter}_stat_external_data_informed"], "fmt": "s", "label": "External-data-informed"},
+        ], systematic=frame[f"{parameter}_target_axis_systematic"], status=frame[f"{parameter}_target_axis_barlow_status"], systematic_definition=definition, show_legends=show_legends, show_xlabel=show_xlabel)
+    # enddef
+    plot_paths: list[str] = []
+    for parameter in PHYSICS_PARAMETERS:
+        fig, axes = plt.subplots(3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True)
+        draw(parameter, axes, show_legends=True, show_xlabel=True)
         fig.tight_layout()
         path = plots_dir / f"target_axis_{parameter}.png"
         fig.savefig(path, dpi=SYSTEMATIC_COMPARISON_DPI)
         plt.close(fig)
         plot_paths.append(str(path))
     # endfor
-
+    summary = write_systematic_summary_canvas(output_dir=summary_dir, filename_stem="target_axis_systematic_summary", draw_parameter=draw)
     csv_path = tables_dir / "target_axis_barlow_criteria.csv"
     json_path = tables_dir / "target_axis_barlow_criteria.json"
     frame.to_csv(csv_path, index=False)
-    write_json(json_path, {
-        "schema_version": 2,
-        "barlow_definition": (
-            "B = abs(variation - nominal) / "
-            "sqrt(abs(sigma_variation^2 - sigma_nominal^2)); pass if B >= 1."
-        ),
-        "plot_axis_convention": (
-            "Single-spin panels use [-0.5, 0.5]; unpolarized/double-spin "
-            "panels use [-1, 1]; Barlow panels use log scale [1e-3, 1e2]."
-        ),
-        "summary": records,
-        "rows": frame.to_dict(orient="records"),
-    })
-    return {
-        "csv": str(csv_path),
-        "json": str(json_path),
-        "plots_directory": str(plots_dir),
-        "plots": plot_paths,
-        "covariance_directory": str(covariance_dir),
-        "covariance": covariance_products,
-        "barlow_summary": records,
-    }
-
+    write_json(json_path, {"schema_version": 3, "systematic_definition": "delta_axis = max(abs(no_projection-nominal), abs(external_data_informed-nominal))", "selected_barlow_marker_rule": "The marker state is taken from the variation that supplies the envelope in that bin.", "middle_panel": "Assigned target-axis envelope with Barlow marker state.", "bottom_panel": "Assigned target-axis envelope divided by nominal statistical uncertainty.", "plot_axis_convention": "Top and middle axes are common by parameter family; normalized-size axis is logarithmic from 1e-2 to 1e2.", "summary": records, "rows": frame.to_dict(orient="records")})
+    return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary_canvas": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": records}
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
