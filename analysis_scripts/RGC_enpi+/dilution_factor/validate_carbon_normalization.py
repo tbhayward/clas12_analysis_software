@@ -1091,12 +1091,18 @@ def plot_spectrum_comparison(
 ) -> None:
     """Compare Method-1 and Method-2 backgrounds and dilution versus Mx2.
 
-    The diagnostic is intentionally restricted to 0.4 <= Mx2 <= 1.4 GeV^2,
-    where the period-integrated five-target subtraction is sufficiently stable
-    to make the two methods visually interpretable.
+    The displayed lower edge is the upper edge of the selected Method-1
+    normalization window, while the upper edge remains fixed at 1.4 GeV^2.
+    This keeps the comparison focused entirely above the normalization region.
     """
-    plot_min = 0.4
+    plot_min = float(nominal_window[1])
     plot_max = 1.4
+    if not np.isfinite(plot_min) or plot_min >= plot_max:
+        raise ValueError(
+            "The Method-1 normalization-window upper edge must be finite and "
+            f"below {plot_max:.2f} GeV^2 to make the Mx2 comparison plot; "
+            f"received {plot_min:.6g} GeV^2."
+        )
     for period in module.PERIODS:
         selected = table[table.period == period].sort_values("mx2_center")
         fig, axes = plt.subplots(
