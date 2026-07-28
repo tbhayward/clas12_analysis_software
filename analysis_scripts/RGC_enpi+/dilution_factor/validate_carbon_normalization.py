@@ -1121,7 +1121,8 @@ def plot_spectrum_comparison(
             label="Method 2: direct five-target background",
         )
         axes[0].set_ylabel("Counts")
-        axes[0].set_yscale("symlog", linthresh=1.0)
+        axes[0].set_yscale("log")
+        axes[0].set_ylim(1.0e2, 1.0e5)
         axes[0].grid(alpha=0.25)
         axes[0].legend()
         axes[0].set_title(
@@ -1138,6 +1139,7 @@ def plot_spectrum_comparison(
         )
         axes[1].axhline(0.0, linewidth=0.8)
         axes[1].set_ylabel("Dilution factor")
+        axes[1].set_ylim(0.0, 0.6)
         axes[1].grid(alpha=0.25)
         axes[1].legend()
 
