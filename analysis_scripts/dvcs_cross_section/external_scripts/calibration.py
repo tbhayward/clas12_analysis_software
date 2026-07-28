@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v8.py
+plot_calibration_v9.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -22,7 +22,7 @@ Current modules
      used, with independent data and MC scales.
    - Existing fiducial exclusion intervals are shaded but are NOT applied to
      the plotted samples, so data/GEMC mismodeling remains visible.
-   - The RGA Sp19-only PCal sector-2 lv exclusion is overlaid only for Sp19.
+   - The period-dependent PCal sector-2 lv exclusions are overlaid only for the applicable RGA periods.
    - PCal-electron mean momentum and mean scattering-angle maps are made
      versus lu-lv, lu-lw, and lv-lw before and after the cuts.
    - Sector-resolved one-dimensional mean momentum and mean theta curves
@@ -56,26 +56,26 @@ Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v8.py
+  python3 external_scripts/plot_calibration_v9.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v8.py --rgc
+  python3 external_scripts/plot_calibration_v9.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v8.py \
+  python3 external_scripts/plot_calibration_v9.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v8.py --skip-ft
+  python3 external_scripts/plot_calibration_v9.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v8.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v9.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -313,28 +313,51 @@ RGC_DATASETS: tuple[Dataset, ...] = (
 # =============================================================================
 
 # Each tuple is:
-#   (layer key, sector, coordinate key, lower bound, upper bound, applicability)
+#   (layer key, sector, coordinate key, lower bound, upper bound,
+#    applicable dataset keys)
 #
-# "all_rga" means every configured RGA period.
-# "sp19_only" means only RGA Sp19 Inb.
-#
-# Bounds are preserved exactly from the Java cut supplied with this script
-# update.  These regions are drawn, not applied, in the matching plots.
+# The generic PCal edge requirement is handled separately below.  These
+# intervals describe only the localized dead-channel exclusions used for
+# data/MC matching.
+ALL_RGA_DATASET_KEYS: frozenset[str] = frozenset(
+    dataset.key for dataset in RGA_DATASETS
+)
+SP18_DATASET_KEYS: frozenset[str] = frozenset(
+    ("rga_sp18_inb", "rga_sp18_out")
+)
+FA18_DATASET_KEYS: frozenset[str] = frozenset(
+    ("rga_fa18_inb", "rga_fa18_out")
+)
+SP19_DATASET_KEYS: frozenset[str] = frozenset(("rga_sp19_inb",))
+
+SP18_AND_SP19_DATASET_KEYS: frozenset[str] = (
+    SP18_DATASET_KEYS | SP19_DATASET_KEYS
+)
+FA18_AND_SP19_DATASET_KEYS: frozenset[str] = (
+    FA18_DATASET_KEYS | SP19_DATASET_KEYS
+)
+
 DEAD_STRIP_EXCLUSIONS: tuple[
-    tuple[str, int, str, float, float, str], ...
+    tuple[str, int, str, float, float, frozenset[str]], ...
 ] = (
-    ("pcal", 1, "lw", 72.0, 94.5, "all_rga"),
-    ("pcal", 1, "lw", 220.5, 234.0, "all_rga"),
-    ("ecin", 1, "lv", 67.5, 94.5, "all_rga"),
-    ("ecout", 1, "lv", 0.0, 40.5, "all_rga"),
-    ("pcal", 2, "lv", 99.0, 117.0, "all_rga"),
-    ("pcal", 3, "lw", 346.5, 378.0, "all_rga"),
-    ("pcal", 4, "lw", 0.0, 13.5, "all_rga"),
-    ("pcal", 4, "lv", 229.5, 243.0, "all_rga"),
-    ("ecin", 5, "lv", 0.0, 23.5, "all_rga"),
-    ("ecout", 5, "lu", 193.5, 216.0, "all_rga"),
-    ("pcal", 6, "lw", 166.5, 193.5, "all_rga"),
-    ("pcal", 2, "lv", 31.5, 49.5, "sp19_only"),
+    # Common PCal exclusions.
+    ("pcal", 1, "lw", 72.0, 94.5, ALL_RGA_DATASET_KEYS),
+    ("pcal", 1, "lw", 220.5, 234.0, ALL_RGA_DATASET_KEYS),
+    ("pcal", 3, "lw", 346.5, 378.0, ALL_RGA_DATASET_KEYS),
+    ("pcal", 4, "lv", 229.5, 243.0, ALL_RGA_DATASET_KEYS),
+    ("pcal", 6, "lw", 166.5, 193.5, ALL_RGA_DATASET_KEYS),
+
+    # Period-dependent PCal sector-2 exclusions.
+    ("pcal", 2, "lv", 31.5, 49.5, SP18_AND_SP19_DATASET_KEYS),
+    ("pcal", 2, "lv", 99.0, 117.0, FA18_AND_SP19_DATASET_KEYS),
+
+    # Common ECin exclusions.
+    ("ecin", 1, "lv", 67.5, 94.5, ALL_RGA_DATASET_KEYS),
+    ("ecin", 4, "lv", 0.0, 23.5, ALL_RGA_DATASET_KEYS),
+
+    # Common ECout exclusions.
+    ("ecout", 1, "lv", 0.0, 67.5, ALL_RGA_DATASET_KEYS),
+    ("ecout", 5, "lu", 198.0, 220.5, ALL_RGA_DATASET_KEYS),
 )
 
 
@@ -384,7 +407,7 @@ def exclusion_intervals(
         cut_coordinate,
         lower,
         upper,
-        applicability,
+        applicable_dataset_keys,
     ) in DEAD_STRIP_EXCLUSIONS:
         if cut_layer != layer_key:
             continue
@@ -395,12 +418,11 @@ def exclusion_intervals(
         if cut_coordinate != coordinate_key:
             continue
         #endif
-        if applicability == "sp19_only" and dataset_key != "rga_sp19_inb":
+        if dataset_key not in applicable_dataset_keys:
             continue
         #endif
 
-        label = "Sp19-only exclusion" if applicability == "sp19_only" else "RGA exclusion"
-        intervals.append((lower, upper, label))
+        intervals.append((lower, upper, "RGA period-specific exclusion"))
     #endfor
 
     return intervals
@@ -417,10 +439,10 @@ def calorimeter_fiducial_mask(
     """
     Apply the complete particle-level calorimeter fiducial decision.
 
-    This reproduces the supplied Java logic:
+    This reproduces the corrected Java logic:
       * PCal lv and lw must exceed the strictness-dependent edge threshold.
       * For strictness >= 2, applicable RGA dead-strip intervals are removed.
-      * The Sp19-only interval is applied only to RGA Sp19 Inb.
+      * PCal sector-2 exclusions are selected explicitly by run period.
 
     The result is calculated once per particle species and ROOT chunk, then
     reused for every layer, sector, coordinate, and 2D coordinate pair.
@@ -449,9 +471,9 @@ def calorimeter_fiducial_mask(
         coordinate_key,
         lower,
         upper,
-        applicability,
+        applicable_dataset_keys,
     ) in DEAD_STRIP_EXCLUSIONS:
-        if applicability == "sp19_only" and dataset_key != "rga_sp19_inb":
+        if dataset_key not in applicable_dataset_keys:
             continue
         #endif
 
