@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v11.py
+plot_calibration_v12.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -56,26 +56,26 @@ Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v11.py
+  python3 external_scripts/plot_calibration_v12.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v11.py --rgc
+  python3 external_scripts/plot_calibration_v12.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v11.py \
+  python3 external_scripts/plot_calibration_v12.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v11.py --skip-ft
+  python3 external_scripts/plot_calibration_v12.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v11.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v12.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -347,14 +347,13 @@ DEAD_STRIP_EXCLUSIONS: tuple[
     ("pcal", 6, "lw", 166.5, 193.5, ALL_RGA_DATASET_KEYS),
 
     # Period-dependent PCal exclusions.
-    ("pcal", 1, "lw", 333.0, 346.5, SP18_DATASET_KEYS),
+    ("pcal", 1, "lw", 328.5, 342.0, SP18_DATASET_KEYS),
     ("pcal", 2, "lv", 31.5, 49.5, SP18_AND_SP19_DATASET_KEYS),
     ("pcal", 2, "lv", 99.0, 117.0, FA18_AND_SP19_DATASET_KEYS),
-    ("pcal", 3, "lw", 346.5, 378.0, ALL_RGA_DATASET_KEYS),
 
     # ECin exclusions common to all five RGA periods.
     ("ecin", 1, "lv", 67.5, 94.5, ALL_RGA_DATASET_KEYS),
-    ("ecin", 4, "lv", 0.0, 23.5, ALL_RGA_DATASET_KEYS),
+    ("ecin", 5, "lv", 0.0, 23.5, ALL_RGA_DATASET_KEYS),
 
     # ECout exclusions common to all five RGA periods.
     ("ecout", 1, "lv", 0.0, 67.5, ALL_RGA_DATASET_KEYS),
@@ -362,6 +361,7 @@ DEAD_STRIP_EXCLUSIONS: tuple[
 
     # Spring-2018-specific ECout exclusion.
     ("ecout", 2, "lw", 306.0, 328.5, SP18_DATASET_KEYS),
+    ("ecout", 4, "lw", 171.0, 189.0, SP18_DATASET_KEYS),
 )
 
 
