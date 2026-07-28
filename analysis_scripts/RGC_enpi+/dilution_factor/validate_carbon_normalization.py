@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-validate_carbon_normalization_v8.py
+validate_carbon_normalization_v13.py
 
 Dedicated validation and stress-test program for the RGC exclusive e pi+
 carbon-normalization dilution-factor method.
@@ -37,6 +37,9 @@ The diagnostics answer four questions:
   8. Can a CH2-minus-carbon empirical hydrogen template describe the NH3
      spectrum, and does an independent template fit prefer a reduced carbon
      transfer factor beneath the neutron region?
+  9. Does explicitly subtracting the charge-normalized liquid-helium bath
+     spectrum from both NH3 and carbon before the 0.0--0.4 GeV^2 carbon-to-
+     nitrogen normalization move Method 1 toward Method 2?
 
 No high-side NH3/carbon closure requirement is imposed.  Above the neutron
 region, NH3 can contain real hydrogen-origin events from channels other than
@@ -1496,6 +1499,248 @@ def plot_spectrum_comparison(
         plt.close(fig)
 
 
+
+def build_he_subtracted_method_comparison(
+    counts: dict[tuple[str, str], TargetCounts],
+    module: Any,
+    charge_fractions: dict[str, dict[str, float]],
+    spectrum_edges: np.ndarray,
+) -> pd.DataFrame:
+    """Build a period-integrated Method-1/1.5/2 comparison versus Mx2.
+
+    Method 1.5 is a diagnostic variant only.  Every target spectrum is first
+    normalized to the period-total accumulated charge by dividing by
+    q_target/q_total.  The charge-normalized liquid-helium spectrum is then
+    subtracted bin by bin from both the NH3 and carbon spectra.  The resulting
+    He-subtracted carbon and NH3 spectra are normalized to one another in the
+    fixed 0.0 <= Mx2 < 0.4 GeV^2 control window, after which the usual Method-1
+    dilution expression is applied.
+
+    No clipping is applied: negative He-subtracted bins remain visible in the
+    numerical table so the diagnostic cannot hide an over-subtraction.
+    """
+    centers = 0.5 * (spectrum_edges[:-1] + spectrum_edges[1:])
+    control_mask = (centers >= 0.0) & (centers < 0.4)
+    rows: list[dict[str, Any]] = []
+
+    for period in module.PERIODS:
+        normalized: dict[str, np.ndarray] = {}
+        for target in module.TARGETS:
+            fraction = _charge_fraction_for_target(
+                charge_fractions, period, target
+            )
+            normalized[target] = (
+                counts[(period, target)].spectrum.astype(float) / fraction
+            )
+
+        nh3 = normalized["NH3"]
+        carbon = normalized["C"]
+        helium = normalized["He"]
+
+        nh3_he_subtracted = nh3 - helium
+        carbon_he_subtracted = carbon - helium
+
+        alpha_method1 = float(
+            ratio(np.sum(nh3[:, control_mask]), np.sum(carbon[:, control_mask]))
+        )
+        alpha_method1p5 = float(
+            ratio(
+                np.sum(nh3_he_subtracted[:, control_mask]),
+                np.sum(carbon_he_subtracted[:, control_mask]),
+            )
+        )
+
+        method1_background = alpha_method1 * carbon
+        method1p5_background = alpha_method1p5 * carbon_he_subtracted
+
+        raw_target_counts = {
+            target: counts[(period, target)].spectrum.astype(float)
+            for target in module.TARGETS
+        }
+        f2_spectrum = module.method2_equation10_from_counts(
+            raw_target_counts, charge_fractions[period]
+        )
+        method2_background = nh3 * (1.0 - f2_spectrum)
+
+        summed_nh3 = np.sum(nh3, axis=0)
+        summed_c = np.sum(carbon, axis=0)
+        summed_he = np.sum(helium, axis=0)
+        summed_nh3_he_sub = np.sum(nh3_he_subtracted, axis=0)
+        summed_c_he_sub = np.sum(carbon_he_subtracted, axis=0)
+        summed_m1_bg = np.sum(method1_background, axis=0)
+        summed_m1p5_bg = np.sum(method1p5_background, axis=0)
+        summed_m2_bg = np.sum(method2_background, axis=0)
+
+        for index, center in enumerate(centers):
+            rows.append({
+                "period": period,
+                "mx2_low": float(spectrum_edges[index]),
+                "mx2_high": float(spectrum_edges[index + 1]),
+                "mx2_center": float(center),
+                "nh3_charge_normalized": float(summed_nh3[index]),
+                "carbon_charge_normalized": float(summed_c[index]),
+                "helium_charge_normalized": float(summed_he[index]),
+                "nh3_he_subtracted": float(summed_nh3_he_sub[index]),
+                "carbon_he_subtracted": float(summed_c_he_sub[index]),
+                "method1_background": float(summed_m1_bg[index]),
+                "method1p5_he_subtracted_background": float(
+                    summed_m1p5_bg[index]
+                ),
+                "method2_background": float(summed_m2_bg[index]),
+                "method1_dilution_factor": float(
+                    1.0 - ratio(summed_m1_bg[index], summed_nh3[index])
+                ),
+                "method1p5_he_subtracted_dilution_factor": float(
+                    1.0 - ratio(
+                        summed_m1p5_bg[index], summed_nh3_he_sub[index]
+                    )
+                ),
+                "method2_dilution_factor": float(
+                    1.0 - ratio(summed_m2_bg[index], summed_nh3[index])
+                ),
+                "method1_carbon_scale_0p0_0p4": alpha_method1,
+                "method1p5_he_subtracted_carbon_scale_0p0_0p4": (
+                    alpha_method1p5
+                ),
+                "control_window_min": 0.0,
+                "control_window_max": 0.4,
+            })
+
+    return pd.DataFrame(rows)
+
+
+def plot_he_subtracted_method_comparison(
+    output: Path,
+    table: pd.DataFrame,
+    module: Any,
+) -> None:
+    """Plot Method 1, He-subtracted Method 1.5, and Method 2 versus Mx2."""
+    for period in module.PERIODS:
+        selected = table[table.period == period].sort_values("mx2_center")
+        centers = selected.mx2_center.to_numpy()
+
+        fig, axes = plt.subplots(
+            2,
+            1,
+            figsize=(13, 8),
+            sharex=True,
+            gridspec_kw={"height_ratios": [2.0, 1.2]},
+        )
+
+        nh3_color = "black"
+        method1_color = "lightcoral"
+        method1p5_color = "darkred"
+        method2_color = "green"
+
+        axes[0].step(
+            centers,
+            selected.nh3_charge_normalized,
+            where="mid",
+            color=nh3_color,
+            linewidth=1.8,
+            label=r"NH$_3$ data, charge normalized",
+        )
+        axes[0].step(
+            centers,
+            selected.method1_background,
+            where="mid",
+            color=method1_color,
+            linestyle="--",
+            linewidth=1.8,
+            label=(
+                r"Method 1: scaled carbon, "
+                r"$0.00\leq M_X^2<0.40$ GeV$^2$"
+            ),
+        )
+        axes[0].step(
+            centers,
+            selected.method1p5_he_subtracted_background,
+            where="mid",
+            color=method1p5_color,
+            linestyle="-",
+            linewidth=1.8,
+            label=(
+                r"Method 1.5: He-subtracted NH$_3$ and C, "
+                r"$0.00\leq M_X^2<0.40$ GeV$^2$"
+            ),
+        )
+        axes[0].step(
+            centers,
+            selected.method2_background,
+            where="mid",
+            color=method2_color,
+            linestyle="-",
+            linewidth=1.8,
+            label="Method 2: direct five-target background",
+        )
+        axes[0].set_ylabel("Counts normalized to period-total charge")
+        axes[0].set_yscale("log")
+        axes[0].set_ylim(1.0e3, 1.0e5)
+        axes[0].grid(alpha=0.25)
+        axes[0].legend()
+        axes[0].set_title(
+            f"{module.PERIOD_LABELS[period]} — Method 1 / Method 1.5 / Method 2 comparison"
+        )
+
+        axes[1].plot(
+            centers,
+            selected.method1_dilution_factor,
+            marker="o",
+            markersize=3,
+            color=method1_color,
+            linestyle="--",
+            linewidth=1.5,
+            label="Method 1",
+        )
+        axes[1].plot(
+            centers,
+            selected.method1p5_he_subtracted_dilution_factor,
+            marker="^",
+            markersize=3,
+            color=method1p5_color,
+            linestyle="-",
+            linewidth=1.5,
+            label="Method 1.5: He subtracted",
+        )
+        axes[1].plot(
+            centers,
+            selected.method2_dilution_factor,
+            marker="s",
+            markersize=3,
+            color=method2_color,
+            linestyle="-",
+            linewidth=1.5,
+            label="Method 2",
+        )
+        axes[1].set_ylabel("Dilution factor")
+        axes[1].set_ylim(0.0, 0.6)
+        axes[1].grid(alpha=0.25)
+        axes[1].legend()
+        axes[1].set_xlabel(r"$M_X^2$ (GeV$^2$)")
+
+        for axis in axes:
+            axis.set_xlim(0.4, 1.4)
+
+        axes[0].text(
+            0.01,
+            0.03,
+            (
+                r"Method 1.5: charge normalize all targets; subtract the "
+                r"He bath from NH$_3$ and C; normalize in "
+                r"$0.00\leq M_X^2<0.40$ GeV$^2$"
+            ),
+            transform=axes[0].transAxes,
+            va="bottom",
+            ha="left",
+        )
+        fig.tight_layout()
+        fig.savefig(
+            output / f"method1_method1p5_method2_vs_mx2_{period}.png",
+            dpi=180,
+        )
+        plt.close(fig)
+
+
 def plot_cumulative_window_scan(
     output: Path,
     module: Any,
@@ -2921,6 +3166,13 @@ def run_one_variant(
         tables / "method_comparison_vs_mx2.csv", index=False
     )
 
+    he_subtracted_comparison = build_he_subtracted_method_comparison(
+        counts, module, charge_fractions, spectrum_edges
+    )
+    he_subtracted_comparison.to_csv(
+        tables / "method1_method1p5_method2_vs_mx2.csv", index=False
+    )
+
     cumulative_background = build_cumulative_background_comparison(
         counts, module, charge_fractions, spectrum_edges, cumulative_edges
     )
@@ -2972,6 +3224,24 @@ def run_one_variant(
             ),
             "common_axes": "x and y standardized separately within each row",
         },
+        "method1p5_he_subtracted_diagnostic": {
+            "control_window": [0.0, 0.4],
+            "normalization": (
+                "all target spectra divided by q_target/q_total before any "
+                "subtraction"
+            ),
+            "helium_subtraction": (
+                "the charge-normalized He spectrum is subtracted bin by bin "
+                "from both NH3 and carbon"
+            ),
+            "definition": (
+                "alpha_1p5 = integral(NH3_norm-He_norm) / "
+                "integral(C_norm-He_norm) in 0.0<=Mx2<0.4; "
+                "f_1p5 = 1 - alpha_1p5*(C_norm-He_norm)/"
+                "(NH3_norm-He_norm)"
+            ),
+            "production_use": False,
+        },
         "cumulative_upper_edges": cumulative_edges,
         "method2_target_sensitivity_fraction": SENSITIVITY_FRACTION,
         "required_target_scale_scan": [REQUIRED_SCALE_MIN, REQUIRED_SCALE_MAX, REQUIRED_SCALE_GRID],
@@ -3006,6 +3276,9 @@ def run_one_variant(
     plot_rcn_scan(plots, rcn_scan, module)
     plot_spectrum_comparison(
         plots, spectrum_comparison, module, NOMINAL_CONTROL_WINDOW
+    )
+    plot_he_subtracted_method_comparison(
+        plots, he_subtracted_comparison, module
     )
     plot_cumulative_background_comparison(plots, cumulative_background, module)
     plot_target_sensitivity(plots, target_sensitivity, module)
