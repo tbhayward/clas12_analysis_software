@@ -1089,12 +1089,19 @@ def plot_spectrum_comparison(
     module: Any,
     nominal_window: tuple[float, float],
 ) -> None:
-    """Compare Method-1 and Method-2 backgrounds and dilution versus Mx2."""
+    """Compare Method-1 and Method-2 backgrounds and dilution versus Mx2.
+
+    The diagnostic is intentionally restricted to 0.4 <= Mx2 <= 1.4 GeV^2,
+    where the period-integrated five-target subtraction is sufficiently stable
+    to make the two methods visually interpretable.
+    """
+    plot_min = 0.4
+    plot_max = 1.4
     for period in module.PERIODS:
         selected = table[table.period == period].sort_values("mx2_center")
         fig, axes = plt.subplots(
-            3, 1, figsize=(13, 10), sharex=True,
-            gridspec_kw={"height_ratios": [2.0, 1.2, 1.0]},
+            2, 1, figsize=(13, 8), sharex=True,
+            gridspec_kw={"height_ratios": [2.0, 1.2]},
         )
         centers = selected.mx2_center.to_numpy()
 
@@ -1128,18 +1135,17 @@ def plot_spectrum_comparison(
         axes[1].grid(alpha=0.25)
         axes[1].legend()
 
-        axes[2].plot(centers, selected.scaled_carbon_over_five_target, "o", markersize=3)
-        axes[2].axhline(1.0, linewidth=1)
-        axes[2].set_ylabel("Method-1 bg. / Method-2 bg.")
-        axes[2].set_xlabel(r"$M_X^2$ (GeV$^2$)")
-        axes[2].grid(alpha=0.25)
+        axes[1].set_xlabel(r"$M_X^2$ (GeV$^2$)")
 
         for ax in axes:
-            ax.axvspan(
-                nominal_window[0], nominal_window[1], alpha=0.12,
-                label=None,
-            )
-            ax.set_xlim(float(selected.mx2_low.min()), float(selected.mx2_high.max()))
+            # The selected Method-1 normalization window may lie partly or
+            # entirely outside this focused comparison range.  Shade only the
+            # visible overlap.
+            visible_low = max(nominal_window[0], plot_min)
+            visible_high = min(nominal_window[1], plot_max)
+            if visible_high > visible_low:
+                ax.axvspan(visible_low, visible_high, alpha=0.12, label=None)
+            ax.set_xlim(plot_min, plot_max)
 
         axes[0].text(
             0.01, 0.03,
