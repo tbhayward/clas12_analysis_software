@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-validate_carbon_normalization_v7.py
+validate_carbon_normalization_v8.py
 
 Dedicated validation and stress-test program for the RGC exclusive e pi+
 carbon-normalization dilution-factor method.
@@ -110,6 +110,11 @@ DEFAULT_LOW_REGIONS: tuple[tuple[float, float], ...] = (
 
 DEFAULT_SPECTRUM_RANGE = (-0.20, 1.50)
 DEFAULT_SPECTRUM_BINS = 80
+DEFAULT_CHARGE_NORMALIZED_XB_BINS = 60
+DEFAULT_CHARGE_NORMALIZED_TPRIME_BINS = 60
+CHARGE_NORMALIZED_CANVAS_FILENAME = (
+    "charge_normalized_target_distributions_3x3.png"
+)
 DEFAULT_CUMULATIVE_UPPER_MIN = 0.15
 DEFAULT_CUMULATIVE_UPPER_MAX = 0.65
 DEFAULT_CUMULATIVE_UPPER_STEP = 0.025
@@ -1032,6 +1037,220 @@ def plot_low_region_closure(output: Path, table: pd.DataFrame, module: Any) -> N
         fig.tight_layout()
         fig.savefig(output / f"low_region_closure_{period}.png", dpi=180)
         plt.close(fig)
+
+
+
+def _target_label(module: Any, target: str) -> str:
+    """Return a readable target label without requiring a specific module API."""
+    labels = getattr(module, "TARGET_LABELS", {})
+    if isinstance(labels, dict) and target in labels:
+        return str(labels[target])
+    fallback = {
+        "NH3": r"NH$_3$",
+        "C": "C",
+        "CH2": r"CH$_2$",
+        "He": "He",
+        "empty": "Empty",
+        "Empty": "Empty",
+    }
+    return fallback.get(target, str(target))
+
+
+def _charge_fraction_for_target(
+    charge_fractions: dict[str, dict[str, float]],
+    period: str,
+    target: str,
+) -> float:
+    """
+    Return q_target/q_total for one period and target.
+
+    Dividing a target histogram by this fraction converts it to the yield that
+    would be expected for the period's total accumulated charge.  All targets
+    in a period therefore share one common effective-charge normalization.
+    """
+    try:
+        value = float(charge_fractions[period][target])
+    except KeyError as exc:
+        raise KeyError(
+            f"Missing charge fraction for period={period!r}, target={target!r}"
+        ) from exc
+    if not np.isfinite(value) or value <= 0.0:
+        raise ValueError(
+            f"Charge fraction must be positive and finite for "
+            f"{period} {target}; received {value}"
+        )
+    return value
+
+
+def _finite_histogram(
+    values: np.ndarray,
+    edges: np.ndarray,
+    charge_fraction: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return counts and Poisson errors normalized to period-total charge."""
+    selected = np.asarray(values, dtype=float)
+    selected = selected[np.isfinite(selected)]
+    raw, _ = np.histogram(selected, bins=edges)
+    scale = 1.0 / charge_fraction
+    return raw.astype(float) * scale, np.sqrt(raw.astype(float)) * scale
+
+
+def plot_charge_normalized_target_canvas(
+    output: Path,
+    loaded: dict[tuple[str, str], Any],
+    module: Any,
+    charge_fractions: dict[str, dict[str, float]],
+    spectrum_edges: np.ndarray,
+) -> None:
+    """
+    Make one 3x3 charge-normalized comparison canvas.
+
+    Columns are the three run periods.  Rows are Mx2, xB, and -t'
+    distributions.  Every panel overlays all five target types.  Each target
+    histogram is divided by q_target/q_total, so it is normalized to the same
+    period-total accumulated charge.  Axes are standardized across each row.
+    """
+    periods = tuple(module.PERIODS)
+    if len(periods) != 3:
+        raise RuntimeError(
+            "The requested 3x3 charge-normalized canvas requires exactly "
+            f"three periods, but the production module defines {len(periods)}."
+        )
+
+    x_low = min(float(low) for low, _ in module.XB_BINS)
+    x_high = max(float(high) for _, high in module.XB_BINS)
+    t_low = min(float(low) for low, _ in module.MINUS_TPRIME_BINS_GEV2)
+    t_high = max(float(high) for _, high in module.MINUS_TPRIME_BINS_GEV2)
+
+    row_specs = (
+        (
+            "mx2_gev2",
+            np.asarray(spectrum_edges, dtype=float),
+            r"$M_X^2(e\pi^+)$ (GeV$^2$)",
+        ),
+        (
+            "xB",
+            np.linspace(
+                x_low,
+                x_high,
+                DEFAULT_CHARGE_NORMALIZED_XB_BINS + 1,
+            ),
+            r"$x_B$",
+        ),
+        (
+            "minus_tprime_gev2",
+            np.linspace(
+                t_low,
+                t_high,
+                DEFAULT_CHARGE_NORMALIZED_TPRIME_BINS + 1,
+            ),
+            r"$-t^\prime$ (GeV$^2$)",
+        ),
+    )
+
+    # Precompute every histogram first so common row-wise y limits are exact.
+    histograms: dict[tuple[int, int, str], tuple[np.ndarray, np.ndarray]] = {}
+    row_maxima = np.zeros(3, dtype=float)
+
+    for column, period in enumerate(periods):
+        for row, (branch, edges, _xlabel) in enumerate(row_specs):
+            for target in module.TARGETS:
+                dataset = loaded[(period, target)]
+                fraction = _charge_fraction_for_target(
+                    charge_fractions,
+                    period,
+                    target,
+                )
+                counts_norm, errors_norm = _finite_histogram(
+                    np.asarray(getattr(dataset, branch)),
+                    edges,
+                    fraction,
+                )
+                histograms[(row, column, target)] = (
+                    counts_norm,
+                    errors_norm,
+                )
+                if counts_norm.size:
+                    row_maxima[row] = max(
+                        row_maxima[row],
+                        float(np.nanmax(counts_norm)),
+                    )
+
+    fig, axes = plt.subplots(
+        3,
+        3,
+        figsize=(18, 13),
+        sharex="row",
+        sharey="row",
+        squeeze=False,
+    )
+
+    for column, period in enumerate(periods):
+        for row, (_branch, edges, xlabel) in enumerate(row_specs):
+            ax = axes[row, column]
+            centers = 0.5 * (edges[:-1] + edges[1:])
+
+            for target in module.TARGETS:
+                counts_norm, _errors_norm = histograms[
+                    (row, column, target)
+                ]
+                ax.step(
+                    centers,
+                    counts_norm,
+                    where="mid",
+                    linewidth=1.5,
+                    label=_target_label(module, target),
+                )
+
+            ax.set_xlim(float(edges[0]), float(edges[-1]))
+            if row_maxima[row] > 0.0:
+                ax.set_ylim(0.0, 1.08 * row_maxima[row])
+            ax.grid(alpha=0.25)
+
+            if row == 0:
+                ax.set_title(module.PERIOD_LABELS[period])
+            if column == 0:
+                ax.set_ylabel(
+                    "Events normalized to\nperiod-total charge"
+                )
+            if row == 2:
+                ax.set_xlabel(xlabel)
+            else:
+                ax.set_xlabel(xlabel)
+
+            if row == 0 and column == 2:
+                ax.legend(
+                    loc="upper right",
+                    fontsize=9,
+                    frameon=True,
+                )
+
+    row_titles = (
+        r"$M_X^2(e\pi^+)$ distributions",
+        r"$x_B$ distributions",
+        r"$-t^\prime$ distributions",
+    )
+    for row, title in enumerate(row_titles):
+        axes[row, 0].annotate(
+            title,
+            xy=(-0.24, 0.5),
+            xycoords="axes fraction",
+            rotation=90,
+            va="center",
+            ha="center",
+            fontsize=12,
+            fontweight="bold",
+        )
+
+    fig.suptitle(
+        "Five-target distributions normalized to each period's total charge"
+    )
+    fig.tight_layout(rect=(0.04, 0.02, 1.0, 0.96))
+    destination = output / CHARGE_NORMALIZED_CANVAS_FILENAME
+    fig.savefig(destination, dpi=180)
+    plt.close(fig)
+    print(f"Saved charge-normalized 3x3 target canvas to {destination}")
+
 
 
 def build_spectrum_comparison(
@@ -2652,6 +2871,13 @@ def run_one_variant(
     counts = build_all_counts(
         loaded, cuts, module, atomic_edges, DEFAULT_LOW_REGIONS, spectrum_edges, workers
     )
+    plot_charge_normalized_target_canvas(
+        plots,
+        loaded,
+        module,
+        charge_fractions,
+        spectrum_edges,
+    )
     central = central_estimators(counts, module, windows, atomic_edges, charge_fractions)
     bootstrap = run_bootstrap(
         counts, module, module_path, windows, atomic_edges, charge_fractions,
@@ -2736,6 +2962,16 @@ def run_one_variant(
         "low_mx2_closure_regions": DEFAULT_LOW_REGIONS,
         "spectrum_range": [args.spectrum_min, args.spectrum_max],
         "spectrum_bins": args.spectrum_bins,
+        "charge_normalized_target_canvas": {
+            "filename": CHARGE_NORMALIZED_CANVAS_FILENAME,
+            "layout": "3 rows (Mx2, xB, -tprime) x 3 period columns",
+            "targets": list(module.TARGETS),
+            "normalization": (
+                "each histogram divided by q_target/q_total, yielding the "
+                "equivalent count distribution at the period-total charge"
+            ),
+            "common_axes": "x and y standardized separately within each row",
+        },
         "cumulative_upper_edges": cumulative_edges,
         "method2_target_sensitivity_fraction": SENSITIVITY_FRACTION,
         "required_target_scale_scan": [REQUIRED_SCALE_MIN, REQUIRED_SCALE_MAX, REQUIRED_SCALE_GRID],
