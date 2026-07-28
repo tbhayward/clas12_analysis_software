@@ -1140,18 +1140,36 @@ def plot_spectrum_comparison(
         )
         centers = selected.mx2_center.to_numpy()
 
-        axes[0].step(centers, selected.nh3_count, where="mid", label="NH$_3$ data")
+        nh3_color = "black"
+        method1_nominal_color = "lightcoral"
+        method1_override_color = "darkred"
+        method2_color = "green"
+
+        axes[0].step(
+            centers,
+            selected.nh3_count,
+            where="mid",
+            color=nh3_color,
+            linewidth=1.8,
+            label="NH$_3$ data",
+        )
         if override_active:
             axes[0].step(
                 centers,
                 selected.scaled_carbon_background_nominal_0p0_0p4,
                 where="mid",
+                color=method1_nominal_color,
+                linestyle="--",
+                linewidth=1.8,
                 label=r"Method 1: scaled carbon, $0.00\leq M_X^2<0.40$ GeV$^2$",
             )
             axes[0].step(
                 centers,
                 selected.scaled_carbon_background_selected,
                 where="mid",
+                color=method1_override_color,
+                linestyle="-",
+                linewidth=1.8,
                 label=(
                     rf"Method 1: scaled carbon, ${selected_window[0]:.2f}\leq "
                     rf"M_X^2<{selected_window[1]:.2f}$ GeV$^2$"
@@ -1159,11 +1177,21 @@ def plot_spectrum_comparison(
             )
         else:
             axes[0].step(
-                centers, selected.scaled_carbon_background, where="mid",
-                label="Method 1: scaled-carbon background",
+                centers,
+                selected.scaled_carbon_background,
+                where="mid",
+                color=method1_nominal_color,
+                linestyle="--",
+                linewidth=1.8,
+                label=r"Method 1: scaled carbon, $0.00\leq M_X^2<0.40$ GeV$^2$",
             )
         axes[0].step(
-            centers, selected.five_target_background, where="mid",
+            centers,
+            selected.five_target_background,
+            where="mid",
+            color=method2_color,
+            linestyle="-",
+            linewidth=1.8,
             label="Method 2: direct five-target background",
         )
         axes[0].set_ylabel("Counts")
@@ -1179,13 +1207,21 @@ def plot_spectrum_comparison(
             axes[1].plot(
                 centers,
                 selected.method1_dilution_factor_nominal_0p0_0p4,
-                "o-", markersize=3,
+                marker="o",
+                markersize=3,
+                color=method1_nominal_color,
+                linestyle="--",
+                linewidth=1.5,
                 label=r"Method 1: $0.00\leq M_X^2<0.40$ GeV$^2$",
             )
             axes[1].plot(
                 centers,
                 selected.method1_dilution_factor_selected,
-                "^-", markersize=3,
+                marker="^",
+                markersize=3,
+                color=method1_override_color,
+                linestyle="-",
+                linewidth=1.5,
                 label=(
                     rf"Method 1: ${selected_window[0]:.2f}\leq M_X^2<"
                     rf"{selected_window[1]:.2f}$ GeV$^2$"
@@ -1193,12 +1229,24 @@ def plot_spectrum_comparison(
             )
         else:
             axes[1].plot(
-                centers, selected.method1_dilution_factor, "o-",
-                markersize=3, label="Method 1",
+                centers,
+                selected.method1_dilution_factor,
+                marker="o",
+                markersize=3,
+                color=method1_nominal_color,
+                linestyle="--",
+                linewidth=1.5,
+                label=r"Method 1: $0.00\leq M_X^2<0.40$ GeV$^2$",
             )
         axes[1].plot(
-            centers, selected.method2_dilution_factor, "s-",
-            markersize=3, label="Method 2",
+            centers,
+            selected.method2_dilution_factor,
+            marker="s",
+            markersize=3,
+            color=method2_color,
+            linestyle="-",
+            linewidth=1.5,
+            label="Method 2",
         )
         axes[1].set_ylabel("Dilution factor")
         axes[1].set_ylim(0.0, 0.6)
