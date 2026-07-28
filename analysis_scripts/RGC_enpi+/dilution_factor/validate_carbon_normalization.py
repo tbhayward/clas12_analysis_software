@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-validate_carbon_normalization_v6.py
+validate_carbon_normalization_v7.py
 
 Dedicated validation and stress-test program for the RGC exclusive e pi+
 carbon-normalization dilution-factor method.
@@ -83,8 +83,9 @@ DEFAULT_SEED = 27072026
 DEFAULT_OUTPUT = Path("output/carbon_normalization_validation")
 DEFAULT_MODULE = Path(__file__).resolve().with_name("determine_dilution_factor.py")
 
-# The nominal window remains [0.00, 0.40).  These scans explicitly vary both
-# edges.  Duplicate nominal entries are removed during canonicalization.
+# The default production-like Method-1 normalization window is [0.00, 0.40).
+# Command-line overrides may replace either edge. These scans explicitly vary
+# both edges, and duplicate entries are removed during canonicalization.
 DEFAULT_CONTROL_WINDOWS: tuple[tuple[float, float], ...] = (
     (0.00, 0.25),
     (0.00, 0.30),
@@ -107,7 +108,7 @@ DEFAULT_LOW_REGIONS: tuple[tuple[float, float], ...] = (
     (0.20, 0.40),
 )
 
-DEFAULT_SPECTRUM_RANGE = (-0.20, 1.40)
+DEFAULT_SPECTRUM_RANGE = (-0.20, 1.50)
 DEFAULT_SPECTRUM_BINS = 80
 DEFAULT_CUMULATIVE_UPPER_MIN = 0.15
 DEFAULT_CUMULATIVE_UPPER_MAX = 0.65
@@ -128,6 +129,8 @@ NOMINAL_R_CN = 6.0 / 7.0
 DEFAULT_R_CN_MIN = 0.50
 DEFAULT_R_CN_MAX = 1.10
 DEFAULT_R_CN_POINTS = 121
+DEFAULT_NOMINAL_CONTROL_WINDOW = (0.0, 0.4)
+NOMINAL_CONTROL_WINDOW = DEFAULT_NOMINAL_CONTROL_WINDOW
 R_CN_BISECTION_ITERATIONS = 48
 
 
@@ -213,8 +216,8 @@ def canonical_windows(
     source = list(DEFAULT_CONTROL_WINDOWS if not values else values)
     source.extend((0.0, upper) for upper in cumulative_edges)
     unique = sorted({(round(a, 10), round(b, 10)) for a, b in source})
-    if (0.0, 0.4) not in unique:
-        unique.append((0.0, 0.4))
+    if NOMINAL_CONTROL_WINDOW not in unique:
+        unique.append(NOMINAL_CONTROL_WINDOW)
         unique.sort()
     return unique
 
@@ -554,6 +557,7 @@ def validation_bootstrap_worker(
     seed: int,
     module_path: str,
     chunk_index: int,
+    nominal_control_window: tuple[float, float],
 ) -> dict[str, Any]:
     """Generate one independent bootstrap chunk for one period."""
     module = import_production_module(Path(module_path))
@@ -576,7 +580,7 @@ def validation_bootstrap_worker(
     }
 
     projection = control_projection_matrix(atomic_edges, windows)
-    nominal_window_index = windows.index((0.0, 0.4))
+    nominal_window_index = windows.index(nominal_control_window)
     grouping_metadata = {}
     for grouping in groupings:
         gids = group_ids(grouping, n_bins, n_t)
@@ -735,7 +739,7 @@ def run_bootstrap(
                     validation_bootstrap_worker,
                     period, observed, windows, atomic_edges, GROUPINGS,
                     n_x, n_t, charge_fractions[period], chunk_size, child_seed,
-                    str(module_path), chunk_index,
+                    str(module_path), chunk_index, NOMINAL_CONTROL_WINDOW,
                 )
                 futures[future] = (period, chunk_index, chunk_size)
 
@@ -810,7 +814,7 @@ def central_estimators(
             signals["NH3"] * (1.0 - result["method2"]),
             signals["C"],
         )
-        nominal_window_index = windows.index((0.0, 0.4))
+        nominal_window_index = windows.index(NOMINAL_CONTROL_WINDOW)
         nominal_period_alpha = result["alpha"][PERIOD_GROUP][:, nominal_window_index]
         result["transfer_ratio"] = ratio(
             result["alpha_required"],
@@ -861,7 +865,7 @@ def plot_window_scan_summary(
     central: dict[str, Any],
     bootstrap: dict[str, Any],
 ) -> None:
-    nominal_window = windows.index((0.0, 0.4))
+    nominal_window = windows.index(NOMINAL_CONTROL_WINDOW)
     nominal_cut = list(module.CUT_VARIATIONS).index("nominal")
     display_windows = structured_windows(windows)
     display_indices = [windows.index(window) for window in display_windows]
@@ -902,7 +906,7 @@ def plot_grouping_comparison(
     central: dict[str, Any],
     bootstrap: dict[str, Any],
 ) -> None:
-    w = windows.index((0.0, 0.4))
+    w = windows.index(NOMINAL_CONTROL_WINDOW)
     cut = list(module.CUT_VARIATIONS).index("nominal")
     x = np.arange(1, module.NUMBER_OF_BINS + 1)
     offsets = np.linspace(-0.24, 0.24, len(GROUPINGS) + 1)
@@ -934,7 +938,7 @@ def plot_method_difference_summary(
     central: dict[str, Any],
     bootstrap: dict[str, Any],
 ) -> None:
-    w = windows.index((0.0, 0.4))
+    w = windows.index(NOMINAL_CONTROL_WINDOW)
     cut = list(module.CUT_VARIATIONS).index("nominal")
     x = np.arange(1, module.NUMBER_OF_BINS + 1)
     fig, axes = plt.subplots(len(module.PERIODS), 1, figsize=(16, 11), sharex=True, sharey=True)
@@ -1069,32 +1073,81 @@ def build_spectrum_comparison(
                 "nh3_count": summed_nh3[i],
                 "scaled_carbon_background": summed_scaled_c[i],
                 "five_target_background": summed_five[i],
+                "method1_dilution_factor": float(1.0 - ratio(summed_scaled_c[i], summed_nh3[i])),
+                "method2_dilution_factor": float(1.0 - ratio(summed_five[i], summed_nh3[i])),
                 "scaled_carbon_over_five_target": float(ratio(summed_scaled_c[i], summed_five[i])),
                 "period_carbon_scale": alpha,
+                "normalization_window_min": nominal_window[0],
+                "normalization_window_max": nominal_window[1],
             })
     return pd.DataFrame(rows)
 
 
-def plot_spectrum_comparison(output: Path, table: pd.DataFrame, module: Any) -> None:
+def plot_spectrum_comparison(
+    output: Path,
+    table: pd.DataFrame,
+    module: Any,
+    nominal_window: tuple[float, float],
+) -> None:
+    """Compare Method-1 and Method-2 backgrounds and dilution versus Mx2."""
     for period in module.PERIODS:
-        selected = table[table.period == period]
-        fig, axes = plt.subplots(2, 1, figsize=(13, 8), sharex=True, gridspec_kw={"height_ratios": [2, 1]})
+        selected = table[table.period == period].sort_values("mx2_center")
+        fig, axes = plt.subplots(
+            3, 1, figsize=(13, 10), sharex=True,
+            gridspec_kw={"height_ratios": [2.0, 1.2, 1.0]},
+        )
         centers = selected.mx2_center.to_numpy()
+
         axes[0].step(centers, selected.nh3_count, where="mid", label="NH$_3$ data")
-        axes[0].step(centers, selected.scaled_carbon_background, where="mid", label="Scaled-carbon background")
-        axes[0].step(centers, selected.five_target_background, where="mid", label="Direct five-target background")
+        axes[0].step(
+            centers, selected.scaled_carbon_background, where="mid",
+            label="Method 1: scaled-carbon background",
+        )
+        axes[0].step(
+            centers, selected.five_target_background, where="mid",
+            label="Method 2: direct five-target background",
+        )
         axes[0].set_ylabel("Counts")
         axes[0].set_yscale("symlog", linthresh=1.0)
         axes[0].grid(alpha=0.25)
         axes[0].legend()
-        axes[0].set_title(f"{module.PERIOD_LABELS[period]} — period-integrated background-shape comparison")
-        axes[1].plot(centers, selected.scaled_carbon_over_five_target, "o")
-        axes[1].axhline(1.0, linewidth=1)
-        axes[1].set_ylabel("Scaled C / five-target")
-        axes[1].set_xlabel(r"$M_X^2$ (GeV$^2$)")
+        axes[0].set_title(
+            f"{module.PERIOD_LABELS[period]} — period-integrated Method-1/Method-2 comparison"
+        )
+
+        axes[1].plot(
+            centers, selected.method1_dilution_factor, "o-",
+            markersize=3, label="Method 1",
+        )
+        axes[1].plot(
+            centers, selected.method2_dilution_factor, "s-",
+            markersize=3, label="Method 2",
+        )
+        axes[1].axhline(0.0, linewidth=0.8)
+        axes[1].set_ylabel("Dilution factor")
         axes[1].grid(alpha=0.25)
+        axes[1].legend()
+
+        axes[2].plot(centers, selected.scaled_carbon_over_five_target, "o", markersize=3)
+        axes[2].axhline(1.0, linewidth=1)
+        axes[2].set_ylabel("Method-1 bg. / Method-2 bg.")
+        axes[2].set_xlabel(r"$M_X^2$ (GeV$^2$)")
+        axes[2].grid(alpha=0.25)
+
+        for ax in axes:
+            ax.axvspan(
+                nominal_window[0], nominal_window[1], alpha=0.12,
+                label=None,
+            )
+            ax.set_xlim(float(selected.mx2_low.min()), float(selected.mx2_high.max()))
+
+        axes[0].text(
+            0.01, 0.03,
+            rf"Method-1 normalization window: ${nominal_window[0]:.2f} \leq M_X^2 < {nominal_window[1]:.2f}$ GeV$^2$",
+            transform=axes[0].transAxes, va="bottom", ha="left",
+        )
         fig.tight_layout()
-        fig.savefig(output / f"background_shape_comparison_{period}.png", dpi=180)
+        fig.savefig(output / f"method_comparison_vs_mx2_{period}.png", dpi=180)
         plt.close(fig)
 
 
@@ -1440,7 +1493,7 @@ def build_target_sensitivity_table(
     move Method 2 to Method 1 under the local linear approximation.
     """
     rows: list[dict[str, Any]] = []
-    nominal_window_index = windows.index((0.0, 0.4))
+    nominal_window_index = windows.index(NOMINAL_CONTROL_WINDOW)
     n_t = len(module.MINUS_TPRIME_BINS_GEV2)
     eps = SENSITIVITY_FRACTION
     for period in module.PERIODS:
@@ -1532,7 +1585,7 @@ def build_required_target_scale_table(
 ) -> pd.DataFrame:
     """Solve for a coherent target-yield factor that would force f2=f1."""
     rows: list[dict[str, Any]] = []
-    nominal_window_index = windows.index((0.0, 0.4))
+    nominal_window_index = windows.index(NOMINAL_CONTROL_WINDOW)
     n_t = len(module.MINUS_TPRIME_BINS_GEV2)
     for period in module.PERIODS:
         full = {
@@ -2363,6 +2416,7 @@ def write_summary_json(
     payload: dict[str, Any] = {
         "purpose": "Carbon-normalization validation; diagnostic only",
         "control_windows": windows,
+        "method1_nominal_normalization_window": list(NOMINAL_CONTROL_WINDOW),
         "high_side_closure_policy": (
             "No high-side NH3/carbon closure requirement is imposed because "
             "NH3 can contain genuine hydrogen-origin nonexclusive channels."
@@ -2395,6 +2449,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--charge-fractions-json", type=Path, default=None)
     parser.add_argument("--control-window", action="append", type=parse_window, default=None,
                         help="Control window MIN:MAX; repeat to replace the default scan")
+    parser.add_argument(
+        "--normalization-window-min", type=float,
+        default=DEFAULT_NOMINAL_CONTROL_WINDOW[0],
+        help="Lower edge of the production-like Method-1 carbon normalization window",
+    )
+    parser.add_argument(
+        "--normalization-window-max", type=float,
+        default=DEFAULT_NOMINAL_CONTROL_WINDOW[1],
+        help="Upper edge of the production-like Method-1 carbon normalization window",
+    )
     parser.add_argument("--spectrum-min", type=float, default=DEFAULT_SPECTRUM_RANGE[0])
     parser.add_argument("--spectrum-max", type=float, default=DEFAULT_SPECTRUM_RANGE[1])
     parser.add_argument("--spectrum-bins", type=int, default=DEFAULT_SPECTRUM_BINS)
@@ -2498,6 +2562,13 @@ def run_one_variant(
     )
     rcn_scan.to_csv(tables / "method2_r_cn_scan.csv", index=False)
 
+    spectrum_comparison = build_spectrum_comparison(
+        counts, module, charge_fractions, spectrum_edges, NOMINAL_CONTROL_WINDOW
+    )
+    spectrum_comparison.to_csv(
+        tables / "method_comparison_vs_mx2.csv", index=False
+    )
+
     cumulative_background = build_cumulative_background_comparison(
         counts, module, charge_fractions, spectrum_edges, cumulative_edges
     )
@@ -2535,6 +2606,7 @@ def run_one_variant(
             "maximum_workers": MAXIMUM_WORKERS,
         },
         "control_windows": windows,
+        "method1_nominal_normalization_window": list(NOMINAL_CONTROL_WINDOW),
         "low_mx2_closure_regions": DEFAULT_LOW_REGIONS,
         "spectrum_range": [args.spectrum_min, args.spectrum_max],
         "spectrum_bins": args.spectrum_bins,
@@ -2553,7 +2625,7 @@ def run_one_variant(
         },
         "empirical_template_fit": {
             "fit_range": [TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX],
-            "control_region": [0.0, 0.4],
+            "control_region": list(NOMINAL_CONTROL_WINDOW),
             "polynomial_order": TEMPLATE_POLYNOMIAL_ORDER,
             "hydrogen_template": "CH2 - beta*C, with beta from the control region",
         },
@@ -2570,6 +2642,9 @@ def run_one_variant(
     plot_required_rcn(plots, required_rcn, module)
     plot_rcn_replica_fit_summary(plots, rcn_replica_fit, module)
     plot_rcn_scan(plots, rcn_scan, module)
+    plot_spectrum_comparison(
+        plots, spectrum_comparison, module, NOMINAL_CONTROL_WINDOW
+    )
     plot_cumulative_background_comparison(plots, cumulative_background, module)
     plot_target_sensitivity(plots, target_sensitivity, module)
     plot_required_target_scales(plots, required_target_scales, module)
@@ -2588,7 +2663,15 @@ def main() -> int:
         raise ValueError("--spectrum-min must be below --spectrum-max")
     if not args.template_fit_min < args.template_fit_max:
         raise ValueError("--template-fit-min must be below --template-fit-max")
-    global TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX, DEFAULT_R_CN_MIN, DEFAULT_R_CN_MAX
+    global TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX, DEFAULT_R_CN_MIN, DEFAULT_R_CN_MAX, NOMINAL_CONTROL_WINDOW
+    if not args.normalization_window_min < args.normalization_window_max:
+        raise ValueError(
+            "--normalization-window-min must be below --normalization-window-max"
+        )
+    NOMINAL_CONTROL_WINDOW = (
+        round(float(args.normalization_window_min), 10),
+        round(float(args.normalization_window_max), 10),
+    )
     TEMPLATE_FIT_MIN = float(args.template_fit_min)
     TEMPLATE_FIT_MAX = float(args.template_fit_max)
     if not 0.0 < args.r_cn_min < args.r_cn_max:
