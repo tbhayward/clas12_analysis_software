@@ -1035,34 +1035,50 @@ def plot_low_region_closure(output: Path, table: pd.DataFrame, module: Any) -> N
 
 
 def build_spectrum_comparison(
-    counts: dict[tuple[str, str], ValidationCounts],
+    counts: dict[tuple[str, str], TargetCounts],
     module: Any,
     charge_fractions: dict[str, dict[str, float]],
     spectrum_edges: np.ndarray,
-    nominal_window: tuple[float, float],
+    selected_window: tuple[float, float],
 ) -> pd.DataFrame:
+    """Build the period-integrated Mx2 comparison table.
+
+    The production-like Method-1 result uses ``selected_window``.  When that
+    window differs from the nominal 0.0--0.4 GeV^2 window, a second Method-1
+    background and dilution curve based on the fixed nominal window are also
+    retained so the effect of the command-line override can be seen directly.
+    Method 2 is independent of the Method-1 carbon-normalization window.
+    """
     centers = 0.5 * (spectrum_edges[:-1] + spectrum_edges[1:])
+    nominal_window = DEFAULT_NOMINAL_CONTROL_WINDOW
     rows: list[dict[str, Any]] = []
     for period in module.PERIODS:
         nh3_spectrum = counts[(period, "NH3")].spectrum.astype(float)
         carbon_spectrum = counts[(period, "C")].spectrum.astype(float)
-        control_nh3 = np.sum(nh3_spectrum[:, (centers >= nominal_window[0]) & (centers < nominal_window[1])])
-        control_c = np.sum(carbon_spectrum[:, (centers >= nominal_window[0]) & (centers < nominal_window[1])])
-        alpha = float(ratio(control_nh3, control_c))
 
-        # Apply the exact direct five-target expression independently in every
-        # Mx2 histogram bin.  This is a descriptive background-shape diagnostic;
-        # low-statistics bins are retained and flagged rather than clipped.
+        def carbon_scale(window: tuple[float, float]) -> float:
+            mask = (centers >= window[0]) & (centers < window[1])
+            control_nh3 = np.sum(nh3_spectrum[:, mask])
+            control_c = np.sum(carbon_spectrum[:, mask])
+            return float(ratio(control_nh3, control_c))
+
+        selected_alpha = carbon_scale(selected_window)
+        nominal_alpha = carbon_scale(nominal_window)
+
         target_counts = {
             target: counts[(period, target)].spectrum.astype(float)
             for target in module.TARGETS
         }
-        f2_spectrum = module.method2_equation10_from_counts(target_counts, charge_fractions[period])
+        f2_spectrum = module.method2_equation10_from_counts(
+            target_counts, charge_fractions[period]
+        )
         five_target_background = nh3_spectrum * (1.0 - f2_spectrum)
-        scaled_carbon = alpha * carbon_spectrum
+        selected_scaled_carbon = selected_alpha * carbon_spectrum
+        nominal_scaled_carbon = nominal_alpha * carbon_spectrum
 
         summed_nh3 = np.sum(nh3_spectrum, axis=0)
-        summed_scaled_c = np.sum(scaled_carbon, axis=0)
+        summed_selected_c = np.sum(selected_scaled_carbon, axis=0)
+        summed_nominal_c = np.sum(nominal_scaled_carbon, axis=0)
         summed_five = np.sum(five_target_background, axis=0)
         for i, center in enumerate(centers):
             rows.append({
@@ -1071,14 +1087,30 @@ def build_spectrum_comparison(
                 "mx2_high": spectrum_edges[i + 1],
                 "mx2_center": center,
                 "nh3_count": summed_nh3[i],
-                "scaled_carbon_background": summed_scaled_c[i],
+                "scaled_carbon_background": summed_selected_c[i],
+                "scaled_carbon_background_selected": summed_selected_c[i],
+                "scaled_carbon_background_nominal_0p0_0p4": summed_nominal_c[i],
                 "five_target_background": summed_five[i],
-                "method1_dilution_factor": float(1.0 - ratio(summed_scaled_c[i], summed_nh3[i])),
-                "method2_dilution_factor": float(1.0 - ratio(summed_five[i], summed_nh3[i])),
-                "scaled_carbon_over_five_target": float(ratio(summed_scaled_c[i], summed_five[i])),
-                "period_carbon_scale": alpha,
-                "normalization_window_min": nominal_window[0],
-                "normalization_window_max": nominal_window[1],
+                "method1_dilution_factor": float(
+                    1.0 - ratio(summed_selected_c[i], summed_nh3[i])
+                ),
+                "method1_dilution_factor_selected": float(
+                    1.0 - ratio(summed_selected_c[i], summed_nh3[i])
+                ),
+                "method1_dilution_factor_nominal_0p0_0p4": float(
+                    1.0 - ratio(summed_nominal_c[i], summed_nh3[i])
+                ),
+                "method2_dilution_factor": float(
+                    1.0 - ratio(summed_five[i], summed_nh3[i])
+                ),
+                "scaled_carbon_over_five_target": float(
+                    ratio(summed_selected_c[i], summed_five[i])
+                ),
+                "selected_period_carbon_scale": selected_alpha,
+                "nominal_0p0_0p4_period_carbon_scale": nominal_alpha,
+                "normalization_window_min": selected_window[0],
+                "normalization_window_max": selected_window[1],
+                "override_window_active": selected_window != nominal_window,
             })
     return pd.DataFrame(rows)
 
@@ -1087,15 +1119,10 @@ def plot_spectrum_comparison(
     output: Path,
     table: pd.DataFrame,
     module: Any,
-    nominal_window: tuple[float, float],
+    selected_window: tuple[float, float],
 ) -> None:
-    """Compare Method-1 and Method-2 backgrounds and dilution versus Mx2.
-
-    The displayed lower edge is the upper edge of the selected Method-1
-    normalization window, while the upper edge remains fixed at 1.4 GeV^2.
-    This keeps the comparison focused entirely above the normalization region.
-    """
-    plot_min = float(nominal_window[1])
+    """Compare Method-1 and Method-2 backgrounds and dilution versus Mx2."""
+    plot_min = float(selected_window[1])
     plot_max = 1.4
     if not np.isfinite(plot_min) or plot_min >= plot_max:
         raise ValueError(
@@ -1103,6 +1130,8 @@ def plot_spectrum_comparison(
             f"below {plot_max:.2f} GeV^2 to make the Mx2 comparison plot; "
             f"received {plot_min:.6g} GeV^2."
         )
+    override_active = selected_window != DEFAULT_NOMINAL_CONTROL_WINDOW
+
     for period in module.PERIODS:
         selected = table[table.period == period].sort_values("mx2_center")
         fig, axes = plt.subplots(
@@ -1112,58 +1141,92 @@ def plot_spectrum_comparison(
         centers = selected.mx2_center.to_numpy()
 
         axes[0].step(centers, selected.nh3_count, where="mid", label="NH$_3$ data")
-        axes[0].step(
-            centers, selected.scaled_carbon_background, where="mid",
-            label="Method 1: scaled-carbon background",
-        )
+        if override_active:
+            axes[0].step(
+                centers,
+                selected.scaled_carbon_background_nominal_0p0_0p4,
+                where="mid",
+                label=r"Method 1: scaled carbon, $0.00\leq M_X^2<0.40$ GeV$^2$",
+            )
+            axes[0].step(
+                centers,
+                selected.scaled_carbon_background_selected,
+                where="mid",
+                label=(
+                    rf"Method 1: scaled carbon, ${selected_window[0]:.2f}\leq "
+                    rf"M_X^2<{selected_window[1]:.2f}$ GeV$^2$"
+                ),
+            )
+        else:
+            axes[0].step(
+                centers, selected.scaled_carbon_background, where="mid",
+                label="Method 1: scaled-carbon background",
+            )
         axes[0].step(
             centers, selected.five_target_background, where="mid",
             label="Method 2: direct five-target background",
         )
         axes[0].set_ylabel("Counts")
         axes[0].set_yscale("log")
-        axes[0].set_ylim(1.0e2, 1.0e5)
+        axes[0].set_ylim(1.0e3, 1.0e5)
         axes[0].grid(alpha=0.25)
         axes[0].legend()
         axes[0].set_title(
             f"{module.PERIOD_LABELS[period]} — period-integrated Method-1/Method-2 comparison"
         )
 
-        axes[1].plot(
-            centers, selected.method1_dilution_factor, "o-",
-            markersize=3, label="Method 1",
-        )
+        if override_active:
+            axes[1].plot(
+                centers,
+                selected.method1_dilution_factor_nominal_0p0_0p4,
+                "o-", markersize=3,
+                label=r"Method 1: $0.00\leq M_X^2<0.40$ GeV$^2$",
+            )
+            axes[1].plot(
+                centers,
+                selected.method1_dilution_factor_selected,
+                "^-", markersize=3,
+                label=(
+                    rf"Method 1: ${selected_window[0]:.2f}\leq M_X^2<"
+                    rf"{selected_window[1]:.2f}$ GeV$^2$"
+                ),
+            )
+        else:
+            axes[1].plot(
+                centers, selected.method1_dilution_factor, "o-",
+                markersize=3, label="Method 1",
+            )
         axes[1].plot(
             centers, selected.method2_dilution_factor, "s-",
             markersize=3, label="Method 2",
         )
-        axes[1].axhline(0.0, linewidth=0.8)
         axes[1].set_ylabel("Dilution factor")
         axes[1].set_ylim(0.0, 0.6)
         axes[1].grid(alpha=0.25)
         axes[1].legend()
-
         axes[1].set_xlabel(r"$M_X^2$ (GeV$^2$)")
 
         for ax in axes:
-            # The selected Method-1 normalization window may lie partly or
-            # entirely outside this focused comparison range.  Shade only the
-            # visible overlap.
-            visible_low = max(nominal_window[0], plot_min)
-            visible_high = min(nominal_window[1], plot_max)
-            if visible_high > visible_low:
-                ax.axvspan(visible_low, visible_high, alpha=0.12, label=None)
             ax.set_xlim(plot_min, plot_max)
 
+        if override_active:
+            annotation = (
+                rf"Method-1 windows: nominal $0.00 \leq M_X^2 < 0.40$ GeV$^2$; "
+                rf"override ${selected_window[0]:.2f} \leq M_X^2 < "
+                rf"{selected_window[1]:.2f}$ GeV$^2$"
+            )
+        else:
+            annotation = (
+                rf"Method-1 normalization window: ${selected_window[0]:.2f} \leq "
+                rf"M_X^2 < {selected_window[1]:.2f}$ GeV$^2$"
+            )
         axes[0].text(
-            0.01, 0.03,
-            rf"Method-1 normalization window: ${nominal_window[0]:.2f} \leq M_X^2 < {nominal_window[1]:.2f}$ GeV$^2$",
+            0.01, 0.03, annotation,
             transform=axes[0].transAxes, va="bottom", ha="left",
         )
         fig.tight_layout()
         fig.savefig(output / f"method_comparison_vs_mx2_{period}.png", dpi=180)
         plt.close(fig)
-
 
 
 def plot_cumulative_window_scan(
@@ -2431,6 +2494,7 @@ def write_summary_json(
         "purpose": "Carbon-normalization validation; diagnostic only",
         "control_windows": windows,
         "method1_nominal_normalization_window": list(NOMINAL_CONTROL_WINDOW),
+        "method1_normalization_window_override_given": (NOMINAL_CONTROL_WINDOW != DEFAULT_NOMINAL_CONTROL_WINDOW),
         "high_side_closure_policy": (
             "No high-side NH3/carbon closure requirement is imposed because "
             "NH3 can contain genuine hydrogen-origin nonexclusive channels."
@@ -2465,12 +2529,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Control window MIN:MAX; repeat to replace the default scan")
     parser.add_argument(
         "--normalization-window-min", type=float,
-        default=DEFAULT_NOMINAL_CONTROL_WINDOW[0],
+        default=None,
         help="Lower edge of the production-like Method-1 carbon normalization window",
     )
     parser.add_argument(
         "--normalization-window-max", type=float,
-        default=DEFAULT_NOMINAL_CONTROL_WINDOW[1],
+        default=None,
         help="Upper edge of the production-like Method-1 carbon normalization window",
     )
     parser.add_argument("--spectrum-min", type=float, default=DEFAULT_SPECTRUM_RANGE[0])
@@ -2678,13 +2742,27 @@ def main() -> int:
     if not args.template_fit_min < args.template_fit_max:
         raise ValueError("--template-fit-min must be below --template-fit-max")
     global TEMPLATE_FIT_MIN, TEMPLATE_FIT_MAX, DEFAULT_R_CN_MIN, DEFAULT_R_CN_MAX, NOMINAL_CONTROL_WINDOW
-    if not args.normalization_window_min < args.normalization_window_max:
+    normalization_override_given = (
+        args.normalization_window_min is not None
+        or args.normalization_window_max is not None
+    )
+    normalization_window_min = (
+        DEFAULT_NOMINAL_CONTROL_WINDOW[0]
+        if args.normalization_window_min is None
+        else float(args.normalization_window_min)
+    )
+    normalization_window_max = (
+        DEFAULT_NOMINAL_CONTROL_WINDOW[1]
+        if args.normalization_window_max is None
+        else float(args.normalization_window_max)
+    )
+    if not normalization_window_min < normalization_window_max:
         raise ValueError(
             "--normalization-window-min must be below --normalization-window-max"
         )
     NOMINAL_CONTROL_WINDOW = (
-        round(float(args.normalization_window_min), 10),
-        round(float(args.normalization_window_max), 10),
+        round(normalization_window_min, 10),
+        round(normalization_window_max, 10),
     )
     TEMPLATE_FIT_MIN = float(args.template_fit_min)
     TEMPLATE_FIT_MAX = float(args.template_fit_max)
