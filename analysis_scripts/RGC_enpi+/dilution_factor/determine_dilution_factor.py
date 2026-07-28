@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v16.py
+determine_dilution_factor_v19.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -2851,8 +2851,9 @@ def plot_nominal_method_comparison(
     output_dir: Path,
     period: str,
     summaries: dict[str, Any],
+    bootstrap: dict[str, np.ndarray],
 ) -> str:
-    """Nominal-cut comparison of the three dilution-factor methods."""
+    """Two-panel nominal-cut method comparison with Method-1/Method-2 percent difference."""
     ensure_directory(output_dir)
     bins = np.arange(1, NUMBER_OF_BINS + 1)
     offsets = {"method1": -0.18, "method2": 0.0, "method3": 0.18}
@@ -2862,9 +2863,40 @@ def plot_nominal_method_comparison(
         "method3": "Method 3: packing-fraction constrained subtraction",
     }
     nominal_index = CUT_VARIATIONS.index("nominal")
-    fig, ax = plt.subplots(figsize=(17, 6.5))
+
+    method1 = np.asarray(
+        summaries["method1"]["central"][:, nominal_index], dtype=float
+    )
+    method2 = np.asarray(
+        summaries["method2"]["central"][:, nominal_index], dtype=float
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        percent_difference = 100.0 * (method2 - method1) / method1
+
+    replica_method1 = np.asarray(
+        bootstrap["method1"][:, :, nominal_index], dtype=float
+    )
+    replica_method2 = np.asarray(
+        bootstrap["method2"][:, :, nominal_index], dtype=float
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        replica_percent_difference = (
+            100.0 * (replica_method2 - replica_method1) / replica_method1
+        )
+    percent_difference_uncertainty = np.nanstd(
+        replica_percent_difference, axis=0, ddof=1
+    )
+
+    fig, (ax_top, ax_bottom) = plt.subplots(
+        2,
+        1,
+        figsize=(17, 9.0),
+        sharex=True,
+        gridspec_kw={"height_ratios": [2.5, 1.0], "hspace": 0.05},
+    )
+
     for method_key in ("method1", "method2", "method3"):
-        ax.errorbar(
+        ax_top.errorbar(
             bins + offsets[method_key],
             summaries[method_key]["central"][:, nominal_index],
             yerr=summaries[method_key]["stat_uncertainty"][:, nominal_index],
@@ -2874,13 +2906,45 @@ def plot_nominal_method_comparison(
             capsize=2,
             label=labels[method_key],
         )
-    ax.set_ylim(0.1, 0.6)
-    ax.set_xlabel("Combined kinematic-bin number")
-    ax.set_ylabel("Dilution factor")
-    ax.set_xticks(bins)
-    ax.grid(alpha=0.25)
-    ax.legend(ncol=3)
-    ax.set_title(f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison")
+
+    ax_top.set_ylim(0.1, 0.6)
+    ax_top.set_ylabel("Dilution factor")
+    ax_top.grid(alpha=0.25)
+    ax_top.legend(ncol=3)
+    ax_top.set_title(
+        f"{PERIOD_LABELS[period]} nominal-cut dilution-factor comparison"
+    )
+
+    ax_bottom.errorbar(
+        bins,
+        percent_difference,
+        yerr=percent_difference_uncertainty,
+        marker="o",
+        linestyle="none",
+        markersize=4,
+        capsize=2,
+    )
+    ax_bottom.axhline(0.0, color="black", linewidth=1.0)
+    ax_bottom.set_ylabel(
+        r"$(f_2-f_1)/f_1$ (\%)"
+    )
+    ax_bottom.set_xlabel("Combined kinematic-bin number")
+    ax_bottom.set_xticks(bins)
+    ax_bottom.grid(alpha=0.25)
+
+    finite = np.isfinite(percent_difference) & np.isfinite(
+        percent_difference_uncertainty
+    )
+    if np.any(finite):
+        lower = np.nanmin(
+            percent_difference[finite] - percent_difference_uncertainty[finite]
+        )
+        upper = np.nanmax(
+            percent_difference[finite] + percent_difference_uncertainty[finite]
+        )
+        padding = max(5.0, 0.12 * max(upper - lower, 1.0))
+        ax_bottom.set_ylim(min(0.0, lower - padding), max(0.0, upper + padding))
+
     fig.tight_layout()
     path = output_dir / f"nominal_method_comparison_{period}.png"
     fig.savefig(path, dpi=180)
@@ -3125,7 +3189,12 @@ def write_plots(
             plot_three_method_comparison(output_dir, period, summaries_by_period[period])
         )
         paths.append(
-            plot_nominal_method_comparison(output_dir, period, summaries_by_period[period])
+            plot_nominal_method_comparison(
+                output_dir,
+                period,
+                summaries_by_period[period],
+                bootstrap_results[period],
+            )
         )
         paths.append(
             plot_packing_fraction_summary(output_dir, period, summaries_by_period[period])
