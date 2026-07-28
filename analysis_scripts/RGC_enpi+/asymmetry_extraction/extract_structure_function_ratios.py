@@ -574,7 +574,7 @@ SINGLE_SPIN_PARAMETERS = frozenset(("lu1", "ul1", "ul2"))
 UNPOLARIZED_DOUBLE_SPIN_PARAMETERS = frozenset(("u1", "u2", "ll0", "ll1"))
 SYSTEMATIC_COMPARISON_SINGLE_SPIN_Y_LIMITS = (-0.5, 0.5)
 SYSTEMATIC_COMPARISON_UNPOLARIZED_DOUBLE_Y_LIMITS = (-1.0, 1.0)
-SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS = (1.0e-2, 1.0e2)
+SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS = (1.0e-2, 1.0e1)
 SYSTEMATIC_COMPARISON_FIGSIZE = (11, 10)
 SYSTEMATIC_COMPARISON_DPI = 200
 PUBLISHED_SYSTEMATIC_PARAMETERS: tuple[str, ...] = (
@@ -781,6 +781,15 @@ def summarize_barlow_status(
         "number_pass": int((status == "pass").sum()),
         "number_fail": int((status == "fail").sum()),
         "number_undefined": int((status == "undefined").sum()),
+        "number_defined": int((status != "undefined").sum()),
+        "pass_fraction_defined": (
+            float((status == "pass").sum() / (status != "undefined").sum())
+            if int((status != "undefined").sum()) > 0 else None
+        ),
+        "fail_fraction_defined": (
+            float((status == "fail").sum() / (status != "undefined").sum())
+            if int((status != "undefined").sum()) > 0 else None
+        ),
         "all_defined_bins_pass": bool(
             (status == "pass").all()
         ),
@@ -829,6 +838,15 @@ def write_barlow_summary_products(
                 "number_pass": number_pass,
                 "number_fail": number_fail,
                 "number_undefined": number_undefined,
+                "number_defined": number_pass + number_fail,
+                "pass_fraction_defined": (
+                    float(number_pass / (number_pass + number_fail))
+                    if (number_pass + number_fail) > 0 else None
+                ),
+                "fail_fraction_defined": (
+                    float(number_fail / (number_pass + number_fail))
+                    if (number_pass + number_fail) > 0 else None
+                ),
                 "all_defined_bins_pass": bool(number_fail == 0),
                 "minimum_finite_barlow": (
                     float(finite_minima.min()) if not finite_minima.empty else None
@@ -843,7 +861,7 @@ def write_barlow_summary_products(
     effect_frame.to_csv(effect_csv_path, index=False)
 
     write_json(json_path, {
-        "schema_version": 2,
+        "schema_version": 3,
         "definition": (
             "B = abs(variation - nominal) / "
             "sqrt(abs(sigma_variation^2 - sigma_nominal^2)); pass if B >= 1"
@@ -864,20 +882,32 @@ def write_barlow_summary_products(
         "--------------------",
     ]
     for record in effect_records:
-        decision = "PASS" if record["number_fail"] == 0 else "FAIL"
+        defined = int(record["number_defined"])
+        pass_fraction = record["pass_fraction_defined"]
+        fail_fraction = record["fail_fraction_defined"]
+        pass_percent = 100.0 * pass_fraction if pass_fraction is not None else float("nan")
+        fail_percent = 100.0 * fail_fraction if fail_fraction is not None else float("nan")
         lines.append(
-            f"{record['effect']:22s} {record['variation']:32s} "
-            f"{decision:4s}: pass={record['number_pass']:3d}, "
-            f"fail={record['number_fail']:3d}, "
+            f"{record['effect']:22s} {record['variation']:32s}: "
+            f"{record['number_pass']:3d}/{defined:3d} defined bins pass "
+            f"({pass_percent:5.1f}%); "
+            f"{record['number_fail']:3d}/{defined:3d} fail "
+            f"({fail_percent:5.1f}%); "
             f"undefined={record['number_undefined']:3d}"
         )
     # endfor
     lines.extend(["", "Parameter-level summary", "-----------------------"])
     for record in records:
+        defined = int(record["number_defined"])
+        pass_fraction = record["pass_fraction_defined"]
+        fail_fraction = record["fail_fraction_defined"]
+        pass_percent = 100.0 * pass_fraction if pass_fraction is not None else float("nan")
+        fail_percent = 100.0 * fail_fraction if fail_fraction is not None else float("nan")
         lines.append(
             f"{record['effect']:22s} {record['variation']:32s} "
-            f"{record['parameter']:4s}: pass={record['number_pass']:2d}, "
-            f"fail={record['number_fail']:2d}, "
+            f"{record['parameter']:4s}: "
+            f"{record['number_pass']:2d}/{defined:2d} pass ({pass_percent:5.1f}%); "
+            f"{record['number_fail']:2d}/{defined:2d} fail ({fail_percent:5.1f}%); "
             f"undefined={record['number_undefined']:2d}"
         )
     # endfor
@@ -2949,12 +2979,12 @@ def systematic_comparison_y_limits(parameter: str) -> tuple[float, float]:
 
 
 def systematic_size_y_limits(parameter: str) -> tuple[float, float]:
-    """Return a common positive scale for assigned systematic magnitudes."""
+    """Return the common positive scale for assigned systematic magnitudes."""
     if parameter in SINGLE_SPIN_PARAMETERS:
-        return (0.0, 0.5)
+        return (0.0, 0.2)
     # endif
     if parameter in UNPOLARIZED_DOUBLE_SPIN_PARAMETERS:
-        return (0.0, 1.0)
+        return (0.0, 0.2)
     # endif
     raise KeyError(f"No systematic-size axis family for {parameter!r}.")
 
@@ -2974,7 +3004,7 @@ def configure_systematic_comparison_axes(
 
 
 def values_for_fixed_log_axis(values: Any) -> tuple[np.ndarray, int, int]:
-    """Clip positive values to the fixed 1e-2--1e2 logarithmic axis."""
+    """Clip positive values to the fixed 1e-2--1e1 logarithmic axis."""
     raw = pd.to_numeric(pd.Series(values), errors="coerce").to_numpy(dtype=float)
     plotted = np.full(raw.shape, np.nan, dtype=float)
     positive = np.isfinite(raw) & (raw > 0.0)
@@ -4077,7 +4107,7 @@ def write_nominal_isr_comparison_products(
         "systematic_definition": "delta_ISR = abs(ISR - nominal)",
         "middle_panel": "Assigned systematic; filled marker passes Barlow, open marker fails Barlow.",
         "bottom_panel": "Assigned systematic divided by nominal statistical uncertainty.",
-        "plot_axis_convention": "Top and middle axes are common by parameter family; normalized-size axis is logarithmic from 1e-2 to 1e2.",
+        "plot_axis_convention": "Top-panel axes are common by parameter family; every assigned-systematic panel uses 0 to 0.2; normalized-size axis is logarithmic from 1e-2 to 1e1.",
         "barlow_summary": barlow_records,
         "rows": merged.to_dict(orient="records"),
     })
@@ -4141,7 +4171,7 @@ def write_momentum_correction_comparison_products(
     csv_path = tables_dir / "momentum_correction_structure_function_ratios.csv"
     json_path = tables_dir / "momentum_correction_structure_function_ratios.json"
     merged.to_csv(csv_path, index=False)
-    write_json(json_path, {"schema_version": 3, "systematic_definition": "delta_mom = abs(uncorrected - corrected)", "middle_panel": "Assigned systematic; filled marker passes Barlow, open marker fails Barlow.", "bottom_panel": "Assigned systematic divided by corrected nominal statistical uncertainty.", "plot_axis_convention": "Top and middle axes are common by parameter family; normalized-size axis is logarithmic from 1e-2 to 1e2.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
+    write_json(json_path, {"schema_version": 3, "systematic_definition": "delta_mom = abs(uncorrected - corrected)", "middle_panel": "Assigned systematic; filled marker passes Barlow, open marker fails Barlow.", "bottom_panel": "Assigned systematic divided by corrected nominal statistical uncertainty.", "plot_axis_convention": "Top-panel axes are common by parameter family; every assigned-systematic panel uses 0 to 0.2; normalized-size axis is logarithmic from 1e-2 to 1e1.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
     return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": barlow_records}
 
 def write_channel_selection_comparison_products(
@@ -4214,7 +4244,7 @@ def write_channel_selection_comparison_products(
     csv_path = tables_dir / "channel_selection_structure_function_ratios.csv"
     json_path = tables_dir / "channel_selection_structure_function_ratios.json"
     merged.to_csv(csv_path, index=False)
-    write_json(json_path, {"schema_version": 4, "systematic_definition": "delta_ch = sqrt(((tight-nominal)^2 + (loose-nominal)^2)/2)", "combined_barlow_marker_rule": "Filled if either tight or loose variation passes Barlow; open only if both defined variations fail; x if unresolved/undefined.", "middle_panel": "Assigned RMS systematic with Barlow marker state.", "bottom_panel": "Assigned RMS systematic divided by nominal statistical uncertainty.", "plot_axis_convention": "Top and middle axes are common by parameter family; normalized-size axis is logarithmic from 1e-2 to 1e2.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
+    write_json(json_path, {"schema_version": 4, "systematic_definition": "delta_ch = sqrt(((tight-nominal)^2 + (loose-nominal)^2)/2)", "combined_barlow_marker_rule": "Filled if either tight or loose variation passes Barlow; open only if both defined variations fail; x if unresolved/undefined.", "middle_panel": "Assigned RMS systematic with Barlow marker state.", "bottom_panel": "Assigned RMS systematic divided by nominal statistical uncertainty.", "plot_axis_convention": "Top-panel axes are common by parameter family; every assigned-systematic panel uses 0 to 0.2; normalized-size axis is logarithmic from 1e-2 to 1e1.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
     return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": barlow_records}
 
 def write_target_axis_barlow_products(
@@ -4448,7 +4478,7 @@ def write_target_axis_barlow_products(
             ),
             "plot_axis_convention": (
                 "Top and middle axes are common by parameter family; "
-                "normalized-size axis is logarithmic from 1e-2 to 1e2."
+                "normalized-size axis is logarithmic from 1e-2 to 1e1."
             ),
             "summary": records,
             "rows": frame.to_dict(orient="records"),
@@ -4820,15 +4850,33 @@ def main() -> int:
     total_undefined = sum(
         record["number_undefined"] for record in all_barlow_records
     )
+    total_defined = total_pass + total_fail
+    total_pass_percent = (
+        100.0 * total_pass / total_defined if total_defined > 0 else float("nan")
+    )
+    total_fail_percent = (
+        100.0 * total_fail / total_defined if total_defined > 0 else float("nan")
+    )
     print(
         "  Barlow bins:       "
-        f"pass={total_pass}, fail={total_fail}, undefined={total_undefined}"
+        f"{total_pass}/{total_defined} defined bins pass "
+        f"({total_pass_percent:.1f}%); "
+        f"{total_fail}/{total_defined} fail "
+        f"({total_fail_percent:.1f}%); "
+        f"undefined={total_undefined}"
     )
     for record in barlow_summary_products["effect_summary"]:
-        decision = "PASS" if record["number_fail"] == 0 else "FAIL"
+        defined = int(record["number_defined"])
+        pass_fraction = record["pass_fraction_defined"]
+        fail_fraction = record["fail_fraction_defined"]
+        pass_percent = 100.0 * pass_fraction if pass_fraction is not None else float("nan")
+        fail_percent = 100.0 * fail_fraction if fail_fraction is not None else float("nan")
         print(
-            f"    {record['effect']} / {record['variation']}: {decision}; "
-            f"pass={record['number_pass']}, fail={record['number_fail']}, "
+            f"    {record['effect']} / {record['variation']}: "
+            f"{record['number_pass']}/{defined} defined bins pass "
+            f"({pass_percent:.1f}%); "
+            f"{record['number_fail']}/{defined} fail "
+            f"({fail_percent:.1f}%); "
             f"undefined={record['number_undefined']}"
         )
     # endfor
