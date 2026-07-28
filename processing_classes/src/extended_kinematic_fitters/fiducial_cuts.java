@@ -135,8 +135,7 @@ public class fiducial_cuts {
                 return false;
         }
 
-        // Do not apply the localized data/MC-matching exclusions
-        // for strictness 1.
+        // Do not apply localized data/MC-matching exclusions at strictness 1.
         if (strictness < 2) {
             return true;
         }
@@ -161,7 +160,7 @@ public class fiducial_cuts {
                     return false;
                 }
 
-                // Additional PCal exclusion for Spring 2018.
+                // Additional PCal exclusion for both Spring 2018 periods.
                 if (isRgaSp18
                         && lw_1 > 333.0 && lw_1 < 346.5) {
                     return false;
@@ -191,7 +190,7 @@ public class fiducial_cuts {
                     return false;
                 }
 
-                // ECout exclusion for Spring 2018.
+                // ECout exclusion for both Spring 2018 periods.
                 if (isRgaSp18
                         && lw_7 > 306.0 && lw_7 < 328.5) {
                     return false;
@@ -199,11 +198,9 @@ public class fiducial_cuts {
                 break;
 
             case 3:
-                // This exclusion is absent for Sp18 Inb.
-                if (!isRgaSp18 || runnum > 4325) {
-                    if (lw_1 > 346.5 && lw_1 < 378.0) {
-                        return false;
-                    }
+                // PCal exclusion common to all RGA periods.
+                if (lw_1 > 346.5 && lw_1 < 378.0) {
+                    return false;
                 }
                 break;
 

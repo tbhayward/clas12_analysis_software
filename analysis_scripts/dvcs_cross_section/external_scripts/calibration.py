@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v10.py
+plot_calibration_v11.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -56,26 +56,26 @@ Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v10.py
+  python3 external_scripts/plot_calibration_v11.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v10.py --rgc
+  python3 external_scripts/plot_calibration_v11.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v10.py \
+  python3 external_scripts/plot_calibration_v11.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v10.py --skip-ft
+  python3 external_scripts/plot_calibration_v11.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v10.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v11.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -337,15 +337,6 @@ FA18_AND_SP19_DATASET_KEYS: frozenset[str] = (
     FA18_DATASET_KEYS | SP19_DATASET_KEYS
 )
 
-SP18_OUT_FA18_SP19_DATASET_KEYS: frozenset[str] = frozenset(
-    (
-        "rga_sp18_out",
-        "rga_fa18_inb",
-        "rga_fa18_out",
-        "rga_sp19_inb",
-    )
-)
-
 DEAD_STRIP_EXCLUSIONS: tuple[
     tuple[str, int, str, float, float, frozenset[str]], ...
 ] = (
@@ -359,7 +350,7 @@ DEAD_STRIP_EXCLUSIONS: tuple[
     ("pcal", 1, "lw", 333.0, 346.5, SP18_DATASET_KEYS),
     ("pcal", 2, "lv", 31.5, 49.5, SP18_AND_SP19_DATASET_KEYS),
     ("pcal", 2, "lv", 99.0, 117.0, FA18_AND_SP19_DATASET_KEYS),
-    ("pcal", 3, "lw", 346.5, 378.0, SP18_OUT_FA18_SP19_DATASET_KEYS),
+    ("pcal", 3, "lw", 346.5, 378.0, ALL_RGA_DATASET_KEYS),
 
     # ECin exclusions common to all five RGA periods.
     ("ecin", 1, "lv", 67.5, 94.5, ALL_RGA_DATASET_KEYS),
