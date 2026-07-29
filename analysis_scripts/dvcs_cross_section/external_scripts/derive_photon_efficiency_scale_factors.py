@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v7.py
+derive_photon_efficiency_scale_factors_v8.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -19,7 +19,9 @@ theta_gamma_gamma and pTmiss projections use log-space shift/smearing.
 
 The production extraction is deliberately integrated over energy and polar angle,
 retaining only FT and FD sectors 1--6. A detailed passing-sample audit records
-every event-level and directed-probe rejection stage for data and AAOGEN MC. Processing is parallelized by run period with a hard maximum of seven
+every event-level and directed-probe rejection stage for data and AAOGEN MC.
+Native photon directions are recovered with a cone-constrained analytic solver
+that does not use gamma_phi1/2, since those are Trento rather than lab angles. Processing is parallelized by run period with a hard maximum of seven
 workers.
 
 The script derives S_gamma,b = epsilon_data,b/epsilon_MC,b. It does not yet
@@ -200,8 +202,8 @@ class TrialArrays:
 
 PASS_EVENT_STAGES = (
     "all_events", "basic_quality", "mx2", "pTmiss", "Delta_phi",
-    "native_inputs_finite", "theta_candidates_both", "detector_compatible_pair",
-    "positive_energy_solution", "closure_pass",
+    "native_inputs_finite", "longitudinal_energy_solution",
+    "transverse_cone_solution", "detector_compatible_solution", "closure_pass",
 )
 
 PASS_PROBE_STAGES = (
@@ -216,6 +218,8 @@ DIAGNOSTIC_HIST_EDGES = {
     "abs_Delta_phi_minus_pi": np.linspace(0.0, 1.2, 121),
     "closure": np.linspace(0.0, 0.20, 101),
     "ambiguity": np.linspace(0.0, 0.20, 101),
+    "transverse_mismatch": np.linspace(0.0, 0.50, 101),
+    "energy_fraction_g1": np.linspace(0.0, 1.0, 101),
     "n_solutions": np.arange(-0.5, 8.5, 1.0),
     "g1_E": np.linspace(0.0, 10.0, 101),
     "g2_E": np.linspace(0.0, 10.0, 101),
@@ -381,6 +385,12 @@ def parse_args() -> argparse.Namespace:
                         help="Maximum |Eobs-Epred|/Epred for a passing probe.")
     parser.add_argument("--pass-photon-closure-max", type=float, default=0.03,
                         help="Maximum normalized four-vector closure residual for reconstructed native eppi0 photons.")
+    parser.add_argument("--cone-energy-denominator-min", type=float, default=1.0e-5,
+                        help="Minimum |cos(alpha1)-cos(alpha2)| for the analytic photon-energy solution.")
+    parser.add_argument("--cone-min-photon-energy", type=float, default=0.05,
+                        help="Minimum physical photon energy (GeV) in the native eppi0 cone solution.")
+    parser.add_argument("--cone-mass-residual-weight", type=float, default=0.05,
+                        help="Relative weight of the diphoton-mass residual when choosing between mirror solutions.")
     parser.add_argument("--diagnostic-max-examples", type=int, default=0,
                         help="Reserved for future event-level diagnostic dumps; zero writes no event records.")
     parser.add_argument("--skip-efficiency-extraction", action="store_true",
@@ -559,40 +569,37 @@ def pass_sample_mask(arrays: Mapping[str, np.ndarray], resolved: Mapping[str, Op
 
 
 
-def _theta_candidates_from_opening(e_theta: float, e_phi: float, gamma_phi: float, opening_angle: float) -> List[float]:
-    """Solve the electron-photon opening-angle equation for photon theta."""
-    if not all(math.isfinite(v) for v in (e_theta, e_phi, gamma_phi, opening_angle)):
-        return []
-    # endif
-    a = math.cos(e_theta)
-    b = math.sin(e_theta) * math.cos(gamma_phi - e_phi)
-    radius = math.hypot(a, b)
-    if radius <= 1.0e-12:
-        return []
-    # endif
-    rhs = math.cos(opening_angle) / radius
-    if rhs < -1.0 - 1.0e-9 or rhs > 1.0 + 1.0e-9:
-        return []
-    # endif
-    rhs = min(1.0, max(-1.0, rhs))
-    phase = math.atan2(b, a)
-    offset = math.acos(rhs)
-    candidates: List[float] = []
-    for raw in (phase + offset, phase - offset):
-        value = raw % (2.0 * math.pi)
-        if value > math.pi:
-            value = 2.0 * math.pi - value
-        # endif
-        if 0.0 <= value <= math.pi and all(abs(value - old) > 1.0e-8 for old in candidates):
-            candidates.append(value)
-        # endif
-    # endfor
-    return candidates
-
-
 def _unit_vector(theta: float, phi: float) -> np.ndarray:
     st = math.sin(theta)
     return np.asarray([st * math.cos(phi), st * math.sin(phi), math.cos(theta)], dtype=float)
+
+
+def _orthonormal_basis_about(axis: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Return two unit vectors transverse to a unit axis."""
+    axis = np.asarray(axis, dtype=float)
+    if abs(axis[2]) < 0.9:
+        reference = np.asarray([0.0, 0.0, 1.0], dtype=float)
+    else:
+        reference = np.asarray([1.0, 0.0, 0.0], dtype=float)
+    u = np.cross(reference, axis)
+    norm_u = float(np.linalg.norm(u))
+    if norm_u <= 1.0e-14:
+        reference = np.asarray([0.0, 1.0, 0.0], dtype=float)
+        u = np.cross(reference, axis)
+        norm_u = float(np.linalg.norm(u))
+    u /= norm_u
+    v = np.cross(axis, u)
+    v /= float(np.linalg.norm(v))
+    return u, v
+
+
+def _detector_compatible(theta_rad: float, detector: int, args: argparse.Namespace) -> bool:
+    theta_deg = math.degrees(theta_rad)
+    if detector == 0:
+        return args.ft_theta_min <= theta_deg < args.ft_theta_max
+    if detector == 1:
+        return args.fd_theta_min <= theta_deg < args.fd_theta_max
+    return False
 
 
 def reconstruct_native_eppi0_photons(
@@ -601,8 +608,6 @@ def reconstruct_native_eppi0_photons(
     pi0_p: np.ndarray,
     pi0_theta: np.ndarray,
     pi0_phi: np.ndarray,
-    gamma1_phi: np.ndarray,
-    gamma2_phi: np.ndarray,
     opening1: np.ndarray,
     opening2: np.ndarray,
     pi0_mass: np.ndarray,
@@ -610,82 +615,146 @@ def reconstruct_native_eppi0_photons(
     detector2: np.ndarray,
     args: argparse.Namespace,
 ) -> Tuple[np.ndarray, ...]:
-    """Recover both photon four-vectors and expose every reconstruction stage."""
+    """Recover the two photons using cone constraints around the electron.
+
+    For photon i, the measured electron-photon opening angle alpha_i places its
+    direction on a cone around the measured electron direction.  The measured
+    pi0 four-vector then fixes the photon energies through the total-energy and
+    electron-axis momentum equations.  The transverse pi0 momentum determines
+    the two azimuths around the electron axis up to a mirror ambiguity.
+
+    When finite detector resolution makes the transverse triangle slightly
+    inconsistent, the nearest triangle boundary is used and the resulting
+    normalized four-vector mismatch is retained as the closure diagnostic.
+    """
     n_events = len(e_theta)
     g1_E = np.full(n_events, np.nan, dtype=float)
     g1_theta = np.full(n_events, np.nan, dtype=float)
+    g1_phi = np.full(n_events, np.nan, dtype=float)
     g2_E = np.full(n_events, np.nan, dtype=float)
     g2_theta = np.full(n_events, np.nan, dtype=float)
+    g2_phi = np.full(n_events, np.nan, dtype=float)
     closure = np.full(n_events, np.nan, dtype=float)
     ambiguity = np.full(n_events, np.nan, dtype=float)
+    transverse_mismatch = np.full(n_events, np.nan, dtype=float)
+    energy_fraction_g1 = np.full(n_events, np.nan, dtype=float)
     n_solutions = np.zeros(n_events, dtype=np.int16)
     input_finite = np.zeros(n_events, dtype=bool)
-    candidates_both = np.zeros(n_events, dtype=bool)
-    detector_pair = np.zeros(n_events, dtype=bool)
-    positive_solution = np.zeros(n_events, dtype=bool)
+    longitudinal_solution = np.zeros(n_events, dtype=bool)
+    transverse_solution = np.zeros(n_events, dtype=bool)
+    detector_solution = np.zeros(n_events, dtype=bool)
     closure_pass = np.zeros(n_events, dtype=bool)
 
     for i in range(n_events):
-        values = (e_theta[i], e_phi[i], pi0_p[i], pi0_theta[i], pi0_phi[i],
-                  gamma1_phi[i], gamma2_phi[i], opening1[i], opening2[i], pi0_mass[i])
-        if not all(math.isfinite(float(v)) for v in values) or pi0_p[i] <= 0.0 or pi0_mass[i] <= 0.0:
+        values = (
+            e_theta[i], e_phi[i], pi0_p[i], pi0_theta[i], pi0_phi[i],
+            opening1[i], opening2[i], pi0_mass[i], detector1[i], detector2[i],
+        )
+        if not all(math.isfinite(float(v)) for v in values):
+            continue
+        if pi0_p[i] <= 0.0 or pi0_mass[i] <= 0.0:
+            continue
+        if not (0.0 < opening1[i] < math.pi and 0.0 < opening2[i] < math.pi):
             continue
         input_finite[i] = True
-        candidates1 = _theta_candidates_from_opening(float(e_theta[i]), float(e_phi[i]), float(gamma1_phi[i]), float(opening1[i]))
-        candidates2 = _theta_candidates_from_opening(float(e_theta[i]), float(e_phi[i]), float(gamma2_phi[i]), float(opening2[i]))
-        if not candidates1 or not candidates2:
+
+        ehat = _unit_vector(float(e_theta[i]), float(e_phi[i]))
+        npi = _unit_vector(float(pi0_theta[i]), float(pi0_phi[i]))
+        pvec = float(pi0_p[i]) * npi
+        epi = math.sqrt(float(pi0_p[i]) ** 2 + float(pi0_mass[i]) ** 2)
+        p_parallel = float(np.dot(pvec, ehat))
+
+        c1 = math.cos(float(opening1[i]))
+        c2 = math.cos(float(opening2[i]))
+        denom = c1 - c2
+        if abs(denom) <= args.cone_energy_denominator_min:
             continue
-        candidates_both[i] = True
-        n_pi0 = _unit_vector(float(pi0_theta[i]), float(pi0_phi[i]))
-        p_pi0 = float(pi0_p[i]) * n_pi0
-        e_pi0 = math.sqrt(float(pi0_p[i]) ** 2 + float(pi0_mass[i]) ** 2)
-        target = np.asarray([e_pi0, *p_pi0], dtype=float)
-        scale = max(e_pi0, 1.0e-9)
-        solutions: List[Tuple[float, float, float, float, float]] = []
-        had_detector_pair = False
-        for theta1 in candidates1:
-            theta1_deg = math.degrees(theta1)
-            if detector1[i] == 0 and not (args.ft_theta_min <= theta1_deg < args.ft_theta_max):
-                continue
-            if detector1[i] == 1 and not (args.fd_theta_min <= theta1_deg < args.fd_theta_max):
-                continue
-            n1 = _unit_vector(theta1, float(gamma1_phi[i]))
-            for theta2 in candidates2:
-                theta2_deg = math.degrees(theta2)
-                if detector2[i] == 0 and not (args.ft_theta_min <= theta2_deg < args.ft_theta_max):
-                    continue
-                if detector2[i] == 1 and not (args.fd_theta_min <= theta2_deg < args.fd_theta_max):
-                    continue
-                had_detector_pair = True
-                n2 = _unit_vector(theta2, float(gamma2_phi[i]))
-                matrix = np.asarray([[1.0, 1.0], [n1[0], n2[0]], [n1[1], n2[1]], [n1[2], n2[2]]], dtype=float)
-                energies, _, rank, _ = np.linalg.lstsq(matrix, target, rcond=None)
-                if rank < 2 or energies[0] <= 0.0 or energies[1] <= 0.0:
-                    continue
-                residual = float(np.linalg.norm(matrix @ energies - target) / scale)
-                solutions.append((residual, float(energies[0]), theta1, float(energies[1]), theta2))
-        detector_pair[i] = had_detector_pair
-        n_solutions[i] = len(solutions)
-        if not solutions:
+        E1 = (p_parallel - epi * c2) / denom
+        E2 = epi - E1
+        if E1 <= args.cone_min_photon_energy or E2 <= args.cone_min_photon_energy:
             continue
-        positive_solution[i] = True
-        solutions.sort(key=lambda item: item[0])
-        best = solutions[0]
-        g1_E[i], g1_theta[i] = best[1], best[2]
-        g2_E[i], g2_theta[i] = best[3], best[4]
-        closure[i] = best[0]
-        ambiguity[i] = solutions[1][0] - best[0] if len(solutions) > 1 else math.inf
-        closure_pass[i] = best[0] <= args.pass_photon_closure_max
-    return (g1_E, g1_theta, gamma1_phi, g2_E, g2_theta, gamma2_phi,
-            closure, ambiguity, n_solutions, input_finite, candidates_both,
-            detector_pair, positive_solution, closure_pass)
+        longitudinal_solution[i] = True
+        energy_fraction_g1[i] = E1 / epi
+
+        u, v = _orthonormal_basis_about(ehat)
+        p_perp_vec = pvec - p_parallel * ehat
+        px = float(np.dot(p_perp_vec, u))
+        py = float(np.dot(p_perp_vec, v))
+        R = math.hypot(px, py)
+        psi = math.atan2(py, px) if R > 1.0e-14 else 0.0
+        A = E1 * math.sin(float(opening1[i]))
+        B = E2 * math.sin(float(opening2[i]))
+        if A <= 1.0e-14 or B <= 1.0e-14:
+            continue
+
+        lower = abs(A - B)
+        upper = A + B
+        target_R = min(max(R, lower), upper)
+        transverse_mismatch[i] = abs(R - target_R) / max(epi, 1.0e-12)
+
+        if target_R <= 1.0e-14:
+            # Degenerate transverse configuration: choose an arbitrary axis;
+            # detector matching and closure will decide whether it is usable.
+            delta1 = 0.0
+            delta2 = math.pi if A >= B else 0.0
+        else:
+            cos_delta1 = (target_R * target_R + A * A - B * B) / (2.0 * target_R * A)
+            cos_delta2 = (target_R * target_R + B * B - A * A) / (2.0 * target_R * B)
+            delta1 = math.acos(float(np.clip(cos_delta1, -1.0, 1.0)))
+            delta2 = math.acos(float(np.clip(cos_delta2, -1.0, 1.0)))
+        transverse_solution[i] = True
+
+        candidates: List[Tuple[float, float, float, float, float, float, float]] = []
+        for sign in (+1.0, -1.0):
+            beta1 = psi + sign * delta1
+            beta2 = psi - sign * delta2
+            n1 = c1 * ehat + math.sin(float(opening1[i])) * (math.cos(beta1) * u + math.sin(beta1) * v)
+            n2 = c2 * ehat + math.sin(float(opening2[i])) * (math.cos(beta2) * u + math.sin(beta2) * v)
+            n1 /= float(np.linalg.norm(n1))
+            n2 /= float(np.linalg.norm(n2))
+            th1 = math.acos(float(np.clip(n1[2], -1.0, 1.0)))
+            ph1 = math.atan2(float(n1[1]), float(n1[0]))
+            th2 = math.acos(float(np.clip(n2[2], -1.0, 1.0)))
+            ph2 = math.atan2(float(n2[1]), float(n2[0]))
+            if not (_detector_compatible(th1, int(detector1[i]), args) and
+                    _detector_compatible(th2, int(detector2[i]), args)):
+                continue
+            four_residual = np.asarray([
+                E1 + E2 - epi,
+                *(E1 * n1 + E2 * n2 - pvec),
+            ], dtype=float)
+            residual = float(np.linalg.norm(four_residual) / max(epi, 1.0e-12))
+            mass2 = 2.0 * E1 * E2 * (1.0 - float(np.dot(n1, n2)))
+            mass_residual = abs(mass2 - float(pi0_mass[i]) ** 2) / max(float(pi0_mass[i]) ** 2, 1.0e-12)
+            score = math.hypot(residual, args.cone_mass_residual_weight * mass_residual)
+            candidates.append((score, residual, mass_residual, th1, ph1, th2, ph2))
+
+        n_solutions[i] = len(candidates)
+        if not candidates:
+            continue
+        detector_solution[i] = True
+        candidates.sort(key=lambda item: item[0])
+        best = candidates[0]
+        closure[i] = best[1]
+        ambiguity[i] = candidates[1][0] - best[0] if len(candidates) > 1 else math.inf
+        g1_E[i], g2_E[i] = E1, E2
+        g1_theta[i], g1_phi[i] = best[3], best[4]
+        g2_theta[i], g2_phi[i] = best[5], best[6]
+        closure_pass[i] = best[1] <= args.pass_photon_closure_max
+
+    return (
+        g1_E, g1_theta, g1_phi, g2_E, g2_theta, g2_phi,
+        closure, ambiguity, transverse_mismatch, energy_fraction_g1,
+        n_solutions, input_finite, longitudinal_solution, transverse_solution,
+        detector_solution, closure_pass,
+    )
 
 def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                      sample_name: str) -> Tuple[TrialArrays, Dict[str, object]]:
     """Read native eppi0 trees, construct directed probes, and audit every loss."""
     logical = [
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
-        "pi0_p", "pi0_theta", "pi0_phi", "gamma1_phi_native", "gamma2_phi_native",
+        "pi0_p", "pi0_theta", "pi0_phi",
         "open_angle_egamma1", "open_angle_egamma2", "gamma1_detector_native",
         "gamma2_detector_native", "Mh_gammagamma", "Mx2_1", "Mx2", "pTmiss",
         "Delta_phi", "fiducial_status",
@@ -736,7 +805,6 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         e_p = finite_array(arrays, resolved["e_p"]); e_theta = finite_array(arrays, resolved["e_theta"]); e_phi = finite_array(arrays, resolved["e_phi"])
         p_p = finite_array(arrays, resolved["p_p"]); p_theta = finite_array(arrays, resolved["p_theta"]); p_phi = finite_array(arrays, resolved["p_phi"])
         pi0_p = finite_array(arrays, resolved["pi0_p"]); pi0_theta = finite_array(arrays, resolved["pi0_theta"]); pi0_phi = finite_array(arrays, resolved["pi0_phi"])
-        gamma1_phi = finite_array(arrays, resolved["gamma1_phi_native"]); gamma2_phi = finite_array(arrays, resolved["gamma2_phi_native"])
         opening1 = finite_array(arrays, resolved["open_angle_egamma1"]); opening2 = finite_array(arrays, resolved["open_angle_egamma2"])
         detector1_obs = finite_array(arrays, resolved["gamma1_detector_native"], default=-1.0).astype(int)
         detector2_obs = finite_array(arrays, resolved["gamma2_detector_native"], default=-1.0).astype(int)
@@ -744,20 +812,25 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         mx2_ep = finite_array(arrays, resolved.get("Mx2_1"))
         theta_gg_all = np.full(n, np.nan, dtype=float)
 
-        rec = reconstruct_native_eppi0_photons(e_theta, e_phi, pi0_p, pi0_theta, pi0_phi,
-            gamma1_phi, gamma2_phi, opening1, opening2, pi0_mass,
-            detector1_obs, detector2_obs, args)
+        rec = reconstruct_native_eppi0_photons(
+            e_theta, e_phi, pi0_p, pi0_theta, pi0_phi, opening1, opening2,
+            pi0_mass, detector1_obs, detector2_obs, args)
         (g1_E, g1_theta, g1_phi, g2_E, g2_theta, g2_phi, closure, ambiguity,
-         n_solutions, input_finite, candidates_both, detector_pair,
-         positive_solution, closure_pass) = rec
+         transverse_mismatch, energy_fraction_g1, n_solutions, input_finite,
+         longitudinal_solution, transverse_solution, detector_solution,
+         closure_pass) = rec
 
-        for stage, mask in (("native_inputs_finite", input_finite), ("theta_candidates_both", candidates_both),
-                            ("detector_compatible_pair", detector_pair), ("positive_energy_solution", positive_solution),
+        for stage, mask in (("native_inputs_finite", input_finite),
+                            ("longitudinal_energy_solution", longitudinal_solution),
+                            ("transverse_cone_solution", transverse_solution),
+                            ("detector_compatible_solution", detector_solution),
                             ("closure_pass", closure_pass)):
             diag_add_count(diag, "event_cutflow", stage, np.count_nonzero(base & mask))
-        diag_fill(diag, "closure", closure, base & positive_solution)
-        diag_fill(diag, "ambiguity", ambiguity, base & positive_solution & np.isfinite(ambiguity))
-        diag_fill(diag, "n_solutions", n_solutions, base & detector_pair)
+        diag_fill(diag, "closure", closure, base & detector_solution)
+        diag_fill(diag, "ambiguity", ambiguity, base & detector_solution & np.isfinite(ambiguity))
+        diag_fill(diag, "transverse_mismatch", transverse_mismatch, base & longitudinal_solution)
+        diag_fill(diag, "energy_fraction_g1", energy_fraction_g1, base & longitudinal_solution)
+        diag_fill(diag, "n_solutions", n_solutions, base & transverse_solution)
         diag_fill(diag, "g1_E", g1_E, base & closure_pass)
         diag_fill(diag, "g2_E", g2_E, base & closure_pass)
         diag_fill(diag, "g1_theta_deg", np.degrees(g1_theta), base & closure_pass)
@@ -1626,7 +1699,7 @@ def write_pass_audit(period_dir: Path, period_label: str, data_diag: Mapping[str
     plot_pass_diagnostic_histograms(audit_dir/"event_selection_variables.png",period_label,data_diag,mc_diag,
         ["Mx2","pTmiss","abs_Delta_phi_minus_pi"],"broad ep-pi0 selection")
     plot_pass_diagnostic_histograms(audit_dir/"native_photon_reconstruction.png",period_label,data_diag,mc_diag,
-        ["closure","ambiguity","n_solutions","g1_E","g2_E","g1_theta_deg","g2_theta_deg"],"native photon recovery")
+        ["closure","transverse_mismatch","energy_fraction_g1","ambiguity","n_solutions","g1_E","g2_E","g1_theta_deg","g2_theta_deg"],"native photon recovery")
     plot_pass_diagnostic_histograms(audit_dir/"directed_probe_matching.png",period_label,data_diag,mc_diag,
         ["pred_E","pred_theta_deg","pred_m2","pred_E_minus_p","match_angle_deg","relative_E_residual"],"predicted-probe matching")
 
