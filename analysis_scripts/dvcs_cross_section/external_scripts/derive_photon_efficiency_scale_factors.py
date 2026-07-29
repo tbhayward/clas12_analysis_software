@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v2.py
+derive_photon_efficiency_scale_factors_v3.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -59,12 +59,12 @@ Python 3, numpy, scipy, matplotlib, uproot.
 Typical usage
 -------------
 
-  python3 derive_photon_efficiency_scale_factors_v2.py \
+  python3 derive_photon_efficiency_scale_factors_v3.py \
       --period fa18_inb --workers 1
 
 Run all periods with up to seven workers:
 
-  python3 derive_photon_efficiency_scale_factors_v2.py --workers 7
+  python3 derive_photon_efficiency_scale_factors_v3.py --workers 7
 
 Use --inspect-branches first if the local trees use unexpected branch names.
 """
@@ -188,6 +188,16 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
     "g2_theta": ("p3_theta", "g2_theta", "gamma2_theta", "photon2_theta"),
     "g2_phi": ("p3_phi", "g2_phi", "gamma2_phi", "photon2_phi"),
     "g2_detector": ("detector3", "g2_detector", "gamma2_detector"),
+    "pi0_p": ("p2_p", "pi0_p"),
+    "pi0_theta": ("p2_theta", "pi0_theta"),
+    "pi0_phi": ("p2_phi", "pi0_phi"),
+    "gamma1_phi_native": ("gamma_phi1",),
+    "gamma2_phi_native": ("gamma_phi2",),
+    "open_angle_egamma1": ("open_angle_egamma1",),
+    "open_angle_egamma2": ("open_angle_egamma2",),
+    "gamma1_detector_native": ("detector_gamma1",),
+    "gamma2_detector_native": ("detector_gamma2",),
+    "Mh_gammagamma": ("Mh_gammagamma",),
     "proton_detector": ("detector1", "p_detector", "proton_detector"),
     "Mx2_1": ("Mx2_1", "Mx2_ep", "Mx2_x1", "Mx2_proton", "Mx2_p"),
     "Mx2": ("Mx2", "Mx2_epg", "Mx2_epgamma", "Mx2_eppi0", "Mx2_epi0"),
@@ -326,6 +336,8 @@ def parse_args() -> argparse.Namespace:
                         help="Maximum angle between predicted and observed probe in epgamma-gamma events.")
     parser.add_argument("--probe-match-relative-E-max", type=float, default=0.35,
                         help="Maximum |Eobs-Epred|/Epred for a passing probe.")
+    parser.add_argument("--pass-photon-closure-max", type=float, default=0.03,
+                        help="Maximum normalized four-vector closure residual for reconstructed native eppi0 photons.")
     parser.add_argument("--require-fiducial-status", type=int, default=None,
                         help="Optional exact fiducial_status requirement.")
 
@@ -496,19 +508,146 @@ def pass_sample_mask(arrays: Mapping[str, np.ndarray], resolved: Mapping[str, Op
     return mask
 
 
+
+def _theta_candidates_from_opening(e_theta: float, e_phi: float, gamma_phi: float, opening_angle: float) -> List[float]:
+    """Solve the electron-photon opening-angle equation for photon theta."""
+    if not all(math.isfinite(v) for v in (e_theta, e_phi, gamma_phi, opening_angle)):
+        return []
+    # endif
+    a = math.cos(e_theta)
+    b = math.sin(e_theta) * math.cos(gamma_phi - e_phi)
+    radius = math.hypot(a, b)
+    if radius <= 1.0e-12:
+        return []
+    # endif
+    rhs = math.cos(opening_angle) / radius
+    if rhs < -1.0 - 1.0e-9 or rhs > 1.0 + 1.0e-9:
+        return []
+    # endif
+    rhs = min(1.0, max(-1.0, rhs))
+    phase = math.atan2(b, a)
+    offset = math.acos(rhs)
+    candidates: List[float] = []
+    for raw in (phase + offset, phase - offset):
+        value = raw % (2.0 * math.pi)
+        if value > math.pi:
+            value = 2.0 * math.pi - value
+        # endif
+        if 0.0 <= value <= math.pi and all(abs(value - old) > 1.0e-8 for old in candidates):
+            candidates.append(value)
+        # endif
+    # endfor
+    return candidates
+
+
+def _unit_vector(theta: float, phi: float) -> np.ndarray:
+    st = math.sin(theta)
+    return np.asarray([st * math.cos(phi), st * math.sin(phi), math.cos(theta)], dtype=float)
+
+
+def reconstruct_native_eppi0_photons(
+    e_theta: np.ndarray,
+    e_phi: np.ndarray,
+    pi0_p: np.ndarray,
+    pi0_theta: np.ndarray,
+    pi0_phi: np.ndarray,
+    gamma1_phi: np.ndarray,
+    gamma2_phi: np.ndarray,
+    opening1: np.ndarray,
+    opening2: np.ndarray,
+    pi0_mass: np.ndarray,
+    detector1: np.ndarray,
+    detector2: np.ndarray,
+    args: argparse.Namespace,
+) -> Tuple[np.ndarray, ...]:
+    """Recover both photon four-vectors from the native eppi0 tree schema."""
+    n_events = len(e_theta)
+    g1_E = np.full(n_events, np.nan, dtype=float)
+    g1_theta = np.full(n_events, np.nan, dtype=float)
+    g2_E = np.full(n_events, np.nan, dtype=float)
+    g2_theta = np.full(n_events, np.nan, dtype=float)
+    closure = np.full(n_events, np.nan, dtype=float)
+    ambiguity = np.full(n_events, np.nan, dtype=float)
+    valid = np.zeros(n_events, dtype=bool)
+
+    for i in range(n_events):
+        values = (e_theta[i], e_phi[i], pi0_p[i], pi0_theta[i], pi0_phi[i],
+                  gamma1_phi[i], gamma2_phi[i], opening1[i], opening2[i], pi0_mass[i])
+        if not all(math.isfinite(float(v)) for v in values) or pi0_p[i] <= 0.0 or pi0_mass[i] <= 0.0:
+            continue
+        # endif
+        candidates1 = _theta_candidates_from_opening(float(e_theta[i]), float(e_phi[i]), float(gamma1_phi[i]), float(opening1[i]))
+        candidates2 = _theta_candidates_from_opening(float(e_theta[i]), float(e_phi[i]), float(gamma2_phi[i]), float(opening2[i]))
+        if not candidates1 or not candidates2:
+            continue
+        # endif
+        n_pi0 = _unit_vector(float(pi0_theta[i]), float(pi0_phi[i]))
+        p_pi0 = float(pi0_p[i]) * n_pi0
+        e_pi0 = math.sqrt(float(pi0_p[i]) ** 2 + float(pi0_mass[i]) ** 2)
+        target = np.asarray([e_pi0, *p_pi0], dtype=float)
+        scale = max(e_pi0, 1.0e-9)
+        solutions: List[Tuple[float, float, float, float, float]] = []
+        for theta1 in candidates1:
+            theta1_deg = math.degrees(theta1)
+            if detector1[i] == 0 and not (args.ft_theta_min <= theta1_deg < args.ft_theta_max):
+                continue
+            # endif
+            if detector1[i] == 1 and not (args.fd_theta_min <= theta1_deg < args.fd_theta_max):
+                continue
+            # endif
+            n1 = _unit_vector(theta1, float(gamma1_phi[i]))
+            for theta2 in candidates2:
+                theta2_deg = math.degrees(theta2)
+                if detector2[i] == 0 and not (args.ft_theta_min <= theta2_deg < args.ft_theta_max):
+                    continue
+                # endif
+                if detector2[i] == 1 and not (args.fd_theta_min <= theta2_deg < args.fd_theta_max):
+                    continue
+                # endif
+                n2 = _unit_vector(theta2, float(gamma2_phi[i]))
+                matrix = np.asarray([[1.0, 1.0], [n1[0], n2[0]], [n1[1], n2[1]], [n1[2], n2[2]]], dtype=float)
+                energies, _, rank, _ = np.linalg.lstsq(matrix, target, rcond=None)
+                if rank < 2 or energies[0] <= 0.0 or energies[1] <= 0.0:
+                    continue
+                # endif
+                residual = float(np.linalg.norm(matrix @ energies - target) / scale)
+                solutions.append((residual, float(energies[0]), theta1, float(energies[1]), theta2))
+            # endfor
+        # endfor
+        if not solutions:
+            continue
+        # endif
+        solutions.sort(key=lambda item: item[0])
+        best = solutions[0]
+        if best[0] > args.pass_photon_closure_max:
+            continue
+        # endif
+        g1_E[i], g1_theta[i] = best[1], best[2]
+        g2_E[i], g2_theta[i] = best[3], best[4]
+        closure[i] = best[0]
+        ambiguity[i] = solutions[1][0] - best[0] if len(solutions) > 1 else math.inf
+        valid[i] = True
+    # endfor
+    return g1_E, g1_theta, gamma1_phi, g2_E, g2_theta, gamma2_phi, closure, ambiguity, valid
+
+
 def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
+    """Read native eppi0 trees and construct two directed passing probes/event."""
     logical = [
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
-        "g1_E", "g1_theta", "g1_phi", "g2_E", "g2_theta", "g2_phi",
-        "Mx2_1", "Mx2", "pTmiss", "Delta_phi", "fiducial_status",
+        "pi0_p", "pi0_theta", "pi0_phi", "gamma1_phi_native", "gamma2_phi_native",
+        "open_angle_egamma1", "open_angle_egamma2", "gamma1_detector_native",
+        "gamma2_detector_native", "Mh_gammagamma", "Mx2_1", "Mx2", "pTmiss",
+        "Delta_phi", "fiducial_status",
     ]
     optional = ["Mx2_1", "Mx2", "pTmiss", "Delta_phi", "fiducial_status"]
     resolved = resolve_branches(path, logical, optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
     chunks: List[TrialArrays] = []
     seen = 0
+    reconstructed_events = 0
 
-    log(f"Reading PASS trials from {path}")
+    log(f"Reading native eppi0 PASS trials from {path}")
     for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
                                  step_size=args.step_size, library="np"):
         n = len(next(iter(arrays.values())))
@@ -521,7 +660,6 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             n = keep
         # endif
         seen += n
-
         base = pass_sample_mask(arrays, resolved, args)
         e_p = finite_array(arrays, resolved["e_p"])
         e_theta = finite_array(arrays, resolved["e_theta"])
@@ -529,25 +667,27 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
         p_p = finite_array(arrays, resolved["p_p"])
         p_theta = finite_array(arrays, resolved["p_theta"])
         p_phi = finite_array(arrays, resolved["p_phi"])
-        g1_E = finite_array(arrays, resolved["g1_E"])
-        g1_theta = finite_array(arrays, resolved["g1_theta"])
-        g1_phi = finite_array(arrays, resolved["g1_phi"])
-        g2_E = finite_array(arrays, resolved["g2_E"])
-        g2_theta = finite_array(arrays, resolved["g2_theta"])
-        g2_phi = finite_array(arrays, resolved["g2_phi"])
+        pi0_p = finite_array(arrays, resolved["pi0_p"])
+        pi0_theta = finite_array(arrays, resolved["pi0_theta"])
+        pi0_phi = finite_array(arrays, resolved["pi0_phi"])
+        gamma1_phi = finite_array(arrays, resolved["gamma1_phi_native"])
+        gamma2_phi = finite_array(arrays, resolved["gamma2_phi_native"])
+        opening1 = finite_array(arrays, resolved["open_angle_egamma1"])
+        opening2 = finite_array(arrays, resolved["open_angle_egamma2"])
+        detector1_obs = finite_array(arrays, resolved["gamma1_detector_native"], default=-1.0).astype(int)
+        detector2_obs = finite_array(arrays, resolved["gamma2_detector_native"], default=-1.0).astype(int)
+        pi0_mass = finite_array(arrays, resolved["Mh_gammagamma"])
         mx2_ep = finite_array(arrays, resolved.get("Mx2_1"))
 
-        # Directed trial 1: gamma1 tag, gamma2 probe.  The bin coordinates use
-        # the kinematically predicted probe, not the observed probe.
+        g1_E, g1_theta, g1_phi, g2_E, g2_theta, g2_phi, closure, ambiguity, reconstructed = reconstruct_native_eppi0_photons(
+            e_theta, e_phi, pi0_p, pi0_theta, pi0_phi, gamma1_phi, gamma2_phi,
+            opening1, opening2, pi0_mass, detector1_obs, detector2_obs, args,
+        )
+        reconstructed_events += int(np.count_nonzero(reconstructed))
         pred1_E, pred1_th, pred1_ph, pred1_m2, pred1_p = predicted_probe(
-            beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi,
-            g1_E, g1_theta, g1_phi,
-        )
-        # Directed trial 2: gamma2 tag, gamma1 probe.
+            beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g1_E, g1_theta, g1_phi)
         pred2_E, pred2_th, pred2_ph, pred2_m2, pred2_p = predicted_probe(
-            beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi,
-            g2_E, g2_theta, g2_phi,
-        )
+            beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g2_E, g2_theta, g2_phi)
 
         for pred_E, pred_th, pred_ph, pred_m2, pred_p, obs_E, obs_th, obs_ph in (
             (pred1_E, pred1_th, pred1_ph, pred1_m2, pred1_p, g2_E, g2_theta, g2_phi),
@@ -555,22 +695,16 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
         ):
             theta_deg = np.degrees(pred_th)
             detector, sector = classify_predicted_detector(theta_deg, pred_ph, args)
-            cos_opening = (
-                np.sin(pred_th) * np.sin(obs_th) * np.cos(pred_ph - obs_ph)
-                + np.cos(pred_th) * np.cos(obs_th)
-            )
+            cos_opening = np.sin(pred_th) * np.sin(obs_th) * np.cos(pred_ph - obs_ph) + np.cos(pred_th) * np.cos(obs_th)
             match_angle_deg = np.degrees(np.arccos(np.clip(cos_opening, -1.0, 1.0)))
-            relative_E_residual = np.abs(obs_E - pred_E) / np.maximum(pred_E, 1e-9)
+            relative_E_residual = np.abs(obs_E - pred_E) / np.maximum(pred_E, 1.0e-9)
             good = (
-                base
-                & np.isfinite(pred_E) & np.isfinite(pred_p)
-                & np.isfinite(theta_deg) & np.isfinite(pred_ph)
+                base & reconstructed & np.isfinite(closure)
+                & np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg) & np.isfinite(pred_ph)
                 & np.isfinite(obs_E) & np.isfinite(obs_th) & np.isfinite(obs_ph)
                 & np.isfinite(match_angle_deg) & np.isfinite(relative_E_residual)
                 & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
-                & (pred_p > 0.0)
-                & (np.abs(pred_E - pred_p) < 0.30)
-                & (np.abs(pred_m2) < 0.20)
+                & (pred_p > 0.0) & (np.abs(pred_E - pred_p) < 0.30) & (np.abs(pred_m2) < 0.20)
                 & (match_angle_deg < args.probe_match_angle_max_deg)
                 & (relative_E_residual < args.probe_match_relative_E_max)
                 & (detector >= 0)
@@ -586,7 +720,9 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             ))
         # endfor
     # endfor
-    return concatenate_trials(chunks)
+    result = concatenate_trials(chunks)
+    log(f"Native eppi0 photon reconstruction for {Path(path).name}: events={seen:,}, reconstructed={reconstructed_events:,}, pass trials={result.size():,}")
+    return result
 
 
 def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
