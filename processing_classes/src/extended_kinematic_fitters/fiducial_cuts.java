@@ -199,7 +199,7 @@ public class fiducial_cuts {
 
             case 3:
                 // PCal exclusion common to all RGA periods.
-                if (lw_1 > 346.5 && lw_1 < 378.0) {
+                if (lv_1 > 346.5 && lv_1 < 378.0) {
                     return false;
                 }
 
