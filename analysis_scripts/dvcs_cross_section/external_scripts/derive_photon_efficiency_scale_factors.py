@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v8.py
+derive_photon_efficiency_scale_factors_v12.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -216,7 +216,7 @@ class TrialArrays:
 
 
 PASS_EVENT_STAGES = (
-    "all_events", "basic_quality", "mx2", "pTmiss", "Delta_phi",
+    "all_events", "basic_quality", "mx2", "pTmiss", "Delta_phi", "production_event_cuts",
     "native_inputs_finite", "longitudinal_energy_solution",
     "transverse_cone_solution", "detector_compatible_solution", "closure_pass",
 )
@@ -224,7 +224,7 @@ PASS_EVENT_STAGES = (
 PASS_PROBE_STAGES = (
     "two_trials_from_closure_events", "prediction_finite", "energy_range",
     "photon_like_E_minus_p", "photon_like_m2", "predicted_detector",
-    "angle_match", "energy_match", "final_pass",
+    "global_cuts", "angle_match", "energy_match", "final_pass",
 )
 
 DIAGNOSTIC_HIST_EDGES = {
@@ -256,29 +256,69 @@ def empty_pass_diagnostics(sample: str, path: str) -> Dict[str, object]:
         "event_cutflow": {stage: 0 for stage in PASS_EVENT_STAGES},
         "probe_cutflow": {stage: 0 for stage in PASS_PROBE_STAGES},
         "histograms": {
-            key: {"edges": edges.tolist(), "counts": np.zeros(len(edges)-1, dtype=np.int64).tolist()}
+            key: {"edges": edges.tolist(), "counts": np.zeros(len(edges)-1, dtype=float).tolist()}
             for key, edges in DIAGNOSTIC_HIST_EDGES.items()
         },
         "detector_pairs_after_closure": {},
         "final_trials_by_category": {"FT": 0, **{f"FD sector {i}": 0 for i in range(1, 7)}},
         "matching_scans": {},
+        "mirror_diagnostics": {
+            "events_with_one_solution": 0,
+            "events_with_two_solutions": 0,
+            "events_with_same_category_pair": 0,
+            "events_with_different_category_pair": 0,
+            "photon1_category_migration": [[0.0 for _ in range(7)] for _ in range(7)],
+            "photon2_category_migration": [[0.0 for _ in range(7)] for _ in range(7)],
+            "category_labels": ["FT", "FD S1", "FD S2", "FD S3", "FD S4", "FD S5", "FD S6"],
+        },
     }
 
 
-def diag_add_count(diag: Dict[str, object], group: str, stage: str, count: int) -> None:
-    diag[group][stage] = int(diag[group].get(stage, 0)) + int(count)
+def diag_add_count(diag: Dict[str, object], group: str, stage: str, count: float) -> None:
+    diag[group][stage] = float(diag[group].get(stage, 0.0)) + float(count)
 
 
-def diag_fill(diag: Dict[str, object], key: str, values: np.ndarray, mask: Optional[np.ndarray] = None) -> None:
+def category_code(detector: np.ndarray, sector: np.ndarray) -> np.ndarray:
+    """Map FT to 0 and FD sectors 1--6 to their sector number."""
+    code = np.full(np.asarray(detector).shape, -1, dtype=np.int16)
+    code[np.asarray(detector) == 0] = 0
+    fd = np.asarray(detector) == 1
+    code[fd] = np.asarray(sector, dtype=np.int16)[fd]
+    return code
+
+
+def weighted_count(mask: np.ndarray, weights: Optional[np.ndarray] = None) -> float:
+    mask = np.asarray(mask, dtype=bool)
+    if weights is None:
+        return float(np.count_nonzero(mask))
+    return float(np.sum(np.asarray(weights, dtype=float)[mask]))
+
+
+def add_matching_scan_count(diag: Dict[str, object], key: str, detector: np.ndarray,
+                            sector: np.ndarray, mask: np.ndarray,
+                            weights: Optional[np.ndarray] = None) -> None:
+    entry = diag["matching_scans"].setdefault(
+        key, {"all": 0.0, "FT": 0.0, **{f"FD sector {i}": 0.0 for i in range(1, 7)}}
+    )
+    entry["all"] += weighted_count(mask, weights)
+    entry["FT"] += weighted_count(mask & (detector == 0), weights)
+    for i in range(1, 7):
+        entry[f"FD sector {i}"] += weighted_count(mask & (detector == 1) & (sector == i), weights)
+
+
+def diag_fill(diag: Dict[str, object], key: str, values: np.ndarray,
+              mask: Optional[np.ndarray] = None,
+              weights: Optional[np.ndarray] = None) -> None:
     values = np.asarray(values, dtype=float)
-    if mask is not None:
-        values = values[np.asarray(mask, dtype=bool)]
-    values = values[np.isfinite(values)]
+    selected = np.ones(values.shape, dtype=bool) if mask is None else np.asarray(mask, dtype=bool)
+    selected &= np.isfinite(values)
+    values = values[selected]
+    hist_weights = None if weights is None else np.asarray(weights, dtype=float)[selected]
     if values.size == 0:
         return
     edges = np.asarray(diag["histograms"][key]["edges"], dtype=float)
-    counts, _ = np.histogram(values, bins=edges)
-    old = np.asarray(diag["histograms"][key]["counts"], dtype=np.int64)
+    counts, _ = np.histogram(values, bins=edges, weights=hist_weights)
+    old = np.asarray(diag["histograms"][key]["counts"], dtype=float)
     diag["histograms"][key]["counts"] = (old + counts).tolist()
 
 
@@ -754,25 +794,22 @@ def reconstruct_native_eppi0_photons(
     detector2: np.ndarray,
     args: argparse.Namespace,
 ) -> Tuple[np.ndarray, ...]:
-    """Recover the two photons using cone constraints around the electron.
+    """Recover both detector-compatible cone-mirror solutions when available.
 
-    For photon i, the measured electron-photon opening angle alpha_i places its
-    direction on a cone around the measured electron direction.  The measured
-    pi0 four-vector then fixes the photon energies through the total-energy and
-    electron-axis momentum equations.  The transverse pi0 momentum determines
-    the two azimuths around the electron axis up to a mirror ambiguity.
-
-    When finite detector resolution makes the transverse triangle slightly
-    inconsistent, the nearest triangle boundary is used and the resulting
-    normalized four-vector mismatch is retained as the closure diagnostic.
+    The first solution index is the nominal best-score solution.  The second is
+    the alternate mirror.  Storing both solutions allows the downstream
+    ``best``, ``half_weight`` and ``unique_sector`` prescriptions to be applied
+    without rerunning the cone reconstruction.
     """
     n_events = len(e_theta)
     g1_E = np.full(n_events, np.nan, dtype=float)
-    g1_theta = np.full(n_events, np.nan, dtype=float)
-    g1_phi = np.full(n_events, np.nan, dtype=float)
     g2_E = np.full(n_events, np.nan, dtype=float)
-    g2_theta = np.full(n_events, np.nan, dtype=float)
-    g2_phi = np.full(n_events, np.nan, dtype=float)
+    solution_g1_theta = np.full((n_events, 2), np.nan, dtype=float)
+    solution_g1_phi = np.full((n_events, 2), np.nan, dtype=float)
+    solution_g2_theta = np.full((n_events, 2), np.nan, dtype=float)
+    solution_g2_phi = np.full((n_events, 2), np.nan, dtype=float)
+    solution_closure = np.full((n_events, 2), np.nan, dtype=float)
+    solution_score = np.full((n_events, 2), np.nan, dtype=float)
     closure = np.full(n_events, np.nan, dtype=float)
     ambiguity = np.full(n_events, np.nan, dtype=float)
     transverse_mismatch = np.full(n_events, np.nan, dtype=float)
@@ -814,6 +851,7 @@ def reconstruct_native_eppi0_photons(
             continue
         longitudinal_solution[i] = True
         energy_fraction_g1[i] = E1 / epi
+        g1_E[i], g2_E[i] = E1, E2
 
         u, v = _orthonormal_basis_about(ehat)
         p_perp_vec = pvec - p_parallel * ehat
@@ -830,10 +868,7 @@ def reconstruct_native_eppi0_photons(
         upper = A + B
         target_R = min(max(R, lower), upper)
         transverse_mismatch[i] = abs(R - target_R) / max(epi, 1.0e-12)
-
         if target_R <= 1.0e-14:
-            # Degenerate transverse configuration: choose an arbitrary axis;
-            # detector matching and closure will decide whether it is usable.
             delta1 = 0.0
             delta2 = math.pi if A >= B else 0.0
         else:
@@ -858,31 +893,31 @@ def reconstruct_native_eppi0_photons(
             if not (_detector_compatible(th1, int(detector1[i]), args) and
                     _detector_compatible(th2, int(detector2[i]), args)):
                 continue
-            four_residual = np.asarray([
-                E1 + E2 - epi,
-                *(E1 * n1 + E2 * n2 - pvec),
-            ], dtype=float)
+            four_residual = np.asarray([E1 + E2 - epi, *(E1 * n1 + E2 * n2 - pvec)], dtype=float)
             residual = float(np.linalg.norm(four_residual) / max(epi, 1.0e-12))
             mass2 = 2.0 * E1 * E2 * (1.0 - float(np.dot(n1, n2)))
             mass_residual = abs(mass2 - float(pi0_mass[i]) ** 2) / max(float(pi0_mass[i]) ** 2, 1.0e-12)
             score = math.hypot(residual, args.cone_mass_residual_weight * mass_residual)
             candidates.append((score, residual, mass_residual, th1, ph1, th2, ph2))
 
-        n_solutions[i] = len(candidates)
+        candidates.sort(key=lambda item: item[0])
+        n_solutions[i] = min(len(candidates), 2)
         if not candidates:
             continue
         detector_solution[i] = True
-        candidates.sort(key=lambda item: item[0])
-        best = candidates[0]
-        closure[i] = best[1]
-        ambiguity[i] = candidates[1][0] - best[0] if len(candidates) > 1 else math.inf
-        g1_E[i], g2_E[i] = E1, E2
-        g1_theta[i], g1_phi[i] = best[3], best[4]
-        g2_theta[i], g2_phi[i] = best[5], best[6]
-        closure_pass[i] = best[1] <= args.pass_photon_closure_max
+        for j, candidate in enumerate(candidates[:2]):
+            solution_score[i, j] = candidate[0]
+            solution_closure[i, j] = candidate[1]
+            solution_g1_theta[i, j], solution_g1_phi[i, j] = candidate[3], candidate[4]
+            solution_g2_theta[i, j], solution_g2_phi[i, j] = candidate[5], candidate[6]
+        closure[i] = solution_closure[i, 0]
+        ambiguity[i] = (solution_score[i, 1] - solution_score[i, 0]
+                        if n_solutions[i] > 1 else math.inf)
+        closure_pass[i] = solution_closure[i, 0] <= args.pass_photon_closure_max
 
     return (
-        g1_E, g1_theta, g1_phi, g2_E, g2_theta, g2_phi,
+        g1_E, g2_E, solution_g1_theta, solution_g1_phi,
+        solution_g2_theta, solution_g2_phi, solution_closure, solution_score,
         closure, ambiguity, transverse_mismatch, energy_fraction_g1,
         n_solutions, input_finite, longitudinal_solution, transverse_solution,
         detector_solution, closure_pass,
@@ -902,8 +937,11 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
     resolved = resolve_branches(path, logical, optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
     chunks: List[TrialArrays] = []
-    seen = 0
     diag = empty_pass_diagnostics(sample_name, path)
+    seen = 0
+    angle_scan = parse_float_list(args.match_angle_scan_deg)
+    energy_scan = parse_float_list(args.match_energy_scan)
+    m2_scan = parse_float_list(args.predicted_m2_scan)
 
     log(f"Reading native eppi0 PASS trials from {path}")
     for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
@@ -918,7 +956,7 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         seen += n
         diag_add_count(diag, "event_cutflow", "all_events", n)
 
-        quality = basic_quality_mask(arrays, resolved, args) & production_event_mask(arrays, resolved, args)
+        quality = basic_quality_mask(arrays, resolved, args)
         mx2 = finite_array(arrays, resolved.get("Mx2"))
         ptmiss_all = finite_array(arrays, resolved.get("pTmiss"))
         delta_phi_all = finite_array(arrays, resolved.get("Delta_phi"))
@@ -931,12 +969,13 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         dphi_stage = pt_stage.copy()
         if args.pass_delta_phi_window is not None and args.pass_delta_phi_window >= 0.0 and resolved.get("Delta_phi") is not None:
             dphi_stage &= np.isfinite(delta_phi_all) & (np.abs(delta_phi_all - math.pi) < args.pass_delta_phi_window)
-        base = dphi_stage
+        base = dphi_stage & production_event_mask(arrays, resolved, args)
 
         diag_add_count(diag, "event_cutflow", "basic_quality", np.count_nonzero(quality))
         diag_add_count(diag, "event_cutflow", "mx2", np.count_nonzero(mx2_stage))
         diag_add_count(diag, "event_cutflow", "pTmiss", np.count_nonzero(pt_stage))
         diag_add_count(diag, "event_cutflow", "Delta_phi", np.count_nonzero(dphi_stage))
+        diag_add_count(diag, "event_cutflow", "production_event_cuts", np.count_nonzero(base))
         diag_fill(diag, "Mx2", mx2, quality)
         diag_fill(diag, "pTmiss", ptmiss_all, mx2_stage)
         diag_fill(diag, "abs_Delta_phi_minus_pi", np.abs(delta_phi_all-math.pi), pt_stage)
@@ -944,14 +983,8 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         e_p = finite_array(arrays, resolved["e_p"]); e_theta = finite_array(arrays, resolved["e_theta"]); e_phi = finite_array(arrays, resolved["e_phi"])
         p_p = finite_array(arrays, resolved["p_p"]); p_theta = finite_array(arrays, resolved["p_theta"]); p_phi = finite_array(arrays, resolved["p_phi"])
         pi0_p = finite_array(arrays, resolved["pi0_p"]); pi0_theta = finite_array(arrays, resolved["pi0_theta"]); pi0_phi = finite_array(arrays, resolved["pi0_phi"])
-        # ThreeParticles.open_angle_egamma* is written in degrees.  Convert
-        # only these opening-angle branches to radians for the cone solver.
-        # The stored e_theta/e_phi and p2_theta/p2_phi branches remain in
-        # their native radian convention.
-        opening1_deg = finite_array(arrays, resolved["open_angle_egamma1"])
-        opening2_deg = finite_array(arrays, resolved["open_angle_egamma2"])
-        opening1 = np.deg2rad(opening1_deg)
-        opening2 = np.deg2rad(opening2_deg)
+        opening1 = np.deg2rad(finite_array(arrays, resolved["open_angle_egamma1"]))
+        opening2 = np.deg2rad(finite_array(arrays, resolved["open_angle_egamma2"]))
         detector1_obs = finite_array(arrays, resolved["gamma1_detector_native"], default=-1.0).astype(int)
         detector2_obs = finite_array(arrays, resolved["gamma2_detector_native"], default=-1.0).astype(int)
         pi0_mass = finite_array(arrays, resolved["Mh_gammagamma"])
@@ -961,10 +994,10 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         rec = reconstruct_native_eppi0_photons(
             e_theta, e_phi, pi0_p, pi0_theta, pi0_phi, opening1, opening2,
             pi0_mass, detector1_obs, detector2_obs, args)
-        (g1_E, g1_theta, g1_phi, g2_E, g2_theta, g2_phi, closure, ambiguity,
-         transverse_mismatch, energy_fraction_g1, n_solutions, input_finite,
-         longitudinal_solution, transverse_solution, detector_solution,
-         closure_pass) = rec
+        (g1_E, g2_E, sol_g1_theta, sol_g1_phi, sol_g2_theta, sol_g2_phi,
+         sol_closure, sol_score, closure, ambiguity, transverse_mismatch,
+         energy_fraction_g1, n_solutions, input_finite, longitudinal_solution,
+         transverse_solution, detector_solution, closure_pass) = rec
 
         for stage, mask in (("native_inputs_finite", input_finite),
                             ("longitudinal_energy_solution", longitudinal_solution),
@@ -979,63 +1012,107 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         diag_fill(diag, "n_solutions", n_solutions, base & transverse_solution)
         diag_fill(diag, "g1_E", g1_E, base & closure_pass)
         diag_fill(diag, "g2_E", g2_E, base & closure_pass)
-        diag_fill(diag, "g1_theta_deg", np.degrees(g1_theta), base & closure_pass)
-        diag_fill(diag, "g2_theta_deg", np.degrees(g2_theta), base & closure_pass)
+        diag_fill(diag, "g1_theta_deg", np.degrees(sol_g1_theta[:, 0]), base & closure_pass)
+        diag_fill(diag, "g2_theta_deg", np.degrees(sol_g2_theta[:, 0]), base & closure_pass)
 
         pair_keys = np.char.add(np.char.add(detector1_obs.astype(str), "-"), detector2_obs.astype(str))
         for key in np.unique(pair_keys[base & closure_pass]):
             diag["detector_pairs_after_closure"][str(key)] = int(diag["detector_pairs_after_closure"].get(str(key), 0)) + int(np.count_nonzero((pair_keys == key) & base & closure_pass))
 
-        pred_sets = (
-            (*predicted_probe(beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g1_E, g1_theta, g1_phi), g2_E, g2_theta, g2_phi),
-            (*predicted_probe(beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g2_E, g2_theta, g2_phi), g1_E, g1_theta, g1_phi),
-        )
-        for pred_E, pred_th, pred_ph, pred_m2, pred_p, obs_E, obs_th, obs_ph in pred_sets:
-            seed = base & closure_pass
-            diag_add_count(diag, "probe_cutflow", "two_trials_from_closure_events", np.count_nonzero(seed))
-            theta_deg = np.degrees(pred_th)
-            detector, sector = classify_predicted_detector(theta_deg, pred_ph, args)
-            cos_opening = np.sin(pred_th)*np.sin(obs_th)*np.cos(pred_ph-obs_ph)+np.cos(pred_th)*np.cos(obs_th)
-            match_angle_deg = np.degrees(np.arccos(np.clip(cos_opening, -1.0, 1.0)))
-            relative_E_residual = np.abs(obs_E-pred_E)/np.maximum(pred_E, 1.0e-9)
-            finite = seed & np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg) & np.isfinite(pred_ph) & np.isfinite(obs_E) & np.isfinite(obs_th) & np.isfinite(obs_ph) & np.isfinite(match_angle_deg) & np.isfinite(relative_E_residual)
-            energy = finite & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
-            ep = energy & (pred_p > 0.0) & (np.abs(pred_E-pred_p) < 0.30)
-            m2 = ep & (np.abs(pred_m2) < 0.20)
-            accepted = m2 & (detector >= 0)
-            if not args.disable_production_global_cuts:
-                global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
-                accepted &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
-                proton_detector = finite_array(arrays, resolved.get("detector1"), default=-1.0).astype(int)
-            angle = accepted & (match_angle_deg < args.probe_match_angle_max_deg)
-            eres = angle & (relative_E_residual < args.probe_match_relative_E_max)
-            for stage, mask in (("prediction_finite", finite), ("energy_range", energy), ("photon_like_E_minus_p", ep),
-                                ("photon_like_m2", m2), ("predicted_detector", accepted),
-                                ("angle_match", angle), ("energy_match", eres), ("final_pass", eres)):
-                diag_add_count(diag, "probe_cutflow", stage, np.count_nonzero(mask))
-            diag_fill(diag, "pred_E", pred_E, finite); diag_fill(diag, "pred_theta_deg", theta_deg, finite)
-            diag_fill(diag, "pred_m2", pred_m2, ep); diag_fill(diag, "pred_E_minus_p", pred_E-pred_p, energy)
-            diag_fill(diag, "match_angle_deg", match_angle_deg, accepted)
-            diag_fill(diag, "relative_E_residual", relative_E_residual, angle)
-            for cat, cmask in [("FT", eres & (detector == 0))] + [(f"FD sector {j}", eres & (detector == 1) & (sector == j)) for j in range(1,7)]:
-                diag["final_trials_by_category"][cat] += int(np.count_nonzero(cmask))
-            for angle_cut in parse_float_list(args.match_angle_scan_deg):
-                for energy_cut in parse_float_list(args.match_energy_scan):
-                    for m2_cut in parse_float_list(args.predicted_m2_scan):
-                        scan_base = ep & (detector >= 0)
-                        if m2_cut >= 0.0:
-                            scan_base &= np.abs(pred_m2) < m2_cut
-                        scan_mask = scan_base & (match_angle_deg < angle_cut) & (relative_E_residual < energy_cut)
-                        key = f"angle_{angle_cut:g}_energy_{energy_cut:g}_m2_{m2_cut:g}"
-                        diag["matching_scans"][key] = int(diag["matching_scans"].get(key, 0)) + int(np.count_nonzero(scan_mask))
-            chunks.append(TrialArrays(
-                E=pred_E[eres].astype(np.float32, copy=False), theta_deg=theta_deg[eres].astype(np.float32, copy=False),
-                phi_rad=pred_ph[eres].astype(np.float32, copy=False), detector=detector[eres].astype(np.int8, copy=False),
-                sector=sector[eres].astype(np.int8, copy=False), mx2_ep=mx2_ep[eres].astype(np.float32, copy=False),
-                delta_phi=delta_phi_all[eres].astype(np.float32, copy=False), theta_gamma_gamma=theta_gg_all[eres].astype(np.float32, copy=False),
-                pTmiss=ptmiss_all[eres].astype(np.float32, copy=False), weight=np.ones(np.count_nonzero(eres), dtype=np.float32)))
+        # Mirror-category diagnostics.  Category code 0 is FT and 1--6 are FD sectors.
+        det11, sec11 = classify_predicted_detector(np.degrees(sol_g1_theta[:, 0]), sol_g1_phi[:, 0], args)
+        det21, sec21 = classify_predicted_detector(np.degrees(sol_g2_theta[:, 0]), sol_g2_phi[:, 0], args)
+        det12, sec12 = classify_predicted_detector(np.degrees(sol_g1_theta[:, 1]), sol_g1_phi[:, 1], args)
+        det22, sec22 = classify_predicted_detector(np.degrees(sol_g2_theta[:, 1]), sol_g2_phi[:, 1], args)
+        cat11, cat21 = category_code(det11, sec11), category_code(det21, sec21)
+        cat12, cat22 = category_code(det12, sec12), category_code(det22, sec22)
+        one = base & closure_pass & (n_solutions == 1)
+        two = base & closure_pass & (n_solutions >= 2)
+        same_pair = two & (cat11 == cat12) & (cat21 == cat22)
+        different_pair = two & ~same_pair
+        md = diag["mirror_diagnostics"]
+        md["events_with_one_solution"] += int(np.count_nonzero(one))
+        md["events_with_two_solutions"] += int(np.count_nonzero(two))
+        md["events_with_same_category_pair"] += int(np.count_nonzero(same_pair))
+        md["events_with_different_category_pair"] += int(np.count_nonzero(different_pair))
+        for a, b, matrix_key in ((cat11, cat12, "photon1_category_migration"),
+                                 (cat21, cat22, "photon2_category_migration")):
+            matrix = np.asarray(md[matrix_key], dtype=float)
+            valid = two & (a >= 0) & (a <= 6) & (b >= 0) & (b <= 6)
+            np.add.at(matrix, (a[valid], b[valid]), 1.0)
+            md[matrix_key] = matrix.tolist()
+
+        # Select one or both mirror geometries according to the requested policy.
+        if args.mirror_policy == "best":
+            variants = [(0, base & closure_pass, np.ones(n, dtype=float))]
+        elif args.mirror_policy == "half_weight":
+            w0 = np.where(n_solutions >= 2, 0.5, 1.0)
+            w1 = np.where(n_solutions >= 2, 0.5, 0.0)
+            variants = [
+                (0, base & (n_solutions >= 1) & (sol_closure[:, 0] <= args.pass_photon_closure_max), w0),
+                (1, base & (n_solutions >= 2) & (sol_closure[:, 1] <= args.pass_photon_closure_max), w1),
+            ]
+        elif args.mirror_policy == "unique_sector":
+            unique = base & closure_pass & ((n_solutions == 1) | same_pair)
+            variants = [(0, unique, np.ones(n, dtype=float))]
+        else:
+            raise RuntimeError(f"Unsupported mirror policy: {args.mirror_policy}")
+
+        for solution_index, solution_seed, solution_weight in variants:
+            g1_theta = sol_g1_theta[:, solution_index]; g1_phi = sol_g1_phi[:, solution_index]
+            g2_theta = sol_g2_theta[:, solution_index]; g2_phi = sol_g2_phi[:, solution_index]
+            pred_sets = (
+                (*predicted_probe(beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g1_E, g1_theta, g1_phi), g2_E, g2_theta, g2_phi),
+                (*predicted_probe(beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g2_E, g2_theta, g2_phi), g1_E, g1_theta, g1_phi),
+            )
+            for pred_E, pred_th, pred_ph, pred_m2, pred_p, obs_E, obs_th, obs_ph in pred_sets:
+                seed = solution_seed
+                diag_add_count(diag, "probe_cutflow", "two_trials_from_closure_events", weighted_count(seed, solution_weight))
+                theta_deg = np.degrees(pred_th)
+                detector, sector = classify_predicted_detector(theta_deg, pred_ph, args)
+                cos_opening = np.sin(pred_th)*np.sin(obs_th)*np.cos(pred_ph-obs_ph)+np.cos(pred_th)*np.cos(obs_th)
+                match_angle_deg = np.degrees(np.arccos(np.clip(cos_opening, -1.0, 1.0)))
+                relative_E_residual = np.abs(obs_E-pred_E)/np.maximum(pred_E, 1.0e-9)
+                finite = seed & np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg) & np.isfinite(pred_ph) & np.isfinite(obs_E) & np.isfinite(obs_th) & np.isfinite(obs_ph) & np.isfinite(match_angle_deg) & np.isfinite(relative_E_residual)
+                energy = finite & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
+                ep = energy & (pred_p > 0.0) & (np.abs(pred_E-pred_p) < 0.30)
+                m2 = ep & (np.abs(pred_m2) < 0.20)
+                detector_ok = m2 & (detector >= 0)
+                global_requirement = np.ones(n, dtype=bool)
+                if not args.disable_production_global_cuts:
+                    global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
+                    global_requirement &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
+                global_ok = detector_ok & global_requirement
+                angle = global_ok & (match_angle_deg < args.probe_match_angle_max_deg)
+                eres = angle & (relative_E_residual < args.probe_match_relative_E_max)
+                for stage, mask in (("prediction_finite", finite), ("energy_range", energy), ("photon_like_E_minus_p", ep),
+                                    ("photon_like_m2", m2), ("predicted_detector", detector_ok),
+                                    ("global_cuts", global_ok), ("angle_match", angle),
+                                    ("energy_match", eres), ("final_pass", eres)):
+                    diag_add_count(diag, "probe_cutflow", stage, weighted_count(mask, solution_weight))
+                diag_fill(diag, "pred_E", pred_E, finite, solution_weight); diag_fill(diag, "pred_theta_deg", theta_deg, finite, solution_weight)
+                diag_fill(diag, "pred_m2", pred_m2, ep, solution_weight); diag_fill(diag, "pred_E_minus_p", pred_E-pred_p, energy, solution_weight)
+                diag_fill(diag, "match_angle_deg", match_angle_deg, global_ok, solution_weight)
+                diag_fill(diag, "relative_E_residual", relative_E_residual, angle, solution_weight)
+                for cat, cmask in [("FT", eres & (detector == 0))] + [(f"FD sector {j}", eres & (detector == 1) & (sector == j)) for j in range(1,7)]:
+                    diag["final_trials_by_category"][cat] += weighted_count(cmask, solution_weight)
+                for angle_cut in angle_scan:
+                    for energy_cut in energy_scan:
+                        for m2_cut in m2_scan:
+                            scan_base = ep & (detector >= 0) & global_requirement
+                            if m2_cut >= 0.0:
+                                scan_base &= np.abs(pred_m2) < m2_cut
+                            scan_mask = scan_base & (match_angle_deg < angle_cut) & (relative_E_residual < energy_cut)
+                            key = f"angle_{angle_cut:g}_energy_{energy_cut:g}_m2_{m2_cut:g}"
+                            add_matching_scan_count(diag, key, detector, sector, scan_mask, solution_weight)
+                chunks.append(TrialArrays(
+                    E=pred_E[eres].astype(np.float32, copy=False), theta_deg=theta_deg[eres].astype(np.float32, copy=False),
+                    phi_rad=pred_ph[eres].astype(np.float32, copy=False), detector=detector[eres].astype(np.int8, copy=False),
+                    sector=sector[eres].astype(np.int8, copy=False), mx2_ep=mx2_ep[eres].astype(np.float32, copy=False),
+                    delta_phi=delta_phi_all[eres].astype(np.float32, copy=False), theta_gamma_gamma=theta_gg_all[eres].astype(np.float32, copy=False),
+                    pTmiss=ptmiss_all[eres].astype(np.float32, copy=False), weight=solution_weight[eres].astype(np.float32, copy=False)))
     result = concatenate_trials(chunks)
-    log(f"Native eppi0 audit for {Path(path).name}: events={seen:,}, closure events={diag['event_cutflow']['closure_pass']:,}, final directed trials={result.size():,}")
+    log(f"Native eppi0 audit for {Path(path).name}: events={seen:,}, closure events={diag['event_cutflow']['closure_pass']:,.0f}, final directed trial weight={float(np.sum(result.weight)):,.1f}")
     return result, diag
 
 def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
@@ -1219,6 +1296,15 @@ def weighted_counts_by_bin(trials: TrialArrays, bin_ids: np.ndarray, n_bins: int
         minlength=n_bins,
     ).astype(float, copy=False)
 
+
+
+def weighted_sumw2_by_bin(trials: TrialArrays, bin_ids: np.ndarray, n_bins: int) -> np.ndarray:
+    valid = (bin_ids >= 0) & (bin_ids < n_bins)
+    return np.bincount(
+        bin_ids[valid].astype(np.int64, copy=False),
+        weights=np.square(trials.weight[valid]),
+        minlength=n_bins,
+    ).astype(float, copy=False)
 
 def bulk_mx2_histograms(
     trials: TrialArrays,
@@ -1859,29 +1945,214 @@ def plot_all_period_scale_factor_summary(path: Path, rows: Sequence[Mapping[str,
     fig.tight_layout(); fig.savefig(path, dpi=180); plt.close(fig)
 
 
-def plot_matching_scan_summary(path: Path, period_label: str, data_diag: Mapping[str, object], mc_diag: Mapping[str, object]) -> None:
-    """Plot data/MC pass-count ratio versus angular matching threshold for nominal energy/m2 cuts."""
-    dscan = data_diag.get("matching_scans", {}); mscan = mc_diag.get("matching_scans", {})
-    points = []
-    for key, dcount in dscan.items():
-        if "_energy_0.35_m2_0.2" not in key:
+def parse_matching_scan_key(key: str) -> Tuple[float, float, float]:
+    try:
+        angle = float(key.split("angle_", 1)[1].split("_energy_", 1)[0])
+        energy = float(key.split("_energy_", 1)[1].split("_m2_", 1)[0])
+        m2 = float(key.rsplit("_m2_", 1)[1])
+        return angle, energy, m2
+    except Exception as exc:
+        raise ValueError(f"Malformed matching-scan key: {key}") from exc
+
+
+def matching_scan_category_value(entry: object, category: str) -> float:
+    if isinstance(entry, Mapping):
+        return float(entry.get(category, 0.0))
+    # Backward compatibility with v10/v11 JSON, where each key held only total counts.
+    return float(entry) if category == "all" else 0.0
+
+
+def matching_scan_summary(diag: Mapping[str, object], nominal_energy: float = 0.35,
+                          nominal_m2: float = 0.20) -> Dict[str, object]:
+    categories = ["all", "FT"] + [f"FD sector {i}" for i in range(1, 7)]
+    output: Dict[str, object] = {
+        "nominal_relative_energy_cut": nominal_energy,
+        "nominal_predicted_m2_cut_GeV2": nominal_m2,
+        "angle_scan": {},
+    }
+    for key, entry in diag.get("matching_scans", {}).items():
+        angle, energy, m2 = parse_matching_scan_key(str(key))
+        if not (math.isclose(energy, nominal_energy, rel_tol=0.0, abs_tol=1.0e-9)
+                and math.isclose(m2, nominal_m2, rel_tol=0.0, abs_tol=1.0e-9)):
             continue
-        try: angle = float(key.split("angle_")[1].split("_energy_")[0])
-        except Exception: continue
-        mcount = float(mscan.get(key, 0))
-        if mcount > 0: points.append((angle, float(dcount)/mcount))
-    if not points: return
-    points.sort(); fig, ax = plt.subplots(figsize=(7.5,5.2))
-    ax.plot([p[0] for p in points], [p[1] for p in points], "o-")
+        output["angle_scan"][f"{angle:g}"] = {
+            category: matching_scan_category_value(entry, category) for category in categories
+        }
+    return output
+
+
+def plot_matching_scan_summary(path: Path, period_label: str,
+                               data_diag: Mapping[str, object],
+                               mc_diag: Mapping[str, object]) -> None:
+    """Plot data/AAOGEN pass-count ratios for all detector categories."""
+    categories = ["all", "FT"] + [f"FD sector {i}" for i in range(1, 7)]
+    labels = {"all": "All", "FT": "FT", **{f"FD sector {i}": f"FD S{i}" for i in range(1, 7)}}
+    dscan = data_diag.get("matching_scans", {})
+    mscan = mc_diag.get("matching_scans", {})
+    fig, ax = plt.subplots(figsize=(9.5, 6.2))
+    drew = False
+    for category in categories:
+        points = []
+        for key, dentry in dscan.items():
+            angle, energy, m2 = parse_matching_scan_key(str(key))
+            if not (math.isclose(energy, 0.35, abs_tol=1.0e-9)
+                    and math.isclose(m2, 0.20, abs_tol=1.0e-9)):
+                continue
+            dcount = matching_scan_category_value(dentry, category)
+            mcount = matching_scan_category_value(mscan.get(key, {}), category)
+            if mcount > 0.0:
+                points.append((angle, dcount / mcount))
+        if points:
+            points.sort()
+            ax.plot([p[0] for p in points], [p[1] for p in points], "o-", label=labels[category])
+            drew = True
+    if not drew:
+        plt.close(fig)
+        return
     ax.set_xlabel("Predicted-observed angular match threshold (deg)")
-    ax.set_ylabel("Passing-probe count ratio, data/AAOGEN")
-    ax.set_title(f"{period_label}: matching-cut stability diagnostic")
-    fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+    ax.set_ylabel("Passing-probe weighted-count ratio, data/AAOGEN")
+    ax.set_title(f"{period_label}: matching-cut stability (energy residual < 0.35, |m²| < 0.20 GeV²)")
+    ax.legend(frameon=False, ncol=3)
+    fig.tight_layout(); fig.savefig(path, dpi=180); plt.close(fig)
 
 
-def _fraction_sequence(cutflow: Mapping[str, int], stages: Sequence[str]) -> np.ndarray:
-    first = max(int(cutflow.get(stages[0], 0)), 1)
-    return np.asarray([int(cutflow.get(stage, 0))/first for stage in stages], dtype=float)
+def plot_mirror_diagnostics(path: Path, period_label: str,
+                            data_diag: Mapping[str, object],
+                            mc_diag: Mapping[str, object]) -> None:
+    """Show mirror multiplicity and category migration for data and AAOGEN."""
+    fig, axes = plt.subplots(2, 3, figsize=(17, 10))
+    labels = ["One solution", "Two solutions", "Same categories", "Different categories"]
+    x = np.arange(len(labels), dtype=float)
+    width = 0.38
+    for offset, diag, sample in ((-width/2, data_diag, "Data"), (width/2, mc_diag, "AAOGEN MC")):
+        md = diag.get("mirror_diagnostics", {})
+        values = [float(md.get("events_with_one_solution", 0.0)),
+                  float(md.get("events_with_two_solutions", 0.0)),
+                  float(md.get("events_with_same_category_pair", 0.0)),
+                  float(md.get("events_with_different_category_pair", 0.0))]
+        axes[0, 0].bar(x + offset, values, width, label=sample)
+    axes[0, 0].set_yscale("log")
+    axes[0, 0].set_xticks(x); axes[0, 0].set_xticklabels(labels, rotation=25, ha="right")
+    axes[0, 0].set_ylabel("Events")
+    axes[0, 0].set_title("Mirror-solution event counts")
+    axes[0, 0].legend(frameon=False)
+
+    category_labels = ["FT"] + [f"S{i}" for i in range(1, 7)]
+    panels = [
+        (axes[0, 1], data_diag, "photon1_category_migration", "Data photon 1"),
+        (axes[0, 2], data_diag, "photon2_category_migration", "Data photon 2"),
+        (axes[1, 1], mc_diag, "photon1_category_migration", "AAOGEN photon 1"),
+        (axes[1, 2], mc_diag, "photon2_category_migration", "AAOGEN photon 2"),
+    ]
+    for ax, diag, key, title in panels:
+        matrix = np.asarray(diag.get("mirror_diagnostics", {}).get(key, np.zeros((7, 7))), dtype=float)
+        row_sum = matrix.sum(axis=1, keepdims=True)
+        normalized = np.divide(matrix, row_sum, out=np.zeros_like(matrix), where=row_sum > 0)
+        image = ax.imshow(normalized, origin="lower", vmin=0.0, vmax=1.0, aspect="auto")
+        ax.set_xticks(range(7)); ax.set_xticklabels(category_labels)
+        ax.set_yticks(range(7)); ax.set_yticklabels(category_labels)
+        ax.set_xlabel("Alternate mirror category"); ax.set_ylabel("Best mirror category")
+        ax.set_title(title)
+        fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Row-normalized fraction")
+    axes[1, 0].axis("off")
+    for row, diag, sample in ((0, data_diag, "Data"), (1, mc_diag, "AAOGEN MC")):
+        md = diag.get("mirror_diagnostics", {})
+        two = float(md.get("events_with_two_solutions", 0.0))
+        different = float(md.get("events_with_different_category_pair", 0.0))
+        text = (f"{sample}\nTwo-solution events: {two:,.0f}\n"
+                f"Different category pair: {different:,.0f}\n"
+                f"Fraction: {different/two:.4f}" if two > 0 else f"{sample}\nNo two-solution events")
+        target = axes[1, 0] if row == 0 else axes[1, 0]
+        target.text(0.05, 0.75 - 0.42*row, text, transform=target.transAxes, va="top", fontsize=11)
+    fig.suptitle(f"{period_label}: cone-mirror category ambiguity")
+    fig.tight_layout(); fig.savefig(path, dpi=180); plt.close(fig)
+
+
+def efficiency_from_counts_simple(npass: float, nfail: float) -> float:
+    denom = npass + nfail
+    return npass / denom if denom > 0.0 else math.nan
+
+
+def plot_matching_scale_factor_scan(path: Path, period_label: str,
+                                    data_diag: Mapping[str, object],
+                                    mc_diag: Mapping[str, object],
+                                    rows: Sequence[EfficiencyRow]) -> None:
+    """Plot S_gamma versus angular matching threshold using nominal fail yields."""
+    row_map = {("FT" if r.detector == "FT" else f"FD sector {r.sector}"): r for r in rows}
+    categories = ["FT"] + [f"FD sector {i}" for i in range(1, 7)]
+    fig, axes = plt.subplots(2, 4, figsize=(17, 8.5), squeeze=False, sharex=True)
+    for ax, category in zip(axes.flat, categories):
+        row = row_map.get(category)
+        if row is None:
+            ax.axis("off"); continue
+        points = []
+        for key, dentry in data_diag.get("matching_scans", {}).items():
+            angle, energy, m2 = parse_matching_scan_key(str(key))
+            if not (math.isclose(energy, 0.35, abs_tol=1.0e-9)
+                    and math.isclose(m2, 0.20, abs_tol=1.0e-9)):
+                continue
+            pd = matching_scan_category_value(dentry, category)
+            pm = matching_scan_category_value(mc_diag.get("matching_scans", {}).get(key, {}), category)
+            ed = efficiency_from_counts_simple(pd, row.fail_data)
+            em = efficiency_from_counts_simple(pm, row.fail_mc)
+            sf = ed / em if em > 0.0 else math.nan
+            points.append((angle, sf))
+        points.sort()
+        ax.plot([p[0] for p in points], [p[1] for p in points], "o-")
+        ax.axhline(1.0, linestyle="--", linewidth=0.8)
+        ax.axvline(2.0, linestyle=":", linewidth=0.8)
+        ax.set_title("FT" if category == "FT" else category.replace("sector ", "S"))
+        ax.set_ylabel(r"$S_\gamma$")
+        ax.set_xlabel("Angle threshold (deg)")
+    axes[1, 3].axis("off")
+    fig.suptitle(f"{period_label}: scale-factor stability versus angular match\n"
+                 "Nominal fitted fail yields held fixed; energy residual < 0.35, |m²| < 0.20 GeV²")
+    fig.tight_layout(); fig.savefig(path, dpi=180); plt.close(fig)
+
+
+def plot_matching_stability_maps(path: Path, period_label: str,
+                                 data_diag: Mapping[str, object],
+                                 mc_diag: Mapping[str, object],
+                                 rows: Sequence[EfficiencyRow]) -> None:
+    """Plot S_gamma maps versus angle and predicted-mass threshold at nominal energy cut."""
+    row_map = {("FT" if r.detector == "FT" else f"FD sector {r.sector}"): r for r in rows}
+    categories = ["FT"] + [f"FD sector {i}" for i in range(1, 7)]
+    all_keys = list(data_diag.get("matching_scans", {}).keys())
+    angles = sorted({parse_matching_scan_key(str(k))[0] for k in all_keys
+                     if math.isclose(parse_matching_scan_key(str(k))[1], 0.35, abs_tol=1.0e-9)})
+    m2_values = sorted({parse_matching_scan_key(str(k))[2] for k in all_keys
+                        if math.isclose(parse_matching_scan_key(str(k))[1], 0.35, abs_tol=1.0e-9)})
+    fig, axes = plt.subplots(2, 4, figsize=(18, 9), squeeze=False)
+    images = []
+    for ax, category in zip(axes.flat, categories):
+        row = row_map.get(category)
+        matrix = np.full((len(m2_values), len(angles)), np.nan, dtype=float)
+        if row is not None:
+            for iy, m2 in enumerate(m2_values):
+                for ix, angle in enumerate(angles):
+                    key = f"angle_{angle:g}_energy_0.35_m2_{m2:g}"
+                    pd = matching_scan_category_value(data_diag.get("matching_scans", {}).get(key, {}), category)
+                    pm = matching_scan_category_value(mc_diag.get("matching_scans", {}).get(key, {}), category)
+                    ed = efficiency_from_counts_simple(pd, row.fail_data)
+                    em = efficiency_from_counts_simple(pm, row.fail_mc)
+                    matrix[iy, ix] = ed / em if em > 0.0 else math.nan
+        image = ax.imshow(matrix, origin="lower", aspect="auto", vmin=0.5, vmax=1.2)
+        images.append(image)
+        ax.set_xticks(range(len(angles))); ax.set_xticklabels([f"{v:g}" for v in angles])
+        ax.set_yticks(range(len(m2_values))); ax.set_yticklabels(["none" if v < 0 else f"{v:g}" for v in m2_values])
+        ax.set_xlabel("Angle threshold (deg)"); ax.set_ylabel(r"$|m^2_{pred}|$ threshold (GeV$^2$)")
+        ax.set_title("FT" if category == "FT" else category.replace("sector ", "S"))
+    axes[1, 3].axis("off")
+    if images:
+        fig.colorbar(images[0], ax=[a for a in axes.flat if a.get_visible()], fraction=0.025, pad=0.02,
+                     label=r"$S_\gamma$ (nominal fail yields fixed)")
+    fig.suptitle(f"{period_label}: matching-cut scale-factor stability maps (energy residual < 0.35)")
+    fig.subplots_adjust(top=0.90, right=0.92, wspace=0.28, hspace=0.30)
+    fig.savefig(path, dpi=180); plt.close(fig)
+
+def _fraction_sequence(cutflow: Mapping[str, float], stages: Sequence[str]) -> np.ndarray:
+    first = max(float(cutflow.get(stages[0], 0.0)), 1.0)
+    return np.asarray([float(cutflow.get(stage, 0.0))/first for stage in stages], dtype=float)
 
 
 def plot_pass_cutflow(path: Path, period_label: str, data_diag: Mapping[str, object], mc_diag: Mapping[str, object]) -> None:
@@ -1893,7 +2164,7 @@ def plot_pass_cutflow(path: Path, period_label: str, data_diag: Mapping[str, obj
             vals=_fraction_sequence(diag[group], stages)
             ax.bar(x+offset, vals, width, label=label)
             for xx,v,stage in zip(x+offset, vals, stages):
-                ax.text(xx, max(v,1e-6)*1.08, f"{diag[group][stage]:,}", rotation=90, ha="center", va="bottom", fontsize=7)
+                ax.text(xx, max(v,1e-6)*1.08, f"{float(diag[group][stage]):,.1f}", rotation=90, ha="center", va="bottom", fontsize=7)
         ax.set_yscale("log"); ax.set_ylim(1e-6, 2.5); ax.set_ylabel("Fraction of initial sample")
         ax.set_xticks(x); ax.set_xticklabels([v.replace("_"," ") for v in stages], rotation=35, ha="right")
         ax.set_title(title); ax.legend(frameon=False)
@@ -1924,6 +2195,8 @@ def write_pass_audit(period_dir: Path, period_label: str, data_diag: Mapping[str
         ["closure","transverse_mismatch","energy_fraction_g1","ambiguity","n_solutions","g1_E","g2_E","g1_theta_deg","g2_theta_deg"],"native photon recovery")
     plot_pass_diagnostic_histograms(audit_dir/"directed_probe_matching.png",period_label,data_diag,mc_diag,
         ["pred_E","pred_theta_deg","pred_m2","pred_E_minus_p","match_angle_deg","relative_E_residual"],"predicted-probe matching")
+    plot_matching_scan_summary(audit_dir/"matching_cut_scan.png", period_label, data_diag, mc_diag)
+    plot_mirror_diagnostics(audit_dir/"mirror_ambiguity.png", period_label, data_diag, mc_diag)
 
 
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
@@ -1940,8 +2213,16 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     pass_mc, pass_mc_diag = read_pass_trials(period.epgg_mc, period.beam_energy_GeV, args, "mc")
     write_pass_audit(period_dir, period.label, pass_data_diag, pass_mc_diag)
     if args.skip_efficiency_extraction:
-        metadata = {"period": asdict(period), "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
-                    "runtime_seconds": time.perf_counter() - period_start}
+        metadata = {
+            "period": asdict(period),
+            "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
+            "mirror_policy": args.mirror_policy,
+            "matching_scan_summary": {
+                "data": matching_scan_summary(pass_data_diag),
+                "mc": matching_scan_summary(pass_mc_diag),
+            },
+            "runtime_seconds": time.perf_counter() - period_start,
+        }
         with open(period_dir / "metadata.json", "w", encoding="utf-8") as handle:
             json.dump(metadata, handle, indent=2)
         return period.key, [], metadata
@@ -1951,7 +2232,9 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     fail_pi0_mc = read_fail_trials(period.pi0_as_epg_mc, period.beam_energy_GeV, args)
 
     log(
-        f"{period.label}: pass data={pass_data.size():,}, pass MC={pass_mc.size():,}, "
+        f"{period.label}: pass data weight={float(np.sum(pass_data.weight)):,.1f} "
+        f"({pass_data.size():,} stored), pass MC weight={float(np.sum(pass_mc.weight)):,.1f} "
+        f"({pass_mc.size():,} stored), "
         f"fail data candidates={fail_data.size():,}, DVCS template={fail_dvcs_mc.size():,}, "
         f"pi0 template={fail_pi0_mc.size():,}"
     )
@@ -1970,6 +2253,8 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
 
     pass_data_counts = weighted_counts_by_bin(pass_data, pass_data_ids, n_bins)
     pass_mc_counts = weighted_counts_by_bin(pass_mc, pass_mc_ids, n_bins)
+    pass_data_sumw2 = weighted_sumw2_by_bin(pass_data, pass_data_ids, n_bins)
+    pass_mc_sumw2 = weighted_sumw2_by_bin(pass_mc, pass_mc_ids, n_bins)
     fail_data_total_counts = weighted_counts_by_bin(fail_data, fail_data_ids, n_bins)
     fail_pi0_counts = weighted_counts_by_bin(fail_pi0_mc, fail_pi0_ids, n_bins)
 
@@ -2005,8 +2290,8 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         fits.append(fit)
         n_fail_data = fit.n_pi0
         n_fail_data_err = fit.n_pi0_err
-        pass_data_err = math.sqrt(max(n_pass_data, 0.0))
-        pass_mc_err = math.sqrt(max(n_pass_mc, 0.0))
+        pass_data_err = math.sqrt(max(float(pass_data_sumw2[index]), 0.0))
+        pass_mc_err = math.sqrt(max(float(pass_mc_sumw2[index]), 0.0))
         fail_mc_err = math.sqrt(max(n_fail_mc, 0.0))
         eff_data, eff_data_err = efficiency_and_error(n_pass_data, pass_data_err, n_fail_data, n_fail_data_err)
         eff_mc, eff_mc_err = efficiency_and_error(n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err)
@@ -2030,19 +2315,35 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         plot_dir / "integrated_efficiencies_and_scale_factors.png",
         period.label, rows,
     )
+    audit_dir = period_dir / "pass_sample_audit"
+    plot_matching_scale_factor_scan(
+        audit_dir / "matching_cut_scale_factor_scan.png", period.label,
+        pass_data_diag, pass_mc_diag, rows,
+    )
+    plot_matching_stability_maps(
+        audit_dir / "matching_cut_stability_maps.png", period.label,
+        pass_data_diag, pass_mc_diag, rows,
+    )
 
     metadata = {
         "period": asdict(period),
         "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
         "counts": {
-            "pass_data_directed_trials": pass_data.size(),
-            "pass_mc_directed_trials": pass_mc.size(),
+            "pass_data_directed_trials_stored": pass_data.size(),
+            "pass_mc_directed_trials_stored": pass_mc.size(),
+            "pass_data_directed_trial_weight": float(np.sum(pass_data.weight)),
+            "pass_mc_directed_trial_weight": float(np.sum(pass_mc.weight)),
             "fail_data_candidates": fail_data.size(),
             "fail_dvcs_mc_candidates": fail_dvcs_mc.size(),
             "fail_pi0_mc_candidates": fail_pi0_mc.size(),
             "n_bins": len(rows),
         },
         "input_file_identity": args.input_identity_records.get(period.key, {}),
+        "mirror_policy": args.mirror_policy,
+        "matching_scan_summary": {
+            "data": matching_scan_summary(pass_data_diag),
+            "mc": matching_scan_summary(pass_mc_diag),
+        },
         "aaogen_truth_closure": inspect_truth_closure_availability(period.epgg_mc, args),
         "fit_diagnostics": {
             ("FT" if d.detector == "FT" else f"FD_sector_{d.sector}"): {
@@ -2215,9 +2516,9 @@ def main() -> int:
             "Each fitted pi0-as-epgamma event contributes one failed probe.",
             "The extraction is integrated over photon energy and polar angle within FT and each FD sector.",
             "A complete data/MC passing-sample cut-flow audit is written for every period.",
-            "Nominal global cuts are mirrored from global_cuts.cpp: (-t1)<1, electron-photon opening angle >5 deg, and Sp18 Out sector-quality exclusions.",
+            "Common study cuts mirror the applicable global requirements: (-t1)<1 when available and electron-photon opening angle >5 deg. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",
             "Input ROOT identity records and duplicate-period checks are written before processing.",
-            "Matching-cut scans and per-projection fit residual/deviance diagnostics are produced.",
+            "Matching-cut scans, scale-factor stability scans, mirror-category migration diagnostics, and per-projection fit residual/deviance diagnostics are produced.",
             "No equal-efficiency approximation is used.",
             "Scale factors are not yet propagated to DVCS acceptance or pi0 migration.",
             "Period processing is parallelized with a hard maximum of seven workers.",
