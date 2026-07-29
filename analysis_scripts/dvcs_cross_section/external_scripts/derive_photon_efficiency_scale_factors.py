@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v3.py
+derive_photon_efficiency_scale_factors_v4.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -26,7 +26,7 @@ The residual photon-efficiency correction is the data/MC scale factor
 
     S_gamma,b = epsilon_data,b / epsilon_MC,b.
 
-The first implementation uses:
+This exploratory implementation uses:
 
 * FT: adaptive bins in predicted E_gamma, integrated over the configured FT
   angular range.
@@ -39,7 +39,7 @@ The first implementation uses:
   configurable broad exclusivity cuts.  This is deliberately simple in v1;
   later iterations can replace it with a simultaneous pass/fail nuisance fit.
 
-Important limitations of v1
+Important limitations
 ---------------------------
 1. The script measures a tag-conditioned efficiency.  AAOGEN truth closure is
    not possible unless generated/truth photon branches are available; v1 writes
@@ -59,12 +59,12 @@ Python 3, numpy, scipy, matplotlib, uproot.
 Typical usage
 -------------
 
-  python3 derive_photon_efficiency_scale_factors_v3.py \
+  python3 derive_photon_efficiency_scale_factors_v4.py \
       --period fa18_inb --workers 1
 
 Run all periods with up to seven workers:
 
-  python3 derive_photon_efficiency_scale_factors_v3.py --workers 7
+  python3 derive_photon_efficiency_scale_factors_v4.py --workers 7
 
 Use --inspect-branches first if the local trees use unexpected branch names.
 """
@@ -100,6 +100,7 @@ except ImportError as exc:
 
 try:
     from scipy.optimize import minimize
+    from scipy.ndimage import gaussian_filter1d
 except ImportError as exc:
     raise SystemExit("This script requires scipy: python3 -m pip install scipy") from exc
 #endif
@@ -262,6 +263,17 @@ class FitSummary:
     edges: np.ndarray
 
 
+@dataclass(frozen=True)
+class TemplateMorphology:
+    pi0_shift: float = 0.0
+    pi0_sigma: float = 0.0
+    dvcs_shift: float = 0.0
+    dvcs_sigma: float = 0.0
+    success: bool = True
+    deviance: float = math.nan
+    ndf: int = 0
+
+
 @dataclass
 class EfficiencyRow:
     period: str
@@ -312,7 +324,7 @@ def parse_args() -> argparse.Namespace:
                         help="Debug-only maximum events read from each tree.")
 
     parser.add_argument("--ft-theta-min", type=float, default=2.5)
-    parser.add_argument("--ft-theta-max", type=float, default=4.5)
+    parser.add_argument("--ft-theta-max", type=float, default=5.0)
     parser.add_argument("--fd-theta-min", type=float, default=5.0)
     parser.add_argument("--fd-theta-max", type=float, default=35.0)
     parser.add_argument("--probe-E-min", type=float, default=0.35)
@@ -330,8 +342,12 @@ def parse_args() -> argparse.Namespace:
                         help="Broad |Mx2| cut for direct epgamma-gamma pass trials, if Mx2 exists.")
     parser.add_argument("--pass-pTmiss-max", type=float, default=0.30,
                         help="Broad pTmiss cut for direct epgamma-gamma pass trials, if pTmiss exists.")
-    parser.add_argument("--pass-delta-phi-window", type=float, default=0.35,
-                        help="Require |Delta_phi-pi| below this value, if branch exists.")
+    parser.add_argument("--pass-delta-phi-window", type=float, default=None,
+                        help="Optional |Delta_phi-pi| requirement. Disabled by default because the native eppi0 Delta_phi is a dihadron Trento-angle quantity, not an exclusivity coplanarity variable.")
+    parser.add_argument("--write-individual-fit-plots", action="store_true",
+                        help="Also write one fail-fit canvas per kinematic bin. Aggregated canvases are always written.")
+    parser.add_argument("--disable-template-morphing", action="store_true",
+                        help="Disable shared detector/sector template shift-and-smearing fits.")
     parser.add_argument("--probe-match-angle-max-deg", type=float, default=2.0,
                         help="Maximum angle between predicted and observed probe in epgamma-gamma events.")
     parser.add_argument("--probe-match-relative-E-max", type=float, default=0.35,
@@ -501,7 +517,7 @@ def pass_sample_mask(arrays: Mapping[str, np.ndarray], resolved: Mapping[str, Op
         pt = finite_array(arrays, resolved["pTmiss"])
         mask &= np.isfinite(pt) & (pt < args.pass_pTmiss_max)
     # endif
-    if resolved.get("Delta_phi") is not None:
+    if args.pass_delta_phi_window is not None and resolved.get("Delta_phi") is not None:
         dphi = finite_array(arrays, resolved["Delta_phi"])
         mask &= np.isfinite(dphi) & (np.abs(dphi - math.pi) < args.pass_delta_phi_window)
     # endif
@@ -947,11 +963,71 @@ def poisson_deviance(data: np.ndarray, model: np.ndarray) -> float:
     return float(2.0 * np.sum(terms))
 
 
+def morph_template_histogram(counts: np.ndarray, edges: np.ndarray, shift: float, sigma: float) -> np.ndarray:
+    """Shift and Gaussian-smear a histogram while preserving its normalization."""
+    counts = np.asarray(counts, dtype=float)
+    total = float(counts.sum())
+    if total <= 0.0:
+        return np.zeros_like(counts, dtype=float)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    shifted = np.interp(centers - shift, centers, counts, left=0.0, right=0.0)
+    mean_width = float(np.mean(np.diff(edges)))
+    if sigma > 0.0 and mean_width > 0.0:
+        shifted = gaussian_filter1d(shifted, sigma / mean_width, mode="constant", cval=0.0)
+    shifted = np.clip(shifted, 0.0, None)
+    norm = float(shifted.sum())
+    return shifted * (total / norm) if norm > 0.0 else np.zeros_like(counts, dtype=float)
+
+
+def fit_shared_template_morphology(
+    data_counts: np.ndarray,
+    dvcs_counts: np.ndarray,
+    pi0_counts: np.ndarray,
+    edges: np.ndarray,
+) -> TemplateMorphology:
+    """Fit one shared shift/smearing model for a period and detector category."""
+    data = np.asarray(data_counts, dtype=float)
+    dvcs = np.asarray(dvcs_counts, dtype=float)
+    pi0 = np.asarray(pi0_counts, dtype=float)
+    if data.sum() <= 0.0 or dvcs.sum() <= 0.0 or pi0.sum() <= 0.0:
+        return TemplateMorphology(success=False)
+    total = float(data.sum())
+
+    def objective(x: np.ndarray) -> float:
+        n_pi0, n_dvcs = np.exp(x[:2])
+        pi0_shape = morph_template_histogram(pi0, edges, x[2], x[3])
+        dvcs_shape = morph_template_histogram(dvcs, edges, x[4], x[5])
+        pi0_shape /= max(float(pi0_shape.sum()), 1e-12)
+        dvcs_shape /= max(float(dvcs_shape.sum()), 1e-12)
+        model = n_pi0 * pi0_shape + n_dvcs * dvcs_shape
+        # Weak regularization prevents pathological over-morphing in sparse categories.
+        penalty = 0.5 * ((x[2] / 0.02) ** 2 + (x[4] / 0.02) ** 2 +
+                         (x[3] / 0.025) ** 2 + (x[5] / 0.025) ** 2)
+        return 0.5 * poisson_deviance(data, model) + penalty
+
+    x0 = np.asarray([math.log(max(0.25 * total, 1.0)), math.log(max(0.75 * total, 1.0)),
+                     0.0, 0.004, 0.0, 0.004], dtype=float)
+    bounds = [
+        (math.log(1e-6), math.log(max(10.0 * total, 1.0))),
+        (math.log(1e-6), math.log(max(10.0 * total, 1.0))),
+        (-0.04, 0.04), (0.0, 0.05), (-0.04, 0.04), (0.0, 0.05),
+    ]
+    result = minimize(objective, x0, method="L-BFGS-B", bounds=bounds)
+    x = result.x
+    pi0_shape = morph_template_histogram(pi0, edges, x[2], x[3]); pi0_shape /= max(pi0_shape.sum(), 1e-12)
+    dvcs_shape = morph_template_histogram(dvcs, edges, x[4], x[5]); dvcs_shape /= max(dvcs_shape.sum(), 1e-12)
+    model = math.exp(x[0]) * pi0_shape + math.exp(x[1]) * dvcs_shape
+    return TemplateMorphology(float(x[2]), float(x[3]), float(x[4]), float(x[5]),
+                              bool(result.success), poisson_deviance(data, model),
+                              max(int(np.count_nonzero(data + model)) - 6, 0))
+
+
 def fit_two_template_histograms(
     data_counts: np.ndarray,
     dvcs_counts: np.ndarray,
     pi0_counts: np.ndarray,
     edges: np.ndarray,
+    morphology: Optional[TemplateMorphology] = None,
 ) -> FitSummary:
     data_counts = np.asarray(data_counts, dtype=float)
     dvcs_counts = np.asarray(dvcs_counts, dtype=float)
@@ -964,8 +1040,11 @@ def fit_two_template_histograms(
                           zeros, zeros, edges)
     # endif
 
-    dvcs_shape = dvcs_counts.astype(float) / dvcs_counts.sum()
-    pi0_shape = pi0_counts.astype(float) / pi0_counts.sum()
+    morphology = morphology or TemplateMorphology()
+    dvcs_morphed = morph_template_histogram(dvcs_counts, edges, morphology.dvcs_shift, morphology.dvcs_sigma)
+    pi0_morphed = morph_template_histogram(pi0_counts, edges, morphology.pi0_shift, morphology.pi0_sigma)
+    dvcs_shape = dvcs_morphed / max(float(dvcs_morphed.sum()), 1e-12)
+    pi0_shape = pi0_morphed / max(float(pi0_morphed.sum()), 1e-12)
     total = float(data_counts.sum())
 
     def objective(log_yields: np.ndarray) -> float:
@@ -1033,6 +1112,49 @@ def scale_factor_and_error(ed: float, sed: float, em: float, sem: float) -> Tupl
     sf = ed / em
     variance = (sed / em) ** 2 + (ed * sem / (em * em)) ** 2
     return sf, math.sqrt(max(variance, 0.0))
+
+
+def draw_fit_panel(ax: plt.Axes, title: str, fit: FitSummary) -> None:
+    centers = 0.5 * (fit.edges[:-1] + fit.edges[1:])
+    ax.errorbar(centers, fit.data_counts, yerr=np.sqrt(fit.data_counts), fmt="o", markersize=2.2, label="Data epgamma")
+    ax.step(fit.edges[:-1], fit.model_counts, where="post", label="Total fit")
+    ax.step(fit.edges[:-1], fit.pi0_counts, where="post", label="pi0 as epgamma")
+    ax.step(fit.edges[:-1], fit.dvcs_counts, where="post", label="DVCS/BH")
+    ax.set_title(title, fontsize=8)
+    ratio = fit.deviance / fit.ndf if fit.ndf > 0 else math.nan
+    ax.text(0.98, 0.96, f"Npi0={fit.n_pi0:.0f}\nD/ndf={ratio:.2f}", transform=ax.transAxes,
+            ha="right", va="top", fontsize=7)
+
+
+def plot_aggregated_fits(path: Path, period_label: str, definitions: Sequence[BinDefinition],
+                         fits: Sequence[FitSummary], detector: str, sector: int) -> None:
+    selected = [(d, f) for d, f in zip(definitions, fits)
+                if d.detector == detector and d.sector == sector]
+    if not selected:
+        return
+    ncols = 3
+    nrows = int(math.ceil(len(selected) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(15, 3.8 * nrows), squeeze=False, sharex=True)
+    for ax, (definition, fit) in zip(axes.flat, selected):
+        if detector == "FT":
+            subtitle = f"E {definition.E_low:.2f}-{definition.E_high:.2f} GeV"
+        else:
+            subtitle = (f"E {definition.E_low:.2f}-{definition.E_high:.2f} GeV, "
+                        f"theta {definition.theta_low_deg:.1f}-{definition.theta_high_deg:.1f} deg")
+        draw_fit_panel(ax, subtitle, fit)
+    for ax in axes.flat[len(selected):]:
+        ax.set_visible(False)
+    for ax in axes[-1, :]:
+        if ax.get_visible(): ax.set_xlabel(r"$M_X^2(ep)$ (GeV$^2$)")
+    for row in axes:
+        if row[0].get_visible(): row[0].set_ylabel("Counts")
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    category = "FT" if detector == "FT" else f"FD sector {sector}"
+    fig.suptitle(f"{period_label}: {category} fail-sample template fits", fontsize=15)
+    fig.legend(handles, labels, loc="upper center", ncol=4, frameon=False, bbox_to_anchor=(0.5, 0.965))
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
 
 
 def plot_fit(path: Path, title: str, fit: FitSummary) -> None:
@@ -1120,9 +1242,11 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
     period_dir = Path(args.output_dir) / period.key
-    fit_dir = period_dir / "fail_fits"
+    fit_dir = period_dir / "fail_fits_individual"
+    aggregate_fit_dir = period_dir / "fail_fits"
     plot_dir = period_dir / "plots"
     fit_dir.mkdir(parents=True, exist_ok=True)
+    aggregate_fit_dir.mkdir(parents=True, exist_ok=True)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
     pass_data = read_pass_trials(period.epgg_data, period.beam_energy_GeV, args)
@@ -1157,6 +1281,19 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     dvcs_mx2_hists = bulk_mx2_histograms(fail_dvcs_mc, fail_dvcs_ids, n_bins, mx2_edges)
     pi0_mx2_hists = bulk_mx2_histograms(fail_pi0_mc, fail_pi0_ids, n_bins, mx2_edges)
 
+    morphology_by_category: Dict[Tuple[str, int], TemplateMorphology] = {}
+    for detector_name, sector in [("FT", 0)] + [("FD", s) for s in range(1, 7)]:
+        indices = [d.bin_id for d in bins if d.detector == detector_name and d.sector == sector]
+        if not indices:
+            continue
+        if args.disable_template_morphing:
+            morphology_by_category[(detector_name, sector)] = TemplateMorphology()
+        else:
+            morphology_by_category[(detector_name, sector)] = fit_shared_template_morphology(
+                data_mx2_hists[indices].sum(axis=0), dvcs_mx2_hists[indices].sum(axis=0),
+                pi0_mx2_hists[indices].sum(axis=0), mx2_edges)
+    fits: List[FitSummary] = []
+
     for definition in bins:
         index = definition.bin_id
         n_pass_data = float(pass_data_counts[index])
@@ -1168,7 +1305,9 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             dvcs_mx2_hists[index],
             pi0_mx2_hists[index],
             mx2_edges,
+            morphology_by_category.get((definition.detector, definition.sector)),
         )
+        fits.append(fit)
         n_fail_data = fit.n_pi0
         n_fail_data_err = fit.n_pi0_err
 
@@ -1200,8 +1339,14 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             f"E {definition.E_low:.2f}-{definition.E_high:.2f} GeV, "
             f"theta {definition.theta_low_deg:.1f}-{definition.theta_high_deg:.1f} deg"
         )
-        plot_fit(fit_dir / fit_name, title, fit)
+        if args.write_individual_fit_plots:
+            plot_fit(fit_dir / fit_name, title, fit)
     # endfor
+
+    plot_aggregated_fits(aggregate_fit_dir / "FT.png", period.label, bins, fits, "FT", 0)
+    for sector in range(1, 7):
+        plot_aggregated_fits(aggregate_fit_dir / f"FD_sector_{sector}.png",
+                             period.label, bins, fits, "FD", sector)
 
     plot_scale_factors(plot_dir / "scale_factors_FT.png", period.label, rows, "FT", 0)
     plot_efficiencies(plot_dir / "efficiencies_FT.png", period.label, rows, "FT", 0)
@@ -1221,6 +1366,10 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "fail_dvcs_mc_candidates": fail_dvcs_mc.size(),
             "fail_pi0_mc_candidates": fail_pi0_mc.size(),
             "n_bins": len(rows),
+        },
+        "template_morphology": {
+            f"{detector}_s{sector}": asdict(value)
+            for (detector, sector), value in morphology_by_category.items()
         },
         "runtime_seconds": time.perf_counter() - period_start,
     }
