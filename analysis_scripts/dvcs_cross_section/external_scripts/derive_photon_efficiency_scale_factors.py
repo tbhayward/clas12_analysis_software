@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v12.py
+derive_photon_efficiency_scale_factors_v13.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -165,6 +165,9 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
     "pTmiss": ("pTmiss", "ptmiss", "pT_miss"),
     "Delta_phi": ("Delta_phi", "delta_phi", "dphi"),
     "theta_gamma_gamma": ("theta_gamma_gamma", "theta_pi0_pi0"),
+    "theta_cm": ("theta", "theta2", "theta_2"),
+    "Emiss2": ("Emiss2", "E_miss2", "Emiss_sq"),
+    "Mx2_2": ("Mx2_2", "Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
     "fiducial_status": ("fiducial_status",),
     "t1": ("t1", "t", "minus_t"),
     "open_angle_ep2": ("open_angle_ep2", "open_angle_eg", "open_angle_ephoton"),
@@ -194,6 +197,11 @@ class TrialArrays:
     delta_phi: np.ndarray
     theta_gamma_gamma: np.ndarray
     pTmiss: np.ndarray
+    theta_cm: np.ndarray
+    Emiss2: np.ndarray
+    Mx2: np.ndarray
+    Mx2_2: np.ndarray
+    proton_detector: np.ndarray
     weight: np.ndarray
 
     @staticmethod
@@ -208,6 +216,11 @@ class TrialArrays:
             delta_phi=np.empty(0, dtype=np.float32),
             theta_gamma_gamma=np.empty(0, dtype=np.float32),
             pTmiss=np.empty(0, dtype=np.float32),
+            theta_cm=np.empty(0, dtype=np.float32),
+            Emiss2=np.empty(0, dtype=np.float32),
+            Mx2=np.empty(0, dtype=np.float32),
+            Mx2_2=np.empty(0, dtype=np.float32),
+            proton_detector=np.empty(0, dtype=np.int8),
             weight=np.empty(0, dtype=np.float32),
         )
 
@@ -435,6 +448,12 @@ def parse_args() -> argparse.Namespace:
                         help="Disable shared detector/sector nuisance morphing in the multi-projection fit.")
     parser.add_argument("--fit-min-counts", type=int, default=100,
                         help="Minimum data and template entries required for a differential multi-projection fit.")
+    parser.add_argument("--fit-support-containment", type=float, default=0.995,
+                        help="MC-defined central containment used while calibrating shared template morphologies.")
+    parser.add_argument("--constraint-variable-weight", type=float, default=0.35,
+                        help="Relative likelihood weight for auxiliary constraint projections.")
+    parser.add_argument("--disable-fit-variant-systematic", action="store_true",
+                        help="Disable leave-one-driver-out and expanded-fit model-systematic variants.")
     parser.add_argument("--probe-match-angle-max-deg", type=float, default=2.0,
                         help="Maximum angle between predicted and observed probe in epgamma-gamma events.")
     parser.add_argument("--probe-match-relative-E-max", type=float, default=0.35,
@@ -707,6 +726,11 @@ def concatenate_trials(chunks: Sequence[TrialArrays]) -> TrialArrays:
         delta_phi=np.concatenate([chunk.delta_phi for chunk in chunks]).astype(np.float32, copy=False),
         theta_gamma_gamma=np.concatenate([chunk.theta_gamma_gamma for chunk in chunks]).astype(np.float32, copy=False),
         pTmiss=np.concatenate([chunk.pTmiss for chunk in chunks]).astype(np.float32, copy=False),
+        theta_cm=np.concatenate([chunk.theta_cm for chunk in chunks]).astype(np.float32, copy=False),
+        Emiss2=np.concatenate([chunk.Emiss2 for chunk in chunks]).astype(np.float32, copy=False),
+        Mx2=np.concatenate([chunk.Mx2 for chunk in chunks]).astype(np.float32, copy=False),
+        Mx2_2=np.concatenate([chunk.Mx2_2 for chunk in chunks]).astype(np.float32, copy=False),
+        proton_detector=np.concatenate([chunk.proton_detector for chunk in chunks]).astype(np.int8, copy=False),
         weight=np.concatenate([chunk.weight for chunk in chunks]).astype(np.float32, copy=False),
     )
 
@@ -1110,7 +1134,13 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                     phi_rad=pred_ph[eres].astype(np.float32, copy=False), detector=detector[eres].astype(np.int8, copy=False),
                     sector=sector[eres].astype(np.int8, copy=False), mx2_ep=mx2_ep[eres].astype(np.float32, copy=False),
                     delta_phi=delta_phi_all[eres].astype(np.float32, copy=False), theta_gamma_gamma=theta_gg_all[eres].astype(np.float32, copy=False),
-                    pTmiss=ptmiss_all[eres].astype(np.float32, copy=False), weight=solution_weight[eres].astype(np.float32, copy=False)))
+                    pTmiss=ptmiss_all[eres].astype(np.float32, copy=False),
+                    theta_cm=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
+                    Emiss2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
+                    Mx2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
+                    Mx2_2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
+                    proton_detector=np.full(np.count_nonzero(eres), -1, dtype=np.int8),
+                    weight=solution_weight[eres].astype(np.float32, copy=False)))
     result = concatenate_trials(chunks)
     log(f"Native eppi0 audit for {Path(path).name}: events={seen:,}, closure events={diag['event_cutflow']['closure_pass']:,.0f}, final directed trial weight={float(np.sum(result.weight)):,.1f}")
     return result, diag
@@ -1119,9 +1149,10 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
     logical = [
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
         "g1_E", "g1_theta", "g1_phi", "Mx2_1", "Delta_phi",
-        "theta_gamma_gamma", "pTmiss", "fiducial_status", "t1", "detector1", "Q2", "W", "y",
+        "theta_gamma_gamma", "pTmiss", "theta_cm", "Emiss2", "Mx2", "Mx2_2",
+        "fiducial_status", "t1", "detector1", "Q2", "W", "y",
     ]
-    optional = ["fiducial_status", "t1", "detector1", "Q2", "W", "y"]
+    optional = ["theta_cm", "Emiss2", "Mx2", "Mx2_2", "fiducial_status", "t1", "detector1", "Q2", "W", "y"]
     resolved = resolve_branches(path, logical, optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
     chunks: List[TrialArrays] = []
@@ -1184,6 +1215,11 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             delta_phi=finite_array(arrays, resolved.get("Delta_phi"))[good].astype(np.float32, copy=False),
             theta_gamma_gamma=finite_array(arrays, resolved.get("theta_gamma_gamma"))[good].astype(np.float32, copy=False),
             pTmiss=finite_array(arrays, resolved.get("pTmiss"))[good].astype(np.float32, copy=False),
+            theta_cm=finite_array(arrays, resolved.get("theta_cm"))[good].astype(np.float32, copy=False),
+            Emiss2=finite_array(arrays, resolved.get("Emiss2"))[good].astype(np.float32, copy=False),
+            Mx2=finite_array(arrays, resolved.get("Mx2"))[good].astype(np.float32, copy=False),
+            Mx2_2=finite_array(arrays, resolved.get("Mx2_2"))[good].astype(np.float32, copy=False),
+            proton_detector=finite_array(arrays, resolved.get("detector1"), default=-1.0)[good].astype(np.int8, copy=False),
             weight=np.ones(np.count_nonzero(good), dtype=np.float32),
         ))
     # endfor
@@ -1626,13 +1662,20 @@ class FitVariableSpec:
     low: float
     high: float
     log_morph: bool = False
+    fraction_driver: bool = True
+    fit_weight: float = 1.0
 
 
 FIT_VARIABLES: Tuple[FitVariableSpec, ...] = (
-    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False),
-    FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0, True),
-    FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5, True),
+    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False, True, 1.0),
+    FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0, True, True, 1.0),
+    FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5, True, True, 1.0),
+    FitVariableSpec("theta_cm", "theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 2.0, math.pi, False, False, 0.35),
+    FitVariableSpec("Emiss2", "Emiss2", r"$E_{\mathrm{miss}}^2$ (GeV$^2$)", 100, -1.0, 2.0, False, False, 0.35),
+    FitVariableSpec("Mx2", "Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03, False, False, 0.35),
+    FitVariableSpec("Mx2_2", "Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0, False, False, 0.20),
 )
+FRACTION_DRIVER_KEYS = tuple(spec.key for spec in FIT_VARIABLES if spec.fraction_driver)
 
 
 @dataclass
@@ -1675,8 +1718,11 @@ def fit_edges() -> Dict[str, np.ndarray]:
 
 
 def common_fit_mask(trials: TrialArrays) -> np.ndarray:
+    """Common event population for the three fraction-driving projections."""
     mask = np.ones(trials.size(), dtype=bool)
     for spec in FIT_VARIABLES:
+        if not spec.fraction_driver:
+            continue
         values = np.asarray(getattr(trials, spec.attr), dtype=float)
         mask &= np.isfinite(values) & (values >= spec.low) & (values < spec.high)
     return mask
@@ -1717,11 +1763,29 @@ def morph_fit_template(counts: np.ndarray, edges: np.ndarray, shift: float, sigm
     return result * (counts.sum() / result.sum()) if result.sum() > 0.0 else np.zeros_like(counts)
 
 
+def mc_containment_mask(counts: np.ndarray, containment: float) -> np.ndarray:
+    counts = np.asarray(counts, dtype=float)
+    mask = np.ones(counts.size, dtype=bool)
+    total = float(np.sum(counts))
+    if total <= 0.0 or containment >= 0.999999:
+        return mask
+    cdf = np.cumsum(np.clip(counts, 0.0, None)) / total
+    tail = 0.5 * (1.0 - containment)
+    lo = int(np.searchsorted(cdf, tail, side="left"))
+    hi = int(np.searchsorted(cdf, 1.0 - tail, side="left"))
+    mask[:] = False
+    mask[max(0, lo):min(counts.size, hi + 1)] = True
+    if np.count_nonzero(mask) < 5:
+        mask[:] = True
+    return mask
+
+
 def fit_category_multi_morphology(data_hists: Mapping[str, np.ndarray],
                                   dvcs_hists: Mapping[str, np.ndarray],
                                   pi0_hists: Mapping[str, np.ndarray],
                                   edges_by_var: Mapping[str, np.ndarray],
-                                  disabled: bool = False) -> MultiMorphology:
+                                  disabled: bool = False, support_containment: float = 0.995,
+                                  constraint_weight: float = 0.35) -> MultiMorphology:
     if disabled:
         return MultiMorphology({spec.key: (0.0, 0.0, 0.0, 0.0) for spec in FIT_VARIABLES})
     active = [spec for spec in FIT_VARIABLES if data_hists[spec.key].sum() > 0 and
@@ -1750,7 +1814,10 @@ def fit_category_multi_morphology(data_hists: Mapping[str, np.ndarray],
             dshape = morph_fit_template(dvcs_hists[spec.key], edges, ds, dsg, spec.log_morph)
             pshape /= max(pshape.sum(), 1e-12); dshape /= max(dshape.sum(), 1e-12)
             n = float(data_hists[spec.key].sum())
-            total += 0.5 * poisson_deviance(data_hists[spec.key], n * (f * pshape + (1-f) * dshape))
+            model = n * (f * pshape + (1-f) * dshape)
+            support = mc_containment_mask(dvcs_hists[spec.key] + pi0_hists[spec.key], support_containment)
+            weight = 1.0 if spec.fraction_driver else constraint_weight
+            total += weight * 0.5 * poisson_deviance(data_hists[spec.key][support], model[support])
             # Same weak nuisance regularization philosophy as the exclusivity study.
             if spec.log_morph:
                 total += 0.5*((ps/0.15)**2 + (ds/0.15)**2 + (psg/0.20)**2 + (dsg/0.20)**2)
@@ -1791,7 +1858,8 @@ def fit_multi_projection_bin(data_hists: Mapping[str, np.ndarray],
         for spec in active:
             pshape, dshape = shapes[spec.key]
             n = float(data_hists[spec.key].sum())
-            total += 0.5 * poisson_deviance(data_hists[spec.key], n*(f*pshape + (1-f)*dshape))
+            weight = spec.fit_weight
+            total += weight * 0.5 * poisson_deviance(data_hists[spec.key], n*(f*pshape + (1-f)*dshape))
         return total
     result = minimize(lambda x: objective_scalar(float(x[0])), np.asarray([0.25]),
                       method="L-BFGS-B", bounds=[(1e-6, 1.0-1e-6)])
@@ -1853,7 +1921,7 @@ def plot_category_fit_summary(path: Path, period_label: str,
                               definition: BinDefinition,
                               fit: MultiFitSummary) -> None:
     """Write fit projections with standardized signed-pull residual panels."""
-    fig, axes = plt.subplots(2, len(FIT_VARIABLES), figsize=(18, 8.0), squeeze=False,
+    fig, axes = plt.subplots(2, len(FIT_VARIABLES), figsize=(4.7 * len(FIT_VARIABLES), 8.0), squeeze=False,
                              gridspec_kw={"height_ratios": [3.0, 1.2]}, sharex="col")
     category = "FT" if definition.detector == "FT" else f"FD sector {definition.sector}"
     for col, spec in enumerate(FIT_VARIABLES):
@@ -2199,6 +2267,35 @@ def write_pass_audit(period_dir: Path, period_label: str, data_diag: Mapping[str
     plot_mirror_diagnostics(audit_dir/"mirror_ambiguity.png", period_label, data_diag, mc_diag)
 
 
+def fit_variant_model_systematic(data_hists, dvcs_hists, pi0_hists, edges_by_var,
+                                 morphology, total_candidates, min_counts):
+    """Return nominal fit and a conservative yield spread from credible projection variants."""
+    nominal = fit_multi_projection_bin(data_hists, dvcs_hists, pi0_hists, edges_by_var,
+                                       morphology, total_candidates, min_counts)
+    variants = {"nominal": nominal}
+    for omitted in FRACTION_DRIVER_KEYS:
+        saved = []
+        for spec in FIT_VARIABLES:
+            if spec.key == omitted:
+                saved.append((spec, data_hists[spec.key].copy(), dvcs_hists[spec.key].copy(), pi0_hists[spec.key].copy()))
+                data_hists[spec.key] = np.zeros_like(data_hists[spec.key])
+                dvcs_hists[spec.key] = np.zeros_like(dvcs_hists[spec.key])
+                pi0_hists[spec.key] = np.zeros_like(pi0_hists[spec.key])
+        variants[f"omit_{omitted}"] = fit_multi_projection_bin(data_hists, dvcs_hists, pi0_hists,
+                                                                 edges_by_var, morphology,
+                                                                 total_candidates, min_counts)
+        for spec, da, dv, pi in saved:
+            data_hists[spec.key], dvcs_hists[spec.key], pi0_hists[spec.key] = da, dv, pi
+    good = [v.n_pi0 for v in variants.values() if v.success and math.isfinite(v.n_pi0)]
+    spread = max((abs(v - nominal.n_pi0) for v in good), default=0.0) if nominal.success else math.nan
+    return nominal, spread, variants
+
+
+def plot_combined_fd_fit(path: Path, period_label: str, fit: MultiFitSummary) -> None:
+    definition = BinDefinition(-1, "FD", 0, 0.0, 0.0, 0.0, 0.0)
+    plot_category_fit_summary(path, period_label + " (all six FD sectors combined)", definition, fit)
+
+
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -2263,33 +2360,59 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     pi0_hists = {spec.key: bulk_variable_histograms(fail_pi0_mc, fail_pi0_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
 
     morphology_by_category: Dict[Tuple[str, int], MultiMorphology] = {}
-    for detector_name, sector in [("FT", 0)] + [("FD", value) for value in range(1, 7)]:
-        indices = [d.bin_id for d in bins if d.detector == detector_name and d.sector == sector]
-        if not indices:
-            continue
-        morphology_by_category[(detector_name, sector)] = fit_category_multi_morphology(
-            {spec.key: data_hists[spec.key][indices].sum(axis=0) for spec in FIT_VARIABLES},
-            {spec.key: dvcs_hists[spec.key][indices].sum(axis=0) for spec in FIT_VARIABLES},
-            {spec.key: pi0_hists[spec.key][indices].sum(axis=0) for spec in FIT_VARIABLES},
+    # FT retains its own integrated morphology.  FD is calibrated once with all six
+    # sectors combined, then the same nuisance parameters are used in every sector.
+    ft_indices = [d.bin_id for d in bins if d.detector == "FT"]
+    fd_indices = [d.bin_id for d in bins if d.detector == "FD"]
+    if ft_indices:
+        morphology_by_category[("FT", 0)] = fit_category_multi_morphology(
+            {spec.key: data_hists[spec.key][ft_indices].sum(axis=0) for spec in FIT_VARIABLES},
+            {spec.key: dvcs_hists[spec.key][ft_indices].sum(axis=0) for spec in FIT_VARIABLES},
+            {spec.key: pi0_hists[spec.key][ft_indices].sum(axis=0) for spec in FIT_VARIABLES},
             edges_by_var, args.disable_template_morphing,
+            args.fit_support_containment, args.constraint_variable_weight,
         )
+    combined_fd_morphology = MultiMorphology({})
+    if fd_indices:
+        combined_fd_morphology = fit_category_multi_morphology(
+            {spec.key: data_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
+            {spec.key: dvcs_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
+            {spec.key: pi0_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
+            edges_by_var, args.disable_template_morphing,
+            args.fit_support_containment, args.constraint_variable_weight,
+        )
+        for sector in range(1, 7):
+            morphology_by_category[("FD", sector)] = combined_fd_morphology
 
     fits: List[MultiFitSummary] = []
+    fit_model_systematics: Dict[str, float] = {}
+    fit_variants_metadata: Dict[str, object] = {}
     for definition in bins:
         index = definition.bin_id
         n_pass_data = float(pass_data_counts[index])
         n_pass_mc = float(pass_mc_counts[index])
         n_fail_mc = float(fail_pi0_counts[index])
-        fit = fit_multi_projection_bin(
-            {spec.key: data_hists[spec.key][index] for spec in FIT_VARIABLES},
-            {spec.key: dvcs_hists[spec.key][index] for spec in FIT_VARIABLES},
-            {spec.key: pi0_hists[spec.key][index] for spec in FIT_VARIABLES},
-            edges_by_var, morphology_by_category.get((definition.detector, definition.sector), MultiMorphology({})),
+        local_data = {spec.key: data_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
+        local_dvcs = {spec.key: dvcs_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
+        local_pi0 = {spec.key: pi0_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
+        fit, model_spread, variants = fit_variant_model_systematic(
+            local_data, local_dvcs, local_pi0, edges_by_var,
+            morphology_by_category.get((definition.detector, definition.sector), MultiMorphology({})),
             float(fail_data_total_counts[index]), args.fit_min_counts,
         )
+        if args.disable_fit_variant_systematic:
+            model_spread = 0.0
+        category_key = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
+        fit_model_systematics[category_key] = float(model_spread)
+        fit_variants_metadata[category_key] = {
+            name: {"success": value.success, "n_pi0": value.n_pi0,
+                   "fraction_pi0": value.fraction_pi0, "deviance": value.deviance,
+                   "ndf": value.ndf}
+            for name, value in variants.items()
+        }
         fits.append(fit)
         n_fail_data = fit.n_pi0
-        n_fail_data_err = fit.n_pi0_err
+        n_fail_data_err = math.hypot(fit.n_pi0_err, model_spread)
         pass_data_err = math.sqrt(max(float(pass_data_sumw2[index]), 0.0))
         pass_mc_err = math.sqrt(max(float(pass_mc_sumw2[index]), 0.0))
         fail_mc_err = math.sqrt(max(n_fail_mc, 0.0))
@@ -2310,6 +2433,19 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             aggregate_fit_dir / f"{category_name}.png",
             period.label, definition, fit,
         )
+
+    if fd_indices:
+        combined_fd_fit = fit_multi_projection_bin(
+            {spec.key: data_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
+            {spec.key: dvcs_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
+            {spec.key: pi0_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
+            edges_by_var, combined_fd_morphology,
+            float(fail_data_total_counts[fd_indices].sum()), args.fit_min_counts,
+        )
+        plot_combined_fd_fit(aggregate_fit_dir / "FD_all_sectors_combined.png", period.label, combined_fd_fit)
+    else:
+        combined_fd_fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan,
+                                          math.nan, math.nan, math.nan, 0, "No FD bins", {})
 
     plot_integrated_efficiency_summary(
         plot_dir / "integrated_efficiencies_and_scale_factors.png",
@@ -2345,6 +2481,20 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "mc": matching_scan_summary(pass_mc_diag),
         },
         "aaogen_truth_closure": inspect_truth_closure_availability(period.epgg_mc, args),
+        "fit_architecture": {
+            "fraction_drivers": list(FRACTION_DRIVER_KEYS),
+            "constraint_variables": [s.key for s in FIT_VARIABLES if not s.fraction_driver],
+            "FD_morphology": "shared across all six sectors from a combined-FD calibration",
+            "FT_morphology": "integrated FT calibration; no proton-topology split",
+            "support_containment": args.fit_support_containment,
+            "constraint_variable_weight": args.constraint_variable_weight,
+        },
+        "fit_model_systematics_on_nfail": fit_model_systematics,
+        "fit_variants": fit_variants_metadata,
+        "combined_FD_fit": {
+            "success": combined_fd_fit.success, "fraction_pi0": combined_fd_fit.fraction_pi0,
+            "deviance": combined_fd_fit.deviance, "ndf": combined_fd_fit.ndf,
+        },
         "fit_diagnostics": {
             ("FT" if d.detector == "FT" else f"FD_sector_{d.sector}"): {
                 "mixture_fit_converged": f.success,
