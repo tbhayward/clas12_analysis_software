@@ -162,7 +162,7 @@ public class fiducial_cuts {
 
                 // Additional PCal exclusion for both Spring 2018 periods.
                 if (isRgaSp18
-                        && lw_1 > 333.0 && lw_1 < 346.5) {
+                        && lw_1 > 328.5 && lw_1 < 342.0) {
                     return false;
                 }
 
@@ -202,6 +202,12 @@ public class fiducial_cuts {
                 if (lw_1 > 346.5 && lw_1 < 378.0) {
                     return false;
                 }
+
+                // ECout exclusion for both Spring 2018 periods.
+                if (isRgaSp18
+                        && lu_7 > 360.0 && lu_7 < 373.5) {
+                    return false;
+                }
                 break;
 
             case 4:
@@ -210,13 +216,19 @@ public class fiducial_cuts {
                     return false;
                 }
 
-                // ECin exclusion common to all RGA periods.
-                if (lv_4 > 0.0 && lv_4 < 23.5) {
+                // ECout exclusion for both Spring 2018 periods.
+                if (isRgaSp18
+                        && lw_7 > 171.0 && lw_7 < 189.0) {
                     return false;
                 }
                 break;
 
             case 5:
+                // ECin exclusion common to all RGA periods.
+                if (lv_4 > 0.0 && lv_4 < 23.5) {
+                    return false;
+                }
+
                 // ECout exclusion common to all RGA periods.
                 if (lu_7 > 198.0 && lu_7 < 220.5) {
                     return false;
