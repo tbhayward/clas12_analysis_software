@@ -1,72 +1,29 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v4.py
+derive_photon_efficiency_scale_factors_v5.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
-Physics definition
-------------------
-The script measures, separately in data and AAOGEN Monte Carlo,
+The script measures epsilon_b = N_pass,b/(N_pass,b+N_fail,b) separately in
+data and AAOGEN MC, where b is a predicted probe-photon bin. Native eppi0
+events provide two directed passing probes. One-photon epgamma candidates
+provide the failed-probe population after a simultaneous DVCS/BH plus pi0
+template decomposition.
 
-    epsilon_b = N_pass,b / (N_pass,b + N_fail,b),
+The failed-probe decomposition follows the stable exclusivity-study strategy:
+Delta_phi, theta_gamma_gamma and pTmiss are fit simultaneously with one shared
+pi0 fraction. Detector-category nuisance morphologies are calibrated on the
+aggregate FT or FD-sector sample and then fixed in the differential E_gamma and
+theta_gamma fits. Delta_phi uses additive shift/smearing; the positive-definite
+theta_gamma_gamma and pTmiss projections use log-space shift/smearing.
 
-where b denotes the predicted probe-photon detector/kinematic bin.
+FT probes are binned in E_gamma and integrated over 2.5--5.0 degrees by
+default. FD probes are binned in E_gamma and theta_gamma separately for sectors
+1--6. Processing is parallelized by run period with a hard maximum of seven
+workers.
 
-* An exclusive epgamma-gamma event contributes two directed PASS trials:
-  gamma_1 is used as the tag and gamma_2 as the probe, and vice versa.
-* An epgamma event attributed to pi0 production contributes one FAIL trial:
-  the reconstructed photon is the tag and the missing photon is predicted from
-
-      p_probe^pred = p_beam + p_target - p_e - p_p - p_tag.
-
-No equal-efficiency assumption for the two pi0 photons is made. Every directed
-trial is assigned using the kinematics of its own predicted probe.
-
-The residual photon-efficiency correction is the data/MC scale factor
-
-    S_gamma,b = epsilon_data,b / epsilon_MC,b.
-
-This exploratory implementation uses:
-
-* FT: adaptive bins in predicted E_gamma, integrated over the configured FT
-  angular range.
-* FD: separate sectors 1--6, with adaptive rectangular bins in predicted
-  E_gamma and theta_gamma.
-* epgamma data FAIL yields: a non-negative binned Poisson template fit of the
-  Mx2_1 = M_X^2(ep) distribution using DVCSGEN and pi0-as-DVCS AAOGEN.
-* epgamma MC FAIL yields: direct pi0-as-DVCS AAOGEN counts.
-* epgamma-gamma PASS yields: direct exclusive-pi0 data and AAOGEN counts after
-  configurable broad exclusivity cuts.  This is deliberately simple in v1;
-  later iterations can replace it with a simultaneous pass/fail nuisance fit.
-
-Important limitations
----------------------------
-1. The script measures a tag-conditioned efficiency.  AAOGEN truth closure is
-   not possible unless generated/truth photon branches are available; v1 writes
-   all ingredients needed for reconstructed tag-and-probe closure.
-2. Direct epgamma-gamma data are treated as pi0 signal after the supplied broad
-   cuts.  The output includes Mx2_1 diagnostics so residual backgrounds can be
-   evaluated before production use.
-3. The FT/FD prediction uses configurable theta windows.  It intentionally does
-   not attempt a detailed FT face or ECAL local-coordinate projection yet.
-4. This script derives scale factors only.  It does not yet modify DVCSGEN
-   acceptance or the AAOGEN one-photon/two-photon migration ratio.
-
-Dependencies
-------------
-Python 3, numpy, scipy, matplotlib, uproot.
-
-Typical usage
--------------
-
-  python3 derive_photon_efficiency_scale_factors_v4.py \
-      --period fa18_inb --workers 1
-
-Run all periods with up to seven workers:
-
-  python3 derive_photon_efficiency_scale_factors_v4.py --workers 7
-
-Use --inspect-branches first if the local trees use unexpected branch names.
+The script derives S_gamma,b = epsilon_data,b/epsilon_MC,b. It does not yet
+propagate that scale factor into DVCS acceptance or pi0 migration.
 """
 
 from __future__ import annotations
@@ -204,7 +161,7 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
     "Mx2": ("Mx2", "Mx2_epg", "Mx2_epgamma", "Mx2_eppi0", "Mx2_epi0"),
     "pTmiss": ("pTmiss", "ptmiss", "pT_miss"),
     "Delta_phi": ("Delta_phi", "delta_phi", "dphi"),
-    "theta_pi0_pi0": ("theta_pi0_pi0", "theta_gamma_gamma"),
+    "theta_gamma_gamma": ("theta_gamma_gamma", "theta_pi0_pi0"),
     "fiducial_status": ("fiducial_status",),
 }
 
@@ -217,6 +174,9 @@ class TrialArrays:
     detector: np.ndarray
     sector: np.ndarray
     mx2_ep: np.ndarray
+    delta_phi: np.ndarray
+    theta_gamma_gamma: np.ndarray
+    pTmiss: np.ndarray
     weight: np.ndarray
 
     @staticmethod
@@ -228,6 +188,9 @@ class TrialArrays:
             detector=np.empty(0, dtype=np.int8),
             sector=np.empty(0, dtype=np.int8),
             mx2_ep=np.empty(0, dtype=np.float32),
+            delta_phi=np.empty(0, dtype=np.float32),
+            theta_gamma_gamma=np.empty(0, dtype=np.float32),
+            pTmiss=np.empty(0, dtype=np.float32),
             weight=np.empty(0, dtype=np.float32),
         )
 
@@ -299,9 +262,9 @@ class EfficiencyRow:
     efficiency_mc_err: float
     scale_factor: float
     scale_factor_err: float
-    fail_fit_success: bool
-    fail_fit_deviance: float
-    fail_fit_ndf: int
+    template_fit_success: bool
+    template_fit_deviance: float
+    template_fit_ndf: int
 
 
 def log(message: str) -> None:
@@ -342,12 +305,12 @@ def parse_args() -> argparse.Namespace:
                         help="Broad |Mx2| cut for direct epgamma-gamma pass trials, if Mx2 exists.")
     parser.add_argument("--pass-pTmiss-max", type=float, default=0.30,
                         help="Broad pTmiss cut for direct epgamma-gamma pass trials, if pTmiss exists.")
-    parser.add_argument("--pass-delta-phi-window", type=float, default=None,
-                        help="Optional |Delta_phi-pi| requirement. Disabled by default because the native eppi0 Delta_phi is a dihadron Trento-angle quantity, not an exclusivity coplanarity variable.")
-    parser.add_argument("--write-individual-fit-plots", action="store_true",
-                        help="Also write one fail-fit canvas per kinematic bin. Aggregated canvases are always written.")
+    parser.add_argument("--pass-delta-phi-window", type=float, default=0.30,
+                        help="Broad native eppi0 proton-pi0 coplanarity requirement |Delta_phi-pi|. Set to a negative value to disable.")
     parser.add_argument("--disable-template-morphing", action="store_true",
-                        help="Disable shared detector/sector template shift-and-smearing fits.")
+                        help="Disable shared detector/sector nuisance morphing in the multi-projection fit.")
+    parser.add_argument("--fit-min-counts", type=int, default=100,
+                        help="Minimum data and template entries required for a differential multi-projection fit.")
     parser.add_argument("--probe-match-angle-max-deg", type=float, default=2.0,
                         help="Maximum angle between predicted and observed probe in epgamma-gamma events.")
     parser.add_argument("--probe-match-relative-E-max", type=float, default=0.35,
@@ -484,6 +447,9 @@ def concatenate_trials(chunks: Sequence[TrialArrays]) -> TrialArrays:
         detector=np.concatenate([chunk.detector for chunk in chunks]).astype(np.int8, copy=False),
         sector=np.concatenate([chunk.sector for chunk in chunks]).astype(np.int8, copy=False),
         mx2_ep=np.concatenate([chunk.mx2_ep for chunk in chunks]).astype(np.float32, copy=False),
+        delta_phi=np.concatenate([chunk.delta_phi for chunk in chunks]).astype(np.float32, copy=False),
+        theta_gamma_gamma=np.concatenate([chunk.theta_gamma_gamma for chunk in chunks]).astype(np.float32, copy=False),
+        pTmiss=np.concatenate([chunk.pTmiss for chunk in chunks]).astype(np.float32, copy=False),
         weight=np.concatenate([chunk.weight for chunk in chunks]).astype(np.float32, copy=False),
     )
 
@@ -517,7 +483,7 @@ def pass_sample_mask(arrays: Mapping[str, np.ndarray], resolved: Mapping[str, Op
         pt = finite_array(arrays, resolved["pTmiss"])
         mask &= np.isfinite(pt) & (pt < args.pass_pTmiss_max)
     # endif
-    if args.pass_delta_phi_window is not None and resolved.get("Delta_phi") is not None:
+    if args.pass_delta_phi_window is not None and args.pass_delta_phi_window >= 0.0 and resolved.get("Delta_phi") is not None:
         dphi = finite_array(arrays, resolved["Delta_phi"])
         mask &= np.isfinite(dphi) & (np.abs(dphi - math.pi) < args.pass_delta_phi_window)
     # endif
@@ -694,6 +660,9 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
         detector2_obs = finite_array(arrays, resolved["gamma2_detector_native"], default=-1.0).astype(int)
         pi0_mass = finite_array(arrays, resolved["Mh_gammagamma"])
         mx2_ep = finite_array(arrays, resolved.get("Mx2_1"))
+        delta_phi_all = finite_array(arrays, resolved.get("Delta_phi"))
+        ptmiss_all = finite_array(arrays, resolved.get("pTmiss"))
+        theta_gg_all = np.full(n, np.nan, dtype=float)
 
         g1_E, g1_theta, g1_phi, g2_E, g2_theta, g2_phi, closure, ambiguity, reconstructed = reconstruct_native_eppi0_photons(
             e_theta, e_phi, pi0_p, pi0_theta, pi0_phi, gamma1_phi, gamma2_phi,
@@ -732,6 +701,9 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
                 detector=detector[good].astype(np.int8, copy=False),
                 sector=sector[good].astype(np.int8, copy=False),
                 mx2_ep=mx2_ep[good].astype(np.float32, copy=False),
+                delta_phi=delta_phi_all[good].astype(np.float32, copy=False),
+                theta_gamma_gamma=theta_gg_all[good].astype(np.float32, copy=False),
+                pTmiss=ptmiss_all[good].astype(np.float32, copy=False),
                 weight=np.ones(np.count_nonzero(good), dtype=np.float32),
             ))
         # endfor
@@ -744,7 +716,8 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
 def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
     logical = [
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
-        "g1_E", "g1_theta", "g1_phi", "Mx2_1", "fiducial_status",
+        "g1_E", "g1_theta", "g1_phi", "Mx2_1", "Delta_phi",
+        "theta_gamma_gamma", "pTmiss", "fiducial_status",
     ]
     optional = ["fiducial_status"]
     resolved = resolve_branches(path, logical, optional)
@@ -802,6 +775,9 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             detector=detector[good].astype(np.int8, copy=False),
             sector=sector[good].astype(np.int8, copy=False),
             mx2_ep=mx2_ep[good].astype(np.float32, copy=False),
+            delta_phi=finite_array(arrays, resolved.get("Delta_phi"))[good].astype(np.float32, copy=False),
+            theta_gamma_gamma=finite_array(arrays, resolved.get("theta_gamma_gamma"))[good].astype(np.float32, copy=False),
+            pTmiss=finite_array(arrays, resolved.get("pTmiss"))[good].astype(np.float32, copy=False),
             weight=np.ones(np.count_nonzero(good), dtype=np.float32),
         ))
     # endfor
@@ -1238,14 +1214,245 @@ def plot_efficiencies(path: Path, period_label: str, rows: Sequence[EfficiencyRo
     plt.close(fig)
 
 
+
+@dataclass(frozen=True)
+class FitVariableSpec:
+    key: str
+    attr: str
+    label: str
+    bins: int
+    low: float
+    high: float
+    log_morph: bool = False
+
+
+FIT_VARIABLES: Tuple[FitVariableSpec, ...] = (
+    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False),
+    FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0, True),
+    FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5, True),
+)
+
+
+@dataclass
+class ProjectionResult:
+    spec: FitVariableSpec
+    edges: np.ndarray
+    data_counts: np.ndarray
+    model_counts: np.ndarray
+    pi0_counts: np.ndarray
+    dvcs_counts: np.ndarray
+    deviance: float
+    ndf: int
+
+
+@dataclass
+class MultiFitSummary:
+    success: bool
+    n_pi0: float
+    n_pi0_err: float
+    n_dvcs: float
+    n_dvcs_err: float
+    fraction_pi0: float
+    fraction_pi0_err: float
+    deviance: float
+    ndf: int
+    message: str
+    projections: Dict[str, ProjectionResult]
+
+
+@dataclass
+class MultiMorphology:
+    params: Dict[str, Tuple[float, float, float, float]]
+    success: bool = True
+    deviance: float = math.nan
+    ndf: int = 0
+
+
+def fit_edges() -> Dict[str, np.ndarray]:
+    return {spec.key: np.linspace(spec.low, spec.high, spec.bins + 1) for spec in FIT_VARIABLES}
+
+
+def common_fit_mask(trials: TrialArrays) -> np.ndarray:
+    mask = np.ones(trials.size(), dtype=bool)
+    for spec in FIT_VARIABLES:
+        values = np.asarray(getattr(trials, spec.attr), dtype=float)
+        mask &= np.isfinite(values) & (values >= spec.low) & (values < spec.high)
+    return mask
+
+
+def bulk_variable_histograms(trials: TrialArrays, bin_ids: np.ndarray, n_probe_bins: int,
+                             spec: FitVariableSpec, edges: np.ndarray,
+                             require_common_support: bool = True) -> np.ndarray:
+    values = np.asarray(getattr(trials, spec.attr), dtype=float)
+    value_index = np.searchsorted(edges, values, side="right") - 1
+    valid = (bin_ids >= 0) & (bin_ids < n_probe_bins) & np.isfinite(values)
+    if require_common_support:
+        valid &= common_fit_mask(trials)
+    valid &= (value_index >= 0) & (value_index < spec.bins)
+    flat = bin_ids[valid].astype(np.int64, copy=False) * spec.bins + value_index[valid].astype(np.int64, copy=False)
+    counts = np.bincount(flat, weights=trials.weight[valid], minlength=n_probe_bins * spec.bins)
+    return counts.reshape(n_probe_bins, spec.bins).astype(float, copy=False)
+
+
+def morph_fit_template(counts: np.ndarray, edges: np.ndarray, shift: float, sigma: float,
+                       log_morph: bool) -> np.ndarray:
+    counts = np.asarray(counts, dtype=float)
+    if counts.sum() <= 0.0:
+        return np.zeros_like(counts)
+    if not log_morph:
+        return morph_template_histogram(counts, edges, shift, sigma)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    epsilon = max(0.25 * float(np.mean(np.diff(edges))), 1.0e-5)
+    z = np.log(np.maximum(centers - edges[0] + epsilon, epsilon))
+    z_uniform = np.linspace(float(z.min()), float(z.max()), len(z))
+    shape_z = np.interp(z_uniform, z, counts, left=0.0, right=0.0)
+    dz = float(np.mean(np.diff(z_uniform))) if len(z_uniform) > 1 else 1.0
+    shifted = np.interp(z_uniform - shift, z_uniform, shape_z, left=0.0, right=0.0)
+    if sigma > 0.0 and dz > 0.0:
+        shifted = gaussian_filter1d(shifted, sigma / dz, mode="constant", cval=0.0)
+    result = np.interp(z, z_uniform, shifted, left=0.0, right=0.0)
+    result = np.clip(result, 0.0, None)
+    return result * (counts.sum() / result.sum()) if result.sum() > 0.0 else np.zeros_like(counts)
+
+
+def fit_category_multi_morphology(data_hists: Mapping[str, np.ndarray],
+                                  dvcs_hists: Mapping[str, np.ndarray],
+                                  pi0_hists: Mapping[str, np.ndarray],
+                                  edges_by_var: Mapping[str, np.ndarray],
+                                  disabled: bool = False) -> MultiMorphology:
+    if disabled:
+        return MultiMorphology({spec.key: (0.0, 0.0, 0.0, 0.0) for spec in FIT_VARIABLES})
+    active = [spec for spec in FIT_VARIABLES if data_hists[spec.key].sum() > 0 and
+              dvcs_hists[spec.key].sum() > 0 and pi0_hists[spec.key].sum() > 0]
+    if len(active) < 2:
+        return MultiMorphology({spec.key: (0.0, 0.0, 0.0, 0.0) for spec in FIT_VARIABLES}, False)
+    # x = logit(f_pi0), then pi0 shift/sigma and DVCS shift/sigma for every variable.
+    x0 = [math.log(0.25 / 0.75)]
+    bounds = [(-8.0, 8.0)]
+    for spec in active:
+        if spec.log_morph:
+            x0 += [0.0, 0.03, 0.0, 0.03]
+            bounds += [(-0.35, 0.35), (0.0, 0.40), (-0.35, 0.35), (0.0, 0.40)]
+        else:
+            width = float(np.mean(np.diff(edges_by_var[spec.key])))
+            x0 += [0.0, 1.0 * width, 0.0, 1.0 * width]
+            bounds += [(-12*width, 12*width), (0.0, 12*width), (-12*width, 12*width), (0.0, 12*width)]
+    def objective(x: np.ndarray) -> float:
+        f = 1.0 / (1.0 + math.exp(-float(x[0])))
+        total = 0.0
+        pos = 1
+        for spec in active:
+            ps, psg, ds, dsg = map(float, x[pos:pos+4]); pos += 4
+            edges = edges_by_var[spec.key]
+            pshape = morph_fit_template(pi0_hists[spec.key], edges, ps, psg, spec.log_morph)
+            dshape = morph_fit_template(dvcs_hists[spec.key], edges, ds, dsg, spec.log_morph)
+            pshape /= max(pshape.sum(), 1e-12); dshape /= max(dshape.sum(), 1e-12)
+            n = float(data_hists[spec.key].sum())
+            total += 0.5 * poisson_deviance(data_hists[spec.key], n * (f * pshape + (1-f) * dshape))
+            # Same weak nuisance regularization philosophy as the exclusivity study.
+            if spec.log_morph:
+                total += 0.5*((ps/0.15)**2 + (ds/0.15)**2 + (psg/0.20)**2 + (dsg/0.20)**2)
+            else:
+                w = float(np.mean(np.diff(edges)))
+                total += 0.5*((ps/(4*w))**2 + (ds/(4*w))**2 + (psg/(5*w))**2 + (dsg/(5*w))**2)
+        return total
+    result = minimize(objective, np.asarray(x0), method="L-BFGS-B", bounds=bounds, options={"maxiter": 800})
+    params = {spec.key: (0.0, 0.0, 0.0, 0.0) for spec in FIT_VARIABLES}
+    pos = 1
+    for spec in active:
+        params[spec.key] = tuple(map(float, result.x[pos:pos+4])); pos += 4
+    ndf = sum(int(np.count_nonzero(data_hists[s.key])) for s in active) - len(result.x)
+    return MultiMorphology(params, bool(result.success), 2.0 * float(result.fun), max(ndf, 0))
+
+
+def fit_multi_projection_bin(data_hists: Mapping[str, np.ndarray],
+                             dvcs_hists: Mapping[str, np.ndarray],
+                             pi0_hists: Mapping[str, np.ndarray],
+                             edges_by_var: Mapping[str, np.ndarray],
+                             morphology: MultiMorphology, total_candidates: float,
+                             min_counts: int) -> MultiFitSummary:
+    active = [s for s in FIT_VARIABLES if data_hists[s.key].sum() >= min_counts and
+              dvcs_hists[s.key].sum() >= min_counts and pi0_hists[s.key].sum() >= min_counts]
+    if len(active) < 2 or total_candidates <= 0.0:
+        return MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan,
+                               math.nan, 0, "Insufficient common-support statistics", {})
+    shapes = {}
+    for spec in active:
+        ps, psg, ds, dsg = morphology.params.get(spec.key, (0.0,0.0,0.0,0.0))
+        pshape = morph_fit_template(pi0_hists[spec.key], edges_by_var[spec.key], ps, psg, spec.log_morph)
+        dshape = morph_fit_template(dvcs_hists[spec.key], edges_by_var[spec.key], ds, dsg, spec.log_morph)
+        pshape /= max(pshape.sum(), 1e-12); dshape /= max(dshape.sum(), 1e-12)
+        shapes[spec.key] = (pshape, dshape)
+    def objective_scalar(f: float) -> float:
+        f = min(max(float(f), 1e-6), 1.0-1e-6)
+        total = 0.0
+        for spec in active:
+            pshape, dshape = shapes[spec.key]
+            n = float(data_hists[spec.key].sum())
+            total += 0.5 * poisson_deviance(data_hists[spec.key], n*(f*pshape + (1-f)*dshape))
+        return total
+    result = minimize(lambda x: objective_scalar(float(x[0])), np.asarray([0.25]),
+                      method="L-BFGS-B", bounds=[(1e-6, 1.0-1e-6)])
+    f = float(result.x[0])
+    h = min(1e-3, 0.25*min(f,1-f))
+    curvature = (objective_scalar(f+h)-2*objective_scalar(f)+objective_scalar(f-h))/(h*h) if h>0 else math.nan
+    ferr = math.sqrt(1.0/curvature) if math.isfinite(curvature) and curvature>0 else math.nan
+    projections = {}
+    dev = 0.0; npoints = 0
+    for spec in active:
+        pshape, dshape = shapes[spec.key]
+        n = float(data_hists[spec.key].sum())
+        pc = n*f*pshape; dc = n*(1-f)*dshape; model = pc+dc
+        one_dev = poisson_deviance(data_hists[spec.key], model)
+        projections[spec.key] = ProjectionResult(spec, edges_by_var[spec.key], data_hists[spec.key], model, pc, dc, one_dev, max(int(np.count_nonzero(data_hists[spec.key]))-1,0))
+        dev += one_dev; npoints += int(np.count_nonzero(data_hists[spec.key]))
+    npi0 = f*total_candidates; ndvcs=(1-f)*total_candidates
+    return MultiFitSummary(bool(result.success), npi0, ferr*total_candidates, ndvcs, ferr*total_candidates,
+                           f, ferr, dev, max(npoints-1,0), str(result.message), projections)
+
+
+def draw_projection_panel(ax, title: str, fit: MultiFitSummary, variable_key: str) -> None:
+    projection = fit.projections.get(variable_key)
+    if projection is None:
+        ax.text(0.5,0.5,"insufficient statistics",ha="center",va="center",transform=ax.transAxes); ax.set_title(title,fontsize=8); return
+    centers=0.5*(projection.edges[:-1]+projection.edges[1:])
+    ax.errorbar(centers, projection.data_counts, yerr=np.sqrt(projection.data_counts), fmt="o", markersize=2.2, label="Data epgamma")
+    ax.step(projection.edges[:-1], projection.model_counts, where="post", label="Total fit")
+    ax.step(projection.edges[:-1], projection.pi0_counts, where="post", label="pi0 as epgamma")
+    ax.step(projection.edges[:-1], projection.dvcs_counts, where="post", label="DVCS/BH")
+    ratio=fit.deviance/fit.ndf if fit.ndf>0 else math.nan
+    ax.text(0.98,0.96,f"fpi0={fit.fraction_pi0:.3f}\nD/ndf={ratio:.2f}",transform=ax.transAxes,ha="right",va="top",fontsize=7)
+    ax.set_title(title,fontsize=8)
+
+
+def plot_aggregated_multi_fits(path: Path, period_label: str, definitions: Sequence[BinDefinition],
+                               fits: Sequence[MultiFitSummary], detector: str, sector: int,
+                               variable_key: str) -> None:
+    selected=[(d,f) for d,f in zip(definitions,fits) if d.detector==detector and d.sector==sector]
+    if not selected: return
+    ncols=3; nrows=int(math.ceil(len(selected)/ncols))
+    fig,axes=plt.subplots(nrows,ncols,figsize=(15,3.8*nrows),squeeze=False,sharex=True)
+    for ax,(d,f) in zip(axes.flat,selected):
+        title=f"E {d.E_low:.2f}-{d.E_high:.2f} GeV" if detector=="FT" else f"E {d.E_low:.2f}-{d.E_high:.2f} GeV, theta {d.theta_low_deg:.1f}-{d.theta_high_deg:.1f} deg"
+        draw_projection_panel(ax,title,f,variable_key)
+    for ax in axes.flat[len(selected):]: ax.set_visible(False)
+    spec=next(s for s in FIT_VARIABLES if s.key==variable_key)
+    for ax in axes[-1,:]:
+        if ax.get_visible(): ax.set_xlabel(spec.label)
+    for row in axes:
+        if row[0].get_visible(): row[0].set_ylabel("Counts")
+    handles,labels=axes.flat[0].get_legend_handles_labels()
+    category="FT" if detector=="FT" else f"FD sector {sector}"
+    fig.suptitle(f"{period_label}: {category} epgamma multi-projection fits — {variable_key}",fontsize=15)
+    if handles: fig.legend(handles,labels,loc="upper center",ncol=4,frameon=False,bbox_to_anchor=(0.5,0.965))
+    fig.tight_layout(rect=(0,0,1,0.93)); fig.savefig(path,dpi=180); plt.close(fig)
+
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
     period_dir = Path(args.output_dir) / period.key
-    fit_dir = period_dir / "fail_fits_individual"
-    aggregate_fit_dir = period_dir / "fail_fits"
+    aggregate_fit_dir = period_dir / "epgamma_template_fits"
     plot_dir = period_dir / "plots"
-    fit_dir.mkdir(parents=True, exist_ok=True)
     aggregate_fit_dir.mkdir(parents=True, exist_ok=True)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1264,7 +1471,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     bins = build_bins(pass_mc, fail_pi0_mc, args)
     rows: List[EfficiencyRow] = []
     n_bins = len(bins)
-    mx2_edges = np.linspace(args.mx2_ep_min, args.mx2_ep_max, args.mx2_ep_bins + 1)
+    edges_by_var = fit_edges()
 
     log(f"{period.label}: assigning trials to {n_bins} adaptive bins")
     pass_data_ids = assign_bin_ids(pass_data, bins)
@@ -1275,78 +1482,59 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
 
     pass_data_counts = weighted_counts_by_bin(pass_data, pass_data_ids, n_bins)
     pass_mc_counts = weighted_counts_by_bin(pass_mc, pass_mc_ids, n_bins)
+    fail_data_total_counts = weighted_counts_by_bin(fail_data, fail_data_ids, n_bins)
     fail_pi0_counts = weighted_counts_by_bin(fail_pi0_mc, fail_pi0_ids, n_bins)
 
-    data_mx2_hists = bulk_mx2_histograms(fail_data, fail_data_ids, n_bins, mx2_edges)
-    dvcs_mx2_hists = bulk_mx2_histograms(fail_dvcs_mc, fail_dvcs_ids, n_bins, mx2_edges)
-    pi0_mx2_hists = bulk_mx2_histograms(fail_pi0_mc, fail_pi0_ids, n_bins, mx2_edges)
+    data_hists = {spec.key: bulk_variable_histograms(fail_data, fail_data_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
+    dvcs_hists = {spec.key: bulk_variable_histograms(fail_dvcs_mc, fail_dvcs_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
+    pi0_hists = {spec.key: bulk_variable_histograms(fail_pi0_mc, fail_pi0_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
 
-    morphology_by_category: Dict[Tuple[str, int], TemplateMorphology] = {}
-    for detector_name, sector in [("FT", 0)] + [("FD", s) for s in range(1, 7)]:
+    morphology_by_category: Dict[Tuple[str, int], MultiMorphology] = {}
+    for detector_name, sector in [("FT", 0)] + [("FD", value) for value in range(1, 7)]:
         indices = [d.bin_id for d in bins if d.detector == detector_name and d.sector == sector]
         if not indices:
             continue
-        if args.disable_template_morphing:
-            morphology_by_category[(detector_name, sector)] = TemplateMorphology()
-        else:
-            morphology_by_category[(detector_name, sector)] = fit_shared_template_morphology(
-                data_mx2_hists[indices].sum(axis=0), dvcs_mx2_hists[indices].sum(axis=0),
-                pi0_mx2_hists[indices].sum(axis=0), mx2_edges)
-    fits: List[FitSummary] = []
+        morphology_by_category[(detector_name, sector)] = fit_category_multi_morphology(
+            {spec.key: data_hists[spec.key][indices].sum(axis=0) for spec in FIT_VARIABLES},
+            {spec.key: dvcs_hists[spec.key][indices].sum(axis=0) for spec in FIT_VARIABLES},
+            {spec.key: pi0_hists[spec.key][indices].sum(axis=0) for spec in FIT_VARIABLES},
+            edges_by_var, args.disable_template_morphing,
+        )
 
+    fits: List[MultiFitSummary] = []
     for definition in bins:
         index = definition.bin_id
         n_pass_data = float(pass_data_counts[index])
         n_pass_mc = float(pass_mc_counts[index])
         n_fail_mc = float(fail_pi0_counts[index])
-
-        fit = fit_two_template_histograms(
-            data_mx2_hists[index],
-            dvcs_mx2_hists[index],
-            pi0_mx2_hists[index],
-            mx2_edges,
-            morphology_by_category.get((definition.detector, definition.sector)),
+        fit = fit_multi_projection_bin(
+            {spec.key: data_hists[spec.key][index] for spec in FIT_VARIABLES},
+            {spec.key: dvcs_hists[spec.key][index] for spec in FIT_VARIABLES},
+            {spec.key: pi0_hists[spec.key][index] for spec in FIT_VARIABLES},
+            edges_by_var, morphology_by_category.get((definition.detector, definition.sector), MultiMorphology({})),
+            float(fail_data_total_counts[index]), args.fit_min_counts,
         )
         fits.append(fit)
         n_fail_data = fit.n_pi0
         n_fail_data_err = fit.n_pi0_err
-
         pass_data_err = math.sqrt(max(n_pass_data, 0.0))
         pass_mc_err = math.sqrt(max(n_pass_mc, 0.0))
         fail_mc_err = math.sqrt(max(n_fail_mc, 0.0))
-
-        eff_data, eff_data_err = efficiency_and_error(
-            n_pass_data, pass_data_err, n_fail_data, n_fail_data_err
-        )
-        eff_mc, eff_mc_err = efficiency_and_error(
-            n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err
-        )
+        eff_data, eff_data_err = efficiency_and_error(n_pass_data, pass_data_err, n_fail_data, n_fail_data_err)
+        eff_mc, eff_mc_err = efficiency_and_error(n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err)
         sf, sf_err = scale_factor_and_error(eff_data, eff_data_err, eff_mc, eff_mc_err)
+        rows.append(EfficiencyRow(
+            period.key, period.label, definition.bin_id, definition.detector, definition.sector,
+            definition.E_low, definition.E_high, definition.theta_low_deg, definition.theta_high_deg,
+            n_pass_data, pass_data_err, n_fail_data, n_fail_data_err, eff_data, eff_data_err,
+            n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err, eff_mc, eff_mc_err, sf, sf_err,
+            fit.success, fit.deviance, fit.ndf,
+        ))
 
-        row = EfficiencyRow(
-            period.key, period.label, definition.bin_id, definition.detector,
-            definition.sector, definition.E_low, definition.E_high,
-            definition.theta_low_deg, definition.theta_high_deg,
-            n_pass_data, pass_data_err, n_fail_data, n_fail_data_err,
-            eff_data, eff_data_err, n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err,
-            eff_mc, eff_mc_err, sf, sf_err, fit.success, fit.deviance, fit.ndf,
-        )
-        rows.append(row)
-
-        fit_name = f"bin_{definition.bin_id:03d}_{definition.detector}_s{definition.sector}.png"
-        title = (
-            f"{period.label}, {definition.detector} sector {definition.sector}, "
-            f"E {definition.E_low:.2f}-{definition.E_high:.2f} GeV, "
-            f"theta {definition.theta_low_deg:.1f}-{definition.theta_high_deg:.1f} deg"
-        )
-        if args.write_individual_fit_plots:
-            plot_fit(fit_dir / fit_name, title, fit)
-    # endfor
-
-    plot_aggregated_fits(aggregate_fit_dir / "FT.png", period.label, bins, fits, "FT", 0)
-    for sector in range(1, 7):
-        plot_aggregated_fits(aggregate_fit_dir / f"FD_sector_{sector}.png",
-                             period.label, bins, fits, "FD", sector)
+    for spec in FIT_VARIABLES:
+        plot_aggregated_multi_fits(aggregate_fit_dir / f"FT_{spec.key}.png", period.label, bins, fits, "FT", 0, spec.key)
+        for sector in range(1, 7):
+            plot_aggregated_multi_fits(aggregate_fit_dir / f"FD_sector_{sector}_{spec.key}.png", period.label, bins, fits, "FD", sector, spec.key)
 
     plot_scale_factors(plot_dir / "scale_factors_FT.png", period.label, rows, "FT", 0)
     plot_efficiencies(plot_dir / "efficiencies_FT.png", period.label, rows, "FT", 0)
@@ -1367,8 +1555,11 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "fail_pi0_mc_candidates": fail_pi0_mc.size(),
             "n_bins": len(rows),
         },
-        "template_morphology": {
-            f"{detector}_s{sector}": asdict(value)
+        "multi_projection_template_morphology": {
+            f"{detector}_s{sector}": {
+                "success": value.success, "deviance": value.deviance, "ndf": value.ndf,
+                "parameters": {key: list(params) for key, params in value.params.items()},
+            }
             for (detector, sector), value in morphology_by_category.items()
         },
         "runtime_seconds": time.perf_counter() - period_start,
@@ -1513,7 +1704,7 @@ def main() -> int:
             "No equal-efficiency approximation is used.",
             "Scale factors are not yet propagated to DVCS acceptance or pi0 migration.",
             "Period processing is parallelized with a hard maximum of seven workers.",
-            "Trials are assigned to adaptive bins once and Mx2 histograms are filled in bulk.",
+            "Trials are assigned to adaptive bins once and all three discriminator histograms are filled in bulk.",
         ],
     }
     with open(output_dir / "provenance.json", "w", encoding="utf-8") as handle:
