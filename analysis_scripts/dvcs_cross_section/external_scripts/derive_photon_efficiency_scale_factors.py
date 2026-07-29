@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v13.py
+derive_photon_efficiency_scale_factors_v17.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
 The script measures epsilon_b = N_pass,b/(N_pass,b+N_fail,b) separately in
 data and AAOGEN MC, where b is a predicted probe-photon bin. Native eppi0
-events provide two directed passing probes. One-photon epgamma candidates
+events provide directed passing probes with an explicit low-energy tag and a DVCS-threshold probe. One-photon epgamma candidates
 provide the failed-probe population after a simultaneous DVCS/BH plus pi0
 template decomposition.
 
@@ -23,6 +23,12 @@ every event-level and directed-probe rejection stage for data and AAOGEN MC.
 Native photon directions are recovered with a cone-constrained analytic solver
 that does not use gamma_phi1/2, since those are Trento rather than lab angles. Processing is parallelized by run period with a hard maximum of seven
 workers.
+
+The nominal directed-trial definition is asymmetric: the observed tag photon
+must satisfy E_tag >= 0.35 GeV, while the predicted probe must satisfy
+E_probe >= 2 GeV to match the DVCS photon threshold.  The existing
+pi0-as-epgamma files retain an observed photon above 2 GeV, so their failed-probe
+support is a restricted subset; the script records this limitation explicitly.
 
 The script derives S_gamma,b = epsilon_data,b/epsilon_MC,b. It does not yet
 propagate that scale factor into DVCS acceptance or pi0 migration.
@@ -236,7 +242,7 @@ PASS_EVENT_STAGES = (
 )
 
 PASS_PROBE_STAGES = (
-    "two_trials_from_closure_events", "prediction_finite", "energy_range",
+    "two_trials_from_closure_events", "prediction_finite", "tag_energy_range", "probe_energy_range",
     "photon_like_E_minus_p", "photon_like_m2", "predicted_detector",
     "global_cuts", "angle_match", "energy_match", "final_pass",
 )
@@ -428,7 +434,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ft-theta-max", type=float, default=5.0)
     parser.add_argument("--fd-theta-min", type=float, default=5.0)
     parser.add_argument("--fd-theta-max", type=float, default=35.0)
-    parser.add_argument("--probe-E-min", type=float, default=0.35)
+    parser.add_argument("--tag-E-min", type=float, default=0.35,
+                        help="Minimum reconstructed tag-photon energy (GeV).")
+    parser.add_argument("--tag-E-max", type=float, default=9.5,
+                        help="Maximum reconstructed tag-photon energy (GeV).")
+    parser.add_argument("--probe-E-min", type=float, default=2.0,
+                        help="Minimum predicted probe-photon energy (GeV), matching the DVCS photon threshold.")
     parser.add_argument("--probe-E-max", type=float, default=9.5)
 
     parser.add_argument("--ft-energy-bins", type=int, default=6)
@@ -1110,8 +1121,9 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                 match_angle_deg = np.degrees(np.arccos(np.clip(cos_opening, -1.0, 1.0)))
                 relative_E_residual = np.abs(obs_E-pred_E)/np.maximum(pred_E, 1.0e-9)
                 finite = seed & np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg) & np.isfinite(pred_ph) & np.isfinite(obs_E) & np.isfinite(obs_th) & np.isfinite(obs_ph) & np.isfinite(match_angle_deg) & np.isfinite(relative_E_residual)
-                energy = finite & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
-                ep = energy & (pred_p > 0.0) & (np.abs(pred_E-pred_p) < 0.30)
+                tag_energy = finite & (obs_E >= args.tag_E_min) & (obs_E < args.tag_E_max)
+                probe_energy = tag_energy & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
+                ep = probe_energy & (pred_p > 0.0) & (np.abs(pred_E-pred_p) < 0.30)
                 m2 = ep & (np.abs(pred_m2) < 0.20)
                 detector_ok = m2 & (detector >= 0)
                 global_requirement = np.ones(n, dtype=bool)
@@ -1121,13 +1133,14 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                 global_ok = detector_ok & global_requirement
                 angle = global_ok & (match_angle_deg < args.probe_match_angle_max_deg)
                 eres = angle & (relative_E_residual < args.probe_match_relative_E_max)
-                for stage, mask in (("prediction_finite", finite), ("energy_range", energy), ("photon_like_E_minus_p", ep),
+                for stage, mask in (("prediction_finite", finite), ("tag_energy_range", tag_energy),
+                                    ("probe_energy_range", probe_energy), ("photon_like_E_minus_p", ep),
                                     ("photon_like_m2", m2), ("predicted_detector", detector_ok),
                                     ("global_cuts", global_ok), ("angle_match", angle),
                                     ("energy_match", eres), ("final_pass", eres)):
                     diag_add_count(diag, "probe_cutflow", stage, weighted_count(mask, solution_weight))
                 diag_fill(diag, "pred_E", pred_E, finite, solution_weight); diag_fill(diag, "pred_theta_deg", theta_deg, finite, solution_weight)
-                diag_fill(diag, "pred_m2", pred_m2, ep, solution_weight); diag_fill(diag, "pred_E_minus_p", pred_E-pred_p, energy, solution_weight)
+                diag_fill(diag, "pred_m2", pred_m2, ep, solution_weight); diag_fill(diag, "pred_E_minus_p", pred_E-pred_p, probe_energy, solution_weight)
                 diag_fill(diag, "match_angle_deg", match_angle_deg, global_ok, solution_weight)
                 diag_fill(diag, "relative_E_residual", relative_E_residual, angle, solution_weight)
                 for cat, cmask in [("FT", eres & (detector == 0))] + [(f"FD sector {j}", eres & (detector == 1) & (sector == j)) for j in range(1,7)]:
@@ -1207,6 +1220,7 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             & np.isfinite(pred_E) & np.isfinite(pred_p)
             & np.isfinite(theta_deg) & np.isfinite(pred_ph)
             & np.isfinite(mx2_ep)
+            & (tag_E >= args.tag_E_min) & (tag_E < args.tag_E_max)
             & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
             & (pred_p > 0.0)
             & (np.abs(pred_E - pred_p) < 0.30)
@@ -2823,6 +2837,17 @@ def write_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
 
 def main() -> int:
     args = parse_args()
+    if args.probe_E_min < 2.0:
+        log("WARNING: --probe-E-min is below the 2 GeV DVCS photon threshold.")
+    log(
+        f"Directed-probe energy definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
+        f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV"
+    )
+    log(
+        "IMPORTANT: the existing pi0-as-epgamma files retain a >2 GeV observed photon. "
+        "The failed-probe sample therefore covers only the subset supported by those files, "
+        "not all cases with a low-energy surviving tag and a missing >2 GeV probe."
+    )
     if args.workers < 1:
         raise ValueError("--workers must be at least 1")
     # endif
@@ -2887,7 +2912,7 @@ def main() -> int:
     plot_all_period_scale_factor_summary(output_dir / "all_periods_integrated_scale_factors.png", all_rows)
 
     json_payload = {
-        "schema_version": 2,
+        "schema_version": 3,
         "description": "Exploratory RGA pi0 tag-and-probe photon-efficiency data/MC scale factors.",
         "formula": "epsilon = N_pass / (N_pass + N_fail); S_gamma = epsilon_data / epsilon_mc",
         "arguments": args_dict,
@@ -2904,8 +2929,10 @@ def main() -> int:
         "tree_name": TREE_NAME,
         "periods": [asdict(period) for period in periods],
         "notes": [
-            "Each epgamma-gamma event contributes two directed passing probes.",
-            "Each fitted pi0-as-epgamma event contributes one failed probe.",
+            "Each native eppi0 event contributes zero, one, or two directed passing probes: the observed tag must satisfy tag-E-min and the predicted probe must satisfy probe-E-min.",
+            "The nominal thresholds are E_tag>0.35 GeV and E_probe>2 GeV, matching the asymmetric pi0 production and the DVCS photon threshold.",
+            "Each fitted pi0-as-epgamma event contributes one failed probe only when the observed tag and predicted missing probe satisfy the same thresholds.",
+            "Because the existing pi0-as-epgamma files were produced with the retained photon above 2 GeV, they do not contain the full population in which a 0.35--2 GeV tag survives while a >2 GeV probe is missing; this restricted-support limitation is recorded and must be resolved before a final absolute efficiency correction is adopted.",
             "The extraction is integrated over photon energy and polar angle within FT and each FD sector.",
             "A complete data/MC passing-sample cut-flow audit is written for every period.",
             "Common study cuts mirror the applicable global requirements: (-t1)<1 when available and electron-photon opening angle >5 deg. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",
