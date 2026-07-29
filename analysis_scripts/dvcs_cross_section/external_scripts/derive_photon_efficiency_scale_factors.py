@@ -31,6 +31,7 @@ propagate that scale factor into DVCS acceptance or pi0 migration.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import concurrent.futures
 import csv
 import hashlib
@@ -451,7 +452,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fit-support-containment", type=float, default=0.995,
                         help="MC-defined central containment used while calibrating shared template morphologies.")
     parser.add_argument("--constraint-variable-weight", type=float, default=0.35,
-                        help="Relative likelihood weight for auxiliary constraint projections.")
+                        help="Legacy option retained for command-line compatibility; the exact exclusivity fitter now controls auxiliary profiling.")
+    parser.add_argument("--exclusivity-max-shift-bins", type=float, default=12.0)
+    parser.add_argument("--exclusivity-max-smear-bins", type=float, default=20.0)
+    parser.add_argument("--exclusivity-shift-prior-bins", type=float, default=4.0)
+    parser.add_argument("--exclusivity-smear-prior-bins", type=float, default=8.0)
+    parser.add_argument("--exclusivity-dvcs-core-containment", type=float, default=0.90)
+    parser.add_argument("--exclusivity-dvcs-fraction-containment", type=float, default=0.95)
+    parser.add_argument("--exclusivity-pi0-core-containment", type=float, default=0.90)
+    parser.add_argument("--exclusivity-pi0-fraction-containment", type=float, default=0.95)
+    parser.add_argument("--exclusivity-outside-overshoot-penalty", type=float, default=0.25)
+    parser.add_argument("--exclusivity-emiss2-mean-order-penalty", type=float, default=25.0)
+    parser.add_argument("--disable-exclusivity-nuisance-penalties", action="store_true")
     parser.add_argument("--disable-fit-variant-systematic", action="store_true",
                         help="Disable leave-one-driver-out and expanded-fit model-systematic variants.")
     parser.add_argument("--probe-match-angle-max-deg", type=float, default=2.0,
@@ -2296,6 +2308,217 @@ def plot_combined_fd_fit(path: Path, period_label: str, fit: MultiFitSummary) ->
     plot_category_fit_summary(path, period_label + " (all six FD sectors combined)", definition, fit)
 
 
+
+
+_EXCLUSIVITY_FITTER_MODULE = None
+
+
+def load_exclusivity_fitter_module():
+    """Load the established exclusivity two-template fitter from this directory.
+
+    Keeping one fitter implementation prevents the photon-efficiency extraction
+    from drifting away from the validated exclusivity-selection methodology.
+    """
+    global _EXCLUSIVITY_FITTER_MODULE
+    if _EXCLUSIVITY_FITTER_MODULE is not None:
+        return _EXCLUSIVITY_FITTER_MODULE
+    here = Path(__file__).resolve().parent
+    candidates = [here / "plot_exclusivity_data_dvcs_pi0_mc.py"]
+    candidates.extend(sorted(here.glob("plot_exclusivity_data_dvcs_pi0_mc(*).py"), reverse=True))
+    source = next((candidate for candidate in candidates if candidate.exists()), None)
+    if source is None:
+        raise FileNotFoundError(
+            "The validated exclusivity fitter plot_exclusivity_data_dvcs_pi0_mc.py "
+            "must be present beside this script."
+        )
+    spec = importlib.util.spec_from_file_location("_photon_eff_exclusivity_fitter", source)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load exclusivity fitter from {source}")
+    module = importlib.util.module_from_spec(spec)
+    import sys
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _EXCLUSIVITY_FITTER_MODULE = module
+    return module
+
+
+def _exact_histogram_mapping(histograms: Mapping[str, np.ndarray]) -> Dict[str, np.ndarray]:
+    """Translate this script's branch aliases to the exclusivity fitter keys."""
+    return {
+        "Delta_phi": np.asarray(histograms["Delta_phi"], dtype=np.float64),
+        "theta": np.asarray(histograms["theta_cm"], dtype=np.float64),
+        "theta_gamma_gamma": np.asarray(histograms["theta_gamma_gamma"], dtype=np.float64),
+        "pTmiss": np.asarray(histograms["pTmiss"], dtype=np.float64),
+        "Emiss2": np.asarray(histograms["Emiss2"], dtype=np.float64),
+        "Mx2": np.asarray(histograms["Mx2"], dtype=np.float64),
+        "Mx2_2": np.asarray(histograms["Mx2_2"], dtype=np.float64),
+    }
+
+
+def _current_key_from_exact(key: str) -> str:
+    return "theta_cm" if key == "theta" else key
+
+
+def convert_exact_summary(summary, data_hists: Mapping[str, np.ndarray]) -> MultiFitSummary:
+    """Convert the established fitter result to this script's output schema."""
+    projections: Dict[str, ProjectionResult] = {}
+    if summary.variable_results:
+        for exact_key, result in summary.variable_results.items():
+            current_key = _current_key_from_exact(exact_key)
+            spec = next((item for item in FIT_VARIABLES if item.key == current_key), None)
+            if spec is None or not result.success or result.model_counts is None:
+                continue
+            edges = np.linspace(spec.low, spec.high, spec.bins + 1)
+            projections[current_key] = ProjectionResult(
+                spec=spec,
+                edges=edges,
+                data_counts=np.asarray(result.fit_data_counts, dtype=np.float64),
+                model_counts=np.asarray(result.model_counts, dtype=np.float64),
+                pi0_counts=np.asarray(result.pi0_component_counts, dtype=np.float64),
+                dvcs_counts=np.asarray(result.dvcs_component_counts, dtype=np.float64),
+                deviance=float(result.deviance),
+                ndf=int(result.ndf),
+            )
+    total_candidates = float(np.sum(np.asarray(data_hists["Delta_phi"], dtype=np.float64)))
+    fraction = float(summary.f_pi0)
+    fraction_err = float(summary.f_pi0_err) if math.isfinite(summary.f_pi0_err) else math.nan
+    return MultiFitSummary(
+        success=bool(summary.success),
+        n_pi0=fraction * total_candidates,
+        n_pi0_err=(fraction_err * total_candidates if math.isfinite(fraction_err) else math.sqrt(max(fraction * total_candidates, 0.0))),
+        n_dvcs=(1.0 - fraction) * total_candidates,
+        n_dvcs_err=(fraction_err * total_candidates if math.isfinite(fraction_err) else math.sqrt(max((1.0-fraction) * total_candidates, 0.0))),
+        fraction_pi0=fraction,
+        fraction_pi0_err=fraction_err,
+        deviance=float(summary.deviance),
+        ndf=int(summary.ndf),
+        message=str(summary.message),
+        projections=projections,
+    )
+
+
+def run_exact_exclusivity_fit(
+    data_hists: Mapping[str, np.ndarray],
+    dvcs_hists: Mapping[str, np.ndarray],
+    pi0_hists: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+    fraction_drivers: Sequence[str] = ("Delta_phi", "theta_gamma_gamma", "pTmiss"),
+) -> Tuple[MultiFitSummary, object]:
+    """Run the exact support/profile fitter used by the exclusivity analysis."""
+    module = load_exclusivity_fitter_module()
+    topology = module.TopologyConfig("EFFICIENCY", "photon-efficiency", 0, 0)
+    exact_drivers = tuple("theta" if key == "theta_cm" else key for key in fraction_drivers)
+    summary = module.fit_shared_two_templates(
+        _exact_histogram_mapping(data_hists),
+        _exact_histogram_mapping(dvcs_hists),
+        _exact_histogram_mapping(pi0_hists),
+        topology,
+        max_shift_bins=args.exclusivity_max_shift_bins,
+        max_smear_bins=args.exclusivity_max_smear_bins,
+        min_counts=args.fit_min_counts,
+        fraction_variable_branches=exact_drivers,
+        shift_prior_bins=args.exclusivity_shift_prior_bins,
+        smear_prior_bins=args.exclusivity_smear_prior_bins,
+        use_nuisance_penalties=not args.disable_exclusivity_nuisance_penalties,
+        core_containment=args.exclusivity_dvcs_core_containment,
+        fraction_containment=args.exclusivity_dvcs_fraction_containment,
+        pi0_support_core_containment=args.exclusivity_pi0_core_containment,
+        pi0_support_fraction_containment=args.exclusivity_pi0_fraction_containment,
+        pi0_core_calibration=None,
+        outside_overshoot_penalty_weight=args.exclusivity_outside_overshoot_penalty,
+        emiss2_mean_order_penalty_weight=args.exclusivity_emiss2_mean_order_penalty,
+    )
+    return convert_exact_summary(summary, data_hists), summary
+
+
+def fit_frozen_exclusivity_shapes(
+    data_hists: Mapping[str, np.ndarray],
+    reference_exact_summary,
+    drivers: Sequence[str],
+) -> MultiFitSummary:
+    """Fit only f_pi0 using morphology frozen by the high-statistics reference fit.
+
+    This is the simultaneous-sector implementation: the combined-FD fit learns
+    the nuisance morphology once; each sector then profiles only its mixture
+    fraction. It is much faster and prevents random sector nuisance solutions.
+    """
+    module = load_exclusivity_fitter_module()
+    results = reference_exact_summary.variable_results or {}
+    usable = []
+    for key in drivers:
+        exact_key = "theta" if key == "theta_cm" else key
+        result = results.get(exact_key)
+        if result is None or not result.success or result.transformed_dvcs_shape is None or result.transformed_pi0_shape is None:
+            continue
+        current_key = _current_key_from_exact(exact_key)
+        data = np.asarray(data_hists[current_key], dtype=np.float64)
+        usable.append((current_key, result, data))
+    if not usable:
+        return MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "No usable frozen projections", {})
+
+    def objective(fraction: float) -> float:
+        value = 0.0
+        for _, result, data in usable:
+            dv = np.asarray(result.transformed_dvcs_shape, dtype=np.float64)
+            pi = np.asarray(result.transformed_pi0_shape, dtype=np.float64)
+            shape = (1.0 - fraction) * dv + fraction * pi
+            total = float(np.sum(data))
+            if total <= 0.0 or float(np.sum(shape)) <= 0.0:
+                continue
+            model = total * shape / float(np.sum(shape))
+            value += module.poisson_deviance(data, model)
+        return value
+
+    opt = minimize_scalar(objective, bounds=(0.0, 1.0), method="bounded", options={"xatol": 2e-5, "maxiter": 150})
+    fraction = float(opt.x) if opt.success else math.nan
+    if not math.isfinite(fraction):
+        return MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "Frozen-shape fraction fit failed", {})
+    step = 1e-3
+    ferr = math.nan
+    if step < fraction < 1.0-step:
+        curvature = (objective(fraction-step) - 2*objective(fraction) + objective(fraction+step)) / step**2
+        if curvature > 0.0:
+            ferr = math.sqrt(2.0/curvature)
+    projections: Dict[str, ProjectionResult] = {}
+    total_deviance = 0.0
+    total_ndf = 0
+    for spec in FIT_VARIABLES:
+        exact_key = "theta" if spec.key == "theta_cm" else spec.key
+        result = results.get(exact_key)
+        if result is None or not result.success or result.transformed_dvcs_shape is None:
+            continue
+        data = np.asarray(data_hists[spec.key], dtype=np.float64)
+        dv = np.asarray(result.transformed_dvcs_shape, dtype=np.float64)
+        pi = np.asarray(result.transformed_pi0_shape, dtype=np.float64)
+        total = float(np.sum(data))
+        shape = (1.0-fraction)*dv + fraction*pi
+        norm = float(np.sum(shape))
+        if total <= 0.0 or norm <= 0.0:
+            continue
+        scale = total / norm
+        model = scale*shape
+        dvcomp = scale*(1.0-fraction)*dv
+        picomp = scale*fraction*pi
+        dev = module.poisson_deviance(data, model)
+        ndf = max(0, int(np.count_nonzero(data + model)) - 1)
+        if spec.key in drivers:
+            total_deviance += dev
+            total_ndf += ndf
+        projections[spec.key] = ProjectionResult(spec, np.linspace(spec.low, spec.high, spec.bins+1), data, model, picomp, dvcomp, dev, ndf)
+    total_candidates = float(np.sum(np.asarray(data_hists["Delta_phi"], dtype=np.float64)))
+    return MultiFitSummary(True, fraction*total_candidates, (ferr*total_candidates if math.isfinite(ferr) else math.sqrt(max(fraction*total_candidates,0.0))), (1-fraction)*total_candidates, (ferr*total_candidates if math.isfinite(ferr) else math.sqrt(max((1-fraction)*total_candidates,0.0))), fraction, ferr, total_deviance, total_ndf, "Exact exclusivity morphology frozen from combined category", projections)
+
+
+def frozen_variant_systematic(data_hists, reference_exact_summary):
+    nominal = fit_frozen_exclusivity_shapes(data_hists, reference_exact_summary, FRACTION_DRIVER_KEYS)
+    variants = {"nominal": nominal}
+    for omitted in FRACTION_DRIVER_KEYS:
+        active = tuple(key for key in FRACTION_DRIVER_KEYS if key != omitted)
+        variants[f"omit_{omitted}"] = fit_frozen_exclusivity_shapes(data_hists, reference_exact_summary, active)
+    good = [fit.n_pi0 for fit in variants.values() if fit.success and math.isfinite(fit.n_pi0)]
+    spread = max((abs(value - nominal.n_pi0) for value in good), default=0.0) if nominal.success else math.nan
+    return nominal, spread, variants
+
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -2359,47 +2582,58 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     dvcs_hists = {spec.key: bulk_variable_histograms(fail_dvcs_mc, fail_dvcs_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
     pi0_hists = {spec.key: bulk_variable_histograms(fail_pi0_mc, fail_pi0_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
 
-    morphology_by_category: Dict[Tuple[str, int], MultiMorphology] = {}
-    # FT retains its own integrated morphology.  FD is calibrated once with all six
-    # sectors combined, then the same nuisance parameters are used in every sector.
+    # Run the validated exclusivity support/profile fitter only twice per period:
+    # once for integrated FT and once for all FD sectors combined.  The sector
+    # fractions then use the combined-FD transformed shapes with nuisance
+    # morphology frozen.  This is both faster and substantially more stable.
     ft_indices = [d.bin_id for d in bins if d.detector == "FT"]
     fd_indices = [d.bin_id for d in bins if d.detector == "FD"]
+
+    def summed_histograms(indices, source):
+        return {spec.key: source[spec.key][indices].sum(axis=0) for spec in FIT_VARIABLES}
+
+    ft_reference_fit = None
+    ft_reference_exact = None
     if ft_indices:
-        morphology_by_category[("FT", 0)] = fit_category_multi_morphology(
-            {spec.key: data_hists[spec.key][ft_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            {spec.key: dvcs_hists[spec.key][ft_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            {spec.key: pi0_hists[spec.key][ft_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            edges_by_var, args.disable_template_morphing,
-            args.fit_support_containment, args.constraint_variable_weight,
+        ft_reference_fit, ft_reference_exact = run_exact_exclusivity_fit(
+            summed_histograms(ft_indices, data_hists),
+            summed_histograms(ft_indices, dvcs_hists),
+            summed_histograms(ft_indices, pi0_hists),
+            args,
         )
-    combined_fd_morphology = MultiMorphology({})
+
+    combined_fd_fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "No FD bins", {})
+    combined_fd_exact = None
     if fd_indices:
-        combined_fd_morphology = fit_category_multi_morphology(
-            {spec.key: data_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            {spec.key: dvcs_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            {spec.key: pi0_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            edges_by_var, args.disable_template_morphing,
-            args.fit_support_containment, args.constraint_variable_weight,
+        combined_fd_fit, combined_fd_exact = run_exact_exclusivity_fit(
+            summed_histograms(fd_indices, data_hists),
+            summed_histograms(fd_indices, dvcs_hists),
+            summed_histograms(fd_indices, pi0_hists),
+            args,
         )
-        for sector in range(1, 7):
-            morphology_by_category[("FD", sector)] = combined_fd_morphology
+        plot_combined_fd_fit(aggregate_fit_dir / "FD_all_sectors_combined.png", period.label, combined_fd_fit)
 
     fits: List[MultiFitSummary] = []
     fit_model_systematics: Dict[str, float] = {}
     fit_variants_metadata: Dict[str, object] = {}
+    rows: List[EfficiencyRow] = []
     for definition in bins:
         index = definition.bin_id
-        n_pass_data = float(pass_data_counts[index])
-        n_pass_mc = float(pass_mc_counts[index])
-        n_fail_mc = float(fail_pi0_counts[index])
         local_data = {spec.key: data_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
-        local_dvcs = {spec.key: dvcs_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
-        local_pi0 = {spec.key: pi0_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
-        fit, model_spread, variants = fit_variant_model_systematic(
-            local_data, local_dvcs, local_pi0, edges_by_var,
-            morphology_by_category.get((definition.detector, definition.sector), MultiMorphology({})),
-            float(fail_data_total_counts[index]), args.fit_min_counts,
-        )
+        if definition.detector == "FT":
+            if ft_reference_exact is None:
+                fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "No FT reference fit", {})
+                model_spread = math.nan
+                variants = {"nominal": fit}
+            else:
+                fit, model_spread, variants = frozen_variant_systematic(local_data, ft_reference_exact)
+        else:
+            if combined_fd_exact is None:
+                fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "No combined-FD reference fit", {})
+                model_spread = math.nan
+                variants = {"nominal": fit}
+            else:
+                fit, model_spread, variants = frozen_variant_systematic(local_data, combined_fd_exact)
         if args.disable_fit_variant_systematic:
             model_spread = 0.0
         category_key = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
@@ -2411,41 +2645,26 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             for name, value in variants.items()
         }
         fits.append(fit)
+        n_pass_data = float(pass_data_counts[index])
+        n_pass_mc = float(pass_mc_counts[index])
+        n_fail_mc = float(fail_pi0_counts[index])
         n_fail_data = fit.n_pi0
-        n_fail_data_err = math.hypot(fit.n_pi0_err, model_spread)
+        n_fail_data_err = math.hypot(fit.n_pi0_err, model_spread) if math.isfinite(model_spread) else fit.n_pi0_err
         pass_data_err = math.sqrt(max(float(pass_data_sumw2[index]), 0.0))
         pass_mc_err = math.sqrt(max(float(pass_mc_sumw2[index]), 0.0))
         fail_mc_err = math.sqrt(max(n_fail_mc, 0.0))
         eff_data, eff_data_err = efficiency_and_error(n_pass_data, pass_data_err, n_fail_data, n_fail_data_err)
         eff_mc, eff_mc_err = efficiency_and_error(n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err)
         sf, sf_err = scale_factor_and_error(eff_data, eff_data_err, eff_mc, eff_mc_err)
-        rows.append(EfficiencyRow(
-            period.key, period.label, definition.bin_id, definition.detector, definition.sector,
+        rows.append(EfficiencyRow(period.key, period.label, definition.bin_id, definition.detector, definition.sector,
             definition.E_low, definition.E_high, definition.theta_low_deg, definition.theta_high_deg,
             n_pass_data, pass_data_err, n_fail_data, n_fail_data_err, eff_data, eff_data_err,
             n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err, eff_mc, eff_mc_err, sf, sf_err,
-            fit.success, fit.deviance, fit.ndf,
-        ))
+            fit.success, fit.deviance, fit.ndf))
 
     for definition, fit in zip(bins, fits):
         category_name = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
-        plot_category_fit_summary(
-            aggregate_fit_dir / f"{category_name}.png",
-            period.label, definition, fit,
-        )
-
-    if fd_indices:
-        combined_fd_fit = fit_multi_projection_bin(
-            {spec.key: data_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            {spec.key: dvcs_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            {spec.key: pi0_hists[spec.key][fd_indices].sum(axis=0) for spec in FIT_VARIABLES},
-            edges_by_var, combined_fd_morphology,
-            float(fail_data_total_counts[fd_indices].sum()), args.fit_min_counts,
-        )
-        plot_combined_fd_fit(aggregate_fit_dir / "FD_all_sectors_combined.png", period.label, combined_fd_fit)
-    else:
-        combined_fd_fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan,
-                                          math.nan, math.nan, math.nan, 0, "No FD bins", {})
+        plot_category_fit_summary(aggregate_fit_dir / f"{category_name}.png", period.label, definition, fit)
 
     plot_integrated_efficiency_summary(
         plot_dir / "integrated_efficiencies_and_scale_factors.png",
@@ -2484,10 +2703,9 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         "fit_architecture": {
             "fraction_drivers": list(FRACTION_DRIVER_KEYS),
             "constraint_variables": [s.key for s in FIT_VARIABLES if not s.fraction_driver],
-            "FD_morphology": "shared across all six sectors from a combined-FD calibration",
-            "FT_morphology": "integrated FT calibration; no proton-topology split",
-            "support_containment": args.fit_support_containment,
-            "constraint_variable_weight": args.constraint_variable_weight,
+            "support_fit_source": "plot_exclusivity_data_dvcs_pi0_mc.py exact fitter",
+            "FD_morphology": "exact exclusivity fit on all six FD sectors; frozen for sector fractions",
+            "FT_morphology": "exact exclusivity fit on integrated FT",
         },
         "fit_model_systematics_on_nfail": fit_model_systematics,
         "fit_variants": fit_variants_metadata,
@@ -2507,19 +2725,10 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
                                         for k, v in f.projections.items()},
             } for d, f in zip(bins, fits)
         },
-        "multi_projection_template_morphology": {
-            f"{detector}_s{sector}": {
-                "success": value.success, "deviance": value.deviance, "ndf": value.ndf,
-                "parameters": {key: list(params) for key, params in value.params.items()},
-                "parameter_at_or_near_bound": {
-                    key: any(abs(v) >= (0.34 if next(s for s in FIT_VARIABLES if s.key == key).log_morph else
-                                        11.5 * float(np.mean(np.diff(fit_edges()[key])))) for v in params[::2])
-                         or any(v >= (0.39 if next(s for s in FIT_VARIABLES if s.key == key).log_morph else
-                                      11.5 * float(np.mean(np.diff(fit_edges()[key])))) for v in params[1::2])
-                    for key, params in value.params.items()
-                },
-            }
-            for (detector, sector), value in morphology_by_category.items()
+        "exclusivity_fitter_reference": {
+            "module": str(Path(load_exclusivity_fitter_module().__file__).resolve()),
+            "FT_reference_success": bool(ft_reference_fit.success) if ft_reference_fit is not None else False,
+            "FD_reference_success": bool(combined_fd_fit.success),
         },
         "runtime_seconds": time.perf_counter() - period_start,
     }
