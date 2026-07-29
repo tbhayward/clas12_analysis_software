@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v1.py
+derive_photon_efficiency_scale_factors_v2.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -59,12 +59,12 @@ Python 3, numpy, scipy, matplotlib, uproot.
 Typical usage
 -------------
 
-  python3 derive_photon_efficiency_scale_factors_v1.py \
+  python3 derive_photon_efficiency_scale_factors_v2.py \
       --period fa18_inb --workers 1
 
-Run all periods with at most five workers:
+Run all periods with up to seven workers:
 
-  python3 derive_photon_efficiency_scale_factors_v1.py --workers 5
+  python3 derive_photon_efficiency_scale_factors_v2.py --workers 7
 
 Use --inspect-branches first if the local trees use unexpected branch names.
 """
@@ -110,7 +110,7 @@ DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study"
 DEFAULT_STEP_SIZE = "200 MB"
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
-MAX_WORKERS = 5
+MAX_WORKERS = 7
 
 
 @dataclass(frozen=True)
@@ -210,7 +210,15 @@ class TrialArrays:
 
     @staticmethod
     def empty() -> "TrialArrays":
-        return TrialArrays(*[np.empty(0, dtype=float) for _ in range(7)])
+        return TrialArrays(
+            E=np.empty(0, dtype=np.float32),
+            theta_deg=np.empty(0, dtype=np.float32),
+            phi_rad=np.empty(0, dtype=np.float32),
+            detector=np.empty(0, dtype=np.int8),
+            sector=np.empty(0, dtype=np.int8),
+            mx2_ep=np.empty(0, dtype=np.float32),
+            weight=np.empty(0, dtype=np.float32),
+        )
 
     def size(self) -> int:
         return int(self.E.size)
@@ -285,7 +293,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--period", action="append", choices=[p.key for p in PERIODS])
-    parser.add_argument("--workers", type=int, default=5)
+    parser.add_argument("--workers", type=int, default=7,
+                        help="Maximum period-level worker processes; capped at 7. "
+                             "At most one worker is used per selected period.")
     parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
     parser.add_argument("--inspect-branches", action="store_true")
     parser.add_argument("--max-events", type=int, default=None,
@@ -440,13 +450,13 @@ def concatenate_trials(chunks: Sequence[TrialArrays]) -> TrialArrays:
         return TrialArrays.empty()
     # endif
     return TrialArrays(
-        E=np.concatenate([chunk.E for chunk in chunks]),
-        theta_deg=np.concatenate([chunk.theta_deg for chunk in chunks]),
-        phi_rad=np.concatenate([chunk.phi_rad for chunk in chunks]),
-        detector=np.concatenate([chunk.detector for chunk in chunks]).astype(np.int16),
-        sector=np.concatenate([chunk.sector for chunk in chunks]).astype(np.int16),
-        mx2_ep=np.concatenate([chunk.mx2_ep for chunk in chunks]),
-        weight=np.concatenate([chunk.weight for chunk in chunks]),
+        E=np.concatenate([chunk.E for chunk in chunks]).astype(np.float32, copy=False),
+        theta_deg=np.concatenate([chunk.theta_deg for chunk in chunks]).astype(np.float32, copy=False),
+        phi_rad=np.concatenate([chunk.phi_rad for chunk in chunks]).astype(np.float32, copy=False),
+        detector=np.concatenate([chunk.detector for chunk in chunks]).astype(np.int8, copy=False),
+        sector=np.concatenate([chunk.sector for chunk in chunks]).astype(np.int8, copy=False),
+        mx2_ep=np.concatenate([chunk.mx2_ep for chunk in chunks]).astype(np.float32, copy=False),
+        weight=np.concatenate([chunk.weight for chunk in chunks]).astype(np.float32, copy=False),
     )
 
 
@@ -566,9 +576,13 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
                 & (detector >= 0)
             )
             chunks.append(TrialArrays(
-                E=pred_E[good], theta_deg=theta_deg[good], phi_rad=pred_ph[good],
-                detector=detector[good], sector=sector[good], mx2_ep=mx2_ep[good],
-                weight=np.ones(np.count_nonzero(good), dtype=float),
+                E=pred_E[good].astype(np.float32, copy=False),
+                theta_deg=theta_deg[good].astype(np.float32, copy=False),
+                phi_rad=pred_ph[good].astype(np.float32, copy=False),
+                detector=detector[good].astype(np.int8, copy=False),
+                sector=sector[good].astype(np.int8, copy=False),
+                mx2_ep=mx2_ep[good].astype(np.float32, copy=False),
+                weight=np.ones(np.count_nonzero(good), dtype=np.float32),
             ))
         # endfor
     # endfor
@@ -630,9 +644,13 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             & (detector >= 0)
         )
         chunks.append(TrialArrays(
-            E=pred_E[good], theta_deg=theta_deg[good], phi_rad=pred_ph[good],
-            detector=detector[good], sector=sector[good], mx2_ep=mx2_ep[good],
-            weight=np.ones(np.count_nonzero(good), dtype=float),
+            E=pred_E[good].astype(np.float32, copy=False),
+            theta_deg=theta_deg[good].astype(np.float32, copy=False),
+            phi_rad=pred_ph[good].astype(np.float32, copy=False),
+            detector=detector[good].astype(np.int8, copy=False),
+            sector=sector[good].astype(np.int8, copy=False),
+            mx2_ep=mx2_ep[good].astype(np.float32, copy=False),
+            weight=np.ones(np.count_nonzero(good), dtype=np.float32),
         ))
     # endfor
     return concatenate_trials(chunks)
@@ -709,6 +727,81 @@ def bin_mask(trials: TrialArrays, definition: BinDefinition) -> np.ndarray:
     )
 
 
+def assign_bin_ids(trials: TrialArrays, definitions: Sequence[BinDefinition]) -> np.ndarray:
+    """Assign every trial to at most one adaptive probe bin in one vectorized pass.
+
+    The bin definitions are disjoint by construction.  This replaces repeated
+    full-array scans for every bin with one scan per detector/sector category.
+    """
+    assigned = np.full(trials.size(), -1, dtype=np.int16)
+    if trials.size() == 0:
+        return assigned
+    # endif
+
+    categories: Dict[Tuple[str, int], List[BinDefinition]] = {}
+    for definition in definitions:
+        categories.setdefault((definition.detector, definition.sector), []).append(definition)
+    # endfor
+
+    for (detector_name, sector), category_bins in categories.items():
+        if detector_name == "FT":
+            category_mask = trials.detector == 0
+        else:
+            category_mask = (trials.detector == 1) & (trials.sector == sector)
+        # endif
+        indices = np.flatnonzero(category_mask)
+        if indices.size == 0:
+            continue
+        # endif
+        energy = trials.E[indices]
+        theta = trials.theta_deg[indices]
+        for definition in category_bins:
+            local = (
+                (energy >= definition.E_low) & (energy < definition.E_high)
+                & (theta >= definition.theta_low_deg)
+                & (theta < definition.theta_high_deg)
+            )
+            assigned[indices[local]] = definition.bin_id
+        # endfor
+    # endfor
+    return assigned
+
+
+def weighted_counts_by_bin(trials: TrialArrays, bin_ids: np.ndarray, n_bins: int) -> np.ndarray:
+    valid = (bin_ids >= 0) & (bin_ids < n_bins)
+    return np.bincount(
+        bin_ids[valid].astype(np.int64, copy=False),
+        weights=trials.weight[valid],
+        minlength=n_bins,
+    ).astype(float, copy=False)
+
+
+def bulk_mx2_histograms(
+    trials: TrialArrays,
+    bin_ids: np.ndarray,
+    n_probe_bins: int,
+    mx2_edges: np.ndarray,
+) -> np.ndarray:
+    """Fill all probe-bin Mx2 histograms in one np.bincount operation."""
+    n_mx2_bins = len(mx2_edges) - 1
+    mx2_index = np.searchsorted(mx2_edges, trials.mx2_ep, side="right") - 1
+    valid = (
+        (bin_ids >= 0) & (bin_ids < n_probe_bins)
+        & np.isfinite(trials.mx2_ep)
+        & (mx2_index >= 0) & (mx2_index < n_mx2_bins)
+    )
+    flat_index = (
+        bin_ids[valid].astype(np.int64, copy=False) * n_mx2_bins
+        + mx2_index[valid].astype(np.int64, copy=False)
+    )
+    counts = np.bincount(
+        flat_index,
+        weights=trials.weight[valid],
+        minlength=n_probe_bins * n_mx2_bins,
+    )
+    return counts.reshape(n_probe_bins, n_mx2_bins).astype(float, copy=False)
+
+
 def poisson_deviance(data: np.ndarray, model: np.ndarray) -> float:
     data = np.asarray(data, dtype=float)
     model = np.clip(np.asarray(model, dtype=float), 1e-12, None)
@@ -718,12 +811,15 @@ def poisson_deviance(data: np.ndarray, model: np.ndarray) -> float:
     return float(2.0 * np.sum(terms))
 
 
-def fit_two_templates(data_values: np.ndarray, dvcs_values: np.ndarray, pi0_values: np.ndarray,
-                      args: argparse.Namespace) -> FitSummary:
-    edges = np.linspace(args.mx2_ep_min, args.mx2_ep_max, args.mx2_ep_bins + 1)
-    data_counts, _ = np.histogram(data_values, bins=edges)
-    dvcs_counts, _ = np.histogram(dvcs_values, bins=edges)
-    pi0_counts, _ = np.histogram(pi0_values, bins=edges)
+def fit_two_template_histograms(
+    data_counts: np.ndarray,
+    dvcs_counts: np.ndarray,
+    pi0_counts: np.ndarray,
+    edges: np.ndarray,
+) -> FitSummary:
+    data_counts = np.asarray(data_counts, dtype=float)
+    dvcs_counts = np.asarray(dvcs_counts, dtype=float)
+    pi0_counts = np.asarray(pi0_counts, dtype=float)
 
     if data_counts.sum() <= 0 or dvcs_counts.sum() <= 0 or pi0_counts.sum() <= 0:
         zeros = np.zeros_like(data_counts, dtype=float)
@@ -885,6 +981,7 @@ def plot_efficiencies(path: Path, period_label: str, rows: Sequence[EfficiencyRo
 
 
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
+    period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
     period_dir = Path(args.output_dir) / period.key
     fit_dir = period_dir / "fail_fits"
@@ -906,23 +1003,35 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
 
     bins = build_bins(pass_mc, fail_pi0_mc, args)
     rows: List[EfficiencyRow] = []
+    n_bins = len(bins)
+    mx2_edges = np.linspace(args.mx2_ep_min, args.mx2_ep_max, args.mx2_ep_bins + 1)
+
+    log(f"{period.label}: assigning trials to {n_bins} adaptive bins")
+    pass_data_ids = assign_bin_ids(pass_data, bins)
+    pass_mc_ids = assign_bin_ids(pass_mc, bins)
+    fail_data_ids = assign_bin_ids(fail_data, bins)
+    fail_dvcs_ids = assign_bin_ids(fail_dvcs_mc, bins)
+    fail_pi0_ids = assign_bin_ids(fail_pi0_mc, bins)
+
+    pass_data_counts = weighted_counts_by_bin(pass_data, pass_data_ids, n_bins)
+    pass_mc_counts = weighted_counts_by_bin(pass_mc, pass_mc_ids, n_bins)
+    fail_pi0_counts = weighted_counts_by_bin(fail_pi0_mc, fail_pi0_ids, n_bins)
+
+    data_mx2_hists = bulk_mx2_histograms(fail_data, fail_data_ids, n_bins, mx2_edges)
+    dvcs_mx2_hists = bulk_mx2_histograms(fail_dvcs_mc, fail_dvcs_ids, n_bins, mx2_edges)
+    pi0_mx2_hists = bulk_mx2_histograms(fail_pi0_mc, fail_pi0_ids, n_bins, mx2_edges)
 
     for definition in bins:
-        pd_mask = bin_mask(pass_data, definition)
-        pm_mask = bin_mask(pass_mc, definition)
-        fd_mask = bin_mask(fail_data, definition)
-        fdm_mask = bin_mask(fail_dvcs_mc, definition)
-        fpm_mask = bin_mask(fail_pi0_mc, definition)
+        index = definition.bin_id
+        n_pass_data = float(pass_data_counts[index])
+        n_pass_mc = float(pass_mc_counts[index])
+        n_fail_mc = float(fail_pi0_counts[index])
 
-        n_pass_data = float(np.sum(pass_data.weight[pd_mask]))
-        n_pass_mc = float(np.sum(pass_mc.weight[pm_mask]))
-        n_fail_mc = float(np.sum(fail_pi0_mc.weight[fpm_mask]))
-
-        fit = fit_two_templates(
-            fail_data.mx2_ep[fd_mask],
-            fail_dvcs_mc.mx2_ep[fdm_mask],
-            fail_pi0_mc.mx2_ep[fpm_mask],
-            args,
+        fit = fit_two_template_histograms(
+            data_mx2_hists[index],
+            dvcs_mx2_hists[index],
+            pi0_mx2_hists[index],
+            mx2_edges,
         )
         n_fail_data = fit.n_pi0
         n_fail_data_err = fit.n_pi0_err
@@ -977,6 +1086,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "fail_pi0_mc_candidates": fail_pi0_mc.size(),
             "n_bins": len(rows),
         },
+        "runtime_seconds": time.perf_counter() - period_start,
     }
     with open(period_dir / "metadata.json", "w", encoding="utf-8") as handle:
         json.dump(metadata, handle, indent=2)
@@ -1060,18 +1170,24 @@ def main() -> int:
         # endfor
     # endfor
 
+    effective_workers = min(args.workers, len(periods))
+    log(
+        f"Selected {len(periods)} period(s); using {effective_workers} period worker(s) "
+        f"(requested={args.workers}, hard maximum={MAX_WORKERS})"
+    )
+
     args_dict = vars(args).copy()
     all_rows: List[Dict[str, object]] = []
     metadata: Dict[str, object] = {}
 
-    if args.workers == 1 or len(periods) == 1:
+    if effective_workers == 1:
         for period in periods:
             key, rows, period_metadata = process_period(period, args_dict)
             all_rows.extend(rows)
             metadata[key] = period_metadata
         # endfor
     else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=args.workers) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=effective_workers) as executor:
             futures = {
                 executor.submit(process_period, period, args_dict): period.key
                 for period in periods
@@ -1088,7 +1204,7 @@ def main() -> int:
     write_rows(output_dir / "photon_efficiency_scale_factors.csv", all_rows)
 
     json_payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "description": "Exploratory RGA pi0 tag-and-probe photon-efficiency data/MC scale factors.",
         "formula": "epsilon = N_pass / (N_pass + N_fail); S_gamma = epsilon_data / epsilon_mc",
         "arguments": args_dict,
@@ -1111,6 +1227,8 @@ def main() -> int:
             "FD is binned by predicted sector, energy and polar angle.",
             "No equal-efficiency approximation is used.",
             "Scale factors are not yet propagated to DVCS acceptance or pi0 migration.",
+            "Period processing is parallelized with a hard maximum of seven workers.",
+            "Trials are assigned to adaptive bins once and Mx2 histograms are filled in bulk.",
         ],
     }
     with open(output_dir / "provenance.json", "w", encoding="utf-8") as handle:
