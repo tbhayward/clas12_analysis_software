@@ -261,6 +261,7 @@ def empty_pass_diagnostics(sample: str, path: str) -> Dict[str, object]:
         },
         "detector_pairs_after_closure": {},
         "final_trials_by_category": {"FT": 0, **{f"FD sector {i}": 0 for i in range(1, 7)}},
+        "matching_scans": {},
     }
 
 
@@ -413,7 +414,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--require-fiducial-status", type=int, default=None,
                         help="Optional exact fiducial_status requirement.")
     parser.add_argument("--disable-production-global-cuts", action="store_true",
-                        help="Disable the nominal global cuts mirrored from global_cuts.cpp.")
+                        help="Disable the common global cuts used by this study; period-specific Sp18 Out sector exclusions are intentionally not applied.")
     parser.add_argument("--global-t-abs-max", type=float, default=1.0,
                         help="Production global requirement (-t1) < this value when t1 exists.")
     parser.add_argument("--global-open-angle-min-deg", type=float, default=5.0,
@@ -528,17 +529,6 @@ def production_event_mask(arrays: Mapping[str, np.ndarray], resolved: Mapping[st
             raise RuntimeError("--enable-global-dis-cuts requested but Q2/W/y are not all present")
     return mask
 
-
-def sp18_out_sector_quality_mask(period_key: str, e_phi: np.ndarray, proton_detector: np.ndarray,
-                                  photon_detector: np.ndarray, args: argparse.Namespace) -> np.ndarray:
-    mask = np.ones(len(e_phi), dtype=bool)
-    if args.disable_production_global_cuts or period_key != "sp18_out":
-        return mask
-    esec = fd_sector_from_phi(e_phi)
-    mask &= esec != 3
-    mask &= ~((esec == 5) & (photon_detector == 1))
-    mask &= ~((esec == 5) & (proton_detector == 1))
-    return mask
 
 def inspect_truth_closure_availability(path: str, args: argparse.Namespace) -> Dict[str, object]:
     logical = ["gen_g1_E", "gen_g1_theta", "gen_g1_phi", "gen_g2_E", "gen_g2_theta", "gen_g2_phi"]
@@ -1017,7 +1007,6 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                 global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
                 accepted &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
                 proton_detector = finite_array(arrays, resolved.get("detector1"), default=-1.0).astype(int)
-                accepted &= sp18_out_sector_quality_mask(args.period_key, e_phi, proton_detector, detector, args)
             angle = accepted & (match_angle_deg < args.probe_match_angle_max_deg)
             eres = angle & (relative_E_residual < args.probe_match_relative_E_max)
             for stage, mask in (("prediction_finite", finite), ("energy_range", energy), ("photon_like_E_minus_p", ep),
@@ -1108,7 +1097,6 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
             proton_detector = finite_array(arrays, resolved.get("detector1"), default=-1.0).astype(int)
             good &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
-            good &= sp18_out_sector_quality_mask(args.period_key, e_phi, proton_detector, detector, args)
         chunks.append(TrialArrays(
             E=pred_E[good].astype(np.float32, copy=False),
             theta_deg=theta_deg[good].astype(np.float32, copy=False),
