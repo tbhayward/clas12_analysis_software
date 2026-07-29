@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v13.py
+plot_calibration_v14.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -56,26 +56,26 @@ Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v13.py
+  python3 external_scripts/plot_calibration_v14.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v13.py --rgc
+  python3 external_scripts/plot_calibration_v14.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v13.py \
+  python3 external_scripts/plot_calibration_v14.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v13.py --skip-ft
+  python3 external_scripts/plot_calibration_v14.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v13.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v14.py --skip-calorimeter
 """
 
 from __future__ import annotations
@@ -343,7 +343,7 @@ DEAD_STRIP_EXCLUSIONS: tuple[
     # PCal exclusions common to all five RGA periods.
     ("pcal", 1, "lw", 72.0, 94.5, ALL_RGA_DATASET_KEYS),
     ("pcal", 1, "lw", 220.5, 234.0, ALL_RGA_DATASET_KEYS),
-    ("pcal", 3, "lw", 346.5, 378.0, ALL_RGA_DATASET_KEYS),
+    ("pcal", 3, "lv", 346.5, 378.0, ALL_RGA_DATASET_KEYS),
     ("pcal", 4, "lv", 229.5, 243.0, ALL_RGA_DATASET_KEYS),
     ("pcal", 6, "lw", 166.5, 193.5, ALL_RGA_DATASET_KEYS),
 
