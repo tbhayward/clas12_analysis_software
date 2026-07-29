@@ -60,7 +60,7 @@ except ImportError as exc:
 #endif
 
 try:
-    from scipy.optimize import minimize
+    from scipy.optimize import minimize, minimize_scalar
     from scipy.ndimage import gaussian_filter1d
 except ImportError as exc:
     raise SystemExit("This script requires scipy: python3 -m pip install scipy") from exc
