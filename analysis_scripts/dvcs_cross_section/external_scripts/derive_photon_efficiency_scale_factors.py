@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v6.py
+derive_photon_efficiency_scale_factors_v7.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -17,9 +17,9 @@ aggregate FT or FD-sector sample and then fixed in the differential E_gamma and
 theta_gamma fits. Delta_phi uses additive shift/smearing; the positive-definite
 theta_gamma_gamma and pTmiss projections use log-space shift/smearing.
 
-FT probes are binned in E_gamma and integrated over 2.5--5.0 degrees by
-default. FD probes are binned in E_gamma and theta_gamma separately for sectors
-1--6. Processing is parallelized by run period with a hard maximum of seven
+The production extraction is deliberately integrated over energy and polar angle,
+retaining only FT and FD sectors 1--6. A detailed passing-sample audit records
+every event-level and directed-probe rejection stage for data and AAOGEN MC. Processing is parallelized by run period with a hard maximum of seven
 workers.
 
 The script derives S_gamma,b = epsilon_data,b/epsilon_MC,b. It does not yet
@@ -198,6 +198,70 @@ class TrialArrays:
         return int(self.E.size)
 
 
+PASS_EVENT_STAGES = (
+    "all_events", "basic_quality", "mx2", "pTmiss", "Delta_phi",
+    "native_inputs_finite", "theta_candidates_both", "detector_compatible_pair",
+    "positive_energy_solution", "closure_pass",
+)
+
+PASS_PROBE_STAGES = (
+    "two_trials_from_closure_events", "prediction_finite", "energy_range",
+    "photon_like_E_minus_p", "photon_like_m2", "predicted_detector",
+    "angle_match", "energy_match", "final_pass",
+)
+
+DIAGNOSTIC_HIST_EDGES = {
+    "Mx2": np.linspace(-0.30, 0.30, 121),
+    "pTmiss": np.linspace(0.0, 1.0, 101),
+    "abs_Delta_phi_minus_pi": np.linspace(0.0, 1.2, 121),
+    "closure": np.linspace(0.0, 0.20, 101),
+    "ambiguity": np.linspace(0.0, 0.20, 101),
+    "n_solutions": np.arange(-0.5, 8.5, 1.0),
+    "g1_E": np.linspace(0.0, 10.0, 101),
+    "g2_E": np.linspace(0.0, 10.0, 101),
+    "g1_theta_deg": np.linspace(0.0, 40.0, 101),
+    "g2_theta_deg": np.linspace(0.0, 40.0, 101),
+    "pred_E": np.linspace(0.0, 10.0, 101),
+    "pred_theta_deg": np.linspace(0.0, 40.0, 101),
+    "pred_m2": np.linspace(-0.5, 0.5, 121),
+    "pred_E_minus_p": np.linspace(-0.8, 0.8, 121),
+    "match_angle_deg": np.linspace(0.0, 15.0, 121),
+    "relative_E_residual": np.linspace(0.0, 2.0, 121),
+}
+
+
+def empty_pass_diagnostics(sample: str, path: str) -> Dict[str, object]:
+    return {
+        "sample": sample,
+        "path": path,
+        "event_cutflow": {stage: 0 for stage in PASS_EVENT_STAGES},
+        "probe_cutflow": {stage: 0 for stage in PASS_PROBE_STAGES},
+        "histograms": {
+            key: {"edges": edges.tolist(), "counts": np.zeros(len(edges)-1, dtype=np.int64).tolist()}
+            for key, edges in DIAGNOSTIC_HIST_EDGES.items()
+        },
+        "detector_pairs_after_closure": {},
+        "final_trials_by_category": {"FT": 0, **{f"FD sector {i}": 0 for i in range(1, 7)}},
+    }
+
+
+def diag_add_count(diag: Dict[str, object], group: str, stage: str, count: int) -> None:
+    diag[group][stage] = int(diag[group].get(stage, 0)) + int(count)
+
+
+def diag_fill(diag: Dict[str, object], key: str, values: np.ndarray, mask: Optional[np.ndarray] = None) -> None:
+    values = np.asarray(values, dtype=float)
+    if mask is not None:
+        values = values[np.asarray(mask, dtype=bool)]
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return
+    edges = np.asarray(diag["histograms"][key]["edges"], dtype=float)
+    counts, _ = np.histogram(values, bins=edges)
+    old = np.asarray(diag["histograms"][key]["counts"], dtype=np.int64)
+    diag["histograms"][key]["counts"] = (old + counts).tolist()
+
+
 @dataclass(frozen=True)
 class BinDefinition:
     bin_id: int
@@ -317,6 +381,10 @@ def parse_args() -> argparse.Namespace:
                         help="Maximum |Eobs-Epred|/Epred for a passing probe.")
     parser.add_argument("--pass-photon-closure-max", type=float, default=0.03,
                         help="Maximum normalized four-vector closure residual for reconstructed native eppi0 photons.")
+    parser.add_argument("--diagnostic-max-examples", type=int, default=0,
+                        help="Reserved for future event-level diagnostic dumps; zero writes no event records.")
+    parser.add_argument("--skip-efficiency-extraction", action="store_true",
+                        help="Run the passing-sample audit and stop before epgamma template fits.")
     parser.add_argument("--require-fiducial-status", type=int, default=None,
                         help="Optional exact fiducial_status requirement.")
 
@@ -542,7 +610,7 @@ def reconstruct_native_eppi0_photons(
     detector2: np.ndarray,
     args: argparse.Namespace,
 ) -> Tuple[np.ndarray, ...]:
-    """Recover both photon four-vectors from the native eppi0 tree schema."""
+    """Recover both photon four-vectors and expose every reconstruction stage."""
     n_events = len(e_theta)
     g1_E = np.full(n_events, np.nan, dtype=float)
     g1_theta = np.full(n_events, np.nan, dtype=float)
@@ -550,71 +618,71 @@ def reconstruct_native_eppi0_photons(
     g2_theta = np.full(n_events, np.nan, dtype=float)
     closure = np.full(n_events, np.nan, dtype=float)
     ambiguity = np.full(n_events, np.nan, dtype=float)
-    valid = np.zeros(n_events, dtype=bool)
+    n_solutions = np.zeros(n_events, dtype=np.int16)
+    input_finite = np.zeros(n_events, dtype=bool)
+    candidates_both = np.zeros(n_events, dtype=bool)
+    detector_pair = np.zeros(n_events, dtype=bool)
+    positive_solution = np.zeros(n_events, dtype=bool)
+    closure_pass = np.zeros(n_events, dtype=bool)
 
     for i in range(n_events):
         values = (e_theta[i], e_phi[i], pi0_p[i], pi0_theta[i], pi0_phi[i],
                   gamma1_phi[i], gamma2_phi[i], opening1[i], opening2[i], pi0_mass[i])
         if not all(math.isfinite(float(v)) for v in values) or pi0_p[i] <= 0.0 or pi0_mass[i] <= 0.0:
             continue
-        # endif
+        input_finite[i] = True
         candidates1 = _theta_candidates_from_opening(float(e_theta[i]), float(e_phi[i]), float(gamma1_phi[i]), float(opening1[i]))
         candidates2 = _theta_candidates_from_opening(float(e_theta[i]), float(e_phi[i]), float(gamma2_phi[i]), float(opening2[i]))
         if not candidates1 or not candidates2:
             continue
-        # endif
+        candidates_both[i] = True
         n_pi0 = _unit_vector(float(pi0_theta[i]), float(pi0_phi[i]))
         p_pi0 = float(pi0_p[i]) * n_pi0
         e_pi0 = math.sqrt(float(pi0_p[i]) ** 2 + float(pi0_mass[i]) ** 2)
         target = np.asarray([e_pi0, *p_pi0], dtype=float)
         scale = max(e_pi0, 1.0e-9)
         solutions: List[Tuple[float, float, float, float, float]] = []
+        had_detector_pair = False
         for theta1 in candidates1:
             theta1_deg = math.degrees(theta1)
             if detector1[i] == 0 and not (args.ft_theta_min <= theta1_deg < args.ft_theta_max):
                 continue
-            # endif
             if detector1[i] == 1 and not (args.fd_theta_min <= theta1_deg < args.fd_theta_max):
                 continue
-            # endif
             n1 = _unit_vector(theta1, float(gamma1_phi[i]))
             for theta2 in candidates2:
                 theta2_deg = math.degrees(theta2)
                 if detector2[i] == 0 and not (args.ft_theta_min <= theta2_deg < args.ft_theta_max):
                     continue
-                # endif
                 if detector2[i] == 1 and not (args.fd_theta_min <= theta2_deg < args.fd_theta_max):
                     continue
-                # endif
+                had_detector_pair = True
                 n2 = _unit_vector(theta2, float(gamma2_phi[i]))
                 matrix = np.asarray([[1.0, 1.0], [n1[0], n2[0]], [n1[1], n2[1]], [n1[2], n2[2]]], dtype=float)
                 energies, _, rank, _ = np.linalg.lstsq(matrix, target, rcond=None)
                 if rank < 2 or energies[0] <= 0.0 or energies[1] <= 0.0:
                     continue
-                # endif
                 residual = float(np.linalg.norm(matrix @ energies - target) / scale)
                 solutions.append((residual, float(energies[0]), theta1, float(energies[1]), theta2))
-            # endfor
-        # endfor
+        detector_pair[i] = had_detector_pair
+        n_solutions[i] = len(solutions)
         if not solutions:
             continue
-        # endif
+        positive_solution[i] = True
         solutions.sort(key=lambda item: item[0])
         best = solutions[0]
-        if best[0] > args.pass_photon_closure_max:
-            continue
-        # endif
         g1_E[i], g1_theta[i] = best[1], best[2]
         g2_E[i], g2_theta[i] = best[3], best[4]
         closure[i] = best[0]
         ambiguity[i] = solutions[1][0] - best[0] if len(solutions) > 1 else math.inf
-        valid[i] = True
-    # endfor
-    return g1_E, g1_theta, gamma1_phi, g2_E, g2_theta, gamma2_phi, closure, ambiguity, valid
+        closure_pass[i] = best[0] <= args.pass_photon_closure_max
+    return (g1_E, g1_theta, gamma1_phi, g2_E, g2_theta, gamma2_phi,
+            closure, ambiguity, n_solutions, input_finite, candidates_both,
+            detector_pair, positive_solution, closure_pass)
 
-
-def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
-    """Read native eppi0 trees and construct two directed passing probes/event."""
+def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
+                     sample_name: str) -> Tuple[TrialArrays, Dict[str, object]]:
+    """Read native eppi0 trees, construct directed probes, and audit every loss."""
     logical = [
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
         "pi0_p", "pi0_theta", "pi0_phi", "gamma1_phi_native", "gamma2_phi_native",
@@ -627,7 +695,7 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
     chunks: List[TrialArrays] = []
     seen = 0
-    reconstructed_events = 0
+    diag = empty_pass_diagnostics(sample_name, path)
 
     log(f"Reading native eppi0 PASS trials from {path}")
     for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
@@ -635,83 +703,108 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
         n = len(next(iter(arrays.values())))
         if args.max_events is not None and seen >= args.max_events:
             break
-        # endif
         if args.max_events is not None and seen + n > args.max_events:
             keep = args.max_events - seen
             arrays = {key: value[:keep] for key, value in arrays.items()}
             n = keep
-        # endif
         seen += n
-        base = pass_sample_mask(arrays, resolved, args)
-        e_p = finite_array(arrays, resolved["e_p"])
-        e_theta = finite_array(arrays, resolved["e_theta"])
-        e_phi = finite_array(arrays, resolved["e_phi"])
-        p_p = finite_array(arrays, resolved["p_p"])
-        p_theta = finite_array(arrays, resolved["p_theta"])
-        p_phi = finite_array(arrays, resolved["p_phi"])
-        pi0_p = finite_array(arrays, resolved["pi0_p"])
-        pi0_theta = finite_array(arrays, resolved["pi0_theta"])
-        pi0_phi = finite_array(arrays, resolved["pi0_phi"])
-        gamma1_phi = finite_array(arrays, resolved["gamma1_phi_native"])
-        gamma2_phi = finite_array(arrays, resolved["gamma2_phi_native"])
-        opening1 = finite_array(arrays, resolved["open_angle_egamma1"])
-        opening2 = finite_array(arrays, resolved["open_angle_egamma2"])
+        diag_add_count(diag, "event_cutflow", "all_events", n)
+
+        quality = basic_quality_mask(arrays, resolved, args)
+        mx2 = finite_array(arrays, resolved.get("Mx2"))
+        ptmiss_all = finite_array(arrays, resolved.get("pTmiss"))
+        delta_phi_all = finite_array(arrays, resolved.get("Delta_phi"))
+        mx2_stage = quality.copy()
+        if resolved.get("Mx2") is not None:
+            mx2_stage &= np.isfinite(mx2) & (np.abs(mx2) < args.pass_mx2_abs_max)
+        pt_stage = mx2_stage.copy()
+        if resolved.get("pTmiss") is not None:
+            pt_stage &= np.isfinite(ptmiss_all) & (ptmiss_all < args.pass_pTmiss_max)
+        dphi_stage = pt_stage.copy()
+        if args.pass_delta_phi_window is not None and args.pass_delta_phi_window >= 0.0 and resolved.get("Delta_phi") is not None:
+            dphi_stage &= np.isfinite(delta_phi_all) & (np.abs(delta_phi_all - math.pi) < args.pass_delta_phi_window)
+        base = dphi_stage
+
+        diag_add_count(diag, "event_cutflow", "basic_quality", np.count_nonzero(quality))
+        diag_add_count(diag, "event_cutflow", "mx2", np.count_nonzero(mx2_stage))
+        diag_add_count(diag, "event_cutflow", "pTmiss", np.count_nonzero(pt_stage))
+        diag_add_count(diag, "event_cutflow", "Delta_phi", np.count_nonzero(dphi_stage))
+        diag_fill(diag, "Mx2", mx2, quality)
+        diag_fill(diag, "pTmiss", ptmiss_all, mx2_stage)
+        diag_fill(diag, "abs_Delta_phi_minus_pi", np.abs(delta_phi_all-math.pi), pt_stage)
+
+        e_p = finite_array(arrays, resolved["e_p"]); e_theta = finite_array(arrays, resolved["e_theta"]); e_phi = finite_array(arrays, resolved["e_phi"])
+        p_p = finite_array(arrays, resolved["p_p"]); p_theta = finite_array(arrays, resolved["p_theta"]); p_phi = finite_array(arrays, resolved["p_phi"])
+        pi0_p = finite_array(arrays, resolved["pi0_p"]); pi0_theta = finite_array(arrays, resolved["pi0_theta"]); pi0_phi = finite_array(arrays, resolved["pi0_phi"])
+        gamma1_phi = finite_array(arrays, resolved["gamma1_phi_native"]); gamma2_phi = finite_array(arrays, resolved["gamma2_phi_native"])
+        opening1 = finite_array(arrays, resolved["open_angle_egamma1"]); opening2 = finite_array(arrays, resolved["open_angle_egamma2"])
         detector1_obs = finite_array(arrays, resolved["gamma1_detector_native"], default=-1.0).astype(int)
         detector2_obs = finite_array(arrays, resolved["gamma2_detector_native"], default=-1.0).astype(int)
         pi0_mass = finite_array(arrays, resolved["Mh_gammagamma"])
         mx2_ep = finite_array(arrays, resolved.get("Mx2_1"))
-        delta_phi_all = finite_array(arrays, resolved.get("Delta_phi"))
-        ptmiss_all = finite_array(arrays, resolved.get("pTmiss"))
         theta_gg_all = np.full(n, np.nan, dtype=float)
 
-        g1_E, g1_theta, g1_phi, g2_E, g2_theta, g2_phi, closure, ambiguity, reconstructed = reconstruct_native_eppi0_photons(
-            e_theta, e_phi, pi0_p, pi0_theta, pi0_phi, gamma1_phi, gamma2_phi,
-            opening1, opening2, pi0_mass, detector1_obs, detector2_obs, args,
-        )
-        reconstructed_events += int(np.count_nonzero(reconstructed))
-        pred1_E, pred1_th, pred1_ph, pred1_m2, pred1_p = predicted_probe(
-            beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g1_E, g1_theta, g1_phi)
-        pred2_E, pred2_th, pred2_ph, pred2_m2, pred2_p = predicted_probe(
-            beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g2_E, g2_theta, g2_phi)
+        rec = reconstruct_native_eppi0_photons(e_theta, e_phi, pi0_p, pi0_theta, pi0_phi,
+            gamma1_phi, gamma2_phi, opening1, opening2, pi0_mass,
+            detector1_obs, detector2_obs, args)
+        (g1_E, g1_theta, g1_phi, g2_E, g2_theta, g2_phi, closure, ambiguity,
+         n_solutions, input_finite, candidates_both, detector_pair,
+         positive_solution, closure_pass) = rec
 
-        for pred_E, pred_th, pred_ph, pred_m2, pred_p, obs_E, obs_th, obs_ph in (
-            (pred1_E, pred1_th, pred1_ph, pred1_m2, pred1_p, g2_E, g2_theta, g2_phi),
-            (pred2_E, pred2_th, pred2_ph, pred2_m2, pred2_p, g1_E, g1_theta, g1_phi),
-        ):
+        for stage, mask in (("native_inputs_finite", input_finite), ("theta_candidates_both", candidates_both),
+                            ("detector_compatible_pair", detector_pair), ("positive_energy_solution", positive_solution),
+                            ("closure_pass", closure_pass)):
+            diag_add_count(diag, "event_cutflow", stage, np.count_nonzero(base & mask))
+        diag_fill(diag, "closure", closure, base & positive_solution)
+        diag_fill(diag, "ambiguity", ambiguity, base & positive_solution & np.isfinite(ambiguity))
+        diag_fill(diag, "n_solutions", n_solutions, base & detector_pair)
+        diag_fill(diag, "g1_E", g1_E, base & closure_pass)
+        diag_fill(diag, "g2_E", g2_E, base & closure_pass)
+        diag_fill(diag, "g1_theta_deg", np.degrees(g1_theta), base & closure_pass)
+        diag_fill(diag, "g2_theta_deg", np.degrees(g2_theta), base & closure_pass)
+
+        pair_keys = np.char.add(np.char.add(detector1_obs.astype(str), "-"), detector2_obs.astype(str))
+        for key in np.unique(pair_keys[base & closure_pass]):
+            diag["detector_pairs_after_closure"][str(key)] = int(diag["detector_pairs_after_closure"].get(str(key), 0)) + int(np.count_nonzero((pair_keys == key) & base & closure_pass))
+
+        pred_sets = (
+            (*predicted_probe(beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g1_E, g1_theta, g1_phi), g2_E, g2_theta, g2_phi),
+            (*predicted_probe(beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g2_E, g2_theta, g2_phi), g1_E, g1_theta, g1_phi),
+        )
+        for pred_E, pred_th, pred_ph, pred_m2, pred_p, obs_E, obs_th, obs_ph in pred_sets:
+            seed = base & closure_pass
+            diag_add_count(diag, "probe_cutflow", "two_trials_from_closure_events", np.count_nonzero(seed))
             theta_deg = np.degrees(pred_th)
             detector, sector = classify_predicted_detector(theta_deg, pred_ph, args)
-            cos_opening = np.sin(pred_th) * np.sin(obs_th) * np.cos(pred_ph - obs_ph) + np.cos(pred_th) * np.cos(obs_th)
+            cos_opening = np.sin(pred_th)*np.sin(obs_th)*np.cos(pred_ph-obs_ph)+np.cos(pred_th)*np.cos(obs_th)
             match_angle_deg = np.degrees(np.arccos(np.clip(cos_opening, -1.0, 1.0)))
-            relative_E_residual = np.abs(obs_E - pred_E) / np.maximum(pred_E, 1.0e-9)
-            good = (
-                base & reconstructed & np.isfinite(closure)
-                & np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg) & np.isfinite(pred_ph)
-                & np.isfinite(obs_E) & np.isfinite(obs_th) & np.isfinite(obs_ph)
-                & np.isfinite(match_angle_deg) & np.isfinite(relative_E_residual)
-                & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
-                & (pred_p > 0.0) & (np.abs(pred_E - pred_p) < 0.30) & (np.abs(pred_m2) < 0.20)
-                & (match_angle_deg < args.probe_match_angle_max_deg)
-                & (relative_E_residual < args.probe_match_relative_E_max)
-                & (detector >= 0)
-            )
+            relative_E_residual = np.abs(obs_E-pred_E)/np.maximum(pred_E, 1.0e-9)
+            finite = seed & np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg) & np.isfinite(pred_ph) & np.isfinite(obs_E) & np.isfinite(obs_th) & np.isfinite(obs_ph) & np.isfinite(match_angle_deg) & np.isfinite(relative_E_residual)
+            energy = finite & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
+            ep = energy & (pred_p > 0.0) & (np.abs(pred_E-pred_p) < 0.30)
+            m2 = ep & (np.abs(pred_m2) < 0.20)
+            accepted = m2 & (detector >= 0)
+            angle = accepted & (match_angle_deg < args.probe_match_angle_max_deg)
+            eres = angle & (relative_E_residual < args.probe_match_relative_E_max)
+            for stage, mask in (("prediction_finite", finite), ("energy_range", energy), ("photon_like_E_minus_p", ep),
+                                ("photon_like_m2", m2), ("predicted_detector", accepted),
+                                ("angle_match", angle), ("energy_match", eres), ("final_pass", eres)):
+                diag_add_count(diag, "probe_cutflow", stage, np.count_nonzero(mask))
+            diag_fill(diag, "pred_E", pred_E, finite); diag_fill(diag, "pred_theta_deg", theta_deg, finite)
+            diag_fill(diag, "pred_m2", pred_m2, ep); diag_fill(diag, "pred_E_minus_p", pred_E-pred_p, energy)
+            diag_fill(diag, "match_angle_deg", match_angle_deg, accepted)
+            diag_fill(diag, "relative_E_residual", relative_E_residual, angle)
+            for cat, cmask in [("FT", eres & (detector == 0))] + [(f"FD sector {j}", eres & (detector == 1) & (sector == j)) for j in range(1,7)]:
+                diag["final_trials_by_category"][cat] += int(np.count_nonzero(cmask))
             chunks.append(TrialArrays(
-                E=pred_E[good].astype(np.float32, copy=False),
-                theta_deg=theta_deg[good].astype(np.float32, copy=False),
-                phi_rad=pred_ph[good].astype(np.float32, copy=False),
-                detector=detector[good].astype(np.int8, copy=False),
-                sector=sector[good].astype(np.int8, copy=False),
-                mx2_ep=mx2_ep[good].astype(np.float32, copy=False),
-                delta_phi=delta_phi_all[good].astype(np.float32, copy=False),
-                theta_gamma_gamma=theta_gg_all[good].astype(np.float32, copy=False),
-                pTmiss=ptmiss_all[good].astype(np.float32, copy=False),
-                weight=np.ones(np.count_nonzero(good), dtype=np.float32),
-            ))
-        # endfor
-    # endfor
+                E=pred_E[eres].astype(np.float32, copy=False), theta_deg=theta_deg[eres].astype(np.float32, copy=False),
+                phi_rad=pred_ph[eres].astype(np.float32, copy=False), detector=detector[eres].astype(np.int8, copy=False),
+                sector=sector[eres].astype(np.int8, copy=False), mx2_ep=mx2_ep[eres].astype(np.float32, copy=False),
+                delta_phi=delta_phi_all[eres].astype(np.float32, copy=False), theta_gamma_gamma=theta_gg_all[eres].astype(np.float32, copy=False),
+                pTmiss=ptmiss_all[eres].astype(np.float32, copy=False), weight=np.ones(np.count_nonzero(eres), dtype=np.float32)))
     result = concatenate_trials(chunks)
-    log(f"Native eppi0 photon reconstruction for {Path(path).name}: events={seen:,}, reconstructed={reconstructed_events:,}, pass trials={result.size():,}")
-    return result
-
+    log(f"Native eppi0 audit for {Path(path).name}: events={seen:,}, closure events={diag['event_cutflow']['closure_pass']:,}, final directed trials={result.size():,}")
+    return result, diag
 
 def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
     logical = [
@@ -1491,6 +1584,53 @@ def plot_integrated_efficiency_summary(path: Path, period_label: str,
     plt.close(fig)
 
 
+def _fraction_sequence(cutflow: Mapping[str, int], stages: Sequence[str]) -> np.ndarray:
+    first = max(int(cutflow.get(stages[0], 0)), 1)
+    return np.asarray([int(cutflow.get(stage, 0))/first for stage in stages], dtype=float)
+
+
+def plot_pass_cutflow(path: Path, period_label: str, data_diag: Mapping[str, object], mc_diag: Mapping[str, object]) -> None:
+    fig, axes = plt.subplots(2, 1, figsize=(13, 10))
+    for ax, group, stages, title in ((axes[0], "event_cutflow", PASS_EVENT_STAGES, "Native eppi0 event cut flow"),
+                                     (axes[1], "probe_cutflow", PASS_PROBE_STAGES, "Directed tag-and-probe cut flow")):
+        x=np.arange(len(stages)); width=0.38
+        for offset, diag, label in ((-width/2, data_diag, "Data"),(width/2, mc_diag, "AAOGEN MC")):
+            vals=_fraction_sequence(diag[group], stages)
+            ax.bar(x+offset, vals, width, label=label)
+            for xx,v,stage in zip(x+offset, vals, stages):
+                ax.text(xx, max(v,1e-6)*1.08, f"{diag[group][stage]:,}", rotation=90, ha="center", va="bottom", fontsize=7)
+        ax.set_yscale("log"); ax.set_ylim(1e-6, 2.5); ax.set_ylabel("Fraction of initial sample")
+        ax.set_xticks(x); ax.set_xticklabels([v.replace("_"," ") for v in stages], rotation=35, ha="right")
+        ax.set_title(title); ax.legend(frameon=False)
+    fig.suptitle(f"{period_label}: passing-sample audit")
+    fig.tight_layout(); fig.savefig(path, dpi=180); plt.close(fig)
+
+
+def plot_pass_diagnostic_histograms(path: Path, period_label: str, data_diag: Mapping[str, object], mc_diag: Mapping[str, object], keys: Sequence[str], title: str) -> None:
+    ncols=3; nrows=math.ceil(len(keys)/ncols)
+    fig, axes=plt.subplots(nrows,ncols,figsize=(15,4.2*nrows)); axes=np.atleast_1d(axes).ravel()
+    for ax,key in zip(axes,keys):
+        for diag,label in ((data_diag,"Data"),(mc_diag,"AAOGEN MC")):
+            h=diag["histograms"][key]; edges=np.asarray(h["edges"]); counts=np.asarray(h["counts"],dtype=float)
+            if counts.sum()>0: counts/=counts.sum()
+            ax.stairs(counts,edges,label=label)
+        ax.set_xlabel(key.replace("_"," ")); ax.set_ylabel("Unit-normalized counts"); ax.legend(frameon=False)
+    for ax in axes[len(keys):]: ax.axis("off")
+    fig.suptitle(f"{period_label}: {title}"); fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def write_pass_audit(period_dir: Path, period_label: str, data_diag: Mapping[str, object], mc_diag: Mapping[str, object]) -> None:
+    audit_dir=period_dir/"pass_sample_audit"; audit_dir.mkdir(parents=True,exist_ok=True)
+    with open(audit_dir/"pass_sample_cutflow.json","w",encoding="utf-8") as h: json.dump({"data":data_diag,"mc":mc_diag},h,indent=2)
+    plot_pass_cutflow(audit_dir/"cutflow.png",period_label,data_diag,mc_diag)
+    plot_pass_diagnostic_histograms(audit_dir/"event_selection_variables.png",period_label,data_diag,mc_diag,
+        ["Mx2","pTmiss","abs_Delta_phi_minus_pi"],"broad ep-pi0 selection")
+    plot_pass_diagnostic_histograms(audit_dir/"native_photon_reconstruction.png",period_label,data_diag,mc_diag,
+        ["closure","ambiguity","n_solutions","g1_E","g2_E","g1_theta_deg","g2_theta_deg"],"native photon recovery")
+    plot_pass_diagnostic_histograms(audit_dir/"directed_probe_matching.png",period_label,data_diag,mc_diag,
+        ["pred_E","pred_theta_deg","pred_m2","pred_E_minus_p","match_angle_deg","relative_E_residual"],"predicted-probe matching")
+
+
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -1500,8 +1640,16 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     aggregate_fit_dir.mkdir(parents=True, exist_ok=True)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    pass_data = read_pass_trials(period.epgg_data, period.beam_energy_GeV, args)
-    pass_mc = read_pass_trials(period.epgg_mc, period.beam_energy_GeV, args)
+    pass_data, pass_data_diag = read_pass_trials(period.epgg_data, period.beam_energy_GeV, args, "data")
+    pass_mc, pass_mc_diag = read_pass_trials(period.epgg_mc, period.beam_energy_GeV, args, "mc")
+    write_pass_audit(period_dir, period.label, pass_data_diag, pass_mc_diag)
+    if args.skip_efficiency_extraction:
+        metadata = {"period": asdict(period), "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
+                    "runtime_seconds": time.perf_counter() - period_start}
+        with open(period_dir / "metadata.json", "w", encoding="utf-8") as handle:
+            json.dump(metadata, handle, indent=2)
+        return period.key, [], metadata
+
     fail_data = read_fail_trials(period.epg_data, period.beam_energy_GeV, args)
     fail_dvcs_mc = read_fail_trials(period.dvcs_mc, period.beam_energy_GeV, args)
     fail_pi0_mc = read_fail_trials(period.pi0_as_epg_mc, period.beam_energy_GeV, args)
@@ -1589,6 +1737,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
 
     metadata = {
         "period": asdict(period),
+        "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
         "counts": {
             "pass_data_directed_trials": pass_data.size(),
             "pass_mc_directed_trials": pass_mc.size(),
@@ -1741,8 +1890,8 @@ def main() -> int:
         "notes": [
             "Each epgamma-gamma event contributes two directed passing probes.",
             "Each fitted pi0-as-epgamma event contributes one failed probe.",
-            "FT is binned only in predicted probe energy.",
-            "FD is binned by predicted sector, energy and polar angle.",
+            "The extraction is integrated over photon energy and polar angle within FT and each FD sector.",
+            "A complete data/MC passing-sample cut-flow audit is written for every period.",
             "No equal-efficiency approximation is used.",
             "Scale factors are not yet propagated to DVCS acceptance or pi0 migration.",
             "Period processing is parallelized with a hard maximum of seven workers.",
