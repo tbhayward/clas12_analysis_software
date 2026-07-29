@@ -805,7 +805,14 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         e_p = finite_array(arrays, resolved["e_p"]); e_theta = finite_array(arrays, resolved["e_theta"]); e_phi = finite_array(arrays, resolved["e_phi"])
         p_p = finite_array(arrays, resolved["p_p"]); p_theta = finite_array(arrays, resolved["p_theta"]); p_phi = finite_array(arrays, resolved["p_phi"])
         pi0_p = finite_array(arrays, resolved["pi0_p"]); pi0_theta = finite_array(arrays, resolved["pi0_theta"]); pi0_phi = finite_array(arrays, resolved["pi0_phi"])
-        opening1 = finite_array(arrays, resolved["open_angle_egamma1"]); opening2 = finite_array(arrays, resolved["open_angle_egamma2"])
+        # ThreeParticles.open_angle_egamma* is written in degrees.  Convert
+        # only these opening-angle branches to radians for the cone solver.
+        # The stored e_theta/e_phi and p2_theta/p2_phi branches remain in
+        # their native radian convention.
+        opening1_deg = finite_array(arrays, resolved["open_angle_egamma1"])
+        opening2_deg = finite_array(arrays, resolved["open_angle_egamma2"])
+        opening1 = np.deg2rad(opening1_deg)
+        opening2 = np.deg2rad(opening2_deg)
         detector1_obs = finite_array(arrays, resolved["gamma1_detector_native"], default=-1.0).astype(int)
         detector2_obs = finite_array(arrays, resolved["gamma2_detector_native"], default=-1.0).astype(int)
         pi0_mass = finite_array(arrays, resolved["Mh_gammagamma"])
