@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v5.py
+derive_photon_efficiency_scale_factors_v6.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -802,42 +802,29 @@ def strict_quantile_edges(values: np.ndarray, n_bins: int, low: float, high: flo
 
 
 def build_bins(pass_mc: TrialArrays, fail_mc: TrialArrays, args: argparse.Namespace) -> List[BinDefinition]:
-    all_E = np.concatenate([pass_mc.E, fail_mc.E])
-    all_theta = np.concatenate([pass_mc.theta_deg, fail_mc.theta_deg])
-    all_detector = np.concatenate([pass_mc.detector, fail_mc.detector])
-    all_sector = np.concatenate([pass_mc.sector, fail_mc.sector])
+    """Build the deliberately coarse first-pass detector binning.
 
-    bins: List[BinDefinition] = []
-    next_id = 0
-
-    ft_mask = all_detector == 0
-    ft_edges = strict_quantile_edges(all_E[ft_mask], args.ft_energy_bins,
-                                     args.probe_E_min, args.probe_E_max)
-    for elo, ehi in zip(ft_edges[:-1], ft_edges[1:]):
-        bins.append(BinDefinition(next_id, "FT", 0, float(elo), float(ehi),
-                                  args.ft_theta_min, args.ft_theta_max))
-        next_id += 1
-    # endfor
-
+    The study is integrated over the full configured photon-energy and
+    polar-angle acceptance.  The only retained categories are FT and the six
+    FD sectors.  The MC arguments are kept in the signature so later versions
+    can restore adaptive differential binning without changing callers.
+    """
+    del pass_mc, fail_mc
+    bins: List[BinDefinition] = [
+        BinDefinition(
+            0, "FT", 0,
+            float(args.probe_E_min), float(args.probe_E_max),
+            float(args.ft_theta_min), float(args.ft_theta_max),
+        )
+    ]
     for sector in range(1, 7):
-        smask = (all_detector == 1) & (all_sector == sector)
-        e_edges = strict_quantile_edges(all_E[smask], args.fd_energy_bins,
-                                        args.probe_E_min, args.probe_E_max)
-        for elo, ehi in zip(e_edges[:-1], e_edges[1:]):
-            emask = smask & (all_E >= elo) & (all_E < ehi)
-            t_edges = strict_quantile_edges(all_theta[emask], args.fd_theta_bins,
-                                            args.fd_theta_min, args.fd_theta_max)
-            for tlo, thi in zip(t_edges[:-1], t_edges[1:]):
-                count = int(np.count_nonzero(emask & (all_theta >= tlo) & (all_theta < thi)))
-                if count < args.min_probes_per_bin and len(t_edges) > 2:
-                    continue
-                # endif
-                bins.append(BinDefinition(next_id, "FD", sector, float(elo), float(ehi),
-                                          float(tlo), float(thi)))
-                next_id += 1
-            # endfor
-        # endfor
-    # endfor
+        bins.append(
+            BinDefinition(
+                sector, "FD", sector,
+                float(args.probe_E_min), float(args.probe_E_max),
+                float(args.fd_theta_min), float(args.fd_theta_max),
+            )
+        )
     return bins
 
 
@@ -1447,6 +1434,63 @@ def plot_aggregated_multi_fits(path: Path, period_label: str, definitions: Seque
     if handles: fig.legend(handles,labels,loc="upper center",ncol=4,frameon=False,bbox_to_anchor=(0.5,0.965))
     fig.tight_layout(rect=(0,0,1,0.93)); fig.savefig(path,dpi=180); plt.close(fig)
 
+def plot_category_fit_summary(path: Path, period_label: str,
+                              definition: BinDefinition,
+                              fit: MultiFitSummary) -> None:
+    """Write one compact 1x3 fit canvas for a detector category."""
+    fig, axes = plt.subplots(1, len(FIT_VARIABLES), figsize=(18, 5.2), squeeze=False)
+    category = "FT" if definition.detector == "FT" else f"FD sector {definition.sector}"
+    for ax, spec in zip(axes[0], FIT_VARIABLES):
+        draw_projection_panel(ax, spec.label, fit, spec.key)
+        ax.set_xlabel(spec.label)
+        ax.set_ylabel("Counts")
+    handles, labels = axes[0][0].get_legend_handles_labels()
+    ratio = fit.deviance / fit.ndf if fit.ndf > 0 else math.nan
+    fig.suptitle(
+        f"{period_label}: {category} integrated epgamma template fit  "
+        f"(fpi0={fit.fraction_pi0:.4f}, deviance/ndf={ratio:.2f})",
+        fontsize=15,
+    )
+    if handles:
+        fig.legend(handles, labels, loc="upper center", ncol=4,
+                   frameon=False, bbox_to_anchor=(0.5, 0.94))
+    fig.tight_layout(rect=(0, 0, 1, 0.88))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_integrated_efficiency_summary(path: Path, period_label: str,
+                                       rows: Sequence[EfficiencyRow]) -> None:
+    """Compare all seven integrated detector categories in one canvas."""
+    ordered = sorted(rows, key=lambda r: (0 if r.detector == "FT" else 1, r.sector))
+    if not ordered:
+        return
+    labels = ["FT" if r.detector == "FT" else f"FD S{r.sector}" for r in ordered]
+    x = np.arange(len(ordered), dtype=float)
+    fig, axes = plt.subplots(2, 1, figsize=(10, 9), sharex=True)
+    axes[0].errorbar(x - 0.08, [r.efficiency_data for r in ordered],
+                     yerr=[r.efficiency_data_err for r in ordered],
+                     fmt="o", label="Data")
+    axes[0].errorbar(x + 0.08, [r.efficiency_mc for r in ordered],
+                     yerr=[r.efficiency_mc_err for r in ordered],
+                     fmt="s", label="AAOGEN MC")
+    axes[0].set_ylim(0.0, 1.05)
+    axes[0].set_ylabel("Tag-and-probe photon efficiency")
+    axes[0].legend(frameon=False)
+    axes[0].set_title(f"{period_label}: integrated photon-efficiency study")
+
+    axes[1].errorbar(x, [r.scale_factor for r in ordered],
+                     yerr=[r.scale_factor_err for r in ordered], fmt="o")
+    axes[1].axhline(1.0, linestyle="--", linewidth=1.0)
+    axes[1].set_ylabel(r"$S_\gamma=\epsilon_{data}/\epsilon_{MC}$")
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(labels)
+    axes[1].set_xlabel("Photon detector category")
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -1473,7 +1517,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     n_bins = len(bins)
     edges_by_var = fit_edges()
 
-    log(f"{period.label}: assigning trials to {n_bins} adaptive bins")
+    log(f"{period.label}: assigning trials to {n_bins} integrated detector categories")
     pass_data_ids = assign_bin_ids(pass_data, bins)
     pass_mc_ids = assign_bin_ids(pass_mc, bins)
     fail_data_ids = assign_bin_ids(fail_data, bins)
@@ -1531,19 +1575,17 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             fit.success, fit.deviance, fit.ndf,
         ))
 
-    for spec in FIT_VARIABLES:
-        plot_aggregated_multi_fits(aggregate_fit_dir / f"FT_{spec.key}.png", period.label, bins, fits, "FT", 0, spec.key)
-        for sector in range(1, 7):
-            plot_aggregated_multi_fits(aggregate_fit_dir / f"FD_sector_{sector}_{spec.key}.png", period.label, bins, fits, "FD", sector, spec.key)
+    for definition, fit in zip(bins, fits):
+        category_name = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
+        plot_category_fit_summary(
+            aggregate_fit_dir / f"{category_name}.png",
+            period.label, definition, fit,
+        )
 
-    plot_scale_factors(plot_dir / "scale_factors_FT.png", period.label, rows, "FT", 0)
-    plot_efficiencies(plot_dir / "efficiencies_FT.png", period.label, rows, "FT", 0)
-    for sector in range(1, 7):
-        plot_scale_factors(plot_dir / f"scale_factors_FD_sector_{sector}.png",
-                           period.label, rows, "FD", sector)
-        plot_efficiencies(plot_dir / f"efficiencies_FD_sector_{sector}.png",
-                          period.label, rows, "FD", sector)
-    # endfor
+    plot_integrated_efficiency_summary(
+        plot_dir / "integrated_efficiencies_and_scale_factors.png",
+        period.label, rows,
+    )
 
     metadata = {
         "period": asdict(period),
