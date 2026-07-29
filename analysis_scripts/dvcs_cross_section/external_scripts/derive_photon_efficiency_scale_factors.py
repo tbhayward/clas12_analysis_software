@@ -2314,23 +2314,56 @@ _EXCLUSIVITY_FITTER_MODULE = None
 
 
 def load_exclusivity_fitter_module():
-    """Load the established exclusivity two-template fitter from this directory.
+    """Load the established exclusivity two-template fitter from nearby paths.
 
-    Keeping one fitter implementation prevents the photon-efficiency extraction
-    from drifting away from the validated exclusivity-selection methodology.
+    During standalone development this script may live under ``external_scripts``
+    while the validated exclusivity program remains one directory higher.  Search
+    a small, deterministic set of nearby locations rather than requiring the two
+    files to be colocated.
     """
     global _EXCLUSIVITY_FITTER_MODULE
     if _EXCLUSIVITY_FITTER_MODULE is not None:
         return _EXCLUSIVITY_FITTER_MODULE
-    here = Path(__file__).resolve().parent
-    candidates = [here / "plot_exclusivity_data_dvcs_pi0_mc.py"]
-    candidates.extend(sorted(here.glob("plot_exclusivity_data_dvcs_pi0_mc(*).py"), reverse=True))
-    source = next((candidate for candidate in candidates if candidate.exists()), None)
+
+    script_dir = Path(__file__).resolve().parent
+    cwd = Path.cwd().resolve()
+    search_dirs = [
+        script_dir,
+        script_dir.parent,
+        script_dir.parent / "external_scripts",
+        cwd,
+        cwd.parent,
+        cwd / "external_scripts",
+        cwd.parent / "external_scripts",
+    ]
+
+    # Preserve order while removing duplicate resolved directories.
+    unique_dirs = []
+    seen_dirs = set()
+    for directory in search_dirs:
+        resolved = directory.resolve()
+        if resolved not in seen_dirs:
+            seen_dirs.add(resolved)
+            unique_dirs.append(resolved)
+
+    candidates = []
+    canonical_name = "plot_exclusivity_data_dvcs_pi0_mc.py"
+    versioned_pattern = "plot_exclusivity_data_dvcs_pi0_mc(*).py"
+    for directory in unique_dirs:
+        # Prefer the canonical repository filename in every search directory.
+        candidates.append(directory / canonical_name)
+    for directory in unique_dirs:
+        # Fall back to versioned development copies, newest filename first.
+        candidates.extend(sorted(directory.glob(versioned_pattern), reverse=True))
+
+    source = next((candidate for candidate in candidates if candidate.is_file()), None)
     if source is None:
+        searched = "\n  - ".join(str(directory) for directory in unique_dirs)
         raise FileNotFoundError(
-            "The validated exclusivity fitter plot_exclusivity_data_dvcs_pi0_mc.py "
-            "must be present beside this script."
+            "Could not locate the validated exclusivity fitter "
+            f"{canonical_name}. Searched:\n  - {searched}"
         )
+
     spec = importlib.util.spec_from_file_location("_photon_eff_exclusivity_fitter", source)
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load exclusivity fitter from {source}")
