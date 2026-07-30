@@ -1,40 +1,38 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v24.py
+derive_photon_efficiency_scale_factors_v28.py
 
-Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
+RGA photon-reconstruction data/MC study based on exclusive pi0 control samples.
 
-The script measures epsilon_b = N_found,b/(N_found,b+N_missing,b) separately
-in data and AAOGEN pi0 MC, where b is a predicted probe-photon bin. Native
-eppi0 events provide directed probe-found trials. One-photon epgamma data are
-a mixture of genuine DVCS/BH events and pi0 events with a missing probe; a
-simultaneous two-template fit determines the pi0 fraction in data. The
-DVCS-generator epgamma sample is used solely as the DVCS/BH template shape.
-The bkg_rga_* pi0-as-epgamma sample supplies both the pi0 template shape and
-the truth-separated MC missing-probe count.
+The ordinary reconstructed epgamma data sample is decomposed into genuine
+DVCS/BH and pi0->gamma gamma events reconstructed with only one photon by
+fitting the stored epgamma exclusivity distributions with DVCSGEN and
+AAOGEN-as-epgamma templates. No missing-photon four-vector is constructed
+before that fit.
 
-The failed-probe decomposition uses the established two-template exclusivity
-fitter, but not the narrow production-DVCS histogram windows.  In the loose-tag
-topology the reconstructed epgamma photon can be the 0.4--2 GeV pi0 tag, so
-Delta_phi, theta_gamma_gamma and pTmiss require broad physical supports.  All
-finite selected candidates are retained by folding under/overflow into edge
-bins, and each detector category must pass an explicit common-support check.
+The epgammagamma data and AAOGEN samples provide the corresponding population
+where both pi0 decay photons are reconstructed. The photons are energy ordered:
+the leading photon must satisfy the production DVCS threshold
+(E_gamma1 >= 2 GeV), while the second reconstructed photon must satisfy the
+loose threshold (E_gamma2 >= 0.4 GeV).
 
-The production extraction is deliberately integrated over energy and polar angle,
-retaining only FT and FD sectors 1--6. A detailed passing-sample audit records
-every event-level and directed-probe rejection stage for data and AAOGEN MC.
-Native photon directions are recovered with a cone-constrained analytic solver
-that does not use gamma_phi1/2, since those are Trento rather than lab angles. Processing is parallelized by run period with a hard maximum of seven
-workers.
+For each leading-photon detector category,
 
-The nominal directed-trial definition is asymmetric: the observed tag photon
-must satisfy E_tag >= 0.40 GeV, while the predicted probe must satisfy
-E_probe >= 2 GeV to match the DVCS photon threshold.  The one-photon data, DVCS/BH-template MC, and pi0-as-epgamma MC inputs are loose photon-efficiency skims with an observed-photon threshold of 0.40 GeV. The predicted probe retains the production DVCS threshold of 2 GeV.
+    epsilon_data = N_pi0(epgammagamma, data)
+                   / [N_pi0(epgammagamma, data)
+                      + N_pi0(epgamma, data from template fit)]
 
-For backward-compatible CSV schemas, columns named pass_* and fail_* mean
-probe_found_* and probe_missing_*, respectively. The script derives
-S_gamma,b = epsilon_data,b/epsilon_MC,b. It does not yet
-propagate that scale factor into DVCS acceptance or pi0 migration.
+    epsilon_mc = N_pi0(epgammagamma, AAOGEN)
+                 / [N_pi0(epgammagamma, AAOGEN)
+                    + N_pi0(epgamma, AAOGEN)]
+
+and S_gamma = epsilon_data / epsilon_mc.
+
+This is directly an event-migration efficiency for recovering the additional
+pi0 decay photon conditional on a reconstructed leading photon above the DVCS
+threshold. Its data/MC ratio constrains photon-reconstruction mismodelling; it
+is not by itself a direct measurement of the absolute probability to lose the
+sole photon in a true DVCS event.
 """
 
 from __future__ import annotations
@@ -1144,76 +1142,144 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         for solution_index, solution_seed, solution_weight in variants:
             g1_theta = sol_g1_theta[:, solution_index]; g1_phi = sol_g1_phi[:, solution_index]
             g2_theta = sol_g2_theta[:, solution_index]; g2_phi = sol_g2_phi[:, solution_index]
-            pred_sets = (
-                (*predicted_probe(beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g1_E, g1_theta, g1_phi), g2_E, g2_theta, g2_phi),
-                (*predicted_probe(beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g2_E, g2_theta, g2_phi), g1_E, g1_theta, g1_phi),
+            # The stored photons are energy ordered.  The leading photon is the
+            # production-DVCS photon (E >= 2 GeV); the subleading photon is the
+            # additional pi0-decay photon whose reconstruction defines whether
+            # the event appears in epgamma or epgammagamma.
+            pred_E, pred_th, pred_ph, pred_m2, pred_p = predicted_probe(
+                beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi,
+                g1_E, g1_theta, g1_phi,
             )
-            for pred_E, pred_th, pred_ph, pred_m2, pred_p, obs_E, obs_th, obs_ph in pred_sets:
-                seed = solution_seed
-                diag_add_count(diag, "probe_cutflow", "two_trials_from_closure_events", weighted_count(seed, solution_weight))
-                theta_deg = np.degrees(pred_th)
-                detector, sector = classify_predicted_detector(theta_deg, pred_ph, args)
-                cos_opening = np.sin(pred_th)*np.sin(obs_th)*np.cos(pred_ph-obs_ph)+np.cos(pred_th)*np.cos(obs_th)
-                match_angle_deg = np.degrees(np.arccos(np.clip(cos_opening, -1.0, 1.0)))
-                relative_E_residual = np.abs(obs_E-pred_E)/np.maximum(pred_E, 1.0e-9)
-                finite = seed & np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg) & np.isfinite(pred_ph) & np.isfinite(obs_E) & np.isfinite(obs_th) & np.isfinite(obs_ph) & np.isfinite(match_angle_deg) & np.isfinite(relative_E_residual)
-                tag_energy = finite & (obs_E >= args.tag_E_min) & (obs_E < args.tag_E_max)
-                probe_energy = tag_energy & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
-                ep = probe_energy & (pred_p > 0.0) & (np.abs(pred_E-pred_p) < 0.30)
-                m2 = ep & (np.abs(pred_m2) < 0.20)
-                detector_ok = m2 & (detector >= 0)
-                global_requirement = np.ones(n, dtype=bool)
-                if args.enable_production_global_cuts and not args.disable_production_global_cuts:
-                    global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
-                    global_requirement &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
-                global_ok = detector_ok & global_requirement
-                angle = global_ok & (match_angle_deg < args.probe_match_angle_max_deg)
-                eres = angle & (relative_E_residual < args.probe_match_relative_E_max)
-                for stage, mask in (("prediction_finite", finite), ("tag_energy_range", tag_energy),
-                                    ("probe_energy_range", probe_energy), ("photon_like_E_minus_p", ep),
-                                    ("photon_like_m2", m2), ("predicted_detector", detector_ok),
-                                    ("global_cuts", global_ok), ("angle_match", angle),
-                                    ("energy_match", eres), ("final_pass", eres)):
-                    diag_add_count(diag, "probe_cutflow", stage, weighted_count(mask, solution_weight))
-                diag_fill(diag, "pred_E", pred_E, finite, solution_weight); diag_fill(diag, "pred_theta_deg", theta_deg, finite, solution_weight)
-                diag_fill(diag, "pred_m2", pred_m2, ep, solution_weight); diag_fill(diag, "pred_E_minus_p", pred_E-pred_p, probe_energy, solution_weight)
-                diag_fill(diag, "match_angle_deg", match_angle_deg, global_ok, solution_weight)
-                diag_fill(diag, "relative_E_residual", relative_E_residual, angle, solution_weight)
-                for cat, cmask in [("FT", eres & (detector == 0))] + [(f"FD sector {j}", eres & (detector == 1) & (sector == j)) for j in range(1,7)]:
-                    diag["final_trials_by_category"][cat] += weighted_count(cmask, solution_weight)
-                for angle_cut in angle_scan:
-                    for energy_cut in energy_scan:
-                        for m2_cut in m2_scan:
-                            scan_base = ep & (detector >= 0) & global_requirement
-                            if m2_cut >= 0.0:
-                                scan_base &= np.abs(pred_m2) < m2_cut
-                            scan_mask = scan_base & (match_angle_deg < angle_cut) & (relative_E_residual < energy_cut)
-                            key = f"angle_{angle_cut:g}_energy_{energy_cut:g}_m2_{m2_cut:g}"
-                            add_matching_scan_count(diag, key, detector, sector, scan_mask, solution_weight)
-                chunks.append(TrialArrays(
-                    E=pred_E[eres].astype(np.float32, copy=False), tag_E=obs_E[eres].astype(np.float32, copy=False), theta_deg=theta_deg[eres].astype(np.float32, copy=False),
-                    phi_rad=pred_ph[eres].astype(np.float32, copy=False), detector=detector[eres].astype(np.int8, copy=False),
-                    sector=sector[eres].astype(np.int8, copy=False), mx2_ep=mx2_ep[eres].astype(np.float32, copy=False),
-                    delta_phi=delta_phi_all[eres].astype(np.float32, copy=False), theta_gamma_gamma=theta_gg_all[eres].astype(np.float32, copy=False),
+            obs_E, obs_th, obs_ph = g2_E, g2_theta, g2_phi
+            seed = solution_seed
+
+            lead_theta_deg = np.degrees(g1_theta)
+            lead_detector, lead_sector = classify_predicted_detector(
+                lead_theta_deg, g1_phi, args
+            )
+            cos_opening = (
+                np.sin(pred_th) * np.sin(obs_th) * np.cos(pred_ph - obs_ph)
+                + np.cos(pred_th) * np.cos(obs_th)
+            )
+            match_angle_deg = np.degrees(
+                np.arccos(np.clip(cos_opening, -1.0, 1.0))
+            )
+            relative_E_residual = np.abs(obs_E - pred_E) / np.maximum(pred_E, 1.0e-9)
+
+            finite = (
+                seed
+                & np.isfinite(pred_E)
+                & np.isfinite(pred_p)
+                & np.isfinite(pred_th)
+                & np.isfinite(pred_ph)
+                & np.isfinite(obs_E)
+                & np.isfinite(obs_th)
+                & np.isfinite(obs_ph)
+                & np.isfinite(g1_E)
+                & np.isfinite(lead_theta_deg)
+                & np.isfinite(g1_phi)
+                & np.isfinite(match_angle_deg)
+                & np.isfinite(relative_E_residual)
+            )
+            leading_energy = (
+                finite
+                & (g1_E >= args.probe_E_min)
+                & (g1_E < args.probe_E_max)
+            )
+            second_energy = (
+                leading_energy
+                & (obs_E >= args.tag_E_min)
+                & (obs_E < args.tag_E_max)
+            )
+            photon_ep = (
+                second_energy
+                & (pred_p > 0.0)
+                & (np.abs(pred_E - pred_p) < 0.30)
+            )
+            photon_m2 = photon_ep & (np.abs(pred_m2) < 0.20)
+            detector_ok = photon_m2 & (lead_detector >= 0)
+            angle = detector_ok & (
+                match_angle_deg < args.probe_match_angle_max_deg
+            )
+            eres = angle & (
+                relative_E_residual < args.probe_match_relative_E_max
+            )
+
+            for stage, mask in (
+                ("prediction_finite", finite),
+                ("tag_energy_range", leading_energy),
+                ("probe_energy_range", second_energy),
+                ("photon_like_E_minus_p", photon_ep),
+                ("photon_like_m2", photon_m2),
+                ("predicted_detector", detector_ok),
+                ("global_cuts", detector_ok),
+                ("angle_match", angle),
+                ("energy_match", eres),
+                ("final_pass", eres),
+            ):
+                diag_add_count(
+                    diag, "probe_cutflow", stage,
+                    weighted_count(mask, solution_weight),
+                )
+
+            diag_fill(diag, "pred_E", pred_E, finite, solution_weight)
+            diag_fill(diag, "pred_theta_deg", np.degrees(pred_th), finite, solution_weight)
+            diag_fill(diag, "pred_m2", pred_m2, photon_ep, solution_weight)
+            diag_fill(diag, "pred_E_minus_p", pred_E - pred_p, second_energy, solution_weight)
+            diag_fill(diag, "match_angle_deg", match_angle_deg, detector_ok, solution_weight)
+            diag_fill(diag, "relative_E_residual", relative_E_residual, angle, solution_weight)
+
+            for cat, cmask in [("FT", eres & (lead_detector == 0))] + [
+                (
+                    f"FD sector {j}",
+                    eres & (lead_detector == 1) & (lead_sector == j),
+                )
+                for j in range(1, 7)
+            ]:
+                diag["final_trials_by_category"][cat] += weighted_count(
+                    cmask, solution_weight
+                )
+
+            chunks.append(
+                TrialArrays(
+                    # Binning/category variables describe the actual leading
+                    # photon shared by the epgamma and epgammagamma samples.
+                    E=g1_E[eres].astype(np.float32, copy=False),
+                    tag_E=g1_E[eres].astype(np.float32, copy=False),
+                    theta_deg=lead_theta_deg[eres].astype(np.float32, copy=False),
+                    phi_rad=g1_phi[eres].astype(np.float32, copy=False),
+                    detector=lead_detector[eres].astype(np.int8, copy=False),
+                    sector=lead_sector[eres].astype(np.int8, copy=False),
+                    mx2_ep=mx2_ep[eres].astype(np.float32, copy=False),
+                    delta_phi=delta_phi_all[eres].astype(np.float32, copy=False),
+                    theta_gamma_gamma=theta_gg_all[eres].astype(np.float32, copy=False),
                     pTmiss=ptmiss_all[eres].astype(np.float32, copy=False),
                     theta_cm=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
                     Emiss2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
                     Mx2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
                     Mx2_2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
                     proton_detector=np.full(np.count_nonzero(eres), -1, dtype=np.int8),
-                    weight=solution_weight[eres].astype(np.float32, copy=False)))
+                    weight=solution_weight[eres].astype(np.float32, copy=False),
+                )
+            )
     result = concatenate_trials(chunks)
     log(f"Native eppi0 audit for {Path(path).name}: events={seen:,}, closure events={diag['event_cutflow']['closure_pass']:,.0f}, final directed trial weight={float(np.sum(result.weight)):,.1f}")
     return result, diag
 
 def _new_one_photon_cutflow(label: str, path: str) -> Dict[str, object]:
     stages = [
-        "all_tree_entries", "basic_quality", "production_event_cuts", "tag_energy",
-        "prediction_finite", "probe_energy", "photon_like_E_minus_p",
-        "photon_like_m2", "predicted_detector", "predicted_opening_angle", "selected",
+        "all_tree_entries", "basic_quality", "production_event_cuts",
+        "leading_photon_energy", "leading_photon_detector", "selected",
     ]
-    return {"label": label, "path": path, "stages": {stage: 0.0 for stage in stages},
-            "selected_by_category": {"FT": 0.0, **{f"FD sector {i}": 0.0 for i in range(1, 7)}}}
+    return {
+        "label": label,
+        "path": path,
+        "stages": {stage: 0.0 for stage in stages},
+        "selected_by_category": {
+            "FT": 0.0,
+            **{f"FD sector {i}": 0.0 for i in range(1, 7)},
+        },
+    }
 
 
 def _add_cutflow(diag: Dict[str, object], stage: str, mask_or_count) -> None:
@@ -1221,15 +1287,33 @@ def _add_cutflow(diag: Dict[str, object], stage: str, mask_or_count) -> None:
     diag["stages"][stage] = float(diag["stages"].get(stage, 0.0)) + value
 
 
-def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Namespace,
-                               sample_label: str = "one-photon sample") -> Tuple[TrialArrays, Dict[str, object]]:
+def read_one_photon_candidates(
+    path: str,
+    beam_energy: float,
+    args: argparse.Namespace,
+    sample_label: str = "one-photon sample",
+) -> Tuple[TrialArrays, Dict[str, object]]:
+    """
+    Read the ordinary reconstructed epgamma population directly.
+
+    No missing-photon four-vector is constructed and no event is assumed to be
+    pi0 before the template decomposition.  The measured leading photon is the
+    photon that would enter the production DVCS candidate.  The same selection
+    is applied to data, DVCSGEN, and AAOGEN-as-epgamma samples.
+    """
+    del beam_energy  # retained in the call signature for backward compatibility
+
     logical = [
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
-        "g1_E", "g1_theta", "g1_phi", "Mx2_1", "Delta_phi",
-        "theta_gamma_gamma", "pTmiss", "theta_cm", "Emiss2", "Mx2", "Mx2_2",
-        "fiducial_status", "t1", "detector1", "Q2", "W", "y", "z",
+        "g1_E", "g1_theta", "g1_phi", "g1_detector",
+        "Mx2_1", "Delta_phi", "theta_gamma_gamma", "pTmiss",
+        "theta_cm", "Emiss2", "Mx2", "Mx2_2",
+        "fiducial_status", "t1", "proton_detector", "Q2", "W", "y", "z",
     ]
-    optional = ["theta_cm", "Emiss2", "Mx2", "Mx2_2", "fiducial_status", "t1", "detector1", "Q2", "W", "y"]
+    optional = [
+        "g1_detector", "theta_cm", "Emiss2", "Mx2", "Mx2_2",
+        "fiducial_status", "t1", "proton_detector", "Q2", "W", "y",
+    ]
     resolved = resolve_branches(path, logical, optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
     chunks: List[TrialArrays] = []
@@ -1237,17 +1321,19 @@ def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Nam
     diag = _new_one_photon_cutflow(sample_label, path)
 
     log(f"Reading {sample_label} from {path}")
-    for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
-                                 step_size=args.step_size, library="np"):
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=args.step_size,
+        library="np",
+    ):
         n = len(next(iter(arrays.values())))
         if args.max_events is not None and seen >= args.max_events:
             break
-        # endif
         if args.max_events is not None and seen + n > args.max_events:
             keep = args.max_events - seen
             arrays = {key: value[:keep] for key, value in arrays.items()}
             n = keep
-        # endif
         seen += n
         _add_cutflow(diag, "all_tree_entries", n)
 
@@ -1255,68 +1341,60 @@ def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Nam
         production = quality & production_event_mask(arrays, resolved, args)
         _add_cutflow(diag, "basic_quality", quality)
         _add_cutflow(diag, "production_event_cuts", production)
-        base = production
-        tag_E_all = finite_array(arrays, resolved["g1_E"])
-        cheap = base & np.isfinite(tag_E_all) & (tag_E_all >= args.tag_E_min) & (tag_E_all < args.tag_E_max)
-        _add_cutflow(diag, "tag_energy", cheap)
-        if not np.any(cheap):
-            continue
-        idx = np.flatnonzero(cheap)
-        e_p = finite_array(arrays, resolved["e_p"])[idx]
-        e_theta = finite_array(arrays, resolved["e_theta"])[idx]
-        e_phi = finite_array(arrays, resolved["e_phi"])[idx]
-        p_p = finite_array(arrays, resolved["p_p"])[idx]
-        p_theta = finite_array(arrays, resolved["p_theta"])[idx]
-        p_phi = finite_array(arrays, resolved["p_phi"])[idx]
-        tag_E = tag_E_all[idx]
-        tag_theta = finite_array(arrays, resolved["g1_theta"])[idx]
-        tag_phi = finite_array(arrays, resolved["g1_phi"])[idx]
-        mx2_ep = finite_array(arrays, resolved["Mx2_1"])[idx]
 
-        pred_E, pred_th, pred_ph, pred_m2, pred_p = predicted_probe(
-            beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi,
-            tag_E, tag_theta, tag_phi,
+        g_E = finite_array(arrays, resolved["g1_E"])
+        g_theta = finite_array(arrays, resolved["g1_theta"])
+        g_phi = finite_array(arrays, resolved["g1_phi"])
+        theta_deg = np.degrees(g_theta)
+
+        # The epgamma template fit represents the actual DVCS candidate sample.
+        # Therefore the measured photon, not an inferred partner, must satisfy
+        # the production photon threshold.
+        energy_ok = (
+            production
+            & np.isfinite(g_E)
+            & (g_E >= args.probe_E_min)
+            & (g_E < args.probe_E_max)
+            & np.isfinite(theta_deg)
+            & np.isfinite(g_phi)
         )
-        theta_deg = np.degrees(pred_th)
-        detector, sector = classify_predicted_detector(theta_deg, pred_ph, args)
-        finite_pred = (np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg)
-                       & np.isfinite(pred_ph) & np.isfinite(mx2_ep))
-        probe_energy = finite_pred & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
-        photon_ep = probe_energy & (pred_p > 0.0) & (np.abs(pred_E - pred_p) < 0.30)
-        photon_m2 = photon_ep & (np.abs(pred_m2) < 0.20)
-        detector_ok = photon_m2 & (detector >= 0)
-        opening_ok = detector_ok.copy()
-        if args.enable_production_global_cuts and not args.disable_production_global_cuts:
-            global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
-            opening_ok &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
-        good = opening_ok
-        for stage, mask in (("prediction_finite", finite_pred), ("probe_energy", probe_energy),
-                            ("photon_like_E_minus_p", photon_ep), ("photon_like_m2", photon_m2),
-                            ("predicted_detector", detector_ok), ("predicted_opening_angle", opening_ok),
-                            ("selected", good)):
-            _add_cutflow(diag, stage, mask)
-        for name, cmask in [("FT", good & (detector == 0))] + [
-                (f"FD sector {j}", good & (detector == 1) & (sector == j)) for j in range(1, 7)]:
+        _add_cutflow(diag, "leading_photon_energy", energy_ok)
+
+        detector, sector = classify_predicted_detector(theta_deg, g_phi, args)
+        detector_ok = energy_ok & (detector >= 0)
+        _add_cutflow(diag, "leading_photon_detector", detector_ok)
+        _add_cutflow(diag, "selected", detector_ok)
+
+        for name, cmask in [("FT", detector_ok & (detector == 0))] + [
+            (f"FD sector {j}", detector_ok & (detector == 1) & (sector == j))
+            for j in range(1, 7)
+        ]:
             diag["selected_by_category"][name] += float(np.count_nonzero(cmask))
-        chunks.append(TrialArrays(
-            E=pred_E[good].astype(np.float32, copy=False),
-            tag_E=tag_E[good].astype(np.float32, copy=False),
-            theta_deg=theta_deg[good].astype(np.float32, copy=False),
-            phi_rad=pred_ph[good].astype(np.float32, copy=False),
-            detector=detector[good].astype(np.int8, copy=False),
-            sector=sector[good].astype(np.int8, copy=False),
-            mx2_ep=mx2_ep[good].astype(np.float32, copy=False),
-            delta_phi=finite_array(arrays, resolved.get("Delta_phi"))[idx][good].astype(np.float32, copy=False),
-            theta_gamma_gamma=finite_array(arrays, resolved.get("theta_gamma_gamma"))[idx][good].astype(np.float32, copy=False),
-            pTmiss=finite_array(arrays, resolved.get("pTmiss"))[idx][good].astype(np.float32, copy=False),
-            theta_cm=finite_array(arrays, resolved.get("theta_cm"))[idx][good].astype(np.float32, copy=False),
-            Emiss2=finite_array(arrays, resolved.get("Emiss2"))[idx][good].astype(np.float32, copy=False),
-            Mx2=finite_array(arrays, resolved.get("Mx2"))[idx][good].astype(np.float32, copy=False),
-            Mx2_2=finite_array(arrays, resolved.get("Mx2_2"))[idx][good].astype(np.float32, copy=False),
-            proton_detector=finite_array(arrays, resolved.get("detector1"), default=-1.0)[idx][good].astype(np.int8, copy=False),
-            weight=np.ones(np.count_nonzero(good), dtype=np.float32),
-        ))
-    # endfor
+
+        good = detector_ok
+        chunks.append(
+            TrialArrays(
+                E=g_E[good].astype(np.float32, copy=False),
+                tag_E=g_E[good].astype(np.float32, copy=False),
+                theta_deg=theta_deg[good].astype(np.float32, copy=False),
+                phi_rad=g_phi[good].astype(np.float32, copy=False),
+                detector=detector[good].astype(np.int8, copy=False),
+                sector=sector[good].astype(np.int8, copy=False),
+                mx2_ep=finite_array(arrays, resolved["Mx2_1"])[good].astype(np.float32, copy=False),
+                delta_phi=finite_array(arrays, resolved.get("Delta_phi"))[good].astype(np.float32, copy=False),
+                theta_gamma_gamma=finite_array(arrays, resolved.get("theta_gamma_gamma"))[good].astype(np.float32, copy=False),
+                pTmiss=finite_array(arrays, resolved.get("pTmiss"))[good].astype(np.float32, copy=False),
+                theta_cm=finite_array(arrays, resolved.get("theta_cm"))[good].astype(np.float32, copy=False),
+                Emiss2=finite_array(arrays, resolved.get("Emiss2"))[good].astype(np.float32, copy=False),
+                Mx2=finite_array(arrays, resolved.get("Mx2"))[good].astype(np.float32, copy=False),
+                Mx2_2=finite_array(arrays, resolved.get("Mx2_2"))[good].astype(np.float32, copy=False),
+                proton_detector=finite_array(
+                    arrays, resolved.get("proton_detector"), default=-1.0
+                )[good].astype(np.int8, copy=False),
+                weight=np.ones(np.count_nonzero(good), dtype=np.float32),
+            )
+        )
+
     return concatenate_trials(chunks), diag
 
 
@@ -3291,35 +3369,44 @@ def summarize_tag_regions(trials: TrialArrays, split_GeV: float = 2.0) -> Dict[s
     }
 
 
-def plot_selected_energy_support(path: Path, period_label: str,
-                                 pass_data: TrialArrays, pass_mc: TrialArrays,
-                                 data_one_photon: TrialArrays, dvcs_template: TrialArrays,
-                                 pi0_missing_probe: TrialArrays, args: argparse.Namespace) -> None:
-    """Plot the observed-tag and predicted-probe support after the common selections."""
+def plot_selected_energy_support(
+    path: Path,
+    period_label: str,
+    pass_data: TrialArrays,
+    pass_mc: TrialArrays,
+    data_one_photon: TrialArrays,
+    dvcs_template: TrialArrays,
+    pi0_missing_probe: TrialArrays,
+    args: argparse.Namespace,
+) -> None:
+    """Compare the actual leading-photon energy support of all five samples."""
     samples = [
-        ("Probe found: data", pass_data), ("Probe found: AAOGEN pi0 MC", pass_mc),
-        ("One-photon candidates: data", data_one_photon),
-        ("DVCS/BH background template", dvcs_template),
-        ("Probe missing: pi0 MC", pi0_missing_probe),
+        ("epgammagamma data", pass_data),
+        ("epgammagamma AAOGEN", pass_mc),
+        ("epgamma data", data_one_photon),
+        ("epgamma DVCSGEN", dvcs_template),
+        ("epgamma AAOGEN", pi0_missing_probe),
     ]
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
-    tag_edges = np.linspace(args.tag_E_min, args.tag_E_max, 91)
-    probe_edges = np.linspace(args.probe_E_min, args.probe_E_max, 76)
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
+    edges = np.linspace(args.probe_E_min, args.probe_E_max, 76)
     for label, trial in samples:
         if trial.size() == 0:
             continue
-        axes[0].hist(trial.tag_E, bins=tag_edges, weights=trial.weight,
-                     histtype="step", density=True, linewidth=1.4, label=label)
-        axes[1].hist(trial.E, bins=probe_edges, weights=trial.weight,
-                     histtype="step", density=True, linewidth=1.4, label=label)
-    axes[0].axvline(2.0, linestyle="--", linewidth=1.0)
-    axes[0].set_xlabel("Observed tag photon energy (GeV)")
-    axes[1].set_xlabel("Predicted probe photon energy (GeV)")
-    for ax in axes:
-        ax.set_ylabel("Unit-normalized entries")
-        ax.grid(alpha=0.25)
-        ax.legend(fontsize=8)
-    fig.suptitle(f"{period_label}: selected tag-and-probe energy support")
+        ax.hist(
+            trial.E,
+            bins=edges,
+            weights=trial.weight,
+            histtype="step",
+            density=True,
+            linewidth=1.4,
+            label=f"{label} (N={np.sum(trial.weight):,.0f})",
+        )
+    ax.axvline(args.probe_E_min, linestyle="--", linewidth=1.0)
+    ax.set_xlabel("Leading reconstructed photon energy (GeV)")
+    ax.set_ylabel("Unit-normalized entries")
+    ax.set_title(f"{period_label}: common leading-photon support")
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(path, dpi=180)
     plt.close(fig)
@@ -3441,10 +3528,12 @@ def write_preflight_outputs(output_dir: Path, periods: Sequence[PeriodConfig],
 def main() -> int:
     args = parse_args()
     if args.probe_E_min < 2.0:
-        log("WARNING: --probe-E-min is below the 2 GeV DVCS photon threshold.")
+        log("WARNING: --probe-E-min is below the production DVCS leading-photon threshold.")
     log(
-        f"Directed-probe energy definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
-        f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV"
+        f"Direct sample definition: leading reconstructed photon "
+        f"{args.probe_E_min:g} <= E_gamma1 < {args.probe_E_max:g} GeV; "
+        f"second photon in epgammagamma "
+        f"{args.tag_E_min:g} <= E_gamma2 < {args.tag_E_max:g} GeV"
     )
     if args.workers < 1:
         raise ValueError("--workers must be at least 1")
@@ -3523,8 +3612,8 @@ def main() -> int:
 
     json_payload = {
         "schema_version": 3,
-        "description": "Exploratory RGA pi0 tag-and-probe photon-efficiency data/MC scale factors.",
-        "formula": "epsilon = N_probe_found / (N_probe_found + N_probe_missing); S_gamma = epsilon_data / epsilon_mc",
+        "description": "RGA exclusive-pi0 event-migration photon-reconstruction data/MC scale factors.",
+        "formula": "epsilon = N_pi0_epgammagamma / (N_pi0_epgammagamma + N_pi0_epgamma); S_gamma = epsilon_data / epsilon_mc",
         "arguments": args_dict,
         "period_metadata": metadata,
         "bins": all_rows,
@@ -3539,11 +3628,11 @@ def main() -> int:
         "tree_name": TREE_NAME,
         "periods": [asdict(period) for period in periods],
         "notes": [
-            "Each native eppi0 event contributes zero, one, or two directed passing probes: the observed tag must satisfy tag-E-min and the predicted probe must satisfy probe-E-min.",
-            "The nominal thresholds are E_tag>0.40 GeV and E_probe>2 GeV, matching the asymmetric pi0 production and the DVCS photon threshold.",
-            "Each fitted pi0-as-epgamma event contributes one failed probe only when the observed tag and predicted missing probe satisfy the same thresholds.",
-            "The one-photon data, DVCS/BH MC, and pi0-as-epgamma MC inputs use the same loose observed-photon threshold, while the predicted probe is required to exceed the production DVCS threshold.",
-            "The extraction is integrated over photon energy and polar angle within FT and each FD sector.",
+            "Each accepted epgammagamma event contributes one two-photon event. The energy-ordered leading photon satisfies probe-E-min and the second reconstructed photon satisfies tag-E-min.",
+            "The nominal thresholds are E_gamma1>2 GeV and E_gamma2>0.40 GeV, matching the production DVCS photon requirement and the loose second-photon control-sample threshold.",
+            "The one-photon pi0 yield in data is obtained only from the DVCSGEN plus AAOGEN template decomposition of the ordinary epgamma distributions.",
+            "The epgamma data, DVCSGEN, and AAOGEN-as-epgamma samples use the same measured leading-photon requirement; no predicted missing photon is constructed.",
+            "The extraction is integrated in categories of the actual leading reconstructed photon: FT and each FD sector.",
             "A complete data/MC passing-sample cut-flow audit is written for every period.",
             "Additional production-style (-t1), z, and predicted electron-photon opening-angle cuts are opt-in via --enable-production-global-cuts and are disabled by default. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",
             "Input ROOT identity records and duplicate-period checks are written before processing.",
