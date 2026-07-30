@@ -2798,11 +2798,11 @@ def plot_shape_comparison_canvas(path: Path, period_label: str, category_label: 
                                  broad: bool = False) -> None:
     if broad:
         specs = [
-            ("delta_phi", r"$\\Delta\\phi$ (rad)", 120, 0.0, 2*math.pi),
-            ("theta_gamma_gamma", r"$\\theta_{\\gamma\\gamma}$ (rad)", 120, 0.0, math.pi),
-            ("pTmiss", r"$p_T^{\\mathrm{miss}}$ (GeV)", 120, 0.0, 3.0),
-            ("theta_cm", r"$\\theta_{p\\gamma}^{\\mathrm{CM}}$ (rad)", 100, 0.0, math.pi),
-            ("Emiss2", r"$E_{\\mathrm{miss}}^2$ (GeV$^2$)", 120, -5.0, 5.0),
+            ("delta_phi", r"$\Delta\phi$ (rad)", 120, 0.0, 2*math.pi),
+            ("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, math.pi),
+            ("pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 120, 0.0, 3.0),
+            ("theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 0.0, math.pi),
+            ("Emiss2", r"$E_{\mathrm{miss}}^2$ (GeV$^2$)", 120, -5.0, 5.0),
             ("Mx2", r"$M_x^2$ (GeV$^2$)", 120, -2.0, 2.0),
             ("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 120, -2.0, 6.0),
         ]
