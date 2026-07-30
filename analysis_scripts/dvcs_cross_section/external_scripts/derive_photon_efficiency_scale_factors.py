@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v17.py
+derive_photon_efficiency_scale_factors_v18.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -25,10 +25,8 @@ that does not use gamma_phi1/2, since those are Trento rather than lab angles. P
 workers.
 
 The nominal directed-trial definition is asymmetric: the observed tag photon
-must satisfy E_tag >= 0.35 GeV, while the predicted probe must satisfy
-E_probe >= 2 GeV to match the DVCS photon threshold.  The existing
-pi0-as-epgamma files retain an observed photon above 2 GeV, so their failed-probe
-support is a restricted subset; the script records this limitation explicitly.
+must satisfy E_tag >= 0.40 GeV, while the predicted probe must satisfy
+E_probe >= 2 GeV to match the DVCS photon threshold.  The one-photon data, DVCS/BH MC, and pi0-as-epgamma MC inputs are loose photon-efficiency skims with an observed-photon threshold of 0.40 GeV. The predicted probe retains the production DVCS threshold of 2 GeV.
 
 The script derives S_gamma,b = epsilon_data,b/epsilon_MC,b. It does not yet
 propagate that scale factor into DVCS acceptance or pi0 migration.
@@ -96,41 +94,41 @@ class PeriodConfig:
 PERIODS: Tuple[PeriodConfig, ...] = (
     PeriodConfig(
         "fa18_inb", "Fa18 Inb", 10.604,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_50nA_10604MeV_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_fa18_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_fa18_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_fa18_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_50nA_10604MeV.root",
     ),
     PeriodConfig(
         "fa18_out", "Fa18 Out", 10.604,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_50nA_10604MeV_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_fa18_out_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_fa18_out_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_fa18_out_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root",
     ),
     PeriodConfig(
         "sp19_inb", "Sp19 Inb", 10.200,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_50nA_10200MeV_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_sp19_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_sp19_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_sp19_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_50nA_10200MeV.root",
     ),
     PeriodConfig(
         "sp18_inb", "Sp18 Inb", 10.594,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_50nA_10594MeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_50nA_10594MeV_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_sp18_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_sp18_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_sp18_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_50nA_10594MeV.root",
     ),
     PeriodConfig(
         "sp18_out", "Sp18 Out", 10.594,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_out_45nA_10594MeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_45nA_10594MeV_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_sp18_out_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_sp18_out_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_sp18_out_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root",
     ),
@@ -196,6 +194,7 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
 @dataclass
 class TrialArrays:
     E: np.ndarray
+    tag_E: np.ndarray
     theta_deg: np.ndarray
     phi_rad: np.ndarray
     detector: np.ndarray
@@ -215,6 +214,7 @@ class TrialArrays:
     def empty() -> "TrialArrays":
         return TrialArrays(
             E=np.empty(0, dtype=np.float32),
+            tag_E=np.empty(0, dtype=np.float32),
             theta_deg=np.empty(0, dtype=np.float32),
             phi_rad=np.empty(0, dtype=np.float32),
             detector=np.empty(0, dtype=np.int8),
@@ -427,6 +427,12 @@ def parse_args() -> argparse.Namespace:
                              "At most one worker is used per selected period.")
     parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
     parser.add_argument("--inspect-branches", action="store_true")
+    parser.add_argument("--preflight-only", action="store_true",
+                        help="Validate all inputs, audit observed-photon energy support, write preflight outputs, and exit before event processing.")
+    parser.add_argument("--preflight-stable-age-min", type=float, default=10.0,
+                        help="Minimum file age in minutes required by preflight to consider a ROOT file complete/stable; set negative to disable.")
+    parser.add_argument("--preflight-min-entries", type=int, default=1000,
+                        help="Minimum PhysicsEvents entries required for each one-photon loose input.")
     parser.add_argument("--max-events", type=int, default=None,
                         help="Debug-only maximum events read from each tree.")
 
@@ -434,7 +440,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ft-theta-max", type=float, default=5.0)
     parser.add_argument("--fd-theta-min", type=float, default=5.0)
     parser.add_argument("--fd-theta-max", type=float, default=35.0)
-    parser.add_argument("--tag-E-min", type=float, default=0.35,
+    parser.add_argument("--tag-E-min", type=float, default=0.40,
                         help="Minimum reconstructed tag-photon energy (GeV).")
     parser.add_argument("--tag-E-max", type=float, default=9.5,
                         help="Maximum reconstructed tag-photon energy (GeV).")
@@ -741,6 +747,7 @@ def concatenate_trials(chunks: Sequence[TrialArrays]) -> TrialArrays:
     # endif
     return TrialArrays(
         E=np.concatenate([chunk.E for chunk in chunks]).astype(np.float32, copy=False),
+        tag_E=np.concatenate([chunk.tag_E for chunk in chunks]).astype(np.float32, copy=False),
         theta_deg=np.concatenate([chunk.theta_deg for chunk in chunks]).astype(np.float32, copy=False),
         phi_rad=np.concatenate([chunk.phi_rad for chunk in chunks]).astype(np.float32, copy=False),
         detector=np.concatenate([chunk.detector for chunk in chunks]).astype(np.int8, copy=False),
@@ -1155,7 +1162,7 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                             key = f"angle_{angle_cut:g}_energy_{energy_cut:g}_m2_{m2_cut:g}"
                             add_matching_scan_count(diag, key, detector, sector, scan_mask, solution_weight)
                 chunks.append(TrialArrays(
-                    E=pred_E[eres].astype(np.float32, copy=False), theta_deg=theta_deg[eres].astype(np.float32, copy=False),
+                    E=pred_E[eres].astype(np.float32, copy=False), tag_E=obs_E[eres].astype(np.float32, copy=False), theta_deg=theta_deg[eres].astype(np.float32, copy=False),
                     phi_rad=pred_ph[eres].astype(np.float32, copy=False), detector=detector[eres].astype(np.int8, copy=False),
                     sector=sector[eres].astype(np.int8, copy=False), mx2_ep=mx2_ep[eres].astype(np.float32, copy=False),
                     delta_phi=delta_phi_all[eres].astype(np.float32, copy=False), theta_gamma_gamma=theta_gg_all[eres].astype(np.float32, copy=False),
@@ -1233,6 +1240,7 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             good &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
         chunks.append(TrialArrays(
             E=pred_E[good].astype(np.float32, copy=False),
+            tag_E=tag_E[good].astype(np.float32, copy=False),
             theta_deg=theta_deg[good].astype(np.float32, copy=False),
             phi_rad=pred_ph[good].astype(np.float32, copy=False),
             detector=detector[good].astype(np.int8, copy=False),
@@ -2606,6 +2614,19 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         f"pi0 template={fail_pi0_mc.size():,}"
     )
 
+    energy_support = {
+        "pass_data": summarize_tag_regions(pass_data),
+        "pass_mc": summarize_tag_regions(pass_mc),
+        "fail_data": summarize_tag_regions(fail_data),
+        "fail_dvcs_mc": summarize_tag_regions(fail_dvcs_mc),
+        "fail_pi0_mc": summarize_tag_regions(fail_pi0_mc),
+    }
+    plot_selected_energy_support(
+        period_dir / "selected_energy_support.png", period.label,
+        pass_data, pass_mc, fail_data, fail_dvcs_mc, fail_pi0_mc, args,
+    )
+
+
     bins = build_bins(pass_mc, fail_pi0_mc, args)
     rows: List[EfficiencyRow] = []
     n_bins = len(bins)
@@ -2772,6 +2793,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
                                         for k, v in f.projections.items()},
             } for d, f in zip(bins, fits)
         },
+        "selected_energy_support": energy_support,
         "exclusivity_fitter_reference": {
             "module": str(Path(load_exclusivity_fitter_module().__file__).resolve()),
             "FT_reference_success": bool(ft_reference_fit.success) if ft_reference_fit is not None else False,
@@ -2835,6 +2857,168 @@ def write_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
     # endwith
 
 
+
+def summarize_tag_regions(trials: TrialArrays, split_GeV: float = 2.0) -> Dict[str, float]:
+    """Summarize selected directed trials by observed-tag energy."""
+    finite = np.isfinite(trials.tag_E) & np.isfinite(trials.weight)
+    low = finite & (trials.tag_E < split_GeV)
+    high = finite & (trials.tag_E >= split_GeV)
+    return {
+        "stored_trials": int(trials.size()),
+        "weighted_total": float(np.sum(trials.weight[finite])),
+        "weighted_low_tag": float(np.sum(trials.weight[low])),
+        "weighted_high_tag": float(np.sum(trials.weight[high])),
+        "low_tag_fraction": float(np.sum(trials.weight[low]) / np.sum(trials.weight[finite])) if np.sum(trials.weight[finite]) > 0 else math.nan,
+    }
+
+
+def plot_selected_energy_support(path: Path, period_label: str,
+                                 pass_data: TrialArrays, pass_mc: TrialArrays,
+                                 fail_data: TrialArrays, fail_dvcs: TrialArrays,
+                                 fail_pi0: TrialArrays, args: argparse.Namespace) -> None:
+    """Plot the observed-tag and predicted-probe support after the common selections."""
+    samples = [
+        ("Passing data", pass_data), ("Passing AAOGEN MC", pass_mc),
+        ("Failing data", fail_data), ("Failing DVCS MC", fail_dvcs),
+        ("Failing pi0 MC", fail_pi0),
+    ]
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
+    tag_edges = np.linspace(args.tag_E_min, args.tag_E_max, 91)
+    probe_edges = np.linspace(args.probe_E_min, args.probe_E_max, 76)
+    for label, trial in samples:
+        if trial.size() == 0:
+            continue
+        axes[0].hist(trial.tag_E, bins=tag_edges, weights=trial.weight,
+                     histtype="step", density=True, linewidth=1.4, label=label)
+        axes[1].hist(trial.E, bins=probe_edges, weights=trial.weight,
+                     histtype="step", density=True, linewidth=1.4, label=label)
+    axes[0].axvline(2.0, linestyle="--", linewidth=1.0)
+    axes[0].set_xlabel("Observed tag photon energy (GeV)")
+    axes[1].set_xlabel("Predicted probe photon energy (GeV)")
+    for ax in axes:
+        ax.set_ylabel("Unit-normalized entries")
+        ax.grid(alpha=0.25)
+        ax.legend(fontsize=8)
+    fig.suptitle(f"{period_label}: selected tag-and-probe energy support")
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def audit_one_photon_file(path: str, role: str, period: PeriodConfig,
+                          args: argparse.Namespace) -> Dict[str, object]:
+    """Audit a loose epgamma ROOT file without running the physics extraction."""
+    record: Dict[str, object] = {
+        "period": period.key,
+        "period_label": period.label,
+        "role": role,
+        "path": path,
+        "exists": Path(path).is_file(),
+        "ok": False,
+    }
+    if not record["exists"]:
+        record["status"] = "missing"
+        return record
+    stat = Path(path).stat()
+    age_minutes = (time.time() - stat.st_mtime) / 60.0
+    record.update({"size_bytes": int(stat.st_size), "mtime_unix": stat.st_mtime,
+                   "age_minutes": age_minutes})
+    try:
+        with uproot.open(path) as root_file:
+            if TREE_NAME not in root_file:
+                record["status"] = f"missing_tree_{TREE_NAME}"
+                return record
+            tree = root_file[TREE_NAME]
+            record["entries"] = int(tree.num_entries)
+            keys = {str(k).split(";")[0] for k in tree.keys()}
+            branch = next((name for name in ALIASES["g1_E"] if name in keys), None)
+            record["observed_photon_energy_branch"] = branch
+            if branch is None:
+                record["status"] = "missing_observed_photon_energy_branch"
+                return record
+        counts = {"finite": 0, "below_tag_min": 0, "tag_to_2": 0, "above_2": 0}
+        hist_edges = np.linspace(0.0, max(args.tag_E_max, 10.0), 101)
+        hist = np.zeros(hist_edges.size - 1, dtype=np.int64)
+        for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=[branch],
+                                     step_size=args.step_size, library="np"):
+            values = np.asarray(arrays[branch], dtype=float)
+            values = values[np.isfinite(values)]
+            counts["finite"] += int(values.size)
+            counts["below_tag_min"] += int(np.count_nonzero(values < args.tag_E_min))
+            counts["tag_to_2"] += int(np.count_nonzero((values >= args.tag_E_min) & (values < 2.0)))
+            counts["above_2"] += int(np.count_nonzero(values >= 2.0))
+            hist += np.histogram(values, bins=hist_edges)[0]
+        record.update(counts)
+        record["fraction_tag_to_2"] = counts["tag_to_2"] / counts["finite"] if counts["finite"] else math.nan
+        record["hist_edges_GeV"] = hist_edges.tolist()
+        record["hist_counts"] = hist.tolist()
+        checks = {
+            "minimum_entries": int(record["entries"]) >= args.preflight_min_entries,
+            "low_energy_support_present": counts["tag_to_2"] > 0,
+            "stable_age": args.preflight_stable_age_min < 0 or age_minutes >= args.preflight_stable_age_min,
+        }
+        record["checks"] = checks
+        record["ok"] = all(checks.values())
+        record["status"] = "ok" if record["ok"] else "failed_checks"
+    except Exception as exc:
+        record["status"] = "error"
+        record["error"] = repr(exc)
+    return record
+
+
+def write_preflight_outputs(output_dir: Path, periods: Sequence[PeriodConfig],
+                            args: argparse.Namespace) -> Dict[str, object]:
+    """Write a complete loose-input readiness and energy-support audit."""
+    preflight_dir = output_dir / "preflight"
+    preflight_dir.mkdir(parents=True, exist_ok=True)
+    records: List[Dict[str, object]] = []
+    for period in periods:
+        roles = (("data", period.epg_data), ("dvcs_mc", period.dvcs_mc),
+                 ("pi0_as_epg_mc", period.pi0_as_epg_mc))
+        for role, path in roles:
+            log(f"Preflight: {period.label} {role}: {path}")
+            records.append(audit_one_photon_file(path, role, period, args))
+    payload = {
+        "created_unix_time": time.time(),
+        "tag_energy_min_GeV": args.tag_E_min,
+        "probe_energy_min_GeV": args.probe_E_min,
+        "all_ok": bool(records) and all(bool(r.get("ok")) for r in records),
+        "records": records,
+    }
+    with open(preflight_dir / "loose_epgamma_preflight.json", "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, indent=2, allow_nan=True)
+    flat_rows = []
+    for r in records:
+        flat_rows.append({k: v for k, v in r.items()
+                          if k not in {"hist_edges_GeV", "hist_counts", "checks"}} |
+                         {f"check_{k}": v for k, v in r.get("checks", {}).items()})
+    write_rows(preflight_dir / "loose_epgamma_preflight.csv", flat_rows)
+
+    for period in periods:
+        fig, ax = plt.subplots(figsize=(8.5, 5.5))
+        for role in ("data", "dvcs_mc", "pi0_as_epg_mc"):
+            rec = next((r for r in records if r["period"] == period.key and r["role"] == role), None)
+            if not rec or "hist_counts" not in rec:
+                continue
+            edges = np.asarray(rec["hist_edges_GeV"], dtype=float)
+            counts = np.asarray(rec["hist_counts"], dtype=float)
+            total = counts.sum()
+            if total > 0:
+                counts /= total
+            ax.stairs(counts, edges, label=role)
+        ax.axvline(args.tag_E_min, linestyle="--", linewidth=1.0)
+        ax.axvline(2.0, linestyle="--", linewidth=1.0)
+        ax.set_xlim(0.0, min(args.tag_E_max, 6.0))
+        ax.set_xlabel("Observed photon energy (GeV)")
+        ax.set_ylabel("Fraction per bin")
+        ax.set_title(f"{period.label}: loose epgamma input support")
+        ax.grid(alpha=0.25)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(preflight_dir / f"{period.key}_observed_photon_energy_support.png", dpi=180)
+        plt.close(fig)
+    return payload
+
 def main() -> int:
     args = parse_args()
     if args.probe_E_min < 2.0:
@@ -2842,11 +3026,6 @@ def main() -> int:
     log(
         f"Directed-probe energy definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
         f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV"
-    )
-    log(
-        "IMPORTANT: the existing pi0-as-epgamma files retain a >2 GeV observed photon. "
-        "The failed-probe sample therefore covers only the subset supported by those files, "
-        "not all cases with a low-energy surviving tag and a missing >2 GeV probe."
     )
     if args.workers < 1:
         raise ValueError("--workers must be at least 1")
@@ -2864,6 +3043,17 @@ def main() -> int:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    preflight_payload = write_preflight_outputs(output_dir, periods, args)
+    if args.preflight_only:
+        log(f"Preflight complete: all_ok={preflight_payload['all_ok']}")
+        return 0 if preflight_payload["all_ok"] else 2
+
+    if not preflight_payload["all_ok"]:
+        raise RuntimeError(
+            "Loose epgamma input preflight failed. Inspect output/photon_efficiency_study/preflight; "
+            "use --preflight-only while files are still being produced."
+        )
 
     for period in periods:
         for path in (period.epg_data, period.dvcs_mc, period.pi0_as_epg_mc,
@@ -2930,9 +3120,9 @@ def main() -> int:
         "periods": [asdict(period) for period in periods],
         "notes": [
             "Each native eppi0 event contributes zero, one, or two directed passing probes: the observed tag must satisfy tag-E-min and the predicted probe must satisfy probe-E-min.",
-            "The nominal thresholds are E_tag>0.35 GeV and E_probe>2 GeV, matching the asymmetric pi0 production and the DVCS photon threshold.",
+            "The nominal thresholds are E_tag>0.40 GeV and E_probe>2 GeV, matching the asymmetric pi0 production and the DVCS photon threshold.",
             "Each fitted pi0-as-epgamma event contributes one failed probe only when the observed tag and predicted missing probe satisfy the same thresholds.",
-            "Because the existing pi0-as-epgamma files were produced with the retained photon above 2 GeV, they do not contain the full population in which a 0.35--2 GeV tag survives while a >2 GeV probe is missing; this restricted-support limitation is recorded and must be resolved before a final absolute efficiency correction is adopted.",
+            "The one-photon data, DVCS/BH MC, and pi0-as-epgamma MC inputs use the same loose observed-photon threshold, while the predicted probe is required to exceed the production DVCS threshold.",
             "The extraction is integrated over photon energy and polar angle within FT and each FD sector.",
             "A complete data/MC passing-sample cut-flow audit is written for every period.",
             "Common study cuts mirror the applicable global requirements: (-t1)<1 when available and electron-photon opening angle >5 deg. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",

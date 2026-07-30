@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v19.py
+determine_dilution_factor_v20.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -2731,6 +2731,144 @@ def plot_three_method_comparison(
     return str(path)
 
 
+def plot_method1_method2_all_cuts(
+    output_dir: Path,
+    period: str,
+    summaries: dict[str, Any],
+) -> str:
+    """
+    One-panel comparison of Methods 1 and 2 for tight, nominal, and loose cuts.
+
+    Cut variation is encoded by color.  Method 1 uses filled circles and
+    Method 2 uses open circles.  Small horizontal offsets keep all six point
+    sets visible without materially changing the bin positions.
+    """
+    ensure_directory(output_dir)
+
+    from matplotlib.lines import Line2D
+
+    bins = np.arange(1, NUMBER_OF_BINS + 1, dtype=float)
+    cut_colors = {
+        "tight": "tab:blue",
+        "nominal": "tab:orange",
+        "loose": "tab:green",
+    }
+    cut_offsets = {
+        "tight": -0.18,
+        "nominal": 0.0,
+        "loose": 0.18,
+    }
+    method_offsets = {
+        "method1": -0.035,
+        "method2": 0.035,
+    }
+
+    fig, ax = plt.subplots(figsize=(17, 6.5))
+
+    for cut_index, variation in enumerate(CUT_VARIATIONS):
+        color = cut_colors[variation]
+        base_x = bins + cut_offsets[variation]
+
+        ax.errorbar(
+            base_x + method_offsets["method1"],
+            summaries["method1"]["central"][:, cut_index],
+            yerr=summaries["method1"]["stat_uncertainty"][:, cut_index],
+            marker="o",
+            markerfacecolor=color,
+            markeredgecolor=color,
+            color=color,
+            linestyle="none",
+            markersize=5,
+            capsize=2,
+            label=None,
+        )
+        ax.errorbar(
+            base_x + method_offsets["method2"],
+            summaries["method2"]["central"][:, cut_index],
+            yerr=summaries["method2"]["stat_uncertainty"][:, cut_index],
+            marker="o",
+            markerfacecolor="none",
+            markeredgecolor=color,
+            markeredgewidth=1.4,
+            color=color,
+            linestyle="none",
+            markersize=5,
+            capsize=2,
+            label=None,
+        )
+
+    cut_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            color=cut_colors[variation],
+            markerfacecolor=cut_colors[variation],
+            markeredgecolor=cut_colors[variation],
+            markersize=6,
+            label=variation.capitalize(),
+        )
+        for variation in ("tight", "nominal", "loose")
+    ]
+    method_handles = [
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            color="black",
+            markerfacecolor="black",
+            markeredgecolor="black",
+            markersize=6,
+            label="Method 1",
+        ),
+        Line2D(
+            [0],
+            [0],
+            marker="o",
+            linestyle="none",
+            color="black",
+            markerfacecolor="none",
+            markeredgecolor="black",
+            markeredgewidth=1.4,
+            markersize=6,
+            label="Method 2",
+        ),
+    ]
+
+    first_legend = ax.legend(
+        handles=cut_handles,
+        title="Exclusivity cut",
+        ncol=3,
+        loc="upper left",
+    )
+    ax.add_artist(first_legend)
+    ax.legend(
+        handles=method_handles,
+        title="Dilution-factor method",
+        ncol=2,
+        loc="upper right",
+    )
+
+    ax.set_ylim(0.1, 0.6)
+    ax.set_xlim(0.45, NUMBER_OF_BINS + 0.55)
+    ax.set_xlabel("Combined kinematic-bin number")
+    ax.set_ylabel("Dilution factor")
+    ax.set_xticks(bins)
+    ax.grid(alpha=0.25)
+    ax.set_title(
+        f"{PERIOD_LABELS[period]} Method-1/Method-2 comparison for "
+        "tight, nominal, and loose cuts"
+    )
+
+    fig.tight_layout()
+    path = output_dir / f"method1_method2_all_cuts_{period}.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return str(path)
+
+
 def plot_three_period_comparison(
     output_dir: Path,
     method_key: str,
@@ -3194,6 +3332,13 @@ def write_plots(
                 period,
                 summaries_by_period[period],
                 bootstrap_results[period],
+            )
+        )
+        paths.append(
+            plot_method1_method2_all_cuts(
+                output_dir,
+                period,
+                summaries_by_period[period],
             )
         )
         paths.append(
