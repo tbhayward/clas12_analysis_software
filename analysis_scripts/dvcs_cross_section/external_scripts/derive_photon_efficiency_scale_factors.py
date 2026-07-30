@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v18.py
+derive_photon_efficiency_scale_factors_v20.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -180,6 +180,7 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
     "Q2": ("Q2", "q2"),
     "W": ("W", "w"),
     "y": ("y", "inelasticity"),
+    "z": ("z",),
     # Optional AAOGEN truth-level probe information.  These aliases are deliberately
     # broad; truth closure is skipped with an explicit reason when no complete set exists.
     "gen_g1_E": ("gen_p2_p", "mc_p2_p", "generated_gamma1_p", "gen_gamma1_p"),
@@ -505,6 +506,8 @@ def parse_args() -> argparse.Namespace:
                         help="Disable the common global cuts used by this study; period-specific Sp18 Out sector exclusions are intentionally not applied.")
     parser.add_argument("--global-t-abs-max", type=float, default=1.0,
                         help="Production global requirement (-t1) < this value when t1 exists.")
+    parser.add_argument("--global-z-min", type=float, default=0.65,
+                        help="Common production requirement z > this value.")
     parser.add_argument("--global-open-angle-min-deg", type=float, default=5.0,
                         help="Production electron-photon opening-angle requirement.")
     parser.add_argument("--enable-global-dis-cuts", action="store_true",
@@ -519,6 +522,11 @@ def parse_args() -> argparse.Namespace:
                         help="Comma-separated relative-energy matching thresholds used for stability scans.")
     parser.add_argument("--predicted-m2-scan", default="0.05,0.10,0.20,0.40,-1",
                         help="Comma-separated |m2_pred| thresholds; negative means no m2 cut.")
+    parser.add_argument(
+        "--enable-matching-scans", action="store_true",
+        help=("Enable the expensive multidimensional matching-cut scan diagnostics. "
+              "Disabled by default because they do not affect the nominal efficiency result."),
+    )
     parser.add_argument("--mirror-policy", choices=("best", "half_weight", "unique_sector"), default="best",
                         help="Treatment of the two cone mirror solutions in passing probes.")
     parser.add_argument("--skip-truth-closure", action="store_true",
@@ -608,6 +616,10 @@ def production_event_mask(arrays: Mapping[str, np.ndarray], resolved: Mapping[st
     if resolved.get("t1") is not None:
         t1 = finite_array(arrays, resolved.get("t1"))
         mask &= np.isfinite(t1) & ((-t1) < args.global_t_abs_max)
+    if resolved.get("z") is None:
+        raise RuntimeError("Required global-cut branch z is absent")
+    z = finite_array(arrays, resolved.get("z"))
+    mask &= np.isfinite(z) & (z > args.global_z_min)
     if args.enable_global_dis_cuts:
         required = (resolved.get("Q2"), resolved.get("W"), resolved.get("y"))
         if all(branch is not None for branch in required):
@@ -847,6 +859,7 @@ def reconstruct_native_eppi0_photons(
     detector1: np.ndarray,
     detector2: np.ndarray,
     args: argparse.Namespace,
+    active_mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, ...]:
     """Recover both detector-compatible cone-mirror solutions when available.
 
@@ -875,7 +888,12 @@ def reconstruct_native_eppi0_photons(
     detector_solution = np.zeros(n_events, dtype=bool)
     closure_pass = np.zeros(n_events, dtype=bool)
 
-    for i in range(n_events):
+    if active_mask is None:
+        active_indices = range(n_events)
+    else:
+        active_indices = np.flatnonzero(np.asarray(active_mask, dtype=bool))
+
+    for i in active_indices:
         values = (
             e_theta[i], e_phi[i], pi0_p[i], pi0_theta[i], pi0_phi[i],
             opening1[i], opening2[i], pi0_mass[i], detector1[i], detector2[i],
@@ -985,7 +1003,7 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         "pi0_p", "pi0_theta", "pi0_phi",
         "open_angle_egamma1", "open_angle_egamma2", "gamma1_detector_native",
         "gamma2_detector_native", "Mh_gammagamma", "Mx2_1", "Mx2", "pTmiss",
-        "Delta_phi", "fiducial_status", "t1", "detector1", "Q2", "W", "y",
+        "Delta_phi", "fiducial_status", "t1", "detector1", "Q2", "W", "y", "z",
     ]
     optional = ["Mx2_1", "Mx2", "pTmiss", "Delta_phi", "fiducial_status", "t1", "detector1", "Q2", "W", "y"]
     resolved = resolve_branches(path, logical, optional)
@@ -993,9 +1011,9 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
     chunks: List[TrialArrays] = []
     diag = empty_pass_diagnostics(sample_name, path)
     seen = 0
-    angle_scan = parse_float_list(args.match_angle_scan_deg)
-    energy_scan = parse_float_list(args.match_energy_scan)
-    m2_scan = parse_float_list(args.predicted_m2_scan)
+    angle_scan = parse_float_list(args.match_angle_scan_deg) if args.enable_matching_scans else []
+    energy_scan = parse_float_list(args.match_energy_scan) if args.enable_matching_scans else []
+    m2_scan = parse_float_list(args.predicted_m2_scan) if args.enable_matching_scans else []
 
     log(f"Reading native eppi0 PASS trials from {path}")
     for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
@@ -1047,7 +1065,7 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
 
         rec = reconstruct_native_eppi0_photons(
             e_theta, e_phi, pi0_p, pi0_theta, pi0_phi, opening1, opening2,
-            pi0_mass, detector1_obs, detector2_obs, args)
+            pi0_mass, detector1_obs, detector2_obs, args, active_mask=base)
         (g1_E, g2_E, sol_g1_theta, sol_g1_phi, sol_g2_theta, sol_g2_phi,
          sol_closure, sol_score, closure, ambiguity, transverse_mismatch,
          energy_fraction_g1, n_solutions, input_finite, longitudinal_solution,
@@ -1182,7 +1200,7 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
         "g1_E", "g1_theta", "g1_phi", "Mx2_1", "Delta_phi",
         "theta_gamma_gamma", "pTmiss", "theta_cm", "Emiss2", "Mx2", "Mx2_2",
-        "fiducial_status", "t1", "detector1", "Q2", "W", "y",
+        "fiducial_status", "t1", "detector1", "Q2", "W", "y", "z",
     ]
     optional = ["theta_cm", "Emiss2", "Mx2", "Mx2_2", "fiducial_status", "t1", "detector1", "Q2", "W", "y"]
     resolved = resolve_branches(path, logical, optional)
@@ -1205,16 +1223,21 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
         seen += n
 
         base = basic_quality_mask(arrays, resolved, args) & production_event_mask(arrays, resolved, args)
-        e_p = finite_array(arrays, resolved["e_p"])
-        e_theta = finite_array(arrays, resolved["e_theta"])
-        e_phi = finite_array(arrays, resolved["e_phi"])
-        p_p = finite_array(arrays, resolved["p_p"])
-        p_theta = finite_array(arrays, resolved["p_theta"])
-        p_phi = finite_array(arrays, resolved["p_phi"])
-        tag_E = finite_array(arrays, resolved["g1_E"])
-        tag_theta = finite_array(arrays, resolved["g1_theta"])
-        tag_phi = finite_array(arrays, resolved["g1_phi"])
-        mx2_ep = finite_array(arrays, resolved["Mx2_1"])
+        tag_E_all = finite_array(arrays, resolved["g1_E"])
+        cheap = base & np.isfinite(tag_E_all) & (tag_E_all >= args.tag_E_min) & (tag_E_all < args.tag_E_max)
+        if not np.any(cheap):
+            continue
+        idx = np.flatnonzero(cheap)
+        e_p = finite_array(arrays, resolved["e_p"])[idx]
+        e_theta = finite_array(arrays, resolved["e_theta"])[idx]
+        e_phi = finite_array(arrays, resolved["e_phi"])[idx]
+        p_p = finite_array(arrays, resolved["p_p"])[idx]
+        p_theta = finite_array(arrays, resolved["p_theta"])[idx]
+        p_phi = finite_array(arrays, resolved["p_phi"])[idx]
+        tag_E = tag_E_all[idx]
+        tag_theta = finite_array(arrays, resolved["g1_theta"])[idx]
+        tag_phi = finite_array(arrays, resolved["g1_phi"])[idx]
+        mx2_ep = finite_array(arrays, resolved["Mx2_1"])[idx]
 
         pred_E, pred_th, pred_ph, pred_m2, pred_p = predicted_probe(
             beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi,
@@ -1223,8 +1246,7 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
         theta_deg = np.degrees(pred_th)
         detector, sector = classify_predicted_detector(theta_deg, pred_ph, args)
         good = (
-            base
-            & np.isfinite(pred_E) & np.isfinite(pred_p)
+            np.isfinite(pred_E) & np.isfinite(pred_p)
             & np.isfinite(theta_deg) & np.isfinite(pred_ph)
             & np.isfinite(mx2_ep)
             & (tag_E >= args.tag_E_min) & (tag_E < args.tag_E_max)
@@ -1236,7 +1258,7 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
         )
         if not args.disable_production_global_cuts:
             global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
-            proton_detector = finite_array(arrays, resolved.get("detector1"), default=-1.0).astype(int)
+            proton_detector = finite_array(arrays, resolved.get("detector1"), default=-1.0)[idx].astype(int)
             good &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
         chunks.append(TrialArrays(
             E=pred_E[good].astype(np.float32, copy=False),
@@ -1246,14 +1268,14 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
             detector=detector[good].astype(np.int8, copy=False),
             sector=sector[good].astype(np.int8, copy=False),
             mx2_ep=mx2_ep[good].astype(np.float32, copy=False),
-            delta_phi=finite_array(arrays, resolved.get("Delta_phi"))[good].astype(np.float32, copy=False),
-            theta_gamma_gamma=finite_array(arrays, resolved.get("theta_gamma_gamma"))[good].astype(np.float32, copy=False),
-            pTmiss=finite_array(arrays, resolved.get("pTmiss"))[good].astype(np.float32, copy=False),
-            theta_cm=finite_array(arrays, resolved.get("theta_cm"))[good].astype(np.float32, copy=False),
-            Emiss2=finite_array(arrays, resolved.get("Emiss2"))[good].astype(np.float32, copy=False),
-            Mx2=finite_array(arrays, resolved.get("Mx2"))[good].astype(np.float32, copy=False),
-            Mx2_2=finite_array(arrays, resolved.get("Mx2_2"))[good].astype(np.float32, copy=False),
-            proton_detector=finite_array(arrays, resolved.get("detector1"), default=-1.0)[good].astype(np.int8, copy=False),
+            delta_phi=finite_array(arrays, resolved.get("Delta_phi"))[idx][good].astype(np.float32, copy=False),
+            theta_gamma_gamma=finite_array(arrays, resolved.get("theta_gamma_gamma"))[idx][good].astype(np.float32, copy=False),
+            pTmiss=finite_array(arrays, resolved.get("pTmiss"))[idx][good].astype(np.float32, copy=False),
+            theta_cm=finite_array(arrays, resolved.get("theta_cm"))[idx][good].astype(np.float32, copy=False),
+            Emiss2=finite_array(arrays, resolved.get("Emiss2"))[idx][good].astype(np.float32, copy=False),
+            Mx2=finite_array(arrays, resolved.get("Mx2"))[idx][good].astype(np.float32, copy=False),
+            Mx2_2=finite_array(arrays, resolved.get("Mx2_2"))[idx][good].astype(np.float32, copy=False),
+            proton_detector=finite_array(arrays, resolved.get("detector1"), default=-1.0)[idx][good].astype(np.int8, copy=False),
             weight=np.ones(np.count_nonzero(good), dtype=np.float32),
         ))
     # endfor
@@ -3125,9 +3147,9 @@ def main() -> int:
             "The one-photon data, DVCS/BH MC, and pi0-as-epgamma MC inputs use the same loose observed-photon threshold, while the predicted probe is required to exceed the production DVCS threshold.",
             "The extraction is integrated over photon energy and polar angle within FT and each FD sector.",
             "A complete data/MC passing-sample cut-flow audit is written for every period.",
-            "Common study cuts mirror the applicable global requirements: (-t1)<1 when available and electron-photon opening angle >5 deg. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",
+            "Common study cuts mirror the applicable global requirements: (-t1)<1 when available, z>0.65, and electron-photon opening angle >5 deg. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",
             "Input ROOT identity records and duplicate-period checks are written before processing.",
-            "Matching-cut scans, scale-factor stability scans, mirror-category migration diagnostics, and per-projection fit residual/deviance diagnostics are produced.",
+            "Matching-cut scans are optional (--enable-matching-scans) because they are expensive and do not affect the nominal result; scale-factor stability, mirror-category migration, and fit residual/deviance diagnostics remain enabled.",
             "No equal-efficiency approximation is used.",
             "Scale factors are not yet propagated to DVCS acceptance or pi0 migration.",
             "Period processing is parallelized with a hard maximum of seven workers.",
