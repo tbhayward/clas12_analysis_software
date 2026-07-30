@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v20.py
+determine_dilution_factor_v23.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -90,6 +90,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import uproot
+from scipy.optimize import curve_fit
 
 
 # =============================================================================
@@ -162,6 +163,26 @@ DEFAULT_INPUTS: dict[str, dict[str, Path]] = {
     }
     for period in PERIODS
 }
+
+UNCORRECTED_ENPI_DIR = Path(
+    "/work/clas12/thayward/CLAS12_exclusive/enpi+/data/pass2/data/enpi+"
+)
+
+DEFAULT_UNCORRECTED_INPUTS: dict[str, dict[str, Path]] = {
+    period: {
+        target: UNCORRECTED_ENPI_DIR
+        / f"rgc_{period}_inb_{target}_epi+.root"
+        for target in TARGETS
+    }
+    for period in PERIODS
+}
+
+SIGMA_SCAN_VALUES = np.asarray(
+    [4.0 - index / 3.0 for index in range(12)],
+    dtype=np.float64,
+)
+SIGMA_SCAN_FIT_MIN_GEV2 = 0.65
+SIGMA_SCAN_FIT_MAX_GEV2 = 1.10
 
 DEFAULT_ISR_INPUTS: dict[str, dict[str, Path]] = {
     period: {
@@ -3367,6 +3388,428 @@ def write_plots(
 
 
 
+
+def _gaussian_plus_quadratic(
+    x: np.ndarray,
+    amplitude: float,
+    mean: float,
+    sigma: float,
+    c0: float,
+    c1: float,
+    c2: float,
+) -> np.ndarray:
+    """Gaussian neutron peak plus a quadratic continuum."""
+    sigma_safe = max(float(sigma), 1.0e-9)
+    return (
+        amplitude * np.exp(-0.5 * ((x - mean) / sigma_safe) ** 2)
+        + c0
+        + c1 * x
+        + c2 * x * x
+    )
+
+
+def fit_period_integrated_neutron_peak(
+    dataset: LoadedDataset,
+) -> tuple[float, float, dict[str, float]]:
+    """
+    Fit the period-integrated NH3 missing-neutron peak.
+
+    The corrected and uncorrected samples are fit independently.  Only events
+    inside the production xB and -tprime phase space enter the fit, ensuring
+    that the sigma scan uses the same accepted kinematic domain as the
+    dilution-factor analysis.
+    """
+    x_min = XB_BINS[0][0]
+    x_max = XB_BINS[-1][1]
+    t_min = MINUS_TPRIME_BINS_GEV2[0][0]
+    t_max = MINUS_TPRIME_BINS_GEV2[-1][1]
+    accepted = (
+        np.isfinite(dataset.mx2_gev2)
+        & np.isfinite(dataset.xB)
+        & np.isfinite(dataset.minus_tprime_gev2)
+        & (dataset.xB >= x_min)
+        & (dataset.xB < x_max)
+        & (dataset.minus_tprime_gev2 >= t_min)
+        & (dataset.minus_tprime_gev2 < t_max)
+        & (dataset.mx2_gev2 >= SIGMA_SCAN_FIT_MIN_GEV2)
+        & (dataset.mx2_gev2 < SIGMA_SCAN_FIT_MAX_GEV2)
+    )
+    values = np.asarray(dataset.mx2_gev2[accepted], dtype=np.float64)
+    if values.size < 100:
+        raise RuntimeError(
+            f"Too few accepted NH3 events to fit the neutron peak for "
+            f"{dataset.period}: {values.size}"
+        )
+
+    edges = np.linspace(
+        SIGMA_SCAN_FIT_MIN_GEV2,
+        SIGMA_SCAN_FIT_MAX_GEV2,
+        181,
+        dtype=np.float64,
+    )
+    counts, _ = np.histogram(values, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    peak_index = int(np.argmax(counts))
+    initial_mean = float(centers[peak_index])
+    initial_sigma = 0.050
+    edge_level = float(np.median(np.r_[counts[:20], counts[-20:]]))
+    initial_amplitude = max(float(counts[peak_index]) - edge_level, 1.0)
+
+    p0 = (
+        initial_amplitude,
+        initial_mean,
+        initial_sigma,
+        max(edge_level, 0.0),
+        0.0,
+        0.0,
+    )
+    lower = (
+        0.0,
+        0.75,
+        0.005,
+        -np.inf,
+        -np.inf,
+        -np.inf,
+    )
+    upper = (
+        np.inf,
+        1.02,
+        0.20,
+        np.inf,
+        np.inf,
+        np.inf,
+    )
+    uncertainty = np.sqrt(np.maximum(counts.astype(np.float64), 1.0))
+    try:
+        parameters, covariance = curve_fit(
+            _gaussian_plus_quadratic,
+            centers,
+            counts.astype(np.float64),
+            p0=p0,
+            sigma=uncertainty,
+            absolute_sigma=True,
+            bounds=(lower, upper),
+            maxfev=50000,
+        )
+        mean = float(parameters[1])
+        sigma = abs(float(parameters[2]))
+        mean_error = float(np.sqrt(max(covariance[1, 1], 0.0)))
+        sigma_error = float(np.sqrt(max(covariance[2, 2], 0.0)))
+    except Exception as exc:
+        # Deterministic fallback based on a local, background-subtracted moment.
+        local = np.abs(centers - initial_mean) <= 0.12
+        baseline = np.percentile(counts[local], 20.0)
+        weights = np.maximum(counts[local].astype(np.float64) - baseline, 0.0)
+        if np.sum(weights) <= 0.0:
+            raise RuntimeError(
+                f"Neutron-peak fit failed for {dataset.period}: {exc}"
+            ) from exc
+        mean = float(np.sum(weights * centers[local]) / np.sum(weights))
+        variance = float(
+            np.sum(weights * (centers[local] - mean) ** 2) / np.sum(weights)
+        )
+        sigma = math.sqrt(max(variance, 1.0e-6))
+        mean_error = float("nan")
+        sigma_error = float("nan")
+
+    if not (math.isfinite(mean) and math.isfinite(sigma) and sigma > 0.0):
+        raise RuntimeError(
+            f"Invalid neutron-peak fit for {dataset.period}: "
+            f"mean={mean}, sigma={sigma}"
+        )
+
+    return mean, sigma, {
+        "mean_gev2": mean,
+        "sigma_gev2": sigma,
+        "mean_error_gev2": mean_error,
+        "sigma_error_gev2": sigma_error,
+        "events_in_fit": int(values.size),
+        "fit_min_gev2": SIGMA_SCAN_FIT_MIN_GEV2,
+        "fit_max_gev2": SIGMA_SCAN_FIT_MAX_GEV2,
+    }
+
+
+def _accepted_period_mask(dataset: LoadedDataset) -> np.ndarray:
+    return (
+        np.isfinite(dataset.mx2_gev2)
+        & np.isfinite(dataset.xB)
+        & np.isfinite(dataset.minus_tprime_gev2)
+        & (dataset.xB >= XB_BINS[0][0])
+        & (dataset.xB < XB_BINS[-1][1])
+        & (dataset.minus_tprime_gev2 >= MINUS_TPRIME_BINS_GEV2[0][0])
+        & (dataset.minus_tprime_gev2 < MINUS_TPRIME_BINS_GEV2[-1][1])
+    )
+
+
+def build_sigma_window_scan(
+    loaded: dict[tuple[str, str], LoadedDataset],
+    charge_fractions: dict[str, dict[str, float]],
+    control_min_gev2: float,
+    control_max_gev2: float,
+) -> tuple[pd.DataFrame, dict[str, dict[str, float]]]:
+    """
+    Calculate period-integrated Methods 1 and 2 versus neutron-window width.
+
+    Each sample variant obtains its own period-integrated neutron-peak mean and
+    sigma from its NH3 file.  Consequently the uncorrected scan never reuses
+    the corrected peak location or resolution.
+    """
+    peak_parameters: dict[str, dict[str, float]] = {}
+    rows: list[dict[str, Any]] = []
+
+    for period in PERIODS:
+        mean, sigma, fit_details = fit_period_integrated_neutron_peak(
+            loaded[(period, "NH3")]
+        )
+        peak_parameters[period] = fit_details
+
+        masks = {
+            target: _accepted_period_mask(loaded[(period, target)])
+            for target in TARGETS
+        }
+        control_counts = {
+            target: float(
+                np.count_nonzero(
+                    masks[target]
+                    & (loaded[(period, target)].mx2_gev2 >= control_min_gev2)
+                    & (loaded[(period, target)].mx2_gev2 < control_max_gev2)
+                )
+            )
+            for target in TARGETS
+        }
+        alpha = float(
+            safe_divide(control_counts["NH3"], control_counts["C"])
+        )
+
+        for scan_index, n_sigma in enumerate(SIGMA_SCAN_VALUES):
+            lower = mean - float(n_sigma) * sigma
+            upper = mean + float(n_sigma) * sigma
+            selected = {
+                target: float(
+                    np.count_nonzero(
+                        masks[target]
+                        & (loaded[(period, target)].mx2_gev2 >= lower)
+                        & (loaded[(period, target)].mx2_gev2 < upper)
+                    )
+                )
+                for target in TARGETS
+            }
+            method1 = float(
+                1.0
+                - safe_divide(
+                    alpha * selected["C"],
+                    selected["NH3"],
+                )
+            )
+            scalar_counts = {
+                target: np.asarray(selected[target], dtype=np.float64)
+                for target in TARGETS
+            }
+            method2 = float(
+                method2_equation10_from_counts(
+                    scalar_counts,
+                    charge_fractions[period],
+                )
+            )
+            percent_difference = float(
+                100.0 * safe_divide(method2 - method1, method1)
+            )
+            rows.append(
+                {
+                    "period": period,
+                    "period_label": PERIOD_LABELS[period],
+                    "scan_index": scan_index,
+                    "n_sigma": float(n_sigma),
+                    "peak_mean_gev2": mean,
+                    "peak_sigma_gev2": sigma,
+                    "mx2_min_gev2": lower,
+                    "mx2_max_gev2": upper,
+                    "method1_alpha": alpha,
+                    "method1": method1,
+                    "method2": method2,
+                    "method2_minus_method1_percent_of_method1": percent_difference,
+                    **{
+                        f"{target}_selected_count": selected[target]
+                        for target in TARGETS
+                    },
+                }
+            )
+
+    return pd.DataFrame(rows), peak_parameters
+
+
+def plot_sigma_window_scan(
+    frame: pd.DataFrame,
+    output_path: Path,
+    title_suffix: str,
+) -> str:
+    """Render the requested two-panel sigma-window diagnostic."""
+    ensure_directory(output_path.parent)
+    positions = np.arange(SIGMA_SCAN_VALUES.size, dtype=np.float64)
+    period_colors = {
+        "su22": "tab:blue",
+        "fa22": "tab:orange",
+        "sp23": "tab:green",
+    }
+
+    fig, (top, bottom) = plt.subplots(
+        2,
+        1,
+        figsize=(17.0, 10.0),
+        sharex=True,
+        gridspec_kw={"height_ratios": [2.2, 1.0], "hspace": 0.05},
+    )
+
+    for period in PERIODS:
+        subset = (
+            frame.loc[frame["period"] == period]
+            .sort_values("scan_index")
+            .reset_index(drop=True)
+        )
+        color = period_colors[period]
+        top.plot(
+            positions,
+            subset["method1"],
+            color=color,
+            marker="o",
+            markersize=5.5,
+            linewidth=1.8,
+            label=f"{PERIOD_LABELS[period]} Method 1",
+        )
+        top.plot(
+            positions,
+            subset["method2"],
+            color=color,
+            marker="o",
+            markerfacecolor="white",
+            markeredgewidth=1.4,
+            markersize=5.5,
+            linewidth=1.6,
+            linestyle="--",
+            label=f"{PERIOD_LABELS[period]} Method 2",
+        )
+        bottom.plot(
+            positions,
+            subset["method2_minus_method1_percent_of_method1"],
+            color=color,
+            marker="o",
+            markersize=5.0,
+            linewidth=1.7,
+            label=PERIOD_LABELS[period],
+        )
+
+    top.set_ylabel("Dilution factor")
+    top.set_ylim(0.0, 0.65)
+    top.grid(alpha=0.25)
+    top.legend(ncol=3, fontsize=9, loc="best")
+    top.set_title(
+        "Method 1 and Method 2 versus missing-neutron window\n"
+        f"{title_suffix}"
+    )
+
+    bottom.axhline(0.0, color="black", linewidth=1.0)
+    bottom.set_ylabel(r"$100(f_2-f_1)/f_1$ (%)")
+    bottom.grid(alpha=0.25)
+
+    tick_labels: list[str] = []
+    for scan_index, n_sigma in enumerate(SIGMA_SCAN_VALUES):
+        pieces = [rf"{n_sigma:.3f}$\sigma$"]
+        for period, short in (("su22", "S"), ("fa22", "F"), ("sp23", "P")):
+            row = frame.loc[
+                (frame["period"] == period)
+                & (frame["scan_index"] == scan_index)
+            ].iloc[0]
+            pieces.append(
+                f"{short}:{row['mx2_min_gev2']:.3f}–"
+                f"{row['mx2_max_gev2']:.3f}"
+            )
+        tick_labels.append("\n".join(pieces))
+
+    bottom.set_xticks(positions)
+    bottom.set_xticklabels(
+        tick_labels,
+        rotation=45,
+        ha="right",
+        fontsize=8,
+    )
+    bottom.set_xlabel(
+        r"Neutron-window half-width and corresponding $M_X^2$ ranges "
+        r"(GeV$^2$); S=Su22, F=Fa22, P=Sp23"
+    )
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    return str(output_path)
+
+
+def write_momentum_correction_sigma_scan_products(
+    *,
+    corrected_loaded: dict[tuple[str, str], LoadedDataset],
+    uncorrected_loaded: dict[tuple[str, str], LoadedDataset],
+    charge_fractions: dict[str, dict[str, float]],
+    control_min_gev2: float,
+    control_max_gev2: float,
+    tables_dir: Path,
+    plots_dir: Path,
+    skip_plots: bool,
+) -> dict[str, Any]:
+    """Write the two corrected/uncorrected sigma-scan tables and canvases."""
+    corrected_frame, corrected_peaks = build_sigma_window_scan(
+        corrected_loaded,
+        charge_fractions,
+        control_min_gev2,
+        control_max_gev2,
+    )
+    uncorrected_frame, uncorrected_peaks = build_sigma_window_scan(
+        uncorrected_loaded,
+        charge_fractions,
+        control_min_gev2,
+        control_max_gev2,
+    )
+
+    corrected_csv = (
+        tables_dir / "sigma_window_scan_with_momentum_corrections.csv"
+    )
+    uncorrected_csv = (
+        tables_dir / "sigma_window_scan_without_momentum_corrections.csv"
+    )
+    corrected_frame.to_csv(corrected_csv, index=False)
+    uncorrected_frame.to_csv(uncorrected_csv, index=False)
+
+    corrected_plot = (
+        plots_dir / "method1_method2_sigma_scan_with_momentum_corrections.png"
+    )
+    uncorrected_plot = (
+        plots_dir / "method1_method2_sigma_scan_without_momentum_corrections.png"
+    )
+    plot_paths: list[str] = []
+    if not skip_plots:
+        plot_paths.append(
+            plot_sigma_window_scan(
+                corrected_frame,
+                corrected_plot,
+                "with electron and pion momentum corrections",
+            )
+        )
+        plot_paths.append(
+            plot_sigma_window_scan(
+                uncorrected_frame,
+                uncorrected_plot,
+                "without electron or pion momentum corrections",
+            )
+        )
+
+    return {
+        "corrected_csv": str(corrected_csv),
+        "uncorrected_csv": str(uncorrected_csv),
+        "corrected_plot": str(corrected_plot),
+        "uncorrected_plot": str(uncorrected_plot),
+        "corrected_peak_parameters": corrected_peaks,
+        "uncorrected_peak_parameters": uncorrected_peaks,
+    }
+
+
+
 def write_nominal_isr_comparison_products(
     output_dir: Path,
     nominal_central: dict[str, dict[str, np.ndarray]],
@@ -3769,6 +4212,33 @@ def main() -> int:
     print()
 
     loaded = load_all_datasets(input_paths, args.tree, workers)
+
+    # Load the original, uncorrected enpi+ trees from the source directory used
+    # by the momentum-correction derivation.  These are fit independently so
+    # their shifted/broadened neutron peaks define their own sigma windows.
+    uncorrected_input_paths = {
+        period: dict(targets)
+        for period, targets in DEFAULT_UNCORRECTED_INPUTS.items()
+    }
+    print()
+    print("Loading uncorrected enpi+ inputs for the momentum-correction sigma scan")
+    uncorrected_loaded = load_all_datasets(
+        uncorrected_input_paths,
+        args.tree,
+        workers,
+    )
+
+    sigma_scan_products = write_momentum_correction_sigma_scan_products(
+        corrected_loaded=loaded,
+        uncorrected_loaded=uncorrected_loaded,
+        charge_fractions=charge_fractions,
+        control_min_gev2=args.control_min,
+        control_max_gev2=args.control_max,
+        tables_dir=tables_dir,
+        plots_dir=plots_dir,
+        skip_plots=args.skip_plots,
+    )
+
     pattern_counts, observed_counts, count_rows = build_count_arrays(
         loaded,
         cuts,
@@ -3849,6 +4319,12 @@ def main() -> int:
         )
         plot_paths.extend(
             plot_epoch_diagnostics(epoch_frame, epoch_plots_dir)
+        )
+        plot_paths.extend(
+            [
+                sigma_scan_products["corrected_plot"],
+                sigma_scan_products["uncorrected_plot"],
+            ]
         )
     # endif
 
@@ -4076,6 +4552,14 @@ def main() -> int:
             for period in PERIODS
         },
         "charge_fractions": charge_fractions,
+        "momentum_correction_sigma_scan": sigma_scan_products,
+        "uncorrected_root_inputs": {
+            period: {
+                target: uncorrected_loaded[(period, target)].file_path
+                for target in TARGETS
+            }
+            for period in PERIODS
+        },
         "global_dilution_model_scale_by_cut": summaries_by_period[
             "_global_method_scale_by_cut"
         ],
@@ -4125,6 +4609,7 @@ def main() -> int:
         "plot_paths": plot_paths,
         "isr_diagnostic": isr_payload,
         "nominal_isr_comparison_products": comparison_products,
+        "momentum_correction_sigma_scan": sigma_scan_products,
     }
     master_json_path = analysis_dir / "dilution_factors.json"
     write_json(master_json_path, master_payload)
