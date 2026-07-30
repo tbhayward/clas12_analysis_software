@@ -2849,7 +2849,7 @@ def plot_all_period_efficiency_summary(path: Path, rows: Sequence[Mapping[str, o
                          yerr=[float(r["efficiency_data_err"]) for r in selected], fmt="o", label=label)
         axes[1].errorbar(x + offset, [float(r["efficiency_mc"]) for r in selected],
                          yerr=[float(r["efficiency_mc_err"]) for r in selected], fmt="o", label=label)
-    axes[0].set_ylabel(r"$\\epsilon_{data}$"); axes[1].set_ylabel(r"$\\epsilon_{MC}$")
+    axes[0].set_ylabel(r"$\epsilon_{data}$"); axes[1].set_ylabel(r"$\epsilon_{MC}$")
     for ax in axes:
         ax.set_ylim(0.0, 1.05); ax.grid(alpha=0.25); ax.legend(frameon=False, ncol=3)
     axes[1].set_xticks(x); axes[1].set_xticklabels(labels); axes[1].set_xlabel("Photon detector category")
