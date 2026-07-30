@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v20.py
+derive_photon_efficiency_scale_factors_v22.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
@@ -10,12 +10,12 @@ events provide directed passing probes with an explicit low-energy tag and a DVC
 provide the failed-probe population after a simultaneous DVCS/BH plus pi0
 template decomposition.
 
-The failed-probe decomposition follows the stable exclusivity-study strategy:
-Delta_phi, theta_gamma_gamma and pTmiss are fit simultaneously with one shared
-pi0 fraction. Detector-category nuisance morphologies are calibrated on the
-aggregate FT or FD-sector sample and then fixed in the differential E_gamma and
-theta_gamma fits. Delta_phi uses additive shift/smearing; the positive-definite
-theta_gamma_gamma and pTmiss projections use log-space shift/smearing.
+The failed-probe decomposition uses the established two-template exclusivity
+fitter, but not the narrow production-DVCS histogram windows.  In the loose-tag
+topology the reconstructed epgamma photon can be the 0.4--2 GeV pi0 tag, so
+Delta_phi, theta_gamma_gamma and pTmiss require broad physical supports.  All
+finite selected candidates are retained by folding under/overflow into edge
+bins, and each detector category must pass an explicit common-support check.
 
 The production extraction is deliberately integrated over energy and polar angle,
 retaining only FT and FD sectors 1--6. A detailed passing-sample audit records
@@ -434,6 +434,13 @@ def parse_args() -> argparse.Namespace:
                         help="Minimum file age in minutes required by preflight to consider a ROOT file complete/stable; set negative to disable.")
     parser.add_argument("--preflight-min-entries", type=int, default=1000,
                         help="Minimum PhysicsEvents entries required for each one-photon loose input.")
+    parser.add_argument("--min-low-tag-fraction", type=float, default=0.01,
+                        help=("Minimum fraction of selected FAIL trials with tag_E below probe_E_min. "
+                              "A smaller value indicates that the nominally loose epgamma file still "
+                              "behaves like an E_gamma>2 GeV production skim."))
+    parser.add_argument("--min-fit-support-fraction", type=float, default=0.98,
+                        help=("Minimum fraction of selected FAIL candidates with finite values for all "
+                              "fraction-driving template variables. Categories below this threshold are rejected."))
     parser.add_argument("--max-events", type=int, default=None,
                         help="Debug-only maximum events read from each tree.")
 
@@ -1723,13 +1730,18 @@ class FitVariableSpec:
 
 
 FIT_VARIABLES: Tuple[FitVariableSpec, ...] = (
-    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False, True, 1.0),
-    FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0, True, True, 1.0),
-    FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5, True, True, 1.0),
-    FitVariableSpec("theta_cm", "theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 2.0, math.pi, False, False, 0.35),
-    FitVariableSpec("Emiss2", "Emiss2", r"$E_{\mathrm{miss}}^2$ (GeV$^2$)", 100, -1.0, 2.0, False, False, 0.35),
-    FitVariableSpec("Mx2", "Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03, False, False, 0.35),
-    FitVariableSpec("Mx2_2", "Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0, False, False, 0.20),
+    # The old supports were production-DVCS exclusivity windows.  They are not
+    # valid for the loose-tag topology, where the reconstructed epgamma photon
+    # can be the 0.4--2 GeV pi0 tag and the >2 GeV photon is missing.  Use broad
+    # physical supports and fold finite under/overflow values into the edge bins
+    # so that the fitted population is the selected population.
+    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 120, 0.0, 2.0 * math.pi, False, True, 1.0),
+    FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, math.pi, False, True, 1.0),
+    FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 120, 0.0, 3.0, False, True, 1.0),
+    FitVariableSpec("theta_cm", "theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 0.0, math.pi, False, False, 0.35),
+    FitVariableSpec("Emiss2", "Emiss2", r"$E_{\mathrm{miss}}^2$ (GeV$^2$)", 120, -5.0, 5.0, False, False, 0.35),
+    FitVariableSpec("Mx2", "Mx2", r"$M_x^2$ (GeV$^2$)", 120, -2.0, 2.0, False, False, 0.35),
+    FitVariableSpec("Mx2_2", "Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 120, -2.0, 6.0, False, False, 0.20),
 )
 FRACTION_DRIVER_KEYS = tuple(spec.key for spec in FIT_VARIABLES if spec.fraction_driver)
 
@@ -1774,13 +1786,16 @@ def fit_edges() -> Dict[str, np.ndarray]:
 
 
 def common_fit_mask(trials: TrialArrays) -> np.ndarray:
-    """Common event population for the three fraction-driving projections."""
+    """Common finite population for all fraction-driving projections.
+
+    Histogram-range cuts must not silently redefine the physical FAIL sample.
+    Finite values outside the nominal plotting support are folded into the edge
+    bins by ``bulk_variable_histograms``.
+    """
     mask = np.ones(trials.size(), dtype=bool)
     for spec in FIT_VARIABLES:
-        if not spec.fraction_driver:
-            continue
-        values = np.asarray(getattr(trials, spec.attr), dtype=float)
-        mask &= np.isfinite(values) & (values >= spec.low) & (values < spec.high)
+        if spec.fraction_driver:
+            mask &= np.isfinite(np.asarray(getattr(trials, spec.attr), dtype=float))
     return mask
 
 
@@ -1792,7 +1807,10 @@ def bulk_variable_histograms(trials: TrialArrays, bin_ids: np.ndarray, n_probe_b
     valid = (bin_ids >= 0) & (bin_ids < n_probe_bins) & np.isfinite(values)
     if require_common_support:
         valid &= common_fit_mask(trials)
-    valid &= (value_index >= 0) & (value_index < spec.bins)
+    # Preserve the selected finite population.  Values outside the broad display
+    # range are explicit under/overflow content in the first/last bin rather
+    # than silently discarded candidates.
+    value_index = np.clip(value_index, 0, spec.bins - 1)
     flat = bin_ids[valid].astype(np.int64, copy=False) * spec.bins + value_index[valid].astype(np.int64, copy=False)
     counts = np.bincount(flat, weights=trials.weight[valid], minlength=n_probe_bins * spec.bins)
     return counts.reshape(n_probe_bins, spec.bins).astype(float, copy=False)
@@ -2260,6 +2278,10 @@ def plot_matching_stability_maps(path: Path, period_label: str,
                     ed = efficiency_from_counts_simple(pd, row.fail_data)
                     em = efficiency_from_counts_simple(pm, row.fail_mc)
                     matrix[iy, ix] = ed / em if em > 0.0 else math.nan
+        if matrix.size == 0 or len(angles) == 0 or len(m2_values) == 0:
+            ax.text(0.5, 0.5, "Matching scan disabled", ha="center", va="center", transform=ax.transAxes)
+            ax.set_axis_off()
+            continue
         image = ax.imshow(matrix, origin="lower", aspect="auto", vmin=0.5, vmax=1.2)
         images.append(image)
         ax.set_xticks(range(len(angles))); ax.set_xticklabels([f"{v:g}" for v in angles])
@@ -2592,9 +2614,49 @@ def frozen_variant_systematic(data_hists, reference_exact_summary):
     for omitted in FRACTION_DRIVER_KEYS:
         active = tuple(key for key in FRACTION_DRIVER_KEYS if key != omitted)
         variants[f"omit_{omitted}"] = fit_frozen_exclusivity_shapes(data_hists, reference_exact_summary, active)
-    good = [fit.n_pi0 for fit in variants.values() if fit.success and math.isfinite(fit.n_pi0)]
-    spread = max((abs(value - nominal.n_pi0) for value in good), default=0.0) if nominal.success else math.nan
+    # The fit projections cover only their configured histogram supports.  The
+    # leave-one-variable-out variation is therefore retained in *fraction*
+    # units and converted to a yield only after multiplying by the full number
+    # of selected failing candidates in the detector category.
+    good = [fit.fraction_pi0 for fit in variants.values()
+            if fit.success and math.isfinite(fit.fraction_pi0)]
+    spread = max((abs(value - nominal.fraction_pi0) for value in good), default=0.0)         if nominal.success else math.nan
     return nominal, spread, variants
+
+def validate_selected_fail_support(label: str, trials: TrialArrays, args: argparse.Namespace) -> Dict[str, float]:
+    """Validate that a nominally loose epgamma sample actually contains low-energy tags.
+
+    The intended failed-probe topology is an observed 0.4--2 GeV tag plus a
+    predicted >2 GeV probe.  A file produced with dvcs_fitter's historical
+    p>2 GeV photon requirement cannot represent that denominator, even if its
+    filename contains ``0.40GeV``.
+    """
+    total = float(np.sum(trials.weight))
+    low_mask = np.isfinite(trials.tag_E) & (trials.tag_E >= args.tag_E_min) & (trials.tag_E < args.probe_E_min)
+    low = float(np.sum(trials.weight[low_mask]))
+    fraction = low / total if total > 0.0 else 0.0
+    log(f"{label}: selected FAIL support total={total:,.1f}, low-tag={low:,.1f}, low-tag fraction={fraction:.4f}")
+    if total <= 0.0:
+        raise RuntimeError(f"{label}: no selected FAIL trials remain after the common tag/probe selection")
+    if fraction < args.min_low_tag_fraction:
+        raise RuntimeError(
+            f"{label}: only {fraction:.4%} of selected FAIL trials have "
+            f"{args.tag_E_min:g} <= E_tag < {args.probe_E_min:g} GeV. "
+            "The one-photon input therefore does not have the loose-tag support required by "
+            "this tag-and-probe definition. Check the fitter used to create the ROOT file; "
+            "the attached dvcs_fitter.java still contains the historical hard cut p > 2.00 GeV."
+        )
+    return {"total_weight": total, "low_tag_weight": low, "low_tag_fraction": fraction}
+
+
+def category_fit_support_fraction(trials: TrialArrays, bin_ids: np.ndarray, bin_id: int) -> float:
+    selected = bin_ids == bin_id
+    denominator = float(np.sum(trials.weight[selected]))
+    if denominator <= 0.0:
+        return 0.0
+    supported = selected & common_fit_mask(trials)
+    return float(np.sum(trials.weight[supported])) / denominator
+
 
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
@@ -2627,6 +2689,12 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     fail_data = read_fail_trials(period.epg_data, period.beam_energy_GeV, args)
     fail_dvcs_mc = read_fail_trials(period.dvcs_mc, period.beam_energy_GeV, args)
     fail_pi0_mc = read_fail_trials(period.pi0_as_epg_mc, period.beam_energy_GeV, args)
+
+    fail_support_audit = {
+        "data": validate_selected_fail_support(f"{period.label} data", fail_data, args),
+        "dvcs_mc": validate_selected_fail_support(f"{period.label} DVCS MC", fail_dvcs_mc, args),
+        "pi0_mc": validate_selected_fail_support(f"{period.label} pi0 MC", fail_pi0_mc, args),
+    }
 
     log(
         f"{period.label}: pass data weight={float(np.sum(pass_data.weight)):,.1f} "
@@ -2665,7 +2733,11 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     pass_mc_counts = weighted_counts_by_bin(pass_mc, pass_mc_ids, n_bins)
     pass_data_sumw2 = weighted_sumw2_by_bin(pass_data, pass_data_ids, n_bins)
     pass_mc_sumw2 = weighted_sumw2_by_bin(pass_mc, pass_mc_ids, n_bins)
+    # Full selected-candidate normalizations.  These are distinct from the
+    # integrals of any individual fit projection, whose finite histogram range
+    # may contain only a subset of the selected candidates.
     fail_data_total_counts = weighted_counts_by_bin(fail_data, fail_data_ids, n_bins)
+    fail_data_total_sumw2 = weighted_sumw2_by_bin(fail_data, fail_data_ids, n_bins)
     fail_pi0_counts = weighted_counts_by_bin(fail_pi0_mc, fail_pi0_ids, n_bins)
 
     data_hists = {spec.key: bulk_variable_histograms(fail_data, fail_data_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
@@ -2707,10 +2779,26 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     fit_model_systematics: Dict[str, float] = {}
     fit_variants_metadata: Dict[str, object] = {}
     rows: List[EfficiencyRow] = []
+    fit_support_coverage: Dict[str, Dict[str, float]] = {}
     for definition in bins:
         index = definition.bin_id
+        category_key = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
+        coverage = {
+            "data": category_fit_support_fraction(fail_data, fail_data_ids, index),
+            "dvcs_mc": category_fit_support_fraction(fail_dvcs_mc, fail_dvcs_ids, index),
+            "pi0_mc": category_fit_support_fraction(fail_pi0_mc, fail_pi0_ids, index),
+        }
+        fit_support_coverage[category_key] = coverage
         local_data = {spec.key: data_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
-        if definition.detector == "FT":
+        if min(coverage.values()) < args.min_fit_support_fraction:
+            fit = MultiFitSummary(
+                False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan,
+                math.nan, 0,
+                f"Finite common-fit support below threshold: {coverage}", {},
+            )
+            model_spread = math.nan
+            variants = {"nominal": fit}
+        elif definition.detector == "FT":
             if ft_reference_exact is None:
                 fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "No FT reference fit", {})
                 model_spread = math.nan
@@ -2726,20 +2814,58 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
                 fit, model_spread, variants = frozen_variant_systematic(local_data, combined_fd_exact)
         if args.disable_fit_variant_systematic:
             model_spread = 0.0
-        category_key = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
         fit_model_systematics[category_key] = float(model_spread)
         fit_variants_metadata[category_key] = {
-            name: {"success": value.success, "n_pi0": value.n_pi0,
-                   "fraction_pi0": value.fraction_pi0, "deviance": value.deviance,
-                   "ndf": value.ndf}
+            name: {
+                "success": value.success,
+                # n_pi0 here is the yield within the finite fit-projection
+                # support and is retained only as a diagnostic.
+                "n_pi0_in_fit_support": value.n_pi0,
+                "fraction_pi0": value.fraction_pi0,
+                "deviance": value.deviance,
+                "ndf": value.ndf,
+            }
             for name, value in variants.items()
         }
         fits.append(fit)
         n_pass_data = float(pass_data_counts[index])
         n_pass_mc = float(pass_mc_counts[index])
         n_fail_mc = float(fail_pi0_counts[index])
-        n_fail_data = fit.n_pi0
-        n_fail_data_err = math.hypot(fit.n_pi0_err, model_spread) if math.isfinite(model_spread) else fit.n_pi0_err
+
+        # CRITICAL NORMALIZATION:
+        # The template fit determines the pi0 *fraction*.  Its histogram
+        # projections have finite supports and therefore cannot define the
+        # physical number of selected failing candidates.  Apply the fitted
+        # fraction to the complete selected epgamma candidate count in this
+        # detector category.
+        n_fail_candidates = float(fail_data_total_counts[index])
+        fail_candidates_sumw2 = float(fail_data_total_sumw2[index])
+        fraction_pi0 = float(fit.fraction_pi0)
+        fraction_pi0_err = float(fit.fraction_pi0_err)
+        if fit.success and math.isfinite(fraction_pi0) and n_fail_candidates >= 0.0:
+            n_fail_data = fraction_pi0 * n_fail_candidates
+            # Include three independent contributions:
+            #   1. fitted mixture-fraction uncertainty;
+            #   2. leave-one-variable-out model variation in fraction units;
+            #   3. counting uncertainty of the full selected candidate sample.
+            fit_fraction_term = (
+                n_fail_candidates * fraction_pi0_err
+                if math.isfinite(fraction_pi0_err) else 0.0
+            )
+            model_fraction_term = (
+                n_fail_candidates * model_spread
+                if math.isfinite(model_spread) else 0.0
+            )
+            candidate_count_term = fraction_pi0 * math.sqrt(max(fail_candidates_sumw2, 0.0))
+            n_fail_data_err = math.sqrt(
+                fit_fraction_term**2
+                + model_fraction_term**2
+                + candidate_count_term**2
+            )
+        else:
+            n_fail_data = math.nan
+            n_fail_data_err = math.nan
+
         pass_data_err = math.sqrt(max(float(pass_data_sumw2[index]), 0.0))
         pass_mc_err = math.sqrt(max(float(pass_mc_sumw2[index]), 0.0))
         fail_mc_err = math.sqrt(max(n_fail_mc, 0.0))
@@ -2752,8 +2878,15 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err, eff_mc, eff_mc_err, sf, sf_err,
             fit.success, fit.deviance, fit.ndf))
 
-    for definition, fit in zip(bins, fits):
+    for definition, fit, row in zip(bins, fits, rows):
+        index = definition.bin_id
         category_name = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
+        log(
+            f"{period.label} {category_name}: fail candidates(full)="
+            f"{float(fail_data_total_counts[index]):,.1f}, "
+            f"Delta_phi support={float(np.sum(data_hists['Delta_phi'][index])):,.1f}, "
+            f"f_pi0={fit.fraction_pi0:.6g}, assigned N_fail={row.fail_data:,.1f}"
+        )
         plot_category_fit_summary(aggregate_fit_dir / f"{category_name}.png", period.label, definition, fit)
 
     plot_integrated_efficiency_summary(
@@ -2784,6 +2917,9 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "n_bins": len(rows),
         },
         "input_file_identity": args.input_identity_records.get(period.key, {}),
+        "selected_fail_support_audit": fail_support_audit,
+        "fit_support_coverage": fit_support_coverage,
+        "energy_support": energy_support,
         "mirror_policy": args.mirror_policy,
         "matching_scan_summary": {
             "data": matching_scan_summary(pass_data_diag),
@@ -2796,8 +2932,11 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "support_fit_source": "plot_exclusivity_data_dvcs_pi0_mc.py exact fitter",
             "FD_morphology": "exact exclusivity fit on all six FD sectors; frozen for sector fractions",
             "FT_morphology": "exact exclusivity fit on integrated FT",
+            "yield_normalization": "fitted pi0 fraction multiplied by the full selected epgamma candidate count only after finite common-support validation",
+            "loose_tag_requirement": "selected one-photon inputs must contain a non-negligible 0.4--2 GeV tag population",
+            "fit_support_policy": "broad physical supports; finite under/overflow folded into edge bins; no silent range-based candidate loss",
         },
-        "fit_model_systematics_on_nfail": fit_model_systematics,
+        "fit_model_systematics_on_fraction_pi0": fit_model_systematics,
         "fit_variants": fit_variants_metadata,
         "combined_FD_fit": {
             "success": combined_fd_fit.success, "fraction_pi0": combined_fd_fit.fraction_pi0,
@@ -2807,6 +2946,18 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             ("FT" if d.detector == "FT" else f"FD_sector_{d.sector}"): {
                 "mixture_fit_converged": f.success,
                 "fit_message": f.message,
+                "fraction_pi0": f.fraction_pi0,
+                "fraction_pi0_stat_err": f.fraction_pi0_err,
+                "fraction_pi0_model_spread": fit_model_systematics.get(
+                    "FT" if d.detector == "FT" else f"FD_sector_{d.sector}", math.nan
+                ),
+                "full_selected_fail_candidates": float(fail_data_total_counts[d.bin_id]),
+                "delta_phi_fit_support_candidates": float(
+                    np.sum(data_hists["Delta_phi"][d.bin_id])
+                ),
+                "assigned_pi0_fail_yield": float(rows[d.bin_id].fail_data),
+                "assigned_pi0_fail_yield_err": float(rows[d.bin_id].fail_data_err),
+                "n_pi0_in_delta_phi_fit_support_diagnostic": f.n_pi0,
                 "deviance": f.deviance,
                 "ndf": f.ndf,
                 "deviance_per_ndf": f.deviance / f.ndf if f.ndf > 0 else math.nan,
