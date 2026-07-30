@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v28.py
+derive_photon_efficiency_scale_factors_v29.py
 
 RGA photon-reconstruction data/MC study based on exclusive pi0 control samples.
 
@@ -97,41 +97,41 @@ class PeriodConfig:
 PERIODS: Tuple[PeriodConfig, ...] = (
     PeriodConfig(
         "fa18_inb", "Fa18 Inb", 10.604,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_fa18_inb_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_fa18_inb_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_fa18_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_50nA_10604MeV_epgamma.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_50nA_10604MeV.root",
     ),
     PeriodConfig(
         "fa18_out", "Fa18 Out", 10.604,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_fa18_out_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_fa18_out_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_fa18_out_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_50nA_10604MeV_epgamma.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root",
     ),
     PeriodConfig(
         "sp19_inb", "Sp19 Inb", 10.200,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_sp19_inb_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_sp19_inb_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_sp19_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_50nA_10200MeV_epgamma.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_50nA_10200MeV.root",
     ),
     PeriodConfig(
         "sp18_inb", "Sp18 Inb", 10.594,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_sp18_inb_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_sp18_inb_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_sp18_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_50nA_10594MeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_50nA_10594MeV_epgamma.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_50nA_10594MeV.root",
     ),
     PeriodConfig(
         "sp18_out", "Sp18 Out", 10.594,
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/rga_sp18_out_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/dvcsgen_rga_sp18_out_epgamma_0.40GeV.root",
-        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.35GeV/bkg_rga_sp18_out_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root",
+        "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_out_45nA_10594MeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_45nA_10594MeV_epgamma.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root",
     ),
@@ -1841,13 +1841,13 @@ class FitVariableSpec:
 FIT_VARIABLES: Tuple[FitVariableSpec, ...] = (
     # Use the validated exclusivity-template supports.  Broad distributions are
     # produced separately as shape diagnostics and are not used to drive the fit.
-    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False, True, 1.0),
+    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False, False, 0.0),
     FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0, False, True, 1.0),
     FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5, False, True, 1.0),
-    FitVariableSpec("theta_cm", "theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 2.0, math.pi, False, False, 0.35),
-    FitVariableSpec("Emiss2", "Emiss2", r"$E_{\mathrm{miss}}^2$ (GeV$^2$)", 100, -1.0, 2.0, False, False, 0.35),
-    FitVariableSpec("Mx2", "Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03, False, False, 0.35),
-    FitVariableSpec("Mx2_2", "Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0, False, False, 0.20),
+    FitVariableSpec("theta_cm", "theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 2.0, math.pi, False, False, 0.0),
+    FitVariableSpec("Emiss2", "Emiss2", r"$E_{\mathrm{miss}}$ (GeV)", 100, -1.0, 2.0, False, False, 0.0),
+    FitVariableSpec("Mx2", "Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03, False, False, 0.0),
+    FitVariableSpec("Mx2_2", "Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0, False, False, 0.0),
 )
 FRACTION_DRIVER_KEYS = tuple(spec.key for spec in FIT_VARIABLES if spec.fraction_driver)
 
@@ -2646,12 +2646,13 @@ def run_exact_exclusivity_fit(
     dvcs_hists: Mapping[str, np.ndarray],
     pi0_hists: Mapping[str, np.ndarray],
     args: argparse.Namespace,
-    fraction_drivers: Sequence[str] = ("Delta_phi", "theta_gamma_gamma", "pTmiss"),
+    fraction_drivers: Optional[Sequence[str]] = None,
 ) -> Tuple[MultiFitSummary, object]:
     """Run the exact support/profile fitter used by the exclusivity analysis."""
     module = load_exclusivity_fitter_module()
     topology = module.TopologyConfig("EFFICIENCY", "photon-efficiency", 0, 0)
-    exact_drivers = tuple("theta" if key == "theta_cm" else key for key in fraction_drivers)
+    active_drivers = tuple(FRACTION_DRIVER_KEYS if fraction_drivers is None else fraction_drivers)
+    exact_drivers = tuple("theta" if key == "theta_cm" else key for key in active_drivers)
 
     mapped_data = _exact_histogram_mapping(data_hists)
     mapped_dvcs = _exact_histogram_mapping(dvcs_hists)
@@ -2833,9 +2834,8 @@ def category_fit_support_fraction(trials: TrialArrays, bin_ids: np.ndarray, bin_
 
 def plot_one_photon_cutflows(path: Path, period_label: str,
                              diagnostics: Sequence[Mapping[str, object]]) -> None:
-    stages = ["all_tree_entries", "basic_quality", "production_event_cuts", "tag_energy",
-              "prediction_finite", "probe_energy", "photon_like_E_minus_p", "photon_like_m2",
-              "predicted_detector", "predicted_opening_angle", "selected"]
+    stages = ["all_tree_entries", "basic_quality", "production_event_cuts",
+              "leading_photon_energy", "leading_photon_detector", "selected"]
     fig, axes = plt.subplots(len(diagnostics), 1, figsize=(13, 4.2 * len(diagnostics)), squeeze=False)
     for ax, diag in zip(axes[:, 0], diagnostics):
         values = np.asarray([float(diag["stages"].get(stage, 0.0)) for stage in stages])
@@ -2880,7 +2880,7 @@ def plot_shape_comparison_canvas(path: Path, period_label: str, category_label: 
             ("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, math.pi),
             ("pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 120, 0.0, 3.0),
             ("theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 0.0, math.pi),
-            ("Emiss2", r"$E_{\mathrm{miss}}^2$ (GeV$^2$)", 120, -5.0, 5.0),
+            ("Emiss2", r"$E_{\mathrm{miss}}$ (GeV)", 120, -5.0, 5.0),
             ("Mx2", r"$M_x^2$ (GeV$^2$)", 120, -2.0, 2.0),
             ("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 120, -2.0, 6.0),
         ]
@@ -3200,7 +3200,8 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         log(
             f"{period.label} {category_name}: data one-photon candidates(full)="
             f"{float(data_one_photon_total_counts[index]):,.1f}, "
-            f"Delta_phi support={float(np.sum(data_hists['Delta_phi'][index])):,.1f}, "
+            f"theta_gamma_gamma support={float(np.sum(data_hists['theta_gamma_gamma'][index])):,.1f}, "
+            f"pTmiss support={float(np.sum(data_hists['pTmiss'][index])):,.1f}, "
             f"f_pi0={fit.fraction_pi0:.6g}, assigned pi0 missing-probe yield={row.fail_data:,.1f}"
         )
         plot_category_fit_summary(aggregate_fit_dir / f"{category_name}.png", period.label, definition, fit)
@@ -3223,11 +3224,11 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         "period": asdict(period),
         "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
         "counts": {
-            "pass_data_directed_trials_stored": pass_data.size(),
-            "pass_mc_directed_trials_stored": pass_mc.size(),
-            "pass_data_directed_trial_weight": float(np.sum(pass_data.weight)),
-            "pass_mc_directed_trial_weight": float(np.sum(pass_mc.weight)),
-            "data_one_photon_candidates_candidates": data_one_photon_candidates.size(),
+            "epgammagamma_data_events_stored": pass_data.size(),
+            "epgammagamma_mc_events_stored": pass_mc.size(),
+            "epgammagamma_data_event_weight": float(np.sum(pass_data.weight)),
+            "epgammagamma_mc_event_weight": float(np.sum(pass_mc.weight)),
+            "data_one_photon_candidates": data_one_photon_candidates.size(),
             "dvcs_background_template_candidates": dvcs_background_template.size(),
             "pi0_missing_probe_mc_candidates": pi0_missing_probe_mc.size(),
             "n_bins": len(rows),
@@ -3249,15 +3250,16 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         "aaogen_truth_closure": inspect_truth_closure_availability(period.epgg_mc, args),
         "fit_architecture": {
             "fraction_drivers": list(FRACTION_DRIVER_KEYS),
-            "constraint_variables": [s.key for s in FIT_VARIABLES if not s.fraction_driver],
+            "diagnostic_only_variables": [s.key for s in FIT_VARIABLES if not s.fraction_driver],
+            "constraint_variables": [],
             "support_fit_source": "plot_exclusivity_data_dvcs_pi0_mc.py exact fitter",
             "FD_morphology": "exact exclusivity fit on all six FD sectors; frozen for sector fractions",
             "FT_morphology": "exact exclusivity fit on integrated FT",
             "yield_normalization": "fitted pi0 fraction multiplied by the full selected data epgamma candidate count only after finite common-support validation",
-            "mc_missing_probe_source": "truth-separated bkg_rga_* pi0-as-epgamma sample; no template fit is used for the MC missing-probe count",
+            "mc_missing_probe_source": "production eppi0_bkg_aaogen_norad_*_epgamma.root sample from load_trees.cpp; no template fit is used for the MC one-photon pi0 count",
             "dvcs_mc_role": "shape-only DVCS/BH background template for the data one-photon decomposition; never enters the MC efficiency denominator",
             "tag_energy_policy": "0.4--probe-threshold tag fractions are recorded as diagnostics only; no minimum fraction is imposed",
-            "fit_support_policy": "validated production exclusivity ranges; broad unit-normalized shape comparisons are written separately",
+            "fit_support_policy": "theta_gamma_gamma and pTmiss alone determine f_pi0; all other projections are diagnostic only",
             "production_global_cuts_enabled": bool(args.enable_production_global_cuts and not args.disable_production_global_cuts),
         },
         "fit_model_systematics_on_fraction_pi0": fit_model_systematics,
@@ -3276,8 +3278,11 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
                     "FT" if d.detector == "FT" else f"FD_sector_{d.sector}", math.nan
                 ),
                 "full_selected_data_one_photon_candidates": float(data_one_photon_total_counts[d.bin_id]),
-                "delta_phi_fit_support_candidates": float(
-                    np.sum(data_hists["Delta_phi"][d.bin_id])
+                "theta_gamma_gamma_fit_support_candidates": float(
+                    np.sum(data_hists["theta_gamma_gamma"][d.bin_id])
+                ),
+                "pTmiss_fit_support_candidates": float(
+                    np.sum(data_hists["pTmiss"][d.bin_id])
                 ),
                 "assigned_pi0_missing_probe_yield": float(rows[d.bin_id].fail_data),
                 "assigned_pi0_missing_probe_yield_err": float(rows[d.bin_id].fail_data_err),
@@ -3414,7 +3419,7 @@ def plot_selected_energy_support(
 
 def audit_one_photon_file(path: str, role: str, period: PeriodConfig,
                           args: argparse.Namespace) -> Dict[str, object]:
-    """Audit a loose epgamma ROOT file without running the physics extraction."""
+    """Audit a production epgamma ROOT file without running the physics extraction."""
     record: Dict[str, object] = {
         "period": period.key,
         "period_label": period.label,
@@ -3474,7 +3479,7 @@ def audit_one_photon_file(path: str, role: str, period: PeriodConfig,
 
 def write_preflight_outputs(output_dir: Path, periods: Sequence[PeriodConfig],
                             args: argparse.Namespace) -> Dict[str, object]:
-    """Write a complete loose-input readiness and energy-support audit."""
+    """Write a complete production-input readiness and energy-support audit."""
     preflight_dir = output_dir / "preflight"
     preflight_dir.mkdir(parents=True, exist_ok=True)
     records: List[Dict[str, object]] = []
@@ -3491,14 +3496,14 @@ def write_preflight_outputs(output_dir: Path, periods: Sequence[PeriodConfig],
         "all_ok": bool(records) and all(bool(r.get("ok")) for r in records),
         "records": records,
     }
-    with open(preflight_dir / "loose_epgamma_preflight.json", "w", encoding="utf-8") as handle:
+    with open(preflight_dir / "production_epgamma_preflight.json", "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, allow_nan=True)
     flat_rows = []
     for r in records:
         flat_rows.append({k: v for k, v in r.items()
                           if k not in {"hist_edges_GeV", "hist_counts", "checks"}} |
                          {f"check_{k}": v for k, v in r.get("checks", {}).items()})
-    write_rows(preflight_dir / "loose_epgamma_preflight.csv", flat_rows)
+    write_rows(preflight_dir / "production_epgamma_preflight.csv", flat_rows)
 
     for period in periods:
         fig, ax = plt.subplots(figsize=(8.5, 5.5))
@@ -3517,7 +3522,7 @@ def write_preflight_outputs(output_dir: Path, periods: Sequence[PeriodConfig],
         ax.set_xlim(0.0, min(args.tag_E_max, 6.0))
         ax.set_xlabel("Observed photon energy (GeV)")
         ax.set_ylabel("Fraction per bin")
-        ax.set_title(f"{period.label}: loose epgamma input support")
+        ax.set_title(f"{period.label}: production epgamma input support")
         ax.grid(alpha=0.25)
         ax.legend()
         fig.tight_layout()
@@ -3544,6 +3549,14 @@ def main() -> int:
     periods = [p for p in PERIODS if p.key in selected_keys]
     periods = apply_path_overrides(periods, args)
 
+    log("Input ROOT-tree roles:")
+    for period in periods:
+        log(f"  {period.label} epgamma data mixture: {period.epg_data}")
+        log(f"  {period.label} DVCS/BH epgamma template: {period.dvcs_mc}")
+        log(f"  {period.label} AAOGEN pi0-as-epgamma template/MC one-photon count: {period.pi0_as_epg_mc}")
+        log(f"  {period.label} epgammagamma data two-photon count: {period.epgg_data}")
+        log(f"  {period.label} AAOGEN epgammagamma MC two-photon count: {period.epgg_mc}")
+
     if args.inspect_branches:
         inspect_selected_branches(periods)
         return 0
@@ -3559,7 +3572,7 @@ def main() -> int:
 
     if not preflight_payload["all_ok"]:
         raise RuntimeError(
-            "Loose epgamma input preflight failed. Inspect output/photon_efficiency_study/preflight; "
+            "Production epgamma input preflight failed. Inspect output/photon_efficiency_study/preflight; "
             "use --preflight-only while files are still being produced."
         )
 
