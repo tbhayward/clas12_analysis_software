@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v23.py
+determine_dilution_factor_v25.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
@@ -178,7 +178,7 @@ DEFAULT_UNCORRECTED_INPUTS: dict[str, dict[str, Path]] = {
 }
 
 SIGMA_SCAN_VALUES = np.asarray(
-    [4.0 - index / 3.0 for index in range(12)],
+    [4.0 - 0.25 * index for index in range(16)],
     dtype=np.float64,
 )
 SIGMA_SCAN_FIT_MIN_GEV2 = 0.65
@@ -3546,6 +3546,8 @@ def build_sigma_window_scan(
     charge_fractions: dict[str, dict[str, float]],
     control_min_gev2: float,
     control_max_gev2: float,
+    replicas: int,
+    seed: int,
 ) -> tuple[pd.DataFrame, dict[str, dict[str, float]]]:
     """
     Calculate period-integrated Methods 1 and 2 versus neutron-window width.
@@ -3556,8 +3558,10 @@ def build_sigma_window_scan(
     """
     peak_parameters: dict[str, dict[str, float]] = {}
     rows: list[dict[str, Any]] = []
+    draws = min(max(int(replicas), 500), 10000)
 
-    for period in PERIODS:
+    for period_index, period in enumerate(PERIODS):
+        rng = np.random.default_rng(seed + 1009 * period_index)
         mean, sigma, fit_details = fit_period_integrated_neutron_peak(
             loaded[(period, "NH3")]
         )
@@ -3614,6 +3618,46 @@ def build_sigma_window_scan(
             percent_difference = float(
                 100.0 * safe_divide(method2 - method1, method1)
             )
+
+            # Statistical uncertainties are evaluated with paired Poisson
+            # replicas.  Method 1 and Method 2 are recalculated from the same
+            # replica counts, preserving their covariance in the lower-panel
+            # percent difference.  The control-region counts are disjoint from
+            # the neutron-window counts and are therefore redrawn separately.
+            replica_control_nh3 = rng.poisson(
+                control_counts["NH3"], size=draws
+            ).astype(np.float64)
+            replica_control_c = rng.poisson(
+                control_counts["C"], size=draws
+            ).astype(np.float64)
+            replica_selected = {
+                target: rng.poisson(
+                    selected[target], size=draws
+                ).astype(np.float64)
+                for target in TARGETS
+            }
+            replica_alpha = safe_divide(
+                replica_control_nh3,
+                replica_control_c,
+            )
+            replica_method1 = 1.0 - safe_divide(
+                replica_alpha * replica_selected["C"],
+                replica_selected["NH3"],
+            )
+            replica_method2 = method2_equation10_from_counts(
+                replica_selected,
+                charge_fractions[period],
+            )
+            replica_percent_difference = 100.0 * safe_divide(
+                replica_method2 - replica_method1,
+                replica_method1,
+            )
+            method1_stat = float(np.nanstd(replica_method1, ddof=1))
+            method2_stat = float(np.nanstd(replica_method2, ddof=1))
+            percent_difference_stat = float(
+                np.nanstd(replica_percent_difference, ddof=1)
+            )
+
             rows.append(
                 {
                     "period": period,
@@ -3626,8 +3670,11 @@ def build_sigma_window_scan(
                     "mx2_max_gev2": upper,
                     "method1_alpha": alpha,
                     "method1": method1,
+                    "method1_stat_uncertainty": method1_stat,
                     "method2": method2,
+                    "method2_stat_uncertainty": method2_stat,
                     "method2_minus_method1_percent_of_method1": percent_difference,
+                    "method2_minus_method1_percent_stat_uncertainty": percent_difference_stat,
                     **{
                         f"{target}_selected_count": selected[target]
                         for target in TARGETS
@@ -3660,6 +3707,13 @@ def plot_sigma_window_scan(
         gridspec_kw={"height_ratios": [2.2, 1.0], "hspace": 0.05},
     )
 
+    period_offsets = {
+        "su22": -0.12,
+        "fa22": 0.00,
+        "sp23": 0.12,
+    }
+    method_offset = 0.025
+
     for period in PERIODS:
         subset = (
             frame.loc[frame["period"] == period]
@@ -3667,18 +3721,26 @@ def plot_sigma_window_scan(
             .reset_index(drop=True)
         )
         color = period_colors[period]
-        top.plot(
-            positions,
+        center = positions + period_offsets[period]
+        method1_x = center - method_offset
+        method2_x = center + method_offset
+
+        top.errorbar(
+            method1_x,
             subset["method1"],
+            yerr=subset["method1_stat_uncertainty"],
             color=color,
             marker="o",
             markersize=5.5,
             linewidth=1.8,
+            elinewidth=1.0,
+            capsize=2.0,
             label=f"{PERIOD_LABELS[period]} Method 1",
         )
-        top.plot(
-            positions,
+        top.errorbar(
+            method2_x,
             subset["method2"],
+            yerr=subset["method2_stat_uncertainty"],
             color=color,
             marker="o",
             markerfacecolor="white",
@@ -3686,15 +3748,20 @@ def plot_sigma_window_scan(
             markersize=5.5,
             linewidth=1.6,
             linestyle="--",
+            elinewidth=1.0,
+            capsize=2.0,
             label=f"{PERIOD_LABELS[period]} Method 2",
         )
-        bottom.plot(
-            positions,
+        bottom.errorbar(
+            center,
             subset["method2_minus_method1_percent_of_method1"],
+            yerr=subset["method2_minus_method1_percent_stat_uncertainty"],
             color=color,
             marker="o",
             markersize=5.0,
             linewidth=1.7,
+            elinewidth=1.0,
+            capsize=2.0,
             label=PERIOD_LABELS[period],
         )
 
@@ -3749,6 +3816,8 @@ def write_momentum_correction_sigma_scan_products(
     charge_fractions: dict[str, dict[str, float]],
     control_min_gev2: float,
     control_max_gev2: float,
+    replicas: int,
+    seed: int,
     tables_dir: Path,
     plots_dir: Path,
     skip_plots: bool,
@@ -3759,12 +3828,16 @@ def write_momentum_correction_sigma_scan_products(
         charge_fractions,
         control_min_gev2,
         control_max_gev2,
+        replicas,
+        seed,
     )
     uncorrected_frame, uncorrected_peaks = build_sigma_window_scan(
         uncorrected_loaded,
         charge_fractions,
         control_min_gev2,
         control_max_gev2,
+        replicas,
+        seed + 1000003,
     )
 
     corrected_csv = (
@@ -4234,6 +4307,8 @@ def main() -> int:
         charge_fractions=charge_fractions,
         control_min_gev2=args.control_min,
         control_max_gev2=args.control_max,
+        replicas=args.replicas,
+        seed=args.seed,
         tables_dir=tables_dir,
         plots_dir=plots_dir,
         skip_plots=args.skip_plots,
