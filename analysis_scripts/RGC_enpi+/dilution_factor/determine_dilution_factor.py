@@ -178,7 +178,7 @@ DEFAULT_UNCORRECTED_INPUTS: dict[str, dict[str, Path]] = {
 }
 
 SIGMA_SCAN_VALUES = np.asarray(
-    [4.0 - 0.25 * index for index in range(16)],
+    [4.0 - 0.25 * index for index in range(16)] + [0.05],
     dtype=np.float64,
 )
 SIGMA_SCAN_FIT_MIN_GEV2 = 0.65
@@ -3692,7 +3692,9 @@ def plot_sigma_window_scan(
 ) -> str:
     """Render the requested two-panel sigma-window diagnostic."""
     ensure_directory(output_path.parent)
-    positions = np.arange(SIGMA_SCAN_VALUES.size, dtype=np.float64)
+    # Preserve the 0.25-sigma spacing of the regular scan points while
+    # placing the hand-added 0.05-sigma point only 0.20 sigma beyond 0.25.
+    positions = (SIGMA_SCAN_VALUES[0] - SIGMA_SCAN_VALUES) / 0.25
     period_colors = {
         "su22": "tab:blue",
         "fa22": "tab:orange",
@@ -3725,22 +3727,32 @@ def plot_sigma_window_scan(
         method1_x = center - method_offset
         method2_x = center + method_offset
 
-        top.errorbar(
+        # Draw all central values, but show statistical error bars only at
+        # the first (4 sigma) and last (0.05 sigma) scan points.
+        endpoint_indices = np.asarray([0, len(subset) - 1], dtype=int)
+
+        top.plot(
             method1_x,
             subset["method1"],
-            yerr=subset["method1_stat_uncertainty"],
             color=color,
             marker="o",
             markersize=5.5,
             linewidth=1.8,
-            elinewidth=1.0,
-            capsize=2.0,
             label=f"{PERIOD_LABELS[period]} Method 1",
         )
         top.errorbar(
+            method1_x[endpoint_indices],
+            subset["method1"].to_numpy(dtype=float)[endpoint_indices],
+            yerr=subset["method1_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
+            color=color,
+            fmt="none",
+            elinewidth=1.0,
+            capsize=2.0,
+        )
+
+        top.plot(
             method2_x,
             subset["method2"],
-            yerr=subset["method2_stat_uncertainty"],
             color=color,
             marker="o",
             markerfacecolor="white",
@@ -3748,21 +3760,35 @@ def plot_sigma_window_scan(
             markersize=5.5,
             linewidth=1.6,
             linestyle="--",
-            elinewidth=1.0,
-            capsize=2.0,
             label=f"{PERIOD_LABELS[period]} Method 2",
         )
-        bottom.errorbar(
+        top.errorbar(
+            method2_x[endpoint_indices],
+            subset["method2"].to_numpy(dtype=float)[endpoint_indices],
+            yerr=subset["method2_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
+            color=color,
+            fmt="none",
+            elinewidth=1.0,
+            capsize=2.0,
+        )
+
+        bottom.plot(
             center,
             subset["method2_minus_method1_percent_of_method1"],
-            yerr=subset["method2_minus_method1_percent_stat_uncertainty"],
             color=color,
             marker="o",
             markersize=5.0,
             linewidth=1.7,
+            label=PERIOD_LABELS[period],
+        )
+        bottom.errorbar(
+            center[endpoint_indices],
+            subset["method2_minus_method1_percent_of_method1"].to_numpy(dtype=float)[endpoint_indices],
+            yerr=subset["method2_minus_method1_percent_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
+            color=color,
+            fmt="none",
             elinewidth=1.0,
             capsize=2.0,
-            label=PERIOD_LABELS[period],
         )
 
     top.set_ylabel("Dilution factor")
@@ -3787,8 +3813,8 @@ def plot_sigma_window_scan(
                 & (frame["scan_index"] == scan_index)
             ].iloc[0]
             pieces.append(
-                f"{short}:{row['mx2_min_gev2']:.3f}–"
-                f"{row['mx2_max_gev2']:.3f}"
+                f"{short}:{row['mx2_min_gev2']:.2f}–"
+                f"{row['mx2_max_gev2']:.2f}"
             )
         tick_labels.append("\n".join(pieces))
 
