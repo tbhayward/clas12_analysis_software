@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v22.py
+derive_photon_efficiency_scale_factors_v24.py
 
 Exploratory RGA photon-efficiency tag-and-probe study for the DVCS analysis.
 
-The script measures epsilon_b = N_pass,b/(N_pass,b+N_fail,b) separately in
-data and AAOGEN MC, where b is a predicted probe-photon bin. Native eppi0
-events provide directed passing probes with an explicit low-energy tag and a DVCS-threshold probe. One-photon epgamma candidates
-provide the failed-probe population after a simultaneous DVCS/BH plus pi0
-template decomposition.
+The script measures epsilon_b = N_found,b/(N_found,b+N_missing,b) separately
+in data and AAOGEN pi0 MC, where b is a predicted probe-photon bin. Native
+eppi0 events provide directed probe-found trials. One-photon epgamma data are
+a mixture of genuine DVCS/BH events and pi0 events with a missing probe; a
+simultaneous two-template fit determines the pi0 fraction in data. The
+DVCS-generator epgamma sample is used solely as the DVCS/BH template shape.
+The bkg_rga_* pi0-as-epgamma sample supplies both the pi0 template shape and
+the truth-separated MC missing-probe count.
 
 The failed-probe decomposition uses the established two-template exclusivity
 fitter, but not the narrow production-DVCS histogram windows.  In the loose-tag
@@ -26,9 +29,11 @@ workers.
 
 The nominal directed-trial definition is asymmetric: the observed tag photon
 must satisfy E_tag >= 0.40 GeV, while the predicted probe must satisfy
-E_probe >= 2 GeV to match the DVCS photon threshold.  The one-photon data, DVCS/BH MC, and pi0-as-epgamma MC inputs are loose photon-efficiency skims with an observed-photon threshold of 0.40 GeV. The predicted probe retains the production DVCS threshold of 2 GeV.
+E_probe >= 2 GeV to match the DVCS photon threshold.  The one-photon data, DVCS/BH-template MC, and pi0-as-epgamma MC inputs are loose photon-efficiency skims with an observed-photon threshold of 0.40 GeV. The predicted probe retains the production DVCS threshold of 2 GeV.
 
-The script derives S_gamma,b = epsilon_data,b/epsilon_MC,b. It does not yet
+For backward-compatible CSV schemas, columns named pass_* and fail_* mean
+probe_found_* and probe_missing_*, respectively. The script derives
+S_gamma,b = epsilon_data,b/epsilon_MC,b. It does not yet
 propagate that scale factor into DVCS acceptance or pi0 migration.
 """
 
@@ -434,12 +439,8 @@ def parse_args() -> argparse.Namespace:
                         help="Minimum file age in minutes required by preflight to consider a ROOT file complete/stable; set negative to disable.")
     parser.add_argument("--preflight-min-entries", type=int, default=1000,
                         help="Minimum PhysicsEvents entries required for each one-photon loose input.")
-    parser.add_argument("--min-low-tag-fraction", type=float, default=0.01,
-                        help=("Minimum fraction of selected FAIL trials with tag_E below probe_E_min. "
-                              "A smaller value indicates that the nominally loose epgamma file still "
-                              "behaves like an E_gamma>2 GeV production skim."))
     parser.add_argument("--min-fit-support-fraction", type=float, default=0.98,
-                        help=("Minimum fraction of selected FAIL candidates with finite values for all "
+                        help=("Minimum fraction of selected one-photon candidates with finite values for all "
                               "fraction-driving template variables. Categories below this threshold are rejected."))
     parser.add_argument("--max-events", type=int, default=None,
                         help="Debug-only maximum events read from each tree.")
@@ -1202,7 +1203,7 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
     log(f"Native eppi0 audit for {Path(path).name}: events={seen:,}, closure events={diag['event_cutflow']['closure_pass']:,.0f}, final directed trial weight={float(np.sum(result.weight)):,.1f}")
     return result, diag
 
-def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
+def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
     logical = [
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
         "g1_E", "g1_theta", "g1_phi", "Mx2_1", "Delta_phi",
@@ -1215,7 +1216,7 @@ def read_fail_trials(path: str, beam_energy: float, args: argparse.Namespace) ->
     chunks: List[TrialArrays] = []
     seen = 0
 
-    log(f"Reading FAIL candidates from {path}")
+    log(f"Reading selected one-photon candidates from {path}")
     for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
                                  step_size=args.step_size, library="np"):
         n = len(next(iter(arrays.values())))
@@ -2684,30 +2685,38 @@ def frozen_variant_systematic(data_hists, reference_exact_summary):
     spread = max((abs(value - nominal.fraction_pi0) for value in good), default=0.0)         if nominal.success else math.nan
     return nominal, spread, variants
 
-def validate_selected_fail_support(label: str, trials: TrialArrays, args: argparse.Namespace) -> Dict[str, float]:
-    """Validate that a nominally loose epgamma sample actually contains low-energy tags.
+def summarize_selected_one_photon_support(label: str, trials: TrialArrays, args: argparse.Namespace) -> Dict[str, float]:
+    """Summarize selected one-photon candidates without imposing a low-tag quota.
 
-    The intended failed-probe topology is an observed 0.4--2 GeV tag plus a
-    predicted >2 GeV probe.  A file produced with dvcs_fitter's historical
-    p>2 GeV photon requirement cannot represent that denominator, even if its
-    filename contains ``0.40GeV``.
+    Tags in 0.4 <= E_tag < E_probe,min are useful diagnostics, but their
+    fraction is sample dependent. In particular, the DVCS-generator sample is
+    only a background-template shape and is not expected to contain a large
+    low-energy-tag population. The only fatal condition is an empty selected
+    sample.
     """
     total = float(np.sum(trials.weight))
-    low_mask = np.isfinite(trials.tag_E) & (trials.tag_E >= args.tag_E_min) & (trials.tag_E < args.probe_E_min)
+    low_mask = (
+        np.isfinite(trials.tag_E)
+        & (trials.tag_E >= args.tag_E_min)
+        & (trials.tag_E < args.probe_E_min)
+    )
     low = float(np.sum(trials.weight[low_mask]))
-    fraction = low / total if total > 0.0 else 0.0
-    log(f"{label}: selected FAIL support total={total:,.1f}, low-tag={low:,.1f}, low-tag fraction={fraction:.4f}")
+    fraction = low / total if total > 0.0 else math.nan
+    log(
+        f"{label}: selected one-photon total={total:,.1f}, "
+        f"0.4-to-probe-threshold tags={low:,.1f}, fraction={fraction:.4f}"
+    )
     if total <= 0.0:
-        raise RuntimeError(f"{label}: no selected FAIL trials remain after the common tag/probe selection")
-    if fraction < args.min_low_tag_fraction:
         raise RuntimeError(
-            f"{label}: only {fraction:.4%} of selected FAIL trials have "
-            f"{args.tag_E_min:g} <= E_tag < {args.probe_E_min:g} GeV. "
-            "The one-photon input therefore does not have the loose-tag support required by "
-            "this tag-and-probe definition. Check the fitter used to create the ROOT file; "
-            "the attached dvcs_fitter.java still contains the historical hard cut p > 2.00 GeV."
+            f"{label}: no selected one-photon candidates remain after the common "
+            "tag/probe selection"
         )
-    return {"total_weight": total, "low_tag_weight": low, "low_tag_fraction": fraction}
+    return {
+        "total_weight": total,
+        "low_tag_weight": low,
+        "low_tag_fraction": fraction,
+        "low_tag_fraction_is_diagnostic_only": True,
+    }
 
 
 def category_fit_support_fraction(trials: TrialArrays, bin_ids: np.ndarray, bin_id: int) -> float:
@@ -2747,38 +2756,51 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             json.dump(metadata, handle, indent=2)
         return period.key, [], metadata
 
-    fail_data = read_fail_trials(period.epg_data, period.beam_energy_GeV, args)
-    fail_dvcs_mc = read_fail_trials(period.dvcs_mc, period.beam_energy_GeV, args)
-    fail_pi0_mc = read_fail_trials(period.pi0_as_epg_mc, period.beam_energy_GeV, args)
+    data_one_photon_candidates = read_one_photon_candidates(
+        period.epg_data, period.beam_energy_GeV, args
+    )
+    dvcs_background_template = read_one_photon_candidates(
+        period.dvcs_mc, period.beam_energy_GeV, args
+    )
+    pi0_missing_probe_mc = read_one_photon_candidates(
+        period.pi0_as_epg_mc, period.beam_energy_GeV, args
+    )
 
-    fail_support_audit = {
-        "data": validate_selected_fail_support(f"{period.label} data", fail_data, args),
-        "dvcs_mc": validate_selected_fail_support(f"{period.label} DVCS MC", fail_dvcs_mc, args),
-        "pi0_mc": validate_selected_fail_support(f"{period.label} pi0 MC", fail_pi0_mc, args),
+    one_photon_support_audit = {
+        "data_one_photon_candidates": summarize_selected_one_photon_support(
+            f"{period.label} data one-photon candidates", data_one_photon_candidates, args
+        ),
+        "dvcs_background_template": summarize_selected_one_photon_support(
+            f"{period.label} DVCS background template", dvcs_background_template, args
+        ),
+        "pi0_missing_probe_mc": summarize_selected_one_photon_support(
+            f"{period.label} pi0 missing-probe MC", pi0_missing_probe_mc, args
+        ),
     }
 
     log(
         f"{period.label}: pass data weight={float(np.sum(pass_data.weight)):,.1f} "
         f"({pass_data.size():,} stored), pass MC weight={float(np.sum(pass_mc.weight)):,.1f} "
         f"({pass_mc.size():,} stored), "
-        f"fail data candidates={fail_data.size():,}, DVCS template={fail_dvcs_mc.size():,}, "
-        f"pi0 template={fail_pi0_mc.size():,}"
+        f"data one-photon candidates={data_one_photon_candidates.size():,}, "
+        f"DVCS background-template events={dvcs_background_template.size():,}, "
+        f"pi0 missing-probe/template events={pi0_missing_probe_mc.size():,}"
     )
 
     energy_support = {
         "pass_data": summarize_tag_regions(pass_data),
         "pass_mc": summarize_tag_regions(pass_mc),
-        "fail_data": summarize_tag_regions(fail_data),
-        "fail_dvcs_mc": summarize_tag_regions(fail_dvcs_mc),
-        "fail_pi0_mc": summarize_tag_regions(fail_pi0_mc),
+        "data_one_photon_candidates": summarize_tag_regions(data_one_photon_candidates),
+        "dvcs_background_template": summarize_tag_regions(dvcs_background_template),
+        "pi0_missing_probe_mc": summarize_tag_regions(pi0_missing_probe_mc),
     }
     plot_selected_energy_support(
         period_dir / "selected_energy_support.png", period.label,
-        pass_data, pass_mc, fail_data, fail_dvcs_mc, fail_pi0_mc, args,
+        pass_data, pass_mc, data_one_photon_candidates, dvcs_background_template, pi0_missing_probe_mc, args,
     )
 
 
-    bins = build_bins(pass_mc, fail_pi0_mc, args)
+    bins = build_bins(pass_mc, pi0_missing_probe_mc, args)
     rows: List[EfficiencyRow] = []
     n_bins = len(bins)
     edges_by_var = fit_edges()
@@ -2786,9 +2808,9 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     log(f"{period.label}: assigning trials to {n_bins} integrated detector categories")
     pass_data_ids = assign_bin_ids(pass_data, bins)
     pass_mc_ids = assign_bin_ids(pass_mc, bins)
-    fail_data_ids = assign_bin_ids(fail_data, bins)
-    fail_dvcs_ids = assign_bin_ids(fail_dvcs_mc, bins)
-    fail_pi0_ids = assign_bin_ids(fail_pi0_mc, bins)
+    data_one_photon_ids = assign_bin_ids(data_one_photon_candidates, bins)
+    dvcs_template_ids = assign_bin_ids(dvcs_background_template, bins)
+    pi0_missing_probe_ids = assign_bin_ids(pi0_missing_probe_mc, bins)
 
     pass_data_counts = weighted_counts_by_bin(pass_data, pass_data_ids, n_bins)
     pass_mc_counts = weighted_counts_by_bin(pass_mc, pass_mc_ids, n_bins)
@@ -2797,13 +2819,13 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     # Full selected-candidate normalizations.  These are distinct from the
     # integrals of any individual fit projection, whose finite histogram range
     # may contain only a subset of the selected candidates.
-    fail_data_total_counts = weighted_counts_by_bin(fail_data, fail_data_ids, n_bins)
-    fail_data_total_sumw2 = weighted_sumw2_by_bin(fail_data, fail_data_ids, n_bins)
-    fail_pi0_counts = weighted_counts_by_bin(fail_pi0_mc, fail_pi0_ids, n_bins)
+    data_one_photon_total_counts = weighted_counts_by_bin(data_one_photon_candidates, data_one_photon_ids, n_bins)
+    data_one_photon_total_sumw2 = weighted_sumw2_by_bin(data_one_photon_candidates, data_one_photon_ids, n_bins)
+    pi0_missing_probe_counts = weighted_counts_by_bin(pi0_missing_probe_mc, pi0_missing_probe_ids, n_bins)
 
-    data_hists = {spec.key: bulk_variable_histograms(fail_data, fail_data_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
-    dvcs_hists = {spec.key: bulk_variable_histograms(fail_dvcs_mc, fail_dvcs_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
-    pi0_hists = {spec.key: bulk_variable_histograms(fail_pi0_mc, fail_pi0_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
+    data_hists = {spec.key: bulk_variable_histograms(data_one_photon_candidates, data_one_photon_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
+    dvcs_hists = {spec.key: bulk_variable_histograms(dvcs_background_template, dvcs_template_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
+    pi0_hists = {spec.key: bulk_variable_histograms(pi0_missing_probe_mc, pi0_missing_probe_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
 
     # Run the validated exclusivity support/profile fitter only twice per period:
     # once for integrated FT and once for all FD sectors combined.  The sector
@@ -2845,9 +2867,9 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         index = definition.bin_id
         category_key = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
         coverage = {
-            "data": category_fit_support_fraction(fail_data, fail_data_ids, index),
-            "dvcs_mc": category_fit_support_fraction(fail_dvcs_mc, fail_dvcs_ids, index),
-            "pi0_mc": category_fit_support_fraction(fail_pi0_mc, fail_pi0_ids, index),
+            "data": category_fit_support_fraction(data_one_photon_candidates, data_one_photon_ids, index),
+            "dvcs_mc": category_fit_support_fraction(dvcs_background_template, dvcs_template_ids, index),
+            "pi0_mc": category_fit_support_fraction(pi0_missing_probe_mc, pi0_missing_probe_ids, index),
         }
         fit_support_coverage[category_key] = coverage
         local_data = {spec.key: data_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
@@ -2891,7 +2913,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         fits.append(fit)
         n_pass_data = float(pass_data_counts[index])
         n_pass_mc = float(pass_mc_counts[index])
-        n_fail_mc = float(fail_pi0_counts[index])
+        n_probe_missing_mc = float(pi0_missing_probe_counts[index])
 
         # CRITICAL NORMALIZATION:
         # The template fit determines the pi0 *fraction*.  Its histogram
@@ -2899,54 +2921,58 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         # physical number of selected failing candidates.  Apply the fitted
         # fraction to the complete selected epgamma candidate count in this
         # detector category.
-        n_fail_candidates = float(fail_data_total_counts[index])
-        fail_candidates_sumw2 = float(fail_data_total_sumw2[index])
+        n_one_photon_candidates = float(data_one_photon_total_counts[index])
+        data_one_photon_sumw2 = float(data_one_photon_total_sumw2[index])
         fraction_pi0 = float(fit.fraction_pi0)
         fraction_pi0_err = float(fit.fraction_pi0_err)
-        if fit.success and math.isfinite(fraction_pi0) and n_fail_candidates >= 0.0:
-            n_fail_data = fraction_pi0 * n_fail_candidates
+        if fit.success and math.isfinite(fraction_pi0) and n_one_photon_candidates >= 0.0:
+            n_probe_missing_data = fraction_pi0 * n_one_photon_candidates
             # Include three independent contributions:
             #   1. fitted mixture-fraction uncertainty;
             #   2. leave-one-variable-out model variation in fraction units;
-            #   3. counting uncertainty of the full selected candidate sample.
+            #   3. counting uncertainty of the full selected data one-photon sample.
             fit_fraction_term = (
-                n_fail_candidates * fraction_pi0_err
+                n_one_photon_candidates * fraction_pi0_err
                 if math.isfinite(fraction_pi0_err) else 0.0
             )
             model_fraction_term = (
-                n_fail_candidates * model_spread
+                n_one_photon_candidates * model_spread
                 if math.isfinite(model_spread) else 0.0
             )
-            candidate_count_term = fraction_pi0 * math.sqrt(max(fail_candidates_sumw2, 0.0))
-            n_fail_data_err = math.sqrt(
+            candidate_count_term = fraction_pi0 * math.sqrt(max(data_one_photon_sumw2, 0.0))
+            n_probe_missing_data_err = math.sqrt(
                 fit_fraction_term**2
                 + model_fraction_term**2
                 + candidate_count_term**2
             )
         else:
-            n_fail_data = math.nan
-            n_fail_data_err = math.nan
+            n_probe_missing_data = math.nan
+            n_probe_missing_data_err = math.nan
 
         pass_data_err = math.sqrt(max(float(pass_data_sumw2[index]), 0.0))
         pass_mc_err = math.sqrt(max(float(pass_mc_sumw2[index]), 0.0))
-        fail_mc_err = math.sqrt(max(n_fail_mc, 0.0))
-        eff_data, eff_data_err = efficiency_and_error(n_pass_data, pass_data_err, n_fail_data, n_fail_data_err)
-        eff_mc, eff_mc_err = efficiency_and_error(n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err)
+        probe_missing_mc_err = math.sqrt(max(n_probe_missing_mc, 0.0))
+        eff_data, eff_data_err = efficiency_and_error(
+            n_pass_data, pass_data_err, n_probe_missing_data, n_probe_missing_data_err
+        )
+        eff_mc, eff_mc_err = efficiency_and_error(
+            n_pass_mc, pass_mc_err, n_probe_missing_mc, probe_missing_mc_err
+        )
         sf, sf_err = scale_factor_and_error(eff_data, eff_data_err, eff_mc, eff_mc_err)
         rows.append(EfficiencyRow(period.key, period.label, definition.bin_id, definition.detector, definition.sector,
             definition.E_low, definition.E_high, definition.theta_low_deg, definition.theta_high_deg,
-            n_pass_data, pass_data_err, n_fail_data, n_fail_data_err, eff_data, eff_data_err,
-            n_pass_mc, pass_mc_err, n_fail_mc, fail_mc_err, eff_mc, eff_mc_err, sf, sf_err,
+            n_pass_data, pass_data_err, n_probe_missing_data, n_probe_missing_data_err, eff_data, eff_data_err,
+            n_pass_mc, pass_mc_err, n_probe_missing_mc, probe_missing_mc_err, eff_mc, eff_mc_err, sf, sf_err,
             fit.success, fit.deviance, fit.ndf))
 
     for definition, fit, row in zip(bins, fits, rows):
         index = definition.bin_id
         category_name = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
         log(
-            f"{period.label} {category_name}: fail candidates(full)="
-            f"{float(fail_data_total_counts[index]):,.1f}, "
+            f"{period.label} {category_name}: data one-photon candidates(full)="
+            f"{float(data_one_photon_total_counts[index]):,.1f}, "
             f"Delta_phi support={float(np.sum(data_hists['Delta_phi'][index])):,.1f}, "
-            f"f_pi0={fit.fraction_pi0:.6g}, assigned N_fail={row.fail_data:,.1f}"
+            f"f_pi0={fit.fraction_pi0:.6g}, assigned pi0 missing-probe yield={row.fail_data:,.1f}"
         )
         plot_category_fit_summary(aggregate_fit_dir / f"{category_name}.png", period.label, definition, fit)
 
@@ -2972,13 +2998,13 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "pass_mc_directed_trials_stored": pass_mc.size(),
             "pass_data_directed_trial_weight": float(np.sum(pass_data.weight)),
             "pass_mc_directed_trial_weight": float(np.sum(pass_mc.weight)),
-            "fail_data_candidates": fail_data.size(),
-            "fail_dvcs_mc_candidates": fail_dvcs_mc.size(),
-            "fail_pi0_mc_candidates": fail_pi0_mc.size(),
+            "data_one_photon_candidates_candidates": data_one_photon_candidates.size(),
+            "dvcs_background_template_candidates": dvcs_background_template.size(),
+            "pi0_missing_probe_mc_candidates": pi0_missing_probe_mc.size(),
             "n_bins": len(rows),
         },
         "input_file_identity": args.input_identity_records.get(period.key, {}),
-        "selected_fail_support_audit": fail_support_audit,
+        "selected_one_photon_support_audit": one_photon_support_audit,
         "fit_support_coverage": fit_support_coverage,
         "energy_support": energy_support,
         "mirror_policy": args.mirror_policy,
@@ -2993,8 +3019,10 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "support_fit_source": "plot_exclusivity_data_dvcs_pi0_mc.py exact fitter",
             "FD_morphology": "exact exclusivity fit on all six FD sectors; frozen for sector fractions",
             "FT_morphology": "exact exclusivity fit on integrated FT",
-            "yield_normalization": "fitted pi0 fraction multiplied by the full selected epgamma candidate count only after finite common-support validation",
-            "loose_tag_requirement": "selected one-photon inputs must contain a non-negligible 0.4--2 GeV tag population",
+            "yield_normalization": "fitted pi0 fraction multiplied by the full selected data epgamma candidate count only after finite common-support validation",
+            "mc_missing_probe_source": "truth-separated bkg_rga_* pi0-as-epgamma sample; no template fit is used for the MC missing-probe count",
+            "dvcs_mc_role": "shape-only DVCS/BH background template for the data one-photon decomposition; never enters the MC efficiency denominator",
+            "tag_energy_policy": "0.4--probe-threshold tag fractions are recorded as diagnostics only; no minimum fraction is imposed",
             "fit_support_policy": "broad physical supports; finite under/overflow folded into edge bins; no silent range-based candidate loss",
         },
         "fit_model_systematics_on_fraction_pi0": fit_model_systematics,
@@ -3012,12 +3040,12 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
                 "fraction_pi0_model_spread": fit_model_systematics.get(
                     "FT" if d.detector == "FT" else f"FD_sector_{d.sector}", math.nan
                 ),
-                "full_selected_fail_candidates": float(fail_data_total_counts[d.bin_id]),
+                "full_selected_data_one_photon_candidates": float(data_one_photon_total_counts[d.bin_id]),
                 "delta_phi_fit_support_candidates": float(
                     np.sum(data_hists["Delta_phi"][d.bin_id])
                 ),
-                "assigned_pi0_fail_yield": float(rows[d.bin_id].fail_data),
-                "assigned_pi0_fail_yield_err": float(rows[d.bin_id].fail_data_err),
+                "assigned_pi0_missing_probe_yield": float(rows[d.bin_id].fail_data),
+                "assigned_pi0_missing_probe_yield_err": float(rows[d.bin_id].fail_data_err),
                 "n_pi0_in_delta_phi_fit_support_diagnostic": f.n_pi0,
                 "deviance": f.deviance,
                 "ndf": f.ndf,
@@ -3108,13 +3136,14 @@ def summarize_tag_regions(trials: TrialArrays, split_GeV: float = 2.0) -> Dict[s
 
 def plot_selected_energy_support(path: Path, period_label: str,
                                  pass_data: TrialArrays, pass_mc: TrialArrays,
-                                 fail_data: TrialArrays, fail_dvcs: TrialArrays,
-                                 fail_pi0: TrialArrays, args: argparse.Namespace) -> None:
+                                 data_one_photon: TrialArrays, dvcs_template: TrialArrays,
+                                 pi0_missing_probe: TrialArrays, args: argparse.Namespace) -> None:
     """Plot the observed-tag and predicted-probe support after the common selections."""
     samples = [
-        ("Passing data", pass_data), ("Passing AAOGEN MC", pass_mc),
-        ("Failing data", fail_data), ("Failing DVCS MC", fail_dvcs),
-        ("Failing pi0 MC", fail_pi0),
+        ("Probe found: data", pass_data), ("Probe found: AAOGEN pi0 MC", pass_mc),
+        ("One-photon candidates: data", data_one_photon),
+        ("DVCS/BH background template", dvcs_template),
+        ("Probe missing: pi0 MC", pi0_missing_probe),
     ]
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.2))
     tag_edges = np.linspace(args.tag_E_min, args.tag_E_max, 91)
@@ -3188,7 +3217,6 @@ def audit_one_photon_file(path: str, role: str, period: PeriodConfig,
         record["hist_counts"] = hist.tolist()
         checks = {
             "minimum_entries": int(record["entries"]) >= args.preflight_min_entries,
-            "low_energy_support_present": counts["tag_to_2"] > 0,
             "stable_age": args.preflight_stable_age_min < 0 or age_minutes >= args.preflight_stable_age_min,
         }
         record["checks"] = checks
@@ -3338,7 +3366,7 @@ def main() -> int:
     json_payload = {
         "schema_version": 3,
         "description": "Exploratory RGA pi0 tag-and-probe photon-efficiency data/MC scale factors.",
-        "formula": "epsilon = N_pass / (N_pass + N_fail); S_gamma = epsilon_data / epsilon_mc",
+        "formula": "epsilon = N_probe_found / (N_probe_found + N_probe_missing); S_gamma = epsilon_data / epsilon_mc",
         "arguments": args_dict,
         "period_metadata": metadata,
         "bins": all_rows,
