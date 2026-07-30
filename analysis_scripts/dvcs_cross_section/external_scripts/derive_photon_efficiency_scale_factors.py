@@ -2437,6 +2437,48 @@ def load_exclusivity_fitter_module():
     import sys
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
+
+    # The validated fitter normally uses the production-DVCS histogram
+    # definitions stored in its module-level VARIABLES tuple.  This efficiency
+    # study intentionally uses broader supports, so the fitter's VariableConfig
+    # objects must be replaced with definitions that exactly match the
+    # histograms supplied below.  Merely changing FIT_VARIABLES in this script
+    # is insufficient: the fitter builds its morphing matrices from its own
+    # VariableConfig.bins/xmin/xmax values.  A mismatch (for example a 120-bin
+    # Delta_phi histogram with the fitter's native 100-bin Delta_phi config)
+    # produces a 100x100 transport matrix multiplied by a 120-element template.
+    fitter_variables = []
+    aliases_by_branch = {
+        variable.branch: tuple(getattr(variable, "aliases", ()))
+        for variable in getattr(module, "VARIABLES", ())
+    }
+    for fit_spec in FIT_VARIABLES:
+        branch = "theta" if fit_spec.key == "theta_cm" else fit_spec.key
+        fitter_variables.append(
+            module.VariableConfig(
+                branch,
+                fit_spec.label,
+                int(fit_spec.bins),
+                float(fit_spec.low),
+                float(fit_spec.high),
+                aliases=aliases_by_branch.get(branch, ()),
+            )
+        )
+    module.VARIABLES = tuple(fitter_variables)
+
+    # Validate the adapter immediately so future changes fail with a readable
+    # message instead of a deep scipy/numpy matrix-dimension traceback.
+    expected = {
+        ("theta" if item.key == "theta_cm" else item.key): int(item.bins)
+        for item in FIT_VARIABLES
+    }
+    configured = {item.branch: int(item.bins) for item in module.VARIABLES}
+    if configured != expected:
+        raise RuntimeError(
+            "Internal exclusivity-fitter histogram configuration mismatch: "
+            f"expected {expected}, configured {configured}"
+        )
+
     _EXCLUSIVITY_FITTER_MODULE = module
     return module
 
@@ -2507,10 +2549,29 @@ def run_exact_exclusivity_fit(
     module = load_exclusivity_fitter_module()
     topology = module.TopologyConfig("EFFICIENCY", "photon-efficiency", 0, 0)
     exact_drivers = tuple("theta" if key == "theta_cm" else key for key in fraction_drivers)
+
+    mapped_data = _exact_histogram_mapping(data_hists)
+    mapped_dvcs = _exact_histogram_mapping(dvcs_hists)
+    mapped_pi0 = _exact_histogram_mapping(pi0_hists)
+    configured_bins = {item.branch: int(item.bins) for item in module.VARIABLES}
+    for sample_name, mapping in (
+        ("data", mapped_data),
+        ("DVCS MC", mapped_dvcs),
+        ("pi0 MC", mapped_pi0),
+    ):
+        for branch, expected_bins in configured_bins.items():
+            actual_bins = int(np.asarray(mapping[branch]).size)
+            if actual_bins != expected_bins:
+                raise RuntimeError(
+                    "Histogram/fitter bin mismatch before exclusivity fit: "
+                    f"{sample_name} {branch} has {actual_bins} bins, but the "
+                    f"configured fitter expects {expected_bins}."
+                )
+
     summary = module.fit_shared_two_templates(
-        _exact_histogram_mapping(data_hists),
-        _exact_histogram_mapping(dvcs_hists),
-        _exact_histogram_mapping(pi0_hists),
+        mapped_data,
+        mapped_dvcs,
+        mapped_pi0,
         topology,
         max_shift_bins=args.exclusivity_max_shift_bins,
         max_smear_bins=args.exclusivity_max_smear_bins,
