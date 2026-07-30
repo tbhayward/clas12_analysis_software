@@ -171,7 +171,7 @@ UNCORRECTED_ENPI_DIR = Path(
 DEFAULT_UNCORRECTED_INPUTS: dict[str, dict[str, Path]] = {
     period: {
         target: UNCORRECTED_ENPI_DIR
-        / f"rgc_{period}_inb_{target}_epi+.root"
+        / f"rgc_{period}_inb_{target}_epi+_2.root"
         for target in TARGETS
     }
     for period in PERIODS
@@ -4213,7 +4213,7 @@ def main() -> int:
 
     loaded = load_all_datasets(input_paths, args.tree, workers)
 
-    # Load the original, uncorrected enpi+ trees from the source directory used
+    # Load the original, uncorrected enpi+ _2.root trees from the source directory used
     # by the momentum-correction derivation.  These are fit independently so
     # their shifted/broadened neutron peaks define their own sigma windows.
     uncorrected_input_paths = {
