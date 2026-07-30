@@ -439,9 +439,9 @@ def parse_args() -> argparse.Namespace:
                         help="Minimum file age in minutes required by preflight to consider a ROOT file complete/stable; set negative to disable.")
     parser.add_argument("--preflight-min-entries", type=int, default=1000,
                         help="Minimum PhysicsEvents entries required for each one-photon loose input.")
-    parser.add_argument("--min-fit-support-fraction", type=float, default=0.98,
-                        help=("Minimum fraction of selected one-photon candidates with finite values for all "
-                              "fraction-driving template variables. Categories below this threshold are rejected."))
+    parser.add_argument("--min-fit-support-fraction", type=float, default=0.0,
+                        help=("Optional minimum common fit-support fraction. The default 0 records coverage without rejecting categories; "
+                              "use a positive value only for explicit validation studies."))
     parser.add_argument("--max-events", type=int, default=None,
                         help="Debug-only maximum events read from each tree.")
 
@@ -510,8 +510,11 @@ def parse_args() -> argparse.Namespace:
                         help="Run the passing-sample audit and stop before epgamma template fits.")
     parser.add_argument("--require-fiducial-status", type=int, default=None,
                         help="Optional exact fiducial_status requirement.")
-    parser.add_argument("--disable-production-global-cuts", action="store_true",
-                        help="Disable the common global cuts used by this study; period-specific Sp18 Out sector exclusions are intentionally not applied.")
+    parser.add_argument("--enable-production-global-cuts", action="store_true",
+                        help=("Opt in to the additional (-t1), z, and predicted electron-photon opening-angle cuts. "
+                              "They are disabled by default because they were responsible for the order-of-magnitude "
+                              "loss of one-photon candidates relative to the original study."))
+    parser.add_argument("--disable-production-global-cuts", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--global-t-abs-max", type=float, default=1.0,
                         help="Production global requirement (-t1) < this value when t1 exists.")
     parser.add_argument("--global-z-min", type=float, default=0.65,
@@ -619,7 +622,7 @@ def production_event_mask(arrays: Mapping[str, np.ndarray], resolved: Mapping[st
                           args: argparse.Namespace) -> np.ndarray:
     n = len(next(iter(arrays.values())))
     mask = np.ones(n, dtype=bool)
-    if args.disable_production_global_cuts:
+    if args.disable_production_global_cuts or not args.enable_production_global_cuts:
         return mask
     if resolved.get("t1") is not None:
         t1 = finite_array(arrays, resolved.get("t1"))
@@ -1160,7 +1163,7 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                 m2 = ep & (np.abs(pred_m2) < 0.20)
                 detector_ok = m2 & (detector >= 0)
                 global_requirement = np.ones(n, dtype=bool)
-                if not args.disable_production_global_cuts:
+                if args.enable_production_global_cuts and not args.disable_production_global_cuts:
                     global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
                     global_requirement &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
                 global_ok = detector_ok & global_requirement
@@ -1203,7 +1206,23 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
     log(f"Native eppi0 audit for {Path(path).name}: events={seen:,}, closure events={diag['event_cutflow']['closure_pass']:,.0f}, final directed trial weight={float(np.sum(result.weight)):,.1f}")
     return result, diag
 
-def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Namespace) -> TrialArrays:
+def _new_one_photon_cutflow(label: str, path: str) -> Dict[str, object]:
+    stages = [
+        "all_tree_entries", "basic_quality", "production_event_cuts", "tag_energy",
+        "prediction_finite", "probe_energy", "photon_like_E_minus_p",
+        "photon_like_m2", "predicted_detector", "predicted_opening_angle", "selected",
+    ]
+    return {"label": label, "path": path, "stages": {stage: 0.0 for stage in stages},
+            "selected_by_category": {"FT": 0.0, **{f"FD sector {i}": 0.0 for i in range(1, 7)}}}
+
+
+def _add_cutflow(diag: Dict[str, object], stage: str, mask_or_count) -> None:
+    value = float(mask_or_count) if np.isscalar(mask_or_count) else float(np.count_nonzero(mask_or_count))
+    diag["stages"][stage] = float(diag["stages"].get(stage, 0.0)) + value
+
+
+def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Namespace,
+                               sample_label: str = "one-photon sample") -> Tuple[TrialArrays, Dict[str, object]]:
     logical = [
         "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
         "g1_E", "g1_theta", "g1_phi", "Mx2_1", "Delta_phi",
@@ -1215,8 +1234,9 @@ def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Nam
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
     chunks: List[TrialArrays] = []
     seen = 0
+    diag = _new_one_photon_cutflow(sample_label, path)
 
-    log(f"Reading selected one-photon candidates from {path}")
+    log(f"Reading {sample_label} from {path}")
     for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
                                  step_size=args.step_size, library="np"):
         n = len(next(iter(arrays.values())))
@@ -1229,10 +1249,16 @@ def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Nam
             n = keep
         # endif
         seen += n
+        _add_cutflow(diag, "all_tree_entries", n)
 
-        base = basic_quality_mask(arrays, resolved, args) & production_event_mask(arrays, resolved, args)
+        quality = basic_quality_mask(arrays, resolved, args)
+        production = quality & production_event_mask(arrays, resolved, args)
+        _add_cutflow(diag, "basic_quality", quality)
+        _add_cutflow(diag, "production_event_cuts", production)
+        base = production
         tag_E_all = finite_array(arrays, resolved["g1_E"])
         cheap = base & np.isfinite(tag_E_all) & (tag_E_all >= args.tag_E_min) & (tag_E_all < args.tag_E_max)
+        _add_cutflow(diag, "tag_energy", cheap)
         if not np.any(cheap):
             continue
         idx = np.flatnonzero(cheap)
@@ -1253,21 +1279,25 @@ def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Nam
         )
         theta_deg = np.degrees(pred_th)
         detector, sector = classify_predicted_detector(theta_deg, pred_ph, args)
-        good = (
-            np.isfinite(pred_E) & np.isfinite(pred_p)
-            & np.isfinite(theta_deg) & np.isfinite(pred_ph)
-            & np.isfinite(mx2_ep)
-            & (tag_E >= args.tag_E_min) & (tag_E < args.tag_E_max)
-            & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
-            & (pred_p > 0.0)
-            & (np.abs(pred_E - pred_p) < 0.30)
-            & (np.abs(pred_m2) < 0.20)
-            & (detector >= 0)
-        )
-        if not args.disable_production_global_cuts:
+        finite_pred = (np.isfinite(pred_E) & np.isfinite(pred_p) & np.isfinite(theta_deg)
+                       & np.isfinite(pred_ph) & np.isfinite(mx2_ep))
+        probe_energy = finite_pred & (pred_E >= args.probe_E_min) & (pred_E < args.probe_E_max)
+        photon_ep = probe_energy & (pred_p > 0.0) & (np.abs(pred_E - pred_p) < 0.30)
+        photon_m2 = photon_ep & (np.abs(pred_m2) < 0.20)
+        detector_ok = photon_m2 & (detector >= 0)
+        opening_ok = detector_ok.copy()
+        if args.enable_production_global_cuts and not args.disable_production_global_cuts:
             global_opening = electron_photon_opening_deg(e_theta, e_phi, pred_th, pred_ph)
-            proton_detector = finite_array(arrays, resolved.get("detector1"), default=-1.0)[idx].astype(int)
-            good &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
+            opening_ok &= np.isfinite(global_opening) & (global_opening > args.global_open_angle_min_deg)
+        good = opening_ok
+        for stage, mask in (("prediction_finite", finite_pred), ("probe_energy", probe_energy),
+                            ("photon_like_E_minus_p", photon_ep), ("photon_like_m2", photon_m2),
+                            ("predicted_detector", detector_ok), ("predicted_opening_angle", opening_ok),
+                            ("selected", good)):
+            _add_cutflow(diag, stage, mask)
+        for name, cmask in [("FT", good & (detector == 0))] + [
+                (f"FD sector {j}", good & (detector == 1) & (sector == j)) for j in range(1, 7)]:
+            diag["selected_by_category"][name] += float(np.count_nonzero(cmask))
         chunks.append(TrialArrays(
             E=pred_E[good].astype(np.float32, copy=False),
             tag_E=tag_E[good].astype(np.float32, copy=False),
@@ -1287,7 +1317,7 @@ def read_one_photon_candidates(path: str, beam_energy: float, args: argparse.Nam
             weight=np.ones(np.count_nonzero(good), dtype=np.float32),
         ))
     # endfor
-    return concatenate_trials(chunks)
+    return concatenate_trials(chunks), diag
 
 
 def strict_quantile_edges(values: np.ndarray, n_bins: int, low: float, high: float) -> np.ndarray:
@@ -1731,18 +1761,15 @@ class FitVariableSpec:
 
 
 FIT_VARIABLES: Tuple[FitVariableSpec, ...] = (
-    # The old supports were production-DVCS exclusivity windows.  They are not
-    # valid for the loose-tag topology, where the reconstructed epgamma photon
-    # can be the 0.4--2 GeV pi0 tag and the >2 GeV photon is missing.  Use broad
-    # physical supports and fold finite under/overflow values into the edge bins
-    # so that the fitted population is the selected population.
-    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 120, 0.0, 2.0 * math.pi, False, True, 1.0),
-    FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, math.pi, False, True, 1.0),
-    FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 120, 0.0, 3.0, False, True, 1.0),
-    FitVariableSpec("theta_cm", "theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 0.0, math.pi, False, False, 0.35),
-    FitVariableSpec("Emiss2", "Emiss2", r"$E_{\mathrm{miss}}^2$ (GeV$^2$)", 120, -5.0, 5.0, False, False, 0.35),
-    FitVariableSpec("Mx2", "Mx2", r"$M_x^2$ (GeV$^2$)", 120, -2.0, 2.0, False, False, 0.35),
-    FitVariableSpec("Mx2_2", "Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 120, -2.0, 6.0, False, False, 0.20),
+    # Use the validated exclusivity-template supports.  Broad distributions are
+    # produced separately as shape diagnostics and are not used to drive the fit.
+    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False, True, 1.0),
+    FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0, False, True, 1.0),
+    FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5, False, True, 1.0),
+    FitVariableSpec("theta_cm", "theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 2.0, math.pi, False, False, 0.35),
+    FitVariableSpec("Emiss2", "Emiss2", r"$E_{\mathrm{miss}}^2$ (GeV$^2$)", 100, -1.0, 2.0, False, False, 0.35),
+    FitVariableSpec("Mx2", "Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03, False, False, 0.35),
+    FitVariableSpec("Mx2_2", "Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 4.0, False, False, 0.20),
 )
 FRACTION_DRIVER_KEYS = tuple(spec.key for spec in FIT_VARIABLES if spec.fraction_driver)
 
@@ -1806,12 +1833,9 @@ def bulk_variable_histograms(trials: TrialArrays, bin_ids: np.ndarray, n_probe_b
     values = np.asarray(getattr(trials, spec.attr), dtype=float)
     value_index = np.searchsorted(edges, values, side="right") - 1
     valid = (bin_ids >= 0) & (bin_ids < n_probe_bins) & np.isfinite(values)
+    valid &= (values >= spec.low) & (values < spec.high)
     if require_common_support:
         valid &= common_fit_mask(trials)
-    # Preserve the selected finite population.  Values outside the broad display
-    # range are explicit under/overflow content in the first/last bin rather
-    # than silently discarded candidates.
-    value_index = np.clip(value_index, 0, spec.bins - 1)
     flat = bin_ids[valid].astype(np.int64, copy=False) * spec.bins + value_index[valid].astype(np.int64, copy=False)
     counts = np.bincount(flat, weights=trials.weight[valid], minlength=n_probe_bins * spec.bins)
     return counts.reshape(n_probe_bins, spec.bins).astype(float, copy=False)
@@ -2728,6 +2752,113 @@ def category_fit_support_fraction(trials: TrialArrays, bin_ids: np.ndarray, bin_
     return float(np.sum(trials.weight[supported])) / denominator
 
 
+
+def plot_one_photon_cutflows(path: Path, period_label: str,
+                             diagnostics: Sequence[Mapping[str, object]]) -> None:
+    stages = ["all_tree_entries", "basic_quality", "production_event_cuts", "tag_energy",
+              "prediction_finite", "probe_energy", "photon_like_E_minus_p", "photon_like_m2",
+              "predicted_detector", "predicted_opening_angle", "selected"]
+    fig, axes = plt.subplots(len(diagnostics), 1, figsize=(13, 4.2 * len(diagnostics)), squeeze=False)
+    for ax, diag in zip(axes[:, 0], diagnostics):
+        values = np.asarray([float(diag["stages"].get(stage, 0.0)) for stage in stages])
+        x = np.arange(len(stages))
+        ax.plot(x, values, marker="o")
+        ax.set_yscale("log")
+        ax.set_xticks(x); ax.set_xticklabels(stages, rotation=35, ha="right")
+        ax.set_ylabel("Candidates")
+        ax.set_title(str(diag.get("label", "one-photon sample")))
+        ax.grid(alpha=0.25)
+        for xx, value in zip(x, values):
+            if value > 0:
+                ax.annotate(f"{value:,.0f}", (xx, value), xytext=(0, 5), textcoords="offset points",
+                            ha="center", fontsize=8)
+    fig.suptitle(f"{period_label}: one-photon candidate cutflow")
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def _shape_hist(trials: TrialArrays, attr: str, edges: np.ndarray,
+                selection: Optional[np.ndarray] = None) -> Tuple[np.ndarray, float]:
+    values = np.asarray(getattr(trials, attr), dtype=float)
+    weights = np.asarray(trials.weight, dtype=float)
+    finite = np.isfinite(values)
+    if selection is not None:
+        finite &= selection
+    total = float(np.sum(weights[finite]))
+    inside = finite & (values >= edges[0]) & (values < edges[-1])
+    counts = np.histogram(values[inside], bins=edges, weights=weights[inside])[0].astype(float)
+    integral = float(np.sum(counts))
+    return (counts / integral if integral > 0 else counts), (integral / total if total > 0 else math.nan)
+
+
+def plot_shape_comparison_canvas(path: Path, period_label: str, category_label: str,
+                                 data: TrialArrays, dvcs: TrialArrays, pi0: TrialArrays,
+                                 category_masks: Tuple[np.ndarray, np.ndarray, np.ndarray],
+                                 broad: bool = False) -> None:
+    if broad:
+        specs = [
+            ("delta_phi", r"$\\Delta\\phi$ (rad)", 120, 0.0, 2*math.pi),
+            ("theta_gamma_gamma", r"$\\theta_{\\gamma\\gamma}$ (rad)", 120, 0.0, math.pi),
+            ("pTmiss", r"$p_T^{\\mathrm{miss}}$ (GeV)", 120, 0.0, 3.0),
+            ("theta_cm", r"$\\theta_{p\\gamma}^{\\mathrm{CM}}$ (rad)", 100, 0.0, math.pi),
+            ("Emiss2", r"$E_{\\mathrm{miss}}^2$ (GeV$^2$)", 120, -5.0, 5.0),
+            ("Mx2", r"$M_x^2$ (GeV$^2$)", 120, -2.0, 2.0),
+            ("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 120, -2.0, 6.0),
+        ]
+    else:
+        specs = [(sp.attr, sp.label, sp.bins, sp.low, sp.high) for sp in FIT_VARIABLES]
+    fig, axes = plt.subplots(2, 4, figsize=(19, 8.5), squeeze=False)
+    axes = axes.ravel()
+    samples = [("Data one-photon", data, category_masks[0]),
+               ("DVCS/BH template", dvcs, category_masks[1]),
+               ("pi0 template", pi0, category_masks[2])]
+    for ax, (attr, label, bins, low, high) in zip(axes, specs):
+        edges = np.linspace(low, high, bins + 1)
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        for sample_label, trials, mask in samples:
+            shape, containment = _shape_hist(trials, attr, edges, mask)
+            ax.step(centers, shape, where="mid", linewidth=1.3,
+                    label=f"{sample_label} ({100*containment:.1f}% in range)" if math.isfinite(containment) else sample_label)
+        ax.set_xlabel(label); ax.set_ylabel("Unit-normalized entries")
+        ax.grid(alpha=0.2); ax.legend(fontsize=7)
+    for ax in axes[len(specs):]:
+        ax.axis("off")
+    kind = "broad diagnostic ranges" if broad else "validated fit ranges"
+    fig.suptitle(f"{period_label}: {category_label} one-photon shape comparison — {kind}")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_all_period_efficiency_summary(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
+    if not rows:
+        return
+    period_order = [p.key for p in PERIODS]
+    labels = ["FT"] + [f"FD S{i}" for i in range(1, 7)]
+    x = np.arange(7, dtype=float)
+    offsets = np.linspace(-0.18, 0.18, len(period_order))
+    fig, axes = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+    for offset, key in zip(offsets, period_order):
+        selected = [r for r in rows if str(r["period"]) == key]
+        if not selected:
+            continue
+        selected.sort(key=lambda r: (0 if str(r["detector"]) == "FT" else 1, int(r["sector"])))
+        label = next(p.label for p in PERIODS if p.key == key)
+        axes[0].errorbar(x + offset, [float(r["efficiency_data"]) for r in selected],
+                         yerr=[float(r["efficiency_data_err"]) for r in selected], fmt="o", label=label)
+        axes[1].errorbar(x + offset, [float(r["efficiency_mc"]) for r in selected],
+                         yerr=[float(r["efficiency_mc_err"]) for r in selected], fmt="o", label=label)
+    axes[0].set_ylabel(r"$\\epsilon_{data}$"); axes[1].set_ylabel(r"$\\epsilon_{MC}$")
+    for ax in axes:
+        ax.set_ylim(0.0, 1.05); ax.grid(alpha=0.25); ax.legend(frameon=False, ncol=3)
+    axes[1].set_xticks(x); axes[1].set_xticklabels(labels); axes[1].set_xlabel("Photon detector category")
+    fig.suptitle("Integrated photon efficiencies by run period")
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -2756,14 +2887,19 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             json.dump(metadata, handle, indent=2)
         return period.key, [], metadata
 
-    data_one_photon_candidates = read_one_photon_candidates(
-        period.epg_data, period.beam_energy_GeV, args
+    data_one_photon_candidates, data_one_photon_diag = read_one_photon_candidates(
+        period.epg_data, period.beam_energy_GeV, args, "data one-photon candidates"
     )
-    dvcs_background_template = read_one_photon_candidates(
-        period.dvcs_mc, period.beam_energy_GeV, args
+    dvcs_background_template, dvcs_template_diag = read_one_photon_candidates(
+        period.dvcs_mc, period.beam_energy_GeV, args, "DVCS/BH background template"
     )
-    pi0_missing_probe_mc = read_one_photon_candidates(
-        period.pi0_as_epg_mc, period.beam_energy_GeV, args
+    pi0_missing_probe_mc, pi0_missing_diag = read_one_photon_candidates(
+        period.pi0_as_epg_mc, period.beam_energy_GeV, args, "pi0 missing-probe MC/template"
+    )
+
+    plot_one_photon_cutflows(
+        period_dir / "one_photon_candidate_cutflow.png", period.label,
+        [data_one_photon_diag, dvcs_template_diag, pi0_missing_diag],
     )
 
     one_photon_support_audit = {
@@ -2811,6 +2947,21 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     data_one_photon_ids = assign_bin_ids(data_one_photon_candidates, bins)
     dvcs_template_ids = assign_bin_ids(dvcs_background_template, bins)
     pi0_missing_probe_ids = assign_bin_ids(pi0_missing_probe_mc, bins)
+
+    shape_dir = period_dir / "shape_comparisons"
+    shape_dir.mkdir(parents=True, exist_ok=True)
+    shape_categories = [("FT", [d.bin_id for d in bins if d.detector == "FT"]),
+                        ("FD_all_sectors", [d.bin_id for d in bins if d.detector == "FD"])]
+    for category_label, category_ids in shape_categories:
+        if not category_ids:
+            continue
+        masks = (np.isin(data_one_photon_ids, category_ids),
+                 np.isin(dvcs_template_ids, category_ids),
+                 np.isin(pi0_missing_probe_ids, category_ids))
+        plot_shape_comparison_canvas(shape_dir / f"{category_label}_fit_ranges.png", period.label, category_label,
+                                     data_one_photon_candidates, dvcs_background_template, pi0_missing_probe_mc, masks, broad=False)
+        plot_shape_comparison_canvas(shape_dir / f"{category_label}_broad_ranges.png", period.label, category_label,
+                                     data_one_photon_candidates, dvcs_background_template, pi0_missing_probe_mc, masks, broad=True)
 
     pass_data_counts = weighted_counts_by_bin(pass_data, pass_data_ids, n_bins)
     pass_mc_counts = weighted_counts_by_bin(pass_mc, pass_mc_ids, n_bins)
@@ -3005,6 +3156,11 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         },
         "input_file_identity": args.input_identity_records.get(period.key, {}),
         "selected_one_photon_support_audit": one_photon_support_audit,
+        "one_photon_cutflow": {
+            "data": data_one_photon_diag,
+            "dvcs_background_template": dvcs_template_diag,
+            "pi0_missing_probe_mc": pi0_missing_diag,
+        },
         "fit_support_coverage": fit_support_coverage,
         "energy_support": energy_support,
         "mirror_policy": args.mirror_policy,
@@ -3023,7 +3179,8 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "mc_missing_probe_source": "truth-separated bkg_rga_* pi0-as-epgamma sample; no template fit is used for the MC missing-probe count",
             "dvcs_mc_role": "shape-only DVCS/BH background template for the data one-photon decomposition; never enters the MC efficiency denominator",
             "tag_energy_policy": "0.4--probe-threshold tag fractions are recorded as diagnostics only; no minimum fraction is imposed",
-            "fit_support_policy": "broad physical supports; finite under/overflow folded into edge bins; no silent range-based candidate loss",
+            "fit_support_policy": "validated production exclusivity ranges; broad unit-normalized shape comparisons are written separately",
+            "production_global_cuts_enabled": bool(args.enable_production_global_cuts and not args.disable_production_global_cuts),
         },
         "fit_model_systematics_on_fraction_pi0": fit_model_systematics,
         "fit_variants": fit_variants_metadata,
@@ -3362,6 +3519,7 @@ def main() -> int:
     all_rows.sort(key=lambda row: (str(row["period"]), int(row["bin_id"])))
     write_rows(output_dir / "photon_efficiency_scale_factors.csv", all_rows)
     plot_all_period_scale_factor_summary(output_dir / "all_periods_integrated_scale_factors.png", all_rows)
+    plot_all_period_efficiency_summary(output_dir / "all_periods_integrated_efficiencies.png", all_rows)
 
     json_payload = {
         "schema_version": 3,
@@ -3387,7 +3545,7 @@ def main() -> int:
             "The one-photon data, DVCS/BH MC, and pi0-as-epgamma MC inputs use the same loose observed-photon threshold, while the predicted probe is required to exceed the production DVCS threshold.",
             "The extraction is integrated over photon energy and polar angle within FT and each FD sector.",
             "A complete data/MC passing-sample cut-flow audit is written for every period.",
-            "Common study cuts mirror the applicable global requirements: (-t1)<1 when available, z>0.65, and electron-photon opening angle >5 deg. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",
+            "Additional production-style (-t1), z, and predicted electron-photon opening-angle cuts are opt-in via --enable-production-global-cuts and are disabled by default. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",
             "Input ROOT identity records and duplicate-period checks are written before processing.",
             "Matching-cut scans are optional (--enable-matching-scans) because they are expensive and do not affect the nominal result; scale-factor stability, mirror-category migration, and fit residual/deviance diagnostics remain enabled.",
             "No equal-efficiency approximation is used.",
