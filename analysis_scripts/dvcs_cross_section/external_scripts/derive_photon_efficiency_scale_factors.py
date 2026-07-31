@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v34.py
+derive_photon_efficiency_scale_factors_v36.py
 
 AUDIT-ONLY release for the RGA photon-efficiency study.
 
@@ -54,7 +54,7 @@ except ImportError as exc:
 #endif
 
 try:
-    from scipy.optimize import minimize, minimize_scalar
+    from scipy.optimize import minimize, minimize_scalar, linear_sum_assignment
     from scipy.ndimage import gaussian_filter1d
     from scipy.spatial import cKDTree
 except ImportError as exc:
@@ -557,6 +557,14 @@ def parse_args() -> argparse.Namespace:
                         help="Reference relative-energy criterion used only in closure summaries.")
     parser.add_argument("--audit-max-matched-plots", type=int, default=500000,
                         help="Maximum matched pairs retained for plotting; accounting always uses all pairs.")
+    parser.add_argument("--audit-tag-angle-scan-deg", default="0.05,0.10,0.25,0.50,1.00,2.00",
+                        help="Comma-separated tag-photon opening-angle thresholds used in audit scans.")
+    parser.add_argument("--audit-tag-relative-E-scan", default="0.001,0.005,0.01,0.02,0.05,0.10",
+                        help="Comma-separated tag-photon relative-energy thresholds used in audit scans.")
+    parser.add_argument("--audit-probe-angle-scan-deg", default="1,2,3,5,7,10",
+                        help="Comma-separated predicted-probe opening-angle thresholds used in audit scans.")
+    parser.add_argument("--audit-probe-relative-E-scan", default="0.10,0.20,0.35,0.50,0.75,1.00",
+                        help="Comma-separated predicted-probe relative-energy thresholds used in audit scans.")
     parser.add_argument("--audit-fail-on-zero-overlap", action="store_true",
                         help="Return a fatal error when a data or AAOGEN pair has no matchable overlap.")
     return parser.parse_args()
@@ -4032,6 +4040,10 @@ def _group_match(a_keys: np.ndarray, b_keys: np.ndarray) -> Dict[str, object]:
         "a_indices": a_idx, "b_indices": b_idx,
         "a_group_counts": ca[a_gid] if na else np.zeros(0,int),
         "b_group_counts": cb[b_gid] if nb else np.zeros(0,int),
+        "a_group_ids": a_gid,
+        "b_group_ids": b_gid,
+        "group_count_a": ca,
+        "group_count_b": cb,
         "a_matched_mask": a_matched, "b_matched_mask": b_matched,
     }
 
@@ -4039,6 +4051,258 @@ def _group_match(a_keys: np.ndarray, b_keys: np.ndarray) -> Dict[str, object]:
 def _opening_deg(th1, ph1, th2, ph2):
     c = np.sin(th1)*np.sin(th2)*np.cos(ph1-ph2) + np.cos(th1)*np.cos(th2)
     return np.degrees(np.arccos(np.clip(c, -1.0, 1.0)))
+
+
+
+def _photon_match_components(epg: AuditEpgRecords, epgg: AuditEpggRecords,
+                             ai: np.ndarray, bi: np.ndarray,
+                             angle_scale_deg: float, relative_E_scale: float
+                             ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return best photon-match choice and residuals for candidate epgamma/epgammagamma pairs."""
+    a1 = _opening_deg(epg.g_theta[ai], epg.g_phi[ai], epgg.g1_theta[bi], epgg.g1_phi[bi])
+    a2 = _opening_deg(epg.g_theta[ai], epg.g_phi[ai], epgg.g2_theta[bi], epgg.g2_phi[bi])
+    r1 = np.abs(epg.g_E[ai] - epgg.g1_E[bi]) / np.maximum(epgg.g1_E[bi], 1.0e-12)
+    r2 = np.abs(epg.g_E[ai] - epgg.g2_E[bi]) / np.maximum(epgg.g2_E[bi], 1.0e-12)
+    s1 = (a1 / max(angle_scale_deg, 1.0e-12))**2 + (r1 / max(relative_E_scale, 1.0e-12))**2
+    s2 = (a2 / max(angle_scale_deg, 1.0e-12))**2 + (r2 / max(relative_E_scale, 1.0e-12))**2
+    choice = np.where(s1 <= s2, 1, 2).astype(np.int8)
+    best_angle = np.where(choice == 1, a1, a2)
+    best_relE = np.where(choice == 1, r1, r2)
+    best_score = np.minimum(s1, s2)
+    return choice, best_angle, best_relE, best_score, np.column_stack((s1, s2))
+
+
+def _resolve_identity_groups(epg: AuditEpgRecords, epgg: AuditEpggRecords,
+                             match: Mapping[str, object],
+                             args: argparse.Namespace) -> Dict[str, object]:
+    """
+    Resolve one-to-many and many-to-many identity groups with photon kinematics.
+
+    The electron/proton identity defines the event group.  Within that group, a
+    Hungarian assignment chooses the epgamma-to-epgammagamma candidate pairing
+    that minimizes the best match to either reconstructed pi0 photon.
+    """
+    a_gid = np.asarray(match["a_group_ids"], dtype=np.int64)
+    b_gid = np.asarray(match["b_group_ids"], dtype=np.int64)
+    ca = np.asarray(match["group_count_a"], dtype=np.int64)
+    cb = np.asarray(match["group_count_b"], dtype=np.int64)
+    shared = np.flatnonzero((ca > 0) & (cb > 0))
+
+    out_ai: List[int] = []
+    out_bi: List[int] = []
+    out_choice: List[int] = []
+    out_angle: List[float] = []
+    out_relE: List[float] = []
+    ambiguous_groups = 0
+    unresolved_groups = 0
+    groups_with_both_photons_matched = 0
+    groups_with_two_epg_above2 = 0
+    multiplicity_caused_by_two_photons = 0
+    candidate_pairs_considered = 0
+
+    angle_max = float(args.audit_tag_match_angle_max_deg)
+    relE_max = float(args.audit_tag_match_relative_E_max)
+
+    for gid in shared:
+        aa = np.flatnonzero(a_gid == gid)
+        bb = np.flatnonzero(b_gid == gid)
+        if aa.size == 0 or bb.size == 0:
+            continue
+        if aa.size > 1 or bb.size > 1:
+            ambiguous_groups += 1
+
+        # Pairwise cost matrix: best match to either gamma in each epgammagamma candidate.
+        A = np.repeat(aa, bb.size)
+        B = np.tile(bb, aa.size)
+        choice, angle, relE, score, _ = _photon_match_components(
+            epg, epgg, A, B, angle_max, relE_max
+        )
+        candidate_pairs_considered += int(A.size)
+        cost = score.reshape(aa.size, bb.size)
+        row, col = linear_sum_assignment(cost)
+
+        accepted_in_group = 0
+        photon_choices = set()
+        for rr, cc in zip(row, col):
+            flat = rr * bb.size + cc
+            if angle[flat] <= angle_max and relE[flat] <= relE_max:
+                out_ai.append(int(aa[rr]))
+                out_bi.append(int(bb[cc]))
+                out_choice.append(int(choice[flat]))
+                out_angle.append(float(angle[flat]))
+                out_relE.append(float(relE[flat]))
+                photon_choices.add(int(choice[flat]))
+                accepted_in_group += 1
+        if accepted_in_group == 0:
+            unresolved_groups += 1
+        if 1 in photon_choices and 2 in photon_choices:
+            groups_with_both_photons_matched += 1
+
+        # Explicitly test whether epgamma multiplicity is explained by both pi0 photons
+        # being individually eligible for the epgamma threshold.
+        if aa.size >= 2 and bb.size >= 1:
+            if np.count_nonzero(epg.g_E[aa] >= 2.0) >= 2:
+                groups_with_two_epg_above2 += 1
+            explained = False
+            for bj in bb:
+                if epgg.g1_E[bj] >= 2.0 and epgg.g2_E[bj] >= 2.0:
+                    # Does this group contain distinct epgamma candidates matching g1 and g2?
+                    a_rep = np.asarray(aa, dtype=np.int64)
+                    b_rep = np.full(aa.size, bj, dtype=np.int64)
+                    ch, ang, re, _, _ = _photon_match_components(
+                        epg, epgg, a_rep, b_rep, angle_max, relE_max
+                    )
+                    ok = (ang <= angle_max) & (re <= relE_max)
+                    if np.any(ok & (ch == 1)) and np.any(ok & (ch == 2)):
+                        explained = True
+                        break
+            if explained:
+                multiplicity_caused_by_two_photons += 1
+
+    return {
+        "a_indices": np.asarray(out_ai, dtype=np.int64),
+        "b_indices": np.asarray(out_bi, dtype=np.int64),
+        "tag_choice": np.asarray(out_choice, dtype=np.int8),
+        "tag_angle_deg": np.asarray(out_angle, dtype=float),
+        "tag_relative_E": np.asarray(out_relE, dtype=float),
+        "shared_groups_considered": int(shared.size),
+        "ambiguous_identity_groups": int(ambiguous_groups),
+        "unresolved_identity_groups": int(unresolved_groups),
+        "resolved_candidate_pairs": int(len(out_ai)),
+        "candidate_pairs_considered": int(candidate_pairs_considered),
+        "groups_with_matches_to_both_photons": int(groups_with_both_photons_matched),
+        "groups_with_at_least_two_epgamma_entries_above2": int(groups_with_two_epg_above2),
+        "groups_where_two_photon_eligibility_explains_epgamma_multiplicity":
+            int(multiplicity_caused_by_two_photons),
+    }
+
+
+def _detector_category(detector: np.ndarray, phi_rad: np.ndarray) -> np.ndarray:
+    """Return 0=unknown, 1=FT, 2..7=FD sectors 1..6."""
+    detector = np.asarray(detector)
+    phi_deg = np.degrees(np.asarray(phi_rad))
+    sector = sector_from_phi(phi_deg)
+    category = np.zeros(detector.shape, dtype=np.int8)
+    category[detector == 0] = 1
+    fd = detector == 1
+    category[fd] = (sector[fd] + 1).astype(np.int8)
+    return category
+
+
+def _threshold_scan(epg: AuditEpgRecords, epgg: AuditEpggRecords,
+                    ai: np.ndarray, bi: np.ndarray,
+                    args: argparse.Namespace) -> Dict[str, object]:
+    if ai.size == 0:
+        return {"angle_thresholds_deg": [], "relative_E_thresholds": [], "counts": []}
+    angles = parse_float_list(args.audit_tag_angle_scan_deg)
+    relEs = parse_float_list(args.audit_tag_relative_E_scan)
+    # Calculate all residuals once.
+    a1 = _opening_deg(epg.g_theta[ai], epg.g_phi[ai], epgg.g1_theta[bi], epgg.g1_phi[bi])
+    a2 = _opening_deg(epg.g_theta[ai], epg.g_phi[ai], epgg.g2_theta[bi], epgg.g2_phi[bi])
+    r1 = np.abs(epg.g_E[ai]-epgg.g1_E[bi])/np.maximum(epgg.g1_E[bi],1e-12)
+    r2 = np.abs(epg.g_E[ai]-epgg.g2_E[bi])/np.maximum(epgg.g2_E[bi],1e-12)
+    counts = np.zeros((len(angles), len(relEs)), dtype=np.int64)
+    for ia, ath in enumerate(angles):
+        for ir, rth in enumerate(relEs):
+            counts[ia, ir] = np.count_nonzero(((a1 <= ath) & (r1 <= rth)) |
+                                              ((a2 <= ath) & (r2 <= rth)))
+        #endfor
+    #endfor
+    return {
+        "angle_thresholds_deg": [float(x) for x in angles],
+        "relative_E_thresholds": [float(x) for x in relEs],
+        "counts": counts.tolist(),
+    }
+
+
+def _probe_threshold_scan(arrays: Mapping[str, np.ndarray],
+                          args: argparse.Namespace) -> Dict[str, object]:
+    angle = np.asarray(arrays.get("probe_angle_deg", []), dtype=float)
+    relE = np.asarray(arrays.get("probe_relative_E", []), dtype=float)
+    valid = np.isfinite(angle) & np.isfinite(relE)
+    angle = angle[valid]
+    relE = relE[valid]
+    angles = parse_float_list(args.audit_probe_angle_scan_deg)
+    relEs = parse_float_list(args.audit_probe_relative_E_scan)
+    counts = np.zeros((len(angles), len(relEs)), dtype=np.int64)
+    for ia, ath in enumerate(angles):
+        for ir, rth in enumerate(relEs):
+            counts[ia, ir] = np.count_nonzero((angle <= ath) & (relE <= rth))
+        #endfor
+    #endfor
+    return {
+        "angle_thresholds_deg": [float(x) for x in angles],
+        "relative_E_thresholds": [float(x) for x in relEs],
+        "counts": counts.tolist(),
+        "denominator": int(angle.size),
+    }
+
+
+def _plot_threshold_map(path: Path, title: str, scan: Mapping[str, object]) -> None:
+    counts = np.asarray(scan.get("counts", []), dtype=float)
+    angles = scan.get("angle_thresholds_deg", [])
+    relEs = scan.get("relative_E_thresholds", [])
+    if counts.size == 0:
+        return
+    fig, ax = plt.subplots(figsize=(8, 6))
+    image = ax.imshow(counts, origin="lower", aspect="auto")
+    ax.set_xticks(np.arange(len(relEs)), [f"{x:g}" for x in relEs])
+    ax.set_yticks(np.arange(len(angles)), [f"{x:g}" for x in angles])
+    ax.set_xlabel("Relative-energy threshold")
+    ax.set_ylabel("Opening-angle threshold (deg)")
+    ax.set_title(title)
+    fig.colorbar(image, ax=ax, label="Accepted matched pairs")
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def _detector_breakdown(epg: AuditEpgRecords, epgg: AuditEpggRecords,
+                        diag_arrays: Mapping[str, np.ndarray],
+                        ai: np.ndarray, bi: np.ndarray) -> Dict[str, object]:
+    labels = ["unknown", "FT", "FD S1", "FD S2", "FD S3", "FD S4", "FD S5", "FD S6"]
+    tag_choice = np.asarray(diag_arrays.get("tag_choice", []), dtype=np.int8)
+    probe_angle = np.asarray(diag_arrays.get("probe_angle_deg", []), dtype=float)
+    probe_relE = np.asarray(diag_arrays.get("probe_relative_E", []), dtype=float)
+    if ai.size == 0 or tag_choice.size == 0:
+        return {label: {"n": 0} for label in labels}
+    actual_probe_detector = np.where(tag_choice == 1, epgg.g2_detector[bi],
+                                     np.where(tag_choice == 2, epgg.g1_detector[bi], -1))
+    actual_probe_phi = np.where(tag_choice == 1, epgg.g2_phi[bi],
+                                np.where(tag_choice == 2, epgg.g1_phi[bi], np.nan))
+    cats = _detector_category(actual_probe_detector, actual_probe_phi)
+    out: Dict[str, object] = {}
+    for ic, label in enumerate(labels):
+        mask = cats == ic
+        out[label] = {
+            "n": int(np.count_nonzero(mask)),
+            "probe_angle_deg": _summary_stats(probe_angle[mask]),
+            "probe_relative_E": _summary_stats(probe_relE[mask]),
+        }
+        #endfor
+    return out
+
+
+def _plot_detector_closure(path: Path, title: str,
+                           breakdown: Mapping[str, object]) -> None:
+    labels = [k for k in breakdown.keys() if k != "unknown"]
+    med_angle = [breakdown[k].get("probe_angle_deg", {}).get("median", np.nan) for k in labels]
+    med_relE = [breakdown[k].get("probe_relative_E", {}).get("median", np.nan) for k in labels]
+    counts = [breakdown[k].get("n", 0) for k in labels]
+    fig, axs = plt.subplots(1, 3, figsize=(15, 4.8))
+    axs[0].bar(np.arange(len(labels)), counts)
+    axs[0].set_ylabel("Matched probes")
+    axs[1].plot(np.arange(len(labels)), med_angle, marker="o")
+    axs[1].set_ylabel("Median angular residual (deg)")
+    axs[2].plot(np.arange(len(labels)), med_relE, marker="o")
+    axs[2].set_ylabel("Median relative-energy residual")
+    for ax in axs:
+        ax.set_xticks(np.arange(len(labels)), labels, rotation=25, ha="right")
+        ax.grid(alpha=.25)
+    fig.suptitle(title)
+    fig.tight_layout(rect=(0,0,1,.94))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
 
 
 def _matched_pair_diagnostics(epg: AuditEpgRecords, epgg: AuditEpggRecords,
@@ -4203,33 +4467,143 @@ def _plot_matched_unmatched(path: Path, title: str, epg: AuditEpgRecords, matche
 
 def _audit_pair(label: str, epg: AuditEpgRecords, epgg: AuditEpggRecords,
                 mode: str, beam_energy: float, outdir: Path, args: argparse.Namespace) -> Dict[str,object]:
-    outdir.mkdir(parents=True,exist_ok=True)
-    if mode=="data":
-        keys_a=_event_key_matrix(epg.runnum,epg.evnum); keys_b=_event_key_matrix(epgg.runnum,epgg.evnum)
-        primary=_group_match(keys_a,keys_b)
-        scans={"runnum_evnum":{k:v for k,v in primary.items() if not isinstance(v,np.ndarray)}}
+    outdir.mkdir(parents=True, exist_ok=True)
+    if mode == "data":
+        keys_a = _event_key_matrix(epg.runnum, epg.evnum)
+        keys_b = _event_key_matrix(epgg.runnum, epgg.evnum)
+        primary = _group_match(keys_a, keys_b)
+        scans = {"runnum_evnum": {k:v for k,v in primary.items() if not isinstance(v,np.ndarray)}}
     else:
-        scans={}
+        scans = {}
         for dec in [int(x) for x in str(args.audit_signature_scan).split(',') if x.strip()]:
-            mm=_group_match(_signature_matrix(epg,dec),_signature_matrix(epgg,dec))
-            scans[str(dec)]={k:v for k,v in mm.items() if not isinstance(v,np.ndarray)}
-        primary=_group_match(_signature_matrix(epg,args.audit_signature_decimals),_signature_matrix(epgg,args.audit_signature_decimals))
-    diag=_matched_pair_diagnostics(epg,epgg,primary["a_indices"],primary["b_indices"],beam_energy,args)
-    _plot_overlap(outdir/"overlap_summary.png",f"{label}: overlap audit",primary)
-    _plot_multiplicity(outdir/"identity_multiplicity.png",f"{label}: identity multiplicity",primary)
-    _plot_residuals(outdir/"electron_proton_residuals.png",f"{label}: matched electron/proton closure",diag["arrays"])
-    _plot_photon_matching(outdir/"tag_photon_matching.png",f"{label}: epgamma tag matching",diag["arrays"])
-    _plot_probe_closure(outdir/"predicted_probe_closure.png",f"{label}: inferred partner closure",diag["arrays"])
-    energy=_plot_energy_regions(outdir/"epgammagamma_energy_regions.png",f"{label}: epgammagamma energy regions",epgg)
-    _plot_matched_unmatched(outdir/"matched_vs_unmatched_epgamma.png",f"{label}: epgamma matched/unmatched",epg,primary["a_matched_mask"])
-    stats={k:_summary_stats(v) for k,v in diag["arrays"].items() if k!="tag_choice"}
-    clean={k:v for k,v in primary.items() if not isinstance(v,np.ndarray)}
-    payload={"label":label,"mode":mode,"identity_match":clean,"identity_precision_scan":scans,
-             "photon_matching":{k:v for k,v in diag.items() if k!="arrays"},"residual_statistics":stats,
-             "epgammagamma_energy_regions":energy}
-    with open(outdir/"audit.json","w") as f: json.dump(payload,f,indent=2,allow_nan=True)
-    return payload
+            mm = _group_match(_signature_matrix(epg, dec), _signature_matrix(epgg, dec))
+            scans[str(dec)] = {k:v for k,v in mm.items() if not isinstance(v,np.ndarray)}
+        #endfor
+        primary = _group_match(
+            _signature_matrix(epg, args.audit_signature_decimals),
+            _signature_matrix(epgg, args.audit_signature_decimals),
+        )
+    #endif
 
+    # First retain the strict one-to-one audit, then resolve all shared identity
+    # groups with photon-level candidate matching.
+    strict_diag = _matched_pair_diagnostics(
+        epg, epgg, primary["a_indices"], primary["b_indices"], beam_energy, args
+    )
+    resolved = _resolve_identity_groups(epg, epgg, primary, args)
+    rai = resolved["a_indices"]
+    rbi = resolved["b_indices"]
+    resolved_diag = _matched_pair_diagnostics(epg, epgg, rai, rbi, beam_energy, args)
+
+    # Photon-matched epgamma entries are the subset truly demonstrated to occur
+    # in a reconstructed epgammagamma candidate.  This is more restrictive than
+    # identity overlap alone.
+    photon_matched_mask = np.zeros(len(epg.e_p), dtype=bool)
+    photon_matched_mask[rai] = True
+
+    tag_scan = _threshold_scan(epg, epgg, rai, rbi, args)
+    probe_scan = _probe_threshold_scan(resolved_diag.get("arrays", {}), args)
+    detector_breakdown = _detector_breakdown(
+        epg, epgg, resolved_diag.get("arrays", {}), rai, rbi
+    )
+
+    _plot_overlap(outdir/"overlap_summary.png", f"{label}: overlap audit", primary)
+    _plot_multiplicity(outdir/"identity_multiplicity.png", f"{label}: identity multiplicity", primary)
+    _plot_residuals(
+        outdir/"electron_proton_residuals.png",
+        f"{label}: resolved electron/proton closure",
+        resolved_diag.get("arrays", {}),
+    )
+    _plot_photon_matching(
+        outdir/"tag_photon_matching.png",
+        f"{label}: resolved epgamma tag matching",
+        resolved_diag.get("arrays", {}),
+    )
+    _plot_probe_closure(
+        outdir/"predicted_probe_closure.png",
+        f"{label}: inferred partner closure",
+        resolved_diag.get("arrays", {}),
+    )
+    _plot_threshold_map(
+        outdir/"tag_matching_threshold_scan.png",
+        f"{label}: tag-matching threshold scan",
+        tag_scan,
+    )
+    _plot_threshold_map(
+        outdir/"probe_closure_threshold_scan.png",
+        f"{label}: inferred-probe closure threshold scan",
+        probe_scan,
+    )
+    _plot_detector_closure(
+        outdir/"probe_closure_by_detector.png",
+        f"{label}: inferred-probe closure by detector",
+        detector_breakdown,
+    )
+    energy = _plot_energy_regions(
+        outdir/"epgammagamma_energy_regions.png",
+        f"{label}: epgammagamma energy regions",
+        epgg,
+    )
+    _plot_matched_unmatched(
+        outdir/"identity_matched_vs_unmatched_epgamma.png",
+        f"{label}: epgamma identity-overlap comparison",
+        epg,
+        primary["a_matched_mask"],
+    )
+    _plot_matched_unmatched(
+        outdir/"photon_matched_vs_unmatched_epgamma.png",
+        f"{label}: epgamma photon-level found/unmatched comparison",
+        epg,
+        photon_matched_mask,
+    )
+
+    strict_stats = {
+        k:_summary_stats(v)
+        for k,v in strict_diag.get("arrays", {}).items()
+        if k != "tag_choice"
+    }
+    resolved_stats = {
+        k:_summary_stats(v)
+        for k,v in resolved_diag.get("arrays", {}).items()
+        if k != "tag_choice"
+    }
+    clean = {k:v for k,v in primary.items() if not isinstance(v,np.ndarray)}
+    resolution_clean = {k:v for k,v in resolved.items() if not isinstance(v,np.ndarray)}
+
+    # Explicit accounting needed for the next event-exclusive efficiency release.
+    found_accounting = {
+        "epgamma_entries": int(len(epg.e_p)),
+        "identity_overlapping_epgamma_entries": int(np.count_nonzero(primary["a_matched_mask"])),
+        "photon_matched_epgamma_entries": int(np.count_nonzero(photon_matched_mask)),
+        "identity_overlap_but_no_photon_match": int(
+            np.count_nonzero(primary["a_matched_mask"] & ~photon_matched_mask)
+        ),
+        "no_identity_overlap": int(np.count_nonzero(~primary["a_matched_mask"])),
+    }
+
+    payload = {
+        "label": label,
+        "mode": mode,
+        "identity_match": clean,
+        "identity_precision_scan": scans,
+        "strict_one_to_one_photon_matching": {
+            k:v for k,v in strict_diag.items() if k != "arrays"
+        },
+        "resolved_identity_groups": resolution_clean,
+        "resolved_photon_matching": {
+            k:v for k,v in resolved_diag.items() if k != "arrays"
+        },
+        "strict_one_to_one_residual_statistics": strict_stats,
+        "resolved_residual_statistics": resolved_stats,
+        "tag_matching_threshold_scan": tag_scan,
+        "probe_closure_threshold_scan": probe_scan,
+        "probe_closure_by_detector": detector_breakdown,
+        "found_unmatched_accounting": found_accounting,
+        "epgammagamma_energy_regions": energy,
+    }
+    with open(outdir/"audit.json", "w") as f:
+        json.dump(payload, f, indent=2, allow_nan=True)
+    return payload
 
 def process_audit_period(period: PeriodConfig, args_dict: Mapping[str,object]):
     args=argparse.Namespace(**dict(args_dict)); pdir=Path(args.output_dir)/period.key; pdir.mkdir(parents=True,exist_ok=True)
@@ -4246,14 +4620,65 @@ def process_audit_period(period: PeriodConfig, args_dict: Mapping[str,object]):
 
 
 def _write_audit_csv(path: Path, metadata: Mapping[str,object]) -> None:
-    fields=["period","sample","epgamma_entries","epgammagamma_entries","shared_groups","one_to_one_groups","one_to_many_groups","many_to_one_groups","many_to_many_groups","epgamma_unmatched_entries","epgammagamma_unmatched_entries","tag_matches_g1","tag_matches_g2","tag_matches_neither","predicted_probe_reference_match"]
-    with open(path,"w",newline="") as f:
-        w=csv.DictWriter(f,fieldnames=fields); w.writeheader()
-        for period,payload in metadata.items():
-            for sample,key in (("data","data"),("aaogen_mc","aaogen_mc")):
-                x=payload[key]; m=x["identity_match"]; q=x["photon_matching"]
-                w.writerow({"period":period,"sample":sample,"epgamma_entries":m["a_entries"],"epgammagamma_entries":m["b_entries"],"shared_groups":m["shared_groups"],"one_to_one_groups":m["one_to_one_groups"],"one_to_many_groups":m["one_to_many_groups"],"many_to_one_groups":m["many_to_one_groups"],"many_to_many_groups":m["many_to_many_groups"],"epgamma_unmatched_entries":m["a_unmatched_entries"],"epgammagamma_unmatched_entries":m["b_unmatched_entries"],"tag_matches_g1":q["tag_matches_g1"],"tag_matches_g2":q["tag_matches_g2"],"tag_matches_neither":q["tag_matches_neither"],"predicted_probe_reference_match":q["predicted_probe_reference_match"]})
-
+    fields = [
+        "period", "sample",
+        "epgamma_entries", "epgammagamma_entries",
+        "shared_groups", "one_to_one_groups", "one_to_many_groups",
+        "many_to_one_groups", "many_to_many_groups",
+        "epgamma_unmatched_entries", "epgammagamma_unmatched_entries",
+        "resolved_candidate_pairs",
+        "ambiguous_identity_groups", "unresolved_identity_groups",
+        "groups_with_matches_to_both_photons",
+        "groups_with_at_least_two_epgamma_entries_above2",
+        "groups_where_two_photon_eligibility_explains_epgamma_multiplicity",
+        "tag_matches_g1", "tag_matches_g2", "tag_matches_neither",
+        "predicted_probe_reference_match",
+        "identity_overlapping_epgamma_entries",
+        "photon_matched_epgamma_entries",
+        "identity_overlap_but_no_photon_match",
+        "no_identity_overlap",
+    ]
+    with open(path, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=fields)
+        w.writeheader()
+        for period, payload in metadata.items():
+            for sample, key in (("data","data"), ("aaogen_mc","aaogen_mc")):
+                x = payload[key]
+                m = x["identity_match"]
+                r = x["resolved_identity_groups"]
+                q = x["resolved_photon_matching"]
+                a = x["found_unmatched_accounting"]
+                w.writerow({
+                    "period": period,
+                    "sample": sample,
+                    "epgamma_entries": m["a_entries"],
+                    "epgammagamma_entries": m["b_entries"],
+                    "shared_groups": m["shared_groups"],
+                    "one_to_one_groups": m["one_to_one_groups"],
+                    "one_to_many_groups": m["one_to_many_groups"],
+                    "many_to_one_groups": m["many_to_one_groups"],
+                    "many_to_many_groups": m["many_to_many_groups"],
+                    "epgamma_unmatched_entries": m["a_unmatched_entries"],
+                    "epgammagamma_unmatched_entries": m["b_unmatched_entries"],
+                    "resolved_candidate_pairs": r["resolved_candidate_pairs"],
+                    "ambiguous_identity_groups": r["ambiguous_identity_groups"],
+                    "unresolved_identity_groups": r["unresolved_identity_groups"],
+                    "groups_with_matches_to_both_photons": r["groups_with_matches_to_both_photons"],
+                    "groups_with_at_least_two_epgamma_entries_above2":
+                        r["groups_with_at_least_two_epgamma_entries_above2"],
+                    "groups_where_two_photon_eligibility_explains_epgamma_multiplicity":
+                        r["groups_where_two_photon_eligibility_explains_epgamma_multiplicity"],
+                    "tag_matches_g1": q["tag_matches_g1"],
+                    "tag_matches_g2": q["tag_matches_g2"],
+                    "tag_matches_neither": q["tag_matches_neither"],
+                    "predicted_probe_reference_match": q["predicted_probe_reference_match"],
+                    "identity_overlapping_epgamma_entries": a["identity_overlapping_epgamma_entries"],
+                    "photon_matched_epgamma_entries": a["photon_matched_epgamma_entries"],
+                    "identity_overlap_but_no_photon_match": a["identity_overlap_but_no_photon_match"],
+                    "no_identity_overlap": a["no_identity_overlap"],
+                })
+            #endfor
+        #endfor
 
 def main() -> int:
     args=parse_args(); args.workers=min(max(1,args.workers),MAX_WORKERS)
@@ -4277,7 +4702,7 @@ def main() -> int:
             for fut in concurrent.futures.as_completed(futures):
                 key,payload=fut.result(); metadata[key]=payload
     with open(output/"photon_efficiency_audit.json","w") as f:
-        json.dump({"schema_version":34,"description":"Audit-only epgamma/epgammagamma overlap and closure study; no efficiency result.","arguments":args_dict,"periods":metadata},f,indent=2,allow_nan=True)
+        json.dump({"schema_version":36,"description":"Audit-only epgamma/epgammagamma overlap and closure study; no efficiency result.","arguments":args_dict,"periods":metadata},f,indent=2,allow_nan=True)
     _write_audit_csv(output/"photon_efficiency_audit.csv",metadata)
     with open(output/"provenance.json","w") as f:
         json.dump({"script":Path(__file__).name,"created_unix_time":time.time(),"audit_only":True,"notes":["No template fit or scale factor is performed.","Data are matched by exact runnum and evnum.","AAOGEN is matched by quantized reconstructed electron and proton six-dimensional signatures.","Only unambiguous one-to-one identities enter kinematic and photon-role closure plots.","DVCSGEN is audited as a future background-template population and is not matched to AAOGEN."]},f,indent=2)
