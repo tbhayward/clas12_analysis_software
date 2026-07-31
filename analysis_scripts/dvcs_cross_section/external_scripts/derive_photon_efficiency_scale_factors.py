@@ -1,25 +1,22 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v39.py
+derive_photon_efficiency_scale_factors_v41.py
 
-AUDIT-ONLY release for the RGA photon-efficiency study.
+Final event-exclusive high-energy photon-efficiency extraction for RGA.
 
-This script deliberately performs no template fit, efficiency extraction, or
-scale-factor calculation.  Its sole purpose is to establish the event-level
-relationship between the separately produced epgamma and epgammagamma trees
-before any further photon-efficiency result is attempted.
+The nominal control measurement uses exclusive pi0 decays with a reconstructed
+low-energy tag photon, 0.4 <= E_tag < 2 GeV, and a high-energy probe photon,
+E_probe >= 2 GeV.  epgamma and epgammagamma trees are explicitly cross-matched
+so that reconstructed-probe and missing-probe outcomes are mutually exclusive.
+Data are matched by exact (runnum, evnum).  AAOGEN is matched by reconstructed
+electron/proton signatures after exact duplicate candidates are removed.
 
-Data overlap is audited with the exact (runnum, evnum) key.  AAOGEN MC cannot
-use that key reliably, so its overlap is audited with deterministic quantized
-reconstructed electron/proton signatures and with explicit residual checks.
-For matched events, the script determines whether the epgamma photon matches
-photon 1 or photon 2 of the reconstructed pi0 pair and whether the exclusive
-missing-photon prediction closes on the other reconstructed photon.
-
-Outputs contain event multiplicities, overlap and ambiguity accounting,
-kinematic residuals, photon-role matching, energy-region populations,
-predicted-probe closure, and matched-versus-unmatched distributions.  No
-physics correction is written by this release.
+Only unmatched epgamma candidates enter the data template decomposition.
+DVCSGEN supplies the BH/DVCS shape, while unmatched AAOGEN supplies both the
+exclusive-pi0 shape and the MC missing-probe count.  Matched epgammagamma pairs
+supply the probe-found counts.  Fits are performed separately in the production
+CD-FT, CD-FD, and FD-FD topologies using Delta_phi, theta_gamma_gamma, and
+pTmiss on one common support.
 """
 
 from __future__ import annotations
@@ -63,7 +60,7 @@ except ImportError as exc:
 
 
 TREE_NAME = "PhysicsEvents"
-DEFAULT_OUTPUT_DIR = "output/photon_efficiency_audit"
+DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study"
 DEFAULT_STEP_SIZE = "200 MB"
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
@@ -444,7 +441,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fd-theta-max", type=float, default=35.0)
     parser.add_argument("--tag-E-min", type=float, default=0.40,
                         help="Minimum reconstructed tag-photon energy (GeV).")
-    parser.add_argument("--tag-E-max", type=float, default=9.5,
+    parser.add_argument("--tag-E-max", type=float, default=2.0,
                         help="Maximum reconstructed tag-photon energy (GeV).")
     parser.add_argument("--probe-E-min", type=float, default=2.0,
                         help="Minimum predicted probe-photon energy (GeV), matching the DVCS photon threshold.")
@@ -1348,6 +1345,7 @@ def read_one_photon_candidates(
     beam_energy: float,
     args: argparse.Namespace,
     sample_label: str = "one-photon sample",
+    entry_keep_mask: Optional[np.ndarray] = None,
 ) -> Tuple[TrialArrays, Dict[str, object]]:
     """
     Read the loose reconstructed epgamma population for a high-energy probe.
@@ -1390,10 +1388,22 @@ def read_one_photon_candidates(
             keep = args.max_events - seen
             arrays = {key: value[:keep] for key, value in arrays.items()}
             n = keep
+        chunk_start = seen
         seen += n
         _add_cutflow(diag, "all_tree_entries", n)
 
-        quality = basic_quality_mask(arrays, resolved, args)
+        if entry_keep_mask is None:
+            externally_kept = np.ones(n, dtype=bool)
+        else:
+            externally_kept = np.asarray(entry_keep_mask[chunk_start:seen], dtype=bool)
+            if externally_kept.size != n:
+                raise ValueError(
+                    f"{sample_label}: entry_keep_mask length is inconsistent with ROOT entries "
+                    f"at [{chunk_start}:{seen}]."
+                )
+        # endif
+
+        quality = externally_kept & basic_quality_mask(arrays, resolved, args)
         production = quality & production_event_mask(arrays, resolved, args)
         _add_cutflow(diag, "basic_quality", quality)
         _add_cutflow(diag, "production_event_cuts", production)
@@ -3134,6 +3144,183 @@ def exact_fit_variants(
     return nominal, spread, variants, exact
 
 
+
+
+def _subset_epg(records: AuditEpgRecords, mask: np.ndarray) -> AuditEpgRecords:
+    idx = np.flatnonzero(np.asarray(mask, dtype=bool))
+    return AuditEpgRecords(**{name: getattr(records, name)[idx] for name in records.__dataclass_fields__})
+
+
+def _subset_epgg(records: AuditEpggRecords, mask: np.ndarray) -> AuditEpggRecords:
+    idx = np.flatnonzero(np.asarray(mask, dtype=bool))
+    return AuditEpggRecords(**{name: getattr(records, name)[idx] for name in records.__dataclass_fields__})
+
+
+def _exact_duplicate_keep_mask(records, fields: Sequence[str], decimals: int = 10) -> np.ndarray:
+    """Keep the first exact reconstructed candidate in each quantized full-candidate group."""
+    arrays = [np.asarray(getattr(records, name), dtype=float) for name in fields]
+    vals = np.column_stack(arrays)
+    finite = np.all(np.isfinite(vals), axis=1)
+    scale = float(10 ** decimals)
+    keys = np.full(vals.shape, np.iinfo(np.int64).min, dtype=np.int64)
+    keys[finite] = np.rint(vals[finite] * scale).astype(np.int64)
+    keep = np.ones(len(vals), dtype=bool)
+    if np.any(finite):
+        finite_indices = np.flatnonzero(finite)
+        gids = _row_group_ids(keys[finite])
+        _, first = np.unique(gids, return_index=True)
+        keep[finite_indices] = False
+        keep[finite_indices[first]] = True
+    return keep
+
+
+def _trial_arrays_from_found_pairs(
+    epg: AuditEpgRecords,
+    epgg: AuditEpggRecords,
+    resolved: Mapping[str, object],
+    args: argparse.Namespace,
+) -> Tuple[TrialArrays, Dict[str, object]]:
+    """Build found high-energy-probe trials from photon-matched epgamma/epgammagamma pairs."""
+    ai = np.asarray(resolved.get("a_indices", []), dtype=np.int64)
+    bi = np.asarray(resolved.get("b_indices", []), dtype=np.int64)
+    choice = np.asarray(resolved.get("tag_choice", []), dtype=np.int8)
+    if ai.size == 0:
+        return TrialArrays.empty(), {"resolved_pairs": 0, "nominal_found_pairs": 0}
+
+    # Nominal directed orientation: the epgamma photon matches the lower-energy gamma2 tag;
+    # gamma1 is the reconstructed high-energy probe relevant to DVCS.
+    tag_E = epgg.g2_E[bi]
+    probe_E = epgg.g1_E[bi]
+    nominal = (
+        (choice == 2)
+        & epgg.reconstruction_valid[bi]
+        & np.isfinite(tag_E) & (tag_E >= args.tag_E_min) & (tag_E < args.tag_E_max)
+        & np.isfinite(probe_E) & (probe_E >= args.probe_E_min) & (probe_E < args.probe_E_max)
+    )
+    bi = bi[nominal]
+    ai = ai[nominal]
+    if bi.size == 0:
+        return TrialArrays.empty(), {"resolved_pairs": int(len(choice)), "nominal_found_pairs": 0}
+
+    theta_deg = np.degrees(epgg.g1_theta[bi])
+    detector, sector = classify_predicted_detector(theta_deg, epgg.g1_phi[bi], args)
+    accepted = detector >= 0
+    bi = bi[accepted]
+    ai = ai[accepted]
+    detector = detector[accepted]
+    sector = sector[accepted]
+    theta_deg = theta_deg[accepted]
+
+    tag_theta_deg = np.degrees(epgg.g2_theta[bi])
+    tag_detector, tag_sector = classify_predicted_detector(tag_theta_deg, epgg.g2_phi[bi], args)
+    n = len(bi)
+    trials = TrialArrays(
+        E=epgg.g1_E[bi].astype(np.float32, copy=False),
+        tag_E=epgg.g2_E[bi].astype(np.float32, copy=False),
+        theta_deg=theta_deg.astype(np.float32, copy=False),
+        phi_rad=epgg.g1_phi[bi].astype(np.float32, copy=False),
+        detector=detector.astype(np.int8, copy=False),
+        sector=sector.astype(np.int8, copy=False),
+        tag_detector=tag_detector.astype(np.int8, copy=False),
+        tag_sector=tag_sector.astype(np.int8, copy=False),
+        mx2_ep=np.full(n, np.nan, dtype=np.float32),
+        delta_phi=np.full(n, np.nan, dtype=np.float32),
+        theta_gamma_gamma=np.full(n, np.nan, dtype=np.float32),
+        pTmiss=np.full(n, np.nan, dtype=np.float32),
+        theta_cm=np.full(n, np.nan, dtype=np.float32),
+        Emiss2=np.full(n, np.nan, dtype=np.float32),
+        Mx2=np.full(n, np.nan, dtype=np.float32),
+        Mx2_2=np.full(n, np.nan, dtype=np.float32),
+        proton_detector=np.full(n, -1, dtype=np.int8),
+        weight=np.ones(n, dtype=np.float32),
+    )
+    return trials, {
+        "resolved_pairs": int(len(choice)),
+        "nominal_found_pairs": int(n),
+        "tag_matches_gamma2_before_energy_acceptance": int(np.count_nonzero(choice == 2)),
+    }
+
+
+def build_event_exclusive_samples(period: PeriodConfig, args: argparse.Namespace):
+    """Cross-match trees and return mutually exclusive found trials and unmatched epgamma masks."""
+    t0 = time.perf_counter()
+    epg_data = _read_epg_audit(period.epg_data, args)
+    epgg_data = _read_epgg_audit(period.epgg_data, args)
+    epg_mc_all = _read_epg_audit(period.pi0_as_epg_mc, args)
+    epgg_mc_all = _read_epgg_audit(period.epgg_mc, args)
+
+    # Skip exact duplicated AAOGEN reconstructed candidates.  The original indices are
+    # retained through the masks so the same selection can be applied while rereading ROOT.
+    epg_mc_keep = _exact_duplicate_keep_mask(
+        epg_mc_all, ("e_p","e_theta","e_phi","p_p","p_theta","p_phi","g_E","g_theta","g_phi")
+    )
+    epgg_mc_keep = _exact_duplicate_keep_mask(
+        epgg_mc_all, ("e_p","e_theta","e_phi","p_p","p_theta","p_phi",
+                       "g1_E","g1_theta","g1_phi","g2_E","g2_theta","g2_phi")
+    )
+    epg_mc = _subset_epg(epg_mc_all, epg_mc_keep)
+    epgg_mc = _subset_epgg(epgg_mc_all, epgg_mc_keep)
+    epg_mc_original = np.flatnonzero(epg_mc_keep)
+
+    data_match = _group_match(_event_key_matrix(epg_data.runnum, epg_data.evnum),
+                              _event_key_matrix(epgg_data.runnum, epgg_data.evnum))
+    data_resolved = _resolve_identity_groups(epg_data, epgg_data, data_match, args)
+
+    mc_match = _group_match(_signature_matrix(epg_mc, args.audit_signature_decimals),
+                            _signature_matrix(epgg_mc, args.audit_signature_decimals))
+    mc_resolved = _resolve_identity_groups(epg_mc, epgg_mc, mc_match, args)
+
+    found_data, found_data_diag = _trial_arrays_from_found_pairs(epg_data, epgg_data, data_resolved, args)
+    found_mc, found_mc_diag = _trial_arrays_from_found_pairs(epg_mc, epgg_mc, mc_resolved, args)
+
+    # Remove only photon-matched nominal found outcomes from the missing-probe candidate pools.
+    data_remove = np.zeros(len(epg_data.e_p), dtype=bool)
+    dai = np.asarray(data_resolved.get("a_indices", []), dtype=np.int64)
+    dbi = np.asarray(data_resolved.get("b_indices", []), dtype=np.int64)
+    dch = np.asarray(data_resolved.get("tag_choice", []), dtype=np.int8)
+    if dai.size:
+        dnom = ((dch == 2) & epgg_data.reconstruction_valid[dbi]
+                & (epgg_data.g2_E[dbi] >= args.tag_E_min) & (epgg_data.g2_E[dbi] < args.tag_E_max)
+                & (epgg_data.g1_E[dbi] >= args.probe_E_min) & (epgg_data.g1_E[dbi] < args.probe_E_max))
+        data_remove[dai[dnom]] = True
+
+    mc_remove_sub = np.zeros(len(epg_mc.e_p), dtype=bool)
+    mai = np.asarray(mc_resolved.get("a_indices", []), dtype=np.int64)
+    mbi = np.asarray(mc_resolved.get("b_indices", []), dtype=np.int64)
+    mch = np.asarray(mc_resolved.get("tag_choice", []), dtype=np.int8)
+    if mai.size:
+        mnom = ((mch == 2) & epgg_mc.reconstruction_valid[mbi]
+                & (epgg_mc.g2_E[mbi] >= args.tag_E_min) & (epgg_mc.g2_E[mbi] < args.tag_E_max)
+                & (epgg_mc.g1_E[mbi] >= args.probe_E_min) & (epgg_mc.g1_E[mbi] < args.probe_E_max))
+        mc_remove_sub[mai[mnom]] = True
+
+    data_keep = ~data_remove
+    mc_keep_original = np.zeros(len(epg_mc_all.e_p), dtype=bool)
+    mc_keep_original[epg_mc_original] = ~mc_remove_sub
+
+    diag = {
+        "data": {
+            "epgamma_entries": int(len(epg_data.e_p)),
+            "epgammagamma_entries": int(len(epgg_data.e_p)),
+            "resolved_pairs": int(data_resolved.get("resolved_candidate_pairs", 0)),
+            "removed_found_epgamma_candidates": int(np.count_nonzero(data_remove)),
+            "found_trial_diagnostics": found_data_diag,
+        },
+        "aaogen_mc": {
+            "epgamma_entries_raw": int(len(epg_mc_all.e_p)),
+            "epgamma_entries_after_duplicate_skip": int(len(epg_mc.e_p)),
+            "epgammagamma_entries_raw": int(len(epgg_mc_all.e_p)),
+            "epgammagamma_entries_after_duplicate_skip": int(len(epgg_mc.e_p)),
+            "epgamma_duplicates_skipped": int(np.count_nonzero(~epg_mc_keep)),
+            "epgammagamma_duplicates_skipped": int(np.count_nonzero(~epgg_mc_keep)),
+            "resolved_pairs": int(mc_resolved.get("resolved_candidate_pairs", 0)),
+            "removed_found_epgamma_candidates": int(np.count_nonzero(mc_remove_sub)),
+            "found_trial_diagnostics": found_mc_diag,
+        },
+        "runtime_seconds": float(time.perf_counter() - t0),
+    }
+    return found_data, found_mc, data_keep, mc_keep_original, diag
+
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -3144,32 +3331,25 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     aggregate_fit_dir.mkdir(parents=True, exist_ok=True)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    pass_data, pass_data_diag = read_pass_trials(period.epgg_data, period.beam_energy_GeV, args, "data")
-    pass_mc, pass_mc_diag = read_pass_trials(period.epgg_mc, period.beam_energy_GeV, args, "mc")
-    write_pass_audit(period_dir, period.label, pass_data_diag, pass_mc_diag)
-    if args.skip_efficiency_extraction:
-        metadata = {
-            "period": asdict(period),
-            "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
-            "mirror_policy": args.mirror_policy,
-            "matching_scan_summary": {
-                "data": matching_scan_summary(pass_data_diag),
-                "mc": matching_scan_summary(pass_mc_diag),
-            },
-            "runtime_seconds": time.perf_counter() - period_start,
-        }
-        with open(period_dir / "metadata.json", "w", encoding="utf-8") as handle:
-            json.dump(metadata, handle, indent=2)
-        return period.key, [], metadata
+    pass_data, pass_mc, data_keep_mask, pi0_mc_keep_mask, overlap_diag = \
+        build_event_exclusive_samples(period, args)
+    pass_data_diag = {"definition": "photon-matched data gamma2-tag/gamma1-probe outcomes",
+                      "selected_trials": int(pass_data.size())}
+    pass_mc_diag = {"definition": "deduplicated photon-matched AAOGEN gamma2-tag/gamma1-probe outcomes",
+                    "selected_trials": int(pass_mc.size())}
+    with open(period_dir / "event_exclusive_accounting.json", "w", encoding="utf-8") as handle:
+        json.dump(overlap_diag, handle, indent=2)
 
     data_one_photon_candidates, data_one_photon_diag = read_one_photon_candidates(
-        period.epg_data, period.beam_energy_GeV, args, "data one-photon candidates"
+        period.epg_data, period.beam_energy_GeV, args, "unmatched data one-photon candidates",
+        entry_keep_mask=data_keep_mask,
     )
     dvcs_background_template, dvcs_template_diag = read_one_photon_candidates(
         period.dvcs_mc, period.beam_energy_GeV, args, "DVCS/BH background template"
     )
     pi0_missing_probe_mc, pi0_missing_diag = read_one_photon_candidates(
-        period.pi0_as_epg_mc, period.beam_energy_GeV, args, "pi0 missing-probe MC/template"
+        period.pi0_as_epg_mc, period.beam_energy_GeV, args, "deduplicated unmatched pi0 missing-probe MC/template",
+        entry_keep_mask=pi0_mc_keep_mask,
     )
 
     plot_one_photon_cutflows(
@@ -3564,6 +3744,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     metadata = {
         "period": asdict(period),
         "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
+        "event_exclusive_accounting": overlap_diag,
         "counts": {
             "epgammagamma_data_events_stored": pass_data.size(),
             "epgammagamma_mc_events_stored": pass_mc.size(),
@@ -3585,8 +3766,8 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         "energy_support": energy_support,
         "mirror_policy": args.mirror_policy,
         "matching_scan_summary": {
-            "data": matching_scan_summary(pass_data_diag),
-            "mc": matching_scan_summary(pass_mc_diag),
+            "data": {},
+            "mc": {},
         },
         "aaogen_truth_closure": inspect_truth_closure_availability(period.epgg_mc, args),
         "fit_architecture": {
@@ -4763,39 +4944,74 @@ def _write_audit_csv(path: Path, metadata: Mapping[str,object]) -> None:
         #endfor
 
 def main() -> int:
-    args=parse_args(); args.workers=min(max(1,args.workers),MAX_WORKERS)
-    selected=set(args.period or [p.key for p in PERIODS]); periods=apply_path_overrides([p for p in PERIODS if p.key in selected],args)
-    output=Path(args.output_dir); output.mkdir(parents=True,exist_ok=True)
-    log("AUDIT ONLY: no fit, efficiency, or scale factor will be calculated.")
-    log("Data identity: exact (runnum, evnum). AAOGEN identity: reconstructed electron/proton signature.")
-    log("Native eppi0 open-angle branches are interpreted in degrees and converted to radians for cone reconstruction.")
-    for p in periods:
-        for path in (p.epg_data,p.dvcs_mc,p.pi0_as_epg_mc,p.epgg_data,p.epgg_mc): require_file(path)
+    args = parse_args()
+    args.workers = min(max(1, args.workers), MAX_WORKERS)
+    selected = set(args.period or [p.key for p in PERIODS])
+    periods = apply_path_overrides([p for p in PERIODS if p.key in selected], args)
+    output = Path(args.output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+
+    log("Event-exclusive high-energy photon-efficiency extraction.")
+    log(f"Nominal directed definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
+        f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV.")
+    log("Data found/missing outcomes are separated by exact event and photon matching; "
+        "AAOGEN exact duplicate candidates are skipped before signature matching.")
+    for period in periods:
+        for path in (period.epg_data, period.dvcs_mc, period.pi0_as_epg_mc,
+                     period.epgg_data, period.epgg_mc):
+            require_file(path)
     if args.inspect_branches:
-        inspect_selected_branches(periods); return 0
-    args_dict=vars(args).copy(); metadata={}
-    workers=min(args.workers,len(periods))
+        inspect_selected_branches(periods)
+        return 0
+
+    args_dict = vars(args).copy()
+    args_dict.setdefault("input_identity_records", {})
+    metadata: Dict[str, object] = {}
+    all_rows: List[Dict[str, object]] = []
+    workers = min(args.workers, len(periods))
     log(f"Selected {len(periods)} period(s); using {workers} period worker process(es) "
         f"(requested={args.workers}, hard maximum={MAX_WORKERS}).")
-    if workers==1:
-        for p in periods:
-            key,payload=process_audit_period(p,args_dict); metadata[key]=payload
+    if workers == 1:
+        for period in periods:
+            key, rows, payload = process_period(period, args_dict)
+            metadata[key] = payload
+            all_rows.extend(rows)
     else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as ex:
-            futures=[ex.submit(process_audit_period,p,args_dict) for p in periods]
-            for fut in concurrent.futures.as_completed(futures):
-                key,payload=fut.result(); metadata[key]=payload
-    with open(output/"photon_efficiency_audit.json","w") as f:
-        json.dump({"schema_version":36,"description":"Audit-only epgamma/epgammagamma overlap and closure study; no efficiency result.","arguments":args_dict,"periods":metadata},f,indent=2,allow_nan=True)
-    _write_audit_csv(output/"photon_efficiency_audit.csv",metadata)
-    with open(output/"provenance.json","w") as f:
-        json.dump({"script":Path(__file__).name,"created_unix_time":time.time(),"audit_only":True,"notes":["No template fit or scale factor is performed.","Data are matched by exact runnum and evnum.","AAOGEN is matched by quantized reconstructed electron and proton six-dimensional signatures.","Only unambiguous one-to-one identities enter kinematic and photon-role closure plots.","DVCSGEN is audited as a future background-template population and is not matched to AAOGEN."]},f,indent=2)
-    if args.audit_fail_on_zero_overlap:
-        for p,x in metadata.items():
-            if x["data"]["identity_match"]["shared_groups"]==0 or x["aaogen_mc"]["identity_match"]["shared_groups"]==0:
-                raise RuntimeError(f"{p}: zero overlap found in an audit pair")
-    log(f"Wrote {output/'photon_efficiency_audit.json'}")
-    log(f"Wrote {output/'photon_efficiency_audit.csv'}")
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+            futures = [executor.submit(process_period, period, args_dict) for period in periods]
+            for future in concurrent.futures.as_completed(futures):
+                key, rows, payload = future.result()
+                metadata[key] = payload
+                all_rows.extend(rows)
+
+    all_rows.sort(key=lambda row: (str(row["period"]), int(row["bin_id"])))
+    csv_path = output / "photon_efficiency_scale_factors.csv"
+    json_path = output / "photon_efficiency_scale_factors.json"
+    write_rows(csv_path, all_rows)
+    with open(json_path, "w", encoding="utf-8") as handle:
+        json.dump({
+            "schema_version": 41,
+            "description": "Event-exclusive pi0 tag-and-probe scale factors for photons above 2 GeV.",
+            "arguments": args_dict,
+            "periods": metadata,
+            "rows": all_rows,
+        }, handle, indent=2, allow_nan=True)
+
+    if all_rows:
+        plot_all_period_efficiency_summary(output / "all_periods_integrated_efficiencies.png", all_rows)
+        plot_all_period_scale_factor_summary(output / "all_periods_integrated_scale_factors.png", all_rows)
+    with open(output / "provenance.json", "w", encoding="utf-8") as handle:
+        json.dump({
+            "script": Path(__file__).name,
+            "created_unix_time": time.time(),
+            "event_exclusive": True,
+            "data_identity": "exact runnum, evnum plus photon match",
+            "aaogen_identity": "deduplicated reconstructed electron/proton signature plus photon match",
+            "nominal_orientation": "gamma2 low-energy tag, gamma1 high-energy probe",
+            "fit_drivers": list(FRACTION_DRIVER_KEYS),
+        }, handle, indent=2)
+    log(f"Wrote {csv_path}")
+    log(f"Wrote {json_path}")
     return 0
 
 
@@ -4803,5 +5019,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"FATAL ERROR: {exc}",file=sys.stderr)
+        print(f"FATAL ERROR: {exc}", file=sys.stderr, flush=True)
         raise
