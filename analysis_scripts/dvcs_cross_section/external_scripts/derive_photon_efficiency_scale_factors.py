@@ -4099,6 +4099,9 @@ def _resolve_identity_groups(epg: AuditEpgRecords, epgg: AuditEpggRecords,
     groups_with_two_epg_above2 = 0
     multiplicity_caused_by_two_photons = 0
     candidate_pairs_considered = 0
+    invalid_candidate_pairs = 0
+    groups_with_invalid_costs = 0
+    groups_with_all_invalid_costs = 0
 
     angle_max = float(args.audit_tag_match_angle_max_deg)
     relE_max = float(args.audit_tag_match_relative_E_max)
@@ -4118,14 +4121,45 @@ def _resolve_identity_groups(epg: AuditEpgRecords, epgg: AuditEpggRecords,
             epg, epgg, A, B, angle_max, relE_max
         )
         candidate_pairs_considered += int(A.size)
-        cost = score.reshape(aa.size, bb.size)
+
+        # scipy.optimize.linear_sum_assignment requires every matrix entry to be
+        # finite. Invalid photon kinematics can yield NaN/inf opening angles,
+        # relative-energy residuals, or scores. Preserve those pairs as
+        # unmatchable by assigning a very large finite penalty rather than
+        # allowing one malformed candidate to abort the complete audit.
+        finite_pair = (
+            np.isfinite(angle)
+            & np.isfinite(relE)
+            & np.isfinite(score)
+        )
+        invalid_here = int(np.count_nonzero(~finite_pair))
+        invalid_candidate_pairs += invalid_here
+        if invalid_here:
+            groups_with_invalid_costs += 1
+
+        cost = score.reshape(aa.size, bb.size).astype(float, copy=True)
+        finite_cost = np.isfinite(cost)
+        if not np.any(finite_cost):
+            groups_with_all_invalid_costs += 1
+            unresolved_groups += 1
+            continue
+
+        finite_max = float(np.max(cost[finite_cost]))
+        invalid_penalty = max(1.0e12, finite_max * 1.0e6 + 1.0)
+        cost[~finite_cost] = invalid_penalty
         row, col = linear_sum_assignment(cost)
 
         accepted_in_group = 0
         photon_choices = set()
         for rr, cc in zip(row, col):
             flat = rr * bb.size + cc
-            if angle[flat] <= angle_max and relE[flat] <= relE_max:
+            if (
+                np.isfinite(angle[flat])
+                and np.isfinite(relE[flat])
+                and np.isfinite(score[flat])
+                and angle[flat] <= angle_max
+                and relE[flat] <= relE_max
+            ):
                 out_ai.append(int(aa[rr]))
                 out_bi.append(int(bb[cc]))
                 out_choice.append(int(choice[flat]))
@@ -4170,6 +4204,9 @@ def _resolve_identity_groups(epg: AuditEpgRecords, epgg: AuditEpggRecords,
         "unresolved_identity_groups": int(unresolved_groups),
         "resolved_candidate_pairs": int(len(out_ai)),
         "candidate_pairs_considered": int(candidate_pairs_considered),
+        "invalid_candidate_pairs": int(invalid_candidate_pairs),
+        "groups_with_invalid_costs": int(groups_with_invalid_costs),
+        "groups_with_all_invalid_costs": int(groups_with_all_invalid_costs),
         "groups_with_matches_to_both_photons": int(groups_with_both_photons_matched),
         "groups_with_at_least_two_epgamma_entries_above2": int(groups_with_two_epg_above2),
         "groups_where_two_photon_eligibility_explains_epgamma_multiplicity":
