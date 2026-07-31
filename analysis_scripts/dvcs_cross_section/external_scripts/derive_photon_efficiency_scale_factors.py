@@ -1,38 +1,25 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v29.py
+derive_photon_efficiency_scale_factors_v34.py
 
-RGA photon-reconstruction data/MC study based on exclusive pi0 control samples.
+AUDIT-ONLY release for the RGA photon-efficiency study.
 
-The ordinary reconstructed epgamma data sample is decomposed into genuine
-DVCS/BH and pi0->gamma gamma events reconstructed with only one photon by
-fitting the stored epgamma exclusivity distributions with DVCSGEN and
-AAOGEN-as-epgamma templates. No missing-photon four-vector is constructed
-before that fit.
+This script deliberately performs no template fit, efficiency extraction, or
+scale-factor calculation.  Its sole purpose is to establish the event-level
+relationship between the separately produced epgamma and epgammagamma trees
+before any further photon-efficiency result is attempted.
 
-The epgammagamma data and AAOGEN samples provide the corresponding population
-where both pi0 decay photons are reconstructed. The photons are energy ordered:
-the leading photon must satisfy the production DVCS threshold
-(E_gamma1 >= 2 GeV), while the second reconstructed photon must satisfy the
-loose threshold (E_gamma2 >= 0.4 GeV).
+Data overlap is audited with the exact (runnum, evnum) key.  AAOGEN MC cannot
+use that key reliably, so its overlap is audited with deterministic quantized
+reconstructed electron/proton signatures and with explicit residual checks.
+For matched events, the script determines whether the epgamma photon matches
+photon 1 or photon 2 of the reconstructed pi0 pair and whether the exclusive
+missing-photon prediction closes on the other reconstructed photon.
 
-For each leading-photon detector category,
-
-    epsilon_data = N_pi0(epgammagamma, data)
-                   / [N_pi0(epgammagamma, data)
-                      + N_pi0(epgamma, data from template fit)]
-
-    epsilon_mc = N_pi0(epgammagamma, AAOGEN)
-                 / [N_pi0(epgammagamma, AAOGEN)
-                    + N_pi0(epgamma, AAOGEN)]
-
-and S_gamma = epsilon_data / epsilon_mc.
-
-This is directly an event-migration efficiency for recovering the additional
-pi0 decay photon conditional on a reconstructed leading photon above the DVCS
-threshold. Its data/MC ratio constrains photon-reconstruction mismodelling; it
-is not by itself a direct measurement of the absolute probability to lose the
-sole photon in a true DVCS event.
+Outputs contain event multiplicities, overlap and ambiguity accounting,
+kinematic residuals, photon-role matching, energy-region populations,
+predicted-probe closure, and matched-versus-unmatched distributions.  No
+physics correction is written by this release.
 """
 
 from __future__ import annotations
@@ -69,13 +56,14 @@ except ImportError as exc:
 try:
     from scipy.optimize import minimize, minimize_scalar
     from scipy.ndimage import gaussian_filter1d
+    from scipy.spatial import cKDTree
 except ImportError as exc:
     raise SystemExit("This script requires scipy: python3 -m pip install scipy") from exc
 #endif
 
 
 TREE_NAME = "PhysicsEvents"
-DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study"
+DEFAULT_OUTPUT_DIR = "output/photon_efficiency_audit_v34"
 DEFAULT_STEP_SIZE = "200 MB"
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
@@ -142,7 +130,7 @@ PERIODS: Tuple[PeriodConfig, ...] = (
 # and exits with a precise error when a required physical quantity is absent.
 ALIASES: Mapping[str, Tuple[str, ...]] = {
     "runnum": ("runnum", "run", "run_number"),
-    "eventnum": ("eventnum", "event", "event_number"),
+    "eventnum": ("evnum", "eventnum", "event", "event_number"),
     "e_p": ("e_p", "p_e", "electron_p"),
     "e_theta": ("e_theta", "theta_e", "electron_theta"),
     "e_phi": ("e_phi", "phi_e", "electron_phi"),
@@ -553,6 +541,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--pi0-as-epg-mc", default=None)
     parser.add_argument("--epgg-data", default=None)
     parser.add_argument("--epgg-mc", default=None)
+
+    # v34 audit-only controls.
+    parser.add_argument("--audit-signature-decimals", type=int, default=8,
+                        help="Decimal places used for the primary reconstructed e/p MC signature.")
+    parser.add_argument("--audit-signature-scan", default="6,8,10,12",
+                        help="Comma-separated rounding precisions scanned for MC overlap stability.")
+    parser.add_argument("--audit-tag-match-angle-max-deg", type=float, default=1.0,
+                        help="Maximum epgamma-to-epgammagamma photon opening angle for a tag match.")
+    parser.add_argument("--audit-tag-match-relative-E-max", type=float, default=0.05,
+                        help="Maximum relative energy residual for a tag match.")
+    parser.add_argument("--audit-probe-match-angle-max-deg", type=float, default=3.0,
+                        help="Reference angle used only to summarize predicted-probe closure.")
+    parser.add_argument("--audit-probe-match-relative-E-max", type=float, default=0.35,
+                        help="Reference relative-energy criterion used only in closure summaries.")
+    parser.add_argument("--audit-max-matched-plots", type=int, default=500000,
+                        help="Maximum matched pairs retained for plotting; accounting always uses all pairs.")
+    parser.add_argument("--audit-fail-on-zero-overlap", action="store_true",
+                        help="Return a fatal error when a data or AAOGEN pair has no matchable overlap.")
     return parser.parse_args()
 
 
@@ -3851,138 +3857,399 @@ def write_preflight_outputs(output_dir: Path, periods: Sequence[PeriodConfig],
         plt.close(fig)
     return payload
 
-def main() -> int:
-    args = parse_args()
-    if args.probe_E_min < 2.0:
-        log("WARNING: --probe-E-min is below the production DVCS leading-photon threshold.")
-    log(
-        f"Directed-probe energy definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
-        f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV. "
-        f"Both photons may exceed the probe threshold."
+
+@dataclass
+class AuditEpgRecords:
+    runnum: np.ndarray
+    evnum: np.ndarray
+    e_p: np.ndarray
+    e_theta: np.ndarray
+    e_phi: np.ndarray
+    p_p: np.ndarray
+    p_theta: np.ndarray
+    p_phi: np.ndarray
+    g_E: np.ndarray
+    g_theta: np.ndarray
+    g_phi: np.ndarray
+    g_detector: np.ndarray
+
+
+@dataclass
+class AuditEpggRecords:
+    runnum: np.ndarray
+    evnum: np.ndarray
+    e_p: np.ndarray
+    e_theta: np.ndarray
+    e_phi: np.ndarray
+    p_p: np.ndarray
+    p_theta: np.ndarray
+    p_phi: np.ndarray
+    g1_E: np.ndarray
+    g1_theta: np.ndarray
+    g1_phi: np.ndarray
+    g1_detector: np.ndarray
+    g2_E: np.ndarray
+    g2_theta: np.ndarray
+    g2_phi: np.ndarray
+    g2_detector: np.ndarray
+    reconstruction_valid: np.ndarray
+
+
+def _concat(parts: List[np.ndarray], dtype=float) -> np.ndarray:
+    if not parts:
+        return np.asarray([], dtype=dtype)
+    return np.concatenate(parts).astype(dtype, copy=False)
+
+
+def _read_epg_audit(path: str, args: argparse.Namespace) -> AuditEpgRecords:
+    logical = ["runnum", "eventnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
+               "g1_E", "g1_theta", "g1_phi", "g1_detector"]
+    resolved = resolve_branches(path, logical, optional=("runnum", "eventnum", "g1_detector"))
+    expressions = sorted({x for x in resolved.values() if x is not None})
+    store = {k: [] for k in logical}
+    seen = 0
+    log(f"Audit reading epgamma records from {path}")
+    for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
+                                 step_size=args.step_size, library="np"):
+        n = len(next(iter(arrays.values())))
+        if args.max_events is not None and seen >= args.max_events:
+            break
+        if args.max_events is not None and seen + n > args.max_events:
+            n = args.max_events - seen
+            arrays = {k: v[:n] for k, v in arrays.items()}
+        seen += n
+        for key in logical:
+            branch = resolved.get(key)
+            if branch is None:
+                default = -1 if key in ("runnum", "eventnum", "g1_detector") else math.nan
+                store[key].append(np.full(n, default))
+            else:
+                store[key].append(np.asarray(arrays[branch]))
+    return AuditEpgRecords(
+        runnum=_concat(store["runnum"], np.int64), evnum=_concat(store["eventnum"], np.int64),
+        e_p=_concat(store["e_p"]), e_theta=_concat(store["e_theta"]), e_phi=_concat(store["e_phi"]),
+        p_p=_concat(store["p_p"]), p_theta=_concat(store["p_theta"]), p_phi=_concat(store["p_phi"]),
+        g_E=_concat(store["g1_E"]), g_theta=_concat(store["g1_theta"]), g_phi=_concat(store["g1_phi"]),
+        g_detector=_concat(store["g1_detector"], np.int16),
     )
-    if args.workers < 1:
-        raise ValueError("--workers must be at least 1")
-    # endif
-    args.workers = min(args.workers, MAX_WORKERS)
 
-    selected_keys = set(args.period or [p.key for p in PERIODS])
-    periods = [p for p in PERIODS if p.key in selected_keys]
-    periods = apply_path_overrides(periods, args)
 
-    log("Input ROOT-tree roles:")
-    for period in periods:
-        log(f"  {period.label} epgamma data mixture: {period.epg_data}")
-        log(f"  {period.label} DVCS/BH epgamma template: {period.dvcs_mc}")
-        log(f"  {period.label} AAOGEN pi0-as-epgamma template/MC one-photon count: {period.pi0_as_epg_mc}")
-        log(f"  {period.label} epgammagamma data two-photon count: {period.epgg_data}")
-        log(f"  {period.label} AAOGEN epgammagamma MC two-photon count: {period.epgg_mc}")
-
-    if args.inspect_branches:
-        inspect_selected_branches(periods)
-        return 0
-    # endif
-
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    preflight_payload = write_preflight_outputs(output_dir, periods, args)
-    if args.preflight_only:
-        log(f"Preflight complete: all_ok={preflight_payload['all_ok']}")
-        return 0 if preflight_payload["all_ok"] else 2
-
-    if not preflight_payload["all_ok"]:
-        raise RuntimeError(
-            "Production epgamma input preflight failed. Inspect output/photon_efficiency_study/preflight; "
-            "use --preflight-only while files are still being produced."
+def _read_epgg_audit(path: str, args: argparse.Namespace) -> AuditEpggRecords:
+    logical = ["runnum", "eventnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
+               "pi0_p", "pi0_theta", "pi0_phi", "open_angle_egamma1", "open_angle_egamma2",
+               "gamma1_detector_native", "gamma2_detector_native", "Mh_gammagamma"]
+    resolved = resolve_branches(path, logical, optional=("runnum", "eventnum"))
+    expressions = sorted({x for x in resolved.values() if x is not None})
+    store = {k: [] for k in ("runnum", "eventnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
+                              "g1_E", "g1_theta", "g1_phi", "g1_detector", "g2_E", "g2_theta", "g2_phi",
+                              "g2_detector", "valid")}
+    seen = 0
+    log(f"Audit reading epgammagamma records from {path}")
+    for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions,
+                                 step_size=args.step_size, library="np"):
+        n = len(next(iter(arrays.values())))
+        if args.max_events is not None and seen >= args.max_events:
+            break
+        if args.max_events is not None and seen + n > args.max_events:
+            n = args.max_events - seen
+            arrays = {k: v[:n] for k, v in arrays.items()}
+        seen += n
+        def arr(key, dtype=float):
+            return np.asarray(arrays[resolved[key]], dtype=dtype)
+        result = reconstruct_native_eppi0_photons(
+            arr("e_theta"), arr("e_phi"), arr("pi0_p"), arr("pi0_theta"), arr("pi0_phi"),
+            arr("open_angle_egamma1"), arr("open_angle_egamma2"), arr("Mh_gammagamma"),
+            arr("gamma1_detector_native", int), arr("gamma2_detector_native", int), args,
         )
-
-    for period in periods:
-        for path in (period.epg_data, period.dvcs_mc, period.pi0_as_epg_mc,
-                     period.epgg_data, period.epgg_mc):
-            require_file(path)
-        # endfor
-    # endfor
-
-    identity_report = validate_period_input_identities(periods, args)
-    args.input_identity_records = identity_report["files"]
-    with open(output_dir / "input_file_identity.json", "w", encoding="utf-8") as handle:
-        json.dump(identity_report, handle, indent=2)
-
-    effective_workers = min(args.workers, len(periods))
-    log(
-        f"Selected {len(periods)} period(s); using {effective_workers} period worker(s) "
-        f"(requested={args.workers}, hard maximum={MAX_WORKERS})"
+        g1_E, g2_E = result[0], result[1]
+        g1_th, g1_ph = result[2][:, 0], result[3][:, 0]
+        g2_th, g2_ph = result[4][:, 0], result[5][:, 0]
+        valid = result[16] & np.isfinite(g1_E) & np.isfinite(g2_E) & np.isfinite(g1_th) & np.isfinite(g2_th)
+        for key in ("e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"):
+            store[key].append(arr(key))
+        for key, values in (("g1_E",g1_E),("g1_theta",g1_th),("g1_phi",g1_ph),
+                            ("g2_E",g2_E),("g2_theta",g2_th),("g2_phi",g2_ph),("valid",valid)):
+            store[key].append(values)
+        store["g1_detector"].append(arr("gamma1_detector_native", int))
+        store["g2_detector"].append(arr("gamma2_detector_native", int))
+        for key in ("runnum", "eventnum"):
+            branch = resolved.get(key)
+            store[key].append(np.asarray(arrays[branch], dtype=np.int64) if branch else np.full(n, -1, dtype=np.int64))
+    return AuditEpggRecords(
+        runnum=_concat(store["runnum"], np.int64), evnum=_concat(store["eventnum"], np.int64),
+        e_p=_concat(store["e_p"]), e_theta=_concat(store["e_theta"]), e_phi=_concat(store["e_phi"]),
+        p_p=_concat(store["p_p"]), p_theta=_concat(store["p_theta"]), p_phi=_concat(store["p_phi"]),
+        g1_E=_concat(store["g1_E"]), g1_theta=_concat(store["g1_theta"]), g1_phi=_concat(store["g1_phi"]),
+        g1_detector=_concat(store["g1_detector"], np.int16), g2_E=_concat(store["g2_E"]),
+        g2_theta=_concat(store["g2_theta"]), g2_phi=_concat(store["g2_phi"]),
+        g2_detector=_concat(store["g2_detector"], np.int16), reconstruction_valid=_concat(store["valid"], bool),
     )
 
-    args_dict = vars(args).copy()
-    all_rows: List[Dict[str, object]] = []
-    metadata: Dict[str, object] = {}
 
-    if effective_workers == 1:
-        for period in periods:
-            key, rows, period_metadata = process_period(period, args_dict)
-            all_rows.extend(rows)
-            metadata[key] = period_metadata
-        # endfor
+def _event_key_matrix(run: np.ndarray, ev: np.ndarray) -> np.ndarray:
+    return np.column_stack((run.astype(np.int64), ev.astype(np.int64)))
+
+
+def _signature_matrix(records, decimals: int) -> np.ndarray:
+    vals = np.column_stack((records.e_p, records.e_theta, records.e_phi,
+                            records.p_p, records.p_theta, records.p_phi))
+    scale = float(10 ** decimals)
+    finite = np.all(np.isfinite(vals), axis=1)
+    out = np.full(vals.shape, np.iinfo(np.int64).min, dtype=np.int64)
+    out[finite] = np.rint(vals[finite] * scale).astype(np.int64)
+    return out
+
+
+def _group_match(a_keys: np.ndarray, b_keys: np.ndarray) -> Dict[str, object]:
+    na = len(a_keys); nb = len(b_keys)
+    combined = np.vstack((a_keys, b_keys))
+    _, inverse = np.unique(combined, axis=0, return_inverse=True)
+    a_gid = inverse[:na]; b_gid = inverse[na:]
+    ng = int(inverse.max()) + 1 if inverse.size else 0
+    ca = np.bincount(a_gid, minlength=ng); cb = np.bincount(b_gid, minlength=ng)
+    overlap_g = (ca > 0) & (cb > 0)
+    one_g = (ca == 1) & (cb == 1)
+    a_matched = overlap_g[a_gid] if na else np.zeros(0, bool)
+    b_matched = overlap_g[b_gid] if nb else np.zeros(0, bool)
+    a_one = one_g[a_gid] if na else np.zeros(0, bool)
+    b_one = one_g[b_gid] if nb else np.zeros(0, bool)
+    # Map only unambiguous one-to-one groups.
+    a_idx = np.flatnonzero(a_one); b_idx = np.flatnonzero(b_one)
+    if a_idx.size:
+        a_idx = a_idx[np.argsort(a_gid[a_idx])]
+        b_idx = b_idx[np.argsort(b_gid[b_idx])]
+    return {
+        "a_entries": na, "b_entries": nb,
+        "a_unique_groups": int(np.count_nonzero(ca)), "b_unique_groups": int(np.count_nonzero(cb)),
+        "shared_groups": int(np.count_nonzero(overlap_g)), "one_to_one_groups": int(np.count_nonzero(one_g)),
+        "one_to_many_groups": int(np.count_nonzero((ca == 1) & (cb > 1))),
+        "many_to_one_groups": int(np.count_nonzero((ca > 1) & (cb == 1))),
+        "many_to_many_groups": int(np.count_nonzero((ca > 1) & (cb > 1))),
+        "a_entries_in_shared_groups": int(np.count_nonzero(a_matched)),
+        "b_entries_in_shared_groups": int(np.count_nonzero(b_matched)),
+        "a_unmatched_entries": int(na - np.count_nonzero(a_matched)),
+        "b_unmatched_entries": int(nb - np.count_nonzero(b_matched)),
+        "a_indices": a_idx, "b_indices": b_idx,
+        "a_group_counts": ca[a_gid] if na else np.zeros(0,int),
+        "b_group_counts": cb[b_gid] if nb else np.zeros(0,int),
+        "a_matched_mask": a_matched, "b_matched_mask": b_matched,
+    }
+
+
+def _opening_deg(th1, ph1, th2, ph2):
+    c = np.sin(th1)*np.sin(th2)*np.cos(ph1-ph2) + np.cos(th1)*np.cos(th2)
+    return np.degrees(np.arccos(np.clip(c, -1.0, 1.0)))
+
+
+def _matched_pair_diagnostics(epg: AuditEpgRecords, epgg: AuditEpggRecords,
+                              ai: np.ndarray, bi: np.ndarray, beam_energy: float,
+                              args: argparse.Namespace) -> Dict[str, object]:
+    if ai.size == 0:
+        return {"n_pairs": 0, "arrays": {}}
+    maxplot = max(1, int(args.audit_max_matched_plots))
+    if ai.size > maxplot:
+        pick = np.linspace(0, ai.size-1, maxplot, dtype=int)
+        aip, bip = ai[pick], bi[pick]
     else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=effective_workers) as executor:
-            futures = {
-                executor.submit(process_period, period, args_dict): period.key
-                for period in periods
-            }
-            for future in concurrent.futures.as_completed(futures):
-                key, rows, period_metadata = future.result()
-                all_rows.extend(rows)
-                metadata[key] = period_metadata
-            # endfor
-        # endwith
-    # endif
-
-    all_rows.sort(key=lambda row: (str(row["period"]), int(row["bin_id"])))
-    write_rows(output_dir / "photon_efficiency_scale_factors.csv", all_rows)
-    plot_all_period_scale_factor_summary(output_dir / "all_periods_integrated_scale_factors.png", all_rows)
-    plot_all_period_efficiency_summary(output_dir / "all_periods_integrated_efficiencies.png", all_rows)
-
-    json_payload = {
-        "schema_version": 3,
-        "description": "RGA exclusive-pi0 reconstructable-partner photon-efficiency data/MC scale factors.",
-        "formula": "epsilon = N_pi0_both_reconstructed / (N_pi0_both_reconstructed + N_pi0_one_reconstructed_with_partner_Egt0p4_and_in_acceptance); S_gamma = epsilon_data / epsilon_mc",
-        "arguments": args_dict,
-        "period_metadata": metadata,
-        "bins": all_rows,
+        aip, bip = ai, bi
+    residuals = {
+        "electron_dp": epg.e_p[aip]-epgg.e_p[bip],
+        "electron_dtheta_deg": np.degrees(epg.e_theta[aip]-epgg.e_theta[bip]),
+        "electron_dphi_deg": np.degrees(np.arctan2(np.sin(epg.e_phi[aip]-epgg.e_phi[bip]), np.cos(epg.e_phi[aip]-epgg.e_phi[bip]))),
+        "proton_dp": epg.p_p[aip]-epgg.p_p[bip],
+        "proton_dtheta_deg": np.degrees(epg.p_theta[aip]-epgg.p_theta[bip]),
+        "proton_dphi_deg": np.degrees(np.arctan2(np.sin(epg.p_phi[aip]-epgg.p_phi[bip]), np.cos(epg.p_phi[aip]-epgg.p_phi[bip]))),
     }
-    with open(output_dir / "photon_efficiency_scale_factors.json", "w", encoding="utf-8") as handle:
-        json.dump(json_payload, handle, indent=2, allow_nan=True)
-    # endwith
-
-    provenance = {
-        "script": Path(__file__).name,
-        "created_unix_time": time.time(),
-        "tree_name": TREE_NAME,
-        "periods": [asdict(period) for period in periods],
-        "notes": [
-            "Each accepted epgammagamma event contributes one two-photon event. The energy-ordered leading photon satisfies probe-E-min and the second reconstructed photon satisfies tag-E-min.",
-            "The nominal thresholds are E_gamma1>2 GeV and E_gamma2>0.40 GeV, matching the production DVCS photon requirement and the loose second-photon control-sample threshold.",
-            "The one-photon pi0 yield in data is obtained only from the DVCSGEN plus AAOGEN template decomposition of the ordinary epgamma distributions.",
-            "The epgamma data, DVCSGEN, and AAOGEN-as-epgamma samples use the same measured leading-photon requirement; no predicted missing photon is constructed.",
-            "The observed tag photon must satisfy E_gamma>=0.4 GeV. The measured probe photon must satisfy E_gamma>=2 GeV. Events with two photons above 2 GeV contribute two directed tag--probe trials.",
-            "For one-photon events, the exclusive-pi0 missing four-vector is used only to require partner reconstructability and assign the probe detector; it is never used to fill or morph the epgamma template observables.",
-            "A complete data/MC passing-sample cut-flow audit is written for every period.",
-            "Additional production-style (-t1), z, and predicted electron-photon opening-angle cuts are opt-in via --enable-production-global-cuts and are disabled by default. Sp18 Out sector-quality exclusions are intentionally not applied in this diagnostic study.",
-            "Input ROOT identity records and duplicate-period checks are written before processing.",
-            "Matching-cut scans are optional (--enable-matching-scans) because they are expensive and do not affect the nominal result; scale-factor stability, mirror-category migration, and fit residual/deviance diagnostics remain enabled.",
-            "No equal-efficiency approximation is used.",
-            "Scale factors are not yet propagated to DVCS acceptance or pi0 migration.",
-            "Period processing is parallelized with a hard maximum of seven workers.",
-            "Trials are assigned to adaptive bins once and all three discriminator histograms are filled in bulk.",
-        ],
+    a1 = _opening_deg(epg.g_theta[aip],epg.g_phi[aip],epgg.g1_theta[bip],epgg.g1_phi[bip])
+    a2 = _opening_deg(epg.g_theta[aip],epg.g_phi[aip],epgg.g2_theta[bip],epgg.g2_phi[bip])
+    r1 = np.abs(epg.g_E[aip]-epgg.g1_E[bip])/np.maximum(epgg.g1_E[bip],1e-12)
+    r2 = np.abs(epg.g_E[aip]-epgg.g2_E[bip])/np.maximum(epgg.g2_E[bip],1e-12)
+    ok1=(a1<=args.audit_tag_match_angle_max_deg)&(r1<=args.audit_tag_match_relative_E_max)
+    ok2=(a2<=args.audit_tag_match_angle_max_deg)&(r2<=args.audit_tag_match_relative_E_max)
+    score1=(a1/args.audit_tag_match_angle_max_deg)**2+(r1/args.audit_tag_match_relative_E_max)**2
+    score2=(a2/args.audit_tag_match_angle_max_deg)**2+(r2/args.audit_tag_match_relative_E_max)**2
+    tag_choice=np.where(ok1&(~ok2| (score1<=score2)),1,np.where(ok2,2,0))
+    predE,predth,predph,predm2,predp=predicted_probe(
+        beam_energy, epg.e_p[aip],epg.e_theta[aip],epg.e_phi[aip],epg.p_p[aip],epg.p_theta[aip],epg.p_phi[aip],
+        epg.g_E[aip],epg.g_theta[aip],epg.g_phi[aip])
+    otherE=np.where(tag_choice==1,epgg.g2_E[bip],np.where(tag_choice==2,epgg.g1_E[bip],np.nan))
+    otherth=np.where(tag_choice==1,epgg.g2_theta[bip],np.where(tag_choice==2,epgg.g1_theta[bip],np.nan))
+    otherph=np.where(tag_choice==1,epgg.g2_phi[bip],np.where(tag_choice==2,epgg.g1_phi[bip],np.nan))
+    probe_angle=_opening_deg(predth,predph,otherth,otherph)
+    probe_relE=np.abs(predE-otherE)/np.maximum(otherE,1e-12)
+    arrays={**residuals,"tag_angle_to_g1":a1,"tag_angle_to_g2":a2,"tag_relE_to_g1":r1,"tag_relE_to_g2":r2,
+            "tag_choice":tag_choice,"pred_probe_E":predE,"actual_probe_E":otherE,
+            "probe_angle_deg":probe_angle,"probe_relative_E":probe_relE,"pred_probe_m2":predm2}
+    return {
+        "n_pairs": int(ai.size), "n_pairs_plotted": int(aip.size),
+        "tag_matches_g1": int(np.count_nonzero(tag_choice==1)),
+        "tag_matches_g2": int(np.count_nonzero(tag_choice==2)),
+        "tag_matches_neither": int(np.count_nonzero(tag_choice==0)),
+        "tag_matches_both_before_tiebreak": int(np.count_nonzero(ok1&ok2)),
+        "predicted_probe_reference_match": int(np.count_nonzero((tag_choice>0)&(probe_angle<=args.audit_probe_match_angle_max_deg)&(probe_relE<=args.audit_probe_match_relative_E_max))),
+        "arrays": arrays,
     }
-    with open(output_dir / "provenance.json", "w", encoding="utf-8") as handle:
-        json.dump(provenance, handle, indent=2)
-    # endwith
 
-    log(f"Wrote {output_dir / 'photon_efficiency_scale_factors.csv'}")
-    log(f"Wrote {output_dir / 'photon_efficiency_scale_factors.json'}")
+
+def _summary_stats(x: np.ndarray) -> Dict[str, float]:
+    x=np.asarray(x,float); x=x[np.isfinite(x)]
+    if x.size==0: return {"n":0}
+    return {"n":int(x.size),"mean":float(np.mean(x)),"std":float(np.std(x)),"median":float(np.median(x)),
+            "q16":float(np.quantile(x,.16)),"q84":float(np.quantile(x,.84)),"min":float(np.min(x)),"max":float(np.max(x))}
+
+
+def _plot_overlap(path: Path, title: str, match: Mapping[str, object]) -> None:
+    labels=["epgamma entries","epgammagamma entries","epgamma in shared","epgammagamma in shared","1-to-1 groups"]
+    vals=[match["a_entries"],match["b_entries"],match["a_entries_in_shared_groups"],match["b_entries_in_shared_groups"],match["one_to_one_groups"]]
+    fig,ax=plt.subplots(figsize=(10,5)); ax.bar(np.arange(len(vals)),vals); ax.set_yscale("log"); ax.set_xticks(np.arange(len(vals)),labels,rotation=20,ha="right"); ax.set_ylabel("Count"); ax.set_title(title); ax.grid(axis="y",alpha=.3); fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def _plot_multiplicity(path: Path, title: str, match: Mapping[str, object]) -> None:
+    a=np.asarray(match["a_group_counts"]); b=np.asarray(match["b_group_counts"])
+    bins=np.arange(.5,max(5,int(max(a.max(initial=1),b.max(initial=1))))+1.5,1)
+    fig,ax=plt.subplots(figsize=(8,5)); ax.hist(a,bins=bins,histtype="step",label="epgamma entries per identity"); ax.hist(b,bins=bins,histtype="step",label="epgammagamma entries per identity"); ax.set_yscale("log"); ax.set_xlabel("Entries sharing identity"); ax.set_ylabel("Entries"); ax.set_title(title); ax.legend(); ax.grid(alpha=.3); fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def _plot_residuals(path: Path, title: str, arrays: Mapping[str,np.ndarray]) -> None:
+    keys=[("electron_dp","Electron delta p (GeV)"),("electron_dtheta_deg","Electron delta theta (deg)"),("electron_dphi_deg","Electron delta phi (deg)"),("proton_dp","Proton delta p (GeV)"),("proton_dtheta_deg","Proton delta theta (deg)"),("proton_dphi_deg","Proton delta phi (deg)")]
+    fig,axs=plt.subplots(2,3,figsize=(14,8));
+    for ax,(k,label) in zip(axs.flat,keys):
+        x=np.asarray(arrays.get(k,[])); x=x[np.isfinite(x)];
+        if x.size: ax.hist(x,bins=100,histtype="step")
+        ax.set_xlabel(label); ax.set_ylabel("Entries"); ax.grid(alpha=.25)
+    fig.suptitle(title); fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def _plot_photon_matching(path: Path, title: str, arrays: Mapping[str,np.ndarray]) -> None:
+    fig,axs=plt.subplots(2,2,figsize=(12,9));
+    items=[("tag_angle_to_g1","Tag opening angle to gamma1 (deg)"),("tag_angle_to_g2","Tag opening angle to gamma2 (deg)"),("tag_relE_to_g1","Tag relative E residual to gamma1"),("tag_relE_to_g2","Tag relative E residual to gamma2")]
+    for ax,(k,label) in zip(axs.flat,items):
+        x=np.asarray(arrays.get(k,[])); x=x[np.isfinite(x)];
+        if x.size: ax.hist(x,bins=100,histtype="step",log=True)
+        ax.set_xlabel(label); ax.set_ylabel("Entries"); ax.grid(alpha=.25)
+    fig.suptitle(title); fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def _plot_probe_closure(path: Path, title: str, arrays: Mapping[str,np.ndarray]) -> None:
+    fig,axs=plt.subplots(2,2,figsize=(12,9));
+    items=[("probe_angle_deg","Predicted-actual probe opening angle (deg)"),("probe_relative_E","Predicted-actual probe relative E residual"),("pred_probe_m2","Predicted probe mass squared (GeV2)"),("pred_probe_E","Predicted probe energy (GeV)")]
+    for ax,(k,label) in zip(axs.flat,items):
+        x=np.asarray(arrays.get(k,[])); x=x[np.isfinite(x)];
+        if x.size: ax.hist(x,bins=100,histtype="step",log=True)
+        ax.set_xlabel(label); ax.set_ylabel("Entries"); ax.grid(alpha=.25)
+    fig.suptitle(title); fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def _plot_energy_regions(path: Path, title: str, epgg: AuditEpggRecords) -> Dict[str,int]:
+    valid=epgg.reconstruction_valid & np.isfinite(epgg.g1_E)&np.isfinite(epgg.g2_E)
+    ehi=np.maximum(epgg.g1_E,epgg.g2_E); elo=np.minimum(epgg.g1_E,epgg.g2_E)
+    counts={
+      "valid_pairs":int(np.count_nonzero(valid)),
+      "leading_gt2_second_0p4_to2":int(np.count_nonzero(valid&(ehi>=2)&(elo>=.4)&(elo<2))),
+      "both_gt2":int(np.count_nonzero(valid&(elo>=2))),
+      "leading_gt2_second_lt0p4":int(np.count_nonzero(valid&(ehi>=2)&(elo<.4))),
+      "leading_lt2":int(np.count_nonzero(valid&(ehi<2))),
+    }
+    labels=list(counts.keys())[1:]; vals=[counts[k] for k in labels]
+    fig,ax=plt.subplots(figsize=(10,5)); ax.bar(np.arange(len(vals)),vals); ax.set_yscale("log"); ax.set_xticks(np.arange(len(vals)),labels,rotation=20,ha="right"); ax.set_ylabel("Events"); ax.set_title(title); ax.grid(axis="y",alpha=.3); fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+    return counts
+
+
+def _plot_matched_unmatched(path: Path, title: str, epg: AuditEpgRecords, matched: np.ndarray) -> None:
+    fig,axs=plt.subplots(1,3,figsize=(15,4.5));
+    for ax,x,label in zip(axs,(epg.g_E,np.degrees(epg.g_theta),np.degrees(epg.g_phi)),("epgamma photon energy (GeV)","epgamma photon theta (deg)","epgamma photon phi (deg)")):
+        for mask,name in ((matched,"matched identity"),(~matched,"unmatched identity")):
+            vals=np.asarray(x[mask]); vals=vals[np.isfinite(vals)];
+            if vals.size: ax.hist(vals,bins=80,density=True,histtype="step",label=name)
+        ax.set_xlabel(label); ax.set_ylabel("Unit-normalized entries"); ax.grid(alpha=.25)
+    axs[0].legend(); fig.suptitle(title); fig.tight_layout(rect=(0,0,1,.94)); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def _audit_pair(label: str, epg: AuditEpgRecords, epgg: AuditEpggRecords,
+                mode: str, beam_energy: float, outdir: Path, args: argparse.Namespace) -> Dict[str,object]:
+    outdir.mkdir(parents=True,exist_ok=True)
+    if mode=="data":
+        keys_a=_event_key_matrix(epg.runnum,epg.evnum); keys_b=_event_key_matrix(epgg.runnum,epgg.evnum)
+        primary=_group_match(keys_a,keys_b)
+        scans={"runnum_evnum":{k:v for k,v in primary.items() if not isinstance(v,np.ndarray)}}
+    else:
+        scans={}
+        for dec in [int(x) for x in str(args.audit_signature_scan).split(',') if x.strip()]:
+            mm=_group_match(_signature_matrix(epg,dec),_signature_matrix(epgg,dec))
+            scans[str(dec)]={k:v for k,v in mm.items() if not isinstance(v,np.ndarray)}
+        primary=_group_match(_signature_matrix(epg,args.audit_signature_decimals),_signature_matrix(epgg,args.audit_signature_decimals))
+    diag=_matched_pair_diagnostics(epg,epgg,primary["a_indices"],primary["b_indices"],beam_energy,args)
+    _plot_overlap(outdir/"overlap_summary.png",f"{label}: overlap audit",primary)
+    _plot_multiplicity(outdir/"identity_multiplicity.png",f"{label}: identity multiplicity",primary)
+    _plot_residuals(outdir/"electron_proton_residuals.png",f"{label}: matched electron/proton closure",diag["arrays"])
+    _plot_photon_matching(outdir/"tag_photon_matching.png",f"{label}: epgamma tag matching",diag["arrays"])
+    _plot_probe_closure(outdir/"predicted_probe_closure.png",f"{label}: inferred partner closure",diag["arrays"])
+    energy=_plot_energy_regions(outdir/"epgammagamma_energy_regions.png",f"{label}: epgammagamma energy regions",epgg)
+    _plot_matched_unmatched(outdir/"matched_vs_unmatched_epgamma.png",f"{label}: epgamma matched/unmatched",epg,primary["a_matched_mask"])
+    stats={k:_summary_stats(v) for k,v in diag["arrays"].items() if k!="tag_choice"}
+    clean={k:v for k,v in primary.items() if not isinstance(v,np.ndarray)}
+    payload={"label":label,"mode":mode,"identity_match":clean,"identity_precision_scan":scans,
+             "photon_matching":{k:v for k,v in diag.items() if k!="arrays"},"residual_statistics":stats,
+             "epgammagamma_energy_regions":energy}
+    with open(outdir/"audit.json","w") as f: json.dump(payload,f,indent=2,allow_nan=True)
+    return payload
+
+
+def process_audit_period(period: PeriodConfig, args_dict: Mapping[str,object]):
+    args=argparse.Namespace(**dict(args_dict)); pdir=Path(args.output_dir)/period.key; pdir.mkdir(parents=True,exist_ok=True)
+    epg_data=_read_epg_audit(period.epg_data,args); epgg_data=_read_epgg_audit(period.epgg_data,args)
+    epg_mc=_read_epg_audit(period.pi0_as_epg_mc,args); epgg_mc=_read_epgg_audit(period.epgg_mc,args)
+    data=_audit_pair(f"{period.label} data",epg_data,epgg_data,"data",period.beam_energy_GeV,pdir/"data",args)
+    mc=_audit_pair(f"{period.label} AAOGEN",epg_mc,epgg_mc,"mc",period.beam_energy_GeV,pdir/"aaogen_mc",args)
+    # DVCSGEN is shape-only in the eventual fit; record its population and kinematics but never match it to AAOGEN.
+    dvcs=_read_epg_audit(period.dvcs_mc,args)
+    dvcs_summary={"entries":int(len(dvcs.e_p)),"unique_data_like_keys":int(len(np.unique(_event_key_matrix(dvcs.runnum,dvcs.evnum),axis=0))),
+                  "electron_p":_summary_stats(dvcs.e_p),"proton_p":_summary_stats(dvcs.p_p),"photon_E":_summary_stats(dvcs.g_E)}
+    with open(pdir/"dvcsgen_template_audit.json","w") as f: json.dump(dvcs_summary,f,indent=2)
+    return period.key,{"period":asdict(period),"data":data,"aaogen_mc":mc,"dvcsgen":dvcs_summary}
+
+
+def _write_audit_csv(path: Path, metadata: Mapping[str,object]) -> None:
+    fields=["period","sample","epgamma_entries","epgammagamma_entries","shared_groups","one_to_one_groups","one_to_many_groups","many_to_one_groups","many_to_many_groups","epgamma_unmatched_entries","epgammagamma_unmatched_entries","tag_matches_g1","tag_matches_g2","tag_matches_neither","predicted_probe_reference_match"]
+    with open(path,"w",newline="") as f:
+        w=csv.DictWriter(f,fieldnames=fields); w.writeheader()
+        for period,payload in metadata.items():
+            for sample,key in (("data","data"),("aaogen_mc","aaogen_mc")):
+                x=payload[key]; m=x["identity_match"]; q=x["photon_matching"]
+                w.writerow({"period":period,"sample":sample,"epgamma_entries":m["a_entries"],"epgammagamma_entries":m["b_entries"],"shared_groups":m["shared_groups"],"one_to_one_groups":m["one_to_one_groups"],"one_to_many_groups":m["one_to_many_groups"],"many_to_one_groups":m["many_to_one_groups"],"many_to_many_groups":m["many_to_many_groups"],"epgamma_unmatched_entries":m["a_unmatched_entries"],"epgammagamma_unmatched_entries":m["b_unmatched_entries"],"tag_matches_g1":q["tag_matches_g1"],"tag_matches_g2":q["tag_matches_g2"],"tag_matches_neither":q["tag_matches_neither"],"predicted_probe_reference_match":q["predicted_probe_reference_match"]})
+
+
+def main() -> int:
+    args=parse_args(); args.workers=min(max(1,args.workers),MAX_WORKERS)
+    selected=set(args.period or [p.key for p in PERIODS]); periods=apply_path_overrides([p for p in PERIODS if p.key in selected],args)
+    output=Path(args.output_dir); output.mkdir(parents=True,exist_ok=True)
+    log("v34 AUDIT ONLY: no fit, efficiency, or scale factor will be calculated.")
+    log("Data identity: exact (runnum, evnum). AAOGEN identity: reconstructed electron/proton signature.")
+    for p in periods:
+        for path in (p.epg_data,p.dvcs_mc,p.pi0_as_epg_mc,p.epgg_data,p.epgg_mc): require_file(path)
+    if args.inspect_branches:
+        inspect_selected_branches(periods); return 0
+    args_dict=vars(args).copy(); metadata={}
+    workers=min(args.workers,len(periods))
+    if workers==1:
+        for p in periods:
+            key,payload=process_audit_period(p,args_dict); metadata[key]=payload
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as ex:
+            futures=[ex.submit(process_audit_period,p,args_dict) for p in periods]
+            for fut in concurrent.futures.as_completed(futures):
+                key,payload=fut.result(); metadata[key]=payload
+    with open(output/"photon_efficiency_audit_v34.json","w") as f:
+        json.dump({"schema_version":34,"description":"Audit-only epgamma/epgammagamma overlap and closure study; no efficiency result.","arguments":args_dict,"periods":metadata},f,indent=2,allow_nan=True)
+    _write_audit_csv(output/"photon_efficiency_audit_v34.csv",metadata)
+    with open(output/"provenance.json","w") as f:
+        json.dump({"script":Path(__file__).name,"created_unix_time":time.time(),"audit_only":True,"notes":["No template fit or scale factor is performed.","Data are matched by exact runnum and evnum.","AAOGEN is matched by quantized reconstructed electron and proton six-dimensional signatures.","Only unambiguous one-to-one identities enter kinematic and photon-role closure plots.","DVCSGEN is audited as a future background-template population and is not matched to AAOGEN."]},f,indent=2)
+    if args.audit_fail_on_zero_overlap:
+        for p,x in metadata.items():
+            if x["data"]["identity_match"]["shared_groups"]==0 or x["aaogen_mc"]["identity_match"]["shared_groups"]==0:
+                raise RuntimeError(f"{p}: zero overlap found in an audit pair")
+    log(f"Wrote {output/'photon_efficiency_audit_v34.json'}")
+    log(f"Wrote {output/'photon_efficiency_audit_v34.csv'}")
     return 0
 
 
@@ -3990,6 +4257,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except Exception as exc:
-        print(f"FATAL ERROR: {exc}", file=sys.stderr)
+        print(f"FATAL ERROR: {exc}",file=sys.stderr)
         raise
-    # endtry
