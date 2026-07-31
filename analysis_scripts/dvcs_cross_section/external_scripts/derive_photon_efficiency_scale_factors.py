@@ -3193,7 +3193,6 @@ def _trial_arrays_from_found_pairs(
     probe_E = epgg.g1_E[bi]
     nominal = (
         (choice == 2)
-        & epgg.reconstruction_valid[bi]
         & np.isfinite(tag_E) & (tag_E >= args.tag_E_min) & (tag_E < args.tag_E_max)
         & np.isfinite(probe_E) & (probe_E >= args.probe_E_min) & (probe_E < args.probe_E_max)
     )
@@ -3238,6 +3237,8 @@ def _trial_arrays_from_found_pairs(
         "resolved_pairs": int(len(choice)),
         "nominal_found_pairs": int(n),
         "tag_matches_gamma2_before_energy_acceptance": int(np.count_nonzero(choice == 2)),
+        "reconstruction_valid_among_resolved_pairs": int(np.count_nonzero(epgg.reconstruction_valid[np.asarray(resolved.get("b_indices", []), dtype=np.int64)])) if len(choice) else 0,
+        "note": "The native epgammagamma skim defines the found sample. The auxiliary cone-closure flag is audited but is not imposed on the nominal found count.",
     }
 
 
@@ -3279,7 +3280,9 @@ def build_event_exclusive_samples(period: PeriodConfig, args: argparse.Namespace
     dbi = np.asarray(data_resolved.get("b_indices", []), dtype=np.int64)
     dch = np.asarray(data_resolved.get("tag_choice", []), dtype=np.int8)
     if dai.size:
-        dnom = ((dch == 2) & epgg_data.reconstruction_valid[dbi]
+        dnom = ((dch == 2)
+                & np.isfinite(epgg_data.g2_E[dbi])
+                & np.isfinite(epgg_data.g1_E[dbi])
                 & (epgg_data.g2_E[dbi] >= args.tag_E_min) & (epgg_data.g2_E[dbi] < args.tag_E_max)
                 & (epgg_data.g1_E[dbi] >= args.probe_E_min) & (epgg_data.g1_E[dbi] < args.probe_E_max))
         data_remove[dai[dnom]] = True
@@ -3289,7 +3292,9 @@ def build_event_exclusive_samples(period: PeriodConfig, args: argparse.Namespace
     mbi = np.asarray(mc_resolved.get("b_indices", []), dtype=np.int64)
     mch = np.asarray(mc_resolved.get("tag_choice", []), dtype=np.int8)
     if mai.size:
-        mnom = ((mch == 2) & epgg_mc.reconstruction_valid[mbi]
+        mnom = ((mch == 2)
+                & np.isfinite(epgg_mc.g2_E[mbi])
+                & np.isfinite(epgg_mc.g1_E[mbi])
                 & (epgg_mc.g2_E[mbi] >= args.tag_E_min) & (epgg_mc.g2_E[mbi] < args.tag_E_max)
                 & (epgg_mc.g1_E[mbi] >= args.probe_E_min) & (epgg_mc.g1_E[mbi] < args.probe_E_max))
         mc_remove_sub[mai[mnom]] = True
@@ -3333,9 +3338,9 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
 
     pass_data, pass_mc, data_keep_mask, pi0_mc_keep_mask, overlap_diag = \
         build_event_exclusive_samples(period, args)
-    pass_data_diag = {"definition": "photon-matched data gamma2-tag/gamma1-probe outcomes",
+    pass_data_diag = {"definition": "photon-matched native epgammagamma data gamma2-tag/gamma1-probe outcomes",
                       "selected_trials": int(pass_data.size())}
-    pass_mc_diag = {"definition": "deduplicated photon-matched AAOGEN gamma2-tag/gamma1-probe outcomes",
+    pass_mc_diag = {"definition": "deduplicated photon-matched native AAOGEN epgammagamma gamma2-tag/gamma1-probe outcomes",
                     "selected_trials": int(pass_mc.size())}
     with open(period_dir / "event_exclusive_accounting.json", "w", encoding="utf-8") as handle:
         json.dump(overlap_diag, handle, indent=2)
@@ -3732,6 +3737,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         period.label, rows,
     )
     audit_dir = period_dir / "pass_sample_audit"
+    audit_dir.mkdir(parents=True, exist_ok=True)
     plot_matching_scale_factor_scan(
         audit_dir / "matching_cut_scale_factor_scan.png", period.label,
         pass_data_diag, pass_mc_diag, rows,
