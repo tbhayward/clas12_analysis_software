@@ -3180,30 +3180,90 @@ def _trial_arrays_from_found_pairs(
     resolved: Mapping[str, object],
     args: argparse.Namespace,
 ) -> Tuple[TrialArrays, Dict[str, object]]:
-    """Build found high-energy-probe trials from photon-matched epgamma/epgammagamma pairs.
+    """Build found high-energy-probe trials from photon-matched pairs.
 
-    The epgamma photon is the measured tag.  Its energy is taken directly from
-    the epgamma tree.  The probe energy is obtained from E_pi0 - E_tag, which
-    avoids relying on the cone-solution energy labels being attached to the
-    same gamma1/gamma2 direction labels used by the photon matcher.
+    The audit photon matcher already determines whether the epgamma tag matches
+    reconstructed photon 1 or photon 2 using both angular and energy agreement.
+    Use that assignment directly:
+
+      tag_choice == 1: gamma1 is the tag and gamma2 is the probe;
+      tag_choice == 2: gamma2 is the tag and gamma1 is the probe.
+
+    This is preferable to E_pi0 - E_tag.  The latter produced an almost empty
+    found sample because the stored reconstructed-pi0 four-vector and the
+    photon-cone solution are not numerically interchangeable in these skims.
     """
     ai_all = np.asarray(resolved.get("a_indices", []), dtype=np.int64)
     bi_all = np.asarray(resolved.get("b_indices", []), dtype=np.int64)
     choice_all = np.asarray(resolved.get("tag_choice", []), dtype=np.int8)
+
     if ai_all.size == 0:
         return TrialArrays.empty(), {"resolved_pairs": 0, "nominal_found_pairs": 0}
 
-    tag_E_all = np.asarray(epg.g_E[ai_all], dtype=float)
-    probe_E_all = np.asarray(epgg.pi0_E[bi_all], dtype=float) - tag_E_all
+    valid_choice = np.isin(choice_all, (1, 2))
+
+    tag_E_all = np.where(
+        choice_all == 1,
+        epgg.g1_E[bi_all],
+        np.where(choice_all == 2, epgg.g2_E[bi_all], np.nan),
+    )
+    probe_E_all = np.where(
+        choice_all == 1,
+        epgg.g2_E[bi_all],
+        np.where(choice_all == 2, epgg.g1_E[bi_all], np.nan),
+    )
+
+    tag_theta_all = np.where(
+        choice_all == 1,
+        epgg.g1_theta[bi_all],
+        np.where(choice_all == 2, epgg.g2_theta[bi_all], np.nan),
+    )
+    tag_phi_all = np.where(
+        choice_all == 1,
+        epgg.g1_phi[bi_all],
+        np.where(choice_all == 2, epgg.g2_phi[bi_all], np.nan),
+    )
+    probe_theta_all = np.where(
+        choice_all == 1,
+        epgg.g2_theta[bi_all],
+        np.where(choice_all == 2, epgg.g1_theta[bi_all], np.nan),
+    )
+    probe_phi_all = np.where(
+        choice_all == 1,
+        epgg.g2_phi[bi_all],
+        np.where(choice_all == 2, epgg.g1_phi[bi_all], np.nan),
+    )
+    tag_detector_native_all = np.where(
+        choice_all == 1,
+        epgg.g1_detector[bi_all],
+        np.where(choice_all == 2, epgg.g2_detector[bi_all], -1),
+    )
+    probe_detector_native_all = np.where(
+        choice_all == 1,
+        epgg.g2_detector[bi_all],
+        np.where(choice_all == 2, epgg.g1_detector[bi_all], -1),
+    )
+
+    finite_energy = np.isfinite(tag_E_all) & np.isfinite(probe_E_all)
+    finite_direction = (
+        np.isfinite(tag_theta_all) & np.isfinite(tag_phi_all)
+        & np.isfinite(probe_theta_all) & np.isfinite(probe_phi_all)
+    )
+    tag_energy_ok = (
+        (tag_E_all >= args.tag_E_min)
+        & (tag_E_all < args.tag_E_max)
+    )
+    probe_energy_ok = (
+        (probe_E_all >= args.probe_E_min)
+        & (probe_E_all < args.probe_E_max)
+    )
 
     nominal = (
-        np.isin(choice_all, (1, 2))
-        & np.isfinite(tag_E_all)
-        & (tag_E_all >= args.tag_E_min)
-        & (tag_E_all < args.tag_E_max)
-        & np.isfinite(probe_E_all)
-        & (probe_E_all >= args.probe_E_min)
-        & (probe_E_all < args.probe_E_max)
+        valid_choice
+        & finite_energy
+        & finite_direction
+        & tag_energy_ok
+        & probe_energy_ok
     )
 
     ai = ai_all[nominal]
@@ -3211,29 +3271,37 @@ def _trial_arrays_from_found_pairs(
     choice = choice_all[nominal]
     tag_E = tag_E_all[nominal]
     probe_E = probe_E_all[nominal]
+    tag_theta = tag_theta_all[nominal]
+    tag_phi = tag_phi_all[nominal]
+    probe_theta = probe_theta_all[nominal]
+    probe_phi = probe_phi_all[nominal]
+    tag_detector_native = tag_detector_native_all[nominal]
+    probe_detector_native = probe_detector_native_all[nominal]
 
     if bi.size == 0:
         return TrialArrays.empty(), {
             "resolved_pairs": int(len(choice_all)),
+            "valid_tag_choice": int(np.count_nonzero(valid_choice)),
+            "finite_energy_assignment": int(np.count_nonzero(valid_choice & finite_energy)),
+            "finite_direction_assignment": int(np.count_nonzero(valid_choice & finite_energy & finite_direction)),
+            "tag_energy_in_range": int(np.count_nonzero(valid_choice & finite_energy & finite_direction & tag_energy_ok)),
+            "probe_energy_in_range": int(np.count_nonzero(valid_choice & finite_energy & finite_direction & probe_energy_ok)),
+            "both_energy_requirements": int(np.count_nonzero(nominal)),
             "nominal_found_pairs": 0,
             "tag_matches_gamma1_before_energy_acceptance": int(np.count_nonzero(choice_all == 1)),
             "tag_matches_gamma2_before_energy_acceptance": int(np.count_nonzero(choice_all == 2)),
-            "finite_pi0_minus_tag_energy": int(np.count_nonzero(np.isfinite(probe_E_all))),
         }
 
-    # If the tag matched gamma1, gamma2 is the found probe; if it matched gamma2,
-    # gamma1 is the found probe.
-    probe_theta = np.where(choice == 1, epgg.g2_theta[bi], epgg.g1_theta[bi])
-    probe_phi = np.where(choice == 1, epgg.g2_phi[bi], epgg.g1_phi[bi])
-    probe_detector_native = np.where(choice == 1, epgg.g2_detector[bi], epgg.g1_detector[bi])
+    probe_theta_deg = np.degrees(probe_theta)
+    detector, sector = classify_predicted_detector(probe_theta_deg, probe_phi, args)
 
-    theta_deg = np.degrees(probe_theta)
-    detector, sector = classify_predicted_detector(theta_deg, probe_phi, args)
+    native_probe_valid = np.isin(probe_detector_native, (0, 1))
+    detector = np.where(native_probe_valid, probe_detector_native, detector).astype(np.int16, copy=False)
 
-    # Prefer the native detector identity when it is valid, while keeping the
-    # geometric classification as the sector source for FD.
-    native_valid = np.isin(probe_detector_native, (0, 1))
-    detector = np.where(native_valid, probe_detector_native, detector).astype(np.int16, copy=False)
+    tag_theta_deg = np.degrees(tag_theta)
+    tag_detector, tag_sector = classify_predicted_detector(tag_theta_deg, tag_phi, args)
+    native_tag_valid = np.isin(tag_detector_native, (0, 1))
+    tag_detector = np.where(native_tag_valid, tag_detector_native, tag_detector).astype(np.int16, copy=False)
 
     accepted = detector >= 0
     ai = ai[accepted]
@@ -3243,22 +3311,17 @@ def _trial_arrays_from_found_pairs(
     probe_E = probe_E[accepted]
     probe_theta = probe_theta[accepted]
     probe_phi = probe_phi[accepted]
-    theta_deg = theta_deg[accepted]
+    probe_theta_deg = probe_theta_deg[accepted]
     detector = detector[accepted]
     sector = sector[accepted]
-
-    tag_theta = np.asarray(epg.g_theta[ai], dtype=float)
-    tag_phi = np.asarray(epg.g_phi[ai], dtype=float)
-    tag_theta_deg = np.degrees(tag_theta)
-    tag_detector, tag_sector = classify_predicted_detector(tag_theta_deg, tag_phi, args)
-    native_tag_valid = np.isin(epg.g_detector[ai], (0, 1))
-    tag_detector = np.where(native_tag_valid, epg.g_detector[ai], tag_detector).astype(np.int16, copy=False)
+    tag_detector = tag_detector[accepted]
+    tag_sector = tag_sector[accepted]
 
     n = len(bi)
     trials = TrialArrays(
         E=probe_E.astype(np.float32, copy=False),
         tag_E=tag_E.astype(np.float32, copy=False),
-        theta_deg=theta_deg.astype(np.float32, copy=False),
+        theta_deg=probe_theta_deg.astype(np.float32, copy=False),
         phi_rad=probe_phi.astype(np.float32, copy=False),
         detector=detector.astype(np.int8, copy=False),
         sector=sector.astype(np.int8, copy=False),
@@ -3278,18 +3341,23 @@ def _trial_arrays_from_found_pairs(
 
     return trials, {
         "resolved_pairs": int(len(choice_all)),
+        "valid_tag_choice": int(np.count_nonzero(valid_choice)),
+        "finite_energy_assignment": int(np.count_nonzero(valid_choice & finite_energy)),
+        "finite_direction_assignment": int(np.count_nonzero(valid_choice & finite_energy & finite_direction)),
+        "tag_energy_in_range": int(np.count_nonzero(valid_choice & finite_energy & finite_direction & tag_energy_ok)),
+        "probe_energy_in_range": int(np.count_nonzero(valid_choice & finite_energy & finite_direction & probe_energy_ok)),
+        "both_energy_requirements": int(np.count_nonzero(nominal)),
+        "before_detector_acceptance": int(np.count_nonzero(nominal)),
         "nominal_found_pairs": int(n),
         "tag_matches_gamma1_before_energy_acceptance": int(np.count_nonzero(choice_all == 1)),
         "tag_matches_gamma2_before_energy_acceptance": int(np.count_nonzero(choice_all == 2)),
-        "finite_pi0_minus_tag_energy": int(np.count_nonzero(np.isfinite(probe_E_all))),
-        "nominal_before_detector_acceptance": int(np.count_nonzero(nominal)),
         "reconstruction_valid_among_resolved_pairs": int(
             np.count_nonzero(epgg.reconstruction_valid[bi_all])
         ) if len(choice_all) else 0,
         "note": (
-            "The native epgammagamma skim defines the found sample. "
-            "The measured epgamma photon supplies E_tag; E_probe is E_pi0-E_tag. "
-            "The auxiliary cone-closure flag is audited but not imposed."
+            "Found energies and directions are assigned from the photon pair "
+            "identified by the audit tag matcher. No E_pi0-E_tag substitution "
+            "or auxiliary closure veto is applied."
         ),
     }
 
@@ -3332,14 +3400,22 @@ def build_event_exclusive_samples(period: PeriodConfig, args: argparse.Namespace
     dbi = np.asarray(data_resolved.get("b_indices", []), dtype=np.int64)
     dch = np.asarray(data_resolved.get("tag_choice", []), dtype=np.int8)
     if dai.size:
-        dtag_E = np.asarray(epg_data.g_E[dai], dtype=float)
-        dprobe_E = np.asarray(epgg_data.pi0_E[dbi], dtype=float) - dtag_E
+        dtag_E = np.where(
+            dch == 1,
+            epgg_data.g1_E[dbi],
+            np.where(dch == 2, epgg_data.g2_E[dbi], np.nan),
+        )
+        dprobe_E = np.where(
+            dch == 1,
+            epgg_data.g2_E[dbi],
+            np.where(dch == 2, epgg_data.g1_E[dbi], np.nan),
+        )
         dnom = (
             np.isin(dch, (1, 2))
             & np.isfinite(dtag_E)
+            & np.isfinite(dprobe_E)
             & (dtag_E >= args.tag_E_min)
             & (dtag_E < args.tag_E_max)
-            & np.isfinite(dprobe_E)
             & (dprobe_E >= args.probe_E_min)
             & (dprobe_E < args.probe_E_max)
         )
@@ -3350,14 +3426,22 @@ def build_event_exclusive_samples(period: PeriodConfig, args: argparse.Namespace
     mbi = np.asarray(mc_resolved.get("b_indices", []), dtype=np.int64)
     mch = np.asarray(mc_resolved.get("tag_choice", []), dtype=np.int8)
     if mai.size:
-        mtag_E = np.asarray(epg_mc.g_E[mai], dtype=float)
-        mprobe_E = np.asarray(epgg_mc.pi0_E[mbi], dtype=float) - mtag_E
+        mtag_E = np.where(
+            mch == 1,
+            epgg_mc.g1_E[mbi],
+            np.where(mch == 2, epgg_mc.g2_E[mbi], np.nan),
+        )
+        mprobe_E = np.where(
+            mch == 1,
+            epgg_mc.g2_E[mbi],
+            np.where(mch == 2, epgg_mc.g1_E[mbi], np.nan),
+        )
         mnom = (
             np.isin(mch, (1, 2))
             & np.isfinite(mtag_E)
+            & np.isfinite(mprobe_E)
             & (mtag_E >= args.tag_E_min)
             & (mtag_E < args.tag_E_max)
-            & np.isfinite(mprobe_E)
             & (mprobe_E >= args.probe_E_min)
             & (mprobe_E < args.probe_E_max)
         )
@@ -5027,8 +5111,8 @@ def main() -> int:
     log("Event-exclusive high-energy photon-efficiency extraction.")
     log(f"Nominal directed definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
         f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV.")
-    log("Found-sample energy convention: E_tag from the matched epgamma photon; "
-        "E_probe = E_pi0 - E_tag.")
+    log("Found-sample convention: the audit photon match identifies the tag; "
+        "the opposite reconstructed photon is the probe.")
     log("Data found/missing outcomes are separated by exact event and photon matching; "
         "AAOGEN exact duplicate candidates are skipped before signature matching.")
     for period in periods:
