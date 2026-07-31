@@ -63,7 +63,7 @@ except ImportError as exc:
 
 
 TREE_NAME = "PhysicsEvents"
-DEFAULT_OUTPUT_DIR = "output/photon_efficiency_audit_v34"
+DEFAULT_OUTPUT_DIR = "output/photon_efficiency_audit"
 DEFAULT_STEP_SIZE = "200 MB"
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
@@ -542,7 +542,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epgg-data", default=None)
     parser.add_argument("--epgg-mc", default=None)
 
-    # v34 audit-only controls.
+    # audit-only controls.
     parser.add_argument("--audit-signature-decimals", type=int, default=8,
                         help="Decimal places used for the primary reconstructed e/p MC signature.")
     parser.add_argument("--audit-signature-scan", default="6,8,10,12",
@@ -3958,7 +3958,7 @@ def _read_epgg_audit(path: str, args: argparse.Namespace) -> AuditEpggRecords:
             return np.asarray(arrays[resolved[key]], dtype=dtype)
         result = reconstruct_native_eppi0_photons(
             arr("e_theta"), arr("e_phi"), arr("pi0_p"), arr("pi0_theta"), arr("pi0_phi"),
-            arr("open_angle_egamma1"), arr("open_angle_egamma2"), arr("Mh_gammagamma"),
+            np.deg2rad(arr("open_angle_egamma1")), np.deg2rad(arr("open_angle_egamma2")), arr("Mh_gammagamma"),
             arr("gamma1_detector_native", int), arr("gamma2_detector_native", int), args,
         )
         g1_E, g2_E = result[0], result[1]
@@ -4101,13 +4101,37 @@ def _summary_stats(x: np.ndarray) -> Dict[str, float]:
 def _plot_overlap(path: Path, title: str, match: Mapping[str, object]) -> None:
     labels=["epgamma entries","epgammagamma entries","epgamma in shared","epgammagamma in shared","1-to-1 groups"]
     vals=[match["a_entries"],match["b_entries"],match["a_entries_in_shared_groups"],match["b_entries_in_shared_groups"],match["one_to_one_groups"]]
-    fig,ax=plt.subplots(figsize=(10,5)); ax.bar(np.arange(len(vals)),vals); ax.set_yscale("log"); ax.set_xticks(np.arange(len(vals)),labels,rotation=20,ha="right"); ax.set_ylabel("Count"); ax.set_title(title); ax.grid(axis="y",alpha=.3); fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.bar(np.arange(len(vals)), vals)
+    if any(float(value) > 0.0 for value in vals):
+        ax.set_yscale("log")
+    else:
+        ax.set_ylim(0.0, 1.0)
+    ax.set_xticks(np.arange(len(vals)), labels, rotation=20, ha="right")
+    ax.set_ylabel("Count")
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
 
 
 def _plot_multiplicity(path: Path, title: str, match: Mapping[str, object]) -> None:
     a=np.asarray(match["a_group_counts"]); b=np.asarray(match["b_group_counts"])
     bins=np.arange(.5,max(5,int(max(a.max(initial=1),b.max(initial=1))))+1.5,1)
-    fig,ax=plt.subplots(figsize=(8,5)); ax.hist(a,bins=bins,histtype="step",label="epgamma entries per identity"); ax.hist(b,bins=bins,histtype="step",label="epgammagamma entries per identity"); ax.set_yscale("log"); ax.set_xlabel("Entries sharing identity"); ax.set_ylabel("Entries"); ax.set_title(title); ax.legend(); ax.grid(alpha=.3); fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.hist(a, bins=bins, histtype="step", label="epgamma entries per identity")
+    ax.hist(b, bins=bins, histtype="step", label="epgammagamma entries per identity")
+    if np.any(a > 0) or np.any(b > 0):
+        ax.set_yscale("log")
+    ax.set_xlabel("Entries sharing identity")
+    ax.set_ylabel("Entries")
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(alpha=.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
 
 
 def _plot_residuals(path: Path, title: str, arrays: Mapping[str,np.ndarray]) -> None:
@@ -4151,7 +4175,19 @@ def _plot_energy_regions(path: Path, title: str, epgg: AuditEpggRecords) -> Dict
       "leading_lt2":int(np.count_nonzero(valid&(ehi<2))),
     }
     labels=list(counts.keys())[1:]; vals=[counts[k] for k in labels]
-    fig,ax=plt.subplots(figsize=(10,5)); ax.bar(np.arange(len(vals)),vals); ax.set_yscale("log"); ax.set_xticks(np.arange(len(vals)),labels,rotation=20,ha="right"); ax.set_ylabel("Events"); ax.set_title(title); ax.grid(axis="y",alpha=.3); fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.bar(np.arange(len(vals)), vals)
+    if any(float(value) > 0.0 for value in vals):
+        ax.set_yscale("log")
+    else:
+        ax.set_ylim(0.0, 1.0)
+    ax.set_xticks(np.arange(len(vals)), labels, rotation=20, ha="right")
+    ax.set_ylabel("Events")
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=.3)
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
     return counts
 
 
@@ -4223,8 +4259,9 @@ def main() -> int:
     args=parse_args(); args.workers=min(max(1,args.workers),MAX_WORKERS)
     selected=set(args.period or [p.key for p in PERIODS]); periods=apply_path_overrides([p for p in PERIODS if p.key in selected],args)
     output=Path(args.output_dir); output.mkdir(parents=True,exist_ok=True)
-    log("v34 AUDIT ONLY: no fit, efficiency, or scale factor will be calculated.")
+    log("AUDIT ONLY: no fit, efficiency, or scale factor will be calculated.")
     log("Data identity: exact (runnum, evnum). AAOGEN identity: reconstructed electron/proton signature.")
+    log("Native eppi0 open-angle branches are interpreted in degrees and converted to radians for cone reconstruction.")
     for p in periods:
         for path in (p.epg_data,p.dvcs_mc,p.pi0_as_epg_mc,p.epgg_data,p.epgg_mc): require_file(path)
     if args.inspect_branches:
@@ -4239,17 +4276,17 @@ def main() -> int:
             futures=[ex.submit(process_audit_period,p,args_dict) for p in periods]
             for fut in concurrent.futures.as_completed(futures):
                 key,payload=fut.result(); metadata[key]=payload
-    with open(output/"photon_efficiency_audit_v34.json","w") as f:
+    with open(output/"photon_efficiency_audit.json","w") as f:
         json.dump({"schema_version":34,"description":"Audit-only epgamma/epgammagamma overlap and closure study; no efficiency result.","arguments":args_dict,"periods":metadata},f,indent=2,allow_nan=True)
-    _write_audit_csv(output/"photon_efficiency_audit_v34.csv",metadata)
+    _write_audit_csv(output/"photon_efficiency_audit.csv",metadata)
     with open(output/"provenance.json","w") as f:
         json.dump({"script":Path(__file__).name,"created_unix_time":time.time(),"audit_only":True,"notes":["No template fit or scale factor is performed.","Data are matched by exact runnum and evnum.","AAOGEN is matched by quantized reconstructed electron and proton six-dimensional signatures.","Only unambiguous one-to-one identities enter kinematic and photon-role closure plots.","DVCSGEN is audited as a future background-template population and is not matched to AAOGEN."]},f,indent=2)
     if args.audit_fail_on_zero_overlap:
         for p,x in metadata.items():
             if x["data"]["identity_match"]["shared_groups"]==0 or x["aaogen_mc"]["identity_match"]["shared_groups"]==0:
                 raise RuntimeError(f"{p}: zero overlap found in an audit pair")
-    log(f"Wrote {output/'photon_efficiency_audit_v34.json'}")
-    log(f"Wrote {output/'photon_efficiency_audit_v34.csv'}")
+    log(f"Wrote {output/'photon_efficiency_audit.json'}")
+    log(f"Wrote {output/'photon_efficiency_audit.csv'}")
     return 0
 
 
