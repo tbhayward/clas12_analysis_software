@@ -4405,7 +4405,9 @@ def _matched_pair_diagnostics(epg: AuditEpgRecords, epgg: AuditEpggRecords,
     probe_relE=np.abs(predE-otherE)/np.maximum(otherE,1e-12)
     arrays={**residuals,"tag_angle_to_g1":a1,"tag_angle_to_g2":a2,"tag_relE_to_g1":r1,"tag_relE_to_g2":r2,
             "tag_choice":tag_choice,"pred_probe_E":predE,"actual_probe_E":otherE,
-            "probe_angle_deg":probe_angle,"probe_relative_E":probe_relE,"pred_probe_m2":predm2}
+            "probe_angle_deg":probe_angle,"probe_relative_E":probe_relE,"pred_probe_m2":predm2,
+            "matched_a_indices":np.asarray(aip,dtype=np.int64),
+            "matched_b_indices":np.asarray(bip,dtype=np.int64)}
     return {
         "n_pairs": int(ai.size), "n_pairs_plotted": int(aip.size),
         "tag_matches_g1": int(np.count_nonzero(tag_choice==1)),
@@ -4572,8 +4574,11 @@ def _audit_pair(label: str, epg: AuditEpgRecords, epgg: AuditEpggRecords,
 
     tag_scan = _threshold_scan(epg, epgg, rai, rbi, args)
     probe_scan = _probe_threshold_scan(resolved_diag.get("arrays", {}), args)
+    resolved_arrays = resolved_diag.get("arrays", {})
+    detector_ai = np.asarray(resolved_arrays.get("matched_a_indices", []), dtype=np.int64)
+    detector_bi = np.asarray(resolved_arrays.get("matched_b_indices", []), dtype=np.int64)
     detector_breakdown = _detector_breakdown(
-        epg, epgg, resolved_diag.get("arrays", {}), rai, rbi
+        epg, epgg, resolved_arrays, detector_ai, detector_bi
     )
 
     _plot_overlap(outdir/"overlap_summary.png", f"{label}: overlap audit", primary)
