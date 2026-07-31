@@ -618,22 +618,30 @@ def electron_photon_opening_deg(e_theta: np.ndarray, e_phi: np.ndarray,
 
 def production_event_mask(arrays: Mapping[str, np.ndarray], resolved: Mapping[str, Optional[str]],
                           args: argparse.Namespace) -> np.ndarray:
+    """Common event-level preselection shared by epgamma and epgammagamma.
+
+    Only quantities with the same physical meaning in both reconstructed
+    topologies are applied here.  Topology-specific exclusivity quantities
+    (Mx2, pTmiss, Delta_phi, photon-pair matching, and cone closure) are not
+    allowed to enter the nominal efficiency numerator or denominator.
+    """
     n = len(next(iter(arrays.values())))
     mask = np.ones(n, dtype=bool)
-    if args.disable_production_global_cuts or not args.enable_production_global_cuts:
+    if args.disable_production_global_cuts:
         return mask
     if resolved.get("t1") is not None:
         t1 = finite_array(arrays, resolved.get("t1"))
         mask &= np.isfinite(t1) & ((-t1) < args.global_t_abs_max)
-    if resolved.get("z") is None:
-        raise RuntimeError("Required global-cut branch z is absent")
-    z = finite_array(arrays, resolved.get("z"))
-    mask &= np.isfinite(z) & (z > args.global_z_min)
     if args.enable_global_dis_cuts:
         required = (resolved.get("Q2"), resolved.get("W"), resolved.get("y"))
         if all(branch is not None for branch in required):
-            q2 = finite_array(arrays, resolved.get("Q2")); w = finite_array(arrays, resolved.get("W")); y = finite_array(arrays, resolved.get("y"))
-            mask &= np.isfinite(q2) & np.isfinite(w) & np.isfinite(y) & (q2 > 1.0) & (w > 2.0) & (y < 0.8)
+            q2 = finite_array(arrays, resolved.get("Q2"))
+            w = finite_array(arrays, resolved.get("W"))
+            y = finite_array(arrays, resolved.get("y"))
+            mask &= (
+                np.isfinite(q2) & np.isfinite(w) & np.isfinite(y)
+                & (q2 > 1.0) & (w > 2.0) & (y < 0.8)
+            )
         else:
             raise RuntimeError("--enable-global-dis-cuts requested but Q2/W/y are not all present")
     return mask
@@ -1041,25 +1049,22 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         mx2 = finite_array(arrays, resolved.get("Mx2"))
         ptmiss_all = finite_array(arrays, resolved.get("pTmiss"))
         delta_phi_all = finite_array(arrays, resolved.get("Delta_phi"))
-        mx2_stage = quality.copy()
-        if resolved.get("Mx2") is not None:
-            mx2_stage &= np.isfinite(mx2) & (np.abs(mx2) < args.pass_mx2_abs_max)
-        pt_stage = mx2_stage.copy()
-        if resolved.get("pTmiss") is not None:
-            pt_stage &= np.isfinite(ptmiss_all) & (ptmiss_all < args.pass_pTmiss_max)
-        dphi_stage = pt_stage.copy()
-        if args.pass_delta_phi_window is not None and args.pass_delta_phi_window >= 0.0 and resolved.get("Delta_phi") is not None:
-            dphi_stage &= np.isfinite(delta_phi_all) & (np.abs(delta_phi_all - math.pi) < args.pass_delta_phi_window)
-        base = dphi_stage & production_event_mask(arrays, resolved, args)
+        base = quality & production_event_mask(arrays, resolved, args)
+
+        # Apply only the same leading-photon opening-angle requirement used for
+        # the one-photon sample.  The stored first photon is energy ordered.
+        opening1_deg = finite_array(arrays, resolved["open_angle_egamma1"])
+        if not args.disable_production_global_cuts:
+            base &= np.isfinite(opening1_deg) & (opening1_deg > args.global_open_angle_min_deg)
 
         diag_add_count(diag, "event_cutflow", "basic_quality", np.count_nonzero(quality))
-        diag_add_count(diag, "event_cutflow", "mx2", np.count_nonzero(mx2_stage))
-        diag_add_count(diag, "event_cutflow", "pTmiss", np.count_nonzero(pt_stage))
-        diag_add_count(diag, "event_cutflow", "Delta_phi", np.count_nonzero(dphi_stage))
+        diag_add_count(diag, "event_cutflow", "mx2", np.count_nonzero(quality))
+        diag_add_count(diag, "event_cutflow", "pTmiss", np.count_nonzero(quality))
+        diag_add_count(diag, "event_cutflow", "Delta_phi", np.count_nonzero(quality))
         diag_add_count(diag, "event_cutflow", "production_event_cuts", np.count_nonzero(base))
         diag_fill(diag, "Mx2", mx2, quality)
-        diag_fill(diag, "pTmiss", ptmiss_all, mx2_stage)
-        diag_fill(diag, "abs_Delta_phi_minus_pi", np.abs(delta_phi_all-math.pi), pt_stage)
+        diag_fill(diag, "pTmiss", ptmiss_all, quality)
+        diag_fill(diag, "abs_Delta_phi_minus_pi", np.abs(delta_phi_all-math.pi), quality)
 
         e_p = finite_array(arrays, resolved["e_p"]); e_theta = finite_array(arrays, resolved["e_theta"]); e_phi = finite_array(arrays, resolved["e_phi"])
         p_p = finite_array(arrays, resolved["p_p"]); p_theta = finite_array(arrays, resolved["p_theta"]); p_phi = finite_array(arrays, resolved["p_phi"])
@@ -1125,16 +1130,16 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
 
         # Select one or both mirror geometries according to the requested policy.
         if args.mirror_policy == "best":
-            variants = [(0, base & closure_pass, np.ones(n, dtype=float))]
+            variants = [(0, base & detector_solution & (n_solutions >= 1), np.ones(n, dtype=float))]
         elif args.mirror_policy == "half_weight":
             w0 = np.where(n_solutions >= 2, 0.5, 1.0)
             w1 = np.where(n_solutions >= 2, 0.5, 0.0)
             variants = [
-                (0, base & (n_solutions >= 1) & (sol_closure[:, 0] <= args.pass_photon_closure_max), w0),
-                (1, base & (n_solutions >= 2) & (sol_closure[:, 1] <= args.pass_photon_closure_max), w1),
+                (0, base & detector_solution & (n_solutions >= 1), w0),
+                (1, base & detector_solution & (n_solutions >= 2), w1),
             ]
         elif args.mirror_policy == "unique_sector":
-            unique = base & closure_pass & ((n_solutions == 1) | same_pair)
+            unique = base & detector_solution & ((n_solutions == 1) | same_pair)
             variants = [(0, unique, np.ones(n, dtype=float))]
         else:
             raise RuntimeError(f"Unsupported mirror policy: {args.mirror_policy}")
@@ -1142,44 +1147,25 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
         for solution_index, solution_seed, solution_weight in variants:
             g1_theta = sol_g1_theta[:, solution_index]; g1_phi = sol_g1_phi[:, solution_index]
             g2_theta = sol_g2_theta[:, solution_index]; g2_phi = sol_g2_phi[:, solution_index]
-            # The stored photons are energy ordered.  The leading photon is the
-            # production-DVCS photon (E >= 2 GeV); the subleading photon is the
-            # additional pi0-decay photon whose reconstruction defines whether
-            # the event appears in epgamma or epgammagamma.
-            pred_E, pred_th, pred_ph, pred_m2, pred_p = predicted_probe(
-                beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi,
-                g1_E, g1_theta, g1_phi,
-            )
-            obs_E, obs_th, obs_ph = g2_E, g2_theta, g2_phi
+            # The stored photons are energy ordered.  The nominal numerator is
+            # the directly reconstructed two-photon category.  No inferred
+            # missing-photon closure, E-p, m2, angular-match, or energy-match
+            # requirement is imposed, because those conditions have no
+            # counterpart in the one-photon denominator.
             seed = solution_seed
-
             lead_theta_deg = np.degrees(g1_theta)
             lead_detector, lead_sector = classify_predicted_detector(
                 lead_theta_deg, g1_phi, args
             )
-            cos_opening = (
-                np.sin(pred_th) * np.sin(obs_th) * np.cos(pred_ph - obs_ph)
-                + np.cos(pred_th) * np.cos(obs_th)
-            )
-            match_angle_deg = np.degrees(
-                np.arccos(np.clip(cos_opening, -1.0, 1.0))
-            )
-            relative_E_residual = np.abs(obs_E - pred_E) / np.maximum(pred_E, 1.0e-9)
+            proton_detector = finite_array(
+                arrays, resolved.get("detector1"), default=-1.0
+            ).astype(np.int16)
 
             finite = (
                 seed
-                & np.isfinite(pred_E)
-                & np.isfinite(pred_p)
-                & np.isfinite(pred_th)
-                & np.isfinite(pred_ph)
-                & np.isfinite(obs_E)
-                & np.isfinite(obs_th)
-                & np.isfinite(obs_ph)
-                & np.isfinite(g1_E)
-                & np.isfinite(lead_theta_deg)
-                & np.isfinite(g1_phi)
-                & np.isfinite(match_angle_deg)
-                & np.isfinite(relative_E_residual)
+                & np.isfinite(g1_E) & np.isfinite(g2_E)
+                & np.isfinite(g1_theta) & np.isfinite(g1_phi)
+                & np.isfinite(g2_theta) & np.isfinite(g2_phi)
             )
             leading_energy = (
                 finite
@@ -1188,51 +1174,38 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
             )
             second_energy = (
                 leading_energy
-                & (obs_E >= args.tag_E_min)
-                & (obs_E < args.tag_E_max)
+                & (g2_E >= args.tag_E_min)
+                & (g2_E < args.tag_E_max)
             )
-            photon_ep = (
-                second_energy
-                & (pred_p > 0.0)
-                & (np.abs(pred_E - pred_p) < 0.30)
+            supported_topology = (
+                ((proton_detector == 2) & (lead_detector == 0))
+                | ((proton_detector == 2) & (lead_detector == 1))
+                | ((proton_detector == 1) & (lead_detector == 1))
             )
-            photon_m2 = photon_ep & (np.abs(pred_m2) < 0.20)
-            detector_ok = photon_m2 & (lead_detector >= 0)
-            angle = detector_ok & (
-                match_angle_deg < args.probe_match_angle_max_deg
-            )
-            eres = angle & (
-                relative_E_residual < args.probe_match_relative_E_max
-            )
+            detector_ok = second_energy & (lead_detector >= 0) & supported_topology
+            final_pass = detector_ok
 
             for stage, mask in (
                 ("prediction_finite", finite),
                 ("tag_energy_range", leading_energy),
                 ("probe_energy_range", second_energy),
-                ("photon_like_E_minus_p", photon_ep),
-                ("photon_like_m2", photon_m2),
+                ("photon_like_E_minus_p", second_energy),
+                ("photon_like_m2", second_energy),
                 ("predicted_detector", detector_ok),
                 ("global_cuts", detector_ok),
-                ("angle_match", angle),
-                ("energy_match", eres),
-                ("final_pass", eres),
+                ("angle_match", detector_ok),
+                ("energy_match", final_pass),
+                ("final_pass", final_pass),
             ):
                 diag_add_count(
                     diag, "probe_cutflow", stage,
                     weighted_count(mask, solution_weight),
                 )
 
-            diag_fill(diag, "pred_E", pred_E, finite, solution_weight)
-            diag_fill(diag, "pred_theta_deg", np.degrees(pred_th), finite, solution_weight)
-            diag_fill(diag, "pred_m2", pred_m2, photon_ep, solution_weight)
-            diag_fill(diag, "pred_E_minus_p", pred_E - pred_p, second_energy, solution_weight)
-            diag_fill(diag, "match_angle_deg", match_angle_deg, detector_ok, solution_weight)
-            diag_fill(diag, "relative_E_residual", relative_E_residual, angle, solution_weight)
-
-            for cat, cmask in [("FT", eres & (lead_detector == 0))] + [
+            for cat, cmask in [("FT", final_pass & (lead_detector == 0))] + [
                 (
                     f"FD sector {j}",
-                    eres & (lead_detector == 1) & (lead_sector == j),
+                    final_pass & (lead_detector == 1) & (lead_sector == j),
                 )
                 for j in range(1, 7)
             ]:
@@ -1244,22 +1217,22 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                 TrialArrays(
                     # Binning/category variables describe the actual leading
                     # photon shared by the epgamma and epgammagamma samples.
-                    E=g1_E[eres].astype(np.float32, copy=False),
-                    tag_E=g1_E[eres].astype(np.float32, copy=False),
-                    theta_deg=lead_theta_deg[eres].astype(np.float32, copy=False),
-                    phi_rad=g1_phi[eres].astype(np.float32, copy=False),
-                    detector=lead_detector[eres].astype(np.int8, copy=False),
-                    sector=lead_sector[eres].astype(np.int8, copy=False),
-                    mx2_ep=mx2_ep[eres].astype(np.float32, copy=False),
-                    delta_phi=delta_phi_all[eres].astype(np.float32, copy=False),
-                    theta_gamma_gamma=theta_gg_all[eres].astype(np.float32, copy=False),
-                    pTmiss=ptmiss_all[eres].astype(np.float32, copy=False),
-                    theta_cm=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
-                    Emiss2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
-                    Mx2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
-                    Mx2_2=np.full(np.count_nonzero(eres), np.nan, dtype=np.float32),
-                    proton_detector=np.full(np.count_nonzero(eres), -1, dtype=np.int8),
-                    weight=solution_weight[eres].astype(np.float32, copy=False),
+                    E=g1_E[final_pass].astype(np.float32, copy=False),
+                    tag_E=g1_E[final_pass].astype(np.float32, copy=False),
+                    theta_deg=lead_theta_deg[final_pass].astype(np.float32, copy=False),
+                    phi_rad=g1_phi[final_pass].astype(np.float32, copy=False),
+                    detector=lead_detector[final_pass].astype(np.int8, copy=False),
+                    sector=lead_sector[final_pass].astype(np.int8, copy=False),
+                    mx2_ep=mx2_ep[final_pass].astype(np.float32, copy=False),
+                    delta_phi=delta_phi_all[final_pass].astype(np.float32, copy=False),
+                    theta_gamma_gamma=theta_gg_all[final_pass].astype(np.float32, copy=False),
+                    pTmiss=ptmiss_all[final_pass].astype(np.float32, copy=False),
+                    theta_cm=np.full(np.count_nonzero(final_pass), np.nan, dtype=np.float32),
+                    Emiss2=np.full(np.count_nonzero(final_pass), np.nan, dtype=np.float32),
+                    Mx2=np.full(np.count_nonzero(final_pass), np.nan, dtype=np.float32),
+                    Mx2_2=np.full(np.count_nonzero(final_pass), np.nan, dtype=np.float32),
+                    proton_detector=proton_detector[final_pass].astype(np.int8, copy=False),
+                    weight=solution_weight[final_pass].astype(np.float32, copy=False),
                 )
             )
     result = concatenate_trials(chunks)
@@ -1308,11 +1281,11 @@ def read_one_photon_candidates(
         "g1_E", "g1_theta", "g1_phi", "g1_detector",
         "Mx2_1", "Delta_phi", "theta_gamma_gamma", "pTmiss",
         "theta_cm", "Emiss2", "Mx2", "Mx2_2",
-        "fiducial_status", "t1", "proton_detector", "Q2", "W", "y", "z",
+        "fiducial_status", "t1", "open_angle_ep2", "proton_detector", "Q2", "W", "y", "z",
     ]
     optional = [
         "g1_detector", "theta_cm", "Emiss2", "Mx2", "Mx2_2",
-        "fiducial_status", "t1", "proton_detector", "Q2", "W", "y",
+        "fiducial_status", "t1", "open_angle_ep2", "proton_detector", "Q2", "W", "y",
     ]
     resolved = resolve_branches(path, logical, optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
@@ -1339,6 +1312,9 @@ def read_one_photon_candidates(
 
         quality = basic_quality_mask(arrays, resolved, args)
         production = quality & production_event_mask(arrays, resolved, args)
+        if resolved.get("open_angle_ep2") is not None and not args.disable_production_global_cuts:
+            opening = finite_array(arrays, resolved.get("open_angle_ep2"))
+            production &= np.isfinite(opening) & (opening > args.global_open_angle_min_deg)
         _add_cutflow(diag, "basic_quality", quality)
         _add_cutflow(diag, "production_event_cuts", production)
 
@@ -1361,8 +1337,16 @@ def read_one_photon_candidates(
         _add_cutflow(diag, "leading_photon_energy", energy_ok)
 
         detector, sector = classify_predicted_detector(theta_deg, g_phi, args)
-        detector_ok = energy_ok & (detector >= 0)
-        _add_cutflow(diag, "leading_photon_detector", detector_ok)
+        proton_detector = finite_array(
+            arrays, resolved.get("proton_detector"), default=-1.0
+        ).astype(np.int16)
+        supported_topology = (
+            ((proton_detector == 2) & (detector == 0))
+            | ((proton_detector == 2) & (detector == 1))
+            | ((proton_detector == 1) & (detector == 1))
+        )
+        detector_ok = energy_ok & (detector >= 0) & supported_topology
+        _add_cutflow(diag, "leading_photon_detector", energy_ok & (detector >= 0))
         _add_cutflow(diag, "selected", detector_ok)
 
         for name, cmask in [("FT", detector_ok & (detector == 0))] + [
@@ -1388,9 +1372,7 @@ def read_one_photon_candidates(
                 Emiss2=finite_array(arrays, resolved.get("Emiss2"))[good].astype(np.float32, copy=False),
                 Mx2=finite_array(arrays, resolved.get("Mx2"))[good].astype(np.float32, copy=False),
                 Mx2_2=finite_array(arrays, resolved.get("Mx2_2"))[good].astype(np.float32, copy=False),
-                proton_detector=finite_array(
-                    arrays, resolved.get("proton_detector"), default=-1.0
-                )[good].astype(np.int8, copy=False),
+                proton_detector=proton_detector[good].astype(np.int8, copy=False),
                 weight=np.ones(np.count_nonzero(good), dtype=np.float32),
             )
         )
@@ -1841,7 +1823,7 @@ class FitVariableSpec:
 FIT_VARIABLES: Tuple[FitVariableSpec, ...] = (
     # Use the validated exclusivity-template supports.  Broad distributions are
     # produced separately as shape diagnostics and are not used to drive the fit.
-    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False, False, 0.0),
+    FitVariableSpec("Delta_phi", "delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159, False, True, 1.0),
     FitVariableSpec("theta_gamma_gamma", "theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (rad)", 120, 0.0, 3.0, False, True, 1.0),
     FitVariableSpec("pTmiss", "pTmiss", r"$p_T^{\mathrm{miss}}$ (GeV)", 125, 0.0, 0.5, False, True, 1.0),
     FitVariableSpec("theta_cm", "theta_cm", r"$\theta_{p\gamma}^{\mathrm{CM}}$ (rad)", 100, 2.0, math.pi, False, False, 0.0),
@@ -2647,10 +2629,24 @@ def run_exact_exclusivity_fit(
     pi0_hists: Mapping[str, np.ndarray],
     args: argparse.Namespace,
     fraction_drivers: Optional[Sequence[str]] = None,
+    topology_key: str = "CD_FT",
 ) -> Tuple[MultiFitSummary, object]:
     """Run the exact support/profile fitter used by the exclusivity analysis."""
     module = load_exclusivity_fitter_module()
-    topology = module.TopologyConfig("EFFICIENCY", "photon-efficiency", 0, 0)
+    topology_map = {
+        "CD_FT": (2, 0),
+        "CD_FD": (2, 1),
+        "FD_FD": (1, 1),
+    }
+    if topology_key not in topology_map:
+        raise ValueError(f"Unsupported production topology: {topology_key}")
+    detector1, detector2 = topology_map[topology_key]
+    topology = module.TopologyConfig(
+        topology_key,
+        TOPOLOGY_LABELS.get(topology_key, topology_key),
+        detector1,
+        detector2,
+    )
     active_drivers = tuple(FRACTION_DRIVER_KEYS if fraction_drivers is None else fraction_drivers)
     exact_drivers = tuple("theta" if key == "theta_cm" else key for key in active_drivers)
 
@@ -2937,6 +2933,86 @@ def plot_all_period_efficiency_summary(path: Path, rows: Sequence[Mapping[str, o
     plt.close(fig)
 
 
+
+TOPOLOGY_LABELS: Mapping[str, str] = {
+    "CD_FT": "(CD, FT)",
+    "CD_FD": "(CD, FD)",
+    "FD_FD": "(FD, FD)",
+}
+
+
+def trial_topology_mask(trials: TrialArrays, topology_key: str) -> np.ndarray:
+    """Return the production-analysis proton/photon topology mask."""
+    if topology_key == "CD_FT":
+        return (trials.proton_detector == 2) & (trials.detector == 0)
+    if topology_key == "CD_FD":
+        return (trials.proton_detector == 2) & (trials.detector == 1)
+    if topology_key == "FD_FD":
+        return (trials.proton_detector == 1) & (trials.detector == 1)
+    raise ValueError(f"Unsupported topology key: {topology_key}")
+
+
+def topology_keys_for_definition(definition: BinDefinition) -> Tuple[str, ...]:
+    return ("CD_FT",) if definition.detector == "FT" else ("CD_FD", "FD_FD")
+
+
+def histograms_for_mask(
+    trials: TrialArrays,
+    mask: np.ndarray,
+    edges_by_var: Mapping[str, np.ndarray],
+) -> Dict[str, np.ndarray]:
+    """Fill all template projections from one explicitly common event mask."""
+    result: Dict[str, np.ndarray] = {}
+    selected_weights = trials.weight[mask]
+    for spec in FIT_VARIABLES:
+        values = np.asarray(getattr(trials, spec.attr), dtype=float)[mask]
+        finite = np.isfinite(values) & np.isfinite(selected_weights)
+        result[spec.key] = np.histogram(
+            values[finite],
+            bins=edges_by_var[spec.key],
+            weights=selected_weights[finite],
+        )[0].astype(float)
+    return result
+
+
+def weighted_count_for_mask(trials: TrialArrays, mask: np.ndarray) -> Tuple[float, float]:
+    weights = np.asarray(trials.weight[mask], dtype=float)
+    return float(np.sum(weights)), float(np.sum(weights * weights))
+
+
+def exact_fit_variants(
+    data_hists: Mapping[str, np.ndarray],
+    dvcs_hists: Mapping[str, np.ndarray],
+    pi0_hists: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+    topology_key: str,
+) -> Tuple[MultiFitSummary, float, Dict[str, MultiFitSummary], object]:
+    """Fit Delta_phi, theta_gamma_gamma and pTmiss and assess driver stability."""
+    nominal, exact = run_exact_exclusivity_fit(
+        data_hists, dvcs_hists, pi0_hists, args, FRACTION_DRIVER_KEYS,
+        topology_key=topology_key,
+    )
+    variants: Dict[str, MultiFitSummary] = {"nominal": nominal}
+    for omitted in FRACTION_DRIVER_KEYS:
+        active = tuple(key for key in FRACTION_DRIVER_KEYS if key != omitted)
+        variant, _ = run_exact_exclusivity_fit(
+            data_hists, dvcs_hists, pi0_hists, args, active,
+            topology_key=topology_key,
+        )
+        variants[f"omit_{omitted}"] = variant
+    good = [
+        fit.fraction_pi0 for fit in variants.values()
+        if fit.success and math.isfinite(fit.fraction_pi0)
+    ]
+    spread = (
+        max((abs(value - nominal.fraction_pi0) for value in good), default=0.0)
+        if nominal.success else math.nan
+    )
+    if args.disable_fit_variant_systematic:
+        spread = 0.0
+    return nominal, spread, variants, exact
+
+
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     period_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -3028,183 +3104,327 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
 
     shape_dir = period_dir / "shape_comparisons"
     shape_dir.mkdir(parents=True, exist_ok=True)
-    shape_categories = [("FT", [d.bin_id for d in bins if d.detector == "FT"]),
-                        ("FD_all_sectors", [d.bin_id for d in bins if d.detector == "FD"])]
-    for category_label, category_ids in shape_categories:
-        if not category_ids:
+
+    # Reproduce the production-analysis topology separation.  In particular,
+    # FT means (CD,FT); FD is the sum of distinct (CD,FD) and (FD,FD) fits.
+    for topology_key in ("CD_FT", "CD_FD", "FD_FD"):
+        data_top = trial_topology_mask(data_one_photon_candidates, topology_key)
+        dvcs_top = trial_topology_mask(dvcs_background_template, topology_key)
+        pi0_top = trial_topology_mask(pi0_missing_probe_mc, topology_key)
+        if not (np.any(data_top) and np.any(dvcs_top) and np.any(pi0_top)):
             continue
-        masks = (np.isin(data_one_photon_ids, category_ids),
-                 np.isin(dvcs_template_ids, category_ids),
-                 np.isin(pi0_missing_probe_ids, category_ids))
-        plot_shape_comparison_canvas(shape_dir / f"{category_label}_fit_ranges.png", period.label, category_label,
-                                     data_one_photon_candidates, dvcs_background_template, pi0_missing_probe_mc, masks, broad=False)
-        plot_shape_comparison_canvas(shape_dir / f"{category_label}_broad_ranges.png", period.label, category_label,
-                                     data_one_photon_candidates, dvcs_background_template, pi0_missing_probe_mc, masks, broad=True)
+        label = topology_key.lower()
+        plot_shape_comparison_canvas(
+            shape_dir / f"{label}_fit_ranges.png",
+            period.label,
+            TOPOLOGY_LABELS[topology_key],
+            data_one_photon_candidates,
+            dvcs_background_template,
+            pi0_missing_probe_mc,
+            (data_top, dvcs_top, pi0_top),
+            broad=False,
+        )
+        plot_shape_comparison_canvas(
+            shape_dir / f"{label}_broad_ranges.png",
+            period.label,
+            TOPOLOGY_LABELS[topology_key],
+            data_one_photon_candidates,
+            dvcs_background_template,
+            pi0_missing_probe_mc,
+            (data_top, dvcs_top, pi0_top),
+            broad=True,
+        )
 
     pass_data_counts = weighted_counts_by_bin(pass_data, pass_data_ids, n_bins)
     pass_mc_counts = weighted_counts_by_bin(pass_mc, pass_mc_ids, n_bins)
     pass_data_sumw2 = weighted_sumw2_by_bin(pass_data, pass_data_ids, n_bins)
     pass_mc_sumw2 = weighted_sumw2_by_bin(pass_mc, pass_mc_ids, n_bins)
-    # Full selected-candidate normalizations.  These are distinct from the
-    # integrals of any individual fit projection, whose finite histogram range
-    # may contain only a subset of the selected candidates.
-    data_one_photon_total_counts = weighted_counts_by_bin(data_one_photon_candidates, data_one_photon_ids, n_bins)
-    data_one_photon_total_sumw2 = weighted_sumw2_by_bin(data_one_photon_candidates, data_one_photon_ids, n_bins)
-    pi0_missing_probe_counts = weighted_counts_by_bin(pi0_missing_probe_mc, pi0_missing_probe_ids, n_bins)
 
-    data_hists = {spec.key: bulk_variable_histograms(data_one_photon_candidates, data_one_photon_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
-    dvcs_hists = {spec.key: bulk_variable_histograms(dvcs_background_template, dvcs_template_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
-    pi0_hists = {spec.key: bulk_variable_histograms(pi0_missing_probe_mc, pi0_missing_probe_ids, n_bins, spec, edges_by_var[spec.key]) for spec in FIT_VARIABLES}
-
-    # Run the validated exclusivity support/profile fitter only twice per period:
-    # once for integrated FT and once for all FD sectors combined.  The sector
-    # fractions then use the combined-FD transformed shapes with nuisance
-    # morphology frozen.  This is both faster and substantially more stable.
-    ft_indices = [d.bin_id for d in bins if d.detector == "FT"]
-    fd_indices = [d.bin_id for d in bins if d.detector == "FD"]
-
-    def summed_histograms(indices, source):
-        return {spec.key: source[spec.key][indices].sum(axis=0) for spec in FIT_VARIABLES}
-
-    ft_reference_fit = None
-    ft_reference_exact = None
-    if ft_indices:
-        ft_reference_fit, ft_reference_exact = run_exact_exclusivity_fit(
-            summed_histograms(ft_indices, data_hists),
-            summed_histograms(ft_indices, dvcs_hists),
-            summed_histograms(ft_indices, pi0_hists),
-            args,
-        )
-
-    combined_fd_fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "No FD bins", {})
-    combined_fd_exact = None
-    if fd_indices:
-        combined_fd_fit, combined_fd_exact = run_exact_exclusivity_fit(
-            summed_histograms(fd_indices, data_hists),
-            summed_histograms(fd_indices, dvcs_hists),
-            summed_histograms(fd_indices, pi0_hists),
-            args,
-        )
-        plot_combined_fd_fit(aggregate_fit_dir / "FD_all_sectors_combined.png", period.label, combined_fd_fit)
-
-    fits: List[MultiFitSummary] = []
-    fit_model_systematics: Dict[str, float] = {}
-    fit_variants_metadata: Dict[str, object] = {}
-    rows: List[EfficiencyRow] = []
-    fit_support_coverage: Dict[str, Dict[str, float]] = {}
-    for definition in bins:
-        index = definition.bin_id
-        category_key = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
-        coverage = {
-            "data": category_fit_support_fraction(data_one_photon_candidates, data_one_photon_ids, index),
-            "dvcs_mc": category_fit_support_fraction(dvcs_background_template, dvcs_template_ids, index),
-            "pi0_mc": category_fit_support_fraction(pi0_missing_probe_mc, pi0_missing_probe_ids, index),
-        }
-        fit_support_coverage[category_key] = coverage
-        local_data = {spec.key: data_hists[spec.key][index].copy() for spec in FIT_VARIABLES}
-        if min(coverage.values()) < args.min_fit_support_fraction:
-            fit = MultiFitSummary(
-                False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan,
-                math.nan, 0,
-                f"Finite common-fit support below threshold: {coverage}", {},
-            )
-            model_spread = math.nan
-            variants = {"nominal": fit}
-        elif definition.detector == "FT":
-            if ft_reference_exact is None:
-                fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "No FT reference fit", {})
-                model_spread = math.nan
-                variants = {"nominal": fit}
-            else:
-                fit, model_spread, variants = frozen_variant_systematic(local_data, ft_reference_exact)
+    # Learn the nuisance morphology separately for each production topology.
+    topology_references: Dict[str, object] = {}
+    topology_reference_fits: Dict[str, MultiFitSummary] = {}
+    topology_reference_variants: Dict[str, object] = {}
+    for topology_key in ("CD_FT", "CD_FD", "FD_FD"):
+        if topology_key == "CD_FT":
+            category_mask_data = data_one_photon_candidates.detector == 0
+            category_mask_dvcs = dvcs_background_template.detector == 0
+            category_mask_pi0 = pi0_missing_probe_mc.detector == 0
         else:
-            if combined_fd_exact is None:
-                fit = MultiFitSummary(False, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, math.nan, 0, "No combined-FD reference fit", {})
-                model_spread = math.nan
-                variants = {"nominal": fit}
-            else:
-                fit, model_spread, variants = frozen_variant_systematic(local_data, combined_fd_exact)
-        if args.disable_fit_variant_systematic:
-            model_spread = 0.0
-        fit_model_systematics[category_key] = float(model_spread)
-        fit_variants_metadata[category_key] = {
+            category_mask_data = data_one_photon_candidates.detector == 1
+            category_mask_dvcs = dvcs_background_template.detector == 1
+            category_mask_pi0 = pi0_missing_probe_mc.detector == 1
+
+        data_mask = category_mask_data & trial_topology_mask(data_one_photon_candidates, topology_key)
+        dvcs_mask = category_mask_dvcs & trial_topology_mask(dvcs_background_template, topology_key)
+        pi0_mask = category_mask_pi0 & trial_topology_mask(pi0_missing_probe_mc, topology_key)
+
+        data_h = histograms_for_mask(data_one_photon_candidates, data_mask, edges_by_var)
+        dvcs_h = histograms_for_mask(dvcs_background_template, dvcs_mask, edges_by_var)
+        pi0_h = histograms_for_mask(pi0_missing_probe_mc, pi0_mask, edges_by_var)
+
+        if min(np.sum(data_h[key]) for key in FRACTION_DRIVER_KEYS) < args.fit_min_counts:
+            continue
+        if min(np.sum(dvcs_h[key]) for key in FRACTION_DRIVER_KEYS) < args.fit_min_counts:
+            continue
+        if min(np.sum(pi0_h[key]) for key in FRACTION_DRIVER_KEYS) < args.fit_min_counts:
+            continue
+
+        reference_fit, _, reference_variants, reference_exact = exact_fit_variants(
+            data_h, dvcs_h, pi0_h, args, topology_key
+        )
+        topology_reference_fits[topology_key] = reference_fit
+        topology_reference_variants[topology_key] = {
             name: {
                 "success": value.success,
-                # n_pi0 here is the yield within the finite fit-projection
-                # support and is retained only as a diagnostic.
-                "n_pi0_in_fit_support": value.n_pi0,
                 "fraction_pi0": value.fraction_pi0,
+                "fraction_pi0_err": value.fraction_pi0_err,
                 "deviance": value.deviance,
                 "ndf": value.ndf,
             }
-            for name, value in variants.items()
+            for name, value in reference_variants.items()
         }
-        fits.append(fit)
-        n_pass_data = float(pass_data_counts[index])
-        n_pass_mc = float(pass_mc_counts[index])
-        n_probe_missing_mc = float(pi0_missing_probe_counts[index])
+        if reference_fit.success:
+            topology_references[topology_key] = reference_exact
+            definition = BinDefinition(
+                -1,
+                "FT" if topology_key == "CD_FT" else "FD",
+                0,
+                args.probe_E_min,
+                args.probe_E_max,
+                args.ft_theta_min if topology_key == "CD_FT" else args.fd_theta_min,
+                args.ft_theta_max if topology_key == "CD_FT" else args.fd_theta_max,
+            )
+            plot_category_fit_summary(
+                aggregate_fit_dir / f"{topology_key}_integrated.png",
+                f"{period.label} {TOPOLOGY_LABELS[topology_key]}",
+                definition,
+                reference_fit,
+            )
 
-        # CRITICAL NORMALIZATION:
-        # The template fit determines the pi0 *fraction*.  Its histogram
-        # projections have finite supports and therefore cannot define the
-        # physical number of selected failing candidates.  Apply the fitted
-        # fraction to the complete selected epgamma candidate count in this
-        # detector category.
-        n_one_photon_candidates = float(data_one_photon_total_counts[index])
-        data_one_photon_sumw2 = float(data_one_photon_total_sumw2[index])
-        fraction_pi0 = float(fit.fraction_pi0)
-        fraction_pi0_err = float(fit.fraction_pi0_err)
-        if fit.success and math.isfinite(fraction_pi0) and n_one_photon_candidates >= 0.0:
-            n_probe_missing_data = fraction_pi0 * n_one_photon_candidates
-            # Include three independent contributions:
-            #   1. fitted mixture-fraction uncertainty;
-            #   2. leave-one-variable-out model variation in fraction units;
-            #   3. counting uncertainty of the full selected data one-photon sample.
-            fit_fraction_term = (
-                n_one_photon_candidates * fraction_pi0_err
-                if math.isfinite(fraction_pi0_err) else 0.0
+    fit_model_systematics: Dict[str, float] = {}
+    fit_variants_metadata: Dict[str, object] = {}
+    fit_support_coverage: Dict[str, Dict[str, float]] = {}
+    category_fit_summaries: Dict[str, MultiFitSummary] = {}
+
+    for definition in bins:
+        index = definition.bin_id
+        category_key = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
+        topology_details: Dict[str, object] = {}
+
+        n_probe_missing_data = 0.0
+        n_probe_missing_data_variance = 0.0
+        n_probe_missing_mc = 0.0
+        all_success = True
+        weighted_fraction_numerator = 0.0
+        weighted_fraction_denominator = 0.0
+        total_deviance = 0.0
+        total_ndf = 0
+        maximum_model_spread = 0.0
+
+        for topology_key in topology_keys_for_definition(definition):
+            data_mask = (
+                (data_one_photon_ids == index)
+                & trial_topology_mask(data_one_photon_candidates, topology_key)
             )
-            model_fraction_term = (
-                n_one_photon_candidates * model_spread
-                if math.isfinite(model_spread) else 0.0
+            dvcs_mask = (
+                (dvcs_template_ids == index)
+                & trial_topology_mask(dvcs_background_template, topology_key)
             )
-            candidate_count_term = fraction_pi0 * math.sqrt(max(data_one_photon_sumw2, 0.0))
-            n_probe_missing_data_err = math.sqrt(
-                fit_fraction_term**2
-                + model_fraction_term**2
-                + candidate_count_term**2
+            pi0_mask = (
+                (pi0_missing_probe_ids == index)
+                & trial_topology_mask(pi0_missing_probe_mc, topology_key)
             )
-        else:
+
+            n_candidates, n_candidates_sumw2 = weighted_count_for_mask(
+                data_one_photon_candidates, data_mask
+            )
+            n_pi0_mc_top, _ = weighted_count_for_mask(pi0_missing_probe_mc, pi0_mask)
+            n_probe_missing_mc += n_pi0_mc_top
+
+            data_h = histograms_for_mask(data_one_photon_candidates, data_mask, edges_by_var)
+            dvcs_h = histograms_for_mask(dvcs_background_template, dvcs_mask, edges_by_var)
+            pi0_h = histograms_for_mask(pi0_missing_probe_mc, pi0_mask, edges_by_var)
+
+            support = {
+                "data_Delta_phi": float(np.sum(data_h["Delta_phi"])),
+                "data_theta_gamma_gamma": float(np.sum(data_h["theta_gamma_gamma"])),
+                "data_pTmiss": float(np.sum(data_h["pTmiss"])),
+                "dvcs_Delta_phi": float(np.sum(dvcs_h["Delta_phi"])),
+                "pi0_Delta_phi": float(np.sum(pi0_h["Delta_phi"])),
+            }
+
+            reference_exact = topology_references.get(topology_key)
+            if reference_exact is None:
+                fit = MultiFitSummary(
+                    False, math.nan, math.nan, math.nan, math.nan,
+                    math.nan, math.nan, math.nan, 0,
+                    f"No valid integrated reference fit for {topology_key}", {},
+                )
+                spread = math.nan
+                variants = {"nominal": fit}
+            elif topology_key == "CD_FT":
+                # FT has one integrated output category, so use the full exact
+                # topology fit rather than refitting frozen shapes.
+                fit, spread, variants, _ = exact_fit_variants(
+                    data_h, dvcs_h, pi0_h, args, topology_key
+                )
+            else:
+                fit, spread, variants = frozen_variant_systematic(
+                    data_h, reference_exact
+                )
+
+            if not fit.success or not math.isfinite(fit.fraction_pi0):
+                all_success = False
+                assigned = math.nan
+                assigned_err = math.nan
+            else:
+                fraction = float(fit.fraction_pi0)
+                fraction_err = (
+                    float(fit.fraction_pi0_err)
+                    if math.isfinite(fit.fraction_pi0_err) else 0.0
+                )
+                spread_value = float(spread) if math.isfinite(spread) else 0.0
+                assigned = fraction * n_candidates
+                fit_term = n_candidates * fraction_err
+                model_term = n_candidates * spread_value
+                count_term = fraction * math.sqrt(max(n_candidates_sumw2, 0.0))
+                assigned_err = math.sqrt(
+                    fit_term * fit_term
+                    + model_term * model_term
+                    + count_term * count_term
+                )
+                n_probe_missing_data += assigned
+                n_probe_missing_data_variance += assigned_err * assigned_err
+                weighted_fraction_numerator += fraction * n_candidates
+                weighted_fraction_denominator += n_candidates
+                total_deviance += fit.deviance
+                total_ndf += fit.ndf
+                maximum_model_spread = max(maximum_model_spread, spread_value)
+
+            topology_details[topology_key] = {
+                "label": TOPOLOGY_LABELS[topology_key],
+                "selected_data_one_photon_candidates": n_candidates,
+                "selected_pi0_mc_one_photon_candidates": n_pi0_mc_top,
+                "support": support,
+                "fit_success": fit.success,
+                "fraction_pi0": fit.fraction_pi0,
+                "fraction_pi0_err": fit.fraction_pi0_err,
+                "assigned_pi0_data_yield": assigned,
+                "assigned_pi0_data_yield_err": assigned_err,
+                "model_spread_fraction": spread,
+                "deviance": fit.deviance,
+                "ndf": fit.ndf,
+                "variants": {
+                    name: {
+                        "success": value.success,
+                        "fraction_pi0": value.fraction_pi0,
+                        "fraction_pi0_err": value.fraction_pi0_err,
+                        "deviance": value.deviance,
+                        "ndf": value.ndf,
+                    }
+                    for name, value in variants.items()
+                },
+            }
+
+            if fit.success:
+                plot_category_fit_summary(
+                    aggregate_fit_dir / f"{category_key}_{topology_key}.png",
+                    f"{period.label} {TOPOLOGY_LABELS[topology_key]}",
+                    definition,
+                    fit,
+                )
+
+        if not all_success:
             n_probe_missing_data = math.nan
             n_probe_missing_data_err = math.nan
+        else:
+            n_probe_missing_data_err = math.sqrt(n_probe_missing_data_variance)
 
+        n_pass_data = float(pass_data_counts[index])
+        n_pass_mc = float(pass_mc_counts[index])
         pass_data_err = math.sqrt(max(float(pass_data_sumw2[index]), 0.0))
         pass_mc_err = math.sqrt(max(float(pass_mc_sumw2[index]), 0.0))
         probe_missing_mc_err = math.sqrt(max(n_probe_missing_mc, 0.0))
+
         eff_data, eff_data_err = efficiency_and_error(
             n_pass_data, pass_data_err, n_probe_missing_data, n_probe_missing_data_err
         )
         eff_mc, eff_mc_err = efficiency_and_error(
             n_pass_mc, pass_mc_err, n_probe_missing_mc, probe_missing_mc_err
         )
-        sf, sf_err = scale_factor_and_error(eff_data, eff_data_err, eff_mc, eff_mc_err)
-        rows.append(EfficiencyRow(period.key, period.label, definition.bin_id, definition.detector, definition.sector,
-            definition.E_low, definition.E_high, definition.theta_low_deg, definition.theta_high_deg,
-            n_pass_data, pass_data_err, n_probe_missing_data, n_probe_missing_data_err, eff_data, eff_data_err,
-            n_pass_mc, pass_mc_err, n_probe_missing_mc, probe_missing_mc_err, eff_mc, eff_mc_err, sf, sf_err,
-            fit.success, fit.deviance, fit.ndf))
-
-    for definition, fit, row in zip(bins, fits, rows):
-        index = definition.bin_id
-        category_name = "FT" if definition.detector == "FT" else f"FD_sector_{definition.sector}"
-        log(
-            f"{period.label} {category_name}: data one-photon candidates(full)="
-            f"{float(data_one_photon_total_counts[index]):,.1f}, "
-            f"theta_gamma_gamma support={float(np.sum(data_hists['theta_gamma_gamma'][index])):,.1f}, "
-            f"pTmiss support={float(np.sum(data_hists['pTmiss'][index])):,.1f}, "
-            f"f_pi0={fit.fraction_pi0:.6g}, assigned pi0 missing-probe yield={row.fail_data:,.1f}"
+        sf, sf_err = scale_factor_and_error(
+            eff_data, eff_data_err, eff_mc, eff_mc_err
         )
-        plot_category_fit_summary(aggregate_fit_dir / f"{category_name}.png", period.label, definition, fit)
+
+        combined_fraction = (
+            weighted_fraction_numerator / weighted_fraction_denominator
+            if weighted_fraction_denominator > 0.0 else math.nan
+        )
+        combined_fit = MultiFitSummary(
+            all_success,
+            n_probe_missing_data,
+            n_probe_missing_data_err,
+            weighted_fraction_denominator - n_probe_missing_data
+            if all_success else math.nan,
+            math.nan,
+            combined_fraction,
+            math.nan,
+            total_deviance,
+            total_ndf,
+            "Topology-separated production-style fit",
+            {},
+        )
+        category_fit_summaries[category_key] = combined_fit
+        fit_model_systematics[category_key] = maximum_model_spread
+        fit_variants_metadata[category_key] = topology_details
+        fit_support_coverage[category_key] = {
+            key: value
+            for topology in topology_details.values()
+            for key, value in {
+                f"{topology['label']} {name}": val
+                for name, val in topology["support"].items()
+            }.items()
+        }
+
+        rows.append(
+            EfficiencyRow(
+                period.key,
+                period.label,
+                definition.bin_id,
+                definition.detector,
+                definition.sector,
+                definition.E_low,
+                definition.E_high,
+                definition.theta_low_deg,
+                definition.theta_high_deg,
+                n_pass_data,
+                pass_data_err,
+                n_probe_missing_data,
+                n_probe_missing_data_err,
+                eff_data,
+                eff_data_err,
+                n_pass_mc,
+                pass_mc_err,
+                n_probe_missing_mc,
+                probe_missing_mc_err,
+                eff_mc,
+                eff_mc_err,
+                sf,
+                sf_err,
+                all_success,
+                total_deviance,
+                total_ndf,
+            )
+        )
+
+        log(
+            f"{period.label} {category_key}: "
+            f"topology-separated f_pi0={combined_fraction:.6g}, "
+            f"assigned pi0 one-photon yield={n_probe_missing_data:,.1f}, "
+            f"epgammagamma data={n_pass_data:,.1f}, "
+            f"epgammagamma MC={n_pass_mc:,.1f}, "
+            f"pi0-as-epgamma MC={n_probe_missing_mc:,.1f}"
+        )
 
     plot_integrated_efficiency_summary(
         plot_dir / "integrated_efficiencies_and_scale_factors.png",
@@ -3253,53 +3473,48 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
             "diagnostic_only_variables": [s.key for s in FIT_VARIABLES if not s.fraction_driver],
             "constraint_variables": [],
             "support_fit_source": "plot_exclusivity_data_dvcs_pi0_mc.py exact fitter",
-            "FD_morphology": "exact exclusivity fit on all six FD sectors; frozen for sector fractions",
-            "FT_morphology": "exact exclusivity fit on integrated FT",
+            "FD_morphology": "separate exact reference fits for (CD,FD) and (FD,FD), frozen independently for sector fractions",
+            "FT_morphology": "exact exclusivity fit for the production (CD,FT) topology",
             "yield_normalization": "fitted pi0 fraction multiplied by the full selected data epgamma candidate count only after finite common-support validation",
             "mc_missing_probe_source": "production eppi0_bkg_aaogen_norad_*_epgamma.root sample from load_trees.cpp; no template fit is used for the MC one-photon pi0 count",
             "dvcs_mc_role": "shape-only DVCS/BH background template for the data one-photon decomposition; never enters the MC efficiency denominator",
             "tag_energy_policy": "0.4--probe-threshold tag fractions are recorded as diagnostics only; no minimum fraction is imposed",
-            "fit_support_policy": "theta_gamma_gamma and pTmiss alone determine f_pi0; all other projections are diagnostic only",
-            "production_global_cuts_enabled": bool(args.enable_production_global_cuts and not args.disable_production_global_cuts),
+            "fit_support_policy": "Delta_phi, theta_gamma_gamma and pTmiss determine f_pi0 on one common population; all other projections are diagnostic only",
+            "common_selection_policy": "epgamma and epgammagamma share basic quality, -t, leading-photon opening angle, optional DIS cuts, leading-photon E>=2 GeV, and the same production topology definitions; topology-specific exclusivity and photon-matching cuts are diagnostic only",
+            "production_global_cuts_enabled": bool(not args.disable_production_global_cuts),
         },
         "fit_model_systematics_on_fraction_pi0": fit_model_systematics,
         "fit_variants": fit_variants_metadata,
-        "combined_FD_fit": {
-            "success": combined_fd_fit.success, "fraction_pi0": combined_fd_fit.fraction_pi0,
-            "deviance": combined_fd_fit.deviance, "ndf": combined_fd_fit.ndf,
+        "topology_reference_fits": {
+            key: {
+                "success": fit.success,
+                "fraction_pi0": fit.fraction_pi0,
+                "fraction_pi0_err": fit.fraction_pi0_err,
+                "deviance": fit.deviance,
+                "ndf": fit.ndf,
+                "variants": topology_reference_variants.get(key, {}),
+            }
+            for key, fit in topology_reference_fits.items()
         },
         "fit_diagnostics": {
-            ("FT" if d.detector == "FT" else f"FD_sector_{d.sector}"): {
-                "mixture_fit_converged": f.success,
-                "fit_message": f.message,
-                "fraction_pi0": f.fraction_pi0,
-                "fraction_pi0_stat_err": f.fraction_pi0_err,
-                "fraction_pi0_model_spread": fit_model_systematics.get(
-                    "FT" if d.detector == "FT" else f"FD_sector_{d.sector}", math.nan
-                ),
-                "full_selected_data_one_photon_candidates": float(data_one_photon_total_counts[d.bin_id]),
-                "theta_gamma_gamma_fit_support_candidates": float(
-                    np.sum(data_hists["theta_gamma_gamma"][d.bin_id])
-                ),
-                "pTmiss_fit_support_candidates": float(
-                    np.sum(data_hists["pTmiss"][d.bin_id])
-                ),
-                "assigned_pi0_missing_probe_yield": float(rows[d.bin_id].fail_data),
-                "assigned_pi0_missing_probe_yield_err": float(rows[d.bin_id].fail_data_err),
-                "n_pi0_in_delta_phi_fit_support_diagnostic": f.n_pi0,
-                "deviance": f.deviance,
-                "ndf": f.ndf,
-                "deviance_per_ndf": f.deviance / f.ndf if f.ndf > 0 else math.nan,
-                "projection_deviance": {k: {"deviance": v.deviance, "ndf": v.ndf,
-                                               "deviance_per_ndf": v.deviance / v.ndf if v.ndf > 0 else math.nan}
-                                        for k, v in f.projections.items()},
-            } for d, f in zip(bins, fits)
+            category_key: {
+                "mixture_fit_converged": fit.success,
+                "fit_message": fit.message,
+                "combined_fraction_pi0": fit.fraction_pi0,
+                "combined_deviance": fit.deviance,
+                "combined_ndf": fit.ndf,
+                "topology_components": fit_variants_metadata.get(category_key, {}),
+                "assigned_pi0_missing_probe_yield": float(rows[i].fail_data),
+                "assigned_pi0_missing_probe_yield_err": float(rows[i].fail_data_err),
+            }
+            for i, (category_key, fit) in enumerate(category_fit_summaries.items())
         },
         "selected_energy_support": energy_support,
         "exclusivity_fitter_reference": {
             "module": str(Path(load_exclusivity_fitter_module().__file__).resolve()),
-            "FT_reference_success": bool(ft_reference_fit.success) if ft_reference_fit is not None else False,
-            "FD_reference_success": bool(combined_fd_fit.success),
+            "topology_reference_success": {
+                key: bool(fit.success) for key, fit in topology_reference_fits.items()
+            },
         },
         "runtime_seconds": time.perf_counter() - period_start,
     }
