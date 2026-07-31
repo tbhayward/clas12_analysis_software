@@ -4217,8 +4217,7 @@ def _resolve_identity_groups(epg: AuditEpgRecords, epgg: AuditEpggRecords,
 def _detector_category(detector: np.ndarray, phi_rad: np.ndarray) -> np.ndarray:
     """Return 0=unknown, 1=FT, 2..7=FD sectors 1..6."""
     detector = np.asarray(detector)
-    phi_deg = np.degrees(np.asarray(phi_rad))
-    sector = sector_from_phi(phi_deg)
+    sector = fd_sector_from_phi(np.asarray(phi_rad))
     category = np.zeros(detector.shape, dtype=np.int8)
     category[detector == 0] = 1
     fd = detector == 1
