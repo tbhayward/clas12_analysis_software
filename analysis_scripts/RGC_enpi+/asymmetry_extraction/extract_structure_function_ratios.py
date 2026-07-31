@@ -3217,6 +3217,21 @@ def plot_parameter_summaries(
 
     for parameter in PHYSICS_PARAMETERS:
         fig, ax = plt.subplots(figsize=(14, 5.5))
+        point_to_point_column = f"{parameter}_point_to_point_systematic"
+        if point_to_point_column in frame.columns:
+            point_to_point = pd.to_numeric(
+                frame[point_to_point_column], errors="coerce"
+            ).to_numpy(dtype=float)
+            ax.bar(
+                bins,
+                point_to_point,
+                width=0.70,
+                bottom=0.0,
+                alpha=0.28,
+                label="Point-to-point systematic",
+                zorder=0,
+            )
+        # endif
         ax.errorbar(
             bins,
             frame[parameter],
@@ -3288,6 +3303,27 @@ def plot_aggregated_by_x(
             # endif
 
             x_values = subset["mean_minus_tprime_gev2"]
+            point_to_point_column = f"{parameter}_point_to_point_systematic"
+            if point_to_point_column in subset.columns:
+                point_to_point = pd.to_numeric(
+                    subset[point_to_point_column], errors="coerce"
+                ).to_numpy(dtype=float)
+                x_array = x_values.to_numpy(dtype=float)
+                if x_array.size > 1:
+                    bar_width = 0.55 * float(np.nanmin(np.diff(x_array)))
+                else:
+                    bar_width = 0.05
+                # endif
+                ax.bar(
+                    x_array,
+                    point_to_point,
+                    width=bar_width,
+                    bottom=0.0,
+                    alpha=0.28,
+                    label="Point-to-point systematic",
+                    zorder=0,
+                )
+            # endif
             ax.errorbar(
                 x_values,
                 subset[parameter],
@@ -4247,6 +4283,78 @@ def write_channel_selection_comparison_products(
     write_json(json_path, {"schema_version": 4, "systematic_definition": "delta_ch = sqrt(((tight-nominal)^2 + (loose-nominal)^2)/2)", "combined_barlow_marker_rule": "Filled if either tight or loose variation passes Barlow; open only if both defined variations fail; x if unresolved/undefined.", "middle_panel": "Assigned RMS systematic with Barlow marker state.", "bottom_panel": "Assigned RMS systematic divided by nominal statistical uncertainty.", "plot_axis_convention": "Top-panel axes are common by parameter family; every assigned-systematic panel uses 0 to 0.2; normalized-size axis is logarithmic from 1e-2 to 1e1.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
     return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": barlow_records}
 
+def attach_point_to_point_systematics(
+    nominal: pd.DataFrame,
+    isr: pd.DataFrame | None,
+    momentum_uncorrected: pd.DataFrame | None,
+    channel_tight: pd.DataFrame | None,
+    channel_loose: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """Attach radiation, momentum, channel-selection, and total point-to-point errors.
+
+    The three assigned sources are combined independently in quadrature:
+
+        delta_ptp = sqrt(delta_rad^2 + delta_mom^2 + delta_ch^2),
+
+    where delta_ch is the RMS of the tight and loose shifts about nominal.
+    Missing disabled studies contribute zero, while non-finite values in an
+    enabled study remain non-finite so incomplete systematic coverage is not
+    silently hidden.
+    """
+    output = nominal.copy()
+    for parameter in PHYSICS_PARAMETERS:
+        nominal_values = pd.to_numeric(output[parameter], errors="coerce").to_numpy(dtype=float)
+
+        if isr is None:
+            radiation = np.zeros_like(nominal_values)
+        else:
+            radiation = np.abs(
+                pd.to_numeric(isr[parameter], errors="coerce").to_numpy(dtype=float)
+                - nominal_values
+            )
+        # endif
+
+        if momentum_uncorrected is None:
+            momentum = np.zeros_like(nominal_values)
+        else:
+            momentum = np.abs(
+                pd.to_numeric(momentum_uncorrected[parameter], errors="coerce").to_numpy(dtype=float)
+                - nominal_values
+            )
+        # endif
+
+        if channel_tight is None or channel_loose is None:
+            channel = np.zeros_like(nominal_values)
+        else:
+            tight_shift = (
+                pd.to_numeric(channel_tight[parameter], errors="coerce").to_numpy(dtype=float)
+                - nominal_values
+            )
+            loose_shift = (
+                pd.to_numeric(channel_loose[parameter], errors="coerce").to_numpy(dtype=float)
+                - nominal_values
+            )
+            channel = np.sqrt(0.5 * (tight_shift**2 + loose_shift**2))
+        # endif
+
+        total = np.sqrt(radiation**2 + momentum**2 + channel**2)
+        output[f"{parameter}_radiation_systematic"] = radiation
+        output[f"{parameter}_momentum_correction_systematic"] = momentum
+        output[f"{parameter}_channel_selection_systematic"] = channel
+        output[f"{parameter}_point_to_point_systematic"] = total
+        output[f"{parameter}_point_to_point_systematic_to_stat"] = np.divide(
+            total,
+            pd.to_numeric(output[f"{parameter}_stat"], errors="coerce").to_numpy(dtype=float),
+            out=np.full_like(total, np.nan),
+            where=(
+                pd.to_numeric(output[f"{parameter}_stat"], errors="coerce").to_numpy(dtype=float)
+                > 0.0
+            ),
+        )
+    # endfor
+    return output
+
+
 def write_target_axis_barlow_products(
     nominal_frame: pd.DataFrame,
     output_dir: Path,
@@ -4761,6 +4869,39 @@ def main() -> int:
         )
     # endif
 
+    nominal_with_systematics = attach_point_to_point_systematics(
+        nominal=nominal_result["frame"],
+        isr=(isr_result["frame"] if isr_result is not None else None),
+        momentum_uncorrected=(
+            momentum_result["frame"] if momentum_result is not None else None
+        ),
+        channel_tight=(
+            channel_results["tight"]["frame"] if channel_results else None
+        ),
+        channel_loose=(
+            channel_results["loose"]["frame"] if channel_results else None
+        ),
+    )
+    nominal_result["frame"] = nominal_with_systematics
+    point_to_point_csv = diagnostics_dir / "point_to_point_systematics.csv"
+    nominal_with_systematics.to_csv(point_to_point_csv, index=False)
+    # Also update the production CSV so downstream consumers receive the
+    # source-by-source and total point-to-point systematic columns directly.
+    nominal_with_systematics.to_csv(Path(nominal_result["csv"]), index=False)
+
+    if not args.skip_plots:
+        plot_parameter_summaries(
+            nominal_with_systematics,
+            nominal_dir / "plots/all_bins",
+            include_target_axis_uncertainty=True,
+        )
+        plot_aggregated_by_x(
+            nominal_with_systematics,
+            nominal_dir / "plots/aggregated",
+            include_target_axis_uncertainty=True,
+        )
+    # endif
+
     all_barlow_records: list[dict[str, Any]] = list(
         target_axis_barlow["barlow_summary"]
     )
@@ -4779,7 +4920,7 @@ def main() -> int:
 
     manifest_path = root / "asymmetry_extraction_manifest.json"
     write_json(manifest_path, {
-        "schema_version": 6,
+        "schema_version": 7,
         "production_policy": (
             "Nominal results are production. ISR/external-ISR results are a "
             "separate radiation diagnostic. Momentum corrections are evaluated "
@@ -4788,7 +4929,9 @@ def main() -> int:
             "with matched tight, nominal, and loose dilution factors. The "
             "recommended per-bin channel-selection uncertainty is the RMS of "
             "the tight-minus-nominal and loose-minus-nominal shifts, while the "
-            "complete variation vectors are retained as coherent alternatives."
+            "complete variation vectors are retained as coherent alternatives. "
+            "Radiation, momentum-correction, and channel-selection point-to-point "
+            "uncertainties are combined in quadrature and drawn as bars from y=0."
         ),
         "nominal": {
             key: value for key, value in nominal_result.items()
@@ -4819,6 +4962,10 @@ def main() -> int:
             for label, result in channel_results.items()
         } if channel_results else None,
         "channel_selection_comparison": channel_comparison,
+        "point_to_point_systematics_csv": str(point_to_point_csv),
+        "point_to_point_systematic_definition": (
+            "sqrt(radiation^2 + momentum_corrections^2 + channel_selection_RMS^2)"
+        ),
         "barlow_summary": barlow_summary_products,
     })
 

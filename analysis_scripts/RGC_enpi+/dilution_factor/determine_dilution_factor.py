@@ -1,31 +1,29 @@
 #!/usr/bin/env python3
 """
-determine_dilution_factor_v25.py
+determine_dilution_factor_v27.py
 
 Determine the RGC exclusive e pi+ dilution factor in the fixed 4 xB by 6
 (-tprime) bins using three complementary methods:
 
-  Method 1
-    Carbon subtraction with exactly the period-wide raw-count normalization
-    used by channel_selection_mx2_fits_v24.py:
-
-        alpha_C = N_NH3(0.00 <= Mx2 < 0.40) /
-                  N_C  (0.00 <= Mx2 < 0.40)
-
-        f = (N_NH3 - alpha_C N_C) / N_NH3.
+  Method 1 (production nominal)
+    Direct five-target auxiliary-target dilution factor from Eq. (10) of the
+    standalone RGC dilution-factor note, using charge-normalized rates from
+    NH3, C, CH2, He-bath (MT), and empty-target/foils-only (F) data.  This is
+    the final dilution factor used by the asymmetry extraction.  A 4%
+    multiplicative scale uncertainty from thermal-contraction studies is
+    assigned and treated as fully correlated across all periods and bins.
 
   Method 2
-    Direct auxiliary-target dilution factor from Eq. (10) of the standalone
-    RGC dilution-factor note, using charge-normalized rates from NH3, C, CH2,
-    He-bath (MT), and empty-target/foils-only (F) data.
-
-  Method 3
     Packing fraction from Eq. (11), followed by the nonlinear dilution-factor
-    expression in Eq. (14).  A per-bin packing fraction is retained as a
-    diagnostic.  The production-style Method-3 calculation uses a period-wide
-    packing fraction extracted from all 24 kinematic bins for the same Mx2 cut
-    variation, because packing fraction is a target-cell property rather than
-    a kinematic observable.
+    expression in Eq. (14).  The production-style calculation uses a
+    period-wide packing fraction because packing fraction is a target-cell
+    property rather than a kinematic observable.
+
+  Method 3 (cross-check only)
+    Carbon normalization using the period-wide raw-count normalization adopted
+    in the channel-selection study.  It is retained in all diagnostic plots and
+    tables as a cursory cross-check, but it neither defines the central value
+    nor contributes an additional assigned systematic uncertainty.
 
 The program is intended to be run from
 
@@ -1130,7 +1128,7 @@ def calculate_epoch_diagnostics(
             if period_control_c > 0
             else math.nan
         )
-        method1 = (
+        method3 = (
             1.0
             - alpha_epoch * period_counts["C"] / nh3_nominal
             if nh3_nominal > 0
@@ -1152,8 +1150,8 @@ def calculate_epoch_diagnostics(
             target: np.asarray(value, dtype=np.float64)
             for target, value in epoch_counts.items()
         }
-        method2 = float(
-            method2_equation10_from_counts(
+        method1 = float(
+            method1_equation10_from_counts(
                 scalar_counts,
                 epoch_charge_fractions,
             )
@@ -1164,7 +1162,7 @@ def calculate_epoch_diagnostics(
                 epoch_charge_fractions,
             )
         )
-        recommended = 0.5 * (method1 + method2)
+        recommended = method1
 
         # Independent-Poisson epoch diagnostic. The full-period auxiliary
         # samples are redrawn for every epoch because they enter every epoch
@@ -1194,11 +1192,11 @@ def calculate_epoch_diagnostics(
             replica_nh3_control,
             replica_period_control_c,
         )
-        replica_method1 = 1.0 - safe_divide(
+        replica_method3 = 1.0 - safe_divide(
             replica_alpha * replica_counts["C"],
             replica_nh3_nominal,
         )
-        replica_method2 = method2_equation10_from_counts(
+        replica_method1 = method1_equation10_from_counts(
             replica_counts,
             epoch_charge_fractions,
         )
@@ -1206,9 +1204,7 @@ def calculate_epoch_diagnostics(
             replica_counts,
             epoch_charge_fractions,
         )
-        replica_recommended = 0.5 * (
-            replica_method1 + replica_method2
-        )
+        replica_recommended = replica_method1
 
         rows.append(
             {
@@ -1283,9 +1279,9 @@ def calculate_epoch_diagnostics(
                 "full_period_c_nominal_count": (
                     period_counts["C"]
                 ),
-                "method1_epoch_carbon_scale": alpha_epoch,
+                "method3_epoch_carbon_scale": alpha_epoch,
                 "method1_value": method1,
-                "method2_value": method2,
+                "method3_value": method3,
                 "recommended_dilution_factor": recommended,
                 "recommended_stat_uncertainty": float(
                     np.nanstd(
@@ -1788,7 +1784,7 @@ def charge_normalized_rates(
     }
 
 
-def method1_from_counts(
+def method3_from_counts(
     counts_by_target: dict[str, np.ndarray],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Exact channel-selection carbon normalization."""
@@ -1803,7 +1799,7 @@ def method1_from_counts(
     return dilution, alpha
 
 
-def method2_equation10_from_counts(
+def method1_equation10_from_counts(
     counts: dict[str, np.ndarray],
     charge_fractions_period: dict[str, float],
 ) -> np.ndarray:
@@ -1885,7 +1881,7 @@ def integrated_packing_fraction_equation11_from_counts(
     )
 
 
-def method3_equation14(
+def method2_equation14(
     counts: dict[str, np.ndarray],
     charge_fractions_period: dict[str, float],
     period_packing_fraction: np.ndarray,
@@ -1930,7 +1926,7 @@ def method3_equation14(
     reconstructed_counts["NH3"] = (
         reconstructed_ammonia_rate * float(charge_fractions_period["NH3"])
     )
-    return method2_equation10_from_counts(
+    return method1_equation10_from_counts(
         reconstructed_counts, charge_fractions_period
     )
 
@@ -1943,13 +1939,13 @@ def observed_estimators_for_period(
         target: observed_period[target_index]
         for target_index, target in enumerate(TARGETS)
     }
-    method1, alpha = method1_from_counts(counts)
+    method3, alpha = method3_from_counts(counts)
     selected_counts = {
         target: values[:, 1:4]
         for target, values in counts.items()
     }
     rates = charge_normalized_rates(selected_counts, period, charge_fractions)
-    method2 = method2_equation10_from_counts(
+    method1 = method1_equation10_from_counts(
         selected_counts, charge_fractions[period]
     )
     pf_bin = packing_fraction_equation11_from_counts(
@@ -1958,16 +1954,16 @@ def observed_estimators_for_period(
     pf_period = integrated_packing_fraction_equation11_from_counts(
         selected_counts, charge_fractions[period]
     )
-    method3 = method3_equation14(
+    method2 = method2_equation14(
         selected_counts, charge_fractions[period], pf_period
     )
     return {
+        "method3": method3,
+        "method3_alpha": alpha,
         "method1": method1,
-        "method1_alpha": alpha,
-        "method2": method2,
         "packing_fraction_bin": pf_bin,
         "packing_fraction_period": pf_period,
-        "method3": method3,
+        "method2": method2,
         "rates": rates,
     }
 
@@ -2009,7 +2005,7 @@ def bootstrap_period_worker(
             for target_index, target in enumerate(TARGETS)
         }
 
-        method1, alpha = method1_from_counts(counts)
+        method3, alpha = method3_from_counts(counts)
         selected_for_auxiliary = {
             target: value[..., 1:4]
             for target, value in counts.items()
@@ -2018,7 +2014,7 @@ def bootstrap_period_worker(
             target: selected_for_auxiliary[target] / charge_fractions_period[target]
             for target in TARGETS
         }
-        method2 = method2_equation10_from_counts(
+        method1 = method1_equation10_from_counts(
             selected_for_auxiliary, charge_fractions_period
         )
         pf_bin = packing_fraction_equation11_from_counts(
@@ -2027,7 +2023,7 @@ def bootstrap_period_worker(
         pf_period = integrated_packing_fraction_equation11_from_counts(
             selected_for_auxiliary, charge_fractions_period
         )
-        method3 = method3_equation14(
+        method2 = method2_equation14(
             selected_for_auxiliary, charge_fractions_period, pf_period
         )
 
@@ -2042,11 +2038,11 @@ def bootstrap_period_worker(
     return {
         "period_index": period_index,
         "method1": method1_output,
-        "method1_alpha": alpha_output,
         "method2": method2_output,
+        "method3": method3_output,
+        "method3_alpha": alpha_output,
         "packing_fraction_bin": pf_bin_output,
         "packing_fraction_period": pf_period_output,
-        "method3": method3_output,
     }
 
 
@@ -2167,8 +2163,8 @@ def scalar_record(summary: dict[str, np.ndarray], index: tuple[int, ...]) -> dic
 
 
 def relative_method_half_difference(
+    method3: np.ndarray,
     method1: np.ndarray,
-    method2: np.ndarray,
 ) -> np.ndarray:
     """
     Return |f1-f2|/(f1+f2), the relative half-difference about their average.
@@ -2176,15 +2172,15 @@ def relative_method_half_difference(
     Since f_rec=(f1+f2)/2 and delta=(|f1-f2|)/2, delta/f_rec is exactly
     |f1-f2|/(f1+f2).
     """
-    denominator = method1 + method2
+    denominator = method3 + method1
     result = np.full_like(denominator, np.nan, dtype=float)
     valid = (
-        np.isfinite(method1)
-        & np.isfinite(method2)
+        np.isfinite(method3)
+        & np.isfinite(method1)
         & np.isfinite(denominator)
         & (denominator > 0.0)
     )
-    result[valid] = np.abs(method1[valid] - method2[valid]) / denominator[valid]
+    result[valid] = np.abs(method3[valid] - method1[valid]) / denominator[valid]
     return result
 
 
@@ -2294,10 +2290,10 @@ def build_output_tables(
 
     method_scale_summaries = {
         period: build_method_scale_summary(
-            central_method1=central_results[period]["method1"],
-            central_method2=central_results[period]["method2"],
-            replica_method1=bootstrap_results[period]["method1"],
-            replica_method2=bootstrap_results[period]["method2"],
+            central_method1=central_results[period]["method3"],
+            central_method2=central_results[period]["method1"],
+            replica_method1=bootstrap_results[period]["method3"],
+            replica_method2=bootstrap_results[period]["method1"],
         )
         for period in PERIODS
     }
@@ -2323,7 +2319,7 @@ def build_output_tables(
                 },
                 "definition": (
                     "Arithmetic mean of the three period-specific constant-fit "
-                    "Method-1/Method-2 relative half-difference scales."
+                    "Method-1/Method-3 relative half-difference scales."
                 ),
                 "correlation_scope": (
                     "One global multiplicative scale fully correlated across "
@@ -2336,13 +2332,13 @@ def build_output_tables(
     for p_index, period in enumerate(PERIODS):
         central = central_results[period]
         replicas = bootstrap_results[period]
-        recommended_central = 0.5 * (central["method1"] + central["method2"])
-        recommended_replicas = 0.5 * (replicas["method1"] + replicas["method2"])
+        recommended_central = np.asarray(central["method1"], dtype=float)
+        recommended_replicas = np.asarray(replicas["method1"], dtype=float)
         method_scale_summary = method_scale_summaries[period]
         summaries = {
+            "method3": summarize_replicas(central["method3"], replicas["method3"]),
             "method1": summarize_replicas(central["method1"], replicas["method1"]),
             "method2": summarize_replicas(central["method2"], replicas["method2"]),
-            "method3": summarize_replicas(central["method3"], replicas["method3"]),
             "recommended": summarize_replicas(
                 recommended_central, recommended_replicas
             ),
@@ -2354,10 +2350,10 @@ def build_output_tables(
             ),
         }
         alpha_summary = summarize_replicas(
-            np.asarray(central["method1_alpha"]),
-            np.asarray(replicas["method1_alpha"]),
+            np.asarray(central["method3_alpha"]),
+            np.asarray(replicas["method3_alpha"]),
         )
-        summaries["method1_alpha"] = alpha_summary
+        summaries["method3_alpha"] = alpha_summary
         summaries["method_scale"] = method_scale_summary
         summaries_by_period[period] = summaries
 
@@ -2399,14 +2395,10 @@ def build_output_tables(
                     ][b, cut_index]
                 )
                 local_absolute_half_difference = 0.5 * abs(
-                    method1_record["value"] - method2_record["value"]
+                    method1_record["value"] - method3_record["value"]
                 )
-                recommended_record["dilution_model_scale_fraction"] = (
-                    local_relative_half_difference
-                )
-                recommended_record["dilution_model_scale_percent"] = (
-                    100.0 * local_relative_half_difference
-                )
+                recommended_record["dilution_model_scale_fraction"] = 0.04
+                recommended_record["dilution_model_scale_percent"] = 4.0
                 recommended_record["dilution_model_scale_uncertainty"] = math.nan
                 recommended_record["dilution_model_scale_chi2"] = math.nan
                 recommended_record[
@@ -2418,7 +2410,7 @@ def build_output_tables(
                     "period_specific_scale_fit_chi2_ndf_diagnostic"
                 ] = float(scale_fit["chi2_ndf"])
                 recommended_record["dilution_model_systematic"] = (
-                    local_absolute_half_difference
+                    0.04 * abs(recommended_record["value"])
                 )
                 recommended_record["dilution_model_method1_value"] = method1_record["value"]
                 recommended_record["dilution_model_method2_value"] = method2_record["value"]
@@ -2441,10 +2433,11 @@ def build_output_tables(
                     )
                 )
                 recommended_record["definition"] = (
-                    "Arithmetic midpoint of Method 1 and Method 2. The assigned "
-                    "dilution-model systematic is one symmetric absolute uncertainty, "
-                    "evaluated bin by bin as |f1-f2|/2 and treated as correlated "
-                    "across bins."
+                    "Method 1, the direct five-target auxiliary-target calculation. "
+                    "The assigned dilution-factor uncertainty is a 4% multiplicative "
+                    "scale uncertainty from the thermal-contraction studies and is "
+                    "fully correlated across periods and kinematic bins. Method 3, "
+                    "the carbon-normalization result, is retained only as a cross-check."
                 )
                 pf_bin_record = scalar_record(
                     summaries["packing_fraction_bin"], (b, cut_index)
@@ -2458,19 +2451,19 @@ def build_output_tables(
                     "mx2_max_gev2": high,
                     "counts": counts_payload,
                     "charge_normalized_rates_relative_units": rates_payload,
-                    "method1_carbon_subtraction": method1_record,
-                    "method2_equation10": method2_record,
+                    "method1_five_target_equation10": method1_record,
+                    "method2_packing_fraction_constrained": method2_record,
                     "packing_fraction_equation11_bin_diagnostic": pf_bin_record,
                     "packing_fraction_equation11_period_integrated": pf_period_record,
-                    "method3_packing_fraction_constrained": method3_record,
-                    "recommended_method1_method2_average": recommended_record,
+                    "method3_carbon_normalization_cross_check": method3_record,
+                    "recommended_method1_five_target": recommended_record,
                 }
                 compact_cut_payload[variation] = {
                     "method1": method1_record,
                     "method2": method2_record,
                     "method3": method3_record,
                     "recommended": recommended_record,
-                    "packing_fraction_used_by_method3": pf_period_record,
+                    "packing_fraction_used_by_method2": pf_period_record,
                 }
 
                 row: dict[str, Any] = {
@@ -2486,8 +2479,8 @@ def build_output_tables(
                     "cut_variation": variation,
                     "mx2_min_gev2": low,
                     "mx2_max_gev2": high,
-                    "method1_carbon_scale_period": float(alpha_summary["central"]),
-                    "method1_carbon_scale_stat_uncertainty": float(
+                    "method3_carbon_scale_period": float(alpha_summary["central"]),
+                    "method3_carbon_scale_stat_uncertainty": float(
                         alpha_summary["stat_uncertainty"]
                     ),
                 }
@@ -2614,9 +2607,11 @@ def build_output_tables(
             "method1_period_carbon_scale": scalar_record(alpha_summary, ()),
             "dilution_model_scale_by_cut_diagnostic": method_scale_by_cut,
             "assigned_dilution_model_systematic": {
-                "central": "(method1 + method2) / 2",
-                "absolute_systematic": "abs(method1 - method2) / 2",
-                "correlation_scope": "one symmetric systematic correlated across bins",
+                "central": "method1_five_target",
+                "relative_scale_systematic": 0.04,
+                "absolute_systematic": "0.04 * abs(method1)",
+                "source": "thermal contraction studies",
+                "correlation_scope": "fully correlated across periods and kinematic bins",
             },
             "period_packing_fraction_by_cut": {
                 variation: scalar_record(
@@ -2628,12 +2623,14 @@ def build_output_tables(
         }
         compact_periods[period] = {
             "charge_fractions": charge_fractions[period],
-            "recommended_nominal_method": "average_of_method1_and_method2",
+            "recommended_nominal_method": "method1_five_target",
             "dilution_model_scale_by_cut_diagnostic": method_scale_by_cut,
             "assigned_dilution_model_systematic": {
-                "central": "(method1 + method2) / 2",
-                "absolute_systematic": "abs(method1 - method2) / 2",
-                "correlation_scope": "one symmetric systematic correlated across bins",
+                "central": "method1_five_target",
+                "relative_scale_systematic": 0.04,
+                "absolute_systematic": "0.04 * abs(method1)",
+                "source": "thermal contraction studies",
+                "correlation_scope": "fully correlated across periods and kinematic bins",
             },
             "period_packing_fraction_by_cut": master_periods[period][
                 "period_packing_fraction_by_cut"
@@ -2658,13 +2655,13 @@ def write_covariance_products(
     for period in PERIODS:
         manifest[period] = {}
         for method_key in (
-            "method1", "method2", "method3", "recommended", "packing_fraction_bin"
+            "method3", "method1", "method2", "recommended", "packing_fraction_bin"
         ):
             manifest[period][method_key] = {}
             if method_key == "recommended":
                 samples = 0.5 * (
-                    bootstrap_results[period]["method1"]
-                    + bootstrap_results[period]["method2"]
+                    bootstrap_results[period]["method3"]
+                    + bootstrap_results[period]["method1"]
                 )
             else:
                 samples = bootstrap_results[period][method_key]
@@ -2716,17 +2713,17 @@ def plot_three_method_comparison(
 ) -> str:
     ensure_directory(output_dir)
     bins = np.arange(1, NUMBER_OF_BINS + 1)
-    offsets = {"method1": -0.18, "method2": 0.0, "method3": 0.18}
+    offsets = {"method3": -0.18, "method1": 0.0, "method2": 0.18}
     labels = {
-        "method1": "Method 1: carbon subtraction",
-        "method2": "Method 2: direct auxiliary-target subtraction",
-        "method3": "Method 3: packing-fraction constrained subtraction",
+        "method1": "Method 1: five-target calculation",
+        "method2": "Method 2: packing-fraction calculation",
+        "method3": "Method 3: carbon-normalization cross-check",
     }
 
     fig, axes = plt.subplots(3, 1, figsize=(17, 14), sharex=True)
     for cut_index, variation in enumerate(CUT_VARIATIONS):
         ax = axes[cut_index]
-        for method_key in ("method1", "method2", "method3"):
+        for method_key in ("method3", "method1", "method2"):
             ax.errorbar(
                 bins + offsets[method_key],
                 summaries[method_key]["central"][:, cut_index],
@@ -2758,10 +2755,10 @@ def plot_method1_method2_all_cuts(
     summaries: dict[str, Any],
 ) -> str:
     """
-    One-panel comparison of Methods 1 and 2 for tight, nominal, and loose cuts.
+    One-panel comparison of Methods 1 and 3 for tight, nominal, and loose cuts.
 
     Cut variation is encoded by color.  Method 1 uses filled circles and
-    Method 2 uses open circles.  Small horizontal offsets keep all six point
+    Method 3 uses open circles.  Small horizontal offsets keep all six point
     sets visible without materially changing the bin positions.
     """
     ensure_directory(output_dir)
@@ -2781,7 +2778,7 @@ def plot_method1_method2_all_cuts(
     }
     method_offsets = {
         "method1": -0.035,
-        "method2": 0.035,
+        "method3": 0.035,
     }
 
     fig, ax = plt.subplots(figsize=(17, 6.5))
@@ -2804,9 +2801,9 @@ def plot_method1_method2_all_cuts(
             label=None,
         )
         ax.errorbar(
-            base_x + method_offsets["method2"],
-            summaries["method2"]["central"][:, cut_index],
-            yerr=summaries["method2"]["stat_uncertainty"][:, cut_index],
+            base_x + method_offsets["method3"],
+            summaries["method3"]["central"][:, cut_index],
+            yerr=summaries["method3"]["stat_uncertainty"][:, cut_index],
             marker="o",
             markerfacecolor="none",
             markeredgecolor=color,
@@ -2854,7 +2851,7 @@ def plot_method1_method2_all_cuts(
             markeredgecolor="black",
             markeredgewidth=1.4,
             markersize=6,
-            label="Method 2",
+            label="Method 3",
         ),
     ]
 
@@ -2879,12 +2876,12 @@ def plot_method1_method2_all_cuts(
     ax.set_xticks(bins)
     ax.grid(alpha=0.25)
     ax.set_title(
-        f"{PERIOD_LABELS[period]} Method-1/Method-2 comparison for "
+        f"{PERIOD_LABELS[period]} Method-1/Method-3 comparison for "
         "tight, nominal, and loose cuts"
     )
 
     fig.tight_layout()
-    path = output_dir / f"method1_method2_all_cuts_{period}.png"
+    path = output_dir / f"method1_method3_all_cuts_{period}.png"
     fig.savefig(path, dpi=180)
     plt.close(fig)
     return str(path)
@@ -2900,9 +2897,9 @@ def plot_three_period_comparison(
     bins = np.arange(1, NUMBER_OF_BINS + 1)
     offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
     method_titles = {
-        "method1": "Method 1: carbon subtraction",
-        "method2": "Method 2: direct auxiliary-target subtraction",
-        "method3": "Method 3: packing-fraction constrained subtraction",
+        "method1": "Method 1: five-target calculation",
+        "method2": "Method 2: packing-fraction calculation",
+        "method3": "Method 3: carbon-normalization cross-check",
     }
 
     fig, axes = plt.subplots(3, 1, figsize=(17, 14), sharex=True)
@@ -2987,9 +2984,9 @@ def plot_method1_control_summary(
     ensure_directory(output_dir)
     fig, ax = plt.subplots(figsize=(9, 6))
     x = np.arange(len(PERIODS))
-    values = np.array([central_results[p]["method1_alpha"] for p in PERIODS], dtype=float)
+    values = np.array([central_results[p]["method3_alpha"] for p in PERIODS], dtype=float)
     errors = np.array(
-        [summaries_by_period[p]["method1_alpha"]["stat_uncertainty"] for p in PERIODS],
+        [summaries_by_period[p]["method3_alpha"]["stat_uncertainty"] for p in PERIODS],
         dtype=float,
     )
     ax.errorbar(x, values, yerr=errors, marker="o", linestyle="none", capsize=3)
@@ -3012,31 +3009,31 @@ def plot_nominal_method_comparison(
     summaries: dict[str, Any],
     bootstrap: dict[str, np.ndarray],
 ) -> str:
-    """Two-panel nominal-cut method comparison with Method-1/Method-2 percent difference."""
+    """Two-panel nominal-cut method comparison with Method-1/Method-3 percent difference."""
     ensure_directory(output_dir)
     bins = np.arange(1, NUMBER_OF_BINS + 1)
-    offsets = {"method1": -0.18, "method2": 0.0, "method3": 0.18}
+    offsets = {"method3": -0.18, "method1": 0.0, "method2": 0.18}
     labels = {
-        "method1": "Method 1: carbon-template subtraction",
-        "method2": "Method 2: direct auxiliary-target subtraction",
-        "method3": "Method 3: packing-fraction constrained subtraction",
+        "method1": "Method 1: five-target calculation",
+        "method2": "Method 2: packing-fraction calculation",
+        "method3": "Method 3: carbon-normalization cross-check",
     }
     nominal_index = CUT_VARIATIONS.index("nominal")
 
+    method3 = np.asarray(
+        summaries["method3"]["central"][:, nominal_index], dtype=float
+    )
     method1 = np.asarray(
         summaries["method1"]["central"][:, nominal_index], dtype=float
     )
-    method2 = np.asarray(
-        summaries["method2"]["central"][:, nominal_index], dtype=float
-    )
     with np.errstate(divide="ignore", invalid="ignore"):
-        percent_difference = 100.0 * (method2 - method1) / method1
+        percent_difference = 100.0 * (method1 - method3) / method3
 
     replica_method1 = np.asarray(
-        bootstrap["method1"][:, :, nominal_index], dtype=float
+        bootstrap["method3"][:, :, nominal_index], dtype=float
     )
     replica_method2 = np.asarray(
-        bootstrap["method2"][:, :, nominal_index], dtype=float
+        bootstrap["method1"][:, :, nominal_index], dtype=float
     )
     with np.errstate(divide="ignore", invalid="ignore"):
         replica_percent_difference = (
@@ -3054,7 +3051,7 @@ def plot_nominal_method_comparison(
         gridspec_kw={"height_ratios": [2.5, 1.0], "hspace": 0.05},
     )
 
-    for method_key in ("method1", "method2", "method3"):
+    for method_key in ("method3", "method1", "method2"):
         ax_top.errorbar(
             bins + offsets[method_key],
             summaries[method_key]["central"][:, nominal_index],
@@ -3121,9 +3118,9 @@ def plot_nominal_period_comparison(
     bins = np.arange(1, NUMBER_OF_BINS + 1)
     offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
     method_titles = {
-        "method1": "carbon-template subtraction",
-        "method2": "direct auxiliary-target subtraction",
-        "method3": "packing-fraction constrained subtraction",
+        "method1": "five-target calculation",
+        "method2": "packing-fraction calculation",
+        "method3": "carbon-normalization cross-check",
     }
     nominal_index = CUT_VARIATIONS.index("nominal")
     fig, ax = plt.subplots(figsize=(17, 6.5))
@@ -3201,7 +3198,7 @@ def plot_nominal_method_differences(
     bootstrap_results: dict[str, dict[str, np.ndarray]],
 ) -> str:
     """
-    Plot the Method-1/Method-2 relative half-difference and scale fit.
+    Plot the Method-1/Method-3 relative half-difference and scale fit.
 
     The plotted quantity is 100*|f1-f2|/(f1+f2), equal to the fractional
     half-difference about the recommended average.
@@ -3276,7 +3273,7 @@ def plot_nominal_method_differences(
     axes[-1].set_xlabel("Combined kinematic-bin number")
     axes[-1].set_xticks(bins)
     fig.suptitle(
-        "Nominal Method-1/Method-2 relative half-difference "
+        "Nominal Method-1/Method-3 relative half-difference "
         f"(global constant-fit diagnostic: {global_percent:.2f}%)"
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.96))
@@ -3324,9 +3321,9 @@ def plot_nominal_recommended_dilution(
     ax.grid(alpha=0.25)
     ax.legend(ncol=3)
     ax.set_title(
-        "Nominal recommended dilution factor: Method-1/Method-2 midpoint\n"
-        "error bars: statistical; method systematic is the binwise absolute "
-        "half-difference, propagated as coherent Method-1/Method-2 alternatives"
+        "Nominal recommended dilution factor: Method 1 five-target result\n"
+        "error bars: statistical; assigned systematic is a 4% fully correlated "
+        "multiplicative scale uncertainty from thermal-contraction studies"
     )
     fig.tight_layout()
     path = output_dir / "nominal_recommended_dilution_factor.png"
@@ -3365,7 +3362,7 @@ def write_plots(
         paths.append(
             plot_packing_fraction_summary(output_dir, period, summaries_by_period[period])
         )
-    for method_key in ("method1", "method2", "method3"):
+    for method_key in ("method3", "method1", "method2"):
         paths.append(
             plot_three_period_comparison(output_dir, method_key, summaries_by_period)
         )
@@ -3598,7 +3595,7 @@ def build_sigma_window_scan(
                 )
                 for target in TARGETS
             }
-            method1 = float(
+            method3 = float(
                 1.0
                 - safe_divide(
                     alpha * selected["C"],
@@ -3609,14 +3606,14 @@ def build_sigma_window_scan(
                 target: np.asarray(selected[target], dtype=np.float64)
                 for target in TARGETS
             }
-            method2 = float(
-                method2_equation10_from_counts(
+            method1 = float(
+                method1_equation10_from_counts(
                     scalar_counts,
                     charge_fractions[period],
                 )
             )
             percent_difference = float(
-                100.0 * safe_divide(method2 - method1, method1)
+                100.0 * safe_divide(method1 - method3, method3)
             )
 
             # Statistical uncertainties are evaluated with paired Poisson
@@ -3644,7 +3641,7 @@ def build_sigma_window_scan(
                 replica_alpha * replica_selected["C"],
                 replica_selected["NH3"],
             )
-            replica_method2 = method2_equation10_from_counts(
+            replica_method2 = method1_equation10_from_counts(
                 replica_selected,
                 charge_fractions[period],
             )
@@ -3668,10 +3665,10 @@ def build_sigma_window_scan(
                     "peak_sigma_gev2": sigma,
                     "mx2_min_gev2": lower,
                     "mx2_max_gev2": upper,
-                    "method1_alpha": alpha,
-                    "method1": method1,
+                    "method3_alpha": alpha,
+                    "method3": method3,
                     "method1_stat_uncertainty": method1_stat,
-                    "method2": method2,
+                    "method1": method1,
                     "method2_stat_uncertainty": method2_stat,
                     "method2_minus_method1_percent_of_method1": percent_difference,
                     "method2_minus_method1_percent_stat_uncertainty": percent_difference_stat,
@@ -3733,7 +3730,7 @@ def plot_sigma_window_scan(
 
         top.plot(
             method1_x,
-            subset["method1"],
+            subset["method3"],
             color=color,
             marker="o",
             markersize=5.5,
@@ -3742,7 +3739,7 @@ def plot_sigma_window_scan(
         )
         top.errorbar(
             method1_x[endpoint_indices],
-            subset["method1"].to_numpy(dtype=float)[endpoint_indices],
+            subset["method3"].to_numpy(dtype=float)[endpoint_indices],
             yerr=subset["method1_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
             color=color,
             fmt="none",
@@ -3752,7 +3749,7 @@ def plot_sigma_window_scan(
 
         top.plot(
             method2_x,
-            subset["method2"],
+            subset["method1"],
             color=color,
             marker="o",
             markerfacecolor="white",
@@ -3764,7 +3761,7 @@ def plot_sigma_window_scan(
         )
         top.errorbar(
             method2_x[endpoint_indices],
-            subset["method2"].to_numpy(dtype=float)[endpoint_indices],
+            subset["method1"].to_numpy(dtype=float)[endpoint_indices],
             yerr=subset["method2_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
             color=color,
             fmt="none",
@@ -3924,7 +3921,7 @@ def write_nominal_isr_comparison_products(
     ensure_directory(plots_dir)
 
     rows: list[dict[str, Any]] = []
-    methods = ("method1", "method2", "method3", "recommended")
+    methods = ("method3", "method1", "method2", "recommended")
     for period in PERIODS:
         for method in methods:
             n_summary = nominal_summaries[period][method]
@@ -4024,7 +4021,7 @@ def write_nominal_isr_comparison_products(
         ax.set_xticks(bins)
     fig.suptitle(
         "Nominal-versus-ISR dilution-factor summary\n"
-        "recommended result = average of carbon-template and direct auxiliary-target methods"
+        "recommended result = Method 1 direct five-target calculation with a 4% correlated scale uncertainty"
     )
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     plot_path = plots_dir / "nominal_vs_isr_recommended_summary.png"
@@ -4580,7 +4577,7 @@ def main() -> int:
                     "RGC exclusive enpi+ ISR dilution factors; diagnostic only"
                 ),
                 "diagnostic_only": True,
-                "recommended_nominal_method": "average_of_method1_and_method2",
+                "recommended_nominal_method": "method1_five_target",
                 "periods": isr_compact_periods,
                 "source_master_json": str(isr_master_json_path),
                 "source_exclusivity_json": str(isr_cut_json),
@@ -4666,16 +4663,16 @@ def main() -> int:
         ],
         "equation_coefficients": EQ10_EQ11_EQ14_COEFFICIENTS,
         "method1_definition": (
-            "Exact channel-selection raw-count normalization pooled over all "
-            "24 bins in the control window; no additional charge normalization."
+            "Direct five-target auxiliary-target dilution factor using the exact "
+            "thermal-contraction-corrected Eq. (10) expression."
         ),
-        "method2_definition": "Exact thermal-contraction-corrected formula transcribed from calculate_dilution_factors.cpp.",
+        "method2_definition": (
+            "Packing-fraction determination from Eq. (11), followed by the "
+            "period-wide packing-fraction constrained Eq. (14) dilution model."
+        ),
         "method3_definition": (
-            "The period-wide packing fraction is calculated from the thermally "
-            "corrected C++ relation. Method 3 reconstructs the binwise ammonia "
-            "rate from that packing fraction and inserts it into the same "
-            "thermally corrected dilution model; this is the algebraic Eq. (14) "
-            "counterpart for the corrected coefficients."
+            "Carbon-normalization subtraction pooled over all 24 bins in the "
+            "control window; retained only as a cursory cross-check."
         ),
         "statistical_model": (
             "Independent Poisson replicas of 16 disjoint membership-pattern "
@@ -4687,9 +4684,9 @@ def main() -> int:
         "schema_version": 12,
         "analysis": "RGC exclusive enpi+ dilution-factor determination",
         "status": (
-            "All three methods are active. Method 2 uses the exact thermally corrected "
-            "direct C++ expression; Method 3 uses the period-wide packing "
-            "fraction in its algebraically equivalent nonlinear formulation."
+            "All three methods are retained. Method 1 is the production nominal "
+            "five-target result, Method 2 is the packing-fraction result, and "
+            "Method 3 is the carbon-normalization cross-check."
         ),
         "binning": {
             "xB": [list(interval) for interval in XB_BINS],
@@ -4718,17 +4715,16 @@ def main() -> int:
     compact_payload = {
         "schema_version": 12,
         "analysis": "RGC exclusive enpi+ dilution factors for downstream asymmetries",
-        "recommended_nominal_method": "average_of_method1_and_method2",
+        "recommended_nominal_method": "method1_five_target",
         "note": (
             "Loose, nominal, and tight values are all carried downstream. "
-            "The recommended dilution factor is the average of Methods 1 and 2. "
+            "The recommended dilution factor is Method 1, the direct five-target calculation. "
             "Its statistical uncertainty is propagated with common bootstrap "
-            "replicas. The Method-1/Method-2 disagreement is represented by a "
-            "single global multiplicative scale systematic obtained by averaging "
-            "the three period-specific constant fits to |f1-f2|/(f1+f2); it is "
-            "fully correlated across all periods and bins. No exclusivity-cut "
-            "systematic is assigned "
-            "at this stage."
+            "replicas. A single 4% multiplicative scale uncertainty from the "
+            "thermal-contraction studies is assigned and treated as fully "
+            "correlated across all periods and kinematic bins. The difference "
+            "between Methods 1 and 3 is retained only as a diagnostic and does "
+            "not define an additional production systematic."
         ),
         "binning": master_payload["binning"],
         "global_dilution_model_scale_by_cut": summaries_by_period[
@@ -4780,7 +4776,7 @@ def main() -> int:
             ),
         },
         "production_products": production_products,
-        "recommended_nominal_method": "average_of_method1_and_method2",
+        "recommended_nominal_method": "method1_five_target",
         "filenames_are_version_independent": True,
     }
     write_json(manifest_path, manifest_payload)
