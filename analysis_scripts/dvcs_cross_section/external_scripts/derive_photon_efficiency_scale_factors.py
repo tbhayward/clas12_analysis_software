@@ -3180,44 +3180,86 @@ def _trial_arrays_from_found_pairs(
     resolved: Mapping[str, object],
     args: argparse.Namespace,
 ) -> Tuple[TrialArrays, Dict[str, object]]:
-    """Build found high-energy-probe trials from photon-matched epgamma/epgammagamma pairs."""
-    ai = np.asarray(resolved.get("a_indices", []), dtype=np.int64)
-    bi = np.asarray(resolved.get("b_indices", []), dtype=np.int64)
-    choice = np.asarray(resolved.get("tag_choice", []), dtype=np.int8)
-    if ai.size == 0:
+    """Build found high-energy-probe trials from photon-matched epgamma/epgammagamma pairs.
+
+    The epgamma photon is the measured tag.  Its energy is taken directly from
+    the epgamma tree.  The probe energy is obtained from E_pi0 - E_tag, which
+    avoids relying on the cone-solution energy labels being attached to the
+    same gamma1/gamma2 direction labels used by the photon matcher.
+    """
+    ai_all = np.asarray(resolved.get("a_indices", []), dtype=np.int64)
+    bi_all = np.asarray(resolved.get("b_indices", []), dtype=np.int64)
+    choice_all = np.asarray(resolved.get("tag_choice", []), dtype=np.int8)
+    if ai_all.size == 0:
         return TrialArrays.empty(), {"resolved_pairs": 0, "nominal_found_pairs": 0}
 
-    # Nominal directed orientation: the epgamma photon matches the lower-energy gamma2 tag;
-    # gamma1 is the reconstructed high-energy probe relevant to DVCS.
-    tag_E = epgg.g2_E[bi]
-    probe_E = epgg.g1_E[bi]
-    nominal = (
-        (choice == 2)
-        & np.isfinite(tag_E) & (tag_E >= args.tag_E_min) & (tag_E < args.tag_E_max)
-        & np.isfinite(probe_E) & (probe_E >= args.probe_E_min) & (probe_E < args.probe_E_max)
-    )
-    bi = bi[nominal]
-    ai = ai[nominal]
-    if bi.size == 0:
-        return TrialArrays.empty(), {"resolved_pairs": int(len(choice)), "nominal_found_pairs": 0}
+    tag_E_all = np.asarray(epg.g_E[ai_all], dtype=float)
+    probe_E_all = np.asarray(epgg.pi0_E[bi_all], dtype=float) - tag_E_all
 
-    theta_deg = np.degrees(epgg.g1_theta[bi])
-    detector, sector = classify_predicted_detector(theta_deg, epgg.g1_phi[bi], args)
+    nominal = (
+        np.isin(choice_all, (1, 2))
+        & np.isfinite(tag_E_all)
+        & (tag_E_all >= args.tag_E_min)
+        & (tag_E_all < args.tag_E_max)
+        & np.isfinite(probe_E_all)
+        & (probe_E_all >= args.probe_E_min)
+        & (probe_E_all < args.probe_E_max)
+    )
+
+    ai = ai_all[nominal]
+    bi = bi_all[nominal]
+    choice = choice_all[nominal]
+    tag_E = tag_E_all[nominal]
+    probe_E = probe_E_all[nominal]
+
+    if bi.size == 0:
+        return TrialArrays.empty(), {
+            "resolved_pairs": int(len(choice_all)),
+            "nominal_found_pairs": 0,
+            "tag_matches_gamma1_before_energy_acceptance": int(np.count_nonzero(choice_all == 1)),
+            "tag_matches_gamma2_before_energy_acceptance": int(np.count_nonzero(choice_all == 2)),
+            "finite_pi0_minus_tag_energy": int(np.count_nonzero(np.isfinite(probe_E_all))),
+        }
+
+    # If the tag matched gamma1, gamma2 is the found probe; if it matched gamma2,
+    # gamma1 is the found probe.
+    probe_theta = np.where(choice == 1, epgg.g2_theta[bi], epgg.g1_theta[bi])
+    probe_phi = np.where(choice == 1, epgg.g2_phi[bi], epgg.g1_phi[bi])
+    probe_detector_native = np.where(choice == 1, epgg.g2_detector[bi], epgg.g1_detector[bi])
+
+    theta_deg = np.degrees(probe_theta)
+    detector, sector = classify_predicted_detector(theta_deg, probe_phi, args)
+
+    # Prefer the native detector identity when it is valid, while keeping the
+    # geometric classification as the sector source for FD.
+    native_valid = np.isin(probe_detector_native, (0, 1))
+    detector = np.where(native_valid, probe_detector_native, detector).astype(np.int16, copy=False)
+
     accepted = detector >= 0
-    bi = bi[accepted]
     ai = ai[accepted]
+    bi = bi[accepted]
+    choice = choice[accepted]
+    tag_E = tag_E[accepted]
+    probe_E = probe_E[accepted]
+    probe_theta = probe_theta[accepted]
+    probe_phi = probe_phi[accepted]
+    theta_deg = theta_deg[accepted]
     detector = detector[accepted]
     sector = sector[accepted]
-    theta_deg = theta_deg[accepted]
 
-    tag_theta_deg = np.degrees(epgg.g2_theta[bi])
-    tag_detector, tag_sector = classify_predicted_detector(tag_theta_deg, epgg.g2_phi[bi], args)
+    tag_theta = np.asarray(epg.g_theta[ai], dtype=float)
+    tag_phi = np.asarray(epg.g_phi[ai], dtype=float)
+    tag_theta_deg = np.degrees(tag_theta)
+    tag_detector, tag_sector = classify_predicted_detector(tag_theta_deg, tag_phi, args)
+    native_tag_valid = np.isin(epg.g_detector[ai], (0, 1))
+    tag_detector = np.where(native_tag_valid, epg.g_detector[ai], tag_detector).astype(np.int16, copy=False)
+
     n = len(bi)
     trials = TrialArrays(
-        E=epgg.g1_E[bi].astype(np.float32, copy=False),
-        tag_E=epgg.g2_E[bi].astype(np.float32, copy=False),
+        E=probe_E.astype(np.float32, copy=False),
+        tag_E=tag_E.astype(np.float32, copy=False),
         theta_deg=theta_deg.astype(np.float32, copy=False),
-        phi_rad=epgg.g1_phi[bi].astype(np.float32, copy=False),
+        phi_rad=probe_phi.astype(np.float32, copy=False),
         detector=detector.astype(np.int8, copy=False),
         sector=sector.astype(np.int8, copy=False),
         tag_detector=tag_detector.astype(np.int8, copy=False),
@@ -3233,12 +3275,22 @@ def _trial_arrays_from_found_pairs(
         proton_detector=np.full(n, -1, dtype=np.int8),
         weight=np.ones(n, dtype=np.float32),
     )
+
     return trials, {
-        "resolved_pairs": int(len(choice)),
+        "resolved_pairs": int(len(choice_all)),
         "nominal_found_pairs": int(n),
-        "tag_matches_gamma2_before_energy_acceptance": int(np.count_nonzero(choice == 2)),
-        "reconstruction_valid_among_resolved_pairs": int(np.count_nonzero(epgg.reconstruction_valid[np.asarray(resolved.get("b_indices", []), dtype=np.int64)])) if len(choice) else 0,
-        "note": "The native epgammagamma skim defines the found sample. The auxiliary cone-closure flag is audited but is not imposed on the nominal found count.",
+        "tag_matches_gamma1_before_energy_acceptance": int(np.count_nonzero(choice_all == 1)),
+        "tag_matches_gamma2_before_energy_acceptance": int(np.count_nonzero(choice_all == 2)),
+        "finite_pi0_minus_tag_energy": int(np.count_nonzero(np.isfinite(probe_E_all))),
+        "nominal_before_detector_acceptance": int(np.count_nonzero(nominal)),
+        "reconstruction_valid_among_resolved_pairs": int(
+            np.count_nonzero(epgg.reconstruction_valid[bi_all])
+        ) if len(choice_all) else 0,
+        "note": (
+            "The native epgammagamma skim defines the found sample. "
+            "The measured epgamma photon supplies E_tag; E_probe is E_pi0-E_tag. "
+            "The auxiliary cone-closure flag is audited but not imposed."
+        ),
     }
 
 
@@ -3280,11 +3332,17 @@ def build_event_exclusive_samples(period: PeriodConfig, args: argparse.Namespace
     dbi = np.asarray(data_resolved.get("b_indices", []), dtype=np.int64)
     dch = np.asarray(data_resolved.get("tag_choice", []), dtype=np.int8)
     if dai.size:
-        dnom = ((dch == 2)
-                & np.isfinite(epgg_data.g2_E[dbi])
-                & np.isfinite(epgg_data.g1_E[dbi])
-                & (epgg_data.g2_E[dbi] >= args.tag_E_min) & (epgg_data.g2_E[dbi] < args.tag_E_max)
-                & (epgg_data.g1_E[dbi] >= args.probe_E_min) & (epgg_data.g1_E[dbi] < args.probe_E_max))
+        dtag_E = np.asarray(epg_data.g_E[dai], dtype=float)
+        dprobe_E = np.asarray(epgg_data.pi0_E[dbi], dtype=float) - dtag_E
+        dnom = (
+            np.isin(dch, (1, 2))
+            & np.isfinite(dtag_E)
+            & (dtag_E >= args.tag_E_min)
+            & (dtag_E < args.tag_E_max)
+            & np.isfinite(dprobe_E)
+            & (dprobe_E >= args.probe_E_min)
+            & (dprobe_E < args.probe_E_max)
+        )
         data_remove[dai[dnom]] = True
 
     mc_remove_sub = np.zeros(len(epg_mc.e_p), dtype=bool)
@@ -3292,11 +3350,17 @@ def build_event_exclusive_samples(period: PeriodConfig, args: argparse.Namespace
     mbi = np.asarray(mc_resolved.get("b_indices", []), dtype=np.int64)
     mch = np.asarray(mc_resolved.get("tag_choice", []), dtype=np.int8)
     if mai.size:
-        mnom = ((mch == 2)
-                & np.isfinite(epgg_mc.g2_E[mbi])
-                & np.isfinite(epgg_mc.g1_E[mbi])
-                & (epgg_mc.g2_E[mbi] >= args.tag_E_min) & (epgg_mc.g2_E[mbi] < args.tag_E_max)
-                & (epgg_mc.g1_E[mbi] >= args.probe_E_min) & (epgg_mc.g1_E[mbi] < args.probe_E_max))
+        mtag_E = np.asarray(epg_mc.g_E[mai], dtype=float)
+        mprobe_E = np.asarray(epgg_mc.pi0_E[mbi], dtype=float) - mtag_E
+        mnom = (
+            np.isin(mch, (1, 2))
+            & np.isfinite(mtag_E)
+            & (mtag_E >= args.tag_E_min)
+            & (mtag_E < args.tag_E_max)
+            & np.isfinite(mprobe_E)
+            & (mprobe_E >= args.probe_E_min)
+            & (mprobe_E < args.probe_E_max)
+        )
         mc_remove_sub[mai[mnom]] = True
 
     data_keep = ~data_remove
@@ -4080,6 +4144,7 @@ class AuditEpggRecords:
     p_p: np.ndarray
     p_theta: np.ndarray
     p_phi: np.ndarray
+    pi0_E: np.ndarray
     g1_E: np.ndarray
     g1_theta: np.ndarray
     g1_phi: np.ndarray
@@ -4137,7 +4202,7 @@ def _read_epgg_audit(path: str, args: argparse.Namespace) -> AuditEpggRecords:
     resolved = resolve_branches(path, logical, optional=("runnum", "eventnum"))
     expressions = sorted({x for x in resolved.values() if x is not None})
     store = {k: [] for k in ("runnum", "eventnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
-                              "g1_E", "g1_theta", "g1_phi", "g1_detector", "g2_E", "g2_theta", "g2_phi",
+                              "pi0_E", "g1_E", "g1_theta", "g1_phi", "g1_detector", "g2_E", "g2_theta", "g2_phi",
                               "g2_detector", "valid")}
     seen = 0
     log(f"Audit reading epgammagamma records from {path}")
@@ -4158,12 +4223,13 @@ def _read_epgg_audit(path: str, args: argparse.Namespace) -> AuditEpggRecords:
             arr("gamma1_detector_native", int), arr("gamma2_detector_native", int), args,
         )
         g1_E, g2_E = result[0], result[1]
+        pi0_E = np.sqrt(np.maximum(arr("pi0_p") ** 2 + arr("Mh_gammagamma") ** 2, 0.0))
         g1_th, g1_ph = result[2][:, 0], result[3][:, 0]
         g2_th, g2_ph = result[4][:, 0], result[5][:, 0]
         valid = result[16] & np.isfinite(g1_E) & np.isfinite(g2_E) & np.isfinite(g1_th) & np.isfinite(g2_th)
         for key in ("e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"):
             store[key].append(arr(key))
-        for key, values in (("g1_E",g1_E),("g1_theta",g1_th),("g1_phi",g1_ph),
+        for key, values in (("pi0_E",pi0_E),("g1_E",g1_E),("g1_theta",g1_th),("g1_phi",g1_ph),
                             ("g2_E",g2_E),("g2_theta",g2_th),("g2_phi",g2_ph),("valid",valid)):
             store[key].append(values)
         store["g1_detector"].append(arr("gamma1_detector_native", int))
@@ -4175,6 +4241,7 @@ def _read_epgg_audit(path: str, args: argparse.Namespace) -> AuditEpggRecords:
         runnum=_concat(store["runnum"], np.int64), evnum=_concat(store["eventnum"], np.int64),
         e_p=_concat(store["e_p"]), e_theta=_concat(store["e_theta"]), e_phi=_concat(store["e_phi"]),
         p_p=_concat(store["p_p"]), p_theta=_concat(store["p_theta"]), p_phi=_concat(store["p_phi"]),
+        pi0_E=_concat(store["pi0_E"]),
         g1_E=_concat(store["g1_E"]), g1_theta=_concat(store["g1_theta"]), g1_phi=_concat(store["g1_phi"]),
         g1_detector=_concat(store["g1_detector"], np.int16), g2_E=_concat(store["g2_E"]),
         g2_theta=_concat(store["g2_theta"]), g2_phi=_concat(store["g2_phi"]),
@@ -4960,6 +5027,8 @@ def main() -> int:
     log("Event-exclusive high-energy photon-efficiency extraction.")
     log(f"Nominal directed definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
         f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV.")
+    log("Found-sample energy convention: E_tag from the matched epgamma photon; "
+        "E_probe = E_pi0 - E_tag.")
     log("Data found/missing outcomes are separated by exact event and photon matching; "
         "AAOGEN exact duplicate candidates are skipped before signature matching.")
     for period in periods:
