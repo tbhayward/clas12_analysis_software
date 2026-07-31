@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v36.py
+derive_photon_efficiency_scale_factors_v39.py
 
 AUDIT-ONLY release for the RGA photon-efficiency study.
 
@@ -67,7 +67,7 @@ DEFAULT_OUTPUT_DIR = "output/photon_efficiency_audit"
 DEFAULT_STEP_SIZE = "200 MB"
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
-MAX_WORKERS = 7
+MAX_WORKERS = 8
 
 
 @dataclass(frozen=True)
@@ -420,9 +420,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--period", action="append", choices=[p.key for p in PERIODS])
-    parser.add_argument("--workers", type=int, default=7,
-                        help="Maximum period-level worker processes; capped at 7. "
-                             "At most one worker is used per selected period.")
+    parser.add_argument("--workers", type=int, default=8,
+                        help="Maximum period-level worker processes; capped at 8. "
+                             "At most one worker is used per selected period, so an all-period "
+                             "RGA run currently uses five workers.")
     parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
     parser.add_argument("--inspect-branches", action="store_true")
     parser.add_argument("--preflight-only", action="store_true",
@@ -4008,10 +4009,23 @@ def _signature_matrix(records, decimals: int) -> np.ndarray:
     return out
 
 
+def _row_group_ids(keys: np.ndarray) -> np.ndarray:
+    """Return exact row-group identifiers without the slower ``axis=0`` unique path."""
+    keys = np.ascontiguousarray(keys)
+    if keys.ndim != 2:
+        raise ValueError(f"Expected a 2D key matrix, received shape {keys.shape}")
+    if keys.shape[0] == 0:
+        return np.zeros(0, dtype=np.int64)
+    row_dtype = np.dtype((np.void, keys.dtype.itemsize * keys.shape[1]))
+    row_view = keys.view(row_dtype).reshape(-1)
+    _, inverse = np.unique(row_view, return_inverse=True)
+    return inverse.astype(np.int64, copy=False)
+
+
 def _group_match(a_keys: np.ndarray, b_keys: np.ndarray) -> Dict[str, object]:
     na = len(a_keys); nb = len(b_keys)
     combined = np.vstack((a_keys, b_keys))
-    _, inverse = np.unique(combined, axis=0, return_inverse=True)
+    inverse = _row_group_ids(combined)
     a_gid = inverse[:na]; b_gid = inverse[na:]
     ng = int(inverse.max()) + 1 if inverse.size else 0
     ca = np.bincount(a_gid, minlength=ng); cb = np.bincount(b_gid, minlength=ng)
@@ -4106,9 +4120,21 @@ def _resolve_identity_groups(epg: AuditEpgRecords, epgg: AuditEpggRecords,
     angle_max = float(args.audit_tag_match_angle_max_deg)
     relE_max = float(args.audit_tag_match_relative_E_max)
 
+    # Build group-member lookup tables once.  The previous implementation ran
+    # ``flatnonzero(group_ids == gid)`` for every shared group, which scales as
+    # O(N_entries * N_groups) and dominates large-period audit runtimes.
+    a_order = np.argsort(a_gid, kind="stable")
+    b_order = np.argsort(b_gid, kind="stable")
+    a_offsets = np.empty(ca.size + 1, dtype=np.int64)
+    b_offsets = np.empty(cb.size + 1, dtype=np.int64)
+    a_offsets[0] = 0
+    b_offsets[0] = 0
+    np.cumsum(ca, out=a_offsets[1:])
+    np.cumsum(cb, out=b_offsets[1:])
+
     for gid in shared:
-        aa = np.flatnonzero(a_gid == gid)
-        bb = np.flatnonzero(b_gid == gid)
+        aa = a_order[a_offsets[gid]:a_offsets[gid + 1]]
+        bb = b_order[b_offsets[gid]:b_offsets[gid + 1]]
         if aa.size == 0 or bb.size == 0:
             continue
         if aa.size > 1 or bb.size > 1:
@@ -4511,14 +4537,21 @@ def _audit_pair(label: str, epg: AuditEpgRecords, epgg: AuditEpggRecords,
         scans = {"runnum_evnum": {k:v for k,v in primary.items() if not isinstance(v,np.ndarray)}}
     else:
         scans = {}
-        for dec in [int(x) for x in str(args.audit_signature_scan).split(',') if x.strip()]:
+        scan_matches: Dict[int, Dict[str, object]] = {}
+        scan_decimals = [int(x) for x in str(args.audit_signature_scan).split(',') if x.strip()]
+        for dec in scan_decimals:
             mm = _group_match(_signature_matrix(epg, dec), _signature_matrix(epgg, dec))
+            scan_matches[dec] = mm
             scans[str(dec)] = {k:v for k,v in mm.items() if not isinstance(v,np.ndarray)}
         #endfor
-        primary = _group_match(
-            _signature_matrix(epg, args.audit_signature_decimals),
-            _signature_matrix(epgg, args.audit_signature_decimals),
-        )
+        default_decimals = int(args.audit_signature_decimals)
+        primary = scan_matches.get(default_decimals)
+        if primary is None:
+            primary = _group_match(
+                _signature_matrix(epg, default_decimals),
+                _signature_matrix(epgg, default_decimals),
+            )
+        #endif
     #endif
 
     # First retain the strict one-to-one audit, then resolve all shared identity
@@ -4643,15 +4676,23 @@ def _audit_pair(label: str, epg: AuditEpgRecords, epgg: AuditEpggRecords,
 
 def process_audit_period(period: PeriodConfig, args_dict: Mapping[str,object]):
     args=argparse.Namespace(**dict(args_dict)); pdir=Path(args.output_dir)/period.key; pdir.mkdir(parents=True,exist_ok=True)
+    period_start = time.perf_counter()
     epg_data=_read_epg_audit(period.epg_data,args); epgg_data=_read_epgg_audit(period.epgg_data,args)
     epg_mc=_read_epg_audit(period.pi0_as_epg_mc,args); epgg_mc=_read_epgg_audit(period.epgg_mc,args)
+    read_done = time.perf_counter()
+    log(f"{period.label}: audit trees read in {read_done-period_start:.1f} s")
     data=_audit_pair(f"{period.label} data",epg_data,epgg_data,"data",period.beam_energy_GeV,pdir/"data",args)
+    data_done = time.perf_counter()
+    log(f"{period.label}: data overlap audit completed in {data_done-read_done:.1f} s")
     mc=_audit_pair(f"{period.label} AAOGEN",epg_mc,epgg_mc,"mc",period.beam_energy_GeV,pdir/"aaogen_mc",args)
+    mc_done = time.perf_counter()
+    log(f"{period.label}: AAOGEN overlap audit completed in {mc_done-data_done:.1f} s")
     # DVCSGEN is shape-only in the eventual fit; record its population and kinematics but never match it to AAOGEN.
     dvcs=_read_epg_audit(period.dvcs_mc,args)
     dvcs_summary={"entries":int(len(dvcs.e_p)),"unique_data_like_keys":int(len(np.unique(_event_key_matrix(dvcs.runnum,dvcs.evnum),axis=0))),
                   "electron_p":_summary_stats(dvcs.e_p),"proton_p":_summary_stats(dvcs.p_p),"photon_E":_summary_stats(dvcs.g_E)}
     with open(pdir/"dvcsgen_template_audit.json","w") as f: json.dump(dvcs_summary,f,indent=2)
+    log(f"{period.label}: complete audit finished in {time.perf_counter()-period_start:.1f} s")
     return period.key,{"period":asdict(period),"data":data,"aaogen_mc":mc,"dvcsgen":dvcs_summary}
 
 
@@ -4729,6 +4770,8 @@ def main() -> int:
         inspect_selected_branches(periods); return 0
     args_dict=vars(args).copy(); metadata={}
     workers=min(args.workers,len(periods))
+    log(f"Selected {len(periods)} period(s); using {workers} period worker process(es) "
+        f"(requested={args.workers}, hard maximum={MAX_WORKERS}).")
     if workers==1:
         for p in periods:
             key,payload=process_audit_period(p,args_dict); metadata[key]=payload
