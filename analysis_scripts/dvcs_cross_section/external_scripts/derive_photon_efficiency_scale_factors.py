@@ -1,22 +1,30 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v41.py
+derive_photon_efficiency_scale_factors_v45.py
 
-Final event-exclusive high-energy photon-efficiency extraction for RGA.
+High-energy photon-efficiency control study for the five RGA periods.
 
-The nominal control measurement uses exclusive pi0 decays with a reconstructed
-low-energy tag photon, 0.4 <= E_tag < 2 GeV, and a high-energy probe photon,
-E_probe >= 2 GeV.  epgamma and epgammagamma trees are explicitly cross-matched
-so that reconstructed-probe and missing-probe outcomes are mutually exclusive.
-Data are matched by exact (runnum, evnum).  AAOGEN is matched by reconstructed
-electron/proton signatures after exact duplicate candidates are removed.
+The nominal directed control configuration is
 
-Only unmatched epgamma candidates enter the data template decomposition.
-DVCSGEN supplies the BH/DVCS shape, while unmatched AAOGEN supplies both the
-exclusive-pi0 shape and the MC missing-probe count.  Matched epgammagamma pairs
-supply the probe-found counts.  Fits are performed separately in the production
-CD-FT, CD-FD, and FD-FD topologies using Delta_phi, theta_gamma_gamma, and
-pTmiss on one common support.
+    0.4 <= E_tag < 2.0 GeV
+    2.0 <= E_probe < 9.5 GeV.
+
+The found-probe population is constructed directly from the native reconstructed
+epgammagamma data and AAOGEN trees.  The two reconstructed photons are ordered
+by energy by the native photon reconstruction: the lower-energy photon is the
+tag and the higher-energy photon is the found probe.  No epgamma/epgammagamma
+event matching is used in the nominal numerator.
+
+The missing-probe population is constructed independently from the loose
+0.40-GeV epgamma trees.  The measured low-energy photon is the tag, and the
+high-energy partner is inferred under the exclusive-pi0 hypothesis.  Data are
+decomposed into BH/DVCS and exclusive-pi0 components using identically selected
+DVCSGEN and AAOGEN-as-epgamma templates.  The nominal template-fraction drivers
+are Delta_phi, theta_gamma_gamma, and pTmiss on one common support, with fits
+performed separately in the production CD-FT, CD-FD, and FD-FD topologies.
+
+The previous event-overlap audit remains scientifically useful, but overlap
+matching is not part of this nominal extraction.
 """
 
 from __future__ import annotations
@@ -412,8 +420,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description=("Derive RGA high-energy photon-efficiency data/MC scale factors with "
-                     "a reconstructed pi0 tag (E_tag >= 0.4 GeV) and a "
-                     "DVCS-like high-energy probe (E_probe >= 2 GeV). Both photons may exceed 2 GeV."),
+                     "a reconstructed low-energy pi0 tag (0.4 <= E_tag < 2 GeV) "
+                     "and a DVCS-like high-energy probe (E_probe >= 2 GeV)."),
     )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--period", action="append", choices=[p.key for p in PERIODS])
@@ -451,6 +459,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fd-energy-bins", type=int, default=4)
     parser.add_argument("--fd-theta-bins", type=int, default=3)
     parser.add_argument("--min-probes-per-bin", type=int, default=250)
+    parser.add_argument(
+        "--minimum-found-trials-per-period",
+        type=float,
+        default=1000.0,
+        help=(
+            "Abort a period before fitting if either the data or AAOGEN native "
+            "epgammagamma found-probe weight is below this value. This prevents "
+            "empty or nearly empty fit products from being interpreted."
+        ),
+    )
 
     parser.add_argument("--mx2-ep-min", type=float, default=-0.12)
     parser.add_argument("--mx2-ep-max", type=float, default=0.20)
@@ -1186,11 +1204,9 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                 & np.isfinite(g2_theta) & np.isfinite(g2_phi)
             )
 
-            # Construct directed tag--probe trials.  The photons are energy ordered
-            # (g1_E >= g2_E), but the method does not require one photon to lie below
-            # 2 GeV.  The always-available direction uses photon 2 as the tag and
-            # photon 1 as the probe.  When photon 2 also exceeds 2 GeV, a second
-            # directed trial uses photon 1 as the tag and photon 2 as the probe.
+            # Construct the nominal directed tag--probe trial.  The native
+            # reconstruction energy-orders the pair as g1_E >= g2_E.  Therefore
+            # photon 2 is the low-energy tag and photon 1 is the high-energy probe.
             directed_orientations = [
                 {
                     "tag_E": g2_E,
@@ -1206,20 +1222,6 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                     "probe_opening_deg": opening1_deg,
                     "orientation": "gamma2_tag_gamma1_probe",
                 },
-                {
-                    "tag_E": g1_E,
-                    "tag_theta_deg": g1_theta_deg,
-                    "tag_phi": g1_phi,
-                    "tag_detector": g1_detector,
-                    "tag_sector": g1_sector,
-                    "probe_E": g2_E,
-                    "probe_theta_deg": g2_theta_deg,
-                    "probe_phi": g2_phi,
-                    "probe_detector": g2_detector,
-                    "probe_sector": g2_sector,
-                    "probe_opening_deg": opening2_deg,
-                    "orientation": "gamma1_tag_gamma2_probe",
-                },
             ]
 
             for orientation_index, orient in enumerate(directed_orientations):
@@ -1233,9 +1235,8 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                     & (orient["probe_E"] >= args.probe_E_min)
                     & (orient["probe_E"] < args.probe_E_max)
                 )
-                # For the reverse direction, probe_energy itself ensures that the
-                # second (less energetic) photon exceeds 2 GeV.  Hence two directed
-                # trials are counted only for genuine two-high-energy-photon events.
+                # The tag and probe energy requirements enforce the nominal
+                # low-energy-tag/high-energy-probe orientation.
                 supported_topology = (
                     ((proton_detector == 2) & (orient["tag_detector"] == 0))
                     | ((proton_detector == 2) & (orient["tag_detector"] == 1))
@@ -3484,25 +3485,79 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     aggregate_fit_dir.mkdir(parents=True, exist_ok=True)
     plot_dir.mkdir(parents=True, exist_ok=True)
 
-    pass_data, pass_mc, data_keep_mask, pi0_mc_keep_mask, overlap_diag = \
-        build_event_exclusive_samples(period, args)
-    pass_data_diag = {"definition": "photon-matched native epgammagamma data gamma2-tag/gamma1-probe outcomes",
-                      "selected_trials": int(pass_data.size())}
-    pass_mc_diag = {"definition": "deduplicated photon-matched native AAOGEN epgammagamma gamma2-tag/gamma1-probe outcomes",
-                    "selected_trials": int(pass_mc.size())}
-    with open(period_dir / "event_exclusive_accounting.json", "w", encoding="utf-8") as handle:
-        json.dump(overlap_diag, handle, indent=2)
+    # ------------------------------------------------------------------
+    # Found high-energy probes:
+    # construct them directly from the native reconstructed pi0 samples.
+    # No epgamma/epgammagamma event matching enters the nominal numerator.
+    # ------------------------------------------------------------------
+    pass_data, pass_data_diag = read_pass_trials(
+        period.epgg_data,
+        period.beam_energy_GeV,
+        args,
+        f"{period.label} native epgammagamma data",
+    )
+    pass_mc, pass_mc_diag = read_pass_trials(
+        period.epgg_mc,
+        period.beam_energy_GeV,
+        args,
+        f"{period.label} native AAOGEN epgammagamma MC",
+    )
 
+    found_data_weight = float(np.sum(pass_data.weight))
+    found_mc_weight = float(np.sum(pass_mc.weight))
+    minimum_found = float(args.minimum_found_trials_per_period)
+    if found_data_weight < minimum_found or found_mc_weight < minimum_found:
+        raise RuntimeError(
+            f"{period.label}: native found-probe sample is unexpectedly small: "
+            f"data weight={found_data_weight:,.1f}, MC weight={found_mc_weight:,.1f}, "
+            f"required minimum={minimum_found:,.1f}. "
+            "The script stops before fitting because this indicates a broken "
+            "epgammagamma selection or photon reconstruction."
+        )
+
+    nominal_accounting = {
+        "architecture": (
+            "Found probes are counted directly from native epgammagamma trees. "
+            "Missing-probe candidates are selected independently from loose "
+            "0.40-GeV epgamma trees. Event-overlap matching is diagnostic-only "
+            "and is not used in the nominal extraction."
+        ),
+        "directed_definition": {
+            "tag_energy_GeV": [float(args.tag_E_min), float(args.tag_E_max)],
+            "probe_energy_GeV": [float(args.probe_E_min), float(args.probe_E_max)],
+        },
+        "found_data_weight": found_data_weight,
+        "found_mc_weight": found_mc_weight,
+        "found_data_stored_trials": int(pass_data.size()),
+        "found_mc_stored_trials": int(pass_mc.size()),
+        "minimum_required_found_weight": minimum_found,
+    }
+    with open(period_dir / "nominal_sample_accounting.json", "w", encoding="utf-8") as handle:
+        json.dump(nominal_accounting, handle, indent=2)
+
+    # ------------------------------------------------------------------
+    # Missing high-energy probes:
+    # select measured low-energy tags independently in the loose epgamma
+    # data, DVCSGEN, and AAOGEN-as-epgamma samples.  Do not subtract or
+    # mask candidates using the overlap audit.
+    # ------------------------------------------------------------------
     data_one_photon_candidates, data_one_photon_diag = read_one_photon_candidates(
-        period.epg_data, period.beam_energy_GeV, args, "unmatched data one-photon candidates",
-        entry_keep_mask=data_keep_mask,
+        period.epg_data,
+        period.beam_energy_GeV,
+        args,
+        "data low-energy-tag / predicted-high-energy-probe candidates",
     )
     dvcs_background_template, dvcs_template_diag = read_one_photon_candidates(
-        period.dvcs_mc, period.beam_energy_GeV, args, "DVCS/BH background template"
+        period.dvcs_mc,
+        period.beam_energy_GeV,
+        args,
+        "DVCS/BH low-energy-tag background template",
     )
     pi0_missing_probe_mc, pi0_missing_diag = read_one_photon_candidates(
-        period.pi0_as_epg_mc, period.beam_energy_GeV, args, "deduplicated unmatched pi0 missing-probe MC/template",
-        entry_keep_mask=pi0_mc_keep_mask,
+        period.pi0_as_epg_mc,
+        period.beam_energy_GeV,
+        args,
+        "AAOGEN low-energy-tag missing-probe template",
     )
 
     plot_one_photon_cutflows(
@@ -3898,7 +3953,7 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     metadata = {
         "period": asdict(period),
         "pass_sample_audit": {"data": pass_data_diag, "mc": pass_mc_diag},
-        "event_exclusive_accounting": overlap_diag,
+        "nominal_sample_accounting": nominal_accounting,
         "counts": {
             "epgammagamma_data_events_stored": pass_data.size(),
             "epgammagamma_mc_events_stored": pass_mc.size(),
@@ -5111,8 +5166,9 @@ def main() -> int:
     log("Event-exclusive high-energy photon-efficiency extraction.")
     log(f"Nominal directed definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
         f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV.")
-    log("Found-sample convention: the audit photon match identifies the tag; "
-        "the opposite reconstructed photon is the probe.")
+    log("Found-sample convention: native epgammagamma photons are energy ordered; "
+        "the lower-energy photon is the tag and the higher-energy photon is the probe.")
+    log("The event-overlap audit is not used in the nominal numerator or denominator.")
     log("Data found/missing outcomes are separated by exact event and photon matching; "
         "AAOGEN exact duplicate candidates are skipped before signature matching.")
     for period in periods:
