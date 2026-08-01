@@ -5896,7 +5896,7 @@ def process_period(
         json.dump(metadata, handle, indent=2)
     # endwith
 
-    plot_period_summary(
+    plot_integrated_efficiency_summary(
         plot_dir / "integrated_photon_efficiency.png",
         period.label,
         rows,
