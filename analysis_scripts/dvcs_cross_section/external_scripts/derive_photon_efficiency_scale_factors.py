@@ -5179,6 +5179,739 @@ def _write_audit_csv(path: Path, metadata: Mapping[str,object]) -> None:
             #endfor
         #endfor
 
+
+# ============================================================================
+# v47 TWO-BRANCH PRODUCTION OVERRIDES
+# ============================================================================
+
+def read_epgamma_template_sample(
+    path: str,
+    beam_energy: float,
+    args: argparse.Namespace,
+    sample_label: str,
+) -> Tuple[TrialArrays, Dict[str, object]]:
+    """Read the complete production-relevant epgamma sample for template fits.
+
+    This branch uses the measured epgamma photon and stored epgamma observables
+    directly.  It deliberately applies no epgamma/epgammagamma matching, no
+    low-energy-tag requirement, and no inferred-partner requirement.
+    """
+    del beam_energy
+
+    logical = [
+        "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
+        "g1_E", "g1_theta", "g1_phi", "g1_detector",
+        "Mx2_1", "Delta_phi", "theta_gamma_gamma", "pTmiss",
+        "theta_cm", "Emiss2", "Mx2", "Mx2_2",
+        "fiducial_status", "t1", "open_angle_ep2", "proton_detector",
+        "Q2", "W", "y", "z",
+    ]
+    optional = [
+        "g1_detector", "theta_cm", "Emiss2", "Mx2", "Mx2_2",
+        "fiducial_status", "t1", "open_angle_ep2", "proton_detector",
+        "Q2", "W", "y",
+    ]
+    resolved = resolve_branches(path, logical, optional)
+    expressions = sorted(
+        {branch for branch in resolved.values() if branch is not None}
+    )
+
+    chunks: List[TrialArrays] = []
+    seen = 0
+    diag = _new_one_photon_cutflow(sample_label, path)
+    diag["analysis_branch"] = "A_complete_epgamma_template_decomposition"
+    diag["selection_note"] = (
+        "Measured epgamma photon only; no event matching, low-energy tag, "
+        "or inferred missing-partner selection."
+    )
+
+    log(f"Branch A: reading {sample_label} from {path}")
+
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=args.step_size,
+        library="np",
+    ):
+        n = len(next(iter(arrays.values())))
+        if args.max_events is not None and seen >= args.max_events:
+            break
+        # endif
+        if args.max_events is not None and seen + n > args.max_events:
+            keep = args.max_events - seen
+            arrays = {key: value[:keep] for key, value in arrays.items()}
+            n = keep
+        # endif
+        seen += n
+        _add_cutflow(diag, "all_tree_entries", n)
+
+        quality = basic_quality_mask(arrays, resolved, args)
+        production = quality & production_event_mask(arrays, resolved, args)
+        _add_cutflow(diag, "basic_quality", quality)
+        _add_cutflow(diag, "production_event_cuts", production)
+
+        g_E = finite_array(arrays, resolved["g1_E"])
+        g_theta = finite_array(arrays, resolved["g1_theta"])
+        g_phi = finite_array(arrays, resolved["g1_phi"])
+        g_theta_deg = np.degrees(g_theta)
+
+        photon_kinematics = (
+            production
+            & np.isfinite(g_E)
+            & np.isfinite(g_theta_deg)
+            & np.isfinite(g_phi)
+            & (g_E >= args.probe_E_min)
+            & (g_E < args.probe_E_max)
+        )
+        _add_cutflow(diag, "tag_photon_energy", photon_kinematics)
+
+        geometric_detector, geometric_sector = classify_predicted_detector(
+            g_theta_deg, g_phi, args
+        )
+        native_detector = finite_array(
+            arrays, resolved.get("g1_detector"), default=-1.0
+        ).astype(np.int16)
+        native_valid = np.isin(native_detector, (0, 1))
+        photon_detector = np.where(
+            native_valid, native_detector, geometric_detector
+        ).astype(np.int16, copy=False)
+        photon_sector = geometric_sector.astype(np.int16, copy=False)
+
+        proton_detector = finite_array(
+            arrays, resolved.get("proton_detector"), default=-1.0
+        ).astype(np.int16)
+
+        supported_topology = (
+            ((proton_detector == 2) & (photon_detector == 0))
+            | ((proton_detector == 2) & (photon_detector == 1))
+            | ((proton_detector == 1) & (photon_detector == 1))
+        )
+        selected = (
+            photon_kinematics
+            & (photon_detector >= 0)
+            & supported_topology
+        )
+
+        _add_cutflow(diag, "tag_photon_detector", selected)
+        _add_cutflow(diag, "partner_prediction_finite", selected)
+        _add_cutflow(diag, "partner_energy_probe_range", selected)
+        _add_cutflow(diag, "partner_detector_acceptance", selected)
+        _add_cutflow(diag, "selected", selected)
+
+        for name, category_mask in (
+            [("FT", selected & (photon_detector == 0))]
+            + [
+                (
+                    f"FD sector {sector}",
+                    selected
+                    & (photon_detector == 1)
+                    & (photon_sector == sector),
+                )
+                for sector in range(1, 7)
+            ]
+        ):
+            diag["selected_by_category"][name] += float(
+                np.count_nonzero(category_mask)
+            )
+        # endfor
+
+        good = selected
+        n_good = int(np.count_nonzero(good))
+        if n_good == 0:
+            continue
+        # endif
+
+        chunks.append(
+            TrialArrays(
+                E=g_E[good].astype(np.float32, copy=False),
+                tag_E=g_E[good].astype(np.float32, copy=False),
+                theta_deg=g_theta_deg[good].astype(np.float32, copy=False),
+                phi_rad=g_phi[good].astype(np.float32, copy=False),
+                detector=photon_detector[good].astype(np.int8, copy=False),
+                sector=photon_sector[good].astype(np.int8, copy=False),
+                tag_detector=photon_detector[good].astype(np.int8, copy=False),
+                tag_sector=photon_sector[good].astype(np.int8, copy=False),
+                mx2_ep=finite_array(
+                    arrays, resolved["Mx2_1"]
+                )[good].astype(np.float32, copy=False),
+                delta_phi=finite_array(
+                    arrays, resolved.get("Delta_phi")
+                )[good].astype(np.float32, copy=False),
+                theta_gamma_gamma=finite_array(
+                    arrays, resolved.get("theta_gamma_gamma")
+                )[good].astype(np.float32, copy=False),
+                pTmiss=finite_array(
+                    arrays, resolved.get("pTmiss")
+                )[good].astype(np.float32, copy=False),
+                theta_cm=finite_array(
+                    arrays, resolved.get("theta_cm")
+                )[good].astype(np.float32, copy=False),
+                Emiss2=finite_array(
+                    arrays, resolved.get("Emiss2")
+                )[good].astype(np.float32, copy=False),
+                Mx2=finite_array(
+                    arrays, resolved.get("Mx2")
+                )[good].astype(np.float32, copy=False),
+                Mx2_2=finite_array(
+                    arrays, resolved.get("Mx2_2")
+                )[good].astype(np.float32, copy=False),
+                proton_detector=proton_detector[good].astype(
+                    np.int8, copy=False
+                ),
+                weight=np.ones(n_good, dtype=np.float32),
+            )
+        )
+    # endfor
+
+    result = concatenate_trials(chunks)
+    diag["selected_entries"] = int(result.size())
+    return result, diag
+
+
+def process_period(
+    period: PeriodConfig,
+    args_dict: Mapping[str, object],
+) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
+    """Run independent template-decomposition and efficiency branches."""
+
+    period_start = time.perf_counter()
+    args = argparse.Namespace(**args_dict)
+    args.period_key = period.key
+
+    period_dir = Path(args.output_dir) / period.key
+    branch_a_dir = period_dir / "branch_a_template_decomposition"
+    branch_b_dir = period_dir / "branch_b_efficiency_accounting"
+    fit_dir = branch_a_dir / "epgamma_template_fits"
+    shape_dir = branch_a_dir / "shape_comparisons"
+    plot_dir = branch_b_dir / "plots"
+
+    for directory in (
+        period_dir,
+        branch_a_dir,
+        branch_b_dir,
+        fit_dir,
+        shape_dir,
+        plot_dir,
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+    # endfor
+
+    # ------------------------------------------------------------------
+    # Branch A: complete epgamma decomposition.
+    # ------------------------------------------------------------------
+    branch_a_start = time.perf_counter()
+
+    fit_data, fit_data_diag = read_epgamma_template_sample(
+        period.epg_data,
+        period.beam_energy_GeV,
+        args,
+        "complete epgamma data fit population",
+    )
+    fit_dvcs, fit_dvcs_diag = read_epgamma_template_sample(
+        period.dvcs_mc,
+        period.beam_energy_GeV,
+        args,
+        "complete DVCSGEN/BH epgamma template",
+    )
+    fit_pi0, fit_pi0_diag = read_epgamma_template_sample(
+        period.pi0_as_epg_mc,
+        period.beam_energy_GeV,
+        args,
+        "complete AAOGEN pi0-as-epgamma template",
+    )
+
+    plot_one_photon_cutflows(
+        branch_a_dir / "epgamma_template_cutflow.png",
+        period.label,
+        [fit_data_diag, fit_dvcs_diag, fit_pi0_diag],
+    )
+
+    log(
+        f"{period.label} Branch A: data={fit_data.size():,}, "
+        f"DVCSGEN={fit_dvcs.size():,}, "
+        f"AAOGEN-as-epgamma={fit_pi0.size():,}"
+    )
+
+    if min(fit_data.size(), fit_dvcs.size(), fit_pi0.size()) < args.fit_min_counts:
+        raise RuntimeError(
+            f"{period.label}: complete Branch-A epgamma population is too small: "
+            f"data={fit_data.size():,}, DVCSGEN={fit_dvcs.size():,}, "
+            f"AAOGEN={fit_pi0.size():,}. "
+            "No event matching or inferred-partner selection is allowed here."
+        )
+    # endif
+
+    edges_by_var = fit_edges()
+
+    for topology_key in ("CD_FT", "CD_FD", "FD_FD"):
+        data_top = trial_topology_mask(fit_data, topology_key)
+        dvcs_top = trial_topology_mask(fit_dvcs, topology_key)
+        pi0_top = trial_topology_mask(fit_pi0, topology_key)
+
+        if not (np.any(data_top) and np.any(dvcs_top) and np.any(pi0_top)):
+            continue
+        # endif
+
+        plot_shape_comparison_canvas(
+            shape_dir / f"{topology_key.lower()}_fit_ranges.png",
+            period.label,
+            TOPOLOGY_LABELS[topology_key],
+            fit_data,
+            fit_dvcs,
+            fit_pi0,
+            (data_top, dvcs_top, pi0_top),
+            broad=False,
+        )
+        plot_shape_comparison_canvas(
+            shape_dir / f"{topology_key.lower()}_broad_ranges.png",
+            period.label,
+            TOPOLOGY_LABELS[topology_key],
+            fit_data,
+            fit_dvcs,
+            fit_pi0,
+            (data_top, dvcs_top, pi0_top),
+            broad=True,
+        )
+    # endfor
+
+    # ------------------------------------------------------------------
+    # Branch B: preserve the reasonable MC treatment.
+    # ------------------------------------------------------------------
+    branch_a_elapsed = time.perf_counter() - branch_a_start
+    branch_b_start = time.perf_counter()
+
+    found_data, found_data_diag = read_pass_trials(
+        period.epgg_data,
+        period.beam_energy_GeV,
+        args,
+        f"{period.label} native epgammagamma data",
+    )
+    found_mc, found_mc_diag = read_pass_trials(
+        period.epgg_mc,
+        period.beam_energy_GeV,
+        args,
+        f"{period.label} native AAOGEN epgammagamma MC",
+    )
+    missing_mc, missing_mc_diag = read_one_photon_candidates(
+        period.pi0_as_epg_mc,
+        period.beam_energy_GeV,
+        args,
+        "Branch-B AAOGEN missing-probe MC",
+    )
+
+    found_data_weight = float(np.sum(found_data.weight))
+    found_mc_weight = float(np.sum(found_mc.weight))
+    if (
+        found_data_weight < args.minimum_found_trials_per_period
+        or found_mc_weight < args.minimum_found_trials_per_period
+    ):
+        raise RuntimeError(
+            f"{period.label}: Branch-B found sample is unexpectedly small: "
+            f"data={found_data_weight:,.1f}, MC={found_mc_weight:,.1f}."
+        )
+    # endif
+
+    bins = build_bins(found_mc, missing_mc, args)
+    n_bins = len(bins)
+
+    found_data_ids = assign_bin_ids(found_data, bins)
+    found_mc_ids = assign_bin_ids(found_mc, bins)
+    fit_data_ids = assign_bin_ids(fit_data, bins)
+    fit_dvcs_ids = assign_bin_ids(fit_dvcs, bins)
+    fit_pi0_ids = assign_bin_ids(fit_pi0, bins)
+    missing_mc_ids = assign_bin_ids(missing_mc, bins)
+
+    found_data_counts = weighted_counts_by_bin(
+        found_data, found_data_ids, n_bins
+    )
+    found_mc_counts = weighted_counts_by_bin(
+        found_mc, found_mc_ids, n_bins
+    )
+    found_data_sumw2 = weighted_sumw2_by_bin(
+        found_data, found_data_ids, n_bins
+    )
+    found_mc_sumw2 = weighted_sumw2_by_bin(
+        found_mc, found_mc_ids, n_bins
+    )
+
+    topology_references: Dict[str, object] = {}
+    topology_reference_fits: Dict[str, MultiFitSummary] = {}
+    topology_reference_variants: Dict[str, object] = {}
+
+    for topology_key in ("CD_FT", "CD_FD", "FD_FD"):
+        data_mask = trial_topology_mask(fit_data, topology_key)
+        dvcs_mask = trial_topology_mask(fit_dvcs, topology_key)
+        pi0_mask = trial_topology_mask(fit_pi0, topology_key)
+
+        data_h = histograms_for_mask(fit_data, data_mask, edges_by_var)
+        dvcs_h = histograms_for_mask(fit_dvcs, dvcs_mask, edges_by_var)
+        pi0_h = histograms_for_mask(fit_pi0, pi0_mask, edges_by_var)
+
+        minimum_support = min(
+            float(np.sum(histograms[key]))
+            for histograms in (data_h, dvcs_h, pi0_h)
+            for key in FRACTION_DRIVER_KEYS
+        )
+        if minimum_support < args.fit_min_counts:
+            continue
+        # endif
+
+        reference_fit, _, variants, exact_reference = exact_fit_variants(
+            data_h, dvcs_h, pi0_h, args, topology_key
+        )
+        topology_reference_fits[topology_key] = reference_fit
+        topology_reference_variants[topology_key] = {
+            name: {
+                "success": value.success,
+                "fraction_pi0": value.fraction_pi0,
+                "fraction_pi0_err": value.fraction_pi0_err,
+                "deviance": value.deviance,
+                "ndf": value.ndf,
+            }
+            for name, value in variants.items()
+        }
+
+        if reference_fit.success:
+            topology_references[topology_key] = exact_reference
+            integrated_definition = BinDefinition(
+                -1,
+                "FT" if topology_key == "CD_FT" else "FD",
+                0,
+                args.probe_E_min,
+                args.probe_E_max,
+                args.ft_theta_min
+                if topology_key == "CD_FT"
+                else args.fd_theta_min,
+                args.ft_theta_max
+                if topology_key == "CD_FT"
+                else args.fd_theta_max,
+            )
+            plot_category_fit_summary(
+                fit_dir / f"{topology_key}_integrated.png",
+                f"{period.label} {TOPOLOGY_LABELS[topology_key]}",
+                integrated_definition,
+                reference_fit,
+            )
+        # endif
+    # endfor
+
+    rows: List[EfficiencyRow] = []
+    category_metadata: Dict[str, object] = {}
+
+    for definition in bins:
+        index = definition.bin_id
+        category_key = (
+            "FT"
+            if definition.detector == "FT"
+            else f"FD_sector_{definition.sector}"
+        )
+
+        missing_data = 0.0
+        missing_data_variance = 0.0
+        missing_mc_count = 0.0
+        all_success = True
+        fraction_numerator = 0.0
+        fraction_denominator = 0.0
+        deviance = 0.0
+        ndf = 0
+        maximum_spread = 0.0
+        topology_details: Dict[str, object] = {}
+
+        for topology_key in topology_keys_for_definition(definition):
+            data_mask = (
+                (fit_data_ids == index)
+                & trial_topology_mask(fit_data, topology_key)
+            )
+            dvcs_mask = (
+                (fit_dvcs_ids == index)
+                & trial_topology_mask(fit_dvcs, topology_key)
+            )
+            pi0_mask = (
+                (fit_pi0_ids == index)
+                & trial_topology_mask(fit_pi0, topology_key)
+            )
+            missing_mc_mask = (
+                (missing_mc_ids == index)
+                & trial_topology_mask(missing_mc, topology_key)
+            )
+
+            n_data, n_data_sumw2 = weighted_count_for_mask(
+                fit_data, data_mask
+            )
+            n_missing_mc_top, _ = weighted_count_for_mask(
+                missing_mc, missing_mc_mask
+            )
+            missing_mc_count += n_missing_mc_top
+
+            data_h = histograms_for_mask(
+                fit_data, data_mask, edges_by_var
+            )
+            dvcs_h = histograms_for_mask(
+                fit_dvcs, dvcs_mask, edges_by_var
+            )
+            pi0_h = histograms_for_mask(
+                fit_pi0, pi0_mask, edges_by_var
+            )
+
+            reference = topology_references.get(topology_key)
+            if reference is None:
+                fit = MultiFitSummary(
+                    False,
+                    math.nan,
+                    math.nan,
+                    math.nan,
+                    math.nan,
+                    math.nan,
+                    math.nan,
+                    math.nan,
+                    0,
+                    f"No complete-epgamma reference for {topology_key}",
+                    {},
+                )
+                spread = math.nan
+                variants = {"nominal": fit}
+            elif topology_key == "CD_FT":
+                fit, spread, variants, _ = exact_fit_variants(
+                    data_h, dvcs_h, pi0_h, args, topology_key
+                )
+            else:
+                fit, spread, variants = frozen_variant_systematic(
+                    data_h, reference
+                )
+            # endif
+
+            if not fit.success or not math.isfinite(fit.fraction_pi0):
+                all_success = False
+                assigned = math.nan
+                assigned_err = math.nan
+            else:
+                fraction = float(fit.fraction_pi0)
+                fraction_err = (
+                    float(fit.fraction_pi0_err)
+                    if math.isfinite(fit.fraction_pi0_err)
+                    else 0.0
+                )
+                spread_value = (
+                    float(spread) if math.isfinite(spread) else 0.0
+                )
+
+                assigned = fraction * n_data
+                assigned_err = math.sqrt(
+                    (n_data * fraction_err) ** 2
+                    + (n_data * spread_value) ** 2
+                    + (
+                        fraction
+                        * math.sqrt(max(n_data_sumw2, 0.0))
+                    ) ** 2
+                )
+
+                missing_data += assigned
+                missing_data_variance += assigned_err ** 2
+                fraction_numerator += fraction * n_data
+                fraction_denominator += n_data
+                deviance += fit.deviance
+                ndf += fit.ndf
+                maximum_spread = max(maximum_spread, spread_value)
+            # endif
+
+            topology_details[topology_key] = {
+                "branch_a_data_candidates": n_data,
+                "branch_b_missing_mc_candidates": n_missing_mc_top,
+                "fit_success": fit.success,
+                "fraction_pi0": fit.fraction_pi0,
+                "fraction_pi0_err": fit.fraction_pi0_err,
+                "assigned_missing_data": assigned,
+                "assigned_missing_data_err": assigned_err,
+                "model_spread": spread,
+                "deviance": fit.deviance,
+                "ndf": fit.ndf,
+                "variants": {
+                    name: {
+                        "success": value.success,
+                        "fraction_pi0": value.fraction_pi0,
+                        "fraction_pi0_err": value.fraction_pi0_err,
+                    }
+                    for name, value in variants.items()
+                },
+            }
+
+            if fit.success:
+                plot_category_fit_summary(
+                    fit_dir / f"{category_key}_{topology_key}.png",
+                    f"{period.label} {TOPOLOGY_LABELS[topology_key]}",
+                    definition,
+                    fit,
+                )
+            # endif
+        # endfor
+
+        missing_data_err = (
+            math.sqrt(missing_data_variance)
+            if all_success
+            else math.nan
+        )
+        if not all_success:
+            missing_data = math.nan
+        # endif
+
+        n_found_data = float(found_data_counts[index])
+        n_found_mc = float(found_mc_counts[index])
+        found_data_err = math.sqrt(
+            max(float(found_data_sumw2[index]), 0.0)
+        )
+        found_mc_err = math.sqrt(
+            max(float(found_mc_sumw2[index]), 0.0)
+        )
+        missing_mc_err = math.sqrt(max(missing_mc_count, 0.0))
+
+        efficiency_data, efficiency_data_err = efficiency_and_error(
+            n_found_data,
+            found_data_err,
+            missing_data,
+            missing_data_err,
+        )
+        efficiency_mc, efficiency_mc_err = efficiency_and_error(
+            n_found_mc,
+            found_mc_err,
+            missing_mc_count,
+            missing_mc_err,
+        )
+        scale_factor, scale_factor_err = scale_factor_and_error(
+            efficiency_data,
+            efficiency_data_err,
+            efficiency_mc,
+            efficiency_mc_err,
+        )
+
+        combined_fraction = (
+            fraction_numerator / fraction_denominator
+            if fraction_denominator > 0.0
+            else math.nan
+        )
+
+        rows.append(
+            EfficiencyRow(
+                period=period.key,
+                period_label=period.label,
+                detector=definition.detector,
+                sector=definition.sector,
+                E_low=definition.E_low,
+                E_high=definition.E_high,
+                theta_low_deg=definition.theta_low_deg,
+                theta_high_deg=definition.theta_high_deg,
+                N_pass_data=n_found_data,
+                N_pass_data_err=found_data_err,
+                N_pass_mc=n_found_mc,
+                N_pass_mc_err=found_mc_err,
+                N_fail_data=missing_data,
+                N_fail_data_err=missing_data_err,
+                N_fail_mc=missing_mc_count,
+                N_fail_mc_err=missing_mc_err,
+                fraction_pi0_data=combined_fraction,
+                fraction_pi0_data_err=math.nan,
+                efficiency_data=efficiency_data,
+                efficiency_data_err=efficiency_data_err,
+                efficiency_mc=efficiency_mc,
+                efficiency_mc_err=efficiency_mc_err,
+                scale_factor=scale_factor,
+                scale_factor_err=scale_factor_err,
+                fit_success=all_success,
+                fit_deviance=deviance,
+                fit_ndf=ndf,
+                fit_model_systematic=maximum_spread,
+            )
+        )
+
+        category_metadata[category_key] = topology_details
+
+        log(
+            f"{period.label} {category_key}: "
+            f"Branch-A f_pi0={combined_fraction:.6g}, "
+            f"missing data={missing_data:,.1f}, "
+            f"found data={n_found_data:,.1f}, "
+            f"found MC={n_found_mc:,.1f}, "
+            f"missing MC={missing_mc_count:,.1f}, "
+            f"epsilon_data={efficiency_data:.5g}, "
+            f"epsilon_MC={efficiency_mc:.5g}, "
+            f"S_gamma={scale_factor:.5g}"
+        )
+    # endfor
+
+    metadata = {
+        "period": asdict(period),
+        "architecture": {
+            "branch_a": (
+                "Complete production-relevant epgamma data/DVCSGEN/AAOGEN "
+                "template decomposition with no event matching or inferred "
+                "partner requirement."
+            ),
+            "branch_b": (
+                "Native epgammagamma found counts and preserved AAOGEN "
+                "low-tag/inferred-probe missing-MC treatment."
+            ),
+            "communication": (
+                "Only the Branch-A fitted pi0 yield is passed to the Branch-B "
+                "data efficiency denominator."
+            ),
+        },
+        "timing_seconds": {
+            "branch_a": branch_a_elapsed,
+            "branch_b": time.perf_counter() - branch_b_start,
+            "total": time.perf_counter() - period_start,
+        },
+        "branch_a": {
+            "selected_entries": {
+                "data": fit_data.size(),
+                "dvcs": fit_dvcs.size(),
+                "pi0": fit_pi0.size(),
+            },
+            "data_cutflow": fit_data_diag,
+            "dvcs_cutflow": fit_dvcs_diag,
+            "pi0_cutflow": fit_pi0_diag,
+            "integrated_topology_fits": {
+                key: {
+                    "success": value.success,
+                    "fraction_pi0": value.fraction_pi0,
+                    "fraction_pi0_err": value.fraction_pi0_err,
+                    "deviance": value.deviance,
+                    "ndf": value.ndf,
+                }
+                for key, value in topology_reference_fits.items()
+            },
+            "integrated_topology_variants": topology_reference_variants,
+            "category_fits": category_metadata,
+        },
+        "branch_b": {
+            "found_data_weight": found_data_weight,
+            "found_mc_weight": found_mc_weight,
+            "found_data_diagnostics": found_data_diag,
+            "found_mc_diagnostics": found_mc_diag,
+            "missing_mc_diagnostics": missing_mc_diag,
+        },
+    }
+
+    with open(
+        period_dir / "metadata.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(metadata, handle, indent=2)
+    # endwith
+
+    plot_period_summary(
+        plot_dir / "integrated_photon_efficiency.png",
+        period.label,
+        rows,
+    )
+
+    return (
+        period.key,
+        [row.to_dict() for row in rows],
+        metadata,
+    )
+
+
+
 def main() -> int:
     args = parse_args()
     args.workers = min(max(1, args.workers), MAX_WORKERS)
