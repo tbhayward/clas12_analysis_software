@@ -1204,10 +1204,33 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                 & np.isfinite(g2_theta) & np.isfinite(g2_phi)
             )
 
-            # Construct the nominal directed tag--probe trial.  The native
-            # reconstruction energy-orders the pair as g1_E >= g2_E.  Therefore
-            # photon 2 is the low-energy tag and photon 1 is the high-energy probe.
+            # The cone reconstruction preserves the photon labels associated
+            # with the two stored electron--photon opening angles; it does NOT
+            # guarantee g1_E >= g2_E.  Build both possible directed assignments.
+            #
+            # Because the nominal energy windows are disjoint,
+            #
+            #   0.4 <= E_tag < 2 GeV
+            #   2.0 <= E_probe < 9.5 GeV,
+            #
+            # at most one orientation can pass for a given photon pair.  Thus
+            # considering both assignments restores label independence without
+            # double counting the nominal low-tag/high-probe opportunity.
             directed_orientations = [
+                {
+                    "tag_E": g1_E,
+                    "tag_theta_deg": g1_theta_deg,
+                    "tag_phi": g1_phi,
+                    "tag_detector": g1_detector,
+                    "tag_sector": g1_sector,
+                    "probe_E": g2_E,
+                    "probe_theta_deg": g2_theta_deg,
+                    "probe_phi": g2_phi,
+                    "probe_detector": g2_detector,
+                    "probe_sector": g2_sector,
+                    "probe_opening_deg": opening2_deg,
+                    "orientation": "gamma1_tag_gamma2_probe",
+                },
                 {
                     "tag_E": g2_E,
                     "tag_theta_deg": g2_theta_deg,
@@ -1256,8 +1279,9 @@ def read_pass_trials(path: str, beam_energy: float, args: argparse.Namespace,
                 final_pass = detector_ok
 
                 # Avoid double-counting generic event-level stages in the audit.
-                # Directed-trial stages are intentionally accumulated for both
-                # orientations when both photons are eligible probes.
+                # Directed-trial stages are accumulated for both label assignments.
+                # The disjoint tag/probe energy windows ensure that no event
+                # contributes twice to the nominal found sample.
                 for stage, mask in (
                     ("prediction_finite", finite_pair),
                     ("tag_energy_range", tag_energy),
@@ -5166,8 +5190,8 @@ def main() -> int:
     log("Event-exclusive high-energy photon-efficiency extraction.")
     log(f"Nominal directed definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
         f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV.")
-    log("Found-sample convention: native epgammagamma photons are energy ordered; "
-        "the lower-energy photon is the tag and the higher-energy photon is the probe.")
+    log("Found-sample convention: both photon-label assignments are tested; "
+        "the disjoint energy windows select one low-energy tag/high-energy probe orientation.")
     log("The event-overlap audit is not used in the nominal numerator or denominator.")
     log("Data found/missing outcomes are separated by exact event and photon matching; "
         "AAOGEN exact duplicate candidates are skipped before signature matching.")
