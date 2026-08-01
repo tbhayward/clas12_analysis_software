@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-photon_efficiency_step1_expected_probe_audit_v1.py
+photon_efficiency_step1_expected_probe_audit_v2.py
 
 Step 1 of the restarted RGA photon-efficiency study.
 
@@ -48,6 +48,11 @@ output/photon_efficiency_study/step1_expected_probe_audit/
       expected_probe_kinematics.png
       photon_hypothesis_diagnostics.png
       topology_breakdown.png
+      cutflow_survival.png
+      tag_energy_categories.png
+      predicted_probe_theta_phi_maps.png
+      missing_mass_closure.png
+      identity_multiplicity.json
 
 The NPZ files contain only the selected expected-probe records needed for
 validation and later development.  They are not production corrections.
@@ -211,6 +216,8 @@ class SampleResult:
     predicted_probe_energy: int
     predicted_probe_acceptance: int
     selected_expected_probes: int
+    selected_tag_0p4_to_2: int
+    selected_tag_at_least_2: int
     selected_ft: int
     selected_fd: int
     selected_outside_acceptance: int
@@ -540,6 +547,8 @@ def process_sample(
         "predicted_probe_energy": 0,
         "predicted_probe_acceptance": 0,
         "selected_expected_probes": 0,
+        "selected_tag_0p4_to_2": 0,
+        "selected_tag_at_least_2": 0,
         "selected_ft": 0,
         "selected_fd": 0,
         "selected_outside_acceptance": 0,
@@ -652,6 +661,16 @@ def process_sample(
         counts["selected_expected_probes"] += int(
             np.count_nonzero(accepted)
         )
+        counts["selected_tag_0p4_to_2"] += int(
+            np.count_nonzero(
+                accepted
+                & (tag_E >= args.tag_E_min)
+                & (tag_E < args.probe_E_min)
+            )
+        )
+        counts["selected_tag_at_least_2"] += int(
+            np.count_nonzero(accepted & (tag_E >= args.probe_E_min))
+        )
         counts["selected_ft"] += int(
             np.count_nonzero(accepted & (detector == 0))
         )
@@ -676,6 +695,24 @@ def process_sample(
         )
         append_selected(storage, "detector", detector, accepted)
         append_selected(storage, "sector", sector, accepted)
+        append_selected(storage, "e_p", e_p, accepted)
+        append_selected(storage, "e_theta", e_theta, accepted)
+        append_selected(storage, "e_phi", e_phi, accepted)
+        append_selected(storage, "p_p", p_p, accepted)
+        append_selected(storage, "p_theta", p_theta, accepted)
+        append_selected(storage, "p_phi", p_phi, accepted)
+        append_selected(
+            storage,
+            "runnum",
+            finite_array(arrays, resolved["runnum"]),
+            accepted,
+        )
+        append_selected(
+            storage,
+            "eventnum",
+            finite_array(arrays, resolved["eventnum"]),
+            accepted,
+        )
 
         for logical in (
             "Delta_phi", "theta_gamma_gamma", "pTmiss",
@@ -768,7 +805,7 @@ def plot_photon_hypothesis(
         ("theta_gamma_gamma", np.linspace(0.0, 3.1, 101), r"$\theta_{\gamma\gamma}$ (rad)"),
         ("pTmiss", np.linspace(0.0, 0.6, 101), r"$p_T^{\rm miss}$ (GeV)"),
         ("Emiss2", np.linspace(-1.0, 2.0, 101), r"$E_{\rm miss}$ diagnostic"),
-        ("Mx2_2", np.linspace(-1.0, 4.0, 101), r"$M_{x2}^2$ (GeV$^2$)"),
+        ("Mx2_2", np.linspace(-1.0, 9.0, 121), r"$M_{x2}^2$ (GeV$^2$)"),
     )
 
     fig, axes = plt.subplots(2, 4, figsize=(20, 9))
@@ -826,6 +863,275 @@ def plot_topology_breakdown(
     plt.close(fig)
 
 
+
+def plot_cutflow_survival(
+    path: Path,
+    period_label: str,
+    results: Mapping[str, SampleResult],
+) -> None:
+    stages = (
+        ("total_entries", "Tree"),
+        ("finite_four_vectors", "Finite 4-vectors"),
+        ("common_global_cuts", "Global cuts"),
+        ("tag_energy", r"$E_{\rm tag}\geq0.4$"),
+        ("predicted_probe_finite", "Finite probe"),
+        ("predicted_probe_energy", r"$E_{\rm probe}\geq2$"),
+        ("predicted_probe_acceptance", "FT/FD acceptance"),
+    )
+
+    x = np.arange(len(stages), dtype=float)
+    fig, axis = plt.subplots(figsize=(12, 6))
+
+    for sample, result in results.items():
+        initial = max(float(result.total_entries), 1.0)
+        fractions = [
+            float(getattr(result, field)) / initial
+            for field, _ in stages
+        ]
+        axis.plot(
+            x,
+            fractions,
+            marker="o",
+            linewidth=1.4,
+            label=sample,
+        )
+    # endfor
+
+    axis.set_xticks(x, [label for _, label in stages], rotation=25, ha="right")
+    axis.set_yscale("log")
+    axis.set_ylabel("Fraction of input entries")
+    axis.set_title(f"{period_label}: Step-1 cumulative cut survival")
+    axis.grid(alpha=0.3)
+    axis.legend()
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_tag_energy_categories(
+    path: Path,
+    period_label: str,
+    results: Mapping[str, SampleResult],
+) -> None:
+    labels = (r"$0.4\leq E_{\rm tag}<2$ GeV", r"$E_{\rm tag}\geq2$ GeV")
+    x = np.arange(2, dtype=float)
+    width = 0.24
+
+    fig, axis = plt.subplots(figsize=(10, 6))
+    for sample_index, (sample, result) in enumerate(results.items()):
+        counts = np.asarray(
+            [
+                result.selected_tag_0p4_to_2,
+                result.selected_tag_at_least_2,
+            ],
+            dtype=float,
+        )
+        total = max(float(result.selected_expected_probes), 1.0)
+        fractions = counts / total
+        offset = (sample_index - 1) * width
+        axis.bar(x + offset, fractions, width=width, label=sample)
+
+        for xpos, count, fraction in zip(x + offset, counts, fractions):
+            axis.text(
+                xpos,
+                fraction,
+                f"{int(count):,}",
+                ha="center",
+                va="bottom",
+                fontsize=8,
+                rotation=90,
+            )
+        # endfor
+    # endfor
+
+    axis.set_xticks(x, labels)
+    axis.set_ylim(0.0, 1.12)
+    axis.set_ylabel("Fraction of selected expected probes")
+    axis.set_title(
+        f"{period_label}: tag-energy composition\n"
+        "No upper bound is imposed on the tag energy"
+    )
+    axis.grid(axis="y", alpha=0.25)
+    axis.legend()
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_predicted_probe_theta_phi_maps(
+    path: Path,
+    period_label: str,
+    records_by_sample: Mapping[str, Mapping[str, np.ndarray]],
+) -> None:
+    samples = list(records_by_sample.items())
+    fig, axes = plt.subplots(
+        1,
+        len(samples),
+        figsize=(6 * len(samples), 5),
+        sharex=True,
+        sharey=True,
+    )
+    if len(samples) == 1:
+        axes = np.asarray([axes])
+    # endif
+
+    for axis, (sample, records) in zip(axes, samples):
+        theta = records["probe_theta_deg"]
+        phi = np.degrees(records["probe_phi_rad"])
+        finite = np.isfinite(theta) & np.isfinite(phi)
+
+        histogram = axis.hist2d(
+            phi[finite],
+            theta[finite],
+            bins=(72, 65),
+            range=((-180.0, 180.0), (0.0, 35.0)),
+            norm=matplotlib.colors.LogNorm()
+            if np.count_nonzero(finite) > 0
+            else None,
+        )
+        axis.axhline(2.5, linestyle="--", linewidth=1.0)
+        axis.axhline(5.0, linestyle="--", linewidth=1.0)
+        axis.set_title(f"{sample} ({np.count_nonzero(finite):,})")
+        axis.set_xlabel(r"Predicted probe $\phi$ (deg)")
+        axis.grid(alpha=0.15)
+        fig.colorbar(histogram[3], ax=axis, label="Entries")
+    # endfor
+
+    axes[0].set_ylabel(r"Predicted probe $\theta$ (deg)")
+    fig.suptitle(
+        f"{period_label}: predicted-probe angular support\n"
+        "Dashed lines show nominal FT/FD theta boundaries"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_missing_mass_closure(
+    path: Path,
+    period_label: str,
+    records_by_sample: Mapping[str, Mapping[str, np.ndarray]],
+) -> None:
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5))
+
+    for sample, records in records_by_sample.items():
+        calculated = records["probe_m2"]
+        stored = records["Mx2"]
+        finite = np.isfinite(calculated) & np.isfinite(stored)
+
+        normalized_hist(
+            axes[0],
+            calculated[finite],
+            np.linspace(-0.25, 0.25, 121),
+            f"{sample}: calculated",
+        )
+        normalized_hist(
+            axes[1],
+            stored[finite],
+            np.linspace(-0.25, 0.25, 121),
+            f"{sample}: stored",
+        )
+        normalized_hist(
+            axes[2],
+            (calculated - stored)[finite],
+            np.linspace(-0.02, 0.02, 121),
+            sample,
+        )
+    # endfor
+
+    axes[0].set_xlabel(r"Calculated $m_X^2$ (GeV$^2$)")
+    axes[1].set_xlabel(r"Stored $M_x^2$ (GeV$^2$)")
+    axes[2].set_xlabel(r"Calculated $m_X^2$ - stored $M_x^2$ (GeV$^2$)")
+
+    for axis in axes:
+        axis.set_ylabel("Fraction / bin")
+        axis.grid(alpha=0.25)
+        axis.legend(fontsize=7)
+    # endfor
+
+    fig.suptitle(f"{period_label}: missing-four-vector closure")
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def identity_multiplicity_summary(
+    records: Mapping[str, np.ndarray],
+) -> Dict[str, object]:
+    n = int(records["tag_E"].size)
+    summary: Dict[str, object] = {
+        "selected_entries": n,
+        "data_event_key_available": False,
+        "unique_run_event_keys": None,
+        "entries_in_repeated_run_event_keys": None,
+        "maximum_run_event_multiplicity": None,
+        "unique_exact_ep_signatures": None,
+        "entries_in_repeated_exact_ep_signatures": None,
+        "maximum_exact_ep_signature_multiplicity": None,
+    }
+    if n == 0:
+        return summary
+    # endif
+
+    runnum = records["runnum"]
+    eventnum = records["eventnum"]
+    valid_event_keys = (
+        np.isfinite(runnum)
+        & np.isfinite(eventnum)
+        & (runnum >= 0)
+        & (eventnum >= 0)
+    )
+    if np.any(valid_event_keys):
+        keys = np.rec.fromarrays(
+            [
+                runnum[valid_event_keys].astype(np.int64),
+                eventnum[valid_event_keys].astype(np.int64),
+            ],
+            names=("runnum", "eventnum"),
+        )
+        _, multiplicities = np.unique(keys, return_counts=True)
+        summary["data_event_key_available"] = True
+        summary["unique_run_event_keys"] = int(multiplicities.size)
+        summary["entries_in_repeated_run_event_keys"] = int(
+            np.sum(multiplicities[multiplicities > 1])
+        )
+        summary["maximum_run_event_multiplicity"] = int(
+            multiplicities.max(initial=0)
+        )
+    # endif
+
+    # Exact reconstructed electron/proton signatures are diagnostic only.
+    # They are not used here to claim event identity or perform matching.
+    signature_arrays = [
+        records["e_p"].astype(np.float64),
+        records["e_theta"].astype(np.float64),
+        records["e_phi"].astype(np.float64),
+        records["p_p"].astype(np.float64),
+        records["p_theta"].astype(np.float64),
+        records["p_phi"].astype(np.float64),
+    ]
+    finite_signature = np.logical_and.reduce(
+        [np.isfinite(values) for values in signature_arrays]
+    )
+    if np.any(finite_signature):
+        signature = np.rec.fromarrays(
+            [values[finite_signature] for values in signature_arrays],
+            names=("e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"),
+        )
+        _, multiplicities = np.unique(signature, return_counts=True)
+        summary["unique_exact_ep_signatures"] = int(multiplicities.size)
+        summary["entries_in_repeated_exact_ep_signatures"] = int(
+            np.sum(multiplicities[multiplicities > 1])
+        )
+        summary["maximum_exact_ep_signature_multiplicity"] = int(
+            multiplicities.max(initial=0)
+        )
+    # endif
+
+    return summary
+
+
+
 def process_period(
     period: PeriodConfig,
     args_dict: Mapping[str, object],
@@ -865,6 +1171,18 @@ def process_period(
         )
     # endwith
 
+    identity_summary = {
+        sample: identity_multiplicity_summary(records)
+        for sample, records in records_by_sample.items()
+    }
+    with open(
+        period_dir / "identity_multiplicity.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(identity_summary, handle, indent=2)
+    # endwith
+
     # Save one compact NPZ per period with sample-prefixed arrays.
     npz_payload: Dict[str, np.ndarray] = {}
     for sample, records in records_by_sample.items():
@@ -893,6 +1211,26 @@ def process_period(
         period.label,
         records_by_sample,
     )
+    plot_cutflow_survival(
+        period_dir / "cutflow_survival.png",
+        period.label,
+        results,
+    )
+    plot_tag_energy_categories(
+        period_dir / "tag_energy_categories.png",
+        period.label,
+        results,
+    )
+    plot_predicted_probe_theta_phi_maps(
+        period_dir / "predicted_probe_theta_phi_maps.png",
+        period.label,
+        records_by_sample,
+    )
+    plot_missing_mass_closure(
+        period_dir / "missing_mass_closure.png",
+        period.label,
+        records_by_sample,
+    )
 
     payload = {
         "period": asdict(period),
@@ -912,9 +1250,12 @@ def write_summary_csvs(
         "common_global_cuts", "tag_energy", "predicted_probe_finite",
         "predicted_probe_energy", "predicted_probe_acceptance",
         "selected_expected_probes",
+        "selected_tag_0p4_to_2",
+        "selected_tag_at_least_2",
     ]
     count_fields = [
         "period", "sample", "selected_expected_probes",
+        "selected_tag_0p4_to_2", "selected_tag_at_least_2",
         "selected_ft", "selected_fd", "selected_outside_acceptance",
     ]
 
@@ -968,6 +1309,7 @@ def main() -> int:
         f"Directed opportunity: E_tag >= {args.tag_E_min:g} GeV; "
         f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV."
     )
+    log("No upper bound is imposed on E_tag.")
     log("No template fit, event matching, or efficiency extraction will run.")
 
     manifest = {
