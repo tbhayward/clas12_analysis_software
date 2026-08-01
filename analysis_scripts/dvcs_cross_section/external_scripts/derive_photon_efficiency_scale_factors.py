@@ -5904,7 +5904,7 @@ def process_period(
 
     return (
         period.key,
-        [row.to_dict() for row in rows],
+        [asdict(row) for row in rows],
         metadata,
     )
 
@@ -5918,14 +5918,12 @@ def main() -> int:
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
 
-    log("Event-exclusive high-energy photon-efficiency extraction.")
-    log(f"Nominal directed definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
+    log("Two-branch high-energy photon-efficiency extraction.")
+    log("Branch A: complete production-relevant epgamma data/DVCSGEN/AAOGEN template decomposition.")
+    log("Branch B: native epgammagamma found samples plus the preserved AAOGEN missing-probe MC treatment.")
+    log("Only the Branch-A fitted pi0 yield is passed to the Branch-B data efficiency denominator.")
+    log(f"Branch-B directed definition: {args.tag_E_min:g} <= E_tag < {args.tag_E_max:g} GeV; "
         f"{args.probe_E_min:g} <= E_probe < {args.probe_E_max:g} GeV.")
-    log("Found-sample convention: both photon-label assignments are tested; "
-        "the disjoint energy windows select one low-energy tag/high-energy probe orientation.")
-    log("The event-overlap audit is not used in the nominal numerator or denominator.")
-    log("Data found/missing outcomes are separated by exact event and photon matching; "
-        "AAOGEN exact duplicate candidates are skipped before signature matching.")
     for period in periods:
         for path in (period.epg_data, period.dvcs_mc, period.pi0_as_epg_mc,
                      period.epgg_data, period.epgg_mc):
@@ -5960,8 +5958,8 @@ def main() -> int:
     write_rows(csv_path, all_rows)
     with open(json_path, "w", encoding="utf-8") as handle:
         json.dump({
-            "schema_version": 41,
-            "description": "Event-exclusive pi0 tag-and-probe scale factors for photons above 2 GeV.",
+            "schema_version": 50,
+            "description": "Two-branch pi0-control extraction of data/MC photon-efficiency scale factors above 2 GeV.",
             "arguments": args_dict,
             "periods": metadata,
             "rows": all_rows,
@@ -5974,10 +5972,12 @@ def main() -> int:
         json.dump({
             "script": Path(__file__).name,
             "created_unix_time": time.time(),
-            "event_exclusive": True,
-            "data_identity": "exact runnum, evnum plus photon match",
-            "aaogen_identity": "deduplicated reconstructed electron/proton signature plus photon match",
-            "nominal_orientation": "gamma2 low-energy tag, gamma1 high-energy probe",
+            "architecture": "independent Branch-A epgamma decomposition and Branch-B efficiency accounting",
+            "branch_a_population": "complete production-relevant epgamma data, DVCSGEN, and AAOGEN-as-epgamma samples",
+            "branch_a_event_matching": False,
+            "branch_b_found_population": "native epgammagamma data and AAOGEN samples",
+            "branch_b_missing_mc_population": "AAOGEN-as-epgamma low-tag/inferred-probe sample",
+            "branch_communication": "only the fitted Branch-A pi0 yield enters the Branch-B data denominator",
             "fit_drivers": list(FRACTION_DRIVER_KEYS),
         }, handle, indent=2)
     log(f"Wrote {csv_path}")
