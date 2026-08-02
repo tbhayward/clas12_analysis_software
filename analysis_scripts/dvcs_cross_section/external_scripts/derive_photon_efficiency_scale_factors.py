@@ -1,59 +1,29 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v18_binomial_helper_fix.py
+derive_photon_efficiency_scale_factors_v19_fail_only_template_fit.py
 
-Pass/fail simultaneous extraction of the RGA high-energy photon reconstruction
-efficiency.
+High-energy photon efficiency extraction using an observed PASS count and a
+FAIL-only BH/DVCS + exclusive-pi0 template fit.
 
-This is a clean replacement for the earlier inclusive BH/DVCS + pi0 denominator
-fit. The selected epgamma opportunity sample is split first:
+For each selected epgamma opportunity:
+  PASS = a validated native epgammagamma partner is reconstructed above 2 GeV;
+  FAIL = no accepted partner is found.
 
-    PASS: a native epgammagamma record is found, its two daughter photons are
-          reconstructed, the epgamma tag is identified, and the opposite
-          daughter has E_gamma >= 2 GeV;
+The PASS yield is measured directly from data. Only the FAIL sample is fitted:
 
-    FAIL: the same selected epgamma opportunity has no accepted reconstructed
-          partner.
+  D_FAIL = N_pi0_FAIL T_pi0_FAIL + N_BH/DVCS_FAIL T_DVCS.
 
-For each run period and predicted photon detector category (FT and FD sectors
-1--6), the script performs a simultaneous extended Poisson fit to the PASS and
-FAIL histograms. The model is
+The data efficiency is then
 
-    PASS = N_pi0 * epsilon_data * T_pi0_pass
+  epsilon_data = N_PASS / (N_PASS + N_pi0_FAIL),
 
-    FAIL = N_pi0 * (1 - epsilon_data) * T_pi0_fail
-         + N_DVCS * T_DVCS_fail.
+while epsilon_MC is the direct AAOGEN PASS fraction. The fit uses one total
+FAIL count and normalized shape likelihoods, avoiding the repeated extended
+normalization that invalidated the earlier simultaneous fit. Independent
+per-variable fits are also produced; their spread is reported as a model
+diagnostic/systematic. Underflow and overflow bins are included in every fit.
 
-The AAOGEN PASS and FAIL templates are obtained with the same validated native
-epgammagamma truth-partner matcher used for data. The DVCSGEN template enters
-only the FAIL sample: native epgammagamma matching defines a reconstructed pi0
-partner, so a genuine BH/DVCS event has no corresponding signal PASS component.
-
-The shared fit parameters are N_pi0, N_DVCS, and epsilon_data. Therefore the
-fitted total pi0 yield can never be smaller than its fitted PASS component.
-The MC efficiency is measured directly as N_AAOGEN_pass / N_AAOGEN_total, and
-the correction is S_gamma = epsilon_data / epsilon_MC.
-
-The nominal fit drivers are Delta_phi, theta_gamma_gamma, and pTmiss. All seven
-stored exclusivity variables are nevertheless plotted in four-panel shape
-diagnostics:
-
-    1. data PASS versus data FAIL;
-    2. matched data versus AAOGEN PASS;
-    3. data FAIL versus DVCSGEN and AAOGEN FAIL;
-    4. data PASS versus AAOGEN PASS, with DVCSGEN shown only as a reference.
-
-The tag-dependent cuts z(tag), -t1(tag), and electron-tag opening angle remain
-disabled. The retained opportunity requirements are Q2, W, y, tag E >= 0.4 GeV,
-predicted probe E >= 2 GeV, predicted-probe massless consistency, and predicted
-FT/FD acceptance.
-
-Output directory:
-    output/photon_efficiency_study/pass_fail_simultaneous_fit/
-
-The script writes complete cutflows, shape diagnostics, simultaneous-fit
-overlays and pulls, bin-by-bin component tables, closure summaries, per-period
-CSV/JSON products, and all-period efficiency/scale-factor canvases.
+The tag-dependent z, t1, and electron-tag opening-angle cuts remain disabled.
 """
 
 from __future__ import annotations
@@ -78,7 +48,7 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, minimize_scalar
 from scipy.special import xlogy
 
 try:
@@ -2076,984 +2046,6 @@ def histograms_for_mask(
 
 
 
-@dataclass
-class PassFailEfficiencyRow:
-    period: str
-    period_label: str
-    detector: str
-    sector: int
-
-    data_pass_count: int
-    data_fail_count: int
-    data_total_count: int
-
-    pi0_mc_pass_count: int
-    pi0_mc_fail_count: int
-    pi0_mc_total_count: int
-    dvcs_mc_count: int
-
-    fitted_pi0_total: float
-    fitted_pi0_total_err: float
-    fitted_dvcs_total: float
-    fitted_dvcs_total_err: float
-    fitted_pi0_pass: float
-    fitted_pi0_fail: float
-
-    efficiency_data: float
-    efficiency_data_err: float
-    efficiency_mc: float
-    efficiency_mc_err: float
-    scale_factor: float
-    scale_factor_err: float
-
-    fit_success: bool
-    fit_status: str
-    fit_message: str
-    fit_nll: float
-    fit_deviance: float
-    fit_ndf: int
-    fit_reduced_deviance: float
-    fit_quality_warning: bool
-    fit_warning_reasons: str
-    covariance_valid: bool
-
-    closure_pass_minus_fit: float
-    closure_pass_pull: float
-    closure_total_data_minus_model: float
-
-
-@dataclass
-class SimultaneousFitResult:
-    success: bool
-    status: str
-    message: str
-    n_pi0: float
-    n_dvcs: float
-    epsilon_data: float
-    covariance: np.ndarray
-    errors: np.ndarray
-    nll: float
-    deviance: float
-    ndf: int
-    reduced_deviance: float
-    covariance_valid: bool
-    warning_reasons: List[str]
-    driver_payload: Dict[str, Dict[str, object]]
-
-
-PASS_FAIL_DRIVER_KEYS: Tuple[str, ...] = FRACTION_DRIVERS
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description=(
-            "Extract data/MC photon-efficiency scale factors with a simultaneous "
-            "PASS/FAIL pi0 tag-and-probe fit."
-        )
-    )
-    parser.add_argument("--period", action="append", choices=[p.key for p in PERIODS])
-    parser.add_argument("--workers", type=int, default=5)
-    parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
-    parser.add_argument("--max-events", type=int, default=None)
-    parser.add_argument(
-        "--output-dir",
-        default=(
-            "output/photon_efficiency_study/"
-            "pass_fail_simultaneous_fit"
-        ),
-    )
-
-    parser.add_argument("--tag-E-min", type=float, default=0.40)
-    parser.add_argument("--probe-E-min", type=float, default=2.00)
-    parser.add_argument("--probe-E-max", type=float, default=9.50)
-    parser.add_argument("--probe-m2-abs-max", type=float, default=0.10)
-    parser.add_argument("--probe-E-minus-p-abs-max", type=float, default=0.10)
-
-    parser.add_argument("--ft-theta-min", type=float, default=2.5)
-    parser.add_argument("--ft-theta-max", type=float, default=5.0)
-    parser.add_argument("--fd-theta-min", type=float, default=5.0)
-    parser.add_argument("--fd-theta-max", type=float, default=35.0)
-
-    parser.add_argument("--Q2-min", type=float, default=1.0)
-    parser.add_argument("--W-min", type=float, default=2.0)
-    parser.add_argument("--y-max", type=float, default=0.8)
-    # Retained only because the cutflow definitions document the disabled cuts.
-    parser.add_argument("--z-min", type=float, default=0.65)
-    parser.add_argument("--minus-t-max", type=float, default=1.0)
-    parser.add_argument("--open-angle-min-deg", type=float, default=5.0)
-    parser.add_argument("--require-fiducial-status-111", action="store_true")
-
-    parser.add_argument("--tag-match-angle-max-deg", type=float, default=3.0)
-    parser.add_argument("--tag-match-relative-E-max", type=float, default=0.35)
-    parser.add_argument("--probe-match-angle-max-deg", type=float, default=3.0)
-    parser.add_argument("--probe-match-relative-E-max", type=float, default=0.35)
-    parser.add_argument("--mc-signature-decimals", type=int, default=10)
-    parser.add_argument("--native-closure-max", type=float, default=0.10)
-    parser.add_argument("--native-minimum-photon-E", type=float, default=0.20)
-    parser.add_argument("--found-probe-E-min", type=float, default=2.00)
-    parser.add_argument(
-        "--require-probe-residual-match",
-        action="store_true",
-        help=(
-            "Require the reconstructed partner to satisfy the predicted-probe "
-            "angular and relative-energy residual windows. By default the "
-            "validated identity and tag match define PASS."
-        ),
-    )
-
-    parser.add_argument(
-        "--fit-drivers",
-        nargs="+",
-        default=list(PASS_FAIL_DRIVER_KEYS),
-        choices=[variable.key for variable in FIT_VARIABLES],
-        help=(
-            "Variables used in the simultaneous PASS/FAIL likelihood. All seven "
-            "variables are still plotted."
-        ),
-    )
-    parser.add_argument("--fit-min-data-pass", type=int, default=50)
-    parser.add_argument("--fit-min-data-fail", type=int, default=100)
-    parser.add_argument("--fit-min-template-counts", type=int, default=100)
-    parser.add_argument(
-        "--fit-max-reduced-deviance",
-        type=float,
-        default=5.0,
-        help=(
-            "Warning threshold only. Poor goodness of fit does not stop output "
-            "production."
-        ),
-    )
-    parser.add_argument(
-        "--template-pseudocount",
-        type=float,
-        default=0.25,
-        help=(
-            "Small symmetric pseudocount added to each template bin before "
-            "normalization. It prevents zero-probability bins without changing "
-            "the template normalization appreciably."
-        ),
-    )
-    parser.add_argument(
-        "--fit-maxiter",
-        type=int,
-        default=2000,
-    )
-    parser.add_argument(
-        "--fail-on-fit-failure",
-        action="store_true",
-        help=(
-            "Abort when a category fit is mathematically invalid. By default "
-            "the category is marked invalid and the remaining diagnostics run."
-        ),
-    )
-    return parser.parse_args()
-
-
-def category_stem(detector: str, sector: int) -> str:
-    return "ft" if detector == "FT" else f"fd_sector_{sector}"
-
-
-def category_title(detector: str, sector: int) -> str:
-    return "FT" if detector == "FT" else f"FD sector {sector}"
-
-
-def finite_values(records: OpportunityRecords, key: str, mask: np.ndarray) -> np.ndarray:
-    values = np.asarray(getattr(records, key), dtype=float)[mask]
-    return values[np.isfinite(values)]
-
-
-def normalized_histogram(
-    records: OpportunityRecords,
-    mask: np.ndarray,
-    variable: FitVariable,
-    pseudocount: float,
-) -> Tuple[np.ndarray, np.ndarray]:
-    values = finite_values(records, variable.key, mask)
-    counts, edges = np.histogram(
-        values,
-        bins=variable.bins,
-        range=(variable.low, variable.high),
-    )
-    smoothed = counts.astype(float) + max(float(pseudocount), 0.0)
-    total = float(np.sum(smoothed))
-    shape = (
-        smoothed / total
-        if total > 0.0
-        else np.full(variable.bins, 1.0 / variable.bins)
-    )
-    return shape, counts.astype(float)
-
-
-def density_histogram(
-    records: OpportunityRecords,
-    mask: np.ndarray,
-    variable: FitVariable,
-) -> Tuple[np.ndarray, np.ndarray]:
-    values = finite_values(records, variable.key, mask)
-    counts, edges = np.histogram(
-        values,
-        bins=variable.bins,
-        range=(variable.low, variable.high),
-    )
-    widths = np.diff(edges)
-    total = float(np.sum(counts))
-    density = (
-        counts / (total * widths)
-        if total > 0.0
-        else np.zeros_like(counts, dtype=float)
-    )
-    return density.astype(float), edges
-
-
-def poisson_nll(observed: np.ndarray, expected: np.ndarray) -> float:
-    expected = np.maximum(np.asarray(expected, dtype=float), 1.0e-12)
-    observed = np.asarray(observed, dtype=float)
-    return float(np.sum(expected - xlogy(observed, expected)))
-
-
-def poisson_deviance(observed: np.ndarray, expected: np.ndarray) -> float:
-    expected = np.maximum(np.asarray(expected, dtype=float), 1.0e-12)
-    observed = np.asarray(observed, dtype=float)
-    terms = expected - observed + xlogy(observed, observed / expected)
-    terms = np.where(observed > 0.0, terms, expected)
-    return float(2.0 * np.sum(terms))
-
-
-def numerical_hessian(
-    function,
-    point: np.ndarray,
-    lower: np.ndarray,
-    upper: np.ndarray,
-) -> np.ndarray:
-    point = np.asarray(point, dtype=float)
-    n = point.size
-    steps = np.maximum(np.abs(point) * 2.0e-4, np.asarray([1.0, 1.0, 2.0e-5]))
-    hessian = np.zeros((n, n), dtype=float)
-    f0 = float(function(point))
-
-    for i in range(n):
-        hi = min(
-            steps[i],
-            0.45 * max(point[i] - lower[i], steps[i]),
-            0.45 * max(upper[i] - point[i], steps[i]),
-        )
-        hi = max(hi, 1.0e-7)
-        plus = point.copy()
-        minus = point.copy()
-        plus[i] += hi
-        minus[i] -= hi
-        hessian[i, i] = (
-            function(plus) - 2.0 * f0 + function(minus)
-        ) / (hi * hi)
-
-        for j in range(i + 1, n):
-            hj = min(
-                steps[j],
-                0.45 * max(point[j] - lower[j], steps[j]),
-                0.45 * max(upper[j] - point[j], steps[j]),
-            )
-            hj = max(hj, 1.0e-7)
-            pp = point.copy()
-            pm = point.copy()
-            mp = point.copy()
-            mm = point.copy()
-            pp[i] += hi
-            pp[j] += hj
-            pm[i] += hi
-            pm[j] -= hj
-            mp[i] -= hi
-            mp[j] += hj
-            mm[i] -= hi
-            mm[j] -= hj
-            mixed = (
-                function(pp) - function(pm) - function(mp) + function(mm)
-            ) / (4.0 * hi * hj)
-            hessian[i, j] = mixed
-            hessian[j, i] = mixed
-        # endfor
-    # endfor
-    return hessian
-
-
-def build_driver_payload(
-    data: OpportunityRecords,
-    dvcs: OpportunityRecords,
-    pi0: OpportunityRecords,
-    data_pass: np.ndarray,
-    data_fail: np.ndarray,
-    pi0_pass: np.ndarray,
-    pi0_fail: np.ndarray,
-    dvcs_mask: np.ndarray,
-    args: argparse.Namespace,
-) -> Dict[str, Dict[str, object]]:
-    variable_by_key = {variable.key: variable for variable in FIT_VARIABLES}
-    payload: Dict[str, Dict[str, object]] = {}
-
-    for key in args.fit_drivers:
-        variable = variable_by_key[key]
-        data_pass_counts, edges = np.histogram(
-            finite_values(data, key, data_pass),
-            bins=variable.bins,
-            range=(variable.low, variable.high),
-        )
-        data_fail_counts, _ = np.histogram(
-            finite_values(data, key, data_fail),
-            bins=variable.bins,
-            range=(variable.low, variable.high),
-        )
-        pi0_pass_shape, pi0_pass_raw = normalized_histogram(
-            pi0, pi0_pass, variable, args.template_pseudocount
-        )
-        pi0_fail_shape, pi0_fail_raw = normalized_histogram(
-            pi0, pi0_fail, variable, args.template_pseudocount
-        )
-        dvcs_fail_shape, dvcs_raw = normalized_histogram(
-            dvcs, dvcs_mask, variable, args.template_pseudocount
-        )
-
-        payload[key] = {
-            "variable": variable,
-            "edges": edges,
-            "data_pass": data_pass_counts.astype(float),
-            "data_fail": data_fail_counts.astype(float),
-            "pi0_pass_shape": pi0_pass_shape,
-            "pi0_fail_shape": pi0_fail_shape,
-            "dvcs_fail_shape": dvcs_fail_shape,
-            "pi0_pass_raw": pi0_pass_raw,
-            "pi0_fail_raw": pi0_fail_raw,
-            "dvcs_raw": dvcs_raw,
-        }
-    # endfor
-    return payload
-
-
-def simultaneous_pass_fail_fit(
-    driver_payload: Dict[str, Dict[str, object]],
-    data_pass_count: int,
-    data_fail_count: int,
-    args: argparse.Namespace,
-) -> SimultaneousFitResult:
-    if data_pass_count < args.fit_min_data_pass:
-        raise RuntimeError(
-            f"PASS data support {data_pass_count} is below "
-            f"--fit-min-data-pass={args.fit_min_data_pass}"
-        )
-    # endif
-    if data_fail_count < args.fit_min_data_fail:
-        raise RuntimeError(
-            f"FAIL data support {data_fail_count} is below "
-            f"--fit-min-data-fail={args.fit_min_data_fail}"
-        )
-    # endif
-
-    for key, item in driver_payload.items():
-        for template_name in ("pi0_pass_raw", "pi0_fail_raw", "dvcs_raw"):
-            support = int(np.sum(item[template_name]))
-            if support < args.fit_min_template_counts:
-                raise RuntimeError(
-                    f"{key} {template_name} support {support} is below "
-                    f"--fit-min-template-counts={args.fit_min_template_counts}"
-                )
-            # endif
-        # endfor
-    # endfor
-
-    total_data = float(data_pass_count + data_fail_count)
-    lower = np.asarray(
-        [max(float(data_pass_count), 1.0e-6), 0.0, 1.0e-6],
-        dtype=float,
-    )
-    upper = np.asarray(
-        [
-            max(10.0 * total_data, lower[0] + 1.0),
-            max(10.0 * total_data, 1.0),
-            1.0 - 1.0e-6,
-        ],
-        dtype=float,
-    )
-
-    observed_pass_fraction = data_pass_count / max(total_data, 1.0)
-    initial_epsilon = float(np.clip(observed_pass_fraction, 0.05, 0.95))
-    initial_pi0 = max(
-        float(data_pass_count) / max(initial_epsilon, 1.0e-6),
-        float(data_pass_count) + 1.0,
-    )
-    initial_dvcs = max(total_data - initial_pi0, 0.1 * total_data, 1.0)
-    x0 = np.asarray(
-        [
-            min(initial_pi0, upper[0] * 0.8),
-            min(initial_dvcs, upper[1] * 0.8),
-            initial_epsilon,
-        ],
-        dtype=float,
-    )
-    x0 = np.minimum(np.maximum(x0, lower + 1.0e-7), upper - 1.0e-7)
-
-    def objective(parameters: np.ndarray) -> float:
-        n_pi0, n_dvcs, efficiency = parameters
-        if (
-            n_pi0 < lower[0]
-            or n_dvcs < 0.0
-            or not (0.0 < efficiency < 1.0)
-        ):
-            return 1.0e100
-        # endif
-
-        value = 0.0
-        for item in driver_payload.values():
-            expected_pass = (
-                n_pi0 * efficiency * item["pi0_pass_shape"]
-            )
-            expected_fail = (
-                n_pi0 * (1.0 - efficiency) * item["pi0_fail_shape"]
-                + n_dvcs * item["dvcs_fail_shape"]
-            )
-            value += poisson_nll(item["data_pass"], expected_pass)
-            value += poisson_nll(item["data_fail"], expected_fail)
-        # endfor
-        return float(value)
-
-    result = minimize(
-        objective,
-        x0,
-        method="L-BFGS-B",
-        bounds=list(zip(lower, upper)),
-        options={
-            "maxiter": int(args.fit_maxiter),
-            "ftol": 1.0e-12,
-            "gtol": 1.0e-8,
-            "maxls": 50,
-        },
-    )
-
-    point = np.asarray(result.x, dtype=float)
-    n_pi0, n_dvcs, efficiency = point
-
-    covariance_valid = False
-    covariance = np.full((3, 3), np.nan)
-    errors = np.full(3, np.nan)
-    try:
-        hessian = numerical_hessian(objective, point, lower, upper)
-        eigenvalues = np.linalg.eigvalsh(hessian)
-        if np.all(np.isfinite(hessian)) and np.all(eigenvalues > 0.0):
-            covariance = np.linalg.inv(hessian)
-            diagonal = np.diag(covariance)
-            if np.all(diagonal >= 0.0) and np.all(np.isfinite(diagonal)):
-                errors = np.sqrt(diagonal)
-                covariance_valid = True
-            # endif
-        # endif
-    except Exception:
-        covariance_valid = False
-    # endtry
-
-    deviance = 0.0
-    number_of_bins = 0
-    fitted_payload: Dict[str, Dict[str, object]] = {}
-    for key, item in driver_payload.items():
-        expected_pass = n_pi0 * efficiency * item["pi0_pass_shape"]
-        pi0_fail_component = (
-            n_pi0 * (1.0 - efficiency) * item["pi0_fail_shape"]
-        )
-        dvcs_fail_component = n_dvcs * item["dvcs_fail_shape"]
-        expected_fail = pi0_fail_component + dvcs_fail_component
-
-        deviance += poisson_deviance(item["data_pass"], expected_pass)
-        deviance += poisson_deviance(item["data_fail"], expected_fail)
-        number_of_bins += int(item["data_pass"].size + item["data_fail"].size)
-
-        fitted_payload[key] = {
-            **item,
-            "expected_pass": expected_pass,
-            "expected_fail": expected_fail,
-            "pi0_fail_component": pi0_fail_component,
-            "dvcs_fail_component": dvcs_fail_component,
-        }
-    # endfor
-
-    ndf = max(number_of_bins - 3, 1)
-    reduced_deviance = deviance / ndf
-    warning_reasons: List[str] = []
-
-    if (
-        args.fit_max_reduced_deviance > 0.0
-        and reduced_deviance > args.fit_max_reduced_deviance
-    ):
-        warning_reasons.append(
-            f"deviance/ndf={reduced_deviance:.4g} exceeds "
-            f"{args.fit_max_reduced_deviance:g}"
-        )
-    # endif
-    if not covariance_valid:
-        warning_reasons.append("numerical covariance is not positive definite")
-    # endif
-    if efficiency < 1.0e-4 or efficiency > 1.0 - 1.0e-4:
-        warning_reasons.append(
-            f"epsilon_data={efficiency:.6g} is near a physical boundary"
-        )
-    # endif
-
-    success = bool(
-        result.success
-        and np.all(np.isfinite(point))
-        and n_pi0 >= data_pass_count - 1.0e-6
-        and n_dvcs >= 0.0
-        and 0.0 < efficiency < 1.0
-    )
-    status = "success" if success else "failed"
-    message = str(result.message)
-
-    return SimultaneousFitResult(
-        success=success,
-        status=status,
-        message=message,
-        n_pi0=float(n_pi0),
-        n_dvcs=float(n_dvcs),
-        epsilon_data=float(efficiency),
-        covariance=covariance,
-        errors=errors,
-        nll=float(result.fun),
-        deviance=float(deviance),
-        ndf=int(ndf),
-        reduced_deviance=float(reduced_deviance),
-        covariance_valid=covariance_valid,
-        warning_reasons=warning_reasons,
-        driver_payload=fitted_payload,
-    )
-
-
-def plot_shape_diagnostics(
-    output_dir: Path,
-    period_label: str,
-    detector: str,
-    sector: int,
-    data: OpportunityRecords,
-    dvcs: OpportunityRecords,
-    pi0: OpportunityRecords,
-    data_pass: np.ndarray,
-    data_fail: np.ndarray,
-    pi0_pass: np.ndarray,
-    pi0_fail: np.ndarray,
-    dvcs_mask: np.ndarray,
-) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    title_category = category_title(detector, sector)
-
-    for variable in FIT_VARIABLES:
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-
-        panels = (
-            (
-                axes[0, 0],
-                (
-                    ("Data PASS", data, data_pass),
-                    ("Data FAIL", data, data_fail),
-                ),
-                "Data PASS versus FAIL",
-            ),
-            (
-                axes[0, 1],
-                (
-                    ("Matched data", data, data_pass),
-                    ("AAOGEN PASS", pi0, pi0_pass),
-                ),
-                "Matched data versus AAOGEN PASS",
-            ),
-            (
-                axes[1, 0],
-                (
-                    ("Data FAIL", data, data_fail),
-                    ("DVCSGEN", dvcs, dvcs_mask),
-                    ("AAOGEN FAIL", pi0, pi0_fail),
-                ),
-                "FAIL population templates",
-            ),
-            (
-                axes[1, 1],
-                (
-                    ("Data PASS", data, data_pass),
-                    ("AAOGEN PASS", pi0, pi0_pass),
-                    ("DVCSGEN reference", dvcs, dvcs_mask),
-                ),
-                "PASS control population",
-            ),
-        )
-
-        for axis, curves, panel_title in panels:
-            for label, records, mask in curves:
-                density, edges = density_histogram(records, mask, variable)
-                centers = 0.5 * (edges[:-1] + edges[1:])
-                axis.step(
-                    centers,
-                    density,
-                    where="mid",
-                    linewidth=1.3,
-                    label=f"{label} ({int(np.count_nonzero(mask)):,})",
-                )
-            # endfor
-            axis.set_title(panel_title)
-            axis.set_xlabel(variable.label)
-            axis.set_ylabel("Unit-normalized density")
-            axis.grid(alpha=0.25)
-            axis.legend(fontsize=8)
-        # endfor
-
-        fig.suptitle(
-            f"{period_label}, {title_category}: {variable.label}\n"
-            "All observables are the original epgamma tag-based quantities"
-        )
-        fig.tight_layout(rect=(0, 0, 1, 0.94))
-        fig.savefig(
-            output_dir / f"{variable.key}_pass_fail_shapes.png",
-            dpi=180,
-        )
-        plt.close(fig)
-    # endfor
-
-
-def plot_simultaneous_fit(
-    path: Path,
-    period_label: str,
-    detector: str,
-    sector: int,
-    fit: SimultaneousFitResult,
-) -> None:
-    driver_keys = list(fit.driver_payload)
-    n_columns = len(driver_keys)
-    fig, axes = plt.subplots(
-        4,
-        n_columns,
-        figsize=(6.0 * n_columns, 14),
-        squeeze=False,
-    )
-
-    for column, key in enumerate(driver_keys):
-        item = fit.driver_payload[key]
-        variable = item["variable"]
-        edges = np.asarray(item["edges"], dtype=float)
-        centers = 0.5 * (edges[:-1] + edges[1:])
-
-        data_pass = np.asarray(item["data_pass"], dtype=float)
-        expected_pass = np.asarray(item["expected_pass"], dtype=float)
-        data_fail = np.asarray(item["data_fail"], dtype=float)
-        expected_fail = np.asarray(item["expected_fail"], dtype=float)
-        pi0_fail = np.asarray(item["pi0_fail_component"], dtype=float)
-        dvcs_fail = np.asarray(item["dvcs_fail_component"], dtype=float)
-
-        axes[0, column].errorbar(
-            centers,
-            data_pass,
-            yerr=np.sqrt(np.maximum(data_pass, 1.0)),
-            fmt=".",
-            label="Data PASS",
-        )
-        axes[0, column].step(
-            centers,
-            expected_pass,
-            where="mid",
-            linewidth=1.5,
-            label="Fitted pi0 PASS",
-        )
-        axes[0, column].set_title(f"PASS: {variable.label}")
-        axes[0, column].set_ylabel("Events / bin")
-        axes[0, column].grid(alpha=0.25)
-        axes[0, column].legend(fontsize=8)
-
-        pass_pull = (
-            data_pass - expected_pass
-        ) / np.sqrt(np.maximum(expected_pass, 1.0))
-        axes[1, column].axhline(0.0, linewidth=1.0)
-        axes[1, column].axhline(3.0, linestyle="--", linewidth=0.8)
-        axes[1, column].axhline(-3.0, linestyle="--", linewidth=0.8)
-        axes[1, column].plot(centers, pass_pull, ".", markersize=3)
-        axes[1, column].set_ylabel("PASS pull")
-        axes[1, column].grid(alpha=0.25)
-
-        axes[2, column].errorbar(
-            centers,
-            data_fail,
-            yerr=np.sqrt(np.maximum(data_fail, 1.0)),
-            fmt=".",
-            label="Data FAIL",
-        )
-        axes[2, column].step(
-            centers,
-            expected_fail,
-            where="mid",
-            linewidth=1.5,
-            label="Total FAIL fit",
-        )
-        axes[2, column].step(
-            centers,
-            pi0_fail,
-            where="mid",
-            linewidth=1.0,
-            label="pi0 FAIL",
-        )
-        axes[2, column].step(
-            centers,
-            dvcs_fail,
-            where="mid",
-            linewidth=1.0,
-            label="BH/DVCS FAIL",
-        )
-        axes[2, column].set_ylabel("Events / bin")
-        axes[2, column].grid(alpha=0.25)
-        axes[2, column].legend(fontsize=8)
-
-        fail_pull = (
-            data_fail - expected_fail
-        ) / np.sqrt(np.maximum(expected_fail, 1.0))
-        axes[3, column].axhline(0.0, linewidth=1.0)
-        axes[3, column].axhline(3.0, linestyle="--", linewidth=0.8)
-        axes[3, column].axhline(-3.0, linestyle="--", linewidth=0.8)
-        axes[3, column].plot(centers, fail_pull, ".", markersize=3)
-        axes[3, column].set_ylabel("FAIL pull")
-        axes[3, column].set_xlabel(variable.label)
-        axes[3, column].grid(alpha=0.25)
-    # endfor
-
-    category = category_title(detector, sector)
-    error_epsilon = (
-        fit.errors[2]
-        if fit.errors.size >= 3 and math.isfinite(fit.errors[2])
-        else math.nan
-    )
-    fig.suptitle(
-        f"{period_label}, {category}: simultaneous PASS/FAIL fit\n"
-        rf"$N_{{\pi^0}}={fit.n_pi0:.1f}$, "
-        rf"$N_{{\rm DVCS}}={fit.n_dvcs:.1f}$, "
-        rf"$\epsilon_{{\rm data}}={fit.epsilon_data:.5f}"
-        rf"\pm{error_epsilon:.5f}$, "
-        rf"$D/\mathrm{{ndf}}={fit.reduced_deviance:.3f}$"
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def write_fit_component_tables(
-    output_dir: Path,
-    stem: str,
-    fit: SimultaneousFitResult,
-) -> Dict[str, str]:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    paths: Dict[str, str] = {}
-
-    for key, item in fit.driver_payload.items():
-        edges = np.asarray(item["edges"], dtype=float)
-        data_pass = np.asarray(item["data_pass"], dtype=float)
-        expected_pass = np.asarray(item["expected_pass"], dtype=float)
-        data_fail = np.asarray(item["data_fail"], dtype=float)
-        expected_fail = np.asarray(item["expected_fail"], dtype=float)
-        pi0_fail = np.asarray(item["pi0_fail_component"], dtype=float)
-        dvcs_fail = np.asarray(item["dvcs_fail_component"], dtype=float)
-
-        path = output_dir / f"{stem}_{key}_components.csv"
-        with open(path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.writer(handle)
-            writer.writerow(
-                [
-                    "bin_low",
-                    "bin_high",
-                    "bin_center",
-                    "data_pass",
-                    "fit_pass_pi0",
-                    "pass_pull",
-                    "data_fail",
-                    "fit_fail_total",
-                    "fit_fail_pi0",
-                    "fit_fail_bh_dvcs",
-                    "fail_pull",
-                    "pass_deviance_contribution",
-                    "fail_deviance_contribution",
-                ]
-            )
-            for index in range(data_pass.size):
-                pass_mu = max(expected_pass[index], 1.0e-12)
-                fail_mu = max(expected_fail[index], 1.0e-12)
-                pass_obs = data_pass[index]
-                fail_obs = data_fail[index]
-                pass_dev = 2.0 * (
-                    pass_mu - pass_obs
-                    + (
-                        pass_obs * math.log(pass_obs / pass_mu)
-                        if pass_obs > 0.0
-                        else 0.0
-                    )
-                )
-                fail_dev = 2.0 * (
-                    fail_mu - fail_obs
-                    + (
-                        fail_obs * math.log(fail_obs / fail_mu)
-                        if fail_obs > 0.0
-                        else 0.0
-                    )
-                )
-                writer.writerow(
-                    [
-                        edges[index],
-                        edges[index + 1],
-                        0.5 * (edges[index] + edges[index + 1]),
-                        pass_obs,
-                        pass_mu,
-                        (pass_obs - pass_mu) / math.sqrt(max(pass_mu, 1.0)),
-                        fail_obs,
-                        fail_mu,
-                        pi0_fail[index],
-                        dvcs_fail[index],
-                        (fail_obs - fail_mu) / math.sqrt(max(fail_mu, 1.0)),
-                        pass_dev,
-                        fail_dev,
-                    ]
-                )
-            # endfor
-        # endwith
-        paths[key] = str(path)
-    # endfor
-    return paths
-
-
-def plot_closure_summary(
-    path: Path,
-    period_label: str,
-    detector: str,
-    sector: int,
-    row: PassFailEfficiencyRow,
-) -> None:
-    category = category_title(detector, sector)
-    labels = [
-        "Data PASS",
-        "Fitted pi0 PASS",
-        "Data FAIL",
-        "Fitted pi0 FAIL",
-        "Fitted BH/DVCS FAIL",
-    ]
-    values = [
-        row.data_pass_count,
-        row.fitted_pi0_pass,
-        row.data_fail_count,
-        row.fitted_pi0_fail,
-        row.fitted_dvcs_total,
-    ]
-
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-    x = np.arange(len(labels))
-    axes[0].bar(x, values)
-    axes[0].set_xticks(x, labels, rotation=25, ha="right")
-    axes[0].set_ylabel("Events")
-    axes[0].set_title("Fitted event decomposition")
-    axes[0].grid(axis="y", alpha=0.25)
-
-    ratio_labels = [
-        r"$\epsilon_{\rm data}$",
-        r"$\epsilon_{\rm MC}$",
-        r"$S_\gamma$",
-    ]
-    ratio_values = [
-        row.efficiency_data,
-        row.efficiency_mc,
-        row.scale_factor,
-    ]
-    ratio_errors = [
-        row.efficiency_data_err,
-        row.efficiency_mc_err,
-        row.scale_factor_err,
-    ]
-    xr = np.arange(len(ratio_labels))
-    axes[1].errorbar(
-        xr,
-        ratio_values,
-        yerr=ratio_errors,
-        fmt="o",
-        capsize=3,
-    )
-    axes[1].axhline(1.0, linestyle="--", linewidth=1.0)
-    axes[1].set_xticks(xr, ratio_labels)
-    axes[1].set_ylabel("Efficiency or ratio")
-    finite = [value for value in ratio_values if math.isfinite(value)]
-    axes[1].set_ylim(0.0, max([1.1] + [1.2 * value for value in finite]))
-    axes[1].grid(alpha=0.25)
-
-    fig.suptitle(
-        f"{period_label}, {category}: PASS/FAIL closure\n"
-        f"PASS data - fitted pi0 PASS = {row.closure_pass_minus_fit:.2f}, "
-        f"PASS pull = {row.closure_pass_pull:.3f}"
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-
-def binomial_efficiency(
-    passed: float,
-    total: float,
-) -> Tuple[float, float]:
-    """
-    Return a binomial efficiency and its Gaussian statistical uncertainty.
-
-    Parameters
-    ----------
-    passed
-        Number of successful trials.
-    total
-        Total number of trials.
-
-    Returns
-    -------
-    efficiency, uncertainty
-        The efficiency passed / total and
-        sqrt(efficiency * (1 - efficiency) / total).
-
-    Notes
-    -----
-    Invalid populations return (nan, nan). A tiny floating-point tolerance is
-    allowed at the physical boundaries, but genuinely unphysical inputs such
-    as passed < 0 or passed > total are rejected.
-    """
-    if (
-        not math.isfinite(passed)
-        or not math.isfinite(total)
-        or total <= 0.0
-        or passed < 0.0
-        or passed > total + 1.0e-9
-    ):
-        return math.nan, math.nan
-    # endif
-
-    efficiency = passed / total
-    efficiency = min(max(efficiency, 0.0), 1.0)
-    variance = efficiency * (1.0 - efficiency) / total
-
-    return efficiency, math.sqrt(max(variance, 0.0))
-
-
-
-def uncertainty_ratio(
-    numerator: float,
-    numerator_error: float,
-    denominator: float,
-    denominator_error: float,
-) -> Tuple[float, float]:
-    if (
-        not math.isfinite(numerator)
-        or not math.isfinite(denominator)
-        or denominator <= 0.0
-    ):
-        return math.nan, math.nan
-    # endif
-    ratio = numerator / denominator
-    if numerator <= 0.0:
-        return ratio, math.nan
-    # endif
-    relative_variance = (
-        (numerator_error / numerator) ** 2
-        + (denominator_error / denominator) ** 2
-    )
-    return ratio, abs(ratio) * math.sqrt(max(relative_variance, 0.0))
-
-
 
 
 def plot_expected_probe_diagnostics(
@@ -3307,732 +2299,218 @@ def emit_cutflow_diagnostics(
                 f"{detector_suffix} — {row['condition']}"
             )
 
-def process_period(
-    period: PeriodConfig,
-    args_dict: Mapping[str, object],
-) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
-    args = argparse.Namespace(**args_dict)
-    period_dir = Path(args.output_dir) / period.key
-    cutflow_dir = period_dir / "cutflow_diagnostics"
-    shape_root = period_dir / "shape_diagnostics"
-    fit_root = period_dir / "simultaneous_fits"
-    closure_root = period_dir / "closure_diagnostics"
-    table_root = period_dir / "fit_component_tables"
 
-    for directory in (
-        period_dir,
-        cutflow_dir,
-        shape_root,
-        fit_root,
-        closure_root,
-        table_root,
-    ):
-        directory.mkdir(parents=True, exist_ok=True)
-    # endfor
+@dataclass
+class FailOnlyEfficiencyRow:
+    period: str
+    period_label: str
+    detector: str
+    sector: int
+    data_pass_count: int
+    data_fail_count: int
+    pi0_mc_pass_count: int
+    pi0_mc_fail_count: int
+    dvcs_mc_count: int
+    fit_fraction_pi0_fail: float
+    fit_fraction_pi0_fail_stat_err: float
+    fit_fraction_pi0_fail_model_spread: float
+    fitted_pi0_fail: float
+    fitted_pi0_fail_stat_err: float
+    fitted_pi0_fail_model_spread: float
+    efficiency_data: float
+    efficiency_data_stat_err: float
+    efficiency_data_model_err: float
+    efficiency_mc: float
+    efficiency_mc_err: float
+    scale_factor: float
+    scale_factor_stat_err: float
+    scale_factor_model_err: float
+    fit_success: bool
+    fit_message: str
+    fit_deviance: float
+    fit_ndf: int
+    fit_reduced_deviance: float
+    fit_quality_warning: bool
+    per_variable_fractions: str
 
-    data, _, data_cutflow = read_opportunities(
-        period.epg_data,
-        period.beam_energy_GeV,
-        "epgamma data",
-        args,
-        deduplicate=False,
-    )
-    dvcs, _, dvcs_cutflow = read_opportunities(
-        period.dvcs_mc,
-        period.beam_energy_GeV,
-        "DVCSGEN epgamma MC",
-        args,
-        deduplicate=True,
-    )
-    pi0, _, pi0_cutflow = read_opportunities(
-        period.pi0_epg_mc,
-        period.beam_energy_GeV,
-        "AAOGEN-as-epgamma MC",
-        args,
-        deduplicate=True,
-    )
+@dataclass
+class FractionFit:
+    success: bool
+    message: str
+    fraction: float
+    stat_error: float
+    nll: float
+    deviance: float
+    ndf: int
+    reduced_deviance: float
+    per_variable: Dict[str, Dict[str, float]]
+    payload: Dict[str, Dict[str, object]]
+    warnings: List[str]
 
-    initial_cutflows = {
-        "data": data_cutflow,
-        "dvcs_mc": dvcs_cutflow,
-        "pi0_mc": pi0_cutflow,
-    }
-    with open(
-        period_dir / "opportunity_cutflows.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(initial_cutflows, handle, indent=2)
-    # endwith
-    emit_cutflow_diagnostics(period_dir, period.label, initial_cutflows)
+FAIL_FIT_DRIVERS: Tuple[str,...] = FRACTION_DRIVERS
 
-    epgg_data, epgg_data_diag = read_epgg(
-        period.epgg_data,
-        period.beam_energy_GeV,
-        "epgammagamma data",
-        args,
-    )
-    epgg_mc, epgg_mc_diag = read_epgg(
-        period.pi0_epgg_mc,
-        period.beam_energy_GeV,
-        "AAOGEN epgammagamma MC",
-        args,
-    )
+def parse_args() -> argparse.Namespace:
+    p=argparse.ArgumentParser(description='FAIL-only photon efficiency template extraction')
+    p.add_argument('--period',action='append',choices=[x.key for x in PERIODS])
+    p.add_argument('--workers',type=int,default=5)
+    p.add_argument('--step-size',default=DEFAULT_STEP_SIZE); p.add_argument('--max-events',type=int,default=None)
+    p.add_argument('--output-dir',default='output/photon_efficiency_study/fail_only_template_fit')
+    p.add_argument('--tag-E-min',type=float,default=.40); p.add_argument('--probe-E-min',type=float,default=2.0); p.add_argument('--probe-E-max',type=float,default=9.5)
+    p.add_argument('--probe-m2-abs-max',type=float,default=.10); p.add_argument('--probe-E-minus-p-abs-max',type=float,default=.10)
+    p.add_argument('--ft-theta-min',type=float,default=2.5); p.add_argument('--ft-theta-max',type=float,default=5.0); p.add_argument('--fd-theta-min',type=float,default=5.0); p.add_argument('--fd-theta-max',type=float,default=35.0)
+    p.add_argument('--Q2-min',type=float,default=1.0); p.add_argument('--W-min',type=float,default=2.0); p.add_argument('--y-max',type=float,default=.8)
+    p.add_argument('--z-min',type=float,default=.65); p.add_argument('--minus-t-max',type=float,default=1.0); p.add_argument('--open-angle-min-deg',type=float,default=5.0); p.add_argument('--require-fiducial-status-111',action='store_true')
+    p.add_argument('--tag-match-angle-max-deg',type=float,default=3.0); p.add_argument('--tag-match-relative-E-max',type=float,default=.35); p.add_argument('--probe-match-angle-max-deg',type=float,default=3.0); p.add_argument('--probe-match-relative-E-max',type=float,default=.35)
+    p.add_argument('--mc-signature-decimals',type=int,default=10); p.add_argument('--native-closure-max',type=float,default=.10); p.add_argument('--native-minimum-photon-E',type=float,default=.20); p.add_argument('--found-probe-E-min',type=float,default=2.0); p.add_argument('--require-probe-residual-match',action='store_true')
+    p.add_argument('--fit-drivers',nargs='+',default=list(FAIL_FIT_DRIVERS),choices=[v.key for v in FIT_VARIABLES])
+    p.add_argument('--template-pseudocount',type=float,default=.25); p.add_argument('--fit-min-data-fail',type=int,default=100); p.add_argument('--fit-min-template-counts',type=int,default=100)
+    p.add_argument('--fit-max-reduced-deviance',type=float,default=5.0); p.add_argument('--fit-max-variable-spread',type=float,default=.15)
+    return p.parse_args()
 
-    data_match = match_truth_partners(data, epgg_data, "data", args)
-    pi0_match = match_truth_partners(pi0, epgg_mc, "mc", args)
+def category_stem(detector,sector): return 'ft' if detector=='FT' else f'fd_sector_{sector}'
+def category_title(detector,sector): return 'FT' if detector=='FT' else f'FD sector {sector}'
+def finite_values(r,key,mask):
+    x=np.asarray(getattr(r,key),float)[mask]; return x[np.isfinite(x)]
 
-    for sample_label, result in (
-        ("data", data_match),
-        ("AAOGEN MC", pi0_match),
-    ):
-        summary = result.summary
-        log(
-            f"{period.label} {sample_label}: identity="
-            f"{summary['identity_matches']:,}/{summary['opportunities']:,}, "
-            f"valid|identity="
-            f"{summary['conditional_valid_solution_given_identity']:.3%}, "
-            f"tag|valid="
-            f"{summary['conditional_tag_match_given_valid_solution']:.3%}, "
-            f"partner E>{args.found_probe_E_min:g} GeV="
-            f"{summary['partner_above_threshold']:,}, matched="
-            f"{summary['matched_opportunities']:,}"
-        )
-    # endfor
+def histogram_with_flow(r,mask,var):
+    x=finite_values(r,var.key,mask); core,_=np.histogram(x,bins=var.bins,range=(var.low,var.high))
+    return np.concatenate(([np.count_nonzero(x<var.low)],core,[np.count_nonzero(x>=var.high)])).astype(float)
 
-    plot_expected_probe_diagnostics(
-        period_dir / "expected_probe_diagnostics.png",
-        period.label,
-        {"Data": data, "DVCSGEN": dvcs, "AAOGEN": pi0},
-    )
-    plot_matching_residuals(
-        period_dir / "matching_residuals.png",
-        period.label,
-        data_match,
-        pi0_match,
-    )
+def shape(counts,pseudo):
+    a=np.asarray(counts,float)+max(float(pseudo),0.0); return a/a.sum()
 
-    rows: List[PassFailEfficiencyRow] = []
-    category_metadata: Dict[str, object] = {}
-    categories = [("FT", 0)] + [("FD", sector) for sector in range(1, 7)]
+def multinomial_nll(f,data,p0,p1):
+    prob=np.maximum(f*p0+(1-f)*p1,1e-300); return float(-np.sum(xlogy(data,prob)))
 
-    for detector, sector in categories:
-        stem = category_stem(detector, sector)
-        title = category_title(detector, sector)
+def fit_one_fraction(data,pi0,dvcs):
+    obj=lambda z: multinomial_nll(float(z),data,pi0,dvcs)
+    res=minimize_scalar(obj,bounds=(1e-6,1-1e-6),method='bounded',options={'xatol':1e-10})
+    f=float(res.x); h=1e-4; h=min(h,.45*f,.45*(1-f)); h=max(h,1e-7)
+    curv=(obj(f+h)-2*obj(f)+obj(f-h))/(h*h); err=math.sqrt(1/curv) if curv>0 and math.isfinite(curv) else math.nan
+    mu=data.sum()*(f*pi0+(1-f)*dvcs); dev=poisson_deviance(data,mu); ndf=max(data.size-1,1)
+    return f,err,float(res.fun),dev,ndf,bool(res.success),str(res.message)
 
-        data_category = category_mask(data, detector, sector)
-        dvcs_category = category_mask(dvcs, detector, sector)
-        pi0_category = category_mask(pi0, detector, sector)
+def fit_fail_shapes(data,dvcs,pi0,data_fail,dvcs_mask,pi0_fail,args):
+    if np.count_nonzero(data_fail)<args.fit_min_data_fail: raise RuntimeError('insufficient FAIL data')
+    payload={}; per={}
+    for key in args.fit_drivers:
+        var=next(v for v in FIT_VARIABLES if v.key==key)
+        d=histogram_with_flow(data,data_fail,var); a=histogram_with_flow(pi0,pi0_fail,var); b=histogram_with_flow(dvcs,dvcs_mask,var)
+        if a.sum()<args.fit_min_template_counts or b.sum()<args.fit_min_template_counts: raise RuntimeError(f'insufficient template support for {key}')
+        ap=shape(a,args.template_pseudocount); bp=shape(b,args.template_pseudocount)
+        f,e,nll,dev,ndf,ok,msg=fit_one_fraction(d,ap,bp); per[key]={'fraction':f,'stat_error':e,'deviance':dev,'ndf':ndf,'reduced_deviance':dev/ndf}
+        payload[key]={'variable':var,'data':d,'pi0_shape':ap,'dvcs_shape':bp}
+    def obj(z): return sum(multinomial_nll(float(z),x['data'],x['pi0_shape'],x['dvcs_shape']) for x in payload.values())
+    res=minimize_scalar(obj,bounds=(1e-6,1-1e-6),method='bounded',options={'xatol':1e-10}); f=float(res.x)
+    h=min(1e-4,.45*f,.45*(1-f)); h=max(h,1e-7); curv=(obj(f+h)-2*obj(f)+obj(f-h))/(h*h); err=math.sqrt(1/curv) if curv>0 else math.nan
+    dev=0.; bins=0
+    for x in payload.values():
+        mu=x['data'].sum()*(f*x['pi0_shape']+(1-f)*x['dvcs_shape']); x['model']=mu; x['pi0_component']=x['data'].sum()*f*x['pi0_shape']; x['dvcs_component']=x['data'].sum()*(1-f)*x['dvcs_shape']; dev+=poisson_deviance(x['data'],mu); bins+=x['data'].size
+    ndf=max(bins-1,1); vals=[v['fraction'] for v in per.values()]; spread=max(abs(v-f) for v in vals) if vals else math.nan
+    warns=[]
+    if args.fit_max_reduced_deviance>0 and dev/ndf>args.fit_max_reduced_deviance: warns.append(f'D/ndf={dev/ndf:.3f} exceeds {args.fit_max_reduced_deviance:g}')
+    if math.isfinite(spread) and spread>args.fit_max_variable_spread: warns.append(f'per-variable fraction spread={spread:.3f} exceeds {args.fit_max_variable_spread:g}')
+    return FractionFit(bool(res.success),str(res.message),f,err,float(res.fun),dev,ndf,dev/ndf,per,payload,warns)
 
-        data_pass = data_category & data_match.matched
-        data_fail = data_category & ~data_match.matched
-        pi0_pass = pi0_category & pi0_match.matched
-        pi0_fail = pi0_category & ~pi0_match.matched
+def poisson_deviance(obs,mu):
+    obs=np.asarray(obs,float); mu=np.maximum(np.asarray(mu,float),1e-12); term=np.where(obs>0,mu-obs+obs*np.log(obs/mu),mu); return float(2*np.sum(term))
 
-        data_pass_count = int(np.count_nonzero(data_pass))
-        data_fail_count = int(np.count_nonzero(data_fail))
-        pi0_pass_count = int(np.count_nonzero(pi0_pass))
-        pi0_fail_count = int(np.count_nonzero(pi0_fail))
-        dvcs_count = int(np.count_nonzero(dvcs_category))
+def binomial_efficiency(passed,total):
+    if total<=0 or passed<0 or passed>total:return math.nan,math.nan
+    e=passed/total; return e,math.sqrt(max(e*(1-e)/total,0))
 
-        shape_dir = shape_root / stem
-        plot_shape_diagnostics(
-            shape_dir,
-            period.label,
-            detector,
-            sector,
-            data,
-            dvcs,
-            pi0,
-            data_pass,
-            data_fail,
-            pi0_pass,
-            pi0_fail,
-            dvcs_category,
-        )
+def efficiency_from_pass_fail(npass,nfail,nfail_err):
+    den=npass+nfail
+    if den<=0:return math.nan,math.nan
+    e=npass/den; dp=nfail/(den*den); df=-npass/(den*den); var=dp*dp*max(npass,1.0)+df*df*nfail_err*nfail_err; return e,math.sqrt(max(var,0))
 
-        driver_payload = build_driver_payload(
-            data,
-            dvcs,
-            pi0,
-            data_pass,
-            data_fail,
-            pi0_pass,
-            pi0_fail,
-            dvcs_category,
-            args,
-        )
+def ratio_errors(a,ae,b,be):
+    if not all(map(math.isfinite,[a,ae,b,be])) or b<=0:return math.nan,math.nan
+    r=a/b; return r,abs(r)*math.sqrt((ae/a)**2+(be/b)**2) if a>0 else math.nan
 
-        fit_failure: Optional[str] = None
-        try:
-            fit = simultaneous_pass_fail_fit(
-                driver_payload,
-                data_pass_count,
-                data_fail_count,
-                args,
-            )
-        except Exception as exc:
-            fit_failure = str(exc)
-            fit = SimultaneousFitResult(
-                success=False,
-                status="failed",
-                message=fit_failure,
-                n_pi0=math.nan,
-                n_dvcs=math.nan,
-                epsilon_data=math.nan,
-                covariance=np.full((3, 3), np.nan),
-                errors=np.full(3, np.nan),
-                nll=math.nan,
-                deviance=math.nan,
-                ndf=0,
-                reduced_deviance=math.nan,
-                covariance_valid=False,
-                warning_reasons=[fit_failure],
-                driver_payload={},
-            )
-            if args.fail_on_fit_failure:
-                raise
-            # endif
-            log(
-                f"WARNING: {period.label} {title}: simultaneous fit failed; "
-                f"diagnostics retained and official values set to NaN: "
-                f"{fit_failure}"
-            )
-        # endtry
+def plot_shape_diagnostics(out,period,det,sec,data,dvcs,pi0,dp,df,pp,pf,dm):
+    out.mkdir(parents=True,exist_ok=True)
+    for var in FIT_VARIABLES:
+        fig,ax=plt.subplots(2,2,figsize=(15,10)); panels=[(ax[0,0],[('Data PASS',data,dp),('Data FAIL',data,df)],'Data PASS vs FAIL'),(ax[0,1],[('Matched data',data,dp),('AAOGEN PASS',pi0,pp)],'PASS closure'),(ax[1,0],[('Data FAIL',data,df),('AAOGEN FAIL',pi0,pf),('DVCSGEN',dvcs,dm)],'FAIL templates'),(ax[1,1],[('Data PASS',data,dp),('AAOGEN PASS',pi0,pp)],'PASS validation')]
+        for a,curves,title in panels:
+            for lab,r,m in curves:
+                vals=finite_values(r,var.key,m); c,e=np.histogram(vals,bins=var.bins,range=(var.low,var.high)); dens=c/c.sum() if c.sum() else c.astype(float); ctr=(e[:-1]+e[1:])/2; a.step(ctr,dens,where='mid',label=f'{lab} ({np.count_nonzero(m):,})')
+            a.set_title(title); a.set_xlabel(var.label); a.set_ylabel('Fraction / bin'); a.grid(alpha=.25); a.legend(fontsize=8)
+        fig.suptitle(f'{period}, {category_title(det,sec)}: {var.label}'); fig.tight_layout(rect=(0,0,1,.95)); fig.savefig(out/f'{var.key}_pass_fail_shapes.png',dpi=180); plt.close(fig)
 
-        if fit.driver_payload:
-            fit_plot = fit_root / f"{stem}_simultaneous_fit.png"
-            plot_simultaneous_fit(
-                fit_plot,
-                period.label,
-                detector,
-                sector,
-                fit,
-            )
-            component_tables = write_fit_component_tables(
-                table_root,
-                stem,
-                fit,
-            )
-        else:
-            fit_plot = None
-            component_tables = {}
-        # endif
+def plot_fail_fit(path,period,det,sec,fit):
+    keys=list(fit.payload); fig,axes=plt.subplots(2,len(keys),figsize=(6*len(keys),8),squeeze=False)
+    for j,k in enumerate(keys):
+        x=fit.payload[k]; var=x['variable']; centers=np.arange(x['data'].size); axes[0,j].errorbar(centers,x['data'],yerr=np.sqrt(np.maximum(x['data'],1)),fmt='.'); axes[0,j].step(centers,x['model'],where='mid',label='Total'); axes[0,j].step(centers,x['pi0_component'],where='mid',label='pi0 FAIL'); axes[0,j].step(centers,x['dvcs_component'],where='mid',label='BH/DVCS'); axes[0,j].set_title(var.label+' (flow bins included)'); axes[0,j].legend(); axes[0,j].grid(alpha=.25)
+        pull=(x['data']-x['model'])/np.sqrt(np.maximum(x['model'],1)); axes[1,j].axhline(0); axes[1,j].axhline(3,ls='--'); axes[1,j].axhline(-3,ls='--'); axes[1,j].plot(centers,pull,'.'); axes[1,j].set_ylabel('Pull'); axes[1,j].set_xlabel('bin: underflow, regular bins, overflow'); axes[1,j].grid(alpha=.25)
+    fig.suptitle(f'{period}, {category_title(det,sec)} FAIL-only fit: f_pi0={fit.fraction:.4f}+/-{fit.stat_error:.4f}, D/ndf={fit.reduced_deviance:.3f}'); fig.tight_layout(rect=(0,0,1,.94)); fig.savefig(path,dpi=180); plt.close(fig)
 
-        efficiency_mc, efficiency_mc_err = binomial_efficiency(
-            float(pi0_pass_count),
-            float(pi0_pass_count + pi0_fail_count),
-        )
+def write_components(pathstem,fit):
+    pathstem.mkdir(parents=True,exist_ok=True)
+    for k,x in fit.payload.items():
+        p=pathstem/f'{k}_components.csv'
+        with open(p,'w',newline='') as h:
+            w=csv.writer(h); w.writerow(['bin_index','data_fail','fit_total','fit_pi0_fail','fit_bh_dvcs','pull'])
+            for i in range(x['data'].size): w.writerow([i,x['data'][i],x['model'][i],x['pi0_component'][i],x['dvcs_component'][i],(x['data'][i]-x['model'][i])/math.sqrt(max(x['model'][i],1))])
 
-        efficiency_data = (
-            fit.epsilon_data if fit.success else math.nan
-        )
-        efficiency_data_err = (
-            float(fit.errors[2])
-            if (
-                fit.success
-                and fit.errors.size >= 3
-                and math.isfinite(fit.errors[2])
-            )
-            else math.nan
-        )
-        scale, scale_err = uncertainty_ratio(
-            efficiency_data,
-            efficiency_data_err,
-            efficiency_mc,
-            efficiency_mc_err,
-        )
+def process_period(period,args_dict):
+    args=argparse.Namespace(**args_dict); pdir=Path(args.output_dir)/period.key
+    for d in [pdir,pdir/'shape_diagnostics',pdir/'fail_fits',pdir/'fit_component_tables']: d.mkdir(parents=True,exist_ok=True)
+    data,_,dc=read_opportunities(period.epg_data,period.beam_energy_GeV,'epgamma data',args,False); dvcs,_,bc=read_opportunities(period.dvcs_mc,period.beam_energy_GeV,'DVCSGEN epgamma MC',args,True); pi0,_,pc=read_opportunities(period.pi0_epg_mc,period.beam_energy_GeV,'AAOGEN-as-epgamma MC',args,True)
+    cuts={'data':dc,'dvcs_mc':bc,'pi0_mc':pc}; json.dump(cuts,open(pdir/'opportunity_cutflows.json','w'),indent=2); emit_cutflow_diagnostics(pdir,period.label,cuts)
+    egd,egd_diag=read_epgg(period.epgg_data,period.beam_energy_GeV,'epgammagamma data',args); egm,egm_diag=read_epgg(period.pi0_epgg_mc,period.beam_energy_GeV,'AAOGEN epgammagamma MC',args)
+    dm=match_truth_partners(data,egd,'data',args); pm=match_truth_partners(pi0,egm,'mc',args)
+    plot_expected_probe_diagnostics(pdir/'expected_probe_diagnostics.png',period.label,{'Data':data,'DVCSGEN':dvcs,'AAOGEN':pi0}); plot_matching_residuals(pdir/'matching_residuals.png',period.label,dm,pm)
+    rows=[]; meta={}
+    for det,sec in [('FT',0)]+[('FD',s) for s in range(1,7)]:
+        stem=category_stem(det,sec); dcat=category_mask(data,det,sec); bcat=category_mask(dvcs,det,sec); pcat=category_mask(pi0,det,sec); dpass=dcat&dm.matched; dfail=dcat&~dm.matched; ppass=pcat&pm.matched; pfail=pcat&~pm.matched
+        plot_shape_diagnostics(pdir/'shape_diagnostics'/stem,period.label,det,sec,data,dvcs,pi0,dpass,dfail,ppass,pfail,bcat)
+        try: fit=fit_fail_shapes(data,dvcs,pi0,dfail,bcat,pfail,args)
+        except Exception as e: log(f'WARNING {period.label} {category_title(det,sec)} fit failed: {e}'); continue
+        plot_fail_fit(pdir/'fail_fits'/f'{stem}_fail_fit.png',period.label,det,sec,fit); write_components(pdir/'fit_component_tables'/stem,fit)
+        npass=int(np.count_nonzero(dpass)); nfail=int(np.count_nonzero(dfail)); npi0fail=fit.fraction*nfail; npi0fail_stat=fit.stat_error*nfail; vals=[v['fraction'] for v in fit.per_variable.values()]; spread=max(abs(v-fit.fraction) for v in vals) if vals else math.nan; npi0fail_model=spread*nfail
+        ed,edstat=efficiency_from_pass_fail(npass,npi0fail,npi0fail_stat); edmodel=(npass/((npass+npi0fail)**2))*npi0fail_model if (npass+npi0fail)>0 else math.nan; em,emerr=binomial_efficiency(int(np.count_nonzero(ppass)),int(np.count_nonzero(pcat))); sf,sfstat=ratio_errors(ed,edstat,em,emerr); sfmodel=abs(sf)*(edmodel/ed) if ed>0 and math.isfinite(edmodel) else math.nan
+        row=FailOnlyEfficiencyRow(period.key,period.label,det,sec,npass,nfail,int(np.count_nonzero(ppass)),int(np.count_nonzero(pfail)),int(np.count_nonzero(bcat)),fit.fraction,fit.stat_error,spread,npi0fail,npi0fail_stat,npi0fail_model,ed,edstat,edmodel,em,emerr,sf,sfstat,sfmodel,fit.success,fit.message,fit.deviance,fit.ndf,fit.reduced_deviance,bool(fit.warnings),json.dumps({k:v['fraction'] for k,v in fit.per_variable.items()},sort_keys=True))
+        rows.append(asdict(row)); meta[stem]={'row':asdict(row),'per_variable':fit.per_variable,'warnings':fit.warnings}
+        log(f'{period.label} {category_title(det,sec)}: PASS={npass:,}, FAIL={nfail:,}, f_pi0_FAIL={fit.fraction:.4f}, N_pi0_FAIL={npi0fail:.1f}, eps_data={ed:.4f}, eps_MC={em:.4f}, S={sf:.4f}, D/ndf={fit.reduced_deviance:.2f}')
+    write_rows_csv(pdir/'fail_only_results.csv',rows); json.dump({'rows':rows,'categories':meta,'matching':{'data':dm.summary,'mc':pm.summary},'epgg':{'data':egd_diag,'mc':egm_diag}},open(pdir/'metadata.json','w'),indent=2)
+    return period.key,rows,meta
 
-        fitted_pi0_pass = (
-            fit.n_pi0 * fit.epsilon_data
-            if fit.success
-            else math.nan
-        )
-        fitted_pi0_fail = (
-            fit.n_pi0 * (1.0 - fit.epsilon_data)
-            if fit.success
-            else math.nan
-        )
-        fitted_pi0_error = (
-            float(fit.errors[0])
-            if fit.errors.size >= 1 and math.isfinite(fit.errors[0])
-            else math.nan
-        )
-        fitted_dvcs_error = (
-            float(fit.errors[1])
-            if fit.errors.size >= 2 and math.isfinite(fit.errors[1])
-            else math.nan
-        )
+def write_rows_csv(path,rows):
+    if not rows:return
+    with open(path,'w',newline='') as h: w=csv.DictWriter(h,fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
 
-        pass_difference = (
-            data_pass_count - fitted_pi0_pass
-            if math.isfinite(fitted_pi0_pass)
-            else math.nan
-        )
-        pass_pull = (
-            pass_difference / math.sqrt(max(fitted_pi0_pass, 1.0))
-            if math.isfinite(pass_difference)
-            and math.isfinite(fitted_pi0_pass)
-            and fitted_pi0_pass > 0.0
-            else math.nan
-        )
-        total_model = (
-            fit.n_pi0 + fit.n_dvcs if fit.success else math.nan
-        )
-        total_difference = (
-            data_pass_count + data_fail_count - total_model
-            if math.isfinite(total_model)
-            else math.nan
-        )
+def preflight(periods):
+    out=[]
+    for p in periods:
+        d=asdict(p)
+        for role in ['epg_data','epgg_data','dvcs_mc','pi0_epg_mc','pi0_epgg_mc']:
+            n,b=require_tree(getattr(p,role)); d[role+'_entries']=n; log(f'Preflight {p.label} {role}: {n:,} entries')
+        out.append(d)
+    return out
 
-        row = PassFailEfficiencyRow(
-            period=period.key,
-            period_label=period.label,
-            detector=detector,
-            sector=sector,
-            data_pass_count=data_pass_count,
-            data_fail_count=data_fail_count,
-            data_total_count=data_pass_count + data_fail_count,
-            pi0_mc_pass_count=pi0_pass_count,
-            pi0_mc_fail_count=pi0_fail_count,
-            pi0_mc_total_count=pi0_pass_count + pi0_fail_count,
-            dvcs_mc_count=dvcs_count,
-            fitted_pi0_total=fit.n_pi0,
-            fitted_pi0_total_err=fitted_pi0_error,
-            fitted_dvcs_total=fit.n_dvcs,
-            fitted_dvcs_total_err=fitted_dvcs_error,
-            fitted_pi0_pass=fitted_pi0_pass,
-            fitted_pi0_fail=fitted_pi0_fail,
-            efficiency_data=efficiency_data,
-            efficiency_data_err=efficiency_data_err,
-            efficiency_mc=efficiency_mc,
-            efficiency_mc_err=efficiency_mc_err,
-            scale_factor=scale,
-            scale_factor_err=scale_err,
-            fit_success=fit.success,
-            fit_status=fit.status,
-            fit_message=fit.message,
-            fit_nll=fit.nll,
-            fit_deviance=fit.deviance,
-            fit_ndf=fit.ndf,
-            fit_reduced_deviance=fit.reduced_deviance,
-            fit_quality_warning=bool(fit.warning_reasons),
-            fit_warning_reasons="; ".join(fit.warning_reasons),
-            covariance_valid=fit.covariance_valid,
-            closure_pass_minus_fit=pass_difference,
-            closure_pass_pull=pass_pull,
-            closure_total_data_minus_model=total_difference,
-        )
-        rows.append(row)
+def plot_all_period_results(path, rows):
+    periods=[p.label for p in PERIODS]; cats=['FT']+[f'FD S{s}' for s in range(1,7)]; x=np.arange(7,dtype=float); offsets=np.linspace(-.24,.24,len(periods))
+    fig,axes=plt.subplots(3,1,figsize=(14,14),sharex=True)
+    for off,label in zip(offsets,periods):
+        selected=[r for r in rows if r['period_label']==label]; selected.sort(key=lambda r:(0 if r['detector']=='FT' else 1,r['sector']))
+        if len(selected)!=7: continue
+        axes[0].errorbar(x+off,[r['efficiency_data'] for r in selected],yerr=[r['efficiency_data_stat_err'] for r in selected],fmt='o',capsize=2,label=label)
+        axes[1].errorbar(x+off,[r['efficiency_mc'] for r in selected],yerr=[r['efficiency_mc_err'] for r in selected],fmt='o',capsize=2,label=label)
+        axes[2].errorbar(x+off,[r['scale_factor'] for r in selected],yerr=[r['scale_factor_stat_err'] for r in selected],fmt='o',capsize=2,label=label)
+    axes[0].set_ylabel(r'$\\epsilon_{data}$'); axes[1].set_ylabel(r'$\\epsilon_{MC}$'); axes[2].set_ylabel(r'$S_\\gamma$'); axes[2].axhline(1,ls='--')
+    axes[0].set_ylim(0,1.05); axes[1].set_ylim(0,1.05); vals=[r['scale_factor'] for r in rows if math.isfinite(r['scale_factor'])]; axes[2].set_ylim(0,max(1.25,1.2*max(vals)) if vals else 1.25)
+    for a in axes: a.grid(alpha=.25); a.legend(ncol=3,fontsize=8)
+    axes[2].set_xticks(x,cats); fig.suptitle('FAIL-only photon efficiencies and data/MC scale factors'); fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
 
-        closure_plot = closure_root / f"{stem}_closure.png"
-        plot_closure_summary(
-            closure_plot,
-            period.label,
-            detector,
-            sector,
-            row,
-        )
+def main():
+    args=parse_args(); periods=selected_periods(args); out=Path(args.output_dir); out.mkdir(parents=True,exist_ok=True); json.dump({'args':vars(args),'periods':preflight(periods)},open(out/'input_manifest.json','w'),indent=2)
+    workers=max(1,min(args.workers,MAX_WORKERS,len(periods))); rows=[]; metadata={}
+    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as ex:
+        futs=[ex.submit(process_period,p,vars(args)) for p in periods]
+        for f in concurrent.futures.as_completed(futs): k,r,m=f.result(); rows.extend(r); metadata[k]=m; log(f'Completed {k}')
+    order={p.key:i for i,p in enumerate(PERIODS)}; rows.sort(key=lambda r:(order[r['period']],0 if r['detector']=='FT' else 1,r['sector'])); write_rows_csv(out/'photon_efficiency_fail_only_results.csv',rows); json.dump({'rows':rows,'metadata':metadata},open(out/'photon_efficiency_fail_only_results.json','w'),indent=2); plot_all_period_results(out/'all_periods_integrated_efficiencies.png',rows); log(f'Wrote outputs to {out}'); return 0
 
-        metadata_entry = {
-            "category": title,
-            "counts": {
-                "data_pass": data_pass_count,
-                "data_fail": data_fail_count,
-                "pi0_mc_pass": pi0_pass_count,
-                "pi0_mc_fail": pi0_fail_count,
-                "dvcs_mc": dvcs_count,
-            },
-            "fit": {
-                "success": fit.success,
-                "status": fit.status,
-                "message": fit.message,
-                "n_pi0": fit.n_pi0,
-                "n_dvcs": fit.n_dvcs,
-                "epsilon_data": fit.epsilon_data,
-                "errors": fit.errors.tolist(),
-                "covariance": fit.covariance.tolist(),
-                "covariance_valid": fit.covariance_valid,
-                "nll": fit.nll,
-                "deviance": fit.deviance,
-                "ndf": fit.ndf,
-                "reduced_deviance": fit.reduced_deviance,
-                "warning_reasons": fit.warning_reasons,
-                "drivers": list(args.fit_drivers),
-            },
-            "efficiency": {
-                "data": efficiency_data,
-                "data_error": efficiency_data_err,
-                "mc": efficiency_mc,
-                "mc_error": efficiency_mc_err,
-                "scale_factor": scale,
-                "scale_factor_error": scale_err,
-            },
-            "closure": {
-                "fitted_pi0_pass": fitted_pi0_pass,
-                "data_pass_minus_fit": pass_difference,
-                "pass_pull": pass_pull,
-                "total_data_minus_model": total_difference,
-            },
-            "outputs": {
-                "shape_directory": str(shape_dir),
-                "fit_plot": str(fit_plot) if fit_plot else None,
-                "component_tables": component_tables,
-                "closure_plot": str(closure_plot),
-            },
-        }
-        category_metadata[stem] = metadata_entry
-
-        warning_text = (
-            " | WARN: " + "; ".join(fit.warning_reasons)
-            if fit.warning_reasons
-            else ""
-        )
-        log(
-            f"{period.label} {title}: data PASS/FAIL="
-            f"{data_pass_count:,}/{data_fail_count:,}, "
-            f"AAOGEN PASS/FAIL={pi0_pass_count:,}/{pi0_fail_count:,}, "
-            f"Npi0={fit.n_pi0:.1f}, NDVCS={fit.n_dvcs:.1f}, "
-            f"eps_data={efficiency_data:.5f}, eps_MC={efficiency_mc:.5f}, "
-            f"S_gamma={scale:.5f}, D/ndf={fit.reduced_deviance:.3f}"
-            f"{warning_text}"
-        )
-    # endfor
-
-    row_dicts = [asdict(row) for row in rows]
-    write_rows_csv(
-        period_dir / "pass_fail_efficiency_results.csv",
-        row_dicts,
-    )
-
-    metadata = {
-        "period": asdict(period),
-        "arguments": vars(args),
-        "opportunity_cutflows": initial_cutflows,
-        "epgammagamma_reconstruction": {
-            "data": epgg_data_diag,
-            "mc": epgg_mc_diag,
-        },
-        "matching": {
-            "data": data_match.summary,
-            "mc": pi0_match.summary,
-        },
-        "categories": category_metadata,
-        "rows": row_dicts,
-    }
-    with open(period_dir / "metadata.json", "w", encoding="utf-8") as handle:
-        json.dump(metadata, handle, indent=2)
-    # endwith
-    with open(period_dir / "matching_summary.json", "w", encoding="utf-8") as handle:
-        json.dump(metadata["matching"], handle, indent=2)
-    # endwith
-
-    plot_period_pass_fail_results(
-        period_dir / "integrated_efficiencies_and_scale_factors.png",
-        period.label,
-        rows,
-    )
-
-    return period.key, row_dicts, metadata
-
-
-def plot_period_pass_fail_results(
-    path: Path,
-    title: str,
-    rows: Sequence[PassFailEfficiencyRow],
-) -> None:
-    labels = [
-        "FT" if row.detector == "FT" else f"FD S{row.sector}"
-        for row in rows
-    ]
-    x = np.arange(len(rows), dtype=float)
-
-    data_eff = np.asarray([row.efficiency_data for row in rows], dtype=float)
-    data_err = np.asarray([row.efficiency_data_err for row in rows], dtype=float)
-    mc_eff = np.asarray([row.efficiency_mc for row in rows], dtype=float)
-    mc_err = np.asarray([row.efficiency_mc_err for row in rows], dtype=float)
-    scale = np.asarray([row.scale_factor for row in rows], dtype=float)
-    scale_err = np.asarray([row.scale_factor_err for row in rows], dtype=float)
-
-    fig, axes = plt.subplots(2, 1, figsize=(12, 9), sharex=True)
-    axes[0].errorbar(
-        x - 0.07,
-        data_eff,
-        yerr=data_err,
-        fmt="o",
-        capsize=3,
-        label="Data",
-    )
-    axes[0].errorbar(
-        x + 0.07,
-        mc_eff,
-        yerr=mc_err,
-        fmt="s",
-        capsize=3,
-        label="AAOGEN MC",
-    )
-    axes[0].set_ylabel("Photon efficiency")
-    axes[0].set_ylim(0.0, 1.05)
-    axes[0].grid(alpha=0.25)
-    axes[0].legend()
-
-    axes[1].errorbar(
-        x,
-        scale,
-        yerr=scale_err,
-        fmt="o",
-        capsize=3,
-    )
-    axes[1].axhline(1.0, linestyle="--", linewidth=1.0)
-    axes[1].set_ylabel(r"$S_\gamma=\epsilon_{\rm data}/\epsilon_{\rm MC}$")
-    finite = scale[np.isfinite(scale)]
-    axes[1].set_ylim(
-        0.0,
-        max(1.25, 1.2 * float(np.max(finite)))
-        if finite.size
-        else 1.25,
-    )
-    axes[1].grid(alpha=0.25)
-    axes[1].set_xticks(x, labels)
-
-    fig.suptitle(title)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def plot_all_period_results(
-    path: Path,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    periods = [period.label for period in PERIODS]
-    categories = ["FT"] + [f"FD S{sector}" for sector in range(1, 7)]
-    x = np.arange(len(categories), dtype=float)
-    offsets = np.linspace(-0.24, 0.24, len(periods))
-
-    fig, axes = plt.subplots(3, 1, figsize=(14, 14), sharex=True)
-
-    for offset, period_label in zip(offsets, periods):
-        selected = [
-            row for row in rows
-            if row["period_label"] == period_label
-        ]
-        selected.sort(
-            key=lambda row: (
-                0 if row["detector"] == "FT" else 1,
-                int(row["sector"]),
-            )
-        )
-        if len(selected) != 7:
-            continue
-        # endif
-
-        axes[0].errorbar(
-            x + offset,
-            [row["efficiency_data"] for row in selected],
-            yerr=[row["efficiency_data_err"] for row in selected],
-            fmt="o",
-            capsize=2,
-            label=period_label,
-        )
-        axes[1].errorbar(
-            x + offset,
-            [row["efficiency_mc"] for row in selected],
-            yerr=[row["efficiency_mc_err"] for row in selected],
-            fmt="o",
-            capsize=2,
-            label=period_label,
-        )
-        axes[2].errorbar(
-            x + offset,
-            [row["scale_factor"] for row in selected],
-            yerr=[row["scale_factor_err"] for row in selected],
-            fmt="o",
-            capsize=2,
-            label=period_label,
-        )
-    # endfor
-
-    axes[0].set_ylabel(r"$\epsilon_{\rm data}$")
-    axes[1].set_ylabel(r"$\epsilon_{\rm MC}$")
-    axes[2].set_ylabel(r"$S_\gamma$")
-    axes[2].axhline(1.0, linestyle="--", linewidth=1.0)
-
-    axes[0].set_ylim(0.0, 1.05)
-    axes[1].set_ylim(0.0, 1.05)
-    finite_scale = np.asarray(
-        [
-            row["scale_factor"]
-            for row in rows
-            if math.isfinite(float(row["scale_factor"]))
-        ],
-        dtype=float,
-    )
-    axes[2].set_ylim(
-        0.0,
-        max(1.25, 1.2 * float(np.max(finite_scale)))
-        if finite_scale.size
-        else 1.25,
-    )
-
-    for axis in axes:
-        axis.grid(alpha=0.25)
-        axis.legend(ncol=3, fontsize=8)
-    # endfor
-    axes[2].set_xticks(x, categories)
-
-    fig.suptitle("Integrated photon efficiencies and data/MC scale factors")
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def write_rows_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
-    if not rows:
-        return
-    # endif
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-    # endwith
-
-
-def preflight(periods: Sequence[PeriodConfig]) -> List[Dict[str, object]]:
-    manifest: List[Dict[str, object]] = []
-    for period in periods:
-        entry = asdict(period)
-        for role in (
-            "epg_data",
-            "epgg_data",
-            "dvcs_mc",
-            "pi0_epg_mc",
-            "pi0_epgg_mc",
-        ):
-            path = getattr(period, role)
-            entries, branches = require_tree(path)
-            entry[f"{role}_entries"] = entries
-            entry[f"{role}_branches"] = branches
-            log(f"Preflight {period.label} {role}: {entries:,} entries")
-        # endfor
-        manifest.append(entry)
-    # endfor
-    return manifest
-
-
-def validate_runtime_helpers() -> None:
-    required = {
-        "read_opportunities": read_opportunities,
-        "read_epgg": read_epgg,
-        "match_truth_partners": match_truth_partners,
-        "emit_cutflow_diagnostics": emit_cutflow_diagnostics,
-        "plot_expected_probe_diagnostics": plot_expected_probe_diagnostics,
-        "plot_matching_residuals": plot_matching_residuals,
-        "binomial_efficiency": binomial_efficiency,
-        "uncertainty_ratio": uncertainty_ratio,
-    }
-    missing = [name for name, value in required.items() if not callable(value)]
-    if missing:
-        raise RuntimeError(
-            "Required runtime helpers are unavailable: " + ", ".join(missing)
-        )
-    # endif
-
-
-def main() -> int:
-    validate_runtime_helpers()
-    args = parse_args()
-    periods = selected_periods(args)
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    manifest = {
-        "script": Path(__file__).name,
-        "created_unix_time": time.time(),
-        "arguments": vars(args),
-        "periods": preflight(periods),
-    }
-    with open(output_dir / "input_manifest.json", "w", encoding="utf-8") as handle:
-        json.dump(manifest, handle, indent=2)
-    # endwith
-
-    workers = max(1, min(int(args.workers), MAX_WORKERS, len(periods)))
-    log(
-        f"PASS/FAIL SIMULTANEOUS FIT: {len(periods)} period(s), "
-        f"{workers} worker(s). Directed opportunity: E_tag >= "
-        f"{args.tag_E_min:g} GeV, predicted E_probe >= "
-        f"{args.probe_E_min:g} GeV. Fit drivers: "
-        + ", ".join(args.fit_drivers)
-    )
-
-    all_rows: List[Dict[str, object]] = []
-    metadata: Dict[str, object] = {}
-
-    if workers == 1:
-        for period in periods:
-            key, rows, payload = process_period(period, vars(args))
-            metadata[key] = payload
-            all_rows.extend(rows)
-        # endfor
-    else:
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=workers
-        ) as executor:
-            futures = {
-                executor.submit(process_period, period, vars(args)): period.key
-                for period in periods
-            }
-            for future in concurrent.futures.as_completed(futures):
-                key, rows, payload = future.result()
-                metadata[key] = payload
-                all_rows.extend(rows)
-                log(f"Completed {key}.")
-            # endfor
-        # endwith
-    # endif
-
-    period_order = {period.key: index for index, period in enumerate(PERIODS)}
-    all_rows.sort(
-        key=lambda row: (
-            period_order.get(row["period"], 999),
-            0 if row["detector"] == "FT" else 1,
-            int(row["sector"]),
-        )
-    )
-
-    write_rows_csv(
-        output_dir / "photon_efficiency_pass_fail_results.csv",
-        all_rows,
-    )
-    with open(
-        output_dir / "photon_efficiency_pass_fail_results.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(
-            {
-                "arguments": vars(args),
-                "rows": all_rows,
-                "period_metadata": metadata,
-            },
-            handle,
-            indent=2,
-        )
-    # endwith
-
-    plot_all_period_results(
-        output_dir / "all_periods_integrated_efficiencies.png",
-        all_rows,
-    )
-    log(f"Wrote PASS/FAIL photon-efficiency outputs to {output_dir}")
-    return 0
-
-
-if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        print(f"FATAL ERROR: {exc}", file=sys.stderr, flush=True)
-        raise
-    # endtry
+if __name__=='__main__':
+    try: raise SystemExit(main())
+    except Exception as e: print(f'FATAL ERROR: {e}',file=sys.stderr,flush=True); raise
