@@ -1,75 +1,61 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v8_pi0_partner_audit.py
+derive_photon_efficiency_scale_factors_v9_epgammagamma_truth_partner_audit.py
 
-Temporary no-cuts matching audit for the newly reprocessed multi-photon epgamma
-trees.
+Compact truth-partner audit for the RGA photon-efficiency study.
 
-This release deliberately does NOT calculate photon efficiencies, template
-fractions, or scale factors. It answers the next matching questions:
+Purpose
+-------
+This release does not fit templates and does not calculate efficiencies or
+scale factors.  It validates the central tag-and-probe geometry before the
+production extraction is restored.
 
-    1. Does another reconstructed photon exist in the same underlying event?
-    2. Does any tag-partner pair lie in the reconstructed pi0 mass window?
-    3. Does the event/signature appear in the epgammagamma catalog?
-    4. For opportunities satisfying both pi0-mass pairing and catalog
-       confirmation, how well does the missing four-vector reproduce the
-       actual partner photon?
+For each directed epgamma opportunity:
 
-Opportunity definition
-----------------------
-Only the following requirements are applied:
+    1. use the measured epgamma photon as the tag;
+    2. calculate the missing four-vector X;
+    3. find the corresponding native epgammagamma record;
+    4. reconstruct both daughter-photon laboratory four-vectors from the
+       quantities stored in the native pi0 tree;
+    5. identify which reconstructed daughter is the epgamma tag;
+    6. define the opposite daughter as the true reconstructed partner;
+    7. compare X directly with that partner.
 
-    * finite electron, proton, and tag-photon kinematics;
-    * E_tag >= 0.40 GeV;
-    * finite missing four-vector;
-    * E_X >= 2.00 GeV.
+The native tree stores Trento azimuths gamma_phi1 and gamma_phi2, not laboratory
+azimuths.  This script converts them correctly by constructing the Trento basis
+around the virtual-photon direction.  The polar angle about q is solved from
+the stored electron-photon opening angle.  Photon energies are then obtained
+from four-vector closure to the stored reconstructed pi0.
 
-No Q2, W, y, z, t, fiducial, opening-angle, missing-mass, E-|p|,
-detector-acceptance, topology, pi0-mass, or epgammagamma-catalog requirement is
-applied.
+No DVCS kinematic, exclusivity, fiducial, detector-acceptance, or pi0-mass cuts
+are imposed.  The only opportunity requirements are finite reconstructed
+electron/proton/tag kinematics, E_tag >= 0.4 GeV, and predicted E_X >= 2 GeV.
 
-Partner pool
-------------
-Every finite reconstructed photon entry with E_gamma >= 0.40 GeV is retained.
-The current tag entry is excluded.  Among the remaining photons in the same
-underlying event, the script records the nearest candidate in combined angular
-and relative-energy residual.
+Identity matching
+-----------------
+Data:
+    exact (runnum, evnum)
 
-Data identity:
-
-    (runnum, evnum)
-
-AAOGEN identity:
-
+AAOGEN MC:
     rounded reconstructed electron/proton signature
     (e_p, e_theta, e_phi, p_p, p_theta, p_phi)
 
-The epgammagamma trees are read only as identity catalogs. They do not supply
-daughter-photon four-vectors. The audit reports the intersection between
-pi0-mass partner identification and epgammagamma catalog membership.
-
 Outputs
 -------
-output/photon_efficiency_study/matching_audit/
+output/photon_efficiency_study/truth_partner_audit/
 
-    matching_audit_summary.csv
-    matching_audit_summary.json
+    truth_partner_audit_summary.csv
+    truth_partner_audit_summary.json
     input_manifest.json
     <period>/
-        data_matching_residuals_all_partners.png
-        aaogen_matching_residuals_all_partners.png
-        data_matching_residuals_pi0_catalog.png
-        aaogen_matching_residuals_pi0_catalog.png
-        data_nearest_match_sample.csv
-        aaogen_nearest_match_sample.csv
+        data_truth_partner_residuals.png
+        aaogen_truth_partner_residuals.png
+        data_truth_partner_sample.csv
+        aaogen_truth_partner_sample.csv
         metadata.json
 
-This is intentionally an audit release.  It never writes one row per
-opportunity.  Exact counters and residual histograms are accumulated in memory,
-while only a small deterministic reservoir sample is written for manual
-inspection.  Once event-level photon matching is validated, the physics cuts
-and BH/DVCS + pi0 template extraction can be restored in a later production
-release.
+Only compact exact counters, histogram bin contents, and a small deterministic
+reservoir sample are written.  No full per-opportunity table is produced.
 """
 
 from __future__ import annotations
@@ -99,8 +85,9 @@ import uproot
 
 TREE_NAME = "PhysicsEvents"
 MAX_WORKERS = 8
-DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study/matching_audit"
 DEFAULT_STEP_SIZE = "200 MB"
+DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study/truth_partner_audit"
+
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
 
@@ -167,6 +154,16 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
     "g_E": ("p2_p", "g1_p", "g1_E", "gamma1_p", "photon1_p"),
     "g_theta": ("p2_theta", "g1_theta", "gamma1_theta", "photon1_theta"),
     "g_phi": ("p2_phi", "g1_phi", "gamma1_phi", "photon1_phi"),
+    "pi0_p": ("p2_p", "pi0_p"),
+    "pi0_theta": ("p2_theta", "pi0_theta"),
+    "pi0_phi": ("p2_phi", "pi0_phi"),
+    "pi0_mass": ("Mh_gammagamma",),
+    "open1": ("open_angle_egamma1",),
+    "open2": ("open_angle_egamma2",),
+    "trento1": ("gamma_phi1",),
+    "trento2": ("gamma_phi2",),
+    "det1": ("detector_gamma1",),
+    "det2": ("detector_gamma2",),
 }
 
 
@@ -193,10 +190,28 @@ class EpgRecords:
 
 
 @dataclass
-class IdentityCatalog:
-    keys: np.ndarray
-    entries: int
-    unique_keys: int
+class EpggRecords:
+    runnum: np.ndarray
+    eventnum: np.ndarray
+    e_p: np.ndarray
+    e_theta: np.ndarray
+    e_phi: np.ndarray
+    p_p: np.ndarray
+    p_theta: np.ndarray
+    p_phi: np.ndarray
+    g1_E: np.ndarray
+    g1_theta: np.ndarray
+    g1_phi: np.ndarray
+    g2_E: np.ndarray
+    g2_theta: np.ndarray
+    g2_phi: np.ndarray
+    solution_valid: np.ndarray
+    solution_closure: np.ndarray
+    detector1: np.ndarray
+    detector2: np.ndarray
+
+    def size(self) -> int:
+        return int(self.g1_E.shape[0])
 
 
 def log(message: str) -> None:
@@ -205,7 +220,7 @@ def log(message: str) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="No-cuts event-level partner-photon matching audit."
+        description="Audit epgammagamma-derived truth partners for epgamma tags."
     )
     parser.add_argument("--period", action="append", choices=[p.key for p in PERIODS])
     parser.add_argument("--workers", type=int, default=5)
@@ -215,36 +230,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag-E-min", type=float, default=0.40)
     parser.add_argument("--probe-E-min", type=float, default=2.00)
     parser.add_argument("--mc-signature-decimals", type=int, default=10)
-    parser.add_argument("--score-angle-scale-deg", type=float, default=3.0)
-    parser.add_argument("--score-relative-E-scale", type=float, default=0.35)
-    parser.add_argument(
-        "--diagnostic-sample-size",
-        type=int,
-        default=5000,
-        help=(
-            "Maximum number of nearest-match rows written per sample and "
-            "period. Exact summary counters and histograms still use every "
-            "opportunity."
-        ),
-    )
-    parser.add_argument(
-        "--diagnostic-seed",
-        type=int,
-        default=20260801,
-        help="Base seed for deterministic reservoir sampling.",
-    )
-    parser.add_argument(
-        "--pi0-mass-min",
-        type=float,
-        default=0.10,
-        help="Lower tag-partner invariant-mass edge (GeV).",
-    )
-    parser.add_argument(
-        "--pi0-mass-max",
-        type=float,
-        default=0.17,
-        help="Upper tag-partner invariant-mass edge (GeV).",
-    )
+    parser.add_argument("--tag-angle-max-deg", type=float, default=3.0)
+    parser.add_argument("--tag-relative-E-max", type=float, default=0.35)
+    parser.add_argument("--closure-max", type=float, default=0.10)
+    parser.add_argument("--minimum-photon-E", type=float, default=0.20)
+    parser.add_argument("--diagnostic-sample-size", type=int, default=5000)
+    parser.add_argument("--diagnostic-seed", type=int, default=20260801)
     return parser.parse_args()
 
 
@@ -269,26 +260,44 @@ def require_tree(path: str) -> Tuple[int, List[str]]:
     # endwith
 
 
-def resolve(path: str, logical: Sequence[str], optional: Sequence[str] = ()) -> Dict[str, Optional[str]]:
+def resolve(
+    path: str,
+    logical: Sequence[str],
+    optional: Sequence[str] = (),
+) -> Dict[str, Optional[str]]:
     _, keys = require_tree(path)
     available = set(keys)
     optional_set = set(optional)
     result: Dict[str, Optional[str]] = {}
-    missing = []
+    missing: List[str] = []
     for name in logical:
-        branch = next((candidate for candidate in ALIASES.get(name, (name,)) if candidate in available), None)
+        branch = next(
+            (
+                candidate
+                for candidate in ALIASES.get(name, (name,))
+                if candidate in available
+            ),
+            None,
+        )
         result[name] = branch
         if branch is None and name not in optional_set:
-            missing.append(name)
+            missing.append(f"{name}: tried {ALIASES.get(name, (name,))}")
         # endif
     # endfor
     if missing:
-        raise KeyError(f"Missing branches in {path}: {missing}")
+        raise KeyError(
+            f"Missing branches in {path}:\n  " + "\n  ".join(missing)
+        )
     # endif
     return result
 
 
-def finite_array(arrays: Mapping[str, np.ndarray], branch: Optional[str], default=math.nan, dtype=np.float64) -> np.ndarray:
+def finite_array(
+    arrays: Mapping[str, np.ndarray],
+    branch: Optional[str],
+    default: float = math.nan,
+    dtype=np.float64,
+) -> np.ndarray:
     n = len(next(iter(arrays.values())))
     if branch is None:
         return np.full(n, default, dtype=dtype)
@@ -296,14 +305,38 @@ def finite_array(arrays: Mapping[str, np.ndarray], branch: Optional[str], defaul
     return np.asarray(arrays[branch], dtype=dtype)
 
 
-def spherical(momentum: np.ndarray, theta: np.ndarray, phi: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    st = np.sin(theta)
-    return momentum * st * np.cos(phi), momentum * st * np.sin(phi), momentum * np.cos(theta)
+def unit_vector(theta: float, phi: float) -> np.ndarray:
+    return np.asarray(
+        [
+            math.sin(theta) * math.cos(phi),
+            math.sin(theta) * math.sin(phi),
+            math.cos(theta),
+        ],
+        dtype=float,
+    )
 
 
-def massive(momentum: np.ndarray, theta: np.ndarray, phi: np.ndarray, mass: float) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+def spherical(
+    momentum: np.ndarray,
+    theta: np.ndarray,
+    phi: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    sin_theta = np.sin(theta)
+    return (
+        momentum * sin_theta * np.cos(phi),
+        momentum * sin_theta * np.sin(phi),
+        momentum * np.cos(theta),
+    )
+
+
+def massive(
+    momentum: np.ndarray,
+    theta: np.ndarray,
+    phi: np.ndarray,
+    mass: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     px, py, pz = spherical(momentum, theta, phi)
-    return np.sqrt(momentum**2 + mass**2), px, py, pz
+    return np.sqrt(np.maximum(momentum**2 + mass**2, 0.0)), px, py, pz
 
 
 def reconstruct_probe(
@@ -318,36 +351,58 @@ def reconstruct_probe(
     g_theta: np.ndarray,
     g_phi: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    e_E, e_px, e_py, e_pz = massive(e_p, e_theta, e_phi, ELECTRON_MASS_GEV)
-    p_E, p_px, p_py, p_pz = massive(p_p, p_theta, p_phi, PROTON_MASS_GEV)
+    e_E, e_px, e_py, e_pz = massive(
+        e_p, e_theta, e_phi, ELECTRON_MASS_GEV
+    )
+    p_E, p_px, p_py, p_pz = massive(
+        p_p, p_theta, p_phi, PROTON_MASS_GEV
+    )
     g_px, g_py, g_pz = spherical(g_E, g_theta, g_phi)
 
-    E = beam_energy + PROTON_MASS_GEV - e_E - p_E - g_E
-    px = -e_px - p_px - g_px
-    py = -e_py - p_py - g_py
-    pz = beam_energy - e_pz - p_pz - g_pz
-    pt = np.sqrt(np.maximum(px**2 + py**2, 0.0))
-    theta = np.arctan2(pt, pz)
-    phi = np.mod(np.arctan2(py, px), 2.0 * math.pi)
-    return E, theta, phi
+    probe_E = beam_energy + PROTON_MASS_GEV - e_E - p_E - g_E
+    probe_px = -e_px - p_px - g_px
+    probe_py = -e_py - p_py - g_py
+    probe_pz = beam_energy - e_pz - p_pz - g_pz
+    probe_pt = np.sqrt(np.maximum(probe_px**2 + probe_py**2, 0.0))
+    probe_theta = np.arctan2(probe_pt, probe_pz)
+    probe_phi = np.mod(np.arctan2(probe_py, probe_px), 2.0 * math.pi)
+    return probe_E, probe_theta, probe_phi
 
 
-def read_epg(path: str, beam_energy: float, mode: str, args: argparse.Namespace) -> Tuple[EpgRecords, Dict[str, int]]:
-    logical = ("runnum", "eventnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi", "g_E", "g_theta", "g_phi")
+def read_epg(
+    path: str,
+    beam_energy: float,
+    mode: str,
+    args: argparse.Namespace,
+) -> Tuple[EpgRecords, Dict[str, int]]:
+    logical = (
+        "runnum", "eventnum",
+        "e_p", "e_theta", "e_phi",
+        "p_p", "p_theta", "p_phi",
+        "g_E", "g_theta", "g_phi",
+    )
     resolved = resolve(path, logical, optional=("runnum", "eventnum"))
-    expressions = sorted({branch for branch in resolved.values() if branch is not None})
-
-    store: Dict[str, List[np.ndarray]] = {name: [] for name in EpgRecords.__dataclass_fields__}
+    expressions = sorted(
+        {branch for branch in resolved.values() if branch is not None}
+    )
+    store: Dict[str, List[np.ndarray]] = {
+        name: [] for name in EpgRecords.__dataclass_fields__
+    }
     counts = {
         "tree_entries": 0,
         "finite_epgamma_entries": 0,
-        "photon_candidates_E_above_0p4": 0,
-        "directed_opportunities_probe_E_above_2": 0,
+        "photon_candidates_E_above_threshold": 0,
+        "directed_opportunities_probe_E_above_threshold": 0,
     }
 
     seen = 0
     log(f"Reading {mode} epgamma records from {path}")
-    for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions, step_size=args.step_size, library="np"):
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=args.step_size,
+        library="np",
+    ):
         n = len(next(iter(arrays.values())))
         if args.max_events is not None and seen >= args.max_events:
             break
@@ -359,25 +414,45 @@ def read_epg(path: str, beam_energy: float, mode: str, args: argparse.Namespace)
         seen += n
         counts["tree_entries"] += int(n)
 
-        def arr(name: str, default=math.nan, dtype=np.float64) -> np.ndarray:
+        def arr(name: str, default=math.nan, dtype=np.float64):
             return finite_array(arrays, resolved.get(name), default, dtype)
 
-        e_p, e_theta, e_phi = arr("e_p"), arr("e_theta"), np.mod(arr("e_phi"), 2.0 * math.pi)
-        p_p, p_theta, p_phi = arr("p_p"), arr("p_theta"), np.mod(arr("p_phi"), 2.0 * math.pi)
-        g_E, g_theta, g_phi = arr("g_E"), arr("g_theta"), np.mod(arr("g_phi"), 2.0 * math.pi)
+        e_p = arr("e_p")
+        e_theta = arr("e_theta")
+        e_phi = np.mod(arr("e_phi"), 2.0 * math.pi)
+        p_p = arr("p_p")
+        p_theta = arr("p_theta")
+        p_phi = np.mod(arr("p_phi"), 2.0 * math.pi)
+        g_E = arr("g_E")
+        g_theta = arr("g_theta")
+        g_phi = np.mod(arr("g_phi"), 2.0 * math.pi)
 
         finite = (
-            np.isfinite(e_p) & np.isfinite(e_theta) & np.isfinite(e_phi)
-            & np.isfinite(p_p) & np.isfinite(p_theta) & np.isfinite(p_phi)
-            & np.isfinite(g_E) & np.isfinite(g_theta) & np.isfinite(g_phi)
-            & (e_p > 0.0) & (p_p > 0.0) & (g_E > 0.0)
+            np.isfinite(e_p)
+            & np.isfinite(e_theta)
+            & np.isfinite(e_phi)
+            & np.isfinite(p_p)
+            & np.isfinite(p_theta)
+            & np.isfinite(p_phi)
+            & np.isfinite(g_E)
+            & np.isfinite(g_theta)
+            & np.isfinite(g_phi)
+            & (e_p > 0.0)
+            & (p_p > 0.0)
+            & (g_E > 0.0)
         )
         counts["finite_epgamma_entries"] += int(np.count_nonzero(finite))
+
         candidate = finite & (g_E >= args.tag_E_min)
-        counts["photon_candidates_E_above_0p4"] += int(np.count_nonzero(candidate))
+        counts["photon_candidates_E_above_threshold"] += int(
+            np.count_nonzero(candidate)
+        )
 
         probe_E, probe_theta, probe_phi = reconstruct_probe(
-            beam_energy, e_p, e_theta, e_phi, p_p, p_theta, p_phi, g_E, g_theta, g_phi
+            beam_energy,
+            e_p, e_theta, e_phi,
+            p_p, p_theta, p_phi,
+            g_E, g_theta, g_phi,
         )
         opportunity = (
             candidate
@@ -386,15 +461,25 @@ def read_epg(path: str, beam_energy: float, mode: str, args: argparse.Namespace)
             & np.isfinite(probe_phi)
             & (probe_E >= args.probe_E_min)
         )
-        counts["directed_opportunities_probe_E_above_2"] += int(np.count_nonzero(opportunity))
+        counts["directed_opportunities_probe_E_above_threshold"] += int(
+            np.count_nonzero(opportunity)
+        )
 
         values = {
             "runnum": arr("runnum", -1, np.int64),
             "eventnum": arr("eventnum", -1, np.int64),
-            "e_p": e_p, "e_theta": e_theta, "e_phi": e_phi,
-            "p_p": p_p, "p_theta": p_theta, "p_phi": p_phi,
-            "g_E": g_E, "g_theta": g_theta, "g_phi": g_phi,
-            "probe_E": probe_E, "probe_theta": probe_theta, "probe_phi": probe_phi,
+            "e_p": e_p,
+            "e_theta": e_theta,
+            "e_phi": e_phi,
+            "p_p": p_p,
+            "p_theta": p_theta,
+            "p_phi": p_phi,
+            "g_E": g_E,
+            "g_theta": g_theta,
+            "g_phi": g_phi,
+            "probe_E": probe_E,
+            "probe_theta": probe_theta,
+            "probe_phi": probe_phi,
             "opportunity": opportunity,
         }
         for name in store:
@@ -404,114 +489,488 @@ def read_epg(path: str, beam_energy: float, mode: str, args: argparse.Namespace)
 
     payload = {}
     for name, parts in store.items():
-        if not parts:
-            dtype = bool if name == "opportunity" else (np.int64 if name in {"runnum", "eventnum"} else np.float64)
-            payload[name] = np.asarray([], dtype=dtype)
-        else:
+        if parts:
             payload[name] = np.concatenate(parts)
+        else:
+            dtype = (
+                bool
+                if name == "opportunity"
+                else np.int64
+                if name in {"runnum", "eventnum"}
+                else np.float64
+            )
+            payload[name] = np.asarray([], dtype=dtype)
+        # endif
+    # endfor
+    return EpgRecords(**payload), counts
+
+
+def q_trento_basis(
+    beam_energy: float,
+    electron_p: float,
+    electron_theta: float,
+    electron_phi: float,
+) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
+    electron_direction = unit_vector(electron_theta, electron_phi)
+    electron_vector = electron_p * electron_direction
+    q_vector = np.asarray([0.0, 0.0, beam_energy]) - electron_vector
+    q_magnitude = float(np.linalg.norm(q_vector))
+    if q_magnitude <= 1.0e-12:
+        return None
+    # endif
+    q_hat = q_vector / q_magnitude
+
+    electron_transverse = (
+        electron_direction
+        - float(np.dot(electron_direction, q_hat)) * q_hat
+    )
+    transverse_magnitude = float(np.linalg.norm(electron_transverse))
+    if transverse_magnitude <= 1.0e-12:
+        return None
+    # endif
+
+    x_hat = electron_transverse / transverse_magnitude
+    y_hat = np.cross(q_hat, x_hat)
+    y_hat /= float(np.linalg.norm(y_hat))
+    return q_hat, x_hat, y_hat, electron_direction
+
+
+def solve_q_polar_angles(
+    electron_direction: np.ndarray,
+    q_hat: np.ndarray,
+    x_hat: np.ndarray,
+    trento_phi: float,
+    opening_angle: float,
+) -> List[float]:
+    """
+    Solve for the photon polar angle about q.
+
+    With n_gamma = sin(theta_q)(cos(phi)x + sin(phi)y) + cos(theta_q)q,
+    the stored electron-photon opening angle gives
+
+        A sin(theta_q) + B cos(theta_q) = cos(alpha),
+
+    where A = (e_hat dot x_hat) cos(phi) and B = e_hat dot q_hat.
+    """
+    A = float(np.dot(electron_direction, x_hat)) * math.cos(trento_phi)
+    B = float(np.dot(electron_direction, q_hat))
+    C = math.cos(opening_angle)
+    radius = math.hypot(A, B)
+    if radius <= 1.0e-12:
+        return []
+    # endif
+
+    ratio = C / radius
+    if ratio < -1.0 - 1.0e-9 or ratio > 1.0 + 1.0e-9:
+        return []
+    # endif
+    ratio = float(np.clip(ratio, -1.0, 1.0))
+
+    phase = math.atan2(A, B)
+    offset = math.acos(ratio)
+    candidates: List[float] = []
+    for raw in (phase + offset, phase - offset):
+        theta = raw % (2.0 * math.pi)
+        if theta > math.pi:
+            theta = 2.0 * math.pi - theta
+        # endif
+        if (
+            0.0 <= theta <= math.pi
+            and all(abs(theta - existing) > 1.0e-9 for existing in candidates)
+        ):
+            candidates.append(theta)
+        # endif
+    # endfor
+    return candidates
+
+
+def lab_direction_from_trento(
+    theta_q: float,
+    trento_phi: float,
+    q_hat: np.ndarray,
+    x_hat: np.ndarray,
+    y_hat: np.ndarray,
+) -> np.ndarray:
+    direction = (
+        math.sin(theta_q)
+        * (
+            math.cos(trento_phi) * x_hat
+            + math.sin(trento_phi) * y_hat
+        )
+        + math.cos(theta_q) * q_hat
+    )
+    direction /= float(np.linalg.norm(direction))
+    return direction
+
+
+def direction_to_angles(direction: np.ndarray) -> Tuple[float, float]:
+    theta = math.acos(float(np.clip(direction[2], -1.0, 1.0)))
+    phi = math.atan2(float(direction[1]), float(direction[0]))
+    return theta, float(np.mod(phi, 2.0 * math.pi))
+
+
+def reconstruct_daughter_solutions(
+    beam_energy: float,
+    electron_p: float,
+    electron_theta: float,
+    electron_phi: float,
+    pi0_p: float,
+    pi0_theta: float,
+    pi0_phi: float,
+    pi0_mass: float,
+    opening1: float,
+    opening2: float,
+    trento1: float,
+    trento2: float,
+    args: argparse.Namespace,
+) -> List[Tuple[float, float, float, float, float, float, float]]:
+    basis = q_trento_basis(
+        beam_energy,
+        electron_p,
+        electron_theta,
+        electron_phi,
+    )
+    if basis is None:
+        return []
+    # endif
+    q_hat, x_hat, y_hat, electron_direction = basis
+
+    theta1_candidates = solve_q_polar_angles(
+        electron_direction,
+        q_hat,
+        x_hat,
+        trento1,
+        opening1,
+    )
+    theta2_candidates = solve_q_polar_angles(
+        electron_direction,
+        q_hat,
+        x_hat,
+        trento2,
+        opening2,
+    )
+    if not theta1_candidates or not theta2_candidates:
+        return []
+    # endif
+
+    pi0_direction = unit_vector(pi0_theta, pi0_phi)
+    pi0_vector = pi0_p * pi0_direction
+    pi0_energy = math.sqrt(max(pi0_p**2 + pi0_mass**2, 0.0))
+    target = np.asarray([pi0_energy, *pi0_vector], dtype=float)
+    normalization = max(pi0_energy, 1.0e-12)
+
+    solutions = []
+    for theta1_q in theta1_candidates:
+        direction1 = lab_direction_from_trento(
+            theta1_q, trento1, q_hat, x_hat, y_hat
+        )
+        theta1_lab, phi1_lab = direction_to_angles(direction1)
+
+        for theta2_q in theta2_candidates:
+            direction2 = lab_direction_from_trento(
+                theta2_q, trento2, q_hat, x_hat, y_hat
+            )
+            theta2_lab, phi2_lab = direction_to_angles(direction2)
+
+            response = np.asarray(
+                [
+                    [1.0, 1.0],
+                    [direction1[0], direction2[0]],
+                    [direction1[1], direction2[1]],
+                    [direction1[2], direction2[2]],
+                ],
+                dtype=float,
+            )
+            energies, _, rank, _ = np.linalg.lstsq(
+                response,
+                target,
+                rcond=None,
+            )
+            if (
+                rank < 2
+                or energies[0] <= args.minimum_photon_E
+                or energies[1] <= args.minimum_photon_E
+            ):
+                continue
+            # endif
+
+            closure = float(
+                np.linalg.norm(response @ energies - target)
+                / normalization
+            )
+            if closure > args.closure_max:
+                continue
+            # endif
+
+            solutions.append(
+                (
+                    closure,
+                    float(energies[0]),
+                    theta1_lab,
+                    phi1_lab,
+                    float(energies[1]),
+                    theta2_lab,
+                    phi2_lab,
+                )
+            )
+        # endfor
+    # endfor
+
+    solutions.sort(key=lambda item: item[0])
+    return solutions[:4]
+
+
+def read_epgg(
+    path: str,
+    beam_energy: float,
+    mode: str,
+    args: argparse.Namespace,
+) -> Tuple[EpggRecords, Dict[str, int]]:
+    logical = (
+        "runnum", "eventnum",
+        "e_p", "e_theta", "e_phi",
+        "p_p", "p_theta", "p_phi",
+        "pi0_p", "pi0_theta", "pi0_phi", "pi0_mass",
+        "open1", "open2", "trento1", "trento2", "det1", "det2",
+    )
+    resolved = resolve(path, logical, optional=("runnum", "eventnum"))
+    expressions = sorted(
+        {branch for branch in resolved.values() if branch is not None}
+    )
+
+    scalar_store: Dict[str, List[np.ndarray]] = {
+        name: [] for name in (
+            "runnum", "eventnum",
+            "e_p", "e_theta", "e_phi",
+            "p_p", "p_theta", "p_phi",
+            "detector1", "detector2",
+        )
+    }
+    solution_store: Dict[str, List[np.ndarray]] = {
+        name: [] for name in (
+            "g1_E", "g1_theta", "g1_phi",
+            "g2_E", "g2_theta", "g2_phi",
+            "solution_valid", "solution_closure",
+        )
+    }
+    counts = {
+        "tree_entries": 0,
+        "events_with_at_least_one_solution": 0,
+        "valid_solution_count": 0,
+    }
+
+    seen = 0
+    log(f"Reading {mode} epgammagamma records from {path}")
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=args.step_size,
+        library="np",
+    ):
+        n = len(next(iter(arrays.values())))
+        if args.max_events is not None and seen >= args.max_events:
+            break
+        # endif
+        if args.max_events is not None and seen + n > args.max_events:
+            n = args.max_events - seen
+            arrays = {key: values[:n] for key, values in arrays.items()}
+        # endif
+        seen += n
+        counts["tree_entries"] += int(n)
+
+        def arr(name: str, default=math.nan, dtype=np.float64):
+            return finite_array(arrays, resolved.get(name), default, dtype)
+
+        e_p = arr("e_p")
+        e_theta = arr("e_theta")
+        e_phi = np.mod(arr("e_phi"), 2.0 * math.pi)
+        p_p = arr("p_p")
+        p_theta = arr("p_theta")
+        p_phi = np.mod(arr("p_phi"), 2.0 * math.pi)
+        pi0_p = arr("pi0_p")
+        pi0_theta = arr("pi0_theta")
+        pi0_phi = np.mod(arr("pi0_phi"), 2.0 * math.pi)
+        pi0_mass = arr("pi0_mass")
+        open1 = np.deg2rad(arr("open1"))
+        open2 = np.deg2rad(arr("open2"))
+        trento1 = np.mod(arr("trento1"), 2.0 * math.pi)
+        trento2 = np.mod(arr("trento2"), 2.0 * math.pi)
+
+        max_solutions = 4
+        g1_E = np.full((n, max_solutions), np.nan)
+        g1_theta = np.full((n, max_solutions), np.nan)
+        g1_phi = np.full((n, max_solutions), np.nan)
+        g2_E = np.full((n, max_solutions), np.nan)
+        g2_theta = np.full((n, max_solutions), np.nan)
+        g2_phi = np.full((n, max_solutions), np.nan)
+        valid = np.zeros((n, max_solutions), dtype=bool)
+        closure = np.full((n, max_solutions), np.nan)
+
+        for index in range(n):
+            values = (
+                e_p[index], e_theta[index], e_phi[index],
+                pi0_p[index], pi0_theta[index], pi0_phi[index],
+                pi0_mass[index], open1[index], open2[index],
+                trento1[index], trento2[index],
+            )
+            if not all(math.isfinite(float(value)) for value in values):
+                continue
+            # endif
+
+            solutions = reconstruct_daughter_solutions(
+                beam_energy,
+                float(e_p[index]),
+                float(e_theta[index]),
+                float(e_phi[index]),
+                float(pi0_p[index]),
+                float(pi0_theta[index]),
+                float(pi0_phi[index]),
+                float(pi0_mass[index]),
+                float(open1[index]),
+                float(open2[index]),
+                float(trento1[index]),
+                float(trento2[index]),
+                args,
+            )
+            for solution_index, solution in enumerate(solutions):
+                (
+                    closure_value,
+                    energy1, theta1, phi1,
+                    energy2, theta2, phi2,
+                ) = solution
+                closure[index, solution_index] = closure_value
+                g1_E[index, solution_index] = energy1
+                g1_theta[index, solution_index] = theta1
+                g1_phi[index, solution_index] = phi1
+                g2_E[index, solution_index] = energy2
+                g2_theta[index, solution_index] = theta2
+                g2_phi[index, solution_index] = phi2
+                valid[index, solution_index] = True
+            # endfor
+        # endfor
+
+        counts["events_with_at_least_one_solution"] += int(
+            np.count_nonzero(np.any(valid, axis=1))
+        )
+        counts["valid_solution_count"] += int(np.count_nonzero(valid))
+
+        scalar_values = {
+            "runnum": arr("runnum", -1, np.int64),
+            "eventnum": arr("eventnum", -1, np.int64),
+            "e_p": e_p,
+            "e_theta": e_theta,
+            "e_phi": e_phi,
+            "p_p": p_p,
+            "p_theta": p_theta,
+            "p_phi": p_phi,
+            "detector1": arr("det1", -1, np.int16),
+            "detector2": arr("det2", -1, np.int16),
+        }
+        for name in scalar_store:
+            scalar_store[name].append(np.asarray(scalar_values[name]))
+        # endfor
+
+        solution_values = {
+            "g1_E": g1_E,
+            "g1_theta": g1_theta,
+            "g1_phi": g1_phi,
+            "g2_E": g2_E,
+            "g2_theta": g2_theta,
+            "g2_phi": g2_phi,
+            "solution_valid": valid,
+            "solution_closure": closure,
+        }
+        for name in solution_store:
+            solution_store[name].append(solution_values[name])
+        # endfor
+    # endfor
+
+    payload = {}
+    for name, parts in scalar_store.items():
+        if parts:
+            payload[name] = np.concatenate(parts)
+        else:
+            dtype = (
+                np.int64
+                if name in {"runnum", "eventnum"}
+                else np.int16
+                if name in {"detector1", "detector2"}
+                else np.float64
+            )
+            payload[name] = np.asarray([], dtype=dtype)
+        # endif
+    # endfor
+    for name, parts in solution_store.items():
+        if parts:
+            payload[name] = np.concatenate(parts, axis=0)
+        else:
+            dtype = bool if name == "solution_valid" else np.float64
+            payload[name] = np.empty((0, 4), dtype=dtype)
         # endif
     # endfor
 
-    records = EpgRecords(**payload)
-
-    # Remove exact duplicate MC rows only. Distinct photons from one event remain.
-    if mode == "mc" and records.size() > 0:
-        matrix = np.column_stack([
-            np.round(records.e_p, args.mc_signature_decimals),
-            np.round(records.e_theta, args.mc_signature_decimals),
-            np.round(records.e_phi, args.mc_signature_decimals),
-            np.round(records.p_p, args.mc_signature_decimals),
-            np.round(records.p_theta, args.mc_signature_decimals),
-            np.round(records.p_phi, args.mc_signature_decimals),
-            np.round(records.g_E, args.mc_signature_decimals),
-            np.round(records.g_theta, args.mc_signature_decimals),
-            np.round(records.g_phi, args.mc_signature_decimals),
-        ])
-        _, first = np.unique(matrix, axis=0, return_index=True)
-        keep = np.zeros(records.size(), dtype=bool)
-        keep[np.sort(first)] = True
-        records = EpgRecords(**{name: np.asarray(getattr(records, name))[keep] for name in records.__dataclass_fields__})
-        counts["after_exact_duplicate_removal"] = records.size()
-    # endif
-
-    return records, counts
+    return EpggRecords(**payload), counts
 
 
-def keys_for_records(records: EpgRecords, mode: str, decimals: int) -> np.ndarray:
+def keys_epg(records: EpgRecords, mode: str, decimals: int) -> np.ndarray:
     if mode == "data":
-        return np.column_stack((records.runnum.astype(np.int64), records.eventnum.astype(np.int64)))
+        return np.column_stack(
+            (records.runnum.astype(np.int64), records.eventnum.astype(np.int64))
+        )
     # endif
-    return np.column_stack([
-        np.round(records.e_p, decimals),
-        np.round(records.e_theta, decimals),
-        np.round(records.e_phi, decimals),
-        np.round(records.p_p, decimals),
-        np.round(records.p_theta, decimals),
-        np.round(records.p_phi, decimals),
-    ])
+    return np.column_stack(
+        [
+            np.round(records.e_p, decimals),
+            np.round(records.e_theta, decimals),
+            np.round(records.e_phi, decimals),
+            np.round(records.p_p, decimals),
+            np.round(records.p_theta, decimals),
+            np.round(records.p_phi, decimals),
+        ]
+    )
+
+
+def keys_epgg(records: EpggRecords, mode: str, decimals: int) -> np.ndarray:
+    if mode == "data":
+        return np.column_stack(
+            (records.runnum.astype(np.int64), records.eventnum.astype(np.int64))
+        )
+    # endif
+    return np.column_stack(
+        [
+            np.round(records.e_p, decimals),
+            np.round(records.e_theta, decimals),
+            np.round(records.e_phi, decimals),
+            np.round(records.p_p, decimals),
+            np.round(records.p_theta, decimals),
+            np.round(records.p_phi, decimals),
+        ]
+    )
 
 
 def structured(matrix: np.ndarray) -> np.ndarray:
     matrix = np.ascontiguousarray(matrix)
-    dtype = np.dtype([(f"f{i}", matrix.dtype) for i in range(matrix.shape[1])])
+    dtype = np.dtype([(f"f{index}", matrix.dtype) for index in range(matrix.shape[1])])
     return matrix.view(dtype).reshape(-1)
 
 
-def read_identity_catalog(path: str, mode: str, args: argparse.Namespace) -> IdentityCatalog:
-    logical = ("runnum", "eventnum", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi")
-    resolved = resolve(path, logical, optional=("runnum", "eventnum"))
-    expressions = sorted({branch for branch in resolved.values() if branch is not None})
-    parts: List[np.ndarray] = []
-
-    for arrays in uproot.iterate(f"{path}:{TREE_NAME}", expressions=expressions, step_size=args.step_size, library="np"):
-        def arr(name: str, default=math.nan, dtype=np.float64) -> np.ndarray:
-            return finite_array(arrays, resolved.get(name), default, dtype)
-        if mode == "data":
-            matrix = np.column_stack((arr("runnum", -1, np.int64), arr("eventnum", -1, np.int64)))
-        else:
-            matrix = np.column_stack([
-                np.round(arr("e_p"), args.mc_signature_decimals),
-                np.round(arr("e_theta"), args.mc_signature_decimals),
-                np.round(arr("e_phi"), args.mc_signature_decimals),
-                np.round(arr("p_p"), args.mc_signature_decimals),
-                np.round(arr("p_theta"), args.mc_signature_decimals),
-                np.round(arr("p_phi"), args.mc_signature_decimals),
-            ])
-        # endif
-        parts.append(matrix)
-    # endfor
-
-    matrix = np.concatenate(parts, axis=0) if parts else np.empty((0, 2 if mode == "data" else 6))
-    keys = np.unique(structured(matrix))
-    return IdentityCatalog(keys=keys, entries=int(matrix.shape[0]), unique_keys=int(keys.size))
-
-
-def angular_distance_deg(theta1: float, phi1: float, theta2: float, phi2: float) -> float:
+def angular_distance_deg(
+    theta1: float,
+    phi1: float,
+    theta2: float,
+    phi2: float,
+) -> float:
     cosine = (
         math.sin(theta1) * math.sin(theta2) * math.cos(phi1 - phi2)
         + math.cos(theta1) * math.cos(theta2)
     )
-    return math.degrees(math.acos(max(-1.0, min(1.0, cosine))))
-
-
-def pair_mass(E1: float, theta1: float, phi1: float, E2: float, theta2: float, phi2: float) -> float:
-    opening = math.radians(angular_distance_deg(theta1, phi1, theta2, phi2))
-    return math.sqrt(max(2.0 * E1 * E2 * (1.0 - math.cos(opening)), 0.0))
-
-
-def residual_histogram_specs() -> Dict[str, np.ndarray]:
-    return {
-        "nearest_angle_deg": np.linspace(0.0, 60.0, 121),
-        "nearest_relative_E": np.linspace(0.0, 3.0, 121),
-        "nearest_pair_mass_GeV": np.linspace(0.0, 1.0, 121),
-        "nearest_score": np.linspace(0.0, 100.0, 121),
-    }
+    return math.degrees(math.acos(float(np.clip(cosine, -1.0, 1.0))))
 
 
 def update_reservoir(
     reservoir: List[Dict[str, object]],
     row: Dict[str, object],
-    seen_rows: int,
+    seen: int,
     capacity: int,
     rng: np.random.Generator,
 ) -> None:
@@ -522,472 +981,252 @@ def update_reservoir(
         reservoir.append(row)
         return
     # endif
-
-    replacement_index = int(rng.integers(0, seen_rows))
+    replacement_index = int(rng.integers(0, seen))
     if replacement_index < capacity:
         reservoir[replacement_index] = row
     # endif
 
 
-def histogram_update(
-    histogram_counts: Dict[str, np.ndarray],
-    histogram_edges: Mapping[str, np.ndarray],
-    values: Mapping[str, float],
-) -> None:
-    for key, value in values.items():
-        if not math.isfinite(value):
-            continue
-        # endif
-        edges = histogram_edges[key]
-        bin_index = int(np.searchsorted(edges, value, side="right") - 1)
-        if 0 <= bin_index < histogram_counts[key].size:
-            histogram_counts[key][bin_index] += 1
-        # endif
-    # endfor
-
-
-def audit_matches(
-    records: EpgRecords,
-    catalog: IdentityCatalog,
+def audit_truth_partners(
+    epg: EpgRecords,
+    epgg: EpggRecords,
     mode: str,
     args: argparse.Namespace,
-) -> Tuple[
-    List[Dict[str, object]],
-    Dict[str, object],
-    Dict[str, object],
-    Dict[str, object],
-]:
-    """
-    Audit every directed opportunity while retaining only compact counters,
-    histograms, and a small deterministic diagnostic sample.
+) -> Tuple[List[Dict[str, object]], Dict[str, object], Dict[str, object]]:
+    epg_keys = structured(keys_epg(epg, mode, args.mc_signature_decimals))
+    epgg_keys = structured(keys_epgg(epgg, mode, args.mc_signature_decimals))
 
-    Two nearest-partner definitions are evaluated independently:
-
-      * nearest overall partner by combined angular/energy score;
-      * nearest partner restricted to the pi0 invariant-mass window.
-
-    Missing-vector residuals for the nominal clean audit subset are accumulated
-    only when a pi0-mass partner exists and the identity appears in the native
-    epgammagamma catalog.
-    """
-    keys = keys_for_records(records, mode, args.mc_signature_decimals)
-    key_structured = structured(keys)
-    _, inverse, counts = np.unique(
-        key_structured,
+    epgg_unique, epgg_inverse, epgg_counts = np.unique(
+        epgg_keys,
         return_inverse=True,
         return_counts=True,
     )
-    order = np.argsort(inverse, kind="stable")
-    offsets = np.empty(counts.size + 1, dtype=np.int64)
-    offsets[0] = 0
-    np.cumsum(counts, out=offsets[1:])
+    epgg_order = np.argsort(epgg_inverse, kind="stable")
+    epgg_offsets = np.empty(epgg_counts.size + 1, dtype=np.int64)
+    epgg_offsets[0] = 0
+    np.cumsum(epgg_counts, out=epgg_offsets[1:])
+    epgg_group_by_key = {
+        epgg_unique[index].tobytes(): index
+        for index in range(epgg_unique.size)
+    }
 
-    catalog_set = set(item.tobytes() for item in catalog.keys)
-    opportunity_indices = np.flatnonzero(records.opportunity)
+    bins = {
+        "tag_angle_deg": np.linspace(0.0, 20.0, 101),
+        "tag_relative_E": np.linspace(0.0, 1.0, 101),
+        "probe_angle_deg": np.linspace(0.0, 30.0, 121),
+        "probe_relative_E": np.linspace(0.0, 3.0, 121),
+        "solution_closure": np.linspace(0.0, args.closure_max, 101),
+    }
+    counts = {
+        key: np.zeros(len(edges) - 1, dtype=np.int64)
+        for key, edges in bins.items()
+    }
+
+    summary = {
+        "mode": mode,
+        "directed_opportunities": int(np.count_nonzero(epg.opportunity)),
+        "opportunities_with_identity_match": 0,
+        "opportunities_with_valid_daughter_solution": 0,
+        "opportunities_with_tag_identified": 0,
+        "opportunities_passing_tag_match_cuts": 0,
+        "candidate_epgammagamma_records_tested": 0,
+        "candidate_daughter_solutions_tested": 0,
+    }
 
     sample_capacity = max(0, int(args.diagnostic_sample_size))
-    seed_offset = 0 if mode == "data" else 1_000_003
-    rng = np.random.default_rng(int(args.diagnostic_seed) + seed_offset)
-    sampled_rows: List[Dict[str, object]] = []
+    rng = np.random.default_rng(
+        int(args.diagnostic_seed) + (0 if mode == "data" else 1_000_003)
+    )
+    sample: List[Dict[str, object]] = []
+    accepted_seen = 0
 
-    histogram_edges = residual_histogram_specs()
-    all_histogram_counts = {
-        key: np.zeros(len(edges) - 1, dtype=np.int64)
-        for key, edges in histogram_edges.items()
-    }
-    clean_histogram_counts = {
-        key: np.zeros(len(edges) - 1, dtype=np.int64)
-        for key, edges in histogram_edges.items()
-    }
+    opportunity_indices = np.flatnonzero(epg.opportunity)
+    for opportunity_number, epg_index in enumerate(opportunity_indices, start=1):
+        key = epg_keys[epg_index].tobytes()
+        group = epgg_group_by_key.get(key)
+        if group is None:
+            continue
+        # endif
+        summary["opportunities_with_identity_match"] += 1
+        members = epgg_order[epgg_offsets[group]:epgg_offsets[group + 1]]
 
-    counters = {
-        "opportunities_in_catalog": 0,
-        "opportunities_with_non_tag_candidate": 0,
-        "opportunities_with_pi0_mass_partner": 0,
-        "opportunities_with_catalog_and_non_tag_candidate": 0,
-        "opportunities_with_catalog_and_pi0_mass_partner": 0,
-        "total_group_size": 0,
-        "total_non_tag_candidates": 0,
-        "total_pi0_mass_candidates": 0,
-    }
-
-    # Compact median reservoirs for all-partner and clean-subset residuals.
-    median_capacity = max(20_000, sample_capacity)
-    median_reservoirs: Dict[str, List[float]] = {
-        "all_angle": [],
-        "all_relE": [],
-        "clean_angle": [],
-        "clean_relE": [],
-    }
-    median_seen = {
-        "all": 0,
-        "clean": 0,
-    }
-
-    angle_cuts = (1.0, 3.0, 5.0, 10.0, 20.0)
-    relE_cuts = (0.15, 0.35, 0.50, 1.00)
-    threshold_counts_all = {
-        (angle_cut, relE_cut): 0
-        for angle_cut in angle_cuts
-        for relE_cut in relE_cuts
-    }
-    threshold_counts_clean = {
-        (angle_cut, relE_cut): 0
-        for angle_cut in angle_cuts
-        for relE_cut in relE_cuts
-    }
-
-    for opportunity_number, index in enumerate(opportunity_indices, start=1):
-        group = int(inverse[index])
-        members = order[offsets[group]:offsets[group + 1]]
-        in_catalog = key_structured[index].tobytes() in catalog_set
-
-        counters["opportunities_in_catalog"] += int(in_catalog)
-        counters["total_group_size"] += int(members.size)
-
-        nearest_any = None
-        nearest_pi0 = None
-        non_tag_candidates = 0
-        pi0_mass_candidates = 0
-
-        for candidate in members:
-            same_tag = (
-                abs(records.g_E[candidate] - records.g_E[index]) < 1.0e-10
-                and abs(records.g_theta[candidate] - records.g_theta[index]) < 1.0e-10
-                and abs(records.g_phi[candidate] - records.g_phi[index]) < 1.0e-10
-            )
-            if same_tag:
-                continue
-            # endif
-
-            non_tag_candidates += 1
-            angle = angular_distance_deg(
-                float(records.probe_theta[index]),
-                float(records.probe_phi[index]),
-                float(records.g_theta[candidate]),
-                float(records.g_phi[candidate]),
-            )
-            relative_energy = abs(
-                float(records.probe_E[index] - records.g_E[candidate])
-            ) / max(float(records.g_E[candidate]), 1.0e-12)
-            score = (
-                (
-                    angle
-                    / max(args.score_angle_scale_deg, 1.0e-12)
-                ) ** 2
-                + (
-                    relative_energy
-                    / max(args.score_relative_E_scale, 1.0e-12)
-                ) ** 2
-            )
-            invariant_mass = pair_mass(
-                float(records.g_E[index]),
-                float(records.g_theta[index]),
-                float(records.g_phi[index]),
-                float(records.g_E[candidate]),
-                float(records.g_theta[candidate]),
-                float(records.g_phi[candidate]),
-            )
-            candidate_tuple = (
-                score,
-                int(candidate),
-                angle,
-                relative_energy,
-                invariant_mass,
-            )
-
-            if nearest_any is None or score < nearest_any[0]:
-                nearest_any = candidate_tuple
-            # endif
-
-            if (
-                args.pi0_mass_min
-                <= invariant_mass
-                < args.pi0_mass_max
-            ):
-                pi0_mass_candidates += 1
-                if nearest_pi0 is None or score < nearest_pi0[0]:
-                    nearest_pi0 = candidate_tuple
+        best = None
+        any_valid = False
+        for epgg_index in members:
+            summary["candidate_epgammagamma_records_tested"] += 1
+            for solution_index in range(epgg.solution_valid.shape[1]):
+                if not epgg.solution_valid[epgg_index, solution_index]:
+                    continue
                 # endif
-            # endif
+                any_valid = True
+                summary["candidate_daughter_solutions_tested"] += 1
+
+                daughter_values = (
+                    (
+                        epgg.g1_E[epgg_index, solution_index],
+                        epgg.g1_theta[epgg_index, solution_index],
+                        epgg.g1_phi[epgg_index, solution_index],
+                        epgg.g2_E[epgg_index, solution_index],
+                        epgg.g2_theta[epgg_index, solution_index],
+                        epgg.g2_phi[epgg_index, solution_index],
+                        1,
+                    ),
+                    (
+                        epgg.g2_E[epgg_index, solution_index],
+                        epgg.g2_theta[epgg_index, solution_index],
+                        epgg.g2_phi[epgg_index, solution_index],
+                        epgg.g1_E[epgg_index, solution_index],
+                        epgg.g1_theta[epgg_index, solution_index],
+                        epgg.g1_phi[epgg_index, solution_index],
+                        2,
+                    ),
+                )
+
+                for (
+                    tag_E, tag_theta, tag_phi,
+                    partner_E, partner_theta, partner_phi,
+                    tag_choice,
+                ) in daughter_values:
+                    tag_angle = angular_distance_deg(
+                        float(epg.g_theta[epg_index]),
+                        float(epg.g_phi[epg_index]),
+                        float(tag_theta),
+                        float(tag_phi),
+                    )
+                    tag_relative_E = abs(
+                        float(epg.g_E[epg_index]) - float(tag_E)
+                    ) / max(float(tag_E), 1.0e-12)
+                    tag_score = (
+                        (tag_angle / max(args.tag_angle_max_deg, 1.0e-12))**2
+                        + (
+                            tag_relative_E
+                            / max(args.tag_relative_E_max, 1.0e-12)
+                        )**2
+                    )
+                    if best is None or tag_score < best[0]:
+                        probe_angle = angular_distance_deg(
+                            float(epg.probe_theta[epg_index]),
+                            float(epg.probe_phi[epg_index]),
+                            float(partner_theta),
+                            float(partner_phi),
+                        )
+                        probe_relative_E = abs(
+                            float(epg.probe_E[epg_index]) - float(partner_E)
+                        ) / max(float(partner_E), 1.0e-12)
+                        best = (
+                            tag_score,
+                            tag_angle,
+                            tag_relative_E,
+                            probe_angle,
+                            probe_relative_E,
+                            float(partner_E),
+                            float(partner_theta),
+                            float(partner_phi),
+                            int(epgg_index),
+                            int(solution_index),
+                            int(tag_choice),
+                            float(epgg.solution_closure[epgg_index, solution_index]),
+                        )
+                    # endif
+                # endfor
+            # endfor
         # endfor
 
-        counters["total_non_tag_candidates"] += non_tag_candidates
-        counters["total_pi0_mass_candidates"] += pi0_mass_candidates
-
-        has_non_tag = nearest_any is not None
-        has_pi0_partner = nearest_pi0 is not None
-        counters["opportunities_with_non_tag_candidate"] += int(has_non_tag)
-        counters["opportunities_with_pi0_mass_partner"] += int(has_pi0_partner)
-        counters["opportunities_with_catalog_and_non_tag_candidate"] += int(
-            in_catalog and has_non_tag
-        )
-        counters["opportunities_with_catalog_and_pi0_mass_partner"] += int(
-            in_catalog and has_pi0_partner
-        )
-
-        if nearest_any is not None:
-            values_all = {
-                "nearest_angle_deg": float(nearest_any[2]),
-                "nearest_relative_E": float(nearest_any[3]),
-                "nearest_pair_mass_GeV": float(nearest_any[4]),
-                "nearest_score": float(nearest_any[0]),
-            }
-            histogram_update(
-                all_histogram_counts,
-                histogram_edges,
-                values_all,
-            )
-
-            median_seen["all"] += 1
-            for reservoir_key, value in (
-                ("all_angle", float(nearest_any[2])),
-                ("all_relE", float(nearest_any[3])),
-            ):
-                reservoir = median_reservoirs[reservoir_key]
-                if len(reservoir) < median_capacity:
-                    reservoir.append(value)
-                else:
-                    replacement_index = int(
-                        rng.integers(0, median_seen["all"])
-                    )
-                    if replacement_index < median_capacity:
-                        reservoir[replacement_index] = value
-                    # endif
-                # endif
-            # endfor
-
-            for angle_cut in angle_cuts:
-                for relE_cut in relE_cuts:
-                    if (
-                        nearest_any[2] < angle_cut
-                        and nearest_any[3] < relE_cut
-                    ):
-                        threshold_counts_all[(angle_cut, relE_cut)] += 1
-                    # endif
-                # endfor
-            # endfor
+        if any_valid:
+            summary["opportunities_with_valid_daughter_solution"] += 1
         # endif
-
-        clean_partner = nearest_pi0 if (in_catalog and has_pi0_partner) else None
-        if clean_partner is not None:
-            values_clean = {
-                "nearest_angle_deg": float(clean_partner[2]),
-                "nearest_relative_E": float(clean_partner[3]),
-                "nearest_pair_mass_GeV": float(clean_partner[4]),
-                "nearest_score": float(clean_partner[0]),
-            }
-            histogram_update(
-                clean_histogram_counts,
-                histogram_edges,
-                values_clean,
-            )
-
-            median_seen["clean"] += 1
-            for reservoir_key, value in (
-                ("clean_angle", float(clean_partner[2])),
-                ("clean_relE", float(clean_partner[3])),
-            ):
-                reservoir = median_reservoirs[reservoir_key]
-                if len(reservoir) < median_capacity:
-                    reservoir.append(value)
-                else:
-                    replacement_index = int(
-                        rng.integers(0, median_seen["clean"])
-                    )
-                    if replacement_index < median_capacity:
-                        reservoir[replacement_index] = value
-                    # endif
-                # endif
-            # endfor
-
-            for angle_cut in angle_cuts:
-                for relE_cut in relE_cuts:
-                    if (
-                        clean_partner[2] < angle_cut
-                        and clean_partner[3] < relE_cut
-                    ):
-                        threshold_counts_clean[(angle_cut, relE_cut)] += 1
-                    # endif
-                # endfor
-            # endfor
+        if best is None:
+            continue
         # endif
+        summary["opportunities_with_tag_identified"] += 1
+
+        (
+            _,
+            tag_angle,
+            tag_relative_E,
+            probe_angle,
+            probe_relative_E,
+            partner_E,
+            partner_theta,
+            partner_phi,
+            matched_epgg_index,
+            solution_index,
+            tag_choice,
+            closure,
+        ) = best
+
+        passes_tag = (
+            tag_angle < args.tag_angle_max_deg
+            and tag_relative_E < args.tag_relative_E_max
+        )
+        if not passes_tag:
+            continue
+        # endif
+        summary["opportunities_passing_tag_match_cuts"] += 1
+        accepted_seen += 1
+
+        residual_values = {
+            "tag_angle_deg": tag_angle,
+            "tag_relative_E": tag_relative_E,
+            "probe_angle_deg": probe_angle,
+            "probe_relative_E": probe_relative_E,
+            "solution_closure": closure,
+        }
+        for name, value in residual_values.items():
+            edges = bins[name]
+            bin_index = int(np.searchsorted(edges, value, side="right") - 1)
+            if 0 <= bin_index < counts[name].size:
+                counts[name][bin_index] += 1
+            # endif
+        # endfor
 
         row = {
-            "opportunity_index": int(index),
-            "group_size": int(members.size),
-            "non_tag_candidates": int(non_tag_candidates),
-            "pi0_mass_candidates": int(pi0_mass_candidates),
-            "in_epgammagamma_catalog": bool(in_catalog),
-            "tag_E": float(records.g_E[index]),
-            "predicted_probe_E": float(records.probe_E[index]),
-            "has_non_tag_candidate": bool(has_non_tag),
-            "has_pi0_mass_partner": bool(has_pi0_partner),
-            "catalog_and_pi0_mass_partner": bool(
-                in_catalog and has_pi0_partner
-            ),
-            "nearest_any_candidate_index": (
-                int(nearest_any[1]) if nearest_any is not None else -1
-            ),
-            "nearest_any_angle_deg": (
-                float(nearest_any[2]) if nearest_any is not None else math.nan
-            ),
-            "nearest_any_relative_E": (
-                float(nearest_any[3]) if nearest_any is not None else math.nan
-            ),
-            "nearest_any_pair_mass_GeV": (
-                float(nearest_any[4]) if nearest_any is not None else math.nan
-            ),
-            "nearest_pi0_candidate_index": (
-                int(nearest_pi0[1]) if nearest_pi0 is not None else -1
-            ),
-            "nearest_pi0_angle_deg": (
-                float(nearest_pi0[2]) if nearest_pi0 is not None else math.nan
-            ),
-            "nearest_pi0_relative_E": (
-                float(nearest_pi0[3]) if nearest_pi0 is not None else math.nan
-            ),
-            "nearest_pi0_pair_mass_GeV": (
-                float(nearest_pi0[4]) if nearest_pi0 is not None else math.nan
-            ),
+            "epgamma_opportunity_index": int(epg_index),
+            "matched_epgammagamma_index": matched_epgg_index,
+            "solution_index": solution_index,
+            "tag_choice": tag_choice,
+            "tag_E": float(epg.g_E[epg_index]),
+            "truth_partner_E": partner_E,
+            "predicted_probe_E": float(epg.probe_E[epg_index]),
+            "tag_angle_deg": tag_angle,
+            "tag_relative_E": tag_relative_E,
+            "probe_angle_deg": probe_angle,
+            "probe_relative_E": probe_relative_E,
+            "solution_closure": closure,
         }
         update_reservoir(
-            sampled_rows,
+            sample,
             row,
-            seen_rows=opportunity_number,
-            capacity=sample_capacity,
-            rng=rng,
+            accepted_seen,
+            sample_capacity,
+            rng,
         )
     # endfor
 
-    directed_opportunities = int(opportunity_indices.size)
-    clean_count = counters[
-        "opportunities_with_catalog_and_pi0_mass_partner"
-    ]
-
-    def fraction(count: int, denominator: int) -> float:
-        return count / denominator if denominator > 0 else math.nan
-
-    summary: Dict[str, object] = {
-        "mode": mode,
-        "photon_candidate_records": records.size(),
-        "directed_opportunities": directed_opportunities,
-        **counters,
-        "fraction_in_epgammagamma_catalog": fraction(
-            counters["opportunities_in_catalog"],
-            directed_opportunities,
-        ),
-        "fraction_with_non_tag_candidate": fraction(
-            counters["opportunities_with_non_tag_candidate"],
-            directed_opportunities,
-        ),
-        "fraction_with_pi0_mass_partner": fraction(
-            counters["opportunities_with_pi0_mass_partner"],
-            directed_opportunities,
-        ),
-        "fraction_with_catalog_and_non_tag_candidate": fraction(
-            counters["opportunities_with_catalog_and_non_tag_candidate"],
-            directed_opportunities,
-        ),
-        "fraction_with_catalog_and_pi0_mass_partner": fraction(
-            clean_count,
-            directed_opportunities,
-        ),
-        "fraction_pi0_mass_partner_given_catalog": fraction(
-            clean_count,
-            counters["opportunities_in_catalog"],
-        ),
-        "fraction_catalog_given_pi0_mass_partner": fraction(
-            clean_count,
-            counters["opportunities_with_pi0_mass_partner"],
-        ),
-        "group_size_mean": fraction(
-            counters["total_group_size"],
-            directed_opportunities,
-        ),
-        "non_tag_candidates_per_opportunity_mean": fraction(
-            counters["total_non_tag_candidates"],
-            directed_opportunities,
-        ),
-        "pi0_mass_candidates_per_opportunity_mean": fraction(
-            counters["total_pi0_mass_candidates"],
-            directed_opportunities,
-        ),
-        "all_partner_nearest_angle_deg_median": (
-            float(np.median(median_reservoirs["all_angle"]))
-            if median_reservoirs["all_angle"]
-            else math.nan
-        ),
-        "all_partner_nearest_relative_E_median": (
-            float(np.median(median_reservoirs["all_relE"]))
-            if median_reservoirs["all_relE"]
-            else math.nan
-        ),
-        "pi0_catalog_nearest_angle_deg_median": (
-            float(np.median(median_reservoirs["clean_angle"]))
-            if median_reservoirs["clean_angle"]
-            else math.nan
-        ),
-        "pi0_catalog_nearest_relative_E_median": (
-            float(np.median(median_reservoirs["clean_relE"]))
-            if median_reservoirs["clean_relE"]
-            else math.nan
-        ),
-        "diagnostic_rows_written": len(sampled_rows),
-        "pi0_mass_window_GeV": [
-            float(args.pi0_mass_min),
-            float(args.pi0_mass_max),
-        ],
-    }
-
-    for angle_cut in angle_cuts:
-        for relE_cut in relE_cuts:
-            all_key = (
-                f"all_fraction_angle_lt_{angle_cut:g}"
-                f"_and_relE_lt_{relE_cut:g}"
-            )
-            clean_key = (
-                f"pi0_catalog_fraction_angle_lt_{angle_cut:g}"
-                f"_and_relE_lt_{relE_cut:g}"
-            )
-            summary[all_key] = fraction(
-                threshold_counts_all[(angle_cut, relE_cut)],
-                directed_opportunities,
-            )
-            summary[clean_key] = fraction(
-                threshold_counts_clean[(angle_cut, relE_cut)],
-                clean_count,
-            )
-        # endfor
+    directed = summary["directed_opportunities"]
+    for key in (
+        "opportunities_with_identity_match",
+        "opportunities_with_valid_daughter_solution",
+        "opportunities_with_tag_identified",
+        "opportunities_passing_tag_match_cuts",
+    ):
+        summary[f"fraction_{key}"] = (
+            summary[key] / directed if directed > 0 else math.nan
+        )
     # endfor
 
-    def histogram_payload(
-        counts_by_key: Mapping[str, np.ndarray],
-        entries: int,
-    ) -> Dict[str, object]:
-        payload: Dict[str, object] = {
-            key: {
-                "edges": histogram_edges[key].tolist(),
-                "counts": counts_by_key[key].tolist(),
-            }
-            for key in histogram_edges
+    histogram_payload = {
+        name: {
+            "edges": bins[name].tolist(),
+            "counts": counts[name].tolist(),
         }
-        payload["nearest_match_entries"] = int(entries)
-        return payload
-
-    return (
-        sampled_rows,
-        summary,
-        histogram_payload(
-            all_histogram_counts,
-            counters["opportunities_with_non_tag_candidate"],
-        ),
-        histogram_payload(
-            clean_histogram_counts,
-            clean_count,
-        ),
+        for name in bins
+    }
+    histogram_payload["accepted_entries"] = int(
+        summary["opportunities_passing_tag_match_cuts"]
     )
-
+    summary["diagnostic_rows_written"] = len(sample)
+    return sample, summary, histogram_payload
 
 
 def write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
@@ -1001,106 +1240,107 @@ def write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
     # endwith
 
 
-def plot_residuals(
+def plot_histograms(
     path: Path,
     title: str,
-    histogram_payload: Mapping[str, object],
+    payload: Mapping[str, object],
 ) -> None:
     panels = (
-        ("nearest_angle_deg", "Nearest angular residual (deg)"),
-        ("nearest_relative_E", "Nearest relative energy residual"),
-        ("nearest_pair_mass_GeV", r"Tag-partner mass (GeV)"),
-        ("nearest_score", "Nearest matching score"),
+        ("tag_angle_deg", "Tag angular residual (deg)"),
+        ("tag_relative_E", "Tag relative energy residual"),
+        ("probe_angle_deg", "Predicted-X to truth-partner angle (deg)"),
+        ("probe_relative_E", "Predicted-X to truth-partner relative energy"),
+        ("solution_closure", "Daughter reconstruction closure"),
     )
-
-    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
-    for axis, (key, label) in zip(axes.flat, panels):
-        payload = histogram_payload[key]
-        edges = np.asarray(payload["edges"], dtype=float)
-        counts = np.asarray(payload["counts"], dtype=float)
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    for axis, (name, label) in zip(axes.flat, panels):
+        edges = np.asarray(payload[name]["edges"], dtype=float)
+        values = np.asarray(payload[name]["counts"], dtype=float)
         centers = 0.5 * (edges[:-1] + edges[1:])
-        axis.step(centers, counts, where="mid", linewidth=1.3)
+        axis.step(centers, values, where="mid", linewidth=1.3)
         axis.set_xlabel(label)
         axis.set_ylabel("Entries")
         axis.grid(alpha=0.25)
     # endfor
-
+    axes.flat[-1].axis("off")
     fig.suptitle(
-        f"{title}\n"
-        f"Nearest-match entries: "
-        f"{int(histogram_payload.get('nearest_match_entries', 0)):,}"
+        f"{title}\nAccepted tag matches: "
+        f"{int(payload.get('accepted_entries', 0)):,}"
     )
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(path, dpi=180)
     plt.close(fig)
 
 
-
-def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, Dict[str, object]]:
+def process_period(
+    period: PeriodConfig,
+    args_dict: Mapping[str, object],
+) -> Tuple[str, Dict[str, object]]:
     args = argparse.Namespace(**args_dict)
     period_dir = Path(args.output_dir) / period.key
     period_dir.mkdir(parents=True, exist_ok=True)
 
-    data, data_counts = read_epg(period.epg_data, period.beam_energy_GeV, "data", args)
-    mc, mc_counts = read_epg(period.pi0_epg_mc, period.beam_energy_GeV, "mc", args)
-    data_catalog = read_identity_catalog(period.epgg_data, "data", args)
-    mc_catalog = read_identity_catalog(period.pi0_epgg_mc, "mc", args)
-
-    (
-        data_rows,
-        data_summary,
-        data_histograms_all,
-        data_histograms_clean,
-    ) = audit_matches(data, data_catalog, "data", args)
-    (
-        mc_rows,
-        mc_summary,
-        mc_histograms_all,
-        mc_histograms_clean,
-    ) = audit_matches(mc, mc_catalog, "mc", args)
-
-    write_csv(period_dir / "data_nearest_match_sample.csv", data_rows)
-    write_csv(period_dir / "aaogen_nearest_match_sample.csv", mc_rows)
-
-    plot_residuals(
-        period_dir / "data_matching_residuals_all_partners.png",
-        f"{period.label}: data, nearest same-event photon",
-        data_histograms_all,
+    data_epg, data_epg_counts = read_epg(
+        period.epg_data,
+        period.beam_energy_GeV,
+        "data",
+        args,
     )
-    plot_residuals(
-        period_dir / "aaogen_matching_residuals_all_partners.png",
-        f"{period.label}: AAOGEN, nearest same-signature photon",
-        mc_histograms_all,
+    mc_epg, mc_epg_counts = read_epg(
+        period.pi0_epg_mc,
+        period.beam_energy_GeV,
+        "AAOGEN",
+        args,
     )
-    plot_residuals(
-        period_dir / "data_matching_residuals_pi0_catalog.png",
-        (
-            f"{period.label}: data, pi0-mass partner "
-            f"and epgammagamma catalog"
-        ),
-        data_histograms_clean,
+    data_epgg, data_epgg_counts = read_epgg(
+        period.epgg_data,
+        period.beam_energy_GeV,
+        "data",
+        args,
     )
-    plot_residuals(
-        period_dir / "aaogen_matching_residuals_pi0_catalog.png",
-        (
-            f"{period.label}: AAOGEN, pi0-mass partner "
-            f"and epgammagamma catalog"
-        ),
-        mc_histograms_clean,
+    mc_epgg, mc_epgg_counts = read_epgg(
+        period.pi0_epgg_mc,
+        period.beam_energy_GeV,
+        "AAOGEN",
+        args,
+    )
+
+    data_sample, data_summary, data_histograms = audit_truth_partners(
+        data_epg,
+        data_epgg,
+        "data",
+        args,
+    )
+    mc_sample, mc_summary, mc_histograms = audit_truth_partners(
+        mc_epg,
+        mc_epgg,
+        "mc",
+        args,
+    )
+
+    write_csv(period_dir / "data_truth_partner_sample.csv", data_sample)
+    write_csv(period_dir / "aaogen_truth_partner_sample.csv", mc_sample)
+    plot_histograms(
+        period_dir / "data_truth_partner_residuals.png",
+        f"{period.label}: data epgammagamma truth partner",
+        data_histograms,
+    )
+    plot_histograms(
+        period_dir / "aaogen_truth_partner_residuals.png",
+        f"{period.label}: AAOGEN epgammagamma truth partner",
+        mc_histograms,
     )
 
     payload = {
         "period": asdict(period),
-        "data_read_counts": data_counts,
-        "mc_read_counts": mc_counts,
-        "data_catalog": asdict(data_catalog) | {"keys": None},
-        "mc_catalog": asdict(mc_catalog) | {"keys": None},
-        "data_matching": data_summary,
-        "mc_matching": mc_summary,
-        "data_residual_histograms_all_partners": data_histograms_all,
-        "data_residual_histograms_pi0_catalog": data_histograms_clean,
-        "mc_residual_histograms_all_partners": mc_histograms_all,
-        "mc_residual_histograms_pi0_catalog": mc_histograms_clean,
+        "data_epgamma_read_counts": data_epg_counts,
+        "mc_epgamma_read_counts": mc_epg_counts,
+        "data_epgammagamma_reconstruction_counts": data_epgg_counts,
+        "mc_epgammagamma_reconstruction_counts": mc_epgg_counts,
+        "data_truth_partner_summary": data_summary,
+        "mc_truth_partner_summary": mc_summary,
+        "data_histograms": data_histograms,
+        "mc_histograms": mc_histograms,
     }
     with open(period_dir / "metadata.json", "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
@@ -1108,31 +1348,21 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
 
     log(
         f"{period.label} data: opportunities="
-        f"{data_summary['directed_opportunities']:,}, "
-        f"another photon="
-        f"{data_summary['fraction_with_non_tag_candidate']:.3%}, "
-        f"pi0-mass partner="
-        f"{data_summary['fraction_with_pi0_mass_partner']:.3%}, "
-        f"pi0 partner + catalog="
-        f"{data_summary['fraction_with_catalog_and_pi0_mass_partner']:.3%}, "
-        f"clean median dtheta="
-        f"{data_summary['pi0_catalog_nearest_angle_deg_median']:.3f} deg, "
-        f"clean median dE/E="
-        f"{data_summary['pi0_catalog_nearest_relative_E_median']:.3f}"
+        f"{data_summary['directed_opportunities']:,}, identity match="
+        f"{data_summary['fraction_opportunities_with_identity_match']:.3%}, "
+        f"valid daughter solution="
+        f"{data_summary['fraction_opportunities_with_valid_daughter_solution']:.3%}, "
+        f"tag matched="
+        f"{data_summary['fraction_opportunities_passing_tag_match_cuts']:.3%}"
     )
     log(
         f"{period.label} AAOGEN: opportunities="
-        f"{mc_summary['directed_opportunities']:,}, "
-        f"another photon="
-        f"{mc_summary['fraction_with_non_tag_candidate']:.3%}, "
-        f"pi0-mass partner="
-        f"{mc_summary['fraction_with_pi0_mass_partner']:.3%}, "
-        f"pi0 partner + catalog="
-        f"{mc_summary['fraction_with_catalog_and_pi0_mass_partner']:.3%}, "
-        f"clean median dtheta="
-        f"{mc_summary['pi0_catalog_nearest_angle_deg_median']:.3f} deg, "
-        f"clean median dE/E="
-        f"{mc_summary['pi0_catalog_nearest_relative_E_median']:.3f}"
+        f"{mc_summary['directed_opportunities']:,}, identity match="
+        f"{mc_summary['fraction_opportunities_with_identity_match']:.3%}, "
+        f"valid daughter solution="
+        f"{mc_summary['fraction_opportunities_with_valid_daughter_solution']:.3%}, "
+        f"tag matched="
+        f"{mc_summary['fraction_opportunities_passing_tag_match_cuts']:.3%}"
     )
     return period.key, payload
 
@@ -1145,8 +1375,8 @@ def main() -> int:
 
     manifest = {
         "script": Path(__file__).name,
-        "arguments": vars(args),
         "created_unix_time": time.time(),
+        "arguments": vars(args),
         "periods": [],
     }
     for period in periods:
@@ -1158,19 +1388,16 @@ def main() -> int:
         # endfor
         manifest["periods"].append(item)
     # endfor
+
     with open(output_dir / "input_manifest.json", "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2)
     # endwith
 
     workers = max(1, min(int(args.workers), MAX_WORKERS, len(periods)))
     log(
-        f"NO-CUTS PI0-PARTNER MATCHING AUDIT: {len(periods)} period(s), {workers} worker(s). "
-        f"Only E_tag >= {args.tag_E_min:g} GeV and predicted E_X >= "
-        f"{args.probe_E_min:g} GeV are required. "
-        f"Pi0 partner window: {args.pi0_mass_min:g} <= M_gg < "
-        f"{args.pi0_mass_max:g} GeV. At most "
-        f"{args.diagnostic_sample_size:,} diagnostic rows per sample and "
-        f"period will be written."
+        f"EPGAMMAGAMMA TRUTH-PARTNER AUDIT: {len(periods)} period(s), "
+        f"{workers} worker(s). Only E_tag >= {args.tag_E_min:g} GeV and "
+        f"predicted E_X >= {args.probe_E_min:g} GeV are required."
     )
 
     metadata: Dict[str, object] = {}
@@ -1180,8 +1407,13 @@ def main() -> int:
             metadata[key] = payload
         # endfor
     else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = [executor.submit(process_period, period, vars(args)) for period in periods]
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=workers
+        ) as executor:
+            futures = [
+                executor.submit(process_period, period, vars(args))
+                for period in periods
+            ]
             for future in concurrent.futures.as_completed(futures):
                 key, payload = future.result()
                 metadata[key] = payload
@@ -1190,27 +1422,38 @@ def main() -> int:
         # endwith
     # endif
 
-    summary_rows = []
+    rows = []
     for period in periods:
         payload = metadata[period.key]
-        for sample in ("data", "mc"):
-            summary = payload[f"{sample}_matching"]
-            row = {
-                "period": period.key,
-                "period_label": period.label,
-                "sample": "Data" if sample == "data" else "AAOGEN MC",
-                **summary,
-            }
-            summary_rows.append(row)
+        for sample, key in (
+            ("Data", "data_truth_partner_summary"),
+            ("AAOGEN MC", "mc_truth_partner_summary"),
+        ):
+            rows.append(
+                {
+                    "period": period.key,
+                    "period_label": period.label,
+                    "sample": sample,
+                    **payload[key],
+                }
+            )
         # endfor
     # endfor
 
-    write_csv(output_dir / "matching_audit_summary.csv", summary_rows)
-    with open(output_dir / "matching_audit_summary.json", "w", encoding="utf-8") as handle:
-        json.dump({"rows": summary_rows, "period_metadata": metadata}, handle, indent=2)
+    write_csv(output_dir / "truth_partner_audit_summary.csv", rows)
+    with open(
+        output_dir / "truth_partner_audit_summary.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            {"rows": rows, "period_metadata": metadata},
+            handle,
+            indent=2,
+        )
     # endwith
 
-    log(f"Wrote no-cuts matching audit to {output_dir}")
+    log(f"Wrote truth-partner audit to {output_dir}")
     return 0
 
 
