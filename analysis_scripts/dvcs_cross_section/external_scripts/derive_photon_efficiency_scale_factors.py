@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v15_full_fit_diagnostics.py
+derive_photon_efficiency_scale_factors_v16_cutflow_csv_fix.py
 
 Production extraction of the data/MC efficiency scale factor for reconstructing
 the high-energy photon in exclusive pi0 tag-and-probe events.
@@ -3026,6 +3026,49 @@ def plot_cutflow(path: Path, title: str, cutflow: Mapping[str, object]) -> None:
     plt.close(fig)
 
 
+
+def write_cutflow_csv(path: Path, cutflow: Mapping[str, object]) -> None:
+    """Write the finalized sequential cutflow table to CSV."""
+    rows = list(cutflow.get("stages", []))
+    if not rows:
+        return
+    # endif
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "order",
+        "stage",
+        "label",
+        "condition",
+        "branch",
+        "scope",
+        "applied",
+        "count",
+        "rejected_at_stage",
+        "incremental_survival",
+        "incremental_rejection",
+        "total_survival",
+    ]
+
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=fieldnames,
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    field: row.get(field)
+                    for field in fieldnames
+                }
+            )
+        # endfor
+    # endwith
+
+
+
 def write_cutflow_text(path: Path, cutflow: Mapping[str, object]) -> None:
     lines = [
         f"Role: {cutflow.get('role')}",
@@ -3539,7 +3582,30 @@ def preflight(periods: Sequence[PeriodConfig], args: argparse.Namespace) -> Dict
     return manifest
 
 
+def validate_runtime_helpers() -> None:
+    """Fail immediately if a required output helper was accidentally omitted."""
+    required_helpers = {
+        "write_cutflow_csv": write_cutflow_csv,
+        "write_cutflow_text": write_cutflow_text,
+        "plot_cutflow": plot_cutflow,
+        "emit_cutflow_diagnostics": emit_cutflow_diagnostics,
+        "write_rows_csv": write_rows_csv,
+    }
+    missing = [
+        name
+        for name, function in required_helpers.items()
+        if not callable(function)
+    ]
+    if missing:
+        raise RuntimeError(
+            "Required runtime helper(s) are unavailable: "
+            + ", ".join(missing)
+        )
+    # endif
+
+
 def main() -> int:
+    validate_runtime_helpers()
     args = parse_args()
     periods = selected_periods(args)
     output_dir = Path(args.output_dir)
