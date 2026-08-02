@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v19_fail_only_template_fit.py
+derive_photon_efficiency_scale_factors_v20_detailed_fail_fit_diagnostics.py
 
 High-energy photon efficiency extraction using an observed PASS count and a
 FAIL-only BH/DVCS + exclusive-pi0 template fit.
@@ -2390,27 +2390,203 @@ def fit_one_fraction(data,pi0,dvcs):
     mu=data.sum()*(f*pi0+(1-f)*dvcs); dev=poisson_deviance(data,mu); ndf=max(data.size-1,1)
     return f,err,float(res.fun),dev,ndf,bool(res.success),str(res.message)
 
-def fit_fail_shapes(data,dvcs,pi0,data_fail,dvcs_mask,pi0_fail,args):
-    if np.count_nonzero(data_fail)<args.fit_min_data_fail: raise RuntimeError('insufficient FAIL data')
-    payload={}; per={}
+def fit_fail_shapes(data, dvcs, pi0, data_fail, dvcs_mask, pi0_fail, args):
+    """
+    Fit the FAIL sample with normalized AAOGEN-pi0 and DVCSGEN shapes.
+
+    The total FAIL event count is used only once through the identity
+    N_pi0_FAIL + N_BH/DVCS_FAIL = N_FAIL. Each observable contributes a
+    multinomial shape likelihood. Independent one-variable fits are retained
+    as model-consistency diagnostics.
+    """
+    n_fail = int(np.count_nonzero(data_fail))
+    if n_fail < args.fit_min_data_fail:
+        raise RuntimeError(
+            f"insufficient FAIL data: {n_fail} < {args.fit_min_data_fail}"
+        )
+    # endif
+
+    payload: Dict[str, Dict[str, object]] = {}
+    per_variable: Dict[str, Dict[str, float]] = {}
+
     for key in args.fit_drivers:
-        var=next(v for v in FIT_VARIABLES if v.key==key)
-        d=histogram_with_flow(data,data_fail,var); a=histogram_with_flow(pi0,pi0_fail,var); b=histogram_with_flow(dvcs,dvcs_mask,var)
-        if a.sum()<args.fit_min_template_counts or b.sum()<args.fit_min_template_counts: raise RuntimeError(f'insufficient template support for {key}')
-        ap=shape(a,args.template_pseudocount); bp=shape(b,args.template_pseudocount)
-        f,e,nll,dev,ndf,ok,msg=fit_one_fraction(d,ap,bp); per[key]={'fraction':f,'stat_error':e,'deviance':dev,'ndf':ndf,'reduced_deviance':dev/ndf}
-        payload[key]={'variable':var,'data':d,'pi0_shape':ap,'dvcs_shape':bp}
-    def obj(z): return sum(multinomial_nll(float(z),x['data'],x['pi0_shape'],x['dvcs_shape']) for x in payload.values())
-    res=minimize_scalar(obj,bounds=(1e-6,1-1e-6),method='bounded',options={'xatol':1e-10}); f=float(res.x)
-    h=min(1e-4,.45*f,.45*(1-f)); h=max(h,1e-7); curv=(obj(f+h)-2*obj(f)+obj(f-h))/(h*h); err=math.sqrt(1/curv) if curv>0 else math.nan
-    dev=0.; bins=0
-    for x in payload.values():
-        mu=x['data'].sum()*(f*x['pi0_shape']+(1-f)*x['dvcs_shape']); x['model']=mu; x['pi0_component']=x['data'].sum()*f*x['pi0_shape']; x['dvcs_component']=x['data'].sum()*(1-f)*x['dvcs_shape']; dev+=poisson_deviance(x['data'],mu); bins+=x['data'].size
-    ndf=max(bins-1,1); vals=[v['fraction'] for v in per.values()]; spread=max(abs(v-f) for v in vals) if vals else math.nan
-    warns=[]
-    if args.fit_max_reduced_deviance>0 and dev/ndf>args.fit_max_reduced_deviance: warns.append(f'D/ndf={dev/ndf:.3f} exceeds {args.fit_max_reduced_deviance:g}')
-    if math.isfinite(spread) and spread>args.fit_max_variable_spread: warns.append(f'per-variable fraction spread={spread:.3f} exceeds {args.fit_max_variable_spread:g}')
-    return FractionFit(bool(res.success),str(res.message),f,err,float(res.fun),dev,ndf,dev/ndf,per,payload,warns)
+        variable = next(variable for variable in FIT_VARIABLES if variable.key == key)
+        data_counts = histogram_with_flow(data, data_fail, variable)
+        pi0_counts = histogram_with_flow(pi0, pi0_fail, variable)
+        dvcs_counts = histogram_with_flow(dvcs, dvcs_mask, variable)
+
+        if pi0_counts.sum() < args.fit_min_template_counts:
+            raise RuntimeError(
+                f"insufficient AAOGEN FAIL template support for {key}: "
+                f"{int(pi0_counts.sum())}"
+            )
+        # endif
+        if dvcs_counts.sum() < args.fit_min_template_counts:
+            raise RuntimeError(
+                f"insufficient DVCSGEN template support for {key}: "
+                f"{int(dvcs_counts.sum())}"
+            )
+        # endif
+
+        pi0_shape = shape(pi0_counts, args.template_pseudocount)
+        dvcs_shape = shape(dvcs_counts, args.template_pseudocount)
+
+        (
+            individual_fraction,
+            individual_error,
+            individual_nll,
+            individual_deviance,
+            individual_ndf,
+            individual_success,
+            individual_message,
+        ) = fit_one_fraction(data_counts, pi0_shape, dvcs_shape)
+
+        per_variable[key] = {
+            "fraction": individual_fraction,
+            "stat_error": individual_error,
+            "nll": individual_nll,
+            "deviance_at_individual_optimum": individual_deviance,
+            "ndf": individual_ndf,
+            "reduced_deviance_at_individual_optimum": (
+                individual_deviance / individual_ndf
+                if individual_ndf > 0
+                else math.nan
+            ),
+            "success": individual_success,
+            "message": individual_message,
+            "data_entries_including_flow": float(data_counts.sum()),
+            "pi0_template_entries_including_flow": float(pi0_counts.sum()),
+            "dvcs_template_entries_including_flow": float(dvcs_counts.sum()),
+        }
+
+        payload[key] = {
+            "variable": variable,
+            "data": data_counts,
+            "pi0_raw": pi0_counts,
+            "dvcs_raw": dvcs_counts,
+            "pi0_shape": pi0_shape,
+            "dvcs_shape": dvcs_shape,
+        }
+    # endfor
+
+    def objective(value):
+        fraction = float(value)
+        return sum(
+            multinomial_nll(
+                fraction,
+                item["data"],
+                item["pi0_shape"],
+                item["dvcs_shape"],
+            )
+            for item in payload.values()
+        )
+    # enddef
+
+    result = minimize_scalar(
+        objective,
+        bounds=(1.0e-6, 1.0 - 1.0e-6),
+        method="bounded",
+        options={"xatol": 1.0e-10},
+    )
+    fraction = float(result.x)
+
+    step = min(1.0e-4, 0.45 * fraction, 0.45 * (1.0 - fraction))
+    step = max(step, 1.0e-7)
+    curvature = (
+        objective(fraction + step)
+        - 2.0 * objective(fraction)
+        + objective(fraction - step)
+    ) / (step * step)
+    stat_error = (
+        math.sqrt(1.0 / curvature)
+        if curvature > 0.0 and math.isfinite(curvature)
+        else math.nan
+    )
+
+    total_deviance = 0.0
+    total_bins = 0
+    for key, item in payload.items():
+        data_counts = item["data"]
+        pi0_component = (
+            data_counts.sum() * fraction * item["pi0_shape"]
+        )
+        dvcs_component = (
+            data_counts.sum() * (1.0 - fraction) * item["dvcs_shape"]
+        )
+        model = pi0_component + dvcs_component
+        residual = data_counts - model
+        pull = residual / np.sqrt(np.maximum(model, 1.0))
+
+        combined_deviance = poisson_deviance(data_counts, model)
+        combined_ndf = max(data_counts.size - 1, 1)
+
+        item["model"] = model
+        item["pi0_component"] = pi0_component
+        item["dvcs_component"] = dvcs_component
+        item["residual"] = residual
+        item["pull"] = pull
+        item["combined_deviance"] = combined_deviance
+        item["combined_ndf"] = combined_ndf
+        item["combined_reduced_deviance"] = combined_deviance / combined_ndf
+
+        per_variable[key]["deviance_at_combined_fraction"] = combined_deviance
+        per_variable[key]["reduced_deviance_at_combined_fraction"] = (
+            combined_deviance / combined_ndf
+        )
+        per_variable[key]["fraction_minus_combined"] = (
+            per_variable[key]["fraction"] - fraction
+        )
+
+        total_deviance += combined_deviance
+        total_bins += data_counts.size
+    # endfor
+
+    ndf = max(total_bins - 1, 1)
+    reduced_deviance = total_deviance / ndf
+
+    individual_fractions = [
+        item["fraction"] for item in per_variable.values()
+    ]
+    spread = (
+        max(abs(value - fraction) for value in individual_fractions)
+        if individual_fractions
+        else math.nan
+    )
+
+    warnings: List[str] = []
+    if (
+        args.fit_max_reduced_deviance > 0.0
+        and reduced_deviance > args.fit_max_reduced_deviance
+    ):
+        warnings.append(
+            f"D/ndf={reduced_deviance:.3f} exceeds "
+            f"{args.fit_max_reduced_deviance:g}"
+        )
+    # endif
+    if (
+        math.isfinite(spread)
+        and spread > args.fit_max_variable_spread
+    ):
+        warnings.append(
+            f"per-variable fraction spread={spread:.3f} exceeds "
+            f"{args.fit_max_variable_spread:g}"
+        )
+    # endif
+
+    return FractionFit(
+        bool(result.success),
+        str(result.message),
+        fraction,
+        stat_error,
+        float(result.fun),
+        total_deviance,
+        ndf,
+        reduced_deviance,
+        per_variable,
+        payload,
+        warnings,
+    )
+
 
 def poisson_deviance(obs,mu):
     obs=np.asarray(obs,float); mu=np.maximum(np.asarray(mu,float),1e-12); term=np.where(obs>0,mu-obs+obs*np.log(obs/mu),mu); return float(2*np.sum(term))
@@ -2438,24 +2614,432 @@ def plot_shape_diagnostics(out,period,det,sec,data,dvcs,pi0,dp,df,pp,pf,dm):
             a.set_title(title); a.set_xlabel(var.label); a.set_ylabel('Fraction / bin'); a.grid(alpha=.25); a.legend(fontsize=8)
         fig.suptitle(f'{period}, {category_title(det,sec)}: {var.label}'); fig.tight_layout(rect=(0,0,1,.95)); fig.savefig(out/f'{var.key}_pass_fail_shapes.png',dpi=180); plt.close(fig)
 
-def plot_fail_fit(path,period,det,sec,fit):
-    keys=list(fit.payload); fig,axes=plt.subplots(2,len(keys),figsize=(6*len(keys),8),squeeze=False)
-    for j,k in enumerate(keys):
-        x=fit.payload[k]; var=x['variable']; centers=np.arange(x['data'].size); axes[0,j].errorbar(centers,x['data'],yerr=np.sqrt(np.maximum(x['data'],1)),fmt='.'); axes[0,j].step(centers,x['model'],where='mid',label='Total'); axes[0,j].step(centers,x['pi0_component'],where='mid',label='pi0 FAIL'); axes[0,j].step(centers,x['dvcs_component'],where='mid',label='BH/DVCS'); axes[0,j].set_title(var.label+' (flow bins included)'); axes[0,j].legend(); axes[0,j].grid(alpha=.25)
-        pull=(x['data']-x['model'])/np.sqrt(np.maximum(x['model'],1)); axes[1,j].axhline(0); axes[1,j].axhline(3,ls='--'); axes[1,j].axhline(-3,ls='--'); axes[1,j].plot(centers,pull,'.'); axes[1,j].set_ylabel('Pull'); axes[1,j].set_xlabel('bin: underflow, regular bins, overflow'); axes[1,j].grid(alpha=.25)
-    fig.suptitle(f'{period}, {category_title(det,sec)} FAIL-only fit: f_pi0={fit.fraction:.4f}+/-{fit.stat_error:.4f}, D/ndf={fit.reduced_deviance:.3f}'); fig.tight_layout(rect=(0,0,1,.94)); fig.savefig(path,dpi=180); plt.close(fig)
+def flow_bin_labels(variable: FitVariable) -> List[str]:
+    labels = ["UF"]
+    labels.extend(str(index + 1) for index in range(variable.bins))
+    labels.append("OF")
+    return labels
 
-def write_components(pathstem,fit):
-    pathstem.mkdir(parents=True,exist_ok=True)
-    for k,x in fit.payload.items():
-        p=pathstem/f'{k}_components.csv'
-        with open(p,'w',newline='') as h:
-            w=csv.writer(h); w.writerow(['bin_index','data_fail','fit_total','fit_pi0_fail','fit_bh_dvcs','pull'])
-            for i in range(x['data'].size): w.writerow([i,x['data'][i],x['model'][i],x['pi0_component'][i],x['dvcs_component'][i],(x['data'][i]-x['model'][i])/math.sqrt(max(x['model'][i],1))])
+
+def plot_one_fail_fit_variable(
+    path: Path,
+    period: str,
+    detector: str,
+    sector: int,
+    key: str,
+    fit: FractionFit,
+) -> None:
+    """
+    Plot one FAIL-fit observable with stacked components and a residual panel.
+    """
+    item = fit.payload[key]
+    variable = item["variable"]
+    data_counts = np.asarray(item["data"], dtype=float)
+    pi0_component = np.asarray(item["pi0_component"], dtype=float)
+    dvcs_component = np.asarray(item["dvcs_component"], dtype=float)
+    model = np.asarray(item["model"], dtype=float)
+    residual = np.asarray(item["residual"], dtype=float)
+
+    x = np.arange(data_counts.size, dtype=float)
+    labels = flow_bin_labels(variable)
+
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(11, 8),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.2, 1.2]},
+    )
+
+    axes[0].bar(
+        x,
+        dvcs_component,
+        width=0.92,
+        label="Fitted BH/DVCS FAIL",
+        alpha=0.65,
+    )
+    axes[0].bar(
+        x,
+        pi0_component,
+        width=0.92,
+        bottom=dvcs_component,
+        label=r"Fitted $\pi^0$ FAIL",
+        alpha=0.65,
+    )
+    axes[0].step(
+        x,
+        model,
+        where="mid",
+        linewidth=1.5,
+        label="Total fit",
+    )
+    axes[0].errorbar(
+        x,
+        data_counts,
+        yerr=np.sqrt(np.maximum(data_counts, 1.0)),
+        fmt=".",
+        markersize=5,
+        capsize=1.5,
+        label="Data FAIL",
+    )
+    axes[0].set_ylabel("Events / bin")
+    axes[0].set_title(
+        f"{period}, {category_title(detector, sector)}: {variable.label}\n"
+        f"combined f_pi0={fit.fraction:.5f}; "
+        f"individual f_pi0={fit.per_variable[key]['fraction']:.5f}; "
+        f"D/ndf={item['combined_reduced_deviance']:.3f}"
+    )
+    axes[0].grid(axis="y", alpha=0.25)
+    axes[0].legend(fontsize=9)
+
+    axes[1].axhline(0.0, linewidth=1.0)
+    axes[1].bar(x, residual, width=0.75)
+    axes[1].set_ylabel("Data - fit")
+    axes[1].set_xlabel(
+        f"{variable.label} bin (UF = underflow, OF = overflow)"
+    )
+    axes[1].grid(axis="y", alpha=0.25)
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(labels, rotation=90 if len(labels) > 24 else 0)
+
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_fail_fit(path, period, detector, sector, fit):
+    """
+    Retain a compact all-driver canvas for quick inspection.
+
+    Dedicated stacked/residual figures are written separately for each driver.
+    """
+    keys = list(fit.payload)
+    fig, axes = plt.subplots(
+        2,
+        len(keys),
+        figsize=(6 * len(keys), 8),
+        squeeze=False,
+    )
+
+    for column, key in enumerate(keys):
+        item = fit.payload[key]
+        variable = item["variable"]
+        x = np.arange(item["data"].size)
+
+        axes[0, column].bar(
+            x,
+            item["dvcs_component"],
+            width=0.92,
+            label="BH/DVCS",
+            alpha=0.65,
+        )
+        axes[0, column].bar(
+            x,
+            item["pi0_component"],
+            width=0.92,
+            bottom=item["dvcs_component"],
+            label=r"$\pi^0$ FAIL",
+            alpha=0.65,
+        )
+        axes[0, column].step(
+            x,
+            item["model"],
+            where="mid",
+            linewidth=1.4,
+            label="Total",
+        )
+        axes[0, column].errorbar(
+            x,
+            item["data"],
+            yerr=np.sqrt(np.maximum(item["data"], 1.0)),
+            fmt=".",
+            label="Data",
+        )
+        axes[0, column].set_title(
+            f"{variable.label}\n"
+            f"D/ndf={item['combined_reduced_deviance']:.2f}"
+        )
+        axes[0, column].set_ylabel("Events / bin")
+        axes[0, column].legend(fontsize=8)
+        axes[0, column].grid(axis="y", alpha=0.25)
+
+        axes[1, column].axhline(0.0, linewidth=1.0)
+        axes[1, column].bar(
+            x,
+            item["residual"],
+            width=0.75,
+        )
+        axes[1, column].set_ylabel("Data - fit")
+        axes[1, column].set_xlabel("bin: UF, regular bins, OF")
+        axes[1, column].grid(axis="y", alpha=0.25)
+    # endfor
+
+    fig.suptitle(
+        f"{period}, {category_title(detector, sector)} FAIL-only fit: "
+        f"f_pi0={fit.fraction:.4f} +/- {fit.stat_error:.4f}, "
+        f"D/ndf={fit.reduced_deviance:.3f}"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_fit_diagnostic_summary(
+    path: Path,
+    period: str,
+    detector: str,
+    sector: int,
+    fit: FractionFit,
+) -> None:
+    """
+    Summarize per-variable deviance and independently preferred pi0 fractions.
+    """
+    keys = list(fit.per_variable)
+    labels = [
+        next(variable.label for variable in FIT_VARIABLES if variable.key == key)
+        for key in keys
+    ]
+    x = np.arange(len(keys), dtype=float)
+
+    combined_deviances = np.asarray(
+        [
+            fit.per_variable[key]["deviance_at_combined_fraction"]
+            for key in keys
+        ],
+        dtype=float,
+    )
+    combined_reduced = np.asarray(
+        [
+            fit.per_variable[key]["reduced_deviance_at_combined_fraction"]
+            for key in keys
+        ],
+        dtype=float,
+    )
+    fractions = np.asarray(
+        [fit.per_variable[key]["fraction"] for key in keys],
+        dtype=float,
+    )
+    fraction_errors = np.asarray(
+        [fit.per_variable[key]["stat_error"] for key in keys],
+        dtype=float,
+    )
+
+    fig, axes = plt.subplots(2, 1, figsize=(11, 9))
+
+    axes[0].bar(x, combined_deviances)
+    for index, (deviance, reduced) in enumerate(
+        zip(combined_deviances, combined_reduced)
+    ):
+        axes[0].text(
+            index,
+            deviance,
+            f"D/ndf={reduced:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+        )
+    # endfor
+    axes[0].set_xticks(x, labels, rotation=25, ha="right")
+    axes[0].set_ylabel("Deviance contribution")
+    axes[0].set_title(
+        "Contribution of each fit observable at the combined fraction"
+    )
+    axes[0].grid(axis="y", alpha=0.25)
+
+    axes[1].errorbar(
+        x,
+        fractions,
+        yerr=fraction_errors,
+        fmt="o",
+        capsize=3,
+        label="Independent one-variable fit",
+    )
+    axes[1].axhline(
+        fit.fraction,
+        linewidth=1.5,
+        label=f"Combined fit = {fit.fraction:.5f}",
+    )
+    if math.isfinite(fit.stat_error):
+        axes[1].axhspan(
+            fit.fraction - fit.stat_error,
+            fit.fraction + fit.stat_error,
+            alpha=0.15,
+            label="Combined statistical uncertainty",
+        )
+    # endif
+    axes[1].set_xticks(x, labels, rotation=25, ha="right")
+    axes[1].set_ylabel(r"Fitted $f_{\pi^0,\mathrm{FAIL}}$")
+    axes[1].set_ylim(0.0, 1.0)
+    axes[1].grid(alpha=0.25)
+    axes[1].legend(fontsize=9)
+
+    fig.suptitle(
+        f"{period}, {category_title(detector, sector)} fit-diagnostic summary"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def fit_diagnostics_payload(
+    period: str,
+    detector: str,
+    sector: int,
+    fit: FractionFit,
+    n_pass: int,
+    n_fail: int,
+    n_pi0_mc_pass: int,
+    n_pi0_mc_fail: int,
+    n_dvcs_mc: int,
+) -> Dict[str, object]:
+    """
+    Return a JSON-serializable record of every fit input and prediction.
+    """
+    variables: Dict[str, object] = {}
+    for key, item in fit.payload.items():
+        variable = item["variable"]
+        variables[key] = {
+            "label": variable.label,
+            "range": [variable.low, variable.high],
+            "regular_bins": variable.bins,
+            "bin_convention": "underflow, regular bins, overflow",
+            "data_fail": np.asarray(item["data"], dtype=float).tolist(),
+            "pi0_template_raw": np.asarray(
+                item["pi0_raw"], dtype=float
+            ).tolist(),
+            "dvcs_template_raw": np.asarray(
+                item["dvcs_raw"], dtype=float
+            ).tolist(),
+            "pi0_template_probability": np.asarray(
+                item["pi0_shape"], dtype=float
+            ).tolist(),
+            "dvcs_template_probability": np.asarray(
+                item["dvcs_shape"], dtype=float
+            ).tolist(),
+            "fit_total": np.asarray(item["model"], dtype=float).tolist(),
+            "fit_pi0_fail": np.asarray(
+                item["pi0_component"], dtype=float
+            ).tolist(),
+            "fit_bh_dvcs_fail": np.asarray(
+                item["dvcs_component"], dtype=float
+            ).tolist(),
+            "residual_data_minus_fit": np.asarray(
+                item["residual"], dtype=float
+            ).tolist(),
+            "pull": np.asarray(item["pull"], dtype=float).tolist(),
+            "deviance_at_combined_fraction": item["combined_deviance"],
+            "ndf_at_combined_fraction": item["combined_ndf"],
+            "reduced_deviance_at_combined_fraction": item[
+                "combined_reduced_deviance"
+            ],
+            "individual_fit": fit.per_variable[key],
+        }
+    # endfor
+
+    return {
+        "period": period,
+        "detector": detector,
+        "sector": sector,
+        "category": category_title(detector, sector),
+        "counts": {
+            "data_pass": n_pass,
+            "data_fail": n_fail,
+            "pi0_mc_pass": n_pi0_mc_pass,
+            "pi0_mc_fail": n_pi0_mc_fail,
+            "dvcs_mc": n_dvcs_mc,
+        },
+        "combined_fit": {
+            "success": fit.success,
+            "message": fit.message,
+            "fraction_pi0_fail": fit.fraction,
+            "fraction_pi0_fail_stat_error": fit.stat_error,
+            "nll": fit.nll,
+            "deviance": fit.deviance,
+            "ndf": fit.ndf,
+            "reduced_deviance": fit.reduced_deviance,
+            "warnings": fit.warnings,
+        },
+        "per_variable": fit.per_variable,
+        "variables": variables,
+    }
+
+
+
+def write_components(pathstem, fit):
+    pathstem.mkdir(parents=True, exist_ok=True)
+    written: Dict[str, str] = {}
+
+    for key, item in fit.payload.items():
+        path = pathstem / f"{key}_components.csv"
+        with open(path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(
+                [
+                    "bin_index",
+                    "bin_type",
+                    "data_fail",
+                    "fit_total",
+                    "fit_pi0_fail",
+                    "fit_bh_dvcs",
+                    "residual_data_minus_fit",
+                    "pull",
+                    "poisson_deviance_contribution",
+                ]
+            )
+            for index in range(item["data"].size):
+                observed = float(item["data"][index])
+                expected = max(float(item["model"][index]), 1.0e-12)
+                deviance_contribution = 2.0 * (
+                    expected
+                    - observed
+                    + (
+                        observed * math.log(observed / expected)
+                        if observed > 0.0
+                        else 0.0
+                    )
+                )
+                if index == 0:
+                    bin_type = "underflow"
+                elif index == item["data"].size - 1:
+                    bin_type = "overflow"
+                else:
+                    bin_type = "regular"
+                # endif
+
+                writer.writerow(
+                    [
+                        index,
+                        bin_type,
+                        observed,
+                        expected,
+                        item["pi0_component"][index],
+                        item["dvcs_component"][index],
+                        item["residual"][index],
+                        item["pull"][index],
+                        deviance_contribution,
+                    ]
+                )
+            # endfor
+        # endwith
+        written[key] = str(path)
+    # endfor
+
+    return written
+
+
 
 def process_period(period,args_dict):
     args=argparse.Namespace(**args_dict); pdir=Path(args.output_dir)/period.key
-    for d in [pdir,pdir/'shape_diagnostics',pdir/'fail_fits',pdir/'fit_component_tables']: d.mkdir(parents=True,exist_ok=True)
+    for directory in [
+        pdir,
+        pdir / "shape_diagnostics",
+        pdir / "fail_fits",
+        pdir / "fit_component_tables",
+        pdir / "fit_diagnostic_summaries",
+        pdir / "fit_diagnostic_json",
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+    # endfor
     data,_,dc=read_opportunities(period.epg_data,period.beam_energy_GeV,'epgamma data',args,False); dvcs,_,bc=read_opportunities(period.dvcs_mc,period.beam_energy_GeV,'DVCSGEN epgamma MC',args,True); pi0,_,pc=read_opportunities(period.pi0_epg_mc,period.beam_energy_GeV,'AAOGEN-as-epgamma MC',args,True)
     cuts={'data':dc,'dvcs_mc':bc,'pi0_mc':pc}; json.dump(cuts,open(pdir/'opportunity_cutflows.json','w'),indent=2); emit_cutflow_diagnostics(pdir,period.label,cuts)
     egd,egd_diag=read_epgg(period.epgg_data,period.beam_energy_GeV,'epgammagamma data',args); egm,egm_diag=read_epgg(period.pi0_epgg_mc,period.beam_energy_GeV,'AAOGEN epgammagamma MC',args)
@@ -2467,12 +3051,112 @@ def process_period(period,args_dict):
         plot_shape_diagnostics(pdir/'shape_diagnostics'/stem,period.label,det,sec,data,dvcs,pi0,dpass,dfail,ppass,pfail,bcat)
         try: fit=fit_fail_shapes(data,dvcs,pi0,dfail,bcat,pfail,args)
         except Exception as e: log(f'WARNING {period.label} {category_title(det,sec)} fit failed: {e}'); continue
-        plot_fail_fit(pdir/'fail_fits'/f'{stem}_fail_fit.png',period.label,det,sec,fit); write_components(pdir/'fit_component_tables'/stem,fit)
+        plot_fail_fit(
+            pdir / "fail_fits" / f"{stem}_fail_fit.png",
+            period.label,
+            det,
+            sec,
+            fit,
+        )
+
+        variable_plot_paths: Dict[str, str] = {}
+        for key in fit.payload:
+            variable_plot_path = (
+                pdir
+                / "fail_fits"
+                / f"{stem}_{key}_stacked_residual.png"
+            )
+            plot_one_fail_fit_variable(
+                variable_plot_path,
+                period.label,
+                det,
+                sec,
+                key,
+                fit,
+            )
+            variable_plot_paths[key] = str(variable_plot_path)
+        # endfor
+
+        summary_plot_path = (
+            pdir
+            / "fit_diagnostic_summaries"
+            / f"{stem}_deviance_and_fraction_summary.png"
+        )
+        plot_fit_diagnostic_summary(
+            summary_plot_path,
+            period.label,
+            det,
+            sec,
+            fit,
+        )
+
+        component_table_paths = write_components(
+            pdir / "fit_component_tables" / stem,
+            fit,
+        )
         npass=int(np.count_nonzero(dpass)); nfail=int(np.count_nonzero(dfail)); npi0fail=fit.fraction*nfail; npi0fail_stat=fit.stat_error*nfail; vals=[v['fraction'] for v in fit.per_variable.values()]; spread=max(abs(v-fit.fraction) for v in vals) if vals else math.nan; npi0fail_model=spread*nfail
         ed,edstat=efficiency_from_pass_fail(npass,npi0fail,npi0fail_stat); edmodel=(npass/((npass+npi0fail)**2))*npi0fail_model if (npass+npi0fail)>0 else math.nan; em,emerr=binomial_efficiency(int(np.count_nonzero(ppass)),int(np.count_nonzero(pcat))); sf,sfstat=ratio_errors(ed,edstat,em,emerr); sfmodel=abs(sf)*(edmodel/ed) if ed>0 and math.isfinite(edmodel) else math.nan
         row=FailOnlyEfficiencyRow(period.key,period.label,det,sec,npass,nfail,int(np.count_nonzero(ppass)),int(np.count_nonzero(pfail)),int(np.count_nonzero(bcat)),fit.fraction,fit.stat_error,spread,npi0fail,npi0fail_stat,npi0fail_model,ed,edstat,edmodel,em,emerr,sf,sfstat,sfmodel,fit.success,fit.message,fit.deviance,fit.ndf,fit.reduced_deviance,bool(fit.warnings),json.dumps({k:v['fraction'] for k,v in fit.per_variable.items()},sort_keys=True))
-        rows.append(asdict(row)); meta[stem]={'row':asdict(row),'per_variable':fit.per_variable,'warnings':fit.warnings}
-        log(f'{period.label} {category_title(det,sec)}: PASS={npass:,}, FAIL={nfail:,}, f_pi0_FAIL={fit.fraction:.4f}, N_pi0_FAIL={npi0fail:.1f}, eps_data={ed:.4f}, eps_MC={em:.4f}, S={sf:.4f}, D/ndf={fit.reduced_deviance:.2f}')
+        rows.append(asdict(row))
+
+        diagnostic_payload = fit_diagnostics_payload(
+            period.label,
+            det,
+            sec,
+            fit,
+            npass,
+            nfail,
+            int(np.count_nonzero(ppass)),
+            int(np.count_nonzero(pfail)),
+            int(np.count_nonzero(bcat)),
+        )
+        diagnostic_payload["outputs"] = {
+            "combined_fit_plot": str(
+                pdir / "fail_fits" / f"{stem}_fail_fit.png"
+            ),
+            "per_variable_fit_plots": variable_plot_paths,
+            "summary_plot": str(summary_plot_path),
+            "component_tables": component_table_paths,
+        }
+
+        diagnostic_json_path = (
+            pdir / "fit_diagnostic_json" / f"{stem}_fit_diagnostics.json"
+        )
+        with open(
+            diagnostic_json_path,
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            json.dump(diagnostic_payload, handle, indent=2)
+        # endwith
+
+        meta[stem] = {
+            "row": asdict(row),
+            "per_variable": fit.per_variable,
+            "warnings": fit.warnings,
+            "diagnostic_json": str(diagnostic_json_path),
+            "outputs": diagnostic_payload["outputs"],
+        }
+        log(
+            f"{period.label} {category_title(det, sec)}: "
+            f"PASS={npass:,}, FAIL={nfail:,}, "
+            f"f_pi0_FAIL={fit.fraction:.4f}, "
+            f"N_pi0_FAIL={npi0fail:.1f}, "
+            f"eps_data={ed:.4f}, eps_MC={em:.4f}, "
+            f"S={sf:.4f}, D/ndf={fit.reduced_deviance:.2f}"
+        )
+        for key, variable_result in fit.per_variable.items():
+            log(
+                f"  {period.label} {category_title(det, sec)} {key}: "
+                f"individual f_pi0_FAIL="
+                f"{variable_result['fraction']:.5f} +/- "
+                f"{variable_result['stat_error']:.5f}; "
+                f"deviance contribution at combined fraction="
+                f"{variable_result['deviance_at_combined_fraction']:.2f}; "
+                f"D/ndf="
+                f"{variable_result['reduced_deviance_at_combined_fraction']:.2f}"
+            )
+        # endfor
     write_rows_csv(pdir/'fail_only_results.csv',rows); json.dump({'rows':rows,'categories':meta,'matching':{'data':dm.summary,'mc':pm.summary},'epgg':{'data':egd_diag,'mc':egm_diag}},open(pdir/'metadata.json','w'),indent=2)
     return period.key,rows,meta
 
@@ -2498,7 +3182,7 @@ def plot_all_period_results(path, rows):
         axes[0].errorbar(x+off,[r['efficiency_data'] for r in selected],yerr=[r['efficiency_data_stat_err'] for r in selected],fmt='o',capsize=2,label=label)
         axes[1].errorbar(x+off,[r['efficiency_mc'] for r in selected],yerr=[r['efficiency_mc_err'] for r in selected],fmt='o',capsize=2,label=label)
         axes[2].errorbar(x+off,[r['scale_factor'] for r in selected],yerr=[r['scale_factor_stat_err'] for r in selected],fmt='o',capsize=2,label=label)
-    axes[0].set_ylabel(r'$\\epsilon_{data}$'); axes[1].set_ylabel(r'$\\epsilon_{MC}$'); axes[2].set_ylabel(r'$S_\\gamma$'); axes[2].axhline(1,ls='--')
+    axes[0].set_ylabel(r'$\epsilon_{\mathrm{data}}$'); axes[1].set_ylabel(r'$\epsilon_{\mathrm{MC}}$'); axes[2].set_ylabel(r'$S_\gamma$'); axes[2].axhline(1,ls='--')
     axes[0].set_ylim(0,1.05); axes[1].set_ylim(0,1.05); vals=[r['scale_factor'] for r in rows if math.isfinite(r['scale_factor'])]; axes[2].set_ylim(0,max(1.25,1.2*max(vals)) if vals else 1.25)
     for a in axes: a.grid(alpha=.25); a.legend(ncol=3,fontsize=8)
     axes[2].set_xticks(x,cats); fig.suptitle('FAIL-only photon efficiencies and data/MC scale factors'); fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
