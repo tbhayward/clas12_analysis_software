@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v10_production_truth_partner.py
+derive_photon_efficiency_scale_factors_v11_combined_photon_topology.py
 
 Production extraction of the data/MC efficiency scale factor for reconstructing
 the high-energy photon in exclusive pi0 tag-and-probe events.
 
-The selected epgammaX denominator is decomposed in data with the validated
-BH/DVCS + AAOGEN template fitter. Native epgammagamma records provide the found
+The selected epgammaX denominator is decomposed in data with one validated
+BH/DVCS + AAOGEN template fit per photon detector category. CD-FD and FD-FD
+proton topologies are combined before fitting. Native epgammagamma records provide the found
 probe. Their daughter photons are reconstructed with the validated Trento-basis
 transformation, stored electron-photon opening angles, and four-vector closure
 to the reconstructed pi0. The measured epgamma tag identifies one daughter;
@@ -382,6 +383,34 @@ def parse_args() -> argparse.Namespace:
 
 
     parser.add_argument("--fit-min-counts", type=int, default=100)
+    parser.add_argument(
+        "--fit-max-reduced-deviance",
+        type=float,
+        default=5.0,
+        help=(
+            "Abort if the combined detector-category template fit has "
+            "deviance/ndf above this value. Use a non-positive value to "
+            "disable only this quality check."
+        ),
+    )
+    parser.add_argument(
+        "--fit-fraction-boundary-margin",
+        type=float,
+        default=1.0e-4,
+        help=(
+            "Abort when the fitted pi0 fraction lies this close to 0 or 1. "
+            "The default rejects boundary-dominated fits such as 0.999991."
+        ),
+    )
+    parser.add_argument(
+        "--yield-consistency-tolerance",
+        type=float,
+        default=1.0e-6,
+        help=(
+            "Absolute numerical tolerance allowed when checking that found "
+            "counts do not exceed expected counts."
+        ),
+    )
     parser.add_argument("--exclusivity-max-shift-bins", type=float, default=5.0)
     parser.add_argument("--exclusivity-max-smear-bins", type=float, default=8.0)
     parser.add_argument("--exclusivity-shift-prior-bins", type=float, default=2.0)
@@ -1822,100 +1851,203 @@ def fit_category(
     period_label: str,
     args: argparse.Namespace,
 ) -> Tuple[float, float, float, float, int, bool, Dict[str, object]]:
-    category_data = category_mask(data, detector, sector)
-    category_dvcs = category_mask(dvcs, detector, sector)
-    category_pi0 = category_mask(pi0, detector, sector)
+    """
+    Fit one photon-detector category after combining all supported proton
+    topologies.
 
-    expected = 0.0
-    expected_variance = 0.0
-    deviance = 0.0
-    ndf = 0
-    fit_success = True
-    weighted_fraction = 0.0
-    weighted_total = 0.0
-    details: Dict[str, object] = {}
+    The photon-efficiency correction depends on the predicted probe detector,
+    not on whether the proton was reconstructed in the CD or FD.  Therefore:
 
-    for code in (0, 1, 2):
-        topology = topology_key(code)
-        data_mask = category_data & (data.topology_code == code)
-        dvcs_mask = category_dvcs & (dvcs.topology_code == code)
-        pi0_mask = category_pi0 & (pi0.topology_code == code)
+      * FT contains every selected opportunity whose predicted probe is FT;
+      * FD sector N contains every selected opportunity whose predicted probe
+        is in FD sector N.
 
-        n_data = int(np.count_nonzero(data_mask))
-        n_dvcs = int(np.count_nonzero(dvcs_mask))
-        n_pi0 = int(np.count_nonzero(pi0_mask))
-        if min(n_data, n_dvcs, n_pi0) < args.fit_min_counts:
-            details[topology] = {
-                "success": False,
-                "reason": "insufficient support",
-                "data": n_data,
-                "dvcs": n_dvcs,
-                "pi0": n_pi0,
+    CD-FD and FD-FD populations are merged before histogramming and before the
+    single two-template fit.  No topology can silently disappear from the data
+    denominator while remaining in the matched numerator.
+    """
+    data_mask = category_mask(data, detector, sector)
+    dvcs_mask = category_mask(dvcs, detector, sector)
+    pi0_mask = category_mask(pi0, detector, sector)
+
+    n_data = int(np.count_nonzero(data_mask))
+    n_dvcs = int(np.count_nonzero(dvcs_mask))
+    n_pi0 = int(np.count_nonzero(pi0_mask))
+    category_label = detector + (f"_sector_{sector}" if detector == "FD" else "")
+
+    details: Dict[str, object] = {
+        "fit_scope": "combined_proton_topologies",
+        "photon_detector": detector,
+        "photon_sector": int(sector),
+        "data": n_data,
+        "dvcs": n_dvcs,
+        "pi0": n_pi0,
+        "included_topology_codes": sorted(
+            {
+                int(code)
+                for code in np.concatenate(
+                    (
+                        data.topology_code[data_mask],
+                        dvcs.topology_code[dvcs_mask],
+                        pi0.topology_code[pi0_mask],
+                    )
+                )
+                if int(code) >= 0
             }
-            if n_data > 0:
-                fit_success = False
-            # endif
-            continue
-        # endif
+        ),
+    }
 
-        summary = run_template_fit(
-            histograms_for_mask(data, data_mask),
-            histograms_for_mask(dvcs, dvcs_mask),
-            histograms_for_mask(pi0, pi0_mask),
-            topology,
-            args,
+    if min(n_data, n_dvcs, n_pi0) < args.fit_min_counts:
+        raise RuntimeError(
+            f"{period_label} {category_label}: combined detector-category fit "
+            f"has insufficient support: data={n_data:,}, DVCSGEN={n_dvcs:,}, "
+            f"AAOGEN={n_pi0:,}; each must be >= {args.fit_min_counts:,}. "
+            "No efficiency or scale factor will be computed."
         )
-        success = bool(summary.success) and math.isfinite(summary.f_pi0)
-        details[topology] = {
-            "success": success,
-            "message": str(summary.message),
-            "data": n_data,
-            "dvcs": n_dvcs,
-            "pi0": n_pi0,
-            "fraction_pi0": float(summary.f_pi0),
-            "fraction_pi0_err": float(summary.f_pi0_err),
-            "deviance": float(summary.deviance),
-            "ndf": int(summary.ndf),
+    # endif
+
+    # The validated fitter requires a TopologyConfig.  Its topology object is
+    # used to configure/label the shared fit; the histograms supplied here are
+    # already the combined detector-category population.  Use the matching
+    # photon topology as the representative configuration.
+    representative_topology = "CD_FT" if detector == "FT" else "CD_FD"
+    summary = run_template_fit(
+        histograms_for_mask(data, data_mask),
+        histograms_for_mask(dvcs, dvcs_mask),
+        histograms_for_mask(pi0, pi0_mask),
+        representative_topology,
+        args,
+    )
+
+    plot_path = fit_dir / (
+        "ft_combined_proton_topologies.png"
+        if detector == "FT"
+        else f"fd_sector_{sector}_combined_proton_topologies.png"
+    )
+    plot_template_fit(
+        plot_path,
+        f"{period_label}: predicted probe {detector}"
+        + (f" sector {sector}" if detector == "FD" else "")
+        + ", combined proton topologies",
+        summary,
+    )
+
+    fraction = float(getattr(summary, "f_pi0", math.nan))
+    fraction_err = float(getattr(summary, "f_pi0_err", math.nan))
+    deviance = float(getattr(summary, "deviance", math.nan))
+    ndf = int(getattr(summary, "ndf", 0))
+    reduced_deviance = deviance / ndf if ndf > 0 else math.inf
+    summary_success = bool(getattr(summary, "success", False))
+    message = str(getattr(summary, "message", ""))
+
+    details.update(
+        {
+            "success": summary_success,
+            "message": message,
+            "fraction_pi0": fraction,
+            "fraction_pi0_err": fraction_err,
+            "deviance": deviance,
+            "ndf": ndf,
+            "reduced_deviance": reduced_deviance,
+            "representative_fitter_topology": representative_topology,
+            "fit_plot": str(plot_path),
         }
-        if not success:
-            fit_success = False
-            continue
+    )
+
+    failure_reasons: List[str] = []
+    if not summary_success:
+        failure_reasons.append(f"fitter reported failure: {message}")
+    # endif
+    if not math.isfinite(fraction):
+        failure_reasons.append("fitted pi0 fraction is non-finite")
+    # endif
+    if not math.isfinite(fraction_err) or fraction_err < 0.0:
+        failure_reasons.append("fitted pi0-fraction uncertainty is invalid")
+    # endif
+    if not math.isfinite(deviance) or ndf <= 0:
+        failure_reasons.append(
+            f"invalid fit deviance/ndf: deviance={deviance}, ndf={ndf}"
+        )
+    # endif
+
+    margin = max(float(args.fit_fraction_boundary_margin), 0.0)
+    if math.isfinite(fraction) and (
+        fraction <= margin or fraction >= 1.0 - margin
+    ):
+        failure_reasons.append(
+            f"fitted pi0 fraction {fraction:.8g} is within {margin:g} "
+            "of a physical boundary"
+        )
+    # endif
+
+    max_reduced_deviance = float(args.fit_max_reduced_deviance)
+    if (
+        max_reduced_deviance > 0.0
+        and math.isfinite(reduced_deviance)
+        and reduced_deviance > max_reduced_deviance
+    ):
+        failure_reasons.append(
+            f"deviance/ndf={reduced_deviance:.4g} exceeds "
+            f"{max_reduced_deviance:g}"
+        )
+    # endif
+
+    variable_results = getattr(summary, "variable_results", None) or {}
+    invalid_variables = []
+    for variable in FIT_VARIABLES:
+        key = "theta" if variable.key == "theta_cm" else variable.key
+        result = variable_results.get(key)
+        if result is None or not bool(getattr(result, "success", False)):
+            invalid_variables.append(key)
         # endif
-
-        fraction = float(summary.f_pi0)
-        fraction_err = (
-            float(summary.f_pi0_err)
-            if math.isfinite(summary.f_pi0_err)
-            else math.sqrt(max(fraction * (1.0 - fraction) / max(n_data, 1), 0.0))
-        )
-        yield_pi0 = fraction * n_data
-        yield_err = math.sqrt((n_data * fraction_err)**2 + fraction**2 * n_data)
-        expected += yield_pi0
-        expected_variance += yield_err**2
-        weighted_fraction += fraction * n_data
-        weighted_total += n_data
-        deviance += float(summary.deviance)
-        ndf += int(summary.ndf)
-
-        plot_template_fit(
-            fit_dir / f"{detector.lower()}_sector_{sector}_{topology}.png",
-            f"{period_label}: predicted probe {detector}"
-            + (f" sector {sector}" if detector == "FD" else "")
-            + f", {TOPOLOGY_INFO[topology][0]}",
-            summary,
-        )
     # endfor
+    if invalid_variables:
+        failure_reasons.append(
+            "invalid component fits for: " + ", ".join(invalid_variables)
+        )
+    # endif
 
-    combined_fraction = weighted_fraction / weighted_total if weighted_total > 0 else math.nan
+    if failure_reasons:
+        details["failure_reasons"] = failure_reasons
+        raise RuntimeError(
+            f"{period_label} {category_label}: combined template fit rejected. "
+            + "; ".join(failure_reasons)
+            + f". Diagnostic plot: {plot_path}"
+        )
+    # endif
+
+    expected = fraction * n_data
+    # Treat the fitted fraction uncertainty and the finite data count as
+    # independent contributions, consistent with the previous implementation.
+    expected_err = math.sqrt(
+        (n_data * fraction_err) ** 2 + fraction**2 * n_data
+    )
+
+    if not math.isfinite(expected) or expected <= 0.0:
+        raise RuntimeError(
+            f"{period_label} {category_label}: fitted expected data yield is "
+            f"invalid ({expected})."
+        )
+    # endif
+    if not math.isfinite(expected_err) or expected_err < 0.0:
+        raise RuntimeError(
+            f"{period_label} {category_label}: fitted expected-yield "
+            f"uncertainty is invalid ({expected_err})."
+        )
+    # endif
+
+    details["expected_data"] = expected
+    details["expected_data_err"] = expected_err
     return (
         expected,
-        math.sqrt(expected_variance),
-        combined_fraction,
+        expected_err,
+        fraction,
         deviance,
         ndf,
-        fit_success,
+        True,
         details,
     )
+
 
 
 def efficiency_error_ratio(
@@ -2077,6 +2209,68 @@ def plot_period_efficiencies(
     plt.close(fig)
 
 
+def validate_efficiency_population(
+    period_label: str,
+    detector: str,
+    sector: int,
+    expected_data: float,
+    found_data: float,
+    expected_mc: float,
+    found_mc: float,
+    fit_success: bool,
+    args: argparse.Namespace,
+) -> None:
+    """Abort before producing any efficiency from inconsistent populations."""
+    category_label = detector + (f" sector {sector}" if detector == "FD" else "")
+    tolerance = max(float(args.yield_consistency_tolerance), 0.0)
+
+    failures: List[str] = []
+    if not fit_success:
+        failures.append("combined data template fit was not successful")
+    # endif
+    if not math.isfinite(expected_data) or expected_data <= 0.0:
+        failures.append(f"expected data yield is invalid ({expected_data})")
+    # endif
+    if not math.isfinite(found_data) or found_data < 0.0:
+        failures.append(f"found data yield is invalid ({found_data})")
+    # endif
+    if not math.isfinite(expected_mc) or expected_mc <= 0.0:
+        failures.append(f"expected MC count is invalid ({expected_mc})")
+    # endif
+    if not math.isfinite(found_mc) or found_mc < 0.0:
+        failures.append(f"found MC count is invalid ({found_mc})")
+    # endif
+    if (
+        math.isfinite(expected_data)
+        and math.isfinite(found_data)
+        and found_data > expected_data + tolerance
+    ):
+        failures.append(
+            f"found data count {found_data:.6g} exceeds fitted expected "
+            f"pi0 yield {expected_data:.6g}"
+        )
+    # endif
+    if (
+        math.isfinite(expected_mc)
+        and math.isfinite(found_mc)
+        and found_mc > expected_mc + tolerance
+    ):
+        failures.append(
+            f"found MC count {found_mc:.6g} exceeds expected MC count "
+            f"{expected_mc:.6g}"
+        )
+    # endif
+
+    if failures:
+        raise RuntimeError(
+            f"{period_label} {category_label}: refusing to calculate photon "
+            "efficiency because numerator and denominator are not a valid "
+            "common population: "
+            + "; ".join(failures)
+        )
+    # endif
+
+
 def process_period(
     period: PeriodConfig,
     args_dict: Mapping[str, object],
@@ -2155,6 +2349,18 @@ def process_period(
         found_data = float(np.count_nonzero(data_category & data_match.matched))
         expected_mc = float(np.count_nonzero(mc_category))
         found_mc = float(np.count_nonzero(mc_category & mc_match.matched))
+
+        validate_efficiency_population(
+            period.label,
+            detector,
+            sector,
+            expected_data,
+            found_data,
+            expected_mc,
+            found_mc,
+            fit_success,
+            args,
+        )
 
         efficiency_data, efficiency_data_err = efficiency_error_ratio(
             found_data,
