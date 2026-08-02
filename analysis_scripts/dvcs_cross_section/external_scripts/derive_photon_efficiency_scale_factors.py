@@ -762,6 +762,7 @@ def read_opportunities(
         "supported_topology": 0,
         "selected_before_deduplication": 0,
         "selected_after_deduplication": 0,
+        "partner_candidates_finite_and_E_above_threshold": 0,
     }
 
     seen = 0
@@ -806,9 +807,13 @@ def read_opportunities(
         tag_mask = global_mask & (tag_E >= args.tag_E_min)
         cutflow["tag_energy"] += int(np.count_nonzero(tag_mask))
 
-        # The partner search must use every reconstructed photon candidate in
-        # the event, not only candidates whose own missing-X hypothesis passes
-        # the expected-probe selection.
+        # Build the partner pool from every finite reconstructed photon in the
+        # event with E_gamma >= 0.4 GeV. Do not require a prospective partner
+        # photon to pass the full tag-specific epgamma selection. Variables
+        # such as z, t1, and open_angle_ep2 are evaluated for the currently
+        # selected photon and can reject the partner even when it was genuinely
+        # reconstructed.
+        candidate_mask = finite & (tag_E >= args.tag_E_min)
         candidate_values = {
             "runnum": arr("runnum", default=-1, dtype=np.int64),
             "eventnum": arr("eventnum", default=-1, dtype=np.int64),
@@ -819,7 +824,10 @@ def read_opportunities(
             "photon_phi": tag_phi,
             "photon_detector": tag_detector,
         }
-        append_candidate_store(candidate_store, candidate_values, tag_mask)
+        append_candidate_store(candidate_store, candidate_values, candidate_mask)
+        cutflow["partner_candidates_finite_and_E_above_threshold"] += int(
+            np.count_nonzero(candidate_mask)
+        )
 
         probe = reconstruct_probe(
             beam_energy,
@@ -1078,6 +1086,7 @@ def match_partner_photons(
     candidate_tests = 0
     exact_tag_candidates_skipped = 0
     mass_window_rejections = 0
+    candidate_group_sizes: List[int] = []
 
     for opportunity_index, key in enumerate(structured_keys(opportunity_keys)):
         key_bytes = key.tobytes()
@@ -1094,6 +1103,7 @@ def match_partner_photons(
         members = candidate_order[
             candidate_offsets[group_index]:candidate_offsets[group_index + 1]
         ]
+        candidate_group_sizes.append(int(members.size))
         best = None
         for candidate_index in members:
             candidate_tests += 1
@@ -1179,6 +1189,33 @@ def match_partner_photons(
             "candidate_tests": candidate_tests,
             "exact_tag_candidates_skipped": exact_tag_candidates_skipped,
             "pi0_mass_window_rejections": mass_window_rejections,
+            "candidate_group_size_mean": (
+                float(np.mean(candidate_group_sizes))
+                if candidate_group_sizes else math.nan
+            ),
+            "candidate_group_size_median": (
+                float(np.median(candidate_group_sizes))
+                if candidate_group_sizes else math.nan
+            ),
+            "candidate_group_size_max": (
+                int(np.max(candidate_group_sizes))
+                if candidate_group_sizes else 0
+            ),
+            "confirmed_groups_with_at_least_two_candidates": (
+                int(np.count_nonzero(np.asarray(candidate_group_sizes) >= 2))
+                if candidate_group_sizes else 0
+            ),
+            "confirmed_groups_with_at_least_two_candidates_fraction": (
+                float(np.mean(np.asarray(candidate_group_sizes) >= 2))
+                if candidate_group_sizes else math.nan
+            ),
+            "non_tag_candidate_tests": (
+                candidate_tests - exact_tag_candidates_skipped
+            ),
+            "non_tag_candidates_per_catalog_confirmed_opportunity": (
+                float(candidate_tests - exact_tag_candidates_skipped)
+                / max(int(np.count_nonzero(catalog_confirmed)), 1)
+            ),
             "matched_opportunities": int(np.count_nonzero(matched)),
             "matched_fraction": float(np.mean(matched)) if n else math.nan,
             "matched_fraction_given_catalog": (
@@ -1693,6 +1730,23 @@ def process_period(
     mc_match = match_partner_photons(
         pi0, pi0_candidates, epgg_mc, "mc", args
     )
+
+    for sample_label, match_result in (
+        ("data", data_match),
+        ("AAOGEN MC", mc_match),
+    ):
+        summary = match_result.summary
+        log(
+            f"{period.label} {sample_label} partner-pool audit: "
+            f"catalog-confirmed={summary['catalog_confirmed_opportunities']:,}, "
+            f"mean candidates/group={summary['candidate_group_size_mean']:.3f}, "
+            f"groups with >=2 candidates="
+            f"{summary['confirmed_groups_with_at_least_two_candidates_fraction']:.3%}, "
+            f"non-tag candidates/opportunity="
+            f"{summary['non_tag_candidates_per_catalog_confirmed_opportunity']:.3f}, "
+            f"matched={summary['matched_opportunities']:,}"
+        )
+    # endfor
 
     plot_expected_probe_diagnostics(
         period_dir / "expected_probe_diagnostics.png",
