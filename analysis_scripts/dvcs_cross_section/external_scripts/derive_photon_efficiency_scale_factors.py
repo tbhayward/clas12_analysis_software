@@ -2,86 +2,47 @@
 """
 derive_photon_efficiency_scale_factors.py
 
-Clean implementation of the RGA high-energy photon-efficiency study.
+RGA high-energy photon-efficiency extraction using the newly reprocessed
+multi-candidate epgamma trees.
 
-Physics definition
-------------------
-Every entry of the newly reprocessed epgamma trees is one directed tag
-opportunity.  The measured photon is the tag and the missing four-vector
+Each epgamma entry contains one real reconstructed photon candidate. Entries
+sharing an event identity therefore provide the actual reconstructed photon
+list for that event:
+
+  * data identity: exact (runnum, evnum);
+  * AAOGEN identity: reconstructed electron/proton kinematic signature.
+
+For every directed epgamma tag opportunity, the script calculates
 
     p_X = k + p_target - k' - p' - p_gamma_tag
 
-is interpreted as a possible second photon from pi0 -> gamma gamma.
+and requires the predicted X to be a photon with E_X >= 2 GeV in FT or FD
+acceptance. No upper bound is imposed on E_tag.
 
-An opportunity enters the denominator when
+The found-probe decision no longer attempts to reconstruct daughter photons
+from the pi0 tree. Instead it searches the other real epgamma entries in the
+same event/signature group for a photon matching X. The epgammagamma tree is
+used only as an event/signature-level confirmation that the event entered the
+reconstructed-pi0 sample. The matched tag-partner pair is also required to lie
+inside the configured pi0 invariant-mass window.
 
-    E_tag >= 0.40 GeV,
-    E_X   >= 2.00 GeV,
+Data denominator:
+  BH/DVCS + AAOGEN two-template fit to selected epgammaX opportunities.
 
-the inferred X is photon-like, and its direction lies in the selected FT/FD
-acceptance.  No E_tag < 2 GeV restriction is imposed.  If both photons exceed
-2 GeV, the reprocessed epgamma tree can therefore supply two legitimate
-directed opportunities.
+Data numerator:
+  selected opportunities with a matching partner photon in the same data
+  event and with that event present in the epgammagamma data tree.
 
-Data
-----
-The complete selected epgammaX data population is decomposed as
+MC denominator:
+  all selected AAOGEN epgammaX opportunities.
 
-    data = BH/DVCS template + exclusive-pi0 template,
+MC numerator:
+  selected AAOGEN opportunities with a matching partner photon in the same
+  reconstructed e/p signature group and with that signature present in the
+  AAOGEN epgammagamma tree.
 
-using the same shared two-template morphology fitter as
-plot_exclusivity_data_dvcs_pi0_mc.py.  The nominal fraction drivers are
-
-    Delta_phi, theta_gamma_gamma, pTmiss.
-
-The fitted pi0 yield is N_expected_data.  An expected probe is counted as found
-when the corresponding event exists in the epgammagamma data tree, the epgamma
-tag matches one reconstructed daughter photon, and the inferred X matches the
-opposite daughter photon.
-
-Monte Carlo
------------
-The AAOGEN epgammaX population is pure pi0 and directly supplies
-N_expected_MC.  Matching those opportunities to the native AAOGEN
-epgammagamma tree supplies N_found_MC.  Since MC run/event identifiers are not
-unique, correspondence is built from the exact reconstructed electron/proton
-signature.  Exact duplicate records are removed, but distinct photon
-opportunities from the same generated event are preserved.
-
-The final correction is
-
-    epsilon_data = N_found_data / N_expected_data
-    epsilon_MC   = N_found_MC   / N_expected_MC
-    S_gamma      = epsilon_data / epsilon_MC
-
-for FT and FD sectors 1--6.
-
-The native epgammagamma trees store a reconstructed pi0 rather than the two
-photon four-vectors.  Both photon four-vectors are therefore rederived from the
-pi0 momentum, invariant mass, electron-photon opening angles, and detector
-assignments before matching.
-
-Outputs
--------
-output/photon_efficiency_study/
-
-    photon_efficiency_scale_factors.csv
-    photon_efficiency_scale_factors.json
-    all_periods_integrated_efficiencies.png
-    all_periods_integrated_scale_factors.png
-    input_manifest.json
-    <period>/
-        metadata.json
-        opportunity_cutflows.json
-        matching_summary.json
-        expected_probe_diagnostics.png
-        matching_residuals.png
-        template_fits/
-        integrated_efficiencies.png
-
-Dependencies: Python 3, numpy, scipy, matplotlib, uproot, and the validated
-plot_exclusivity_data_dvcs_pi0_mc.py located beside this script or one directory
-above it.
+The final correction is S_gamma = epsilon_data / epsilon_MC for FT and FD
+sectors 1--6.
 """
 
 from __future__ import annotations
@@ -114,11 +75,6 @@ except ImportError as exc:
     raise SystemExit("This script requires uproot: python3 -m pip install uproot") from exc
 #endif
 
-try:
-    from scipy.optimize import linear_sum_assignment
-except ImportError as exc:
-    raise SystemExit("This script requires scipy: python3 -m pip install scipy") from exc
-#endif
 
 
 TREE_NAME = "PhysicsEvents"
@@ -219,13 +175,6 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
     "pi0_p": ("p2_p", "pi0_p"),
     "pi0_theta": ("p2_theta", "pi0_theta"),
     "pi0_phi": ("p2_phi", "pi0_phi"),
-    "gamma1_phi_native": ("gamma_phi1",),
-    "gamma2_phi_native": ("gamma_phi2",),
-    "open_angle_egamma1": ("open_angle_egamma1",),
-    "open_angle_egamma2": ("open_angle_egamma2",),
-    "gamma1_detector_native": ("detector_gamma1",),
-    "gamma2_detector_native": ("detector_gamma2",),
-    "Mh_gammagamma": ("Mh_gammagamma",),
 }
 
 
@@ -298,7 +247,7 @@ class OpportunityRecords:
 
 
 @dataclass
-class EpggRecords:
+class PhotonCandidateRecords:
     runnum: np.ndarray
     eventnum: np.ndarray
     e_p: np.ndarray
@@ -307,30 +256,38 @@ class EpggRecords:
     p_p: np.ndarray
     p_theta: np.ndarray
     p_phi: np.ndarray
-    g1_E: np.ndarray
-    g2_E: np.ndarray
-    g1_theta_solutions: np.ndarray
-    g1_phi_solutions: np.ndarray
-    g2_theta_solutions: np.ndarray
-    g2_phi_solutions: np.ndarray
-    g1_detector: np.ndarray
-    g2_detector: np.ndarray
-    valid_solutions: np.ndarray
+    photon_E: np.ndarray
+    photon_theta: np.ndarray
+    photon_phi: np.ndarray
+    photon_detector: np.ndarray
 
     def size(self) -> int:
-        return int(self.g1_E.size)
+        return int(self.photon_E.size)
 
 
 @dataclass
-class MatchResult:
+class IdentityCatalog:
+    runnum: np.ndarray
+    eventnum: np.ndarray
+    e_p: np.ndarray
+    e_theta: np.ndarray
+    e_phi: np.ndarray
+    p_p: np.ndarray
+    p_theta: np.ndarray
+    p_phi: np.ndarray
+
+    def size(self) -> int:
+        return int(self.e_p.size)
+
+
+@dataclass
+class PartnerMatchResult:
     matched: np.ndarray
-    epgg_index: np.ndarray
-    tag_choice: np.ndarray
-    solution_index: np.ndarray
-    tag_angle_deg: np.ndarray
-    tag_relative_E: np.ndarray
+    catalog_confirmed: np.ndarray
+    partner_index: np.ndarray
     probe_angle_deg: np.ndarray
     probe_relative_E: np.ndarray
+    pair_mass_GeV: np.ndarray
     score: np.ndarray
     summary: Dict[str, object]
 
@@ -404,12 +361,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tag-match-relative-E-max", type=float, default=0.15)
     parser.add_argument("--probe-match-angle-max-deg", type=float, default=3.0)
     parser.add_argument("--probe-match-relative-E-max", type=float, default=0.35)
+    parser.add_argument("--pi0-mass-min", type=float, default=0.10)
+    parser.add_argument("--pi0-mass-max", type=float, default=0.17)
     parser.add_argument("--mc-signature-decimals", type=int, default=10)
 
-    parser.add_argument("--cone-min-photon-energy", type=float, default=0.20)
-    parser.add_argument("--cone-energy-denominator-min", type=float, default=1.0e-6)
-    parser.add_argument("--cone-mass-residual-weight", type=float, default=1.0)
-    parser.add_argument("--cone-closure-max", type=float, default=0.05)
 
     parser.add_argument("--fit-min-counts", type=int, default=100)
     parser.add_argument("--exclusivity-max-shift-bins", type=float, default=5.0)
@@ -727,13 +682,53 @@ def finalize_opportunity_store(store: Mapping[str, Sequence[np.ndarray]]) -> Opp
     return OpportunityRecords(**payload)
 
 
+def empty_candidate_store() -> Dict[str, List[np.ndarray]]:
+    return {name: [] for name in PhotonCandidateRecords.__dataclass_fields__}
+
+
+def append_candidate_store(
+    store: Dict[str, List[np.ndarray]],
+    values: Mapping[str, np.ndarray],
+    mask: np.ndarray,
+) -> None:
+    for name in store:
+        store[name].append(np.asarray(values[name])[mask])
+    # endfor
+
+
+def finalize_candidate_store(
+    store: Mapping[str, Sequence[np.ndarray]],
+) -> PhotonCandidateRecords:
+    integer_fields = {"runnum", "eventnum", "photon_detector"}
+    payload = {}
+    for name, parts in store.items():
+        dtype = np.int64 if name in {"runnum", "eventnum"} else (
+            np.int16 if name in integer_fields else np.float64
+        )
+        payload[name] = concat(parts, dtype=dtype)
+    # endfor
+    return PhotonCandidateRecords(**payload)
+
+
+def subset_candidates(
+    records: PhotonCandidateRecords,
+    mask: np.ndarray,
+) -> PhotonCandidateRecords:
+    return PhotonCandidateRecords(
+        **{
+            name: np.asarray(getattr(records, name))[mask]
+            for name in records.__dataclass_fields__
+        }
+    )
+
+
 def read_opportunities(
     path: str,
     beam_energy: float,
     role: str,
     args: argparse.Namespace,
     deduplicate: bool,
-) -> Tuple[OpportunityRecords, Dict[str, object]]:
+) -> Tuple[OpportunityRecords, PhotonCandidateRecords, Dict[str, object]]:
     logical = (
         "runnum", "eventnum",
         "e_p", "e_theta", "e_phi",
@@ -752,6 +747,7 @@ def read_opportunities(
     resolved = resolve_branches(path, logical, optional=optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
     store = empty_opportunity_store()
+    candidate_store = empty_candidate_store()
     cutflow = {
         "role": role,
         "path": path,
@@ -809,6 +805,21 @@ def read_opportunities(
 
         tag_mask = global_mask & (tag_E >= args.tag_E_min)
         cutflow["tag_energy"] += int(np.count_nonzero(tag_mask))
+
+        # The partner search must use every reconstructed photon candidate in
+        # the event, not only candidates whose own missing-X hypothesis passes
+        # the expected-probe selection.
+        candidate_values = {
+            "runnum": arr("runnum", default=-1, dtype=np.int64),
+            "eventnum": arr("eventnum", default=-1, dtype=np.int64),
+            "e_p": e_p, "e_theta": e_theta, "e_phi": e_phi,
+            "p_p": p_p, "p_theta": p_theta, "p_phi": p_phi,
+            "photon_E": tag_E,
+            "photon_theta": tag_theta,
+            "photon_phi": tag_phi,
+            "photon_detector": tag_detector,
+        }
+        append_candidate_store(candidate_store, candidate_values, tag_mask)
 
         probe = reconstruct_probe(
             beam_energy,
@@ -878,6 +889,19 @@ def read_opportunities(
     # endfor
 
     records = finalize_opportunity_store(store)
+    candidates = finalize_candidate_store(candidate_store)
+    if deduplicate and candidates.size() > 0:
+        candidate_keep = exact_duplicate_keep_mask(
+            [
+                candidates.e_p, candidates.e_theta, candidates.e_phi,
+                candidates.p_p, candidates.p_theta, candidates.p_phi,
+                candidates.photon_E, candidates.photon_theta,
+                candidates.photon_phi,
+            ],
+            decimals=args.mc_signature_decimals,
+        )
+        candidates = subset_candidates(candidates, candidate_keep)
+    # endif
     if deduplicate and records.size() > 0:
         keep = exact_duplicate_keep_mask(
             [
@@ -891,245 +915,28 @@ def read_opportunities(
     # endif
     cutflow["selected_after_deduplication"] = records.size()
     cutflow["branch_mapping"] = resolved
-    return records, cutflow
+    cutflow["partner_candidate_records"] = candidates.size()
+    return records, candidates, cutflow
 
 
-def unit_vector(theta: float, phi: float) -> np.ndarray:
-    return np.asarray(
-        [math.sin(theta) * math.cos(phi), math.sin(theta) * math.sin(phi), math.cos(theta)],
-        dtype=float,
-    )
-
-
-def orthonormal_basis(axis: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    trial = np.asarray([0.0, 0.0, 1.0], dtype=float)
-    if abs(float(np.dot(axis, trial))) > 0.90:
-        trial = np.asarray([1.0, 0.0, 0.0], dtype=float)
-    # endif
-    u = np.cross(axis, trial)
-    u /= float(np.linalg.norm(u))
-    v = np.cross(axis, u)
-    return u, v
-
-
-def detector_compatible(theta_rad: float, detector: int, args: argparse.Namespace) -> bool:
-    theta_deg = math.degrees(theta_rad)
-    if detector == 0:
-        return args.ft_theta_min <= theta_deg < args.ft_theta_max
-    # endif
-    if detector == 1:
-        return args.fd_theta_min <= theta_deg < args.fd_theta_max
-    # endif
-    return False
-
-
-def theta_candidates_from_opening(
-    electron_theta: float,
-    electron_phi: float,
-    photon_phi: float,
-    opening_angle: float,
-) -> List[float]:
-    """Solve the electron-photon opening-angle equation for photon theta."""
-    if not all(math.isfinite(value) for value in (
-        electron_theta, electron_phi, photon_phi, opening_angle
-    )):
-        return []
-    # endif
-    a = math.cos(electron_theta)
-    b = math.sin(electron_theta) * math.cos(photon_phi - electron_phi)
-    radius = math.hypot(a, b)
-    if radius <= 1.0e-12:
-        return []
-    # endif
-    rhs = math.cos(opening_angle) / radius
-    if rhs < -1.0 - 1.0e-9 or rhs > 1.0 + 1.0e-9:
-        return []
-    # endif
-    rhs = min(1.0, max(-1.0, rhs))
-    phase = math.atan2(b, a)
-    offset = math.acos(rhs)
-    candidates: List[float] = []
-    for raw in (phase + offset, phase - offset):
-        theta = raw % (2.0 * math.pi)
-        if theta > math.pi:
-            theta = 2.0 * math.pi - theta
-        # endif
-        if 0.0 <= theta <= math.pi and all(
-            abs(theta - existing) > 1.0e-8 for existing in candidates
-        ):
-            candidates.append(theta)
-        # endif
-    # endfor
-    return candidates
-
-
-def reconstruct_epgg_photons(
-    e_theta: np.ndarray,
-    e_phi: np.ndarray,
-    pi0_p: np.ndarray,
-    pi0_theta: np.ndarray,
-    pi0_phi: np.ndarray,
-    gamma1_phi: np.ndarray,
-    gamma2_phi: np.ndarray,
-    opening1_rad: np.ndarray,
-    opening2_rad: np.ndarray,
-    pi0_mass: np.ndarray,
-    detector1: np.ndarray,
-    detector2: np.ndarray,
-    args: argparse.Namespace,
-) -> Tuple[np.ndarray, ...]:
-    """Reconstruct both photons from the branches stored in native eppi0."""
-    n_events = len(e_theta)
-    g1_E = np.full(n_events, np.nan)
-    g2_E = np.full(n_events, np.nan)
-    g1_theta = np.full((n_events, 2), np.nan)
-    g1_phi = np.full((n_events, 2), np.nan)
-    g2_theta = np.full((n_events, 2), np.nan)
-    g2_phi = np.full((n_events, 2), np.nan)
-    valid = np.zeros((n_events, 2), dtype=bool)
-
-    for index in range(n_events):
-        values = (
-            e_theta[index], e_phi[index], pi0_p[index], pi0_theta[index],
-            pi0_phi[index], gamma1_phi[index], gamma2_phi[index],
-            opening1_rad[index], opening2_rad[index], pi0_mass[index],
-        )
-        if not all(math.isfinite(float(value)) for value in values):
-            continue
-        # endif
-        if pi0_p[index] <= 0.0 or pi0_mass[index] <= 0.0:
-            continue
-        # endif
-
-        candidates1 = theta_candidates_from_opening(
-            float(e_theta[index]), float(e_phi[index]),
-            float(gamma1_phi[index]), float(opening1_rad[index]),
-        )
-        candidates2 = theta_candidates_from_opening(
-            float(e_theta[index]), float(e_phi[index]),
-            float(gamma2_phi[index]), float(opening2_rad[index]),
-        )
-        if not candidates1 or not candidates2:
-            continue
-        # endif
-
-        pi0_axis = unit_vector(float(pi0_theta[index]), float(pi0_phi[index]))
-        pi0_vector = float(pi0_p[index]) * pi0_axis
-        pi0_energy = math.sqrt(float(pi0_p[index])**2 + float(pi0_mass[index])**2)
-        target = np.asarray([pi0_energy, *pi0_vector], dtype=float)
-        scale = max(pi0_energy, 1.0e-12)
-        solutions = []
-
-        for theta1 in candidates1:
-            if not detector_compatible(theta1, int(detector1[index]), args):
-                continue
-            # endif
-            n1 = unit_vector(theta1, float(gamma1_phi[index]))
-            for theta2 in candidates2:
-                if not detector_compatible(theta2, int(detector2[index]), args):
-                    continue
-                # endif
-                n2 = unit_vector(theta2, float(gamma2_phi[index]))
-                matrix = np.asarray([
-                    [1.0, 1.0],
-                    [n1[0], n2[0]],
-                    [n1[1], n2[1]],
-                    [n1[2], n2[2]],
-                ], dtype=float)
-                energies, _, rank, _ = np.linalg.lstsq(matrix, target, rcond=None)
-                if rank < 2 or energies[0] <= args.cone_min_photon_energy or energies[1] <= args.cone_min_photon_energy:
-                    continue
-                # endif
-                closure = float(np.linalg.norm(matrix @ energies - target) / scale)
-                if closure <= args.cone_closure_max:
-                    solutions.append((closure, float(energies[0]), theta1, float(energies[1]), theta2))
-                # endif
-            # endfor
-        # endfor
-
-        solutions.sort(key=lambda item: item[0])
-        for solution_index, solution in enumerate(solutions[:2]):
-            _, energy1, theta1, energy2, theta2 = solution
-            g1_E[index] = energy1
-            g2_E[index] = energy2
-            g1_theta[index, solution_index] = theta1
-            g1_phi[index, solution_index] = np.mod(gamma1_phi[index], 2.0 * math.pi)
-            g2_theta[index, solution_index] = theta2
-            g2_phi[index, solution_index] = np.mod(gamma2_phi[index], 2.0 * math.pi)
-            valid[index, solution_index] = True
-        # endfor
-    # endfor
-
-    return g1_E, g2_E, g1_theta, g1_phi, g2_theta, g2_phi, valid
-
-
-
-def finalize_epgg_store(store: Mapping[str, Sequence[np.ndarray]]) -> EpggRecords:
-    return EpggRecords(
-        runnum=concat(store["runnum"], np.int64),
-        eventnum=concat(store["eventnum"], np.int64),
-        e_p=concat(store["e_p"]),
-        e_theta=concat(store["e_theta"]),
-        e_phi=concat(store["e_phi"]),
-        p_p=concat(store["p_p"]),
-        p_theta=concat(store["p_theta"]),
-        p_phi=concat(store["p_phi"]),
-        g1_E=concat(store["g1_E"]),
-        g2_E=concat(store["g2_E"]),
-        g1_theta_solutions=np.concatenate(store["g1_theta_solutions"], axis=0)
-        if store["g1_theta_solutions"] else np.empty((0, 2)),
-        g1_phi_solutions=np.concatenate(store["g1_phi_solutions"], axis=0)
-        if store["g1_phi_solutions"] else np.empty((0, 2)),
-        g2_theta_solutions=np.concatenate(store["g2_theta_solutions"], axis=0)
-        if store["g2_theta_solutions"] else np.empty((0, 2)),
-        g2_phi_solutions=np.concatenate(store["g2_phi_solutions"], axis=0)
-        if store["g2_phi_solutions"] else np.empty((0, 2)),
-        g1_detector=concat(store["g1_detector"], np.int16),
-        g2_detector=concat(store["g2_detector"], np.int16),
-        valid_solutions=np.concatenate(store["valid_solutions"], axis=0)
-        if store["valid_solutions"] else np.empty((0, 2), dtype=bool),
-    )
-
-
-def read_epgg_records(
+def read_identity_catalog(
     path: str,
     role: str,
+    mode: str,
     args: argparse.Namespace,
-    deduplicate: bool,
-) -> Tuple[EpggRecords, Dict[str, object]]:
+) -> Tuple[IdentityCatalog, Dict[str, object]]:
     logical = (
         "runnum", "eventnum",
         "e_p", "e_theta", "e_phi",
         "p_p", "p_theta", "p_phi",
-        "pi0_p", "pi0_theta", "pi0_phi",
-        "gamma1_phi_native", "gamma2_phi_native",
-        "open_angle_egamma1", "open_angle_egamma2",
-        "gamma1_detector_native", "gamma2_detector_native",
-        "Mh_gammagamma",
     )
-    resolved = resolve_branches(path, logical, optional=("runnum", "eventnum"))
+    optional = ("runnum", "eventnum") if mode == "mc" else ()
+    resolved = resolve_branches(path, logical, optional=optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
-    store = {name: [] for name in (
-        "runnum", "eventnum",
-        "e_p", "e_theta", "e_phi",
-        "p_p", "p_theta", "p_phi",
-        "g1_E", "g2_E",
-        "g1_theta_solutions", "g1_phi_solutions",
-        "g2_theta_solutions", "g2_phi_solutions",
-        "g1_detector", "g2_detector", "valid_solutions",
-    )}
-    diagnostics = {
-        "role": role,
-        "path": path,
-        "tree_entries": 0,
-        "events_with_valid_solution": 0,
-        "valid_solution_count": 0,
-        "records_after_deduplication": 0,
-        "branch_mapping": resolved,
-    }
-
+    store = {name: [] for name in IdentityCatalog.__dataclass_fields__}
     seen = 0
-    log(f"Reading {role} from {path}")
+    log(f"Reading {role} identity catalog from {path}")
+
     for arrays in uproot.iterate(
         f"{path}:{TREE_NAME}",
         expressions=expressions,
@@ -1145,61 +952,39 @@ def read_epgg_records(
             arrays = {key: value[:n] for key, value in arrays.items()}
         # endif
         seen += n
-        diagnostics["tree_entries"] += int(n)
 
-        def arr(key: str, default: float = math.nan, dtype=np.float64) -> np.ndarray:
-            return finite_array(arrays, resolved.get(key), default=default, dtype=dtype)
-
-        result = reconstruct_epgg_photons(
-            arr("e_theta"), arr("e_phi"),
-            arr("pi0_p"), arr("pi0_theta"), arr("pi0_phi"),
-            arr("gamma1_phi_native"), arr("gamma2_phi_native"),
-            np.deg2rad(arr("open_angle_egamma1")),
-            np.deg2rad(arr("open_angle_egamma2")),
-            arr("Mh_gammagamma"),
-            arr("gamma1_detector_native", dtype=np.int16),
-            arr("gamma2_detector_native", dtype=np.int16),
-            args,
-        )
-        g1_E, g2_E, g1_theta, g1_phi, g2_theta, g2_phi, valid = result
-        diagnostics["events_with_valid_solution"] += int(np.count_nonzero(np.any(valid, axis=1)))
-        diagnostics["valid_solution_count"] += int(np.count_nonzero(valid))
-
-        store["runnum"].append(arr("runnum", default=-1, dtype=np.int64))
-        store["eventnum"].append(arr("eventnum", default=-1, dtype=np.int64))
-        for key in ("e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"):
-            store[key].append(arr(key))
+        for name in store:
+            branch = resolved.get(name)
+            default = -1 if name in {"runnum", "eventnum"} else math.nan
+            dtype = np.int64 if name in {"runnum", "eventnum"} else np.float64
+            store[name].append(finite_array(arrays, branch, default=default, dtype=dtype))
         # endfor
-        store["g1_E"].append(g1_E)
-        store["g2_E"].append(g2_E)
-        store["g1_theta_solutions"].append(g1_theta)
-        store["g1_phi_solutions"].append(g1_phi)
-        store["g2_theta_solutions"].append(g2_theta)
-        store["g2_phi_solutions"].append(g2_phi)
-        store["g1_detector"].append(arr("gamma1_detector_native", dtype=np.int16))
-        store["g2_detector"].append(arr("gamma2_detector_native", dtype=np.int16))
-        store["valid_solutions"].append(valid)
     # endfor
 
-    records = finalize_epgg_store(store)
-    if deduplicate and records.size() > 0:
-        keep = exact_duplicate_keep_mask(
-            [
-                records.e_p, records.e_theta, records.e_phi,
-                records.p_p, records.p_theta, records.p_phi,
-                records.g1_E, records.g2_E,
-            ],
-            decimals=args.mc_signature_decimals,
-        )
-        records = EpggRecords(
-            **{
-                name: np.asarray(getattr(records, name))[keep]
-                for name in records.__dataclass_fields__
-            }
-        )
-    # endif
-    diagnostics["records_after_deduplication"] = records.size()
-    return records, diagnostics
+    catalog = IdentityCatalog(
+        runnum=concat(store["runnum"], np.int64),
+        eventnum=concat(store["eventnum"], np.int64),
+        e_p=concat(store["e_p"]),
+        e_theta=concat(store["e_theta"]),
+        e_phi=concat(store["e_phi"]),
+        p_p=concat(store["p_p"]),
+        p_theta=concat(store["p_theta"]),
+        p_phi=concat(store["p_phi"]),
+    )
+
+    keys = identity_keys_data(catalog) if mode == "data" else identity_keys_mc(
+        catalog, args.mc_signature_decimals
+    )
+    unique_count = int(np.unique(structured_keys(keys)).size) if catalog.size() else 0
+    diagnostics = {
+        "role": role,
+        "mode": mode,
+        "path": path,
+        "tree_entries_read": int(seen),
+        "catalog_records": catalog.size(),
+        "unique_identity_keys": unique_count,
+    }
+    return catalog, diagnostics
 
 
 def identity_keys_data(records) -> np.ndarray:
@@ -1229,11 +1014,7 @@ def structured_keys(matrix: np.ndarray) -> np.ndarray:
 
 def group_indices(keys: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     structured = structured_keys(keys)
-    unique, inverse, counts = np.unique(
-        structured,
-        return_inverse=True,
-        return_counts=True,
-    )
+    _, inverse, counts = np.unique(structured, return_inverse=True, return_counts=True)
     order = np.argsort(inverse, kind="stable")
     offsets = np.empty(counts.size + 1, dtype=np.int64)
     offsets[0] = 0
@@ -1241,209 +1022,168 @@ def group_indices(keys: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]
     return inverse, order, offsets
 
 
-def pair_match_score(
+def photon_pair_mass(
+    E1: float,
+    theta1: float,
+    phi1: float,
+    E2: float,
+    theta2: float,
+    phi2: float,
+) -> float:
+    cosine = (
+        math.sin(theta1) * math.sin(theta2) * math.cos(phi1 - phi2)
+        + math.cos(theta1) * math.cos(theta2)
+    )
+    mass2 = 2.0 * E1 * E2 * (1.0 - max(-1.0, min(1.0, cosine)))
+    return math.sqrt(max(mass2, 0.0))
+
+
+def match_partner_photons(
     opportunities: OpportunityRecords,
-    epgg: EpggRecords,
-    opportunity_index: int,
-    epgg_index: int,
-    solution_index: int,
-    args: argparse.Namespace,
-) -> Optional[Tuple[float, int, float, float, float, float]]:
-    if not epgg.valid_solutions[epgg_index, solution_index]:
-        return None
-    # endif
-
-    g1_theta = epgg.g1_theta_solutions[epgg_index, solution_index]
-    g1_phi = epgg.g1_phi_solutions[epgg_index, solution_index]
-    g2_theta = epgg.g2_theta_solutions[epgg_index, solution_index]
-    g2_phi = epgg.g2_phi_solutions[epgg_index, solution_index]
-
-    tag_angles = opening_angle_deg(
-        np.asarray([opportunities.tag_theta[opportunity_index]] * 2),
-        np.asarray([opportunities.tag_phi[opportunity_index]] * 2),
-        np.asarray([g1_theta, g2_theta]),
-        np.asarray([g1_phi, g2_phi]),
-    )
-    tag_relE = np.asarray(
-        [
-            abs(opportunities.tag_E[opportunity_index] - epgg.g1_E[epgg_index])
-            / max(epgg.g1_E[epgg_index], 1.0e-12),
-            abs(opportunities.tag_E[opportunity_index] - epgg.g2_E[epgg_index])
-            / max(epgg.g2_E[epgg_index], 1.0e-12),
-        ]
-    )
-    tag_scores = (
-        (tag_angles / max(args.tag_match_angle_max_deg, 1.0e-12))**2
-        + (tag_relE / max(args.tag_match_relative_E_max, 1.0e-12))**2
-    )
-    tag_choice = int(np.argmin(tag_scores))
-    if (
-        tag_angles[tag_choice] > args.tag_match_angle_max_deg
-        or tag_relE[tag_choice] > args.tag_match_relative_E_max
-    ):
-        return None
-    # endif
-
-    if tag_choice == 0:
-        probe_E, probe_theta, probe_phi = epgg.g2_E[epgg_index], g2_theta, g2_phi
-    else:
-        probe_E, probe_theta, probe_phi = epgg.g1_E[epgg_index], g1_theta, g1_phi
-    # endif
-
-    probe_angle = float(
-        opening_angle_deg(
-            np.asarray([opportunities.probe_theta[opportunity_index]]),
-            np.asarray([opportunities.probe_phi[opportunity_index]]),
-            np.asarray([probe_theta]),
-            np.asarray([probe_phi]),
-        )[0]
-    )
-    probe_relE = abs(opportunities.probe_E[opportunity_index] - probe_E) / max(
-        probe_E, 1.0e-12
-    )
-    if (
-        probe_angle > args.probe_match_angle_max_deg
-        or probe_relE > args.probe_match_relative_E_max
-    ):
-        return None
-    # endif
-
-    score = (
-        tag_scores[tag_choice]
-        + (probe_angle / max(args.probe_match_angle_max_deg, 1.0e-12))**2
-        + (probe_relE / max(args.probe_match_relative_E_max, 1.0e-12))**2
-    )
-    return (
-        float(score),
-        tag_choice + 1,
-        float(tag_angles[tag_choice]),
-        float(tag_relE[tag_choice]),
-        float(probe_angle),
-        float(probe_relE),
-    )
-
-
-def match_opportunities(
-    opportunities: OpportunityRecords,
-    epgg: EpggRecords,
+    candidates: PhotonCandidateRecords,
+    catalog: IdentityCatalog,
     mode: str,
     args: argparse.Namespace,
-) -> MatchResult:
+) -> PartnerMatchResult:
     n = opportunities.size()
     matched = np.zeros(n, dtype=bool)
-    epgg_index = np.full(n, -1, dtype=np.int64)
-    tag_choice = np.zeros(n, dtype=np.int8)
-    solution_index = np.full(n, -1, dtype=np.int8)
-    tag_angle = np.full(n, np.nan)
-    tag_relE = np.full(n, np.nan)
+    catalog_confirmed = np.zeros(n, dtype=bool)
+    partner_index = np.full(n, -1, dtype=np.int64)
     probe_angle = np.full(n, np.nan)
-    probe_relE = np.full(n, np.nan)
+    probe_relative_E = np.full(n, np.nan)
+    pair_mass = np.full(n, np.nan)
     score = np.full(n, np.nan)
 
-    opportunity_keys = (
-        identity_keys_data(opportunities)
-        if mode == "data"
-        else identity_keys_mc(opportunities, args.mc_signature_decimals)
+    opportunity_keys = identity_keys_data(opportunities) if mode == "data" else identity_keys_mc(
+        opportunities, args.mc_signature_decimals
     )
-    epgg_keys = (
-        identity_keys_data(epgg)
-        if mode == "data"
-        else identity_keys_mc(epgg, args.mc_signature_decimals)
+    candidate_keys = identity_keys_data(candidates) if mode == "data" else identity_keys_mc(
+        candidates, args.mc_signature_decimals
+    )
+    catalog_keys = identity_keys_data(catalog) if mode == "data" else identity_keys_mc(
+        catalog, args.mc_signature_decimals
     )
 
-    opp_inverse, opp_order, opp_offsets = group_indices(opportunity_keys)
-    epgg_inverse, epgg_order, epgg_offsets = group_indices(epgg_keys)
-
-    # Create a dictionary from the actual structured key to the epgg group.
-    epgg_structured = structured_keys(epgg_keys)
-    epgg_unique, epgg_first = np.unique(epgg_structured, return_index=True)
-    epgg_group_by_key = {
-        epgg_unique[index].tobytes(): int(epgg_inverse[epgg_first[index]])
-        for index in range(epgg_unique.size)
+    candidate_inverse, candidate_order, candidate_offsets = group_indices(candidate_keys)
+    candidate_structured = structured_keys(candidate_keys)
+    candidate_unique, candidate_first = np.unique(candidate_structured, return_index=True)
+    candidate_group_by_key = {
+        candidate_unique[index].tobytes(): int(candidate_inverse[candidate_first[index]])
+        for index in range(candidate_unique.size)
     }
+    catalog_key_set = {key.tobytes() for key in np.unique(structured_keys(catalog_keys))}
 
-    opportunity_structured = structured_keys(opportunity_keys)
-    opportunity_unique, opportunity_first = np.unique(
-        opportunity_structured,
-        return_index=True,
-    )
+    shared_candidate_groups = 0
+    catalog_groups = 0
+    candidate_tests = 0
+    exact_tag_candidates_skipped = 0
+    mass_window_rejections = 0
 
-    shared_groups = 0
-    candidate_pairs = 0
-    ambiguous_groups = 0
-    for unique_index, first_index in enumerate(opportunity_first):
-        key_bytes = opportunity_unique[unique_index].tobytes()
-        if key_bytes not in epgg_group_by_key:
+    for opportunity_index, key in enumerate(structured_keys(opportunity_keys)):
+        key_bytes = key.tobytes()
+        if key_bytes not in catalog_key_set:
             continue
         # endif
-        shared_groups += 1
-        opp_group = int(opp_inverse[first_index])
-        gg_group = epgg_group_by_key[key_bytes]
-        opp_members = opp_order[opp_offsets[opp_group]:opp_offsets[opp_group + 1]]
-        gg_members = epgg_order[epgg_offsets[gg_group]:epgg_offsets[gg_group + 1]]
-        if opp_members.size > 1 or gg_members.size > 1:
-            ambiguous_groups += 1
+        catalog_confirmed[opportunity_index] = True
+        catalog_groups += 1
+        group_index = candidate_group_by_key.get(key_bytes)
+        if group_index is None:
+            continue
         # endif
-
-        # Each directed epgamma opportunity may legitimately match the same
-        # epgammagamma event through the opposite daughter photon.  Therefore
-        # resolve the best epgammagamma candidate independently for each
-        # opportunity instead of imposing a one-to-one assignment across tags.
-        for opportunity in opp_members:
-            best = None
-            for gg in gg_members:
-                for solution in (0, 1):
-                    candidate_pairs += 1
-                    candidate = pair_match_score(
-                        opportunities, epgg, int(opportunity), int(gg), solution, args
-                    )
-                    if candidate is None:
-                        continue
-                    # endif
-                    if best is None or candidate[0] < best[0]:
-                        best = (*candidate, int(gg), int(solution))
-                    # endif
-                # endfor
-            # endfor
-            if best is None:
+        shared_candidate_groups += 1
+        members = candidate_order[
+            candidate_offsets[group_index]:candidate_offsets[group_index + 1]
+        ]
+        best = None
+        for candidate_index in members:
+            candidate_tests += 1
+            tag_angle = float(opening_angle_deg(
+                np.asarray([opportunities.tag_theta[opportunity_index]]),
+                np.asarray([opportunities.tag_phi[opportunity_index]]),
+                np.asarray([candidates.photon_theta[candidate_index]]),
+                np.asarray([candidates.photon_phi[candidate_index]]),
+            )[0])
+            tag_relE = abs(
+                opportunities.tag_E[opportunity_index] - candidates.photon_E[candidate_index]
+            ) / max(candidates.photon_E[candidate_index], 1.0e-12)
+            if tag_angle < 1.0e-6 and tag_relE < 1.0e-10:
+                exact_tag_candidates_skipped += 1
                 continue
             # endif
-            (
-                score_value, choice_value, tag_angle_value, tag_relE_value,
-                probe_angle_value, probe_relE_value, gg_value, solution_value,
-            ) = best
-            matched[opportunity] = True
-            epgg_index[opportunity] = gg_value
-            tag_choice[opportunity] = choice_value
-            solution_index[opportunity] = solution_value
-            tag_angle[opportunity] = tag_angle_value
-            tag_relE[opportunity] = tag_relE_value
-            probe_angle[opportunity] = probe_angle_value
-            probe_relE[opportunity] = probe_relE_value
-            score[opportunity] = score_value
+
+            angle = float(opening_angle_deg(
+                np.asarray([opportunities.probe_theta[opportunity_index]]),
+                np.asarray([opportunities.probe_phi[opportunity_index]]),
+                np.asarray([candidates.photon_theta[candidate_index]]),
+                np.asarray([candidates.photon_phi[candidate_index]]),
+            )[0])
+            relative_E = abs(
+                opportunities.probe_E[opportunity_index] - candidates.photon_E[candidate_index]
+            ) / max(candidates.photon_E[candidate_index], 1.0e-12)
+            if (
+                candidates.photon_E[candidate_index] < args.probe_E_min
+                or angle > args.probe_match_angle_max_deg
+                or relative_E > args.probe_match_relative_E_max
+            ):
+                continue
+            # endif
+
+            mass = photon_pair_mass(
+                float(opportunities.tag_E[opportunity_index]),
+                float(opportunities.tag_theta[opportunity_index]),
+                float(opportunities.tag_phi[opportunity_index]),
+                float(candidates.photon_E[candidate_index]),
+                float(candidates.photon_theta[candidate_index]),
+                float(candidates.photon_phi[candidate_index]),
+            )
+            if not (args.pi0_mass_min <= mass <= args.pi0_mass_max):
+                mass_window_rejections += 1
+                continue
+            # endif
+
+            candidate_score = (
+                (angle / max(args.probe_match_angle_max_deg, 1.0e-12)) ** 2
+                + (relative_E / max(args.probe_match_relative_E_max, 1.0e-12)) ** 2
+            )
+            if best is None or candidate_score < best[0]:
+                best = (candidate_score, int(candidate_index), angle, relative_E, mass)
+            # endif
         # endfor
+
+        if best is not None:
+            matched[opportunity_index] = True
+            score[opportunity_index] = best[0]
+            partner_index[opportunity_index] = best[1]
+            probe_angle[opportunity_index] = best[2]
+            probe_relative_E[opportunity_index] = best[3]
+            pair_mass[opportunity_index] = best[4]
+        # endif
     # endfor
 
-    return MatchResult(
+    return PartnerMatchResult(
         matched=matched,
-        epgg_index=epgg_index,
-        tag_choice=tag_choice,
-        solution_index=solution_index,
-        tag_angle_deg=tag_angle,
-        tag_relative_E=tag_relE,
+        catalog_confirmed=catalog_confirmed,
+        partner_index=partner_index,
         probe_angle_deg=probe_angle,
-        probe_relative_E=probe_relE,
+        probe_relative_E=probe_relative_E,
+        pair_mass_GeV=pair_mass,
         score=score,
         summary={
             "mode": mode,
             "opportunities": n,
-            "epgammagamma_records": epgg.size(),
-            "shared_identity_groups": shared_groups,
-            "ambiguous_identity_groups": ambiguous_groups,
-            "candidate_pair_solution_tests": candidate_pairs,
+            "candidate_records": candidates.size(),
+            "epgammagamma_catalog_records": catalog.size(),
+            "catalog_confirmed_opportunities": int(np.count_nonzero(catalog_confirmed)),
+            "catalog_confirmed_fraction": float(np.mean(catalog_confirmed)) if n else math.nan,
+            "opportunities_with_candidate_group": shared_candidate_groups,
+            "candidate_tests": candidate_tests,
+            "exact_tag_candidates_skipped": exact_tag_candidates_skipped,
+            "pi0_mass_window_rejections": mass_window_rejections,
             "matched_opportunities": int(np.count_nonzero(matched)),
-            "matched_fraction": (
-                float(np.mean(matched)) if n else math.nan
+            "matched_fraction": float(np.mean(matched)) if n else math.nan,
+            "matched_fraction_given_catalog": (
+                float(np.count_nonzero(matched) / np.count_nonzero(catalog_confirmed))
+                if np.count_nonzero(catalog_confirmed) else math.nan
             ),
         },
     )
@@ -1849,14 +1589,14 @@ def plot_expected_probe_diagnostics(
 def plot_matching_residuals(
     path: Path,
     period_label: str,
-    data_match: MatchResult,
-    mc_match: MatchResult,
+    data_match: PartnerMatchResult,
+    mc_match: PartnerMatchResult,
 ) -> None:
     variables = (
-        ("tag_angle_deg", np.linspace(0.0, 2.0, 81), "Tag angular residual (deg)"),
-        ("tag_relative_E", np.linspace(0.0, 0.30, 81), "Tag relative energy residual"),
         ("probe_angle_deg", np.linspace(0.0, 6.0, 81), "Probe angular residual (deg)"),
         ("probe_relative_E", np.linspace(0.0, 0.70, 81), "Probe relative energy residual"),
+        ("pair_mass_GeV", np.linspace(0.08, 0.20, 81), r"Matched $M_{\gamma\gamma}$ (GeV)"),
+        ("score", np.linspace(0.0, 2.0, 81), "Partner-match score"),
     )
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
     for axis, (name, bins, label) in zip(axes.flat, variables):
@@ -1880,7 +1620,7 @@ def plot_matching_residuals(
         axis.grid(alpha=0.25)
         axis.legend()
     # endfor
-    fig.suptitle(f"{period_label}: accepted epgamma-to-epgammagamma matches")
+    fig.suptitle(f"{period_label}: accepted partner-photon matches")
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(path, dpi=180)
     plt.close(fig)
@@ -1930,25 +1670,29 @@ def process_period(
     period_dir.mkdir(parents=True, exist_ok=True)
     fit_dir.mkdir(parents=True, exist_ok=True)
 
-    data, data_cutflow = read_opportunities(
+    data, data_candidates, data_cutflow = read_opportunities(
         period.epg_data, period.beam_energy_GeV, "epgamma data", args, deduplicate=False
     )
-    dvcs, dvcs_cutflow = read_opportunities(
+    dvcs, _, dvcs_cutflow = read_opportunities(
         period.dvcs_mc, period.beam_energy_GeV, "DVCSGEN epgamma MC", args, deduplicate=True
     )
-    pi0, pi0_cutflow = read_opportunities(
+    pi0, pi0_candidates, pi0_cutflow = read_opportunities(
         period.pi0_epg_mc, period.beam_energy_GeV, "AAOGEN-as-epgamma MC", args, deduplicate=True
     )
 
-    epgg_data, epgg_data_diag = read_epgg_records(
-        period.epgg_data, "epgammagamma data", args, deduplicate=False
+    epgg_data, epgg_data_diag = read_identity_catalog(
+        period.epgg_data, "epgammagamma data", "data", args
     )
-    epgg_mc, epgg_mc_diag = read_epgg_records(
-        period.pi0_epgg_mc, "AAOGEN epgammagamma MC", args, deduplicate=True
+    epgg_mc, epgg_mc_diag = read_identity_catalog(
+        period.pi0_epgg_mc, "AAOGEN epgammagamma MC", "mc", args
     )
 
-    data_match = match_opportunities(data, epgg_data, "data", args)
-    mc_match = match_opportunities(pi0, epgg_mc, "mc", args)
+    data_match = match_partner_photons(
+        data, data_candidates, epgg_data, "data", args
+    )
+    mc_match = match_partner_photons(
+        pi0, pi0_candidates, epgg_mc, "mc", args
+    )
 
     plot_expected_probe_diagnostics(
         period_dir / "expected_probe_diagnostics.png",
@@ -2055,7 +1799,7 @@ def process_period(
             "dvcs_mc": dvcs_cutflow,
             "pi0_mc": pi0_cutflow,
         },
-        "epgammagamma_diagnostics": {
+        "epgammagamma_identity_catalogs": {
             "data": epgg_data_diag,
             "mc": epgg_mc_diag,
         },
