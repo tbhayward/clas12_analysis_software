@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v29_delta_phi_range_fix.py
+derive_photon_efficiency_scale_factors_v30_top_level_data_mc_split_and_ranges.py
 
 Stepwise photon-efficiency study: raw data/MC shape comparison followed by the established AAOGEN-only efficiency.
 
@@ -212,7 +212,7 @@ FIT_VARIABLES: Tuple[FitVariable, ...] = (
         "theta_cm",
         r"$\theta_{p\gamma}^{\rm CM}$ (rad)",
         120,
-        0.0,
+        1.0,
         math.pi,
     ),
     FitVariable(
@@ -220,21 +220,21 @@ FIT_VARIABLES: Tuple[FitVariable, ...] = (
         r"$\theta_{\gamma\gamma}$ (deg)",
         120,
         0.0,
-        50.0,
+        40.0,
     ),
     FitVariable(
         "pTmiss",
         r"$p_T^{\rm miss}$ (GeV)",
         125,
         0.0,
-        1.0,
+        2.0,
     ),
     FitVariable(
         "Emiss2",
         r"$E_{\rm miss}$ (GeV)",
         120,
         0.0,
-        6.0,
+        9.0,
     ),
     FitVariable(
         "Mx2",
@@ -246,9 +246,9 @@ FIT_VARIABLES: Tuple[FitVariable, ...] = (
     FitVariable(
         "Mx2_2",
         r"$M_{x2}^2$ (GeV$^2$)",
-        150,
+        160,
         0.0,
-        12.0,
+        16.0,
     ),
 )
 
