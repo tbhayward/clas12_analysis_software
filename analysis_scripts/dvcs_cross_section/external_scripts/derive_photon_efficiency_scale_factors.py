@@ -1,39 +1,44 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v32_data_shape_comparison_canvas.py
+derive_photon_efficiency_scale_factors_v33_fast_shapes_and_photon_multiplicity.py
 
 Stepwise photon-efficiency study.
 
-The default execution performs the current data-side shape-comparison stage:
+Default data-side processing:
 
-  * read every stored epgamma entry from data, DVCSGEN, and AAOGEN;
-  * require open_angle_ep2 > 5 deg for both the before-cuts and after-cuts
-    populations;
-  * compare five directly stored exclusivity variables:
-      Delta_phi,
-      theta_gamma_gamma,
-      pTmiss,
-      Emiss2,
-      Mx2_2;
-  * apply the additional after-cuts requirements:
-      Emiss2 > 1 GeV,
-      Mx2_2 > 2 GeV^2,
-      pTmiss > 0.5 GeV;
-  * write one 2x5 canvas per run period, with before-cuts comparisons on the
-    top row and after-cuts comparisons on the bottom row.
+  * process the 15 epgamma input files (five periods times data, DVCSGEN, and
+    AAOGEN background MC) in parallel with at most eight workers;
+  * read each file only once;
+  * accumulate the before-cuts and after-cuts normalized shape histograms
+    directly while streaming ROOT chunks;
+  * require open_angle_ep2 > 5 deg in both rows;
+  * additionally require Emiss2 > 1 GeV, Mx2_2 > 2 GeV^2, and
+    pTmiss > 0.5 GeV in the after-cuts row;
+  * write one 2x5 canvas per run period under data/shape_comparison;
+  * determine the number of physical events represented by one, two, ...,
+    six reconstructed-photon entries, plus an overflow category above six.
 
-The five run-period canvases are written directly to:
+Event identity:
 
-  output/photon_efficiency_study/data/shape_comparison/
+  * data: exact (runnum, evnum);
+  * DVCSGEN and AAOGEN epgamma MC: rounded reconstructed electron and proton
+    kinematics (e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi), using
+    --mc-signature-decimals.
 
-No data fit, event grouping, candidate arbitration, or deduplication is
-performed. The plotted quantities and open_angle_ep2 are read directly from
-the ROOT trees.
-
-The completed AAOGEN MC efficiency stage remains available only when
---run-mc-efficiency is supplied and writes under:
+The completed AAOGEN MC photon-efficiency machinery is preserved. Its output
+directory is always retained at:
 
   output/photon_efficiency_study/mc/
+
+and it can be rerun with --run-mc-efficiency.
+
+Data products are written under:
+
+  output/photon_efficiency_study/data/
+      shape_comparison/
+      photon_multiplicity_summary.csv
+      photon_multiplicity_summary.json
+      shape_comparison_audit.json
 """
 
 
@@ -71,7 +76,7 @@ except ImportError as exc:
 TREE_NAME = "PhysicsEvents"
 DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study"
 DEFAULT_STEP_SIZE = "200 MB"
-MAX_WORKERS = 7
+MAX_WORKERS = 8
 
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
@@ -2373,7 +2378,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=5,
+        default=8,
         help=f"Number of period workers; hard maximum is {MAX_WORKERS}.",
     )
     parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
@@ -2790,42 +2795,363 @@ RAW_SHAPE_SAMPLE_INFO: Tuple[Tuple[str, str, str], ...] = (
 )
 
 
-def read_data_shape_branches(
+def resolve_branches_from_keys(
     path: str,
-    sample_key: str,
-    period_label: str,
-    args: argparse.Namespace,
-) -> Tuple[Dict[str, np.ndarray], Dict[str, object]]:
+    available_keys: Sequence[str],
+    logical_names: Sequence[str],
+) -> Dict[str, str]:
     """
-    Read the five plotted branches plus open_angle_ep2 directly from the tree.
+    Resolve logical branches from an already opened tree branch list.
 
-    No event grouping, candidate arbitration, matching, deduplication, or
-    derived-variable substitution is performed.
+    This avoids reopening every ROOT file inside resolve_branches().
     """
-    logical_names = [
+    available = set(available_keys)
+    resolved: Dict[str, str] = {}
+    missing: List[str] = []
+
+    for logical_name in logical_names:
+        aliases = ALIASES.get(logical_name, (logical_name,))
+        branch = next(
+            (candidate for candidate in aliases if candidate in available),
+            None,
+        )
+        if branch is None:
+            missing.append(
+                f"{logical_name}: tried {', '.join(aliases)}"
+            )
+        else:
+            resolved[logical_name] = branch
+        # endif
+    # endfor
+
+    if missing:
+        raise KeyError(
+            f"Missing required branches in {path}:\n  "
+            + "\n  ".join(missing)
+        )
+    # endif
+    return resolved
+
+
+def empty_stage_histograms() -> Dict[str, Dict[str, object]]:
+    histograms: Dict[str, Dict[str, object]] = {}
+    for variable in DATA_SHAPE_VARIABLES:
+        edges = np.linspace(
+            variable.low,
+            variable.high,
+            variable.bins + 1,
+        )
+        histograms[variable.key] = {
+            "edges": edges,
+            "counts": np.zeros(variable.bins, dtype=np.int64),
+            "selected_entries": 0,
+            "in_range_entries": 0,
+            "underflow_entries": 0,
+            "overflow_entries": 0,
+        }
+    # endfor
+    return histograms
+
+
+def update_stage_histograms(
+    stage_histograms: Dict[str, Dict[str, object]],
+    arrays_by_logical_name: Mapping[str, np.ndarray],
+    mask: np.ndarray,
+) -> None:
+    for variable in DATA_SHAPE_VARIABLES:
+        selected = np.asarray(
+            arrays_by_logical_name[variable.key],
+            dtype=float,
+        )[mask]
+        histogram = stage_histograms[variable.key]
+        edges = np.asarray(histogram["edges"], dtype=float)
+        counts, _ = np.histogram(selected, bins=edges)
+
+        histogram["counts"] += counts.astype(np.int64)
+        histogram["selected_entries"] += int(selected.size)
+        histogram["in_range_entries"] += int(np.sum(counts))
+        histogram["underflow_entries"] += int(
+            np.count_nonzero(selected < variable.low)
+        )
+        histogram["overflow_entries"] += int(
+            np.count_nonzero(selected >= variable.high)
+        )
+    # endfor
+
+
+def finalize_stage_histograms(
+    stage_histograms: Dict[str, Dict[str, object]],
+) -> Dict[str, Dict[str, object]]:
+    finalized: Dict[str, Dict[str, object]] = {}
+
+    for variable in DATA_SHAPE_VARIABLES:
+        histogram = stage_histograms[variable.key]
+        counts = np.asarray(histogram["counts"], dtype=np.int64)
+        in_range = int(histogram["in_range_entries"])
+        selected = int(histogram["selected_entries"])
+
+        finalized[variable.key] = {
+            "edges": np.asarray(histogram["edges"], dtype=float),
+            "counts": counts,
+            "unit_area": (
+                counts.astype(float) / in_range
+                if in_range > 0
+                else np.zeros_like(counts, dtype=float)
+            ),
+            "selected_entries": selected,
+            "in_range_entries": in_range,
+            "underflow_entries": int(
+                histogram["underflow_entries"]
+            ),
+            "overflow_entries": int(
+                histogram["overflow_entries"]
+            ),
+            "in_range_fraction_of_selected": (
+                in_range / selected if selected > 0 else math.nan
+            ),
+            "underflow_fraction_of_selected": (
+                int(histogram["underflow_entries"]) / selected
+                if selected > 0
+                else math.nan
+            ),
+            "overflow_fraction_of_selected": (
+                int(histogram["overflow_entries"]) / selected
+                if selected > 0
+                else math.nan
+            ),
+        }
+    # endfor
+
+    return finalized
+
+
+def uint64_mix(values: np.ndarray) -> np.ndarray:
+    """
+    SplitMix64 finalizer used to build a deterministic 128-bit MC signature.
+    """
+    values = np.asarray(values, dtype=np.uint64)
+    values = values ^ (values >> np.uint64(30))
+    values = values * np.uint64(0xBF58476D1CE4E5B9)
+    values = values ^ (values >> np.uint64(27))
+    values = values * np.uint64(0x94D049BB133111EB)
+    values = values ^ (values >> np.uint64(31))
+    return values
+
+
+def data_identity_signature(
+    arrays_by_logical_name: Mapping[str, np.ndarray],
+) -> Tuple[np.ndarray, np.ndarray]:
+    runnum = np.asarray(
+        arrays_by_logical_name["runnum"],
+        dtype=float,
+    )
+    eventnum = np.asarray(
+        arrays_by_logical_name["eventnum"],
+        dtype=float,
+    )
+    valid = np.isfinite(runnum) & np.isfinite(eventnum)
+
+    signature = np.empty(
+        int(np.count_nonzero(valid)),
+        dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
+    )
+    signature["runnum"] = np.rint(runnum[valid]).astype(np.int64)
+    signature["eventnum"] = np.rint(eventnum[valid]).astype(np.int64)
+    return signature, valid
+
+
+def mc_identity_signature(
+    arrays_by_logical_name: Mapping[str, np.ndarray],
+    decimals: int,
+) -> Tuple[np.ndarray, np.ndarray]:
+    logical_names = (
+        "e_p",
+        "e_theta",
+        "e_phi",
+        "p_p",
+        "p_theta",
+        "p_phi",
+    )
+    columns = [
+        np.asarray(arrays_by_logical_name[name], dtype=float)
+        for name in logical_names
+    ]
+
+    valid = np.ones(columns[0].size, dtype=bool)
+    for column in columns:
+        valid &= np.isfinite(column)
+    # endfor
+
+    scale = float(10 ** int(decimals))
+    quantized = [
+        np.rint(column[valid] * scale).astype(np.int64)
+        for column in columns
+    ]
+
+    count = int(np.count_nonzero(valid))
+    h1 = np.full(count, np.uint64(0x243F6A8885A308D3))
+    h2 = np.full(count, np.uint64(0x13198A2E03707344))
+
+    for index, column in enumerate(quantized):
+        unsigned = column.view(np.uint64)
+        mixed_a = uint64_mix(
+            unsigned
+            + np.uint64(
+                (0x9E3779B97F4A7C15 * (index + 1))
+                & 0xFFFFFFFFFFFFFFFF
+            )
+        )
+        mixed_b = uint64_mix(
+            unsigned
+            ^ np.uint64(
+                (0xD1B54A32D192ED03 * (index + 1))
+                & 0xFFFFFFFFFFFFFFFF
+            )
+        )
+        h1 = uint64_mix(h1 ^ mixed_a)
+        h2 = uint64_mix(h2 + mixed_b)
+    # endfor
+
+    signature = np.empty(
+        count,
+        dtype=[("hash1", "<u8"), ("hash2", "<u8")],
+    )
+    signature["hash1"] = h1
+    signature["hash2"] = h2
+    return signature, valid
+
+
+def photon_multiplicity_summary(
+    signatures: Sequence[np.ndarray],
+    period: PeriodConfig,
+    sample_key: str,
+    sample_label: str,
+    entries_read: int,
+    valid_identity_entries: int,
+    args: argparse.Namespace,
+) -> Dict[str, object]:
+    if signatures:
+        all_signatures = np.concatenate(signatures)
+    else:
+        if sample_key == "data":
+            all_signatures = np.empty(
+                0,
+                dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
+            )
+        else:
+            all_signatures = np.empty(
+                0,
+                dtype=[("hash1", "<u8"), ("hash2", "<u8")],
+            )
+        # endif
+    # endif
+
+    if all_signatures.size > 0:
+        _, multiplicities = np.unique(
+            all_signatures,
+            return_counts=True,
+        )
+    else:
+        multiplicities = np.empty(0, dtype=np.int64)
+    # endif
+
+    exact_counts = {
+        multiplicity: int(
+            np.count_nonzero(multiplicities == multiplicity)
+        )
+        for multiplicity in range(1, 7)
+    }
+    above_six = int(np.count_nonzero(multiplicities > 6))
+    unique_events = int(multiplicities.size)
+    accounted_entries = int(np.sum(multiplicities))
+
+    return {
+        "period": period.key,
+        "period_label": period.label,
+        "sample": sample_key,
+        "sample_label": sample_label,
+        "identity_method": (
+            "exact runnum + evnum"
+            if sample_key == "data"
+            else (
+                "128-bit hash of rounded reconstructed electron/proton "
+                f"kinematics ({args.mc_signature_decimals} decimals)"
+            )
+        ),
+        "tree_entries_read": int(entries_read),
+        "valid_identity_entries": int(valid_identity_entries),
+        "unique_events": unique_events,
+        "events_with_1_photon": exact_counts[1],
+        "events_with_2_photons": exact_counts[2],
+        "events_with_3_photons": exact_counts[3],
+        "events_with_4_photons": exact_counts[4],
+        "events_with_5_photons": exact_counts[5],
+        "events_with_6_photons": exact_counts[6],
+        "events_with_more_than_6_photons": above_six,
+        "maximum_photons_in_event": (
+            int(np.max(multiplicities))
+            if multiplicities.size > 0
+            else 0
+        ),
+        "photon_entries_accounted_for": accounted_entries,
+    }
+
+
+def process_data_shape_sample(
+    period: PeriodConfig,
+    sample_key: str,
+    sample_label: str,
+    period_attribute: str,
+    args_dict: Mapping[str, object],
+) -> Tuple[str, str, Dict[str, object]]:
+    """
+    Read one input file once and produce both shape stages plus multiplicity.
+    """
+    args = argparse.Namespace(**args_dict)
+    path = getattr(period, period_attribute)
+
+    total_entries, available_keys = require_tree(path)
+
+    shape_logical_names = [
         *(variable.key for variable in DATA_SHAPE_VARIABLES),
         "open_angle_ep2",
     ]
-    resolved = resolve_branches(path, logical_names)
-    expressions = sorted(
-        branch for branch in resolved.values() if branch is not None
+    identity_logical_names = (
+        ["runnum", "eventnum"]
+        if sample_key == "data"
+        else ["e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"]
     )
+    logical_names = list(
+        dict.fromkeys(shape_logical_names + identity_logical_names)
+    )
+    resolved = resolve_branches_from_keys(
+        path,
+        available_keys,
+        logical_names,
+    )
+    expressions = sorted(set(resolved.values()))
 
-    total_entries, available = require_tree(path)
     entry_stop = (
         min(total_entries, int(args.max_events))
         if args.max_events is not None
         else total_entries
     )
 
-    pieces: Dict[str, List[np.ndarray]] = {
-        logical_name: [] for logical_name in logical_names
-    }
+    before_histograms = empty_stage_histograms()
+    after_histograms = empty_stage_histograms()
+    signatures: List[np.ndarray] = []
+
     entries_read = 0
+    valid_identity_entries = 0
+    all_required_finite = 0
+    open_angle_selected = 0
+    after_emiss = 0
+    after_mx2 = 0
+    after_ptmiss = 0
 
     log(
-        f"{period_label} data-shape {sample_key}: reading "
-        f"{entry_stop:,}/{total_entries:,} entries from {path}"
+        f"{period.label} {sample_label}: streaming "
+        f"{entry_stop:,}/{total_entries:,} entries"
     )
 
     for arrays in uproot.iterate(
@@ -2838,172 +3164,123 @@ def read_data_shape_branches(
         chunk_size = len(next(iter(arrays.values()))) if arrays else 0
         entries_read += chunk_size
 
-        for logical_name in logical_names:
-            branch = resolved[logical_name]
-            if branch is None:
-                raise RuntimeError(
-                    f"Resolved branch unexpectedly absent for {logical_name}"
-                )
-            # endif
-            pieces[logical_name].append(
-                np.asarray(arrays[branch], dtype=float)
+        logical_arrays = {
+            logical_name: np.asarray(
+                arrays[resolved[logical_name]],
+                dtype=float,
             )
+            for logical_name in logical_names
+        }
+
+        finite = np.isfinite(logical_arrays["open_angle_ep2"])
+        for variable in DATA_SHAPE_VARIABLES:
+            finite &= np.isfinite(logical_arrays[variable.key])
         # endfor
+        all_required_finite += int(np.count_nonzero(finite))
+
+        before_mask = finite & (
+            logical_arrays["open_angle_ep2"] > 5.0
+        )
+        open_angle_selected += int(np.count_nonzero(before_mask))
+
+        after_mask = before_mask.copy()
+        after_mask &= (
+            logical_arrays["Emiss2"] > args.data_Emiss_min
+        )
+        after_emiss += int(np.count_nonzero(after_mask))
+
+        after_mask &= (
+            logical_arrays["Mx2_2"] > args.data_Mx2_2_min
+        )
+        after_mx2 += int(np.count_nonzero(after_mask))
+
+        after_mask &= (
+            logical_arrays["pTmiss"] > args.data_pTmiss_min
+        )
+        after_ptmiss += int(np.count_nonzero(after_mask))
+
+        update_stage_histograms(
+            before_histograms,
+            logical_arrays,
+            before_mask,
+        )
+        update_stage_histograms(
+            after_histograms,
+            logical_arrays,
+            after_mask,
+        )
+
+        if sample_key == "data":
+            signature, valid_identity = data_identity_signature(
+                logical_arrays
+            )
+        else:
+            signature, valid_identity = mc_identity_signature(
+                logical_arrays,
+                args.mc_signature_decimals,
+            )
+        # endif
+        valid_identity_entries += int(np.count_nonzero(valid_identity))
+        signatures.append(signature)
     # endfor
 
-    values = {
-        key: (
-            np.concatenate(chunks)
-            if chunks
-            else np.empty(0, dtype=float)
-        )
-        for key, chunks in pieces.items()
-    }
+    multiplicity = photon_multiplicity_summary(
+        signatures,
+        period,
+        sample_key,
+        sample_label,
+        entries_read,
+        valid_identity_entries,
+        args,
+    )
 
-    lengths = {key: array.size for key, array in values.items()}
-    if len(set(lengths.values())) != 1:
-        raise RuntimeError(
-            f"{period_label} {sample_key}: inconsistent branch lengths: "
-            f"{lengths}"
-        )
-    # endif
-
-    metadata = {
+    payload = {
+        "period": period.key,
+        "period_label": period.label,
+        "sample": sample_key,
+        "sample_label": sample_label,
         "path": path,
         "tree_entries": total_entries,
         "entries_read": entries_read,
         "resolved_branches": resolved,
-        "available_branch_count": len(available),
-    }
-    return values, metadata
-
-
-def data_shape_selection_masks(
-    values: Mapping[str, np.ndarray],
-    args: argparse.Namespace,
-) -> Tuple[np.ndarray, np.ndarray, Dict[str, int]]:
-    """
-    Build the common before-cuts population and the additional after-cuts subset.
-
-    The open-angle requirement is part of both populations.
-    """
-    size = next(iter(values.values())).size
-
-    finite = np.isfinite(values["open_angle_ep2"])
-    for variable in DATA_SHAPE_VARIABLES:
-        finite &= np.isfinite(values[variable.key])
-    # endfor
-
-    open_angle_mask = finite & (values["open_angle_ep2"] > 5.0)
-    before_mask = open_angle_mask
-
-    after_mask = before_mask.copy()
-    after_mask &= values["Emiss2"] > args.data_Emiss_min
-    after_emiss = int(np.count_nonzero(after_mask))
-
-    after_mask &= values["Mx2_2"] > args.data_Mx2_2_min
-    after_mx2 = int(np.count_nonzero(after_mask))
-
-    after_mask &= values["pTmiss"] > args.data_pTmiss_min
-    after_ptmiss = int(np.count_nonzero(after_mask))
-
-    cutflow = {
-        "tree_entries_read": int(size),
-        "all_required_branches_finite": int(np.count_nonzero(finite)),
-        "open_angle_ep2_gt_5_deg": int(np.count_nonzero(before_mask)),
-        "after_Emiss2_gt_min": after_emiss,
-        "after_Mx2_2_gt_min": after_mx2,
-        "after_pTmiss_gt_min": after_ptmiss,
-    }
-    return before_mask, after_mask, cutflow
-
-
-def normalized_shape_histogram(
-    values: np.ndarray,
-    mask: np.ndarray,
-    variable: FitVariable,
-) -> Dict[str, object]:
-    selected = np.asarray(values, dtype=float)[mask]
-    edges = np.linspace(variable.low, variable.high, variable.bins + 1)
-    counts, _ = np.histogram(selected, bins=edges)
-
-    underflow = int(np.count_nonzero(selected < variable.low))
-    overflow = int(np.count_nonzero(selected >= variable.high))
-    in_range = int(np.sum(counts))
-    selected_count = int(selected.size)
-
-    normalized = (
-        counts.astype(float) / in_range
-        if in_range > 0
-        else np.zeros(variable.bins, dtype=float)
-    )
-
-    return {
-        "edges": edges,
-        "counts": counts.astype(np.int64),
-        "unit_area": normalized,
-        "selected_entries": selected_count,
-        "in_range_entries": in_range,
-        "underflow_entries": underflow,
-        "overflow_entries": overflow,
-        "in_range_fraction_of_selected": (
-            in_range / selected_count if selected_count > 0 else math.nan
+        "cutflow": {
+            "all_required_branches_finite": all_required_finite,
+            "open_angle_ep2_gt_5_deg": open_angle_selected,
+            "after_Emiss2_gt_min": after_emiss,
+            "after_Mx2_2_gt_min": after_mx2,
+            "after_pTmiss_gt_min": after_ptmiss,
+        },
+        "before_histograms": finalize_stage_histograms(
+            before_histograms
         ),
-        "underflow_fraction_of_selected": (
-            underflow / selected_count if selected_count > 0 else math.nan
+        "after_histograms": finalize_stage_histograms(
+            after_histograms
         ),
-        "overflow_fraction_of_selected": (
-            overflow / selected_count if selected_count > 0 else math.nan
-        ),
+        "photon_multiplicity": multiplicity,
     }
-
-
-def build_stage_histograms(
-    values_by_sample: Mapping[str, Mapping[str, np.ndarray]],
-    masks_by_sample: Mapping[str, np.ndarray],
-) -> Dict[str, Dict[str, Dict[str, object]]]:
-    return {
-        variable.key: {
-            sample_key: normalized_shape_histogram(
-                values_by_sample[sample_key][variable.key],
-                masks_by_sample[sample_key],
-                variable,
-            )
-            for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO
-        }
-        for variable in DATA_SHAPE_VARIABLES
-    }
+    return period.key, sample_key, payload
 
 
 def plot_before_after_shape_canvas(
     path: Path,
     period_label: str,
-    before_histograms: Mapping[
-        str,
-        Mapping[str, Mapping[str, object]],
-    ],
-    after_histograms: Mapping[
-        str,
-        Mapping[str, Mapping[str, object]],
-    ],
+    sample_payloads: Mapping[str, Mapping[str, object]],
     args: argparse.Namespace,
 ) -> None:
-    """
-    Write one 2x5 canvas: before cuts on top and after cuts on the bottom.
-    """
     fig, axes = plt.subplots(2, 5, figsize=(24, 10))
 
-    stage_rows = (
-        ("Before cuts", before_histograms),
-        ("After cuts", after_histograms),
-    )
+    for row_index, stage_name in enumerate(
+        ("before_histograms", "after_histograms")
+    ):
+        stage_label = "Before cuts" if row_index == 0 else "After cuts"
 
-    for row_index, (stage_label, stage_histograms) in enumerate(stage_rows):
         for column_index, variable in enumerate(DATA_SHAPE_VARIABLES):
             axis = axes[row_index, column_index]
 
             for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
-                histogram = stage_histograms[variable.key][sample_key]
+                histogram = sample_payloads[sample_key][
+                    stage_name
+                ][variable.key]
                 edges = np.asarray(histogram["edges"], dtype=float)
                 centers = 0.5 * (edges[:-1] + edges[1:])
                 normalized = np.asarray(
@@ -3035,9 +3312,9 @@ def plot_before_after_shape_canvas(
                 positive: List[float] = []
                 for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
                     values = np.asarray(
-                        stage_histograms[variable.key][sample_key][
-                            "unit_area"
-                        ],
+                        sample_payloads[sample_key][stage_name][
+                            variable.key
+                        ]["unit_area"],
                         dtype=float,
                     )
                     positive.extend(values[values > 0.0].tolist())
@@ -3064,114 +3341,66 @@ def plot_before_after_shape_canvas(
     plt.close(fig)
 
 
-def histogram_audit(
-    histograms: Mapping[str, Mapping[str, Mapping[str, object]]],
-) -> Dict[str, object]:
-    return {
-        variable.key: {
-            "label": variable.label,
-            "bins": variable.bins,
-            "range": [variable.low, variable.high],
-            "samples": {
-                sample_key: {
-                    key: value
-                    for key, value in histograms[variable.key][
-                        sample_key
-                    ].items()
-                    if key not in ("edges", "counts", "unit_area")
-                }
-                for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO
-            },
+def serializable_histograms(
+    histograms: Mapping[str, Mapping[str, object]],
+) -> Dict[str, Dict[str, object]]:
+    output: Dict[str, Dict[str, object]] = {}
+    for variable in DATA_SHAPE_VARIABLES:
+        histogram = histograms[variable.key]
+        output[variable.key] = {
+            key: (
+                value.tolist()
+                if isinstance(value, np.ndarray)
+                else value
+            )
+            for key, value in histogram.items()
         }
-        for variable in DATA_SHAPE_VARIABLES
-    }
-
-
-def process_period_data_shapes(
-    period: PeriodConfig,
-    args_dict: Mapping[str, object],
-) -> Tuple[str, Dict[str, object]]:
-    args = argparse.Namespace(**args_dict)
-    shape_dir = Path(args.output_dir) / "data" / "shape_comparison"
-    shape_dir.mkdir(parents=True, exist_ok=True)
-
-    values_by_sample: Dict[str, Dict[str, np.ndarray]] = {}
-    sample_metadata: Dict[str, object] = {}
-    before_masks: Dict[str, np.ndarray] = {}
-    after_masks: Dict[str, np.ndarray] = {}
-    cutflows: Dict[str, Dict[str, int]] = {}
-
-    for sample_key, sample_label, period_attribute in RAW_SHAPE_SAMPLE_INFO:
-        path = getattr(period, period_attribute)
-        values, metadata = read_data_shape_branches(
-            path,
-            sample_key,
-            period.label,
-            args,
-        )
-        before_mask, after_mask, cutflow = data_shape_selection_masks(
-            values,
-            args,
-        )
-
-        values_by_sample[sample_key] = values
-        before_masks[sample_key] = before_mask
-        after_masks[sample_key] = after_mask
-        cutflows[sample_key] = cutflow
-        sample_metadata[sample_key] = {
-            "label": sample_label,
-            **metadata,
-        }
-
-        log(
-            f"{period.label} {sample_key}: "
-            f"open-angle selected={np.count_nonzero(before_mask):,}, "
-            f"after cuts={np.count_nonzero(after_mask):,}"
-        )
     # endfor
+    return output
 
-    before_histograms = build_stage_histograms(
-        values_by_sample,
-        before_masks,
-    )
-    after_histograms = build_stage_histograms(
-        values_by_sample,
-        after_masks,
-    )
 
-    output_path = shape_dir / f"{period.key}_before_after_cuts.png"
-    plot_before_after_shape_canvas(
-        output_path,
-        period.label,
-        before_histograms,
-        after_histograms,
-        args,
-    )
+def write_photon_multiplicity_outputs(
+    data_root: Path,
+    rows: Sequence[Mapping[str, object]],
+) -> None:
+    ordered_fields = [
+        "period",
+        "period_label",
+        "sample",
+        "sample_label",
+        "identity_method",
+        "tree_entries_read",
+        "valid_identity_entries",
+        "unique_events",
+        "events_with_1_photon",
+        "events_with_2_photons",
+        "events_with_3_photons",
+        "events_with_4_photons",
+        "events_with_5_photons",
+        "events_with_6_photons",
+        "events_with_more_than_6_photons",
+        "maximum_photons_in_event",
+        "photon_entries_accounted_for",
+    ]
 
-    audit = {
-        "period": {
-            "key": period.key,
-            "label": period.label,
-            "beam_energy_GeV": period.beam_energy_GeV,
-        },
-        "plot": str(output_path),
-        "variables": [variable.key for variable in DATA_SHAPE_VARIABLES],
-        "common_selection": {
-            "open_angle_ep2_gt_deg": 5.0,
-        },
-        "after_cuts_selection": {
-            "Emiss2_gt_GeV": args.data_Emiss_min,
-            "Mx2_2_gt_GeV2": args.data_Mx2_2_min,
-            "pTmiss_gt_GeV": args.data_pTmiss_min,
-        },
-        "samples": sample_metadata,
-        "cutflows": cutflows,
-        "before_cuts": histogram_audit(before_histograms),
-        "after_cuts": histogram_audit(after_histograms),
-    }
+    with open(
+        data_root / "photon_multiplicity_summary.csv",
+        "w",
+        newline="",
+        encoding="utf-8",
+    ) as handle:
+        writer = csv.DictWriter(handle, fieldnames=ordered_fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    # endwith
 
-    log(f"Completed before/after shape canvas for {period.label}.")
-    return period.key, audit
+    with open(
+        data_root / "photon_multiplicity_summary.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(list(rows), handle, indent=2)
+    # endwith
 
 
 def run_data_shape_stage(
@@ -3179,52 +3408,179 @@ def run_data_shape_stage(
     args: argparse.Namespace,
     workers: int,
 ) -> Dict[str, object]:
-    audits: Dict[str, object] = {}
+    """
+    Run 15 independent file tasks with no nested multiprocessing.
+    """
     data_root = Path(args.output_dir) / "data"
     shape_dir = data_root / "shape_comparison"
     shape_dir.mkdir(parents=True, exist_ok=True)
 
-    log(
-        f"DATA SHAPE STAGE: {len(periods)} period(s), {workers} worker(s). "
-        "Writing one 2x5 before/after canvas per period."
+    tasks = [
+        (period, sample_key, sample_label, period_attribute)
+        for period in periods
+        for sample_key, sample_label, period_attribute
+        in RAW_SHAPE_SAMPLE_INFO
+    ]
+    file_workers = max(
+        1,
+        min(int(workers), MAX_WORKERS, len(tasks)),
     )
 
-    if workers == 1:
-        for period in periods:
-            key, audit = process_period_data_shapes(
+    log(
+        f"DATA SHAPE + MULTIPLICITY STAGE: {len(tasks)} files, "
+        f"{file_workers} worker(s). Each ROOT file is read once."
+    )
+
+    results: Dict[str, Dict[str, Dict[str, object]]] = {
+        period.key: {} for period in periods
+    }
+
+    if file_workers == 1:
+        for period, sample_key, sample_label, period_attribute in tasks:
+            key, returned_sample, payload = process_data_shape_sample(
                 period,
+                sample_key,
+                sample_label,
+                period_attribute,
                 vars(args),
             )
-            audits[key] = audit
+            results[key][returned_sample] = payload
         # endfor
     else:
         with concurrent.futures.ProcessPoolExecutor(
-            max_workers=workers
+            max_workers=file_workers
         ) as executor:
             future_map = {
                 executor.submit(
-                    process_period_data_shapes,
+                    process_data_shape_sample,
                     period,
+                    sample_key,
+                    sample_label,
+                    period_attribute,
                     vars(args),
-                ): period.key
-                for period in periods
+                ): (period.key, sample_key)
+                for (
+                    period,
+                    sample_key,
+                    sample_label,
+                    period_attribute,
+                ) in tasks
             }
             for future in concurrent.futures.as_completed(future_map):
-                key, audit = future.result()
-                audits[key] = audit
+                key, returned_sample, payload = future.result()
+                results[key][returned_sample] = payload
+                log(
+                    f"Completed {payload['period_label']} "
+                    f"{payload['sample_label']}."
+                )
             # endfor
         # endwith
     # endif
+
+    period_order = {
+        period.key: index for index, period in enumerate(PERIODS)
+    }
+    sample_order = {
+        sample_key: index
+        for index, (sample_key, _, _) in enumerate(
+            RAW_SHAPE_SAMPLE_INFO
+        )
+    }
+
+    multiplicity_rows: List[Dict[str, object]] = []
+    audit: Dict[str, object] = {}
+
+    for period in periods:
+        sample_payloads = results[period.key]
+        missing_samples = [
+            sample_key
+            for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO
+            if sample_key not in sample_payloads
+        ]
+        if missing_samples:
+            raise RuntimeError(
+                f"{period.label}: missing processed samples: "
+                + ", ".join(missing_samples)
+            )
+        # endif
+
+        plot_path = (
+            shape_dir / f"{period.key}_before_after_cuts.png"
+        )
+        plot_before_after_shape_canvas(
+            plot_path,
+            period.label,
+            sample_payloads,
+            args,
+        )
+
+        period_audit: Dict[str, object] = {
+            "plot": str(plot_path),
+            "samples": {},
+        }
+        for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
+            payload = sample_payloads[sample_key]
+            multiplicity_rows.append(
+                payload["photon_multiplicity"]
+            )
+            period_audit["samples"][sample_key] = {
+                "sample_label": payload["sample_label"],
+                "path": payload["path"],
+                "tree_entries": payload["tree_entries"],
+                "entries_read": payload["entries_read"],
+                "resolved_branches": payload["resolved_branches"],
+                "cutflow": payload["cutflow"],
+                "photon_multiplicity": payload[
+                    "photon_multiplicity"
+                ],
+                "before_histograms": serializable_histograms(
+                    payload["before_histograms"]
+                ),
+                "after_histograms": serializable_histograms(
+                    payload["after_histograms"]
+                ),
+            }
+        # endfor
+        audit[period.key] = period_audit
+    # endfor
+
+    multiplicity_rows.sort(
+        key=lambda row: (
+            period_order.get(str(row["period"]), 999),
+            sample_order.get(str(row["sample"]), 999),
+        )
+    )
+    write_photon_multiplicity_outputs(
+        data_root,
+        multiplicity_rows,
+    )
 
     with open(
         data_root / "shape_comparison_audit.json",
         "w",
         encoding="utf-8",
     ) as handle:
-        json.dump(audits, handle, indent=2)
+        json.dump(audit, handle, indent=2)
     # endwith
 
-    return audits
+    for row in multiplicity_rows:
+        log(
+            f"{row['period_label']} {row['sample_label']}: "
+            f"events by photon multiplicity "
+            f"1={row['events_with_1_photon']:,}, "
+            f"2={row['events_with_2_photons']:,}, "
+            f"3={row['events_with_3_photons']:,}, "
+            f"4={row['events_with_4_photons']:,}, "
+            f"5={row['events_with_5_photons']:,}, "
+            f"6={row['events_with_6_photons']:,}, "
+            f">6={row['events_with_more_than_6_photons']:,}"
+        )
+    # endfor
+
+    return {
+        "periods": audit,
+        "photon_multiplicity_rows": multiplicity_rows,
+    }
 
 
 
@@ -3518,18 +3874,23 @@ def main() -> int:
     args = parse_args()
     periods = selected_periods(args)
     output_root = Path(args.output_dir)
+    data_root = output_root / "data"
+    mc_root = output_root / "mc"
+
     output_root.mkdir(parents=True, exist_ok=True)
+    data_root.mkdir(parents=True, exist_ok=True)
+    mc_root.mkdir(parents=True, exist_ok=True)
 
     workers = max(
         1,
-        min(int(args.workers), MAX_WORKERS, len(periods)),
+        min(int(args.workers), MAX_WORKERS),
     )
 
     manifest = {
         "script": Path(__file__).name,
         "mode": (
-            "Data before/after-cuts shape comparison with optional AAOGEN "
-            "MC efficiency"
+            "Fast data 2x5 shape comparison and photon multiplicity "
+            "diagnostics with preserved optional AAOGEN MC efficiency"
         ),
         "created_unix_time": time.time(),
         "arguments": vars(args),
@@ -3553,15 +3914,16 @@ def main() -> int:
     mc_metadata: Dict[str, object] = {}
 
     if args.run_mc_efficiency:
-        mc_root = output_root / "mc"
-        mc_root.mkdir(parents=True, exist_ok=True)
-
+        mc_workers = max(
+            1,
+            min(workers, len(periods)),
+        )
         log(
             f"OPTIONAL AAOGEN MC EFFICIENCY STAGE: "
-            f"{len(periods)} period(s), {workers} worker(s)."
+            f"{len(periods)} period(s), {mc_workers} worker(s)."
         )
 
-        if workers == 1:
+        if mc_workers == 1:
             for period in periods:
                 key, rows, payload = process_period_mc_only(
                     period,
@@ -3572,7 +3934,7 @@ def main() -> int:
             # endfor
         else:
             with concurrent.futures.ProcessPoolExecutor(
-                max_workers=workers
+                max_workers=mc_workers
             ) as executor:
                 future_map = {
                     executor.submit(
@@ -3637,7 +3999,7 @@ def main() -> int:
         json.dump(
             {
                 "arguments": vars(args),
-                "data_shape_stage": data_metadata,
+                "data_shape_and_multiplicity_stage": data_metadata,
                 "mc_efficiency_rows": mc_rows,
                 "mc_efficiency_metadata": mc_metadata,
             },
