@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v26_mc_efficiency_plus_raw_data_shapes.py
+derive_photon_efficiency_scale_factors_v27_stage_cli_fix.py
 
 Stepwise photon-efficiency study: raw data/MC shape comparison followed by the established AAOGEN-only efficiency.
 
@@ -2503,6 +2503,24 @@ def parse_args() -> argparse.Namespace:
             "suppressed from efficiency plots."
         ),
     )
+    parser.add_argument(
+        "--skip-raw-shape-comparison",
+        action="store_true",
+        help=(
+            "Skip the first-stage entry-by-entry comparison of epgamma data, "
+            "DVCSGEN, and AAOGEN background MC."
+        ),
+    )
+    parser.add_argument(
+        "--skip-mc-efficiency",
+        action="store_true",
+        help="Skip the established AAOGEN-only efficiency stage.",
+    )
+    parser.add_argument(
+        "--shape-log-y",
+        action="store_true",
+        help="Also write logarithmic-y raw-shape canvases.",
+    )
     return parser.parse_args()
 
 
@@ -3512,6 +3530,23 @@ def plot_all_period_integrated(
 
 def main() -> int:
     args = parse_args()
+
+    required_stage_arguments = (
+        "skip_raw_shape_comparison",
+        "skip_mc_efficiency",
+        "shape_log_y",
+    )
+    missing_stage_arguments = [
+        name
+        for name in required_stage_arguments
+        if not hasattr(args, name)
+    ]
+    if missing_stage_arguments:
+        raise RuntimeError(
+            "Active parse_args() is missing required stage options: "
+            + ", ".join(missing_stage_arguments)
+        )
+    # endif
     periods = selected_periods(args)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
