@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v13_remove_tag_dependent_cuts.py
+derive_photon_efficiency_scale_factors_v14_fit_quality_warnings.py
 
 Production extraction of the data/MC efficiency scale factor for reconstructing
 the high-energy photon in exclusive pi0 tag-and-probe events.
@@ -9,7 +9,9 @@ This revision removes the three inappropriate tag-dependent DVCS cuts
 (z(tag), -t1(tag), and electron-tag opening angle) from the nominal
 opportunity selection. It retains the predicted-probe energy, massless
 four-vector consistency, and FT/FD acceptance requirements. It also writes
-a fully sequential opportunity cut audit before any template fit is attempted. Each cut is reported with its mathematical
+a fully sequential opportunity cut audit before any template fit is attempted.
+
+Poor reduced deviance is recorded and printed as a warning, but does not abort the extraction. Mathematical failures such as non-convergence, invalid parameters, boundary solutions, missing component fits, or unphysical yields remain fatal. Each cut is reported with its mathematical
 definition, branch name, cumulative count, incremental survival fraction,
 total survival fraction, rejection count, and FT/FD population where
 applicable. The audit is written even if a later fit aborts.
@@ -397,9 +399,10 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=5.0,
         help=(
-            "Abort if the combined detector-category template fit has "
-            "deviance/ndf above this value. Use a non-positive value to "
-            "disable only this quality check."
+            "Issue a prominent warning if the combined detector-category "
+            "template fit has deviance/ndf above this value. The fit is still "
+            "retained and the efficiency is still calculated. Use a "
+            "non-positive value to disable this warning threshold."
         ),
     )
     parser.add_argument(
@@ -2339,13 +2342,14 @@ def fit_category(
         )
     # endif
 
+    warning_reasons: List[str] = []
     max_reduced_deviance = float(args.fit_max_reduced_deviance)
     if (
         max_reduced_deviance > 0.0
         and math.isfinite(reduced_deviance)
         and reduced_deviance > max_reduced_deviance
     ):
-        failure_reasons.append(
+        warning_reasons.append(
             f"deviance/ndf={reduced_deviance:.4g} exceeds "
             f"{max_reduced_deviance:g}"
         )
@@ -2363,6 +2367,20 @@ def fit_category(
     if invalid_variables:
         failure_reasons.append(
             "invalid component fits for: " + ", ".join(invalid_variables)
+        )
+    # endif
+
+    details["fit_quality_warning"] = bool(warning_reasons)
+    details["warning_reasons"] = warning_reasons
+    details["passes_reduced_deviance_threshold"] = not bool(warning_reasons)
+    details["fit_max_reduced_deviance_threshold"] = max_reduced_deviance
+
+    if warning_reasons:
+        log(
+            f"WARNING: {period_label} {category_label}: combined template fit "
+            f"retained despite poor goodness of fit: "
+            + "; ".join(warning_reasons)
+            + f". Inspect diagnostic plot: {plot_path}"
         )
     # endif
 
