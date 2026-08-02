@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v25_mc_only.py
+derive_photon_efficiency_scale_factors_v26_mc_efficiency_plus_raw_data_shapes.py
 
-AAOGEN-only determination of the reconstructed high-energy photon efficiency.
+Stepwise photon-efficiency study: raw data/MC shape comparison followed by the established AAOGEN-only efficiency.
 
-No data files, DVCSGEN files, template fits, scale factors, or data-driven
-corrections are read or calculated in this script.
+The first stage reads epgamma data, DVCSGEN, and AAOGEN-as-epgamma MC and
+compares the raw exclusivity-variable shapes entry by entry. It performs
+no fit, no event grouping, no candidate arbitration, and no data-efficiency
+extraction. The second stage retains the established direct AAOGEN MC
+efficiency calculation.
 
 For each selected AAOGEN epgamma opportunity:
 
@@ -83,7 +86,7 @@ except ImportError as exc:
 TREE_NAME = "PhysicsEvents"
 DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study"
 DEFAULT_STEP_SIZE = "200 MB"
-MAX_WORKERS = 8
+MAX_WORKERS = 7
 
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
@@ -377,6 +380,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
     parser.add_argument("--max-events", type=int, default=None)
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
+    parser.add_argument(
+        "--skip-raw-shape-comparison",
+        action="store_true",
+        help=(
+            "Skip the first-stage entry-by-entry comparison of epgamma data, "
+            "DVCSGEN, and AAOGEN background MC."
+        ),
+    )
+    parser.add_argument(
+        "--skip-mc-efficiency",
+        action="store_true",
+        help="Skip the established AAOGEN-only efficiency stage.",
+    )
+    parser.add_argument(
+        "--shape-log-y",
+        action="store_true",
+        help="Also write logarithmic-y raw-shape canvases.",
+    )
     parser.add_argument(
         "--exclusivity-fitter",
         default=None,
@@ -2782,6 +2803,430 @@ def plot_fd_sector_diagnostics(
     return rows
 
 
+
+RAW_SHAPE_SAMPLE_INFO: Tuple[Tuple[str, str, str], ...] = (
+    ("data", "Data (BH/DVCS + pi0)", "epg_data"),
+    ("dvcsgen", "DVCSGEN", "dvcs_mc"),
+    ("aaogen", "AAOGEN as epgamma", "pi0_epg_mc"),
+)
+
+
+def read_raw_exclusivity_shapes(
+    path: str,
+    sample_key: str,
+    period_label: str,
+    args: argparse.Namespace,
+) -> Tuple[Dict[str, np.ndarray], Dict[str, object]]:
+    """
+    Read every stored epgamma entry for the seven standard exclusivity variables.
+
+    No event selection, deduplication, grouping, or candidate arbitration is
+    applied. Only nonfinite values are excluded later at histogramming time.
+    """
+    logical_names = [variable.key for variable in FIT_VARIABLES]
+    resolved = resolve_branches(path, logical_names)
+    expressions = sorted(
+        {
+            branch
+            for branch in resolved.values()
+            if branch is not None
+        }
+    )
+    total_entries, available = require_tree(path)
+    entry_stop = (
+        min(total_entries, int(args.max_events))
+        if args.max_events is not None
+        else total_entries
+    )
+
+    pieces: Dict[str, List[np.ndarray]] = {
+        variable.key: [] for variable in FIT_VARIABLES
+    }
+    entries_read = 0
+
+    log(
+        f"{period_label} raw-shape {sample_key}: reading "
+        f"{entry_stop:,}/{total_entries:,} entries from {path}"
+    )
+
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=args.step_size,
+        entry_stop=entry_stop,
+        library="np",
+    ):
+        chunk_size = len(next(iter(arrays.values()))) if arrays else 0
+        entries_read += chunk_size
+        for variable in FIT_VARIABLES:
+            branch = resolved[variable.key]
+            if branch is None:
+                raise RuntimeError(
+                    f"Resolved branch unexpectedly absent for {variable.key}"
+                )
+            # endif
+            pieces[variable.key].append(
+                np.asarray(arrays[branch], dtype=float)
+            )
+        # endfor
+    # endfor
+
+    values = {
+        key: (
+            np.concatenate(chunks)
+            if chunks
+            else np.empty(0, dtype=float)
+        )
+        for key, chunks in pieces.items()
+    }
+    metadata = {
+        "path": path,
+        "tree_entries": total_entries,
+        "entries_read": entries_read,
+        "resolved_branches": resolved,
+        "available_branch_count": len(available),
+    }
+    return values, metadata
+
+
+def raw_shape_histogram(
+    values: np.ndarray,
+    variable: FitVariable,
+) -> Dict[str, object]:
+    values = np.asarray(values, dtype=float)
+    finite = values[np.isfinite(values)]
+    edges = np.linspace(variable.low, variable.high, variable.bins + 1)
+    counts, _ = np.histogram(finite, bins=edges)
+
+    underflow = int(np.count_nonzero(finite < variable.low))
+    overflow = int(np.count_nonzero(finite >= variable.high))
+    in_range = int(np.sum(counts))
+    finite_count = int(finite.size)
+
+    normalized = (
+        counts.astype(float) / in_range
+        if in_range > 0
+        else np.zeros(variable.bins, dtype=float)
+    )
+
+    return {
+        "edges": edges,
+        "counts": counts.astype(np.int64),
+        "unit_area": normalized,
+        "input_entries": int(values.size),
+        "finite_entries": finite_count,
+        "nonfinite_entries": int(values.size - finite_count),
+        "in_range_entries": in_range,
+        "underflow_entries": underflow,
+        "overflow_entries": overflow,
+        "in_range_fraction_of_finite": (
+            in_range / finite_count if finite_count > 0 else math.nan
+        ),
+        "underflow_fraction_of_finite": (
+            underflow / finite_count if finite_count > 0 else math.nan
+        ),
+        "overflow_fraction_of_finite": (
+            overflow / finite_count if finite_count > 0 else math.nan
+        ),
+    }
+
+
+def write_raw_shape_histogram_csv(
+    path: Path,
+    variable: FitVariable,
+    histograms: Mapping[str, Mapping[str, object]],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    edges = np.asarray(next(iter(histograms.values()))["edges"], dtype=float)
+
+    fields = ["bin_low", "bin_high", "bin_center"]
+    for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
+        fields.extend(
+            [
+                f"{sample_key}_counts",
+                f"{sample_key}_unit_area",
+            ]
+        )
+    # endfor
+
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for index in range(variable.bins):
+            row: Dict[str, object] = {
+                "bin_low": float(edges[index]),
+                "bin_high": float(edges[index + 1]),
+                "bin_center": float(
+                    0.5 * (edges[index] + edges[index + 1])
+                ),
+            }
+            for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
+                row[f"{sample_key}_counts"] = int(
+                    histograms[sample_key]["counts"][index]
+                )
+                row[f"{sample_key}_unit_area"] = float(
+                    histograms[sample_key]["unit_area"][index]
+                )
+            # endfor
+            writer.writerow(row)
+        # endfor
+    # endwith
+
+
+def plot_raw_shape_canvas(
+    path: Path,
+    period_label: str,
+    histograms_by_variable: Mapping[
+        str,
+        Mapping[str, Mapping[str, object]],
+    ],
+    normalized: bool,
+    log_y: bool = False,
+) -> None:
+    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    axes_flat = list(axes.flat)
+
+    for axis, variable in zip(axes_flat, FIT_VARIABLES):
+        for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
+            histogram = histograms_by_variable[variable.key][sample_key]
+            edges = np.asarray(histogram["edges"], dtype=float)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            values = np.asarray(
+                histogram["unit_area"] if normalized else histogram["counts"],
+                dtype=float,
+            )
+            axis.step(
+                centers,
+                values,
+                where="mid",
+                linewidth=1.35,
+                label=(
+                    f"{sample_label} "
+                    f"({histogram['in_range_entries']:,} in range)"
+                ),
+            )
+        # endfor
+
+        axis.set_xlim(variable.low, variable.high)
+        axis.set_xlabel(variable.label)
+        axis.set_ylabel(
+            "Fraction / bin" if normalized else "Entries / bin"
+        )
+        axis.grid(alpha=0.25)
+        axis.legend(fontsize=7)
+
+        if log_y:
+            axis.set_yscale("log")
+            positive: List[float] = []
+            for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
+                histogram = histograms_by_variable[variable.key][sample_key]
+                values = np.asarray(
+                    histogram["unit_area"]
+                    if normalized
+                    else histogram["counts"],
+                    dtype=float,
+                )
+                positive.extend(values[values > 0.0].tolist())
+            # endfor
+            if positive:
+                axis.set_ylim(
+                    bottom=max(min(positive) * 0.5, 1.0e-8)
+                )
+            # endif
+        # endif
+    # endfor
+
+    axes_flat[-1].axis("off")
+    normalization_text = (
+        "independently unit normalized"
+        if normalized
+        else "raw entry counts"
+    )
+    scale_text = ", logarithmic y" if log_y else ""
+    fig.suptitle(
+        f"{period_label}: raw epgamma exclusivity-variable shapes\n"
+        f"Every finite stored entry; no cuts, deduplication, event grouping, "
+        f"candidate arbitration, or fit; {normalization_text}{scale_text}"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def process_period_raw_shapes(
+    period: PeriodConfig,
+    args_dict: Mapping[str, object],
+) -> Tuple[str, Dict[str, object]]:
+    args = argparse.Namespace(**args_dict)
+    period_dir = (
+        Path(args.output_dir)
+        / "raw_data_shape_comparisons"
+        / period.key
+    )
+    histogram_dir = period_dir / "histograms"
+    histogram_dir.mkdir(parents=True, exist_ok=True)
+
+    values_by_sample: Dict[str, Dict[str, np.ndarray]] = {}
+    sample_metadata: Dict[str, object] = {}
+
+    for sample_key, sample_label, period_attribute in RAW_SHAPE_SAMPLE_INFO:
+        path = getattr(period, period_attribute)
+        values, metadata = read_raw_exclusivity_shapes(
+            path,
+            sample_key,
+            period.label,
+            args,
+        )
+        values_by_sample[sample_key] = values
+        sample_metadata[sample_key] = {
+            "label": sample_label,
+            **metadata,
+        }
+    # endfor
+
+    histograms_by_variable: Dict[
+        str,
+        Dict[str, Dict[str, object]],
+    ] = {}
+    variable_audit: Dict[str, object] = {}
+
+    for variable in FIT_VARIABLES:
+        histograms = {
+            sample_key: raw_shape_histogram(
+                values_by_sample[sample_key][variable.key],
+                variable,
+            )
+            for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO
+        }
+        histograms_by_variable[variable.key] = histograms
+
+        write_raw_shape_histogram_csv(
+            histogram_dir / f"{variable.key}.csv",
+            variable,
+            histograms,
+        )
+
+        variable_audit[variable.key] = {
+            "label": variable.label,
+            "bins": variable.bins,
+            "range": [variable.low, variable.high],
+            "samples": {
+                sample_key: {
+                    key: value
+                    for key, value in histogram.items()
+                    if key not in ("edges", "counts", "unit_area")
+                }
+                for sample_key, histogram in histograms.items()
+            },
+        }
+    # endfor
+
+    plot_raw_shape_canvas(
+        period_dir / "unit_normalized_shape_comparison.png",
+        period.label,
+        histograms_by_variable,
+        normalized=True,
+    )
+    plot_raw_shape_canvas(
+        period_dir / "raw_entry_shape_comparison.png",
+        period.label,
+        histograms_by_variable,
+        normalized=False,
+    )
+    if args.shape_log_y:
+        plot_raw_shape_canvas(
+            period_dir / "unit_normalized_shape_comparison_logy.png",
+            period.label,
+            histograms_by_variable,
+            normalized=True,
+            log_y=True,
+        )
+        plot_raw_shape_canvas(
+            period_dir / "raw_entry_shape_comparison_logy.png",
+            period.label,
+            histograms_by_variable,
+            normalized=False,
+            log_y=True,
+        )
+    # endif
+
+    audit = {
+        "period": {
+            "key": period.key,
+            "label": period.label,
+            "beam_energy_GeV": period.beam_energy_GeV,
+        },
+        "stage": (
+            "Raw epgamma data/DVCSGEN/AAOGEN shape comparison. "
+            "Every finite stored entry is used. No cuts, event grouping, "
+            "deduplication, candidate arbitration, or fit."
+        ),
+        "samples": sample_metadata,
+        "variables": variable_audit,
+    }
+    with open(
+        period_dir / "shape_comparison_audit.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(audit, handle, indent=2)
+    # endwith
+
+    log(f"Completed raw shape comparison for {period.label}.")
+    return period.key, audit
+
+
+def run_raw_shape_stage(
+    periods: Sequence[PeriodConfig],
+    args: argparse.Namespace,
+    workers: int,
+) -> Dict[str, object]:
+    audits: Dict[str, object] = {}
+
+    log(
+        f"STAGE 1 — RAW DATA/MC SHAPE COMPARISON: "
+        f"{len(periods)} period(s), {workers} worker(s)."
+    )
+
+    if workers == 1:
+        for period in periods:
+            key, audit = process_period_raw_shapes(
+                period,
+                vars(args),
+            )
+            audits[key] = audit
+        # endfor
+    else:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=workers
+        ) as executor:
+            future_map = {
+                executor.submit(
+                    process_period_raw_shapes,
+                    period,
+                    vars(args),
+                ): period.key
+                for period in periods
+            }
+            for future in concurrent.futures.as_completed(future_map):
+                key, audit = future.result()
+                audits[key] = audit
+            # endfor
+        # endwith
+    # endif
+
+    shape_root = Path(args.output_dir) / "raw_data_shape_comparisons"
+    with open(
+        shape_root / "all_periods_shape_comparison_audit.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(audits, handle, indent=2)
+    # endwith
+    return audits
+
+
+
 def process_period_mc_only(
     period: PeriodConfig,
     args_dict: Mapping[str, object],
@@ -2968,8 +3413,9 @@ def process_period_mc_only(
     return period.key, official_dicts, metadata
 
 
-def preflight_mc_only(
+def preflight_enabled_stages(
     periods: Sequence[PeriodConfig],
+    args: argparse.Namespace,
 ) -> List[Dict[str, object]]:
     manifest: List[Dict[str, object]] = []
     for period in periods:
@@ -2978,7 +3424,16 @@ def preflight_mc_only(
             "label": period.label,
             "beam_energy_GeV": period.beam_energy_GeV,
         }
-        for role in ("pi0_epg_mc", "pi0_epgg_mc"):
+
+        roles: List[str] = []
+        if not args.skip_raw_shape_comparison:
+            roles.extend(("epg_data", "dvcs_mc", "pi0_epg_mc"))
+        # endif
+        if not args.skip_mc_efficiency:
+            roles.extend(("pi0_epg_mc", "pi0_epgg_mc"))
+        # endif
+
+        for role in dict.fromkeys(roles):
             path = getattr(period, role)
             entries, branches = require_tree(path)
             period_entry[role] = path
@@ -2992,6 +3447,7 @@ def preflight_mc_only(
         manifest.append(period_entry)
     # endfor
     return manifest
+
 
 
 def plot_all_period_integrated(
@@ -3060,12 +3516,20 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    if args.skip_raw_shape_comparison and args.skip_mc_efficiency:
+        raise ValueError(
+            "Both stages were disabled; there is nothing to run."
+        )
+    # endif
+
     manifest = {
         "script": Path(__file__).name,
-        "mode": "AAOGEN MC only",
+        "mode": (
+            "Stepwise raw data/MC shapes plus direct AAOGEN MC efficiency"
+        ),
         "created_unix_time": time.time(),
         "arguments": vars(args),
-        "periods": preflight_mc_only(periods),
+        "periods": preflight_enabled_stages(periods, args),
     }
     with open(
         output_dir / "input_manifest.json",
@@ -3079,86 +3543,112 @@ def main() -> int:
         1,
         min(int(args.workers), MAX_WORKERS, len(periods)),
     )
-    log(
-        f"AAOGEN MC-ONLY PHOTON EFFICIENCY: "
-        f"{len(periods)} period(s), {workers} worker(s). "
-        f"No data or DVCSGEN files will be read."
-    )
 
-    all_rows: List[Dict[str, object]] = []
-    metadata: Dict[str, object] = {}
-
-    if workers == 1:
-        for period in periods:
-            key, rows, payload = process_period_mc_only(
-                period,
-                vars(args),
-            )
-            metadata[key] = payload
-            all_rows.extend(rows)
-        # endfor
-    else:
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=workers
-        ) as executor:
-            future_map = {
-                executor.submit(
-                    process_period_mc_only,
-                    period,
-                    vars(args),
-                ): period.key
-                for period in periods
-            }
-            for future in concurrent.futures.as_completed(future_map):
-                key, rows, payload = future.result()
-                metadata[key] = payload
-                all_rows.extend(rows)
-                log(f"Completed {key}.")
-            # endfor
-        # endwith
+    raw_shape_metadata: Dict[str, object] = {}
+    if not args.skip_raw_shape_comparison:
+        raw_shape_metadata = run_raw_shape_stage(
+            periods,
+            args,
+            workers,
+        )
     # endif
 
-    period_order = {
-        period.key: index for index, period in enumerate(PERIODS)
-    }
-    topology_order = {"FT": 0, "FD": 1}
-    all_rows.sort(
-        key=lambda row: (
-            period_order.get(str(row["period"]), 999),
-            topology_order.get(str(row["topology"]), 999),
-        )
-    )
+    all_rows: List[Dict[str, object]] = []
+    mc_metadata: Dict[str, object] = {}
 
-    write_dict_rows(
-        output_dir / "photon_efficiency_mc_only.csv",
-        all_rows,
-    )
+    if not args.skip_mc_efficiency:
+        log(
+            f"STAGE 2 — AAOGEN MC PHOTON EFFICIENCY: "
+            f"{len(periods)} period(s), {workers} worker(s)."
+        )
+
+        if workers == 1:
+            for period in periods:
+                key, rows, payload = process_period_mc_only(
+                    period,
+                    vars(args),
+                )
+                mc_metadata[key] = payload
+                all_rows.extend(rows)
+            # endfor
+        else:
+            with concurrent.futures.ProcessPoolExecutor(
+                max_workers=workers
+            ) as executor:
+                future_map = {
+                    executor.submit(
+                        process_period_mc_only,
+                        period,
+                        vars(args),
+                    ): period.key
+                    for period in periods
+                }
+                for future in concurrent.futures.as_completed(future_map):
+                    key, rows, payload = future.result()
+                    mc_metadata[key] = payload
+                    all_rows.extend(rows)
+                    log(f"Completed MC efficiency for {key}.")
+                # endfor
+            # endwith
+        # endif
+
+        period_order = {
+            period.key: index
+            for index, period in enumerate(PERIODS)
+        }
+        topology_order = {"FT": 0, "FD": 1}
+        all_rows.sort(
+            key=lambda row: (
+                period_order.get(str(row["period"]), 999),
+                topology_order.get(str(row["topology"]), 999),
+            )
+        )
+
+        write_dict_rows(
+            output_dir / "photon_efficiency_mc_only.csv",
+            all_rows,
+        )
+        with open(
+            output_dir / "photon_efficiency_mc_only.json",
+            "w",
+            encoding="utf-8",
+        ) as handle:
+            json.dump(
+                {
+                    "mode": "AAOGEN MC only",
+                    "arguments": vars(args),
+                    "rows": all_rows,
+                    "period_metadata": mc_metadata,
+                },
+                handle,
+                indent=2,
+            )
+        # endwith
+
+        plot_all_period_integrated(
+            output_dir / "all_periods_integrated_mc_efficiency.png",
+            all_rows,
+        )
+    # endif
+
     with open(
-        output_dir / "photon_efficiency_mc_only.json",
+        output_dir / "stepwise_study_summary.json",
         "w",
         encoding="utf-8",
     ) as handle:
         json.dump(
             {
-                "mode": "AAOGEN MC only",
                 "arguments": vars(args),
-                "rows": all_rows,
-                "period_metadata": metadata,
+                "raw_shape_stage": raw_shape_metadata,
+                "mc_efficiency_rows": all_rows,
+                "mc_efficiency_metadata": mc_metadata,
             },
             handle,
             indent=2,
         )
     # endwith
 
-    plot_all_period_integrated(
-        output_dir / "all_periods_integrated_mc_efficiency.png",
-        all_rows,
-    )
-
-    log(
-        f"Wrote AAOGEN-only photon-efficiency outputs to "
-        f"{output_dir}"
-    )
+    log(f"Wrote stepwise photon-efficiency outputs to {output_dir}")
     return 0
 
 
