@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v17_pass_fail_simultaneous_fit.py
+derive_photon_efficiency_scale_factors_v18_binomial_helper_fix.py
 
 Pass/fail simultaneous extraction of the RGA high-energy photon reconstruction
 efficiency.
@@ -2985,6 +2985,51 @@ def plot_closure_summary(
     plt.close(fig)
 
 
+
+def binomial_efficiency(
+    passed: float,
+    total: float,
+) -> Tuple[float, float]:
+    """
+    Return a binomial efficiency and its Gaussian statistical uncertainty.
+
+    Parameters
+    ----------
+    passed
+        Number of successful trials.
+    total
+        Total number of trials.
+
+    Returns
+    -------
+    efficiency, uncertainty
+        The efficiency passed / total and
+        sqrt(efficiency * (1 - efficiency) / total).
+
+    Notes
+    -----
+    Invalid populations return (nan, nan). A tiny floating-point tolerance is
+    allowed at the physical boundaries, but genuinely unphysical inputs such
+    as passed < 0 or passed > total are rejected.
+    """
+    if (
+        not math.isfinite(passed)
+        or not math.isfinite(total)
+        or total <= 0.0
+        or passed < 0.0
+        or passed > total + 1.0e-9
+    ):
+        return math.nan, math.nan
+    # endif
+
+    efficiency = passed / total
+    efficiency = min(max(efficiency, 0.0), 1.0)
+    variance = efficiency * (1.0 - efficiency) / total
+
+    return efficiency, math.sqrt(max(variance, 0.0))
+
+
+
 def uncertainty_ratio(
     numerator: float,
     numerator_error: float,
@@ -3884,6 +3929,8 @@ def validate_runtime_helpers() -> None:
         "emit_cutflow_diagnostics": emit_cutflow_diagnostics,
         "plot_expected_probe_diagnostics": plot_expected_probe_diagnostics,
         "plot_matching_residuals": plot_matching_residuals,
+        "binomial_efficiency": binomial_efficiency,
+        "uncertainty_ratio": uncertainty_ratio,
     }
     missing = [name for name, value in required.items() if not callable(value)]
     if missing:
