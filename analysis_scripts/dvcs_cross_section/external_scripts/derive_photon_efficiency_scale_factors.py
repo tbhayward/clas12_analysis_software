@@ -1,37 +1,39 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v31_data_before_after_cuts.py
+derive_photon_efficiency_scale_factors_v32_data_shape_comparison_canvas.py
 
 Stepwise photon-efficiency study.
 
-The default execution performs the current data-side development stage only:
+The default execution performs the current data-side shape-comparison stage:
 
-  1. Read every stored epgamma entry from:
-       * data: BH/DVCS + pi0;
-       * DVCSGEN;
-       * AAOGEN processed as epgamma background.
-  2. Make independently unit-normalized comparisons of the seven standard
-     exclusivity branches before cuts.
-  3. Apply the same initial background-selection cuts to all three samples:
-       Emiss2 > 1 GeV,
-       Mx2_2 > 2 GeV^2,
-       pTmiss > 0.5 GeV.
-  4. Make the same independently unit-normalized comparisons after cuts.
+  * read every stored epgamma entry from data, DVCSGEN, and AAOGEN;
+  * require open_angle_ep2 > 5 deg for both the before-cuts and after-cuts
+    populations;
+  * compare five directly stored exclusivity variables:
+      Delta_phi,
+      theta_gamma_gamma,
+      pTmiss,
+      Emiss2,
+      Mx2_2;
+  * apply the additional after-cuts requirements:
+      Emiss2 > 1 GeV,
+      Mx2_2 > 2 GeV^2,
+      pTmiss > 0.5 GeV;
+  * write one 2x5 canvas per run period, with before-cuts comparisons on the
+    top row and after-cuts comparisons on the bottom row.
 
-At this stage there is no data fit, no event grouping, no candidate
-arbitration, no deduplication, and no data-efficiency extraction. The plotted
-values are taken directly from the corresponding ROOT-tree branches.
+The five run-period canvases are written directly to:
 
-The previously completed AAOGEN MC efficiency calculation remains available as
-an optional stage through --run-mc-efficiency.
+  output/photon_efficiency_study/data/shape_comparison/
 
-Output organization:
+No data fit, event grouping, candidate arbitration, or deduplication is
+performed. The plotted quantities and open_angle_ep2 are read directly from
+the ROOT trees.
 
-  output/photon_efficiency_study/
-      data/
-          before_cuts/
-          after_cuts/
-      mc/
+The completed AAOGEN MC efficiency stage remains available only when
+--run-mc-efficiency is supplied and writes under:
+
+  output/photon_efficiency_study/mc/
 """
 
 
@@ -225,6 +227,45 @@ FIT_VARIABLES: Tuple[FitVariable, ...] = (
         100,
         -0.03,
         0.03,
+    ),
+    FitVariable(
+        "Mx2_2",
+        r"$M_{x2}^2$ (GeV$^2$)",
+        160,
+        0.0,
+        16.0,
+    ),
+)
+
+
+DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
+    FitVariable(
+        "Delta_phi",
+        r"$\Delta\phi$ (rad)",
+        120,
+        0.5 * math.pi,
+        1.5 * math.pi,
+    ),
+    FitVariable(
+        "theta_gamma_gamma",
+        r"$\theta_{\gamma\gamma}$ (deg)",
+        120,
+        0.0,
+        40.0,
+    ),
+    FitVariable(
+        "pTmiss",
+        r"$p_T^{\rm miss}$ (GeV)",
+        125,
+        0.0,
+        2.0,
+    ),
+    FitVariable(
+        "Emiss2",
+        r"$E_{\rm miss}$ (GeV)",
+        120,
+        0.0,
+        9.0,
     ),
     FitVariable(
         "Mx2_2",
@@ -2756,12 +2797,15 @@ def read_data_shape_branches(
     args: argparse.Namespace,
 ) -> Tuple[Dict[str, np.ndarray], Dict[str, object]]:
     """
-    Read the seven exclusivity observables directly from every stored entry.
+    Read the five plotted branches plus open_angle_ep2 directly from the tree.
 
-    No event selection, deduplication, event grouping, candidate arbitration,
-    matching, or derived-variable substitution is performed.
+    No event grouping, candidate arbitration, matching, deduplication, or
+    derived-variable substitution is performed.
     """
-    logical_names = [variable.key for variable in FIT_VARIABLES]
+    logical_names = [
+        *(variable.key for variable in DATA_SHAPE_VARIABLES),
+        "open_angle_ep2",
+    ]
     resolved = resolve_branches(path, logical_names)
     expressions = sorted(
         branch for branch in resolved.values() if branch is not None
@@ -2775,7 +2819,7 @@ def read_data_shape_branches(
     )
 
     pieces: Dict[str, List[np.ndarray]] = {
-        variable.key: [] for variable in FIT_VARIABLES
+        logical_name: [] for logical_name in logical_names
     }
     entries_read = 0
 
@@ -2794,14 +2838,14 @@ def read_data_shape_branches(
         chunk_size = len(next(iter(arrays.values()))) if arrays else 0
         entries_read += chunk_size
 
-        for variable in FIT_VARIABLES:
-            branch = resolved[variable.key]
+        for logical_name in logical_names:
+            branch = resolved[logical_name]
             if branch is None:
                 raise RuntimeError(
-                    f"Resolved branch unexpectedly absent for {variable.key}"
+                    f"Resolved branch unexpectedly absent for {logical_name}"
                 )
             # endif
-            pieces[variable.key].append(
+            pieces[logical_name].append(
                 np.asarray(arrays[branch], dtype=float)
             )
         # endfor
@@ -2834,38 +2878,44 @@ def read_data_shape_branches(
     return values, metadata
 
 
-def data_shape_selection_mask(
+def data_shape_selection_masks(
     values: Mapping[str, np.ndarray],
     args: argparse.Namespace,
-    after_cuts: bool,
-) -> Tuple[np.ndarray, Dict[str, int]]:
+) -> Tuple[np.ndarray, np.ndarray, Dict[str, int]]:
+    """
+    Build the common before-cuts population and the additional after-cuts subset.
+
+    The open-angle requirement is part of both populations.
+    """
     size = next(iter(values.values())).size
-    finite_all = np.ones(size, dtype=bool)
-    for variable in FIT_VARIABLES:
-        finite_all &= np.isfinite(values[variable.key])
+
+    finite = np.isfinite(values["open_angle_ep2"])
+    for variable in DATA_SHAPE_VARIABLES:
+        finite &= np.isfinite(values[variable.key])
     # endfor
+
+    open_angle_mask = finite & (values["open_angle_ep2"] > 5.0)
+    before_mask = open_angle_mask
+
+    after_mask = before_mask.copy()
+    after_mask &= values["Emiss2"] > args.data_Emiss_min
+    after_emiss = int(np.count_nonzero(after_mask))
+
+    after_mask &= values["Mx2_2"] > args.data_Mx2_2_min
+    after_mx2 = int(np.count_nonzero(after_mask))
+
+    after_mask &= values["pTmiss"] > args.data_pTmiss_min
+    after_ptmiss = int(np.count_nonzero(after_mask))
 
     cutflow = {
         "tree_entries_read": int(size),
-        "all_seven_variables_finite": int(np.count_nonzero(finite_all)),
+        "all_required_branches_finite": int(np.count_nonzero(finite)),
+        "open_angle_ep2_gt_5_deg": int(np.count_nonzero(before_mask)),
+        "after_Emiss2_gt_min": after_emiss,
+        "after_Mx2_2_gt_min": after_mx2,
+        "after_pTmiss_gt_min": after_ptmiss,
     }
-
-    if not after_cuts:
-        return finite_all, cutflow
-    # endif
-
-    mask = finite_all.copy()
-
-    mask &= values["Emiss2"] > args.data_Emiss_min
-    cutflow["Emiss2_gt_min"] = int(np.count_nonzero(mask))
-
-    mask &= values["Mx2_2"] > args.data_Mx2_2_min
-    cutflow["Mx2_2_gt_min"] = int(np.count_nonzero(mask))
-
-    mask &= values["pTmiss"] > args.data_pTmiss_min
-    cutflow["pTmiss_gt_min"] = int(np.count_nonzero(mask))
-
-    return mask, cutflow
+    return before_mask, after_mask, cutflow
 
 
 def normalized_shape_histogram(
@@ -2908,145 +2958,12 @@ def normalized_shape_histogram(
     }
 
 
-def write_normalized_shape_csv(
-    path: Path,
-    variable: FitVariable,
-    histograms: Mapping[str, Mapping[str, object]],
-) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    edges = np.asarray(next(iter(histograms.values()))["edges"], dtype=float)
-
-    fields = ["bin_low", "bin_high", "bin_center"]
-    for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
-        fields.extend(
-            [
-                f"{sample_key}_counts",
-                f"{sample_key}_unit_area",
-            ]
-        )
-    # endfor
-
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
-        writer.writeheader()
-
-        for index in range(variable.bins):
-            row: Dict[str, object] = {
-                "bin_low": float(edges[index]),
-                "bin_high": float(edges[index + 1]),
-                "bin_center": float(
-                    0.5 * (edges[index] + edges[index + 1])
-                ),
-            }
-            for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
-                row[f"{sample_key}_counts"] = int(
-                    histograms[sample_key]["counts"][index]
-                )
-                row[f"{sample_key}_unit_area"] = float(
-                    histograms[sample_key]["unit_area"][index]
-                )
-            # endfor
-            writer.writerow(row)
-        # endfor
-    # endwith
-
-
-def plot_normalized_shape_canvas(
-    path: Path,
-    period_label: str,
-    stage_label: str,
-    histograms_by_variable: Mapping[
-        str,
-        Mapping[str, Mapping[str, object]],
-    ],
-    cut_description: str,
-    log_y: bool = False,
-) -> None:
-    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
-    axes_flat = list(axes.flat)
-
-    for axis, variable in zip(axes_flat, FIT_VARIABLES):
-        for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
-            histogram = histograms_by_variable[variable.key][sample_key]
-            edges = np.asarray(histogram["edges"], dtype=float)
-            centers = 0.5 * (edges[:-1] + edges[1:])
-            normalized = np.asarray(
-                histogram["unit_area"],
-                dtype=float,
-            )
-
-            axis.step(
-                centers,
-                normalized,
-                where="mid",
-                linewidth=1.35,
-                label=(
-                    f"{sample_label} "
-                    f"({histogram['in_range_entries']:,} in range)"
-                ),
-            )
-        # endfor
-
-        axis.set_xlim(variable.low, variable.high)
-        axis.set_xlabel(variable.label)
-        axis.set_ylabel("Fraction / bin")
-        axis.grid(alpha=0.25)
-        axis.legend(fontsize=7)
-
-        if log_y:
-            axis.set_yscale("log")
-            positive: List[float] = []
-            for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
-                values = np.asarray(
-                    histograms_by_variable[variable.key][sample_key][
-                        "unit_area"
-                    ],
-                    dtype=float,
-                )
-                positive.extend(values[values > 0.0].tolist())
-            # endfor
-            if positive:
-                axis.set_ylim(
-                    bottom=max(min(positive) * 0.5, 1.0e-8)
-                )
-            # endif
-        # endif
-    # endfor
-
-    axes_flat[-1].axis("off")
-    scale_text = ", logarithmic y" if log_y else ""
-
-    fig.suptitle(
-        f"{period_label}: epgamma exclusivity-variable shapes — "
-        f"{stage_label}\n"
-        f"{cut_description}; independently unit normalized{scale_text}"
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def build_shape_stage(
-    output_root: Path,
-    period: PeriodConfig,
+def build_stage_histograms(
     values_by_sample: Mapping[str, Mapping[str, np.ndarray]],
     masks_by_sample: Mapping[str, np.ndarray],
-    stage_name: str,
-    cut_description: str,
-    args: argparse.Namespace,
-) -> Dict[str, object]:
-    stage_dir = output_root / stage_name / period.key
-    histogram_dir = stage_dir / "histograms"
-    histogram_dir.mkdir(parents=True, exist_ok=True)
-
-    histograms_by_variable: Dict[
-        str,
-        Dict[str, Dict[str, object]],
-    ] = {}
-    variable_audit: Dict[str, object] = {}
-
-    for variable in FIT_VARIABLES:
-        histograms = {
+) -> Dict[str, Dict[str, Dict[str, object]]]:
+    return {
+        variable.key: {
             sample_key: normalized_shape_histogram(
                 values_by_sample[sample_key][variable.key],
                 masks_by_sample[sample_key],
@@ -3054,52 +2971,119 @@ def build_shape_stage(
             )
             for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO
         }
-        histograms_by_variable[variable.key] = histograms
+        for variable in DATA_SHAPE_VARIABLES
+    }
 
-        write_normalized_shape_csv(
-            histogram_dir / f"{variable.key}.csv",
-            variable,
-            histograms,
-        )
 
-        variable_audit[variable.key] = {
+def plot_before_after_shape_canvas(
+    path: Path,
+    period_label: str,
+    before_histograms: Mapping[
+        str,
+        Mapping[str, Mapping[str, object]],
+    ],
+    after_histograms: Mapping[
+        str,
+        Mapping[str, Mapping[str, object]],
+    ],
+    args: argparse.Namespace,
+) -> None:
+    """
+    Write one 2x5 canvas: before cuts on top and after cuts on the bottom.
+    """
+    fig, axes = plt.subplots(2, 5, figsize=(24, 10))
+
+    stage_rows = (
+        ("Before cuts", before_histograms),
+        ("After cuts", after_histograms),
+    )
+
+    for row_index, (stage_label, stage_histograms) in enumerate(stage_rows):
+        for column_index, variable in enumerate(DATA_SHAPE_VARIABLES):
+            axis = axes[row_index, column_index]
+
+            for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
+                histogram = stage_histograms[variable.key][sample_key]
+                edges = np.asarray(histogram["edges"], dtype=float)
+                centers = 0.5 * (edges[:-1] + edges[1:])
+                normalized = np.asarray(
+                    histogram["unit_area"],
+                    dtype=float,
+                )
+
+                axis.step(
+                    centers,
+                    normalized,
+                    where="mid",
+                    linewidth=1.35,
+                    label=(
+                        f"{sample_label} "
+                        f"({histogram['in_range_entries']:,})"
+                    ),
+                )
+            # endfor
+
+            axis.set_xlim(variable.low, variable.high)
+            axis.set_xlabel(variable.label)
+            axis.set_ylabel("Fraction / bin")
+            axis.grid(alpha=0.25)
+            axis.legend(fontsize=7)
+            axis.set_title(f"{stage_label}: {variable.label}")
+
+            if args.shape_log_y:
+                axis.set_yscale("log")
+                positive: List[float] = []
+                for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
+                    values = np.asarray(
+                        stage_histograms[variable.key][sample_key][
+                            "unit_area"
+                        ],
+                        dtype=float,
+                    )
+                    positive.extend(values[values > 0.0].tolist())
+                # endfor
+                if positive:
+                    axis.set_ylim(
+                        bottom=max(min(positive) * 0.5, 1.0e-8)
+                    )
+                # endif
+            # endif
+        # endfor
+    # endfor
+
+    fig.suptitle(
+        f"{period_label}: epgamma data-efficiency shape comparison\n"
+        r"Both rows: open_angle_ep2 $>5^\circ$. "
+        f"Bottom row additionally: Emiss2 > {args.data_Emiss_min:g} GeV, "
+        f"Mx2_2 > {args.data_Mx2_2_min:g} GeV$^2$, "
+        f"pTmiss > {args.data_pTmiss_min:g} GeV. "
+        "Each sample is independently unit normalized."
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def histogram_audit(
+    histograms: Mapping[str, Mapping[str, Mapping[str, object]]],
+) -> Dict[str, object]:
+    return {
+        variable.key: {
             "label": variable.label,
             "bins": variable.bins,
             "range": [variable.low, variable.high],
             "samples": {
                 sample_key: {
                     key: value
-                    for key, value in histogram.items()
+                    for key, value in histograms[variable.key][
+                        sample_key
+                    ].items()
                     if key not in ("edges", "counts", "unit_area")
                 }
-                for sample_key, histogram in histograms.items()
+                for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO
             },
         }
-    # endfor
-
-    plot_normalized_shape_canvas(
-        stage_dir / "unit_normalized_shape_comparison.png",
-        period.label,
-        stage_name.replace("_", " "),
-        histograms_by_variable,
-        cut_description,
-    )
-
-    if args.shape_log_y:
-        plot_normalized_shape_canvas(
-            stage_dir / "unit_normalized_shape_comparison_logy.png",
-            period.label,
-            stage_name.replace("_", " "),
-            histograms_by_variable,
-            cut_description,
-            log_y=True,
-        )
-    # endif
-
-    return {
-        "stage": stage_name,
-        "cut_description": cut_description,
-        "variables": variable_audit,
+        for variable in DATA_SHAPE_VARIABLES
     }
 
 
@@ -3108,10 +3092,14 @@ def process_period_data_shapes(
     args_dict: Mapping[str, object],
 ) -> Tuple[str, Dict[str, object]]:
     args = argparse.Namespace(**args_dict)
-    data_root = Path(args.output_dir) / "data"
+    shape_dir = Path(args.output_dir) / "data" / "shape_comparison"
+    shape_dir.mkdir(parents=True, exist_ok=True)
 
     values_by_sample: Dict[str, Dict[str, np.ndarray]] = {}
     sample_metadata: Dict[str, object] = {}
+    before_masks: Dict[str, np.ndarray] = {}
+    after_masks: Dict[str, np.ndarray] = {}
+    cutflows: Dict[str, Dict[str, int]] = {}
 
     for sample_key, sample_label, period_attribute in RAW_SHAPE_SAMPLE_INFO:
         path = getattr(period, period_attribute)
@@ -3121,69 +3109,42 @@ def process_period_data_shapes(
             period.label,
             args,
         )
+        before_mask, after_mask, cutflow = data_shape_selection_masks(
+            values,
+            args,
+        )
+
         values_by_sample[sample_key] = values
+        before_masks[sample_key] = before_mask
+        after_masks[sample_key] = after_mask
+        cutflows[sample_key] = cutflow
         sample_metadata[sample_key] = {
             "label": sample_label,
             **metadata,
         }
-    # endfor
-
-    before_masks: Dict[str, np.ndarray] = {}
-    after_masks: Dict[str, np.ndarray] = {}
-    before_cutflows: Dict[str, Dict[str, int]] = {}
-    after_cutflows: Dict[str, Dict[str, int]] = {}
-
-    for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
-        before_mask, before_cutflow = data_shape_selection_mask(
-            values_by_sample[sample_key],
-            args,
-            after_cuts=False,
-        )
-        after_mask, after_cutflow = data_shape_selection_mask(
-            values_by_sample[sample_key],
-            args,
-            after_cuts=True,
-        )
-        before_masks[sample_key] = before_mask
-        after_masks[sample_key] = after_mask
-        before_cutflows[sample_key] = before_cutflow
-        after_cutflows[sample_key] = after_cutflow
 
         log(
-            f"{period.label} {sample_key}: before cuts="
-            f"{np.count_nonzero(before_mask):,}, after cuts="
-            f"{np.count_nonzero(after_mask):,}"
+            f"{period.label} {sample_key}: "
+            f"open-angle selected={np.count_nonzero(before_mask):,}, "
+            f"after cuts={np.count_nonzero(after_mask):,}"
         )
     # endfor
 
-    before_description = (
-        "Every entry with all seven directly stored branches finite; "
-        "no physics cuts, deduplication, event grouping, candidate "
-        "arbitration, or fit"
-    )
-    after_description = (
-        f"Emiss2 > {args.data_Emiss_min:g} GeV, "
-        f"Mx2_2 > {args.data_Mx2_2_min:g} GeV$^2$, and "
-        f"pTmiss > {args.data_pTmiss_min:g} GeV; "
-        "no deduplication, event grouping, candidate arbitration, or fit"
-    )
-
-    before_audit = build_shape_stage(
-        data_root,
-        period,
+    before_histograms = build_stage_histograms(
         values_by_sample,
         before_masks,
-        "before_cuts",
-        before_description,
-        args,
     )
-    after_audit = build_shape_stage(
-        data_root,
-        period,
+    after_histograms = build_stage_histograms(
         values_by_sample,
         after_masks,
-        "after_cuts",
-        after_description,
+    )
+
+    output_path = shape_dir / f"{period.key}_before_after_cuts.png"
+    plot_before_after_shape_canvas(
+        output_path,
+        period.label,
+        before_histograms,
+        after_histograms,
         args,
     )
 
@@ -3193,29 +3154,23 @@ def process_period_data_shapes(
             "label": period.label,
             "beam_energy_GeV": period.beam_energy_GeV,
         },
-        "samples": sample_metadata,
-        "cuts": {
+        "plot": str(output_path),
+        "variables": [variable.key for variable in DATA_SHAPE_VARIABLES],
+        "common_selection": {
+            "open_angle_ep2_gt_deg": 5.0,
+        },
+        "after_cuts_selection": {
             "Emiss2_gt_GeV": args.data_Emiss_min,
             "Mx2_2_gt_GeV2": args.data_Mx2_2_min,
             "pTmiss_gt_GeV": args.data_pTmiss_min,
         },
-        "before_cutflows": before_cutflows,
-        "after_cutflows": after_cutflows,
-        "before_cuts": before_audit,
-        "after_cuts": after_audit,
+        "samples": sample_metadata,
+        "cutflows": cutflows,
+        "before_cuts": histogram_audit(before_histograms),
+        "after_cuts": histogram_audit(after_histograms),
     }
 
-    audit_dir = data_root / "audits" / period.key
-    audit_dir.mkdir(parents=True, exist_ok=True)
-    with open(
-        audit_dir / "data_shape_comparison_audit.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(audit, handle, indent=2)
-    # endwith
-
-    log(f"Completed before/after data-shape comparison for {period.label}.")
+    log(f"Completed before/after shape canvas for {period.label}.")
     return period.key, audit
 
 
@@ -3225,11 +3180,13 @@ def run_data_shape_stage(
     workers: int,
 ) -> Dict[str, object]:
     audits: Dict[str, object] = {}
-    (Path(args.output_dir) / "data").mkdir(parents=True, exist_ok=True)
+    data_root = Path(args.output_dir) / "data"
+    shape_dir = data_root / "shape_comparison"
+    shape_dir.mkdir(parents=True, exist_ok=True)
 
     log(
         f"DATA SHAPE STAGE: {len(periods)} period(s), {workers} worker(s). "
-        "Producing before_cuts and after_cuts unit-normalized comparisons."
+        "Writing one 2x5 before/after canvas per period."
     )
 
     if workers == 1:
@@ -3260,9 +3217,7 @@ def run_data_shape_stage(
     # endif
 
     with open(
-        Path(args.output_dir)
-        / "data"
-        / "all_periods_data_shape_audit.json",
+        data_root / "shape_comparison_audit.json",
         "w",
         encoding="utf-8",
     ) as handle:
