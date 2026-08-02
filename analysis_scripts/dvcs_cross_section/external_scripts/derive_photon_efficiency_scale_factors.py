@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v23_parent_exclusivity_fitter_path_fix.py
+derive_photon_efficiency_scale_factors_v24_fitter_preflight_and_failure_audit.py
 
 High-energy photon efficiency extraction using an observed PASS count and a
 FAIL-only BH/DVCS + exclusive-pi0 template fit.
@@ -33,6 +33,8 @@ import concurrent.futures
 import csv
 import json
 import importlib.util
+import inspect
+import traceback
 import math
 import os
 import sys
@@ -2422,10 +2424,12 @@ def fit_one_fraction(data,pi0,dvcs):
     mu=data.sum()*(f*pi0+(1-f)*dvcs); dev=poisson_deviance(data,mu); ndf=max(data.size-1,1)
     return f,err,float(res.fun),dev,ndf,bool(res.success),str(res.message)
 
-def load_exclusivity_fitter(script_path: str):
-    """Load the exact validated template-morphing implementation."""
-    requested = Path(script_path).expanduser()
+_EXCLUSIVITY_FITTER_CACHE = {}
 
+
+def resolve_exclusivity_fitter_path(script_path: str) -> Path:
+    """Resolve the validated fitter path with explicit, deterministic fallbacks."""
+    requested = Path(script_path).expanduser()
     candidates = [
         requested,
         Path(__file__).resolve().parent.parent
@@ -2434,51 +2438,133 @@ def load_exclusivity_fitter(script_path: str):
         / "plot_exclusivity_data_dvcs_pi0_mc.py",
     ]
 
-    path = next(
-        (
-            candidate.resolve()
-            for candidate in candidates
-            if candidate.exists()
-        ),
-        None,
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+        # endif
+    # endfor
+
+    attempted = "\n  ".join(str(candidate.resolve()) for candidate in candidates)
+    raise FileNotFoundError(
+        "Validated exclusivity fitter was not found. Tried:\n  " + attempted
     )
-    if path is None:
-        attempted = "\n  ".join(
-            str(candidate.resolve())
-            for candidate in candidates
-        )
-        raise FileNotFoundError(
-            "Validated exclusivity fitter was not found. Tried:\n  "
-            + attempted
-        )
+
+
+def load_exclusivity_fitter(script_path: str):
+    """
+    Load and validate the exact template-morphing implementation.
+
+    The module is registered in sys.modules before exec_module(), which is
+    required by dataclasses and by imported code that resolves its own module.
+    Each worker process caches the successfully imported module.
+    """
+    path = resolve_exclusivity_fitter_path(script_path)
+    cache_key = str(path)
+    if cache_key in _EXCLUSIVITY_FITTER_CACHE:
+        return _EXCLUSIVITY_FITTER_CACHE[cache_key]
     # endif
 
-    specification = importlib.util.spec_from_file_location(
-        "validated_exclusivity_fitter",
-        path,
-    )
+    module_name = "validated_exclusivity_fitter"
+    specification = importlib.util.spec_from_file_location(module_name, path)
     if specification is None or specification.loader is None:
-        raise RuntimeError(
-            f"Could not create an import specification for {path}"
-        )
+        raise RuntimeError(f"Could not create an import specification for {path}")
     # endif
 
     module = importlib.util.module_from_spec(specification)
-    specification.loader.exec_module(module)
+    sys.modules[module_name] = module
+    try:
+        specification.loader.exec_module(module)
+    except Exception:
+        sys.modules.pop(module_name, None)
+        raise
+    # endtry
 
-    required = (
+    required_symbols = (
         "fit_shared_two_templates",
         "VARIABLES",
         "TopologyConfig",
     )
-    missing = [name for name in required if not hasattr(module, name)]
+    missing = [name for name in required_symbols if not hasattr(module, name)]
     if missing:
         raise RuntimeError(
-            f"{path} is missing required fitter symbols: "
-            + ", ".join(missing)
+            f"{path} is missing required fitter symbols: " + ", ".join(missing)
         )
     # endif
+
+    expected_parameters = {
+        "data_histograms",
+        "dvcs_histograms",
+        "pi0_histograms",
+        "topology",
+        "max_shift_bins",
+        "max_smear_bins",
+        "min_counts",
+        "fraction_variable_branches",
+        "shift_prior_bins",
+        "smear_prior_bins",
+        "use_nuisance_penalties",
+        "core_containment",
+        "fraction_containment",
+        "pi0_support_core_containment",
+        "pi0_support_fraction_containment",
+        "pi0_core_calibration",
+        "outside_overshoot_penalty_weight",
+        "emiss2_mean_order_penalty_weight",
+    }
+    signature = inspect.signature(module.fit_shared_two_templates)
+    available_parameters = set(signature.parameters)
+    missing_parameters = sorted(expected_parameters - available_parameters)
+    if missing_parameters:
+        raise RuntimeError(
+            "Validated fit_shared_two_templates() interface is incompatible. "
+            "Missing parameter(s): " + ", ".join(missing_parameters)
+            + f". Resolved fitter: {path}"
+        )
+    # endif
+
+    variables = list(module.VARIABLES)
+    variable_branches = {variable.branch for variable in variables}
+    missing_drivers = sorted(
+        set(FAIL_FIT_DRIVERS) - variable_branches
+    )
+    if missing_drivers:
+        raise RuntimeError(
+            "Validated fitter does not define nominal FAIL driver(s): "
+            + ", ".join(missing_drivers)
+        )
+    # endif
+
+    # Lightweight interface exercise: instantiate the topology object now,
+    # before any ROOT files are read.
+    module.TopologyConfig(
+        key="FAIL_ONLY_PREFLIGHT",
+        label="FAIL-only preflight",
+        detector1=-1,
+        detector2=-1,
+    )
+
+    module._resolved_fitter_path = str(path)
+    module._validated_fit_signature = str(signature)
+    _EXCLUSIVITY_FITTER_CACHE[cache_key] = module
     return module
+
+
+def preflight_exclusivity_fitter(args: argparse.Namespace) -> Dict[str, object]:
+    """Validate and report the external fitter before expensive processing."""
+    module = load_exclusivity_fitter(args.exclusivity_fitter_script)
+    payload = {
+        "resolved_path": module._resolved_fitter_path,
+        "fit_signature": module._validated_fit_signature,
+        "variables": [variable.branch for variable in module.VARIABLES],
+        "nominal_fraction_drivers": list(args.fit_drivers),
+        "module_name": module.__name__,
+    }
+    log(
+        "Validated exclusivity fitter interface: "
+        f"{payload['resolved_path']} | signature "
+        f"{payload['fit_signature']}"
+    )
+    return payload
 
 
 def exclusivity_variable_values(
@@ -3185,24 +3271,39 @@ def write_components(pathstem, fit):
 
 
 def ratio_with_poisson_uncertainty(
-    numerator: np.ndarray,
-    denominator: np.ndarray,
+    numerator_counts: np.ndarray,
+    denominator_counts: np.ndarray,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    numerator = np.asarray(numerator, dtype=float)
-    denominator = np.asarray(denominator, dtype=float)
-    ratio = np.full_like(numerator, np.nan, dtype=float)
-    error = np.full_like(numerator, np.nan, dtype=float)
+    """
+    Ratio of unit-normalized shapes with uncertainties from the raw counts.
 
-    valid = denominator > 0.0
-    ratio[valid] = numerator[valid] / denominator[valid]
+    The central value is (n_i/N_n)/(d_i/N_d). The displayed uncertainty uses
+    the raw per-bin Poisson terms rather than incorrectly treating normalized
+    fractions as event counts.
+    """
+    numerator_counts = np.asarray(numerator_counts, dtype=float)
+    denominator_counts = np.asarray(denominator_counts, dtype=float)
+    numerator_total = float(np.sum(numerator_counts))
+    denominator_total = float(np.sum(denominator_counts))
 
-    positive_num = valid & (numerator > 0.0)
-    error[positive_num] = ratio[positive_num] * np.sqrt(
-        1.0 / numerator[positive_num] + 1.0 / denominator[positive_num]
+    ratio = np.full_like(numerator_counts, np.nan, dtype=float)
+    error = np.full_like(numerator_counts, np.nan, dtype=float)
+    if numerator_total <= 0.0 or denominator_total <= 0.0:
+        return ratio, error
+    # endif
+
+    numerator_fraction = numerator_counts / numerator_total
+    denominator_fraction = denominator_counts / denominator_total
+    valid = denominator_fraction > 0.0
+    ratio[valid] = numerator_fraction[valid] / denominator_fraction[valid]
+
+    positive = valid & (numerator_counts > 0.0) & (denominator_counts > 0.0)
+    error[positive] = ratio[positive] * np.sqrt(
+        1.0 / numerator_counts[positive]
+        + 1.0 / denominator_counts[positive]
     )
-    zero_num = valid & (numerator <= 0.0)
-    error[zero_num] = 0.0
-
+    zero_numerator = valid & (numerator_counts <= 0.0)
+    error[zero_numerator] = 0.0
     return ratio, error
 
 
@@ -3262,12 +3363,12 @@ def plot_theta_control_diagnostics(
     pi0_fail_norm = normalized(pi0_fail_counts.astype(float))
 
     pass_ratio, pass_ratio_err = ratio_with_poisson_uncertainty(
-        data_pass_norm,
-        pi0_pass_norm,
+        data_pass_counts,
+        pi0_pass_counts,
     )
     mc_ratio, mc_ratio_err = ratio_with_poisson_uncertainty(
-        pi0_pass_norm,
-        pi0_fail_norm,
+        pi0_pass_counts,
+        pi0_fail_counts,
     )
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
@@ -3347,7 +3448,10 @@ def plot_theta_control_diagnostics(
 
 
 def process_period(period,args_dict):
-    args=argparse.Namespace(**args_dict); pdir=Path(args.output_dir)/period.key
+    args = argparse.Namespace(**args_dict)
+    # Import and validate once per worker, before any ROOT I/O.
+    fitter_preflight = preflight_exclusivity_fitter(args)
+    pdir = Path(args.output_dir) / period.key
     for directory in [
         pdir,
         pdir / "shape_diagnostics",
@@ -3364,7 +3468,9 @@ def process_period(period,args_dict):
     egd,egd_diag=read_epgg(period.epgg_data,period.beam_energy_GeV,'epgammagamma data',args); egm,egm_diag=read_epgg(period.pi0_epgg_mc,period.beam_energy_GeV,'AAOGEN epgammagamma MC',args)
     dm=match_truth_partners(data,egd,'data',args); pm=match_truth_partners(pi0,egm,'mc',args)
     plot_expected_probe_diagnostics(pdir/'expected_probe_diagnostics.png',period.label,{'Data':data,'DVCSGEN':dvcs,'AAOGEN':pi0}); plot_matching_residuals(pdir/'matching_residuals.png',period.label,dm,pm)
-    rows=[]; meta={}
+    rows = []
+    meta = {}
+    failures: Dict[str, object] = {}
     for det,sec in [('FT',0)]+[('FD',s) for s in range(1,7)]:
         stem=category_stem(det,sec); dcat=category_mask(data,det,sec); bcat=category_mask(dvcs,det,sec); pcat=category_mask(pi0,det,sec); dpass=dcat&dm.matched; dfail=dcat&~dm.matched; ppass=pcat&pm.matched; pfail=pcat&~pm.matched
         plot_shape_diagnostics(
@@ -3397,8 +3503,44 @@ def process_period(period,args_dict):
             ppass,
             pfail,
         )
-        try: fit=fit_fail_shapes(data,dvcs,pi0,dfail,bcat,pfail,args)
-        except Exception as e: log(f'WARNING {period.label} {category_title(det,sec)} fit failed: {e}'); continue
+        try:
+            fit = fit_fail_shapes(data, dvcs, pi0, dfail, bcat, pfail, args)
+        except Exception as error:
+            failure_traceback = traceback.format_exc()
+            failure_payload = {
+                "period": period.key,
+                "period_label": period.label,
+                "detector": det,
+                "sector": sec,
+                "category": category_title(det, sec),
+                "exception_type": type(error).__name__,
+                "exception": str(error),
+                "traceback": failure_traceback,
+                "resolved_fitter_path": fitter_preflight["resolved_path"],
+                "fit_signature": fitter_preflight["fit_signature"],
+                "counts": {
+                    "data_pass": int(np.count_nonzero(dpass)),
+                    "data_fail": int(np.count_nonzero(dfail)),
+                    "pi0_mc_pass": int(np.count_nonzero(ppass)),
+                    "pi0_mc_fail": int(np.count_nonzero(pfail)),
+                    "dvcs_mc": int(np.count_nonzero(bcat)),
+                },
+                "theta_control_plot": str(theta_control_plot),
+            }
+            failures[stem] = failure_payload
+            failure_path = (
+                pdir / "fit_diagnostic_json" / f"{stem}_fit_failure.json"
+            )
+            with open(failure_path, "w", encoding="utf-8") as handle:
+                json.dump(failure_payload, handle, indent=2)
+            # endwith
+            log(
+                f"WARNING {period.label} {category_title(det, sec)} "
+                f"fit failed: {type(error).__name__}: {error}. "
+                f"Full traceback: {failure_path}"
+            )
+            continue
+        # endtry
         plot_fail_fit(
             pdir / "fail_fits" / f"{stem}_fail_fit.png",
             period.label,
@@ -3506,8 +3648,31 @@ def process_period(period,args_dict):
                 f"{variable_result['reduced_deviance_at_combined_fraction']:.2f}"
             )
         # endfor
-    write_rows_csv(pdir/'fail_only_results.csv',rows); json.dump({'rows':rows,'categories':meta,'matching':{'data':dm.summary,'mc':pm.summary},'epgg':{'data':egd_diag,'mc':egm_diag}},open(pdir/'metadata.json','w'),indent=2)
-    return period.key,rows,meta
+    write_rows_csv(pdir / "fail_only_results.csv", rows)
+    period_payload = {
+        "rows": rows,
+        "categories": meta,
+        "fit_failures": failures,
+        "fit_summary": {
+            "successful_categories": len(rows),
+            "failed_categories": len(failures),
+            "expected_categories": 7,
+        },
+        "fitter_preflight": fitter_preflight,
+        "matching": {"data": dm.summary, "mc": pm.summary},
+        "epgg": {"data": egd_diag, "mc": egm_diag},
+    }
+    with open(pdir / "metadata.json", "w", encoding="utf-8") as handle:
+        json.dump(period_payload, handle, indent=2)
+    # endwith
+
+    if not rows:
+        raise RuntimeError(
+            f"{period.label}: all seven detector-category fits failed. "
+            f"See {pdir / 'metadata.json'} and fit_diagnostic_json/*_fit_failure.json"
+        )
+    # endif
+    return period.key, rows, period_payload
 
 def write_rows_csv(path,rows):
     if not rows:return
@@ -3537,12 +3702,100 @@ def plot_all_period_results(path, rows):
     axes[2].set_xticks(x,cats); fig.suptitle('FAIL-only photon efficiencies and data/MC scale factors'); fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
 
 def main():
-    args=parse_args(); periods=selected_periods(args); out=Path(args.output_dir); out.mkdir(parents=True,exist_ok=True); json.dump({'args':vars(args),'periods':preflight(periods)},open(out/'input_manifest.json','w'),indent=2)
-    workers=max(1,min(args.workers,MAX_WORKERS,len(periods))); rows=[]; metadata={}
-    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as ex:
-        futs=[ex.submit(process_period,p,vars(args)) for p in periods]
-        for f in concurrent.futures.as_completed(futs): k,r,m=f.result(); rows.extend(r); metadata[k]=m; log(f'Completed {k}')
-    order={p.key:i for i,p in enumerate(PERIODS)}; rows.sort(key=lambda r:(order[r['period']],0 if r['detector']=='FT' else 1,r['sector'])); write_rows_csv(out/'photon_efficiency_fail_only_results.csv',rows); json.dump({'rows':rows,'metadata':metadata},open(out/'photon_efficiency_fail_only_results.json','w'),indent=2); plot_all_period_results(out/'all_periods_integrated_efficiencies.png',rows); log(f'Wrote outputs to {out}'); return 0
+    args = parse_args()
+    periods = selected_periods(args)
+    out = Path(args.output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    # Resolve/import/validate before the much more expensive ROOT preflight.
+    fitter_preflight = preflight_exclusivity_fitter(args)
+    manifest = {
+        "args": vars(args),
+        "fitter_preflight": fitter_preflight,
+        "periods": preflight(periods),
+    }
+    with open(out / "input_manifest.json", "w", encoding="utf-8") as handle:
+        json.dump(manifest, handle, indent=2)
+    # endwith
+
+    workers = max(1, min(args.workers, MAX_WORKERS, len(periods)))
+    rows: List[Dict[str, object]] = []
+    metadata: Dict[str, object] = {}
+    period_failures: Dict[str, object] = {}
+
+    with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(process_period, period, vars(args)): period
+            for period in periods
+        }
+        for future in concurrent.futures.as_completed(futures):
+            period = futures[future]
+            try:
+                key, period_rows, period_metadata = future.result()
+            except Exception as error:
+                failure_payload = {
+                    "period": period.key,
+                    "period_label": period.label,
+                    "exception_type": type(error).__name__,
+                    "exception": str(error),
+                    "traceback": traceback.format_exc(),
+                }
+                period_failures[period.key] = failure_payload
+                log(
+                    f"WARNING period {period.label} failed: "
+                    f"{type(error).__name__}: {error}"
+                )
+                continue
+            # endtry
+            rows.extend(period_rows)
+            metadata[key] = period_metadata
+            log(f"Completed {key}")
+        # endfor
+    # endwith
+
+    order = {period.key: index for index, period in enumerate(PERIODS)}
+    rows.sort(
+        key=lambda row: (
+            order[row["period"]],
+            0 if row["detector"] == "FT" else 1,
+            row["sector"],
+        )
+    )
+    write_rows_csv(out / "photon_efficiency_fail_only_results.csv", rows)
+
+    final_payload = {
+        "rows": rows,
+        "metadata": metadata,
+        "period_failures": period_failures,
+        "fitter_preflight": fitter_preflight,
+        "summary": {
+            "successful_category_rows": len(rows),
+            "expected_category_rows": 7 * len(periods),
+            "failed_periods": len(period_failures),
+        },
+    }
+    with open(
+        out / "photon_efficiency_fail_only_results.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(final_payload, handle, indent=2)
+    # endwith
+
+    if not rows:
+        raise RuntimeError(
+            "All detector-category fits failed; refusing to write an empty "
+            "summary plot. Inspect photon_efficiency_fail_only_results.json "
+            "and per-period fit failure JSON files."
+        )
+    # endif
+
+    plot_all_period_results(
+        out / "all_periods_integrated_efficiencies.png",
+        rows,
+    )
+    log(f"Wrote outputs to {out}")
+    return 0
 
 if __name__=='__main__':
     try: raise SystemExit(main())
