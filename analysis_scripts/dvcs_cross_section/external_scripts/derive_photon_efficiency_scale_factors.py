@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v20_detailed_fail_fit_diagnostics.py
+derive_photon_efficiency_scale_factors_v22_exclusivity_morphed_fail_fit.py
 
 High-energy photon efficiency extraction using an observed PASS count and a
 FAIL-only BH/DVCS + exclusive-pi0 template fit.
@@ -32,6 +32,7 @@ import argparse
 import concurrent.futures
 import csv
 import json
+import importlib.util
 import math
 import os
 import sys
@@ -187,9 +188,7 @@ FIT_VARIABLES: Tuple[FitVariable, ...] = (
 )
 
 FRACTION_DRIVERS: Tuple[str, ...] = (
-    "Delta_phi",
     "theta_gamma_gamma",
-    "pTmiss",
 )
 
 TOPOLOGY_INFO: Mapping[str, Tuple[str, int, int]] = {
@@ -2362,9 +2361,39 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--z-min',type=float,default=.65); p.add_argument('--minus-t-max',type=float,default=1.0); p.add_argument('--open-angle-min-deg',type=float,default=5.0); p.add_argument('--require-fiducial-status-111',action='store_true')
     p.add_argument('--tag-match-angle-max-deg',type=float,default=3.0); p.add_argument('--tag-match-relative-E-max',type=float,default=.35); p.add_argument('--probe-match-angle-max-deg',type=float,default=3.0); p.add_argument('--probe-match-relative-E-max',type=float,default=.35)
     p.add_argument('--mc-signature-decimals',type=int,default=10); p.add_argument('--native-closure-max',type=float,default=.10); p.add_argument('--native-minimum-photon-E',type=float,default=.20); p.add_argument('--found-probe-E-min',type=float,default=2.0); p.add_argument('--require-probe-residual-match',action='store_true')
-    p.add_argument('--fit-drivers',nargs='+',default=list(FAIL_FIT_DRIVERS),choices=[v.key for v in FIT_VARIABLES])
+    p.add_argument(
+        '--fit-drivers',
+        nargs='+',
+        default=list(FAIL_FIT_DRIVERS),
+        choices=[v.key for v in FIT_VARIABLES],
+        help=(
+            'Variables used in the nominal FAIL-only fit. The default is '
+            'theta_gamma_gamma only. All seven observables are still plotted '
+            'as diagnostics.'
+        ),
+    )
     p.add_argument('--template-pseudocount',type=float,default=.25); p.add_argument('--fit-min-data-fail',type=int,default=100); p.add_argument('--fit-min-template-counts',type=int,default=100)
-    p.add_argument('--fit-max-reduced-deviance',type=float,default=5.0); p.add_argument('--fit-max-variable-spread',type=float,default=.15)
+    p.add_argument('--fit-max-reduced-deviance',type=float,default=5.0)
+    p.add_argument('--fit-max-variable-spread',type=float,default=.15)
+    p.add_argument(
+        '--exclusivity-fitter-script',
+        default=str(Path(__file__).with_name('plot_exclusivity_data_dvcs_pi0_mc.py')),
+        help=(
+            'Path to the validated exclusivity-template script. Its exact '
+            'fit_shared_two_templates implementation is used for the FAIL fit.'
+        ),
+    )
+    p.add_argument('--max-shift-bins', type=float, default=12.0)
+    p.add_argument('--max-smear-bins', type=float, default=20.0)
+    p.add_argument('--shift-prior-bins', type=float, default=4.0)
+    p.add_argument('--smear-prior-bins', type=float, default=8.0)
+    p.add_argument('--disable-nuisance-penalties', action='store_true')
+    p.add_argument('--fit-core-containment', type=float, default=0.90)
+    p.add_argument('--fit-fraction-containment', type=float, default=0.95)
+    p.add_argument('--pi0-support-core-containment', type=float, default=0.90)
+    p.add_argument('--pi0-support-fraction-containment', type=float, default=0.95)
+    p.add_argument('--outside-overshoot-penalty-weight', type=float, default=0.25)
+    p.add_argument('--emiss2-mean-order-penalty-weight', type=float, default=25.0)
     return p.parse_args()
 
 def category_stem(detector,sector): return 'ft' if detector=='FT' else f'fd_sector_{sector}'
@@ -2390,14 +2419,95 @@ def fit_one_fraction(data,pi0,dvcs):
     mu=data.sum()*(f*pi0+(1-f)*dvcs); dev=poisson_deviance(data,mu); ndf=max(data.size-1,1)
     return f,err,float(res.fun),dev,ndf,bool(res.success),str(res.message)
 
+def load_exclusivity_fitter(script_path: str):
+    """Load the exact validated template-morphing implementation."""
+    path = Path(script_path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Validated exclusivity fitter was not found: {path}"
+        )
+    # endif
+
+    specification = importlib.util.spec_from_file_location(
+        "validated_exclusivity_fitter",
+        path,
+    )
+    if specification is None or specification.loader is None:
+        raise RuntimeError(
+            f"Could not create an import specification for {path}"
+        )
+    # endif
+
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+
+    required = (
+        "fit_shared_two_templates",
+        "VARIABLES",
+        "TopologyConfig",
+    )
+    missing = [name for name in required if not hasattr(module, name)]
+    if missing:
+        raise RuntimeError(
+            f"{path} is missing required fitter symbols: "
+            + ", ".join(missing)
+        )
+    # endif
+    return module
+
+
+def exclusivity_variable_values(
+    records: OpportunityRecords,
+    branch: str,
+    mask: np.ndarray,
+) -> np.ndarray:
+    """
+    Map this script's stored quantities onto the validated fitter's conventions.
+
+    In particular, theta_gamma_gamma is stored here in degrees but is fitted in
+    radians by plot_exclusivity_data_dvcs_pi0_mc.py.
+    """
+    source_branch = "theta_cm" if branch == "theta" else branch
+    values = finite_values(records, source_branch, mask)
+
+    if branch == "theta_gamma_gamma":
+        values = np.radians(values)
+    # endif
+    return values
+
+
+def build_exclusivity_histograms(
+    fitter_module,
+    records: OpportunityRecords,
+    mask: np.ndarray,
+) -> Dict[str, np.ndarray]:
+    histograms: Dict[str, np.ndarray] = {}
+    for variable in fitter_module.VARIABLES:
+        values = exclusivity_variable_values(
+            records,
+            variable.branch,
+            mask,
+        )
+        counts, _ = np.histogram(
+            values,
+            bins=variable.bins,
+            range=(variable.xmin, variable.xmax),
+        )
+        histograms[variable.branch] = counts.astype(float)
+    # endfor
+    return histograms
+
+
 def fit_fail_shapes(data, dvcs, pi0, data_fail, dvcs_mask, pi0_fail, args):
     """
-    Fit the FAIL sample with normalized AAOGEN-pi0 and DVCSGEN shapes.
+    Fit the FAIL sample using the exact shape-morphing model from the validated
+    exclusivity determination.
 
-    The total FAIL event count is used only once through the identity
-    N_pi0_FAIL + N_BH/DVCS_FAIL = N_FAIL. Each observable contributes a
-    multinomial shape likelihood. Independent one-variable fits are retained
-    as model-consistency diagnostics.
+    The PASS count remains fixed and external to this fit. Only the FAIL pi0
+    fraction is extracted. Both the BH/DVCS and AAOGEN FAIL templates receive
+    the same variable-dependent shift/smearing treatment, nuisance priors,
+    support-region handling, and physical penalties used by the exclusivity
+    script.
     """
     n_fail = int(np.count_nonzero(data_fail))
     if n_fail < args.fit_min_data_fail:
@@ -2406,156 +2516,177 @@ def fit_fail_shapes(data, dvcs, pi0, data_fail, dvcs_mask, pi0_fail, args):
         )
     # endif
 
+    fitter = load_exclusivity_fitter(args.exclusivity_fitter_script)
+
+    data_histograms = build_exclusivity_histograms(
+        fitter, data, data_fail
+    )
+    dvcs_histograms = build_exclusivity_histograms(
+        fitter, dvcs, dvcs_mask
+    )
+    pi0_histograms = build_exclusivity_histograms(
+        fitter, pi0, pi0_fail
+    )
+
+    topology = fitter.TopologyConfig(
+        key="FAIL_ONLY",
+        label="FAIL-only combined proton topologies",
+        detector1=-1,
+        detector2=-1,
+    )
+
+    summary = fitter.fit_shared_two_templates(
+        data_histograms=data_histograms,
+        dvcs_histograms=dvcs_histograms,
+        pi0_histograms=pi0_histograms,
+        topology=topology,
+        max_shift_bins=float(args.max_shift_bins),
+        max_smear_bins=float(args.max_smear_bins),
+        min_counts=int(args.fit_min_template_counts),
+        fraction_variable_branches=tuple(args.fit_drivers),
+        shift_prior_bins=float(args.shift_prior_bins),
+        smear_prior_bins=float(args.smear_prior_bins),
+        use_nuisance_penalties=not args.disable_nuisance_penalties,
+        core_containment=float(args.fit_core_containment),
+        fraction_containment=float(args.fit_fraction_containment),
+        pi0_support_core_containment=float(
+            args.pi0_support_core_containment
+        ),
+        pi0_support_fraction_containment=float(
+            args.pi0_support_fraction_containment
+        ),
+        pi0_core_calibration=None,
+        outside_overshoot_penalty_weight=float(
+            args.outside_overshoot_penalty_weight
+        ),
+        emiss2_mean_order_penalty_weight=float(
+            args.emiss2_mean_order_penalty_weight
+        ),
+    )
+
+    if not summary.success:
+        raise RuntimeError(
+            "Validated exclusivity-template fitter failed: "
+            + str(summary.message)
+        )
+    # endif
+
+    fraction = float(summary.f_pi0)
+    stat_error = float(summary.f_pi0_err)
+    variable_results = summary.variable_results or {}
+
     payload: Dict[str, Dict[str, object]] = {}
     per_variable: Dict[str, Dict[str, float]] = {}
 
-    for key in args.fit_drivers:
-        variable = next(variable for variable in FIT_VARIABLES if variable.key == key)
-        data_counts = histogram_with_flow(data, data_fail, variable)
-        pi0_counts = histogram_with_flow(pi0, pi0_fail, variable)
-        dvcs_counts = histogram_with_flow(dvcs, dvcs_mask, variable)
-
-        if pi0_counts.sum() < args.fit_min_template_counts:
-            raise RuntimeError(
-                f"insufficient AAOGEN FAIL template support for {key}: "
-                f"{int(pi0_counts.sum())}"
-            )
-        # endif
-        if dvcs_counts.sum() < args.fit_min_template_counts:
-            raise RuntimeError(
-                f"insufficient DVCSGEN template support for {key}: "
-                f"{int(dvcs_counts.sum())}"
-            )
+    # Retain every successfully profiled variable for diagnostics, while the
+    # requested fit drivers alone determine the shared fraction.
+    for branch, result in variable_results.items():
+        if (
+            result.fit_data_counts is None
+            or result.model_counts is None
+            or result.dvcs_component_counts is None
+            or result.pi0_component_counts is None
+        ):
+            continue
         # endif
 
-        pi0_shape = shape(pi0_counts, args.template_pseudocount)
-        dvcs_shape = shape(dvcs_counts, args.template_pseudocount)
-
-        (
-            individual_fraction,
-            individual_error,
-            individual_nll,
-            individual_deviance,
-            individual_ndf,
-            individual_success,
-            individual_message,
-        ) = fit_one_fraction(data_counts, pi0_shape, dvcs_shape)
-
-        per_variable[key] = {
-            "fraction": individual_fraction,
-            "stat_error": individual_error,
-            "nll": individual_nll,
-            "deviance_at_individual_optimum": individual_deviance,
-            "ndf": individual_ndf,
-            "reduced_deviance_at_individual_optimum": (
-                individual_deviance / individual_ndf
-                if individual_ndf > 0
-                else math.nan
+        fitted_variable = next(
+            variable
+            for variable in fitter.VARIABLES
+            if variable.branch == branch
+        )
+        local_key = "theta_cm" if branch == "theta" else branch
+        local_variable = next(
+            (
+                variable
+                for variable in FIT_VARIABLES
+                if variable.key == local_key
             ),
-            "success": individual_success,
-            "message": individual_message,
-            "data_entries_including_flow": float(data_counts.sum()),
-            "pi0_template_entries_including_flow": float(pi0_counts.sum()),
-            "dvcs_template_entries_including_flow": float(dvcs_counts.sum()),
-        }
-
-        payload[key] = {
-            "variable": variable,
-            "data": data_counts,
-            "pi0_raw": pi0_counts,
-            "dvcs_raw": dvcs_counts,
-            "pi0_shape": pi0_shape,
-            "dvcs_shape": dvcs_shape,
-        }
-    # endfor
-
-    def objective(value):
-        fraction = float(value)
-        return sum(
-            multinomial_nll(
-                fraction,
-                item["data"],
-                item["pi0_shape"],
-                item["dvcs_shape"],
-            )
-            for item in payload.values()
+            FitVariable(
+                local_key,
+                fitted_variable.label,
+                fitted_variable.bins,
+                fitted_variable.xmin,
+                fitted_variable.xmax,
+            ),
         )
-    # enddef
 
-    result = minimize_scalar(
-        objective,
-        bounds=(1.0e-6, 1.0 - 1.0e-6),
-        method="bounded",
-        options={"xatol": 1.0e-10},
-    )
-    fraction = float(result.x)
-
-    step = min(1.0e-4, 0.45 * fraction, 0.45 * (1.0 - fraction))
-    step = max(step, 1.0e-7)
-    curvature = (
-        objective(fraction + step)
-        - 2.0 * objective(fraction)
-        + objective(fraction - step)
-    ) / (step * step)
-    stat_error = (
-        math.sqrt(1.0 / curvature)
-        if curvature > 0.0 and math.isfinite(curvature)
-        else math.nan
-    )
-
-    total_deviance = 0.0
-    total_bins = 0
-    for key, item in payload.items():
-        data_counts = item["data"]
-        pi0_component = (
-            data_counts.sum() * fraction * item["pi0_shape"]
+        data_counts = np.asarray(result.fit_data_counts, dtype=float)
+        model = np.asarray(result.model_counts, dtype=float)
+        dvcs_component = np.asarray(
+            result.dvcs_component_counts,
+            dtype=float,
         )
-        dvcs_component = (
-            data_counts.sum() * (1.0 - fraction) * item["dvcs_shape"]
+        pi0_component = np.asarray(
+            result.pi0_component_counts,
+            dtype=float,
         )
-        model = pi0_component + dvcs_component
         residual = data_counts - model
         pull = residual / np.sqrt(np.maximum(model, 1.0))
+        deviance = float(result.deviance)
+        ndf = max(int(result.ndf), 1)
 
-        combined_deviance = poisson_deviance(data_counts, model)
-        combined_ndf = max(data_counts.size - 1, 1)
+        payload[local_key] = {
+            "variable": local_variable,
+            "data": data_counts,
+            "model": model,
+            "pi0_component": pi0_component,
+            "dvcs_component": dvcs_component,
+            "residual": residual,
+            "pull": pull,
+            "combined_deviance": deviance,
+            "combined_ndf": ndf,
+            "combined_reduced_deviance": deviance / ndf,
+            "pi0_raw": pi0_histograms[branch],
+            "dvcs_raw": dvcs_histograms[branch],
+            "pi0_shape": np.asarray(
+                result.transformed_pi0_shape,
+                dtype=float,
+            ),
+            "dvcs_shape": np.asarray(
+                result.transformed_dvcs_shape,
+                dtype=float,
+            ),
+        }
 
-        item["model"] = model
-        item["pi0_component"] = pi0_component
-        item["dvcs_component"] = dvcs_component
-        item["residual"] = residual
-        item["pull"] = pull
-        item["combined_deviance"] = combined_deviance
-        item["combined_ndf"] = combined_ndf
-        item["combined_reduced_deviance"] = combined_deviance / combined_ndf
-
-        per_variable[key]["deviance_at_combined_fraction"] = combined_deviance
-        per_variable[key]["reduced_deviance_at_combined_fraction"] = (
-            combined_deviance / combined_ndf
-        )
-        per_variable[key]["fraction_minus_combined"] = (
-            per_variable[key]["fraction"] - fraction
-        )
-
-        total_deviance += combined_deviance
-        total_bins += data_counts.size
+        per_variable[local_key] = {
+            "fraction": fraction,
+            "stat_error": stat_error,
+            "nll": math.nan,
+            "deviance_at_individual_optimum": deviance,
+            "ndf": ndf,
+            "reduced_deviance_at_individual_optimum": deviance / ndf,
+            "success": bool(result.success),
+            "message": str(result.message),
+            "deviance_at_combined_fraction": deviance,
+            "reduced_deviance_at_combined_fraction": deviance / ndf,
+            "fraction_minus_combined": 0.0,
+            "shift": float(result.shift),
+            "shift_error": float(result.shift_err),
+            "smear": float(result.sigma_add),
+            "smear_error": float(result.sigma_add_err),
+            "pi0_shift": float(result.pi0_shift),
+            "pi0_shift_error": float(result.pi0_shift_err),
+            "pi0_smear": float(result.pi0_sigma_add),
+            "pi0_smear_error": float(result.pi0_sigma_add_err),
+            "morph_label": str(result.morph_label),
+            "fit_region_data_counts": float(result.fit_region_data_counts),
+            "fit_region_model_counts": float(result.fit_region_model_counts),
+            "full_range_model_to_data": float(
+                result.full_range_model_to_data
+            ),
+        }
     # endfor
 
-    ndf = max(total_bins - 1, 1)
-    reduced_deviance = total_deviance / ndf
-
-    individual_fractions = [
-        item["fraction"] for item in per_variable.values()
-    ]
-    spread = (
-        max(abs(value - fraction) for value in individual_fractions)
-        if individual_fractions
+    reduced_deviance = (
+        float(summary.deviance) / int(summary.ndf)
+        if int(summary.ndf) > 0
         else math.nan
     )
-
     warnings: List[str] = []
     if (
         args.fit_max_reduced_deviance > 0.0
+        and math.isfinite(reduced_deviance)
         and reduced_deviance > args.fit_max_reduced_deviance
     ):
         warnings.append(
@@ -2563,24 +2694,15 @@ def fit_fail_shapes(data, dvcs, pi0, data_fail, dvcs_mask, pi0_fail, args):
             f"{args.fit_max_reduced_deviance:g}"
         )
     # endif
-    if (
-        math.isfinite(spread)
-        and spread > args.fit_max_variable_spread
-    ):
-        warnings.append(
-            f"per-variable fraction spread={spread:.3f} exceeds "
-            f"{args.fit_max_variable_spread:g}"
-        )
-    # endif
 
     return FractionFit(
-        bool(result.success),
-        str(result.message),
+        True,
+        str(summary.message),
         fraction,
         stat_error,
-        float(result.fun),
-        total_deviance,
-        ndf,
+        math.nan,
+        float(summary.deviance),
+        int(summary.ndf),
         reduced_deviance,
         per_variable,
         payload,
@@ -2614,11 +2736,15 @@ def plot_shape_diagnostics(out,period,det,sec,data,dvcs,pi0,dp,df,pp,pf,dm):
             a.set_title(title); a.set_xlabel(var.label); a.set_ylabel('Fraction / bin'); a.grid(alpha=.25); a.legend(fontsize=8)
         fig.suptitle(f'{period}, {category_title(det,sec)}: {var.label}'); fig.tight_layout(rect=(0,0,1,.95)); fig.savefig(out/f'{var.key}_pass_fail_shapes.png',dpi=180); plt.close(fig)
 
-def flow_bin_labels(variable: FitVariable) -> List[str]:
-    labels = ["UF"]
-    labels.extend(str(index + 1) for index in range(variable.bins))
-    labels.append("OF")
-    return labels
+def flow_bin_labels(variable: FitVariable, size: Optional[int] = None) -> List[str]:
+    count = variable.bins if size is None else int(size)
+    if count == variable.bins + 2:
+        labels = ["UF"]
+        labels.extend(str(index + 1) for index in range(variable.bins))
+        labels.append("OF")
+        return labels
+    # endif
+    return [str(index + 1) for index in range(count)]
 
 
 def plot_one_fail_fit_variable(
@@ -2641,7 +2767,7 @@ def plot_one_fail_fit_variable(
     residual = np.asarray(item["residual"], dtype=float)
 
     x = np.arange(data_counts.size, dtype=float)
-    labels = flow_bin_labels(variable)
+    labels = flow_bin_labels(variable, data_counts.size)
 
     fig, axes = plt.subplots(
         2,
@@ -2998,10 +3124,14 @@ def write_components(pathstem, fit):
                         else 0.0
                     )
                 )
-                if index == 0:
-                    bin_type = "underflow"
-                elif index == item["data"].size - 1:
-                    bin_type = "overflow"
+                if item["data"].size == item["variable"].bins + 2:
+                    if index == 0:
+                        bin_type = "underflow"
+                    elif index == item["data"].size - 1:
+                        bin_type = "overflow"
+                    else:
+                        bin_type = "regular"
+                    # endif
                 else:
                     bin_type = "regular"
                 # endif
@@ -3028,6 +3158,169 @@ def write_components(pathstem, fit):
 
 
 
+
+def ratio_with_poisson_uncertainty(
+    numerator: np.ndarray,
+    denominator: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    numerator = np.asarray(numerator, dtype=float)
+    denominator = np.asarray(denominator, dtype=float)
+    ratio = np.full_like(numerator, np.nan, dtype=float)
+    error = np.full_like(numerator, np.nan, dtype=float)
+
+    valid = denominator > 0.0
+    ratio[valid] = numerator[valid] / denominator[valid]
+
+    positive_num = valid & (numerator > 0.0)
+    error[positive_num] = ratio[positive_num] * np.sqrt(
+        1.0 / numerator[positive_num] + 1.0 / denominator[positive_num]
+    )
+    zero_num = valid & (numerator <= 0.0)
+    error[zero_num] = 0.0
+
+    return ratio, error
+
+
+def plot_theta_control_diagnostics(
+    path: Path,
+    period: str,
+    detector: str,
+    sector: int,
+    data: OpportunityRecords,
+    pi0: OpportunityRecords,
+    data_pass: np.ndarray,
+    pi0_pass: np.ndarray,
+    pi0_fail: np.ndarray,
+) -> None:
+    """
+    Validate the theta_gamma_gamma control shapes before interpreting the FAIL fit.
+
+    Panels:
+      1. matched PASS data versus AAOGEN PASS;
+      2. PASS-data / AAOGEN-PASS ratio;
+      3. AAOGEN PASS versus AAOGEN FAIL;
+      4. AAOGEN-PASS / AAOGEN-FAIL ratio.
+
+    Coarser binning is used here to expose broad shape differences without
+    allowing very fine statistical fluctuations to dominate the comparison.
+    """
+    variable = next(
+        item for item in FIT_VARIABLES
+        if item.key == "theta_gamma_gamma"
+    )
+    bins = 40
+    low = variable.low
+    high = variable.high
+    edges = np.linspace(low, high, bins + 1)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    data_pass_counts, _ = np.histogram(
+        finite_values(data, "theta_gamma_gamma", data_pass),
+        bins=edges,
+    )
+    pi0_pass_counts, _ = np.histogram(
+        finite_values(pi0, "theta_gamma_gamma", pi0_pass),
+        bins=edges,
+    )
+    pi0_fail_counts, _ = np.histogram(
+        finite_values(pi0, "theta_gamma_gamma", pi0_fail),
+        bins=edges,
+    )
+
+    def normalized(counts: np.ndarray) -> np.ndarray:
+        total = float(np.sum(counts))
+        return counts / total if total > 0.0 else np.zeros_like(counts, dtype=float)
+    # enddef
+
+    data_pass_norm = normalized(data_pass_counts.astype(float))
+    pi0_pass_norm = normalized(pi0_pass_counts.astype(float))
+    pi0_fail_norm = normalized(pi0_fail_counts.astype(float))
+
+    pass_ratio, pass_ratio_err = ratio_with_poisson_uncertainty(
+        data_pass_norm,
+        pi0_pass_norm,
+    )
+    mc_ratio, mc_ratio_err = ratio_with_poisson_uncertainty(
+        pi0_pass_norm,
+        pi0_fail_norm,
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+
+    axes[0, 0].step(
+        centers,
+        data_pass_norm,
+        where="mid",
+        label=f"Matched data PASS ({int(np.count_nonzero(data_pass)):,})",
+    )
+    axes[0, 0].step(
+        centers,
+        pi0_pass_norm,
+        where="mid",
+        label=f"AAOGEN PASS ({int(np.count_nonzero(pi0_pass)):,})",
+    )
+    axes[0, 0].set_title("PASS control-shape closure")
+    axes[0, 0].set_ylabel("Fraction / bin")
+    axes[0, 0].legend(fontsize=9)
+    axes[0, 0].grid(alpha=0.25)
+
+    axes[0, 1].axhline(1.0, linestyle="--", linewidth=1.0)
+    axes[0, 1].errorbar(
+        centers,
+        pass_ratio,
+        yerr=pass_ratio_err,
+        fmt=".",
+        capsize=2,
+    )
+    axes[0, 1].set_title("Matched data PASS / AAOGEN PASS")
+    axes[0, 1].set_ylabel("Shape ratio")
+    axes[0, 1].grid(alpha=0.25)
+
+    axes[1, 0].step(
+        centers,
+        pi0_pass_norm,
+        where="mid",
+        label=f"AAOGEN PASS ({int(np.count_nonzero(pi0_pass)):,})",
+    )
+    axes[1, 0].step(
+        centers,
+        pi0_fail_norm,
+        where="mid",
+        label=f"AAOGEN FAIL ({int(np.count_nonzero(pi0_fail)):,})",
+    )
+    axes[1, 0].set_title("AAOGEN reconstruction-bias comparison")
+    axes[1, 0].set_xlabel(variable.label)
+    axes[1, 0].set_ylabel("Fraction / bin")
+    axes[1, 0].legend(fontsize=9)
+    axes[1, 0].grid(alpha=0.25)
+
+    axes[1, 1].axhline(1.0, linestyle="--", linewidth=1.0)
+    axes[1, 1].errorbar(
+        centers,
+        mc_ratio,
+        yerr=mc_ratio_err,
+        fmt=".",
+        capsize=2,
+    )
+    axes[1, 1].set_title("AAOGEN PASS / AAOGEN FAIL")
+    axes[1, 1].set_xlabel(variable.label)
+    axes[1, 1].set_ylabel("Shape ratio")
+    axes[1, 1].grid(alpha=0.25)
+
+    for axis in axes.flat:
+        axis.set_xlim(low, high)
+    # endfor
+
+    fig.suptitle(
+        f"{period}, {category_title(detector, sector)}: "
+        r"$\theta_{\gamma\gamma}$ control diagnostics"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+
 def process_period(period,args_dict):
     args=argparse.Namespace(**args_dict); pdir=Path(args.output_dir)/period.key
     for directory in [
@@ -3037,6 +3330,7 @@ def process_period(period,args_dict):
         pdir / "fit_component_tables",
         pdir / "fit_diagnostic_summaries",
         pdir / "fit_diagnostic_json",
+        pdir / "theta_control_diagnostics",
     ]:
         directory.mkdir(parents=True, exist_ok=True)
     # endfor
@@ -3048,7 +3342,36 @@ def process_period(period,args_dict):
     rows=[]; meta={}
     for det,sec in [('FT',0)]+[('FD',s) for s in range(1,7)]:
         stem=category_stem(det,sec); dcat=category_mask(data,det,sec); bcat=category_mask(dvcs,det,sec); pcat=category_mask(pi0,det,sec); dpass=dcat&dm.matched; dfail=dcat&~dm.matched; ppass=pcat&pm.matched; pfail=pcat&~pm.matched
-        plot_shape_diagnostics(pdir/'shape_diagnostics'/stem,period.label,det,sec,data,dvcs,pi0,dpass,dfail,ppass,pfail,bcat)
+        plot_shape_diagnostics(
+            pdir / 'shape_diagnostics' / stem,
+            period.label,
+            det,
+            sec,
+            data,
+            dvcs,
+            pi0,
+            dpass,
+            dfail,
+            ppass,
+            pfail,
+            bcat,
+        )
+        theta_control_plot = (
+            pdir
+            / "theta_control_diagnostics"
+            / f"{stem}_theta_gamma_gamma_control.png"
+        )
+        plot_theta_control_diagnostics(
+            theta_control_plot,
+            period.label,
+            det,
+            sec,
+            data,
+            pi0,
+            dpass,
+            ppass,
+            pfail,
+        )
         try: fit=fit_fail_shapes(data,dvcs,pi0,dfail,bcat,pfail,args)
         except Exception as e: log(f'WARNING {period.label} {category_title(det,sec)} fit failed: {e}'); continue
         plot_fail_fit(
@@ -3117,6 +3440,7 @@ def process_period(period,args_dict):
             "per_variable_fit_plots": variable_plot_paths,
             "summary_plot": str(summary_plot_path),
             "component_tables": component_table_paths,
+            "theta_control_plot": str(theta_control_plot),
         }
 
         diagnostic_json_path = (
