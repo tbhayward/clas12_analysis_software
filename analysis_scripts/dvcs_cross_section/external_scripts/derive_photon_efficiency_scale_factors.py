@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v33_fast_shapes_and_photon_multiplicity.py
+derive_photon_efficiency_scale_factors_v34_multiplicity_plots.py
 
 Stepwise photon-efficiency study.
 
@@ -16,7 +16,9 @@ Default data-side processing:
     pTmiss > 0.5 GeV in the after-cuts row;
   * write one 2x5 canvas per run period under data/shape_comparison;
   * determine the number of physical events represented by one, two, ...,
-    six reconstructed-photon entries, plus an overflow category above six.
+    six reconstructed-photon entries, plus an overflow category above six;
+  * write multiplicity plots showing both absolute event totals and the
+    percentage of unique events in each multiplicity category.
 
 Event identity:
 
@@ -25,17 +27,17 @@ Event identity:
     kinematics (e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi), using
     --mc-signature-decimals.
 
-The completed AAOGEN MC photon-efficiency machinery is preserved. Its output
-directory is always retained at:
+The completed AAOGEN MC photon-efficiency machinery is preserved under:
 
   output/photon_efficiency_study/mc/
 
-and it can be rerun with --run-mc-efficiency.
+and can be rerun with --run-mc-efficiency.
 
 Data products are written under:
 
   output/photon_efficiency_study/data/
       shape_comparison/
+      photon_multiplicity/
       photon_multiplicity_summary.csv
       photon_multiplicity_summary.json
       shape_comparison_audit.json
@@ -3359,6 +3361,197 @@ def serializable_histograms(
     return output
 
 
+
+def multiplicity_categories() -> Tuple[Tuple[str, str], ...]:
+    return (
+        ("1", "events_with_1_photon"),
+        ("2", "events_with_2_photons"),
+        ("3", "events_with_3_photons"),
+        ("4", "events_with_4_photons"),
+        ("5", "events_with_5_photons"),
+        ("6", "events_with_6_photons"),
+        (">6", "events_with_more_than_6_photons"),
+    )
+
+
+def plot_period_photon_multiplicity(
+    path: Path,
+    period_label: str,
+    rows: Sequence[Mapping[str, object]],
+) -> None:
+    categories = multiplicity_categories()
+    labels = [label for label, _ in categories]
+    x = np.arange(len(categories), dtype=float)
+
+    sample_rows = {
+        str(row["sample"]): row
+        for row in rows
+    }
+    offsets = {
+        "data": -0.24,
+        "dvcsgen": 0.0,
+        "aaogen": 0.24,
+    }
+    width = 0.22
+
+    fig, axes = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+
+    for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
+        if sample_key not in sample_rows:
+            raise RuntimeError(
+                f"{period_label}: missing multiplicity row for "
+                f"{sample_key}."
+            )
+        # endif
+
+        row = sample_rows[sample_key]
+        totals = np.asarray(
+            [int(row[field_name]) for _, field_name in categories],
+            dtype=float,
+        )
+        unique_events = int(row["unique_events"])
+        percentages = (
+            100.0 * totals / unique_events
+            if unique_events > 0
+            else np.zeros_like(totals)
+        )
+
+        axes[0].bar(
+            x + offsets[sample_key],
+            totals,
+            width=width,
+            label=sample_label,
+        )
+        axes[1].bar(
+            x + offsets[sample_key],
+            percentages,
+            width=width,
+            label=sample_label,
+        )
+    # endfor
+
+    axes[0].set_ylabel("Unique events")
+    axes[0].set_title("Total event count")
+    axes[0].grid(axis="y", alpha=0.25)
+    axes[0].legend()
+
+    axes[1].set_ylabel("Percentage of unique events (%)")
+    axes[1].set_xlabel("Number of reconstructed-photon entries")
+    axes[1].set_title("Percentage of unique events")
+    axes[1].set_xticks(x, labels)
+    axes[1].set_ylim(bottom=0.0)
+    axes[1].grid(axis="y", alpha=0.25)
+    axes[1].legend()
+
+    fig.suptitle(
+        f"{period_label}: epgamma photon-entry multiplicity"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_all_periods_photon_multiplicity(
+    path: Path,
+    rows: Sequence[Mapping[str, object]],
+) -> None:
+    categories = multiplicity_categories()
+    labels = [label for label, _ in categories]
+    x = np.arange(len(categories), dtype=float)
+
+    offsets = {
+        "data": -0.24,
+        "dvcsgen": 0.0,
+        "aaogen": 0.24,
+    }
+    width = 0.22
+
+    selected_periods = [
+        period
+        for period in PERIODS
+        if any(str(row["period"]) == period.key for row in rows)
+    ]
+
+    fig, axes = plt.subplots(
+        len(selected_periods),
+        2,
+        figsize=(18, 4.2 * len(selected_periods)),
+        squeeze=False,
+    )
+
+    for period_index, period in enumerate(selected_periods):
+        period_rows = {
+            str(row["sample"]): row
+            for row in rows
+            if str(row["period"]) == period.key
+        }
+
+        total_axis = axes[period_index, 0]
+        percent_axis = axes[period_index, 1]
+
+        for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
+            if sample_key not in period_rows:
+                raise RuntimeError(
+                    f"{period.label}: missing multiplicity row for "
+                    f"{sample_key}."
+                )
+            # endif
+
+            row = period_rows[sample_key]
+            totals = np.asarray(
+                [int(row[field_name]) for _, field_name in categories],
+                dtype=float,
+            )
+            unique_events = int(row["unique_events"])
+            percentages = (
+                100.0 * totals / unique_events
+                if unique_events > 0
+                else np.zeros_like(totals)
+            )
+
+            total_axis.bar(
+                x + offsets[sample_key],
+                totals,
+                width=width,
+                label=sample_label,
+            )
+            percent_axis.bar(
+                x + offsets[sample_key],
+                percentages,
+                width=width,
+                label=sample_label,
+            )
+        # endfor
+
+        total_axis.set_title(f"{period.label}: total events")
+        total_axis.set_ylabel("Unique events")
+        total_axis.set_xticks(x, labels)
+        total_axis.grid(axis="y", alpha=0.25)
+
+        percent_axis.set_title(f"{period.label}: percentage")
+        percent_axis.set_ylabel("Percentage of unique events (%)")
+        percent_axis.set_xticks(x, labels)
+        percent_axis.set_ylim(bottom=0.0)
+        percent_axis.grid(axis="y", alpha=0.25)
+
+        if period_index == 0:
+            total_axis.legend(fontsize=8)
+            percent_axis.legend(fontsize=8)
+        # endif
+    # endfor
+
+    axes[-1, 0].set_xlabel("Number of reconstructed-photon entries")
+    axes[-1, 1].set_xlabel("Number of reconstructed-photon entries")
+
+    fig.suptitle(
+        "epgamma photon-entry multiplicity by run period"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.98))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+
 def write_photon_multiplicity_outputs(
     data_root: Path,
     rows: Sequence[Mapping[str, object]],
@@ -3400,6 +3593,32 @@ def write_photon_multiplicity_outputs(
         encoding="utf-8",
     ) as handle:
         json.dump(list(rows), handle, indent=2)
+    # endwith
+
+    plot_dir = data_root / "photon_multiplicity"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+
+    for period in PERIODS:
+        period_rows = [
+            row
+            for row in rows
+            if str(row["period"]) == period.key
+        ]
+        if not period_rows:
+            continue
+        # endif
+
+        plot_period_photon_multiplicity(
+            plot_dir / f"{period.key}_photon_multiplicity.png",
+            period.label,
+            period_rows,
+        )
+    # endfor
+
+    plot_all_periods_photon_multiplicity(
+        plot_dir / "all_periods_photon_multiplicity.png",
+        rows,
+    )
     # endwith
 
 
