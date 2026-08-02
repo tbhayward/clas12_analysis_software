@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v11_combined_photon_topology.py
+derive_photon_efficiency_scale_factors_v12_detailed_cut_survival.py
 
 Production extraction of the data/MC efficiency scale factor for reconstructing
 the high-energy photon in exclusive pi0 tag-and-probe events.
+
+This revision writes a fully sequential opportunity cut audit before any
+template fit is attempted. Each cut is reported with its mathematical
+definition, branch name, cumulative count, incremental survival fraction,
+total survival fraction, rejection count, and FT/FD population where
+applicable. The audit is written even if a later fit aborts.
 
 The selected epgammaX denominator is decomposed in data with one validated
 BH/DVCS + AAOGEN template fit per photon detector category. CD-FD and FD-FD
@@ -651,6 +657,266 @@ def exact_duplicate_keep_mask(
     return keep
 
 
+
+CUT_STAGE_ORDER: Tuple[str, ...] = (
+    "tree_entries",
+    "finite_kinematics",
+    "Q2",
+    "W",
+    "y",
+    "z_tag",
+    "minus_t1_tag",
+    "open_angle_ep2_tag",
+    "fiducial_status",
+    "tag_energy",
+    "probe_finite",
+    "probe_energy_min",
+    "probe_energy_max",
+    "probe_m2",
+    "probe_E_minus_p",
+    "probe_acceptance",
+    "supported_topology",
+    "selected_before_deduplication",
+    "selected_after_deduplication",
+)
+
+
+def cut_stage_definitions(
+    resolved: Mapping[str, Optional[str]],
+    args: argparse.Namespace,
+) -> Dict[str, Dict[str, object]]:
+    """Return human-readable definitions for every sequential opportunity cut."""
+    return {
+        "tree_entries": {
+            "label": "Input ROOT-tree entries",
+            "condition": "all entries",
+            "branch": None,
+            "applied": True,
+            "scope": "input",
+        },
+        "finite_kinematics": {
+            "label": "Finite positive reconstructed e, p, and tag photon",
+            "condition": (
+                "finite e/p/gamma momentum and angles; "
+                "p_e > 0, p_p > 0, E_tag > 0"
+            ),
+            "branch": "e_p,e_theta,e_phi,p1_p,p1_theta,p1_phi,p2_p,p2_theta,p2_phi",
+            "applied": True,
+            "scope": "common event/tag",
+        },
+        "Q2": {
+            "label": "DIS virtuality",
+            "condition": f"Q2 > {args.Q2_min:g} GeV^2",
+            "branch": resolved.get("Q2"),
+            "applied": resolved.get("Q2") is not None,
+            "scope": "common event",
+        },
+        "W": {
+            "label": "DIS invariant mass",
+            "condition": f"W > {args.W_min:g} GeV",
+            "branch": resolved.get("W"),
+            "applied": resolved.get("W") is not None,
+            "scope": "common event",
+        },
+        "y": {
+            "label": "DIS inelasticity",
+            "condition": f"y < {args.y_max:g}",
+            "branch": resolved.get("y"),
+            "applied": resolved.get("y") is not None,
+            "scope": "common event",
+        },
+        "z_tag": {
+            "label": "Tag-photon z requirement",
+            "condition": f"z(tag photon) > {args.z_min:g}",
+            "branch": resolved.get("z"),
+            "applied": resolved.get("z") is not None,
+            "scope": "TAG DEPENDENT — diagnostic suspect",
+        },
+        "minus_t1_tag": {
+            "label": "Tag-photon -t1 requirement",
+            "condition": f"-t1(tag photon) < {args.minus_t_max:g} GeV^2",
+            "branch": resolved.get("t1"),
+            "applied": resolved.get("t1") is not None,
+            "scope": "TAG DEPENDENT — diagnostic suspect",
+        },
+        "open_angle_ep2_tag": {
+            "label": "Electron–tag-photon opening angle",
+            "condition": (
+                f"open_angle(e, tag photon) > "
+                f"{args.open_angle_min_deg:g} deg"
+            ),
+            "branch": resolved.get("open_angle_ep2"),
+            "applied": resolved.get("open_angle_ep2") is not None,
+            "scope": "TAG DEPENDENT — diagnostic suspect",
+        },
+        "fiducial_status": {
+            "label": "Combined fiducial status",
+            "condition": "fiducial_status == 111",
+            "branch": resolved.get("fiducial_status"),
+            "applied": (
+                bool(args.require_fiducial_status_111)
+                and resolved.get("fiducial_status") is not None
+            ),
+            "scope": "optional reconstructed-particle fiducial",
+        },
+        "tag_energy": {
+            "label": "Reconstructed tag-photon energy",
+            "condition": f"E_tag >= {args.tag_E_min:g} GeV",
+            "branch": resolved.get("tag_E"),
+            "applied": True,
+            "scope": "tag",
+        },
+        "probe_finite": {
+            "label": "Finite physical missing-photon four-vector",
+            "condition": (
+                "finite E_X, |p_X|, theta_X, phi_X, m_X^2, E_X-|p_X|; "
+                "E_X > 0 and |p_X| > 0"
+            ),
+            "branch": "derived from beam + target - e - p - tag",
+            "applied": True,
+            "scope": "predicted probe",
+        },
+        "probe_energy_min": {
+            "label": "Predicted probe minimum energy",
+            "condition": f"E_X >= {args.probe_E_min:g} GeV",
+            "branch": "derived E_X",
+            "applied": True,
+            "scope": "predicted probe",
+        },
+        "probe_energy_max": {
+            "label": "Predicted probe maximum energy",
+            "condition": f"E_X < {args.probe_E_max:g} GeV",
+            "branch": "derived E_X",
+            "applied": True,
+            "scope": "predicted probe",
+        },
+        "probe_m2": {
+            "label": "Predicted probe mass-squared consistency",
+            "condition": f"|m_X^2| < {args.probe_m2_abs_max:g} GeV^2",
+            "branch": "derived m_X^2",
+            "applied": True,
+            "scope": "predicted probe",
+        },
+        "probe_E_minus_p": {
+            "label": "Predicted probe massless-energy consistency",
+            "condition": (
+                f"|E_X - |p_X|| < "
+                f"{args.probe_E_minus_p_abs_max:g} GeV"
+            ),
+            "branch": "derived E_X-|p_X|",
+            "applied": True,
+            "scope": "predicted probe",
+        },
+        "probe_acceptance": {
+            "label": "Predicted probe points into FT or FD",
+            "condition": (
+                f"FT: {args.ft_theta_min:g} <= theta_X < "
+                f"{args.ft_theta_max:g} deg; FD: "
+                f"{args.fd_theta_min:g} <= theta_X < "
+                f"{args.fd_theta_max:g} deg"
+            ),
+            "branch": "derived theta_X and phi_X",
+            "applied": True,
+            "scope": "predicted probe detector",
+        },
+        "supported_topology": {
+            "label": "Supported reconstructed proton/tag topology",
+            "condition": "proton and tag detector codes map to a supported topology",
+            "branch": "detector1, detector2",
+            "applied": True,
+            "scope": "bookkeeping only; proton topologies later combined",
+        },
+        "selected_before_deduplication": {
+            "label": "Selected directed opportunities before MC deduplication",
+            "condition": "all preceding requirements",
+            "branch": None,
+            "applied": True,
+            "scope": "selected sample",
+        },
+        "selected_after_deduplication": {
+            "label": "Selected directed opportunities after MC deduplication",
+            "condition": "exact duplicate removal for MC; unchanged for data",
+            "branch": None,
+            "applied": True,
+            "scope": "final fit denominator population",
+        },
+    }
+
+
+def stage_mask_with_optional_branch(
+    previous: np.ndarray,
+    arrays: Mapping[str, np.ndarray],
+    branch: Optional[str],
+    predicate,
+) -> np.ndarray:
+    """Apply one branch cut sequentially; absent optional branches leave the mask unchanged."""
+    if branch is None:
+        return previous.copy()
+    # endif
+    values = finite_array(arrays, branch)
+    return previous & np.isfinite(values) & predicate(values)
+
+
+def finalize_cutflow_report(cutflow: Dict[str, object]) -> Dict[str, object]:
+    """Add incremental and total survival rates to the raw cumulative counters."""
+    definitions = cutflow["stage_definitions"]
+    counts = cutflow["stage_counts"]
+    rows: List[Dict[str, object]] = []
+    total = int(counts.get("tree_entries", 0))
+    previous_count = total
+
+    for index, stage in enumerate(CUT_STAGE_ORDER):
+        count = int(counts.get(stage, 0))
+        definition = definitions[stage]
+        applied = bool(definition["applied"])
+        reference = total if index == 0 else previous_count
+        incremental = (
+            float(count / reference)
+            if reference > 0
+            else math.nan
+        )
+        total_survival = (
+            float(count / total)
+            if total > 0
+            else math.nan
+        )
+        rows.append(
+            {
+                "order": index,
+                "stage": stage,
+                "label": definition["label"],
+                "condition": definition["condition"],
+                "branch": definition["branch"],
+                "scope": definition["scope"],
+                "applied": applied,
+                "count": count,
+                "rejected_at_stage": (
+                    0 if index == 0 else max(previous_count - count, 0)
+                ),
+                "incremental_survival": incremental,
+                "incremental_rejection": (
+                    1.0 - incremental
+                    if math.isfinite(incremental)
+                    else math.nan
+                ),
+                "total_survival": total_survival,
+            }
+        )
+        previous_count = count
+    # endfor
+
+    cutflow["stages"] = rows
+    cutflow["largest_incremental_loss"] = max(
+        rows[1:],
+        key=lambda row: (
+            row["incremental_rejection"]
+            if math.isfinite(row["incremental_rejection"])
+            else -1.0
+        ),
+    ) if len(rows) > 1 else None
+    return cutflow
+
+
 def common_global_mask(
     arrays: Mapping[str, np.ndarray],
     resolved: Mapping[str, Optional[str]],
@@ -792,22 +1058,20 @@ def read_opportunities(
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
     store = empty_opportunity_store()
     candidate_store = empty_candidate_store()
-    cutflow = {
+    stage_definitions = cut_stage_definitions(resolved, args)
+    cutflow: Dict[str, object] = {
         "role": role,
         "path": path,
-        "tree_entries": 0,
-        "finite_kinematics": 0,
-        "global_cuts": 0,
-        "tag_energy": 0,
-        "probe_finite": 0,
-        "probe_energy": 0,
-        "probe_photon_hypothesis": 0,
-        "probe_acceptance": 0,
-        "supported_topology": 0,
-        "selected_before_deduplication": 0,
-        "selected_after_deduplication": 0,
+        "stage_definitions": stage_definitions,
+        "stage_counts": {stage: 0 for stage in CUT_STAGE_ORDER},
+        "detector_counts": {
+            "after_probe_acceptance": {"FT": 0, "FD": 0},
+            "after_supported_topology": {"FT": 0, "FD": 0},
+            "after_deduplication": {"FT": 0, "FD": 0},
+        },
         "partner_candidates_finite_and_E_above_threshold": 0,
     }
+    stage_counts = cutflow["stage_counts"]
 
     seen = 0
     log(f"Reading {role} from {path}")
@@ -826,14 +1090,16 @@ def read_opportunities(
             arrays = {key: value[:n] for key, value in arrays.items()}
         # endif
         seen += n
-        cutflow["tree_entries"] += int(n)
+        stage_counts["tree_entries"] += int(n)
 
         def arr(key: str, default: float = math.nan, dtype=np.float64) -> np.ndarray:
             return finite_array(arrays, resolved.get(key), default=default, dtype=dtype)
 
         e_p, e_theta, e_phi = arr("e_p"), arr("e_theta"), arr("e_phi")
         p_p, p_theta, p_phi = arr("p_p"), arr("p_theta"), arr("p_phi")
-        tag_E, tag_theta, tag_phi = arr("tag_E"), arr("tag_theta"), np.mod(arr("tag_phi"), 2.0 * math.pi)
+        tag_E = arr("tag_E")
+        tag_theta = arr("tag_theta")
+        tag_phi = np.mod(arr("tag_phi"), 2.0 * math.pi)
         tag_detector = arr("tag_detector", default=-1, dtype=np.int16)
         proton_detector = arr("proton_detector", default=-1, dtype=np.int16)
 
@@ -843,20 +1109,66 @@ def read_opportunities(
             & np.isfinite(tag_E) & np.isfinite(tag_theta) & np.isfinite(tag_phi)
             & (e_p > 0.0) & (p_p > 0.0) & (tag_E > 0.0)
         )
-        cutflow["finite_kinematics"] += int(np.count_nonzero(finite))
+        stage_counts["finite_kinematics"] += int(np.count_nonzero(finite))
 
-        global_mask = finite & common_global_mask(arrays, resolved, args)
-        cutflow["global_cuts"] += int(np.count_nonzero(global_mask))
+        mask_Q2 = stage_mask_with_optional_branch(
+            finite, arrays, resolved.get("Q2"),
+            lambda values: values > args.Q2_min,
+        )
+        stage_counts["Q2"] += int(np.count_nonzero(mask_Q2))
 
-        tag_mask = global_mask & (tag_E >= args.tag_E_min)
-        cutflow["tag_energy"] += int(np.count_nonzero(tag_mask))
+        mask_W = stage_mask_with_optional_branch(
+            mask_Q2, arrays, resolved.get("W"),
+            lambda values: values > args.W_min,
+        )
+        stage_counts["W"] += int(np.count_nonzero(mask_W))
 
-        # Build the partner pool from every finite reconstructed photon in the
-        # event with E_gamma >= 0.4 GeV. Do not require a prospective partner
-        # photon to pass the full tag-specific epgamma selection. Variables
-        # such as z, t1, and open_angle_ep2 are evaluated for the currently
-        # selected photon and can reject the partner even when it was genuinely
-        # reconstructed.
+        mask_y = stage_mask_with_optional_branch(
+            mask_W, arrays, resolved.get("y"),
+            lambda values: values < args.y_max,
+        )
+        stage_counts["y"] += int(np.count_nonzero(mask_y))
+
+        mask_z = stage_mask_with_optional_branch(
+            mask_y, arrays, resolved.get("z"),
+            lambda values: values > args.z_min,
+        )
+        stage_counts["z_tag"] += int(np.count_nonzero(mask_z))
+
+        mask_t1 = stage_mask_with_optional_branch(
+            mask_z, arrays, resolved.get("t1"),
+            lambda values: (-values) < args.minus_t_max,
+        )
+        stage_counts["minus_t1_tag"] += int(np.count_nonzero(mask_t1))
+
+        mask_open = stage_mask_with_optional_branch(
+            mask_t1, arrays, resolved.get("open_angle_ep2"),
+            lambda values: values > args.open_angle_min_deg,
+        )
+        stage_counts["open_angle_ep2_tag"] += int(np.count_nonzero(mask_open))
+
+        if (
+            args.require_fiducial_status_111
+            and resolved.get("fiducial_status") is not None
+        ):
+            status = finite_array(arrays, resolved["fiducial_status"])
+            mask_fiducial = (
+                mask_open
+                & np.isfinite(status)
+                & (status == 111)
+            )
+        else:
+            mask_fiducial = mask_open.copy()
+        # endif
+        stage_counts["fiducial_status"] += int(
+            np.count_nonzero(mask_fiducial)
+        )
+
+        tag_mask = mask_fiducial & (tag_E >= args.tag_E_min)
+        stage_counts["tag_energy"] += int(np.count_nonzero(tag_mask))
+
+        # The partner pool intentionally uses every finite reconstructed photon
+        # above threshold, independent of the tag-specific opportunity cuts.
         candidate_mask = finite & (tag_E >= args.tag_E_min)
         candidate_values = {
             "runnum": arr("runnum", default=-1, dtype=np.int64),
@@ -886,33 +1198,60 @@ def read_opportunities(
             & np.isfinite(probe["m2"]) & np.isfinite(probe["E_minus_p"])
             & (probe["E"] > 0.0) & (probe["p"] > 0.0)
         )
-        cutflow["probe_finite"] += int(np.count_nonzero(probe_finite))
+        stage_counts["probe_finite"] += int(np.count_nonzero(probe_finite))
 
-        probe_energy = (
-            probe_finite
-            & (probe["E"] >= args.probe_E_min)
-            & (probe["E"] < args.probe_E_max)
+        probe_E_min = probe_finite & (probe["E"] >= args.probe_E_min)
+        stage_counts["probe_energy_min"] += int(
+            np.count_nonzero(probe_E_min)
         )
-        cutflow["probe_energy"] += int(np.count_nonzero(probe_energy))
+
+        probe_E_window = probe_E_min & (probe["E"] < args.probe_E_max)
+        stage_counts["probe_energy_max"] += int(
+            np.count_nonzero(probe_E_window)
+        )
+
+        probe_m2 = (
+            probe_E_window
+            & (np.abs(probe["m2"]) < args.probe_m2_abs_max)
+        )
+        stage_counts["probe_m2"] += int(np.count_nonzero(probe_m2))
 
         photon_like = (
-            probe_energy
-            & (np.abs(probe["m2"]) < args.probe_m2_abs_max)
-            & (np.abs(probe["E_minus_p"]) < args.probe_E_minus_p_abs_max)
+            probe_m2
+            & (
+                np.abs(probe["E_minus_p"])
+                < args.probe_E_minus_p_abs_max
+            )
         )
-        cutflow["probe_photon_hypothesis"] += int(np.count_nonzero(photon_like))
+        stage_counts["probe_E_minus_p"] += int(
+            np.count_nonzero(photon_like)
+        )
 
         probe_theta_deg = np.degrees(probe["theta"])
         probe_detector, probe_sector = classify_probe(
             probe_theta_deg, probe["phi"], args
         )
         accepted = photon_like & (probe_detector >= 0)
-        cutflow["probe_acceptance"] += int(np.count_nonzero(accepted))
+        stage_counts["probe_acceptance"] += int(np.count_nonzero(accepted))
+        cutflow["detector_counts"]["after_probe_acceptance"]["FT"] += int(
+            np.count_nonzero(accepted & (probe_detector == 0))
+        )
+        cutflow["detector_counts"]["after_probe_acceptance"]["FD"] += int(
+            np.count_nonzero(accepted & (probe_detector == 1))
+        )
 
         topo = topology_code(proton_detector, tag_detector)
         selected = accepted & (topo >= 0)
-        cutflow["supported_topology"] += int(np.count_nonzero(selected))
-        cutflow["selected_before_deduplication"] += int(np.count_nonzero(selected))
+        stage_counts["supported_topology"] += int(np.count_nonzero(selected))
+        stage_counts["selected_before_deduplication"] += int(
+            np.count_nonzero(selected)
+        )
+        cutflow["detector_counts"]["after_supported_topology"]["FT"] += int(
+            np.count_nonzero(selected & (probe_detector == 0))
+        )
+        cutflow["detector_counts"]["after_supported_topology"]["FD"] += int(
+            np.count_nonzero(selected & (probe_detector == 1))
+        )
 
         values = {
             "runnum": arr("runnum", default=-1, dtype=np.int64),
@@ -2271,6 +2610,157 @@ def validate_efficiency_population(
     # endif
 
 
+
+def write_cutflow_csv(path: Path, cutflow: Mapping[str, object]) -> None:
+    rows = cutflow.get("stages", [])
+    if not rows:
+        return
+    # endif
+    with open(path, "w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    # endwith
+
+
+def plot_cutflow(path: Path, title: str, cutflow: Mapping[str, object]) -> None:
+    rows = cutflow.get("stages", [])
+    if not rows:
+        return
+    # endif
+    labels = [str(row["stage"]) for row in rows]
+    counts = np.asarray([float(row["count"]) for row in rows])
+    total_survival = np.asarray(
+        [float(row["total_survival"]) for row in rows]
+    )
+    incremental = np.asarray(
+        [float(row["incremental_survival"]) for row in rows]
+    )
+
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10), sharex=True)
+    x = np.arange(len(rows))
+
+    axes[0].step(x, np.maximum(counts, 0.5), where="mid", linewidth=1.5)
+    axes[0].scatter(x, np.maximum(counts, 0.5), s=25)
+    axes[0].set_yscale("log")
+    axes[0].set_ylabel("Cumulative entries")
+    axes[0].grid(alpha=0.25)
+
+    axes[1].plot(x, 100.0 * total_survival, marker="o", label="Total survival")
+    axes[1].plot(x, 100.0 * incremental, marker="s", label="Incremental survival")
+    axes[1].set_ylabel("Survival (%)")
+    axes[1].set_ylim(0.0, 105.0)
+    axes[1].grid(alpha=0.25)
+    axes[1].legend()
+    axes[1].set_xticks(x)
+    axes[1].set_xticklabels(labels, rotation=45, ha="right")
+
+    suspect_stages = {"z_tag", "minus_t1_tag", "open_angle_ep2_tag"}
+    for axis in axes:
+        for index, stage in enumerate(labels):
+            if stage in suspect_stages:
+                axis.axvspan(index - 0.45, index + 0.45, alpha=0.10)
+            # endif
+        # endfor
+    # endfor
+
+    largest = cutflow.get("largest_incremental_loss")
+    subtitle = ""
+    if isinstance(largest, Mapping):
+        subtitle = (
+            f"Largest incremental loss: {largest['stage']} — "
+            f"{100.0 * float(largest['incremental_rejection']):.2f}% rejected"
+        )
+    # endif
+    fig.suptitle(f"{title}\n{subtitle}")
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def write_cutflow_text(path: Path, cutflow: Mapping[str, object]) -> None:
+    lines = [
+        f"Role: {cutflow.get('role')}",
+        f"Path: {cutflow.get('path')}",
+        "",
+        (
+            "Columns: cumulative count | incremental survival | total survival "
+            "| rejected at stage | cut description"
+        ),
+        "",
+    ]
+    for row in cutflow.get("stages", []):
+        branch = row.get("branch")
+        branch_text = f"; branch={branch}" if branch else ""
+        applied_text = "applied" if row.get("applied") else "NOT APPLIED (branch/option absent)"
+        lines.append(
+            f"{int(row['order']):2d} {row['stage']:<34s} "
+            f"{int(row['count']):>12,d} | "
+            f"{100.0 * float(row['incremental_survival']):>8.3f}% | "
+            f"{100.0 * float(row['total_survival']):>8.3f}% | "
+            f"rejected={int(row['rejected_at_stage']):>10,d} | "
+            f"{row['condition']} [{applied_text}; scope={row['scope']}"
+            f"{branch_text}]"
+        )
+    # endfor
+
+    lines.extend(
+        [
+            "",
+            "Predicted-probe detector populations:",
+            json.dumps(cutflow.get("detector_counts", {}), indent=2),
+            "",
+            "NOTE: z_tag, minus_t1_tag, and open_angle_ep2_tag are explicitly "
+            "marked as tag-dependent. A large loss there indicates that a "
+            "DVCS-style cut on the reconstructed tag photon may be inappropriate "
+            "for a low-energy-tag/high-energy-probe efficiency denominator.",
+        ]
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def emit_cutflow_diagnostics(
+    period_dir: Path,
+    period_label: str,
+    named_cutflows: Mapping[str, Mapping[str, object]],
+) -> None:
+    audit_dir = period_dir / "cutflow_diagnostics"
+    audit_dir.mkdir(parents=True, exist_ok=True)
+
+    for sample_name, cutflow in named_cutflows.items():
+        safe = sample_name.replace(" ", "_").replace("/", "_")
+        write_cutflow_csv(audit_dir / f"{safe}_cutflow.csv", cutflow)
+        write_cutflow_text(audit_dir / f"{safe}_cutflow.txt", cutflow)
+        plot_cutflow(
+            audit_dir / f"{safe}_cutflow.png",
+            f"{period_label}: {sample_name} opportunity cutflow",
+            cutflow,
+        )
+
+        largest = cutflow.get("largest_incremental_loss")
+        if isinstance(largest, Mapping):
+            log(
+                f"{period_label} {sample_name} cutflow: "
+                f"{int(largest['count']):,} survive {largest['stage']}; "
+                f"incremental survival="
+                f"{100.0 * float(largest['incremental_survival']):.3f}%, "
+                f"total survival="
+                f"{100.0 * float(largest['total_survival']):.3f}%"
+            )
+        # endif
+
+        for row in cutflow.get("stages", []):
+            log(
+                f"{period_label} {sample_name}: "
+                f"{row['stage']}: {int(row['count']):,} "
+                f"({100.0 * float(row['incremental_survival']):.3f}% of prior, "
+                f"{100.0 * float(row['total_survival']):.3f}% of input) — "
+                f"{row['condition']}"
+            )
+        # endfor
+    # endfor
+
+
 def process_period(
     period: PeriodConfig,
     args_dict: Mapping[str, object],
@@ -2290,6 +2780,23 @@ def process_period(
     pi0, _, pi0_cutflow = read_opportunities(
         period.pi0_epg_mc, period.beam_energy_GeV, "AAOGEN-as-epgamma MC", args, deduplicate=True
     )
+
+    # Write the complete sequential audit before any native-tree reconstruction
+    # or template fit. Therefore a later intentional fit failure cannot erase
+    # the information needed to diagnose the low statistics.
+    initial_cutflows = {
+        "data": data_cutflow,
+        "dvcs_mc": dvcs_cutflow,
+        "pi0_mc": pi0_cutflow,
+    }
+    with open(
+        period_dir / "opportunity_cutflows.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(initial_cutflows, handle, indent=2)
+    # endwith
+    emit_cutflow_diagnostics(period_dir, period.label, initial_cutflows)
 
     epgg_data, epgg_data_diag = read_epgg(
         period.epgg_data, period.beam_energy_GeV, "epgammagamma data", args
