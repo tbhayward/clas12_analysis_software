@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v12_detailed_cut_survival.py
+derive_photon_efficiency_scale_factors_v13_remove_tag_dependent_cuts.py
 
 Production extraction of the data/MC efficiency scale factor for reconstructing
 the high-energy photon in exclusive pi0 tag-and-probe events.
 
-This revision writes a fully sequential opportunity cut audit before any
-template fit is attempted. Each cut is reported with its mathematical
+This revision removes the three inappropriate tag-dependent DVCS cuts
+(z(tag), -t1(tag), and electron-tag opening angle) from the nominal
+opportunity selection. It retains the predicted-probe energy, massless
+four-vector consistency, and FT/FD acceptance requirements. It also writes
+a fully sequential opportunity cut audit before any template fit is attempted. Each cut is reported with its mathematical
 definition, branch name, cumulative count, incremental survival fraction,
 total survival fraction, rejection count, and FT/FD population where
 applicable. The audit is written even if a later fit aborts.
@@ -727,27 +730,34 @@ def cut_stage_definitions(
         },
         "z_tag": {
             "label": "Tag-photon z requirement",
-            "condition": f"z(tag photon) > {args.z_min:g}",
+            "condition": (
+                f"NOT APPLIED: z(tag photon) > {args.z_min:g} "
+                "was removed from the nominal tag-and-probe selection"
+            ),
             "branch": resolved.get("z"),
-            "applied": resolved.get("z") is not None,
-            "scope": "TAG DEPENDENT — diagnostic suspect",
+            "applied": False,
+            "scope": "REMOVED — tag-dependent DVCS cut",
         },
         "minus_t1_tag": {
             "label": "Tag-photon -t1 requirement",
-            "condition": f"-t1(tag photon) < {args.minus_t_max:g} GeV^2",
+            "condition": (
+                f"NOT APPLIED: -t1(tag photon) < {args.minus_t_max:g} GeV^2 "
+                "was removed from the nominal tag-and-probe selection"
+            ),
             "branch": resolved.get("t1"),
-            "applied": resolved.get("t1") is not None,
-            "scope": "TAG DEPENDENT — diagnostic suspect",
+            "applied": False,
+            "scope": "REMOVED — tag-dependent DVCS cut",
         },
         "open_angle_ep2_tag": {
             "label": "Electron–tag-photon opening angle",
             "condition": (
-                f"open_angle(e, tag photon) > "
-                f"{args.open_angle_min_deg:g} deg"
+                f"NOT APPLIED: open_angle(e, tag photon) > "
+                f"{args.open_angle_min_deg:g} deg was removed from the "
+                "nominal tag-and-probe selection"
             ),
             "branch": resolved.get("open_angle_ep2"),
-            "applied": resolved.get("open_angle_ep2") is not None,
-            "scope": "TAG DEPENDENT — diagnostic suspect",
+            "applied": False,
+            "scope": "REMOVED — tag-dependent DVCS cut",
         },
         "fiducial_status": {
             "label": "Combined fiducial status",
@@ -946,15 +956,8 @@ def common_global_mask(
     upper("y", args.y_max)
     lower("z", args.z_min)
 
-    if resolved.get("t1") is not None:
-        t1 = finite_array(arrays, resolved["t1"])
-        mask &= np.isfinite(t1) & ((-t1) < args.minus_t_max)
-    # endif
-
-    if resolved.get("open_angle_ep2") is not None:
-        opening = finite_array(arrays, resolved["open_angle_ep2"])
-        mask &= np.isfinite(opening) & (opening > args.open_angle_min_deg)
-    # endif
+    # Tag-dependent z, t1, and electron-tag opening-angle cuts are
+    # intentionally omitted from the nominal opportunity definition.
 
     if args.require_fiducial_status_111 and resolved.get("fiducial_status") is not None:
         status = finite_array(arrays, resolved["fiducial_status"])
@@ -1065,9 +1068,18 @@ def read_opportunities(
         "stage_definitions": stage_definitions,
         "stage_counts": {stage: 0 for stage in CUT_STAGE_ORDER},
         "detector_counts": {
-            "after_probe_acceptance": {"FT": 0, "FD": 0},
-            "after_supported_topology": {"FT": 0, "FD": 0},
-            "after_deduplication": {"FT": 0, "FD": 0},
+            stage: {"FT": 0, "FD": 0}
+            for stage in (
+                "probe_finite",
+                "probe_energy_min",
+                "probe_energy_max",
+                "probe_m2",
+                "probe_E_minus_p",
+                "probe_acceptance",
+                "supported_topology",
+                "selected_before_deduplication",
+                "selected_after_deduplication",
+            )
         },
         "partner_candidates_finite_and_E_above_threshold": 0,
     }
@@ -1129,22 +1141,17 @@ def read_opportunities(
         )
         stage_counts["y"] += int(np.count_nonzero(mask_y))
 
-        mask_z = stage_mask_with_optional_branch(
-            mask_y, arrays, resolved.get("z"),
-            lambda values: values > args.z_min,
-        )
+        # These three DVCS-style cuts are tag dependent. The reconstructed
+        # tag may be the low-energy pi0 daughter, whereas the efficiency probe
+        # is the predicted high-energy photon. They are therefore retained as
+        # explicit audit stages but intentionally do not alter the mask.
+        mask_z = mask_y.copy()
         stage_counts["z_tag"] += int(np.count_nonzero(mask_z))
 
-        mask_t1 = stage_mask_with_optional_branch(
-            mask_z, arrays, resolved.get("t1"),
-            lambda values: (-values) < args.minus_t_max,
-        )
+        mask_t1 = mask_z.copy()
         stage_counts["minus_t1_tag"] += int(np.count_nonzero(mask_t1))
 
-        mask_open = stage_mask_with_optional_branch(
-            mask_t1, arrays, resolved.get("open_angle_ep2"),
-            lambda values: values > args.open_angle_min_deg,
-        )
+        mask_open = mask_t1.copy()
         stage_counts["open_angle_ep2_tag"] += int(np.count_nonzero(mask_open))
 
         if (
@@ -1191,6 +1198,20 @@ def read_opportunities(
             p_p, p_theta, p_phi,
             tag_E, tag_theta, tag_phi,
         )
+        probe_theta_deg = np.degrees(probe["theta"])
+        probe_detector, probe_sector = classify_probe(
+            probe_theta_deg, probe["phi"], args
+        )
+
+        def accumulate_detector_stage(stage: str, mask: np.ndarray) -> None:
+            cutflow["detector_counts"][stage]["FT"] += int(
+                np.count_nonzero(mask & (probe_detector == 0))
+            )
+            cutflow["detector_counts"][stage]["FD"] += int(
+                np.count_nonzero(mask & (probe_detector == 1))
+            )
+        # enddef
+
         probe_finite = (
             tag_mask
             & np.isfinite(probe["E"]) & np.isfinite(probe["p"])
@@ -1199,22 +1220,26 @@ def read_opportunities(
             & (probe["E"] > 0.0) & (probe["p"] > 0.0)
         )
         stage_counts["probe_finite"] += int(np.count_nonzero(probe_finite))
+        accumulate_detector_stage("probe_finite", probe_finite)
 
         probe_E_min = probe_finite & (probe["E"] >= args.probe_E_min)
         stage_counts["probe_energy_min"] += int(
             np.count_nonzero(probe_E_min)
         )
+        accumulate_detector_stage("probe_energy_min", probe_E_min)
 
         probe_E_window = probe_E_min & (probe["E"] < args.probe_E_max)
         stage_counts["probe_energy_max"] += int(
             np.count_nonzero(probe_E_window)
         )
+        accumulate_detector_stage("probe_energy_max", probe_E_window)
 
         probe_m2 = (
             probe_E_window
             & (np.abs(probe["m2"]) < args.probe_m2_abs_max)
         )
         stage_counts["probe_m2"] += int(np.count_nonzero(probe_m2))
+        accumulate_detector_stage("probe_m2", probe_m2)
 
         photon_like = (
             probe_m2
@@ -1226,19 +1251,11 @@ def read_opportunities(
         stage_counts["probe_E_minus_p"] += int(
             np.count_nonzero(photon_like)
         )
+        accumulate_detector_stage("probe_E_minus_p", photon_like)
 
-        probe_theta_deg = np.degrees(probe["theta"])
-        probe_detector, probe_sector = classify_probe(
-            probe_theta_deg, probe["phi"], args
-        )
         accepted = photon_like & (probe_detector >= 0)
         stage_counts["probe_acceptance"] += int(np.count_nonzero(accepted))
-        cutflow["detector_counts"]["after_probe_acceptance"]["FT"] += int(
-            np.count_nonzero(accepted & (probe_detector == 0))
-        )
-        cutflow["detector_counts"]["after_probe_acceptance"]["FD"] += int(
-            np.count_nonzero(accepted & (probe_detector == 1))
-        )
+        accumulate_detector_stage("probe_acceptance", accepted)
 
         topo = topology_code(proton_detector, tag_detector)
         selected = accepted & (topo >= 0)
@@ -1246,12 +1263,8 @@ def read_opportunities(
         stage_counts["selected_before_deduplication"] += int(
             np.count_nonzero(selected)
         )
-        cutflow["detector_counts"]["after_supported_topology"]["FT"] += int(
-            np.count_nonzero(selected & (probe_detector == 0))
-        )
-        cutflow["detector_counts"]["after_supported_topology"]["FD"] += int(
-            np.count_nonzero(selected & (probe_detector == 1))
-        )
+        accumulate_detector_stage("supported_topology", selected)
+        accumulate_detector_stage("selected_before_deduplication", selected)
 
         values = {
             "runnum": arr("runnum", default=-1, dtype=np.int64),
@@ -1304,9 +1317,16 @@ def read_opportunities(
         )
         records = subset_opportunities(records, keep)
     # endif
-    cutflow["selected_after_deduplication"] = records.size()
+    stage_counts["selected_after_deduplication"] = records.size()
+    cutflow["detector_counts"]["selected_after_deduplication"]["FT"] = int(
+        np.count_nonzero(records.probe_detector == 0)
+    )
+    cutflow["detector_counts"]["selected_after_deduplication"]["FD"] = int(
+        np.count_nonzero(records.probe_detector == 1)
+    )
     cutflow["branch_mapping"] = resolved
     cutflow["partner_candidate_records"] = candidates.size()
+    cutflow = finalize_cutflow_report(cutflow)
     return records, candidates, cutflow
 
 
@@ -2710,10 +2730,9 @@ def write_cutflow_text(path: Path, cutflow: Mapping[str, object]) -> None:
             "Predicted-probe detector populations:",
             json.dumps(cutflow.get("detector_counts", {}), indent=2),
             "",
-            "NOTE: z_tag, minus_t1_tag, and open_angle_ep2_tag are explicitly "
-            "marked as tag-dependent. A large loss there indicates that a "
-            "DVCS-style cut on the reconstructed tag photon may be inappropriate "
-            "for a low-energy-tag/high-energy-probe efficiency denominator.",
+            "NOTE: z_tag, minus_t1_tag, and open_angle_ep2_tag are intentionally "
+            "NOT APPLIED. They remain in the stage table with 100% incremental "
+            "survival so the removed selection is explicit in the provenance.",
         ]
     )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -2749,13 +2768,22 @@ def emit_cutflow_diagnostics(
             )
         # endif
 
+        detector_counts = cutflow.get("detector_counts", {})
         for row in cutflow.get("stages", []):
+            detector_suffix = ""
+            if row["stage"] in detector_counts:
+                stage_detector_counts = detector_counts[row["stage"]]
+                detector_suffix = (
+                    f"; FT={int(stage_detector_counts.get('FT', 0)):,}, "
+                    f"FD={int(stage_detector_counts.get('FD', 0)):,}"
+                )
+            # endif
             log(
                 f"{period_label} {sample_name}: "
                 f"{row['stage']}: {int(row['count']):,} "
                 f"({100.0 * float(row['incremental_survival']):.3f}% of prior, "
-                f"{100.0 * float(row['total_survival']):.3f}% of input) — "
-                f"{row['condition']}"
+                f"{100.0 * float(row['total_survival']):.3f}% of input)"
+                f"{detector_suffix} — {row['condition']}"
             )
         # endfor
     # endfor
