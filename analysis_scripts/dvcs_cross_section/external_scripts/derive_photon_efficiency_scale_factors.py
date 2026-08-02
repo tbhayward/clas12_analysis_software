@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v22_exclusivity_morphed_fail_fit.py
+derive_photon_efficiency_scale_factors_v23_parent_exclusivity_fitter_path_fix.py
 
 High-energy photon efficiency extraction using an observed PASS count and a
 FAIL-only BH/DVCS + exclusive-pi0 template fit.
@@ -2377,7 +2377,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument('--fit-max-variable-spread',type=float,default=.15)
     p.add_argument(
         '--exclusivity-fitter-script',
-        default=str(Path(__file__).with_name('plot_exclusivity_data_dvcs_pi0_mc.py')),
+        default=str(
+            Path(__file__).resolve().parent.parent
+            / 'plot_exclusivity_data_dvcs_pi0_mc.py'
+        ),
         help=(
             'Path to the validated exclusivity-template script. Its exact '
             'fit_shared_two_templates implementation is used for the FAIL fit.'
@@ -2421,10 +2424,32 @@ def fit_one_fraction(data,pi0,dvcs):
 
 def load_exclusivity_fitter(script_path: str):
     """Load the exact validated template-morphing implementation."""
-    path = Path(script_path).expanduser().resolve()
-    if not path.exists():
+    requested = Path(script_path).expanduser()
+
+    candidates = [
+        requested,
+        Path(__file__).resolve().parent.parent
+        / "plot_exclusivity_data_dvcs_pi0_mc.py",
+        Path(__file__).resolve().parent
+        / "plot_exclusivity_data_dvcs_pi0_mc.py",
+    ]
+
+    path = next(
+        (
+            candidate.resolve()
+            for candidate in candidates
+            if candidate.exists()
+        ),
+        None,
+    )
+    if path is None:
+        attempted = "\n  ".join(
+            str(candidate.resolve())
+            for candidate in candidates
+        )
         raise FileNotFoundError(
-            f"Validated exclusivity fitter was not found: {path}"
+            "Validated exclusivity fitter was not found. Tried:\n  "
+            + attempted
         )
     # endif
 
