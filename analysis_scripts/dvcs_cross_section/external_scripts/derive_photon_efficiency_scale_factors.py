@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v27_stage_cli_fix.py
+derive_photon_efficiency_scale_factors_v29_delta_phi_range_fix.py
 
 Stepwise photon-efficiency study: raw data/MC shape comparison followed by the established AAOGEN-only efficiency.
 
@@ -201,13 +201,55 @@ class FitVariable:
 
 
 FIT_VARIABLES: Tuple[FitVariable, ...] = (
-    FitVariable("Delta_phi", r"$\Delta\phi$ (rad)", 100, 2.84159, 3.44159),
-    FitVariable("theta_cm", r"$\theta_{p\gamma}^{\rm CM}$ (rad)", 100, 2.0, math.pi),
-    FitVariable("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$ (deg)", 120, 0.0, 50.0),
-    FitVariable("pTmiss", r"$p_T^{\rm miss}$ (GeV)", 125, 0.0, 0.5),
-    FitVariable("Emiss2", r"$E_{\rm miss}$ (GeV)", 120, 1.5, 4.5),
-    FitVariable("Mx2", r"$M_x^2$ (GeV$^2$)", 100, -0.03, 0.03),
-    FitVariable("Mx2_2", r"$M_{x2}^2$ (GeV$^2$)", 125, -1.0, 9.0),
+    FitVariable(
+        "Delta_phi",
+        r"$\Delta\phi$ (rad)",
+        120,
+        0.5 * math.pi,
+        1.5 * math.pi,
+    ),
+    FitVariable(
+        "theta_cm",
+        r"$\theta_{p\gamma}^{\rm CM}$ (rad)",
+        120,
+        0.0,
+        math.pi,
+    ),
+    FitVariable(
+        "theta_gamma_gamma",
+        r"$\theta_{\gamma\gamma}$ (deg)",
+        120,
+        0.0,
+        50.0,
+    ),
+    FitVariable(
+        "pTmiss",
+        r"$p_T^{\rm miss}$ (GeV)",
+        125,
+        0.0,
+        1.0,
+    ),
+    FitVariable(
+        "Emiss2",
+        r"$E_{\rm miss}$ (GeV)",
+        120,
+        0.0,
+        6.0,
+    ),
+    FitVariable(
+        "Mx2",
+        r"$M_x^2$ (GeV$^2$)",
+        100,
+        -0.03,
+        0.03,
+    ),
+    FitVariable(
+        "Mx2_2",
+        r"$M_{x2}^2$ (GeV$^2$)",
+        150,
+        0.0,
+        12.0,
+    ),
 )
 
 FRACTION_DRIVERS: Tuple[str, ...] = (
@@ -371,117 +413,6 @@ def log(message: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Derive data/MC scale factors for reconstructing photons above 2 GeV."
-    )
-    parser.add_argument("--period", action="append", choices=[p.key for p in PERIODS])
-    parser.add_argument("--workers", type=int, default=5)
-    parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
-    parser.add_argument("--max-events", type=int, default=None)
-    parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument(
-        "--skip-raw-shape-comparison",
-        action="store_true",
-        help=(
-            "Skip the first-stage entry-by-entry comparison of epgamma data, "
-            "DVCSGEN, and AAOGEN background MC."
-        ),
-    )
-    parser.add_argument(
-        "--skip-mc-efficiency",
-        action="store_true",
-        help="Skip the established AAOGEN-only efficiency stage.",
-    )
-    parser.add_argument(
-        "--shape-log-y",
-        action="store_true",
-        help="Also write logarithmic-y raw-shape canvases.",
-    )
-    parser.add_argument(
-        "--exclusivity-fitter",
-        default=None,
-        help="Optional explicit path to plot_exclusivity_data_dvcs_pi0_mc.py.",
-    )
-
-    parser.add_argument("--tag-E-min", type=float, default=0.40)
-    parser.add_argument("--probe-E-min", type=float, default=2.00)
-    parser.add_argument("--probe-E-max", type=float, default=9.50)
-    parser.add_argument("--probe-m2-abs-max", type=float, default=0.10)
-    parser.add_argument("--probe-E-minus-p-abs-max", type=float, default=0.10)
-
-    parser.add_argument("--ft-theta-min", type=float, default=2.5)
-    parser.add_argument("--ft-theta-max", type=float, default=5.0)
-    parser.add_argument("--fd-theta-min", type=float, default=5.0)
-    parser.add_argument("--fd-theta-max", type=float, default=35.0)
-
-    parser.add_argument("--Q2-min", type=float, default=1.0)
-    parser.add_argument("--W-min", type=float, default=2.0)
-    parser.add_argument("--y-max", type=float, default=0.8)
-    parser.add_argument("--z-min", type=float, default=0.65)
-    parser.add_argument("--minus-t-max", type=float, default=1.0)
-    parser.add_argument("--open-angle-min-deg", type=float, default=5.0)
-    parser.add_argument("--require-fiducial-status-111", action="store_true")
-
-    parser.add_argument("--tag-match-angle-max-deg", type=float, default=3.0)
-    parser.add_argument("--tag-match-relative-E-max", type=float, default=0.35)
-    parser.add_argument("--probe-match-angle-max-deg", type=float, default=3.0)
-    parser.add_argument("--probe-match-relative-E-max", type=float, default=0.35)
-    parser.add_argument("--pi0-mass-min", type=float, default=0.10)
-    parser.add_argument("--pi0-mass-max", type=float, default=0.17)
-    parser.add_argument("--mc-signature-decimals", type=int, default=10)
-    parser.add_argument("--native-closure-max", type=float, default=0.10)
-    parser.add_argument("--native-minimum-photon-E", type=float, default=0.20)
-    parser.add_argument("--found-probe-E-min", type=float, default=2.00)
-    parser.add_argument(
-        "--require-probe-residual-match",
-        action="store_true",
-        help="Also require the truth partner to pass probe residual windows.",
-    )
-
-
-    parser.add_argument("--fit-min-counts", type=int, default=100)
-    parser.add_argument(
-        "--fit-max-reduced-deviance",
-        type=float,
-        default=5.0,
-        help=(
-            "Issue a prominent warning if the combined detector-category "
-            "template fit has deviance/ndf above this value. The fit is still "
-            "retained and the efficiency is still calculated. Use a "
-            "non-positive value to disable this warning threshold."
-        ),
-    )
-    parser.add_argument(
-        "--fit-fraction-boundary-margin",
-        type=float,
-        default=1.0e-4,
-        help=(
-            "Abort when the fitted pi0 fraction lies this close to 0 or 1. "
-            "The default rejects boundary-dominated fits such as 0.999991."
-        ),
-    )
-    parser.add_argument(
-        "--yield-consistency-tolerance",
-        type=float,
-        default=1.0e-6,
-        help=(
-            "Absolute numerical tolerance allowed when checking that found "
-            "counts do not exceed expected counts."
-        ),
-    )
-    parser.add_argument("--exclusivity-max-shift-bins", type=float, default=5.0)
-    parser.add_argument("--exclusivity-max-smear-bins", type=float, default=8.0)
-    parser.add_argument("--exclusivity-shift-prior-bins", type=float, default=2.0)
-    parser.add_argument("--exclusivity-smear-prior-bins", type=float, default=3.0)
-    parser.add_argument("--disable-exclusivity-nuisance-penalties", action="store_true")
-    parser.add_argument("--exclusivity-dvcs-core-containment", type=float, default=0.90)
-    parser.add_argument("--exclusivity-dvcs-fraction-containment", type=float, default=0.95)
-    parser.add_argument("--exclusivity-pi0-core-containment", type=float, default=0.90)
-    parser.add_argument("--exclusivity-pi0-fraction-containment", type=float, default=0.95)
-    parser.add_argument("--exclusivity-outside-overshoot-penalty", type=float, default=0.25)
-    parser.add_argument("--exclusivity-emiss2-mean-order-penalty", type=float, default=25.0)
-    return parser.parse_args()
 
 
 def selected_periods(args: argparse.Namespace) -> List[PeriodConfig]:
@@ -3063,8 +2994,8 @@ def plot_raw_shape_canvas(
     scale_text = ", logarithmic y" if log_y else ""
     fig.suptitle(
         f"{period_label}: raw epgamma exclusivity-variable shapes\n"
-        f"Every finite stored entry; no cuts, deduplication, event grouping, "
-        f"candidate arbitration, or fit; {normalization_text}{scale_text}"
+        f"Every finite stored branch value; no derived-variable substitution, "
+        f"cuts, deduplication, event grouping, candidate arbitration, or fit; {normalization_text}{scale_text}"
     )
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(path, dpi=180)
@@ -3078,7 +3009,8 @@ def process_period_raw_shapes(
     args = argparse.Namespace(**args_dict)
     period_dir = (
         Path(args.output_dir)
-        / "raw_data_shape_comparisons"
+        / "data"
+        / "raw_shape_comparisons"
         / period.key
     )
     histogram_dir = period_dir / "histograms"
@@ -3233,7 +3165,11 @@ def run_raw_shape_stage(
         # endwith
     # endif
 
-    shape_root = Path(args.output_dir) / "raw_data_shape_comparisons"
+    shape_root = (
+        Path(args.output_dir)
+        / "data"
+        / "raw_shape_comparisons"
+    )
     with open(
         shape_root / "all_periods_shape_comparison_audit.json",
         "w",
@@ -3250,7 +3186,11 @@ def process_period_mc_only(
     args_dict: Mapping[str, object],
 ) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
     args = argparse.Namespace(**args_dict)
-    period_dir = Path(args.output_dir) / period.key
+    period_dir = (
+        Path(args.output_dir)
+        / "mc_only"
+        / period.key
+    )
     period_dir.mkdir(parents=True, exist_ok=True)
 
     opportunities, _, cutflow = read_opportunities(
@@ -3592,6 +3532,7 @@ def main() -> int:
     mc_metadata: Dict[str, object] = {}
 
     if not args.skip_mc_efficiency:
+        (output_dir / "mc_only").mkdir(parents=True, exist_ok=True)
         log(
             f"STAGE 2 — AAOGEN MC PHOTON EFFICIENCY: "
             f"{len(periods)} period(s), {workers} worker(s)."
@@ -3640,11 +3581,11 @@ def main() -> int:
         )
 
         write_dict_rows(
-            output_dir / "photon_efficiency_mc_only.csv",
+            output_dir / "mc_only" / "photon_efficiency_mc_only.csv",
             all_rows,
         )
         with open(
-            output_dir / "photon_efficiency_mc_only.json",
+            output_dir / "mc_only" / "photon_efficiency_mc_only.json",
             "w",
             encoding="utf-8",
         ) as handle:
@@ -3661,7 +3602,7 @@ def main() -> int:
         # endwith
 
         plot_all_period_integrated(
-            output_dir / "all_periods_integrated_mc_efficiency.png",
+            output_dir / "mc_only" / "all_periods_integrated_mc_efficiency.png",
             all_rows,
         )
     # endif
