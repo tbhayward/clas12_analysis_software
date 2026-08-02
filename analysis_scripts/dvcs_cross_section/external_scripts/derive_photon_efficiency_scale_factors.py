@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v6_no_cuts_matching_audit.py
+derive_photon_efficiency_scale_factors_v7_compact_matching_audit.py
 
 Temporary no-cuts matching audit for the newly reprocessed multi-photon epgamma
 trees.
@@ -54,13 +54,16 @@ output/photon_efficiency_study/matching_audit/
     <period>/
         data_matching_residuals.png
         aaogen_matching_residuals.png
-        data_nearest_match_table.csv
-        aaogen_nearest_match_table.csv
+        data_nearest_match_sample.csv
+        aaogen_nearest_match_sample.csv
         metadata.json
 
-This is intentionally an audit release.  Once the event-level photon matching
-is validated, the physics cuts and BH/DVCS + pi0 template extraction can be
-restored in a later production release.
+This is intentionally an audit release.  It never writes one row per
+opportunity.  Exact counters and residual histograms are accumulated in memory,
+while only a small deterministic reservoir sample is written for manual
+inspection.  Once event-level photon matching is validated, the physics cuts
+and BH/DVCS + pi0 template extraction can be restored in a later production
+release.
 """
 
 from __future__ import annotations
@@ -208,6 +211,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mc-signature-decimals", type=int, default=10)
     parser.add_argument("--score-angle-scale-deg", type=float, default=3.0)
     parser.add_argument("--score-relative-E-scale", type=float, default=0.35)
+    parser.add_argument(
+        "--diagnostic-sample-size",
+        type=int,
+        default=5000,
+        help=(
+            "Maximum number of nearest-match rows written per sample and "
+            "period. Exact summary counters and histograms still use every "
+            "opportunity."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-seed",
+        type=int,
+        default=20260801,
+        help="Base seed for deterministic reservoir sampling.",
+    )
     return parser.parse_args()
 
 
@@ -462,28 +481,101 @@ def pair_mass(E1: float, theta1: float, phi1: float, E2: float, theta2: float, p
     return math.sqrt(max(2.0 * E1 * E2 * (1.0 - math.cos(opening)), 0.0))
 
 
+def residual_histogram_specs() -> Dict[str, np.ndarray]:
+    return {
+        "nearest_angle_deg": np.linspace(0.0, 60.0, 121),
+        "nearest_relative_E": np.linspace(0.0, 3.0, 121),
+        "nearest_pair_mass_GeV": np.linspace(0.0, 1.0, 121),
+        "nearest_score": np.linspace(0.0, 100.0, 121),
+    }
+
+
+def update_reservoir(
+    reservoir: List[Dict[str, object]],
+    row: Dict[str, object],
+    seen_rows: int,
+    capacity: int,
+    rng: np.random.Generator,
+) -> None:
+    if capacity <= 0:
+        return
+    # endif
+    if len(reservoir) < capacity:
+        reservoir.append(row)
+        return
+    # endif
+
+    replacement_index = int(rng.integers(0, seen_rows))
+    if replacement_index < capacity:
+        reservoir[replacement_index] = row
+    # endif
+
+
 def audit_matches(
     records: EpgRecords,
     catalog: IdentityCatalog,
     mode: str,
     args: argparse.Namespace,
-) -> Tuple[List[Dict[str, object]], Dict[str, object]]:
+) -> Tuple[List[Dict[str, object]], Dict[str, object], Dict[str, object]]:
+    """
+    Audit every directed opportunity without retaining one Python dictionary per
+    opportunity.
+
+    Exact counters and histogram bin contents include the full sample.  A small
+    deterministic reservoir sample is retained only for manual CSV inspection.
+    """
     keys = keys_for_records(records, mode, args.mc_signature_decimals)
     key_structured = structured(keys)
-    unique, inverse, counts = np.unique(key_structured, return_inverse=True, return_counts=True)
+    unique, inverse, counts = np.unique(
+        key_structured,
+        return_inverse=True,
+        return_counts=True,
+    )
     order = np.argsort(inverse, kind="stable")
     offsets = np.empty(counts.size + 1, dtype=np.int64)
     offsets[0] = 0
     np.cumsum(counts, out=offsets[1:])
 
     catalog_set = set(item.tobytes() for item in catalog.keys)
-    rows: List[Dict[str, object]] = []
     opportunity_indices = np.flatnonzero(records.opportunity)
+
+    sample_capacity = max(0, int(args.diagnostic_sample_size))
+    seed_offset = 0 if mode == "data" else 1_000_003
+    rng = np.random.default_rng(int(args.diagnostic_seed) + seed_offset)
+    sampled_rows: List[Dict[str, object]] = []
+
+    histogram_edges = residual_histogram_specs()
+    histogram_counts = {
+        key: np.zeros(len(edges) - 1, dtype=np.int64)
+        for key, edges in histogram_edges.items()
+    }
+
+    opportunities_in_catalog = 0
+    opportunities_with_non_tag = 0
+    total_group_size = 0
+    total_non_tag_candidates = 0
+    nearest_rows_seen = 0
+
+    # Reservoirs used only to estimate medians without retaining all residuals.
+    median_reservoir_capacity = max(20_000, sample_capacity)
+    angle_reservoir: List[float] = []
+    relE_reservoir: List[float] = []
+    residual_seen = 0
+
+    angle_cuts = (1.0, 3.0, 5.0, 10.0, 20.0)
+    relE_cuts = (0.15, 0.35, 0.50, 1.00)
+    threshold_counts = {
+        (angle_cut, relE_cut): 0
+        for angle_cut in angle_cuts
+        for relE_cut in relE_cuts
+    }
 
     for index in opportunity_indices:
         group = int(inverse[index])
         members = order[offsets[group]:offsets[group + 1]]
         in_catalog = key_structured[index].tobytes() in catalog_set
+        opportunities_in_catalog += int(in_catalog)
+        total_group_size += int(members.size)
 
         best = None
         non_tag_candidates = 0
@@ -496,6 +588,7 @@ def audit_matches(
             if same_tag:
                 continue
             # endif
+
             non_tag_candidates += 1
             angle = angular_distance_deg(
                 float(records.probe_theta[index]),
@@ -503,19 +596,78 @@ def audit_matches(
                 float(records.g_theta[candidate]),
                 float(records.g_phi[candidate]),
             )
-            relE = abs(float(records.probe_E[index] - records.g_E[candidate])) / max(float(records.g_E[candidate]), 1.0e-12)
+            relative_energy = abs(
+                float(records.probe_E[index] - records.g_E[candidate])
+            ) / max(float(records.g_E[candidate]), 1.0e-12)
             score = (
-                (angle / max(args.score_angle_scale_deg, 1.0e-12))**2
-                + (relE / max(args.score_relative_E_scale, 1.0e-12))**2
+                (
+                    angle
+                    / max(args.score_angle_scale_deg, 1.0e-12)
+                ) ** 2
+                + (
+                    relative_energy
+                    / max(args.score_relative_E_scale, 1.0e-12)
+                ) ** 2
             )
-            mass = pair_mass(
-                float(records.g_E[index]), float(records.g_theta[index]), float(records.g_phi[index]),
-                float(records.g_E[candidate]), float(records.g_theta[candidate]), float(records.g_phi[candidate]),
+            invariant_mass = pair_mass(
+                float(records.g_E[index]),
+                float(records.g_theta[index]),
+                float(records.g_phi[index]),
+                float(records.g_E[candidate]),
+                float(records.g_theta[candidate]),
+                float(records.g_phi[candidate]),
             )
             if best is None or score < best[0]:
-                best = (score, int(candidate), angle, relE, mass)
+                best = (
+                    score,
+                    int(candidate),
+                    angle,
+                    relative_energy,
+                    invariant_mass,
+                )
             # endif
         # endfor
+
+        total_non_tag_candidates += non_tag_candidates
+        if best is not None:
+            opportunities_with_non_tag += 1
+            nearest_rows_seen += 1
+            residual_seen += 1
+
+            nearest_values = {
+                "nearest_angle_deg": float(best[2]),
+                "nearest_relative_E": float(best[3]),
+                "nearest_pair_mass_GeV": float(best[4]),
+                "nearest_score": float(best[0]),
+            }
+
+            for key, value in nearest_values.items():
+                edges = histogram_edges[key]
+                bin_index = int(np.searchsorted(edges, value, side="right") - 1)
+                if 0 <= bin_index < histogram_counts[key].size:
+                    histogram_counts[key][bin_index] += 1
+                # endif
+            # endfor
+
+            for angle_cut in angle_cuts:
+                for relE_cut in relE_cuts:
+                    if best[2] < angle_cut and best[3] < relE_cut:
+                        threshold_counts[(angle_cut, relE_cut)] += 1
+                    # endif
+                # endfor
+            # endfor
+
+            if len(angle_reservoir) < median_reservoir_capacity:
+                angle_reservoir.append(float(best[2]))
+                relE_reservoir.append(float(best[3]))
+            else:
+                replacement_index = int(rng.integers(0, residual_seen))
+                if replacement_index < median_reservoir_capacity:
+                    angle_reservoir[replacement_index] = float(best[2])
+                    relE_reservoir[replacement_index] = float(best[3])
+                # endif
+            # endif
+        # endif
 
         row = {
             "opportunity_index": int(index),
@@ -531,34 +683,78 @@ def audit_matches(
             "nearest_pair_mass_GeV": float(best[4]) if best is not None else math.nan,
             "nearest_score": float(best[0]) if best is not None else math.nan,
         }
-        rows.append(row)
+        update_reservoir(
+            sampled_rows,
+            row,
+            seen_rows=int(index) + 1,
+            capacity=sample_capacity,
+            rng=rng,
+        )
     # endfor
 
-    angles = np.asarray([row["nearest_angle_deg"] for row in rows], dtype=float)
-    relE = np.asarray([row["nearest_relative_E"] for row in rows], dtype=float)
-    finite = np.isfinite(angles) & np.isfinite(relE)
-
+    directed_opportunities = int(opportunity_indices.size)
     summary: Dict[str, object] = {
         "mode": mode,
         "photon_candidate_records": records.size(),
-        "directed_opportunities": int(opportunity_indices.size),
-        "opportunities_in_epgammagamma_catalog": int(sum(bool(row["in_epgammagamma_catalog"]) for row in rows)),
-        "opportunities_with_non_tag_candidate": int(sum(bool(row["has_non_tag_candidate"]) for row in rows)),
-        "fraction_with_non_tag_candidate": float(np.mean([bool(row["has_non_tag_candidate"]) for row in rows])) if rows else math.nan,
-        "group_size_mean": float(np.mean([int(row["group_size"]) for row in rows])) if rows else math.nan,
-        "group_size_median": float(np.median([int(row["group_size"]) for row in rows])) if rows else math.nan,
-        "non_tag_candidates_per_opportunity_mean": float(np.mean([int(row["non_tag_candidates"]) for row in rows])) if rows else math.nan,
-        "nearest_angle_deg_median": float(np.median(angles[finite])) if np.any(finite) else math.nan,
-        "nearest_relative_E_median": float(np.median(relE[finite])) if np.any(finite) else math.nan,
+        "directed_opportunities": directed_opportunities,
+        "opportunities_in_epgammagamma_catalog": opportunities_in_catalog,
+        "opportunities_with_non_tag_candidate": opportunities_with_non_tag,
+        "fraction_with_non_tag_candidate": (
+            opportunities_with_non_tag / directed_opportunities
+            if directed_opportunities > 0
+            else math.nan
+        ),
+        "group_size_mean": (
+            total_group_size / directed_opportunities
+            if directed_opportunities > 0
+            else math.nan
+        ),
+        "non_tag_candidates_per_opportunity_mean": (
+            total_non_tag_candidates / directed_opportunities
+            if directed_opportunities > 0
+            else math.nan
+        ),
+        "nearest_angle_deg_median": (
+            float(np.median(angle_reservoir))
+            if angle_reservoir
+            else math.nan
+        ),
+        "nearest_relative_E_median": (
+            float(np.median(relE_reservoir))
+            if relE_reservoir
+            else math.nan
+        ),
+        "median_estimate_reservoir_size": len(angle_reservoir),
+        "diagnostic_rows_written": len(sampled_rows),
+        "diagnostic_rows_total_population": directed_opportunities,
     }
 
-    for angle_cut in (1.0, 3.0, 5.0, 10.0, 20.0):
-        for relE_cut in (0.15, 0.35, 0.50, 1.00):
-            key = f"fraction_angle_lt_{angle_cut:g}_and_relE_lt_{relE_cut:g}"
-            summary[key] = float(np.mean(finite & (angles < angle_cut) & (relE < relE_cut))) if rows else math.nan
+    for angle_cut in angle_cuts:
+        for relE_cut in relE_cuts:
+            key = (
+                f"fraction_angle_lt_{angle_cut:g}"
+                f"_and_relE_lt_{relE_cut:g}"
+            )
+            summary[key] = (
+                threshold_counts[(angle_cut, relE_cut)]
+                / directed_opportunities
+                if directed_opportunities > 0
+                else math.nan
+            )
         # endfor
     # endfor
-    return rows, summary
+
+    histogram_payload: Dict[str, object] = {
+        key: {
+            "edges": edges.tolist(),
+            "counts": histogram_counts[key].tolist(),
+        }
+        for key, edges in histogram_edges.items()
+    }
+    histogram_payload["nearest_match_entries"] = nearest_rows_seen
+
+    return sampled_rows, summary, histogram_payload
+
 
 
 def write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
@@ -572,30 +768,39 @@ def write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
     # endwith
 
 
-def plot_residuals(path: Path, title: str, rows: Sequence[Mapping[str, object]]) -> None:
-    angle = np.asarray([row["nearest_angle_deg"] for row in rows], dtype=float)
-    relE = np.asarray([row["nearest_relative_E"] for row in rows], dtype=float)
-    mass = np.asarray([row["nearest_pair_mass_GeV"] for row in rows], dtype=float)
-    score = np.asarray([row["nearest_score"] for row in rows], dtype=float)
+def plot_residuals(
+    path: Path,
+    title: str,
+    histogram_payload: Mapping[str, object],
+) -> None:
+    panels = (
+        ("nearest_angle_deg", "Nearest angular residual (deg)"),
+        ("nearest_relative_E", "Nearest relative energy residual"),
+        ("nearest_pair_mass_GeV", r"Tag-partner mass (GeV)"),
+        ("nearest_score", "Nearest matching score"),
+    )
 
     fig, axes = plt.subplots(2, 2, figsize=(12, 9))
-    panels = (
-        (angle, np.linspace(0.0, 60.0, 121), "Nearest angular residual (deg)"),
-        (relE, np.linspace(0.0, 3.0, 121), "Nearest relative energy residual"),
-        (mass, np.linspace(0.0, 1.0, 121), r"Tag-partner mass (GeV)"),
-        (score, np.linspace(0.0, 100.0, 121), "Nearest matching score"),
-    )
-    for axis, (values, bins, label) in zip(axes.flat, panels):
-        values = values[np.isfinite(values)]
-        axis.hist(values, bins=bins, histtype="step", linewidth=1.3)
+    for axis, (key, label) in zip(axes.flat, panels):
+        payload = histogram_payload[key]
+        edges = np.asarray(payload["edges"], dtype=float)
+        counts = np.asarray(payload["counts"], dtype=float)
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        axis.step(centers, counts, where="mid", linewidth=1.3)
         axis.set_xlabel(label)
         axis.set_ylabel("Entries")
         axis.grid(alpha=0.25)
     # endfor
-    fig.suptitle(title)
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+
+    fig.suptitle(
+        f"{title}\n"
+        f"Nearest-match entries: "
+        f"{int(histogram_payload.get('nearest_match_entries', 0)):,}"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(path, dpi=180)
     plt.close(fig)
+
 
 
 def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tuple[str, Dict[str, object]]:
@@ -608,13 +813,25 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
     data_catalog = read_identity_catalog(period.epgg_data, "data", args)
     mc_catalog = read_identity_catalog(period.pi0_epgg_mc, "mc", args)
 
-    data_rows, data_summary = audit_matches(data, data_catalog, "data", args)
-    mc_rows, mc_summary = audit_matches(mc, mc_catalog, "mc", args)
+    data_rows, data_summary, data_histograms = audit_matches(
+        data, data_catalog, "data", args
+    )
+    mc_rows, mc_summary, mc_histograms = audit_matches(
+        mc, mc_catalog, "mc", args
+    )
 
-    write_csv(period_dir / "data_nearest_match_table.csv", data_rows)
-    write_csv(period_dir / "aaogen_nearest_match_table.csv", mc_rows)
-    plot_residuals(period_dir / "data_matching_residuals.png", f"{period.label}: data no-cuts matching", data_rows)
-    plot_residuals(period_dir / "aaogen_matching_residuals.png", f"{period.label}: AAOGEN no-cuts matching", mc_rows)
+    write_csv(period_dir / "data_nearest_match_sample.csv", data_rows)
+    write_csv(period_dir / "aaogen_nearest_match_sample.csv", mc_rows)
+    plot_residuals(
+        period_dir / "data_matching_residuals.png",
+        f"{period.label}: data no-cuts matching",
+        data_histograms,
+    )
+    plot_residuals(
+        period_dir / "aaogen_matching_residuals.png",
+        f"{period.label}: AAOGEN no-cuts matching",
+        mc_histograms,
+    )
 
     payload = {
         "period": asdict(period),
@@ -624,6 +841,8 @@ def process_period(period: PeriodConfig, args_dict: Mapping[str, object]) -> Tup
         "mc_catalog": asdict(mc_catalog) | {"keys": None},
         "data_matching": data_summary,
         "mc_matching": mc_summary,
+        "data_residual_histograms": data_histograms,
+        "mc_residual_histograms": mc_histograms,
     }
     with open(period_dir / "metadata.json", "w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
@@ -673,7 +892,9 @@ def main() -> int:
     log(
         f"NO-CUTS MATCHING AUDIT: {len(periods)} period(s), {workers} worker(s). "
         f"Only E_tag >= {args.tag_E_min:g} GeV and predicted E_X >= "
-        f"{args.probe_E_min:g} GeV are required."
+        f"{args.probe_E_min:g} GeV are required. "
+        f"At most {args.diagnostic_sample_size:,} diagnostic rows per sample "
+        f"and period will be written."
     )
 
     metadata: Dict[str, object] = {}
