@@ -144,6 +144,7 @@ public static void main(String[] args) {
 		    if (num_events % 500000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
+		    if (num_events > 100000) { break; }
 
 		    // get run and event numbers
 		    event = reader.getNextEvent();
