@@ -251,8 +251,7 @@ public static void main(String[] args) {
 				BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
 				// Use the input beam energy if runnum == 11, otherwise use Eb.Eb()
 				double energy = (runnum == 11) ? beam_energy : Eb.Eb();
-				println(num_p2);
-				for(i=1; i<num_p2; i++) {
+				for(i=0; i<num_p2; i++) {
 		            ThreeParticles variables = new ThreeParticles(event, research_Event, 
 						2212, 0, 22, i, energy);
 		            // this is my class for defining all relevant kinematic variables
