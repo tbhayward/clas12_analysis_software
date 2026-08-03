@@ -94,8 +94,8 @@ public static void main(String[] args) {
 	double Emiss2, theta_gamma_gamma, pTmiss;
 
 	// load my kinematic fitter/PID
-	GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
-	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
+	// GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
+	GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
 	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
 	
 	// set filter for final states
@@ -273,6 +273,7 @@ public static void main(String[] args) {
 		                p1_theta = variables.p1_theta(); // lab polar angle
 		                p2_phi = variables.p2_phi(); // lab azimuthal angle
 		                p2_p = variables.p2_p(); // lab momentum
+		                println(p2_p);
 		                p2_theta = variables.p2_theta(); // lab polar angle
 		                open_angle_ep = variables.open_angle_ep;
 		                open_angle_ep1 = variables.open_angle_ep1;
