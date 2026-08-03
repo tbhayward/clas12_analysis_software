@@ -243,7 +243,6 @@ public static void main(String[] args) {
 			    runnum == 3947) process_event = false;
 	    	
 		    if (process_event) {
-		    	println("hello world")
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
 		        int num_p2 = research_Event.countByPid(22); 
@@ -257,6 +256,7 @@ public static void main(String[] args) {
 						2212, 0, 22, i, energy);
 		            // this is my class for defining all relevant kinematic variables
 		            if (variables.channel_test(variables)) {
+		            	println("hey")
 		            	fiducial_status = variables.get_fiducial_status();
 		                helicity = variables.get_helicity(); // helicity of event
 		                detector1 = variables.get_detector1();
