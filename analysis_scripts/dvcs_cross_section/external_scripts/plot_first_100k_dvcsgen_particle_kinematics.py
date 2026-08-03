@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_first_100k_dvcsgen_vs_aaogen_reconstructed_photons.py
+plot_first_100k_dvcsgen_particle_kinematics_v3_import_fix.py
 
 Compare the first 100,000 entries from the generated DVCSGEN and AAOGEN ROOT
 files.
@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import math
+import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import Mapping, Sequence
@@ -150,7 +151,21 @@ def import_main_module(path: Path) -> ModuleType:
     # endif
 
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+
+    # Register the dynamically created module before executing it. Python 3.13
+    # dataclasses inspect sys.modules while class decorators are being applied.
+    # Without this registration, importing the main analysis script fails with
+    # an AttributeError inside dataclasses.py.
+    sys.modules[spec.name] = module
+
+    try:
+        spec.loader.exec_module(module)
+    except Exception:
+        # Do not leave a partially initialized module cached after a failed
+        # import.
+        sys.modules.pop(spec.name, None)
+        raise
+    # endtry
 
     required = "reconstruct_native_eppi0_photons"
     if not hasattr(module, required):
