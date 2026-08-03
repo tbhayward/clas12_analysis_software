@@ -1,57 +1,35 @@
 #!/usr/bin/env python3
 """
-plot_first_100k_dvcsgen_particle_kinematics_v5_optional_rec_aaogen.py
+plot_first_100k_dvcsgen_particle_kinematics_v6_optional_04_dvcsgen.py
 
-Compare the first 100,000 entries from the generated DVCSGEN and AAOGEN ROOT
-files.
+Compare the first N entries from:
 
-DVCSGEN:
-    p1_p, p1_theta  -> generated proton
-    p2_p, p2_theta  -> generated real photon
+  1. the nominal generated DVCSGEN ROOT file;
+  2. the reconstructed AAOGEN ROOT file;
+  3. optionally, a second generated DVCSGEN epgamma file, such as the sample
+     produced with a reconstructed-photon threshold of 0.40 GeV.
 
-AAOGEN:
-    p1_p, p1_theta  -> generated proton
-    photon 1 and photon 2 are reconstructed with an exact embedded copy of the current
-    reconstruct_native_eppi0_photons() implementation from
-    derive_photon_efficiency_scale_factors.py.
+The obsolete generated-AAOGEN input is no longer read or plotted.
 
-No independent isotropic pi0 decay is generated in this script.
+DVCSGEN interpretation:
+    p1_p, p1_theta -> generated proton
+    p2_p, p2_theta -> generated real photon
 
-The embedded reconstruction uses:
-    e_theta, e_phi
-    pi0_p, pi0_theta, pi0_phi
-    open_angle_egamma1, open_angle_egamma2
-    Mh_gammagamma
-    detector_gamma1, detector_gamma2
+Reconstructed AAOGEN interpretation:
+    p1_p, p1_theta -> reconstructed proton
+    the two pi0 daughter photons are recovered with the embedded
+    reconstruct_native_eppi0_photons() implementation used by the main
+    photon-efficiency analysis.
 
-and returns the best-ranked physical daughter solution after the same analytic
-energy solution, transverse-cone construction, detector-compatibility test,
-four-vector closure calculation, and diphoton-mass ranking used by the main
-photon-efficiency analysis.
+The optional comparison sample can be supplied with:
 
-Dependencies:
-    uproot, numpy, matplotlib
+    --dvcsgen_04 \
+      /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/\
+dvcsgen_files_greater_than_0.40GeV/\
+gen_dvcsgen_rga_fa18_out_epgamma_0.40GeV.root
 
-Optional reconstructed-AAOGEN comparison
-----------------------------------------
-
-Pass
-
-    --rec_aaogen /path/to/rec_aaogen.root
-
-to overlay the reconstructed AAOGEN sample on the same four panels.
-
-The reconstructed file is processed with the same branch resolution and the
-same embedded daughter-photon reconstruction as the generated AAOGEN file.
-Therefore the comparison includes:
-
-  * generated AAOGEN proton versus reconstructed AAOGEN proton;
-  * generated-AAOGEN reconstructed gamma1/gamma2 versus reconstructed-AAOGEN
-    reconstructed gamma1/gamma2.
-
-The argument is optional. If it is omitted, the original DVCSGEN versus
-generated-AAOGEN comparison is produced unchanged.
-
+All plotted histograms are independently normalized to unit integral.
+Polar-angle branches are converted from radians to degrees.
 """
 
 from __future__ import annotations
@@ -71,12 +49,12 @@ DEFAULT_DVCSGEN = Path(
     "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
     "dvcsgen/gen_dvcsgen_rga_fa18_out_50nA_10604MeV.root"
 )
-DEFAULT_AAOGEN = Path(
+DEFAULT_REC_AAOGEN = Path(
     "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/"
-    "hipo_files/gen_aaogen_norad_fa18_out_50nA_10604MeV.root"
+    "hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root"
 )
 DEFAULT_OUTPUT = Path(
-    "first_100k_dvcsgen_vs_aaogen_reconstructed_photons.png"
+    "first_100k_dvcsgen_vs_rec_aaogen_with_optional_04_dvcsgen.png"
 )
 DEFAULT_TREE = "PhysicsEvents"
 
@@ -84,29 +62,35 @@ DEFAULT_TREE = "PhysicsEvents"
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Overlay DVCSGEN proton/photon kinematics with AAOGEN proton and "
-            "pi0 daughter photons reconstructed by the main efficiency script."
+            "Compare nominal generated DVCSGEN, reconstructed AAOGEN, and "
+            "optionally a second generated DVCSGEN epgamma sample."
         )
     )
     parser.add_argument(
         "--dvcsgen",
         type=Path,
         default=DEFAULT_DVCSGEN,
+        help=(
+            "Nominal generated DVCSGEN ROOT file "
+            f"(default: {DEFAULT_DVCSGEN})"
+        ),
     )
     parser.add_argument(
-        "--aaogen",
+        "--dvcsgen_04",
         type=Path,
-        default=DEFAULT_AAOGEN,
+        default=None,
+        help=(
+            "Optional generated DVCSGEN epgamma ROOT file to overlay, for "
+            "example the sample produced with a 0.40 GeV photon threshold."
+        ),
     )
     parser.add_argument(
         "--rec_aaogen",
         type=Path,
-        default=None,
+        default=DEFAULT_REC_AAOGEN,
         help=(
-            "Optional reconstructed AAOGEN ROOT file to overlay. "
-            "Example: /work/clas12/thayward/CLAS12_exclusive/eppi0/data/"
-            "pass2/mc/hipo_files/"
-            "rec_aaogen_norad_fa18_out_50nA_10604MeV.root"
+            "Reconstructed AAOGEN ROOT file "
+            f"(default: {DEFAULT_REC_AAOGEN})"
         ),
     )
     parser.add_argument(
@@ -124,8 +108,6 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT,
     )
 
-    # These defaults are copied from the main script's current CLI defaults.
-    # They may be overridden here for an exact configuration comparison.
     parser.add_argument("--ft-theta-min", type=float, default=2.5)
     parser.add_argument("--ft-theta-max", type=float, default=5.0)
     parser.add_argument("--fd-theta-min", type=float, default=5.0)
@@ -603,18 +585,21 @@ def main() -> int:
     if args.max_entries <= 0:
         raise ValueError("--max-entries must be positive.")
     # endif
-    for path in (args.dvcsgen, args.aaogen):
+
+    required_paths = (
+        args.dvcsgen,
+        args.rec_aaogen,
+    )
+    for path in required_paths:
         if not path.exists():
             raise FileNotFoundError(path)
         # endif
     # endfor
 
-    if args.rec_aaogen is not None and not args.rec_aaogen.exists():
-        raise FileNotFoundError(args.rec_aaogen)
+    if args.dvcsgen_04 is not None and not args.dvcsgen_04.exists():
+        raise FileNotFoundError(args.dvcsgen_04)
     # endif
 
-
-    # The imported function accesses only these reconstruction settings.
     reconstruction_args = SimpleNamespace(
         ft_theta_min=args.ft_theta_min,
         ft_theta_max=args.ft_theta_max,
@@ -626,130 +611,129 @@ def main() -> int:
         cone_mass_residual_weight=args.cone_mass_residual_weight,
     )
 
-    dvcs = read_dvcsgen(
+    nominal_dvcs = read_dvcsgen(
         args.dvcsgen,
         args.tree,
         args.max_entries,
     )
-    aaogen = read_aaogen_with_main_reconstruction(
-        args.aaogen,
+
+    dvcs_04 = None
+    if args.dvcsgen_04 is not None:
+        dvcs_04 = read_dvcsgen(
+            args.dvcsgen_04,
+            args.tree,
+            args.max_entries,
+        )
+    # endif
+
+    rec_aaogen = read_aaogen_with_main_reconstruction(
+        args.rec_aaogen,
         args.tree,
         args.max_entries,
         reconstruction_args,
     )
 
-    rec_aaogen = None
-    if args.rec_aaogen is not None:
-        rec_aaogen = read_aaogen_with_main_reconstruction(
-            args.rec_aaogen,
-            args.tree,
-            args.max_entries,
-            reconstruction_args,
-        )
-    # endif
-
     proton_momentum_samples = [
-        ("DVCSGEN proton", dvcs["proton_p"], "tab:blue", "-"),
-        ("generated AAOGEN proton", aaogen["proton_p"], "tab:red", "-"),
-    ]
-    proton_theta_samples = [
         (
-            "DVCSGEN proton",
-            dvcs["proton_theta_deg"],
+            "nominal generated DVCSGEN proton",
+            nominal_dvcs["proton_p"],
             "tab:blue",
             "-",
         ),
         (
-            "generated AAOGEN proton",
-            aaogen["proton_theta_deg"],
+            "reconstructed AAOGEN proton",
+            rec_aaogen["proton_p"],
+            "tab:red",
+            "-",
+        ),
+    ]
+    proton_theta_samples = [
+        (
+            "nominal generated DVCSGEN proton",
+            nominal_dvcs["proton_theta_deg"],
+            "tab:blue",
+            "-",
+        ),
+        (
+            "reconstructed AAOGEN proton",
+            rec_aaogen["proton_theta_deg"],
             "tab:red",
             "-",
         ),
     ]
     photon_momentum_samples = [
-        ("DVCSGEN photon", dvcs["gamma_p"], "tab:blue", "-"),
         (
-            r"generated AAOGEN reconstructed $\gamma_1$",
-            aaogen["gamma1_p"],
+            "nominal generated DVCSGEN photon",
+            nominal_dvcs["gamma_p"],
+            "tab:blue",
+            "-",
+        ),
+        (
+            r"reconstructed AAOGEN $\gamma_1$",
+            rec_aaogen["gamma1_p"],
             "tab:red",
             "-",
         ),
         (
-            r"generated AAOGEN reconstructed $\gamma_2$",
-            aaogen["gamma2_p"],
+            r"reconstructed AAOGEN $\gamma_2$",
+            rec_aaogen["gamma2_p"],
             "tab:red",
             "--",
         ),
     ]
     photon_theta_samples = [
         (
-            "DVCSGEN photon",
-            dvcs["gamma_theta_deg"],
+            "nominal generated DVCSGEN photon",
+            nominal_dvcs["gamma_theta_deg"],
             "tab:blue",
             "-",
         ),
         (
-            r"generated AAOGEN reconstructed $\gamma_1$",
-            aaogen["gamma1_theta_deg"],
+            r"reconstructed AAOGEN $\gamma_1$",
+            rec_aaogen["gamma1_theta_deg"],
             "tab:red",
             "-",
         ),
         (
-            r"generated AAOGEN reconstructed $\gamma_2$",
-            aaogen["gamma2_theta_deg"],
+            r"reconstructed AAOGEN $\gamma_2$",
+            rec_aaogen["gamma2_theta_deg"],
             "tab:red",
             "--",
         ),
     ]
 
-    if rec_aaogen is not None:
+    if dvcs_04 is not None:
         proton_momentum_samples.append(
             (
-                "reconstructed AAOGEN proton",
-                rec_aaogen["proton_p"],
+                "0.40 GeV generated DVCSGEN proton",
+                dvcs_04["proton_p"],
                 "tab:green",
                 "-",
             )
         )
         proton_theta_samples.append(
             (
-                "reconstructed AAOGEN proton",
-                rec_aaogen["proton_theta_deg"],
+                "0.40 GeV generated DVCSGEN proton",
+                dvcs_04["proton_theta_deg"],
                 "tab:green",
                 "-",
             )
         )
-        photon_momentum_samples.extend(
-            [
-                (
-                    r"reconstructed AAOGEN reconstructed $\gamma_1$",
-                    rec_aaogen["gamma1_p"],
-                    "tab:green",
-                    "-",
-                ),
-                (
-                    r"reconstructed AAOGEN reconstructed $\gamma_2$",
-                    rec_aaogen["gamma2_p"],
-                    "tab:green",
-                    "--",
-                ),
-            ]
+        photon_momentum_samples.append(
+            (
+                "0.40 GeV generated DVCSGEN photon",
+                dvcs_04["gamma_p"],
+                "tab:green",
+                "-",
+            )
         )
-        photon_theta_samples.extend(
-            [
-                (
-                    r"reconstructed AAOGEN reconstructed $\gamma_1$",
-                    rec_aaogen["gamma1_theta_deg"],
-                    "tab:green",
-                    "-",
-                ),
-                (
-                    r"reconstructed AAOGEN reconstructed $\gamma_2$",
-                    rec_aaogen["gamma2_theta_deg"],
-                    "tab:green",
-                    "--",
-                ),
-            ]
+        photon_theta_samples.append(
+            (
+                "0.40 GeV generated DVCSGEN photon",
+                dvcs_04["gamma_theta_deg"],
+                "tab:green",
+                "-",
+            )
         )
     # endif
 
@@ -806,22 +790,20 @@ def main() -> int:
         axis.legend(frameon=False)
     # endfor
 
-    entries = int(aaogen["entries_read"][0])
-    valid = int(aaogen["valid_reconstructions"][0])
+    rec_entries = int(rec_aaogen["entries_read"][0])
+    rec_valid = int(rec_aaogen["valid_reconstructions"][0])
+
     title_lines = [
         f"First {args.max_entries:,} entries from each requested sample",
         (
-            "Generated AAOGEN photons reconstructed with the embedded "
-            f"main-analysis helper: {valid:,}/{entries:,} valid "
-            "closure-passing events"
+            "Reconstructed AAOGEN daughter helper: "
+            f"{rec_valid:,}/{rec_entries:,} valid closure-passing events"
         ),
     ]
-    if rec_aaogen is not None:
-        rec_entries = int(rec_aaogen["entries_read"][0])
-        rec_valid = int(rec_aaogen["valid_reconstructions"][0])
+    if dvcs_04 is not None:
         title_lines.append(
-            "Reconstructed AAOGEN helper result: "
-            f"{rec_valid:,}/{rec_entries:,} valid closure-passing events"
+            "Green overlay: generated DVCSGEN epgamma sample supplied by "
+            "--dvcsgen_04"
         )
     # endif
 
@@ -829,7 +811,7 @@ def main() -> int:
         "\n".join(title_lines),
         fontsize=14,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.93))
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.92))
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(
@@ -839,48 +821,51 @@ def main() -> int:
     )
     plt.close(fig)
 
-    print("Using embedded reconstruction copied from the current main analysis script.")
-    print(f"DVCSGEN entries read: {int(dvcs['entries_read'][0]):,}")
-    print(f"AAOGEN entries read: {entries:,}")
+    print(f"Nominal DVCSGEN file: {args.dvcsgen}")
     print(
-        "AAOGEN reconstruction cutflow: "
-        f"finite={int(aaogen['input_finite_count'][0]):,}, "
-        f"longitudinal={int(aaogen['longitudinal_count'][0]):,}, "
-        f"transverse={int(aaogen['transverse_count'][0]):,}, "
-        f"detector-compatible={int(aaogen['detector_count'][0]):,}, "
-        f"closure-pass={int(aaogen['closure_count'][0]):,}, "
-        f"final-valid={valid:,}"
-    )
-    print(
-        f"Median normalized closure: "
-        f"{float(aaogen['median_closure'][0]):.6g}"
-    )
-    print(
-        f"Median mirror ambiguity: "
-        f"{float(aaogen['median_ambiguity'][0]):.6g}"
+        "Nominal DVCSGEN entries read: "
+        f"{int(nominal_dvcs['entries_read'][0]):,}"
     )
 
-    if rec_aaogen is not None:
-        rec_entries = int(rec_aaogen["entries_read"][0])
-        rec_valid = int(rec_aaogen["valid_reconstructions"][0])
-        print(f"Reconstructed AAOGEN file: {args.rec_aaogen}")
-        print(f"Reconstructed AAOGEN entries read: {rec_entries:,}")
+    if dvcs_04 is not None:
+        print(f"0.40 GeV DVCSGEN file: {args.dvcsgen_04}")
         print(
-            "Reconstructed AAOGEN reconstruction cutflow: "
-            f"finite={int(rec_aaogen['input_finite_count'][0]):,}, "
-            f"longitudinal={int(rec_aaogen['longitudinal_count'][0]):,}, "
-            f"transverse={int(rec_aaogen['transverse_count'][0]):,}, "
-            f"detector-compatible="
-            f"{int(rec_aaogen['detector_count'][0]):,}, "
-            f"closure-pass={int(rec_aaogen['closure_count'][0]):,}, "
-            f"final-valid={rec_valid:,}"
+            "0.40 GeV DVCSGEN entries read: "
+            f"{int(dvcs_04['entries_read'][0]):,}"
         )
+
+        low_thresholds = (0.4, 0.5, 1.0, 2.0)
+        gamma_p = np.asarray(dvcs_04["gamma_p"], dtype=float)
+        for threshold in low_thresholds:
+            count = int(np.count_nonzero(gamma_p < threshold))
+            fraction = (
+                count / gamma_p.size
+                if gamma_p.size > 0
+                else float("nan")
+            )
+            print(
+                f"0.40 GeV DVCSGEN photons with p < {threshold:g} GeV: "
+                f"{count:,}/{gamma_p.size:,} ({100.0 * fraction:.4f}%)"
+            )
+        # endfor
         print(
-            "Reconstructed AAOGEN median normalized closure: "
-            f"{float(rec_aaogen['median_closure'][0]):.6g}"
+            "0.40 GeV DVCSGEN photon momentum range: "
+            f"{float(np.min(gamma_p)):.6g} to "
+            f"{float(np.max(gamma_p)):.6g} GeV"
         )
     # endif
 
+    print(f"Reconstructed AAOGEN file: {args.rec_aaogen}")
+    print(f"Reconstructed AAOGEN entries read: {rec_entries:,}")
+    print(
+        "Reconstructed AAOGEN helper cutflow: "
+        f"finite={int(rec_aaogen['input_finite_count'][0]):,}, "
+        f"longitudinal={int(rec_aaogen['longitudinal_count'][0]):,}, "
+        f"transverse={int(rec_aaogen['transverse_count'][0]):,}, "
+        f"detector-compatible={int(rec_aaogen['detector_count'][0]):,}, "
+        f"closure-pass={int(rec_aaogen['closure_count'][0]):,}, "
+        f"final-valid={rec_valid:,}"
+    )
     print(f"Wrote: {args.output}")
     return 0
 
