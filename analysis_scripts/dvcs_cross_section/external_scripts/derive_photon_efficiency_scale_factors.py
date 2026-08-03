@@ -1,58 +1,81 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v36_one_two_photon_shape_canvases.py
+derive_photon_efficiency_scale_factors_v37_morphed_shared_template_fits.py
 
 Stepwise photon-efficiency study.
 
-A hard event-level photon-multiplicity cut is applied everywhere:
+The accepted epgamma population is split into events represented by exactly
+one reconstructed-photon entry and events represented by exactly two
+reconstructed-photon entries. Events represented by three or more photon
+entries are rejected in full.
 
-    retain only events represented by one or two reconstructed-photon entries;
-    reject every event represented by three or more reconstructed-photon
-    entries.
+For each run period and accepted multiplicity, the after-cuts data
+distributions are fitted simultaneously as a mixture of:
 
-The data-side shape comparison is now split by accepted multiplicity. For each
-run period, the script writes two independent 2x5 canvases:
+    DVCSGEN epgamma MC
+    AAOGEN-as-epgamma pi0 background MC
 
-  * events with exactly one reconstructed-photon entry;
-  * events with exactly two reconstructed-photon entries.
+using the validated shared two-template morphing fitter from
+plot_exclusivity_data_dvcs_pi0_mc.py.
 
-Within each canvas:
+The five one-dimensional projections fitted simultaneously are:
 
-  * the top row shows the before-cuts distributions;
-  * the bottom row shows the after-cuts distributions;
-  * both rows require open_angle_ep2 > 5 deg;
-  * the bottom row additionally requires:
-      Emiss2 > 1 GeV,
-      Mx2_2 > 2 GeV^2,
-      pTmiss > 0.5 GeV.
+    Delta_phi
+    theta_gamma_gamma
+    pTmiss
+    Emiss2
+    Mx2_2
 
-Event identity:
+A single pi0 fraction is shared by all five projections. Each projection has
+independent DVCSGEN and AAOGEN shape-nuisance parameters.
 
-  * data: exact (runnum, evnum);
-  * DVCSGEN and AAOGEN epgamma MC: rounded reconstructed electron and proton
-    kinematics (e_p, e_theta, e_phi, p1_p, p1_theta, p1_phi), using
-    --mc-signature-decimals.
+Morphing model:
 
-The multiplicity summary and multiplicity plots continue to describe the
-original pre-cut populations. The completed AAOGEN MC efficiency machinery is
-preserved under:
+  * Delta_phi, Emiss2, and Mx2_2:
+      additive translation plus symmetric Gaussian broadening;
+  * theta_gamma_gamma and pTmiss:
+      translation and Gaussian broadening in log(x + epsilon), preserving the
+      physical lower boundary;
+  * DVCSGEN and AAOGEN receive separate shift and broadening parameters;
+  * Gaussian nuisance penalties regularize large shifts and broadenings;
+  * the Emiss2 and Mx2_2 morphed DVCSGEN means are required to remain below
+    the corresponding AAOGEN means.
+
+The mixture is fitted to the raw histogram counts with a binned Poisson
+deviance. Each template is normalized internally, so the fit determines the
+composition of the selected data population rather than an absolute MC
+normalization.
+
+The five projections are marginals of the same event sample. Their combined
+likelihood is therefore a composite likelihood rather than a statistically
+independent five-dimensional likelihood. The fitted fraction is meaningful as
+a common shape-composition estimator, while its curvature uncertainty does not
+include correlations among the five projections.
+
+Data products are written under:
+
+  output/photon_efficiency_study/data/
+      shape_comparison/
+      template_fits/
+          <period>_one_photon_template_fit.png
+          <period>_two_photon_template_fit.png
+          template_fit_results.csv
+          template_fit_results.json
+          all_periods_fitted_pi0_fraction.png
+
+The completed AAOGEN MC photon-efficiency machinery remains under:
 
   output/photon_efficiency_study/mc/
 
-Data-side shape canvases are written under:
-
-  output/photon_efficiency_study/data/shape_comparison/
-
-with filenames:
-
-  <period>_one_photon_before_after_cuts.png
-  <period>_two_photon_before_after_cuts.png
+and can be rerun with --run-mc-efficiency.
 """
 
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
+import inspect
 import concurrent.futures
 import csv
 import json
@@ -2567,6 +2590,86 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=20,
     )
+    parser.add_argument(
+        "--skip-data-template-fits",
+        action="store_true",
+        help="Skip the shared morphed DVCSGEN+AAOGEN fits.",
+    )
+    parser.add_argument(
+        "--allow-data-fit-failures",
+        action="store_true",
+        help=(
+            "Retain successful categories and serialize failed categories "
+            "instead of aborting the run."
+        ),
+    )
+    parser.add_argument(
+        "--exclusivity-fitter-script",
+        default=str(
+            Path(__file__).resolve().parent.parent
+            / "plot_exclusivity_data_dvcs_pi0_mc.py"
+        ),
+        help=(
+            "Path to the validated exclusivity template-morphing script. "
+            "The parent dvcs_cross_section directory is used by default."
+        ),
+    )
+    parser.add_argument(
+        "--fit-max-shift-bins",
+        type=float,
+        default=12.0,
+        help="Maximum absolute additive shift in histogram bins.",
+    )
+    parser.add_argument(
+        "--fit-max-smear-bins",
+        type=float,
+        default=20.0,
+        help="Maximum additional Gaussian broadening in histogram bins.",
+    )
+    parser.add_argument(
+        "--fit-min-counts",
+        type=int,
+        default=100,
+        help="Minimum in-range data count required in every active projection.",
+    )
+    parser.add_argument(
+        "--fit-shift-prior-bins",
+        type=float,
+        default=4.0,
+        help="Gaussian additive-shift prior width in histogram bins.",
+    )
+    parser.add_argument(
+        "--fit-smear-prior-bins",
+        type=float,
+        default=8.0,
+        help="Half-Gaussian broadening-prior width in histogram bins.",
+    )
+    parser.add_argument(
+        "--disable-fit-nuisance-penalties",
+        action="store_true",
+        help="Disable shift and broadening nuisance penalties.",
+    )
+    parser.add_argument(
+        "--fit-outside-overshoot-penalty",
+        type=float,
+        default=0.25,
+        help="One-sided model-overshoot penalty outside active support.",
+    )
+    parser.add_argument(
+        "--fit-emiss2-mean-order-penalty",
+        type=float,
+        default=25.0,
+        help=(
+            "Compatibility argument passed to the validated fitter. The "
+            "current fitter applies hard mean ordering for Emiss2 and Mx2_2."
+        ),
+    )
+    parser.add_argument(
+        "--fit-dpi",
+        type=int,
+        default=180,
+        help="Resolution of template-fit diagnostic plots.",
+    )
     return parser.parse_args()
 
 
@@ -3965,6 +4068,649 @@ def write_photon_multiplicity_outputs(
     # endwith
 
 
+
+_EXCLUSIVITY_FITTER_MODULE = None
+
+
+def resolve_exclusivity_fitter_path(
+    configured_path: str,
+) -> Path:
+    requested = Path(configured_path).expanduser()
+    candidates = (
+        requested,
+        Path(__file__).resolve().parent.parent
+        / "plot_exclusivity_data_dvcs_pi0_mc.py",
+        Path(__file__).resolve().parent
+        / "plot_exclusivity_data_dvcs_pi0_mc.py",
+    )
+
+    for candidate in candidates:
+        resolved = candidate.resolve()
+        if resolved.exists():
+            return resolved
+        # endif
+    # endfor
+
+    attempted = "\n  ".join(
+        str(candidate.resolve()) for candidate in candidates
+    )
+    raise FileNotFoundError(
+        "Validated exclusivity fitter was not found. Tried:\n  "
+        + attempted
+    )
+
+
+def load_exclusivity_fitter(
+    configured_path: str,
+):
+    global _EXCLUSIVITY_FITTER_MODULE
+
+    resolved_path = resolve_exclusivity_fitter_path(configured_path)
+    if (
+        _EXCLUSIVITY_FITTER_MODULE is not None
+        and Path(_EXCLUSIVITY_FITTER_MODULE.__file__).resolve()
+        == resolved_path
+    ):
+        return _EXCLUSIVITY_FITTER_MODULE
+    # endif
+
+    module_name = (
+        "_photon_efficiency_validated_exclusivity_fitter"
+    )
+    spec = importlib.util.spec_from_file_location(
+        module_name,
+        resolved_path,
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(
+            f"Could not create import specification for {resolved_path}"
+        )
+    # endif
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+    required_symbols = (
+        "VariableConfig",
+        "TopologyConfig",
+        "FitResult",
+        "SharedFitSummary",
+        "fit_shared_two_templates",
+    )
+    missing = [
+        name for name in required_symbols
+        if not hasattr(module, name)
+    ]
+    if missing:
+        raise AttributeError(
+            f"{resolved_path} is missing required fitter symbols: "
+            + ", ".join(missing)
+        )
+    # endif
+
+    signature = inspect.signature(module.fit_shared_two_templates)
+    required_parameters = (
+        "data_histograms",
+        "dvcs_histograms",
+        "pi0_histograms",
+        "topology",
+        "max_shift_bins",
+        "max_smear_bins",
+        "min_counts",
+        "fraction_variable_branches",
+        "shift_prior_bins",
+        "smear_prior_bins",
+        "use_nuisance_penalties",
+        "core_containment",
+        "fraction_containment",
+        "pi0_support_core_containment",
+        "pi0_support_fraction_containment",
+    )
+    absent_parameters = [
+        name for name in required_parameters
+        if name not in signature.parameters
+    ]
+    if absent_parameters:
+        raise TypeError(
+            "Validated fit_shared_two_templates() has an incompatible "
+            "interface. Missing parameters: "
+            + ", ".join(absent_parameters)
+        )
+    # endif
+
+    module.VARIABLES = tuple(
+        module.VariableConfig(
+            branch=variable.key,
+            label=variable.label,
+            bins=variable.bins,
+            xmin=variable.low,
+            xmax=variable.high,
+            aliases=(),
+        )
+        for variable in DATA_SHAPE_VARIABLES
+    )
+
+    _EXCLUSIVITY_FITTER_MODULE = module
+    log(
+        "Loaded validated exclusivity template fitter from "
+        f"{resolved_path}"
+    )
+    log(
+        "Validated fitter signature: "
+        f"{signature}"
+    )
+    return module
+
+
+def fit_histogram_inputs(
+    sample_payloads: Mapping[str, Mapping[str, object]],
+    multiplicity_key: str,
+) -> Tuple[
+    Dict[str, np.ndarray],
+    Dict[str, np.ndarray],
+    Dict[str, np.ndarray],
+]:
+    def extract(
+        sample_key: str,
+    ) -> Dict[str, np.ndarray]:
+        return {
+            variable.key: np.asarray(
+                sample_payloads[sample_key][multiplicity_key][
+                    "after_histograms"
+                ][variable.key]["counts"],
+                dtype=np.float64,
+            )
+            for variable in DATA_SHAPE_VARIABLES
+        }
+
+    return extract("data"), extract("dvcsgen"), extract("aaogen")
+
+
+def fit_result_to_dict(
+    result,
+) -> Dict[str, object]:
+    scalar_fields = (
+        "success",
+        "message",
+        "f_pi0",
+        "f_pi0_err",
+        "shift",
+        "shift_err",
+        "sigma_add",
+        "sigma_add_err",
+        "sigma_right",
+        "sigma_right_err",
+        "pi0_shift",
+        "pi0_shift_err",
+        "pi0_sigma_add",
+        "pi0_sigma_add_err",
+        "pi0_sigma_right",
+        "pi0_sigma_right_err",
+        "deviance",
+        "ndf",
+        "data_total",
+        "morph_label",
+        "excluded_data_counts",
+        "excluded_model_counts",
+        "excluded_excess_counts",
+        "excluded_excess_fraction",
+        "fit_region_data_counts",
+        "fit_region_model_counts",
+        "fit_region_model_to_data",
+        "fit_region_closure_difference",
+        "full_range_model_counts",
+        "full_range_model_to_data",
+    )
+    return {
+        field: getattr(result, field)
+        for field in scalar_fields
+        if hasattr(result, field)
+    }
+
+
+def shared_fit_to_dict(
+    summary,
+) -> Dict[str, object]:
+    return {
+        "success": bool(summary.success),
+        "message": str(summary.message),
+        "f_pi0": float(summary.f_pi0),
+        "f_pi0_err": float(summary.f_pi0_err),
+        "deviance": float(summary.deviance),
+        "ndf": int(summary.ndf),
+        "deviance_per_ndf": (
+            float(summary.deviance) / int(summary.ndf)
+            if int(summary.ndf) > 0
+            else math.nan
+        ),
+        "fraction_variables": list(summary.fraction_variables),
+        "variables": {
+            variable_key: fit_result_to_dict(result)
+            for variable_key, result in (
+                summary.variable_results or {}
+            ).items()
+        },
+    }
+
+
+def run_one_shared_template_fit(
+    period: PeriodConfig,
+    multiplicity_key: str,
+    multiplicity_label: str,
+    sample_payloads: Mapping[str, Mapping[str, object]],
+    args: argparse.Namespace,
+):
+    fitter = load_exclusivity_fitter(
+        args.exclusivity_fitter_script
+    )
+    data_histograms, dvcs_histograms, pi0_histograms = (
+        fit_histogram_inputs(
+            sample_payloads,
+            multiplicity_key,
+        )
+    )
+
+    insufficient = []
+    for variable in DATA_SHAPE_VARIABLES:
+        data_count = int(np.sum(data_histograms[variable.key]))
+        dvcs_count = int(np.sum(dvcs_histograms[variable.key]))
+        pi0_count = int(np.sum(pi0_histograms[variable.key]))
+        if (
+            data_count < args.fit_min_counts
+            or dvcs_count <= 0
+            or pi0_count <= 0
+        ):
+            insufficient.append(
+                f"{variable.key}: data={data_count}, "
+                f"DVCSGEN={dvcs_count}, AAOGEN={pi0_count}"
+            )
+        # endif
+    # endfor
+
+    if insufficient:
+        raise RuntimeError(
+            f"{period.label} {multiplicity_label}: insufficient support "
+            "for shared template fit:\n  "
+            + "\n  ".join(insufficient)
+        )
+    # endif
+
+    topology = fitter.TopologyConfig(
+        key=f"{period.key}_{multiplicity_key}",
+        label=f"{period.label}, {multiplicity_label}",
+        detector1=-1,
+        detector2=-1,
+    )
+
+    summary = fitter.fit_shared_two_templates(
+        data_histograms=data_histograms,
+        dvcs_histograms=dvcs_histograms,
+        pi0_histograms=pi0_histograms,
+        topology=topology,
+        max_shift_bins=args.fit_max_shift_bins,
+        max_smear_bins=args.fit_max_smear_bins,
+        min_counts=args.fit_min_counts,
+        fraction_variable_branches=[
+            variable.key for variable in DATA_SHAPE_VARIABLES
+        ],
+        shift_prior_bins=args.fit_shift_prior_bins,
+        smear_prior_bins=args.fit_smear_prior_bins,
+        use_nuisance_penalties=(
+            not args.disable_fit_nuisance_penalties
+        ),
+        core_containment=0.90,
+        fraction_containment=0.95,
+        pi0_support_core_containment=0.90,
+        pi0_support_fraction_containment=0.95,
+        pi0_core_calibration=None,
+        outside_overshoot_penalty_weight=(
+            args.fit_outside_overshoot_penalty
+        ),
+        emiss2_mean_order_penalty_weight=(
+            args.fit_emiss2_mean_order_penalty
+        ),
+    )
+
+    if not summary.success:
+        raise RuntimeError(
+            f"{period.label} {multiplicity_label}: shared template fit "
+            f"failed: {summary.message}"
+        )
+    # endif
+
+    return summary, data_histograms
+
+
+def plot_shared_template_fit(
+    path: Path,
+    period_label: str,
+    multiplicity_label: str,
+    summary,
+    data_histograms: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+) -> None:
+    fig, axes = plt.subplots(
+        2,
+        5,
+        figsize=(24, 10),
+        sharex="col",
+        gridspec_kw={"height_ratios": [3.0, 1.2]},
+    )
+
+    for column, variable in enumerate(DATA_SHAPE_VARIABLES):
+        fit_result = summary.variable_results[variable.key]
+        if not fit_result.success:
+            raise RuntimeError(
+                f"{period_label} {multiplicity_label} "
+                f"{variable.key}: variable fit failed: "
+                f"{fit_result.message}"
+            )
+        # endif
+
+        top = axes[0, column]
+        bottom = axes[1, column]
+
+        data = np.asarray(
+            data_histograms[variable.key],
+            dtype=float,
+        )
+        edges = np.linspace(
+            variable.low,
+            variable.high,
+            variable.bins + 1,
+        )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+
+        model = np.asarray(
+            fit_result.model_counts,
+            dtype=float,
+        )
+        dvcs_component = np.asarray(
+            fit_result.dvcs_component_counts,
+            dtype=float,
+        )
+        pi0_component = np.asarray(
+            fit_result.pi0_component_counts,
+            dtype=float,
+        )
+
+        top.errorbar(
+            centers,
+            data,
+            yerr=np.sqrt(np.maximum(data, 1.0)),
+            fmt="o",
+            markersize=2.8,
+            linewidth=0.8,
+            capsize=1.5,
+            label="Data",
+        )
+        top.step(
+            centers,
+            model,
+            where="mid",
+            linewidth=1.8,
+            label="Total fit",
+        )
+        top.step(
+            centers,
+            dvcs_component,
+            where="mid",
+            linewidth=1.3,
+            linestyle="--",
+            label="Morphed DVCSGEN",
+        )
+        top.step(
+            centers,
+            pi0_component,
+            where="mid",
+            linewidth=1.3,
+            linestyle=":",
+            label=r"Morphed AAOGEN $\pi^0$",
+        )
+        top.set_ylabel("Entries / bin")
+        top.set_title(variable.label)
+        top.grid(alpha=0.25)
+        top.legend(fontsize=7)
+
+        ratio = np.full_like(data, np.nan, dtype=float)
+        ratio_error = np.full_like(data, np.nan, dtype=float)
+        valid = model > 0.0
+        ratio[valid] = data[valid] / model[valid]
+        ratio_error[valid] = (
+            np.sqrt(np.maximum(data[valid], 1.0))
+            / model[valid]
+        )
+
+        bottom.errorbar(
+            centers[valid],
+            ratio[valid],
+            yerr=ratio_error[valid],
+            fmt="o",
+            markersize=2.5,
+            linewidth=0.7,
+            capsize=1.2,
+        )
+        bottom.axhline(1.0, linewidth=1.0)
+        bottom.set_ylim(0.0, 2.0)
+        bottom.set_xlabel(variable.label)
+        bottom.set_ylabel("Data / fit")
+        bottom.grid(alpha=0.25)
+
+        if args.shape_log_y:
+            top.set_yscale("log")
+        # endif
+    # endfor
+
+    fig.suptitle(
+        f"{period_label}: {multiplicity_label} shared morphed-template fit\n"
+        rf"$f_{{\pi^0}}={summary.f_pi0:.4f}"
+        rf"\pm{summary.f_pi0_err:.4f}$, "
+        f"deviance/ndf="
+        f"{summary.deviance:.1f}/{summary.ndf}"
+        + (
+            f"={summary.deviance / summary.ndf:.2f}"
+            if summary.ndf > 0
+            else ""
+        )
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.savefig(path, dpi=args.fit_dpi)
+    plt.close(fig)
+
+
+def flatten_shared_fit_row(
+    period: PeriodConfig,
+    multiplicity_key: str,
+    multiplicity_label: str,
+    summary,
+) -> Dict[str, object]:
+    row: Dict[str, object] = {
+        "period": period.key,
+        "period_label": period.label,
+        "multiplicity": multiplicity_key,
+        "multiplicity_label": multiplicity_label,
+        "fit_success": bool(summary.success),
+        "fit_message": str(summary.message),
+        "f_pi0": float(summary.f_pi0),
+        "f_pi0_error": float(summary.f_pi0_err),
+        "deviance": float(summary.deviance),
+        "ndf": int(summary.ndf),
+        "deviance_per_ndf": (
+            float(summary.deviance) / int(summary.ndf)
+            if int(summary.ndf) > 0
+            else math.nan
+        ),
+    }
+
+    for variable in DATA_SHAPE_VARIABLES:
+        result = summary.variable_results[variable.key]
+        prefix = variable.key
+        for field in (
+            "shift",
+            "shift_err",
+            "sigma_add",
+            "sigma_add_err",
+            "sigma_right",
+            "sigma_right_err",
+            "pi0_shift",
+            "pi0_shift_err",
+            "pi0_sigma_add",
+            "pi0_sigma_add_err",
+            "pi0_sigma_right",
+            "pi0_sigma_right_err",
+            "deviance",
+            "ndf",
+            "morph_label",
+            "full_range_model_to_data",
+        ):
+            row[f"{prefix}_{field}"] = getattr(result, field)
+        # endfor
+    # endfor
+
+    return row
+
+
+def plot_all_period_fitted_pi0_fractions(
+    path: Path,
+    rows: Sequence[Mapping[str, object]],
+) -> None:
+    period_labels = [period.label for period in PERIODS]
+    x = np.arange(len(period_labels), dtype=float)
+    offsets = {
+        "one_photon": -0.08,
+        "two_photon": 0.08,
+    }
+    display_labels = {
+        "one_photon": "One-photon events",
+        "two_photon": "Two-photon events",
+    }
+
+    fig, axis = plt.subplots(figsize=(12, 7))
+
+    for multiplicity_key in ("one_photon", "two_photon"):
+        selected = []
+        for period in PERIODS:
+            match = next(
+                (
+                    row for row in rows
+                    if row["period"] == period.key
+                    and row["multiplicity"] == multiplicity_key
+                    and bool(row["fit_success"])
+                ),
+                None,
+            )
+            selected.append(match)
+        # endfor
+
+        values = np.asarray(
+            [
+                row["f_pi0"] if row is not None else math.nan
+                for row in selected
+            ],
+            dtype=float,
+        )
+        errors = np.asarray(
+            [
+                row["f_pi0_error"] if row is not None else math.nan
+                for row in selected
+            ],
+            dtype=float,
+        )
+
+        axis.errorbar(
+            x + offsets[multiplicity_key],
+            values,
+            yerr=errors,
+            fmt="o",
+            capsize=3,
+            label=display_labels[multiplicity_key],
+        )
+    # endfor
+
+    axis.set_xticks(x, period_labels, rotation=20, ha="right")
+    axis.set_ylabel(r"Fitted $\pi^0$ fraction")
+    axis.set_ylim(0.0, 1.0)
+    axis.grid(alpha=0.25)
+    axis.legend()
+    axis.set_title(
+        "Shared five-projection morphed-template fits"
+    )
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def write_template_fit_outputs(
+    fit_dir: Path,
+    fit_rows: Sequence[Mapping[str, object]],
+    fit_payloads: Mapping[str, object],
+) -> None:
+    fit_dir.mkdir(parents=True, exist_ok=True)
+
+    if fit_rows:
+        fieldnames = list(fit_rows[0].keys())
+        with open(
+            fit_dir / "template_fit_results.csv",
+            "w",
+            newline="",
+            encoding="utf-8",
+        ) as handle:
+            writer = csv.DictWriter(
+                handle,
+                fieldnames=fieldnames,
+            )
+            writer.writeheader()
+            writer.writerows(fit_rows)
+        # endwith
+    # endif
+
+    with open(
+        fit_dir / "template_fit_results.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            {
+                "fit_model": {
+                    "shared_fraction": True,
+                    "fraction_variables": [
+                        variable.key
+                        for variable in DATA_SHAPE_VARIABLES
+                    ],
+                    "templates": [
+                        "DVCSGEN",
+                        "AAOGEN-as-epgamma pi0",
+                    ],
+                    "data_population": "after_cuts",
+                    "multiplicity_categories": [
+                        "one_photon",
+                        "two_photon",
+                    ],
+                    "projection_likelihood_note": (
+                        "The five one-dimensional projections contain the "
+                        "same events and are combined as a composite "
+                        "likelihood; projection correlations are not included "
+                        "in the curvature uncertainty."
+                    ),
+                },
+                "rows": list(fit_rows),
+                "fits": fit_payloads,
+            },
+            handle,
+            indent=2,
+        )
+    # endwith
+
+    if fit_rows:
+        plot_all_period_fitted_pi0_fractions(
+            fit_dir / "all_periods_fitted_pi0_fraction.png",
+            fit_rows,
+        )
+    # endif
+
+
+
 def run_data_shape_stage(
     periods: Sequence[PeriodConfig],
     args: argparse.Namespace,
@@ -4051,6 +4797,9 @@ def run_data_shape_stage(
 
     multiplicity_rows: List[Dict[str, object]] = []
     audit: Dict[str, object] = {}
+    fit_rows: List[Dict[str, object]] = []
+    fit_payloads: Dict[str, object] = {}
+    fit_dir = data_root / "template_fits"
 
     for period in periods:
         sample_payloads = results[period.key]
@@ -4092,11 +4841,89 @@ def run_data_shape_stage(
             args,
         )
 
+        period_fit_payload: Dict[str, object] = {}
+        if not args.skip_data_template_fits:
+            fit_categories = (
+                (
+                    "one_photon",
+                    "exactly one reconstructed-photon entry",
+                ),
+                (
+                    "two_photon",
+                    "exactly two reconstructed-photon entries",
+                ),
+            )
+
+            for multiplicity_key, multiplicity_label in fit_categories:
+                try:
+                    summary, data_histograms = (
+                        run_one_shared_template_fit(
+                            period,
+                            multiplicity_key,
+                            multiplicity_label,
+                            sample_payloads,
+                            args,
+                        )
+                    )
+
+                    fit_plot_path = (
+                        fit_dir
+                        / f"{period.key}_{multiplicity_key}"
+                        "_template_fit.png"
+                    )
+                    plot_shared_template_fit(
+                        fit_plot_path,
+                        period.label,
+                        multiplicity_label,
+                        summary,
+                        data_histograms,
+                        args,
+                    )
+
+                    fit_row = flatten_shared_fit_row(
+                        period,
+                        multiplicity_key,
+                        multiplicity_label,
+                        summary,
+                    )
+                    fit_rows.append(fit_row)
+                    period_fit_payload[multiplicity_key] = {
+                        "plot": str(fit_plot_path),
+                        **shared_fit_to_dict(summary),
+                    }
+
+                    log(
+                        f"{period.label} {multiplicity_label}: "
+                        f"f_pi0={summary.f_pi0:.6f} +/- "
+                        f"{summary.f_pi0_err:.6f}, "
+                        f"deviance/ndf={summary.deviance:.2f}/"
+                        f"{summary.ndf}"
+                    )
+                except Exception as exc:
+                    failure = {
+                        "success": False,
+                        "message": str(exc),
+                    }
+                    period_fit_payload[multiplicity_key] = failure
+                    if not args.allow_data_fit_failures:
+                        raise
+                    # endif
+                    log(
+                        f"WARNING: {period.label} {multiplicity_label} "
+                        f"template fit failed: {exc}"
+                    )
+                # endtry
+            # endfor
+        # endif
+
+        fit_payloads[period.key] = period_fit_payload
+
         period_audit: Dict[str, object] = {
             "plots": {
                 "one_photon": str(one_photon_plot_path),
                 "two_photon": str(two_photon_plot_path),
             },
+            "template_fits": period_fit_payload,
             "samples": {},
         }
         for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
@@ -4149,6 +4976,14 @@ def run_data_shape_stage(
         multiplicity_rows,
     )
 
+    if not args.skip_data_template_fits:
+        write_template_fit_outputs(
+            fit_dir,
+            fit_rows,
+            fit_payloads,
+        )
+    # endif
+
     with open(
         data_root / "shape_comparison_audit.json",
         "w",
@@ -4174,6 +5009,8 @@ def run_data_shape_stage(
     return {
         "periods": audit,
         "photon_multiplicity_rows": multiplicity_rows,
+        "template_fit_rows": fit_rows,
+        "template_fit_payloads": fit_payloads,
     }
 
 
@@ -4480,6 +5317,37 @@ def main() -> int:
         min(int(args.workers), MAX_WORKERS),
     )
 
+    fitter_preflight: Dict[str, object] = {
+        "enabled": not args.skip_data_template_fits,
+    }
+    if not args.skip_data_template_fits:
+        fitter = load_exclusivity_fitter(
+            args.exclusivity_fitter_script
+        )
+        fitter_preflight.update(
+            {
+                "resolved_path": str(
+                    Path(fitter.__file__).resolve()
+                ),
+                "fit_signature": str(
+                    inspect.signature(
+                        fitter.fit_shared_two_templates
+                    )
+                ),
+                "variables": [
+                    {
+                        "branch": variable.branch,
+                        "label": variable.label,
+                        "bins": variable.bins,
+                        "xmin": variable.xmin,
+                        "xmax": variable.xmax,
+                    }
+                    for variable in fitter.VARIABLES
+                ],
+            }
+        )
+    # endif
+
     manifest = {
         "script": Path(__file__).name,
         "mode": (
@@ -4488,6 +5356,7 @@ def main() -> int:
         ),
         "created_unix_time": time.time(),
         "arguments": vars(args),
+        "fitter_preflight": fitter_preflight,
         "periods": preflight_enabled_stages(periods, args),
     }
     with open(
