@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v38_template_fit_directory_fix.py
+derive_photon_efficiency_scale_factors_v39_advanced_component_morph_fits.py
 
 Stepwise photon-efficiency study.
 
@@ -9,59 +9,72 @@ one reconstructed-photon entry and events represented by exactly two
 reconstructed-photon entries. Events represented by three or more photon
 entries are rejected in full.
 
-For each run period and accepted multiplicity, the after-cuts data
-distributions are fitted simultaneously as a mixture of:
+For each run period and accepted multiplicity, the five after-cuts data
+projections are fitted to DVCSGEN and AAOGEN-as-epgamma templates. The fit now
+uses variable-specific response models rather than one generic template
+translation and Gaussian broadening.
 
-    DVCSGEN epgamma MC
-    AAOGEN-as-epgamma pi0 background MC
+Fit architecture
+----------------
 
-using the validated shared two-template morphing fitter from
-plot_exclusivity_data_dvcs_pi0_mc.py.
+1. Each projection is first fitted independently, including an independent
+   pi0 fraction. These fits diagnose whether the five variables prefer
+   compatible compositions.
 
-The five one-dimensional projections fitted simultaneously are:
+2. A shared-fraction composite fit is then performed. A single pi0 fraction is
+   common to all five projections. Variable-specific nuisance parameters are
+   reoptimized conditionally on the shared fraction through coordinate
+   minimization.
 
-    Delta_phi
-    theta_gamma_gamma
-    pTmiss
-    Emiss2
-    Mx2_2
+3. The five projections are marginals of the same event sample. Their summed
+   Poisson deviances form a composite likelihood. The reported curvature
+   uncertainty does not include correlations among the projections.
 
-A single pi0 fraction is shared by all five projections. Each projection has
-independent DVCSGEN and AAOGEN shape-nuisance parameters.
+Variable-specific template models
+---------------------------------
 
-Morphing model:
+Delta_phi:
+  * DVCSGEN: one additive shift and one symmetric Gaussian broadening.
+  * AAOGEN: the raw template is split at pi into left and right lobes.
+    The lobes shift and broaden independently. Their relative integral may
+    vary with a constrained logit nuisance. This preserves the two side-peak
+    structures instead of washing them into one central peak.
 
-  * Delta_phi, Emiss2, and Mx2_2:
-      additive translation plus symmetric Gaussian broadening;
-  * theta_gamma_gamma and pTmiss:
-      translation and Gaussian broadening in log(x + epsilon), preserving the
-      physical lower boundary;
-  * DVCSGEN and AAOGEN receive separate shift and broadening parameters;
-  * Gaussian nuisance penalties regularize large shifts and broadenings;
-  * the Emiss2 and Mx2_2 morphed DVCSGEN means are required to remain below
-    the corresponding AAOGEN means.
+theta_gamma_gamma:
+  * Both DVCSGEN and AAOGEN are split into two reconstruction components.
+    The divider is found from the valley between the two strongest smoothed
+    peaks, with a robust fallback when two peaks are not resolved.
+  * Each component shifts and broadens independently in log(theta + epsilon).
+    The relative component weight is constrained near the raw-MC value.
+  * One-photon and two-photon samples are fitted independently and therefore
+    have independent component dividers and nuisance parameters.
 
-The mixture is fitted to the raw histogram counts with a binned Poisson
-deviance. Each template is normalized internally, so the fit determines the
-composition of the selected data population rather than an absolute MC
-normalization.
+pTmiss:
+  * An affine mapping is applied in log(pTmiss + epsilon), allowing both a
+    location shift and a stretch/compression.
+  * Independent lower-side and upper-side Gaussian broadenings are allowed.
 
-The five projections are marginals of the same event sample. Their combined
-likelihood is therefore a composite likelihood rather than a statistically
-independent five-dimensional likelihood. The fitted fraction is meaningful as
-a common shape-composition estimator, while its curvature uncertainty does not
-include correlations among the five projections.
+Emiss2 and Mx2_2:
+  * An affine mapping x' = pivot + scale*(x-pivot) + shift is allowed.
+  * Independent lower-side and upper-side Gaussian broadenings are allowed.
+  * The morphed DVCSGEN mean is constrained to remain below the morphed
+    AAOGEN mean.
 
-Data products are written under:
+All nuisance parameters are regularized around the raw templates. The fit
+plots show thin raw-template outlines normalized to the fitted component
+yields, together with thicker morphed components and the total fit.
 
-  output/photon_efficiency_study/data/
-      shape_comparison/
-      template_fits/
-          <period>_one_photon_template_fit.png
-          <period>_two_photon_template_fit.png
-          template_fit_results.csv
-          template_fit_results.json
-          all_periods_fitted_pi0_fraction.png
+Outputs
+-------
+
+  output/photon_efficiency_study/data/template_fits/
+      <period>_one_photon_template_fit.png
+      <period>_two_photon_template_fit.png
+      <period>_one_photon_fraction_consistency.png
+      <period>_two_photon_fraction_consistency.png
+      template_fit_results.csv
+      template_fit_results.json
+      all_periods_fitted_pi0_fraction.png
 
 The completed AAOGEN MC photon-efficiency machinery remains under:
 
@@ -74,8 +87,6 @@ and can be rerun with --run-mc-efficiency.
 from __future__ import annotations
 
 import argparse
-import importlib.util
-import inspect
 import concurrent.futures
 import csv
 import json
@@ -95,6 +106,9 @@ import matplotlib
 matplotlib.use("Agg", force=True)
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.ndimage import gaussian_filter1d
+from scipy.optimize import minimize, minimize_scalar
+from scipy.signal import find_peaks
 
 try:
     import uproot
@@ -2593,76 +2607,95 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-data-template-fits",
         action="store_true",
-        help="Skip the shared morphed DVCSGEN+AAOGEN fits.",
+        help="Skip the advanced DVCSGEN+AAOGEN data-template fits.",
     )
     parser.add_argument(
         "--allow-data-fit-failures",
         action="store_true",
         help=(
-            "Retain successful categories and serialize failed categories "
-            "instead of aborting the run."
+            "Serialize failed categories and continue instead of aborting "
+            "the complete run."
         ),
-    )
-    parser.add_argument(
-        "--exclusivity-fitter-script",
-        default=str(
-            Path(__file__).resolve().parent.parent
-            / "plot_exclusivity_data_dvcs_pi0_mc.py"
-        ),
-        help=(
-            "Path to the validated exclusivity template-morphing script. "
-            "The parent dvcs_cross_section directory is used by default."
-        ),
-    )
-    parser.add_argument(
-        "--fit-max-shift-bins",
-        type=float,
-        default=12.0,
-        help="Maximum absolute additive shift in histogram bins.",
-    )
-    parser.add_argument(
-        "--fit-max-smear-bins",
-        type=float,
-        default=20.0,
-        help="Maximum additional Gaussian broadening in histogram bins.",
     )
     parser.add_argument(
         "--fit-min-counts",
         type=int,
         default=100,
-        help="Minimum in-range data count required in every active projection.",
+        help="Minimum in-range data count required in every projection.",
+    )
+    parser.add_argument(
+        "--fit-max-shift-bins",
+        type=float,
+        default=12.0,
+        help="Maximum absolute component shift in transformed histogram bins.",
+    )
+    parser.add_argument(
+        "--fit-max-smear-bins",
+        type=float,
+        default=20.0,
+        help="Maximum additional Gaussian broadening in bins.",
+    )
+    parser.add_argument(
+        "--fit-max-log-stretch",
+        type=float,
+        default=0.45,
+        help=(
+            "Maximum absolute logarithm of the affine scale factor. "
+            "A value of 0.45 permits scales from exp(-0.45) to exp(0.45)."
+        ),
     )
     parser.add_argument(
         "--fit-shift-prior-bins",
         type=float,
         default=4.0,
-        help="Gaussian additive-shift prior width in histogram bins.",
+        help="Gaussian prior width for component shifts in bins.",
     )
     parser.add_argument(
         "--fit-smear-prior-bins",
         type=float,
         default=8.0,
-        help="Half-Gaussian broadening-prior width in histogram bins.",
+        help="Half-Gaussian prior width for additional broadenings in bins.",
+    )
+    parser.add_argument(
+        "--fit-log-stretch-prior",
+        type=float,
+        default=0.18,
+        help="Gaussian prior width for the logarithmic affine scale.",
+    )
+    parser.add_argument(
+        "--fit-component-weight-prior",
+        type=float,
+        default=0.55,
+        help=(
+            "Gaussian prior width for the component-weight logit change in "
+            "the two-component Delta_phi and theta_gamma_gamma models."
+        ),
+    )
+    parser.add_argument(
+        "--fit-mean-order-penalty",
+        type=float,
+        default=1.0e6,
+        help=(
+            "Quadratic penalty coefficient when the morphed DVCSGEN mean "
+            "exceeds the morphed AAOGEN mean for Emiss2 or Mx2_2."
+        ),
+    )
+    parser.add_argument(
+        "--fit-coordinate-iterations",
+        type=int,
+        default=5,
+        help="Maximum shared-fraction coordinate-minimization iterations.",
+    )
+    parser.add_argument(
+        "--fit-independent-multistarts",
+        type=int,
+        default=4,
+        help="Number of independent-fraction starting points per variable.",
     )
     parser.add_argument(
         "--disable-fit-nuisance-penalties",
         action="store_true",
-        help="Disable shift and broadening nuisance penalties.",
-    )
-    parser.add_argument(
-        "--fit-outside-overshoot-penalty",
-        type=float,
-        default=0.25,
-        help="One-sided model-overshoot penalty outside active support.",
-    )
-    parser.add_argument(
-        "--fit-emiss2-mean-order-penalty",
-        type=float,
-        default=25.0,
-        help=(
-            "Compatibility argument passed to the validated fitter. The "
-            "current fitter applies hard mean ordering for Emiss2 and Mx2_2."
-        ),
+        help="Disable all template-morph nuisance penalties.",
     )
     parser.add_argument(
         "--fit-dpi",
@@ -4069,138 +4102,1052 @@ def write_photon_multiplicity_outputs(
 
 
 
-_EXCLUSIVITY_FITTER_MODULE = None
+@dataclass
+class AdvancedVariableFit:
+    success: bool
+    message: str
+    variable: str
+    model_name: str
+    f_pi0: float
+    f_pi0_err: float
+    independent_f_pi0: float
+    independent_f_pi0_err: float
+    deviance: float
+    ndf: int
+    nuisance_count: int
+    model_counts: np.ndarray
+    dvcs_component_counts: np.ndarray
+    pi0_component_counts: np.ndarray
+    raw_dvcs_component_counts: np.ndarray
+    raw_pi0_component_counts: np.ndarray
+    morphed_dvcs_probability: np.ndarray
+    morphed_pi0_probability: np.ndarray
+    raw_dvcs_probability: np.ndarray
+    raw_pi0_probability: np.ndarray
+    dvcs_nuisance: Dict[str, float]
+    pi0_nuisance: Dict[str, float]
+    divider_dvcs: float
+    divider_pi0: float
+    fit_total: float
+    data_total: float
 
 
-def resolve_exclusivity_fitter_path(
-    configured_path: str,
-) -> Path:
-    requested = Path(configured_path).expanduser()
-    candidates = (
-        requested,
-        Path(__file__).resolve().parent.parent
-        / "plot_exclusivity_data_dvcs_pi0_mc.py",
-        Path(__file__).resolve().parent
-        / "plot_exclusivity_data_dvcs_pi0_mc.py",
+@dataclass
+class AdvancedSharedFit:
+    success: bool
+    message: str
+    f_pi0: float
+    f_pi0_err: float
+    deviance: float
+    ndf: int
+    variable_results: Dict[str, AdvancedVariableFit]
+    coordinate_iterations: int
+
+
+def normalized_probability(counts: np.ndarray) -> np.ndarray:
+    values = np.asarray(counts, dtype=float)
+    values = np.clip(values, 0.0, None)
+    total = float(np.sum(values))
+    if total <= 0.0:
+        return np.zeros_like(values, dtype=float)
+    # endif
+    return values / total
+
+
+def poisson_deviance(
+    observed: np.ndarray,
+    expected: np.ndarray,
+) -> float:
+    observed = np.asarray(observed, dtype=float)
+    expected = np.clip(
+        np.asarray(expected, dtype=float),
+        1.0e-12,
+        None,
+    )
+    term = expected - observed
+    positive = observed > 0.0
+    term[positive] += (
+        observed[positive]
+        * np.log(observed[positive] / expected[positive])
+    )
+    return float(2.0 * np.sum(term))
+
+
+def weighted_mean(
+    probability: np.ndarray,
+    centers: np.ndarray,
+) -> float:
+    probability = normalized_probability(probability)
+    if np.sum(probability) <= 0.0:
+        return math.nan
+    # endif
+    return float(np.sum(probability * centers))
+
+
+def deposit_probability(
+    source_probability: np.ndarray,
+    mapped_centers: np.ndarray,
+    output_centers: np.ndarray,
+) -> np.ndarray:
+    """
+    Deposit probability linearly on the output-bin centers.
+
+    Probability mapped outside the configured plotting range is accumulated
+    into the nearest edge bin. This preserves template normalization.
+    """
+    source = normalized_probability(source_probability)
+    output = np.zeros_like(output_centers, dtype=float)
+
+    if source.size == 0:
+        return output
+    # endif
+
+    indices = np.searchsorted(output_centers, mapped_centers)
+    indices = np.clip(indices, 1, output_centers.size - 1)
+    left = indices - 1
+    right = indices
+
+    x_left = output_centers[left]
+    x_right = output_centers[right]
+    denominator = np.maximum(x_right - x_left, 1.0e-12)
+    right_weight = np.clip(
+        (mapped_centers - x_left) / denominator,
+        0.0,
+        1.0,
+    )
+    left_weight = 1.0 - right_weight
+
+    below = mapped_centers <= output_centers[0]
+    above = mapped_centers >= output_centers[-1]
+    left[below] = 0
+    right[below] = 0
+    left_weight[below] = 1.0
+    right_weight[below] = 0.0
+    left[above] = output_centers.size - 1
+    right[above] = output_centers.size - 1
+    left_weight[above] = 1.0
+    right_weight[above] = 0.0
+
+    np.add.at(output, left, source * left_weight)
+    np.add.at(output, right, source * right_weight)
+    return normalized_probability(output)
+
+
+def asymmetric_gaussian_broadening(
+    probability: np.ndarray,
+    sigma_left_bins: float,
+    sigma_right_bins: float,
+) -> np.ndarray:
+    probability = normalized_probability(probability)
+    if probability.size == 0:
+        return probability
+    # endif
+
+    mode_index = int(np.argmax(probability))
+    left_component = probability.copy()
+    right_component = probability.copy()
+    left_component[mode_index + 1:] = 0.0
+    right_component[:mode_index + 1] = 0.0
+
+    if sigma_left_bins > 1.0e-8:
+        left_component = gaussian_filter1d(
+            left_component,
+            sigma=float(sigma_left_bins),
+            mode="constant",
+            cval=0.0,
+            truncate=4.0,
+        )
+    # endif
+    if sigma_right_bins > 1.0e-8:
+        right_component = gaussian_filter1d(
+            right_component,
+            sigma=float(sigma_right_bins),
+            mode="constant",
+            cval=0.0,
+            truncate=4.0,
+        )
+    # endif
+
+    return normalized_probability(left_component + right_component)
+
+
+def affine_morph_probability(
+    raw_probability: np.ndarray,
+    centers: np.ndarray,
+    shift_bins: float,
+    log_scale: float,
+    sigma_left_bins: float,
+    sigma_right_bins: float,
+    use_log_coordinate: bool,
+) -> np.ndarray:
+    raw = normalized_probability(raw_probability)
+    if np.sum(raw) <= 0.0:
+        return raw
+    # endif
+
+    if use_log_coordinate:
+        positive_widths = np.diff(centers)
+        epsilon = max(
+            0.5 * float(np.median(positive_widths)),
+            1.0e-6,
+        )
+        coordinate = np.log(np.maximum(centers + epsilon, epsilon))
+        coordinate_step = float(np.median(np.diff(coordinate)))
+        pivot = float(np.sum(raw * coordinate))
+        mapped_coordinate = (
+            pivot
+            + math.exp(float(log_scale)) * (coordinate - pivot)
+            + float(shift_bins) * coordinate_step
+        )
+        mapped_centers = np.exp(mapped_coordinate) - epsilon
+    else:
+        bin_width = float(np.median(np.diff(centers)))
+        pivot = float(np.sum(raw * centers))
+        mapped_centers = (
+            pivot
+            + math.exp(float(log_scale)) * (centers - pivot)
+            + float(shift_bins) * bin_width
+        )
+    # endif
+
+    deposited = deposit_probability(
+        raw,
+        mapped_centers,
+        centers,
+    )
+    return asymmetric_gaussian_broadening(
+        deposited,
+        sigma_left_bins,
+        sigma_right_bins,
     )
 
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved.exists():
-            return resolved
+
+def simple_shift_smear_probability(
+    raw_probability: np.ndarray,
+    centers: np.ndarray,
+    shift_bins: float,
+    sigma_bins: float,
+    use_log_coordinate: bool,
+) -> np.ndarray:
+    return affine_morph_probability(
+        raw_probability,
+        centers,
+        shift_bins,
+        0.0,
+        sigma_bins,
+        sigma_bins,
+        use_log_coordinate,
+    )
+
+
+def logit(value: float) -> float:
+    value = float(np.clip(value, 1.0e-6, 1.0 - 1.0e-6))
+    return math.log(value / (1.0 - value))
+
+
+def logistic(value: float) -> float:
+    if value >= 0.0:
+        exponential = math.exp(-value)
+        return 1.0 / (1.0 + exponential)
+    # endif
+    exponential = math.exp(value)
+    return exponential / (1.0 + exponential)
+
+
+def detect_two_component_divider(
+    probability: np.ndarray,
+    centers: np.ndarray,
+    variable_key: str,
+) -> Tuple[int, float]:
+    """
+    Find the valley between the two strongest smoothed template peaks.
+
+    Delta_phi is always divided at pi. theta_gamma_gamma uses peak finding,
+    with a weighted-quantile fallback when the second structure is weak.
+    """
+    probability = normalized_probability(probability)
+
+    if variable_key == "Delta_phi":
+        divider_index = int(np.searchsorted(centers, math.pi))
+        divider_index = int(
+            np.clip(divider_index, 1, centers.size - 2)
+        )
+        return divider_index, float(centers[divider_index])
+    # endif
+
+    smoothed = gaussian_filter1d(
+        probability,
+        sigma=1.5,
+        mode="nearest",
+    )
+    prominence = max(
+        0.015 * float(np.max(smoothed)),
+        1.0e-8,
+    )
+    peaks, properties = find_peaks(
+        smoothed,
+        prominence=prominence,
+        distance=max(3, centers.size // 20),
+    )
+
+    if peaks.size >= 2:
+        peak_strength = smoothed[peaks]
+        strongest = peaks[
+            np.argsort(peak_strength)[-2:]
+        ]
+        left_peak, right_peak = sorted(
+            int(index) for index in strongest
+        )
+        if right_peak - left_peak >= 2:
+            valley_relative = int(
+                np.argmin(smoothed[left_peak:right_peak + 1])
+            )
+            divider_index = left_peak + valley_relative
+            divider_index = int(
+                np.clip(divider_index, 1, centers.size - 2)
+            )
+            return divider_index, float(centers[divider_index])
+        # endif
+    # endif
+
+    cumulative = np.cumsum(probability)
+    divider_index = int(
+        np.searchsorted(cumulative, 0.68)
+    )
+    divider_index = int(
+        np.clip(divider_index, 1, centers.size - 2)
+    )
+    return divider_index, float(centers[divider_index])
+
+
+def two_component_morph_probability(
+    raw_probability: np.ndarray,
+    centers: np.ndarray,
+    divider_index: int,
+    parameters: np.ndarray,
+    use_log_coordinate: bool,
+) -> Tuple[np.ndarray, Dict[str, float]]:
+    """
+    Morph two raw-template components independently.
+
+    parameters:
+      left shift, left smear,
+      right shift, right smear,
+      constrained component-weight logit change.
+    """
+    raw = normalized_probability(raw_probability)
+    left_raw = raw.copy()
+    right_raw = raw.copy()
+    left_raw[divider_index + 1:] = 0.0
+    right_raw[:divider_index + 1] = 0.0
+
+    raw_left_weight = float(np.sum(left_raw))
+    raw_right_weight = float(np.sum(right_raw))
+    if raw_left_weight <= 0.0 or raw_right_weight <= 0.0:
+        fallback = simple_shift_smear_probability(
+            raw,
+            centers,
+            float(parameters[0]),
+            float(parameters[1]),
+            use_log_coordinate,
+        )
+        return fallback, {
+            "raw_left_weight": raw_left_weight,
+            "fitted_left_weight": raw_left_weight,
+        }
+    # endif
+
+    left_probability = simple_shift_smear_probability(
+        left_raw,
+        centers,
+        float(parameters[0]),
+        float(parameters[1]),
+        use_log_coordinate,
+    )
+    right_probability = simple_shift_smear_probability(
+        right_raw,
+        centers,
+        float(parameters[2]),
+        float(parameters[3]),
+        use_log_coordinate,
+    )
+
+    fitted_left_weight = logistic(
+        logit(raw_left_weight) + float(parameters[4])
+    )
+    combined = (
+        fitted_left_weight * left_probability
+        + (1.0 - fitted_left_weight) * right_probability
+    )
+    return normalized_probability(combined), {
+        "raw_left_weight": raw_left_weight,
+        "fitted_left_weight": fitted_left_weight,
+    }
+
+
+def variable_model_spec(variable_key: str) -> Dict[str, str]:
+    if variable_key == "Delta_phi":
+        return {
+            "dvcs": "simple_linear",
+            "pi0": "two_component_linear",
+            "description": (
+                "DVCSGEN shift+smear; AAOGEN independent left/right "
+                "Delta_phi lobes with constrained relative weight"
+            ),
+        }
+    # endif
+    if variable_key == "theta_gamma_gamma":
+        return {
+            "dvcs": "two_component_log",
+            "pi0": "two_component_log",
+            "description": (
+                "Independent low/high reconstruction components in "
+                "log(theta+epsilon)"
+            ),
+        }
+    # endif
+    if variable_key == "pTmiss":
+        return {
+            "dvcs": "affine_log_asymmetric",
+            "pi0": "affine_log_asymmetric",
+            "description": (
+                "Log-space affine location/scale plus asymmetric broadening"
+            ),
+        }
+    # endif
+    if variable_key in ("Emiss2", "Mx2_2"):
+        return {
+            "dvcs": "affine_linear_asymmetric",
+            "pi0": "affine_linear_asymmetric",
+            "description": (
+                "Linear affine location/scale plus asymmetric broadening "
+                "with DVCSGEN/AAOGEN mean ordering"
+            ),
+        }
+    # endif
+    raise KeyError(f"No fit model configured for {variable_key}")
+
+
+def model_parameter_count(model_name: str) -> int:
+    if model_name.startswith("simple_"):
+        return 2
+    # endif
+    if model_name.startswith("two_component_"):
+        return 5
+    # endif
+    if model_name.startswith("affine_"):
+        return 4
+    # endif
+    raise KeyError(f"Unknown model name: {model_name}")
+
+
+def model_initial_parameters(model_name: str) -> np.ndarray:
+    return np.zeros(model_parameter_count(model_name), dtype=float)
+
+
+def model_bounds(
+    model_name: str,
+    args: argparse.Namespace,
+) -> List[Tuple[float, float]]:
+    shift = float(args.fit_max_shift_bins)
+    smear = float(args.fit_max_smear_bins)
+    stretch = float(args.fit_max_log_stretch)
+
+    if model_name.startswith("simple_"):
+        return [(-shift, shift), (0.0, smear)]
+    # endif
+    if model_name.startswith("two_component_"):
+        return [
+            (-shift, shift),
+            (0.0, smear),
+            (-shift, shift),
+            (0.0, smear),
+            (-2.5, 2.5),
+        ]
+    # endif
+    if model_name.startswith("affine_"):
+        return [
+            (-shift, shift),
+            (-stretch, stretch),
+            (0.0, smear),
+            (0.0, smear),
+        ]
+    # endif
+    raise KeyError(f"Unknown model name: {model_name}")
+
+
+def nuisance_penalty(
+    parameters: np.ndarray,
+    model_name: str,
+    args: argparse.Namespace,
+) -> float:
+    if args.disable_fit_nuisance_penalties:
+        return 0.0
+    # endif
+
+    shift_prior = max(float(args.fit_shift_prior_bins), 1.0e-6)
+    smear_prior = max(float(args.fit_smear_prior_bins), 1.0e-6)
+    stretch_prior = max(float(args.fit_log_stretch_prior), 1.0e-6)
+    weight_prior = max(
+        float(args.fit_component_weight_prior),
+        1.0e-6,
+    )
+
+    if model_name.startswith("simple_"):
+        return float(
+            (parameters[0] / shift_prior) ** 2
+            + (parameters[1] / smear_prior) ** 2
+        )
+    # endif
+
+    if model_name.startswith("two_component_"):
+        return float(
+            (parameters[0] / shift_prior) ** 2
+            + (parameters[1] / smear_prior) ** 2
+            + (parameters[2] / shift_prior) ** 2
+            + (parameters[3] / smear_prior) ** 2
+            + (parameters[4] / weight_prior) ** 2
+        )
+    # endif
+
+    if model_name.startswith("affine_"):
+        return float(
+            (parameters[0] / shift_prior) ** 2
+            + (parameters[1] / stretch_prior) ** 2
+            + (parameters[2] / smear_prior) ** 2
+            + (parameters[3] / smear_prior) ** 2
+        )
+    # endif
+
+    raise KeyError(f"Unknown model name: {model_name}")
+
+
+def morph_model_probability(
+    raw_probability: np.ndarray,
+    centers: np.ndarray,
+    model_name: str,
+    parameters: np.ndarray,
+    divider_index: int,
+) -> Tuple[np.ndarray, Dict[str, float]]:
+    if model_name == "simple_linear":
+        return (
+            simple_shift_smear_probability(
+                raw_probability,
+                centers,
+                parameters[0],
+                parameters[1],
+                False,
+            ),
+            {},
+        )
+    # endif
+    if model_name == "simple_log":
+        return (
+            simple_shift_smear_probability(
+                raw_probability,
+                centers,
+                parameters[0],
+                parameters[1],
+                True,
+            ),
+            {},
+        )
+    # endif
+    if model_name == "two_component_linear":
+        return two_component_morph_probability(
+            raw_probability,
+            centers,
+            divider_index,
+            parameters,
+            False,
+        )
+    # endif
+    if model_name == "two_component_log":
+        return two_component_morph_probability(
+            raw_probability,
+            centers,
+            divider_index,
+            parameters,
+            True,
+        )
+    # endif
+    if model_name == "affine_log_asymmetric":
+        return (
+            affine_morph_probability(
+                raw_probability,
+                centers,
+                parameters[0],
+                parameters[1],
+                parameters[2],
+                parameters[3],
+                True,
+            ),
+            {},
+        )
+    # endif
+    if model_name == "affine_linear_asymmetric":
+        return (
+            affine_morph_probability(
+                raw_probability,
+                centers,
+                parameters[0],
+                parameters[1],
+                parameters[2],
+                parameters[3],
+                False,
+            ),
+            {},
+        )
+    # endif
+    raise KeyError(f"Unknown model name: {model_name}")
+
+
+def nuisance_dictionary(
+    model_name: str,
+    parameters: np.ndarray,
+    metadata: Mapping[str, float],
+) -> Dict[str, float]:
+    if model_name.startswith("simple_"):
+        output = {
+            "shift_bins": float(parameters[0]),
+            "smear_bins": float(parameters[1]),
+        }
+    elif model_name.startswith("two_component_"):
+        output = {
+            "left_shift_bins": float(parameters[0]),
+            "left_smear_bins": float(parameters[1]),
+            "right_shift_bins": float(parameters[2]),
+            "right_smear_bins": float(parameters[3]),
+            "component_weight_logit_delta": float(parameters[4]),
+        }
+    elif model_name.startswith("affine_"):
+        output = {
+            "shift_bins": float(parameters[0]),
+            "log_scale": float(parameters[1]),
+            "scale": float(math.exp(parameters[1])),
+            "lower_smear_bins": float(parameters[2]),
+            "upper_smear_bins": float(parameters[3]),
+        }
+    else:
+        raise KeyError(f"Unknown model name: {model_name}")
+    # endif
+
+    output.update(
+        {key: float(value) for key, value in metadata.items()}
+    )
+    return output
+
+
+def prepare_variable_fit_context(
+    variable: FitVariable,
+    data_counts: np.ndarray,
+    dvcs_counts: np.ndarray,
+    pi0_counts: np.ndarray,
+) -> Dict[str, object]:
+    centers = np.linspace(
+        variable.low,
+        variable.high,
+        variable.bins,
+        endpoint=False,
+        dtype=float,
+    )
+    bin_width = (variable.high - variable.low) / variable.bins
+    centers += 0.5 * bin_width
+
+    raw_dvcs = normalized_probability(dvcs_counts)
+    raw_pi0 = normalized_probability(pi0_counts)
+    model_spec = variable_model_spec(variable.key)
+
+    dvcs_divider_index, dvcs_divider_value = (
+        detect_two_component_divider(
+            raw_dvcs,
+            centers,
+            variable.key,
+        )
+        if model_spec["dvcs"].startswith("two_component_")
+        else (max(1, centers.size // 2), math.nan)
+    )
+    pi0_divider_index, pi0_divider_value = (
+        detect_two_component_divider(
+            raw_pi0,
+            centers,
+            variable.key,
+        )
+        if model_spec["pi0"].startswith("two_component_")
+        else (max(1, centers.size // 2), math.nan)
+    )
+
+    return {
+        "variable": variable,
+        "centers": centers,
+        "data": np.asarray(data_counts, dtype=float),
+        "data_total": float(np.sum(data_counts)),
+        "raw_dvcs": raw_dvcs,
+        "raw_pi0": raw_pi0,
+        "dvcs_model": model_spec["dvcs"],
+        "pi0_model": model_spec["pi0"],
+        "model_description": model_spec["description"],
+        "dvcs_divider_index": dvcs_divider_index,
+        "dvcs_divider_value": dvcs_divider_value,
+        "pi0_divider_index": pi0_divider_index,
+        "pi0_divider_value": pi0_divider_value,
+    }
+
+
+def evaluate_variable_model(
+    context: Mapping[str, object],
+    f_pi0: float,
+    dvcs_parameters: np.ndarray,
+    pi0_parameters: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[str, object]:
+    centers = np.asarray(context["centers"], dtype=float)
+    dvcs_probability, dvcs_metadata = morph_model_probability(
+        np.asarray(context["raw_dvcs"], dtype=float),
+        centers,
+        str(context["dvcs_model"]),
+        np.asarray(dvcs_parameters, dtype=float),
+        int(context["dvcs_divider_index"]),
+    )
+    pi0_probability, pi0_metadata = morph_model_probability(
+        np.asarray(context["raw_pi0"], dtype=float),
+        centers,
+        str(context["pi0_model"]),
+        np.asarray(pi0_parameters, dtype=float),
+        int(context["pi0_divider_index"]),
+    )
+
+    data_total = float(context["data_total"])
+    f_pi0 = float(np.clip(f_pi0, 1.0e-6, 1.0 - 1.0e-6))
+    dvcs_component = data_total * (1.0 - f_pi0) * dvcs_probability
+    pi0_component = data_total * f_pi0 * pi0_probability
+    model = dvcs_component + pi0_component
+
+    deviance = poisson_deviance(
+        np.asarray(context["data"], dtype=float),
+        model,
+    )
+    penalty = (
+        nuisance_penalty(
+            dvcs_parameters,
+            str(context["dvcs_model"]),
+            args,
+        )
+        + nuisance_penalty(
+            pi0_parameters,
+            str(context["pi0_model"]),
+            args,
+        )
+    )
+
+    variable_key = str(context["variable"].key)
+    if variable_key in ("Emiss2", "Mx2_2"):
+        dvcs_mean = weighted_mean(dvcs_probability, centers)
+        pi0_mean = weighted_mean(pi0_probability, centers)
+        if (
+            np.isfinite(dvcs_mean)
+            and np.isfinite(pi0_mean)
+            and dvcs_mean >= pi0_mean
+        ):
+            bin_width = float(np.median(np.diff(centers)))
+            violation_bins = (
+                (dvcs_mean - pi0_mean) / max(bin_width, 1.0e-12)
+            )
+            penalty += (
+                float(args.fit_mean_order_penalty)
+                * (1.0 + violation_bins ** 2)
+            )
+        # endif
+    # endif
+
+    return {
+        "objective": float(deviance + penalty),
+        "deviance": float(deviance),
+        "penalty": float(penalty),
+        "dvcs_probability": dvcs_probability,
+        "pi0_probability": pi0_probability,
+        "dvcs_component": dvcs_component,
+        "pi0_component": pi0_component,
+        "model": model,
+        "dvcs_metadata": dvcs_metadata,
+        "pi0_metadata": pi0_metadata,
+    }
+
+
+def optimize_variable_independent_fraction(
+    context: Mapping[str, object],
+    args: argparse.Namespace,
+) -> Dict[str, object]:
+    dvcs_model = str(context["dvcs_model"])
+    pi0_model = str(context["pi0_model"])
+    ndvcs = model_parameter_count(dvcs_model)
+    npi0 = model_parameter_count(pi0_model)
+
+    bounds = (
+        [(1.0e-4, 1.0 - 1.0e-4)]
+        + model_bounds(dvcs_model, args)
+        + model_bounds(pi0_model, args)
+    )
+
+    requested_starts = max(
+        1,
+        int(args.fit_independent_multistarts),
+    )
+    candidate_fractions = np.linspace(
+        0.15,
+        0.95,
+        requested_starts,
+    )
+    best_result = None
+
+    for initial_fraction in candidate_fractions:
+        initial = np.concatenate(
+            [
+                np.asarray([initial_fraction], dtype=float),
+                model_initial_parameters(dvcs_model),
+                model_initial_parameters(pi0_model),
+            ]
+        )
+
+        def objective(parameters: np.ndarray) -> float:
+            return float(
+                evaluate_variable_model(
+                    context,
+                    float(parameters[0]),
+                    parameters[1:1 + ndvcs],
+                    parameters[1 + ndvcs:1 + ndvcs + npi0],
+                    args,
+                )["objective"]
+            )
+
+        result = minimize(
+            objective,
+            initial,
+            method="L-BFGS-B",
+            bounds=bounds,
+            options={
+                "maxiter": 700,
+                "ftol": 1.0e-10,
+                "gtol": 1.0e-6,
+                "maxls": 40,
+            },
+        )
+        if (
+            best_result is None
+            or float(result.fun) < float(best_result.fun)
+        ):
+            best_result = result
         # endif
     # endfor
 
-    attempted = "\n  ".join(
-        str(candidate.resolve()) for candidate in candidates
-    )
-    raise FileNotFoundError(
-        "Validated exclusivity fitter was not found. Tried:\n  "
-        + attempted
-    )
-
-
-def load_exclusivity_fitter(
-    configured_path: str,
-):
-    global _EXCLUSIVITY_FITTER_MODULE
-
-    resolved_path = resolve_exclusivity_fitter_path(configured_path)
-    if (
-        _EXCLUSIVITY_FITTER_MODULE is not None
-        and Path(_EXCLUSIVITY_FITTER_MODULE.__file__).resolve()
-        == resolved_path
-    ):
-        return _EXCLUSIVITY_FITTER_MODULE
+    if best_result is None:
+        raise RuntimeError("Independent variable fit produced no result.")
     # endif
 
-    module_name = (
-        "_photon_efficiency_validated_exclusivity_fitter"
+    parameters = np.asarray(best_result.x, dtype=float)
+    evaluation = evaluate_variable_model(
+        context,
+        float(parameters[0]),
+        parameters[1:1 + ndvcs],
+        parameters[1 + ndvcs:1 + ndvcs + npi0],
+        args,
     )
-    spec = importlib.util.spec_from_file_location(
-        module_name,
-        resolved_path,
+
+    fraction_error = curvature_fraction_error(
+        context,
+        float(parameters[0]),
+        parameters[1:1 + ndvcs],
+        parameters[1 + ndvcs:1 + ndvcs + npi0],
+        args,
     )
-    if spec is None or spec.loader is None:
-        raise ImportError(
-            f"Could not create import specification for {resolved_path}"
+
+    return {
+        "success": bool(best_result.success),
+        "message": str(best_result.message),
+        "f_pi0": float(parameters[0]),
+        "f_pi0_err": fraction_error,
+        "dvcs_parameters": parameters[1:1 + ndvcs].copy(),
+        "pi0_parameters": parameters[
+            1 + ndvcs:1 + ndvcs + npi0
+        ].copy(),
+        "evaluation": evaluation,
+        "optimizer_objective": float(best_result.fun),
+    }
+
+
+def optimize_nuisance_fixed_fraction(
+    context: Mapping[str, object],
+    f_pi0: float,
+    initial_dvcs: np.ndarray,
+    initial_pi0: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[str, object]:
+    dvcs_model = str(context["dvcs_model"])
+    pi0_model = str(context["pi0_model"])
+    ndvcs = model_parameter_count(dvcs_model)
+
+    initial = np.concatenate(
+        [
+            np.asarray(initial_dvcs, dtype=float),
+            np.asarray(initial_pi0, dtype=float),
+        ]
+    )
+    bounds = (
+        model_bounds(dvcs_model, args)
+        + model_bounds(pi0_model, args)
+    )
+
+    def objective(parameters: np.ndarray) -> float:
+        return float(
+            evaluate_variable_model(
+                context,
+                f_pi0,
+                parameters[:ndvcs],
+                parameters[ndvcs:],
+                args,
+            )["objective"]
         )
+
+    result = minimize(
+        objective,
+        initial,
+        method="L-BFGS-B",
+        bounds=bounds,
+        options={
+            "maxiter": 500,
+            "ftol": 1.0e-10,
+            "gtol": 1.0e-6,
+            "maxls": 40,
+        },
+    )
+    parameters = np.asarray(result.x, dtype=float)
+    evaluation = evaluate_variable_model(
+        context,
+        f_pi0,
+        parameters[:ndvcs],
+        parameters[ndvcs:],
+        args,
+    )
+
+    return {
+        "success": bool(result.success),
+        "message": str(result.message),
+        "dvcs_parameters": parameters[:ndvcs].copy(),
+        "pi0_parameters": parameters[ndvcs:].copy(),
+        "evaluation": evaluation,
+    }
+
+
+def curvature_fraction_error(
+    context: Mapping[str, object],
+    f_pi0: float,
+    dvcs_parameters: np.ndarray,
+    pi0_parameters: np.ndarray,
+    args: argparse.Namespace,
+) -> float:
+    step = max(2.0e-4, min(0.01, 0.05 * min(f_pi0, 1.0 - f_pi0)))
+    low = max(1.0e-5, f_pi0 - step)
+    high = min(1.0 - 1.0e-5, f_pi0 + step)
+    if high <= f_pi0 or low >= f_pi0:
+        return math.nan
     # endif
 
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-
-    required_symbols = (
-        "VariableConfig",
-        "TopologyConfig",
-        "FitResult",
-        "SharedFitSummary",
-        "fit_shared_two_templates",
+    center_value = float(
+        evaluate_variable_model(
+            context,
+            f_pi0,
+            dvcs_parameters,
+            pi0_parameters,
+            args,
+        )["objective"]
     )
-    missing = [
-        name for name in required_symbols
-        if not hasattr(module, name)
-    ]
-    if missing:
-        raise AttributeError(
-            f"{resolved_path} is missing required fitter symbols: "
-            + ", ".join(missing)
-        )
+    low_value = float(
+        evaluate_variable_model(
+            context,
+            low,
+            dvcs_parameters,
+            pi0_parameters,
+            args,
+        )["objective"]
+    )
+    high_value = float(
+        evaluate_variable_model(
+            context,
+            high,
+            dvcs_parameters,
+            pi0_parameters,
+            args,
+        )["objective"]
+    )
+
+    effective_step = 0.5 * (high - low)
+    second_derivative = (
+        high_value - 2.0 * center_value + low_value
+    ) / max(effective_step ** 2, 1.0e-12)
+    if second_derivative <= 0.0:
+        return math.nan
     # endif
 
-    signature = inspect.signature(module.fit_shared_two_templates)
-    required_parameters = (
-        "data_histograms",
-        "dvcs_histograms",
-        "pi0_histograms",
-        "topology",
-        "max_shift_bins",
-        "max_smear_bins",
-        "min_counts",
-        "fraction_variable_branches",
-        "shift_prior_bins",
-        "smear_prior_bins",
-        "use_nuisance_penalties",
-        "core_containment",
-        "fraction_containment",
-        "pi0_support_core_containment",
-        "pi0_support_fraction_containment",
-    )
-    absent_parameters = [
-        name for name in required_parameters
-        if name not in signature.parameters
-    ]
-    if absent_parameters:
-        raise TypeError(
-            "Validated fit_shared_two_templates() has an incompatible "
-            "interface. Missing parameters: "
-            + ", ".join(absent_parameters)
+    return float(math.sqrt(2.0 / second_derivative))
+
+
+def shared_fraction_objective(
+    f_pi0: float,
+    contexts: Mapping[str, Mapping[str, object]],
+    states: Mapping[str, Mapping[str, object]],
+    args: argparse.Namespace,
+) -> float:
+    total = 0.0
+    for variable_key, context in contexts.items():
+        state = states[variable_key]
+        total += float(
+            evaluate_variable_model(
+                context,
+                f_pi0,
+                np.asarray(state["dvcs_parameters"], dtype=float),
+                np.asarray(state["pi0_parameters"], dtype=float),
+                args,
+            )["objective"]
         )
+    # endfor
+    return float(total)
+
+
+def shared_fraction_curvature_error(
+    f_pi0: float,
+    contexts: Mapping[str, Mapping[str, object]],
+    states: Mapping[str, Mapping[str, object]],
+    args: argparse.Namespace,
+) -> float:
+    step = max(2.0e-4, min(0.006, 0.04 * min(f_pi0, 1.0 - f_pi0)))
+    low = max(1.0e-5, f_pi0 - step)
+    high = min(1.0 - 1.0e-5, f_pi0 + step)
+    center = shared_fraction_objective(
+        f_pi0,
+        contexts,
+        states,
+        args,
+    )
+    low_value = shared_fraction_objective(
+        low,
+        contexts,
+        states,
+        args,
+    )
+    high_value = shared_fraction_objective(
+        high,
+        contexts,
+        states,
+        args,
+    )
+    effective_step = 0.5 * (high - low)
+    second_derivative = (
+        high_value - 2.0 * center + low_value
+    ) / max(effective_step ** 2, 1.0e-12)
+    if second_derivative <= 0.0:
+        return math.nan
     # endif
-
-    module.VARIABLES = tuple(
-        module.VariableConfig(
-            branch=variable.key,
-            label=variable.label,
-            bins=variable.bins,
-            xmin=variable.low,
-            xmax=variable.high,
-            aliases=(),
-        )
-        for variable in DATA_SHAPE_VARIABLES
-    )
-
-    _EXCLUSIVITY_FITTER_MODULE = module
-    log(
-        "Loaded validated exclusivity template fitter from "
-        f"{resolved_path}"
-    )
-    log(
-        "Validated fitter signature: "
-        f"{signature}"
-    )
-    return module
+    return float(math.sqrt(2.0 / second_derivative))
 
 
 def fit_histogram_inputs(
@@ -4211,9 +5158,7 @@ def fit_histogram_inputs(
     Dict[str, np.ndarray],
     Dict[str, np.ndarray],
 ]:
-    def extract(
-        sample_key: str,
-    ) -> Dict[str, np.ndarray]:
+    def extract(sample_key: str) -> Dict[str, np.ndarray]:
         return {
             variable.key: np.asarray(
                 sample_payloads[sample_key][multiplicity_key][
@@ -4227,83 +5172,13 @@ def fit_histogram_inputs(
     return extract("data"), extract("dvcsgen"), extract("aaogen")
 
 
-def fit_result_to_dict(
-    result,
-) -> Dict[str, object]:
-    scalar_fields = (
-        "success",
-        "message",
-        "f_pi0",
-        "f_pi0_err",
-        "shift",
-        "shift_err",
-        "sigma_add",
-        "sigma_add_err",
-        "sigma_right",
-        "sigma_right_err",
-        "pi0_shift",
-        "pi0_shift_err",
-        "pi0_sigma_add",
-        "pi0_sigma_add_err",
-        "pi0_sigma_right",
-        "pi0_sigma_right_err",
-        "deviance",
-        "ndf",
-        "data_total",
-        "morph_label",
-        "excluded_data_counts",
-        "excluded_model_counts",
-        "excluded_excess_counts",
-        "excluded_excess_fraction",
-        "fit_region_data_counts",
-        "fit_region_model_counts",
-        "fit_region_model_to_data",
-        "fit_region_closure_difference",
-        "full_range_model_counts",
-        "full_range_model_to_data",
-    )
-    return {
-        field: getattr(result, field)
-        for field in scalar_fields
-        if hasattr(result, field)
-    }
-
-
-def shared_fit_to_dict(
-    summary,
-) -> Dict[str, object]:
-    return {
-        "success": bool(summary.success),
-        "message": str(summary.message),
-        "f_pi0": float(summary.f_pi0),
-        "f_pi0_err": float(summary.f_pi0_err),
-        "deviance": float(summary.deviance),
-        "ndf": int(summary.ndf),
-        "deviance_per_ndf": (
-            float(summary.deviance) / int(summary.ndf)
-            if int(summary.ndf) > 0
-            else math.nan
-        ),
-        "fraction_variables": list(summary.fraction_variables),
-        "variables": {
-            variable_key: fit_result_to_dict(result)
-            for variable_key, result in (
-                summary.variable_results or {}
-            ).items()
-        },
-    }
-
-
 def run_one_shared_template_fit(
     period: PeriodConfig,
     multiplicity_key: str,
     multiplicity_label: str,
     sample_payloads: Mapping[str, Mapping[str, object]],
     args: argparse.Namespace,
-):
-    fitter = load_exclusivity_fitter(
-        args.exclusivity_fitter_script
-    )
+) -> Tuple[AdvancedSharedFit, Dict[str, np.ndarray]]:
     data_histograms, dvcs_histograms, pi0_histograms = (
         fit_histogram_inputs(
             sample_payloads,
@@ -4311,7 +5186,9 @@ def run_one_shared_template_fit(
         )
     )
 
-    insufficient = []
+    contexts: Dict[str, Dict[str, object]] = {}
+    independent_states: Dict[str, Dict[str, object]] = {}
+
     for variable in DATA_SHAPE_VARIABLES:
         data_count = int(np.sum(data_histograms[variable.key]))
         dvcs_count = int(np.sum(dvcs_histograms[variable.key]))
@@ -4321,72 +5198,285 @@ def run_one_shared_template_fit(
             or dvcs_count <= 0
             or pi0_count <= 0
         ):
-            insufficient.append(
-                f"{variable.key}: data={data_count}, "
+            raise RuntimeError(
+                f"{period.label} {multiplicity_label} {variable.key}: "
+                f"insufficient fit support: data={data_count}, "
                 f"DVCSGEN={dvcs_count}, AAOGEN={pi0_count}"
             )
         # endif
+
+        context = prepare_variable_fit_context(
+            variable,
+            data_histograms[variable.key],
+            dvcs_histograms[variable.key],
+            pi0_histograms[variable.key],
+        )
+        contexts[variable.key] = context
+        independent_states[variable.key] = (
+            optimize_variable_independent_fraction(
+                context,
+                args,
+            )
+        )
+        log(
+            f"{period.label} {multiplicity_label} "
+            f"{variable.key} independent fit: "
+            f"f_pi0={independent_states[variable.key]['f_pi0']:.5f} "
+            f"+/- {independent_states[variable.key]['f_pi0_err']:.5f}"
+        )
     # endfor
 
-    if insufficient:
-        raise RuntimeError(
-            f"{period.label} {multiplicity_label}: insufficient support "
-            "for shared template fit:\n  "
-            + "\n  ".join(insufficient)
+    weights = []
+    fractions = []
+    for variable_key, state in independent_states.items():
+        error = float(state["f_pi0_err"])
+        weight = (
+            1.0 / error ** 2
+            if np.isfinite(error) and error > 0.0
+            else 1.0
         )
-    # endif
-
-    topology = fitter.TopologyConfig(
-        key=f"{period.key}_{multiplicity_key}",
-        label=f"{period.label}, {multiplicity_label}",
-        detector1=-1,
-        detector2=-1,
+        weights.append(weight)
+        fractions.append(float(state["f_pi0"]))
+    # endfor
+    shared_fraction = float(
+        np.average(fractions, weights=weights)
+    )
+    shared_fraction = float(
+        np.clip(shared_fraction, 1.0e-4, 1.0 - 1.0e-4)
     )
 
-    summary = fitter.fit_shared_two_templates(
-        data_histograms=data_histograms,
-        dvcs_histograms=dvcs_histograms,
-        pi0_histograms=pi0_histograms,
-        topology=topology,
-        max_shift_bins=args.fit_max_shift_bins,
-        max_smear_bins=args.fit_max_smear_bins,
-        min_counts=args.fit_min_counts,
-        fraction_variable_branches=[
-            variable.key for variable in DATA_SHAPE_VARIABLES
-        ],
-        shift_prior_bins=args.fit_shift_prior_bins,
-        smear_prior_bins=args.fit_smear_prior_bins,
-        use_nuisance_penalties=(
-            not args.disable_fit_nuisance_penalties
-        ),
-        core_containment=0.90,
-        fraction_containment=0.95,
-        pi0_support_core_containment=0.90,
-        pi0_support_fraction_containment=0.95,
-        pi0_core_calibration=None,
-        outside_overshoot_penalty_weight=(
-            args.fit_outside_overshoot_penalty
-        ),
-        emiss2_mean_order_penalty_weight=(
-            args.fit_emiss2_mean_order_penalty
-        ),
+    states: Dict[str, Dict[str, object]] = {
+        variable_key: {
+            "dvcs_parameters": np.asarray(
+                state["dvcs_parameters"],
+                dtype=float,
+            ).copy(),
+            "pi0_parameters": np.asarray(
+                state["pi0_parameters"],
+                dtype=float,
+            ).copy(),
+        }
+        for variable_key, state in independent_states.items()
+    }
+
+    completed_iterations = 0
+    for iteration in range(
+        max(1, int(args.fit_coordinate_iterations))
+    ):
+        previous_fraction = shared_fraction
+
+        for variable_key, context in contexts.items():
+            optimized = optimize_nuisance_fixed_fraction(
+                context,
+                shared_fraction,
+                np.asarray(
+                    states[variable_key]["dvcs_parameters"],
+                    dtype=float,
+                ),
+                np.asarray(
+                    states[variable_key]["pi0_parameters"],
+                    dtype=float,
+                ),
+                args,
+            )
+            states[variable_key] = {
+                "dvcs_parameters": optimized["dvcs_parameters"],
+                "pi0_parameters": optimized["pi0_parameters"],
+            }
+        # endfor
+
+        fraction_result = minimize_scalar(
+            lambda fraction: shared_fraction_objective(
+                float(fraction),
+                contexts,
+                states,
+                args,
+            ),
+            bounds=(1.0e-4, 1.0 - 1.0e-4),
+            method="bounded",
+            options={
+                "xatol": 2.0e-6,
+                "maxiter": 250,
+            },
+        )
+        shared_fraction = float(fraction_result.x)
+        completed_iterations = iteration + 1
+
+        if abs(shared_fraction - previous_fraction) < 2.0e-5:
+            break
+        # endif
+    # endfor
+
+    shared_error = shared_fraction_curvature_error(
+        shared_fraction,
+        contexts,
+        states,
+        args,
     )
 
-    if not summary.success:
-        raise RuntimeError(
-            f"{period.label} {multiplicity_label}: shared template fit "
-            f"failed: {summary.message}"
-        )
-    # endif
+    variable_results: Dict[str, AdvancedVariableFit] = {}
+    total_deviance = 0.0
+    total_bins = 0
+    total_nuisance = 1
 
+    for variable in DATA_SHAPE_VARIABLES:
+        context = contexts[variable.key]
+        state = states[variable.key]
+        evaluation = evaluate_variable_model(
+            context,
+            shared_fraction,
+            np.asarray(state["dvcs_parameters"], dtype=float),
+            np.asarray(state["pi0_parameters"], dtype=float),
+            args,
+        )
+        independent = independent_states[variable.key]
+        data_total = float(context["data_total"])
+        raw_dvcs = np.asarray(context["raw_dvcs"], dtype=float)
+        raw_pi0 = np.asarray(context["raw_pi0"], dtype=float)
+
+        ndvcs = model_parameter_count(str(context["dvcs_model"]))
+        npi0 = model_parameter_count(str(context["pi0_model"]))
+        nuisance_count = ndvcs + npi0
+        ndf = max(
+            1,
+            int(np.count_nonzero(np.asarray(context["data"]) >= 0.0))
+            - nuisance_count
+            - 1,
+        )
+
+        result = AdvancedVariableFit(
+            success=True,
+            message="advanced component-preserving morph fit",
+            variable=variable.key,
+            model_name=str(context["model_description"]),
+            f_pi0=shared_fraction,
+            f_pi0_err=shared_error,
+            independent_f_pi0=float(independent["f_pi0"]),
+            independent_f_pi0_err=float(independent["f_pi0_err"]),
+            deviance=float(evaluation["deviance"]),
+            ndf=ndf,
+            nuisance_count=nuisance_count,
+            model_counts=np.asarray(evaluation["model"], dtype=float),
+            dvcs_component_counts=np.asarray(
+                evaluation["dvcs_component"],
+                dtype=float,
+            ),
+            pi0_component_counts=np.asarray(
+                evaluation["pi0_component"],
+                dtype=float,
+            ),
+            raw_dvcs_component_counts=(
+                data_total * (1.0 - shared_fraction) * raw_dvcs
+            ),
+            raw_pi0_component_counts=(
+                data_total * shared_fraction * raw_pi0
+            ),
+            morphed_dvcs_probability=np.asarray(
+                evaluation["dvcs_probability"],
+                dtype=float,
+            ),
+            morphed_pi0_probability=np.asarray(
+                evaluation["pi0_probability"],
+                dtype=float,
+            ),
+            raw_dvcs_probability=raw_dvcs,
+            raw_pi0_probability=raw_pi0,
+            dvcs_nuisance=nuisance_dictionary(
+                str(context["dvcs_model"]),
+                np.asarray(state["dvcs_parameters"], dtype=float),
+                evaluation["dvcs_metadata"],
+            ),
+            pi0_nuisance=nuisance_dictionary(
+                str(context["pi0_model"]),
+                np.asarray(state["pi0_parameters"], dtype=float),
+                evaluation["pi0_metadata"],
+            ),
+            divider_dvcs=float(context["dvcs_divider_value"]),
+            divider_pi0=float(context["pi0_divider_value"]),
+            fit_total=float(np.sum(evaluation["model"])),
+            data_total=data_total,
+        )
+        variable_results[variable.key] = result
+        total_deviance += result.deviance
+        total_bins += variable.bins
+        total_nuisance += nuisance_count
+    # endfor
+
+    global_ndf = max(1, total_bins - total_nuisance)
+    summary = AdvancedSharedFit(
+        success=True,
+        message=(
+            "coordinate-minimized shared fraction with variable-specific "
+            "component-preserving morphs"
+        ),
+        f_pi0=shared_fraction,
+        f_pi0_err=shared_error,
+        deviance=float(total_deviance),
+        ndf=int(global_ndf),
+        variable_results=variable_results,
+        coordinate_iterations=completed_iterations,
+    )
     return summary, data_histograms
+
+
+def variable_fit_to_dict(
+    result: AdvancedVariableFit,
+) -> Dict[str, object]:
+    return {
+        "success": result.success,
+        "message": result.message,
+        "variable": result.variable,
+        "model_name": result.model_name,
+        "shared_f_pi0": result.f_pi0,
+        "shared_f_pi0_error": result.f_pi0_err,
+        "independent_f_pi0": result.independent_f_pi0,
+        "independent_f_pi0_error": result.independent_f_pi0_err,
+        "deviance": result.deviance,
+        "ndf": result.ndf,
+        "deviance_per_ndf": (
+            result.deviance / result.ndf
+            if result.ndf > 0
+            else math.nan
+        ),
+        "nuisance_count": result.nuisance_count,
+        "dvcs_nuisance": result.dvcs_nuisance,
+        "pi0_nuisance": result.pi0_nuisance,
+        "divider_dvcs": result.divider_dvcs,
+        "divider_pi0": result.divider_pi0,
+        "fit_total": result.fit_total,
+        "data_total": result.data_total,
+    }
+
+
+def shared_fit_to_dict(
+    summary: AdvancedSharedFit,
+) -> Dict[str, object]:
+    return {
+        "success": summary.success,
+        "message": summary.message,
+        "f_pi0": summary.f_pi0,
+        "f_pi0_error": summary.f_pi0_err,
+        "deviance": summary.deviance,
+        "ndf": summary.ndf,
+        "deviance_per_ndf": (
+            summary.deviance / summary.ndf
+            if summary.ndf > 0
+            else math.nan
+        ),
+        "coordinate_iterations": summary.coordinate_iterations,
+        "variables": {
+            variable_key: variable_fit_to_dict(result)
+            for variable_key, result
+            in summary.variable_results.items()
+        },
+    }
 
 
 def plot_shared_template_fit(
     path: Path,
     period_label: str,
     multiplicity_label: str,
-    summary,
+    summary: AdvancedSharedFit,
     data_histograms: Mapping[str, np.ndarray],
     args: argparse.Namespace,
 ) -> None:
@@ -4401,15 +5491,7 @@ def plot_shared_template_fit(
     )
 
     for column, variable in enumerate(DATA_SHAPE_VARIABLES):
-        fit_result = summary.variable_results[variable.key]
-        if not fit_result.success:
-            raise RuntimeError(
-                f"{period_label} {multiplicity_label} "
-                f"{variable.key}: variable fit failed: "
-                f"{fit_result.message}"
-            )
-        # endif
-
+        result = summary.variable_results[variable.key]
         top = axes[0, column]
         bottom = axes[1, column]
 
@@ -4424,19 +5506,6 @@ def plot_shared_template_fit(
         )
         centers = 0.5 * (edges[:-1] + edges[1:])
 
-        model = np.asarray(
-            fit_result.model_counts,
-            dtype=float,
-        )
-        dvcs_component = np.asarray(
-            fit_result.dvcs_component_counts,
-            dtype=float,
-        )
-        pi0_component = np.asarray(
-            fit_result.pi0_component_counts,
-            dtype=float,
-        )
-
         top.errorbar(
             centers,
             data,
@@ -4446,42 +5515,66 @@ def plot_shared_template_fit(
             linewidth=0.8,
             capsize=1.5,
             label="Data",
+            zorder=5,
         )
         top.step(
             centers,
-            model,
+            result.raw_dvcs_component_counts,
             where="mid",
-            linewidth=1.8,
-            label="Total fit",
+            linewidth=0.9,
+            linestyle="--",
+            alpha=0.75,
+            label="Raw DVCSGEN outline",
         )
         top.step(
             centers,
-            dvcs_component,
+            result.raw_pi0_component_counts,
             where="mid",
-            linewidth=1.3,
+            linewidth=0.9,
+            linestyle=":",
+            alpha=0.75,
+            label=r"Raw AAOGEN $\pi^0$ outline",
+        )
+        top.step(
+            centers,
+            result.dvcs_component_counts,
+            where="mid",
+            linewidth=1.5,
             linestyle="--",
             label="Morphed DVCSGEN",
         )
         top.step(
             centers,
-            pi0_component,
+            result.pi0_component_counts,
             where="mid",
-            linewidth=1.3,
+            linewidth=1.5,
             linestyle=":",
             label=r"Morphed AAOGEN $\pi^0$",
         )
+        top.step(
+            centers,
+            result.model_counts,
+            where="mid",
+            linewidth=2.0,
+            label="Total fit",
+            zorder=4,
+        )
         top.set_ylabel("Entries / bin")
-        top.set_title(variable.label)
+        top.set_title(
+            f"{variable.label}\n"
+            f"independent f_pi0="
+            f"{result.independent_f_pi0:.3f}"
+        )
         top.grid(alpha=0.25)
-        top.legend(fontsize=7)
+        top.legend(fontsize=6.5)
 
         ratio = np.full_like(data, np.nan, dtype=float)
         ratio_error = np.full_like(data, np.nan, dtype=float)
-        valid = model > 0.0
-        ratio[valid] = data[valid] / model[valid]
+        valid = result.model_counts > 0.0
+        ratio[valid] = data[valid] / result.model_counts[valid]
         ratio_error[valid] = (
             np.sqrt(np.maximum(data[valid], 1.0))
-            / model[valid]
+            / result.model_counts[valid]
         )
 
         bottom.errorbar(
@@ -4505,7 +5598,7 @@ def plot_shared_template_fit(
     # endfor
 
     fig.suptitle(
-        f"{period_label}: {multiplicity_label} shared morphed-template fit\n"
+        f"{period_label}: {multiplicity_label} advanced shared-template fit\n"
         rf"$f_{{\pi^0}}={summary.f_pi0:.4f}"
         rf"\pm{summary.f_pi0_err:.4f}$, "
         f"deviance/ndf="
@@ -4516,8 +5609,67 @@ def plot_shared_template_fit(
             else ""
         )
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    fig.tight_layout(rect=(0, 0, 1, 0.91))
     fig.savefig(path, dpi=args.fit_dpi)
+    plt.close(fig)
+
+
+def plot_fraction_consistency(
+    path: Path,
+    period_label: str,
+    multiplicity_label: str,
+    summary: AdvancedSharedFit,
+) -> None:
+    labels = [variable.label for variable in DATA_SHAPE_VARIABLES]
+    values = np.asarray(
+        [
+            summary.variable_results[variable.key].independent_f_pi0
+            for variable in DATA_SHAPE_VARIABLES
+        ],
+        dtype=float,
+    )
+    errors = np.asarray(
+        [
+            summary.variable_results[
+                variable.key
+            ].independent_f_pi0_err
+            for variable in DATA_SHAPE_VARIABLES
+        ],
+        dtype=float,
+    )
+    x = np.arange(len(labels), dtype=float)
+
+    fig, axis = plt.subplots(figsize=(12, 6))
+    axis.errorbar(
+        x,
+        values,
+        yerr=errors,
+        fmt="o",
+        capsize=3,
+        label="Independent single-variable fits",
+    )
+    axis.axhline(
+        summary.f_pi0,
+        linewidth=1.5,
+        label="Shared five-projection fit",
+    )
+    if np.isfinite(summary.f_pi0_err):
+        axis.axhspan(
+            summary.f_pi0 - summary.f_pi0_err,
+            summary.f_pi0 + summary.f_pi0_err,
+            alpha=0.15,
+        )
+    # endif
+    axis.set_xticks(x, labels, rotation=20, ha="right")
+    axis.set_ylabel(r"Fitted $\pi^0$ fraction")
+    axis.set_ylim(0.0, 1.0)
+    axis.grid(alpha=0.25)
+    axis.legend()
+    axis.set_title(
+        f"{period_label}: {multiplicity_label} fraction consistency"
+    )
+    fig.tight_layout()
+    fig.savefig(path, dpi=180)
     plt.close(fig)
 
 
@@ -4525,49 +5677,54 @@ def flatten_shared_fit_row(
     period: PeriodConfig,
     multiplicity_key: str,
     multiplicity_label: str,
-    summary,
+    summary: AdvancedSharedFit,
 ) -> Dict[str, object]:
     row: Dict[str, object] = {
         "period": period.key,
         "period_label": period.label,
         "multiplicity": multiplicity_key,
         "multiplicity_label": multiplicity_label,
-        "fit_success": bool(summary.success),
-        "fit_message": str(summary.message),
-        "f_pi0": float(summary.f_pi0),
-        "f_pi0_error": float(summary.f_pi0_err),
-        "deviance": float(summary.deviance),
-        "ndf": int(summary.ndf),
+        "fit_success": summary.success,
+        "fit_message": summary.message,
+        "f_pi0": summary.f_pi0,
+        "f_pi0_error": summary.f_pi0_err,
+        "deviance": summary.deviance,
+        "ndf": summary.ndf,
         "deviance_per_ndf": (
-            float(summary.deviance) / int(summary.ndf)
-            if int(summary.ndf) > 0
+            summary.deviance / summary.ndf
+            if summary.ndf > 0
             else math.nan
         ),
+        "coordinate_iterations": summary.coordinate_iterations,
     }
 
     for variable in DATA_SHAPE_VARIABLES:
         result = summary.variable_results[variable.key]
         prefix = variable.key
-        for field in (
-            "shift",
-            "shift_err",
-            "sigma_add",
-            "sigma_add_err",
-            "sigma_right",
-            "sigma_right_err",
-            "pi0_shift",
-            "pi0_shift_err",
-            "pi0_sigma_add",
-            "pi0_sigma_add_err",
-            "pi0_sigma_right",
-            "pi0_sigma_right_err",
-            "deviance",
-            "ndf",
-            "morph_label",
-            "full_range_model_to_data",
-        ):
-            row[f"{prefix}_{field}"] = getattr(result, field)
-        # endfor
+        row[f"{prefix}_independent_f_pi0"] = (
+            result.independent_f_pi0
+        )
+        row[f"{prefix}_independent_f_pi0_error"] = (
+            result.independent_f_pi0_err
+        )
+        row[f"{prefix}_deviance"] = result.deviance
+        row[f"{prefix}_ndf"] = result.ndf
+        row[f"{prefix}_deviance_per_ndf"] = (
+            result.deviance / result.ndf
+            if result.ndf > 0
+            else math.nan
+        )
+        row[f"{prefix}_model"] = result.model_name
+        row[f"{prefix}_dvcs_nuisance_json"] = json.dumps(
+            result.dvcs_nuisance,
+            sort_keys=True,
+        )
+        row[f"{prefix}_pi0_nuisance_json"] = json.dumps(
+            result.pi0_nuisance,
+            sort_keys=True,
+        )
+        row[f"{prefix}_dvcs_divider"] = result.divider_dvcs
+        row[f"{prefix}_pi0_divider"] = result.divider_pi0
     # endfor
 
     return row
@@ -4589,7 +5746,6 @@ def plot_all_period_fitted_pi0_fractions(
     }
 
     fig, axis = plt.subplots(figsize=(12, 7))
-
     for multiplicity_key in ("one_photon", "two_photon"):
         selected = []
         for period in PERIODS:
@@ -4636,7 +5792,7 @@ def plot_all_period_fitted_pi0_fractions(
     axis.grid(alpha=0.25)
     axis.legend()
     axis.set_title(
-        "Shared five-projection morphed-template fits"
+        "Advanced shared five-projection template fits"
     )
     fig.tight_layout()
     fig.savefig(path, dpi=180)
@@ -4676,23 +5832,20 @@ def write_template_fit_outputs(
             {
                 "fit_model": {
                     "shared_fraction": True,
-                    "fraction_variables": [
-                        variable.key
-                        for variable in DATA_SHAPE_VARIABLES
-                    ],
+                    "independent_variable_fits": True,
+                    "data_population": "after_cuts",
                     "templates": [
                         "DVCSGEN",
                         "AAOGEN-as-epgamma pi0",
                     ],
-                    "data_population": "after_cuts",
-                    "multiplicity_categories": [
-                        "one_photon",
-                        "two_photon",
-                    ],
+                    "variable_models": {
+                        variable.key: variable_model_spec(variable.key)
+                        for variable in DATA_SHAPE_VARIABLES
+                    },
                     "projection_likelihood_note": (
                         "The five one-dimensional projections contain the "
                         "same events and are combined as a composite "
-                        "likelihood; projection correlations are not included "
+                        "likelihood. Projection correlations are not included "
                         "in the curvature uncertainty."
                     ),
                 },
@@ -4885,6 +6038,18 @@ def run_data_shape_stage(
                         args,
                     )
 
+                    consistency_plot_path = (
+                        fit_dir
+                        / f"{period.key}_{multiplicity_key}"
+                        "_fraction_consistency.png"
+                    )
+                    plot_fraction_consistency(
+                        consistency_plot_path,
+                        period.label,
+                        multiplicity_label,
+                        summary,
+                    )
+
                     fit_row = flatten_shared_fit_row(
                         period,
                         multiplicity_key,
@@ -4894,6 +6059,9 @@ def run_data_shape_stage(
                     fit_rows.append(fit_row)
                     period_fit_payload[multiplicity_key] = {
                         "plot": str(fit_plot_path),
+                        "fraction_consistency_plot": str(
+                            consistency_plot_path
+                        ),
                         **shared_fit_to_dict(summary),
                     }
 
@@ -5324,34 +6492,15 @@ def main() -> int:
 
     fitter_preflight: Dict[str, object] = {
         "enabled": not args.skip_data_template_fits,
+        "implementation": "internal advanced component-preserving fitter",
+        "scipy_optimizer": "L-BFGS-B plus bounded scalar coordinate update",
+        "variables": {
+            variable.key: variable_model_spec(variable.key)
+            for variable in DATA_SHAPE_VARIABLES
+        },
+        "shared_fraction": True,
+        "independent_variable_fits": True,
     }
-    if not args.skip_data_template_fits:
-        fitter = load_exclusivity_fitter(
-            args.exclusivity_fitter_script
-        )
-        fitter_preflight.update(
-            {
-                "resolved_path": str(
-                    Path(fitter.__file__).resolve()
-                ),
-                "fit_signature": str(
-                    inspect.signature(
-                        fitter.fit_shared_two_templates
-                    )
-                ),
-                "variables": [
-                    {
-                        "branch": variable.branch,
-                        "label": variable.label,
-                        "bins": variable.bins,
-                        "xmin": variable.xmin,
-                        "xmax": variable.xmax,
-                    }
-                    for variable in fitter.VARIABLES
-                ],
-            }
-        )
-    # endif
 
     manifest = {
         "script": Path(__file__).name,
