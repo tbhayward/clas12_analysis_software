@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v43_kinematics_and_exclusivity_aesthetics.py
+derive_photon_efficiency_scale_factors_v44_degree_kinematics_separate_canvases.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -62,6 +62,24 @@ conventions used by plot_exclusivity_data_dvcs_pi0_mc.py: black data, blue
 DVCS MC, red epi0 MC, dashed green total fit, thin dashed raw-template
 outlines, solid fitted components, a shared frame-free legend, and matching
 axis-label and horizontal-grid conventions.
+
+Kinematic diagnostic canvases
+-----------------------------
+
+The four additional particle-kinematic diagnostics are written on separate
+before/after canvases rather than appended to the fitted-variable canvases:
+
+    p1_p, p1_theta, p2_p, p2_theta.
+
+The p1_theta and p2_theta ROOT branches are stored in radians. They are
+converted entry-by-entry to degrees before histogramming. Their configured
+histogram limits and axis labels are therefore interpreted in degrees.
+
+For every run period, separate exact-one-photon and exact-two-photon canvases
+are produced for:
+
+  * the four fitted shape variables;
+  * the four particle-kinematic diagnostics.
 
 """
 
@@ -308,8 +326,7 @@ DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
 # Shape-comparison diagnostics include the four fit projections above plus
 # native proton/photon kinematics stored in the epgamma trees. These additional
 # variables do not enter either the independent or shared pi0-fraction fits.
-SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
-    *DATA_SHAPE_VARIABLES,
+KINEMATIC_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
     FitVariable(
         "p1_p",
         r"$p_1$ momentum (GeV)",
@@ -338,6 +355,11 @@ SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
         0.0,
         40.0,
     ),
+)
+
+SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
+    *DATA_SHAPE_VARIABLES,
+    *KINEMATIC_SHAPE_VARIABLES,
 )
 
 FRACTION_DRIVERS: Tuple[str, ...] = (
@@ -3076,11 +3098,24 @@ def update_stage_histograms(
     arrays_by_logical_name: Mapping[str, np.ndarray],
     mask: np.ndarray,
 ) -> None:
+    """
+    Fill all comparison histograms.
+
+    The p1_theta and p2_theta branches are stored in radians and are converted
+    to degrees here. No other branch is transformed.
+    """
+    radians_to_degrees = 180.0 / math.pi
+
     for variable in SHAPE_COMPARISON_VARIABLES:
         selected = np.asarray(
             arrays_by_logical_name[variable.key],
             dtype=float,
         )[mask]
+
+        if variable.key in ("p1_theta", "p2_theta"):
+            selected = selected * radians_to_degrees
+        # endif
+
         histogram = stage_histograms[variable.key]
         edges = np.asarray(histogram["edges"], dtype=float)
         counts, _ = np.histogram(selected, bins=edges)
@@ -3094,6 +3129,7 @@ def update_stage_histograms(
         histogram["overflow_entries"] += int(
             np.count_nonzero(selected >= variable.high)
         )
+    # endfor
     # endfor
 
 
@@ -3729,13 +3765,13 @@ def plot_before_after_shape_canvas(
     multiplicity_label: str,
     sample_payloads: Mapping[str, Mapping[str, object]],
     multiplicity_key: str,
+    variables: Sequence[FitVariable],
+    canvas_description: str,
     args: argparse.Namespace,
 ) -> None:
     """
-    Write one before/after shape-comparison canvas.
-
-    The first four columns are the fitted variables. The final four columns
-    are diagnostic p1/p2 momentum and polar-angle distributions.
+    Write one before/after shape-comparison canvas for a specified variable
+    group.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -3744,17 +3780,18 @@ def plot_before_after_shape_canvas(
         "dvcsgen": "tab:blue",
         "aaogen": "tab:red",
     }
-    sample_linestyles = {
-        "data": "-",
-        "dvcsgen": "-",
-        "aaogen": "-",
-    }
 
-    number_of_variables = len(SHAPE_COMPARISON_VARIABLES)
+    number_of_variables = len(variables)
+    if number_of_variables <= 0:
+        raise ValueError(
+            "plot_before_after_shape_canvas() received no variables."
+        )
+    # endif
+
     fig, axes = plt.subplots(
         2,
         number_of_variables,
-        figsize=(4.55 * number_of_variables, 9.3),
+        figsize=(4.8 * number_of_variables, 9.3),
         squeeze=False,
         sharex="col",
     )
@@ -3764,9 +3801,7 @@ def plot_before_after_shape_canvas(
     ):
         stage_label = "before cuts" if row_index == 0 else "after cuts"
 
-        for column_index, variable in enumerate(
-            SHAPE_COMPARISON_VARIABLES
-        ):
+        for column_index, variable in enumerate(variables):
             axis = axes[row_index, column_index]
 
             for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
@@ -3789,7 +3824,7 @@ def plot_before_after_shape_canvas(
                     linewidth=(
                         1.45 if sample_key == "data" else 1.25
                     ),
-                    linestyle=sample_linestyles[sample_key],
+                    linestyle="-",
                     label=(
                         f"{sample_label} "
                         f"({histogram['in_range_entries']:,})"
@@ -3837,7 +3872,7 @@ def plot_before_after_shape_canvas(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.suptitle(
-        f"Unit-area epgamma shape comparisons: "
+        f"Unit-area epgamma {canvas_description}: "
         f"{period_label}, {multiplicity_label}\n"
         r"both rows: open_angle_ep2 $>5^\circ$; "
         f"bottom row additionally: "
@@ -6114,6 +6149,14 @@ def run_data_shape_stage(
             shape_dir
             / f"{period.key}_two_photon_before_after_cuts.png"
         )
+        one_photon_kinematics_plot_path = (
+            shape_dir
+            / f"{period.key}_one_photon_particle_kinematics.png"
+        )
+        two_photon_kinematics_plot_path = (
+            shape_dir
+            / f"{period.key}_two_photon_particle_kinematics.png"
+        )
 
         plot_before_after_shape_canvas(
             one_photon_plot_path,
@@ -6121,6 +6164,8 @@ def run_data_shape_stage(
             "exactly one reconstructed-photon entry",
             sample_payloads,
             "one_photon",
+            DATA_SHAPE_VARIABLES,
+            "fit-variable shape comparisons",
             args,
         )
         plot_before_after_shape_canvas(
@@ -6129,6 +6174,28 @@ def run_data_shape_stage(
             "exactly two reconstructed-photon entries",
             sample_payloads,
             "two_photon",
+            DATA_SHAPE_VARIABLES,
+            "fit-variable shape comparisons",
+            args,
+        )
+        plot_before_after_shape_canvas(
+            one_photon_kinematics_plot_path,
+            period.label,
+            "exactly one reconstructed-photon entry",
+            sample_payloads,
+            "one_photon",
+            KINEMATIC_SHAPE_VARIABLES,
+            "particle-kinematic comparisons",
+            args,
+        )
+        plot_before_after_shape_canvas(
+            two_photon_kinematics_plot_path,
+            period.label,
+            "exactly two reconstructed-photon entries",
+            sample_payloads,
+            "two_photon",
+            KINEMATIC_SHAPE_VARIABLES,
+            "particle-kinematic comparisons",
             args,
         )
 
@@ -6226,8 +6293,18 @@ def run_data_shape_stage(
 
         period_audit: Dict[str, object] = {
             "plots": {
-                "one_photon": str(one_photon_plot_path),
-                "two_photon": str(two_photon_plot_path),
+                "one_photon_fit_variables": str(
+                    one_photon_plot_path
+                ),
+                "two_photon_fit_variables": str(
+                    two_photon_plot_path
+                ),
+                "one_photon_particle_kinematics": str(
+                    one_photon_kinematics_plot_path
+                ),
+                "two_photon_particle_kinematics": str(
+                    two_photon_kinematics_plot_path
+                ),
             },
             "template_fits": period_fit_payload,
             "samples": {},
