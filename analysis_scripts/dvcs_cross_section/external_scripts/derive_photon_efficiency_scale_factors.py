@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v40_untruncated_four_variable_fits.py
+derive_photon_efficiency_scale_factors_v42_add_particle_kinematic_shapes.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -19,6 +19,33 @@ The four fitted data projections are Delta_phi, theta_gamma_gamma, pTmiss, and
 Emiss2. Each is fitted independently, followed by a shared pi0-fraction fit
 with variable-specific template morphing. Mx2_2 remains available to the
 established optional MC-efficiency machinery elsewhere in this script.
+
+Template-fit plotting conventions
+---------------------------------
+
+The advanced data-template canvases use the same visual conventions as
+plot_exclusivity_data_dvcs_pi0_mc.py:
+
+  * black points: e'p'gamma data;
+  * thin dashed blue: raw DVCS MC shape;
+  * thin dashed red: raw epi0 MC shape;
+  * solid blue: fitted DVCS component;
+  * solid red: fitted epi0 component;
+  * dashed green: total two-template fit;
+  * one shared legend centered above the panels;
+  * per-panel fit-quality annotation in the upper-right corner;
+  * lowercase 'events / bin' and 'data / fit' axis labels.
+
+
+
+Shape-comparison kinematic diagnostics
+--------------------------------------
+
+The one-photon and two-photon before/after shape canvases additionally show
+p1_p, p1_theta, p2_p, and p2_theta from the native epgamma tree branches.
+These four distributions are diagnostic only and do not enter the pi0-fraction
+template fits. Their default plotting ranges are 0--5 GeV, 0--70 deg,
+0--10 GeV, and 0--40 deg, respectively.
 """
 
 
@@ -130,6 +157,10 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
     "p_p": ("p1_p", "p_p", "proton_p"),
     "p_theta": ("p1_theta", "p_theta", "proton_theta"),
     "p_phi": ("p1_phi", "p_phi", "proton_phi"),
+    "p1_p": ("p1_p",),
+    "p1_theta": ("p1_theta",),
+    "p2_p": ("p2_p",),
+    "p2_theta": ("p2_theta",),
     "tag_E": ("p2_p", "g1_p", "g1_E", "gamma1_p", "photon1_p"),
     "tag_theta": ("p2_theta", "g1_theta", "gamma1_theta", "photon1_theta"),
     "tag_phi": ("p2_phi", "g1_phi", "gamma1_phi", "photon1_phi"),
@@ -254,6 +285,41 @@ DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
         120,
         0.0,
         9.0,
+    ),
+)
+
+# Shape-comparison diagnostics include the four fit projections above plus
+# native proton/photon kinematics stored in the epgamma trees. These additional
+# variables do not enter either the independent or shared pi0-fraction fits.
+SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
+    *DATA_SHAPE_VARIABLES,
+    FitVariable(
+        "p1_p",
+        r"$p_1$ momentum (GeV)",
+        120,
+        0.0,
+        5.0,
+    ),
+    FitVariable(
+        "p1_theta",
+        r"$\theta_1$ (deg)",
+        120,
+        0.0,
+        70.0,
+    ),
+    FitVariable(
+        "p2_p",
+        r"$p_2$ momentum (GeV)",
+        120,
+        0.0,
+        10.0,
+    ),
+    FitVariable(
+        "p2_theta",
+        r"$\theta_2$ (deg)",
+        120,
+        0.0,
+        40.0,
     ),
 )
 
@@ -2970,7 +3036,7 @@ def resolve_branches_from_keys(
 
 def empty_stage_histograms() -> Dict[str, Dict[str, object]]:
     histograms: Dict[str, Dict[str, object]] = {}
-    for variable in DATA_SHAPE_VARIABLES:
+    for variable in SHAPE_COMPARISON_VARIABLES:
         edges = np.linspace(
             variable.low,
             variable.high,
@@ -2993,7 +3059,7 @@ def update_stage_histograms(
     arrays_by_logical_name: Mapping[str, np.ndarray],
     mask: np.ndarray,
 ) -> None:
-    for variable in DATA_SHAPE_VARIABLES:
+    for variable in SHAPE_COMPARISON_VARIABLES:
         selected = np.asarray(
             arrays_by_logical_name[variable.key],
             dtype=float,
@@ -3019,7 +3085,7 @@ def finalize_stage_histograms(
 ) -> Dict[str, Dict[str, object]]:
     finalized: Dict[str, Dict[str, object]] = {}
 
-    for variable in DATA_SHAPE_VARIABLES:
+    for variable in SHAPE_COMPARISON_VARIABLES:
         histogram = stage_histograms[variable.key]
         counts = np.asarray(histogram["counts"], dtype=np.int64)
         in_range = int(histogram["in_range_entries"])
@@ -3439,7 +3505,7 @@ def process_data_shape_sample(
     total_entries, available_keys = require_tree(path)
 
     shape_logical_names = [
-        *(variable.key for variable in DATA_SHAPE_VARIABLES),
+        *(variable.key for variable in SHAPE_COMPARISON_VARIABLES),
         "open_angle_ep2",
     ]
     identity_names = list(identity_logical_names(sample_key))
@@ -3538,7 +3604,7 @@ def process_data_shape_sample(
         valid_identity_entries += int(np.count_nonzero(valid_identity))
 
         common_finite = np.isfinite(logical_arrays["open_angle_ep2"])
-        for variable in DATA_SHAPE_VARIABLES:
+        for variable in SHAPE_COMPARISON_VARIABLES:
             common_finite &= np.isfinite(logical_arrays[variable.key])
         # endfor
 
@@ -3651,7 +3717,7 @@ def plot_before_after_shape_canvas(
     """
     Write one 2xN canvas for one accepted event-multiplicity category.
     """
-    number_of_variables = len(DATA_SHAPE_VARIABLES)
+    number_of_variables = len(SHAPE_COMPARISON_VARIABLES)
     fig, axes = plt.subplots(
         2,
         number_of_variables,
@@ -3664,7 +3730,7 @@ def plot_before_after_shape_canvas(
     ):
         stage_label = "Before cuts" if row_index == 0 else "After cuts"
 
-        for column_index, variable in enumerate(DATA_SHAPE_VARIABLES):
+        for column_index, variable in enumerate(SHAPE_COMPARISON_VARIABLES):
             axis = axes[row_index, column_index]
 
             for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
@@ -5388,16 +5454,43 @@ def plot_shared_template_fit(
     data_histograms: Mapping[str, np.ndarray],
     args: argparse.Namespace,
 ) -> None:
+    """
+    Plot the advanced fit using the visual conventions of the validated
+    exclusivity-selection template-fit canvases.
+
+    Color and line conventions:
+      data                       black points
+      raw DVCSGEN template       thin dashed blue
+      raw AAOGEN pi0 template    thin dashed red
+      fitted DVCSGEN component   solid blue
+      fitted AAOGEN component    solid red
+      total two-template model   dashed green
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
+
+    sample_colors = {
+        "data": "black",
+        "dvcs_mc": "tab:blue",
+        "pi0_mc": "tab:red",
+        "fit": "tab:green",
+    }
+    sample_labels = {
+        "data": r"$e'p'\gamma$ data",
+        "raw_dvcs": "raw DVCS MC shape",
+        "raw_pi0": r"raw $e\pi^0$ MC shape",
+        "fitted_dvcs": "fitted DVCS component",
+        "fitted_pi0": r"fitted $e\pi^0$ component",
+        "fit": "total two-template fit",
+    }
 
     number_of_variables = len(DATA_SHAPE_VARIABLES)
     fig, axes = plt.subplots(
         2,
         number_of_variables,
-        figsize=(4.8 * number_of_variables, 10),
+        figsize=(4.8 * number_of_variables, 10.0),
         sharex="col",
         squeeze=False,
-        gridspec_kw={"height_ratios": [3.0, 1.2]},
+        gridspec_kw={"height_ratios": [3.0, 1.15]},
     )
 
     for column, variable in enumerate(DATA_SHAPE_VARIABLES):
@@ -5419,71 +5512,137 @@ def plot_shared_template_fit(
         top.errorbar(
             centers,
             data,
-            yerr=np.sqrt(np.maximum(data, 1.0)),
+            yerr=np.sqrt(np.maximum(data, 0.0)),
             fmt="o",
-            markersize=2.8,
+            markersize=2.4,
             linewidth=0.8,
-            capsize=1.5,
-            label="Data",
-            zorder=5,
+            capsize=0.0,
+            color=sample_colors["data"],
+            label=sample_labels["data"],
+            zorder=6,
         )
-        top.step(
-            centers,
+
+        top.stairs(
             result.raw_dvcs_component_counts,
-            where="mid",
-            linewidth=0.9,
+            edges,
+            color=sample_colors["dvcs_mc"],
+            linewidth=0.40,
             linestyle="--",
-            alpha=0.75,
-            label="Raw DVCSGEN outline",
+            alpha=0.80,
+            label=sample_labels["raw_dvcs"],
+            zorder=1,
         )
-        top.step(
-            centers,
+        top.stairs(
             result.raw_pi0_component_counts,
-            where="mid",
-            linewidth=0.9,
-            linestyle=":",
-            alpha=0.75,
-            label=r"Raw AAOGEN $\pi^0$ outline",
-        )
-        top.step(
-            centers,
-            result.dvcs_component_counts,
-            where="mid",
-            linewidth=1.5,
+            edges,
+            color=sample_colors["pi0_mc"],
+            linewidth=0.40,
             linestyle="--",
-            label="Morphed DVCSGEN",
+            alpha=0.80,
+            label=sample_labels["raw_pi0"],
+            zorder=1,
         )
-        top.step(
-            centers,
+        top.stairs(
+            result.dvcs_component_counts,
+            edges,
+            color=sample_colors["dvcs_mc"],
+            linewidth=1.6,
+            linestyle="-",
+            label=sample_labels["fitted_dvcs"],
+            zorder=3,
+        )
+        top.stairs(
             result.pi0_component_counts,
-            where="mid",
-            linewidth=1.5,
-            linestyle=":",
-            label=r"Morphed AAOGEN $\pi^0$",
+            edges,
+            color=sample_colors["pi0_mc"],
+            linewidth=1.6,
+            linestyle="-",
+            label=sample_labels["fitted_pi0"],
+            zorder=2,
         )
-        top.step(
-            centers,
+        top.stairs(
             result.model_counts,
-            where="mid",
+            edges,
+            color=sample_colors["fit"],
             linewidth=2.0,
-            label="Total fit",
+            linestyle="--",
+            label=sample_labels["fit"],
             zorder=4,
         )
-        top.set_ylabel("Entries / bin")
-        top.set_title(
-            f"{variable.label}\n"
-            f"independent f_pi0="
-            f"{result.independent_f_pi0:.3f}"
+
+        quality_lines = [
+            (
+                rf"$f_{{\pi^0}}={summary.f_pi0:.3f}$ "
+                rf"(shared four-projection fit)"
+            ),
+            (
+                rf"$f_{{\pi^0}}^{{\rm independent}}="
+                rf"{result.independent_f_pi0:.3f}"
+                rf"\pm{result.independent_f_pi0_err:.3f}$"
+            ),
+            (
+                rf"$D/ndf={result.deviance:.1f}/{result.ndf}$"
+                + (
+                    rf"$={result.deviance / result.ndf:.2f}$"
+                    if result.ndf > 0
+                    else ""
+                )
+            ),
+        ]
+        top.text(
+            0.98,
+            0.96,
+            "\n".join(quality_lines),
+            transform=top.transAxes,
+            ha="right",
+            va="top",
+            fontsize=8.5,
+            bbox={
+                "facecolor": "white",
+                "alpha": 0.78,
+                "edgecolor": "none",
+            },
+            zorder=10,
         )
-        top.grid(alpha=0.25)
-        top.legend(fontsize=6.5)
+
+        top.set_xlim(variable.low, variable.high)
+        top.set_ylabel("events / bin")
+        top.grid(axis="y", alpha=0.25)
+        top.set_ylim(bottom=0.0)
+
+        if args.shape_log_y:
+            positive_arrays = (
+                data,
+                result.model_counts,
+                result.dvcs_component_counts,
+                result.pi0_component_counts,
+            )
+            positive_values = np.concatenate(
+                [
+                    np.asarray(array, dtype=float)[
+                        np.asarray(array, dtype=float) > 0.0
+                    ]
+                    for array in positive_arrays
+                    if np.any(np.asarray(array, dtype=float) > 0.0)
+                ]
+            )
+            if positive_values.size > 0:
+                top.set_yscale("log")
+                top.set_ylim(
+                    bottom=max(
+                        0.5,
+                        0.5 * float(np.min(positive_values)),
+                    )
+                )
+            # endif
+        # endif
 
         ratio = np.full_like(data, np.nan, dtype=float)
         ratio_error = np.full_like(data, np.nan, dtype=float)
         valid = result.model_counts > 0.0
         ratio[valid] = data[valid] / result.model_counts[valid]
         ratio_error[valid] = (
-            np.sqrt(np.maximum(data[valid], 1.0))
+            np.sqrt(np.maximum(data[valid], 0.0))
             / result.model_counts[valid]
         )
 
@@ -5492,35 +5651,62 @@ def plot_shared_template_fit(
             ratio[valid],
             yerr=ratio_error[valid],
             fmt="o",
-            markersize=2.5,
-            linewidth=0.7,
-            capsize=1.2,
+            markersize=2.4,
+            linewidth=0.8,
+            capsize=0.0,
+            color=sample_colors["data"],
+            zorder=5,
         )
-        bottom.axhline(1.0, linewidth=1.0)
+        bottom.axhline(
+            1.0,
+            color=sample_colors["fit"],
+            linewidth=1.4,
+            linestyle="--",
+            zorder=1,
+        )
         bottom.set_ylim(0.0, 2.0)
+        bottom.set_xlim(variable.low, variable.high)
         bottom.set_xlabel(variable.label)
-        bottom.set_ylabel("Data / fit")
-        bottom.grid(alpha=0.25)
+        bottom.set_ylabel("data / fit")
+        bottom.grid(axis="y", alpha=0.25)
 
-        if args.shape_log_y:
-            top.set_yscale("log")
-        # endif
     # endfor
 
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+
+    fraction_driver_labels = ", ".join(
+        variable.key for variable in DATA_SHAPE_VARIABLES
+    )
     fig.suptitle(
-        f"{period_label}: {multiplicity_label} advanced shared-template fit\n"
-        rf"$f_{{\pi^0}}={summary.f_pi0:.4f}"
-        rf"\pm{summary.f_pi0_err:.4f}$, "
-        f"deviance/ndf="
-        f"{summary.deviance:.1f}/{summary.ndf}"
+        "DVCS+pi0 support advanced two-template fit after minimal "
+        f"preselection: {period_label}, {multiplicity_label}\n"
+        "fraction drivers (common population): "
+        f"{fraction_driver_labels}; "
+        rf"shared $f_{{\pi^0}}={summary.f_pi0:.4f}"
+        rf"\pm{summary.f_pi0_err:.4f}$; "
+        f"global $D/ndf={summary.deviance:.1f}/{summary.ndf}$"
         + (
             f"={summary.deviance / summary.ndf:.2f}"
             if summary.ndf > 0
             else ""
-        )
+        ),
+        fontsize=15,
+        y=0.992,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.91))
-    fig.savefig(path, dpi=args.fit_dpi)
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.885),
+        ncol=len(labels),
+        frameon=False,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.82))
+    fig.savefig(
+        path,
+        dpi=args.fit_dpi,
+        bbox_inches="tight",
+    )
     plt.close(fig)
 
 
