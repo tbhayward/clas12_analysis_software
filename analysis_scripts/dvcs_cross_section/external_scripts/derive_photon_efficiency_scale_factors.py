@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v37_morphed_shared_template_fits.py
+derive_photon_efficiency_scale_factors_v38_template_fit_directory_fix.py
 
 Stepwise photon-efficiency study.
 
@@ -4390,6 +4390,8 @@ def plot_shared_template_fit(
     data_histograms: Mapping[str, np.ndarray],
     args: argparse.Namespace,
 ) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+
     fig, axes = plt.subplots(
         2,
         5,
@@ -4800,6 +4802,9 @@ def run_data_shape_stage(
     fit_rows: List[Dict[str, object]] = []
     fit_payloads: Dict[str, object] = {}
     fit_dir = data_root / "template_fits"
+    if not args.skip_data_template_fits:
+        fit_dir.mkdir(parents=True, exist_ok=True)
+    # endif
 
     for period in periods:
         sample_payloads = results[period.key]
