@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_first_100k_dvcsgen_particle_kinematics_v4_embedded_reconstruction.py
+plot_first_100k_dvcsgen_particle_kinematics_v5_optional_rec_aaogen.py
 
 Compare the first 100,000 entries from the generated DVCSGEN and AAOGEN ROOT
 files.
@@ -31,6 +31,27 @@ photon-efficiency analysis.
 
 Dependencies:
     uproot, numpy, matplotlib
+
+Optional reconstructed-AAOGEN comparison
+----------------------------------------
+
+Pass
+
+    --rec_aaogen /path/to/rec_aaogen.root
+
+to overlay the reconstructed AAOGEN sample on the same four panels.
+
+The reconstructed file is processed with the same branch resolution and the
+same embedded daughter-photon reconstruction as the generated AAOGEN file.
+Therefore the comparison includes:
+
+  * generated AAOGEN proton versus reconstructed AAOGEN proton;
+  * generated-AAOGEN reconstructed gamma1/gamma2 versus reconstructed-AAOGEN
+    reconstructed gamma1/gamma2.
+
+The argument is optional. If it is omitted, the original DVCSGEN versus
+generated-AAOGEN comparison is produced unchanged.
+
 """
 
 from __future__ import annotations
@@ -76,6 +97,17 @@ def parse_args() -> argparse.Namespace:
         "--aaogen",
         type=Path,
         default=DEFAULT_AAOGEN,
+    )
+    parser.add_argument(
+        "--rec_aaogen",
+        type=Path,
+        default=None,
+        help=(
+            "Optional reconstructed AAOGEN ROOT file to overlay. "
+            "Example: /work/clas12/thayward/CLAS12_exclusive/eppi0/data/"
+            "pass2/mc/hipo_files/"
+            "rec_aaogen_norad_fa18_out_50nA_10604MeV.root"
+        ),
     )
     parser.add_argument(
         "--tree",
@@ -577,6 +609,10 @@ def main() -> int:
         # endif
     # endfor
 
+    if args.rec_aaogen is not None and not args.rec_aaogen.exists():
+        raise FileNotFoundError(args.rec_aaogen)
+    # endif
+
 
     # The imported function accesses only these reconstruction settings.
     reconstruction_args = SimpleNamespace(
@@ -602,75 +638,141 @@ def main() -> int:
         reconstruction_args,
     )
 
+    rec_aaogen = None
+    if args.rec_aaogen is not None:
+        rec_aaogen = read_aaogen_with_main_reconstruction(
+            args.rec_aaogen,
+            args.tree,
+            args.max_entries,
+            reconstruction_args,
+        )
+    # endif
+
+    proton_momentum_samples = [
+        ("DVCSGEN proton", dvcs["proton_p"], "tab:blue", "-"),
+        ("generated AAOGEN proton", aaogen["proton_p"], "tab:red", "-"),
+    ]
+    proton_theta_samples = [
+        (
+            "DVCSGEN proton",
+            dvcs["proton_theta_deg"],
+            "tab:blue",
+            "-",
+        ),
+        (
+            "generated AAOGEN proton",
+            aaogen["proton_theta_deg"],
+            "tab:red",
+            "-",
+        ),
+    ]
+    photon_momentum_samples = [
+        ("DVCSGEN photon", dvcs["gamma_p"], "tab:blue", "-"),
+        (
+            r"generated AAOGEN reconstructed $\gamma_1$",
+            aaogen["gamma1_p"],
+            "tab:red",
+            "-",
+        ),
+        (
+            r"generated AAOGEN reconstructed $\gamma_2$",
+            aaogen["gamma2_p"],
+            "tab:red",
+            "--",
+        ),
+    ]
+    photon_theta_samples = [
+        (
+            "DVCSGEN photon",
+            dvcs["gamma_theta_deg"],
+            "tab:blue",
+            "-",
+        ),
+        (
+            r"generated AAOGEN reconstructed $\gamma_1$",
+            aaogen["gamma1_theta_deg"],
+            "tab:red",
+            "-",
+        ),
+        (
+            r"generated AAOGEN reconstructed $\gamma_2$",
+            aaogen["gamma2_theta_deg"],
+            "tab:red",
+            "--",
+        ),
+    ]
+
+    if rec_aaogen is not None:
+        proton_momentum_samples.append(
+            (
+                "reconstructed AAOGEN proton",
+                rec_aaogen["proton_p"],
+                "tab:green",
+                "-",
+            )
+        )
+        proton_theta_samples.append(
+            (
+                "reconstructed AAOGEN proton",
+                rec_aaogen["proton_theta_deg"],
+                "tab:green",
+                "-",
+            )
+        )
+        photon_momentum_samples.extend(
+            [
+                (
+                    r"reconstructed AAOGEN reconstructed $\gamma_1$",
+                    rec_aaogen["gamma1_p"],
+                    "tab:green",
+                    "-",
+                ),
+                (
+                    r"reconstructed AAOGEN reconstructed $\gamma_2$",
+                    rec_aaogen["gamma2_p"],
+                    "tab:green",
+                    "--",
+                ),
+            ]
+        )
+        photon_theta_samples.extend(
+            [
+                (
+                    r"reconstructed AAOGEN reconstructed $\gamma_1$",
+                    rec_aaogen["gamma1_theta_deg"],
+                    "tab:green",
+                    "-",
+                ),
+                (
+                    r"reconstructed AAOGEN reconstructed $\gamma_2$",
+                    rec_aaogen["gamma2_theta_deg"],
+                    "tab:green",
+                    "--",
+                ),
+            ]
+        )
+    # endif
+
     panels = (
         (
             r"Proton momentum (GeV)",
             (0.0, 5.0),
-            (
-                ("DVCSGEN proton", dvcs["proton_p"], "tab:blue", "-"),
-                ("AAOGEN proton", aaogen["proton_p"], "tab:red", "-"),
-            ),
+            proton_momentum_samples,
         ),
         (
             r"Proton $\theta$ (deg)",
             (0.0, 70.0),
-            (
-                (
-                    "DVCSGEN proton",
-                    dvcs["proton_theta_deg"],
-                    "tab:blue",
-                    "-",
-                ),
-                (
-                    "AAOGEN proton",
-                    aaogen["proton_theta_deg"],
-                    "tab:red",
-                    "-",
-                ),
-            ),
+            proton_theta_samples,
         ),
         (
             r"Photon momentum (GeV)",
             (0.0, 10.0),
-            (
-                ("DVCSGEN photon", dvcs["gamma_p"], "tab:blue", "-"),
-                (
-                    r"AAOGEN reconstructed $\gamma_1$",
-                    aaogen["gamma1_p"],
-                    "tab:red",
-                    "-",
-                ),
-                (
-                    r"AAOGEN reconstructed $\gamma_2$",
-                    aaogen["gamma2_p"],
-                    "tab:red",
-                    "--",
-                ),
-            ),
+            photon_momentum_samples,
         ),
         (
             r"Photon $\theta$ (deg)",
             (0.0, 40.0),
-            (
-                (
-                    "DVCSGEN photon",
-                    dvcs["gamma_theta_deg"],
-                    "tab:blue",
-                    "-",
-                ),
-                (
-                    r"AAOGEN reconstructed $\gamma_1$",
-                    aaogen["gamma1_theta_deg"],
-                    "tab:red",
-                    "-",
-                ),
-                (
-                    r"AAOGEN reconstructed $\gamma_2$",
-                    aaogen["gamma2_theta_deg"],
-                    "tab:red",
-                    "--",
-                ),
-            ),
+            photon_theta_samples,
         ),
     )
 
@@ -706,10 +808,25 @@ def main() -> int:
 
     entries = int(aaogen["entries_read"][0])
     valid = int(aaogen["valid_reconstructions"][0])
+    title_lines = [
+        f"First {args.max_entries:,} entries from each requested sample",
+        (
+            "Generated AAOGEN photons reconstructed with the embedded "
+            f"main-analysis helper: {valid:,}/{entries:,} valid "
+            "closure-passing events"
+        ),
+    ]
+    if rec_aaogen is not None:
+        rec_entries = int(rec_aaogen["entries_read"][0])
+        rec_valid = int(rec_aaogen["valid_reconstructions"][0])
+        title_lines.append(
+            "Reconstructed AAOGEN helper result: "
+            f"{rec_valid:,}/{rec_entries:,} valid closure-passing events"
+        )
+    # endif
+
     fig.suptitle(
-        f"First {args.max_entries:,} generated entries\n"
-        "AAOGEN photons reconstructed with the embedded main-analysis helper: "
-        f"{valid:,}/{entries:,} valid closure-passing events",
+        "\n".join(title_lines),
         fontsize=14,
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.93))
@@ -742,6 +859,28 @@ def main() -> int:
         f"Median mirror ambiguity: "
         f"{float(aaogen['median_ambiguity'][0]):.6g}"
     )
+
+    if rec_aaogen is not None:
+        rec_entries = int(rec_aaogen["entries_read"][0])
+        rec_valid = int(rec_aaogen["valid_reconstructions"][0])
+        print(f"Reconstructed AAOGEN file: {args.rec_aaogen}")
+        print(f"Reconstructed AAOGEN entries read: {rec_entries:,}")
+        print(
+            "Reconstructed AAOGEN reconstruction cutflow: "
+            f"finite={int(rec_aaogen['input_finite_count'][0]):,}, "
+            f"longitudinal={int(rec_aaogen['longitudinal_count'][0]):,}, "
+            f"transverse={int(rec_aaogen['transverse_count'][0]):,}, "
+            f"detector-compatible="
+            f"{int(rec_aaogen['detector_count'][0]):,}, "
+            f"closure-pass={int(rec_aaogen['closure_count'][0]):,}, "
+            f"final-valid={rec_valid:,}"
+        )
+        print(
+            "Reconstructed AAOGEN median normalized closure: "
+            f"{float(rec_aaogen['median_closure'][0]):.6g}"
+        )
+    # endif
+
     print(f"Wrote: {args.output}")
     return 0
 
