@@ -1,86 +1,24 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v39_advanced_component_morph_fits.py
+derive_photon_efficiency_scale_factors_v40_untruncated_four_variable_fits.py
 
-Stepwise photon-efficiency study.
+Photon-efficiency study with separate exact-one-photon and exact-two-photon
+data categories. Events with three or more reconstructed-photon entries are
+rejected.
 
-The accepted epgamma population is split into events represented by exactly
-one reconstructed-photon entry and events represented by exactly two
-reconstructed-photon entries. Events represented by three or more photon
-entries are rejected in full.
+Data-side changes in this revision:
 
-For each run period and accepted multiplicity, the five after-cuts data
-projections are fitted to DVCSGEN and AAOGEN-as-epgamma templates. The fit now
-uses variable-specific response models rather than one generic template
-translation and Gaussian broadening.
+  * remove the Emiss2 > 1 GeV lower cut;
+  * remove the Mx2_2 > 2 GeV^2 lower cut;
+  * remove Mx2_2 from the data shape comparison and data template fit;
+  * retain the complete Emiss2 spectrum, including the BH/DVCS peak near zero;
+  * define the after-cuts row using only pTmiss > 0.5 GeV, in addition to the
+    open_angle_ep2 > 5 deg requirement common to both rows.
 
-Fit architecture
-----------------
-
-1. Each projection is first fitted independently, including an independent
-   pi0 fraction. These fits diagnose whether the five variables prefer
-   compatible compositions.
-
-2. A shared-fraction composite fit is then performed. A single pi0 fraction is
-   common to all five projections. Variable-specific nuisance parameters are
-   reoptimized conditionally on the shared fraction through coordinate
-   minimization.
-
-3. The five projections are marginals of the same event sample. Their summed
-   Poisson deviances form a composite likelihood. The reported curvature
-   uncertainty does not include correlations among the projections.
-
-Variable-specific template models
----------------------------------
-
-Delta_phi:
-  * DVCSGEN: one additive shift and one symmetric Gaussian broadening.
-  * AAOGEN: the raw template is split at pi into left and right lobes.
-    The lobes shift and broaden independently. Their relative integral may
-    vary with a constrained logit nuisance. This preserves the two side-peak
-    structures instead of washing them into one central peak.
-
-theta_gamma_gamma:
-  * Both DVCSGEN and AAOGEN are split into two reconstruction components.
-    The divider is found from the valley between the two strongest smoothed
-    peaks, with a robust fallback when two peaks are not resolved.
-  * Each component shifts and broadens independently in log(theta + epsilon).
-    The relative component weight is constrained near the raw-MC value.
-  * One-photon and two-photon samples are fitted independently and therefore
-    have independent component dividers and nuisance parameters.
-
-pTmiss:
-  * An affine mapping is applied in log(pTmiss + epsilon), allowing both a
-    location shift and a stretch/compression.
-  * Independent lower-side and upper-side Gaussian broadenings are allowed.
-
-Emiss2 and Mx2_2:
-  * An affine mapping x' = pivot + scale*(x-pivot) + shift is allowed.
-  * Independent lower-side and upper-side Gaussian broadenings are allowed.
-  * The morphed DVCSGEN mean is constrained to remain below the morphed
-    AAOGEN mean.
-
-All nuisance parameters are regularized around the raw templates. The fit
-plots show thin raw-template outlines normalized to the fitted component
-yields, together with thicker morphed components and the total fit.
-
-Outputs
--------
-
-  output/photon_efficiency_study/data/template_fits/
-      <period>_one_photon_template_fit.png
-      <period>_two_photon_template_fit.png
-      <period>_one_photon_fraction_consistency.png
-      <period>_two_photon_fraction_consistency.png
-      template_fit_results.csv
-      template_fit_results.json
-      all_periods_fitted_pi0_fraction.png
-
-The completed AAOGEN MC photon-efficiency machinery remains under:
-
-  output/photon_efficiency_study/mc/
-
-and can be rerun with --run-mc-efficiency.
+The four fitted data projections are Delta_phi, theta_gamma_gamma, pTmiss, and
+Emiss2. Each is fitted independently, followed by a shared pi0-fraction fit
+with variable-specific template morphing. Mx2_2 remains available to the
+established optional MC-efficiency machinery elsewhere in this script.
 """
 
 
@@ -316,13 +254,6 @@ DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
         120,
         0.0,
         9.0,
-    ),
-    FitVariable(
-        "Mx2_2",
-        r"$M_{x2}^2$ (GeV$^2$)",
-        160,
-        0.0,
-        16.0,
     ),
 )
 
@@ -2517,18 +2448,6 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--data-Emiss-min",
-        type=float,
-        default=1.0,
-        help="After-cuts requirement: Emiss2 greater than this value (GeV).",
-    )
-    parser.add_argument(
-        "--data-Mx2-2-min",
-        type=float,
-        default=2.0,
-        help="After-cuts requirement: Mx2_2 greater than this value (GeV^2).",
-    )
-    parser.add_argument(
         "--data-pTmiss-min",
         type=float,
         default=0.5,
@@ -3574,14 +3493,10 @@ def process_data_shape_sample(
 
     one_finite = 0
     one_open_angle = 0
-    one_after_emiss = 0
-    one_after_mx2 = 0
     one_after_ptmiss = 0
 
     two_finite = 0
     two_open_angle = 0
-    two_after_emiss = 0
-    two_after_mx2 = 0
     two_after_ptmiss = 0
 
     log(
@@ -3633,10 +3548,6 @@ def process_data_shape_sample(
         one_open_angle += int(np.count_nonzero(one_before_mask))
 
         one_after_mask = one_before_mask.copy()
-        one_after_mask &= logical_arrays["Emiss2"] > args.data_Emiss_min
-        one_after_emiss += int(np.count_nonzero(one_after_mask))
-        one_after_mask &= logical_arrays["Mx2_2"] > args.data_Mx2_2_min
-        one_after_mx2 += int(np.count_nonzero(one_after_mask))
         one_after_mask &= logical_arrays["pTmiss"] > args.data_pTmiss_min
         one_after_ptmiss += int(np.count_nonzero(one_after_mask))
 
@@ -3646,10 +3557,6 @@ def process_data_shape_sample(
         two_open_angle += int(np.count_nonzero(two_before_mask))
 
         two_after_mask = two_before_mask.copy()
-        two_after_mask &= logical_arrays["Emiss2"] > args.data_Emiss_min
-        two_after_emiss += int(np.count_nonzero(two_after_mask))
-        two_after_mask &= logical_arrays["Mx2_2"] > args.data_Mx2_2_min
-        two_after_mx2 += int(np.count_nonzero(two_after_mask))
         two_after_mask &= logical_arrays["pTmiss"] > args.data_pTmiss_min
         two_after_ptmiss += int(np.count_nonzero(two_after_mask))
 
@@ -3704,15 +3611,11 @@ def process_data_shape_sample(
             "one_photon": {
                 "finite_required_branches": one_finite,
                 "open_angle_ep2_gt_5_deg": one_open_angle,
-                "after_Emiss2_gt_min": one_after_emiss,
-                "after_Mx2_2_gt_min": one_after_mx2,
                 "after_pTmiss_gt_min": one_after_ptmiss,
             },
             "two_photon": {
                 "finite_required_branches": two_finite,
                 "open_angle_ep2_gt_5_deg": two_open_angle,
-                "after_Emiss2_gt_min": two_after_emiss,
-                "after_Mx2_2_gt_min": two_after_mx2,
                 "after_pTmiss_gt_min": two_after_ptmiss,
             },
         },
@@ -3746,9 +3649,15 @@ def plot_before_after_shape_canvas(
     args: argparse.Namespace,
 ) -> None:
     """
-    Write one 2x5 canvas for one accepted event-multiplicity category.
+    Write one 2xN canvas for one accepted event-multiplicity category.
     """
-    fig, axes = plt.subplots(2, 5, figsize=(24, 10))
+    number_of_variables = len(DATA_SHAPE_VARIABLES)
+    fig, axes = plt.subplots(
+        2,
+        number_of_variables,
+        figsize=(4.8 * number_of_variables, 10),
+        squeeze=False,
+    )
 
     for row_index, stage_name in enumerate(
         ("before_histograms", "after_histograms")
@@ -3812,9 +3721,8 @@ def plot_before_after_shape_canvas(
     fig.suptitle(
         f"{period_label}: {multiplicity_label} epgamma shape comparison\n"
         r"Both rows: open_angle_ep2 $>5^\circ$. "
-        f"Bottom row additionally: Emiss2 > {args.data_Emiss_min:g} GeV, "
-        f"Mx2_2 > {args.data_Mx2_2_min:g} GeV$^2$, "
-        f"pTmiss > {args.data_pTmiss_min:g} GeV. "
+        f"Bottom row additionally: pTmiss > "
+        f"{args.data_pTmiss_min:g} GeV. "
         "Each sample is independently unit normalized."
     )
     fig.tight_layout(rect=(0, 0, 1, 0.92))
@@ -4515,7 +4423,7 @@ def variable_model_spec(variable_key: str) -> Dict[str, str]:
             ),
         }
     # endif
-    if variable_key in ("Emiss2", "Mx2_2"):
+    if variable_key == "Emiss2":
         return {
             "dvcs": "affine_linear_asymmetric",
             "pi0": "affine_linear_asymmetric",
@@ -4841,7 +4749,7 @@ def evaluate_variable_model(
     )
 
     variable_key = str(context["variable"].key)
-    if variable_key in ("Emiss2", "Mx2_2"):
+    if variable_key == "Emiss2":
         dvcs_mean = weighted_mean(dvcs_probability, centers)
         pi0_mean = weighted_mean(pi0_probability, centers)
         if (
@@ -5406,8 +5314,8 @@ def run_one_shared_template_fit(
     summary = AdvancedSharedFit(
         success=True,
         message=(
-            "coordinate-minimized shared fraction with variable-specific "
-            "component-preserving morphs"
+            "coordinate-minimized shared fraction across four projections with "
+            "variable-specific component-preserving morphs"
         ),
         f_pi0=shared_fraction,
         f_pi0_err=shared_error,
@@ -5482,11 +5390,13 @@ def plot_shared_template_fit(
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    number_of_variables = len(DATA_SHAPE_VARIABLES)
     fig, axes = plt.subplots(
         2,
-        5,
-        figsize=(24, 10),
+        number_of_variables,
+        figsize=(4.8 * number_of_variables, 10),
         sharex="col",
+        squeeze=False,
         gridspec_kw={"height_ratios": [3.0, 1.2]},
     )
 
@@ -5651,7 +5561,7 @@ def plot_fraction_consistency(
     axis.axhline(
         summary.f_pi0,
         linewidth=1.5,
-        label="Shared five-projection fit",
+        label="Shared four-projection fit",
     )
     if np.isfinite(summary.f_pi0_err):
         axis.axhspan(
@@ -5792,7 +5702,7 @@ def plot_all_period_fitted_pi0_fractions(
     axis.grid(alpha=0.25)
     axis.legend()
     axis.set_title(
-        "Advanced shared five-projection template fits"
+        "Advanced shared four-projection template fits"
     )
     fig.tight_layout()
     fig.savefig(path, dpi=180)
@@ -5843,7 +5753,7 @@ def write_template_fit_outputs(
                         for variable in DATA_SHAPE_VARIABLES
                     },
                     "projection_likelihood_note": (
-                        "The five one-dimensional projections contain the "
+                        "The four one-dimensional projections contain the "
                         "same events and are combined as a composite "
                         "likelihood. Projection correlations are not included "
                         "in the curvature uncertainty."
