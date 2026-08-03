@@ -243,6 +243,7 @@ public static void main(String[] args) {
 			    runnum == 3947) process_event = false;
 	    	
 		    if (process_event) {
+		    	println("hello world")
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
 		        int num_p2 = research_Event.countByPid(22); 
