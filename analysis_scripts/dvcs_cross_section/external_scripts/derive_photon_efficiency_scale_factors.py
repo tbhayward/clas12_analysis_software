@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v63_category_specific_ranges_and_pi0_mass.py
+derive_photon_efficiency_scale_factors_v64_p2_phi_resolution_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -226,6 +226,13 @@ The same event-level diphoton mass is attached to both the more-energetic and
 less-energetic exact-two entries. The shape-comparison plot marks the nominal
 pi0 window 0.10 < M_gg < 0.17 GeV and reports the corresponding data fraction.
 
+Revision: p2_phi branch-resolution fix
+--------------------------------------
+
+The exact-two diphoton-mass prepass requires p2_phi in addition to p2_p and
+p2_theta. This revision adds p2_phi as a direct logical branch alias and
+includes it in the branch-resolution request made by the data shape processor.
+
 """
 
 
@@ -341,6 +348,7 @@ ALIASES: Mapping[str, Tuple[str, ...]] = {
     "p1_theta": ("p1_theta",),
     "p2_p": ("p2_p",),
     "p2_theta": ("p2_theta",),
+    "p2_phi": ("p2_phi",),
     "tag_E": ("p2_p", "g1_p", "g1_E", "gamma1_p", "photon1_p"),
     "tag_theta": ("p2_theta", "g1_theta", "gamma1_theta", "photon1_theta"),
     "tag_phi": ("p2_phi", "g1_phi", "gamma1_phi", "photon1_phi"),
@@ -4277,6 +4285,7 @@ def process_data_shape_sample(
 
     shape_names = [
         *raw_shape_branch_keys(),
+        "p2_phi",
         "open_angle_ep2",
     ]
     logical_names = list(
