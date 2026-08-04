@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v61_algorithmic_speedups.py
+derive_photon_efficiency_scale_factors_v63_category_specific_ranges_and_pi0_mass.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -198,6 +198,33 @@ Fit-stage changes:
   * invariant fit-context arrays, bin widths, and two-component template
     partitions are prepared once and reused by objective evaluations;
   * stage timings are written into the data and MC metadata.
+
+Revision: category-specific ranges and exact-two diphoton-mass diagnostics
+-------------------------------------------------------------------------
+
+The one-photon case now uses the restricted ranges:
+
+    p1_p:              0 to 1.25 GeV
+    theta_gamma_gamma: 0 to 3 deg
+    pTmiss:            0 to 0.7 GeV
+    Emiss2:            0 to 2 GeV
+
+The two exact-two-photon cases retain the broader fit-variable ranges:
+
+    theta_gamma_gamma: 0 to 10 deg
+    pTmiss:            0 to 1.25 GeV
+    Emiss2:            0 to 4 GeV
+
+For exact-two events, the bottom row of the shape-comparison canvas no longer
+contains p1_p or p1_theta. It instead contains the reconstructed diphoton mass,
+followed by p2_p and p2_theta. The diphoton mass is calculated directly from
+the two reconstructed photon four-vectors in each exact-two event:
+
+    M_gg^2 = 2 E1 E2 (1 - cos(theta_12)).
+
+The same event-level diphoton mass is attached to both the more-energetic and
+less-energetic exact-two entries. The shape-comparison plot marks the nominal
+pi0 window 0.10 < M_gg < 0.17 GeV and reports the corresponding data fraction.
 
 """
 
@@ -410,7 +437,38 @@ FIT_VARIABLES: Tuple[FitVariable, ...] = (
 )
 
 
-DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
+ONE_PHOTON_FIT_VARIABLES: Tuple[FitVariable, ...] = (
+    FitVariable(
+        "Delta_phi",
+        r"$\Delta\phi$ (rad)",
+        120,
+        0.5 * math.pi,
+        1.5 * math.pi,
+    ),
+    FitVariable(
+        "theta_gamma_gamma",
+        r"$\theta_{\gamma\gamma}$ (deg)",
+        120,
+        0.0,
+        3.0,
+    ),
+    FitVariable(
+        "pTmiss",
+        r"$p_T^{\mathrm{miss}}$ (GeV)",
+        120,
+        0.0,
+        0.7,
+    ),
+    FitVariable(
+        "Emiss2",
+        r"$E_{\mathrm{miss}}$ (GeV)",
+        120,
+        0.0,
+        2.0,
+    ),
+)
+
+TWO_PHOTON_FIT_VARIABLES: Tuple[FitVariable, ...] = (
     FitVariable(
         "Delta_phi",
         r"$\Delta\phi$ (rad)",
@@ -441,13 +499,13 @@ DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
     ),
 )
 
-KINEMATIC_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
+ONE_PHOTON_DIAGNOSTIC_VARIABLES: Tuple[FitVariable, ...] = (
     FitVariable(
         "p1_p",
         r"$p_1$ momentum (GeV)",
         120,
         0.0,
-        5.0,
+        1.25,
     ),
     FitVariable(
         "p1_theta",
@@ -472,10 +530,100 @@ KINEMATIC_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
     ),
 )
 
-SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
-    *DATA_SHAPE_VARIABLES,
-    *KINEMATIC_SHAPE_VARIABLES,
+TWO_PHOTON_DIAGNOSTIC_VARIABLES: Tuple[FitVariable, ...] = (
+    FitVariable(
+        "diphoton_mass",
+        r"$M_{\gamma\gamma}$ (GeV)",
+        120,
+        0.0,
+        0.30,
+    ),
+    FitVariable(
+        "p2_p",
+        r"$p_2$ momentum (GeV)",
+        120,
+        0.0,
+        10.0,
+    ),
+    FitVariable(
+        "p2_theta",
+        r"$\theta_2$ (deg)",
+        120,
+        0.0,
+        40.0,
+    ),
 )
+
+# Backward-compatible aliases used by fit-model metadata. Actual histogram
+# ranges are selected with the category helper functions below.
+DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = ONE_PHOTON_FIT_VARIABLES
+KINEMATIC_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
+    ONE_PHOTON_DIAGNOSTIC_VARIABLES
+)
+SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
+    *ONE_PHOTON_FIT_VARIABLES,
+    *ONE_PHOTON_DIAGNOSTIC_VARIABLES,
+)
+
+PI0_MASS_WINDOW: Tuple[float, float] = (0.10, 0.17)
+
+
+def fit_variables_for_category(
+    category_key: str,
+) -> Tuple[FitVariable, ...]:
+    if category_key == "one_photon":
+        return ONE_PHOTON_FIT_VARIABLES
+    # endif
+    if category_key in (
+        "two_photon_more_energetic",
+        "two_photon_less_energetic",
+    ):
+        return TWO_PHOTON_FIT_VARIABLES
+    # endif
+    raise KeyError(f"Unknown photon category: {category_key}")
+
+
+def diagnostic_variables_for_category(
+    category_key: str,
+) -> Tuple[FitVariable, ...]:
+    if category_key == "one_photon":
+        return ONE_PHOTON_DIAGNOSTIC_VARIABLES
+    # endif
+    if category_key in (
+        "two_photon_more_energetic",
+        "two_photon_less_energetic",
+    ):
+        return TWO_PHOTON_DIAGNOSTIC_VARIABLES
+    # endif
+    raise KeyError(f"Unknown photon category: {category_key}")
+
+
+def shape_variables_for_category(
+    category_key: str,
+) -> Tuple[FitVariable, ...]:
+    return (
+        *fit_variables_for_category(category_key),
+        *diagnostic_variables_for_category(category_key),
+    )
+
+
+def raw_shape_branch_keys() -> Tuple[str, ...]:
+    """Return the union of non-derived branches needed by any category."""
+    keys: List[str] = []
+    for variable in (
+        *ONE_PHOTON_FIT_VARIABLES,
+        *TWO_PHOTON_FIT_VARIABLES,
+        *ONE_PHOTON_DIAGNOSTIC_VARIABLES,
+        *TWO_PHOTON_DIAGNOSTIC_VARIABLES,
+    ):
+        if variable.key == "diphoton_mass":
+            continue
+        # endif
+        if variable.key not in keys:
+            keys.append(variable.key)
+        # endif
+    # endfor
+    return tuple(keys)
 
 # Shape-comparison diagnostics include the four fit projections above plus
 # native proton/photon kinematics stored in the epgamma trees. These additional
@@ -3287,9 +3435,11 @@ def resolve_branches_from_keys(
     return resolved
 
 
-def empty_stage_histograms() -> Dict[str, Dict[str, object]]:
+def empty_stage_histograms(
+    variables: Sequence[FitVariable],
+) -> Dict[str, Dict[str, object]]:
     histograms: Dict[str, Dict[str, object]] = {}
-    for variable in SHAPE_COMPARISON_VARIABLES:
+    for variable in variables:
         edges = np.linspace(
             variable.low,
             variable.high,
@@ -3311,16 +3461,12 @@ def update_stage_histograms(
     stage_histograms: Dict[str, Dict[str, object]],
     arrays_by_logical_name: Mapping[str, np.ndarray],
     mask: np.ndarray,
+    variables: Sequence[FitVariable],
 ) -> None:
-    """
-    Fill all shape-comparison histograms.
-
-    p1_theta and p2_theta are stored in radians and converted to degrees before
-    histogramming. No other branch is transformed.
-    """
+    """Fill the requested category-specific shape histograms."""
     radians_to_degrees = 180.0 / math.pi
 
-    for variable in SHAPE_COMPARISON_VARIABLES:
+    for variable in variables:
         selected = np.asarray(
             arrays_by_logical_name[variable.key],
             dtype=float,
@@ -3347,14 +3493,16 @@ def update_stage_histograms(
     # endfor
     # endfor
     # endfor
+    # endfor
 
 
 def finalize_stage_histograms(
     stage_histograms: Dict[str, Dict[str, object]],
+    variables: Sequence[FitVariable],
 ) -> Dict[str, Dict[str, object]]:
     finalized: Dict[str, Dict[str, object]] = {}
 
-    for variable in SHAPE_COMPARISON_VARIABLES:
+    for variable in variables:
         histogram = stage_histograms[variable.key]
         counts = np.asarray(histogram["counts"], dtype=np.int64)
         in_range = int(histogram["in_range_entries"])
@@ -3748,13 +3896,20 @@ def scan_shape_multiplicity_and_energy_ranking(
     start_time = time.perf_counter()
 
     identity_names = list(identity_logical_names(sample_key))
-    logical_names = list(dict.fromkeys(identity_names + ["p2_p"]))
+    logical_names = list(
+        dict.fromkeys(
+            identity_names
+            + ["p2_p", "p2_theta", "p2_phi"]
+        )
+    )
     expressions = sorted(
         {resolved[name] for name in logical_names}
     )
 
     signature_chunks: List[np.ndarray] = []
     energy_chunks: List[np.ndarray] = []
+    theta_chunks: List[np.ndarray] = []
+    phi_chunks: List[np.ndarray] = []
     ordinal_chunks: List[np.ndarray] = []
     valid_identity_entries = 0
     entries_scanned = 0
@@ -3789,6 +3944,18 @@ def scan_shape_multiplicity_and_energy_ranking(
                 dtype=float,
             )
         )
+        theta_chunks.append(
+            np.asarray(
+                logical_arrays["p2_theta"][valid_identity],
+                dtype=float,
+            )
+        )
+        phi_chunks.append(
+            np.asarray(
+                logical_arrays["p2_phi"][valid_identity],
+                dtype=float,
+            )
+        )
         ordinal_chunks.append(
             np.arange(
                 chunk_start,
@@ -3802,6 +3969,8 @@ def scan_shape_multiplicity_and_energy_ranking(
     if signature_chunks:
         entry_signatures = np.concatenate(signature_chunks)
         entry_energies = np.concatenate(energy_chunks)
+        entry_thetas = np.concatenate(theta_chunks)
+        entry_phis = np.concatenate(phi_chunks)
         entry_ordinals = np.concatenate(ordinal_chunks)
     else:
         signature_dtype = (
@@ -3811,11 +3980,18 @@ def scan_shape_multiplicity_and_energy_ranking(
         )
         entry_signatures = np.empty(0, dtype=signature_dtype)
         entry_energies = np.empty(0, dtype=float)
+        entry_thetas = np.empty(0, dtype=float)
+        entry_phis = np.empty(0, dtype=float)
         entry_ordinals = np.empty(0, dtype=np.int64)
     # endif
 
     grouping_start = time.perf_counter()
     entry_category = np.zeros(entries_scanned, dtype=np.uint8)
+    entry_diphoton_mass = np.full(
+        entries_scanned,
+        np.nan,
+        dtype=np.float64,
+    )
 
     if entry_signatures.size:
         unique_signatures, inverse, multiplicities = np.unique(
@@ -3830,6 +4006,8 @@ def scan_shape_multiplicity_and_energy_ranking(
         sorted_groups = inverse[order]
         sorted_ordinals = entry_ordinals[order]
         sorted_energies = entry_energies[order]
+        sorted_thetas = entry_thetas[order]
+        sorted_phis = entry_phis[order]
 
         group_starts = np.empty(multiplicities.size, dtype=np.int64)
         group_starts[0] = 0
@@ -3910,6 +4088,43 @@ def scan_shape_multiplicity_and_energy_ranking(
 
             entry_category[high_ordinals] = 2
             entry_category[low_ordinals] = 3
+
+            first_thetas = sorted_thetas[first_positions]
+            second_thetas = sorted_thetas[second_positions]
+            first_phis = sorted_phis[first_positions]
+            second_phis = sorted_phis[second_positions]
+
+            opening_cosine = (
+                np.cos(first_thetas) * np.cos(second_thetas)
+                + np.sin(first_thetas)
+                * np.sin(second_thetas)
+                * np.cos(first_phis - second_phis)
+            )
+            opening_cosine = np.clip(
+                opening_cosine,
+                -1.0,
+                1.0,
+            )
+            mass_squared = (
+                2.0
+                * first_energies
+                * second_energies
+                * (1.0 - opening_cosine)
+            )
+            valid_mass = (
+                np.isfinite(mass_squared)
+                & (mass_squared >= 0.0)
+            )
+            pair_mass = np.full(
+                two_groups.size,
+                np.nan,
+                dtype=np.float64,
+            )
+            pair_mass[valid_mass] = np.sqrt(
+                mass_squared[valid_mass]
+            )
+            entry_diphoton_mass[high_ordinals] = pair_mass
+            entry_diphoton_mass[low_ordinals] = pair_mass
         # endif
     else:
         unique_signatures = entry_signatures.copy()
@@ -3980,7 +4195,12 @@ def scan_shape_multiplicity_and_energy_ranking(
         timings["multiplicity_prepass_total_seconds"],
     )
 
-    return entry_category, accounting, timings
+    return (
+        entry_category,
+        entry_diphoton_mass,
+        accounting,
+        timings,
+    )
 
 
 def multiplicity_entry_masks(
@@ -4045,8 +4265,10 @@ def process_data_shape_sample(
     args_dict: Mapping[str, object],
 ) -> Tuple[str, str, Dict[str, object]]:
     """
-    Fill one-photon, two-high, and two-low shape populations using a dense
-    entry-category array prepared by the multiplicity prepass.
+    Fill category-specific one-photon, two-high, and two-low populations.
+
+    Exact-two events receive an event-level diphoton mass calculated during the
+    multiplicity/ranking prepass.
     """
     total_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -4054,7 +4276,7 @@ def process_data_shape_sample(
     total_entries, available_keys = require_tree(path)
 
     shape_names = [
-        *(variable.key for variable in SHAPE_COMPARISON_VARIABLES),
+        *raw_shape_branch_keys(),
         "open_angle_ep2",
     ]
     logical_names = list(
@@ -4077,6 +4299,7 @@ def process_data_shape_sample(
 
     (
         entry_category,
+        entry_diphoton_mass,
         multiplicity_audit,
         prepass_timings,
     ) = scan_shape_multiplicity_and_energy_ranking(
@@ -4100,8 +4323,12 @@ def process_data_shape_sample(
         ("two_photon_more_energetic", 2),
         ("two_photon_less_energetic", 3),
     )
+    category_variables = {
+        key: shape_variables_for_category(key)
+        for key, _code in category_specs
+    }
     histograms = {
-        key: empty_stage_histograms()
+        key: empty_stage_histograms(category_variables[key])
         for key, _code in category_specs
     }
     cutflow_counts = {
@@ -4113,6 +4340,20 @@ def process_data_shape_sample(
         for key, _code in category_specs
     }
 
+    pi0_mass_diagnostics = {
+        key: {
+            "window_low_GeV": PI0_MASS_WINDOW[0],
+            "window_high_GeV": PI0_MASS_WINDOW[1],
+            "finite_entries": 0,
+            "entries_in_window": 0,
+            "fraction_in_window": math.nan,
+        }
+        for key in (
+            "two_photon_more_energetic",
+            "two_photon_less_energetic",
+        )
+    }
+
     entries_read = 0
     histogram_start = time.perf_counter()
 
@@ -4121,7 +4362,7 @@ def process_data_shape_sample(
         f"{multiplicity_audit['one_photon_events']:,}, two="
         f"{multiplicity_audit['two_photon_events']:,}, rejected >=3="
         f"{multiplicity_audit['three_plus_photon_events']:,}; "
-        "dense exact-two ranking by p2_p"
+        "dense exact-two ranking by p2_p with event-level Mgg"
     )
 
     for arrays in uproot.iterate(
@@ -4141,18 +4382,28 @@ def process_data_shape_sample(
             name: np.asarray(arrays[resolved[name]], dtype=float)
             for name in logical_names
         }
+        logical_arrays["diphoton_mass"] = (
+            entry_diphoton_mass[chunk_start:chunk_stop]
+        )
 
-        common_finite = np.isfinite(logical_arrays["open_angle_ep2"])
-        for variable in SHAPE_COMPARISON_VARIABLES:
-            common_finite &= np.isfinite(logical_arrays[variable.key])
-        # endfor
-
+        open_angle_finite = np.isfinite(
+            logical_arrays["open_angle_ep2"]
+        )
         open_angle_mask = (
             logical_arrays["open_angle_ep2"] > 5.0
         )
 
         for category_key, category_code in category_specs:
+            variables = category_variables[category_key]
             identity_mask = chunk_category == category_code
+
+            common_finite = open_angle_finite.copy()
+            for variable in variables:
+                common_finite &= np.isfinite(
+                    logical_arrays[variable.key]
+                )
+            # endfor
+
             finite_mask = identity_mask & common_finite
             cutflow_counts[category_key][
                 "finite_required_branches"
@@ -4171,7 +4422,27 @@ def process_data_shape_sample(
                 histograms[category_key],
                 logical_arrays,
                 selected_mask,
+                variables,
             )
+
+            if category_key in pi0_mass_diagnostics:
+                selected_mass = logical_arrays[
+                    "diphoton_mass"
+                ][selected_mask]
+                finite_mass = selected_mass[
+                    np.isfinite(selected_mass)
+                ]
+                diagnostic = pi0_mass_diagnostics[category_key]
+                diagnostic["finite_entries"] += int(
+                    finite_mass.size
+                )
+                diagnostic["entries_in_window"] += int(
+                    np.count_nonzero(
+                        (finite_mass >= PI0_MASS_WINDOW[0])
+                        & (finite_mass <= PI0_MASS_WINDOW[1])
+                    )
+                )
+            # endif
         # endfor
     # endfor
 
@@ -4195,8 +4466,21 @@ def process_data_shape_sample(
         )
     # endif
 
+    for category_key, diagnostic in pi0_mass_diagnostics.items():
+        finite_entries = int(diagnostic["finite_entries"])
+        in_window = int(diagnostic["entries_in_window"])
+        diagnostic["fraction_in_window"] = (
+            in_window / finite_entries
+            if finite_entries > 0
+            else math.nan
+        )
+    # endfor
+
     finalized = {
-        key: finalize_stage_histograms(histograms[key])
+        key: finalize_stage_histograms(
+            histograms[key],
+            category_variables[key],
+        )
         for key, _code in category_specs
     }
 
@@ -4241,12 +4525,11 @@ def process_data_shape_sample(
             **cutflow_counts,
         },
         "photon_multiplicity": multiplicity,
+        "pi0_mass_diagnostics": pi0_mass_diagnostics,
         "timings": timings,
     }
 
     for category_key, _code in category_specs:
-        # There is no additional after-selection cut. Preserve the existing
-        # output schema without re-histogramming the identical population.
         payload[category_key] = {
             "before_histograms": finalized[category_key],
             "after_histograms": finalized[category_key],
@@ -4267,16 +4550,11 @@ def plot_before_after_shape_canvas(
     args: argparse.Namespace,
 ) -> None:
     """
-    Write one 2x4 shape-comparison canvas.
+    Write one category-specific 2x4 shape-comparison canvas.
 
-    Top row:
-        Delta_phi, theta_gamma_gamma, pTmiss, Emiss2.
-
-    Bottom row:
-        p1_p, p1_theta, p2_p, p2_theta.
-
-    The same open_angle_ep2 > 5 deg selection is used in both rows. No pTmiss
-    cut is applied.
+    The one-photon case shows four fit variables and four particle-kinematic
+    diagnostics. The exact-two cases show four fit variables and, in the bottom
+    row, M_gg, p2_p, and p2_theta; the unused fourth panel is hidden.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -4286,14 +4564,19 @@ def plot_before_after_shape_canvas(
         "aaogen": "tab:red",
     }
 
-    if len(DATA_SHAPE_VARIABLES) != 4:
+    fit_variables = fit_variables_for_category(multiplicity_key)
+    diagnostic_variables = diagnostic_variables_for_category(
+        multiplicity_key
+    )
+
+    if len(fit_variables) != 4:
         raise RuntimeError(
-            "Expected exactly four fit variables for the top row."
+            "Expected exactly four category fit variables."
         )
     # endif
-    if len(KINEMATIC_SHAPE_VARIABLES) != 4:
+    if len(diagnostic_variables) > 4:
         raise RuntimeError(
-            "Expected exactly four kinematic variables for the bottom row."
+            "At most four diagnostic variables may be drawn."
         )
     # endif
 
@@ -4305,28 +4588,28 @@ def plot_before_after_shape_canvas(
     )
 
     row_variables = (
-        DATA_SHAPE_VARIABLES,
-        KINEMATIC_SHAPE_VARIABLES,
-    )
-    row_stage_names = (
-        "before_histograms",
-        "before_histograms",
+        fit_variables,
+        diagnostic_variables,
     )
     row_titles = (
         "fit-variable shapes",
-        "particle kinematics",
+        "diagnostics",
     )
 
     for row_index, row_group in enumerate(row_variables):
-        stage_name = row_stage_names[row_index]
-
-        for column_index, variable in enumerate(row_group):
+        for column_index in range(4):
             axis = axes[row_index, column_index]
 
+            if column_index >= len(row_group):
+                axis.set_visible(False)
+                continue
+            # endif
+
+            variable = row_group[column_index]
             for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
                 histogram = sample_payloads[sample_key][
                     multiplicity_key
-                ][stage_name][variable.key]
+                ]["before_histograms"][variable.key]
                 edges = np.asarray(
                     histogram["edges"],
                     dtype=float,
@@ -4336,6 +4619,27 @@ def plot_before_after_shape_canvas(
                     dtype=float,
                 )
 
+                label = (
+                    f"{sample_label} "
+                    f"({histogram['in_range_entries']:,})"
+                )
+                if (
+                    variable.key == "diphoton_mass"
+                    and sample_key == "data"
+                ):
+                    diagnostic = sample_payloads[sample_key][
+                        "pi0_mass_diagnostics"
+                    ][multiplicity_key]
+                    fraction = float(
+                        diagnostic["fraction_in_window"]
+                    )
+                    if np.isfinite(fraction):
+                        label += (
+                            f"; pi0 window={100.0 * fraction:.1f}%"
+                        )
+                    # endif
+                # endif
+
                 axis.stairs(
                     normalized,
                     edges,
@@ -4344,16 +4648,31 @@ def plot_before_after_shape_canvas(
                         1.45 if sample_key == "data" else 1.25
                     ),
                     linestyle="-",
-                    label=(
-                        f"{sample_label} "
-                        f"({histogram['in_range_entries']:,})"
-                    ),
+                    label=label,
                     zorder=(
                         4 if sample_key == "data" else
                         3 if sample_key == "dvcsgen" else 2
                     ),
                 )
             # endfor
+
+            if variable.key == "diphoton_mass":
+                axis.axvspan(
+                    PI0_MASS_WINDOW[0],
+                    PI0_MASS_WINDOW[1],
+                    alpha=0.15,
+                    label=(
+                        r"nominal $\pi^0$ window "
+                        f"({PI0_MASS_WINDOW[0]:.2f}-"
+                        f"{PI0_MASS_WINDOW[1]:.2f} GeV)"
+                    ),
+                )
+                axis.axvline(
+                    0.1349768,
+                    linewidth=1.0,
+                    linestyle="--",
+                )
+            # endif
 
             axis.set_xlim(variable.low, variable.high)
             axis.set_xlabel(variable.label)
@@ -4369,7 +4688,9 @@ def plot_before_after_shape_canvas(
                     values = np.asarray(
                         sample_payloads[sample_key][
                             multiplicity_key
-                        ][stage_name][variable.key]["unit_area"],
+                        ]["before_histograms"][
+                            variable.key
+                        ]["unit_area"],
                         dtype=float,
                     )
                     positive_values.extend(
@@ -4392,6 +4713,12 @@ def plot_before_after_shape_canvas(
     # endfor
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
+    if multiplicity_key != "one_photon":
+        extra_handles, extra_labels = axes[1, 0].get_legend_handles_labels()
+        handles = [*handles, *extra_handles]
+        labels = [*labels, *extra_labels]
+    # endif
+
     fig.suptitle(
         f"Unit-area epgamma shape comparisons: "
         f"{period_label}, {multiplicity_label}\n"
@@ -4405,10 +4732,10 @@ def plot_before_after_shape_canvas(
         labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.875),
-        ncol=len(labels),
+        ncol=min(4, max(1, len(labels))),
         frameon=False,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.82))
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.80))
     fig.savefig(
         path,
         dpi=180,
@@ -4421,9 +4748,8 @@ def serializable_histograms(
     histograms: Mapping[str, Mapping[str, object]],
 ) -> Dict[str, Dict[str, object]]:
     output: Dict[str, Dict[str, object]] = {}
-    for variable in DATA_SHAPE_VARIABLES:
-        histogram = histograms[variable.key]
-        output[variable.key] = {
+    for variable_key, histogram in histograms.items():
+        output[variable_key] = {
             key: (
                 value.tolist()
                 if isinstance(value, np.ndarray)
@@ -5803,6 +6129,8 @@ def fit_histogram_inputs(
     Dict[str, np.ndarray],
     Dict[str, np.ndarray],
 ]:
+    fit_variables = fit_variables_for_category(multiplicity_key)
+
     def extract(sample_key: str) -> Dict[str, np.ndarray]:
         return {
             variable.key: np.asarray(
@@ -5811,7 +6139,7 @@ def fit_histogram_inputs(
                 ][variable.key]["counts"],
                 dtype=np.float64,
             )
-            for variable in DATA_SHAPE_VARIABLES
+            for variable in fit_variables
         }
 
     return extract("data"), extract("dvcsgen"), extract("aaogen")
@@ -5833,8 +6161,9 @@ def run_one_shared_template_fit(
 
     contexts: Dict[str, Dict[str, object]] = {}
     independent_states: Dict[str, Dict[str, object]] = {}
+    fit_variables = fit_variables_for_category(multiplicity_key)
 
-    for variable in DATA_SHAPE_VARIABLES:
+    for variable in fit_variables:
         data_count = int(np.sum(data_histograms[variable.key]))
         dvcs_count = int(np.sum(dvcs_histograms[variable.key]))
         pi0_count = int(np.sum(pi0_histograms[variable.key]))
@@ -6744,7 +7073,7 @@ def run_data_shape_stage(
                 category_label,
                 sample_payloads,
                 category_key,
-                SHAPE_COMPARISON_VARIABLES,
+                shape_variables_for_category(category_key),
                 "shape comparisons",
                 args,
             )
@@ -6862,6 +7191,10 @@ def run_data_shape_stage(
                 "photon_multiplicity": payload[
                     "photon_multiplicity"
                 ],
+                "pi0_mass_diagnostics": payload.get(
+                    "pi0_mass_diagnostics",
+                    {},
+                ),
                 **{
                     category_key: {
                         "before_histograms": serializable_histograms(
