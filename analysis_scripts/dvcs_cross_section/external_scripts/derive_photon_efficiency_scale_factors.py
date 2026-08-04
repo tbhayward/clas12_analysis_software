@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v44_degree_kinematics_separate_canvases.py
+derive_photon_efficiency_scale_factors_v53_multiplicity_reset.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -80,6 +80,32 @@ are produced for:
 
   * the four fitted shape variables;
   * the four particle-kinematic diagnostics.
+
+Multiplicity reset after corrected epgamma production
+------------------------------------------------------
+
+The epgamma files were regenerated after correcting the photon loop so that
+the leading reconstructed photon is once again included. This revision removes
+the temporary hard rejection of events represented by three or more photon
+entries.
+
+No event is rejected solely because of photon-entry multiplicity.
+
+The data diagnostic stage now keeps four independent categories:
+
+  * exactly one photon entry;
+  * exactly two photon entries;
+  * three or more photon entries;
+  * all multiplicities combined.
+
+Multiplicity histograms and CSV/JSON summaries still report exact
+multiplicities 1 through 6 and >6. The template fits remain restricted to the
+exact-one and exact-two categories for now; the >=3 and inclusive categories
+are diagnostic only.
+
+The MC-efficiency opportunity stage also no longer requires multiplicity <3.
+Every entry with a valid event identity is allowed to proceed to the ordinary
+kinematic and topology selections.
 
 """
 
@@ -754,7 +780,7 @@ def exact_duplicate_keep_mask(
 
 CUT_STAGE_ORDER: Tuple[str, ...] = (
     "tree_entries",
-    "photon_multiplicity_lt_3",
+    "valid_event_identity",
     "finite_kinematics",
     "Q2",
     "W",
@@ -789,18 +815,18 @@ def cut_stage_definitions(
             "applied": True,
             "scope": "input",
         },
-        "photon_multiplicity_lt_3": {
-            "label": "Event photon-entry multiplicity",
+        "valid_event_identity": {
+            "label": "Valid event identity",
             "condition": (
-                "retain only events with one or two reconstructed-photon "
-                "entries; reject multiplicity >= 3"
+                "require a valid event signature for multiplicity auditing; "
+                "do not reject any multiplicity"
             ),
             "branch": (
                 "runnum,evnum for data; rounded reconstructed e/p "
                 "kinematics for MC"
             ),
             "applied": True,
-            "scope": "hard event-level cut",
+            "scope": "event-identity validation only",
         },
         "finite_kinematics": {
             "label": "Finite positive reconstructed e, p, and tag photon",
@@ -1176,10 +1202,10 @@ def read_opportunities(
     }
     (
         _all_mc_signatures,
-        one_mc_signatures,
-        two_mc_signatures,
-        rejected_mc_signatures,
-        multiplicity_cut,
+        _one_mc_signatures,
+        _two_mc_signatures,
+        _three_plus_mc_signatures,
+        multiplicity_audit,
     ) = scan_event_multiplicity(
         path,
         "mc",
@@ -1211,12 +1237,12 @@ def read_opportunities(
             )
         },
         "partner_candidates_finite_and_E_above_threshold": 0,
-        "hard_multiplicity_cut": {
+        "multiplicity_audit": {
             "condition": (
-                "retain event multiplicity < 3; reject every event with "
-                "multiplicity >= 3"
+                "all photon-entry multiplicities are retained; multiplicity "
+                "is reported for diagnostics only"
             ),
-            **multiplicity_cut,
+            **multiplicity_audit,
         },
     }
     stage_counts = cutflow["stage_counts"]
@@ -1260,25 +1286,16 @@ def read_opportunities(
             "p_theta": p_theta,
             "p_phi": p_phi,
         }
-        (
-            one_multiplicity_keep,
-            two_multiplicity_keep,
-            _valid_identity,
-        ) = multiplicity_entry_masks(
+        _signatures, valid_identity = build_identity_signature(
             identity_arrays,
             "mc",
-            one_mc_signatures,
-            two_mc_signatures,
             args,
         )
-        multiplicity_keep = (
-            one_multiplicity_keep | two_multiplicity_keep
-        )
-        stage_counts["photon_multiplicity_lt_3"] += int(
-            np.count_nonzero(multiplicity_keep)
+        stage_counts["valid_event_identity"] += int(
+            np.count_nonzero(valid_identity)
         )
 
-        finite = multiplicity_keep & (
+        finite = valid_identity & (
             np.isfinite(e_p) & np.isfinite(e_theta) & np.isfinite(e_phi)
             & np.isfinite(p_p) & np.isfinite(p_theta) & np.isfinite(p_phi)
             & np.isfinite(tag_E) & np.isfinite(tag_theta) & np.isfinite(tag_phi)
@@ -3396,11 +3413,13 @@ def scan_event_multiplicity(
     """
     Scan identity branches and classify events by photon-entry multiplicity.
 
+    This function is diagnostic only. It does not define an event rejection.
+
     Returns:
       all unique event signatures,
       exact-one-photon event signatures,
       exact-two-photon event signatures,
-      rejected event signatures with multiplicity >= 3,
+      three-or-more-photon event signatures,
       entry/event accounting.
     """
     logical_names = identity_logical_names(sample_key)
@@ -3460,17 +3479,17 @@ def scan_event_multiplicity(
         )
         one_photon_signatures = unique_signatures[multiplicities == 1]
         two_photon_signatures = unique_signatures[multiplicities == 2]
-        rejected_signatures = unique_signatures[multiplicities >= 3]
-        rejected_entries = int(
+        three_plus_signatures = unique_signatures[multiplicities >= 3]
+        three_plus_entries = int(
             np.sum(multiplicities[multiplicities >= 3])
         )
     else:
         unique_signatures = all_entry_signatures.copy()
         one_photon_signatures = all_entry_signatures.copy()
         two_photon_signatures = all_entry_signatures.copy()
-        rejected_signatures = all_entry_signatures.copy()
+        three_plus_signatures = all_entry_signatures.copy()
         multiplicities = np.empty(0, dtype=np.int64)
-        rejected_entries = 0
+        three_plus_entries = 0
     # endif
 
     accounting = {
@@ -3479,17 +3498,11 @@ def scan_event_multiplicity(
         "unique_events": int(unique_signatures.size),
         "one_photon_events": int(one_photon_signatures.size),
         "two_photon_events": int(two_photon_signatures.size),
-        "rejected_events_multiplicity_ge_3": int(
-            rejected_signatures.size
-        ),
-        "rejected_entries_multiplicity_ge_3": rejected_entries,
-        "retained_events_multiplicity_lt_3": int(
-            one_photon_signatures.size + two_photon_signatures.size
-        ),
-        "retained_entries_multiplicity_lt_3": int(
-            one_photon_signatures.size
-            + 2 * two_photon_signatures.size
-        ),
+        "three_plus_photon_events": int(three_plus_signatures.size),
+        "three_plus_photon_entries": three_plus_entries,
+        "all_multiplicities_retained": True,
+        "events_rejected_by_multiplicity": 0,
+        "entries_rejected_by_multiplicity": 0,
         "maximum_multiplicity": (
             int(np.max(multiplicities))
             if multiplicities.size > 0
@@ -3500,7 +3513,7 @@ def scan_event_multiplicity(
         unique_signatures,
         one_photon_signatures,
         two_photon_signatures,
-        rejected_signatures,
+        three_plus_signatures,
         accounting,
     )
 
@@ -3510,10 +3523,12 @@ def multiplicity_entry_masks(
     sample_key: str,
     one_photon_signatures: np.ndarray,
     two_photon_signatures: np.ndarray,
+    three_plus_signatures: np.ndarray,
     args: argparse.Namespace,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Return full-length masks for exact-one and exact-two photon events.
+    Return full-length masks for exact-one, exact-two, >=3, and all valid
+    event identities. No multiplicity category is rejected.
     """
     signatures, valid_identity = build_identity_signature(
         arrays_by_logical_name,
@@ -3523,6 +3538,7 @@ def multiplicity_entry_masks(
 
     one_valid = np.zeros(signatures.size, dtype=bool)
     two_valid = np.zeros(signatures.size, dtype=bool)
+    three_plus_valid = np.zeros(signatures.size, dtype=bool)
 
     if signatures.size > 0:
         if one_photon_signatures.size > 0:
@@ -3531,14 +3547,28 @@ def multiplicity_entry_masks(
         if two_photon_signatures.size > 0:
             two_valid = np.isin(signatures, two_photon_signatures)
         # endif
+        if three_plus_signatures.size > 0:
+            three_plus_valid = np.isin(
+                signatures,
+                three_plus_signatures,
+            )
+        # endif
     # endif
 
     one_full = np.zeros(valid_identity.size, dtype=bool)
     two_full = np.zeros(valid_identity.size, dtype=bool)
+    three_plus_full = np.zeros(valid_identity.size, dtype=bool)
+
     one_full[valid_identity] = one_valid
     two_full[valid_identity] = two_valid
+    three_plus_full[valid_identity] = three_plus_valid
 
-    return one_full, two_full, valid_identity
+    return (
+        one_full,
+        two_full,
+        three_plus_full,
+        valid_identity,
+    )
 
 
 
@@ -3550,7 +3580,8 @@ def process_data_shape_sample(
     args_dict: Mapping[str, object],
 ) -> Tuple[str, str, Dict[str, object]]:
     """
-    Determine event multiplicities, then fill exact-one and exact-two shapes.
+    Determine event multiplicities and fill exact-one, exact-two, >=3, and
+    inclusive shape diagnostics. No multiplicity category is rejected.
     """
     args = argparse.Namespace(**args_dict)
     path = getattr(period, period_attribute)
@@ -3582,8 +3613,8 @@ def process_data_shape_sample(
         all_signatures,
         one_photon_signatures,
         two_photon_signatures,
-        rejected_signatures,
-        multiplicity_cut,
+        three_plus_signatures,
+        multiplicity_audit,
     ) = scan_event_multiplicity(
         path,
         sample_key,
@@ -3597,32 +3628,43 @@ def process_data_shape_sample(
         period,
         sample_key,
         sample_label,
-        multiplicity_cut["entries_scanned"],
-        multiplicity_cut["valid_identity_entries"],
+        multiplicity_audit["entries_scanned"],
+        multiplicity_audit["valid_identity_entries"],
         args,
     )
 
-    one_before_histograms = empty_stage_histograms()
-    one_after_histograms = empty_stage_histograms()
-    two_before_histograms = empty_stage_histograms()
-    two_after_histograms = empty_stage_histograms()
+    category_keys = (
+        "one_photon",
+        "two_photon",
+        "three_plus_photons",
+        "all_multiplicities",
+    )
+    before_histograms = {
+        key: empty_stage_histograms()
+        for key in category_keys
+    }
+    after_histograms = {
+        key: empty_stage_histograms()
+        for key in category_keys
+    }
+    cutflow_counts = {
+        key: {
+            "finite_required_branches": 0,
+            "open_angle_ep2_gt_5_deg": 0,
+            "after_pTmiss_gt_min": 0,
+        }
+        for key in category_keys
+    }
 
     entries_read = 0
     valid_identity_entries = 0
 
-    one_finite = 0
-    one_open_angle = 0
-    one_after_ptmiss = 0
-
-    two_finite = 0
-    two_open_angle = 0
-    two_after_ptmiss = 0
-
     log(
         f"{period.label} {sample_label}: exact-one events="
-        f"{multiplicity_cut['one_photon_events']:,}, exact-two events="
-        f"{multiplicity_cut['two_photon_events']:,}, rejected >=3="
-        f"{multiplicity_cut['rejected_events_multiplicity_ge_3']:,}"
+        f"{multiplicity_audit['one_photon_events']:,}, exact-two events="
+        f"{multiplicity_audit['two_photon_events']:,}, >=3 events="
+        f"{multiplicity_audit['three_plus_photon_events']:,}; "
+        "no multiplicity rejection"
     )
 
     for arrays in uproot.iterate(
@@ -3646,12 +3688,14 @@ def process_data_shape_sample(
         (
             one_multiplicity_mask,
             two_multiplicity_mask,
+            three_plus_multiplicity_mask,
             valid_identity,
         ) = multiplicity_entry_masks(
             logical_arrays,
             sample_key,
             one_photon_signatures,
             two_photon_signatures,
+            three_plus_signatures,
             args,
         )
         valid_identity_entries += int(np.count_nonzero(valid_identity))
@@ -3661,51 +3705,50 @@ def process_data_shape_sample(
             common_finite &= np.isfinite(logical_arrays[variable.key])
         # endfor
 
-        one_before_mask = one_multiplicity_mask & common_finite
-        one_finite += int(np.count_nonzero(one_before_mask))
-        one_before_mask &= logical_arrays["open_angle_ep2"] > 5.0
-        one_open_angle += int(np.count_nonzero(one_before_mask))
+        category_identity_masks = {
+            "one_photon": one_multiplicity_mask,
+            "two_photon": two_multiplicity_mask,
+            "three_plus_photons": three_plus_multiplicity_mask,
+            "all_multiplicities": valid_identity,
+        }
 
-        one_after_mask = one_before_mask.copy()
-        one_after_mask &= logical_arrays["pTmiss"] > args.data_pTmiss_min
-        one_after_ptmiss += int(np.count_nonzero(one_after_mask))
+        for category_key, identity_mask in category_identity_masks.items():
+            before_mask = identity_mask & common_finite
+            cutflow_counts[category_key][
+                "finite_required_branches"
+            ] += int(np.count_nonzero(before_mask))
 
-        two_before_mask = two_multiplicity_mask & common_finite
-        two_finite += int(np.count_nonzero(two_before_mask))
-        two_before_mask &= logical_arrays["open_angle_ep2"] > 5.0
-        two_open_angle += int(np.count_nonzero(two_before_mask))
+            before_mask &= logical_arrays["open_angle_ep2"] > 5.0
+            cutflow_counts[category_key][
+                "open_angle_ep2_gt_5_deg"
+            ] += int(np.count_nonzero(before_mask))
 
-        two_after_mask = two_before_mask.copy()
-        two_after_mask &= logical_arrays["pTmiss"] > args.data_pTmiss_min
-        two_after_ptmiss += int(np.count_nonzero(two_after_mask))
+            after_mask = before_mask.copy()
+            after_mask &= (
+                logical_arrays["pTmiss"] > args.data_pTmiss_min
+            )
+            cutflow_counts[category_key][
+                "after_pTmiss_gt_min"
+            ] += int(np.count_nonzero(after_mask))
 
-        update_stage_histograms(
-            one_before_histograms,
-            logical_arrays,
-            one_before_mask,
-        )
-        update_stage_histograms(
-            one_after_histograms,
-            logical_arrays,
-            one_after_mask,
-        )
-        update_stage_histograms(
-            two_before_histograms,
-            logical_arrays,
-            two_before_mask,
-        )
-        update_stage_histograms(
-            two_after_histograms,
-            logical_arrays,
-            two_after_mask,
-        )
+            update_stage_histograms(
+                before_histograms[category_key],
+                logical_arrays,
+                before_mask,
+            )
+            update_stage_histograms(
+                after_histograms[category_key],
+                logical_arrays,
+                after_mask,
+            )
+        # endfor
     # endfor
 
-    if entries_read != multiplicity_cut["entries_scanned"]:
+    if entries_read != multiplicity_audit["entries_scanned"]:
         raise RuntimeError(
             f"{period.label} {sample_label}: multiplicity prepass read "
-            f"{multiplicity_cut['entries_scanned']:,} entries but the shape "
-            f"pass read {entries_read:,}."
+            f"{multiplicity_audit['entries_scanned']:,} entries but the "
+            f"shape pass read {entries_read:,}."
         )
     # endif
 
@@ -3718,44 +3761,32 @@ def process_data_shape_sample(
         "tree_entries": total_entries,
         "entries_read": entries_read,
         "resolved_branches": resolved,
-        "hard_multiplicity_cut": {
+        "multiplicity_audit": {
             "condition": (
-                "retain exact multiplicity 1 or 2; reject multiplicity >= 3"
+                "no photon-entry multiplicity is rejected; exact-one, "
+                "exact-two, >=3, and inclusive categories are retained"
             ),
-            **multiplicity_cut,
+            **multiplicity_audit,
         },
         "cutflow": {
             "tree_entries_read": entries_read,
             "valid_identity_entries": valid_identity_entries,
-            "one_photon": {
-                "finite_required_branches": one_finite,
-                "open_angle_ep2_gt_5_deg": one_open_angle,
-                "after_pTmiss_gt_min": one_after_ptmiss,
-            },
-            "two_photon": {
-                "finite_required_branches": two_finite,
-                "open_angle_ep2_gt_5_deg": two_open_angle,
-                "after_pTmiss_gt_min": two_after_ptmiss,
-            },
-        },
-        "one_photon": {
-            "before_histograms": finalize_stage_histograms(
-                one_before_histograms
-            ),
-            "after_histograms": finalize_stage_histograms(
-                one_after_histograms
-            ),
-        },
-        "two_photon": {
-            "before_histograms": finalize_stage_histograms(
-                two_before_histograms
-            ),
-            "after_histograms": finalize_stage_histograms(
-                two_after_histograms
-            ),
+            **cutflow_counts,
         },
         "photon_multiplicity": multiplicity,
     }
+
+    for category_key in category_keys:
+        payload[category_key] = {
+            "before_histograms": finalize_stage_histograms(
+                before_histograms[category_key]
+            ),
+            "after_histograms": finalize_stage_histograms(
+                after_histograms[category_key]
+            ),
+        }
+    # endfor
+
     return period.key, sample_key, payload
 
 
@@ -6149,6 +6180,14 @@ def run_data_shape_stage(
             shape_dir
             / f"{period.key}_two_photon_before_after_cuts.png"
         )
+        three_plus_plot_path = (
+            shape_dir
+            / f"{period.key}_three_plus_photons_before_after_cuts.png"
+        )
+        inclusive_plot_path = (
+            shape_dir
+            / f"{period.key}_all_multiplicities_before_after_cuts.png"
+        )
         one_photon_kinematics_plot_path = (
             shape_dir
             / f"{period.key}_one_photon_particle_kinematics.png"
@@ -6156,6 +6195,14 @@ def run_data_shape_stage(
         two_photon_kinematics_plot_path = (
             shape_dir
             / f"{period.key}_two_photon_particle_kinematics.png"
+        )
+        three_plus_kinematics_plot_path = (
+            shape_dir
+            / f"{period.key}_three_plus_photons_particle_kinematics.png"
+        )
+        inclusive_kinematics_plot_path = (
+            shape_dir
+            / f"{period.key}_all_multiplicities_particle_kinematics.png"
         )
 
         plot_before_after_shape_canvas(
@@ -6194,6 +6241,46 @@ def run_data_shape_stage(
             "exactly two reconstructed-photon entries",
             sample_payloads,
             "two_photon",
+            KINEMATIC_SHAPE_VARIABLES,
+            "particle-kinematic comparisons",
+            args,
+        )
+        plot_before_after_shape_canvas(
+            three_plus_plot_path,
+            period.label,
+            "three or more reconstructed-photon entries",
+            sample_payloads,
+            "three_plus_photons",
+            DATA_SHAPE_VARIABLES,
+            "fit-variable shape comparisons",
+            args,
+        )
+        plot_before_after_shape_canvas(
+            inclusive_plot_path,
+            period.label,
+            "all reconstructed-photon multiplicities",
+            sample_payloads,
+            "all_multiplicities",
+            DATA_SHAPE_VARIABLES,
+            "fit-variable shape comparisons",
+            args,
+        )
+        plot_before_after_shape_canvas(
+            three_plus_kinematics_plot_path,
+            period.label,
+            "three or more reconstructed-photon entries",
+            sample_payloads,
+            "three_plus_photons",
+            KINEMATIC_SHAPE_VARIABLES,
+            "particle-kinematic comparisons",
+            args,
+        )
+        plot_before_after_shape_canvas(
+            inclusive_kinematics_plot_path,
+            period.label,
+            "all reconstructed-photon multiplicities",
+            sample_payloads,
+            "all_multiplicities",
             KINEMATIC_SHAPE_VARIABLES,
             "particle-kinematic comparisons",
             args,
@@ -6305,6 +6392,18 @@ def run_data_shape_stage(
                 "two_photon_particle_kinematics": str(
                     two_photon_kinematics_plot_path
                 ),
+                "three_plus_photons_fit_variables": str(
+                    three_plus_plot_path
+                ),
+                "all_multiplicities_fit_variables": str(
+                    inclusive_plot_path
+                ),
+                "three_plus_photons_particle_kinematics": str(
+                    three_plus_kinematics_plot_path
+                ),
+                "all_multiplicities_particle_kinematics": str(
+                    inclusive_kinematics_plot_path
+                ),
             },
             "template_fits": period_fit_payload,
             "samples": {},
@@ -6320,8 +6419,8 @@ def run_data_shape_stage(
                 "tree_entries": payload["tree_entries"],
                 "entries_read": payload["entries_read"],
                 "resolved_branches": payload["resolved_branches"],
-                "hard_multiplicity_cut": payload[
-                    "hard_multiplicity_cut"
+                "multiplicity_audit": payload[
+                    "multiplicity_audit"
                 ],
                 "cutflow": payload["cutflow"],
                 "photon_multiplicity": payload[
@@ -6341,6 +6440,30 @@ def run_data_shape_stage(
                     ),
                     "after_histograms": serializable_histograms(
                         payload["two_photon"]["after_histograms"]
+                    ),
+                },
+                "three_plus_photons": {
+                    "before_histograms": serializable_histograms(
+                        payload["three_plus_photons"][
+                            "before_histograms"
+                        ]
+                    ),
+                    "after_histograms": serializable_histograms(
+                        payload["three_plus_photons"][
+                            "after_histograms"
+                        ]
+                    ),
+                },
+                "all_multiplicities": {
+                    "before_histograms": serializable_histograms(
+                        payload["all_multiplicities"][
+                            "before_histograms"
+                        ]
+                    ),
+                    "after_histograms": serializable_histograms(
+                        payload["all_multiplicities"][
+                            "after_histograms"
+                        ]
                     ),
                 },
             }
