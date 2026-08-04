@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v55_restore_mc_and_fix_multiplicity.py
+derive_photon_efficiency_scale_factors_v57_restore_multiplicity_cut_and_kinematics.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -126,6 +126,29 @@ np.unique() again. Consequently every event appeared to have multiplicity one
 in the summary plots even though the exact-one, exact-two, and >=3 masks were
 correct. The summary is now constructed directly from the multiplicities found
 during the identity prepass.
+
+Revision: restore multiplicity cut and updated diagnostic ranges
+---------------------------------------------------------------
+
+This revision restores the hard event-level requirement that only events with
+one or two reconstructed-photon entries are retained. Events with three or
+more reconstructed-photon entries are rejected consistently in the data-shape
+stage and the MC-efficiency opportunity stage.
+
+The data shape-comparison ranges are now:
+
+    theta_gamma_gamma: 0 to 10 deg
+    pTmiss:            0 to 1.25 GeV
+    Emiss2:            0 to 4 GeV
+
+No pTmiss lower cut is applied in the after-selection row.
+
+The four particle-kinematic diagnostics are restored:
+
+    p1_p, p1_theta, p2_p, p2_theta
+
+and are placed in the bottom row of the same shape-comparison canvas. The top
+row contains the four exclusivity-shape variables.
 
 """
 
@@ -351,31 +374,64 @@ DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
         r"$\theta_{\gamma\gamma}$ (deg)",
         120,
         0.0,
-        40.0,
+        10.0,
     ),
     FitVariable(
         "pTmiss",
-        r"$p_T^{\rm miss}$ (GeV)",
-        125,
+        r"$p_T^{\mathrm{miss}}$ (GeV)",
+        120,
         0.0,
-        2.0,
+        1.25,
     ),
     FitVariable(
         "Emiss2",
-        r"$E_{\rm miss}$ (GeV)",
+        r"$E_{\mathrm{miss}}$ (GeV)",
         120,
         0.0,
-        9.0,
+        4.0,
     ),
+)
+
+KINEMATIC_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
+    FitVariable(
+        "p1_p",
+        r"$p_1$ momentum (GeV)",
+        120,
+        0.0,
+        5.0,
+    ),
+    FitVariable(
+        "p1_theta",
+        r"$\theta_1$ (deg)",
+        120,
+        0.0,
+        70.0,
+    ),
+    FitVariable(
+        "p2_p",
+        r"$p_2$ momentum (GeV)",
+        120,
+        0.0,
+        10.0,
+    ),
+    FitVariable(
+        "p2_theta",
+        r"$\theta_2$ (deg)",
+        120,
+        0.0,
+        40.0,
+    ),
+)
+
+SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
+    *DATA_SHAPE_VARIABLES,
+    *KINEMATIC_SHAPE_VARIABLES,
 )
 
 # Shape-comparison diagnostics include the four fit projections above plus
 # native proton/photon kinematics stored in the epgamma trees. These additional
 # variables do not enter either the independent or shared pi0-fraction fits.
 
-SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
-    *DATA_SHAPE_VARIABLES,
-)
 
 FRACTION_DRIVERS: Tuple[str, ...] = (
     "theta_gamma_gamma",
@@ -769,7 +825,7 @@ def exact_duplicate_keep_mask(
 
 CUT_STAGE_ORDER: Tuple[str, ...] = (
     "tree_entries",
-    "valid_event_identity",
+    "photon_multiplicity_lt_3",
     "finite_kinematics",
     "Q2",
     "W",
@@ -804,18 +860,18 @@ def cut_stage_definitions(
             "applied": True,
             "scope": "input",
         },
-        "valid_event_identity": {
-            "label": "Valid event identity",
+        "photon_multiplicity_lt_3": {
+            "label": "Event photon-entry multiplicity",
             "condition": (
-                "require a valid event signature for multiplicity auditing; "
-                "do not reject any multiplicity"
+                "retain only events with one or two reconstructed-photon "
+                "entries; reject multiplicity >= 3"
             ),
             "branch": (
                 "runnum,evnum for data; rounded reconstructed e/p "
                 "kinematics for MC"
             ),
             "applied": True,
-            "scope": "event-identity validation only",
+            "scope": "hard event-level cut",
         },
         "finite_kinematics": {
             "label": "Finite positive reconstructed e, p, and tag photon",
@@ -1191,8 +1247,8 @@ def read_opportunities(
     }
     (
         _all_mc_signatures,
-        _one_mc_signatures,
-        _two_mc_signatures,
+        one_mc_signatures,
+        two_mc_signatures,
         _three_plus_mc_signatures,
         multiplicity_audit,
     ) = scan_event_multiplicity(
@@ -1275,16 +1331,27 @@ def read_opportunities(
             "p_theta": p_theta,
             "p_phi": p_phi,
         }
-        _signatures, valid_identity = build_identity_signature(
+        (
+            one_multiplicity_keep,
+            two_multiplicity_keep,
+            _three_plus_multiplicity_keep,
+            valid_identity,
+        ) = multiplicity_entry_masks(
             identity_arrays,
             "mc",
+            one_mc_signatures,
+            two_mc_signatures,
+            _three_plus_mc_signatures,
             args,
         )
-        stage_counts["valid_event_identity"] += int(
-            np.count_nonzero(valid_identity)
+        multiplicity_keep = (
+            one_multiplicity_keep | two_multiplicity_keep
+        )
+        stage_counts["photon_multiplicity_lt_3"] += int(
+            np.count_nonzero(multiplicity_keep)
         )
 
-        finite = valid_identity & (
+        finite = multiplicity_keep & (
             np.isfinite(e_p) & np.isfinite(e_theta) & np.isfinite(e_phi)
             & np.isfinite(p_p) & np.isfinite(p_theta) & np.isfinite(p_phi)
             & np.isfinite(tag_E) & np.isfinite(tag_theta) & np.isfinite(tag_phi)
@@ -3113,12 +3180,23 @@ def update_stage_histograms(
     arrays_by_logical_name: Mapping[str, np.ndarray],
     mask: np.ndarray,
 ) -> None:
-    """Fill the four data shape-comparison histograms."""
+    """
+    Fill all shape-comparison histograms.
+
+    p1_theta and p2_theta are stored in radians and converted to degrees before
+    histogramming. No other branch is transformed.
+    """
+    radians_to_degrees = 180.0 / math.pi
+
     for variable in SHAPE_COMPARISON_VARIABLES:
         selected = np.asarray(
             arrays_by_logical_name[variable.key],
             dtype=float,
         )[mask]
+
+        if variable.key in ("p1_theta", "p2_theta"):
+            selected = selected * radians_to_degrees
+        # endif
 
         histogram = stage_histograms[variable.key]
         edges = np.asarray(histogram["edges"], dtype=float)
@@ -3133,6 +3211,7 @@ def update_stage_histograms(
         histogram["overflow_entries"] += int(
             np.count_nonzero(selected >= variable.high)
         )
+    # endfor
     # endfor
     # endfor
     # endfor
@@ -3497,9 +3576,9 @@ def scan_event_multiplicity(
         ),
         "three_plus_photon_entries": three_plus_entries,
         "photon_entries_accounted_for": accounted_entries,
-        "all_multiplicities_retained": True,
-        "events_rejected_by_multiplicity": 0,
-        "entries_rejected_by_multiplicity": 0,
+        "all_multiplicities_retained": False,
+        "events_rejected_by_multiplicity": int(np.count_nonzero(multiplicities >= 3)),
+        "entries_rejected_by_multiplicity": three_plus_entries,
         "maximum_multiplicity": (
             int(np.max(multiplicities))
             if multiplicities.size > 0
@@ -3631,8 +3710,6 @@ def process_data_shape_sample(
     category_keys = (
         "one_photon",
         "two_photon",
-        "three_plus_photons",
-        "all_multiplicities",
     )
     before_histograms = {
         key: empty_stage_histograms()
@@ -3646,7 +3723,7 @@ def process_data_shape_sample(
         key: {
             "finite_required_branches": 0,
             "open_angle_ep2_gt_5_deg": 0,
-            "after_pTmiss_gt_min": 0,
+            "after_no_additional_cut": 0,
         }
         for key in category_keys
     }
@@ -3657,9 +3734,8 @@ def process_data_shape_sample(
     log(
         f"{period.label} {sample_label}: exact-one events="
         f"{multiplicity_audit['one_photon_events']:,}, exact-two events="
-        f"{multiplicity_audit['two_photon_events']:,}, >=3 events="
-        f"{multiplicity_audit['three_plus_photon_events']:,}; "
-        "no multiplicity rejection"
+        f"{multiplicity_audit['two_photon_events']:,}, rejected >=3="
+        f"{multiplicity_audit['three_plus_photon_events']:,}"
     )
 
     for arrays in uproot.iterate(
@@ -3703,9 +3779,7 @@ def process_data_shape_sample(
         category_identity_masks = {
             "one_photon": one_multiplicity_mask,
             "two_photon": two_multiplicity_mask,
-            "three_plus_photons": three_plus_multiplicity_mask,
-            "all_multiplicities": valid_identity,
-        }
+            }
 
         for category_key, identity_mask in category_identity_masks.items():
             before_mask = identity_mask & common_finite
@@ -3719,11 +3793,8 @@ def process_data_shape_sample(
             ] += int(np.count_nonzero(before_mask))
 
             after_mask = before_mask.copy()
-            after_mask &= (
-                logical_arrays["pTmiss"] > args.data_pTmiss_min
-            )
             cutflow_counts[category_key][
-                "after_pTmiss_gt_min"
+                "after_no_additional_cut"
             ] += int(np.count_nonzero(after_mask))
 
             update_stage_histograms(
@@ -3758,8 +3829,8 @@ def process_data_shape_sample(
         "resolved_branches": resolved,
         "multiplicity_audit": {
             "condition": (
-                "no photon-entry multiplicity is rejected; exact-one, "
-                "exact-two, >=3, and inclusive categories are retained"
+                "retain exact-one and exact-two photon-entry events; reject "
+                "multiplicity >=3"
             ),
             **multiplicity_audit,
         },
@@ -3796,8 +3867,16 @@ def plot_before_after_shape_canvas(
     args: argparse.Namespace,
 ) -> None:
     """
-    Write one before/after shape-comparison canvas for a specified variable
-    group.
+    Write one 2x4 shape-comparison canvas.
+
+    Top row:
+        Delta_phi, theta_gamma_gamma, pTmiss, Emiss2.
+
+    Bottom row:
+        p1_p, p1_theta, p2_p, p2_theta.
+
+    The same open_angle_ep2 > 5 deg selection is used in both rows. No pTmiss
+    cut is applied.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -3807,27 +3886,41 @@ def plot_before_after_shape_canvas(
         "aaogen": "tab:red",
     }
 
-    number_of_variables = len(variables)
-    if number_of_variables <= 0:
-        raise ValueError(
-            "plot_before_after_shape_canvas() received no variables."
+    if len(DATA_SHAPE_VARIABLES) != 4:
+        raise RuntimeError(
+            "Expected exactly four fit variables for the top row."
+        )
+    # endif
+    if len(KINEMATIC_SHAPE_VARIABLES) != 4:
+        raise RuntimeError(
+            "Expected exactly four kinematic variables for the bottom row."
         )
     # endif
 
     fig, axes = plt.subplots(
         2,
-        number_of_variables,
-        figsize=(4.8 * number_of_variables, 9.3),
+        4,
+        figsize=(19.0, 9.3),
         squeeze=False,
-        sharex="col",
     )
 
-    for row_index, stage_name in enumerate(
-        ("before_histograms", "after_histograms")
-    ):
-        stage_label = "before cuts" if row_index == 0 else "after cuts"
+    row_variables = (
+        DATA_SHAPE_VARIABLES,
+        KINEMATIC_SHAPE_VARIABLES,
+    )
+    row_stage_names = (
+        "before_histograms",
+        "before_histograms",
+    )
+    row_titles = (
+        "fit-variable shapes",
+        "particle kinematics",
+    )
 
-        for column_index, variable in enumerate(variables):
+    for row_index, row_group in enumerate(row_variables):
+        stage_name = row_stage_names[row_index]
+
+        for column_index, variable in enumerate(row_group):
             axis = axes[row_index, column_index]
 
             for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
@@ -3865,7 +3958,9 @@ def plot_before_after_shape_canvas(
             axis.set_xlim(variable.low, variable.high)
             axis.set_xlabel(variable.label)
             axis.set_ylabel("fraction / bin")
-            axis.set_title(f"{stage_label}: {variable.label}")
+            axis.set_title(
+                f"{row_titles[row_index]}: {variable.label}"
+            )
             axis.grid(axis="y", alpha=0.25)
 
             if args.shape_log_y:
@@ -3898,11 +3993,9 @@ def plot_before_after_shape_canvas(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fig.suptitle(
-        f"Unit-area epgamma {canvas_description}: "
+        f"Unit-area epgamma shape comparisons: "
         f"{period_label}, {multiplicity_label}\n"
-        r"both rows: open_angle_ep2 $>5^\circ$; "
-        f"bottom row additionally: "
-        f"pTmiss > {args.data_pTmiss_min:g} GeV; "
+        r"open_angle_ep2 $>5^\circ$; no pTmiss cut; "
         "each sample independently normalized",
         fontsize=15,
         y=0.992,
@@ -6175,14 +6268,6 @@ def run_data_shape_stage(
             shape_dir
             / f"{period.key}_two_photon_before_after_cuts.png"
         )
-        three_plus_plot_path = (
-            shape_dir
-            / f"{period.key}_three_plus_photons_before_after_cuts.png"
-        )
-        inclusive_plot_path = (
-            shape_dir
-            / f"{period.key}_all_multiplicities_before_after_cuts.png"
-        )
 
         plot_before_after_shape_canvas(
             one_photon_plot_path,
@@ -6200,26 +6285,6 @@ def run_data_shape_stage(
             "exactly two reconstructed-photon entries",
             sample_payloads,
             "two_photon",
-            DATA_SHAPE_VARIABLES,
-            "fit-variable shape comparisons",
-            args,
-        )
-        plot_before_after_shape_canvas(
-            three_plus_plot_path,
-            period.label,
-            "three or more reconstructed-photon entries",
-            sample_payloads,
-            "three_plus_photons",
-            DATA_SHAPE_VARIABLES,
-            "fit-variable shape comparisons",
-            args,
-        )
-        plot_before_after_shape_canvas(
-            inclusive_plot_path,
-            period.label,
-            "all reconstructed-photon multiplicities",
-            sample_payloads,
-            "all_multiplicities",
             DATA_SHAPE_VARIABLES,
             "fit-variable shape comparisons",
             args,
@@ -6325,12 +6390,6 @@ def run_data_shape_stage(
                 "two_photon_fit_variables": str(
                     two_photon_plot_path
                 ),
-                "three_plus_photons_fit_variables": str(
-                    three_plus_plot_path
-                ),
-                "all_multiplicities_fit_variables": str(
-                    inclusive_plot_path
-                ),
             },
             "template_fits": period_fit_payload,
             "samples": {},
@@ -6367,30 +6426,6 @@ def run_data_shape_stage(
                     ),
                     "after_histograms": serializable_histograms(
                         payload["two_photon"]["after_histograms"]
-                    ),
-                },
-                "three_plus_photons": {
-                    "before_histograms": serializable_histograms(
-                        payload["three_plus_photons"][
-                            "before_histograms"
-                        ]
-                    ),
-                    "after_histograms": serializable_histograms(
-                        payload["three_plus_photons"][
-                            "after_histograms"
-                        ]
-                    ),
-                },
-                "all_multiplicities": {
-                    "before_histograms": serializable_histograms(
-                        payload["all_multiplicities"][
-                            "before_histograms"
-                        ]
-                    ),
-                    "after_histograms": serializable_histograms(
-                        payload["all_multiplicities"][
-                            "after_histograms"
-                        ]
                     ),
                 },
             }
@@ -6762,6 +6797,15 @@ def main() -> int:
         "independent_variable_fits": True,
     }
 
+    log(
+        "MC efficiency stage: "
+        + (
+            "DISABLED by --skip-mc-efficiency"
+            if args.skip_mc_efficiency
+            else "ENABLED (default)"
+        )
+    )
+
     manifest = {
         "script": Path(__file__).name,
         "mode": (
@@ -6770,6 +6814,11 @@ def main() -> int:
         ),
         "created_unix_time": time.time(),
         "arguments": vars(args),
+        "resolved_stages": {
+            "data_shape_and_multiplicity": True,
+            "data_template_fits": not args.skip_data_template_fits,
+            "mc_efficiency": not args.skip_mc_efficiency,
+        },
         "fitter_preflight": fitter_preflight,
         "periods": preflight_enabled_stages(periods, args),
     }
@@ -6790,7 +6839,7 @@ def main() -> int:
     mc_rows: List[Dict[str, object]] = []
     mc_metadata: Dict[str, object] = {}
 
-    if args.run_mc_efficiency:
+    if not args.skip_mc_efficiency:
         mc_workers = max(
             1,
             min(workers, len(periods)),
