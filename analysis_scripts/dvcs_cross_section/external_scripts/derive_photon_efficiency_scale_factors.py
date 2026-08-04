@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v64_p2_phi_resolution_fix.py
+derive_photon_efficiency_scale_factors_v65_pi0_mass_cut_before_after.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -232,6 +232,33 @@ Revision: p2_phi branch-resolution fix
 The exact-two diphoton-mass prepass requires p2_phi in addition to p2_p and
 p2_theta. This revision adds p2_phi as a direct logical branch alias and
 includes it in the branch-resolution request made by the data shape processor.
+
+Revision: exact-two pi0 mass cut and before/after canvases
+----------------------------------------------------------
+
+The nominal reconstructed pi0 mass window is now:
+
+    0.11 < M_gamma_gamma < 0.16 GeV.
+
+For exact-one-photon events, the before and after populations are identical:
+no diphoton-mass requirement can be applied.
+
+For both exact-two-photon categories, the after population requires the event
+diphoton mass to lie inside the nominal pi0 window. The more-energetic and
+less-energetic entries from a given exact-two event therefore receive the same
+event-level pass/fail decision.
+
+The shape-comparison canvases are now 2 rows by 5 columns:
+
+    top row:    before the exact-two M_gamma_gamma cut;
+    bottom row: after the exact-two M_gamma_gamma cut.
+
+The five displayed variables are:
+
+    Delta_phi, theta_gamma_gamma, pTmiss, Emiss2, and
+    either p1_p for the exact-one case or M_gamma_gamma for exact-two cases.
+
+The p2_p and p2_theta shape diagnostics are removed completely.
 
 """
 
@@ -507,7 +534,8 @@ TWO_PHOTON_FIT_VARIABLES: Tuple[FitVariable, ...] = (
     ),
 )
 
-ONE_PHOTON_DIAGNOSTIC_VARIABLES: Tuple[FitVariable, ...] = (
+ONE_PHOTON_DISPLAY_VARIABLES: Tuple[FitVariable, ...] = (
+    *ONE_PHOTON_FIT_VARIABLES,
     FitVariable(
         "p1_p",
         r"$p_1$ momentum (GeV)",
@@ -515,30 +543,10 @@ ONE_PHOTON_DIAGNOSTIC_VARIABLES: Tuple[FitVariable, ...] = (
         0.0,
         1.25,
     ),
-    FitVariable(
-        "p1_theta",
-        r"$\theta_1$ (deg)",
-        120,
-        0.0,
-        70.0,
-    ),
-    FitVariable(
-        "p2_p",
-        r"$p_2$ momentum (GeV)",
-        120,
-        0.0,
-        10.0,
-    ),
-    FitVariable(
-        "p2_theta",
-        r"$\theta_2$ (deg)",
-        120,
-        0.0,
-        40.0,
-    ),
 )
 
-TWO_PHOTON_DIAGNOSTIC_VARIABLES: Tuple[FitVariable, ...] = (
+TWO_PHOTON_DISPLAY_VARIABLES: Tuple[FitVariable, ...] = (
+    *TWO_PHOTON_FIT_VARIABLES,
     FitVariable(
         "diphoton_mass",
         r"$M_{\gamma\gamma}$ (GeV)",
@@ -546,34 +554,18 @@ TWO_PHOTON_DIAGNOSTIC_VARIABLES: Tuple[FitVariable, ...] = (
         0.0,
         0.30,
     ),
-    FitVariable(
-        "p2_p",
-        r"$p_2$ momentum (GeV)",
-        120,
-        0.0,
-        10.0,
-    ),
-    FitVariable(
-        "p2_theta",
-        r"$\theta_2$ (deg)",
-        120,
-        0.0,
-        40.0,
-    ),
 )
 
-# Backward-compatible aliases used by fit-model metadata. Actual histogram
-# ranges are selected with the category helper functions below.
+# Backward-compatible aliases used by fit-model metadata.
 DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = ONE_PHOTON_FIT_VARIABLES
 KINEMATIC_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
-    ONE_PHOTON_DIAGNOSTIC_VARIABLES
+    ONE_PHOTON_DISPLAY_VARIABLES[4:],
 )
 SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
-    *ONE_PHOTON_FIT_VARIABLES,
-    *ONE_PHOTON_DIAGNOSTIC_VARIABLES,
+    *ONE_PHOTON_DISPLAY_VARIABLES,
 )
 
-PI0_MASS_WINDOW: Tuple[float, float] = (0.10, 0.17)
+PI0_MASS_WINDOW: Tuple[float, float] = (0.11, 0.16)
 
 
 def fit_variables_for_category(
@@ -591,17 +583,17 @@ def fit_variables_for_category(
     raise KeyError(f"Unknown photon category: {category_key}")
 
 
-def diagnostic_variables_for_category(
+def display_variables_for_category(
     category_key: str,
 ) -> Tuple[FitVariable, ...]:
     if category_key == "one_photon":
-        return ONE_PHOTON_DIAGNOSTIC_VARIABLES
+        return ONE_PHOTON_DISPLAY_VARIABLES
     # endif
     if category_key in (
         "two_photon_more_energetic",
         "two_photon_less_energetic",
     ):
-        return TWO_PHOTON_DIAGNOSTIC_VARIABLES
+        return TWO_PHOTON_DISPLAY_VARIABLES
     # endif
     raise KeyError(f"Unknown photon category: {category_key}")
 
@@ -609,20 +601,15 @@ def diagnostic_variables_for_category(
 def shape_variables_for_category(
     category_key: str,
 ) -> Tuple[FitVariable, ...]:
-    return (
-        *fit_variables_for_category(category_key),
-        *diagnostic_variables_for_category(category_key),
-    )
+    return display_variables_for_category(category_key)
 
 
 def raw_shape_branch_keys() -> Tuple[str, ...]:
     """Return the union of non-derived branches needed by any category."""
     keys: List[str] = []
     for variable in (
-        *ONE_PHOTON_FIT_VARIABLES,
-        *TWO_PHOTON_FIT_VARIABLES,
-        *ONE_PHOTON_DIAGNOSTIC_VARIABLES,
-        *TWO_PHOTON_DIAGNOSTIC_VARIABLES,
+        *ONE_PHOTON_DISPLAY_VARIABLES,
+        *TWO_PHOTON_DISPLAY_VARIABLES,
     ):
         if variable.key == "diphoton_mass":
             continue
@@ -4273,10 +4260,14 @@ def process_data_shape_sample(
     args_dict: Mapping[str, object],
 ) -> Tuple[str, str, Dict[str, object]]:
     """
-    Fill category-specific one-photon, two-high, and two-low populations.
+    Fill category-specific before/after populations.
 
-    Exact-two events receive an event-level diphoton mass calculated during the
-    multiplicity/ranking prepass.
+    Exact-one:
+        after == before.
+
+    Exact-two:
+        after additionally requires
+        PI0_MASS_WINDOW[0] < M_gamma_gamma < PI0_MASS_WINDOW[1].
     """
     total_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -4333,18 +4324,24 @@ def process_data_shape_sample(
         ("two_photon_less_energetic", 3),
     )
     category_variables = {
-        key: shape_variables_for_category(key)
+        key: display_variables_for_category(key)
         for key, _code in category_specs
     }
-    histograms = {
+
+    before_histograms = {
         key: empty_stage_histograms(category_variables[key])
         for key, _code in category_specs
     }
+    after_histograms = {
+        key: empty_stage_histograms(category_variables[key])
+        for key, _code in category_specs
+    }
+
     cutflow_counts = {
         key: {
             "finite_required_branches": 0,
             "open_angle_ep2_gt_5_deg": 0,
-            "after_no_additional_cut": 0,
+            "after_pi0_mass_window": 0,
         }
         for key, _code in category_specs
     }
@@ -4353,8 +4350,8 @@ def process_data_shape_sample(
         key: {
             "window_low_GeV": PI0_MASS_WINDOW[0],
             "window_high_GeV": PI0_MASS_WINDOW[1],
-            "finite_entries": 0,
-            "entries_in_window": 0,
+            "before_entries": 0,
+            "after_entries": 0,
             "fraction_in_window": math.nan,
         }
         for key in (
@@ -4371,7 +4368,9 @@ def process_data_shape_sample(
         f"{multiplicity_audit['one_photon_events']:,}, two="
         f"{multiplicity_audit['two_photon_events']:,}, rejected >=3="
         f"{multiplicity_audit['three_plus_photon_events']:,}; "
-        "dense exact-two ranking by p2_p with event-level Mgg"
+        f"exact-two after cut: "
+        f"{PI0_MASS_WINDOW[0]:.2f}<Mgg<"
+        f"{PI0_MASS_WINDOW[1]:.2f} GeV"
     )
 
     for arrays in uproot.iterate(
@@ -4402,6 +4401,13 @@ def process_data_shape_sample(
             logical_arrays["open_angle_ep2"] > 5.0
         )
 
+        diphoton_mass = logical_arrays["diphoton_mass"]
+        pi0_window_mask = (
+            np.isfinite(diphoton_mass)
+            & (diphoton_mass > PI0_MASS_WINDOW[0])
+            & (diphoton_mass < PI0_MASS_WINDOW[1])
+        )
+
         for category_key, category_code in category_specs:
             variables = category_variables[category_key]
             identity_mask = chunk_category == category_code
@@ -4418,44 +4424,46 @@ def process_data_shape_sample(
                 "finite_required_branches"
             ] += int(np.count_nonzero(finite_mask))
 
-            selected_mask = finite_mask & open_angle_mask
-            selected_count = int(np.count_nonzero(selected_mask))
+            before_mask = finite_mask & open_angle_mask
+            before_count = int(np.count_nonzero(before_mask))
             cutflow_counts[category_key][
                 "open_angle_ep2_gt_5_deg"
-            ] += selected_count
+            ] += before_count
+
+            if category_key == "one_photon":
+                after_mask = before_mask
+            else:
+                after_mask = before_mask & pi0_window_mask
+            # endif
+
+            after_count = int(np.count_nonzero(after_mask))
             cutflow_counts[category_key][
-                "after_no_additional_cut"
-            ] += selected_count
+                "after_pi0_mass_window"
+            ] += after_count
 
             update_stage_histograms(
-                histograms[category_key],
+                before_histograms[category_key],
                 logical_arrays,
-                selected_mask,
+                before_mask,
+                variables,
+            )
+            update_stage_histograms(
+                after_histograms[category_key],
+                logical_arrays,
+                after_mask,
                 variables,
             )
 
             if category_key in pi0_mass_diagnostics:
-                selected_mass = logical_arrays[
-                    "diphoton_mass"
-                ][selected_mask]
-                finite_mass = selected_mass[
-                    np.isfinite(selected_mass)
-                ]
                 diagnostic = pi0_mass_diagnostics[category_key]
-                diagnostic["finite_entries"] += int(
-                    finite_mass.size
-                )
-                diagnostic["entries_in_window"] += int(
-                    np.count_nonzero(
-                        (finite_mass >= PI0_MASS_WINDOW[0])
-                        & (finite_mass <= PI0_MASS_WINDOW[1])
-                    )
-                )
+                diagnostic["before_entries"] += before_count
+                diagnostic["after_entries"] += after_count
             # endif
         # endfor
     # endfor
 
     histogram_seconds = elapsed_seconds(histogram_start)
+
     if entries_read != multiplicity_audit["entries_scanned"]:
         raise RuntimeError(
             f"{period.label} {sample_label}: prepass/shape-pass entry "
@@ -4475,19 +4483,26 @@ def process_data_shape_sample(
         )
     # endif
 
-    for category_key, diagnostic in pi0_mass_diagnostics.items():
-        finite_entries = int(diagnostic["finite_entries"])
-        in_window = int(diagnostic["entries_in_window"])
+    for diagnostic in pi0_mass_diagnostics.values():
+        before_entries = int(diagnostic["before_entries"])
+        after_entries = int(diagnostic["after_entries"])
         diagnostic["fraction_in_window"] = (
-            in_window / finite_entries
-            if finite_entries > 0
+            after_entries / before_entries
+            if before_entries > 0
             else math.nan
         )
     # endfor
 
-    finalized = {
+    finalized_before = {
         key: finalize_stage_histograms(
-            histograms[key],
+            before_histograms[key],
+            category_variables[key],
+        )
+        for key, _code in category_specs
+    }
+    finalized_after = {
+        key: finalize_stage_histograms(
+            after_histograms[key],
             category_variables[key],
         )
         for key, _code in category_specs
@@ -4521,8 +4536,8 @@ def process_data_shape_sample(
         "resolved_branches": resolved,
         "multiplicity_audit": {
             "condition": (
-                "retain exact-one events and split exact-two events into "
-                "one more-energetic and one less-energetic entry; reject >=3"
+                "retain exact-one events; split exact-two events into "
+                "more-/less-energetic entries; reject multiplicity >=3"
             ),
             **multiplicity_audit,
         },
@@ -4540,8 +4555,8 @@ def process_data_shape_sample(
 
     for category_key, _code in category_specs:
         payload[category_key] = {
-            "before_histograms": finalized[category_key],
-            "after_histograms": finalized[category_key],
+            "before_histograms": finalized_before[category_key],
+            "after_histograms": finalized_after[category_key],
         }
     # endfor
 
@@ -4559,11 +4574,15 @@ def plot_before_after_shape_canvas(
     args: argparse.Namespace,
 ) -> None:
     """
-    Write one category-specific 2x4 shape-comparison canvas.
+    Write a 2x5 category-specific shape-comparison canvas.
 
-    The one-photon case shows four fit variables and four particle-kinematic
-    diagnostics. The exact-two cases show four fit variables and, in the bottom
-    row, M_gg, p2_p, and p2_theta; the unused fourth panel is hidden.
+    Top row:
+        before the exact-two M_gamma_gamma requirement.
+
+    Bottom row:
+        after the exact-two M_gamma_gamma requirement.
+
+    Exact-one events have identical before and after rows.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -4573,52 +4592,35 @@ def plot_before_after_shape_canvas(
         "aaogen": "tab:red",
     }
 
-    fit_variables = fit_variables_for_category(multiplicity_key)
-    diagnostic_variables = diagnostic_variables_for_category(
+    display_variables = display_variables_for_category(
         multiplicity_key
     )
-
-    if len(fit_variables) != 4:
+    if len(display_variables) != 5:
         raise RuntimeError(
-            "Expected exactly four category fit variables."
-        )
-    # endif
-    if len(diagnostic_variables) > 4:
-        raise RuntimeError(
-            "At most four diagnostic variables may be drawn."
+            f"{multiplicity_key}: expected exactly five display variables."
         )
     # endif
 
     fig, axes = plt.subplots(
         2,
-        4,
-        figsize=(19.0, 9.3),
+        5,
+        figsize=(23.0, 9.4),
         squeeze=False,
     )
 
-    row_variables = (
-        fit_variables,
-        diagnostic_variables,
-    )
-    row_titles = (
-        "fit-variable shapes",
-        "diagnostics",
+    row_specs = (
+        ("before_histograms", "before"),
+        ("after_histograms", "after"),
     )
 
-    for row_index, row_group in enumerate(row_variables):
-        for column_index in range(4):
+    for row_index, (stage_name, row_label) in enumerate(row_specs):
+        for column_index, variable in enumerate(display_variables):
             axis = axes[row_index, column_index]
 
-            if column_index >= len(row_group):
-                axis.set_visible(False)
-                continue
-            # endif
-
-            variable = row_group[column_index]
             for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
                 histogram = sample_payloads[sample_key][
                     multiplicity_key
-                ]["before_histograms"][variable.key]
+                ][stage_name][variable.key]
                 edges = np.asarray(
                     histogram["edges"],
                     dtype=float,
@@ -4632,9 +4634,11 @@ def plot_before_after_shape_canvas(
                     f"{sample_label} "
                     f"({histogram['in_range_entries']:,})"
                 )
+
                 if (
                     variable.key == "diphoton_mass"
                     and sample_key == "data"
+                    and row_index == 0
                 ):
                     diagnostic = sample_payloads[sample_key][
                         "pi0_mass_diagnostics"
@@ -4644,7 +4648,7 @@ def plot_before_after_shape_canvas(
                     )
                     if np.isfinite(fraction):
                         label += (
-                            f"; pi0 window={100.0 * fraction:.1f}%"
+                            f"; in window={100.0 * fraction:.1f}%"
                         )
                     # endif
                 # endif
@@ -4671,7 +4675,7 @@ def plot_before_after_shape_canvas(
                     PI0_MASS_WINDOW[1],
                     alpha=0.15,
                     label=(
-                        r"nominal $\pi^0$ window "
+                        r"$\pi^0$ mass requirement "
                         f"({PI0_MASS_WINDOW[0]:.2f}-"
                         f"{PI0_MASS_WINDOW[1]:.2f} GeV)"
                     ),
@@ -4687,7 +4691,7 @@ def plot_before_after_shape_canvas(
             axis.set_xlabel(variable.label)
             axis.set_ylabel("fraction / bin")
             axis.set_title(
-                f"{row_titles[row_index]}: {variable.label}"
+                f"{row_label}: {variable.label}"
             )
             axis.grid(axis="y", alpha=0.25)
 
@@ -4697,9 +4701,7 @@ def plot_before_after_shape_canvas(
                     values = np.asarray(
                         sample_payloads[sample_key][
                             multiplicity_key
-                        ]["before_histograms"][
-                            variable.key
-                        ]["unit_area"],
+                        ][stage_name][variable.key]["unit_area"],
                         dtype=float,
                     )
                     positive_values.extend(
@@ -4723,16 +4725,29 @@ def plot_before_after_shape_canvas(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     if multiplicity_key != "one_photon":
-        extra_handles, extra_labels = axes[1, 0].get_legend_handles_labels()
-        handles = [*handles, *extra_handles]
-        labels = [*labels, *extra_labels]
+        mass_handles, mass_labels = axes[0, 4].get_legend_handles_labels()
+        handles = [*handles, *mass_handles]
+        labels = [*labels, *mass_labels]
+    # endif
+
+    if multiplicity_key == "one_photon":
+        selection_text = (
+            r"open_angle_ep2 $>5^\circ$; no additional after cut; "
+            "rows are intentionally identical"
+        )
+    else:
+        selection_text = (
+            r"open_angle_ep2 $>5^\circ$; bottom row additionally requires "
+            f"{PI0_MASS_WINDOW[0]:.2f}"
+            r"$<M_{\gamma\gamma}<$"
+            f"{PI0_MASS_WINDOW[1]:.2f} GeV"
+        )
     # endif
 
     fig.suptitle(
         f"Unit-area epgamma shape comparisons: "
         f"{period_label}, {multiplicity_label}\n"
-        r"open_angle_ep2 $>5^\circ$; no pTmiss cut; "
-        "each sample independently normalized",
+        f"{selection_text}; each sample independently normalized",
         fontsize=15,
         y=0.992,
     )
@@ -4740,11 +4755,11 @@ def plot_before_after_shape_canvas(
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.875),
-        ncol=min(4, max(1, len(labels))),
+        bbox_to_anchor=(0.5, 0.88),
+        ncol=min(5, max(1, len(labels))),
         frameon=False,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.80))
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.81))
     fig.savefig(
         path,
         dpi=180,
@@ -7082,7 +7097,7 @@ def run_data_shape_stage(
                 category_label,
                 sample_payloads,
                 category_key,
-                shape_variables_for_category(category_key),
+                display_variables_for_category(category_key),
                 "shape comparisons",
                 args,
             )
