@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v53_multiplicity_reset.py
+derive_photon_efficiency_scale_factors_v55_restore_mc_and_fix_multiplicity.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -106,6 +106,26 @@ are diagnostic only.
 The MC-efficiency opportunity stage also no longer requires multiplicity <3.
 Every entry with a valid event identity is allowed to proceed to the ordinary
 kinematic and topology selections.
+
+Revision: restored MC stage and corrected multiplicity summaries
+---------------------------------------------------------------
+
+The full AAOGEN MC photon-efficiency stage is again enabled by default and
+writes under output/photon_efficiency_study/mc/. It may be disabled explicitly
+with --skip-mc-efficiency. The legacy --run-mc-efficiency option remains
+accepted for command-line compatibility.
+
+The temporary p1_p, p1_theta, p2_p, and p2_theta shape-comparison canvases
+have been removed. The data shape-comparison stage now uses only:
+
+    Delta_phi, theta_gamma_gamma, pTmiss, Emiss2.
+
+A multiplicity-summary bug has also been corrected. The previous version
+passed the array of already-unique event signatures into a helper that called
+np.unique() again. Consequently every event appeared to have multiplicity one
+in the summary plots even though the exact-one, exact-two, and >=3 masks were
+correct. The summary is now constructed directly from the multiplicities found
+during the identity prepass.
 
 """
 
@@ -352,40 +372,9 @@ DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
 # Shape-comparison diagnostics include the four fit projections above plus
 # native proton/photon kinematics stored in the epgamma trees. These additional
 # variables do not enter either the independent or shared pi0-fraction fits.
-KINEMATIC_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
-    FitVariable(
-        "p1_p",
-        r"$p_1$ momentum (GeV)",
-        120,
-        0.0,
-        5.0,
-    ),
-    FitVariable(
-        "p1_theta",
-        r"$\theta_1$ (deg)",
-        120,
-        0.0,
-        70.0,
-    ),
-    FitVariable(
-        "p2_p",
-        r"$p_2$ momentum (GeV)",
-        120,
-        0.0,
-        10.0,
-    ),
-    FitVariable(
-        "p2_theta",
-        r"$\theta_2$ (deg)",
-        120,
-        0.0,
-        40.0,
-    ),
-)
 
 SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
     *DATA_SHAPE_VARIABLES,
-    *KINEMATIC_SHAPE_VARIABLES,
 )
 
 FRACTION_DRIVERS: Tuple[str, ...] = (
@@ -2577,11 +2566,20 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--skip-mc-efficiency",
+        action="store_true",
+        help=(
+            "Skip the full AAOGEN MC photon-efficiency stage. By default "
+            "the complete MC study is produced under the top-level mc/ "
+            "directory."
+        ),
+    )
+    parser.add_argument(
         "--run-mc-efficiency",
         action="store_true",
         help=(
-            "Also rerun the previously completed AAOGEN-only MC photon "
-            "efficiency stage under the top-level mc/ directory."
+            "Deprecated compatibility option. The full MC-efficiency stage "
+            "now runs by default."
         ),
     )
 
@@ -3115,23 +3113,12 @@ def update_stage_histograms(
     arrays_by_logical_name: Mapping[str, np.ndarray],
     mask: np.ndarray,
 ) -> None:
-    """
-    Fill all comparison histograms.
-
-    The p1_theta and p2_theta branches are stored in radians and are converted
-    to degrees here. No other branch is transformed.
-    """
-    radians_to_degrees = 180.0 / math.pi
-
+    """Fill the four data shape-comparison histograms."""
     for variable in SHAPE_COMPARISON_VARIABLES:
         selected = np.asarray(
             arrays_by_logical_name[variable.key],
             dtype=float,
         )[mask]
-
-        if variable.key in ("p1_theta", "p2_theta"):
-            selected = selected * radians_to_degrees
-        # endif
 
         histogram = stage_histograms[variable.key]
         edges = np.asarray(histogram["edges"], dtype=float)
@@ -3146,6 +3133,7 @@ def update_stage_histograms(
         histogram["overflow_entries"] += int(
             np.count_nonzero(selected >= variable.high)
         )
+    # endfor
     # endfor
     # endfor
 
@@ -3293,49 +3281,19 @@ def mc_identity_signature(
 
 
 def photon_multiplicity_summary(
-    signatures: Sequence[np.ndarray],
+    multiplicity_audit: Mapping[str, object],
     period: PeriodConfig,
     sample_key: str,
     sample_label: str,
-    entries_read: int,
-    valid_identity_entries: int,
     args: argparse.Namespace,
 ) -> Dict[str, object]:
-    if signatures:
-        all_signatures = np.concatenate(signatures)
-    else:
-        if sample_key == "data":
-            all_signatures = np.empty(
-                0,
-                dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
-            )
-        else:
-            all_signatures = np.empty(
-                0,
-                dtype=[("hash1", "<u8"), ("hash2", "<u8")],
-            )
-        # endif
-    # endif
+    """
+    Serialize the exact event multiplicities computed during the identity
+    prepass.
 
-    if all_signatures.size > 0:
-        _, multiplicities = np.unique(
-            all_signatures,
-            return_counts=True,
-        )
-    else:
-        multiplicities = np.empty(0, dtype=np.int64)
-    # endif
-
-    exact_counts = {
-        multiplicity: int(
-            np.count_nonzero(multiplicities == multiplicity)
-        )
-        for multiplicity in range(1, 7)
-    }
-    above_six = int(np.count_nonzero(multiplicities > 6))
-    unique_events = int(multiplicities.size)
-    accounted_entries = int(np.sum(multiplicities))
-
+    The input already contains counts derived from the entry-level event
+    signatures. It must not be passed through np.unique() a second time.
+    """
     return {
         "period": period.key,
         "period_label": period.label,
@@ -3349,22 +3307,42 @@ def photon_multiplicity_summary(
                 f"kinematics ({args.mc_signature_decimals} decimals)"
             )
         ),
-        "tree_entries_read": int(entries_read),
-        "valid_identity_entries": int(valid_identity_entries),
-        "unique_events": unique_events,
-        "events_with_1_photon": exact_counts[1],
-        "events_with_2_photons": exact_counts[2],
-        "events_with_3_photons": exact_counts[3],
-        "events_with_4_photons": exact_counts[4],
-        "events_with_5_photons": exact_counts[5],
-        "events_with_6_photons": exact_counts[6],
-        "events_with_more_than_6_photons": above_six,
-        "maximum_photons_in_event": (
-            int(np.max(multiplicities))
-            if multiplicities.size > 0
-            else 0
+        "tree_entries_read": int(
+            multiplicity_audit["entries_scanned"]
         ),
-        "photon_entries_accounted_for": accounted_entries,
+        "valid_identity_entries": int(
+            multiplicity_audit["valid_identity_entries"]
+        ),
+        "unique_events": int(
+            multiplicity_audit["unique_events"]
+        ),
+        "events_with_1_photon": int(
+            multiplicity_audit["one_photon_events"]
+        ),
+        "events_with_2_photons": int(
+            multiplicity_audit["two_photon_events"]
+        ),
+        "events_with_3_photons": int(
+            multiplicity_audit["three_photon_events"]
+        ),
+        "events_with_4_photons": int(
+            multiplicity_audit["four_photon_events"]
+        ),
+        "events_with_5_photons": int(
+            multiplicity_audit["five_photon_events"]
+        ),
+        "events_with_6_photons": int(
+            multiplicity_audit["six_photon_events"]
+        ),
+        "events_with_more_than_6_photons": int(
+            multiplicity_audit["above_six_photon_events"]
+        ),
+        "maximum_photons_in_event": int(
+            multiplicity_audit["maximum_multiplicity"]
+        ),
+        "photon_entries_accounted_for": int(
+            multiplicity_audit["photon_entries_accounted_for"]
+        ),
     }
 
 
@@ -3492,14 +3470,33 @@ def scan_event_multiplicity(
         three_plus_entries = 0
     # endif
 
+    exact_event_counts = {
+        multiplicity: int(
+            np.count_nonzero(multiplicities == multiplicity)
+        )
+        for multiplicity in range(1, 7)
+    }
+    above_six_events = int(
+        np.count_nonzero(multiplicities > 6)
+    )
+    accounted_entries = int(np.sum(multiplicities))
+
     accounting = {
         "entries_scanned": int(entries_scanned),
         "valid_identity_entries": int(valid_identity_entries),
         "unique_events": int(unique_signatures.size),
-        "one_photon_events": int(one_photon_signatures.size),
-        "two_photon_events": int(two_photon_signatures.size),
-        "three_plus_photon_events": int(three_plus_signatures.size),
+        "one_photon_events": exact_event_counts[1],
+        "two_photon_events": exact_event_counts[2],
+        "three_photon_events": exact_event_counts[3],
+        "four_photon_events": exact_event_counts[4],
+        "five_photon_events": exact_event_counts[5],
+        "six_photon_events": exact_event_counts[6],
+        "above_six_photon_events": above_six_events,
+        "three_plus_photon_events": int(
+            np.count_nonzero(multiplicities >= 3)
+        ),
         "three_plus_photon_entries": three_plus_entries,
+        "photon_entries_accounted_for": accounted_entries,
         "all_multiplicities_retained": True,
         "events_rejected_by_multiplicity": 0,
         "entries_rejected_by_multiplicity": 0,
@@ -3624,12 +3621,10 @@ def process_data_shape_sample(
     )
 
     multiplicity = photon_multiplicity_summary(
-        [all_signatures],
+        multiplicity_audit,
         period,
         sample_key,
         sample_label,
-        multiplicity_audit["entries_scanned"],
-        multiplicity_audit["valid_identity_entries"],
         args,
     )
 
@@ -6188,22 +6183,6 @@ def run_data_shape_stage(
             shape_dir
             / f"{period.key}_all_multiplicities_before_after_cuts.png"
         )
-        one_photon_kinematics_plot_path = (
-            shape_dir
-            / f"{period.key}_one_photon_particle_kinematics.png"
-        )
-        two_photon_kinematics_plot_path = (
-            shape_dir
-            / f"{period.key}_two_photon_particle_kinematics.png"
-        )
-        three_plus_kinematics_plot_path = (
-            shape_dir
-            / f"{period.key}_three_plus_photons_particle_kinematics.png"
-        )
-        inclusive_kinematics_plot_path = (
-            shape_dir
-            / f"{period.key}_all_multiplicities_particle_kinematics.png"
-        )
 
         plot_before_after_shape_canvas(
             one_photon_plot_path,
@@ -6226,26 +6205,6 @@ def run_data_shape_stage(
             args,
         )
         plot_before_after_shape_canvas(
-            one_photon_kinematics_plot_path,
-            period.label,
-            "exactly one reconstructed-photon entry",
-            sample_payloads,
-            "one_photon",
-            KINEMATIC_SHAPE_VARIABLES,
-            "particle-kinematic comparisons",
-            args,
-        )
-        plot_before_after_shape_canvas(
-            two_photon_kinematics_plot_path,
-            period.label,
-            "exactly two reconstructed-photon entries",
-            sample_payloads,
-            "two_photon",
-            KINEMATIC_SHAPE_VARIABLES,
-            "particle-kinematic comparisons",
-            args,
-        )
-        plot_before_after_shape_canvas(
             three_plus_plot_path,
             period.label,
             "three or more reconstructed-photon entries",
@@ -6263,26 +6222,6 @@ def run_data_shape_stage(
             "all_multiplicities",
             DATA_SHAPE_VARIABLES,
             "fit-variable shape comparisons",
-            args,
-        )
-        plot_before_after_shape_canvas(
-            three_plus_kinematics_plot_path,
-            period.label,
-            "three or more reconstructed-photon entries",
-            sample_payloads,
-            "three_plus_photons",
-            KINEMATIC_SHAPE_VARIABLES,
-            "particle-kinematic comparisons",
-            args,
-        )
-        plot_before_after_shape_canvas(
-            inclusive_kinematics_plot_path,
-            period.label,
-            "all reconstructed-photon multiplicities",
-            sample_payloads,
-            "all_multiplicities",
-            KINEMATIC_SHAPE_VARIABLES,
-            "particle-kinematic comparisons",
             args,
         )
 
@@ -6386,23 +6325,11 @@ def run_data_shape_stage(
                 "two_photon_fit_variables": str(
                     two_photon_plot_path
                 ),
-                "one_photon_particle_kinematics": str(
-                    one_photon_kinematics_plot_path
-                ),
-                "two_photon_particle_kinematics": str(
-                    two_photon_kinematics_plot_path
-                ),
                 "three_plus_photons_fit_variables": str(
                     three_plus_plot_path
                 ),
                 "all_multiplicities_fit_variables": str(
                     inclusive_plot_path
-                ),
-                "three_plus_photons_particle_kinematics": str(
-                    three_plus_kinematics_plot_path
-                ),
-                "all_multiplicities_particle_kinematics": str(
-                    inclusive_kinematics_plot_path
                 ),
             },
             "template_fits": period_fit_payload,
@@ -6725,7 +6652,7 @@ def preflight_enabled_stages(
         }
 
         roles = ["epg_data", "dvcs_mc", "pi0_epg_mc"]
-        if args.run_mc_efficiency:
+        if not args.skip_mc_efficiency:
             roles.append("pi0_epgg_mc")
         # endif
 
@@ -6839,7 +6766,7 @@ def main() -> int:
         "script": Path(__file__).name,
         "mode": (
             "Fast data 2x5 shape comparison and photon multiplicity "
-            "diagnostics with preserved optional AAOGEN MC efficiency"
+            "diagnostics with the complete AAOGEN MC efficiency enabled by default"
         ),
         "created_unix_time": time.time(),
         "arguments": vars(args),
@@ -6869,7 +6796,7 @@ def main() -> int:
             min(workers, len(periods)),
         )
         log(
-            f"OPTIONAL AAOGEN MC EFFICIENCY STAGE: "
+            f"AAOGEN MC EFFICIENCY STAGE: "
             f"{len(periods)} period(s), {mc_workers} worker(s)."
         )
 
