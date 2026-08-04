@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v57_restore_multiplicity_cut_and_kinematics.py
+derive_photon_efficiency_scale_factors_v58_no_mc_and_speedups.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -149,6 +149,29 @@ The four particle-kinematic diagnostics are restored:
 
 and are placed in the bottom row of the same shape-comparison canvas. The top
 row contains the four exclusivity-shape variables.
+
+Revision: optional data-only mode and MC runtime optimizations
+-------------------------------------------------------------
+
+Use --no-mc to skip the complete MC-efficiency stage while iterating on the
+data multiplicity, shape-comparison, and template-fit machinery. The existing
+--skip-mc-efficiency spelling remains an alias.
+
+The MC stage remains enabled by default.
+
+Runtime improvements in the MC stage:
+
+  * the epgamma opportunity reader no longer constructs and deduplicates the
+    unused all-photon candidate catalog when called by the MC-efficiency stage;
+  * the epgammagamma reader now passes entry_stop directly to uproot.iterate,
+    avoiding an unnecessary final chunk and Python-side truncation;
+  * repeated ROOT-tree entry-count queries in read_opportunities are reduced to
+    one query;
+  * scalar photon-angle residuals in the truth-partner matcher are evaluated
+    with scalar trigonometry instead of repeatedly constructing one-element
+    NumPy arrays.
+
+These changes preserve the MC-efficiency definition and output products.
 
 """
 
@@ -788,6 +811,29 @@ def opening_angle_deg(
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
 
 
+def opening_angle_deg_scalar(
+    theta1: float,
+    phi1: float,
+    theta2: float,
+    phi2: float,
+) -> float:
+    """
+    Scalar equivalent of opening_angle_deg().
+
+    This avoids allocating several one-element NumPy arrays inside the
+    truth-partner matching hot loop.
+    """
+    cosine = (
+        math.cos(theta1) * math.cos(theta2)
+        + math.sin(theta1)
+        * math.sin(theta2)
+        * math.cos(phi1 - phi2)
+    )
+    return math.degrees(
+        math.acos(min(1.0, max(-1.0, cosine)))
+    )
+
+
 def concat(parts: Sequence[np.ndarray], dtype=np.float64) -> np.ndarray:
     if not parts:
         return np.asarray([], dtype=dtype)
@@ -1217,6 +1263,7 @@ def read_opportunities(
     role: str,
     args: argparse.Namespace,
     deduplicate: bool,
+    collect_candidates: bool = True,
 ) -> Tuple[OpportunityRecords, PhotonCandidateRecords, Dict[str, object]]:
     logical = (
         "runnum", "eventnum",
@@ -1236,10 +1283,11 @@ def read_opportunities(
     resolved = resolve_branches(path, logical, optional=optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
 
+    tree_entries, _available_keys = require_tree(path)
     entry_stop = (
-        min(require_tree(path)[0], int(args.max_events))
+        min(tree_entries, int(args.max_events))
         if args.max_events is not None
-        else require_tree(path)[0]
+        else tree_entries
     )
     mc_identity_resolved = {
         logical_name: resolved[logical_name]
@@ -1260,7 +1308,11 @@ def read_opportunities(
     )
 
     store = empty_opportunity_store()
-    candidate_store = empty_candidate_store()
+    candidate_store = (
+        empty_candidate_store()
+        if collect_candidates
+        else None
+    )
     stage_definitions = cut_stage_definitions(resolved, args)
     cutflow: Dict[str, object] = {
         "role": role,
@@ -1423,10 +1475,16 @@ def read_opportunities(
             "photon_phi": tag_phi,
             "photon_detector": tag_detector,
         }
-        append_candidate_store(candidate_store, candidate_values, candidate_mask)
-        cutflow["partner_candidates_finite_and_E_above_threshold"] += int(
-            np.count_nonzero(candidate_mask)
-        )
+        if collect_candidates:
+            append_candidate_store(
+                candidate_store,
+                candidate_values,
+                candidate_mask,
+            )
+            cutflow[
+                "partner_candidates_finite_and_E_above_threshold"
+            ] += int(np.count_nonzero(candidate_mask))
+        # endif
 
         probe = reconstruct_probe(
             beam_energy,
@@ -1529,18 +1587,33 @@ def read_opportunities(
     # endfor
 
     records = finalize_opportunity_store(store)
-    candidates = finalize_candidate_store(candidate_store)
-    if deduplicate and candidates.size() > 0:
-        candidate_keep = exact_duplicate_keep_mask(
-            [
-                candidates.e_p, candidates.e_theta, candidates.e_phi,
-                candidates.p_p, candidates.p_theta, candidates.p_phi,
-                candidates.photon_E, candidates.photon_theta,
-                candidates.photon_phi,
-            ],
-            decimals=args.mc_signature_decimals,
+
+    if collect_candidates:
+        candidates = finalize_candidate_store(candidate_store)
+        if deduplicate and candidates.size() > 0:
+            candidate_keep = exact_duplicate_keep_mask(
+                [
+                    candidates.e_p,
+                    candidates.e_theta,
+                    candidates.e_phi,
+                    candidates.p_p,
+                    candidates.p_theta,
+                    candidates.p_phi,
+                    candidates.photon_E,
+                    candidates.photon_theta,
+                    candidates.photon_phi,
+                ],
+                decimals=args.mc_signature_decimals,
+            )
+            candidates = subset_candidates(
+                candidates,
+                candidate_keep,
+            )
+        # endif
+    else:
+        candidates = finalize_candidate_store(
+            empty_candidate_store()
         )
-        candidates = subset_candidates(candidates, candidate_keep)
     # endif
     if deduplicate and records.size() > 0:
         keep = exact_duplicate_keep_mask(
@@ -1831,22 +1904,23 @@ def read_epgg(
         "valid_solution_count": 0,
     }
 
+    tree_entries, _available_keys = require_tree(path)
+    entry_stop = (
+        min(tree_entries, int(args.max_events))
+        if args.max_events is not None
+        else tree_entries
+    )
+
     seen = 0
     log(f"Reading {mode} epgammagamma records from {path}")
     for arrays in uproot.iterate(
         f"{path}:{TREE_NAME}",
         expressions=expressions,
         step_size=args.step_size,
+        entry_stop=entry_stop,
         library="np",
     ):
         n = len(next(iter(arrays.values())))
-        if args.max_events is not None and seen >= args.max_events:
-            break
-        # endif
-        if args.max_events is not None and seen + n > args.max_events:
-            n = args.max_events - seen
-            arrays = {key: values[:n] for key, values in arrays.items()}
-        # endif
         seen += n
         counts["tree_entries"] += int(n)
 
@@ -2175,15 +2249,21 @@ def match_truth_partners(
                      epgg.g1_E[ni,si], epgg.g1_theta[ni,si], epgg.g1_phi[ni,si]),
                 )
                 for tE,tth,tph,pE,pth,pph in assignments:
-                    ta = float(opening_angle_deg(
-                        np.asarray([opportunities.tag_theta[oi]]), np.asarray([opportunities.tag_phi[oi]]),
-                        np.asarray([tth]), np.asarray([tph]))[0])
+                    ta = opening_angle_deg_scalar(
+                        float(opportunities.tag_theta[oi]),
+                        float(opportunities.tag_phi[oi]),
+                        float(tth),
+                        float(tph),
+                    )
                     tr = abs(opportunities.tag_E[oi]-tE)/max(tE,1e-12)
                     ts = (ta/max(args.tag_match_angle_max_deg,1e-12))**2 + (tr/max(args.tag_match_relative_E_max,1e-12))**2
                     if best is None or ts < best[0]:
-                        pa = float(opening_angle_deg(
-                            np.asarray([opportunities.probe_theta[oi]]), np.asarray([opportunities.probe_phi[oi]]),
-                            np.asarray([pth]), np.asarray([pph]))[0])
+                        pa = opening_angle_deg_scalar(
+                            float(opportunities.probe_theta[oi]),
+                            float(opportunities.probe_phi[oi]),
+                            float(pth),
+                            float(pph),
+                        )
                         pr = abs(opportunities.probe_E[oi]-pE)/max(pE,1e-12)
                         pm = photon_pair_mass(float(opportunities.tag_E[oi]),float(opportunities.tag_theta[oi]),float(opportunities.tag_phi[oi]),float(pE),float(pth),float(pph))
                         best=(ts,ta,tr,pa,pr,pm,float(pE),int(ni),float(epgg.solution_closure[ni,si]))
@@ -2633,12 +2713,13 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--no-mc",
         "--skip-mc-efficiency",
+        dest="skip_mc_efficiency",
         action="store_true",
         help=(
-            "Skip the full AAOGEN MC photon-efficiency stage. By default "
-            "the complete MC study is produced under the top-level mc/ "
-            "directory."
+            "Skip the full AAOGEN MC photon-efficiency stage while running "
+            "the data diagnostics and fits. The MC study runs by default."
         ),
     )
     parser.add_argument(
@@ -6501,6 +6582,7 @@ def process_period_mc_only(
         "AAOGEN epgamma opportunities",
         args,
         deduplicate=True,
+        collect_candidates=False,
     )
     emit_cutflow_diagnostics(
         period_dir,
@@ -6800,7 +6882,7 @@ def main() -> int:
     log(
         "MC efficiency stage: "
         + (
-            "DISABLED by --skip-mc-efficiency"
+            "DISABLED by --no-mc"
             if args.skip_mc_efficiency
             else "ENABLED (default)"
         )
