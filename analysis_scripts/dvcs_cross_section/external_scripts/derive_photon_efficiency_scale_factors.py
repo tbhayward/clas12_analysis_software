@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v59_three_photon_template_cases.py
+derive_photon_efficiency_scale_factors_v61_algorithmic_speedups.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -162,6 +162,42 @@ Shape comparisons and template fits are produced separately for:
 The two entries in every exact-two event are ranked by p2_p. Global ROOT entry
 index is used as a deterministic tie breaker. Each exact-two event contributes
 exactly once to each energy-ranked case. Multiplicity >=3 remains rejected.
+
+Revision: algorithmic runtime optimizations
+-------------------------------------------
+
+This revision preserves the physics selections, three photon-template cases,
+fit models, plotting products, and MC-efficiency outputs while reducing the
+dominant runtime costs.
+
+Data-stage changes:
+
+  * exact-two event ranking is vectorized after one stable sort rather than
+    repeatedly scanning the complete inverse-index array for every event;
+  * the multiplicity prepass returns one dense uint8 category code per ROOT
+    entry, so the histogram pass uses direct slices instead of repeated
+    structured-signature construction and np.isin membership tests;
+  * the duplicate after-selection histograms are no longer filled a second
+    time when no additional cut is active; the serialized after-selection
+    products are copied from the same finalized counts;
+  * per-file timing is recorded for the ranking prepass and histogram pass.
+
+MC-stage changes:
+
+  * read_opportunities() can skip construction and exact-deduplication of the
+    unused photon-candidate catalog;
+  * the MC-efficiency processor uses that fast path;
+  * read_epgg() applies entry_stop directly in uproot.iterate();
+  * scalar opening-angle calculations replace one-element NumPy allocations
+    in the truth-partner matching hot loop.
+
+Fit-stage changes:
+
+  * --fast-fits provides an explicit diagnostic mode with fewer starts,
+    looser optimizer tolerances, and fewer coordinate iterations;
+  * invariant fit-context arrays, bin widths, and two-component template
+    partitions are prepared once and reused by objective evaluations;
+  * stage timings are written into the data and MC metadata.
 
 """
 
@@ -607,6 +643,22 @@ def log(message: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
 
 
+def elapsed_seconds(start_time: float) -> float:
+    """Return elapsed wall-clock seconds from a perf_counter timestamp."""
+    return float(time.perf_counter() - start_time)
+
+
+def maybe_log_timing(
+    args: argparse.Namespace,
+    label: str,
+    seconds: float,
+) -> None:
+    """Emit a timing line only when explicitly requested."""
+    if getattr(args, "print_stage_timings", False):
+        log(f"TIMING {label}: {seconds:.3f} s")
+    # endif
+
+
 
 
 def selected_periods(args: argparse.Namespace) -> List[PeriodConfig]:
@@ -799,6 +851,24 @@ def opening_angle_deg(
         + np.cos(theta1) * np.cos(theta2)
     )
     return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
+
+
+def opening_angle_deg_scalar(
+    theta1: float,
+    phi1: float,
+    theta2: float,
+    phi2: float,
+) -> float:
+    """Allocation-free scalar opening angle in degrees."""
+    cosine = (
+        math.cos(theta1) * math.cos(theta2)
+        + math.sin(theta1)
+        * math.sin(theta2)
+        * math.cos(phi1 - phi2)
+    )
+    return math.degrees(
+        math.acos(min(1.0, max(-1.0, cosine)))
+    )
 
 
 def concat(parts: Sequence[np.ndarray], dtype=np.float64) -> np.ndarray:
@@ -1230,6 +1300,7 @@ def read_opportunities(
     role: str,
     args: argparse.Namespace,
     deduplicate: bool,
+    collect_candidates: bool = True,
 ) -> Tuple[OpportunityRecords, PhotonCandidateRecords, Dict[str, object]]:
     logical = (
         "runnum", "eventnum",
@@ -1249,10 +1320,11 @@ def read_opportunities(
     resolved = resolve_branches(path, logical, optional=optional)
     expressions = sorted({branch for branch in resolved.values() if branch is not None})
 
+    tree_entries, _available_keys = require_tree(path)
     entry_stop = (
-        min(require_tree(path)[0], int(args.max_events))
+        min(tree_entries, int(args.max_events))
         if args.max_events is not None
-        else require_tree(path)[0]
+        else tree_entries
     )
     mc_identity_resolved = {
         logical_name: resolved[logical_name]
@@ -1273,7 +1345,11 @@ def read_opportunities(
     )
 
     store = empty_opportunity_store()
-    candidate_store = empty_candidate_store()
+    candidate_store = (
+        empty_candidate_store()
+        if collect_candidates
+        else None
+    )
     stage_definitions = cut_stage_definitions(resolved, args)
     cutflow: Dict[str, object] = {
         "role": role,
@@ -1436,10 +1512,16 @@ def read_opportunities(
             "photon_phi": tag_phi,
             "photon_detector": tag_detector,
         }
-        append_candidate_store(candidate_store, candidate_values, candidate_mask)
-        cutflow["partner_candidates_finite_and_E_above_threshold"] += int(
-            np.count_nonzero(candidate_mask)
-        )
+        if collect_candidates:
+            append_candidate_store(
+                candidate_store,
+                candidate_values,
+                candidate_mask,
+            )
+            cutflow[
+                "partner_candidates_finite_and_E_above_threshold"
+            ] += int(np.count_nonzero(candidate_mask))
+        # endif
 
         probe = reconstruct_probe(
             beam_energy,
@@ -1542,18 +1624,33 @@ def read_opportunities(
     # endfor
 
     records = finalize_opportunity_store(store)
-    candidates = finalize_candidate_store(candidate_store)
-    if deduplicate and candidates.size() > 0:
-        candidate_keep = exact_duplicate_keep_mask(
-            [
-                candidates.e_p, candidates.e_theta, candidates.e_phi,
-                candidates.p_p, candidates.p_theta, candidates.p_phi,
-                candidates.photon_E, candidates.photon_theta,
-                candidates.photon_phi,
-            ],
-            decimals=args.mc_signature_decimals,
+
+    if collect_candidates:
+        candidates = finalize_candidate_store(candidate_store)
+        if deduplicate and candidates.size() > 0:
+            candidate_keep = exact_duplicate_keep_mask(
+                [
+                    candidates.e_p,
+                    candidates.e_theta,
+                    candidates.e_phi,
+                    candidates.p_p,
+                    candidates.p_theta,
+                    candidates.p_phi,
+                    candidates.photon_E,
+                    candidates.photon_theta,
+                    candidates.photon_phi,
+                ],
+                decimals=args.mc_signature_decimals,
+            )
+            candidates = subset_candidates(
+                candidates,
+                candidate_keep,
+            )
+        # endif
+    else:
+        candidates = finalize_candidate_store(
+            empty_candidate_store()
         )
-        candidates = subset_candidates(candidates, candidate_keep)
     # endif
     if deduplicate and records.size() > 0:
         keep = exact_duplicate_keep_mask(
@@ -1844,22 +1941,23 @@ def read_epgg(
         "valid_solution_count": 0,
     }
 
+    tree_entries, _available_keys = require_tree(path)
+    entry_stop = (
+        min(tree_entries, int(args.max_events))
+        if args.max_events is not None
+        else tree_entries
+    )
+
     seen = 0
     log(f"Reading {mode} epgammagamma records from {path}")
     for arrays in uproot.iterate(
         f"{path}:{TREE_NAME}",
         expressions=expressions,
         step_size=args.step_size,
+        entry_stop=entry_stop,
         library="np",
     ):
         n = len(next(iter(arrays.values())))
-        if args.max_events is not None and seen >= args.max_events:
-            break
-        # endif
-        if args.max_events is not None and seen + n > args.max_events:
-            n = args.max_events - seen
-            arrays = {key: values[:n] for key, values in arrays.items()}
-        # endif
         seen += n
         counts["tree_entries"] += int(n)
 
@@ -2188,15 +2286,21 @@ def match_truth_partners(
                      epgg.g1_E[ni,si], epgg.g1_theta[ni,si], epgg.g1_phi[ni,si]),
                 )
                 for tE,tth,tph,pE,pth,pph in assignments:
-                    ta = float(opening_angle_deg(
-                        np.asarray([opportunities.tag_theta[oi]]), np.asarray([opportunities.tag_phi[oi]]),
-                        np.asarray([tth]), np.asarray([tph]))[0])
+                    ta = opening_angle_deg_scalar(
+                        float(opportunities.tag_theta[oi]),
+                        float(opportunities.tag_phi[oi]),
+                        float(tth),
+                        float(tph),
+                    )
                     tr = abs(opportunities.tag_E[oi]-tE)/max(tE,1e-12)
                     ts = (ta/max(args.tag_match_angle_max_deg,1e-12))**2 + (tr/max(args.tag_match_relative_E_max,1e-12))**2
                     if best is None or ts < best[0]:
-                        pa = float(opening_angle_deg(
-                            np.asarray([opportunities.probe_theta[oi]]), np.asarray([opportunities.probe_phi[oi]]),
-                            np.asarray([pth]), np.asarray([pph]))[0])
+                        pa = opening_angle_deg_scalar(
+                            float(opportunities.probe_theta[oi]),
+                            float(opportunities.probe_phi[oi]),
+                            float(pth),
+                            float(pph),
+                        )
                         pr = abs(opportunities.probe_E[oi]-pE)/max(pE,1e-12)
                         pm = photon_pair_mass(float(opportunities.tag_E[oi]),float(opportunities.tag_theta[oi]),float(opportunities.tag_phi[oi]),float(pE),float(pth),float(pph))
                         best=(ts,ta,tr,pa,pr,pm,float(pE),int(ni),float(epgg.solution_closure[ni,si]))
@@ -2636,6 +2740,20 @@ def parse_args() -> argparse.Namespace:
         "--shape-log-y",
         action="store_true",
         help="Also write logarithmic-y normalized shape canvases.",
+    )
+    parser.add_argument(
+        "--fast-fits",
+        action="store_true",
+        help=(
+            "Use diagnostic-speed template-fit settings: fewer multistarts, "
+            "looser optimizer tolerances, and fewer coordinate iterations. "
+            "The default retains the full production fit settings."
+        ),
+    )
+    parser.add_argument(
+        "--print-stage-timings",
+        action="store_true",
+        help="Print detailed per-file and per-stage runtime measurements.",
     )
 
     parser.add_argument(
@@ -3614,19 +3732,21 @@ def scan_shape_multiplicity_and_energy_ranking(
     resolved: Mapping[str, str],
     args: argparse.Namespace,
     entry_stop: int,
-) -> Tuple[
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    Dict[str, int],
-]:
+) -> Tuple[np.ndarray, Dict[str, int], Dict[str, float]]:
     """
-    Compute event multiplicities and the high-/low-energy entry index for each
-    exact-two event. Photon energy ordering is determined by p2_p.
+    Compute event multiplicities and one dense category code per ROOT entry.
+
+    Category codes:
+      0 = rejected or invalid identity;
+      1 = exact-one-photon entry;
+      2 = more energetic entry in an exact-two event;
+      3 = less energetic entry in an exact-two event.
+
+    The implementation is O(N log N), dominated by one stable lexicographic
+    sort. It does not scan the complete inverse-index array once per event.
     """
+    start_time = time.perf_counter()
+
     identity_names = list(identity_logical_names(sample_key))
     logical_names = list(dict.fromkeys(identity_names + ["p2_p"]))
     expressions = sorted(
@@ -3639,6 +3759,7 @@ def scan_shape_multiplicity_and_energy_ranking(
     valid_identity_entries = 0
     entries_scanned = 0
 
+    io_start = time.perf_counter()
     for arrays in uproot.iterate(
         f"{path}:{TREE_NAME}",
         expressions=expressions,
@@ -3660,9 +3781,13 @@ def scan_shape_multiplicity_and_energy_ranking(
             args,
         )
         valid_identity_entries += int(np.count_nonzero(valid_identity))
+
         signature_chunks.append(signatures)
         energy_chunks.append(
-            np.asarray(logical_arrays["p2_p"][valid_identity], dtype=float)
+            np.asarray(
+                logical_arrays["p2_p"][valid_identity],
+                dtype=float,
+            )
         )
         ordinal_chunks.append(
             np.arange(
@@ -3672,6 +3797,7 @@ def scan_shape_multiplicity_and_energy_ranking(
             )[valid_identity]
         )
     # endfor
+    io_seconds = elapsed_seconds(io_start)
 
     if signature_chunks:
         entry_signatures = np.concatenate(signature_chunks)
@@ -3688,72 +3814,111 @@ def scan_shape_multiplicity_and_energy_ranking(
         entry_ordinals = np.empty(0, dtype=np.int64)
     # endif
 
+    grouping_start = time.perf_counter()
+    entry_category = np.zeros(entries_scanned, dtype=np.uint8)
+
     if entry_signatures.size:
         unique_signatures, inverse, multiplicities = np.unique(
             entry_signatures,
             return_inverse=True,
             return_counts=True,
         )
-    else:
-        unique_signatures = entry_signatures.copy()
-        inverse = np.empty(0, dtype=np.int64)
-        multiplicities = np.empty(0, dtype=np.int64)
-    # endif
 
-    one_signatures = unique_signatures[multiplicities == 1]
-    two_signatures = unique_signatures[multiplicities == 2]
-    three_plus_signatures = unique_signatures[multiplicities >= 3]
+        # Stable sort by group and then by original entry ordinal. Every group
+        # becomes one contiguous segment.
+        order = np.lexsort((entry_ordinals, inverse))
+        sorted_groups = inverse[order]
+        sorted_ordinals = entry_ordinals[order]
+        sorted_energies = entry_energies[order]
 
-    high_ordinals: List[int] = []
-    low_ordinals: List[int] = []
-    equal_energy_ties = 0
-    nonfinite_pairs = 0
-
-    for group_index in np.flatnonzero(multiplicities == 2):
-        members = np.flatnonzero(inverse == group_index)
-        if members.size != 2:
-            raise RuntimeError(
-                "Exact-two event did not contain exactly two entries."
+        group_starts = np.empty(multiplicities.size, dtype=np.int64)
+        group_starts[0] = 0
+        if multiplicities.size > 1:
+            np.cumsum(
+                multiplicities[:-1],
+                out=group_starts[1:],
             )
         # endif
 
-        first, second = int(members[0]), int(members[1])
-        e_first = float(entry_energies[first])
-        e_second = float(entry_energies[second])
-        o_first = int(entry_ordinals[first])
-        o_second = int(entry_ordinals[second])
+        one_groups = np.flatnonzero(multiplicities == 1)
+        two_groups = np.flatnonzero(multiplicities == 2)
 
-        finite_first = np.isfinite(e_first)
-        finite_second = np.isfinite(e_second)
-
-        if finite_first and finite_second and e_first != e_second:
-            if e_first > e_second:
-                high, low = o_first, o_second
-            else:
-                high, low = o_second, o_first
-            # endif
-        else:
-            if not (finite_first and finite_second):
-                nonfinite_pairs += 1
-            else:
-                equal_energy_ties += 1
-            # endif
-
-            if finite_first and not finite_second:
-                high, low = o_first, o_second
-            elif finite_second and not finite_first:
-                high, low = o_second, o_first
-            else:
-                high, low = min(o_first, o_second), max(o_first, o_second)
-            # endif
+        if one_groups.size:
+            one_positions = group_starts[one_groups]
+            one_ordinals = sorted_ordinals[one_positions]
+            entry_category[one_ordinals] = 1
         # endif
 
-        high_ordinals.append(high)
-        low_ordinals.append(low)
-    # endfor
+        equal_energy_ties = 0
+        nonfinite_pairs = 0
 
-    high_array = np.asarray(high_ordinals, dtype=np.int64)
-    low_array = np.asarray(low_ordinals, dtype=np.int64)
+        if two_groups.size:
+            first_positions = group_starts[two_groups]
+            second_positions = first_positions + 1
+
+            first_ordinals = sorted_ordinals[first_positions]
+            second_ordinals = sorted_ordinals[second_positions]
+            first_energies = sorted_energies[first_positions]
+            second_energies = sorted_energies[second_positions]
+
+            first_finite = np.isfinite(first_energies)
+            second_finite = np.isfinite(second_energies)
+            both_finite = first_finite & second_finite
+            unequal = both_finite & (
+                first_energies != second_energies
+            )
+
+            first_is_high = np.zeros(two_groups.size, dtype=bool)
+            first_is_high[unequal] = (
+                first_energies[unequal]
+                > second_energies[unequal]
+            )
+
+            only_first_finite = first_finite & ~second_finite
+            only_second_finite = second_finite & ~first_finite
+            first_is_high[only_first_finite] = True
+            first_is_high[only_second_finite] = False
+
+            unresolved = ~unequal & ~only_first_finite & ~only_second_finite
+            # Deterministic entry-order tie break for equal or doubly
+            # non-finite energies.
+            first_is_high[unresolved] = (
+                first_ordinals[unresolved]
+                < second_ordinals[unresolved]
+            )
+
+            equal_energy_ties = int(
+                np.count_nonzero(
+                    both_finite
+                    & (first_energies == second_energies)
+                )
+            )
+            nonfinite_pairs = int(
+                np.count_nonzero(~both_finite)
+            )
+
+            high_ordinals = np.where(
+                first_is_high,
+                first_ordinals,
+                second_ordinals,
+            )
+            low_ordinals = np.where(
+                first_is_high,
+                second_ordinals,
+                first_ordinals,
+            )
+
+            entry_category[high_ordinals] = 2
+            entry_category[low_ordinals] = 3
+        # endif
+    else:
+        unique_signatures = entry_signatures.copy()
+        multiplicities = np.empty(0, dtype=np.int64)
+        equal_energy_ties = 0
+        nonfinite_pairs = 0
+    # endif
+
+    grouping_seconds = elapsed_seconds(grouping_start)
 
     exact_counts = {
         value: int(np.count_nonzero(multiplicities == value))
@@ -3791,22 +3956,31 @@ def scan_shape_multiplicity_and_energy_ranking(
             if multiplicities.size
             else 0
         ),
-        "two_photon_more_energetic_entries": int(high_array.size),
-        "two_photon_less_energetic_entries": int(low_array.size),
+        "two_photon_more_energetic_entries": int(
+            np.count_nonzero(entry_category == 2)
+        ),
+        "two_photon_less_energetic_entries": int(
+            np.count_nonzero(entry_category == 3)
+        ),
         "two_photon_equal_energy_ties": int(equal_energy_ties),
         "two_photon_nonfinite_energy_pairs": int(nonfinite_pairs),
         "two_photon_ranking_branch": "p2_p",
     }
 
-    return (
-        unique_signatures,
-        one_signatures,
-        two_signatures,
-        three_plus_signatures,
-        high_array,
-        low_array,
-        accounting,
+    timings = {
+        "multiplicity_prepass_total_seconds": elapsed_seconds(
+            start_time
+        ),
+        "multiplicity_prepass_root_io_seconds": io_seconds,
+        "multiplicity_grouping_seconds": grouping_seconds,
+    }
+    maybe_log_timing(
+        args,
+        f"{Path(path).name} multiplicity/ranking prepass",
+        timings["multiplicity_prepass_total_seconds"],
     )
+
+    return entry_category, accounting, timings
 
 
 def multiplicity_entry_masks(
@@ -3870,7 +4044,11 @@ def process_data_shape_sample(
     period_attribute: str,
     args_dict: Mapping[str, object],
 ) -> Tuple[str, str, Dict[str, object]]:
-    """Fill the one-photon, two-high, and two-low shape populations."""
+    """
+    Fill one-photon, two-high, and two-low shape populations using a dense
+    entry-category array prepared by the multiplicity prepass.
+    """
+    total_start = time.perf_counter()
     args = argparse.Namespace(**args_dict)
     path = getattr(period, period_attribute)
     total_entries, available_keys = require_tree(path)
@@ -3898,13 +4076,9 @@ def process_data_shape_sample(
     )
 
     (
-        _all_signatures,
-        one_signatures,
-        two_signatures,
-        three_plus_signatures,
-        high_ordinals,
-        low_ordinals,
+        entry_category,
         multiplicity_audit,
+        prepass_timings,
     ) = scan_shape_multiplicity_and_energy_ranking(
         path,
         sample_key,
@@ -3921,18 +4095,14 @@ def process_data_shape_sample(
         args,
     )
 
-    category_keys = (
-        "one_photon",
-        "two_photon_more_energetic",
-        "two_photon_less_energetic",
+    category_specs = (
+        ("one_photon", 1),
+        ("two_photon_more_energetic", 2),
+        ("two_photon_less_energetic", 3),
     )
-    before_histograms = {
+    histograms = {
         key: empty_stage_histograms()
-        for key in category_keys
-    }
-    after_histograms = {
-        key: empty_stage_histograms()
-        for key in category_keys
+        for key, _code in category_specs
     }
     cutflow_counts = {
         key: {
@@ -3940,18 +4110,18 @@ def process_data_shape_sample(
             "open_angle_ep2_gt_5_deg": 0,
             "after_no_additional_cut": 0,
         }
-        for key in category_keys
+        for key, _code in category_specs
     }
 
     entries_read = 0
-    valid_identity_entries = 0
+    histogram_start = time.perf_counter()
 
     log(
         f"{period.label} {sample_label}: one="
         f"{multiplicity_audit['one_photon_events']:,}, two="
         f"{multiplicity_audit['two_photon_events']:,}, rejected >=3="
         f"{multiplicity_audit['three_plus_photon_events']:,}; "
-        "two-entry events ranked by p2_p"
+        "dense exact-two ranking by p2_p"
     )
 
     for arrays in uproot.iterate(
@@ -3964,11 +4134,7 @@ def process_data_shape_sample(
         chunk_size = len(next(iter(arrays.values()))) if arrays else 0
         chunk_start = entries_read
         chunk_stop = chunk_start + chunk_size
-        ordinals = np.arange(
-            chunk_start,
-            chunk_stop,
-            dtype=np.int64,
-        )
+        chunk_category = entry_category[chunk_start:chunk_stop]
         entries_read = chunk_stop
 
         logical_arrays = {
@@ -3976,92 +4142,80 @@ def process_data_shape_sample(
             for name in logical_names
         }
 
-        (
-            one_mask,
-            _two_mask,
-            _three_plus_mask,
-            valid_identity,
-        ) = multiplicity_entry_masks(
-            logical_arrays,
-            sample_key,
-            one_signatures,
-            two_signatures,
-            three_plus_signatures,
-            args,
-        )
-        valid_identity_entries += int(np.count_nonzero(valid_identity))
-
-        high_mask = np.isin(
-            ordinals,
-            high_ordinals,
-            assume_unique=True,
-        )
-        low_mask = np.isin(
-            ordinals,
-            low_ordinals,
-            assume_unique=True,
-        )
-        if np.any(high_mask & low_mask):
-            raise RuntimeError(
-                f"{period.label} {sample_label}: overlapping high/low "
-                "two-photon entry assignments."
-            )
-        # endif
-
         common_finite = np.isfinite(logical_arrays["open_angle_ep2"])
         for variable in SHAPE_COMPARISON_VARIABLES:
             common_finite &= np.isfinite(logical_arrays[variable.key])
         # endfor
 
-        masks = {
-            "one_photon": one_mask,
-            "two_photon_more_energetic": high_mask,
-            "two_photon_less_energetic": low_mask,
-        }
+        open_angle_mask = (
+            logical_arrays["open_angle_ep2"] > 5.0
+        )
 
-        for category_key, identity_mask in masks.items():
-            before_mask = identity_mask & common_finite
+        for category_key, category_code in category_specs:
+            identity_mask = chunk_category == category_code
+            finite_mask = identity_mask & common_finite
             cutflow_counts[category_key][
                 "finite_required_branches"
-            ] += int(np.count_nonzero(before_mask))
+            ] += int(np.count_nonzero(finite_mask))
 
-            before_mask &= logical_arrays["open_angle_ep2"] > 5.0
+            selected_mask = finite_mask & open_angle_mask
+            selected_count = int(np.count_nonzero(selected_mask))
             cutflow_counts[category_key][
                 "open_angle_ep2_gt_5_deg"
-            ] += int(np.count_nonzero(before_mask))
-
-            after_mask = before_mask.copy()
+            ] += selected_count
             cutflow_counts[category_key][
                 "after_no_additional_cut"
-            ] += int(np.count_nonzero(after_mask))
+            ] += selected_count
 
             update_stage_histograms(
-                before_histograms[category_key],
+                histograms[category_key],
                 logical_arrays,
-                before_mask,
-            )
-            update_stage_histograms(
-                after_histograms[category_key],
-                logical_arrays,
-                after_mask,
+                selected_mask,
             )
         # endfor
     # endfor
 
+    histogram_seconds = elapsed_seconds(histogram_start)
     if entries_read != multiplicity_audit["entries_scanned"]:
         raise RuntimeError(
             f"{period.label} {sample_label}: prepass/shape-pass entry "
-            "count mismatch."
+            f"count mismatch ({multiplicity_audit['entries_scanned']:,} "
+            f"versus {entries_read:,})."
         )
     # endif
 
     expected_two = int(multiplicity_audit["two_photon_events"])
-    if high_ordinals.size != expected_two or low_ordinals.size != expected_two:
+    if (
+        np.count_nonzero(entry_category == 2) != expected_two
+        or np.count_nonzero(entry_category == 3) != expected_two
+    ):
         raise RuntimeError(
-            f"{period.label} {sample_label}: exact-two ranking count "
-            "does not match exact-two event count."
+            f"{period.label} {sample_label}: dense exact-two category "
+            "counts do not match exact-two event count."
         )
     # endif
+
+    finalized = {
+        key: finalize_stage_histograms(histograms[key])
+        for key, _code in category_specs
+    }
+
+    total_seconds = elapsed_seconds(total_start)
+    timings = {
+        **prepass_timings,
+        "shape_histogram_pass_seconds": histogram_seconds,
+        "shape_sample_total_seconds": total_seconds,
+    }
+    maybe_log_timing(
+        args,
+        f"{period.label} {sample_label} histogram pass",
+        histogram_seconds,
+    )
+    maybe_log_timing(
+        args,
+        f"{period.label} {sample_label} total",
+        total_seconds,
+    )
 
     payload = {
         "period": period.key,
@@ -4081,20 +4235,21 @@ def process_data_shape_sample(
         },
         "cutflow": {
             "tree_entries_read": entries_read,
-            "valid_identity_entries": valid_identity_entries,
+            "valid_identity_entries": int(
+                multiplicity_audit["valid_identity_entries"]
+            ),
             **cutflow_counts,
         },
         "photon_multiplicity": multiplicity,
+        "timings": timings,
     }
 
-    for category_key in category_keys:
+    for category_key, _code in category_specs:
+        # There is no additional after-selection cut. Preserve the existing
+        # output schema without re-histogramming the identical population.
         payload[category_key] = {
-            "before_histograms": finalize_stage_histograms(
-                before_histograms[category_key]
-            ),
-            "after_histograms": finalize_stage_histograms(
-                after_histograms[category_key]
-            ),
+            "before_histograms": finalized[category_key],
+            "after_histograms": finalized[category_key],
         }
     # endfor
 
@@ -4866,6 +5021,7 @@ def two_component_morph_probability(
     divider_index: int,
     parameters: np.ndarray,
     use_log_coordinate: bool,
+    component_cache: Optional[Mapping[str, object]] = None,
 ) -> Tuple[np.ndarray, Dict[str, float]]:
     """
     Morph two raw-template components independently.
@@ -4876,13 +5032,29 @@ def two_component_morph_probability(
       constrained component-weight logit change.
     """
     raw = normalized_probability(raw_probability)
-    left_raw = raw.copy()
-    right_raw = raw.copy()
-    left_raw[divider_index + 1:] = 0.0
-    right_raw[:divider_index + 1] = 0.0
-
-    raw_left_weight = float(np.sum(left_raw))
-    raw_right_weight = float(np.sum(right_raw))
+    if component_cache:
+        left_raw = np.asarray(
+            component_cache["left_raw"],
+            dtype=float,
+        )
+        right_raw = np.asarray(
+            component_cache["right_raw"],
+            dtype=float,
+        )
+        raw_left_weight = float(
+            component_cache["raw_left_weight"]
+        )
+        raw_right_weight = float(
+            component_cache["raw_right_weight"]
+        )
+    else:
+        left_raw = raw.copy()
+        right_raw = raw.copy()
+        left_raw[divider_index + 1:] = 0.0
+        right_raw[:divider_index + 1] = 0.0
+        raw_left_weight = float(np.sum(left_raw))
+        raw_right_weight = float(np.sum(right_raw))
+    # endif
     if raw_left_weight <= 0.0 or raw_right_weight <= 0.0:
         fallback = simple_shift_smear_probability(
             raw,
@@ -5068,6 +5240,7 @@ def morph_model_probability(
     model_name: str,
     parameters: np.ndarray,
     divider_index: int,
+    component_cache: Optional[Mapping[str, object]] = None,
 ) -> Tuple[np.ndarray, Dict[str, float]]:
     if model_name == "simple_linear":
         return (
@@ -5217,9 +5390,29 @@ def prepare_variable_fit_context(
         else (max(1, centers.size // 2), math.nan)
     )
 
+    def component_cache(
+        raw_probability: np.ndarray,
+        model_name: str,
+        divider_index: int,
+    ) -> Dict[str, object]:
+        if not model_name.startswith("two_component_"):
+            return {}
+        # endif
+        left_raw = raw_probability.copy()
+        right_raw = raw_probability.copy()
+        left_raw[divider_index + 1:] = 0.0
+        right_raw[:divider_index + 1] = 0.0
+        return {
+            "left_raw": left_raw,
+            "right_raw": right_raw,
+            "raw_left_weight": float(np.sum(left_raw)),
+            "raw_right_weight": float(np.sum(right_raw)),
+        }
+
     return {
         "variable": variable,
         "centers": centers,
+        "bin_width": float(bin_width),
         "data": np.asarray(data_counts, dtype=float),
         "data_total": float(np.sum(data_counts)),
         "raw_dvcs": raw_dvcs,
@@ -5231,6 +5424,16 @@ def prepare_variable_fit_context(
         "dvcs_divider_value": dvcs_divider_value,
         "pi0_divider_index": pi0_divider_index,
         "pi0_divider_value": pi0_divider_value,
+        "dvcs_component_cache": component_cache(
+            raw_dvcs,
+            model_spec["dvcs"],
+            dvcs_divider_index,
+        ),
+        "pi0_component_cache": component_cache(
+            raw_pi0,
+            model_spec["pi0"],
+            pi0_divider_index,
+        ),
     }
 
 
@@ -5241,20 +5444,22 @@ def evaluate_variable_model(
     pi0_parameters: np.ndarray,
     args: argparse.Namespace,
 ) -> Dict[str, object]:
-    centers = np.asarray(context["centers"], dtype=float)
+    centers = context["centers"]
     dvcs_probability, dvcs_metadata = morph_model_probability(
-        np.asarray(context["raw_dvcs"], dtype=float),
+        context["raw_dvcs"],
         centers,
-        str(context["dvcs_model"]),
-        np.asarray(dvcs_parameters, dtype=float),
-        int(context["dvcs_divider_index"]),
+        context["dvcs_model"],
+        dvcs_parameters,
+        context["dvcs_divider_index"],
+        component_cache=context["dvcs_component_cache"],
     )
     pi0_probability, pi0_metadata = morph_model_probability(
-        np.asarray(context["raw_pi0"], dtype=float),
+        context["raw_pi0"],
         centers,
-        str(context["pi0_model"]),
-        np.asarray(pi0_parameters, dtype=float),
-        int(context["pi0_divider_index"]),
+        context["pi0_model"],
+        pi0_parameters,
+        context["pi0_divider_index"],
+        component_cache=context["pi0_component_cache"],
     )
 
     data_total = float(context["data_total"])
@@ -5264,7 +5469,7 @@ def evaluate_variable_model(
     model = dvcs_component + pi0_component
 
     deviance = poisson_deviance(
-        np.asarray(context["data"], dtype=float),
+        context["data"],
         model,
     )
     penalty = (
@@ -5289,9 +5494,9 @@ def evaluate_variable_model(
             and np.isfinite(pi0_mean)
             and dvcs_mean >= pi0_mean
         ):
-            bin_width = float(np.median(np.diff(centers)))
             violation_bins = (
-                (dvcs_mean - pi0_mean) / max(bin_width, 1.0e-12)
+                (dvcs_mean - pi0_mean)
+                / max(float(context["bin_width"]), 1.0e-12)
             )
             penalty += (
                 float(args.fit_mean_order_penalty)
@@ -5366,10 +5571,10 @@ def optimize_variable_independent_fraction(
             method="L-BFGS-B",
             bounds=bounds,
             options={
-                "maxiter": 700,
-                "ftol": 1.0e-10,
-                "gtol": 1.0e-6,
-                "maxls": 40,
+                "maxiter": 250 if args.fast_fits else 700,
+                "ftol": 1.0e-8 if args.fast_fits else 1.0e-10,
+                "gtol": 1.0e-5 if args.fast_fits else 1.0e-6,
+                "maxls": 25 if args.fast_fits else 40,
             },
         )
         if (
@@ -5700,9 +5905,15 @@ def run_one_shared_template_fit(
     }
 
     completed_iterations = 0
-    for iteration in range(
-        max(1, int(args.fit_coordinate_iterations))
-    ):
+    coordinate_iterations = max(
+        1,
+        int(args.fit_coordinate_iterations),
+    )
+    if args.fast_fits:
+        coordinate_iterations = min(coordinate_iterations, 2)
+    # endif
+
+    for iteration in range(coordinate_iterations):
         previous_fraction = shared_fraction
 
         for variable_key, context in contexts.items():
@@ -5735,7 +5946,7 @@ def run_one_shared_template_fit(
             bounds=(1.0e-4, 1.0 - 1.0e-4),
             method="bounded",
             options={
-                "xatol": 2.0e-6,
+                "xatol": 2.0e-5 if args.fast_fits else 2.0e-6,
                 "maxiter": 250,
             },
         )
@@ -6540,7 +6751,9 @@ def run_data_shape_stage(
         # endfor
 
         period_fit_payload: Dict[str, object] = {}
+        fit_stage_seconds = 0.0
         if not args.skip_data_template_fits:
+            template_fit_start = time.perf_counter()
             fit_categories = category_specs
 
             for multiplicity_key, multiplicity_label in fit_categories:
@@ -6628,6 +6841,7 @@ def run_data_shape_stage(
                 for key, value in shape_plot_paths.items()
             },
             "template_fits": period_fit_payload,
+            "fit_stage_seconds": fit_stage_seconds,
             "samples": {},
         }
         for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
@@ -6732,6 +6946,7 @@ def process_period_mc_only(
         "AAOGEN epgamma opportunities",
         args,
         deduplicate=True,
+        collect_candidates=False,
     )
     emit_cutflow_diagnostics(
         period_dir,
