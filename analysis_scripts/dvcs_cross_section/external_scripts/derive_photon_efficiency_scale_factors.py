@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v66_pairing_branch_resolution_fix.py
+derive_photon_efficiency_scale_factors_v67_exclusivity_style_one_photon_fits.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -269,6 +269,40 @@ prepass still requires p2_p, p2_theta, and p2_phi. This revision explicitly
 resolves all three internal branches even though only M_gamma_gamma is displayed
 from that information.
 
+Revision: exclusivity-style coherent one-photon template morphing
+-----------------------------------------------------------------
+
+The exact-one-photon template fits now deliberately follow the validated
+plot_exclusivity_data_dvcs_pi0_mc.py strategy as closely as possible.
+
+For exact-one events, both DVCSGEN and AAOGEN receive independent nuisance
+parameters, but each complete template is morphed coherently:
+
+    Delta_phi:          additive shift + Gaussian broadening;
+    theta_gamma_gamma:  log(theta+epsilon) shift + Gaussian broadening;
+    pTmiss:             log(pTmiss+epsilon) shift + Gaussian broadening;
+    Emiss2:             additive shift + Gaussian broadening.
+
+The former two-component theta_gamma_gamma model and affine/asymmetric pTmiss
+and Emiss2 models are therefore not used in the exact-one fit. This prevents a
+single DVCS template from being split into independently movable sub-peaks.
+
+The coherent transforms use the same integrated-Gaussian transport approach as
+the validated exclusivity fitter, including the same nuisance-prior philosophy:
+additive shifts/smears use --fit-shift-prior-bins and
+--fit-smear-prior-bins, while positive/log variables use fixed transformed-space
+prior widths of 0.20 for shifts and 0.40 for broadenings.
+
+Exact-two events retain the established category-specific modeling because the
+0.11 < M_gamma_gamma < 0.16 GeV selection already supplies the primary
+two-photon discrimination.
+
+Emiss2 is restricted to 0--2 GeV for every category.
+
+Independent per-variable fractions remain diagnostics. The shared fraction is
+still determined separately for each run period; no cross-period fraction
+constraint is imposed.
+
 """
 
 
@@ -296,6 +330,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 from scipy.optimize import minimize, minimize_scalar
+from scipy.special import ndtr
 from scipy.signal import find_peaks
 
 try:
@@ -539,7 +574,7 @@ TWO_PHOTON_FIT_VARIABLES: Tuple[FitVariable, ...] = (
         r"$E_{\mathrm{miss}}$ (GeV)",
         120,
         0.0,
-        4.0,
+        2.0,
     ),
 )
 
@@ -2912,7 +2947,10 @@ def parse_args() -> argparse.Namespace:
         "--data-pTmiss-min",
         type=float,
         default=0.5,
-        help="After-cuts requirement: pTmiss greater than this value (GeV).",
+        help=(
+            "Deprecated compatibility option. No pTmiss lower cut is applied "
+            "in the current data-template workflow."
+        ),
     )
 
     parser.add_argument(
@@ -5287,15 +5325,102 @@ def simple_shift_smear_probability(
     sigma_bins: float,
     use_log_coordinate: bool,
 ) -> np.ndarray:
-    return affine_morph_probability(
-        raw_probability,
-        centers,
-        shift_bins,
-        0.0,
-        sigma_bins,
-        sigma_bins,
-        use_log_coordinate,
+    """
+    Coherently shift and Gaussian-broaden an entire template.
+
+    This mirrors the transport used by plot_exclusivity_data_dvcs_pi0_mc.py:
+    every source-bin probability is transported into every target bin using
+    integrated Gaussian probabilities. No interpolation cutoff is introduced.
+
+    Parameters remain expressed in transformed-coordinate bin units so the
+    existing --fit-max-shift-bins/--fit-max-smear-bins interface is preserved.
+    """
+    raw = normalized_probability(raw_probability)
+    if np.sum(raw) <= 0.0 or centers.size < 2:
+        return raw
+    # endif
+
+    linear_bin_width = float(np.median(np.diff(centers)))
+    edges = np.concatenate(
+        [
+            np.asarray(
+                [centers[0] - 0.5 * linear_bin_width],
+                dtype=float,
+            ),
+            0.5 * (centers[:-1] + centers[1:]),
+            np.asarray(
+                [centers[-1] + 0.5 * linear_bin_width],
+                dtype=float,
+            ),
+        ]
     )
+
+    if use_log_coordinate:
+        epsilon = max(
+            0.25 * linear_bin_width,
+            1.0e-8,
+        )
+        source_coordinate = np.log(
+            np.maximum(centers + epsilon, 1.0e-15)
+        )
+        lower_coordinate = np.log(
+            np.maximum(edges[:-1] + epsilon, 1.0e-15)
+        )
+        upper_coordinate = np.log(
+            np.maximum(edges[1:] + epsilon, 1.0e-15)
+        )
+        coordinate_step = float(
+            np.median(np.diff(source_coordinate))
+        )
+    else:
+        source_coordinate = centers
+        lower_coordinate = edges[:-1]
+        upper_coordinate = edges[1:]
+        coordinate_step = linear_bin_width
+    # endif
+
+    shift = float(shift_bins) * coordinate_step
+    sigma = max(float(sigma_bins), 0.0) * coordinate_step
+
+    if sigma <= 1.0e-12:
+        mapped_coordinate = source_coordinate + shift
+
+        if use_log_coordinate:
+            epsilon = max(
+                0.25 * linear_bin_width,
+                1.0e-8,
+            )
+            mapped_centers = np.exp(mapped_coordinate) - epsilon
+        else:
+            mapped_centers = mapped_coordinate
+        # endif
+
+        target, _ = np.histogram(
+            mapped_centers,
+            bins=edges,
+            weights=raw,
+        )
+    else:
+        source_means = (source_coordinate + shift)[None, :]
+        lower = lower_coordinate[:, None]
+        upper = upper_coordinate[:, None]
+        probabilities = (
+            ndtr((upper - source_means) / sigma)
+            - ndtr((lower - source_means) / sigma)
+        )
+        target = probabilities @ raw
+    # endif
+
+    target = np.clip(
+        np.asarray(target, dtype=float),
+        0.0,
+        None,
+    )
+    total = float(np.sum(target))
+    if total <= 0.0 or not np.isfinite(total):
+        return raw
+    # endif
+    return target / total
 
 
 def logit(value: float) -> float:
@@ -5460,7 +5585,63 @@ def two_component_morph_probability(
     }
 
 
-def variable_model_spec(variable_key: str) -> Dict[str, str]:
+def variable_model_spec(
+    variable_key: str,
+    multiplicity_key: str,
+) -> Dict[str, str]:
+    """
+    Return category-specific template morph models.
+
+    Exact-one deliberately uses only coherent whole-template transformations,
+    matching the validated exclusivity-selection fit philosophy.
+
+    Exact-two keeps the previously developed flexible models because the
+    diphoton-mass selection is the primary topology discriminator there.
+    """
+    if multiplicity_key == "one_photon":
+        if variable_key == "Delta_phi":
+            return {
+                "dvcs": "simple_linear",
+                "pi0": "simple_linear",
+                "description": (
+                    "coherent additive shift+smear for complete DVCSGEN "
+                    "and AAOGEN templates (exclusivity-style)"
+                ),
+            }
+        # endif
+        if variable_key == "theta_gamma_gamma":
+            return {
+                "dvcs": "simple_log",
+                "pi0": "simple_log",
+                "description": (
+                    "coherent log(theta+epsilon) shift+smear for complete "
+                    "DVCSGEN and AAOGEN templates (exclusivity-style)"
+                ),
+            }
+        # endif
+        if variable_key == "pTmiss":
+            return {
+                "dvcs": "simple_log",
+                "pi0": "simple_log",
+                "description": (
+                    "coherent log(pTmiss+epsilon) shift+smear for complete "
+                    "DVCSGEN and AAOGEN templates (exclusivity-style)"
+                ),
+            }
+        # endif
+        if variable_key == "Emiss2":
+            return {
+                "dvcs": "simple_linear",
+                "pi0": "simple_linear",
+                "description": (
+                    "coherent additive shift+smear for complete DVCSGEN "
+                    "and AAOGEN templates (exclusivity-style)"
+                ),
+            }
+        # endif
+    # endif
+
+    # Exact-two categories retain the established flexible modeling.
     if variable_key == "Delta_phi":
         return {
             "dvcs": "simple_linear",
@@ -5500,7 +5681,10 @@ def variable_model_spec(variable_key: str) -> Dict[str, str]:
             ),
         }
     # endif
-    raise KeyError(f"No fit model configured for {variable_key}")
+
+    raise KeyError(
+        f"No fit model configured for {multiplicity_key}/{variable_key}"
+    )
 
 
 def model_parameter_count(model_name: str) -> int:
@@ -5555,7 +5739,18 @@ def nuisance_penalty(
     parameters: np.ndarray,
     model_name: str,
     args: argparse.Namespace,
+    context: Optional[Mapping[str, object]] = None,
 ) -> float:
+    """
+    Gaussian nuisance penalties.
+
+    For coherent simple models this follows the validated exclusivity fitter:
+      * additive: widths are specified in histogram-bin units;
+      * positive/log: transformed-space prior widths are 0.20 (shift) and
+        0.40 (smearing).
+
+    More flexible exact-two models retain their established penalties.
+    """
     if args.disable_fit_nuisance_penalties:
         return 0.0
     # endif
@@ -5568,10 +5763,24 @@ def nuisance_penalty(
         1.0e-6,
     )
 
-    if model_name.startswith("simple_"):
+    if model_name == "simple_linear":
         return float(
-            (parameters[0] / shift_prior) ** 2
-            + (parameters[1] / smear_prior) ** 2
+            0.5 * (parameters[0] / shift_prior) ** 2
+            + 0.5 * (parameters[1] / smear_prior) ** 2
+        )
+    # endif
+
+    if model_name == "simple_log":
+        coordinate_step = (
+            float(context["positive_coordinate_step"])
+            if context is not None
+            else 1.0
+        )
+        log_shift = float(parameters[0]) * coordinate_step
+        log_sigma = float(parameters[1]) * coordinate_step
+        return float(
+            0.5 * (log_shift / 0.20) ** 2
+            + 0.5 * (log_sigma / 0.40) ** 2
         )
     # endif
 
@@ -5719,6 +5928,7 @@ def prepare_variable_fit_context(
     data_counts: np.ndarray,
     dvcs_counts: np.ndarray,
     pi0_counts: np.ndarray,
+    multiplicity_key: str,
 ) -> Dict[str, object]:
     centers = np.linspace(
         variable.low,
@@ -5730,9 +5940,22 @@ def prepare_variable_fit_context(
     bin_width = (variable.high - variable.low) / variable.bins
     centers += 0.5 * bin_width
 
+    positive_epsilon = max(
+        0.25 * float(bin_width),
+        1.0e-8,
+    )
+    positive_coordinate = np.log(
+        np.maximum(centers + positive_epsilon, 1.0e-15)
+    )
+    positive_coordinate_step = (
+        float(np.median(np.diff(positive_coordinate)))
+        if positive_coordinate.size > 1
+        else 1.0
+    )
+
     raw_dvcs = normalized_probability(dvcs_counts)
     raw_pi0 = normalized_probability(pi0_counts)
-    model_spec = variable_model_spec(variable.key)
+    model_spec = variable_model_spec(variable.key, multiplicity_key)
 
     dvcs_divider_index, dvcs_divider_value = (
         detect_two_component_divider(
@@ -5774,8 +5997,10 @@ def prepare_variable_fit_context(
 
     return {
         "variable": variable,
+        "multiplicity_key": multiplicity_key,
         "centers": centers,
         "bin_width": float(bin_width),
+        "positive_coordinate_step": positive_coordinate_step,
         "data": np.asarray(data_counts, dtype=float),
         "data_total": float(np.sum(data_counts)),
         "raw_dvcs": raw_dvcs,
@@ -5840,11 +6065,13 @@ def evaluate_variable_model(
             dvcs_parameters,
             str(context["dvcs_model"]),
             args,
+            context,
         )
         + nuisance_penalty(
             pi0_parameters,
             str(context["pi0_model"]),
             args,
+            context,
         )
     )
 
@@ -6221,6 +6448,7 @@ def run_one_shared_template_fit(
             data_histograms[variable.key],
             dvcs_histograms[variable.key],
             pi0_histograms[variable.key],
+            multiplicity_key,
         )
         contexts[variable.key] = context
         independent_states[variable.key] = (
@@ -6336,7 +6564,7 @@ def run_one_shared_template_fit(
     total_bins = 0
     total_nuisance = 1
 
-    for variable in DATA_SHAPE_VARIABLES:
+    for variable in fit_variables:
         context = contexts[variable.key]
         state = states[variable.key]
         evaluation = evaluate_variable_model(
@@ -6513,7 +6741,10 @@ def plot_shared_template_fit(
         "fit": "tab:green",
     }
 
-    number_of_variables = len(DATA_SHAPE_VARIABLES)
+    fit_variables = fit_variables_for_category(
+        summary.multiplicity_key
+    )
+    number_of_variables = len(fit_variables)
     fig, axes = plt.subplots(
         2,
         number_of_variables,
@@ -6523,7 +6754,7 @@ def plot_shared_template_fit(
         gridspec_kw={"height_ratios": [3.0, 1.15]},
     )
 
-    for column, variable in enumerate(DATA_SHAPE_VARIABLES):
+    for column, variable in enumerate(fit_variables):
         result = summary.variable_results[variable.key]
         top = axes[0, column]
         bottom = axes[1, column]
@@ -6598,7 +6829,7 @@ def plot_shared_template_fit(
 
         quality = (
             rf"$f_{{\pi^0}}={summary.f_pi0:.3f}$ "
-            "(shared four-projection fit)"
+            f"(shared {len(fit_variables)}-projection fit)"
             + "\n"
             + rf"independent: $f_{{\pi^0}}="
             rf"{result.independent_f_pi0:.3f}"
@@ -6693,7 +6924,7 @@ def plot_shared_template_fit(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
     fraction_drivers = ", ".join(
-        variable.key for variable in DATA_SHAPE_VARIABLES
+        variable.key for variable in fit_variables
     )
     fig.suptitle(
         "DVCS+pi0 support advanced two-template fits after minimal "
