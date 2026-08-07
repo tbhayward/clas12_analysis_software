@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v69_shared_fit_category_fix.py
+derive_photon_efficiency_scale_factors_v70_raw_vs_morphed_one_photon_fits.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -323,6 +323,36 @@ AdvancedSharedFit now stores multiplicity_key explicitly. The category-aware
 fit plotting, fraction-consistency plotting, and flattened fit-row machinery
 introduced in the previous revision can therefore retrieve the photon category
 directly from the returned fit summary.
+
+Revision: raw-template primary diagnostic versus morphed comparison
+-------------------------------------------------------------------
+
+For each fit category the script now evaluates a strict raw-template,
+fraction-only decomposition in addition to the constrained morphed-template
+fit. This is especially important for the exact-one-photon sample, where the
+raw DVCSGEN and AAOGEN shapes visibly bracket the data well.
+
+The raw model has exactly one shared physics parameter:
+
+    D_i = N_i [(1-f_pi0) T_DVCS,i^raw + f_pi0 T_pi0,i^raw].
+
+No shifts, smearing, affine transformations, component splitting, or other
+shape nuisance parameters enter the raw-template result.
+
+For every variable the script records:
+    * the independent raw-template fraction;
+    * the independent morphed-template fraction;
+    * the shared raw-template fraction;
+    * the shared morphed-template fraction;
+    * Delta f_morph = f_morphed - f_raw;
+    * raw and morphed Poisson deviances.
+
+The fit canvases overlay both total models and show both data/model ratios.
+The fraction-consistency plots compare raw and morphed independent fractions
+directly. Existing morphed-fit fields are retained for backward compatibility.
+
+The raw-template result is labeled as the primary diagnostic for the exact-one
+sample; the morphed result is a model-sensitivity comparison.
 
 """
 
@@ -5147,6 +5177,15 @@ class AdvancedVariableFit:
     divider_pi0: float
     fit_total: float
     data_total: float
+    raw_shared_f_pi0: float
+    raw_shared_f_pi0_err: float
+    raw_independent_f_pi0: float
+    raw_independent_f_pi0_err: float
+    raw_shared_deviance: float
+    raw_independent_deviance: float
+    raw_shared_model_counts: np.ndarray
+    raw_shared_dvcs_component_counts: np.ndarray
+    raw_shared_pi0_component_counts: np.ndarray
 
 
 @dataclass
@@ -5160,6 +5199,10 @@ class AdvancedSharedFit:
     variable_results: Dict[str, AdvancedVariableFit]
     coordinate_iterations: int
     multiplicity_key: str
+    raw_f_pi0: float
+    raw_f_pi0_err: float
+    raw_deviance: float
+    raw_ndf: int
 
 
 def normalized_probability(counts: np.ndarray) -> np.ndarray:
@@ -6431,6 +6474,135 @@ def fit_histogram_inputs(
     return extract("data"), extract("dvcsgen"), extract("aaogen")
 
 
+
+def raw_template_model_counts(
+    context: Mapping[str, object],
+    f_pi0: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Fraction-only model using the untouched DVCSGEN and AAOGEN templates.
+    """
+    f_pi0 = float(np.clip(f_pi0, 1.0e-8, 1.0 - 1.0e-8))
+    data_total = float(context["data_total"])
+    raw_dvcs = np.asarray(context["raw_dvcs"], dtype=float)
+    raw_pi0 = np.asarray(context["raw_pi0"], dtype=float)
+
+    dvcs_component = data_total * (1.0 - f_pi0) * raw_dvcs
+    pi0_component = data_total * f_pi0 * raw_pi0
+    model = dvcs_component + pi0_component
+    return model, dvcs_component, pi0_component
+
+
+def raw_template_objective(
+    context: Mapping[str, object],
+    f_pi0: float,
+) -> float:
+    model, _dvcs, _pi0 = raw_template_model_counts(
+        context,
+        f_pi0,
+    )
+    return poisson_deviance(
+        np.asarray(context["data"], dtype=float),
+        model,
+    )
+
+
+def scalar_fraction_curvature_error(
+    objective,
+    f_pi0: float,
+) -> float:
+    """Curvature error for a one-dimensional fraction objective."""
+    step = max(
+        2.0e-4,
+        min(0.006, 0.04 * min(f_pi0, 1.0 - f_pi0)),
+    )
+    low = max(1.0e-5, f_pi0 - step)
+    high = min(1.0 - 1.0e-5, f_pi0 + step)
+
+    center_value = float(objective(f_pi0))
+    low_value = float(objective(low))
+    high_value = float(objective(high))
+    effective_step = 0.5 * (high - low)
+
+    second_derivative = (
+        high_value - 2.0 * center_value + low_value
+    ) / max(effective_step ** 2, 1.0e-12)
+
+    if second_derivative <= 0.0 or not np.isfinite(second_derivative):
+        return math.nan
+    # endif
+
+    return float(math.sqrt(2.0 / second_derivative))
+
+
+def fit_raw_template_fraction(
+    context: Mapping[str, object],
+) -> Dict[str, float]:
+    """Independent fraction-only raw-template fit for one projection."""
+    result = minimize_scalar(
+        lambda fraction: raw_template_objective(
+            context,
+            float(fraction),
+        ),
+        bounds=(1.0e-5, 1.0 - 1.0e-5),
+        method="bounded",
+        options={
+            "xatol": 2.0e-7,
+            "maxiter": 300,
+        },
+    )
+    f_pi0 = float(result.x)
+    error = scalar_fraction_curvature_error(
+        lambda fraction: raw_template_objective(
+            context,
+            float(fraction),
+        ),
+        f_pi0,
+    )
+    return {
+        "success": bool(result.success),
+        "f_pi0": f_pi0,
+        "f_pi0_err": error,
+        "deviance": float(result.fun),
+    }
+
+
+def fit_shared_raw_template_fraction(
+    contexts: Mapping[str, Mapping[str, object]],
+) -> Dict[str, float]:
+    """Shared fraction-only raw-template fit across all projections."""
+    def objective(fraction: float) -> float:
+        return float(
+            sum(
+                raw_template_objective(
+                    context,
+                    float(fraction),
+                )
+                for context in contexts.values()
+            )
+        )
+
+    result = minimize_scalar(
+        objective,
+        bounds=(1.0e-5, 1.0 - 1.0e-5),
+        method="bounded",
+        options={
+            "xatol": 2.0e-7,
+            "maxiter": 400,
+        },
+    )
+    f_pi0 = float(result.x)
+    error = scalar_fraction_curvature_error(
+        objective,
+        f_pi0,
+    )
+    return {
+        "success": bool(result.success),
+        "f_pi0": f_pi0,
+        "f_pi0_err": error,
+        "deviance": float(result.fun),
+    }
+
 def run_one_shared_template_fit(
     period: PeriodConfig,
     multiplicity_key: str,
@@ -6447,6 +6619,7 @@ def run_one_shared_template_fit(
 
     contexts: Dict[str, Dict[str, object]] = {}
     independent_states: Dict[str, Dict[str, object]] = {}
+    raw_independent_states: Dict[str, Dict[str, float]] = {}
     fit_variables = fit_variables_for_category(multiplicity_key)
 
     for variable in fit_variables:
@@ -6473,19 +6646,34 @@ def run_one_shared_template_fit(
             multiplicity_key,
         )
         contexts[variable.key] = context
+
+        raw_independent_states[variable.key] = (
+            fit_raw_template_fraction(context)
+        )
         independent_states[variable.key] = (
             optimize_variable_independent_fraction(
                 context,
                 args,
             )
         )
+
+        raw_state = raw_independent_states[variable.key]
+        morphed_state = independent_states[variable.key]
         log(
-            f"{period.label} {multiplicity_label} "
-            f"{variable.key} independent fit: "
-            f"f_pi0={independent_states[variable.key]['f_pi0']:.5f} "
-            f"+/- {independent_states[variable.key]['f_pi0_err']:.5f}"
+            f"{period.label} {multiplicity_label} {variable.key}: "
+            f"raw f_pi0={raw_state['f_pi0']:.5f} +/- "
+            f"{raw_state['f_pi0_err']:.5f}; "
+            f"morphed f_pi0={morphed_state['f_pi0']:.5f} +/- "
+            f"{morphed_state['f_pi0_err']:.5f}; "
+            f"Delta={morphed_state['f_pi0'] - raw_state['f_pi0']:+.5f}"
         )
     # endfor
+
+    raw_shared_state = fit_shared_raw_template_fraction(
+        contexts
+    )
+    raw_shared_fraction = float(raw_shared_state["f_pi0"])
+    raw_shared_error = float(raw_shared_state["f_pi0_err"])
 
     weights = []
     fractions = []
@@ -6601,6 +6789,20 @@ def run_one_shared_template_fit(
         raw_dvcs = np.asarray(context["raw_dvcs"], dtype=float)
         raw_pi0 = np.asarray(context["raw_pi0"], dtype=float)
 
+        (
+            raw_shared_model,
+            raw_shared_dvcs_component,
+            raw_shared_pi0_component,
+        ) = raw_template_model_counts(
+            context,
+            raw_shared_fraction,
+        )
+        raw_shared_variable_deviance = poisson_deviance(
+            np.asarray(context["data"], dtype=float),
+            raw_shared_model,
+        )
+        raw_independent = raw_independent_states[variable.key]
+
         ndvcs = model_parameter_count(str(context["dvcs_model"]))
         npi0 = model_parameter_count(str(context["pi0_model"]))
         nuisance_count = ndvcs + npi0
@@ -6662,6 +6864,32 @@ def run_one_shared_template_fit(
             divider_pi0=float(context["pi0_divider_value"]),
             fit_total=float(np.sum(evaluation["model"])),
             data_total=data_total,
+            raw_shared_f_pi0=raw_shared_fraction,
+            raw_shared_f_pi0_err=raw_shared_error,
+            raw_independent_f_pi0=float(
+                raw_independent["f_pi0"]
+            ),
+            raw_independent_f_pi0_err=float(
+                raw_independent["f_pi0_err"]
+            ),
+            raw_shared_deviance=float(
+                raw_shared_variable_deviance
+            ),
+            raw_independent_deviance=float(
+                raw_independent["deviance"]
+            ),
+            raw_shared_model_counts=np.asarray(
+                raw_shared_model,
+                dtype=float,
+            ),
+            raw_shared_dvcs_component_counts=np.asarray(
+                raw_shared_dvcs_component,
+                dtype=float,
+            ),
+            raw_shared_pi0_component_counts=np.asarray(
+                raw_shared_pi0_component,
+                dtype=float,
+            ),
         )
         variable_results[variable.key] = result
         total_deviance += result.deviance
@@ -6683,6 +6911,13 @@ def run_one_shared_template_fit(
         variable_results=variable_results,
         coordinate_iterations=completed_iterations,
         multiplicity_key=multiplicity_key,
+        raw_f_pi0=raw_shared_fraction,
+        raw_f_pi0_err=raw_shared_error,
+        raw_deviance=float(raw_shared_state["deviance"]),
+        raw_ndf=max(
+            1,
+            int(sum(variable.bins for variable in fit_variables)) - 1,
+        ),
     )
     return summary, data_histograms
 
@@ -6706,6 +6941,19 @@ def variable_fit_to_dict(
             if result.ndf > 0
             else math.nan
         ),
+        "raw_shared_f_pi0": result.raw_shared_f_pi0,
+        "raw_shared_f_pi0_error": result.raw_shared_f_pi0_err,
+        "raw_independent_f_pi0": result.raw_independent_f_pi0,
+        "raw_independent_f_pi0_error": result.raw_independent_f_pi0_err,
+        "delta_f_morph_shared": (
+            result.f_pi0 - result.raw_shared_f_pi0
+        ),
+        "delta_f_morph_independent": (
+            result.independent_f_pi0
+            - result.raw_independent_f_pi0
+        ),
+        "raw_shared_deviance": result.raw_shared_deviance,
+        "raw_independent_deviance": result.raw_independent_deviance,
         "nuisance_count": result.nuisance_count,
         "dvcs_nuisance": result.dvcs_nuisance,
         "pi0_nuisance": result.pi0_nuisance,
@@ -6732,6 +6980,18 @@ def shared_fit_to_dict(
             else math.nan
         ),
         "coordinate_iterations": summary.coordinate_iterations,
+        "raw_f_pi0": summary.raw_f_pi0,
+        "raw_f_pi0_error": summary.raw_f_pi0_err,
+        "raw_deviance": summary.raw_deviance,
+        "raw_ndf": summary.raw_ndf,
+        "raw_deviance_per_ndf": (
+            summary.raw_deviance / summary.raw_ndf
+            if summary.raw_ndf > 0
+            else math.nan
+        ),
+        "delta_f_morph": (
+            summary.f_pi0 - summary.raw_f_pi0
+        ),
         "variables": {
             variable_key: variable_fit_to_dict(result)
             for variable_key, result
@@ -6749,11 +7009,10 @@ def plot_shared_template_fit(
     args: argparse.Namespace,
 ) -> None:
     """
-    Plot the advanced data fit with the validated exclusivity-selection
-    palette, labels, line styles, legend, and title conventions.
+    Compare the fraction-only raw-template fit with the constrained morphed fit.
 
-    The lower ratio row is retained as an additional photon-efficiency
-    diagnostic.
+    For exact-one events the raw-template result is the primary diagnostic and
+    the morphed fit is a model-sensitivity comparison.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -6761,7 +7020,8 @@ def plot_shared_template_fit(
         "data": "black",
         "dvcs_mc": "tab:blue",
         "pi0_mc": "tab:red",
-        "fit": "tab:green",
+        "morphed_fit": "tab:green",
+        "raw_fit": "0.35",
     }
 
     fit_variables = fit_variables_for_category(
@@ -6771,7 +7031,7 @@ def plot_shared_template_fit(
     fig, axes = plt.subplots(
         2,
         number_of_variables,
-        figsize=(4.55 * number_of_variables, 9.3),
+        figsize=(4.75 * number_of_variables, 9.5),
         sharex="col",
         squeeze=False,
         gridspec_kw={"height_ratios": [3.0, 1.15]},
@@ -6804,61 +7064,84 @@ def plot_shared_template_fit(
             capsize=0.0,
             color=sample_colors["data"],
             label=r"$e'p'\gamma$ data",
-            zorder=5,
+            zorder=6,
         )
+
+        # Raw-template components are plotted with thin dashed outlines and are
+        # normalized using the shared RAW fraction, not the morphed fraction.
         top.stairs(
-            result.raw_dvcs_component_counts,
+            result.raw_shared_dvcs_component_counts,
             edges,
             color=sample_colors["dvcs_mc"],
-            linewidth=0.40,
+            linewidth=0.75,
             linestyle="--",
-            label="raw DVCS MC shape",
+            label="raw DVCS MC component",
             zorder=1,
         )
         top.stairs(
-            result.raw_pi0_component_counts,
+            result.raw_shared_pi0_component_counts,
             edges,
             color=sample_colors["pi0_mc"],
-            linewidth=0.40,
+            linewidth=0.75,
             linestyle="--",
-            label=r"raw $e\pi^0$ MC shape",
+            label=r"raw $e\pi^0$ MC component",
             zorder=1,
         )
+        top.stairs(
+            result.raw_shared_model_counts,
+            edges,
+            color=sample_colors["raw_fit"],
+            linewidth=1.8,
+            linestyle="-.",
+            label="raw-template fraction-only fit",
+            zorder=4,
+        )
+
+        # Morphed comparison.
         top.stairs(
             result.dvcs_component_counts,
             edges,
             color=sample_colors["dvcs_mc"],
-            linewidth=1.6,
-            label="fitted DVCS component",
+            linewidth=1.45,
+            label="morphed DVCS component",
             zorder=3,
         )
         top.stairs(
             result.pi0_component_counts,
             edges,
             color=sample_colors["pi0_mc"],
-            linewidth=1.6,
-            label=r"fitted $e\pi^0$ component",
+            linewidth=1.45,
+            label=r"morphed $e\pi^0$ component",
             zorder=2,
         )
         top.stairs(
             result.model_counts,
             edges,
-            color=sample_colors["fit"],
-            linewidth=2.0,
+            color=sample_colors["morphed_fit"],
+            linewidth=1.9,
             linestyle="--",
-            label="total two-template fit",
-            zorder=4,
+            label="constrained morphed fit",
+            zorder=5,
         )
 
         quality = (
-            rf"$f_{{\pi^0}}={summary.f_pi0:.3f}$ "
-            f"(shared {len(fit_variables)}-projection fit)"
+            rf"raw shared: $f_{{\pi^0}}={summary.raw_f_pi0:.3f}$"
+            rf"$\pm{summary.raw_f_pi0_err:.3f}$"
             + "\n"
-            + rf"independent: $f_{{\pi^0}}="
-            rf"{result.independent_f_pi0:.3f}"
-            rf"\pm{result.independent_f_pi0_err:.3f}$"
+            + rf"raw independent: {result.raw_independent_f_pi0:.3f}"
+            rf"$\pm{result.raw_independent_f_pi0_err:.3f}$"
             + "\n"
-            + f"$D/ndf={result.deviance:.1f}/{result.ndf}$"
+            + rf"morph shared: {summary.f_pi0:.3f}"
+            rf"$\pm{summary.f_pi0_err:.3f}$"
+            + "\n"
+            + rf"morph independent: {result.independent_f_pi0:.3f}"
+            rf"$\pm{result.independent_f_pi0_err:.3f}$"
+            + "\n"
+            + rf"$\Delta f_{{morph}}={summary.f_pi0-summary.raw_f_pi0:+.3f}$"
+            + "\n"
+            + rf"$D/ndf$ raw={result.raw_shared_deviance:.1f}/"
+            f"{max(1, variable.bins - 1)}; "
+            + f"morph={result.deviance:.1f}/{result.ndf}"
         )
         top.text(
             0.98,
@@ -6867,10 +7150,10 @@ def plot_shared_template_fit(
             transform=top.transAxes,
             ha="right",
             va="top",
-            fontsize=8.5,
+            fontsize=7.7,
             bbox={
                 "facecolor": "white",
-                "alpha": 0.78,
+                "alpha": 0.80,
                 "edgecolor": "none",
             },
             zorder=10,
@@ -6883,9 +7166,8 @@ def plot_shared_template_fit(
         if args.shape_log_y:
             positive_arrays = (
                 data_counts,
+                result.raw_shared_model_counts,
                 result.model_counts,
-                result.dvcs_component_counts,
-                result.pi0_component_counts,
             )
             positive_parts = [
                 np.asarray(array, dtype=float)[
@@ -6908,33 +7190,68 @@ def plot_shared_template_fit(
             top.set_ylim(bottom=0.0)
         # endif
 
-        model_counts = np.asarray(
+        raw_model = np.asarray(
+            result.raw_shared_model_counts,
+            dtype=float,
+        )
+        morph_model = np.asarray(
             result.model_counts,
             dtype=float,
         )
-        ratio = np.full_like(data_counts, np.nan, dtype=float)
-        ratio_error = np.full_like(data_counts, np.nan, dtype=float)
-        valid = model_counts > 0.0
-        ratio[valid] = data_counts[valid] / model_counts[valid]
-        ratio_error[valid] = (
-            data_error[valid] / model_counts[valid]
+
+        raw_valid = raw_model > 0.0
+        morph_valid = morph_model > 0.0
+
+        raw_ratio = np.full_like(data_counts, np.nan, dtype=float)
+        raw_ratio_error = np.full_like(data_counts, np.nan, dtype=float)
+        raw_ratio[raw_valid] = (
+            data_counts[raw_valid] / raw_model[raw_valid]
+        )
+        raw_ratio_error[raw_valid] = (
+            data_error[raw_valid] / raw_model[raw_valid]
         )
 
+        morph_ratio = np.full_like(data_counts, np.nan, dtype=float)
+        morph_ratio_error = np.full_like(data_counts, np.nan, dtype=float)
+        morph_ratio[morph_valid] = (
+            data_counts[morph_valid] / morph_model[morph_valid]
+        )
+        morph_ratio_error[morph_valid] = (
+            data_error[morph_valid] / morph_model[morph_valid]
+        )
+
+        bin_width = float(edges[1] - edges[0])
+        offset = 0.10 * bin_width
+
         bottom.errorbar(
-            centers[valid],
-            ratio[valid],
-            yerr=ratio_error[valid],
+            centers[raw_valid] - offset,
+            raw_ratio[raw_valid],
+            yerr=raw_ratio_error[raw_valid],
             fmt="o",
-            markersize=2.4,
-            linewidth=0.8,
+            markersize=2.2,
+            markerfacecolor="none",
+            linewidth=0.7,
+            capsize=0.0,
+            color=sample_colors["raw_fit"],
+            label="data / raw fit",
+            zorder=3,
+        )
+        bottom.errorbar(
+            centers[morph_valid] + offset,
+            morph_ratio[morph_valid],
+            yerr=morph_ratio_error[morph_valid],
+            fmt="o",
+            markersize=2.2,
+            linewidth=0.7,
             capsize=0.0,
             color=sample_colors["data"],
-            zorder=5,
+            label="data / morphed fit",
+            zorder=4,
         )
         bottom.axhline(
             1.0,
-            color=sample_colors["fit"],
-            linewidth=1.4,
+            color=sample_colors["morphed_fit"],
+            linewidth=1.2,
             linestyle="--",
             zorder=1,
         )
@@ -6946,18 +7263,28 @@ def plot_shared_template_fit(
     # endfor
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
+    ratio_handles, ratio_labels = axes[1, 0].get_legend_handles_labels()
+    handles = [*handles, *ratio_handles]
+    labels = [*labels, *ratio_labels]
+
     fraction_drivers = ", ".join(
         variable.key for variable in fit_variables
     )
+    primary_note = (
+        "raw fraction-only fit is primary diagnostic"
+        if summary.multiplicity_key == "one_photon"
+        else "raw fraction-only fit shown as diagnostic comparison"
+    )
+
     fig.suptitle(
-        "DVCS+pi0 support advanced two-template fits after minimal "
-        f"preselection: {period_label}, {multiplicity_label}\n"
-        "fraction drivers (common population): "
-        f"{fraction_drivers}; "
-        rf"shared $f_{{\pi^0}}={summary.f_pi0:.4f}"
-        rf"\pm{summary.f_pi0_err:.4f}$; "
-        f"global $D/ndf={summary.deviance:.1f}/{summary.ndf}$",
-        fontsize=15,
+        "DVCS+pi0 raw-template versus constrained-morph fits: "
+        f"{period_label}, {multiplicity_label}\n"
+        f"fraction drivers: {fraction_drivers}; {primary_note}; "
+        rf"raw shared $f_{{\pi^0}}={summary.raw_f_pi0:.4f}"
+        rf"\pm{summary.raw_f_pi0_err:.4f}$; "
+        rf"morphed={summary.f_pi0:.4f}\pm{summary.f_pi0_err:.4f}$; "
+        rf"$\Delta f_{{morph}}={summary.f_pi0-summary.raw_f_pi0:+.4f}$",
+        fontsize=14,
         y=0.992,
     )
     fig.legend(
@@ -6965,10 +7292,10 @@ def plot_shared_template_fit(
         labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.875),
-        ncol=len(labels),
+        ncol=5,
         frameon=False,
     )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.82))
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.80))
     fig.savefig(
         path,
         dpi=args.fit_dpi,
@@ -6983,18 +7310,40 @@ def plot_fraction_consistency(
     multiplicity_label: str,
     summary: AdvancedSharedFit,
 ) -> None:
+    """Compare raw-template and morphed fractions projection by projection."""
     fit_variables = fit_variables_for_category(
         summary.multiplicity_key
     )
     labels = [variable.label for variable in fit_variables]
-    values = np.asarray(
+
+    raw_values = np.asarray(
         [
-            summary.variable_results[variable.key].independent_f_pi0
+            summary.variable_results[
+                variable.key
+            ].raw_independent_f_pi0
             for variable in fit_variables
         ],
         dtype=float,
     )
-    errors = np.asarray(
+    raw_errors = np.asarray(
+        [
+            summary.variable_results[
+                variable.key
+            ].raw_independent_f_pi0_err
+            for variable in fit_variables
+        ],
+        dtype=float,
+    )
+    morphed_values = np.asarray(
+        [
+            summary.variable_results[
+                variable.key
+            ].independent_f_pi0
+            for variable in fit_variables
+        ],
+        dtype=float,
+    )
+    morphed_errors = np.asarray(
         [
             summary.variable_results[
                 variable.key
@@ -7003,36 +7352,71 @@ def plot_fraction_consistency(
         ],
         dtype=float,
     )
+
     x = np.arange(len(labels), dtype=float)
+    offset = 0.08
 
     fig, axis = plt.subplots(figsize=(12, 6))
     axis.errorbar(
-        x,
-        values,
-        yerr=errors,
+        x - offset,
+        raw_values,
+        yerr=raw_errors,
         fmt="o",
         capsize=3,
-        label="Independent single-variable fits",
+        label="Raw-template independent fits",
+    )
+    axis.errorbar(
+        x + offset,
+        morphed_values,
+        yerr=morphed_errors,
+        fmt="s",
+        capsize=3,
+        label="Morphed independent fits",
+    )
+
+    axis.axhline(
+        summary.raw_f_pi0,
+        linewidth=1.5,
+        linestyle="-.",
+        label=(
+            "Raw shared fit "
+            f"({summary.raw_f_pi0:.3f})"
+        ),
     )
     axis.axhline(
         summary.f_pi0,
         linewidth=1.5,
-        label="Shared four-projection fit",
+        linestyle="--",
+        label=(
+            "Morphed shared fit "
+            f"({summary.f_pi0:.3f})"
+        ),
     )
+
+    if np.isfinite(summary.raw_f_pi0_err):
+        axis.axhspan(
+            summary.raw_f_pi0 - summary.raw_f_pi0_err,
+            summary.raw_f_pi0 + summary.raw_f_pi0_err,
+            alpha=0.08,
+        )
+    # endif
     if np.isfinite(summary.f_pi0_err):
         axis.axhspan(
             summary.f_pi0 - summary.f_pi0_err,
             summary.f_pi0 + summary.f_pi0_err,
-            alpha=0.15,
+            alpha=0.08,
         )
     # endif
+
     axis.set_xticks(x, labels, rotation=20, ha="right")
     axis.set_ylabel(r"Fitted $\pi^0$ fraction")
     axis.set_ylim(0.0, 1.0)
     axis.grid(alpha=0.25)
     axis.legend()
     axis.set_title(
-        f"{period_label}: {multiplicity_label} fraction consistency"
+        f"{period_label}: {multiplicity_label} fraction consistency; "
+        rf"$\Delta f_{{morph}}="
+        f"{summary.f_pi0-summary.raw_f_pi0:+.4f}$"
     )
     fig.tight_layout()
     fig.savefig(path, dpi=180)
@@ -7062,6 +7446,21 @@ def flatten_shared_fit_row(
             else math.nan
         ),
         "coordinate_iterations": summary.coordinate_iterations,
+        "raw_f_pi0": summary.raw_f_pi0,
+        "raw_f_pi0_error": summary.raw_f_pi0_err,
+        "raw_deviance": summary.raw_deviance,
+        "raw_ndf": summary.raw_ndf,
+        "raw_deviance_per_ndf": (
+            summary.raw_deviance / summary.raw_ndf
+            if summary.raw_ndf > 0
+            else math.nan
+        ),
+        "delta_f_morph": summary.f_pi0 - summary.raw_f_pi0,
+        "primary_one_photon_fraction": (
+            summary.raw_f_pi0
+            if multiplicity_key == "one_photon"
+            else summary.f_pi0
+        ),
     }
 
     fit_variables = fit_variables_for_category(
@@ -7071,6 +7470,22 @@ def flatten_shared_fit_row(
     for variable in fit_variables:
         result = summary.variable_results[variable.key]
         prefix = variable.key
+        row[f"{prefix}_raw_independent_f_pi0"] = (
+            result.raw_independent_f_pi0
+        )
+        row[f"{prefix}_raw_independent_f_pi0_error"] = (
+            result.raw_independent_f_pi0_err
+        )
+        row[f"{prefix}_raw_independent_deviance"] = (
+            result.raw_independent_deviance
+        )
+        row[f"{prefix}_raw_shared_deviance"] = (
+            result.raw_shared_deviance
+        )
+        row[f"{prefix}_delta_f_morph_independent"] = (
+            result.independent_f_pi0
+            - result.raw_independent_f_pi0
+        )
         row[f"{prefix}_independent_f_pi0"] = (
             result.independent_f_pi0
         )
@@ -7203,6 +7618,13 @@ def write_template_fit_outputs(
                 "fit_model": {
                     "shared_fraction": True,
                     "independent_variable_fits": True,
+                    "raw_fraction_only_fit": True,
+                    "raw_fraction_only_has_shape_nuisances": False,
+                    "one_photon_primary_diagnostic": "raw_fraction_only",
+                    "morphed_fit_role": (
+                        "secondary model-sensitivity comparison for one-photon; "
+                        "existing fit result retained for exact-two categories"
+                    ),
                     "data_population": "three energy-ranked photon-entry categories",
                     "templates": [
                         "DVCSGEN",
@@ -7450,9 +7872,14 @@ def run_data_shape_stage(
 
                     log(
                         f"{period.label} {multiplicity_label}: "
-                        f"f_pi0={summary.f_pi0:.6f} +/- "
-                        f"{summary.f_pi0_err:.6f}, "
-                        f"deviance/ndf={summary.deviance:.2f}/"
+                        f"raw f_pi0={summary.raw_f_pi0:.6f} +/- "
+                        f"{summary.raw_f_pi0_err:.6f}; "
+                        f"morphed f_pi0={summary.f_pi0:.6f} +/- "
+                        f"{summary.f_pi0_err:.6f}; "
+                        f"Delta={summary.f_pi0-summary.raw_f_pi0:+.6f}; "
+                        f"raw D/ndf={summary.raw_deviance:.2f}/"
+                        f"{summary.raw_ndf}; "
+                        f"morph D/ndf={summary.deviance:.2f}/"
                         f"{summary.ndf}"
                     )
                 except Exception as exc:
