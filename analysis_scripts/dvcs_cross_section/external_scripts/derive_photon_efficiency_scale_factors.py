@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v65_pi0_mass_cut_before_after.py
+derive_photon_efficiency_scale_factors_v66_pairing_branch_resolution_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -259,6 +259,15 @@ The five displayed variables are:
     either p1_p for the exact-one case or M_gamma_gamma for exact-two cases.
 
 The p2_p and p2_theta shape diagnostics are removed completely.
+
+Revision: exact-two internal branch-resolution fix
+--------------------------------------------------
+
+Removing p2_p and p2_theta from the displayed shape diagnostics must not remove
+them from the exact-two event machinery. The photon-ranking and diphoton-mass
+prepass still requires p2_p, p2_theta, and p2_phi. This revision explicitly
+resolves all three internal branches even though only M_gamma_gamma is displayed
+from that information.
 
 """
 
@@ -4276,6 +4285,10 @@ def process_data_shape_sample(
 
     shape_names = [
         *raw_shape_branch_keys(),
+        # Required internally for exact-two photon energy ranking and Mgg.
+        # These need not be displayed to still be required inputs.
+        "p2_p",
+        "p2_theta",
         "p2_phi",
         "open_angle_ep2",
     ]
