@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v67_exclusivity_style_one_photon_fits.py
+derive_photon_efficiency_scale_factors_v68_variable_model_callsite_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -302,6 +302,19 @@ Emiss2 is restricted to 0--2 GeV for every category.
 Independent per-variable fractions remain diagnostics. The shared fraction is
 still determined separately for each run period; no cross-period fraction
 constraint is imposed.
+
+Revision: category-aware model-callsite consistency fix
+-------------------------------------------------------
+
+variable_model_spec() became category dependent in the exclusivity-style
+one-photon rewrite. This revision updates every remaining call site so the
+multiplicity category is always explicit. Startup/preflight and JSON metadata
+now record model definitions separately for the one-photon and exact-two
+categories.
+
+The fraction-consistency and flattened fit-row builders were also made
+explicitly category-aware rather than relying on the backward-compatible
+DATA_SHAPE_VARIABLES alias.
 
 """
 
@@ -6960,11 +6973,14 @@ def plot_fraction_consistency(
     multiplicity_label: str,
     summary: AdvancedSharedFit,
 ) -> None:
-    labels = [variable.label for variable in DATA_SHAPE_VARIABLES]
+    fit_variables = fit_variables_for_category(
+        summary.multiplicity_key
+    )
+    labels = [variable.label for variable in fit_variables]
     values = np.asarray(
         [
             summary.variable_results[variable.key].independent_f_pi0
-            for variable in DATA_SHAPE_VARIABLES
+            for variable in fit_variables
         ],
         dtype=float,
     )
@@ -6973,7 +6989,7 @@ def plot_fraction_consistency(
             summary.variable_results[
                 variable.key
             ].independent_f_pi0_err
-            for variable in DATA_SHAPE_VARIABLES
+            for variable in fit_variables
         ],
         dtype=float,
     )
@@ -7038,7 +7054,11 @@ def flatten_shared_fit_row(
         "coordinate_iterations": summary.coordinate_iterations,
     }
 
-    for variable in DATA_SHAPE_VARIABLES:
+    fit_variables = fit_variables_for_category(
+        summary.multiplicity_key
+    )
+
+    for variable in fit_variables:
         result = summary.variable_results[variable.key]
         prefix = variable.key
         row[f"{prefix}_independent_f_pi0"] = (
@@ -7179,8 +7199,20 @@ def write_template_fit_outputs(
                         "AAOGEN-as-epgamma pi0",
                     ],
                     "variable_models": {
-                        variable.key: variable_model_spec(variable.key)
-                        for variable in DATA_SHAPE_VARIABLES
+                        category_key: {
+                            variable.key: variable_model_spec(
+                                variable.key,
+                                category_key,
+                            )
+                            for variable in fit_variables_for_category(
+                                category_key
+                            )
+                        }
+                        for category_key in (
+                            "one_photon",
+                            "two_photon_more_energetic",
+                            "two_photon_less_energetic",
+                        )
                     },
                     "projection_likelihood_note": (
                         "The four one-dimensional projections contain the "
@@ -7837,8 +7869,20 @@ def main() -> int:
         "implementation": "internal advanced component-preserving fitter",
         "scipy_optimizer": "L-BFGS-B plus bounded scalar coordinate update",
         "variables": {
-            variable.key: variable_model_spec(variable.key)
-            for variable in DATA_SHAPE_VARIABLES
+            category_key: {
+                variable.key: variable_model_spec(
+                    variable.key,
+                    category_key,
+                )
+                for variable in fit_variables_for_category(
+                    category_key
+                )
+            }
+            for category_key in (
+                "one_photon",
+                "two_photon_more_energetic",
+                "two_photon_less_energetic",
+            )
         },
         "shared_fraction": True,
         "independent_variable_fits": True,
