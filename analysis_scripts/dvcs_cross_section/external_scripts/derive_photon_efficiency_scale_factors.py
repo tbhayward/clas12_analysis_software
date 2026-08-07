@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v68_variable_model_callsite_fix.py
+derive_photon_efficiency_scale_factors_v69_shared_fit_category_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -315,6 +315,14 @@ categories.
 The fraction-consistency and flattened fit-row builders were also made
 explicitly category-aware rather than relying on the backward-compatible
 DATA_SHAPE_VARIABLES alias.
+
+Revision: shared-fit category propagation fix
+---------------------------------------------
+
+AdvancedSharedFit now stores multiplicity_key explicitly. The category-aware
+fit plotting, fraction-consistency plotting, and flattened fit-row machinery
+introduced in the previous revision can therefore retrieve the photon category
+directly from the returned fit summary.
 
 """
 
@@ -5151,6 +5159,7 @@ class AdvancedSharedFit:
     ndf: int
     variable_results: Dict[str, AdvancedVariableFit]
     coordinate_iterations: int
+    multiplicity_key: str
 
 
 def normalized_probability(counts: np.ndarray) -> np.ndarray:
@@ -6673,6 +6682,7 @@ def run_one_shared_template_fit(
         ndf=int(global_ndf),
         variable_results=variable_results,
         coordinate_iterations=completed_iterations,
+        multiplicity_key=multiplicity_key,
     )
     return summary, data_histograms
 
