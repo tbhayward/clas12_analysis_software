@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v70_raw_vs_morphed_one_photon_fits.py
+derive_photon_efficiency_scale_factors_v71_simple_data_override.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -353,6 +353,44 @@ directly. Existing morphed-fit fields are retained for backward compatibility.
 
 The raw-template result is labeled as the primary diagnostic for the exact-one
 sample; the morphed result is a model-sensitivity comparison.
+
+Revision: temporary --simple data-side efficiency override
+-----------------------------------------------------------
+
+A temporary --simple mode is available as a complete override of the normal
+DATA section only. It does not remove or alter the existing data-template or
+MC-efficiency implementations.
+
+In --simple mode the epgamma DATA tree is split entry-by-entry at 2 GeV:
+
+    low-energy tags:      p2_p < 2 GeV;
+    high-energy partners: p2_p > 2 GeV.
+
+Every low-energy photon is provisionally assumed to be the lower-energy photon
+from a pi0 decay whose other photon should lie above 2 GeV. The expected
+high-energy partner direction is reconstructed from the beam, target, electron,
+proton, and low-energy photon four-vectors using the same reconstruct_probe()
+helper as the established MC-efficiency study.
+
+Each low-energy tag is assigned to FT or to one of the six FD sectors from the
+predicted partner direction. A tag is counted as reconstructed when the same
+(runnum, evnum) occurs anywhere in the >2 GeV photon set. No DVCS/pi0 template
+decomposition, invariant-mass requirement, angular partner requirement, or
+other data-side fit is used in this temporary mode.
+
+The simple efficiency in each predicted detector region is therefore:
+
+    epsilon = N(low-E tags whose event has a >2 GeV photon)
+              / N(all low-E tags in that predicted region).
+
+Results are printed to the console for FT and FD sectors 1--6, separately by
+run period and for all selected periods combined. They are also written under:
+
+    output/photon_efficiency_study/data/simple/
+
+The normal data analysis remains the default when --simple is absent. The
+separate MC-efficiency stage is unaffected and still runs unless --no-mc /
+--skip-mc-efficiency is supplied.
 
 """
 
@@ -2978,6 +3016,15 @@ def parse_args() -> argparse.Namespace:
         "--shape-log-y",
         action="store_true",
         help="Also write logarithmic-y normalized shape canvases.",
+    )
+    parser.add_argument(
+        "--simple",
+        action="store_true",
+        help=(
+            "Temporarily replace the normal DATA shape/template section with "
+            "a direct <2 GeV tag / >2 GeV same-(runnum,evnum) partner "
+            "efficiency study. The separate MC-efficiency stage is unchanged."
+        ),
     )
     parser.add_argument(
         "--fast-fits",
@@ -8189,6 +8236,551 @@ def process_period_mc_only(
     return period.key, official_dicts, metadata
 
 
+
+def simple_data_event_key(
+    runnum: np.ndarray,
+    eventnum: np.ndarray,
+) -> np.ndarray:
+    """
+    Build an exact structured (runnum, evnum) key for data entries.
+    """
+    runnum = np.asarray(runnum, dtype=np.int64)
+    eventnum = np.asarray(eventnum, dtype=np.int64)
+    keys = np.empty(
+        runnum.size,
+        dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
+    )
+    keys["runnum"] = runnum
+    keys["eventnum"] = eventnum
+    return keys
+
+
+def simple_binomial_error(
+    matched: int,
+    expected: int,
+) -> float:
+    if expected <= 0:
+        return math.nan
+    # endif
+    efficiency = matched / expected
+    return float(
+        math.sqrt(
+            max(efficiency * (1.0 - efficiency), 0.0)
+            / expected
+        )
+    )
+
+
+def process_period_simple_data_efficiency(
+    period: PeriodConfig,
+    args_dict: Mapping[str, object],
+) -> Tuple[str, Dict[str, object]]:
+    """
+    Temporary direct data efficiency estimator requested by --simple.
+
+    Every p2_p < 2 GeV entry is one denominator opportunity. Its missing
+    high-energy partner direction is reconstructed from four-momentum closure.
+    The opportunity is a success if the exact same (runnum, evnum) appears in
+    the p2_p > 2 GeV entry set.
+
+    No one-to-one arbitration is attempted when an event contains multiple low
+    or high photon entries: each low-energy photon is intentionally treated as
+    one independent opportunity under the requested temporary assumption.
+    """
+    start_time = time.perf_counter()
+    args = argparse.Namespace(**args_dict)
+    path = period.epg_data
+
+    total_entries, available_keys = require_tree(path)
+    logical_names = (
+        "runnum",
+        "eventnum",
+        "e_p",
+        "e_theta",
+        "e_phi",
+        "p_p",
+        "p_theta",
+        "p_phi",
+        "p2_p",
+        "p2_theta",
+        "p2_phi",
+    )
+    resolved = resolve_branches_from_keys(
+        path,
+        available_keys,
+        logical_names,
+    )
+    expressions = sorted(set(resolved.values()))
+
+    entry_stop = (
+        min(total_entries, int(args.max_events))
+        if args.max_events is not None
+        else total_entries
+    )
+
+    low_key_chunks: List[np.ndarray] = []
+    low_detector_chunks: List[np.ndarray] = []
+    low_sector_chunks: List[np.ndarray] = []
+    low_probe_E_chunks: List[np.ndarray] = []
+    high_key_chunks: List[np.ndarray] = []
+
+    entries_read = 0
+    finite_identity_entries = 0
+    finite_low_kinematics = 0
+    low_entries_total = 0
+    high_entries_total = 0
+    exactly_2GeV_entries = 0
+
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=args.step_size,
+        entry_stop=entry_stop,
+        library="np",
+    ):
+        if not arrays:
+            continue
+        # endif
+
+        chunk_size = len(next(iter(arrays.values())))
+        entries_read += chunk_size
+
+        values = {
+            name: np.asarray(
+                arrays[resolved[name]],
+                dtype=float,
+            )
+            for name in logical_names
+        }
+
+        run_f = values["runnum"]
+        event_f = values["eventnum"]
+        photon_E = values["p2_p"]
+
+        valid_identity = (
+            np.isfinite(run_f)
+            & np.isfinite(event_f)
+        )
+        finite_identity_entries += int(
+            np.count_nonzero(valid_identity)
+        )
+
+        finite_photon = valid_identity & np.isfinite(photon_E)
+        low_mask = finite_photon & (photon_E < 2.0)
+        high_mask = finite_photon & (photon_E > 2.0)
+        exactly_mask = finite_photon & (photon_E == 2.0)
+
+        low_entries_total += int(np.count_nonzero(low_mask))
+        high_entries_total += int(np.count_nonzero(high_mask))
+        exactly_2GeV_entries += int(np.count_nonzero(exactly_mask))
+
+        if np.any(high_mask):
+            high_key_chunks.append(
+                simple_data_event_key(
+                    np.rint(run_f[high_mask]).astype(np.int64),
+                    np.rint(event_f[high_mask]).astype(np.int64),
+                )
+            )
+        # endif
+
+        if not np.any(low_mask):
+            continue
+        # endif
+
+        low_required_finite = low_mask.copy()
+        for name in (
+            "e_p",
+            "e_theta",
+            "e_phi",
+            "p_p",
+            "p_theta",
+            "p_phi",
+            "p2_theta",
+            "p2_phi",
+        ):
+            low_required_finite &= np.isfinite(values[name])
+        # endfor
+
+        finite_low_kinematics += int(
+            np.count_nonzero(low_required_finite)
+        )
+
+        if not np.any(low_required_finite):
+            continue
+        # endif
+
+        probe = reconstruct_probe(
+            period.beam_energy_GeV,
+            values["e_p"][low_required_finite],
+            values["e_theta"][low_required_finite],
+            values["e_phi"][low_required_finite],
+            values["p_p"][low_required_finite],
+            values["p_theta"][low_required_finite],
+            values["p_phi"][low_required_finite],
+            values["p2_p"][low_required_finite],
+            values["p2_theta"][low_required_finite],
+            values["p2_phi"][low_required_finite],
+        )
+
+        probe_theta_deg = np.degrees(
+            np.asarray(probe["theta"], dtype=float)
+        )
+        probe_phi = np.asarray(probe["phi"], dtype=float)
+        predicted_detector, predicted_sector = classify_probe(
+            probe_theta_deg,
+            probe_phi,
+            args,
+        )
+
+        low_key_chunks.append(
+            simple_data_event_key(
+                np.rint(
+                    run_f[low_required_finite]
+                ).astype(np.int64),
+                np.rint(
+                    event_f[low_required_finite]
+                ).astype(np.int64),
+            )
+        )
+        low_detector_chunks.append(
+            np.asarray(predicted_detector, dtype=np.int16)
+        )
+        low_sector_chunks.append(
+            np.asarray(predicted_sector, dtype=np.int16)
+        )
+        low_probe_E_chunks.append(
+            np.asarray(probe["E"], dtype=float)
+        )
+    # endfor
+
+    if low_key_chunks:
+        low_keys = np.concatenate(low_key_chunks)
+        low_detector = np.concatenate(low_detector_chunks)
+        low_sector = np.concatenate(low_sector_chunks)
+        low_probe_E = np.concatenate(low_probe_E_chunks)
+    else:
+        low_keys = np.empty(
+            0,
+            dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
+        )
+        low_detector = np.empty(0, dtype=np.int16)
+        low_sector = np.empty(0, dtype=np.int16)
+        low_probe_E = np.empty(0, dtype=float)
+    # endif
+
+    if high_key_chunks:
+        high_keys = np.unique(np.concatenate(high_key_chunks))
+    else:
+        high_keys = np.empty(
+            0,
+            dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
+        )
+    # endif
+
+    if low_keys.size and high_keys.size:
+        matched = np.isin(
+            low_keys,
+            high_keys,
+            assume_unique=False,
+        )
+    else:
+        matched = np.zeros(low_keys.size, dtype=bool)
+    # endif
+
+    region_specs = [
+        ("FT", 0, 0),
+        *[
+            (f"FD sector {sector}", 1, sector)
+            for sector in range(1, 7)
+        ],
+    ]
+
+    rows: List[Dict[str, object]] = []
+    for region_label, detector_code, sector_code in region_specs:
+        region_mask = low_detector == detector_code
+        if detector_code == 1:
+            region_mask &= low_sector == sector_code
+        # endif
+
+        expected = int(np.count_nonzero(region_mask))
+        found = int(np.count_nonzero(region_mask & matched))
+        efficiency = (
+            found / expected if expected > 0 else math.nan
+        )
+        error = simple_binomial_error(found, expected)
+
+        rows.append(
+            {
+                "period": period.key,
+                "period_label": period.label,
+                "region": region_label,
+                "detector_code": detector_code,
+                "sector": sector_code,
+                "expected_low_energy_tags": expected,
+                "matched_same_event_high_energy_partner": found,
+                "efficiency": efficiency,
+                "efficiency_error": error,
+            }
+        )
+    # endfor
+
+    classified_mask = (
+        (low_detector == 0)
+        | (
+            (low_detector == 1)
+            & (low_sector >= 1)
+            & (low_sector <= 6)
+        )
+    )
+
+    payload: Dict[str, object] = {
+        "period": period.key,
+        "period_label": period.label,
+        "beam_energy_GeV": period.beam_energy_GeV,
+        "path": path,
+        "tree_entries": total_entries,
+        "entries_read": entries_read,
+        "threshold_GeV": 2.0,
+        "low_definition": "p2_p < 2 GeV",
+        "high_definition": "p2_p > 2 GeV",
+        "matching": "exact same (runnum, evnum); no angle/energy match cut",
+        "denominator_assumption": (
+            "every low-energy photon is treated as the lower-energy pi0 "
+            "daughter and therefore defines one expected >2 GeV partner"
+        ),
+        "predicted_region_definition": (
+            "missing-photon direction reconstructed from beam+target-e-p-low_gamma; "
+            f"FT={args.ft_theta_min:g}--{args.ft_theta_max:g} deg, "
+            f"FD={args.fd_theta_min:g}--{args.fd_theta_max:g} deg; "
+            "FD sector from predicted phi"
+        ),
+        "finite_identity_entries": finite_identity_entries,
+        "low_entries_total": low_entries_total,
+        "high_entries_total": high_entries_total,
+        "exactly_2GeV_entries_excluded": exactly_2GeV_entries,
+        "low_entries_with_finite_reconstruction_kinematics": (
+            finite_low_kinematics
+        ),
+        "low_opportunities_built": int(low_keys.size),
+        "unique_high_energy_events": int(high_keys.size),
+        "classified_low_opportunities": int(
+            np.count_nonzero(classified_mask)
+        ),
+        "unclassified_low_opportunities": int(
+            np.count_nonzero(~classified_mask)
+        ),
+        "low_opportunities_with_reconstructed_probe_E_gt_2": int(
+            np.count_nonzero(
+                np.isfinite(low_probe_E)
+                & (low_probe_E > 2.0)
+            )
+        ),
+        "low_opportunities_with_reconstructed_probe_E_le_2": int(
+            np.count_nonzero(
+                np.isfinite(low_probe_E)
+                & (low_probe_E <= 2.0)
+            )
+        ),
+        "rows": rows,
+        "elapsed_seconds": elapsed_seconds(start_time),
+    }
+
+    return period.key, payload
+
+
+def print_simple_data_efficiency_block(
+    title: str,
+    rows: Sequence[Mapping[str, object]],
+) -> None:
+    log("=" * 72)
+    log(f"SIMPLE DATA EFFICIENCY: {title}")
+    log(
+        "Definition: each p2_p<2 GeV data photon is one expected pi0 "
+        "opportunity; success = same (runnum,evnum) contains p2_p>2 GeV."
+    )
+    log("Region is the PREDICTED missing-partner FT/FD sector.")
+    for row in rows:
+        expected = int(row["expected_low_energy_tags"])
+        matched = int(
+            row["matched_same_event_high_energy_partner"]
+        )
+        efficiency = float(row["efficiency"])
+        error = float(row["efficiency_error"])
+
+        if np.isfinite(efficiency):
+            log(
+                f"  {str(row['region']):<11s}: "
+                f"{matched:,} / {expected:,} = "
+                f"{100.0 * efficiency:7.3f}% +/- "
+                f"{100.0 * error:6.3f}%"
+            )
+        else:
+            log(
+                f"  {str(row['region']):<11s}: "
+                f"{matched:,} / {expected:,} = undefined"
+            )
+        # endif
+    # endfor
+    log("=" * 72)
+
+
+def run_simple_data_efficiency_stage(
+    periods: Sequence[PeriodConfig],
+    args: argparse.Namespace,
+    workers: int,
+    data_root: Path,
+) -> Dict[str, object]:
+    """
+    Run the temporary --simple data-side override and persist a compact audit.
+    """
+    simple_root = data_root / "simple"
+    simple_root.mkdir(parents=True, exist_ok=True)
+
+    worker_count = max(
+        1,
+        min(int(workers), len(periods), MAX_WORKERS),
+    )
+    log(
+        f"SIMPLE DATA OVERRIDE: {len(periods)} period(s), "
+        f"{worker_count} worker(s); normal data shapes/template fits skipped."
+    )
+
+    payloads: Dict[str, Dict[str, object]] = {}
+
+    if worker_count == 1:
+        for period in periods:
+            key, payload = process_period_simple_data_efficiency(
+                period,
+                vars(args),
+            )
+            payloads[key] = payload
+        # endfor
+    else:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=worker_count
+        ) as executor:
+            future_map = {
+                executor.submit(
+                    process_period_simple_data_efficiency,
+                    period,
+                    vars(args),
+                ): period.key
+                for period in periods
+            }
+            for future in concurrent.futures.as_completed(
+                future_map
+            ):
+                key, payload = future.result()
+                payloads[key] = payload
+            # endfor
+        # endwith
+    # endif
+
+    ordered_rows: List[Dict[str, object]] = []
+    for period in periods:
+        payload = payloads[period.key]
+        rows = payload["rows"]
+        ordered_rows.extend(rows)
+        print_simple_data_efficiency_block(
+            period.label,
+            rows,
+        )
+        log(
+            f"{period.label} simple audit: "
+            f"low tags={payload['low_entries_total']:,}, "
+            f"high entries={payload['high_entries_total']:,}, "
+            f"classified low opportunities="
+            f"{payload['classified_low_opportunities']:,}, "
+            f"unclassified="
+            f"{payload['unclassified_low_opportunities']:,}."
+        )
+    # endfor
+
+    # Aggregate exactly by numerator/denominator, not by averaging efficiencies.
+    combined_rows: List[Dict[str, object]] = []
+    for region_label, detector_code, sector_code in [
+        ("FT", 0, 0),
+        *[
+            (f"FD sector {sector}", 1, sector)
+            for sector in range(1, 7)
+        ],
+    ]:
+        selected = [
+            row for row in ordered_rows
+            if row["region"] == region_label
+        ]
+        expected = int(
+            sum(
+                int(row["expected_low_energy_tags"])
+                for row in selected
+            )
+        )
+        matched = int(
+            sum(
+                int(
+                    row[
+                        "matched_same_event_high_energy_partner"
+                    ]
+                )
+                for row in selected
+            )
+        )
+        efficiency = (
+            matched / expected if expected > 0 else math.nan
+        )
+        combined_rows.append(
+            {
+                "period": "combined",
+                "period_label": "Combined selected periods",
+                "region": region_label,
+                "detector_code": detector_code,
+                "sector": sector_code,
+                "expected_low_energy_tags": expected,
+                "matched_same_event_high_energy_partner": matched,
+                "efficiency": efficiency,
+                "efficiency_error": simple_binomial_error(
+                    matched,
+                    expected,
+                ),
+            }
+        )
+    # endfor
+
+    print_simple_data_efficiency_block(
+        "COMBINED SELECTED PERIODS",
+        combined_rows,
+    )
+
+    all_rows = [*ordered_rows, *combined_rows]
+    write_rows_csv(
+        simple_root / "simple_data_efficiency.csv",
+        all_rows,
+    )
+
+    metadata: Dict[str, object] = {
+        "mode": "simple_data_override",
+        "threshold_GeV": 2.0,
+        "periods": payloads,
+        "combined_rows": combined_rows,
+        "output_csv": str(
+            simple_root / "simple_data_efficiency.csv"
+        ),
+    }
+    with open(
+        simple_root / "simple_data_efficiency.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            metadata,
+            handle,
+            indent=2,
+            default=json_default,
+        )
+    # endwith
+
+    return metadata
+
 def preflight_enabled_stages(
     periods: Sequence[PeriodConfig],
     args: argparse.Namespace,
@@ -8202,7 +8794,12 @@ def preflight_enabled_stages(
             "beam_energy_GeV": period.beam_energy_GeV,
         }
 
-        roles = ["epg_data", "dvcs_mc", "pi0_epg_mc"]
+        if args.simple:
+            roles = ["epg_data"]
+        else:
+            roles = ["epg_data", "dvcs_mc", "pi0_epg_mc"]
+        # endif
+
         if not args.skip_mc_efficiency:
             roles.append("pi0_epgg_mc")
         # endif
@@ -8302,7 +8899,10 @@ def main() -> int:
     )
 
     fitter_preflight: Dict[str, object] = {
-        "enabled": not args.skip_data_template_fits,
+        "enabled": (
+            not args.simple
+            and not args.skip_data_template_fits
+        ),
         "implementation": "internal advanced component-preserving fitter",
         "scipy_optimizer": "L-BFGS-B plus bounded scalar coordinate update",
         "variables": {
@@ -8343,8 +8943,12 @@ def main() -> int:
         "created_unix_time": time.time(),
         "arguments": vars(args),
         "resolved_stages": {
-            "data_shape_and_multiplicity": True,
-            "data_template_fits": not args.skip_data_template_fits,
+            "simple_data_override": bool(args.simple),
+            "data_shape_and_multiplicity": not args.simple,
+            "data_template_fits": (
+                not args.simple
+                and not args.skip_data_template_fits
+            ),
             "mc_efficiency": not args.skip_mc_efficiency,
         },
         "fitter_preflight": fitter_preflight,
@@ -8358,11 +8962,20 @@ def main() -> int:
         json.dump(manifest, handle, indent=2)
     # endwith
 
-    data_metadata = run_data_shape_stage(
-        periods,
-        args,
-        workers,
-    )
+    if args.simple:
+        data_metadata = run_simple_data_efficiency_stage(
+            periods,
+            args,
+            workers,
+            data_root,
+        )
+    else:
+        data_metadata = run_data_shape_stage(
+            periods,
+            args,
+            workers,
+        )
+    # endif
 
     mc_rows: List[Dict[str, object]] = []
     mc_metadata: Dict[str, object] = {}
