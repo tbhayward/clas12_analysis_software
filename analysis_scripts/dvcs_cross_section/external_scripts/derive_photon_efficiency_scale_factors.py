@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v72_simple_csv_writer_fix.py
+derive_photon_efficiency_scale_factors_v73_simple_json_writer_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -401,6 +401,16 @@ writer dedicated to the temporary simple-data audit and updates the simple
 stage to use it.
 
 No physics logic or efficiency definitions are changed.
+
+Revision: --simple JSON-writer fix
+----------------------------------
+
+The temporary --simple stage previously passed default=json_default to
+json.dump(), but no json_default() helper exists in this script. This revision
+adds a dedicated serializer for the simple-mode audit payload.
+
+No physics, matching, efficiency, detector-classification, or normal-analysis
+logic is changed.
 
 """
 
@@ -8681,6 +8691,35 @@ def write_simple_rows_csv(
                     for key in fieldnames
                 }
             )
+
+
+def simple_json_default(value: object) -> object:
+    """
+    JSON serializer used only by the temporary --simple audit.
+
+    Convert the NumPy scalar/array and Path types that can occur in the
+    metadata payload to ordinary JSON-compatible Python objects.
+    """
+    if isinstance(value, np.integer):
+        return int(value)
+    # endif
+    if isinstance(value, np.floating):
+        return float(value)
+    # endif
+    if isinstance(value, np.bool_):
+        return bool(value)
+    # endif
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    # endif
+    if isinstance(value, Path):
+        return str(value)
+    # endif
+
+    raise TypeError(
+        f"Object of type {type(value).__name__} is not JSON serializable"
+    )
+
         # endfor
     # endwith
 
@@ -8835,7 +8874,7 @@ def run_simple_data_efficiency_stage(
             metadata,
             handle,
             indent=2,
-            default=json_default,
+            default=simple_json_default,
         )
     # endwith
 
