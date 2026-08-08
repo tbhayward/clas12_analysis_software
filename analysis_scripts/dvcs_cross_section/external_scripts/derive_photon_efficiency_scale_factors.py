@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v73_simple_json_writer_fix.py
+derive_photon_efficiency_scale_factors_v74_simple_pi0_mass_requirement.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -411,6 +411,19 @@ adds a dedicated serializer for the simple-mode audit payload.
 
 No physics, matching, efficiency, detector-classification, or normal-analysis
 logic is changed.
+
+Revision: --simple same-event pi0 mass requirement
+-------------------------------------------------
+
+The temporary --simple DATA override now requires the low-energy photon and at
+least one >2 GeV photon from the same exact (runnum, evnum) to form a
+reconstructed pi0 candidate in the nominal mass window:
+
+    0.11 < M_gamma_gamma < 0.16 GeV.
+
+The denominator and predicted FT/FD-region assignment are unchanged. If an
+event contains multiple >2 GeV photons, all are tested and the low-energy tag
+is counted once if any candidate passes the diphoton-mass requirement.
 
 """
 
@@ -8298,14 +8311,16 @@ def process_period_simple_data_efficiency(
     """
     Temporary direct data efficiency estimator requested by --simple.
 
-    Every p2_p < 2 GeV entry is one denominator opportunity. Its missing
-    high-energy partner direction is reconstructed from four-momentum closure.
-    The opportunity is a success if the exact same (runnum, evnum) appears in
-    the p2_p > 2 GeV entry set.
+    Denominator:
+        every p2_p < 2 GeV photon entry is one expected pi0 opportunity.
 
-    No one-to-one arbitration is attempted when an event contains multiple low
-    or high photon entries: each low-energy photon is intentionally treated as
-    one independent opportunity under the requested temporary assumption.
+    Numerator:
+        the exact same (runnum, evnum) must contain at least one p2_p > 2 GeV
+        photon that forms 0.11 < M_gamma_gamma < 0.16 GeV with the low-energy
+        photon.
+
+    Predicted detector region is still obtained from the missing-partner
+    four-vector reconstructed from beam+target-e-p-low_gamma.
     """
     start_time = time.perf_counter()
     args = argparse.Namespace(**args_dict)
@@ -8313,23 +8328,12 @@ def process_period_simple_data_efficiency(
 
     total_entries, available_keys = require_tree(path)
     logical_names = (
-        "runnum",
-        "eventnum",
-        "e_p",
-        "e_theta",
-        "e_phi",
-        "p_p",
-        "p_theta",
-        "p_phi",
-        "p2_p",
-        "p2_theta",
-        "p2_phi",
+        "runnum", "eventnum",
+        "e_p", "e_theta", "e_phi",
+        "p_p", "p_theta", "p_phi",
+        "p2_p", "p2_theta", "p2_phi",
     )
-    resolved = resolve_branches_from_keys(
-        path,
-        available_keys,
-        logical_names,
-    )
+    resolved = resolve_branches_from_keys(path, available_keys, logical_names)
     expressions = sorted(set(resolved.values()))
 
     entry_stop = (
@@ -8342,7 +8346,14 @@ def process_period_simple_data_efficiency(
     low_detector_chunks: List[np.ndarray] = []
     low_sector_chunks: List[np.ndarray] = []
     low_probe_E_chunks: List[np.ndarray] = []
+    low_E_chunks: List[np.ndarray] = []
+    low_theta_chunks: List[np.ndarray] = []
+    low_phi_chunks: List[np.ndarray] = []
+
     high_key_chunks: List[np.ndarray] = []
+    high_E_chunks: List[np.ndarray] = []
+    high_theta_chunks: List[np.ndarray] = []
+    high_phi_chunks: List[np.ndarray] = []
 
     entries_read = 0
     finite_identity_entries = 0
@@ -8364,28 +8375,26 @@ def process_period_simple_data_efficiency(
 
         chunk_size = len(next(iter(arrays.values())))
         entries_read += chunk_size
-
         values = {
-            name: np.asarray(
-                arrays[resolved[name]],
-                dtype=float,
-            )
+            name: np.asarray(arrays[resolved[name]], dtype=float)
             for name in logical_names
         }
 
         run_f = values["runnum"]
         event_f = values["eventnum"]
         photon_E = values["p2_p"]
+        photon_theta = values["p2_theta"]
+        photon_phi = values["p2_phi"]
 
-        valid_identity = (
-            np.isfinite(run_f)
-            & np.isfinite(event_f)
-        )
-        finite_identity_entries += int(
-            np.count_nonzero(valid_identity)
-        )
+        valid_identity = np.isfinite(run_f) & np.isfinite(event_f)
+        finite_identity_entries += int(np.count_nonzero(valid_identity))
 
-        finite_photon = valid_identity & np.isfinite(photon_E)
+        finite_photon = (
+            valid_identity
+            & np.isfinite(photon_E)
+            & np.isfinite(photon_theta)
+            & np.isfinite(photon_phi)
+        )
         low_mask = finite_photon & (photon_E < 2.0)
         high_mask = finite_photon & (photon_E > 2.0)
         exactly_mask = finite_photon & (photon_E == 2.0)
@@ -8395,12 +8404,13 @@ def process_period_simple_data_efficiency(
         exactly_2GeV_entries += int(np.count_nonzero(exactly_mask))
 
         if np.any(high_mask):
-            high_key_chunks.append(
-                simple_data_event_key(
-                    np.rint(run_f[high_mask]).astype(np.int64),
-                    np.rint(event_f[high_mask]).astype(np.int64),
-                )
-            )
+            high_key_chunks.append(simple_data_event_key(
+                np.rint(run_f[high_mask]).astype(np.int64),
+                np.rint(event_f[high_mask]).astype(np.int64),
+            ))
+            high_E_chunks.append(np.asarray(photon_E[high_mask], dtype=float))
+            high_theta_chunks.append(np.asarray(photon_theta[high_mask], dtype=float))
+            high_phi_chunks.append(np.asarray(photon_phi[high_mask], dtype=float))
         # endif
 
         if not np.any(low_mask):
@@ -8408,23 +8418,10 @@ def process_period_simple_data_efficiency(
         # endif
 
         low_required_finite = low_mask.copy()
-        for name in (
-            "e_p",
-            "e_theta",
-            "e_phi",
-            "p_p",
-            "p_theta",
-            "p_phi",
-            "p2_theta",
-            "p2_phi",
-        ):
+        for name in ("e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"):
             low_required_finite &= np.isfinite(values[name])
         # endfor
-
-        finite_low_kinematics += int(
-            np.count_nonzero(low_required_finite)
-        )
-
+        finite_low_kinematics += int(np.count_nonzero(low_required_finite))
         if not np.any(low_required_finite):
             continue
         # endif
@@ -8437,40 +8434,26 @@ def process_period_simple_data_efficiency(
             values["p_p"][low_required_finite],
             values["p_theta"][low_required_finite],
             values["p_phi"][low_required_finite],
-            values["p2_p"][low_required_finite],
-            values["p2_theta"][low_required_finite],
-            values["p2_phi"][low_required_finite],
+            photon_E[low_required_finite],
+            photon_theta[low_required_finite],
+            photon_phi[low_required_finite],
         )
-
-        probe_theta_deg = np.degrees(
-            np.asarray(probe["theta"], dtype=float)
-        )
-        probe_phi = np.asarray(probe["phi"], dtype=float)
         predicted_detector, predicted_sector = classify_probe(
-            probe_theta_deg,
-            probe_phi,
+            np.degrees(np.asarray(probe["theta"], dtype=float)),
+            np.asarray(probe["phi"], dtype=float),
             args,
         )
 
-        low_key_chunks.append(
-            simple_data_event_key(
-                np.rint(
-                    run_f[low_required_finite]
-                ).astype(np.int64),
-                np.rint(
-                    event_f[low_required_finite]
-                ).astype(np.int64),
-            )
-        )
-        low_detector_chunks.append(
-            np.asarray(predicted_detector, dtype=np.int16)
-        )
-        low_sector_chunks.append(
-            np.asarray(predicted_sector, dtype=np.int16)
-        )
-        low_probe_E_chunks.append(
-            np.asarray(probe["E"], dtype=float)
-        )
+        low_key_chunks.append(simple_data_event_key(
+            np.rint(run_f[low_required_finite]).astype(np.int64),
+            np.rint(event_f[low_required_finite]).astype(np.int64),
+        ))
+        low_detector_chunks.append(np.asarray(predicted_detector, dtype=np.int16))
+        low_sector_chunks.append(np.asarray(predicted_sector, dtype=np.int16))
+        low_probe_E_chunks.append(np.asarray(probe["E"], dtype=float))
+        low_E_chunks.append(np.asarray(photon_E[low_required_finite], dtype=float))
+        low_theta_chunks.append(np.asarray(photon_theta[low_required_finite], dtype=float))
+        low_phi_chunks.append(np.asarray(photon_phi[low_required_finite], dtype=float))
     # endfor
 
     if low_key_chunks:
@@ -8478,41 +8461,75 @@ def process_period_simple_data_efficiency(
         low_detector = np.concatenate(low_detector_chunks)
         low_sector = np.concatenate(low_sector_chunks)
         low_probe_E = np.concatenate(low_probe_E_chunks)
+        low_E = np.concatenate(low_E_chunks)
+        low_theta = np.concatenate(low_theta_chunks)
+        low_phi = np.concatenate(low_phi_chunks)
     else:
-        low_keys = np.empty(
-            0,
-            dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
-        )
+        low_keys = np.empty(0, dtype=[("runnum", "<i8"), ("eventnum", "<i8")])
         low_detector = np.empty(0, dtype=np.int16)
         low_sector = np.empty(0, dtype=np.int16)
         low_probe_E = np.empty(0, dtype=float)
+        low_E = np.empty(0, dtype=float)
+        low_theta = np.empty(0, dtype=float)
+        low_phi = np.empty(0, dtype=float)
     # endif
 
     if high_key_chunks:
-        high_keys = np.unique(np.concatenate(high_key_chunks))
+        high_keys = np.concatenate(high_key_chunks)
+        high_E = np.concatenate(high_E_chunks)
+        high_theta = np.concatenate(high_theta_chunks)
+        high_phi = np.concatenate(high_phi_chunks)
+        order = np.argsort(high_keys, kind="stable")
+        high_keys = high_keys[order]
+        high_E = high_E[order]
+        high_theta = high_theta[order]
+        high_phi = high_phi[order]
     else:
-        high_keys = np.empty(
-            0,
-            dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
-        )
+        high_keys = np.empty(0, dtype=[("runnum", "<i8"), ("eventnum", "<i8")])
+        high_E = np.empty(0, dtype=float)
+        high_theta = np.empty(0, dtype=float)
+        high_phi = np.empty(0, dtype=float)
     # endif
 
-    if low_keys.size and high_keys.size:
-        matched = np.isin(
-            low_keys,
-            high_keys,
-            assume_unique=False,
-        )
-    else:
-        matched = np.zeros(low_keys.size, dtype=bool)
+    same_event_high_exists = np.zeros(low_keys.size, dtype=bool)
+    pi0_mass_partner_found = np.zeros(low_keys.size, dtype=bool)
+
+    if low_keys.size > 0 and high_keys.size > 0:
+        left = np.searchsorted(high_keys, low_keys, side="left")
+        right = np.searchsorted(high_keys, low_keys, side="right")
+        same_event_high_exists = right > left
+
+        mlow2 = float(PI0_MASS_WINDOW[0]) ** 2
+        mhigh2 = float(PI0_MASS_WINDOW[1]) ** 2
+
+        for i in np.flatnonzero(same_event_high_exists):
+            start = int(left[i])
+            stop = int(right[i])
+            hE = high_E[start:stop]
+            htheta = high_theta[start:stop]
+            hphi = high_phi[start:stop]
+
+            cos_open = (
+                math.cos(float(low_theta[i])) * np.cos(htheta)
+                + math.sin(float(low_theta[i])) * np.sin(htheta)
+                * np.cos(float(low_phi[i]) - hphi)
+            )
+            cos_open = np.clip(cos_open, -1.0, 1.0)
+            m2 = 2.0 * float(low_E[i]) * hE * (1.0 - cos_open)
+
+            if np.any(
+                np.isfinite(m2)
+                & (m2 > mlow2)
+                & (m2 < mhigh2)
+            ):
+                pi0_mass_partner_found[i] = True
+            # endif
+        # endfor
     # endif
 
     region_specs = [
         ("FT", 0, 0),
-        *[
-            (f"FD sector {sector}", 1, sector)
-            for sector in range(1, 7)
-        ],
+        *[(f"FD sector {sector}", 1, sector) for sector in range(1, 7)],
     ]
 
     rows: List[Dict[str, object]] = []
@@ -8523,34 +8540,26 @@ def process_period_simple_data_efficiency(
         # endif
 
         expected = int(np.count_nonzero(region_mask))
-        found = int(np.count_nonzero(region_mask & matched))
-        efficiency = (
-            found / expected if expected > 0 else math.nan
-        )
-        error = simple_binomial_error(found, expected)
-
-        rows.append(
-            {
-                "period": period.key,
-                "period_label": period.label,
-                "region": region_label,
-                "detector_code": detector_code,
-                "sector": sector_code,
-                "expected_low_energy_tags": expected,
-                "matched_same_event_high_energy_partner": found,
-                "efficiency": efficiency,
-                "efficiency_error": error,
-            }
-        )
+        same_event = int(np.count_nonzero(region_mask & same_event_high_exists))
+        found = int(np.count_nonzero(region_mask & pi0_mass_partner_found))
+        efficiency = found / expected if expected > 0 else math.nan
+        rows.append({
+            "period": period.key,
+            "period_label": period.label,
+            "region": region_label,
+            "detector_code": detector_code,
+            "sector": sector_code,
+            "expected_low_energy_tags": expected,
+            "same_event_high_energy_partner": same_event,
+            "matched_pi0_mass_partner": found,
+            "efficiency": efficiency,
+            "efficiency_error": simple_binomial_error(found, expected),
+        })
     # endfor
 
     classified_mask = (
         (low_detector == 0)
-        | (
-            (low_detector == 1)
-            & (low_sector >= 1)
-            & (low_sector <= 6)
-        )
+        | ((low_detector == 1) & (low_sector >= 1) & (low_sector <= 6))
     )
 
     payload: Dict[str, object] = {
@@ -8561,50 +8570,26 @@ def process_period_simple_data_efficiency(
         "tree_entries": total_entries,
         "entries_read": entries_read,
         "threshold_GeV": 2.0,
+        "pi0_mass_window_GeV": [float(PI0_MASS_WINDOW[0]), float(PI0_MASS_WINDOW[1])],
         "low_definition": "p2_p < 2 GeV",
         "high_definition": "p2_p > 2 GeV",
-        "matching": "exact same (runnum, evnum); no angle/energy match cut",
-        "denominator_assumption": (
-            "every low-energy photon is treated as the lower-energy pi0 "
-            "daughter and therefore defines one expected >2 GeV partner"
-        ),
-        "predicted_region_definition": (
-            "missing-photon direction reconstructed from beam+target-e-p-low_gamma; "
-            f"FT={args.ft_theta_min:g}--{args.ft_theta_max:g} deg, "
-            f"FD={args.fd_theta_min:g}--{args.fd_theta_max:g} deg; "
-            "FD sector from predicted phi"
-        ),
+        "matching": "same (runnum,eventnum) and 0.11<M_gamma_gamma<0.16 GeV",
         "finite_identity_entries": finite_identity_entries,
         "low_entries_total": low_entries_total,
         "high_entries_total": high_entries_total,
         "exactly_2GeV_entries_excluded": exactly_2GeV_entries,
-        "low_entries_with_finite_reconstruction_kinematics": (
-            finite_low_kinematics
-        ),
+        "low_entries_with_finite_reconstruction_kinematics": finite_low_kinematics,
         "low_opportunities_built": int(low_keys.size),
-        "unique_high_energy_events": int(high_keys.size),
-        "classified_low_opportunities": int(
-            np.count_nonzero(classified_mask)
-        ),
-        "unclassified_low_opportunities": int(
-            np.count_nonzero(~classified_mask)
-        ),
-        "low_opportunities_with_reconstructed_probe_E_gt_2": int(
-            np.count_nonzero(
-                np.isfinite(low_probe_E)
-                & (low_probe_E > 2.0)
-            )
-        ),
-        "low_opportunities_with_reconstructed_probe_E_le_2": int(
-            np.count_nonzero(
-                np.isfinite(low_probe_E)
-                & (low_probe_E <= 2.0)
-            )
-        ),
+        "high_energy_entries_stored": int(high_keys.size),
+        "low_opportunities_with_same_event_high_partner": int(np.count_nonzero(same_event_high_exists)),
+        "low_opportunities_with_pi0_mass_partner": int(np.count_nonzero(pi0_mass_partner_found)),
+        "classified_low_opportunities": int(np.count_nonzero(classified_mask)),
+        "unclassified_low_opportunities": int(np.count_nonzero(~classified_mask)),
+        "low_opportunities_with_reconstructed_probe_E_gt_2": int(np.count_nonzero(np.isfinite(low_probe_E) & (low_probe_E > 2.0))),
+        "low_opportunities_with_reconstructed_probe_E_le_2": int(np.count_nonzero(np.isfinite(low_probe_E) & (low_probe_E <= 2.0))),
         "rows": rows,
         "elapsed_seconds": elapsed_seconds(start_time),
     }
-
     return period.key, payload
 
 
@@ -8616,28 +8601,28 @@ def print_simple_data_efficiency_block(
     log(f"SIMPLE DATA EFFICIENCY: {title}")
     log(
         "Definition: each p2_p<2 GeV data photon is one expected pi0 "
-        "opportunity; success = same (runnum,evnum) contains p2_p>2 GeV."
+        "opportunity; success = same (runnum,evnum) contains p2_p>2 GeV "
+        "with 0.11<Mgg<0.16 GeV."
     )
     log("Region is the PREDICTED missing-partner FT/FD sector.")
     for row in rows:
         expected = int(row["expected_low_energy_tags"])
-        matched = int(
-            row["matched_same_event_high_energy_partner"]
-        )
+        matched = int(row["matched_pi0_mass_partner"])
+        same_event = int(row["same_event_high_energy_partner"])
         efficiency = float(row["efficiency"])
         error = float(row["efficiency_error"])
-
         if np.isfinite(efficiency):
             log(
                 f"  {str(row['region']):<11s}: "
                 f"{matched:,} / {expected:,} = "
-                f"{100.0 * efficiency:7.3f}% +/- "
-                f"{100.0 * error:6.3f}%"
+                f"{100.0 * efficiency:7.3f}% +/- {100.0 * error:6.3f}% "
+                f"(same-event >2 GeV before Mgg: {same_event:,})"
             )
         else:
             log(
                 f"  {str(row['region']):<11s}: "
-                f"{matched:,} / {expected:,} = undefined"
+                f"{matched:,} / {expected:,} = undefined "
+                f"(same-event >2 GeV before Mgg: {same_event:,})"
             )
         # endif
     # endfor
@@ -8814,19 +8799,19 @@ def run_simple_data_efficiency_stage(
                 for row in selected
             )
         )
-        matched = int(
+        same_event = int(
             sum(
-                int(
-                    row[
-                        "matched_same_event_high_energy_partner"
-                    ]
-                )
+                int(row["same_event_high_energy_partner"])
                 for row in selected
             )
         )
-        efficiency = (
-            matched / expected if expected > 0 else math.nan
+        matched = int(
+            sum(
+                int(row["matched_pi0_mass_partner"])
+                for row in selected
+            )
         )
+        efficiency = matched / expected if expected > 0 else math.nan
         combined_rows.append(
             {
                 "period": "combined",
@@ -8835,12 +8820,10 @@ def run_simple_data_efficiency_stage(
                 "detector_code": detector_code,
                 "sector": sector_code,
                 "expected_low_energy_tags": expected,
-                "matched_same_event_high_energy_partner": matched,
+                "same_event_high_energy_partner": same_event,
+                "matched_pi0_mass_partner": matched,
                 "efficiency": efficiency,
-                "efficiency_error": simple_binomial_error(
-                    matched,
-                    expected,
-                ),
+                "efficiency_error": simple_binomial_error(matched, expected),
             }
         )
     # endfor
