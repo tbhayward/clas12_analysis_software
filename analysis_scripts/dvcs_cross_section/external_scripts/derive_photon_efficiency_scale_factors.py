@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v71_simple_data_override.py
+derive_photon_efficiency_scale_factors_v72_simple_csv_writer_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -391,6 +391,16 @@ run period and for all selected periods combined. They are also written under:
 The normal data analysis remains the default when --simple is absent. The
 separate MC-efficiency stage is unaffected and still runs unless --no-mc /
 --skip-mc-efficiency is supplied.
+
+Revision: --simple CSV-writer fix
+---------------------------------
+
+The initial --simple implementation called write_rows_csv(), but the main
+script has no function with that name. This revision adds a small local CSV
+writer dedicated to the temporary simple-data audit and updates the simple
+stage to use it.
+
+No physics logic or efficiency definitions are changed.
 
 """
 
@@ -8624,6 +8634,56 @@ def print_simple_data_efficiency_block(
     log("=" * 72)
 
 
+
+def write_simple_rows_csv(
+    path: Path,
+    rows: Sequence[Mapping[str, object]],
+) -> None:
+    """
+    Write the compact --simple efficiency table without relying on any
+    non-existent global CSV helper.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if not rows:
+        with open(path, "w", encoding="utf-8", newline=""):
+            pass
+        # endwith
+        return
+    # endif
+
+    fieldnames: List[str] = []
+    for row in rows:
+        for key in row.keys():
+            key_string = str(key)
+            if key_string not in fieldnames:
+                fieldnames.append(key_string)
+            # endif
+        # endfor
+    # endfor
+
+    with open(
+        path,
+        "w",
+        encoding="utf-8",
+        newline="",
+    ) as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=fieldnames,
+            extrasaction="ignore",
+        )
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    key: row.get(key, "")
+                    for key in fieldnames
+                }
+            )
+        # endfor
+    # endwith
+
 def run_simple_data_efficiency_stage(
     periods: Sequence[PeriodConfig],
     args: argparse.Namespace,
@@ -8752,7 +8812,7 @@ def run_simple_data_efficiency_stage(
     )
 
     all_rows = [*ordered_rows, *combined_rows]
-    write_rows_csv(
+    write_simple_rows_csv(
         simple_root / "simple_data_efficiency.csv",
         all_rows,
     )
