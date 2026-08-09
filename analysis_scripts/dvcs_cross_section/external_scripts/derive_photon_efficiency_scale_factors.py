@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v79_simple_three_category_estimator.py
+derive_photon_efficiency_scale_factors_v80_final_data_driven.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -560,6 +560,72 @@ count by a fitted pi0 yield or a nontrivial unmatched-purity transfer factor.
 The same reconstructed-level bookkeeping is applied to data and reconstructed
 AAOGEN. Existing diagnostics, template fits, and the truth-informed AAOGEN
 efficiency study are preserved.
+
+Revision: final data-driven RGA photon-efficiency extraction
+------------------------------------------------------------
+
+The --simple switch is promoted from the exploratory three-category counting
+study to the production data-driven photon-efficiency extraction.  The legacy
+exploratory implementation is preserved behind --legacy-simple.
+
+The production extraction is a tag-and-probe measurement designed specifically
+for the RGA epgamma trees in which every reconstructed photon appears as a
+separate row.
+
+For data, event identity is exact (runnum, evnum).  For reconstructed MC, where
+run/event identifiers are not usable, the established quantized electron and
+proton kinematic signature is used.  Events with three or more photon rows are
+rejected.  A clean opportunity is either:
+
+  * exactly one reconstructed low-energy tag photon, 0.4 <= E_tag < 2 GeV;
+    this is an unmatched probe opportunity; or
+  * exactly two reconstructed photons with exactly one low-energy tag and one
+    high-energy photon E_high > 2 GeV; this is a paired opportunity.
+
+Ambiguous exact-two events with two sub-2-GeV photons are not used in the final
+measurement.  For every low-energy tag, the missing photon four-vector
+
+    X = k + p_target - e' - p' - gamma_low
+
+is reconstructed.  The same photon-like requirements used by the established
+AAOGEN efficiency calculation are imposed on X: finite positive four-vector,
+2 <= E_X < 9.5 GeV, |m_X^2| < 0.1 GeV^2,
+|E_X-|p_X|| < 0.1 GeV, and predicted FT/FD acceptance.  All angular quantities
+are kept internally in radians and converted to degrees only for cuts, sector
+bookkeeping, and plotting.  Phi differences are wrapped periodically.
+
+The found pi0 yield in paired data is obtained from an extended shape fit to
+M_gamma_gamma over 0--0.35 GeV.  The signal is a truth-purified reconstructed
+AAOGEN pi0 template with a constrained data/MC shift and additional Gaussian
+smearing.  The non-pi0 component is a positive cubic Bernstein background, so
+BH/DVCS photons, split clusters, accidental neutral activity, and other smooth
+combinatorial pairs are not counted as reconstructed pi0 partners.
+
+The missed-pi0 content of the unmatched one-photon data population is fitted
+rather than inferred from the paired purity.  The shared-fraction fit uses
+observables available even when the partner photon is missing:
+
+    M_X^2(e'p'), E_gamma_low, theta_gamma_low,
+    E_X, theta_X, opening_angle(gamma_low, X), and local predicted phi_X.
+
+The signal templates are genuine unmatched AAOGEN pi0 opportunities selected
+with truth information.  One background template is unmatched DVCSGEN, which
+explicitly models BH/DVCS events accompanied by low-energy reconstructed
+photons.  A second data-driven background template is built from the paired
+data with posterior background weights from the M_gamma_gamma fit.  The
+unmatched data fit therefore determines its own pi0 fraction without using
+truth information in data.
+
+For each period and for predicted FT and aggregate FD,
+
+    epsilon_data = N_pi0_found /
+                   (N_pi0_found + f_pi0_unmatched * N_unmatched).
+
+The same opportunity definition is applied to AAOGEN and truth information is
+used only there to form an apples-to-apples MC efficiency and closure
+diagnostics.  The reported data/MC scale factor is epsilon_data/epsilon_MC.
+The historical shape/template study and historical truth-informed MC study are
+retained as independent cross-checks and are not deleted.
 
 """
 
@@ -3190,11 +3256,69 @@ def parse_args() -> argparse.Namespace:
         "--simple",
         action="store_true",
         help=(
-            "Temporarily replace the normal DATA shape/template section with "
-            "a direct <2 GeV tag / >2 GeV same-(runnum,evnum) partner "
-            "efficiency study. The separate MC-efficiency stage is unchanged."
+            "Run the final data-driven RGA photon-efficiency extraction: "
+            "paired Mgg signal fit, failed-partner pi0-purity fit, and "
+            "same-selection AAOGEN truth efficiency for FT and FD. "
+            "Use --legacy-simple to recover the earlier exploratory study."
         ),
     )
+    parser.add_argument(
+        "--legacy-simple",
+        action="store_true",
+        help=(
+            "Run the pre-v80 exploratory --simple three-category study "
+            "instead of the final data-driven efficiency extraction."
+        ),
+    )
+    parser.add_argument(
+        "--final-mass-fit-bins",
+        type=int,
+        default=120,
+        help="Number of bins in the paired-data Mgg production fit.",
+    )
+    parser.add_argument(
+        "--final-mass-fit-max",
+        type=float,
+        default=0.35,
+        help="Upper edge of the paired-data Mgg fit in GeV.",
+    )
+    parser.add_argument(
+        "--final-mass-max-shift",
+        type=float,
+        default=0.010,
+        help="Maximum absolute AAOGEN pi0-template shift in GeV.",
+    )
+    parser.add_argument(
+        "--final-mass-max-smear",
+        type=float,
+        default=0.015,
+        help="Maximum additional AAOGEN pi0-template Gaussian sigma in GeV.",
+    )
+    parser.add_argument(
+        "--final-template-min-entries",
+        type=int,
+        default=150,
+        help="Minimum entries required for a production template before fallback.",
+    )
+    parser.add_argument(
+        "--final-fit-min-data",
+        type=int,
+        default=250,
+        help="Minimum unmatched data opportunities required for a production purity fit.",
+    )
+    parser.add_argument(
+        "--final-profile-points",
+        type=int,
+        default=61,
+        help="Grid points used for profile-likelihood statistical errors.",
+    )
+    parser.add_argument(
+        "--final-template-smoothing",
+        type=float,
+        default=0.60,
+        help="Gaussian histogram-bin smoothing used only for final normalized templates.",
+    )
+
     parser.add_argument(
         "--fast-fits",
         action="store_true",
@@ -10557,6 +10681,1622 @@ def run_simple_mc_efficiency_stage(
     return metadata
 
 
+
+
+# =============================================================================
+# Final data-driven photon-efficiency extraction (v80)
+# =============================================================================
+
+PI0_MASS_GEV = 0.1349768
+
+
+@dataclass
+class FinalOpportunityCatalog:
+    e_p: np.ndarray
+    e_theta: np.ndarray
+    e_phi: np.ndarray
+    p_p: np.ndarray
+    p_theta: np.ndarray
+    p_phi: np.ndarray
+    tag_E: np.ndarray
+    tag_theta: np.ndarray
+    tag_phi: np.ndarray
+    tag_detector: np.ndarray
+    proton_detector: np.ndarray
+    probe_E: np.ndarray
+    probe_p: np.ndarray
+    probe_theta: np.ndarray
+    probe_phi: np.ndarray
+    probe_m2: np.ndarray
+    probe_E_minus_p: np.ndarray
+    probe_detector: np.ndarray
+    probe_sector: np.ndarray
+    topology_code: np.ndarray
+    mx_ep2: np.ndarray
+    event_multiplicity: np.ndarray
+    paired: np.ndarray
+    high_E: np.ndarray
+    high_theta: np.ndarray
+    high_phi: np.ndarray
+    mgg: np.ndarray
+    high_probe_angle_deg: np.ndarray
+    high_probe_relative_E: np.ndarray
+
+    def size(self) -> int:
+        return int(self.tag_E.size)
+
+
+@dataclass
+class FinalTruthLabels:
+    tag_truth_match: np.ndarray
+    truth_partner_E: np.ndarray
+    truth_partner_theta: np.ndarray
+    truth_partner_phi: np.ndarray
+    truth_partner_above_threshold: np.ndarray
+    measured_partner_truth_match: np.ndarray
+    tag_match_angle_deg: np.ndarray
+    tag_match_relative_E: np.ndarray
+    measured_partner_angle_deg: np.ndarray
+    measured_partner_relative_E: np.ndarray
+
+
+FINAL_FEATURE_ORDER: Tuple[str, ...] = (
+    "mx_ep2",
+    "tag_E",
+    "tag_theta_deg",
+    "probe_E",
+    "probe_theta_deg",
+    "tag_probe_opening_deg",
+    "probe_phi_local_deg",
+)
+
+
+def wrap_angle_deg(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    return (values + 180.0) % 360.0 - 180.0
+
+
+def fd_sector_center_deg(sector: np.ndarray) -> np.ndarray:
+    sector = np.asarray(sector, dtype=int)
+    centers = np.zeros(sector.shape, dtype=float)
+    centers[sector == 1] = 0.0
+    centers[sector == 2] = 60.0
+    centers[sector == 3] = 120.0
+    centers[sector == 4] = 180.0
+    centers[sector == 5] = 240.0
+    centers[sector == 6] = 300.0
+    return centers
+
+
+def derive_ep_missing_mass_squared(
+    beam_energy: float,
+    e_p: np.ndarray,
+    e_theta: np.ndarray,
+    e_phi: np.ndarray,
+    p_p: np.ndarray,
+    p_theta: np.ndarray,
+    p_phi: np.ndarray,
+) -> np.ndarray:
+    e_E, e_px, e_py, e_pz = massive_four_vector(
+        e_p, e_theta, e_phi, ELECTRON_MASS_GEV
+    )
+    p_E, p_px, p_py, p_pz = massive_four_vector(
+        p_p, p_theta, p_phi, PROTON_MASS_GEV
+    )
+    miss_E = beam_energy + PROTON_MASS_GEV - e_E - p_E
+    miss_px = -e_px - p_px
+    miss_py = -e_py - p_py
+    miss_pz = beam_energy - e_pz - p_pz
+    return miss_E**2 - miss_px**2 - miss_py**2 - miss_pz**2
+
+
+def final_feature_values(
+    catalog: FinalOpportunityCatalog,
+    key: str,
+) -> np.ndarray:
+    if key == "mx_ep2":
+        return np.asarray(catalog.mx_ep2, dtype=float)
+    # endif
+    if key == "tag_E":
+        return np.asarray(catalog.tag_E, dtype=float)
+    # endif
+    if key == "tag_theta_deg":
+        return np.degrees(np.asarray(catalog.tag_theta, dtype=float))
+    # endif
+    if key == "probe_E":
+        return np.asarray(catalog.probe_E, dtype=float)
+    # endif
+    if key == "probe_theta_deg":
+        return np.degrees(np.asarray(catalog.probe_theta, dtype=float))
+    # endif
+    if key == "tag_probe_opening_deg":
+        return opening_angle_deg(
+            catalog.tag_theta,
+            catalog.tag_phi,
+            catalog.probe_theta,
+            catalog.probe_phi,
+        )
+    # endif
+    if key == "probe_phi_local_deg":
+        phi_deg = np.mod(np.degrees(catalog.probe_phi), 360.0)
+        result = wrap_angle_deg(phi_deg)
+        fd = catalog.probe_detector == 1
+        if np.any(fd):
+            centers = fd_sector_center_deg(catalog.probe_sector[fd])
+            result[fd] = wrap_angle_deg(phi_deg[fd] - centers)
+        # endif
+        return result
+    # endif
+    raise KeyError(f"Unknown final feature {key}")
+
+
+def final_feature_spec(
+    key: str,
+    detector: str,
+) -> Tuple[int, float, float, str]:
+    if key == "mx_ep2":
+        return (50, -0.10, 0.15, r"$M_X^2(e'p')$ (GeV$^2$)")
+    # endif
+    if key == "tag_E":
+        return (40, 0.40, 2.00, r"$E_{\gamma,\mathrm{low}}$ (GeV)")
+    # endif
+    if key == "tag_theta_deg":
+        return (45, 2.0, 40.0, r"$\theta_{\gamma,\mathrm{low}}$ (deg)")
+    # endif
+    if key == "probe_E":
+        return (40, 2.0, 9.5, r"predicted $E_X$ (GeV)")
+    # endif
+    if key == "probe_theta_deg":
+        if detector == "FT":
+            return (30, 2.5, 5.0, r"predicted $\theta_X$ (deg)")
+        # endif
+        return (45, 5.0, 35.0, r"predicted $\theta_X$ (deg)")
+    # endif
+    if key == "tag_probe_opening_deg":
+        return (45, 0.0, 30.0, r"$\angle(\gamma_{\mathrm{low}},X)$ (deg)")
+    # endif
+    if key == "probe_phi_local_deg":
+        if detector == "FT":
+            return (48, -180.0, 180.0, r"predicted $\phi_X$ (deg, wrapped)")
+        # endif
+        return (36, -30.0, 30.0, r"predicted local $\phi_X$ (deg)")
+    # endif
+    raise KeyError(key)
+
+
+def final_region_mask(
+    catalog: FinalOpportunityCatalog,
+    detector: str,
+) -> np.ndarray:
+    if detector == "FT":
+        return catalog.probe_detector == 0
+    # endif
+    if detector == "FD":
+        return catalog.probe_detector == 1
+    # endif
+    raise KeyError(detector)
+
+
+def _empty_final_catalog() -> FinalOpportunityCatalog:
+    floats = np.empty(0, dtype=float)
+    ints = np.empty(0, dtype=np.int16)
+    return FinalOpportunityCatalog(
+        e_p=floats.copy(), e_theta=floats.copy(), e_phi=floats.copy(),
+        p_p=floats.copy(), p_theta=floats.copy(), p_phi=floats.copy(),
+        tag_E=floats.copy(), tag_theta=floats.copy(), tag_phi=floats.copy(),
+        tag_detector=ints.copy(), proton_detector=ints.copy(),
+        probe_E=floats.copy(), probe_p=floats.copy(),
+        probe_theta=floats.copy(), probe_phi=floats.copy(),
+        probe_m2=floats.copy(), probe_E_minus_p=floats.copy(),
+        probe_detector=ints.copy(), probe_sector=ints.copy(),
+        topology_code=ints.copy(), mx_ep2=floats.copy(),
+        event_multiplicity=np.empty(0, dtype=np.int8),
+        paired=np.empty(0, dtype=bool),
+        high_E=floats.copy(), high_theta=floats.copy(), high_phi=floats.copy(),
+        mgg=floats.copy(), high_probe_angle_deg=floats.copy(),
+        high_probe_relative_E=floats.copy(),
+    )
+
+
+def read_final_opportunity_catalog(
+    path: str,
+    beam_energy: float,
+    sample_key: str,
+    args: argparse.Namespace,
+) -> Tuple[FinalOpportunityCatalog, Dict[str, object]]:
+    """
+    Build the final clean low-tag opportunity catalog.
+
+    Data event identity is exact run/event.  MC identity uses reconstructed
+    electron/proton kinematics.  Only exact-one and exact-two photon events are
+    considered.  Exact-two two-low events are removed after event pairing.
+    """
+    if sample_key not in {"data", "mc"}:
+        raise ValueError(sample_key)
+    # endif
+
+    logical = (
+        *identity_logical_names(sample_key),
+        "e_p", "e_theta", "e_phi",
+        "p_p", "p_theta", "p_phi",
+        "tag_E", "tag_theta", "tag_phi",
+        "tag_detector", "proton_detector",
+        "fiducial_status", "Q2", "W", "y",
+    )
+    optional = (
+        "tag_detector", "proton_detector", "fiducial_status",
+        "Q2", "W", "y",
+    )
+    resolved = resolve_branches(path, logical, optional=optional)
+    expressions = sorted({v for v in resolved.values() if v is not None})
+
+    tree_entries, _ = require_tree(path)
+    entry_stop = min(tree_entries, args.max_events) if args.max_events else tree_entries
+    identity_resolved = {
+        name: resolved[name]
+        for name in identity_logical_names(sample_key)
+    }
+    (
+        _all_signatures,
+        one_signatures,
+        two_signatures,
+        three_plus_signatures,
+        mult_audit,
+    ) = scan_event_multiplicity(
+        path,
+        sample_key,
+        identity_resolved,
+        args,
+        entry_stop,
+    )
+
+    low_store: Dict[str, List[np.ndarray]] = {
+        name: []
+        for name in (
+            "key", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
+            "tag_E", "tag_theta", "tag_phi", "tag_detector", "proton_detector",
+            "probe_E", "probe_p", "probe_theta", "probe_phi", "probe_m2",
+            "probe_E_minus_p", "probe_detector", "probe_sector", "topology_code",
+            "mx_ep2", "event_multiplicity",
+        )
+    }
+    high_keys: List[np.ndarray] = []
+    high_Es: List[np.ndarray] = []
+    high_thetas: List[np.ndarray] = []
+    high_phis: List[np.ndarray] = []
+
+    audit = {
+        "path": path,
+        "sample_key": sample_key,
+        "tree_entries": int(tree_entries),
+        "entry_stop": int(entry_stop),
+        "multiplicity": mult_audit,
+        "counts": {
+            "multiplicity_one_or_two_rows": 0,
+            "global_selected_rows": 0,
+            "low_tag_rows_before_probe": 0,
+            "high_candidate_rows": 0,
+            "photon_like_low_opportunities": 0,
+            "clean_exact_one_unmatched": 0,
+            "clean_exact_two_paired": 0,
+            "rejected_exact_two_without_high": 0,
+        },
+        "branch_mapping": resolved,
+    }
+
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=args.step_size,
+        entry_stop=entry_stop,
+        library="np",
+    ):
+        if not arrays:
+            continue
+        # endif
+        n = len(next(iter(arrays.values())))
+
+        def arr(name: str, default=math.nan, dtype=np.float64):
+            return finite_array(arrays, resolved.get(name), default=default, dtype=dtype)
+
+        e_p = arr("e_p"); e_theta = arr("e_theta"); e_phi = arr("e_phi")
+        p_p = arr("p_p"); p_theta = arr("p_theta"); p_phi = arr("p_phi")
+        tag_E = arr("tag_E"); tag_theta = arr("tag_theta")
+        tag_phi = np.mod(arr("tag_phi"), 2.0 * math.pi)
+        tag_detector = arr("tag_detector", default=-1, dtype=np.int16)
+        proton_detector = arr("proton_detector", default=-1, dtype=np.int16)
+
+        identity_arrays = {
+            "e_p": e_p, "e_theta": e_theta, "e_phi": e_phi,
+            "p_p": p_p, "p_theta": p_theta, "p_phi": p_phi,
+        }
+        if sample_key == "data":
+            identity_arrays["runnum"] = arr("runnum")
+            identity_arrays["eventnum"] = arr("eventnum")
+        # endif
+
+        one_mask, two_mask, _three_mask, valid_identity = multiplicity_entry_masks(
+            identity_arrays,
+            sample_key,
+            one_signatures,
+            two_signatures,
+            three_plus_signatures,
+            args,
+        )
+        mult_keep = one_mask | two_mask
+        audit["counts"]["multiplicity_one_or_two_rows"] += int(np.count_nonzero(mult_keep))
+
+        finite = (
+            mult_keep & valid_identity
+            & np.isfinite(e_p) & np.isfinite(e_theta) & np.isfinite(e_phi)
+            & np.isfinite(p_p) & np.isfinite(p_theta) & np.isfinite(p_phi)
+            & np.isfinite(tag_E) & np.isfinite(tag_theta) & np.isfinite(tag_phi)
+            & (e_p > 0.0) & (p_p > 0.0) & (tag_E > 0.0)
+        )
+
+        global_mask = finite.copy()
+        if resolved.get("Q2") is not None:
+            q2 = arr("Q2")
+            global_mask &= np.isfinite(q2) & (q2 > args.Q2_min)
+        # endif
+        if resolved.get("W") is not None:
+            w = arr("W")
+            global_mask &= np.isfinite(w) & (w > args.W_min)
+        # endif
+        if resolved.get("y") is not None:
+            y = arr("y")
+            global_mask &= np.isfinite(y) & (y < args.y_max)
+        # endif
+        if args.require_fiducial_status_111 and resolved.get("fiducial_status") is not None:
+            fid = arr("fiducial_status")
+            global_mask &= np.isfinite(fid) & (fid == 111)
+        # endif
+        audit["counts"]["global_selected_rows"] += int(np.count_nonzero(global_mask))
+
+        low_mask = global_mask & (tag_E >= args.tag_E_min) & (tag_E < args.probe_E_min)
+        high_mask = finite & (tag_E > args.found_probe_E_min) & (tag_E < args.probe_E_max)
+        audit["counts"]["low_tag_rows_before_probe"] += int(np.count_nonzero(low_mask))
+        audit["counts"]["high_candidate_rows"] += int(np.count_nonzero(high_mask))
+
+        if np.any(high_mask):
+            high_identity = {
+                name: np.asarray(identity_arrays[name])[high_mask]
+                for name in identity_logical_names(sample_key)
+            }
+            key, valid = build_identity_signature(high_identity, sample_key, args)
+            if not np.all(valid):
+                raise RuntimeError("Unexpected invalid identity in final high-candidate mask")
+            # endif
+            high_keys.append(key)
+            high_Es.append(tag_E[high_mask])
+            high_thetas.append(tag_theta[high_mask])
+            high_phis.append(tag_phi[high_mask])
+        # endif
+
+        if not np.any(low_mask):
+            continue
+        # endif
+
+        probe = reconstruct_probe(
+            beam_energy,
+            e_p, e_theta, e_phi,
+            p_p, p_theta, p_phi,
+            tag_E, tag_theta, tag_phi,
+        )
+        probe_theta_deg = np.degrees(probe["theta"])
+        probe_detector, probe_sector = classify_probe(
+            probe_theta_deg,
+            probe["phi"],
+            args,
+        )
+        topology = topology_code(proton_detector, tag_detector)
+
+        selected = (
+            low_mask
+            & np.isfinite(probe["E"])
+            & np.isfinite(probe["p"])
+            & np.isfinite(probe["theta"])
+            & np.isfinite(probe["phi"])
+            & np.isfinite(probe["m2"])
+            & np.isfinite(probe["E_minus_p"])
+            & (probe["E"] >= args.probe_E_min)
+            & (probe["E"] < args.probe_E_max)
+            & (np.abs(probe["m2"]) < args.probe_m2_abs_max)
+            & (np.abs(probe["E_minus_p"]) < args.probe_E_minus_p_abs_max)
+            & (probe_detector >= 0)
+        )
+        # If detector codes exist, retain the established supported topologies.
+        if resolved.get("tag_detector") is not None and resolved.get("proton_detector") is not None:
+            selected &= topology >= 0
+        # endif
+
+        if not np.any(selected):
+            continue
+        # endif
+        audit["counts"]["photon_like_low_opportunities"] += int(np.count_nonzero(selected))
+
+        selected_identity = {
+            name: np.asarray(identity_arrays[name])[selected]
+            for name in identity_logical_names(sample_key)
+        }
+        keys, valid = build_identity_signature(selected_identity, sample_key, args)
+        if not np.all(valid):
+            raise RuntimeError("Unexpected invalid identity in final low-opportunity mask")
+        # endif
+
+        mx_ep2 = derive_ep_missing_mass_squared(
+            beam_energy,
+            e_p, e_theta, e_phi,
+            p_p, p_theta, p_phi,
+        )
+        multiplicity = np.where(one_mask, 1, np.where(two_mask, 2, 0)).astype(np.int8)
+
+        vals = {
+            "key": keys,
+            "e_p": e_p[selected], "e_theta": e_theta[selected], "e_phi": e_phi[selected],
+            "p_p": p_p[selected], "p_theta": p_theta[selected], "p_phi": p_phi[selected],
+            "tag_E": tag_E[selected], "tag_theta": tag_theta[selected], "tag_phi": tag_phi[selected],
+            "tag_detector": tag_detector[selected], "proton_detector": proton_detector[selected],
+            "probe_E": probe["E"][selected], "probe_p": probe["p"][selected],
+            "probe_theta": probe["theta"][selected], "probe_phi": probe["phi"][selected],
+            "probe_m2": probe["m2"][selected],
+            "probe_E_minus_p": probe["E_minus_p"][selected],
+            "probe_detector": probe_detector[selected], "probe_sector": probe_sector[selected],
+            "topology_code": topology[selected], "mx_ep2": mx_ep2[selected],
+            "event_multiplicity": multiplicity[selected],
+        }
+        for name, value in vals.items():
+            low_store[name].append(np.asarray(value))
+        # endfor
+    # endfor
+
+    if not low_store["tag_E"]:
+        return _empty_final_catalog(), audit
+    # endif
+
+    low = {name: np.concatenate(parts) for name, parts in low_store.items() if name != "key"}
+    low_keys = np.concatenate(low_store["key"])
+
+    if high_keys:
+        hkeys = np.concatenate(high_keys)
+        hE = np.concatenate(high_Es)
+        htheta = np.concatenate(high_thetas)
+        hphi = np.concatenate(high_phis)
+        order = np.argsort(hkeys, kind="stable")
+        hkeys = hkeys[order]; hE = hE[order]; htheta = htheta[order]; hphi = hphi[order]
+        left = np.searchsorted(hkeys, low_keys, side="left")
+        right = np.searchsorted(hkeys, low_keys, side="right")
+        has_high = right > left
+    else:
+        hkeys = np.empty(0, dtype=low_keys.dtype)
+        hE = np.empty(0); htheta = np.empty(0); hphi = np.empty(0)
+        left = np.zeros(low_keys.size, dtype=np.int64)
+        right = np.zeros(low_keys.size, dtype=np.int64)
+        has_high = np.zeros(low_keys.size, dtype=bool)
+    # endif
+
+    event_mult = low["event_multiplicity"].astype(np.int8)
+    clean_unmatched = (event_mult == 1) & (~has_high)
+    clean_paired = (event_mult == 2) & has_high
+    ambiguous_two_low = (event_mult == 2) & (~has_high)
+    audit["counts"]["clean_exact_one_unmatched"] = int(np.count_nonzero(clean_unmatched))
+    audit["counts"]["clean_exact_two_paired"] = int(np.count_nonzero(clean_paired))
+    audit["counts"]["rejected_exact_two_without_high"] = int(np.count_nonzero(ambiguous_two_low))
+
+    keep = clean_unmatched | clean_paired
+    if not np.any(keep):
+        return _empty_final_catalog(), audit
+    # endif
+
+    indices = np.flatnonzero(keep)
+    paired = clean_paired[keep]
+    high_E = np.full(indices.size, np.nan)
+    high_theta = np.full(indices.size, np.nan)
+    high_phi = np.full(indices.size, np.nan)
+
+    for out_i, original_i in enumerate(indices):
+        if not clean_paired[original_i]:
+            continue
+        # endif
+        start = int(left[original_i]); stop = int(right[original_i])
+        # exact-two clean pairing should have one high photon, but choose the
+        # best predicted-probe match defensively if duplicate candidates exist.
+        candidate_angles = opening_angle_deg(
+            np.full(stop-start, low["probe_theta"][original_i]),
+            np.full(stop-start, low["probe_phi"][original_i]),
+            htheta[start:stop],
+            hphi[start:stop],
+        )
+        candidate_relE = np.abs(hE[start:stop] - low["probe_E"][original_i]) / max(low["probe_E"][original_i], 1.0e-12)
+        score = (candidate_angles / max(args.probe_match_angle_max_deg, 1.0e-12))**2 + (candidate_relE / max(args.probe_match_relative_E_max, 1.0e-12))**2
+        best = int(np.argmin(score))
+        high_E[out_i] = hE[start + best]
+        high_theta[out_i] = htheta[start + best]
+        high_phi[out_i] = hphi[start + best]
+    # endfor
+
+    kept = {name: np.asarray(value)[keep] for name, value in low.items()}
+    mgg = np.full(indices.size, np.nan)
+    hp_angle = np.full(indices.size, np.nan)
+    hp_relE = np.full(indices.size, np.nan)
+    if np.any(paired):
+        pidx = np.flatnonzero(paired)
+        mgg[pidx] = np.asarray([
+            photon_pair_mass(
+                float(kept["tag_E"][i]), float(kept["tag_theta"][i]), float(kept["tag_phi"][i]),
+                float(high_E[i]), float(high_theta[i]), float(high_phi[i]),
+            )
+            for i in pidx
+        ])
+        hp_angle[pidx] = opening_angle_deg(
+            kept["probe_theta"][pidx], kept["probe_phi"][pidx],
+            high_theta[pidx], high_phi[pidx],
+        )
+        hp_relE[pidx] = np.abs(high_E[pidx] - kept["probe_E"][pidx]) / np.maximum(kept["probe_E"][pidx], 1.0e-12)
+    # endif
+
+    catalog = FinalOpportunityCatalog(
+        e_p=kept["e_p"], e_theta=kept["e_theta"], e_phi=kept["e_phi"],
+        p_p=kept["p_p"], p_theta=kept["p_theta"], p_phi=kept["p_phi"],
+        tag_E=kept["tag_E"], tag_theta=kept["tag_theta"], tag_phi=kept["tag_phi"],
+        tag_detector=kept["tag_detector"].astype(np.int16),
+        proton_detector=kept["proton_detector"].astype(np.int16),
+        probe_E=kept["probe_E"], probe_p=kept["probe_p"],
+        probe_theta=kept["probe_theta"], probe_phi=kept["probe_phi"],
+        probe_m2=kept["probe_m2"], probe_E_minus_p=kept["probe_E_minus_p"],
+        probe_detector=kept["probe_detector"].astype(np.int16),
+        probe_sector=kept["probe_sector"].astype(np.int16),
+        topology_code=kept["topology_code"].astype(np.int16),
+        mx_ep2=kept["mx_ep2"], event_multiplicity=kept["event_multiplicity"].astype(np.int8),
+        paired=paired, high_E=high_E, high_theta=high_theta, high_phi=high_phi,
+        mgg=mgg, high_probe_angle_deg=hp_angle, high_probe_relative_E=hp_relE,
+    )
+    audit["final_opportunities"] = catalog.size()
+    audit["final_paired"] = int(np.count_nonzero(catalog.paired))
+    audit["final_unmatched"] = int(np.count_nonzero(~catalog.paired))
+    audit["final_FT"] = int(np.count_nonzero(catalog.probe_detector == 0))
+    audit["final_FD"] = int(np.count_nonzero(catalog.probe_detector == 1))
+    return catalog, audit
+
+
+def truth_label_final_catalog(
+    catalog: FinalOpportunityCatalog,
+    epgg: EpggRecords,
+    args: argparse.Namespace,
+) -> FinalTruthLabels:
+    n = catalog.size()
+    false = np.zeros(n, dtype=bool)
+    nan = np.full(n, np.nan)
+    if n == 0:
+        return FinalTruthLabels(false, nan, nan, nan, false, false, nan, nan, nan, nan)
+    # endif
+
+    cat_matrix = np.column_stack([
+        np.round(np.asarray(catalog.e_p, dtype=float), args.mc_signature_decimals),
+        np.round(np.asarray(catalog.e_theta, dtype=float), args.mc_signature_decimals),
+        np.round(np.asarray(catalog.e_phi, dtype=float), args.mc_signature_decimals),
+        np.round(np.asarray(catalog.p_p, dtype=float), args.mc_signature_decimals),
+        np.round(np.asarray(catalog.p_theta, dtype=float), args.mc_signature_decimals),
+        np.round(np.asarray(catalog.p_phi, dtype=float), args.mc_signature_decimals),
+    ])
+    if not np.all(np.isfinite(cat_matrix)):
+        raise RuntimeError("Final AAOGEN catalog contains invalid MC identity")
+    # endif
+    cat_keys = structured_keys(cat_matrix)
+    epgg_keys = structured_keys(identity_keys_epgg_mc(epgg, args.mc_signature_decimals))
+    unique, inverse, counts = np.unique(epgg_keys, return_inverse=True, return_counts=True)
+    order = np.argsort(inverse, kind="stable")
+    offsets = np.empty(counts.size + 1, dtype=np.int64)
+    offsets[0] = 0; np.cumsum(counts, out=offsets[1:])
+    group_map = {unique[i].tobytes(): i for i in range(unique.size)}
+
+    tag_match = np.zeros(n, dtype=bool)
+    truth_partner_E = np.full(n, np.nan)
+    truth_partner_theta = np.full(n, np.nan)
+    truth_partner_phi = np.full(n, np.nan)
+    tag_angle = np.full(n, np.nan)
+    tag_relE = np.full(n, np.nan)
+    measured_match = np.zeros(n, dtype=bool)
+    measured_angle = np.full(n, np.nan)
+    measured_relE = np.full(n, np.nan)
+
+    for i, key in enumerate(cat_keys):
+        # cat_keys and epgg_keys use the identical rounded six-dimensional
+        # reconstructed electron/proton identity.
+        group = group_map.get(key.tobytes())
+        if group is None:
+            continue
+        # endif
+        best = None
+        members = order[offsets[group]:offsets[group+1]]
+        for ni in members:
+            for si in range(epgg.solution_valid.shape[1]):
+                if not epgg.solution_valid[ni, si]:
+                    continue
+                # endif
+                assignments = (
+                    (epgg.g1_E[ni,si], epgg.g1_theta[ni,si], epgg.g1_phi[ni,si], epgg.g2_E[ni,si], epgg.g2_theta[ni,si], epgg.g2_phi[ni,si]),
+                    (epgg.g2_E[ni,si], epgg.g2_theta[ni,si], epgg.g2_phi[ni,si], epgg.g1_E[ni,si], epgg.g1_theta[ni,si], epgg.g1_phi[ni,si]),
+                )
+                for tE,tth,tph,pE,pth,pph in assignments:
+                    angle = opening_angle_deg_scalar(
+                        float(catalog.tag_theta[i]), float(catalog.tag_phi[i]),
+                        float(tth), float(tph),
+                    )
+                    relE = abs(float(catalog.tag_E[i]) - float(tE)) / max(float(tE), 1.0e-12)
+                    score = (angle/max(args.tag_match_angle_max_deg,1.0e-12))**2 + (relE/max(args.tag_match_relative_E_max,1.0e-12))**2
+                    if best is None or score < best[0]:
+                        best = (score, angle, relE, float(pE), float(pth), float(pph))
+                    # endif
+                # endfor
+            # endfor
+        # endfor
+        if best is None:
+            continue
+        # endif
+        _, angle, relE, pE, pth, pph = best
+        tag_angle[i] = angle; tag_relE[i] = relE
+        truth_partner_E[i] = pE; truth_partner_theta[i] = pth; truth_partner_phi[i] = pph
+        tag_match[i] = angle < args.tag_match_angle_max_deg and relE < args.tag_match_relative_E_max
+        if catalog.paired[i] and np.isfinite(catalog.high_E[i]):
+            pa = opening_angle_deg_scalar(
+                float(catalog.high_theta[i]), float(catalog.high_phi[i]),
+                pth, pph,
+            )
+            pr = abs(float(catalog.high_E[i])-pE)/max(pE,1.0e-12)
+            measured_angle[i] = pa; measured_relE[i] = pr
+            measured_match[i] = (
+                tag_match[i]
+                and pa < args.probe_match_angle_max_deg
+                and pr < args.probe_match_relative_E_max
+            )
+        # endif
+    # endfor
+
+    above = tag_match & np.isfinite(truth_partner_E) & (truth_partner_E > args.found_probe_E_min)
+    return FinalTruthLabels(
+        tag_truth_match=tag_match,
+        truth_partner_E=truth_partner_E,
+        truth_partner_theta=truth_partner_theta,
+        truth_partner_phi=truth_partner_phi,
+        truth_partner_above_threshold=above,
+        measured_partner_truth_match=measured_match,
+        tag_match_angle_deg=tag_angle,
+        tag_match_relative_E=tag_relE,
+        measured_partner_angle_deg=measured_angle,
+        measured_partner_relative_E=measured_relE,
+    )
+
+
+def _normalized_template(counts: np.ndarray, smoothing: float) -> np.ndarray:
+    values = np.asarray(counts, dtype=float)
+    if smoothing > 0.0 and values.size > 2:
+        values = gaussian_filter1d(values, smoothing, mode="nearest")
+    # endif
+    values = np.maximum(values, 0.0) + 1.0e-12
+    total = float(np.sum(values))
+    if total <= 0.0:
+        raise ValueError("Empty template")
+    # endif
+    return values / total
+
+
+def _morph_mass_template(
+    base_pdf: np.ndarray,
+    edges: np.ndarray,
+    shift: float,
+    smear: float,
+) -> np.ndarray:
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    width = float(np.mean(np.diff(edges)))
+    shifted = np.interp(
+        centers - shift,
+        centers,
+        np.asarray(base_pdf, dtype=float),
+        left=0.0,
+        right=0.0,
+    )
+    if smear > 0.0:
+        shifted = gaussian_filter1d(
+            shifted,
+            smear / max(width, 1.0e-12),
+            mode="constant",
+            cval=0.0,
+        )
+    # endif
+    return _normalized_template(shifted, 0.0)
+
+
+def _bernstein_templates(edges: np.ndarray, degree: int) -> np.ndarray:
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    x = (centers - edges[0]) / (edges[-1] - edges[0])
+    columns = []
+    for k in range(degree + 1):
+        values = math.comb(degree, k) * x**k * (1.0-x)**(degree-k)
+        columns.append(_normalized_template(values, 0.0))
+    # endfor
+    return np.column_stack(columns)
+
+
+def _softmax_with_reference(logits: np.ndarray) -> np.ndarray:
+    full = np.concatenate(([0.0], np.asarray(logits, dtype=float)))
+    full -= np.max(full)
+    expv = np.exp(full)
+    return expv / np.sum(expv)
+
+
+def _poisson_shape_nll(counts: np.ndarray, pdf: np.ndarray) -> float:
+    counts = np.asarray(counts, dtype=float)
+    pdf = _normalized_template(pdf, 0.0)
+    mu = np.maximum(np.sum(counts) * pdf, 1.0e-12)
+    return float(np.sum(mu - counts * np.log(mu)))
+
+
+def fit_paired_mass_peak(
+    masses: np.ndarray,
+    signal_template_masses: np.ndarray,
+    args: argparse.Namespace,
+    background_degree: int = 3,
+) -> Dict[str, object]:
+    low = 0.0
+    high = float(args.final_mass_fit_max)
+    edges = np.linspace(low, high, int(args.final_mass_fit_bins) + 1)
+    masses = np.asarray(masses, dtype=float)
+    masses = masses[np.isfinite(masses) & (masses >= low) & (masses < high)]
+    signal_template_masses = np.asarray(signal_template_masses, dtype=float)
+    signal_template_masses = signal_template_masses[
+        np.isfinite(signal_template_masses)
+        & (signal_template_masses >= low)
+        & (signal_template_masses < high)
+    ]
+    if masses.size < args.final_fit_min_data:
+        raise RuntimeError(f"Paired mass fit has only {masses.size} data entries")
+    # endif
+    if signal_template_masses.size < args.final_template_min_entries:
+        raise RuntimeError(
+            f"Paired mass signal template has only {signal_template_masses.size} entries"
+        )
+    # endif
+
+    counts, _ = np.histogram(masses, bins=edges)
+    sig_counts, _ = np.histogram(signal_template_masses, bins=edges)
+    base_sig = _normalized_template(sig_counts, args.final_template_smoothing)
+    bern = _bernstein_templates(edges, background_degree)
+
+    def components(params):
+        f = float(params[0])
+        shift = float(params[1])
+        smear = float(params[2])
+        weights = _softmax_with_reference(np.asarray(params[3:], dtype=float))
+        sig = _morph_mass_template(base_sig, edges, shift, smear)
+        bg = _normalized_template(bern @ weights, 0.0)
+        model = f*sig + (1.0-f)*bg
+        return sig, bg, _normalized_template(model, 0.0)
+
+    def objective(params):
+        _sig, _bg, model = components(params)
+        return _poisson_shape_nll(counts, model)
+
+    bounds = [
+        (1.0e-5, 0.99999),
+        (-float(args.final_mass_max_shift), float(args.final_mass_max_shift)),
+        (0.0, float(args.final_mass_max_smear)),
+        *[(-6.0, 6.0) for _ in range(background_degree)],
+    ]
+    starts = []
+    window_fraction = float(np.mean((masses > 0.11) & (masses < 0.16)))
+    for f0 in sorted({0.05, 0.15, 0.30, 0.55, 0.80, min(max(window_fraction,0.03),0.90)}):
+        starts.append(np.asarray([f0, 0.0, 0.003] + [0.0]*background_degree, dtype=float))
+    # endfor
+    best = None
+    for start in starts:
+        result = minimize(
+            objective,
+            start,
+            method="L-BFGS-B",
+            bounds=bounds,
+            options={"maxiter": 2500, "ftol": 1.0e-11, "gtol": 1.0e-7},
+        )
+        if best is None or result.fun < best.fun:
+            best = result
+        # endif
+    # endfor
+    if best is None or not np.isfinite(best.fun):
+        raise RuntimeError("Paired mass fit failed to obtain a finite solution")
+    # endif
+
+    params = np.asarray(best.x, dtype=float)
+    sig, bg, model = components(params)
+    fbest = float(params[0])
+    nll_min = float(best.fun)
+
+    # Profile f while re-optimizing nuisance parameters.
+    grid = np.linspace(1.0e-4, 0.9999, max(31, int(args.final_profile_points)))
+    profile = np.full(grid.size, np.nan)
+    nuisance_bounds = bounds[1:]
+    nuisance_start = params[1:].copy()
+    for gi, fval in enumerate(grid):
+        def prof_obj(nuisance):
+            return objective(np.concatenate(([fval], np.asarray(nuisance))))
+        pres = minimize(
+            prof_obj,
+            nuisance_start,
+            method="L-BFGS-B",
+            bounds=nuisance_bounds,
+            options={"maxiter": 700, "ftol": 1.0e-9},
+        )
+        if np.isfinite(pres.fun):
+            profile[gi] = float(pres.fun)
+        # endif
+    # endfor
+    target = nll_min + 0.5
+    below = grid[(grid < fbest) & np.isfinite(profile)]
+    below_nll = profile[(grid < fbest) & np.isfinite(profile)]
+    above = grid[(grid > fbest) & np.isfinite(profile)]
+    above_nll = profile[(grid > fbest) & np.isfinite(profile)]
+    lo_cross = fbest
+    hi_cross = fbest
+    if below.size:
+        eligible = np.flatnonzero(below_nll >= target)
+        if eligible.size:
+            j = eligible[-1]
+            lo_cross = float(below[j])
+        else:
+            lo_cross = float(below[0])
+        # endif
+    # endif
+    if above.size:
+        eligible = np.flatnonzero(above_nll >= target)
+        if eligible.size:
+            hi_cross = float(above[eligible[0]])
+        else:
+            hi_cross = float(above[-1])
+        # endif
+    # endif
+    stat_error = max(fbest-lo_cross, hi_cross-fbest)
+    if stat_error <= 0.0 or not np.isfinite(stat_error):
+        stat_error = math.sqrt(max(fbest*(1.0-fbest)/max(masses.size,1), 1.0e-12))
+    # endif
+
+    expected = masses.size * model
+    with np.errstate(divide="ignore", invalid="ignore"):
+        dev_terms = np.where(
+            counts > 0,
+            2.0*(counts*np.log(counts/np.maximum(expected,1.0e-12))-(counts-expected)),
+            2.0*expected,
+        )
+    deviance = float(np.sum(dev_terms))
+    npar = 3 + background_degree
+    ndf = max(int(np.count_nonzero(counts >= 0)) - npar - 1, 1)
+
+    centers = 0.5*(edges[:-1]+edges[1:])
+    sig_density = np.interp(masses, centers, sig, left=sig[0], right=sig[-1])
+    bg_density = np.interp(masses, centers, bg, left=bg[0], right=bg[-1])
+    posterior = fbest*sig_density / np.maximum(fbest*sig_density + (1.0-fbest)*bg_density, 1.0e-15)
+
+    return {
+        "success": bool(best.success or np.isfinite(best.fun)),
+        "message": str(best.message),
+        "fraction_signal": fbest,
+        "fraction_signal_stat_error": float(stat_error),
+        "shift_GeV": float(params[1]),
+        "smear_GeV": float(params[2]),
+        "background_degree": int(background_degree),
+        "n_entries": int(masses.size),
+        "signal_template_entries": int(signal_template_masses.size),
+        "nll": nll_min,
+        "deviance": deviance,
+        "ndf": ndf,
+        "reduced_deviance": deviance/ndf,
+        "edges": edges,
+        "counts": counts,
+        "signal_pdf": sig,
+        "background_pdf": bg,
+        "model_pdf": model,
+        "posterior_signal": posterior,
+        "masses_used": masses,
+        "profile_fraction_grid": grid,
+        "profile_nll": profile,
+    }
+
+
+def fit_paired_mass_peak_with_model_spread(
+    masses: np.ndarray,
+    signal_template_masses: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[str, object]:
+    fits = {}
+    for degree in (2, 3, 4):
+        try:
+            fits[degree] = fit_paired_mass_peak(
+                masses,
+                signal_template_masses,
+                args,
+                background_degree=degree,
+            )
+        except Exception as exc:
+            fits[degree] = {"success": False, "message": str(exc)}
+        # endtry
+    # endfor
+    if not fits.get(3, {}).get("success", False):
+        viable = [v for v in fits.values() if v.get("success", False)]
+        if not viable:
+            raise RuntimeError("All paired mass-fit background models failed")
+        # endif
+        nominal = min(viable, key=lambda item: item["nll"])
+    else:
+        nominal = fits[3]
+    # endif
+    fractions = [
+        float(v["fraction_signal"])
+        for v in fits.values()
+        if v.get("success", False)
+    ]
+    spread = max(abs(value-float(nominal["fraction_signal"])) for value in fractions) if fractions else 0.0
+    nominal = dict(nominal)
+    nominal["fraction_signal_model_spread"] = float(spread)
+    nominal["degree_variations"] = {
+        str(k): {
+            key: value
+            for key, value in v.items()
+            if key not in {"edges","counts","signal_pdf","background_pdf","model_pdf","posterior_signal","masses_used","profile_fraction_grid","profile_nll"}
+        }
+        for k,v in fits.items()
+    }
+    return nominal
+
+
+def _weighted_histogram(values, edges, weights=None):
+    values = np.asarray(values, dtype=float)
+    mask = np.isfinite(values)
+    if weights is not None:
+        weights = np.asarray(weights, dtype=float)
+        mask &= np.isfinite(weights) & (weights >= 0.0)
+        weights = weights[mask]
+    # endif
+    counts, _ = np.histogram(values[mask], bins=edges, weights=weights)
+    return np.asarray(counts, dtype=float)
+
+
+def fit_unmatched_shared_purity(
+    data_catalog: FinalOpportunityCatalog,
+    data_mask: np.ndarray,
+    data_weights: Optional[np.ndarray],
+    signal_catalog: FinalOpportunityCatalog,
+    signal_mask: np.ndarray,
+    dvcs_catalog: FinalOpportunityCatalog,
+    dvcs_mask: np.ndarray,
+    paired_background_catalog: FinalOpportunityCatalog,
+    paired_background_mask: np.ndarray,
+    paired_background_weights: np.ndarray,
+    detector: str,
+    args: argparse.Namespace,
+) -> Dict[str, object]:
+    n_data_raw = int(np.count_nonzero(data_mask))
+    if n_data_raw < args.final_fit_min_data:
+        raise RuntimeError(f"Only {n_data_raw} failed-partner data opportunities in {detector}")
+    # endif
+    if data_weights is None:
+        full_data_weights = np.ones(data_catalog.size(), dtype=float)
+    else:
+        full_data_weights = np.asarray(data_weights, dtype=float)
+        if full_data_weights.size != data_catalog.size():
+            raise ValueError("data_weights must have one value per data catalog opportunity")
+        # endif
+    # endif
+    selected_data_weights = full_data_weights[data_mask]
+    n_data_weighted = float(np.sum(selected_data_weights))
+    n_data_weight2 = float(np.sum(selected_data_weights**2))
+    if n_data_weighted <= 0.0:
+        raise RuntimeError(f"Failed-partner data weight is zero in {detector}")
+    # endif
+
+    payload = {}
+    for key in FINAL_FEATURE_ORDER:
+        bins, low, high, label = final_feature_spec(key, detector)
+        edges = np.linspace(low, high, bins+1)
+        d = _weighted_histogram(
+            final_feature_values(data_catalog,key)[data_mask],
+            edges,
+            selected_data_weights,
+        )
+        s = _weighted_histogram(final_feature_values(signal_catalog,key)[signal_mask], edges)
+        b1 = _weighted_histogram(final_feature_values(dvcs_catalog,key)[dvcs_mask], edges)
+        bg_values = final_feature_values(paired_background_catalog,key)[paired_background_mask]
+        b2 = _weighted_histogram(bg_values, edges, paired_background_weights)
+        if np.sum(s) < args.final_template_min_entries:
+            raise RuntimeError(f"Signal template {key} has only {np.sum(s):.0f} entries in {detector}")
+        # endif
+        if np.sum(b1) < args.final_template_min_entries:
+            raise RuntimeError(f"DVCS template {key} has only {np.sum(b1):.0f} entries in {detector}")
+        # endif
+        # Data-driven background is optional; if sparse, use the DVCS shape as
+        # a neutral fallback and record it.
+        b2_fallback = bool(np.sum(b2) < args.final_template_min_entries)
+        if b2_fallback:
+            b2 = b1.copy()
+        # endif
+        payload[key] = {
+            "label": label, "edges": edges, "data": d,
+            "signal": _normalized_template(s, args.final_template_smoothing),
+            "dvcs": _normalized_template(b1, args.final_template_smoothing),
+            "generic": _normalized_template(b2, args.final_template_smoothing),
+            "signal_entries": float(np.sum(s)),
+            "dvcs_entries": float(np.sum(b1)),
+            "generic_weight": float(np.sum(b2)),
+            "generic_fallback_to_dvcs": b2_fallback,
+        }
+    # endfor
+
+    def nll_for(keys, f_signal, bkg_mix):
+        total = 0.0
+        for key in keys:
+            item = payload[key]
+            background = bkg_mix*item["dvcs"] + (1.0-bkg_mix)*item["generic"]
+            model = f_signal*item["signal"] + (1.0-f_signal)*background
+            total += _poisson_shape_nll(item["data"], model)
+        # endfor
+        return float(total)
+
+    def fit_keys(keys, fixed_bkg_mix=None):
+        if fixed_bkg_mix is None:
+            def obj(x):
+                return nll_for(keys, float(x[0]), float(x[1]))
+            best = None
+            for start in ((0.10,0.25),(0.30,0.50),(0.55,0.50),(0.80,0.75)):
+                res = minimize(obj, np.asarray(start), method="L-BFGS-B", bounds=[(1e-5,0.99999),(0.0,1.0)], options={"maxiter":1200,"ftol":1e-10})
+                if best is None or res.fun < best.fun:
+                    best = res
+                # endif
+            # endfor
+            return float(best.x[0]), float(best.x[1]), float(best.fun), bool(best.success), str(best.message)
+        # endif
+        def scalar_obj(f):
+            return nll_for(keys, float(f), float(fixed_bkg_mix))
+        res = minimize_scalar(scalar_obj, bounds=(1e-5,0.99999), method="bounded", options={"xatol":1e-8})
+        return float(res.x), float(fixed_bkg_mix), float(res.fun), bool(res.success), str(res.message)
+
+    # The production central value and statistical interval come from the
+    # single physically direct discriminator M_X^2(e'p').  The remaining
+    # projections are correlated views of the same events and therefore must
+    # not be multiplied together as if they were statistically independent.
+    # A multi-projection composite fit is retained only as a model diagnostic.
+    nominal_keys = ("mx_ep2",)
+    nominal_f, nominal_mix, nominal_nll, success, message = fit_keys(nominal_keys)
+    composite_f, composite_mix, composite_nll, composite_success, composite_message = fit_keys(FINAL_FEATURE_ORDER)
+
+    # Profile statistical uncertainty on f_signal in the nominal M_X^2 fit
+    # while reoptimizing the background mixture.
+    grid = np.linspace(1e-4,0.9999,max(31,int(args.final_profile_points)))
+    prof = np.full(grid.size,np.nan)
+    for i,fval in enumerate(grid):
+        res = minimize_scalar(
+            lambda mix: nll_for(nominal_keys,float(fval),float(mix)),
+            bounds=(0.0,1.0), method="bounded", options={"xatol":1e-6}
+        )
+        if res.success and np.isfinite(res.fun):
+            prof[i] = float(res.fun)
+        # endif
+    # endfor
+    target = nominal_nll + 0.5
+    left_candidates = np.flatnonzero((grid < nominal_f) & np.isfinite(prof) & (prof >= target))
+    right_candidates = np.flatnonzero((grid > nominal_f) & np.isfinite(prof) & (prof >= target))
+    flo = float(grid[left_candidates[-1]]) if left_candidates.size else float(grid[0])
+    fhi = float(grid[right_candidates[0]]) if right_candidates.size else float(grid[-1])
+    stat_error = max(nominal_f-flo, fhi-nominal_f)
+    if not np.isfinite(stat_error) or stat_error <= 0:
+        effective_n = (n_data_weighted**2 / n_data_weight2) if n_data_weight2 > 0.0 else n_data_weighted
+        stat_error = math.sqrt(max(nominal_f*(1-nominal_f)/max(effective_n,1.0),1e-12))
+    # endif
+
+    individual = {}
+    for key in FINAL_FEATURE_ORDER:
+        f, mix, nll, ok, msg = fit_keys((key,))
+        individual[key] = {"fraction_signal":f,"background_dvcs_fraction":mix,"nll":nll,"success":ok,"message":msg}
+    # endfor
+    alt_dvcs = fit_keys(nominal_keys, fixed_bkg_mix=1.0)
+    alt_generic = fit_keys(nominal_keys, fixed_bkg_mix=0.0)
+    # The individual one-dimensional projections are validation diagnostics,
+    # not independent systematic variations: several are intentionally weak
+    # discriminators and can become nearly unconstrained.  The production
+    # model spread therefore uses only controlled alternatives to the nominal
+    # M_X^2 fit: DVCS-only background, generic-only background, and the full
+    # multi-projection composite fit when it converges.
+    variations = []
+    # Alternative background descriptions are included only when their
+    # nominal M_X^2 likelihood is not catastrophically worse than the mixed
+    # background model.  This prevents an obviously excluded pure-background
+    # hypothesis from being misreported as a 100% systematic uncertainty.
+    nll_tolerance = max(10.0, 0.002 * n_data_weighted)
+    if alt_dvcs[2] - nominal_nll <= nll_tolerance:
+        variations.append(alt_dvcs[0])
+    # endif
+    if alt_generic[2] - nominal_nll <= nll_tolerance:
+        variations.append(alt_generic[0])
+    # endif
+    # The multi-projection fit is correlated and is never used for statistical
+    # inference, but its central-value displacement is a useful shape-model
+    # stress test.
+    if composite_success and np.isfinite(composite_f):
+        variations.append(composite_f)
+    # endif
+    model_spread = max(abs(v-nominal_f) for v in variations) if variations else 0.0
+
+    deviance = 0.0
+    nbins = 0
+    for key in FINAL_FEATURE_ORDER:
+        item = payload[key]
+        background = nominal_mix*item["dvcs"] + (1.0-nominal_mix)*item["generic"]
+        model = nominal_f*item["signal"] + (1.0-nominal_f)*background
+        item["model_pdf"] = model
+        item["background_pdf"] = background
+        if key in nominal_keys:
+            expected = np.sum(item["data"])*model
+            d = item["data"]
+            with np.errstate(divide="ignore",invalid="ignore"):
+                terms = np.where(d>0,2*(d*np.log(d/np.maximum(expected,1e-12))-(d-expected)),2*expected)
+            deviance += float(np.sum(terms)); nbins += d.size
+        # endif
+    # endfor
+    ndf = max(nbins - 2 - 1, 1)
+
+    return {
+        "success": bool(success), "message": message,
+        "fraction_signal": nominal_f,
+        "fraction_signal_stat_error": float(stat_error),
+        "fraction_signal_model_spread": float(model_spread),
+        "background_dvcs_fraction": nominal_mix,
+        "n_data_raw": n_data_raw,
+        "n_data_weighted": n_data_weighted,
+        "n_data_effective": ((n_data_weighted**2 / n_data_weight2) if n_data_weight2 > 0.0 else n_data_weighted),
+        "nll": nominal_nll,
+        "deviance": deviance, "ndf": ndf,
+        "reduced_deviance": deviance/ndf,
+        "nominal_driver": "mx_ep2",
+        "individual_variable_fits": individual,
+        "composite_diagnostic": {
+            "fraction_signal": composite_f,
+            "background_dvcs_fraction": composite_mix,
+            "nll": composite_nll,
+            "success": composite_success,
+            "message": composite_message,
+        },
+        "signal_plus_dvcs_only": {"fraction_signal":alt_dvcs[0],"nll":alt_dvcs[2]},
+        "signal_plus_generic_only": {"fraction_signal":alt_generic[0],"nll":alt_generic[2]},
+        "payload": payload,
+        "profile_fraction_grid": grid,
+        "profile_nll": prof,
+    }
+
+
+def _final_efficiency_from_yields(
+    found: float,
+    found_stat: float,
+    found_model: float,
+    total_selected_opportunities: int,
+    failed_purity: float,
+    failed_purity_stat: float,
+    failed_purity_model: float,
+) -> Dict[str,float]:
+    """
+    Convert the fitted found-pi0 yield and fitted pi0 purity of the remaining
+    opportunities into an efficiency.
+
+    Every selected low-tag opportunity is either a genuine found pi0 pair or
+    belongs to the residual failed-partner population.  Consequently
+
+        N_fail = N_selected - N_found
+        N_missed_pi0 = f_pi0_fail * N_fail
+
+    This formulation keeps the anti-correlation between the fitted found yield
+    and the size of the residual population explicit instead of treating them
+    as independent Poisson counts.
+    """
+    total = float(total_selected_opportunities)
+    if total <= 0.0 or found < 0.0 or found > total:
+        return {
+            "efficiency": math.nan,
+            "stat_error": math.nan,
+            "model_error": math.nan,
+            "missed_pi0": math.nan,
+            "failed_population": math.nan,
+        }
+    # endif
+
+    failed_population = total - found
+    missed = failed_purity * failed_population
+    denominator = found + missed
+    if denominator <= 0.0:
+        return {
+            "efficiency": math.nan,
+            "stat_error": math.nan,
+            "model_error": math.nan,
+            "missed_pi0": missed,
+            "failed_population": failed_population,
+        }
+    # endif
+
+    efficiency = found / denominator
+    # D = f_fail*N_total + (1-f_fail)*N_found.
+    d_found = failed_purity * total / (denominator**2)
+    d_purity = -found * failed_population / (denominator**2)
+
+    stat = math.sqrt(
+        (d_found * found_stat)**2
+        + (d_purity * failed_purity_stat)**2
+    )
+    model = math.sqrt(
+        (d_found * found_model)**2
+        + (d_purity * failed_purity_model)**2
+    )
+    return {
+        "efficiency": efficiency,
+        "stat_error": stat,
+        "model_error": model,
+        "missed_pi0": missed,
+        "failed_population": failed_population,
+    }
+
+def plot_final_pair_residuals(
+    path: Path,
+    period_label: str,
+    detector: str,
+    catalog: FinalOpportunityCatalog,
+    mask: np.ndarray,
+) -> None:
+    """Diagnostic only: verify all angular and energy residuals for paired data."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    angle = np.asarray(catalog.high_probe_angle_deg[mask], dtype=float)
+    relE = np.asarray(catalog.high_probe_relative_E[mask], dtype=float)
+    mgg = np.asarray(catalog.mgg[mask], dtype=float)
+    probe_theta = np.degrees(np.asarray(catalog.probe_theta[mask], dtype=float))
+    valid = np.isfinite(angle) & np.isfinite(relE) & np.isfinite(mgg)
+
+    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.5))
+    axes[0,0].hist(angle[np.isfinite(angle)], bins=80, range=(0.0, 12.0), histtype="step", density=True)
+    axes[0,0].axvline(3.0, color="0.4", linestyle="--", linewidth=1.0)
+    axes[0,0].set_xlabel(r"$\Delta\psi(\gamma_{\rm high},X)$ (deg)")
+    axes[0,0].set_ylabel("fraction / bin")
+
+    axes[0,1].hist(relE[np.isfinite(relE)], bins=80, range=(0.0, 1.2), histtype="step", density=True)
+    axes[0,1].axvline(0.35, color="0.4", linestyle="--", linewidth=1.0)
+    axes[0,1].set_xlabel(r"$|E_{\gamma,\rm high}-E_X|/E_X$")
+    axes[0,1].set_ylabel("fraction / bin")
+
+    axes[1,0].hist(mgg[np.isfinite(mgg)], bins=100, range=(0.0, 0.35), histtype="step", density=True)
+    axes[1,0].axvspan(0.11, 0.16, color="0.5", alpha=0.14)
+    axes[1,0].set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+    axes[1,0].set_ylabel("fraction / bin")
+
+    if np.any(valid):
+        axes[1,1].hist2d(
+            probe_theta[valid],
+            angle[valid],
+            bins=(45, 50),
+            range=((2.5, 35.0), (0.0, 12.0)),
+        )
+    # endif
+    axes[1,1].axhline(3.0, color="white", linestyle="--", linewidth=1.0)
+    axes[1,1].set_xlabel(r"predicted $\theta_X$ (deg)")
+    axes[1,1].set_ylabel(r"$\Delta\psi(\gamma_{\rm high},X)$ (deg)")
+
+    for ax in axes.reshape(-1):
+        ax.grid(axis="y", alpha=0.18)
+    # endfor
+    fig.suptitle(f"{period_label} {detector}: paired-photon residual diagnostics")
+    fig.tight_layout(rect=(0,0,1,.96))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def plot_final_mass_fit(path: Path, period_label: str, detector: str, fit: Mapping[str,object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    edges=np.asarray(fit["edges"],dtype=float); counts=np.asarray(fit["counts"],dtype=float)
+    centers=0.5*(edges[:-1]+edges[1:]); n=float(np.sum(counts)); f=float(fit["fraction_signal"])
+    sig=n*f*np.asarray(fit["signal_pdf"],dtype=float)
+    bg=n*(1-f)*np.asarray(fit["background_pdf"],dtype=float)
+    total=sig+bg
+    fig,axes=plt.subplots(2,1,figsize=(8.2,7.2),height_ratios=[3.1,1.0],sharex=True)
+    ax=axes[0]
+    ax.errorbar(centers,counts,yerr=np.sqrt(np.maximum(counts,1.0)),fmt='o',ms=3.2,color='black',label='Data')
+    ax.stairs(sig,edges,color='tab:red',linewidth=1.7,label=r'fitted $\pi^0$')
+    ax.stairs(bg,edges,color='tab:blue',linewidth=1.5,label=r'non-$\pi^0$ background')
+    ax.stairs(total,edges,color='tab:green',linewidth=1.7,linestyle='--',label='total fit')
+    ax.axvspan(0.11,0.16,color='0.5',alpha=0.12)
+    ax.set_ylabel('events / bin'); ax.grid(axis='y',alpha=.2); ax.legend(frameon=False,ncol=2)
+    ax.set_title(f'{period_label} {detector}: paired $M_{{\\gamma\\gamma}}$ fit')
+    ax.text(.98,.95,fr'$f_{{\pi^0}}={f:.3f}\pm{float(fit["fraction_signal_stat_error"]):.3f}$'+'\n'+fr'$D/ndf={float(fit["reduced_deviance"]):.2f}$',transform=ax.transAxes,ha='right',va='top')
+    ratio=np.divide(counts,total,out=np.full_like(counts,np.nan),where=total>0)
+    axes[1].axhline(1.0,color='0.4',lw=1); axes[1].plot(centers,ratio,'o',ms=3,color='black')
+    axes[1].set_ylabel('data / fit'); axes[1].set_xlabel(r'$M_{\gamma\gamma}$ (GeV)'); axes[1].set_ylim(.5,1.5); axes[1].grid(axis='y',alpha=.2)
+    fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def plot_final_unmatched_fit(path: Path, period_label: str, detector: str, fit: Mapping[str,object]) -> None:
+    path.parent.mkdir(parents=True,exist_ok=True)
+    keys=FINAL_FEATURE_ORDER
+    fig,axes=plt.subplots(2,4,figsize=(19,9.5)); axes=np.asarray(axes).reshape(-1)
+    fs=float(fit['fraction_signal']); bm=float(fit['background_dvcs_fraction'])
+    for i,key in enumerate(keys):
+        ax=axes[i]; item=fit['payload'][key]; edges=np.asarray(item['edges']); centers=.5*(edges[:-1]+edges[1:]); d=np.asarray(item['data']); n=float(np.sum(d))
+        s=n*fs*np.asarray(item['signal']); b=n*(1-fs)*np.asarray(item['background_pdf']); m=s+b
+        ax.errorbar(centers,d,yerr=np.sqrt(np.maximum(d,1)),fmt='o',ms=2.7,color='black',label='failed-partner data')
+        ax.stairs(s,edges,color='tab:red',lw=1.5,label=r'$\pi^0$ signal')
+        ax.stairs(b,edges,color='tab:blue',lw=1.4,label='background')
+        ax.stairs(m,edges,color='tab:green',lw=1.5,ls='--',label='total')
+        ax.set_xlabel(item['label']); ax.set_ylabel('events / bin'); ax.grid(axis='y',alpha=.2)
+        if i==0: ax.legend(frameon=False,fontsize=8)
+    # endfor
+    axes[-1].axis('off')
+    axes[-1].text(.05,.95,fr'$f_C^{{\pi^0}}={fs:.3f}\pm{float(fit["fraction_signal_stat_error"]):.3f}$'+'\n'+fr'model spread $={float(fit["fraction_signal_model_spread"]):.3f}$'+'\n'+fr'DVCS fraction of background $={bm:.3f}$'+'\n'+fr'$D/ndf={float(fit["reduced_deviance"]):.2f}$',va='top')
+    fig.suptitle(fr'{period_label} {detector}: missed-partner $\pi^0$ purity fit',fontsize=15)
+    fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def _final_serializable_fit(fit: Mapping[str,object]) -> Dict[str,object]:
+    return {
+        k:v for k,v in fit.items()
+        if k not in {"edges","counts","signal_pdf","background_pdf","model_pdf","posterior_signal","masses_used","profile_fraction_grid","profile_nll","payload"}
+    }
+
+
+def process_period_final_efficiency(
+    period: PeriodConfig,
+    args_dict: Mapping[str,object],
+) -> Tuple[str,List[Dict[str,object]],Dict[str,object]]:
+    args=argparse.Namespace(**args_dict)
+    root=Path(args.output_dir)/'final'/period.key
+    root.mkdir(parents=True,exist_ok=True)
+
+    log(f'{period.label} FINAL: reading data low-tag opportunities')
+    data, data_audit = read_final_opportunity_catalog(period.epg_data,period.beam_energy_GeV,'data',args)
+    log(f'{period.label} FINAL: reading AAOGEN reconstructed opportunities')
+    aao, aao_audit = read_final_opportunity_catalog(period.pi0_epg_mc,period.beam_energy_GeV,'mc',args)
+    log(f'{period.label} FINAL: reading DVCSGEN reconstructed opportunities')
+    dvcs, dvcs_audit = read_final_opportunity_catalog(period.dvcs_mc,period.beam_energy_GeV,'mc',args)
+    log(f'{period.label} FINAL: reading AAOGEN truth daughters')
+    epgg, epgg_audit = read_epgg(period.pi0_epgg_mc,period.beam_energy_GeV,'AAOGEN final truth',args)
+    truth = truth_label_final_catalog(aao,epgg,args)
+    truth_signal = truth.tag_truth_match & truth.truth_partner_above_threshold
+
+    rows=[]; region_metadata={}
+    for detector in ('FT','FD'):
+        dreg=final_region_mask(data,detector)
+        areg=final_region_mask(aao,detector)
+        vreg=final_region_mask(dvcs,detector)
+        # A reconstructed high-energy photon is considered a candidate for the
+        # predicted probe only when it is geometrically and energetically
+        # compatible with X.  This prevents an unrelated BH/DVCS photon from
+        # entering the pi0 mass fit merely because it shares the event.
+        data_probe_match = (
+            data.paired
+            & np.isfinite(data.high_probe_angle_deg)
+            & np.isfinite(data.high_probe_relative_E)
+            & (data.high_probe_angle_deg < args.probe_match_angle_max_deg)
+            & (data.high_probe_relative_E < args.probe_match_relative_E_max)
+        )
+        aao_probe_match = (
+            aao.paired
+            & np.isfinite(aao.high_probe_angle_deg)
+            & np.isfinite(aao.high_probe_relative_E)
+            & (aao.high_probe_angle_deg < args.probe_match_angle_max_deg)
+            & (aao.high_probe_relative_E < args.probe_match_relative_E_max)
+        )
+        paired_data=dreg & data_probe_match & np.isfinite(data.mgg)
+        unmatched_data=dreg & (~data.paired)
+        paired_signal_mc=(areg & aao_probe_match & truth_signal & truth.measured_partner_truth_match & np.isfinite(aao.mgg))
+        if np.count_nonzero(paired_signal_mc) < args.final_template_min_entries:
+            paired_signal_mc=(areg & aao_probe_match & truth_signal & np.isfinite(aao.mgg))
+        # endif
+
+        mass_fit=fit_paired_mass_peak_with_model_spread(data.mgg[paired_data],aao.mgg[paired_signal_mc],args)
+        plot_final_mass_fit(root/f'{detector.lower()}_paired_mgg_fit.png',period.label,detector,mass_fit)
+        plot_final_pair_residuals(
+            root/f'{detector.lower()}_paired_residual_diagnostics.png',
+            period.label, detector, data, dreg & data.paired & np.isfinite(data.mgg),
+        )
+
+        # Map the paired mass-fit background posterior back onto the data
+        # opportunities.  A true pi0 low tag whose real high-energy daughter
+        # was missed can still coexist with an unrelated >2 GeV photon.  Such
+        # events belong in the missed-partner denominator even though they are
+        # technically "paired" at the row level.  We therefore fit the entire
+        # failed-partner population:
+        #   * exact-one unmatched opportunities carry failure weight 1;
+        #   * paired opportunities carry 1-P(pi0 pair | Mgg);
+        #   * paired masses outside the fit range carry failure weight 1.
+        mass_range=(data.mgg[paired_data]>=0.0)&(data.mgg[paired_data]<args.final_mass_fit_max)&np.isfinite(data.mgg[paired_data])
+        paired_indices=np.flatnonzero(paired_data)
+        fit_indices=paired_indices[mass_range]
+        failure_weight_full=np.zeros(data.size(),dtype=float)
+        # Every selected opportunity is initially a failed probe.  Only the
+        # signal posterior of a residual-matched paired candidate is removed.
+        failure_weight_full[dreg]=1.0
+        failure_weight_full[fit_indices]=1.0-np.asarray(mass_fit['posterior_signal'],dtype=float)
+        failed_data_mask = dreg & (failure_weight_full > 1.0e-8)
+
+        # Genuine missed-signal template: truth-matched AAOGEN low daughter
+        # whose true >2 GeV partner is not successfully reconstructed/matched.
+        signal_failed = areg & truth_signal & ~(aao_probe_match & truth.measured_partner_truth_match)
+        if np.count_nonzero(signal_failed) < args.final_template_min_entries:
+            raise RuntimeError(
+                f"{period.label} {detector}: insufficient truth-matched AAOGEN missed-signal template "
+                f"({np.count_nonzero(signal_failed)} entries)"
+            )
+        # endif
+
+        # Physics background: DVCSGEN opportunities under the exact same low-
+        # tag/probe selection.  Detector-artifact background: AAOGEN low tags
+        # that do not truth-match the generated pi0 daughter/partner topology.
+        dvcs_background = vreg
+        fake_background = areg & (~truth_signal)
+        if np.count_nonzero(dvcs_background) < args.final_template_min_entries:
+            raise RuntimeError(f"{period.label} {detector}: insufficient DVCSGEN background template")
+        # endif
+        if np.count_nonzero(fake_background) < args.final_template_min_entries:
+            fake_background = areg & (~truth.tag_truth_match)
+        # endif
+        if np.count_nonzero(fake_background) < args.final_template_min_entries:
+            raise RuntimeError(f"{period.label} {detector}: insufficient AAOGEN fake-photon background template")
+        # endif
+
+        purity_fit=fit_unmatched_shared_purity(
+            data,failed_data_mask,failure_weight_full,
+            aao,signal_failed,
+            dvcs,dvcs_background,
+            aao,fake_background,np.ones(np.count_nonzero(fake_background),dtype=float),
+            detector,args,
+        )
+        plot_final_unmatched_fit(root/f'{detector.lower()}_missed_partner_purity_fit.png',period.label,detector,purity_fit)
+
+        npaired=int(mass_fit['n_entries'])
+        found=float(mass_fit['fraction_signal'])*npaired
+        found_stat=float(mass_fit['fraction_signal_stat_error'])*npaired
+        found_model=float(mass_fit['fraction_signal_model_spread'])*npaired
+        nunmatched=int(np.count_nonzero(unmatched_data))
+        nfailed_weighted=float(np.sum(failure_weight_full[failed_data_mask]))
+        purity=float(purity_fit['fraction_signal'])
+        purity_stat=float(purity_fit['fraction_signal_stat_error'])
+        purity_model=float(purity_fit['fraction_signal_model_spread'])
+        ntotal_selected=int(np.count_nonzero(dreg))
+        eff=_final_efficiency_from_yields(
+            found, found_stat, found_model,
+            ntotal_selected,
+            purity, purity_stat, purity_model,
+        )
+
+        mc_denom=int(np.count_nonzero(areg & truth_signal))
+        mc_num=int(np.count_nonzero(areg & truth_signal & aao_probe_match & truth.measured_partner_truth_match))
+        mc_eff=mc_num/mc_denom if mc_denom else math.nan
+        mc_err=simple_binomial_error(mc_num,mc_denom)
+        scale=eff['efficiency']/mc_eff if np.isfinite(mc_eff) and mc_eff>0 else math.nan
+        scale_stat=math.sqrt((eff['stat_error']/mc_eff)**2 + (eff['efficiency']*mc_err/max(mc_eff**2,1e-15))**2) if np.isfinite(scale) else math.nan
+        scale_model=eff['model_error']/mc_eff if np.isfinite(scale) else math.nan
+
+        mc_c=areg & (~aao.paired)
+        mc_c_truth=int(np.count_nonzero(mc_c & truth_signal))
+        mc_c_total=int(np.count_nonzero(mc_c))
+        mc_c_purity=mc_c_truth/mc_c_total if mc_c_total else math.nan
+        mc_success = areg & truth_signal & aao_probe_match & truth.measured_partner_truth_match
+        mc_failed_population = areg & (~mc_success)
+        mc_failed_truth = mc_failed_population & truth_signal
+        mc_failed_purity = (
+            np.count_nonzero(mc_failed_truth) / np.count_nonzero(mc_failed_population)
+            if np.count_nonzero(mc_failed_population) > 0
+            else math.nan
+        )
+
+        row={
+            'period':period.key,'period_label':period.label,'detector':detector,
+            'paired_data_entries_in_mass_fit':npaired,
+            'fitted_found_pi0':found,'fitted_found_pi0_stat_err':found_stat,'fitted_found_pi0_model_err':found_model,
+            'paired_pi0_fraction':float(mass_fit['fraction_signal']),'paired_pi0_fraction_stat_err':float(mass_fit['fraction_signal_stat_error']),'paired_pi0_fraction_model_err':float(mass_fit['fraction_signal_model_spread']),
+            'total_selected_low_tag_opportunities':ntotal_selected,
+            'unmatched_exact_one_data_entries':nunmatched,
+            'failed_partner_weighted_entries_for_shape_fit':nfailed_weighted,
+            'failed_partner_count_from_total_minus_found':float(eff['failed_population']),
+            'failed_partner_pi0_fraction':purity,'failed_partner_pi0_fraction_stat_err':purity_stat,'failed_partner_pi0_fraction_model_err':purity_model,
+            'fitted_missed_pi0':float(eff['missed_pi0']),
+            'efficiency_data':float(eff['efficiency']),'efficiency_data_stat_err':float(eff['stat_error']),'efficiency_data_model_err':float(eff['model_error']),
+            'mc_truth_opportunities':mc_denom,'mc_truth_reconstructed':mc_num,'efficiency_mc':mc_eff,'efficiency_mc_stat_err':mc_err,
+            'scale_factor_data_over_mc':scale,'scale_factor_stat_err':scale_stat,'scale_factor_model_err':scale_model,
+            'aaogen_unmatched_truth_pi0_fraction':mc_c_purity,
+            'aaogen_failed_population_truth_pi0_fraction':mc_failed_purity,
+            'mass_fit_reduced_deviance':float(mass_fit['reduced_deviance']),'unmatched_fit_reduced_deviance':float(purity_fit['reduced_deviance']),
+            'unmatched_background_dvcs_fraction':float(purity_fit['background_dvcs_fraction']),
+        }
+        rows.append(row)
+        region_metadata[detector]={
+            'mass_fit':_final_serializable_fit(mass_fit),
+            'unmatched_fit':{
+                k:v for k,v in purity_fit.items()
+                if k not in {'payload','profile_fraction_grid','profile_nll'}
+            },
+            'counts':row,
+        }
+        log(
+            f"{period.label} FINAL {detector}: "
+            f"Npi0_found={found:.1f}, fC={purity:.4f}, Npi0_missed={eff['missed_pi0']:.1f}, "
+            f"epsilon_data={eff['efficiency']:.4f} +/- {eff['stat_error']:.4f} (stat) +/- {eff['model_error']:.4f} (model), "
+            f"epsilon_MC={mc_eff:.4f}, SF={scale:.4f}"
+        )
+    # endfor
+
+    write_dict_rows(root/'final_photon_efficiency.csv',rows)
+    metadata={
+        'period':asdict(period),'data_audit':data_audit,'aaogen_audit':aao_audit,'dvcsgen_audit':dvcs_audit,
+        'epgg_truth_audit':epgg_audit,
+        'truth_summary':{
+            'aaogen_final_opportunities':aao.size(),
+            'truth_low_and_partner_gt2':int(np.count_nonzero(truth_signal)),
+            'truth_reconstructed_partner_matches':int(np.count_nonzero(truth_signal & aao.paired & truth.measured_partner_truth_match & (aao.high_probe_angle_deg < args.probe_match_angle_max_deg) & (aao.high_probe_relative_E < args.probe_match_relative_E_max))),
+        },
+        'regions':region_metadata,
+    }
+    with open(root/'final_photon_efficiency_metadata.json','w',encoding='utf-8') as handle:
+        json.dump(metadata,handle,indent=2,default=simple_json_default)
+    # endwith
+    return period.key,rows,metadata
+
+
+def plot_final_all_period_summary(path: Path, rows: Sequence[Mapping[str,object]]) -> None:
+    path.parent.mkdir(parents=True,exist_ok=True)
+    fig,axes=plt.subplots(2,1,figsize=(11,8.5),sharex=True)
+    period_labels=[p.label for p in PERIODS if any(r['period']==p.key for r in rows)]
+    x=np.arange(len(period_labels),dtype=float)
+    for detector,offset in (('FT',-0.08),('FD',0.08)):
+        selected=[]
+        for label in period_labels:
+            selected.append(next(r for r in rows if r['period_label']==label and r['detector']==detector))
+        y=np.asarray([r['efficiency_data'] for r in selected]); estat=np.asarray([r['efficiency_data_stat_err'] for r in selected]); emod=np.asarray([r['efficiency_data_model_err'] for r in selected]); ymc=np.asarray([r['efficiency_mc'] for r in selected])
+        axes[0].errorbar(x+offset,y,yerr=estat,fmt='o',capsize=2,label=f'{detector} data')
+        axes[0].errorbar(x+offset,ymc,yerr=[r['efficiency_mc_stat_err'] for r in selected],fmt='s',mfc='none',capsize=2,label=f'{detector} AAOGEN')
+        for xi,yi,si in zip(x+offset,y,emod):
+            axes[0].bar(xi,2*si,bottom=yi-si,width=.06,alpha=.25)
+        sf=np.asarray([r['scale_factor_data_over_mc'] for r in selected]); sfstat=np.asarray([r['scale_factor_stat_err'] for r in selected]); sfmod=np.asarray([r['scale_factor_model_err'] for r in selected])
+        axes[1].errorbar(x+offset,sf,yerr=sfstat,fmt='o',capsize=2,label=detector)
+        for xi,yi,si in zip(x+offset,sf,sfmod):
+            axes[1].bar(xi,2*si,bottom=yi-si,width=.06,alpha=.25)
+    # endfor
+    axes[0].set_ylabel('photon efficiency'); axes[0].set_ylim(0,1.05); axes[0].grid(axis='y',alpha=.2); axes[0].legend(frameon=False,ncol=2)
+    axes[1].axhline(1,color='0.4',lw=1); axes[1].set_ylabel('data / AAOGEN'); axes[1].set_ylim(0,2.0); axes[1].grid(axis='y',alpha=.2); axes[1].legend(frameon=False,ncol=2)
+    axes[1].set_xticks(x,period_labels,rotation=20,ha='right'); fig.suptitle('RGA photon-efficiency extraction: final data-driven method'); fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
+
+
+def run_final_efficiency_stage(periods, args, workers):
+    root=Path(args.output_dir)/'final'; root.mkdir(parents=True,exist_ok=True)
+    nworkers=max(1,min(int(workers),len(periods),MAX_WORKERS))
+    log(f'FINAL DATA-DRIVEN PHOTON EFFICIENCY: {len(periods)} period(s), {nworkers} worker(s).')
+    all_rows=[]; metadata={}
+    if nworkers==1:
+        for period in periods:
+            key,rows,payload=process_period_final_efficiency(period,vars(args)); metadata[key]=payload; all_rows.extend(rows)
+        # endfor
+    else:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=nworkers) as executor:
+            future_map={executor.submit(process_period_final_efficiency,p,vars(args)):p.key for p in periods}
+            for future in concurrent.futures.as_completed(future_map):
+                key,rows,payload=future.result(); metadata[key]=payload; all_rows.extend(rows)
+            # endfor
+        # endwith
+    # endif
+    order={p.key:i for i,p in enumerate(PERIODS)}; det_order={'FT':0,'FD':1}
+    all_rows.sort(key=lambda r:(order.get(r['period'],999),det_order.get(r['detector'],9)))
+    write_dict_rows(root/'photon_efficiency_final.csv',all_rows)
+    with open(root/'photon_efficiency_final.json','w',encoding='utf-8') as handle:
+        json.dump({'method':'final data-driven paired-mass + unmatched-template fit','arguments':vars(args),'rows':all_rows,'period_metadata':metadata},handle,indent=2,default=simple_json_default)
+    # endwith
+    plot_final_all_period_summary(root/'all_periods_final_efficiency.png',all_rows)
+    log('')
+    log('='*112)
+    log('FINAL RGA PHOTON EFFICIENCY SUMMARY')
+    log(f"{'Period':<12s} {'Reg':<3s} {'eps_data':>10s} {'stat':>9s} {'model':>9s} {'eps_MC':>10s} {'data/MC':>10s}")
+    for r in all_rows:
+        log(f"{r['period_label']:<12s} {r['detector']:<3s} {r['efficiency_data']:10.4f} {r['efficiency_data_stat_err']:9.4f} {r['efficiency_data_model_err']:9.4f} {r['efficiency_mc']:10.4f} {r['scale_factor_data_over_mc']:10.4f}")
+    # endfor
+    log('='*112)
+    return {'rows':all_rows,'period_metadata':metadata,'output_csv':str(root/'photon_efficiency_final.csv')}
+
 def preflight_enabled_stages(
     periods: Sequence[PeriodConfig],
     args: argparse.Namespace,
@@ -10570,7 +12310,9 @@ def preflight_enabled_stages(
             "beam_energy_GeV": period.beam_energy_GeV,
         }
 
-        if args.simple:
+        if args.simple and not args.legacy_simple:
+            roles = ["epg_data", "dvcs_mc", "pi0_epg_mc", "pi0_epgg_mc"]
+        elif args.simple:
             roles = ["epg_data", "pi0_epg_mc"]
         else:
             roles = ["epg_data", "dvcs_mc", "pi0_epg_mc"]
@@ -10579,6 +12321,7 @@ def preflight_enabled_stages(
         if not args.skip_mc_efficiency:
             roles.append("pi0_epgg_mc")
         # endif
+        roles = list(dict.fromkeys(roles))
 
         for role in roles:
             path = getattr(period, role)
@@ -10658,6 +12401,24 @@ def plot_all_period_integrated(
     plt.close(fig)
 
 
+def print_final_efficiency_summary_rows(rows: Sequence[Mapping[str, object]]) -> None:
+    log("")
+    log("=" * 112)
+    log("FINAL RGA PHOTON EFFICIENCY RESULTS (data-driven fit / same-selection AAOGEN truth)")
+    log(f"{'Period':<12s} {'Reg':<3s} {'eps_data':>10s} {'stat':>9s} {'model':>9s} {'eps_MC':>10s} {'data/MC':>10s}")
+    for row in rows:
+        log(
+            f"{str(row['period_label']):<12s} {str(row['detector']):<3s} "
+            f"{float(row['efficiency_data']):10.4f} "
+            f"{float(row['efficiency_data_stat_err']):9.4f} "
+            f"{float(row['efficiency_data_model_err']):9.4f} "
+            f"{float(row['efficiency_mc']):10.4f} "
+            f"{float(row['scale_factor_data_over_mc']):10.4f}"
+        )
+    # endfor
+    log("=" * 112)
+
+
 def main() -> int:
     args = parse_args()
     periods = selected_periods(args)
@@ -10723,7 +12484,8 @@ def main() -> int:
         "created_unix_time": time.time(),
         "arguments": vars(args),
         "resolved_stages": {
-            "simple_data_override": bool(args.simple),
+            "final_data_driven_efficiency": bool(args.simple and not args.legacy_simple),
+            "legacy_simple_data_override": bool(args.simple and args.legacy_simple),
             "data_shape_and_multiplicity": not args.simple,
             "data_template_fits": (
                 not args.simple
@@ -10742,7 +12504,19 @@ def main() -> int:
         json.dump(manifest, handle, indent=2)
     # endwith
 
-    if args.simple:
+    final_efficiency_metadata: Dict[str, object] = {}
+    if args.simple and not args.legacy_simple:
+        final_efficiency_metadata = run_final_efficiency_stage(
+            periods,
+            args,
+            workers,
+        )
+        data_metadata = {
+            "mode": "final_data_driven_efficiency",
+            "output": final_efficiency_metadata.get("output_csv"),
+        }
+        simple_mc_metadata = {}
+    elif args.simple:
         data_metadata = run_simple_data_efficiency_stage(
             periods,
             args,
@@ -10855,6 +12629,7 @@ def main() -> int:
                 "arguments": vars(args),
                 "data_shape_and_multiplicity_stage": data_metadata,
                 "simple_reconstructed_aaogen_stage": simple_mc_metadata,
+                "final_data_driven_efficiency_stage": final_efficiency_metadata,
                 "mc_efficiency_rows": mc_rows,
                 "mc_efficiency_metadata": mc_metadata,
             },
@@ -10864,7 +12639,7 @@ def main() -> int:
         )
     # endwith
 
-    if args.simple:
+    if args.simple and args.legacy_simple:
         write_simple_diagnostic_package(
             periods,
             data_metadata,
@@ -10879,6 +12654,16 @@ def main() -> int:
         log(
             "Wrote --simple FT/FD diagnostic plots to "
             f"{simple_parent / 'diagnostics'}"
+        )
+    # endif
+
+    if args.simple and not args.legacy_simple and final_efficiency_metadata:
+        print_final_efficiency_summary_rows(
+            final_efficiency_metadata.get("rows", [])
+        )
+        log(
+            "Final production outputs: "
+            f"{Path(args.output_dir) / 'final'}"
         )
     # endif
 
