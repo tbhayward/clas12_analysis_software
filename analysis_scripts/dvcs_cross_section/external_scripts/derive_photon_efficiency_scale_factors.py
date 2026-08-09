@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v77_simple_diagnostic_concat_fix.py
+derive_photon_efficiency_scale_factors_v78_simple_summary_json_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -502,6 +502,16 @@ diagnostic concatenation and explicit array-length consistency checks.
 
 No event selection, pi0 mass logic, matching, efficiency definition, detector
 boundaries, template analysis, or truth-informed MC-efficiency logic changes.
+
+Revision: --simple top-level JSON serialization fix
+---------------------------------------------------
+
+The simple FT/FD diagnostic histograms contain NumPy arrays. The dedicated
+simple-data and reconstructed-AAOGEN JSON outputs already serialize those with
+simple_json_default(), but the final top-level study-summary JSON did not.
+This revision applies the same serializer to that final summary write.
+
+No physics or analysis logic changes.
 
 """
 
@@ -10609,6 +10619,7 @@ def main() -> int:
             },
             handle,
             indent=2,
+            default=simple_json_default,
         )
     # endwith
 
