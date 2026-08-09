@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v75_simple_data_vs_simple_mc.py
+derive_photon_efficiency_scale_factors_v76_simple_ft_fd_diagnostics.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -447,6 +447,45 @@ This simple reconstructed-AAOGEN diagnostic uses no truth matching and does
 not replace the established AAOGEN MC-efficiency stage. At the very end of a
 --simple run, the script prints a compact data/simple-MC comparison for FT and
 aggregate FD, period by period and combined.
+
+Revision: --simple FT/FD data-vs-AAOGEN diagnostic package
+----------------------------------------------------------
+
+The temporary --simple mode now records and plots reconstructed-level
+diagnostics for data and reconstructed AAOGEN using the identical simple
+selection.
+
+A new top-level parent directory is created:
+
+    output/photon_efficiency_study/simple/
+
+with per-period diagnostics in:
+
+    output/photon_efficiency_study/simple/diagnostics/
+
+Two 2x3 canvases are written for every run period. Rows are predicted FT and
+aggregate predicted FD. The first canvas contains:
+
+    1. low-energy tag photon momentum/energy, p_gamma < 2 GeV;
+    2. predicted missing-partner theta_X;
+    3. reconstructed M_gamma_gamma for every same-event low/high pair before
+       the pi0 mass requirement.
+
+The second canvas contains:
+
+    1. low-energy tag photon theta;
+    2. same-event high-energy photon energy before the pi0 mass requirement;
+    3. high-energy photon energy for pairs satisfying
+       0.11 < M_gamma_gamma < 0.16 GeV.
+
+All data and reconstructed-AAOGEN distributions are independently unit
+normalized on the diagnostic plots. Predicted-theta panels mark the FT and FD
+acceptance boundaries, and M_gamma_gamma panels mark the nominal pi0 window.
+
+The diagnostic bookkeeping is accumulated during the existing --simple pass;
+the ROOT files are not reread for plotting. Existing simple numerical outputs,
+the reconstructed-data/reconstructed-AAOGEN comparison, the full data-template
+analysis, and the truth-informed AAOGEN MC-efficiency stage are all preserved.
 
 """
 
@@ -8327,6 +8366,96 @@ def simple_binomial_error(
     )
 
 
+
+SIMPLE_DIAGNOSTIC_SPECS: Mapping[str, Tuple[int, float, float]] = {
+    "low_energy": (100, 0.0, 2.0),
+    "low_theta_deg": (100, 0.0, 40.0),
+    "predicted_theta_deg": (100, 0.0, 40.0),
+    "mgg_before": (120, 0.0, 0.40),
+    "high_energy_before": (100, 2.0, 9.5),
+    "high_energy_after": (100, 2.0, 9.5),
+}
+
+
+def simple_empty_diagnostic_histograms() -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
+    result: Dict[str, Dict[str, Dict[str, np.ndarray]]] = {}
+    for region in ("FT", "FD"):
+        result[region] = {}
+        for name, (bins, low, high) in SIMPLE_DIAGNOSTIC_SPECS.items():
+            edges = np.linspace(low, high, bins + 1)
+            result[region][name] = {
+                "edges": edges,
+                "counts": np.zeros(bins, dtype=np.int64),
+            }
+        # endfor
+    # endfor
+    return result
+
+
+def simple_fill_diagnostic_histogram(
+    histograms: Dict[str, Dict[str, Dict[str, np.ndarray]]],
+    region: str,
+    name: str,
+    values: np.ndarray,
+) -> None:
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return
+    # endif
+
+    edges = np.asarray(
+        histograms[region][name]["edges"],
+        dtype=float,
+    )
+    counts, _ = np.histogram(values, bins=edges)
+    histograms[region][name]["counts"] += counts.astype(
+        np.int64,
+        copy=False,
+    )
+
+
+def simple_finalize_diagnostic_histograms(
+    histograms: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
+) -> Dict[str, object]:
+    payload: Dict[str, object] = {}
+    for region in ("FT", "FD"):
+        payload[region] = {}
+        for name in SIMPLE_DIAGNOSTIC_SPECS:
+            edges = np.asarray(
+                histograms[region][name]["edges"],
+                dtype=float,
+            )
+            counts = np.asarray(
+                histograms[region][name]["counts"],
+                dtype=np.int64,
+            )
+            total = int(np.sum(counts))
+            unit_area = (
+                counts.astype(float) / total
+                if total > 0
+                else np.zeros_like(counts, dtype=float)
+            )
+            payload[region][name] = {
+                "edges": edges,
+                "counts": counts,
+                "unit_area": unit_area,
+                "in_range_entries": total,
+            }
+        # endfor
+    # endfor
+    return payload
+
+
+def simple_region_key(detector_code: int) -> Optional[str]:
+    if int(detector_code) == 0:
+        return "FT"
+    # endif
+    if int(detector_code) == 1:
+        return "FD"
+    # endif
+    return None
+
 def process_period_simple_data_efficiency(
     period: PeriodConfig,
     args_dict: Mapping[str, object],
@@ -8369,6 +8498,7 @@ def process_period_simple_data_efficiency(
     low_detector_chunks: List[np.ndarray] = []
     low_sector_chunks: List[np.ndarray] = []
     low_probe_E_chunks: List[np.ndarray] = []
+    low_probe_theta_deg_chunks: List[np.ndarray] = []
     low_E_chunks: List[np.ndarray] = []
     low_theta_chunks: List[np.ndarray] = []
     low_phi_chunks: List[np.ndarray] = []
@@ -8484,6 +8614,9 @@ def process_period_simple_data_efficiency(
         low_detector = np.concatenate(low_detector_chunks)
         low_sector = np.concatenate(low_sector_chunks)
         low_probe_E = np.concatenate(low_probe_E_chunks)
+        low_probe_theta_deg = np.concatenate(
+            low_probe_theta_deg_chunks
+        )
         low_E = np.concatenate(low_E_chunks)
         low_theta = np.concatenate(low_theta_chunks)
         low_phi = np.concatenate(low_phi_chunks)
@@ -8492,6 +8625,7 @@ def process_period_simple_data_efficiency(
         low_detector = np.empty(0, dtype=np.int16)
         low_sector = np.empty(0, dtype=np.int16)
         low_probe_E = np.empty(0, dtype=float)
+        low_probe_theta_deg = np.empty(0, dtype=float)
         low_E = np.empty(0, dtype=float)
         low_theta = np.empty(0, dtype=float)
         low_phi = np.empty(0, dtype=float)
@@ -8513,6 +8647,40 @@ def process_period_simple_data_efficiency(
         high_theta = np.empty(0, dtype=float)
         high_phi = np.empty(0, dtype=float)
     # endif
+
+    diagnostic_histograms = simple_empty_diagnostic_histograms()
+    pair_diagnostic_values: Dict[str, Dict[str, List[np.ndarray]]] = {
+        region: {
+            "mgg_before": [],
+            "high_energy_before": [],
+            "high_energy_after": [],
+        }
+        for region in ("FT", "FD")
+    }
+
+    for region, region_mask in (
+        ("FT", low_detector == 0),
+        ("FD", low_detector == 1),
+    ):
+        simple_fill_diagnostic_histogram(
+            diagnostic_histograms,
+            region,
+            "low_energy",
+            low_E[region_mask],
+        )
+        simple_fill_diagnostic_histogram(
+            diagnostic_histograms,
+            region,
+            "low_theta_deg",
+            np.degrees(low_theta[region_mask]),
+        )
+        simple_fill_diagnostic_histogram(
+            diagnostic_histograms,
+            region,
+            "predicted_theta_deg",
+            low_probe_theta_deg[region_mask],
+        )
+    # endfor
 
     same_event_high_exists = np.zeros(low_keys.size, dtype=bool)
     pi0_mass_partner_found = np.zeros(low_keys.size, dtype=bool)
@@ -8539,12 +8707,37 @@ def process_period_simple_data_efficiency(
             )
             cos_open = np.clip(cos_open, -1.0, 1.0)
             m2 = 2.0 * float(low_E[i]) * hE * (1.0 - cos_open)
-
-            if np.any(
-                np.isfinite(m2)
+            finite_mass = np.isfinite(m2)
+            passing_pair = (
+                finite_mass
                 & (m2 > mlow2)
                 & (m2 < mhigh2)
-            ):
+            )
+
+            region = simple_region_key(int(low_detector[i]))
+            if region is not None:
+                pair_diagnostic_values[region][
+                    "mgg_before"
+                ].append(
+                    np.sqrt(
+                        np.clip(
+                            m2[finite_mass],
+                            0.0,
+                            None,
+                        )
+                    )
+                )
+                pair_diagnostic_values[region][
+                    "high_energy_before"
+                ].append(hE[finite_mass])
+                if np.any(passing_pair):
+                    pair_diagnostic_values[region][
+                        "high_energy_after"
+                    ].append(hE[passing_pair])
+                # endif
+            # endif
+
+            if np.any(passing_pair):
                 pi0_mass_partner_found[i] = True
             # endif
         # endfor
@@ -8554,6 +8747,25 @@ def process_period_simple_data_efficiency(
         ("FT", 0, 0),
         *[(f"FD sector {sector}", 1, sector) for sector in range(1, 7)],
     ]
+
+    for region in ("FT", "FD"):
+        for name in (
+            "mgg_before",
+            "high_energy_before",
+            "high_energy_after",
+        ):
+            chunks = pair_diagnostic_values[region][name]
+            if chunks:
+                values = np.concatenate(chunks)
+                simple_fill_diagnostic_histogram(
+                    diagnostic_histograms,
+                    region,
+                    name,
+                    values,
+                )
+            # endif
+        # endfor
+    # endfor
 
     rows: List[Dict[str, object]] = []
     for region_label, detector_code, sector_code in region_specs:
@@ -8611,6 +8823,11 @@ def process_period_simple_data_efficiency(
         "low_opportunities_with_reconstructed_probe_E_gt_2": int(np.count_nonzero(np.isfinite(low_probe_E) & (low_probe_E > 2.0))),
         "low_opportunities_with_reconstructed_probe_E_le_2": int(np.count_nonzero(np.isfinite(low_probe_E) & (low_probe_E <= 2.0))),
         "rows": rows,
+        "diagnostic_histograms": (
+            simple_finalize_diagnostic_histograms(
+                diagnostic_histograms
+            )
+        ),
         "elapsed_seconds": elapsed_seconds(start_time),
     }
     return period.key, payload
@@ -8804,6 +9021,7 @@ def process_period_simple_mc_efficiency(
     low_detector_chunks: List[np.ndarray] = []
     low_sector_chunks: List[np.ndarray] = []
     low_probe_E_chunks: List[np.ndarray] = []
+    low_probe_theta_deg_chunks: List[np.ndarray] = []
     low_E_chunks: List[np.ndarray] = []
     low_theta_chunks: List[np.ndarray] = []
     low_phi_chunks: List[np.ndarray] = []
@@ -8907,8 +9125,11 @@ def process_period_simple_mc_efficiency(
             photon_theta[low_required_finite],
             photon_phi[low_required_finite],
         )
+        probe_theta_deg = np.degrees(
+            np.asarray(probe["theta"], dtype=float)
+        )
         predicted_detector, predicted_sector = classify_probe(
-            np.degrees(np.asarray(probe["theta"], dtype=float)),
+            probe_theta_deg,
             np.asarray(probe["phi"], dtype=float),
             args,
         )
@@ -8929,6 +9150,9 @@ def process_period_simple_mc_efficiency(
         low_probe_E_chunks.append(
             np.asarray(probe["E"], dtype=float)
         )
+        low_probe_theta_deg_chunks.append(
+            np.asarray(probe_theta_deg, dtype=float)
+        )
         low_E_chunks.append(
             np.asarray(photon_E[low_required_finite], dtype=float)
         )
@@ -8947,6 +9171,9 @@ def process_period_simple_mc_efficiency(
         low_detector = np.concatenate(low_detector_chunks)
         low_sector = np.concatenate(low_sector_chunks)
         low_probe_E = np.concatenate(low_probe_E_chunks)
+        low_probe_theta_deg = np.concatenate(
+            low_probe_theta_deg_chunks
+        )
         low_E = np.concatenate(low_E_chunks)
         low_theta = np.concatenate(low_theta_chunks)
         low_phi = np.concatenate(low_phi_chunks)
@@ -8955,6 +9182,7 @@ def process_period_simple_mc_efficiency(
         low_detector = np.empty(0, dtype=np.int16)
         low_sector = np.empty(0, dtype=np.int16)
         low_probe_E = np.empty(0, dtype=float)
+        low_probe_theta_deg = np.empty(0, dtype=float)
         low_E = np.empty(0, dtype=float)
         low_theta = np.empty(0, dtype=float)
         low_phi = np.empty(0, dtype=float)
@@ -8980,6 +9208,40 @@ def process_period_simple_mc_efficiency(
         high_theta = np.empty(0, dtype=float)
         high_phi = np.empty(0, dtype=float)
     # endif
+
+    diagnostic_histograms = simple_empty_diagnostic_histograms()
+    pair_diagnostic_values: Dict[str, Dict[str, List[np.ndarray]]] = {
+        region: {
+            "mgg_before": [],
+            "high_energy_before": [],
+            "high_energy_after": [],
+        }
+        for region in ("FT", "FD")
+    }
+
+    for region, region_mask in (
+        ("FT", low_detector == 0),
+        ("FD", low_detector == 1),
+    ):
+        simple_fill_diagnostic_histogram(
+            diagnostic_histograms,
+            region,
+            "low_energy",
+            low_E[region_mask],
+        )
+        simple_fill_diagnostic_histogram(
+            diagnostic_histograms,
+            region,
+            "low_theta_deg",
+            np.degrees(low_theta[region_mask]),
+        )
+        simple_fill_diagnostic_histogram(
+            diagnostic_histograms,
+            region,
+            "predicted_theta_deg",
+            low_probe_theta_deg[region_mask],
+        )
+    # endfor
 
     same_event_high_exists = np.zeros(
         low_keys.size,
@@ -9038,15 +9300,62 @@ def process_period_simple_mc_efficiency(
                 * candidate_E
                 * (1.0 - cosine_opening)
             )
-            if np.any(
-                np.isfinite(mass_squared)
+            finite_mass = np.isfinite(mass_squared)
+            passing_pair = (
+                finite_mass
                 & (mass_squared > mass_low_sq)
                 & (mass_squared < mass_high_sq)
-            ):
+            )
+
+            region = simple_region_key(
+                int(low_detector[low_index])
+            )
+            if region is not None:
+                pair_diagnostic_values[region][
+                    "mgg_before"
+                ].append(
+                    np.sqrt(
+                        np.clip(
+                            mass_squared[finite_mass],
+                            0.0,
+                            None,
+                        )
+                    )
+                )
+                pair_diagnostic_values[region][
+                    "high_energy_before"
+                ].append(candidate_E[finite_mass])
+                if np.any(passing_pair):
+                    pair_diagnostic_values[region][
+                        "high_energy_after"
+                    ].append(candidate_E[passing_pair])
+                # endif
+            # endif
+
+            if np.any(passing_pair):
                 pi0_mass_partner_found[low_index] = True
             # endif
         # endfor
     # endif
+
+    for region in ("FT", "FD"):
+        for name in (
+            "mgg_before",
+            "high_energy_before",
+            "high_energy_after",
+        ):
+            chunks = pair_diagnostic_values[region][name]
+            if chunks:
+                values = np.concatenate(chunks)
+                simple_fill_diagnostic_histogram(
+                    diagnostic_histograms,
+                    region,
+                    name,
+                    values,
+                )
+            # endif
+        # endfor
+    # endfor
 
     rows: List[Dict[str, object]] = []
     for region_label, detector_code, sector_code in [
@@ -9148,6 +9457,11 @@ def process_period_simple_mc_efficiency(
             )
         ),
         "rows": rows,
+        "diagnostic_histograms": (
+            simple_finalize_diagnostic_histograms(
+                diagnostic_histograms
+            )
+        ),
         "elapsed_seconds": elapsed_seconds(start_time),
     }
 
@@ -9188,6 +9502,335 @@ def simple_ft_row(
 ) -> Mapping[str, object]:
     return next(row for row in rows if row["region"] == "FT")
 
+
+
+def simple_histogram_arrays(
+    payload: Mapping[str, object],
+    region: str,
+    name: str,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
+    histogram = payload["diagnostic_histograms"][region][name]
+    edges = np.asarray(histogram["edges"], dtype=float)
+    counts = np.asarray(histogram["counts"], dtype=float)
+    unit_area = np.asarray(histogram["unit_area"], dtype=float)
+    total = int(histogram["in_range_entries"])
+    return edges, counts, unit_area, total
+
+
+def plot_simple_diagnostic_overlays(
+    path: Path,
+    period_label: str,
+    data_payload: Mapping[str, object],
+    mc_payload: Mapping[str, object],
+    variables: Sequence[Tuple[str, str]],
+    title_suffix: str,
+) -> None:
+    """
+    Plot predicted FT on the top row and aggregate predicted FD on the bottom.
+    Each sample is independently normalized to unit integral in the displayed
+    range.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(
+        2,
+        3,
+        figsize=(18.5, 9.0),
+        squeeze=False,
+    )
+
+    for row_index, region in enumerate(("FT", "FD")):
+        for column_index, (name, xlabel) in enumerate(variables):
+            axis = axes[row_index, column_index]
+
+            data_edges, _data_counts, data_unit, data_total = (
+                simple_histogram_arrays(
+                    data_payload,
+                    region,
+                    name,
+                )
+            )
+            mc_edges, _mc_counts, mc_unit, mc_total = (
+                simple_histogram_arrays(
+                    mc_payload,
+                    region,
+                    name,
+                )
+            )
+
+            axis.stairs(
+                data_unit,
+                data_edges,
+                linewidth=1.7,
+                color="black",
+                label=f"Data ({data_total:,})",
+                zorder=4,
+            )
+            axis.stairs(
+                mc_unit,
+                mc_edges,
+                linewidth=1.5,
+                color="tab:red",
+                label=f"AAOGEN ({mc_total:,})",
+                zorder=3,
+            )
+
+            if name == "predicted_theta_deg":
+                for boundary in (2.5, 5.0, 35.0):
+                    axis.axvline(
+                        boundary,
+                        linewidth=1.0,
+                        linestyle="--",
+                        color="0.45",
+                    )
+                # endfor
+            # endif
+
+            if name == "mgg_before":
+                axis.axvspan(
+                    PI0_MASS_WINDOW[0],
+                    PI0_MASS_WINDOW[1],
+                    alpha=0.14,
+                    color="0.5",
+                    label=r"$0.11<M_{\gamma\gamma}<0.16$ GeV",
+                )
+                axis.axvline(
+                    0.1349768,
+                    linewidth=1.0,
+                    linestyle="--",
+                    color="0.35",
+                )
+            # endif
+
+            axis.set_xlabel(xlabel)
+            axis.set_ylabel("fraction / bin")
+            axis.set_ylim(bottom=0.0)
+            axis.grid(axis="y", alpha=0.25)
+            axis.set_title(
+                f"Predicted {region}: {xlabel}"
+            )
+
+            if row_index == 0 and column_index == 0:
+                axis.legend(frameon=False)
+            # endif
+            if name == "mgg_before":
+                axis.legend(frameon=False, fontsize=8)
+            # endif
+        # endfor
+    # endfor
+
+    fig.suptitle(
+        f"{period_label}: --simple data vs reconstructed AAOGEN\n"
+        f"{title_suffix}",
+        fontsize=15,
+        y=0.99,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
+    fig.savefig(
+        path,
+        dpi=180,
+        bbox_inches="tight",
+    )
+    plt.close(fig)
+
+
+def simple_conditional_rows(
+    periods: Sequence[PeriodConfig],
+    data_metadata: Mapping[str, object],
+    mc_metadata: Mapping[str, object],
+) -> List[Dict[str, object]]:
+    """
+    Summarize the two factors entering the simple efficiency:
+      P(high-E same-event partner | low tag)
+      P(pi0 mass | same-event high-E partner)
+    """
+    rows: List[Dict[str, object]] = []
+
+    for period in periods:
+        for sample_name, metadata in (
+            ("data", data_metadata),
+            ("reconstructed_aaogen", mc_metadata),
+        ):
+            period_rows = metadata["periods"][period.key]["rows"]
+            for region in ("FT", "FD"):
+                if region == "FT":
+                    selected = [
+                        row for row in period_rows
+                        if row["region"] == "FT"
+                    ]
+                else:
+                    selected = [
+                        row for row in period_rows
+                        if str(row["region"]).startswith("FD sector ")
+                    ]
+                # endif
+
+                denominator = int(
+                    sum(
+                        int(row["expected_low_energy_tags"])
+                        for row in selected
+                    )
+                )
+                same_event = int(
+                    sum(
+                        int(row["same_event_high_energy_partner"])
+                        for row in selected
+                    )
+                )
+                pi0_pass = int(
+                    sum(
+                        int(row["matched_pi0_mass_partner"])
+                        for row in selected
+                    )
+                )
+
+                rows.append(
+                    {
+                        "period": period.key,
+                        "period_label": period.label,
+                        "sample": sample_name,
+                        "region": region,
+                        "low_tag_denominator": denominator,
+                        "same_event_high_partner": same_event,
+                        "pi0_mass_partner": pi0_pass,
+                        "p_high_given_low": (
+                            same_event / denominator
+                            if denominator > 0
+                            else math.nan
+                        ),
+                        "p_pi0_given_high": (
+                            pi0_pass / same_event
+                            if same_event > 0
+                            else math.nan
+                        ),
+                        "simple_efficiency": (
+                            pi0_pass / denominator
+                            if denominator > 0
+                            else math.nan
+                        ),
+                    }
+                )
+            # endfor
+        # endfor
+    # endfor
+
+    return rows
+
+
+def write_simple_diagnostic_package(
+    periods: Sequence[PeriodConfig],
+    data_metadata: Mapping[str, object],
+    mc_metadata: Mapping[str, object],
+    simple_parent: Path,
+) -> None:
+    diagnostic_root = simple_parent / "diagnostics"
+    diagnostic_root.mkdir(parents=True, exist_ok=True)
+
+    first_canvas_variables = (
+        (
+            "low_energy",
+            r"$E_{\gamma,\mathrm{low}}$ (GeV)",
+        ),
+        (
+            "predicted_theta_deg",
+            r"predicted $\theta_X$ (deg)",
+        ),
+        (
+            "mgg_before",
+            r"$M_{\gamma\gamma}$ before mass cut (GeV)",
+        ),
+    )
+    second_canvas_variables = (
+        (
+            "low_theta_deg",
+            r"$\theta_{\gamma,\mathrm{low}}$ (deg)",
+        ),
+        (
+            "high_energy_before",
+            r"$E_{\gamma,\mathrm{high}}$ before mass cut (GeV)",
+        ),
+        (
+            "high_energy_after",
+            r"$E_{\gamma,\mathrm{high}}$ after mass cut (GeV)",
+        ),
+    )
+
+    for period in periods:
+        data_payload = data_metadata["periods"][period.key]
+        mc_payload = mc_metadata["periods"][period.key]
+
+        plot_simple_diagnostic_overlays(
+            diagnostic_root
+            / f"{period.key}_ft_fd_core_diagnostics.png",
+            period.label,
+            data_payload,
+            mc_payload,
+            first_canvas_variables,
+            (
+                "top row: predicted FT; bottom row: predicted FD; "
+                "each sample independently unit normalized"
+            ),
+        )
+        plot_simple_diagnostic_overlays(
+            diagnostic_root
+            / f"{period.key}_ft_fd_photon_diagnostics.png",
+            period.label,
+            data_payload,
+            mc_payload,
+            second_canvas_variables,
+            (
+                "low-tag and high-partner kinematics; "
+                "each sample independently unit normalized"
+            ),
+        )
+    # endfor
+
+    conditional_rows = simple_conditional_rows(
+        periods,
+        data_metadata,
+        mc_metadata,
+    )
+    write_simple_rows_csv(
+        simple_parent / "simple_conditional_probabilities.csv",
+        conditional_rows,
+    )
+
+    diagnostic_manifest = {
+        "description": (
+            "Data versus reconstructed-AAOGEN diagnostics for --simple."
+        ),
+        "regions": ["predicted FT", "aggregate predicted FD"],
+        "pi0_mass_window_GeV": [
+            float(PI0_MASS_WINDOW[0]),
+            float(PI0_MASS_WINDOW[1]),
+        ],
+        "plots": {
+            "core": [
+                "low_energy",
+                "predicted_theta_deg",
+                "mgg_before",
+            ],
+            "photon": [
+                "low_theta_deg",
+                "high_energy_before",
+                "high_energy_after",
+            ],
+        },
+        "conditional_probability_csv": str(
+            simple_parent / "simple_conditional_probabilities.csv"
+        ),
+    }
+    with open(
+        simple_parent / "simple_diagnostic_manifest.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            diagnostic_manifest,
+            handle,
+            indent=2,
+            default=simple_json_default,
+        )
+    # endwith
 
 def print_simple_data_mc_final_summary(
     periods: Sequence[PeriodConfig],
@@ -9704,10 +10347,14 @@ def main() -> int:
     output_root = Path(args.output_dir)
     data_root = output_root / "data"
     mc_root = output_root / "mc"
+    simple_parent = output_root / "simple"
 
     output_root.mkdir(parents=True, exist_ok=True)
     data_root.mkdir(parents=True, exist_ok=True)
     mc_root.mkdir(parents=True, exist_ok=True)
+    if args.simple:
+        simple_parent.mkdir(parents=True, exist_ok=True)
+    # endif
 
     workers = max(
         1,
@@ -9900,10 +10547,20 @@ def main() -> int:
     # endwith
 
     if args.simple:
+        write_simple_diagnostic_package(
+            periods,
+            data_metadata,
+            simple_mc_metadata,
+            simple_parent,
+        )
         print_simple_data_mc_final_summary(
             periods,
             data_metadata,
             simple_mc_metadata,
+        )
+        log(
+            "Wrote --simple FT/FD diagnostic plots to "
+            f"{simple_parent / 'diagnostics'}"
         )
     # endif
 
