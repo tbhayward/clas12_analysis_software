@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v76_simple_ft_fd_diagnostics.py
+derive_photon_efficiency_scale_factors_v77_simple_diagnostic_concat_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -486,6 +486,22 @@ The diagnostic bookkeeping is accumulated during the existing --simple pass;
 the ROOT files are not reread for plotting. Existing simple numerical outputs,
 the reconstructed-data/reconstructed-AAOGEN comparison, the full data-template
 analysis, and the truth-informed AAOGEN MC-efficiency stage are all preserved.
+
+Revision: --simple predicted-theta diagnostic bookkeeping fix
+--------------------------------------------------------------
+
+The v76 diagnostic package declared low_probe_theta_deg_chunks in the simple
+DATA processor but failed to append the reconstructed probe theta values to
+that list. Low-energy opportunities therefore existed while the diagnostic
+theta list remained empty, causing np.concatenate() to fail.
+
+This revision explicitly computes probe_theta_deg once in the data processor,
+uses it for detector classification, and appends it alongside probe energy.
+Both simple DATA and reconstructed-AAOGEN processors also receive guarded
+diagnostic concatenation and explicit array-length consistency checks.
+
+No event selection, pi0 mass logic, matching, efficiency definition, detector
+boundaries, template analysis, or truth-informed MC-efficiency logic changes.
 
 """
 
@@ -8591,8 +8607,11 @@ def process_period_simple_data_efficiency(
             photon_theta[low_required_finite],
             photon_phi[low_required_finite],
         )
+        probe_theta_deg = np.degrees(
+            np.asarray(probe["theta"], dtype=float)
+        )
         predicted_detector, predicted_sector = classify_probe(
-            np.degrees(np.asarray(probe["theta"], dtype=float)),
+            probe_theta_deg,
             np.asarray(probe["phi"], dtype=float),
             args,
         )
@@ -8603,8 +8622,15 @@ def process_period_simple_data_efficiency(
         ))
         low_detector_chunks.append(np.asarray(predicted_detector, dtype=np.int16))
         low_sector_chunks.append(np.asarray(predicted_sector, dtype=np.int16))
-        low_probe_E_chunks.append(np.asarray(probe["E"], dtype=float))
-        low_E_chunks.append(np.asarray(photon_E[low_required_finite], dtype=float))
+        low_probe_E_chunks.append(
+            np.asarray(probe["E"], dtype=float)
+        )
+        low_probe_theta_deg_chunks.append(
+            np.asarray(probe_theta_deg, dtype=float)
+        )
+        low_E_chunks.append(
+            np.asarray(photon_E[low_required_finite], dtype=float)
+        )
         low_theta_chunks.append(np.asarray(photon_theta[low_required_finite], dtype=float))
         low_phi_chunks.append(np.asarray(photon_phi[low_required_finite], dtype=float))
     # endfor
@@ -8613,13 +8639,33 @@ def process_period_simple_data_efficiency(
         low_keys = np.concatenate(low_key_chunks)
         low_detector = np.concatenate(low_detector_chunks)
         low_sector = np.concatenate(low_sector_chunks)
-        low_probe_E = np.concatenate(low_probe_E_chunks)
-        low_probe_theta_deg = np.concatenate(
-            low_probe_theta_deg_chunks
+        low_probe_E = (
+            np.concatenate(low_probe_E_chunks)
+            if low_probe_E_chunks
+            else np.empty(0, dtype=float)
+        )
+        low_probe_theta_deg = (
+            np.concatenate(low_probe_theta_deg_chunks)
+            if low_probe_theta_deg_chunks
+            else np.empty(0, dtype=float)
         )
         low_E = np.concatenate(low_E_chunks)
         low_theta = np.concatenate(low_theta_chunks)
         low_phi = np.concatenate(low_phi_chunks)
+
+        if low_probe_E.size != low_E.size:
+            raise RuntimeError(
+                f"{period.label} simple DATA diagnostic bookkeeping error: "
+                f"probe-E entries={low_probe_E.size}, low tags={low_E.size}."
+            )
+        # endif
+        if low_probe_theta_deg.size != low_E.size:
+            raise RuntimeError(
+                f"{period.label} simple DATA diagnostic bookkeeping error: "
+                f"probe-theta entries={low_probe_theta_deg.size}, "
+                f"low tags={low_E.size}."
+            )
+        # endif
     else:
         low_keys = np.empty(0, dtype=[("runnum", "<i8"), ("eventnum", "<i8")])
         low_detector = np.empty(0, dtype=np.int16)
@@ -9170,13 +9216,33 @@ def process_period_simple_mc_efficiency(
         low_keys = np.concatenate(low_key_chunks)
         low_detector = np.concatenate(low_detector_chunks)
         low_sector = np.concatenate(low_sector_chunks)
-        low_probe_E = np.concatenate(low_probe_E_chunks)
-        low_probe_theta_deg = np.concatenate(
-            low_probe_theta_deg_chunks
+        low_probe_E = (
+            np.concatenate(low_probe_E_chunks)
+            if low_probe_E_chunks
+            else np.empty(0, dtype=float)
+        )
+        low_probe_theta_deg = (
+            np.concatenate(low_probe_theta_deg_chunks)
+            if low_probe_theta_deg_chunks
+            else np.empty(0, dtype=float)
         )
         low_E = np.concatenate(low_E_chunks)
         low_theta = np.concatenate(low_theta_chunks)
         low_phi = np.concatenate(low_phi_chunks)
+
+        if low_probe_E.size != low_E.size:
+            raise RuntimeError(
+                f"{period.label} simple AAOGEN diagnostic bookkeeping error: "
+                f"probe-E entries={low_probe_E.size}, low tags={low_E.size}."
+            )
+        # endif
+        if low_probe_theta_deg.size != low_E.size:
+            raise RuntimeError(
+                f"{period.label} simple AAOGEN diagnostic bookkeeping error: "
+                f"probe-theta entries={low_probe_theta_deg.size}, "
+                f"low tags={low_E.size}."
+            )
+        # endif
     else:
         low_keys = np.empty(0, dtype=key_dtype)
         low_detector = np.empty(0, dtype=np.int16)
