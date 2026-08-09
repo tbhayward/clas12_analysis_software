@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v80_final_data_driven.py
+derive_photon_efficiency_scale_factors_v81_sparse_ft_signal_template_fix.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -626,6 +626,26 @@ used only there to form an apples-to-apples MC efficiency and closure
 diagnostics.  The reported data/MC scale factor is epsilon_data/epsilon_MC.
 The historical shape/template study and historical truth-informed MC study are
 retained as independent cross-checks and are not deleted.
+
+Revision: sparse FT missed-signal template fix
+----------------------------------------------
+
+The first final-data-driven run exposed an important low-statistics corner case:
+Sp18 Inb FT contains only five truth-matched AAOGEN opportunities in which the
+true >2 GeV pi0 daughter is specifically missed. That sample is far too small
+to define a stable signal template.
+
+The production missed-partner purity fit is driven only by M_X^2(e'p'), an
+observable built solely from the reconstructed electron and proton. Its
+pi0-signal shape therefore does not require the partner photon to have been
+missed. The final extraction now uses the inclusive truth-matched AAOGEN
+pi0-low-tag sample in the same predicted FT/FD region as the production signal
+template. The genuinely missed subset is retained as a diagnostic whenever
+statistics permit.
+
+No data selection, paired Mgg fit, truth definition, photon matching, detector
+acceptance, DVCS background, fake-photon background, efficiency algebra, or
+legacy functionality is changed.
 
 """
 
@@ -12115,13 +12135,60 @@ def process_period_final_efficiency(
         failure_weight_full[fit_indices]=1.0-np.asarray(mass_fit['posterior_signal'],dtype=float)
         failed_data_mask = dreg & (failure_weight_full > 1.0e-8)
 
-        # Genuine missed-signal template: truth-matched AAOGEN low daughter
-        # whose true >2 GeV partner is not successfully reconstructed/matched.
-        signal_failed = areg & truth_signal & ~(aao_probe_match & truth.measured_partner_truth_match)
-        if np.count_nonzero(signal_failed) < args.final_template_min_entries:
+        # Production signal template for the failed-partner purity fit.
+        #
+        # The production fit is driven only by M_X^2(e'p'), which depends on
+        # the reconstructed electron and proton and therefore does not require
+        # the true partner photon to have been missed. Requiring a specifically
+        # missed truth partner would make the template statistics scale with
+        # the very inefficiency being measured and is too sparse in FT.
+        #
+        # Use all truth-matched AAOGEN pi0 low-tag opportunities in the same
+        # predicted FT/FD region whose true partner is above threshold.
+        signal_inclusive = areg & truth_signal
+
+        # Keep the genuinely missed subset as a diagnostic only.
+        signal_failed_truth = (
+            areg
+            & truth_signal
+            & ~(
+                aao_probe_match
+                & truth.measured_partner_truth_match
+            )
+        )
+
+        n_signal_inclusive = int(
+            np.count_nonzero(signal_inclusive)
+        )
+        n_signal_failed_truth = int(
+            np.count_nonzero(signal_failed_truth)
+        )
+
+        if n_signal_inclusive < args.final_template_min_entries:
             raise RuntimeError(
-                f"{period.label} {detector}: insufficient truth-matched AAOGEN missed-signal template "
-                f"({np.count_nonzero(signal_failed)} entries)"
+                f"{period.label} {detector}: insufficient inclusive "
+                f"truth-matched AAOGEN pi0 signal template "
+                f"({n_signal_inclusive} entries)"
+            )
+        # endif
+
+        signal_template = signal_inclusive
+
+        if n_signal_failed_truth < args.final_template_min_entries:
+            log(
+                f"{period.label} {detector}: only "
+                f"{n_signal_failed_truth} truth-matched AAOGEN genuinely "
+                "missed-partner entries; using the inclusive truth-matched "
+                f"pi0 signal template ({n_signal_inclusive} entries) for "
+                "the production M_X^2(e'p') purity fit."
+            )
+        else:
+            log(
+                f"{period.label} {detector}: production pi0 signal template "
+                f"uses {n_signal_inclusive} inclusive truth-matched AAOGEN "
+                f"entries; genuinely missed subset has "
+                f"{n_signal_failed_truth} entries and is retained as a "
+                "shape diagnostic."
             )
         # endif
 
@@ -12142,12 +12209,88 @@ def process_period_final_efficiency(
 
         purity_fit=fit_unmatched_shared_purity(
             data,failed_data_mask,failure_weight_full,
-            aao,signal_failed,
+            aao,signal_template,
             dvcs,dvcs_background,
             aao,fake_background,np.ones(np.count_nonzero(fake_background),dtype=float),
             detector,args,
         )
-        plot_final_unmatched_fit(root/f'{detector.lower()}_missed_partner_purity_fit.png',period.label,detector,purity_fit)
+
+        # Compare inclusive and genuinely missed AAOGEN signal shapes in the
+        # nominal M_X^2(e'p') variable whenever the missed subset is populated
+        # well enough for the comparison to be meaningful.
+        signal_shape_diagnostic = {
+            "inclusive_entries": n_signal_inclusive,
+            "genuinely_missed_entries": n_signal_failed_truth,
+            "missed_shape_comparison_available": False,
+            "mx_ep2_l1_distance": math.nan,
+            "mx_ep2_chi2_like": math.nan,
+        }
+        if n_signal_failed_truth >= args.final_template_min_entries:
+            bins, low, high, _ = final_feature_spec(
+                "mx_ep2",
+                detector,
+            )
+            edges = np.linspace(low, high, bins + 1)
+            inclusive_counts = _weighted_histogram(
+                final_feature_values(aao, "mx_ep2")[
+                    signal_inclusive
+                ],
+                edges,
+            )
+            missed_counts = _weighted_histogram(
+                final_feature_values(aao, "mx_ep2")[
+                    signal_failed_truth
+                ],
+                edges,
+            )
+            inclusive_pdf = _normalized_template(
+                inclusive_counts,
+                args.final_template_smoothing,
+            )
+            missed_pdf = _normalized_template(
+                missed_counts,
+                args.final_template_smoothing,
+            )
+            l1_distance = 0.5 * float(
+                np.sum(
+                    np.abs(
+                        inclusive_pdf - missed_pdf
+                    )
+                )
+            )
+            denom = np.maximum(
+                0.5 * (inclusive_pdf + missed_pdf),
+                1.0e-12,
+            )
+            chi2_like = float(
+                np.sum(
+                    (inclusive_pdf - missed_pdf) ** 2
+                    / denom
+                )
+            )
+            signal_shape_diagnostic.update(
+                {
+                    "missed_shape_comparison_available": True,
+                    "mx_ep2_l1_distance": l1_distance,
+                    "mx_ep2_chi2_like": chi2_like,
+                }
+            )
+        # endif
+
+        purity_fit["signal_template_definition"] = (
+            "inclusive truth-matched AAOGEN pi0 low-tag opportunities in "
+            "the same predicted detector region; true partner >2 GeV"
+        )
+        purity_fit["signal_shape_diagnostic"] = (
+            signal_shape_diagnostic
+        )
+
+        plot_final_unmatched_fit(
+            root/f'{detector.lower()}_missed_partner_purity_fit.png',
+            period.label,
+            detector,
+            purity_fit,
+        )
 
         npaired=int(mass_fit['n_entries'])
         found=float(mass_fit['fraction_signal'])*npaired
@@ -12230,6 +12373,13 @@ def process_period_final_efficiency(
             'aaogen_final_opportunities':aao.size(),
             'truth_low_and_partner_gt2':int(np.count_nonzero(truth_signal)),
             'truth_reconstructed_partner_matches':int(np.count_nonzero(truth_signal & aao.paired & truth.measured_partner_truth_match & (aao.high_probe_angle_deg < args.probe_match_angle_max_deg) & (aao.high_probe_relative_E < args.probe_match_relative_E_max))),
+            'truth_signal_template_inclusive_entries': n_signal_inclusive,
+            'truth_signal_genuinely_missed_entries': n_signal_failed_truth,
+            'truth_signal_template_definition': (
+                "inclusive truth-matched AAOGEN pi0 low-tag opportunities "
+                "in the same predicted region with true partner >2 GeV"
+            ),
+            'truth_signal_shape_diagnostic': signal_shape_diagnostic,
         },
         'regions':region_metadata,
     }
