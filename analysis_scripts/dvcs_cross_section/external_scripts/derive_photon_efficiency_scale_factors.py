@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v78_simple_summary_json_fix.py
+derive_photon_efficiency_scale_factors_v79_simple_three_category_estimator.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -512,6 +512,54 @@ simple_json_default(), but the final top-level study-summary JSON did not.
 This revision applies the same serializer to that final summary write.
 
 No physics or analysis logic changes.
+
+Revision: --simple three-category pi0-pair estimator
+----------------------------------------------------
+
+The temporary --simple estimator is reorganized into three mutually exclusive
+classes for each reconstructed low-energy photon (p2_p < 2 GeV), separately in
+predicted FT and each predicted FD sector:
+
+  A) FOUND PI0 PAIR:
+       at least one same-event reconstructed photon has p2_p > 2 GeV and the
+       measured low/high pair satisfies 0.11 < M_gamma_gamma < 0.16 GeV.
+
+  B) MEASURED HIGH-ENERGY PHOTON, NON-PI0 PAIR:
+       at least one same-event p2_p > 2 GeV photon exists, but no low/high pair
+       satisfies the pi0 mass window. These entries are explicitly identified
+       as rejected/non-pi0-like and are not counted as failed pi0 opportunities.
+
+  C) NO HIGH-ENERGY PARTNER RECONSTRUCTED:
+       no same-event p2_p > 2 GeV photon exists. Their pi0 purity is unknown.
+
+For category C, --simple now applies the observed pi0-pair purity from category
+A/(A+B) as the provisional estimate of how many unmatched low-energy photons
+are genuine pi0 opportunities:
+
+    f_pi0,pair = N_A / (N_A + N_B)
+
+    N_missed_pi0,est = f_pi0,pair * N_C
+
+    epsilon_simple,purity =
+        N_A / (N_A + N_missed_pi0,est)
+
+The code prints and saves all three category counts, the observed pair purity,
+the estimated missed-pi0 count, the legacy hard-window fraction N_A/N_low, and
+the new provisional purity-weighted efficiency.
+
+Important algebraic note: because the same measured pair purity is applied to
+the unmatched population, epsilon_simple,purity is mathematically identical to
+
+    (N_A + N_B) / (N_A + N_B + N_C),
+
+i.e. the probability that any >2 GeV same-event photon is reconstructed. The
+output states this explicitly. The pi0 mass window is nevertheless essential
+for diagnosing category purity and for later replacement of the hard-window
+count by a fitted pi0 yield or a nontrivial unmatched-purity transfer factor.
+
+The same reconstructed-level bookkeeping is applied to data and reconstructed
+AAOGEN. Existing diagnostics, template fits, and the truth-informed AAOGEN
+efficiency study are preserved.
 
 """
 
@@ -8482,6 +8530,122 @@ def simple_region_key(detector_code: int) -> Optional[str]:
     # endif
     return None
 
+
+def simple_three_category_metrics(
+    n_low_total: int,
+    n_same_event_high: int,
+    n_pi0_pair: int,
+) -> Dict[str, object]:
+    """
+    Convert the raw --simple counts into the three-category bookkeeping.
+
+    Category A: measured low/high pair passes the pi0 mass window.
+    Category B: a >2 GeV same-event photon exists, but no pair passes.
+    Category C: no >2 GeV same-event photon exists.
+
+    The provisional unmatched-pi0 purity is taken from A/(A+B).
+    """
+    total = int(n_low_total)
+    high = int(n_same_event_high)
+    found = int(n_pi0_pair)
+
+    if total < 0 or high < 0 or found < 0:
+        raise ValueError("Simple three-category counts must be non-negative.")
+    # endif
+    if high > total:
+        raise ValueError(
+            f"Simple three-category bookkeeping invalid: high={high} > total={total}."
+        )
+    # endif
+    if found > high:
+        raise ValueError(
+            f"Simple three-category bookkeeping invalid: found={found} > high={high}."
+        )
+    # endif
+
+    measured_nonpi0 = high - found
+    no_high = total - high
+
+    pair_purity = (
+        found / high
+        if high > 0
+        else math.nan
+    )
+    pair_purity_error = simple_binomial_error(
+        found,
+        high,
+    )
+
+    estimated_missed_pi0 = (
+        pair_purity * no_high
+        if np.isfinite(pair_purity)
+        else math.nan
+    )
+
+    effective_pi0_denominator = (
+        found + estimated_missed_pi0
+        if np.isfinite(estimated_missed_pi0)
+        else math.nan
+    )
+    purity_weighted_efficiency = (
+        found / effective_pi0_denominator
+        if np.isfinite(effective_pi0_denominator)
+        and effective_pi0_denominator > 0.0
+        else math.nan
+    )
+
+    high_partner_fraction = (
+        high / total
+        if total > 0
+        else math.nan
+    )
+    high_partner_fraction_error = simple_binomial_error(
+        high,
+        total,
+    )
+
+    legacy_window_efficiency = (
+        found / total
+        if total > 0
+        else math.nan
+    )
+    legacy_window_efficiency_error = simple_binomial_error(
+        found,
+        total,
+    )
+
+    algebraic_difference = (
+        purity_weighted_efficiency - high_partner_fraction
+        if np.isfinite(purity_weighted_efficiency)
+        and np.isfinite(high_partner_fraction)
+        else math.nan
+    )
+
+    return {
+        "expected_low_energy_tags": total,
+        "same_event_high_energy_partner": high,
+        "matched_pi0_mass_partner": found,
+        "category_A_found_pi0_pair": found,
+        "category_B_high_nonpi0_pair": measured_nonpi0,
+        "category_C_no_high_partner": no_high,
+        "observed_pair_pi0_purity": pair_purity,
+        "observed_pair_pi0_purity_error": pair_purity_error,
+        "estimated_missed_pi0_from_no_high": estimated_missed_pi0,
+        "effective_pi0_opportunities": effective_pi0_denominator,
+        "legacy_window_efficiency": legacy_window_efficiency,
+        "legacy_window_efficiency_error": legacy_window_efficiency_error,
+        "high_partner_fraction": high_partner_fraction,
+        "high_partner_fraction_error": high_partner_fraction_error,
+        "purity_weighted_efficiency": purity_weighted_efficiency,
+        "purity_weighted_efficiency_error": high_partner_fraction_error,
+        "purity_weighted_minus_high_partner_fraction": algebraic_difference,
+        # Keep the historical generic keys pointed at the new provisional
+        # estimator so all downstream --simple comparisons automatically use
+        # the upgraded definition.
+        "efficiency": purity_weighted_efficiency,
+        "efficiency_error": high_partner_fraction_error,
+    }
+
 def process_period_simple_data_efficiency(
     period: PeriodConfig,
     args_dict: Mapping[str, object],
@@ -8831,20 +8995,28 @@ def process_period_simple_data_efficiency(
         # endif
 
         expected = int(np.count_nonzero(region_mask))
-        same_event = int(np.count_nonzero(region_mask & same_event_high_exists))
-        found = int(np.count_nonzero(region_mask & pi0_mass_partner_found))
-        efficiency = found / expected if expected > 0 else math.nan
+        same_event = int(
+            np.count_nonzero(
+                region_mask & same_event_high_exists
+            )
+        )
+        found = int(
+            np.count_nonzero(
+                region_mask & pi0_mass_partner_found
+            )
+        )
+        metrics = simple_three_category_metrics(
+            expected,
+            same_event,
+            found,
+        )
         rows.append({
             "period": period.key,
             "period_label": period.label,
             "region": region_label,
             "detector_code": detector_code,
             "sector": sector_code,
-            "expected_low_energy_tags": expected,
-            "same_event_high_energy_partner": same_event,
-            "matched_pi0_mass_partner": found,
-            "efficiency": efficiency,
-            "efficiency_error": simple_binomial_error(found, expected),
+            **metrics,
         })
     # endfor
 
@@ -8893,36 +9065,58 @@ def print_simple_data_efficiency_block(
     title: str,
     rows: Sequence[Mapping[str, object]],
 ) -> None:
-    log("=" * 72)
-    log(f"SIMPLE DATA EFFICIENCY: {title}")
+    log("=" * 104)
+    log(f"SIMPLE THREE-CATEGORY ESTIMATOR: {title}")
     log(
-        "Definition: each p2_p<2 GeV data photon is one expected pi0 "
-        "opportunity; success = same (runnum,evnum) contains p2_p>2 GeV "
-        "with 0.11<Mgg<0.16 GeV."
+        "A=found pi0 pair (same-event E_high>2 GeV and "
+        "0.11<Mgg<0.16 GeV); "
+        "B=E_high>2 exists but no pi0-mass pair; "
+        "C=no E_high>2 partner."
+    )
+    log(
+        "B is rejected as explicitly non-pi0-like. "
+        "For C, provisional pi0 purity is A/(A+B)."
+    )
+    log(
+        "epsilon_purity = A / [A + (A/(A+B))*C]. "
+        "With this same-purity assumption it is algebraically equal to "
+        "(A+B)/(A+B+C)."
     )
     log("Region is the PREDICTED missing-partner FT/FD sector.")
+
     for row in rows:
-        expected = int(row["expected_low_energy_tags"])
-        matched = int(row["matched_pi0_mass_partner"])
-        same_event = int(row["same_event_high_energy_partner"])
-        efficiency = float(row["efficiency"])
-        error = float(row["efficiency_error"])
+        region = str(row["region"])
+        a_count = int(row["category_A_found_pi0_pair"])
+        b_count = int(row["category_B_high_nonpi0_pair"])
+        c_count = int(row["category_C_no_high_partner"])
+        purity = float(row["observed_pair_pi0_purity"])
+        estimated_missed = float(
+            row["estimated_missed_pi0_from_no_high"]
+        )
+        efficiency = float(row["purity_weighted_efficiency"])
+        error = float(row["purity_weighted_efficiency_error"])
+        legacy = float(row["legacy_window_efficiency"])
+
         if np.isfinite(efficiency):
             log(
-                f"  {str(row['region']):<11s}: "
-                f"{matched:,} / {expected:,} = "
-                f"{100.0 * efficiency:7.3f}% +/- {100.0 * error:6.3f}% "
-                f"(same-event >2 GeV before Mgg: {same_event:,})"
+                f"  {region:<11s}: "
+                f"A={a_count:,}, B={b_count:,}, C={c_count:,}; "
+                f"pair purity={100.0*purity:6.2f}%; "
+                f"estimated missed pi0={estimated_missed:,.1f}; "
+                f"epsilon_purity={100.0*efficiency:6.2f}% "
+                f"+/- {100.0*error:5.2f}% "
+                f"[legacy A/N_low={100.0*legacy:6.2f}%]"
             )
         else:
             log(
-                f"  {str(row['region']):<11s}: "
-                f"{matched:,} / {expected:,} = undefined "
-                f"(same-event >2 GeV before Mgg: {same_event:,})"
+                f"  {region:<11s}: "
+                f"A={a_count:,}, B={b_count:,}, C={c_count:,}; "
+                "provisional purity/efficiency undefined."
             )
         # endif
     # endfor
-    log("=" * 72)
+
+    log("=" * 104)
 
 
 
@@ -9457,8 +9651,10 @@ def process_period_simple_mc_efficiency(
                 region_mask & pi0_mass_partner_found
             )
         )
-        efficiency = (
-            found / expected if expected > 0 else math.nan
+        metrics = simple_three_category_metrics(
+            expected,
+            same_event_found,
+            found,
         )
 
         rows.append(
@@ -9468,14 +9664,7 @@ def process_period_simple_mc_efficiency(
                 "region": region_label,
                 "detector_code": detector_code,
                 "sector": sector_code,
-                "expected_low_energy_tags": expected,
-                "same_event_high_energy_partner": same_event_found,
-                "matched_pi0_mass_partner": found,
-                "efficiency": efficiency,
-                "efficiency_error": simple_binomial_error(
-                    found,
-                    expected,
-                ),
+                **metrics,
             }
         )
     # endfor
@@ -9546,30 +9735,44 @@ def process_period_simple_mc_efficiency(
 
 def aggregate_simple_fd(
     rows: Sequence[Mapping[str, object]],
-) -> Dict[str, float]:
-    """Combine the six FD sectors by summing numerators and denominators."""
+) -> Dict[str, object]:
+    """
+    Combine the six FD sectors by summing the raw A/B/C counts first and then
+    recomputing the provisional purity-weighted estimator.
+    """
     selected = [
         row
         for row in rows
         if str(row["region"]).startswith("FD sector ")
     ]
+
     expected = int(
-        sum(int(row["expected_low_energy_tags"]) for row in selected)
+        sum(
+            int(row["expected_low_energy_tags"])
+            for row in selected
+        )
+    )
+    same_event = int(
+        sum(
+            int(row["same_event_high_energy_partner"])
+            for row in selected
+        )
     )
     matched = int(
-        sum(int(row["matched_pi0_mass_partner"]) for row in selected)
+        sum(
+            int(row["matched_pi0_mass_partner"])
+            for row in selected
+        )
     )
-    efficiency = (
-        matched / expected if expected > 0 else math.nan
+
+    metrics = simple_three_category_metrics(
+        expected,
+        same_event,
+        matched,
     )
     return {
-        "expected": expected,
-        "matched": matched,
-        "efficiency": efficiency,
-        "efficiency_error": simple_binomial_error(
-            matched,
-            expected,
-        ),
+        "region": "FD",
+        **metrics,
     }
 
 
@@ -9715,9 +9918,8 @@ def simple_conditional_rows(
     mc_metadata: Mapping[str, object],
 ) -> List[Dict[str, object]]:
     """
-    Summarize the two factors entering the simple efficiency:
-      P(high-E same-event partner | low tag)
-      P(pi0 mass | same-event high-E partner)
+    Summarize A/B/C bookkeeping and the provisional unmatched-purity estimator
+    for predicted FT and aggregate predicted FD.
     """
     rows: List[Dict[str, object]] = []
 
@@ -9727,15 +9929,18 @@ def simple_conditional_rows(
             ("reconstructed_aaogen", mc_metadata),
         ):
             period_rows = metadata["periods"][period.key]["rows"]
+
             for region in ("FT", "FD"):
                 if region == "FT":
                     selected = [
-                        row for row in period_rows
+                        row
+                        for row in period_rows
                         if row["region"] == "FT"
                     ]
                 else:
                     selected = [
-                        row for row in period_rows
+                        row
+                        for row in period_rows
                         if str(row["region"]).startswith("FD sector ")
                     ]
                 # endif
@@ -9759,30 +9964,28 @@ def simple_conditional_rows(
                     )
                 )
 
+                metrics = simple_three_category_metrics(
+                    denominator,
+                    same_event,
+                    pi0_pass,
+                )
+
                 rows.append(
                     {
                         "period": period.key,
                         "period_label": period.label,
                         "sample": sample_name,
                         "region": region,
-                        "low_tag_denominator": denominator,
-                        "same_event_high_partner": same_event,
-                        "pi0_mass_partner": pi0_pass,
-                        "p_high_given_low": (
-                            same_event / denominator
-                            if denominator > 0
-                            else math.nan
-                        ),
-                        "p_pi0_given_high": (
-                            pi0_pass / same_event
-                            if same_event > 0
-                            else math.nan
-                        ),
-                        "simple_efficiency": (
-                            pi0_pass / denominator
-                            if denominator > 0
-                            else math.nan
-                        ),
+                        **metrics,
+                        "p_high_given_low": metrics[
+                            "high_partner_fraction"
+                        ],
+                        "p_pi0_given_high": metrics[
+                            "observed_pair_pi0_purity"
+                        ],
+                        "simple_efficiency": metrics[
+                            "purity_weighted_efficiency"
+                        ],
                     }
                 )
             # endfor
@@ -9914,41 +10117,47 @@ def print_simple_data_mc_final_summary(
     simple_mc_metadata: Mapping[str, object],
 ) -> None:
     """
-    Short final --simple comparison using identical reconstructed algorithms.
+    Compact final --simple comparison using the three-category estimator.
     """
     log("")
-    log("=" * 86)
-    log("FINAL --simple DATA / RECONSTRUCTED-AAOGEN SUMMARY")
+    log("=" * 118)
+    log("FINAL --simple DATA / RECONSTRUCTED-AAOGEN THREE-CATEGORY SUMMARY")
     log(
-        "same reconstructed algorithm on both samples: "
-        "E_low<2 GeV, E_high>2 GeV, 0.11<Mgg<0.16 GeV"
+        "A=pi0-window pair; B=measured >2 GeV partner but non-pi0 pair; "
+        "C=no measured >2 GeV partner."
+    )
+    log(
+        "Displayed efficiency = A/[A + (A/(A+B))*C] = (A+B)/(A+B+C) "
+        "under the same-purity assumption."
     )
     log(
         f"{'Period':<12s} "
-        f"{'FT data/MC':>12s} "
-        f"{'FD data/MC':>12s} "
-        f"{'FT data':>10s} "
-        f"{'FT MC':>10s} "
-        f"{'FD data':>10s} "
-        f"{'FD MC':>10s}"
+        f"{'FT data/MC':>11s} "
+        f"{'FD data/MC':>11s} "
+        f"{'FT eps D':>9s} "
+        f"{'FT eps M':>9s} "
+        f"{'FD eps D':>9s} "
+        f"{'FD eps M':>9s} "
+        f"{'FT purity D/M':>15s} "
+        f"{'FD purity D/M':>15s}"
     )
 
     data_periods = data_metadata["periods"]
     mc_periods = simple_mc_metadata["periods"]
 
-    for period in periods:
-        data_rows = data_periods[period.key]["rows"]
-        mc_rows = mc_periods[period.key]["rows"]
-
+    def _line_values(
+        data_rows: Sequence[Mapping[str, object]],
+        mc_rows: Sequence[Mapping[str, object]],
+    ) -> Tuple[float, ...]:
         data_ft = simple_ft_row(data_rows)
         mc_ft = simple_ft_row(mc_rows)
         data_fd = aggregate_simple_fd(data_rows)
         mc_fd = aggregate_simple_fd(mc_rows)
 
-        data_ft_eff = float(data_ft["efficiency"])
-        mc_ft_eff = float(mc_ft["efficiency"])
-        data_fd_eff = float(data_fd["efficiency"])
-        mc_fd_eff = float(mc_fd["efficiency"])
+        data_ft_eff = float(data_ft["purity_weighted_efficiency"])
+        mc_ft_eff = float(mc_ft["purity_weighted_efficiency"])
+        data_fd_eff = float(data_fd["purity_weighted_efficiency"])
+        mc_fd_eff = float(mc_fd["purity_weighted_efficiency"])
 
         ft_ratio = (
             data_ft_eff / mc_ft_eff
@@ -9965,44 +10174,81 @@ def print_simple_data_mc_final_summary(
             else math.nan
         )
 
+        return (
+            ft_ratio,
+            fd_ratio,
+            data_ft_eff,
+            mc_ft_eff,
+            data_fd_eff,
+            mc_fd_eff,
+            float(data_ft["observed_pair_pi0_purity"]),
+            float(mc_ft["observed_pair_pi0_purity"]),
+            float(data_fd["observed_pair_pi0_purity"]),
+            float(mc_fd["observed_pair_pi0_purity"]),
+        )
+    # endif
+
+    for period in periods:
+        values = _line_values(
+            data_periods[period.key]["rows"],
+            mc_periods[period.key]["rows"],
+        )
+        (
+            ft_ratio,
+            fd_ratio,
+            data_ft_eff,
+            mc_ft_eff,
+            data_fd_eff,
+            mc_fd_eff,
+            data_ft_purity,
+            mc_ft_purity,
+            data_fd_purity,
+            mc_fd_purity,
+        ) = values
+
         log(
             f"{period.label:<12s} "
-            f"{ft_ratio:12.3f} "
-            f"{fd_ratio:12.3f} "
-            f"{100.0*data_ft_eff:9.2f}% "
-            f"{100.0*mc_ft_eff:9.2f}% "
-            f"{100.0*data_fd_eff:9.2f}% "
-            f"{100.0*mc_fd_eff:9.2f}%"
+            f"{ft_ratio:11.3f} "
+            f"{fd_ratio:11.3f} "
+            f"{100.0*data_ft_eff:8.2f}% "
+            f"{100.0*mc_ft_eff:8.2f}% "
+            f"{100.0*data_fd_eff:8.2f}% "
+            f"{100.0*mc_fd_eff:8.2f}% "
+            f"{100.0*data_ft_purity:6.1f}/{100.0*mc_ft_purity:6.1f}% "
+            f"{100.0*data_fd_purity:6.1f}/{100.0*mc_fd_purity:6.1f}%"
         )
     # endfor
 
-    data_combined_rows = data_metadata["combined_rows"]
-    mc_combined_rows = simple_mc_metadata["combined_rows"]
+    values = _line_values(
+        data_metadata["combined_rows"],
+        simple_mc_metadata["combined_rows"],
+    )
+    (
+        ft_ratio,
+        fd_ratio,
+        data_ft_eff,
+        mc_ft_eff,
+        data_fd_eff,
+        mc_fd_eff,
+        data_ft_purity,
+        mc_ft_purity,
+        data_fd_purity,
+        mc_fd_purity,
+    ) = values
 
-    data_ft = simple_ft_row(data_combined_rows)
-    mc_ft = simple_ft_row(mc_combined_rows)
-    data_fd = aggregate_simple_fd(data_combined_rows)
-    mc_fd = aggregate_simple_fd(mc_combined_rows)
-
-    data_ft_eff = float(data_ft["efficiency"])
-    mc_ft_eff = float(mc_ft["efficiency"])
-    data_fd_eff = float(data_fd["efficiency"])
-    mc_fd_eff = float(mc_fd["efficiency"])
-
-    ft_ratio = data_ft_eff / mc_ft_eff
-    fd_ratio = data_fd_eff / mc_fd_eff
-
-    log("-" * 86)
+    log("-" * 118)
     log(
         f"{'COMBINED':<12s} "
-        f"{ft_ratio:12.3f} "
-        f"{fd_ratio:12.3f} "
-        f"{100.0*data_ft_eff:9.2f}% "
-        f"{100.0*mc_ft_eff:9.2f}% "
-        f"{100.0*data_fd_eff:9.2f}% "
-        f"{100.0*mc_fd_eff:9.2f}%"
+        f"{ft_ratio:11.3f} "
+        f"{fd_ratio:11.3f} "
+        f"{100.0*data_ft_eff:8.2f}% "
+        f"{100.0*mc_ft_eff:8.2f}% "
+        f"{100.0*data_fd_eff:8.2f}% "
+        f"{100.0*mc_fd_eff:8.2f}% "
+        f"{100.0*data_ft_purity:6.1f}/{100.0*mc_ft_purity:6.1f}% "
+        f"{100.0*data_fd_purity:6.1f}/{100.0*mc_fd_purity:6.1f}%"
     )
-    log("=" * 86)
+    log("=" * 118)
 
 def run_simple_data_efficiency_stage(
     periods: Sequence[PeriodConfig],
@@ -10107,7 +10353,11 @@ def run_simple_data_efficiency_stage(
                 for row in selected
             )
         )
-        efficiency = matched / expected if expected > 0 else math.nan
+        metrics = simple_three_category_metrics(
+            expected,
+            same_event,
+            matched,
+        )
         combined_rows.append(
             {
                 "period": "combined",
@@ -10115,11 +10365,7 @@ def run_simple_data_efficiency_stage(
                 "region": region_label,
                 "detector_code": detector_code,
                 "sector": sector_code,
-                "expected_low_energy_tags": expected,
-                "same_event_high_energy_partner": same_event,
-                "matched_pi0_mass_partner": matched,
-                "efficiency": efficiency,
-                "efficiency_error": simple_binomial_error(matched, expected),
+                **metrics,
             }
         )
     # endfor
@@ -10136,7 +10382,7 @@ def run_simple_data_efficiency_stage(
     )
 
     metadata: Dict[str, object] = {
-        "mode": "simple_data_override",
+        "mode": "simple_data_three_category_estimator",
         "threshold_GeV": 2.0,
         "periods": payloads,
         "combined_rows": combined_rows,
@@ -10253,8 +10499,10 @@ def run_simple_mc_efficiency_stage(
                 for row in selected
             )
         )
-        efficiency = (
-            matched / expected if expected > 0 else math.nan
+        metrics = simple_three_category_metrics(
+            expected,
+            same_event,
+            matched,
         )
         combined_rows.append(
             {
@@ -10263,14 +10511,7 @@ def run_simple_mc_efficiency_stage(
                 "region": region_label,
                 "detector_code": detector_code,
                 "sector": sector_code,
-                "expected_low_energy_tags": expected,
-                "same_event_high_energy_partner": same_event,
-                "matched_pi0_mass_partner": matched,
-                "efficiency": efficiency,
-                "efficiency_error": simple_binomial_error(
-                    matched,
-                    expected,
-                ),
+                **metrics,
             }
         )
     # endfor
@@ -10282,7 +10523,7 @@ def run_simple_mc_efficiency_stage(
     )
 
     metadata: Dict[str, object] = {
-        "mode": "simple_reconstructed_AAOGEN_comparison",
+        "mode": "simple_reconstructed_AAOGEN_three_category_comparison",
         "threshold_GeV": 2.0,
         "pi0_mass_window_GeV": [
             float(PI0_MASS_WINDOW[0]),
