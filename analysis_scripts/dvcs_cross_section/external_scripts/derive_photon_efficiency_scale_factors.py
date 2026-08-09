@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v74_simple_pi0_mass_requirement.py
+derive_photon_efficiency_scale_factors_v75_simple_data_vs_simple_mc.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -424,6 +424,29 @@ reconstructed pi0 candidate in the nominal mass window:
 The denominator and predicted FT/FD-region assignment are unchanged. If an
 event contains multiple >2 GeV photons, all are tested and the low-energy tag
 is counted once if any candidate passes the diphoton-mass requirement.
+
+Revision: --simple reconstructed-data versus reconstructed-AAOGEN comparison
+----------------------------------------------------------------------------
+
+When --simple is enabled, the script now runs the same reconstructed-photon
+algorithm on the AAOGEN epgamma sample in addition to data.
+
+For both samples:
+  * every reconstructed photon with p2_p < 2 GeV is a denominator opportunity;
+  * the expected partner direction is reconstructed from beam+target-e-p-low_gamma;
+  * the opportunity is assigned to FT or FD sector 1--6 from that direction;
+  * success requires a reconstructed photon with p2_p > 2 GeV from the same
+    reconstructed event and 0.11 < M_gamma_gamma < 0.16 GeV.
+
+Data event identity is exact (runnum, evnum). AAOGEN epgamma files do not have
+usable run/event identifiers, so reconstructed MC entries are grouped with the
+same established quantized electron+proton kinematic identity used elsewhere
+in this script for MC multiplicity reconstruction.
+
+This simple reconstructed-AAOGEN diagnostic uses no truth matching and does
+not replace the established AAOGEN MC-efficiency stage. At the very end of a
+--simple run, the script prints a compact data/simple-MC comparison for FT and
+aggregate FD, period by period and combined.
 
 """
 
@@ -8708,6 +8731,560 @@ def simple_json_default(value: object) -> object:
         # endfor
     # endwith
 
+
+def simple_mc_event_key(
+    arrays_by_logical_name: Mapping[str, np.ndarray],
+    mask: np.ndarray,
+    decimals: int,
+) -> np.ndarray:
+    """
+    Build the established reconstructed-MC event identity from electron and
+    proton kinematics for the selected entries.
+    """
+    selected = {
+        name: np.asarray(arrays_by_logical_name[name], dtype=float)[mask]
+        for name in (
+            "e_p",
+            "e_theta",
+            "e_phi",
+            "p_p",
+            "p_theta",
+            "p_phi",
+        )
+    }
+    signature, valid = mc_identity_signature(
+        selected,
+        decimals,
+    )
+    if not np.all(valid):
+        raise RuntimeError(
+            "simple_mc_event_key received non-finite electron/proton "
+            "kinematics after its finite-input mask."
+        )
+    # endif
+    return signature
+
+
+def process_period_simple_mc_efficiency(
+    period: PeriodConfig,
+    args_dict: Mapping[str, object],
+) -> Tuple[str, Dict[str, object]]:
+    """
+    Apply the exact same temporary reconstructed-photon algorithm used by
+    --simple data to the reconstructed AAOGEN epgamma sample.
+
+    The only unavoidable difference is event identity:
+      data -> exact (runnum, evnum);
+      MC   -> quantized electron+proton kinematic identity.
+    """
+    start_time = time.perf_counter()
+    args = argparse.Namespace(**args_dict)
+    path = period.pi0_epg_mc
+
+    total_entries, available_keys = require_tree(path)
+    logical_names = (
+        "e_p", "e_theta", "e_phi",
+        "p_p", "p_theta", "p_phi",
+        "p2_p", "p2_theta", "p2_phi",
+    )
+    resolved = resolve_branches_from_keys(
+        path,
+        available_keys,
+        logical_names,
+    )
+    expressions = sorted(set(resolved.values()))
+
+    entry_stop = (
+        min(total_entries, int(args.max_events))
+        if args.max_events is not None
+        else total_entries
+    )
+
+    low_key_chunks: List[np.ndarray] = []
+    low_detector_chunks: List[np.ndarray] = []
+    low_sector_chunks: List[np.ndarray] = []
+    low_probe_E_chunks: List[np.ndarray] = []
+    low_E_chunks: List[np.ndarray] = []
+    low_theta_chunks: List[np.ndarray] = []
+    low_phi_chunks: List[np.ndarray] = []
+
+    high_key_chunks: List[np.ndarray] = []
+    high_E_chunks: List[np.ndarray] = []
+    high_theta_chunks: List[np.ndarray] = []
+    high_phi_chunks: List[np.ndarray] = []
+
+    entries_read = 0
+    finite_identity_entries = 0
+    finite_low_kinematics = 0
+    low_entries_total = 0
+    high_entries_total = 0
+    exactly_2GeV_entries = 0
+
+    for arrays in uproot.iterate(
+        f"{path}:{TREE_NAME}",
+        expressions=expressions,
+        step_size=args.step_size,
+        entry_stop=entry_stop,
+        library="np",
+    ):
+        if not arrays:
+            continue
+        # endif
+
+        chunk_size = len(next(iter(arrays.values())))
+        entries_read += chunk_size
+        values = {
+            name: np.asarray(arrays[resolved[name]], dtype=float)
+            for name in logical_names
+        }
+
+        identity_finite = np.ones(chunk_size, dtype=bool)
+        for name in (
+            "e_p", "e_theta", "e_phi",
+            "p_p", "p_theta", "p_phi",
+        ):
+            identity_finite &= np.isfinite(values[name])
+        # endfor
+        finite_identity_entries += int(
+            np.count_nonzero(identity_finite)
+        )
+
+        photon_E = values["p2_p"]
+        photon_theta = values["p2_theta"]
+        photon_phi = values["p2_phi"]
+
+        finite_photon = (
+            identity_finite
+            & np.isfinite(photon_E)
+            & np.isfinite(photon_theta)
+            & np.isfinite(photon_phi)
+        )
+        low_mask = finite_photon & (photon_E < 2.0)
+        high_mask = finite_photon & (photon_E > 2.0)
+        exactly_mask = finite_photon & (photon_E == 2.0)
+
+        low_entries_total += int(np.count_nonzero(low_mask))
+        high_entries_total += int(np.count_nonzero(high_mask))
+        exactly_2GeV_entries += int(np.count_nonzero(exactly_mask))
+
+        if np.any(high_mask):
+            high_key_chunks.append(
+                simple_mc_event_key(
+                    values,
+                    high_mask,
+                    args.mc_signature_decimals,
+                )
+            )
+            high_E_chunks.append(
+                np.asarray(photon_E[high_mask], dtype=float)
+            )
+            high_theta_chunks.append(
+                np.asarray(photon_theta[high_mask], dtype=float)
+            )
+            high_phi_chunks.append(
+                np.asarray(photon_phi[high_mask], dtype=float)
+            )
+        # endif
+
+        if not np.any(low_mask):
+            continue
+        # endif
+
+        low_required_finite = low_mask.copy()
+        finite_low_kinematics += int(
+            np.count_nonzero(low_required_finite)
+        )
+
+        probe = reconstruct_probe(
+            period.beam_energy_GeV,
+            values["e_p"][low_required_finite],
+            values["e_theta"][low_required_finite],
+            values["e_phi"][low_required_finite],
+            values["p_p"][low_required_finite],
+            values["p_theta"][low_required_finite],
+            values["p_phi"][low_required_finite],
+            photon_E[low_required_finite],
+            photon_theta[low_required_finite],
+            photon_phi[low_required_finite],
+        )
+        predicted_detector, predicted_sector = classify_probe(
+            np.degrees(np.asarray(probe["theta"], dtype=float)),
+            np.asarray(probe["phi"], dtype=float),
+            args,
+        )
+
+        low_key_chunks.append(
+            simple_mc_event_key(
+                values,
+                low_required_finite,
+                args.mc_signature_decimals,
+            )
+        )
+        low_detector_chunks.append(
+            np.asarray(predicted_detector, dtype=np.int16)
+        )
+        low_sector_chunks.append(
+            np.asarray(predicted_sector, dtype=np.int16)
+        )
+        low_probe_E_chunks.append(
+            np.asarray(probe["E"], dtype=float)
+        )
+        low_E_chunks.append(
+            np.asarray(photon_E[low_required_finite], dtype=float)
+        )
+        low_theta_chunks.append(
+            np.asarray(photon_theta[low_required_finite], dtype=float)
+        )
+        low_phi_chunks.append(
+            np.asarray(photon_phi[low_required_finite], dtype=float)
+        )
+    # endfor
+
+    key_dtype = np.dtype([("hash1", "<u8"), ("hash2", "<u8")])
+
+    if low_key_chunks:
+        low_keys = np.concatenate(low_key_chunks)
+        low_detector = np.concatenate(low_detector_chunks)
+        low_sector = np.concatenate(low_sector_chunks)
+        low_probe_E = np.concatenate(low_probe_E_chunks)
+        low_E = np.concatenate(low_E_chunks)
+        low_theta = np.concatenate(low_theta_chunks)
+        low_phi = np.concatenate(low_phi_chunks)
+    else:
+        low_keys = np.empty(0, dtype=key_dtype)
+        low_detector = np.empty(0, dtype=np.int16)
+        low_sector = np.empty(0, dtype=np.int16)
+        low_probe_E = np.empty(0, dtype=float)
+        low_E = np.empty(0, dtype=float)
+        low_theta = np.empty(0, dtype=float)
+        low_phi = np.empty(0, dtype=float)
+    # endif
+
+    if high_key_chunks:
+        high_keys = np.concatenate(high_key_chunks)
+        high_E = np.concatenate(high_E_chunks)
+        high_theta = np.concatenate(high_theta_chunks)
+        high_phi = np.concatenate(high_phi_chunks)
+
+        high_order = np.argsort(
+            high_keys,
+            kind="stable",
+        )
+        high_keys = high_keys[high_order]
+        high_E = high_E[high_order]
+        high_theta = high_theta[high_order]
+        high_phi = high_phi[high_order]
+    else:
+        high_keys = np.empty(0, dtype=key_dtype)
+        high_E = np.empty(0, dtype=float)
+        high_theta = np.empty(0, dtype=float)
+        high_phi = np.empty(0, dtype=float)
+    # endif
+
+    same_event_high_exists = np.zeros(
+        low_keys.size,
+        dtype=bool,
+    )
+    pi0_mass_partner_found = np.zeros(
+        low_keys.size,
+        dtype=bool,
+    )
+
+    if low_keys.size > 0 and high_keys.size > 0:
+        left_indices = np.searchsorted(
+            high_keys,
+            low_keys,
+            side="left",
+        )
+        right_indices = np.searchsorted(
+            high_keys,
+            low_keys,
+            side="right",
+        )
+        same_event_high_exists = right_indices > left_indices
+
+        candidate_low_indices = np.flatnonzero(
+            same_event_high_exists
+        )
+        mass_low_sq = float(PI0_MASS_WINDOW[0]) ** 2
+        mass_high_sq = float(PI0_MASS_WINDOW[1]) ** 2
+
+        for low_index in candidate_low_indices:
+            start = int(left_indices[low_index])
+            stop = int(right_indices[low_index])
+
+            candidate_E = high_E[start:stop]
+            candidate_theta = high_theta[start:stop]
+            candidate_phi = high_phi[start:stop]
+
+            cosine_opening = (
+                math.cos(float(low_theta[low_index]))
+                * np.cos(candidate_theta)
+                + math.sin(float(low_theta[low_index]))
+                * np.sin(candidate_theta)
+                * np.cos(
+                    float(low_phi[low_index]) - candidate_phi
+                )
+            )
+            cosine_opening = np.clip(
+                cosine_opening,
+                -1.0,
+                1.0,
+            )
+
+            mass_squared = (
+                2.0
+                * float(low_E[low_index])
+                * candidate_E
+                * (1.0 - cosine_opening)
+            )
+            if np.any(
+                np.isfinite(mass_squared)
+                & (mass_squared > mass_low_sq)
+                & (mass_squared < mass_high_sq)
+            ):
+                pi0_mass_partner_found[low_index] = True
+            # endif
+        # endfor
+    # endif
+
+    rows: List[Dict[str, object]] = []
+    for region_label, detector_code, sector_code in [
+        ("FT", 0, 0),
+        *[
+            (f"FD sector {sector}", 1, sector)
+            for sector in range(1, 7)
+        ],
+    ]:
+        region_mask = low_detector == detector_code
+        if detector_code == 1:
+            region_mask &= low_sector == sector_code
+        # endif
+
+        expected = int(np.count_nonzero(region_mask))
+        same_event_found = int(
+            np.count_nonzero(
+                region_mask & same_event_high_exists
+            )
+        )
+        found = int(
+            np.count_nonzero(
+                region_mask & pi0_mass_partner_found
+            )
+        )
+        efficiency = (
+            found / expected if expected > 0 else math.nan
+        )
+
+        rows.append(
+            {
+                "period": period.key,
+                "period_label": period.label,
+                "region": region_label,
+                "detector_code": detector_code,
+                "sector": sector_code,
+                "expected_low_energy_tags": expected,
+                "same_event_high_energy_partner": same_event_found,
+                "matched_pi0_mass_partner": found,
+                "efficiency": efficiency,
+                "efficiency_error": simple_binomial_error(
+                    found,
+                    expected,
+                ),
+            }
+        )
+    # endfor
+
+    classified_mask = (
+        (low_detector == 0)
+        | (
+            (low_detector == 1)
+            & (low_sector >= 1)
+            & (low_sector <= 6)
+        )
+    )
+
+    payload: Dict[str, object] = {
+        "period": period.key,
+        "period_label": period.label,
+        "sample": "reconstructed_AAOGEN_epgamma_simple",
+        "path": path,
+        "tree_entries": total_entries,
+        "entries_read": entries_read,
+        "threshold_GeV": 2.0,
+        "pi0_mass_window_GeV": [
+            float(PI0_MASS_WINDOW[0]),
+            float(PI0_MASS_WINDOW[1]),
+        ],
+        "event_identity": (
+            "quantized electron+proton reconstructed kinematics using "
+            f"mc_signature_decimals={args.mc_signature_decimals}"
+        ),
+        "finite_identity_entries": finite_identity_entries,
+        "low_entries_total": low_entries_total,
+        "high_entries_total": high_entries_total,
+        "exactly_2GeV_entries_excluded": exactly_2GeV_entries,
+        "low_entries_with_finite_reconstruction_kinematics": (
+            finite_low_kinematics
+        ),
+        "low_opportunities_built": int(low_keys.size),
+        "high_energy_entries_stored": int(high_keys.size),
+        "low_opportunities_with_same_event_high_partner": int(
+            np.count_nonzero(same_event_high_exists)
+        ),
+        "low_opportunities_with_pi0_mass_partner": int(
+            np.count_nonzero(pi0_mass_partner_found)
+        ),
+        "classified_low_opportunities": int(
+            np.count_nonzero(classified_mask)
+        ),
+        "unclassified_low_opportunities": int(
+            np.count_nonzero(~classified_mask)
+        ),
+        "low_opportunities_with_reconstructed_probe_E_gt_2": int(
+            np.count_nonzero(
+                np.isfinite(low_probe_E)
+                & (low_probe_E > 2.0)
+            )
+        ),
+        "rows": rows,
+        "elapsed_seconds": elapsed_seconds(start_time),
+    }
+
+    return period.key, payload
+
+
+def aggregate_simple_fd(
+    rows: Sequence[Mapping[str, object]],
+) -> Dict[str, float]:
+    """Combine the six FD sectors by summing numerators and denominators."""
+    selected = [
+        row
+        for row in rows
+        if str(row["region"]).startswith("FD sector ")
+    ]
+    expected = int(
+        sum(int(row["expected_low_energy_tags"]) for row in selected)
+    )
+    matched = int(
+        sum(int(row["matched_pi0_mass_partner"]) for row in selected)
+    )
+    efficiency = (
+        matched / expected if expected > 0 else math.nan
+    )
+    return {
+        "expected": expected,
+        "matched": matched,
+        "efficiency": efficiency,
+        "efficiency_error": simple_binomial_error(
+            matched,
+            expected,
+        ),
+    }
+
+
+def simple_ft_row(
+    rows: Sequence[Mapping[str, object]],
+) -> Mapping[str, object]:
+    return next(row for row in rows if row["region"] == "FT")
+
+
+def print_simple_data_mc_final_summary(
+    periods: Sequence[PeriodConfig],
+    data_metadata: Mapping[str, object],
+    simple_mc_metadata: Mapping[str, object],
+) -> None:
+    """
+    Short final --simple comparison using identical reconstructed algorithms.
+    """
+    log("")
+    log("=" * 86)
+    log("FINAL --simple DATA / RECONSTRUCTED-AAOGEN SUMMARY")
+    log(
+        "same reconstructed algorithm on both samples: "
+        "E_low<2 GeV, E_high>2 GeV, 0.11<Mgg<0.16 GeV"
+    )
+    log(
+        f"{'Period':<12s} "
+        f"{'FT data/MC':>12s} "
+        f"{'FD data/MC':>12s} "
+        f"{'FT data':>10s} "
+        f"{'FT MC':>10s} "
+        f"{'FD data':>10s} "
+        f"{'FD MC':>10s}"
+    )
+
+    data_periods = data_metadata["periods"]
+    mc_periods = simple_mc_metadata["periods"]
+
+    for period in periods:
+        data_rows = data_periods[period.key]["rows"]
+        mc_rows = mc_periods[period.key]["rows"]
+
+        data_ft = simple_ft_row(data_rows)
+        mc_ft = simple_ft_row(mc_rows)
+        data_fd = aggregate_simple_fd(data_rows)
+        mc_fd = aggregate_simple_fd(mc_rows)
+
+        data_ft_eff = float(data_ft["efficiency"])
+        mc_ft_eff = float(mc_ft["efficiency"])
+        data_fd_eff = float(data_fd["efficiency"])
+        mc_fd_eff = float(mc_fd["efficiency"])
+
+        ft_ratio = (
+            data_ft_eff / mc_ft_eff
+            if np.isfinite(data_ft_eff)
+            and np.isfinite(mc_ft_eff)
+            and mc_ft_eff > 0.0
+            else math.nan
+        )
+        fd_ratio = (
+            data_fd_eff / mc_fd_eff
+            if np.isfinite(data_fd_eff)
+            and np.isfinite(mc_fd_eff)
+            and mc_fd_eff > 0.0
+            else math.nan
+        )
+
+        log(
+            f"{period.label:<12s} "
+            f"{ft_ratio:12.3f} "
+            f"{fd_ratio:12.3f} "
+            f"{100.0*data_ft_eff:9.2f}% "
+            f"{100.0*mc_ft_eff:9.2f}% "
+            f"{100.0*data_fd_eff:9.2f}% "
+            f"{100.0*mc_fd_eff:9.2f}%"
+        )
+    # endfor
+
+    data_combined_rows = data_metadata["combined_rows"]
+    mc_combined_rows = simple_mc_metadata["combined_rows"]
+
+    data_ft = simple_ft_row(data_combined_rows)
+    mc_ft = simple_ft_row(mc_combined_rows)
+    data_fd = aggregate_simple_fd(data_combined_rows)
+    mc_fd = aggregate_simple_fd(mc_combined_rows)
+
+    data_ft_eff = float(data_ft["efficiency"])
+    mc_ft_eff = float(mc_ft["efficiency"])
+    data_fd_eff = float(data_fd["efficiency"])
+    mc_fd_eff = float(mc_fd["efficiency"])
+
+    ft_ratio = data_ft_eff / mc_ft_eff
+    fd_ratio = data_fd_eff / mc_fd_eff
+
+    log("-" * 86)
+    log(
+        f"{'COMBINED':<12s} "
+        f"{ft_ratio:12.3f} "
+        f"{fd_ratio:12.3f} "
+        f"{100.0*data_ft_eff:9.2f}% "
+        f"{100.0*mc_ft_eff:9.2f}% "
+        f"{100.0*data_fd_eff:9.2f}% "
+        f"{100.0*mc_fd_eff:9.2f}%"
+    )
+    log("=" * 86)
+
 def run_simple_data_efficiency_stage(
     periods: Sequence[PeriodConfig],
     args: argparse.Namespace,
@@ -8863,6 +9440,163 @@ def run_simple_data_efficiency_stage(
 
     return metadata
 
+
+def run_simple_mc_efficiency_stage(
+    periods: Sequence[PeriodConfig],
+    args: argparse.Namespace,
+    workers: int,
+    data_root: Path,
+) -> Dict[str, object]:
+    """
+    Run the identical reconstructed --simple algorithm on AAOGEN epgamma MC.
+    """
+    simple_root = data_root / "simple"
+    simple_root.mkdir(parents=True, exist_ok=True)
+
+    worker_count = max(
+        1,
+        min(int(workers), len(periods), MAX_WORKERS),
+    )
+    log(
+        f"SIMPLE RECONSTRUCTED-AAOGEN COMPARISON: "
+        f"{len(periods)} period(s), {worker_count} worker(s)."
+    )
+
+    payloads: Dict[str, Dict[str, object]] = {}
+
+    if worker_count == 1:
+        for period in periods:
+            key, payload = process_period_simple_mc_efficiency(
+                period,
+                vars(args),
+            )
+            payloads[key] = payload
+        # endfor
+    else:
+        with concurrent.futures.ProcessPoolExecutor(
+            max_workers=worker_count
+        ) as executor:
+            future_map = {
+                executor.submit(
+                    process_period_simple_mc_efficiency,
+                    period,
+                    vars(args),
+                ): period.key
+                for period in periods
+            }
+            for future in concurrent.futures.as_completed(
+                future_map
+            ):
+                key, payload = future.result()
+                payloads[key] = payload
+            # endfor
+        # endwith
+    # endif
+
+    ordered_rows: List[Dict[str, object]] = []
+    for period in periods:
+        payload = payloads[period.key]
+        rows = payload["rows"]
+        ordered_rows.extend(rows)
+        print_simple_data_efficiency_block(
+            f"{period.label} reconstructed AAOGEN",
+            rows,
+        )
+    # endfor
+
+    combined_rows: List[Dict[str, object]] = []
+    for region_label, detector_code, sector_code in [
+        ("FT", 0, 0),
+        *[
+            (f"FD sector {sector}", 1, sector)
+            for sector in range(1, 7)
+        ],
+    ]:
+        selected = [
+            row for row in ordered_rows
+            if row["region"] == region_label
+        ]
+        expected = int(
+            sum(
+                int(row["expected_low_energy_tags"])
+                for row in selected
+            )
+        )
+        same_event = int(
+            sum(
+                int(row["same_event_high_energy_partner"])
+                for row in selected
+            )
+        )
+        matched = int(
+            sum(
+                int(row["matched_pi0_mass_partner"])
+                for row in selected
+            )
+        )
+        efficiency = (
+            matched / expected if expected > 0 else math.nan
+        )
+        combined_rows.append(
+            {
+                "period": "combined",
+                "period_label": "Combined selected periods",
+                "region": region_label,
+                "detector_code": detector_code,
+                "sector": sector_code,
+                "expected_low_energy_tags": expected,
+                "same_event_high_energy_partner": same_event,
+                "matched_pi0_mass_partner": matched,
+                "efficiency": efficiency,
+                "efficiency_error": simple_binomial_error(
+                    matched,
+                    expected,
+                ),
+            }
+        )
+    # endfor
+
+    all_rows = [*ordered_rows, *combined_rows]
+    write_simple_rows_csv(
+        simple_root / "simple_reconstructed_aaogen_efficiency.csv",
+        all_rows,
+    )
+
+    metadata: Dict[str, object] = {
+        "mode": "simple_reconstructed_AAOGEN_comparison",
+        "threshold_GeV": 2.0,
+        "pi0_mass_window_GeV": [
+            float(PI0_MASS_WINDOW[0]),
+            float(PI0_MASS_WINDOW[1]),
+        ],
+        "event_identity": (
+            "quantized reconstructed electron+proton kinematics; "
+            "no truth matching"
+        ),
+        "periods": payloads,
+        "combined_rows": combined_rows,
+        "output_csv": str(
+            simple_root
+            / "simple_reconstructed_aaogen_efficiency.csv"
+        ),
+    }
+    with open(
+        simple_root
+        / "simple_reconstructed_aaogen_efficiency.json",
+        "w",
+        encoding="utf-8",
+    ) as handle:
+        json.dump(
+            metadata,
+            handle,
+            indent=2,
+            default=simple_json_default,
+        )
+    # endwith
+
+    return metadata
+
+
 def preflight_enabled_stages(
     periods: Sequence[PeriodConfig],
     args: argparse.Namespace,
@@ -8877,7 +9611,7 @@ def preflight_enabled_stages(
         }
 
         if args.simple:
-            roles = ["epg_data"]
+            roles = ["epg_data", "pi0_epg_mc"]
         else:
             roles = ["epg_data", "dvcs_mc", "pi0_epg_mc"]
         # endif
@@ -9051,12 +9785,19 @@ def main() -> int:
             workers,
             data_root,
         )
+        simple_mc_metadata = run_simple_mc_efficiency_stage(
+            periods,
+            args,
+            workers,
+            data_root,
+        )
     else:
         data_metadata = run_data_shape_stage(
             periods,
             args,
             workers,
         )
+        simple_mc_metadata = {}
     # endif
 
     mc_rows: List[Dict[str, object]] = []
@@ -9149,6 +9890,7 @@ def main() -> int:
             {
                 "arguments": vars(args),
                 "data_shape_and_multiplicity_stage": data_metadata,
+                "simple_reconstructed_aaogen_stage": simple_mc_metadata,
                 "mc_efficiency_rows": mc_rows,
                 "mc_efficiency_metadata": mc_metadata,
             },
@@ -9156,6 +9898,14 @@ def main() -> int:
             indent=2,
         )
     # endwith
+
+    if args.simple:
+        print_simple_data_mc_final_summary(
+            periods,
+            data_metadata,
+            simple_mc_metadata,
+        )
+    # endif
 
     log(f"Wrote photon-efficiency study outputs to {output_root}")
     return 0
