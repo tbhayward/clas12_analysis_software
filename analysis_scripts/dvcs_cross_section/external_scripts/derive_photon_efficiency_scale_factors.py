@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v015.py
+derive_photon_efficiency_scale_factors_v017.py
 
 Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -95,23 +95,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v015.py
+    python derive_photon_efficiency_scale_factors_v017.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v015.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v017.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v015.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v017.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v015.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v017.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v015.py --angles rad
+    python derive_photon_efficiency_scale_factors_v017.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -897,11 +897,42 @@ def resolution_rows(
 
 
 def write_rows_csv(rows: List[Dict[str, object]], path: Path) -> None:
+    """
+    Write a list of dictionaries whose schemas may legitimately differ.
+
+    Some diagnostic columns (for example closure-test fields) exist only for
+    selected rows.  Therefore deriving fieldnames from rows[0] is unsafe and
+    can fail late, after all expensive physics processing has completed.
+
+    Column order is deterministic: first occurrence of each key while scanning
+    rows in their current order.
+    """
     if not rows:
         return
     #endif
+
+    fieldnames: List[str] = []
+    seen: set[str] = set()
+
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                seen.add(key)
+                fieldnames.append(key)
+            #endif
+        #endfor
+    #endfor
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
     with path.open("w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer = csv.DictWriter(
+            f,
+            fieldnames=fieldnames,
+            extrasaction="ignore",
+            restval="",
+        )
         writer.writeheader()
         writer.writerows(rows)
     #endwith
@@ -1844,13 +1875,29 @@ def make_shared_fit_canvas(period: PeriodConfig, shared_rows: List[Dict[str,obje
     ax[0,0].set_ylabel(r"$f_{\pi^0}$"); ax[0,0].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[0,0].set_ylim(0,1); ax[0,0].legend(fontsize=8); ax[0,0].grid(alpha=.18)
     ax[0,1].plot(x,[r["deviance_per_ndof"] for r in rr],marker="o")
     ax[0,1].set_ylabel("combined Poisson deviance / ndof"); ax[0,1].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[0,1].grid(alpha=.18)
-    for key,label in (("mx2_ep_x_probe_m2_pi0_shift_bins","probe-M2 pi0 shift"),("mx2_ep_x_probe_m2_dvcs_shift_bins","probe-M2 DVCS shift"),("mx2_ep_x_pTmiss_pi0_shift_bins","pTmiss pi0 shift"),("mx2_ep_x_pTmiss_dvcs_shift_bins","pTmiss DVCS shift")):
-        if key in rr[0]: ax[1,0].plot(x,[r.get(key,np.nan) for r in rr],marker=".",label=label)
+    for key, label in (
+        ("mx2_ep_x_probe_m2_pi0_shift_bins", "probe-M2 pi0 shift"),
+        ("mx2_ep_x_probe_m2_dvcs_shift_bins", "probe-M2 DVCS shift"),
+        ("mx2_ep_x_pTmiss_pi0_shift_bins", "pTmiss pi0 shift"),
+        ("mx2_ep_x_pTmiss_dvcs_shift_bins", "pTmiss DVCS shift"),
+    ):
+        values = np.asarray([r.get(key, np.nan) for r in rr], dtype=float)
+        if np.any(np.isfinite(values)):
+            ax[1, 0].plot(x, values, marker=".", label=label)
+        #endif
     #endfor
     ax[1,0].axhline(0,linewidth=.8); ax[1,0].set_ylabel("template shift (bins)"); ax[1,0].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[1,0].legend(fontsize=7); ax[1,0].grid(alpha=.18)
-    for truth in (20,50,80):
-        key=f"closure_bias_{truth}"
-        if key in rr[0]: ax[1,1].plot(x,[r.get(key,np.nan) for r in rr],marker=".",label=f"truth {truth/100:.1f}")
+    for truth in (20, 50, 80):
+        key = f"closure_bias_{truth}"
+        values = np.asarray([r.get(key, np.nan) for r in rr], dtype=float)
+        if np.any(np.isfinite(values)):
+            ax[1, 1].plot(
+                x,
+                values,
+                marker=".",
+                label=f"truth {truth/100:.1f}",
+            )
+        #endif
     #endfor
     ax[1,1].axhline(0,linewidth=.8); ax[1,1].set_ylabel(r"closure $f_{fit}-f_{true}$"); ax[1,1].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[1,1].legend(fontsize=8); ax[1,1].grid(alpha=.18)
     ctl=pi0_control.get("pTmiss",{}); fig.suptitle(f"{period.label}: shared morphed Stage-II composition; pi0 pTmiss control shift={ctl.get('shift_bins',float('nan')):.2f} bins, smear={ctl.get('sigma_bins',float('nan')):.2f} bins",fontsize=13)
@@ -2096,11 +2143,14 @@ def unit_hist(ax, values: np.ndarray, bins: np.ndarray, label: str) -> None:
 
 def sanitize_figure_text(fig, strip_math: bool = False) -> None:
     """
-    Sanitize Matplotlib Text artists before rendering.
+    Sanitize every Matplotlib Text artist before rendering.
 
-    This corrects accidentally doubled LaTeX backslashes such as ``\\otimes``.
-    If strip_math=True, dollar delimiters are removed as a final plain-text
-    fallback. Numerical analysis results are never modified.
+    Development-time plotting bugs have occasionally introduced doubled LaTeX
+    backslashes such as ``\\otimes``.  Collapse those to a single backslash.
+
+    If strip_math=True, remove dollar delimiters as a last-resort plain-text
+    fallback.  This changes presentation only; physics arrays and fit results
+    are untouched.
     """
     from matplotlib.text import Text
 
@@ -2131,10 +2181,19 @@ def safe_finalize_figure(
     rect: Tuple[float, float, float, float] = (0.0, 0.0, 1.0, 0.96),
 ) -> None:
     """
-    Save a figure without allowing presentation-only MathText/layout problems
-    to abort completed physics processing.
+    Best-effort figure renderer.
+
+    A plot-label or layout problem must never terminate a multi-period physics
+    job after the numerical results have already been computed.
+
+    Attempts:
+      1. sanitize MathText, tight_layout, save;
+      2. sanitize again, manual subplot spacing, save;
+      3. strip MathText dollar delimiters and save as plain text;
+      4. log and skip this one canvas.
     """
     output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     sanitize_figure_text(fig, strip_math=False)
 
@@ -2145,7 +2204,6 @@ def safe_finalize_figure(
             f"WARNING: tight_layout failed for {output_path.name}: {exc}. "
             "Using manual subplot spacing."
         )
-        sanitize_figure_text(fig, strip_math=False)
         fig.subplots_adjust(
             left=0.08,
             right=0.97,
@@ -2161,7 +2219,7 @@ def safe_finalize_figure(
         return
     except Exception as exc:
         log(
-            f"WARNING: first save attempt failed for {output_path.name}: {exc}. "
+            f"WARNING: first render failed for {output_path.name}: {exc}. "
             "Retrying after text sanitization."
         )
     #endtry
@@ -2181,18 +2239,18 @@ def safe_finalize_figure(
         return
     except Exception as exc:
         log(
-            f"WARNING: sanitized save failed for {output_path.name}: {exc}. "
+            f"WARNING: sanitized render failed for {output_path.name}: {exc}. "
             "Retrying with plain-text labels."
         )
     #endtry
 
     sanitize_figure_text(fig, strip_math=True)
+
     try:
         fig.savefig(output_path, dpi=180)
     except Exception as exc:
         log(
-            f"WARNING: unable to save {output_path.name} even with plain-text "
-            f"labels: {exc}. Skipping this canvas."
+            f"WARNING: skipping unsavable canvas {output_path.name}: {exc}"
         )
     #endtry
 
@@ -2713,8 +2771,7 @@ def save_hist(
         ax.set_yscale("log")
     #endif
     ax.grid(alpha=0.20)
-    fig.tight_layout()
-    fig.savefig(path, dpi=180)
+    safe_finalize_figure(fig, Path(path), rect=(0, 0, 1, 1))
     plt.close(fig)
 
 
@@ -2752,8 +2809,7 @@ def save_hist2d(
         ax.set_ylim(*ylim)
     #endif
     ax.grid(alpha=0.12)
-    fig.tight_layout()
-    fig.savefig(path, dpi=180)
+    safe_finalize_figure(fig, Path(path), rect=(0, 0, 1, 1))
     plt.close(fig)
 
 
@@ -2967,8 +3023,11 @@ def make_plots(
         f"({nclean:,}/{nall:,} = {100.0*nclean/max(nall,1):.1f}%)",
         fontsize=15,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(outdir / "canvas_clean_tag_association.png", dpi=180)
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_clean_tag_association.png",
+        rect=(0, 0, 1, 0.96),
+    )
     plt.close(fig)
 
     # ------------------------------------------------------------------
@@ -3019,8 +3078,11 @@ def make_plots(
     axes[1, 1].set_title("Angular resolution vs predicted energy")
 
     fig.suptitle(f"{title}: clean-sample probe prediction resolution", fontsize=15)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(outdir / "canvas_clean_probe_resolution.png", dpi=180)
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_clean_probe_resolution.png",
+        rect=(0, 0, 1, 0.96),
+    )
     plt.close(fig)
 
     # ------------------------------------------------------------------
@@ -3069,8 +3131,11 @@ def make_plots(
         f"{title}: candidate angular matching containment by predicted region",
         fontsize=15,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(outdir / "canvas_matching_resolution_quantiles.png", dpi=180)
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_matching_resolution_quantiles.png",
+        rect=(0, 0, 1, 0.96),
+    )
     plt.close(fig)
 
     # ------------------------------------------------------------------
@@ -3096,8 +3161,11 @@ def make_plots(
         f"{title}: exclusivity diagnostics after reconstructed-side association",
         fontsize=15,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(outdir / "canvas_exclusivity_after_clean_association.png", dpi=180)
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_exclusivity_after_clean_association.png",
+        rect=(0, 0, 1, 0.96),
+    )
     plt.close(fig)
 # -----------------------------------------------------------------------------
 # Summaries
@@ -3244,6 +3312,240 @@ def write_summary_csv(summaries: List[Dict[str, object]], path: Path) -> None:
         writer = csv.DictWriter(f, fieldnames=keys)
         writer.writeheader()
         writer.writerows(summaries)
+
+
+
+def read_csv_rows(path: Path) -> List[Dict[str, object]]:
+    path = Path(path)
+    if not path.exists():
+        return []
+    #endif
+    with path.open(newline="") as f:
+        return [dict(row) for row in csv.DictReader(f)]
+    #endwith
+
+
+def run_internal_self_tests(output_root: Path) -> None:
+    """
+    Fast startup tests for the two classes of late failures encountered during
+    development: heterogeneous CSV row schemas and malformed MathText.
+    """
+    test_dir = Path(output_root) / ".photon_efficiency_selftest"
+    test_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = test_dir / "rows.csv"
+    png_path = test_dir / "mathtext.png"
+
+    try:
+        rows = [
+            {"period": "selftest", "region": "FD_S1", "pi0_fraction": 0.70},
+            {
+                "period": "selftest",
+                "region": "all",
+                "pi0_fraction": 0.80,
+                "closure_truth_20": 0.20,
+                "closure_fit_20": 0.21,
+                "closure_bias_20": 0.01,
+            },
+        ]
+        write_rows_csv(rows, csv_path)
+        loaded = read_csv_rows(csv_path)
+
+        if len(loaded) != 2:
+            raise RuntimeError("CSV self-test returned wrong row count.")
+        #endif
+        if "closure_bias_20" not in loaded[0]:
+            raise RuntimeError("CSV self-test did not preserve union schema.")
+        #endif
+        if loaded[1].get("closure_bias_20", "") == "":
+            raise RuntimeError("CSV self-test lost closure value.")
+        #endif
+
+        fig, ax = plt.subplots(figsize=(4.0, 3.0))
+        ax.plot(
+            [0.0, 1.0],
+            [0.0, 1.0],
+            label=r"raw $M_X^2\\otimes M_{probe}^2$",
+        )
+        ax.set_ylabel(r"$f_{\\pi^0}$")
+        ax.legend()
+        safe_finalize_figure(fig, png_path, rect=(0, 0, 1, 1))
+        plt.close(fig)
+
+        if not png_path.exists() or png_path.stat().st_size <= 0:
+            raise RuntimeError("MathText-safe renderer self-test failed.")
+        #endif
+
+        log(
+            "Internal self-tests passed: heterogeneous CSV writing and "
+            "MathText-safe rendering."
+        )
+    finally:
+        for candidate in (csv_path, png_path):
+            try:
+                if candidate.exists():
+                    candidate.unlink()
+                #endif
+            except OSError:
+                pass
+            #endtry
+        #endfor
+        try:
+            if test_dir.exists():
+                test_dir.rmdir()
+            #endif
+        except OSError:
+            pass
+        #endtry
+    #endtry
+
+
+def aggregate_existing_outputs(
+    selected: Sequence[PeriodConfig],
+    stage1_outroot: Path,
+    stage2_outroot: Path,
+    include_stage2: bool,
+) -> None:
+    """Rebuild aggregate files from existing per-period outputs only."""
+    order = {p.key: i for i, p in enumerate(selected)}
+
+    stage1_summaries: List[Dict[str, object]] = []
+    resolution_rows: List[Dict[str, object]] = []
+    stage2_summaries: List[Dict[str, object]] = []
+    disc_rows: List[Dict[str, object]] = []
+    spread_rows: List[Dict[str, object]] = []
+    mixed_rows: List[Dict[str, object]] = []
+    shared_rows: List[Dict[str, object]] = []
+    missing: List[str] = []
+
+    for period in selected:
+        p1 = Path(stage1_outroot) / period.key
+        s1 = p1 / "stage1_summary.json"
+        if s1.exists():
+            with s1.open() as f:
+                stage1_summaries.append(json.load(f))
+            #endwith
+        else:
+            missing.append(str(s1))
+        #endif
+
+        resolution_rows.extend(
+            read_csv_rows(p1 / "probe_resolution_by_energy_region.csv")
+        )
+
+        if include_stage2:
+            p2 = Path(stage2_outroot) / period.key
+            s2 = p2 / "stage2_summary.json"
+            if s2.exists():
+                with s2.open() as f:
+                    stage2_summaries.append(json.load(f))
+                #endwith
+            else:
+                missing.append(str(s2))
+            #endif
+
+            disc_rows.extend(
+                read_csv_rows(p2 / "denominator_discriminator_fits.csv")
+            )
+            spread_rows.extend(
+                read_csv_rows(p2 / "denominator_discriminator_spread.csv")
+            )
+            mixed_rows.extend(
+                read_csv_rows(p2 / "mixed_component_diagnostics.csv")
+            )
+            shared_rows.extend(
+                read_csv_rows(p2 / "denominator_shared_morphed_fits.csv")
+            )
+        #endif
+    #endfor
+
+    if missing:
+        raise FileNotFoundError(
+            "--aggregate-only is missing required per-period files:\n  "
+            + "\n  ".join(missing)
+        )
+    #endif
+
+    stage1_summaries.sort(
+        key=lambda r: order.get(str(r.get("period", "")), 999)
+    )
+    write_summary_csv(
+        stage1_summaries,
+        Path(stage1_outroot) / "stage1_summary.csv",
+    )
+
+    if resolution_rows:
+        resolution_rows.sort(
+            key=lambda r: (
+                order.get(str(r.get("period", "")), 999),
+                str(r.get("region", "")),
+                float(r.get("energy_low_GeV", "nan")),
+            )
+        )
+        write_rows_csv(
+            resolution_rows,
+            Path(stage1_outroot) / "probe_resolution_by_energy_region.csv",
+        )
+    #endif
+
+    with (Path(stage1_outroot) / "stage1_summary.json").open("w") as f:
+        json.dump(
+            {
+                "aggregation_mode": "aggregate-only",
+                "period_summaries": stage1_summaries,
+            },
+            f,
+            indent=2,
+            allow_nan=True,
+        )
+    #endwith
+
+    if include_stage2:
+        stage2_summaries.sort(
+            key=lambda r: order.get(str(r.get("period", "")), 999)
+        )
+        write_summary_csv(
+            stage2_summaries,
+            Path(stage2_outroot) / "stage2_summary.csv",
+        )
+
+        def _sort(rows: List[Dict[str, object]]) -> None:
+            rows.sort(
+                key=lambda r: (
+                    order.get(str(r.get("period", "")), 999),
+                    str(r.get("region", "")),
+                    float(r.get("energy_low_GeV", "nan")),
+                    str(r.get("discriminator", "")),
+                    str(r.get("mix_shift", "")),
+                )
+            )
+        #enddef
+
+        for rows, filename in (
+            (disc_rows, "denominator_discriminator_fits.csv"),
+            (spread_rows, "denominator_discriminator_spread.csv"),
+            (mixed_rows, "mixed_component_diagnostics.csv"),
+            (shared_rows, "denominator_shared_morphed_fits.csv"),
+        ):
+            if rows:
+                _sort(rows)
+                write_rows_csv(rows, Path(stage2_outroot) / filename)
+            #endif
+        #endfor
+
+        with (Path(stage2_outroot) / "stage2_summary.json").open("w") as f:
+            json.dump(
+                {
+                    "aggregation_mode": "aggregate-only",
+                    "period_summaries": stage2_summaries,
+                },
+                f,
+                indent=2,
+                allow_nan=True,
+            )
+        #endwith
+    #endif
+
+    log("Aggregate-only recovery completed successfully.")
 
 
 # -----------------------------------------------------------------------------
@@ -3569,6 +3871,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--morph-sigma-prior-bins", type=float, default=1.0, help="Gaussian prior width for additional template smearing in histogram bins. Default: 1.0.")
     parser.add_argument("--morph-max-shift-bins", type=float, default=4.0, help="Hard bound on template shifts in histogram bins. Default: 4.0.")
     parser.add_argument("--morph-max-sigma-bins", type=float, default=4.0, help="Hard bound on additional template smearing in histogram bins. Default: 4.0.")
+    parser.add_argument(
+        "--aggregate-only",
+        action="store_true",
+        help=(
+            "Do not reread ROOT files. Rebuild top-level aggregate CSV/JSON "
+            "outputs from completed per-period files."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -3829,6 +4139,10 @@ def process_period(
             float(args_dict["morph_max_shift_bins"]), float(args_dict["morph_max_sigma_bins"]),
         )
         write_rows_csv(shared_rows, stage2_dir / "denominator_shared_morphed_fits.csv")
+        log(
+            f"{period.label}: wrote per-period shared-morphed numerical results "
+            f"({len(shared_rows)} rows) before canvas rendering."
+        )
         make_shared_fit_canvas(period, shared_rows, stage2_rows, pi0_control, stage2_dir)
 
         stage2_spread_rows = discriminator_spread_rows(stage2_rows)
@@ -3990,6 +4304,18 @@ def main() -> int:
     stage2_outroot = Path(args.stage2_output_dir)
     if not args.stage1_only:
         stage2_outroot.mkdir(parents=True, exist_ok=True)
+    #endif
+
+    run_internal_self_tests(outroot)
+
+    if args.aggregate_only:
+        aggregate_existing_outputs(
+            selected=selected,
+            stage1_outroot=outroot,
+            stage2_outroot=stage2_outroot,
+            include_stage2=not args.stage1_only,
+        )
+        return 0
     #endif
 
     log(
