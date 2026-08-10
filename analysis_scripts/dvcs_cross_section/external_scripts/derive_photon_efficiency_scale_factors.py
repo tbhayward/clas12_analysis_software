@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v020.py
+derive_photon_efficiency_scale_factors_v021.py
 
 Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -96,23 +96,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v020.py
+    python derive_photon_efficiency_scale_factors_v021.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v020.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v021.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v020.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v021.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v020.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v021.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v020.py --angles rad
+    python derive_photon_efficiency_scale_factors_v021.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -139,7 +139,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import uproot
 from scipy.spatial import cKDTree
-from scipy.optimize import minimize
+from scipy.optimize import minimize, minimize_scalar
 from scipy.ndimage import gaussian_filter1d, shift as ndimage_shift
 
 
@@ -1163,6 +1163,9 @@ def stage2_region_mask(
     if region_name == "FT":
         return theta <= ft_theta_max
     #endif
+    if region_name == "FD_all":
+        return (theta > ft_theta_max) & (sector >= 1) & (sector <= 6)
+    #endif
     if region_name.startswith("FD_S"):
         s = int(region_name[-1])
         return (theta > ft_theta_max) & (sector == s)
@@ -1489,7 +1492,7 @@ def run_stage2_discriminator_fits(
     robustness test.
     """
     edges = stage2_energy_edges(max_probe_energy)
-    regions = ["all", "FT"] + [f"FD_S{s}" for s in range(1, 7)]
+    regions = ["all", "FT", "FD_all"] + [f"FD_S{s}" for s in range(1, 7)]
     rows: List[Dict[str, object]] = []
 
     for region_name in regions:
@@ -1864,7 +1867,7 @@ def build_pi0_control_validation(
     """
     Reconstructed-eppi0 data/aaogen control validation.
 
-    IMPORTANT: v020 does NOT feed this calibration into the denominator fit.
+    IMPORTANT: v021 does NOT feed this calibration into the denominator fit.
     The previous full-range Gaussian-smearing calibration saturated at its hard
     bound and failed goodness-of-fit, so it is retained only as a diagnostic.
     """
@@ -2214,93 +2217,301 @@ def make_pi0_control_canvases(
     #endif
 
 
-def fit_shared_morphed_composition(histograms: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
-                                   pi0_control: Dict[str, object],
-                                   nuisance_shift_prior: float,
-                                   nuisance_sigma_prior: float,
-                                   max_shift_bins: float,
-                                   max_sigma_bins: float) -> SharedMorphedFitResult:
+def fit_shared_morphed_composition(
+    histograms: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    pi0_control: Dict[str, object],
+    nuisance_shift_prior: float,
+    nuisance_sigma_prior: float,
+    max_shift_bins: float,
+    max_sigma_bins: float,
+) -> SharedMorphedFitResult:
     """
-    Composite profile-likelihood fit with one shared pi0 fraction.
+    Shared two-driver composition fit with profile-initialized template morphing.
 
-    v020 deliberately uses ZERO-CENTERED weak morphing priors for every driver.
-    The reconstructed-eppi0 control calibration is diagnostic only because the
-    previous full-range pTmiss calibration saturated its hard smearing bound and
-    failed goodness-of-fit.  The argument is retained for provenance/closure API
-    stability, but it does not alter nuisance centers.
+    The earlier simultaneous L-BFGS-B fit frequently remained exactly at the
+    zero-smearing boundary even when explicit profile scans strongly preferred
+    non-zero smearing.  v021 therefore uses:
+
+      1. zero-centered weak nuisance priors;
+      2. one-coordinate-at-a-time grid profiling with f_pi0 re-profiled at
+         every candidate point;
+      3. repeated sweeps until stable;
+      4. optional continuous L-BFGS-B refinement starting from the non-zero
+         profiled solution.
+
+    The reconstructed-eppi0 control remains diagnostic-only.
     """
     names = [n for n in STAGE2_DRIVER_DISCRIMINATORS if n in histograms]
     if not names:
         return SharedMorphedFitResult(False, "no available driver discriminators")
     #endif
-    x0 = [math.log(0.7 / 0.3)]
-    bounds = [(-8.0, 8.0)]
-    centers: List[Tuple[float, float, float, float]] = []
+
+    data_hists = {
+        name: np.asarray(histograms[name][0], dtype=float)
+        for name in names
+    }
+
+    # Nuisance state is stored explicitly by (driver, component, nuisance).
+    nuisance_state: Dict[str, float] = {}
     for name in names:
-        centers.append((0.0, 0.0, 0.0, 0.0))
-        x0.extend([0.0, 0.0, 0.0, 0.0])
-        bounds.extend([
-            (-max_shift_bins, max_shift_bins), (0.0, max_sigma_bins),
-            (-max_shift_bins, max_shift_bins), (0.0, max_sigma_bins),
-        ])
+        for component in ("pi0", "dvcs"):
+            nuisance_state[f"{name}_{component}_shift_bins"] = 0.0
+            nuisance_state[f"{name}_{component}_sigma_bins"] = 0.0
+        #endfor
     #endfor
 
-    def unpack_fraction(z: float) -> float:
-        return 1.0 / (1.0 + math.exp(-float(z)))
+    shift_grid = np.arange(
+        -float(max_shift_bins),
+        float(max_shift_bins) + 0.5,
+        1.0,
+        dtype=float,
+    )
+    sigma_grid = np.arange(
+        0.0,
+        float(max_sigma_bins) + 0.25,
+        0.5,
+        dtype=float,
+    )
+
+    def morphed_templates(
+        state: Dict[str, float],
+    ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+        tp: Dict[str, np.ndarray] = {}
+        td: Dict[str, np.ndarray] = {}
+        for name in names:
+            _, hp, hv = histograms[name]
+            tp[name] = morph_template_second_axis(
+                hp,
+                state[f"{name}_pi0_shift_bins"],
+                state[f"{name}_pi0_sigma_bins"],
+            )
+            td[name] = morph_template_second_axis(
+                hv,
+                state[f"{name}_dvcs_shift_bins"],
+                state[f"{name}_dvcs_sigma_bins"],
+            )
+        #endfor
+        return tp, td
     #enddef
 
-    def objective(x: np.ndarray) -> float:
-        f = unpack_fraction(x[0])
-        total_nll = 0.0
+    def nuisance_penalty(state: Dict[str, float]) -> float:
         penalty = 0.0
-        k = 1
-        for idx, name in enumerate(names):
-            hd, hp, hv = histograms[name]
-            ps, pg, ds, dg = map(float, x[k:k+4]); k += 4
-            tp = morph_template_second_axis(hp, ps, pg).ravel()
-            td = morph_template_second_axis(hv, ds, dg).ravel()
-            data = np.asarray(hd, dtype=float).ravel()
-            nd = float(np.sum(data))
-            mu = np.clip(nd * (f * tp + (1.0 - f) * td), 1.0e-12, None)
-            total_nll += float(np.sum(mu - data * np.log(mu))) / len(names)
-            c = centers[idx]
-            penalty += 0.5 * ((ps-c[0])/nuisance_shift_prior)**2
-            penalty += 0.5 * ((pg-c[1])/nuisance_sigma_prior)**2
-            penalty += 0.5 * ((ds-c[2])/nuisance_shift_prior)**2
-            penalty += 0.5 * ((dg-c[3])/nuisance_sigma_prior)**2
+        for key, value in state.items():
+            width = (
+                nuisance_sigma_prior
+                if key.endswith("_sigma_bins")
+                else nuisance_shift_prior
+            )
+            penalty += 0.5 * (float(value) / float(width)) ** 2
         #endfor
-        return total_nll + penalty
+        return float(penalty)
+    #enddef
+
+    def profiled_objective(
+        state: Dict[str, float],
+    ) -> Tuple[float, float]:
+        tp, td = morphed_templates(state)
+        f_prof, nll = _profile_fraction_for_templates(
+            data_hists,
+            tp,
+            td,
+        )
+        return f_prof, float(nll + nuisance_penalty(state))
+    #enddef
+
+    f_best, objective_best = profiled_objective(nuisance_state)
+
+    # Alternating coordinate-profile sweeps.
+    max_sweeps = 4
+    for sweep in range(max_sweeps):
+        changed = False
+
+        for name in names:
+            for component in ("pi0", "dvcs"):
+                for nuisance in ("shift", "sigma"):
+                    key = f"{name}_{component}_{nuisance}_bins"
+                    grid = shift_grid if nuisance == "shift" else sigma_grid
+
+                    current_value = float(nuisance_state[key])
+                    candidate_values = np.unique(
+                        np.concatenate((grid, np.asarray([current_value])))
+                    )
+
+                    best_local_value = current_value
+                    best_local_f = f_best
+                    best_local_objective = objective_best
+
+                    for candidate in candidate_values:
+                        trial = dict(nuisance_state)
+                        trial[key] = float(candidate)
+                        f_trial, objective_trial = profiled_objective(trial)
+
+                        if objective_trial < best_local_objective - 1.0e-8:
+                            best_local_value = float(candidate)
+                            best_local_f = float(f_trial)
+                            best_local_objective = float(objective_trial)
+                        #endif
+                    #endfor
+
+                    if abs(best_local_value - current_value) > 1.0e-10:
+                        nuisance_state[key] = best_local_value
+                        f_best = best_local_f
+                        objective_best = best_local_objective
+                        changed = True
+                    #endif
+                #endfor
+            #endfor
+        #endfor
+
+        if not changed:
+            break
+        #endif
+    #endfor
+
+    # Record the profile-grid initialization before continuous refinement.
+    profile_initial = dict(nuisance_state)
+    profile_initial_f = float(f_best)
+    profile_initial_objective = float(objective_best)
+
+    # Continuous local refinement starts from the profile solution rather than
+    # from the problematic all-zero boundary.
+    x0 = [math.log(profile_initial_f / (1.0 - profile_initial_f))]
+    bounds = [(-8.0, 8.0)]
+    ordered_keys: List[str] = []
+
+    for name in names:
+        for component in ("pi0", "dvcs"):
+            for nuisance in ("shift", "sigma"):
+                key = f"{name}_{component}_{nuisance}_bins"
+                ordered_keys.append(key)
+                x0.append(profile_initial[key])
+                if nuisance == "shift":
+                    bounds.append((-max_shift_bins, max_shift_bins))
+                else:
+                    bounds.append((0.0, max_sigma_bins))
+                #endif
+            #endfor
+        #endfor
+    #endfor
+
+    def continuous_objective(x: np.ndarray) -> float:
+        f = 1.0 / (1.0 + math.exp(-float(x[0])))
+        state = {
+            key: float(value)
+            for key, value in zip(ordered_keys, x[1:])
+        }
+        tp, td = morphed_templates(state)
+
+        total_nll = 0.0
+        for name in names:
+            data = data_hists[name].ravel()
+            nd = float(np.sum(data))
+            mu = np.clip(
+                nd * (
+                    f * tp[name].ravel()
+                    + (1.0 - f) * td[name].ravel()
+                ),
+                1.0e-12,
+                None,
+            )
+            total_nll += float(
+                np.sum(mu - data * np.log(mu))
+            ) / len(names)
+        #endfor
+
+        return float(total_nll + nuisance_penalty(state))
     #enddef
 
     res = minimize(
-        objective,
+        continuous_objective,
         np.asarray(x0, dtype=float),
         method="L-BFGS-B",
         bounds=bounds,
-        options={"maxiter": 700, "ftol": 1.0e-10, "maxls": 40},
+        options={"maxiter": 500, "ftol": 1.0e-10, "maxls": 40},
     )
-    f = unpack_fraction(res.x[0])
-    nuisance: Dict[str, float] = {"control_prior_applied": 0.0}
-    total_dev, total_ndof = 0.0, 0
-    k = 1
+
+    # Use the continuous result only if it actually improves the profiled
+    # coordinate solution. This prevents a local optimizer regression.
+    use_continuous = (
+        bool(res.success)
+        and np.isfinite(res.fun)
+        and float(res.fun) <= profile_initial_objective + 1.0e-8
+    )
+
+    if use_continuous:
+        f_final = 1.0 / (1.0 + math.exp(-float(res.x[0])))
+        final_state = {
+            key: float(value)
+            for key, value in zip(ordered_keys, res.x[1:])
+        }
+        objective_final = float(res.fun)
+        message = (
+            "profile-grid initialization + continuous refinement: "
+            + str(res.message)
+        )
+    else:
+        f_final = profile_initial_f
+        final_state = profile_initial
+        objective_final = profile_initial_objective
+        message = (
+            "profile-grid/alternating solution retained; continuous refinement "
+            "did not improve the objective"
+        )
+    #endif
+
+    nuisance: Dict[str, float] = {
+        "control_prior_applied": 0.0,
+        "profile_initialized": 1.0,
+        "profile_initial_pi0_fraction": profile_initial_f,
+        "profile_initial_objective": profile_initial_objective,
+        "continuous_refinement_used": float(use_continuous),
+    }
+    nuisance.update(final_state)
+
+    # Preserve the grid-initial values for direct debugging.
+    for key, value in profile_initial.items():
+        nuisance[f"{key}_profile_initial"] = float(value)
+    #endfor
+
+    total_dev = 0.0
+    total_ndof = 0
+
     for name in names:
         hd, hp, hv = histograms[name]
-        ps, pg, ds, dg = map(float, res.x[k:k+4]); k += 4
-        nuisance[f"{name}_pi0_shift_bins"] = ps
-        nuisance[f"{name}_pi0_sigma_bins"] = pg
-        nuisance[f"{name}_dvcs_shift_bins"] = ds
-        nuisance[f"{name}_dvcs_sigma_bins"] = dg
-        tp = morph_template_second_axis(hp, ps, pg).ravel()
-        td = morph_template_second_axis(hv, ds, dg).ravel()
-        data = np.asarray(hd, dtype=float).ravel(); nd = float(np.sum(data))
-        dev, ndof = poisson_deviance_quality(data, nd*(f*tp+(1-f)*td), 1+4*len(names))
-        nuisance[f"{name}_deviance_per_ndof"] = float(dev/ndof)
-        total_dev += dev; total_ndof += ndof
+        tp = morph_template_second_axis(
+            hp,
+            final_state[f"{name}_pi0_shift_bins"],
+            final_state[f"{name}_pi0_sigma_bins"],
+        ).ravel()
+        td = morph_template_second_axis(
+            hv,
+            final_state[f"{name}_dvcs_shift_bins"],
+            final_state[f"{name}_dvcs_sigma_bins"],
+        ).ravel()
+        data = np.asarray(hd, dtype=float).ravel()
+        nd = float(np.sum(data))
+        mu = nd * (f_final * tp + (1.0 - f_final) * td)
+
+        dev, ndof = poisson_deviance_quality(
+            data,
+            mu,
+            1 + 4 * len(names),
+        )
+        nuisance[f"{name}_deviance_per_ndof"] = float(dev / ndof)
+        total_dev += dev
+        total_ndof += ndof
     #endfor
+
     return SharedMorphedFitResult(
-        bool(res.success), str(res.message), f, float(res.fun),
-        float(total_dev), int(total_ndof), nuisance,
+        True,
+        message,
+        float(f_final),
+        objective_final,
+        float(total_dev),
+        int(total_ndof),
+        nuisance,
     )
+
 
 
 def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.ndarray], pi0_f: Dict[str,np.ndarray],
@@ -2310,7 +2521,7 @@ def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.nda
                                    ptmiss_max: float, ptmiss_bins: int, theta_max: float, theta_bins: int,
                                    min_data_count: int, min_template_count: int, nuisance_shift_prior: float,
                                    nuisance_sigma_prior: float, max_shift_bins: float, max_sigma_bins: float) -> List[Dict[str,object]]:
-    edges=stage2_energy_edges(max_probe_energy); regions=["all","FT"]+[f"FD_S{s}" for s in range(1,7)]
+    edges=stage2_energy_edges(max_probe_energy); regions=["all","FT","FD_all"]+[f"FD_S{s}" for s in range(1,7)]
     rows=[]
     for region in regions:
         for ib in range(len(edges)-1):
@@ -2368,39 +2579,48 @@ def _profile_fraction_for_templates(
     dvcs_templates: Dict[str, np.ndarray],
 ) -> Tuple[float, float]:
     """
-    Profile only the shared pi0 fraction for a fixed set of morphed templates.
+    Profile only the shared pi0 fraction for fixed morphed templates.
 
-    Returns (best_fraction, objective). The same equal-driver composite
-    likelihood convention as the shared fit is used.
+    A bounded one-dimensional minimization is substantially faster and more
+    robust here than running L-BFGS-B on a logit parameter thousands of times
+    during nuisance scans.
     """
     names = [n for n in STAGE2_DRIVER_DISCRIMINATORS if n in data_hists]
     if not names:
         return float("nan"), float("nan")
     #endif
 
-    def objective_z(z: np.ndarray) -> float:
-        f = 1.0 / (1.0 + math.exp(-float(z[0])))
+    prepared = []
+    for name in names:
+        data = np.asarray(data_hists[name], dtype=float).ravel()
+        tp = np.asarray(pi0_templates[name], dtype=float).ravel()
+        td = np.asarray(dvcs_templates[name], dtype=float).ravel()
+        nd = float(np.sum(data))
+        prepared.append((data, tp, td, nd))
+    #endfor
+
+    def objective_f(f: float) -> float:
+        ff = float(np.clip(f, 3.0e-4, 1.0 - 3.0e-4))
         total = 0.0
-        for name in names:
-            data = np.asarray(data_hists[name], dtype=float).ravel()
-            tp = np.asarray(pi0_templates[name], dtype=float).ravel()
-            td = np.asarray(dvcs_templates[name], dtype=float).ravel()
-            nd = float(np.sum(data))
-            mu = np.clip(nd * (f * tp + (1.0 - f) * td), 1.0e-12, None)
-            total += float(np.sum(mu - data * np.log(mu))) / len(names)
+        for data, tp, td, nd in prepared:
+            mu = np.clip(
+                nd * (ff * tp + (1.0 - ff) * td),
+                1.0e-12,
+                None,
+            )
+            total += float(np.sum(mu - data * np.log(mu))) / len(prepared)
         #endfor
         return total
     #enddef
 
-    result = minimize(
-        objective_z,
-        np.asarray([math.log(0.7 / 0.3)], dtype=float),
-        method="L-BFGS-B",
-        bounds=((-8.0, 8.0),),
-        options={"maxiter": 120, "ftol": 1.0e-11},
+    result = minimize_scalar(
+        objective_f,
+        bounds=(3.0e-4, 1.0 - 3.0e-4),
+        method="bounded",
+        options={"xatol": 1.0e-7, "maxiter": 120},
     )
-    f = 1.0 / (1.0 + math.exp(-float(result.x[0])))
-    return float(f), float(result.fun)
+    return float(result.x), float(result.fun)
+
 
 
 def run_stage2_morph_profile_scans(
@@ -2724,8 +2944,381 @@ def make_shared_fit_canvas(period: PeriodConfig, shared_rows: List[Dict[str,obje
     ax[1,1].axhline(0,linewidth=.8); ax[1,1].set_ylabel(r"closure $f_{\mathrm{fit}}-f_{\mathrm{true}}$"); ax[1,1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"); ax[1,1].legend(fontsize=8); ax[1,1].grid(alpha=.18)
     core=pi0_control.get("robust_core_global",{}) if isinstance(pi0_control,dict) else {}
     sadd=core.get("sigma_add_core_GeV",float("nan")) if isinstance(core,dict) else float("nan")
-    fig.suptitle(f"{period.label}: shared morphed Stage-II composition; eppi0 control diagnostic sigma_add(core)={sadd:.4f} GeV; control prior NOT applied",fontsize=12.5)
+    fig.suptitle(
+        f"{period.label}: shared morphed Stage-II composition (each FT/FD region fitted independently); "
+        f"eppi0 control sigma_add(core)={sadd:.4f} GeV; control prior NOT applied",
+        fontsize=12.2,
+    )
     safe_finalize_figure(fig,outdir/"canvas_shared_morphed_composition.png",rect=(0,0,1,.95)); plt.close(fig)
+
+
+
+def make_ft_fd_composition_canvas(
+    period: PeriodConfig,
+    shared_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """
+    Make the fitted composition distinction between FT and FD unmistakable.
+
+    Left panel:
+      FT pi0 and BH/DVCS fractions.
+
+    Right panel:
+      FD-all BH/DVCS fraction plus the six individual FD-sector BH/DVCS
+      fractions. Since BH/DVCS and pi0 sum to unity, this directly displays the
+      expected larger BH/DVCS contribution in FT without conflating it with a
+      template-shape problem.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.7))
+
+    ft = sorted(
+        [
+            r for r in shared_rows
+            if r["region"] == "FT"
+            and int(r["fit_success"]) == 1
+            and np.isfinite(r["pi0_fraction"])
+        ],
+        key=lambda r: float(r["energy_center_GeV"]),
+    )
+
+    if ft:
+        x = [r["energy_center_GeV"] for r in ft]
+        fpi0 = [r["pi0_fraction"] for r in ft]
+        fbh = [r["dvcs_fraction"] for r in ft]
+        axes[0].plot(x, fbh, marker="o", label="BH/DVCS")
+        axes[0].plot(x, fpi0, marker="o", label=r"$\pi^0$")
+    #endif
+    axes[0].set_ylim(0.0, 1.02)
+    axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[0].set_ylabel("Fitted fraction")
+    axes[0].set_title("FT: independent fitted composition")
+    axes[0].legend(fontsize=8)
+    axes[0].grid(alpha=0.18)
+
+    fd_all = sorted(
+        [
+            r for r in shared_rows
+            if r["region"] == "FD_all"
+            and int(r["fit_success"]) == 1
+            and np.isfinite(r["dvcs_fraction"])
+        ],
+        key=lambda r: float(r["energy_center_GeV"]),
+    )
+    if fd_all:
+        axes[1].plot(
+            [r["energy_center_GeV"] for r in fd_all],
+            [r["dvcs_fraction"] for r in fd_all],
+            marker="o",
+            linewidth=2.0,
+            label="FD all",
+        )
+    #endif
+
+    for sector in range(1, 7):
+        region = f"FD_S{sector}"
+        rr = sorted(
+            [
+                r for r in shared_rows
+                if r["region"] == region
+                and int(r["fit_success"]) == 1
+                and np.isfinite(r["dvcs_fraction"])
+            ],
+            key=lambda r: float(r["energy_center_GeV"]),
+        )
+        if rr:
+            axes[1].plot(
+                [r["energy_center_GeV"] for r in rr],
+                [r["dvcs_fraction"] for r in rr],
+                marker=".",
+                linewidth=1.0,
+                label=f"S{sector}",
+            )
+        #endif
+    #endfor
+
+    axes[1].set_ylim(0.0, 1.02)
+    axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[1].set_ylabel("Fitted BH/DVCS fraction")
+    axes[1].set_title("FD: BH/DVCS fraction by sector")
+    axes[1].legend(fontsize=8, ncol=2)
+    axes[1].grid(alpha=0.18)
+
+    fig.suptitle(
+        f"{period.label}: Stage-II fitted composition by predicted detector region",
+        fontsize=14,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_ft_fd_composition.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+
+def shared_driver_projection(
+    region: str,
+    row: Dict[str, object],
+    discriminator: str,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    ft_theta_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    mm2_bins_2d: int,
+    probe_m2_bins_2d: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Build a one-dimensional second-axis projection using the actual shared-fit
+    region, fraction, and final morphed templates.
+    """
+    elo = float(row["energy_low_GeV"])
+    ehi = float(row["energy_high_GeV"])
+
+    masks = {
+        key: stage2_fit_mask(
+            feat,
+            region,
+            ft_theta_max,
+            elo,
+            ehi,
+            mm2_min,
+            mm2_max,
+            probe_m2_max,
+        )
+        for key, feat in (
+            ("data", data_f),
+            ("pi0", pi0_f),
+            ("dvcs", dvcs_f),
+        )
+    }
+
+    hd = histogram_for_discriminator(
+        discriminator,
+        data_f,
+        masks["data"],
+        mm2_min=mm2_min,
+        mm2_max=mm2_max,
+        probe_m2_max=probe_m2_max,
+        mm2_bins_2d=mm2_bins_2d,
+        probe_m2_bins_2d=probe_m2_bins_2d,
+        bins_1d=90,
+        ptmiss_max=ptmiss_max,
+        ptmiss_bins=ptmiss_bins,
+        theta_max=theta_max,
+        theta_bins=theta_bins,
+    )
+    hp = histogram_for_discriminator(
+        discriminator,
+        pi0_f,
+        masks["pi0"],
+        mm2_min=mm2_min,
+        mm2_max=mm2_max,
+        probe_m2_max=probe_m2_max,
+        mm2_bins_2d=mm2_bins_2d,
+        probe_m2_bins_2d=probe_m2_bins_2d,
+        bins_1d=90,
+        ptmiss_max=ptmiss_max,
+        ptmiss_bins=ptmiss_bins,
+        theta_max=theta_max,
+        theta_bins=theta_bins,
+    )
+    hv = histogram_for_discriminator(
+        discriminator,
+        dvcs_f,
+        masks["dvcs"],
+        mm2_min=mm2_min,
+        mm2_max=mm2_max,
+        probe_m2_max=probe_m2_max,
+        mm2_bins_2d=mm2_bins_2d,
+        probe_m2_bins_2d=probe_m2_bins_2d,
+        bins_1d=90,
+        ptmiss_max=ptmiss_max,
+        ptmiss_bins=ptmiss_bins,
+        theta_max=theta_max,
+        theta_bins=theta_bins,
+    )
+
+    tp = morph_template_second_axis(
+        hp,
+        float(row.get(f"{discriminator}_pi0_shift_bins", 0.0)),
+        float(row.get(f"{discriminator}_pi0_sigma_bins", 0.0)),
+    )
+    td = morph_template_second_axis(
+        hv,
+        float(row.get(f"{discriminator}_dvcs_shift_bins", 0.0)),
+        float(row.get(f"{discriminator}_dvcs_sigma_bins", 0.0)),
+    )
+
+    data_proj = np.sum(hd, axis=0).astype(float)
+    pi0_shape = np.sum(tp, axis=0).astype(float)
+    dvcs_shape = np.sum(td, axis=0).astype(float)
+
+    pi0_shape /= max(np.sum(pi0_shape), 1.0e-30)
+    dvcs_shape /= max(np.sum(dvcs_shape), 1.0e-30)
+
+    nd = float(np.sum(data_proj))
+    fpi0 = float(row["pi0_fraction"])
+    pi0_component = nd * fpi0 * pi0_shape
+    dvcs_component = nd * (1.0 - fpi0) * dvcs_shape
+    model = pi0_component + dvcs_component
+
+    if discriminator == "mx2_ep_x_pTmiss":
+        edges = np.linspace(0.0, ptmiss_max, ptmiss_bins + 1)
+    else:
+        edges = np.linspace(
+            -probe_m2_max,
+            probe_m2_max,
+            probe_m2_bins_2d + 1,
+        )
+    #endif
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    return centers, data_proj, pi0_component, dvcs_component, model
+
+
+def make_ft_fd_fit_overlay_canvas(
+    period: PeriodConfig,
+    shared_rows: List[Dict[str, object]],
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    outdir: Path,
+    ft_theta_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    mm2_bins_2d: int,
+    probe_m2_bins_2d: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+) -> None:
+    """
+    Explicitly show what is being fit in FT versus FD.
+
+    Rows:
+      top    = FT
+      bottom = all FD sectors combined
+
+    Columns:
+      representative predicted-probe energy bins.
+
+    The pTmiss projection is used because it currently provides the clearest
+    shape leverage and is where morphing is most strongly preferred.
+    """
+    targets = ((0.40, 0.50), (0.80, 1.00), (1.50, 2.00))
+    fig, axes = plt.subplots(2, 3, figsize=(18.5, 10.2))
+
+    for irow, region in enumerate(("FT", "FD_all")):
+        for icol, (elo, ehi) in enumerate(targets):
+            ax = axes[irow, icol]
+            candidates = [
+                r for r in shared_rows
+                if r["region"] == region
+                and int(r["fit_success"]) == 1
+                and abs(float(r["energy_low_GeV"]) - elo) < 1.0e-9
+                and abs(float(r["energy_high_GeV"]) - ehi) < 1.0e-9
+            ]
+            if not candidates:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No successful fit",
+                    ha="center",
+                    va="center",
+                )
+                ax.set_axis_off()
+                continue
+            #endif
+
+            row = candidates[0]
+            centers, data, pi0_c, dvcs_c, model = shared_driver_projection(
+                region,
+                row,
+                "mx2_ep_x_pTmiss",
+                data_f,
+                pi0_f,
+                dvcs_f,
+                ft_theta_max,
+                mm2_min,
+                mm2_max,
+                probe_m2_max,
+                mm2_bins_2d,
+                probe_m2_bins_2d,
+                ptmiss_max,
+                ptmiss_bins,
+                theta_max,
+                theta_bins,
+            )
+
+            ax.errorbar(
+                centers,
+                data,
+                yerr=np.sqrt(np.maximum(data, 1.0)),
+                fmt="o",
+                ms=2.5,
+                label="Data",
+            )
+            ax.step(
+                centers,
+                model,
+                where="mid",
+                linewidth=1.5,
+                label="Total fit",
+            )
+            ax.step(
+                centers,
+                dvcs_c,
+                where="mid",
+                linewidth=1.0,
+                label="BH/DVCS",
+            )
+            ax.step(
+                centers,
+                pi0_c,
+                where="mid",
+                linewidth=1.0,
+                label=r"$\pi^0$",
+            )
+            ax.set_xlabel(r"$p_{T,\mathrm{miss}}$ (GeV)")
+            ax.set_ylabel("Entries / bin")
+
+            fbh = float(row["dvcs_fraction"])
+            fpi0 = float(row["pi0_fraction"])
+            smear_pi0 = float(
+                row.get("mx2_ep_x_pTmiss_pi0_sigma_bins", 0.0)
+            )
+            smear_dvcs = float(
+                row.get("mx2_ep_x_pTmiss_dvcs_sigma_bins", 0.0)
+            )
+            ax.set_title(
+                f"{region}, {elo:.2f}–{ehi:.2f} GeV\n"
+                f"BH/DVCS={fbh:.2f}, $\\pi^0$={fpi0:.2f}; "
+                f"smear=({smear_dvcs:.1f},{smear_pi0:.1f}) bins"
+            )
+            ax.grid(alpha=0.18)
+        #endfor
+    #endfor
+
+    axes[0, 0].legend(fontsize=8)
+    fig.suptitle(
+        f"{period.label}: explicit FT versus FD Stage-II $p_{{T,\\mathrm{{miss}}}}$ fits",
+        fontsize=14,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_ft_fd_fit_overlays.png",
+        rect=(0, 0, 1, 0.94),
+    )
+    plt.close(fig)
 
 
 def closure_rows_for_shared_fit(period: PeriodConfig, shared_rows: List[Dict[str,object]]) -> List[Dict[str,object]]:
@@ -3124,7 +3717,7 @@ def make_stage2_canvases(
         unit_hist(
             axes[0, 1],
             feat["pred_probe_mass2"][common[key]],
-            np.linspace(-probe_m2_max, probe_m2_max, 220),
+            np.linspace(-0.10, 0.08, 241),
             label,
         )
     #endfor
@@ -3136,6 +3729,7 @@ def make_stage2_canvases(
     axes[0, 0].legend(fontsize=8)
     axes[0, 0].grid(alpha=0.18)
 
+    axes[0, 1].set_xlim(-0.10, 0.08)
     axes[0, 1].set_xlabel(r"$(P_{\mathrm{probe}}^{\mathrm{pred}})^2$ (GeV$^2$)")
     axes[0, 1].set_ylabel("Unit-normalized entries")
     axes[0, 1].set_title("Predicted probe mass squared")
@@ -4725,7 +5319,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--morph-shift-prior-bins", type=float, default=1.0, help="Gaussian prior width for template shifts in histogram bins. Default: 1.0.")
     parser.add_argument("--morph-sigma-prior-bins", type=float, default=1.0, help="Gaussian prior width for additional template smearing in histogram bins. Default: 1.0.")
     parser.add_argument("--morph-max-shift-bins", type=float, default=4.0, help="Hard bound on template shifts in histogram bins. Default: 4.0.")
-    parser.add_argument("--morph-max-sigma-bins", type=float, default=4.0, help="Hard bound on additional template smearing in histogram bins. Default: 4.0.")
+    parser.add_argument("--morph-max-sigma-bins", type=float, default=6.0, help="Hard bound on additional template smearing in histogram bins. Default: 6.0.")
     parser.add_argument(
         "--morph-profile-shift-grid",
         default="-4,-3,-2,-1,0,1,2,3,4",
@@ -4736,11 +5330,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--morph-profile-sigma-grid",
-        default="0,0.5,1,1.5,2,2.5,3,3.5,4",
+        default="0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6",
         help=(
             "Comma-separated fixed additional-smearing values (histogram bins) "
             "used for all-region nuisance profile scans. "
-            "Default: 0,0.5,1,1.5,2,2.5,3,3.5,4."
+            "Default: 0,0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6."
         ),
     )
     parser.add_argument(
@@ -5054,6 +5648,29 @@ def process_period(
             f"({len(shared_rows)} rows) before canvas rendering."
         )
         make_shared_fit_canvas(period, shared_rows, stage2_rows, pi0_control, stage2_dir)
+        make_ft_fd_composition_canvas(
+            period,
+            shared_rows,
+            stage2_dir,
+        )
+        make_ft_fd_fit_overlay_canvas(
+            period,
+            shared_rows,
+            data_f,
+            pi0_f,
+            dvcs_f,
+            stage2_dir,
+            ft_theta_max=ft_theta_max,
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+            mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
+            probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
+            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+            ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+            theta_max=float(args_dict["disc_theta_max"]),
+            theta_bins=int(args_dict["disc_theta_bins"]),
+        )
 
         shift_profile_grid = np.asarray(
             parse_float_edges(
@@ -5339,7 +5956,7 @@ def main() -> int:
                 "real epgamma data are fit locally with floated aaogen-pi0 and "
                 "dvcsgen BH/DVCS templates under multiple discriminator choices. "
                 "No generator relative normalization is imposed. Shared morphing "
-                "uses zero-centered weak priors in v020; reconstructed-eppi0 control "
+                "uses zero-centered weak priors in v021; reconstructed-eppi0 control "
                 "results are diagnostic and are not injected as nuisance centers. "
                 "Mixed-data wrong-tag templates remain diagnostic-only stress tests."
             ),
@@ -5462,7 +6079,8 @@ def main() -> int:
             region_order2 = {
                 "all": 0,
                 "FT": 1,
-                **{f"FD_S{s}": s + 1 for s in range(1, 7)},
+                "FD_all": 2,
+                **{f"FD_S{s}": s + 2 for s in range(1, 7)},
             }
             all_stage2_rows.sort(
                 key=lambda r: (
@@ -5542,7 +6160,8 @@ def main() -> int:
                         "pi0 missing-photon tags and dvcsgen models genuine BH/DVCS "
                         "epgamma; both normalizations float independently. The "
                         "shared morphed fit uses zero-centered weak nuisance priors; "
-                        "explicit all-region one-nuisance profile scans test whether "
+                        "profile-grid initialized alternating morph fits plus explicit all-region "
+                        "one-nuisance scans test whether "
                         "nonzero morphing is actually preferred. The reconstructed-eppi0 "
                         "pTmiss control study uses the confirmed 0=FT, 1=FD photon "
                         "detector convention and remains diagnostic-only until its "
