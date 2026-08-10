@@ -1,734 +1,153 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v82_aaogen_closure_audit.py
+derive_photon_efficiency_scale_factors_v002.py
 
-Photon-efficiency study with separate exact-one-photon and exact-two-photon
-data categories. Events with three or more reconstructed-photon entries are
-rejected.
+Stage-I development script for a relative data/MC photon-reconstruction
+efficiency measurement in CLAS12 RGA.
 
-Data-side changes in this revision:
+THIS VERSION DOES NOT EXTRACT A PHOTON EFFICIENCY OR SCALE FACTOR.
 
-  * remove the Emiss2 > 1 GeV lower cut;
-  * remove the Mx2_2 > 2 GeV^2 lower cut;
-  * remove Mx2_2 from the data shape comparison and data template fit;
-  * retain the complete Emiss2 spectrum, including the BH/DVCS peak near zero;
-  * define the after-cuts row using only pTmiss > 0.5 GeV, in addition to the
-    open_angle_ep2 > 5 deg requirement common to both rows.
+Its purpose is to validate the central tag-and-probe kinematics using the
+exclusive-pi0 aaogen samples:
 
-The four fitted data projections are Delta_phi, theta_gamma_gamma, pTmiss, and
-Emiss2. Each is fitted independently, followed by a shared pi0-fraction fit
-with variable-specific template morphing. Mx2_2 remains available to the
-established optional MC-efficiency machinery elsewhere in this script.
+    aaogen reconstructed as epgamma:
+        .../bkg_rga_<period>_epgamma_0.40GeV.root
 
-Template-fit plotting conventions
----------------------------------
+    aaogen reconstructed as eppi0:
+        .../rec_aaogen_norad_<period>_...root
 
-The advanced data-template canvases use the same visual conventions as
-plot_exclusivity_data_dvcs_pi0_mc.py:
+Because runnum/evnum are not useful identifiers in the MC, the two files are
+matched through the reconstructed electron and proton Cartesian momenta.
 
-  * black points: e'p'gamma data;
-  * thin dashed blue: raw DVCS MC shape;
-  * thin dashed red: raw epi0 MC shape;
-  * solid blue: fitted DVCS component;
-  * solid red: fitted epi0 component;
-  * dashed green: total two-template fit;
-  * one shared legend centered above the panels;
-  * per-panel fit-quality annotation in the upper-right corner;
-  * lowercase 'events / bin' and 'data / fit' axis labels.
+For every matched epgamma -> eppi0 pair:
 
+  1. The epgamma photon is treated as the directed tag.
+  2. The missing/probe photon is predicted from four-momentum conservation,
 
+         p_probe^pred = p_beam + p_target - p_e - p_p - p_tag .
 
-Shape-comparison kinematic diagnostics
---------------------------------------
+  3. The two reconstructed photons in the eppi0 event are recovered from the
+     stored eppi0 quantities.  The supplied tree schema does not expose
+     gamma1_p/gamma1_theta/gamma2_p/gamma2_theta explicitly.  Importantly,
+     gamma_phi1/2 are TRento azimuths, not laboratory azimuths, while
+     open_angle_egamma1/2 are lab-frame electron-photon opening angles.
+     Therefore this script:
+       * constructs the event-by-event Trento basis from the beam and measured
+         scattered-electron momentum, with z_T parallel to q;
+       * solves for each photon's polar angle about q using its Trento phi and
+         measured lab-frame electron-photon opening angle;
+       * transforms the resulting photon direction back into the lab frame;
+       * uses the reconstructed pi0 four-vector (p2_p,p2_theta,p2_phi) and the
+         pi0 -> gamma gamma mass-shell relation to recover photon energies;
+       * chooses the physical pair of angular solutions with the best pi0
+         four-vector closure.
 
-The one-photon and two-photon before/after shape canvases additionally show
-p1_p, p1_theta, p2_p, and p2_theta from the native epgamma tree branches.
-These four distributions are diagnostic only and do not enter the pi0-fraction
-template fits. Their default plotting ranges are 0--5 GeV, 0--70 deg,
-0--10 GeV, and 0--40 deg, respectively.
+  4. The reconstructed eppi0 photon closest in angle to the epgamma tag is
+     identified as the same tag.  The other photon is the reconstructed probe.
+  5. Predicted-vs-reconstructed probe residuals are written and plotted.
 
-Shape-comparison diagnostics
-----------------------------
+Important schema assumptions in v001
+------------------------------------
+epgamma tree:
+    p1_* = proton
+    p2_* = reconstructed photon/tag
 
-In addition to the four data-fit variables, the before/after shape-comparison
-canvases include p1_p, p1_theta, p2_p, and p2_theta. These particle-kinematic
-distributions are diagnostic only and do not enter the fitted pi0 fraction.
+eppi0 tree:
+    p1_* = proton
+    p2_* = reconstructed pi0
+    gamma_phi1/2 = photon Trento azimuths about q
+    open_angle_egamma1/2 = lab-frame electron-photon opening angles.
 
-Plotting conventions
---------------------
+These assumptions are checked with diagnostic closures, not silently treated
+as established facts.  If the actual producer uses another mapping, change
+the adapters in `extract_epgamma()` / `extract_eppi0()` rather than changing
+the physics calculations downstream.
 
-Both the shape-comparison and template-fit canvases follow the visual
-conventions used by plot_exclusivity_data_dvcs_pi0_mc.py: black data, blue
-DVCS MC, red epi0 MC, dashed green total fit, thin dashed raw-template
-outlines, solid fitted components, a shared frame-free legend, and matching
-axis-label and horizontal-grid conventions.
+Outputs
+-------
+All products go below:
 
-Kinematic diagnostic canvases
------------------------------
+    output/photon_efficiency/stage1/
 
-The four additional particle-kinematic diagnostics are written on separate
-before/after canvases rather than appended to the fitted-variable canvases:
+including:
+    stage1_summary.csv
+    stage1_summary.json
+    <period>/stage1_matched_pairs.npz
+    <period>/*.png
 
-    p1_p, p1_theta, p2_p, p2_theta.
+Dependencies
+------------
+    numpy
+    scipy
+    uproot
+    matplotlib
 
-The p1_theta and p2_theta ROOT branches are stored in radians. They are
-converted entry-by-entry to degrees before histogramming. Their configured
-histogram limits and axis labels are therefore interpreted in degrees.
+Typical usage
+-------------
+Quick orientation run over the first 500k entries of each relevant file:
 
-For every run period, separate exact-one-photon and exact-two-photon canvases
-are produced for:
+    python derive_photon_efficiency_scale_factors_v002.py
 
-  * the four fitted shape variables;
-  * the four particle-kinematic diagnostics.
+Run one period:
 
-Multiplicity reset after corrected epgamma production
-------------------------------------------------------
+    python derive_photon_efficiency_scale_factors_v002.py --period fa18_inb
 
-The epgamma files were regenerated after correcting the photon loop so that
-the leading reconstructed photon is once again included. This revision removes
-the temporary hard rejection of events represented by three or more photon
-entries.
+Run all available entries:
 
-No event is rejected solely because of photon-entry multiplicity.
+    python derive_photon_efficiency_scale_factors_v002.py --max-entries 0
 
-The data diagnostic stage now keeps four independent categories:
+If the ROOT angles are known explicitly:
 
-  * exactly one photon entry;
-  * exactly two photon entries;
-  * three or more photon entries;
-  * all multiplicities combined.
+    python derive_photon_efficiency_scale_factors_v002.py --angles rad
 
-Multiplicity histograms and CSV/JSON summaries still report exact
-multiplicities 1 through 6 and >6. The template fits remain restricted to the
-exact-one and exact-two categories for now; the >=3 and inclusive categories
-are diagnostic only.
-
-The MC-efficiency opportunity stage also no longer requires multiplicity <3.
-Every entry with a valid event identity is allowed to proceed to the ordinary
-kinematic and topology selections.
-
-Revision: restored MC stage and corrected multiplicity summaries
----------------------------------------------------------------
-
-The full AAOGEN MC photon-efficiency stage is again enabled by default and
-writes under output/photon_efficiency_study/mc/. It may be disabled explicitly
-with --skip-mc-efficiency. The legacy --run-mc-efficiency option remains
-accepted for command-line compatibility.
-
-The temporary p1_p, p1_theta, p2_p, and p2_theta shape-comparison canvases
-have been removed. The data shape-comparison stage now uses only:
-
-    Delta_phi, theta_gamma_gamma, pTmiss, Emiss2.
-
-A multiplicity-summary bug has also been corrected. The previous version
-passed the array of already-unique event signatures into a helper that called
-np.unique() again. Consequently every event appeared to have multiplicity one
-in the summary plots even though the exact-one, exact-two, and >=3 masks were
-correct. The summary is now constructed directly from the multiplicities found
-during the identity prepass.
-
-Revision: restore multiplicity cut and updated diagnostic ranges
----------------------------------------------------------------
-
-This revision restores the hard event-level requirement that only events with
-one or two reconstructed-photon entries are retained. Events with three or
-more reconstructed-photon entries are rejected consistently in the data-shape
-stage and the MC-efficiency opportunity stage.
-
-The data shape-comparison ranges are now:
-
-    theta_gamma_gamma: 0 to 10 deg
-    pTmiss:            0 to 1.25 GeV
-    Emiss2:            0 to 4 GeV
-
-No pTmiss lower cut is applied in the after-selection row.
-
-The four particle-kinematic diagnostics are restored:
-
-    p1_p, p1_theta, p2_p, p2_theta
-
-and are placed in the bottom row of the same shape-comparison canvas. The top
-row contains the four exclusivity-shape variables.
-
-Revision: three independent reconstructed-photon template cases
----------------------------------------------------------------
-
-Shape comparisons and template fits are produced separately for:
-
-  1. exact-one-photon events;
-  2. exact-two-photon events, selecting the more energetic p2 entry;
-  3. exact-two-photon events, selecting the less energetic p2 entry.
-
-The two entries in every exact-two event are ranked by p2_p. Global ROOT entry
-index is used as a deterministic tie breaker. Each exact-two event contributes
-exactly once to each energy-ranked case. Multiplicity >=3 remains rejected.
-
-Revision: algorithmic runtime optimizations
--------------------------------------------
-
-This revision preserves the physics selections, three photon-template cases,
-fit models, plotting products, and MC-efficiency outputs while reducing the
-dominant runtime costs.
-
-Data-stage changes:
-
-  * exact-two event ranking is vectorized after one stable sort rather than
-    repeatedly scanning the complete inverse-index array for every event;
-  * the multiplicity prepass returns one dense uint8 category code per ROOT
-    entry, so the histogram pass uses direct slices instead of repeated
-    structured-signature construction and np.isin membership tests;
-  * the duplicate after-selection histograms are no longer filled a second
-    time when no additional cut is active; the serialized after-selection
-    products are copied from the same finalized counts;
-  * per-file timing is recorded for the ranking prepass and histogram pass.
-
-MC-stage changes:
-
-  * read_opportunities() can skip construction and exact-deduplication of the
-    unused photon-candidate catalog;
-  * the MC-efficiency processor uses that fast path;
-  * read_epgg() applies entry_stop directly in uproot.iterate();
-  * scalar opening-angle calculations replace one-element NumPy allocations
-    in the truth-partner matching hot loop.
-
-Fit-stage changes:
-
-  * --fast-fits provides an explicit diagnostic mode with fewer starts,
-    looser optimizer tolerances, and fewer coordinate iterations;
-  * invariant fit-context arrays, bin widths, and two-component template
-    partitions are prepared once and reused by objective evaluations;
-  * stage timings are written into the data and MC metadata.
-
-Revision: category-specific ranges and exact-two diphoton-mass diagnostics
--------------------------------------------------------------------------
-
-The one-photon case now uses the restricted ranges:
-
-    p1_p:              0 to 1.25 GeV
-    theta_gamma_gamma: 0 to 3 deg
-    pTmiss:            0 to 0.7 GeV
-    Emiss2:            0 to 2 GeV
-
-The two exact-two-photon cases retain the broader fit-variable ranges:
-
-    theta_gamma_gamma: 0 to 10 deg
-    pTmiss:            0 to 1.25 GeV
-    Emiss2:            0 to 4 GeV
-
-For exact-two events, the bottom row of the shape-comparison canvas no longer
-contains p1_p or p1_theta. It instead contains the reconstructed diphoton mass,
-followed by p2_p and p2_theta. The diphoton mass is calculated directly from
-the two reconstructed photon four-vectors in each exact-two event:
-
-    M_gg^2 = 2 E1 E2 (1 - cos(theta_12)).
-
-The same event-level diphoton mass is attached to both the more-energetic and
-less-energetic exact-two entries. The shape-comparison plot marks the nominal
-pi0 window 0.10 < M_gg < 0.17 GeV and reports the corresponding data fraction.
-
-Revision: p2_phi branch-resolution fix
---------------------------------------
-
-The exact-two diphoton-mass prepass requires p2_phi in addition to p2_p and
-p2_theta. This revision adds p2_phi as a direct logical branch alias and
-includes it in the branch-resolution request made by the data shape processor.
-
-Revision: exact-two pi0 mass cut and before/after canvases
-----------------------------------------------------------
-
-The nominal reconstructed pi0 mass window is now:
-
-    0.11 < M_gamma_gamma < 0.16 GeV.
-
-For exact-one-photon events, the before and after populations are identical:
-no diphoton-mass requirement can be applied.
-
-For both exact-two-photon categories, the after population requires the event
-diphoton mass to lie inside the nominal pi0 window. The more-energetic and
-less-energetic entries from a given exact-two event therefore receive the same
-event-level pass/fail decision.
-
-The shape-comparison canvases are now 2 rows by 5 columns:
-
-    top row:    before the exact-two M_gamma_gamma cut;
-    bottom row: after the exact-two M_gamma_gamma cut.
-
-The five displayed variables are:
-
-    Delta_phi, theta_gamma_gamma, pTmiss, Emiss2, and
-    either p1_p for the exact-one case or M_gamma_gamma for exact-two cases.
-
-The p2_p and p2_theta shape diagnostics are removed completely.
-
-Revision: exact-two internal branch-resolution fix
---------------------------------------------------
-
-Removing p2_p and p2_theta from the displayed shape diagnostics must not remove
-them from the exact-two event machinery. The photon-ranking and diphoton-mass
-prepass still requires p2_p, p2_theta, and p2_phi. This revision explicitly
-resolves all three internal branches even though only M_gamma_gamma is displayed
-from that information.
-
-Revision: exclusivity-style coherent one-photon template morphing
------------------------------------------------------------------
-
-The exact-one-photon template fits now deliberately follow the validated
-plot_exclusivity_data_dvcs_pi0_mc.py strategy as closely as possible.
-
-For exact-one events, both DVCSGEN and AAOGEN receive independent nuisance
-parameters, but each complete template is morphed coherently:
-
-    Delta_phi:          additive shift + Gaussian broadening;
-    theta_gamma_gamma:  log(theta+epsilon) shift + Gaussian broadening;
-    pTmiss:             log(pTmiss+epsilon) shift + Gaussian broadening;
-    Emiss2:             additive shift + Gaussian broadening.
-
-The former two-component theta_gamma_gamma model and affine/asymmetric pTmiss
-and Emiss2 models are therefore not used in the exact-one fit. This prevents a
-single DVCS template from being split into independently movable sub-peaks.
-
-The coherent transforms use the same integrated-Gaussian transport approach as
-the validated exclusivity fitter, including the same nuisance-prior philosophy:
-additive shifts/smears use --fit-shift-prior-bins and
---fit-smear-prior-bins, while positive/log variables use fixed transformed-space
-prior widths of 0.20 for shifts and 0.40 for broadenings.
-
-Exact-two events retain the established category-specific modeling because the
-0.11 < M_gamma_gamma < 0.16 GeV selection already supplies the primary
-two-photon discrimination.
-
-Emiss2 is restricted to 0--2 GeV for every category.
-
-Independent per-variable fractions remain diagnostics. The shared fraction is
-still determined separately for each run period; no cross-period fraction
-constraint is imposed.
-
-Revision: category-aware model-callsite consistency fix
--------------------------------------------------------
-
-variable_model_spec() became category dependent in the exclusivity-style
-one-photon rewrite. This revision updates every remaining call site so the
-multiplicity category is always explicit. Startup/preflight and JSON metadata
-now record model definitions separately for the one-photon and exact-two
-categories.
-
-The fraction-consistency and flattened fit-row builders were also made
-explicitly category-aware rather than relying on the backward-compatible
-DATA_SHAPE_VARIABLES alias.
-
-Revision: shared-fit category propagation fix
----------------------------------------------
-
-AdvancedSharedFit now stores multiplicity_key explicitly. The category-aware
-fit plotting, fraction-consistency plotting, and flattened fit-row machinery
-introduced in the previous revision can therefore retrieve the photon category
-directly from the returned fit summary.
-
-Revision: raw-template primary diagnostic versus morphed comparison
--------------------------------------------------------------------
-
-For each fit category the script now evaluates a strict raw-template,
-fraction-only decomposition in addition to the constrained morphed-template
-fit. This is especially important for the exact-one-photon sample, where the
-raw DVCSGEN and AAOGEN shapes visibly bracket the data well.
-
-The raw model has exactly one shared physics parameter:
-
-    D_i = N_i [(1-f_pi0) T_DVCS,i^raw + f_pi0 T_pi0,i^raw].
-
-No shifts, smearing, affine transformations, component splitting, or other
-shape nuisance parameters enter the raw-template result.
-
-For every variable the script records:
-    * the independent raw-template fraction;
-    * the independent morphed-template fraction;
-    * the shared raw-template fraction;
-    * the shared morphed-template fraction;
-    * Delta f_morph = f_morphed - f_raw;
-    * raw and morphed Poisson deviances.
-
-The fit canvases overlay both total models and show both data/model ratios.
-The fraction-consistency plots compare raw and morphed independent fractions
-directly. Existing morphed-fit fields are retained for backward compatibility.
-
-The raw-template result is labeled as the primary diagnostic for the exact-one
-sample; the morphed result is a model-sensitivity comparison.
-
-Revision: temporary --simple data-side efficiency override
------------------------------------------------------------
-
-A temporary --simple mode is available as a complete override of the normal
-DATA section only. It does not remove or alter the existing data-template or
-MC-efficiency implementations.
-
-In --simple mode the epgamma DATA tree is split entry-by-entry at 2 GeV:
-
-    low-energy tags:      p2_p < 2 GeV;
-    high-energy partners: p2_p > 2 GeV.
-
-Every low-energy photon is provisionally assumed to be the lower-energy photon
-from a pi0 decay whose other photon should lie above 2 GeV. The expected
-high-energy partner direction is reconstructed from the beam, target, electron,
-proton, and low-energy photon four-vectors using the same reconstruct_probe()
-helper as the established MC-efficiency study.
-
-Each low-energy tag is assigned to FT or to one of the six FD sectors from the
-predicted partner direction. A tag is counted as reconstructed when the same
-(runnum, evnum) occurs anywhere in the >2 GeV photon set. No DVCS/pi0 template
-decomposition, invariant-mass requirement, angular partner requirement, or
-other data-side fit is used in this temporary mode.
-
-The simple efficiency in each predicted detector region is therefore:
-
-    epsilon = N(low-E tags whose event has a >2 GeV photon)
-              / N(all low-E tags in that predicted region).
-
-Results are printed to the console for FT and FD sectors 1--6, separately by
-run period and for all selected periods combined. They are also written under:
-
-    output/photon_efficiency_study/data/simple/
-
-The normal data analysis remains the default when --simple is absent. The
-separate MC-efficiency stage is unaffected and still runs unless --no-mc /
---skip-mc-efficiency is supplied.
-
-Revision: --simple CSV-writer fix
----------------------------------
-
-The initial --simple implementation called write_rows_csv(), but the main
-script has no function with that name. This revision adds a small local CSV
-writer dedicated to the temporary simple-data audit and updates the simple
-stage to use it.
-
-No physics logic or efficiency definitions are changed.
-
-Revision: --simple JSON-writer fix
-----------------------------------
-
-The temporary --simple stage previously passed default=json_default to
-json.dump(), but no json_default() helper exists in this script. This revision
-adds a dedicated serializer for the simple-mode audit payload.
-
-No physics, matching, efficiency, detector-classification, or normal-analysis
-logic is changed.
-
-Revision: --simple same-event pi0 mass requirement
--------------------------------------------------
-
-The temporary --simple DATA override now requires the low-energy photon and at
-least one >2 GeV photon from the same exact (runnum, evnum) to form a
-reconstructed pi0 candidate in the nominal mass window:
-
-    0.11 < M_gamma_gamma < 0.16 GeV.
-
-The denominator and predicted FT/FD-region assignment are unchanged. If an
-event contains multiple >2 GeV photons, all are tested and the low-energy tag
-is counted once if any candidate passes the diphoton-mass requirement.
-
-Revision: --simple reconstructed-data versus reconstructed-AAOGEN comparison
-----------------------------------------------------------------------------
-
-When --simple is enabled, the script now runs the same reconstructed-photon
-algorithm on the AAOGEN epgamma sample in addition to data.
-
-For both samples:
-  * every reconstructed photon with p2_p < 2 GeV is a denominator opportunity;
-  * the expected partner direction is reconstructed from beam+target-e-p-low_gamma;
-  * the opportunity is assigned to FT or FD sector 1--6 from that direction;
-  * success requires a reconstructed photon with p2_p > 2 GeV from the same
-    reconstructed event and 0.11 < M_gamma_gamma < 0.16 GeV.
-
-Data event identity is exact (runnum, evnum). AAOGEN epgamma files do not have
-usable run/event identifiers, so reconstructed MC entries are grouped with the
-same established quantized electron+proton kinematic identity used elsewhere
-in this script for MC multiplicity reconstruction.
-
-This simple reconstructed-AAOGEN diagnostic uses no truth matching and does
-not replace the established AAOGEN MC-efficiency stage. At the very end of a
---simple run, the script prints a compact data/simple-MC comparison for FT and
-aggregate FD, period by period and combined.
-
-Revision: --simple FT/FD data-vs-AAOGEN diagnostic package
-----------------------------------------------------------
-
-The temporary --simple mode now records and plots reconstructed-level
-diagnostics for data and reconstructed AAOGEN using the identical simple
-selection.
-
-A new top-level parent directory is created:
-
-    output/photon_efficiency_study/simple/
-
-with per-period diagnostics in:
-
-    output/photon_efficiency_study/simple/diagnostics/
-
-Two 2x3 canvases are written for every run period. Rows are predicted FT and
-aggregate predicted FD. The first canvas contains:
-
-    1. low-energy tag photon momentum/energy, p_gamma < 2 GeV;
-    2. predicted missing-partner theta_X;
-    3. reconstructed M_gamma_gamma for every same-event low/high pair before
-       the pi0 mass requirement.
-
-The second canvas contains:
-
-    1. low-energy tag photon theta;
-    2. same-event high-energy photon energy before the pi0 mass requirement;
-    3. high-energy photon energy for pairs satisfying
-       0.11 < M_gamma_gamma < 0.16 GeV.
-
-All data and reconstructed-AAOGEN distributions are independently unit
-normalized on the diagnostic plots. Predicted-theta panels mark the FT and FD
-acceptance boundaries, and M_gamma_gamma panels mark the nominal pi0 window.
-
-The diagnostic bookkeeping is accumulated during the existing --simple pass;
-the ROOT files are not reread for plotting. Existing simple numerical outputs,
-the reconstructed-data/reconstructed-AAOGEN comparison, the full data-template
-analysis, and the truth-informed AAOGEN MC-efficiency stage are all preserved.
-
-Revision: --simple predicted-theta diagnostic bookkeeping fix
---------------------------------------------------------------
-
-The v76 diagnostic package declared low_probe_theta_deg_chunks in the simple
-DATA processor but failed to append the reconstructed probe theta values to
-that list. Low-energy opportunities therefore existed while the diagnostic
-theta list remained empty, causing np.concatenate() to fail.
-
-This revision explicitly computes probe_theta_deg once in the data processor,
-uses it for detector classification, and appends it alongside probe energy.
-Both simple DATA and reconstructed-AAOGEN processors also receive guarded
-diagnostic concatenation and explicit array-length consistency checks.
-
-No event selection, pi0 mass logic, matching, efficiency definition, detector
-boundaries, template analysis, or truth-informed MC-efficiency logic changes.
-
-Revision: --simple top-level JSON serialization fix
----------------------------------------------------
-
-The simple FT/FD diagnostic histograms contain NumPy arrays. The dedicated
-simple-data and reconstructed-AAOGEN JSON outputs already serialize those with
-simple_json_default(), but the final top-level study-summary JSON did not.
-This revision applies the same serializer to that final summary write.
-
-No physics or analysis logic changes.
-
-Revision: --simple three-category pi0-pair estimator
-----------------------------------------------------
-
-The temporary --simple estimator is reorganized into three mutually exclusive
-classes for each reconstructed low-energy photon (p2_p < 2 GeV), separately in
-predicted FT and each predicted FD sector:
-
-  A) FOUND PI0 PAIR:
-       at least one same-event reconstructed photon has p2_p > 2 GeV and the
-       measured low/high pair satisfies 0.11 < M_gamma_gamma < 0.16 GeV.
-
-  B) MEASURED HIGH-ENERGY PHOTON, NON-PI0 PAIR:
-       at least one same-event p2_p > 2 GeV photon exists, but no low/high pair
-       satisfies the pi0 mass window. These entries are explicitly identified
-       as rejected/non-pi0-like and are not counted as failed pi0 opportunities.
-
-  C) NO HIGH-ENERGY PARTNER RECONSTRUCTED:
-       no same-event p2_p > 2 GeV photon exists. Their pi0 purity is unknown.
-
-For category C, --simple now applies the observed pi0-pair purity from category
-A/(A+B) as the provisional estimate of how many unmatched low-energy photons
-are genuine pi0 opportunities:
-
-    f_pi0,pair = N_A / (N_A + N_B)
-
-    N_missed_pi0,est = f_pi0,pair * N_C
-
-    epsilon_simple,purity =
-        N_A / (N_A + N_missed_pi0,est)
-
-The code prints and saves all three category counts, the observed pair purity,
-the estimated missed-pi0 count, the legacy hard-window fraction N_A/N_low, and
-the new provisional purity-weighted efficiency.
-
-Important algebraic note: because the same measured pair purity is applied to
-the unmatched population, epsilon_simple,purity is mathematically identical to
-
-    (N_A + N_B) / (N_A + N_B + N_C),
-
-i.e. the probability that any >2 GeV same-event photon is reconstructed. The
-output states this explicitly. The pi0 mass window is nevertheless essential
-for diagnosing category purity and for later replacement of the hard-window
-count by a fitted pi0 yield or a nontrivial unmatched-purity transfer factor.
-
-The same reconstructed-level bookkeeping is applied to data and reconstructed
-AAOGEN. Existing diagnostics, template fits, and the truth-informed AAOGEN
-efficiency study are preserved.
-
-Revision: final data-driven RGA photon-efficiency extraction
-------------------------------------------------------------
-
-The --simple switch is promoted from the exploratory three-category counting
-study to the production data-driven photon-efficiency extraction.  The legacy
-exploratory implementation is preserved behind --legacy-simple.
-
-The production extraction is a tag-and-probe measurement designed specifically
-for the RGA epgamma trees in which every reconstructed photon appears as a
-separate row.
-
-For data, event identity is exact (runnum, evnum).  For reconstructed MC, where
-run/event identifiers are not usable, the established quantized electron and
-proton kinematic signature is used.  Events with three or more photon rows are
-rejected.  A clean opportunity is either:
-
-  * exactly one reconstructed low-energy tag photon, 0.4 <= E_tag < 2 GeV;
-    this is an unmatched probe opportunity; or
-  * exactly two reconstructed photons with exactly one low-energy tag and one
-    high-energy photon E_high > 2 GeV; this is a paired opportunity.
-
-Ambiguous exact-two events with two sub-2-GeV photons are not used in the final
-measurement.  For every low-energy tag, the missing photon four-vector
-
-    X = k + p_target - e' - p' - gamma_low
-
-is reconstructed.  The same photon-like requirements used by the established
-AAOGEN efficiency calculation are imposed on X: finite positive four-vector,
-2 <= E_X < 9.5 GeV, |m_X^2| < 0.1 GeV^2,
-|E_X-|p_X|| < 0.1 GeV, and predicted FT/FD acceptance.  All angular quantities
-are kept internally in radians and converted to degrees only for cuts, sector
-bookkeeping, and plotting.  Phi differences are wrapped periodically.
-
-The found pi0 yield in paired data is obtained from an extended shape fit to
-M_gamma_gamma over 0--0.35 GeV.  The signal is a truth-purified reconstructed
-AAOGEN pi0 template with a constrained data/MC shift and additional Gaussian
-smearing.  The non-pi0 component is a positive cubic Bernstein background, so
-BH/DVCS photons, split clusters, accidental neutral activity, and other smooth
-combinatorial pairs are not counted as reconstructed pi0 partners.
-
-The missed-pi0 content of the unmatched one-photon data population is fitted
-rather than inferred from the paired purity.  The shared-fraction fit uses
-observables available even when the partner photon is missing:
-
-    M_X^2(e'p'), E_gamma_low, theta_gamma_low,
-    E_X, theta_X, opening_angle(gamma_low, X), and local predicted phi_X.
-
-The signal templates are genuine unmatched AAOGEN pi0 opportunities selected
-with truth information.  One background template is unmatched DVCSGEN, which
-explicitly models BH/DVCS events accompanied by low-energy reconstructed
-photons.  A second data-driven background template is built from the paired
-data with posterior background weights from the M_gamma_gamma fit.  The
-unmatched data fit therefore determines its own pi0 fraction without using
-truth information in data.
-
-For each period and for predicted FT and aggregate FD,
-
-    epsilon_data = N_pi0_found /
-                   (N_pi0_found + f_pi0_unmatched * N_unmatched).
-
-The same opportunity definition is applied to AAOGEN and truth information is
-used only there to form an apples-to-apples MC efficiency and closure
-diagnostics.  The reported data/MC scale factor is epsilon_data/epsilon_MC.
-The historical shape/template study and historical truth-informed MC study are
-retained as independent cross-checks and are not deleted.
-
-Revision: sparse FT missed-signal template fix
-----------------------------------------------
-
-The first final-data-driven run exposed an important low-statistics corner case:
-Sp18 Inb FT contains only five truth-matched AAOGEN opportunities in which the
-true >2 GeV pi0 daughter is specifically missed. That sample is far too small
-to define a stable signal template.
-
-The production missed-partner purity fit is driven only by M_X^2(e'p'), an
-observable built solely from the reconstructed electron and proton. Its
-pi0-signal shape therefore does not require the partner photon to have been
-missed. The final extraction now uses the inclusive truth-matched AAOGEN
-pi0-low-tag sample in the same predicted FT/FD region as the production signal
-template. The genuinely missed subset is retained as a diagnostic whenever
-statistics permit.
-
-No data selection, paired Mgg fit, truth definition, photon matching, detector
-acceptance, DVCS background, fake-photon background, efficiency algebra, or
-legacy functionality is changed.
-
-Revision: AAOGEN pseudo-data closure and efficiency-definition audit
--------------------------------------------------------------------
-
-The final --simple workflow now performs a dedicated closure test before any
-scale factor is interpreted.  AAOGEN reconstructed low-tag opportunities are
-split deterministically into disjoint template and pseudo-data halves.  The
-pseudo-data half is processed with the identical paired-Mgg fit, residual
-failed-partner construction, and M_X^2(e'p') purity fit used for real data;
-truth labels are consulted only afterward to measure closure.
-
-For every period and FT/FD region the output now records three distinct
-efficiencies side by side:
-
-  * the established broad AAOGEN truth-association fraction (historically
-    labeled an MC efficiency, but not a direct reconstructed-high-photon test);
-  * the truth efficiency conditioned on the final reconstructed low-tag
-    opportunity catalog;
-  * the final estimator extracted blindly from AAOGEN pseudo-data.
-
-The closure audit additionally compares fitted versus truth paired-pi0 purity
-and fitted versus truth failed-population pi0 purity.  A combined CSV, JSON,
-and two-panel plot are written under closure_audit/.  The hard period-worker
-cap is seven.
-
-
+The Stage-I defaults intentionally require a reconstructed tag energy
+E_tag >= 2 GeV, while no efficiency denominator is formed yet.
 """
-
 
 from __future__ import annotations
 
 import argparse
-import concurrent.futures
 import csv
 import json
 import math
-import os
 import sys
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
-
-os.environ.setdefault("MPLBACKEND", "Agg")
-os.environ.setdefault("MPLCONFIGDIR", f"/tmp/matplotlib-{os.getuid()}")
-os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import matplotlib
-matplotlib.use("Agg", force=True)
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.ndimage import gaussian_filter1d
-from scipy.optimize import minimize, minimize_scalar
-from scipy.special import ndtr
-from scipy.signal import find_peaks
-
-try:
-    import uproot
-except ImportError as exc:
-    raise SystemExit("This script requires uproot: python3 -m pip install uproot") from exc
-#endif
+import uproot
+from scipy.spatial import cKDTree
 
 
+# -----------------------------------------------------------------------------
+# Physics constants
+# -----------------------------------------------------------------------------
 
-TREE_NAME = "PhysicsEvents"
-DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study"
-DEFAULT_STEP_SIZE = "200 MB"
-MAX_WORKERS = 7
+M_E = 0.00051099895000
+M_P = 0.93827208816
+M_PI0 = 0.1349768
+TWO_PI = 2.0 * math.pi
 
-PROTON_MASS_GEV = 0.9382720813
-ELECTRON_MASS_GEV = 0.00051099895
 
+# -----------------------------------------------------------------------------
+# Period configuration
+# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class PeriodConfig:
     key: str
     label: str
-    beam_energy_GeV: float
-    epg_data: str
-    epgg_data: str
-    dvcs_mc: str
-    pi0_epg_mc: str
-    pi0_epgg_mc: str
+    beam_energy: float
+    epgamma_data: str
+    eppi0_data: str
+    epgamma_dvcs_mc: str
+    epgamma_pi0_mc: str
+    eppi0_pi0_mc: str
 
 
 PERIODS: Tuple[PeriodConfig, ...] = (
@@ -775,12606 +194,1467 @@ PERIODS: Tuple[PeriodConfig, ...] = (
 )
 
 
-ALIASES: Mapping[str, Tuple[str, ...]] = {
-    "runnum": ("runnum", "run", "run_number"),
-    "eventnum": ("evnum", "eventnum", "event", "event_number"),
-    "e_p": ("e_p", "p_e", "electron_p"),
-    "e_theta": ("e_theta", "theta_e", "electron_theta"),
-    "e_phi": ("e_phi", "phi_e", "electron_phi"),
-    "p_p": ("p1_p", "p_p", "proton_p"),
-    "p_theta": ("p1_theta", "p_theta", "proton_theta"),
-    "p_phi": ("p1_phi", "p_phi", "proton_phi"),
-    "p1_p": ("p1_p",),
-    "p1_theta": ("p1_theta",),
-    "p2_p": ("p2_p",),
-    "p2_theta": ("p2_theta",),
-    "p2_phi": ("p2_phi",),
-    "tag_E": ("p2_p", "g1_p", "g1_E", "gamma1_p", "photon1_p"),
-    "tag_theta": ("p2_theta", "g1_theta", "gamma1_theta", "photon1_theta"),
-    "tag_phi": ("p2_phi", "g1_phi", "gamma1_phi", "photon1_phi"),
-    "tag_detector": ("detector2", "g1_detector", "gamma1_detector"),
-    "proton_detector": ("detector1", "p_detector", "proton_detector"),
-    "fiducial_status": ("fiducial_status",),
-    "Q2": ("Q2", "q2"),
-    "W": ("W", "w"),
-    "y": ("y", "inelasticity"),
-    "z": ("z",),
-    "t1": ("t1", "t", "minus_t"),
-    "open_angle_ep2": ("open_angle_ep2", "open_angle_eg", "open_angle_ephoton"),
-    "Delta_phi": ("Delta_phi", "delta_phi", "dphi"),
-    "theta_cm": ("theta", "theta2", "theta_2"),
-    "theta_gamma_gamma": ("theta_gamma_gamma", "theta_pi0_pi0"),
-    "pTmiss": ("pTmiss", "ptmiss", "pT_miss"),
-    "Emiss2": ("Emiss2", "E_miss2", "Emiss_sq"),
-    "Mx2": ("Mx2", "Mx2_epg", "Mx2_epgamma", "Mx2_eppi0", "Mx2_epi0"),
-    "Mx2_1": ("Mx2_1", "Mx2_ep", "Mx2_x1", "Mx2_proton", "Mx2_p"),
-    "Mx2_2": ("Mx2_2", "Mx2_egamma", "Mx2_gamma", "Mx2_pi0", "Mx2_x2"),
-    # Native epgammagamma reconstruction.
-    "pi0_p": ("p2_p", "pi0_p"),
-    "pi0_theta": ("p2_theta", "pi0_theta"),
-    "pi0_phi": ("p2_phi", "pi0_phi"),
-    "pi0_mass": ("Mh_gammagamma",),
-    "open1": ("open_angle_egamma1",),
-    "open2": ("open_angle_egamma2",),
-    "trento1": ("gamma_phi1",),
-    "trento2": ("gamma_phi2",),
-    "native_gamma_detector1": ("detector_gamma1",),
-    "native_gamma_detector2": ("detector_gamma2",),
-}
-
-
-@dataclass(frozen=True)
-class FitVariable:
-    key: str
-    label: str
-    bins: int
-    low: float
-    high: float
-
-
-FIT_VARIABLES: Tuple[FitVariable, ...] = (
-    FitVariable(
-        "Delta_phi",
-        r"$\Delta\phi$ (rad)",
-        120,
-        0.5 * math.pi,
-        1.5 * math.pi,
-    ),
-    FitVariable(
-        "theta_cm",
-        r"$\theta_{p\gamma}^{\rm CM}$ (rad)",
-        120,
-        1.0,
-        math.pi,
-    ),
-    FitVariable(
-        "theta_gamma_gamma",
-        r"$\theta_{\gamma\gamma}$ (deg)",
-        120,
-        0.0,
-        40.0,
-    ),
-    FitVariable(
-        "pTmiss",
-        r"$p_T^{\rm miss}$ (GeV)",
-        125,
-        0.0,
-        2.0,
-    ),
-    FitVariable(
-        "Emiss2",
-        r"$E_{\rm miss}$ (GeV)",
-        120,
-        0.0,
-        9.0,
-    ),
-    FitVariable(
-        "Mx2",
-        r"$M_x^2$ (GeV$^2$)",
-        100,
-        -0.03,
-        0.03,
-    ),
-    FitVariable(
-        "Mx2_2",
-        r"$M_{x2}^2$ (GeV$^2$)",
-        160,
-        0.0,
-        16.0,
-    ),
-)
-
-
-ONE_PHOTON_FIT_VARIABLES: Tuple[FitVariable, ...] = (
-    FitVariable(
-        "Delta_phi",
-        r"$\Delta\phi$ (rad)",
-        120,
-        0.5 * math.pi,
-        1.5 * math.pi,
-    ),
-    FitVariable(
-        "theta_gamma_gamma",
-        r"$\theta_{\gamma\gamma}$ (deg)",
-        120,
-        0.0,
-        3.0,
-    ),
-    FitVariable(
-        "pTmiss",
-        r"$p_T^{\mathrm{miss}}$ (GeV)",
-        120,
-        0.0,
-        0.7,
-    ),
-    FitVariable(
-        "Emiss2",
-        r"$E_{\mathrm{miss}}$ (GeV)",
-        120,
-        0.0,
-        2.0,
-    ),
-)
-
-TWO_PHOTON_FIT_VARIABLES: Tuple[FitVariable, ...] = (
-    FitVariable(
-        "Delta_phi",
-        r"$\Delta\phi$ (rad)",
-        120,
-        0.5 * math.pi,
-        1.5 * math.pi,
-    ),
-    FitVariable(
-        "theta_gamma_gamma",
-        r"$\theta_{\gamma\gamma}$ (deg)",
-        120,
-        0.0,
-        10.0,
-    ),
-    FitVariable(
-        "pTmiss",
-        r"$p_T^{\mathrm{miss}}$ (GeV)",
-        120,
-        0.0,
-        1.25,
-    ),
-    FitVariable(
-        "Emiss2",
-        r"$E_{\mathrm{miss}}$ (GeV)",
-        120,
-        0.0,
-        2.0,
-    ),
-)
-
-ONE_PHOTON_DISPLAY_VARIABLES: Tuple[FitVariable, ...] = (
-    *ONE_PHOTON_FIT_VARIABLES,
-    FitVariable(
-        "p1_p",
-        r"$p_1$ momentum (GeV)",
-        120,
-        0.0,
-        1.25,
-    ),
-)
-
-TWO_PHOTON_DISPLAY_VARIABLES: Tuple[FitVariable, ...] = (
-    *TWO_PHOTON_FIT_VARIABLES,
-    FitVariable(
-        "diphoton_mass",
-        r"$M_{\gamma\gamma}$ (GeV)",
-        120,
-        0.0,
-        0.30,
-    ),
-)
-
-# Backward-compatible aliases used by fit-model metadata.
-DATA_SHAPE_VARIABLES: Tuple[FitVariable, ...] = ONE_PHOTON_FIT_VARIABLES
-KINEMATIC_SHAPE_VARIABLES: Tuple[FitVariable, ...] = (
-    ONE_PHOTON_DISPLAY_VARIABLES[4:],
-)
-SHAPE_COMPARISON_VARIABLES: Tuple[FitVariable, ...] = (
-    *ONE_PHOTON_DISPLAY_VARIABLES,
-)
-
-PI0_MASS_WINDOW: Tuple[float, float] = (0.11, 0.16)
-
-
-def fit_variables_for_category(
-    category_key: str,
-) -> Tuple[FitVariable, ...]:
-    if category_key == "one_photon":
-        return ONE_PHOTON_FIT_VARIABLES
-    # endif
-    if category_key in (
-        "two_photon_more_energetic",
-        "two_photon_less_energetic",
-    ):
-        return TWO_PHOTON_FIT_VARIABLES
-    # endif
-    raise KeyError(f"Unknown photon category: {category_key}")
-
-
-def display_variables_for_category(
-    category_key: str,
-) -> Tuple[FitVariable, ...]:
-    if category_key == "one_photon":
-        return ONE_PHOTON_DISPLAY_VARIABLES
-    # endif
-    if category_key in (
-        "two_photon_more_energetic",
-        "two_photon_less_energetic",
-    ):
-        return TWO_PHOTON_DISPLAY_VARIABLES
-    # endif
-    raise KeyError(f"Unknown photon category: {category_key}")
-
-
-def shape_variables_for_category(
-    category_key: str,
-) -> Tuple[FitVariable, ...]:
-    return display_variables_for_category(category_key)
-
-
-def raw_shape_branch_keys() -> Tuple[str, ...]:
-    """Return the union of non-derived branches needed by any category."""
-    keys: List[str] = []
-    for variable in (
-        *ONE_PHOTON_DISPLAY_VARIABLES,
-        *TWO_PHOTON_DISPLAY_VARIABLES,
-    ):
-        if variable.key == "diphoton_mass":
-            continue
-        # endif
-        if variable.key not in keys:
-            keys.append(variable.key)
-        # endif
-    # endfor
-    return tuple(keys)
-
-# Shape-comparison diagnostics include the four fit projections above plus
-# native proton/photon kinematics stored in the epgamma trees. These additional
-# variables do not enter either the independent or shared pi0-fraction fits.
-
-
-FRACTION_DRIVERS: Tuple[str, ...] = (
-    "theta_gamma_gamma",
-)
-
-TOPOLOGY_INFO: Mapping[str, Tuple[str, int, int]] = {
-    "CD_FT": ("(CD, FT)", 2, 0),
-    "CD_FD": ("(CD, FD)", 2, 1),
-    "FD_FD": ("(FD, FD)", 1, 1),
-}
-
-
-@dataclass
-class OpportunityRecords:
-    runnum: np.ndarray
-    eventnum: np.ndarray
-    e_p: np.ndarray
-    e_theta: np.ndarray
-    e_phi: np.ndarray
-    p_p: np.ndarray
-    p_theta: np.ndarray
-    p_phi: np.ndarray
-    tag_E: np.ndarray
-    tag_theta: np.ndarray
-    tag_phi: np.ndarray
-    tag_detector: np.ndarray
-    proton_detector: np.ndarray
-    probe_E: np.ndarray
-    probe_p: np.ndarray
-    probe_theta: np.ndarray
-    probe_phi: np.ndarray
-    probe_m2: np.ndarray
-    probe_E_minus_p: np.ndarray
-    probe_detector: np.ndarray
-    probe_sector: np.ndarray
-    topology_code: np.ndarray
-    Delta_phi: np.ndarray
-    theta_cm: np.ndarray
-    theta_gamma_gamma: np.ndarray
-    pTmiss: np.ndarray
-    Emiss2: np.ndarray
-    Mx2: np.ndarray
-    Mx2_2: np.ndarray
-
-    def size(self) -> int:
-        return int(self.tag_E.size)
-
-
-@dataclass
-class PhotonCandidateRecords:
-    runnum: np.ndarray
-    eventnum: np.ndarray
-    e_p: np.ndarray
-    e_theta: np.ndarray
-    e_phi: np.ndarray
-    p_p: np.ndarray
-    p_theta: np.ndarray
-    p_phi: np.ndarray
-    photon_E: np.ndarray
-    photon_theta: np.ndarray
-    photon_phi: np.ndarray
-    photon_detector: np.ndarray
-
-    def size(self) -> int:
-        return int(self.photon_E.size)
-
-
-@dataclass
-class IdentityCatalog:
-    runnum: np.ndarray
-    eventnum: np.ndarray
-    e_p: np.ndarray
-    e_theta: np.ndarray
-    e_phi: np.ndarray
-    p_p: np.ndarray
-    p_theta: np.ndarray
-    p_phi: np.ndarray
-
-    def size(self) -> int:
-        return int(self.e_p.size)
-
-
-@dataclass
-class EpggRecords:
-    runnum: np.ndarray
-    eventnum: np.ndarray
-    e_p: np.ndarray
-    e_theta: np.ndarray
-    e_phi: np.ndarray
-    p_p: np.ndarray
-    p_theta: np.ndarray
-    p_phi: np.ndarray
-    g1_E: np.ndarray
-    g1_theta: np.ndarray
-    g1_phi: np.ndarray
-    g2_E: np.ndarray
-    g2_theta: np.ndarray
-    g2_phi: np.ndarray
-    solution_valid: np.ndarray
-    solution_closure: np.ndarray
-    detector1: np.ndarray
-    detector2: np.ndarray
-
-    def size(self) -> int:
-        return int(self.g1_E.shape[0])
-
-
-@dataclass
-class PartnerMatchResult:
-    matched: np.ndarray
-    catalog_confirmed: np.ndarray
-    partner_index: np.ndarray
-    probe_angle_deg: np.ndarray
-    probe_relative_E: np.ndarray
-    pair_mass_GeV: np.ndarray
-    score: np.ndarray
-    partner_E: np.ndarray
-    tag_angle_deg: np.ndarray
-    tag_relative_E: np.ndarray
-    solution_closure: np.ndarray
-    summary: Dict[str, object]
-
-
-@dataclass
-class EfficiencyRow:
-    period: str
-    period_label: str
-    detector: str
-    sector: int
-    observed_data: float
-    expected_data: float
-    expected_data_err: float
-    found_data: float
-    raw_efficiency_data: float
-    efficiency_data: float
-    efficiency_data_err: float
-    expected_mc: float
-    found_mc: float
-    raw_efficiency_mc: float
-    efficiency_mc: float
-    efficiency_mc_err: float
-    raw_scale_factor: float
-    scale_factor: float
-    scale_factor_err: float
-    population_valid: bool
-    population_failure_reasons: str
-    fit_success: bool
-    fit_quality_warning: bool
-    fit_warning_reasons: str
-    fit_fraction_pi0: float
-    fit_fraction_pi0_err: float
-    fit_deviance: float
-    fit_ndf: int
-    fit_reduced_deviance: float
-
-
-
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
 
 def log(message: str) -> None:
     print(f"[{time.strftime('%H:%M:%S')}] {message}", flush=True)
 
 
-def elapsed_seconds(start_time: float) -> float:
-    """Return elapsed wall-clock seconds from a perf_counter timestamp."""
-    return float(time.perf_counter() - start_time)
+def wrap_phi(phi: np.ndarray | float) -> np.ndarray | float:
+    return (phi + math.pi) % TWO_PI - math.pi
 
 
-def maybe_log_timing(
-    args: argparse.Namespace,
-    label: str,
-    seconds: float,
-) -> None:
-    """Emit a timing line only when explicitly requested."""
-    if getattr(args, "print_stage_timings", False):
-        log(f"TIMING {label}: {seconds:.3f} s")
-    # endif
+def angle_between(a: np.ndarray, b: np.ndarray) -> float:
+    denom = np.linalg.norm(a) * np.linalg.norm(b)
+    if denom <= 0.0:
+        return float("nan")
+    #endif
+    c = float(np.dot(a, b) / denom)
+    return math.acos(max(-1.0, min(1.0, c)))
 
 
+def direction(theta: float, phi: float) -> np.ndarray:
+    st = math.sin(theta)
+    return np.asarray([st * math.cos(phi), st * math.sin(phi), math.cos(theta)], dtype=float)
 
 
-def selected_periods(args: argparse.Namespace) -> List[PeriodConfig]:
-    if not args.period:
-        return list(PERIODS)
-    # endif
-    requested = set(args.period)
-    return [period for period in PERIODS if period.key in requested]
+def cartesian_from_spherical(p: np.ndarray, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
+    st = np.sin(theta)
+    return np.column_stack((
+        p * st * np.cos(phi),
+        p * st * np.sin(phi),
+        p * np.cos(theta),
+    ))
 
 
-def require_tree(path: str) -> Tuple[int, List[str]]:
-    if not Path(path).is_file():
-        raise FileNotFoundError(f"Missing input ROOT file: {path}")
-    # endif
-    with uproot.open(path) as root_file:
-        if TREE_NAME not in root_file:
-            raise KeyError(f"Tree '{TREE_NAME}' is absent from {path}")
-        # endif
-        tree = root_file[TREE_NAME]
-        return int(tree.num_entries), [str(key) for key in tree.keys()]
-    # endwith
+def infer_angle_unit(arrays: Dict[str, np.ndarray], requested: str) -> str:
+    if requested in ("rad", "deg"):
+        return requested
+    #endif
+
+    probes: List[np.ndarray] = []
+    for name in ("e_theta", "p1_theta", "p2_theta", "e_phi", "p1_phi", "p2_phi"):
+        if name in arrays:
+            v = np.asarray(arrays[name], dtype=float)
+            v = v[np.isfinite(v)]
+            if v.size:
+                probes.append(np.abs(v[: min(v.size, 10000)]))
+            #endif
+        #endif
+    #endfor
+
+    if not probes:
+        raise RuntimeError("Could not infer angle units: no angular branches were available.")
+    #endif
+
+    vmax = float(np.nanpercentile(np.concatenate(probes), 99.0))
+    return "deg" if vmax > 7.0 else "rad"
 
 
-def resolve_branches(
+def to_radians(values: np.ndarray, unit: str) -> np.ndarray:
+    return np.deg2rad(values) if unit == "deg" else np.asarray(values, dtype=float)
+
+
+def finite_mask(*arrays: np.ndarray) -> np.ndarray:
+    out = np.ones(len(arrays[0]), dtype=bool)
+    for arr in arrays:
+        out &= np.isfinite(arr)
+    #endfor
+    return out
+
+
+def find_tree(root_file: uproot.ReadOnlyDirectory, requested: Optional[str]) -> Tuple[str, object]:
+    if requested:
+        if requested not in root_file:
+            raise KeyError(f"Requested tree '{requested}' not found. Keys: {root_file.keys()[:20]}")
+        #endif
+        return requested, root_file[requested]
+    #endif
+
+    for key, classname in root_file.classnames().items():
+        if "TTree" in classname or "RNTuple" in classname:
+            clean = key.split(";")[0]
+            return clean, root_file[clean]
+        #endif
+    #endfor
+
+    raise RuntimeError(f"No TTree/RNTuple found. Keys: {root_file.keys()[:20]}")
+
+
+def read_branches(
     path: str,
-    logical_names: Sequence[str],
-    optional: Sequence[str] = (),
-) -> Dict[str, Optional[str]]:
-    _, keys = require_tree(path)
-    available = set(keys)
-    optional_set = set(optional)
-    resolved: Dict[str, Optional[str]] = {}
-    missing: List[str] = []
+    required: Sequence[str],
+    optional: Sequence[str],
+    tree_name: Optional[str],
+    max_entries: int,
+) -> Tuple[Dict[str, np.ndarray], str, int]:
+    with uproot.open(path) as root_file:
+        found_name, tree = find_tree(root_file, tree_name)
+        available = set(tree.keys())
 
-    for logical in logical_names:
-        aliases = ALIASES.get(logical, (logical,))
-        branch = next((candidate for candidate in aliases if candidate in available), None)
-        resolved[logical] = branch
-        if branch is None and logical not in optional_set:
-            missing.append(f"{logical}: tried {', '.join(aliases)}")
-        # endif
-    # endfor
+        missing = sorted(set(required) - available)
+        if missing:
+            raise KeyError(
+                f"{path}\nTree '{found_name}' is missing required branches:\n  "
+                + "\n  ".join(missing)
+            )
+        #endif
 
-    if missing:
-        raise KeyError(
-            f"Missing required branches in {path}:\n  " + "\n  ".join(missing)
-        )
-    # endif
-    return resolved
+        chosen = list(required) + [b for b in optional if b in available and b not in required]
+        entry_stop = None if max_entries == 0 else min(max_entries, int(tree.num_entries))
+        arrays = tree.arrays(chosen, entry_stop=entry_stop, library="np")
+        arrays = {k: np.asarray(v) for k, v in arrays.items()}
+        return arrays, found_name, int(tree.num_entries)
 
 
-def finite_array(
-    arrays: Mapping[str, np.ndarray],
-    branch: Optional[str],
-    default: float = math.nan,
-    dtype=np.float64,
-) -> np.ndarray:
-    n = len(next(iter(arrays.values())))
-    if branch is None:
-        return np.full(n, default, dtype=dtype)
-    # endif
-    return np.asarray(arrays[branch], dtype=dtype)
+# -----------------------------------------------------------------------------
+# Schema adapters
+# -----------------------------------------------------------------------------
 
+EPG_REQUIRED = (
+    "e_p", "e_theta", "e_phi",
+    "p1_p", "p1_theta", "p1_phi",
+    "p2_p", "p2_theta", "p2_phi",
+)
 
-def spherical_to_cartesian(
-    momentum: np.ndarray,
-    theta: np.ndarray,
-    phi: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    sin_theta = np.sin(theta)
-    return (
-        momentum * sin_theta * np.cos(phi),
-        momentum * sin_theta * np.sin(phi),
-        momentum * np.cos(theta),
-    )
+EPG_OPTIONAL = (
+    "runnum", "evnum", "detector1", "detector2",
+    "Mx2", "Mx2_1", "Mx2_2", "Emiss2", "pTmiss",
+)
 
+EPPIO_REQUIRED = (
+    "e_p", "e_theta", "e_phi",
+    "p1_p", "p1_theta", "p1_phi",
+    "p2_p", "p2_theta", "p2_phi",
+    "gamma_phi1", "gamma_phi2",
+    "open_angle_egamma1", "open_angle_egamma2",
+)
 
-def massive_four_vector(
-    momentum: np.ndarray,
-    theta: np.ndarray,
-    phi: np.ndarray,
-    mass: float,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    px, py, pz = spherical_to_cartesian(momentum, theta, phi)
-    energy = np.sqrt(np.maximum(momentum * momentum + mass * mass, 0.0))
-    return energy, px, py, pz
-
-
-def photon_four_vector(
-    energy: np.ndarray,
-    theta: np.ndarray,
-    phi: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    px, py, pz = spherical_to_cartesian(energy, theta, phi)
-    return energy, px, py, pz
-
-
-def reconstruct_probe(
-    beam_energy: float,
-    e_p: np.ndarray,
-    e_theta: np.ndarray,
-    e_phi: np.ndarray,
-    p_p: np.ndarray,
-    p_theta: np.ndarray,
-    p_phi: np.ndarray,
-    tag_E: np.ndarray,
-    tag_theta: np.ndarray,
-    tag_phi: np.ndarray,
-) -> Dict[str, np.ndarray]:
-    e_E, e_px, e_py, e_pz = massive_four_vector(
-        e_p, e_theta, e_phi, ELECTRON_MASS_GEV
-    )
-    p_E, p_px, p_py, p_pz = massive_four_vector(
-        p_p, p_theta, p_phi, PROTON_MASS_GEV
-    )
-    g_E, g_px, g_py, g_pz = photon_four_vector(tag_E, tag_theta, tag_phi)
-
-    probe_E = beam_energy + PROTON_MASS_GEV - e_E - p_E - g_E
-    probe_px = -e_px - p_px - g_px
-    probe_py = -e_py - p_py - g_py
-    probe_pz = beam_energy - e_pz - p_pz - g_pz
-    probe_p = np.sqrt(np.maximum(probe_px**2 + probe_py**2 + probe_pz**2, 0.0))
-    probe_pt = np.sqrt(np.maximum(probe_px**2 + probe_py**2, 0.0))
-    probe_theta = np.arctan2(probe_pt, probe_pz)
-    probe_phi = np.mod(np.arctan2(probe_py, probe_px), 2.0 * math.pi)
-    return {
-        "E": probe_E,
-        "p": probe_p,
-        "theta": probe_theta,
-        "phi": probe_phi,
-        "m2": probe_E**2 - probe_p**2,
-        "E_minus_p": probe_E - probe_p,
-    }
-
-
-def fd_sector_from_phi(phi_rad: np.ndarray) -> np.ndarray:
-    phi_deg = np.mod(np.degrees(phi_rad), 360.0)
-    sector = np.full(phi_deg.shape, -1, dtype=np.int16)
-    sector[(phi_deg >= 330.0) | (phi_deg < 30.0)] = 1
-    sector[(phi_deg >= 30.0) & (phi_deg < 90.0)] = 2
-    sector[(phi_deg >= 90.0) & (phi_deg < 150.0)] = 3
-    sector[(phi_deg >= 150.0) & (phi_deg < 210.0)] = 4
-    sector[(phi_deg >= 210.0) & (phi_deg < 270.0)] = 5
-    sector[(phi_deg >= 270.0) & (phi_deg < 330.0)] = 6
-    return sector
-
-
-def classify_probe(
-    theta_deg: np.ndarray,
-    phi_rad: np.ndarray,
-    args: argparse.Namespace,
-) -> Tuple[np.ndarray, np.ndarray]:
-    detector = np.full(theta_deg.shape, -1, dtype=np.int16)
-    detector[
-        (theta_deg >= args.ft_theta_min)
-        & (theta_deg < args.ft_theta_max)
-    ] = 0
-    detector[
-        (theta_deg >= args.fd_theta_min)
-        & (theta_deg < args.fd_theta_max)
-    ] = 1
-    sector = fd_sector_from_phi(phi_rad)
-    sector[detector != 1] = 0
-    return detector, sector
-
-
-def topology_code(
-    proton_detector: np.ndarray,
-    tag_detector: np.ndarray,
-) -> np.ndarray:
-    code = np.full(proton_detector.shape, -1, dtype=np.int8)
-    code[(proton_detector == 2) & (tag_detector == 0)] = 0  # CD_FT
-    code[(proton_detector == 2) & (tag_detector == 1)] = 1  # CD_FD
-    code[(proton_detector == 1) & (tag_detector == 1)] = 2  # FD_FD
-    return code
-
-
-def topology_key(code: int) -> str:
-    return {0: "CD_FT", 1: "CD_FD", 2: "FD_FD"}[int(code)]
-
-
-def opening_angle_deg(
-    theta1: np.ndarray,
-    phi1: np.ndarray,
-    theta2: np.ndarray,
-    phi2: np.ndarray,
-) -> np.ndarray:
-    cosine = (
-        np.sin(theta1) * np.sin(theta2) * np.cos(phi1 - phi2)
-        + np.cos(theta1) * np.cos(theta2)
-    )
-    return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))
-
-
-def opening_angle_deg_scalar(
-    theta1: float,
-    phi1: float,
-    theta2: float,
-    phi2: float,
-) -> float:
-    """Allocation-free scalar opening angle in degrees."""
-    cosine = (
-        math.cos(theta1) * math.cos(theta2)
-        + math.sin(theta1)
-        * math.sin(theta2)
-        * math.cos(phi1 - phi2)
-    )
-    return math.degrees(
-        math.acos(min(1.0, max(-1.0, cosine)))
-    )
-
-
-def concat(parts: Sequence[np.ndarray], dtype=np.float64) -> np.ndarray:
-    if not parts:
-        return np.asarray([], dtype=dtype)
-    # endif
-    return np.concatenate(parts).astype(dtype, copy=False)
-
-
-def subset_opportunities(records: OpportunityRecords, mask: np.ndarray) -> OpportunityRecords:
-    return OpportunityRecords(
-        **{
-            name: np.asarray(getattr(records, name))[mask]
-            for name in records.__dataclass_fields__
-        }
-    )
-
-
-def exact_duplicate_keep_mask(
-    arrays: Sequence[np.ndarray],
-    decimals: int = 10,
-) -> np.ndarray:
-    if not arrays or len(arrays[0]) == 0:
-        return np.ones(0, dtype=bool)
-    # endif
-    rounded = [
-        np.round(np.asarray(values, dtype=np.float64), decimals)
-        for values in arrays
-    ]
-    matrix = np.column_stack(rounded)
-    _, first = np.unique(matrix, axis=0, return_index=True)
-    keep = np.zeros(matrix.shape[0], dtype=bool)
-    keep[np.sort(first)] = True
-    return keep
-
-
-
-CUT_STAGE_ORDER: Tuple[str, ...] = (
-    "tree_entries",
-    "photon_multiplicity_lt_3",
-    "finite_kinematics",
-    "Q2",
-    "W",
-    "y",
-    "z_tag",
-    "minus_t1_tag",
-    "open_angle_ep2_tag",
-    "fiducial_status",
-    "tag_energy",
-    "probe_finite",
-    "probe_energy_min",
-    "probe_energy_max",
-    "probe_m2",
-    "probe_E_minus_p",
-    "probe_acceptance",
-    "supported_topology",
-    "selected_before_deduplication",
-    "selected_after_deduplication",
+EPPIO_OPTIONAL = (
+    "runnum", "evnum", "detector_gamma1", "detector_gamma2",
+    "Mh_gammagamma", "Mx2", "Mx2_1", "Mx2_2",
+    "Emiss2", "pTmiss", "fiducial_status",
 )
 
 
-def cut_stage_definitions(
-    resolved: Mapping[str, Optional[str]],
-    args: argparse.Namespace,
-) -> Dict[str, Dict[str, object]]:
-    """Return human-readable definitions for every sequential opportunity cut."""
-    return {
-        "tree_entries": {
-            "label": "Input ROOT-tree entries",
-            "condition": "all entries",
-            "branch": None,
-            "applied": True,
-            "scope": "input",
-        },
-        "photon_multiplicity_lt_3": {
-            "label": "Event photon-entry multiplicity",
-            "condition": (
-                "retain only events with one or two reconstructed-photon "
-                "entries; reject multiplicity >= 3"
-            ),
-            "branch": (
-                "runnum,evnum for data; rounded reconstructed e/p "
-                "kinematics for MC"
-            ),
-            "applied": True,
-            "scope": "hard event-level cut",
-        },
-        "finite_kinematics": {
-            "label": "Finite positive reconstructed e, p, and tag photon",
-            "condition": (
-                "finite e/p/gamma momentum and angles; "
-                "p_e > 0, p_p > 0, E_tag > 0"
-            ),
-            "branch": "e_p,e_theta,e_phi,p1_p,p1_theta,p1_phi,p2_p,p2_theta,p2_phi",
-            "applied": True,
-            "scope": "common event/tag",
-        },
-        "Q2": {
-            "label": "DIS virtuality",
-            "condition": f"Q2 > {args.Q2_min:g} GeV^2",
-            "branch": resolved.get("Q2"),
-            "applied": resolved.get("Q2") is not None,
-            "scope": "common event",
-        },
-        "W": {
-            "label": "DIS invariant mass",
-            "condition": f"W > {args.W_min:g} GeV",
-            "branch": resolved.get("W"),
-            "applied": resolved.get("W") is not None,
-            "scope": "common event",
-        },
-        "y": {
-            "label": "DIS inelasticity",
-            "condition": f"y < {args.y_max:g}",
-            "branch": resolved.get("y"),
-            "applied": resolved.get("y") is not None,
-            "scope": "common event",
-        },
-        "z_tag": {
-            "label": "Tag-photon z requirement",
-            "condition": (
-                f"NOT APPLIED: z(tag photon) > {args.z_min:g} "
-                "was removed from the nominal tag-and-probe selection"
-            ),
-            "branch": resolved.get("z"),
-            "applied": False,
-            "scope": "REMOVED — tag-dependent DVCS cut",
-        },
-        "minus_t1_tag": {
-            "label": "Tag-photon -t1 requirement",
-            "condition": (
-                f"NOT APPLIED: -t1(tag photon) < {args.minus_t_max:g} GeV^2 "
-                "was removed from the nominal tag-and-probe selection"
-            ),
-            "branch": resolved.get("t1"),
-            "applied": False,
-            "scope": "REMOVED — tag-dependent DVCS cut",
-        },
-        "open_angle_ep2_tag": {
-            "label": "Electron–tag-photon opening angle",
-            "condition": (
-                f"NOT APPLIED: open_angle(e, tag photon) > "
-                f"{args.open_angle_min_deg:g} deg was removed from the "
-                "nominal tag-and-probe selection"
-            ),
-            "branch": resolved.get("open_angle_ep2"),
-            "applied": False,
-            "scope": "REMOVED — tag-dependent DVCS cut",
-        },
-        "fiducial_status": {
-            "label": "Combined fiducial status",
-            "condition": "fiducial_status == 111",
-            "branch": resolved.get("fiducial_status"),
-            "applied": (
-                bool(args.require_fiducial_status_111)
-                and resolved.get("fiducial_status") is not None
-            ),
-            "scope": "optional reconstructed-particle fiducial",
-        },
-        "tag_energy": {
-            "label": "Reconstructed tag-photon energy",
-            "condition": f"E_tag >= {args.tag_E_min:g} GeV",
-            "branch": resolved.get("tag_E"),
-            "applied": True,
-            "scope": "tag",
-        },
-        "probe_finite": {
-            "label": "Finite physical missing-photon four-vector",
-            "condition": (
-                "finite E_X, |p_X|, theta_X, phi_X, m_X^2, E_X-|p_X|; "
-                "E_X > 0 and |p_X| > 0"
-            ),
-            "branch": "derived from beam + target - e - p - tag",
-            "applied": True,
-            "scope": "predicted probe",
-        },
-        "probe_energy_min": {
-            "label": "Predicted probe minimum energy",
-            "condition": f"E_X >= {args.probe_E_min:g} GeV",
-            "branch": "derived E_X",
-            "applied": True,
-            "scope": "predicted probe",
-        },
-        "probe_energy_max": {
-            "label": "Predicted probe maximum energy",
-            "condition": f"E_X < {args.probe_E_max:g} GeV",
-            "branch": "derived E_X",
-            "applied": True,
-            "scope": "predicted probe",
-        },
-        "probe_m2": {
-            "label": "Predicted probe mass-squared consistency",
-            "condition": f"|m_X^2| < {args.probe_m2_abs_max:g} GeV^2",
-            "branch": "derived m_X^2",
-            "applied": True,
-            "scope": "predicted probe",
-        },
-        "probe_E_minus_p": {
-            "label": "Predicted probe massless-energy consistency",
-            "condition": (
-                f"|E_X - |p_X|| < "
-                f"{args.probe_E_minus_p_abs_max:g} GeV"
-            ),
-            "branch": "derived E_X-|p_X|",
-            "applied": True,
-            "scope": "predicted probe",
-        },
-        "probe_acceptance": {
-            "label": "Predicted probe points into FT or FD",
-            "condition": (
-                f"FT: {args.ft_theta_min:g} <= theta_X < "
-                f"{args.ft_theta_max:g} deg; FD: "
-                f"{args.fd_theta_min:g} <= theta_X < "
-                f"{args.fd_theta_max:g} deg"
-            ),
-            "branch": "derived theta_X and phi_X",
-            "applied": True,
-            "scope": "predicted probe detector",
-        },
-        "supported_topology": {
-            "label": "Supported reconstructed proton/tag topology",
-            "condition": "proton and tag detector codes map to a supported topology",
-            "branch": "detector1, detector2",
-            "applied": True,
-            "scope": "bookkeeping only; proton topologies later combined",
-        },
-        "selected_before_deduplication": {
-            "label": "Selected directed opportunities before MC deduplication",
-            "condition": "all preceding requirements",
-            "branch": None,
-            "applied": True,
-            "scope": "selected sample",
-        },
-        "selected_after_deduplication": {
-            "label": "Selected directed opportunities after MC deduplication",
-            "condition": "exact duplicate removal for MC; unchanged for data",
-            "branch": None,
-            "applied": True,
-            "scope": "final fit denominator population",
-        },
-    }
+@dataclass
+class EPGammaSample:
+    electron_p3: np.ndarray
+    proton_p3: np.ndarray
+    tag_p3: np.ndarray
+    electron_p: np.ndarray
+    proton_p: np.ndarray
+    tag_energy: np.ndarray
+    electron_theta: np.ndarray
+    electron_phi: np.ndarray
+    proton_theta: np.ndarray
+    proton_phi: np.ndarray
+    tag_theta: np.ndarray
+    tag_phi: np.ndarray
+    raw: Dict[str, np.ndarray]
+    angle_unit: str
 
 
-def stage_mask_with_optional_branch(
-    previous: np.ndarray,
-    arrays: Mapping[str, np.ndarray],
-    branch: Optional[str],
-    predicate,
-) -> np.ndarray:
-    """Apply one branch cut sequentially; absent optional branches leave the mask unchanged."""
-    if branch is None:
-        return previous.copy()
-    # endif
-    values = finite_array(arrays, branch)
-    return previous & np.isfinite(values) & predicate(values)
+@dataclass
+class EPPi0Sample:
+    electron_p3: np.ndarray
+    proton_p3: np.ndarray
+    pi0_p3: np.ndarray
+    electron_p: np.ndarray
+    proton_p: np.ndarray
+    pi0_p: np.ndarray
+    electron_theta: np.ndarray
+    electron_phi: np.ndarray
+    proton_theta: np.ndarray
+    proton_phi: np.ndarray
+    pi0_theta: np.ndarray
+    pi0_phi: np.ndarray
+    gamma_phi1: np.ndarray
+    gamma_phi2: np.ndarray
+    open_angle_egamma1: np.ndarray
+    open_angle_egamma2: np.ndarray
+    raw: Dict[str, np.ndarray]
+    angle_unit: str
 
 
-def finalize_cutflow_report(cutflow: Dict[str, object]) -> Dict[str, object]:
-    """Add incremental and total survival rates to the raw cumulative counters."""
-    definitions = cutflow["stage_definitions"]
-    counts = cutflow["stage_counts"]
-    rows: List[Dict[str, object]] = []
-    total = int(counts.get("tree_entries", 0))
-    previous_count = total
+def extract_epgamma(arrays: Dict[str, np.ndarray], angle_mode: str) -> EPGammaSample:
+    unit = infer_angle_unit(arrays, angle_mode)
 
-    for index, stage in enumerate(CUT_STAGE_ORDER):
-        count = int(counts.get(stage, 0))
-        definition = definitions[stage]
-        applied = bool(definition["applied"])
-        reference = total if index == 0 else previous_count
-        incremental = (
-            float(count / reference)
-            if reference > 0
-            else math.nan
-        )
-        total_survival = (
-            float(count / total)
-            if total > 0
-            else math.nan
-        )
-        rows.append(
-            {
-                "order": index,
-                "stage": stage,
-                "label": definition["label"],
-                "condition": definition["condition"],
-                "branch": definition["branch"],
-                "scope": definition["scope"],
-                "applied": applied,
-                "count": count,
-                "rejected_at_stage": (
-                    0 if index == 0 else max(previous_count - count, 0)
-                ),
-                "incremental_survival": incremental,
-                "incremental_rejection": (
-                    1.0 - incremental
-                    if math.isfinite(incremental)
-                    else math.nan
-                ),
-                "total_survival": total_survival,
-            }
-        )
-        previous_count = count
-    # endfor
+    e_theta = to_radians(arrays["e_theta"], unit)
+    e_phi = to_radians(arrays["e_phi"], unit)
+    p_theta = to_radians(arrays["p1_theta"], unit)
+    p_phi = to_radians(arrays["p1_phi"], unit)
+    g_theta = to_radians(arrays["p2_theta"], unit)
+    g_phi = to_radians(arrays["p2_phi"], unit)
 
-    cutflow["stages"] = rows
-    cutflow["largest_incremental_loss"] = max(
-        rows[1:],
-        key=lambda row: (
-            row["incremental_rejection"]
-            if math.isfinite(row["incremental_rejection"])
-            else -1.0
-        ),
-    ) if len(rows) > 1 else None
-    return cutflow
+    e_p = np.asarray(arrays["e_p"], dtype=float)
+    p_p = np.asarray(arrays["p1_p"], dtype=float)
+    g_e = np.asarray(arrays["p2_p"], dtype=float)
 
-
-def common_global_mask(
-    arrays: Mapping[str, np.ndarray],
-    resolved: Mapping[str, Optional[str]],
-    args: argparse.Namespace,
-) -> np.ndarray:
-    n = len(next(iter(arrays.values())))
-    mask = np.ones(n, dtype=bool)
-
-    def lower(key: str, threshold: float) -> None:
-        nonlocal mask
-        branch = resolved.get(key)
-        if branch is not None:
-            values = finite_array(arrays, branch)
-            mask &= np.isfinite(values) & (values > threshold)
-        # endif
-
-    def upper(key: str, threshold: float) -> None:
-        nonlocal mask
-        branch = resolved.get(key)
-        if branch is not None:
-            values = finite_array(arrays, branch)
-            mask &= np.isfinite(values) & (values < threshold)
-        # endif
-
-    lower("Q2", args.Q2_min)
-    lower("W", args.W_min)
-    upper("y", args.y_max)
-    lower("z", args.z_min)
-
-    # Tag-dependent z, t1, and electron-tag opening-angle cuts are
-    # intentionally omitted from the nominal opportunity definition.
-
-    if args.require_fiducial_status_111 and resolved.get("fiducial_status") is not None:
-        status = finite_array(arrays, resolved["fiducial_status"])
-        mask &= np.isfinite(status) & (status == 111)
-    # endif
-    return mask
-
-
-def empty_opportunity_store() -> Dict[str, List[np.ndarray]]:
-    return {name: [] for name in OpportunityRecords.__dataclass_fields__}
-
-
-def append_opportunity_store(
-    store: Dict[str, List[np.ndarray]],
-    values: Mapping[str, np.ndarray],
-    mask: np.ndarray,
-) -> None:
-    for name in store:
-        store[name].append(np.asarray(values[name])[mask])
-    # endfor
-
-
-def finalize_opportunity_store(store: Mapping[str, Sequence[np.ndarray]]) -> OpportunityRecords:
-    integer_fields = {
-        "runnum", "eventnum", "tag_detector", "proton_detector",
-        "probe_detector", "probe_sector", "topology_code",
-    }
-    payload = {}
-    for name, parts in store.items():
-        dtype = np.int64 if name in {"runnum", "eventnum"} else (
-            np.int16 if name in integer_fields else np.float64
-        )
-        payload[name] = concat(parts, dtype=dtype)
-    # endfor
-    return OpportunityRecords(**payload)
-
-
-def empty_candidate_store() -> Dict[str, List[np.ndarray]]:
-    return {name: [] for name in PhotonCandidateRecords.__dataclass_fields__}
-
-
-def append_candidate_store(
-    store: Dict[str, List[np.ndarray]],
-    values: Mapping[str, np.ndarray],
-    mask: np.ndarray,
-) -> None:
-    for name in store:
-        store[name].append(np.asarray(values[name])[mask])
-    # endfor
-
-
-def finalize_candidate_store(
-    store: Mapping[str, Sequence[np.ndarray]],
-) -> PhotonCandidateRecords:
-    integer_fields = {"runnum", "eventnum", "photon_detector"}
-    payload = {}
-    for name, parts in store.items():
-        dtype = np.int64 if name in {"runnum", "eventnum"} else (
-            np.int16 if name in integer_fields else np.float64
-        )
-        payload[name] = concat(parts, dtype=dtype)
-    # endfor
-    return PhotonCandidateRecords(**payload)
-
-
-def subset_candidates(
-    records: PhotonCandidateRecords,
-    mask: np.ndarray,
-) -> PhotonCandidateRecords:
-    return PhotonCandidateRecords(
-        **{
-            name: np.asarray(getattr(records, name))[mask]
-            for name in records.__dataclass_fields__
-        }
+    return EPGammaSample(
+        electron_p3=cartesian_from_spherical(e_p, e_theta, e_phi),
+        proton_p3=cartesian_from_spherical(p_p, p_theta, p_phi),
+        tag_p3=cartesian_from_spherical(g_e, g_theta, g_phi),
+        electron_p=e_p,
+        proton_p=p_p,
+        tag_energy=g_e,
+        electron_theta=e_theta,
+        electron_phi=e_phi,
+        proton_theta=p_theta,
+        proton_phi=p_phi,
+        tag_theta=g_theta,
+        tag_phi=g_phi,
+        raw=arrays,
+        angle_unit=unit,
     )
 
 
-def read_opportunities(
-    path: str,
-    beam_energy: float,
-    role: str,
-    args: argparse.Namespace,
-    deduplicate: bool,
-    collect_candidates: bool = True,
-) -> Tuple[OpportunityRecords, PhotonCandidateRecords, Dict[str, object]]:
-    logical = (
-        "runnum", "eventnum",
-        "e_p", "e_theta", "e_phi",
-        "p_p", "p_theta", "p_phi",
-        "tag_E", "tag_theta", "tag_phi",
-        "tag_detector", "proton_detector",
-        "fiducial_status", "Q2", "W", "y", "z", "t1", "open_angle_ep2",
-        "Delta_phi", "theta_cm", "theta_gamma_gamma", "pTmiss",
-        "Emiss2", "Mx2", "Mx2_1", "Mx2_2",
-    )
-    optional = (
-        "runnum", "eventnum", "tag_detector", "proton_detector",
-        "fiducial_status", "Q2", "W", "y", "z", "t1", "open_angle_ep2",
-        "theta_cm", "Mx2_1",
-    )
-    resolved = resolve_branches(path, logical, optional=optional)
-    expressions = sorted({branch for branch in resolved.values() if branch is not None})
+def extract_eppi0(arrays: Dict[str, np.ndarray], angle_mode: str) -> EPPi0Sample:
+    unit = infer_angle_unit(arrays, angle_mode)
 
-    tree_entries, _available_keys = require_tree(path)
-    entry_stop = (
-        min(tree_entries, int(args.max_events))
-        if args.max_events is not None
-        else tree_entries
-    )
-    mc_identity_resolved = {
-        logical_name: resolved[logical_name]
-        for logical_name in identity_logical_names("mc")
-    }
-    (
-        _all_mc_signatures,
-        one_mc_signatures,
-        two_mc_signatures,
-        _three_plus_mc_signatures,
-        multiplicity_audit,
-    ) = scan_event_multiplicity(
-        path,
-        "mc",
-        mc_identity_resolved,
-        args,
-        entry_stop,
+    e_theta = to_radians(arrays["e_theta"], unit)
+    e_phi = to_radians(arrays["e_phi"], unit)
+    p_theta = to_radians(arrays["p1_theta"], unit)
+    p_phi = to_radians(arrays["p1_phi"], unit)
+    pi_theta = to_radians(arrays["p2_theta"], unit)
+    pi_phi = to_radians(arrays["p2_phi"], unit)
+
+    e_p = np.asarray(arrays["e_p"], dtype=float)
+    p_p = np.asarray(arrays["p1_p"], dtype=float)
+    pi_p = np.asarray(arrays["p2_p"], dtype=float)
+
+    return EPPi0Sample(
+        electron_p3=cartesian_from_spherical(e_p, e_theta, e_phi),
+        proton_p3=cartesian_from_spherical(p_p, p_theta, p_phi),
+        pi0_p3=cartesian_from_spherical(pi_p, pi_theta, pi_phi),
+        electron_p=e_p,
+        proton_p=p_p,
+        pi0_p=pi_p,
+        electron_theta=e_theta,
+        electron_phi=e_phi,
+        proton_theta=p_theta,
+        proton_phi=p_phi,
+        pi0_theta=pi_theta,
+        pi0_phi=pi_phi,
+        gamma_phi1=to_radians(arrays["gamma_phi1"], unit),
+        gamma_phi2=to_radians(arrays["gamma_phi2"], unit),
+        open_angle_egamma1=to_radians(arrays["open_angle_egamma1"], unit),
+        open_angle_egamma2=to_radians(arrays["open_angle_egamma2"], unit),
+        raw=arrays,
+        angle_unit=unit,
     )
 
-    store = empty_opportunity_store()
-    candidate_store = (
-        empty_candidate_store()
-        if collect_candidates
-        else None
-    )
-    stage_definitions = cut_stage_definitions(resolved, args)
-    cutflow: Dict[str, object] = {
-        "role": role,
-        "path": path,
-        "stage_definitions": stage_definitions,
-        "stage_counts": {stage: 0 for stage in CUT_STAGE_ORDER},
-        "detector_counts": {
-            stage: {"FT": 0, "FD": 0}
-            for stage in (
-                "probe_finite",
-                "probe_energy_min",
-                "probe_energy_max",
-                "probe_m2",
-                "probe_E_minus_p",
-                "probe_acceptance",
-                "supported_topology",
-                "selected_before_deduplication",
-                "selected_after_deduplication",
-            )
-        },
-        "partner_candidates_finite_and_E_above_threshold": 0,
-        "multiplicity_audit": {
-            "condition": (
-                "all photon-entry multiplicities are retained; multiplicity "
-                "is reported for diagnostics only"
-            ),
-            **multiplicity_audit,
-        },
-    }
-    stage_counts = cutflow["stage_counts"]
 
-    seen = 0
-    log(f"Reading {role} from {path}")
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        entry_stop=entry_stop,
-        library="np",
-    ):
-        n = len(next(iter(arrays.values())))
-        if args.max_events is not None and seen >= args.max_events:
-            break
-        # endif
-        if args.max_events is not None and seen + n > args.max_events:
-            n = args.max_events - seen
-            arrays = {key: value[:n] for key, value in arrays.items()}
-        # endif
-        seen += n
-        stage_counts["tree_entries"] += int(n)
+# -----------------------------------------------------------------------------
+# MC event matching through reconstructed e/p kinematics
+# -----------------------------------------------------------------------------
 
-        def arr(key: str, default: float = math.nan, dtype=np.float64) -> np.ndarray:
-            return finite_array(arrays, resolved.get(key), default=default, dtype=dtype)
-
-        e_p, e_theta, e_phi = arr("e_p"), arr("e_theta"), arr("e_phi")
-        p_p, p_theta, p_phi = arr("p_p"), arr("p_theta"), arr("p_phi")
-        tag_E = arr("tag_E")
-        tag_theta = arr("tag_theta")
-        tag_phi = np.mod(arr("tag_phi"), 2.0 * math.pi)
-        tag_detector = arr("tag_detector", default=-1, dtype=np.int16)
-        proton_detector = arr("proton_detector", default=-1, dtype=np.int16)
-
-        identity_arrays = {
-            "e_p": e_p,
-            "e_theta": e_theta,
-            "e_phi": e_phi,
-            "p_p": p_p,
-            "p_theta": p_theta,
-            "p_phi": p_phi,
-        }
-        (
-            one_multiplicity_keep,
-            two_multiplicity_keep,
-            _three_plus_multiplicity_keep,
-            valid_identity,
-        ) = multiplicity_entry_masks(
-            identity_arrays,
-            "mc",
-            one_mc_signatures,
-            two_mc_signatures,
-            _three_plus_mc_signatures,
-            args,
-        )
-        multiplicity_keep = (
-            one_multiplicity_keep | two_multiplicity_keep
-        )
-        stage_counts["photon_multiplicity_lt_3"] += int(
-            np.count_nonzero(multiplicity_keep)
-        )
-
-        finite = multiplicity_keep & (
-            np.isfinite(e_p) & np.isfinite(e_theta) & np.isfinite(e_phi)
-            & np.isfinite(p_p) & np.isfinite(p_theta) & np.isfinite(p_phi)
-            & np.isfinite(tag_E) & np.isfinite(tag_theta) & np.isfinite(tag_phi)
-            & (e_p > 0.0) & (p_p > 0.0) & (tag_E > 0.0)
-        )
-        stage_counts["finite_kinematics"] += int(np.count_nonzero(finite))
-
-        mask_Q2 = stage_mask_with_optional_branch(
-            finite, arrays, resolved.get("Q2"),
-            lambda values: values > args.Q2_min,
-        )
-        stage_counts["Q2"] += int(np.count_nonzero(mask_Q2))
-
-        mask_W = stage_mask_with_optional_branch(
-            mask_Q2, arrays, resolved.get("W"),
-            lambda values: values > args.W_min,
-        )
-        stage_counts["W"] += int(np.count_nonzero(mask_W))
-
-        mask_y = stage_mask_with_optional_branch(
-            mask_W, arrays, resolved.get("y"),
-            lambda values: values < args.y_max,
-        )
-        stage_counts["y"] += int(np.count_nonzero(mask_y))
-
-        # These three DVCS-style cuts are tag dependent. The reconstructed
-        # tag may be the low-energy pi0 daughter, whereas the efficiency probe
-        # is the predicted high-energy photon. They are therefore retained as
-        # explicit audit stages but intentionally do not alter the mask.
-        mask_z = mask_y.copy()
-        stage_counts["z_tag"] += int(np.count_nonzero(mask_z))
-
-        mask_t1 = mask_z.copy()
-        stage_counts["minus_t1_tag"] += int(np.count_nonzero(mask_t1))
-
-        mask_open = mask_t1.copy()
-        stage_counts["open_angle_ep2_tag"] += int(np.count_nonzero(mask_open))
-
-        if (
-            args.require_fiducial_status_111
-            and resolved.get("fiducial_status") is not None
-        ):
-            status = finite_array(arrays, resolved["fiducial_status"])
-            mask_fiducial = (
-                mask_open
-                & np.isfinite(status)
-                & (status == 111)
-            )
-        else:
-            mask_fiducial = mask_open.copy()
-        # endif
-        stage_counts["fiducial_status"] += int(
-            np.count_nonzero(mask_fiducial)
-        )
-
-        tag_mask = mask_fiducial & (tag_E >= args.tag_E_min)
-        stage_counts["tag_energy"] += int(np.count_nonzero(tag_mask))
-
-        # The partner pool intentionally uses every finite reconstructed photon
-        # above threshold, independent of the tag-specific opportunity cuts.
-        candidate_mask = finite & (tag_E >= args.tag_E_min)
-        candidate_values = {
-            "runnum": arr("runnum", default=-1, dtype=np.int64),
-            "eventnum": arr("eventnum", default=-1, dtype=np.int64),
-            "e_p": e_p, "e_theta": e_theta, "e_phi": e_phi,
-            "p_p": p_p, "p_theta": p_theta, "p_phi": p_phi,
-            "photon_E": tag_E,
-            "photon_theta": tag_theta,
-            "photon_phi": tag_phi,
-            "photon_detector": tag_detector,
-        }
-        if collect_candidates:
-            append_candidate_store(
-                candidate_store,
-                candidate_values,
-                candidate_mask,
-            )
-            cutflow[
-                "partner_candidates_finite_and_E_above_threshold"
-            ] += int(np.count_nonzero(candidate_mask))
-        # endif
-
-        probe = reconstruct_probe(
-            beam_energy,
-            e_p, e_theta, e_phi,
-            p_p, p_theta, p_phi,
-            tag_E, tag_theta, tag_phi,
-        )
-        probe_theta_deg = np.degrees(probe["theta"])
-        probe_detector, probe_sector = classify_probe(
-            probe_theta_deg, probe["phi"], args
-        )
-
-        def accumulate_detector_stage(stage: str, mask: np.ndarray) -> None:
-            cutflow["detector_counts"][stage]["FT"] += int(
-                np.count_nonzero(mask & (probe_detector == 0))
-            )
-            cutflow["detector_counts"][stage]["FD"] += int(
-                np.count_nonzero(mask & (probe_detector == 1))
-            )
-        # enddef
-
-        probe_finite = (
-            tag_mask
-            & np.isfinite(probe["E"]) & np.isfinite(probe["p"])
-            & np.isfinite(probe["theta"]) & np.isfinite(probe["phi"])
-            & np.isfinite(probe["m2"]) & np.isfinite(probe["E_minus_p"])
-            & (probe["E"] > 0.0) & (probe["p"] > 0.0)
-        )
-        stage_counts["probe_finite"] += int(np.count_nonzero(probe_finite))
-        accumulate_detector_stage("probe_finite", probe_finite)
-
-        probe_E_min = probe_finite & (probe["E"] >= args.probe_E_min)
-        stage_counts["probe_energy_min"] += int(
-            np.count_nonzero(probe_E_min)
-        )
-        accumulate_detector_stage("probe_energy_min", probe_E_min)
-
-        probe_E_window = probe_E_min & (probe["E"] < args.probe_E_max)
-        stage_counts["probe_energy_max"] += int(
-            np.count_nonzero(probe_E_window)
-        )
-        accumulate_detector_stage("probe_energy_max", probe_E_window)
-
-        probe_m2 = (
-            probe_E_window
-            & (np.abs(probe["m2"]) < args.probe_m2_abs_max)
-        )
-        stage_counts["probe_m2"] += int(np.count_nonzero(probe_m2))
-        accumulate_detector_stage("probe_m2", probe_m2)
-
-        photon_like = (
-            probe_m2
-            & (
-                np.abs(probe["E_minus_p"])
-                < args.probe_E_minus_p_abs_max
-            )
-        )
-        stage_counts["probe_E_minus_p"] += int(
-            np.count_nonzero(photon_like)
-        )
-        accumulate_detector_stage("probe_E_minus_p", photon_like)
-
-        accepted = photon_like & (probe_detector >= 0)
-        stage_counts["probe_acceptance"] += int(np.count_nonzero(accepted))
-        accumulate_detector_stage("probe_acceptance", accepted)
-
-        topo = topology_code(proton_detector, tag_detector)
-        selected = accepted & (topo >= 0)
-        stage_counts["supported_topology"] += int(np.count_nonzero(selected))
-        stage_counts["selected_before_deduplication"] += int(
-            np.count_nonzero(selected)
-        )
-        accumulate_detector_stage("supported_topology", selected)
-        accumulate_detector_stage("selected_before_deduplication", selected)
-
-        values = {
-            "runnum": arr("runnum", default=-1, dtype=np.int64),
-            "eventnum": arr("eventnum", default=-1, dtype=np.int64),
-            "e_p": e_p, "e_theta": e_theta, "e_phi": e_phi,
-            "p_p": p_p, "p_theta": p_theta, "p_phi": p_phi,
-            "tag_E": tag_E, "tag_theta": tag_theta, "tag_phi": tag_phi,
-            "tag_detector": tag_detector,
-            "proton_detector": proton_detector,
-            "probe_E": probe["E"], "probe_p": probe["p"],
-            "probe_theta": probe["theta"], "probe_phi": probe["phi"],
-            "probe_m2": probe["m2"],
-            "probe_E_minus_p": probe["E_minus_p"],
-            "probe_detector": probe_detector,
-            "probe_sector": probe_sector,
-            "topology_code": topo,
-            "Delta_phi": arr("Delta_phi"),
-            "theta_cm": arr("theta_cm"),
-            "theta_gamma_gamma": arr("theta_gamma_gamma"),
-            "pTmiss": arr("pTmiss"),
-            "Emiss2": arr("Emiss2"),
-            "Mx2": arr("Mx2"),
-            "Mx2_2": arr("Mx2_2"),
-        }
-        append_opportunity_store(store, values, selected)
-    # endfor
-
-    records = finalize_opportunity_store(store)
-
-    if collect_candidates:
-        candidates = finalize_candidate_store(candidate_store)
-        if deduplicate and candidates.size() > 0:
-            candidate_keep = exact_duplicate_keep_mask(
-                [
-                    candidates.e_p,
-                    candidates.e_theta,
-                    candidates.e_phi,
-                    candidates.p_p,
-                    candidates.p_theta,
-                    candidates.p_phi,
-                    candidates.photon_E,
-                    candidates.photon_theta,
-                    candidates.photon_phi,
-                ],
-                decimals=args.mc_signature_decimals,
-            )
-            candidates = subset_candidates(
-                candidates,
-                candidate_keep,
-            )
-        # endif
-    else:
-        candidates = finalize_candidate_store(
-            empty_candidate_store()
-        )
-    # endif
-    if deduplicate and records.size() > 0:
-        keep = exact_duplicate_keep_mask(
-            [
-                records.e_p, records.e_theta, records.e_phi,
-                records.p_p, records.p_theta, records.p_phi,
-                records.tag_E, records.tag_theta, records.tag_phi,
-            ],
-            decimals=args.mc_signature_decimals,
-        )
-        records = subset_opportunities(records, keep)
-    # endif
-    stage_counts["selected_after_deduplication"] = records.size()
-    cutflow["detector_counts"]["selected_after_deduplication"]["FT"] = int(
-        np.count_nonzero(records.probe_detector == 0)
-    )
-    cutflow["detector_counts"]["selected_after_deduplication"]["FD"] = int(
-        np.count_nonzero(records.probe_detector == 1)
-    )
-    cutflow["branch_mapping"] = resolved
-    cutflow["partner_candidate_records"] = candidates.size()
-    cutflow = finalize_cutflow_report(cutflow)
-    return records, candidates, cutflow
+@dataclass
+class MatchResult:
+    epg_index: np.ndarray
+    eppi0_index: np.ndarray
+    nearest_distance: np.ndarray
+    max_component_delta: np.ndarray
 
 
-def unit_vector(theta: float, phi: float) -> np.ndarray:
-    return np.asarray(
-        [
-            math.sin(theta) * math.cos(phi),
-            math.sin(theta) * math.sin(phi),
-            math.cos(theta),
-        ],
-        dtype=float,
+def match_parent_kinematics(
+    epg: EPGammaSample,
+    eppi0: EPPi0Sample,
+    tag_min: float,
+    tag_max: float,
+    component_tolerance: float,
+    nearest_distance_max: float,
+) -> MatchResult:
+    """
+    Match reconstructed parent (electron, proton) states.
+
+    Features are the six Cartesian momentum components:
+        e_px,e_py,e_pz,p_px,p_py,p_pz.
+
+    Dividing by component_tolerance makes the KD-tree metric dimensionless.
+    A match must pass BOTH:
+        Euclidean scaled distance <= nearest_distance_max
+        max absolute Cartesian component difference <= component_tolerance
+
+    The second condition prevents a moderately bad match in one coordinate
+    from being hidden by the six-dimensional Euclidean metric.
+    """
+    x_pi0 = np.column_stack((eppi0.electron_p3, eppi0.proton_p3))
+    x_epg = np.column_stack((epg.electron_p3, epg.proton_p3))
+
+    good_pi0 = np.all(np.isfinite(x_pi0), axis=1)
+    good_epg = (
+        np.all(np.isfinite(x_epg), axis=1)
+        & np.isfinite(epg.tag_energy)
+        & (epg.tag_energy >= tag_min)
+        & (epg.tag_energy < tag_max)
     )
 
-def q_trento_basis(
-    beam_energy: float,
-    electron_p: float,
-    electron_theta: float,
-    electron_phi: float,
-) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]]:
-    electron_direction = unit_vector(electron_theta, electron_phi)
-    electron_vector = electron_p * electron_direction
-    q_vector = np.asarray([0.0, 0.0, beam_energy]) - electron_vector
-    q_magnitude = float(np.linalg.norm(q_vector))
-    if q_magnitude <= 1.0e-12:
+    pi0_indices = np.flatnonzero(good_pi0)
+    epg_indices = np.flatnonzero(good_epg)
+
+    if pi0_indices.size == 0 or epg_indices.size == 0:
+        return MatchResult(
+            epg_index=np.asarray([], dtype=np.int64),
+            eppi0_index=np.asarray([], dtype=np.int64),
+            nearest_distance=np.asarray([], dtype=float),
+            max_component_delta=np.asarray([], dtype=float),
+        )
+    #endif
+
+    tree = cKDTree(x_pi0[pi0_indices] / component_tolerance)
+    distance, local_index = tree.query(
+        x_epg[epg_indices] / component_tolerance,
+        k=1,
+        workers=-1,
+    )
+
+    candidate_pi0 = pi0_indices[local_index]
+    deltas = np.abs(x_epg[epg_indices] - x_pi0[candidate_pi0])
+    max_delta = np.max(deltas, axis=1)
+
+    accepted = (
+        np.isfinite(distance)
+        & (distance <= nearest_distance_max)
+        & (max_delta <= component_tolerance)
+    )
+
+    return MatchResult(
+        epg_index=epg_indices[accepted],
+        eppi0_index=candidate_pi0[accepted],
+        nearest_distance=distance[accepted],
+        max_component_delta=max_delta[accepted],
+    )
+
+
+# -----------------------------------------------------------------------------
+# Recovery of the two photons stored only indirectly in the eppi0 tree
+# -----------------------------------------------------------------------------
+
+def build_trento_basis(
+    beam_p3: np.ndarray,
+    electron_p3: np.ndarray,
+) -> Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """
+    Construct an event-by-event Trento-like orthonormal basis in the lab.
+
+    z_T is parallel to q = k - k'.
+
+    y_T is normal to the lepton plane, using k x k'.  x_T = y_T x z_T.
+    This is the standard right-handed choice appropriate for a Trento azimuth
+    measured about q relative to the lepton plane.
+
+    The exact sign convention used by the producer is validated downstream by
+    reconstructed-pi0 four-vector closure; a wrong y_T sign would manifest as
+    a large and systematic closure failure.
+    """
+    q = np.asarray(beam_p3, dtype=float) - np.asarray(electron_p3, dtype=float)
+    qmag = float(np.linalg.norm(q))
+    if qmag <= 1.0e-14:
         return None
-    # endif
-    q_hat = q_vector / q_magnitude
+    #endif
+    zhat = q / qmag
 
-    electron_transverse = (
-        electron_direction
-        - float(np.dot(electron_direction, q_hat)) * q_hat
-    )
-    transverse_magnitude = float(np.linalg.norm(electron_transverse))
-    if transverse_magnitude <= 1.0e-12:
+    normal = np.cross(np.asarray(beam_p3, dtype=float), np.asarray(electron_p3, dtype=float))
+    nmag = float(np.linalg.norm(normal))
+    if nmag <= 1.0e-14:
         return None
-    # endif
+    #endif
+    yhat = normal / nmag
 
-    x_hat = electron_transverse / transverse_magnitude
-    y_hat = np.cross(q_hat, x_hat)
-    y_hat /= float(np.linalg.norm(y_hat))
-    return q_hat, x_hat, y_hat, electron_direction
+    xhat = np.cross(yhat, zhat)
+    xmag = float(np.linalg.norm(xhat))
+    if xmag <= 1.0e-14:
+        return None
+    #endif
+    xhat /= xmag
 
-def solve_q_polar_angles(
-    electron_direction: np.ndarray,
-    q_hat: np.ndarray,
-    x_hat: np.ndarray,
+    # Re-orthogonalize y to protect against floating-point drift.
+    yhat = np.cross(zhat, xhat)
+    yhat /= max(float(np.linalg.norm(yhat)), 1.0e-30)
+
+    return xhat, yhat, zhat
+
+
+def trento_polar_solutions_from_electron_opening(
+    electron_hat: np.ndarray,
     trento_phi: float,
-    opening_angle: float,
+    opening_angle_lab: float,
+    xhat: np.ndarray,
+    yhat: np.ndarray,
+    zhat: np.ndarray,
 ) -> List[float]:
     """
-    Solve for the photon polar angle about q.
+    Solve for the photon polar angle theta_{gamma q} about q.
 
-    With n_gamma = sin(theta_q)(cos(phi)x + sin(phi)y) + cos(theta_q)q,
-    the stored electron-photon opening angle gives
+    In the Trento basis,
 
-        A sin(theta_q) + B cos(theta_q) = cos(alpha),
+      n_gamma =
+          sin(theta) cos(phi_T) x_T
+        + sin(theta) sin(phi_T) y_T
+        + cos(theta)            z_T.
 
-    where A = (e_hat dot x_hat) cos(phi) and B = e_hat dot q_hat.
+    The measured lab electron-photon opening angle alpha supplies
+
+      e_hat dot n_gamma = cos(alpha).
+
+    Thus
+
+      A cos(theta) + B sin(theta) = C,
+
+    with
+      A = e_hat dot z_T
+      B = cos(phi_T) e_hat dot x_T + sin(phi_T) e_hat dot y_T
+      C = cos(alpha).
+
+    There may be two physical theta solutions; both are retained and the
+    reconstructed-pi0 four-vector closure resolves the ambiguity.
     """
-    A = float(np.dot(electron_direction, x_hat)) * math.cos(trento_phi)
-    B = float(np.dot(electron_direction, q_hat))
-    C = math.cos(opening_angle)
-    radius = math.hypot(A, B)
-    if radius <= 1.0e-12:
+    if not math.isfinite(trento_phi) or not math.isfinite(opening_angle_lab):
         return []
-    # endif
+    #endif
 
-    ratio = C / radius
-    if ratio < -1.0 - 1.0e-9 or ratio > 1.0 + 1.0e-9:
+    A = float(np.dot(electron_hat, zhat))
+    B = (
+        math.cos(trento_phi) * float(np.dot(electron_hat, xhat))
+        + math.sin(trento_phi) * float(np.dot(electron_hat, yhat))
+    )
+    C = math.cos(opening_angle_lab)
+    R = math.hypot(A, B)
+
+    if R <= 1.0e-14:
         return []
-    # endif
-    ratio = float(np.clip(ratio, -1.0, 1.0))
+    #endif
 
-    phase = math.atan2(A, B)
-    offset = math.acos(ratio)
-    candidates: List[float] = []
-    for raw in (phase + offset, phase - offset):
-        theta = raw % (2.0 * math.pi)
-        if theta > math.pi:
-            theta = 2.0 * math.pi - theta
-        # endif
-        if (
-            0.0 <= theta <= math.pi
-            and all(abs(theta - existing) > 1.0e-9 for existing in candidates)
-        ):
-            candidates.append(theta)
-        # endif
-    # endfor
-    return candidates
+    ratio = C / R
+    if ratio < -1.0 - 1.0e-10 or ratio > 1.0 + 1.0e-10:
+        return []
+    #endif
 
-def lab_direction_from_trento(
+    ratio = max(-1.0, min(1.0, ratio))
+    delta = math.atan2(B, A)
+    beta = math.acos(ratio)
+
+    out: List[float] = []
+    for raw in (delta + beta, delta - beta):
+        # theta is a polar angle about q and must lie in [0, pi].
+        # Add/subtract 2pi until we can test the physical representative.
+        candidates = (raw, raw + TWO_PI, raw - TWO_PI)
+        for candidate in candidates:
+            if 0.0 <= candidate <= math.pi:
+                if not any(abs(candidate - old) < 1.0e-10 for old in out):
+                    out.append(candidate)
+                #endif
+                break
+            #endif
+        #endfor
+    #endfor
+
+    return out
+
+
+def direction_from_trento(
     theta_q: float,
-    trento_phi: float,
-    q_hat: np.ndarray,
-    x_hat: np.ndarray,
-    y_hat: np.ndarray,
+    phi_trento: float,
+    xhat: np.ndarray,
+    yhat: np.ndarray,
+    zhat: np.ndarray,
 ) -> np.ndarray:
-    direction = (
-        math.sin(theta_q)
-        * (
-            math.cos(trento_phi) * x_hat
-            + math.sin(trento_phi) * y_hat
-        )
-        + math.cos(theta_q) * q_hat
+    st = math.sin(theta_q)
+    n = (
+        st * math.cos(phi_trento) * xhat
+        + st * math.sin(phi_trento) * yhat
+        + math.cos(theta_q) * zhat
     )
-    direction /= float(np.linalg.norm(direction))
-    return direction
+    norm = float(np.linalg.norm(n))
+    if norm <= 1.0e-14:
+        return np.asarray([float("nan")] * 3, dtype=float)
+    #endif
+    return n / norm
 
-def direction_to_angles(direction: np.ndarray) -> Tuple[float, float]:
-    theta = math.acos(float(np.clip(direction[2], -1.0, 1.0)))
-    phi = math.atan2(float(direction[1]), float(direction[0]))
-    return theta, float(np.mod(phi, 2.0 * math.pi))
 
-def reconstruct_daughter_solutions(
-    beam_energy: float,
-    electron_p: float,
-    electron_theta: float,
-    electron_phi: float,
-    pi0_p: float,
-    pi0_theta: float,
-    pi0_phi: float,
-    pi0_mass: float,
-    opening1: float,
-    opening2: float,
-    trento1: float,
-    trento2: float,
-    args: argparse.Namespace,
-) -> List[Tuple[float, float, float, float, float, float, float]]:
-    basis = q_trento_basis(
-        beam_energy,
-        electron_p,
-        electron_theta,
-        electron_phi,
-    )
+@dataclass
+class RecoveredPi0Photons:
+    success: bool
+    n1: Optional[np.ndarray] = None
+    n2: Optional[np.ndarray] = None
+    theta_q1: float = float("nan")
+    theta_q2: float = float("nan")
+    phi_trento1: float = float("nan")
+    phi_trento2: float = float("nan")
+    lab_theta1: float = float("nan")
+    lab_theta2: float = float("nan")
+    lab_phi1: float = float("nan")
+    lab_phi2: float = float("nan")
+    energy1: float = float("nan")
+    energy2: float = float("nan")
+    mass_gg: float = float("nan")
+    energy_closure: float = float("nan")
+    momentum_closure: float = float("nan")
+    opening1_closure: float = float("nan")
+    opening2_closure: float = float("nan")
+    score: float = float("inf")
+
+
+def recover_pi0_photons(
+    beam_p3: np.ndarray,
+    electron_p3: np.ndarray,
+    pi0_p3: np.ndarray,
+    gamma_phi1_trento: float,
+    gamma_phi2_trento: float,
+    opening1_lab: float,
+    opening2_lab: float,
+) -> RecoveredPi0Photons:
+    """
+    Recover the two reconstructed photons using Trento azimuths and lab-frame
+    electron-photon opening angles.
+
+    Photon directions are first solved in the event-by-event Trento basis and
+    transformed back to lab coordinates.
+
+    For a candidate photon direction n_i and reconstructed pi0 P=(E,p),
+    enforcing (P-k_i)^2=0 gives
+
+        E_gamma_i = m_pi0^2 / [2 (E_pi0 - p_pi0 dot n_i)].
+
+    All physical angular-solution pairs are tested.  The pair with the best
+    pi0 four-vector closure is retained.
+    """
+    beam_p3 = np.asarray(beam_p3, dtype=float)
+    electron_p3 = np.asarray(electron_p3, dtype=float)
+    pi0_p3 = np.asarray(pi0_p3, dtype=float)
+
+    e_mag = float(np.linalg.norm(electron_p3))
+    p_pi = float(np.linalg.norm(pi0_p3))
+    if e_mag <= 1.0e-14 or not math.isfinite(p_pi):
+        return RecoveredPi0Photons(False)
+    #endif
+    electron_hat = electron_p3 / e_mag
+
+    basis = build_trento_basis(beam_p3, electron_p3)
     if basis is None:
-        return []
-    # endif
-    q_hat, x_hat, y_hat, electron_direction = basis
+        return RecoveredPi0Photons(False)
+    #endif
+    xhat, yhat, zhat = basis
 
-    theta1_candidates = solve_q_polar_angles(
-        electron_direction,
-        q_hat,
-        x_hat,
-        trento1,
-        opening1,
+    E_pi = math.sqrt(max(0.0, p_pi * p_pi + M_PI0 * M_PI0))
+
+    sol1 = trento_polar_solutions_from_electron_opening(
+        electron_hat,
+        gamma_phi1_trento,
+        opening1_lab,
+        xhat, yhat, zhat,
     )
-    theta2_candidates = solve_q_polar_angles(
-        electron_direction,
-        q_hat,
-        x_hat,
-        trento2,
-        opening2,
+    sol2 = trento_polar_solutions_from_electron_opening(
+        electron_hat,
+        gamma_phi2_trento,
+        opening2_lab,
+        xhat, yhat, zhat,
     )
-    if not theta1_candidates or not theta2_candidates:
-        return []
-    # endif
 
-    pi0_direction = unit_vector(pi0_theta, pi0_phi)
-    pi0_vector = pi0_p * pi0_direction
-    pi0_energy = math.sqrt(max(pi0_p**2 + pi0_mass**2, 0.0))
-    target = np.asarray([pi0_energy, *pi0_vector], dtype=float)
-    normalization = max(pi0_energy, 1.0e-12)
+    best = RecoveredPi0Photons(False)
 
-    solutions = []
-    for theta1_q in theta1_candidates:
-        direction1 = lab_direction_from_trento(
-            theta1_q, trento1, q_hat, x_hat, y_hat
-        )
-        theta1_lab, phi1_lab = direction_to_angles(direction1)
+    for theta_q1 in sol1:
+        n1 = direction_from_trento(theta_q1, gamma_phi1_trento, xhat, yhat, zhat)
+        if not np.all(np.isfinite(n1)):
+            continue
+        #endif
+        denom1 = 2.0 * (E_pi - float(np.dot(pi0_p3, n1)))
+        if denom1 <= 1.0e-12:
+            continue
+        #endif
+        E1 = M_PI0 * M_PI0 / denom1
 
-        for theta2_q in theta2_candidates:
-            direction2 = lab_direction_from_trento(
-                theta2_q, trento2, q_hat, x_hat, y_hat
-            )
-            theta2_lab, phi2_lab = direction_to_angles(direction2)
+        for theta_q2 in sol2:
+            n2 = direction_from_trento(theta_q2, gamma_phi2_trento, xhat, yhat, zhat)
+            if not np.all(np.isfinite(n2)):
+                continue
+            #endif
+            denom2 = 2.0 * (E_pi - float(np.dot(pi0_p3, n2)))
+            if denom2 <= 1.0e-12:
+                continue
+            #endif
+            E2 = M_PI0 * M_PI0 / denom2
 
-            response = np.asarray(
-                [
-                    [1.0, 1.0],
-                    [direction1[0], direction2[0]],
-                    [direction1[1], direction2[1]],
-                    [direction1[2], direction2[2]],
-                ],
-                dtype=float,
-            )
-            energies, _, rank, _ = np.linalg.lstsq(
-                response,
-                target,
-                rcond=None,
-            )
             if (
-                rank < 2
-                or energies[0] <= args.native_minimum_photon_E
-                or energies[1] <= args.native_minimum_photon_E
+                not math.isfinite(E1)
+                or not math.isfinite(E2)
+                or E1 <= 0.0
+                or E2 <= 0.0
             ):
                 continue
-            # endif
+            #endif
 
-            closure = float(
-                np.linalg.norm(response @ energies - target)
-                / normalization
+            p_sum = E1 * n1 + E2 * n2
+            energy_closure = (E1 + E2) - E_pi
+            momentum_closure = float(np.linalg.norm(p_sum - pi0_p3))
+
+            cos12 = max(-1.0, min(1.0, float(np.dot(n1, n2))))
+            m2 = max(0.0, 2.0 * E1 * E2 * (1.0 - cos12))
+            mass_gg = math.sqrt(m2)
+
+            opening1_reco = angle_between(electron_hat, n1)
+            opening2_reco = angle_between(electron_hat, n2)
+            opening1_closure = opening1_reco - opening1_lab
+            opening2_closure = opening2_reco - opening2_lab
+
+            scale = max(E_pi, 0.25)
+            score = (
+                momentum_closure / scale
+                + abs(energy_closure) / scale
+                + 0.25 * abs(mass_gg - M_PI0) / M_PI0
+                + 0.05 * abs(opening1_closure)
+                + 0.05 * abs(opening2_closure)
             )
-            if closure > args.native_closure_max:
-                continue
-            # endif
 
-            solutions.append(
-                (
-                    closure,
-                    float(energies[0]),
-                    theta1_lab,
-                    phi1_lab,
-                    float(energies[1]),
-                    theta2_lab,
-                    phi2_lab,
+            if score < best.score:
+                lab_theta1 = math.acos(max(-1.0, min(1.0, float(n1[2]))))
+                lab_theta2 = math.acos(max(-1.0, min(1.0, float(n2[2]))))
+                lab_phi1 = math.atan2(float(n1[1]), float(n1[0]))
+                lab_phi2 = math.atan2(float(n2[1]), float(n2[0]))
+
+                best = RecoveredPi0Photons(
+                    True,
+                    n1=n1,
+                    n2=n2,
+                    theta_q1=theta_q1,
+                    theta_q2=theta_q2,
+                    phi_trento1=gamma_phi1_trento,
+                    phi_trento2=gamma_phi2_trento,
+                    lab_theta1=lab_theta1,
+                    lab_theta2=lab_theta2,
+                    lab_phi1=lab_phi1,
+                    lab_phi2=lab_phi2,
+                    energy1=E1,
+                    energy2=E2,
+                    mass_gg=mass_gg,
+                    energy_closure=energy_closure,
+                    momentum_closure=momentum_closure,
+                    opening1_closure=opening1_closure,
+                    opening2_closure=opening2_closure,
+                    score=score,
                 )
-            )
-        # endfor
-    # endfor
+            #endif
+        #endfor
+    #endfor
 
-    solutions.sort(key=lambda item: item[0])
-    return solutions[:4]
+    return best
 
-def read_epgg(
-    path: str,
-    beam_energy: float,
-    mode: str,
-    args: argparse.Namespace,
-) -> Tuple[EpggRecords, Dict[str, int]]:
-    logical = (
-        "runnum", "eventnum",
-        "e_p", "e_theta", "e_phi",
-        "p_p", "p_theta", "p_phi",
-        "pi0_p", "pi0_theta", "pi0_phi", "pi0_mass",
-        "open1", "open2", "trento1", "trento2",
-        "native_gamma_detector1", "native_gamma_detector2",
-    )
-    optional_identity = (
-        ("runnum", "eventnum")
-        if "AAOGEN" in mode.upper()
-        else ()
-    )
-    resolved = resolve_branches(path, logical, optional=optional_identity)
-    expressions = sorted(
-        {branch for branch in resolved.values() if branch is not None}
-    )
 
-    scalar_store: Dict[str, List[np.ndarray]] = {
-        name: [] for name in (
-            "runnum", "eventnum",
-            "e_p", "e_theta", "e_phi",
-            "p_p", "p_theta", "p_phi",
-            "detector1", "detector2",
-        )
+# -----------------------------------------------------------------------------
+# Stage-I pair construction
+# -----------------------------------------------------------------------------
+
+@dataclass
+class PairArrays:
+    epg_index: List[int]
+    eppi0_index: List[int]
+    parent_distance: List[float]
+    parent_max_component_delta: List[float]
+    tag_energy: List[float]
+    reco_probe_energy: List[float]
+    pred_probe_energy: List[float]
+    pred_probe_p: List[float]
+    pred_probe_mass2: List[float]
+    pred_probe_E_minus_p: List[float]
+    probe_delta_E: List[float]
+    probe_delta_E_over_E: List[float]
+    probe_delta_theta_deg: List[float]
+    probe_delta_phi_deg: List[float]
+    probe_opening_residual_deg: List[float]
+    tag_reco_match_angle_deg: List[float]
+    pi0_energy_closure: List[float]
+    pi0_momentum_closure: List[float]
+    pi0_mass_recovered: List[float]
+    pi0_recovery_score: List[float]
+    reco_gamma_gamma_opening_deg: List[float]
+    detector_tag: List[int]
+    detector_probe: List[int]
+
+    @classmethod
+    def empty(cls) -> "PairArrays":
+        return cls(*([[] for _ in cls.__annotations__]))
+
+
+def event_four_vector(momentum3: np.ndarray, mass: float) -> np.ndarray:
+    p2 = float(np.dot(momentum3, momentum3))
+    E = math.sqrt(max(0.0, p2 + mass * mass))
+    return np.asarray([E, momentum3[0], momentum3[1], momentum3[2]], dtype=float)
+
+
+def photon_four_vector(momentum3: np.ndarray) -> np.ndarray:
+    E = float(np.linalg.norm(momentum3))
+    return np.asarray([E, momentum3[0], momentum3[1], momentum3[2]], dtype=float)
+
+
+def detector_value(raw: Dict[str, np.ndarray], branch: str, index: int) -> int:
+    if branch not in raw:
+        return -999
+    #endif
+    try:
+        return int(raw[branch][index])
+    except Exception:
+        return -999
+
+
+def build_stage1_pairs(
+    period: PeriodConfig,
+    epg: EPGammaSample,
+    eppi0: EPPi0Sample,
+    matches: MatchResult,
+    max_tag_reco_angle_deg: float,
+) -> Tuple[PairArrays, Dict[str, int]]:
+    out = PairArrays.empty()
+    counters = {
+        "matched_parent_pairs": int(len(matches.epg_index)),
+        "pi0_photon_recovery_failed": 0,
+        "tag_reco_match_failed": 0,
+        "nonphysical_predicted_probe": 0,
+        "accepted_stage1_pairs": 0,
     }
-    solution_store: Dict[str, List[np.ndarray]] = {
-        name: [] for name in (
-            "g1_E", "g1_theta", "g1_phi",
-            "g2_E", "g2_theta", "g2_phi",
-            "solution_valid", "solution_closure",
+
+    beam_p = math.sqrt(max(0.0, period.beam_energy**2 - M_E**2))
+    beam4 = np.asarray([period.beam_energy, 0.0, 0.0, beam_p], dtype=float)
+    target4 = np.asarray([M_P, 0.0, 0.0, 0.0], dtype=float)
+    max_tag_angle = math.radians(max_tag_reco_angle_deg)
+
+    for k in range(len(matches.epg_index)):
+        i = int(matches.epg_index[k])
+        j = int(matches.eppi0_index[k])
+
+        recovered = recover_pi0_photons(
+            beam_p3=beam4[1:4],
+            electron_p3=eppi0.electron_p3[j],
+            pi0_p3=eppi0.pi0_p3[j],
+            gamma_phi1_trento=float(eppi0.gamma_phi1[j]),
+            gamma_phi2_trento=float(eppi0.gamma_phi2[j]),
+            opening1_lab=float(eppi0.open_angle_egamma1[j]),
+            opening2_lab=float(eppi0.open_angle_egamma2[j]),
         )
-    }
-    counts = {
-        "tree_entries": 0,
-        "events_with_at_least_one_solution": 0,
-        "valid_solution_count": 0,
-    }
 
-    tree_entries, _available_keys = require_tree(path)
-    entry_stop = (
-        min(tree_entries, int(args.max_events))
-        if args.max_events is not None
-        else tree_entries
-    )
+        if not recovered.success:
+            counters["pi0_photon_recovery_failed"] += 1
+            continue
+        #endif
 
-    seen = 0
-    log(f"Reading {mode} epgammagamma records from {path}")
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        entry_stop=entry_stop,
-        library="np",
-    ):
-        n = len(next(iter(arrays.values())))
-        seen += n
-        counts["tree_entries"] += int(n)
+        n1 = recovered.n1
+        n2 = recovered.n2
+        assert n1 is not None and n2 is not None
+        ntag = epg.tag_p3[i] / max(float(np.linalg.norm(epg.tag_p3[i])), 1.0e-30)
 
-        def arr(name: str, default=math.nan, dtype=np.float64):
-            return finite_array(arrays, resolved.get(name), default, dtype)
+        a1 = angle_between(ntag, n1)
+        a2 = angle_between(ntag, n2)
 
-        e_p = arr("e_p")
-        e_theta = arr("e_theta")
-        e_phi = np.mod(arr("e_phi"), 2.0 * math.pi)
-        p_p = arr("p_p")
-        p_theta = arr("p_theta")
-        p_phi = np.mod(arr("p_phi"), 2.0 * math.pi)
-        pi0_p = arr("pi0_p")
-        pi0_theta = arr("pi0_theta")
-        pi0_phi = np.mod(arr("pi0_phi"), 2.0 * math.pi)
-        pi0_mass = arr("pi0_mass")
-        open1 = np.deg2rad(arr("open1"))
-        open2 = np.deg2rad(arr("open2"))
-        trento1 = np.mod(arr("trento1"), 2.0 * math.pi)
-        trento2 = np.mod(arr("trento2"), 2.0 * math.pi)
+        if not math.isfinite(a1) or not math.isfinite(a2):
+            counters["tag_reco_match_failed"] += 1
+            continue
+        #endif
 
-        max_solutions = 4
-        g1_E = np.full((n, max_solutions), np.nan)
-        g1_theta = np.full((n, max_solutions), np.nan)
-        g1_phi = np.full((n, max_solutions), np.nan)
-        g2_E = np.full((n, max_solutions), np.nan)
-        g2_theta = np.full((n, max_solutions), np.nan)
-        g2_phi = np.full((n, max_solutions), np.nan)
-        valid = np.zeros((n, max_solutions), dtype=bool)
-        closure = np.full((n, max_solutions), np.nan)
-
-        for index in range(n):
-            values = (
-                e_p[index], e_theta[index], e_phi[index],
-                pi0_p[index], pi0_theta[index], pi0_phi[index],
-                pi0_mass[index], open1[index], open2[index],
-                trento1[index], trento2[index],
-            )
-            if not all(math.isfinite(float(value)) for value in values):
-                continue
-            # endif
-
-            solutions = reconstruct_daughter_solutions(
-                beam_energy,
-                float(e_p[index]),
-                float(e_theta[index]),
-                float(e_phi[index]),
-                float(pi0_p[index]),
-                float(pi0_theta[index]),
-                float(pi0_phi[index]),
-                float(pi0_mass[index]),
-                float(open1[index]),
-                float(open2[index]),
-                float(trento1[index]),
-                float(trento2[index]),
-                args,
-            )
-            for solution_index, solution in enumerate(solutions):
-                (
-                    closure_value,
-                    energy1, theta1, phi1,
-                    energy2, theta2, phi2,
-                ) = solution
-                closure[index, solution_index] = closure_value
-                g1_E[index, solution_index] = energy1
-                g1_theta[index, solution_index] = theta1
-                g1_phi[index, solution_index] = phi1
-                g2_E[index, solution_index] = energy2
-                g2_theta[index, solution_index] = theta2
-                g2_phi[index, solution_index] = phi2
-                valid[index, solution_index] = True
-            # endfor
-        # endfor
-
-        counts["events_with_at_least_one_solution"] += int(
-            np.count_nonzero(np.any(valid, axis=1))
-        )
-        counts["valid_solution_count"] += int(np.count_nonzero(valid))
-
-        scalar_values = {
-            "runnum": arr("runnum", -1, np.int64),
-            "eventnum": arr("eventnum", -1, np.int64),
-            "e_p": e_p,
-            "e_theta": e_theta,
-            "e_phi": e_phi,
-            "p_p": p_p,
-            "p_theta": p_theta,
-            "p_phi": p_phi,
-            "detector1": arr("native_gamma_detector1", -1, np.int16),
-            "detector2": arr("native_gamma_detector2", -1, np.int16),
-        }
-        for name in scalar_store:
-            scalar_store[name].append(np.asarray(scalar_values[name]))
-        # endfor
-
-        solution_values = {
-            "g1_E": g1_E,
-            "g1_theta": g1_theta,
-            "g1_phi": g1_phi,
-            "g2_E": g2_E,
-            "g2_theta": g2_theta,
-            "g2_phi": g2_phi,
-            "solution_valid": valid,
-            "solution_closure": closure,
-        }
-        for name in solution_store:
-            solution_store[name].append(solution_values[name])
-        # endfor
-    # endfor
-
-    payload = {}
-    for name, parts in scalar_store.items():
-        if parts:
-            payload[name] = np.concatenate(parts)
+        if a1 <= a2:
+            tag_id = 1
+            tag_match = a1
+            reco_probe_n = n2
+            reco_probe_E = recovered.energy2
+            reco_probe_theta = recovered.lab_theta2
+            reco_probe_phi = recovered.lab_phi2
         else:
-            dtype = (
-                np.int64
-                if name in {"runnum", "eventnum"}
-                else np.int16
-                if name in {"detector1", "detector2"}
-                else np.float64
-            )
-            payload[name] = np.asarray([], dtype=dtype)
-        # endif
-    # endfor
-    for name, parts in solution_store.items():
-        if parts:
-            payload[name] = np.concatenate(parts, axis=0)
+            tag_id = 2
+            tag_match = a2
+            reco_probe_n = n1
+            reco_probe_E = recovered.energy1
+            reco_probe_theta = recovered.lab_theta1
+            reco_probe_phi = recovered.lab_phi1
+        #endif
+
+        if tag_match > max_tag_angle:
+            counters["tag_reco_match_failed"] += 1
+            continue
+        #endif
+
+        electron4 = event_four_vector(epg.electron_p3[i], M_E)
+        proton4 = event_four_vector(epg.proton_p3[i], M_P)
+        tag4 = photon_four_vector(epg.tag_p3[i])
+        probe4 = beam4 + target4 - electron4 - proton4 - tag4
+
+        Epred = float(probe4[0])
+        ppred3 = probe4[1:4]
+        ppred = float(np.linalg.norm(ppred3))
+        m2pred = Epred * Epred - ppred * ppred
+
+        if Epred <= 0.0 or ppred <= 0.0 or not np.all(np.isfinite(probe4)):
+            counters["nonphysical_predicted_probe"] += 1
+            continue
+        #endif
+
+        npred = ppred3 / ppred
+        theta_pred = math.acos(max(-1.0, min(1.0, float(npred[2]))))
+        phi_pred = math.atan2(float(npred[1]), float(npred[0]))
+
+        dtheta = reco_probe_theta - theta_pred
+        dphi = float(wrap_phi(reco_probe_phi - phi_pred))
+        open_res = angle_between(npred, reco_probe_n)
+        gg_open = angle_between(n1, n2)
+
+        out.epg_index.append(i)
+        out.eppi0_index.append(j)
+        out.parent_distance.append(float(matches.nearest_distance[k]))
+        out.parent_max_component_delta.append(float(matches.max_component_delta[k]))
+        out.tag_energy.append(float(epg.tag_energy[i]))
+        out.reco_probe_energy.append(float(reco_probe_E))
+        out.pred_probe_energy.append(Epred)
+        out.pred_probe_p.append(ppred)
+        out.pred_probe_mass2.append(m2pred)
+        out.pred_probe_E_minus_p.append(Epred - ppred)
+        out.probe_delta_E.append(float(reco_probe_E - Epred))
+        out.probe_delta_E_over_E.append(float((reco_probe_E - Epred) / Epred))
+        out.probe_delta_theta_deg.append(math.degrees(dtheta))
+        out.probe_delta_phi_deg.append(math.degrees(dphi))
+        out.probe_opening_residual_deg.append(math.degrees(open_res))
+        out.tag_reco_match_angle_deg.append(math.degrees(tag_match))
+        out.pi0_energy_closure.append(float(recovered.energy_closure))
+        out.pi0_momentum_closure.append(float(recovered.momentum_closure))
+        out.pi0_mass_recovered.append(float(recovered.mass_gg))
+        out.pi0_recovery_score.append(float(recovered.score))
+        out.reco_gamma_gamma_opening_deg.append(math.degrees(gg_open))
+
+        if tag_id == 1:
+            out.detector_tag.append(detector_value(eppi0.raw, "detector_gamma1", j))
+            out.detector_probe.append(detector_value(eppi0.raw, "detector_gamma2", j))
         else:
-            dtype = bool if name == "solution_valid" else np.float64
-            payload[name] = np.empty((0, 4), dtype=dtype)
-        # endif
-    # endfor
+            out.detector_tag.append(detector_value(eppi0.raw, "detector_gamma2", j))
+            out.detector_probe.append(detector_value(eppi0.raw, "detector_gamma1", j))
+        #endif
 
-    return EpggRecords(**payload), counts
+        counters["accepted_stage1_pairs"] += 1
+    #endfor
 
-def read_identity_catalog(
-    path: str,
-    role: str,
-    mode: str,
-    args: argparse.Namespace,
-) -> Tuple[IdentityCatalog, Dict[str, object]]:
-    logical = (
-        "runnum", "eventnum",
-        "e_p", "e_theta", "e_phi",
-        "p_p", "p_theta", "p_phi",
-    )
-    optional = ("runnum", "eventnum") if mode == "mc" else ()
-    resolved = resolve_branches(path, logical, optional=optional)
-    expressions = sorted({branch for branch in resolved.values() if branch is not None})
-    store = {name: [] for name in IdentityCatalog.__dataclass_fields__}
-    seen = 0
-    log(f"Reading {role} identity catalog from {path}")
-
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        library="np",
-    ):
-        n = len(next(iter(arrays.values())))
-        if args.max_events is not None and seen >= args.max_events:
-            break
-        # endif
-        if args.max_events is not None and seen + n > args.max_events:
-            n = args.max_events - seen
-            arrays = {key: value[:n] for key, value in arrays.items()}
-        # endif
-        seen += n
-
-        for name in store:
-            branch = resolved.get(name)
-            default = -1 if name in {"runnum", "eventnum"} else math.nan
-            dtype = np.int64 if name in {"runnum", "eventnum"} else np.float64
-            store[name].append(finite_array(arrays, branch, default=default, dtype=dtype))
-        # endfor
-    # endfor
-
-    catalog = IdentityCatalog(
-        runnum=concat(store["runnum"], np.int64),
-        eventnum=concat(store["eventnum"], np.int64),
-        e_p=concat(store["e_p"]),
-        e_theta=concat(store["e_theta"]),
-        e_phi=concat(store["e_phi"]),
-        p_p=concat(store["p_p"]),
-        p_theta=concat(store["p_theta"]),
-        p_phi=concat(store["p_phi"]),
-    )
-
-    keys = identity_keys_data(catalog) if mode == "data" else identity_keys_mc(
-        catalog, args.mc_signature_decimals
-    )
-    unique_count = int(np.unique(structured_keys(keys)).size) if catalog.size() else 0
-    diagnostics = {
-        "role": role,
-        "mode": mode,
-        "path": path,
-        "tree_entries_read": int(seen),
-        "catalog_records": catalog.size(),
-        "unique_identity_keys": unique_count,
-    }
-    return catalog, diagnostics
+    return out, counters
 
 
-def identity_keys_data(records) -> np.ndarray:
-    return np.column_stack(
-        (
-            np.asarray(records.runnum, dtype=np.int64),
-            np.asarray(records.eventnum, dtype=np.int64),
-        )
-    )
+def pair_arrays_to_numpy(pairs: PairArrays) -> Dict[str, np.ndarray]:
+    out: Dict[str, np.ndarray] = {}
+    integer_names = {"epg_index", "eppi0_index", "detector_tag", "detector_probe"}
+    for name in pairs.__annotations__:
+        dtype = np.int64 if name in integer_names else float
+        out[name] = np.asarray(getattr(pairs, name), dtype=dtype)
+    #endfor
+    return out
 
 
-def identity_keys_mc(records, decimals: int) -> np.ndarray:
-    values = (
-        records.e_p, records.e_theta, records.e_phi,
-        records.p_p, records.p_theta, records.p_phi,
-    )
-    return np.column_stack(
-        [np.round(np.asarray(value, dtype=np.float64), decimals) for value in values]
-    )
+# -----------------------------------------------------------------------------
+# Plotting
+# -----------------------------------------------------------------------------
 
-
-def identity_keys_epgg_data(records: EpggRecords) -> np.ndarray:
-    return np.column_stack((records.runnum.astype(np.int64), records.eventnum.astype(np.int64)))
-
-
-def identity_keys_epgg_mc(records: EpggRecords, decimals: int) -> np.ndarray:
-    return np.column_stack([
-        np.round(records.e_p, decimals),
-        np.round(records.e_theta, decimals),
-        np.round(records.e_phi, decimals),
-        np.round(records.p_p, decimals),
-        np.round(records.p_theta, decimals),
-        np.round(records.p_phi, decimals),
-    ])
-
-
-def structured_keys(matrix: np.ndarray) -> np.ndarray:
-    matrix = np.ascontiguousarray(matrix)
-    dtype = np.dtype([(f"f{index}", matrix.dtype) for index in range(matrix.shape[1])])
-    return matrix.view(dtype).reshape(-1)
-
-
-def group_indices(keys: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    structured = structured_keys(keys)
-    _, inverse, counts = np.unique(structured, return_inverse=True, return_counts=True)
-    order = np.argsort(inverse, kind="stable")
-    offsets = np.empty(counts.size + 1, dtype=np.int64)
-    offsets[0] = 0
-    np.cumsum(counts, out=offsets[1:])
-    return inverse, order, offsets
-
-
-def photon_pair_mass(
-    E1: float,
-    theta1: float,
-    phi1: float,
-    E2: float,
-    theta2: float,
-    phi2: float,
-) -> float:
-    cosine = (
-        math.sin(theta1) * math.sin(theta2) * math.cos(phi1 - phi2)
-        + math.cos(theta1) * math.cos(theta2)
-    )
-    mass2 = 2.0 * E1 * E2 * (1.0 - max(-1.0, min(1.0, cosine)))
-    return math.sqrt(max(mass2, 0.0))
-
-
-def match_truth_partners(
-    opportunities: OpportunityRecords,
-    epgg: EpggRecords,
-    mode: str,
-    args: argparse.Namespace,
-) -> PartnerMatchResult:
-    n = opportunities.size()
-    matched = np.zeros(n, dtype=bool)
-    catalog_confirmed = np.zeros(n, dtype=bool)
-    partner_index = np.full(n, -1, dtype=np.int64)
-    probe_angle = np.full(n, np.nan)
-    probe_relative_E = np.full(n, np.nan)
-    pair_mass = np.full(n, np.nan)
-    score = np.full(n, np.nan)
-    partner_E = np.full(n, np.nan)
-    tag_angle = np.full(n, np.nan)
-    tag_relative_E = np.full(n, np.nan)
-    closure = np.full(n, np.nan)
-
-    opportunity_keys = identity_keys_data(opportunities) if mode == "data" else identity_keys_mc(opportunities, args.mc_signature_decimals)
-    native_keys = identity_keys_epgg_data(epgg) if mode == "data" else identity_keys_epgg_mc(epgg, args.mc_signature_decimals)
-
-    native_structured = structured_keys(native_keys)
-    unique, inverse, counts = np.unique(native_structured, return_inverse=True, return_counts=True)
-    order = np.argsort(inverse, kind="stable")
-    offsets = np.empty(counts.size + 1, dtype=np.int64)
-    offsets[0] = 0
-    np.cumsum(counts, out=offsets[1:])
-    group_by_key = {unique[i].tobytes(): i for i in range(unique.size)}
-
-    identity_matches = valid_opportunities = tag_matches = partner_threshold = probe_passes = 0
-    records_tested = solutions_tested = 0
-
-    for oi, key in enumerate(structured_keys(opportunity_keys)):
-        group = group_by_key.get(key.tobytes())
-        if group is None:
-            continue
-        # endif
-        catalog_confirmed[oi] = True
-        identity_matches += 1
-        best = None
-        any_valid = False
-        members = order[offsets[group]:offsets[group + 1]]
-        for ni in members:
-            records_tested += 1
-            for si in range(epgg.solution_valid.shape[1]):
-                if not epgg.solution_valid[ni, si]:
-                    continue
-                # endif
-                any_valid = True
-                solutions_tested += 1
-                assignments = (
-                    (epgg.g1_E[ni,si], epgg.g1_theta[ni,si], epgg.g1_phi[ni,si],
-                     epgg.g2_E[ni,si], epgg.g2_theta[ni,si], epgg.g2_phi[ni,si]),
-                    (epgg.g2_E[ni,si], epgg.g2_theta[ni,si], epgg.g2_phi[ni,si],
-                     epgg.g1_E[ni,si], epgg.g1_theta[ni,si], epgg.g1_phi[ni,si]),
-                )
-                for tE,tth,tph,pE,pth,pph in assignments:
-                    ta = opening_angle_deg_scalar(
-                        float(opportunities.tag_theta[oi]),
-                        float(opportunities.tag_phi[oi]),
-                        float(tth),
-                        float(tph),
-                    )
-                    tr = abs(opportunities.tag_E[oi]-tE)/max(tE,1e-12)
-                    ts = (ta/max(args.tag_match_angle_max_deg,1e-12))**2 + (tr/max(args.tag_match_relative_E_max,1e-12))**2
-                    if best is None or ts < best[0]:
-                        pa = opening_angle_deg_scalar(
-                            float(opportunities.probe_theta[oi]),
-                            float(opportunities.probe_phi[oi]),
-                            float(pth),
-                            float(pph),
-                        )
-                        pr = abs(opportunities.probe_E[oi]-pE)/max(pE,1e-12)
-                        pm = photon_pair_mass(float(opportunities.tag_E[oi]),float(opportunities.tag_theta[oi]),float(opportunities.tag_phi[oi]),float(pE),float(pth),float(pph))
-                        best=(ts,ta,tr,pa,pr,pm,float(pE),int(ni),float(epgg.solution_closure[ni,si]))
-                    # endif
-                # endfor
-            # endfor
-        # endfor
-        if any_valid:
-            valid_opportunities += 1
-        # endif
-        if best is None:
-            continue
-        # endif
-        ts,ta,tr,pa,pr,pm,pE,ni,cl = best
-        partner_index[oi]=ni; probe_angle[oi]=pa; probe_relative_E[oi]=pr
-        pair_mass[oi]=pm; score[oi]=ts; partner_E[oi]=pE
-        tag_angle[oi]=ta; tag_relative_E[oi]=tr; closure[oi]=cl
-        if not (ta < args.tag_match_angle_max_deg and tr < args.tag_match_relative_E_max):
-            continue
-        # endif
-        tag_matches += 1
-        if pE < args.found_probe_E_min:
-            continue
-        # endif
-        partner_threshold += 1
-        probe_ok = pa < args.probe_match_angle_max_deg and pr < args.probe_match_relative_E_max
-        probe_passes += int(probe_ok)
-        if args.require_probe_residual_match and not probe_ok:
-            continue
-        # endif
-        matched[oi]=True
-    # endfor
-
-    summary={
-        "mode":mode,"opportunities":n,"identity_matches":identity_matches,
-        "valid_solution_opportunities":valid_opportunities,"tag_matched":tag_matches,
-        "partner_above_threshold":partner_threshold,"probe_residual_passes":probe_passes,
-        "matched_opportunities":int(np.count_nonzero(matched)),
-        "epgammagamma_records_tested":records_tested,"daughter_solutions_tested":solutions_tested,
-        "fraction_identity_matched":identity_matches/n if n else math.nan,
-        "fraction_matched":float(np.count_nonzero(matched))/n if n else math.nan,
-        "conditional_valid_solution_given_identity":valid_opportunities/identity_matches if identity_matches else math.nan,
-        "conditional_tag_match_given_valid_solution":tag_matches/valid_opportunities if valid_opportunities else math.nan,
-        "require_probe_residual_match":bool(args.require_probe_residual_match),
-    }
-    return PartnerMatchResult(
-        matched,catalog_confirmed,partner_index,probe_angle,probe_relative_E,pair_mass,score,
-        partner_E,tag_angle,tag_relative_E,closure,summary
-    )
-
-
-
-def category_mask(
-    records: OpportunityRecords,
-    detector: str,
-    sector: int,
-) -> np.ndarray:
-    if detector == "FT":
-        return records.probe_detector == 0
-    # endif
-    return (records.probe_detector == 1) & (records.probe_sector == sector)
-
-
-def variable_values(records: OpportunityRecords, key: str) -> np.ndarray:
-    return np.asarray(getattr(records, key), dtype=np.float64)
-
-
-def histograms_for_mask(
-    records: OpportunityRecords,
-    mask: np.ndarray,
-) -> Dict[str, np.ndarray]:
-    histograms: Dict[str, np.ndarray] = {}
-    for variable in FIT_VARIABLES:
-        values = variable_values(records, variable.key)[mask]
-        values = values[np.isfinite(values)]
-        histograms[variable.key], _ = np.histogram(
-            values,
-            bins=variable.bins,
-            range=(variable.low, variable.high),
-        )
-    # endfor
-    return histograms
-
-
-
-
-
-
-
-def plot_expected_probe_diagnostics(
+def save_hist(
+    values: np.ndarray,
     path: Path,
-    period_label: str,
-    samples: Mapping[str, OpportunityRecords],
+    xlabel: str,
+    title: str,
+    bins: int | np.ndarray = 120,
+    xlim: Optional[Tuple[float, float]] = None,
+    logy: bool = False,
 ) -> None:
-    variables = (
-        ("tag_E", np.linspace(0.4, 9.5, 92), r"$E_{\rm tag}$ (GeV)"),
-        ("probe_E", np.linspace(2.0, 9.5, 76), r"$E_{\rm probe}^{\rm pred}$ (GeV)"),
-        ("probe_theta", np.linspace(math.radians(2.5), math.radians(35.0), 80), r"$\theta_{\rm probe}^{\rm pred}$ (rad)"),
-        ("probe_phi", np.linspace(0.0, 2.0 * math.pi, 73), r"$\phi_{\rm probe}^{\rm pred}$ (rad)"),
-        ("probe_m2", np.linspace(-0.1, 0.1, 101), r"$m_X^2$ (GeV$^2$)"),
-        ("probe_E_minus_p", np.linspace(-0.1, 0.1, 101), r"$E_X-|\vec p_X|$ (GeV)"),
-    )
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
-    for axis, (name, bins, label) in zip(axes.flat, variables):
-        for sample, records in samples.items():
-            values = np.asarray(getattr(records, name), dtype=float)
-            values = values[np.isfinite(values)]
-            if values.size == 0:
-                continue
-            # endif
-            axis.hist(
-                values,
-                bins=bins,
-                weights=np.ones(values.size) / values.size,
-                histtype="step",
-                linewidth=1.3,
-                label=f"{sample} ({values.size:,})",
-            )
-        # endfor
-        axis.set_xlabel(label)
-        axis.set_ylabel("Fraction / bin")
-        axis.grid(alpha=0.25)
-        axis.legend(fontsize=7)
-    # endfor
-    fig.suptitle(f"{period_label}: selected expected-probe opportunities")
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+
+    fig, ax = plt.subplots(figsize=(8.0, 6.0))
+    ax.hist(values, bins=bins, histtype="step", linewidth=1.4)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Entries")
+    ax.set_title(title)
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    #endif
+    if logy:
+        ax.set_yscale("log")
+    #endif
+    ax.grid(alpha=0.20)
+    fig.tight_layout()
     fig.savefig(path, dpi=180)
     plt.close(fig)
 
-def plot_matching_residuals(
+
+def save_hist2d(
+    x: np.ndarray,
+    y: np.ndarray,
     path: Path,
-    period_label: str,
-    data_match: PartnerMatchResult,
-    mc_match: PartnerMatchResult,
+    xlabel: str,
+    ylabel: str,
+    title: str,
+    bins: Tuple[int, int] = (100, 100),
+    xlim: Optional[Tuple[float, float]] = None,
+    ylim: Optional[Tuple[float, float]] = None,
 ) -> None:
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
-    panels = (
-        ("tag_angle_deg", "Tag angular residual (deg)", 0.0, 5.0),
-        ("tag_relative_E", "Tag relative energy residual", 0.0, 0.5),
-        ("probe_angle_deg", "Predicted-X to partner angle (deg)", 0.0, 20.0),
-        ("probe_relative_E", "Predicted-X to partner relative energy", 0.0, 1.5),
-        ("partner_E", "Reconstructed partner energy (GeV)", 0.0, 10.0),
-        ("solution_closure", "Native daughter closure", 0.0, 0.10),
-    )
-    for axis,(field,label,low,high) in zip(axes.flat,panels):
-        for sample,result in (("Data",data_match),("AAOGEN MC",mc_match)):
-            values=np.asarray(getattr(result,field),dtype=float)
-            values=values[np.isfinite(values)]
-            if values.size:
-                hist,edges=np.histogram(values,bins=np.linspace(low,high,101))
-                if hist.sum()>0: hist=hist/hist.sum()
-                centers=0.5*(edges[:-1]+edges[1:])
-                axis.step(centers,hist,where="mid",label=sample)
-            # endif
-        # endfor
-        axis.set_xlabel(label); axis.set_ylabel("Normalized entries")
-        axis.set_xlim(low,high); axis.grid(alpha=0.25); axis.legend(fontsize=8)
-    # endfor
-    fig.suptitle(f"{period_label}: native truth-partner matching")
-    fig.tight_layout(rect=(0,0,1,0.95)); fig.savefig(path,dpi=180); plt.close(fig)
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    x = x[mask]
+    y = y[mask]
 
-def plot_cutflow(path: Path, title: str, cutflow: Mapping[str, object]) -> None:
-    rows = cutflow.get("stages", [])
-    if not rows:
-        return
-    # endif
-    labels = [str(row["stage"]) for row in rows]
-    counts = np.asarray([float(row["count"]) for row in rows])
-    total_survival = np.asarray(
-        [float(row["total_survival"]) for row in rows]
-    )
-    incremental = np.asarray(
-        [float(row["incremental_survival"]) for row in rows]
-    )
-
-    fig, axes = plt.subplots(2, 1, figsize=(14, 10), sharex=True)
-    x = np.arange(len(rows))
-
-    axes[0].step(x, np.maximum(counts, 0.5), where="mid", linewidth=1.5)
-    axes[0].scatter(x, np.maximum(counts, 0.5), s=25)
-    axes[0].set_yscale("log")
-    axes[0].set_ylabel("Cumulative entries")
-    axes[0].grid(alpha=0.25)
-
-    axes[1].plot(x, 100.0 * total_survival, marker="o", label="Total survival")
-    axes[1].plot(x, 100.0 * incremental, marker="s", label="Incremental survival")
-    axes[1].set_ylabel("Survival (%)")
-    axes[1].set_ylim(0.0, 105.0)
-    axes[1].grid(alpha=0.25)
-    axes[1].legend()
-    axes[1].set_xticks(x)
-    axes[1].set_xticklabels(labels, rotation=45, ha="right")
-
-    suspect_stages = {"z_tag", "minus_t1_tag", "open_angle_ep2_tag"}
-    for axis in axes:
-        for index, stage in enumerate(labels):
-            if stage in suspect_stages:
-                axis.axvspan(index - 0.45, index + 0.45, alpha=0.10)
-            # endif
-        # endfor
-    # endfor
-
-    largest = cutflow.get("largest_incremental_loss")
-    subtitle = ""
-    if isinstance(largest, Mapping):
-        subtitle = (
-            f"Largest incremental loss: {largest['stage']} — "
-            f"{100.0 * float(largest['incremental_rejection']):.2f}% rejected"
-        )
-    # endif
-    fig.suptitle(f"{title}\n{subtitle}")
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig, ax = plt.subplots(figsize=(7.5, 6.5))
+    h = ax.hist2d(x, y, bins=bins)
+    fig.colorbar(h[3], ax=ax, label="Entries")
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    #endif
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    #endif
+    ax.grid(alpha=0.12)
+    fig.tight_layout()
     fig.savefig(path, dpi=180)
     plt.close(fig)
 
-def write_cutflow_csv(path: Path, cutflow: Mapping[str, object]) -> None:
-    """Write the finalized sequential cutflow table to CSV."""
-    rows = list(cutflow.get("stages", []))
-    if not rows:
+
+def robust_symmetric_limit(values: np.ndarray, percentile: float = 99.0, floor: float = 1.0e-6) -> float:
+    values = np.asarray(values, dtype=float)
+    values = np.abs(values[np.isfinite(values)])
+    if values.size == 0:
+        return floor
+    #endif
+    return max(floor, float(np.percentile(values, percentile)))
+
+
+def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path) -> None:
+    if len(arrays["pred_probe_energy"]) == 0:
+        log(f"{period.label}: no accepted pairs; skipping plots.")
         return
-    # endif
+    #endif
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = [
-        "order",
-        "stage",
-        "label",
-        "condition",
-        "branch",
-        "scope",
-        "applied",
-        "count",
-        "rejected_at_stage",
-        "incremental_survival",
-        "incremental_rejection",
-        "total_survival",
-    ]
+    title = period.label
 
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=fieldnames,
-            extrasaction="ignore",
-        )
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(
-                {
-                    field: row.get(field)
-                    for field in fieldnames
-                }
-            )
+    save_hist(
+        arrays["parent_max_component_delta"],
+        outdir / "parent_match_max_cartesian_delta.png",
+        r"max $|\Delta p_{e/p,x/y/z}|$ [GeV]",
+        f"{title}: e/p kinematic match quality",
+        bins=120,
+        logy=True,
+    )
 
-def write_cutflow_text(path: Path, cutflow: Mapping[str, object]) -> None:
-    lines = [
-        f"Role: {cutflow.get('role')}",
-        f"Path: {cutflow.get('path')}",
-        "",
-        (
-            "Columns: cumulative count | incremental survival | total survival "
-            "| rejected at stage | cut description"
+    save_hist(
+        arrays["tag_reco_match_angle_deg"],
+        outdir / "tag_reco_angular_match.png",
+        r"$\Delta\alpha(\gamma_{\rm tag}^{ep\gamma},\gamma_{\rm tag}^{ep\pi^0})$ [deg]",
+        f"{title}: tag correspondence after e/p event matching",
+        bins=120,
+        logy=True,
+    )
+
+    emax = max(
+        2.5,
+        float(np.nanpercentile(
+            np.concatenate((arrays["pred_probe_energy"], arrays["reco_probe_energy"])),
+            99.5,
+        )),
+    )
+    save_hist2d(
+        arrays["pred_probe_energy"],
+        arrays["reco_probe_energy"],
+        outdir / "probe_energy_pred_vs_reco.png",
+        r"$E_{\rm probe}^{pred}$ [GeV]",
+        r"$E_{\rm probe}^{reco}$ [GeV]",
+        f"{title}: predicted vs reconstructed probe energy",
+        bins=(120, 120),
+        xlim=(0.0, emax),
+        ylim=(0.0, emax),
+    )
+
+    de_lim = robust_symmetric_limit(arrays["probe_delta_E"], 99.0, 0.05)
+    save_hist(
+        arrays["probe_delta_E"],
+        outdir / "probe_energy_residual.png",
+        r"$E_{\rm probe}^{reco}-E_{\rm probe}^{pred}$ [GeV]",
+        f"{title}: probe energy residual",
+        bins=160,
+        xlim=(-de_lim, de_lim),
+    )
+
+    rel_lim = min(2.0, robust_symmetric_limit(arrays["probe_delta_E_over_E"], 99.0, 0.05))
+    save_hist(
+        arrays["probe_delta_E_over_E"],
+        outdir / "probe_fractional_energy_residual.png",
+        r"$(E_{\rm reco}-E_{\rm pred})/E_{\rm pred}$",
+        f"{title}: fractional probe energy residual",
+        bins=160,
+        xlim=(-rel_lim, rel_lim),
+    )
+
+    th_lim = min(5.0, robust_symmetric_limit(arrays["probe_delta_theta_deg"], 99.5, 0.1))
+    ph_lim = min(8.0, robust_symmetric_limit(arrays["probe_delta_phi_deg"], 99.5, 0.1))
+
+    save_hist(
+        arrays["probe_delta_theta_deg"],
+        outdir / "probe_theta_residual.png",
+        r"$\theta_{\rm reco}-\theta_{\rm pred}$ [deg]",
+        f"{title}: probe polar-angle residual",
+        bins=160,
+        xlim=(-th_lim, th_lim),
+    )
+    save_hist(
+        arrays["probe_delta_phi_deg"],
+        outdir / "probe_phi_residual.png",
+        r"$\phi_{\rm reco}-\phi_{\rm pred}$ [deg]",
+        f"{title}: probe azimuth residual",
+        bins=160,
+        xlim=(-ph_lim, ph_lim),
+    )
+
+    open_hi = min(
+        10.0,
+        max(0.25, float(np.nanpercentile(arrays["probe_opening_residual_deg"], 99.5))),
+    )
+    save_hist(
+        arrays["probe_opening_residual_deg"],
+        outdir / "probe_direction_opening_residual.png",
+        r"$\Delta\alpha(\gamma_{\rm probe}^{pred},\gamma_{\rm probe}^{reco})$ [deg]",
+        f"{title}: probe direction matching resolution",
+        bins=160,
+        xlim=(0.0, open_hi),
+        logy=True,
+    )
+
+    m2lim = robust_symmetric_limit(arrays["pred_probe_mass2"], 99.0, 0.02)
+    save_hist(
+        arrays["pred_probe_mass2"],
+        outdir / "predicted_probe_mass2.png",
+        r"$(p_{\rm probe}^{pred})^2$ [GeV$^2$]",
+        f"{title}: predicted missing-photon mass shell",
+        bins=160,
+        xlim=(-m2lim, m2lim),
+    )
+
+    eplim = robust_symmetric_limit(arrays["pred_probe_E_minus_p"], 99.0, 0.02)
+    save_hist(
+        arrays["pred_probe_E_minus_p"],
+        outdir / "predicted_probe_E_minus_p.png",
+        r"$E_{\rm probe}^{pred}-|\vec p_{\rm probe}^{pred}|$ [GeV]",
+        f"{title}: predicted photon mass-shell residual",
+        bins=160,
+        xlim=(-eplim, eplim),
+    )
+
+    save_hist(
+        arrays["pi0_mass_recovered"],
+        outdir / "recovered_gamma_gamma_mass.png",
+        r"$M_{\gamma\gamma}^{recovered}$ [GeV]",
+        f"{title}: eppi0 photon-recovery closure",
+        bins=140,
+        xlim=(0.05, 0.22),
+    )
+
+    save_hist(
+        arrays["pi0_momentum_closure"],
+        outdir / "recovered_pi0_momentum_closure.png",
+        r"$|\vec p_{\gamma1}+\vec p_{\gamma2}-\vec p_{\pi^0}|$ [GeV]",
+        f"{title}: reconstructed-pi0 momentum closure",
+        bins=140,
+        logy=True,
+    )
+
+    save_hist2d(
+        arrays["pred_probe_energy"],
+        arrays["probe_opening_residual_deg"],
+        outdir / "probe_direction_residual_vs_energy.png",
+        r"$E_{\rm probe}^{pred}$ [GeV]",
+        r"$\Delta\alpha_{\rm probe}$ [deg]",
+        f"{title}: probe direction resolution vs energy",
+        bins=(100, 100),
+        xlim=(0.0, emax),
+        ylim=(0.0, open_hi),
+    )
+
+    save_hist2d(
+        arrays["pred_probe_energy"],
+        arrays["probe_delta_E_over_E"],
+        outdir / "probe_fractional_energy_residual_vs_energy.png",
+        r"$E_{\rm probe}^{pred}$ [GeV]",
+        r"$(E_{\rm reco}-E_{\rm pred})/E_{\rm pred}$",
+        f"{title}: probe energy closure vs energy",
+        bins=(100, 100),
+        xlim=(0.0, emax),
+        ylim=(-rel_lim, rel_lim),
+    )
+
+    save_hist(
+        arrays["reco_gamma_gamma_opening_deg"],
+        outdir / "reco_gamma_gamma_opening_angle.png",
+        r"$\Delta\alpha_{\gamma\gamma}$ [deg]",
+        f"{title}: reconstructed pi0 photon opening angle",
+        bins=140,
+        logy=True,
+    )
+
+
+# -----------------------------------------------------------------------------
+# Summaries
+# -----------------------------------------------------------------------------
+
+def percentile_or_nan(x: np.ndarray, q: float) -> float:
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    return float(np.percentile(x, q)) if x.size else float("nan")
+
+
+def rms_or_nan(x: np.ndarray) -> float:
+    x = np.asarray(x, dtype=float)
+    x = x[np.isfinite(x)]
+    return float(np.sqrt(np.mean(x * x))) if x.size else float("nan")
+
+
+def summarize_period(
+    period: PeriodConfig,
+    epg_entries_total: int,
+    eppi0_entries_total: int,
+    epg_loaded: int,
+    eppi0_loaded: int,
+    epg_angle_unit: str,
+    eppi0_angle_unit: str,
+    matches: MatchResult,
+    arrays: Dict[str, np.ndarray],
+    counters: Dict[str, int],
+) -> Dict[str, object]:
+    n = len(arrays["pred_probe_energy"])
+    summary: Dict[str, object] = {
+        "period": period.key,
+        "label": period.label,
+        "beam_energy_GeV": period.beam_energy,
+        "epgamma_entries_total": epg_entries_total,
+        "eppi0_entries_total": eppi0_entries_total,
+        "epgamma_entries_loaded": epg_loaded,
+        "eppi0_entries_loaded": eppi0_loaded,
+        "epgamma_angle_unit": epg_angle_unit,
+        "eppi0_angle_unit": eppi0_angle_unit,
+        **counters,
+        "stage1_pair_fraction_of_parent_matches": (
+            n / len(matches.epg_index) if len(matches.epg_index) else float("nan")
         ),
-        "",
-    ]
-    for row in cutflow.get("stages", []):
-        branch = row.get("branch")
-        branch_text = f"; branch={branch}" if branch else ""
-        applied_text = "applied" if row.get("applied") else "NOT APPLIED (branch/option absent)"
-        lines.append(
-            f"{int(row['order']):2d} {row['stage']:<34s} "
-            f"{int(row['count']):>12,d} | "
-            f"{100.0 * float(row['incremental_survival']):>8.3f}% | "
-            f"{100.0 * float(row['total_survival']):>8.3f}% | "
-            f"rejected={int(row['rejected_at_stage']):>10,d} | "
-            f"{row['condition']} [{applied_text}; scope={row['scope']}"
-            f"{branch_text}]"
+        "median_parent_max_component_delta_GeV": percentile_or_nan(
+            arrays["parent_max_component_delta"], 50.0
+        ),
+        "p99_parent_max_component_delta_GeV": percentile_or_nan(
+            arrays["parent_max_component_delta"], 99.0
+        ),
+        "median_tag_reco_match_deg": percentile_or_nan(
+            arrays["tag_reco_match_angle_deg"], 50.0
+        ),
+        "p99_tag_reco_match_deg": percentile_or_nan(
+            arrays["tag_reco_match_angle_deg"], 99.0
+        ),
+        "median_probe_direction_residual_deg": percentile_or_nan(
+            arrays["probe_opening_residual_deg"], 50.0
+        ),
+        "p68_probe_direction_residual_deg": percentile_or_nan(
+            arrays["probe_opening_residual_deg"], 68.0
+        ),
+        "p95_probe_direction_residual_deg": percentile_or_nan(
+            arrays["probe_opening_residual_deg"], 95.0
+        ),
+        "median_probe_deltaE_GeV": percentile_or_nan(arrays["probe_delta_E"], 50.0),
+        "rms_probe_deltaE_GeV": rms_or_nan(arrays["probe_delta_E"]),
+        "median_probe_fractional_deltaE": percentile_or_nan(
+            arrays["probe_delta_E_over_E"], 50.0
+        ),
+        "median_abs_pred_probe_mass2_GeV2": percentile_or_nan(
+            np.abs(arrays["pred_probe_mass2"]), 50.0
+        ),
+        "p95_abs_pred_probe_mass2_GeV2": percentile_or_nan(
+            np.abs(arrays["pred_probe_mass2"]), 95.0
+        ),
+        "median_pi0_momentum_closure_GeV": percentile_or_nan(
+            arrays["pi0_momentum_closure"], 50.0
+        ),
+        "median_recovered_Mgg_GeV": percentile_or_nan(
+            arrays["pi0_mass_recovered"], 50.0
+        ),
+    }
+    return summary
+
+
+def write_summary_csv(summaries: List[Dict[str, object]], path: Path) -> None:
+    if not summaries:
+        return
+    #endif
+
+    keys: List[str] = []
+    seen = set()
+    for row in summaries:
+        for key in row:
+            if key not in seen:
+                keys.append(key)
+                seen.add(key)
+            #endif
+        #endfor
+    #endfor
+
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(summaries)
+
+
+# -----------------------------------------------------------------------------
+# Preflight and driver
+# -----------------------------------------------------------------------------
+
+def preflight(periods: Sequence[PeriodConfig]) -> None:
+    log("Stage-I preflight: checking aaogen epgamma and aaogen eppi0 files.")
+    missing: List[str] = []
+
+    for p in periods:
+        for label, path in (
+            ("epgamma pi0 MC", p.epgamma_pi0_mc),
+            ("eppi0 pi0 MC", p.eppi0_pi0_mc),
+        ):
+            if not Path(path).exists():
+                missing.append(f"{p.label}: {label}: {path}")
+            else:
+                log(f"Preflight OK: {p.label}: {label}")
+            #endif
+        #endfor
+    #endfor
+
+    if missing:
+        raise FileNotFoundError(
+            "The following Stage-I input files do not exist:\n  " + "\n  ".join(missing)
         )
-    # endfor
-
-    lines.extend(
-        [
-            "",
-            "Predicted-probe detector populations:",
-            json.dumps(cutflow.get("detector_counts", {}), indent=2),
-            "",
-            "NOTE: z_tag, minus_t1_tag, and open_angle_ep2_tag are intentionally "
-            "NOT APPLIED. They remain in the stage table with 100% incremental "
-            "survival so the removed selection is explicit in the provenance.",
-        ]
-    )
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-def emit_cutflow_diagnostics(
-    period_dir: Path,
-    period_label: str,
-    named_cutflows: Mapping[str, Mapping[str, object]],
-) -> None:
-    audit_dir = period_dir / "cutflow_diagnostics"
-    audit_dir.mkdir(parents=True, exist_ok=True)
-
-    for sample_name, cutflow in named_cutflows.items():
-        safe = sample_name.replace(" ", "_").replace("/", "_")
-        write_cutflow_csv(audit_dir / f"{safe}_cutflow.csv", cutflow)
-        write_cutflow_text(audit_dir / f"{safe}_cutflow.txt", cutflow)
-        plot_cutflow(
-            audit_dir / f"{safe}_cutflow.png",
-            f"{period_label}: {sample_name} opportunity cutflow",
-            cutflow,
-        )
-
-        largest = cutflow.get("largest_incremental_loss")
-        if isinstance(largest, Mapping):
-            log(
-                f"{period_label} {sample_name} cutflow: "
-                f"{int(largest['count']):,} survive {largest['stage']}; "
-                f"incremental survival="
-                f"{100.0 * float(largest['incremental_survival']):.3f}%, "
-                f"total survival="
-                f"{100.0 * float(largest['total_survival']):.3f}%"
-            )
-        # endif
-
-        detector_counts = cutflow.get("detector_counts", {})
-        for row in cutflow.get("stages", []):
-            detector_suffix = ""
-            if row["stage"] in detector_counts:
-                stage_detector_counts = detector_counts[row["stage"]]
-                detector_suffix = (
-                    f"; FT={int(stage_detector_counts.get('FT', 0)):,}, "
-                    f"FD={int(stage_detector_counts.get('FD', 0)):,}"
-                )
-            # endif
-            log(
-                f"{period_label} {sample_name}: "
-                f"{row['stage']}: {int(row['count']):,} "
-                f"({100.0 * float(row['incremental_survival']):.3f}% of prior, "
-                f"{100.0 * float(row['total_survival']):.3f}% of input)"
-                f"{detector_suffix} — {row['condition']}"
-            )
-
-
-@dataclass
-class FailOnlyEfficiencyRow:
-    period: str
-    period_label: str
-    detector: str
-    sector: int
-    data_pass_count: int
-    data_fail_count: int
-    pi0_mc_pass_count: int
-    pi0_mc_fail_count: int
-    dvcs_mc_count: int
-    fit_fraction_pi0_fail: float
-    fit_fraction_pi0_fail_stat_err: float
-    fit_fraction_pi0_fail_model_spread: float
-    fitted_pi0_fail: float
-    fitted_pi0_fail_stat_err: float
-    fitted_pi0_fail_model_spread: float
-    efficiency_data: float
-    efficiency_data_stat_err: float
-    efficiency_data_model_err: float
-    efficiency_mc: float
-    efficiency_mc_err: float
-    scale_factor: float
-    scale_factor_stat_err: float
-    scale_factor_model_err: float
-    fit_success: bool
-    fit_message: str
-    fit_deviance: float
-    fit_ndf: int
-    fit_reduced_deviance: float
-    fit_quality_warning: bool
-    per_variable_fractions: str
-
-@dataclass
-class FractionFit:
-    success: bool
-    message: str
-    fraction: float
-    stat_error: float
-    nll: float
-    deviance: float
-    ndf: int
-    reduced_deviance: float
-    per_variable: Dict[str, Dict[str, float]]
-    payload: Dict[str, Dict[str, object]]
-    warnings: List[str]
-
-FAIL_FIT_DRIVERS: Tuple[str,...] = FRACTION_DRIVERS
-
-
-@dataclass
-class MCEfficiencyRow:
-    period: str
-    period_label: str
-    topology: str
-    opportunities: int
-    reconstructed: int
-    missed: int
-    efficiency: float
-    efficiency_error: float
+    #endif
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Produce before-cuts and after-cuts normalized epgamma shape "
-            "comparisons, with the completed AAOGEN MC efficiency available "
-            "as an optional stage."
-        )
+        description="Stage-I aaogen tag-and-probe kinematic validation."
     )
     parser.add_argument(
         "--period",
         action="append",
-        choices=[period.key for period in PERIODS],
-        help="Restrict processing to one or more run periods.",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=7,
-        help=f"Number of period workers; hard maximum is {MAX_WORKERS}.",
-    )
-    parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
-    parser.add_argument(
-        "--max-events",
-        type=int,
-        default=None,
-        help="Optional debugging cap per input ROOT tree.",
+        choices=[p.key for p in PERIODS],
+        help="Run only this period. May be supplied more than once. Default: all periods.",
     )
     parser.add_argument(
         "--output-dir",
-        default=DEFAULT_OUTPUT_DIR,
-        help="Common output root containing top-level data/ and mc/ folders.",
+        default="output/photon_efficiency/stage1",
+        help="Stage-I output directory.",
     )
     parser.add_argument(
-        "--shape-log-y",
-        action="store_true",
-        help="Also write logarithmic-y normalized shape canvases.",
+        "--tree",
+        default=None,
+        help="TTree name. Default: auto-detect first TTree/RNTuple.",
     )
     parser.add_argument(
-        "--simple",
-        action="store_true",
-        help=(
-            "Run the final data-driven RGA photon-efficiency extraction: "
-            "paired Mgg signal fit, failed-partner pi0-purity fit, and "
-            "same-selection AAOGEN truth efficiency for FT and FD. "
-            "Use --legacy-simple to recover the earlier exploratory study."
-        ),
-    )
-    parser.add_argument(
-        "--legacy-simple",
-        action="store_true",
-        help=(
-            "Run the pre-v80 exploratory --simple three-category study "
-            "instead of the final data-driven efficiency extraction."
-        ),
-    )
-    parser.add_argument(
-        "--final-mass-fit-bins",
+        "--max-entries",
         type=int,
-        default=120,
-        help="Number of bins in the paired-data Mgg production fit.",
+        default=500_000,
+        help="Maximum entries loaded from each ROOT tree. 0 means all. Default: 500000.",
     )
     parser.add_argument(
-        "--final-mass-fit-max",
+        "--angles",
+        choices=("auto", "rad", "deg"),
+        default="auto",
+        help="Input angle units. Default: auto.",
+    )
+    parser.add_argument(
+        "--tag-min",
         type=float,
-        default=0.35,
-        help="Upper edge of the paired-data Mgg fit in GeV.",
+        default=2.0,
+        help="Minimum reconstructed epgamma tag energy in GeV. Default: 2.0.",
     )
     parser.add_argument(
-        "--final-mass-max-shift",
+        "--tag-max",
         type=float,
-        default=0.010,
-        help="Maximum absolute AAOGEN pi0-template shift in GeV.",
+        default=9.5,
+        help="Exclusive upper reconstructed epgamma tag energy in GeV. Default: 9.5.",
     )
     parser.add_argument(
-        "--final-mass-max-smear",
+        "--parent-component-tol",
         type=float,
-        default=0.015,
-        help="Maximum additional AAOGEN pi0-template Gaussian sigma in GeV.",
-    )
-    parser.add_argument(
-        "--final-template-min-entries",
-        type=int,
-        default=150,
-        help="Minimum entries required for a production template before fallback.",
-    )
-    parser.add_argument(
-        "--final-fit-min-data",
-        type=int,
-        default=250,
-        help="Minimum unmatched data opportunities required for a production purity fit.",
-    )
-    parser.add_argument(
-        "--final-profile-points",
-        type=int,
-        default=61,
-        help="Grid points used for profile-likelihood statistical errors.",
-    )
-    parser.add_argument(
-        "--final-template-smoothing",
-        type=float,
-        default=0.60,
-        help="Gaussian histogram-bin smoothing used only for final normalized templates.",
-    )
-
-    parser.add_argument(
-        "--fast-fits",
-        action="store_true",
+        default=0.002,
         help=(
-            "Use diagnostic-speed template-fit settings: fewer multistarts, "
-            "looser optimizer tolerances, and fewer coordinate iterations. "
-            "The default retains the full production fit settings."
+            "Maximum allowed absolute mismatch in each electron/proton Cartesian "
+            "momentum component, GeV. Default: 0.002."
         ),
     )
     parser.add_argument(
-        "--print-stage-timings",
-        action="store_true",
-        help="Print detailed per-file and per-stage runtime measurements.",
-    )
-
-    parser.add_argument(
-        "--data-pTmiss-min",
+        "--parent-distance-max",
         type=float,
-        default=0.5,
+        default=2.0,
         help=(
-            "Deprecated compatibility option. No pTmiss lower cut is applied "
-            "in the current data-template workflow."
-        ),
-    )
-
-    parser.add_argument(
-        "--no-mc",
-        "--skip-mc-efficiency",
-        dest="skip_mc_efficiency",
-        action="store_true",
-        help=(
-            "Skip the full AAOGEN MC photon-efficiency stage while running "
-            "the data diagnostics and fits. The MC study runs by default."
+            "Maximum six-dimensional KD-tree distance after scaling each momentum "
+            "component by --parent-component-tol. Default: 2.0."
         ),
     )
     parser.add_argument(
-        "--run-mc-efficiency",
-        action="store_true",
+        "--max-tag-reco-angle",
+        type=float,
+        default=1.0,
         help=(
-            "Deprecated compatibility option. The full MC-efficiency stage "
-            "now runs by default."
+            "Maximum angle in degrees between epgamma tag and the corresponding "
+            "recovered eppi0 photon. Default: 1.0 deg."
         ),
-    )
-
-    # Options retained by the optional AAOGEN MC efficiency stage.
-    parser.add_argument("--tag-E-min", type=float, default=0.40)
-    parser.add_argument("--probe-E-min", type=float, default=2.00)
-    parser.add_argument("--probe-E-max", type=float, default=9.50)
-    parser.add_argument("--probe-m2-abs-max", type=float, default=0.10)
-    parser.add_argument(
-        "--probe-E-minus-p-abs-max",
-        type=float,
-        default=0.10,
-    )
-    parser.add_argument("--ft-theta-min", type=float, default=2.5)
-    parser.add_argument("--ft-theta-max", type=float, default=5.0)
-    parser.add_argument("--fd-theta-min", type=float, default=5.0)
-    parser.add_argument("--fd-theta-max", type=float, default=35.0)
-    parser.add_argument("--Q2-min", type=float, default=1.0)
-    parser.add_argument("--W-min", type=float, default=2.0)
-    parser.add_argument("--y-max", type=float, default=0.8)
-    parser.add_argument("--z-min", type=float, default=0.65)
-    parser.add_argument("--minus-t-max", type=float, default=1.0)
-    parser.add_argument("--open-angle-min-deg", type=float, default=5.0)
-    parser.add_argument(
-        "--require-fiducial-status-111",
-        action="store_true",
-    )
-    parser.add_argument("--tag-match-angle-max-deg", type=float, default=3.0)
-    parser.add_argument(
-        "--tag-match-relative-E-max",
-        type=float,
-        default=0.35,
-    )
-    parser.add_argument(
-        "--probe-match-angle-max-deg",
-        type=float,
-        default=3.0,
-    )
-    parser.add_argument(
-        "--probe-match-relative-E-max",
-        type=float,
-        default=0.35,
-    )
-    parser.add_argument("--mc-signature-decimals", type=int, default=10)
-    parser.add_argument("--native-closure-max", type=float, default=0.10)
-    parser.add_argument(
-        "--native-minimum-photon-E",
-        type=float,
-        default=0.20,
-    )
-    parser.add_argument("--found-probe-E-min", type=float, default=2.00)
-    parser.add_argument(
-        "--require-probe-residual-match",
-        action="store_true",
-    )
-    parser.add_argument("--energy-bins", type=int, default=15)
-    parser.add_argument("--theta-bins", type=int, default=13)
-    parser.add_argument("--phi-bins", type=int, default=36)
-    parser.add_argument(
-        "--minimum-bin-opportunities",
-        type=int,
-        default=20,
-    )
-    parser.add_argument(
-        "--skip-data-template-fits",
-        action="store_true",
-        help="Skip the advanced DVCSGEN+AAOGEN data-template fits.",
-    )
-    parser.add_argument(
-        "--allow-data-fit-failures",
-        action="store_true",
-        help=(
-            "Serialize failed categories and continue instead of aborting "
-            "the complete run."
-        ),
-    )
-    parser.add_argument(
-        "--fit-min-counts",
-        type=int,
-        default=100,
-        help="Minimum in-range data count required in every projection.",
-    )
-    parser.add_argument(
-        "--fit-max-shift-bins",
-        type=float,
-        default=12.0,
-        help="Maximum absolute component shift in transformed histogram bins.",
-    )
-    parser.add_argument(
-        "--fit-max-smear-bins",
-        type=float,
-        default=20.0,
-        help="Maximum additional Gaussian broadening in bins.",
-    )
-    parser.add_argument(
-        "--fit-max-log-stretch",
-        type=float,
-        default=0.45,
-        help=(
-            "Maximum absolute logarithm of the affine scale factor. "
-            "A value of 0.45 permits scales from exp(-0.45) to exp(0.45)."
-        ),
-    )
-    parser.add_argument(
-        "--fit-shift-prior-bins",
-        type=float,
-        default=4.0,
-        help="Gaussian prior width for component shifts in bins.",
-    )
-    parser.add_argument(
-        "--fit-smear-prior-bins",
-        type=float,
-        default=8.0,
-        help="Half-Gaussian prior width for additional broadenings in bins.",
-    )
-    parser.add_argument(
-        "--fit-log-stretch-prior",
-        type=float,
-        default=0.18,
-        help="Gaussian prior width for the logarithmic affine scale.",
-    )
-    parser.add_argument(
-        "--fit-component-weight-prior",
-        type=float,
-        default=0.55,
-        help=(
-            "Gaussian prior width for the component-weight logit change in "
-            "the two-component Delta_phi and theta_gamma_gamma models."
-        ),
-    )
-    parser.add_argument(
-        "--fit-mean-order-penalty",
-        type=float,
-        default=1.0e6,
-        help=(
-            "Quadratic penalty coefficient when the morphed DVCSGEN mean "
-            "exceeds the morphed AAOGEN mean for Emiss2 or Mx2_2."
-        ),
-    )
-    parser.add_argument(
-        "--fit-coordinate-iterations",
-        type=int,
-        default=5,
-        help="Maximum shared-fraction coordinate-minimization iterations.",
-    )
-    parser.add_argument(
-        "--fit-independent-multistarts",
-        type=int,
-        default=4,
-        help="Number of independent-fraction starting points per variable.",
-    )
-    parser.add_argument(
-        "--disable-fit-nuisance-penalties",
-        action="store_true",
-        help="Disable all template-morph nuisance penalties.",
-    )
-    parser.add_argument(
-        "--fit-dpi",
-        type=int,
-        default=180,
-        help="Resolution of template-fit diagnostic plots.",
     )
     return parser.parse_args()
 
 
-def binomial_efficiency(
-    reconstructed: int,
-    opportunities: int,
-) -> Tuple[float, float]:
-    if opportunities <= 0:
-        return math.nan, math.nan
-    # endif
-    if reconstructed < 0 or reconstructed > opportunities:
-        raise ValueError(
-            "Invalid binomial population: "
-            f"reconstructed={reconstructed}, opportunities={opportunities}"
-        )
-    # endif
-
-    efficiency = reconstructed / opportunities
-    uncertainty = math.sqrt(
-        max(efficiency * (1.0 - efficiency) / opportunities, 0.0)
-    )
-    return efficiency, uncertainty
-
-
-def topology_mask(
-    records: OpportunityRecords,
-    topology: str,
-) -> np.ndarray:
-    if topology == "FT":
-        return records.probe_detector == 0
-    # endif
-    if topology == "FD":
-        return records.probe_detector == 1
-    # endif
-    raise ValueError(f"Unsupported topology: {topology}")
-
-
-def efficiency_row(
-    period: PeriodConfig,
-    topology: str,
-    mask: np.ndarray,
-    matched: np.ndarray,
-) -> MCEfficiencyRow:
-    opportunities = int(np.count_nonzero(mask))
-    reconstructed = int(np.count_nonzero(mask & matched))
-    efficiency, uncertainty = binomial_efficiency(
-        reconstructed,
-        opportunities,
-    )
-    return MCEfficiencyRow(
-        period=period.key,
-        period_label=period.label,
-        topology=topology,
-        opportunities=opportunities,
-        reconstructed=reconstructed,
-        missed=opportunities - reconstructed,
-        efficiency=efficiency,
-        efficiency_error=uncertainty,
-    )
-
-
-def binned_efficiency(
-    values: np.ndarray,
-    selected: np.ndarray,
-    matched: np.ndarray,
-    edges: np.ndarray,
-) -> List[Dict[str, object]]:
-    values = np.asarray(values, dtype=float)
-    selected = np.asarray(selected, dtype=bool)
-    matched = np.asarray(matched, dtype=bool)
-
-    finite = selected & np.isfinite(values)
-    denominator, _ = np.histogram(values[finite], bins=edges)
-    numerator, _ = np.histogram(values[finite & matched], bins=edges)
-
-    rows: List[Dict[str, object]] = []
-    for index in range(edges.size - 1):
-        efficiency, uncertainty = binomial_efficiency(
-            int(numerator[index]),
-            int(denominator[index]),
-        )
-        rows.append(
-            {
-                "bin_index": index,
-                "bin_low": float(edges[index]),
-                "bin_high": float(edges[index + 1]),
-                "bin_center": float(
-                    0.5 * (edges[index] + edges[index + 1])
-                ),
-                "opportunities": int(denominator[index]),
-                "reconstructed": int(numerator[index]),
-                "missed": int(denominator[index] - numerator[index]),
-                "efficiency": efficiency,
-                "efficiency_error": uncertainty,
-            }
-        )
-    # endfor
-    return rows
-
-
-def write_dict_rows(
-    path: Path,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not rows:
-        path.write_text("", encoding="utf-8")
-        return
-    # endif
-
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=list(rows[0].keys()),
-        )
-        writer.writeheader()
-        writer.writerows(rows)
-    # endwith
-
-
-def plot_matching_residuals_mc_only(
-    path: Path,
-    period_label: str,
-    match: PartnerMatchResult,
-) -> None:
-    panels = (
-        ("tag_angle_deg", "Tag angular residual (deg)", 0.0, 5.0),
-        (
-            "tag_relative_E",
-            "Tag relative energy residual",
-            0.0,
-            0.5,
-        ),
-        (
-            "probe_angle_deg",
-            "Predicted probe to partner angle (deg)",
-            0.0,
-            20.0,
-        ),
-        (
-            "probe_relative_E",
-            "Predicted probe to partner relative energy",
-            0.0,
-            1.5,
-        ),
-        (
-            "partner_E",
-            "Reconstructed partner energy (GeV)",
-            0.0,
-            10.0,
-        ),
-        (
-            "solution_closure",
-            "Native daughter-solution closure",
-            0.0,
-            0.10,
-        ),
-    )
-
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
-    for axis, (field, label, low, high) in zip(axes.flat, panels):
-        values = np.asarray(getattr(match, field), dtype=float)
-        values = values[np.isfinite(values)]
-        counts, edges = np.histogram(
-            values,
-            bins=np.linspace(low, high, 101),
-        )
-        if counts.sum() > 0:
-            counts = counts / counts.sum()
-        # endif
-        centers = 0.5 * (edges[:-1] + edges[1:])
-        axis.step(centers, counts, where="mid")
-        axis.set_xlabel(label)
-        axis.set_ylabel("Normalized entries")
-        axis.set_xlim(low, high)
-        axis.grid(alpha=0.25)
-    # endfor
-
-    fig.suptitle(f"{period_label}: AAOGEN truth-partner matching")
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def plot_efficiency_dependence(
-    path: Path,
-    title: str,
-    variable_label: str,
-    topology_rows: Mapping[str, Sequence[Mapping[str, object]]],
-    minimum_opportunities: int,
-) -> None:
-    fig, axis = plt.subplots(figsize=(11, 7))
-
-    for topology, rows in topology_rows.items():
-        centers = np.asarray(
-            [row["bin_center"] for row in rows],
-            dtype=float,
-        )
-        efficiencies = np.asarray(
-            [row["efficiency"] for row in rows],
-            dtype=float,
-        )
-        uncertainties = np.asarray(
-            [row["efficiency_error"] for row in rows],
-            dtype=float,
-        )
-        support = np.asarray(
-            [row["opportunities"] for row in rows],
-            dtype=int,
-        )
-        valid = (
-            np.isfinite(efficiencies)
-            & np.isfinite(uncertainties)
-            & (support >= minimum_opportunities)
-        )
-        axis.errorbar(
-            centers[valid],
-            efficiencies[valid],
-            yerr=uncertainties[valid],
-            fmt="o-",
-            capsize=2,
-            linewidth=1.0,
-            markersize=4,
-            label=topology,
-        )
-    # endfor
-
-    axis.set_xlabel(variable_label)
-    axis.set_ylabel(r"$\epsilon_{\mathrm{MC}}$")
-    axis.set_ylim(0.0, 1.05)
-    axis.grid(alpha=0.25)
-    axis.legend()
-    axis.set_title(title)
-    fig.tight_layout()
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def plot_fd_sector_diagnostics(
-    path: Path,
-    period_label: str,
-    records: OpportunityRecords,
-    matched: np.ndarray,
-) -> List[Dict[str, object]]:
-    rows: List[Dict[str, object]] = []
-    for sector in range(1, 7):
-        mask = (
-            (records.probe_detector == 1)
-            & (records.probe_sector == sector)
-        )
-        opportunities = int(np.count_nonzero(mask))
-        reconstructed = int(np.count_nonzero(mask & matched))
-        efficiency, uncertainty = binomial_efficiency(
-            reconstructed,
-            opportunities,
-        )
-        rows.append(
-            {
-                "sector": sector,
-                "opportunities": opportunities,
-                "reconstructed": reconstructed,
-                "missed": opportunities - reconstructed,
-                "efficiency": efficiency,
-                "efficiency_error": uncertainty,
-            }
-        )
-    # endfor
-
-    x = np.arange(1, 7)
-    efficiency = np.asarray(
-        [row["efficiency"] for row in rows],
-        dtype=float,
-    )
-    uncertainty = np.asarray(
-        [row["efficiency_error"] for row in rows],
-        dtype=float,
-    )
-
-    fig, axis = plt.subplots(figsize=(10, 6))
-    axis.errorbar(
-        x,
-        efficiency,
-        yerr=uncertainty,
-        fmt="o",
-        capsize=3,
-    )
-    axis.set_xticks(x)
-    axis.set_xlabel("Predicted FD photon sector")
-    axis.set_ylabel(r"$\epsilon_{\mathrm{MC}}$")
-    axis.set_ylim(0.0, 1.05)
-    axis.grid(alpha=0.25)
-    axis.set_title(
-        f"{period_label}: FD-sector diagnostic photon efficiency"
-    )
-    fig.tight_layout()
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-    return rows
-
-
-
-RAW_SHAPE_SAMPLE_INFO: Tuple[Tuple[str, str, str], ...] = (
-    ("data", r"$e'p'\gamma$ data", "epg_data"),
-    ("dvcsgen", "DVCS MC", "dvcs_mc"),
-    ("aaogen", r"$e\pi^0$ MC as DVCS", "pi0_epg_mc"),
-)
-
-
-def resolve_branches_from_keys(
-    path: str,
-    available_keys: Sequence[str],
-    logical_names: Sequence[str],
-) -> Dict[str, str]:
-    """
-    Resolve logical branches from an already opened tree branch list.
-
-    This avoids reopening every ROOT file inside resolve_branches().
-    """
-    available = set(available_keys)
-    resolved: Dict[str, str] = {}
-    missing: List[str] = []
-
-    for logical_name in logical_names:
-        aliases = ALIASES.get(logical_name, (logical_name,))
-        branch = next(
-            (candidate for candidate in aliases if candidate in available),
-            None,
-        )
-        if branch is None:
-            missing.append(
-                f"{logical_name}: tried {', '.join(aliases)}"
-            )
-        else:
-            resolved[logical_name] = branch
-        # endif
-    # endfor
-
-    if missing:
-        raise KeyError(
-            f"Missing required branches in {path}:\n  "
-            + "\n  ".join(missing)
-        )
-    # endif
-    return resolved
-
-
-def empty_stage_histograms(
-    variables: Sequence[FitVariable],
-) -> Dict[str, Dict[str, object]]:
-    histograms: Dict[str, Dict[str, object]] = {}
-    for variable in variables:
-        edges = np.linspace(
-            variable.low,
-            variable.high,
-            variable.bins + 1,
-        )
-        histograms[variable.key] = {
-            "edges": edges,
-            "counts": np.zeros(variable.bins, dtype=np.int64),
-            "selected_entries": 0,
-            "in_range_entries": 0,
-            "underflow_entries": 0,
-            "overflow_entries": 0,
-        }
-    # endfor
-    return histograms
-
-
-def update_stage_histograms(
-    stage_histograms: Dict[str, Dict[str, object]],
-    arrays_by_logical_name: Mapping[str, np.ndarray],
-    mask: np.ndarray,
-    variables: Sequence[FitVariable],
-) -> None:
-    """Fill the requested category-specific shape histograms."""
-    radians_to_degrees = 180.0 / math.pi
-
-    for variable in variables:
-        selected = np.asarray(
-            arrays_by_logical_name[variable.key],
-            dtype=float,
-        )[mask]
-
-        if variable.key in ("p1_theta", "p2_theta"):
-            selected = selected * radians_to_degrees
-        # endif
-
-        histogram = stage_histograms[variable.key]
-        edges = np.asarray(histogram["edges"], dtype=float)
-        counts, _ = np.histogram(selected, bins=edges)
-
-        histogram["counts"] += counts.astype(np.int64)
-        histogram["selected_entries"] += int(selected.size)
-        histogram["in_range_entries"] += int(np.sum(counts))
-        histogram["underflow_entries"] += int(
-            np.count_nonzero(selected < variable.low)
-        )
-        histogram["overflow_entries"] += int(
-            np.count_nonzero(selected >= variable.high)
-        )
-    # endfor
-    # endfor
-    # endfor
-    # endfor
-    # endfor
-
-
-def finalize_stage_histograms(
-    stage_histograms: Dict[str, Dict[str, object]],
-    variables: Sequence[FitVariable],
-) -> Dict[str, Dict[str, object]]:
-    finalized: Dict[str, Dict[str, object]] = {}
-
-    for variable in variables:
-        histogram = stage_histograms[variable.key]
-        counts = np.asarray(histogram["counts"], dtype=np.int64)
-        in_range = int(histogram["in_range_entries"])
-        selected = int(histogram["selected_entries"])
-
-        finalized[variable.key] = {
-            "edges": np.asarray(histogram["edges"], dtype=float),
-            "counts": counts,
-            "unit_area": (
-                counts.astype(float) / in_range
-                if in_range > 0
-                else np.zeros_like(counts, dtype=float)
-            ),
-            "selected_entries": selected,
-            "in_range_entries": in_range,
-            "underflow_entries": int(
-                histogram["underflow_entries"]
-            ),
-            "overflow_entries": int(
-                histogram["overflow_entries"]
-            ),
-            "in_range_fraction_of_selected": (
-                in_range / selected if selected > 0 else math.nan
-            ),
-            "underflow_fraction_of_selected": (
-                int(histogram["underflow_entries"]) / selected
-                if selected > 0
-                else math.nan
-            ),
-            "overflow_fraction_of_selected": (
-                int(histogram["overflow_entries"]) / selected
-                if selected > 0
-                else math.nan
-            ),
-        }
-    # endfor
-
-    return finalized
-
-
-def uint64_mix(values: np.ndarray) -> np.ndarray:
-    """
-    SplitMix64 finalizer used to build a deterministic 128-bit MC signature.
-    """
-    values = np.asarray(values, dtype=np.uint64)
-    values = values ^ (values >> np.uint64(30))
-    values = values * np.uint64(0xBF58476D1CE4E5B9)
-    values = values ^ (values >> np.uint64(27))
-    values = values * np.uint64(0x94D049BB133111EB)
-    values = values ^ (values >> np.uint64(31))
-    return values
-
-
-def data_identity_signature(
-    arrays_by_logical_name: Mapping[str, np.ndarray],
-) -> Tuple[np.ndarray, np.ndarray]:
-    runnum = np.asarray(
-        arrays_by_logical_name["runnum"],
-        dtype=float,
-    )
-    eventnum = np.asarray(
-        arrays_by_logical_name["eventnum"],
-        dtype=float,
-    )
-    valid = np.isfinite(runnum) & np.isfinite(eventnum)
-
-    signature = np.empty(
-        int(np.count_nonzero(valid)),
-        dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
-    )
-    signature["runnum"] = np.rint(runnum[valid]).astype(np.int64)
-    signature["eventnum"] = np.rint(eventnum[valid]).astype(np.int64)
-    return signature, valid
-
-
-def mc_identity_signature(
-    arrays_by_logical_name: Mapping[str, np.ndarray],
-    decimals: int,
-) -> Tuple[np.ndarray, np.ndarray]:
-    logical_names = (
-        "e_p",
-        "e_theta",
-        "e_phi",
-        "p_p",
-        "p_theta",
-        "p_phi",
-    )
-    columns = [
-        np.asarray(arrays_by_logical_name[name], dtype=float)
-        for name in logical_names
-    ]
-
-    valid = np.ones(columns[0].size, dtype=bool)
-    for column in columns:
-        valid &= np.isfinite(column)
-    # endfor
-
-    scale = float(10 ** int(decimals))
-    quantized = [
-        np.rint(column[valid] * scale).astype(np.int64)
-        for column in columns
-    ]
-
-    count = int(np.count_nonzero(valid))
-    h1 = np.full(count, np.uint64(0x243F6A8885A308D3))
-    h2 = np.full(count, np.uint64(0x13198A2E03707344))
-
-    for index, column in enumerate(quantized):
-        unsigned = column.view(np.uint64)
-        mixed_a = uint64_mix(
-            unsigned
-            + np.uint64(
-                (0x9E3779B97F4A7C15 * (index + 1))
-                & 0xFFFFFFFFFFFFFFFF
-            )
-        )
-        mixed_b = uint64_mix(
-            unsigned
-            ^ np.uint64(
-                (0xD1B54A32D192ED03 * (index + 1))
-                & 0xFFFFFFFFFFFFFFFF
-            )
-        )
-        h1 = uint64_mix(h1 ^ mixed_a)
-        h2 = uint64_mix(h2 + mixed_b)
-    # endfor
-
-    signature = np.empty(
-        count,
-        dtype=[("hash1", "<u8"), ("hash2", "<u8")],
-    )
-    signature["hash1"] = h1
-    signature["hash2"] = h2
-    return signature, valid
-
-
-def photon_multiplicity_summary(
-    multiplicity_audit: Mapping[str, object],
-    period: PeriodConfig,
-    sample_key: str,
-    sample_label: str,
-    args: argparse.Namespace,
-) -> Dict[str, object]:
-    """
-    Serialize the exact event multiplicities computed during the identity
-    prepass.
-
-    The input already contains counts derived from the entry-level event
-    signatures. It must not be passed through np.unique() a second time.
-    """
-    return {
-        "period": period.key,
-        "period_label": period.label,
-        "sample": sample_key,
-        "sample_label": sample_label,
-        "identity_method": (
-            "exact runnum + evnum"
-            if sample_key == "data"
-            else (
-                "128-bit hash of rounded reconstructed electron/proton "
-                f"kinematics ({args.mc_signature_decimals} decimals)"
-            )
-        ),
-        "tree_entries_read": int(
-            multiplicity_audit["entries_scanned"]
-        ),
-        "valid_identity_entries": int(
-            multiplicity_audit["valid_identity_entries"]
-        ),
-        "unique_events": int(
-            multiplicity_audit["unique_events"]
-        ),
-        "events_with_1_photon": int(
-            multiplicity_audit["one_photon_events"]
-        ),
-        "events_with_2_photons": int(
-            multiplicity_audit["two_photon_events"]
-        ),
-        "events_with_3_photons": int(
-            multiplicity_audit["three_photon_events"]
-        ),
-        "events_with_4_photons": int(
-            multiplicity_audit["four_photon_events"]
-        ),
-        "events_with_5_photons": int(
-            multiplicity_audit["five_photon_events"]
-        ),
-        "events_with_6_photons": int(
-            multiplicity_audit["six_photon_events"]
-        ),
-        "events_with_more_than_6_photons": int(
-            multiplicity_audit["above_six_photon_events"]
-        ),
-        "maximum_photons_in_event": int(
-            multiplicity_audit["maximum_multiplicity"]
-        ),
-        "photon_entries_accounted_for": int(
-            multiplicity_audit["photon_entries_accounted_for"]
-        ),
-    }
-
-
-
-def identity_logical_names(sample_key: str) -> Tuple[str, ...]:
-    if sample_key == "data":
-        return ("runnum", "eventnum")
-    # endif
-    return (
-        "e_p",
-        "e_theta",
-        "e_phi",
-        "p_p",
-        "p_theta",
-        "p_phi",
-    )
-
-
-def build_identity_signature(
-    arrays_by_logical_name: Mapping[str, np.ndarray],
-    sample_key: str,
-    args: argparse.Namespace,
-) -> Tuple[np.ndarray, np.ndarray]:
-    if sample_key == "data":
-        return data_identity_signature(arrays_by_logical_name)
-    # endif
-    return mc_identity_signature(
-        arrays_by_logical_name,
-        args.mc_signature_decimals,
-    )
-
-
-def scan_event_multiplicity(
-    path: str,
-    sample_key: str,
-    resolved: Mapping[str, str],
-    args: argparse.Namespace,
-    entry_stop: int,
-) -> Tuple[
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    np.ndarray,
-    Dict[str, int],
-]:
-    """
-    Scan identity branches and classify events by photon-entry multiplicity.
-
-    This function is diagnostic only. It does not define an event rejection.
-
-    Returns:
-      all unique event signatures,
-      exact-one-photon event signatures,
-      exact-two-photon event signatures,
-      three-or-more-photon event signatures,
-      entry/event accounting.
-    """
-    logical_names = identity_logical_names(sample_key)
-    expressions = sorted(
-        {resolved[logical_name] for logical_name in logical_names}
-    )
-    signature_chunks: List[np.ndarray] = []
-    valid_identity_entries = 0
-    entries_scanned = 0
-
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        entry_stop=entry_stop,
-        library="np",
-    ):
-        chunk_size = len(next(iter(arrays.values()))) if arrays else 0
-        entries_scanned += chunk_size
-
-        logical_arrays = {
-            logical_name: np.asarray(
-                arrays[resolved[logical_name]],
-                dtype=float,
-            )
-            for logical_name in logical_names
-        }
-        signatures, valid_identity = build_identity_signature(
-            logical_arrays,
-            sample_key,
-            args,
-        )
-        valid_identity_entries += int(np.count_nonzero(valid_identity))
-        signature_chunks.append(signatures)
-    # endfor
-
-    if signature_chunks:
-        all_entry_signatures = np.concatenate(signature_chunks)
-    else:
-        if sample_key == "data":
-            all_entry_signatures = np.empty(
-                0,
-                dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
-            )
-        else:
-            all_entry_signatures = np.empty(
-                0,
-                dtype=[("hash1", "<u8"), ("hash2", "<u8")],
-            )
-        # endif
-    # endif
-
-    if all_entry_signatures.size > 0:
-        unique_signatures, multiplicities = np.unique(
-            all_entry_signatures,
-            return_counts=True,
-        )
-        one_photon_signatures = unique_signatures[multiplicities == 1]
-        two_photon_signatures = unique_signatures[multiplicities == 2]
-        three_plus_signatures = unique_signatures[multiplicities >= 3]
-        three_plus_entries = int(
-            np.sum(multiplicities[multiplicities >= 3])
-        )
-    else:
-        unique_signatures = all_entry_signatures.copy()
-        one_photon_signatures = all_entry_signatures.copy()
-        two_photon_signatures = all_entry_signatures.copy()
-        three_plus_signatures = all_entry_signatures.copy()
-        multiplicities = np.empty(0, dtype=np.int64)
-        three_plus_entries = 0
-    # endif
-
-    exact_event_counts = {
-        multiplicity: int(
-            np.count_nonzero(multiplicities == multiplicity)
-        )
-        for multiplicity in range(1, 7)
-    }
-    above_six_events = int(
-        np.count_nonzero(multiplicities > 6)
-    )
-    accounted_entries = int(np.sum(multiplicities))
-
-    accounting = {
-        "entries_scanned": int(entries_scanned),
-        "valid_identity_entries": int(valid_identity_entries),
-        "unique_events": int(unique_signatures.size),
-        "one_photon_events": exact_event_counts[1],
-        "two_photon_events": exact_event_counts[2],
-        "three_photon_events": exact_event_counts[3],
-        "four_photon_events": exact_event_counts[4],
-        "five_photon_events": exact_event_counts[5],
-        "six_photon_events": exact_event_counts[6],
-        "above_six_photon_events": above_six_events,
-        "three_plus_photon_events": int(
-            np.count_nonzero(multiplicities >= 3)
-        ),
-        "three_plus_photon_entries": three_plus_entries,
-        "photon_entries_accounted_for": accounted_entries,
-        "all_multiplicities_retained": False,
-        "events_rejected_by_multiplicity": int(np.count_nonzero(multiplicities >= 3)),
-        "entries_rejected_by_multiplicity": three_plus_entries,
-        "maximum_multiplicity": (
-            int(np.max(multiplicities))
-            if multiplicities.size > 0
-            else 0
-        ),
-    }
-    return (
-        unique_signatures,
-        one_photon_signatures,
-        two_photon_signatures,
-        three_plus_signatures,
-        accounting,
-    )
-
-
-def scan_shape_multiplicity_and_energy_ranking(
-    path: str,
-    sample_key: str,
-    resolved: Mapping[str, str],
-    args: argparse.Namespace,
-    entry_stop: int,
-) -> Tuple[np.ndarray, Dict[str, int], Dict[str, float]]:
-    """
-    Compute event multiplicities and one dense category code per ROOT entry.
-
-    Category codes:
-      0 = rejected or invalid identity;
-      1 = exact-one-photon entry;
-      2 = more energetic entry in an exact-two event;
-      3 = less energetic entry in an exact-two event.
-
-    The implementation is O(N log N), dominated by one stable lexicographic
-    sort. It does not scan the complete inverse-index array once per event.
-    """
-    start_time = time.perf_counter()
-
-    identity_names = list(identity_logical_names(sample_key))
-    logical_names = list(
-        dict.fromkeys(
-            identity_names
-            + ["p2_p", "p2_theta", "p2_phi"]
-        )
-    )
-    expressions = sorted(
-        {resolved[name] for name in logical_names}
-    )
-
-    signature_chunks: List[np.ndarray] = []
-    energy_chunks: List[np.ndarray] = []
-    theta_chunks: List[np.ndarray] = []
-    phi_chunks: List[np.ndarray] = []
-    ordinal_chunks: List[np.ndarray] = []
-    valid_identity_entries = 0
-    entries_scanned = 0
-
-    io_start = time.perf_counter()
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        entry_stop=entry_stop,
-        library="np",
-    ):
-        chunk_size = len(next(iter(arrays.values()))) if arrays else 0
-        chunk_start = entries_scanned
-        entries_scanned += chunk_size
-
-        logical_arrays = {
-            name: np.asarray(arrays[resolved[name]], dtype=float)
-            for name in logical_names
-        }
-        signatures, valid_identity = build_identity_signature(
-            logical_arrays,
-            sample_key,
-            args,
-        )
-        valid_identity_entries += int(np.count_nonzero(valid_identity))
-
-        signature_chunks.append(signatures)
-        energy_chunks.append(
-            np.asarray(
-                logical_arrays["p2_p"][valid_identity],
-                dtype=float,
-            )
-        )
-        theta_chunks.append(
-            np.asarray(
-                logical_arrays["p2_theta"][valid_identity],
-                dtype=float,
-            )
-        )
-        phi_chunks.append(
-            np.asarray(
-                logical_arrays["p2_phi"][valid_identity],
-                dtype=float,
-            )
-        )
-        ordinal_chunks.append(
-            np.arange(
-                chunk_start,
-                chunk_start + chunk_size,
-                dtype=np.int64,
-            )[valid_identity]
-        )
-    # endfor
-    io_seconds = elapsed_seconds(io_start)
-
-    if signature_chunks:
-        entry_signatures = np.concatenate(signature_chunks)
-        entry_energies = np.concatenate(energy_chunks)
-        entry_thetas = np.concatenate(theta_chunks)
-        entry_phis = np.concatenate(phi_chunks)
-        entry_ordinals = np.concatenate(ordinal_chunks)
-    else:
-        signature_dtype = (
-            [("runnum", "<i8"), ("eventnum", "<i8")]
-            if sample_key == "data"
-            else [("hash1", "<u8"), ("hash2", "<u8")]
-        )
-        entry_signatures = np.empty(0, dtype=signature_dtype)
-        entry_energies = np.empty(0, dtype=float)
-        entry_thetas = np.empty(0, dtype=float)
-        entry_phis = np.empty(0, dtype=float)
-        entry_ordinals = np.empty(0, dtype=np.int64)
-    # endif
-
-    grouping_start = time.perf_counter()
-    entry_category = np.zeros(entries_scanned, dtype=np.uint8)
-    entry_diphoton_mass = np.full(
-        entries_scanned,
-        np.nan,
-        dtype=np.float64,
-    )
-
-    if entry_signatures.size:
-        unique_signatures, inverse, multiplicities = np.unique(
-            entry_signatures,
-            return_inverse=True,
-            return_counts=True,
-        )
-
-        # Stable sort by group and then by original entry ordinal. Every group
-        # becomes one contiguous segment.
-        order = np.lexsort((entry_ordinals, inverse))
-        sorted_groups = inverse[order]
-        sorted_ordinals = entry_ordinals[order]
-        sorted_energies = entry_energies[order]
-        sorted_thetas = entry_thetas[order]
-        sorted_phis = entry_phis[order]
-
-        group_starts = np.empty(multiplicities.size, dtype=np.int64)
-        group_starts[0] = 0
-        if multiplicities.size > 1:
-            np.cumsum(
-                multiplicities[:-1],
-                out=group_starts[1:],
-            )
-        # endif
-
-        one_groups = np.flatnonzero(multiplicities == 1)
-        two_groups = np.flatnonzero(multiplicities == 2)
-
-        if one_groups.size:
-            one_positions = group_starts[one_groups]
-            one_ordinals = sorted_ordinals[one_positions]
-            entry_category[one_ordinals] = 1
-        # endif
-
-        equal_energy_ties = 0
-        nonfinite_pairs = 0
-
-        if two_groups.size:
-            first_positions = group_starts[two_groups]
-            second_positions = first_positions + 1
-
-            first_ordinals = sorted_ordinals[first_positions]
-            second_ordinals = sorted_ordinals[second_positions]
-            first_energies = sorted_energies[first_positions]
-            second_energies = sorted_energies[second_positions]
-
-            first_finite = np.isfinite(first_energies)
-            second_finite = np.isfinite(second_energies)
-            both_finite = first_finite & second_finite
-            unequal = both_finite & (
-                first_energies != second_energies
-            )
-
-            first_is_high = np.zeros(two_groups.size, dtype=bool)
-            first_is_high[unequal] = (
-                first_energies[unequal]
-                > second_energies[unequal]
-            )
-
-            only_first_finite = first_finite & ~second_finite
-            only_second_finite = second_finite & ~first_finite
-            first_is_high[only_first_finite] = True
-            first_is_high[only_second_finite] = False
-
-            unresolved = ~unequal & ~only_first_finite & ~only_second_finite
-            # Deterministic entry-order tie break for equal or doubly
-            # non-finite energies.
-            first_is_high[unresolved] = (
-                first_ordinals[unresolved]
-                < second_ordinals[unresolved]
-            )
-
-            equal_energy_ties = int(
-                np.count_nonzero(
-                    both_finite
-                    & (first_energies == second_energies)
-                )
-            )
-            nonfinite_pairs = int(
-                np.count_nonzero(~both_finite)
-            )
-
-            high_ordinals = np.where(
-                first_is_high,
-                first_ordinals,
-                second_ordinals,
-            )
-            low_ordinals = np.where(
-                first_is_high,
-                second_ordinals,
-                first_ordinals,
-            )
-
-            entry_category[high_ordinals] = 2
-            entry_category[low_ordinals] = 3
-
-            first_thetas = sorted_thetas[first_positions]
-            second_thetas = sorted_thetas[second_positions]
-            first_phis = sorted_phis[first_positions]
-            second_phis = sorted_phis[second_positions]
-
-            opening_cosine = (
-                np.cos(first_thetas) * np.cos(second_thetas)
-                + np.sin(first_thetas)
-                * np.sin(second_thetas)
-                * np.cos(first_phis - second_phis)
-            )
-            opening_cosine = np.clip(
-                opening_cosine,
-                -1.0,
-                1.0,
-            )
-            mass_squared = (
-                2.0
-                * first_energies
-                * second_energies
-                * (1.0 - opening_cosine)
-            )
-            valid_mass = (
-                np.isfinite(mass_squared)
-                & (mass_squared >= 0.0)
-            )
-            pair_mass = np.full(
-                two_groups.size,
-                np.nan,
-                dtype=np.float64,
-            )
-            pair_mass[valid_mass] = np.sqrt(
-                mass_squared[valid_mass]
-            )
-            entry_diphoton_mass[high_ordinals] = pair_mass
-            entry_diphoton_mass[low_ordinals] = pair_mass
-        # endif
-    else:
-        unique_signatures = entry_signatures.copy()
-        multiplicities = np.empty(0, dtype=np.int64)
-        equal_energy_ties = 0
-        nonfinite_pairs = 0
-    # endif
-
-    grouping_seconds = elapsed_seconds(grouping_start)
-
-    exact_counts = {
-        value: int(np.count_nonzero(multiplicities == value))
-        for value in range(1, 7)
-    }
-    three_plus_entries = int(
-        np.sum(multiplicities[multiplicities >= 3])
-    )
-
-    accounting = {
-        "entries_scanned": int(entries_scanned),
-        "valid_identity_entries": int(valid_identity_entries),
-        "unique_events": int(unique_signatures.size),
-        "one_photon_events": exact_counts[1],
-        "two_photon_events": exact_counts[2],
-        "three_photon_events": exact_counts[3],
-        "four_photon_events": exact_counts[4],
-        "five_photon_events": exact_counts[5],
-        "six_photon_events": exact_counts[6],
-        "above_six_photon_events": int(
-            np.count_nonzero(multiplicities > 6)
-        ),
-        "three_plus_photon_events": int(
-            np.count_nonzero(multiplicities >= 3)
-        ),
-        "three_plus_photon_entries": three_plus_entries,
-        "photon_entries_accounted_for": int(np.sum(multiplicities)),
-        "all_multiplicities_retained": False,
-        "events_rejected_by_multiplicity": int(
-            np.count_nonzero(multiplicities >= 3)
-        ),
-        "entries_rejected_by_multiplicity": three_plus_entries,
-        "maximum_multiplicity": (
-            int(np.max(multiplicities))
-            if multiplicities.size
-            else 0
-        ),
-        "two_photon_more_energetic_entries": int(
-            np.count_nonzero(entry_category == 2)
-        ),
-        "two_photon_less_energetic_entries": int(
-            np.count_nonzero(entry_category == 3)
-        ),
-        "two_photon_equal_energy_ties": int(equal_energy_ties),
-        "two_photon_nonfinite_energy_pairs": int(nonfinite_pairs),
-        "two_photon_ranking_branch": "p2_p",
-    }
-
-    timings = {
-        "multiplicity_prepass_total_seconds": elapsed_seconds(
-            start_time
-        ),
-        "multiplicity_prepass_root_io_seconds": io_seconds,
-        "multiplicity_grouping_seconds": grouping_seconds,
-    }
-    maybe_log_timing(
-        args,
-        f"{Path(path).name} multiplicity/ranking prepass",
-        timings["multiplicity_prepass_total_seconds"],
-    )
-
-    return (
-        entry_category,
-        entry_diphoton_mass,
-        accounting,
-        timings,
-    )
-
-
-def multiplicity_entry_masks(
-    arrays_by_logical_name: Mapping[str, np.ndarray],
-    sample_key: str,
-    one_photon_signatures: np.ndarray,
-    two_photon_signatures: np.ndarray,
-    three_plus_signatures: np.ndarray,
-    args: argparse.Namespace,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Return full-length masks for exact-one, exact-two, >=3, and all valid
-    event identities. No multiplicity category is rejected.
-    """
-    signatures, valid_identity = build_identity_signature(
-        arrays_by_logical_name,
-        sample_key,
-        args,
-    )
-
-    one_valid = np.zeros(signatures.size, dtype=bool)
-    two_valid = np.zeros(signatures.size, dtype=bool)
-    three_plus_valid = np.zeros(signatures.size, dtype=bool)
-
-    if signatures.size > 0:
-        if one_photon_signatures.size > 0:
-            one_valid = np.isin(signatures, one_photon_signatures)
-        # endif
-        if two_photon_signatures.size > 0:
-            two_valid = np.isin(signatures, two_photon_signatures)
-        # endif
-        if three_plus_signatures.size > 0:
-            three_plus_valid = np.isin(
-                signatures,
-                three_plus_signatures,
-            )
-        # endif
-    # endif
-
-    one_full = np.zeros(valid_identity.size, dtype=bool)
-    two_full = np.zeros(valid_identity.size, dtype=bool)
-    three_plus_full = np.zeros(valid_identity.size, dtype=bool)
-
-    one_full[valid_identity] = one_valid
-    two_full[valid_identity] = two_valid
-    three_plus_full[valid_identity] = three_plus_valid
-
-    return (
-        one_full,
-        two_full,
-        three_plus_full,
-        valid_identity,
-    )
-
-
-
-def process_data_shape_sample(
-    period: PeriodConfig,
-    sample_key: str,
-    sample_label: str,
-    period_attribute: str,
-    args_dict: Mapping[str, object],
-) -> Tuple[str, str, Dict[str, object]]:
-    """
-    Fill category-specific before/after populations.
-
-    Exact-one:
-        after == before.
-
-    Exact-two:
-        after additionally requires
-        PI0_MASS_WINDOW[0] < M_gamma_gamma < PI0_MASS_WINDOW[1].
-    """
-    total_start = time.perf_counter()
-    args = argparse.Namespace(**args_dict)
-    path = getattr(period, period_attribute)
-    total_entries, available_keys = require_tree(path)
-
-    shape_names = [
-        *raw_shape_branch_keys(),
-        # Required internally for exact-two photon energy ranking and Mgg.
-        # These need not be displayed to still be required inputs.
-        "p2_p",
-        "p2_theta",
-        "p2_phi",
-        "open_angle_ep2",
-    ]
-    logical_names = list(
-        dict.fromkeys(
-            shape_names + list(identity_logical_names(sample_key))
-        )
-    )
-    resolved = resolve_branches_from_keys(
-        path,
-        available_keys,
-        logical_names,
-    )
-    expressions = sorted(set(resolved.values()))
-
-    entry_stop = (
-        min(total_entries, int(args.max_events))
-        if args.max_events is not None
-        else total_entries
-    )
-
-    (
-        entry_category,
-        entry_diphoton_mass,
-        multiplicity_audit,
-        prepass_timings,
-    ) = scan_shape_multiplicity_and_energy_ranking(
-        path,
-        sample_key,
-        resolved,
-        args,
-        entry_stop,
-    )
-
-    multiplicity = photon_multiplicity_summary(
-        multiplicity_audit,
-        period,
-        sample_key,
-        sample_label,
-        args,
-    )
-
-    category_specs = (
-        ("one_photon", 1),
-        ("two_photon_more_energetic", 2),
-        ("two_photon_less_energetic", 3),
-    )
-    category_variables = {
-        key: display_variables_for_category(key)
-        for key, _code in category_specs
-    }
-
-    before_histograms = {
-        key: empty_stage_histograms(category_variables[key])
-        for key, _code in category_specs
-    }
-    after_histograms = {
-        key: empty_stage_histograms(category_variables[key])
-        for key, _code in category_specs
-    }
-
-    cutflow_counts = {
-        key: {
-            "finite_required_branches": 0,
-            "open_angle_ep2_gt_5_deg": 0,
-            "after_pi0_mass_window": 0,
-        }
-        for key, _code in category_specs
-    }
-
-    pi0_mass_diagnostics = {
-        key: {
-            "window_low_GeV": PI0_MASS_WINDOW[0],
-            "window_high_GeV": PI0_MASS_WINDOW[1],
-            "before_entries": 0,
-            "after_entries": 0,
-            "fraction_in_window": math.nan,
-        }
-        for key in (
-            "two_photon_more_energetic",
-            "two_photon_less_energetic",
-        )
-    }
-
-    entries_read = 0
-    histogram_start = time.perf_counter()
-
-    log(
-        f"{period.label} {sample_label}: one="
-        f"{multiplicity_audit['one_photon_events']:,}, two="
-        f"{multiplicity_audit['two_photon_events']:,}, rejected >=3="
-        f"{multiplicity_audit['three_plus_photon_events']:,}; "
-        f"exact-two after cut: "
-        f"{PI0_MASS_WINDOW[0]:.2f}<Mgg<"
-        f"{PI0_MASS_WINDOW[1]:.2f} GeV"
-    )
-
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        entry_stop=entry_stop,
-        library="np",
-    ):
-        chunk_size = len(next(iter(arrays.values()))) if arrays else 0
-        chunk_start = entries_read
-        chunk_stop = chunk_start + chunk_size
-        chunk_category = entry_category[chunk_start:chunk_stop]
-        entries_read = chunk_stop
-
-        logical_arrays = {
-            name: np.asarray(arrays[resolved[name]], dtype=float)
-            for name in logical_names
-        }
-        logical_arrays["diphoton_mass"] = (
-            entry_diphoton_mass[chunk_start:chunk_stop]
-        )
-
-        open_angle_finite = np.isfinite(
-            logical_arrays["open_angle_ep2"]
-        )
-        open_angle_mask = (
-            logical_arrays["open_angle_ep2"] > 5.0
-        )
-
-        diphoton_mass = logical_arrays["diphoton_mass"]
-        pi0_window_mask = (
-            np.isfinite(diphoton_mass)
-            & (diphoton_mass > PI0_MASS_WINDOW[0])
-            & (diphoton_mass < PI0_MASS_WINDOW[1])
-        )
-
-        for category_key, category_code in category_specs:
-            variables = category_variables[category_key]
-            identity_mask = chunk_category == category_code
-
-            common_finite = open_angle_finite.copy()
-            for variable in variables:
-                common_finite &= np.isfinite(
-                    logical_arrays[variable.key]
-                )
-            # endfor
-
-            finite_mask = identity_mask & common_finite
-            cutflow_counts[category_key][
-                "finite_required_branches"
-            ] += int(np.count_nonzero(finite_mask))
-
-            before_mask = finite_mask & open_angle_mask
-            before_count = int(np.count_nonzero(before_mask))
-            cutflow_counts[category_key][
-                "open_angle_ep2_gt_5_deg"
-            ] += before_count
-
-            if category_key == "one_photon":
-                after_mask = before_mask
-            else:
-                after_mask = before_mask & pi0_window_mask
-            # endif
-
-            after_count = int(np.count_nonzero(after_mask))
-            cutflow_counts[category_key][
-                "after_pi0_mass_window"
-            ] += after_count
-
-            update_stage_histograms(
-                before_histograms[category_key],
-                logical_arrays,
-                before_mask,
-                variables,
-            )
-            update_stage_histograms(
-                after_histograms[category_key],
-                logical_arrays,
-                after_mask,
-                variables,
-            )
-
-            if category_key in pi0_mass_diagnostics:
-                diagnostic = pi0_mass_diagnostics[category_key]
-                diagnostic["before_entries"] += before_count
-                diagnostic["after_entries"] += after_count
-            # endif
-        # endfor
-    # endfor
-
-    histogram_seconds = elapsed_seconds(histogram_start)
-
-    if entries_read != multiplicity_audit["entries_scanned"]:
-        raise RuntimeError(
-            f"{period.label} {sample_label}: prepass/shape-pass entry "
-            f"count mismatch ({multiplicity_audit['entries_scanned']:,} "
-            f"versus {entries_read:,})."
-        )
-    # endif
-
-    expected_two = int(multiplicity_audit["two_photon_events"])
-    if (
-        np.count_nonzero(entry_category == 2) != expected_two
-        or np.count_nonzero(entry_category == 3) != expected_two
-    ):
-        raise RuntimeError(
-            f"{period.label} {sample_label}: dense exact-two category "
-            "counts do not match exact-two event count."
-        )
-    # endif
-
-    for diagnostic in pi0_mass_diagnostics.values():
-        before_entries = int(diagnostic["before_entries"])
-        after_entries = int(diagnostic["after_entries"])
-        diagnostic["fraction_in_window"] = (
-            after_entries / before_entries
-            if before_entries > 0
-            else math.nan
-        )
-    # endfor
-
-    finalized_before = {
-        key: finalize_stage_histograms(
-            before_histograms[key],
-            category_variables[key],
-        )
-        for key, _code in category_specs
-    }
-    finalized_after = {
-        key: finalize_stage_histograms(
-            after_histograms[key],
-            category_variables[key],
-        )
-        for key, _code in category_specs
-    }
-
-    total_seconds = elapsed_seconds(total_start)
-    timings = {
-        **prepass_timings,
-        "shape_histogram_pass_seconds": histogram_seconds,
-        "shape_sample_total_seconds": total_seconds,
-    }
-    maybe_log_timing(
-        args,
-        f"{period.label} {sample_label} histogram pass",
-        histogram_seconds,
-    )
-    maybe_log_timing(
-        args,
-        f"{period.label} {sample_label} total",
-        total_seconds,
-    )
-
-    payload = {
-        "period": period.key,
-        "period_label": period.label,
-        "sample": sample_key,
-        "sample_label": sample_label,
-        "path": path,
-        "tree_entries": total_entries,
-        "entries_read": entries_read,
-        "resolved_branches": resolved,
-        "multiplicity_audit": {
-            "condition": (
-                "retain exact-one events; split exact-two events into "
-                "more-/less-energetic entries; reject multiplicity >=3"
-            ),
-            **multiplicity_audit,
-        },
-        "cutflow": {
-            "tree_entries_read": entries_read,
-            "valid_identity_entries": int(
-                multiplicity_audit["valid_identity_entries"]
-            ),
-            **cutflow_counts,
-        },
-        "photon_multiplicity": multiplicity,
-        "pi0_mass_diagnostics": pi0_mass_diagnostics,
-        "timings": timings,
-    }
-
-    for category_key, _code in category_specs:
-        payload[category_key] = {
-            "before_histograms": finalized_before[category_key],
-            "after_histograms": finalized_after[category_key],
-        }
-    # endfor
-
-    return period.key, sample_key, payload
-
-
-def plot_before_after_shape_canvas(
-    path: Path,
-    period_label: str,
-    multiplicity_label: str,
-    sample_payloads: Mapping[str, Mapping[str, object]],
-    multiplicity_key: str,
-    variables: Sequence[FitVariable],
-    canvas_description: str,
-    args: argparse.Namespace,
-) -> None:
-    """
-    Write a 2x5 category-specific shape-comparison canvas.
-
-    Top row:
-        before the exact-two M_gamma_gamma requirement.
-
-    Bottom row:
-        after the exact-two M_gamma_gamma requirement.
-
-    Exact-one events have identical before and after rows.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    sample_colors = {
-        "data": "black",
-        "dvcsgen": "tab:blue",
-        "aaogen": "tab:red",
-    }
-
-    display_variables = display_variables_for_category(
-        multiplicity_key
-    )
-    if len(display_variables) != 5:
-        raise RuntimeError(
-            f"{multiplicity_key}: expected exactly five display variables."
-        )
-    # endif
-
-    fig, axes = plt.subplots(
-        2,
-        5,
-        figsize=(23.0, 9.4),
-        squeeze=False,
-    )
-
-    row_specs = (
-        ("before_histograms", "before"),
-        ("after_histograms", "after"),
-    )
-
-    for row_index, (stage_name, row_label) in enumerate(row_specs):
-        for column_index, variable in enumerate(display_variables):
-            axis = axes[row_index, column_index]
-
-            for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
-                histogram = sample_payloads[sample_key][
-                    multiplicity_key
-                ][stage_name][variable.key]
-                edges = np.asarray(
-                    histogram["edges"],
-                    dtype=float,
-                )
-                normalized = np.asarray(
-                    histogram["unit_area"],
-                    dtype=float,
-                )
-
-                label = (
-                    f"{sample_label} "
-                    f"({histogram['in_range_entries']:,})"
-                )
-
-                if (
-                    variable.key == "diphoton_mass"
-                    and sample_key == "data"
-                    and row_index == 0
-                ):
-                    diagnostic = sample_payloads[sample_key][
-                        "pi0_mass_diagnostics"
-                    ][multiplicity_key]
-                    fraction = float(
-                        diagnostic["fraction_in_window"]
-                    )
-                    if np.isfinite(fraction):
-                        label += (
-                            f"; in window={100.0 * fraction:.1f}%"
-                        )
-                    # endif
-                # endif
-
-                axis.stairs(
-                    normalized,
-                    edges,
-                    color=sample_colors[sample_key],
-                    linewidth=(
-                        1.45 if sample_key == "data" else 1.25
-                    ),
-                    linestyle="-",
-                    label=label,
-                    zorder=(
-                        4 if sample_key == "data" else
-                        3 if sample_key == "dvcsgen" else 2
-                    ),
-                )
-            # endfor
-
-            if variable.key == "diphoton_mass":
-                axis.axvspan(
-                    PI0_MASS_WINDOW[0],
-                    PI0_MASS_WINDOW[1],
-                    alpha=0.15,
-                    label=(
-                        r"$\pi^0$ mass requirement "
-                        f"({PI0_MASS_WINDOW[0]:.2f}-"
-                        f"{PI0_MASS_WINDOW[1]:.2f} GeV)"
-                    ),
-                )
-                axis.axvline(
-                    0.1349768,
-                    linewidth=1.0,
-                    linestyle="--",
-                )
-            # endif
-
-            axis.set_xlim(variable.low, variable.high)
-            axis.set_xlabel(variable.label)
-            axis.set_ylabel("fraction / bin")
-            axis.set_title(
-                f"{row_label}: {variable.label}"
-            )
-            axis.grid(axis="y", alpha=0.25)
-
-            if args.shape_log_y:
-                positive_values: List[float] = []
-                for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
-                    values = np.asarray(
-                        sample_payloads[sample_key][
-                            multiplicity_key
-                        ][stage_name][variable.key]["unit_area"],
-                        dtype=float,
-                    )
-                    positive_values.extend(
-                        values[values > 0.0].tolist()
-                    )
-                # endfor
-                if positive_values:
-                    axis.set_yscale("log")
-                    axis.set_ylim(
-                        bottom=max(
-                            0.5 * min(positive_values),
-                            1.0e-8,
-                        )
-                    )
-                # endif
-            else:
-                axis.set_ylim(bottom=0.0)
-            # endif
-        # endfor
-    # endfor
-
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    if multiplicity_key != "one_photon":
-        mass_handles, mass_labels = axes[0, 4].get_legend_handles_labels()
-        handles = [*handles, *mass_handles]
-        labels = [*labels, *mass_labels]
-    # endif
-
-    if multiplicity_key == "one_photon":
-        selection_text = (
-            r"open_angle_ep2 $>5^\circ$; no additional after cut; "
-            "rows are intentionally identical"
-        )
-    else:
-        selection_text = (
-            r"open_angle_ep2 $>5^\circ$; bottom row additionally requires "
-            f"{PI0_MASS_WINDOW[0]:.2f}"
-            r"$<M_{\gamma\gamma}<$"
-            f"{PI0_MASS_WINDOW[1]:.2f} GeV"
-        )
-    # endif
-
-    fig.suptitle(
-        f"Unit-area epgamma shape comparisons: "
-        f"{period_label}, {multiplicity_label}\n"
-        f"{selection_text}; each sample independently normalized",
-        fontsize=15,
-        y=0.992,
-    )
-    fig.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.88),
-        ncol=min(5, max(1, len(labels))),
-        frameon=False,
-    )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.81))
-    fig.savefig(
-        path,
-        dpi=180,
-        bbox_inches="tight",
-    )
-    plt.close(fig)
-
-
-def serializable_histograms(
-    histograms: Mapping[str, Mapping[str, object]],
-) -> Dict[str, Dict[str, object]]:
-    output: Dict[str, Dict[str, object]] = {}
-    for variable_key, histogram in histograms.items():
-        output[variable_key] = {
-            key: (
-                value.tolist()
-                if isinstance(value, np.ndarray)
-                else value
-            )
-            for key, value in histogram.items()
-        }
-    # endfor
-    return output
-
-
-
-def multiplicity_categories() -> Tuple[Tuple[str, str], ...]:
-    return (
-        ("1", "events_with_1_photon"),
-        ("2", "events_with_2_photons"),
-        ("3", "events_with_3_photons"),
-        ("4", "events_with_4_photons"),
-        ("5", "events_with_5_photons"),
-        ("6", "events_with_6_photons"),
-        (">6", "events_with_more_than_6_photons"),
-    )
-
-
-def plot_period_photon_multiplicity(
-    path: Path,
-    period_label: str,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    categories = multiplicity_categories()
-    labels = [label for label, _ in categories]
-    x = np.arange(len(categories), dtype=float)
-
-    sample_rows = {
-        str(row["sample"]): row
-        for row in rows
-    }
-    offsets = {
-        "data": -0.24,
-        "dvcsgen": 0.0,
-        "aaogen": 0.24,
-    }
-    width = 0.22
-
-    fig, axes = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
-
-    for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
-        if sample_key not in sample_rows:
-            raise RuntimeError(
-                f"{period_label}: missing multiplicity row for "
-                f"{sample_key}."
-            )
-        # endif
-
-        row = sample_rows[sample_key]
-        totals = np.asarray(
-            [int(row[field_name]) for _, field_name in categories],
-            dtype=float,
-        )
-        unique_events = int(row["unique_events"])
-        percentages = (
-            100.0 * totals / unique_events
-            if unique_events > 0
-            else np.zeros_like(totals)
-        )
-
-        axes[0].bar(
-            x + offsets[sample_key],
-            totals,
-            width=width,
-            label=sample_label,
-        )
-        axes[1].bar(
-            x + offsets[sample_key],
-            percentages,
-            width=width,
-            label=sample_label,
-        )
-    # endfor
-
-    axes[0].set_ylabel("Unique events")
-    axes[0].set_title("Total event count")
-    axes[0].grid(axis="y", alpha=0.25)
-    axes[0].legend()
-
-    axes[1].set_ylabel("Percentage of unique events (%)")
-    axes[1].set_xlabel("Number of reconstructed-photon entries")
-    axes[1].set_title("Percentage of unique events")
-    axes[1].set_xticks(x, labels)
-    axes[1].set_ylim(bottom=0.0)
-    axes[1].grid(axis="y", alpha=0.25)
-    axes[1].legend()
-
-    fig.suptitle(
-        f"{period_label}: epgamma photon-entry multiplicity"
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def plot_all_periods_photon_multiplicity(
-    path: Path,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    categories = multiplicity_categories()
-    labels = [label for label, _ in categories]
-    x = np.arange(len(categories), dtype=float)
-
-    offsets = {
-        "data": -0.24,
-        "dvcsgen": 0.0,
-        "aaogen": 0.24,
-    }
-    width = 0.22
-
-    selected_periods = [
-        period
-        for period in PERIODS
-        if any(str(row["period"]) == period.key for row in rows)
-    ]
-
-    fig, axes = plt.subplots(
-        len(selected_periods),
-        2,
-        figsize=(18, 4.2 * len(selected_periods)),
-        squeeze=False,
-    )
-
-    for period_index, period in enumerate(selected_periods):
-        period_rows = {
-            str(row["sample"]): row
-            for row in rows
-            if str(row["period"]) == period.key
-        }
-
-        total_axis = axes[period_index, 0]
-        percent_axis = axes[period_index, 1]
-
-        for sample_key, sample_label, _ in RAW_SHAPE_SAMPLE_INFO:
-            if sample_key not in period_rows:
-                raise RuntimeError(
-                    f"{period.label}: missing multiplicity row for "
-                    f"{sample_key}."
-                )
-            # endif
-
-            row = period_rows[sample_key]
-            totals = np.asarray(
-                [int(row[field_name]) for _, field_name in categories],
-                dtype=float,
-            )
-            unique_events = int(row["unique_events"])
-            percentages = (
-                100.0 * totals / unique_events
-                if unique_events > 0
-                else np.zeros_like(totals)
-            )
-
-            total_axis.bar(
-                x + offsets[sample_key],
-                totals,
-                width=width,
-                label=sample_label,
-            )
-            percent_axis.bar(
-                x + offsets[sample_key],
-                percentages,
-                width=width,
-                label=sample_label,
-            )
-        # endfor
-
-        total_axis.set_title(f"{period.label}: total events")
-        total_axis.set_ylabel("Unique events")
-        total_axis.set_xticks(x, labels)
-        total_axis.grid(axis="y", alpha=0.25)
-
-        percent_axis.set_title(f"{period.label}: percentage")
-        percent_axis.set_ylabel("Percentage of unique events (%)")
-        percent_axis.set_xticks(x, labels)
-        percent_axis.set_ylim(bottom=0.0)
-        percent_axis.grid(axis="y", alpha=0.25)
-
-        if period_index == 0:
-            total_axis.legend(fontsize=8)
-            percent_axis.legend(fontsize=8)
-        # endif
-    # endfor
-
-    axes[-1, 0].set_xlabel("Number of reconstructed-photon entries")
-    axes[-1, 1].set_xlabel("Number of reconstructed-photon entries")
-
-    fig.suptitle(
-        "epgamma photon-entry multiplicity by run period"
-    )
-    fig.tight_layout(rect=(0, 0, 1, 0.98))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-
-def write_photon_multiplicity_outputs(
-    data_root: Path,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    ordered_fields = [
-        "period",
-        "period_label",
-        "sample",
-        "sample_label",
-        "identity_method",
-        "tree_entries_read",
-        "valid_identity_entries",
-        "unique_events",
-        "events_with_1_photon",
-        "events_with_2_photons",
-        "events_with_3_photons",
-        "events_with_4_photons",
-        "events_with_5_photons",
-        "events_with_6_photons",
-        "events_with_more_than_6_photons",
-        "maximum_photons_in_event",
-        "photon_entries_accounted_for",
-    ]
-
-    with open(
-        data_root / "photon_multiplicity_summary.csv",
-        "w",
-        newline="",
-        encoding="utf-8",
-    ) as handle:
-        writer = csv.DictWriter(handle, fieldnames=ordered_fields)
-        writer.writeheader()
-        writer.writerows(rows)
-    # endwith
-
-    with open(
-        data_root / "photon_multiplicity_summary.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(list(rows), handle, indent=2)
-    # endwith
-
-    plot_dir = data_root / "photon_multiplicity"
-    plot_dir.mkdir(parents=True, exist_ok=True)
-
-    for period in PERIODS:
-        period_rows = [
-            row
-            for row in rows
-            if str(row["period"]) == period.key
-        ]
-        if not period_rows:
-            continue
-        # endif
-
-        plot_period_photon_multiplicity(
-            plot_dir / f"{period.key}_photon_multiplicity.png",
-            period.label,
-            period_rows,
-        )
-    # endfor
-
-    plot_all_periods_photon_multiplicity(
-        plot_dir / "all_periods_photon_multiplicity.png",
-        rows,
-    )
-    # endwith
-
-
-
-@dataclass
-class AdvancedVariableFit:
-    success: bool
-    message: str
-    variable: str
-    model_name: str
-    f_pi0: float
-    f_pi0_err: float
-    independent_f_pi0: float
-    independent_f_pi0_err: float
-    deviance: float
-    ndf: int
-    nuisance_count: int
-    model_counts: np.ndarray
-    dvcs_component_counts: np.ndarray
-    pi0_component_counts: np.ndarray
-    raw_dvcs_component_counts: np.ndarray
-    raw_pi0_component_counts: np.ndarray
-    morphed_dvcs_probability: np.ndarray
-    morphed_pi0_probability: np.ndarray
-    raw_dvcs_probability: np.ndarray
-    raw_pi0_probability: np.ndarray
-    dvcs_nuisance: Dict[str, float]
-    pi0_nuisance: Dict[str, float]
-    divider_dvcs: float
-    divider_pi0: float
-    fit_total: float
-    data_total: float
-    raw_shared_f_pi0: float
-    raw_shared_f_pi0_err: float
-    raw_independent_f_pi0: float
-    raw_independent_f_pi0_err: float
-    raw_shared_deviance: float
-    raw_independent_deviance: float
-    raw_shared_model_counts: np.ndarray
-    raw_shared_dvcs_component_counts: np.ndarray
-    raw_shared_pi0_component_counts: np.ndarray
-
-
-@dataclass
-class AdvancedSharedFit:
-    success: bool
-    message: str
-    f_pi0: float
-    f_pi0_err: float
-    deviance: float
-    ndf: int
-    variable_results: Dict[str, AdvancedVariableFit]
-    coordinate_iterations: int
-    multiplicity_key: str
-    raw_f_pi0: float
-    raw_f_pi0_err: float
-    raw_deviance: float
-    raw_ndf: int
-
-
-def normalized_probability(counts: np.ndarray) -> np.ndarray:
-    values = np.asarray(counts, dtype=float)
-    values = np.clip(values, 0.0, None)
-    total = float(np.sum(values))
-    if total <= 0.0:
-        return np.zeros_like(values, dtype=float)
-    # endif
-    return values / total
-
-
-def poisson_deviance(
-    observed: np.ndarray,
-    expected: np.ndarray,
-) -> float:
-    observed = np.asarray(observed, dtype=float)
-    expected = np.clip(
-        np.asarray(expected, dtype=float),
-        1.0e-12,
-        None,
-    )
-    term = expected - observed
-    positive = observed > 0.0
-    term[positive] += (
-        observed[positive]
-        * np.log(observed[positive] / expected[positive])
-    )
-    return float(2.0 * np.sum(term))
-
-
-def weighted_mean(
-    probability: np.ndarray,
-    centers: np.ndarray,
-) -> float:
-    probability = normalized_probability(probability)
-    if np.sum(probability) <= 0.0:
-        return math.nan
-    # endif
-    return float(np.sum(probability * centers))
-
-
-def deposit_probability(
-    source_probability: np.ndarray,
-    mapped_centers: np.ndarray,
-    output_centers: np.ndarray,
-) -> np.ndarray:
-    """
-    Deposit probability linearly on the output-bin centers.
-
-    Probability mapped outside the configured plotting range is accumulated
-    into the nearest edge bin. This preserves template normalization.
-    """
-    source = normalized_probability(source_probability)
-    output = np.zeros_like(output_centers, dtype=float)
-
-    if source.size == 0:
-        return output
-    # endif
-
-    indices = np.searchsorted(output_centers, mapped_centers)
-    indices = np.clip(indices, 1, output_centers.size - 1)
-    left = indices - 1
-    right = indices
-
-    x_left = output_centers[left]
-    x_right = output_centers[right]
-    denominator = np.maximum(x_right - x_left, 1.0e-12)
-    right_weight = np.clip(
-        (mapped_centers - x_left) / denominator,
-        0.0,
-        1.0,
-    )
-    left_weight = 1.0 - right_weight
-
-    below = mapped_centers <= output_centers[0]
-    above = mapped_centers >= output_centers[-1]
-    left[below] = 0
-    right[below] = 0
-    left_weight[below] = 1.0
-    right_weight[below] = 0.0
-    left[above] = output_centers.size - 1
-    right[above] = output_centers.size - 1
-    left_weight[above] = 1.0
-    right_weight[above] = 0.0
-
-    np.add.at(output, left, source * left_weight)
-    np.add.at(output, right, source * right_weight)
-    return normalized_probability(output)
-
-
-def asymmetric_gaussian_broadening(
-    probability: np.ndarray,
-    sigma_left_bins: float,
-    sigma_right_bins: float,
-) -> np.ndarray:
-    probability = normalized_probability(probability)
-    if probability.size == 0:
-        return probability
-    # endif
-
-    mode_index = int(np.argmax(probability))
-    left_component = probability.copy()
-    right_component = probability.copy()
-    left_component[mode_index + 1:] = 0.0
-    right_component[:mode_index + 1] = 0.0
-
-    if sigma_left_bins > 1.0e-8:
-        left_component = gaussian_filter1d(
-            left_component,
-            sigma=float(sigma_left_bins),
-            mode="constant",
-            cval=0.0,
-            truncate=4.0,
-        )
-    # endif
-    if sigma_right_bins > 1.0e-8:
-        right_component = gaussian_filter1d(
-            right_component,
-            sigma=float(sigma_right_bins),
-            mode="constant",
-            cval=0.0,
-            truncate=4.0,
-        )
-    # endif
-
-    return normalized_probability(left_component + right_component)
-
-
-def affine_morph_probability(
-    raw_probability: np.ndarray,
-    centers: np.ndarray,
-    shift_bins: float,
-    log_scale: float,
-    sigma_left_bins: float,
-    sigma_right_bins: float,
-    use_log_coordinate: bool,
-) -> np.ndarray:
-    raw = normalized_probability(raw_probability)
-    if np.sum(raw) <= 0.0:
-        return raw
-    # endif
-
-    if use_log_coordinate:
-        positive_widths = np.diff(centers)
-        epsilon = max(
-            0.5 * float(np.median(positive_widths)),
-            1.0e-6,
-        )
-        coordinate = np.log(np.maximum(centers + epsilon, epsilon))
-        coordinate_step = float(np.median(np.diff(coordinate)))
-        pivot = float(np.sum(raw * coordinate))
-        mapped_coordinate = (
-            pivot
-            + math.exp(float(log_scale)) * (coordinate - pivot)
-            + float(shift_bins) * coordinate_step
-        )
-        mapped_centers = np.exp(mapped_coordinate) - epsilon
-    else:
-        bin_width = float(np.median(np.diff(centers)))
-        pivot = float(np.sum(raw * centers))
-        mapped_centers = (
-            pivot
-            + math.exp(float(log_scale)) * (centers - pivot)
-            + float(shift_bins) * bin_width
-        )
-    # endif
-
-    deposited = deposit_probability(
-        raw,
-        mapped_centers,
-        centers,
-    )
-    return asymmetric_gaussian_broadening(
-        deposited,
-        sigma_left_bins,
-        sigma_right_bins,
-    )
-
-
-def simple_shift_smear_probability(
-    raw_probability: np.ndarray,
-    centers: np.ndarray,
-    shift_bins: float,
-    sigma_bins: float,
-    use_log_coordinate: bool,
-) -> np.ndarray:
-    """
-    Coherently shift and Gaussian-broaden an entire template.
-
-    This mirrors the transport used by plot_exclusivity_data_dvcs_pi0_mc.py:
-    every source-bin probability is transported into every target bin using
-    integrated Gaussian probabilities. No interpolation cutoff is introduced.
-
-    Parameters remain expressed in transformed-coordinate bin units so the
-    existing --fit-max-shift-bins/--fit-max-smear-bins interface is preserved.
-    """
-    raw = normalized_probability(raw_probability)
-    if np.sum(raw) <= 0.0 or centers.size < 2:
-        return raw
-    # endif
-
-    linear_bin_width = float(np.median(np.diff(centers)))
-    edges = np.concatenate(
-        [
-            np.asarray(
-                [centers[0] - 0.5 * linear_bin_width],
-                dtype=float,
-            ),
-            0.5 * (centers[:-1] + centers[1:]),
-            np.asarray(
-                [centers[-1] + 0.5 * linear_bin_width],
-                dtype=float,
-            ),
-        ]
-    )
-
-    if use_log_coordinate:
-        epsilon = max(
-            0.25 * linear_bin_width,
-            1.0e-8,
-        )
-        source_coordinate = np.log(
-            np.maximum(centers + epsilon, 1.0e-15)
-        )
-        lower_coordinate = np.log(
-            np.maximum(edges[:-1] + epsilon, 1.0e-15)
-        )
-        upper_coordinate = np.log(
-            np.maximum(edges[1:] + epsilon, 1.0e-15)
-        )
-        coordinate_step = float(
-            np.median(np.diff(source_coordinate))
-        )
-    else:
-        source_coordinate = centers
-        lower_coordinate = edges[:-1]
-        upper_coordinate = edges[1:]
-        coordinate_step = linear_bin_width
-    # endif
-
-    shift = float(shift_bins) * coordinate_step
-    sigma = max(float(sigma_bins), 0.0) * coordinate_step
-
-    if sigma <= 1.0e-12:
-        mapped_coordinate = source_coordinate + shift
-
-        if use_log_coordinate:
-            epsilon = max(
-                0.25 * linear_bin_width,
-                1.0e-8,
-            )
-            mapped_centers = np.exp(mapped_coordinate) - epsilon
-        else:
-            mapped_centers = mapped_coordinate
-        # endif
-
-        target, _ = np.histogram(
-            mapped_centers,
-            bins=edges,
-            weights=raw,
-        )
-    else:
-        source_means = (source_coordinate + shift)[None, :]
-        lower = lower_coordinate[:, None]
-        upper = upper_coordinate[:, None]
-        probabilities = (
-            ndtr((upper - source_means) / sigma)
-            - ndtr((lower - source_means) / sigma)
-        )
-        target = probabilities @ raw
-    # endif
-
-    target = np.clip(
-        np.asarray(target, dtype=float),
-        0.0,
-        None,
-    )
-    total = float(np.sum(target))
-    if total <= 0.0 or not np.isfinite(total):
-        return raw
-    # endif
-    return target / total
-
-
-def logit(value: float) -> float:
-    value = float(np.clip(value, 1.0e-6, 1.0 - 1.0e-6))
-    return math.log(value / (1.0 - value))
-
-
-def logistic(value: float) -> float:
-    if value >= 0.0:
-        exponential = math.exp(-value)
-        return 1.0 / (1.0 + exponential)
-    # endif
-    exponential = math.exp(value)
-    return exponential / (1.0 + exponential)
-
-
-def detect_two_component_divider(
-    probability: np.ndarray,
-    centers: np.ndarray,
-    variable_key: str,
-) -> Tuple[int, float]:
-    """
-    Find the valley between the two strongest smoothed template peaks.
-
-    Delta_phi is always divided at pi. theta_gamma_gamma uses peak finding,
-    with a weighted-quantile fallback when the second structure is weak.
-    """
-    probability = normalized_probability(probability)
-
-    if variable_key == "Delta_phi":
-        divider_index = int(np.searchsorted(centers, math.pi))
-        divider_index = int(
-            np.clip(divider_index, 1, centers.size - 2)
-        )
-        return divider_index, float(centers[divider_index])
-    # endif
-
-    smoothed = gaussian_filter1d(
-        probability,
-        sigma=1.5,
-        mode="nearest",
-    )
-    prominence = max(
-        0.015 * float(np.max(smoothed)),
-        1.0e-8,
-    )
-    peaks, properties = find_peaks(
-        smoothed,
-        prominence=prominence,
-        distance=max(3, centers.size // 20),
-    )
-
-    if peaks.size >= 2:
-        peak_strength = smoothed[peaks]
-        strongest = peaks[
-            np.argsort(peak_strength)[-2:]
-        ]
-        left_peak, right_peak = sorted(
-            int(index) for index in strongest
-        )
-        if right_peak - left_peak >= 2:
-            valley_relative = int(
-                np.argmin(smoothed[left_peak:right_peak + 1])
-            )
-            divider_index = left_peak + valley_relative
-            divider_index = int(
-                np.clip(divider_index, 1, centers.size - 2)
-            )
-            return divider_index, float(centers[divider_index])
-        # endif
-    # endif
-
-    cumulative = np.cumsum(probability)
-    divider_index = int(
-        np.searchsorted(cumulative, 0.68)
-    )
-    divider_index = int(
-        np.clip(divider_index, 1, centers.size - 2)
-    )
-    return divider_index, float(centers[divider_index])
-
-
-def two_component_morph_probability(
-    raw_probability: np.ndarray,
-    centers: np.ndarray,
-    divider_index: int,
-    parameters: np.ndarray,
-    use_log_coordinate: bool,
-    component_cache: Optional[Mapping[str, object]] = None,
-) -> Tuple[np.ndarray, Dict[str, float]]:
-    """
-    Morph two raw-template components independently.
-
-    parameters:
-      left shift, left smear,
-      right shift, right smear,
-      constrained component-weight logit change.
-    """
-    raw = normalized_probability(raw_probability)
-    if component_cache:
-        left_raw = np.asarray(
-            component_cache["left_raw"],
-            dtype=float,
-        )
-        right_raw = np.asarray(
-            component_cache["right_raw"],
-            dtype=float,
-        )
-        raw_left_weight = float(
-            component_cache["raw_left_weight"]
-        )
-        raw_right_weight = float(
-            component_cache["raw_right_weight"]
-        )
-    else:
-        left_raw = raw.copy()
-        right_raw = raw.copy()
-        left_raw[divider_index + 1:] = 0.0
-        right_raw[:divider_index + 1] = 0.0
-        raw_left_weight = float(np.sum(left_raw))
-        raw_right_weight = float(np.sum(right_raw))
-    # endif
-    if raw_left_weight <= 0.0 or raw_right_weight <= 0.0:
-        fallback = simple_shift_smear_probability(
-            raw,
-            centers,
-            float(parameters[0]),
-            float(parameters[1]),
-            use_log_coordinate,
-        )
-        return fallback, {
-            "raw_left_weight": raw_left_weight,
-            "fitted_left_weight": raw_left_weight,
-        }
-    # endif
-
-    left_probability = simple_shift_smear_probability(
-        left_raw,
-        centers,
-        float(parameters[0]),
-        float(parameters[1]),
-        use_log_coordinate,
-    )
-    right_probability = simple_shift_smear_probability(
-        right_raw,
-        centers,
-        float(parameters[2]),
-        float(parameters[3]),
-        use_log_coordinate,
-    )
-
-    fitted_left_weight = logistic(
-        logit(raw_left_weight) + float(parameters[4])
-    )
-    combined = (
-        fitted_left_weight * left_probability
-        + (1.0 - fitted_left_weight) * right_probability
-    )
-    return normalized_probability(combined), {
-        "raw_left_weight": raw_left_weight,
-        "fitted_left_weight": fitted_left_weight,
-    }
-
-
-def variable_model_spec(
-    variable_key: str,
-    multiplicity_key: str,
-) -> Dict[str, str]:
-    """
-    Return category-specific template morph models.
-
-    Exact-one deliberately uses only coherent whole-template transformations,
-    matching the validated exclusivity-selection fit philosophy.
-
-    Exact-two keeps the previously developed flexible models because the
-    diphoton-mass selection is the primary topology discriminator there.
-    """
-    if multiplicity_key == "one_photon":
-        if variable_key == "Delta_phi":
-            return {
-                "dvcs": "simple_linear",
-                "pi0": "simple_linear",
-                "description": (
-                    "coherent additive shift+smear for complete DVCSGEN "
-                    "and AAOGEN templates (exclusivity-style)"
-                ),
-            }
-        # endif
-        if variable_key == "theta_gamma_gamma":
-            return {
-                "dvcs": "simple_log",
-                "pi0": "simple_log",
-                "description": (
-                    "coherent log(theta+epsilon) shift+smear for complete "
-                    "DVCSGEN and AAOGEN templates (exclusivity-style)"
-                ),
-            }
-        # endif
-        if variable_key == "pTmiss":
-            return {
-                "dvcs": "simple_log",
-                "pi0": "simple_log",
-                "description": (
-                    "coherent log(pTmiss+epsilon) shift+smear for complete "
-                    "DVCSGEN and AAOGEN templates (exclusivity-style)"
-                ),
-            }
-        # endif
-        if variable_key == "Emiss2":
-            return {
-                "dvcs": "simple_linear",
-                "pi0": "simple_linear",
-                "description": (
-                    "coherent additive shift+smear for complete DVCSGEN "
-                    "and AAOGEN templates (exclusivity-style)"
-                ),
-            }
-        # endif
-    # endif
-
-    # Exact-two categories retain the established flexible modeling.
-    if variable_key == "Delta_phi":
-        return {
-            "dvcs": "simple_linear",
-            "pi0": "two_component_linear",
-            "description": (
-                "DVCSGEN shift+smear; AAOGEN independent left/right "
-                "Delta_phi lobes with constrained relative weight"
-            ),
-        }
-    # endif
-    if variable_key == "theta_gamma_gamma":
-        return {
-            "dvcs": "two_component_log",
-            "pi0": "two_component_log",
-            "description": (
-                "Independent low/high reconstruction components in "
-                "log(theta+epsilon)"
-            ),
-        }
-    # endif
-    if variable_key == "pTmiss":
-        return {
-            "dvcs": "affine_log_asymmetric",
-            "pi0": "affine_log_asymmetric",
-            "description": (
-                "Log-space affine location/scale plus asymmetric broadening"
-            ),
-        }
-    # endif
-    if variable_key == "Emiss2":
-        return {
-            "dvcs": "affine_linear_asymmetric",
-            "pi0": "affine_linear_asymmetric",
-            "description": (
-                "Linear affine location/scale plus asymmetric broadening "
-                "with DVCSGEN/AAOGEN mean ordering"
-            ),
-        }
-    # endif
-
-    raise KeyError(
-        f"No fit model configured for {multiplicity_key}/{variable_key}"
-    )
-
-
-def model_parameter_count(model_name: str) -> int:
-    if model_name.startswith("simple_"):
-        return 2
-    # endif
-    if model_name.startswith("two_component_"):
-        return 5
-    # endif
-    if model_name.startswith("affine_"):
-        return 4
-    # endif
-    raise KeyError(f"Unknown model name: {model_name}")
-
-
-def model_initial_parameters(model_name: str) -> np.ndarray:
-    return np.zeros(model_parameter_count(model_name), dtype=float)
-
-
-def model_bounds(
-    model_name: str,
-    args: argparse.Namespace,
-) -> List[Tuple[float, float]]:
-    shift = float(args.fit_max_shift_bins)
-    smear = float(args.fit_max_smear_bins)
-    stretch = float(args.fit_max_log_stretch)
-
-    if model_name.startswith("simple_"):
-        return [(-shift, shift), (0.0, smear)]
-    # endif
-    if model_name.startswith("two_component_"):
-        return [
-            (-shift, shift),
-            (0.0, smear),
-            (-shift, shift),
-            (0.0, smear),
-            (-2.5, 2.5),
-        ]
-    # endif
-    if model_name.startswith("affine_"):
-        return [
-            (-shift, shift),
-            (-stretch, stretch),
-            (0.0, smear),
-            (0.0, smear),
-        ]
-    # endif
-    raise KeyError(f"Unknown model name: {model_name}")
-
-
-def nuisance_penalty(
-    parameters: np.ndarray,
-    model_name: str,
-    args: argparse.Namespace,
-    context: Optional[Mapping[str, object]] = None,
-) -> float:
-    """
-    Gaussian nuisance penalties.
-
-    For coherent simple models this follows the validated exclusivity fitter:
-      * additive: widths are specified in histogram-bin units;
-      * positive/log: transformed-space prior widths are 0.20 (shift) and
-        0.40 (smearing).
-
-    More flexible exact-two models retain their established penalties.
-    """
-    if args.disable_fit_nuisance_penalties:
-        return 0.0
-    # endif
-
-    shift_prior = max(float(args.fit_shift_prior_bins), 1.0e-6)
-    smear_prior = max(float(args.fit_smear_prior_bins), 1.0e-6)
-    stretch_prior = max(float(args.fit_log_stretch_prior), 1.0e-6)
-    weight_prior = max(
-        float(args.fit_component_weight_prior),
-        1.0e-6,
-    )
-
-    if model_name == "simple_linear":
-        return float(
-            0.5 * (parameters[0] / shift_prior) ** 2
-            + 0.5 * (parameters[1] / smear_prior) ** 2
-        )
-    # endif
-
-    if model_name == "simple_log":
-        coordinate_step = (
-            float(context["positive_coordinate_step"])
-            if context is not None
-            else 1.0
-        )
-        log_shift = float(parameters[0]) * coordinate_step
-        log_sigma = float(parameters[1]) * coordinate_step
-        return float(
-            0.5 * (log_shift / 0.20) ** 2
-            + 0.5 * (log_sigma / 0.40) ** 2
-        )
-    # endif
-
-    if model_name.startswith("two_component_"):
-        return float(
-            (parameters[0] / shift_prior) ** 2
-            + (parameters[1] / smear_prior) ** 2
-            + (parameters[2] / shift_prior) ** 2
-            + (parameters[3] / smear_prior) ** 2
-            + (parameters[4] / weight_prior) ** 2
-        )
-    # endif
-
-    if model_name.startswith("affine_"):
-        return float(
-            (parameters[0] / shift_prior) ** 2
-            + (parameters[1] / stretch_prior) ** 2
-            + (parameters[2] / smear_prior) ** 2
-            + (parameters[3] / smear_prior) ** 2
-        )
-    # endif
-
-    raise KeyError(f"Unknown model name: {model_name}")
-
-
-def morph_model_probability(
-    raw_probability: np.ndarray,
-    centers: np.ndarray,
-    model_name: str,
-    parameters: np.ndarray,
-    divider_index: int,
-    component_cache: Optional[Mapping[str, object]] = None,
-) -> Tuple[np.ndarray, Dict[str, float]]:
-    if model_name == "simple_linear":
-        return (
-            simple_shift_smear_probability(
-                raw_probability,
-                centers,
-                parameters[0],
-                parameters[1],
-                False,
-            ),
-            {},
-        )
-    # endif
-    if model_name == "simple_log":
-        return (
-            simple_shift_smear_probability(
-                raw_probability,
-                centers,
-                parameters[0],
-                parameters[1],
-                True,
-            ),
-            {},
-        )
-    # endif
-    if model_name == "two_component_linear":
-        return two_component_morph_probability(
-            raw_probability,
-            centers,
-            divider_index,
-            parameters,
-            False,
-        )
-    # endif
-    if model_name == "two_component_log":
-        return two_component_morph_probability(
-            raw_probability,
-            centers,
-            divider_index,
-            parameters,
-            True,
-        )
-    # endif
-    if model_name == "affine_log_asymmetric":
-        return (
-            affine_morph_probability(
-                raw_probability,
-                centers,
-                parameters[0],
-                parameters[1],
-                parameters[2],
-                parameters[3],
-                True,
-            ),
-            {},
-        )
-    # endif
-    if model_name == "affine_linear_asymmetric":
-        return (
-            affine_morph_probability(
-                raw_probability,
-                centers,
-                parameters[0],
-                parameters[1],
-                parameters[2],
-                parameters[3],
-                False,
-            ),
-            {},
-        )
-    # endif
-    raise KeyError(f"Unknown model name: {model_name}")
-
-
-def nuisance_dictionary(
-    model_name: str,
-    parameters: np.ndarray,
-    metadata: Mapping[str, float],
-) -> Dict[str, float]:
-    if model_name.startswith("simple_"):
-        output = {
-            "shift_bins": float(parameters[0]),
-            "smear_bins": float(parameters[1]),
-        }
-    elif model_name.startswith("two_component_"):
-        output = {
-            "left_shift_bins": float(parameters[0]),
-            "left_smear_bins": float(parameters[1]),
-            "right_shift_bins": float(parameters[2]),
-            "right_smear_bins": float(parameters[3]),
-            "component_weight_logit_delta": float(parameters[4]),
-        }
-    elif model_name.startswith("affine_"):
-        output = {
-            "shift_bins": float(parameters[0]),
-            "log_scale": float(parameters[1]),
-            "scale": float(math.exp(parameters[1])),
-            "lower_smear_bins": float(parameters[2]),
-            "upper_smear_bins": float(parameters[3]),
-        }
-    else:
-        raise KeyError(f"Unknown model name: {model_name}")
-    # endif
-
-    output.update(
-        {key: float(value) for key, value in metadata.items()}
-    )
-    return output
-
-
-def prepare_variable_fit_context(
-    variable: FitVariable,
-    data_counts: np.ndarray,
-    dvcs_counts: np.ndarray,
-    pi0_counts: np.ndarray,
-    multiplicity_key: str,
-) -> Dict[str, object]:
-    centers = np.linspace(
-        variable.low,
-        variable.high,
-        variable.bins,
-        endpoint=False,
-        dtype=float,
-    )
-    bin_width = (variable.high - variable.low) / variable.bins
-    centers += 0.5 * bin_width
-
-    positive_epsilon = max(
-        0.25 * float(bin_width),
-        1.0e-8,
-    )
-    positive_coordinate = np.log(
-        np.maximum(centers + positive_epsilon, 1.0e-15)
-    )
-    positive_coordinate_step = (
-        float(np.median(np.diff(positive_coordinate)))
-        if positive_coordinate.size > 1
-        else 1.0
-    )
-
-    raw_dvcs = normalized_probability(dvcs_counts)
-    raw_pi0 = normalized_probability(pi0_counts)
-    model_spec = variable_model_spec(variable.key, multiplicity_key)
-
-    dvcs_divider_index, dvcs_divider_value = (
-        detect_two_component_divider(
-            raw_dvcs,
-            centers,
-            variable.key,
-        )
-        if model_spec["dvcs"].startswith("two_component_")
-        else (max(1, centers.size // 2), math.nan)
-    )
-    pi0_divider_index, pi0_divider_value = (
-        detect_two_component_divider(
-            raw_pi0,
-            centers,
-            variable.key,
-        )
-        if model_spec["pi0"].startswith("two_component_")
-        else (max(1, centers.size // 2), math.nan)
-    )
-
-    def component_cache(
-        raw_probability: np.ndarray,
-        model_name: str,
-        divider_index: int,
-    ) -> Dict[str, object]:
-        if not model_name.startswith("two_component_"):
-            return {}
-        # endif
-        left_raw = raw_probability.copy()
-        right_raw = raw_probability.copy()
-        left_raw[divider_index + 1:] = 0.0
-        right_raw[:divider_index + 1] = 0.0
-        return {
-            "left_raw": left_raw,
-            "right_raw": right_raw,
-            "raw_left_weight": float(np.sum(left_raw)),
-            "raw_right_weight": float(np.sum(right_raw)),
-        }
-
-    return {
-        "variable": variable,
-        "multiplicity_key": multiplicity_key,
-        "centers": centers,
-        "bin_width": float(bin_width),
-        "positive_coordinate_step": positive_coordinate_step,
-        "data": np.asarray(data_counts, dtype=float),
-        "data_total": float(np.sum(data_counts)),
-        "raw_dvcs": raw_dvcs,
-        "raw_pi0": raw_pi0,
-        "dvcs_model": model_spec["dvcs"],
-        "pi0_model": model_spec["pi0"],
-        "model_description": model_spec["description"],
-        "dvcs_divider_index": dvcs_divider_index,
-        "dvcs_divider_value": dvcs_divider_value,
-        "pi0_divider_index": pi0_divider_index,
-        "pi0_divider_value": pi0_divider_value,
-        "dvcs_component_cache": component_cache(
-            raw_dvcs,
-            model_spec["dvcs"],
-            dvcs_divider_index,
-        ),
-        "pi0_component_cache": component_cache(
-            raw_pi0,
-            model_spec["pi0"],
-            pi0_divider_index,
-        ),
-    }
-
-
-def evaluate_variable_model(
-    context: Mapping[str, object],
-    f_pi0: float,
-    dvcs_parameters: np.ndarray,
-    pi0_parameters: np.ndarray,
-    args: argparse.Namespace,
-) -> Dict[str, object]:
-    centers = context["centers"]
-    dvcs_probability, dvcs_metadata = morph_model_probability(
-        context["raw_dvcs"],
-        centers,
-        context["dvcs_model"],
-        dvcs_parameters,
-        context["dvcs_divider_index"],
-        component_cache=context["dvcs_component_cache"],
-    )
-    pi0_probability, pi0_metadata = morph_model_probability(
-        context["raw_pi0"],
-        centers,
-        context["pi0_model"],
-        pi0_parameters,
-        context["pi0_divider_index"],
-        component_cache=context["pi0_component_cache"],
-    )
-
-    data_total = float(context["data_total"])
-    f_pi0 = float(np.clip(f_pi0, 1.0e-6, 1.0 - 1.0e-6))
-    dvcs_component = data_total * (1.0 - f_pi0) * dvcs_probability
-    pi0_component = data_total * f_pi0 * pi0_probability
-    model = dvcs_component + pi0_component
-
-    deviance = poisson_deviance(
-        context["data"],
-        model,
-    )
-    penalty = (
-        nuisance_penalty(
-            dvcs_parameters,
-            str(context["dvcs_model"]),
-            args,
-            context,
-        )
-        + nuisance_penalty(
-            pi0_parameters,
-            str(context["pi0_model"]),
-            args,
-            context,
-        )
-    )
-
-    variable_key = str(context["variable"].key)
-    if variable_key == "Emiss2":
-        dvcs_mean = weighted_mean(dvcs_probability, centers)
-        pi0_mean = weighted_mean(pi0_probability, centers)
-        if (
-            np.isfinite(dvcs_mean)
-            and np.isfinite(pi0_mean)
-            and dvcs_mean >= pi0_mean
-        ):
-            violation_bins = (
-                (dvcs_mean - pi0_mean)
-                / max(float(context["bin_width"]), 1.0e-12)
-            )
-            penalty += (
-                float(args.fit_mean_order_penalty)
-                * (1.0 + violation_bins ** 2)
-            )
-        # endif
-    # endif
-
-    return {
-        "objective": float(deviance + penalty),
-        "deviance": float(deviance),
-        "penalty": float(penalty),
-        "dvcs_probability": dvcs_probability,
-        "pi0_probability": pi0_probability,
-        "dvcs_component": dvcs_component,
-        "pi0_component": pi0_component,
-        "model": model,
-        "dvcs_metadata": dvcs_metadata,
-        "pi0_metadata": pi0_metadata,
-    }
-
-
-def optimize_variable_independent_fraction(
-    context: Mapping[str, object],
-    args: argparse.Namespace,
-) -> Dict[str, object]:
-    dvcs_model = str(context["dvcs_model"])
-    pi0_model = str(context["pi0_model"])
-    ndvcs = model_parameter_count(dvcs_model)
-    npi0 = model_parameter_count(pi0_model)
-
-    bounds = (
-        [(1.0e-4, 1.0 - 1.0e-4)]
-        + model_bounds(dvcs_model, args)
-        + model_bounds(pi0_model, args)
-    )
-
-    requested_starts = max(
-        1,
-        int(args.fit_independent_multistarts),
-    )
-    candidate_fractions = np.linspace(
-        0.15,
-        0.95,
-        requested_starts,
-    )
-    best_result = None
-
-    for initial_fraction in candidate_fractions:
-        initial = np.concatenate(
-            [
-                np.asarray([initial_fraction], dtype=float),
-                model_initial_parameters(dvcs_model),
-                model_initial_parameters(pi0_model),
-            ]
-        )
-
-        def objective(parameters: np.ndarray) -> float:
-            return float(
-                evaluate_variable_model(
-                    context,
-                    float(parameters[0]),
-                    parameters[1:1 + ndvcs],
-                    parameters[1 + ndvcs:1 + ndvcs + npi0],
-                    args,
-                )["objective"]
-            )
-
-        result = minimize(
-            objective,
-            initial,
-            method="L-BFGS-B",
-            bounds=bounds,
-            options={
-                "maxiter": 250 if args.fast_fits else 700,
-                "ftol": 1.0e-8 if args.fast_fits else 1.0e-10,
-                "gtol": 1.0e-5 if args.fast_fits else 1.0e-6,
-                "maxls": 25 if args.fast_fits else 40,
-            },
-        )
-        if (
-            best_result is None
-            or float(result.fun) < float(best_result.fun)
-        ):
-            best_result = result
-        # endif
-    # endfor
-
-    if best_result is None:
-        raise RuntimeError("Independent variable fit produced no result.")
-    # endif
-
-    parameters = np.asarray(best_result.x, dtype=float)
-    evaluation = evaluate_variable_model(
-        context,
-        float(parameters[0]),
-        parameters[1:1 + ndvcs],
-        parameters[1 + ndvcs:1 + ndvcs + npi0],
-        args,
-    )
-
-    fraction_error = curvature_fraction_error(
-        context,
-        float(parameters[0]),
-        parameters[1:1 + ndvcs],
-        parameters[1 + ndvcs:1 + ndvcs + npi0],
-        args,
-    )
-
-    return {
-        "success": bool(best_result.success),
-        "message": str(best_result.message),
-        "f_pi0": float(parameters[0]),
-        "f_pi0_err": fraction_error,
-        "dvcs_parameters": parameters[1:1 + ndvcs].copy(),
-        "pi0_parameters": parameters[
-            1 + ndvcs:1 + ndvcs + npi0
-        ].copy(),
-        "evaluation": evaluation,
-        "optimizer_objective": float(best_result.fun),
-    }
-
-
-def optimize_nuisance_fixed_fraction(
-    context: Mapping[str, object],
-    f_pi0: float,
-    initial_dvcs: np.ndarray,
-    initial_pi0: np.ndarray,
-    args: argparse.Namespace,
-) -> Dict[str, object]:
-    dvcs_model = str(context["dvcs_model"])
-    pi0_model = str(context["pi0_model"])
-    ndvcs = model_parameter_count(dvcs_model)
-
-    initial = np.concatenate(
-        [
-            np.asarray(initial_dvcs, dtype=float),
-            np.asarray(initial_pi0, dtype=float),
-        ]
-    )
-    bounds = (
-        model_bounds(dvcs_model, args)
-        + model_bounds(pi0_model, args)
-    )
-
-    def objective(parameters: np.ndarray) -> float:
-        return float(
-            evaluate_variable_model(
-                context,
-                f_pi0,
-                parameters[:ndvcs],
-                parameters[ndvcs:],
-                args,
-            )["objective"]
-        )
-
-    result = minimize(
-        objective,
-        initial,
-        method="L-BFGS-B",
-        bounds=bounds,
-        options={
-            "maxiter": 500,
-            "ftol": 1.0e-10,
-            "gtol": 1.0e-6,
-            "maxls": 40,
-        },
-    )
-    parameters = np.asarray(result.x, dtype=float)
-    evaluation = evaluate_variable_model(
-        context,
-        f_pi0,
-        parameters[:ndvcs],
-        parameters[ndvcs:],
-        args,
-    )
-
-    return {
-        "success": bool(result.success),
-        "message": str(result.message),
-        "dvcs_parameters": parameters[:ndvcs].copy(),
-        "pi0_parameters": parameters[ndvcs:].copy(),
-        "evaluation": evaluation,
-    }
-
-
-def curvature_fraction_error(
-    context: Mapping[str, object],
-    f_pi0: float,
-    dvcs_parameters: np.ndarray,
-    pi0_parameters: np.ndarray,
-    args: argparse.Namespace,
-) -> float:
-    step = max(2.0e-4, min(0.01, 0.05 * min(f_pi0, 1.0 - f_pi0)))
-    low = max(1.0e-5, f_pi0 - step)
-    high = min(1.0 - 1.0e-5, f_pi0 + step)
-    if high <= f_pi0 or low >= f_pi0:
-        return math.nan
-    # endif
-
-    center_value = float(
-        evaluate_variable_model(
-            context,
-            f_pi0,
-            dvcs_parameters,
-            pi0_parameters,
-            args,
-        )["objective"]
-    )
-    low_value = float(
-        evaluate_variable_model(
-            context,
-            low,
-            dvcs_parameters,
-            pi0_parameters,
-            args,
-        )["objective"]
-    )
-    high_value = float(
-        evaluate_variable_model(
-            context,
-            high,
-            dvcs_parameters,
-            pi0_parameters,
-            args,
-        )["objective"]
-    )
-
-    effective_step = 0.5 * (high - low)
-    second_derivative = (
-        high_value - 2.0 * center_value + low_value
-    ) / max(effective_step ** 2, 1.0e-12)
-    if second_derivative <= 0.0:
-        return math.nan
-    # endif
-
-    return float(math.sqrt(2.0 / second_derivative))
-
-
-def shared_fraction_objective(
-    f_pi0: float,
-    contexts: Mapping[str, Mapping[str, object]],
-    states: Mapping[str, Mapping[str, object]],
-    args: argparse.Namespace,
-) -> float:
-    total = 0.0
-    for variable_key, context in contexts.items():
-        state = states[variable_key]
-        total += float(
-            evaluate_variable_model(
-                context,
-                f_pi0,
-                np.asarray(state["dvcs_parameters"], dtype=float),
-                np.asarray(state["pi0_parameters"], dtype=float),
-                args,
-            )["objective"]
-        )
-    # endfor
-    return float(total)
-
-
-def shared_fraction_curvature_error(
-    f_pi0: float,
-    contexts: Mapping[str, Mapping[str, object]],
-    states: Mapping[str, Mapping[str, object]],
-    args: argparse.Namespace,
-) -> float:
-    step = max(2.0e-4, min(0.006, 0.04 * min(f_pi0, 1.0 - f_pi0)))
-    low = max(1.0e-5, f_pi0 - step)
-    high = min(1.0 - 1.0e-5, f_pi0 + step)
-    center = shared_fraction_objective(
-        f_pi0,
-        contexts,
-        states,
-        args,
-    )
-    low_value = shared_fraction_objective(
-        low,
-        contexts,
-        states,
-        args,
-    )
-    high_value = shared_fraction_objective(
-        high,
-        contexts,
-        states,
-        args,
-    )
-    effective_step = 0.5 * (high - low)
-    second_derivative = (
-        high_value - 2.0 * center + low_value
-    ) / max(effective_step ** 2, 1.0e-12)
-    if second_derivative <= 0.0:
-        return math.nan
-    # endif
-    return float(math.sqrt(2.0 / second_derivative))
-
-
-def fit_histogram_inputs(
-    sample_payloads: Mapping[str, Mapping[str, object]],
-    multiplicity_key: str,
-) -> Tuple[
-    Dict[str, np.ndarray],
-    Dict[str, np.ndarray],
-    Dict[str, np.ndarray],
-]:
-    fit_variables = fit_variables_for_category(multiplicity_key)
-
-    def extract(sample_key: str) -> Dict[str, np.ndarray]:
-        return {
-            variable.key: np.asarray(
-                sample_payloads[sample_key][multiplicity_key][
-                    "after_histograms"
-                ][variable.key]["counts"],
-                dtype=np.float64,
-            )
-            for variable in fit_variables
-        }
-
-    return extract("data"), extract("dvcsgen"), extract("aaogen")
-
-
-
-def raw_template_model_counts(
-    context: Mapping[str, object],
-    f_pi0: float,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Fraction-only model using the untouched DVCSGEN and AAOGEN templates.
-    """
-    f_pi0 = float(np.clip(f_pi0, 1.0e-8, 1.0 - 1.0e-8))
-    data_total = float(context["data_total"])
-    raw_dvcs = np.asarray(context["raw_dvcs"], dtype=float)
-    raw_pi0 = np.asarray(context["raw_pi0"], dtype=float)
-
-    dvcs_component = data_total * (1.0 - f_pi0) * raw_dvcs
-    pi0_component = data_total * f_pi0 * raw_pi0
-    model = dvcs_component + pi0_component
-    return model, dvcs_component, pi0_component
-
-
-def raw_template_objective(
-    context: Mapping[str, object],
-    f_pi0: float,
-) -> float:
-    model, _dvcs, _pi0 = raw_template_model_counts(
-        context,
-        f_pi0,
-    )
-    return poisson_deviance(
-        np.asarray(context["data"], dtype=float),
-        model,
-    )
-
-
-def scalar_fraction_curvature_error(
-    objective,
-    f_pi0: float,
-) -> float:
-    """Curvature error for a one-dimensional fraction objective."""
-    step = max(
-        2.0e-4,
-        min(0.006, 0.04 * min(f_pi0, 1.0 - f_pi0)),
-    )
-    low = max(1.0e-5, f_pi0 - step)
-    high = min(1.0 - 1.0e-5, f_pi0 + step)
-
-    center_value = float(objective(f_pi0))
-    low_value = float(objective(low))
-    high_value = float(objective(high))
-    effective_step = 0.5 * (high - low)
-
-    second_derivative = (
-        high_value - 2.0 * center_value + low_value
-    ) / max(effective_step ** 2, 1.0e-12)
-
-    if second_derivative <= 0.0 or not np.isfinite(second_derivative):
-        return math.nan
-    # endif
-
-    return float(math.sqrt(2.0 / second_derivative))
-
-
-def fit_raw_template_fraction(
-    context: Mapping[str, object],
-) -> Dict[str, float]:
-    """Independent fraction-only raw-template fit for one projection."""
-    result = minimize_scalar(
-        lambda fraction: raw_template_objective(
-            context,
-            float(fraction),
-        ),
-        bounds=(1.0e-5, 1.0 - 1.0e-5),
-        method="bounded",
-        options={
-            "xatol": 2.0e-7,
-            "maxiter": 300,
-        },
-    )
-    f_pi0 = float(result.x)
-    error = scalar_fraction_curvature_error(
-        lambda fraction: raw_template_objective(
-            context,
-            float(fraction),
-        ),
-        f_pi0,
-    )
-    return {
-        "success": bool(result.success),
-        "f_pi0": f_pi0,
-        "f_pi0_err": error,
-        "deviance": float(result.fun),
-    }
-
-
-def fit_shared_raw_template_fraction(
-    contexts: Mapping[str, Mapping[str, object]],
-) -> Dict[str, float]:
-    """Shared fraction-only raw-template fit across all projections."""
-    def objective(fraction: float) -> float:
-        return float(
-            sum(
-                raw_template_objective(
-                    context,
-                    float(fraction),
-                )
-                for context in contexts.values()
-            )
-        )
-
-    result = minimize_scalar(
-        objective,
-        bounds=(1.0e-5, 1.0 - 1.0e-5),
-        method="bounded",
-        options={
-            "xatol": 2.0e-7,
-            "maxiter": 400,
-        },
-    )
-    f_pi0 = float(result.x)
-    error = scalar_fraction_curvature_error(
-        objective,
-        f_pi0,
-    )
-    return {
-        "success": bool(result.success),
-        "f_pi0": f_pi0,
-        "f_pi0_err": error,
-        "deviance": float(result.fun),
-    }
-
-def run_one_shared_template_fit(
-    period: PeriodConfig,
-    multiplicity_key: str,
-    multiplicity_label: str,
-    sample_payloads: Mapping[str, Mapping[str, object]],
-    args: argparse.Namespace,
-) -> Tuple[AdvancedSharedFit, Dict[str, np.ndarray]]:
-    data_histograms, dvcs_histograms, pi0_histograms = (
-        fit_histogram_inputs(
-            sample_payloads,
-            multiplicity_key,
-        )
-    )
-
-    contexts: Dict[str, Dict[str, object]] = {}
-    independent_states: Dict[str, Dict[str, object]] = {}
-    raw_independent_states: Dict[str, Dict[str, float]] = {}
-    fit_variables = fit_variables_for_category(multiplicity_key)
-
-    for variable in fit_variables:
-        data_count = int(np.sum(data_histograms[variable.key]))
-        dvcs_count = int(np.sum(dvcs_histograms[variable.key]))
-        pi0_count = int(np.sum(pi0_histograms[variable.key]))
-        if (
-            data_count < args.fit_min_counts
-            or dvcs_count <= 0
-            or pi0_count <= 0
-        ):
-            raise RuntimeError(
-                f"{period.label} {multiplicity_label} {variable.key}: "
-                f"insufficient fit support: data={data_count}, "
-                f"DVCSGEN={dvcs_count}, AAOGEN={pi0_count}"
-            )
-        # endif
-
-        context = prepare_variable_fit_context(
-            variable,
-            data_histograms[variable.key],
-            dvcs_histograms[variable.key],
-            pi0_histograms[variable.key],
-            multiplicity_key,
-        )
-        contexts[variable.key] = context
-
-        raw_independent_states[variable.key] = (
-            fit_raw_template_fraction(context)
-        )
-        independent_states[variable.key] = (
-            optimize_variable_independent_fraction(
-                context,
-                args,
-            )
-        )
-
-        raw_state = raw_independent_states[variable.key]
-        morphed_state = independent_states[variable.key]
-        log(
-            f"{period.label} {multiplicity_label} {variable.key}: "
-            f"raw f_pi0={raw_state['f_pi0']:.5f} +/- "
-            f"{raw_state['f_pi0_err']:.5f}; "
-            f"morphed f_pi0={morphed_state['f_pi0']:.5f} +/- "
-            f"{morphed_state['f_pi0_err']:.5f}; "
-            f"Delta={morphed_state['f_pi0'] - raw_state['f_pi0']:+.5f}"
-        )
-    # endfor
-
-    raw_shared_state = fit_shared_raw_template_fraction(
-        contexts
-    )
-    raw_shared_fraction = float(raw_shared_state["f_pi0"])
-    raw_shared_error = float(raw_shared_state["f_pi0_err"])
-
-    weights = []
-    fractions = []
-    for variable_key, state in independent_states.items():
-        error = float(state["f_pi0_err"])
-        weight = (
-            1.0 / error ** 2
-            if np.isfinite(error) and error > 0.0
-            else 1.0
-        )
-        weights.append(weight)
-        fractions.append(float(state["f_pi0"]))
-    # endfor
-    shared_fraction = float(
-        np.average(fractions, weights=weights)
-    )
-    shared_fraction = float(
-        np.clip(shared_fraction, 1.0e-4, 1.0 - 1.0e-4)
-    )
-
-    states: Dict[str, Dict[str, object]] = {
-        variable_key: {
-            "dvcs_parameters": np.asarray(
-                state["dvcs_parameters"],
-                dtype=float,
-            ).copy(),
-            "pi0_parameters": np.asarray(
-                state["pi0_parameters"],
-                dtype=float,
-            ).copy(),
-        }
-        for variable_key, state in independent_states.items()
-    }
-
-    completed_iterations = 0
-    coordinate_iterations = max(
-        1,
-        int(args.fit_coordinate_iterations),
-    )
-    if args.fast_fits:
-        coordinate_iterations = min(coordinate_iterations, 2)
-    # endif
-
-    for iteration in range(coordinate_iterations):
-        previous_fraction = shared_fraction
-
-        for variable_key, context in contexts.items():
-            optimized = optimize_nuisance_fixed_fraction(
-                context,
-                shared_fraction,
-                np.asarray(
-                    states[variable_key]["dvcs_parameters"],
-                    dtype=float,
-                ),
-                np.asarray(
-                    states[variable_key]["pi0_parameters"],
-                    dtype=float,
-                ),
-                args,
-            )
-            states[variable_key] = {
-                "dvcs_parameters": optimized["dvcs_parameters"],
-                "pi0_parameters": optimized["pi0_parameters"],
-            }
-        # endfor
-
-        fraction_result = minimize_scalar(
-            lambda fraction: shared_fraction_objective(
-                float(fraction),
-                contexts,
-                states,
-                args,
-            ),
-            bounds=(1.0e-4, 1.0 - 1.0e-4),
-            method="bounded",
-            options={
-                "xatol": 2.0e-5 if args.fast_fits else 2.0e-6,
-                "maxiter": 250,
-            },
-        )
-        shared_fraction = float(fraction_result.x)
-        completed_iterations = iteration + 1
-
-        if abs(shared_fraction - previous_fraction) < 2.0e-5:
-            break
-        # endif
-    # endfor
-
-    shared_error = shared_fraction_curvature_error(
-        shared_fraction,
-        contexts,
-        states,
-        args,
-    )
-
-    variable_results: Dict[str, AdvancedVariableFit] = {}
-    total_deviance = 0.0
-    total_bins = 0
-    total_nuisance = 1
-
-    for variable in fit_variables:
-        context = contexts[variable.key]
-        state = states[variable.key]
-        evaluation = evaluate_variable_model(
-            context,
-            shared_fraction,
-            np.asarray(state["dvcs_parameters"], dtype=float),
-            np.asarray(state["pi0_parameters"], dtype=float),
-            args,
-        )
-        independent = independent_states[variable.key]
-        data_total = float(context["data_total"])
-        raw_dvcs = np.asarray(context["raw_dvcs"], dtype=float)
-        raw_pi0 = np.asarray(context["raw_pi0"], dtype=float)
-
-        (
-            raw_shared_model,
-            raw_shared_dvcs_component,
-            raw_shared_pi0_component,
-        ) = raw_template_model_counts(
-            context,
-            raw_shared_fraction,
-        )
-        raw_shared_variable_deviance = poisson_deviance(
-            np.asarray(context["data"], dtype=float),
-            raw_shared_model,
-        )
-        raw_independent = raw_independent_states[variable.key]
-
-        ndvcs = model_parameter_count(str(context["dvcs_model"]))
-        npi0 = model_parameter_count(str(context["pi0_model"]))
-        nuisance_count = ndvcs + npi0
-        ndf = max(
-            1,
-            int(np.count_nonzero(np.asarray(context["data"]) >= 0.0))
-            - nuisance_count
-            - 1,
-        )
-
-        result = AdvancedVariableFit(
-            success=True,
-            message="advanced component-preserving morph fit",
-            variable=variable.key,
-            model_name=str(context["model_description"]),
-            f_pi0=shared_fraction,
-            f_pi0_err=shared_error,
-            independent_f_pi0=float(independent["f_pi0"]),
-            independent_f_pi0_err=float(independent["f_pi0_err"]),
-            deviance=float(evaluation["deviance"]),
-            ndf=ndf,
-            nuisance_count=nuisance_count,
-            model_counts=np.asarray(evaluation["model"], dtype=float),
-            dvcs_component_counts=np.asarray(
-                evaluation["dvcs_component"],
-                dtype=float,
-            ),
-            pi0_component_counts=np.asarray(
-                evaluation["pi0_component"],
-                dtype=float,
-            ),
-            raw_dvcs_component_counts=(
-                data_total * (1.0 - shared_fraction) * raw_dvcs
-            ),
-            raw_pi0_component_counts=(
-                data_total * shared_fraction * raw_pi0
-            ),
-            morphed_dvcs_probability=np.asarray(
-                evaluation["dvcs_probability"],
-                dtype=float,
-            ),
-            morphed_pi0_probability=np.asarray(
-                evaluation["pi0_probability"],
-                dtype=float,
-            ),
-            raw_dvcs_probability=raw_dvcs,
-            raw_pi0_probability=raw_pi0,
-            dvcs_nuisance=nuisance_dictionary(
-                str(context["dvcs_model"]),
-                np.asarray(state["dvcs_parameters"], dtype=float),
-                evaluation["dvcs_metadata"],
-            ),
-            pi0_nuisance=nuisance_dictionary(
-                str(context["pi0_model"]),
-                np.asarray(state["pi0_parameters"], dtype=float),
-                evaluation["pi0_metadata"],
-            ),
-            divider_dvcs=float(context["dvcs_divider_value"]),
-            divider_pi0=float(context["pi0_divider_value"]),
-            fit_total=float(np.sum(evaluation["model"])),
-            data_total=data_total,
-            raw_shared_f_pi0=raw_shared_fraction,
-            raw_shared_f_pi0_err=raw_shared_error,
-            raw_independent_f_pi0=float(
-                raw_independent["f_pi0"]
-            ),
-            raw_independent_f_pi0_err=float(
-                raw_independent["f_pi0_err"]
-            ),
-            raw_shared_deviance=float(
-                raw_shared_variable_deviance
-            ),
-            raw_independent_deviance=float(
-                raw_independent["deviance"]
-            ),
-            raw_shared_model_counts=np.asarray(
-                raw_shared_model,
-                dtype=float,
-            ),
-            raw_shared_dvcs_component_counts=np.asarray(
-                raw_shared_dvcs_component,
-                dtype=float,
-            ),
-            raw_shared_pi0_component_counts=np.asarray(
-                raw_shared_pi0_component,
-                dtype=float,
-            ),
-        )
-        variable_results[variable.key] = result
-        total_deviance += result.deviance
-        total_bins += variable.bins
-        total_nuisance += nuisance_count
-    # endfor
-
-    global_ndf = max(1, total_bins - total_nuisance)
-    summary = AdvancedSharedFit(
-        success=True,
-        message=(
-            "coordinate-minimized shared fraction across four projections with "
-            "variable-specific component-preserving morphs"
-        ),
-        f_pi0=shared_fraction,
-        f_pi0_err=shared_error,
-        deviance=float(total_deviance),
-        ndf=int(global_ndf),
-        variable_results=variable_results,
-        coordinate_iterations=completed_iterations,
-        multiplicity_key=multiplicity_key,
-        raw_f_pi0=raw_shared_fraction,
-        raw_f_pi0_err=raw_shared_error,
-        raw_deviance=float(raw_shared_state["deviance"]),
-        raw_ndf=max(
-            1,
-            int(sum(variable.bins for variable in fit_variables)) - 1,
-        ),
-    )
-    return summary, data_histograms
-
-
-def variable_fit_to_dict(
-    result: AdvancedVariableFit,
-) -> Dict[str, object]:
-    return {
-        "success": result.success,
-        "message": result.message,
-        "variable": result.variable,
-        "model_name": result.model_name,
-        "shared_f_pi0": result.f_pi0,
-        "shared_f_pi0_error": result.f_pi0_err,
-        "independent_f_pi0": result.independent_f_pi0,
-        "independent_f_pi0_error": result.independent_f_pi0_err,
-        "deviance": result.deviance,
-        "ndf": result.ndf,
-        "deviance_per_ndf": (
-            result.deviance / result.ndf
-            if result.ndf > 0
-            else math.nan
-        ),
-        "raw_shared_f_pi0": result.raw_shared_f_pi0,
-        "raw_shared_f_pi0_error": result.raw_shared_f_pi0_err,
-        "raw_independent_f_pi0": result.raw_independent_f_pi0,
-        "raw_independent_f_pi0_error": result.raw_independent_f_pi0_err,
-        "delta_f_morph_shared": (
-            result.f_pi0 - result.raw_shared_f_pi0
-        ),
-        "delta_f_morph_independent": (
-            result.independent_f_pi0
-            - result.raw_independent_f_pi0
-        ),
-        "raw_shared_deviance": result.raw_shared_deviance,
-        "raw_independent_deviance": result.raw_independent_deviance,
-        "nuisance_count": result.nuisance_count,
-        "dvcs_nuisance": result.dvcs_nuisance,
-        "pi0_nuisance": result.pi0_nuisance,
-        "divider_dvcs": result.divider_dvcs,
-        "divider_pi0": result.divider_pi0,
-        "fit_total": result.fit_total,
-        "data_total": result.data_total,
-    }
-
-
-def shared_fit_to_dict(
-    summary: AdvancedSharedFit,
-) -> Dict[str, object]:
-    return {
-        "success": summary.success,
-        "message": summary.message,
-        "f_pi0": summary.f_pi0,
-        "f_pi0_error": summary.f_pi0_err,
-        "deviance": summary.deviance,
-        "ndf": summary.ndf,
-        "deviance_per_ndf": (
-            summary.deviance / summary.ndf
-            if summary.ndf > 0
-            else math.nan
-        ),
-        "coordinate_iterations": summary.coordinate_iterations,
-        "raw_f_pi0": summary.raw_f_pi0,
-        "raw_f_pi0_error": summary.raw_f_pi0_err,
-        "raw_deviance": summary.raw_deviance,
-        "raw_ndf": summary.raw_ndf,
-        "raw_deviance_per_ndf": (
-            summary.raw_deviance / summary.raw_ndf
-            if summary.raw_ndf > 0
-            else math.nan
-        ),
-        "delta_f_morph": (
-            summary.f_pi0 - summary.raw_f_pi0
-        ),
-        "variables": {
-            variable_key: variable_fit_to_dict(result)
-            for variable_key, result
-            in summary.variable_results.items()
-        },
-    }
-
-
-def plot_shared_template_fit(
-    path: Path,
-    period_label: str,
-    multiplicity_label: str,
-    summary: AdvancedSharedFit,
-    data_histograms: Mapping[str, np.ndarray],
-    args: argparse.Namespace,
-) -> None:
-    """
-    Compare the fraction-only raw-template fit with the constrained morphed fit.
-
-    For exact-one events the raw-template result is the primary diagnostic and
-    the morphed fit is a model-sensitivity comparison.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    sample_colors = {
-        "data": "black",
-        "dvcs_mc": "tab:blue",
-        "pi0_mc": "tab:red",
-        "morphed_fit": "tab:green",
-        "raw_fit": "0.35",
-    }
-
-    fit_variables = fit_variables_for_category(
-        summary.multiplicity_key
-    )
-    number_of_variables = len(fit_variables)
-    fig, axes = plt.subplots(
-        2,
-        number_of_variables,
-        figsize=(4.75 * number_of_variables, 9.5),
-        sharex="col",
-        squeeze=False,
-        gridspec_kw={"height_ratios": [3.0, 1.15]},
-    )
-
-    for column, variable in enumerate(fit_variables):
-        result = summary.variable_results[variable.key]
-        top = axes[0, column]
-        bottom = axes[1, column]
-
-        data_counts = np.asarray(
-            data_histograms[variable.key],
-            dtype=float,
-        )
-        data_error = np.sqrt(np.maximum(data_counts, 0.0))
-        edges = np.linspace(
-            variable.low,
-            variable.high,
-            variable.bins + 1,
-        )
-        centers = 0.5 * (edges[:-1] + edges[1:])
-
-        top.errorbar(
-            centers,
-            data_counts,
-            yerr=data_error,
-            fmt="o",
-            markersize=2.4,
-            linewidth=0.8,
-            capsize=0.0,
-            color=sample_colors["data"],
-            label=r"$e'p'\gamma$ data",
-            zorder=6,
-        )
-
-        # Raw-template components are plotted with thin dashed outlines and are
-        # normalized using the shared RAW fraction, not the morphed fraction.
-        top.stairs(
-            result.raw_shared_dvcs_component_counts,
-            edges,
-            color=sample_colors["dvcs_mc"],
-            linewidth=0.75,
-            linestyle="--",
-            label="raw DVCS MC component",
-            zorder=1,
-        )
-        top.stairs(
-            result.raw_shared_pi0_component_counts,
-            edges,
-            color=sample_colors["pi0_mc"],
-            linewidth=0.75,
-            linestyle="--",
-            label=r"raw $e\pi^0$ MC component",
-            zorder=1,
-        )
-        top.stairs(
-            result.raw_shared_model_counts,
-            edges,
-            color=sample_colors["raw_fit"],
-            linewidth=1.8,
-            linestyle="-.",
-            label="raw-template fraction-only fit",
-            zorder=4,
-        )
-
-        # Morphed comparison.
-        top.stairs(
-            result.dvcs_component_counts,
-            edges,
-            color=sample_colors["dvcs_mc"],
-            linewidth=1.45,
-            label="morphed DVCS component",
-            zorder=3,
-        )
-        top.stairs(
-            result.pi0_component_counts,
-            edges,
-            color=sample_colors["pi0_mc"],
-            linewidth=1.45,
-            label=r"morphed $e\pi^0$ component",
-            zorder=2,
-        )
-        top.stairs(
-            result.model_counts,
-            edges,
-            color=sample_colors["morphed_fit"],
-            linewidth=1.9,
-            linestyle="--",
-            label="constrained morphed fit",
-            zorder=5,
-        )
-
-        quality = (
-            rf"raw shared: $f_{{\pi^0}}={summary.raw_f_pi0:.3f}$"
-            rf"$\pm{summary.raw_f_pi0_err:.3f}$"
-            + "\n"
-            + rf"raw independent: {result.raw_independent_f_pi0:.3f}"
-            rf"$\pm{result.raw_independent_f_pi0_err:.3f}$"
-            + "\n"
-            + rf"morph shared: {summary.f_pi0:.3f}"
-            rf"$\pm{summary.f_pi0_err:.3f}$"
-            + "\n"
-            + rf"morph independent: {result.independent_f_pi0:.3f}"
-            rf"$\pm{result.independent_f_pi0_err:.3f}$"
-            + "\n"
-            + rf"$\Delta f_{{morph}}={summary.f_pi0-summary.raw_f_pi0:+.3f}$"
-            + "\n"
-            + rf"$D/ndf$ raw={result.raw_shared_deviance:.1f}/"
-            f"{max(1, variable.bins - 1)}; "
-            + f"morph={result.deviance:.1f}/{result.ndf}"
-        )
-        top.text(
-            0.98,
-            0.96,
-            quality,
-            transform=top.transAxes,
-            ha="right",
-            va="top",
-            fontsize=7.7,
-            bbox={
-                "facecolor": "white",
-                "alpha": 0.80,
-                "edgecolor": "none",
-            },
-            zorder=10,
-        )
-
-        top.set_xlim(variable.low, variable.high)
-        top.set_ylabel("events / bin")
-        top.grid(axis="y", alpha=0.25)
-
-        if args.shape_log_y:
-            positive_arrays = (
-                data_counts,
-                result.raw_shared_model_counts,
-                result.model_counts,
-            )
-            positive_parts = [
-                np.asarray(array, dtype=float)[
-                    np.asarray(array, dtype=float) > 0.0
-                ]
-                for array in positive_arrays
-                if np.any(np.asarray(array, dtype=float) > 0.0)
-            ]
-            if positive_parts:
-                positive_values = np.concatenate(positive_parts)
-                top.set_yscale("log")
-                top.set_ylim(
-                    bottom=max(
-                        0.5,
-                        0.5 * float(np.min(positive_values)),
-                    )
-                )
-            # endif
-        else:
-            top.set_ylim(bottom=0.0)
-        # endif
-
-        raw_model = np.asarray(
-            result.raw_shared_model_counts,
-            dtype=float,
-        )
-        morph_model = np.asarray(
-            result.model_counts,
-            dtype=float,
-        )
-
-        raw_valid = raw_model > 0.0
-        morph_valid = morph_model > 0.0
-
-        raw_ratio = np.full_like(data_counts, np.nan, dtype=float)
-        raw_ratio_error = np.full_like(data_counts, np.nan, dtype=float)
-        raw_ratio[raw_valid] = (
-            data_counts[raw_valid] / raw_model[raw_valid]
-        )
-        raw_ratio_error[raw_valid] = (
-            data_error[raw_valid] / raw_model[raw_valid]
-        )
-
-        morph_ratio = np.full_like(data_counts, np.nan, dtype=float)
-        morph_ratio_error = np.full_like(data_counts, np.nan, dtype=float)
-        morph_ratio[morph_valid] = (
-            data_counts[morph_valid] / morph_model[morph_valid]
-        )
-        morph_ratio_error[morph_valid] = (
-            data_error[morph_valid] / morph_model[morph_valid]
-        )
-
-        bin_width = float(edges[1] - edges[0])
-        offset = 0.10 * bin_width
-
-        bottom.errorbar(
-            centers[raw_valid] - offset,
-            raw_ratio[raw_valid],
-            yerr=raw_ratio_error[raw_valid],
-            fmt="o",
-            markersize=2.2,
-            markerfacecolor="none",
-            linewidth=0.7,
-            capsize=0.0,
-            color=sample_colors["raw_fit"],
-            label="data / raw fit",
-            zorder=3,
-        )
-        bottom.errorbar(
-            centers[morph_valid] + offset,
-            morph_ratio[morph_valid],
-            yerr=morph_ratio_error[morph_valid],
-            fmt="o",
-            markersize=2.2,
-            linewidth=0.7,
-            capsize=0.0,
-            color=sample_colors["data"],
-            label="data / morphed fit",
-            zorder=4,
-        )
-        bottom.axhline(
-            1.0,
-            color=sample_colors["morphed_fit"],
-            linewidth=1.2,
-            linestyle="--",
-            zorder=1,
-        )
-        bottom.set_xlim(variable.low, variable.high)
-        bottom.set_ylim(0.0, 2.0)
-        bottom.set_xlabel(variable.label)
-        bottom.set_ylabel("data / fit")
-        bottom.grid(axis="y", alpha=0.25)
-    # endfor
-
-    handles, labels = axes[0, 0].get_legend_handles_labels()
-    ratio_handles, ratio_labels = axes[1, 0].get_legend_handles_labels()
-    handles = [*handles, *ratio_handles]
-    labels = [*labels, *ratio_labels]
-
-    fraction_drivers = ", ".join(
-        variable.key for variable in fit_variables
-    )
-    primary_note = (
-        "raw fraction-only fit is primary diagnostic"
-        if summary.multiplicity_key == "one_photon"
-        else "raw fraction-only fit shown as diagnostic comparison"
-    )
-
-    fig.suptitle(
-        "DVCS+pi0 raw-template versus constrained-morph fits: "
-        f"{period_label}, {multiplicity_label}\n"
-        f"fraction drivers: {fraction_drivers}; {primary_note}; "
-        rf"raw shared $f_{{\pi^0}}={summary.raw_f_pi0:.4f}"
-        rf"\pm{summary.raw_f_pi0_err:.4f}$; "
-        rf"morphed={summary.f_pi0:.4f}\pm{summary.f_pi0_err:.4f}$; "
-        rf"$\Delta f_{{morph}}={summary.f_pi0-summary.raw_f_pi0:+.4f}$",
-        fontsize=14,
-        y=0.992,
-    )
-    fig.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.875),
-        ncol=5,
-        frameon=False,
-    )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.80))
-    fig.savefig(
-        path,
-        dpi=args.fit_dpi,
-        bbox_inches="tight",
-    )
-    plt.close(fig)
-
-
-def plot_fraction_consistency(
-    path: Path,
-    period_label: str,
-    multiplicity_label: str,
-    summary: AdvancedSharedFit,
-) -> None:
-    """Compare raw-template and morphed fractions projection by projection."""
-    fit_variables = fit_variables_for_category(
-        summary.multiplicity_key
-    )
-    labels = [variable.label for variable in fit_variables]
-
-    raw_values = np.asarray(
-        [
-            summary.variable_results[
-                variable.key
-            ].raw_independent_f_pi0
-            for variable in fit_variables
-        ],
-        dtype=float,
-    )
-    raw_errors = np.asarray(
-        [
-            summary.variable_results[
-                variable.key
-            ].raw_independent_f_pi0_err
-            for variable in fit_variables
-        ],
-        dtype=float,
-    )
-    morphed_values = np.asarray(
-        [
-            summary.variable_results[
-                variable.key
-            ].independent_f_pi0
-            for variable in fit_variables
-        ],
-        dtype=float,
-    )
-    morphed_errors = np.asarray(
-        [
-            summary.variable_results[
-                variable.key
-            ].independent_f_pi0_err
-            for variable in fit_variables
-        ],
-        dtype=float,
-    )
-
-    x = np.arange(len(labels), dtype=float)
-    offset = 0.08
-
-    fig, axis = plt.subplots(figsize=(12, 6))
-    axis.errorbar(
-        x - offset,
-        raw_values,
-        yerr=raw_errors,
-        fmt="o",
-        capsize=3,
-        label="Raw-template independent fits",
-    )
-    axis.errorbar(
-        x + offset,
-        morphed_values,
-        yerr=morphed_errors,
-        fmt="s",
-        capsize=3,
-        label="Morphed independent fits",
-    )
-
-    axis.axhline(
-        summary.raw_f_pi0,
-        linewidth=1.5,
-        linestyle="-.",
-        label=(
-            "Raw shared fit "
-            f"({summary.raw_f_pi0:.3f})"
-        ),
-    )
-    axis.axhline(
-        summary.f_pi0,
-        linewidth=1.5,
-        linestyle="--",
-        label=(
-            "Morphed shared fit "
-            f"({summary.f_pi0:.3f})"
-        ),
-    )
-
-    if np.isfinite(summary.raw_f_pi0_err):
-        axis.axhspan(
-            summary.raw_f_pi0 - summary.raw_f_pi0_err,
-            summary.raw_f_pi0 + summary.raw_f_pi0_err,
-            alpha=0.08,
-        )
-    # endif
-    if np.isfinite(summary.f_pi0_err):
-        axis.axhspan(
-            summary.f_pi0 - summary.f_pi0_err,
-            summary.f_pi0 + summary.f_pi0_err,
-            alpha=0.08,
-        )
-    # endif
-
-    axis.set_xticks(x, labels, rotation=20, ha="right")
-    axis.set_ylabel(r"Fitted $\pi^0$ fraction")
-    axis.set_ylim(0.0, 1.0)
-    axis.grid(alpha=0.25)
-    axis.legend()
-    axis.set_title(
-        f"{period_label}: {multiplicity_label} fraction consistency; "
-        rf"$\Delta f_{{morph}}="
-        f"{summary.f_pi0-summary.raw_f_pi0:+.4f}$"
-    )
-    fig.tight_layout()
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def flatten_shared_fit_row(
-    period: PeriodConfig,
-    multiplicity_key: str,
-    multiplicity_label: str,
-    summary: AdvancedSharedFit,
-) -> Dict[str, object]:
-    row: Dict[str, object] = {
-        "period": period.key,
-        "period_label": period.label,
-        "multiplicity": multiplicity_key,
-        "multiplicity_label": multiplicity_label,
-        "fit_success": summary.success,
-        "fit_message": summary.message,
-        "f_pi0": summary.f_pi0,
-        "f_pi0_error": summary.f_pi0_err,
-        "deviance": summary.deviance,
-        "ndf": summary.ndf,
-        "deviance_per_ndf": (
-            summary.deviance / summary.ndf
-            if summary.ndf > 0
-            else math.nan
-        ),
-        "coordinate_iterations": summary.coordinate_iterations,
-        "raw_f_pi0": summary.raw_f_pi0,
-        "raw_f_pi0_error": summary.raw_f_pi0_err,
-        "raw_deviance": summary.raw_deviance,
-        "raw_ndf": summary.raw_ndf,
-        "raw_deviance_per_ndf": (
-            summary.raw_deviance / summary.raw_ndf
-            if summary.raw_ndf > 0
-            else math.nan
-        ),
-        "delta_f_morph": summary.f_pi0 - summary.raw_f_pi0,
-        "primary_one_photon_fraction": (
-            summary.raw_f_pi0
-            if multiplicity_key == "one_photon"
-            else summary.f_pi0
-        ),
-    }
-
-    fit_variables = fit_variables_for_category(
-        summary.multiplicity_key
-    )
-
-    for variable in fit_variables:
-        result = summary.variable_results[variable.key]
-        prefix = variable.key
-        row[f"{prefix}_raw_independent_f_pi0"] = (
-            result.raw_independent_f_pi0
-        )
-        row[f"{prefix}_raw_independent_f_pi0_error"] = (
-            result.raw_independent_f_pi0_err
-        )
-        row[f"{prefix}_raw_independent_deviance"] = (
-            result.raw_independent_deviance
-        )
-        row[f"{prefix}_raw_shared_deviance"] = (
-            result.raw_shared_deviance
-        )
-        row[f"{prefix}_delta_f_morph_independent"] = (
-            result.independent_f_pi0
-            - result.raw_independent_f_pi0
-        )
-        row[f"{prefix}_independent_f_pi0"] = (
-            result.independent_f_pi0
-        )
-        row[f"{prefix}_independent_f_pi0_error"] = (
-            result.independent_f_pi0_err
-        )
-        row[f"{prefix}_deviance"] = result.deviance
-        row[f"{prefix}_ndf"] = result.ndf
-        row[f"{prefix}_deviance_per_ndf"] = (
-            result.deviance / result.ndf
-            if result.ndf > 0
-            else math.nan
-        )
-        row[f"{prefix}_model"] = result.model_name
-        row[f"{prefix}_dvcs_nuisance_json"] = json.dumps(
-            result.dvcs_nuisance,
-            sort_keys=True,
-        )
-        row[f"{prefix}_pi0_nuisance_json"] = json.dumps(
-            result.pi0_nuisance,
-            sort_keys=True,
-        )
-        row[f"{prefix}_dvcs_divider"] = result.divider_dvcs
-        row[f"{prefix}_pi0_divider"] = result.divider_pi0
-    # endfor
-
-    return row
-
-
-def plot_all_period_fitted_pi0_fractions(
-    path: Path,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    period_labels = [period.label for period in PERIODS]
-    x = np.arange(len(period_labels), dtype=float)
-    offsets = {
-        "one_photon": -0.08,
-        "two_photon": 0.08,
-    }
-    display_labels = {
-        "one_photon": "One-photon events",
-        "two_photon": "Two-photon events",
-    }
-
-    fig, axis = plt.subplots(figsize=(12, 7))
-    for multiplicity_key in ("one_photon", "two_photon"):
-        selected = []
-        for period in PERIODS:
-            match = next(
-                (
-                    row for row in rows
-                    if row["period"] == period.key
-                    and row["multiplicity"] == multiplicity_key
-                    and bool(row["fit_success"])
-                ),
-                None,
-            )
-            selected.append(match)
-        # endfor
-
-        values = np.asarray(
-            [
-                row["f_pi0"] if row is not None else math.nan
-                for row in selected
-            ],
-            dtype=float,
-        )
-        errors = np.asarray(
-            [
-                row["f_pi0_error"] if row is not None else math.nan
-                for row in selected
-            ],
-            dtype=float,
-        )
-
-        axis.errorbar(
-            x + offsets[multiplicity_key],
-            values,
-            yerr=errors,
-            fmt="o",
-            capsize=3,
-            label=display_labels[multiplicity_key],
-        )
-    # endfor
-
-    axis.set_xticks(x, period_labels, rotation=20, ha="right")
-    axis.set_ylabel(r"Fitted $\pi^0$ fraction")
-    axis.set_ylim(0.0, 1.0)
-    axis.grid(alpha=0.25)
-    axis.legend()
-    axis.set_title(
-        "Advanced shared four-projection template fits"
-    )
-    fig.tight_layout()
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def write_template_fit_outputs(
-    fit_dir: Path,
-    fit_rows: Sequence[Mapping[str, object]],
-    fit_payloads: Mapping[str, object],
-) -> None:
-    fit_dir.mkdir(parents=True, exist_ok=True)
-
-    if fit_rows:
-        fieldnames = list(fit_rows[0].keys())
-        with open(
-            fit_dir / "template_fit_results.csv",
-            "w",
-            newline="",
-            encoding="utf-8",
-        ) as handle:
-            writer = csv.DictWriter(
-                handle,
-                fieldnames=fieldnames,
-            )
-            writer.writeheader()
-            writer.writerows(fit_rows)
-        # endwith
-    # endif
-
-    with open(
-        fit_dir / "template_fit_results.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(
-            {
-                "fit_model": {
-                    "shared_fraction": True,
-                    "independent_variable_fits": True,
-                    "raw_fraction_only_fit": True,
-                    "raw_fraction_only_has_shape_nuisances": False,
-                    "one_photon_primary_diagnostic": "raw_fraction_only",
-                    "morphed_fit_role": (
-                        "secondary model-sensitivity comparison for one-photon; "
-                        "existing fit result retained for exact-two categories"
-                    ),
-                    "data_population": "three energy-ranked photon-entry categories",
-                    "templates": [
-                        "DVCSGEN",
-                        "AAOGEN-as-epgamma pi0",
-                    ],
-                    "variable_models": {
-                        category_key: {
-                            variable.key: variable_model_spec(
-                                variable.key,
-                                category_key,
-                            )
-                            for variable in fit_variables_for_category(
-                                category_key
-                            )
-                        }
-                        for category_key in (
-                            "one_photon",
-                            "two_photon_more_energetic",
-                            "two_photon_less_energetic",
-                        )
-                    },
-                    "projection_likelihood_note": (
-                        "The four one-dimensional projections contain the "
-                        "same events and are combined as a composite "
-                        "likelihood. Projection correlations are not included "
-                        "in the curvature uncertainty."
-                    ),
-                },
-                "rows": list(fit_rows),
-                "fits": fit_payloads,
-            },
-            handle,
-            indent=2,
-        )
-    # endwith
-
-    if fit_rows:
-        plot_all_period_fitted_pi0_fractions(
-            fit_dir / "all_periods_fitted_pi0_fraction.png",
-            fit_rows,
-        )
-    # endif
-
-
-
-def run_data_shape_stage(
-    periods: Sequence[PeriodConfig],
-    args: argparse.Namespace,
-    workers: int,
-) -> Dict[str, object]:
-    """
-    Run 15 independent file tasks with no nested multiprocessing.
-    """
-    data_root = Path(args.output_dir) / "data"
-    shape_dir = data_root / "shape_comparison"
-    shape_dir.mkdir(parents=True, exist_ok=True)
-
-    tasks = [
-        (period, sample_key, sample_label, period_attribute)
-        for period in periods
-        for sample_key, sample_label, period_attribute
-        in RAW_SHAPE_SAMPLE_INFO
-    ]
-    file_workers = max(
-        1,
-        min(int(workers), MAX_WORKERS, len(tasks)),
-    )
-
-    log(
-        f"DATA SHAPE + MULTIPLICITY STAGE: {len(tasks)} files, "
-        f"{file_workers} worker(s). Each ROOT file is read once."
-    )
-
-    results: Dict[str, Dict[str, Dict[str, object]]] = {
-        period.key: {} for period in periods
-    }
-
-    if file_workers == 1:
-        for period, sample_key, sample_label, period_attribute in tasks:
-            key, returned_sample, payload = process_data_shape_sample(
-                period,
-                sample_key,
-                sample_label,
-                period_attribute,
-                vars(args),
-            )
-            results[key][returned_sample] = payload
-        # endfor
-    else:
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=file_workers
-        ) as executor:
-            future_map = {
-                executor.submit(
-                    process_data_shape_sample,
-                    period,
-                    sample_key,
-                    sample_label,
-                    period_attribute,
-                    vars(args),
-                ): (period.key, sample_key)
-                for (
-                    period,
-                    sample_key,
-                    sample_label,
-                    period_attribute,
-                ) in tasks
-            }
-            for future in concurrent.futures.as_completed(future_map):
-                key, returned_sample, payload = future.result()
-                results[key][returned_sample] = payload
-                log(
-                    f"Completed {payload['period_label']} "
-                    f"{payload['sample_label']}."
-                )
-            # endfor
-        # endwith
-    # endif
-
-    period_order = {
-        period.key: index for index, period in enumerate(PERIODS)
-    }
-    sample_order = {
-        sample_key: index
-        for index, (sample_key, _, _) in enumerate(
-            RAW_SHAPE_SAMPLE_INFO
-        )
-    }
-
-    multiplicity_rows: List[Dict[str, object]] = []
-    audit: Dict[str, object] = {}
-    fit_rows: List[Dict[str, object]] = []
-    fit_payloads: Dict[str, object] = {}
-    fit_dir = data_root / "template_fits"
-    if not args.skip_data_template_fits:
-        fit_dir.mkdir(parents=True, exist_ok=True)
-    # endif
-
-    for period in periods:
-        sample_payloads = results[period.key]
-        missing_samples = [
-            sample_key
-            for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO
-            if sample_key not in sample_payloads
-        ]
-        if missing_samples:
-            raise RuntimeError(
-                f"{period.label}: missing processed samples: "
-                + ", ".join(missing_samples)
-            )
-        # endif
-
-        category_specs = (
-            (
-                "one_photon",
-                "exactly one reconstructed-photon entry",
-            ),
-            (
-                "two_photon_more_energetic",
-                "exactly two entries: more energetic photon",
-            ),
-            (
-                "two_photon_less_energetic",
-                "exactly two entries: less energetic photon",
-            ),
-        )
-
-        shape_plot_paths: Dict[str, Path] = {}
-        for category_key, category_label in category_specs:
-            category_plot_path = (
-                shape_dir
-                / f"{period.key}_{category_key}_shape_comparison.png"
-            )
-            shape_plot_paths[category_key] = category_plot_path
-            plot_before_after_shape_canvas(
-                category_plot_path,
-                period.label,
-                category_label,
-                sample_payloads,
-                category_key,
-                display_variables_for_category(category_key),
-                "shape comparisons",
-                args,
-            )
-        # endfor
-
-        period_fit_payload: Dict[str, object] = {}
-        fit_stage_seconds = 0.0
-        if not args.skip_data_template_fits:
-            template_fit_start = time.perf_counter()
-            fit_categories = category_specs
-
-            for multiplicity_key, multiplicity_label in fit_categories:
-                try:
-                    summary, data_histograms = (
-                        run_one_shared_template_fit(
-                            period,
-                            multiplicity_key,
-                            multiplicity_label,
-                            sample_payloads,
-                            args,
-                        )
-                    )
-
-                    fit_plot_path = (
-                        fit_dir
-                        / f"{period.key}_{multiplicity_key}"
-                        "_template_fit.png"
-                    )
-                    plot_shared_template_fit(
-                        fit_plot_path,
-                        period.label,
-                        multiplicity_label,
-                        summary,
-                        data_histograms,
-                        args,
-                    )
-
-                    consistency_plot_path = (
-                        fit_dir
-                        / f"{period.key}_{multiplicity_key}"
-                        "_fraction_consistency.png"
-                    )
-                    plot_fraction_consistency(
-                        consistency_plot_path,
-                        period.label,
-                        multiplicity_label,
-                        summary,
-                    )
-
-                    fit_row = flatten_shared_fit_row(
-                        period,
-                        multiplicity_key,
-                        multiplicity_label,
-                        summary,
-                    )
-                    fit_rows.append(fit_row)
-                    period_fit_payload[multiplicity_key] = {
-                        "plot": str(fit_plot_path),
-                        "fraction_consistency_plot": str(
-                            consistency_plot_path
-                        ),
-                        **shared_fit_to_dict(summary),
-                    }
-
-                    log(
-                        f"{period.label} {multiplicity_label}: "
-                        f"raw f_pi0={summary.raw_f_pi0:.6f} +/- "
-                        f"{summary.raw_f_pi0_err:.6f}; "
-                        f"morphed f_pi0={summary.f_pi0:.6f} +/- "
-                        f"{summary.f_pi0_err:.6f}; "
-                        f"Delta={summary.f_pi0-summary.raw_f_pi0:+.6f}; "
-                        f"raw D/ndf={summary.raw_deviance:.2f}/"
-                        f"{summary.raw_ndf}; "
-                        f"morph D/ndf={summary.deviance:.2f}/"
-                        f"{summary.ndf}"
-                    )
-                except Exception as exc:
-                    failure = {
-                        "success": False,
-                        "message": str(exc),
-                    }
-                    period_fit_payload[multiplicity_key] = failure
-                    if not args.allow_data_fit_failures:
-                        raise
-                    # endif
-                    log(
-                        f"WARNING: {period.label} {multiplicity_label} "
-                        f"template fit failed: {exc}"
-                    )
-                # endtry
-            # endfor
-        # endif
-
-        fit_payloads[period.key] = period_fit_payload
-
-        period_audit: Dict[str, object] = {
-            "plots": {
-                key: str(value)
-                for key, value in shape_plot_paths.items()
-            },
-            "template_fits": period_fit_payload,
-            "fit_stage_seconds": fit_stage_seconds,
-            "samples": {},
-        }
-        for sample_key, _, _ in RAW_SHAPE_SAMPLE_INFO:
-            payload = sample_payloads[sample_key]
-            multiplicity_rows.append(
-                payload["photon_multiplicity"]
-            )
-            period_audit["samples"][sample_key] = {
-                "sample_label": payload["sample_label"],
-                "path": payload["path"],
-                "tree_entries": payload["tree_entries"],
-                "entries_read": payload["entries_read"],
-                "resolved_branches": payload["resolved_branches"],
-                "multiplicity_audit": payload[
-                    "multiplicity_audit"
-                ],
-                "cutflow": payload["cutflow"],
-                "photon_multiplicity": payload[
-                    "photon_multiplicity"
-                ],
-                "pi0_mass_diagnostics": payload.get(
-                    "pi0_mass_diagnostics",
-                    {},
-                ),
-                **{
-                    category_key: {
-                        "before_histograms": serializable_histograms(
-                            payload[category_key]["before_histograms"]
-                        ),
-                        "after_histograms": serializable_histograms(
-                            payload[category_key]["after_histograms"]
-                        ),
-                    }
-                    for category_key, _ in category_specs
-                },
-            }
-        # endfor
-        audit[period.key] = period_audit
-    # endfor
-
-    multiplicity_rows.sort(
-        key=lambda row: (
-            period_order.get(str(row["period"]), 999),
-            sample_order.get(str(row["sample"]), 999),
-        )
-    )
-    write_photon_multiplicity_outputs(
-        data_root,
-        multiplicity_rows,
-    )
-
-    if not args.skip_data_template_fits:
-        write_template_fit_outputs(
-            fit_dir,
-            fit_rows,
-            fit_payloads,
-        )
-    # endif
-
-    with open(
-        data_root / "shape_comparison_audit.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(audit, handle, indent=2)
-    # endwith
-
-    for row in multiplicity_rows:
-        log(
-            f"{row['period_label']} {row['sample_label']}: "
-            f"events by photon multiplicity "
-            f"1={row['events_with_1_photon']:,}, "
-            f"2={row['events_with_2_photons']:,}, "
-            f"3={row['events_with_3_photons']:,}, "
-            f"4={row['events_with_4_photons']:,}, "
-            f"5={row['events_with_5_photons']:,}, "
-            f"6={row['events_with_6_photons']:,}, "
-            f">6={row['events_with_more_than_6_photons']:,}"
-        )
-    # endfor
-
-    return {
-        "periods": audit,
-        "photon_multiplicity_rows": multiplicity_rows,
-        "template_fit_rows": fit_rows,
-        "template_fit_payloads": fit_payloads,
-    }
-
-
-
-def process_period_mc_only(
-    period: PeriodConfig,
-    args_dict: Mapping[str, object],
-) -> Tuple[str, List[Dict[str, object]], Dict[str, object]]:
-    args = argparse.Namespace(**args_dict)
-    period_dir = (
-        Path(args.output_dir)
-        / "mc"
-        / period.key
-    )
-    period_dir.mkdir(parents=True, exist_ok=True)
-
-    opportunities, _, cutflow = read_opportunities(
-        period.pi0_epg_mc,
-        period.beam_energy_GeV,
-        "AAOGEN epgamma opportunities",
-        args,
-        deduplicate=True,
-        collect_candidates=False,
-    )
-    emit_cutflow_diagnostics(
-        period_dir,
-        period.label,
-        {"aaogen_epgamma": cutflow},
-    )
-
-    epgg, epgg_diagnostics = read_epgg(
-        period.pi0_epgg_mc,
-        period.beam_energy_GeV,
-        "AAOGEN",
-        args,
-    )
-    match = match_truth_partners(
-        opportunities,
-        epgg,
-        "mc",
-        args,
-    )
-
-    summary = match.summary
-    log(
-        f"{period.label} AAOGEN: opportunities="
-        f"{summary['opportunities']:,}, identity="
-        f"{summary['identity_matches']:,}, valid daughter solution="
-        f"{summary['valid_solution_opportunities']:,}, tag matched="
-        f"{summary['tag_matched']:,}, partner above "
-        f"{args.found_probe_E_min:g} GeV="
-        f"{summary['partner_above_threshold']:,}, reconstructed="
-        f"{summary['matched_opportunities']:,}"
-    )
-
-    plot_expected_probe_diagnostics(
-        period_dir / "selected_opportunity_kinematics.png",
-        period.label,
-        {"AAOGEN": opportunities},
-    )
-    plot_matching_residuals_mc_only(
-        period_dir / "matching_residuals.png",
-        period.label,
-        match,
-    )
-
-    official_rows: List[MCEfficiencyRow] = []
-    for topology in ("FT", "FD"):
-        mask = topology_mask(opportunities, topology)
-        row = efficiency_row(
-            period,
-            topology,
-            mask,
-            match.matched,
-        )
-        official_rows.append(row)
-        log(
-            f"{period.label} {topology}: "
-            f"N_reconstructed={row.reconstructed:,}, "
-            f"N_opportunities={row.opportunities:,}, "
-            f"epsilon_MC={row.efficiency:.6f} +/- "
-            f"{row.efficiency_error:.6f}"
-        )
-    # endfor
-
-    official_dicts = [asdict(row) for row in official_rows]
-    for payload, topology in zip(official_dicts, ("FT", "FD")):
-        mask = topology_mask(opportunities, topology)
-        truth_qualified = (
-            mask
-            & np.isfinite(match.tag_angle_deg)
-            & np.isfinite(match.tag_relative_E)
-            & np.isfinite(match.partner_E)
-            & (match.tag_angle_deg < args.tag_match_angle_max_deg)
-            & (match.tag_relative_E < args.tag_match_relative_E_max)
-            & (match.partner_E >= args.found_probe_E_min)
-        )
-        truth_probe_residual_ok = (
-            truth_qualified
-            & np.isfinite(match.probe_angle_deg)
-            & np.isfinite(match.probe_relative_E)
-            & (match.probe_angle_deg < args.probe_match_angle_max_deg)
-            & (match.probe_relative_E < args.probe_match_relative_E_max)
-        )
-        n_topology = int(np.count_nonzero(mask))
-        n_truth_qualified = int(np.count_nonzero(truth_qualified))
-        n_residual_ok = int(np.count_nonzero(truth_probe_residual_ok))
-        payload["legacy_truth_qualified_opportunities"] = n_truth_qualified
-        payload["legacy_truth_qualified_fraction"] = (
-            n_truth_qualified / n_topology if n_topology else math.nan
-        )
-        payload["legacy_truth_probe_residual_passes"] = n_residual_ok
-        payload["legacy_probe_residual_pass_fraction_given_truth"] = (
-            n_residual_ok / n_truth_qualified if n_truth_qualified else math.nan
-        )
-        payload["legacy_quantity_interpretation"] = (
-            "Broad reconstructed low-tag truth-association fraction; this stage "
-            "does not search the epgamma event for a reconstructed high-energy "
-            "partner photon. With --require-probe-residual-match off (default), "
-            "the reported legacy efficiency equals the truth-qualified fraction."
-        )
-    # endfor
-    write_dict_rows(
-        period_dir / "integrated_mc_efficiency.csv",
-        official_dicts,
-    )
-
-    topology_masks = {
-        topology: topology_mask(opportunities, topology)
-        for topology in ("FT", "FD")
-    }
-
-    energy_edges = np.linspace(
-        args.probe_E_min,
-        args.probe_E_max,
-        args.energy_bins + 1,
-    )
-    theta_edges = np.linspace(
-        args.ft_theta_min,
-        args.fd_theta_max,
-        args.theta_bins + 1,
-    )
-    phi_edges = np.linspace(
-        0.0,
-        2.0 * math.pi,
-        args.phi_bins + 1,
-    )
-
-    dependence_specs = {
-        "probe_energy": (
-            opportunities.probe_E,
-            energy_edges,
-            "Predicted probe energy (GeV)",
-        ),
-        "probe_theta": (
-            np.degrees(opportunities.probe_theta),
-            theta_edges,
-            "Predicted probe theta (deg)",
-        ),
-        "probe_phi": (
-            np.mod(opportunities.probe_phi, 2.0 * math.pi),
-            phi_edges,
-            "Predicted probe phi (rad)",
-        ),
-    }
-
-    binned_outputs: Dict[str, Dict[str, List[Dict[str, object]]]] = {}
-    for name, (values, edges, label) in dependence_specs.items():
-        topology_rows: Dict[str, List[Dict[str, object]]] = {}
-        for topology, mask in topology_masks.items():
-            rows = binned_efficiency(
-                values,
-                mask,
-                match.matched,
-                edges,
-            )
-            topology_rows[topology] = rows
-            write_dict_rows(
-                period_dir / f"mc_efficiency_vs_{name}_{topology.lower()}.csv",
-                rows,
-            )
-        # endfor
-
-        binned_outputs[name] = topology_rows
-        plot_efficiency_dependence(
-            period_dir / f"mc_efficiency_vs_{name}.png",
-            f"{period.label}: AAOGEN photon efficiency",
-            label,
-            topology_rows,
-            args.minimum_bin_opportunities,
-        )
-    # endfor
-
-    sector_rows = plot_fd_sector_diagnostics(
-        period_dir / "fd_sector_diagnostic_efficiency.png",
-        period.label,
-        opportunities,
-        match.matched,
-    )
-    write_dict_rows(
-        period_dir / "fd_sector_diagnostic_efficiency.csv",
-        sector_rows,
-    )
-
-    metadata = {
-        "period": {
-            "key": period.key,
-            "label": period.label,
-            "beam_energy_GeV": period.beam_energy_GeV,
-            "pi0_epg_mc": period.pi0_epg_mc,
-            "pi0_epgg_mc": period.pi0_epgg_mc,
-        },
-        "arguments": vars(args),
-        "opportunity_cutflow": cutflow,
-        "epgammagamma_reconstruction": epgg_diagnostics,
-        "matching": summary,
-        "integrated_efficiencies": official_dicts,
-        "fd_sector_diagnostics": sector_rows,
-        "binned_efficiencies": binned_outputs,
-    }
-    with open(
-        period_dir / "mc_efficiency_metadata.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(metadata, handle, indent=2)
-    # endwith
-
-    return period.key, official_dicts, metadata
-
-
-
-def simple_data_event_key(
-    runnum: np.ndarray,
-    eventnum: np.ndarray,
-) -> np.ndarray:
-    """
-    Build an exact structured (runnum, evnum) key for data entries.
-    """
-    runnum = np.asarray(runnum, dtype=np.int64)
-    eventnum = np.asarray(eventnum, dtype=np.int64)
-    keys = np.empty(
-        runnum.size,
-        dtype=[("runnum", "<i8"), ("eventnum", "<i8")],
-    )
-    keys["runnum"] = runnum
-    keys["eventnum"] = eventnum
-    return keys
-
-
-def simple_binomial_error(
-    matched: int,
-    expected: int,
-) -> float:
-    if expected <= 0:
-        return math.nan
-    # endif
-    efficiency = matched / expected
-    return float(
-        math.sqrt(
-            max(efficiency * (1.0 - efficiency), 0.0)
-            / expected
-        )
-    )
-
-
-
-SIMPLE_DIAGNOSTIC_SPECS: Mapping[str, Tuple[int, float, float]] = {
-    "low_energy": (100, 0.0, 2.0),
-    "low_theta_deg": (100, 0.0, 40.0),
-    "predicted_theta_deg": (100, 0.0, 40.0),
-    "mgg_before": (120, 0.0, 0.40),
-    "high_energy_before": (100, 2.0, 9.5),
-    "high_energy_after": (100, 2.0, 9.5),
-}
-
-
-def simple_empty_diagnostic_histograms() -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
-    result: Dict[str, Dict[str, Dict[str, np.ndarray]]] = {}
-    for region in ("FT", "FD"):
-        result[region] = {}
-        for name, (bins, low, high) in SIMPLE_DIAGNOSTIC_SPECS.items():
-            edges = np.linspace(low, high, bins + 1)
-            result[region][name] = {
-                "edges": edges,
-                "counts": np.zeros(bins, dtype=np.int64),
-            }
-        # endfor
-    # endfor
-    return result
-
-
-def simple_fill_diagnostic_histogram(
-    histograms: Dict[str, Dict[str, Dict[str, np.ndarray]]],
-    region: str,
-    name: str,
-    values: np.ndarray,
-) -> None:
-    values = np.asarray(values, dtype=float)
-    values = values[np.isfinite(values)]
-    if values.size == 0:
-        return
-    # endif
-
-    edges = np.asarray(
-        histograms[region][name]["edges"],
-        dtype=float,
-    )
-    counts, _ = np.histogram(values, bins=edges)
-    histograms[region][name]["counts"] += counts.astype(
-        np.int64,
-        copy=False,
-    )
-
-
-def simple_finalize_diagnostic_histograms(
-    histograms: Mapping[str, Mapping[str, Mapping[str, np.ndarray]]],
-) -> Dict[str, object]:
-    payload: Dict[str, object] = {}
-    for region in ("FT", "FD"):
-        payload[region] = {}
-        for name in SIMPLE_DIAGNOSTIC_SPECS:
-            edges = np.asarray(
-                histograms[region][name]["edges"],
-                dtype=float,
-            )
-            counts = np.asarray(
-                histograms[region][name]["counts"],
-                dtype=np.int64,
-            )
-            total = int(np.sum(counts))
-            unit_area = (
-                counts.astype(float) / total
-                if total > 0
-                else np.zeros_like(counts, dtype=float)
-            )
-            payload[region][name] = {
-                "edges": edges,
-                "counts": counts,
-                "unit_area": unit_area,
-                "in_range_entries": total,
-            }
-        # endfor
-    # endfor
-    return payload
-
-
-def simple_region_key(detector_code: int) -> Optional[str]:
-    if int(detector_code) == 0:
-        return "FT"
-    # endif
-    if int(detector_code) == 1:
-        return "FD"
-    # endif
-    return None
-
-
-def simple_three_category_metrics(
-    n_low_total: int,
-    n_same_event_high: int,
-    n_pi0_pair: int,
-) -> Dict[str, object]:
-    """
-    Convert the raw --simple counts into the three-category bookkeeping.
-
-    Category A: measured low/high pair passes the pi0 mass window.
-    Category B: a >2 GeV same-event photon exists, but no pair passes.
-    Category C: no >2 GeV same-event photon exists.
-
-    The provisional unmatched-pi0 purity is taken from A/(A+B).
-    """
-    total = int(n_low_total)
-    high = int(n_same_event_high)
-    found = int(n_pi0_pair)
-
-    if total < 0 or high < 0 or found < 0:
-        raise ValueError("Simple three-category counts must be non-negative.")
-    # endif
-    if high > total:
-        raise ValueError(
-            f"Simple three-category bookkeeping invalid: high={high} > total={total}."
-        )
-    # endif
-    if found > high:
-        raise ValueError(
-            f"Simple three-category bookkeeping invalid: found={found} > high={high}."
-        )
-    # endif
-
-    measured_nonpi0 = high - found
-    no_high = total - high
-
-    pair_purity = (
-        found / high
-        if high > 0
-        else math.nan
-    )
-    pair_purity_error = simple_binomial_error(
-        found,
-        high,
-    )
-
-    estimated_missed_pi0 = (
-        pair_purity * no_high
-        if np.isfinite(pair_purity)
-        else math.nan
-    )
-
-    effective_pi0_denominator = (
-        found + estimated_missed_pi0
-        if np.isfinite(estimated_missed_pi0)
-        else math.nan
-    )
-    purity_weighted_efficiency = (
-        found / effective_pi0_denominator
-        if np.isfinite(effective_pi0_denominator)
-        and effective_pi0_denominator > 0.0
-        else math.nan
-    )
-
-    high_partner_fraction = (
-        high / total
-        if total > 0
-        else math.nan
-    )
-    high_partner_fraction_error = simple_binomial_error(
-        high,
-        total,
-    )
-
-    legacy_window_efficiency = (
-        found / total
-        if total > 0
-        else math.nan
-    )
-    legacy_window_efficiency_error = simple_binomial_error(
-        found,
-        total,
-    )
-
-    algebraic_difference = (
-        purity_weighted_efficiency - high_partner_fraction
-        if np.isfinite(purity_weighted_efficiency)
-        and np.isfinite(high_partner_fraction)
-        else math.nan
-    )
-
-    return {
-        "expected_low_energy_tags": total,
-        "same_event_high_energy_partner": high,
-        "matched_pi0_mass_partner": found,
-        "category_A_found_pi0_pair": found,
-        "category_B_high_nonpi0_pair": measured_nonpi0,
-        "category_C_no_high_partner": no_high,
-        "observed_pair_pi0_purity": pair_purity,
-        "observed_pair_pi0_purity_error": pair_purity_error,
-        "estimated_missed_pi0_from_no_high": estimated_missed_pi0,
-        "effective_pi0_opportunities": effective_pi0_denominator,
-        "legacy_window_efficiency": legacy_window_efficiency,
-        "legacy_window_efficiency_error": legacy_window_efficiency_error,
-        "high_partner_fraction": high_partner_fraction,
-        "high_partner_fraction_error": high_partner_fraction_error,
-        "purity_weighted_efficiency": purity_weighted_efficiency,
-        "purity_weighted_efficiency_error": high_partner_fraction_error,
-        "purity_weighted_minus_high_partner_fraction": algebraic_difference,
-        # Keep the historical generic keys pointed at the new provisional
-        # estimator so all downstream --simple comparisons automatically use
-        # the upgraded definition.
-        "efficiency": purity_weighted_efficiency,
-        "efficiency_error": high_partner_fraction_error,
-    }
-
-def process_period_simple_data_efficiency(
-    period: PeriodConfig,
-    args_dict: Mapping[str, object],
-) -> Tuple[str, Dict[str, object]]:
-    """
-    Temporary direct data efficiency estimator requested by --simple.
-
-    Denominator:
-        every p2_p < 2 GeV photon entry is one expected pi0 opportunity.
-
-    Numerator:
-        the exact same (runnum, evnum) must contain at least one p2_p > 2 GeV
-        photon that forms 0.11 < M_gamma_gamma < 0.16 GeV with the low-energy
-        photon.
-
-    Predicted detector region is still obtained from the missing-partner
-    four-vector reconstructed from beam+target-e-p-low_gamma.
-    """
-    start_time = time.perf_counter()
-    args = argparse.Namespace(**args_dict)
-    path = period.epg_data
-
-    total_entries, available_keys = require_tree(path)
-    logical_names = (
-        "runnum", "eventnum",
-        "e_p", "e_theta", "e_phi",
-        "p_p", "p_theta", "p_phi",
-        "p2_p", "p2_theta", "p2_phi",
-    )
-    resolved = resolve_branches_from_keys(path, available_keys, logical_names)
-    expressions = sorted(set(resolved.values()))
-
-    entry_stop = (
-        min(total_entries, int(args.max_events))
-        if args.max_events is not None
-        else total_entries
-    )
-
-    low_key_chunks: List[np.ndarray] = []
-    low_detector_chunks: List[np.ndarray] = []
-    low_sector_chunks: List[np.ndarray] = []
-    low_probe_E_chunks: List[np.ndarray] = []
-    low_probe_theta_deg_chunks: List[np.ndarray] = []
-    low_E_chunks: List[np.ndarray] = []
-    low_theta_chunks: List[np.ndarray] = []
-    low_phi_chunks: List[np.ndarray] = []
-
-    high_key_chunks: List[np.ndarray] = []
-    high_E_chunks: List[np.ndarray] = []
-    high_theta_chunks: List[np.ndarray] = []
-    high_phi_chunks: List[np.ndarray] = []
-
-    entries_read = 0
-    finite_identity_entries = 0
-    finite_low_kinematics = 0
-    low_entries_total = 0
-    high_entries_total = 0
-    exactly_2GeV_entries = 0
-
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        entry_stop=entry_stop,
-        library="np",
-    ):
-        if not arrays:
-            continue
-        # endif
-
-        chunk_size = len(next(iter(arrays.values())))
-        entries_read += chunk_size
-        values = {
-            name: np.asarray(arrays[resolved[name]], dtype=float)
-            for name in logical_names
-        }
-
-        run_f = values["runnum"]
-        event_f = values["eventnum"]
-        photon_E = values["p2_p"]
-        photon_theta = values["p2_theta"]
-        photon_phi = values["p2_phi"]
-
-        valid_identity = np.isfinite(run_f) & np.isfinite(event_f)
-        finite_identity_entries += int(np.count_nonzero(valid_identity))
-
-        finite_photon = (
-            valid_identity
-            & np.isfinite(photon_E)
-            & np.isfinite(photon_theta)
-            & np.isfinite(photon_phi)
-        )
-        low_mask = finite_photon & (photon_E < 2.0)
-        high_mask = finite_photon & (photon_E > 2.0)
-        exactly_mask = finite_photon & (photon_E == 2.0)
-
-        low_entries_total += int(np.count_nonzero(low_mask))
-        high_entries_total += int(np.count_nonzero(high_mask))
-        exactly_2GeV_entries += int(np.count_nonzero(exactly_mask))
-
-        if np.any(high_mask):
-            high_key_chunks.append(simple_data_event_key(
-                np.rint(run_f[high_mask]).astype(np.int64),
-                np.rint(event_f[high_mask]).astype(np.int64),
-            ))
-            high_E_chunks.append(np.asarray(photon_E[high_mask], dtype=float))
-            high_theta_chunks.append(np.asarray(photon_theta[high_mask], dtype=float))
-            high_phi_chunks.append(np.asarray(photon_phi[high_mask], dtype=float))
-        # endif
-
-        if not np.any(low_mask):
-            continue
-        # endif
-
-        low_required_finite = low_mask.copy()
-        for name in ("e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi"):
-            low_required_finite &= np.isfinite(values[name])
-        # endfor
-        finite_low_kinematics += int(np.count_nonzero(low_required_finite))
-        if not np.any(low_required_finite):
-            continue
-        # endif
-
-        probe = reconstruct_probe(
-            period.beam_energy_GeV,
-            values["e_p"][low_required_finite],
-            values["e_theta"][low_required_finite],
-            values["e_phi"][low_required_finite],
-            values["p_p"][low_required_finite],
-            values["p_theta"][low_required_finite],
-            values["p_phi"][low_required_finite],
-            photon_E[low_required_finite],
-            photon_theta[low_required_finite],
-            photon_phi[low_required_finite],
-        )
-        probe_theta_deg = np.degrees(
-            np.asarray(probe["theta"], dtype=float)
-        )
-        predicted_detector, predicted_sector = classify_probe(
-            probe_theta_deg,
-            np.asarray(probe["phi"], dtype=float),
-            args,
-        )
-
-        low_key_chunks.append(simple_data_event_key(
-            np.rint(run_f[low_required_finite]).astype(np.int64),
-            np.rint(event_f[low_required_finite]).astype(np.int64),
-        ))
-        low_detector_chunks.append(np.asarray(predicted_detector, dtype=np.int16))
-        low_sector_chunks.append(np.asarray(predicted_sector, dtype=np.int16))
-        low_probe_E_chunks.append(
-            np.asarray(probe["E"], dtype=float)
-        )
-        low_probe_theta_deg_chunks.append(
-            np.asarray(probe_theta_deg, dtype=float)
-        )
-        low_E_chunks.append(
-            np.asarray(photon_E[low_required_finite], dtype=float)
-        )
-        low_theta_chunks.append(np.asarray(photon_theta[low_required_finite], dtype=float))
-        low_phi_chunks.append(np.asarray(photon_phi[low_required_finite], dtype=float))
-    # endfor
-
-    if low_key_chunks:
-        low_keys = np.concatenate(low_key_chunks)
-        low_detector = np.concatenate(low_detector_chunks)
-        low_sector = np.concatenate(low_sector_chunks)
-        low_probe_E = (
-            np.concatenate(low_probe_E_chunks)
-            if low_probe_E_chunks
-            else np.empty(0, dtype=float)
-        )
-        low_probe_theta_deg = (
-            np.concatenate(low_probe_theta_deg_chunks)
-            if low_probe_theta_deg_chunks
-            else np.empty(0, dtype=float)
-        )
-        low_E = np.concatenate(low_E_chunks)
-        low_theta = np.concatenate(low_theta_chunks)
-        low_phi = np.concatenate(low_phi_chunks)
-
-        if low_probe_E.size != low_E.size:
-            raise RuntimeError(
-                f"{period.label} simple DATA diagnostic bookkeeping error: "
-                f"probe-E entries={low_probe_E.size}, low tags={low_E.size}."
-            )
-        # endif
-        if low_probe_theta_deg.size != low_E.size:
-            raise RuntimeError(
-                f"{period.label} simple DATA diagnostic bookkeeping error: "
-                f"probe-theta entries={low_probe_theta_deg.size}, "
-                f"low tags={low_E.size}."
-            )
-        # endif
-    else:
-        low_keys = np.empty(0, dtype=[("runnum", "<i8"), ("eventnum", "<i8")])
-        low_detector = np.empty(0, dtype=np.int16)
-        low_sector = np.empty(0, dtype=np.int16)
-        low_probe_E = np.empty(0, dtype=float)
-        low_probe_theta_deg = np.empty(0, dtype=float)
-        low_E = np.empty(0, dtype=float)
-        low_theta = np.empty(0, dtype=float)
-        low_phi = np.empty(0, dtype=float)
-    # endif
-
-    if high_key_chunks:
-        high_keys = np.concatenate(high_key_chunks)
-        high_E = np.concatenate(high_E_chunks)
-        high_theta = np.concatenate(high_theta_chunks)
-        high_phi = np.concatenate(high_phi_chunks)
-        order = np.argsort(high_keys, kind="stable")
-        high_keys = high_keys[order]
-        high_E = high_E[order]
-        high_theta = high_theta[order]
-        high_phi = high_phi[order]
-    else:
-        high_keys = np.empty(0, dtype=[("runnum", "<i8"), ("eventnum", "<i8")])
-        high_E = np.empty(0, dtype=float)
-        high_theta = np.empty(0, dtype=float)
-        high_phi = np.empty(0, dtype=float)
-    # endif
-
-    diagnostic_histograms = simple_empty_diagnostic_histograms()
-    pair_diagnostic_values: Dict[str, Dict[str, List[np.ndarray]]] = {
-        region: {
-            "mgg_before": [],
-            "high_energy_before": [],
-            "high_energy_after": [],
-        }
-        for region in ("FT", "FD")
-    }
-
-    for region, region_mask in (
-        ("FT", low_detector == 0),
-        ("FD", low_detector == 1),
-    ):
-        simple_fill_diagnostic_histogram(
-            diagnostic_histograms,
-            region,
-            "low_energy",
-            low_E[region_mask],
-        )
-        simple_fill_diagnostic_histogram(
-            diagnostic_histograms,
-            region,
-            "low_theta_deg",
-            np.degrees(low_theta[region_mask]),
-        )
-        simple_fill_diagnostic_histogram(
-            diagnostic_histograms,
-            region,
-            "predicted_theta_deg",
-            low_probe_theta_deg[region_mask],
-        )
-    # endfor
-
-    same_event_high_exists = np.zeros(low_keys.size, dtype=bool)
-    pi0_mass_partner_found = np.zeros(low_keys.size, dtype=bool)
-
-    if low_keys.size > 0 and high_keys.size > 0:
-        left = np.searchsorted(high_keys, low_keys, side="left")
-        right = np.searchsorted(high_keys, low_keys, side="right")
-        same_event_high_exists = right > left
-
-        mlow2 = float(PI0_MASS_WINDOW[0]) ** 2
-        mhigh2 = float(PI0_MASS_WINDOW[1]) ** 2
-
-        for i in np.flatnonzero(same_event_high_exists):
-            start = int(left[i])
-            stop = int(right[i])
-            hE = high_E[start:stop]
-            htheta = high_theta[start:stop]
-            hphi = high_phi[start:stop]
-
-            cos_open = (
-                math.cos(float(low_theta[i])) * np.cos(htheta)
-                + math.sin(float(low_theta[i])) * np.sin(htheta)
-                * np.cos(float(low_phi[i]) - hphi)
-            )
-            cos_open = np.clip(cos_open, -1.0, 1.0)
-            m2 = 2.0 * float(low_E[i]) * hE * (1.0 - cos_open)
-            finite_mass = np.isfinite(m2)
-            passing_pair = (
-                finite_mass
-                & (m2 > mlow2)
-                & (m2 < mhigh2)
-            )
-
-            region = simple_region_key(int(low_detector[i]))
-            if region is not None:
-                pair_diagnostic_values[region][
-                    "mgg_before"
-                ].append(
-                    np.sqrt(
-                        np.clip(
-                            m2[finite_mass],
-                            0.0,
-                            None,
-                        )
-                    )
-                )
-                pair_diagnostic_values[region][
-                    "high_energy_before"
-                ].append(hE[finite_mass])
-                if np.any(passing_pair):
-                    pair_diagnostic_values[region][
-                        "high_energy_after"
-                    ].append(hE[passing_pair])
-                # endif
-            # endif
-
-            if np.any(passing_pair):
-                pi0_mass_partner_found[i] = True
-            # endif
-        # endfor
-    # endif
-
-    region_specs = [
-        ("FT", 0, 0),
-        *[(f"FD sector {sector}", 1, sector) for sector in range(1, 7)],
-    ]
-
-    for region in ("FT", "FD"):
-        for name in (
-            "mgg_before",
-            "high_energy_before",
-            "high_energy_after",
-        ):
-            chunks = pair_diagnostic_values[region][name]
-            if chunks:
-                values = np.concatenate(chunks)
-                simple_fill_diagnostic_histogram(
-                    diagnostic_histograms,
-                    region,
-                    name,
-                    values,
-                )
-            # endif
-        # endfor
-    # endfor
-
-    rows: List[Dict[str, object]] = []
-    for region_label, detector_code, sector_code in region_specs:
-        region_mask = low_detector == detector_code
-        if detector_code == 1:
-            region_mask &= low_sector == sector_code
-        # endif
-
-        expected = int(np.count_nonzero(region_mask))
-        same_event = int(
-            np.count_nonzero(
-                region_mask & same_event_high_exists
-            )
-        )
-        found = int(
-            np.count_nonzero(
-                region_mask & pi0_mass_partner_found
-            )
-        )
-        metrics = simple_three_category_metrics(
-            expected,
-            same_event,
-            found,
-        )
-        rows.append({
-            "period": period.key,
-            "period_label": period.label,
-            "region": region_label,
-            "detector_code": detector_code,
-            "sector": sector_code,
-            **metrics,
-        })
-    # endfor
-
-    classified_mask = (
-        (low_detector == 0)
-        | ((low_detector == 1) & (low_sector >= 1) & (low_sector <= 6))
-    )
-
-    payload: Dict[str, object] = {
-        "period": period.key,
-        "period_label": period.label,
-        "beam_energy_GeV": period.beam_energy_GeV,
-        "path": path,
-        "tree_entries": total_entries,
-        "entries_read": entries_read,
-        "threshold_GeV": 2.0,
-        "pi0_mass_window_GeV": [float(PI0_MASS_WINDOW[0]), float(PI0_MASS_WINDOW[1])],
-        "low_definition": "p2_p < 2 GeV",
-        "high_definition": "p2_p > 2 GeV",
-        "matching": "same (runnum,eventnum) and 0.11<M_gamma_gamma<0.16 GeV",
-        "finite_identity_entries": finite_identity_entries,
-        "low_entries_total": low_entries_total,
-        "high_entries_total": high_entries_total,
-        "exactly_2GeV_entries_excluded": exactly_2GeV_entries,
-        "low_entries_with_finite_reconstruction_kinematics": finite_low_kinematics,
-        "low_opportunities_built": int(low_keys.size),
-        "high_energy_entries_stored": int(high_keys.size),
-        "low_opportunities_with_same_event_high_partner": int(np.count_nonzero(same_event_high_exists)),
-        "low_opportunities_with_pi0_mass_partner": int(np.count_nonzero(pi0_mass_partner_found)),
-        "classified_low_opportunities": int(np.count_nonzero(classified_mask)),
-        "unclassified_low_opportunities": int(np.count_nonzero(~classified_mask)),
-        "low_opportunities_with_reconstructed_probe_E_gt_2": int(np.count_nonzero(np.isfinite(low_probe_E) & (low_probe_E > 2.0))),
-        "low_opportunities_with_reconstructed_probe_E_le_2": int(np.count_nonzero(np.isfinite(low_probe_E) & (low_probe_E <= 2.0))),
-        "rows": rows,
-        "diagnostic_histograms": (
-            simple_finalize_diagnostic_histograms(
-                diagnostic_histograms
-            )
-        ),
-        "elapsed_seconds": elapsed_seconds(start_time),
-    }
-    return period.key, payload
-
-
-def print_simple_data_efficiency_block(
-    title: str,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    log("=" * 104)
-    log(f"SIMPLE THREE-CATEGORY ESTIMATOR: {title}")
-    log(
-        "A=found pi0 pair (same-event E_high>2 GeV and "
-        "0.11<Mgg<0.16 GeV); "
-        "B=E_high>2 exists but no pi0-mass pair; "
-        "C=no E_high>2 partner."
-    )
-    log(
-        "B is rejected as explicitly non-pi0-like. "
-        "For C, provisional pi0 purity is A/(A+B)."
-    )
-    log(
-        "epsilon_purity = A / [A + (A/(A+B))*C]. "
-        "With this same-purity assumption it is algebraically equal to "
-        "(A+B)/(A+B+C)."
-    )
-    log("Region is the PREDICTED missing-partner FT/FD sector.")
-
-    for row in rows:
-        region = str(row["region"])
-        a_count = int(row["category_A_found_pi0_pair"])
-        b_count = int(row["category_B_high_nonpi0_pair"])
-        c_count = int(row["category_C_no_high_partner"])
-        purity = float(row["observed_pair_pi0_purity"])
-        estimated_missed = float(
-            row["estimated_missed_pi0_from_no_high"]
-        )
-        efficiency = float(row["purity_weighted_efficiency"])
-        error = float(row["purity_weighted_efficiency_error"])
-        legacy = float(row["legacy_window_efficiency"])
-
-        if np.isfinite(efficiency):
-            log(
-                f"  {region:<11s}: "
-                f"A={a_count:,}, B={b_count:,}, C={c_count:,}; "
-                f"pair purity={100.0*purity:6.2f}%; "
-                f"estimated missed pi0={estimated_missed:,.1f}; "
-                f"epsilon_purity={100.0*efficiency:6.2f}% "
-                f"+/- {100.0*error:5.2f}% "
-                f"[legacy A/N_low={100.0*legacy:6.2f}%]"
-            )
-        else:
-            log(
-                f"  {region:<11s}: "
-                f"A={a_count:,}, B={b_count:,}, C={c_count:,}; "
-                "provisional purity/efficiency undefined."
-            )
-        # endif
-    # endfor
-
-    log("=" * 104)
-
-
-
-def write_simple_rows_csv(
-    path: Path,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    """
-    Write the compact --simple efficiency table without relying on any
-    non-existent global CSV helper.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-
-    if not rows:
-        with open(path, "w", encoding="utf-8", newline=""):
-            pass
-        # endwith
-        return
-    # endif
-
-    fieldnames: List[str] = []
-    for row in rows:
-        for key in row.keys():
-            key_string = str(key)
-            if key_string not in fieldnames:
-                fieldnames.append(key_string)
-            # endif
-        # endfor
-    # endfor
-
-    with open(
-        path,
-        "w",
-        encoding="utf-8",
-        newline="",
-    ) as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=fieldnames,
-            extrasaction="ignore",
-        )
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(
-                {
-                    key: row.get(key, "")
-                    for key in fieldnames
-                }
-            )
-
-
-def simple_json_default(value: object) -> object:
-    """
-    JSON serializer used only by the temporary --simple audit.
-
-    Convert the NumPy scalar/array and Path types that can occur in the
-    metadata payload to ordinary JSON-compatible Python objects.
-    """
-    if isinstance(value, np.integer):
-        return int(value)
-    # endif
-    if isinstance(value, np.floating):
-        return float(value)
-    # endif
-    if isinstance(value, np.bool_):
-        return bool(value)
-    # endif
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    # endif
-    if isinstance(value, Path):
-        return str(value)
-    # endif
-
-    raise TypeError(
-        f"Object of type {type(value).__name__} is not JSON serializable"
-    )
-
-        # endfor
-    # endwith
-
-
-def simple_mc_event_key(
-    arrays_by_logical_name: Mapping[str, np.ndarray],
-    mask: np.ndarray,
-    decimals: int,
-) -> np.ndarray:
-    """
-    Build the established reconstructed-MC event identity from electron and
-    proton kinematics for the selected entries.
-    """
-    selected = {
-        name: np.asarray(arrays_by_logical_name[name], dtype=float)[mask]
-        for name in (
-            "e_p",
-            "e_theta",
-            "e_phi",
-            "p_p",
-            "p_theta",
-            "p_phi",
-        )
-    }
-    signature, valid = mc_identity_signature(
-        selected,
-        decimals,
-    )
-    if not np.all(valid):
-        raise RuntimeError(
-            "simple_mc_event_key received non-finite electron/proton "
-            "kinematics after its finite-input mask."
-        )
-    # endif
-    return signature
-
-
-def process_period_simple_mc_efficiency(
-    period: PeriodConfig,
-    args_dict: Mapping[str, object],
-) -> Tuple[str, Dict[str, object]]:
-    """
-    Apply the exact same temporary reconstructed-photon algorithm used by
-    --simple data to the reconstructed AAOGEN epgamma sample.
-
-    The only unavoidable difference is event identity:
-      data -> exact (runnum, evnum);
-      MC   -> quantized electron+proton kinematic identity.
-    """
-    start_time = time.perf_counter()
-    args = argparse.Namespace(**args_dict)
-    path = period.pi0_epg_mc
-
-    total_entries, available_keys = require_tree(path)
-    logical_names = (
-        "e_p", "e_theta", "e_phi",
-        "p_p", "p_theta", "p_phi",
-        "p2_p", "p2_theta", "p2_phi",
-    )
-    resolved = resolve_branches_from_keys(
-        path,
-        available_keys,
-        logical_names,
-    )
-    expressions = sorted(set(resolved.values()))
-
-    entry_stop = (
-        min(total_entries, int(args.max_events))
-        if args.max_events is not None
-        else total_entries
-    )
-
-    low_key_chunks: List[np.ndarray] = []
-    low_detector_chunks: List[np.ndarray] = []
-    low_sector_chunks: List[np.ndarray] = []
-    low_probe_E_chunks: List[np.ndarray] = []
-    low_probe_theta_deg_chunks: List[np.ndarray] = []
-    low_E_chunks: List[np.ndarray] = []
-    low_theta_chunks: List[np.ndarray] = []
-    low_phi_chunks: List[np.ndarray] = []
-
-    high_key_chunks: List[np.ndarray] = []
-    high_E_chunks: List[np.ndarray] = []
-    high_theta_chunks: List[np.ndarray] = []
-    high_phi_chunks: List[np.ndarray] = []
-
-    entries_read = 0
-    finite_identity_entries = 0
-    finite_low_kinematics = 0
-    low_entries_total = 0
-    high_entries_total = 0
-    exactly_2GeV_entries = 0
-
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        entry_stop=entry_stop,
-        library="np",
-    ):
-        if not arrays:
-            continue
-        # endif
-
-        chunk_size = len(next(iter(arrays.values())))
-        entries_read += chunk_size
-        values = {
-            name: np.asarray(arrays[resolved[name]], dtype=float)
-            for name in logical_names
-        }
-
-        identity_finite = np.ones(chunk_size, dtype=bool)
-        for name in (
-            "e_p", "e_theta", "e_phi",
-            "p_p", "p_theta", "p_phi",
-        ):
-            identity_finite &= np.isfinite(values[name])
-        # endfor
-        finite_identity_entries += int(
-            np.count_nonzero(identity_finite)
-        )
-
-        photon_E = values["p2_p"]
-        photon_theta = values["p2_theta"]
-        photon_phi = values["p2_phi"]
-
-        finite_photon = (
-            identity_finite
-            & np.isfinite(photon_E)
-            & np.isfinite(photon_theta)
-            & np.isfinite(photon_phi)
-        )
-        low_mask = finite_photon & (photon_E < 2.0)
-        high_mask = finite_photon & (photon_E > 2.0)
-        exactly_mask = finite_photon & (photon_E == 2.0)
-
-        low_entries_total += int(np.count_nonzero(low_mask))
-        high_entries_total += int(np.count_nonzero(high_mask))
-        exactly_2GeV_entries += int(np.count_nonzero(exactly_mask))
-
-        if np.any(high_mask):
-            high_key_chunks.append(
-                simple_mc_event_key(
-                    values,
-                    high_mask,
-                    args.mc_signature_decimals,
-                )
-            )
-            high_E_chunks.append(
-                np.asarray(photon_E[high_mask], dtype=float)
-            )
-            high_theta_chunks.append(
-                np.asarray(photon_theta[high_mask], dtype=float)
-            )
-            high_phi_chunks.append(
-                np.asarray(photon_phi[high_mask], dtype=float)
-            )
-        # endif
-
-        if not np.any(low_mask):
-            continue
-        # endif
-
-        low_required_finite = low_mask.copy()
-        finite_low_kinematics += int(
-            np.count_nonzero(low_required_finite)
-        )
-
-        probe = reconstruct_probe(
-            period.beam_energy_GeV,
-            values["e_p"][low_required_finite],
-            values["e_theta"][low_required_finite],
-            values["e_phi"][low_required_finite],
-            values["p_p"][low_required_finite],
-            values["p_theta"][low_required_finite],
-            values["p_phi"][low_required_finite],
-            photon_E[low_required_finite],
-            photon_theta[low_required_finite],
-            photon_phi[low_required_finite],
-        )
-        probe_theta_deg = np.degrees(
-            np.asarray(probe["theta"], dtype=float)
-        )
-        predicted_detector, predicted_sector = classify_probe(
-            probe_theta_deg,
-            np.asarray(probe["phi"], dtype=float),
-            args,
-        )
-
-        low_key_chunks.append(
-            simple_mc_event_key(
-                values,
-                low_required_finite,
-                args.mc_signature_decimals,
-            )
-        )
-        low_detector_chunks.append(
-            np.asarray(predicted_detector, dtype=np.int16)
-        )
-        low_sector_chunks.append(
-            np.asarray(predicted_sector, dtype=np.int16)
-        )
-        low_probe_E_chunks.append(
-            np.asarray(probe["E"], dtype=float)
-        )
-        low_probe_theta_deg_chunks.append(
-            np.asarray(probe_theta_deg, dtype=float)
-        )
-        low_E_chunks.append(
-            np.asarray(photon_E[low_required_finite], dtype=float)
-        )
-        low_theta_chunks.append(
-            np.asarray(photon_theta[low_required_finite], dtype=float)
-        )
-        low_phi_chunks.append(
-            np.asarray(photon_phi[low_required_finite], dtype=float)
-        )
-    # endfor
-
-    key_dtype = np.dtype([("hash1", "<u8"), ("hash2", "<u8")])
-
-    if low_key_chunks:
-        low_keys = np.concatenate(low_key_chunks)
-        low_detector = np.concatenate(low_detector_chunks)
-        low_sector = np.concatenate(low_sector_chunks)
-        low_probe_E = (
-            np.concatenate(low_probe_E_chunks)
-            if low_probe_E_chunks
-            else np.empty(0, dtype=float)
-        )
-        low_probe_theta_deg = (
-            np.concatenate(low_probe_theta_deg_chunks)
-            if low_probe_theta_deg_chunks
-            else np.empty(0, dtype=float)
-        )
-        low_E = np.concatenate(low_E_chunks)
-        low_theta = np.concatenate(low_theta_chunks)
-        low_phi = np.concatenate(low_phi_chunks)
-
-        if low_probe_E.size != low_E.size:
-            raise RuntimeError(
-                f"{period.label} simple AAOGEN diagnostic bookkeeping error: "
-                f"probe-E entries={low_probe_E.size}, low tags={low_E.size}."
-            )
-        # endif
-        if low_probe_theta_deg.size != low_E.size:
-            raise RuntimeError(
-                f"{period.label} simple AAOGEN diagnostic bookkeeping error: "
-                f"probe-theta entries={low_probe_theta_deg.size}, "
-                f"low tags={low_E.size}."
-            )
-        # endif
-    else:
-        low_keys = np.empty(0, dtype=key_dtype)
-        low_detector = np.empty(0, dtype=np.int16)
-        low_sector = np.empty(0, dtype=np.int16)
-        low_probe_E = np.empty(0, dtype=float)
-        low_probe_theta_deg = np.empty(0, dtype=float)
-        low_E = np.empty(0, dtype=float)
-        low_theta = np.empty(0, dtype=float)
-        low_phi = np.empty(0, dtype=float)
-    # endif
-
-    if high_key_chunks:
-        high_keys = np.concatenate(high_key_chunks)
-        high_E = np.concatenate(high_E_chunks)
-        high_theta = np.concatenate(high_theta_chunks)
-        high_phi = np.concatenate(high_phi_chunks)
-
-        high_order = np.argsort(
-            high_keys,
-            kind="stable",
-        )
-        high_keys = high_keys[high_order]
-        high_E = high_E[high_order]
-        high_theta = high_theta[high_order]
-        high_phi = high_phi[high_order]
-    else:
-        high_keys = np.empty(0, dtype=key_dtype)
-        high_E = np.empty(0, dtype=float)
-        high_theta = np.empty(0, dtype=float)
-        high_phi = np.empty(0, dtype=float)
-    # endif
-
-    diagnostic_histograms = simple_empty_diagnostic_histograms()
-    pair_diagnostic_values: Dict[str, Dict[str, List[np.ndarray]]] = {
-        region: {
-            "mgg_before": [],
-            "high_energy_before": [],
-            "high_energy_after": [],
-        }
-        for region in ("FT", "FD")
-    }
-
-    for region, region_mask in (
-        ("FT", low_detector == 0),
-        ("FD", low_detector == 1),
-    ):
-        simple_fill_diagnostic_histogram(
-            diagnostic_histograms,
-            region,
-            "low_energy",
-            low_E[region_mask],
-        )
-        simple_fill_diagnostic_histogram(
-            diagnostic_histograms,
-            region,
-            "low_theta_deg",
-            np.degrees(low_theta[region_mask]),
-        )
-        simple_fill_diagnostic_histogram(
-            diagnostic_histograms,
-            region,
-            "predicted_theta_deg",
-            low_probe_theta_deg[region_mask],
-        )
-    # endfor
-
-    same_event_high_exists = np.zeros(
-        low_keys.size,
-        dtype=bool,
-    )
-    pi0_mass_partner_found = np.zeros(
-        low_keys.size,
-        dtype=bool,
-    )
-
-    if low_keys.size > 0 and high_keys.size > 0:
-        left_indices = np.searchsorted(
-            high_keys,
-            low_keys,
-            side="left",
-        )
-        right_indices = np.searchsorted(
-            high_keys,
-            low_keys,
-            side="right",
-        )
-        same_event_high_exists = right_indices > left_indices
-
-        candidate_low_indices = np.flatnonzero(
-            same_event_high_exists
-        )
-        mass_low_sq = float(PI0_MASS_WINDOW[0]) ** 2
-        mass_high_sq = float(PI0_MASS_WINDOW[1]) ** 2
-
-        for low_index in candidate_low_indices:
-            start = int(left_indices[low_index])
-            stop = int(right_indices[low_index])
-
-            candidate_E = high_E[start:stop]
-            candidate_theta = high_theta[start:stop]
-            candidate_phi = high_phi[start:stop]
-
-            cosine_opening = (
-                math.cos(float(low_theta[low_index]))
-                * np.cos(candidate_theta)
-                + math.sin(float(low_theta[low_index]))
-                * np.sin(candidate_theta)
-                * np.cos(
-                    float(low_phi[low_index]) - candidate_phi
-                )
-            )
-            cosine_opening = np.clip(
-                cosine_opening,
-                -1.0,
-                1.0,
-            )
-
-            mass_squared = (
-                2.0
-                * float(low_E[low_index])
-                * candidate_E
-                * (1.0 - cosine_opening)
-            )
-            finite_mass = np.isfinite(mass_squared)
-            passing_pair = (
-                finite_mass
-                & (mass_squared > mass_low_sq)
-                & (mass_squared < mass_high_sq)
-            )
-
-            region = simple_region_key(
-                int(low_detector[low_index])
-            )
-            if region is not None:
-                pair_diagnostic_values[region][
-                    "mgg_before"
-                ].append(
-                    np.sqrt(
-                        np.clip(
-                            mass_squared[finite_mass],
-                            0.0,
-                            None,
-                        )
-                    )
-                )
-                pair_diagnostic_values[region][
-                    "high_energy_before"
-                ].append(candidate_E[finite_mass])
-                if np.any(passing_pair):
-                    pair_diagnostic_values[region][
-                        "high_energy_after"
-                    ].append(candidate_E[passing_pair])
-                # endif
-            # endif
-
-            if np.any(passing_pair):
-                pi0_mass_partner_found[low_index] = True
-            # endif
-        # endfor
-    # endif
-
-    for region in ("FT", "FD"):
-        for name in (
-            "mgg_before",
-            "high_energy_before",
-            "high_energy_after",
-        ):
-            chunks = pair_diagnostic_values[region][name]
-            if chunks:
-                values = np.concatenate(chunks)
-                simple_fill_diagnostic_histogram(
-                    diagnostic_histograms,
-                    region,
-                    name,
-                    values,
-                )
-            # endif
-        # endfor
-    # endfor
-
-    rows: List[Dict[str, object]] = []
-    for region_label, detector_code, sector_code in [
-        ("FT", 0, 0),
-        *[
-            (f"FD sector {sector}", 1, sector)
-            for sector in range(1, 7)
-        ],
-    ]:
-        region_mask = low_detector == detector_code
-        if detector_code == 1:
-            region_mask &= low_sector == sector_code
-        # endif
-
-        expected = int(np.count_nonzero(region_mask))
-        same_event_found = int(
-            np.count_nonzero(
-                region_mask & same_event_high_exists
-            )
-        )
-        found = int(
-            np.count_nonzero(
-                region_mask & pi0_mass_partner_found
-            )
-        )
-        metrics = simple_three_category_metrics(
-            expected,
-            same_event_found,
-            found,
-        )
-
-        rows.append(
-            {
-                "period": period.key,
-                "period_label": period.label,
-                "region": region_label,
-                "detector_code": detector_code,
-                "sector": sector_code,
-                **metrics,
-            }
-        )
-    # endfor
-
-    classified_mask = (
-        (low_detector == 0)
-        | (
-            (low_detector == 1)
-            & (low_sector >= 1)
-            & (low_sector <= 6)
-        )
-    )
-
-    payload: Dict[str, object] = {
-        "period": period.key,
-        "period_label": period.label,
-        "sample": "reconstructed_AAOGEN_epgamma_simple",
-        "path": path,
-        "tree_entries": total_entries,
-        "entries_read": entries_read,
-        "threshold_GeV": 2.0,
-        "pi0_mass_window_GeV": [
-            float(PI0_MASS_WINDOW[0]),
-            float(PI0_MASS_WINDOW[1]),
-        ],
-        "event_identity": (
-            "quantized electron+proton reconstructed kinematics using "
-            f"mc_signature_decimals={args.mc_signature_decimals}"
-        ),
-        "finite_identity_entries": finite_identity_entries,
-        "low_entries_total": low_entries_total,
-        "high_entries_total": high_entries_total,
-        "exactly_2GeV_entries_excluded": exactly_2GeV_entries,
-        "low_entries_with_finite_reconstruction_kinematics": (
-            finite_low_kinematics
-        ),
-        "low_opportunities_built": int(low_keys.size),
-        "high_energy_entries_stored": int(high_keys.size),
-        "low_opportunities_with_same_event_high_partner": int(
-            np.count_nonzero(same_event_high_exists)
-        ),
-        "low_opportunities_with_pi0_mass_partner": int(
-            np.count_nonzero(pi0_mass_partner_found)
-        ),
-        "classified_low_opportunities": int(
-            np.count_nonzero(classified_mask)
-        ),
-        "unclassified_low_opportunities": int(
-            np.count_nonzero(~classified_mask)
-        ),
-        "low_opportunities_with_reconstructed_probe_E_gt_2": int(
-            np.count_nonzero(
-                np.isfinite(low_probe_E)
-                & (low_probe_E > 2.0)
-            )
-        ),
-        "rows": rows,
-        "diagnostic_histograms": (
-            simple_finalize_diagnostic_histograms(
-                diagnostic_histograms
-            )
-        ),
-        "elapsed_seconds": elapsed_seconds(start_time),
-    }
-
-    return period.key, payload
-
-
-def aggregate_simple_fd(
-    rows: Sequence[Mapping[str, object]],
-) -> Dict[str, object]:
-    """
-    Combine the six FD sectors by summing the raw A/B/C counts first and then
-    recomputing the provisional purity-weighted estimator.
-    """
-    selected = [
-        row
-        for row in rows
-        if str(row["region"]).startswith("FD sector ")
-    ]
-
-    expected = int(
-        sum(
-            int(row["expected_low_energy_tags"])
-            for row in selected
-        )
-    )
-    same_event = int(
-        sum(
-            int(row["same_event_high_energy_partner"])
-            for row in selected
-        )
-    )
-    matched = int(
-        sum(
-            int(row["matched_pi0_mass_partner"])
-            for row in selected
-        )
-    )
-
-    metrics = simple_three_category_metrics(
-        expected,
-        same_event,
-        matched,
-    )
-    return {
-        "region": "FD",
-        **metrics,
-    }
-
-
-def simple_ft_row(
-    rows: Sequence[Mapping[str, object]],
-) -> Mapping[str, object]:
-    return next(row for row in rows if row["region"] == "FT")
-
-
-
-def simple_histogram_arrays(
-    payload: Mapping[str, object],
-    region: str,
-    name: str,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, int]:
-    histogram = payload["diagnostic_histograms"][region][name]
-    edges = np.asarray(histogram["edges"], dtype=float)
-    counts = np.asarray(histogram["counts"], dtype=float)
-    unit_area = np.asarray(histogram["unit_area"], dtype=float)
-    total = int(histogram["in_range_entries"])
-    return edges, counts, unit_area, total
-
-
-def plot_simple_diagnostic_overlays(
-    path: Path,
-    period_label: str,
-    data_payload: Mapping[str, object],
-    mc_payload: Mapping[str, object],
-    variables: Sequence[Tuple[str, str]],
-    title_suffix: str,
-) -> None:
-    """
-    Plot predicted FT on the top row and aggregate predicted FD on the bottom.
-    Each sample is independently normalized to unit integral in the displayed
-    range.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig, axes = plt.subplots(
-        2,
-        3,
-        figsize=(18.5, 9.0),
-        squeeze=False,
-    )
-
-    for row_index, region in enumerate(("FT", "FD")):
-        for column_index, (name, xlabel) in enumerate(variables):
-            axis = axes[row_index, column_index]
-
-            data_edges, _data_counts, data_unit, data_total = (
-                simple_histogram_arrays(
-                    data_payload,
-                    region,
-                    name,
-                )
-            )
-            mc_edges, _mc_counts, mc_unit, mc_total = (
-                simple_histogram_arrays(
-                    mc_payload,
-                    region,
-                    name,
-                )
-            )
-
-            axis.stairs(
-                data_unit,
-                data_edges,
-                linewidth=1.7,
-                color="black",
-                label=f"Data ({data_total:,})",
-                zorder=4,
-            )
-            axis.stairs(
-                mc_unit,
-                mc_edges,
-                linewidth=1.5,
-                color="tab:red",
-                label=f"AAOGEN ({mc_total:,})",
-                zorder=3,
-            )
-
-            if name == "predicted_theta_deg":
-                for boundary in (2.5, 5.0, 35.0):
-                    axis.axvline(
-                        boundary,
-                        linewidth=1.0,
-                        linestyle="--",
-                        color="0.45",
-                    )
-                # endfor
-            # endif
-
-            if name == "mgg_before":
-                axis.axvspan(
-                    PI0_MASS_WINDOW[0],
-                    PI0_MASS_WINDOW[1],
-                    alpha=0.14,
-                    color="0.5",
-                    label=r"$0.11<M_{\gamma\gamma}<0.16$ GeV",
-                )
-                axis.axvline(
-                    0.1349768,
-                    linewidth=1.0,
-                    linestyle="--",
-                    color="0.35",
-                )
-            # endif
-
-            axis.set_xlabel(xlabel)
-            axis.set_ylabel("fraction / bin")
-            axis.set_ylim(bottom=0.0)
-            axis.grid(axis="y", alpha=0.25)
-            axis.set_title(
-                f"Predicted {region}: {xlabel}"
-            )
-
-            if row_index == 0 and column_index == 0:
-                axis.legend(frameon=False)
-            # endif
-            if name == "mgg_before":
-                axis.legend(frameon=False, fontsize=8)
-            # endif
-        # endfor
-    # endfor
-
-    fig.suptitle(
-        f"{period_label}: --simple data vs reconstructed AAOGEN\n"
-        f"{title_suffix}",
-        fontsize=15,
-        y=0.99,
-    )
-    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
-    fig.savefig(
-        path,
-        dpi=180,
-        bbox_inches="tight",
-    )
-    plt.close(fig)
-
-
-def simple_conditional_rows(
-    periods: Sequence[PeriodConfig],
-    data_metadata: Mapping[str, object],
-    mc_metadata: Mapping[str, object],
-) -> List[Dict[str, object]]:
-    """
-    Summarize A/B/C bookkeeping and the provisional unmatched-purity estimator
-    for predicted FT and aggregate predicted FD.
-    """
-    rows: List[Dict[str, object]] = []
-
-    for period in periods:
-        for sample_name, metadata in (
-            ("data", data_metadata),
-            ("reconstructed_aaogen", mc_metadata),
-        ):
-            period_rows = metadata["periods"][period.key]["rows"]
-
-            for region in ("FT", "FD"):
-                if region == "FT":
-                    selected = [
-                        row
-                        for row in period_rows
-                        if row["region"] == "FT"
-                    ]
-                else:
-                    selected = [
-                        row
-                        for row in period_rows
-                        if str(row["region"]).startswith("FD sector ")
-                    ]
-                # endif
-
-                denominator = int(
-                    sum(
-                        int(row["expected_low_energy_tags"])
-                        for row in selected
-                    )
-                )
-                same_event = int(
-                    sum(
-                        int(row["same_event_high_energy_partner"])
-                        for row in selected
-                    )
-                )
-                pi0_pass = int(
-                    sum(
-                        int(row["matched_pi0_mass_partner"])
-                        for row in selected
-                    )
-                )
-
-                metrics = simple_three_category_metrics(
-                    denominator,
-                    same_event,
-                    pi0_pass,
-                )
-
-                rows.append(
-                    {
-                        "period": period.key,
-                        "period_label": period.label,
-                        "sample": sample_name,
-                        "region": region,
-                        **metrics,
-                        "p_high_given_low": metrics[
-                            "high_partner_fraction"
-                        ],
-                        "p_pi0_given_high": metrics[
-                            "observed_pair_pi0_purity"
-                        ],
-                        "simple_efficiency": metrics[
-                            "purity_weighted_efficiency"
-                        ],
-                    }
-                )
-            # endfor
-        # endfor
-    # endfor
-
-    return rows
-
-
-def write_simple_diagnostic_package(
-    periods: Sequence[PeriodConfig],
-    data_metadata: Mapping[str, object],
-    mc_metadata: Mapping[str, object],
-    simple_parent: Path,
-) -> None:
-    diagnostic_root = simple_parent / "diagnostics"
-    diagnostic_root.mkdir(parents=True, exist_ok=True)
-
-    first_canvas_variables = (
-        (
-            "low_energy",
-            r"$E_{\gamma,\mathrm{low}}$ (GeV)",
-        ),
-        (
-            "predicted_theta_deg",
-            r"predicted $\theta_X$ (deg)",
-        ),
-        (
-            "mgg_before",
-            r"$M_{\gamma\gamma}$ before mass cut (GeV)",
-        ),
-    )
-    second_canvas_variables = (
-        (
-            "low_theta_deg",
-            r"$\theta_{\gamma,\mathrm{low}}$ (deg)",
-        ),
-        (
-            "high_energy_before",
-            r"$E_{\gamma,\mathrm{high}}$ before mass cut (GeV)",
-        ),
-        (
-            "high_energy_after",
-            r"$E_{\gamma,\mathrm{high}}$ after mass cut (GeV)",
-        ),
-    )
-
-    for period in periods:
-        data_payload = data_metadata["periods"][period.key]
-        mc_payload = mc_metadata["periods"][period.key]
-
-        plot_simple_diagnostic_overlays(
-            diagnostic_root
-            / f"{period.key}_ft_fd_core_diagnostics.png",
-            period.label,
-            data_payload,
-            mc_payload,
-            first_canvas_variables,
-            (
-                "top row: predicted FT; bottom row: predicted FD; "
-                "each sample independently unit normalized"
-            ),
-        )
-        plot_simple_diagnostic_overlays(
-            diagnostic_root
-            / f"{period.key}_ft_fd_photon_diagnostics.png",
-            period.label,
-            data_payload,
-            mc_payload,
-            second_canvas_variables,
-            (
-                "low-tag and high-partner kinematics; "
-                "each sample independently unit normalized"
-            ),
-        )
-    # endfor
-
-    conditional_rows = simple_conditional_rows(
-        periods,
-        data_metadata,
-        mc_metadata,
-    )
-    write_simple_rows_csv(
-        simple_parent / "simple_conditional_probabilities.csv",
-        conditional_rows,
-    )
-
-    diagnostic_manifest = {
-        "description": (
-            "Data versus reconstructed-AAOGEN diagnostics for --simple."
-        ),
-        "regions": ["predicted FT", "aggregate predicted FD"],
-        "pi0_mass_window_GeV": [
-            float(PI0_MASS_WINDOW[0]),
-            float(PI0_MASS_WINDOW[1]),
-        ],
-        "plots": {
-            "core": [
-                "low_energy",
-                "predicted_theta_deg",
-                "mgg_before",
-            ],
-            "photon": [
-                "low_theta_deg",
-                "high_energy_before",
-                "high_energy_after",
-            ],
-        },
-        "conditional_probability_csv": str(
-            simple_parent / "simple_conditional_probabilities.csv"
-        ),
-    }
-    with open(
-        simple_parent / "simple_diagnostic_manifest.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(
-            diagnostic_manifest,
-            handle,
-            indent=2,
-            default=simple_json_default,
-        )
-    # endwith
-
-def print_simple_data_mc_final_summary(
-    periods: Sequence[PeriodConfig],
-    data_metadata: Mapping[str, object],
-    simple_mc_metadata: Mapping[str, object],
-) -> None:
-    """
-    Compact final --simple comparison using the three-category estimator.
-    """
-    log("")
-    log("=" * 118)
-    log("FINAL --simple DATA / RECONSTRUCTED-AAOGEN THREE-CATEGORY SUMMARY")
-    log(
-        "A=pi0-window pair; B=measured >2 GeV partner but non-pi0 pair; "
-        "C=no measured >2 GeV partner."
-    )
-    log(
-        "Displayed efficiency = A/[A + (A/(A+B))*C] = (A+B)/(A+B+C) "
-        "under the same-purity assumption."
-    )
-    log(
-        f"{'Period':<12s} "
-        f"{'FT data/MC':>11s} "
-        f"{'FD data/MC':>11s} "
-        f"{'FT eps D':>9s} "
-        f"{'FT eps M':>9s} "
-        f"{'FD eps D':>9s} "
-        f"{'FD eps M':>9s} "
-        f"{'FT purity D/M':>15s} "
-        f"{'FD purity D/M':>15s}"
-    )
-
-    data_periods = data_metadata["periods"]
-    mc_periods = simple_mc_metadata["periods"]
-
-    def _line_values(
-        data_rows: Sequence[Mapping[str, object]],
-        mc_rows: Sequence[Mapping[str, object]],
-    ) -> Tuple[float, ...]:
-        data_ft = simple_ft_row(data_rows)
-        mc_ft = simple_ft_row(mc_rows)
-        data_fd = aggregate_simple_fd(data_rows)
-        mc_fd = aggregate_simple_fd(mc_rows)
-
-        data_ft_eff = float(data_ft["purity_weighted_efficiency"])
-        mc_ft_eff = float(mc_ft["purity_weighted_efficiency"])
-        data_fd_eff = float(data_fd["purity_weighted_efficiency"])
-        mc_fd_eff = float(mc_fd["purity_weighted_efficiency"])
-
-        ft_ratio = (
-            data_ft_eff / mc_ft_eff
-            if np.isfinite(data_ft_eff)
-            and np.isfinite(mc_ft_eff)
-            and mc_ft_eff > 0.0
-            else math.nan
-        )
-        fd_ratio = (
-            data_fd_eff / mc_fd_eff
-            if np.isfinite(data_fd_eff)
-            and np.isfinite(mc_fd_eff)
-            and mc_fd_eff > 0.0
-            else math.nan
-        )
-
-        return (
-            ft_ratio,
-            fd_ratio,
-            data_ft_eff,
-            mc_ft_eff,
-            data_fd_eff,
-            mc_fd_eff,
-            float(data_ft["observed_pair_pi0_purity"]),
-            float(mc_ft["observed_pair_pi0_purity"]),
-            float(data_fd["observed_pair_pi0_purity"]),
-            float(mc_fd["observed_pair_pi0_purity"]),
-        )
-    # endif
-
-    for period in periods:
-        values = _line_values(
-            data_periods[period.key]["rows"],
-            mc_periods[period.key]["rows"],
-        )
-        (
-            ft_ratio,
-            fd_ratio,
-            data_ft_eff,
-            mc_ft_eff,
-            data_fd_eff,
-            mc_fd_eff,
-            data_ft_purity,
-            mc_ft_purity,
-            data_fd_purity,
-            mc_fd_purity,
-        ) = values
-
-        log(
-            f"{period.label:<12s} "
-            f"{ft_ratio:11.3f} "
-            f"{fd_ratio:11.3f} "
-            f"{100.0*data_ft_eff:8.2f}% "
-            f"{100.0*mc_ft_eff:8.2f}% "
-            f"{100.0*data_fd_eff:8.2f}% "
-            f"{100.0*mc_fd_eff:8.2f}% "
-            f"{100.0*data_ft_purity:6.1f}/{100.0*mc_ft_purity:6.1f}% "
-            f"{100.0*data_fd_purity:6.1f}/{100.0*mc_fd_purity:6.1f}%"
-        )
-    # endfor
-
-    values = _line_values(
-        data_metadata["combined_rows"],
-        simple_mc_metadata["combined_rows"],
-    )
-    (
-        ft_ratio,
-        fd_ratio,
-        data_ft_eff,
-        mc_ft_eff,
-        data_fd_eff,
-        mc_fd_eff,
-        data_ft_purity,
-        mc_ft_purity,
-        data_fd_purity,
-        mc_fd_purity,
-    ) = values
-
-    log("-" * 118)
-    log(
-        f"{'COMBINED':<12s} "
-        f"{ft_ratio:11.3f} "
-        f"{fd_ratio:11.3f} "
-        f"{100.0*data_ft_eff:8.2f}% "
-        f"{100.0*mc_ft_eff:8.2f}% "
-        f"{100.0*data_fd_eff:8.2f}% "
-        f"{100.0*mc_fd_eff:8.2f}% "
-        f"{100.0*data_ft_purity:6.1f}/{100.0*mc_ft_purity:6.1f}% "
-        f"{100.0*data_fd_purity:6.1f}/{100.0*mc_fd_purity:6.1f}%"
-    )
-    log("=" * 118)
-
-def run_simple_data_efficiency_stage(
-    periods: Sequence[PeriodConfig],
-    args: argparse.Namespace,
-    workers: int,
-    data_root: Path,
-) -> Dict[str, object]:
-    """
-    Run the temporary --simple data-side override and persist a compact audit.
-    """
-    simple_root = data_root / "simple"
-    simple_root.mkdir(parents=True, exist_ok=True)
-
-    worker_count = max(
-        1,
-        min(int(workers), len(periods), MAX_WORKERS),
-    )
-    log(
-        f"SIMPLE DATA OVERRIDE: {len(periods)} period(s), "
-        f"{worker_count} worker(s); normal data shapes/template fits skipped."
-    )
-
-    payloads: Dict[str, Dict[str, object]] = {}
-
-    if worker_count == 1:
-        for period in periods:
-            key, payload = process_period_simple_data_efficiency(
-                period,
-                vars(args),
-            )
-            payloads[key] = payload
-        # endfor
-    else:
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=worker_count
-        ) as executor:
-            future_map = {
-                executor.submit(
-                    process_period_simple_data_efficiency,
-                    period,
-                    vars(args),
-                ): period.key
-                for period in periods
-            }
-            for future in concurrent.futures.as_completed(
-                future_map
-            ):
-                key, payload = future.result()
-                payloads[key] = payload
-            # endfor
-        # endwith
-    # endif
-
-    ordered_rows: List[Dict[str, object]] = []
-    for period in periods:
-        payload = payloads[period.key]
-        rows = payload["rows"]
-        ordered_rows.extend(rows)
-        print_simple_data_efficiency_block(
-            period.label,
-            rows,
-        )
-        log(
-            f"{period.label} simple audit: "
-            f"low tags={payload['low_entries_total']:,}, "
-            f"high entries={payload['high_entries_total']:,}, "
-            f"classified low opportunities="
-            f"{payload['classified_low_opportunities']:,}, "
-            f"unclassified="
-            f"{payload['unclassified_low_opportunities']:,}."
-        )
-    # endfor
-
-    # Aggregate exactly by numerator/denominator, not by averaging efficiencies.
-    combined_rows: List[Dict[str, object]] = []
-    for region_label, detector_code, sector_code in [
-        ("FT", 0, 0),
-        *[
-            (f"FD sector {sector}", 1, sector)
-            for sector in range(1, 7)
-        ],
-    ]:
-        selected = [
-            row for row in ordered_rows
-            if row["region"] == region_label
-        ]
-        expected = int(
-            sum(
-                int(row["expected_low_energy_tags"])
-                for row in selected
-            )
-        )
-        same_event = int(
-            sum(
-                int(row["same_event_high_energy_partner"])
-                for row in selected
-            )
-        )
-        matched = int(
-            sum(
-                int(row["matched_pi0_mass_partner"])
-                for row in selected
-            )
-        )
-        metrics = simple_three_category_metrics(
-            expected,
-            same_event,
-            matched,
-        )
-        combined_rows.append(
-            {
-                "period": "combined",
-                "period_label": "Combined selected periods",
-                "region": region_label,
-                "detector_code": detector_code,
-                "sector": sector_code,
-                **metrics,
-            }
-        )
-    # endfor
-
-    print_simple_data_efficiency_block(
-        "COMBINED SELECTED PERIODS",
-        combined_rows,
-    )
-
-    all_rows = [*ordered_rows, *combined_rows]
-    write_simple_rows_csv(
-        simple_root / "simple_data_efficiency.csv",
-        all_rows,
-    )
-
-    metadata: Dict[str, object] = {
-        "mode": "simple_data_three_category_estimator",
-        "threshold_GeV": 2.0,
-        "periods": payloads,
-        "combined_rows": combined_rows,
-        "output_csv": str(
-            simple_root / "simple_data_efficiency.csv"
-        ),
-    }
-    with open(
-        simple_root / "simple_data_efficiency.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(
-            metadata,
-            handle,
-            indent=2,
-            default=simple_json_default,
-        )
-    # endwith
-
-    return metadata
-
-
-def run_simple_mc_efficiency_stage(
-    periods: Sequence[PeriodConfig],
-    args: argparse.Namespace,
-    workers: int,
-    data_root: Path,
-) -> Dict[str, object]:
-    """
-    Run the identical reconstructed --simple algorithm on AAOGEN epgamma MC.
-    """
-    simple_root = data_root / "simple"
-    simple_root.mkdir(parents=True, exist_ok=True)
-
-    worker_count = max(
-        1,
-        min(int(workers), len(periods), MAX_WORKERS),
-    )
-    log(
-        f"SIMPLE RECONSTRUCTED-AAOGEN COMPARISON: "
-        f"{len(periods)} period(s), {worker_count} worker(s)."
-    )
-
-    payloads: Dict[str, Dict[str, object]] = {}
-
-    if worker_count == 1:
-        for period in periods:
-            key, payload = process_period_simple_mc_efficiency(
-                period,
-                vars(args),
-            )
-            payloads[key] = payload
-        # endfor
-    else:
-        with concurrent.futures.ProcessPoolExecutor(
-            max_workers=worker_count
-        ) as executor:
-            future_map = {
-                executor.submit(
-                    process_period_simple_mc_efficiency,
-                    period,
-                    vars(args),
-                ): period.key
-                for period in periods
-            }
-            for future in concurrent.futures.as_completed(
-                future_map
-            ):
-                key, payload = future.result()
-                payloads[key] = payload
-            # endfor
-        # endwith
-    # endif
-
-    ordered_rows: List[Dict[str, object]] = []
-    for period in periods:
-        payload = payloads[period.key]
-        rows = payload["rows"]
-        ordered_rows.extend(rows)
-        print_simple_data_efficiency_block(
-            f"{period.label} reconstructed AAOGEN",
-            rows,
-        )
-    # endfor
-
-    combined_rows: List[Dict[str, object]] = []
-    for region_label, detector_code, sector_code in [
-        ("FT", 0, 0),
-        *[
-            (f"FD sector {sector}", 1, sector)
-            for sector in range(1, 7)
-        ],
-    ]:
-        selected = [
-            row for row in ordered_rows
-            if row["region"] == region_label
-        ]
-        expected = int(
-            sum(
-                int(row["expected_low_energy_tags"])
-                for row in selected
-            )
-        )
-        same_event = int(
-            sum(
-                int(row["same_event_high_energy_partner"])
-                for row in selected
-            )
-        )
-        matched = int(
-            sum(
-                int(row["matched_pi0_mass_partner"])
-                for row in selected
-            )
-        )
-        metrics = simple_three_category_metrics(
-            expected,
-            same_event,
-            matched,
-        )
-        combined_rows.append(
-            {
-                "period": "combined",
-                "period_label": "Combined selected periods",
-                "region": region_label,
-                "detector_code": detector_code,
-                "sector": sector_code,
-                **metrics,
-            }
-        )
-    # endfor
-
-    all_rows = [*ordered_rows, *combined_rows]
-    write_simple_rows_csv(
-        simple_root / "simple_reconstructed_aaogen_efficiency.csv",
-        all_rows,
-    )
-
-    metadata: Dict[str, object] = {
-        "mode": "simple_reconstructed_AAOGEN_three_category_comparison",
-        "threshold_GeV": 2.0,
-        "pi0_mass_window_GeV": [
-            float(PI0_MASS_WINDOW[0]),
-            float(PI0_MASS_WINDOW[1]),
-        ],
-        "event_identity": (
-            "quantized reconstructed electron+proton kinematics; "
-            "no truth matching"
-        ),
-        "periods": payloads,
-        "combined_rows": combined_rows,
-        "output_csv": str(
-            simple_root
-            / "simple_reconstructed_aaogen_efficiency.csv"
-        ),
-    }
-    with open(
-        simple_root
-        / "simple_reconstructed_aaogen_efficiency.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(
-            metadata,
-            handle,
-            indent=2,
-            default=simple_json_default,
-        )
-    # endwith
-
-    return metadata
-
-
-
-
-# =============================================================================
-# Final data-driven photon-efficiency extraction (v80)
-# =============================================================================
-
-PI0_MASS_GEV = 0.1349768
-
-
-@dataclass
-class FinalOpportunityCatalog:
-    e_p: np.ndarray
-    e_theta: np.ndarray
-    e_phi: np.ndarray
-    p_p: np.ndarray
-    p_theta: np.ndarray
-    p_phi: np.ndarray
-    tag_E: np.ndarray
-    tag_theta: np.ndarray
-    tag_phi: np.ndarray
-    tag_detector: np.ndarray
-    proton_detector: np.ndarray
-    probe_E: np.ndarray
-    probe_p: np.ndarray
-    probe_theta: np.ndarray
-    probe_phi: np.ndarray
-    probe_m2: np.ndarray
-    probe_E_minus_p: np.ndarray
-    probe_detector: np.ndarray
-    probe_sector: np.ndarray
-    topology_code: np.ndarray
-    mx_ep2: np.ndarray
-    event_multiplicity: np.ndarray
-    paired: np.ndarray
-    high_E: np.ndarray
-    high_theta: np.ndarray
-    high_phi: np.ndarray
-    mgg: np.ndarray
-    high_probe_angle_deg: np.ndarray
-    high_probe_relative_E: np.ndarray
-
-    def size(self) -> int:
-        return int(self.tag_E.size)
-
-
-@dataclass
-class FinalTruthLabels:
-    tag_truth_match: np.ndarray
-    truth_partner_E: np.ndarray
-    truth_partner_theta: np.ndarray
-    truth_partner_phi: np.ndarray
-    truth_partner_above_threshold: np.ndarray
-    measured_partner_truth_match: np.ndarray
-    tag_match_angle_deg: np.ndarray
-    tag_match_relative_E: np.ndarray
-    measured_partner_angle_deg: np.ndarray
-    measured_partner_relative_E: np.ndarray
-
-
-FINAL_FEATURE_ORDER: Tuple[str, ...] = (
-    "mx_ep2",
-    "tag_E",
-    "tag_theta_deg",
-    "probe_E",
-    "probe_theta_deg",
-    "tag_probe_opening_deg",
-    "probe_phi_local_deg",
-)
-
-
-def wrap_angle_deg(values: np.ndarray) -> np.ndarray:
-    values = np.asarray(values, dtype=float)
-    return (values + 180.0) % 360.0 - 180.0
-
-
-def fd_sector_center_deg(sector: np.ndarray) -> np.ndarray:
-    sector = np.asarray(sector, dtype=int)
-    centers = np.zeros(sector.shape, dtype=float)
-    centers[sector == 1] = 0.0
-    centers[sector == 2] = 60.0
-    centers[sector == 3] = 120.0
-    centers[sector == 4] = 180.0
-    centers[sector == 5] = 240.0
-    centers[sector == 6] = 300.0
-    return centers
-
-
-def derive_ep_missing_mass_squared(
-    beam_energy: float,
-    e_p: np.ndarray,
-    e_theta: np.ndarray,
-    e_phi: np.ndarray,
-    p_p: np.ndarray,
-    p_theta: np.ndarray,
-    p_phi: np.ndarray,
-) -> np.ndarray:
-    e_E, e_px, e_py, e_pz = massive_four_vector(
-        e_p, e_theta, e_phi, ELECTRON_MASS_GEV
-    )
-    p_E, p_px, p_py, p_pz = massive_four_vector(
-        p_p, p_theta, p_phi, PROTON_MASS_GEV
-    )
-    miss_E = beam_energy + PROTON_MASS_GEV - e_E - p_E
-    miss_px = -e_px - p_px
-    miss_py = -e_py - p_py
-    miss_pz = beam_energy - e_pz - p_pz
-    return miss_E**2 - miss_px**2 - miss_py**2 - miss_pz**2
-
-
-def final_feature_values(
-    catalog: FinalOpportunityCatalog,
-    key: str,
-) -> np.ndarray:
-    if key == "mx_ep2":
-        return np.asarray(catalog.mx_ep2, dtype=float)
-    # endif
-    if key == "tag_E":
-        return np.asarray(catalog.tag_E, dtype=float)
-    # endif
-    if key == "tag_theta_deg":
-        return np.degrees(np.asarray(catalog.tag_theta, dtype=float))
-    # endif
-    if key == "probe_E":
-        return np.asarray(catalog.probe_E, dtype=float)
-    # endif
-    if key == "probe_theta_deg":
-        return np.degrees(np.asarray(catalog.probe_theta, dtype=float))
-    # endif
-    if key == "tag_probe_opening_deg":
-        return opening_angle_deg(
-            catalog.tag_theta,
-            catalog.tag_phi,
-            catalog.probe_theta,
-            catalog.probe_phi,
-        )
-    # endif
-    if key == "probe_phi_local_deg":
-        phi_deg = np.mod(np.degrees(catalog.probe_phi), 360.0)
-        result = wrap_angle_deg(phi_deg)
-        fd = catalog.probe_detector == 1
-        if np.any(fd):
-            centers = fd_sector_center_deg(catalog.probe_sector[fd])
-            result[fd] = wrap_angle_deg(phi_deg[fd] - centers)
-        # endif
-        return result
-    # endif
-    raise KeyError(f"Unknown final feature {key}")
-
-
-def final_feature_spec(
-    key: str,
-    detector: str,
-) -> Tuple[int, float, float, str]:
-    if key == "mx_ep2":
-        return (50, -0.10, 0.15, r"$M_X^2(e'p')$ (GeV$^2$)")
-    # endif
-    if key == "tag_E":
-        return (40, 0.40, 2.00, r"$E_{\gamma,\mathrm{low}}$ (GeV)")
-    # endif
-    if key == "tag_theta_deg":
-        return (45, 2.0, 40.0, r"$\theta_{\gamma,\mathrm{low}}$ (deg)")
-    # endif
-    if key == "probe_E":
-        return (40, 2.0, 9.5, r"predicted $E_X$ (GeV)")
-    # endif
-    if key == "probe_theta_deg":
-        if detector == "FT":
-            return (30, 2.5, 5.0, r"predicted $\theta_X$ (deg)")
-        # endif
-        return (45, 5.0, 35.0, r"predicted $\theta_X$ (deg)")
-    # endif
-    if key == "tag_probe_opening_deg":
-        return (45, 0.0, 30.0, r"$\angle(\gamma_{\mathrm{low}},X)$ (deg)")
-    # endif
-    if key == "probe_phi_local_deg":
-        if detector == "FT":
-            return (48, -180.0, 180.0, r"predicted $\phi_X$ (deg, wrapped)")
-        # endif
-        return (36, -30.0, 30.0, r"predicted local $\phi_X$ (deg)")
-    # endif
-    raise KeyError(key)
-
-
-def final_region_mask(
-    catalog: FinalOpportunityCatalog,
-    detector: str,
-) -> np.ndarray:
-    if detector == "FT":
-        return catalog.probe_detector == 0
-    # endif
-    if detector == "FD":
-        return catalog.probe_detector == 1
-    # endif
-    raise KeyError(detector)
-
-
-def _empty_final_catalog() -> FinalOpportunityCatalog:
-    floats = np.empty(0, dtype=float)
-    ints = np.empty(0, dtype=np.int16)
-    return FinalOpportunityCatalog(
-        e_p=floats.copy(), e_theta=floats.copy(), e_phi=floats.copy(),
-        p_p=floats.copy(), p_theta=floats.copy(), p_phi=floats.copy(),
-        tag_E=floats.copy(), tag_theta=floats.copy(), tag_phi=floats.copy(),
-        tag_detector=ints.copy(), proton_detector=ints.copy(),
-        probe_E=floats.copy(), probe_p=floats.copy(),
-        probe_theta=floats.copy(), probe_phi=floats.copy(),
-        probe_m2=floats.copy(), probe_E_minus_p=floats.copy(),
-        probe_detector=ints.copy(), probe_sector=ints.copy(),
-        topology_code=ints.copy(), mx_ep2=floats.copy(),
-        event_multiplicity=np.empty(0, dtype=np.int8),
-        paired=np.empty(0, dtype=bool),
-        high_E=floats.copy(), high_theta=floats.copy(), high_phi=floats.copy(),
-        mgg=floats.copy(), high_probe_angle_deg=floats.copy(),
-        high_probe_relative_E=floats.copy(),
-    )
-
-
-def read_final_opportunity_catalog(
-    path: str,
-    beam_energy: float,
-    sample_key: str,
-    args: argparse.Namespace,
-) -> Tuple[FinalOpportunityCatalog, Dict[str, object]]:
-    """
-    Build the final clean low-tag opportunity catalog.
-
-    Data event identity is exact run/event.  MC identity uses reconstructed
-    electron/proton kinematics.  Only exact-one and exact-two photon events are
-    considered.  Exact-two two-low events are removed after event pairing.
-    """
-    if sample_key not in {"data", "mc"}:
-        raise ValueError(sample_key)
-    # endif
-
-    logical = (
-        *identity_logical_names(sample_key),
-        "e_p", "e_theta", "e_phi",
-        "p_p", "p_theta", "p_phi",
-        "tag_E", "tag_theta", "tag_phi",
-        "tag_detector", "proton_detector",
-        "fiducial_status", "Q2", "W", "y",
-    )
-    optional = (
-        "tag_detector", "proton_detector", "fiducial_status",
-        "Q2", "W", "y",
-    )
-    resolved = resolve_branches(path, logical, optional=optional)
-    expressions = sorted({v for v in resolved.values() if v is not None})
-
-    tree_entries, _ = require_tree(path)
-    entry_stop = min(tree_entries, args.max_events) if args.max_events else tree_entries
-    identity_resolved = {
-        name: resolved[name]
-        for name in identity_logical_names(sample_key)
-    }
-    (
-        _all_signatures,
-        one_signatures,
-        two_signatures,
-        three_plus_signatures,
-        mult_audit,
-    ) = scan_event_multiplicity(
-        path,
-        sample_key,
-        identity_resolved,
-        args,
-        entry_stop,
-    )
-
-    low_store: Dict[str, List[np.ndarray]] = {
-        name: []
-        for name in (
-            "key", "e_p", "e_theta", "e_phi", "p_p", "p_theta", "p_phi",
-            "tag_E", "tag_theta", "tag_phi", "tag_detector", "proton_detector",
-            "probe_E", "probe_p", "probe_theta", "probe_phi", "probe_m2",
-            "probe_E_minus_p", "probe_detector", "probe_sector", "topology_code",
-            "mx_ep2", "event_multiplicity",
-        )
-    }
-    high_keys: List[np.ndarray] = []
-    high_Es: List[np.ndarray] = []
-    high_thetas: List[np.ndarray] = []
-    high_phis: List[np.ndarray] = []
-
-    audit = {
-        "path": path,
-        "sample_key": sample_key,
-        "tree_entries": int(tree_entries),
-        "entry_stop": int(entry_stop),
-        "multiplicity": mult_audit,
-        "counts": {
-            "multiplicity_one_or_two_rows": 0,
-            "global_selected_rows": 0,
-            "low_tag_rows_before_probe": 0,
-            "high_candidate_rows": 0,
-            "photon_like_low_opportunities": 0,
-            "clean_exact_one_unmatched": 0,
-            "clean_exact_two_paired": 0,
-            "rejected_exact_two_without_high": 0,
-        },
-        "branch_mapping": resolved,
-    }
-
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=args.step_size,
-        entry_stop=entry_stop,
-        library="np",
-    ):
-        if not arrays:
-            continue
-        # endif
-        n = len(next(iter(arrays.values())))
-
-        def arr(name: str, default=math.nan, dtype=np.float64):
-            return finite_array(arrays, resolved.get(name), default=default, dtype=dtype)
-
-        e_p = arr("e_p"); e_theta = arr("e_theta"); e_phi = arr("e_phi")
-        p_p = arr("p_p"); p_theta = arr("p_theta"); p_phi = arr("p_phi")
-        tag_E = arr("tag_E"); tag_theta = arr("tag_theta")
-        tag_phi = np.mod(arr("tag_phi"), 2.0 * math.pi)
-        tag_detector = arr("tag_detector", default=-1, dtype=np.int16)
-        proton_detector = arr("proton_detector", default=-1, dtype=np.int16)
-
-        identity_arrays = {
-            "e_p": e_p, "e_theta": e_theta, "e_phi": e_phi,
-            "p_p": p_p, "p_theta": p_theta, "p_phi": p_phi,
-        }
-        if sample_key == "data":
-            identity_arrays["runnum"] = arr("runnum")
-            identity_arrays["eventnum"] = arr("eventnum")
-        # endif
-
-        one_mask, two_mask, _three_mask, valid_identity = multiplicity_entry_masks(
-            identity_arrays,
-            sample_key,
-            one_signatures,
-            two_signatures,
-            three_plus_signatures,
-            args,
-        )
-        mult_keep = one_mask | two_mask
-        audit["counts"]["multiplicity_one_or_two_rows"] += int(np.count_nonzero(mult_keep))
-
-        finite = (
-            mult_keep & valid_identity
-            & np.isfinite(e_p) & np.isfinite(e_theta) & np.isfinite(e_phi)
-            & np.isfinite(p_p) & np.isfinite(p_theta) & np.isfinite(p_phi)
-            & np.isfinite(tag_E) & np.isfinite(tag_theta) & np.isfinite(tag_phi)
-            & (e_p > 0.0) & (p_p > 0.0) & (tag_E > 0.0)
-        )
-
-        global_mask = finite.copy()
-        if resolved.get("Q2") is not None:
-            q2 = arr("Q2")
-            global_mask &= np.isfinite(q2) & (q2 > args.Q2_min)
-        # endif
-        if resolved.get("W") is not None:
-            w = arr("W")
-            global_mask &= np.isfinite(w) & (w > args.W_min)
-        # endif
-        if resolved.get("y") is not None:
-            y = arr("y")
-            global_mask &= np.isfinite(y) & (y < args.y_max)
-        # endif
-        if args.require_fiducial_status_111 and resolved.get("fiducial_status") is not None:
-            fid = arr("fiducial_status")
-            global_mask &= np.isfinite(fid) & (fid == 111)
-        # endif
-        audit["counts"]["global_selected_rows"] += int(np.count_nonzero(global_mask))
-
-        low_mask = global_mask & (tag_E >= args.tag_E_min) & (tag_E < args.probe_E_min)
-        high_mask = finite & (tag_E > args.found_probe_E_min) & (tag_E < args.probe_E_max)
-        audit["counts"]["low_tag_rows_before_probe"] += int(np.count_nonzero(low_mask))
-        audit["counts"]["high_candidate_rows"] += int(np.count_nonzero(high_mask))
-
-        if np.any(high_mask):
-            high_identity = {
-                name: np.asarray(identity_arrays[name])[high_mask]
-                for name in identity_logical_names(sample_key)
-            }
-            key, valid = build_identity_signature(high_identity, sample_key, args)
-            if not np.all(valid):
-                raise RuntimeError("Unexpected invalid identity in final high-candidate mask")
-            # endif
-            high_keys.append(key)
-            high_Es.append(tag_E[high_mask])
-            high_thetas.append(tag_theta[high_mask])
-            high_phis.append(tag_phi[high_mask])
-        # endif
-
-        if not np.any(low_mask):
-            continue
-        # endif
-
-        probe = reconstruct_probe(
-            beam_energy,
-            e_p, e_theta, e_phi,
-            p_p, p_theta, p_phi,
-            tag_E, tag_theta, tag_phi,
-        )
-        probe_theta_deg = np.degrees(probe["theta"])
-        probe_detector, probe_sector = classify_probe(
-            probe_theta_deg,
-            probe["phi"],
-            args,
-        )
-        topology = topology_code(proton_detector, tag_detector)
-
-        selected = (
-            low_mask
-            & np.isfinite(probe["E"])
-            & np.isfinite(probe["p"])
-            & np.isfinite(probe["theta"])
-            & np.isfinite(probe["phi"])
-            & np.isfinite(probe["m2"])
-            & np.isfinite(probe["E_minus_p"])
-            & (probe["E"] >= args.probe_E_min)
-            & (probe["E"] < args.probe_E_max)
-            & (np.abs(probe["m2"]) < args.probe_m2_abs_max)
-            & (np.abs(probe["E_minus_p"]) < args.probe_E_minus_p_abs_max)
-            & (probe_detector >= 0)
-        )
-        # If detector codes exist, retain the established supported topologies.
-        if resolved.get("tag_detector") is not None and resolved.get("proton_detector") is not None:
-            selected &= topology >= 0
-        # endif
-
-        if not np.any(selected):
-            continue
-        # endif
-        audit["counts"]["photon_like_low_opportunities"] += int(np.count_nonzero(selected))
-
-        selected_identity = {
-            name: np.asarray(identity_arrays[name])[selected]
-            for name in identity_logical_names(sample_key)
-        }
-        keys, valid = build_identity_signature(selected_identity, sample_key, args)
-        if not np.all(valid):
-            raise RuntimeError("Unexpected invalid identity in final low-opportunity mask")
-        # endif
-
-        mx_ep2 = derive_ep_missing_mass_squared(
-            beam_energy,
-            e_p, e_theta, e_phi,
-            p_p, p_theta, p_phi,
-        )
-        multiplicity = np.where(one_mask, 1, np.where(two_mask, 2, 0)).astype(np.int8)
-
-        vals = {
-            "key": keys,
-            "e_p": e_p[selected], "e_theta": e_theta[selected], "e_phi": e_phi[selected],
-            "p_p": p_p[selected], "p_theta": p_theta[selected], "p_phi": p_phi[selected],
-            "tag_E": tag_E[selected], "tag_theta": tag_theta[selected], "tag_phi": tag_phi[selected],
-            "tag_detector": tag_detector[selected], "proton_detector": proton_detector[selected],
-            "probe_E": probe["E"][selected], "probe_p": probe["p"][selected],
-            "probe_theta": probe["theta"][selected], "probe_phi": probe["phi"][selected],
-            "probe_m2": probe["m2"][selected],
-            "probe_E_minus_p": probe["E_minus_p"][selected],
-            "probe_detector": probe_detector[selected], "probe_sector": probe_sector[selected],
-            "topology_code": topology[selected], "mx_ep2": mx_ep2[selected],
-            "event_multiplicity": multiplicity[selected],
-        }
-        for name, value in vals.items():
-            low_store[name].append(np.asarray(value))
-        # endfor
-    # endfor
-
-    if not low_store["tag_E"]:
-        return _empty_final_catalog(), audit
-    # endif
-
-    low = {name: np.concatenate(parts) for name, parts in low_store.items() if name != "key"}
-    low_keys = np.concatenate(low_store["key"])
-
-    if high_keys:
-        hkeys = np.concatenate(high_keys)
-        hE = np.concatenate(high_Es)
-        htheta = np.concatenate(high_thetas)
-        hphi = np.concatenate(high_phis)
-        order = np.argsort(hkeys, kind="stable")
-        hkeys = hkeys[order]; hE = hE[order]; htheta = htheta[order]; hphi = hphi[order]
-        left = np.searchsorted(hkeys, low_keys, side="left")
-        right = np.searchsorted(hkeys, low_keys, side="right")
-        has_high = right > left
-    else:
-        hkeys = np.empty(0, dtype=low_keys.dtype)
-        hE = np.empty(0); htheta = np.empty(0); hphi = np.empty(0)
-        left = np.zeros(low_keys.size, dtype=np.int64)
-        right = np.zeros(low_keys.size, dtype=np.int64)
-        has_high = np.zeros(low_keys.size, dtype=bool)
-    # endif
-
-    event_mult = low["event_multiplicity"].astype(np.int8)
-    clean_unmatched = (event_mult == 1) & (~has_high)
-    clean_paired = (event_mult == 2) & has_high
-    ambiguous_two_low = (event_mult == 2) & (~has_high)
-    audit["counts"]["clean_exact_one_unmatched"] = int(np.count_nonzero(clean_unmatched))
-    audit["counts"]["clean_exact_two_paired"] = int(np.count_nonzero(clean_paired))
-    audit["counts"]["rejected_exact_two_without_high"] = int(np.count_nonzero(ambiguous_two_low))
-
-    keep = clean_unmatched | clean_paired
-    if not np.any(keep):
-        return _empty_final_catalog(), audit
-    # endif
-
-    indices = np.flatnonzero(keep)
-    paired = clean_paired[keep]
-    high_E = np.full(indices.size, np.nan)
-    high_theta = np.full(indices.size, np.nan)
-    high_phi = np.full(indices.size, np.nan)
-
-    for out_i, original_i in enumerate(indices):
-        if not clean_paired[original_i]:
-            continue
-        # endif
-        start = int(left[original_i]); stop = int(right[original_i])
-        # exact-two clean pairing should have one high photon, but choose the
-        # best predicted-probe match defensively if duplicate candidates exist.
-        candidate_angles = opening_angle_deg(
-            np.full(stop-start, low["probe_theta"][original_i]),
-            np.full(stop-start, low["probe_phi"][original_i]),
-            htheta[start:stop],
-            hphi[start:stop],
-        )
-        candidate_relE = np.abs(hE[start:stop] - low["probe_E"][original_i]) / max(low["probe_E"][original_i], 1.0e-12)
-        score = (candidate_angles / max(args.probe_match_angle_max_deg, 1.0e-12))**2 + (candidate_relE / max(args.probe_match_relative_E_max, 1.0e-12))**2
-        best = int(np.argmin(score))
-        high_E[out_i] = hE[start + best]
-        high_theta[out_i] = htheta[start + best]
-        high_phi[out_i] = hphi[start + best]
-    # endfor
-
-    kept = {name: np.asarray(value)[keep] for name, value in low.items()}
-    mgg = np.full(indices.size, np.nan)
-    hp_angle = np.full(indices.size, np.nan)
-    hp_relE = np.full(indices.size, np.nan)
-    if np.any(paired):
-        pidx = np.flatnonzero(paired)
-        mgg[pidx] = np.asarray([
-            photon_pair_mass(
-                float(kept["tag_E"][i]), float(kept["tag_theta"][i]), float(kept["tag_phi"][i]),
-                float(high_E[i]), float(high_theta[i]), float(high_phi[i]),
-            )
-            for i in pidx
-        ])
-        hp_angle[pidx] = opening_angle_deg(
-            kept["probe_theta"][pidx], kept["probe_phi"][pidx],
-            high_theta[pidx], high_phi[pidx],
-        )
-        hp_relE[pidx] = np.abs(high_E[pidx] - kept["probe_E"][pidx]) / np.maximum(kept["probe_E"][pidx], 1.0e-12)
-    # endif
-
-    catalog = FinalOpportunityCatalog(
-        e_p=kept["e_p"], e_theta=kept["e_theta"], e_phi=kept["e_phi"],
-        p_p=kept["p_p"], p_theta=kept["p_theta"], p_phi=kept["p_phi"],
-        tag_E=kept["tag_E"], tag_theta=kept["tag_theta"], tag_phi=kept["tag_phi"],
-        tag_detector=kept["tag_detector"].astype(np.int16),
-        proton_detector=kept["proton_detector"].astype(np.int16),
-        probe_E=kept["probe_E"], probe_p=kept["probe_p"],
-        probe_theta=kept["probe_theta"], probe_phi=kept["probe_phi"],
-        probe_m2=kept["probe_m2"], probe_E_minus_p=kept["probe_E_minus_p"],
-        probe_detector=kept["probe_detector"].astype(np.int16),
-        probe_sector=kept["probe_sector"].astype(np.int16),
-        topology_code=kept["topology_code"].astype(np.int16),
-        mx_ep2=kept["mx_ep2"], event_multiplicity=kept["event_multiplicity"].astype(np.int8),
-        paired=paired, high_E=high_E, high_theta=high_theta, high_phi=high_phi,
-        mgg=mgg, high_probe_angle_deg=hp_angle, high_probe_relative_E=hp_relE,
-    )
-    audit["final_opportunities"] = catalog.size()
-    audit["final_paired"] = int(np.count_nonzero(catalog.paired))
-    audit["final_unmatched"] = int(np.count_nonzero(~catalog.paired))
-    audit["final_FT"] = int(np.count_nonzero(catalog.probe_detector == 0))
-    audit["final_FD"] = int(np.count_nonzero(catalog.probe_detector == 1))
-    return catalog, audit
-
-
-def truth_label_final_catalog(
-    catalog: FinalOpportunityCatalog,
-    epgg: EpggRecords,
-    args: argparse.Namespace,
-) -> FinalTruthLabels:
-    n = catalog.size()
-    false = np.zeros(n, dtype=bool)
-    nan = np.full(n, np.nan)
-    if n == 0:
-        return FinalTruthLabels(false, nan, nan, nan, false, false, nan, nan, nan, nan)
-    # endif
-
-    cat_matrix = np.column_stack([
-        np.round(np.asarray(catalog.e_p, dtype=float), args.mc_signature_decimals),
-        np.round(np.asarray(catalog.e_theta, dtype=float), args.mc_signature_decimals),
-        np.round(np.asarray(catalog.e_phi, dtype=float), args.mc_signature_decimals),
-        np.round(np.asarray(catalog.p_p, dtype=float), args.mc_signature_decimals),
-        np.round(np.asarray(catalog.p_theta, dtype=float), args.mc_signature_decimals),
-        np.round(np.asarray(catalog.p_phi, dtype=float), args.mc_signature_decimals),
-    ])
-    if not np.all(np.isfinite(cat_matrix)):
-        raise RuntimeError("Final AAOGEN catalog contains invalid MC identity")
-    # endif
-    cat_keys = structured_keys(cat_matrix)
-    epgg_keys = structured_keys(identity_keys_epgg_mc(epgg, args.mc_signature_decimals))
-    unique, inverse, counts = np.unique(epgg_keys, return_inverse=True, return_counts=True)
-    order = np.argsort(inverse, kind="stable")
-    offsets = np.empty(counts.size + 1, dtype=np.int64)
-    offsets[0] = 0; np.cumsum(counts, out=offsets[1:])
-    group_map = {unique[i].tobytes(): i for i in range(unique.size)}
-
-    tag_match = np.zeros(n, dtype=bool)
-    truth_partner_E = np.full(n, np.nan)
-    truth_partner_theta = np.full(n, np.nan)
-    truth_partner_phi = np.full(n, np.nan)
-    tag_angle = np.full(n, np.nan)
-    tag_relE = np.full(n, np.nan)
-    measured_match = np.zeros(n, dtype=bool)
-    measured_angle = np.full(n, np.nan)
-    measured_relE = np.full(n, np.nan)
-
-    for i, key in enumerate(cat_keys):
-        # cat_keys and epgg_keys use the identical rounded six-dimensional
-        # reconstructed electron/proton identity.
-        group = group_map.get(key.tobytes())
-        if group is None:
-            continue
-        # endif
-        best = None
-        members = order[offsets[group]:offsets[group+1]]
-        for ni in members:
-            for si in range(epgg.solution_valid.shape[1]):
-                if not epgg.solution_valid[ni, si]:
-                    continue
-                # endif
-                assignments = (
-                    (epgg.g1_E[ni,si], epgg.g1_theta[ni,si], epgg.g1_phi[ni,si], epgg.g2_E[ni,si], epgg.g2_theta[ni,si], epgg.g2_phi[ni,si]),
-                    (epgg.g2_E[ni,si], epgg.g2_theta[ni,si], epgg.g2_phi[ni,si], epgg.g1_E[ni,si], epgg.g1_theta[ni,si], epgg.g1_phi[ni,si]),
-                )
-                for tE,tth,tph,pE,pth,pph in assignments:
-                    angle = opening_angle_deg_scalar(
-                        float(catalog.tag_theta[i]), float(catalog.tag_phi[i]),
-                        float(tth), float(tph),
-                    )
-                    relE = abs(float(catalog.tag_E[i]) - float(tE)) / max(float(tE), 1.0e-12)
-                    score = (angle/max(args.tag_match_angle_max_deg,1.0e-12))**2 + (relE/max(args.tag_match_relative_E_max,1.0e-12))**2
-                    if best is None or score < best[0]:
-                        best = (score, angle, relE, float(pE), float(pth), float(pph))
-                    # endif
-                # endfor
-            # endfor
-        # endfor
-        if best is None:
-            continue
-        # endif
-        _, angle, relE, pE, pth, pph = best
-        tag_angle[i] = angle; tag_relE[i] = relE
-        truth_partner_E[i] = pE; truth_partner_theta[i] = pth; truth_partner_phi[i] = pph
-        tag_match[i] = angle < args.tag_match_angle_max_deg and relE < args.tag_match_relative_E_max
-        if catalog.paired[i] and np.isfinite(catalog.high_E[i]):
-            pa = opening_angle_deg_scalar(
-                float(catalog.high_theta[i]), float(catalog.high_phi[i]),
-                pth, pph,
-            )
-            pr = abs(float(catalog.high_E[i])-pE)/max(pE,1.0e-12)
-            measured_angle[i] = pa; measured_relE[i] = pr
-            measured_match[i] = (
-                tag_match[i]
-                and pa < args.probe_match_angle_max_deg
-                and pr < args.probe_match_relative_E_max
-            )
-        # endif
-    # endfor
-
-    above = tag_match & np.isfinite(truth_partner_E) & (truth_partner_E > args.found_probe_E_min)
-    return FinalTruthLabels(
-        tag_truth_match=tag_match,
-        truth_partner_E=truth_partner_E,
-        truth_partner_theta=truth_partner_theta,
-        truth_partner_phi=truth_partner_phi,
-        truth_partner_above_threshold=above,
-        measured_partner_truth_match=measured_match,
-        tag_match_angle_deg=tag_angle,
-        tag_match_relative_E=tag_relE,
-        measured_partner_angle_deg=measured_angle,
-        measured_partner_relative_E=measured_relE,
-    )
-
-
-def _normalized_template(counts: np.ndarray, smoothing: float) -> np.ndarray:
-    values = np.asarray(counts, dtype=float)
-    if smoothing > 0.0 and values.size > 2:
-        values = gaussian_filter1d(values, smoothing, mode="nearest")
-    # endif
-    values = np.maximum(values, 0.0) + 1.0e-12
-    total = float(np.sum(values))
-    if total <= 0.0:
-        raise ValueError("Empty template")
-    # endif
-    return values / total
-
-
-def _morph_mass_template(
-    base_pdf: np.ndarray,
-    edges: np.ndarray,
-    shift: float,
-    smear: float,
-) -> np.ndarray:
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    width = float(np.mean(np.diff(edges)))
-    shifted = np.interp(
-        centers - shift,
-        centers,
-        np.asarray(base_pdf, dtype=float),
-        left=0.0,
-        right=0.0,
-    )
-    if smear > 0.0:
-        shifted = gaussian_filter1d(
-            shifted,
-            smear / max(width, 1.0e-12),
-            mode="constant",
-            cval=0.0,
-        )
-    # endif
-    return _normalized_template(shifted, 0.0)
-
-
-def _bernstein_templates(edges: np.ndarray, degree: int) -> np.ndarray:
-    centers = 0.5 * (edges[:-1] + edges[1:])
-    x = (centers - edges[0]) / (edges[-1] - edges[0])
-    columns = []
-    for k in range(degree + 1):
-        values = math.comb(degree, k) * x**k * (1.0-x)**(degree-k)
-        columns.append(_normalized_template(values, 0.0))
-    # endfor
-    return np.column_stack(columns)
-
-
-def _softmax_with_reference(logits: np.ndarray) -> np.ndarray:
-    full = np.concatenate(([0.0], np.asarray(logits, dtype=float)))
-    full -= np.max(full)
-    expv = np.exp(full)
-    return expv / np.sum(expv)
-
-
-def _poisson_shape_nll(counts: np.ndarray, pdf: np.ndarray) -> float:
-    counts = np.asarray(counts, dtype=float)
-    pdf = _normalized_template(pdf, 0.0)
-    mu = np.maximum(np.sum(counts) * pdf, 1.0e-12)
-    return float(np.sum(mu - counts * np.log(mu)))
-
-
-def fit_paired_mass_peak(
-    masses: np.ndarray,
-    signal_template_masses: np.ndarray,
-    args: argparse.Namespace,
-    background_degree: int = 3,
-) -> Dict[str, object]:
-    low = 0.0
-    high = float(args.final_mass_fit_max)
-    edges = np.linspace(low, high, int(args.final_mass_fit_bins) + 1)
-    masses = np.asarray(masses, dtype=float)
-    masses = masses[np.isfinite(masses) & (masses >= low) & (masses < high)]
-    signal_template_masses = np.asarray(signal_template_masses, dtype=float)
-    signal_template_masses = signal_template_masses[
-        np.isfinite(signal_template_masses)
-        & (signal_template_masses >= low)
-        & (signal_template_masses < high)
-    ]
-    if masses.size < args.final_fit_min_data:
-        raise RuntimeError(f"Paired mass fit has only {masses.size} data entries")
-    # endif
-    if signal_template_masses.size < args.final_template_min_entries:
-        raise RuntimeError(
-            f"Paired mass signal template has only {signal_template_masses.size} entries"
-        )
-    # endif
-
-    counts, _ = np.histogram(masses, bins=edges)
-    sig_counts, _ = np.histogram(signal_template_masses, bins=edges)
-    base_sig = _normalized_template(sig_counts, args.final_template_smoothing)
-    bern = _bernstein_templates(edges, background_degree)
-
-    def components(params):
-        f = float(params[0])
-        shift = float(params[1])
-        smear = float(params[2])
-        weights = _softmax_with_reference(np.asarray(params[3:], dtype=float))
-        sig = _morph_mass_template(base_sig, edges, shift, smear)
-        bg = _normalized_template(bern @ weights, 0.0)
-        model = f*sig + (1.0-f)*bg
-        return sig, bg, _normalized_template(model, 0.0)
-
-    def objective(params):
-        _sig, _bg, model = components(params)
-        return _poisson_shape_nll(counts, model)
-
-    bounds = [
-        (1.0e-5, 0.99999),
-        (-float(args.final_mass_max_shift), float(args.final_mass_max_shift)),
-        (0.0, float(args.final_mass_max_smear)),
-        *[(-6.0, 6.0) for _ in range(background_degree)],
-    ]
-    starts = []
-    window_fraction = float(np.mean((masses > 0.11) & (masses < 0.16)))
-    for f0 in sorted({0.05, 0.15, 0.30, 0.55, 0.80, min(max(window_fraction,0.03),0.90)}):
-        starts.append(np.asarray([f0, 0.0, 0.003] + [0.0]*background_degree, dtype=float))
-    # endfor
-    best = None
-    for start in starts:
-        result = minimize(
-            objective,
-            start,
-            method="L-BFGS-B",
-            bounds=bounds,
-            options={"maxiter": 2500, "ftol": 1.0e-11, "gtol": 1.0e-7},
-        )
-        if best is None or result.fun < best.fun:
-            best = result
-        # endif
-    # endfor
-    if best is None or not np.isfinite(best.fun):
-        raise RuntimeError("Paired mass fit failed to obtain a finite solution")
-    # endif
-
-    params = np.asarray(best.x, dtype=float)
-    sig, bg, model = components(params)
-    fbest = float(params[0])
-    nll_min = float(best.fun)
-
-    # Profile f while re-optimizing nuisance parameters.
-    grid = np.linspace(1.0e-4, 0.9999, max(31, int(args.final_profile_points)))
-    profile = np.full(grid.size, np.nan)
-    nuisance_bounds = bounds[1:]
-    nuisance_start = params[1:].copy()
-    for gi, fval in enumerate(grid):
-        def prof_obj(nuisance):
-            return objective(np.concatenate(([fval], np.asarray(nuisance))))
-        pres = minimize(
-            prof_obj,
-            nuisance_start,
-            method="L-BFGS-B",
-            bounds=nuisance_bounds,
-            options={"maxiter": 700, "ftol": 1.0e-9},
-        )
-        if np.isfinite(pres.fun):
-            profile[gi] = float(pres.fun)
-        # endif
-    # endfor
-    target = nll_min + 0.5
-    below = grid[(grid < fbest) & np.isfinite(profile)]
-    below_nll = profile[(grid < fbest) & np.isfinite(profile)]
-    above = grid[(grid > fbest) & np.isfinite(profile)]
-    above_nll = profile[(grid > fbest) & np.isfinite(profile)]
-    lo_cross = fbest
-    hi_cross = fbest
-    if below.size:
-        eligible = np.flatnonzero(below_nll >= target)
-        if eligible.size:
-            j = eligible[-1]
-            lo_cross = float(below[j])
-        else:
-            lo_cross = float(below[0])
-        # endif
-    # endif
-    if above.size:
-        eligible = np.flatnonzero(above_nll >= target)
-        if eligible.size:
-            hi_cross = float(above[eligible[0]])
-        else:
-            hi_cross = float(above[-1])
-        # endif
-    # endif
-    stat_error = max(fbest-lo_cross, hi_cross-fbest)
-    if stat_error <= 0.0 or not np.isfinite(stat_error):
-        stat_error = math.sqrt(max(fbest*(1.0-fbest)/max(masses.size,1), 1.0e-12))
-    # endif
-
-    expected = masses.size * model
-    with np.errstate(divide="ignore", invalid="ignore"):
-        dev_terms = np.where(
-            counts > 0,
-            2.0*(counts*np.log(counts/np.maximum(expected,1.0e-12))-(counts-expected)),
-            2.0*expected,
-        )
-    deviance = float(np.sum(dev_terms))
-    npar = 3 + background_degree
-    ndf = max(int(np.count_nonzero(counts >= 0)) - npar - 1, 1)
-
-    centers = 0.5*(edges[:-1]+edges[1:])
-    sig_density = np.interp(masses, centers, sig, left=sig[0], right=sig[-1])
-    bg_density = np.interp(masses, centers, bg, left=bg[0], right=bg[-1])
-    posterior = fbest*sig_density / np.maximum(fbest*sig_density + (1.0-fbest)*bg_density, 1.0e-15)
-
-    return {
-        "success": bool(best.success or np.isfinite(best.fun)),
-        "message": str(best.message),
-        "fraction_signal": fbest,
-        "fraction_signal_stat_error": float(stat_error),
-        "shift_GeV": float(params[1]),
-        "smear_GeV": float(params[2]),
-        "background_degree": int(background_degree),
-        "n_entries": int(masses.size),
-        "signal_template_entries": int(signal_template_masses.size),
-        "nll": nll_min,
-        "deviance": deviance,
-        "ndf": ndf,
-        "reduced_deviance": deviance/ndf,
-        "edges": edges,
-        "counts": counts,
-        "signal_pdf": sig,
-        "background_pdf": bg,
-        "model_pdf": model,
-        "posterior_signal": posterior,
-        "masses_used": masses,
-        "profile_fraction_grid": grid,
-        "profile_nll": profile,
-    }
-
-
-def fit_paired_mass_peak_with_model_spread(
-    masses: np.ndarray,
-    signal_template_masses: np.ndarray,
-    args: argparse.Namespace,
-) -> Dict[str, object]:
-    fits = {}
-    for degree in (2, 3, 4):
-        try:
-            fits[degree] = fit_paired_mass_peak(
-                masses,
-                signal_template_masses,
-                args,
-                background_degree=degree,
-            )
-        except Exception as exc:
-            fits[degree] = {"success": False, "message": str(exc)}
-        # endtry
-    # endfor
-    if not fits.get(3, {}).get("success", False):
-        viable = [v for v in fits.values() if v.get("success", False)]
-        if not viable:
-            raise RuntimeError("All paired mass-fit background models failed")
-        # endif
-        nominal = min(viable, key=lambda item: item["nll"])
-    else:
-        nominal = fits[3]
-    # endif
-    fractions = [
-        float(v["fraction_signal"])
-        for v in fits.values()
-        if v.get("success", False)
-    ]
-    spread = max(abs(value-float(nominal["fraction_signal"])) for value in fractions) if fractions else 0.0
-    nominal = dict(nominal)
-    nominal["fraction_signal_model_spread"] = float(spread)
-    nominal["degree_variations"] = {
-        str(k): {
-            key: value
-            for key, value in v.items()
-            if key not in {"edges","counts","signal_pdf","background_pdf","model_pdf","posterior_signal","masses_used","profile_fraction_grid","profile_nll"}
-        }
-        for k,v in fits.items()
-    }
-    return nominal
-
-
-def _weighted_histogram(values, edges, weights=None):
-    values = np.asarray(values, dtype=float)
-    mask = np.isfinite(values)
-    if weights is not None:
-        weights = np.asarray(weights, dtype=float)
-        mask &= np.isfinite(weights) & (weights >= 0.0)
-        weights = weights[mask]
-    # endif
-    counts, _ = np.histogram(values[mask], bins=edges, weights=weights)
-    return np.asarray(counts, dtype=float)
-
-
-def fit_unmatched_shared_purity(
-    data_catalog: FinalOpportunityCatalog,
-    data_mask: np.ndarray,
-    data_weights: Optional[np.ndarray],
-    signal_catalog: FinalOpportunityCatalog,
-    signal_mask: np.ndarray,
-    dvcs_catalog: FinalOpportunityCatalog,
-    dvcs_mask: np.ndarray,
-    paired_background_catalog: FinalOpportunityCatalog,
-    paired_background_mask: np.ndarray,
-    paired_background_weights: np.ndarray,
-    detector: str,
-    args: argparse.Namespace,
-) -> Dict[str, object]:
-    n_data_raw = int(np.count_nonzero(data_mask))
-    if n_data_raw < args.final_fit_min_data:
-        raise RuntimeError(f"Only {n_data_raw} failed-partner data opportunities in {detector}")
-    # endif
-    if data_weights is None:
-        full_data_weights = np.ones(data_catalog.size(), dtype=float)
-    else:
-        full_data_weights = np.asarray(data_weights, dtype=float)
-        if full_data_weights.size != data_catalog.size():
-            raise ValueError("data_weights must have one value per data catalog opportunity")
-        # endif
-    # endif
-    selected_data_weights = full_data_weights[data_mask]
-    n_data_weighted = float(np.sum(selected_data_weights))
-    n_data_weight2 = float(np.sum(selected_data_weights**2))
-    if n_data_weighted <= 0.0:
-        raise RuntimeError(f"Failed-partner data weight is zero in {detector}")
-    # endif
-
-    payload = {}
-    for key in FINAL_FEATURE_ORDER:
-        bins, low, high, label = final_feature_spec(key, detector)
-        edges = np.linspace(low, high, bins+1)
-        d = _weighted_histogram(
-            final_feature_values(data_catalog,key)[data_mask],
-            edges,
-            selected_data_weights,
-        )
-        s = _weighted_histogram(final_feature_values(signal_catalog,key)[signal_mask], edges)
-        b1 = _weighted_histogram(final_feature_values(dvcs_catalog,key)[dvcs_mask], edges)
-        bg_values = final_feature_values(paired_background_catalog,key)[paired_background_mask]
-        b2 = _weighted_histogram(bg_values, edges, paired_background_weights)
-        if np.sum(s) < args.final_template_min_entries:
-            raise RuntimeError(f"Signal template {key} has only {np.sum(s):.0f} entries in {detector}")
-        # endif
-        if np.sum(b1) < args.final_template_min_entries:
-            raise RuntimeError(f"DVCS template {key} has only {np.sum(b1):.0f} entries in {detector}")
-        # endif
-        # Data-driven background is optional; if sparse, use the DVCS shape as
-        # a neutral fallback and record it.
-        b2_fallback = bool(np.sum(b2) < args.final_template_min_entries)
-        if b2_fallback:
-            b2 = b1.copy()
-        # endif
-        payload[key] = {
-            "label": label, "edges": edges, "data": d,
-            "signal": _normalized_template(s, args.final_template_smoothing),
-            "dvcs": _normalized_template(b1, args.final_template_smoothing),
-            "generic": _normalized_template(b2, args.final_template_smoothing),
-            "signal_entries": float(np.sum(s)),
-            "dvcs_entries": float(np.sum(b1)),
-            "generic_weight": float(np.sum(b2)),
-            "generic_fallback_to_dvcs": b2_fallback,
-        }
-    # endfor
-
-    def nll_for(keys, f_signal, bkg_mix):
-        total = 0.0
-        for key in keys:
-            item = payload[key]
-            background = bkg_mix*item["dvcs"] + (1.0-bkg_mix)*item["generic"]
-            model = f_signal*item["signal"] + (1.0-f_signal)*background
-            total += _poisson_shape_nll(item["data"], model)
-        # endfor
-        return float(total)
-
-    def fit_keys(keys, fixed_bkg_mix=None):
-        if fixed_bkg_mix is None:
-            def obj(x):
-                return nll_for(keys, float(x[0]), float(x[1]))
-            best = None
-            for start in ((0.10,0.25),(0.30,0.50),(0.55,0.50),(0.80,0.75)):
-                res = minimize(obj, np.asarray(start), method="L-BFGS-B", bounds=[(1e-5,0.99999),(0.0,1.0)], options={"maxiter":1200,"ftol":1e-10})
-                if best is None or res.fun < best.fun:
-                    best = res
-                # endif
-            # endfor
-            return float(best.x[0]), float(best.x[1]), float(best.fun), bool(best.success), str(best.message)
-        # endif
-        def scalar_obj(f):
-            return nll_for(keys, float(f), float(fixed_bkg_mix))
-        res = minimize_scalar(scalar_obj, bounds=(1e-5,0.99999), method="bounded", options={"xatol":1e-8})
-        return float(res.x), float(fixed_bkg_mix), float(res.fun), bool(res.success), str(res.message)
-
-    # The production central value and statistical interval come from the
-    # single physically direct discriminator M_X^2(e'p').  The remaining
-    # projections are correlated views of the same events and therefore must
-    # not be multiplied together as if they were statistically independent.
-    # A multi-projection composite fit is retained only as a model diagnostic.
-    nominal_keys = ("mx_ep2",)
-    nominal_f, nominal_mix, nominal_nll, success, message = fit_keys(nominal_keys)
-    composite_f, composite_mix, composite_nll, composite_success, composite_message = fit_keys(FINAL_FEATURE_ORDER)
-
-    # Profile statistical uncertainty on f_signal in the nominal M_X^2 fit
-    # while reoptimizing the background mixture.
-    grid = np.linspace(1e-4,0.9999,max(31,int(args.final_profile_points)))
-    prof = np.full(grid.size,np.nan)
-    for i,fval in enumerate(grid):
-        res = minimize_scalar(
-            lambda mix: nll_for(nominal_keys,float(fval),float(mix)),
-            bounds=(0.0,1.0), method="bounded", options={"xatol":1e-6}
-        )
-        if res.success and np.isfinite(res.fun):
-            prof[i] = float(res.fun)
-        # endif
-    # endfor
-    target = nominal_nll + 0.5
-    left_candidates = np.flatnonzero((grid < nominal_f) & np.isfinite(prof) & (prof >= target))
-    right_candidates = np.flatnonzero((grid > nominal_f) & np.isfinite(prof) & (prof >= target))
-    flo = float(grid[left_candidates[-1]]) if left_candidates.size else float(grid[0])
-    fhi = float(grid[right_candidates[0]]) if right_candidates.size else float(grid[-1])
-    stat_error = max(nominal_f-flo, fhi-nominal_f)
-    if not np.isfinite(stat_error) or stat_error <= 0:
-        effective_n = (n_data_weighted**2 / n_data_weight2) if n_data_weight2 > 0.0 else n_data_weighted
-        stat_error = math.sqrt(max(nominal_f*(1-nominal_f)/max(effective_n,1.0),1e-12))
-    # endif
-
-    individual = {}
-    for key in FINAL_FEATURE_ORDER:
-        f, mix, nll, ok, msg = fit_keys((key,))
-        individual[key] = {"fraction_signal":f,"background_dvcs_fraction":mix,"nll":nll,"success":ok,"message":msg}
-    # endfor
-    alt_dvcs = fit_keys(nominal_keys, fixed_bkg_mix=1.0)
-    alt_generic = fit_keys(nominal_keys, fixed_bkg_mix=0.0)
-    # The individual one-dimensional projections are validation diagnostics,
-    # not independent systematic variations: several are intentionally weak
-    # discriminators and can become nearly unconstrained.  The production
-    # model spread therefore uses only controlled alternatives to the nominal
-    # M_X^2 fit: DVCS-only background, generic-only background, and the full
-    # multi-projection composite fit when it converges.
-    variations = []
-    # Alternative background descriptions are included only when their
-    # nominal M_X^2 likelihood is not catastrophically worse than the mixed
-    # background model.  This prevents an obviously excluded pure-background
-    # hypothesis from being misreported as a 100% systematic uncertainty.
-    nll_tolerance = max(10.0, 0.002 * n_data_weighted)
-    if alt_dvcs[2] - nominal_nll <= nll_tolerance:
-        variations.append(alt_dvcs[0])
-    # endif
-    if alt_generic[2] - nominal_nll <= nll_tolerance:
-        variations.append(alt_generic[0])
-    # endif
-    # The multi-projection fit is correlated and is never used for statistical
-    # inference, but its central-value displacement is a useful shape-model
-    # stress test.
-    if composite_success and np.isfinite(composite_f):
-        variations.append(composite_f)
-    # endif
-    model_spread = max(abs(v-nominal_f) for v in variations) if variations else 0.0
-
-    deviance = 0.0
-    nbins = 0
-    for key in FINAL_FEATURE_ORDER:
-        item = payload[key]
-        background = nominal_mix*item["dvcs"] + (1.0-nominal_mix)*item["generic"]
-        model = nominal_f*item["signal"] + (1.0-nominal_f)*background
-        item["model_pdf"] = model
-        item["background_pdf"] = background
-        if key in nominal_keys:
-            expected = np.sum(item["data"])*model
-            d = item["data"]
-            with np.errstate(divide="ignore",invalid="ignore"):
-                terms = np.where(d>0,2*(d*np.log(d/np.maximum(expected,1e-12))-(d-expected)),2*expected)
-            deviance += float(np.sum(terms)); nbins += d.size
-        # endif
-    # endfor
-    ndf = max(nbins - 2 - 1, 1)
-
-    return {
-        "success": bool(success), "message": message,
-        "fraction_signal": nominal_f,
-        "fraction_signal_stat_error": float(stat_error),
-        "fraction_signal_model_spread": float(model_spread),
-        "background_dvcs_fraction": nominal_mix,
-        "n_data_raw": n_data_raw,
-        "n_data_weighted": n_data_weighted,
-        "n_data_effective": ((n_data_weighted**2 / n_data_weight2) if n_data_weight2 > 0.0 else n_data_weighted),
-        "nll": nominal_nll,
-        "deviance": deviance, "ndf": ndf,
-        "reduced_deviance": deviance/ndf,
-        "nominal_driver": "mx_ep2",
-        "individual_variable_fits": individual,
-        "composite_diagnostic": {
-            "fraction_signal": composite_f,
-            "background_dvcs_fraction": composite_mix,
-            "nll": composite_nll,
-            "success": composite_success,
-            "message": composite_message,
-        },
-        "signal_plus_dvcs_only": {"fraction_signal":alt_dvcs[0],"nll":alt_dvcs[2]},
-        "signal_plus_generic_only": {"fraction_signal":alt_generic[0],"nll":alt_generic[2]},
-        "payload": payload,
-        "profile_fraction_grid": grid,
-        "profile_nll": prof,
-    }
-
-
-def _final_efficiency_from_yields(
-    found: float,
-    found_stat: float,
-    found_model: float,
-    total_selected_opportunities: int,
-    failed_purity: float,
-    failed_purity_stat: float,
-    failed_purity_model: float,
-) -> Dict[str,float]:
-    """
-    Convert the fitted found-pi0 yield and fitted pi0 purity of the remaining
-    opportunities into an efficiency.
-
-    Every selected low-tag opportunity is either a genuine found pi0 pair or
-    belongs to the residual failed-partner population.  Consequently
-
-        N_fail = N_selected - N_found
-        N_missed_pi0 = f_pi0_fail * N_fail
-
-    This formulation keeps the anti-correlation between the fitted found yield
-    and the size of the residual population explicit instead of treating them
-    as independent Poisson counts.
-    """
-    total = float(total_selected_opportunities)
-    if total <= 0.0 or found < 0.0 or found > total:
-        return {
-            "efficiency": math.nan,
-            "stat_error": math.nan,
-            "model_error": math.nan,
-            "missed_pi0": math.nan,
-            "failed_population": math.nan,
-        }
-    # endif
-
-    failed_population = total - found
-    missed = failed_purity * failed_population
-    denominator = found + missed
-    if denominator <= 0.0:
-        return {
-            "efficiency": math.nan,
-            "stat_error": math.nan,
-            "model_error": math.nan,
-            "missed_pi0": missed,
-            "failed_population": failed_population,
-        }
-    # endif
-
-    efficiency = found / denominator
-    # D = f_fail*N_total + (1-f_fail)*N_found.
-    d_found = failed_purity * total / (denominator**2)
-    d_purity = -found * failed_population / (denominator**2)
-
-    stat = math.sqrt(
-        (d_found * found_stat)**2
-        + (d_purity * failed_purity_stat)**2
-    )
-    model = math.sqrt(
-        (d_found * found_model)**2
-        + (d_purity * failed_purity_model)**2
-    )
-    return {
-        "efficiency": efficiency,
-        "stat_error": stat,
-        "model_error": model,
-        "missed_pi0": missed,
-        "failed_population": failed_population,
-    }
-
-def plot_final_pair_residuals(
-    path: Path,
-    period_label: str,
-    detector: str,
-    catalog: FinalOpportunityCatalog,
-    mask: np.ndarray,
-) -> None:
-    """Diagnostic only: verify all angular and energy residuals for paired data."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    angle = np.asarray(catalog.high_probe_angle_deg[mask], dtype=float)
-    relE = np.asarray(catalog.high_probe_relative_E[mask], dtype=float)
-    mgg = np.asarray(catalog.mgg[mask], dtype=float)
-    probe_theta = np.degrees(np.asarray(catalog.probe_theta[mask], dtype=float))
-    valid = np.isfinite(angle) & np.isfinite(relE) & np.isfinite(mgg)
-
-    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.5))
-    axes[0,0].hist(angle[np.isfinite(angle)], bins=80, range=(0.0, 12.0), histtype="step", density=True)
-    axes[0,0].axvline(3.0, color="0.4", linestyle="--", linewidth=1.0)
-    axes[0,0].set_xlabel(r"$\Delta\psi(\gamma_{\rm high},X)$ (deg)")
-    axes[0,0].set_ylabel("fraction / bin")
-
-    axes[0,1].hist(relE[np.isfinite(relE)], bins=80, range=(0.0, 1.2), histtype="step", density=True)
-    axes[0,1].axvline(0.35, color="0.4", linestyle="--", linewidth=1.0)
-    axes[0,1].set_xlabel(r"$|E_{\gamma,\rm high}-E_X|/E_X$")
-    axes[0,1].set_ylabel("fraction / bin")
-
-    axes[1,0].hist(mgg[np.isfinite(mgg)], bins=100, range=(0.0, 0.35), histtype="step", density=True)
-    axes[1,0].axvspan(0.11, 0.16, color="0.5", alpha=0.14)
-    axes[1,0].set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
-    axes[1,0].set_ylabel("fraction / bin")
-
-    if np.any(valid):
-        axes[1,1].hist2d(
-            probe_theta[valid],
-            angle[valid],
-            bins=(45, 50),
-            range=((2.5, 35.0), (0.0, 12.0)),
-        )
-    # endif
-    axes[1,1].axhline(3.0, color="white", linestyle="--", linewidth=1.0)
-    axes[1,1].set_xlabel(r"predicted $\theta_X$ (deg)")
-    axes[1,1].set_ylabel(r"$\Delta\psi(\gamma_{\rm high},X)$ (deg)")
-
-    for ax in axes.reshape(-1):
-        ax.grid(axis="y", alpha=0.18)
-    # endfor
-    fig.suptitle(f"{period_label} {detector}: paired-photon residual diagnostics")
-    fig.tight_layout(rect=(0,0,1,.96))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def plot_final_mass_fit(path: Path, period_label: str, detector: str, fit: Mapping[str,object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    edges=np.asarray(fit["edges"],dtype=float); counts=np.asarray(fit["counts"],dtype=float)
-    centers=0.5*(edges[:-1]+edges[1:]); n=float(np.sum(counts)); f=float(fit["fraction_signal"])
-    sig=n*f*np.asarray(fit["signal_pdf"],dtype=float)
-    bg=n*(1-f)*np.asarray(fit["background_pdf"],dtype=float)
-    total=sig+bg
-    fig,axes=plt.subplots(2,1,figsize=(8.2,7.2),height_ratios=[3.1,1.0],sharex=True)
-    ax=axes[0]
-    ax.errorbar(centers,counts,yerr=np.sqrt(np.maximum(counts,1.0)),fmt='o',ms=3.2,color='black',label='Data')
-    ax.stairs(sig,edges,color='tab:red',linewidth=1.7,label=r'fitted $\pi^0$')
-    ax.stairs(bg,edges,color='tab:blue',linewidth=1.5,label=r'non-$\pi^0$ background')
-    ax.stairs(total,edges,color='tab:green',linewidth=1.7,linestyle='--',label='total fit')
-    ax.axvspan(0.11,0.16,color='0.5',alpha=0.12)
-    ax.set_ylabel('events / bin'); ax.grid(axis='y',alpha=.2); ax.legend(frameon=False,ncol=2)
-    ax.set_title(f'{period_label} {detector}: paired $M_{{\\gamma\\gamma}}$ fit')
-    ax.text(.98,.95,fr'$f_{{\pi^0}}={f:.3f}\pm{float(fit["fraction_signal_stat_error"]):.3f}$'+'\n'+fr'$D/ndf={float(fit["reduced_deviance"]):.2f}$',transform=ax.transAxes,ha='right',va='top')
-    ratio=np.divide(counts,total,out=np.full_like(counts,np.nan),where=total>0)
-    axes[1].axhline(1.0,color='0.4',lw=1); axes[1].plot(centers,ratio,'o',ms=3,color='black')
-    axes[1].set_ylabel('data / fit'); axes[1].set_xlabel(r'$M_{\gamma\gamma}$ (GeV)'); axes[1].set_ylim(.5,1.5); axes[1].grid(axis='y',alpha=.2)
-    fig.tight_layout(); fig.savefig(path,dpi=180); plt.close(fig)
-
-
-def plot_final_unmatched_fit(path: Path, period_label: str, detector: str, fit: Mapping[str,object]) -> None:
-    path.parent.mkdir(parents=True,exist_ok=True)
-    keys=FINAL_FEATURE_ORDER
-    fig,axes=plt.subplots(2,4,figsize=(19,9.5)); axes=np.asarray(axes).reshape(-1)
-    fs=float(fit['fraction_signal']); bm=float(fit['background_dvcs_fraction'])
-    for i,key in enumerate(keys):
-        ax=axes[i]; item=fit['payload'][key]; edges=np.asarray(item['edges']); centers=.5*(edges[:-1]+edges[1:]); d=np.asarray(item['data']); n=float(np.sum(d))
-        s=n*fs*np.asarray(item['signal']); b=n*(1-fs)*np.asarray(item['background_pdf']); m=s+b
-        ax.errorbar(centers,d,yerr=np.sqrt(np.maximum(d,1)),fmt='o',ms=2.7,color='black',label='failed-partner data')
-        ax.stairs(s,edges,color='tab:red',lw=1.5,label=r'$\pi^0$ signal')
-        ax.stairs(b,edges,color='tab:blue',lw=1.4,label='background')
-        ax.stairs(m,edges,color='tab:green',lw=1.5,ls='--',label='total')
-        ax.set_xlabel(item['label']); ax.set_ylabel('events / bin'); ax.grid(axis='y',alpha=.2)
-        if i==0: ax.legend(frameon=False,fontsize=8)
-    # endfor
-    axes[-1].axis('off')
-    axes[-1].text(.05,.95,fr'$f_C^{{\pi^0}}={fs:.3f}\pm{float(fit["fraction_signal_stat_error"]):.3f}$'+'\n'+fr'model spread $={float(fit["fraction_signal_model_spread"]):.3f}$'+'\n'+fr'DVCS fraction of background $={bm:.3f}$'+'\n'+fr'$D/ndf={float(fit["reduced_deviance"]):.2f}$',va='top')
-    fig.suptitle(fr'{period_label} {detector}: missed-partner $\pi^0$ purity fit',fontsize=15)
-    fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
-
-
-def _final_serializable_fit(fit: Mapping[str,object]) -> Dict[str,object]:
-    return {
-        k:v for k,v in fit.items()
-        if k not in {"edges","counts","signal_pdf","background_pdf","model_pdf","posterior_signal","masses_used","profile_fraction_grid","profile_nll","payload"}
-    }
-
-
-
-def _deterministic_closure_split(size: int) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Return disjoint AAOGEN template/evaluation masks for the final closure.
-
-    The split is deterministic and deliberately independent of truth labels:
-    alternating reconstructed low-tag opportunities are assigned to the
-    template and pseudo-data samples.  This prevents the closure fit from
-    evaluating an AAOGEN entry against a signal/fake template containing that
-    same entry.
-    """
-    index = np.arange(int(size), dtype=np.int64)
-    template = (index % 2) == 0
-    evaluation = ~template
-    return template, evaluation
-
-
-def run_final_aaogen_closure_region(
-    period: PeriodConfig,
-    detector: str,
-    aao: FinalOpportunityCatalog,
-    truth: FinalTruthLabels,
-    truth_signal: np.ndarray,
-    dvcs: FinalOpportunityCatalog,
-    args: argparse.Namespace,
-    output_dir: Path,
-) -> Dict[str, object]:
-    """
-    Run the final data-driven estimator on AAOGEN as blinded pseudo-data.
-
-    AAOGEN is split into disjoint template and evaluation halves.  The
-    evaluation half is treated exactly like data: its paired Mgg spectrum is
-    fit without truth labels, a residual failed-partner population is built
-    from the mass-fit posterior, and its pi0 purity is extracted from the same
-    M_X^2(e'p') template fit used in production.  Truth is consulted only
-    after the extraction to quantify closure.
-    """
-    output_dir.mkdir(parents=True, exist_ok=True)
-    areg = final_region_mask(aao, detector)
-    vreg = final_region_mask(dvcs, detector)
-    template_half, evaluation_half = _deterministic_closure_split(aao.size())
-
-    aao_probe_match = (
-        aao.paired
-        & np.isfinite(aao.high_probe_angle_deg)
-        & np.isfinite(aao.high_probe_relative_E)
-        & (aao.high_probe_angle_deg < args.probe_match_angle_max_deg)
-        & (aao.high_probe_relative_E < args.probe_match_relative_E_max)
-    )
-    truth_success = (
-        areg
-        & truth_signal
-        & aao_probe_match
-        & truth.measured_partner_truth_match
-    )
-
-    eval_region = areg & evaluation_half
-    template_region = areg & template_half
-    truth_denom = int(np.count_nonzero(eval_region & truth_signal))
-    truth_num = int(np.count_nonzero(eval_region & truth_success))
-    truth_eff = truth_num / truth_denom if truth_denom else math.nan
-    truth_eff_err = simple_binomial_error(truth_num, truth_denom)
-
-    closure: Dict[str, object] = {
-        "available": False,
-        "detector": detector,
-        "split_definition": "even reconstructed opportunity index = template; odd = pseudo-data",
-        "template_region_entries": int(np.count_nonzero(template_region)),
-        "evaluation_region_entries": int(np.count_nonzero(eval_region)),
-        "truth_opportunities": truth_denom,
-        "truth_reconstructed": truth_num,
-        "truth_efficiency": truth_eff,
-        "truth_efficiency_stat_err": truth_eff_err,
-        "failure_reason": "",
-    }
-
-    try:
-        paired_eval = (
-            eval_region
-            & aao_probe_match
-            & np.isfinite(aao.mgg)
-        )
-        signal_mass_template = (
-            template_region
-            & aao_probe_match
-            & truth_signal
-            & truth.measured_partner_truth_match
-            & np.isfinite(aao.mgg)
-        )
-        if np.count_nonzero(signal_mass_template) < args.final_template_min_entries:
-            signal_mass_template = (
-                template_region
-                & aao_probe_match
-                & truth_signal
-                & np.isfinite(aao.mgg)
-            )
-        # endif
-
-        mass_fit = fit_paired_mass_peak_with_model_spread(
-            aao.mgg[paired_eval],
-            aao.mgg[signal_mass_template],
-            args,
-        )
-        plot_final_mass_fit(
-            output_dir / f"{detector.lower()}_aaogen_pseudodata_paired_mgg_fit.png",
-            f"{period.label} AAOGEN closure",
-            detector,
-            mass_fit,
-        )
-
-        mass_range = (
-            (aao.mgg[paired_eval] >= 0.0)
-            & (aao.mgg[paired_eval] < args.final_mass_fit_max)
-            & np.isfinite(aao.mgg[paired_eval])
-        )
-        paired_indices = np.flatnonzero(paired_eval)
-        fit_indices = paired_indices[mass_range]
-        failure_weight_full = np.zeros(aao.size(), dtype=float)
-        failure_weight_full[eval_region] = 1.0
-        failure_weight_full[fit_indices] = (
-            1.0 - np.asarray(mass_fit["posterior_signal"], dtype=float)
-        )
-        failed_eval_mask = eval_region & (failure_weight_full > 1.0e-8)
-
-        signal_template = template_region & truth_signal
-        fake_background = template_region & (~truth_signal)
-        if np.count_nonzero(fake_background) < args.final_template_min_entries:
-            fake_background = template_region & (~truth.tag_truth_match)
-        # endif
-        if np.count_nonzero(signal_template) < args.final_template_min_entries:
-            raise RuntimeError(
-                f"closure signal template has only {np.count_nonzero(signal_template)} entries"
-            )
-        # endif
-        if np.count_nonzero(fake_background) < args.final_template_min_entries:
-            raise RuntimeError(
-                f"closure fake-photon template has only {np.count_nonzero(fake_background)} entries"
-            )
-        # endif
-        if np.count_nonzero(vreg) < args.final_template_min_entries:
-            raise RuntimeError(
-                f"closure DVCSGEN template has only {np.count_nonzero(vreg)} entries"
-            )
-        # endif
-
-        purity_fit = fit_unmatched_shared_purity(
-            aao,
-            failed_eval_mask,
-            failure_weight_full,
-            aao,
-            signal_template,
-            dvcs,
-            vreg,
-            aao,
-            fake_background,
-            np.ones(np.count_nonzero(fake_background), dtype=float),
-            detector,
-            args,
-        )
-        plot_final_unmatched_fit(
-            output_dir / f"{detector.lower()}_aaogen_pseudodata_missed_partner_purity_fit.png",
-            f"{period.label} AAOGEN closure",
-            detector,
-            purity_fit,
-        )
-
-        npaired = int(mass_fit["n_entries"])
-        found = float(mass_fit["fraction_signal"]) * npaired
-        found_stat = float(mass_fit["fraction_signal_stat_error"]) * npaired
-        found_model = float(mass_fit["fraction_signal_model_spread"]) * npaired
-        purity = float(purity_fit["fraction_signal"])
-        purity_stat = float(purity_fit["fraction_signal_stat_error"])
-        purity_model = float(purity_fit["fraction_signal_model_spread"])
-        ntotal = int(np.count_nonzero(eval_region))
-        extracted = _final_efficiency_from_yields(
-            found,
-            found_stat,
-            found_model,
-            ntotal,
-            purity,
-            purity_stat,
-            purity_model,
-        )
-
-        paired_truth_signal = (
-            paired_eval
-            & truth_signal
-            & truth.measured_partner_truth_match
-        )
-        paired_truth_purity = (
-            np.count_nonzero(paired_truth_signal) / np.count_nonzero(paired_eval)
-            if np.count_nonzero(paired_eval) > 0
-            else math.nan
-        )
-        actual_failed = eval_region & (~truth_success)
-        actual_failed_truth = actual_failed & truth_signal
-        actual_failed_purity = (
-            np.count_nonzero(actual_failed_truth) / np.count_nonzero(actual_failed)
-            if np.count_nonzero(actual_failed) > 0
-            else math.nan
-        )
-        weighted_truth_purity = (
-            float(np.sum(failure_weight_full[failed_eval_mask] * truth_signal[failed_eval_mask]))
-            / float(np.sum(failure_weight_full[failed_eval_mask]))
-            if np.sum(failure_weight_full[failed_eval_mask]) > 0.0
-            else math.nan
-        )
-
-        extracted_eff = float(extracted["efficiency"])
-        closure.update(
-            {
-                "available": True,
-                "paired_pseudodata_entries": npaired,
-                "paired_fitted_pi0_fraction": float(mass_fit["fraction_signal"]),
-                "paired_fitted_pi0_fraction_stat_err": float(mass_fit["fraction_signal_stat_error"]),
-                "paired_fitted_pi0_fraction_model_err": float(mass_fit["fraction_signal_model_spread"]),
-                "paired_truth_pi0_fraction": paired_truth_purity,
-                "paired_mass_fit_reduced_deviance": float(mass_fit["reduced_deviance"]),
-                "failed_weighted_entries": float(np.sum(failure_weight_full[failed_eval_mask])),
-                "failed_fitted_pi0_fraction": purity,
-                "failed_fitted_pi0_fraction_stat_err": purity_stat,
-                "failed_fitted_pi0_fraction_model_err": purity_model,
-                "failed_truth_pi0_fraction": actual_failed_purity,
-                "failed_weighted_truth_pi0_fraction": weighted_truth_purity,
-                "failed_fit_reduced_deviance": float(purity_fit["reduced_deviance"]),
-                "fitted_found_pi0": found,
-                "fitted_missed_pi0": float(extracted["missed_pi0"]),
-                "extracted_efficiency": extracted_eff,
-                "extracted_efficiency_stat_err": float(extracted["stat_error"]),
-                "extracted_efficiency_model_err": float(extracted["model_error"]),
-                "closure_difference": (
-                    extracted_eff - truth_eff
-                    if np.isfinite(extracted_eff) and np.isfinite(truth_eff)
-                    else math.nan
-                ),
-                "closure_ratio": (
-                    extracted_eff / truth_eff
-                    if np.isfinite(extracted_eff) and np.isfinite(truth_eff) and truth_eff > 0.0
-                    else math.nan
-                ),
-                "mass_fit": _final_serializable_fit(mass_fit),
-                "purity_fit": {
-                    k: v for k, v in purity_fit.items()
-                    if k not in {"payload", "profile_fraction_grid", "profile_nll"}
-                },
-            }
-        )
-    except Exception as exc:
-        closure["failure_reason"] = str(exc)
-        log(
-            f"{period.label} {detector} AAOGEN CLOSURE WARNING: {exc}"
-        )
-    # endtry
-
-    return closure
-
-
-def process_period_final_efficiency(
-    period: PeriodConfig,
-    args_dict: Mapping[str,object],
-) -> Tuple[str,List[Dict[str,object]],Dict[str,object]]:
-    args=argparse.Namespace(**args_dict)
-    root=Path(args.output_dir)/'final'/period.key
-    root.mkdir(parents=True,exist_ok=True)
-
-    log(f'{period.label} FINAL: reading data low-tag opportunities')
-    data, data_audit = read_final_opportunity_catalog(period.epg_data,period.beam_energy_GeV,'data',args)
-    log(f'{period.label} FINAL: reading AAOGEN reconstructed opportunities')
-    aao, aao_audit = read_final_opportunity_catalog(period.pi0_epg_mc,period.beam_energy_GeV,'mc',args)
-    log(f'{period.label} FINAL: reading DVCSGEN reconstructed opportunities')
-    dvcs, dvcs_audit = read_final_opportunity_catalog(period.dvcs_mc,period.beam_energy_GeV,'mc',args)
-    log(f'{period.label} FINAL: reading AAOGEN truth daughters')
-    epgg, epgg_audit = read_epgg(period.pi0_epgg_mc,period.beam_energy_GeV,'AAOGEN final truth',args)
-    truth = truth_label_final_catalog(aao,epgg,args)
-    truth_signal = truth.tag_truth_match & truth.truth_partner_above_threshold
-
-    rows=[]; region_metadata={}
-    for detector in ('FT','FD'):
-        dreg=final_region_mask(data,detector)
-        areg=final_region_mask(aao,detector)
-        vreg=final_region_mask(dvcs,detector)
-        # A reconstructed high-energy photon is considered a candidate for the
-        # predicted probe only when it is geometrically and energetically
-        # compatible with X.  This prevents an unrelated BH/DVCS photon from
-        # entering the pi0 mass fit merely because it shares the event.
-        data_probe_match = (
-            data.paired
-            & np.isfinite(data.high_probe_angle_deg)
-            & np.isfinite(data.high_probe_relative_E)
-            & (data.high_probe_angle_deg < args.probe_match_angle_max_deg)
-            & (data.high_probe_relative_E < args.probe_match_relative_E_max)
-        )
-        aao_probe_match = (
-            aao.paired
-            & np.isfinite(aao.high_probe_angle_deg)
-            & np.isfinite(aao.high_probe_relative_E)
-            & (aao.high_probe_angle_deg < args.probe_match_angle_max_deg)
-            & (aao.high_probe_relative_E < args.probe_match_relative_E_max)
-        )
-        paired_data=dreg & data_probe_match & np.isfinite(data.mgg)
-        unmatched_data=dreg & (~data.paired)
-        paired_signal_mc=(areg & aao_probe_match & truth_signal & truth.measured_partner_truth_match & np.isfinite(aao.mgg))
-        if np.count_nonzero(paired_signal_mc) < args.final_template_min_entries:
-            paired_signal_mc=(areg & aao_probe_match & truth_signal & np.isfinite(aao.mgg))
-        # endif
-
-        mass_fit=fit_paired_mass_peak_with_model_spread(data.mgg[paired_data],aao.mgg[paired_signal_mc],args)
-        plot_final_mass_fit(root/f'{detector.lower()}_paired_mgg_fit.png',period.label,detector,mass_fit)
-        plot_final_pair_residuals(
-            root/f'{detector.lower()}_paired_residual_diagnostics.png',
-            period.label, detector, data, dreg & data.paired & np.isfinite(data.mgg),
-        )
-
-        # Map the paired mass-fit background posterior back onto the data
-        # opportunities.  A true pi0 low tag whose real high-energy daughter
-        # was missed can still coexist with an unrelated >2 GeV photon.  Such
-        # events belong in the missed-partner denominator even though they are
-        # technically "paired" at the row level.  We therefore fit the entire
-        # failed-partner population:
-        #   * exact-one unmatched opportunities carry failure weight 1;
-        #   * paired opportunities carry 1-P(pi0 pair | Mgg);
-        #   * paired masses outside the fit range carry failure weight 1.
-        mass_range=(data.mgg[paired_data]>=0.0)&(data.mgg[paired_data]<args.final_mass_fit_max)&np.isfinite(data.mgg[paired_data])
-        paired_indices=np.flatnonzero(paired_data)
-        fit_indices=paired_indices[mass_range]
-        failure_weight_full=np.zeros(data.size(),dtype=float)
-        # Every selected opportunity is initially a failed probe.  Only the
-        # signal posterior of a residual-matched paired candidate is removed.
-        failure_weight_full[dreg]=1.0
-        failure_weight_full[fit_indices]=1.0-np.asarray(mass_fit['posterior_signal'],dtype=float)
-        failed_data_mask = dreg & (failure_weight_full > 1.0e-8)
-
-        # Production signal template for the failed-partner purity fit.
-        #
-        # The production fit is driven only by M_X^2(e'p'), which depends on
-        # the reconstructed electron and proton and therefore does not require
-        # the true partner photon to have been missed. Requiring a specifically
-        # missed truth partner would make the template statistics scale with
-        # the very inefficiency being measured and is too sparse in FT.
-        #
-        # Use all truth-matched AAOGEN pi0 low-tag opportunities in the same
-        # predicted FT/FD region whose true partner is above threshold.
-        signal_inclusive = areg & truth_signal
-
-        # Keep the genuinely missed subset as a diagnostic only.
-        signal_failed_truth = (
-            areg
-            & truth_signal
-            & ~(
-                aao_probe_match
-                & truth.measured_partner_truth_match
-            )
-        )
-
-        n_signal_inclusive = int(
-            np.count_nonzero(signal_inclusive)
-        )
-        n_signal_failed_truth = int(
-            np.count_nonzero(signal_failed_truth)
-        )
-
-        if n_signal_inclusive < args.final_template_min_entries:
-            raise RuntimeError(
-                f"{period.label} {detector}: insufficient inclusive "
-                f"truth-matched AAOGEN pi0 signal template "
-                f"({n_signal_inclusive} entries)"
-            )
-        # endif
-
-        signal_template = signal_inclusive
-
-        if n_signal_failed_truth < args.final_template_min_entries:
-            log(
-                f"{period.label} {detector}: only "
-                f"{n_signal_failed_truth} truth-matched AAOGEN genuinely "
-                "missed-partner entries; using the inclusive truth-matched "
-                f"pi0 signal template ({n_signal_inclusive} entries) for "
-                "the production M_X^2(e'p') purity fit."
-            )
-        else:
-            log(
-                f"{period.label} {detector}: production pi0 signal template "
-                f"uses {n_signal_inclusive} inclusive truth-matched AAOGEN "
-                f"entries; genuinely missed subset has "
-                f"{n_signal_failed_truth} entries and is retained as a "
-                "shape diagnostic."
-            )
-        # endif
-
-        # Physics background: DVCSGEN opportunities under the exact same low-
-        # tag/probe selection.  Detector-artifact background: AAOGEN low tags
-        # that do not truth-match the generated pi0 daughter/partner topology.
-        dvcs_background = vreg
-        fake_background = areg & (~truth_signal)
-        if np.count_nonzero(dvcs_background) < args.final_template_min_entries:
-            raise RuntimeError(f"{period.label} {detector}: insufficient DVCSGEN background template")
-        # endif
-        if np.count_nonzero(fake_background) < args.final_template_min_entries:
-            fake_background = areg & (~truth.tag_truth_match)
-        # endif
-        if np.count_nonzero(fake_background) < args.final_template_min_entries:
-            raise RuntimeError(f"{period.label} {detector}: insufficient AAOGEN fake-photon background template")
-        # endif
-
-        purity_fit=fit_unmatched_shared_purity(
-            data,failed_data_mask,failure_weight_full,
-            aao,signal_template,
-            dvcs,dvcs_background,
-            aao,fake_background,np.ones(np.count_nonzero(fake_background),dtype=float),
-            detector,args,
-        )
-
-        # Compare inclusive and genuinely missed AAOGEN signal shapes in the
-        # nominal M_X^2(e'p') variable whenever the missed subset is populated
-        # well enough for the comparison to be meaningful.
-        signal_shape_diagnostic = {
-            "inclusive_entries": n_signal_inclusive,
-            "genuinely_missed_entries": n_signal_failed_truth,
-            "missed_shape_comparison_available": False,
-            "mx_ep2_l1_distance": math.nan,
-            "mx_ep2_chi2_like": math.nan,
-        }
-        if n_signal_failed_truth >= args.final_template_min_entries:
-            bins, low, high, _ = final_feature_spec(
-                "mx_ep2",
-                detector,
-            )
-            edges = np.linspace(low, high, bins + 1)
-            inclusive_counts = _weighted_histogram(
-                final_feature_values(aao, "mx_ep2")[
-                    signal_inclusive
-                ],
-                edges,
-            )
-            missed_counts = _weighted_histogram(
-                final_feature_values(aao, "mx_ep2")[
-                    signal_failed_truth
-                ],
-                edges,
-            )
-            inclusive_pdf = _normalized_template(
-                inclusive_counts,
-                args.final_template_smoothing,
-            )
-            missed_pdf = _normalized_template(
-                missed_counts,
-                args.final_template_smoothing,
-            )
-            l1_distance = 0.5 * float(
-                np.sum(
-                    np.abs(
-                        inclusive_pdf - missed_pdf
-                    )
-                )
-            )
-            denom = np.maximum(
-                0.5 * (inclusive_pdf + missed_pdf),
-                1.0e-12,
-            )
-            chi2_like = float(
-                np.sum(
-                    (inclusive_pdf - missed_pdf) ** 2
-                    / denom
-                )
-            )
-            signal_shape_diagnostic.update(
-                {
-                    "missed_shape_comparison_available": True,
-                    "mx_ep2_l1_distance": l1_distance,
-                    "mx_ep2_chi2_like": chi2_like,
-                }
-            )
-        # endif
-
-        purity_fit["signal_template_definition"] = (
-            "inclusive truth-matched AAOGEN pi0 low-tag opportunities in "
-            "the same predicted detector region; true partner >2 GeV"
-        )
-        purity_fit["signal_shape_diagnostic"] = (
-            signal_shape_diagnostic
-        )
-
-        plot_final_unmatched_fit(
-            root/f'{detector.lower()}_missed_partner_purity_fit.png',
-            period.label,
-            detector,
-            purity_fit,
-        )
-
-        npaired=int(mass_fit['n_entries'])
-        found=float(mass_fit['fraction_signal'])*npaired
-        found_stat=float(mass_fit['fraction_signal_stat_error'])*npaired
-        found_model=float(mass_fit['fraction_signal_model_spread'])*npaired
-        nunmatched=int(np.count_nonzero(unmatched_data))
-        nfailed_weighted=float(np.sum(failure_weight_full[failed_data_mask]))
-        purity=float(purity_fit['fraction_signal'])
-        purity_stat=float(purity_fit['fraction_signal_stat_error'])
-        purity_model=float(purity_fit['fraction_signal_model_spread'])
-        ntotal_selected=int(np.count_nonzero(dreg))
-        eff=_final_efficiency_from_yields(
-            found, found_stat, found_model,
-            ntotal_selected,
-            purity, purity_stat, purity_model,
-        )
-
-        mc_denom=int(np.count_nonzero(areg & truth_signal))
-        mc_num=int(np.count_nonzero(areg & truth_signal & aao_probe_match & truth.measured_partner_truth_match))
-        mc_eff=mc_num/mc_denom if mc_denom else math.nan
-        mc_err=simple_binomial_error(mc_num,mc_denom)
-        scale=eff['efficiency']/mc_eff if np.isfinite(mc_eff) and mc_eff>0 else math.nan
-        scale_stat=math.sqrt((eff['stat_error']/mc_eff)**2 + (eff['efficiency']*mc_err/max(mc_eff**2,1e-15))**2) if np.isfinite(scale) else math.nan
-        scale_model=eff['model_error']/mc_eff if np.isfinite(scale) else math.nan
-
-        mc_c=areg & (~aao.paired)
-        mc_c_truth=int(np.count_nonzero(mc_c & truth_signal))
-        mc_c_total=int(np.count_nonzero(mc_c))
-        mc_c_purity=mc_c_truth/mc_c_total if mc_c_total else math.nan
-        mc_success = areg & truth_signal & aao_probe_match & truth.measured_partner_truth_match
-        mc_failed_population = areg & (~mc_success)
-        mc_failed_truth = mc_failed_population & truth_signal
-        mc_failed_purity = (
-            np.count_nonzero(mc_failed_truth) / np.count_nonzero(mc_failed_population)
-            if np.count_nonzero(mc_failed_population) > 0
-            else math.nan
-        )
-
-        closure = run_final_aaogen_closure_region(
-            period,
-            detector,
-            aao,
-            truth,
-            truth_signal,
-            dvcs,
-            args,
-            root / "closure",
-        )
-
-        row={
-            'period':period.key,'period_label':period.label,'detector':detector,
-            'paired_data_entries_in_mass_fit':npaired,
-            'fitted_found_pi0':found,'fitted_found_pi0_stat_err':found_stat,'fitted_found_pi0_model_err':found_model,
-            'paired_pi0_fraction':float(mass_fit['fraction_signal']),'paired_pi0_fraction_stat_err':float(mass_fit['fraction_signal_stat_error']),'paired_pi0_fraction_model_err':float(mass_fit['fraction_signal_model_spread']),
-            'total_selected_low_tag_opportunities':ntotal_selected,
-            'unmatched_exact_one_data_entries':nunmatched,
-            'failed_partner_weighted_entries_for_shape_fit':nfailed_weighted,
-            'failed_partner_count_from_total_minus_found':float(eff['failed_population']),
-            'failed_partner_pi0_fraction':purity,'failed_partner_pi0_fraction_stat_err':purity_stat,'failed_partner_pi0_fraction_model_err':purity_model,
-            'fitted_missed_pi0':float(eff['missed_pi0']),
-            'efficiency_data':float(eff['efficiency']),'efficiency_data_stat_err':float(eff['stat_error']),'efficiency_data_model_err':float(eff['model_error']),
-            'mc_truth_opportunities':mc_denom,'mc_truth_reconstructed':mc_num,'efficiency_mc':mc_eff,'efficiency_mc_stat_err':mc_err,
-            'scale_factor_data_over_mc':scale,'scale_factor_stat_err':scale_stat,'scale_factor_model_err':scale_model,
-            'aaogen_unmatched_truth_pi0_fraction':mc_c_purity,
-            'aaogen_failed_population_truth_pi0_fraction':mc_failed_purity,
-            'mass_fit_reduced_deviance':float(mass_fit['reduced_deviance']),'unmatched_fit_reduced_deviance':float(purity_fit['reduced_deviance']),
-            'unmatched_background_dvcs_fraction':float(purity_fit['background_dvcs_fraction']),
-            'closure_available':bool(closure.get('available',False)),
-            'closure_truth_efficiency':float(closure.get('truth_efficiency',math.nan)),
-            'closure_extracted_efficiency':float(closure.get('extracted_efficiency',math.nan)),
-            'closure_extracted_efficiency_stat_err':float(closure.get('extracted_efficiency_stat_err',math.nan)),
-            'closure_extracted_efficiency_model_err':float(closure.get('extracted_efficiency_model_err',math.nan)),
-            'closure_difference':float(closure.get('closure_difference',math.nan)),
-            'closure_ratio':float(closure.get('closure_ratio',math.nan)),
-            'closure_paired_fitted_pi0_fraction':float(closure.get('paired_fitted_pi0_fraction',math.nan)),
-            'closure_paired_truth_pi0_fraction':float(closure.get('paired_truth_pi0_fraction',math.nan)),
-            'closure_failed_fitted_pi0_fraction':float(closure.get('failed_fitted_pi0_fraction',math.nan)),
-            'closure_failed_truth_pi0_fraction':float(closure.get('failed_truth_pi0_fraction',math.nan)),
-            'closure_failure_reason':str(closure.get('failure_reason','')),
-        }
-        rows.append(row)
-        region_metadata[detector]={
-            'mass_fit':_final_serializable_fit(mass_fit),
-            'unmatched_fit':{
-                k:v for k,v in purity_fit.items()
-                if k not in {'payload','profile_fraction_grid','profile_nll'}
-            },
-            'counts':row,
-            'aaogen_pseudodata_closure':closure,
-        }
-        log(
-            f"{period.label} FINAL {detector}: "
-            f"Npi0_found={found:.1f}, fC={purity:.4f}, Npi0_missed={eff['missed_pi0']:.1f}, "
-            f"epsilon_data={eff['efficiency']:.4f} +/- {eff['stat_error']:.4f} (stat) +/- {eff['model_error']:.4f} (model), "
-            f"epsilon_MC={mc_eff:.4f}, SF={scale:.4f}; "
-            f"AAOGEN closure="
-            f"{float(closure.get('extracted_efficiency',math.nan)):.4f}/"
-            f"{float(closure.get('truth_efficiency',math.nan)):.4f} "
-            f"(extracted/truth)"
-        )
-    # endfor
-
-    write_dict_rows(root/'final_photon_efficiency.csv',rows)
-    metadata={
-        'period':asdict(period),'data_audit':data_audit,'aaogen_audit':aao_audit,'dvcsgen_audit':dvcs_audit,
-        'epgg_truth_audit':epgg_audit,
-        'truth_summary':{
-            'aaogen_final_opportunities':aao.size(),
-            'truth_low_and_partner_gt2':int(np.count_nonzero(truth_signal)),
-            'truth_reconstructed_partner_matches':int(np.count_nonzero(truth_signal & aao.paired & truth.measured_partner_truth_match & (aao.high_probe_angle_deg < args.probe_match_angle_max_deg) & (aao.high_probe_relative_E < args.probe_match_relative_E_max))),
-            'truth_signal_template_inclusive_entries': n_signal_inclusive,
-            'truth_signal_genuinely_missed_entries': n_signal_failed_truth,
-            'truth_signal_template_definition': (
-                "inclusive truth-matched AAOGEN pi0 low-tag opportunities "
-                "in the same predicted region with true partner >2 GeV"
-            ),
-            'truth_signal_shape_diagnostic': signal_shape_diagnostic,
-        },
-        'regions':region_metadata,
-    }
-    with open(root/'final_photon_efficiency_metadata.json','w',encoding='utf-8') as handle:
-        json.dump(metadata,handle,indent=2,default=simple_json_default)
-    # endwith
-    return period.key,rows,metadata
-
-
-def plot_final_all_period_summary(path: Path, rows: Sequence[Mapping[str,object]]) -> None:
-    path.parent.mkdir(parents=True,exist_ok=True)
-    fig,axes=plt.subplots(2,1,figsize=(11,8.5),sharex=True)
-    period_labels=[p.label for p in PERIODS if any(r['period']==p.key for r in rows)]
-    x=np.arange(len(period_labels),dtype=float)
-    for detector,offset in (('FT',-0.08),('FD',0.08)):
-        selected=[]
-        for label in period_labels:
-            selected.append(next(r for r in rows if r['period_label']==label and r['detector']==detector))
-        y=np.asarray([r['efficiency_data'] for r in selected]); estat=np.asarray([r['efficiency_data_stat_err'] for r in selected]); emod=np.asarray([r['efficiency_data_model_err'] for r in selected]); ymc=np.asarray([r['efficiency_mc'] for r in selected])
-        axes[0].errorbar(x+offset,y,yerr=estat,fmt='o',capsize=2,label=f'{detector} data')
-        axes[0].errorbar(x+offset,ymc,yerr=[r['efficiency_mc_stat_err'] for r in selected],fmt='s',mfc='none',capsize=2,label=f'{detector} AAOGEN')
-        for xi,yi,si in zip(x+offset,y,emod):
-            axes[0].bar(xi,2*si,bottom=yi-si,width=.06,alpha=.25)
-        sf=np.asarray([r['scale_factor_data_over_mc'] for r in selected]); sfstat=np.asarray([r['scale_factor_stat_err'] for r in selected]); sfmod=np.asarray([r['scale_factor_model_err'] for r in selected])
-        axes[1].errorbar(x+offset,sf,yerr=sfstat,fmt='o',capsize=2,label=detector)
-        for xi,yi,si in zip(x+offset,sf,sfmod):
-            axes[1].bar(xi,2*si,bottom=yi-si,width=.06,alpha=.25)
-    # endfor
-    axes[0].set_ylabel('photon efficiency'); axes[0].set_ylim(0,1.05); axes[0].grid(axis='y',alpha=.2); axes[0].legend(frameon=False,ncol=2)
-    axes[1].axhline(1,color='0.4',lw=1); axes[1].set_ylabel('data / AAOGEN'); axes[1].set_ylim(0,2.0); axes[1].grid(axis='y',alpha=.2); axes[1].legend(frameon=False,ncol=2)
-    axes[1].set_xticks(x,period_labels,rotation=20,ha='right'); fig.suptitle('RGA photon-efficiency extraction: final data-driven method'); fig.tight_layout(rect=(0,0,1,.96)); fig.savefig(path,dpi=180); plt.close(fig)
-
-
-def run_final_efficiency_stage(periods, args, workers):
-    root=Path(args.output_dir)/'final'; root.mkdir(parents=True,exist_ok=True)
-    nworkers=max(1,min(int(workers),len(periods),MAX_WORKERS))
-    log(f'FINAL DATA-DRIVEN PHOTON EFFICIENCY: {len(periods)} period(s), {nworkers} worker(s).')
-    all_rows=[]; metadata={}
-    if nworkers==1:
-        for period in periods:
-            key,rows,payload=process_period_final_efficiency(period,vars(args)); metadata[key]=payload; all_rows.extend(rows)
-        # endfor
-    else:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=nworkers) as executor:
-            future_map={executor.submit(process_period_final_efficiency,p,vars(args)):p.key for p in periods}
-            for future in concurrent.futures.as_completed(future_map):
-                key,rows,payload=future.result(); metadata[key]=payload; all_rows.extend(rows)
-            # endfor
-        # endwith
-    # endif
-    order={p.key:i for i,p in enumerate(PERIODS)}; det_order={'FT':0,'FD':1}
-    all_rows.sort(key=lambda r:(order.get(r['period'],999),det_order.get(r['detector'],9)))
-    write_dict_rows(root/'photon_efficiency_final.csv',all_rows)
-    with open(root/'photon_efficiency_final.json','w',encoding='utf-8') as handle:
-        json.dump({'method':'final data-driven paired-mass + unmatched-template fit','arguments':vars(args),'rows':all_rows,'period_metadata':metadata},handle,indent=2,default=simple_json_default)
-    # endwith
-    plot_final_all_period_summary(root/'all_periods_final_efficiency.png',all_rows)
-    log('')
-    log('='*112)
-    log('FINAL RGA PHOTON EFFICIENCY SUMMARY')
-    log(f"{'Period':<12s} {'Reg':<3s} {'eps_data':>10s} {'stat':>9s} {'model':>9s} {'eps_MC':>10s} {'data/MC':>10s}")
-    for r in all_rows:
-        log(f"{r['period_label']:<12s} {r['detector']:<3s} {r['efficiency_data']:10.4f} {r['efficiency_data_stat_err']:9.4f} {r['efficiency_data_model_err']:9.4f} {r['efficiency_mc']:10.4f} {r['scale_factor_data_over_mc']:10.4f}")
-    # endfor
-    log('='*112)
-    return {'rows':all_rows,'period_metadata':metadata,'output_csv':str(root/'photon_efficiency_final.csv')}
-
-
-def plot_efficiency_definition_audit(
-    path: Path,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    """Plot broad-MC, final-catalog truth, and pseudo-data closure efficiencies."""
-    if not rows:
-        return
-    # endif
-    path.parent.mkdir(parents=True, exist_ok=True)
-    labels = []
-    for period in PERIODS:
-        for detector in ("FT", "FD"):
-            if any(
-                str(row.get("period")) == period.key
-                and str(row.get("detector")) == detector
-                for row in rows
-            ):
-                labels.append(f"{period.label}\n{detector}")
-            # endif
-        # endfor
-    # endfor
-    ordered = []
-    for period in PERIODS:
-        for detector in ("FT", "FD"):
-            match = next(
-                (
-                    row for row in rows
-                    if str(row.get("period")) == period.key
-                    and str(row.get("detector")) == detector
-                ),
-                None,
-            )
-            if match is not None:
-                ordered.append(match)
-            # endif
-        # endfor
-    # endfor
-
-    x = np.arange(len(ordered), dtype=float)
-    broad = np.asarray([row.get("legacy_broad_match_fraction", math.nan) for row in ordered], dtype=float)
-    final_truth = np.asarray([row.get("final_catalog_truth_efficiency", math.nan) for row in ordered], dtype=float)
-    closure = np.asarray([row.get("closure_extracted_efficiency", math.nan) for row in ordered], dtype=float)
-    closure_stat = np.asarray([row.get("closure_extracted_efficiency_stat_err", math.nan) for row in ordered], dtype=float)
-
-    fig, axes = plt.subplots(2, 1, figsize=(14, 9), sharex=True, gridspec_kw={"height_ratios": [2.0, 1.0]})
-    axes[0].plot(x - 0.16, broad, "o", label="legacy broad truth-association fraction")
-    axes[0].plot(x, final_truth, "s", mfc="none", label="final-catalog AAOGEN truth")
-    axes[0].errorbar(x + 0.16, closure, yerr=closure_stat, fmt="^", capsize=2, label="AAOGEN pseudo-data extraction")
-    axes[0].set_ylabel("photon efficiency")
-    axes[0].set_ylim(0.0, 1.05)
-    axes[0].grid(axis="y", alpha=0.25)
-    axes[0].legend(frameon=False, ncol=3)
-
-    with np.errstate(divide="ignore", invalid="ignore"):
-        final_over_broad = final_truth / broad
-        closure_over_truth = closure / final_truth
-    axes[1].axhline(1.0, color="0.4", lw=1.0)
-    axes[1].plot(x - 0.08, final_over_broad, "o", label="final truth / legacy match fraction")
-    axes[1].plot(x + 0.08, closure_over_truth, "^", label="closure extraction / final truth")
-    axes[1].set_ylabel("ratio")
-    axes[1].set_ylim(0.0, 4.0)
-    axes[1].grid(axis="y", alpha=0.25)
-    axes[1].legend(frameon=False, ncol=2)
-    axes[1].set_xticks(x, [f"{row['period_label']}\n{row['detector']}" for row in ordered], rotation=25, ha="right")
-    fig.suptitle("AAOGEN photon-efficiency definition and closure audit")
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def build_efficiency_definition_audit(
-    output_root: Path,
-    final_rows: Sequence[Mapping[str, object]],
-    mc_rows: Sequence[Mapping[str, object]],
-) -> Dict[str, object]:
-    """
-    Merge the three efficiency definitions needed for the closure audit.
-
-    1. legacy_broad_match_fraction: established read_opportunities()/match_truth_partners
-       truth-association fraction (not a direct high-photon reconstruction efficiency);
-    2. final_catalog_truth_efficiency: truth efficiency after conditioning on
-       the reconstructed low-tag catalog used by the final data-driven method;
-    3. closure_extracted_efficiency: final estimator applied blindly to a
-       disjoint AAOGEN pseudo-data sample.
-    """
-    audit_root = output_root / "closure_audit"
-    audit_root.mkdir(parents=True, exist_ok=True)
-    rows: List[Dict[str, object]] = []
-    mc_lookup = {
-        (str(row.get("period")), str(row.get("topology"))): row
-        for row in mc_rows
-    }
-    for final in final_rows:
-        period = str(final.get("period"))
-        detector = str(final.get("detector"))
-        old = mc_lookup.get((period, detector), {})
-        broad = float(old.get("efficiency", math.nan))
-        final_truth = float(final.get("efficiency_mc", math.nan))
-        closure_eff = float(final.get("closure_extracted_efficiency", math.nan))
-        row = {
-            "period": period,
-            "period_label": str(final.get("period_label", period)),
-            "detector": detector,
-            "broad_mc_opportunities": int(old.get("opportunities", 0) or 0),
-            "broad_mc_reconstructed": int(old.get("reconstructed", 0) or 0),
-            "legacy_broad_match_fraction": broad,
-            "legacy_broad_match_fraction_stat_err": float(old.get("efficiency_error", math.nan)),
-            "legacy_truth_qualified_opportunities": int(old.get("legacy_truth_qualified_opportunities", 0) or 0),
-            "legacy_truth_qualified_fraction": float(old.get("legacy_truth_qualified_fraction", math.nan)),
-            "legacy_probe_residual_pass_fraction_given_truth": float(old.get("legacy_probe_residual_pass_fraction_given_truth", math.nan)),
-            "final_catalog_truth_opportunities": int(final.get("mc_truth_opportunities", 0) or 0),
-            "final_catalog_truth_reconstructed": int(final.get("mc_truth_reconstructed", 0) or 0),
-            "final_catalog_truth_efficiency": final_truth,
-            "final_catalog_truth_efficiency_stat_err": float(final.get("efficiency_mc_stat_err", math.nan)),
-            "closure_available": bool(final.get("closure_available", False)),
-            "closure_truth_efficiency": float(final.get("closure_truth_efficiency", math.nan)),
-            "closure_extracted_efficiency": closure_eff,
-            "closure_extracted_efficiency_stat_err": float(final.get("closure_extracted_efficiency_stat_err", math.nan)),
-            "closure_extracted_efficiency_model_err": float(final.get("closure_extracted_efficiency_model_err", math.nan)),
-            "closure_difference": float(final.get("closure_difference", math.nan)),
-            "closure_ratio": float(final.get("closure_ratio", math.nan)),
-            "final_truth_over_legacy_match": (
-                final_truth / broad
-                if np.isfinite(final_truth) and np.isfinite(broad) and broad > 0.0
-                else math.nan
-            ),
-            "closure_extracted_over_final_truth": (
-                closure_eff / final_truth
-                if np.isfinite(closure_eff) and np.isfinite(final_truth) and final_truth > 0.0
-                else math.nan
-            ),
-            "closure_paired_fitted_pi0_fraction": float(final.get("closure_paired_fitted_pi0_fraction", math.nan)),
-            "closure_paired_truth_pi0_fraction": float(final.get("closure_paired_truth_pi0_fraction", math.nan)),
-            "closure_failed_fitted_pi0_fraction": float(final.get("closure_failed_fitted_pi0_fraction", math.nan)),
-            "closure_failed_truth_pi0_fraction": float(final.get("closure_failed_truth_pi0_fraction", math.nan)),
-            "closure_failure_reason": str(final.get("closure_failure_reason", "")),
-        }
-        rows.append(row)
-    # endfor
-
-    write_dict_rows(audit_root / "efficiency_definition_and_closure_audit.csv", rows)
-    with open(audit_root / "efficiency_definition_and_closure_audit.json", "w", encoding="utf-8") as handle:
-        json.dump(
-            {
-                "definitions": {
-                    "legacy_broad_match_fraction": "Established read_opportunities + truth association fraction; it is not a direct reconstructed-high-photon efficiency.",
-                    "final_catalog_truth_efficiency": "Truth efficiency after the final reconstructed low-tag opportunity conditioning.",
-                    "closure_extracted_efficiency": "Final paired-mass + failed-purity estimator applied to disjoint AAOGEN pseudo-data.",
-                },
-                "rows": rows,
-            },
-            handle,
-            indent=2,
-            default=simple_json_default,
-        )
-    # endwith
-    plot_efficiency_definition_audit(
-        audit_root / "efficiency_definition_and_closure_audit.png",
-        rows,
-    )
-
-    log("")
-    log("=" * 148)
-    log("AAOGEN EFFICIENCY DEFINITION + PSEUDO-DATA CLOSURE AUDIT")
-    log(
-        f"{'Period':<12s} {'Reg':<3s} {'legacy':>10s} {'final truth':>11s} "
-        f"{'pseudo ext':>11s} {'ext/truth':>10s} {'final/legacy':>11s} "
-        f"{'pair fit/truth':>17s} {'fail fit/truth':>17s}"
-    )
-    for row in rows:
-        log(
-            f"{row['period_label']:<12s} {row['detector']:<3s} "
-            f"{row['legacy_broad_match_fraction']:10.4f} "
-            f"{row['final_catalog_truth_efficiency']:11.4f} "
-            f"{row['closure_extracted_efficiency']:11.4f} "
-            f"{row['closure_extracted_over_final_truth']:10.4f} "
-            f"{row['final_truth_over_legacy_match']:11.4f} "
-            f"{row['closure_paired_fitted_pi0_fraction']:8.4f}/"
-            f"{row['closure_paired_truth_pi0_fraction']:<8.4f} "
-            f"{row['closure_failed_fitted_pi0_fraction']:8.4f}/"
-            f"{row['closure_failed_truth_pi0_fraction']:<8.4f}"
-        )
-    # endfor
-    log("=" * 148)
-    return {
-        "rows": rows,
-        "output_csv": str(audit_root / "efficiency_definition_and_closure_audit.csv"),
-        "output_plot": str(audit_root / "efficiency_definition_and_closure_audit.png"),
-    }
-
-
-def preflight_enabled_stages(
-    periods: Sequence[PeriodConfig],
-    args: argparse.Namespace,
-) -> List[Dict[str, object]]:
-    manifest: List[Dict[str, object]] = []
-
-    for period in periods:
-        period_entry: Dict[str, object] = {
-            "key": period.key,
-            "label": period.label,
-            "beam_energy_GeV": period.beam_energy_GeV,
-        }
-
-        if args.simple and not args.legacy_simple:
-            roles = ["epg_data", "dvcs_mc", "pi0_epg_mc", "pi0_epgg_mc"]
-        elif args.simple:
-            roles = ["epg_data", "pi0_epg_mc"]
-        else:
-            roles = ["epg_data", "dvcs_mc", "pi0_epg_mc"]
-        # endif
-
-        if not args.skip_mc_efficiency:
-            roles.append("pi0_epgg_mc")
-        # endif
-        roles = list(dict.fromkeys(roles))
-
-        for role in roles:
-            path = getattr(period, role)
-            entries, branches = require_tree(path)
-            period_entry[role] = path
-            period_entry[f"{role}_entries"] = entries
-            period_entry[f"{role}_branches"] = branches
-            log(
-                f"Preflight {period.label} {role}: {entries:,} entries"
-            )
-        # endfor
-
-        manifest.append(period_entry)
-    # endfor
-
-    return manifest
-
-
-
-def plot_all_period_integrated(
-    path: Path,
-    rows: Sequence[Mapping[str, object]],
-) -> None:
-    period_labels = [period.label for period in PERIODS]
-    x = np.arange(len(period_labels), dtype=float)
-    offsets = {"FT": -0.08, "FD": 0.08}
-
-    fig, axis = plt.subplots(figsize=(12, 7))
-    for topology in ("FT", "FD"):
-        selected = []
-        for label in period_labels:
-            match = next(
-                (
-                    row for row in rows
-                    if row["period_label"] == label
-                    and row["topology"] == topology
-                ),
-                None,
-            )
-            selected.append(match)
-        # endfor
-
-        efficiencies = np.asarray(
-            [
-                row["efficiency"] if row is not None else math.nan
-                for row in selected
-            ],
-            dtype=float,
-        )
-        errors = np.asarray(
-            [
-                row["efficiency_error"] if row is not None else math.nan
-                for row in selected
-            ],
-            dtype=float,
-        )
-        axis.errorbar(
-            x + offsets[topology],
-            efficiencies,
-            yerr=errors,
-            fmt="o",
-            capsize=3,
-            label=topology,
-        )
-    # endfor
-
-    axis.set_xticks(x, period_labels, rotation=20, ha="right")
-    axis.set_ylabel(r"$\epsilon_{\mathrm{MC}}$")
-    axis.set_ylim(0.0, 1.05)
-    axis.grid(alpha=0.25)
-    axis.legend()
-    axis.set_title(
-        "AAOGEN high-energy photon reconstruction efficiency"
-    )
-    fig.tight_layout()
-    fig.savefig(path, dpi=180)
-    plt.close(fig)
-
-
-def print_final_efficiency_summary_rows(rows: Sequence[Mapping[str, object]]) -> None:
-    log("")
-    log("=" * 112)
-    log("FINAL RGA PHOTON EFFICIENCY RESULTS (data-driven fit / same-selection AAOGEN truth)")
-    log(f"{'Period':<12s} {'Reg':<3s} {'eps_data':>10s} {'stat':>9s} {'model':>9s} {'eps_MC':>10s} {'data/MC':>10s}")
-    for row in rows:
-        log(
-            f"{str(row['period_label']):<12s} {str(row['detector']):<3s} "
-            f"{float(row['efficiency_data']):10.4f} "
-            f"{float(row['efficiency_data_stat_err']):9.4f} "
-            f"{float(row['efficiency_data_model_err']):9.4f} "
-            f"{float(row['efficiency_mc']):10.4f} "
-            f"{float(row['scale_factor_data_over_mc']):10.4f}"
-        )
-    # endfor
-    log("=" * 112)
-
-
 def main() -> int:
     args = parse_args()
-    periods = selected_periods(args)
-    output_root = Path(args.output_dir)
-    data_root = output_root / "data"
-    mc_root = output_root / "mc"
-    simple_parent = output_root / "simple"
 
-    output_root.mkdir(parents=True, exist_ok=True)
-    data_root.mkdir(parents=True, exist_ok=True)
-    mc_root.mkdir(parents=True, exist_ok=True)
-    if args.simple:
-        simple_parent.mkdir(parents=True, exist_ok=True)
-    # endif
+    if args.max_entries < 0:
+        raise ValueError("--max-entries must be >= 0.")
+    #endif
+    if not (0.0 < args.tag_min < args.tag_max):
+        raise ValueError("Require 0 < --tag-min < --tag-max.")
+    #endif
+    if args.parent_component_tol <= 0.0:
+        raise ValueError("--parent-component-tol must be > 0.")
+    #endif
 
-    workers = max(
-        1,
-        min(int(args.workers), MAX_WORKERS),
-    )
+    selected = [
+        p for p in PERIODS
+        if args.period is None or p.key in set(args.period)
+    ]
 
-    fitter_preflight: Dict[str, object] = {
-        "enabled": (
-            not args.simple
-            and not args.skip_data_template_fits
-        ),
-        "implementation": "internal advanced component-preserving fitter",
-        "scipy_optimizer": "L-BFGS-B plus bounded scalar coordinate update",
-        "variables": {
-            category_key: {
-                variable.key: variable_model_spec(
-                    variable.key,
-                    category_key,
-                )
-                for variable in fit_variables_for_category(
-                    category_key
-                )
-            }
-            for category_key in (
-                "one_photon",
-                "two_photon_more_energetic",
-                "two_photon_less_energetic",
-            )
-        },
-        "shared_fraction": True,
-        "independent_variable_fits": True,
-    }
+    outroot = Path(args.output_dir)
+    outroot.mkdir(parents=True, exist_ok=True)
 
     log(
-        "MC efficiency stage: "
-        + (
-            "DISABLED by --skip-mc-efficiency"
-            if args.skip_mc_efficiency
-            else "ENABLED (default)"
-        )
+        "Directed-tag Stage-I definition: "
+        f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
+    )
+    log(
+        "No photon-efficiency denominator/numerator is formed in v002; "
+        "this run validates event matching and missing-photon prediction only."
     )
 
-    manifest = {
+    preflight(selected)
+
+    summaries: List[Dict[str, object]] = []
+    provenance = {
         "script": Path(__file__).name,
-        "mode": (
-            "Fast data 2x5 shape comparison and photon multiplicity "
-            "diagnostics with the complete AAOGEN MC efficiency enabled by default"
-        ),
-        "created_unix_time": time.time(),
+        "stage": 1,
+        "purpose": "aaogen tag-and-probe kinematic validation",
         "arguments": vars(args),
-        "resolved_stages": {
-            "final_data_driven_efficiency": bool(args.simple and not args.legacy_simple),
-            "legacy_simple_data_override": bool(args.simple and args.legacy_simple),
-            "data_shape_and_multiplicity": not args.simple,
-            "data_template_fits": (
-                not args.simple
-                and not args.skip_data_template_fits
+        "periods": [asdict(p) for p in selected],
+        "schema_assumptions": {
+            "epgamma": "p1=proton, p2=photon/tag",
+            "eppi0": (
+                "p1=proton, p2=pi0; gamma_phi1/2 are Trento azimuths and "
+                "open_angle_egamma1/2 are lab e-gamma opening angles; individual "
+                "photon lab directions/energies are recovered with the Trento "
+                "basis plus the reconstructed pi0 four-vector"
             ),
-            "mc_efficiency": not args.skip_mc_efficiency,
-            "aaogen_pseudodata_closure": bool(args.simple and not args.legacy_simple),
-            "efficiency_definition_audit": bool(args.simple and not args.legacy_simple and not args.skip_mc_efficiency),
         },
-        "fitter_preflight": fitter_preflight,
-        "periods": preflight_enabled_stages(periods, args),
     }
-    with open(
-        output_root / "input_manifest.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
-        json.dump(manifest, handle, indent=2)
-    # endwith
 
-    final_efficiency_metadata: Dict[str, object] = {}
-    if args.simple and not args.legacy_simple:
-        final_efficiency_metadata = run_final_efficiency_stage(
-            periods,
-            args,
-            workers,
+    for period in selected:
+        log(f"{period.label}: reading aaogen epgamma sample.")
+        epg_arrays, epg_tree, epg_total = read_branches(
+            period.epgamma_pi0_mc,
+            EPG_REQUIRED,
+            EPG_OPTIONAL,
+            args.tree,
+            args.max_entries,
         )
-        data_metadata = {
-            "mode": "final_data_driven_efficiency",
-            "output": final_efficiency_metadata.get("output_csv"),
-        }
-        simple_mc_metadata = {}
-    elif args.simple:
-        data_metadata = run_simple_data_efficiency_stage(
-            periods,
-            args,
-            workers,
-            data_root,
-        )
-        simple_mc_metadata = run_simple_mc_efficiency_stage(
-            periods,
-            args,
-            workers,
-            data_root,
-        )
-    else:
-        data_metadata = run_data_shape_stage(
-            periods,
-            args,
-            workers,
-        )
-        simple_mc_metadata = {}
-    # endif
+        epg = extract_epgamma(epg_arrays, args.angles)
 
-    mc_rows: List[Dict[str, object]] = []
-    mc_metadata: Dict[str, object] = {}
-
-    if not args.skip_mc_efficiency:
-        mc_workers = max(
-            1,
-            min(workers, len(periods)),
-        )
         log(
-            f"AAOGEN MC EFFICIENCY STAGE: "
-            f"{len(periods)} period(s), {mc_workers} worker(s)."
+            f"{period.label}: epgamma tree '{epg_tree}', "
+            f"loaded {len(epg.tag_energy):,}/{epg_total:,} entries, "
+            f"angles interpreted as {epg.angle_unit}."
         )
 
-        if mc_workers == 1:
-            for period in periods:
-                key, rows, payload = process_period_mc_only(
-                    period,
-                    vars(args),
-                )
-                mc_metadata[key] = payload
-                mc_rows.extend(rows)
-            # endfor
-        else:
-            with concurrent.futures.ProcessPoolExecutor(
-                max_workers=mc_workers
-            ) as executor:
-                future_map = {
-                    executor.submit(
-                        process_period_mc_only,
-                        period,
-                        vars(args),
-                    ): period.key
-                    for period in periods
-                }
-                for future in concurrent.futures.as_completed(future_map):
-                    key, rows, payload = future.result()
-                    mc_metadata[key] = payload
-                    mc_rows.extend(rows)
-                # endfor
-            # endwith
-        # endif
+        log(f"{period.label}: reading reconstructed aaogen eppi0 sample.")
+        pi_arrays, pi_tree, pi_total = read_branches(
+            period.eppi0_pi0_mc,
+            EPPIO_REQUIRED,
+            EPPIO_OPTIONAL,
+            args.tree,
+            args.max_entries,
+        )
+        eppi0 = extract_eppi0(pi_arrays, args.angles)
 
-        period_order = {
-            period.key: index
-            for index, period in enumerate(PERIODS)
-        }
-        topology_order = {"FT": 0, "FD": 1}
-        mc_rows.sort(
-            key=lambda row: (
-                period_order.get(str(row["period"]), 999),
-                topology_order.get(str(row["topology"]), 999),
-            )
+        log(
+            f"{period.label}: eppi0 tree '{pi_tree}', "
+            f"loaded {len(eppi0.pi0_p):,}/{pi_total:,} entries, "
+            f"angles interpreted as {eppi0.angle_unit}."
         )
 
-        write_dict_rows(
-            mc_root / "photon_efficiency_mc.csv",
-            mc_rows,
+        log(f"{period.label}: matching e/p parent kinematics between MC skims.")
+        matches = match_parent_kinematics(
+            epg,
+            eppi0,
+            tag_min=args.tag_min,
+            tag_max=args.tag_max,
+            component_tolerance=args.parent_component_tol,
+            nearest_distance_max=args.parent_distance_max,
         )
-        with open(
-            mc_root / "photon_efficiency_mc.json",
-            "w",
-            encoding="utf-8",
-        ) as handle:
-            json.dump(
-                {
-                    "mode": "AAOGEN MC only",
-                    "arguments": vars(args),
-                    "rows": mc_rows,
-                    "period_metadata": mc_metadata,
-                },
-                handle,
-                indent=2,
-            )
-        # endwith
+        log(f"{period.label}: accepted {len(matches.epg_index):,} parent matches.")
 
-        plot_all_period_integrated(
-            mc_root / "all_periods_integrated_mc_efficiency.png",
-            mc_rows,
+        log(f"{period.label}: recovering eppi0 photons and validating predicted probe.")
+        pairs, counters = build_stage1_pairs(
+            period,
+            epg,
+            eppi0,
+            matches,
+            max_tag_reco_angle_deg=args.max_tag_reco_angle,
         )
-    # endif
+        pair_np = pair_arrays_to_numpy(pairs)
 
-    closure_audit_metadata: Dict[str, object] = {}
-    if args.simple and not args.legacy_simple and final_efficiency_metadata:
-        closure_audit_metadata = build_efficiency_definition_audit(
-            output_root,
-            final_efficiency_metadata.get("rows", []),
-            mc_rows,
+        period_dir = outroot / period.key
+        period_dir.mkdir(parents=True, exist_ok=True)
+
+        np.savez_compressed(period_dir / "stage1_matched_pairs.npz", **pair_np)
+
+        make_plots(period, pair_np, period_dir)
+
+        summary = summarize_period(
+            period,
+            epg_entries_total=epg_total,
+            eppi0_entries_total=pi_total,
+            epg_loaded=len(epg.tag_energy),
+            eppi0_loaded=len(eppi0.pi0_p),
+            epg_angle_unit=epg.angle_unit,
+            eppi0_angle_unit=eppi0.angle_unit,
+            matches=matches,
+            arrays=pair_np,
+            counters=counters,
         )
-    # endif
+        summaries.append(summary)
 
-    with open(
-        output_root / "stepwise_study_summary.json",
-        "w",
-        encoding="utf-8",
-    ) as handle:
+        with (period_dir / "stage1_summary.json").open("w") as f:
+            json.dump(summary, f, indent=2, allow_nan=True)
+        #endif
+
+        log(
+            f"{period.label}: Stage-I accepted pairs = "
+            f"{counters['accepted_stage1_pairs']:,}; "
+            f"photon-recovery failures = {counters['pi0_photon_recovery_failed']:,}; "
+            f"tag-correspondence failures = {counters['tag_reco_match_failed']:,}."
+        )
+    #endfor
+
+    write_summary_csv(summaries, outroot / "stage1_summary.csv")
+
+    with (outroot / "stage1_summary.json").open("w") as f:
         json.dump(
             {
-                "arguments": vars(args),
-                "data_shape_and_multiplicity_stage": data_metadata,
-                "simple_reconstructed_aaogen_stage": simple_mc_metadata,
-                "final_data_driven_efficiency_stage": final_efficiency_metadata,
-                "mc_efficiency_rows": mc_rows,
-                "mc_efficiency_metadata": mc_metadata,
-                "efficiency_definition_and_closure_audit": closure_audit_metadata,
+                "provenance": provenance,
+                "period_summaries": summaries,
             },
-            handle,
+            f,
             indent=2,
-            default=simple_json_default,
+            allow_nan=True,
         )
-    # endwith
+    #endif
 
-    if args.simple and args.legacy_simple:
-        write_simple_diagnostic_package(
-            periods,
-            data_metadata,
-            simple_mc_metadata,
-            simple_parent,
-        )
-        print_simple_data_mc_final_summary(
-            periods,
-            data_metadata,
-            simple_mc_metadata,
-        )
-        log(
-            "Wrote --simple FT/FD diagnostic plots to "
-            f"{simple_parent / 'diagnostics'}"
-        )
-    # endif
-
-    if args.simple and not args.legacy_simple and final_efficiency_metadata:
-        print_final_efficiency_summary_rows(
-            final_efficiency_metadata.get("rows", [])
-        )
-        log(
-            "Final production outputs: "
-            f"{Path(args.output_dir) / 'final'}"
-        )
-    # endif
-
-    log(f"Wrote photon-efficiency study outputs to {output_root}")
+    log(f"Done. Stage-I outputs are in {outroot}")
     return 0
 
 
 if __name__ == "__main__":
-    try:
-        raise SystemExit(main())
-    except Exception as exc:
-        print(f"FATAL ERROR: {exc}", file=sys.stderr, flush=True)
-        raise
-    # endtry
+    sys.exit(main())
+#endif
