@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v011.py
+derive_photon_efficiency_scale_factors_v012.py
 
 Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -95,23 +95,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v011.py
+    python derive_photon_efficiency_scale_factors_v012.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v011.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v012.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v011.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v012.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v011.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v012.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v011.py --angles rad
+    python derive_photon_efficiency_scale_factors_v012.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -138,6 +138,7 @@ import numpy as np
 import uproot
 from scipy.spatial import cKDTree
 from scipy.optimize import minimize
+from scipy.ndimage import gaussian_filter1d, shift as ndimage_shift
 
 
 # -----------------------------------------------------------------------------
@@ -918,6 +919,16 @@ STAGE2_DISCRIMINATORS: Tuple[str, ...] = (
 )
 
 STAGE2_NOMINAL_DISCRIMINATOR = "mx2_ep_x_probe_m2"
+STAGE2_PRODUCTION_MODEL = "shared_morphed_2d"
+STAGE2_DRIVER_DISCRIMINATORS: Tuple[str, ...] = (
+    "mx2_ep_x_probe_m2",
+    "mx2_ep_x_pTmiss",
+)
+STAGE2_VALIDATION_DISCRIMINATORS: Tuple[str, ...] = (
+    "mx2_ep_x_theta_gg",
+    "mx2_ep_1d",
+    "probe_m2_1d",
+)
 
 
 def stage2_energy_edges(max_energy: float) -> np.ndarray:
@@ -1599,6 +1610,264 @@ def run_stage2_discriminator_fits(
 
     return rows
 
+
+
+@dataclass
+class SharedMorphedFitResult:
+    success: bool
+    message: str
+    pi0_fraction: float = float("nan")
+    objective: float = float("nan")
+    poisson_deviance: float = float("nan")
+    ndof: int = 0
+    nuisance: Optional[Dict[str, float]] = None
+
+
+def morph_template_second_axis(hist: np.ndarray, shift_bins: float, sigma_bins: float) -> np.ndarray:
+    """Shift and additionally smear a 2D template along its second discriminator axis."""
+    h = np.asarray(hist, dtype=float)
+    if h.ndim != 2:
+        raise ValueError("Template morphing expects a 2D histogram.")
+    out = h.copy()
+    if sigma_bins > 1.0e-8:
+        out = gaussian_filter1d(out, sigma=float(sigma_bins), axis=1, mode="nearest")
+    #endif
+    if abs(shift_bins) > 1.0e-8:
+        out = ndimage_shift(out, shift=(0.0, float(shift_bins)), order=1, mode="nearest", prefilter=False)
+    #endif
+    out = np.clip(out, 0.0, None)
+    total = float(np.sum(out))
+    if total <= 0.0:
+        return normalized_template(h).reshape(h.shape)
+    #endif
+    return out / total
+
+
+def fit_control_shift_smear(data_values: np.ndarray, mc_values: np.ndarray, lo: float, hi: float, bins: int) -> Dict[str, float]:
+    """Calibrate a modest MC shift/additional-smearing from a clean control projection."""
+    d = np.asarray(data_values, dtype=float)
+    m = np.asarray(mc_values, dtype=float)
+    d = d[np.isfinite(d) & (d >= lo) & (d < hi)]
+    m = m[np.isfinite(m) & (m >= lo) & (m < hi)]
+    if len(d) < 500 or len(m) < 500:
+        return {"success": 0, "shift_bins": 0.0, "sigma_bins": 0.0, "deviance_per_ndof": float("nan")}
+    #endif
+    hd, _ = np.histogram(d, bins=np.linspace(lo, hi, bins + 1))
+    hm, _ = np.histogram(m, bins=np.linspace(lo, hi, bins + 1))
+    hd = hd.astype(float)
+    hm2 = hm.astype(float)[None, :]
+    nd = float(np.sum(hd))
+
+    def objective(x: np.ndarray) -> float:
+        t = morph_template_second_axis(hm2, x[0], x[1]).ravel()
+        mu = np.clip(nd * t, 1.0e-12, None)
+        return float(np.sum(mu - hd * np.log(mu)))
+    #enddef
+
+    res = minimize(objective, np.asarray([0.0, 0.5]), method="L-BFGS-B",
+                   bounds=((-4.0, 4.0), (0.0, 4.0)), options={"maxiter": 250, "ftol": 1e-10})
+    t = morph_template_second_axis(hm2, res.x[0], res.x[1]).ravel()
+    dev, ndof = poisson_deviance_quality(hd, nd * t, 2)
+    return {"success": int(res.success), "shift_bins": float(res.x[0]), "sigma_bins": float(res.x[1]),
+            "deviance_per_ndof": float(dev / ndof), "data_count": int(np.sum(hd)), "mc_count": int(np.sum(hm))}
+
+
+def build_pi0_control_calibration(eppi0_data: EPPi0Sample, eppi0_mc: EPPi0Sample,
+                                  ptmiss_max: float, ptmiss_bins: int) -> Dict[str, Dict[str, float]]:
+    """Use reconstructed ep-pi0 data/aaogen to anchor the pi0 pTmiss morph nuisance."""
+    out: Dict[str, Dict[str, float]] = {}
+    if "pTmiss" in eppi0_data.raw and "pTmiss" in eppi0_mc.raw:
+        out["pTmiss"] = fit_control_shift_smear(
+            np.asarray(eppi0_data.raw["pTmiss"], dtype=float),
+            np.asarray(eppi0_mc.raw["pTmiss"], dtype=float),
+            0.0, ptmiss_max, ptmiss_bins,
+        )
+    else:
+        out["pTmiss"] = {"success": 0, "shift_bins": 0.0, "sigma_bins": 0.0, "deviance_per_ndof": float("nan")}
+    #endif
+    return out
+
+
+def fit_shared_morphed_composition(histograms: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+                                   pi0_control: Dict[str, Dict[str, float]],
+                                   nuisance_shift_prior: float,
+                                   nuisance_sigma_prior: float,
+                                   max_shift_bins: float,
+                                   max_sigma_bins: float) -> SharedMorphedFitResult:
+    """
+    Composite profile-likelihood fit with one shared pi0 fraction. Each 2D driver
+    gets constrained shift/smear nuisances along its second axis for aaogen and
+    dvcsgen. pTmiss aaogen is anchored to the clean reconstructed-pi0 control.
+    """
+    names = [n for n in STAGE2_DRIVER_DISCRIMINATORS if n in histograms]
+    if not names:
+        return SharedMorphedFitResult(False, "no available driver discriminators")
+    #endif
+    # x = [logit(f), then pi_shift,pi_sigma,dv_shift,dv_sigma for each driver]
+    x0 = [math.log(0.7 / 0.3)]
+    bounds = [(-8.0, 8.0)]
+    centers: List[Tuple[float, float, float, float]] = []
+    for name in names:
+        ps, pg = 0.0, 0.0
+        if name == "mx2_ep_x_pTmiss" and int(pi0_control.get("pTmiss", {}).get("success", 0)):
+            ps = float(pi0_control["pTmiss"]["shift_bins"])
+            pg = float(pi0_control["pTmiss"]["sigma_bins"])
+        #endif
+        centers.append((ps, pg, 0.0, 0.0))
+        x0.extend([ps, pg, 0.0, 0.0])
+        bounds.extend([(-max_shift_bins, max_shift_bins), (0.0, max_sigma_bins),
+                       (-max_shift_bins, max_shift_bins), (0.0, max_sigma_bins)])
+    #endfor
+
+    def unpack_fraction(z: float) -> float:
+        return 1.0 / (1.0 + math.exp(-float(z)))
+    #enddef
+
+    def objective(x: np.ndarray) -> float:
+        f = unpack_fraction(x[0])
+        total_nll = 0.0
+        penalty = 0.0
+        k = 1
+        for idx, name in enumerate(names):
+            hd, hp, hv = histograms[name]
+            ps, pg, ds, dg = map(float, x[k:k+4]); k += 4
+            tp = morph_template_second_axis(hp, ps, pg).ravel()
+            td = morph_template_second_axis(hv, ds, dg).ravel()
+            data = np.asarray(hd, dtype=float).ravel()
+            nd = float(np.sum(data))
+            mu = np.clip(nd * (f * tp + (1.0 - f) * td), 1.0e-12, None)
+            # Average the projection likelihoods because they reuse the same events.
+            total_nll += float(np.sum(mu - data * np.log(mu))) / len(names)
+            c = centers[idx]
+            penalty += 0.5 * ((ps-c[0])/nuisance_shift_prior)**2
+            penalty += 0.5 * ((pg-c[1])/nuisance_sigma_prior)**2
+            penalty += 0.5 * ((ds-c[2])/nuisance_shift_prior)**2
+            penalty += 0.5 * ((dg-c[3])/nuisance_sigma_prior)**2
+        #endfor
+        return total_nll + penalty
+    #enddef
+
+    res = minimize(objective, np.asarray(x0, dtype=float), method="L-BFGS-B", bounds=bounds,
+                   options={"maxiter": 700, "ftol": 1.0e-10, "maxls": 40})
+    f = unpack_fraction(res.x[0])
+    nuisance: Dict[str, float] = {}
+    total_dev, total_ndof = 0.0, 0
+    k = 1
+    for name in names:
+        hd, hp, hv = histograms[name]
+        ps, pg, ds, dg = map(float, res.x[k:k+4]); k += 4
+        nuisance[f"{name}_pi0_shift_bins"] = ps
+        nuisance[f"{name}_pi0_sigma_bins"] = pg
+        nuisance[f"{name}_dvcs_shift_bins"] = ds
+        nuisance[f"{name}_dvcs_sigma_bins"] = dg
+        tp = morph_template_second_axis(hp, ps, pg).ravel()
+        td = morph_template_second_axis(hv, ds, dg).ravel()
+        data = np.asarray(hd, dtype=float).ravel(); nd = float(np.sum(data))
+        dev, ndof = poisson_deviance_quality(data, nd*(f*tp+(1-f)*td), 1+4*len(names))
+        nuisance[f"{name}_deviance_per_ndof"] = float(dev/ndof)
+        total_dev += dev; total_ndof += ndof
+    #endfor
+    return SharedMorphedFitResult(bool(res.success), str(res.message), f, float(res.fun),
+                                  float(total_dev), int(total_ndof), nuisance)
+
+
+def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.ndarray], pi0_f: Dict[str,np.ndarray],
+                                   dvcs_f: Dict[str,np.ndarray], pi0_control: Dict[str,Dict[str,float]],
+                                   ft_theta_max: float, max_probe_energy: float, mm2_min: float, mm2_max: float,
+                                   probe_m2_max: float, mm2_bins_2d: int, probe_m2_bins_2d: int,
+                                   ptmiss_max: float, ptmiss_bins: int, theta_max: float, theta_bins: int,
+                                   min_data_count: int, min_template_count: int, nuisance_shift_prior: float,
+                                   nuisance_sigma_prior: float, max_shift_bins: float, max_sigma_bins: float) -> List[Dict[str,object]]:
+    edges=stage2_energy_edges(max_probe_energy); regions=["all","FT"]+[f"FD_S{s}" for s in range(1,7)]
+    rows=[]
+    for region in regions:
+        for ib in range(len(edges)-1):
+            elo,ehi=float(edges[ib]),float(edges[ib+1])
+            masks={k:stage2_fit_mask(f,region,ft_theta_max,elo,ehi,mm2_min,mm2_max,probe_m2_max)
+                   for k,f in (("data",data_f),("pi0",pi0_f),("dvcs",dvcs_f))}
+            row={"period":period.key,"label":period.label,"beam_energy_GeV":period.beam_energy,"region":region,
+                 "energy_low_GeV":elo,"energy_high_GeV":ehi,"energy_center_GeV":0.5*(elo+ehi),
+                 "fit_model":"shared_morphed_2d"}
+            hist={}
+            for disc in STAGE2_DRIVER_DISCRIMINATORS:
+                if not discriminator_available(disc,data_f,pi0_f,dvcs_f): continue
+                hd=histogram_for_discriminator(disc,data_f,masks["data"],mm2_min=mm2_min,mm2_max=mm2_max,probe_m2_max=probe_m2_max,
+                    mm2_bins_2d=mm2_bins_2d,probe_m2_bins_2d=probe_m2_bins_2d,bins_1d=90,ptmiss_max=ptmiss_max,ptmiss_bins=ptmiss_bins,theta_max=theta_max,theta_bins=theta_bins)
+                hp=histogram_for_discriminator(disc,pi0_f,masks["pi0"],mm2_min=mm2_min,mm2_max=mm2_max,probe_m2_max=probe_m2_max,
+                    mm2_bins_2d=mm2_bins_2d,probe_m2_bins_2d=probe_m2_bins_2d,bins_1d=90,ptmiss_max=ptmiss_max,ptmiss_bins=ptmiss_bins,theta_max=theta_max,theta_bins=theta_bins)
+                hv=histogram_for_discriminator(disc,dvcs_f,masks["dvcs"],mm2_min=mm2_min,mm2_max=mm2_max,probe_m2_max=probe_m2_max,
+                    mm2_bins_2d=mm2_bins_2d,probe_m2_bins_2d=probe_m2_bins_2d,bins_1d=90,ptmiss_max=ptmiss_max,ptmiss_bins=ptmiss_bins,theta_max=theta_max,theta_bins=theta_bins)
+                if np.sum(hd)>=min_data_count and np.sum(hp)>=min_template_count and np.sum(hv)>=min_template_count: hist[disc]=(hd,hp,hv)
+            #endfor
+            fit=fit_shared_morphed_composition(hist,pi0_control,nuisance_shift_prior,nuisance_sigma_prior,max_shift_bins,max_sigma_bins)
+            row.update({"fit_success":int(fit.success),"fit_message":fit.message,"n_drivers":len(hist),"pi0_fraction":fit.pi0_fraction,
+                        "dvcs_fraction":1.0-fit.pi0_fraction if np.isfinite(fit.pi0_fraction) else float("nan"),"objective":fit.objective,
+                        "poisson_deviance":fit.poisson_deviance,"ndof":fit.ndof,"deviance_per_ndof":fit.poisson_deviance/fit.ndof if fit.ndof else float("nan")})
+            if fit.nuisance: row.update(fit.nuisance)
+            # Deterministic template-mixture closure in the high-statistics all-region sample.
+            # This catches optimizer/boundary pathologies without multiplying runtime in every sector.
+            if region == "all" and hist:
+                for truth in (0.2, 0.5, 0.8):
+                    pseudo = {}
+                    for disc, (hd0, hp0, hv0) in hist.items():
+                        nd0 = max(1.0, float(np.sum(hd0)))
+                        tp0 = normalized_template(hp0).reshape(hp0.shape)
+                        td0 = normalized_template(hv0).reshape(hv0.shape)
+                        pseudo[disc] = (nd0 * (truth * tp0 + (1.0-truth) * td0), hp0, hv0)
+                    #endfor
+                    cf = fit_shared_morphed_composition(pseudo, pi0_control, nuisance_shift_prior, nuisance_sigma_prior, max_shift_bins, max_sigma_bins)
+                    tag = str(int(round(100*truth)))
+                    row[f"closure_truth_{tag}"] = truth
+                    row[f"closure_fit_{tag}"] = cf.pi0_fraction
+                    row[f"closure_bias_{tag}"] = cf.pi0_fraction-truth if np.isfinite(cf.pi0_fraction) else float("nan")
+                #endfor
+            #endif
+            rows.append(row)
+        #endfor
+    #endfor
+    return rows
+
+
+
+def make_shared_fit_canvas(period: PeriodConfig, shared_rows: List[Dict[str,object]], raw_rows: List[Dict[str,object]],
+                           pi0_control: Dict[str,Dict[str,float]], outdir: Path) -> None:
+    """Compact production-fit summary: shared fraction, raw-driver comparison, fit quality, nuisances."""
+    rr=[r for r in shared_rows if r["region"]=="all" and int(r.get("fit_success",0))]
+    if not rr: return
+    rr=sorted(rr,key=lambda r:float(r["energy_center_GeV"])); x=np.asarray([r["energy_center_GeV"] for r in rr])
+    fig,ax=plt.subplots(2,2,figsize=(13.5,9.5))
+    ax[0,0].plot(x,[r["pi0_fraction"] for r in rr],marker="o",label="shared morphed fit")
+    for disc,label in (("mx2_ep_x_probe_m2",r"raw $M_X^2\\otimes M_{probe}^2$"),("mx2_ep_x_pTmiss",r"raw $M_X^2\\otimes p_{T,miss}$")):
+        q=sorted([r for r in raw_rows if r["region"]=="all" and r["discriminator"]==disc and int(r["fit_success"])],key=lambda r:float(r["energy_center_GeV"]))
+        if q: ax[0,0].plot([r["energy_center_GeV"] for r in q],[r["pi0_fraction"] for r in q],marker=".",linestyle="--",label=label)
+    #endfor
+    ax[0,0].set_ylabel(r"$f_{\\pi^0}$"); ax[0,0].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[0,0].set_ylim(0,1); ax[0,0].legend(fontsize=8); ax[0,0].grid(alpha=.18)
+    ax[0,1].plot(x,[r["deviance_per_ndof"] for r in rr],marker="o")
+    ax[0,1].set_ylabel("combined Poisson deviance / ndof"); ax[0,1].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[0,1].grid(alpha=.18)
+    for key,label in (("mx2_ep_x_probe_m2_pi0_shift_bins","probe-M2 pi0 shift"),("mx2_ep_x_probe_m2_dvcs_shift_bins","probe-M2 DVCS shift"),("mx2_ep_x_pTmiss_pi0_shift_bins","pTmiss pi0 shift"),("mx2_ep_x_pTmiss_dvcs_shift_bins","pTmiss DVCS shift")):
+        if key in rr[0]: ax[1,0].plot(x,[r.get(key,np.nan) for r in rr],marker=".",label=label)
+    #endfor
+    ax[1,0].axhline(0,linewidth=.8); ax[1,0].set_ylabel("template shift (bins)"); ax[1,0].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[1,0].legend(fontsize=7); ax[1,0].grid(alpha=.18)
+    for truth in (20,50,80):
+        key=f"closure_bias_{truth}"
+        if key in rr[0]: ax[1,1].plot(x,[r.get(key,np.nan) for r in rr],marker=".",label=f"truth {truth/100:.1f}")
+    #endfor
+    ax[1,1].axhline(0,linewidth=.8); ax[1,1].set_ylabel(r"closure $f_{fit}-f_{true}$"); ax[1,1].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[1,1].legend(fontsize=8); ax[1,1].grid(alpha=.18)
+    ctl=pi0_control.get("pTmiss",{}); fig.suptitle(f"{period.label}: shared morphed Stage-II composition; pi0 pTmiss control shift={ctl.get('shift_bins',float('nan')):.2f} bins, smear={ctl.get('sigma_bins',float('nan')):.2f} bins",fontsize=13)
+    fig.tight_layout(rect=(0,0,1,.95)); fig.savefig(outdir/"canvas_shared_morphed_composition.png",dpi=180); plt.close(fig)
+
+
+def closure_rows_for_shared_fit(period: PeriodConfig, shared_rows: List[Dict[str,object]]) -> List[Dict[str,object]]:
+    """Lightweight bookkeeping closure target grid; full event bootstrap is deferred until final extraction."""
+    rows=[]
+    for r in shared_rows:
+        if r["region"] != "all" or not int(r["fit_success"]): continue
+        for truth in (0.2,0.5,0.8):
+            rows.append({"period":period.key,"region":r["region"],"energy_low_GeV":r["energy_low_GeV"],"energy_high_GeV":r["energy_high_GeV"],
+                         "closure_truth_fraction":truth,"note":"reserved target for pseudo-data closure in next statistical-validation step"})
+        #endfor
+    #endfor
+    return rows
 
 def discriminator_spread_rows(
     fit_rows: List[Dict[str, object]],
@@ -2907,6 +3176,7 @@ def preflight(
         checks = [
             ("epgamma pi0 MC", p.epgamma_pi0_mc),
             ("eppi0 pi0 MC", p.eppi0_pi0_mc),
+            ("eppi0 data control", p.eppi0_data),
         ]
         if include_stage2:
             checks.extend([
@@ -3210,6 +3480,10 @@ def parse_args() -> argparse.Namespace:
             "Default: 40."
         ),
     )
+    parser.add_argument("--morph-shift-prior-bins", type=float, default=1.0, help="Gaussian prior width for template shifts in histogram bins. Default: 1.0.")
+    parser.add_argument("--morph-sigma-prior-bins", type=float, default=1.0, help="Gaussian prior width for additional template smearing in histogram bins. Default: 1.0.")
+    parser.add_argument("--morph-max-shift-bins", type=float, default=4.0, help="Hard bound on template shifts in histogram bins. Default: 4.0.")
+    parser.add_argument("--morph-max-sigma-bins", type=float, default=4.0, help="Hard bound on additional template smearing in histogram bins. Default: 4.0.")
     return parser.parse_args()
 
 
@@ -3277,6 +3551,13 @@ def process_period(
         f"loaded {len(eppi0.pi0_p):,}/{pi_total:,} entries, "
         f"angles interpreted as {eppi0.angle_unit}."
     )
+
+    log(f"{period.label}: reading reconstructed eppi0 data control sample.")
+    pi_data_arrays, pi_data_tree, pi_data_total = read_branches(
+        period.eppi0_data, EPPIO_REQUIRED, EPPIO_OPTIONAL, tree_name, max_entries
+    )
+    eppi0_data = extract_eppi0(pi_data_arrays, angle_mode)
+    log(f"{period.label}: eppi0 data tree '{pi_data_tree}', loaded {len(eppi0_data.pi0_p):,}/{pi_data_total:,} entries.")
 
     log(f"{period.label}: matching e/p parent kinematics between MC skims.")
     matches = match_parent_kinematics(
@@ -3364,6 +3645,7 @@ def process_period(
     stage2_rows: List[Dict[str, object]] = []
     stage2_spread_rows: List[Dict[str, object]] = []
     mixed_diag_rows: List[Dict[str, object]] = []
+    shared_rows: List[Dict[str, object]] = []
 
     if not bool(args_dict.get("stage1_only", False)):
         stage2_dir = Path(stage2_output_dir) / period.key
@@ -3445,6 +3727,24 @@ def process_period(
             stage2_rows,
             stage2_dir / "denominator_discriminator_fits.csv",
         )
+
+        pi0_control = build_pi0_control_calibration(
+            eppi0_data, eppi0, float(args_dict["disc_ptmiss_max"]), int(args_dict["disc_ptmiss_bins"])
+        )
+        with (stage2_dir / "pi0_control_calibration.json").open("w") as f:
+            json.dump(pi0_control, f, indent=2, allow_nan=True)
+        #endwith
+        shared_rows = run_stage2_shared_morphed_fits(
+            period, data_f, pi0_f, dvcs_f, pi0_control, ft_theta_max, max_probe_energy,
+            float(args_dict["den_fit_mm2_min"]), float(args_dict["den_fit_mm2_max"]), float(args_dict["den_fit_probe_m2_max"]),
+            int(args_dict["den_fit_mm2_bins"]), int(args_dict["den_fit_probe_m2_bins"]), float(args_dict["disc_ptmiss_max"]),
+            int(args_dict["disc_ptmiss_bins"]), float(args_dict["disc_theta_max"]), int(args_dict["disc_theta_bins"]),
+            int(args_dict["den_min_data_count"]), int(args_dict["den_min_template_count"]),
+            float(args_dict["morph_shift_prior_bins"]), float(args_dict["morph_sigma_prior_bins"]),
+            float(args_dict["morph_max_shift_bins"]), float(args_dict["morph_max_sigma_bins"]),
+        )
+        write_rows_csv(shared_rows, stage2_dir / "denominator_shared_morphed_fits.csv")
+        make_shared_fit_canvas(period, shared_rows, stage2_rows, pi0_control, stage2_dir)
 
         stage2_spread_rows = discriminator_spread_rows(stage2_rows)
         write_rows_csv(
@@ -3544,6 +3844,7 @@ def process_period(
         "stage2_rows": stage2_rows,
         "stage2_spread_rows": stage2_spread_rows,
         "mixed_diag_rows": mixed_diag_rows,
+        "shared_rows": shared_rows,
     }
 
 def main() -> int:
@@ -3673,6 +3974,7 @@ def main() -> int:
     all_stage2_rows: List[Dict[str, object]] = []
     all_stage2_spread_rows: List[Dict[str, object]] = []
     all_mixed_diag_rows: List[Dict[str, object]] = []
+    all_shared_rows: List[Dict[str, object]] = []
 
     if n_processes == 1:
         for period in selected:
@@ -3689,6 +3991,7 @@ def main() -> int:
                 all_stage2_rows.extend(result["stage2_rows"])
                 all_stage2_spread_rows.extend(result["stage2_spread_rows"])
                 all_mixed_diag_rows.extend(result["mixed_diag_rows"])
+                all_shared_rows.extend(result.get("shared_rows", []))
             #endif
         #endfor
     else:
@@ -3713,6 +4016,9 @@ def main() -> int:
                     if result["stage2_summary"] is not None:
                         stage2_summaries.append(result["stage2_summary"])
                         all_stage2_rows.extend(result["stage2_rows"])
+                        all_stage2_spread_rows.extend(result.get("stage2_spread_rows", []))
+                        all_mixed_diag_rows.extend(result.get("mixed_diag_rows", []))
+                        all_shared_rows.extend(result.get("shared_rows", []))
                     #endif
                 except Exception as exc:
                     for other in future_to_period:
@@ -3813,6 +4119,11 @@ def main() -> int:
                 all_mixed_diag_rows,
                 stage2_outroot / "mixed_component_diagnostics.csv",
             )
+        #endif
+
+        if all_shared_rows:
+            all_shared_rows.sort(key=lambda r: (order.get(str(r["period"]),999), str(r["region"]), float(r["energy_low_GeV"])))
+            write_rows_csv(all_shared_rows, stage2_outroot / "denominator_shared_morphed_fits.csv")
         #endif
 
         with (stage2_outroot / "stage2_summary.json").open("w") as f:
