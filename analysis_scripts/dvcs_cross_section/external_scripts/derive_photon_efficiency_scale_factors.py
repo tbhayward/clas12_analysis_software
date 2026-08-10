@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v004.py
+derive_photon_efficiency_scale_factors_v005.py
 
 Stage-I development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -88,23 +88,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v004.py
+    python derive_photon_efficiency_scale_factors_v005.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v004.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v005.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v004.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v005.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v004.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v005.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v004.py --angles rad
+    python derive_photon_efficiency_scale_factors_v005.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -896,265 +896,253 @@ def make_full_and_zoom_hist(
     )
 
 
+
+def _finite(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    return values[np.isfinite(values)]
+
+
+def _hist_panel(
+    ax,
+    values: np.ndarray,
+    xlabel: str,
+    bins: int = 260,
+    xlim: Optional[Tuple[float, float]] = None,
+    logy: bool = False,
+) -> None:
+    values = _finite(values)
+    ax.hist(values, bins=bins, histtype="step", linewidth=1.3)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel("Entries")
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    #endif
+    if logy:
+        ax.set_yscale("log")
+    #endif
+    ax.grid(alpha=0.18)
+
+
+def _hist2d_panel(
+    ax,
+    x: np.ndarray,
+    y: np.ndarray,
+    xlabel: str,
+    ylabel: str,
+    bins: Tuple[int, int] = (160, 160),
+    xlim: Optional[Tuple[float, float]] = None,
+    ylim: Optional[Tuple[float, float]] = None,
+    logz: bool = True,
+):
+    from matplotlib.colors import LogNorm
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    mask = np.isfinite(x) & np.isfinite(y)
+    norm = LogNorm() if logz and np.any(mask) else None
+    h = ax.hist2d(x[mask], y[mask], bins=bins, norm=norm)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    if xlim is not None:
+        ax.set_xlim(*xlim)
+    #endif
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+    #endif
+    ax.grid(alpha=0.10)
+    return h[3]
+
+
+def make_compact_canvases(
+    period: PeriodConfig,
+    arrays: Dict[str, np.ndarray],
+    outdir: Path,
+) -> None:
+    """
+    Produce three compact Stage-I diagnostic canvases.
+
+    The old development script emitted dozens of individual PNGs.  v005 keeps
+    the same physics information in three 2x2 canvases so that all five periods
+    are easy to inspect and copy.
+    """
+    title = period.label
+
+    # ------------------------------------------------------------------
+    # Canvas 1: tag association / reconstructed companion photon
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
+
+    _hist_panel(
+        axes[0, 0],
+        arrays["pi0_mass"],
+        r"$M_{\gamma\gamma}$ (GeV)",
+        bins=300,
+        xlim=(0.10, 0.17),
+    )
+    axes[0, 0].set_title("Reconstructed $M_{\\gamma\\gamma}$")
+
+    _hist_panel(
+        axes[0, 1],
+        arrays["reco_probe_mass2"],
+        r"$(P_{\pi^0}^{reco}-k_{tag}^{reco})^2$ (GeV$^2$)",
+        bins=400,
+        xlim=(-0.010, 0.010),
+    )
+    axes[0, 1].set_title("Companion-photon mass shell (core)")
+
+    _hist_panel(
+        axes[1, 0],
+        arrays["reco_probe_E_minus_p"],
+        r"$E_{\rm probe}^{reco}-|\vec p_{\rm probe}^{reco}|$ (GeV)",
+        bins=400,
+        xlim=(-0.005, 0.005),
+    )
+    axes[1, 0].set_title("Companion-photon $E-p$ (core)")
+
+    _hist_panel(
+        axes[1, 1],
+        arrays["reco_probe_mass2"],
+        r"$(P_{\pi^0}^{reco}-k_{tag}^{reco})^2$ (GeV$^2$)",
+        bins=260,
+        logy=True,
+    )
+    axes[1, 1].set_title("Companion-photon mass shell (full)")
+
+    fig.suptitle(f"{title}: Stage I tag association", fontsize=15)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(outdir / "canvas_tag_association.png", dpi=180)
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Canvas 2: predicted vs reconstructed probe
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
+
+    emax = max(
+        7.0,
+        min(
+            10.0,
+            finite_percentile(
+                np.concatenate(
+                    (arrays["pred_probe_energy"], arrays["reco_probe_energy"])
+                ),
+                99.8,
+                7.0,
+            ),
+        ),
+    )
+
+    mappable = _hist2d_panel(
+        axes[0, 0],
+        arrays["pred_probe_energy"],
+        arrays["reco_probe_energy"],
+        r"$E_{\rm probe}^{pred}$ (GeV)",
+        r"$E_{\rm probe}^{reco}$ (GeV)",
+        bins=(180, 180),
+        xlim=(0.0, emax),
+        ylim=(0.0, emax),
+        logz=True,
+    )
+    axes[0, 0].set_title("Predicted vs reconstructed energy")
+    fig.colorbar(mappable, ax=axes[0, 0], label="Entries")
+
+    _hist_panel(
+        axes[0, 1],
+        arrays["probe_delta_E"],
+        r"$E_{\rm reco}-E_{\rm pred}$ (GeV)",
+        bins=350,
+        xlim=(-1.0, 1.0),
+    )
+    axes[0, 1].set_title("Probe energy residual (core)")
+
+    _hist_panel(
+        axes[1, 0],
+        arrays["probe_opening_residual_deg"],
+        r"$\Delta\alpha_{\rm probe}$ (deg)",
+        bins=360,
+        xlim=(0.0, 20.0),
+    )
+    axes[1, 0].set_title("Probe direction residual (core)")
+
+    _hist_panel(
+        axes[1, 1],
+        arrays["probe_opening_residual_deg"],
+        r"$\Delta\alpha_{\rm probe}$ (deg)",
+        bins=360,
+        xlim=(0.0, 180.0),
+        logy=True,
+    )
+    axes[1, 1].set_title("Probe direction residual (full)")
+
+    fig.suptitle(f"{title}: Stage I probe prediction closure", fontsize=15)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(outdir / "canvas_probe_closure.png", dpi=180)
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Canvas 3: full ep pi0 exclusivity / tail diagnostics
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
+
+    _hist_panel(
+        axes[0, 0],
+        arrays["exclusivity_missing_energy"],
+        r"$E_{\rm miss}(ep\pi^0)$ (GeV)",
+        bins=350,
+        xlim=(-1.5, 1.5),
+    )
+    axes[0, 0].set_title("$ep\\pi^0$ missing energy")
+
+    _hist_panel(
+        axes[0, 1],
+        arrays["exclusivity_missing_p"],
+        r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
+        bins=300,
+        xlim=(0.0, 1.5),
+    )
+    axes[0, 1].set_title("$ep\\pi^0$ missing momentum")
+
+    _hist_panel(
+        axes[1, 0],
+        arrays["exclusivity_missing_pT"],
+        r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)",
+        bins=300,
+        xlim=(0.0, 0.75),
+    )
+    axes[1, 0].set_title("$ep\\pi^0$ missing transverse momentum")
+
+    mappable = _hist2d_panel(
+        axes[1, 1],
+        arrays["pred_probe_energy"],
+        arrays["probe_opening_residual_deg"],
+        r"$E_{\rm probe}^{pred}$ (GeV)",
+        r"$\Delta\alpha_{\rm probe}$ (deg)",
+        bins=(180, 180),
+        xlim=(0.0, emax),
+        ylim=(0.0, 40.0),
+        logz=True,
+    )
+    axes[1, 1].set_title("Direction residual vs predicted energy")
+    fig.colorbar(mappable, ax=axes[1, 1], label="Entries")
+
+    fig.suptitle(f"{title}: Stage I exclusivity and tails", fontsize=15)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(outdir / "canvas_exclusivity_and_tails.png", dpi=180)
+    plt.close(fig)
+
+
 def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path) -> None:
     if len(arrays["pred_probe_energy"]) == 0:
         log(f"{period.label}: no accepted pairs; skipping plots.")
         return
     #endif
 
-    title = period.label
+    # Remove stale development PNGs from older Stage-I versions so a rerun
+    # leaves only the compact v005 canvases in the period directory.
+    for old_png in outdir.glob("*.png"):
+        old_png.unlink()
+    #endfor
 
-    save_hist(
-        arrays["parent_max_component_delta"],
-        outdir / "parent_match_max_cartesian_delta.png",
-        r"max $|\Delta p_{e/p,x/y/z}|$ (GeV)",
-        f"{title}: e/p kinematic match quality",
-        bins=120,
-        logy=True,
-    )
-
-    # Reconstructed pi0 mass directly from Mh_gammagamma.
-    save_hist(
-        arrays["pi0_mass"],
-        outdir / "pi0_Mh_gammagamma.png",
-        r"$M_{\gamma\gamma}$ (GeV)",
-        f"{title}: reconstructed $M_{{\\gamma\\gamma}}$ used for $P_{{\\pi^0}}$",
-        bins=160,
-        xlim=(0.0, 0.30),
-    )
-
-    # Photon-likeness of P_pi0 - k_tag.
-    reco_m2_zoom = symmetric_zoom(arrays["reco_probe_mass2"], 99.0, 0.02, 1.0)
-    make_full_and_zoom_hist(
-        arrays["reco_probe_mass2"],
-        outdir,
-        "reco_probe_mass2",
-        r"$(P_{\pi^0}^{reco}-k_{tag}^{reco})^2$ (GeV$^2$)",
-        f"{title}: reconstructed companion photon mass shell",
-        (-reco_m2_zoom, reco_m2_zoom),
-    )
-
-    reco_ep_zoom = symmetric_zoom(arrays["reco_probe_E_minus_p"], 99.0, 0.02, 1.0)
-    make_full_and_zoom_hist(
-        arrays["reco_probe_E_minus_p"],
-        outdir,
-        "reco_probe_E_minus_p",
-        r"$E_{\rm probe}^{reco}-|\vec p_{\rm probe}^{reco}|$ (GeV)",
-        f"{title}: reconstructed companion photon mass-shell residual",
-        (-reco_ep_zoom, reco_ep_zoom),
-    )
-
-    # Predicted missing photon mass shell.
-    pred_m2_zoom = symmetric_zoom(arrays["pred_probe_mass2"], 99.0, 0.02, 1.0)
-    make_full_and_zoom_hist(
-        arrays["pred_probe_mass2"],
-        outdir,
-        "pred_probe_mass2",
-        r"$(p_{\rm probe}^{pred})^2$ (GeV$^2$)",
-        f"{title}: predicted missing-photon mass shell",
-        (-pred_m2_zoom, pred_m2_zoom),
-    )
-
-    pred_ep_zoom = symmetric_zoom(arrays["pred_probe_E_minus_p"], 99.0, 0.02, 1.0)
-    make_full_and_zoom_hist(
-        arrays["pred_probe_E_minus_p"],
-        outdir,
-        "pred_probe_E_minus_p",
-        r"$E_{\rm probe}^{pred}-|\vec p_{\rm probe}^{pred}|$ (GeV)",
-        f"{title}: predicted photon mass-shell residual",
-        (-pred_ep_zoom, pred_ep_zoom),
-    )
-
-    # Probe energy comparison. Full physically broad range plus a log-z copy.
-    emax = max(
-        10.0,
-        finite_percentile(
-            np.concatenate((arrays["pred_probe_energy"], arrays["reco_probe_energy"])),
-            99.9,
-            10.0,
-        ),
-    )
-    emax = min(emax, 15.0)
-
-    save_hist2d(
-        arrays["pred_probe_energy"],
-        arrays["reco_probe_energy"],
-        outdir / "probe_energy_pred_vs_reco_full_linear.png",
-        r"$E_{\rm probe}^{pred}$ (GeV)",
-        r"$E_{\rm probe}^{reco}$ (GeV)",
-        f"{title}: predicted vs reconstructed probe energy",
-        bins=(140, 140),
-        xlim=(-1.0, emax),
-        ylim=(-1.0, emax),
-        logz=False,
-    )
-    save_hist2d(
-        arrays["pred_probe_energy"],
-        arrays["reco_probe_energy"],
-        outdir / "probe_energy_pred_vs_reco_full_logz.png",
-        r"$E_{\rm probe}^{pred}$ (GeV)",
-        r"$E_{\rm probe}^{reco}$ (GeV)",
-        f"{title}: predicted vs reconstructed probe energy",
-        bins=(140, 140),
-        xlim=(-1.0, emax),
-        ylim=(-1.0, emax),
-        logz=True,
-    )
-
-    de_zoom = symmetric_zoom(arrays["probe_delta_E"], 99.0, 0.10, 3.0)
-    make_full_and_zoom_hist(
-        arrays["probe_delta_E"],
-        outdir,
-        "probe_delta_E",
-        r"$E_{\rm probe}^{reco}-E_{\rm probe}^{pred}$ (GeV)",
-        f"{title}: probe energy residual",
-        (-de_zoom, de_zoom),
-    )
-
-    rel_zoom = symmetric_zoom(arrays["probe_delta_E_over_E"], 99.0, 0.10, 3.0)
-    make_full_and_zoom_hist(
-        arrays["probe_delta_E_over_E"],
-        outdir,
-        "probe_fractional_delta_E",
-        r"$(E_{\rm reco}-E_{\rm pred})/E_{\rm pred}$",
-        f"{title}: fractional probe energy residual",
-        (-rel_zoom, rel_zoom),
-    )
-
-    # Full angular range is always shown; zoom is additional.
-    save_hist(
-        arrays["probe_opening_residual_deg"],
-        outdir / "probe_direction_opening_residual_full.png",
-        r"$\Delta\alpha(\gamma_{\rm probe}^{pred},\gamma_{\rm probe}^{reco})$ (deg)",
-        f"{title}: probe direction residual (full range)",
-        bins=180,
-        xlim=(0.0, 180.0),
-        logy=True,
-    )
-    opening_zoom = max(
-        1.0,
-        min(20.0, finite_percentile(arrays["probe_opening_residual_deg"], 95.0, 5.0)),
-    )
-    save_hist(
-        arrays["probe_opening_residual_deg"],
-        outdir / "probe_direction_opening_residual_zoom.png",
-        r"$\Delta\alpha(\gamma_{\rm probe}^{pred},\gamma_{\rm probe}^{reco})$ (deg)",
-        f"{title}: probe direction residual (core zoom)",
-        bins=160,
-        xlim=(0.0, opening_zoom),
-        logy=False,
-    )
-
-    dtheta_zoom = symmetric_zoom(arrays["probe_delta_theta_deg"], 99.0, 1.0, 30.0)
-    make_full_and_zoom_hist(
-        arrays["probe_delta_theta_deg"],
-        outdir,
-        "probe_delta_theta",
-        r"$\theta_{\rm reco}-\theta_{\rm pred}$ (deg)",
-        f"{title}: probe polar-angle residual",
-        (-dtheta_zoom, dtheta_zoom),
-    )
-
-    dphi_zoom = symmetric_zoom(arrays["probe_delta_phi_deg"], 99.0, 1.0, 60.0)
-    make_full_and_zoom_hist(
-        arrays["probe_delta_phi_deg"],
-        outdir,
-        "probe_delta_phi",
-        r"$\phi_{\rm reco}-\phi_{\rm pred}$ (deg)",
-        f"{title}: probe azimuth residual",
-        (-dphi_zoom, dphi_zoom),
-    )
-
-    # Full exclusive eppi0 closure.
-    emiss_zoom = symmetric_zoom(arrays["exclusivity_missing_energy"], 99.0, 0.05, 2.0)
-    make_full_and_zoom_hist(
-        arrays["exclusivity_missing_energy"],
-        outdir,
-        "eppi0_exclusivity_missing_energy",
-        r"$E_{\rm miss}(ep\pi^0)$ (GeV)",
-        f"{title}: full reconstructed $ep\\pi^0$ energy closure",
-        (-emiss_zoom, emiss_zoom),
-    )
-
-    save_hist(
-        arrays["exclusivity_missing_p"],
-        outdir / "eppi0_exclusivity_missing_p_full.png",
-        r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
-        f"{title}: full reconstructed $ep\\pi^0$ momentum closure",
-        bins=160,
-        logy=True,
-    )
-    pmiss_zoom = max(
-        0.05,
-        min(2.0, finite_percentile(arrays["exclusivity_missing_p"], 99.0, 0.5)),
-    )
-    save_hist(
-        arrays["exclusivity_missing_p"],
-        outdir / "eppi0_exclusivity_missing_p_zoom.png",
-        r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
-        f"{title}: full reconstructed $ep\\pi^0$ momentum closure (core zoom)",
-        bins=160,
-        xlim=(0.0, pmiss_zoom),
-    )
-
-    save_hist(
-        arrays["exclusivity_missing_pT"],
-        outdir / "eppi0_exclusivity_missing_pT.png",
-        r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)",
-        f"{title}: reconstructed $ep\\pi^0$ transverse closure",
-        bins=160,
-        logy=True,
-    )
-
-    mm2_zoom = symmetric_zoom(arrays["exclusivity_missing_mass2"], 99.0, 0.02, 2.0)
-    make_full_and_zoom_hist(
-        arrays["exclusivity_missing_mass2"],
-        outdir,
-        "eppi0_exclusivity_missing_mass2",
-        r"$M_X^2(ep\pi^0)$ (GeV$^2$)",
-        f"{title}: reconstructed $ep\\pi^0$ missing mass squared",
-        (-mm2_zoom, mm2_zoom),
-    )
-
-    # Residuals versus predicted probe energy; log-z makes sparse structures visible.
-    save_hist2d(
-        arrays["pred_probe_energy"],
-        arrays["probe_opening_residual_deg"],
-        outdir / "probe_direction_residual_vs_energy_logz.png",
-        r"$E_{\rm probe}^{pred}$ (GeV)",
-        r"$\Delta\alpha_{\rm probe}$ (deg)",
-        f"{title}: probe direction residual vs predicted energy",
-        bins=(120, 120),
-        xlim=(-1.0, emax),
-        ylim=(0.0, 180.0),
-        logz=True,
-    )
-
-    save_hist2d(
-        arrays["pred_probe_energy"],
-        arrays["probe_delta_E_over_E"],
-        outdir / "probe_fractional_energy_residual_vs_energy_logz.png",
-        r"$E_{\rm probe}^{pred}$ (GeV)",
-        r"$(E_{\rm reco}-E_{\rm pred})/E_{\rm pred}$",
-        f"{title}: probe energy closure vs predicted energy",
-        bins=(120, 120),
-        xlim=(-1.0, emax),
-        ylim=(-3.0, 3.0),
-        logz=True,
-    )
-
-    save_hist2d(
-        arrays["reco_probe_mass2"],
-        arrays["probe_opening_residual_deg"],
-        outdir / "tag_association_mass2_vs_direction_residual_logz.png",
-        r"$(P_{\pi^0}^{reco}-k_{tag}^{reco})^2$ (GeV$^2$)",
-        r"$\Delta\alpha_{\rm probe}$ (deg)",
-        f"{title}: tag-association quality",
-        bins=(120, 120),
-        xlim=(-1.0, 1.0),
-        ylim=(0.0, 180.0),
-        logz=True,
-    )
+    make_compact_canvases(period, arrays, outdir)
 
 
 # -----------------------------------------------------------------------------
@@ -1399,6 +1387,15 @@ def parse_args() -> argparse.Namespace:
             "this at 1 avoids CPU oversubscription when periods run in parallel."
         ),
     )
+    parser.add_argument(
+        "--save-npz",
+        action="store_true",
+        help=(
+            "Optionally save the large pair-level stage1_matched_pairs.npz file. "
+            "Disabled by default because the diagnostic canvases and summaries "
+            "are sufficient for normal Stage-I development."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1487,7 +1484,15 @@ def process_period(
     )
     pair_np = pair_arrays_to_numpy(pairs)
 
-    np.savez_compressed(period_dir / "stage1_matched_pairs.npz", **pair_np)
+    if bool(args_dict.get("save_npz", False)):
+        np.savez_compressed(period_dir / "stage1_matched_pairs.npz", **pair_np)
+    else:
+        old_npz = period_dir / "stage1_matched_pairs.npz"
+        if old_npz.exists():
+            old_npz.unlink()
+        #endif
+    #endif
+
     make_plots(period, pair_np, period_dir)
 
     summary = summarize_period(
@@ -1553,7 +1558,7 @@ def main() -> int:
         f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
     )
     log(
-        "No photon-efficiency denominator/numerator is formed in v004; "
+        "No photon-efficiency denominator/numerator is formed in v005; "
         "this run validates exact e/p event matching, direct tag association, "
         "the reconstructed companion-photon remainder, and missing-photon prediction."
     )
@@ -1584,6 +1589,7 @@ def main() -> int:
         },
         "performance_notes": {
             "parallelization": "independent run periods use separate processes",
+            "pair_level_npz": "disabled by default; enable with --save-npz",
             "kdtree": (
                 "search coordinates use float32; final physical matching cut "
                 "uses original float64 momentum components"
