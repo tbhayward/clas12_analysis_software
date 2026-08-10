@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v008.py
+derive_photon_efficiency_scale_factors_v009.py
 
 Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -9,8 +9,9 @@ THIS VERSION DOES NOT YET FORM THE FINAL DATA/MC EFFICIENCY SCALE FACTOR.
 
 Stage I validates the exclusive-pi0 tag-and-probe kinematics and derives
 probe-prediction resolution. Stage II begins the real-data denominator
-extraction by explicitly decomposing epgamma data into exclusive-pi0,
-BH/DVCS, and wrong-tag/accidental components.
+extraction with a nominal two-component decomposition into exclusive-pi0 and
+BH/DVCS. Mixed-data wrong-tag samples are retained as diagnostic stress tests,
+not nominal fit components.
 
 Its purpose is to validate the central tag-and-probe kinematics using the
 exclusive-pi0 aaogen samples:
@@ -93,23 +94,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v008.py
+    python derive_photon_efficiency_scale_factors_v009.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v008.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v009.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v008.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v009.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v008.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v009.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v008.py --angles rad
+    python derive_photon_efficiency_scale_factors_v009.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -205,7 +206,7 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root",
     ),
     PeriodConfig(
-        "sp19_inb", "Sp19 Inb", 10.200,
+        "sp19_inb", "Sp19 Inb", 10.1998,
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/rga_sp19_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root",
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_sp19_inb_epgamma_0.40GeV.root",
@@ -343,6 +344,7 @@ EPG_REQUIRED = (
 EPG_OPTIONAL = (
     "runnum", "evnum", "detector1", "detector2",
     "Mx2", "Mx2_1", "Mx2_2", "Emiss2", "pTmiss",
+    "theta_gamma_gamma",
 )
 
 EPPIO_REQUIRED = (
@@ -906,6 +908,39 @@ def write_rows_csv(rows: List[Dict[str, object]], path: Path) -> None:
 # Stage-II: real epgamma denominator composition
 # -----------------------------------------------------------------------------
 
+def stage2_energy_edges(max_energy: float) -> np.ndarray:
+    """
+    Return Stage-II probe-energy edges, truncated at the supported data endpoint.
+
+    Stage I intentionally keeps the full high-energy resolution binning. Stage II
+    defaults to <= 2 GeV because the real epgamma exclusivity skim has an observed
+    missing-energy endpoint there.
+    """
+    base = PROBE_ENERGY_EDGES[PROBE_ENERGY_EDGES < max_energy]
+    edges = np.concatenate((base, np.asarray([max_energy], dtype=float)))
+    edges = np.unique(edges)
+    return edges[edges >= PROBE_ENERGY_EDGES[0]]
+
+
+def parse_mix_shifts(value: str) -> List[int]:
+    shifts: List[int] = []
+    for token in str(value).split(","):
+        token = token.strip()
+        if not token:
+            continue
+        #endif
+        shift = int(token)
+        if shift == 0:
+            raise ValueError("--mix-shifts may not contain zero.")
+        #endif
+        shifts.append(shift)
+    #endfor
+    if not shifts:
+        raise ValueError("--mix-shifts must contain at least one nonzero integer.")
+    #endif
+    return shifts
+
+
 def predicted_region_arrays(
     pred_theta_deg: np.ndarray,
     pred_phi_deg: np.ndarray,
@@ -916,16 +951,8 @@ def predicted_region_arrays(
 
     region_code:
       0 = outside/unclassified
-      1 = FT-like, theta <= ft_theta_max
+      1 = FT, theta <= ft_theta_max
       2..7 = FD sectors 1..6, theta > ft_theta_max
-
-    FD sector boundaries exactly follow:
-      S1: [330,360) U [0,30)
-      S2: [30,90)
-      S3: [90,150)
-      S4: [150,210)
-      S5: [210,270)
-      S6: [270,330)
     """
     phi360 = np.asarray(pred_phi_deg, dtype=float) % 360.0
     theta = np.asarray(pred_theta_deg, dtype=float)
@@ -958,13 +985,11 @@ def build_epgamma_denominator_features(
     """
     Vectorized Stage-II kinematics for an epgamma sample.
 
-    The physical data denominator sample is NOT assumed to be pi0-pure.
-    The important discriminants are built from e, p and the tag photon only:
+    Nominal physical discriminants:
+      P_X(ep)      = P_initial - P_e - P_p
+      P_probe^pred = P_initial - P_e - P_p - k_tag
 
-      P_X(ep)        = P_initial - P_e - P_p
-      P_probe^pred   = P_initial - P_e - P_p - k_tag
-
-    For a missing-photon exclusive pi0 event:
+    For exclusive pi0 with an unreconstructed probe:
       M_X^2(ep) ~ m_pi0^2,
       E_probe^pred > 0,
       (P_probe^pred)^2 ~ 0.
@@ -973,10 +998,9 @@ def build_epgamma_denominator_features(
       M_X^2(ep) ~ 0,
       E_probe^pred ~ 0.
 
-    For the mixed-tag template, only the tag photon is cyclically shifted;
-    the e/p parent kinematics remain fixed. This intentionally destroys the
-    physical e/p/gamma association while retaining the measured data photon
-    spectrum and detector occupancy approximately.
+    If mixed_tag_shift != 0, only the tag photon is cyclically shifted. Such
+    mixed events are used ONLY as an uncorrelated-photon diagnostic in v009,
+    never as a nominal floated component.
     """
     e3 = np.asarray(epg.electron_p3, dtype=float)
     p3 = np.asarray(epg.proton_p3, dtype=float)
@@ -1014,6 +1038,7 @@ def build_epgamma_denominator_features(
     pred_p = np.linalg.norm(pred3, axis=1)
     pred_m2 = pred_E * pred_E - pred_p * pred_p
     pred_E_minus_p = pred_E - pred_p
+    pred_pT = np.hypot(pred3[:, 0], pred3[:, 1])
 
     with np.errstate(invalid="ignore", divide="ignore"):
         pred_unit = pred3 / pred_p[:, None]
@@ -1046,6 +1071,7 @@ def build_epgamma_denominator_features(
         "ep_missing_energy": epmiss_E,
         "pred_probe_energy": pred_E,
         "pred_probe_p": pred_p,
+        "pred_probe_pT": pred_pT,
         "pred_probe_mass2": pred_m2,
         "pred_probe_E_minus_p": pred_E_minus_p,
         "pred_probe_theta_deg": pred_theta_deg,
@@ -1055,8 +1081,21 @@ def build_epgamma_denominator_features(
         "valid_tag": valid,
     }
 
-    # Keep run/event keys when they are meaningful (real data). They are not
-    # used in the Stage-II composition fit itself.
+    # Preserve original skim-level exclusivity quantities as optional diagnostics.
+    # For mixed events these are intentionally omitted because the stored values
+    # correspond to the original, unshifted photon.
+    if not mixed_tag_shift:
+        for raw_name, out_name in (
+            ("Emiss2", "stored_Emiss2"),
+            ("pTmiss", "stored_pTmiss"),
+            ("theta_gamma_gamma", "stored_theta_gamma_gamma"),
+        ):
+            if raw_name in epg.raw:
+                out[out_name] = np.asarray(epg.raw[raw_name], dtype=float)
+            #endif
+        #endfor
+    #endif
+
     if "runnum" in epg.raw:
         out["runnum"] = np.asarray(epg.raw["runnum"])
     #endif
@@ -1103,111 +1142,323 @@ def hist2d_template(
 
 
 @dataclass
-class TemplateFitResult:
+class TwoComponentFitResult:
     success: bool
     message: str
     data_count: int
     aaogen_count: int
     dvcsgen_count: int
-    mixed_count: int
     pi0_yield: float = float("nan")
     dvcs_yield: float = float("nan")
-    mixed_yield: float = float("nan")
+    pi0_fraction: float = float("nan")
+    dvcs_fraction: float = float("nan")
+    nll: float = float("nan")
+    poisson_deviance: float = float("nan")
+    pearson_chi2: float = float("nan")
+    ndof: int = 0
+
+
+@dataclass
+class ThreeComponentDiagnosticResult:
+    success: bool
     pi0_fraction: float = float("nan")
     dvcs_fraction: float = float("nan")
     mixed_fraction: float = float("nan")
-    nll: float = float("nan")
+    pi0_yield: float = float("nan")
+    mixed_yield: float = float("nan")
 
 
-def fit_three_component_poisson(
+def normalized_template(hist: np.ndarray) -> np.ndarray:
+    x = np.asarray(hist, dtype=float).ravel()
+    eps = 1.0e-12
+    return (x + eps) / np.sum(x + eps)
+
+
+def poisson_fit_quality(data: np.ndarray, mu: np.ndarray, n_parameters: int) -> Tuple[float, float, int]:
+    data = np.asarray(data, dtype=float)
+    mu = np.clip(np.asarray(mu, dtype=float), 1.0e-12, None)
+
+    positive = data > 0.0
+    terms = np.zeros_like(data, dtype=float)
+    terms[positive] = data[positive] * np.log(data[positive] / mu[positive])
+    deviance = 2.0 * float(np.sum(mu - data + terms))
+
+    pearson = float(np.sum((data - mu) ** 2 / mu))
+    populated = int(np.count_nonzero((data > 0.0) | (mu > 1.0e-10)))
+    ndof = max(1, populated - n_parameters)
+    return deviance, pearson, ndof
+
+
+def fit_two_component_poisson(
     data_hist: np.ndarray,
     pi0_hist: np.ndarray,
     dvcs_hist: np.ndarray,
-    mixed_hist: np.ndarray,
-) -> TemplateFitResult:
+) -> TwoComponentFitResult:
     """
-    Extended binned Poisson fit:
+    Nominal Stage-II extended binned Poisson fit:
 
-      mu_i = N_pi0 T_pi0_i + N_DVCS T_DVCS_i + N_mix T_mix_i
+      mu_i = N_pi0 T_pi0_i + N_DVCS T_DVCS_i
 
-    Each template T is normalized to unit integral inside the fit window.
-    The three component yields float freely and non-negatively. No generator
-    cross-section normalization is imposed.
+    aaogen and dvcsgen provide only local template SHAPES. Their relative
+    generator normalizations are never imposed.
     """
     data = np.asarray(data_hist, dtype=float).ravel()
-    p = np.asarray(pi0_hist, dtype=float).ravel()
-    d = np.asarray(dvcs_hist, dtype=float).ravel()
-    m = np.asarray(mixed_hist, dtype=float).ravel()
+    p_raw = np.asarray(pi0_hist, dtype=float).ravel()
+    d_raw = np.asarray(dvcs_hist, dtype=float).ravel()
 
     nd = int(round(float(np.sum(data))))
-    np0 = int(round(float(np.sum(p))))
-    ndv = int(round(float(np.sum(d))))
-    nmx = int(round(float(np.sum(m))))
+    np0 = int(round(float(np.sum(p_raw))))
+    ndv = int(round(float(np.sum(d_raw))))
 
-    if nd <= 0 or np0 <= 0 or ndv <= 0 or nmx <= 0:
-        return TemplateFitResult(
-            False,
-            "one or more empty histograms",
-            nd, np0, ndv, nmx,
+    if nd <= 0 or np0 <= 0 or ndv <= 0:
+        return TwoComponentFitResult(
+            False, "one or more empty histograms", nd, np0, ndv
         )
     #endif
 
-    # A tiny pseudocount prevents exact-zero support from making the likelihood
-    # pathological while remaining negligible compared with populated bins.
-    eps = 1.0e-12
-    p = (p + eps) / np.sum(p + eps)
-    d = (d + eps) / np.sum(d + eps)
-    m = (m + eps) / np.sum(m + eps)
-
-    T = np.column_stack((p, d, m))
+    p = normalized_template(p_raw)
+    d = normalized_template(d_raw)
+    T = np.column_stack((p, d))
 
     def objective(yields: np.ndarray) -> float:
-        mu = T @ yields
-        mu = np.clip(mu, 1.0e-12, None)
+        mu = np.clip(T @ yields, 1.0e-12, None)
         return float(np.sum(mu - data * np.log(mu)))
     #enddef
 
-    # Start conservatively with a pi0-rich denominator, but all components float.
-    x0 = np.asarray([0.60 * nd, 0.30 * nd, 0.10 * nd], dtype=float)
-
     result = minimize(
         objective,
-        x0,
+        np.asarray([0.70 * nd, 0.30 * nd], dtype=float),
         method="L-BFGS-B",
-        bounds=((0.0, None), (0.0, None), (0.0, None)),
-        options={"maxiter": 500, "ftol": 1.0e-11},
+        bounds=((0.0, None), (0.0, None)),
+        options={"maxiter": 400, "ftol": 1.0e-11},
     )
 
     y = np.clip(np.asarray(result.x, dtype=float), 0.0, None)
     total = float(np.sum(y))
     if total <= 0.0:
-        return TemplateFitResult(
-            False,
-            "fit returned zero total yield",
-            nd, np0, ndv, nmx,
+        return TwoComponentFitResult(
+            False, "fit returned zero total yield", nd, np0, ndv
         )
     #endif
 
-    return TemplateFitResult(
-        bool(result.success),
-        str(result.message),
-        nd, np0, ndv, nmx,
+    mu = T @ y
+    deviance, pearson, ndof = poisson_fit_quality(data, mu, n_parameters=2)
+
+    return TwoComponentFitResult(
+        success=bool(result.success),
+        message=str(result.message),
+        data_count=nd,
+        aaogen_count=np0,
+        dvcsgen_count=ndv,
         pi0_yield=float(y[0]),
         dvcs_yield=float(y[1]),
-        mixed_yield=float(y[2]),
         pi0_fraction=float(y[0] / total),
         dvcs_fraction=float(y[1] / total),
-        mixed_fraction=float(y[2] / total),
         nll=float(result.fun),
+        poisson_deviance=deviance,
+        pearson_chi2=pearson,
+        ndof=ndof,
     )
 
 
-def run_stage2_component_fits(
+def fit_three_component_diagnostic(
+    data_hist: np.ndarray,
+    pi0_hist: np.ndarray,
+    dvcs_hist: np.ndarray,
+    mixed_hist: np.ndarray,
+) -> ThreeComponentDiagnosticResult:
+    """
+    Diagnostic only. The mixed template is allowed to float to test how much
+    the nominal pi0 yield could move if an uncorrelated-photon component were
+    admitted. It is NOT the production denominator result.
+    """
+    data = np.asarray(data_hist, dtype=float).ravel()
+    if (
+        np.sum(data) <= 0
+        or np.sum(pi0_hist) <= 0
+        or np.sum(dvcs_hist) <= 0
+        or np.sum(mixed_hist) <= 0
+    ):
+        return ThreeComponentDiagnosticResult(False)
+    #endif
+
+    T = np.column_stack((
+        normalized_template(pi0_hist),
+        normalized_template(dvcs_hist),
+        normalized_template(mixed_hist),
+    ))
+    nd = float(np.sum(data))
+
+    def objective(yields: np.ndarray) -> float:
+        mu = np.clip(T @ yields, 1.0e-12, None)
+        return float(np.sum(mu - data * np.log(mu)))
+    #enddef
+
+    result = minimize(
+        objective,
+        np.asarray([0.70 * nd, 0.29 * nd, 0.01 * nd], dtype=float),
+        method="L-BFGS-B",
+        bounds=((0.0, None), (0.0, None), (0.0, None)),
+        options={"maxiter": 400, "ftol": 1.0e-11},
+    )
+    y = np.clip(np.asarray(result.x, dtype=float), 0.0, None)
+    total = float(np.sum(y))
+    if total <= 0.0:
+        return ThreeComponentDiagnosticResult(False)
+    #endif
+
+    return ThreeComponentDiagnosticResult(
+        success=bool(result.success),
+        pi0_fraction=float(y[0] / total),
+        dvcs_fraction=float(y[1] / total),
+        mixed_fraction=float(y[2] / total),
+        pi0_yield=float(y[0]),
+        mixed_yield=float(y[2]),
+    )
+
+
+def stage2_fit_mask(
+    feat: Dict[str, np.ndarray],
+    region_name: str,
+    ft_theta_max: float,
+    elo: float,
+    ehi: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+) -> np.ndarray:
+    return (
+        feat["valid_tag"]
+        & stage2_region_mask(feat, region_name, ft_theta_max)
+        & (feat["pred_probe_energy"] >= elo)
+        & (feat["pred_probe_energy"] < ehi)
+        & (feat["ep_missing_mass2"] >= mm2_min)
+        & (feat["ep_missing_mass2"] < mm2_max)
+        & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
+    )
+
+
+def run_stage2_nominal_fits(
+    period: PeriodConfig,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    mm2_bins: int,
+    probe_m2_bins: int,
+    min_data_count: int,
+    min_template_count: int,
+) -> List[Dict[str, object]]:
+    """
+    Nominal local aaogen + dvcsgen decomposition, fit independently in every
+    period / predicted region / supported probe-energy bin.
+    """
+    mm2_edges = np.linspace(mm2_min, mm2_max, mm2_bins + 1)
+    pm2_edges = np.linspace(-probe_m2_max, probe_m2_max, probe_m2_bins + 1)
+    edges = stage2_energy_edges(max_probe_energy)
+
+    regions = ["all", "FT"] + [f"FD_S{s}" for s in range(1, 7)]
+    rows: List[Dict[str, object]] = []
+
+    for region_name in regions:
+        for ibin in range(len(edges) - 1):
+            elo = float(edges[ibin])
+            ehi = float(edges[ibin + 1])
+
+            md = stage2_fit_mask(
+                data_f, region_name, ft_theta_max, elo, ehi,
+                mm2_min, mm2_max, probe_m2_max
+            )
+            mp = stage2_fit_mask(
+                pi0_f, region_name, ft_theta_max, elo, ehi,
+                mm2_min, mm2_max, probe_m2_max
+            )
+            mv = stage2_fit_mask(
+                dvcs_f, region_name, ft_theta_max, elo, ehi,
+                mm2_min, mm2_max, probe_m2_max
+            )
+
+            cd = int(np.count_nonzero(md))
+            cp = int(np.count_nonzero(mp))
+            cv = int(np.count_nonzero(mv))
+
+            row: Dict[str, object] = {
+                "period": period.key,
+                "label": period.label,
+                "beam_energy_GeV": period.beam_energy,
+                "region": region_name,
+                "energy_low_GeV": elo,
+                "energy_high_GeV": ehi,
+                "energy_center_GeV": 0.5 * (elo + ehi),
+                "data_count": cd,
+                "aaogen_count": cp,
+                "dvcsgen_count": cv,
+            }
+
+            enough = (
+                cd >= min_data_count
+                and cp >= min_template_count
+                and cv >= min_template_count
+            )
+            if enough:
+                hd = hist2d_template(data_f, md, mm2_edges, pm2_edges)
+                hp = hist2d_template(pi0_f, mp, mm2_edges, pm2_edges)
+                hv = hist2d_template(dvcs_f, mv, mm2_edges, pm2_edges)
+                fit = fit_two_component_poisson(hd, hp, hv)
+
+                row.update({
+                    "fit_success": int(fit.success),
+                    "fit_message": fit.message,
+                    "pi0_yield": fit.pi0_yield,
+                    "dvcs_yield": fit.dvcs_yield,
+                    "pi0_fraction": fit.pi0_fraction,
+                    "dvcs_fraction": fit.dvcs_fraction,
+                    "nll": fit.nll,
+                    "poisson_deviance": fit.poisson_deviance,
+                    "pearson_chi2": fit.pearson_chi2,
+                    "ndof": fit.ndof,
+                    "deviance_per_ndof": (
+                        fit.poisson_deviance / fit.ndof if fit.ndof > 0 else float("nan")
+                    ),
+                    "pearson_per_ndof": (
+                        fit.pearson_chi2 / fit.ndof if fit.ndof > 0 else float("nan")
+                    ),
+                })
+            else:
+                row.update({
+                    "fit_success": 0,
+                    "fit_message": "insufficient data/template statistics",
+                    "pi0_yield": float("nan"),
+                    "dvcs_yield": float("nan"),
+                    "pi0_fraction": float("nan"),
+                    "dvcs_fraction": float("nan"),
+                    "nll": float("nan"),
+                    "poisson_deviance": float("nan"),
+                    "pearson_chi2": float("nan"),
+                    "ndof": 0,
+                    "deviance_per_ndof": float("nan"),
+                    "pearson_per_ndof": float("nan"),
+                })
+            #endif
+            rows.append(row)
+        #endfor
+    #endfor
+
+    return rows
+
+
+def run_mixed_shift_diagnostic(
     period: PeriodConfig,
     data_f: Dict[str, np.ndarray],
     pi0_f: Dict[str, np.ndarray],
     dvcs_f: Dict[str, np.ndarray],
     mixed_f: Dict[str, np.ndarray],
+    nominal_rows: List[Dict[str, object]],
+    shift: int,
     ft_theta_max: float,
     mm2_min: float,
     mm2_max: float,
@@ -1218,107 +1469,118 @@ def run_stage2_component_fits(
     min_template_count: int,
 ) -> List[Dict[str, object]]:
     """
-    Fit data composition independently in each predicted energy/region bin.
-
-    This deliberately avoids assuming that aaogen and dvcsgen reproduce the
-    relative cross sections versus energy or sector. Only their local SHAPES
-    inside each bin are used.
+    Repeat each successful nominal fit with one extra mixed-data component.
+    The resulting change in pi0 fraction quantifies sensitivity to a possible
+    uncorrelated-photon contribution. It never replaces the nominal result.
     """
     mm2_edges = np.linspace(mm2_min, mm2_max, mm2_bins + 1)
     pm2_edges = np.linspace(-probe_m2_max, probe_m2_max, probe_m2_bins + 1)
 
-    regions = ["all", "FT"] + [f"FD_S{s}" for s in range(1, 7)]
     rows: List[Dict[str, object]] = []
+    for nominal in nominal_rows:
+        if int(nominal["fit_success"]) != 1:
+            continue
+        #endif
 
-    for region_name in regions:
-        masks_region = {
-            "data": stage2_region_mask(data_f, region_name, ft_theta_max),
-            "pi0": stage2_region_mask(pi0_f, region_name, ft_theta_max),
-            "dvcs": stage2_region_mask(dvcs_f, region_name, ft_theta_max),
-            "mixed": stage2_region_mask(mixed_f, region_name, ft_theta_max),
-        }
+        region = str(nominal["region"])
+        elo = float(nominal["energy_low_GeV"])
+        ehi = float(nominal["energy_high_GeV"])
 
-        for ibin in range(len(PROBE_ENERGY_EDGES) - 1):
-            elo = float(PROBE_ENERGY_EDGES[ibin])
-            ehi = float(PROBE_ENERGY_EDGES[ibin + 1])
+        md = stage2_fit_mask(
+            data_f, region, ft_theta_max, elo, ehi,
+            mm2_min, mm2_max, probe_m2_max
+        )
+        mp = stage2_fit_mask(
+            pi0_f, region, ft_theta_max, elo, ehi,
+            mm2_min, mm2_max, probe_m2_max
+        )
+        mv = stage2_fit_mask(
+            dvcs_f, region, ft_theta_max, elo, ehi,
+            mm2_min, mm2_max, probe_m2_max
+        )
+        mm = stage2_fit_mask(
+            mixed_f, region, ft_theta_max, elo, ehi,
+            mm2_min, mm2_max, probe_m2_max
+        )
 
-            masks = {}
-            for key, feat in (
-                ("data", data_f),
-                ("pi0", pi0_f),
-                ("dvcs", dvcs_f),
-                ("mixed", mixed_f),
-            ):
-                masks[key] = (
-                    feat["valid_tag"]
-                    & masks_region[key]
-                    & (feat["pred_probe_energy"] >= elo)
-                    & (feat["pred_probe_energy"] < ehi)
-                    & (feat["ep_missing_mass2"] >= mm2_min)
-                    & (feat["ep_missing_mass2"] < mm2_max)
-                    & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
-                )
-            #endfor
+        cm = int(np.count_nonzero(mm))
+        if cm < min_template_count:
+            continue
+        #endif
 
-            counts = {k: int(np.count_nonzero(v)) for k, v in masks.items()}
+        hd = hist2d_template(data_f, md, mm2_edges, pm2_edges)
+        hp = hist2d_template(pi0_f, mp, mm2_edges, pm2_edges)
+        hv = hist2d_template(dvcs_f, mv, mm2_edges, pm2_edges)
+        hm = hist2d_template(mixed_f, mm, mm2_edges, pm2_edges)
 
-            row: Dict[str, object] = {
-                "period": period.key,
-                "label": period.label,
-                "region": region_name,
-                "energy_low_GeV": elo,
-                "energy_high_GeV": ehi,
-                "energy_center_GeV": 0.5 * (elo + ehi),
-                "data_count": counts["data"],
-                "aaogen_count": counts["pi0"],
-                "dvcsgen_count": counts["dvcs"],
-                "mixed_count": counts["mixed"],
-            }
+        fit = fit_three_component_diagnostic(hd, hp, hv, hm)
+        if not fit.success:
+            continue
+        #endif
 
-            enough = (
-                counts["data"] >= min_data_count
-                and counts["pi0"] >= min_template_count
-                and counts["dvcs"] >= min_template_count
-                and counts["mixed"] >= min_template_count
-            )
-
-            if enough:
-                hd = hist2d_template(data_f, masks["data"], mm2_edges, pm2_edges)
-                hp = hist2d_template(pi0_f, masks["pi0"], mm2_edges, pm2_edges)
-                hv = hist2d_template(dvcs_f, masks["dvcs"], mm2_edges, pm2_edges)
-                hm = hist2d_template(mixed_f, masks["mixed"], mm2_edges, pm2_edges)
-
-                fit = fit_three_component_poisson(hd, hp, hv, hm)
-                row.update({
-                    "fit_success": int(fit.success),
-                    "fit_message": fit.message,
-                    "pi0_yield": fit.pi0_yield,
-                    "dvcs_yield": fit.dvcs_yield,
-                    "mixed_yield": fit.mixed_yield,
-                    "pi0_fraction": fit.pi0_fraction,
-                    "dvcs_fraction": fit.dvcs_fraction,
-                    "mixed_fraction": fit.mixed_fraction,
-                    "nll": fit.nll,
-                })
-            else:
-                row.update({
-                    "fit_success": 0,
-                    "fit_message": "insufficient data/template statistics",
-                    "pi0_yield": float("nan"),
-                    "dvcs_yield": float("nan"),
-                    "mixed_yield": float("nan"),
-                    "pi0_fraction": float("nan"),
-                    "dvcs_fraction": float("nan"),
-                    "mixed_fraction": float("nan"),
-                    "nll": float("nan"),
-                })
-            #endif
-
-            rows.append(row)
-        #endfor
+        nominal_pi0 = float(nominal["pi0_fraction"])
+        rows.append({
+            "period": period.key,
+            "label": period.label,
+            "region": region,
+            "energy_low_GeV": elo,
+            "energy_high_GeV": ehi,
+            "energy_center_GeV": float(nominal["energy_center_GeV"]),
+            "mix_shift": int(shift),
+            "mixed_template_count": cm,
+            "nominal_pi0_fraction": nominal_pi0,
+            "diagnostic_pi0_fraction": fit.pi0_fraction,
+            "diagnostic_dvcs_fraction": fit.dvcs_fraction,
+            "diagnostic_mixed_fraction": fit.mixed_fraction,
+            "delta_pi0_fraction": fit.pi0_fraction - nominal_pi0,
+        })
     #endfor
 
     return rows
+
+
+def representative_fit_projection(
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    row: Dict[str, object],
+    ft_theta_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    bins: int = 90,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return M_X^2(ep) data and fitted component projections for one fit row."""
+    region = str(row["region"])
+    elo = float(row["energy_low_GeV"])
+    ehi = float(row["energy_high_GeV"])
+
+    md = stage2_fit_mask(data_f, region, ft_theta_max, elo, ehi, mm2_min, mm2_max, probe_m2_max)
+    mp = stage2_fit_mask(pi0_f, region, ft_theta_max, elo, ehi, mm2_min, mm2_max, probe_m2_max)
+    mv = stage2_fit_mask(dvcs_f, region, ft_theta_max, elo, ehi, mm2_min, mm2_max, probe_m2_max)
+
+    edges = np.linspace(mm2_min, mm2_max, bins + 1)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    hd, _ = np.histogram(data_f["ep_missing_mass2"][md], bins=edges)
+    hp, _ = np.histogram(pi0_f["ep_missing_mass2"][mp], bins=edges)
+    hv, _ = np.histogram(dvcs_f["ep_missing_mass2"][mv], bins=edges)
+
+    hp = hp.astype(float)
+    hv = hv.astype(float)
+    hp /= max(float(np.sum(hp)), 1.0)
+    hv /= max(float(np.sum(hv)), 1.0)
+
+    pi0_component = float(row["pi0_yield"]) * hp
+    dvcs_component = float(row["dvcs_yield"]) * hv
+    model = pi0_component + dvcs_component
+    return centers, hd.astype(float), pi0_component, dvcs_component, model
+
+
+def unit_hist(ax, values: np.ndarray, bins: np.ndarray, label: str) -> None:
+    vals = np.asarray(values, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    weights = np.ones(len(vals), dtype=float) / max(len(vals), 1)
+    ax.hist(vals, bins=bins, weights=weights, histtype="step", linewidth=1.15, label=label)
 
 
 def make_stage2_canvases(
@@ -1326,20 +1588,21 @@ def make_stage2_canvases(
     data_f: Dict[str, np.ndarray],
     pi0_f: Dict[str, np.ndarray],
     dvcs_f: Dict[str, np.ndarray],
-    mixed_f: Dict[str, np.ndarray],
-    fit_rows: List[Dict[str, object]],
+    nominal_rows: List[Dict[str, object]],
+    mixed_rows: List[Dict[str, object]],
     outdir: Path,
     ft_theta_max: float,
+    max_probe_energy: float,
     mm2_min: float,
     mm2_max: float,
     probe_m2_max: float,
 ) -> None:
     """
-    Compact diagnostic output for Stage II.
-
-    MC curves are shape-normalized in the first canvas. The actual component
-    normalizations are obtained from the local template fits and shown in the
-    second canvas.
+    Four compact Stage-II canvases:
+      1. discriminator shapes (data/aaogen/dvcsgen only),
+      2. nominal fit quality and composition,
+      3. 1x2 FT + all-six-FD pi0 purity,
+      4. representative nominal fit projections and mixed-template sensitivity.
     """
     from matplotlib.colors import LogNorm
 
@@ -1347,184 +1610,379 @@ def make_stage2_canvases(
         old.unlink()
     #endfor
 
-    # Broad common preselection for shape diagnostics.
-    masks = {}
-    for key, feat in (
-        ("data", data_f),
-        ("pi0", pi0_f),
-        ("dvcs", dvcs_f),
-        ("mixed", mixed_f),
-    ):
-        masks[key] = (
+    common = {}
+    for key, feat in (("data", data_f), ("pi0", pi0_f), ("dvcs", dvcs_f)):
+        common[key] = (
             feat["valid_tag"]
-            & (feat["pred_probe_energy"] >= 0.0)
-            & (feat["pred_probe_energy"] < 6.0)
+            & (feat["pred_probe_energy"] >= 0.40)
+            & (feat["pred_probe_energy"] < max_probe_energy)
             & (feat["ep_missing_mass2"] >= mm2_min)
             & (feat["ep_missing_mass2"] < mm2_max)
             & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
         )
     #endfor
 
+    # --------------------------------------------------------------
+    # Canvas 1: physics discriminants.
+    # --------------------------------------------------------------
     fig, axes = plt.subplots(2, 2, figsize=(13.8, 10.2))
 
-    # M_X^2(ep) shape comparison.
-    edges = np.linspace(mm2_min, mm2_max, 220)
     for key, feat, label in (
         ("data", data_f, "Data"),
         ("pi0", pi0_f, "aaogen $\\pi^0$"),
         ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
-        ("mixed", mixed_f, "Mixed-data wrong tag"),
     ):
-        vals = feat["ep_missing_mass2"][masks[key]]
-        w = np.ones(len(vals), dtype=float) / max(len(vals), 1)
-        axes[0, 0].hist(vals, bins=edges, weights=w, histtype="step", linewidth=1.2, label=label)
+        unit_hist(
+            axes[0, 0],
+            feat["ep_missing_mass2"][common[key]],
+            np.linspace(mm2_min, mm2_max, 220),
+            label,
+        )
     #endfor
     axes[0, 0].axvline(M_PI0 * M_PI0, linestyle="--", linewidth=1.0)
     axes[0, 0].set_xlabel(r"$M_X^2(ep)$ (GeV$^2$)")
     axes[0, 0].set_ylabel("Unit-normalized entries")
-    axes[0, 0].set_title("Denominator composition discriminator")
+    axes[0, 0].set_title("$ep$ missing mass squared")
     axes[0, 0].legend(fontsize=8)
     axes[0, 0].grid(alpha=0.18)
 
-    # Predicted probe energy.
-    edges_e = np.linspace(-0.5, 6.0, 220)
     for key, feat, label in (
         ("data", data_f, "Data"),
         ("pi0", pi0_f, "aaogen $\\pi^0$"),
         ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
-        ("mixed", mixed_f, "Mixed-data wrong tag"),
     ):
-        vals = feat["pred_probe_energy"][masks[key]]
-        w = np.ones(len(vals), dtype=float) / max(len(vals), 1)
-        axes[0, 1].hist(vals, bins=edges_e, weights=w, histtype="step", linewidth=1.2, label=label)
+        unit_hist(
+            axes[0, 1],
+            feat["pred_probe_energy"][common[key]],
+            np.linspace(0.35, max_probe_energy, 220),
+            label,
+        )
     #endfor
-    axes[0, 1].axvline(0.40, linestyle="--", linewidth=1.0)
     axes[0, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
     axes[0, 1].set_ylabel("Unit-normalized entries")
-    axes[0, 1].set_title("BH/DVCS should concentrate near zero")
+    axes[0, 1].set_title("Predicted missing-photon energy")
     axes[0, 1].grid(alpha=0.18)
 
-    # Data 2D discriminator.
-    dmask = masks["data"]
-    h = axes[1, 0].hist2d(
-        data_f["ep_missing_mass2"][dmask],
-        data_f["pred_probe_mass2"][dmask],
-        bins=(140, 140),
-        range=((mm2_min, mm2_max), (-probe_m2_max, probe_m2_max)),
-        norm=LogNorm(),
-    )
-    fig.colorbar(h[3], ax=axes[1, 0], label="Entries")
-    axes[1, 0].set_xlabel(r"$M_X^2(ep)$ (GeV$^2$)")
-    axes[1, 0].set_ylabel(r"$(P_{\rm probe}^{pred})^2$ (GeV$^2$)")
-    axes[1, 0].set_title("Real $ep\\gamma$ data")
-
-    # Component fractions vs energy, all regions fit.
-    rr = [
-        r for r in fit_rows
-        if r["region"] == "all"
-        and int(r["fit_success"]) == 1
-        and np.isfinite(r["pi0_fraction"])
-    ]
-    if rr:
-        x = np.asarray([r["energy_center_GeV"] for r in rr])
-        axes[1, 1].plot(x, [r["pi0_fraction"] for r in rr], marker="o", label="$\\pi^0$")
-        axes[1, 1].plot(x, [r["dvcs_fraction"] for r in rr], marker="o", label="BH/DVCS")
-        axes[1, 1].plot(x, [r["mixed_fraction"] for r in rr], marker="o", label="mixed/wrong")
-    #endif
-    axes[1, 1].set_ylim(0.0, 1.05)
-    axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
-    axes[1, 1].set_ylabel("Fitted fraction")
-    axes[1, 1].set_title("Local data composition fits")
-    axes[1, 1].legend(fontsize=8)
-    axes[1, 1].grid(alpha=0.18)
-
-    fig.suptitle(f"{period.label}: Stage II $ep\\gamma$ denominator composition", fontsize=15)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(outdir / "canvas_denominator_composition.png", dpi=180)
-    plt.close(fig)
-
-    # Region-by-region pi0 purity.
-    fig, axes = plt.subplots(2, 2, figsize=(13.8, 10.2))
-    region_groups = (
-        ("FT", ["FT"]),
-        ("FD sectors 1-2", ["FD_S1", "FD_S2"]),
-        ("FD sectors 3-4", ["FD_S3", "FD_S4"]),
-        ("FD sectors 5-6", ["FD_S5", "FD_S6"]),
-    )
-    for ax, (title, regions) in zip(axes.flat, region_groups):
-        for region in regions:
-            rr = [
-                r for r in fit_rows
-                if r["region"] == region
-                and int(r["fit_success"]) == 1
-                and np.isfinite(r["pi0_fraction"])
-            ]
-            if not rr:
-                continue
-            #endif
-            ax.plot(
-                [r["energy_center_GeV"] for r in rr],
-                [r["pi0_fraction"] for r in rr],
-                marker="o",
-                ms=3,
-                label=region,
+    # Optional stored pTmiss comparison.
+    have_pt = all("stored_pTmiss" in f for f in (data_f, pi0_f, dvcs_f))
+    if have_pt:
+        for key, feat, label in (
+            ("data", data_f, "Data"),
+            ("pi0", pi0_f, "aaogen $\\pi^0$"),
+            ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
+        ):
+            unit_hist(
+                axes[1, 0],
+                feat["stored_pTmiss"][common[key]],
+                np.linspace(0.0, 1.0, 220),
+                label,
             )
         #endfor
-        ax.set_ylim(0.0, 1.05)
-        ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
-        ax.set_ylabel("Fitted $\\pi^0$ fraction")
-        ax.set_title(title)
-        ax.grid(alpha=0.18)
-        ax.legend(fontsize=8)
-    #endfor
+        axes[1, 0].set_xlabel(r"stored $p_{T,\rm miss}$ (GeV)")
+        axes[1, 0].set_ylabel("Unit-normalized entries")
+        axes[1, 0].set_title("Skim-level $p_{T,\rm miss}$ diagnostic")
+    else:
+        axes[1, 0].text(0.5, 0.5, "pTmiss branch unavailable", ha="center", va="center")
+        axes[1, 0].set_axis_off()
+    #endif
+    axes[1, 0].grid(alpha=0.18)
+
+    have_theta = all("stored_theta_gamma_gamma" in f for f in (data_f, pi0_f, dvcs_f))
+    if have_theta:
+        theta_all = np.concatenate([
+            f["stored_theta_gamma_gamma"][common[k]]
+            for k, f in (("data", data_f), ("pi0", pi0_f), ("dvcs", dvcs_f))
+        ])
+        theta_all = theta_all[np.isfinite(theta_all)]
+        hi = min(180.0, max(5.0, float(np.percentile(theta_all, 99.5)))) if theta_all.size else 30.0
+        for key, feat, label in (
+            ("data", data_f, "Data"),
+            ("pi0", pi0_f, "aaogen $\\pi^0$"),
+            ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
+        ):
+            unit_hist(
+                axes[1, 1],
+                feat["stored_theta_gamma_gamma"][common[key]],
+                np.linspace(0.0, hi, 220),
+                label,
+            )
+        #endfor
+        axes[1, 1].set_xlabel(r"stored $\theta_{\gamma\gamma}$ (deg)")
+        axes[1, 1].set_ylabel("Unit-normalized entries")
+        axes[1, 1].set_title("$\\theta_{\\gamma\\gamma}$ diagnostic")
+    else:
+        # Fall back to computed E-p, still independent of extra skim branches.
+        for key, feat, label in (
+            ("data", data_f, "Data"),
+            ("pi0", pi0_f, "aaogen $\\pi^0$"),
+            ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
+        ):
+            unit_hist(
+                axes[1, 1],
+                feat["pred_probe_E_minus_p"][common[key]],
+                np.linspace(-1.0, 1.0, 220),
+                label,
+            )
+        #endfor
+        axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}-|\vec p_{\rm probe}^{pred}|$ (GeV)")
+        axes[1, 1].set_ylabel("Unit-normalized entries")
+        axes[1, 1].set_title("Predicted photon mass-shell diagnostic")
+    #endif
+    axes[1, 1].grid(alpha=0.18)
 
     fig.suptitle(
-        f"{period.label}: Stage II fitted $\\pi^0$ denominator purity by predicted detector region",
+        f"{period.label}: Stage II denominator discriminants "
+        f"(beam {period.beam_energy:.4f} GeV)",
         fontsize=15,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "canvas_denominator_discriminants.png", dpi=180)
+    plt.close(fig)
+
+    # --------------------------------------------------------------
+    # Canvas 2: nominal fit fractions and goodness.
+    # --------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.8, 10.2))
+    rr = [
+        r for r in nominal_rows
+        if r["region"] == "all" and int(r["fit_success"]) == 1
+    ]
+    if rr:
+        x = np.asarray([r["energy_center_GeV"] for r in rr])
+        axes[0, 0].plot(x, [r["pi0_fraction"] for r in rr], marker="o", label="$\\pi^0$")
+        axes[0, 0].plot(x, [r["dvcs_fraction"] for r in rr], marker="o", label="BH/DVCS")
+        axes[0, 0].set_ylim(0.0, 1.05)
+        axes[0, 0].legend()
+
+        axes[0, 1].plot(x, [r["deviance_per_ndof"] for r in rr], marker="o", label="Poisson deviance/ndof")
+        axes[0, 1].plot(x, [r["pearson_per_ndof"] for r in rr], marker="o", label="Pearson $\\chi^2$/ndof")
+        axes[0, 1].legend(fontsize=8)
+
+        axes[1, 0].step(
+            x, [r["data_count"] for r in rr], where="mid", label="Data"
+        )
+        axes[1, 0].step(
+            x, [r["aaogen_count"] for r in rr], where="mid", label="aaogen"
+        )
+        axes[1, 0].step(
+            x, [r["dvcsgen_count"] for r in rr], where="mid", label="dvcsgen"
+        )
+        axes[1, 0].set_yscale("log")
+        axes[1, 0].legend(fontsize=8)
+
+        # Max |delta f_pi0| over diagnostic mixing shifts.
+        for ecenter in x:
+            vals = [
+                abs(float(r["delta_pi0_fraction"]))
+                for r in mixed_rows
+                if r["region"] == "all"
+                and abs(float(r["energy_center_GeV"]) - float(ecenter)) < 1.0e-9
+                and np.isfinite(r["delta_pi0_fraction"])
+            ]
+            axes[1, 1].plot(
+                [ecenter], [max(vals) if vals else np.nan], marker="o"
+            )
+        #endfor
+    #endif
+
+    axes[0, 0].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0, 0].set_ylabel("Nominal fitted fraction")
+    axes[0, 0].set_title("Two-component nominal composition")
+    axes[0, 0].grid(alpha=0.18)
+
+    axes[0, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0, 1].set_ylabel("Goodness statistic / ndof")
+    axes[0, 1].set_title("Nominal fit quality")
+    axes[0, 1].grid(alpha=0.18)
+
+    axes[1, 0].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 0].set_ylabel("Entries")
+    axes[1, 0].set_title("All-region fit statistics")
+    axes[1, 0].grid(alpha=0.18)
+
+    axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 1].set_ylabel(r"max $|\Delta f_{\pi^0}|$")
+    axes[1, 1].set_title("Sensitivity to adding mixed-data component")
+    axes[1, 1].grid(alpha=0.18)
+
+    fig.suptitle(
+        f"{period.label}: Stage II nominal denominator fits",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "canvas_nominal_fit_summary.png", dpi=180)
+    plt.close(fig)
+
+    # --------------------------------------------------------------
+    # Canvas 3: requested 1x2 FT + all FD sectors.
+    # --------------------------------------------------------------
+    fig, axes = plt.subplots(1, 2, figsize=(14.5, 5.5))
+
+    rr_ft = [
+        r for r in nominal_rows
+        if r["region"] == "FT"
+        and int(r["fit_success"]) == 1
+        and np.isfinite(r["pi0_fraction"])
+    ]
+    if rr_ft:
+        axes[0].plot(
+            [r["energy_center_GeV"] for r in rr_ft],
+            [r["pi0_fraction"] for r in rr_ft],
+            marker="o",
+            label="FT",
+        )
+    #endif
+    axes[0].set_ylim(0.0, 1.05)
+    axes[0].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0].set_ylabel("Fitted $\\pi^0$ fraction")
+    axes[0].set_title("FT")
+    axes[0].grid(alpha=0.18)
+
+    for s in range(1, 7):
+        region = f"FD_S{s}"
+        rr_s = [
+            r for r in nominal_rows
+            if r["region"] == region
+            and int(r["fit_success"]) == 1
+            and np.isfinite(r["pi0_fraction"])
+        ]
+        if not rr_s:
+            continue
+        #endif
+        axes[1].plot(
+            [r["energy_center_GeV"] for r in rr_s],
+            [r["pi0_fraction"] for r in rr_s],
+            marker="o",
+            ms=3,
+            label=f"S{s}",
+        )
+    #endfor
+    axes[1].set_ylim(0.0, 1.05)
+    axes[1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1].set_ylabel("Fitted $\\pi^0$ fraction")
+    axes[1].set_title("FD sectors")
+    axes[1].legend(ncol=2, fontsize=8)
+    axes[1].grid(alpha=0.18)
+
+    fig.suptitle(
+        f"{period.label}: nominal $\\pi^0$ denominator purity by predicted region",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(outdir / "canvas_pi0_purity_by_region.png", dpi=180)
+    plt.close(fig)
+
+    # --------------------------------------------------------------
+    # Canvas 4: representative all-region nominal fit projections.
+    # --------------------------------------------------------------
+    targets = ((0.40, 0.50), (0.80, 1.00), (1.50, 2.00))
+    fig, axes = plt.subplots(1, 3, figsize=(18.0, 5.2))
+
+    for ax, (elo, ehi) in zip(axes, targets):
+        candidates = [
+            r for r in nominal_rows
+            if r["region"] == "all"
+            and int(r["fit_success"]) == 1
+            and abs(float(r["energy_low_GeV"]) - elo) < 1.0e-9
+            and abs(float(r["energy_high_GeV"]) - ehi) < 1.0e-9
+        ]
+        if not candidates:
+            ax.text(0.5, 0.5, "No successful fit", ha="center", va="center")
+            ax.set_axis_off()
+            continue
+        #endif
+        row = candidates[0]
+        centers, hd, hp, hv, model = representative_fit_projection(
+            data_f, pi0_f, dvcs_f, row,
+            ft_theta_max=ft_theta_max,
+            mm2_min=mm2_min,
+            mm2_max=mm2_max,
+            probe_m2_max=probe_m2_max,
+        )
+        ax.errorbar(
+            centers, hd, yerr=np.sqrt(np.maximum(hd, 1.0)),
+            fmt="o", ms=2.5, label="Data"
+        )
+        ax.step(centers, model, where="mid", linewidth=1.4, label="Total fit")
+        ax.step(centers, hp, where="mid", linewidth=1.0, label="$\\pi^0$")
+        ax.step(centers, hv, where="mid", linewidth=1.0, label="BH/DVCS")
+        ax.set_xlabel(r"$M_X^2(ep)$ (GeV$^2$)")
+        ax.set_ylabel("Entries / bin")
+        ax.set_title(
+            f"{elo:.2f}–{ehi:.2f} GeV\n"
+            f"$f_{{\\pi^0}}$={float(row['pi0_fraction']):.3f}, "
+            f"D/ndof={float(row['deviance_per_ndof']):.2f}"
+        )
+        ax.grid(alpha=0.18)
+    #endfor
+    axes[0].legend(fontsize=8)
+
+    fig.suptitle(
+        f"{period.label}: representative nominal two-component fits",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(outdir / "canvas_representative_nominal_fits.png", dpi=180)
     plt.close(fig)
 
 
 def summarize_stage2(
     period: PeriodConfig,
-    fit_rows: List[Dict[str, object]],
+    nominal_rows: List[Dict[str, object]],
+    mixed_rows: List[Dict[str, object]],
     data_total: int,
     pi0_total: int,
     dvcs_total: int,
+    max_probe_energy: float,
 ) -> Dict[str, object]:
     good = [
-        r for r in fit_rows
+        r for r in nominal_rows
         if r["region"] == "all"
         and int(r["fit_success"]) == 1
         and np.isfinite(r["pi0_yield"])
     ]
+
     pi0_yield = float(np.sum([r["pi0_yield"] for r in good])) if good else float("nan")
     dvcs_yield = float(np.sum([r["dvcs_yield"] for r in good])) if good else float("nan")
-    mixed_yield = float(np.sum([r["mixed_yield"] for r in good])) if good else float("nan")
-    total = pi0_yield + dvcs_yield + mixed_yield if good else float("nan")
+    total = pi0_yield + dvcs_yield if good else float("nan")
+
+    mix_shifts = sorted(set(int(r["mix_shift"]) for r in mixed_rows))
+    mix_delta = [
+        abs(float(r["delta_pi0_fraction"]))
+        for r in mixed_rows
+        if r["region"] == "all" and np.isfinite(r["delta_pi0_fraction"])
+    ]
 
     return {
         "period": period.key,
         "label": period.label,
+        "beam_energy_GeV": period.beam_energy,
+        "stage2_probe_energy_max_GeV": max_probe_energy,
         "epgamma_data_entries_total": int(data_total),
         "aaogen_epgamma_entries_total": int(pi0_total),
         "dvcsgen_epgamma_entries_total": int(dvcs_total),
         "successful_all_region_energy_fits": int(len(good)),
         "summed_pi0_yield_in_fit_windows": pi0_yield,
         "summed_dvcs_yield_in_fit_windows": dvcs_yield,
-        "summed_mixed_yield_in_fit_windows": mixed_yield,
         "summed_pi0_fraction": (
             pi0_yield / total if good and total > 0.0 else float("nan")
         ),
         "summed_dvcs_fraction": (
             dvcs_yield / total if good and total > 0.0 else float("nan")
         ),
-        "summed_mixed_fraction": (
-            mixed_yield / total if good and total > 0.0 else float("nan")
+        "median_deviance_per_ndof": (
+            float(np.median([r["deviance_per_ndof"] for r in good]))
+            if good else float("nan")
+        ),
+        "mixed_diagnostic_shifts": mix_shifts,
+        "max_abs_pi0_fraction_shift_from_mixed_component": (
+            max(mix_delta) if mix_delta else float("nan")
+        ),
+        "median_abs_pi0_fraction_shift_from_mixed_component": (
+            float(np.median(mix_delta)) if mix_delta else float("nan")
         ),
     }
+
 
 # -----------------------------------------------------------------------------
 # Plotting
@@ -2344,12 +2802,22 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--mix-shift",
-        type=int,
-        default=7919,
+        "--den-probe-energy-max",
+        type=float,
+        default=2.0,
         help=(
-            "Deterministic cyclic row shift used to construct the data-driven "
-            "wrong-tag/accidental template. Default: 7919."
+            "Maximum predicted probe energy (GeV) used for Stage-II denominator "
+            "fits. The real epgamma skim has an observed missing-energy endpoint "
+            "near 2 GeV, so 2.0 is the default supported upper boundary."
+        ),
+    )
+    parser.add_argument(
+        "--mix-shifts",
+        default="7919,15401,32749",
+        help=(
+            "Comma-separated deterministic cyclic shifts used only for the "
+            "mixed-data wrong-tag diagnostic. Mixed events are NOT part of the "
+            "nominal denominator fit. Default: 7919,15401,32749."
         ),
     )
     return parser.parse_args()
@@ -2504,6 +2972,7 @@ def process_period(
 
     stage2_summary: Optional[Dict[str, object]] = None
     stage2_rows: List[Dict[str, object]] = []
+    mixed_diag_rows: List[Dict[str, object]] = []
 
     if not bool(args_dict.get("stage1_only", False)):
         stage2_dir = Path(stage2_output_dir) / period.key
@@ -2538,46 +3007,30 @@ def process_period(
         )
 
         ft_theta_max = float(args_dict["ft_theta_max"])
+        max_probe_energy = float(args_dict["den_probe_energy_max"])
 
-        # Reuse `epg`, the aaogen epgamma sample already loaded for Stage I.
+        # Reuse aaogen epgamma already resident from Stage I.
         pi0_f = build_epgamma_denominator_features(
-            period,
-            epg,
-            tag_min=tag_min,
-            tag_max=tag_max,
-            ft_theta_max=ft_theta_max,
+            period, epg, tag_min, tag_max, ft_theta_max
         )
         data_f = build_epgamma_denominator_features(
-            period,
-            data_epg,
-            tag_min=tag_min,
-            tag_max=tag_max,
-            ft_theta_max=ft_theta_max,
+            period, data_epg, tag_min, tag_max, ft_theta_max
         )
         dvcs_f = build_epgamma_denominator_features(
-            period,
-            dv_epg,
-            tag_min=tag_min,
-            tag_max=tag_max,
-            ft_theta_max=ft_theta_max,
-        )
-        mixed_f = build_epgamma_denominator_features(
-            period,
-            data_epg,
-            tag_min=tag_min,
-            tag_max=tag_max,
-            ft_theta_max=ft_theta_max,
-            mixed_tag_shift=int(args_dict["mix_shift"]),
+            period, dv_epg, tag_min, tag_max, ft_theta_max
         )
 
-        log(f"{period.label}: Stage II fitting pi0 + BH/DVCS + mixed-data templates.")
-        stage2_rows = run_stage2_component_fits(
+        log(
+            f"{period.label}: Stage II nominal aaogen + dvcsgen fits "
+            f"for 0.4 <= E_probe^pred < {max_probe_energy:g} GeV."
+        )
+        stage2_rows = run_stage2_nominal_fits(
             period,
             data_f=data_f,
             pi0_f=pi0_f,
             dvcs_f=dvcs_f,
-            mixed_f=mixed_f,
             ft_theta_max=ft_theta_max,
+            max_probe_energy=max_probe_energy,
             mm2_min=float(args_dict["den_fit_mm2_min"]),
             mm2_max=float(args_dict["den_fit_mm2_max"]),
             probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
@@ -2591,15 +3044,58 @@ def process_period(
             stage2_dir / "denominator_component_fits.csv",
         )
 
+        # Mixed-event sensitivity diagnostics are processed one shift at a time
+        # and released immediately to keep memory bounded.
+        for shift in parse_mix_shifts(str(args_dict["mix_shifts"])):
+            log(
+                f"{period.label}: mixed-data diagnostic shift {shift} "
+                "(not part of nominal fit)."
+            )
+            mixed_f = build_epgamma_denominator_features(
+                period,
+                data_epg,
+                tag_min=tag_min,
+                tag_max=tag_max,
+                ft_theta_max=ft_theta_max,
+                mixed_tag_shift=shift,
+            )
+            mixed_diag_rows.extend(
+                run_mixed_shift_diagnostic(
+                    period,
+                    data_f=data_f,
+                    pi0_f=pi0_f,
+                    dvcs_f=dvcs_f,
+                    mixed_f=mixed_f,
+                    nominal_rows=stage2_rows,
+                    shift=shift,
+                    ft_theta_max=ft_theta_max,
+                    mm2_min=float(args_dict["den_fit_mm2_min"]),
+                    mm2_max=float(args_dict["den_fit_mm2_max"]),
+                    probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+                    mm2_bins=int(args_dict["den_fit_mm2_bins"]),
+                    probe_m2_bins=int(args_dict["den_fit_probe_m2_bins"]),
+                    min_data_count=int(args_dict["den_min_data_count"]),
+                    min_template_count=int(args_dict["den_min_template_count"]),
+                )
+            )
+            del mixed_f
+        #endfor
+
+        write_rows_csv(
+            mixed_diag_rows,
+            stage2_dir / "mixed_component_diagnostics.csv",
+        )
+
         make_stage2_canvases(
             period,
             data_f=data_f,
             pi0_f=pi0_f,
             dvcs_f=dvcs_f,
-            mixed_f=mixed_f,
-            fit_rows=stage2_rows,
+            nominal_rows=stage2_rows,
+            mixed_rows=mixed_diag_rows,
             outdir=stage2_dir,
             ft_theta_max=ft_theta_max,
+            max_probe_energy=max_probe_energy,
             mm2_min=float(args_dict["den_fit_mm2_min"]),
             mm2_max=float(args_dict["den_fit_mm2_max"]),
             probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
@@ -2607,10 +3103,12 @@ def process_period(
 
         stage2_summary = summarize_stage2(
             period,
-            stage2_rows,
+            nominal_rows=stage2_rows,
+            mixed_rows=mixed_diag_rows,
             data_total=data_total,
             pi0_total=epg_total,
             dvcs_total=dv_total,
+            max_probe_energy=max_probe_energy,
         )
         with (stage2_dir / "stage2_summary.json").open("w") as f:
             json.dump(stage2_summary, f, indent=2, allow_nan=True)
@@ -2619,7 +3117,7 @@ def process_period(
         log(
             f"{period.label}: Stage II completed "
             f"{stage2_summary['successful_all_region_energy_fits']} "
-            "successful all-region energy fits."
+            "successful all-region nominal energy fits."
         )
     #endif
 
@@ -2635,6 +3133,7 @@ def process_period(
         "resolution_rows": res_rows,
         "stage2_summary": stage2_summary,
         "stage2_rows": stage2_rows,
+        "mixed_diag_rows": mixed_diag_rows,
     }
 
 def main() -> int:
@@ -2664,6 +3163,10 @@ def main() -> int:
     if args.den_fit_mm2_bins < 8 or args.den_fit_probe_m2_bins < 8:
         raise ValueError("Stage-II histogram bin counts must each be >= 8.")
     #endif
+    if not (0.40 < args.den_probe_energy_max <= 10.0):
+        raise ValueError("--den-probe-energy-max must be > 0.40 and <= 10 GeV.")
+    #endif
+    parse_mix_shifts(args.mix_shifts)
 
     requested_workers = min(int(args.workers), 8)
 
@@ -2730,9 +3233,10 @@ def main() -> int:
                 "cKDTree defaults to one thread/process to avoid oversubscription"
             ),
             "stage2_denominator_model": (
-                "real epgamma data = floated aaogen-pi0 shape + floated dvcsgen "
-                "BH/DVCS shape + floated deterministic mixed-data wrong-tag shape; "
-                "no generator relative normalization is imposed"
+                "nominal real epgamma data fit = floated aaogen-pi0 shape + "
+                "floated dvcsgen BH/DVCS shape; no generator relative normalization "
+                "is imposed. Multiple deterministic mixed-data wrong-tag templates "
+                "are diagnostic-only stress tests."
             ),
         },
     }
@@ -2742,6 +3246,7 @@ def main() -> int:
     all_resolution_rows: List[Dict[str, object]] = []
     stage2_summaries: List[Dict[str, object]] = []
     all_stage2_rows: List[Dict[str, object]] = []
+    all_mixed_diag_rows: List[Dict[str, object]] = []
 
     if n_processes == 1:
         for period in selected:
@@ -2756,6 +3261,7 @@ def main() -> int:
             if result["stage2_summary"] is not None:
                 stage2_summaries.append(result["stage2_summary"])
                 all_stage2_rows.extend(result["stage2_rows"])
+                all_mixed_diag_rows.extend(result["mixed_diag_rows"])
             #endif
         #endfor
     else:
@@ -2853,15 +3359,31 @@ def main() -> int:
             )
         #endif
 
+        if all_mixed_diag_rows:
+            all_mixed_diag_rows.sort(
+                key=lambda r: (
+                    order.get(str(r["period"]), 999),
+                    str(r["region"]),
+                    float(r["energy_low_GeV"]),
+                    int(r["mix_shift"]),
+                )
+            )
+            write_rows_csv(
+                all_mixed_diag_rows,
+                stage2_outroot / "mixed_component_diagnostics.csv",
+            )
+        #endif
+
         with (stage2_outroot / "stage2_summary.json").open("w") as f:
             json.dump(
                 {
                     "method": (
-                        "Three-component local extended-Poisson template fits. "
-                        "aaogen models exclusive-pi0 missing-photon tags; dvcsgen "
-                        "models genuine BH/DVCS epgamma; a deterministic mixed-data "
-                        "tag sample models wrong/accidental photon associations. "
-                        "All three normalizations float independently."
+                        "Nominal local two-component extended-Poisson template "
+                        "fits: aaogen models exclusive-pi0 missing-photon tags and "
+                        "dvcsgen models genuine BH/DVCS epgamma; both normalizations "
+                        "float independently. Deterministic mixed-data tag samples "
+                        "are diagnostic-only stress tests and never define the "
+                        "nominal denominator yield."
                     ),
                     "period_summaries": stage2_summaries,
                 },
