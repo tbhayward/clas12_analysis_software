@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v012.py
+derive_photon_efficiency_scale_factors_v014.py
 
 Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -95,23 +95,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v012.py
+    python derive_photon_efficiency_scale_factors_v014.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v012.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v014.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v012.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v014.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v012.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v014.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v012.py --angles rad
+    python derive_photon_efficiency_scale_factors_v014.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -1841,7 +1841,7 @@ def make_shared_fit_canvas(period: PeriodConfig, shared_rows: List[Dict[str,obje
         q=sorted([r for r in raw_rows if r["region"]=="all" and r["discriminator"]==disc and int(r["fit_success"])],key=lambda r:float(r["energy_center_GeV"]))
         if q: ax[0,0].plot([r["energy_center_GeV"] for r in q],[r["pi0_fraction"] for r in q],marker=".",linestyle="--",label=label)
     #endfor
-    ax[0,0].set_ylabel(r"$f_{\\pi^0}$"); ax[0,0].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[0,0].set_ylim(0,1); ax[0,0].legend(fontsize=8); ax[0,0].grid(alpha=.18)
+    ax[0,0].set_ylabel(r"$f_{\pi^0}$"); ax[0,0].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[0,0].set_ylim(0,1); ax[0,0].legend(fontsize=8); ax[0,0].grid(alpha=.18)
     ax[0,1].plot(x,[r["deviance_per_ndof"] for r in rr],marker="o")
     ax[0,1].set_ylabel("combined Poisson deviance / ndof"); ax[0,1].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[0,1].grid(alpha=.18)
     for key,label in (("mx2_ep_x_probe_m2_pi0_shift_bins","probe-M2 pi0 shift"),("mx2_ep_x_probe_m2_dvcs_shift_bins","probe-M2 DVCS shift"),("mx2_ep_x_pTmiss_pi0_shift_bins","pTmiss pi0 shift"),("mx2_ep_x_pTmiss_dvcs_shift_bins","pTmiss DVCS shift")):
@@ -1854,7 +1854,12 @@ def make_shared_fit_canvas(period: PeriodConfig, shared_rows: List[Dict[str,obje
     #endfor
     ax[1,1].axhline(0,linewidth=.8); ax[1,1].set_ylabel(r"closure $f_{fit}-f_{true}$"); ax[1,1].set_xlabel(r"$E_{probe}^{pred}$ (GeV)"); ax[1,1].legend(fontsize=8); ax[1,1].grid(alpha=.18)
     ctl=pi0_control.get("pTmiss",{}); fig.suptitle(f"{period.label}: shared morphed Stage-II composition; pi0 pTmiss control shift={ctl.get('shift_bins',float('nan')):.2f} bins, smear={ctl.get('sigma_bins',float('nan')):.2f} bins",fontsize=13)
-    fig.tight_layout(rect=(0,0,1,.95)); fig.savefig(outdir/"canvas_shared_morphed_composition.png",dpi=180); plt.close(fig)
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_shared_morphed_composition.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
 
 
 def closure_rows_for_shared_fit(period: PeriodConfig, shared_rows: List[Dict[str,object]]) -> List[Dict[str,object]]:
