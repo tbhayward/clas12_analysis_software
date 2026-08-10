@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v005.py
+derive_photon_efficiency_scale_factors_v006.py
 
 Stage-I development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -88,23 +88,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v005.py
+    python derive_photon_efficiency_scale_factors_v006.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v005.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v006.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v005.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v006.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v005.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v006.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v005.py --angles rad
+    python derive_photon_efficiency_scale_factors_v006.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -140,6 +140,13 @@ M_E = 0.00051099895000
 M_P = 0.93827208816
 M_PI0 = 0.1349768
 TWO_PI = 2.0 * math.pi
+
+
+# Probe-energy binning used for Stage-Ib resolution studies.
+PROBE_ENERGY_EDGES = np.asarray(
+    [0.40, 0.50, 0.60, 0.80, 1.00, 1.25, 1.50, 2.00, 3.00, 4.50, 6.00, 10.00],
+    dtype=float,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -545,232 +552,323 @@ def match_parent_kinematics(
 
 
 # -----------------------------------------------------------------------------
-# Stage-I pair construction
+# Stage-I / Stage-Ib pair construction
 # -----------------------------------------------------------------------------
 
-@dataclass
-class PairArrays:
-    epg_index: List[int]
-    eppi0_index: List[int]
-    parent_distance: List[float]
-    parent_max_component_delta: List[float]
-
-    tag_energy: List[float]
-
-    pi0_mass: List[float]
-    pi0_energy: List[float]
-
-    reco_probe_energy: List[float]
-    reco_probe_p: List[float]
-    reco_probe_mass2: List[float]
-    reco_probe_E_minus_p: List[float]
-
-    pred_probe_energy: List[float]
-    pred_probe_p: List[float]
-    pred_probe_mass2: List[float]
-    pred_probe_E_minus_p: List[float]
-
-    probe_delta_E: List[float]
-    probe_delta_E_over_E: List[float]
-    probe_delta_theta_deg: List[float]
-    probe_delta_phi_deg: List[float]
-    probe_opening_residual_deg: List[float]
-
-    exclusivity_missing_energy: List[float]
-    exclusivity_missing_p: List[float]
-    exclusivity_missing_pT: List[float]
-    exclusivity_missing_mass2: List[float]
-
-    detector_tag_epgamma: List[int]
-
-    @classmethod
-    def empty(cls) -> "PairArrays":
-        return cls(*([[] for _ in cls.__annotations__]))
-
-
-def event_four_vector(momentum3: np.ndarray, mass: float) -> np.ndarray:
-    p2 = float(np.dot(momentum3, momentum3))
-    E = math.sqrt(max(0.0, p2 + mass * mass))
-    return np.asarray([E, momentum3[0], momentum3[1], momentum3[2]], dtype=float)
-
-
-def photon_four_vector(momentum3: np.ndarray) -> np.ndarray:
-    E = float(np.linalg.norm(momentum3))
-    return np.asarray([E, momentum3[0], momentum3[1], momentum3[2]], dtype=float)
-
-
-def detector_value(raw: Dict[str, np.ndarray], branch: str, index: int) -> int:
-    if branch not in raw:
-        return -999
-    #endif
-    try:
-        return int(raw[branch][index])
-    except Exception:
-        return -999
-
-
-def build_stage1_pairs(
+def build_stage1_arrays(
     period: PeriodConfig,
     epg: EPGammaSample,
     eppi0: EPPi0Sample,
     matches: MatchResult,
-) -> Tuple[PairArrays, Dict[str, int]]:
+) -> Tuple[Dict[str, np.ndarray], Dict[str, int]]:
     """
-    Build direct reconstructed-probe and missing-probe quantities.
+    Vectorized construction of all Stage-I quantities.
 
-    The reconstructed companion photon is
+    For each epgamma tag matched to an eppi0 candidate through the reconstructed
+    electron/proton parent kinematics:
 
-        probe_reco = pi0_reco - tag_reco,
+        P_probe^reco = P_pi0^reco - k_tag^reco
+        P_probe^pred = P_beam + P_target - P_e - P_p - k_tag^reco
 
-    where the reconstructed pi0 energy uses the measured Mh_gammagamma.
+    Mh_gammagamma supplies the reconstructed pi0 mass event by event.
 
-    No angular matching cut is imposed in Stage I.  We want the complete
-    distribution, including failures, so that association quality is visible
-    rather than hidden by an upstream cut.
+    This routine is vectorized because it is applied to O(10^5-10^6) pairs per
+    period in full-statistics production.
     """
-    out = PairArrays.empty()
-    counters = {
-        "matched_parent_pairs": int(len(matches.epg_index)),
-        "invalid_pi0_mass": 0,
-        "nonphysical_reco_probe_energy": 0,
-        "nonphysical_predicted_probe": 0,
-        "accepted_stage1_pairs": 0,
-    }
+    i = np.asarray(matches.epg_index, dtype=np.int64)
+    j = np.asarray(matches.eppi0_index, dtype=np.int64)
+    n = len(i)
+
+    if n == 0:
+        return {}, {
+            "matched_parent_pairs": 0,
+            "invalid_pi0_mass": 0,
+            "nonphysical_reco_probe_energy": 0,
+            "nonphysical_predicted_probe": 0,
+            "accepted_stage1_pairs": 0,
+        }
+    #endif
+
+    e3 = np.asarray(epg.electron_p3[i], dtype=float)
+    p3 = np.asarray(epg.proton_p3[i], dtype=float)
+    tag3 = np.asarray(epg.tag_p3[i], dtype=float)
+    pi3 = np.asarray(eppi0.pi0_p3[j], dtype=float)
+
+    e_pmag = np.linalg.norm(e3, axis=1)
+    p_pmag = np.linalg.norm(p3, axis=1)
+    tag_E = np.linalg.norm(tag3, axis=1)
+    pi_pmag = np.linalg.norm(pi3, axis=1)
+    pi_mass = np.asarray(eppi0.pi0_mass[j], dtype=float)
+
+    e_E = np.sqrt(e_pmag * e_pmag + M_E * M_E)
+    p_E = np.sqrt(p_pmag * p_pmag + M_P * M_P)
+    pi_E = np.sqrt(np.maximum(0.0, pi_pmag * pi_pmag + pi_mass * pi_mass))
 
     beam_p = math.sqrt(max(0.0, period.beam_energy**2 - M_E**2))
-    beam4 = np.asarray([period.beam_energy, 0.0, 0.0, beam_p], dtype=float)
-    target4 = np.asarray([M_P, 0.0, 0.0, 0.0], dtype=float)
+    initial_E = period.beam_energy + M_P
+    initial_p3 = np.asarray([0.0, 0.0, beam_p], dtype=float)
 
-    for k in range(len(matches.epg_index)):
-        i = int(matches.epg_index[k])
-        j = int(matches.eppi0_index[k])
+    # Reconstructed companion photon from the reconstructed pi0 and tag.
+    reco_E = pi_E - tag_E
+    reco3 = pi3 - tag3
+    reco_p = np.linalg.norm(reco3, axis=1)
+    reco_m2 = reco_E * reco_E - reco_p * reco_p
+    reco_E_minus_p = reco_E - reco_p
 
-        pi0_mass = float(eppi0.pi0_mass[j])
-        if not math.isfinite(pi0_mass) or pi0_mass <= 0.0:
-            counters["invalid_pi0_mass"] += 1
-            continue
-        #endif
+    # Missing/probe photon predicted independently of the eppi0 reconstruction.
+    pred_E = initial_E - e_E - p_E - tag_E
+    pred3 = initial_p3[None, :] - e3 - p3 - tag3
+    pred_p = np.linalg.norm(pred3, axis=1)
+    pred_m2 = pred_E * pred_E - pred_p * pred_p
+    pred_E_minus_p = pred_E - pred_p
 
-        electron4 = event_four_vector(epg.electron_p3[i], M_E)
-        proton4 = event_four_vector(epg.proton_p3[i], M_P)
-        tag4 = photon_four_vector(epg.tag_p3[i])
+    # Complete reconstructed e p pi0 exclusivity closure.  This is diagnostic
+    # only and is deliberately NOT used to define the clean tag association.
+    miss_E = initial_E - e_E - p_E - pi_E
+    miss3 = initial_p3[None, :] - e3 - p3 - pi3
+    miss_p = np.linalg.norm(miss3, axis=1)
+    miss_pT = np.hypot(miss3[:, 0], miss3[:, 1])
+    miss_m2 = miss_E * miss_E - miss_p * miss_p
 
-        pi0_p3 = np.asarray(eppi0.pi0_p3[j], dtype=float)
-        pi0_p = float(np.linalg.norm(pi0_p3))
-        pi0_energy = math.sqrt(max(0.0, pi0_p * pi0_p + pi0_mass * pi0_mass))
-        pi04 = np.asarray(
-            [pi0_energy, pi0_p3[0], pi0_p3[1], pi0_p3[2]],
-            dtype=float,
+    # Angular quantities.
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pred_unit = pred3 / pred_p[:, None]
+        reco_unit = reco3 / reco_p[:, None]
+        cos_open = np.sum(pred_unit * reco_unit, axis=1)
+        cos_open = np.clip(cos_open, -1.0, 1.0)
+        opening_deg = np.degrees(np.arccos(cos_open))
+
+        pred_theta_deg = np.degrees(
+            np.arccos(np.clip(pred_unit[:, 2], -1.0, 1.0))
         )
-
-        # Reconstructed companion photon candidate from reconstructed pi0.
-        reco_probe4 = pi04 - tag4
-        Ereco = float(reco_probe4[0])
-        preco3 = reco_probe4[1:4]
-        preco = float(np.linalg.norm(preco3))
-        m2reco = Ereco * Ereco - preco * preco
-
-        if not np.all(np.isfinite(reco_probe4)):
-            counters["nonphysical_reco_probe_energy"] += 1
-            continue
-        #endif
-        if Ereco <= 0.0:
-            counters["nonphysical_reco_probe_energy"] += 1
-        #endif
-
-        # Probe predicted only from beam/target/e/p/tag.
-        pred_probe4 = beam4 + target4 - electron4 - proton4 - tag4
-        Epred = float(pred_probe4[0])
-        ppred3 = pred_probe4[1:4]
-        ppred = float(np.linalg.norm(ppred3))
-        m2pred = Epred * Epred - ppred * ppred
-
-        if not np.all(np.isfinite(pred_probe4)) or ppred <= 0.0:
-            counters["nonphysical_predicted_probe"] += 1
-            continue
-        #endif
-
-        # Full ep -> ep pi0 exclusivity closure.
-        miss4 = beam4 + target4 - electron4 - proton4 - pi04
-        Emiss = float(miss4[0])
-        pmiss3 = miss4[1:4]
-        pmiss = float(np.linalg.norm(pmiss3))
-        pTmiss = float(math.hypot(pmiss3[0], pmiss3[1]))
-        Mmiss2 = Emiss * Emiss - pmiss * pmiss
-
-        # Direction residuals are meaningful only when the reconstructed
-        # remainder has nonzero momentum.
-        if preco > 0.0:
-            npred = ppred3 / ppred
-            nreco = preco3 / preco
-
-            theta_pred = math.acos(max(-1.0, min(1.0, float(npred[2]))))
-            phi_pred = math.atan2(float(npred[1]), float(npred[0]))
-            theta_reco = math.acos(max(-1.0, min(1.0, float(nreco[2]))))
-            phi_reco = math.atan2(float(nreco[1]), float(nreco[0]))
-
-            dtheta = math.degrees(theta_reco - theta_pred)
-            dphi = math.degrees(float(wrap_phi(phi_reco - phi_pred)))
-            opening = math.degrees(angle_between(npred, nreco))
-        else:
-            dtheta = float("nan")
-            dphi = float("nan")
-            opening = float("nan")
-        #endif
-
-        out.epg_index.append(i)
-        out.eppi0_index.append(j)
-        out.parent_distance.append(float(matches.nearest_distance[k]))
-        out.parent_max_component_delta.append(float(matches.max_component_delta[k]))
-
-        out.tag_energy.append(float(epg.tag_energy[i]))
-
-        out.pi0_mass.append(pi0_mass)
-        out.pi0_energy.append(pi0_energy)
-
-        out.reco_probe_energy.append(Ereco)
-        out.reco_probe_p.append(preco)
-        out.reco_probe_mass2.append(m2reco)
-        out.reco_probe_E_minus_p.append(Ereco - preco)
-
-        out.pred_probe_energy.append(Epred)
-        out.pred_probe_p.append(ppred)
-        out.pred_probe_mass2.append(m2pred)
-        out.pred_probe_E_minus_p.append(Epred - ppred)
-
-        out.probe_delta_E.append(Ereco - Epred)
-        out.probe_delta_E_over_E.append(
-            (Ereco - Epred) / Epred if Epred != 0.0 else float("nan")
+        reco_theta_deg = np.degrees(
+            np.arccos(np.clip(reco_unit[:, 2], -1.0, 1.0))
         )
-        out.probe_delta_theta_deg.append(dtheta)
-        out.probe_delta_phi_deg.append(dphi)
-        out.probe_opening_residual_deg.append(opening)
+        pred_phi_deg = np.degrees(np.arctan2(pred3[:, 1], pred3[:, 0]))
+        reco_phi_deg = np.degrees(np.arctan2(reco3[:, 1], reco3[:, 0]))
 
-        out.exclusivity_missing_energy.append(Emiss)
-        out.exclusivity_missing_p.append(pmiss)
-        out.exclusivity_missing_pT.append(pTmiss)
-        out.exclusivity_missing_mass2.append(Mmiss2)
+        delta_theta_deg = reco_theta_deg - pred_theta_deg
+        delta_phi_deg = (
+            (reco_phi_deg - pred_phi_deg + 180.0) % 360.0
+        ) - 180.0
 
-        out.detector_tag_epgamma.append(
-            detector_value(epg.raw, "detector2", i)
+        delta_E = reco_E - pred_E
+        frac_delta_E = delta_E / pred_E
+    #endwith
+
+    # CLAS12 FD sector convention based only on azimuth. Sector centers are
+    # approximately 0, 60, 120, 180, -120, -60 degrees.
+    pred_sector = (
+        np.floor(((pred_phi_deg + 30.0) % 360.0) / 60.0).astype(np.int16) + 1
+    )
+
+    detector_tag = np.full(n, -999, dtype=np.int16)
+    if "detector2" in epg.raw:
+        detector_tag = np.asarray(epg.raw["detector2"][i], dtype=np.int16)
+    #endif
+
+    arrays = {
+        "epg_index": i,
+        "eppi0_index": j,
+        "parent_distance": np.asarray(matches.nearest_distance, dtype=float),
+        "parent_max_component_delta": np.asarray(matches.max_component_delta, dtype=float),
+        "tag_energy": tag_E,
+        "pi0_mass": pi_mass,
+        "pi0_energy": pi_E,
+        "reco_probe_energy": reco_E,
+        "reco_probe_p": reco_p,
+        "reco_probe_mass2": reco_m2,
+        "reco_probe_E_minus_p": reco_E_minus_p,
+        "pred_probe_energy": pred_E,
+        "pred_probe_p": pred_p,
+        "pred_probe_mass2": pred_m2,
+        "pred_probe_E_minus_p": pred_E_minus_p,
+        "probe_delta_E": delta_E,
+        "probe_delta_E_over_E": frac_delta_E,
+        "probe_delta_theta_deg": delta_theta_deg,
+        "probe_delta_phi_deg": delta_phi_deg,
+        "probe_opening_residual_deg": opening_deg,
+        "pred_probe_theta_deg": pred_theta_deg,
+        "pred_probe_phi_deg": pred_phi_deg,
+        "pred_probe_sector": pred_sector,
+        "reco_probe_theta_deg": reco_theta_deg,
+        "reco_probe_phi_deg": reco_phi_deg,
+        "exclusivity_missing_energy": miss_E,
+        "exclusivity_missing_p": miss_p,
+        "exclusivity_missing_pT": miss_pT,
+        "exclusivity_missing_mass2": miss_m2,
+        "detector_tag_epgamma": detector_tag,
+    }
+
+    finite_common = (
+        np.isfinite(pi_mass)
+        & np.isfinite(reco_E)
+        & np.isfinite(reco_p)
+        & np.isfinite(pred_E)
+        & np.isfinite(pred_p)
+    )
+    arrays = {name: value[finite_common] for name, value in arrays.items()}
+
+    counters = {
+        "matched_parent_pairs": int(n),
+        "invalid_pi0_mass": int(np.count_nonzero(~np.isfinite(pi_mass) | (pi_mass <= 0.0))),
+        "nonphysical_reco_probe_energy": int(np.count_nonzero(~np.isfinite(reco_E) | (reco_E <= 0.0))),
+        "nonphysical_predicted_probe": int(np.count_nonzero(~np.isfinite(pred_E) | (pred_p <= 0.0))),
+        "accepted_stage1_pairs": int(np.count_nonzero(finite_common)),
+    }
+    return arrays, counters
+
+
+def build_clean_association_mask(
+    arrays: Dict[str, np.ndarray],
+    mgg_min: float,
+    mgg_max: float,
+    remainder_mass2_max: float,
+    reco_probe_energy_min: float,
+) -> np.ndarray:
+    """
+    Define a clean reconstructed-pi0 tag association.
+
+    Crucially, this uses only reconstructed-side quantities.  It does NOT cut on
+    the predicted probe, the predicted/reconstructed angular residual, or the
+    ep-pi0 exclusivity residual.  Therefore the subsequent probe-resolution
+    study is not artificially narrowed by its own selection.
+
+    Defaults:
+      0.10 < M_gg < 0.17 GeV
+      |(P_pi0 - k_tag)^2| < 1e-3 GeV^2
+      E_probe^reco >= 0.40 GeV
+    """
+    return (
+        np.isfinite(arrays["pi0_mass"])
+        & (arrays["pi0_mass"] >= mgg_min)
+        & (arrays["pi0_mass"] <= mgg_max)
+        & np.isfinite(arrays["reco_probe_mass2"])
+        & (np.abs(arrays["reco_probe_mass2"]) <= remainder_mass2_max)
+        & np.isfinite(arrays["reco_probe_energy"])
+        & (arrays["reco_probe_energy"] >= reco_probe_energy_min)
+        & (arrays["reco_probe_p"] > 0.0)
+    )
+
+
+def quantile_or_nan(values: np.ndarray, q: float) -> float:
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    if values.size == 0:
+        return float("nan")
+    #endif
+    return float(np.quantile(values, q))
+
+
+def resolution_rows(
+    period: PeriodConfig,
+    arrays: Dict[str, np.ndarray],
+    clean: np.ndarray,
+    ft_theta_max: float,
+    min_count: int,
+) -> List[Dict[str, object]]:
+    """
+    Measure probe prediction resolution versus predicted energy and detector
+    region.  These are diagnostics/candidate matching radii, not final cuts.
+
+    Region assignment is based on the PREDICTED probe direction so that the same
+    definition can later be applied when the probe is not reconstructed:
+      FT-like: theta_pred < ft_theta_max
+      FD S1..S6: theta_pred >= ft_theta_max, sector from phi_pred
+
+    The exact FT/FD geometric/fiducial acceptance will be refined later.
+    """
+    E = arrays["pred_probe_energy"]
+    opening = arrays["probe_opening_residual_deg"]
+    dE = arrays["probe_delta_E"]
+    frac = arrays["probe_delta_E_over_E"]
+    theta = arrays["pred_probe_theta_deg"]
+    sector = arrays["pred_probe_sector"]
+
+    region_masks: List[Tuple[str, np.ndarray]] = [
+        ("all", np.ones(len(E), dtype=bool)),
+        ("FT_like", theta < ft_theta_max),
+    ]
+    for s in range(1, 7):
+        region_masks.append(
+            (f"FD_S{s}", (theta >= ft_theta_max) & (sector == s))
         )
-
-        counters["accepted_stage1_pairs"] += 1
     #endfor
 
-    return out, counters
+    rows: List[Dict[str, object]] = []
+    for region_name, region_mask in region_masks:
+        for ibin in range(len(PROBE_ENERGY_EDGES) - 1):
+            lo = float(PROBE_ENERGY_EDGES[ibin])
+            hi = float(PROBE_ENERGY_EDGES[ibin + 1])
+            mask = (
+                clean
+                & region_mask
+                & np.isfinite(E)
+                & (E >= lo)
+                & (E < hi)
+                & np.isfinite(opening)
+            )
+            n = int(np.count_nonzero(mask))
 
+            row: Dict[str, object] = {
+                "period": period.key,
+                "label": period.label,
+                "region": region_name,
+                "energy_low_GeV": lo,
+                "energy_high_GeV": hi,
+                "energy_center_GeV": 0.5 * (lo + hi),
+                "count": n,
+            }
 
-def pair_arrays_to_numpy(pairs: PairArrays) -> Dict[str, np.ndarray]:
-    out: Dict[str, np.ndarray] = {}
-    integer_names = {"epg_index", "eppi0_index", "detector_tag_epgamma"}
-    for name in pairs.__annotations__:
-        dtype = np.int64 if name in integer_names else float
-        out[name] = np.asarray(getattr(pairs, name), dtype=dtype)
+            if n >= min_count:
+                a = opening[mask]
+                de = dE[mask]
+                fr = frac[mask]
+                row.update({
+                    "angle_q50_deg": quantile_or_nan(a, 0.50),
+                    "angle_q68_deg": quantile_or_nan(a, 0.68),
+                    "angle_q90_deg": quantile_or_nan(a, 0.90),
+                    "angle_q95_deg": quantile_or_nan(a, 0.95),
+                    "angle_q99_deg": quantile_or_nan(a, 0.99),
+                    "deltaE_median_GeV": quantile_or_nan(de, 0.50),
+                    "deltaE_q16_GeV": quantile_or_nan(de, 0.16),
+                    "deltaE_q84_GeV": quantile_or_nan(de, 0.84),
+                    "frac_deltaE_median": quantile_or_nan(fr, 0.50),
+                    "frac_deltaE_q16": quantile_or_nan(fr, 0.16),
+                    "frac_deltaE_q84": quantile_or_nan(fr, 0.84),
+                })
+            else:
+                row.update({
+                    "angle_q50_deg": float("nan"),
+                    "angle_q68_deg": float("nan"),
+                    "angle_q90_deg": float("nan"),
+                    "angle_q95_deg": float("nan"),
+                    "angle_q99_deg": float("nan"),
+                    "deltaE_median_GeV": float("nan"),
+                    "deltaE_q16_GeV": float("nan"),
+                    "deltaE_q84_GeV": float("nan"),
+                    "frac_deltaE_median": float("nan"),
+                    "frac_deltaE_q16": float("nan"),
+                    "frac_deltaE_q84": float("nan"),
+                })
+            #endif
+
+            rows.append(row)
+        #endfor
     #endfor
-    return out
+
+    return rows
 
 
+def write_rows_csv(rows: List[Dict[str, object]], path: Path) -> None:
+    if not rows:
+        return
+    #endif
+    with path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    #endwith
 # -----------------------------------------------------------------------------
 # Plotting
 # -----------------------------------------------------------------------------
@@ -955,196 +1053,236 @@ def _hist2d_panel(
 def make_compact_canvases(
     period: PeriodConfig,
     arrays: Dict[str, np.ndarray],
-    outdir: Path,
+    clean: np.ndarray,
+    rows: List[Dict[str, object]],
+    assoc_mgg_min: float,
+    assoc_mgg_max: float,
+    assoc_mass2_max: float,
 ) -> None:
-    """
-    Produce three compact Stage-I diagnostic canvases.
-
-    The old development script emitted dozens of individual PNGs.  v005 keeps
-    the same physics information in three 2x2 canvases so that all five periods
-    are easy to inspect and copy.
-    """
     title = period.label
-
-    # ------------------------------------------------------------------
-    # Canvas 1: tag association / reconstructed companion photon
-    # ------------------------------------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
-
-    _hist_panel(
-        axes[0, 0],
-        arrays["pi0_mass"],
-        r"$M_{\gamma\gamma}$ (GeV)",
-        bins=300,
-        xlim=(0.10, 0.17),
-    )
-    axes[0, 0].set_title("Reconstructed $M_{\\gamma\\gamma}$")
-
-    _hist_panel(
-        axes[0, 1],
-        arrays["reco_probe_mass2"],
-        r"$(P_{\pi^0}^{reco}-k_{tag}^{reco})^2$ (GeV$^2$)",
-        bins=400,
-        xlim=(-0.010, 0.010),
-    )
-    axes[0, 1].set_title("Companion-photon mass shell (core)")
-
-    _hist_panel(
-        axes[1, 0],
-        arrays["reco_probe_E_minus_p"],
-        r"$E_{\rm probe}^{reco}-|\vec p_{\rm probe}^{reco}|$ (GeV)",
-        bins=400,
-        xlim=(-0.005, 0.005),
-    )
-    axes[1, 0].set_title("Companion-photon $E-p$ (core)")
-
-    _hist_panel(
-        axes[1, 1],
-        arrays["reco_probe_mass2"],
-        r"$(P_{\pi^0}^{reco}-k_{tag}^{reco})^2$ (GeV$^2$)",
-        bins=260,
-        logy=True,
-    )
-    axes[1, 1].set_title("Companion-photon mass shell (full)")
-
-    fig.suptitle(f"{title}: Stage I tag association", fontsize=15)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(outdir / "canvas_tag_association.png", dpi=180)
-    plt.close(fig)
-
-    # ------------------------------------------------------------------
-    # Canvas 2: predicted vs reconstructed probe
-    # ------------------------------------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
-
-    emax = max(
-        7.0,
-        min(
-            10.0,
-            finite_percentile(
-                np.concatenate(
-                    (arrays["pred_probe_energy"], arrays["reco_probe_energy"])
-                ),
-                99.8,
-                7.0,
-            ),
-        ),
-    )
-
-    mappable = _hist2d_panel(
-        axes[0, 0],
-        arrays["pred_probe_energy"],
-        arrays["reco_probe_energy"],
-        r"$E_{\rm probe}^{pred}$ (GeV)",
-        r"$E_{\rm probe}^{reco}$ (GeV)",
-        bins=(180, 180),
-        xlim=(0.0, emax),
-        ylim=(0.0, emax),
-        logz=True,
-    )
-    axes[0, 0].set_title("Predicted vs reconstructed energy")
-    fig.colorbar(mappable, ax=axes[0, 0], label="Entries")
-
-    _hist_panel(
-        axes[0, 1],
-        arrays["probe_delta_E"],
-        r"$E_{\rm reco}-E_{\rm pred}$ (GeV)",
-        bins=350,
-        xlim=(-1.0, 1.0),
-    )
-    axes[0, 1].set_title("Probe energy residual (core)")
-
-    _hist_panel(
-        axes[1, 0],
-        arrays["probe_opening_residual_deg"],
-        r"$\Delta\alpha_{\rm probe}$ (deg)",
-        bins=360,
-        xlim=(0.0, 20.0),
-    )
-    axes[1, 0].set_title("Probe direction residual (core)")
-
-    _hist_panel(
-        axes[1, 1],
-        arrays["probe_opening_residual_deg"],
-        r"$\Delta\alpha_{\rm probe}$ (deg)",
-        bins=360,
-        xlim=(0.0, 180.0),
-        logy=True,
-    )
-    axes[1, 1].set_title("Probe direction residual (full)")
-
-    fig.suptitle(f"{title}: Stage I probe prediction closure", fontsize=15)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(outdir / "canvas_probe_closure.png", dpi=180)
-    plt.close(fig)
-
-    # ------------------------------------------------------------------
-    # Canvas 3: full ep pi0 exclusivity / tail diagnostics
-    # ------------------------------------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
-
-    _hist_panel(
-        axes[0, 0],
-        arrays["exclusivity_missing_energy"],
-        r"$E_{\rm miss}(ep\pi^0)$ (GeV)",
-        bins=350,
-        xlim=(-1.5, 1.5),
-    )
-    axes[0, 0].set_title("$ep\\pi^0$ missing energy")
-
-    _hist_panel(
-        axes[0, 1],
-        arrays["exclusivity_missing_p"],
-        r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
-        bins=300,
-        xlim=(0.0, 1.5),
-    )
-    axes[0, 1].set_title("$ep\\pi^0$ missing momentum")
-
-    _hist_panel(
-        axes[1, 0],
-        arrays["exclusivity_missing_pT"],
-        r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)",
-        bins=300,
-        xlim=(0.0, 0.75),
-    )
-    axes[1, 0].set_title("$ep\\pi^0$ missing transverse momentum")
-
-    mappable = _hist2d_panel(
-        axes[1, 1],
-        arrays["pred_probe_energy"],
-        arrays["probe_opening_residual_deg"],
-        r"$E_{\rm probe}^{pred}$ (GeV)",
-        r"$\Delta\alpha_{\rm probe}$ (deg)",
-        bins=(180, 180),
-        xlim=(0.0, emax),
-        ylim=(0.0, 40.0),
-        logz=True,
-    )
-    axes[1, 1].set_title("Direction residual vs predicted energy")
-    fig.colorbar(mappable, ax=axes[1, 1], label="Entries")
-
-    fig.suptitle(f"{title}: Stage I exclusivity and tails", fontsize=15)
-    fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(outdir / "canvas_exclusivity_and_tails.png", dpi=180)
-    plt.close(fig)
+    outdir = Path(".")  # overwritten by caller through matplotlib path helper
 
 
-def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path) -> None:
+def make_plots(
+    period: PeriodConfig,
+    arrays: Dict[str, np.ndarray],
+    clean: np.ndarray,
+    rows: List[Dict[str, object]],
+    outdir: Path,
+    assoc_mgg_min: float,
+    assoc_mgg_max: float,
+    assoc_mass2_max: float,
+) -> None:
     if len(arrays["pred_probe_energy"]) == 0:
         log(f"{period.label}: no accepted pairs; skipping plots.")
         return
     #endif
 
-    # Remove stale development PNGs from older Stage-I versions so a rerun
-    # leaves only the compact v005 canvases in the period directory.
     for old_png in outdir.glob("*.png"):
         old_png.unlink()
     #endfor
 
-    make_compact_canvases(period, arrays, outdir)
+    title = period.label
+    all_mask = np.ones(len(clean), dtype=bool)
 
+    # ------------------------------------------------------------------
+    # Canvas 1: define and validate the reconstructed-side association.
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
 
+    vals = arrays["pi0_mass"]
+    axes[0, 0].hist(vals[np.isfinite(vals)], bins=350, histtype="step", linewidth=1.2)
+    axes[0, 0].axvline(assoc_mgg_min, linestyle="--")
+    axes[0, 0].axvline(assoc_mgg_max, linestyle="--")
+    axes[0, 0].set_xlim(0.08, 0.20)
+    axes[0, 0].set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+    axes[0, 0].set_ylabel("Entries")
+    axes[0, 0].set_title("Reconstructed $\\pi^0$ mass window")
+    axes[0, 0].grid(alpha=0.18)
+
+    m2 = arrays["reco_probe_mass2"]
+    finite = np.isfinite(m2)
+    axes[0, 1].hist(m2[finite], bins=500, histtype="step", linewidth=1.2)
+    axes[0, 1].axvline(-assoc_mass2_max, linestyle="--")
+    axes[0, 1].axvline(+assoc_mass2_max, linestyle="--")
+    axes[0, 1].set_xlim(-0.02, 0.02)
+    axes[0, 1].set_yscale("log")
+    axes[0, 1].set_xlabel(r"$(P_{\pi^0}^{reco}-k_{tag}^{reco})^2$ (GeV$^2$)")
+    axes[0, 1].set_ylabel("Entries")
+    axes[0, 1].set_title("Companion-photon mass shell")
+    axes[0, 1].grid(alpha=0.18)
+
+    bins_e = np.linspace(0.0, 7.0, 141)
+    axes[1, 0].hist(
+        arrays["reco_probe_energy"][all_mask],
+        bins=bins_e, histtype="step", linewidth=1.1, label="All parent matches"
+    )
+    axes[1, 0].hist(
+        arrays["reco_probe_energy"][clean],
+        bins=bins_e, histtype="step", linewidth=1.3, label="Clean association"
+    )
+    axes[1, 0].set_xlabel(r"$E_{\rm probe}^{reco}$ (GeV)")
+    axes[1, 0].set_ylabel("Entries")
+    axes[1, 0].set_title("Companion-photon energy")
+    axes[1, 0].legend()
+    axes[1, 0].grid(alpha=0.18)
+
+    bins_a = np.linspace(0.0, 180.0, 361)
+    axes[1, 1].hist(
+        arrays["probe_opening_residual_deg"][all_mask],
+        bins=bins_a, histtype="step", linewidth=1.0, label="All parent matches"
+    )
+    axes[1, 1].hist(
+        arrays["probe_opening_residual_deg"][clean],
+        bins=bins_a, histtype="step", linewidth=1.3, label="Clean association"
+    )
+    axes[1, 1].set_yscale("log")
+    axes[1, 1].set_xlim(0.0, 180.0)
+    axes[1, 1].set_xlabel(r"$\Delta\alpha_{\rm probe}$ (deg)")
+    axes[1, 1].set_ylabel("Entries")
+    axes[1, 1].set_title("Prediction residual: diagnostic only")
+    axes[1, 1].legend()
+    axes[1, 1].grid(alpha=0.18)
+
+    nall = len(clean)
+    nclean = int(np.count_nonzero(clean))
+    fig.suptitle(
+        f"{title}: clean reconstructed $\\pi^0$ tag association "
+        f"({nclean:,}/{nall:,} = {100.0*nclean/max(nall,1):.1f}%)",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "canvas_clean_tag_association.png", dpi=180)
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Canvas 2: resolution in the clean sample.
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
+    from matplotlib.colors import LogNorm
+
+    x = arrays["pred_probe_energy"][clean]
+    y = arrays["reco_probe_energy"][clean]
+    finite = np.isfinite(x) & np.isfinite(y)
+    h = axes[0, 0].hist2d(
+        x[finite], y[finite], bins=(180, 180),
+        range=((0.0, 7.0), (0.0, 7.0)), norm=LogNorm()
+    )
+    fig.colorbar(h[3], ax=axes[0, 0], label="Entries")
+    axes[0, 0].plot([0, 7], [0, 7], linestyle="--", linewidth=1.0)
+    axes[0, 0].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0, 0].set_ylabel(r"$E_{\rm probe}^{reco}$ (GeV)")
+    axes[0, 0].set_title("Predicted vs reconstructed energy")
+
+    core_a = arrays["probe_opening_residual_deg"][clean]
+    core_a = core_a[np.isfinite(core_a)]
+    axes[0, 1].hist(core_a, bins=600, range=(0.0, 20.0), histtype="step", linewidth=1.25)
+    axes[0, 1].set_xlabel(r"$\Delta\alpha_{\rm probe}$ (deg)")
+    axes[0, 1].set_ylabel("Entries")
+    axes[0, 1].set_title("Angular residual (fine core binning)")
+    axes[0, 1].grid(alpha=0.18)
+
+    de = arrays["probe_delta_E"][clean]
+    de = de[np.isfinite(de)]
+    axes[1, 0].hist(de, bins=500, range=(-1.0, 1.0), histtype="step", linewidth=1.25)
+    axes[1, 0].set_xlabel(r"$E_{\rm reco}-E_{\rm pred}$ (GeV)")
+    axes[1, 0].set_ylabel("Entries")
+    axes[1, 0].set_title("Energy residual (fine core binning)")
+    axes[1, 0].grid(alpha=0.18)
+
+    E = arrays["pred_probe_energy"][clean]
+    A = arrays["probe_opening_residual_deg"][clean]
+    finite = np.isfinite(E) & np.isfinite(A)
+    h = axes[1, 1].hist2d(
+        E[finite], A[finite], bins=(160, 160),
+        range=((0.4, 7.0), (0.0, 30.0)), norm=LogNorm()
+    )
+    fig.colorbar(h[3], ax=axes[1, 1], label="Entries")
+    axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 1].set_ylabel(r"$\Delta\alpha_{\rm probe}$ (deg)")
+    axes[1, 1].set_title("Angular resolution vs predicted energy")
+
+    fig.suptitle(f"{title}: clean-sample probe prediction resolution", fontsize=15)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "canvas_clean_probe_resolution.png", dpi=180)
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Canvas 3: energy-dependent quantiles, all + detector-region split.
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
+    region_order = ["all", "FT_like"] + [f"FD_S{s}" for s in range(1, 7)]
+
+    for region in region_order:
+        rr = [r for r in rows if r["region"] == region and np.isfinite(r["angle_q68_deg"])]
+        if not rr:
+            continue
+        #endif
+        xx = np.asarray([r["energy_center_GeV"] for r in rr])
+        axes[0, 0].plot(xx, [r["angle_q68_deg"] for r in rr], marker="o", ms=3, label=region)
+        axes[0, 1].plot(xx, [r["angle_q95_deg"] for r in rr], marker="o", ms=3, label=region)
+        axes[1, 0].plot(xx, [r["angle_q99_deg"] for r in rr], marker="o", ms=3, label=region)
+    #endfor
+
+    for ax, q in (
+        (axes[0, 0], "68%"),
+        (axes[0, 1], "95%"),
+        (axes[1, 0], "99%"),
+    ):
+        ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+        ax.set_ylabel(r"$\Delta\alpha$ quantile (deg)")
+        ax.set_title(f"{q} containment")
+        ax.grid(alpha=0.18)
+    #endfor
+    axes[0, 1].legend(fontsize=8, ncol=2)
+
+    # Counts by energy for all clean probes.
+    rr = [r for r in rows if r["region"] == "all"]
+    axes[1, 1].step(
+        [r["energy_center_GeV"] for r in rr],
+        [r["count"] for r in rr],
+        where="mid",
+    )
+    axes[1, 1].set_yscale("log")
+    axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 1].set_ylabel("Clean entries")
+    axes[1, 1].set_title("Statistics by predicted energy")
+    axes[1, 1].grid(alpha=0.18)
+
+    fig.suptitle(
+        f"{title}: candidate angular matching containment by predicted region",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "canvas_matching_resolution_quantiles.png", dpi=180)
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Canvas 4: check that clean association did not impose exclusivity.
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 10.0))
+    variables = (
+        ("exclusivity_missing_energy", r"$E_{\rm miss}(ep\pi^0)$ (GeV)", (-1.5, 1.5)),
+        ("exclusivity_missing_p", r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)", (0.0, 1.5)),
+        ("exclusivity_missing_pT", r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)", (0.0, 0.75)),
+        ("pred_probe_mass2", r"$(p_{\rm probe}^{pred})^2$ (GeV$^2$)", (-1.0, 1.0)),
+    )
+    for ax, (name, xlabel, lim) in zip(axes.flat, variables):
+        vals = arrays[name][clean]
+        vals = vals[np.isfinite(vals)]
+        ax.hist(vals, bins=350, range=lim, histtype="step", linewidth=1.2)
+        ax.set_xlim(*lim)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Entries")
+        ax.grid(alpha=0.18)
+    #endfor
+    fig.suptitle(
+        f"{title}: exclusivity diagnostics after reconstructed-side association",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "canvas_exclusivity_after_clean_association.png", dpi=180)
+    plt.close(fig)
 # -----------------------------------------------------------------------------
 # Summaries
 # -----------------------------------------------------------------------------
@@ -1172,6 +1310,7 @@ def summarize_period(
     matches: MatchResult,
     arrays: Dict[str, np.ndarray],
     counters: Dict[str, int],
+    clean: Optional[np.ndarray] = None,
 ) -> Dict[str, object]:
     n = len(arrays["pred_probe_energy"])
     summary: Dict[str, object] = {
@@ -1243,6 +1382,29 @@ def summarize_period(
             arrays["exclusivity_missing_mass2"], 50.0
         ),
     }
+
+    if clean is not None and len(clean) == len(arrays["pred_probe_energy"]):
+        nclean = int(np.count_nonzero(clean))
+        summary["clean_association_pairs"] = nclean
+        summary["clean_association_fraction"] = (
+            nclean / len(clean) if len(clean) else float("nan")
+        )
+        if nclean:
+            summary["clean_angle_q50_deg"] = quantile_or_nan(
+                arrays["probe_opening_residual_deg"][clean], 0.50
+            )
+            summary["clean_angle_q68_deg"] = quantile_or_nan(
+                arrays["probe_opening_residual_deg"][clean], 0.68
+            )
+            summary["clean_angle_q95_deg"] = quantile_or_nan(
+                arrays["probe_opening_residual_deg"][clean], 0.95
+            )
+            summary["clean_angle_q99_deg"] = quantile_or_nan(
+                arrays["probe_opening_residual_deg"][clean], 0.99
+            )
+        #endif
+    #endif
+
     return summary
 
 
@@ -1392,8 +1554,55 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Optionally save the large pair-level stage1_matched_pairs.npz file. "
-            "Disabled by default because the diagnostic canvases and summaries "
-            "are sufficient for normal Stage-I development."
+            "Disabled by default."
+        ),
+    )
+    parser.add_argument(
+        "--assoc-mgg-min",
+        type=float,
+        default=0.10,
+        help="Lower clean-association M_gammagamma edge (GeV). Default: 0.10.",
+    )
+    parser.add_argument(
+        "--assoc-mgg-max",
+        type=float,
+        default=0.17,
+        help="Upper clean-association M_gammagamma edge (GeV). Default: 0.17.",
+    )
+    parser.add_argument(
+        "--assoc-remainder-mass2-max",
+        type=float,
+        default=1.0e-3,
+        help=(
+            "Require |(P_pi0-k_tag)^2| below this value (GeV^2) for a clean "
+            "tag association. Default: 1e-3."
+        ),
+    )
+    parser.add_argument(
+        "--assoc-probe-energy-min",
+        type=float,
+        default=0.40,
+        help=(
+            "Minimum reconstructed companion-photon energy (GeV) for the clean "
+            "association sample. Default: 0.40."
+        ),
+    )
+    parser.add_argument(
+        "--ft-theta-max",
+        type=float,
+        default=5.0,
+        help=(
+            "Predicted-probe polar-angle boundary (deg) used only for the "
+            "Stage-Ib FT-like versus FD-like resolution diagnostic. Default: 5.0."
+        ),
+    )
+    parser.add_argument(
+        "--min-resolution-count",
+        type=int,
+        default=100,
+        help=(
+            "Minimum clean entries required to report quantiles for one "
+            "energy/region bin. Default: 100."
         ),
     )
     return parser.parse_args()
@@ -1475,17 +1684,37 @@ def process_period(
     )
     log(f"{period.label}: accepted {len(matches.epg_index):,} parent matches.")
 
-    log(f"{period.label}: forming reconstructed pi0-minus-tag remainder and validating predicted probe.")
-    pairs, counters = build_stage1_pairs(
+    log(f"{period.label}: vectorized construction of reconstructed and predicted probes.")
+    pair_np, counters = build_stage1_arrays(
         period,
         epg,
         eppi0,
         matches,
     )
-    pair_np = pair_arrays_to_numpy(pairs)
+
+    clean = build_clean_association_mask(
+        pair_np,
+        mgg_min=float(args_dict["assoc_mgg_min"]),
+        mgg_max=float(args_dict["assoc_mgg_max"]),
+        remainder_mass2_max=float(args_dict["assoc_remainder_mass2_max"]),
+        reco_probe_energy_min=float(args_dict["assoc_probe_energy_min"]),
+    )
+
+    res_rows = resolution_rows(
+        period,
+        pair_np,
+        clean,
+        ft_theta_max=float(args_dict["ft_theta_max"]),
+        min_count=int(args_dict["min_resolution_count"]),
+    )
+    write_rows_csv(res_rows, period_dir / "probe_resolution_by_energy_region.csv")
 
     if bool(args_dict.get("save_npz", False)):
-        np.savez_compressed(period_dir / "stage1_matched_pairs.npz", **pair_np)
+        np.savez_compressed(
+            period_dir / "stage1_matched_pairs.npz",
+            clean_association=clean,
+            **pair_np,
+        )
     else:
         old_npz = period_dir / "stage1_matched_pairs.npz"
         if old_npz.exists():
@@ -1493,7 +1722,16 @@ def process_period(
         #endif
     #endif
 
-    make_plots(period, pair_np, period_dir)
+    make_plots(
+        period,
+        pair_np,
+        clean,
+        res_rows,
+        period_dir,
+        assoc_mgg_min=float(args_dict["assoc_mgg_min"]),
+        assoc_mgg_max=float(args_dict["assoc_mgg_max"]),
+        assoc_mass2_max=float(args_dict["assoc_remainder_mass2_max"]),
+    )
 
     summary = summarize_period(
         period,
@@ -1506,6 +1744,7 @@ def process_period(
         matches=matches,
         arrays=pair_np,
         counters=counters,
+        clean=clean,
     )
     summary["wall_time_s"] = float(time.perf_counter() - t0)
 
@@ -1522,7 +1761,7 @@ def process_period(
         f"wall time = {summary['wall_time_s']:.1f} s."
     )
 
-    return summary
+    return {"summary": summary, "resolution_rows": res_rows}
 
 def main() -> int:
     args = parse_args()
@@ -1558,9 +1797,9 @@ def main() -> int:
         f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
     )
     log(
-        "No photon-efficiency denominator/numerator is formed in v005; "
-        "this run validates exact e/p event matching, direct tag association, "
-        "the reconstructed companion-photon remainder, and missing-photon prediction."
+        "No data/MC photon-efficiency ratio is formed in v006. "
+        "This run defines a reconstructed-side clean pi0 tag association and "
+        "measures probe-prediction resolution versus energy and predicted region."
     )
 
     preflight(selected)
@@ -1574,7 +1813,7 @@ def main() -> int:
     provenance = {
         "script": Path(__file__).name,
         "stage": 1,
-        "purpose": "aaogen tag-and-probe kinematic validation",
+        "purpose": "aaogen clean tag association and probe-prediction resolution",
         "arguments": vars(args),
         "effective_period_workers": n_processes,
         "worker_cap": 8,
@@ -1602,10 +1841,13 @@ def main() -> int:
 
     args_dict = vars(args).copy()
     summaries: List[Dict[str, object]] = []
+    all_resolution_rows: List[Dict[str, object]] = []
 
     if n_processes == 1:
         for period in selected:
-            summaries.append(process_period(period, args_dict, str(outroot)))
+            result = process_period(period, args_dict, str(outroot))
+            summaries.append(result["summary"])
+            all_resolution_rows.extend(result["resolution_rows"])
         #endfor
     else:
         with ProcessPoolExecutor(max_workers=n_processes) as executor:
@@ -1622,7 +1864,9 @@ def main() -> int:
             for future in as_completed(future_to_period):
                 period = future_to_period[future]
                 try:
-                    summaries.append(future.result())
+                    result = future.result()
+                    summaries.append(result["summary"])
+                    all_resolution_rows.extend(result["resolution_rows"])
                 except Exception as exc:
                     for other in future_to_period:
                         other.cancel()
@@ -1639,6 +1883,21 @@ def main() -> int:
     summaries.sort(key=lambda row: order[str(row["period"])])
 
     write_summary_csv(summaries, outroot / "stage1_summary.csv")
+    if all_resolution_rows:
+        region_order = {"all": 0, "FT_like": 1, **{f"FD_S{s}": s + 1 for s in range(1, 7)}}
+        period_order = {p.key: i for i, p in enumerate(selected)}
+        all_resolution_rows.sort(
+            key=lambda r: (
+                period_order.get(str(r["period"]), 999),
+                region_order.get(str(r["region"]), 999),
+                float(r["energy_low_GeV"]),
+            )
+        )
+        write_rows_csv(
+            all_resolution_rows,
+            outroot / "probe_resolution_by_energy_region.csv",
+        )
+    #endif
 
     with (outroot / "stage1_summary.json").open("w") as f:
         json.dump(
