@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v002.py
+derive_photon_efficiency_scale_factors_v003.py
 
 Stage-I development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -86,19 +86,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v002.py
+    python derive_photon_efficiency_scale_factors_v003.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v002.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v003.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v002.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v003.py --max-entries 0
+
+Use up to eight worker processes (default):
+
+    python derive_photon_efficiency_scale_factors_v003.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v002.py --angles rad
+    python derive_photon_efficiency_scale_factors_v003.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -110,8 +114,10 @@ import argparse
 import csv
 import json
 import math
+import os
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
@@ -466,6 +472,7 @@ def match_parent_kinematics(
     tag_max: float,
     component_tolerance: float,
     nearest_distance_max: float,
+    kdtree_workers: int = 1,
 ) -> MatchResult:
     """
     Match reconstructed parent (electron, proton) states.
@@ -504,11 +511,21 @@ def match_parent_kinematics(
         )
     #endif
 
-    tree = cKDTree(x_pi0[pi0_indices] / component_tolerance)
+    # Use float32 search coordinates to reduce KD-tree memory and bandwidth.
+    # The final physical component-difference cut is still evaluated with the
+    # original float64 momenta below.
+    pi0_search = np.asarray(
+        x_pi0[pi0_indices] / component_tolerance, dtype=np.float32
+    )
+    epg_search = np.asarray(
+        x_epg[epg_indices] / component_tolerance, dtype=np.float32
+    )
+
+    tree = cKDTree(pi0_search, compact_nodes=True, balanced_tree=True)
     distance, local_index = tree.query(
-        x_epg[epg_indices] / component_tolerance,
+        epg_search,
         k=1,
-        workers=-1,
+        workers=max(1, int(kdtree_workers)),
     )
 
     candidate_pi0 = pi0_indices[local_index]
@@ -1131,7 +1148,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["parent_max_component_delta"],
         outdir / "parent_match_max_cartesian_delta.png",
-        r"max $|\Delta p_{e/p,x/y/z}|$ [GeV]",
+        r"max $|\Delta p_{e/p,x/y/z}|$ (GeV)",
         f"{title}: e/p kinematic match quality",
         bins=120,
         logy=True,
@@ -1140,7 +1157,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["tag_reco_match_angle_deg"],
         outdir / "tag_reco_angular_match.png",
-        r"$\Delta\alpha(\gamma_{\rm tag}^{ep\gamma},\gamma_{\rm tag}^{ep\pi^0})$ [deg]",
+        r"$\Delta\alpha(\gamma_{\rm tag}^{ep\gamma},\gamma_{\rm tag}^{ep\pi^0})$ (deg)",
         f"{title}: tag correspondence after e/p event matching",
         bins=120,
         logy=True,
@@ -1157,8 +1174,8 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
         arrays["pred_probe_energy"],
         arrays["reco_probe_energy"],
         outdir / "probe_energy_pred_vs_reco.png",
-        r"$E_{\rm probe}^{pred}$ [GeV]",
-        r"$E_{\rm probe}^{reco}$ [GeV]",
+        r"$E_{\rm probe}^{pred}$ (GeV)",
+        r"$E_{\rm probe}^{reco}$ (GeV)",
         f"{title}: predicted vs reconstructed probe energy",
         bins=(120, 120),
         xlim=(0.0, emax),
@@ -1169,7 +1186,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["probe_delta_E"],
         outdir / "probe_energy_residual.png",
-        r"$E_{\rm probe}^{reco}-E_{\rm probe}^{pred}$ [GeV]",
+        r"$E_{\rm probe}^{reco}-E_{\rm probe}^{pred}$ (GeV)",
         f"{title}: probe energy residual",
         bins=160,
         xlim=(-de_lim, de_lim),
@@ -1191,7 +1208,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["probe_delta_theta_deg"],
         outdir / "probe_theta_residual.png",
-        r"$\theta_{\rm reco}-\theta_{\rm pred}$ [deg]",
+        r"$\theta_{\rm reco}-\theta_{\rm pred}$ (deg)",
         f"{title}: probe polar-angle residual",
         bins=160,
         xlim=(-th_lim, th_lim),
@@ -1199,7 +1216,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["probe_delta_phi_deg"],
         outdir / "probe_phi_residual.png",
-        r"$\phi_{\rm reco}-\phi_{\rm pred}$ [deg]",
+        r"$\phi_{\rm reco}-\phi_{\rm pred}$ (deg)",
         f"{title}: probe azimuth residual",
         bins=160,
         xlim=(-ph_lim, ph_lim),
@@ -1212,7 +1229,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["probe_opening_residual_deg"],
         outdir / "probe_direction_opening_residual.png",
-        r"$\Delta\alpha(\gamma_{\rm probe}^{pred},\gamma_{\rm probe}^{reco})$ [deg]",
+        r"$\Delta\alpha(\gamma_{\rm probe}^{pred},\gamma_{\rm probe}^{reco})$ (deg)",
         f"{title}: probe direction matching resolution",
         bins=160,
         xlim=(0.0, open_hi),
@@ -1223,7 +1240,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["pred_probe_mass2"],
         outdir / "predicted_probe_mass2.png",
-        r"$(p_{\rm probe}^{pred})^2$ [GeV$^2$]",
+        r"$(p_{\rm probe}^{pred})^2$ (GeV$^2$)",
         f"{title}: predicted missing-photon mass shell",
         bins=160,
         xlim=(-m2lim, m2lim),
@@ -1233,7 +1250,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["pred_probe_E_minus_p"],
         outdir / "predicted_probe_E_minus_p.png",
-        r"$E_{\rm probe}^{pred}-|\vec p_{\rm probe}^{pred}|$ [GeV]",
+        r"$E_{\rm probe}^{pred}-|\vec p_{\rm probe}^{pred}|$ (GeV)",
         f"{title}: predicted photon mass-shell residual",
         bins=160,
         xlim=(-eplim, eplim),
@@ -1242,7 +1259,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["pi0_mass_recovered"],
         outdir / "recovered_gamma_gamma_mass.png",
-        r"$M_{\gamma\gamma}^{recovered}$ [GeV]",
+        r"$M_{\gamma\gamma}^{recovered}$ (GeV)",
         f"{title}: eppi0 photon-recovery closure",
         bins=140,
         xlim=(0.05, 0.22),
@@ -1251,7 +1268,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["pi0_momentum_closure"],
         outdir / "recovered_pi0_momentum_closure.png",
-        r"$|\vec p_{\gamma1}+\vec p_{\gamma2}-\vec p_{\pi^0}|$ [GeV]",
+        r"$|\vec p_{\gamma1}+\vec p_{\gamma2}-\vec p_{\pi^0}|$ (GeV)",
         f"{title}: reconstructed-pi0 momentum closure",
         bins=140,
         logy=True,
@@ -1261,8 +1278,8 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
         arrays["pred_probe_energy"],
         arrays["probe_opening_residual_deg"],
         outdir / "probe_direction_residual_vs_energy.png",
-        r"$E_{\rm probe}^{pred}$ [GeV]",
-        r"$\Delta\alpha_{\rm probe}$ [deg]",
+        r"$E_{\rm probe}^{pred}$ (GeV)",
+        r"$\Delta\alpha_{\rm probe}$ (deg)",
         f"{title}: probe direction resolution vs energy",
         bins=(100, 100),
         xlim=(0.0, emax),
@@ -1273,7 +1290,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
         arrays["pred_probe_energy"],
         arrays["probe_delta_E_over_E"],
         outdir / "probe_fractional_energy_residual_vs_energy.png",
-        r"$E_{\rm probe}^{pred}$ [GeV]",
+        r"$E_{\rm probe}^{pred}$ (GeV)",
         r"$(E_{\rm reco}-E_{\rm pred})/E_{\rm pred}$",
         f"{title}: probe energy closure vs energy",
         bins=(100, 100),
@@ -1284,7 +1301,7 @@ def make_plots(period: PeriodConfig, arrays: Dict[str, np.ndarray], outdir: Path
     save_hist(
         arrays["reco_gamma_gamma_opening_deg"],
         outdir / "reco_gamma_gamma_opening_angle.png",
-        r"$\Delta\alpha_{\gamma\gamma}$ [deg]",
+        r"$\Delta\alpha_{\gamma\gamma}$ (deg)",
         f"{title}: reconstructed pi0 photon opening angle",
         bins=140,
         logy=True,
@@ -1476,7 +1493,7 @@ def parse_args() -> argparse.Namespace:
         default=0.002,
         help=(
             "Maximum allowed absolute mismatch in each electron/proton Cartesian "
-            "momentum component, GeV. Default: 0.002."
+            "momentum component (GeV). Default: 0.002."
         ),
     )
     parser.add_argument(
@@ -1493,12 +1510,149 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1.0,
         help=(
-            "Maximum angle in degrees between epgamma tag and the corresponding "
+            "Maximum angle (deg) between epgamma tag and the corresponding "
             "recovered eppi0 photon. Default: 1.0 deg."
+        ),
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help=(
+            "Maximum number of independent period worker processes. Hard-capped "
+            "at 8. With all RGA periods there are only five independent jobs, so "
+            "at most five processes run concurrently. Default: 8."
+        ),
+    )
+    parser.add_argument(
+        "--kdtree-workers",
+        type=int,
+        default=1,
+        help=(
+            "Threads used inside each scipy cKDTree query. Default: 1. Keeping "
+            "this at 1 avoids CPU oversubscription when periods run in parallel."
         ),
     )
     return parser.parse_args()
 
+
+
+def process_period(
+    period: PeriodConfig,
+    args_dict: Dict[str, object],
+    output_dir: str,
+) -> Dict[str, object]:
+    """
+    Process one run period completely.
+
+    This top-level function is compatible with ProcessPoolExecutor and avoids
+    relying on fork-specific behavior.
+    """
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
+    tree_name = args_dict["tree"]
+    max_entries = int(args_dict["max_entries"])
+    angle_mode = str(args_dict["angles"])
+    tag_min = float(args_dict["tag_min"])
+    tag_max = float(args_dict["tag_max"])
+    parent_component_tol = float(args_dict["parent_component_tol"])
+    parent_distance_max = float(args_dict["parent_distance_max"])
+    max_tag_reco_angle = float(args_dict["max_tag_reco_angle"])
+    kdtree_workers = int(args_dict["kdtree_workers"])
+
+    outroot = Path(output_dir)
+    period_dir = outroot / period.key
+    period_dir.mkdir(parents=True, exist_ok=True)
+
+    t0 = time.perf_counter()
+
+    log(f"{period.label}: reading aaogen epgamma sample.")
+    epg_arrays, epg_tree, epg_total = read_branches(
+        period.epgamma_pi0_mc,
+        EPG_REQUIRED,
+        EPG_OPTIONAL,
+        tree_name,
+        max_entries,
+    )
+    epg = extract_epgamma(epg_arrays, angle_mode)
+
+    log(
+        f"{period.label}: epgamma tree '{epg_tree}', "
+        f"loaded {len(epg.tag_energy):,}/{epg_total:,} entries, "
+        f"angles interpreted as {epg.angle_unit}."
+    )
+
+    log(f"{period.label}: reading reconstructed aaogen eppi0 sample.")
+    pi_arrays, pi_tree, pi_total = read_branches(
+        period.eppi0_pi0_mc,
+        EPPIO_REQUIRED,
+        EPPIO_OPTIONAL,
+        tree_name,
+        max_entries,
+    )
+    eppi0 = extract_eppi0(pi_arrays, angle_mode)
+
+    log(
+        f"{period.label}: eppi0 tree '{pi_tree}', "
+        f"loaded {len(eppi0.pi0_p):,}/{pi_total:,} entries, "
+        f"angles interpreted as {eppi0.angle_unit}."
+    )
+
+    log(f"{period.label}: matching e/p parent kinematics between MC skims.")
+    matches = match_parent_kinematics(
+        epg,
+        eppi0,
+        tag_min=tag_min,
+        tag_max=tag_max,
+        component_tolerance=parent_component_tol,
+        nearest_distance_max=parent_distance_max,
+        kdtree_workers=kdtree_workers,
+    )
+    log(f"{period.label}: accepted {len(matches.epg_index):,} parent matches.")
+
+    log(f"{period.label}: recovering eppi0 photons and validating predicted probe.")
+    pairs, counters = build_stage1_pairs(
+        period,
+        epg,
+        eppi0,
+        matches,
+        max_tag_reco_angle_deg=max_tag_reco_angle,
+    )
+    pair_np = pair_arrays_to_numpy(pairs)
+
+    np.savez_compressed(period_dir / "stage1_matched_pairs.npz", **pair_np)
+    make_plots(period, pair_np, period_dir)
+
+    summary = summarize_period(
+        period,
+        epg_entries_total=epg_total,
+        eppi0_entries_total=pi_total,
+        epg_loaded=len(epg.tag_energy),
+        eppi0_loaded=len(eppi0.pi0_p),
+        epg_angle_unit=epg.angle_unit,
+        eppi0_angle_unit=eppi0.angle_unit,
+        matches=matches,
+        arrays=pair_np,
+        counters=counters,
+    )
+    summary["wall_time_s"] = float(time.perf_counter() - t0)
+
+    with (period_dir / "stage1_summary.json").open("w") as f:
+        json.dump(summary, f, indent=2, allow_nan=True)
+    #endif
+
+    log(
+        f"{period.label}: Stage-I accepted pairs = "
+        f"{counters['accepted_stage1_pairs']:,}; "
+        f"photon-recovery failures = {counters['pi0_photon_recovery_failed']:,}; "
+        f"tag-correspondence failures = {counters['tag_reco_match_failed']:,}; "
+        f"wall time = {summary['wall_time_s']:.1f} s."
+    )
+
+    return summary
 
 def main() -> int:
     args = parse_args()
@@ -1512,6 +1666,14 @@ def main() -> int:
     if args.parent_component_tol <= 0.0:
         raise ValueError("--parent-component-tol must be > 0.")
     #endif
+    if args.workers < 1:
+        raise ValueError("--workers must be >= 1.")
+    #endif
+    if args.kdtree_workers < 1:
+        raise ValueError("--kdtree-workers must be >= 1.")
+    #endif
+
+    requested_workers = min(int(args.workers), 8)
 
     selected = [
         p for p in PERIODS
@@ -1526,18 +1688,25 @@ def main() -> int:
         f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
     )
     log(
-        "No photon-efficiency denominator/numerator is formed in v002; "
+        "No photon-efficiency denominator/numerator is formed in v003; "
         "this run validates event matching and missing-photon prediction only."
     )
 
     preflight(selected)
 
-    summaries: List[Dict[str, object]] = []
+    n_processes = min(requested_workers, len(selected))
+    log(
+        f"Period-level parallelism: {n_processes} process(es); "
+        f"cKDTree workers/process = {args.kdtree_workers}."
+    )
+
     provenance = {
         "script": Path(__file__).name,
         "stage": 1,
         "purpose": "aaogen tag-and-probe kinematic validation",
         "arguments": vars(args),
+        "effective_period_workers": n_processes,
+        "worker_cap": 8,
         "periods": [asdict(p) for p in selected],
         "schema_assumptions": {
             "epgamma": "p1=proton, p2=photon/tag",
@@ -1548,94 +1717,55 @@ def main() -> int:
                 "basis plus the reconstructed pi0 four-vector"
             ),
         },
+        "performance_notes": {
+            "parallelization": "independent run periods use separate processes",
+            "kdtree": (
+                "search coordinates use float32; final physical matching cut "
+                "uses original float64 momentum components"
+            ),
+            "nested_parallelism": (
+                "cKDTree defaults to one thread/process to avoid oversubscription"
+            ),
+        },
     }
 
-    for period in selected:
-        log(f"{period.label}: reading aaogen epgamma sample.")
-        epg_arrays, epg_tree, epg_total = read_branches(
-            period.epgamma_pi0_mc,
-            EPG_REQUIRED,
-            EPG_OPTIONAL,
-            args.tree,
-            args.max_entries,
-        )
-        epg = extract_epgamma(epg_arrays, args.angles)
+    args_dict = vars(args).copy()
+    summaries: List[Dict[str, object]] = []
 
-        log(
-            f"{period.label}: epgamma tree '{epg_tree}', "
-            f"loaded {len(epg.tag_energy):,}/{epg_total:,} entries, "
-            f"angles interpreted as {epg.angle_unit}."
-        )
+    if n_processes == 1:
+        for period in selected:
+            summaries.append(process_period(period, args_dict, str(outroot)))
+        #endfor
+    else:
+        with ProcessPoolExecutor(max_workers=n_processes) as executor:
+            future_to_period = {
+                executor.submit(
+                    process_period,
+                    period,
+                    args_dict,
+                    str(outroot),
+                ): period
+                for period in selected
+            }
 
-        log(f"{period.label}: reading reconstructed aaogen eppi0 sample.")
-        pi_arrays, pi_tree, pi_total = read_branches(
-            period.eppi0_pi0_mc,
-            EPPIO_REQUIRED,
-            EPPIO_OPTIONAL,
-            args.tree,
-            args.max_entries,
-        )
-        eppi0 = extract_eppi0(pi_arrays, args.angles)
+            for future in as_completed(future_to_period):
+                period = future_to_period[future]
+                try:
+                    summaries.append(future.result())
+                except Exception as exc:
+                    for other in future_to_period:
+                        other.cancel()
+                    #endfor
+                    raise RuntimeError(
+                        f"Parallel Stage-I processing failed for {period.label}: {exc}"
+                    ) from exc
+                #endtry
+            #endfor
+        #endwith
+    #endif
 
-        log(
-            f"{period.label}: eppi0 tree '{pi_tree}', "
-            f"loaded {len(eppi0.pi0_p):,}/{pi_total:,} entries, "
-            f"angles interpreted as {eppi0.angle_unit}."
-        )
-
-        log(f"{period.label}: matching e/p parent kinematics between MC skims.")
-        matches = match_parent_kinematics(
-            epg,
-            eppi0,
-            tag_min=args.tag_min,
-            tag_max=args.tag_max,
-            component_tolerance=args.parent_component_tol,
-            nearest_distance_max=args.parent_distance_max,
-        )
-        log(f"{period.label}: accepted {len(matches.epg_index):,} parent matches.")
-
-        log(f"{period.label}: recovering eppi0 photons and validating predicted probe.")
-        pairs, counters = build_stage1_pairs(
-            period,
-            epg,
-            eppi0,
-            matches,
-            max_tag_reco_angle_deg=args.max_tag_reco_angle,
-        )
-        pair_np = pair_arrays_to_numpy(pairs)
-
-        period_dir = outroot / period.key
-        period_dir.mkdir(parents=True, exist_ok=True)
-
-        np.savez_compressed(period_dir / "stage1_matched_pairs.npz", **pair_np)
-
-        make_plots(period, pair_np, period_dir)
-
-        summary = summarize_period(
-            period,
-            epg_entries_total=epg_total,
-            eppi0_entries_total=pi_total,
-            epg_loaded=len(epg.tag_energy),
-            eppi0_loaded=len(eppi0.pi0_p),
-            epg_angle_unit=epg.angle_unit,
-            eppi0_angle_unit=eppi0.angle_unit,
-            matches=matches,
-            arrays=pair_np,
-            counters=counters,
-        )
-        summaries.append(summary)
-
-        with (period_dir / "stage1_summary.json").open("w") as f:
-            json.dump(summary, f, indent=2, allow_nan=True)
-        #endif
-
-        log(
-            f"{period.label}: Stage-I accepted pairs = "
-            f"{counters['accepted_stage1_pairs']:,}; "
-            f"photon-recovery failures = {counters['pi0_photon_recovery_failed']:,}; "
-            f"tag-correspondence failures = {counters['tag_reco_match_failed']:,}."
-        )
-    #endfor
+    order = {p.key: i for i, p in enumerate(selected)}
+    summaries.sort(key=lambda row: order[str(row["period"])])
 
     write_summary_csv(summaries, outroot / "stage1_summary.csv")
 
@@ -1651,7 +1781,7 @@ def main() -> int:
         )
     #endif
 
-    log(f"Done. Stage-I outputs are in {outroot}")
+    log(f"Done. Stage-I outputs are in {outroot}.")
     return 0
 
 
