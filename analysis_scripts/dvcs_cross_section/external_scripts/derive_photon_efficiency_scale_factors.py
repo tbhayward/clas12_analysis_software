@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v81_sparse_ft_signal_template_fix.py
+derive_photon_efficiency_scale_factors_v82_aaogen_closure_audit.py
 
 Photon-efficiency study with separate exact-one-photon and exact-two-photon
 data categories. Events with three or more reconstructed-photon entries are
@@ -647,6 +647,31 @@ No data selection, paired Mgg fit, truth definition, photon matching, detector
 acceptance, DVCS background, fake-photon background, efficiency algebra, or
 legacy functionality is changed.
 
+Revision: AAOGEN pseudo-data closure and efficiency-definition audit
+-------------------------------------------------------------------
+
+The final --simple workflow now performs a dedicated closure test before any
+scale factor is interpreted.  AAOGEN reconstructed low-tag opportunities are
+split deterministically into disjoint template and pseudo-data halves.  The
+pseudo-data half is processed with the identical paired-Mgg fit, residual
+failed-partner construction, and M_X^2(e'p') purity fit used for real data;
+truth labels are consulted only afterward to measure closure.
+
+For every period and FT/FD region the output now records three distinct
+efficiencies side by side:
+
+  * the established broad AAOGEN truth-association fraction (historically
+    labeled an MC efficiency, but not a direct reconstructed-high-photon test);
+  * the truth efficiency conditioned on the final reconstructed low-tag
+    opportunity catalog;
+  * the final estimator extracted blindly from AAOGEN pseudo-data.
+
+The closure audit additionally compares fitted versus truth paired-pi0 purity
+and fitted versus truth failed-population pi0 purity.  A combined CSV, JSON,
+and two-panel plot are written under closure_audit/.  The hard period-worker
+cap is seven.
+
+
 """
 
 
@@ -688,7 +713,7 @@ except ImportError as exc:
 TREE_NAME = "PhysicsEvents"
 DEFAULT_OUTPUT_DIR = "output/photon_efficiency_study"
 DEFAULT_STEP_SIZE = "200 MB"
-MAX_WORKERS = 8
+MAX_WORKERS = 7
 
 PROTON_MASS_GEV = 0.9382720813
 ELECTRON_MASS_GEV = 0.00051099895
@@ -3252,7 +3277,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=8,
+        default=7,
         help=f"Number of period workers; hard maximum is {MAX_WORKERS}.",
     )
     parser.add_argument("--step-size", default=DEFAULT_STEP_SIZE)
@@ -8440,6 +8465,42 @@ def process_period_mc_only(
     # endfor
 
     official_dicts = [asdict(row) for row in official_rows]
+    for payload, topology in zip(official_dicts, ("FT", "FD")):
+        mask = topology_mask(opportunities, topology)
+        truth_qualified = (
+            mask
+            & np.isfinite(match.tag_angle_deg)
+            & np.isfinite(match.tag_relative_E)
+            & np.isfinite(match.partner_E)
+            & (match.tag_angle_deg < args.tag_match_angle_max_deg)
+            & (match.tag_relative_E < args.tag_match_relative_E_max)
+            & (match.partner_E >= args.found_probe_E_min)
+        )
+        truth_probe_residual_ok = (
+            truth_qualified
+            & np.isfinite(match.probe_angle_deg)
+            & np.isfinite(match.probe_relative_E)
+            & (match.probe_angle_deg < args.probe_match_angle_max_deg)
+            & (match.probe_relative_E < args.probe_match_relative_E_max)
+        )
+        n_topology = int(np.count_nonzero(mask))
+        n_truth_qualified = int(np.count_nonzero(truth_qualified))
+        n_residual_ok = int(np.count_nonzero(truth_probe_residual_ok))
+        payload["legacy_truth_qualified_opportunities"] = n_truth_qualified
+        payload["legacy_truth_qualified_fraction"] = (
+            n_truth_qualified / n_topology if n_topology else math.nan
+        )
+        payload["legacy_truth_probe_residual_passes"] = n_residual_ok
+        payload["legacy_probe_residual_pass_fraction_given_truth"] = (
+            n_residual_ok / n_truth_qualified if n_truth_qualified else math.nan
+        )
+        payload["legacy_quantity_interpretation"] = (
+            "Broad reconstructed low-tag truth-association fraction; this stage "
+            "does not search the epgamma event for a reconstructed high-energy "
+            "partner photon. With --require-probe-residual-match off (default), "
+            "the reported legacy efficiency equals the truth-qualified fraction."
+        )
+    # endfor
     write_dict_rows(
         period_dir / "integrated_mc_efficiency.csv",
         official_dicts,
@@ -12060,6 +12121,263 @@ def _final_serializable_fit(fit: Mapping[str,object]) -> Dict[str,object]:
     }
 
 
+
+def _deterministic_closure_split(size: int) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Return disjoint AAOGEN template/evaluation masks for the final closure.
+
+    The split is deterministic and deliberately independent of truth labels:
+    alternating reconstructed low-tag opportunities are assigned to the
+    template and pseudo-data samples.  This prevents the closure fit from
+    evaluating an AAOGEN entry against a signal/fake template containing that
+    same entry.
+    """
+    index = np.arange(int(size), dtype=np.int64)
+    template = (index % 2) == 0
+    evaluation = ~template
+    return template, evaluation
+
+
+def run_final_aaogen_closure_region(
+    period: PeriodConfig,
+    detector: str,
+    aao: FinalOpportunityCatalog,
+    truth: FinalTruthLabels,
+    truth_signal: np.ndarray,
+    dvcs: FinalOpportunityCatalog,
+    args: argparse.Namespace,
+    output_dir: Path,
+) -> Dict[str, object]:
+    """
+    Run the final data-driven estimator on AAOGEN as blinded pseudo-data.
+
+    AAOGEN is split into disjoint template and evaluation halves.  The
+    evaluation half is treated exactly like data: its paired Mgg spectrum is
+    fit without truth labels, a residual failed-partner population is built
+    from the mass-fit posterior, and its pi0 purity is extracted from the same
+    M_X^2(e'p') template fit used in production.  Truth is consulted only
+    after the extraction to quantify closure.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    areg = final_region_mask(aao, detector)
+    vreg = final_region_mask(dvcs, detector)
+    template_half, evaluation_half = _deterministic_closure_split(aao.size())
+
+    aao_probe_match = (
+        aao.paired
+        & np.isfinite(aao.high_probe_angle_deg)
+        & np.isfinite(aao.high_probe_relative_E)
+        & (aao.high_probe_angle_deg < args.probe_match_angle_max_deg)
+        & (aao.high_probe_relative_E < args.probe_match_relative_E_max)
+    )
+    truth_success = (
+        areg
+        & truth_signal
+        & aao_probe_match
+        & truth.measured_partner_truth_match
+    )
+
+    eval_region = areg & evaluation_half
+    template_region = areg & template_half
+    truth_denom = int(np.count_nonzero(eval_region & truth_signal))
+    truth_num = int(np.count_nonzero(eval_region & truth_success))
+    truth_eff = truth_num / truth_denom if truth_denom else math.nan
+    truth_eff_err = simple_binomial_error(truth_num, truth_denom)
+
+    closure: Dict[str, object] = {
+        "available": False,
+        "detector": detector,
+        "split_definition": "even reconstructed opportunity index = template; odd = pseudo-data",
+        "template_region_entries": int(np.count_nonzero(template_region)),
+        "evaluation_region_entries": int(np.count_nonzero(eval_region)),
+        "truth_opportunities": truth_denom,
+        "truth_reconstructed": truth_num,
+        "truth_efficiency": truth_eff,
+        "truth_efficiency_stat_err": truth_eff_err,
+        "failure_reason": "",
+    }
+
+    try:
+        paired_eval = (
+            eval_region
+            & aao_probe_match
+            & np.isfinite(aao.mgg)
+        )
+        signal_mass_template = (
+            template_region
+            & aao_probe_match
+            & truth_signal
+            & truth.measured_partner_truth_match
+            & np.isfinite(aao.mgg)
+        )
+        if np.count_nonzero(signal_mass_template) < args.final_template_min_entries:
+            signal_mass_template = (
+                template_region
+                & aao_probe_match
+                & truth_signal
+                & np.isfinite(aao.mgg)
+            )
+        # endif
+
+        mass_fit = fit_paired_mass_peak_with_model_spread(
+            aao.mgg[paired_eval],
+            aao.mgg[signal_mass_template],
+            args,
+        )
+        plot_final_mass_fit(
+            output_dir / f"{detector.lower()}_aaogen_pseudodata_paired_mgg_fit.png",
+            f"{period.label} AAOGEN closure",
+            detector,
+            mass_fit,
+        )
+
+        mass_range = (
+            (aao.mgg[paired_eval] >= 0.0)
+            & (aao.mgg[paired_eval] < args.final_mass_fit_max)
+            & np.isfinite(aao.mgg[paired_eval])
+        )
+        paired_indices = np.flatnonzero(paired_eval)
+        fit_indices = paired_indices[mass_range]
+        failure_weight_full = np.zeros(aao.size(), dtype=float)
+        failure_weight_full[eval_region] = 1.0
+        failure_weight_full[fit_indices] = (
+            1.0 - np.asarray(mass_fit["posterior_signal"], dtype=float)
+        )
+        failed_eval_mask = eval_region & (failure_weight_full > 1.0e-8)
+
+        signal_template = template_region & truth_signal
+        fake_background = template_region & (~truth_signal)
+        if np.count_nonzero(fake_background) < args.final_template_min_entries:
+            fake_background = template_region & (~truth.tag_truth_match)
+        # endif
+        if np.count_nonzero(signal_template) < args.final_template_min_entries:
+            raise RuntimeError(
+                f"closure signal template has only {np.count_nonzero(signal_template)} entries"
+            )
+        # endif
+        if np.count_nonzero(fake_background) < args.final_template_min_entries:
+            raise RuntimeError(
+                f"closure fake-photon template has only {np.count_nonzero(fake_background)} entries"
+            )
+        # endif
+        if np.count_nonzero(vreg) < args.final_template_min_entries:
+            raise RuntimeError(
+                f"closure DVCSGEN template has only {np.count_nonzero(vreg)} entries"
+            )
+        # endif
+
+        purity_fit = fit_unmatched_shared_purity(
+            aao,
+            failed_eval_mask,
+            failure_weight_full,
+            aao,
+            signal_template,
+            dvcs,
+            vreg,
+            aao,
+            fake_background,
+            np.ones(np.count_nonzero(fake_background), dtype=float),
+            detector,
+            args,
+        )
+        plot_final_unmatched_fit(
+            output_dir / f"{detector.lower()}_aaogen_pseudodata_missed_partner_purity_fit.png",
+            f"{period.label} AAOGEN closure",
+            detector,
+            purity_fit,
+        )
+
+        npaired = int(mass_fit["n_entries"])
+        found = float(mass_fit["fraction_signal"]) * npaired
+        found_stat = float(mass_fit["fraction_signal_stat_error"]) * npaired
+        found_model = float(mass_fit["fraction_signal_model_spread"]) * npaired
+        purity = float(purity_fit["fraction_signal"])
+        purity_stat = float(purity_fit["fraction_signal_stat_error"])
+        purity_model = float(purity_fit["fraction_signal_model_spread"])
+        ntotal = int(np.count_nonzero(eval_region))
+        extracted = _final_efficiency_from_yields(
+            found,
+            found_stat,
+            found_model,
+            ntotal,
+            purity,
+            purity_stat,
+            purity_model,
+        )
+
+        paired_truth_signal = (
+            paired_eval
+            & truth_signal
+            & truth.measured_partner_truth_match
+        )
+        paired_truth_purity = (
+            np.count_nonzero(paired_truth_signal) / np.count_nonzero(paired_eval)
+            if np.count_nonzero(paired_eval) > 0
+            else math.nan
+        )
+        actual_failed = eval_region & (~truth_success)
+        actual_failed_truth = actual_failed & truth_signal
+        actual_failed_purity = (
+            np.count_nonzero(actual_failed_truth) / np.count_nonzero(actual_failed)
+            if np.count_nonzero(actual_failed) > 0
+            else math.nan
+        )
+        weighted_truth_purity = (
+            float(np.sum(failure_weight_full[failed_eval_mask] * truth_signal[failed_eval_mask]))
+            / float(np.sum(failure_weight_full[failed_eval_mask]))
+            if np.sum(failure_weight_full[failed_eval_mask]) > 0.0
+            else math.nan
+        )
+
+        extracted_eff = float(extracted["efficiency"])
+        closure.update(
+            {
+                "available": True,
+                "paired_pseudodata_entries": npaired,
+                "paired_fitted_pi0_fraction": float(mass_fit["fraction_signal"]),
+                "paired_fitted_pi0_fraction_stat_err": float(mass_fit["fraction_signal_stat_error"]),
+                "paired_fitted_pi0_fraction_model_err": float(mass_fit["fraction_signal_model_spread"]),
+                "paired_truth_pi0_fraction": paired_truth_purity,
+                "paired_mass_fit_reduced_deviance": float(mass_fit["reduced_deviance"]),
+                "failed_weighted_entries": float(np.sum(failure_weight_full[failed_eval_mask])),
+                "failed_fitted_pi0_fraction": purity,
+                "failed_fitted_pi0_fraction_stat_err": purity_stat,
+                "failed_fitted_pi0_fraction_model_err": purity_model,
+                "failed_truth_pi0_fraction": actual_failed_purity,
+                "failed_weighted_truth_pi0_fraction": weighted_truth_purity,
+                "failed_fit_reduced_deviance": float(purity_fit["reduced_deviance"]),
+                "fitted_found_pi0": found,
+                "fitted_missed_pi0": float(extracted["missed_pi0"]),
+                "extracted_efficiency": extracted_eff,
+                "extracted_efficiency_stat_err": float(extracted["stat_error"]),
+                "extracted_efficiency_model_err": float(extracted["model_error"]),
+                "closure_difference": (
+                    extracted_eff - truth_eff
+                    if np.isfinite(extracted_eff) and np.isfinite(truth_eff)
+                    else math.nan
+                ),
+                "closure_ratio": (
+                    extracted_eff / truth_eff
+                    if np.isfinite(extracted_eff) and np.isfinite(truth_eff) and truth_eff > 0.0
+                    else math.nan
+                ),
+                "mass_fit": _final_serializable_fit(mass_fit),
+                "purity_fit": {
+                    k: v for k, v in purity_fit.items()
+                    if k not in {"payload", "profile_fraction_grid", "profile_nll"}
+                },
+            }
+        )
+    except Exception as exc:
+        closure["failure_reason"] = str(exc)
+        log(
+            f"{period.label} {detector} AAOGEN CLOSURE WARNING: {exc}"
+        )
+    # endtry
+
+    return closure
+
+
 def process_period_final_efficiency(
     period: PeriodConfig,
     args_dict: Mapping[str,object],
@@ -12329,6 +12647,17 @@ def process_period_final_efficiency(
             else math.nan
         )
 
+        closure = run_final_aaogen_closure_region(
+            period,
+            detector,
+            aao,
+            truth,
+            truth_signal,
+            dvcs,
+            args,
+            root / "closure",
+        )
+
         row={
             'period':period.key,'period_label':period.label,'detector':detector,
             'paired_data_entries_in_mass_fit':npaired,
@@ -12347,6 +12676,18 @@ def process_period_final_efficiency(
             'aaogen_failed_population_truth_pi0_fraction':mc_failed_purity,
             'mass_fit_reduced_deviance':float(mass_fit['reduced_deviance']),'unmatched_fit_reduced_deviance':float(purity_fit['reduced_deviance']),
             'unmatched_background_dvcs_fraction':float(purity_fit['background_dvcs_fraction']),
+            'closure_available':bool(closure.get('available',False)),
+            'closure_truth_efficiency':float(closure.get('truth_efficiency',math.nan)),
+            'closure_extracted_efficiency':float(closure.get('extracted_efficiency',math.nan)),
+            'closure_extracted_efficiency_stat_err':float(closure.get('extracted_efficiency_stat_err',math.nan)),
+            'closure_extracted_efficiency_model_err':float(closure.get('extracted_efficiency_model_err',math.nan)),
+            'closure_difference':float(closure.get('closure_difference',math.nan)),
+            'closure_ratio':float(closure.get('closure_ratio',math.nan)),
+            'closure_paired_fitted_pi0_fraction':float(closure.get('paired_fitted_pi0_fraction',math.nan)),
+            'closure_paired_truth_pi0_fraction':float(closure.get('paired_truth_pi0_fraction',math.nan)),
+            'closure_failed_fitted_pi0_fraction':float(closure.get('failed_fitted_pi0_fraction',math.nan)),
+            'closure_failed_truth_pi0_fraction':float(closure.get('failed_truth_pi0_fraction',math.nan)),
+            'closure_failure_reason':str(closure.get('failure_reason','')),
         }
         rows.append(row)
         region_metadata[detector]={
@@ -12356,12 +12697,17 @@ def process_period_final_efficiency(
                 if k not in {'payload','profile_fraction_grid','profile_nll'}
             },
             'counts':row,
+            'aaogen_pseudodata_closure':closure,
         }
         log(
             f"{period.label} FINAL {detector}: "
             f"Npi0_found={found:.1f}, fC={purity:.4f}, Npi0_missed={eff['missed_pi0']:.1f}, "
             f"epsilon_data={eff['efficiency']:.4f} +/- {eff['stat_error']:.4f} (stat) +/- {eff['model_error']:.4f} (model), "
-            f"epsilon_MC={mc_eff:.4f}, SF={scale:.4f}"
+            f"epsilon_MC={mc_eff:.4f}, SF={scale:.4f}; "
+            f"AAOGEN closure="
+            f"{float(closure.get('extracted_efficiency',math.nan)):.4f}/"
+            f"{float(closure.get('truth_efficiency',math.nan)):.4f} "
+            f"(extracted/truth)"
         )
     # endfor
 
@@ -12446,6 +12792,198 @@ def run_final_efficiency_stage(periods, args, workers):
     # endfor
     log('='*112)
     return {'rows':all_rows,'period_metadata':metadata,'output_csv':str(root/'photon_efficiency_final.csv')}
+
+
+def plot_efficiency_definition_audit(
+    path: Path,
+    rows: Sequence[Mapping[str, object]],
+) -> None:
+    """Plot broad-MC, final-catalog truth, and pseudo-data closure efficiencies."""
+    if not rows:
+        return
+    # endif
+    path.parent.mkdir(parents=True, exist_ok=True)
+    labels = []
+    for period in PERIODS:
+        for detector in ("FT", "FD"):
+            if any(
+                str(row.get("period")) == period.key
+                and str(row.get("detector")) == detector
+                for row in rows
+            ):
+                labels.append(f"{period.label}\n{detector}")
+            # endif
+        # endfor
+    # endfor
+    ordered = []
+    for period in PERIODS:
+        for detector in ("FT", "FD"):
+            match = next(
+                (
+                    row for row in rows
+                    if str(row.get("period")) == period.key
+                    and str(row.get("detector")) == detector
+                ),
+                None,
+            )
+            if match is not None:
+                ordered.append(match)
+            # endif
+        # endfor
+    # endfor
+
+    x = np.arange(len(ordered), dtype=float)
+    broad = np.asarray([row.get("legacy_broad_match_fraction", math.nan) for row in ordered], dtype=float)
+    final_truth = np.asarray([row.get("final_catalog_truth_efficiency", math.nan) for row in ordered], dtype=float)
+    closure = np.asarray([row.get("closure_extracted_efficiency", math.nan) for row in ordered], dtype=float)
+    closure_stat = np.asarray([row.get("closure_extracted_efficiency_stat_err", math.nan) for row in ordered], dtype=float)
+
+    fig, axes = plt.subplots(2, 1, figsize=(14, 9), sharex=True, gridspec_kw={"height_ratios": [2.0, 1.0]})
+    axes[0].plot(x - 0.16, broad, "o", label="legacy broad truth-association fraction")
+    axes[0].plot(x, final_truth, "s", mfc="none", label="final-catalog AAOGEN truth")
+    axes[0].errorbar(x + 0.16, closure, yerr=closure_stat, fmt="^", capsize=2, label="AAOGEN pseudo-data extraction")
+    axes[0].set_ylabel("photon efficiency")
+    axes[0].set_ylim(0.0, 1.05)
+    axes[0].grid(axis="y", alpha=0.25)
+    axes[0].legend(frameon=False, ncol=3)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        final_over_broad = final_truth / broad
+        closure_over_truth = closure / final_truth
+    axes[1].axhline(1.0, color="0.4", lw=1.0)
+    axes[1].plot(x - 0.08, final_over_broad, "o", label="final truth / legacy match fraction")
+    axes[1].plot(x + 0.08, closure_over_truth, "^", label="closure extraction / final truth")
+    axes[1].set_ylabel("ratio")
+    axes[1].set_ylim(0.0, 4.0)
+    axes[1].grid(axis="y", alpha=0.25)
+    axes[1].legend(frameon=False, ncol=2)
+    axes[1].set_xticks(x, [f"{row['period_label']}\n{row['detector']}" for row in ordered], rotation=25, ha="right")
+    fig.suptitle("AAOGEN photon-efficiency definition and closure audit")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+
+
+def build_efficiency_definition_audit(
+    output_root: Path,
+    final_rows: Sequence[Mapping[str, object]],
+    mc_rows: Sequence[Mapping[str, object]],
+) -> Dict[str, object]:
+    """
+    Merge the three efficiency definitions needed for the closure audit.
+
+    1. legacy_broad_match_fraction: established read_opportunities()/match_truth_partners
+       truth-association fraction (not a direct high-photon reconstruction efficiency);
+    2. final_catalog_truth_efficiency: truth efficiency after conditioning on
+       the reconstructed low-tag catalog used by the final data-driven method;
+    3. closure_extracted_efficiency: final estimator applied blindly to a
+       disjoint AAOGEN pseudo-data sample.
+    """
+    audit_root = output_root / "closure_audit"
+    audit_root.mkdir(parents=True, exist_ok=True)
+    rows: List[Dict[str, object]] = []
+    mc_lookup = {
+        (str(row.get("period")), str(row.get("topology"))): row
+        for row in mc_rows
+    }
+    for final in final_rows:
+        period = str(final.get("period"))
+        detector = str(final.get("detector"))
+        old = mc_lookup.get((period, detector), {})
+        broad = float(old.get("efficiency", math.nan))
+        final_truth = float(final.get("efficiency_mc", math.nan))
+        closure_eff = float(final.get("closure_extracted_efficiency", math.nan))
+        row = {
+            "period": period,
+            "period_label": str(final.get("period_label", period)),
+            "detector": detector,
+            "broad_mc_opportunities": int(old.get("opportunities", 0) or 0),
+            "broad_mc_reconstructed": int(old.get("reconstructed", 0) or 0),
+            "legacy_broad_match_fraction": broad,
+            "legacy_broad_match_fraction_stat_err": float(old.get("efficiency_error", math.nan)),
+            "legacy_truth_qualified_opportunities": int(old.get("legacy_truth_qualified_opportunities", 0) or 0),
+            "legacy_truth_qualified_fraction": float(old.get("legacy_truth_qualified_fraction", math.nan)),
+            "legacy_probe_residual_pass_fraction_given_truth": float(old.get("legacy_probe_residual_pass_fraction_given_truth", math.nan)),
+            "final_catalog_truth_opportunities": int(final.get("mc_truth_opportunities", 0) or 0),
+            "final_catalog_truth_reconstructed": int(final.get("mc_truth_reconstructed", 0) or 0),
+            "final_catalog_truth_efficiency": final_truth,
+            "final_catalog_truth_efficiency_stat_err": float(final.get("efficiency_mc_stat_err", math.nan)),
+            "closure_available": bool(final.get("closure_available", False)),
+            "closure_truth_efficiency": float(final.get("closure_truth_efficiency", math.nan)),
+            "closure_extracted_efficiency": closure_eff,
+            "closure_extracted_efficiency_stat_err": float(final.get("closure_extracted_efficiency_stat_err", math.nan)),
+            "closure_extracted_efficiency_model_err": float(final.get("closure_extracted_efficiency_model_err", math.nan)),
+            "closure_difference": float(final.get("closure_difference", math.nan)),
+            "closure_ratio": float(final.get("closure_ratio", math.nan)),
+            "final_truth_over_legacy_match": (
+                final_truth / broad
+                if np.isfinite(final_truth) and np.isfinite(broad) and broad > 0.0
+                else math.nan
+            ),
+            "closure_extracted_over_final_truth": (
+                closure_eff / final_truth
+                if np.isfinite(closure_eff) and np.isfinite(final_truth) and final_truth > 0.0
+                else math.nan
+            ),
+            "closure_paired_fitted_pi0_fraction": float(final.get("closure_paired_fitted_pi0_fraction", math.nan)),
+            "closure_paired_truth_pi0_fraction": float(final.get("closure_paired_truth_pi0_fraction", math.nan)),
+            "closure_failed_fitted_pi0_fraction": float(final.get("closure_failed_fitted_pi0_fraction", math.nan)),
+            "closure_failed_truth_pi0_fraction": float(final.get("closure_failed_truth_pi0_fraction", math.nan)),
+            "closure_failure_reason": str(final.get("closure_failure_reason", "")),
+        }
+        rows.append(row)
+    # endfor
+
+    write_dict_rows(audit_root / "efficiency_definition_and_closure_audit.csv", rows)
+    with open(audit_root / "efficiency_definition_and_closure_audit.json", "w", encoding="utf-8") as handle:
+        json.dump(
+            {
+                "definitions": {
+                    "legacy_broad_match_fraction": "Established read_opportunities + truth association fraction; it is not a direct reconstructed-high-photon efficiency.",
+                    "final_catalog_truth_efficiency": "Truth efficiency after the final reconstructed low-tag opportunity conditioning.",
+                    "closure_extracted_efficiency": "Final paired-mass + failed-purity estimator applied to disjoint AAOGEN pseudo-data.",
+                },
+                "rows": rows,
+            },
+            handle,
+            indent=2,
+            default=simple_json_default,
+        )
+    # endwith
+    plot_efficiency_definition_audit(
+        audit_root / "efficiency_definition_and_closure_audit.png",
+        rows,
+    )
+
+    log("")
+    log("=" * 148)
+    log("AAOGEN EFFICIENCY DEFINITION + PSEUDO-DATA CLOSURE AUDIT")
+    log(
+        f"{'Period':<12s} {'Reg':<3s} {'legacy':>10s} {'final truth':>11s} "
+        f"{'pseudo ext':>11s} {'ext/truth':>10s} {'final/legacy':>11s} "
+        f"{'pair fit/truth':>17s} {'fail fit/truth':>17s}"
+    )
+    for row in rows:
+        log(
+            f"{row['period_label']:<12s} {row['detector']:<3s} "
+            f"{row['legacy_broad_match_fraction']:10.4f} "
+            f"{row['final_catalog_truth_efficiency']:11.4f} "
+            f"{row['closure_extracted_efficiency']:11.4f} "
+            f"{row['closure_extracted_over_final_truth']:10.4f} "
+            f"{row['final_truth_over_legacy_match']:11.4f} "
+            f"{row['closure_paired_fitted_pi0_fraction']:8.4f}/"
+            f"{row['closure_paired_truth_pi0_fraction']:<8.4f} "
+            f"{row['closure_failed_fitted_pi0_fraction']:8.4f}/"
+            f"{row['closure_failed_truth_pi0_fraction']:<8.4f}"
+        )
+    # endfor
+    log("=" * 148)
+    return {
+        "rows": rows,
+        "output_csv": str(audit_root / "efficiency_definition_and_closure_audit.csv"),
+        "output_plot": str(audit_root / "efficiency_definition_and_closure_audit.png"),
+    }
+
 
 def preflight_enabled_stages(
     periods: Sequence[PeriodConfig],
@@ -12642,6 +13180,8 @@ def main() -> int:
                 and not args.skip_data_template_fits
             ),
             "mc_efficiency": not args.skip_mc_efficiency,
+            "aaogen_pseudodata_closure": bool(args.simple and not args.legacy_simple),
+            "efficiency_definition_audit": bool(args.simple and not args.legacy_simple and not args.skip_mc_efficiency),
         },
         "fitter_preflight": fitter_preflight,
         "periods": preflight_enabled_stages(periods, args),
@@ -12769,6 +13309,15 @@ def main() -> int:
         )
     # endif
 
+    closure_audit_metadata: Dict[str, object] = {}
+    if args.simple and not args.legacy_simple and final_efficiency_metadata:
+        closure_audit_metadata = build_efficiency_definition_audit(
+            output_root,
+            final_efficiency_metadata.get("rows", []),
+            mc_rows,
+        )
+    # endif
+
     with open(
         output_root / "stepwise_study_summary.json",
         "w",
@@ -12782,6 +13331,7 @@ def main() -> int:
                 "final_data_driven_efficiency_stage": final_efficiency_metadata,
                 "mc_efficiency_rows": mc_rows,
                 "mc_efficiency_metadata": mc_metadata,
+                "efficiency_definition_and_closure_audit": closure_audit_metadata,
             },
             handle,
             indent=2,
