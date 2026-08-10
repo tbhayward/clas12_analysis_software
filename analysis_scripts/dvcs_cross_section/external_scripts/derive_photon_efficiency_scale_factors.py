@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v014.py
+derive_photon_efficiency_scale_factors_v015.py
 
 Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -95,23 +95,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v014.py
+    python derive_photon_efficiency_scale_factors_v015.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v014.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v015.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v014.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v015.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v014.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v015.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v014.py --angles rad
+    python derive_photon_efficiency_scale_factors_v015.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -1837,7 +1837,7 @@ def make_shared_fit_canvas(period: PeriodConfig, shared_rows: List[Dict[str,obje
     rr=sorted(rr,key=lambda r:float(r["energy_center_GeV"])); x=np.asarray([r["energy_center_GeV"] for r in rr])
     fig,ax=plt.subplots(2,2,figsize=(13.5,9.5))
     ax[0,0].plot(x,[r["pi0_fraction"] for r in rr],marker="o",label="shared morphed fit")
-    for disc,label in (("mx2_ep_x_probe_m2",r"raw $M_X^2\\otimes M_{probe}^2$"),("mx2_ep_x_pTmiss",r"raw $M_X^2\\otimes p_{T,miss}$")):
+    for disc,label in (("mx2_ep_x_probe_m2", r"raw $M_X^2\otimes M_{\mathrm{probe}}^2$"),("mx2_ep_x_pTmiss", r"raw $M_X^2\otimes p_{T,\mathrm{miss}}$")):
         q=sorted([r for r in raw_rows if r["region"]=="all" and r["discriminator"]==disc and int(r["fit_success"])],key=lambda r:float(r["energy_center_GeV"]))
         if q: ax[0,0].plot([r["energy_center_GeV"] for r in q],[r["pi0_fraction"] for r in q],marker=".",linestyle="--",label=label)
     #endfor
@@ -2094,28 +2094,108 @@ def unit_hist(ax, values: np.ndarray, bins: np.ndarray, label: str) -> None:
     )
 
 
+def sanitize_figure_text(fig, strip_math: bool = False) -> None:
+    """
+    Sanitize Matplotlib Text artists before rendering.
+
+    This corrects accidentally doubled LaTeX backslashes such as ``\\otimes``.
+    If strip_math=True, dollar delimiters are removed as a final plain-text
+    fallback. Numerical analysis results are never modified.
+    """
+    from matplotlib.text import Text
+
+    for artist in fig.findobj(match=Text):
+        value = artist.get_text()
+        if not isinstance(value, str) or not value:
+            continue
+        #endif
+
+        cleaned = value
+        while "\\\\" in cleaned:
+            cleaned = cleaned.replace("\\\\", "\\")
+        #endwhile
+
+        if strip_math:
+            cleaned = cleaned.replace("$", "")
+        #endif
+
+        if cleaned != value:
+            artist.set_text(cleaned)
+        #endif
+    #endfor
+
+
 def safe_finalize_figure(
     fig,
     output_path: Path,
     rect: Tuple[float, float, float, float] = (0.0, 0.0, 1.0, 0.96),
 ) -> None:
+    """
+    Save a figure without allowing presentation-only MathText/layout problems
+    to abort completed physics processing.
+    """
+    output_path = Path(output_path)
+
+    sanitize_figure_text(fig, strip_math=False)
+
     try:
         fig.tight_layout(rect=rect)
     except Exception as exc:
         log(
             f"WARNING: tight_layout failed for {output_path.name}: {exc}. "
-            "Saving with manual subplot spacing instead."
+            "Using manual subplot spacing."
         )
+        sanitize_figure_text(fig, strip_math=False)
         fig.subplots_adjust(
             left=0.08,
             right=0.97,
             bottom=0.10,
-            top=rect[3] - 0.02,
+            top=max(0.50, rect[3] - 0.02),
             wspace=0.28,
             hspace=0.30,
         )
     #endtry
-    fig.savefig(output_path, dpi=180)
+
+    try:
+        fig.savefig(output_path, dpi=180)
+        return
+    except Exception as exc:
+        log(
+            f"WARNING: first save attempt failed for {output_path.name}: {exc}. "
+            "Retrying after text sanitization."
+        )
+    #endtry
+
+    sanitize_figure_text(fig, strip_math=False)
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.97,
+        bottom=0.10,
+        top=max(0.50, rect[3] - 0.02),
+        wspace=0.28,
+        hspace=0.30,
+    )
+
+    try:
+        fig.savefig(output_path, dpi=180)
+        return
+    except Exception as exc:
+        log(
+            f"WARNING: sanitized save failed for {output_path.name}: {exc}. "
+            "Retrying with plain-text labels."
+        )
+    #endtry
+
+    sanitize_figure_text(fig, strip_math=True)
+    try:
+        fig.savefig(output_path, dpi=180)
+    except Exception as exc:
+        log(
+            f"WARNING: unable to save {output_path.name} even with plain-text "
+            f"labels: {exc}. Skipping this canvas."
+        )
+    #endtry
+
 
 
 def make_stage2_canvases(
