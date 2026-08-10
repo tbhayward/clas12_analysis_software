@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v007.py
+derive_photon_efficiency_scale_factors_v008.py
 
-Stage-I development script for a relative data/MC photon-reconstruction
+Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
 
-THIS VERSION DOES NOT EXTRACT A PHOTON EFFICIENCY OR SCALE FACTOR.
+THIS VERSION DOES NOT YET FORM THE FINAL DATA/MC EFFICIENCY SCALE FACTOR.
+
+Stage I validates the exclusive-pi0 tag-and-probe kinematics and derives
+probe-prediction resolution. Stage II begins the real-data denominator
+extraction by explicitly decomposing epgamma data into exclusive-pi0,
+BH/DVCS, and wrong-tag/accidental components.
 
 Its purpose is to validate the central tag-and-probe kinematics using the
 exclusive-pi0 aaogen samples:
@@ -74,7 +79,7 @@ All products go below:
 including:
     stage1_summary.csv
     stage1_summary.json
-    <period>/stage1_matched_pairs.npz
+    <period>/stage1_matched_pairs.npz   (only with --save-npz)
     <period>/*.png
 
 Dependencies
@@ -88,23 +93,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v007.py
+    python derive_photon_efficiency_scale_factors_v008.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v007.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v008.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v007.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v008.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v007.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v008.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v007.py --angles rad
+    python derive_photon_efficiency_scale_factors_v008.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -130,6 +135,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import uproot
 from scipy.spatial import cKDTree
+from scipy.optimize import minimize
 
 
 # -----------------------------------------------------------------------------
@@ -895,6 +901,631 @@ def write_rows_csv(rows: List[Dict[str, object]], path: Path) -> None:
         writer.writeheader()
         writer.writerows(rows)
     #endwith
+
+# -----------------------------------------------------------------------------
+# Stage-II: real epgamma denominator composition
+# -----------------------------------------------------------------------------
+
+def predicted_region_arrays(
+    pred_theta_deg: np.ndarray,
+    pred_phi_deg: np.ndarray,
+    ft_theta_max: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Return (sector, region_code) from the predicted photon direction.
+
+    region_code:
+      0 = outside/unclassified
+      1 = FT-like, theta <= ft_theta_max
+      2..7 = FD sectors 1..6, theta > ft_theta_max
+
+    FD sector boundaries exactly follow:
+      S1: [330,360) U [0,30)
+      S2: [30,90)
+      S3: [90,150)
+      S4: [150,210)
+      S5: [210,270)
+      S6: [270,330)
+    """
+    phi360 = np.asarray(pred_phi_deg, dtype=float) % 360.0
+    theta = np.asarray(pred_theta_deg, dtype=float)
+
+    sector = np.full(len(theta), -1, dtype=np.int16)
+    sector[(phi360 >= 330.0) | (phi360 < 30.0)] = 1
+    sector[(phi360 >= 30.0) & (phi360 < 90.0)] = 2
+    sector[(phi360 >= 90.0) & (phi360 < 150.0)] = 3
+    sector[(phi360 >= 150.0) & (phi360 < 210.0)] = 4
+    sector[(phi360 >= 210.0) & (phi360 < 270.0)] = 5
+    sector[(phi360 >= 270.0) & (phi360 < 330.0)] = 6
+
+    region = np.zeros(len(theta), dtype=np.int16)
+    finite = np.isfinite(theta) & np.isfinite(phi360)
+    region[finite & (theta <= ft_theta_max)] = 1
+    fd = finite & (theta > ft_theta_max) & (sector >= 1)
+    region[fd] = sector[fd] + 1
+
+    return sector, region
+
+
+def build_epgamma_denominator_features(
+    period: PeriodConfig,
+    epg: EPGammaSample,
+    tag_min: float,
+    tag_max: float,
+    ft_theta_max: float,
+    mixed_tag_shift: int = 0,
+) -> Dict[str, np.ndarray]:
+    """
+    Vectorized Stage-II kinematics for an epgamma sample.
+
+    The physical data denominator sample is NOT assumed to be pi0-pure.
+    The important discriminants are built from e, p and the tag photon only:
+
+      P_X(ep)        = P_initial - P_e - P_p
+      P_probe^pred   = P_initial - P_e - P_p - k_tag
+
+    For a missing-photon exclusive pi0 event:
+      M_X^2(ep) ~ m_pi0^2,
+      E_probe^pred > 0,
+      (P_probe^pred)^2 ~ 0.
+
+    For genuine BH/DVCS:
+      M_X^2(ep) ~ 0,
+      E_probe^pred ~ 0.
+
+    For the mixed-tag template, only the tag photon is cyclically shifted;
+    the e/p parent kinematics remain fixed. This intentionally destroys the
+    physical e/p/gamma association while retaining the measured data photon
+    spectrum and detector occupancy approximately.
+    """
+    e3 = np.asarray(epg.electron_p3, dtype=float)
+    p3 = np.asarray(epg.proton_p3, dtype=float)
+    tag3 = np.asarray(epg.tag_p3, dtype=float)
+
+    if mixed_tag_shift:
+        n = len(tag3)
+        if n:
+            shift = int(mixed_tag_shift) % n
+            if shift == 0:
+                shift = max(1, n // 2)
+            #endif
+            tag3 = np.roll(tag3, shift=shift, axis=0)
+        #endif
+    #endif
+
+    e_pmag = np.linalg.norm(e3, axis=1)
+    p_pmag = np.linalg.norm(p3, axis=1)
+    tag_E = np.linalg.norm(tag3, axis=1)
+
+    e_E = np.sqrt(e_pmag * e_pmag + M_E * M_E)
+    p_E = np.sqrt(p_pmag * p_pmag + M_P * M_P)
+
+    beam_p = math.sqrt(max(0.0, period.beam_energy**2 - M_E**2))
+    initial_E = period.beam_energy + M_P
+    initial_p3 = np.asarray([0.0, 0.0, beam_p], dtype=float)
+
+    epmiss_E = initial_E - e_E - p_E
+    epmiss3 = initial_p3[None, :] - e3 - p3
+    epmiss_p = np.linalg.norm(epmiss3, axis=1)
+    epmiss_m2 = epmiss_E * epmiss_E - epmiss_p * epmiss_p
+
+    pred_E = epmiss_E - tag_E
+    pred3 = epmiss3 - tag3
+    pred_p = np.linalg.norm(pred3, axis=1)
+    pred_m2 = pred_E * pred_E - pred_p * pred_p
+    pred_E_minus_p = pred_E - pred_p
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pred_unit = pred3 / pred_p[:, None]
+        pred_theta_deg = np.degrees(
+            np.arccos(np.clip(pred_unit[:, 2], -1.0, 1.0))
+        )
+        pred_phi_deg = np.degrees(np.arctan2(pred3[:, 1], pred3[:, 0]))
+    #endwith
+
+    sector, region = predicted_region_arrays(
+        pred_theta_deg,
+        pred_phi_deg,
+        ft_theta_max=ft_theta_max,
+    )
+
+    valid = (
+        np.isfinite(tag_E)
+        & (tag_E >= tag_min)
+        & (tag_E < tag_max)
+        & np.isfinite(epmiss_m2)
+        & np.isfinite(pred_E)
+        & np.isfinite(pred_m2)
+        & np.isfinite(pred_theta_deg)
+        & np.isfinite(pred_phi_deg)
+    )
+
+    out = {
+        "tag_energy": tag_E,
+        "ep_missing_mass2": epmiss_m2,
+        "ep_missing_energy": epmiss_E,
+        "pred_probe_energy": pred_E,
+        "pred_probe_p": pred_p,
+        "pred_probe_mass2": pred_m2,
+        "pred_probe_E_minus_p": pred_E_minus_p,
+        "pred_probe_theta_deg": pred_theta_deg,
+        "pred_probe_phi_deg": pred_phi_deg,
+        "pred_probe_sector": sector,
+        "pred_region_code": region,
+        "valid_tag": valid,
+    }
+
+    # Keep run/event keys when they are meaningful (real data). They are not
+    # used in the Stage-II composition fit itself.
+    if "runnum" in epg.raw:
+        out["runnum"] = np.asarray(epg.raw["runnum"])
+    #endif
+    if "evnum" in epg.raw:
+        out["evnum"] = np.asarray(epg.raw["evnum"])
+    #endif
+
+    return out
+
+
+def stage2_region_mask(
+    features: Dict[str, np.ndarray],
+    region_name: str,
+    ft_theta_max: float,
+) -> np.ndarray:
+    theta = features["pred_probe_theta_deg"]
+    sector = features["pred_probe_sector"]
+
+    if region_name == "all":
+        return np.ones(len(theta), dtype=bool)
+    #endif
+    if region_name == "FT":
+        return theta <= ft_theta_max
+    #endif
+    if region_name.startswith("FD_S"):
+        s = int(region_name[-1])
+        return (theta > ft_theta_max) & (sector == s)
+    #endif
+    raise ValueError(f"Unknown Stage-II region '{region_name}'")
+
+
+def hist2d_template(
+    features: Dict[str, np.ndarray],
+    mask: np.ndarray,
+    mm2_edges: np.ndarray,
+    probe_m2_edges: np.ndarray,
+) -> np.ndarray:
+    h, _, _ = np.histogram2d(
+        features["ep_missing_mass2"][mask],
+        features["pred_probe_mass2"][mask],
+        bins=(mm2_edges, probe_m2_edges),
+    )
+    return np.asarray(h, dtype=float)
+
+
+@dataclass
+class TemplateFitResult:
+    success: bool
+    message: str
+    data_count: int
+    aaogen_count: int
+    dvcsgen_count: int
+    mixed_count: int
+    pi0_yield: float = float("nan")
+    dvcs_yield: float = float("nan")
+    mixed_yield: float = float("nan")
+    pi0_fraction: float = float("nan")
+    dvcs_fraction: float = float("nan")
+    mixed_fraction: float = float("nan")
+    nll: float = float("nan")
+
+
+def fit_three_component_poisson(
+    data_hist: np.ndarray,
+    pi0_hist: np.ndarray,
+    dvcs_hist: np.ndarray,
+    mixed_hist: np.ndarray,
+) -> TemplateFitResult:
+    """
+    Extended binned Poisson fit:
+
+      mu_i = N_pi0 T_pi0_i + N_DVCS T_DVCS_i + N_mix T_mix_i
+
+    Each template T is normalized to unit integral inside the fit window.
+    The three component yields float freely and non-negatively. No generator
+    cross-section normalization is imposed.
+    """
+    data = np.asarray(data_hist, dtype=float).ravel()
+    p = np.asarray(pi0_hist, dtype=float).ravel()
+    d = np.asarray(dvcs_hist, dtype=float).ravel()
+    m = np.asarray(mixed_hist, dtype=float).ravel()
+
+    nd = int(round(float(np.sum(data))))
+    np0 = int(round(float(np.sum(p))))
+    ndv = int(round(float(np.sum(d))))
+    nmx = int(round(float(np.sum(m))))
+
+    if nd <= 0 or np0 <= 0 or ndv <= 0 or nmx <= 0:
+        return TemplateFitResult(
+            False,
+            "one or more empty histograms",
+            nd, np0, ndv, nmx,
+        )
+    #endif
+
+    # A tiny pseudocount prevents exact-zero support from making the likelihood
+    # pathological while remaining negligible compared with populated bins.
+    eps = 1.0e-12
+    p = (p + eps) / np.sum(p + eps)
+    d = (d + eps) / np.sum(d + eps)
+    m = (m + eps) / np.sum(m + eps)
+
+    T = np.column_stack((p, d, m))
+
+    def objective(yields: np.ndarray) -> float:
+        mu = T @ yields
+        mu = np.clip(mu, 1.0e-12, None)
+        return float(np.sum(mu - data * np.log(mu)))
+    #enddef
+
+    # Start conservatively with a pi0-rich denominator, but all components float.
+    x0 = np.asarray([0.60 * nd, 0.30 * nd, 0.10 * nd], dtype=float)
+
+    result = minimize(
+        objective,
+        x0,
+        method="L-BFGS-B",
+        bounds=((0.0, None), (0.0, None), (0.0, None)),
+        options={"maxiter": 500, "ftol": 1.0e-11},
+    )
+
+    y = np.clip(np.asarray(result.x, dtype=float), 0.0, None)
+    total = float(np.sum(y))
+    if total <= 0.0:
+        return TemplateFitResult(
+            False,
+            "fit returned zero total yield",
+            nd, np0, ndv, nmx,
+        )
+    #endif
+
+    return TemplateFitResult(
+        bool(result.success),
+        str(result.message),
+        nd, np0, ndv, nmx,
+        pi0_yield=float(y[0]),
+        dvcs_yield=float(y[1]),
+        mixed_yield=float(y[2]),
+        pi0_fraction=float(y[0] / total),
+        dvcs_fraction=float(y[1] / total),
+        mixed_fraction=float(y[2] / total),
+        nll=float(result.fun),
+    )
+
+
+def run_stage2_component_fits(
+    period: PeriodConfig,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    mixed_f: Dict[str, np.ndarray],
+    ft_theta_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    mm2_bins: int,
+    probe_m2_bins: int,
+    min_data_count: int,
+    min_template_count: int,
+) -> List[Dict[str, object]]:
+    """
+    Fit data composition independently in each predicted energy/region bin.
+
+    This deliberately avoids assuming that aaogen and dvcsgen reproduce the
+    relative cross sections versus energy or sector. Only their local SHAPES
+    inside each bin are used.
+    """
+    mm2_edges = np.linspace(mm2_min, mm2_max, mm2_bins + 1)
+    pm2_edges = np.linspace(-probe_m2_max, probe_m2_max, probe_m2_bins + 1)
+
+    regions = ["all", "FT"] + [f"FD_S{s}" for s in range(1, 7)]
+    rows: List[Dict[str, object]] = []
+
+    for region_name in regions:
+        masks_region = {
+            "data": stage2_region_mask(data_f, region_name, ft_theta_max),
+            "pi0": stage2_region_mask(pi0_f, region_name, ft_theta_max),
+            "dvcs": stage2_region_mask(dvcs_f, region_name, ft_theta_max),
+            "mixed": stage2_region_mask(mixed_f, region_name, ft_theta_max),
+        }
+
+        for ibin in range(len(PROBE_ENERGY_EDGES) - 1):
+            elo = float(PROBE_ENERGY_EDGES[ibin])
+            ehi = float(PROBE_ENERGY_EDGES[ibin + 1])
+
+            masks = {}
+            for key, feat in (
+                ("data", data_f),
+                ("pi0", pi0_f),
+                ("dvcs", dvcs_f),
+                ("mixed", mixed_f),
+            ):
+                masks[key] = (
+                    feat["valid_tag"]
+                    & masks_region[key]
+                    & (feat["pred_probe_energy"] >= elo)
+                    & (feat["pred_probe_energy"] < ehi)
+                    & (feat["ep_missing_mass2"] >= mm2_min)
+                    & (feat["ep_missing_mass2"] < mm2_max)
+                    & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
+                )
+            #endfor
+
+            counts = {k: int(np.count_nonzero(v)) for k, v in masks.items()}
+
+            row: Dict[str, object] = {
+                "period": period.key,
+                "label": period.label,
+                "region": region_name,
+                "energy_low_GeV": elo,
+                "energy_high_GeV": ehi,
+                "energy_center_GeV": 0.5 * (elo + ehi),
+                "data_count": counts["data"],
+                "aaogen_count": counts["pi0"],
+                "dvcsgen_count": counts["dvcs"],
+                "mixed_count": counts["mixed"],
+            }
+
+            enough = (
+                counts["data"] >= min_data_count
+                and counts["pi0"] >= min_template_count
+                and counts["dvcs"] >= min_template_count
+                and counts["mixed"] >= min_template_count
+            )
+
+            if enough:
+                hd = hist2d_template(data_f, masks["data"], mm2_edges, pm2_edges)
+                hp = hist2d_template(pi0_f, masks["pi0"], mm2_edges, pm2_edges)
+                hv = hist2d_template(dvcs_f, masks["dvcs"], mm2_edges, pm2_edges)
+                hm = hist2d_template(mixed_f, masks["mixed"], mm2_edges, pm2_edges)
+
+                fit = fit_three_component_poisson(hd, hp, hv, hm)
+                row.update({
+                    "fit_success": int(fit.success),
+                    "fit_message": fit.message,
+                    "pi0_yield": fit.pi0_yield,
+                    "dvcs_yield": fit.dvcs_yield,
+                    "mixed_yield": fit.mixed_yield,
+                    "pi0_fraction": fit.pi0_fraction,
+                    "dvcs_fraction": fit.dvcs_fraction,
+                    "mixed_fraction": fit.mixed_fraction,
+                    "nll": fit.nll,
+                })
+            else:
+                row.update({
+                    "fit_success": 0,
+                    "fit_message": "insufficient data/template statistics",
+                    "pi0_yield": float("nan"),
+                    "dvcs_yield": float("nan"),
+                    "mixed_yield": float("nan"),
+                    "pi0_fraction": float("nan"),
+                    "dvcs_fraction": float("nan"),
+                    "mixed_fraction": float("nan"),
+                    "nll": float("nan"),
+                })
+            #endif
+
+            rows.append(row)
+        #endfor
+    #endfor
+
+    return rows
+
+
+def make_stage2_canvases(
+    period: PeriodConfig,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    mixed_f: Dict[str, np.ndarray],
+    fit_rows: List[Dict[str, object]],
+    outdir: Path,
+    ft_theta_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+) -> None:
+    """
+    Compact diagnostic output for Stage II.
+
+    MC curves are shape-normalized in the first canvas. The actual component
+    normalizations are obtained from the local template fits and shown in the
+    second canvas.
+    """
+    from matplotlib.colors import LogNorm
+
+    for old in outdir.glob("*.png"):
+        old.unlink()
+    #endfor
+
+    # Broad common preselection for shape diagnostics.
+    masks = {}
+    for key, feat in (
+        ("data", data_f),
+        ("pi0", pi0_f),
+        ("dvcs", dvcs_f),
+        ("mixed", mixed_f),
+    ):
+        masks[key] = (
+            feat["valid_tag"]
+            & (feat["pred_probe_energy"] >= 0.0)
+            & (feat["pred_probe_energy"] < 6.0)
+            & (feat["ep_missing_mass2"] >= mm2_min)
+            & (feat["ep_missing_mass2"] < mm2_max)
+            & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
+        )
+    #endfor
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.8, 10.2))
+
+    # M_X^2(ep) shape comparison.
+    edges = np.linspace(mm2_min, mm2_max, 220)
+    for key, feat, label in (
+        ("data", data_f, "Data"),
+        ("pi0", pi0_f, "aaogen $\\pi^0$"),
+        ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
+        ("mixed", mixed_f, "Mixed-data wrong tag"),
+    ):
+        vals = feat["ep_missing_mass2"][masks[key]]
+        w = np.ones(len(vals), dtype=float) / max(len(vals), 1)
+        axes[0, 0].hist(vals, bins=edges, weights=w, histtype="step", linewidth=1.2, label=label)
+    #endfor
+    axes[0, 0].axvline(M_PI0 * M_PI0, linestyle="--", linewidth=1.0)
+    axes[0, 0].set_xlabel(r"$M_X^2(ep)$ (GeV$^2$)")
+    axes[0, 0].set_ylabel("Unit-normalized entries")
+    axes[0, 0].set_title("Denominator composition discriminator")
+    axes[0, 0].legend(fontsize=8)
+    axes[0, 0].grid(alpha=0.18)
+
+    # Predicted probe energy.
+    edges_e = np.linspace(-0.5, 6.0, 220)
+    for key, feat, label in (
+        ("data", data_f, "Data"),
+        ("pi0", pi0_f, "aaogen $\\pi^0$"),
+        ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
+        ("mixed", mixed_f, "Mixed-data wrong tag"),
+    ):
+        vals = feat["pred_probe_energy"][masks[key]]
+        w = np.ones(len(vals), dtype=float) / max(len(vals), 1)
+        axes[0, 1].hist(vals, bins=edges_e, weights=w, histtype="step", linewidth=1.2, label=label)
+    #endfor
+    axes[0, 1].axvline(0.40, linestyle="--", linewidth=1.0)
+    axes[0, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0, 1].set_ylabel("Unit-normalized entries")
+    axes[0, 1].set_title("BH/DVCS should concentrate near zero")
+    axes[0, 1].grid(alpha=0.18)
+
+    # Data 2D discriminator.
+    dmask = masks["data"]
+    h = axes[1, 0].hist2d(
+        data_f["ep_missing_mass2"][dmask],
+        data_f["pred_probe_mass2"][dmask],
+        bins=(140, 140),
+        range=((mm2_min, mm2_max), (-probe_m2_max, probe_m2_max)),
+        norm=LogNorm(),
+    )
+    fig.colorbar(h[3], ax=axes[1, 0], label="Entries")
+    axes[1, 0].set_xlabel(r"$M_X^2(ep)$ (GeV$^2$)")
+    axes[1, 0].set_ylabel(r"$(P_{\rm probe}^{pred})^2$ (GeV$^2$)")
+    axes[1, 0].set_title("Real $ep\\gamma$ data")
+
+    # Component fractions vs energy, all regions fit.
+    rr = [
+        r for r in fit_rows
+        if r["region"] == "all"
+        and int(r["fit_success"]) == 1
+        and np.isfinite(r["pi0_fraction"])
+    ]
+    if rr:
+        x = np.asarray([r["energy_center_GeV"] for r in rr])
+        axes[1, 1].plot(x, [r["pi0_fraction"] for r in rr], marker="o", label="$\\pi^0$")
+        axes[1, 1].plot(x, [r["dvcs_fraction"] for r in rr], marker="o", label="BH/DVCS")
+        axes[1, 1].plot(x, [r["mixed_fraction"] for r in rr], marker="o", label="mixed/wrong")
+    #endif
+    axes[1, 1].set_ylim(0.0, 1.05)
+    axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 1].set_ylabel("Fitted fraction")
+    axes[1, 1].set_title("Local data composition fits")
+    axes[1, 1].legend(fontsize=8)
+    axes[1, 1].grid(alpha=0.18)
+
+    fig.suptitle(f"{period.label}: Stage II $ep\\gamma$ denominator composition", fontsize=15)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "canvas_denominator_composition.png", dpi=180)
+    plt.close(fig)
+
+    # Region-by-region pi0 purity.
+    fig, axes = plt.subplots(2, 2, figsize=(13.8, 10.2))
+    region_groups = (
+        ("FT", ["FT"]),
+        ("FD sectors 1-2", ["FD_S1", "FD_S2"]),
+        ("FD sectors 3-4", ["FD_S3", "FD_S4"]),
+        ("FD sectors 5-6", ["FD_S5", "FD_S6"]),
+    )
+    for ax, (title, regions) in zip(axes.flat, region_groups):
+        for region in regions:
+            rr = [
+                r for r in fit_rows
+                if r["region"] == region
+                and int(r["fit_success"]) == 1
+                and np.isfinite(r["pi0_fraction"])
+            ]
+            if not rr:
+                continue
+            #endif
+            ax.plot(
+                [r["energy_center_GeV"] for r in rr],
+                [r["pi0_fraction"] for r in rr],
+                marker="o",
+                ms=3,
+                label=region,
+            )
+        #endfor
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+        ax.set_ylabel("Fitted $\\pi^0$ fraction")
+        ax.set_title(title)
+        ax.grid(alpha=0.18)
+        ax.legend(fontsize=8)
+    #endfor
+
+    fig.suptitle(
+        f"{period.label}: Stage II fitted $\\pi^0$ denominator purity by predicted detector region",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / "canvas_pi0_purity_by_region.png", dpi=180)
+    plt.close(fig)
+
+
+def summarize_stage2(
+    period: PeriodConfig,
+    fit_rows: List[Dict[str, object]],
+    data_total: int,
+    pi0_total: int,
+    dvcs_total: int,
+) -> Dict[str, object]:
+    good = [
+        r for r in fit_rows
+        if r["region"] == "all"
+        and int(r["fit_success"]) == 1
+        and np.isfinite(r["pi0_yield"])
+    ]
+    pi0_yield = float(np.sum([r["pi0_yield"] for r in good])) if good else float("nan")
+    dvcs_yield = float(np.sum([r["dvcs_yield"] for r in good])) if good else float("nan")
+    mixed_yield = float(np.sum([r["mixed_yield"] for r in good])) if good else float("nan")
+    total = pi0_yield + dvcs_yield + mixed_yield if good else float("nan")
+
+    return {
+        "period": period.key,
+        "label": period.label,
+        "epgamma_data_entries_total": int(data_total),
+        "aaogen_epgamma_entries_total": int(pi0_total),
+        "dvcsgen_epgamma_entries_total": int(dvcs_total),
+        "successful_all_region_energy_fits": int(len(good)),
+        "summed_pi0_yield_in_fit_windows": pi0_yield,
+        "summed_dvcs_yield_in_fit_windows": dvcs_yield,
+        "summed_mixed_yield_in_fit_windows": mixed_yield,
+        "summed_pi0_fraction": (
+            pi0_yield / total if good and total > 0.0 else float("nan")
+        ),
+        "summed_dvcs_fraction": (
+            dvcs_yield / total if good and total > 0.0 else float("nan")
+        ),
+        "summed_mixed_fraction": (
+            mixed_yield / total if good and total > 0.0 else float("nan")
+        ),
+    }
+
 # -----------------------------------------------------------------------------
 # Plotting
 # -----------------------------------------------------------------------------
@@ -1460,15 +2091,26 @@ def write_summary_csv(summaries: List[Dict[str, object]], path: Path) -> None:
 # Preflight and driver
 # -----------------------------------------------------------------------------
 
-def preflight(periods: Sequence[PeriodConfig]) -> None:
-    log("Stage-I preflight: checking aaogen epgamma and aaogen eppi0 files.")
+def preflight(
+    periods: Sequence[PeriodConfig],
+    include_stage2: bool,
+) -> None:
+    log("Preflight: checking required photon-efficiency input files.")
     missing: List[str] = []
 
     for p in periods:
-        for label, path in (
+        checks = [
             ("epgamma pi0 MC", p.epgamma_pi0_mc),
             ("eppi0 pi0 MC", p.eppi0_pi0_mc),
-        ):
+        ]
+        if include_stage2:
+            checks.extend([
+                ("epgamma data", p.epgamma_data),
+                ("epgamma BH/DVCS MC", p.epgamma_dvcs_mc),
+            ])
+        #endif
+
+        for label, path in checks:
             if not Path(path).exists():
                 missing.append(f"{p.label}: {label}: {path}")
             else:
@@ -1479,7 +2121,7 @@ def preflight(periods: Sequence[PeriodConfig]) -> None:
 
     if missing:
         raise FileNotFoundError(
-            "The following Stage-I input files do not exist:\n  " + "\n  ".join(missing)
+            "The following required input files do not exist:\n  " + "\n  ".join(missing)
         )
     #endif
 
@@ -1632,6 +2274,84 @@ def parse_args() -> argparse.Namespace:
             "energy/region bin. Default: 100."
         ),
     )
+
+    # Stage-II denominator-composition controls.
+    parser.add_argument(
+        "--stage1-only",
+        action="store_true",
+        help=(
+            "Run only the existing Stage-I/Stage-Ib validation. By default v008 "
+            "also runs the Stage-II epgamma data-composition study."
+        ),
+    )
+    parser.add_argument(
+        "--stage2-output-dir",
+        default="output/photon_efficiency/stage2",
+        help="Stage-II output directory. Default: output/photon_efficiency/stage2.",
+    )
+    parser.add_argument(
+        "--den-fit-mm2-min",
+        type=float,
+        default=-0.08,
+        help="Lower M_X^2(ep) fit edge (GeV^2). Default: -0.08.",
+    )
+    parser.add_argument(
+        "--den-fit-mm2-max",
+        type=float,
+        default=0.10,
+        help="Upper M_X^2(ep) fit edge (GeV^2). Default: 0.10.",
+    )
+    parser.add_argument(
+        "--den-fit-probe-m2-max",
+        type=float,
+        default=0.60,
+        help=(
+            "Fit |M_X^2(epgamma_tag)| up to this value (GeV^2). "
+            "Default: 0.60."
+        ),
+    )
+    parser.add_argument(
+        "--den-fit-mm2-bins",
+        type=int,
+        default=48,
+        help="Number of M_X^2(ep) bins in each Stage-II template fit. Default: 48.",
+    )
+    parser.add_argument(
+        "--den-fit-probe-m2-bins",
+        type=int,
+        default=48,
+        help=(
+            "Number of predicted-probe M^2 bins in each Stage-II template fit. "
+            "Default: 48."
+        ),
+    )
+    parser.add_argument(
+        "--den-min-data-count",
+        type=int,
+        default=250,
+        help=(
+            "Minimum data entries inside a region/energy fit window before a "
+            "Stage-II component fit is attempted. Default: 250."
+        ),
+    )
+    parser.add_argument(
+        "--den-min-template-count",
+        type=int,
+        default=100,
+        help=(
+            "Minimum aaogen and dvcsgen template entries in a region/energy fit "
+            "window. Default: 100."
+        ),
+    )
+    parser.add_argument(
+        "--mix-shift",
+        type=int,
+        default=7919,
+        help=(
+            "Deterministic cyclic row shift used to construct the data-driven "
+            "wrong-tag/accidental template. Default: 7919."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1640,6 +2360,7 @@ def process_period(
     period: PeriodConfig,
     args_dict: Dict[str, object],
     output_dir: str,
+    stage2_output_dir: str,
 ) -> Dict[str, object]:
     """
     Process one run period completely.
@@ -1773,22 +2494,148 @@ def process_period(
         counters=counters,
         clean=clean,
     )
-    summary["wall_time_s"] = float(time.perf_counter() - t0)
-
-    with (period_dir / "stage1_summary.json").open("w") as f:
-        json.dump(summary, f, indent=2, allow_nan=True)
-    #endif
-
     log(
         f"{period.label}: Stage-I retained pairs = "
         f"{counters['accepted_stage1_pairs']:,}; "
         f"invalid Mh_gammagamma = {counters['invalid_pi0_mass']:,}; "
         f"nonpositive reconstructed remainder energy = "
-        f"{counters['nonphysical_reco_probe_energy']:,}; "
-        f"wall time = {summary['wall_time_s']:.1f} s."
+        f"{counters['nonphysical_reco_probe_energy']:,}."
     )
 
-    return {"summary": summary, "resolution_rows": res_rows}
+    stage2_summary: Optional[Dict[str, object]] = None
+    stage2_rows: List[Dict[str, object]] = []
+
+    if not bool(args_dict.get("stage1_only", False)):
+        stage2_dir = Path(stage2_output_dir) / period.key
+        stage2_dir.mkdir(parents=True, exist_ok=True)
+
+        log(f"{period.label}: Stage II reading real epgamma data.")
+        data_arrays, data_tree, data_total = read_branches(
+            period.epgamma_data,
+            EPG_REQUIRED,
+            EPG_OPTIONAL,
+            tree_name,
+            max_entries,
+        )
+        data_epg = extract_epgamma(data_arrays, angle_mode)
+        log(
+            f"{period.label}: data epgamma tree '{data_tree}', "
+            f"loaded {len(data_epg.tag_energy):,}/{data_total:,} entries."
+        )
+
+        log(f"{period.label}: Stage II reading dvcsgen epgamma MC.")
+        dv_arrays, dv_tree, dv_total = read_branches(
+            period.epgamma_dvcs_mc,
+            EPG_REQUIRED,
+            EPG_OPTIONAL,
+            tree_name,
+            max_entries,
+        )
+        dv_epg = extract_epgamma(dv_arrays, angle_mode)
+        log(
+            f"{period.label}: dvcsgen tree '{dv_tree}', "
+            f"loaded {len(dv_epg.tag_energy):,}/{dv_total:,} entries."
+        )
+
+        ft_theta_max = float(args_dict["ft_theta_max"])
+
+        # Reuse `epg`, the aaogen epgamma sample already loaded for Stage I.
+        pi0_f = build_epgamma_denominator_features(
+            period,
+            epg,
+            tag_min=tag_min,
+            tag_max=tag_max,
+            ft_theta_max=ft_theta_max,
+        )
+        data_f = build_epgamma_denominator_features(
+            period,
+            data_epg,
+            tag_min=tag_min,
+            tag_max=tag_max,
+            ft_theta_max=ft_theta_max,
+        )
+        dvcs_f = build_epgamma_denominator_features(
+            period,
+            dv_epg,
+            tag_min=tag_min,
+            tag_max=tag_max,
+            ft_theta_max=ft_theta_max,
+        )
+        mixed_f = build_epgamma_denominator_features(
+            period,
+            data_epg,
+            tag_min=tag_min,
+            tag_max=tag_max,
+            ft_theta_max=ft_theta_max,
+            mixed_tag_shift=int(args_dict["mix_shift"]),
+        )
+
+        log(f"{period.label}: Stage II fitting pi0 + BH/DVCS + mixed-data templates.")
+        stage2_rows = run_stage2_component_fits(
+            period,
+            data_f=data_f,
+            pi0_f=pi0_f,
+            dvcs_f=dvcs_f,
+            mixed_f=mixed_f,
+            ft_theta_max=ft_theta_max,
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+            mm2_bins=int(args_dict["den_fit_mm2_bins"]),
+            probe_m2_bins=int(args_dict["den_fit_probe_m2_bins"]),
+            min_data_count=int(args_dict["den_min_data_count"]),
+            min_template_count=int(args_dict["den_min_template_count"]),
+        )
+        write_rows_csv(
+            stage2_rows,
+            stage2_dir / "denominator_component_fits.csv",
+        )
+
+        make_stage2_canvases(
+            period,
+            data_f=data_f,
+            pi0_f=pi0_f,
+            dvcs_f=dvcs_f,
+            mixed_f=mixed_f,
+            fit_rows=stage2_rows,
+            outdir=stage2_dir,
+            ft_theta_max=ft_theta_max,
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+        )
+
+        stage2_summary = summarize_stage2(
+            period,
+            stage2_rows,
+            data_total=data_total,
+            pi0_total=epg_total,
+            dvcs_total=dv_total,
+        )
+        with (stage2_dir / "stage2_summary.json").open("w") as f:
+            json.dump(stage2_summary, f, indent=2, allow_nan=True)
+        #endwith
+
+        log(
+            f"{period.label}: Stage II completed "
+            f"{stage2_summary['successful_all_region_energy_fits']} "
+            "successful all-region energy fits."
+        )
+    #endif
+
+    summary["wall_time_s"] = float(time.perf_counter() - t0)
+    with (period_dir / "stage1_summary.json").open("w") as f:
+        json.dump(summary, f, indent=2, allow_nan=True)
+    #endwith
+
+    log(f"{period.label}: total worker wall time = {summary['wall_time_s']:.1f} s.")
+
+    return {
+        "summary": summary,
+        "resolution_rows": res_rows,
+        "stage2_summary": stage2_summary,
+        "stage2_rows": stage2_rows,
+    }
 
 def main() -> int:
     args = parse_args()
@@ -1808,6 +2655,15 @@ def main() -> int:
     if args.kdtree_workers < 1:
         raise ValueError("--kdtree-workers must be >= 1.")
     #endif
+    if not (args.den_fit_mm2_min < args.den_fit_mm2_max):
+        raise ValueError("Require --den-fit-mm2-min < --den-fit-mm2-max.")
+    #endif
+    if args.den_fit_probe_m2_max <= 0.0:
+        raise ValueError("--den-fit-probe-m2-max must be > 0.")
+    #endif
+    if args.den_fit_mm2_bins < 8 or args.den_fit_probe_m2_bins < 8:
+        raise ValueError("Stage-II histogram bin counts must each be >= 8.")
+    #endif
 
     requested_workers = min(int(args.workers), 8)
 
@@ -1819,6 +2675,11 @@ def main() -> int:
     outroot = Path(args.output_dir)
     outroot.mkdir(parents=True, exist_ok=True)
 
+    stage2_outroot = Path(args.stage2_output_dir)
+    if not args.stage1_only:
+        stage2_outroot.mkdir(parents=True, exist_ok=True)
+    #endif
+
     log(
         "Directed-tag Stage-I definition: "
         f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
@@ -1829,7 +2690,7 @@ def main() -> int:
         "measures probe-prediction resolution versus energy and predicted region."
     )
 
-    preflight(selected)
+    preflight(selected, include_stage2=not args.stage1_only)
 
     n_processes = min(requested_workers, len(selected))
     log(
@@ -1840,7 +2701,7 @@ def main() -> int:
     provenance = {
         "script": Path(__file__).name,
         "stage": 1,
-        "purpose": "aaogen clean tag association and probe-prediction resolution",
+        "purpose": "Stage I aaogen resolution + Stage II real-data denominator composition",
         "arguments": vars(args),
         "effective_period_workers": n_processes,
         "worker_cap": 8,
@@ -1868,18 +2729,34 @@ def main() -> int:
             "nested_parallelism": (
                 "cKDTree defaults to one thread/process to avoid oversubscription"
             ),
+            "stage2_denominator_model": (
+                "real epgamma data = floated aaogen-pi0 shape + floated dvcsgen "
+                "BH/DVCS shape + floated deterministic mixed-data wrong-tag shape; "
+                "no generator relative normalization is imposed"
+            ),
         },
     }
 
     args_dict = vars(args).copy()
     summaries: List[Dict[str, object]] = []
     all_resolution_rows: List[Dict[str, object]] = []
+    stage2_summaries: List[Dict[str, object]] = []
+    all_stage2_rows: List[Dict[str, object]] = []
 
     if n_processes == 1:
         for period in selected:
-            result = process_period(period, args_dict, str(outroot))
+            result = process_period(
+                period,
+                args_dict,
+                str(outroot),
+                str(stage2_outroot),
+            )
             summaries.append(result["summary"])
             all_resolution_rows.extend(result["resolution_rows"])
+            if result["stage2_summary"] is not None:
+                stage2_summaries.append(result["stage2_summary"])
+                all_stage2_rows.extend(result["stage2_rows"])
+            #endif
         #endfor
     else:
         with ProcessPoolExecutor(max_workers=n_processes) as executor:
@@ -1889,6 +2766,7 @@ def main() -> int:
                     period,
                     args_dict,
                     str(outroot),
+                    str(stage2_outroot),
                 ): period
                 for period in selected
             }
@@ -1899,6 +2777,10 @@ def main() -> int:
                     result = future.result()
                     summaries.append(result["summary"])
                     all_resolution_rows.extend(result["resolution_rows"])
+                    if result["stage2_summary"] is not None:
+                        stage2_summaries.append(result["stage2_summary"])
+                        all_stage2_rows.extend(result["stage2_rows"])
+                    #endif
                 except Exception as exc:
                     for other in future_to_period:
                         other.cancel()
@@ -1941,9 +2823,58 @@ def main() -> int:
             indent=2,
             allow_nan=True,
         )
-    #endif
+    #endwith
+
+    if not args.stage1_only:
+        stage2_summaries.sort(
+            key=lambda row: order.get(str(row["period"]), 999)
+        )
+        write_summary_csv(
+            stage2_summaries,
+            stage2_outroot / "stage2_summary.csv",
+        )
+
+        if all_stage2_rows:
+            region_order2 = {
+                "all": 0,
+                "FT": 1,
+                **{f"FD_S{s}": s + 1 for s in range(1, 7)},
+            }
+            all_stage2_rows.sort(
+                key=lambda r: (
+                    order.get(str(r["period"]), 999),
+                    region_order2.get(str(r["region"]), 999),
+                    float(r["energy_low_GeV"]),
+                )
+            )
+            write_rows_csv(
+                all_stage2_rows,
+                stage2_outroot / "denominator_component_fits.csv",
+            )
+        #endif
+
+        with (stage2_outroot / "stage2_summary.json").open("w") as f:
+            json.dump(
+                {
+                    "method": (
+                        "Three-component local extended-Poisson template fits. "
+                        "aaogen models exclusive-pi0 missing-photon tags; dvcsgen "
+                        "models genuine BH/DVCS epgamma; a deterministic mixed-data "
+                        "tag sample models wrong/accidental photon associations. "
+                        "All three normalizations float independently."
+                    ),
+                    "period_summaries": stage2_summaries,
+                },
+                f,
+                indent=2,
+                allow_nan=True,
+            )
+        #endwith
 
     log(f"Done. Stage-I outputs are in {outroot}.")
+    if not args.stage1_only:
+        log(f"Stage-II outputs are in {stage2_outroot}.")
+    #endif
     return 0
 
 
