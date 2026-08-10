@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v006.py
+derive_photon_efficiency_scale_factors_v007.py
 
 Stage-I development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -88,23 +88,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v006.py
+    python derive_photon_efficiency_scale_factors_v007.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v006.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v007.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v006.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v007.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v006.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v007.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v006.py --angles rad
+    python derive_photon_efficiency_scale_factors_v007.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -656,11 +656,37 @@ def build_stage1_arrays(
         frac_delta_E = delta_E / pred_E
     #endwith
 
-    # CLAS12 FD sector convention based only on azimuth. Sector centers are
-    # approximately 0, 60, 120, 180, -120, -60 degrees.
-    pred_sector = (
-        np.floor(((pred_phi_deg + 30.0) % 360.0) / 60.0).astype(np.int16) + 1
-    )
+    # Exact CLAS12 FD sector convention supplied for this analysis:
+    #   S1: [330,360) U [0,30)
+    #   S2: [ 30, 90)
+    #   S3: [ 90,150)
+    #   S4: [150,210)
+    #   S5: [210,270)
+    #   S6: [270,330)
+    #
+    # Convert predicted lab phi to [0,360) and assign the wrapped ranges
+    # explicitly rather than relying on an approximate sector-center formula.
+    pred_phi_360 = pred_phi_deg % 360.0
+    pred_sector = np.full(len(pred_phi_360), -1, dtype=np.int16)
+
+    pred_sector[
+        (pred_phi_360 >= 330.0) | (pred_phi_360 < 30.0)
+    ] = 1
+    pred_sector[
+        (pred_phi_360 >= 30.0) & (pred_phi_360 < 90.0)
+    ] = 2
+    pred_sector[
+        (pred_phi_360 >= 90.0) & (pred_phi_360 < 150.0)
+    ] = 3
+    pred_sector[
+        (pred_phi_360 >= 150.0) & (pred_phi_360 < 210.0)
+    ] = 4
+    pred_sector[
+        (pred_phi_360 >= 210.0) & (pred_phi_360 < 270.0)
+    ] = 5
+    pred_sector[
+        (pred_phi_360 >= 270.0) & (pred_phi_360 < 330.0)
+    ] = 6
 
     detector_tag = np.full(n, -999, dtype=np.int16)
     if "detector2" in epg.raw:
@@ -773,8 +799,8 @@ def resolution_rows(
 
     Region assignment is based on the PREDICTED probe direction so that the same
     definition can later be applied when the probe is not reconstructed:
-      FT-like: theta_pred < ft_theta_max
-      FD S1..S6: theta_pred >= ft_theta_max, sector from phi_pred
+      FT-like: theta_pred <= ft_theta_max
+      FD S1..S6: theta_pred > ft_theta_max, sector from exact wrapped phi ranges
 
     The exact FT/FD geometric/fiducial acceptance will be refined later.
     """
@@ -787,11 +813,11 @@ def resolution_rows(
 
     region_masks: List[Tuple[str, np.ndarray]] = [
         ("all", np.ones(len(E), dtype=bool)),
-        ("FT_like", theta < ft_theta_max),
+        ("FT_like", theta <= ft_theta_max),
     ]
     for s in range(1, 7):
         region_masks.append(
-            (f"FD_S{s}", (theta >= ft_theta_max) & (sector == s))
+            (f"FD_S{s}", (theta > ft_theta_max) & (sector == s))
         )
     #endfor
 
@@ -1590,10 +1616,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ft-theta-max",
         type=float,
-        default=5.0,
+        default=5.5,
         help=(
-            "Predicted-probe polar-angle boundary (deg) used only for the "
-            "Stage-Ib FT-like versus FD-like resolution diagnostic. Default: 5.0."
+            "Predicted-probe polar-angle boundary (deg) used for the Stage-Ib "
+            "FT-like versus FD-like resolution diagnostic. FT-like is defined "
+            "as theta_pred <= this value. Default: 5.5."
         ),
     )
     parser.add_argument(
@@ -1829,6 +1856,11 @@ def main() -> int:
         "performance_notes": {
             "parallelization": "independent run periods use separate processes",
             "pair_level_npz": "disabled by default; enable with --save-npz",
+            "detector_region_definition": (
+                "FT-like: theta_pred <= 5.5 deg by default; FD sectors use exact "
+                "wrapped phi intervals [330,30), [30,90), [90,150), [150,210), "
+                "[210,270), [270,330)"
+            ),
             "kdtree": (
                 "search coordinates use float32; final physical matching cut "
                 "uses original float64 momentum components"
