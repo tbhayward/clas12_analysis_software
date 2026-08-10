@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v009.py
+derive_photon_efficiency_scale_factors_v010.py
 
 Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -94,23 +94,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v009.py
+    python derive_photon_efficiency_scale_factors_v010.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v009.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v010.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v009.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v010.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v009.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v010.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v009.py --angles rad
+    python derive_photon_efficiency_scale_factors_v010.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -1583,6 +1583,46 @@ def unit_hist(ax, values: np.ndarray, bins: np.ndarray, label: str) -> None:
     ax.hist(vals, bins=bins, weights=weights, histtype="step", linewidth=1.15, label=label)
 
 
+
+def safe_finalize_figure(
+    fig,
+    output_path: Path,
+    rect: Tuple[float, float, float, float] = (0.0, 0.0, 1.0, 0.96),
+) -> None:
+    """
+    Finalize and save a Matplotlib figure without allowing a layout-only
+    formatting problem to abort the physics analysis.
+
+    First try tight_layout. If a mathtext/layout exception occurs, report it
+    and save with conservative manual subplot spacing. The figure is always
+    closed by the caller after this returns.
+    """
+    try:
+        fig.tight_layout(rect=rect)
+    except Exception as exc:
+        log(
+            f"WARNING: tight_layout failed for {output_path.name}: {exc}. "
+            "Saving with manual subplot spacing instead."
+        )
+        fig.subplots_adjust(
+            left=0.08,
+            right=0.97,
+            bottom=0.10,
+            top=rect[3] - 0.02,
+            wspace=0.28,
+            hspace=0.30,
+        )
+    #endtry
+
+    try:
+        fig.savefig(output_path, dpi=180)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to save figure {output_path}: {exc}"
+        ) from exc
+    #endtry
+
+
 def make_stage2_canvases(
     period: PeriodConfig,
     data_f: Dict[str, np.ndarray],
@@ -1658,7 +1698,7 @@ def make_stage2_canvases(
             label,
         )
     #endfor
-    axes[0, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[0, 1].set_ylabel("Unit-normalized entries")
     axes[0, 1].set_title("Predicted missing-photon energy")
     axes[0, 1].grid(alpha=0.18)
@@ -1678,9 +1718,9 @@ def make_stage2_canvases(
                 label,
             )
         #endfor
-        axes[1, 0].set_xlabel(r"stored $p_{T,\rm miss}$ (GeV)")
+        axes[1, 0].set_xlabel(r"stored $p_{T,\mathrm{miss}}$ (GeV)")
         axes[1, 0].set_ylabel("Unit-normalized entries")
-        axes[1, 0].set_title("Skim-level $p_{T,\rm miss}$ diagnostic")
+        axes[1, 0].set_title(r"Skim-level $p_{T,\mathrm{miss}}$ diagnostic")
     else:
         axes[1, 0].text(0.5, 0.5, "pTmiss branch unavailable", ha="center", va="center")
         axes[1, 0].set_axis_off()
@@ -1709,7 +1749,7 @@ def make_stage2_canvases(
         #endfor
         axes[1, 1].set_xlabel(r"stored $\theta_{\gamma\gamma}$ (deg)")
         axes[1, 1].set_ylabel("Unit-normalized entries")
-        axes[1, 1].set_title("$\\theta_{\\gamma\\gamma}$ diagnostic")
+        axes[1, 1].set_title(r"$\theta_{\gamma\gamma}$ diagnostic")
     else:
         # Fall back to computed E-p, still independent of extra skim branches.
         for key, feat, label in (
@@ -1735,8 +1775,7 @@ def make_stage2_canvases(
         f"(beam {period.beam_energy:.4f} GeV)",
         fontsize=15,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(outdir / "canvas_denominator_discriminants.png", dpi=180)
+    safe_finalize_figure(fig, outdir / "canvas_denominator_discriminants.png", rect=(0, 0, 1, 0.96))
     plt.close(fig)
 
     # --------------------------------------------------------------
@@ -1785,22 +1824,22 @@ def make_stage2_canvases(
         #endfor
     #endif
 
-    axes[0, 0].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0, 0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[0, 0].set_ylabel("Nominal fitted fraction")
     axes[0, 0].set_title("Two-component nominal composition")
     axes[0, 0].grid(alpha=0.18)
 
-    axes[0, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[0, 1].set_ylabel("Goodness statistic / ndof")
     axes[0, 1].set_title("Nominal fit quality")
     axes[0, 1].grid(alpha=0.18)
 
-    axes[1, 0].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1, 0].set_ylabel("Entries")
     axes[1, 0].set_title("All-region fit statistics")
     axes[1, 0].grid(alpha=0.18)
 
-    axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1, 1].set_ylabel(r"max $|\Delta f_{\pi^0}|$")
     axes[1, 1].set_title("Sensitivity to adding mixed-data component")
     axes[1, 1].grid(alpha=0.18)
@@ -1809,8 +1848,7 @@ def make_stage2_canvases(
         f"{period.label}: Stage II nominal denominator fits",
         fontsize=15,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    fig.savefig(outdir / "canvas_nominal_fit_summary.png", dpi=180)
+    safe_finalize_figure(fig, outdir / "canvas_nominal_fit_summary.png", rect=(0, 0, 1, 0.96))
     plt.close(fig)
 
     # --------------------------------------------------------------
@@ -1833,7 +1871,7 @@ def make_stage2_canvases(
         )
     #endif
     axes[0].set_ylim(0.0, 1.05)
-    axes[0].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[0].set_ylabel("Fitted $\\pi^0$ fraction")
     axes[0].set_title("FT")
     axes[0].grid(alpha=0.18)
@@ -1858,7 +1896,7 @@ def make_stage2_canvases(
         )
     #endfor
     axes[1].set_ylim(0.0, 1.05)
-    axes[1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1].set_ylabel("Fitted $\\pi^0$ fraction")
     axes[1].set_title("FD sectors")
     axes[1].legend(ncol=2, fontsize=8)
@@ -1868,8 +1906,7 @@ def make_stage2_canvases(
         f"{period.label}: nominal $\\pi^0$ denominator purity by predicted region",
         fontsize=15,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
-    fig.savefig(outdir / "canvas_pi0_purity_by_region.png", dpi=180)
+    safe_finalize_figure(fig, outdir / "canvas_pi0_purity_by_region.png", rect=(0, 0, 1, 0.94))
     plt.close(fig)
 
     # --------------------------------------------------------------
@@ -1921,8 +1958,7 @@ def make_stage2_canvases(
         f"{period.label}: representative nominal two-component fits",
         fontsize=15,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.93))
-    fig.savefig(outdir / "canvas_representative_nominal_fits.png", dpi=180)
+    safe_finalize_figure(fig, outdir / "canvas_representative_nominal_fits.png", rect=(0, 0, 1, 0.93))
     plt.close(fig)
 
 
@@ -2236,7 +2272,7 @@ def make_plots(
         arrays["reco_probe_energy"][clean],
         bins=bins_e, histtype="step", linewidth=1.3, label="Clean association"
     )
-    axes[1, 0].set_xlabel(r"$E_{\rm probe}^{reco}$ (GeV)")
+    axes[1, 0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{reco}}$ (GeV)")
     axes[1, 0].set_ylabel("Entries")
     axes[1, 0].set_title("Companion-photon energy")
     axes[1, 0].legend()
@@ -2285,8 +2321,8 @@ def make_plots(
     )
     fig.colorbar(h[3], ax=axes[0, 0], label="Entries")
     axes[0, 0].plot([0, 7], [0, 7], linestyle="--", linewidth=1.0)
-    axes[0, 0].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
-    axes[0, 0].set_ylabel(r"$E_{\rm probe}^{reco}$ (GeV)")
+    axes[0, 0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[0, 0].set_ylabel(r"$E_{\mathrm{probe}}^{\mathrm{reco}}$ (GeV)")
     axes[0, 0].set_title("Predicted vs reconstructed energy")
 
     core_a = arrays["probe_opening_residual_deg"][clean]
@@ -2300,7 +2336,7 @@ def make_plots(
     de = arrays["probe_delta_E"][clean]
     de = de[np.isfinite(de)]
     axes[1, 0].hist(de, bins=500, range=(-1.0, 1.0), histtype="step", linewidth=1.25)
-    axes[1, 0].set_xlabel(r"$E_{\rm reco}-E_{\rm pred}$ (GeV)")
+    axes[1, 0].set_xlabel(r"$E_{\mathrm{reco}}-E_{\mathrm{pred}}$ (GeV)")
     axes[1, 0].set_ylabel("Entries")
     axes[1, 0].set_title("Energy residual (fine core binning)")
     axes[1, 0].grid(alpha=0.18)
@@ -2313,7 +2349,7 @@ def make_plots(
         range=((0.4, 7.0), (0.0, 30.0)), norm=LogNorm()
     )
     fig.colorbar(h[3], ax=axes[1, 1], label="Entries")
-    axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1, 1].set_ylabel(r"$\Delta\alpha_{\rm probe}$ (deg)")
     axes[1, 1].set_title("Angular resolution vs predicted energy")
 
@@ -2344,7 +2380,7 @@ def make_plots(
         (axes[0, 1], "95%"),
         (axes[1, 0], "99%"),
     ):
-        ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
         ax.set_ylabel(r"$\Delta\alpha$ quantile (deg)")
         ax.set_title(f"{q} containment")
         ax.grid(alpha=0.18)
@@ -2359,7 +2395,7 @@ def make_plots(
         where="mid",
     )
     axes[1, 1].set_yscale("log")
-    axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    axes[1, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1, 1].set_ylabel("Clean entries")
     axes[1, 1].set_title("Statistics by predicted energy")
     axes[1, 1].grid(alpha=0.18)
@@ -3292,7 +3328,7 @@ def main() -> int:
                         other.cancel()
                     #endfor
                     raise RuntimeError(
-                        f"Parallel Stage-I processing failed for {period.label}: {exc}"
+                        f"Parallel photon-efficiency processing failed for {period.label}: {exc}"
                     ) from exc
                 #endtry
             #endfor
