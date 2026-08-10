@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v010.py
+derive_photon_efficiency_scale_factors_v011.py
 
 Stage-I + Stage-II development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -8,10 +8,11 @@ efficiency measurement in CLAS12 RGA.
 THIS VERSION DOES NOT YET FORM THE FINAL DATA/MC EFFICIENCY SCALE FACTOR.
 
 Stage I validates the exclusive-pi0 tag-and-probe kinematics and derives
-probe-prediction resolution. Stage II begins the real-data denominator
-extraction with a nominal two-component decomposition into exclusive-pi0 and
-BH/DVCS. Mixed-data wrong-tag samples are retained as diagnostic stress tests,
-not nominal fit components.
+probe-prediction resolution. Stage II studies the real-data denominator using local two-component
+aaogen-pi0 + dvcsgen BH/DVCS fits under several alternative discriminator
+choices. The spread in the extracted pi0 fraction is used to test robustness
+against template-shape mismodeling. Mixed-data wrong-tag samples remain
+diagnostic stress tests, not nominal fit components.
 
 Its purpose is to validate the central tag-and-probe kinematics using the
 exclusive-pi0 aaogen samples:
@@ -94,23 +95,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v010.py
+    python derive_photon_efficiency_scale_factors_v011.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v010.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v011.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v010.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v011.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v010.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v011.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v010.py --angles rad
+    python derive_photon_efficiency_scale_factors_v011.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -905,16 +906,23 @@ def write_rows_csv(rows: List[Dict[str, object]], path: Path) -> None:
     #endwith
 
 # -----------------------------------------------------------------------------
-# Stage-II: real epgamma denominator composition
+# Stage-II: real epgamma denominator composition and discriminator stability
 # -----------------------------------------------------------------------------
+
+STAGE2_DISCRIMINATORS: Tuple[str, ...] = (
+    "mx2_ep_1d",
+    "probe_m2_1d",
+    "mx2_ep_x_probe_m2",
+    "mx2_ep_x_pTmiss",
+    "mx2_ep_x_theta_gg",
+)
+
+STAGE2_NOMINAL_DISCRIMINATOR = "mx2_ep_x_probe_m2"
+
 
 def stage2_energy_edges(max_energy: float) -> np.ndarray:
     """
     Return Stage-II probe-energy edges, truncated at the supported data endpoint.
-
-    Stage I intentionally keeps the full high-energy resolution binning. Stage II
-    defaults to <= 2 GeV because the real epgamma exclusivity skim has an observed
-    missing-energy endpoint there.
     """
     base = PROBE_ENERGY_EDGES[PROBE_ENERGY_EDGES < max_energy]
     edges = np.concatenate((base, np.asarray([max_energy], dtype=float)))
@@ -985,22 +993,12 @@ def build_epgamma_denominator_features(
     """
     Vectorized Stage-II kinematics for an epgamma sample.
 
-    Nominal physical discriminants:
-      P_X(ep)      = P_initial - P_e - P_p
-      P_probe^pred = P_initial - P_e - P_p - k_tag
+    The physical variables are recomputed from e, p, and the tag photon using
+    the period-specific beam energy.
 
-    For exclusive pi0 with an unreconstructed probe:
-      M_X^2(ep) ~ m_pi0^2,
-      E_probe^pred > 0,
-      (P_probe^pred)^2 ~ 0.
-
-    For genuine BH/DVCS:
-      M_X^2(ep) ~ 0,
-      E_probe^pred ~ 0.
-
-    If mixed_tag_shift != 0, only the tag photon is cyclically shifted. Such
-    mixed events are used ONLY as an uncorrelated-photon diagnostic in v009,
-    never as a nominal floated component.
+    Stored pTmiss / theta_gamma_gamma are preserved only for the unshifted
+    physical samples. They are used as alternative discriminator diagnostics,
+    not as nominal cuts.
     """
     e3 = np.asarray(epg.electron_p3, dtype=float)
     p3 = np.asarray(epg.proton_p3, dtype=float)
@@ -1081,9 +1079,6 @@ def build_epgamma_denominator_features(
         "valid_tag": valid,
     }
 
-    # Preserve original skim-level exclusivity quantities as optional diagnostics.
-    # For mixed events these are intentionally omitted because the stored values
-    # correspond to the original, unshifted photon.
     if not mixed_tag_shift:
         for raw_name, out_name in (
             ("Emiss2", "stored_Emiss2"),
@@ -1127,18 +1122,120 @@ def stage2_region_mask(
     raise ValueError(f"Unknown Stage-II region '{region_name}'")
 
 
-def hist2d_template(
-    features: Dict[str, np.ndarray],
-    mask: np.ndarray,
-    mm2_edges: np.ndarray,
-    probe_m2_edges: np.ndarray,
+def stage2_fit_mask(
+    feat: Dict[str, np.ndarray],
+    region_name: str,
+    ft_theta_max: float,
+    elo: float,
+    ehi: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
 ) -> np.ndarray:
-    h, _, _ = np.histogram2d(
-        features["ep_missing_mass2"][mask],
-        features["pred_probe_mass2"][mask],
-        bins=(mm2_edges, probe_m2_edges),
+    return (
+        feat["valid_tag"]
+        & stage2_region_mask(feat, region_name, ft_theta_max)
+        & (feat["pred_probe_energy"] >= elo)
+        & (feat["pred_probe_energy"] < ehi)
+        & (feat["ep_missing_mass2"] >= mm2_min)
+        & (feat["ep_missing_mass2"] < mm2_max)
+        & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
     )
-    return np.asarray(h, dtype=float)
+
+
+def discriminator_available(
+    discriminator: str,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+) -> bool:
+    if discriminator == "mx2_ep_x_pTmiss":
+        return all("stored_pTmiss" in f for f in (data_f, pi0_f, dvcs_f))
+    #endif
+    if discriminator == "mx2_ep_x_theta_gg":
+        return all("stored_theta_gamma_gamma" in f for f in (data_f, pi0_f, dvcs_f))
+    #endif
+    return True
+
+
+def histogram_for_discriminator(
+    discriminator: str,
+    feat: Dict[str, np.ndarray],
+    mask: np.ndarray,
+    *,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    mm2_bins_2d: int,
+    probe_m2_bins_2d: int,
+    bins_1d: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+) -> np.ndarray:
+    """
+    Build one histogram for the requested discriminator.
+
+    The same baseline energy/region/MM2/probe-M2 support mask is applied before
+    constructing every discriminator so the extracted fractions are compared on
+    as nearly identical an event sample as possible.
+    """
+    if discriminator == "mx2_ep_1d":
+        h, _ = np.histogram(
+            feat["ep_missing_mass2"][mask],
+            bins=np.linspace(mm2_min, mm2_max, bins_1d + 1),
+        )
+        return h.astype(float)
+    #endif
+
+    if discriminator == "probe_m2_1d":
+        h, _ = np.histogram(
+            feat["pred_probe_mass2"][mask],
+            bins=np.linspace(-probe_m2_max, probe_m2_max, bins_1d + 1),
+        )
+        return h.astype(float)
+    #endif
+
+    if discriminator == "mx2_ep_x_probe_m2":
+        h, _, _ = np.histogram2d(
+            feat["ep_missing_mass2"][mask],
+            feat["pred_probe_mass2"][mask],
+            bins=(
+                np.linspace(mm2_min, mm2_max, mm2_bins_2d + 1),
+                np.linspace(-probe_m2_max, probe_m2_max, probe_m2_bins_2d + 1),
+            ),
+        )
+        return h.astype(float)
+    #endif
+
+    if discriminator == "mx2_ep_x_pTmiss":
+        local = mask & np.isfinite(feat["stored_pTmiss"])
+        h, _, _ = np.histogram2d(
+            feat["ep_missing_mass2"][local],
+            feat["stored_pTmiss"][local],
+            bins=(
+                np.linspace(mm2_min, mm2_max, mm2_bins_2d + 1),
+                np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+            ),
+        )
+        return h.astype(float)
+    #endif
+
+    if discriminator == "mx2_ep_x_theta_gg":
+        local = mask & np.isfinite(feat["stored_theta_gamma_gamma"])
+        h, _, _ = np.histogram2d(
+            feat["ep_missing_mass2"][local],
+            feat["stored_theta_gamma_gamma"][local],
+            bins=(
+                np.linspace(mm2_min, mm2_max, mm2_bins_2d + 1),
+                np.linspace(0.0, theta_max, theta_bins + 1),
+            ),
+        )
+        return h.astype(float)
+    #endif
+
+    raise ValueError(f"Unknown Stage-II discriminator '{discriminator}'")
 
 
 @dataclass
@@ -1154,7 +1251,6 @@ class TwoComponentFitResult:
     dvcs_fraction: float = float("nan")
     nll: float = float("nan")
     poisson_deviance: float = float("nan")
-    pearson_chi2: float = float("nan")
     ndof: int = 0
 
 
@@ -1174,7 +1270,11 @@ def normalized_template(hist: np.ndarray) -> np.ndarray:
     return (x + eps) / np.sum(x + eps)
 
 
-def poisson_fit_quality(data: np.ndarray, mu: np.ndarray, n_parameters: int) -> Tuple[float, float, int]:
+def poisson_deviance_quality(
+    data: np.ndarray,
+    mu: np.ndarray,
+    n_parameters: int,
+) -> Tuple[float, int]:
     data = np.asarray(data, dtype=float)
     mu = np.clip(np.asarray(mu, dtype=float), 1.0e-12, None)
 
@@ -1183,10 +1283,9 @@ def poisson_fit_quality(data: np.ndarray, mu: np.ndarray, n_parameters: int) -> 
     terms[positive] = data[positive] * np.log(data[positive] / mu[positive])
     deviance = 2.0 * float(np.sum(mu - data + terms))
 
-    pearson = float(np.sum((data - mu) ** 2 / mu))
     populated = int(np.count_nonzero((data > 0.0) | (mu > 1.0e-10)))
     ndof = max(1, populated - n_parameters)
-    return deviance, pearson, ndof
+    return deviance, ndof
 
 
 def fit_two_component_poisson(
@@ -1195,12 +1294,11 @@ def fit_two_component_poisson(
     dvcs_hist: np.ndarray,
 ) -> TwoComponentFitResult:
     """
-    Nominal Stage-II extended binned Poisson fit:
+    Extended binned Poisson fit:
 
-      mu_i = N_pi0 T_pi0_i + N_DVCS T_DVCS_i
+      mu_i = N_pi0 T_pi0_i + N_DVCS T_DVCS_i.
 
-    aaogen and dvcsgen provide only local template SHAPES. Their relative
-    generator normalizations are never imposed.
+    aaogen and dvcsgen provide local shapes only.
     """
     data = np.asarray(data_hist, dtype=float).ravel()
     p_raw = np.asarray(pi0_hist, dtype=float).ravel()
@@ -1242,7 +1340,7 @@ def fit_two_component_poisson(
     #endif
 
     mu = T @ y
-    deviance, pearson, ndof = poisson_fit_quality(data, mu, n_parameters=2)
+    deviance, ndof = poisson_deviance_quality(data, mu, n_parameters=2)
 
     return TwoComponentFitResult(
         success=bool(result.success),
@@ -1256,7 +1354,6 @@ def fit_two_component_poisson(
         dvcs_fraction=float(y[1] / total),
         nll=float(result.fun),
         poisson_deviance=deviance,
-        pearson_chi2=pearson,
         ndof=ndof,
     )
 
@@ -1268,9 +1365,8 @@ def fit_three_component_diagnostic(
     mixed_hist: np.ndarray,
 ) -> ThreeComponentDiagnosticResult:
     """
-    Diagnostic only. The mixed template is allowed to float to test how much
-    the nominal pi0 yield could move if an uncorrelated-photon component were
-    admitted. It is NOT the production denominator result.
+    Diagnostic only: allow one mixed-event component to float and record the
+    induced pi0-fraction shift. Never used for the nominal denominator.
     """
     data = np.asarray(data_hist, dtype=float).ravel()
     if (
@@ -1317,28 +1413,7 @@ def fit_three_component_diagnostic(
     )
 
 
-def stage2_fit_mask(
-    feat: Dict[str, np.ndarray],
-    region_name: str,
-    ft_theta_max: float,
-    elo: float,
-    ehi: float,
-    mm2_min: float,
-    mm2_max: float,
-    probe_m2_max: float,
-) -> np.ndarray:
-    return (
-        feat["valid_tag"]
-        & stage2_region_mask(feat, region_name, ft_theta_max)
-        & (feat["pred_probe_energy"] >= elo)
-        & (feat["pred_probe_energy"] < ehi)
-        & (feat["ep_missing_mass2"] >= mm2_min)
-        & (feat["ep_missing_mass2"] < mm2_max)
-        & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
-    )
-
-
-def run_stage2_nominal_fits(
+def run_stage2_discriminator_fits(
     period: PeriodConfig,
     data_f: Dict[str, np.ndarray],
     pi0_f: Dict[str, np.ndarray],
@@ -1348,19 +1423,24 @@ def run_stage2_nominal_fits(
     mm2_min: float,
     mm2_max: float,
     probe_m2_max: float,
-    mm2_bins: int,
-    probe_m2_bins: int,
+    mm2_bins_2d: int,
+    probe_m2_bins_2d: int,
+    bins_1d: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
     min_data_count: int,
     min_template_count: int,
 ) -> List[Dict[str, object]]:
     """
-    Nominal local aaogen + dvcsgen decomposition, fit independently in every
-    period / predicted region / supported probe-energy bin.
-    """
-    mm2_edges = np.linspace(mm2_min, mm2_max, mm2_bins + 1)
-    pm2_edges = np.linspace(-probe_m2_max, probe_m2_max, probe_m2_bins + 1)
-    edges = stage2_energy_edges(max_probe_energy)
+    Fit all available discriminators independently in each
+    period / region / energy bin.
 
+    The comparison among extracted pi0 fractions is the central Stage-II
+    robustness test.
+    """
+    edges = stage2_energy_edges(max_probe_energy)
     regions = ["all", "FT"] + [f"FD_S{s}" for s in range(1, 7)]
     rows: List[Dict[str, object]] = []
 
@@ -1369,86 +1449,231 @@ def run_stage2_nominal_fits(
             elo = float(edges[ibin])
             ehi = float(edges[ibin + 1])
 
-            md = stage2_fit_mask(
-                data_f, region_name, ft_theta_max, elo, ehi,
-                mm2_min, mm2_max, probe_m2_max
-            )
-            mp = stage2_fit_mask(
-                pi0_f, region_name, ft_theta_max, elo, ehi,
-                mm2_min, mm2_max, probe_m2_max
-            )
-            mv = stage2_fit_mask(
-                dvcs_f, region_name, ft_theta_max, elo, ehi,
-                mm2_min, mm2_max, probe_m2_max
-            )
-
-            cd = int(np.count_nonzero(md))
-            cp = int(np.count_nonzero(mp))
-            cv = int(np.count_nonzero(mv))
-
-            row: Dict[str, object] = {
-                "period": period.key,
-                "label": period.label,
-                "beam_energy_GeV": period.beam_energy,
-                "region": region_name,
-                "energy_low_GeV": elo,
-                "energy_high_GeV": ehi,
-                "energy_center_GeV": 0.5 * (elo + ehi),
-                "data_count": cd,
-                "aaogen_count": cp,
-                "dvcsgen_count": cv,
+            masks = {
+                "data": stage2_fit_mask(
+                    data_f, region_name, ft_theta_max, elo, ehi,
+                    mm2_min, mm2_max, probe_m2_max
+                ),
+                "pi0": stage2_fit_mask(
+                    pi0_f, region_name, ft_theta_max, elo, ehi,
+                    mm2_min, mm2_max, probe_m2_max
+                ),
+                "dvcs": stage2_fit_mask(
+                    dvcs_f, region_name, ft_theta_max, elo, ehi,
+                    mm2_min, mm2_max, probe_m2_max
+                ),
             }
 
-            enough = (
-                cd >= min_data_count
-                and cp >= min_template_count
-                and cv >= min_template_count
-            )
-            if enough:
-                hd = hist2d_template(data_f, md, mm2_edges, pm2_edges)
-                hp = hist2d_template(pi0_f, mp, mm2_edges, pm2_edges)
-                hv = hist2d_template(dvcs_f, mv, mm2_edges, pm2_edges)
-                fit = fit_two_component_poisson(hd, hp, hv)
+            raw_counts = {
+                key: int(np.count_nonzero(mask))
+                for key, mask in masks.items()
+            }
 
-                row.update({
-                    "fit_success": int(fit.success),
-                    "fit_message": fit.message,
-                    "pi0_yield": fit.pi0_yield,
-                    "dvcs_yield": fit.dvcs_yield,
-                    "pi0_fraction": fit.pi0_fraction,
-                    "dvcs_fraction": fit.dvcs_fraction,
-                    "nll": fit.nll,
-                    "poisson_deviance": fit.poisson_deviance,
-                    "pearson_chi2": fit.pearson_chi2,
-                    "ndof": fit.ndof,
-                    "deviance_per_ndof": (
-                        fit.poisson_deviance / fit.ndof if fit.ndof > 0 else float("nan")
+            for disc in STAGE2_DISCRIMINATORS:
+                row: Dict[str, object] = {
+                    "period": period.key,
+                    "label": period.label,
+                    "beam_energy_GeV": period.beam_energy,
+                    "region": region_name,
+                    "energy_low_GeV": elo,
+                    "energy_high_GeV": ehi,
+                    "energy_center_GeV": 0.5 * (elo + ehi),
+                    "discriminator": disc,
+                    "is_nominal_discriminator": int(
+                        disc == STAGE2_NOMINAL_DISCRIMINATOR
                     ),
-                    "pearson_per_ndof": (
-                        fit.pearson_chi2 / fit.ndof if fit.ndof > 0 else float("nan")
-                    ),
-                })
-            else:
+                    "data_count_pre_discriminator": raw_counts["data"],
+                    "aaogen_count_pre_discriminator": raw_counts["pi0"],
+                    "dvcsgen_count_pre_discriminator": raw_counts["dvcs"],
+                }
+
+                if not discriminator_available(disc, data_f, pi0_f, dvcs_f):
+                    row.update({
+                        "fit_success": 0,
+                        "fit_message": "required diagnostic branch unavailable",
+                        "data_count": 0,
+                        "aaogen_count": 0,
+                        "dvcsgen_count": 0,
+                        "pi0_yield": float("nan"),
+                        "dvcs_yield": float("nan"),
+                        "pi0_fraction": float("nan"),
+                        "dvcs_fraction": float("nan"),
+                        "nll": float("nan"),
+                        "poisson_deviance": float("nan"),
+                        "ndof": 0,
+                        "deviance_per_ndof": float("nan"),
+                    })
+                    rows.append(row)
+                    continue
+                #endif
+
+                hd = histogram_for_discriminator(
+                    disc, data_f, masks["data"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    probe_m2_max=probe_m2_max,
+                    mm2_bins_2d=mm2_bins_2d,
+                    probe_m2_bins_2d=probe_m2_bins_2d,
+                    bins_1d=bins_1d,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max,
+                    theta_bins=theta_bins,
+                )
+                hp = histogram_for_discriminator(
+                    disc, pi0_f, masks["pi0"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    probe_m2_max=probe_m2_max,
+                    mm2_bins_2d=mm2_bins_2d,
+                    probe_m2_bins_2d=probe_m2_bins_2d,
+                    bins_1d=bins_1d,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max,
+                    theta_bins=theta_bins,
+                )
+                hv = histogram_for_discriminator(
+                    disc, dvcs_f, masks["dvcs"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    probe_m2_max=probe_m2_max,
+                    mm2_bins_2d=mm2_bins_2d,
+                    probe_m2_bins_2d=probe_m2_bins_2d,
+                    bins_1d=bins_1d,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max,
+                    theta_bins=theta_bins,
+                )
+
+                counts = {
+                    "data": int(round(float(np.sum(hd)))),
+                    "pi0": int(round(float(np.sum(hp)))),
+                    "dvcs": int(round(float(np.sum(hv)))),
+                }
                 row.update({
-                    "fit_success": 0,
-                    "fit_message": "insufficient data/template statistics",
-                    "pi0_yield": float("nan"),
-                    "dvcs_yield": float("nan"),
-                    "pi0_fraction": float("nan"),
-                    "dvcs_fraction": float("nan"),
-                    "nll": float("nan"),
-                    "poisson_deviance": float("nan"),
-                    "pearson_chi2": float("nan"),
-                    "ndof": 0,
-                    "deviance_per_ndof": float("nan"),
-                    "pearson_per_ndof": float("nan"),
+                    "data_count": counts["data"],
+                    "aaogen_count": counts["pi0"],
+                    "dvcsgen_count": counts["dvcs"],
                 })
-            #endif
-            rows.append(row)
+
+                enough = (
+                    counts["data"] >= min_data_count
+                    and counts["pi0"] >= min_template_count
+                    and counts["dvcs"] >= min_template_count
+                )
+                if enough:
+                    fit = fit_two_component_poisson(hd, hp, hv)
+                    row.update({
+                        "fit_success": int(fit.success),
+                        "fit_message": fit.message,
+                        "pi0_yield": fit.pi0_yield,
+                        "dvcs_yield": fit.dvcs_yield,
+                        "pi0_fraction": fit.pi0_fraction,
+                        "dvcs_fraction": fit.dvcs_fraction,
+                        "nll": fit.nll,
+                        "poisson_deviance": fit.poisson_deviance,
+                        "ndof": fit.ndof,
+                        "deviance_per_ndof": (
+                            fit.poisson_deviance / fit.ndof
+                            if fit.ndof > 0 else float("nan")
+                        ),
+                    })
+                else:
+                    row.update({
+                        "fit_success": 0,
+                        "fit_message": "insufficient data/template statistics",
+                        "pi0_yield": float("nan"),
+                        "dvcs_yield": float("nan"),
+                        "pi0_fraction": float("nan"),
+                        "dvcs_fraction": float("nan"),
+                        "nll": float("nan"),
+                        "poisson_deviance": float("nan"),
+                        "ndof": 0,
+                        "deviance_per_ndof": float("nan"),
+                    })
+                #endif
+
+                rows.append(row)
+            #endfor
         #endfor
     #endfor
 
     return rows
+
+
+def discriminator_spread_rows(
+    fit_rows: List[Dict[str, object]],
+) -> List[Dict[str, object]]:
+    """
+    Collapse the discriminator fit table into one stability row per
+    period/region/energy bin.
+
+    Spread quantities exclude unavailable/failed discriminators.
+    """
+    groups: Dict[Tuple[str, str, float, float], List[Dict[str, object]]] = {}
+    for row in fit_rows:
+        key = (
+            str(row["period"]),
+            str(row["region"]),
+            float(row["energy_low_GeV"]),
+            float(row["energy_high_GeV"]),
+        )
+        groups.setdefault(key, []).append(row)
+    #endfor
+
+    out: List[Dict[str, object]] = []
+    for key, rows in groups.items():
+        good = [
+            r for r in rows
+            if int(r["fit_success"]) == 1
+            and np.isfinite(r["pi0_fraction"])
+        ]
+        nominal = next(
+            (
+                r for r in good
+                if str(r["discriminator"]) == STAGE2_NOMINAL_DISCRIMINATOR
+            ),
+            None,
+        )
+
+        values = np.asarray(
+            [float(r["pi0_fraction"]) for r in good],
+            dtype=float,
+        )
+        if values.size:
+            fmin = float(np.min(values))
+            fmax = float(np.max(values))
+            spread = fmax - fmin
+            half_range = 0.5 * spread
+            std = float(np.std(values))
+        else:
+            fmin = fmax = spread = half_range = std = float("nan")
+        #endif
+
+        row0 = rows[0]
+        out.append({
+            "period": key[0],
+            "label": row0["label"],
+            "region": key[1],
+            "energy_low_GeV": key[2],
+            "energy_high_GeV": key[3],
+            "energy_center_GeV": float(row0["energy_center_GeV"]),
+            "n_successful_discriminators": len(good),
+            "nominal_pi0_fraction": (
+                float(nominal["pi0_fraction"]) if nominal is not None else float("nan")
+            ),
+            "min_pi0_fraction": fmin,
+            "max_pi0_fraction": fmax,
+            "full_spread_pi0_fraction": spread,
+            "half_range_pi0_fraction": half_range,
+            "std_pi0_fraction": std,
+            "nominal_deviance_per_ndof": (
+                float(nominal["deviance_per_ndof"])
+                if nominal is not None else float("nan")
+            ),
+        })
+    #endfor
+
+    return out
 
 
 def run_mixed_shift_diagnostic(
@@ -1457,7 +1682,7 @@ def run_mixed_shift_diagnostic(
     pi0_f: Dict[str, np.ndarray],
     dvcs_f: Dict[str, np.ndarray],
     mixed_f: Dict[str, np.ndarray],
-    nominal_rows: List[Dict[str, object]],
+    fit_rows: List[Dict[str, object]],
     shift: int,
     ft_theta_max: float,
     mm2_min: float,
@@ -1465,53 +1690,56 @@ def run_mixed_shift_diagnostic(
     probe_m2_max: float,
     mm2_bins: int,
     probe_m2_bins: int,
-    min_data_count: int,
     min_template_count: int,
 ) -> List[Dict[str, object]]:
     """
-    Repeat each successful nominal fit with one extra mixed-data component.
-    The resulting change in pi0 fraction quantifies sensitivity to a possible
-    uncorrelated-photon contribution. It never replaces the nominal result.
+    Repeat only the nominal 2D discriminator fit with one extra mixed-data
+    component. This is a stress test, not a production denominator result.
     """
+    nominal_rows = [
+        r for r in fit_rows
+        if str(r["discriminator"]) == STAGE2_NOMINAL_DISCRIMINATOR
+        and int(r["fit_success"]) == 1
+    ]
+
     mm2_edges = np.linspace(mm2_min, mm2_max, mm2_bins + 1)
     pm2_edges = np.linspace(-probe_m2_max, probe_m2_max, probe_m2_bins + 1)
 
     rows: List[Dict[str, object]] = []
     for nominal in nominal_rows:
-        if int(nominal["fit_success"]) != 1:
-            continue
-        #endif
-
         region = str(nominal["region"])
         elo = float(nominal["energy_low_GeV"])
         ehi = float(nominal["energy_high_GeV"])
 
-        md = stage2_fit_mask(
-            data_f, region, ft_theta_max, elo, ehi,
-            mm2_min, mm2_max, probe_m2_max
-        )
-        mp = stage2_fit_mask(
-            pi0_f, region, ft_theta_max, elo, ehi,
-            mm2_min, mm2_max, probe_m2_max
-        )
-        mv = stage2_fit_mask(
-            dvcs_f, region, ft_theta_max, elo, ehi,
-            mm2_min, mm2_max, probe_m2_max
-        )
-        mm = stage2_fit_mask(
-            mixed_f, region, ft_theta_max, elo, ehi,
-            mm2_min, mm2_max, probe_m2_max
-        )
+        md = stage2_fit_mask(data_f, region, ft_theta_max, elo, ehi, mm2_min, mm2_max, probe_m2_max)
+        mp = stage2_fit_mask(pi0_f, region, ft_theta_max, elo, ehi, mm2_min, mm2_max, probe_m2_max)
+        mv = stage2_fit_mask(dvcs_f, region, ft_theta_max, elo, ehi, mm2_min, mm2_max, probe_m2_max)
+        mm = stage2_fit_mask(mixed_f, region, ft_theta_max, elo, ehi, mm2_min, mm2_max, probe_m2_max)
 
-        cm = int(np.count_nonzero(mm))
-        if cm < min_template_count:
+        if int(np.count_nonzero(mm)) < min_template_count:
             continue
         #endif
 
-        hd = hist2d_template(data_f, md, mm2_edges, pm2_edges)
-        hp = hist2d_template(pi0_f, mp, mm2_edges, pm2_edges)
-        hv = hist2d_template(dvcs_f, mv, mm2_edges, pm2_edges)
-        hm = hist2d_template(mixed_f, mm, mm2_edges, pm2_edges)
+        hd, _, _ = np.histogram2d(
+            data_f["ep_missing_mass2"][md],
+            data_f["pred_probe_mass2"][md],
+            bins=(mm2_edges, pm2_edges),
+        )
+        hp, _, _ = np.histogram2d(
+            pi0_f["ep_missing_mass2"][mp],
+            pi0_f["pred_probe_mass2"][mp],
+            bins=(mm2_edges, pm2_edges),
+        )
+        hv, _, _ = np.histogram2d(
+            dvcs_f["ep_missing_mass2"][mv],
+            dvcs_f["pred_probe_mass2"][mv],
+            bins=(mm2_edges, pm2_edges),
+        )
+        hm, _, _ = np.histogram2d(
+            mixed_f["ep_missing_mass2"][mm],
+            mixed_f["pred_probe_mass2"][mm],
+            bins=(mm2_edges, pm2_edges),
+        )
 
         fit = fit_three_component_diagnostic(hd, hp, hv, hm)
         if not fit.success:
@@ -1527,7 +1755,6 @@ def run_mixed_shift_diagnostic(
             "energy_high_GeV": ehi,
             "energy_center_GeV": float(nominal["energy_center_GeV"]),
             "mix_shift": int(shift),
-            "mixed_template_count": cm,
             "nominal_pi0_fraction": nominal_pi0,
             "diagnostic_pi0_fraction": fit.pi0_fraction,
             "diagnostic_dvcs_fraction": fit.dvcs_fraction,
@@ -1550,7 +1777,10 @@ def representative_fit_projection(
     probe_m2_max: float,
     bins: int = 90,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Return M_X^2(ep) data and fitted component projections for one fit row."""
+    """
+    Return M_X^2(ep) data and fitted component projections for one nominal
+    mx2_ep_x_probe_m2 fit row.
+    """
     region = str(row["region"])
     elo = float(row["energy_low_GeV"])
     ehi = float(row["energy_high_GeV"])
@@ -1580,8 +1810,14 @@ def unit_hist(ax, values: np.ndarray, bins: np.ndarray, label: str) -> None:
     vals = np.asarray(values, dtype=float)
     vals = vals[np.isfinite(vals)]
     weights = np.ones(len(vals), dtype=float) / max(len(vals), 1)
-    ax.hist(vals, bins=bins, weights=weights, histtype="step", linewidth=1.15, label=label)
-
+    ax.hist(
+        vals,
+        bins=bins,
+        weights=weights,
+        histtype="step",
+        linewidth=1.15,
+        label=label,
+    )
 
 
 def safe_finalize_figure(
@@ -1589,14 +1825,6 @@ def safe_finalize_figure(
     output_path: Path,
     rect: Tuple[float, float, float, float] = (0.0, 0.0, 1.0, 0.96),
 ) -> None:
-    """
-    Finalize and save a Matplotlib figure without allowing a layout-only
-    formatting problem to abort the physics analysis.
-
-    First try tight_layout. If a mathtext/layout exception occurs, report it
-    and save with conservative manual subplot spacing. The figure is always
-    closed by the caller after this returns.
-    """
     try:
         fig.tight_layout(rect=rect)
     except Exception as exc:
@@ -1613,14 +1841,7 @@ def safe_finalize_figure(
             hspace=0.30,
         )
     #endtry
-
-    try:
-        fig.savefig(output_path, dpi=180)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to save figure {output_path}: {exc}"
-        ) from exc
-    #endtry
+    fig.savefig(output_path, dpi=180)
 
 
 def make_stage2_canvases(
@@ -1628,7 +1849,8 @@ def make_stage2_canvases(
     data_f: Dict[str, np.ndarray],
     pi0_f: Dict[str, np.ndarray],
     dvcs_f: Dict[str, np.ndarray],
-    nominal_rows: List[Dict[str, object]],
+    fit_rows: List[Dict[str, object]],
+    spread_rows: List[Dict[str, object]],
     mixed_rows: List[Dict[str, object]],
     outdir: Path,
     ft_theta_max: float,
@@ -1638,14 +1860,8 @@ def make_stage2_canvases(
     probe_m2_max: float,
 ) -> None:
     """
-    Four compact Stage-II canvases:
-      1. discriminator shapes (data/aaogen/dvcsgen only),
-      2. nominal fit quality and composition,
-      3. 1x2 FT + all-six-FD pi0 purity,
-      4. representative nominal fit projections and mixed-template sensitivity.
+    Compact Stage-II diagnostic suite emphasizing discriminator stability.
     """
-    from matplotlib.colors import LogNorm
-
     for old in outdir.glob("*.png"):
         old.unlink()
     #endfor
@@ -1663,7 +1879,7 @@ def make_stage2_canvases(
     #endfor
 
     # --------------------------------------------------------------
-    # Canvas 1: physics discriminants.
+    # Canvas 1: discriminator shapes.
     # --------------------------------------------------------------
     fig, axes = plt.subplots(2, 2, figsize=(13.8, 10.2))
 
@@ -1678,7 +1894,14 @@ def make_stage2_canvases(
             np.linspace(mm2_min, mm2_max, 220),
             label,
         )
+        unit_hist(
+            axes[0, 1],
+            feat["pred_probe_mass2"][common[key]],
+            np.linspace(-probe_m2_max, probe_m2_max, 220),
+            label,
+        )
     #endfor
+
     axes[0, 0].axvline(M_PI0 * M_PI0, linestyle="--", linewidth=1.0)
     axes[0, 0].set_xlabel(r"$M_X^2(ep)$ (GeV$^2$)")
     axes[0, 0].set_ylabel("Unit-normalized entries")
@@ -1686,26 +1909,18 @@ def make_stage2_canvases(
     axes[0, 0].legend(fontsize=8)
     axes[0, 0].grid(alpha=0.18)
 
-    for key, feat, label in (
-        ("data", data_f, "Data"),
-        ("pi0", pi0_f, "aaogen $\\pi^0$"),
-        ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
-    ):
-        unit_hist(
-            axes[0, 1],
-            feat["pred_probe_energy"][common[key]],
-            np.linspace(0.35, max_probe_energy, 220),
-            label,
-        )
-    #endfor
-    axes[0, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[0, 1].set_xlabel(r"$(P_{\mathrm{probe}}^{\mathrm{pred}})^2$ (GeV$^2$)")
     axes[0, 1].set_ylabel("Unit-normalized entries")
-    axes[0, 1].set_title("Predicted missing-photon energy")
+    axes[0, 1].set_title("Predicted probe mass squared")
     axes[0, 1].grid(alpha=0.18)
 
-    # Optional stored pTmiss comparison.
-    have_pt = all("stored_pTmiss" in f for f in (data_f, pi0_f, dvcs_f))
-    if have_pt:
+    if all("stored_pTmiss" in f for f in (data_f, pi0_f, dvcs_f)):
+        vals_all = np.concatenate([
+            f["stored_pTmiss"][common[k]]
+            for k, f in (("data", data_f), ("pi0", pi0_f), ("dvcs", dvcs_f))
+        ])
+        vals_all = vals_all[np.isfinite(vals_all)]
+        hi = max(0.2, min(1.5, float(np.percentile(vals_all, 99.5)))) if vals_all.size else 1.0
         for key, feat, label in (
             ("data", data_f, "Data"),
             ("pi0", pi0_f, "aaogen $\\pi^0$"),
@@ -1714,7 +1929,7 @@ def make_stage2_canvases(
             unit_hist(
                 axes[1, 0],
                 feat["stored_pTmiss"][common[key]],
-                np.linspace(0.0, 1.0, 220),
+                np.linspace(0.0, hi, 220),
                 label,
             )
         #endfor
@@ -1722,19 +1937,18 @@ def make_stage2_canvases(
         axes[1, 0].set_ylabel("Unit-normalized entries")
         axes[1, 0].set_title(r"Skim-level $p_{T,\mathrm{miss}}$ diagnostic")
     else:
-        axes[1, 0].text(0.5, 0.5, "pTmiss branch unavailable", ha="center", va="center")
+        axes[1, 0].text(0.5, 0.5, "pTmiss unavailable", ha="center", va="center")
         axes[1, 0].set_axis_off()
     #endif
     axes[1, 0].grid(alpha=0.18)
 
-    have_theta = all("stored_theta_gamma_gamma" in f for f in (data_f, pi0_f, dvcs_f))
-    if have_theta:
-        theta_all = np.concatenate([
+    if all("stored_theta_gamma_gamma" in f for f in (data_f, pi0_f, dvcs_f)):
+        vals_all = np.concatenate([
             f["stored_theta_gamma_gamma"][common[k]]
             for k, f in (("data", data_f), ("pi0", pi0_f), ("dvcs", dvcs_f))
         ])
-        theta_all = theta_all[np.isfinite(theta_all)]
-        hi = min(180.0, max(5.0, float(np.percentile(theta_all, 99.5)))) if theta_all.size else 30.0
+        vals_all = vals_all[np.isfinite(vals_all)]
+        hi = max(5.0, min(180.0, float(np.percentile(vals_all, 99.5)))) if vals_all.size else 40.0
         for key, feat, label in (
             ("data", data_f, "Data"),
             ("pi0", pi0_f, "aaogen $\\pi^0$"),
@@ -1751,174 +1965,216 @@ def make_stage2_canvases(
         axes[1, 1].set_ylabel("Unit-normalized entries")
         axes[1, 1].set_title(r"$\theta_{\gamma\gamma}$ diagnostic")
     else:
-        # Fall back to computed E-p, still independent of extra skim branches.
-        for key, feat, label in (
-            ("data", data_f, "Data"),
-            ("pi0", pi0_f, "aaogen $\\pi^0$"),
-            ("dvcs", dvcs_f, "dvcsgen BH/DVCS"),
-        ):
-            unit_hist(
-                axes[1, 1],
-                feat["pred_probe_E_minus_p"][common[key]],
-                np.linspace(-1.0, 1.0, 220),
-                label,
-            )
-        #endfor
-        axes[1, 1].set_xlabel(r"$E_{\rm probe}^{pred}-|\vec p_{\rm probe}^{pred}|$ (GeV)")
-        axes[1, 1].set_ylabel("Unit-normalized entries")
-        axes[1, 1].set_title("Predicted photon mass-shell diagnostic")
+        axes[1, 1].text(
+            0.5, 0.5, "theta_gamma_gamma unavailable",
+            ha="center", va="center"
+        )
+        axes[1, 1].set_axis_off()
     #endif
     axes[1, 1].grid(alpha=0.18)
 
     fig.suptitle(
-        f"{period.label}: Stage II denominator discriminants "
+        f"{period.label}: Stage II discriminator shapes "
         f"(beam {period.beam_energy:.4f} GeV)",
         fontsize=15,
     )
-    safe_finalize_figure(fig, outdir / "canvas_denominator_discriminants.png", rect=(0, 0, 1, 0.96))
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_discriminator_shapes.png",
+        rect=(0, 0, 1, 0.96),
+    )
     plt.close(fig)
 
     # --------------------------------------------------------------
-    # Canvas 2: nominal fit fractions and goodness.
+    # Canvas 2: all-region discriminator comparison.
     # --------------------------------------------------------------
     fig, axes = plt.subplots(2, 2, figsize=(13.8, 10.2))
-    rr = [
-        r for r in nominal_rows
-        if r["region"] == "all" and int(r["fit_success"]) == 1
-    ]
-    if rr:
-        x = np.asarray([r["energy_center_GeV"] for r in rr])
-        axes[0, 0].plot(x, [r["pi0_fraction"] for r in rr], marker="o", label="$\\pi^0$")
-        axes[0, 0].plot(x, [r["dvcs_fraction"] for r in rr], marker="o", label="BH/DVCS")
-        axes[0, 0].set_ylim(0.0, 1.05)
-        axes[0, 0].legend()
 
-        axes[0, 1].plot(x, [r["deviance_per_ndof"] for r in rr], marker="o", label="Poisson deviance/ndof")
-        axes[0, 1].plot(x, [r["pearson_per_ndof"] for r in rr], marker="o", label="Pearson $\\chi^2$/ndof")
-        axes[0, 1].legend(fontsize=8)
-
-        axes[1, 0].step(
-            x, [r["data_count"] for r in rr], where="mid", label="Data"
-        )
-        axes[1, 0].step(
-            x, [r["aaogen_count"] for r in rr], where="mid", label="aaogen"
-        )
-        axes[1, 0].step(
-            x, [r["dvcsgen_count"] for r in rr], where="mid", label="dvcsgen"
-        )
-        axes[1, 0].set_yscale("log")
-        axes[1, 0].legend(fontsize=8)
-
-        # Max |delta f_pi0| over diagnostic mixing shifts.
-        for ecenter in x:
-            vals = [
-                abs(float(r["delta_pi0_fraction"]))
-                for r in mixed_rows
-                if r["region"] == "all"
-                and abs(float(r["energy_center_GeV"]) - float(ecenter)) < 1.0e-9
-                and np.isfinite(r["delta_pi0_fraction"])
-            ]
-            axes[1, 1].plot(
-                [ecenter], [max(vals) if vals else np.nan], marker="o"
-            )
-        #endfor
-    #endif
-
-    axes[0, 0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[0, 0].set_ylabel("Nominal fitted fraction")
-    axes[0, 0].set_title("Two-component nominal composition")
-    axes[0, 0].grid(alpha=0.18)
-
-    axes[0, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[0, 1].set_ylabel("Goodness statistic / ndof")
-    axes[0, 1].set_title("Nominal fit quality")
-    axes[0, 1].grid(alpha=0.18)
-
-    axes[1, 0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[1, 0].set_ylabel("Entries")
-    axes[1, 0].set_title("All-region fit statistics")
-    axes[1, 0].grid(alpha=0.18)
-
-    axes[1, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[1, 1].set_ylabel(r"max $|\Delta f_{\pi^0}|$")
-    axes[1, 1].set_title("Sensitivity to adding mixed-data component")
-    axes[1, 1].grid(alpha=0.18)
-
-    fig.suptitle(
-        f"{period.label}: Stage II nominal denominator fits",
-        fontsize=15,
-    )
-    safe_finalize_figure(fig, outdir / "canvas_nominal_fit_summary.png", rect=(0, 0, 1, 0.96))
-    plt.close(fig)
-
-    # --------------------------------------------------------------
-    # Canvas 3: requested 1x2 FT + all FD sectors.
-    # --------------------------------------------------------------
-    fig, axes = plt.subplots(1, 2, figsize=(14.5, 5.5))
-
-    rr_ft = [
-        r for r in nominal_rows
-        if r["region"] == "FT"
+    good_all = [
+        r for r in fit_rows
+        if r["region"] == "all"
         and int(r["fit_success"]) == 1
         and np.isfinite(r["pi0_fraction"])
     ]
-    if rr_ft:
-        axes[0].plot(
-            [r["energy_center_GeV"] for r in rr_ft],
-            [r["pi0_fraction"] for r in rr_ft],
-            marker="o",
-            label="FT",
+
+    for disc in STAGE2_DISCRIMINATORS:
+        rr = [r for r in good_all if r["discriminator"] == disc]
+        if not rr:
+            continue
+        #endif
+        axes[0, 0].plot(
+            [r["energy_center_GeV"] for r in rr],
+            [r["pi0_fraction"] for r in rr],
+            marker="o", ms=3, label=disc,
         )
+        axes[0, 1].plot(
+            [r["energy_center_GeV"] for r in rr],
+            [r["deviance_per_ndof"] for r in rr],
+            marker="o", ms=3, label=disc,
+        )
+    #endfor
+
+    axes[0, 0].set_ylim(0.0, 1.05)
+    axes[0, 0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[0, 0].set_ylabel("Fitted $\\pi^0$ fraction")
+    axes[0, 0].set_title("Discriminator stability")
+    axes[0, 0].legend(fontsize=7)
+    axes[0, 0].grid(alpha=0.18)
+
+    axes[0, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[0, 1].set_ylabel("Poisson deviance / ndof")
+    axes[0, 1].set_title("Absolute template goodness")
+    axes[0, 1].legend(fontsize=7)
+    axes[0, 1].grid(alpha=0.18)
+
+    rrspread = [
+        r for r in spread_rows
+        if r["region"] == "all"
+        and np.isfinite(r["full_spread_pi0_fraction"])
+    ]
+    if rrspread:
+        x = [r["energy_center_GeV"] for r in rrspread]
+        axes[1, 0].plot(
+            x,
+            [r["full_spread_pi0_fraction"] for r in rrspread],
+            marker="o",
+            label="full discriminator spread",
+        )
+        axes[1, 0].plot(
+            x,
+            [r["half_range_pi0_fraction"] for r in rrspread],
+            marker="o",
+            label="half range",
+        )
+        axes[1, 0].legend(fontsize=8)
     #endif
+    axes[1, 0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[1, 0].set_ylabel(r"spread in $f_{\pi^0}$")
+    axes[1, 0].set_title("Model dependence of extracted composition")
+    axes[1, 0].grid(alpha=0.18)
+
+    # Mixed-event sensitivity for nominal discriminator only.
+    shifts = sorted(set(int(r["mix_shift"]) for r in mixed_rows))
+    for shift in shifts:
+        rr = [
+            r for r in mixed_rows
+            if r["region"] == "all"
+            and int(r["mix_shift"]) == shift
+            and np.isfinite(r["delta_pi0_fraction"])
+        ]
+        if not rr:
+            continue
+        #endif
+        axes[1, 1].plot(
+            [r["energy_center_GeV"] for r in rr],
+            [r["delta_pi0_fraction"] for r in rr],
+            marker="o", ms=3, label=f"shift {shift}",
+        )
+    #endfor
+    axes[1, 1].axhline(0.0, linestyle="--", linewidth=1.0)
+    axes[1, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[1, 1].set_ylabel(r"$\Delta f_{\pi^0}$")
+    axes[1, 1].set_title("Diagnostic mixed-event sensitivity")
+    axes[1, 1].legend(fontsize=7)
+    axes[1, 1].grid(alpha=0.18)
+
+    fig.suptitle(
+        f"{period.label}: Stage II discriminator robustness",
+        fontsize=15,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_discriminator_stability.png",
+        rect=(0, 0, 1, 0.96),
+    )
+    plt.close(fig)
+
+    # --------------------------------------------------------------
+    # Canvas 3: requested FT / FD summary using the nominal discriminator,
+    # with discriminator spread indicated as a band.
+    # --------------------------------------------------------------
+    fig, axes = plt.subplots(1, 2, figsize=(14.5, 5.6))
+
+    def draw_region(ax, region: str, label: str) -> None:
+        rr_nom = [
+            r for r in fit_rows
+            if r["region"] == region
+            and r["discriminator"] == STAGE2_NOMINAL_DISCRIMINATOR
+            and int(r["fit_success"]) == 1
+            and np.isfinite(r["pi0_fraction"])
+        ]
+        rr_sp = {
+            (float(r["energy_low_GeV"]), float(r["energy_high_GeV"])): r
+            for r in spread_rows if r["region"] == region
+        }
+
+        if not rr_nom:
+            return
+        #endif
+
+        x = np.asarray([r["energy_center_GeV"] for r in rr_nom])
+        y = np.asarray([r["pi0_fraction"] for r in rr_nom])
+        low = []
+        high = []
+        for r in rr_nom:
+            key = (float(r["energy_low_GeV"]), float(r["energy_high_GeV"]))
+            sr = rr_sp.get(key)
+            low.append(
+                float(sr["min_pi0_fraction"])
+                if sr is not None and np.isfinite(sr["min_pi0_fraction"])
+                else float(r["pi0_fraction"])
+            )
+            high.append(
+                float(sr["max_pi0_fraction"])
+                if sr is not None and np.isfinite(sr["max_pi0_fraction"])
+                else float(r["pi0_fraction"])
+            )
+        #endfor
+
+        ax.plot(x, y, marker="o", ms=3, label=label)
+        ax.fill_between(x, low, high, alpha=0.18)
+    #enddef
+
+    draw_region(axes[0], "FT", "FT")
     axes[0].set_ylim(0.0, 1.05)
     axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[0].set_ylabel("Fitted $\\pi^0$ fraction")
+    axes[0].set_ylabel("Nominal fitted $\\pi^0$ fraction")
     axes[0].set_title("FT")
     axes[0].grid(alpha=0.18)
 
     for s in range(1, 7):
-        region = f"FD_S{s}"
-        rr_s = [
-            r for r in nominal_rows
-            if r["region"] == region
-            and int(r["fit_success"]) == 1
-            and np.isfinite(r["pi0_fraction"])
-        ]
-        if not rr_s:
-            continue
-        #endif
-        axes[1].plot(
-            [r["energy_center_GeV"] for r in rr_s],
-            [r["pi0_fraction"] for r in rr_s],
-            marker="o",
-            ms=3,
-            label=f"S{s}",
-        )
+        draw_region(axes[1], f"FD_S{s}", f"S{s}")
     #endfor
     axes[1].set_ylim(0.0, 1.05)
     axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[1].set_ylabel("Fitted $\\pi^0$ fraction")
+    axes[1].set_ylabel("Nominal fitted $\\pi^0$ fraction")
     axes[1].set_title("FD sectors")
     axes[1].legend(ncol=2, fontsize=8)
     axes[1].grid(alpha=0.18)
 
     fig.suptitle(
-        f"{period.label}: nominal $\\pi^0$ denominator purity by predicted region",
+        f"{period.label}: nominal denominator purity "
+        "(bands = discriminator spread)",
         fontsize=15,
     )
-    safe_finalize_figure(fig, outdir / "canvas_pi0_purity_by_region.png", rect=(0, 0, 1, 0.94))
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_pi0_purity_by_region.png",
+        rect=(0, 0, 1, 0.94),
+    )
     plt.close(fig)
 
     # --------------------------------------------------------------
-    # Canvas 4: representative all-region nominal fit projections.
+    # Canvas 4: representative nominal 2D fits.
     # --------------------------------------------------------------
     targets = ((0.40, 0.50), (0.80, 1.00), (1.50, 2.00))
     fig, axes = plt.subplots(1, 3, figsize=(18.0, 5.2))
 
     for ax, (elo, ehi) in zip(axes, targets):
         candidates = [
-            r for r in nominal_rows
+            r for r in fit_rows
             if r["region"] == "all"
+            and r["discriminator"] == STAGE2_NOMINAL_DISCRIMINATOR
             and int(r["fit_success"]) == 1
             and abs(float(r["energy_low_GeV"]) - elo) < 1.0e-9
             and abs(float(r["energy_high_GeV"]) - ehi) < 1.0e-9
@@ -1928,6 +2184,7 @@ def make_stage2_canvases(
             ax.set_axis_off()
             continue
         #endif
+
         row = candidates[0]
         centers, hd, hp, hv, model = representative_fit_projection(
             data_f, pi0_f, dvcs_f, row,
@@ -1937,8 +2194,12 @@ def make_stage2_canvases(
             probe_m2_max=probe_m2_max,
         )
         ax.errorbar(
-            centers, hd, yerr=np.sqrt(np.maximum(hd, 1.0)),
-            fmt="o", ms=2.5, label="Data"
+            centers,
+            hd,
+            yerr=np.sqrt(np.maximum(hd, 1.0)),
+            fmt="o",
+            ms=2.5,
+            label="Data",
         )
         ax.step(centers, model, where="mid", linewidth=1.4, label="Total fit")
         ax.step(centers, hp, where="mid", linewidth=1.0, label="$\\pi^0$")
@@ -1955,68 +2216,118 @@ def make_stage2_canvases(
     axes[0].legend(fontsize=8)
 
     fig.suptitle(
-        f"{period.label}: representative nominal two-component fits",
+        f"{period.label}: representative nominal "
+        f"{STAGE2_NOMINAL_DISCRIMINATOR} fits",
         fontsize=15,
     )
-    safe_finalize_figure(fig, outdir / "canvas_representative_nominal_fits.png", rect=(0, 0, 1, 0.93))
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_representative_nominal_fits.png",
+        rect=(0, 0, 1, 0.93),
+    )
     plt.close(fig)
 
 
 def summarize_stage2(
     period: PeriodConfig,
-    nominal_rows: List[Dict[str, object]],
+    fit_rows: List[Dict[str, object]],
+    spread_rows: List[Dict[str, object]],
     mixed_rows: List[Dict[str, object]],
     data_total: int,
     pi0_total: int,
     dvcs_total: int,
     max_probe_energy: float,
 ) -> Dict[str, object]:
-    good = [
-        r for r in nominal_rows
+    nominal_good = [
+        r for r in fit_rows
         if r["region"] == "all"
+        and r["discriminator"] == STAGE2_NOMINAL_DISCRIMINATOR
         and int(r["fit_success"]) == 1
         and np.isfinite(r["pi0_yield"])
     ]
 
-    pi0_yield = float(np.sum([r["pi0_yield"] for r in good])) if good else float("nan")
-    dvcs_yield = float(np.sum([r["dvcs_yield"] for r in good])) if good else float("nan")
-    total = pi0_yield + dvcs_yield if good else float("nan")
+    pi0_yield = (
+        float(np.sum([r["pi0_yield"] for r in nominal_good]))
+        if nominal_good else float("nan")
+    )
+    dvcs_yield = (
+        float(np.sum([r["dvcs_yield"] for r in nominal_good]))
+        if nominal_good else float("nan")
+    )
+    total = pi0_yield + dvcs_yield if nominal_good else float("nan")
 
-    mix_shifts = sorted(set(int(r["mix_shift"]) for r in mixed_rows))
+    all_spreads = [
+        float(r["full_spread_pi0_fraction"])
+        for r in spread_rows
+        if r["region"] == "all"
+        and np.isfinite(r["full_spread_pi0_fraction"])
+    ]
+
     mix_delta = [
         abs(float(r["delta_pi0_fraction"]))
         for r in mixed_rows
-        if r["region"] == "all" and np.isfinite(r["delta_pi0_fraction"])
+        if r["region"] == "all"
+        and np.isfinite(r["delta_pi0_fraction"])
     ]
+
+    discriminator_summary: Dict[str, Dict[str, float]] = {}
+    for disc in STAGE2_DISCRIMINATORS:
+        rr = [
+            r for r in fit_rows
+            if r["region"] == "all"
+            and r["discriminator"] == disc
+            and int(r["fit_success"]) == 1
+        ]
+        if rr:
+            discriminator_summary[disc] = {
+                "successful_bins": int(len(rr)),
+                "median_pi0_fraction": float(
+                    np.median([r["pi0_fraction"] for r in rr])
+                ),
+                "median_deviance_per_ndof": float(
+                    np.median([r["deviance_per_ndof"] for r in rr])
+                ),
+            }
+        #endif
+    #endfor
 
     return {
         "period": period.key,
         "label": period.label,
         "beam_energy_GeV": period.beam_energy,
         "stage2_probe_energy_max_GeV": max_probe_energy,
+        "nominal_discriminator": STAGE2_NOMINAL_DISCRIMINATOR,
         "epgamma_data_entries_total": int(data_total),
         "aaogen_epgamma_entries_total": int(pi0_total),
         "dvcsgen_epgamma_entries_total": int(dvcs_total),
-        "successful_all_region_energy_fits": int(len(good)),
-        "summed_pi0_yield_in_fit_windows": pi0_yield,
-        "summed_dvcs_yield_in_fit_windows": dvcs_yield,
-        "summed_pi0_fraction": (
-            pi0_yield / total if good and total > 0.0 else float("nan")
+        "successful_nominal_all_region_energy_fits": int(len(nominal_good)),
+        "summed_nominal_pi0_yield_in_fit_windows": pi0_yield,
+        "summed_nominal_dvcs_yield_in_fit_windows": dvcs_yield,
+        "summed_nominal_pi0_fraction": (
+            pi0_yield / total
+            if nominal_good and total > 0.0 else float("nan")
         ),
-        "summed_dvcs_fraction": (
-            dvcs_yield / total if good and total > 0.0 else float("nan")
+        "summed_nominal_dvcs_fraction": (
+            dvcs_yield / total
+            if nominal_good and total > 0.0 else float("nan")
         ),
-        "median_deviance_per_ndof": (
-            float(np.median([r["deviance_per_ndof"] for r in good]))
-            if good else float("nan")
+        "median_nominal_deviance_per_ndof": (
+            float(np.median([r["deviance_per_ndof"] for r in nominal_good]))
+            if nominal_good else float("nan")
         ),
-        "mixed_diagnostic_shifts": mix_shifts,
-        "max_abs_pi0_fraction_shift_from_mixed_component": (
-            max(mix_delta) if mix_delta else float("nan")
+        "median_all_region_discriminator_spread": (
+            float(np.median(all_spreads)) if all_spreads else float("nan")
+        ),
+        "max_all_region_discriminator_spread": (
+            max(all_spreads) if all_spreads else float("nan")
         ),
         "median_abs_pi0_fraction_shift_from_mixed_component": (
             float(np.median(mix_delta)) if mix_delta else float("nan")
         ),
+        "max_abs_pi0_fraction_shift_from_mixed_component": (
+            max(mix_delta) if mix_delta else float("nan")
+        ),
+        "discriminator_summary": discriminator_summary,
     }
 
 
@@ -2856,6 +3167,49 @@ def parse_args() -> argparse.Namespace:
             "nominal denominator fit. Default: 7919,15401,32749."
         ),
     )
+    parser.add_argument(
+        "--disc-1d-bins",
+        type=int,
+        default=90,
+        help=(
+            "Histogram bins for 1D Stage-II discriminator fits. Default: 90."
+        ),
+    )
+    parser.add_argument(
+        "--disc-ptmiss-max",
+        type=float,
+        default=1.0,
+        help=(
+            "Upper stored pTmiss edge (GeV) used by the optional "
+            "M_X^2(ep) x pTmiss discriminator. Default: 1.0."
+        ),
+    )
+    parser.add_argument(
+        "--disc-ptmiss-bins",
+        type=int,
+        default=40,
+        help=(
+            "pTmiss bins for the optional 2D discriminator fit. Default: 40."
+        ),
+    )
+    parser.add_argument(
+        "--disc-theta-max",
+        type=float,
+        default=40.0,
+        help=(
+            "Upper theta_gamma_gamma edge (deg) used by the optional "
+            "M_X^2(ep) x theta_gamma_gamma discriminator. Default: 40."
+        ),
+    )
+    parser.add_argument(
+        "--disc-theta-bins",
+        type=int,
+        default=40,
+        help=(
+            "theta_gamma_gamma bins for the optional 2D discriminator fit. "
+            "Default: 40."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -3008,6 +3362,7 @@ def process_period(
 
     stage2_summary: Optional[Dict[str, object]] = None
     stage2_rows: List[Dict[str, object]] = []
+    stage2_spread_rows: List[Dict[str, object]] = []
     mixed_diag_rows: List[Dict[str, object]] = []
 
     if not bool(args_dict.get("stage1_only", False)):
@@ -3056,11 +3411,17 @@ def process_period(
             period, dv_epg, tag_min, tag_max, ft_theta_max
         )
 
+        available = [
+            disc for disc in STAGE2_DISCRIMINATORS
+            if discriminator_available(disc, data_f, pi0_f, dvcs_f)
+        ]
         log(
-            f"{period.label}: Stage II nominal aaogen + dvcsgen fits "
-            f"for 0.4 <= E_probe^pred < {max_probe_energy:g} GeV."
+            f"{period.label}: Stage II discriminator study for "
+            f"0.4 <= E_probe^pred < {max_probe_energy:g} GeV: "
+            + ", ".join(available)
         )
-        stage2_rows = run_stage2_nominal_fits(
+
+        stage2_rows = run_stage2_discriminator_fits(
             period,
             data_f=data_f,
             pi0_f=pi0_f,
@@ -3070,22 +3431,33 @@ def process_period(
             mm2_min=float(args_dict["den_fit_mm2_min"]),
             mm2_max=float(args_dict["den_fit_mm2_max"]),
             probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-            mm2_bins=int(args_dict["den_fit_mm2_bins"]),
-            probe_m2_bins=int(args_dict["den_fit_probe_m2_bins"]),
+            mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
+            probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
+            bins_1d=int(args_dict["disc_1d_bins"]),
+            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+            ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+            theta_max=float(args_dict["disc_theta_max"]),
+            theta_bins=int(args_dict["disc_theta_bins"]),
             min_data_count=int(args_dict["den_min_data_count"]),
             min_template_count=int(args_dict["den_min_template_count"]),
         )
         write_rows_csv(
             stage2_rows,
-            stage2_dir / "denominator_component_fits.csv",
+            stage2_dir / "denominator_discriminator_fits.csv",
         )
 
-        # Mixed-event sensitivity diagnostics are processed one shift at a time
-        # and released immediately to keep memory bounded.
+        stage2_spread_rows = discriminator_spread_rows(stage2_rows)
+        write_rows_csv(
+            stage2_spread_rows,
+            stage2_dir / "denominator_discriminator_spread.csv",
+        )
+
+        # Mixed-event stress tests remain nominal-discriminator-only and are
+        # processed one shift at a time to bound peak memory.
         for shift in parse_mix_shifts(str(args_dict["mix_shifts"])):
             log(
                 f"{period.label}: mixed-data diagnostic shift {shift} "
-                "(not part of nominal fit)."
+                "(nominal discriminator stress test only)."
             )
             mixed_f = build_epgamma_denominator_features(
                 period,
@@ -3102,7 +3474,7 @@ def process_period(
                     pi0_f=pi0_f,
                     dvcs_f=dvcs_f,
                     mixed_f=mixed_f,
-                    nominal_rows=stage2_rows,
+                    fit_rows=stage2_rows,
                     shift=shift,
                     ft_theta_max=ft_theta_max,
                     mm2_min=float(args_dict["den_fit_mm2_min"]),
@@ -3110,7 +3482,6 @@ def process_period(
                     probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
                     mm2_bins=int(args_dict["den_fit_mm2_bins"]),
                     probe_m2_bins=int(args_dict["den_fit_probe_m2_bins"]),
-                    min_data_count=int(args_dict["den_min_data_count"]),
                     min_template_count=int(args_dict["den_min_template_count"]),
                 )
             )
@@ -3127,7 +3498,8 @@ def process_period(
             data_f=data_f,
             pi0_f=pi0_f,
             dvcs_f=dvcs_f,
-            nominal_rows=stage2_rows,
+            fit_rows=stage2_rows,
+            spread_rows=stage2_spread_rows,
             mixed_rows=mixed_diag_rows,
             outdir=stage2_dir,
             ft_theta_max=ft_theta_max,
@@ -3139,7 +3511,8 @@ def process_period(
 
         stage2_summary = summarize_stage2(
             period,
-            nominal_rows=stage2_rows,
+            fit_rows=stage2_rows,
+            spread_rows=stage2_spread_rows,
             mixed_rows=mixed_diag_rows,
             data_total=data_total,
             pi0_total=epg_total,
@@ -3152,8 +3525,8 @@ def process_period(
 
         log(
             f"{period.label}: Stage II completed "
-            f"{stage2_summary['successful_all_region_energy_fits']} "
-            "successful all-region nominal energy fits."
+            f"{stage2_summary['successful_nominal_all_region_energy_fits']} "
+            "successful nominal all-region fits."
         )
     #endif
 
@@ -3169,6 +3542,7 @@ def process_period(
         "resolution_rows": res_rows,
         "stage2_summary": stage2_summary,
         "stage2_rows": stage2_rows,
+        "stage2_spread_rows": stage2_spread_rows,
         "mixed_diag_rows": mixed_diag_rows,
     }
 
@@ -3201,6 +3575,19 @@ def main() -> int:
     #endif
     if not (0.40 < args.den_probe_energy_max <= 10.0):
         raise ValueError("--den-probe-energy-max must be > 0.40 and <= 10 GeV.")
+    #endif
+    if args.disc_1d_bins < 8:
+        raise ValueError("--disc-1d-bins must be >= 8.")
+    #endif
+    if args.disc_ptmiss_max <= 0.0 or args.disc_ptmiss_bins < 8:
+        raise ValueError(
+            "--disc-ptmiss-max must be > 0 and --disc-ptmiss-bins >= 8."
+        )
+    #endif
+    if args.disc_theta_max <= 0.0 or args.disc_theta_bins < 8:
+        raise ValueError(
+            "--disc-theta-max must be > 0 and --disc-theta-bins >= 8."
+        )
     #endif
     parse_mix_shifts(args.mix_shifts)
 
@@ -3269,10 +3656,12 @@ def main() -> int:
                 "cKDTree defaults to one thread/process to avoid oversubscription"
             ),
             "stage2_denominator_model": (
-                "nominal real epgamma data fit = floated aaogen-pi0 shape + "
-                "floated dvcsgen BH/DVCS shape; no generator relative normalization "
-                "is imposed. Multiple deterministic mixed-data wrong-tag templates "
-                "are diagnostic-only stress tests."
+                "real epgamma data are fit locally with floated aaogen-pi0 and "
+                "dvcsgen BH/DVCS templates under multiple discriminator choices. "
+                "No generator relative normalization is imposed. The nominal "
+                "reference is mx2_ep_x_probe_m2; discriminator spread tests shape "
+                "model dependence. Mixed-data wrong-tag templates remain "
+                "diagnostic-only stress tests."
             ),
         },
     }
@@ -3282,6 +3671,7 @@ def main() -> int:
     all_resolution_rows: List[Dict[str, object]] = []
     stage2_summaries: List[Dict[str, object]] = []
     all_stage2_rows: List[Dict[str, object]] = []
+    all_stage2_spread_rows: List[Dict[str, object]] = []
     all_mixed_diag_rows: List[Dict[str, object]] = []
 
     if n_processes == 1:
@@ -3297,6 +3687,7 @@ def main() -> int:
             if result["stage2_summary"] is not None:
                 stage2_summaries.append(result["stage2_summary"])
                 all_stage2_rows.extend(result["stage2_rows"])
+                all_stage2_spread_rows.extend(result["stage2_spread_rows"])
                 all_mixed_diag_rows.extend(result["mixed_diag_rows"])
             #endif
         #endfor
@@ -3391,7 +3782,21 @@ def main() -> int:
             )
             write_rows_csv(
                 all_stage2_rows,
-                stage2_outroot / "denominator_component_fits.csv",
+                stage2_outroot / "denominator_discriminator_fits.csv",
+            )
+        #endif
+
+        if all_stage2_spread_rows:
+            all_stage2_spread_rows.sort(
+                key=lambda r: (
+                    order.get(str(r["period"]), 999),
+                    str(r["region"]),
+                    float(r["energy_low_GeV"]),
+                )
+            )
+            write_rows_csv(
+                all_stage2_spread_rows,
+                stage2_outroot / "denominator_discriminator_spread.csv",
             )
         #endif
 
@@ -3414,12 +3819,14 @@ def main() -> int:
             json.dump(
                 {
                     "method": (
-                        "Nominal local two-component extended-Poisson template "
-                        "fits: aaogen models exclusive-pi0 missing-photon tags and "
-                        "dvcsgen models genuine BH/DVCS epgamma; both normalizations "
-                        "float independently. Deterministic mixed-data tag samples "
-                        "are diagnostic-only stress tests and never define the "
-                        "nominal denominator yield."
+                        "Local two-component extended-Poisson fits compare several "
+                        "independent discriminator choices. aaogen models exclusive-"
+                        "pi0 missing-photon tags and dvcsgen models genuine BH/DVCS "
+                        "epgamma; both normalizations float independently. The "
+                        "mx2_ep_x_probe_m2 result remains the nominal reference while "
+                        "the spread among available discriminators quantifies model "
+                        "dependence. Deterministic mixed-data tag samples are "
+                        "diagnostic-only stress tests."
                     ),
                     "period_summaries": stage2_summaries,
                 },
