@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v028.py
+derive_photon_efficiency_scale_factors_v029.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v028.py
+    python derive_photon_efficiency_scale_factors_v029.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v028.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v029.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v028.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v029.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v028.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v029.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v028.py --angles rad
+    python derive_photon_efficiency_scale_factors_v029.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -157,6 +157,19 @@ TWO_PI = 2.0 * math.pi
 
 # Probe-energy binning used for Stage-Ib resolution studies.
 # Confirmed photon detector-code convention for reconstructed eppi0 trees.
+# Plot aesthetics aligned with the main exclusivity-determination script.
+SAMPLE_COLORS = {
+    "data": "black",
+    "dvcs_mc": "tab:blue",
+    "pi0_mc": "tab:red",
+    "fit": "tab:green",
+}
+SAMPLE_LABELS = {
+    "data": r"$e'p'\gamma$ data",
+    "dvcs_mc": "BH/DVCS MC",
+    "pi0_mc": r"$e'p'\pi^0$ MC contribution",
+}
+
 PHOTON_DETECTOR_FT = 0
 PHOTON_DETECTOR_FD = 1
 
@@ -2225,7 +2238,7 @@ def build_pi0_control_validation(
     """
     Reconstructed-eppi0 data/aaogen control validation.
 
-    IMPORTANT: v028 does NOT feed this calibration into the denominator fit.
+    IMPORTANT: v029 does NOT feed this calibration into the denominator fit.
     The previous full-range Gaussian-smearing calibration saturated at its hard
     bound and failed goodness-of-fit, so it is retained only as a diagnostic.
     """
@@ -3435,10 +3448,22 @@ def shared_driver_projection(
     theta_max: float,
     theta_bins: int,
     display_bin_factor: int = 1,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
     """
     Build a one-dimensional second-axis projection using the actual shared-fit
-    region, fraction, and final morphed templates.
+    region and fraction.
+
+    Returns data, final morphed pi0/BH-DVCS components, the total final model,
+    and the corresponding *starting/unmorphed* pi0/BH-DVCS components.  The raw
+    templates make it visually obvious what the morphing changed.
     """
     display_bin_factor = max(1, int(display_bin_factor))
     display_ptmiss_bins = int(ptmiss_bins) * display_bin_factor
@@ -3511,6 +3536,9 @@ def shared_driver_projection(
         theta_bins=theta_bins,
     )
 
+    raw_pi0_shape = normalized_template(hp).reshape(hp.shape)
+    raw_dvcs_shape = normalized_template(hv).reshape(hv.shape)
+
     tp = morph_template_second_axis(
         hp,
         display_bin_factor
@@ -3529,14 +3557,20 @@ def shared_driver_projection(
     data_proj = np.sum(hd, axis=0).astype(float)
     pi0_shape = np.sum(tp, axis=0).astype(float)
     dvcs_shape = np.sum(td, axis=0).astype(float)
+    raw_pi0_proj = np.sum(raw_pi0_shape, axis=0).astype(float)
+    raw_dvcs_proj = np.sum(raw_dvcs_shape, axis=0).astype(float)
 
     pi0_shape /= max(np.sum(pi0_shape), 1.0e-30)
     dvcs_shape /= max(np.sum(dvcs_shape), 1.0e-30)
+    raw_pi0_proj /= max(np.sum(raw_pi0_proj), 1.0e-30)
+    raw_dvcs_proj /= max(np.sum(raw_dvcs_proj), 1.0e-30)
 
     nd = float(np.sum(data_proj))
     fpi0 = float(row["pi0_fraction"])
     pi0_component = nd * fpi0 * pi0_shape
     dvcs_component = nd * (1.0 - fpi0) * dvcs_shape
+    raw_pi0_component = nd * fpi0 * raw_pi0_proj
+    raw_dvcs_component = nd * (1.0 - fpi0) * raw_dvcs_proj
     model = pi0_component + dvcs_component
 
     if discriminator == "mx2_ep_x_pTmiss":
@@ -3550,7 +3584,15 @@ def shared_driver_projection(
     #endif
     centers = 0.5 * (edges[:-1] + edges[1:])
 
-    return centers, data_proj, pi0_component, dvcs_component, model
+    return (
+        centers,
+        data_proj,
+        pi0_component,
+        dvcs_component,
+        model,
+        raw_pi0_component,
+        raw_dvcs_component,
+    )
 
 
 def make_ft_fd_fit_overlay_canvas(
@@ -3610,7 +3652,15 @@ def make_ft_fd_fit_overlay_canvas(
             #endif
 
             row = candidates[0]
-            centers, data, pi0_c, dvcs_c, model = shared_driver_projection(
+            (
+                centers,
+                data,
+                pi0_c,
+                dvcs_c,
+                model,
+                raw_pi0_c,
+                raw_dvcs_c,
+            ) = shared_driver_projection(
                 region,
                 row,
                 "mx2_ep_x_pTmiss",
@@ -3630,34 +3680,70 @@ def make_ft_fd_fit_overlay_canvas(
                 display_bin_factor=2,
             )
 
+            # Match the visual language of the main exclusivity fitter:
+            # black points = data; blue = BH/DVCS; red = pi0; green = total fit.
+            # Thin dashed curves show the starting/unmorphed templates; solid
+            # curves show the final morphed components used in the shared fit.
             ax.errorbar(
                 centers,
                 data,
                 yerr=np.sqrt(np.maximum(data, 1.0)),
                 fmt="o",
-                ms=2.5,
+                ms=2.8,
+                linewidth=0.8,
+                capsize=0.0,
+                color=SAMPLE_COLORS["data"],
                 label="Data",
+                zorder=6,
             )
             ax.step(
                 centers,
-                model,
+                raw_dvcs_c,
                 where="mid",
-                linewidth=1.5,
-                label="Total fit",
+                color=SAMPLE_COLORS["dvcs_mc"],
+                linewidth=0.75,
+                linestyle="--",
+                alpha=0.75,
+                label="raw BH/DVCS",
+                zorder=1,
+            )
+            ax.step(
+                centers,
+                raw_pi0_c,
+                where="mid",
+                color=SAMPLE_COLORS["pi0_mc"],
+                linewidth=0.75,
+                linestyle="--",
+                alpha=0.75,
+                label=r"raw $\pi^0$",
+                zorder=1,
             )
             ax.step(
                 centers,
                 dvcs_c,
                 where="mid",
-                linewidth=1.0,
-                label="BH/DVCS",
+                color=SAMPLE_COLORS["dvcs_mc"],
+                linewidth=1.6,
+                label="morphed BH/DVCS",
+                zorder=3,
             )
             ax.step(
                 centers,
                 pi0_c,
                 where="mid",
-                linewidth=1.0,
-                label=r"$\pi^0$",
+                color=SAMPLE_COLORS["pi0_mc"],
+                linewidth=1.6,
+                label=r"morphed $\pi^0$",
+                zorder=3,
+            )
+            ax.step(
+                centers,
+                model,
+                where="mid",
+                color=SAMPLE_COLORS["fit"],
+                linewidth=2.0,
+                label="total fit",
+                zorder=4,
             )
             ax.set_xlabel(r"$p_{T,\mathrm{miss}}$ (GeV)")
             ax.set_ylabel("Entries / bin")
@@ -3680,11 +3766,11 @@ def make_ft_fd_fit_overlay_canvas(
                 f"BH/DVCS={fbh:.2f}, $\\pi^0$={fpi0:.2f}; "
                 f"smear=({smear_dvcs:.1f},{smear_pi0:.1f}) bins"
             )
-            ax.grid(alpha=0.18)
+            ax.grid(alpha=0.20)
         #endfor
     #endfor
 
-    axes[0, 0].legend(fontsize=8)
+    axes[0, 0].legend(fontsize=7.5, frameon=False, ncol=2)
     fig.suptitle(
         f"{period.label}: explicit FT versus FD Stage-II $p_{{T,\\mathrm{{miss}}}}$ fits",
         fontsize=14,
@@ -4093,7 +4179,7 @@ def make_stage2_canvases(
         unit_hist(
             axes[0, 1],
             feat["pred_probe_mass2"][common[key]],
-            np.linspace(-0.10, 0.08, 241),
+            np.linspace(-0.06, 0.06, 241),
             label,
         )
     #endfor
@@ -4105,7 +4191,7 @@ def make_stage2_canvases(
     axes[0, 0].legend(fontsize=8)
     axes[0, 0].grid(alpha=0.18)
 
-    axes[0, 1].set_xlim(-0.10, 0.08)
+    axes[0, 1].set_xlim(-0.06, 0.06)
     axes[0, 1].set_xlabel(r"$(P_{\mathrm{probe}}^{\mathrm{pred}})^2$ (GeV$^2$)")
     axes[0, 1].set_ylabel("Unit-normalized entries")
     axes[0, 1].set_title("Predicted probe mass squared")
@@ -4145,7 +4231,7 @@ def make_stage2_canvases(
             for k, f in (("data", data_f), ("pi0", pi0_f), ("dvcs", dvcs_f))
         ])
         vals_all = vals_all[np.isfinite(vals_all)]
-        hi = max(5.0, min(180.0, float(np.percentile(vals_all, 99.5)))) if vals_all.size else 40.0
+        theta_display_max = 4.0
         for key, feat, label in (
             ("data", data_f, "Data"),
             ("pi0", pi0_f, "aaogen $\\pi^0$"),
@@ -4154,10 +4240,11 @@ def make_stage2_canvases(
             unit_hist(
                 axes[1, 1],
                 feat["stored_theta_gamma_gamma"][common[key]],
-                np.linspace(0.0, hi, 220),
+                np.linspace(0.0, theta_display_max, 221),
                 label,
             )
         #endfor
+        axes[1, 1].set_xlim(0.0, 4.0)
         axes[1, 1].set_xlabel(r"stored $\theta_{\gamma\gamma}$ (deg)")
         axes[1, 1].set_ylabel("Unit-normalized entries")
         axes[1, 1].set_title(r"$\theta_{\gamma\gamma}$ diagnostic")
@@ -7298,7 +7385,7 @@ def main() -> int:
                 "real epgamma data are fit locally with floated aaogen-pi0 and "
                 "dvcsgen BH/DVCS templates under multiple discriminator choices. "
                 "No generator relative normalization is imposed. Shared morphing "
-                "uses zero-centered weak priors in v028; reconstructed-eppi0 control "
+                "uses zero-centered weak priors in v029; reconstructed-eppi0 control "
                 "results are diagnostic and are not injected as nuisance centers. "
                 "Mixed-data wrong-tag templates remain diagnostic-only stress tests."
             ),
