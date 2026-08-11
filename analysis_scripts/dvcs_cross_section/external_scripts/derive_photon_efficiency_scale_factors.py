@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v024.py
+derive_photon_efficiency_scale_factors_v025.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v024.py
+    python derive_photon_efficiency_scale_factors_v025.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v024.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v025.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v024.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v025.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v024.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v025.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v024.py --angles rad
+    python derive_photon_efficiency_scale_factors_v025.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -600,6 +600,7 @@ class DataAssociationResult:
     stage_lookup: Dict[str, np.ndarray]
     counters: Dict[str, int]
     best_diagnostics: Dict[str, np.ndarray]
+    parent_delta_diagnostics: Dict[str, np.ndarray]
 
 
 def _lookup_from_indices(n: int, indices: np.ndarray) -> np.ndarray:
@@ -707,6 +708,7 @@ def match_data_event_candidates(
                 "accepted_best_matches": 0,
             },
             best_diagnostics={},
+            parent_delta_diagnostics={},
         )
     #endif
 
@@ -740,6 +742,7 @@ def match_data_event_candidates(
                 "accepted_best_matches": 0,
             },
             best_diagnostics={},
+            parent_delta_diagnostics={},
         )
     #endif
 
@@ -750,9 +753,12 @@ def match_data_event_candidates(
     pi_sorted_index = left_rep + offsets
     pi_rep = order_p[pi_sorted_index]
 
-    # Parent e/p consistency.
-    de = np.abs(epg.electron_p3[epg_rep] - eppi0.electron_p3[pi_rep])
-    dp = np.abs(epg.proton_p3[epg_rep] - eppi0.proton_p3[pi_rep])
+    # Parent e/p consistency. For diagnostics define signed differences as
+    # (epgamma tree) - (eppi0 tree) for the same runnum/evnum.
+    de_signed = epg.electron_p3[epg_rep] - eppi0.electron_p3[pi_rep]
+    dp_signed = epg.proton_p3[epg_rep] - eppi0.proton_p3[pi_rep]
+    de = np.abs(de_signed)
+    dp = np.abs(dp_signed)
     component_delta = np.maximum(np.max(de, axis=1), np.max(dp, axis=1))
     parent_distance = np.sqrt(
         np.sum((de / parent_component_tol) ** 2, axis=1)
@@ -762,6 +768,87 @@ def match_data_event_candidates(
         np.isfinite(component_delta)
         & (component_delta <= parent_component_tol)
     )
+
+    # One parent-delta diagnostic point per exact same-event epgamma tag,
+    # independent of the active 2-MeV-style hard gate. If an event contains
+    # multiple eppi0 candidates, retain the candidate with the smallest maximum
+    # six-component e/p mismatch.
+    finite_parent = np.isfinite(component_delta)
+    candidate_pairs = np.flatnonzero(finite_parent)
+    if candidate_pairs.size:
+        order_diag = np.lexsort(
+            (component_delta[candidate_pairs], epg_rep[candidate_pairs])
+        )
+        sorted_pairs = candidate_pairs[order_diag]
+        sorted_tags = epg_rep[sorted_pairs]
+        first = np.ones(len(sorted_pairs), dtype=bool)
+        if len(sorted_pairs) > 1:
+            first[1:] = sorted_tags[1:] != sorted_tags[:-1]
+        #endif
+        diag_pair = sorted_pairs[first]
+        diag_epg = epg_rep[diag_pair]
+        diag_pi = pi_rep[diag_pair]
+
+        e_g3 = epg.electron_p3[diag_epg]
+        e_pi3 = eppi0.electron_p3[diag_pi]
+        p_g3 = epg.proton_p3[diag_epg]
+        p_pi3 = eppi0.proton_p3[diag_pi]
+
+        def _angles_deg(v: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+            mag = np.linalg.norm(v, axis=1)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                theta = np.degrees(
+                    np.arccos(
+                        np.clip(
+                            v[:, 2] / np.where(mag > 0.0, mag, np.nan),
+                            -1.0, 1.0,
+                        )
+                    )
+                )
+            #endwith
+            phi = np.degrees(np.arctan2(v[:, 1], v[:, 0]))
+            return theta, phi
+        #enddef
+
+        def _dphi_deg(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+            return (a - b + 180.0) % 360.0 - 180.0
+        #enddef
+
+        e_tg, e_pg = _angles_deg(e_g3)
+        e_tp, e_pphi = _angles_deg(e_pi3)
+        p_tg, p_pg = _angles_deg(p_g3)
+        p_tp, p_pphi = _angles_deg(p_pi3)
+        e_mag_g = np.linalg.norm(e_g3, axis=1)
+        e_mag_p = np.linalg.norm(e_pi3, axis=1)
+        p_mag_g = np.linalg.norm(p_g3, axis=1)
+        p_mag_p = np.linalg.norm(p_pi3, axis=1)
+
+        parent_delta_diagnostics = {
+            "epg_index": np.asarray(diag_epg, dtype=np.int64),
+            "eppi0_index": np.asarray(diag_pi, dtype=np.int64),
+            "runnum": np.asarray(epg.raw["runnum"][diag_epg], dtype=np.int64),
+            "evnum": np.asarray(epg.raw["evnum"][diag_epg], dtype=np.int64),
+            "pred_probe_energy": np.full(len(diag_epg), np.nan, dtype=float),
+            "pred_probe_theta_deg": np.full(len(diag_epg), np.nan, dtype=float),
+            "e_delta_px_GeV": np.asarray(de_signed[diag_pair, 0], dtype=float),
+            "e_delta_py_GeV": np.asarray(de_signed[diag_pair, 1], dtype=float),
+            "e_delta_pz_GeV": np.asarray(de_signed[diag_pair, 2], dtype=float),
+            "p_delta_px_GeV": np.asarray(dp_signed[diag_pair, 0], dtype=float),
+            "p_delta_py_GeV": np.asarray(dp_signed[diag_pair, 1], dtype=float),
+            "p_delta_pz_GeV": np.asarray(dp_signed[diag_pair, 2], dtype=float),
+            "e_delta_p_GeV": np.asarray(e_mag_g - e_mag_p, dtype=float),
+            "p_delta_p_GeV": np.asarray(p_mag_g - p_mag_p, dtype=float),
+            "e_delta_theta_deg": np.asarray(e_tg - e_tp, dtype=float),
+            "p_delta_theta_deg": np.asarray(p_tg - p_tp, dtype=float),
+            "e_delta_phi_deg": np.asarray(_dphi_deg(e_pg, e_pphi), dtype=float),
+            "p_delta_phi_deg": np.asarray(_dphi_deg(p_pg, p_pphi), dtype=float),
+            "max_component_delta_GeV": np.asarray(
+                component_delta[diag_pair], dtype=float
+            ),
+        }
+    else:
+        parent_delta_diagnostics = {}
+    #endif
 
     # Reconstructed companion = P_pi0 - k_tag.
     tag3 = epg.tag_p3[epg_rep]
@@ -909,6 +996,33 @@ def match_data_event_candidates(
         }
     #endif
 
+    # Attach predicted probe energy/theta to the parent-delta diagnostic.
+    if parent_delta_diagnostics:
+        dg = np.asarray(parent_delta_diagnostics["epg_index"], dtype=np.int64)
+        e3d = epg.electron_p3[dg]
+        p3d = epg.proton_p3[dg]
+        t3d = epg.tag_p3[dg]
+        eEd = np.sqrt(np.sum(e3d * e3d, axis=1) + M_E * M_E)
+        pEd = np.sqrt(np.sum(p3d * p3d, axis=1) + M_P * M_P)
+        tEd = np.linalg.norm(t3d, axis=1)
+        predEd = initial_E - eEd - pEd - tEd
+        pred3d = initial_p3[None, :] - e3d - p3d - t3d
+        predpd = np.linalg.norm(pred3d, axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            predthd = np.degrees(
+                np.arccos(
+                    np.clip(
+                        pred3d[:, 2]
+                        / np.where(predpd > 0.0, predpd, np.nan),
+                        -1.0, 1.0,
+                    )
+                )
+            )
+        #endwith
+        parent_delta_diagnostics["pred_probe_energy"] = np.asarray(predEd, dtype=float)
+        parent_delta_diagnostics["pred_probe_theta_deg"] = np.asarray(predthd, dtype=float)
+    #endif
+
     counters = {
         "epgamma_entries": int(n_epg),
         "eppi0_entries": int(n_pi0),
@@ -944,6 +1058,7 @@ def match_data_event_candidates(
         stage_lookup=stage_lookup,
         counters=counters,
         best_diagnostics=best_diag,
+        parent_delta_diagnostics=parent_delta_diagnostics,
     )
 
 
@@ -2266,7 +2381,7 @@ def build_pi0_control_validation(
     """
     Reconstructed-eppi0 data/aaogen control validation.
 
-    IMPORTANT: v024 does NOT feed this calibration into the denominator fit.
+    IMPORTANT: v025 does NOT feed this calibration into the denominator fit.
     The previous full-range Gaussian-smearing calibration saturated at its hard
     bound and failed goodness-of-fit, so it is retained only as a diagnostic.
     """
@@ -4774,6 +4889,222 @@ def _stage3_rows_for_region(
     )
 
 
+
+def _qfinite(values: np.ndarray, q: float) -> float:
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    return float(np.quantile(arr, q)) if arr.size else float("nan")
+
+
+def build_parent_delta_summary_rows(
+    period: PeriodConfig,
+    diagnostics: Dict[str, np.ndarray],
+) -> List[Dict[str, object]]:
+    if not diagnostics:
+        return []
+    #endif
+    specs = (
+        ("electron", "delta_px", "e_delta_px_GeV", "GeV"),
+        ("electron", "delta_py", "e_delta_py_GeV", "GeV"),
+        ("electron", "delta_pz", "e_delta_pz_GeV", "GeV"),
+        ("electron", "delta_p", "e_delta_p_GeV", "GeV"),
+        ("electron", "delta_theta", "e_delta_theta_deg", "deg"),
+        ("electron", "delta_phi", "e_delta_phi_deg", "deg"),
+        ("proton", "delta_px", "p_delta_px_GeV", "GeV"),
+        ("proton", "delta_py", "p_delta_py_GeV", "GeV"),
+        ("proton", "delta_pz", "p_delta_pz_GeV", "GeV"),
+        ("proton", "delta_p", "p_delta_p_GeV", "GeV"),
+        ("proton", "delta_theta", "p_delta_theta_deg", "deg"),
+        ("proton", "delta_phi", "p_delta_phi_deg", "deg"),
+        ("combined", "max_abs_cartesian_component", "max_component_delta_GeV", "GeV"),
+    )
+    rows = []
+    for particle, variable, key, unit in specs:
+        vals = np.asarray(diagnostics[key], dtype=float)
+        vals = vals[np.isfinite(vals)]
+        av = np.abs(vals)
+        rows.append({
+            "period": period.key, "label": period.label,
+            "particle": particle, "variable": variable, "unit": unit,
+            "definition": "epgamma minus eppi0 for exact same runnum/evnum; best parent candidate",
+            "count": int(vals.size),
+            "mean": float(np.mean(vals)) if vals.size else float("nan"),
+            "std": float(np.std(vals)) if vals.size else float("nan"),
+            "q01": _qfinite(vals, .01), "q16": _qfinite(vals, .16),
+            "median": _qfinite(vals, .50), "q84": _qfinite(vals, .84),
+            "q99": _qfinite(vals, .99),
+            "abs_q50": _qfinite(av, .50), "abs_q68": _qfinite(av, .68),
+            "abs_q90": _qfinite(av, .90), "abs_q95": _qfinite(av, .95),
+            "abs_q99": _qfinite(av, .99),
+            "abs_max": float(np.max(av)) if vals.size else float("nan"),
+        })
+    #endfor
+    return rows
+
+
+def build_parent_tolerance_rows(
+    period: PeriodConfig,
+    diagnostics: Dict[str, np.ndarray],
+    tolerance_grid: np.ndarray,
+    ft_theta_max: float,
+    max_probe_energy: float,
+) -> List[Dict[str, object]]:
+    if not diagnostics:
+        return []
+    #endif
+    d = np.asarray(diagnostics["max_component_delta_GeV"], dtype=float)
+    th = np.asarray(diagnostics["pred_probe_theta_deg"], dtype=float)
+    en = np.asarray(diagnostics["pred_probe_energy"], dtype=float)
+    finite = np.isfinite(d)
+    regions = {
+        "all": finite,
+        "FT": finite & np.isfinite(th) & (th <= ft_theta_max),
+        "FD_all": finite & np.isfinite(th) & (th > ft_theta_max),
+    }
+    edges = stage2_energy_edges(max_probe_energy)
+    rows = []
+    for region, rm in regions.items():
+        for elo, ehi in [(float("nan"), float("nan"))] + [
+            (float(edges[i]), float(edges[i+1])) for i in range(len(edges)-1)
+        ]:
+            if np.isfinite(elo):
+                bm = rm & np.isfinite(en) & (en >= elo) & (en < ehi)
+            else:
+                bm = rm
+            #endif
+            n = int(np.count_nonzero(bm))
+            for tol in tolerance_grid:
+                npass = int(np.count_nonzero(bm & (d <= tol)))
+                rows.append({
+                    "period": period.key, "label": period.label, "region": region,
+                    "energy_low_GeV": elo, "energy_high_GeV": ehi,
+                    "tolerance_GeV": float(tol), "same_event_tags": n,
+                    "passing_tags": npass,
+                    "passing_fraction": npass/n if n else float("nan"),
+                })
+            #endfor
+        #endfor
+    #endfor
+    return rows
+
+
+def build_parent_delta_by_run_rows(
+    period: PeriodConfig,
+    diagnostics: Dict[str, np.ndarray],
+    active_tolerance: float,
+) -> List[Dict[str, object]]:
+    if not diagnostics:
+        return []
+    #endif
+    runs = np.asarray(diagnostics["runnum"], dtype=np.int64)
+    d = np.asarray(diagnostics["max_component_delta_GeV"], dtype=float)
+    rows = []
+    for run in np.unique(runs):
+        a = d[(runs == run) & np.isfinite(d)]
+        if not a.size:
+            continue
+        #endif
+        rows.append({
+            "period": period.key, "label": period.label, "runnum": int(run),
+            "same_event_tags": int(a.size),
+            "median_max_component_delta_GeV": _qfinite(a,.50),
+            "q90_max_component_delta_GeV": _qfinite(a,.90),
+            "q99_max_component_delta_GeV": _qfinite(a,.99),
+            "fraction_passing_active_tolerance": float(np.mean(a <= active_tolerance)),
+            "active_tolerance_GeV": float(active_tolerance),
+        })
+    #endfor
+    return rows
+
+
+def _symrange(a: np.ndarray) -> float:
+    v = np.abs(np.asarray(a,dtype=float))
+    v = v[np.isfinite(v)]
+    return max(1.15*_qfinite(v,.995), 1e-6) if v.size else 1.0
+
+
+def make_parent_delta_diagnostic_canvases(
+    period: PeriodConfig,
+    diagnostics: Dict[str, np.ndarray],
+    tolerance_rows: List[Dict[str, object]],
+    run_rows: List[Dict[str, object]],
+    outdir: Path,
+    active_tolerance: float,
+) -> None:
+    if not diagnostics:
+        return
+    #endif
+
+    fig, ax = plt.subplots(2,3,figsize=(17.5,9.2))
+    specs=(("e_delta_px_GeV",r"$\Delta p_x^e$ (GeV)",0,0),
+           ("e_delta_py_GeV",r"$\Delta p_y^e$ (GeV)",0,1),
+           ("e_delta_pz_GeV",r"$\Delta p_z^e$ (GeV)",0,2),
+           ("p_delta_px_GeV",r"$\Delta p_x^p$ (GeV)",1,0),
+           ("p_delta_py_GeV",r"$\Delta p_y^p$ (GeV)",1,1),
+           ("p_delta_pz_GeV",r"$\Delta p_z^p$ (GeV)",1,2))
+    for key,xl,r,c in specs:
+        v=np.asarray(diagnostics[key],float); v=v[np.isfinite(v)]; lim=_symrange(v)
+        ax[r,c].hist(v,bins=np.linspace(-lim,lim,181),histtype="step",density=True)
+        ax[r,c].axvline(0,lw=.8); ax[r,c].axvline(active_tolerance,ls="--",lw=.8)
+        ax[r,c].axvline(-active_tolerance,ls="--",lw=.8)
+        ax[r,c].set_xlabel(xl); ax[r,c].set_ylabel("Density"); ax[r,c].grid(alpha=.18)
+    #endfor
+    fig.suptitle(f"{period.label}: same-event parent Cartesian differences (epgamma − eppi0)")
+    safe_finalize_figure(fig,outdir/"canvas_data_parent_cartesian_deltas.png",rect=(0,0,1,.94)); plt.close(fig)
+
+    fig, ax = plt.subplots(2,3,figsize=(17.5,9.2))
+    specs=(("e_delta_p_GeV",r"$\Delta p_e$ (GeV)",0,0),
+           ("e_delta_theta_deg",r"$\Delta\theta_e$ (deg)",0,1),
+           ("e_delta_phi_deg",r"$\Delta\phi_e$ (deg)",0,2),
+           ("p_delta_p_GeV",r"$\Delta p_p$ (GeV)",1,0),
+           ("p_delta_theta_deg",r"$\Delta\theta_p$ (deg)",1,1),
+           ("p_delta_phi_deg",r"$\Delta\phi_p$ (deg)",1,2))
+    for key,xl,r,c in specs:
+        v=np.asarray(diagnostics[key],float); v=v[np.isfinite(v)]; lim=_symrange(v)
+        ax[r,c].hist(v,bins=np.linspace(-lim,lim,181),histtype="step",density=True)
+        ax[r,c].axvline(0,lw=.8); ax[r,c].set_xlabel(xl); ax[r,c].set_ylabel("Density"); ax[r,c].grid(alpha=.18)
+    #endfor
+    fig.suptitle(f"{period.label}: same-event parent magnitude/angle differences (epgamma − eppi0)")
+    safe_finalize_figure(fig,outdir/"canvas_data_parent_kinematic_deltas.png",rect=(0,0,1,.94)); plt.close(fig)
+
+    fig, ax = plt.subplots(1,2,figsize=(15.5,5.8))
+    full=[r for r in tolerance_rows if not np.isfinite(r["energy_low_GeV"])]
+    for region in ("all","FT","FD_all"):
+        rr=sorted([r for r in full if r["region"]==region],key=lambda r:float(r["tolerance_GeV"]))
+        if rr: ax[0].plot([r["tolerance_GeV"] for r in rr],[r["passing_fraction"] for r in rr],marker="o",label=region)
+        #endif
+    #endfor
+    ax[0].axvline(active_tolerance,ls="--",lw=1,label=f"active {active_tolerance:g} GeV")
+    ax[0].set_xscale("log"); ax[0].set_ylim(0,1.05); ax[0].set_xlabel("Maximum allowed |Cartesian component difference| (GeV)")
+    ax[0].set_ylabel("Fraction of exact same-event tags passing"); ax[0].legend(fontsize=8); ax[0].grid(alpha=.18)
+
+    available=sorted(set(float(r["tolerance_GeV"]) for r in tolerance_rows))
+    for target in (0.002,0.005,0.010,0.020,0.050):
+        tol=min(available,key=lambda x:abs(x-target))
+        rr=sorted([r for r in tolerance_rows if r["region"]=="FD_all" and np.isfinite(r["energy_low_GeV"]) and abs(float(r["tolerance_GeV"])-tol)<1e-12],key=lambda r:float(r["energy_low_GeV"]))
+        if rr:
+            ax[1].plot([.5*(float(r["energy_low_GeV"])+float(r["energy_high_GeV"])) for r in rr],[r["passing_fraction"] for r in rr],marker="o",label=f"{tol:g} GeV")
+        #endif
+    #endfor
+    ax[1].set_ylim(0,1.05); ax[1].set_xlabel(r"$E_{\rm probe}^{\rm pred}$ (GeV)"); ax[1].set_ylabel("FD-all same-event parent pass fraction")
+    ax[1].legend(fontsize=8); ax[1].grid(alpha=.18)
+    fig.suptitle(f"{period.label}: sensitivity of exact-event data parent matching to tolerance")
+    safe_finalize_figure(fig,outdir/"canvas_data_parent_tolerance_scan.png",rect=(0,0,1,.93)); plt.close(fig)
+
+    if run_rows:
+        rr=sorted(run_rows,key=lambda r:int(r["runnum"])); runs=[r["runnum"] for r in rr]
+        fig,ax=plt.subplots(2,1,figsize=(15.5,8),sharex=True)
+        ax[0].plot(runs,[r["median_max_component_delta_GeV"] for r in rr],marker=".",ls="none",label="median")
+        ax[0].plot(runs,[r["q90_max_component_delta_GeV"] for r in rr],marker=".",ls="none",label="90th percentile")
+        ax[0].axhline(active_tolerance,ls="--",lw=1,label=f"active {active_tolerance:g} GeV")
+        ax[0].set_yscale("log"); ax[0].set_ylabel("max |component difference| (GeV)"); ax[0].legend(fontsize=8); ax[0].grid(alpha=.18)
+        ax[1].plot(runs,[r["fraction_passing_active_tolerance"] for r in rr],marker=".",ls="none")
+        ax[1].set_ylim(0,1.05); ax[1].set_xlabel("Run number"); ax[1].set_ylabel("Fraction passing active tolerance"); ax[1].grid(alpha=.18)
+        fig.suptitle(f"{period.label}: same-event parent consistency by run")
+        safe_finalize_figure(fig,outdir/"canvas_data_parent_delta_by_run.png",rect=(0,0,1,.94)); plt.close(fig)
+    #endif
+
+
 def make_stage3_canvases(
     period: PeriodConfig,
     rows: List[Dict[str, object]],
@@ -5241,6 +5572,7 @@ def summarize_stage3(
             "testing; future loose-nSidis production data will replace/extend "
             "the data side"
         ),
+        "parent_consistency_diagnostic": "Active 0.002-GeV-style Cartesian gate retained for this run; independent tolerance scan quantifies its appropriateness.",
         "association_schema_limit": (
             "Current eppi0 trees do not store daughter-photon full three-vectors. "
             "Tag identity is therefore tested by exact event identity, e/p "
@@ -6050,6 +6382,9 @@ def aggregate_existing_outputs(
     control_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
     stage3_summaries: List[Dict[str, object]] = []
+    parent_delta_summary_rows: List[Dict[str, object]] = []
+    parent_tolerance_rows: List[Dict[str, object]] = []
+    parent_run_rows: List[Dict[str, object]] = []
     missing: List[str] = []
 
     for period in selected:
@@ -6113,6 +6448,15 @@ def aggregate_existing_outputs(
             #endif
             stage3_rows.extend(
                 read_csv_rows(p3 / "reference_efficiency_scale_factors.csv")
+            )
+            parent_delta_summary_rows.extend(
+                read_csv_rows(p3 / "data_parent_kinematic_delta_summary.csv")
+            )
+            parent_tolerance_rows.extend(
+                read_csv_rows(p3 / "data_parent_tolerance_scan.csv")
+            )
+            parent_run_rows.extend(
+                read_csv_rows(p3 / "data_parent_delta_by_run.csv")
             )
         #endif
     #endfor
@@ -6221,6 +6565,56 @@ def aggregate_existing_outputs(
             write_rows_csv(
                 stage3_rows,
                 Path(stage3_outroot) / "reference_efficiency_scale_factors.csv",
+            )
+        #endif
+        if parent_delta_summary_rows:
+            write_rows_csv(
+                parent_delta_summary_rows,
+                Path(stage3_outroot) / "data_parent_kinematic_delta_summary.csv",
+            )
+        #endif
+        if parent_tolerance_rows:
+            write_rows_csv(
+                parent_tolerance_rows,
+                Path(stage3_outroot) / "data_parent_tolerance_scan.csv",
+            )
+        #endif
+        if parent_run_rows:
+            write_rows_csv(
+                parent_run_rows,
+                Path(stage3_outroot) / "data_parent_delta_by_run.csv",
+            )
+        #endif
+        if parent_delta_summary_rows and parent_tolerance_rows:
+            # CSV values read through DictReader are strings in aggregate-only.
+            # Convert the numeric fields needed by the comparison canvas.
+            numeric_summary = []
+            for r in parent_delta_summary_rows:
+                rr = dict(r)
+                for key in ("abs_q50", "abs_q90", "abs_q99"):
+                    if key in rr and rr[key] != "":
+                        rr[key] = float(rr[key])
+                    #endif
+                #endfor
+                numeric_summary.append(rr)
+            #endfor
+            numeric_tol = []
+            for r in parent_tolerance_rows:
+                rr = dict(r)
+                for key in ("energy_low_GeV", "energy_high_GeV", "tolerance_GeV", "passing_fraction"):
+                    if key in rr and rr[key] != "":
+                        rr[key] = float(rr[key])
+                    else:
+                        rr[key] = float("nan")
+                    #endif
+                #endfor
+                numeric_tol.append(rr)
+            #endfor
+            make_cross_period_parent_delta_canvas(
+                numeric_summary,
+                numeric_tol,
+                Path(stage3_outroot),
+                active_tolerance=0.002,
             )
         #endif
         if stage3_summaries:
@@ -6670,6 +7064,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--stage3-parent-tolerance-grid",
+        default="0.0001,0.0002,0.0005,0.001,0.002,0.005,0.01,0.02,0.05,0.10",
+        help=(
+            "Comma-separated absolute Cartesian parent-momentum tolerances (GeV) "
+            "for the Stage-III exact-same-event data diagnostic scan. This scan "
+            "does not change --parent-component-tol. "
+            "Default: 0.0001,0.0002,0.0005,0.001,0.002,0.005,0.01,0.02,0.05,0.10."
+        ),
+    )
+    parser.add_argument(
         "--stage3-tag-remainder-m2-max",
         type=float,
         default=1.0e-3,
@@ -6890,6 +7294,9 @@ def process_period(
     control_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
     stage3_summary: Optional[Dict[str, object]] = None
+    parent_delta_summary_rows: List[Dict[str, object]] = []
+    parent_tolerance_rows: List[Dict[str, object]] = []
+    parent_run_rows: List[Dict[str, object]] = []
 
     if not bool(args_dict.get("stage1_only", False)):
         stage2_dir = Path(stage2_output_dir) / period.key
@@ -7214,6 +7621,38 @@ def process_period(
                 ),
             )
 
+            parent_tolerance_grid = np.asarray(
+                parse_float_edges(
+                    str(args_dict["stage3_parent_tolerance_grid"]),
+                    "--stage3-parent-tolerance-grid",
+                ),
+                dtype=float,
+            )
+            parent_delta_summary_rows = build_parent_delta_summary_rows(
+                period, data_assoc.parent_delta_diagnostics
+            )
+            parent_tolerance_rows = build_parent_tolerance_rows(
+                period, data_assoc.parent_delta_diagnostics,
+                parent_tolerance_grid, ft_theta_max, max_probe_energy,
+            )
+            parent_run_rows = build_parent_delta_by_run_rows(
+                period, data_assoc.parent_delta_diagnostics,
+                float(args_dict["parent_component_tol"]),
+            )
+            write_rows_csv(parent_delta_summary_rows, stage3_dir/"data_parent_kinematic_delta_summary.csv")
+            write_rows_csv(parent_tolerance_rows, stage3_dir/"data_parent_tolerance_scan.csv")
+            write_rows_csv(parent_run_rows, stage3_dir/"data_parent_delta_by_run.csv")
+            make_parent_delta_diagnostic_canvases(
+                period, data_assoc.parent_delta_diagnostics,
+                parent_tolerance_rows, parent_run_rows, stage3_dir,
+                float(args_dict["parent_component_tol"]),
+            )
+            log(
+                f"{period.label}: parent-delta diagnostic uses "
+                f"{len(data_assoc.parent_delta_diagnostics.get('epg_index', [])):,} "
+                "exact same-event tags before the active parent tolerance."
+            )
+
             # Best mass-shell/threshold candidate lookup. The final numerator
             # optionally adds the loose predicted/reconstructed consistency gate.
             data_mass_shell_lookup = data_assoc.stage_lookup["probe_energy"]
@@ -7335,7 +7774,44 @@ def process_period(
         "control_rows": control_rows,
         "stage3_rows": stage3_rows,
         "stage3_summary": stage3_summary,
+        "parent_delta_summary_rows": parent_delta_summary_rows,
+        "parent_tolerance_rows": parent_tolerance_rows,
+        "parent_run_rows": parent_run_rows,
     }
+
+
+def make_cross_period_parent_delta_canvas(
+    summary_rows: List[Dict[str, object]],
+    tolerance_rows: List[Dict[str, object]],
+    outdir: Path,
+    active_tolerance: float,
+) -> None:
+    if not summary_rows or not tolerance_rows:
+        return
+    #endif
+    order=[p.key for p in PERIODS]; labels={p.key:p.label for p in PERIODS}
+    mr={str(r["period"]):r for r in summary_rows if r["particle"]=="combined" and r["variable"]=="max_abs_cartesian_component"}
+    periods=[p for p in order if p in mr]
+    fig,ax=plt.subplots(1,2,figsize=(16,5.8))
+    x=np.arange(len(periods))
+    for key,label in (("abs_q50","median"),("abs_q90","90th percentile"),("abs_q99","99th percentile")):
+        ax[0].plot(x,[mr[p][key] for p in periods],marker="o",label=label)
+    #endfor
+    ax[0].axhline(active_tolerance,ls="--",lw=1,label=f"active {active_tolerance:g} GeV")
+    ax[0].set_yscale("log"); ax[0].set_xticks(x); ax[0].set_xticklabels([labels[p] for p in periods],rotation=25,ha="right")
+    ax[0].set_ylabel("max |e/p Cartesian component difference| (GeV)"); ax[0].legend(fontsize=8); ax[0].grid(alpha=.18)
+    full=[r for r in tolerance_rows if r["region"]=="all" and not np.isfinite(r["energy_low_GeV"])]
+    for p in order:
+        rr=sorted([r for r in full if str(r["period"])==p],key=lambda r:float(r["tolerance_GeV"]))
+        if rr: ax[1].plot([r["tolerance_GeV"] for r in rr],[r["passing_fraction"] for r in rr],marker="o",label=labels[p])
+        #endif
+    #endfor
+    ax[1].axvline(active_tolerance,ls="--",lw=1); ax[1].set_xscale("log"); ax[1].set_ylim(0,1.05)
+    ax[1].set_xlabel("Maximum allowed |component difference| (GeV)"); ax[1].set_ylabel("Exact same-event tags passing")
+    ax[1].legend(fontsize=8); ax[1].grid(alpha=.18)
+    fig.suptitle("Stage-III data parent consistency: epgamma tree versus eppi0 tree")
+    safe_finalize_figure(fig,Path(outdir)/"canvas_data_parent_cross_period_comparison.png",rect=(0,0,1,.93)); plt.close(fig)
+
 
 def main() -> int:
     args = parse_args()
@@ -7359,6 +7835,13 @@ def main() -> int:
     #endif
     if args.parent_component_tol <= 0.0:
         raise ValueError("--parent-component-tol must be > 0.")
+    #endif
+    parent_tolerance_grid = parse_float_edges(
+        args.stage3_parent_tolerance_grid,
+        "--stage3-parent-tolerance-grid",
+    )
+    if any(x <= 0.0 for x in parent_tolerance_grid):
+        raise ValueError("--stage3-parent-tolerance-grid values must all be > 0.")
     #endif
     if args.stage3_tag_remainder_m2_max <= 0.0:
         raise ValueError("--stage3-tag-remainder-m2-max must be > 0.")
@@ -7519,7 +8002,7 @@ def main() -> int:
                 "real epgamma data are fit locally with floated aaogen-pi0 and "
                 "dvcsgen BH/DVCS templates under multiple discriminator choices. "
                 "No generator relative normalization is imposed. Shared morphing "
-                "uses zero-centered weak priors in v024; reconstructed-eppi0 control "
+                "uses zero-centered weak priors in v025; reconstructed-eppi0 control "
                 "results are diagnostic and are not injected as nuisance centers. "
                 "Mixed-data wrong-tag templates remain diagnostic-only stress tests."
             ),
@@ -7538,6 +8021,9 @@ def main() -> int:
     all_control_rows: List[Dict[str, object]] = []
     all_stage3_rows: List[Dict[str, object]] = []
     stage3_summaries: List[Dict[str, object]] = []
+    all_parent_delta_summary_rows: List[Dict[str, object]] = []
+    all_parent_tolerance_rows: List[Dict[str, object]] = []
+    all_parent_run_rows: List[Dict[str, object]] = []
 
     if n_processes == 1:
         for period in selected:
@@ -7558,6 +8044,9 @@ def main() -> int:
                 all_shared_rows.extend(result.get("shared_rows", []))
                 all_control_rows.extend(result.get("control_rows", []))
                 all_stage3_rows.extend(result.get("stage3_rows", []))
+                all_parent_delta_summary_rows.extend(result.get("parent_delta_summary_rows", []))
+                all_parent_tolerance_rows.extend(result.get("parent_tolerance_rows", []))
+                all_parent_run_rows.extend(result.get("parent_run_rows", []))
                 if result.get("stage3_summary") is not None:
                     stage3_summaries.append(result["stage3_summary"])
                 #endif
@@ -7591,6 +8080,9 @@ def main() -> int:
                         all_shared_rows.extend(result.get("shared_rows", []))
                         all_control_rows.extend(result.get("control_rows", []))
                         all_stage3_rows.extend(result.get("stage3_rows", []))
+                        all_parent_delta_summary_rows.extend(result.get("parent_delta_summary_rows", []))
+                        all_parent_tolerance_rows.extend(result.get("parent_tolerance_rows", []))
+                        all_parent_run_rows.extend(result.get("parent_run_rows", []))
                         if result.get("stage3_summary") is not None:
                             stage3_summaries.append(result["stage3_summary"])
                         #endif
@@ -7768,6 +8260,21 @@ def main() -> int:
             write_rows_csv(
                 all_stage3_rows,
                 stage3_outroot / "reference_efficiency_scale_factors.csv",
+            )
+        #endif
+        if all_parent_delta_summary_rows:
+            write_rows_csv(all_parent_delta_summary_rows, stage3_outroot/"data_parent_kinematic_delta_summary.csv")
+        #endif
+        if all_parent_tolerance_rows:
+            write_rows_csv(all_parent_tolerance_rows, stage3_outroot/"data_parent_tolerance_scan.csv")
+        #endif
+        if all_parent_run_rows:
+            write_rows_csv(all_parent_run_rows, stage3_outroot/"data_parent_delta_by_run.csv")
+        #endif
+        if all_parent_delta_summary_rows and all_parent_tolerance_rows:
+            make_cross_period_parent_delta_canvas(
+                all_parent_delta_summary_rows, all_parent_tolerance_rows,
+                stage3_outroot, float(args.parent_component_tol),
             )
         #endif
         if stage3_summaries:
