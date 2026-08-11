@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v023.py
+derive_photon_efficiency_scale_factors_v024.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
 
-THIS VERSION FORMS A PRELIMINARY STAGE-III REFERENCE DATA/MC EFFICIENCY SCALE FACTOR
+THIS VERSION FORMS A STAGE-III ASSOCIATION-VALIDATION DATA/MC EFFICIENCY REFERENCE
 FOR THE CURRENT WAGON-DERIVED 0.4--2.0 GeV PROBE RANGE.  IT IS NOT YET THE
 FINAL PRODUCTION RESULT OR FINAL STATISTICAL-UNCERTAINTY EXTRACTION.
 
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v023.py
+    python derive_photon_efficiency_scale_factors_v024.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v023.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v024.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v023.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v024.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v023.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v024.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v023.py --angles rad
+    python derive_photon_efficiency_scale_factors_v024.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -583,23 +583,82 @@ def packed_event_keys(runnum: np.ndarray, evnum: np.ndarray) -> np.ndarray:
     return (run.astype(np.uint64) << np.uint64(32)) | ev.astype(np.uint64)
 
 
+
+@dataclass
+class DataAssociationResult:
+    """
+    Detailed exact-event Stage-III data association.
+
+    The current eppi0 tree stores the reconstructed pi0 four-vector but not the
+    individual daughter-photon four-vectors. Therefore photon-level identity is
+    tested kinematically: removing the epgamma tag from P_pi0 must leave a
+    positive-energy, approximately massless companion, and that companion is
+    optionally required to agree loosely with the probe predicted from epgamma
+    exclusivity.
+    """
+    best_match: MatchResult
+    stage_lookup: Dict[str, np.ndarray]
+    counters: Dict[str, int]
+    best_diagnostics: Dict[str, np.ndarray]
+
+
+def _lookup_from_indices(n: int, indices: np.ndarray) -> np.ndarray:
+    out = np.zeros(int(n), dtype=bool)
+    if len(indices):
+        out[np.asarray(indices, dtype=np.int64)] = True
+    #endif
+    return out
+
+
 def match_data_event_candidates(
+    period: PeriodConfig,
     epg: EPGammaSample,
     eppi0: EPPi0Sample,
     parent_component_tol: float,
-) -> Tuple[MatchResult, Dict[str, int]]:
+    tag_remainder_m2_max: float,
+    reco_probe_energy_min: float,
+    probe_angle_max_deg: float,
+    probe_frac_energy_max: float,
+) -> DataAssociationResult:
     """
-    Exact data association through runnum+evnum, followed by e/p consistency
-    and a best reconstructed-pi0/tag association choice.
+    Exact runnum+evnum Stage-III association with a transparent sequential
+    cut-flow.
 
-    Unlike MC, data retain meaningful run/event identifiers.  For one epgamma
-    tag there can be multiple reconstructed eppi0 candidates in the same event.
-    We therefore enumerate only same-event candidates, require the reconstructed
-    electron/proton Cartesian momenta to agree within parent_component_tol, and
-    retain the candidate with the smallest |(P_pi0-k_tag)^2| subject to a
-    positive reconstructed companion-photon energy.
+    Stages, all evaluated per epgamma tag candidate:
 
-    No predicted-probe resolution quantity is used in choosing the candidate.
+      same_event
+          At least one reconstructed eppi0 candidate has the same run/event.
+
+      parent_consistent
+          At least one same-event candidate has compatible reconstructed e/p
+          Cartesian momentum components.
+
+      positive_remainder
+          Removing the epgamma tag from that reconstructed pi0 leaves positive
+          companion energy.
+
+      tag_mass_shell
+          The remainder is photon-like:
+              |(P_pi0-k_tag)^2| <= tag_remainder_m2_max.
+
+          With the present schema this is the strongest direct test that the
+          particular epgamma tag belongs to the reconstructed pi0 candidate.
+
+      probe_energy
+          The reconstructed companion is above the photon threshold.
+
+      probe_pred_consistent
+          The reconstructed companion agrees loosely with the epgamma-predicted
+          missing photon in opening angle and fractional energy.
+
+    The best candidate for a tag is selected only among candidates passing
+    probe_energy, using a score dominated by the remainder photon mass shell
+    and then by predicted/reconstructed companion agreement.
+
+    This function deliberately exposes all intermediate lookups. Stage III can
+    therefore diagnose whether a zero numerator originates from missing event
+    overlap, e/p mismatch, tag identity, threshold, or the final consistency
+    gate.
     """
     for name in ("runnum", "evnum"):
         if name not in epg.raw or name not in eppi0.raw:
@@ -612,21 +671,43 @@ def match_data_event_candidates(
 
     n_epg = len(epg.tag_energy)
     n_pi0 = len(eppi0.pi0_mass)
+    empty_match = MatchResult(
+        epg_index=np.asarray([], dtype=np.int64),
+        eppi0_index=np.asarray([], dtype=np.int64),
+        nearest_distance=np.asarray([], dtype=float),
+        max_component_delta=np.asarray([], dtype=float),
+    )
+    stage_names = (
+        "same_event",
+        "parent_consistent",
+        "positive_remainder",
+        "tag_mass_shell",
+        "probe_energy",
+        "probe_pred_consistent",
+    )
+    empty_lookup = {
+        name: np.zeros(n_epg, dtype=bool)
+        for name in stage_names
+    }
+
     if n_epg == 0 or n_pi0 == 0:
-        return MatchResult(
-            epg_index=np.asarray([], dtype=np.int64),
-            eppi0_index=np.asarray([], dtype=np.int64),
-            nearest_distance=np.asarray([], dtype=float),
-            max_component_delta=np.asarray([], dtype=float),
-        ), {
-            "epgamma_entries": int(n_epg),
-            "eppi0_entries": int(n_pi0),
-            "same_event_epgamma_entries": 0,
-            "same_event_candidate_pairs": 0,
-            "parent_consistent_pairs": 0,
-            "positive_remainder_pairs": 0,
-            "accepted_best_matches": 0,
-        }
+        return DataAssociationResult(
+            best_match=empty_match,
+            stage_lookup=empty_lookup,
+            counters={
+                "epgamma_entries": int(n_epg),
+                "eppi0_entries": int(n_pi0),
+                **{name: 0 for name in stage_names},
+                "same_event_candidate_pairs": 0,
+                "parent_consistent_pairs": 0,
+                "positive_remainder_pairs": 0,
+                "tag_mass_shell_pairs": 0,
+                "probe_energy_pairs": 0,
+                "probe_pred_consistent_pairs": 0,
+                "accepted_best_matches": 0,
+            },
+            best_diagnostics={},
+        )
     #endif
 
     key_g = packed_event_keys(epg.raw["runnum"], epg.raw["evnum"])
@@ -638,23 +719,28 @@ def match_data_event_candidates(
     right = np.searchsorted(sorted_p, key_g, side="right")
     counts = (right - left).astype(np.int64)
 
-    same_event_entries = int(np.count_nonzero(counts))
+    same_lookup = counts > 0
     total_pairs = int(np.sum(counts))
     if total_pairs == 0:
-        return MatchResult(
-            epg_index=np.asarray([], dtype=np.int64),
-            eppi0_index=np.asarray([], dtype=np.int64),
-            nearest_distance=np.asarray([], dtype=float),
-            max_component_delta=np.asarray([], dtype=float),
-        ), {
-            "epgamma_entries": int(n_epg),
-            "eppi0_entries": int(n_pi0),
-            "same_event_epgamma_entries": same_event_entries,
-            "same_event_candidate_pairs": 0,
-            "parent_consistent_pairs": 0,
-            "positive_remainder_pairs": 0,
-            "accepted_best_matches": 0,
-        }
+        empty_lookup["same_event"] = same_lookup
+        return DataAssociationResult(
+            best_match=empty_match,
+            stage_lookup=empty_lookup,
+            counters={
+                "epgamma_entries": int(n_epg),
+                "eppi0_entries": int(n_pi0),
+                "same_event": int(np.count_nonzero(same_lookup)),
+                "same_event_candidate_pairs": 0,
+                **{name: 0 for name in stage_names[1:]},
+                "parent_consistent_pairs": 0,
+                "positive_remainder_pairs": 0,
+                "tag_mass_shell_pairs": 0,
+                "probe_energy_pairs": 0,
+                "probe_pred_consistent_pairs": 0,
+                "accepted_best_matches": 0,
+            },
+            best_diagnostics={},
+        )
     #endif
 
     epg_rep = np.repeat(np.arange(n_epg, dtype=np.int64), counts)
@@ -664,6 +750,7 @@ def match_data_event_candidates(
     pi_sorted_index = left_rep + offsets
     pi_rep = order_p[pi_sorted_index]
 
+    # Parent e/p consistency.
     de = np.abs(epg.electron_p3[epg_rep] - eppi0.electron_p3[pi_rep])
     dp = np.abs(epg.proton_p3[epg_rep] - eppi0.proton_p3[pi_rep])
     component_delta = np.maximum(np.max(de, axis=1), np.max(dp, axis=1))
@@ -671,71 +758,193 @@ def match_data_event_candidates(
         np.sum((de / parent_component_tol) ** 2, axis=1)
         + np.sum((dp / parent_component_tol) ** 2, axis=1)
     )
-    parent_ok = np.isfinite(component_delta) & (component_delta <= parent_component_tol)
+    parent_ok = (
+        np.isfinite(component_delta)
+        & (component_delta <= parent_component_tol)
+    )
 
+    # Reconstructed companion = P_pi0 - k_tag.
     tag3 = epg.tag_p3[epg_rep]
     pi3 = eppi0.pi0_p3[pi_rep]
     tag_E = np.linalg.norm(tag3, axis=1)
     pi_p = np.linalg.norm(pi3, axis=1)
     pi_m = np.asarray(eppi0.pi0_mass[pi_rep], dtype=float)
     pi_E = np.sqrt(np.maximum(0.0, pi_p * pi_p + pi_m * pi_m))
+
     reco_E = pi_E - tag_E
     reco3 = pi3 - tag3
-    reco_m2 = reco_E * reco_E - np.sum(reco3 * reco3, axis=1)
-    physical = (
+    reco_p = np.linalg.norm(reco3, axis=1)
+    reco_m2 = reco_E * reco_E - reco_p * reco_p
+
+    positive = (
         parent_ok
         & np.isfinite(reco_E)
-        & np.isfinite(reco_m2)
+        & np.isfinite(reco_p)
         & (reco_E > 0.0)
+        & (reco_p > 0.0)
+    )
+    mass_shell = (
+        positive
+        & np.isfinite(reco_m2)
+        & (np.abs(reco_m2) <= tag_remainder_m2_max)
+    )
+    above_threshold = (
+        mass_shell
+        & (reco_E >= reco_probe_energy_min)
     )
 
-    valid_idx = np.flatnonzero(physical)
-    if valid_idx.size == 0:
-        return MatchResult(
-            epg_index=np.asarray([], dtype=np.int64),
-            eppi0_index=np.asarray([], dtype=np.int64),
-            nearest_distance=np.asarray([], dtype=float),
-            max_component_delta=np.asarray([], dtype=float),
-        ), {
-            "epgamma_entries": int(n_epg),
-            "eppi0_entries": int(n_pi0),
-            "same_event_epgamma_entries": same_event_entries,
-            "same_event_candidate_pairs": total_pairs,
-            "parent_consistent_pairs": int(np.count_nonzero(parent_ok)),
-            "positive_remainder_pairs": 0,
-            "accepted_best_matches": 0,
+    # Probe predicted from the same epgamma tag candidate.
+    e3 = epg.electron_p3[epg_rep]
+    p3 = epg.proton_p3[epg_rep]
+    e_pmag = np.linalg.norm(e3, axis=1)
+    p_pmag = np.linalg.norm(p3, axis=1)
+    e_E = np.sqrt(e_pmag * e_pmag + M_E * M_E)
+    p_E = np.sqrt(p_pmag * p_pmag + M_P * M_P)
+
+    beam_p = math.sqrt(max(0.0, period.beam_energy**2 - M_E**2))
+    initial_E = period.beam_energy + M_P
+    initial_p3 = np.asarray([0.0, 0.0, beam_p], dtype=float)
+
+    pred_E = initial_E - e_E - p_E - tag_E
+    pred3 = initial_p3[None, :] - e3 - p3 - tag3
+    pred_p = np.linalg.norm(pred3, axis=1)
+
+    dot = np.sum(pred3 * reco3, axis=1)
+    denom = pred_p * reco_p
+    with np.errstate(invalid="ignore", divide="ignore"):
+        cos_open = np.clip(dot / denom, -1.0, 1.0)
+        delta_theta_deg = np.degrees(np.arccos(cos_open))
+        frac_delta_E = (reco_E - pred_E) / pred_E
+    #endwith
+
+    pred_consistent = (
+        above_threshold
+        & np.isfinite(pred_E)
+        & (pred_E > 0.0)
+        & np.isfinite(delta_theta_deg)
+        & (delta_theta_deg <= probe_angle_max_deg)
+        & np.isfinite(frac_delta_E)
+        & (np.abs(frac_delta_E) <= probe_frac_energy_max)
+    )
+
+    # Convert pair-level sequential conditions into per-tag lookups.
+    pair_stage_masks = {
+        "parent_consistent": parent_ok,
+        "positive_remainder": positive,
+        "tag_mass_shell": mass_shell,
+        "probe_energy": above_threshold,
+        "probe_pred_consistent": pred_consistent,
+    }
+    stage_lookup: Dict[str, np.ndarray] = {
+        "same_event": same_lookup.copy(),
+    }
+    for name, pair_mask in pair_stage_masks.items():
+        stage_lookup[name] = _lookup_from_indices(
+            n_epg,
+            np.unique(epg_rep[pair_mask]),
+        )
+    #endfor
+
+    # Select a best candidate among mass-shell + threshold candidates.
+    eligible_idx = np.flatnonzero(above_threshold)
+    if eligible_idx.size == 0:
+        best_match = empty_match
+        best_diag: Dict[str, np.ndarray] = {}
+    else:
+        # Primary: photon remainder mass shell.
+        # Secondary: probe opening-angle and fractional-energy agreement.
+        # Parent-distance only breaks near-ties.
+        angle_term = np.nan_to_num(
+            delta_theta_deg[eligible_idx] / max(probe_angle_max_deg, 1.0e-9),
+            nan=1.0e6,
+            posinf=1.0e6,
+            neginf=1.0e6,
+        )
+        energy_term = np.nan_to_num(
+            np.abs(frac_delta_E[eligible_idx])
+            / max(probe_frac_energy_max, 1.0e-9),
+            nan=1.0e6,
+            posinf=1.0e6,
+            neginf=1.0e6,
+        )
+        score = (
+            np.abs(reco_m2[eligible_idx])
+            / max(tag_remainder_m2_max, 1.0e-12)
+            + 0.05 * angle_term
+            + 0.05 * energy_term
+            + 1.0e-9 * parent_distance[eligible_idx]
+        )
+
+        gvalid = epg_rep[eligible_idx]
+        order_best = np.lexsort((score, gvalid))
+        sorted_eligible = eligible_idx[order_best]
+        sorted_g = epg_rep[sorted_eligible]
+        first = np.ones(len(sorted_eligible), dtype=bool)
+        if len(sorted_eligible) > 1:
+            first[1:] = sorted_g[1:] != sorted_g[:-1]
+        #endif
+        chosen = sorted_eligible[first]
+
+        best_match = MatchResult(
+            epg_index=np.asarray(epg_rep[chosen], dtype=np.int64),
+            eppi0_index=np.asarray(pi_rep[chosen], dtype=np.int64),
+            nearest_distance=np.asarray(parent_distance[chosen], dtype=float),
+            max_component_delta=np.asarray(component_delta[chosen], dtype=float),
+        )
+        best_diag = {
+            "epg_index": np.asarray(epg_rep[chosen], dtype=np.int64),
+            "eppi0_index": np.asarray(pi_rep[chosen], dtype=np.int64),
+            "reco_probe_energy": np.asarray(reco_E[chosen], dtype=float),
+            "pred_probe_energy": np.asarray(pred_E[chosen], dtype=float),
+            "reco_probe_mass2": np.asarray(reco_m2[chosen], dtype=float),
+            "probe_delta_theta_deg": np.asarray(
+                delta_theta_deg[chosen], dtype=float
+            ),
+            "probe_delta_E_over_E": np.asarray(
+                frac_delta_E[chosen], dtype=float
+            ),
+            "passes_pred_consistency": np.asarray(
+                pred_consistent[chosen], dtype=bool
+            ),
         }
     #endif
 
-    # The tiny parent-distance term only breaks ties between candidates having
-    # effectively identical reconstructed companion mass shell.
-    score = np.abs(reco_m2[valid_idx]) + 1.0e-9 * parent_distance[valid_idx]
-    gvalid = epg_rep[valid_idx]
-    order_best = np.lexsort((score, gvalid))
-    sorted_valid = valid_idx[order_best]
-    sorted_g = epg_rep[sorted_valid]
-    first = np.ones(len(sorted_valid), dtype=bool)
-    if len(sorted_valid) > 1:
-        first[1:] = sorted_g[1:] != sorted_g[:-1]
-    #endif
-    chosen = sorted_valid[first]
-
-    result = MatchResult(
-        epg_index=np.asarray(epg_rep[chosen], dtype=np.int64),
-        eppi0_index=np.asarray(pi_rep[chosen], dtype=np.int64),
-        nearest_distance=np.asarray(parent_distance[chosen], dtype=float),
-        max_component_delta=np.asarray(component_delta[chosen], dtype=float),
-    )
     counters = {
         "epgamma_entries": int(n_epg),
         "eppi0_entries": int(n_pi0),
-        "same_event_epgamma_entries": same_event_entries,
+        "same_event": int(np.count_nonzero(stage_lookup["same_event"])),
+        "parent_consistent": int(
+            np.count_nonzero(stage_lookup["parent_consistent"])
+        ),
+        "positive_remainder": int(
+            np.count_nonzero(stage_lookup["positive_remainder"])
+        ),
+        "tag_mass_shell": int(
+            np.count_nonzero(stage_lookup["tag_mass_shell"])
+        ),
+        "probe_energy": int(
+            np.count_nonzero(stage_lookup["probe_energy"])
+        ),
+        "probe_pred_consistent": int(
+            np.count_nonzero(stage_lookup["probe_pred_consistent"])
+        ),
         "same_event_candidate_pairs": total_pairs,
         "parent_consistent_pairs": int(np.count_nonzero(parent_ok)),
-        "positive_remainder_pairs": int(valid_idx.size),
-        "accepted_best_matches": int(len(result.epg_index)),
+        "positive_remainder_pairs": int(np.count_nonzero(positive)),
+        "tag_mass_shell_pairs": int(np.count_nonzero(mass_shell)),
+        "probe_energy_pairs": int(np.count_nonzero(above_threshold)),
+        "probe_pred_consistent_pairs": int(
+            np.count_nonzero(pred_consistent)
+        ),
+        "accepted_best_matches": int(len(best_match.epg_index)),
     }
-    return result, counters
+
+    return DataAssociationResult(
+        best_match=best_match,
+        stage_lookup=stage_lookup,
+        counters=counters,
+        best_diagnostics=best_diag,
+    )
 
 
 def stage1_success_lookup(
@@ -2057,7 +2266,7 @@ def build_pi0_control_validation(
     """
     Reconstructed-eppi0 data/aaogen control validation.
 
-    IMPORTANT: v023 does NOT feed this calibration into the denominator fit.
+    IMPORTANT: v024 does NOT feed this calibration into the denominator fit.
     The previous full-range Gaussian-smearing calibration saturated at its hard
     bound and failed goodness-of-fit, so it is retained only as a diagnostic.
     """
@@ -4283,8 +4492,9 @@ def build_stage3_reference_rows(
     shared_rows: List[Dict[str, object]],
     data_f: Dict[str, np.ndarray],
     aaogen_f: Dict[str, np.ndarray],
-    data_any_match: np.ndarray,
-    data_clean_success: np.ndarray,
+    data_stage_lookup: Dict[str, np.ndarray],
+    data_mass_shell_success: np.ndarray,
+    data_final_success: np.ndarray,
     mc_any_match: np.ndarray,
     mc_clean_success: np.ndarray,
     ft_theta_max: float,
@@ -4294,27 +4504,22 @@ def build_stage3_reference_rows(
     probe_m2_max: float,
 ) -> List[Dict[str, object]]:
     """
-    Construct the first end-to-end tag-and-probe efficiency reference.
+    Construct the Stage-III reference extraction with a transparent data
+    association cut-flow.
 
-    Data denominator:
-        fitted exclusive-pi0 fraction from Stage II times the number of epgamma
-        tag candidates in the identical Stage-II support.
+    The data numerator is reported in two forms:
 
-    Data numerator:
-        those same epgamma tags for which an exact runnum+evnum association to
-        an eppi0 data candidate yields a clean reconstructed companion photon.
+      mass-shell-only:
+          same-event + e/p-compatible eppi0 candidate whose tag removal leaves
+          a massless, above-threshold companion;
 
-    MC denominator:
-        all aaogen epgamma tag candidates in the same support (aaogen is already
-        exclusive pi0).
+      final:
+          mass-shell-only plus the loose predicted/reconstructed companion
+          consistency gate.
 
-    MC numerator:
-        aaogen tags with a clean reconstructed companion in the eppi0 aaogen
-        sample, using the validated e/p kinematic parent matcher.
-
-    The current wagon-derived reference is intentionally restricted to the
-    Stage-II supported probe range (default 0.4--2.0 GeV).  No extrapolation is
-    made above that boundary in Stage III.
+    The production-like reference efficiency uses ``data_final_success``.
+    Keeping the mass-shell-only alternative makes the association sensitivity
+    explicit and is especially useful for diagnosing epsilon_data > 1.
     """
     edges = stage2_energy_edges(max_probe_energy)
     regions = ["all", "FT", "FD_all"] + [f"FD_S{s}" for s in range(1, 7)]
@@ -4326,6 +4531,20 @@ def build_stage3_reference_rows(
         ): r
         for r in shared_rows
     }
+
+    required_stages = (
+        "same_event",
+        "parent_consistent",
+        "positive_remainder",
+        "tag_mass_shell",
+        "probe_energy",
+        "probe_pred_consistent",
+    )
+    for stage in required_stages:
+        if stage not in data_stage_lookup:
+            raise KeyError(f"Missing Stage-III data association stage '{stage}'.")
+        #endif
+    #endfor
 
     rows: List[Dict[str, object]] = []
     for region in regions:
@@ -4345,8 +4564,17 @@ def build_stage3_reference_rows(
             )
 
             n_data_tags = int(np.count_nonzero(md))
-            n_data_any = int(np.count_nonzero(md & data_any_match))
-            n_data_success = int(np.count_nonzero(md & data_clean_success))
+            stage_counts = {
+                stage: int(np.count_nonzero(md & data_stage_lookup[stage]))
+                for stage in required_stages
+            }
+            n_data_mass_shell = int(
+                np.count_nonzero(md & data_mass_shell_success)
+            )
+            n_data_success = int(
+                np.count_nonzero(md & data_final_success)
+            )
+
             n_mc_tags = int(np.count_nonzero(mm))
             n_mc_any = int(np.count_nonzero(mm & mc_any_match))
             n_mc_success = int(np.count_nonzero(mm & mc_clean_success))
@@ -4360,13 +4588,23 @@ def build_stage3_reference_rows(
                 fit_success = int(fit_row.get("fit_success", 0))
                 fpi0 = float(fit_row.get("pi0_fraction", float("nan")))
                 fit_dev = float(fit_row.get("deviance_per_ndof", float("nan")))
-                stage2_data_count = int(fit_row.get("data_candidate_count", -1))
-                stage2_aaogen_count = int(fit_row.get("aaogen_candidate_count", -1))
+                stage2_data_count = int(
+                    fit_row.get("data_candidate_count", -1)
+                )
+                stage2_aaogen_count = int(
+                    fit_row.get("aaogen_candidate_count", -1)
+                )
             #endif
 
             data_den = (
                 fpi0 * n_data_tags
                 if fit_success and np.isfinite(fpi0) and fpi0 > 0.0
+                else float("nan")
+            )
+
+            data_eff_mass_shell = (
+                float(n_data_mass_shell) / data_den
+                if np.isfinite(data_den) and data_den > 0.0
                 else float("nan")
             )
             data_eff = (
@@ -4380,17 +4618,32 @@ def build_stage3_reference_rows(
             )
             sf = (
                 data_eff / mc_eff
-                if np.isfinite(data_eff) and np.isfinite(mc_eff) and mc_eff > 0.0
+                if np.isfinite(data_eff)
+                and np.isfinite(mc_eff)
+                and mc_eff > 0.0
+                else float("nan")
+            )
+            sf_mass_shell = (
+                data_eff_mass_shell / mc_eff
+                if np.isfinite(data_eff_mass_shell)
+                and np.isfinite(mc_eff)
+                and mc_eff > 0.0
                 else float("nan")
             )
 
-            data_err = provisional_ratio_error(float(n_data_success), data_den)
+            data_err = provisional_ratio_error(
+                float(n_data_success), data_den
+            )
             mc_err = provisional_binomial_error(n_mc_success, n_mc_tags)
             if (
-                np.isfinite(sf) and sf != 0.0
-                and np.isfinite(data_err) and np.isfinite(mc_err)
-                and np.isfinite(data_eff) and data_eff != 0.0
-                and np.isfinite(mc_eff) and mc_eff != 0.0
+                np.isfinite(sf)
+                and sf != 0.0
+                and np.isfinite(data_err)
+                and np.isfinite(mc_err)
+                and np.isfinite(data_eff)
+                and data_eff != 0.0
+                and np.isfinite(mc_eff)
+                and mc_eff != 0.0
             ):
                 sf_err = abs(sf) * math.sqrt(
                     (data_err / data_eff) ** 2
@@ -4405,20 +4658,33 @@ def build_stage3_reference_rows(
                 status = "no_successful_stage2_fit"
             elif (
                 (stage2_data_count >= 0 and stage2_data_count != n_data_tags)
-                or (stage2_aaogen_count >= 0 and stage2_aaogen_count != n_mc_tags)
+                or (
+                    stage2_aaogen_count >= 0
+                    and stage2_aaogen_count != n_mc_tags
+                )
             ):
                 status = "stage2_stage3_candidate_support_mismatch"
             elif n_mc_tags <= 0:
                 status = "no_aaogen_denominator"
+            elif stage_counts["same_event"] <= 0:
+                status = "no_same_event_overlap"
+            elif stage_counts["parent_consistent"] <= 0:
+                status = "same_event_but_no_parent_consistency"
+            elif stage_counts["tag_mass_shell"] <= 0:
+                status = "no_kinematic_tag_identity"
+            elif n_data_mass_shell <= 0:
+                status = "no_above_threshold_mass_shell_probe"
             elif n_data_success <= 0:
-                status = "no_data_reconstructed_probe"
+                status = "mass_shell_probe_but_no_pred_consistent_probe"
             elif np.isfinite(data_eff) and data_eff > 1.05:
-                status = "data_efficiency_above_unity_check_association_or_denominator"
+                status = (
+                    "data_efficiency_above_unity_check_association_or_denominator"
+                )
             elif np.isfinite(mc_eff) and mc_eff > 1.0 + 1.0e-12:
                 status = "mc_efficiency_above_unity_internal_error"
             #endif
 
-            rows.append({
+            row = {
                 "period": period.key,
                 "label": period.label,
                 "beam_energy_GeV": period.beam_energy,
@@ -4433,15 +4699,18 @@ def build_stage3_reference_rows(
                 "stage2_data_candidate_count": stage2_data_count,
                 "stage2_aaogen_candidate_count": stage2_aaogen_count,
                 "stage2_minus_stage3_data_candidate_count": (
-                    stage2_data_count - n_data_tags if stage2_data_count >= 0 else -999999
+                    stage2_data_count - n_data_tags
+                    if stage2_data_count >= 0 else -999999
                 ),
                 "stage2_minus_stage3_aaogen_candidate_count": (
-                    stage2_aaogen_count - n_mc_tags if stage2_aaogen_count >= 0 else -999999
+                    stage2_aaogen_count - n_mc_tags
+                    if stage2_aaogen_count >= 0 else -999999
                 ),
                 "data_tag_candidates": n_data_tags,
-                "data_any_eppi0_event_association": n_data_any,
-                "data_clean_reconstructed_probe": n_data_success,
                 "data_fitted_pi0_denominator": data_den,
+                "data_mass_shell_reconstructed_probe": n_data_mass_shell,
+                "data_clean_reconstructed_probe": n_data_success,
+                "data_efficiency_mass_shell_only": data_eff_mass_shell,
                 "data_efficiency": data_eff,
                 "data_efficiency_counting_error_provisional": data_err,
                 "mc_tag_candidates": n_mc_tags,
@@ -4449,23 +4718,43 @@ def build_stage3_reference_rows(
                 "mc_clean_reconstructed_probe": n_mc_success,
                 "mc_efficiency": mc_eff,
                 "mc_efficiency_binomial_error_provisional": mc_err,
+                "data_over_mc_scale_factor_mass_shell_only": sf_mass_shell,
                 "data_over_mc_scale_factor": sf,
                 "scale_factor_counting_error_provisional": sf_err,
-                "data_any_match_fraction_of_tags": (
-                    n_data_any / n_data_tags if n_data_tags else float("nan")
+                "data_mass_shell_success_fraction_of_tags_raw": (
+                    n_data_mass_shell / n_data_tags
+                    if n_data_tags else float("nan")
                 ),
                 "data_clean_success_fraction_of_tags_raw": (
-                    n_data_success / n_data_tags if n_data_tags else float("nan")
+                    n_data_success / n_data_tags
+                    if n_data_tags else float("nan")
                 ),
                 "mc_any_match_fraction_of_tags": (
                     n_mc_any / n_mc_tags if n_mc_tags else float("nan")
                 ),
                 "uncertainty_model": (
-                    "provisional counting-only; fitted-denominator and shared-event "
-                    "correlations omitted; final result requires event bootstrap"
+                    "provisional counting-only; fitted-denominator and "
+                    "shared-event correlations omitted; final result requires "
+                    "event bootstrap"
                 ),
                 "status": status,
-            })
+            }
+
+            # Full sequential cut-flow, both counts and raw-tag fractions.
+            previous = n_data_tags
+            for stage in required_stages:
+                count = stage_counts[stage]
+                row[f"data_cutflow_{stage}"] = count
+                row[f"data_cutflow_{stage}_fraction_of_raw_tags"] = (
+                    count / n_data_tags if n_data_tags else float("nan")
+                )
+                row[f"data_cutflow_{stage}_conditional_fraction"] = (
+                    count / previous if previous else float("nan")
+                )
+                previous = count
+            #endfor
+
+            rows.append(row)
         #endfor
     #endfor
     return rows
@@ -4489,30 +4778,68 @@ def make_stage3_canvases(
     period: PeriodConfig,
     rows: List[Dict[str, object]],
     outdir: Path,
+    best_diagnostics: Dict[str, np.ndarray],
+    data_f: Dict[str, np.ndarray],
+    ft_theta_max: float,
 ) -> None:
-    """Compact reference-efficiency, scale-factor, and association diagnostics."""
+    """
+    Stage-III reference efficiencies plus explicit association cut-flow.
+
+    The cut-flow plots are intentionally more important than the scale-factor
+    plots in this development version: they identify whether pathological bins
+    are caused by missing event overlap, parent mismatch, tag identity,
+    reconstructed-probe threshold, or predicted/reconstructed consistency.
+    """
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Canvas 1: data/MC efficiency, FT separately and all six FD sectors.
+    # ------------------------------------------------------------------
+    # Canvas 1: data/MC efficiency.
+    # ------------------------------------------------------------------
     fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
     ft = _stage3_rows_for_region(rows, "FT")
     if ft:
         x = np.asarray([r["energy_center_GeV"] for r in ft], dtype=float)
         yd = np.asarray([r["data_efficiency"] for r in ft], dtype=float)
         ym = np.asarray([r["mc_efficiency"] for r in ft], dtype=float)
-        ed = np.asarray([r["data_efficiency_counting_error_provisional"] for r in ft], dtype=float)
-        em = np.asarray([r["mc_efficiency_binomial_error_provisional"] for r in ft], dtype=float)
-        axes[0].errorbar(x, yd, yerr=ed, marker="o", linestyle="-", label="Data")
-        axes[0].errorbar(x, ym, yerr=em, marker="o", linestyle="--", label="aaogen MC")
+        ed = np.asarray(
+            [r["data_efficiency_counting_error_provisional"] for r in ft],
+            dtype=float,
+        )
+        em = np.asarray(
+            [r["mc_efficiency_binomial_error_provisional"] for r in ft],
+            dtype=float,
+        )
+        axes[0].errorbar(
+            x, yd, yerr=ed, marker="o", linestyle="-", label="Data final"
+        )
+        axes[0].plot(
+            x,
+            [r["data_efficiency_mass_shell_only"] for r in ft],
+            marker=".",
+            linestyle=":",
+            label="Data mass-shell only",
+        )
+        axes[0].errorbar(
+            x, ym, yerr=em, marker="o", linestyle="--", label="aaogen MC"
+        )
     #endif
+
     finite_eff = [
         float(r[key])
         for r in rows
-        for key in ("data_efficiency", "mc_efficiency")
+        for key in (
+            "data_efficiency",
+            "data_efficiency_mass_shell_only",
+            "mc_efficiency",
+        )
         if np.isfinite(r.get(key, np.nan))
     ]
-    eff_ymax = max(1.15, min(2.0, 1.10 * max(finite_eff))) if finite_eff else 1.15
+    eff_ymax = (
+        max(1.15, min(2.5, 1.10 * max(finite_eff)))
+        if finite_eff else 1.15
+    )
     axes[0].set_ylim(0.0, eff_ymax)
+    axes[0].axhline(1.0, linestyle="--", linewidth=0.8)
     axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[0].set_ylabel("Conditional photon reconstruction efficiency")
     axes[0].set_title("FT")
@@ -4541,6 +4868,7 @@ def make_stage3_canvases(
             label=f"MC S{s}",
         )
     #endfor
+    axes[1].axhline(1.0, linestyle="--", linewidth=0.8)
     axes[1].set_ylim(0.0, eff_ymax)
     axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1].set_ylabel("Conditional photon reconstruction efficiency")
@@ -4549,7 +4877,7 @@ def make_stage3_canvases(
     axes[1].grid(alpha=0.18)
     fig.suptitle(
         f"{period.label}: Stage-III wagon-reference efficiencies "
-        "(error bars are provisional counting-only diagnostics)",
+        "(provisional counting errors)",
         fontsize=13,
     )
     safe_finalize_figure(
@@ -4559,18 +4887,33 @@ def make_stage3_canvases(
     )
     plt.close(fig)
 
-    # Canvas 2: direct data/MC scale factor.
+    # ------------------------------------------------------------------
+    # Canvas 2: scale factor, final vs mass-shell-only association.
+    # ------------------------------------------------------------------
     fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
     if ft:
         x = np.asarray([r["energy_center_GeV"] for r in ft], dtype=float)
-        y = np.asarray([r["data_over_mc_scale_factor"] for r in ft], dtype=float)
-        e = np.asarray([r["scale_factor_counting_error_provisional"] for r in ft], dtype=float)
-        axes[0].errorbar(x, y, yerr=e, marker="o", linestyle="-")
+        axes[0].errorbar(
+            x,
+            [r["data_over_mc_scale_factor"] for r in ft],
+            yerr=[r["scale_factor_counting_error_provisional"] for r in ft],
+            marker="o",
+            linestyle="-",
+            label="Final association",
+        )
+        axes[0].plot(
+            x,
+            [r["data_over_mc_scale_factor_mass_shell_only"] for r in ft],
+            marker=".",
+            linestyle=":",
+            label="Mass-shell only",
+        )
     #endif
     axes[0].axhline(1.0, linestyle="--", linewidth=1.0)
     axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[0].set_ylabel(r"$\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$")
     axes[0].set_title("FT")
+    axes[0].legend(fontsize=8)
     axes[0].grid(alpha=0.18)
 
     for s in range(1, 7):
@@ -4589,7 +4932,7 @@ def make_stage3_canvases(
     axes[1].axhline(1.0, linestyle="--", linewidth=1.0)
     axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1].set_ylabel(r"$\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$")
-    axes[1].set_title("FD sectors")
+    axes[1].set_title("FD sectors: final association")
     axes[1].legend(fontsize=8, ncol=2)
     axes[1].grid(alpha=0.18)
     fig.suptitle(
@@ -4603,9 +4946,102 @@ def make_stage3_canvases(
     )
     plt.close(fig)
 
-    # Canvas 3: make numerator/denominator bookkeeping transparent.
+    # ------------------------------------------------------------------
+    # Canvas 3: sequential association cut-flow for FT and FD_all.
+    # ------------------------------------------------------------------
+    stages = (
+        ("same_event", "same event"),
+        ("parent_consistent", "e/p compatible"),
+        ("positive_remainder", r"$E_{\rm rem}>0$"),
+        ("tag_mass_shell", "tag in $\\pi^0$"),
+        ("probe_energy", r"$E_{\rm reco}>0.4$"),
+        ("probe_pred_consistent", "probe consistent"),
+    )
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.9))
+    for ax, region, title in (
+        (axes[0], "FT", "FT"),
+        (axes[1], "FD_all", "FD all"),
+    ):
+        rr = _stage3_rows_for_region(rows, region)
+        for stage, label in stages:
+            ax.plot(
+                [r["energy_center_GeV"] for r in rr],
+                [
+                    r[f"data_cutflow_{stage}_fraction_of_raw_tags"]
+                    for r in rr
+                ],
+                marker="o",
+                ms=3,
+                linewidth=1.0,
+                label=label,
+            )
+        #endfor
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel("Fraction of Stage-II data tags")
+        ax.set_title(title)
+        ax.legend(fontsize=7, ncol=2)
+        ax.grid(alpha=0.18)
+    #endfor
+    fig.suptitle(
+        f"{period.label}: Stage-III data association cut-flow",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_data_association_cutflow.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Canvas 4: conditional retention at each sequential association step.
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.9))
+    for ax, region, title in (
+        (axes[0], "FT", "FT"),
+        (axes[1], "FD_all", "FD all"),
+    ):
+        rr = _stage3_rows_for_region(rows, region)
+        for stage, label in stages:
+            ax.plot(
+                [r["energy_center_GeV"] for r in rr],
+                [
+                    r[f"data_cutflow_{stage}_conditional_fraction"]
+                    for r in rr
+                ],
+                marker="o",
+                ms=3,
+                linewidth=1.0,
+                label=label,
+            )
+        #endfor
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel("Conditional retention from previous step")
+        ax.set_title(title)
+        ax.legend(fontsize=7, ncol=2)
+        ax.grid(alpha=0.18)
+    #endfor
+    fig.suptitle(
+        f"{period.label}: where reconstructed-probe associations are lost",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_data_association_conditional_retention.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Canvas 5: numerator/denominator bookkeeping.
+    # ------------------------------------------------------------------
     fig, axes = plt.subplots(2, 2, figsize=(14.5, 10.0))
-    for region, label, ax_col in (("FT", "FT", 0), ("FD_all", "FD all", 1)):
+    for region, label, ax_col in (
+        ("FT", "FT", 0),
+        ("FD_all", "FD all", 1),
+    ):
         rr = _stage3_rows_for_region(rows, region)
         if not rr:
             continue
@@ -4615,16 +5051,24 @@ def make_stage3_canvases(
             x,
             [r["data_fitted_pi0_denominator"] for r in rr],
             marker="o",
-            label="Data fitted $\\pi^0$ denominator",
+            label="Fitted data $\\pi^0$ denominator",
+        )
+        axes[0, ax_col].plot(
+            x,
+            [r["data_mass_shell_reconstructed_probe"] for r in rr],
+            marker="o",
+            label="Mass-shell numerator",
         )
         axes[0, ax_col].plot(
             x,
             [r["data_clean_reconstructed_probe"] for r in rr],
             marker="o",
-            label="Data reconstructed probe",
+            label="Final numerator",
         )
         axes[0, ax_col].set_yscale("log")
-        axes[0, ax_col].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        axes[0, ax_col].set_xlabel(
+            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+        )
         axes[0, ax_col].set_ylabel("Directed tag-probe candidates")
         axes[0, ax_col].set_title(label)
         axes[0, ax_col].legend(fontsize=8)
@@ -4632,15 +5076,21 @@ def make_stage3_canvases(
 
         axes[1, ax_col].plot(
             x,
-            [r["data_any_match_fraction_of_tags"] for r in rr],
+            [r["fitted_pi0_fraction"] for r in rr],
             marker="o",
-            label="Data any same-event $ep\\pi^0$ association",
+            label=r"Stage-II $f_{\pi^0}$",
+        )
+        axes[1, ax_col].plot(
+            x,
+            [r["data_mass_shell_success_fraction_of_tags_raw"] for r in rr],
+            marker="o",
+            label="Mass-shell numerator / raw tags",
         )
         axes[1, ax_col].plot(
             x,
             [r["data_clean_success_fraction_of_tags_raw"] for r in rr],
             marker="o",
-            label="Data clean association / raw tags",
+            label="Final numerator / raw tags",
         )
         axes[1, ax_col].plot(
             x,
@@ -4650,13 +5100,15 @@ def make_stage3_canvases(
             label="MC any parent match",
         )
         axes[1, ax_col].set_ylim(0.0, 1.05)
-        axes[1, ax_col].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-        axes[1, ax_col].set_ylabel("Association fraction")
+        axes[1, ax_col].set_xlabel(
+            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+        )
+        axes[1, ax_col].set_ylabel("Fraction")
         axes[1, ax_col].legend(fontsize=7)
         axes[1, ax_col].grid(alpha=0.18)
     #endfor
     fig.suptitle(
-        f"{period.label}: Stage-III numerator/denominator and association diagnostics",
+        f"{period.label}: Stage-III numerator/denominator bookkeeping",
         fontsize=13,
     )
     safe_finalize_figure(
@@ -4666,12 +5118,104 @@ def make_stage3_canvases(
     )
     plt.close(fig)
 
+    # ------------------------------------------------------------------
+    # Canvas 6: best-candidate kinematic association residuals.
+    # ------------------------------------------------------------------
+    if best_diagnostics:
+        idx = np.asarray(best_diagnostics["epg_index"], dtype=np.int64)
+        if len(idx):
+            pred_e = np.asarray(
+                best_diagnostics["pred_probe_energy"], dtype=float
+            )
+            dtheta = np.asarray(
+                best_diagnostics["probe_delta_theta_deg"], dtype=float
+            )
+            dfrac = np.asarray(
+                best_diagnostics["probe_delta_E_over_E"], dtype=float
+            )
+            rem_m2 = np.asarray(
+                best_diagnostics["reco_probe_mass2"], dtype=float
+            )
+            pred_theta = data_f["pred_probe_theta_deg"][idx]
+            is_ft = pred_theta <= ft_theta_max
+            is_fd = pred_theta > ft_theta_max
+
+            fig, axes = plt.subplots(2, 2, figsize=(14.0, 10.0))
+            for mask, label in ((is_ft, "FT"), (is_fd, "FD")):
+                axes[0, 0].hist(
+                    rem_m2[mask & np.isfinite(rem_m2)],
+                    bins=np.linspace(-0.003, 0.003, 181),
+                    histtype="step",
+                    density=True,
+                    label=label,
+                )
+                axes[0, 1].hist(
+                    dtheta[mask & np.isfinite(dtheta)],
+                    bins=np.linspace(0.0, 20.0, 161),
+                    histtype="step",
+                    density=True,
+                    label=label,
+                )
+                axes[1, 0].hist(
+                    dfrac[mask & np.isfinite(dfrac)],
+                    bins=np.linspace(-1.0, 1.0, 181),
+                    histtype="step",
+                    density=True,
+                    label=label,
+                )
+                axes[1, 1].scatter(
+                    pred_e[mask],
+                    dtheta[mask],
+                    s=2,
+                    alpha=0.12,
+                    label=label,
+                )
+            #endfor
+            axes[0, 0].set_xlabel(
+                r"$(P_{\pi^0}-k_{\rm tag})^2$ (GeV$^2$)"
+            )
+            axes[0, 0].set_ylabel("Density")
+            axes[0, 0].set_title("Tag-removal photon mass shell")
+            axes[0, 1].set_xlabel(
+                r"$\Delta\theta(\gamma_{\rm reco},\gamma_{\rm pred})$ (deg)"
+            )
+            axes[0, 1].set_ylabel("Density")
+            axes[0, 1].set_title("Reconstructed/predicted probe direction")
+            axes[1, 0].set_xlabel(
+                r"$(E_{\rm reco}-E_{\rm pred})/E_{\rm pred}$"
+            )
+            axes[1, 0].set_ylabel("Density")
+            axes[1, 0].set_title("Reconstructed/predicted probe energy")
+            axes[1, 1].set_xlabel(
+                r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+            )
+            axes[1, 1].set_ylabel(r"$\Delta\theta$ (deg)")
+            axes[1, 1].set_title("Association residual versus probe energy")
+            for ax in axes.ravel():
+                ax.legend(fontsize=8)
+                ax.grid(alpha=0.18)
+            #endfor
+            fig.suptitle(
+                f"{period.label}: best same-event $ep\\pi^0$ association residuals",
+                fontsize=13,
+            )
+            safe_finalize_figure(
+                fig,
+                outdir / "canvas_data_association_residuals.png",
+                rect=(0, 0, 1, 0.94),
+            )
+            plt.close(fig)
+        #endif
+    #endif
+
 
 def summarize_stage3(
     period: PeriodConfig,
     rows: List[Dict[str, object]],
     data_match_counters: Dict[str, int],
     max_probe_energy: float,
+    use_pred_consistency: bool,
+    association_settings: Dict[str, float],
 ) -> Dict[str, object]:
     good = [
         r for r in rows
@@ -4679,6 +5223,12 @@ def summarize_stage3(
         and r.get("status") == "ok"
         and np.isfinite(r.get("data_over_mc_scale_factor", np.nan))
     ]
+    status_counts: Dict[str, int] = {}
+    for row in rows:
+        status = str(row.get("status", "unknown"))
+        status_counts[status] = status_counts.get(status, 0) + 1
+    #endfor
+
     return {
         "period": period.key,
         "label": period.label,
@@ -4687,18 +5237,33 @@ def summarize_stage3(
         "probe_energy_min_GeV": 0.40,
         "probe_energy_max_GeV": max_probe_energy,
         "purpose": (
-            "preliminary end-to-end reference extraction for overlap validation; "
-            "future loose-nSidis production data will replace/extend the data side"
+            "Stage-III association-validation reference extraction for overlap "
+            "testing; future loose-nSidis production data will replace/extend "
+            "the data side"
         ),
+        "association_schema_limit": (
+            "Current eppi0 trees do not store daughter-photon full three-vectors. "
+            "Tag identity is therefore tested by exact event identity, e/p "
+            "compatibility, and the massless remainder P_pi0-k_tag."
+        ),
+        "use_predicted_probe_consistency_in_numerator": bool(
+            use_pred_consistency
+        ),
+        "association_settings": association_settings,
         "uncertainty_status": (
             "provisional counting-only diagnostics; final statistical covariance "
             "requires event-level bootstrap"
         ),
         "data_exact_event_matching": data_match_counters,
+        "status_counts": status_counts,
         "n_reference_rows": len(rows),
         "n_good_ft_fdall_rows": len(good),
         "median_good_scale_factor": (
-            float(np.median([r["data_over_mc_scale_factor"] for r in good]))
+            float(
+                np.median(
+                    [r["data_over_mc_scale_factor"] for r in good]
+                )
+            )
             if good else float("nan")
         ),
     }
@@ -6105,6 +6670,45 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--stage3-tag-remainder-m2-max",
+        type=float,
+        default=1.0e-3,
+        help=(
+            "Maximum |(P_pi0-k_tag)^2| (GeV^2) for the current-data "
+            "kinematic tag-in-pi0 identity test. Default: 1e-3."
+        ),
+    )
+    parser.add_argument(
+        "--stage3-probe-angle-max-deg",
+        type=float,
+        default=10.0,
+        help=(
+            "Loose maximum opening angle (deg) between the reconstructed "
+            "companion P_pi0-k_tag and the epgamma-predicted probe. This is an "
+            "association diagnostic/gate, not an exclusivity cut. Default: 10."
+        ),
+    )
+    parser.add_argument(
+        "--stage3-probe-frac-energy-max",
+        type=float,
+        default=0.50,
+        help=(
+            "Loose maximum |E_reco-E_pred|/E_pred for the final current-data "
+            "probe-consistency association. Default: 0.50."
+        ),
+    )
+    parser.add_argument(
+        "--stage3-use-pred-consistency",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Use the loose predicted-vs-reconstructed companion consistency "
+            "gate in the Stage-III data numerator. Disable with "
+            "--no-stage3-use-pred-consistency for a mass-shell-only diagnostic. "
+            "Default: enabled."
+        ),
+    )
+    parser.add_argument(
         "--stage3-output-dir",
         default="output/photon_efficiency/stage3",
         help=(
@@ -6593,28 +7197,42 @@ def process_period(
                 f"{period.label}: Stage III exact runnum/evnum matching of "
                 "epgamma data tags to reconstructed eppi0 data candidates."
             )
-            data_matches, data_match_counters = match_data_event_candidates(
+            data_assoc = match_data_event_candidates(
+                period,
                 data_epg,
                 eppi0_data,
                 parent_component_tol=float(args_dict["parent_component_tol"]),
+                tag_remainder_m2_max=float(
+                    args_dict["stage3_tag_remainder_m2_max"]
+                ),
+                reco_probe_energy_min=float(args_dict["assoc_probe_energy_min"]),
+                probe_angle_max_deg=float(
+                    args_dict["stage3_probe_angle_max_deg"]
+                ),
+                probe_frac_energy_max=float(
+                    args_dict["stage3_probe_frac_energy_max"]
+                ),
             )
+
+            # Best mass-shell/threshold candidate lookup. The final numerator
+            # optionally adds the loose predicted/reconstructed consistency gate.
+            data_mass_shell_lookup = data_assoc.stage_lookup["probe_energy"]
+            if bool(args_dict["stage3_use_pred_consistency"]):
+                data_final_lookup = data_assoc.stage_lookup[
+                    "probe_pred_consistent"
+                ]
+            else:
+                data_final_lookup = data_mass_shell_lookup.copy()
+            #endif
+
+            # Build the existing reconstructed-side Stage-I quantities only for
+            # the selected best candidate. These remain useful diagnostics and
+            # preserve backward-compatible counters.
             data_stage1_arrays, data_stage1_counters = build_stage1_arrays(
                 period,
                 data_epg,
                 eppi0_data,
-                data_matches,
-            )
-            data_clean_assoc = build_clean_association_mask(
-                data_stage1_arrays,
-                mgg_min=float(args_dict["assoc_mgg_min"]),
-                mgg_max=float(args_dict["assoc_mgg_max"]),
-                remainder_mass2_max=float(args_dict["assoc_remainder_mass2_max"]),
-                reco_probe_energy_min=float(args_dict["assoc_probe_energy_min"]),
-            ) if data_stage1_arrays else np.asarray([], dtype=bool)
-            data_any_lookup, data_clean_lookup = stage1_success_lookup(
-                len(data_epg.tag_energy),
-                data_stage1_arrays,
-                data_clean_assoc,
+                data_assoc.best_match,
             )
 
             # MC uses the already validated e/p kinematic matcher from Stage I.
@@ -6629,8 +7247,9 @@ def process_period(
                 shared_rows=shared_rows,
                 data_f=data_f,
                 aaogen_f=pi0_f,
-                data_any_match=data_any_lookup,
-                data_clean_success=data_clean_lookup,
+                data_stage_lookup=data_assoc.stage_lookup,
+                data_mass_shell_success=data_mass_shell_lookup,
+                data_final_success=data_final_lookup,
                 mc_any_match=mc_any_lookup,
                 mc_clean_success=mc_clean_lookup,
                 ft_theta_max=ft_theta_max,
@@ -6647,16 +7266,44 @@ def process_period(
                 period,
                 stage3_rows,
                 stage3_dir,
+                best_diagnostics=data_assoc.best_diagnostics,
+                data_f=data_f,
+                ft_theta_max=ft_theta_max,
             )
             stage3_summary = summarize_stage3(
                 period,
                 stage3_rows,
                 data_match_counters={
-                    **data_match_counters,
-                    **{f"stage1_{k}": v for k, v in data_stage1_counters.items()},
-                    "clean_associations": int(np.count_nonzero(data_clean_assoc)),
+                    **data_assoc.counters,
+                    **{
+                        f"stage1_{k}": v
+                        for k, v in data_stage1_counters.items()
+                    },
+                    "mass_shell_above_threshold_associations": int(
+                        np.count_nonzero(data_mass_shell_lookup)
+                    ),
+                    "final_numerator_associations": int(
+                        np.count_nonzero(data_final_lookup)
+                    ),
                 },
                 max_probe_energy=max_probe_energy,
+                use_pred_consistency=bool(
+                    args_dict["stage3_use_pred_consistency"]
+                ),
+                association_settings={
+                    "tag_remainder_m2_max_GeV2": float(
+                        args_dict["stage3_tag_remainder_m2_max"]
+                    ),
+                    "reco_probe_energy_min_GeV": float(
+                        args_dict["assoc_probe_energy_min"]
+                    ),
+                    "probe_angle_max_deg": float(
+                        args_dict["stage3_probe_angle_max_deg"]
+                    ),
+                    "probe_frac_energy_max": float(
+                        args_dict["stage3_probe_frac_energy_max"]
+                    ),
+                },
             )
             with (stage3_dir / "stage3_summary.json").open("w") as f:
                 json.dump(stage3_summary, f, indent=2, allow_nan=True)
@@ -6712,6 +7359,15 @@ def main() -> int:
     #endif
     if args.parent_component_tol <= 0.0:
         raise ValueError("--parent-component-tol must be > 0.")
+    #endif
+    if args.stage3_tag_remainder_m2_max <= 0.0:
+        raise ValueError("--stage3-tag-remainder-m2-max must be > 0.")
+    #endif
+    if args.stage3_probe_angle_max_deg <= 0.0:
+        raise ValueError("--stage3-probe-angle-max-deg must be > 0.")
+    #endif
+    if args.stage3_probe_frac_energy_max <= 0.0:
+        raise ValueError("--stage3-probe-frac-energy-max must be > 0.")
     #endif
     if args.workers < 1:
         raise ValueError("--workers must be >= 1.")
@@ -6863,7 +7519,7 @@ def main() -> int:
                 "real epgamma data are fit locally with floated aaogen-pi0 and "
                 "dvcsgen BH/DVCS templates under multiple discriminator choices. "
                 "No generator relative normalization is imposed. Shared morphing "
-                "uses zero-centered weak priors in v023; reconstructed-eppi0 control "
+                "uses zero-centered weak priors in v024; reconstructed-eppi0 control "
                 "results are diagnostic and are not injected as nuisance centers. "
                 "Mixed-data wrong-tag templates remain diagnostic-only stress tests."
             ),
