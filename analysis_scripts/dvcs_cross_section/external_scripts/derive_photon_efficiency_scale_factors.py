@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v026.py
+derive_photon_efficiency_scale_factors_v028.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v026.py
+    python derive_photon_efficiency_scale_factors_v028.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v026.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v028.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v026.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v028.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v026.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v028.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v026.py --angles rad
+    python derive_photon_efficiency_scale_factors_v028.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -600,7 +600,6 @@ class DataAssociationResult:
     stage_lookup: Dict[str, np.ndarray]
     counters: Dict[str, int]
     best_diagnostics: Dict[str, np.ndarray]
-    parent_delta_diagnostics: Dict[str, np.ndarray]
 
 
 def _lookup_from_indices(n: int, indices: np.ndarray) -> np.ndarray:
@@ -615,52 +614,42 @@ def match_data_event_candidates(
     period: PeriodConfig,
     epg: EPGammaSample,
     eppi0: EPPi0Sample,
-    parent_component_tol: float,
     tag_remainder_m2_max: float,
     reco_probe_energy_min: float,
     probe_angle_max_deg: float,
     probe_frac_energy_max: float,
 ) -> DataAssociationResult:
     """
-    Exact runnum+evnum Stage-III association with a transparent sequential
-    cut-flow.
+    Exact-event Stage-III DATA association.
 
-    Stages, all evaluated per epgamma tag candidate:
+    For data, (runnum, evnum) is the complete parent-event identity. No
+    electron/proton kinematic matching is performed. MC continues to use the
+    independent e/p kinematic matcher developed in Stage I.
+
+    For every epgamma tag candidate, all same-event reconstructed eppi0
+    candidates are considered. Candidate association is determined entirely
+    from the photon side:
 
       same_event
-          At least one reconstructed eppi0 candidate has the same run/event.
-
-      parent_consistent
-          Diagnostic only in data: at least one same-event candidate has finite
-          reconstructed e/p momentum information. Exact runnum+evnum defines
-          the parent event identity; no e/p momentum tolerance is imposed.
+          At least one eppi0 candidate has identical runnum and evnum.
 
       positive_remainder
-          Removing the epgamma tag from that reconstructed pi0 leaves positive
-          companion energy.
+          P_pi0 - k_tag has positive energy and non-zero momentum.
 
       tag_mass_shell
           The remainder is photon-like:
               |(P_pi0-k_tag)^2| <= tag_remainder_m2_max.
 
-          With the present schema this is the strongest direct test that the
-          particular epgamma tag belongs to the reconstructed pi0 candidate.
-
       probe_energy
-          The reconstructed companion is above the photon threshold.
+          The reconstructed companion energy is above the photon threshold.
 
       probe_pred_consistent
-          The reconstructed companion agrees loosely with the epgamma-predicted
-          missing photon in opening angle and fractional energy.
+          The reconstructed companion agrees loosely with the independent
+          epgamma-predicted probe in opening angle and fractional energy.
 
-    The best candidate for a tag is selected only among candidates passing
-    probe_energy, using a score dominated by the remainder photon mass shell
-    and then by predicted/reconstructed companion agreement.
-
-    This function deliberately exposes all intermediate lookups. Stage III can
-    therefore diagnose whether a zero numerator originates from missing event
-    overlap, e/p mismatch, tag identity, threshold, or the final consistency
-    gate.
+    The best candidate is selected by the photon remainder mass shell, then by
+    predicted/reconstructed companion agreement. No data e/p momentum
+    difference enters the score or any hard selection.
     """
     for name in ("runnum", "evnum"):
         if name not in epg.raw or name not in eppi0.raw:
@@ -681,7 +670,6 @@ def match_data_event_candidates(
     )
     stage_names = (
         "same_event",
-        "parent_consistent",
         "positive_remainder",
         "tag_mass_shell",
         "probe_energy",
@@ -692,30 +680,38 @@ def match_data_event_candidates(
         for name in stage_names
     }
 
-    if n_epg == 0 or n_pi0 == 0:
+    def empty_result(extra_counters: Optional[Dict[str, int]] = None) -> DataAssociationResult:
+        counters = {
+            "epgamma_entries": int(n_epg),
+            "eppi0_entries": int(n_pi0),
+            **{name: 0 for name in stage_names},
+            "same_event_candidate_pairs": 0,
+            "positive_remainder_pairs": 0,
+            "tag_mass_shell_pairs": 0,
+            "probe_energy_pairs": 0,
+            "probe_pred_consistent_pairs": 0,
+            "accepted_best_matches": 0,
+        }
+        if extra_counters:
+            counters.update(extra_counters)
+        #endif
         return DataAssociationResult(
             best_match=empty_match,
-            stage_lookup=empty_lookup,
-            counters={
-                "epgamma_entries": int(n_epg),
-                "eppi0_entries": int(n_pi0),
-                **{name: 0 for name in stage_names},
-                "same_event_candidate_pairs": 0,
-                "parent_consistent_pairs": 0,
-                "positive_remainder_pairs": 0,
-                "tag_mass_shell_pairs": 0,
-                "probe_energy_pairs": 0,
-                "probe_pred_consistent_pairs": 0,
-                "accepted_best_matches": 0,
-            },
+            stage_lookup={k: v.copy() for k, v in empty_lookup.items()},
+            counters=counters,
             best_diagnostics={},
-            parent_delta_diagnostics={},
         )
+    #enddef
+
+    if n_epg == 0 or n_pi0 == 0:
+        return empty_result()
     #endif
 
     key_g = packed_event_keys(epg.raw["runnum"], epg.raw["evnum"])
     key_p = packed_event_keys(eppi0.raw["runnum"], eppi0.raw["evnum"])
 
+    # Only the eppi0 keys need sorting. Every epgamma candidate then gets the
+    # contiguous same-event eppi0 slice by two vectorized searchsorted calls.
     order_p = np.argsort(key_p, kind="mergesort")
     sorted_p = key_p[order_p]
     left = np.searchsorted(sorted_p, key_g, side="left")
@@ -725,134 +721,21 @@ def match_data_event_candidates(
     same_lookup = counts > 0
     total_pairs = int(np.sum(counts))
     if total_pairs == 0:
-        empty_lookup["same_event"] = same_lookup
-        return DataAssociationResult(
-            best_match=empty_match,
-            stage_lookup=empty_lookup,
-            counters={
-                "epgamma_entries": int(n_epg),
-                "eppi0_entries": int(n_pi0),
-                "same_event": int(np.count_nonzero(same_lookup)),
-                "same_event_candidate_pairs": 0,
-                **{name: 0 for name in stage_names[1:]},
-                "parent_consistent_pairs": 0,
-                "positive_remainder_pairs": 0,
-                "tag_mass_shell_pairs": 0,
-                "probe_energy_pairs": 0,
-                "probe_pred_consistent_pairs": 0,
-                "accepted_best_matches": 0,
-            },
-            best_diagnostics={},
-            parent_delta_diagnostics={},
-        )
+        result = empty_result({
+            "same_event": int(np.count_nonzero(same_lookup)),
+        })
+        result.stage_lookup["same_event"] = same_lookup
+        return result
     #endif
 
+    # Expand only same-event candidate pairs.
     epg_rep = np.repeat(np.arange(n_epg, dtype=np.int64), counts)
     left_rep = np.repeat(left.astype(np.int64), counts)
     prefix_before = np.repeat((np.cumsum(counts) - counts), counts)
     offsets = np.arange(total_pairs, dtype=np.int64) - prefix_before
-    pi_sorted_index = left_rep + offsets
-    pi_rep = order_p[pi_sorted_index]
+    pi_rep = order_p[left_rep + offsets]
 
-    # Parent e/p consistency. For diagnostics define signed differences as
-    # (epgamma tree) - (eppi0 tree) for the same runnum/evnum.
-    de_signed = epg.electron_p3[epg_rep] - eppi0.electron_p3[pi_rep]
-    dp_signed = epg.proton_p3[epg_rep] - eppi0.proton_p3[pi_rep]
-    de = np.abs(de_signed)
-    dp = np.abs(dp_signed)
-    component_delta = np.maximum(np.max(de, axis=1), np.max(dp, axis=1))
-    parent_distance = np.sqrt(
-        np.sum((de / parent_component_tol) ** 2, axis=1)
-        + np.sum((dp / parent_component_tol) ** 2, axis=1)
-    )
-    # For DATA, exact (runnum, evnum) defines the parent event identity.
-    # Electron/proton kinematic differences between the independently produced
-    # epgamma and eppi0 trees are retained as diagnostics only and MUST NOT gate
-    # the Stage-III numerator.
-    parent_ok = np.isfinite(component_delta)
-
-    # One parent-delta diagnostic point per exact same-event epgamma tag,
-    # independent of the active 2-MeV-style hard gate. If an event contains
-    # multiple eppi0 candidates, retain the candidate with the smallest maximum
-    # six-component e/p mismatch.
-    finite_parent = np.isfinite(component_delta)
-    candidate_pairs = np.flatnonzero(finite_parent)
-    if candidate_pairs.size:
-        order_diag = np.lexsort(
-            (component_delta[candidate_pairs], epg_rep[candidate_pairs])
-        )
-        sorted_pairs = candidate_pairs[order_diag]
-        sorted_tags = epg_rep[sorted_pairs]
-        first = np.ones(len(sorted_pairs), dtype=bool)
-        if len(sorted_pairs) > 1:
-            first[1:] = sorted_tags[1:] != sorted_tags[:-1]
-        #endif
-        diag_pair = sorted_pairs[first]
-        diag_epg = epg_rep[diag_pair]
-        diag_pi = pi_rep[diag_pair]
-
-        e_g3 = epg.electron_p3[diag_epg]
-        e_pi3 = eppi0.electron_p3[diag_pi]
-        p_g3 = epg.proton_p3[diag_epg]
-        p_pi3 = eppi0.proton_p3[diag_pi]
-
-        def _angles_deg(v: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-            mag = np.linalg.norm(v, axis=1)
-            with np.errstate(divide="ignore", invalid="ignore"):
-                theta = np.degrees(
-                    np.arccos(
-                        np.clip(
-                            v[:, 2] / np.where(mag > 0.0, mag, np.nan),
-                            -1.0, 1.0,
-                        )
-                    )
-                )
-            #endwith
-            phi = np.degrees(np.arctan2(v[:, 1], v[:, 0]))
-            return theta, phi
-        #enddef
-
-        def _dphi_deg(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-            return (a - b + 180.0) % 360.0 - 180.0
-        #enddef
-
-        e_tg, e_pg = _angles_deg(e_g3)
-        e_tp, e_pphi = _angles_deg(e_pi3)
-        p_tg, p_pg = _angles_deg(p_g3)
-        p_tp, p_pphi = _angles_deg(p_pi3)
-        e_mag_g = np.linalg.norm(e_g3, axis=1)
-        e_mag_p = np.linalg.norm(e_pi3, axis=1)
-        p_mag_g = np.linalg.norm(p_g3, axis=1)
-        p_mag_p = np.linalg.norm(p_pi3, axis=1)
-
-        parent_delta_diagnostics = {
-            "epg_index": np.asarray(diag_epg, dtype=np.int64),
-            "eppi0_index": np.asarray(diag_pi, dtype=np.int64),
-            "runnum": np.asarray(epg.raw["runnum"][diag_epg], dtype=np.int64),
-            "evnum": np.asarray(epg.raw["evnum"][diag_epg], dtype=np.int64),
-            "pred_probe_energy": np.full(len(diag_epg), np.nan, dtype=float),
-            "pred_probe_theta_deg": np.full(len(diag_epg), np.nan, dtype=float),
-            "e_delta_px_GeV": np.asarray(de_signed[diag_pair, 0], dtype=float),
-            "e_delta_py_GeV": np.asarray(de_signed[diag_pair, 1], dtype=float),
-            "e_delta_pz_GeV": np.asarray(de_signed[diag_pair, 2], dtype=float),
-            "p_delta_px_GeV": np.asarray(dp_signed[diag_pair, 0], dtype=float),
-            "p_delta_py_GeV": np.asarray(dp_signed[diag_pair, 1], dtype=float),
-            "p_delta_pz_GeV": np.asarray(dp_signed[diag_pair, 2], dtype=float),
-            "e_delta_p_GeV": np.asarray(e_mag_g - e_mag_p, dtype=float),
-            "p_delta_p_GeV": np.asarray(p_mag_g - p_mag_p, dtype=float),
-            "e_delta_theta_deg": np.asarray(e_tg - e_tp, dtype=float),
-            "p_delta_theta_deg": np.asarray(p_tg - p_tp, dtype=float),
-            "e_delta_phi_deg": np.asarray(_dphi_deg(e_pg, e_pphi), dtype=float),
-            "p_delta_phi_deg": np.asarray(_dphi_deg(p_pg, p_pphi), dtype=float),
-            "max_component_delta_GeV": np.asarray(
-                component_delta[diag_pair], dtype=float
-            ),
-        }
-    else:
-        parent_delta_diagnostics = {}
-    #endif
-
-    # Reconstructed companion = P_pi0 - k_tag.
+    # Reconstructed companion: P_pi0 - k_tag.
     tag3 = epg.tag_p3[epg_rep]
     pi3 = eppi0.pi0_p3[pi_rep]
     tag_E = np.linalg.norm(tag3, axis=1)
@@ -866,8 +749,7 @@ def match_data_event_candidates(
     reco_m2 = reco_E * reco_E - reco_p * reco_p
 
     positive = (
-        parent_ok
-        & np.isfinite(reco_E)
+        np.isfinite(reco_E)
         & np.isfinite(reco_p)
         & (reco_E > 0.0)
         & (reco_p > 0.0)
@@ -877,12 +759,9 @@ def match_data_event_candidates(
         & np.isfinite(reco_m2)
         & (np.abs(reco_m2) <= tag_remainder_m2_max)
     )
-    above_threshold = (
-        mass_shell
-        & (reco_E >= reco_probe_energy_min)
-    )
+    above_threshold = mass_shell & (reco_E >= reco_probe_energy_min)
 
-    # Probe predicted from the same epgamma tag candidate.
+    # Independently predicted companion from the epgamma kinematics.
     e3 = epg.electron_p3[epg_rep]
     p3 = epg.proton_p3[epg_rep]
     e_pmag = np.linalg.norm(e3, axis=1)
@@ -916,9 +795,7 @@ def match_data_event_candidates(
         & (np.abs(frac_delta_E) <= probe_frac_energy_max)
     )
 
-    # Convert pair-level sequential conditions into per-tag lookups.
     pair_stage_masks = {
-        "parent_consistent": parent_ok,
         "positive_remainder": positive,
         "tag_mass_shell": mass_shell,
         "probe_energy": above_threshold,
@@ -934,15 +811,13 @@ def match_data_event_candidates(
         )
     #endfor
 
-    # Select a best candidate among mass-shell + threshold candidates.
+    # Select one reconstructed-pi0 candidate per epgamma tag. Only photon-side
+    # quantities enter the score.
     eligible_idx = np.flatnonzero(above_threshold)
     if eligible_idx.size == 0:
         best_match = empty_match
         best_diag: Dict[str, np.ndarray] = {}
     else:
-        # Primary: photon remainder mass shell.
-        # Secondary: probe opening-angle and fractional-energy agreement.
-        # Parent-distance is diagnostic only and serves merely as an infinitesimal tie-breaker.
         angle_term = np.nan_to_num(
             delta_theta_deg[eligible_idx] / max(probe_angle_max_deg, 1.0e-9),
             nan=1.0e6,
@@ -961,7 +836,6 @@ def match_data_event_candidates(
             / max(tag_remainder_m2_max, 1.0e-12)
             + 0.05 * angle_term
             + 0.05 * energy_term
-            + 1.0e-9 * parent_distance[eligible_idx]
         )
 
         gvalid = epg_rep[eligible_idx]
@@ -977,8 +851,8 @@ def match_data_event_candidates(
         best_match = MatchResult(
             epg_index=np.asarray(epg_rep[chosen], dtype=np.int64),
             eppi0_index=np.asarray(pi_rep[chosen], dtype=np.int64),
-            nearest_distance=np.asarray(parent_distance[chosen], dtype=float),
-            max_component_delta=np.asarray(component_delta[chosen], dtype=float),
+            nearest_distance=np.zeros(len(chosen), dtype=float),
+            max_component_delta=np.zeros(len(chosen), dtype=float),
         )
         best_diag = {
             "epg_index": np.asarray(epg_rep[chosen], dtype=np.int64),
@@ -998,40 +872,10 @@ def match_data_event_candidates(
         }
     #endif
 
-    # Attach predicted probe energy/theta to the parent-delta diagnostic.
-    if parent_delta_diagnostics:
-        dg = np.asarray(parent_delta_diagnostics["epg_index"], dtype=np.int64)
-        e3d = epg.electron_p3[dg]
-        p3d = epg.proton_p3[dg]
-        t3d = epg.tag_p3[dg]
-        eEd = np.sqrt(np.sum(e3d * e3d, axis=1) + M_E * M_E)
-        pEd = np.sqrt(np.sum(p3d * p3d, axis=1) + M_P * M_P)
-        tEd = np.linalg.norm(t3d, axis=1)
-        predEd = initial_E - eEd - pEd - tEd
-        pred3d = initial_p3[None, :] - e3d - p3d - t3d
-        predpd = np.linalg.norm(pred3d, axis=1)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            predthd = np.degrees(
-                np.arccos(
-                    np.clip(
-                        pred3d[:, 2]
-                        / np.where(predpd > 0.0, predpd, np.nan),
-                        -1.0, 1.0,
-                    )
-                )
-            )
-        #endwith
-        parent_delta_diagnostics["pred_probe_energy"] = np.asarray(predEd, dtype=float)
-        parent_delta_diagnostics["pred_probe_theta_deg"] = np.asarray(predthd, dtype=float)
-    #endif
-
     counters = {
         "epgamma_entries": int(n_epg),
         "eppi0_entries": int(n_pi0),
         "same_event": int(np.count_nonzero(stage_lookup["same_event"])),
-        "parent_consistent": int(
-            np.count_nonzero(stage_lookup["parent_consistent"])
-        ),
         "positive_remainder": int(
             np.count_nonzero(stage_lookup["positive_remainder"])
         ),
@@ -1045,7 +889,6 @@ def match_data_event_candidates(
             np.count_nonzero(stage_lookup["probe_pred_consistent"])
         ),
         "same_event_candidate_pairs": total_pairs,
-        "parent_consistent_pairs": int(np.count_nonzero(parent_ok)),
         "positive_remainder_pairs": int(np.count_nonzero(positive)),
         "tag_mass_shell_pairs": int(np.count_nonzero(mass_shell)),
         "probe_energy_pairs": int(np.count_nonzero(above_threshold)),
@@ -1060,7 +903,6 @@ def match_data_event_candidates(
         stage_lookup=stage_lookup,
         counters=counters,
         best_diagnostics=best_diag,
-        parent_delta_diagnostics=parent_delta_diagnostics,
     )
 
 
@@ -2383,7 +2225,7 @@ def build_pi0_control_validation(
     """
     Reconstructed-eppi0 data/aaogen control validation.
 
-    IMPORTANT: v026 does NOT feed this calibration into the denominator fit.
+    IMPORTANT: v028 does NOT feed this calibration into the denominator fit.
     The previous full-range Gaussian-smearing calibration saturated at its hard
     bound and failed goodness-of-fit, so it is retained only as a diagnostic.
     """
@@ -3592,11 +3434,16 @@ def shared_driver_projection(
     ptmiss_bins: int,
     theta_max: float,
     theta_bins: int,
+    display_bin_factor: int = 1,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Build a one-dimensional second-axis projection using the actual shared-fit
     region, fraction, and final morphed templates.
     """
+    display_bin_factor = max(1, int(display_bin_factor))
+    display_ptmiss_bins = int(ptmiss_bins) * display_bin_factor
+    display_probe_m2_bins = int(probe_m2_bins_2d) * display_bin_factor
+
     elo = float(row["energy_low_GeV"])
     ehi = float(row["energy_high_GeV"])
 
@@ -3626,10 +3473,10 @@ def shared_driver_projection(
         mm2_max=mm2_max,
         probe_m2_max=probe_m2_max,
         mm2_bins_2d=mm2_bins_2d,
-        probe_m2_bins_2d=probe_m2_bins_2d,
+        probe_m2_bins_2d=display_probe_m2_bins,
         bins_1d=90,
         ptmiss_max=ptmiss_max,
-        ptmiss_bins=ptmiss_bins,
+        ptmiss_bins=display_ptmiss_bins,
         theta_max=theta_max,
         theta_bins=theta_bins,
     )
@@ -3641,10 +3488,10 @@ def shared_driver_projection(
         mm2_max=mm2_max,
         probe_m2_max=probe_m2_max,
         mm2_bins_2d=mm2_bins_2d,
-        probe_m2_bins_2d=probe_m2_bins_2d,
+        probe_m2_bins_2d=display_probe_m2_bins,
         bins_1d=90,
         ptmiss_max=ptmiss_max,
-        ptmiss_bins=ptmiss_bins,
+        ptmiss_bins=display_ptmiss_bins,
         theta_max=theta_max,
         theta_bins=theta_bins,
     )
@@ -3656,23 +3503,27 @@ def shared_driver_projection(
         mm2_max=mm2_max,
         probe_m2_max=probe_m2_max,
         mm2_bins_2d=mm2_bins_2d,
-        probe_m2_bins_2d=probe_m2_bins_2d,
+        probe_m2_bins_2d=display_probe_m2_bins,
         bins_1d=90,
         ptmiss_max=ptmiss_max,
-        ptmiss_bins=ptmiss_bins,
+        ptmiss_bins=display_ptmiss_bins,
         theta_max=theta_max,
         theta_bins=theta_bins,
     )
 
     tp = morph_template_second_axis(
         hp,
-        float(row.get(f"{discriminator}_pi0_shift_bins", 0.0)),
-        float(row.get(f"{discriminator}_pi0_sigma_bins", 0.0)),
+        display_bin_factor
+        * float(row.get(f"{discriminator}_pi0_shift_bins", 0.0)),
+        display_bin_factor
+        * float(row.get(f"{discriminator}_pi0_sigma_bins", 0.0)),
     )
     td = morph_template_second_axis(
         hv,
-        float(row.get(f"{discriminator}_dvcs_shift_bins", 0.0)),
-        float(row.get(f"{discriminator}_dvcs_sigma_bins", 0.0)),
+        display_bin_factor
+        * float(row.get(f"{discriminator}_dvcs_shift_bins", 0.0)),
+        display_bin_factor
+        * float(row.get(f"{discriminator}_dvcs_sigma_bins", 0.0)),
     )
 
     data_proj = np.sum(hd, axis=0).astype(float)
@@ -3689,12 +3540,12 @@ def shared_driver_projection(
     model = pi0_component + dvcs_component
 
     if discriminator == "mx2_ep_x_pTmiss":
-        edges = np.linspace(0.0, ptmiss_max, ptmiss_bins + 1)
+        edges = np.linspace(0.0, ptmiss_max, display_ptmiss_bins + 1)
     else:
         edges = np.linspace(
             -probe_m2_max,
             probe_m2_max,
-            probe_m2_bins_2d + 1,
+            display_probe_m2_bins + 1,
         )
     #endif
     centers = 0.5 * (edges[:-1] + edges[1:])
@@ -3776,6 +3627,7 @@ def make_ft_fd_fit_overlay_canvas(
                 ptmiss_bins,
                 theta_max,
                 theta_bins,
+                display_bin_factor=2,
             )
 
             ax.errorbar(
@@ -3810,7 +3662,7 @@ def make_ft_fd_fit_overlay_canvas(
             ax.set_xlabel(r"$p_{T,\mathrm{miss}}$ (GeV)")
             ax.set_ylabel("Entries / bin")
             if region == "FT":
-                ax.set_xlim(0.0, 0.40)
+                ax.set_xlim(0.0, 0.30)
             else:
                 ax.set_xlim(0.0, ptmiss_max)
             #endif
@@ -4651,7 +4503,6 @@ def build_stage3_reference_rows(
 
     required_stages = (
         "same_event",
-        "parent_consistent",
         "positive_remainder",
         "tag_mass_shell",
         "probe_energy",
@@ -4899,520 +4750,63 @@ def _qfinite(values: np.ndarray, q: float) -> float:
 
 
 
-def _event_unique_electron_summary(
-    runnum: np.ndarray,
-    evnum: np.ndarray,
-    e_p: np.ndarray,
-    momentum_tol_GeV: float = 1.0e-6,
-) -> Dict[Tuple[int, int], Dict[str, object]]:
-    """
-    Group one data tree by exact (runnum, evnum) and summarize distinct electron
-    momentum magnitudes.
-
-    Distinct e_p values are clustered with a tiny tolerance because repeated
-    epgamma entries from the same physical electron can appear once per photon
-    candidate. The highest-e_p candidate is retained explicitly.
-    """
-    runnum = np.asarray(runnum, dtype=np.int64)
-    evnum = np.asarray(evnum, dtype=np.int64)
-    e_p = np.asarray(e_p, dtype=float)
-
-    order = np.lexsort((evnum, runnum))
-    run_s = runnum[order]
-    ev_s = evnum[order]
-    ep_s = e_p[order]
-
-    out: Dict[Tuple[int, int], Dict[str, object]] = {}
-    if len(order) == 0:
-        return out
-    #endif
-
-    start = 0
-    while start < len(order):
-        r = int(run_s[start])
-        e = int(ev_s[start])
-        stop = start + 1
-        while stop < len(order) and run_s[stop] == r and ev_s[stop] == e:
-            stop += 1
-        #endwhile
-
-        vals = ep_s[start:stop]
-        vals = vals[np.isfinite(vals)]
-        vals_sorted = np.sort(vals)
-
-        distinct = []
-        for value in vals_sorted:
-            if not distinct or abs(float(value) - distinct[-1]) > momentum_tol_GeV:
-                distinct.append(float(value))
-            #endif
-        #endfor
-
-        out[(r, e)] = {
-            "n_entries": int(stop - start),
-            "n_distinct_electrons": int(len(distinct)),
-            "distinct_e_p_GeV": distinct,
-            "highest_e_p_GeV": (
-                float(distinct[-1]) if distinct else float("nan")
-            ),
-            "lowest_e_p_GeV": (
-                float(distinct[0]) if distinct else float("nan")
-            ),
-            "highest_minus_lowest_e_p_GeV": (
-                float(distinct[-1] - distinct[0])
-                if len(distinct) >= 2 else 0.0
-            ),
-        }
-        start = stop
-    #endwhile
-
-    return out
-
-
-def build_multiple_electron_audit_rows(
-    period: PeriodConfig,
-    epg: EPGammaSample,
-    eppi0: EPPi0Sample,
-    distinct_tol_GeV: float = 1.0e-6,
-) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
-    """
-    Audit multiple reconstructed electrons in the epgamma and eppi0 DATA trees.
-
-    Returns:
-      summary_rows: one compact row per tree plus cross-tree comparison.
-      event_rows: one row per common runnum/evnum with highest-e_p information.
-    """
-    epg_map = _event_unique_electron_summary(
-        epg.raw["runnum"], epg.raw["evnum"], epg.electron_p, distinct_tol_GeV
-    )
-    pi_map = _event_unique_electron_summary(
-        eppi0.raw["runnum"], eppi0.raw["evnum"], eppi0.electron_p, distinct_tol_GeV
-    )
-
-    summary_rows: List[Dict[str, object]] = []
-    for tree_name, mapping in (("epgamma", epg_map), ("eppi0", pi_map)):
-        vals = list(mapping.values())
-        n_events = len(vals)
-        n_multi = sum(v["n_distinct_electrons"] > 1 for v in vals)
-        multiplicities = np.asarray(
-            [v["n_distinct_electrons"] for v in vals], dtype=float
-        )
-        spreads = np.asarray(
-            [v["highest_minus_lowest_e_p_GeV"] for v in vals], dtype=float
-        )
-        summary_rows.append({
-            "period": period.key,
-            "label": period.label,
-            "tree": tree_name,
-            "event_scope": "all_events",
-            "events": int(n_events),
-            "events_with_multiple_distinct_electrons": int(n_multi),
-            "fraction_with_multiple_distinct_electrons": (
-                n_multi / n_events if n_events else float("nan")
-            ),
-            "mean_distinct_electron_multiplicity": (
-                float(np.mean(multiplicities)) if n_events else float("nan")
-            ),
-            "max_distinct_electron_multiplicity": (
-                int(np.max(multiplicities)) if n_events else 0
-            ),
-            "median_highest_minus_lowest_e_p_GeV": (
-                float(np.median(spreads)) if n_events else float("nan")
-            ),
-            "q90_highest_minus_lowest_e_p_GeV": (
-                float(np.quantile(spreads, 0.90)) if n_events else float("nan")
-            ),
-            "q99_highest_minus_lowest_e_p_GeV": (
-                float(np.quantile(spreads, 0.99)) if n_events else float("nan")
-            ),
-        })
-    #endfor
-
-    common = sorted(set(epg_map.keys()) & set(pi_map.keys()))
-    event_rows: List[Dict[str, object]] = []
-    highest_deltas = []
-    same_highest = 0
-    for key in common:
-        ge = epg_map[key]
-        pe = pi_map[key]
-        d_high = (
-            float(ge["highest_e_p_GeV"]) - float(pe["highest_e_p_GeV"])
-        )
-        highest_deltas.append(d_high)
-        if abs(d_high) <= distinct_tol_GeV:
-            same_highest += 1
-        #endif
-        event_rows.append({
-            "period": period.key,
-            "label": period.label,
-            "runnum": int(key[0]),
-            "evnum": int(key[1]),
-            "epgamma_n_entries": ge["n_entries"],
-            "eppi0_n_entries": pe["n_entries"],
-            "epgamma_n_distinct_electrons": ge["n_distinct_electrons"],
-            "eppi0_n_distinct_electrons": pe["n_distinct_electrons"],
-            "epgamma_highest_e_p_GeV": ge["highest_e_p_GeV"],
-            "eppi0_highest_e_p_GeV": pe["highest_e_p_GeV"],
-            "highest_e_p_delta_epgamma_minus_eppi0_GeV": d_high,
-            "epgamma_highest_minus_lowest_e_p_GeV":
-                ge["highest_minus_lowest_e_p_GeV"],
-            "eppi0_highest_minus_lowest_e_p_GeV":
-                pe["highest_minus_lowest_e_p_GeV"],
-        })
-    #endfor
-
-    arr = np.asarray(highest_deltas, dtype=float)
-    summary_rows.append({
-        "period": period.key,
-        "label": period.label,
-        "tree": "cross_tree",
-        "event_scope": "common_runnum_evnum",
-        "events": int(len(common)),
-        "events_with_multiple_distinct_electrons": -1,
-        "fraction_with_multiple_distinct_electrons": float("nan"),
-        "mean_distinct_electron_multiplicity": float("nan"),
-        "max_distinct_electron_multiplicity": -1,
-        "median_highest_minus_lowest_e_p_GeV": float("nan"),
-        "q90_highest_minus_lowest_e_p_GeV": float("nan"),
-        "q99_highest_minus_lowest_e_p_GeV": float("nan"),
-        "fraction_highest_e_p_identical_between_trees": (
-            same_highest / len(common) if common else float("nan")
-        ),
-        "median_highest_e_p_delta_epgamma_minus_eppi0_GeV": (
-            float(np.median(arr)) if arr.size else float("nan")
-        ),
-        "q16_highest_e_p_delta_epgamma_minus_eppi0_GeV": (
-            float(np.quantile(arr, 0.16)) if arr.size else float("nan")
-        ),
-        "q84_highest_e_p_delta_epgamma_minus_eppi0_GeV": (
-            float(np.quantile(arr, 0.84)) if arr.size else float("nan")
-        ),
-        "q99_abs_highest_e_p_delta_GeV": (
-            float(np.quantile(np.abs(arr), 0.99)) if arr.size else float("nan")
-        ),
-    })
-
-    return summary_rows, event_rows
-
-
-def make_multiple_electron_audit_canvas(
-    period: PeriodConfig,
-    summary_rows: List[Dict[str, object]],
-    event_rows: List[Dict[str, object]],
-    outdir: Path,
-) -> None:
-    if not summary_rows:
-        return
-    #endif
-
-    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.7))
-
-    tree_rows = [r for r in summary_rows if r["tree"] in ("epgamma", "eppi0")]
-    names = [r["tree"] for r in tree_rows]
-    fracs = [r["fraction_with_multiple_distinct_electrons"] for r in tree_rows]
-    axes[0].bar(names, fracs)
-    axes[0].set_ylim(0.0, max(0.02, 1.15 * max(fracs, default=0.0)))
-    axes[0].set_ylabel("Fraction of events")
-    axes[0].set_title("Events with >1 distinct reconstructed electron")
-    axes[0].grid(alpha=0.18, axis="y")
-
-    if event_rows:
-        vals = np.asarray(
-            [
-                r["highest_e_p_delta_epgamma_minus_eppi0_GeV"]
-                for r in event_rows
-            ],
-            dtype=float,
-        )
-        vals = vals[np.isfinite(vals)]
-        if vals.size:
-            lim = max(
-                1.0e-4,
-                1.15 * float(np.quantile(np.abs(vals), 0.995))
-            )
-            axes[1].hist(
-                vals,
-                bins=np.linspace(-lim, lim, 201),
-                histtype="step",
-                density=True,
-            )
-            axes[1].axvline(0.0, linewidth=0.8)
-        #endif
-    #endif
-    axes[1].set_xlabel(
-        r"highest-$e_p$: epgamma minus eppi0 (GeV)"
-    )
-    axes[1].set_ylabel("Density")
-    axes[1].set_title("Do highest-energy electrons agree across trees?")
-    axes[1].grid(alpha=0.18)
-
-    fig.suptitle(
-        f"{period.label}: multiple-electron data-tree audit",
-        fontsize=14,
-    )
-    safe_finalize_figure(
-        fig,
-        outdir / "canvas_data_multiple_electron_audit.png",
-        rect=(0, 0, 1, 0.93),
-    )
-    plt.close(fig)
-
-
-def build_parent_delta_summary_rows(
-    period: PeriodConfig,
-    diagnostics: Dict[str, np.ndarray],
-) -> List[Dict[str, object]]:
-    if not diagnostics:
-        return []
-    #endif
-    specs = (
-        ("electron", "delta_px", "e_delta_px_GeV", "GeV"),
-        ("electron", "delta_py", "e_delta_py_GeV", "GeV"),
-        ("electron", "delta_pz", "e_delta_pz_GeV", "GeV"),
-        ("electron", "delta_p", "e_delta_p_GeV", "GeV"),
-        ("electron", "delta_theta", "e_delta_theta_deg", "deg"),
-        ("electron", "delta_phi", "e_delta_phi_deg", "deg"),
-        ("proton", "delta_px", "p_delta_px_GeV", "GeV"),
-        ("proton", "delta_py", "p_delta_py_GeV", "GeV"),
-        ("proton", "delta_pz", "p_delta_pz_GeV", "GeV"),
-        ("proton", "delta_p", "p_delta_p_GeV", "GeV"),
-        ("proton", "delta_theta", "p_delta_theta_deg", "deg"),
-        ("proton", "delta_phi", "p_delta_phi_deg", "deg"),
-        ("combined", "max_abs_cartesian_component", "max_component_delta_GeV", "GeV"),
-    )
-    rows = []
-    for particle, variable, key, unit in specs:
-        vals = np.asarray(diagnostics[key], dtype=float)
-        vals = vals[np.isfinite(vals)]
-        av = np.abs(vals)
-        rows.append({
-            "period": period.key, "label": period.label,
-            "particle": particle, "variable": variable, "unit": unit,
-            "definition": "epgamma minus eppi0 for exact same runnum/evnum; best parent candidate",
-            "count": int(vals.size),
-            "mean": float(np.mean(vals)) if vals.size else float("nan"),
-            "std": float(np.std(vals)) if vals.size else float("nan"),
-            "q01": _qfinite(vals, .01), "q16": _qfinite(vals, .16),
-            "median": _qfinite(vals, .50), "q84": _qfinite(vals, .84),
-            "q99": _qfinite(vals, .99),
-            "abs_q50": _qfinite(av, .50), "abs_q68": _qfinite(av, .68),
-            "abs_q90": _qfinite(av, .90), "abs_q95": _qfinite(av, .95),
-            "abs_q99": _qfinite(av, .99),
-            "abs_max": float(np.max(av)) if vals.size else float("nan"),
-        })
-    #endfor
-    return rows
-
-
-def build_parent_tolerance_rows(
-    period: PeriodConfig,
-    diagnostics: Dict[str, np.ndarray],
-    tolerance_grid: np.ndarray,
-    ft_theta_max: float,
-    max_probe_energy: float,
-) -> List[Dict[str, object]]:
-    if not diagnostics:
-        return []
-    #endif
-    d = np.asarray(diagnostics["max_component_delta_GeV"], dtype=float)
-    th = np.asarray(diagnostics["pred_probe_theta_deg"], dtype=float)
-    en = np.asarray(diagnostics["pred_probe_energy"], dtype=float)
-    finite = np.isfinite(d)
-    regions = {
-        "all": finite,
-        "FT": finite & np.isfinite(th) & (th <= ft_theta_max),
-        "FD_all": finite & np.isfinite(th) & (th > ft_theta_max),
-    }
-    edges = stage2_energy_edges(max_probe_energy)
-    rows = []
-    for region, rm in regions.items():
-        for elo, ehi in [(float("nan"), float("nan"))] + [
-            (float(edges[i]), float(edges[i+1])) for i in range(len(edges)-1)
-        ]:
-            if np.isfinite(elo):
-                bm = rm & np.isfinite(en) & (en >= elo) & (en < ehi)
-            else:
-                bm = rm
-            #endif
-            n = int(np.count_nonzero(bm))
-            for tol in tolerance_grid:
-                npass = int(np.count_nonzero(bm & (d <= tol)))
-                rows.append({
-                    "period": period.key, "label": period.label, "region": region,
-                    "energy_low_GeV": elo, "energy_high_GeV": ehi,
-                    "tolerance_GeV": float(tol), "same_event_tags": n,
-                    "passing_tags": npass,
-                    "passing_fraction": npass/n if n else float("nan"),
-                })
-            #endfor
-        #endfor
-    #endfor
-    return rows
-
-
-def build_parent_delta_by_run_rows(
-    period: PeriodConfig,
-    diagnostics: Dict[str, np.ndarray],
-    active_tolerance: float,
-) -> List[Dict[str, object]]:
-    if not diagnostics:
-        return []
-    #endif
-    runs = np.asarray(diagnostics["runnum"], dtype=np.int64)
-    d = np.asarray(diagnostics["max_component_delta_GeV"], dtype=float)
-    rows = []
-    for run in np.unique(runs):
-        a = d[(runs == run) & np.isfinite(d)]
-        if not a.size:
-            continue
-        #endif
-        rows.append({
-            "period": period.key, "label": period.label, "runnum": int(run),
-            "same_event_tags": int(a.size),
-            "median_max_component_delta_GeV": _qfinite(a,.50),
-            "q90_max_component_delta_GeV": _qfinite(a,.90),
-            "q99_max_component_delta_GeV": _qfinite(a,.99),
-            "fraction_passing_active_tolerance": float(np.mean(a <= active_tolerance)),
-            "active_tolerance_GeV": float(active_tolerance),
-        })
-    #endfor
-    return rows
-
-
-def _symrange(a: np.ndarray) -> float:
-    v = np.abs(np.asarray(a,dtype=float))
-    v = v[np.isfinite(v)]
-    return max(1.15*_qfinite(v,.995), 1e-6) if v.size else 1.0
-
-
-def make_parent_delta_diagnostic_canvases(
-    period: PeriodConfig,
-    diagnostics: Dict[str, np.ndarray],
-    tolerance_rows: List[Dict[str, object]],
-    run_rows: List[Dict[str, object]],
-    outdir: Path,
-    active_tolerance: float,
-) -> None:
-    if not diagnostics:
-        return
-    #endif
-
-    fig, ax = plt.subplots(2,3,figsize=(17.5,9.2))
-    specs=(("e_delta_px_GeV",r"$\Delta p_x^e$ (GeV)",0,0),
-           ("e_delta_py_GeV",r"$\Delta p_y^e$ (GeV)",0,1),
-           ("e_delta_pz_GeV",r"$\Delta p_z^e$ (GeV)",0,2),
-           ("p_delta_px_GeV",r"$\Delta p_x^p$ (GeV)",1,0),
-           ("p_delta_py_GeV",r"$\Delta p_y^p$ (GeV)",1,1),
-           ("p_delta_pz_GeV",r"$\Delta p_z^p$ (GeV)",1,2))
-    for key,xl,r,c in specs:
-        v=np.asarray(diagnostics[key],float); v=v[np.isfinite(v)]; lim=_symrange(v)
-        ax[r,c].hist(v,bins=np.linspace(-lim,lim,181),histtype="step",density=True)
-        ax[r,c].axvline(0,lw=.8); ax[r,c].axvline(active_tolerance,ls="--",lw=.8)
-        ax[r,c].axvline(-active_tolerance,ls="--",lw=.8)
-        ax[r,c].set_xlabel(xl); ax[r,c].set_ylabel("Density"); ax[r,c].grid(alpha=.18)
-    #endfor
-    fig.suptitle(f"{period.label}: same-event parent Cartesian differences (epgamma − eppi0)")
-    safe_finalize_figure(fig,outdir/"canvas_data_parent_cartesian_deltas.png",rect=(0,0,1,.94)); plt.close(fig)
-
-    fig, ax = plt.subplots(2,3,figsize=(17.5,9.2))
-    specs=(("e_delta_p_GeV",r"$\Delta p_e$ (GeV)",0,0),
-           ("e_delta_theta_deg",r"$\Delta\theta_e$ (deg)",0,1),
-           ("e_delta_phi_deg",r"$\Delta\phi_e$ (deg)",0,2),
-           ("p_delta_p_GeV",r"$\Delta p_p$ (GeV)",1,0),
-           ("p_delta_theta_deg",r"$\Delta\theta_p$ (deg)",1,1),
-           ("p_delta_phi_deg",r"$\Delta\phi_p$ (deg)",1,2))
-    for key,xl,r,c in specs:
-        v=np.asarray(diagnostics[key],float); v=v[np.isfinite(v)]; lim=_symrange(v)
-        ax[r,c].hist(v,bins=np.linspace(-lim,lim,181),histtype="step",density=True)
-        ax[r,c].axvline(0,lw=.8); ax[r,c].set_xlabel(xl); ax[r,c].set_ylabel("Density"); ax[r,c].grid(alpha=.18)
-    #endfor
-    fig.suptitle(f"{period.label}: same-event parent magnitude/angle differences (epgamma − eppi0)")
-    safe_finalize_figure(fig,outdir/"canvas_data_parent_kinematic_deltas.png",rect=(0,0,1,.94)); plt.close(fig)
-
-    fig, ax = plt.subplots(1,2,figsize=(15.5,5.8))
-    full=[r for r in tolerance_rows if not np.isfinite(r["energy_low_GeV"])]
-    for region in ("all","FT","FD_all"):
-        rr=sorted([r for r in full if r["region"]==region],key=lambda r:float(r["tolerance_GeV"]))
-        if rr: ax[0].plot([r["tolerance_GeV"] for r in rr],[r["passing_fraction"] for r in rr],marker="o",label=region)
-        #endif
-    #endfor
-    ax[0].axvline(active_tolerance,ls="--",lw=1,label=f"active {active_tolerance:g} GeV")
-    ax[0].set_xscale("log"); ax[0].set_ylim(0,1.05); ax[0].set_xlabel("Maximum allowed |Cartesian component difference| (GeV)")
-    ax[0].set_ylabel("Fraction of exact same-event tags passing"); ax[0].legend(fontsize=8); ax[0].grid(alpha=.18)
-
-    available=sorted(set(float(r["tolerance_GeV"]) for r in tolerance_rows))
-    for target in (0.002,0.005,0.010,0.020,0.050):
-        tol=min(available,key=lambda x:abs(x-target))
-        rr=sorted([r for r in tolerance_rows if r["region"]=="FD_all" and np.isfinite(r["energy_low_GeV"]) and abs(float(r["tolerance_GeV"])-tol)<1e-12],key=lambda r:float(r["energy_low_GeV"]))
-        if rr:
-            ax[1].plot([.5*(float(r["energy_low_GeV"])+float(r["energy_high_GeV"])) for r in rr],[r["passing_fraction"] for r in rr],marker="o",label=f"{tol:g} GeV")
-        #endif
-    #endfor
-    ax[1].set_ylim(0,1.05); ax[1].set_xlabel(r"$E_{\rm probe}^{\rm pred}$ (GeV)"); ax[1].set_ylabel("FD-all same-event parent pass fraction")
-    ax[1].legend(fontsize=8); ax[1].grid(alpha=.18)
-    fig.suptitle(f"{period.label}: sensitivity of exact-event data parent matching to tolerance")
-    safe_finalize_figure(fig,outdir/"canvas_data_parent_tolerance_scan.png",rect=(0,0,1,.93)); plt.close(fig)
-
-    if run_rows:
-        rr=sorted(run_rows,key=lambda r:int(r["runnum"])); runs=[r["runnum"] for r in rr]
-        fig,ax=plt.subplots(2,1,figsize=(15.5,8),sharex=True)
-        ax[0].plot(runs,[r["median_max_component_delta_GeV"] for r in rr],marker=".",ls="none",label="median")
-        ax[0].plot(runs,[r["q90_max_component_delta_GeV"] for r in rr],marker=".",ls="none",label="90th percentile")
-        ax[0].axhline(active_tolerance,ls="--",lw=1,label=f"active {active_tolerance:g} GeV")
-        ax[0].set_yscale("log"); ax[0].set_ylabel("max |component difference| (GeV)"); ax[0].legend(fontsize=8); ax[0].grid(alpha=.18)
-        ax[1].plot(runs,[r["fraction_passing_active_tolerance"] for r in rr],marker=".",ls="none")
-        ax[1].set_ylim(0,1.05); ax[1].set_xlabel("Run number"); ax[1].set_ylabel("Fraction passing active tolerance"); ax[1].grid(alpha=.18)
-        fig.suptitle(f"{period.label}: same-event parent consistency by run")
-        safe_finalize_figure(fig,outdir/"canvas_data_parent_delta_by_run.png",rect=(0,0,1,.94)); plt.close(fig)
-    #endif
-
-
 def make_stage3_canvases(
     period: PeriodConfig,
     rows: List[Dict[str, object]],
     outdir: Path,
-    best_diagnostics: Dict[str, np.ndarray],
-    data_f: Dict[str, np.ndarray],
-    ft_theta_max: float,
 ) -> None:
     """
-    Stage-III reference efficiencies plus explicit association cut-flow.
+    Compact Stage-III production-development output.
 
-    The cut-flow plots are intentionally more important than the scale-factor
-    plots in this development version: they identify whether pathological bins
-    are caused by missing event overlap, parent mismatch, tag identity,
-    reconstructed-probe threshold, or predicted/reconstructed consistency.
+    Only three canvases are retained:
+      1. data and MC efficiencies;
+      2. data/MC scale factors;
+      3. compact numerator/denominator bookkeeping.
+
+    The detailed parent-delta, multiple-electron, cut-flow, conditional-
+    retention, and residual canvases were useful during development but are
+    intentionally removed from the normal production output.
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # Canvas 1: data/MC efficiency.
+    # 1. Efficiencies: FT and FD sectors.
     # ------------------------------------------------------------------
     fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
     ft = _stage3_rows_for_region(rows, "FT")
     if ft:
         x = np.asarray([r["energy_center_GeV"] for r in ft], dtype=float)
-        yd = np.asarray([r["data_efficiency"] for r in ft], dtype=float)
-        ym = np.asarray([r["mc_efficiency"] for r in ft], dtype=float)
-        ed = np.asarray(
-            [r["data_efficiency_counting_error_provisional"] for r in ft],
-            dtype=float,
-        )
-        em = np.asarray(
-            [r["mc_efficiency_binomial_error_provisional"] for r in ft],
-            dtype=float,
+        axes[0].errorbar(
+            x,
+            [r["data_efficiency"] for r in ft],
+            yerr=[
+                r["data_efficiency_counting_error_provisional"]
+                for r in ft
+            ],
+            marker="o",
+            linestyle="-",
+            label="Data",
         )
         axes[0].errorbar(
-            x, yd, yerr=ed, marker="o", linestyle="-", label="Data final"
+            x,
+            [r["mc_efficiency"] for r in ft],
+            yerr=[
+                r["mc_efficiency_binomial_error_provisional"]
+                for r in ft
+            ],
+            marker="o",
+            linestyle="--",
+            label="aaogen MC",
         )
+        # Retain mass-shell-only as a small diagnostic overlay, not a separate
+        # canvas.
         axes[0].plot(
             x,
             [r["data_efficiency_mass_shell_only"] for r in ft],
             marker=".",
             linestyle=":",
-            label="Data mass-shell only",
-        )
-        axes[0].errorbar(
-            x, ym, yerr=em, marker="o", linestyle="--", label="aaogen MC"
+            linewidth=0.9,
+            label="Data, mass-shell only",
         )
     #endif
 
@@ -5427,13 +4821,13 @@ def make_stage3_canvases(
         if np.isfinite(r.get(key, np.nan))
     ]
     eff_ymax = (
-        max(1.15, min(2.5, 1.10 * max(finite_eff)))
+        max(1.15, min(2.0, 1.10 * max(finite_eff)))
         if finite_eff else 1.15
     )
     axes[0].set_ylim(0.0, eff_ymax)
     axes[0].axhline(1.0, linestyle="--", linewidth=0.8)
     axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[0].set_ylabel("Conditional photon reconstruction efficiency")
+    axes[0].set_ylabel("Photon reconstruction efficiency")
     axes[0].set_title("FT")
     axes[0].legend(fontsize=8)
     axes[0].grid(alpha=0.18)
@@ -5443,12 +4837,12 @@ def make_stage3_canvases(
         if not rr:
             continue
         #endif
-        x = np.asarray([r["energy_center_GeV"] for r in rr], dtype=float)
+        x = [r["energy_center_GeV"] for r in rr]
         axes[1].plot(
             x,
             [r["data_efficiency"] for r in rr],
             marker="o",
-            linewidth=1.1,
+            linewidth=1.0,
             label=f"Data S{s}",
         )
         axes[1].plot(
@@ -5456,20 +4850,20 @@ def make_stage3_canvases(
             [r["mc_efficiency"] for r in rr],
             marker=".",
             linestyle="--",
-            linewidth=0.9,
+            linewidth=0.8,
             label=f"MC S{s}",
         )
     #endfor
     axes[1].axhline(1.0, linestyle="--", linewidth=0.8)
     axes[1].set_ylim(0.0, eff_ymax)
     axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[1].set_ylabel("Conditional photon reconstruction efficiency")
+    axes[1].set_ylabel("Photon reconstruction efficiency")
     axes[1].set_title("FD sectors")
     axes[1].legend(fontsize=7, ncol=3)
     axes[1].grid(alpha=0.18)
+
     fig.suptitle(
-        f"{period.label}: Stage-III wagon-reference efficiencies "
-        "(provisional counting errors)",
+        f"{period.label}: Stage-III reference photon efficiencies",
         fontsize=13,
     )
     safe_finalize_figure(
@@ -5480,24 +4874,28 @@ def make_stage3_canvases(
     plt.close(fig)
 
     # ------------------------------------------------------------------
-    # Canvas 2: scale factor, final vs mass-shell-only association.
+    # 2. Data/MC scale factors.
     # ------------------------------------------------------------------
     fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
     if ft:
-        x = np.asarray([r["energy_center_GeV"] for r in ft], dtype=float)
+        x = [r["energy_center_GeV"] for r in ft]
         axes[0].errorbar(
             x,
             [r["data_over_mc_scale_factor"] for r in ft],
-            yerr=[r["scale_factor_counting_error_provisional"] for r in ft],
+            yerr=[
+                r["scale_factor_counting_error_provisional"]
+                for r in ft
+            ],
             marker="o",
             linestyle="-",
-            label="Final association",
+            label="Final",
         )
         axes[0].plot(
             x,
             [r["data_over_mc_scale_factor_mass_shell_only"] for r in ft],
             marker=".",
             linestyle=":",
+            linewidth=0.9,
             label="Mass-shell only",
         )
     #endif
@@ -5510,23 +4908,23 @@ def make_stage3_canvases(
 
     for s in range(1, 7):
         rr = _stage3_rows_for_region(rows, f"FD_S{s}")
-        if not rr:
-            continue
+        if rr:
+            axes[1].plot(
+                [r["energy_center_GeV"] for r in rr],
+                [r["data_over_mc_scale_factor"] for r in rr],
+                marker="o",
+                linewidth=1.0,
+                label=f"S{s}",
+            )
         #endif
-        axes[1].plot(
-            [r["energy_center_GeV"] for r in rr],
-            [r["data_over_mc_scale_factor"] for r in rr],
-            marker="o",
-            linewidth=1.0,
-            label=f"S{s}",
-        )
     #endfor
     axes[1].axhline(1.0, linestyle="--", linewidth=1.0)
     axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1].set_ylabel(r"$\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$")
-    axes[1].set_title("FD sectors: final association")
+    axes[1].set_title("FD sectors")
     axes[1].legend(fontsize=8, ncol=2)
     axes[1].grid(alpha=0.18)
+
     fig.suptitle(
         f"{period.label}: preliminary photon-efficiency data/MC scale factor",
         fontsize=13,
@@ -5539,166 +4937,44 @@ def make_stage3_canvases(
     plt.close(fig)
 
     # ------------------------------------------------------------------
-    # Canvas 3: sequential association cut-flow for FT and FD_all.
+    # 3. Minimal bookkeeping: fitted pi0 denominator and final numerator.
     # ------------------------------------------------------------------
-    stages = (
-        ("same_event", "same event"),
-        ("parent_consistent", "e/p compatible"),
-        ("positive_remainder", r"$E_{\rm rem}>0$"),
-        ("tag_mass_shell", "tag in $\\pi^0$"),
-        ("probe_energy", r"$E_{\rm reco}>0.4$"),
-        ("probe_pred_consistent", "probe consistent"),
-    )
-    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.9))
+    fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
     for ax, region, title in (
         (axes[0], "FT", "FT"),
         (axes[1], "FD_all", "FD all"),
     ):
         rr = _stage3_rows_for_region(rows, region)
-        for stage, label in stages:
+        if rr:
+            x = [r["energy_center_GeV"] for r in rr]
             ax.plot(
-                [r["energy_center_GeV"] for r in rr],
-                [
-                    r[f"data_cutflow_{stage}_fraction_of_raw_tags"]
-                    for r in rr
-                ],
+                x,
+                [r["data_fitted_pi0_denominator"] for r in rr],
                 marker="o",
-                ms=3,
-                linewidth=1.0,
-                label=label,
+                label=r"Fitted data $\pi^0$ denominator",
             )
-        #endfor
-        ax.set_ylim(0.0, 1.05)
-        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-        ax.set_ylabel("Fraction of Stage-II data tags")
-        ax.set_title(title)
-        ax.legend(fontsize=7, ncol=2)
-        ax.grid(alpha=0.18)
-    #endfor
-    fig.suptitle(
-        f"{period.label}: Stage-III data association cut-flow",
-        fontsize=13,
-    )
-    safe_finalize_figure(
-        fig,
-        outdir / "canvas_data_association_cutflow.png",
-        rect=(0, 0, 1, 0.93),
-    )
-    plt.close(fig)
-
-    # ------------------------------------------------------------------
-    # Canvas 4: conditional retention at each sequential association step.
-    # ------------------------------------------------------------------
-    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.9))
-    for ax, region, title in (
-        (axes[0], "FT", "FT"),
-        (axes[1], "FD_all", "FD all"),
-    ):
-        rr = _stage3_rows_for_region(rows, region)
-        for stage, label in stages:
             ax.plot(
-                [r["energy_center_GeV"] for r in rr],
-                [
-                    r[f"data_cutflow_{stage}_conditional_fraction"]
-                    for r in rr
-                ],
+                x,
+                [r["data_clean_reconstructed_probe"] for r in rr],
                 marker="o",
-                ms=3,
-                linewidth=1.0,
-                label=label,
+                label="Final reconstructed-probe numerator",
             )
-        #endfor
-        ax.set_ylim(0.0, 1.05)
-        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-        ax.set_ylabel("Conditional retention from previous step")
-        ax.set_title(title)
-        ax.legend(fontsize=7, ncol=2)
-        ax.grid(alpha=0.18)
-    #endfor
-    fig.suptitle(
-        f"{period.label}: where reconstructed-probe associations are lost",
-        fontsize=13,
-    )
-    safe_finalize_figure(
-        fig,
-        outdir / "canvas_data_association_conditional_retention.png",
-        rect=(0, 0, 1, 0.93),
-    )
-    plt.close(fig)
-
-    # ------------------------------------------------------------------
-    # Canvas 5: numerator/denominator bookkeeping.
-    # ------------------------------------------------------------------
-    fig, axes = plt.subplots(2, 2, figsize=(14.5, 10.0))
-    for region, label, ax_col in (
-        ("FT", "FT", 0),
-        ("FD_all", "FD all", 1),
-    ):
-        rr = _stage3_rows_for_region(rows, region)
-        if not rr:
-            continue
+            ax.plot(
+                x,
+                [r["mc_clean_reconstructed_probe"] for r in rr],
+                marker=".",
+                linestyle="--",
+                label="aaogen reconstructed probe",
+            )
         #endif
-        x = np.asarray([r["energy_center_GeV"] for r in rr], dtype=float)
-        axes[0, ax_col].plot(
-            x,
-            [r["data_fitted_pi0_denominator"] for r in rr],
-            marker="o",
-            label="Fitted data $\\pi^0$ denominator",
-        )
-        axes[0, ax_col].plot(
-            x,
-            [r["data_mass_shell_reconstructed_probe"] for r in rr],
-            marker="o",
-            label="Mass-shell numerator",
-        )
-        axes[0, ax_col].plot(
-            x,
-            [r["data_clean_reconstructed_probe"] for r in rr],
-            marker="o",
-            label="Final numerator",
-        )
-        axes[0, ax_col].set_yscale("log")
-        axes[0, ax_col].set_xlabel(
-            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
-        )
-        axes[0, ax_col].set_ylabel("Directed tag-probe candidates")
-        axes[0, ax_col].set_title(label)
-        axes[0, ax_col].legend(fontsize=8)
-        axes[0, ax_col].grid(alpha=0.18)
-
-        axes[1, ax_col].plot(
-            x,
-            [r["fitted_pi0_fraction"] for r in rr],
-            marker="o",
-            label=r"Stage-II $f_{\pi^0}$",
-        )
-        axes[1, ax_col].plot(
-            x,
-            [r["data_mass_shell_success_fraction_of_tags_raw"] for r in rr],
-            marker="o",
-            label="Mass-shell numerator / raw tags",
-        )
-        axes[1, ax_col].plot(
-            x,
-            [r["data_clean_success_fraction_of_tags_raw"] for r in rr],
-            marker="o",
-            label="Final numerator / raw tags",
-        )
-        axes[1, ax_col].plot(
-            x,
-            [r["mc_any_match_fraction_of_tags"] for r in rr],
-            marker="o",
-            linestyle="--",
-            label="MC any parent match",
-        )
-        axes[1, ax_col].set_ylim(0.0, 1.05)
-        axes[1, ax_col].set_xlabel(
-            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
-        )
-        axes[1, ax_col].set_ylabel("Fraction")
-        axes[1, ax_col].legend(fontsize=7)
-        axes[1, ax_col].grid(alpha=0.18)
+        ax.set_yscale("log")
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel("Directed tag-probe candidates")
+        ax.set_title(title)
+        ax.legend(fontsize=8)
+        ax.grid(alpha=0.18)
     #endfor
+
     fig.suptitle(
         f"{period.label}: Stage-III numerator/denominator bookkeeping",
         fontsize=13,
@@ -5706,99 +4982,9 @@ def make_stage3_canvases(
     safe_finalize_figure(
         fig,
         outdir / "canvas_reference_bookkeeping.png",
-        rect=(0, 0, 1, 0.94),
+        rect=(0, 0, 1, 0.93),
     )
     plt.close(fig)
-
-    # ------------------------------------------------------------------
-    # Canvas 6: best-candidate kinematic association residuals.
-    # ------------------------------------------------------------------
-    if best_diagnostics:
-        idx = np.asarray(best_diagnostics["epg_index"], dtype=np.int64)
-        if len(idx):
-            pred_e = np.asarray(
-                best_diagnostics["pred_probe_energy"], dtype=float
-            )
-            dtheta = np.asarray(
-                best_diagnostics["probe_delta_theta_deg"], dtype=float
-            )
-            dfrac = np.asarray(
-                best_diagnostics["probe_delta_E_over_E"], dtype=float
-            )
-            rem_m2 = np.asarray(
-                best_diagnostics["reco_probe_mass2"], dtype=float
-            )
-            pred_theta = data_f["pred_probe_theta_deg"][idx]
-            is_ft = pred_theta <= ft_theta_max
-            is_fd = pred_theta > ft_theta_max
-
-            fig, axes = plt.subplots(2, 2, figsize=(14.0, 10.0))
-            for mask, label in ((is_ft, "FT"), (is_fd, "FD")):
-                axes[0, 0].hist(
-                    rem_m2[mask & np.isfinite(rem_m2)],
-                    bins=np.linspace(-0.003, 0.003, 181),
-                    histtype="step",
-                    density=True,
-                    label=label,
-                )
-                axes[0, 1].hist(
-                    dtheta[mask & np.isfinite(dtheta)],
-                    bins=np.linspace(0.0, 20.0, 161),
-                    histtype="step",
-                    density=True,
-                    label=label,
-                )
-                axes[1, 0].hist(
-                    dfrac[mask & np.isfinite(dfrac)],
-                    bins=np.linspace(-1.0, 1.0, 181),
-                    histtype="step",
-                    density=True,
-                    label=label,
-                )
-                axes[1, 1].scatter(
-                    pred_e[mask],
-                    dtheta[mask],
-                    s=2,
-                    alpha=0.12,
-                    label=label,
-                )
-            #endfor
-            axes[0, 0].set_xlabel(
-                r"$(P_{\pi^0}-k_{\rm tag})^2$ (GeV$^2$)"
-            )
-            axes[0, 0].set_ylabel("Density")
-            axes[0, 0].set_title("Tag-removal photon mass shell")
-            axes[0, 1].set_xlabel(
-                r"$\Delta\theta(\gamma_{\rm reco},\gamma_{\rm pred})$ (deg)"
-            )
-            axes[0, 1].set_ylabel("Density")
-            axes[0, 1].set_title("Reconstructed/predicted probe direction")
-            axes[1, 0].set_xlabel(
-                r"$(E_{\rm reco}-E_{\rm pred})/E_{\rm pred}$"
-            )
-            axes[1, 0].set_ylabel("Density")
-            axes[1, 0].set_title("Reconstructed/predicted probe energy")
-            axes[1, 1].set_xlabel(
-                r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
-            )
-            axes[1, 1].set_ylabel(r"$\Delta\theta$ (deg)")
-            axes[1, 1].set_title("Association residual versus probe energy")
-            for ax in axes.ravel():
-                ax.legend(fontsize=8)
-                ax.grid(alpha=0.18)
-            #endfor
-            fig.suptitle(
-                f"{period.label}: best same-event $ep\\pi^0$ association residuals",
-                fontsize=13,
-            )
-            safe_finalize_figure(
-                fig,
-                outdir / "canvas_data_association_residuals.png",
-                rect=(0, 0, 1, 0.94),
-            )
-            plt.close(fig)
-        #endif
-    #endif
 
 
 def summarize_stage3(
@@ -5839,7 +5025,7 @@ def summarize_stage3(
             "Tag identity is therefore tested by exact event identity, e/p "
             "compatibility, and the massless remainder P_pi0-k_tag."
         ),
-        "data_parent_identity": "exact runnum+evnum; e/p kinematics diagnostic only",
+        "data_parent_identity": "exact runnum+evnum; no data e/p kinematic matching",
         "use_predicted_probe_consistency_in_numerator": bool(
             use_pred_consistency
         ),
@@ -6644,11 +5830,6 @@ def aggregate_existing_outputs(
     control_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
     stage3_summaries: List[Dict[str, object]] = []
-    parent_delta_summary_rows: List[Dict[str, object]] = []
-    parent_tolerance_rows: List[Dict[str, object]] = []
-    parent_run_rows: List[Dict[str, object]] = []
-    multiple_electron_summary_rows: List[Dict[str, object]] = []
-    multiple_electron_event_rows: List[Dict[str, object]] = []
     missing: List[str] = []
 
     for period in selected:
@@ -6712,15 +5893,6 @@ def aggregate_existing_outputs(
             #endif
             stage3_rows.extend(
                 read_csv_rows(p3 / "reference_efficiency_scale_factors.csv")
-            )
-            parent_delta_summary_rows.extend(
-                read_csv_rows(p3 / "data_parent_kinematic_delta_summary.csv")
-            )
-            parent_tolerance_rows.extend(
-                read_csv_rows(p3 / "data_parent_tolerance_scan.csv")
-            )
-            parent_run_rows.extend(
-                read_csv_rows(p3 / "data_parent_delta_by_run.csv")
             )
         #endif
     #endfor
@@ -6831,56 +6003,8 @@ def aggregate_existing_outputs(
                 Path(stage3_outroot) / "reference_efficiency_scale_factors.csv",
             )
         #endif
-        if parent_delta_summary_rows:
-            write_rows_csv(
-                parent_delta_summary_rows,
-                Path(stage3_outroot) / "data_parent_kinematic_delta_summary.csv",
-            )
-        #endif
-        if parent_tolerance_rows:
-            write_rows_csv(
-                parent_tolerance_rows,
-                Path(stage3_outroot) / "data_parent_tolerance_scan.csv",
-            )
-        #endif
-        if parent_run_rows:
-            write_rows_csv(
-                parent_run_rows,
-                Path(stage3_outroot) / "data_parent_delta_by_run.csv",
-            )
-        #endif
-        if parent_delta_summary_rows and parent_tolerance_rows:
-            # CSV values read through DictReader are strings in aggregate-only.
-            # Convert the numeric fields needed by the comparison canvas.
-            numeric_summary = []
-            for r in parent_delta_summary_rows:
-                rr = dict(r)
-                for key in ("abs_q50", "abs_q90", "abs_q99"):
-                    if key in rr and rr[key] != "":
-                        rr[key] = float(rr[key])
-                    #endif
-                #endfor
-                numeric_summary.append(rr)
-            #endfor
-            numeric_tol = []
-            for r in parent_tolerance_rows:
-                rr = dict(r)
-                for key in ("energy_low_GeV", "energy_high_GeV", "tolerance_GeV", "passing_fraction"):
-                    if key in rr and rr[key] != "":
-                        rr[key] = float(rr[key])
-                    else:
-                        rr[key] = float("nan")
-                    #endif
-                #endfor
-                numeric_tol.append(rr)
-            #endfor
-            make_cross_period_parent_delta_canvas(
-                numeric_summary,
-                numeric_tol,
-                Path(stage3_outroot),
-                active_tolerance=0.002,
-            )
-        #endif
+
+
         if stage3_summaries:
             stage3_summaries.sort(
                 key=lambda r: order.get(str(r.get("period", "")), 999)
@@ -7328,16 +6452,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--stage3-parent-tolerance-grid",
-        default="0.0001,0.0002,0.0005,0.001,0.002,0.005,0.01,0.02,0.05,0.10",
-        help=(
-            "Comma-separated absolute Cartesian parent-momentum tolerances (GeV) "
-            "for the Stage-III exact-same-event data diagnostic scan. This scan "
-            "does not change --parent-component-tol. "
-            "Default: 0.0001,0.0002,0.0005,0.001,0.002,0.005,0.01,0.02,0.05,0.10."
-        ),
-    )
-    parser.add_argument(
         "--stage3-tag-remainder-m2-max",
         type=float,
         default=1.0e-3,
@@ -7558,9 +6672,6 @@ def process_period(
     control_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
     stage3_summary: Optional[Dict[str, object]] = None
-    parent_delta_summary_rows: List[Dict[str, object]] = []
-    parent_tolerance_rows: List[Dict[str, object]] = []
-    parent_run_rows: List[Dict[str, object]] = []
 
     if not bool(args_dict.get("stage1_only", False)):
         stage2_dir = Path(stage2_output_dir) / period.key
@@ -7872,7 +6983,6 @@ def process_period(
                 period,
                 data_epg,
                 eppi0_data,
-                parent_component_tol=float(args_dict["parent_component_tol"]),
                 tag_remainder_m2_max=float(
                     args_dict["stage3_tag_remainder_m2_max"]
                 ),
@@ -7883,64 +6993,6 @@ def process_period(
                 probe_frac_energy_max=float(
                     args_dict["stage3_probe_frac_energy_max"]
                 ),
-            )
-
-            multiple_electron_summary_rows, multiple_electron_event_rows = (
-                build_multiple_electron_audit_rows(
-                    period,
-                    data_epg,
-                    eppi0_data,
-                )
-            )
-            write_rows_csv(
-                multiple_electron_summary_rows,
-                stage3_dir / "data_multiple_electron_summary.csv",
-            )
-            write_rows_csv(
-                multiple_electron_event_rows,
-                stage3_dir / "data_multiple_electron_by_event.csv",
-            )
-            make_multiple_electron_audit_canvas(
-                period,
-                multiple_electron_summary_rows,
-                multiple_electron_event_rows,
-                stage3_dir,
-            )
-            log(
-                f"{period.label}: multiple-electron audit completed for "
-                f"{len(multiple_electron_event_rows):,} common data events."
-            )
-
-            parent_tolerance_grid = np.asarray(
-                parse_float_edges(
-                    str(args_dict["stage3_parent_tolerance_grid"]),
-                    "--stage3-parent-tolerance-grid",
-                ),
-                dtype=float,
-            )
-            parent_delta_summary_rows = build_parent_delta_summary_rows(
-                period, data_assoc.parent_delta_diagnostics
-            )
-            parent_tolerance_rows = build_parent_tolerance_rows(
-                period, data_assoc.parent_delta_diagnostics,
-                parent_tolerance_grid, ft_theta_max, max_probe_energy,
-            )
-            parent_run_rows = build_parent_delta_by_run_rows(
-                period, data_assoc.parent_delta_diagnostics,
-                float(args_dict["parent_component_tol"]),
-            )
-            write_rows_csv(parent_delta_summary_rows, stage3_dir/"data_parent_kinematic_delta_summary.csv")
-            write_rows_csv(parent_tolerance_rows, stage3_dir/"data_parent_tolerance_scan.csv")
-            write_rows_csv(parent_run_rows, stage3_dir/"data_parent_delta_by_run.csv")
-            make_parent_delta_diagnostic_canvases(
-                period, data_assoc.parent_delta_diagnostics,
-                parent_tolerance_rows, parent_run_rows, stage3_dir,
-                float(args_dict["parent_component_tol"]),
-            )
-            log(
-                f"{period.label}: parent-delta diagnostic uses "
-                f"{len(data_assoc.parent_delta_diagnostics.get('epg_index', [])):,} "
-                "exact same-event tags before the active parent tolerance."
             )
 
             # Best mass-shell/threshold candidate lookup. The final numerator
@@ -7995,9 +7047,6 @@ def process_period(
                 period,
                 stage3_rows,
                 stage3_dir,
-                best_diagnostics=data_assoc.best_diagnostics,
-                data_f=data_f,
-                ft_theta_max=ft_theta_max,
             )
             stage3_summary = summarize_stage3(
                 period,
@@ -8064,45 +7113,7 @@ def process_period(
         "control_rows": control_rows,
         "stage3_rows": stage3_rows,
         "stage3_summary": stage3_summary,
-        "parent_delta_summary_rows": parent_delta_summary_rows,
-        "parent_tolerance_rows": parent_tolerance_rows,
-        "parent_run_rows": parent_run_rows,
-        "multiple_electron_summary_rows": multiple_electron_summary_rows,
-        "multiple_electron_event_rows": multiple_electron_event_rows,
     }
-
-
-def make_cross_period_parent_delta_canvas(
-    summary_rows: List[Dict[str, object]],
-    tolerance_rows: List[Dict[str, object]],
-    outdir: Path,
-    active_tolerance: float,
-) -> None:
-    if not summary_rows or not tolerance_rows:
-        return
-    #endif
-    order=[p.key for p in PERIODS]; labels={p.key:p.label for p in PERIODS}
-    mr={str(r["period"]):r for r in summary_rows if r["particle"]=="combined" and r["variable"]=="max_abs_cartesian_component"}
-    periods=[p for p in order if p in mr]
-    fig,ax=plt.subplots(1,2,figsize=(16,5.8))
-    x=np.arange(len(periods))
-    for key,label in (("abs_q50","median"),("abs_q90","90th percentile"),("abs_q99","99th percentile")):
-        ax[0].plot(x,[mr[p][key] for p in periods],marker="o",label=label)
-    #endfor
-    ax[0].axhline(active_tolerance,ls="--",lw=1,label=f"active {active_tolerance:g} GeV")
-    ax[0].set_yscale("log"); ax[0].set_xticks(x); ax[0].set_xticklabels([labels[p] for p in periods],rotation=25,ha="right")
-    ax[0].set_ylabel("max |e/p Cartesian component difference| (GeV)"); ax[0].legend(fontsize=8); ax[0].grid(alpha=.18)
-    full=[r for r in tolerance_rows if r["region"]=="all" and not np.isfinite(r["energy_low_GeV"])]
-    for p in order:
-        rr=sorted([r for r in full if str(r["period"])==p],key=lambda r:float(r["tolerance_GeV"]))
-        if rr: ax[1].plot([r["tolerance_GeV"] for r in rr],[r["passing_fraction"] for r in rr],marker="o",label=labels[p])
-        #endif
-    #endfor
-    ax[1].axvline(active_tolerance,ls="--",lw=1); ax[1].set_xscale("log"); ax[1].set_ylim(0,1.05)
-    ax[1].set_xlabel("Maximum allowed |component difference| (GeV)"); ax[1].set_ylabel("Exact same-event tags passing")
-    ax[1].legend(fontsize=8); ax[1].grid(alpha=.18)
-    fig.suptitle("Stage-III data parent consistency: epgamma tree versus eppi0 tree")
-    safe_finalize_figure(fig,Path(outdir)/"canvas_data_parent_cross_period_comparison.png",rect=(0,0,1,.93)); plt.close(fig)
 
 
 def main() -> int:
@@ -8127,13 +7138,6 @@ def main() -> int:
     #endif
     if args.parent_component_tol <= 0.0:
         raise ValueError("--parent-component-tol must be > 0.")
-    #endif
-    parent_tolerance_grid = parse_float_edges(
-        args.stage3_parent_tolerance_grid,
-        "--stage3-parent-tolerance-grid",
-    )
-    if any(x <= 0.0 for x in parent_tolerance_grid):
-        raise ValueError("--stage3-parent-tolerance-grid values must all be > 0.")
     #endif
     if args.stage3_tag_remainder_m2_max <= 0.0:
         raise ValueError("--stage3-tag-remainder-m2-max must be > 0.")
@@ -8294,7 +7298,7 @@ def main() -> int:
                 "real epgamma data are fit locally with floated aaogen-pi0 and "
                 "dvcsgen BH/DVCS templates under multiple discriminator choices. "
                 "No generator relative normalization is imposed. Shared morphing "
-                "uses zero-centered weak priors in v026; reconstructed-eppi0 control "
+                "uses zero-centered weak priors in v028; reconstructed-eppi0 control "
                 "results are diagnostic and are not injected as nuisance centers. "
                 "Mixed-data wrong-tag templates remain diagnostic-only stress tests."
             ),
@@ -8313,11 +7317,6 @@ def main() -> int:
     all_control_rows: List[Dict[str, object]] = []
     all_stage3_rows: List[Dict[str, object]] = []
     stage3_summaries: List[Dict[str, object]] = []
-    all_parent_delta_summary_rows: List[Dict[str, object]] = []
-    all_parent_tolerance_rows: List[Dict[str, object]] = []
-    all_parent_run_rows: List[Dict[str, object]] = []
-    all_multiple_electron_summary_rows: List[Dict[str, object]] = []
-    all_multiple_electron_event_rows: List[Dict[str, object]] = []
 
     if n_processes == 1:
         for period in selected:
@@ -8338,9 +7337,6 @@ def main() -> int:
                 all_shared_rows.extend(result.get("shared_rows", []))
                 all_control_rows.extend(result.get("control_rows", []))
                 all_stage3_rows.extend(result.get("stage3_rows", []))
-                all_parent_delta_summary_rows.extend(result.get("parent_delta_summary_rows", []))
-                all_parent_tolerance_rows.extend(result.get("parent_tolerance_rows", []))
-                all_parent_run_rows.extend(result.get("parent_run_rows", []))
                 if result.get("stage3_summary") is not None:
                     stage3_summaries.append(result["stage3_summary"])
                 #endif
@@ -8374,9 +7370,6 @@ def main() -> int:
                         all_shared_rows.extend(result.get("shared_rows", []))
                         all_control_rows.extend(result.get("control_rows", []))
                         all_stage3_rows.extend(result.get("stage3_rows", []))
-                        all_parent_delta_summary_rows.extend(result.get("parent_delta_summary_rows", []))
-                        all_parent_tolerance_rows.extend(result.get("parent_tolerance_rows", []))
-                        all_parent_run_rows.extend(result.get("parent_run_rows", []))
                         if result.get("stage3_summary") is not None:
                             stage3_summaries.append(result["stage3_summary"])
                         #endif
@@ -8554,21 +7547,6 @@ def main() -> int:
             write_rows_csv(
                 all_stage3_rows,
                 stage3_outroot / "reference_efficiency_scale_factors.csv",
-            )
-        #endif
-        if all_parent_delta_summary_rows:
-            write_rows_csv(all_parent_delta_summary_rows, stage3_outroot/"data_parent_kinematic_delta_summary.csv")
-        #endif
-        if all_parent_tolerance_rows:
-            write_rows_csv(all_parent_tolerance_rows, stage3_outroot/"data_parent_tolerance_scan.csv")
-        #endif
-        if all_parent_run_rows:
-            write_rows_csv(all_parent_run_rows, stage3_outroot/"data_parent_delta_by_run.csv")
-        #endif
-        if all_parent_delta_summary_rows and all_parent_tolerance_rows:
-            make_cross_period_parent_delta_canvas(
-                all_parent_delta_summary_rows, all_parent_tolerance_rows,
-                stage3_outroot, float(args.parent_component_tol),
             )
         #endif
         if stage3_summaries:
