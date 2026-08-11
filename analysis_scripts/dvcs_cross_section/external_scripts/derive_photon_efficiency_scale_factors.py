@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v025.py
+derive_photon_efficiency_scale_factors_v026.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v025.py
+    python derive_photon_efficiency_scale_factors_v026.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v025.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v026.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v025.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v026.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v025.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v026.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v025.py --angles rad
+    python derive_photon_efficiency_scale_factors_v026.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -631,8 +631,9 @@ def match_data_event_candidates(
           At least one reconstructed eppi0 candidate has the same run/event.
 
       parent_consistent
-          At least one same-event candidate has compatible reconstructed e/p
-          Cartesian momentum components.
+          Diagnostic only in data: at least one same-event candidate has finite
+          reconstructed e/p momentum information. Exact runnum+evnum defines
+          the parent event identity; no e/p momentum tolerance is imposed.
 
       positive_remainder
           Removing the epgamma tag from that reconstructed pi0 leaves positive
@@ -764,10 +765,11 @@ def match_data_event_candidates(
         np.sum((de / parent_component_tol) ** 2, axis=1)
         + np.sum((dp / parent_component_tol) ** 2, axis=1)
     )
-    parent_ok = (
-        np.isfinite(component_delta)
-        & (component_delta <= parent_component_tol)
-    )
+    # For DATA, exact (runnum, evnum) defines the parent event identity.
+    # Electron/proton kinematic differences between the independently produced
+    # epgamma and eppi0 trees are retained as diagnostics only and MUST NOT gate
+    # the Stage-III numerator.
+    parent_ok = np.isfinite(component_delta)
 
     # One parent-delta diagnostic point per exact same-event epgamma tag,
     # independent of the active 2-MeV-style hard gate. If an event contains
@@ -940,7 +942,7 @@ def match_data_event_candidates(
     else:
         # Primary: photon remainder mass shell.
         # Secondary: probe opening-angle and fractional-energy agreement.
-        # Parent-distance only breaks near-ties.
+        # Parent-distance is diagnostic only and serves merely as an infinitesimal tie-breaker.
         angle_term = np.nan_to_num(
             delta_theta_deg[eligible_idx] / max(probe_angle_max_deg, 1.0e-9),
             nan=1.0e6,
@@ -2381,7 +2383,7 @@ def build_pi0_control_validation(
     """
     Reconstructed-eppi0 data/aaogen control validation.
 
-    IMPORTANT: v025 does NOT feed this calibration into the denominator fit.
+    IMPORTANT: v026 does NOT feed this calibration into the denominator fit.
     The previous full-range Gaussian-smearing calibration saturated at its hard
     bound and failed goodness-of-fit, so it is retained only as a diagnostic.
     """
@@ -4625,7 +4627,7 @@ def build_stage3_reference_rows(
     The data numerator is reported in two forms:
 
       mass-shell-only:
-          same-event + e/p-compatible eppi0 candidate whose tag removal leaves
+          same-event eppi0 candidate whose tag removal leaves
           a massless, above-threshold companion;
 
       final:
@@ -4783,8 +4785,8 @@ def build_stage3_reference_rows(
                 status = "no_aaogen_denominator"
             elif stage_counts["same_event"] <= 0:
                 status = "no_same_event_overlap"
-            elif stage_counts["parent_consistent"] <= 0:
-                status = "same_event_but_no_parent_consistency"
+            # Exact runnum+evnum defines data parent identity in v026.
+            # Parent kinematic differences are diagnostic only.
             elif stage_counts["tag_mass_shell"] <= 0:
                 status = "no_kinematic_tag_identity"
             elif n_data_mass_shell <= 0:
@@ -4894,6 +4896,265 @@ def _qfinite(values: np.ndarray, q: float) -> float:
     arr = np.asarray(values, dtype=float)
     arr = arr[np.isfinite(arr)]
     return float(np.quantile(arr, q)) if arr.size else float("nan")
+
+
+
+def _event_unique_electron_summary(
+    runnum: np.ndarray,
+    evnum: np.ndarray,
+    e_p: np.ndarray,
+    momentum_tol_GeV: float = 1.0e-6,
+) -> Dict[Tuple[int, int], Dict[str, object]]:
+    """
+    Group one data tree by exact (runnum, evnum) and summarize distinct electron
+    momentum magnitudes.
+
+    Distinct e_p values are clustered with a tiny tolerance because repeated
+    epgamma entries from the same physical electron can appear once per photon
+    candidate. The highest-e_p candidate is retained explicitly.
+    """
+    runnum = np.asarray(runnum, dtype=np.int64)
+    evnum = np.asarray(evnum, dtype=np.int64)
+    e_p = np.asarray(e_p, dtype=float)
+
+    order = np.lexsort((evnum, runnum))
+    run_s = runnum[order]
+    ev_s = evnum[order]
+    ep_s = e_p[order]
+
+    out: Dict[Tuple[int, int], Dict[str, object]] = {}
+    if len(order) == 0:
+        return out
+    #endif
+
+    start = 0
+    while start < len(order):
+        r = int(run_s[start])
+        e = int(ev_s[start])
+        stop = start + 1
+        while stop < len(order) and run_s[stop] == r and ev_s[stop] == e:
+            stop += 1
+        #endwhile
+
+        vals = ep_s[start:stop]
+        vals = vals[np.isfinite(vals)]
+        vals_sorted = np.sort(vals)
+
+        distinct = []
+        for value in vals_sorted:
+            if not distinct or abs(float(value) - distinct[-1]) > momentum_tol_GeV:
+                distinct.append(float(value))
+            #endif
+        #endfor
+
+        out[(r, e)] = {
+            "n_entries": int(stop - start),
+            "n_distinct_electrons": int(len(distinct)),
+            "distinct_e_p_GeV": distinct,
+            "highest_e_p_GeV": (
+                float(distinct[-1]) if distinct else float("nan")
+            ),
+            "lowest_e_p_GeV": (
+                float(distinct[0]) if distinct else float("nan")
+            ),
+            "highest_minus_lowest_e_p_GeV": (
+                float(distinct[-1] - distinct[0])
+                if len(distinct) >= 2 else 0.0
+            ),
+        }
+        start = stop
+    #endwhile
+
+    return out
+
+
+def build_multiple_electron_audit_rows(
+    period: PeriodConfig,
+    epg: EPGammaSample,
+    eppi0: EPPi0Sample,
+    distinct_tol_GeV: float = 1.0e-6,
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+    """
+    Audit multiple reconstructed electrons in the epgamma and eppi0 DATA trees.
+
+    Returns:
+      summary_rows: one compact row per tree plus cross-tree comparison.
+      event_rows: one row per common runnum/evnum with highest-e_p information.
+    """
+    epg_map = _event_unique_electron_summary(
+        epg.raw["runnum"], epg.raw["evnum"], epg.electron_p, distinct_tol_GeV
+    )
+    pi_map = _event_unique_electron_summary(
+        eppi0.raw["runnum"], eppi0.raw["evnum"], eppi0.electron_p, distinct_tol_GeV
+    )
+
+    summary_rows: List[Dict[str, object]] = []
+    for tree_name, mapping in (("epgamma", epg_map), ("eppi0", pi_map)):
+        vals = list(mapping.values())
+        n_events = len(vals)
+        n_multi = sum(v["n_distinct_electrons"] > 1 for v in vals)
+        multiplicities = np.asarray(
+            [v["n_distinct_electrons"] for v in vals], dtype=float
+        )
+        spreads = np.asarray(
+            [v["highest_minus_lowest_e_p_GeV"] for v in vals], dtype=float
+        )
+        summary_rows.append({
+            "period": period.key,
+            "label": period.label,
+            "tree": tree_name,
+            "event_scope": "all_events",
+            "events": int(n_events),
+            "events_with_multiple_distinct_electrons": int(n_multi),
+            "fraction_with_multiple_distinct_electrons": (
+                n_multi / n_events if n_events else float("nan")
+            ),
+            "mean_distinct_electron_multiplicity": (
+                float(np.mean(multiplicities)) if n_events else float("nan")
+            ),
+            "max_distinct_electron_multiplicity": (
+                int(np.max(multiplicities)) if n_events else 0
+            ),
+            "median_highest_minus_lowest_e_p_GeV": (
+                float(np.median(spreads)) if n_events else float("nan")
+            ),
+            "q90_highest_minus_lowest_e_p_GeV": (
+                float(np.quantile(spreads, 0.90)) if n_events else float("nan")
+            ),
+            "q99_highest_minus_lowest_e_p_GeV": (
+                float(np.quantile(spreads, 0.99)) if n_events else float("nan")
+            ),
+        })
+    #endfor
+
+    common = sorted(set(epg_map.keys()) & set(pi_map.keys()))
+    event_rows: List[Dict[str, object]] = []
+    highest_deltas = []
+    same_highest = 0
+    for key in common:
+        ge = epg_map[key]
+        pe = pi_map[key]
+        d_high = (
+            float(ge["highest_e_p_GeV"]) - float(pe["highest_e_p_GeV"])
+        )
+        highest_deltas.append(d_high)
+        if abs(d_high) <= distinct_tol_GeV:
+            same_highest += 1
+        #endif
+        event_rows.append({
+            "period": period.key,
+            "label": period.label,
+            "runnum": int(key[0]),
+            "evnum": int(key[1]),
+            "epgamma_n_entries": ge["n_entries"],
+            "eppi0_n_entries": pe["n_entries"],
+            "epgamma_n_distinct_electrons": ge["n_distinct_electrons"],
+            "eppi0_n_distinct_electrons": pe["n_distinct_electrons"],
+            "epgamma_highest_e_p_GeV": ge["highest_e_p_GeV"],
+            "eppi0_highest_e_p_GeV": pe["highest_e_p_GeV"],
+            "highest_e_p_delta_epgamma_minus_eppi0_GeV": d_high,
+            "epgamma_highest_minus_lowest_e_p_GeV":
+                ge["highest_minus_lowest_e_p_GeV"],
+            "eppi0_highest_minus_lowest_e_p_GeV":
+                pe["highest_minus_lowest_e_p_GeV"],
+        })
+    #endfor
+
+    arr = np.asarray(highest_deltas, dtype=float)
+    summary_rows.append({
+        "period": period.key,
+        "label": period.label,
+        "tree": "cross_tree",
+        "event_scope": "common_runnum_evnum",
+        "events": int(len(common)),
+        "events_with_multiple_distinct_electrons": -1,
+        "fraction_with_multiple_distinct_electrons": float("nan"),
+        "mean_distinct_electron_multiplicity": float("nan"),
+        "max_distinct_electron_multiplicity": -1,
+        "median_highest_minus_lowest_e_p_GeV": float("nan"),
+        "q90_highest_minus_lowest_e_p_GeV": float("nan"),
+        "q99_highest_minus_lowest_e_p_GeV": float("nan"),
+        "fraction_highest_e_p_identical_between_trees": (
+            same_highest / len(common) if common else float("nan")
+        ),
+        "median_highest_e_p_delta_epgamma_minus_eppi0_GeV": (
+            float(np.median(arr)) if arr.size else float("nan")
+        ),
+        "q16_highest_e_p_delta_epgamma_minus_eppi0_GeV": (
+            float(np.quantile(arr, 0.16)) if arr.size else float("nan")
+        ),
+        "q84_highest_e_p_delta_epgamma_minus_eppi0_GeV": (
+            float(np.quantile(arr, 0.84)) if arr.size else float("nan")
+        ),
+        "q99_abs_highest_e_p_delta_GeV": (
+            float(np.quantile(np.abs(arr), 0.99)) if arr.size else float("nan")
+        ),
+    })
+
+    return summary_rows, event_rows
+
+
+def make_multiple_electron_audit_canvas(
+    period: PeriodConfig,
+    summary_rows: List[Dict[str, object]],
+    event_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    if not summary_rows:
+        return
+    #endif
+
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.7))
+
+    tree_rows = [r for r in summary_rows if r["tree"] in ("epgamma", "eppi0")]
+    names = [r["tree"] for r in tree_rows]
+    fracs = [r["fraction_with_multiple_distinct_electrons"] for r in tree_rows]
+    axes[0].bar(names, fracs)
+    axes[0].set_ylim(0.0, max(0.02, 1.15 * max(fracs, default=0.0)))
+    axes[0].set_ylabel("Fraction of events")
+    axes[0].set_title("Events with >1 distinct reconstructed electron")
+    axes[0].grid(alpha=0.18, axis="y")
+
+    if event_rows:
+        vals = np.asarray(
+            [
+                r["highest_e_p_delta_epgamma_minus_eppi0_GeV"]
+                for r in event_rows
+            ],
+            dtype=float,
+        )
+        vals = vals[np.isfinite(vals)]
+        if vals.size:
+            lim = max(
+                1.0e-4,
+                1.15 * float(np.quantile(np.abs(vals), 0.995))
+            )
+            axes[1].hist(
+                vals,
+                bins=np.linspace(-lim, lim, 201),
+                histtype="step",
+                density=True,
+            )
+            axes[1].axvline(0.0, linewidth=0.8)
+        #endif
+    #endif
+    axes[1].set_xlabel(
+        r"highest-$e_p$: epgamma minus eppi0 (GeV)"
+    )
+    axes[1].set_ylabel("Density")
+    axes[1].set_title("Do highest-energy electrons agree across trees?")
+    axes[1].grid(alpha=0.18)
+
+    fig.suptitle(
+        f"{period.label}: multiple-electron data-tree audit",
+        fontsize=14,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_data_multiple_electron_audit.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
 
 
 def build_parent_delta_summary_rows(
@@ -5578,6 +5839,7 @@ def summarize_stage3(
             "Tag identity is therefore tested by exact event identity, e/p "
             "compatibility, and the massless remainder P_pi0-k_tag."
         ),
+        "data_parent_identity": "exact runnum+evnum; e/p kinematics diagnostic only",
         "use_predicted_probe_consistency_in_numerator": bool(
             use_pred_consistency
         ),
@@ -6385,6 +6647,8 @@ def aggregate_existing_outputs(
     parent_delta_summary_rows: List[Dict[str, object]] = []
     parent_tolerance_rows: List[Dict[str, object]] = []
     parent_run_rows: List[Dict[str, object]] = []
+    multiple_electron_summary_rows: List[Dict[str, object]] = []
+    multiple_electron_event_rows: List[Dict[str, object]] = []
     missing: List[str] = []
 
     for period in selected:
@@ -7621,6 +7885,32 @@ def process_period(
                 ),
             )
 
+            multiple_electron_summary_rows, multiple_electron_event_rows = (
+                build_multiple_electron_audit_rows(
+                    period,
+                    data_epg,
+                    eppi0_data,
+                )
+            )
+            write_rows_csv(
+                multiple_electron_summary_rows,
+                stage3_dir / "data_multiple_electron_summary.csv",
+            )
+            write_rows_csv(
+                multiple_electron_event_rows,
+                stage3_dir / "data_multiple_electron_by_event.csv",
+            )
+            make_multiple_electron_audit_canvas(
+                period,
+                multiple_electron_summary_rows,
+                multiple_electron_event_rows,
+                stage3_dir,
+            )
+            log(
+                f"{period.label}: multiple-electron audit completed for "
+                f"{len(multiple_electron_event_rows):,} common data events."
+            )
+
             parent_tolerance_grid = np.asarray(
                 parse_float_edges(
                     str(args_dict["stage3_parent_tolerance_grid"]),
@@ -7777,6 +8067,8 @@ def process_period(
         "parent_delta_summary_rows": parent_delta_summary_rows,
         "parent_tolerance_rows": parent_tolerance_rows,
         "parent_run_rows": parent_run_rows,
+        "multiple_electron_summary_rows": multiple_electron_summary_rows,
+        "multiple_electron_event_rows": multiple_electron_event_rows,
     }
 
 
@@ -8002,7 +8294,7 @@ def main() -> int:
                 "real epgamma data are fit locally with floated aaogen-pi0 and "
                 "dvcsgen BH/DVCS templates under multiple discriminator choices. "
                 "No generator relative normalization is imposed. Shared morphing "
-                "uses zero-centered weak priors in v025; reconstructed-eppi0 control "
+                "uses zero-centered weak priors in v026; reconstructed-eppi0 control "
                 "results are diagnostic and are not injected as nuisance centers. "
                 "Mixed-data wrong-tag templates remain diagnostic-only stress tests."
             ),
@@ -8024,6 +8316,8 @@ def main() -> int:
     all_parent_delta_summary_rows: List[Dict[str, object]] = []
     all_parent_tolerance_rows: List[Dict[str, object]] = []
     all_parent_run_rows: List[Dict[str, object]] = []
+    all_multiple_electron_summary_rows: List[Dict[str, object]] = []
+    all_multiple_electron_event_rows: List[Dict[str, object]] = []
 
     if n_processes == 1:
         for period in selected:
