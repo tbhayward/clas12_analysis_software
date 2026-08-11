@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v029.py
+derive_photon_efficiency_scale_factors_v032.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v029.py
+    python derive_photon_efficiency_scale_factors_v032.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v029.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v032.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v029.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v032.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v029.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v032.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v029.py --angles rad
+    python derive_photon_efficiency_scale_factors_v032.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -124,6 +124,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gc
 import json
 import math
 import os
@@ -364,9 +365,22 @@ EPG_REQUIRED = (
     "p2_p", "p2_theta", "p2_phi",
 )
 
-EPG_OPTIONAL = (
-    "runnum", "evnum", "detector1", "detector2",
-    "Mx2", "Mx2_1", "Mx2_2", "Emiss2", "pTmiss",
+EPG_OPTIONAL_PI0_MC = (
+    "detector2",
+    "pTmiss",
+    "theta_gamma_gamma",
+)
+
+EPG_OPTIONAL_DVCS_MC = (
+    "pTmiss",
+    "theta_gamma_gamma",
+)
+
+EPG_OPTIONAL_DATA = (
+    "runnum",
+    "evnum",
+    "detector2",
+    "pTmiss",
     "theta_gamma_gamma",
 )
 
@@ -377,12 +391,22 @@ EPPIO_REQUIRED = (
     "Mh_gammagamma",
 )
 
-EPPIO_OPTIONAL = (
-    "runnum", "evnum", "detector_gamma1", "detector_gamma2",
-    "gamma_phi1", "gamma_phi2",
-    "open_angle_egamma1", "open_angle_egamma2",
-    "Mx2", "Mx2_1", "Mx2_2",
-    "Emiss2", "pTmiss", "theta_pi0_pi0", "fiducial_status",
+EPPIO_OPTIONAL_PI0_MC = (
+    "detector_gamma1",
+    "detector_gamma2",
+    "Emiss2",
+    "pTmiss",
+    "theta_pi0_pi0",
+)
+
+EPPIO_OPTIONAL_DATA = (
+    "runnum",
+    "evnum",
+    "detector_gamma1",
+    "detector_gamma2",
+    "Emiss2",
+    "pTmiss",
+    "theta_pi0_pi0",
 )
 
 
@@ -391,15 +415,7 @@ class EPGammaSample:
     electron_p3: np.ndarray
     proton_p3: np.ndarray
     tag_p3: np.ndarray
-    electron_p: np.ndarray
-    proton_p: np.ndarray
     tag_energy: np.ndarray
-    electron_theta: np.ndarray
-    electron_phi: np.ndarray
-    proton_theta: np.ndarray
-    proton_phi: np.ndarray
-    tag_theta: np.ndarray
-    tag_phi: np.ndarray
     raw: Dict[str, np.ndarray]
     angle_unit: str
 
@@ -409,18 +425,23 @@ class EPPi0Sample:
     electron_p3: np.ndarray
     proton_p3: np.ndarray
     pi0_p3: np.ndarray
-    electron_p: np.ndarray
-    proton_p: np.ndarray
     pi0_p: np.ndarray
     pi0_mass: np.ndarray
-    electron_theta: np.ndarray
-    electron_phi: np.ndarray
-    proton_theta: np.ndarray
-    proton_phi: np.ndarray
     pi0_theta: np.ndarray
-    pi0_phi: np.ndarray
     raw: Dict[str, np.ndarray]
     angle_unit: str
+
+
+def _optional_raw_only(
+    arrays: Dict[str, np.ndarray],
+    required: Sequence[str],
+) -> Dict[str, np.ndarray]:
+    required_set = set(required)
+    return {
+        key: np.asarray(value)
+        for key, value in arrays.items()
+        if key not in required_set
+    }
 
 
 def extract_epgamma(arrays: Dict[str, np.ndarray], angle_mode: str) -> EPGammaSample:
@@ -441,16 +462,8 @@ def extract_epgamma(arrays: Dict[str, np.ndarray], angle_mode: str) -> EPGammaSa
         electron_p3=cartesian_from_spherical(e_p, e_theta, e_phi),
         proton_p3=cartesian_from_spherical(p_p, p_theta, p_phi),
         tag_p3=cartesian_from_spherical(g_e, g_theta, g_phi),
-        electron_p=e_p,
-        proton_p=p_p,
         tag_energy=g_e,
-        electron_theta=e_theta,
-        electron_phi=e_phi,
-        proton_theta=p_theta,
-        proton_phi=p_phi,
-        tag_theta=g_theta,
-        tag_phi=g_phi,
-        raw=arrays,
+        raw=_optional_raw_only(arrays, EPG_REQUIRED),
         angle_unit=unit,
     )
 
@@ -474,17 +487,10 @@ def extract_eppi0(arrays: Dict[str, np.ndarray], angle_mode: str) -> EPPi0Sample
         electron_p3=cartesian_from_spherical(e_p, e_theta, e_phi),
         proton_p3=cartesian_from_spherical(p_p, p_theta, p_phi),
         pi0_p3=cartesian_from_spherical(pi_p, pi_theta, pi_phi),
-        electron_p=e_p,
-        proton_p=p_p,
         pi0_p=pi_p,
         pi0_mass=pi_mass,
-        electron_theta=e_theta,
-        electron_phi=e_phi,
-        proton_theta=p_theta,
-        proton_phi=p_phi,
         pi0_theta=pi_theta,
-        pi0_phi=pi_phi,
-        raw=arrays,
+        raw=_optional_raw_only(arrays, EPPIO_REQUIRED),
         angle_unit=unit,
     )
 
@@ -509,27 +515,18 @@ def match_parent_kinematics(
     component_tolerance: float,
     nearest_distance_max: float,
     kdtree_workers: int = 1,
+    query_chunk_size: int = 500_000,
 ) -> MatchResult:
     """
-    Match reconstructed parent (electron, proton) states.
-
-    Features are the six Cartesian momentum components:
-        e_px,e_py,e_pz,p_px,p_py,p_pz.
-
-    Dividing by component_tolerance makes the KD-tree metric dimensionless.
-    A match must pass BOTH:
-        Euclidean scaled distance <= nearest_distance_max
-        max absolute Cartesian component difference <= component_tolerance
-
-    The second condition prevents a moderately bad match in one coordinate
-    from being hidden by the six-dimensional Euclidean metric.
+    Same MC parent match as before, executed in bounded epgamma query chunks.
     """
-    x_pi0 = np.column_stack((eppi0.electron_p3, eppi0.proton_p3))
-    x_epg = np.column_stack((epg.electron_p3, epg.proton_p3))
-
-    good_pi0 = np.all(np.isfinite(x_pi0), axis=1)
+    good_pi0 = (
+        np.all(np.isfinite(eppi0.electron_p3), axis=1)
+        & np.all(np.isfinite(eppi0.proton_p3), axis=1)
+    )
     good_epg = (
-        np.all(np.isfinite(x_epg), axis=1)
+        np.all(np.isfinite(epg.electron_p3), axis=1)
+        & np.all(np.isfinite(epg.proton_p3), axis=1)
         & np.isfinite(epg.tag_energy)
         & (epg.tag_energy >= tag_min)
         & (epg.tag_energy < tag_max)
@@ -547,38 +544,78 @@ def match_parent_kinematics(
         )
     #endif
 
-    # Use float32 search coordinates to reduce KD-tree memory and bandwidth.
-    # The final physical component-difference cut is still evaluated with the
-    # original float64 momenta below.
-    pi0_search = np.asarray(
-        x_pi0[pi0_indices] / component_tolerance, dtype=np.float32
-    )
-    epg_search = np.asarray(
-        x_epg[epg_indices] / component_tolerance, dtype=np.float32
-    )
+    pi0_search = np.empty((pi0_indices.size, 6), dtype=np.float32)
+    pi0_search[:, :3] = (
+        eppi0.electron_p3[pi0_indices] / component_tolerance
+    ).astype(np.float32, copy=False)
+    pi0_search[:, 3:] = (
+        eppi0.proton_p3[pi0_indices] / component_tolerance
+    ).astype(np.float32, copy=False)
 
     tree = cKDTree(pi0_search, compact_nodes=True, balanced_tree=True)
-    distance, local_index = tree.query(
-        epg_search,
-        k=1,
-        workers=max(1, int(kdtree_workers)),
-    )
+    del pi0_search
 
-    candidate_pi0 = pi0_indices[local_index]
-    deltas = np.abs(x_epg[epg_indices] - x_pi0[candidate_pi0])
-    max_delta = np.max(deltas, axis=1)
+    chunk_size = max(10_000, int(query_chunk_size))
+    epg_parts: List[np.ndarray] = []
+    pi0_parts: List[np.ndarray] = []
+    distance_parts: List[np.ndarray] = []
+    delta_parts: List[np.ndarray] = []
 
-    accepted = (
-        np.isfinite(distance)
-        & (distance <= nearest_distance_max)
-        & (max_delta <= component_tolerance)
-    )
+    for start in range(0, epg_indices.size, chunk_size):
+        stop = min(start + chunk_size, epg_indices.size)
+        idx = epg_indices[start:stop]
+
+        query = np.empty((len(idx), 6), dtype=np.float32)
+        query[:, :3] = (
+            epg.electron_p3[idx] / component_tolerance
+        ).astype(np.float32, copy=False)
+        query[:, 3:] = (
+            epg.proton_p3[idx] / component_tolerance
+        ).astype(np.float32, copy=False)
+
+        distance, local_index = tree.query(
+            query,
+            k=1,
+            workers=max(1, int(kdtree_workers)),
+        )
+        del query
+
+        candidate_pi0 = pi0_indices[local_index]
+        de = np.abs(
+            epg.electron_p3[idx] - eppi0.electron_p3[candidate_pi0]
+        )
+        dp = np.abs(
+            epg.proton_p3[idx] - eppi0.proton_p3[candidate_pi0]
+        )
+        max_delta = np.maximum(np.max(de, axis=1), np.max(dp, axis=1))
+
+        accepted = (
+            np.isfinite(distance)
+            & (distance <= nearest_distance_max)
+            & (max_delta <= component_tolerance)
+        )
+        if np.any(accepted):
+            epg_parts.append(idx[accepted])
+            pi0_parts.append(candidate_pi0[accepted])
+            distance_parts.append(distance[accepted])
+            delta_parts.append(max_delta[accepted])
+        #endif
+    #endfor
+
+    if not epg_parts:
+        return MatchResult(
+            epg_index=np.asarray([], dtype=np.int64),
+            eppi0_index=np.asarray([], dtype=np.int64),
+            nearest_distance=np.asarray([], dtype=float),
+            max_component_delta=np.asarray([], dtype=float),
+        )
+    #endif
 
     return MatchResult(
-        epg_index=epg_indices[accepted],
-        eppi0_index=candidate_pi0[accepted],
-        nearest_distance=distance[accepted],
-        max_component_delta=max_delta[accepted],
+        epg_index=np.concatenate(epg_parts),
+        eppi0_index=np.concatenate(pi0_parts),
+        nearest_distance=np.concatenate(distance_parts),
+        max_component_delta=np.concatenate(delta_parts),
     )
 
 
@@ -1410,62 +1447,69 @@ def build_epgamma_denominator_features(
     mixed_tag_shift: int = 0,
 ) -> Dict[str, np.ndarray]:
     """
-    Vectorized Stage-II kinematics for an epgamma sample.
-
-    The physical variables are recomputed from e, p, and the tag photon using
-    the period-specific beam energy.
-
-    Stored pTmiss / theta_gamma_gamma are preserved only for the unshifted
-    physical samples. They are used as alternative discriminator diagnostics,
-    not as nominal cuts.
+    Same Stage-II kinematics with lower peak memory and a float32 persistent
+    histogram feature store.
     """
-    e3 = np.asarray(epg.electron_p3, dtype=float)
-    p3 = np.asarray(epg.proton_p3, dtype=float)
-    tag3 = np.asarray(epg.tag_p3, dtype=float)
+    e3 = epg.electron_p3
+    p3 = epg.proton_p3
+    tag_source = epg.tag_p3
+    n = len(epg.tag_energy)
 
-    if mixed_tag_shift:
-        n = len(tag3)
-        if n:
-            shift = int(mixed_tag_shift) % n
-            if shift == 0:
-                shift = max(1, n // 2)
-            #endif
-            tag3 = np.roll(tag3, shift=shift, axis=0)
+    if mixed_tag_shift and n:
+        shift = int(mixed_tag_shift) % n
+        if shift == 0:
+            shift = max(1, n // 2)
         #endif
+        tag_index = (np.arange(n, dtype=np.int64) - shift) % n
+        tag_E = epg.tag_energy[tag_index]
+    else:
+        tag_index = None
+        tag_E = epg.tag_energy
     #endif
 
-    e_pmag = np.linalg.norm(e3, axis=1)
-    p_pmag = np.linalg.norm(p3, axis=1)
-    tag_E = np.linalg.norm(tag3, axis=1)
-
-    e_E = np.sqrt(e_pmag * e_pmag + M_E * M_E)
-    p_E = np.sqrt(p_pmag * p_pmag + M_P * M_P)
+    e_E = np.sqrt(np.einsum("ij,ij->i", e3, e3) + M_E * M_E)
+    p_E = np.sqrt(np.einsum("ij,ij->i", p3, p3) + M_P * M_P)
 
     beam_p = math.sqrt(max(0.0, period.beam_energy**2 - M_E**2))
     initial_E = period.beam_energy + M_P
-    initial_p3 = np.asarray([0.0, 0.0, beam_p], dtype=float)
-
     epmiss_E = initial_E - e_E - p_E
-    epmiss3 = initial_p3[None, :] - e3 - p3
-    epmiss_p = np.linalg.norm(epmiss3, axis=1)
-    epmiss_m2 = epmiss_E * epmiss_E - epmiss_p * epmiss_p
+    del e_E, p_E
 
+    px = -e3[:, 0] - p3[:, 0]
+    py = -e3[:, 1] - p3[:, 1]
+    pz = beam_p - e3[:, 2] - p3[:, 2]
+
+    epmiss_m2 = epmiss_E * epmiss_E - (px * px + py * py + pz * pz)
     pred_E = epmiss_E - tag_E
-    pred3 = epmiss3 - tag3
-    pred_p = np.linalg.norm(pred3, axis=1)
-    pred_m2 = pred_E * pred_E - pred_p * pred_p
-    pred_E_minus_p = pred_E - pred_p
-    pred_pT = np.hypot(pred3[:, 0], pred3[:, 1])
+
+    if tag_index is None:
+        px -= tag_source[:, 0]
+        py -= tag_source[:, 1]
+        pz -= tag_source[:, 2]
+    else:
+        px -= tag_source[tag_index, 0]
+        py -= tag_source[tag_index, 1]
+        pz -= tag_source[tag_index, 2]
+    #endif
+
+    pred_p2 = px * px + py * py + pz * pz
+    pred_p = np.sqrt(pred_p2)
+    pred_m2 = pred_E * pred_E - pred_p2
 
     with np.errstate(invalid="ignore", divide="ignore"):
-        pred_unit = pred3 / pred_p[:, None]
         pred_theta_deg = np.degrees(
-            np.arccos(np.clip(pred_unit[:, 2], -1.0, 1.0))
+            np.arccos(
+                np.clip(
+                    pz / np.where(pred_p > 0.0, pred_p, np.nan),
+                    -1.0,
+                    1.0,
+                )
+            )
         )
-        pred_phi_deg = np.degrees(np.arctan2(pred3[:, 1], pred3[:, 0]))
+        pred_phi_deg = np.degrees(np.arctan2(py, px))
     #endwith
 
-    sector, region = predicted_region_arrays(
+    sector, _region = predicted_region_arrays(
         pred_theta_deg,
         pred_phi_deg,
         ft_theta_max=ft_theta_max,
@@ -1483,29 +1527,23 @@ def build_epgamma_denominator_features(
     )
 
     out = {
-        "tag_energy": tag_E,
-        "ep_missing_mass2": epmiss_m2,
-        "ep_missing_energy": epmiss_E,
-        "pred_probe_energy": pred_E,
-        "pred_probe_p": pred_p,
-        "pred_probe_pT": pred_pT,
-        "pred_probe_mass2": pred_m2,
-        "pred_probe_E_minus_p": pred_E_minus_p,
-        "pred_probe_theta_deg": pred_theta_deg,
-        "pred_probe_phi_deg": pred_phi_deg,
-        "pred_probe_sector": sector,
-        "pred_region_code": region,
-        "valid_tag": valid,
+        "ep_missing_mass2": np.asarray(epmiss_m2, dtype=np.float32),
+        "pred_probe_energy": np.asarray(pred_E, dtype=np.float32),
+        "pred_probe_mass2": np.asarray(pred_m2, dtype=np.float32),
+        "pred_probe_theta_deg": np.asarray(pred_theta_deg, dtype=np.float32),
+        "pred_probe_sector": np.asarray(sector, dtype=np.int16),
+        "valid_tag": np.asarray(valid, dtype=bool),
     }
 
     if not mixed_tag_shift:
         for raw_name, out_name in (
-            ("Emiss2", "stored_Emiss2"),
             ("pTmiss", "stored_pTmiss"),
             ("theta_gamma_gamma", "stored_theta_gamma_gamma"),
         ):
             if raw_name in epg.raw:
-                out[out_name] = np.asarray(epg.raw[raw_name], dtype=float)
+                out[out_name] = np.asarray(
+                    epg.raw[raw_name], dtype=np.float32
+                )
             #endif
         #endfor
     #endif
@@ -2238,7 +2276,7 @@ def build_pi0_control_validation(
     """
     Reconstructed-eppi0 data/aaogen control validation.
 
-    IMPORTANT: v029 does NOT feed this calibration into the denominator fit.
+    IMPORTANT: v031 does NOT feed this calibration into the denominator fit.
     The previous full-range Gaussian-smearing calibration saturated at its hard
     bound and failed goodness-of-fit, so it is retained only as a diagnostic.
     """
@@ -6274,11 +6312,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=8,
+        default=2,
         help=(
             "Maximum number of independent period worker processes. Hard-capped "
-            "at 8. With all RGA periods there are only five independent jobs, so "
-            "at most five processes run concurrently. Default: 8."
+            "at 8. Full-statistics jobs are memory/I/O intensive, so the default "
+            "is 2 rather than five simultaneous periods."
         ),
     )
     parser.add_argument(
@@ -6288,6 +6326,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Threads used inside each scipy cKDTree query. Default: 1. Keeping "
             "this at 1 avoids CPU oversubscription when periods run in parallel."
+        ),
+    )
+    parser.add_argument(
+        "--kdtree-query-chunk",
+        type=int,
+        default=500000,
+        help=(
+            "Maximum epgamma candidates per KD-tree query chunk. Default: 500000."
         ),
     )
     parser.add_argument(
@@ -6633,11 +6679,12 @@ def process_period(
     epg_arrays, epg_tree, epg_total = read_branches(
         period.epgamma_pi0_mc,
         EPG_REQUIRED,
-        EPG_OPTIONAL,
+        EPG_OPTIONAL_PI0_MC,
         tree_name,
         max_entries,
     )
     epg = extract_epgamma(epg_arrays, angle_mode)
+    del epg_arrays
 
     log(
         f"{period.label}: epgamma tree '{epg_tree}', "
@@ -6649,11 +6696,12 @@ def process_period(
     pi_arrays, pi_tree, pi_total = read_branches(
         period.eppi0_pi0_mc,
         EPPIO_REQUIRED,
-        EPPIO_OPTIONAL,
+        EPPIO_OPTIONAL_PI0_MC,
         tree_name,
         max_entries,
     )
     eppi0 = extract_eppi0(pi_arrays, angle_mode)
+    del pi_arrays
 
     log(
         f"{period.label}: eppi0 tree '{pi_tree}', "
@@ -6663,9 +6711,11 @@ def process_period(
 
     log(f"{period.label}: reading reconstructed eppi0 data control sample.")
     pi_data_arrays, pi_data_tree, pi_data_total = read_branches(
-        period.eppi0_data, EPPIO_REQUIRED, EPPIO_OPTIONAL, tree_name, max_entries
+        period.eppi0_data, EPPIO_REQUIRED, EPPIO_OPTIONAL_DATA, tree_name, max_entries
     )
     eppi0_data = extract_eppi0(pi_data_arrays, angle_mode)
+    del pi_data_arrays
+    gc.collect()
     log(f"{period.label}: eppi0 data tree '{pi_data_tree}', loaded {len(eppi0_data.pi0_p):,}/{pi_data_total:,} entries.")
 
     log(f"{period.label}: matching e/p parent kinematics between MC skims.")
@@ -6677,6 +6727,7 @@ def process_period(
         component_tolerance=parent_component_tol,
         nearest_distance_max=parent_distance_max,
         kdtree_workers=kdtree_workers,
+        query_chunk_size=int(args_dict["kdtree_query_chunk"]),
     )
     log(f"{period.label}: accepted {len(matches.epg_index):,} parent matches.")
 
@@ -6774,11 +6825,12 @@ def process_period(
         data_arrays, data_tree, data_total = read_branches(
             period.epgamma_data,
             EPG_REQUIRED,
-            EPG_OPTIONAL,
+            EPG_OPTIONAL_DATA,
             tree_name,
             max_entries,
         )
         data_epg = extract_epgamma(data_arrays, angle_mode)
+        del data_arrays
         log(
             f"{period.label}: data epgamma tree '{data_tree}', "
             f"loaded {len(data_epg.tag_energy):,}/{data_total:,} entries."
@@ -6788,11 +6840,12 @@ def process_period(
         dv_arrays, dv_tree, dv_total = read_branches(
             period.epgamma_dvcs_mc,
             EPG_REQUIRED,
-            EPG_OPTIONAL,
+            EPG_OPTIONAL_DVCS_MC,
             tree_name,
             max_entries,
         )
         dv_epg = extract_epgamma(dv_arrays, angle_mode)
+        del dv_arrays
         log(
             f"{period.label}: dvcsgen tree '{dv_tree}', "
             f"loaded {len(dv_epg.tag_energy):,}/{dv_total:,} entries."
@@ -6811,6 +6864,8 @@ def process_period(
         dvcs_f = build_epgamma_denominator_features(
             period, dv_epg, tag_min, tag_max, ft_theta_max
         )
+        del dv_epg
+        gc.collect()
 
         available = [
             disc for disc in STAGE2_DISCRIMINATORS
@@ -6884,6 +6939,8 @@ def process_period(
             f"{period.label}: reconstructed-eppi0 control validation written; "
             "control calibration is diagnostic-only and is not used as a morph prior."
         )
+        del eppi0
+        gc.collect()
         shared_rows = run_stage2_shared_morphed_fits(
             period, data_f, pi0_f, dvcs_f, pi0_control, ft_theta_max, max_probe_energy,
             float(args_dict["den_fit_mm2_min"]), float(args_dict["den_fit_mm2_max"]), float(args_dict["den_fit_probe_m2_max"]),
@@ -7203,6 +7260,240 @@ def process_period(
     }
 
 
+
+def make_cross_period_stage3_scale_factor_canvas(
+    stage3_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """All-period Stage-III scale-factor summary for FT and FD_all."""
+    if not stage3_rows:
+        return
+    #endif
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.8))
+
+    region_specs = (
+        ("FT", "FT", 1.8),
+        ("FD_all", "FD all", 1.35),
+    )
+
+    for ax, region, title, ymax in (
+        (axes[0], *region_specs[0]),
+        (axes[1], *region_specs[1]),
+    ):
+        for period in PERIODS:
+            rr = sorted(
+                [
+                    r for r in stage3_rows
+                    if str(r.get("period", "")) == period.key
+                    and str(r.get("region", "")) == region
+                    and np.isfinite(
+                        float(r.get("data_over_mc_scale_factor", np.nan))
+                    )
+                ],
+                key=lambda r: float(r["energy_center_GeV"]),
+            )
+            if not rr:
+                continue
+            #endif
+
+            x = np.asarray(
+                [float(r["energy_center_GeV"]) for r in rr],
+                dtype=float,
+            )
+            y = np.asarray(
+                [float(r["data_over_mc_scale_factor"]) for r in rr],
+                dtype=float,
+            )
+            yerr = np.asarray(
+                [
+                    float(
+                        r.get(
+                            "scale_factor_counting_error_provisional",
+                            np.nan,
+                        )
+                    )
+                    for r in rr
+                ],
+                dtype=float,
+            )
+            ax.errorbar(
+                x,
+                y,
+                yerr=yerr,
+                marker="o",
+                ms=4.0,
+                linewidth=1.1,
+                capsize=0.0,
+                label=period.label,
+            )
+        #endfor
+
+        ax.axhline(1.0, color="black", linestyle="--", linewidth=1.0)
+        ax.set_ylim(0.0, ymax)
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel(
+            r"$SF_\gamma=\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$"
+        )
+        ax.set_title(title)
+        ax.grid(alpha=0.20)
+        ax.legend(fontsize=8, frameon=False)
+    #endfor
+
+    fig.suptitle(
+        "RGA photon-efficiency reference scale factors by run period",
+        fontsize=14,
+    )
+    safe_finalize_figure(
+        fig,
+        Path(outdir) / "canvas_cross_period_stage3_scale_factors.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+
+def make_cross_period_stage2_composition_canvas(
+    shared_rows: List[Dict[str, object]],
+    discriminator_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """
+    Cross-period Stage-II composition summary.
+
+    Top: shared morphed f_pi0 versus predicted probe energy.
+    Bottom: absolute disagreement between the two production-driver fits.
+    """
+    if not shared_rows:
+        return
+    #endif
+
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    driver_map: Dict[Tuple[str, str, float, float, str], Dict[str, object]] = {}
+    for row in discriminator_rows:
+        disc = str(row.get("discriminator", ""))
+        if (
+            int(row.get("fit_success", 0)) != 1
+            or disc not in STAGE2_DRIVER_DISCRIMINATORS
+        ):
+            continue
+        #endif
+        key = (
+            str(row.get("period", "")),
+            str(row.get("region", "")),
+            round(float(row.get("energy_low_GeV", np.nan)), 9),
+            round(float(row.get("energy_high_GeV", np.nan)), 9),
+            disc,
+        )
+        driver_map[key] = row
+    #endfor
+
+    fig, axes = plt.subplots(2, 2, figsize=(15.8, 10.0), sharex="col")
+
+    for icol, region in enumerate(("FT", "FD_all")):
+        for period in PERIODS:
+            rr = sorted(
+                [
+                    r for r in shared_rows
+                    if str(r.get("period", "")) == period.key
+                    and str(r.get("region", "")) == region
+                    and int(r.get("fit_success", 0)) == 1
+                    and np.isfinite(float(r.get("pi0_fraction", np.nan)))
+                ],
+                key=lambda r: float(r["energy_center_GeV"]),
+            )
+            if not rr:
+                continue
+            #endif
+
+            x = np.asarray(
+                [float(r["energy_center_GeV"]) for r in rr],
+                dtype=float,
+            )
+            axes[0, icol].plot(
+                x,
+                [float(r["pi0_fraction"]) for r in rr],
+                marker="o",
+                ms=4.0,
+                linewidth=1.1,
+                label=period.label,
+            )
+
+            dx = []
+            dy = []
+            for row in rr:
+                elo = round(float(row["energy_low_GeV"]), 9)
+                ehi = round(float(row["energy_high_GeV"]), 9)
+                rp = driver_map.get(
+                    (
+                        period.key,
+                        region,
+                        elo,
+                        ehi,
+                        "mx2_ep_x_probe_m2",
+                    )
+                )
+                rt = driver_map.get(
+                    (
+                        period.key,
+                        region,
+                        elo,
+                        ehi,
+                        "mx2_ep_x_pTmiss",
+                    )
+                )
+                if rp is None or rt is None:
+                    continue
+                #endif
+                fp = float(rp.get("pi0_fraction", np.nan))
+                ft = float(rt.get("pi0_fraction", np.nan))
+                if np.isfinite(fp) and np.isfinite(ft):
+                    dx.append(float(row["energy_center_GeV"]))
+                    dy.append(abs(fp - ft))
+                #endif
+            #endfor
+
+            if dx:
+                axes[1, icol].plot(
+                    dx,
+                    dy,
+                    marker="o",
+                    ms=4.0,
+                    linewidth=1.1,
+                    label=period.label,
+                )
+            #endif
+        #endfor
+
+        axes[0, icol].set_ylim(0.0, 1.02)
+        axes[0, icol].set_ylabel(r"shared fitted $f_{\pi^0}$")
+        axes[0, icol].set_title("FT" if region == "FT" else "FD all")
+        axes[0, icol].grid(alpha=0.20)
+        axes[0, icol].legend(fontsize=8, frameon=False)
+
+        axes[1, icol].set_ylim(0.0, 0.70 if region == "FT" else 0.25)
+        axes[1, icol].set_xlabel(
+            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+        )
+        axes[1, icol].set_ylabel(
+            r"$|\Delta f_{\pi^0}|$ between production drivers"
+        )
+        axes[1, icol].grid(alpha=0.20)
+    #endfor
+
+    fig.suptitle(
+        "RGA Stage-II denominator composition and driver consistency",
+        fontsize=14,
+    )
+    safe_finalize_figure(
+        fig,
+        Path(outdir) / "canvas_cross_period_stage2_composition.png",
+        rect=(0, 0, 1, 0.94),
+    )
+    plt.close(fig)
+
+
 def main() -> int:
     args = parse_args()
 
@@ -7240,6 +7531,9 @@ def main() -> int:
     #endif
     if args.kdtree_workers < 1:
         raise ValueError("--kdtree-workers must be >= 1.")
+    #endif
+    if args.kdtree_query_chunk < 10000:
+        raise ValueError("--kdtree-query-chunk must be >= 10000.")
     #endif
     if not (args.den_fit_mm2_min < args.den_fit_mm2_max):
         raise ValueError("Require --den-fit-mm2-min < --den-fit-mm2-max.")
@@ -7337,7 +7631,8 @@ def main() -> int:
     n_processes = min(requested_workers, len(selected))
     log(
         f"Period-level parallelism: {n_processes} process(es); "
-        f"cKDTree workers/process = {args.kdtree_workers}."
+        f"cKDTree workers/process = {args.kdtree_workers}; "
+        f"KD query chunk = {args.kdtree_query_chunk:,}."
     )
 
     provenance = {
@@ -7374,6 +7669,15 @@ def main() -> int:
             "nested_parallelism": (
                 "cKDTree defaults to one thread/process to avoid oversubscription"
             ),
+            "full_statistics_worker_default": (
+                "2 period processes to reduce RAM/page-cache and filesystem thrashing"
+            ),
+            "kdtree_query_chunk": int(args.kdtree_query_chunk),
+            "memory_model": (
+                "sample-specific ROOT branch reads; slim sample objects; float32 "
+                "persistent Stage-II histogram features; prompt release of large "
+                "temporary/sample objects"
+            ),
             "stage3_reference_model": (
                 "Data numerator uses exact runnum+evnum epgamma-to-eppi0 association; "
                 "MC numerator uses the validated e/p kinematic matcher. Data denominator "
@@ -7385,7 +7689,7 @@ def main() -> int:
                 "real epgamma data are fit locally with floated aaogen-pi0 and "
                 "dvcsgen BH/DVCS templates under multiple discriminator choices. "
                 "No generator relative normalization is imposed. Shared morphing "
-                "uses zero-centered weak priors in v029; reconstructed-eppi0 control "
+                "uses zero-centered weak priors in v031; reconstructed-eppi0 control "
                 "results are diagnostic and are not injected as nuisance centers. "
                 "Mixed-data wrong-tag templates remain diagnostic-only stress tests."
             ),
@@ -7590,6 +7894,14 @@ def main() -> int:
             write_rows_csv(all_control_rows, stage2_outroot / "pi0_control_validation.csv")
         #endif
 
+        if all_shared_rows and all_stage2_rows:
+            make_cross_period_stage2_composition_canvas(
+                all_shared_rows,
+                all_stage2_rows,
+                stage2_outroot,
+            )
+        #endif
+
         with (stage2_outroot / "stage2_summary.json").open("w") as f:
             json.dump(
                 {
@@ -7634,6 +7946,10 @@ def main() -> int:
             write_rows_csv(
                 all_stage3_rows,
                 stage3_outroot / "reference_efficiency_scale_factors.csv",
+            )
+            make_cross_period_stage3_scale_factor_canvas(
+                all_stage3_rows,
+                stage3_outroot,
             )
         #endif
         if stage3_summaries:
