@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v032.py
+derive_photon_efficiency_scale_factors_v033.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v032.py
+    python derive_photon_efficiency_scale_factors_v033.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v032.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v033.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v032.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v033.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v032.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v033.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v032.py --angles rad
+    python derive_photon_efficiency_scale_factors_v033.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -2923,15 +2923,235 @@ def fit_shared_morphed_composition(
 
 
 
+
+def build_stage2_template_mixture_closure(
+    period: PeriodConfig,
+    region: str,
+    energy_low: float,
+    energy_high: float,
+    histograms: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]],
+    nominal_fit: SharedMorphedFitResult,
+    pi0_control: Dict[str, object],
+    truth_fractions: Sequence[float],
+    nuisance_shift_prior: float,
+    nuisance_sigma_prior: float,
+    max_shift_bins: float,
+    max_sigma_bins: float,
+) -> List[Dict[str, object]]:
+    """
+    Deterministic Stage-II template-mixture closure using the *real-data best-fit
+    morphed shapes* as the pseudo-data generator.
+
+    This is deliberately harder than mixing the raw templates with themselves.
+    For every production driver we first apply the nuisance shifts/smearings
+    found in the nominal real-data fit, inject a controlled pi0 fraction, and
+    then rerun the complete shared-morphed fit from its ordinary zero-nuisance
+    initialization.  Any failure to recover the injected fraction therefore
+    exposes optimizer/boundary/identifiability problems inside the model family.
+    """
+    if (
+        region not in ("FT", "FD_all")
+        or not nominal_fit.success
+        or not nominal_fit.nuisance
+        or not histograms
+    ):
+        return []
+    #endif
+
+    names = [n for n in STAGE2_DRIVER_DISCRIMINATORS if n in histograms]
+    if not names:
+        return []
+    #endif
+
+    injected_templates: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+    for name in names:
+        _, hp, hv = histograms[name]
+        tp = morph_template_second_axis(
+            hp,
+            float(nominal_fit.nuisance.get(f"{name}_pi0_shift_bins", 0.0)),
+            float(nominal_fit.nuisance.get(f"{name}_pi0_sigma_bins", 0.0)),
+        )
+        td = morph_template_second_axis(
+            hv,
+            float(nominal_fit.nuisance.get(f"{name}_dvcs_shift_bins", 0.0)),
+            float(nominal_fit.nuisance.get(f"{name}_dvcs_sigma_bins", 0.0)),
+        )
+        injected_templates[name] = (tp, td)
+    #endfor
+
+    rows: List[Dict[str, object]] = []
+    for truth in truth_fractions:
+        truth = float(truth)
+        if not (0.0 < truth < 1.0):
+            continue
+        #endif
+
+        pseudo: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        for name in names:
+            hd0, hp0, hv0 = histograms[name]
+            nd = max(1.0, float(np.sum(hd0)))
+            tp, td = injected_templates[name]
+            pseudo_data = nd * (truth * tp + (1.0 - truth) * td)
+            pseudo[name] = (pseudo_data, hp0, hv0)
+        #endfor
+
+        refit = fit_shared_morphed_composition(
+            pseudo,
+            pi0_control,
+            nuisance_shift_prior,
+            nuisance_sigma_prior,
+            max_shift_bins,
+            max_sigma_bins,
+        )
+
+        row: Dict[str, object] = {
+            "period": period.key,
+            "label": period.label,
+            "beam_energy_GeV": period.beam_energy,
+            "region": region,
+            "energy_low_GeV": float(energy_low),
+            "energy_high_GeV": float(energy_high),
+            "energy_center_GeV": 0.5 * (float(energy_low) + float(energy_high)),
+            "closure_model": "real-data-best-fit-morphed-Asimov",
+            "n_drivers": len(names),
+            "injected_pi0_fraction": truth,
+            "fit_success": int(refit.success),
+            "recovered_pi0_fraction": float(refit.pi0_fraction),
+            "closure_bias": (
+                float(refit.pi0_fraction - truth)
+                if np.isfinite(refit.pi0_fraction)
+                else float("nan")
+            ),
+            "abs_closure_bias": (
+                abs(float(refit.pi0_fraction - truth))
+                if np.isfinite(refit.pi0_fraction)
+                else float("nan")
+            ),
+            "refit_deviance_per_ndof": (
+                float(refit.poisson_deviance / refit.ndof)
+                if refit.ndof else float("nan")
+            ),
+            "nominal_real_data_pi0_fraction": float(nominal_fit.pi0_fraction),
+            "nominal_real_data_deviance_per_ndof": (
+                float(nominal_fit.poisson_deviance / nominal_fit.ndof)
+                if nominal_fit.ndof else float("nan")
+            ),
+        }
+
+        # Record the actual injected morph state and the refitted state.  This
+        # lets us distinguish a composition bias from a nuisance degeneracy.
+        for name in names:
+            for component in ("pi0", "dvcs"):
+                for nuisance in ("shift", "sigma"):
+                    key = f"{name}_{component}_{nuisance}_bins"
+                    row[f"injected_{key}"] = float(
+                        nominal_fit.nuisance.get(key, 0.0)
+                    )
+                    row[f"recovered_{key}"] = float(
+                        (refit.nuisance or {}).get(key, float("nan"))
+                    )
+                #endfor
+            #endfor
+        #endfor
+
+        rows.append(row)
+    #endfor
+
+    return rows
+
+
+def make_stage2_template_mixture_closure_canvas(
+    closure_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """Compact cross-period closure summary for FT and FD_all."""
+    if not closure_rows:
+        return
+    #endif
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(2, 2, figsize=(15.8, 10.0))
+
+    for icol, region in enumerate(("FT", "FD_all")):
+        rr_region = [
+            r for r in closure_rows
+            if str(r.get("region", "")) == region
+            and int(r.get("fit_success", 0)) == 1
+        ]
+
+        # Top: recovered versus injected fraction. Each period is a separate
+        # line/marker family; all energy bins are intentionally overlaid.
+        ax = axes[0, icol]
+        for period in PERIODS:
+            rr = [r for r in rr_region if str(r.get("period", "")) == period.key]
+            if not rr:
+                continue
+            #endif
+            ax.scatter(
+                [float(r["injected_pi0_fraction"]) for r in rr],
+                [float(r["recovered_pi0_fraction"]) for r in rr],
+                s=24,
+                alpha=0.70,
+                label=period.label,
+            )
+        #endfor
+        ax.plot([0.0, 1.0], [0.0, 1.0], color="black", linestyle="--", linewidth=1.0)
+        ax.set_xlim(0.0, 1.0)
+        ax.set_ylim(0.0, 1.0)
+        ax.set_xlabel(r"injected $f_{\pi^0}$")
+        ax.set_ylabel(r"recovered $f_{\pi^0}$")
+        ax.set_title("FT" if region == "FT" else "FD all")
+        ax.grid(alpha=0.20)
+        ax.legend(fontsize=8, frameon=False)
+
+        # Bottom: worst absolute closure bias across injected fractions in each
+        # energy bin. This makes energy-localized identifiability failures easy
+        # to see without another forest of curves.
+        ax = axes[1, icol]
+        for period in PERIODS:
+            rr = [r for r in rr_region if str(r.get("period", "")) == period.key]
+            if not rr:
+                continue
+            #endif
+            grouped: Dict[float, List[float]] = {}
+            for row in rr:
+                e = float(row["energy_center_GeV"])
+                grouped.setdefault(e, []).append(abs(float(row["closure_bias"])))
+            #endfor
+            xs = sorted(grouped)
+            ys = [max(grouped[x]) for x in xs]
+            ax.plot(xs, ys, marker="o", linewidth=1.1, label=period.label)
+        #endfor
+        ax.axhline(0.01, color="black", linestyle=":", linewidth=1.0, label="1% bias")
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel(r"max injected-fraction $|\Delta f_{\pi^0}|$")
+        ax.set_ylim(0.0, 0.10)
+        ax.grid(alpha=0.20)
+        ax.legend(fontsize=8, frameon=False)
+    #endfor
+
+    fig.suptitle(
+        "Stage-II template-mixture closure with real-data best-fit morphing",
+        fontsize=14,
+    )
+    safe_finalize_figure(
+        fig,
+        Path(outdir) / "canvas_template_mixture_closure.png",
+        rect=(0, 0, 1, 0.94),
+    )
+    plt.close(fig)
+
 def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.ndarray], pi0_f: Dict[str,np.ndarray],
                                    dvcs_f: Dict[str,np.ndarray], pi0_control: Dict[str,Dict[str,float]],
                                    ft_theta_max: float, max_probe_energy: float, mm2_min: float, mm2_max: float,
                                    probe_m2_max: float, mm2_bins_2d: int, probe_m2_bins_2d: int,
                                    ptmiss_max: float, ptmiss_bins: int, theta_max: float, theta_bins: int,
                                    min_data_count: int, min_template_count: int, nuisance_shift_prior: float,
-                                   nuisance_sigma_prior: float, max_shift_bins: float, max_sigma_bins: float) -> List[Dict[str,object]]:
+                                   nuisance_sigma_prior: float, max_shift_bins: float, max_sigma_bins: float,
+                                   closure_truth_fractions: Sequence[float]) -> Tuple[List[Dict[str,object]], List[Dict[str,object]]]:
     edges=stage2_energy_edges(max_probe_energy); regions=["all","FT","FD_all"]+[f"FD_S{s}" for s in range(1,7)]
     rows=[]
+    closure_rows: List[Dict[str,object]] = []
     for region in regions:
         for ib in range(len(edges)-1):
             elo,ehi=float(edges[ib]),float(edges[ib+1])
@@ -2959,28 +3179,33 @@ def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.nda
                         "dvcs_fraction":1.0-fit.pi0_fraction if np.isfinite(fit.pi0_fraction) else float("nan"),"objective":fit.objective,
                         "poisson_deviance":fit.poisson_deviance,"ndof":fit.ndof,"deviance_per_ndof":fit.poisson_deviance/fit.ndof if fit.ndof else float("nan")})
             if fit.nuisance: row.update(fit.nuisance)
-            # Deterministic template-mixture closure in the high-statistics all-region sample.
-            # This catches optimizer/boundary pathologies without multiplying runtime in every sector.
-            if region == "all" and hist:
-                for truth in (0.2, 0.5, 0.8):
-                    pseudo = {}
-                    for disc, (hd0, hp0, hv0) in hist.items():
-                        nd0 = max(1.0, float(np.sum(hd0)))
-                        tp0 = normalized_template(hp0).reshape(hp0.shape)
-                        td0 = normalized_template(hv0).reshape(hv0.shape)
-                        pseudo[disc] = (nd0 * (truth * tp0 + (1.0-truth) * td0), hp0, hv0)
-                    #endfor
-                    cf = fit_shared_morphed_composition(pseudo, pi0_control, nuisance_shift_prior, nuisance_sigma_prior, max_shift_bins, max_sigma_bins)
-                    tag = str(int(round(100*truth)))
-                    row[f"closure_truth_{tag}"] = truth
-                    row[f"closure_fit_{tag}"] = cf.pi0_fraction
-                    row[f"closure_bias_{tag}"] = cf.pi0_fraction-truth if np.isfinite(cf.pi0_fraction) else float("nan")
-                #endfor
+            # Meaningful deterministic closure: inject the *real-data best-fit
+            # morphed shapes* at controlled pi0 fractions and rerun the complete
+            # Stage-II shared fit from its normal initialization.  Restrict this
+            # to FT and FD_all to directly test the two production topologies
+            # without multiplying the sector-level runtime.
+            if region in ("FT", "FD_all") and hist and fit.success:
+                closure_rows.extend(
+                    build_stage2_template_mixture_closure(
+                        period,
+                        region,
+                        elo,
+                        ehi,
+                        hist,
+                        fit,
+                        pi0_control,
+                        closure_truth_fractions,
+                        nuisance_shift_prior,
+                        nuisance_sigma_prior,
+                        max_shift_bins,
+                        max_sigma_bins,
+                    )
+                )
             #endif
             rows.append(row)
         #endfor
     #endfor
-    return rows
+    return rows, closure_rows
 
 
 
@@ -5951,6 +6176,7 @@ def aggregate_existing_outputs(
     spread_rows: List[Dict[str, object]] = []
     mixed_rows: List[Dict[str, object]] = []
     shared_rows: List[Dict[str, object]] = []
+    closure_rows: List[Dict[str, object]] = []
     profile_rows: List[Dict[str, object]] = []
     control_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
@@ -5994,6 +6220,9 @@ def aggregate_existing_outputs(
             )
             shared_rows.extend(
                 read_csv_rows(p2 / "denominator_shared_morphed_fits.csv")
+            )
+            closure_rows.extend(
+                read_csv_rows(p2 / "template_mixture_closure.csv")
             )
             profile_rows.extend(
                 read_csv_rows(p2 / "morph_nuisance_profiles.csv")
@@ -6089,6 +6318,7 @@ def aggregate_existing_outputs(
             (spread_rows, "denominator_discriminator_spread.csv"),
             (mixed_rows, "mixed_component_diagnostics.csv"),
             (shared_rows, "denominator_shared_morphed_fits.csv"),
+            (closure_rows, "template_mixture_closure.csv"),
             (profile_rows, "morph_nuisance_profiles.csv"),
             (control_rows, "pi0_control_validation.csv"),
         ):
@@ -6097,6 +6327,13 @@ def aggregate_existing_outputs(
                 write_rows_csv(rows, Path(stage2_outroot) / filename)
             #endif
         #endfor
+
+        if closure_rows:
+            make_stage2_template_mixture_closure_canvas(
+                closure_rows,
+                Path(stage2_outroot),
+            )
+        #endif
 
         with (Path(stage2_outroot) / "stage2_summary.json").open("w") as f:
             json.dump(
@@ -6560,6 +6797,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--morph-max-shift-bins", type=float, default=4.0, help="Hard bound on template shifts in histogram bins. Default: 4.0.")
     parser.add_argument("--morph-max-sigma-bins", type=float, default=6.0, help="Hard bound on additional template smearing in histogram bins. Default: 6.0.")
     parser.add_argument(
+        "--stage2-closure-truth-fractions",
+        default="0.2,0.5,0.8",
+        help=(
+            "Comma-separated injected pi0 fractions for the FT/FD_all Stage-II "
+            "morphed-template closure study. Default: 0.2,0.5,0.8."
+        ),
+    )
+    parser.add_argument(
         "--morph-profile-shift-grid",
         default="-4,-3,-2,-1,0,1,2,3,4",
         help=(
@@ -6807,6 +7052,7 @@ def process_period(
     mixed_diag_rows: List[Dict[str, object]] = []
     profile_rows: List[Dict[str, object]] = []
     shared_rows: List[Dict[str, object]] = []
+    closure_rows: List[Dict[str, object]] = []
     control_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
     stage3_summary: Optional[Dict[str, object]] = None
@@ -6941,7 +7187,7 @@ def process_period(
         )
         del eppi0
         gc.collect()
-        shared_rows = run_stage2_shared_morphed_fits(
+        shared_rows, closure_rows = run_stage2_shared_morphed_fits(
             period, data_f, pi0_f, dvcs_f, pi0_control, ft_theta_max, max_probe_energy,
             float(args_dict["den_fit_mm2_min"]), float(args_dict["den_fit_mm2_max"]), float(args_dict["den_fit_probe_m2_max"]),
             int(args_dict["den_fit_mm2_bins"]), int(args_dict["den_fit_probe_m2_bins"]), float(args_dict["disc_ptmiss_max"]),
@@ -6949,8 +7195,17 @@ def process_period(
             int(args_dict["den_min_data_count"]), int(args_dict["den_min_template_count"]),
             float(args_dict["morph_shift_prior_bins"]), float(args_dict["morph_sigma_prior_bins"]),
             float(args_dict["morph_max_shift_bins"]), float(args_dict["morph_max_sigma_bins"]),
+            parse_float_edges(
+                str(args_dict["stage2_closure_truth_fractions"]),
+                "--stage2-closure-truth-fractions",
+            ),
         )
         write_rows_csv(shared_rows, stage2_dir / "denominator_shared_morphed_fits.csv")
+        write_rows_csv(closure_rows, stage2_dir / "template_mixture_closure.csv")
+        make_stage2_template_mixture_closure_canvas(
+            closure_rows,
+            stage2_dir,
+        )
         log(
             f"{period.label}: wrote per-period shared-morphed numerical results "
             f"({len(shared_rows)} rows) before canvas rendering."
@@ -7254,6 +7509,7 @@ def process_period(
         "mixed_diag_rows": mixed_diag_rows,
         "profile_rows": profile_rows,
         "shared_rows": shared_rows,
+        "closure_rows": closure_rows,
         "control_rows": control_rows,
         "stage3_rows": stage3_rows,
         "stage3_summary": stage3_summary,
@@ -7535,6 +7791,17 @@ def main() -> int:
     if args.kdtree_query_chunk < 10000:
         raise ValueError("--kdtree-query-chunk must be >= 10000.")
     #endif
+    closure_truth_fractions = parse_float_edges(
+        args.stage2_closure_truth_fractions,
+        "--stage2-closure-truth-fractions",
+    )
+    if not closure_truth_fractions or any(
+        (x <= 0.0 or x >= 1.0) for x in closure_truth_fractions
+    ):
+        raise ValueError(
+            "--stage2-closure-truth-fractions values must lie strictly between 0 and 1."
+        )
+    #endif
     if not (args.den_fit_mm2_min < args.den_fit_mm2_max):
         raise ValueError("Require --den-fit-mm2-min < --den-fit-mm2-max.")
     #endif
@@ -7704,6 +7971,7 @@ def main() -> int:
     all_stage2_spread_rows: List[Dict[str, object]] = []
     all_mixed_diag_rows: List[Dict[str, object]] = []
     all_shared_rows: List[Dict[str, object]] = []
+    all_closure_rows: List[Dict[str, object]] = []
     all_profile_rows: List[Dict[str, object]] = []
     all_control_rows: List[Dict[str, object]] = []
     all_stage3_rows: List[Dict[str, object]] = []
@@ -7726,6 +7994,7 @@ def main() -> int:
                 all_mixed_diag_rows.extend(result["mixed_diag_rows"])
                 all_profile_rows.extend(result.get("profile_rows", []))
                 all_shared_rows.extend(result.get("shared_rows", []))
+                all_closure_rows.extend(result.get("closure_rows", []))
                 all_control_rows.extend(result.get("control_rows", []))
                 all_stage3_rows.extend(result.get("stage3_rows", []))
                 if result.get("stage3_summary") is not None:
@@ -7759,6 +8028,7 @@ def main() -> int:
                         all_mixed_diag_rows.extend(result.get("mixed_diag_rows", []))
                         all_profile_rows.extend(result.get("profile_rows", []))
                         all_shared_rows.extend(result.get("shared_rows", []))
+                        all_closure_rows.extend(result.get("closure_rows", []))
                         all_control_rows.extend(result.get("control_rows", []))
                         all_stage3_rows.extend(result.get("stage3_rows", []))
                         if result.get("stage3_summary") is not None:
@@ -7870,6 +8140,25 @@ def main() -> int:
         if all_shared_rows:
             all_shared_rows.sort(key=lambda r: (order.get(str(r["period"]),999), str(r["region"]), float(r["energy_low_GeV"])))
             write_rows_csv(all_shared_rows, stage2_outroot / "denominator_shared_morphed_fits.csv")
+        #endif
+
+        if all_closure_rows:
+            all_closure_rows.sort(
+                key=lambda r: (
+                    order.get(str(r.get("period", "")), 999),
+                    str(r.get("region", "")),
+                    float(r.get("energy_low_GeV", "nan")),
+                    float(r.get("injected_pi0_fraction", "nan")),
+                )
+            )
+            write_rows_csv(
+                all_closure_rows,
+                stage2_outroot / "template_mixture_closure.csv",
+            )
+            make_stage2_template_mixture_closure_canvas(
+                all_closure_rows,
+                stage2_outroot,
+            )
         #endif
 
         if all_profile_rows:
