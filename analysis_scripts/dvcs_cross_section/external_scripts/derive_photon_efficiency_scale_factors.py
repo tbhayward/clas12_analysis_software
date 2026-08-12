@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v052.py
+derive_photon_efficiency_scale_factors_v053.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v052.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v053.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v052.py \
+    python derive_photon_efficiency_scale_factors_v053.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v052.py \
+    python derive_photon_efficiency_scale_factors_v053.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -416,6 +416,50 @@ class EPPi0Sample:
     pi0_theta: np.ndarray
     raw: Dict[str, np.ndarray]
     angle_unit: str
+
+
+def subset_epgamma_sample(
+    sample: EPGammaSample,
+    selector: np.ndarray,
+) -> EPGammaSample:
+    """Return an EPGammaSample containing only selected entries."""
+    sel = np.asarray(selector)
+    return EPGammaSample(
+        electron_p3=np.asarray(sample.electron_p3[sel]),
+        proton_p3=np.asarray(sample.proton_p3[sel]),
+        tag_p3=np.asarray(sample.tag_p3[sel]),
+        tag_energy=np.asarray(sample.tag_energy[sel]),
+        raw={
+            key: np.asarray(value[sel])
+            for key, value in sample.raw.items()
+            if len(value) == len(sample.tag_energy)
+        },
+        angle_unit=sample.angle_unit,
+    )
+
+
+def subset_eppi0_sample(
+    sample: EPPi0Sample,
+    selector: np.ndarray,
+) -> EPPi0Sample:
+    """Return an EPPi0Sample containing only selected entries."""
+    sel = np.asarray(selector)
+    return EPPi0Sample(
+        electron_p3=np.asarray(sample.electron_p3[sel]),
+        proton_p3=np.asarray(sample.proton_p3[sel]),
+        pi0_p3=np.asarray(sample.pi0_p3[sel]),
+        pi0_p=np.asarray(sample.pi0_p[sel]),
+        pi0_mass=np.asarray(sample.pi0_mass[sel]),
+        pi0_theta=np.asarray(sample.pi0_theta[sel]),
+        raw={
+            key: np.asarray(value[sel])
+            for key, value in sample.raw.items()
+            if len(value) == len(sample.pi0_mass)
+        },
+        angle_unit=sample.angle_unit,
+    )
+
+
 
 
 def _optional_raw_only(
@@ -1741,7 +1785,7 @@ def stage2_region_mask(
     """
     Predicted-probe detector-region mask.
 
-    Normal processing attaches data-derived FT/FD polar-angle support to every
+    Normal processing attaches fixed FT/FD polar-angle acceptance to every
     feature store.  This excludes the FT beam hole and the angular gap/outside
     acceptance instead of treating every theta <= 5.5 deg as reconstructable.
     """
@@ -10721,7 +10765,7 @@ def make_nsidis_photon_acceptance_canvas(
         histtype="step",
         density=True,
         linewidth=1.2,
-        label="inside robust FT theta support",
+        label="inside fixed FT theta acceptance",
     )
     axes[1].set_xlabel(r"$p_{T,\rm miss}(ep\gamma)$ (GeV)")
     axes[1].set_ylabel("density")
@@ -10741,6 +10785,473 @@ def make_nsidis_photon_acceptance_canvas(
         rect=(0, 0, 1, 0.93),
     )
     plt.close(fig)
+
+
+
+def nsidis_central_tag_mask(
+    feat: Dict[str, np.ndarray],
+    *,
+    ft_theta_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    max_probe_energy: float,
+) -> np.ndarray:
+    """
+    Union of the actual FT and FD_all denominator support at the central
+    mass-shell choice.  stage2_fit_mask supplies fixed detector acceptance and
+    theta_ep > 5 deg; e_p > 2 GeV is added explicitly for nSidis compatibility.
+    """
+    out = np.zeros(len(feat["pred_probe_energy"]), dtype=bool)
+    for region in ("FT", "FD_all"):
+        out |= stage2_fit_mask(
+            feat,
+            region,
+            ft_theta_max,
+            0.40,
+            max_probe_energy,
+            mm2_min,
+            mm2_max,
+            probe_m2_max,
+        )
+    #endfor
+
+    if "electron_p" not in feat:
+        raise KeyError("electron_p missing from denominator feature store.")
+    #endif
+    out &= (
+        np.isfinite(feat["electron_p"])
+        & (feat["electron_p"] > 2.0)
+    )
+    return out
+
+
+def _fit_row_map_for_support(
+    rows: Sequence[Dict[str, object]],
+    support: float,
+) -> Dict[Tuple[str, float, float], Dict[str, object]]:
+    out: Dict[Tuple[str, float, float], Dict[str, object]] = {}
+    for row in rows:
+        if int(row.get("fit_success", 0)) != 1:
+            continue
+        #endif
+        if abs(
+            float(row.get("probe_m2_support_max_GeV2", np.nan))
+            - float(support)
+        ) > 1.0e-10:
+            continue
+        #endif
+        out[
+            (
+                str(row["region"]),
+                round(float(row["energy_low_GeV"]), 9),
+                round(float(row["energy_high_GeV"]), 9),
+            )
+        ] = row
+    #endfor
+    return out
+
+
+def build_nsidis_data_efficiency_rows(
+    period: PeriodConfig,
+    fit_rows: Sequence[Dict[str, object]],
+    selected_feat: Dict[str, np.ndarray],
+    association: DataAssociationResult,
+    *,
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    source_label: str,
+) -> List[Dict[str, object]]:
+    """
+    Association-first DATA efficiency pilot.
+
+        epsilon_data =
+          N(reconstructed companion probe)
+          --------------------------------
+          f_pi0 * N(selected epgamma tags)
+
+    No MC division is performed here yet.
+    """
+    edges = stage2_energy_edges(max_probe_energy)
+    fit_map = _fit_row_map_for_support(fit_rows, probe_m2_max)
+
+    stages = (
+        "same_event",
+        "positive_remainder",
+        "tag_mass_shell",
+        "probe_energy",
+        "probe_pred_consistent",
+    )
+    for stage in stages:
+        if stage not in association.stage_lookup:
+            raise KeyError(
+                f"{source_label}: missing association stage '{stage}'."
+            )
+        #endif
+    #endfor
+
+    rows: List[Dict[str, object]] = []
+    for region in ("FT", "FD_all"):
+        for ib in range(len(edges) - 1):
+            elo = float(edges[ib])
+            ehi = float(edges[ib + 1])
+
+            m = stage2_fit_mask(
+                selected_feat,
+                region,
+                ft_theta_max,
+                elo,
+                ehi,
+                mm2_min,
+                mm2_max,
+                probe_m2_max,
+            )
+            if "electron_p" in selected_feat:
+                m &= (
+                    np.isfinite(selected_feat["electron_p"])
+                    & (selected_feat["electron_p"] > 2.0)
+                )
+            #endif
+
+            n_tags = int(np.count_nonzero(m))
+            counts = {
+                stage: int(
+                    np.count_nonzero(m & association.stage_lookup[stage])
+                )
+                for stage in stages
+            }
+
+            fit = fit_map.get(
+                (region, round(elo, 9), round(ehi, 9))
+            )
+            fpi0 = (
+                float(fit["pi0_fraction"])
+                if fit is not None
+                else float("nan")
+            )
+            data_den = (
+                fpi0 * float(n_tags)
+                if np.isfinite(fpi0) and fpi0 > 0.0
+                else float("nan")
+            )
+
+            n_mass_shell = counts["probe_energy"]
+            n_final = counts["probe_pred_consistent"]
+            eff_mass = (
+                float(n_mass_shell) / data_den
+                if np.isfinite(data_den) and data_den > 0.0
+                else float("nan")
+            )
+            eff_final = (
+                float(n_final) / data_den
+                if np.isfinite(data_den) and data_den > 0.0
+                else float("nan")
+            )
+
+            status = "ok"
+            if fit is None:
+                status = "no_successful_denominator_fit"
+            elif n_tags <= 0:
+                status = "no_selected_tags"
+            elif counts["same_event"] <= 0:
+                status = "no_same_event_eppi0_candidate"
+            elif n_final <= 0:
+                status = "no_final_reconstructed_probe"
+            elif np.isfinite(eff_final) and eff_final > 1.05:
+                status = "efficiency_above_unity_check_numerator_purity"
+            #endif
+
+            row = {
+                "period": period.key,
+                "label": period.label,
+                "source": source_label,
+                "region": region,
+                "energy_low_GeV": elo,
+                "energy_high_GeV": ehi,
+                "energy_center_GeV": 0.5 * (elo + ehi),
+                "probe_m2_support_max_GeV2": float(probe_m2_max),
+                "denominator_fit_success": int(fit is not None),
+                "fitted_pi0_fraction": fpi0,
+                "selected_epgamma_tags": n_tags,
+                "fitted_pi0_denominator": data_den,
+                "reconstructed_probe_mass_shell": n_mass_shell,
+                "reconstructed_probe_final": n_final,
+                "data_efficiency_mass_shell_only": eff_mass,
+                "data_efficiency_final": eff_final,
+                "counting_error_final_provisional": provisional_ratio_error(
+                    float(n_final), data_den
+                ),
+                "status": status,
+                "interpretation": (
+                    "preliminary data-only association efficiency; "
+                    "not yet divided by aaogen MC efficiency"
+                ),
+            }
+            previous = n_tags
+            for stage in stages:
+                count = counts[stage]
+                row[f"cutflow_{stage}"] = count
+                row[f"cutflow_{stage}_fraction_of_tags"] = (
+                    count / n_tags if n_tags else float("nan")
+                )
+                row[f"cutflow_{stage}_conditional_fraction"] = (
+                    count / previous if previous else float("nan")
+                )
+                previous = count
+            #endfor
+            rows.append(row)
+        #endfor
+    #endfor
+    return rows
+
+
+def make_nsidis_data_efficiency_canvas(
+    period: PeriodConfig,
+    wagon_rows: Sequence[Dict[str, object]],
+    nsidis_rows: Sequence[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """Old-wagon overlap comparison plus nSidis high-energy DATA extension."""
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 8.8))
+
+    for irow, region in enumerate(("FT", "FD_all")):
+        ax_eff = axes[irow, 0]
+        ax_flow = axes[irow, 1]
+
+        nr = sorted(
+            [
+                r for r in nsidis_rows
+                if r["region"] == region
+                and np.isfinite(
+                    float(r.get("data_efficiency_final", np.nan))
+                )
+            ],
+            key=lambda r: float(r["energy_center_GeV"]),
+        )
+        wr = sorted(
+            [
+                r for r in wagon_rows
+                if r["region"] == region
+                and np.isfinite(
+                    float(r.get("data_efficiency_final", np.nan))
+                )
+            ],
+            key=lambda r: float(r["energy_center_GeV"]),
+        )
+
+        if nr:
+            x = np.asarray(
+                [float(r["energy_center_GeV"]) for r in nr],
+                dtype=float,
+            )
+            ax_eff.plot(
+                x,
+                [float(r["data_efficiency_final"]) for r in nr],
+                marker="o",
+                linewidth=1.25,
+                label="nSidis final association",
+            )
+            ax_eff.plot(
+                x,
+                [float(r["data_efficiency_mass_shell_only"]) for r in nr],
+                marker=".",
+                linestyle="--",
+                linewidth=0.9,
+                label="nSidis mass-shell only",
+            )
+            for stage, label in (
+                ("same_event", "same event"),
+                ("probe_energy", "mass-shell + threshold"),
+                ("probe_pred_consistent", "final pred-consistent"),
+            ):
+                ax_flow.plot(
+                    x,
+                    [
+                        float(r[f"cutflow_{stage}_fraction_of_tags"])
+                        for r in nr
+                    ],
+                    marker="o",
+                    linewidth=1.0,
+                    label=label,
+                )
+            #endfor
+        #endif
+
+        if wr:
+            xw = np.asarray(
+                [float(r["energy_center_GeV"]) for r in wr],
+                dtype=float,
+            )
+            ax_eff.plot(
+                xw,
+                [float(r["data_efficiency_final"]) for r in wr],
+                marker="s",
+                linestyle="--",
+                linewidth=1.2,
+                label="old wagon reference",
+            )
+        #endif
+
+        for ax in (ax_eff, ax_flow):
+            ax.axvline(2.0, linestyle=":", linewidth=1.0)
+            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.grid(alpha=0.18)
+        #endfor
+        ax_eff.axhline(1.0, linestyle=":", linewidth=0.9)
+        ax_eff.set_ylabel(r"preliminary $\epsilon_{\rm data}$")
+        ax_eff.set_title("FT" if region == "FT" else "FD all")
+        ax_flow.set_ylabel("fraction of selected epgamma tags")
+        ax_flow.set_ylim(bottom=0.0)
+        ax_flow.set_title("association cut flow")
+    #endfor
+
+    axes[0, 0].legend(fontsize=8, frameon=False)
+    axes[0, 1].legend(fontsize=8, frameon=False)
+    fig.suptitle(
+        f"{period.label}: association-first reconstructed-probe pilot "
+        "(DATA ONLY; not yet data/MC)",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_data_efficiency_pilot.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
+
+
+def make_nsidis_associated_eppi0_exclusivity_canvas(
+    period: PeriodConfig,
+    eppi0_features: Dict[str, np.ndarray],
+    association: DataAssociationResult,
+    outdir: Path,
+) -> Dict[str, object]:
+    """
+    Inspect eppi0 exclusivity only AFTER exact tag/probe association.
+
+    This determines whether association itself supplies sufficient numerator
+    purity before we impose any additional reconstructed-side exclusivity cut.
+    """
+    best = association.best_match
+    if len(best.eppi0_index) == 0:
+        return {
+            "best_associations": 0,
+            "best_pred_consistent_associations": 0,
+        }
+    #endif
+
+    passes = np.asarray(
+        association.best_diagnostics.get(
+            "passes_pred_consistency",
+            np.zeros(len(best.eppi0_index), dtype=bool),
+        ),
+        dtype=bool,
+    )
+    best_idx = np.asarray(best.eppi0_index, dtype=np.int64)
+    final_idx = best_idx[passes]
+    best_unique = np.unique(best_idx)
+    final_unique = np.unique(final_idx)
+
+    specs = (
+        ("Mx2", np.linspace(-0.20, 0.20, 161),
+         r"$M_X^2(ep\pi^0)$ (GeV$^2$)"),
+        ("pTmiss", np.linspace(0.0, 0.80, 161),
+         r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)"),
+        ("pmiss", np.linspace(0.0, 1.5, 161),
+         r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)"),
+        ("Emiss", np.linspace(-1.5, 2.5, 181),
+         r"$E_{\rm miss}(ep\pi^0)$ (GeV)"),
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 9.0))
+    n_all = len(eppi0_features["Mx2"])
+    idx_all = np.arange(n_all)
+    best_mask = np.isin(idx_all, best_unique)
+    final_mask = np.isin(idx_all, final_unique)
+
+    for ax, (key, bins, xlabel) in zip(axes.ravel(), specs):
+        h_all, edges = _normalized_hist(eppi0_features[key], bins)
+        h_best, _ = _normalized_hist(
+            eppi0_features[key], bins, best_mask
+        )
+        h_final, _ = _normalized_hist(
+            eppi0_features[key], bins, final_mask
+        )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        ax.step(
+            centers, h_all, where="mid", linewidth=0.9,
+            label="all nSidis eppi0X",
+        )
+        ax.step(
+            centers, h_best, where="mid", linewidth=1.1,
+            label="best mass-shell association",
+        )
+        ax.step(
+            centers, h_final, where="mid", linewidth=1.3,
+            label="best + pred-consistent",
+        )
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("unit-normalized entries")
+        ax.grid(alpha=0.18)
+    #endfor
+
+    axes[0, 0].legend(fontsize=8, frameon=False)
+    fig.suptitle(
+        f"{period.label}: eppi0X exclusivity AFTER tag/probe association",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_associated_eppi0_exclusivity.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
+
+    stress_rows: List[Dict[str, object]] = []
+    if final_unique.size:
+        mx = np.asarray(eppi0_features["Mx2"][final_unique], dtype=float)
+        pt = np.asarray(
+            eppi0_features["pTmiss"][final_unique], dtype=float
+        )
+        for mxmax in (0.02, 0.04, 0.06, 0.10):
+            for ptmax in (0.20, 0.30, 0.50):
+                good = (
+                    np.isfinite(mx)
+                    & np.isfinite(pt)
+                    & (np.abs(mx) < mxmax)
+                    & (pt < ptmax)
+                )
+                stress_rows.append({
+                    "period": period.key,
+                    "label": period.label,
+                    "abs_Mx2_max_GeV2": mxmax,
+                    "pTmiss_max_GeV": ptmax,
+                    "unique_final_associated_pi0": int(final_unique.size),
+                    "surviving_count": int(np.count_nonzero(good)),
+                    "surviving_fraction": float(np.mean(good)),
+                    "status": "diagnostic_only_no_cut_applied",
+                })
+            #endfor
+        #endfor
+    #endif
+
+    if stress_rows:
+        write_rows_csv(
+            stress_rows,
+            outdir / "nsidis_associated_eppi0_exclusivity_stress.csv",
+        )
+    #endif
+
+    return {
+        "best_associations": int(len(best_idx)),
+        "best_pred_consistent_associations": int(np.count_nonzero(passes)),
+        "unique_best_eppi0_candidates": int(best_unique.size),
+        "unique_final_eppi0_candidates": int(final_unique.size),
+        "stress_rows": int(len(stress_rows)),
+    }
 
 
 def preflight_nsidis_study(
@@ -10989,66 +11500,13 @@ def process_nsidis_study_period(
         tag_max,
     )
 
-    # Proper exclusive-core study: robust peak characterization + scan.
-    core_model = derive_eppi0_core_model(
-        wagon_epi_f,
-        wagon_epi_parent,
-    )
-    core_nsigma = parse_float_edges(
-        str(args_dict["nsidis_eppi0_core_nsigma_scan"]),
-        "--nsidis-eppi0-core-nsigma-scan",
-    )
-    core_quantiles = parse_float_edges(
-        str(args_dict["nsidis_eppi0_momentum_quantile_scan"]),
-        "--nsidis-eppi0-momentum-quantile-scan",
-    )
-    core_rows, core_recommended = build_eppi0_core_scan(
-        period,
-        wagon_epi_f,
-        ns_epi_f,
-        epi_overlap,
-        wagon_epi_parent,
-        ns_epi_parent,
-        core_model,
-        core_nsigma,
-        core_quantiles,
-        float(args_dict["nsidis_eppi0_target_wagon_retention"]),
-    )
-    write_rows_csv(
-        core_rows,
-        outdir / "nsidis_eppi0_exclusive_core_scan.csv",
-    )
-    with (
-        outdir / "nsidis_eppi0_recommended_core.json"
-    ).open("w") as f:
-        json.dump(
-            {
-                "period": period.key,
-                "label": period.label,
-                "core_model": core_model,
-                "recommended": core_recommended,
-            },
-            f,
-            indent=2,
-            allow_nan=True,
-        )
-    #endwith
-    make_nsidis_eppi0_core_canvas(
-        period,
-        wagon_epi_f,
-        ns_epi_f,
-        epi_overlap,
-        wagon_epi_parent,
-        ns_epi_parent,
-        core_model,
-        core_recommended,
-        outdir,
-    )
-    make_nsidis_eppi0_core_scan_canvas(
-        period,
-        core_rows,
-        core_recommended,
-        outdir,
+    # Retire the old global eppi0 "95% wagon-core" optimization.
+    # The full old eppi0 wagon contains long exclusivity tails, so maximizing
+    # retention of that entire tree is not the correct numerator-purity target.
+    # Numerator exclusivity is evaluated below AFTER exact tag/probe association.
+    log(
+        f"{period.label}: skipped retired global eppi0 core optimization; "
+        "numerator purity will be evaluated after exact association."
     )
 
     scan_values = parse_float_edges(
@@ -11210,6 +11668,166 @@ def process_nsidis_study_period(
             ptmiss_max=float(args_dict["disc_ptmiss_max"]),
             ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
         )
+
+
+        # Association-first numerator pilot.
+        log(
+            f"{period.label}: building association-first reconstructed-probe "
+            "numerator pilot."
+        )
+
+        ns_mask = nsidis_central_tag_mask(
+            ns_epg_f,
+            ft_theta_max=ft_theta_max,
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=central_support,
+            max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
+        )
+        wagon_mask = nsidis_central_tag_mask(
+            wagon_epg_f,
+            ft_theta_max=ft_theta_max,
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=central_support,
+            max_probe_energy=min(
+                2.0, float(args_dict["nsidis_pilot_energy_max"])
+            ),
+        )
+
+        ns_idx = np.flatnonzero(ns_mask)
+        wagon_idx = np.flatnonzero(wagon_mask)
+
+        ns_epg_selected = subset_epgamma_sample(ns_epg, ns_idx)
+        wagon_epg_selected = subset_epgamma_sample(
+            wagon_epg, wagon_idx
+        )
+        ns_feat_selected = {
+            key: np.asarray(value[ns_idx])
+            for key, value in ns_epg_f.items()
+            if len(value) == len(ns_epg.tag_energy)
+        }
+        wagon_feat_selected = {
+            key: np.asarray(value[wagon_idx])
+            for key, value in wagon_epg_f.items()
+            if len(value) == len(wagon_epg.tag_energy)
+        }
+
+        log(
+            f"{period.label}: exact eppi0 association on "
+            f"{len(ns_idx):,} nSidis denominator-supported tags and "
+            f"{len(wagon_idx):,} old-wagon tags."
+        )
+
+        ns_assoc = match_data_event_candidates(
+            period,
+            ns_epg_selected,
+            ns_epi,
+            tag_remainder_m2_max=float(
+                args_dict["stage3_tag_remainder_m2_max"]
+            ),
+            reco_probe_energy_min=float(
+                args_dict["assoc_probe_energy_min"]
+            ),
+            probe_angle_max_deg=float(
+                args_dict["stage3_probe_angle_max_deg"]
+            ),
+            probe_frac_energy_max=float(
+                args_dict["stage3_probe_frac_energy_max"]
+            ),
+        )
+        wagon_assoc = match_data_event_candidates(
+            period,
+            wagon_epg_selected,
+            wagon_epi,
+            tag_remainder_m2_max=float(
+                args_dict["stage3_tag_remainder_m2_max"]
+            ),
+            reco_probe_energy_min=float(
+                args_dict["assoc_probe_energy_min"]
+            ),
+            probe_angle_max_deg=float(
+                args_dict["stage3_probe_angle_max_deg"]
+            ),
+            probe_frac_energy_max=float(
+                args_dict["stage3_probe_frac_energy_max"]
+            ),
+        )
+
+        ns_eff_rows = build_nsidis_data_efficiency_rows(
+            period,
+            pilot_nsidis_rows,
+            ns_feat_selected,
+            ns_assoc,
+            ft_theta_max=ft_theta_max,
+            max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=central_support,
+            source_label="nsidis",
+        )
+        wagon_eff_rows = build_nsidis_data_efficiency_rows(
+            period,
+            pilot_wagon_rows,
+            wagon_feat_selected,
+            wagon_assoc,
+            ft_theta_max=ft_theta_max,
+            max_probe_energy=min(
+                2.0, float(args_dict["nsidis_pilot_energy_max"])
+            ),
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=central_support,
+            source_label="wagon_epgt2_reference",
+        )
+
+        write_rows_csv(
+            ns_eff_rows,
+            outdir / "nsidis_data_efficiency_pilot.csv",
+        )
+        write_rows_csv(
+            wagon_eff_rows,
+            outdir / "wagon_data_efficiency_reference.csv",
+        )
+        make_nsidis_data_efficiency_canvas(
+            period,
+            wagon_eff_rows,
+            ns_eff_rows,
+            outdir,
+        )
+
+        assoc_excl_summary = (
+            make_nsidis_associated_eppi0_exclusivity_canvas(
+                period,
+                ns_epi_f,
+                ns_assoc,
+                outdir,
+            )
+        )
+
+        with (
+            outdir / "nsidis_numerator_association_summary.json"
+        ).open("w") as f:
+            json.dump(
+                {
+                    "period": period.key,
+                    "label": period.label,
+                    "central_probe_m2_support_GeV2": central_support,
+                    "selected_nsidis_epgamma_tags": int(len(ns_idx)),
+                    "selected_wagon_epgamma_tags": int(len(wagon_idx)),
+                    "nsidis_association_counters": ns_assoc.counters,
+                    "wagon_association_counters": wagon_assoc.counters,
+                    "associated_eppi0_exclusivity": assoc_excl_summary,
+                    "status": (
+                        "preliminary association-first DATA numerator; "
+                        "no MC scale factor formed"
+                    ),
+                },
+                f,
+                indent=2,
+                allow_nan=True,
+            )
+        #endwith
     #endif
 
     summary = {
@@ -11223,8 +11841,9 @@ def process_nsidis_study_period(
         "photon_angular_acceptance": photon_acceptance.as_dict(),
         "epgamma_overlap": epg_overlap_summary,
         "eppi0_overlap": epi_overlap_summary,
-        "eppi0_core_model": core_model,
-        "eppi0_recommended_core": core_recommended,
+        "eppi0_numerator_strategy": (
+            "association-first; no global eppi0 exclusivity cut"
+        ),
         "nsidis_pilot_fit_enabled": bool(
             args_dict.get("nsidis_pilot_fit", False)
         ),
@@ -11233,7 +11852,8 @@ def process_nsidis_study_period(
         ),
         "wall_time_s": float(time.perf_counter() - t0),
         "status": (
-            "diagnostic nSidis transition study; no efficiency scale factor formed"
+            "nSidis denominator + preliminary association-first DATA "
+            "efficiency pilot; no data/MC scale factor formed"
         ),
     }
 
@@ -12939,15 +13559,8 @@ def main() -> int:
                         "reference_unique_event_recall"
                     ]
                 ),
-                "eppi0_recommended_wagon_retention": (
-                    summary["eppi0_recommended_core"][
-                        "wagon_epgt2_retention"
-                    ]
-                ),
-                "eppi0_recommended_nonwagon_retention": (
-                    summary["eppi0_recommended_core"][
-                        "nsidis_nonwagon_event_entry_retention"
-                    ]
+                "eppi0_numerator_strategy": (
+                    summary["eppi0_numerator_strategy"]
                 ),
                 "pilot_fit_enabled": int(
                     summary["nsidis_pilot_fit_enabled"]
