@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v042.py
+derive_photon_efficiency_scale_factors_v043.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -46,10 +46,10 @@ Default --plot-mode compact keeps only high-value plots. --plot-mode full
 restores development/debug canvases.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v042.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v043.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v042.py \
+    python derive_photon_efficiency_scale_factors_v043.py \
         --max-entries 0 --period fa18_out
 """
 
@@ -9155,6 +9155,137 @@ def compact_plot_enabled(args_dict: Dict[str, object]) -> bool:
     return str(args_dict.get("plot_mode", "compact")) == "compact"
 
 
+
+def merge_period_result(
+    result: Dict[str, object],
+    accum: Dict[str, List[Dict[str, object]]],
+) -> None:
+    """
+    Merge one process_period() payload into aggregate containers.
+
+    Serial and parallel execution intentionally share this exact function so
+    result-key refactors cannot diverge between the two code paths.
+    """
+    required_keys = {
+        "mc_association_summary",
+        "stage2_summary",
+        "stage2_rows",
+        "stage2_spread_rows",
+        "mixed_diag_rows",
+        "profile_rows",
+        "shared_rows",
+        "closure_rows",
+        "ft_coarse_rows",
+        "ft_coarse_closure_rows",
+        "ft_coarse_three_component_rows",
+        "ft_coarse_three_component_closure_rows",
+        "ft_coarse_three_component_summary_rows",
+        "control_rows",
+        "stage3_rows",
+        "stage3_summary",
+    }
+    missing = sorted(required_keys - set(result))
+    if missing:
+        raise KeyError(
+            "process_period() result payload is missing required key(s): "
+            + ", ".join(missing)
+        )
+    #endif
+
+    accum["mc_association_summaries"].append(
+        result["mc_association_summary"]
+    )
+
+    if result["stage2_summary"] is not None:
+        accum["stage2_summaries"].append(result["stage2_summary"])
+        accum["all_stage2_rows"].extend(result["stage2_rows"])
+        accum["all_stage2_spread_rows"].extend(
+            result["stage2_spread_rows"]
+        )
+        accum["all_mixed_diag_rows"].extend(result["mixed_diag_rows"])
+        accum["all_profile_rows"].extend(result["profile_rows"])
+        accum["all_shared_rows"].extend(result["shared_rows"])
+        accum["all_closure_rows"].extend(result["closure_rows"])
+        accum["all_ft_coarse_rows"].extend(result["ft_coarse_rows"])
+        accum["all_ft_coarse_closure_rows"].extend(
+            result["ft_coarse_closure_rows"]
+        )
+        accum["all_ft_coarse_three_component_rows"].extend(
+            result["ft_coarse_three_component_rows"]
+        )
+        accum["all_ft_coarse_three_component_closure_rows"].extend(
+            result["ft_coarse_three_component_closure_rows"]
+        )
+        accum["all_ft_coarse_three_component_summary_rows"].extend(
+            result["ft_coarse_three_component_summary_rows"]
+        )
+        accum["all_control_rows"].extend(result["control_rows"])
+    #endif
+
+    accum["all_stage3_rows"].extend(result["stage3_rows"])
+    if result["stage3_summary"] is not None:
+        accum["stage3_summaries"].append(result["stage3_summary"])
+    #endif
+
+
+def run_period_result_merge_self_test() -> None:
+    """Fast regression test for the serial/parallel aggregation schema."""
+    fake_result = {
+        "mc_association_summary": {"period": "selftest"},
+        "stage2_summary": {"period": "selftest"},
+        "stage2_rows": [{"period": "selftest"}],
+        "stage2_spread_rows": [],
+        "mixed_diag_rows": [],
+        "profile_rows": [],
+        "shared_rows": [],
+        "closure_rows": [],
+        "ft_coarse_rows": [],
+        "ft_coarse_closure_rows": [],
+        "ft_coarse_three_component_rows": [],
+        "ft_coarse_three_component_closure_rows": [],
+        "ft_coarse_three_component_summary_rows": [],
+        "control_rows": [],
+        "stage3_rows": [{"period": "selftest"}],
+        "stage3_summary": {"period": "selftest"},
+    }
+    fake_accum = {
+        "mc_association_summaries": [],
+        "stage2_summaries": [],
+        "all_stage2_rows": [],
+        "all_stage2_spread_rows": [],
+        "all_mixed_diag_rows": [],
+        "all_shared_rows": [],
+        "all_closure_rows": [],
+        "all_ft_coarse_rows": [],
+        "all_ft_coarse_closure_rows": [],
+        "all_ft_coarse_three_component_rows": [],
+        "all_ft_coarse_three_component_closure_rows": [],
+        "all_ft_coarse_three_component_summary_rows": [],
+        "all_profile_rows": [],
+        "all_control_rows": [],
+        "all_stage3_rows": [],
+        "stage3_summaries": [],
+    }
+
+    merge_period_result(fake_result, fake_accum)
+
+    if len(fake_accum["mc_association_summaries"]) != 1:
+        raise RuntimeError("Period-result self-test failed MC summary merge.")
+    #endif
+    if len(fake_accum["stage2_summaries"]) != 1:
+        raise RuntimeError("Period-result self-test failed Stage-II summary merge.")
+    #endif
+    if len(fake_accum["all_stage2_rows"]) != 1:
+        raise RuntimeError("Period-result self-test failed Stage-II row merge.")
+    #endif
+    if len(fake_accum["all_stage3_rows"]) != 1:
+        raise RuntimeError("Period-result self-test failed Stage-III row merge.")
+    #endif
+    if len(fake_accum["stage3_summaries"]) != 1:
+        raise RuntimeError("Period-result self-test failed Stage-III summary merge.")
+    #endif
+
+
 def main() -> int:
     args = parse_args()
 
@@ -9162,8 +9293,7 @@ def main() -> int:
         raise ValueError("--max-entries must be >= 0.")
     #endif
     if (
-        not args.stage1_only
-        and not args.skip_stage3
+        not args.skip_stage3
         and args.max_entries != 0
     ):
         raise ValueError(
@@ -9283,6 +9413,8 @@ def main() -> int:
     )
 
     run_internal_self_tests(outroot)
+    run_period_result_merge_self_test()
+    log("Internal period-result aggregation self-test passed.")
 
     if args.aggregate_only:
         aggregate_existing_outputs(
@@ -9395,22 +9527,25 @@ def main() -> int:
     }
 
     args_dict = vars(args).copy()
-    mc_association_summaries: List[Dict[str, object]] = []
-    stage2_summaries: List[Dict[str, object]] = []
-    all_stage2_rows: List[Dict[str, object]] = []
-    all_stage2_spread_rows: List[Dict[str, object]] = []
-    all_mixed_diag_rows: List[Dict[str, object]] = []
-    all_shared_rows: List[Dict[str, object]] = []
-    all_closure_rows: List[Dict[str, object]] = []
-    all_ft_coarse_rows: List[Dict[str, object]] = []
-    all_ft_coarse_closure_rows: List[Dict[str, object]] = []
-    all_ft_coarse_three_component_rows: List[Dict[str, object]] = []
-    all_ft_coarse_three_component_closure_rows: List[Dict[str, object]] = []
-    all_ft_coarse_three_component_summary_rows: List[Dict[str, object]] = []
-    all_profile_rows: List[Dict[str, object]] = []
-    all_control_rows: List[Dict[str, object]] = []
-    all_stage3_rows: List[Dict[str, object]] = []
-    stage3_summaries: List[Dict[str, object]] = []
+
+    accum: Dict[str, List[Dict[str, object]]] = {
+        "mc_association_summaries": [],
+        "stage2_summaries": [],
+        "all_stage2_rows": [],
+        "all_stage2_spread_rows": [],
+        "all_mixed_diag_rows": [],
+        "all_shared_rows": [],
+        "all_closure_rows": [],
+        "all_ft_coarse_rows": [],
+        "all_ft_coarse_closure_rows": [],
+        "all_ft_coarse_three_component_rows": [],
+        "all_ft_coarse_three_component_closure_rows": [],
+        "all_ft_coarse_three_component_summary_rows": [],
+        "all_profile_rows": [],
+        "all_control_rows": [],
+        "all_stage3_rows": [],
+        "stage3_summaries": [],
+    }
 
     if n_processes == 1:
         for period in selected:
@@ -9420,28 +9555,7 @@ def main() -> int:
                 str(outroot),
                 str(stage2_outroot),
             )
-            mc_association_summaries.append(
-                result["mc_association_summary"]
-            )
-            if result["stage2_summary"] is not None:
-                stage2_summaries.append(result["stage2_summary"])
-                all_stage2_rows.extend(result["stage2_rows"])
-                all_stage2_spread_rows.extend(result["stage2_spread_rows"])
-                all_mixed_diag_rows.extend(result["mixed_diag_rows"])
-                all_profile_rows.extend(result.get("profile_rows", []))
-                all_shared_rows.extend(result.get("shared_rows", []))
-                all_closure_rows.extend(result.get("closure_rows", []))
-                all_ft_coarse_rows.extend(result.get("ft_coarse_rows", []))
-                all_ft_coarse_closure_rows.extend(result.get("ft_coarse_closure_rows", []))
-                all_ft_coarse_three_component_rows.extend(result.get("ft_coarse_three_component_rows", []))
-                all_ft_coarse_three_component_closure_rows.extend(result.get("ft_coarse_three_component_closure_rows", []))
-                all_ft_coarse_three_component_summary_rows.extend(result.get("ft_coarse_three_component_summary_rows", []))
-                all_control_rows.extend(result.get("control_rows", []))
-                all_stage3_rows.extend(result.get("stage3_rows", []))
-                if result.get("stage3_summary") is not None:
-                    stage3_summaries.append(result["stage3_summary"])
-                #endif
-            #endif
+            merge_period_result(result, accum)
         #endfor
     else:
         with ProcessPoolExecutor(max_workers=n_processes) as executor:
@@ -9460,38 +9574,42 @@ def main() -> int:
                 period = future_to_period[future]
                 try:
                     result = future.result()
-                    summaries.append(result["summary"])
-                    all_resolution_rows.extend(result["resolution_rows"])
-                    if result["stage2_summary"] is not None:
-                        stage2_summaries.append(result["stage2_summary"])
-                        all_stage2_rows.extend(result["stage2_rows"])
-                        all_stage2_spread_rows.extend(result.get("stage2_spread_rows", []))
-                        all_mixed_diag_rows.extend(result.get("mixed_diag_rows", []))
-                        all_profile_rows.extend(result.get("profile_rows", []))
-                        all_shared_rows.extend(result.get("shared_rows", []))
-                        all_closure_rows.extend(result.get("closure_rows", []))
-                        all_ft_coarse_rows.extend(result.get("ft_coarse_rows", []))
-                        all_ft_coarse_closure_rows.extend(result.get("ft_coarse_closure_rows", []))
-                        all_ft_coarse_three_component_rows.extend(result.get("ft_coarse_three_component_rows", []))
-                        all_ft_coarse_three_component_closure_rows.extend(result.get("ft_coarse_three_component_closure_rows", []))
-                        all_ft_coarse_three_component_summary_rows.extend(result.get("ft_coarse_three_component_summary_rows", []))
-                        all_control_rows.extend(result.get("control_rows", []))
-                        all_stage3_rows.extend(result.get("stage3_rows", []))
-                        if result.get("stage3_summary") is not None:
-                            stage3_summaries.append(result["stage3_summary"])
-                        #endif
-                    #endif
+                    merge_period_result(result, accum)
                 except Exception as exc:
                     for other in future_to_period:
                         other.cancel()
                     #endfor
                     raise RuntimeError(
-                        f"Parallel photon-efficiency processing failed for {period.label}: {exc}"
+                        f"Parallel photon-efficiency processing failed for "
+                        f"{period.label}: {exc}"
                     ) from exc
                 #endtry
             #endfor
         #endwith
     #endif
+
+    mc_association_summaries = accum["mc_association_summaries"]
+    stage2_summaries = accum["stage2_summaries"]
+    all_stage2_rows = accum["all_stage2_rows"]
+    all_stage2_spread_rows = accum["all_stage2_spread_rows"]
+    all_mixed_diag_rows = accum["all_mixed_diag_rows"]
+    all_shared_rows = accum["all_shared_rows"]
+    all_closure_rows = accum["all_closure_rows"]
+    all_ft_coarse_rows = accum["all_ft_coarse_rows"]
+    all_ft_coarse_closure_rows = accum["all_ft_coarse_closure_rows"]
+    all_ft_coarse_three_component_rows = (
+        accum["all_ft_coarse_three_component_rows"]
+    )
+    all_ft_coarse_three_component_closure_rows = (
+        accum["all_ft_coarse_three_component_closure_rows"]
+    )
+    all_ft_coarse_three_component_summary_rows = (
+        accum["all_ft_coarse_three_component_summary_rows"]
+    )
+    all_profile_rows = accum["all_profile_rows"]
+    all_control_rows = accum["all_control_rows"]
+    all_stage3_rows = accum["all_stage3_rows"]
+    stage3_summaries = accum["stage3_summaries"]
 
     order = {p.key: i for i, p in enumerate(selected)}
     # Internal MC association produces no standalone aggregate files.
@@ -9691,6 +9809,10 @@ def main() -> int:
                 all_stage3_rows,
                 stage3_outroot / "reference_efficiency_scale_factors.csv",
             )
+            write_rows_csv(
+                final_reference_input_rows(all_stage3_rows),
+                stage3_outroot / "final_reference_inputs.csv",
+            )
             make_cross_period_stage3_scale_factor_canvas(
                 all_stage3_rows,
                 stage3_outroot,
@@ -9704,7 +9826,9 @@ def main() -> int:
                 stage3_summaries,
                 stage3_outroot / "stage3_summary.csv",
             )
-            summary_outroot = outroot / "summary"
+        #endif
+
+        summary_outroot = outroot / "summary"
         make_summary_dashboard(
             all_shared_rows,
             all_stage2_rows,
@@ -9732,12 +9856,10 @@ def main() -> int:
             #endwith
         #endif
 
-    log(f"Done. Stage-I outputs are in {outroot}.")
-    if True:
-        log(f"Stage-II outputs are in {stage2_outroot}.")
-    #endif
+    log(f"Done. Summary plots are in {outroot / 'summary'}.")
+    log(f"Denominator-composition outputs are in {stage2_outroot}.")
     if not args.skip_stage3:
-        log(f"Stage-III reference outputs are in {stage3_outroot}.")
+        log(f"Efficiency-reference outputs are in {stage3_outroot}.")
     #endif
     return 0
 
