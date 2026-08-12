@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v049.py
+derive_photon_efficiency_scale_factors_v050.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v049.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v050.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v049.py \
+    python derive_photon_efficiency_scale_factors_v050.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v049.py \
+    python derive_photon_efficiency_scale_factors_v050.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -70,6 +70,10 @@ This isolated mode:
   * compares old and new epgamma kinematics below 2 GeV;
   * conditions old-wagon overlap checks on the nSidis parent requirement
     e_p > 2 GeV;
+  * derives the FT and FD theta acceptance directly from real reconstructed
+    photons (detector 0 = FT, detector 1 = FD), excluding the FT beam hole and
+    out-of-acceptance predicted probes;
+  * applies theta_ep > 5 deg identically to data and MC templates;
   * reconstructs the sharp M_X^2(ep pi0) exclusive core, scans M_X^2 + missing-momentum cuts, and quantifies rejection of the loose SIDIS-rich
     eppi0X population; E_miss is diagnostic-only;
   * scans the missing-photon mass-shell support without cutting pTmiss;
@@ -140,6 +144,8 @@ SAMPLE_LABELS = {
 
 PHOTON_DETECTOR_FT = 0
 PHOTON_DETECTOR_FD = 1
+
+THETA_EP_MIN_DEG = 5.0
 
 PROBE_ENERGY_EDGES = np.asarray(
     # The former 4.5-6 and 6-10 GeV bins were individually too sparse,
@@ -1385,6 +1391,189 @@ def parse_mix_shifts(value: str) -> List[int]:
     return shifts
 
 
+
+@dataclass(frozen=True)
+class PhotonAngularAcceptance:
+    """Observed reconstructed-photon polar-angle support for one run period."""
+    ft_theta_min_deg: float
+    ft_theta_max_deg: float
+    fd_theta_min_deg: float
+    fd_theta_max_deg: float
+    ft_count: int
+    fd_count: int
+    source: str
+
+    def as_dict(self) -> Dict[str, object]:
+        return {
+            "ft_theta_min_deg": float(self.ft_theta_min_deg),
+            "ft_theta_max_deg": float(self.ft_theta_max_deg),
+            "fd_theta_min_deg": float(self.fd_theta_min_deg),
+            "fd_theta_max_deg": float(self.fd_theta_max_deg),
+            "ft_count": int(self.ft_count),
+            "fd_count": int(self.fd_count),
+            "source": str(self.source),
+        }
+
+
+def photon_theta_deg_from_epgamma(sample: EPGammaSample) -> np.ndarray:
+    """Polar angle of the actually reconstructed photon in an epgamma tree."""
+    p3 = np.asarray(sample.tag_p3, dtype=float)
+    p = np.sqrt(np.einsum("ij,ij->i", p3, p3))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        c = p3[:, 2] / np.where(p > 0.0, p, np.nan)
+        theta = np.degrees(np.arccos(np.clip(c, -1.0, 1.0)))
+    #endwith
+    return np.asarray(theta, dtype=float)
+
+
+def infer_photon_angular_acceptance(
+    sample: EPGammaSample,
+    *,
+    source: str,
+    parent_mask: Optional[np.ndarray] = None,
+) -> PhotonAngularAcceptance:
+    """
+    Infer FT/FD theta support directly from reconstructed data.
+
+    Confirmed detector convention:
+      detector2 == 0 -> FT
+      detector2 == 1 -> FD
+
+    The requested operational definition is the exact observed finite
+    min/max theta for each detector code.  The resulting FT and FD intervals
+    must be disjoint; otherwise the script stops rather than ambiguously
+    assigning a predicted probe to both detector systems.
+    """
+    if "detector2" not in sample.raw:
+        raise KeyError(
+            f"{source}: detector2 is required to derive FT/FD angular acceptance."
+        )
+    #endif
+
+    det = np.asarray(sample.raw["detector2"], dtype=np.int16)
+    theta = photon_theta_deg_from_epgamma(sample)
+    base = np.isfinite(theta)
+    if parent_mask is not None:
+        pm = np.asarray(parent_mask, dtype=bool)
+        if pm.shape != base.shape:
+            raise ValueError(
+                f"{source}: parent mask has incompatible shape for acceptance derivation."
+            )
+        #endif
+        base &= pm
+    #endif
+
+    ft = base & (det == PHOTON_DETECTOR_FT)
+    fd = base & (det == PHOTON_DETECTOR_FD)
+    nft = int(np.count_nonzero(ft))
+    nfd = int(np.count_nonzero(fd))
+    if nft < 100 or nfd < 100:
+        raise RuntimeError(
+            f"{source}: insufficient reconstructed photons to derive acceptance "
+            f"(FT={nft}, FD={nfd})."
+        )
+    #endif
+
+    ft_min = float(np.min(theta[ft]))
+    ft_max = float(np.max(theta[ft]))
+    fd_min = float(np.min(theta[fd]))
+    fd_max = float(np.max(theta[fd]))
+
+    vals = (ft_min, ft_max, fd_min, fd_max)
+    if not all(np.isfinite(x) for x in vals):
+        raise RuntimeError(f"{source}: non-finite detector angular boundary.")
+    #endif
+    if not (0.0 <= ft_min < ft_max <= 180.0):
+        raise RuntimeError(
+            f"{source}: invalid FT theta range [{ft_min}, {ft_max}] deg."
+        )
+    #endif
+    if not (0.0 <= fd_min < fd_max <= 180.0):
+        raise RuntimeError(
+            f"{source}: invalid FD theta range [{fd_min}, {fd_max}] deg."
+        )
+    #endif
+    if ft_max >= fd_min:
+        raise RuntimeError(
+            f"{source}: observed FT and FD theta ranges overlap: "
+            f"FT=[{ft_min:.6g},{ft_max:.6g}] deg, "
+            f"FD=[{fd_min:.6g},{fd_max:.6g}] deg. "
+            "Predicted-region assignment would be ambiguous; inspect detector2/theta."
+        )
+    #endif
+
+    return PhotonAngularAcceptance(
+        ft_theta_min_deg=ft_min,
+        ft_theta_max_deg=ft_max,
+        fd_theta_min_deg=fd_min,
+        fd_theta_max_deg=fd_max,
+        ft_count=nft,
+        fd_count=nfd,
+        source=source,
+    )
+
+
+def attach_photon_angular_acceptance(
+    features: Dict[str, np.ndarray],
+    acceptance: PhotonAngularAcceptance,
+) -> None:
+    """
+    Attach scalar angular-support metadata to a denominator feature store.
+
+    Keeping the metadata inside the feature dict lets every existing
+    stage2_fit_mask() caller automatically use the same period-specific
+    acceptance without a large and error-prone signature refactor.
+    """
+    features["_ft_theta_min_deg"] = float(acceptance.ft_theta_min_deg)
+    features["_ft_theta_max_deg"] = float(acceptance.ft_theta_max_deg)
+    features["_fd_theta_min_deg"] = float(acceptance.fd_theta_min_deg)
+    features["_fd_theta_max_deg"] = float(acceptance.fd_theta_max_deg)
+
+
+def feature_angular_acceptance(
+    features: Dict[str, np.ndarray],
+    fallback_ft_theta_max: float,
+) -> Tuple[float, float, float, float]:
+    """Return attached period-specific support, or the legacy fallback."""
+    if all(
+        key in features
+        for key in (
+            "_ft_theta_min_deg",
+            "_ft_theta_max_deg",
+            "_fd_theta_min_deg",
+            "_fd_theta_max_deg",
+        )
+    ):
+        return (
+            float(features["_ft_theta_min_deg"]),
+            float(features["_ft_theta_max_deg"]),
+            float(features["_fd_theta_min_deg"]),
+            float(features["_fd_theta_max_deg"]),
+        )
+    #endif
+
+    # Legacy fallback for internal/self-test paths that do not attach data-derived
+    # acceptance. Normal production/nSidis processing attaches exact boundaries.
+    return (0.0, float(fallback_ft_theta_max), float(fallback_ft_theta_max), 180.0)
+
+
+def electron_proton_opening_angle_deg(
+    electron_p3: np.ndarray,
+    proton_p3: np.ndarray,
+) -> np.ndarray:
+    """Lab opening angle theta_ep between reconstructed electron and proton."""
+    e3 = np.asarray(electron_p3, dtype=float)
+    p3 = np.asarray(proton_p3, dtype=float)
+    en = np.sqrt(np.einsum("ij,ij->i", e3, e3))
+    pn = np.sqrt(np.einsum("ij,ij->i", p3, p3))
+    dot = np.einsum("ij,ij->i", e3, p3)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        c = dot / np.where((en > 0.0) & (pn > 0.0), en * pn, np.nan)
+        theta = np.degrees(np.arccos(np.clip(c, -1.0, 1.0)))
+    #endwith
+    return np.asarray(theta, dtype=float)
+
+
 def predicted_region_arrays(
     pred_theta_deg: np.ndarray,
     pred_phi_deg: np.ndarray,
@@ -1512,6 +1701,14 @@ def build_epgamma_denominator_features(
         "pred_probe_mass2": np.asarray(pred_m2, dtype=np.float32),
         "pred_probe_theta_deg": np.asarray(pred_theta_deg, dtype=np.float32),
         "pred_probe_sector": np.asarray(sector, dtype=np.int16),
+        "electron_p": np.asarray(
+            np.sqrt(np.einsum("ij,ij->i", e3, e3)),
+            dtype=np.float32,
+        ),
+        "theta_ep_deg": np.asarray(
+            electron_proton_opening_angle_deg(e3, p3),
+            dtype=np.float32,
+        ),
         "valid_tag": np.asarray(valid, dtype=bool),
     }
 
@@ -1561,21 +1758,41 @@ def stage2_region_mask(
     region_name: str,
     ft_theta_max: float,
 ) -> np.ndarray:
+    """
+    Predicted-probe detector-region mask.
+
+    Normal processing attaches data-derived FT/FD polar-angle support to every
+    feature store.  This excludes the FT beam hole and the angular gap/outside
+    acceptance instead of treating every theta <= 5.5 deg as reconstructable.
+    """
     theta = features["pred_probe_theta_deg"]
     sector = features["pred_probe_sector"]
+    ft_min, ft_max, fd_min, fd_max = feature_angular_acceptance(
+        features, ft_theta_max
+    )
+
+    finite = np.isfinite(theta)
+    ft = finite & (theta >= ft_min) & (theta <= ft_max)
+    fd = (
+        finite
+        & (theta >= fd_min)
+        & (theta <= fd_max)
+        & (sector >= 1)
+        & (sector <= 6)
+    )
 
     if region_name == "all":
-        return np.ones(len(theta), dtype=bool)
+        return ft | fd
     #endif
     if region_name == "FT":
-        return theta <= ft_theta_max
+        return ft
     #endif
     if region_name == "FD_all":
-        return (theta > ft_theta_max) & (sector >= 1) & (sector <= 6)
+        return fd
     #endif
     if region_name.startswith("FD_S"):
         s = int(region_name[-1])
-        return (theta > ft_theta_max) & (sector == s)
+        return fd & (sector == s)
     #endif
     raise ValueError(f"Unknown Stage-II region '{region_name}'")
 
@@ -1590,8 +1807,27 @@ def stage2_fit_mask(
     mm2_max: float,
     probe_m2_max: float,
 ) -> np.ndarray:
+    """
+    Common denominator/template selection.
+
+    theta_ep > 5 deg is now imposed identically on real data, aaogen, and
+    dvcsgen.  Detector-region acceptance is also common through
+    stage2_region_mask().
+    """
+    theta_ep = feat.get("theta_ep_deg")
+    if theta_ep is None:
+        theta_ep_mask = np.ones(
+            len(feat["pred_probe_energy"]), dtype=bool
+        )
+    else:
+        theta_ep_mask = (
+            np.isfinite(theta_ep) & (theta_ep > THETA_EP_MIN_DEG)
+        )
+    #endif
+
     return (
         feat["valid_tag"]
+        & theta_ep_mask
         & stage2_region_mask(feat, region_name, ft_theta_max)
         & (feat["pred_probe_energy"] >= elo)
         & (feat["pred_probe_energy"] < ehi)
@@ -1599,6 +1835,7 @@ def stage2_fit_mask(
         & (feat["ep_missing_mass2"] < mm2_max)
         & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
     )
+
 
 
 def discriminator_available(
@@ -8200,6 +8437,26 @@ def preflight(
         )
     #endif
 
+    if include_stage2:
+        detector_missing: List[str] = []
+        for p in periods:
+            with uproot.open(p.epgamma_data) as root_file:
+                found_name, tree = find_tree(root_file, None)
+                if "detector2" not in set(tree.keys()):
+                    detector_missing.append(
+                        f"{p.label}: epgamma data tree '{found_name}' missing detector2"
+                    )
+                #endif
+            #endwith
+        #endfor
+        if detector_missing:
+            raise KeyError(
+                "Data-derived photon angular acceptance requires detector2:\n  "
+                + "\n  ".join(detector_missing)
+            )
+        #endif
+    #endif
+
     if include_stage3:
         log(
             "Preflight efficiency stage: verifying exact data-event identifiers "
@@ -9845,6 +10102,26 @@ def run_nsidis_ptmiss_pilot_fits(
                         ("dvcs", dvcs_f),
                     )
                 }
+                # The loose nSidis parent skim requires e_p > 2 GeV.
+                # Apply the same parent support to data AND both templates.
+                # parent_mask is retained only to reproduce the exact selected
+                # data/wagon entry population used by overlap diagnostics.
+                for _name, _feat in (
+                    ("data", data_f),
+                    ("pi0", pi0_f),
+                    ("dvcs", dvcs_f),
+                ):
+                    if "electron_p" not in _feat:
+                        raise KeyError(
+                            f"{source_label}: {_name} feature store lacks electron_p"
+                        )
+                    #endif
+                    masks[_name] &= (
+                        np.isfinite(_feat["electron_p"])
+                        & (_feat["electron_p"] > 2.0)
+                    )
+                #endfor
+
                 if parent_mask is not None:
                     pmask = np.asarray(parent_mask, dtype=bool)
                     if pmask.shape != masks["data"].shape:
@@ -10169,6 +10446,17 @@ def make_nsidis_pilot_fit_projection_canvases(
                     ("dvcs", dvcs_f),
                 )
             }
+            # Match the nSidis parent support used in the actual pilot fit.
+            for _name, _feat in (
+                ("data", data_f),
+                ("pi0", pi0_f),
+                ("dvcs", dvcs_f),
+            ):
+                masks[_name] &= (
+                    np.isfinite(_feat["electron_p"])
+                    & (_feat["electron_p"] > 2.0)
+                )
+            #endfor
 
             hd = histogram_for_discriminator(
                 disc, data_f, masks["data"],
@@ -10362,6 +10650,119 @@ def make_nsidis_pilot_fit_projection_canvases(
     #endfor
 
 
+
+def make_nsidis_photon_acceptance_canvas(
+    period: PeriodConfig,
+    ns_epg: EPGammaSample,
+    ns_epg_f: Dict[str, np.ndarray],
+    ns_parent_mask: np.ndarray,
+    acceptance: PhotonAngularAcceptance,
+    outdir: Path,
+) -> None:
+    """
+    Direct diagnostic for the beam-hole hypothesis.
+
+    Left: actually reconstructed photon theta by detector code, with exact
+    observed FT/FD boundaries.
+    Right: high-energy predicted-FT pTmiss before versus after requiring the
+    predicted probe to lie inside the measured FT angular support.
+    """
+    det = np.asarray(ns_epg.raw["detector2"], dtype=np.int16)
+    theta_reco = photon_theta_deg_from_epgamma(ns_epg)
+    parent = np.asarray(ns_parent_mask, dtype=bool)
+    good = parent & np.isfinite(theta_reco)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.3))
+
+    bins = np.linspace(0.0, min(45.0, acceptance.fd_theta_max_deg + 3.0), 181)
+    for code, label in (
+        (PHOTON_DETECTOR_FT, "reconstructed FT (detector=0)"),
+        (PHOTON_DETECTOR_FD, "reconstructed FD (detector=1)"),
+    ):
+        m = good & (det == code)
+        axes[0].hist(
+            theta_reco[m],
+            bins=bins,
+            histtype="step",
+            density=True,
+            linewidth=1.2,
+            label=label,
+        )
+    #endfor
+    for x in (
+        acceptance.ft_theta_min_deg,
+        acceptance.ft_theta_max_deg,
+        acceptance.fd_theta_min_deg,
+        acceptance.fd_theta_max_deg,
+    ):
+        axes[0].axvline(x, linestyle="--", linewidth=0.9)
+    #endfor
+    axes[0].set_yscale("log")
+    axes[0].set_xlabel(r"reconstructed photon $\theta_\gamma$ (deg)")
+    axes[0].set_ylabel("density")
+    axes[0].set_title(
+        "measured photon angular support\n"
+        f"FT=[{acceptance.ft_theta_min_deg:.3f},"
+        f"{acceptance.ft_theta_max_deg:.3f}] deg; "
+        f"FD=[{acceptance.fd_theta_min_deg:.3f},"
+        f"{acceptance.fd_theta_max_deg:.3f}] deg"
+    )
+    axes[0].legend(fontsize=8, frameon=False)
+    axes[0].grid(alpha=0.18)
+
+    # What the old theta<=5.5 definition admitted versus the physical FT range.
+    base = (
+        parent
+        & ns_epg_f["valid_tag"]
+        & (ns_epg_f["pred_probe_energy"] >= 2.0)
+        & (ns_epg_f["pred_probe_energy"] < 9.5)
+        & np.isfinite(ns_epg_f["pred_probe_theta_deg"])
+        & np.isfinite(ns_epg_f["stored_pTmiss"])
+    )
+    legacy_ft = base & (
+        ns_epg_f["pred_probe_theta_deg"] <= 5.5
+    )
+    physical_ft = base & stage2_region_mask(
+        ns_epg_f, "FT", 5.5
+    )
+
+    ptbins = np.linspace(0.0, 0.30, 81)
+    axes[1].hist(
+        ns_epg_f["stored_pTmiss"][legacy_ft],
+        bins=ptbins,
+        histtype="step",
+        density=True,
+        linewidth=1.2,
+        label=r"legacy predicted FT: $\theta^{pred}\leq5.5^\circ$",
+    )
+    axes[1].hist(
+        ns_epg_f["stored_pTmiss"][physical_ft],
+        bins=ptbins,
+        histtype="step",
+        density=True,
+        linewidth=1.2,
+        label="inside measured FT theta support",
+    )
+    axes[1].set_xlabel(r"$p_{T,\rm miss}(ep\gamma)$ (GeV)")
+    axes[1].set_ylabel("density")
+    axes[1].set_title(
+        r"$2<E_{\rm probe}^{pred}<9.5$ GeV: beam-hole population check"
+    )
+    axes[1].legend(fontsize=8, frameon=False)
+    axes[1].grid(alpha=0.18)
+
+    fig.suptitle(
+        f"{period.label}: data-derived FT/FD photon angular acceptance",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_photon_angular_acceptance.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+
 def preflight_nsidis_study(
     periods: Sequence[PeriodConfig],
     args_dict: Dict[str, object],
@@ -10408,6 +10809,9 @@ def preflight_nsidis_study(
                 needed = set(required)
                 if needs_event_ids:
                     needed |= {"runnum", "evnum"}
+                #endif
+                if label == "nSidis epgamma":
+                    needed |= {"detector2"}
                 #endif
                 absent = sorted(needed - available)
                 if absent:
@@ -10527,6 +10931,24 @@ def process_nsidis_study_period(
         ns_epi.electron_p3
     ) > 2.0
 
+    # Use the enormous loose nSidis epgamma sample itself to measure the
+    # reconstructed-photon angular support. This is the geometry the predicted
+    # probe must fall inside to count as potentially reconstructable.
+    photon_acceptance = infer_photon_angular_acceptance(
+        ns_epg,
+        source=f"{period.label} nSidis epgamma data",
+        parent_mask=ns_epg_parent,
+    )
+    log(
+        f"{period.label}: nSidis-derived photon angular acceptance: "
+        f"FT {photon_acceptance.ft_theta_min_deg:.4f}-"
+        f"{photon_acceptance.ft_theta_max_deg:.4f} deg "
+        f"(N={photon_acceptance.ft_count:,}); "
+        f"FD {photon_acceptance.fd_theta_min_deg:.4f}-"
+        f"{photon_acceptance.fd_theta_max_deg:.4f} deg "
+        f"(N={photon_acceptance.fd_count:,})."
+    )
+
     epg_overlap, epg_overlap_summary = event_overlap_masks(
         wagon_epg.raw,
         ns_epg.raw,
@@ -10546,6 +10968,9 @@ def process_nsidis_study_period(
     ns_epg_f = build_epgamma_denominator_features(
         period, ns_epg, tag_min, tag_max, ft_theta_max
     )
+    for _feat in (wagon_epg_f, ns_epg_f):
+        attach_photon_angular_acceptance(_feat, photon_acceptance)
+    #endfor
     wagon_epg_f["electron_p"] = np.asarray(
         electron_momentum_from_p3(wagon_epg.electron_p3),
         dtype=np.float32,
@@ -10560,6 +10985,15 @@ def process_nsidis_study_period(
     )
     ns_epi_f = build_eppi0_exclusivity_features(
         period, ns_epi
+    )
+
+    make_nsidis_photon_acceptance_canvas(
+        period,
+        ns_epg,
+        ns_epg_f,
+        ns_epg_parent,
+        photon_acceptance,
+        outdir,
     )
 
     make_nsidis_epgamma_overlap_canvas(
@@ -10701,6 +11135,9 @@ def process_nsidis_study_period(
         dvcs_f = build_epgamma_denominator_features(
             period, dv_epg, tag_min, tag_max, ft_theta_max
         )
+        for _feat in (pi0_f, dvcs_f):
+            attach_photon_angular_acceptance(_feat, photon_acceptance)
+        #endfor
         del pi_epg, dv_epg
 
         support_values = parse_float_edges(
@@ -10807,6 +11244,8 @@ def process_nsidis_study_period(
         "nsidis_epgamma_path": ns_epg_path,
         "nsidis_eppi0_path": ns_epi_path,
         "overlap_parent_requirement": "electron momentum > 2 GeV",
+        "theta_ep_requirement": f"theta_ep > {THETA_EP_MIN_DEG:g} deg",
+        "photon_angular_acceptance": photon_acceptance.as_dict(),
         "epgamma_overlap": epg_overlap_summary,
         "eppi0_overlap": epi_overlap_summary,
         "eppi0_core_model": core_model,
@@ -11017,6 +11456,24 @@ def process_period(
         ft_theta_max = float(args_dict["ft_theta_max"])
         max_probe_energy = float(args_dict["den_probe_energy_max"])
 
+        # Derive the actual reconstructed-photon angular support directly from
+        # this period's real epgamma data.  detector2=0 is FT, detector2=1 is FD.
+        # These exact observed extrema define where a predicted probe could
+        # physically have been reconstructed.
+        photon_acceptance = infer_photon_angular_acceptance(
+            data_epg,
+            source=f"{period.label} epgamma data",
+        )
+        log(
+            f"{period.label}: photon angular acceptance from data: "
+            f"FT {photon_acceptance.ft_theta_min_deg:.4f}-"
+            f"{photon_acceptance.ft_theta_max_deg:.4f} deg "
+            f"(N={photon_acceptance.ft_count:,}); "
+            f"FD {photon_acceptance.fd_theta_min_deg:.4f}-"
+            f"{photon_acceptance.fd_theta_max_deg:.4f} deg "
+            f"(N={photon_acceptance.fd_count:,})."
+        )
+
         # Reuse aaogen epgamma already resident from Stage I.
         pi0_f = build_epgamma_denominator_features(
             period, epg, tag_min, tag_max, ft_theta_max
@@ -11027,6 +11484,9 @@ def process_period(
         dvcs_f = build_epgamma_denominator_features(
             period, dv_epg, tag_min, tag_max, ft_theta_max
         )
+        for _feat in (pi0_f, data_f, dvcs_f):
+            attach_photon_angular_acceptance(_feat, photon_acceptance)
+        #endfor
         del dv_epg
         gc.collect()
 
@@ -11342,6 +11802,9 @@ def process_period(
                     tag_max=tag_max,
                     ft_theta_max=ft_theta_max,
                     mixed_tag_shift=shift,
+                )
+                attach_photon_angular_acceptance(
+                    mixed_f, photon_acceptance
                 )
                 mixed_diag_rows.extend(
                     run_mixed_shift_diagnostic(
@@ -12629,9 +13092,11 @@ def main() -> int:
             "parallelization": "independent run periods use separate processes",
             "mc_association_output": "internal only; no routine pair-level files are written",
             "detector_region_definition": (
-                "FT-like: theta_pred <= 5.5 deg by default; FD sectors use exact "
+                "Period-specific FT/FD theta support is derived from reconstructed "
+                "real photons using detector2 (0=FT, 1=FD); predicted probes outside "
+                "those observed theta intervals are excluded. FD sectors retain exact "
                 "wrapped phi intervals [330,30), [30,90), [90,150), [150,210), "
-                "[210,270), [270,330)"
+                "[210,270), [270,330)."
             ),
             "kdtree": (
                 "search coordinates use float32; final physical matching cut "
