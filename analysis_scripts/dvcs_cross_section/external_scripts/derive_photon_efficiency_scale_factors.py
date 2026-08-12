@@ -1,123 +1,56 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v038.py
+derive_photon_efficiency_scale_factors_v039.py
 
-Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
-efficiency measurement in CLAS12 RGA.
+Development script for the relative data/MC photon-reconstruction efficiency
+measurement in CLAS12 RGA.
 
-THIS VERSION FORMS A STAGE-III ASSOCIATION-VALIDATION DATA/MC EFFICIENCY REFERENCE
-FOR THE CURRENT WAGON-DERIVED 0.4--2.0 GeV PROBE RANGE.  IT IS NOT YET THE
-FINAL PRODUCTION RESULT OR FINAL STATISTICAL-UNCERTAINTY EXTRACTION.
+CURRENT USER-FACING WORKFLOW
+----------------------------
+1. Denominator composition:
+   real epgamma data are decomposed into exclusive-pi0 missing-photon tags and
+   genuine BH/DVCS epgamma using aaogen and dvcsgen templates.
 
-Stage I validates the exclusive-pi0 tag-and-probe kinematics and derives
-probe-prediction resolution. Stage II studies the real-data denominator with
-local aaogen-pi0 + dvcsgen BH/DVCS template fits, shared-fraction morphing,
-and a dedicated reconstructed-eppi0 data/MC control-validation study. The
-control study is diagnostic in v018: it does not constrain the denominator
-morph nuisances until its data/MC closure is demonstrated. Mixed-data wrong-tag
-samples remain diagnostic stress tests, not nominal fit components.
+2. Photon-efficiency extraction:
+   reconstructed companion photons are associated with those tags in data and
+   MC and the relative efficiency scale factor is formed,
 
-Its purpose is to validate the central tag-and-probe kinematics using the
-exclusive-pi0 aaogen samples:
+       SF_gamma = epsilon_data / epsilon_MC.
 
-    aaogen reconstructed as epgamma:
-        .../bkg_rga_<period>_epgamma_0.40GeV.root
+The old "Stage I" resolution study is no longer a user-visible analysis stage.
+Its only surviving role is an INTERNAL aaogen MC association kernel. Because
+runnum/evnum are not useful identifiers in MC, aaogen epgamma and reconstructed
+eppi0 skims are matched through reconstructed electron/proton Cartesian
+momenta. That association supplies the MC reconstructed-probe numerator. No
+routine Stage-I plots, resolution tables, summaries, or NPZ files are written.
 
-    aaogen reconstructed as eppi0:
-        .../rec_aaogen_norad_<period>_...root
+Data companion-photon association uses exact (runnum, evnum) identity.
 
-Because runnum/evnum are not useful identifiers in the MC, the two files are
-matched through the reconstructed electron and proton Cartesian momenta.
+The current wagon-derived data support the reference extraction only for
+0.4 <= E_probe^pred < 2 GeV. The result therefore remains a PRELIMINARY
+overlap/reference extraction until the loose nSidis-derived data reproduce it
+below 2 GeV and permit extension above 2 GeV.
 
-For every matched epgamma -> eppi0 pair:
+The nominal denominator model remains aaogen pi0 + dvcsgen BH/DVCS. Mixed data
+remain diagnostic-only. In FT, a coarse 0.40--1.20 / 1.20--2.00 GeV diagnostic
+also floats the deterministic mixed-event wrong-photon template as a third
+component with the two-component morph nuisance values held fixed. This does
+not feed the nominal efficiency extraction.
 
-  1. The epgamma photon is treated as the directed tag.
-  2. The missing/probe photon is predicted from four-momentum conservation,
+Routine outputs:
+    output/photon_efficiency/summary/
+    output/photon_efficiency/stage2/
+    output/photon_efficiency/stage3/
 
-         p_probe^pred = p_beam + p_target - p_e - p_p - p_tag .
+Default --plot-mode compact keeps only high-value plots. --plot-mode full
+restores development/debug canvases.
 
-  3. The reconstructed pi0 four-vector is formed directly from the eppi0 tree:
-       * p2_p, p2_theta, p2_phi provide the reconstructed pi0 momentum;
-       * Mh_gammagamma provides the event-by-event reconstructed pi0 mass;
-       * E_pi0 = sqrt(|p_pi0|^2 + Mh_gammagamma^2).
+Typical full-statistics run:
+    python derive_photon_efficiency_scale_factors_v039.py --max-entries 0
 
-  4. The reconstructed companion photon is then obtained without any Trento
-     inversion:
-
-         p_probe^reco = p_pi0^reco - p_tag^reco .
-
-     If the epgamma tag is genuinely one daughter of the reconstructed pi0,
-     this remainder should itself be photon-like:
-         E_probe^reco > 0,
-         (p_probe^reco)^2 ~ 0,
-         E_probe^reco - |p_probe^reco| ~ 0.
-
-  5. Predicted-vs-reconstructed probe residuals and full exclusive eppi0
-     closure diagnostics are written and plotted.
-
-The stored gamma_phi1/2 and open_angle_egamma1/2 branches are retained only as
-optional future diagnostics; they are NOT used to construct the Stage-I probe.
-
-Important schema assumptions in v001
-------------------------------------
-epgamma tree:
-    p1_* = proton
-    p2_* = reconstructed photon/tag
-
-eppi0 tree:
-    p1_* = proton
-    p2_* = reconstructed pi0 momentum
-    Mh_gammagamma = event-by-event reconstructed gamma-gamma mass
-    gamma_phi1/2 and open_angle_egamma1/2 are auxiliary only in v004.
-
-These assumptions are checked with diagnostic closures, not silently treated
-as established facts.  If the actual producer uses another mapping, change
-the adapters in `extract_epgamma()` / `extract_eppi0()` rather than changing
-the physics calculations downstream.
-
-Outputs
--------
-All products go below:
-
-    output/photon_efficiency/stage1/
-
-including:
-    stage1_summary.csv
-    stage1_summary.json
-    <period>/stage1_matched_pairs.npz   (only with --save-npz)
-    <period>/*.png
-
-Dependencies
-------------
-    numpy
-    scipy
-    uproot
-    matplotlib
-
-Typical usage
--------------
-Quick orientation run over the first 500k entries of each relevant file:
-
-    python derive_photon_efficiency_scale_factors_v038.py
-
-Run one period:
-
-    python derive_photon_efficiency_scale_factors_v038.py --period fa18_inb
-
-Run all available entries:
-
-    python derive_photon_efficiency_scale_factors_v038.py --max-entries 0
-
-Use up to eight worker processes (default):
-
-    python derive_photon_efficiency_scale_factors_v038.py --max-entries 0 --workers 8
-
-If the ROOT angles are known explicitly:
-
-    python derive_photon_efficiency_scale_factors_v038.py --angles rad
-
-The Stage-I defaults intentionally require a reconstructed tag energy
-E_tag >= 2 GeV, while no efficiency denominator is formed yet.
+One period:
+    python derive_photon_efficiency_scale_factors_v039.py \
+        --max-entries 0 --period fa18_out
 """
 
 from __future__ import annotations
@@ -6921,23 +6854,25 @@ def run_internal_self_tests(output_root: Path) -> None:
 
 def aggregate_existing_outputs(
     selected: Sequence[PeriodConfig],
-    stage1_outroot: Path,
     stage2_outroot: Path,
-    include_stage2: bool,
-    stage3_outroot: Optional[Path] = None,
-    include_stage3: bool = False,
+    stage3_outroot: Path,
+    include_stage3: bool,
+    summary_outroot: Path,
 ) -> None:
-    """Rebuild aggregate files from existing per-period outputs only."""
+    """Rebuild aggregate denominator/efficiency outputs from per-period files."""
     order = {p.key: i for i, p in enumerate(selected)}
 
-    stage1_summaries: List[Dict[str, object]] = []
-    resolution_rows: List[Dict[str, object]] = []
     stage2_summaries: List[Dict[str, object]] = []
     disc_rows: List[Dict[str, object]] = []
     spread_rows: List[Dict[str, object]] = []
     mixed_rows: List[Dict[str, object]] = []
     shared_rows: List[Dict[str, object]] = []
     closure_rows: List[Dict[str, object]] = []
+    ft_coarse_rows: List[Dict[str, object]] = []
+    ft_coarse_closure_rows: List[Dict[str, object]] = []
+    ft3_rows: List[Dict[str, object]] = []
+    ft3_closure_rows: List[Dict[str, object]] = []
+    ft3_summary_rows: List[Dict[str, object]] = []
     profile_rows: List[Dict[str, object]] = []
     control_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
@@ -6945,58 +6880,38 @@ def aggregate_existing_outputs(
     missing: List[str] = []
 
     for period in selected:
-        p1 = Path(stage1_outroot) / period.key
-        s1 = p1 / "stage1_summary.json"
-        if s1.exists():
-            with s1.open() as f:
-                stage1_summaries.append(json.load(f))
+        p2 = Path(stage2_outroot) / period.key
+        s2 = p2 / "stage2_summary.json"
+        if s2.exists():
+            with s2.open() as f:
+                stage2_summaries.append(json.load(f))
             #endwith
         else:
-            missing.append(str(s1))
+            missing.append(str(s2))
         #endif
 
-        resolution_rows.extend(
-            read_csv_rows(p1 / "probe_resolution_by_energy_region.csv")
+        disc_rows.extend(read_csv_rows(p2 / "denominator_discriminator_fits.csv"))
+        spread_rows.extend(read_csv_rows(p2 / "denominator_discriminator_spread.csv"))
+        mixed_rows.extend(read_csv_rows(p2 / "mixed_component_diagnostics.csv"))
+        shared_rows.extend(read_csv_rows(p2 / "denominator_shared_morphed_fits.csv"))
+        closure_rows.extend(read_csv_rows(p2 / "template_mixture_closure.csv"))
+        ft_coarse_rows.extend(read_csv_rows(p2 / "ft_coarse_shared_morphed_fits.csv"))
+        ft_coarse_closure_rows.extend(
+            read_csv_rows(p2 / "ft_coarse_template_mixture_closure.csv")
         )
-
-        if include_stage2:
-            p2 = Path(stage2_outroot) / period.key
-            s2 = p2 / "stage2_summary.json"
-            if s2.exists():
-                with s2.open() as f:
-                    stage2_summaries.append(json.load(f))
-                #endwith
-            else:
-                missing.append(str(s2))
-            #endif
-
-            disc_rows.extend(
-                read_csv_rows(p2 / "denominator_discriminator_fits.csv")
-            )
-            spread_rows.extend(
-                read_csv_rows(p2 / "denominator_discriminator_spread.csv")
-            )
-            mixed_rows.extend(
-                read_csv_rows(p2 / "mixed_component_diagnostics.csv")
-            )
-            shared_rows.extend(
-                read_csv_rows(p2 / "denominator_shared_morphed_fits.csv")
-            )
-            closure_rows.extend(
-                read_csv_rows(p2 / "template_mixture_closure.csv")
-            )
-            profile_rows.extend(
-                read_csv_rows(p2 / "morph_nuisance_profiles.csv")
-            )
-            control_rows.extend(
-                read_csv_rows(p2 / "pi0_control_validation.csv")
-            )
-        #endif
+        ft3_rows.extend(
+            read_csv_rows(p2 / "ft_coarse_three_component_by_mix_shift.csv")
+        )
+        ft3_closure_rows.extend(
+            read_csv_rows(p2 / "ft_coarse_three_component_closure.csv")
+        )
+        ft3_summary_rows.extend(
+            read_csv_rows(p2 / "ft_coarse_three_component_summary.csv")
+        )
+        profile_rows.extend(read_csv_rows(p2 / "morph_nuisance_profiles.csv"))
+        control_rows.extend(read_csv_rows(p2 / "pi0_control_validation.csv"))
 
         if include_stage3:
-            if stage3_outroot is None:
-                raise ValueError("include_stage3 requires stage3_outroot.")
-            #endif
             p3 = Path(stage3_outroot) / period.key
             s3 = p3 / "stage3_summary.json"
             if s3.exists():
@@ -7014,229 +6929,88 @@ def aggregate_existing_outputs(
 
     if missing:
         raise FileNotFoundError(
-            "--aggregate-only is missing required per-period files:\n  "
-            + "\n  ".join(missing)
+            "--aggregate-only is missing required per-period files:\\n  "
+            + "\\n  ".join(missing)
         )
     #endif
 
-    stage1_summaries.sort(
-        key=lambda r: order.get(str(r.get("period", "")), 999)
-    )
-    write_summary_csv(
-        stage1_summaries,
-        Path(stage1_outroot) / "stage1_summary.csv",
-    )
-
-    if resolution_rows:
-        resolution_rows.sort(
+    def sort_rows(rows: List[Dict[str, object]]) -> None:
+        rows.sort(
             key=lambda r: (
                 order.get(str(r.get("period", "")), 999),
                 str(r.get("region", "")),
                 float(r.get("energy_low_GeV", "nan")),
+                str(r.get("discriminator", "")),
+                str(r.get("mix_shift", "")),
             )
         )
-        write_rows_csv(
-            resolution_rows,
-            Path(stage1_outroot) / "probe_resolution_by_energy_region.csv",
+    #enddef
+
+    stage2_summaries.sort(
+        key=lambda r: order.get(str(r.get("period", "")), 999)
+    )
+    write_summary_csv(stage2_summaries, Path(stage2_outroot) / "stage2_summary.csv")
+
+    for rows, filename in (
+        (disc_rows, "denominator_discriminator_fits.csv"),
+        (spread_rows, "denominator_discriminator_spread.csv"),
+        (mixed_rows, "mixed_component_diagnostics.csv"),
+        (shared_rows, "denominator_shared_morphed_fits.csv"),
+        (closure_rows, "template_mixture_closure.csv"),
+        (ft_coarse_rows, "ft_coarse_shared_morphed_fits.csv"),
+        (ft_coarse_closure_rows, "ft_coarse_template_mixture_closure.csv"),
+        (ft3_rows, "ft_coarse_three_component_by_mix_shift.csv"),
+        (ft3_closure_rows, "ft_coarse_three_component_closure.csv"),
+        (ft3_summary_rows, "ft_coarse_three_component_summary.csv"),
+        (profile_rows, "morph_nuisance_profiles.csv"),
+        (control_rows, "pi0_control_validation.csv"),
+    ):
+        if rows:
+            sort_rows(rows)
+            write_rows_csv(rows, Path(stage2_outroot) / filename)
+        #endif
+    #endfor
+
+    if shared_rows and disc_rows:
+        make_cross_period_stage2_composition_canvas(
+            shared_rows, disc_rows, Path(stage2_outroot)
         )
     #endif
 
-    with (Path(stage1_outroot) / "stage1_summary.json").open("w") as f:
-        json.dump(
-            {
-                "aggregation_mode": "aggregate-only",
-                "period_summaries": stage1_summaries,
-            },
-            f,
-            indent=2,
-            allow_nan=True,
+    if include_stage3 and stage3_rows:
+        sort_rows(stage3_rows)
+        write_rows_csv(
+            stage3_rows,
+            Path(stage3_outroot) / "reference_efficiency_scale_factors.csv",
         )
-    #endwith
+        make_cross_period_stage3_scale_factor_canvas(
+            stage3_rows, Path(stage3_outroot)
+        )
+    #endif
 
-    if include_stage2:
-        stage2_summaries.sort(
+    if include_stage3 and stage3_summaries:
+        stage3_summaries.sort(
             key=lambda r: order.get(str(r.get("period", "")), 999)
         )
         write_summary_csv(
-            stage2_summaries,
-            Path(stage2_outroot) / "stage2_summary.csv",
-        )
-
-        def _sort(rows: List[Dict[str, object]]) -> None:
-            rows.sort(
-                key=lambda r: (
-                    order.get(str(r.get("period", "")), 999),
-                    str(r.get("region", "")),
-                    float(r.get("energy_low_GeV", "nan")),
-                    str(r.get("discriminator", "")),
-                    str(r.get("mix_shift", "")),
-                )
-            )
-        #enddef
-
-        for rows, filename in (
-            (disc_rows, "denominator_discriminator_fits.csv"),
-            (spread_rows, "denominator_discriminator_spread.csv"),
-            (mixed_rows, "mixed_component_diagnostics.csv"),
-            (shared_rows, "denominator_shared_morphed_fits.csv"),
-            (closure_rows, "template_mixture_closure.csv"),
-            (profile_rows, "morph_nuisance_profiles.csv"),
-            (control_rows, "pi0_control_validation.csv"),
-        ):
-            if rows:
-                _sort(rows)
-                write_rows_csv(rows, Path(stage2_outroot) / filename)
-            #endif
-        #endfor
-
-        if closure_rows:
-            make_stage2_template_mixture_closure_canvas(
-                closure_rows,
-                Path(stage2_outroot),
-            )
-        #endif
-
-        with (Path(stage2_outroot) / "stage2_summary.json").open("w") as f:
-            json.dump(
-                {
-                    "aggregation_mode": "aggregate-only",
-                    "period_summaries": stage2_summaries,
-                },
-                f,
-                indent=2,
-                allow_nan=True,
-            )
-        #endwith
-    #endif
-
-    if include_stage3:
-        if stage3_outroot is None:
-            raise ValueError("include_stage3 requires stage3_outroot.")
-        #endif
-        if stage3_rows:
-            stage3_rows.sort(
-                key=lambda r: (
-                    order.get(str(r.get("period", "")), 999),
-                    str(r.get("region", "")),
-                    float(r.get("energy_low_GeV", "nan")),
-                )
-            )
-            write_rows_csv(
-                stage3_rows,
-                Path(stage3_outroot) / "reference_efficiency_scale_factors.csv",
-            )
-        #endif
-
-
-        if stage3_summaries:
-            stage3_summaries.sort(
-                key=lambda r: order.get(str(r.get("period", "")), 999)
-            )
-            write_summary_csv(
-                stage3_summaries,
-                Path(stage3_outroot) / "stage3_summary.csv",
-            )
-            with (Path(stage3_outroot) / "stage3_summary.json").open("w") as f:
-                json.dump(
-                    {
-                        "aggregation_mode": "aggregate-only",
-                        "status": "preliminary wagon-reference extraction",
-                        "period_summaries": stage3_summaries,
-                    },
-                    f,
-                    indent=2,
-                    allow_nan=True,
-                )
-            #endwith
-        #endif
-    #endif
-
-    log("Aggregate-only recovery completed successfully.")
-
-
-# -----------------------------------------------------------------------------
-# Preflight and driver
-# -----------------------------------------------------------------------------
-
-def preflight(
-    periods: Sequence[PeriodConfig],
-    include_stage2: bool,
-    include_stage3: bool = False,
-) -> None:
-    log("Preflight: checking required photon-efficiency input files.")
-    missing: List[str] = []
-
-    for p in periods:
-        checks = [
-            ("epgamma pi0 MC", p.epgamma_pi0_mc),
-            ("eppi0 pi0 MC", p.eppi0_pi0_mc),
-            ("eppi0 data control", p.eppi0_data),
-        ]
-        if include_stage2:
-            checks.extend([
-                ("epgamma data", p.epgamma_data),
-                ("epgamma BH/DVCS MC", p.epgamma_dvcs_mc),
-            ])
-        #endif
-
-        for label, path in checks:
-            if not Path(path).exists():
-                missing.append(f"{p.label}: {label}: {path}")
-            else:
-                log(f"Preflight OK: {p.label}: {label}")
-            #endif
-        #endfor
-    #endfor
-
-    if missing:
-        raise FileNotFoundError(
-            "The following required input files do not exist:\n  " + "\n  ".join(missing)
+            stage3_summaries, Path(stage3_outroot) / "stage3_summary.csv"
         )
     #endif
 
-    if include_stage3:
-        log(
-            "Preflight Stage III: verifying exact data-event identifiers "
-            "(runnum, evnum) before expensive processing."
-        )
-        branch_missing: List[str] = []
-        for p in periods:
-            for label, path in (
-                ("epgamma data", p.epgamma_data),
-                ("eppi0 data", p.eppi0_data),
-            ):
-                with uproot.open(path) as root_file:
-                    found_name, tree = find_tree(root_file, None)
-                    available = set(tree.keys())
-                    absent = [b for b in ("runnum", "evnum") if b not in available]
-                    if absent:
-                        branch_missing.append(
-                            f"{p.label}: {label}: tree '{found_name}' missing "
-                            + ", ".join(absent)
-                        )
-                    else:
-                        log(
-                            f"Preflight Stage III OK: {p.label}: {label}: "
-                            "runnum+evnum available."
-                        )
-                    #endif
-                #endwith
-            #endfor
-        #endfor
-        if branch_missing:
-            raise KeyError(
-                "Stage III exact data matching cannot run because:\n  "
-                + "\n  ".join(branch_missing)
-            )
-        #endif
-    #endif
-
+    make_summary_dashboard(
+        shared_rows,
+        disc_rows,
+        closure_rows,
+        stage3_rows,
+        ft3_summary_rows,
+        Path(summary_outroot),
+    )
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Photon-efficiency development: Stage I kinematics, Stage II "
-            "denominator decomposition, Stage III preliminary reference scale factor."
+            "Photon-efficiency development: denominator composition plus preliminary "
+            "data/MC photon-efficiency scale-factor extraction."
         )
     )
     parser.add_argument(
@@ -7247,8 +7021,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default="output/photon_efficiency/stage1",
-        help="Stage-I output directory.",
+        default="output/photon_efficiency",
+        help="Photon-efficiency output root. Default: output/photon_efficiency.",
     )
     parser.add_argument(
         "--tree",
@@ -7347,10 +7121,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--save-npz",
         action="store_true",
-        help=(
-            "Optionally save the large pair-level stage1_matched_pairs.npz file. "
-            "Disabled by default."
-        ),
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--assoc-mgg-min",
@@ -7387,9 +7158,8 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=5.5,
         help=(
-            "Predicted-probe polar-angle boundary (deg) used for the Stage-Ib "
-            "FT-like versus FD-like resolution diagnostic. FT-like is defined "
-            "as theta_pred <= this value. Default: 5.5."
+            "Predicted-probe polar-angle boundary (deg). FT is theta_pred <= this "
+            "value; FD is above it. Default: 5.5."
         ),
     )
     parser.add_argument(
@@ -7406,10 +7176,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--stage1-only",
         action="store_true",
-        help=(
-            "Run only the existing Stage-I/Stage-Ib validation. By default v008 "
-            "also runs the Stage-II epgamma data-composition study."
-        ),
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--stage2-output-dir",
@@ -7696,8 +7463,6 @@ def process_period(
     kdtree_workers = int(args_dict["kdtree_workers"])
 
     outroot = Path(output_dir)
-    period_dir = outroot / period.key
-    period_dir.mkdir(parents=True, exist_ok=True)
 
     t0 = time.perf_counter()
 
@@ -7773,58 +7538,23 @@ def process_period(
         reco_probe_energy_min=float(args_dict["assoc_probe_energy_min"]),
     )
 
-    res_rows = resolution_rows(
-        period,
-        pair_np,
-        clean,
-        ft_theta_max=float(args_dict["ft_theta_max"]),
-        min_count=int(args_dict["min_resolution_count"]),
-    )
-    write_rows_csv(res_rows, period_dir / "probe_resolution_by_energy_region.csv")
-
-    if bool(args_dict.get("save_npz", False)):
-        np.savez_compressed(
-            period_dir / "stage1_matched_pairs.npz",
-            clean_association=clean,
-            **pair_np,
-        )
-    else:
-        old_npz = period_dir / "stage1_matched_pairs.npz"
-        if old_npz.exists():
-            old_npz.unlink()
-        #endif
-    #endif
-
-    make_plots(
-        period,
-        pair_np,
-        clean,
-        res_rows,
-        period_dir,
-        assoc_mgg_min=float(args_dict["assoc_mgg_min"]),
-        assoc_mgg_max=float(args_dict["assoc_mgg_max"]),
-        assoc_mass2_max=float(args_dict["assoc_remainder_mass2_max"]),
-    )
-
-    summary = summarize_period(
-        period,
-        epg_entries_total=epg_total,
-        eppi0_entries_total=pi_total,
-        epg_loaded=len(epg.tag_energy),
-        eppi0_loaded=len(eppi0.pi0_p),
-        epg_angle_unit=epg.angle_unit,
-        eppi0_angle_unit=eppi0.angle_unit,
-        matches=matches,
-        arrays=pair_np,
-        counters=counters,
-        clean=clean,
-    )
+    mc_association_summary = {
+        "period": period.key,
+        "label": period.label,
+        "aaogen_epgamma_loaded": int(len(epg.tag_energy)),
+        "aaogen_eppi0_loaded": int(len(eppi0.pi0_p)),
+        "accepted_parent_matches": int(len(matches.epg_index)),
+        "accepted_probe_pairs": int(counters["accepted_stage1_pairs"]),
+        "clean_reconstructed_probes": int(np.count_nonzero(clean)),
+        "invalid_pi0_mass": int(counters["invalid_pi0_mass"]),
+        "nonphysical_reco_probe_energy": int(
+            counters["nonphysical_reco_probe_energy"]
+        ),
+    }
     log(
-        f"{period.label}: Stage-I retained pairs = "
-        f"{counters['accepted_stage1_pairs']:,}; "
-        f"invalid Mh_gammagamma = {counters['invalid_pi0_mass']:,}; "
-        f"nonpositive reconstructed remainder energy = "
-        f"{counters['nonphysical_reco_probe_energy']:,}."
+        f"{period.label}: internal MC tag/probe association: "
+        f"{len(matches.epg_index):,} parent matches; "
+        f"{np.count_nonzero(clean):,} clean reconstructed companion probes."
     )
 
     stage2_summary: Optional[Dict[str, object]] = None
@@ -7843,7 +7573,7 @@ def process_period(
     stage3_rows: List[Dict[str, object]] = []
     stage3_summary: Optional[Dict[str, object]] = None
 
-    if not bool(args_dict.get("stage1_only", False)):
+    if True:
         stage2_dir = Path(stage2_output_dir) / period.key
         stage2_dir.mkdir(parents=True, exist_ok=True)
         # Clear stale canvases exactly once BEFORE generating any Stage-II plots.
@@ -7992,10 +7722,12 @@ def process_period(
         )
         write_rows_csv(shared_rows, stage2_dir / "denominator_shared_morphed_fits.csv")
         write_rows_csv(closure_rows, stage2_dir / "template_mixture_closure.csv")
-        make_stage2_template_mixture_closure_canvas(
-            closure_rows,
-            stage2_dir,
-        )
+        if not compact_plot_enabled(args_dict):
+            make_stage2_template_mixture_closure_canvas(
+                closure_rows,
+                stage2_dir,
+            )
+        #endif
 
         ft_coarse_edges = parse_float_edges(
             str(args_dict["ft_coarse_energy_edges"]),
@@ -8039,13 +7771,15 @@ def process_period(
             ft_coarse_closure_rows,
             stage2_dir / "ft_coarse_template_mixture_closure.csv",
         )
-        make_ft_coarse_composition_canvas(
-            period,
-            shared_rows,
-            ft_coarse_rows,
-            ft_coarse_closure_rows,
-            stage2_dir,
-        )
+        if not compact_plot_enabled(args_dict):
+            make_ft_coarse_composition_canvas(
+                period,
+                shared_rows,
+                ft_coarse_rows,
+                ft_coarse_closure_rows,
+                stage2_dir,
+            )
+        #endif
 
 
         log(
@@ -8206,28 +7940,32 @@ def process_period(
         write_rows_csv(ft_coarse_three_component_rows, stage2_dir / "ft_coarse_three_component_by_mix_shift.csv")
         write_rows_csv(ft_coarse_three_component_closure_rows, stage2_dir / "ft_coarse_three_component_closure.csv")
         write_rows_csv(ft_coarse_three_component_summary_rows, stage2_dir / "ft_coarse_three_component_summary.csv")
-        make_ft_coarse_three_component_canvas(
-            period,
-            ft_coarse_three_component_summary_rows,
-            ft_coarse_three_component_closure_rows,
-            stage2_dir,
-        )
+        if not compact_plot_enabled(args_dict):
+            make_ft_coarse_three_component_canvas(
+                period,
+                ft_coarse_three_component_summary_rows,
+                ft_coarse_three_component_closure_rows,
+                stage2_dir,
+            )
+        #endif
 
-        make_stage2_canvases(
-            period,
-            data_f=data_f,
-            pi0_f=pi0_f,
-            dvcs_f=dvcs_f,
-            fit_rows=stage2_rows,
-            spread_rows=stage2_spread_rows,
-            mixed_rows=mixed_diag_rows,
-            outdir=stage2_dir,
-            ft_theta_max=ft_theta_max,
-            max_probe_energy=max_probe_energy,
-            mm2_min=float(args_dict["den_fit_mm2_min"]),
-            mm2_max=float(args_dict["den_fit_mm2_max"]),
-            probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-        )
+        if not compact_plot_enabled(args_dict):
+            make_stage2_canvases(
+                period,
+                data_f=data_f,
+                pi0_f=pi0_f,
+                dvcs_f=dvcs_f,
+                fit_rows=stage2_rows,
+                spread_rows=stage2_spread_rows,
+                mixed_rows=mixed_diag_rows,
+                outdir=stage2_dir,
+                ft_theta_max=ft_theta_max,
+                max_probe_energy=max_probe_energy,
+                mm2_min=float(args_dict["den_fit_mm2_min"]),
+                mm2_max=float(args_dict["den_fit_mm2_max"]),
+                probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+            )
+        #endif
 
         stage2_summary = summarize_stage2(
             period,
@@ -8287,17 +8025,7 @@ def process_period(
                 data_final_lookup = data_mass_shell_lookup.copy()
             #endif
 
-            # Build the existing reconstructed-side Stage-I quantities only for
-            # the selected best candidate. These remain useful diagnostics and
-            # preserve backward-compatible counters.
-            data_stage1_arrays, data_stage1_counters = build_stage1_arrays(
-                period,
-                data_epg,
-                eppi0_data,
-                data_assoc.best_match,
-            )
-
-            # MC uses the already validated e/p kinematic matcher from Stage I.
+            # MC uses the internal aaogen e/p parent matcher.
             mc_any_lookup, mc_clean_lookup = stage1_success_lookup(
                 len(epg.tag_energy),
                 pair_np,
@@ -8335,10 +8063,6 @@ def process_period(
                 stage3_rows,
                 data_match_counters={
                     **data_assoc.counters,
-                    **{
-                        f"stage1_{k}": v
-                        for k, v in data_stage1_counters.items()
-                    },
                     "mass_shell_above_threshold_associations": int(
                         np.count_nonzero(data_mass_shell_lookup)
                     ),
@@ -8384,8 +8108,7 @@ def process_period(
     log(f"{period.label}: total worker wall time = {summary['wall_time_s']:.1f} s.")
 
     return {
-        "summary": summary,
-        "resolution_rows": res_rows,
+        "mc_association_summary": mc_association_summary,
         "stage2_summary": stage2_summary,
         "stage2_rows": stage2_rows,
         "stage2_spread_rows": stage2_spread_rows,
@@ -8639,9 +8362,84 @@ def make_cross_period_stage2_composition_canvas(
 
 
 
+
+def make_cross_period_closure_summary_canvas(
+    closure_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """Worst absolute template-mixture closure bias by period and energy."""
+    if not closure_rows:
+        return
+    #endif
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, 5.8))
+
+    for ax, region, title, ymax in (
+        (axes[0], "FT", "FT", 0.30),
+        (axes[1], "FD_all", "FD all", 0.20),
+    ):
+        for period in PERIODS:
+            grouped: Dict[Tuple[float, float], List[float]] = {}
+            for row in closure_rows:
+                if (
+                    str(row.get("period", "")) != period.key
+                    or str(row.get("region", "")) != region
+                    or int(row.get("fit_success", 0)) != 1
+                ):
+                    continue
+                #endif
+                bias = float(row.get("closure_bias", np.nan))
+                if not np.isfinite(bias):
+                    continue
+                #endif
+                key = (
+                    float(row["energy_low_GeV"]),
+                    float(row["energy_high_GeV"]),
+                )
+                grouped.setdefault(key, []).append(abs(bias))
+            #endfor
+
+            if grouped:
+                keys = sorted(grouped)
+                ax.plot(
+                    [0.5 * (a + b) for a, b in keys],
+                    [max(grouped[k]) for k in keys],
+                    marker="o",
+                    linewidth=1.1,
+                    label=period.label,
+                )
+            #endif
+        #endfor
+
+        ax.axhline(
+            0.01, color="black", linestyle=":", linewidth=1.0, label="1% bias"
+        )
+        ax.axhline(
+            0.05, color="black", linestyle="--", linewidth=0.9,
+            alpha=0.7, label="5% bias"
+        )
+        ax.set_ylim(0.0, ymax)
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel(r"max closure $|\Delta f_{\pi^0}|$")
+        ax.set_title(title)
+        ax.grid(alpha=0.20)
+        ax.legend(fontsize=8, frameon=False)
+    #endfor
+
+    fig.suptitle("RGA denominator-fit template-mixture closure", fontsize=14)
+    safe_finalize_figure(
+        fig,
+        Path(outdir) / "canvas_summary_template_closure.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+
 def make_summary_dashboard(
     stage2_shared_rows: List[Dict[str, object]],
     stage2_discriminator_rows: List[Dict[str, object]],
+    closure_rows: List[Dict[str, object]],
     stage3_rows: List[Dict[str, object]],
     ft_three_component_summary_rows: List[Dict[str, object]],
     outdir: Path,
@@ -8671,6 +8469,10 @@ def make_summary_dashboard(
             stage2_discriminator_rows,
             outdir,
         )
+    #endif
+
+    if closure_rows:
+        make_cross_period_closure_summary_canvas(closure_rows, outdir)
     #endif
 
     if ft_three_component_summary_rows:
@@ -8897,11 +8699,9 @@ def main() -> int:
     outroot.mkdir(parents=True, exist_ok=True)
 
     stage2_outroot = Path(args.stage2_output_dir)
-    if not args.stage1_only:
-        stage2_outroot.mkdir(parents=True, exist_ok=True)
-    #endif
+    stage2_outroot.mkdir(parents=True, exist_ok=True)
     stage3_outroot = Path(args.stage3_output_dir)
-    if not args.stage1_only and not args.skip_stage3:
+    if not args.skip_stage3:
         stage3_outroot.mkdir(parents=True, exist_ok=True)
     #endif
 
@@ -8910,39 +8710,34 @@ def main() -> int:
     if args.aggregate_only:
         aggregate_existing_outputs(
             selected=selected,
-            stage1_outroot=outroot,
             stage2_outroot=stage2_outroot,
-            include_stage2=not args.stage1_only,
             stage3_outroot=stage3_outroot,
-            include_stage3=(not args.stage1_only and not args.skip_stage3),
+            include_stage3=(not args.skip_stage3),
+            summary_outroot=outroot / "summary",
         )
         return 0
     #endif
 
     log(
-        "Directed-tag Stage-I definition: "
+        "Internal MC tag definition: "
         f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
     )
-    if args.stage1_only:
+    if args.skip_stage3:
         log(
-            "Stage-I-only mode: no data/MC efficiency ratio will be formed."
-        )
-    elif args.skip_stage3:
-        log(
-            "Stage III is disabled by --skip-stage3; Stages I/II only."
+            "Efficiency extraction disabled by --skip-stage3; "
+            "denominator-composition study only."
         )
     else:
         log(
-            "Stage III enabled: forming a PRELIMINARY wagon-reference data/MC "
-            "photon-efficiency ratio over the Stage-II supported probe range. "
-            "This is an overlap-validation result, not the final production result."
+            "Efficiency extraction enabled: forming a PRELIMINARY wagon-reference "
+            "data/MC photon-efficiency ratio below 2 GeV."
         )
     #endif
 
     preflight(
         selected,
-        include_stage2=not args.stage1_only,
-        include_stage3=(not args.stage1_only and not args.skip_stage3),
+        include_stage2=True,
+        include_stage3=(not args.skip_stage3),
     )
 
     n_processes = min(requested_workers, len(selected))
@@ -8954,10 +8749,10 @@ def main() -> int:
 
     provenance = {
         "script": Path(__file__).name,
-        "stage": 3 if (not args.stage1_only and not args.skip_stage3) else (2 if not args.stage1_only else 1),
+        "stage": 3 if not args.skip_stage3 else 2,
         "purpose": (
-            "Stage I aaogen resolution + Stage II real-data denominator composition + "
-            "Stage III preliminary wagon-reference efficiency scale factor"
+            "internal aaogen MC tag/probe association + real-data denominator composition + "
+            "preliminary wagon-reference efficiency scale factor"
         ),
         "arguments": vars(args),
         "effective_period_workers": n_processes,
@@ -8973,7 +8768,7 @@ def main() -> int:
         },
         "performance_notes": {
             "parallelization": "independent run periods use separate processes",
-            "pair_level_npz": "disabled by default; enable with --save-npz",
+            "mc_association_output": "internal only; no routine pair-level files are written",
             "detector_region_definition": (
                 "FT-like: theta_pred <= 5.5 deg by default; FD sectors use exact "
                 "wrapped phi intervals [330,30), [30,90), [90,150), [150,210), "
@@ -8998,7 +8793,7 @@ def main() -> int:
             ),
             "stage3_reference_model": (
                 "Data numerator uses exact runnum+evnum epgamma-to-eppi0 association; "
-                "MC numerator uses the validated e/p kinematic matcher. Data denominator "
+                "MC numerator uses the internal aaogen e/p kinematic matcher. Data denominator "
                 "is fitted Stage-II pi0 fraction times tag count; aaogen denominator is "
                 "the corresponding exclusive-pi0 tag count. Stage-III uncertainties are "
                 "provisional counting-only diagnostics pending event-level bootstrap."
@@ -9015,8 +8810,7 @@ def main() -> int:
     }
 
     args_dict = vars(args).copy()
-    summaries: List[Dict[str, object]] = []
-    all_resolution_rows: List[Dict[str, object]] = []
+    mc_association_summaries: List[Dict[str, object]] = []
     stage2_summaries: List[Dict[str, object]] = []
     all_stage2_rows: List[Dict[str, object]] = []
     all_stage2_spread_rows: List[Dict[str, object]] = []
@@ -9041,8 +8835,9 @@ def main() -> int:
                 str(outroot),
                 str(stage2_outroot),
             )
-            summaries.append(result["summary"])
-            all_resolution_rows.extend(result["resolution_rows"])
+            mc_association_summaries.append(
+                result["mc_association_summary"]
+            )
             if result["stage2_summary"] is not None:
                 stage2_summaries.append(result["stage2_summary"])
                 all_stage2_rows.extend(result["stage2_rows"])
@@ -9114,38 +8909,9 @@ def main() -> int:
     #endif
 
     order = {p.key: i for i, p in enumerate(selected)}
-    summaries.sort(key=lambda row: order[str(row["period"])])
+    # Internal MC association produces no standalone aggregate files.
 
-    write_summary_csv(summaries, outroot / "stage1_summary.csv")
-    if all_resolution_rows:
-        region_order = {"all": 0, "FT_like": 1, **{f"FD_S{s}": s + 1 for s in range(1, 7)}}
-        period_order = {p.key: i for i, p in enumerate(selected)}
-        all_resolution_rows.sort(
-            key=lambda r: (
-                period_order.get(str(r["period"]), 999),
-                region_order.get(str(r["region"]), 999),
-                float(r["energy_low_GeV"]),
-            )
-        )
-        write_rows_csv(
-            all_resolution_rows,
-            outroot / "probe_resolution_by_energy_region.csv",
-        )
-    #endif
-
-    with (outroot / "stage1_summary.json").open("w") as f:
-        json.dump(
-            {
-                "provenance": provenance,
-                "period_summaries": summaries,
-            },
-            f,
-            indent=2,
-            allow_nan=True,
-        )
-    #endwith
-
-    if not args.stage1_only:
+    if True:
         stage2_summaries.sort(
             key=lambda row: order.get(str(row["period"]), 999)
         )
@@ -9320,7 +9086,7 @@ def main() -> int:
             )
         #endwith
 
-    if not args.stage1_only and not args.skip_stage3:
+    if not args.skip_stage3:
         order = {p.key: i for i, p in enumerate(selected)}
         if all_stage3_rows:
             region_order3 = {
@@ -9357,6 +9123,7 @@ def main() -> int:
         make_summary_dashboard(
             all_shared_rows,
             all_stage2_rows,
+            all_closure_rows,
             all_stage3_rows,
             all_ft_coarse_three_component_summary_rows,
             summary_outroot,
@@ -9381,10 +9148,10 @@ def main() -> int:
         #endif
 
     log(f"Done. Stage-I outputs are in {outroot}.")
-    if not args.stage1_only:
+    if True:
         log(f"Stage-II outputs are in {stage2_outroot}.")
     #endif
-    if not args.stage1_only and not args.skip_stage3:
+    if not args.skip_stage3:
         log(f"Stage-III reference outputs are in {stage3_outroot}.")
     #endif
     return 0
