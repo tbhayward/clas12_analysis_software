@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v037.py
+derive_photon_efficiency_scale_factors_v038.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v037.py
+    python derive_photon_efficiency_scale_factors_v038.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v037.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v038.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v037.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v038.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v037.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v038.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v037.py --angles rad
+    python derive_photon_efficiency_scale_factors_v038.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -5873,12 +5873,14 @@ def make_stage3_canvases(
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
+    # Needed by the scale-factor canvas in BOTH compact and full modes.
+    ft = _stage3_rows_for_region(rows, "FT")
+
     if not compact:
         # ------------------------------------------------------------------
         # 1. Efficiencies: FT and FD sectors.
         # ------------------------------------------------------------------
         fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
-        ft = _stage3_rows_for_region(rows, "FT")
         if ft:
             x = np.asarray([r["energy_center_GeV"] for r in ft], dtype=float)
             axes[0].errorbar(
