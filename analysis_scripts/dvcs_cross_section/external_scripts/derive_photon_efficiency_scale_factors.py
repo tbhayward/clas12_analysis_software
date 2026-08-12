@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v053.py
+derive_photon_efficiency_scale_factors_v054.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v053.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v054.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v053.py \
+    python derive_photon_efficiency_scale_factors_v054.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v053.py \
+    python derive_photon_efficiency_scale_factors_v054.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -418,6 +418,62 @@ class EPPi0Sample:
     angle_unit: str
 
 
+def subset_event_mapping(
+    mapping: Dict[str, object],
+    selector: np.ndarray,
+    n_entries: int,
+    *,
+    preserve_metadata: bool,
+) -> Dict[str, object]:
+    """
+    Safely subset a mixed event/metadata mapping.
+
+    Event-length arrays are sliced by ``selector``.
+    Scalar and other non-event metadata are either preserved verbatim or
+    omitted according to ``preserve_metadata``.
+
+    This is required for denominator feature stores because they intentionally
+    contain scalar fixed-acceptance metadata alongside per-event arrays.
+    """
+    sel = np.asarray(selector)
+    out: Dict[str, object] = {}
+
+    for key, value in mapping.items():
+        arr = np.asarray(value)
+
+        if arr.ndim >= 1 and arr.shape[0] == int(n_entries):
+            out[key] = np.asarray(arr[sel])
+        elif preserve_metadata:
+            # Keep true metadata exactly.  Scalars are converted back to their
+            # Python/NumPy scalar form where possible so existing float(...)
+            # consumers behave identically.
+            if arr.ndim == 0:
+                out[key] = arr.item()
+            else:
+                out[key] = value
+            #endif
+        #endif
+    #endfor
+
+    return out
+
+
+def subset_feature_store(
+    features: Dict[str, object],
+    selector: np.ndarray,
+    n_entries: int,
+) -> Dict[str, object]:
+    """
+    Subset per-event feature arrays while preserving scalar detector metadata.
+    """
+    return subset_event_mapping(
+        features,
+        selector,
+        n_entries,
+        preserve_metadata=True,
+    )
+
+
 def subset_epgamma_sample(
     sample: EPGammaSample,
     selector: np.ndarray,
@@ -429,11 +485,12 @@ def subset_epgamma_sample(
         proton_p3=np.asarray(sample.proton_p3[sel]),
         tag_p3=np.asarray(sample.tag_p3[sel]),
         tag_energy=np.asarray(sample.tag_energy[sel]),
-        raw={
-            key: np.asarray(value[sel])
-            for key, value in sample.raw.items()
-            if len(value) == len(sample.tag_energy)
-        },
+        raw=subset_event_mapping(
+            sample.raw,
+            sel,
+            len(sample.tag_energy),
+            preserve_metadata=False,
+        ),
         angle_unit=sample.angle_unit,
     )
 
@@ -451,11 +508,12 @@ def subset_eppi0_sample(
         pi0_p=np.asarray(sample.pi0_p[sel]),
         pi0_mass=np.asarray(sample.pi0_mass[sel]),
         pi0_theta=np.asarray(sample.pi0_theta[sel]),
-        raw={
-            key: np.asarray(value[sel])
-            for key, value in sample.raw.items()
-            if len(value) == len(sample.pi0_mass)
-        },
+        raw=subset_event_mapping(
+            sample.raw,
+            sel,
+            len(sample.pi0_mass),
+            preserve_metadata=False,
+        ),
         angle_unit=sample.angle_unit,
     )
 
@@ -11702,16 +11760,38 @@ def process_nsidis_study_period(
         wagon_epg_selected = subset_epgamma_sample(
             wagon_epg, wagon_idx
         )
-        ns_feat_selected = {
-            key: np.asarray(value[ns_idx])
-            for key, value in ns_epg_f.items()
-            if len(value) == len(ns_epg.tag_energy)
-        }
-        wagon_feat_selected = {
-            key: np.asarray(value[wagon_idx])
-            for key, value in wagon_epg_f.items()
-            if len(value) == len(wagon_epg.tag_energy)
-        }
+        ns_feat_selected = subset_feature_store(
+            ns_epg_f,
+            ns_idx,
+            len(ns_epg.tag_energy),
+        )
+        wagon_feat_selected = subset_feature_store(
+            wagon_epg_f,
+            wagon_idx,
+            len(wagon_epg.tag_energy),
+        )
+
+        # Critical invariant: selected feature stores must retain the fixed
+        # FT/FD acceptance metadata.  Fail here, before the expensive exact
+        # eppi0 association, if a future refactor drops it.
+        for selected_name, selected_feat in (
+            ("nSidis", ns_feat_selected),
+            ("wagon", wagon_feat_selected),
+        ):
+            ft_min, ft_max, fd_min, fd_max = feature_angular_acceptance(
+                selected_feat,
+                ft_theta_max,
+            )
+            expected = (2.4, 5.0, 6.0, 35.0)
+            observed = (ft_min, ft_max, fd_min, fd_max)
+            if not np.allclose(observed, expected, rtol=0.0, atol=1.0e-12):
+                raise RuntimeError(
+                    f"{period.label}: {selected_name} selected feature store "
+                    f"lost fixed photon angular acceptance; "
+                    f"observed={observed}, expected={expected}."
+                )
+            #endif
+        #endfor
 
         log(
             f"{period.label}: exact eppi0 association on "
