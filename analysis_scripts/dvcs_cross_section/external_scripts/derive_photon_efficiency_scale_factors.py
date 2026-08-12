@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v043.py
+derive_photon_efficiency_scale_factors_v045.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -42,14 +42,15 @@ Routine outputs:
     output/photon_efficiency/stage2/
     output/photon_efficiency/stage3/
 
-Default --plot-mode compact keeps only high-value plots. --plot-mode full
-restores development/debug canvases.
+Default --diagnostics selection runs only the focused discriminator-selection
+study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
+suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v043.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v045.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v043.py \
+    python derive_photon_efficiency_scale_factors_v045.py \
         --max-entries 0 --period fa18_out
 """
 
@@ -75,7 +76,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import uproot
 from scipy.spatial import cKDTree
-from scipy.optimize import minimize, minimize_scalar
+from scipy.optimize import brentq, minimize, minimize_scalar
 from scipy.ndimage import gaussian_filter1d, shift as ndimage_shift
 
 
@@ -2640,6 +2641,40 @@ def fit_shared_morphed_composition(
         dtype=float,
     )
 
+    # The coordinate-profile sweeps revisit the same discrete morph states
+    # many times. Cache each component template by its exact nuisance pair.
+    morph_cache: Dict[
+        Tuple[str, str, float, float],
+        np.ndarray,
+    ] = {}
+
+    def cached_morph(
+        name: str,
+        component: str,
+        hist: np.ndarray,
+        shift_bins: float,
+        sigma_bins: float,
+    ) -> np.ndarray:
+        key = (
+            str(name),
+            str(component),
+            round(float(shift_bins), 12),
+            round(float(sigma_bins), 12),
+        )
+        cached = morph_cache.get(key)
+        if cached is not None:
+            return cached
+        #endif
+
+        value = morph_template_second_axis(
+            hist,
+            float(shift_bins),
+            float(sigma_bins),
+        )
+        morph_cache[key] = value
+        return value
+    #enddef
+
     def morphed_templates(
         state: Dict[str, float],
     ) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
@@ -2647,15 +2682,25 @@ def fit_shared_morphed_composition(
         td: Dict[str, np.ndarray] = {}
         for name in names:
             _, hp, hv = histograms[name]
-            tp[name] = morph_template_second_axis(
+
+            pi0_shift = state[f"{name}_pi0_shift_bins"]
+            pi0_sigma = state[f"{name}_pi0_sigma_bins"]
+            dvcs_shift = state[f"{name}_dvcs_shift_bins"]
+            dvcs_sigma = state[f"{name}_dvcs_sigma_bins"]
+
+            tp[name] = cached_morph(
+                name,
+                "pi0",
                 hp,
-                state[f"{name}_pi0_shift_bins"],
-                state[f"{name}_pi0_sigma_bins"],
+                pi0_shift,
+                pi0_sigma,
             )
-            td[name] = morph_template_second_axis(
+            td[name] = cached_morph(
+                name,
+                "dvcs",
                 hv,
-                state[f"{name}_dvcs_shift_bins"],
-                state[f"{name}_dvcs_sigma_bins"],
+                dvcs_shift,
+                dvcs_sigma,
             )
         #endfor
         return tp, td
@@ -3825,7 +3870,8 @@ def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.nda
                                    ptmiss_max: float, ptmiss_bins: int, theta_max: float, theta_bins: int,
                                    min_data_count: int, min_template_count: int, nuisance_shift_prior: float,
                                    nuisance_sigma_prior: float, max_shift_bins: float, max_sigma_bins: float,
-                                   closure_truth_fractions: Sequence[float]) -> Tuple[List[Dict[str,object]], List[Dict[str,object]]]:
+                                   closure_truth_fractions: Sequence[float],
+                                   run_closure: bool = True) -> Tuple[List[Dict[str,object]], List[Dict[str,object]]]:
     edges=stage2_energy_edges(max_probe_energy); regions=["all","FT","FD_all"]+[f"FD_S{s}" for s in range(1,7)]
     rows=[]
     closure_rows: List[Dict[str,object]] = []
@@ -3861,7 +3907,7 @@ def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.nda
             # Stage-II shared fit from its normal initialization.  Restrict this
             # to FT and FD_all to directly test the two production topologies
             # without multiplying the sector-level runtime.
-            if region in ("FT", "FD_all") and hist and fit.success:
+            if run_closure and region in ("FT", "FD_all") and hist and fit.success:
                 closure_rows.extend(
                     build_stage2_template_mixture_closure(
                         period,
@@ -3893,16 +3939,25 @@ def _profile_fraction_for_templates(
     dvcs_templates: Dict[str, np.ndarray],
 ) -> Tuple[float, float]:
     """
-    Profile only the shared pi0 fraction for fixed morphed templates.
+    Profile the shared pi0 fraction for fixed templates.
 
-    A bounded one-dimensional minimization is substantially faster and more
-    robust here than running L-BFGS-B on a logit parameter thousands of times
-    during nuisance scans.
+    The extended-Poisson objective is convex in the single mixture fraction f.
+    Instead of repeatedly evaluating it through minimize_scalar, solve the
+    monotonic score equation exactly with Brent's method.  This is materially
+    faster because this function is called thousands of times during morph
+    coordinate profiling.
+
+    The previous bounded minimize_scalar implementation remains as a numerical
+    fallback for pathological inputs.  The objective, allowed fraction range,
+    and returned NLL are unchanged.
     """
     names = [n for n in STAGE2_DRIVER_DISCRIMINATORS if n in data_hists]
     if not names:
         return float("nan"), float("nan")
     #endif
+
+    f_lo = 3.0e-4
+    f_hi = 1.0 - 3.0e-4
 
     prepared = []
     for name in names:
@@ -3910,30 +3965,83 @@ def _profile_fraction_for_templates(
         tp = np.asarray(pi0_templates[name], dtype=float).ravel()
         td = np.asarray(dvcs_templates[name], dtype=float).ravel()
         nd = float(np.sum(data))
-        prepared.append((data, tp, td, nd))
+        delta = tp - td
+        prepared.append((data, tp, td, delta, nd))
     #endfor
 
     def objective_f(f: float) -> float:
-        ff = float(np.clip(f, 3.0e-4, 1.0 - 3.0e-4))
+        ff = float(np.clip(f, f_lo, f_hi))
         total = 0.0
-        for data, tp, td, nd in prepared:
-            mu = np.clip(
-                nd * (ff * tp + (1.0 - ff) * td),
-                1.0e-12,
-                None,
-            )
+        for data, tp, td, delta, nd in prepared:
+            shape = td + ff * delta
+            mu = np.clip(nd * shape, 1.0e-12, None)
             total += float(np.sum(mu - data * np.log(mu))) / len(prepared)
         #endfor
-        return total
+        return float(total)
     #enddef
 
-    result = minimize_scalar(
-        objective_f,
-        bounds=(3.0e-4, 1.0 - 3.0e-4),
-        method="bounded",
-        options={"xatol": 1.0e-7, "maxiter": 120},
-    )
-    return float(result.x), float(result.fun)
+    def score_f(f: float) -> float:
+        """
+        d(NLL)/df.  For mu_i = N [td_i + f (tp_i-td_i)],
+
+            dNLL/df = sum_i N delta_i [1 - data_i/mu_i].
+
+        The derivative is monotonic nondecreasing because the second derivative
+        is positive semidefinite, so a bracketed root is the unique interior
+        minimum.
+        """
+        ff = float(np.clip(f, f_lo, f_hi))
+        total = 0.0
+        for data, tp, td, delta, nd in prepared:
+            shape = td + ff * delta
+            mu = np.clip(nd * shape, 1.0e-12, None)
+            total += float(
+                np.sum(nd * delta * (1.0 - data / mu))
+            ) / len(prepared)
+        #endfor
+        return float(total)
+    #enddef
+
+    try:
+        score_lo = score_f(f_lo)
+        score_hi = score_f(f_hi)
+
+        if not np.isfinite(score_lo) or not np.isfinite(score_hi):
+            raise FloatingPointError("non-finite profile score")
+        #endif
+
+        # Convex objective: if the derivative already has one sign across the
+        # interval, the minimum is at the corresponding boundary.
+        if score_lo >= 0.0:
+            f_best = f_lo
+        elif score_hi <= 0.0:
+            f_best = f_hi
+        else:
+            f_best = float(
+                brentq(
+                    score_f,
+                    f_lo,
+                    f_hi,
+                    xtol=1.0e-10,
+                    rtol=1.0e-12,
+                    maxiter=80,
+                )
+            )
+        #endif
+
+        return float(f_best), objective_f(f_best)
+
+    except Exception:
+        # Conservative fallback: preserve the prior implementation if the
+        # score equation is numerically pathological for any unexpected input.
+        result = minimize_scalar(
+            objective_f,
+            bounds=(f_lo, f_hi),
+            method="bounded",
+            options={"xatol": 1.0e-7, "maxiter": 120},
+        )
+        return float(result.x), float(result.fun)
+    #endtry
 
 
 
@@ -4534,6 +4642,642 @@ def shared_driver_projection(
         raw_dvcs_component,
     )
 
+
+
+
+SELECTION_CANDIDATE_MODELS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
+    ("mx2_x_ptmiss", ("mx2_ep_x_pTmiss",)),
+    ("mx2_x_theta_gg", ("mx2_ep_x_theta_gg",)),
+    (
+        "shared_ptmiss_theta",
+        ("mx2_ep_x_pTmiss", "mx2_ep_x_theta_gg"),
+    ),
+)
+
+
+def run_stage2_candidate_model_study(
+    period: PeriodConfig,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    support_probe_m2_max: float,
+    mm2_bins_2d: int,
+    probe_m2_bins_2d: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+    min_data_count: int,
+    min_template_count: int,
+    nuisance_shift_prior: float,
+    nuisance_sigma_prior: float,
+    max_shift_bins: float,
+    max_sigma_bins: float,
+) -> List[Dict[str, object]]:
+    """
+    Region-specific denominator-model selection study.
+
+    Candidate models are evaluated only for FT and FD_all.  They are
+    DIAGNOSTIC and do not feed Stage III in v045.
+
+    Crucially, M_probe^2 is not one of the candidate production drivers here.
+    It remains available as a high-resolution diagnostic.
+    """
+    rows: List[Dict[str, object]] = []
+    edges = stage2_energy_edges(max_probe_energy)
+
+    for region in ("FT", "FD_all"):
+        for ib in range(len(edges) - 1):
+            elo = float(edges[ib])
+            ehi = float(edges[ib + 1])
+
+            masks = {
+                key: stage2_fit_mask(
+                    feat,
+                    region,
+                    ft_theta_max,
+                    elo,
+                    ehi,
+                    mm2_min,
+                    mm2_max,
+                    support_probe_m2_max,
+                )
+                for key, feat in (
+                    ("data", data_f),
+                    ("pi0", pi0_f),
+                    ("dvcs", dvcs_f),
+                )
+            }
+
+            for model_name, drivers in SELECTION_CANDIDATE_MODELS:
+                hist: Dict[
+                    str,
+                    Tuple[np.ndarray, np.ndarray, np.ndarray],
+                ] = {}
+
+                for disc in drivers:
+                    if not discriminator_available(
+                        disc, data_f, pi0_f, dvcs_f
+                    ):
+                        continue
+                    #endif
+
+                    hd = histogram_for_discriminator(
+                        disc,
+                        data_f,
+                        masks["data"],
+                        mm2_min=mm2_min,
+                        mm2_max=mm2_max,
+                        probe_m2_max=support_probe_m2_max,
+                        mm2_bins_2d=mm2_bins_2d,
+                        probe_m2_bins_2d=probe_m2_bins_2d,
+                        bins_1d=90,
+                        ptmiss_max=ptmiss_max,
+                        ptmiss_bins=ptmiss_bins,
+                        theta_max=theta_max,
+                        theta_bins=theta_bins,
+                    )
+                    hp = histogram_for_discriminator(
+                        disc,
+                        pi0_f,
+                        masks["pi0"],
+                        mm2_min=mm2_min,
+                        mm2_max=mm2_max,
+                        probe_m2_max=support_probe_m2_max,
+                        mm2_bins_2d=mm2_bins_2d,
+                        probe_m2_bins_2d=probe_m2_bins_2d,
+                        bins_1d=90,
+                        ptmiss_max=ptmiss_max,
+                        ptmiss_bins=ptmiss_bins,
+                        theta_max=theta_max,
+                        theta_bins=theta_bins,
+                    )
+                    hv = histogram_for_discriminator(
+                        disc,
+                        dvcs_f,
+                        masks["dvcs"],
+                        mm2_min=mm2_min,
+                        mm2_max=mm2_max,
+                        probe_m2_max=support_probe_m2_max,
+                        mm2_bins_2d=mm2_bins_2d,
+                        probe_m2_bins_2d=probe_m2_bins_2d,
+                        bins_1d=90,
+                        ptmiss_max=ptmiss_max,
+                        ptmiss_bins=ptmiss_bins,
+                        theta_max=theta_max,
+                        theta_bins=theta_bins,
+                    )
+
+                    if (
+                        np.sum(hd) >= min_data_count
+                        and np.sum(hp) >= min_template_count
+                        and np.sum(hv) >= min_template_count
+                    ):
+                        hist[disc] = (hd, hp, hv)
+                    #endif
+                #endfor
+
+                row: Dict[str, object] = {
+                    "period": period.key,
+                    "label": period.label,
+                    "region": region,
+                    "energy_low_GeV": elo,
+                    "energy_high_GeV": ehi,
+                    "energy_center_GeV": 0.5 * (elo + ehi),
+                    "candidate_model": model_name,
+                    "drivers": "+".join(drivers),
+                    "candidate_is_production": 0,
+                }
+
+                if len(hist) != len(drivers):
+                    row.update({
+                        "fit_success": 0,
+                        "fit_message": "required driver unavailable or insufficient statistics",
+                        "pi0_fraction": float("nan"),
+                        "deviance_per_ndof": float("nan"),
+                        "poisson_deviance": float("nan"),
+                        "ndof": 0,
+                    })
+                    rows.append(row)
+                    continue
+                #endif
+
+                fit = fit_shared_morphed_composition(
+                    hist,
+                    {},
+                    nuisance_shift_prior,
+                    nuisance_sigma_prior,
+                    max_shift_bins,
+                    max_sigma_bins,
+                )
+                row.update({
+                    "fit_success": int(fit.success),
+                    "fit_message": fit.message,
+                    "pi0_fraction": float(fit.pi0_fraction),
+                    "dvcs_fraction": (
+                        1.0 - float(fit.pi0_fraction)
+                        if np.isfinite(fit.pi0_fraction)
+                        else float("nan")
+                    ),
+                    "poisson_deviance": float(fit.poisson_deviance),
+                    "ndof": int(fit.ndof),
+                    "deviance_per_ndof": (
+                        float(fit.poisson_deviance / fit.ndof)
+                        if fit.ndof else float("nan")
+                    ),
+                })
+                if fit.nuisance:
+                    row.update(fit.nuisance)
+                #endif
+                rows.append(row)
+            #endfor
+        #endfor
+    #endfor
+
+    return rows
+
+
+def _component_projection_from_independent_fit(
+    hd: np.ndarray,
+    hp: np.ndarray,
+    hv: np.ndarray,
+    fit: TwoComponentFitResult,
+    axis: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Project data and fitted raw-template components onto one 2D axis."""
+    data = np.sum(hd, axis=axis)
+    pshape = np.sum(hp, axis=axis)
+    dshape = np.sum(hv, axis=axis)
+
+    pshape = (
+        pshape / np.sum(pshape)
+        if np.sum(pshape) > 0 else pshape
+    )
+    dshape = (
+        dshape / np.sum(dshape)
+        if np.sum(dshape) > 0 else dshape
+    )
+
+    pi0_c = float(fit.pi0_yield) * pshape
+    dvcs_c = float(fit.dvcs_yield) * dshape
+    return data, pi0_c, dvcs_c, pi0_c + dvcs_c
+
+
+def make_selection_driver_fit_canvases(
+    period: PeriodConfig,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    outdir: Path,
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    support_probe_m2_max: float,
+    mm2_bins: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+    narrow_probe_m2_max: float,
+    narrow_probe_m2_bins: int,
+    min_data_count: int,
+    min_template_count: int,
+) -> None:
+    """
+    Show the shapes that actually distinguish the two components.
+
+    For every nominal energy bin and for FT/FD_all separately:
+      column 1: M_X^2(ep) projection from the M_X^2 x pTmiss fit
+      column 2: pTmiss projection from that same fit
+      column 3: M_X^2(ep) projection from the M_X^2 x theta_gg fit
+      column 4: theta_gg projection from that same fit
+
+    A separate narrow-core M_probe^2 canvas is also written.  This directly
+    addresses the fact that previous canvases hid M_X^2 by projecting only onto
+    the second axis.
+    """
+    edges = stage2_energy_edges(max_probe_energy)
+
+    for region in ("FT", "FD_all"):
+        nrows = len(edges) - 1
+        fig, axes = plt.subplots(
+            nrows,
+            4,
+            figsize=(19.0, max(9.0, 2.65 * nrows)),
+            squeeze=False,
+        )
+
+        fig_m2, axes_m2 = plt.subplots(
+            nrows,
+            1,
+            figsize=(8.8, max(8.0, 2.45 * nrows)),
+            squeeze=False,
+        )
+
+        for ib in range(nrows):
+            elo = float(edges[ib])
+            ehi = float(edges[ib + 1])
+
+            masks = {
+                key: stage2_fit_mask(
+                    feat,
+                    region,
+                    ft_theta_max,
+                    elo,
+                    ehi,
+                    mm2_min,
+                    mm2_max,
+                    support_probe_m2_max,
+                )
+                for key, feat in (
+                    ("data", data_f),
+                    ("pi0", pi0_f),
+                    ("dvcs", dvcs_f),
+                )
+            }
+
+            for pair_index, disc in enumerate(
+                ("mx2_ep_x_pTmiss", "mx2_ep_x_theta_gg")
+            ):
+                hd = histogram_for_discriminator(
+                    disc, data_f, masks["data"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    probe_m2_max=support_probe_m2_max,
+                    mm2_bins_2d=mm2_bins,
+                    probe_m2_bins_2d=narrow_probe_m2_bins,
+                    bins_1d=90,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max,
+                    theta_bins=theta_bins,
+                )
+                hp = histogram_for_discriminator(
+                    disc, pi0_f, masks["pi0"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    probe_m2_max=support_probe_m2_max,
+                    mm2_bins_2d=mm2_bins,
+                    probe_m2_bins_2d=narrow_probe_m2_bins,
+                    bins_1d=90,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max,
+                    theta_bins=theta_bins,
+                )
+                hv = histogram_for_discriminator(
+                    disc, dvcs_f, masks["dvcs"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    probe_m2_max=support_probe_m2_max,
+                    mm2_bins_2d=mm2_bins,
+                    probe_m2_bins_2d=narrow_probe_m2_bins,
+                    bins_1d=90,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max,
+                    theta_bins=theta_bins,
+                )
+
+                fit = fit_two_component_poisson(hd, hp, hv)
+                ax_mx = axes[ib, 2 * pair_index]
+                ax_second = axes[ib, 2 * pair_index + 1]
+
+                if not fit.success:
+                    for ax in (ax_mx, ax_second):
+                        ax.text(
+                            0.5, 0.5, "fit unavailable",
+                            transform=ax.transAxes,
+                            ha="center", va="center",
+                        )
+                    #endfor
+                    continue
+                #endif
+
+                # Mx2 is axis 0, so sum over axis 1.
+                d_mx, p_mx, v_mx, m_mx = (
+                    _component_projection_from_independent_fit(
+                        hd, hp, hv, fit, axis=1
+                    )
+                )
+                mx_edges = np.linspace(mm2_min, mm2_max, mm2_bins + 1)
+                mx_centers = 0.5 * (mx_edges[:-1] + mx_edges[1:])
+
+                # Second coordinate is axis 1, so sum over axis 0.
+                d_2, p_2, v_2, m_2 = (
+                    _component_projection_from_independent_fit(
+                        hd, hp, hv, fit, axis=0
+                    )
+                )
+
+                if disc == "mx2_ep_x_pTmiss":
+                    second_edges = np.linspace(
+                        0.0, ptmiss_max, ptmiss_bins + 1
+                    )
+                    second_label = r"$p_{T,\mathrm{miss}}$ (GeV)"
+                    second_xlim = (
+                        (0.0, 0.30)
+                        if region == "FT"
+                        else (0.0, ptmiss_max)
+                    )
+                    model_label = r"$M_X^2\otimes p_{T,\mathrm{miss}}$"
+                else:
+                    second_edges = np.linspace(
+                        0.0, theta_max, theta_bins + 1
+                    )
+                    second_label = r"$\theta_{\gamma\gamma}$ (deg)"
+                    second_xlim = (0.0, theta_max)
+                    model_label = r"$M_X^2\otimes\theta_{\gamma\gamma}$"
+                #endif
+                second_centers = 0.5 * (
+                    second_edges[:-1] + second_edges[1:]
+                )
+
+                for ax, xx, dd, pp, vv, mm, xlabel in (
+                    (
+                        ax_mx, mx_centers, d_mx, p_mx, v_mx, m_mx,
+                        r"$M_X^2(ep)$ (GeV$^2$)",
+                    ),
+                    (
+                        ax_second, second_centers, d_2, p_2, v_2, m_2,
+                        second_label,
+                    ),
+                ):
+                    ax.errorbar(
+                        xx, dd,
+                        yerr=np.sqrt(np.maximum(dd, 1.0)),
+                        fmt="o", ms=2.0, linewidth=0.6,
+                        color=SAMPLE_COLORS["data"],
+                        label="data",
+                    )
+                    ax.step(
+                        xx, vv, where="mid",
+                        color=SAMPLE_COLORS["dvcs_mc"],
+                        linewidth=1.1,
+                        label="BH/DVCS",
+                    )
+                    ax.step(
+                        xx, pp, where="mid",
+                        color=SAMPLE_COLORS["pi0_mc"],
+                        linewidth=1.1,
+                        label=r"$\pi^0$",
+                    )
+                    ax.step(
+                        xx, mm, where="mid",
+                        color=SAMPLE_COLORS["fit"],
+                        linewidth=1.4,
+                        label="total fit",
+                    )
+                    ax.set_xlabel(xlabel)
+                    ax.set_ylabel("entries / bin")
+                    ax.grid(alpha=0.18)
+                #endfor
+
+                ax_second.set_xlim(*second_xlim)
+                ax_mx.set_title(
+                    f"{elo:.2f}-{ehi:.2f} GeV; {model_label}\n"
+                    + rf"$f_{{\pi^0}}={fit.pi0_fraction:.3f}$, "
+                    + rf"$D/\mathrm{{ndof}}="
+                    + (
+                        f"{fit.poisson_deviance/fit.ndof:.2f}"
+                        if fit.ndof else "nan"
+                    ),
+                    fontsize=8.0,
+                )
+                ax_second.set_title("same fit: second-axis projection", fontsize=8.0)
+            #endfor
+
+            # Narrow high-resolution Mprobe^2 study, using the same support mask
+            # but a much smaller histogram range.
+            narrow_edges = np.linspace(
+                -narrow_probe_m2_max,
+                narrow_probe_m2_max,
+                narrow_probe_m2_bins + 1,
+            )
+            hdn, _ = np.histogram(
+                data_f["pred_probe_mass2"][masks["data"]],
+                bins=narrow_edges,
+            )
+            hpn, _ = np.histogram(
+                pi0_f["pred_probe_mass2"][masks["pi0"]],
+                bins=narrow_edges,
+            )
+            hvn, _ = np.histogram(
+                dvcs_f["pred_probe_mass2"][masks["dvcs"]],
+                bins=narrow_edges,
+            )
+            narrow_fit = fit_two_component_poisson(
+                hdn.astype(float),
+                hpn.astype(float),
+                hvn.astype(float),
+            )
+            axn = axes_m2[ib, 0]
+            nc = 0.5 * (narrow_edges[:-1] + narrow_edges[1:])
+            if narrow_fit.success:
+                pshape = (
+                    hpn / np.sum(hpn)
+                    if np.sum(hpn) > 0 else hpn.astype(float)
+                )
+                vshape = (
+                    hvn / np.sum(hvn)
+                    if np.sum(hvn) > 0 else hvn.astype(float)
+                )
+                pc = narrow_fit.pi0_yield * pshape
+                vc = narrow_fit.dvcs_yield * vshape
+                axn.errorbar(
+                    nc, hdn,
+                    yerr=np.sqrt(np.maximum(hdn, 1.0)),
+                    fmt="o", ms=2.0, linewidth=0.6,
+                    color=SAMPLE_COLORS["data"],
+                    label="data",
+                )
+                axn.step(
+                    nc, vc, where="mid",
+                    color=SAMPLE_COLORS["dvcs_mc"],
+                    linewidth=1.0, label="BH/DVCS",
+                )
+                axn.step(
+                    nc, pc, where="mid",
+                    color=SAMPLE_COLORS["pi0_mc"],
+                    linewidth=1.0, label=r"$\pi^0$",
+                )
+                axn.step(
+                    nc, pc + vc, where="mid",
+                    color=SAMPLE_COLORS["fit"],
+                    linewidth=1.3, label="total fit",
+                )
+                axn.set_title(
+                    f"{elo:.2f}-{ehi:.2f} GeV; narrow "
+                    + r"$M_{\mathrm{probe}}^2$ diagnostic; "
+                    + rf"$f_{{\pi^0}}={narrow_fit.pi0_fraction:.3f}$",
+                    fontsize=8.5,
+                )
+            else:
+                axn.text(
+                    0.5, 0.5, "fit unavailable",
+                    transform=axn.transAxes,
+                    ha="center", va="center",
+                )
+            #endif
+            axn.set_xlim(
+                -narrow_probe_m2_max,
+                narrow_probe_m2_max,
+            )
+            axn.set_xlabel(
+                r"$(P_{\mathrm{probe}}^{\mathrm{pred}})^2$ "
+                r"(GeV$^2$)"
+            )
+            axn.set_ylabel("entries / bin")
+            axn.grid(alpha=0.18)
+        #endfor
+
+        axes[0, 0].legend(fontsize=6.5, frameon=False, ncol=2)
+        fig.suptitle(
+            f"{period.label}: discriminator-selection ACTUAL fit projections — "
+            f"{region}\n"
+            r"$M_X^2(ep)$ is shown explicitly in columns 1 and 3",
+            fontsize=13,
+        )
+        safe_finalize_figure(
+            fig,
+            outdir / f"canvas_selection_fit_projections_{region.lower()}.png",
+            rect=(0, 0, 1, 0.965),
+        )
+        plt.close(fig)
+
+        axes_m2[0, 0].legend(fontsize=6.5, frameon=False, ncol=2)
+        fig_m2.suptitle(
+            f"{period.label}: high-resolution narrow "
+            + r"$M_{\mathrm{probe}}^2$ diagnostic — "
+            + region,
+            fontsize=13,
+        )
+        safe_finalize_figure(
+            fig_m2,
+            outdir / f"canvas_probe_m2_narrow_{region.lower()}.png",
+            rect=(0, 0, 1, 0.965),
+        )
+        plt.close(fig_m2)
+    #endfor
+
+
+def make_candidate_model_summary_canvas(
+    period: PeriodConfig,
+    rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """Compact comparison of the three candidate production models."""
+    if not rows:
+        return
+    #endif
+
+    fig, axes = plt.subplots(2, 2, figsize=(14.5, 9.0))
+    labels = {
+        "mx2_x_ptmiss": r"$M_X^2\otimes p_{T,\mathrm{miss}}$",
+        "mx2_x_theta_gg": r"$M_X^2\otimes\theta_{\gamma\gamma}$",
+        "shared_ptmiss_theta": (
+            r"shared: $(M_X^2\otimes p_T)+(M_X^2\otimes\theta_{\gamma\gamma})$"
+        ),
+    }
+
+    for irow, region in enumerate(("FT", "FD_all")):
+        for model, label in labels.items():
+            rr = sorted(
+                [
+                    r for r in rows
+                    if r["region"] == region
+                    and r["candidate_model"] == model
+                    and int(r["fit_success"]) == 1
+                ],
+                key=lambda r: float(r["energy_center_GeV"]),
+            )
+            if not rr:
+                continue
+            #endif
+
+            x = [float(r["energy_center_GeV"]) for r in rr]
+            axes[irow, 0].plot(
+                x,
+                [float(r["pi0_fraction"]) for r in rr],
+                marker="o",
+                linewidth=1.0,
+                label=label,
+            )
+            axes[irow, 1].plot(
+                x,
+                [float(r["deviance_per_ndof"]) for r in rr],
+                marker="o",
+                linewidth=1.0,
+                label=label,
+            )
+        #endfor
+
+        axes[irow, 0].set_ylim(0.0, 1.02)
+        axes[irow, 0].set_ylabel(r"$f_{\pi^0}$")
+        axes[irow, 0].set_title(f"{region}: extracted composition")
+        axes[irow, 1].set_ylabel("Poisson deviance / ndof")
+        axes[irow, 1].set_title(f"{region}: absolute template goodness")
+        for ax in axes[irow]:
+            ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+            ax.grid(alpha=0.18)
+        #endfor
+    #endfor
+
+    axes[0, 0].legend(fontsize=7.2, frameon=False)
+    axes[0, 1].legend(fontsize=7.2, frameon=False)
+    fig.suptitle(
+        f"{period.label}: denominator-driver candidate selection "
+        "(DIAGNOSTIC; does not feed Stage III)",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_candidate_model_summary.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
 
 
 def make_actual_nominal_stage2_driver_canvases(
@@ -7586,6 +8330,18 @@ def parse_args() -> argparse.Namespace:
         ),
     )
 
+    parser.add_argument(
+        "--diagnostics",
+        choices=("selection", "full"),
+        default="selection",
+        help=(
+            "Diagnostic workload. 'selection' (default) runs only the fits and "
+            "plots needed for the current discriminator-selection study and skips "
+            "expensive closure/mixed/coarse-FT/profile/control diagnostics. "
+            "'full' restores the complete development diagnostic suite."
+        ),
+    )
+
     # Stage-II denominator-composition controls.
     parser.add_argument(
         "--stage1-only",
@@ -7619,6 +8375,25 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--study-probe-m2-max",
+        type=float,
+        default=0.06,
+        help=(
+            "Half-range (GeV^2) for the high-resolution predicted-probe M^2 "
+            "diagnostic. This does NOT change the common Stage-II support mask. "
+            "Default: 0.06."
+        ),
+    )
+    parser.add_argument(
+        "--study-probe-m2-bins",
+        type=int,
+        default=120,
+        help=(
+            "Bins across the narrow predicted-probe M^2 diagnostic range. "
+            "Default: 120."
+        ),
+    )
+    parser.add_argument(
         "--den-fit-mm2-bins",
         type=int,
         default=48,
@@ -7627,10 +8402,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--den-fit-probe-m2-bins",
         type=int,
-        default=48,
+        default=120,
         help=(
             "Number of predicted-probe M^2 bins in each Stage-II template fit. "
-            "Default: 48."
+            "Default: 120."
         ),
     )
     parser.add_argument(
@@ -7690,27 +8465,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--disc-ptmiss-bins",
         type=int,
-        default=40,
+        default=100,
         help=(
-            "pTmiss bins for the optional 2D discriminator fit. Default: 40."
+            "pTmiss bins for the optional 2D discriminator fit. Default: 100."
         ),
     )
     parser.add_argument(
         "--disc-theta-max",
         type=float,
-        default=40.0,
+        default=4.0,
         help=(
             "Upper theta_gamma_gamma edge (deg) used by the optional "
-            "M_X^2(ep) x theta_gamma_gamma discriminator. Default: 40."
+            "M_X^2(ep) x theta_gamma_gamma discriminator. Default: 4."
         ),
     )
     parser.add_argument(
         "--disc-theta-bins",
         type=int,
-        default=40,
+        default=100,
         help=(
             "theta_gamma_gamma bins for the optional 2D discriminator fit. "
-            "Default: 40."
+            "Default: 100."
         ),
     )
     parser.add_argument(
@@ -7875,6 +8650,8 @@ def process_period(
     parent_component_tol = float(args_dict["parent_component_tol"])
     parent_distance_max = float(args_dict["parent_distance_max"])
     kdtree_workers = int(args_dict["kdtree_workers"])
+    diagnostics_mode = str(args_dict.get("diagnostics", "selection"))
+    full_diagnostics = diagnostics_mode == "full"
 
     outroot = Path(output_dir)
 
@@ -7984,6 +8761,7 @@ def process_period(
     ft_coarse_three_component_closure_rows: List[Dict[str, object]] = []
     ft_coarse_three_component_summary_rows: List[Dict[str, object]] = []
     control_rows: List[Dict[str, object]] = []
+    candidate_model_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
     stage3_summary: Optional[Dict[str, object]] = None
 
@@ -8078,45 +8856,55 @@ def process_period(
             stage2_dir / "denominator_discriminator_fits.csv",
         )
 
-        control_energy_edges = parse_float_edges(
-            str(args_dict["control_pi0_energy_edges"]),
-            "--control-pi0-energy-edges",
-        )
-        pi0_control, control_rows = build_pi0_control_validation(
-            period,
-            eppi0_data,
-            eppi0,
-            mgg_min=float(args_dict["control_mgg_min"]),
-            mgg_max=float(args_dict["control_mgg_max"]),
-            emiss_abs_max=float(args_dict["control_emiss_abs_max"]),
-            ft_theta_max=ft_theta_max,
-            pi0_energy_edges=control_energy_edges,
-            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
-            ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
-        )
-        write_rows_csv(control_rows, stage2_dir / "pi0_control_validation.csv")
-        with (stage2_dir / "pi0_control_calibration.json").open("w") as f:
-            json.dump(pi0_control, f, indent=2, allow_nan=True)
-        #endwith
-        if not compact_plot_enabled(args_dict):
-            make_pi0_control_canvases(
+        pi0_control: Dict[str, object] = {}
+        if full_diagnostics:
+            control_energy_edges = parse_float_edges(
+                str(args_dict["control_pi0_energy_edges"]),
+                "--control-pi0-energy-edges",
+            )
+            pi0_control, control_rows = build_pi0_control_validation(
                 period,
                 eppi0_data,
                 eppi0,
-                control_rows,
-                stage2_dir,
                 mgg_min=float(args_dict["control_mgg_min"]),
                 mgg_max=float(args_dict["control_mgg_max"]),
                 emiss_abs_max=float(args_dict["control_emiss_abs_max"]),
                 ft_theta_max=ft_theta_max,
                 pi0_energy_edges=control_energy_edges,
                 ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+                ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+            )
+            write_rows_csv(
+                control_rows,
+                stage2_dir / "pi0_control_validation.csv",
+            )
+            with (stage2_dir / "pi0_control_calibration.json").open("w") as f:
+                json.dump(pi0_control, f, indent=2, allow_nan=True)
+            #endwith
+            if not compact_plot_enabled(args_dict):
+                make_pi0_control_canvases(
+                    period,
+                    eppi0_data,
+                    eppi0,
+                    control_rows,
+                    stage2_dir,
+                    mgg_min=float(args_dict["control_mgg_min"]),
+                    mgg_max=float(args_dict["control_mgg_max"]),
+                    emiss_abs_max=float(args_dict["control_emiss_abs_max"]),
+                    ft_theta_max=ft_theta_max,
+                    pi0_energy_edges=control_energy_edges,
+                    ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+                )
+            #endif
+            log(
+                f"{period.label}: reconstructed-eppi0 control validation written."
+            )
+        else:
+            log(
+                f"{period.label}: selection diagnostics mode: skipping "
+                "reconstructed-eppi0 control validation."
             )
         #endif
-        log(
-            f"{period.label}: reconstructed-eppi0 control validation written; "
-            "control calibration is diagnostic-only and is not used as a morph prior."
-        )
         del eppi0
         gc.collect()
         # Keep the object through the transfer-factor calculation below; it is
@@ -8133,6 +8921,7 @@ def process_period(
                 str(args_dict["stage2_closure_truth_fractions"]),
                 "--stage2-closure-truth-fractions",
             ),
+            run_closure=full_diagnostics,
         )
         write_rows_csv(shared_rows, stage2_dir / "denominator_shared_morphed_fits.csv")
         write_rows_csv(closure_rows, stage2_dir / "template_mixture_closure.csv")
@@ -8143,73 +8932,65 @@ def process_period(
             )
         #endif
 
-        ft_coarse_edges = parse_float_edges(
-            str(args_dict["ft_coarse_energy_edges"]),
-            "--ft-coarse-energy-edges",
-        )
-        ft_coarse_rows, ft_coarse_closure_rows = (
-            run_stage2_ft_coarse_shared_morphed_fits(
-                period,
-                data_f,
-                pi0_f,
-                dvcs_f,
-                pi0_control,
-                ft_theta_max,
-                ft_coarse_edges,
-                float(args_dict["den_fit_mm2_min"]),
-                float(args_dict["den_fit_mm2_max"]),
-                float(args_dict["den_fit_probe_m2_max"]),
-                int(args_dict["den_fit_mm2_bins"]),
-                int(args_dict["den_fit_probe_m2_bins"]),
-                float(args_dict["disc_ptmiss_max"]),
-                int(args_dict["disc_ptmiss_bins"]),
-                float(args_dict["disc_theta_max"]),
-                int(args_dict["disc_theta_bins"]),
-                int(args_dict["den_min_data_count"]),
-                int(args_dict["den_min_template_count"]),
-                float(args_dict["morph_shift_prior_bins"]),
-                float(args_dict["morph_sigma_prior_bins"]),
-                float(args_dict["morph_max_shift_bins"]),
-                float(args_dict["morph_max_sigma_bins"]),
-                parse_float_edges(
-                    str(args_dict["stage2_closure_truth_fractions"]),
-                    "--stage2-closure-truth-fractions",
-                ),
-            )
-        )
-        write_rows_csv(
-            ft_coarse_rows,
-            stage2_dir / "ft_coarse_shared_morphed_fits.csv",
-        )
-        write_rows_csv(
-            ft_coarse_closure_rows,
-            stage2_dir / "ft_coarse_template_mixture_closure.csv",
-        )
-        if not compact_plot_enabled(args_dict):
-            make_ft_coarse_composition_canvas(
-                period,
-                shared_rows,
-                ft_coarse_rows,
-                ft_coarse_closure_rows,
-                stage2_dir,
-            )
-        #endif
-
-
-        log(
-            f"{period.label}: wrote per-period shared-morphed numerical results "
-            f"({len(shared_rows)} rows) before canvas rendering."
-        )
-        if not compact_plot_enabled(args_dict):
-            make_shared_fit_canvas(period, shared_rows, stage2_rows, pi0_control, stage2_dir)
-        #endif
-        make_ft_fd_composition_canvas(
+        # Always perform the focused discriminator-selection study.
+        candidate_model_rows = run_stage2_candidate_model_study(
             period,
-            shared_rows,
+            data_f,
+            pi0_f,
+            dvcs_f,
+            ft_theta_max,
+            max_probe_energy,
+            float(args_dict["den_fit_mm2_min"]),
+            float(args_dict["den_fit_mm2_max"]),
+            float(args_dict["den_fit_probe_m2_max"]),
+            int(args_dict["den_fit_mm2_bins"]),
+            int(args_dict["den_fit_probe_m2_bins"]),
+            float(args_dict["disc_ptmiss_max"]),
+            int(args_dict["disc_ptmiss_bins"]),
+            float(args_dict["disc_theta_max"]),
+            int(args_dict["disc_theta_bins"]),
+            int(args_dict["den_min_data_count"]),
+            int(args_dict["den_min_template_count"]),
+            float(args_dict["morph_shift_prior_bins"]),
+            float(args_dict["morph_sigma_prior_bins"]),
+            float(args_dict["morph_max_shift_bins"]),
+            float(args_dict["morph_max_sigma_bins"]),
+        )
+        write_rows_csv(
+            candidate_model_rows,
+            stage2_dir / "candidate_model_selection.csv",
+        )
+        make_candidate_model_summary_canvas(
+            period,
+            candidate_model_rows,
             stage2_dir,
         )
+        make_selection_driver_fit_canvases(
+            period,
+            data_f,
+            pi0_f,
+            dvcs_f,
+            stage2_dir,
+            ft_theta_max,
+            max_probe_energy,
+            float(args_dict["den_fit_mm2_min"]),
+            float(args_dict["den_fit_mm2_max"]),
+            float(args_dict["den_fit_probe_m2_max"]),
+            int(args_dict["den_fit_mm2_bins"]),
+            float(args_dict["disc_ptmiss_max"]),
+            int(args_dict["disc_ptmiss_bins"]),
+            float(args_dict["disc_theta_max"]),
+            int(args_dict["disc_theta_bins"]),
+            float(args_dict["study_probe_m2_max"]),
+            int(args_dict["study_probe_m2_bins"]),
+            int(args_dict["den_min_data_count"]),
+            int(args_dict["den_min_template_count"]),
+        )
+
+        # The old nominal-driver canvases are redundant with the new selection
+        # canvases because they hid Mx2. Keep them only in full/debug plotting.
         if not compact_plot_enabled(args_dict):
-            make_ft_fd_fit_overlay_canvas(
+            make_actual_nominal_stage2_driver_canvases(
                 period,
                 shared_rows,
                 data_f,
@@ -8217,6 +8998,7 @@ def process_period(
                 dvcs_f,
                 stage2_dir,
                 ft_theta_max=ft_theta_max,
+                max_probe_energy=max_probe_energy,
                 mm2_min=float(args_dict["den_fit_mm2_min"]),
                 mm2_max=float(args_dict["den_fit_mm2_max"]),
                 probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
@@ -8229,53 +9011,10 @@ def process_period(
             )
         #endif
 
-        shift_profile_grid = np.asarray(
-            parse_float_edges(
-                str(args_dict["morph_profile_shift_grid"]),
-                "--morph-profile-shift-grid",
-            ),
-            dtype=float,
-        )
-        sigma_profile_grid = np.asarray(
-            parse_float_edges(
-                str(args_dict["morph_profile_sigma_grid"]),
-                "--morph-profile-sigma-grid",
-            ),
-            dtype=float,
-        )
-        profile_rows = run_stage2_morph_profile_scans(
+        make_theta_gg_alternative_canvas(
             period,
-            data_f=data_f,
-            pi0_f=pi0_f,
-            dvcs_f=dvcs_f,
-            ft_theta_max=ft_theta_max,
-            max_probe_energy=max_probe_energy,
-            mm2_min=float(args_dict["den_fit_mm2_min"]),
-            mm2_max=float(args_dict["den_fit_mm2_max"]),
-            probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-            mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
-            probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
-            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
-            ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
-            theta_max=float(args_dict["disc_theta_max"]),
-            theta_bins=int(args_dict["disc_theta_bins"]),
-            min_data_count=int(args_dict["den_min_data_count"]),
-            min_template_count=int(args_dict["den_min_template_count"]),
-            shift_grid=shift_profile_grid,
-            sigma_grid=sigma_profile_grid,
-        )
-        write_rows_csv(
-            profile_rows,
-            stage2_dir / "morph_nuisance_profiles.csv",
-        )
-        make_morph_profile_canvas(
-            period,
-            profile_rows,
+            stage2_rows,
             stage2_dir,
-        )
-        log(
-            f"{period.label}: wrote explicit all-region morph nuisance profiles "
-            f"({len(profile_rows)} scan rows)."
         )
 
         stage2_spread_rows = discriminator_spread_rows(stage2_rows)
@@ -8284,102 +9023,215 @@ def process_period(
             stage2_dir / "denominator_discriminator_spread.csv",
         )
 
-        # Mixed-event stress tests remain nominal-discriminator-only and are
-        # processed one shift at a time to bound peak memory.
-        for shift in parse_mix_shifts(str(args_dict["mix_shifts"])):
-            log(
-                f"{period.label}: mixed-data diagnostic shift {shift} "
-                "(nominal discriminator stress test only)."
+        if full_diagnostics:
+            ft_coarse_edges = parse_float_edges(
+                str(args_dict["ft_coarse_energy_edges"]),
+                "--ft-coarse-energy-edges",
             )
-            mixed_f = build_epgamma_denominator_features(
-                period,
-                data_epg,
-                tag_min=tag_min,
-                tag_max=tag_max,
-                ft_theta_max=ft_theta_max,
-                mixed_tag_shift=shift,
-            )
-            mixed_diag_rows.extend(
-                run_mixed_shift_diagnostic(
+            ft_coarse_rows, ft_coarse_closure_rows = (
+                run_stage2_ft_coarse_shared_morphed_fits(
                     period,
-                    data_f=data_f,
-                    pi0_f=pi0_f,
-                    dvcs_f=dvcs_f,
-                    mixed_f=mixed_f,
-                    fit_rows=stage2_rows,
-                    shift=shift,
-                    ft_theta_max=ft_theta_max,
-                    mm2_min=float(args_dict["den_fit_mm2_min"]),
-                    mm2_max=float(args_dict["den_fit_mm2_max"]),
-                    probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-                    mm2_bins=int(args_dict["den_fit_mm2_bins"]),
-                    probe_m2_bins=int(args_dict["den_fit_probe_m2_bins"]),
-                    min_template_count=int(args_dict["den_min_template_count"]),
+                    data_f,
+                    pi0_f,
+                    dvcs_f,
+                    pi0_control,
+                    ft_theta_max,
+                    ft_coarse_edges,
+                    float(args_dict["den_fit_mm2_min"]),
+                    float(args_dict["den_fit_mm2_max"]),
+                    float(args_dict["den_fit_probe_m2_max"]),
+                    int(args_dict["den_fit_mm2_bins"]),
+                    int(args_dict["den_fit_probe_m2_bins"]),
+                    float(args_dict["disc_ptmiss_max"]),
+                    int(args_dict["disc_ptmiss_bins"]),
+                    float(args_dict["disc_theta_max"]),
+                    int(args_dict["disc_theta_bins"]),
+                    int(args_dict["den_min_data_count"]),
+                    int(args_dict["den_min_template_count"]),
+                    float(args_dict["morph_shift_prior_bins"]),
+                    float(args_dict["morph_sigma_prior_bins"]),
+                    float(args_dict["morph_max_shift_bins"]),
+                    float(args_dict["morph_max_sigma_bins"]),
+                    parse_float_edges(
+                        str(args_dict["stage2_closure_truth_fractions"]),
+                        "--stage2-closure-truth-fractions",
+                    ),
                 )
             )
-            three_rows_shift, three_closure_shift = (
-                run_ft_coarse_three_component_diagnostic(
-                    period,
-                    data_f=data_f,
-                    pi0_f=pi0_f,
-                    dvcs_f=dvcs_f,
-                    mixed_f=mixed_f,
-                    coarse_rows=ft_coarse_rows,
-                    shift=shift,
-                    ft_theta_max=ft_theta_max,
-                    mm2_min=float(args_dict["den_fit_mm2_min"]),
-                    mm2_max=float(args_dict["den_fit_mm2_max"]),
-                    probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-                    mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
-                    probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
-                    ptmiss_max=float(args_dict["disc_ptmiss_max"]),
-                    ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
-                    theta_max=float(args_dict["disc_theta_max"]),
-                    theta_bins=int(args_dict["disc_theta_bins"]),
-                    min_data_count=int(args_dict["den_min_data_count"]),
-                    min_template_count=int(args_dict["den_min_template_count"]),
-                )
+            write_rows_csv(
+                ft_coarse_rows,
+                stage2_dir / "ft_coarse_shared_morphed_fits.csv",
             )
-            ft_coarse_three_component_rows.extend(three_rows_shift)
-            ft_coarse_three_component_closure_rows.extend(three_closure_shift)
-            del mixed_f
-        #endfor
-
-        write_rows_csv(
-            mixed_diag_rows,
-            stage2_dir / "mixed_component_diagnostics.csv",
-        )
-
-        ft_coarse_three_component_summary_rows = summarize_ft_coarse_three_component_shifts(
-            ft_coarse_three_component_rows
-        )
-        write_rows_csv(ft_coarse_three_component_rows, stage2_dir / "ft_coarse_three_component_by_mix_shift.csv")
-        write_rows_csv(ft_coarse_three_component_closure_rows, stage2_dir / "ft_coarse_three_component_closure.csv")
-        write_rows_csv(ft_coarse_three_component_summary_rows, stage2_dir / "ft_coarse_three_component_summary.csv")
-        if not compact_plot_enabled(args_dict):
-            make_ft_coarse_three_component_canvas(
-                period,
-                ft_coarse_three_component_summary_rows,
-                ft_coarse_three_component_closure_rows,
-                stage2_dir,
+            write_rows_csv(
+                ft_coarse_closure_rows,
+                stage2_dir / "ft_coarse_template_mixture_closure.csv",
             )
-        #endif
 
-        if not compact_plot_enabled(args_dict):
-            make_stage2_canvases(
+            shift_profile_grid = np.asarray(
+                parse_float_edges(
+                    str(args_dict["morph_profile_shift_grid"]),
+                    "--morph-profile-shift-grid",
+                ),
+                dtype=float,
+            )
+            sigma_profile_grid = np.asarray(
+                parse_float_edges(
+                    str(args_dict["morph_profile_sigma_grid"]),
+                    "--morph-profile-sigma-grid",
+                ),
+                dtype=float,
+            )
+            profile_rows = run_stage2_morph_profile_scans(
                 period,
                 data_f=data_f,
                 pi0_f=pi0_f,
                 dvcs_f=dvcs_f,
-                fit_rows=stage2_rows,
-                spread_rows=stage2_spread_rows,
-                mixed_rows=mixed_diag_rows,
-                outdir=stage2_dir,
                 ft_theta_max=ft_theta_max,
                 max_probe_energy=max_probe_energy,
                 mm2_min=float(args_dict["den_fit_mm2_min"]),
                 mm2_max=float(args_dict["den_fit_mm2_max"]),
                 probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+                mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
+                probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
+                ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+                ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+                theta_max=float(args_dict["disc_theta_max"]),
+                theta_bins=int(args_dict["disc_theta_bins"]),
+                min_data_count=int(args_dict["den_min_data_count"]),
+                min_template_count=int(args_dict["den_min_template_count"]),
+                shift_grid=shift_profile_grid,
+                sigma_grid=sigma_profile_grid,
+            )
+            write_rows_csv(
+                profile_rows,
+                stage2_dir / "morph_nuisance_profiles.csv",
+            )
+            log(
+                f"{period.label}: wrote explicit morph nuisance profiles "
+                f"({len(profile_rows)} rows)."
+            )
+
+            for shift in parse_mix_shifts(str(args_dict["mix_shifts"])):
+                log(
+                    f"{period.label}: mixed-data diagnostic shift {shift}."
+                )
+                mixed_f = build_epgamma_denominator_features(
+                    period,
+                    data_epg,
+                    tag_min=tag_min,
+                    tag_max=tag_max,
+                    ft_theta_max=ft_theta_max,
+                    mixed_tag_shift=shift,
+                )
+                mixed_diag_rows.extend(
+                    run_mixed_shift_diagnostic(
+                        period,
+                        data_f=data_f,
+                        pi0_f=pi0_f,
+                        dvcs_f=dvcs_f,
+                        mixed_f=mixed_f,
+                        fit_rows=stage2_rows,
+                        shift=shift,
+                        ft_theta_max=ft_theta_max,
+                        mm2_min=float(args_dict["den_fit_mm2_min"]),
+                        mm2_max=float(args_dict["den_fit_mm2_max"]),
+                        probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+                        mm2_bins=int(args_dict["den_fit_mm2_bins"]),
+                        probe_m2_bins=int(args_dict["den_fit_probe_m2_bins"]),
+                        min_template_count=int(args_dict["den_min_template_count"]),
+                    )
+                )
+                three_rows_shift, three_closure_shift = (
+                    run_ft_coarse_three_component_diagnostic(
+                        period,
+                        data_f=data_f,
+                        pi0_f=pi0_f,
+                        dvcs_f=dvcs_f,
+                        mixed_f=mixed_f,
+                        coarse_rows=ft_coarse_rows,
+                        shift=shift,
+                        ft_theta_max=ft_theta_max,
+                        mm2_min=float(args_dict["den_fit_mm2_min"]),
+                        mm2_max=float(args_dict["den_fit_mm2_max"]),
+                        probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+                        mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
+                        probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
+                        ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+                        ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+                        theta_max=float(args_dict["disc_theta_max"]),
+                        theta_bins=int(args_dict["disc_theta_bins"]),
+                        min_data_count=int(args_dict["den_min_data_count"]),
+                        min_template_count=int(args_dict["den_min_template_count"]),
+                    )
+                )
+                ft_coarse_three_component_rows.extend(three_rows_shift)
+                ft_coarse_three_component_closure_rows.extend(
+                    three_closure_shift
+                )
+                del mixed_f
+            #endfor
+
+            write_rows_csv(
+                mixed_diag_rows,
+                stage2_dir / "mixed_component_diagnostics.csv",
+            )
+            ft_coarse_three_component_summary_rows = (
+                summarize_ft_coarse_three_component_shifts(
+                    ft_coarse_three_component_rows
+                )
+            )
+            write_rows_csv(
+                ft_coarse_three_component_rows,
+                stage2_dir / "ft_coarse_three_component_by_mix_shift.csv",
+            )
+            write_rows_csv(
+                ft_coarse_three_component_closure_rows,
+                stage2_dir / "ft_coarse_three_component_closure.csv",
+            )
+            write_rows_csv(
+                ft_coarse_three_component_summary_rows,
+                stage2_dir / "ft_coarse_three_component_summary.csv",
+            )
+
+            if not compact_plot_enabled(args_dict):
+                make_morph_profile_canvas(
+                    period,
+                    profile_rows,
+                    stage2_dir,
+                )
+                make_ft_coarse_composition_canvas(
+                    period,
+                    shared_rows,
+                    ft_coarse_rows,
+                    ft_coarse_closure_rows,
+                    stage2_dir,
+                )
+                make_ft_coarse_three_component_canvas(
+                    period,
+                    ft_coarse_three_component_summary_rows,
+                    ft_coarse_three_component_closure_rows,
+                    stage2_dir,
+                )
+                make_stage2_canvases(
+                    period,
+                    data_f=data_f,
+                    pi0_f=pi0_f,
+                    dvcs_f=dvcs_f,
+                    fit_rows=stage2_rows,
+                    spread_rows=stage2_spread_rows,
+                    mixed_rows=mixed_diag_rows,
+                    outdir=stage2_dir,
+                    ft_theta_max=ft_theta_max,
+                    max_probe_energy=max_probe_energy,
+                    mm2_min=float(args_dict["den_fit_mm2_min"]),
+                    mm2_max=float(args_dict["den_fit_mm2_max"]),
+                    probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+                )
+            #endif
+        else:
+            log(
+                f"{period.label}: selection diagnostics mode: skipped "
+                "closure/coarse-FT/morph-profile/mixed-event diagnostics."
             )
         #endif
 
@@ -8403,30 +9255,6 @@ def process_period(
             "successful nominal all-region fits."
         )
 
-        make_actual_nominal_stage2_driver_canvases(
-            period,
-            shared_rows,
-            data_f,
-            pi0_f,
-            dvcs_f,
-            stage2_dir,
-            ft_theta_max=ft_theta_max,
-            max_probe_energy=max_probe_energy,
-            mm2_min=float(args_dict["den_fit_mm2_min"]),
-            mm2_max=float(args_dict["den_fit_mm2_max"]),
-            probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-            mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
-            probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
-            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
-            ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
-            theta_max=float(args_dict["disc_theta_max"]),
-            theta_bins=int(args_dict["disc_theta_bins"]),
-        )
-        make_theta_gg_alternative_canvas(
-            period,
-            stage2_rows,
-            stage2_dir,
-        )
 
         if not bool(args_dict.get("skip_stage3", False)):
             stage3_dir = Path(args_dict["stage3_output_dir"]) / period.key
@@ -8651,12 +9479,19 @@ For EACH period, region, and energy bin:
    IMPORTANT: these two drivers share ONE fitted f_pi0.  That shared f_pi0 from
    the exact period/region/energy row is what Stage III uses.
 
-   The script writes two high-value per-period canvases that show the ACTUAL
-   nominal shared-fit projections for every nominal energy bin:
-     - canvas_nominal_stage2_drivers_ft.png
-     - canvas_nominal_stage2_drivers_fd_all.png
+   v045 is explicitly a discriminator-selection study. The existing nominal
+   shared fit is retained ONLY so Stage III remains backward-compatible if it is
+   requested. It is not being promoted as the final denominator model here.
 
-   Diagnostic alternatives are compared in:
+   The high-value selection canvases are:
+     - canvas_selection_fit_projections_ft.png
+     - canvas_selection_fit_projections_fd_all.png
+       These show M_X^2(ep) explicitly as well as pTmiss/theta_gamma_gamma.
+     - canvas_probe_m2_narrow_ft.png
+     - canvas_probe_m2_narrow_fd_all.png
+       High-resolution narrow-core M_probe^2 study.
+     - canvas_candidate_model_summary.png
+       Compares M_X^2 x pTmiss, M_X^2 x theta_gg, and a shared pTmiss+theta fit.
      - canvas_theta_gg_alternative.png
 
    In particular, theta_gg_1d tests theta_gamma_gamma without using M_X^2(ep).
@@ -9431,6 +10266,14 @@ def main() -> int:
         "Internal MC tag definition: "
         f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
     )
+    log(
+        f"Diagnostic workload: {args.diagnostics}. "
+        + (
+            "Focused discriminator-selection study only."
+            if args.diagnostics == "selection"
+            else "Full development diagnostics enabled."
+        )
+    )
     nominal_edges = stage2_energy_edges(
         min(2.0, float(args.den_probe_energy_max))
     )
@@ -9503,10 +10346,16 @@ def main() -> int:
             ),
             "kdtree_query_chunk": int(args.kdtree_query_chunk),
             "plot_mode": str(args.plot_mode),
+            "diagnostics_mode": str(args.diagnostics),
             "memory_model": (
                 "sample-specific ROOT branch reads; slim sample objects; float32 "
                 "persistent Stage-II histogram features; prompt release of large "
                 "temporary/sample objects"
+            ),
+            "fit_acceleration": (
+                "shared-morph fits use cached morphed templates and an exact "
+                "convex score-equation solve for the profiled pi0 fraction; "
+                "physics objective and bounds are unchanged"
             ),
             "stage3_reference_model": (
                 "Data numerator uses exact runnum+evnum epgamma-to-eppi0 association; "
