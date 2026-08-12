@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v040.py
+derive_photon_efficiency_scale_factors_v041.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -46,10 +46,10 @@ Default --plot-mode compact keeps only high-value plots. --plot-mode full
 restores development/debug canvases.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v040.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v041.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v040.py \
+    python derive_photon_efficiency_scale_factors_v041.py \
         --max-entries 0 --period fa18_out
 """
 
@@ -1291,6 +1291,7 @@ def write_rows_csv(rows: List[Dict[str, object]], path: Path) -> None:
 STAGE2_DISCRIMINATORS: Tuple[str, ...] = (
     "mx2_ep_1d",
     "probe_m2_1d",
+    "theta_gg_1d",
     "mx2_ep_x_probe_m2",
     "mx2_ep_x_pTmiss",
     "mx2_ep_x_theta_gg",
@@ -1303,6 +1304,7 @@ STAGE2_DRIVER_DISCRIMINATORS: Tuple[str, ...] = (
     "mx2_ep_x_pTmiss",
 )
 STAGE2_VALIDATION_DISCRIMINATORS: Tuple[str, ...] = (
+    "theta_gg_1d",
     "mx2_ep_x_theta_gg",
     "mx2_ep_1d",
     "probe_m2_1d",
@@ -1556,8 +1558,11 @@ def discriminator_available(
     if discriminator == "mx2_ep_x_pTmiss":
         return all("stored_pTmiss" in f for f in (data_f, pi0_f, dvcs_f))
     #endif
-    if discriminator == "mx2_ep_x_theta_gg":
-        return all("stored_theta_gamma_gamma" in f for f in (data_f, pi0_f, dvcs_f))
+    if discriminator in ("theta_gg_1d", "mx2_ep_x_theta_gg"):
+        return all(
+            "stored_theta_gamma_gamma" in f
+            for f in (data_f, pi0_f, dvcs_f)
+        )
     #endif
     return True
 
@@ -1597,6 +1602,15 @@ def histogram_for_discriminator(
         h, _ = np.histogram(
             feat["pred_probe_mass2"][mask],
             bins=np.linspace(-probe_m2_max, probe_m2_max, bins_1d + 1),
+        )
+        return h.astype(float)
+    #endif
+
+    if discriminator == "theta_gg_1d":
+        local = mask & np.isfinite(feat["stored_theta_gamma_gamma"])
+        h, _ = np.histogram(
+            feat["stored_theta_gamma_gamma"][local],
+            bins=np.linspace(0.0, theta_max, theta_bins + 1),
         )
         return h.astype(float)
     #endif
@@ -4519,6 +4533,309 @@ def shared_driver_projection(
         raw_pi0_component,
         raw_dvcs_component,
     )
+
+
+
+def make_actual_nominal_stage2_driver_canvases(
+    period: PeriodConfig,
+    shared_rows: List[Dict[str, object]],
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    outdir: Path,
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    mm2_bins_2d: int,
+    probe_m2_bins_2d: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+) -> None:
+    """
+    High-value production diagnostic: show BOTH ACTUAL nominal Stage-II drivers
+    in EVERY nominal energy bin.
+
+    The shared fit uses the same f_pi0 simultaneously in:
+      1. M_X^2(ep) x M_probe^2
+      2. M_X^2(ep) x pTmiss
+
+    This canvas projects each 2D driver onto its second coordinate.  The curves
+    are reconstructed from the same shared fit row and morph nuisance values
+    that feed Stage III.  These are therefore not example/independent fits.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    edges = stage2_energy_edges(max_probe_energy)
+
+    row_map = {
+        (
+            str(r.get("region", "")),
+            round(float(r.get("energy_low_GeV", np.nan)), 10),
+            round(float(r.get("energy_high_GeV", np.nan)), 10),
+        ): r
+        for r in shared_rows
+        if int(r.get("fit_success", 0)) == 1
+    }
+
+    for region in ("FT", "FD_all"):
+        nrows = len(edges) - 1
+        fig, axes = plt.subplots(
+            nrows,
+            2,
+            figsize=(13.5, max(8.0, 2.8 * nrows)),
+            squeeze=False,
+        )
+
+        for ib in range(nrows):
+            elo = float(edges[ib])
+            ehi = float(edges[ib + 1])
+            row = row_map.get(
+                (region, round(elo, 10), round(ehi, 10))
+            )
+
+            for j, disc in enumerate(STAGE2_DRIVER_DISCRIMINATORS):
+                ax = axes[ib, j]
+                if row is None:
+                    ax.text(
+                        0.5, 0.5, "no successful shared fit",
+                        transform=ax.transAxes, ha="center", va="center"
+                    )
+                    ax.set_axis_off()
+                    continue
+                #endif
+
+                (
+                    centers,
+                    data,
+                    pi0_c,
+                    dvcs_c,
+                    model,
+                    raw_pi0_c,
+                    raw_dvcs_c,
+                ) = shared_driver_projection(
+                    region,
+                    row,
+                    disc,
+                    data_f,
+                    pi0_f,
+                    dvcs_f,
+                    ft_theta_max,
+                    mm2_min,
+                    mm2_max,
+                    probe_m2_max,
+                    mm2_bins_2d,
+                    probe_m2_bins_2d,
+                    ptmiss_max,
+                    ptmiss_bins,
+                    theta_max,
+                    theta_bins,
+                    display_bin_factor=1,
+                )
+
+                if not np.allclose(
+                    model, pi0_c + dvcs_c,
+                    rtol=1.0e-12, atol=1.0e-10
+                ):
+                    raise RuntimeError(
+                        f"{period.label} {region} {elo:.2f}-{ehi:.2f}: "
+                        "nominal driver display components do not sum to model."
+                    )
+                #endif
+
+                ax.errorbar(
+                    centers,
+                    data,
+                    yerr=np.sqrt(np.maximum(data, 1.0)),
+                    fmt="o",
+                    ms=2.3,
+                    linewidth=0.7,
+                    capsize=0.0,
+                    color=SAMPLE_COLORS["data"],
+                    label="data",
+                    zorder=6,
+                )
+                ax.step(
+                    centers, raw_dvcs_c, where="mid",
+                    color=SAMPLE_COLORS["dvcs_mc"],
+                    linewidth=0.65, linestyle="--", alpha=0.55,
+                    label="BH/DVCS pre-morph",
+                )
+                ax.step(
+                    centers, raw_pi0_c, where="mid",
+                    color=SAMPLE_COLORS["pi0_mc"],
+                    linewidth=0.65, linestyle="--", alpha=0.55,
+                    label=r"$\pi^0$ pre-morph",
+                )
+                ax.step(
+                    centers, dvcs_c, where="mid",
+                    color=SAMPLE_COLORS["dvcs_mc"],
+                    linewidth=1.25,
+                    label="BH/DVCS fitted",
+                )
+                ax.step(
+                    centers, pi0_c, where="mid",
+                    color=SAMPLE_COLORS["pi0_mc"],
+                    linewidth=1.25,
+                    label=r"$\pi^0$ fitted",
+                )
+                ax.step(
+                    centers, model, where="mid",
+                    color=SAMPLE_COLORS["fit"],
+                    linewidth=1.6,
+                    label="total shared fit",
+                )
+
+                if disc == "mx2_ep_x_probe_m2":
+                    ax.set_xlabel(
+                        r"$(P_{\mathrm{probe}}^{\mathrm{pred}})^2$ "
+                        r"(GeV$^2$)"
+                    )
+                    driver_label = (
+                        r"$M_X^2(ep)\otimes M_{\mathrm{probe}}^2$"
+                    )
+                else:
+                    ax.set_xlabel(r"$p_{T,\mathrm{miss}}$ (GeV)")
+                    if region == "FT":
+                        ax.set_xlim(0.0, 0.30)
+                    else:
+                        ax.set_xlim(0.0, ptmiss_max)
+                    #endif
+                    driver_label = (
+                        r"$M_X^2(ep)\otimes p_{T,\mathrm{miss}}$"
+                    )
+                #endif
+
+                ax.set_ylabel("entries / bin")
+                ax.set_title(
+                    f"{elo:.2f}-{ehi:.2f} GeV; {driver_label}\n"
+                    + rf"shared nominal $f_{{\pi^0}}={float(row['pi0_fraction']):.3f}$, "
+                    + rf"$D/\mathrm{{ndof}}={float(row['deviance_per_ndof']):.2f}$",
+                    fontsize=8.6,
+                )
+                ax.grid(alpha=0.18)
+            #endfor
+        #endfor
+
+        axes[0, 0].legend(fontsize=6.7, frameon=False, ncol=2)
+        fig.suptitle(
+            f"{period.label}: ACTUAL nominal Stage-II shared-fit projections — "
+            f"{region}\n"
+            r"Both columns are used simultaneously to determine the same "
+            r"$f_{\pi^0}$ that feeds the efficiency",
+            fontsize=13,
+        )
+        safe_finalize_figure(
+            fig,
+            outdir / (
+                "canvas_nominal_stage2_drivers_"
+                + region.lower()
+                + ".png"
+            ),
+            rect=(0, 0, 1, 0.965),
+        )
+        plt.close(fig)
+    #endfor
+
+
+def make_theta_gg_alternative_canvas(
+    period: PeriodConfig,
+    fit_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """
+    Compare theta_gg alternatives against the two nominal-driver independent
+    fits.  This is diagnostic only.
+
+    theta_gg_1d is especially important because it tests theta_gg WITHOUT
+    relying on M_X^2(ep).  mx2_ep_x_theta_gg tests whether theta_gg helps when
+    combined with M_X^2(ep).
+    """
+    choices = (
+        (
+            "mx2_ep_x_probe_m2",
+            r"$M_X^2\otimes M_{\mathrm{probe}}^2$",
+        ),
+        (
+            "mx2_ep_x_pTmiss",
+            r"$M_X^2\otimes p_{T,\mathrm{miss}}$",
+        ),
+        (
+            "mx2_ep_x_theta_gg",
+            r"$M_X^2\otimes\theta_{\gamma\gamma}$",
+        ),
+        (
+            "theta_gg_1d",
+            r"$\theta_{\gamma\gamma}$ only",
+        ),
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(15.0, 9.2))
+
+    for irow, region in enumerate(("FT", "FD_all")):
+        for disc, label in choices:
+            rr = sorted(
+                [
+                    r for r in fit_rows
+                    if str(r.get("region", "")) == region
+                    and str(r.get("discriminator", "")) == disc
+                    and int(r.get("fit_success", 0)) == 1
+                    and np.isfinite(float(r.get("pi0_fraction", np.nan)))
+                ],
+                key=lambda r: float(r["energy_center_GeV"]),
+            )
+            if not rr:
+                continue
+            #endif
+
+            x = [float(r["energy_center_GeV"]) for r in rr]
+            axes[irow, 0].plot(
+                x,
+                [float(r["pi0_fraction"]) for r in rr],
+                marker="o",
+                linewidth=1.0,
+                label=label,
+            )
+            axes[irow, 1].plot(
+                x,
+                [float(r["deviance_per_ndof"]) for r in rr],
+                marker="o",
+                linewidth=1.0,
+                label=label,
+            )
+        #endfor
+
+        axes[irow, 0].set_ylim(0.0, 1.02)
+        axes[irow, 0].set_ylabel(r"independent-fit $f_{\pi^0}$")
+        axes[irow, 0].set_title(f"{region}: extracted composition")
+        axes[irow, 1].set_ylabel("Poisson deviance / ndof")
+        axes[irow, 1].set_title(f"{region}: template goodness")
+
+        for ax in axes[irow]:
+            ax.set_xlabel(
+                r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+            )
+            ax.grid(alpha=0.18)
+        #endfor
+    #endfor
+
+    axes[0, 0].legend(fontsize=7.4, frameon=False)
+    axes[0, 1].legend(fontsize=7.4, frameon=False)
+
+    fig.suptitle(
+        f"{period.label}: diagnostic alternatives to the nominal Stage-II drivers\n"
+        r"$\theta_{\gamma\gamma}$-only explicitly tests separation without "
+        r"$M_X^2(ep)$",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_theta_gg_alternative.png",
+        rect=(0, 0, 1, 0.94),
+    )
+    plt.close(fig)
 
 
 def make_ft_fd_fit_overlay_canvas(
@@ -8086,6 +8403,31 @@ def process_period(
             "successful nominal all-region fits."
         )
 
+        make_actual_nominal_stage2_driver_canvases(
+            period,
+            shared_rows,
+            data_f,
+            pi0_f,
+            dvcs_f,
+            stage2_dir,
+            ft_theta_max=ft_theta_max,
+            max_probe_energy=max_probe_energy,
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+            mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
+            probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
+            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+            ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+            theta_max=float(args_dict["disc_theta_max"]),
+            theta_bins=int(args_dict["disc_theta_bins"]),
+        )
+        make_theta_gg_alternative_canvas(
+            period,
+            stage2_rows,
+            stage2_dir,
+        )
+
         if not bool(args_dict.get("skip_stage3", False)):
             stage3_dir = Path(args_dict["stage3_output_dir"]) / period.key
             stage3_dir.mkdir(parents=True, exist_ok=True)
@@ -8306,7 +8648,19 @@ For EACH period, region, and energy bin:
      - M_X^2(ep) x M_probe^2
      - M_X^2(ep) x pTmiss
 
-   The fitted pi0 fraction f_pi0 from that exact energy/region row is used.
+   IMPORTANT: these two drivers share ONE fitted f_pi0.  That shared f_pi0 from
+   the exact period/region/energy row is what Stage III uses.
+
+   The script writes two high-value per-period canvases that show the ACTUAL
+   nominal shared-fit projections for every nominal energy bin:
+     - canvas_nominal_stage2_drivers_ft.png
+     - canvas_nominal_stage2_drivers_fd_all.png
+
+   Diagnostic alternatives are compared in:
+     - canvas_theta_gg_alternative.png
+
+   In particular, theta_gg_1d tests theta_gamma_gamma without using M_X^2(ep).
+   Neither theta_gg diagnostic currently changes the nominal f_pi0.
 
 2. Data efficiency
      N_data_den = f_pi0 * N_data_tag_candidates
@@ -8946,7 +9300,7 @@ def main() -> int:
         f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
     )
     nominal_edges = stage2_energy_edges(
-        min(2.0, float(args.den_max_probe_energy))
+        min(2.0, float(args.den_probe_energy_max))
     )
     log(
         "Nominal reference probe-energy bin edges (GeV): "
