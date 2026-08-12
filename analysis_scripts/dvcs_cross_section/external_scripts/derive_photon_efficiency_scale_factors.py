@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v045.py
+derive_photon_efficiency_scale_factors_v046.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v045.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v046.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v045.py \
+    python derive_photon_efficiency_scale_factors_v046.py \
         --max-entries 0 --period fa18_out
 """
 
@@ -2592,6 +2592,7 @@ def fit_shared_morphed_composition(
     nuisance_sigma_prior: float,
     max_shift_bins: float,
     max_sigma_bins: float,
+    driver_names: Optional[Sequence[str]] = None,
 ) -> SharedMorphedFitResult:
     """
     Shared two-driver composition fit with profile-initialized template morphing.
@@ -2609,7 +2610,12 @@ def fit_shared_morphed_composition(
 
     The reconstructed-eppi0 control remains diagnostic-only.
     """
-    names = [n for n in STAGE2_DRIVER_DISCRIMINATORS if n in histograms]
+    requested_drivers = (
+        tuple(STAGE2_DRIVER_DISCRIMINATORS)
+        if driver_names is None
+        else tuple(str(x) for x in driver_names)
+    )
+    names = [n for n in requested_drivers if n in histograms]
     if not names:
         return SharedMorphedFitResult(False, "no available driver discriminators")
     #endif
@@ -4813,6 +4819,7 @@ def run_stage2_candidate_model_study(
                     nuisance_sigma_prior,
                     max_shift_bins,
                     max_sigma_bins,
+                    driver_names=drivers,
                 )
                 row.update({
                     "fit_success": int(fit.success),
@@ -4883,8 +4890,6 @@ def make_selection_driver_fit_canvases(
     ptmiss_bins: int,
     theta_max: float,
     theta_bins: int,
-    narrow_probe_m2_max: float,
-    narrow_probe_m2_bins: int,
     min_data_count: int,
     min_template_count: int,
 ) -> None:
@@ -4897,9 +4902,8 @@ def make_selection_driver_fit_canvases(
       column 3: M_X^2(ep) projection from the M_X^2 x theta_gg fit
       column 4: theta_gg projection from that same fit
 
-    A separate narrow-core M_probe^2 canvas is also written.  This directly
-    addresses the fact that previous canvases hid M_X^2 by projecting only onto
-    the second axis.
+    This directly addresses the fact that previous canvases hid M_X^2 by
+    projecting only onto the second axis.
     """
     edges = stage2_energy_edges(max_probe_energy)
 
@@ -4912,12 +4916,6 @@ def make_selection_driver_fit_canvases(
             squeeze=False,
         )
 
-        fig_m2, axes_m2 = plt.subplots(
-            nrows,
-            1,
-            figsize=(8.8, max(8.0, 2.45 * nrows)),
-            squeeze=False,
-        )
 
         for ib in range(nrows):
             elo = float(edges[ib])
@@ -4949,7 +4947,7 @@ def make_selection_driver_fit_canvases(
                     mm2_min=mm2_min, mm2_max=mm2_max,
                     probe_m2_max=support_probe_m2_max,
                     mm2_bins_2d=mm2_bins,
-                    probe_m2_bins_2d=narrow_probe_m2_bins,
+                    probe_m2_bins_2d=120,
                     bins_1d=90,
                     ptmiss_max=ptmiss_max,
                     ptmiss_bins=ptmiss_bins,
@@ -4961,7 +4959,7 @@ def make_selection_driver_fit_canvases(
                     mm2_min=mm2_min, mm2_max=mm2_max,
                     probe_m2_max=support_probe_m2_max,
                     mm2_bins_2d=mm2_bins,
-                    probe_m2_bins_2d=narrow_probe_m2_bins,
+                    probe_m2_bins_2d=120,
                     bins_1d=90,
                     ptmiss_max=ptmiss_max,
                     ptmiss_bins=ptmiss_bins,
@@ -4973,7 +4971,7 @@ def make_selection_driver_fit_canvases(
                     mm2_min=mm2_min, mm2_max=mm2_max,
                     probe_m2_max=support_probe_m2_max,
                     mm2_bins_2d=mm2_bins,
-                    probe_m2_bins_2d=narrow_probe_m2_bins,
+                    probe_m2_bins_2d=120,
                     bins_1d=90,
                     ptmiss_max=ptmiss_max,
                     ptmiss_bins=ptmiss_bins,
@@ -5089,88 +5087,6 @@ def make_selection_driver_fit_canvases(
                 ax_second.set_title("same fit: second-axis projection", fontsize=8.0)
             #endfor
 
-            # Narrow high-resolution Mprobe^2 study, using the same support mask
-            # but a much smaller histogram range.
-            narrow_edges = np.linspace(
-                -narrow_probe_m2_max,
-                narrow_probe_m2_max,
-                narrow_probe_m2_bins + 1,
-            )
-            hdn, _ = np.histogram(
-                data_f["pred_probe_mass2"][masks["data"]],
-                bins=narrow_edges,
-            )
-            hpn, _ = np.histogram(
-                pi0_f["pred_probe_mass2"][masks["pi0"]],
-                bins=narrow_edges,
-            )
-            hvn, _ = np.histogram(
-                dvcs_f["pred_probe_mass2"][masks["dvcs"]],
-                bins=narrow_edges,
-            )
-            narrow_fit = fit_two_component_poisson(
-                hdn.astype(float),
-                hpn.astype(float),
-                hvn.astype(float),
-            )
-            axn = axes_m2[ib, 0]
-            nc = 0.5 * (narrow_edges[:-1] + narrow_edges[1:])
-            if narrow_fit.success:
-                pshape = (
-                    hpn / np.sum(hpn)
-                    if np.sum(hpn) > 0 else hpn.astype(float)
-                )
-                vshape = (
-                    hvn / np.sum(hvn)
-                    if np.sum(hvn) > 0 else hvn.astype(float)
-                )
-                pc = narrow_fit.pi0_yield * pshape
-                vc = narrow_fit.dvcs_yield * vshape
-                axn.errorbar(
-                    nc, hdn,
-                    yerr=np.sqrt(np.maximum(hdn, 1.0)),
-                    fmt="o", ms=2.0, linewidth=0.6,
-                    color=SAMPLE_COLORS["data"],
-                    label="data",
-                )
-                axn.step(
-                    nc, vc, where="mid",
-                    color=SAMPLE_COLORS["dvcs_mc"],
-                    linewidth=1.0, label="BH/DVCS",
-                )
-                axn.step(
-                    nc, pc, where="mid",
-                    color=SAMPLE_COLORS["pi0_mc"],
-                    linewidth=1.0, label=r"$\pi^0$",
-                )
-                axn.step(
-                    nc, pc + vc, where="mid",
-                    color=SAMPLE_COLORS["fit"],
-                    linewidth=1.3, label="total fit",
-                )
-                axn.set_title(
-                    f"{elo:.2f}-{ehi:.2f} GeV; narrow "
-                    + r"$M_{\mathrm{probe}}^2$ diagnostic; "
-                    + rf"$f_{{\pi^0}}={narrow_fit.pi0_fraction:.3f}$",
-                    fontsize=8.5,
-                )
-            else:
-                axn.text(
-                    0.5, 0.5, "fit unavailable",
-                    transform=axn.transAxes,
-                    ha="center", va="center",
-                )
-            #endif
-            axn.set_xlim(
-                -narrow_probe_m2_max,
-                narrow_probe_m2_max,
-            )
-            axn.set_xlabel(
-                r"$(P_{\mathrm{probe}}^{\mathrm{pred}})^2$ "
-                r"(GeV$^2$)"
-            )
-            axn.set_ylabel("entries / bin")
-            axn.grid(alpha=0.18)
         #endfor
 
         axes[0, 0].legend(fontsize=6.5, frameon=False, ncol=2)
@@ -5187,19 +5103,7 @@ def make_selection_driver_fit_canvases(
         )
         plt.close(fig)
 
-        axes_m2[0, 0].legend(fontsize=6.5, frameon=False, ncol=2)
-        fig_m2.suptitle(
-            f"{period.label}: high-resolution narrow "
-            + r"$M_{\mathrm{probe}}^2$ diagnostic — "
-            + region,
-            fontsize=13,
-        )
-        safe_finalize_figure(
-            fig_m2,
-            outdir / f"canvas_probe_m2_narrow_{region.lower()}.png",
-            rect=(0, 0, 1, 0.965),
-        )
-        plt.close(fig_m2)
+
     #endfor
 
 
@@ -8375,25 +8279,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--study-probe-m2-max",
-        type=float,
-        default=0.06,
-        help=(
-            "Half-range (GeV^2) for the high-resolution predicted-probe M^2 "
-            "diagnostic. This does NOT change the common Stage-II support mask. "
-            "Default: 0.06."
-        ),
-    )
-    parser.add_argument(
-        "--study-probe-m2-bins",
-        type=int,
-        default=120,
-        help=(
-            "Bins across the narrow predicted-probe M^2 diagnostic range. "
-            "Default: 120."
-        ),
-    )
-    parser.add_argument(
         "--den-fit-mm2-bins",
         type=int,
         default=48,
@@ -8981,8 +8866,6 @@ def process_period(
             int(args_dict["disc_ptmiss_bins"]),
             float(args_dict["disc_theta_max"]),
             int(args_dict["disc_theta_bins"]),
-            float(args_dict["study_probe_m2_max"]),
-            int(args_dict["study_probe_m2_bins"]),
             int(args_dict["den_min_data_count"]),
             int(args_dict["den_min_template_count"]),
         )
@@ -9487,9 +9370,6 @@ For EACH period, region, and energy bin:
      - canvas_selection_fit_projections_ft.png
      - canvas_selection_fit_projections_fd_all.png
        These show M_X^2(ep) explicitly as well as pTmiss/theta_gamma_gamma.
-     - canvas_probe_m2_narrow_ft.png
-     - canvas_probe_m2_narrow_fd_all.png
-       High-resolution narrow-core M_probe^2 study.
      - canvas_candidate_model_summary.png
        Compares M_X^2 x pTmiss, M_X^2 x theta_gg, and a shared pTmiss+theta fit.
      - canvas_theta_gg_alternative.png
