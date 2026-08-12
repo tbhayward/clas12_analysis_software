@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v046.py
+derive_photon_efficiency_scale_factors_v047.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,11 +47,39 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v046.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v047.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v046.py \
+    python derive_photon_efficiency_scale_factors_v047.py \
         --max-entries 0 --period fa18_out
+
+
+LOOSE nSIDIS TRANSITION STUDY
+-----------------------------
+Fa18 Inb now has loose nSidis-derived epgammaX and eppi0X data trees whose only
+upstream event requirement is the nSidis electron selection.  These trees do
+not impose the old DVCS/DVPi0P wagon missing-energy requirement.
+
+Use:
+    python derive_photon_efficiency_scale_factors_v047.py \
+        --max-entries 0 --period fa18_inb --nsidis-study
+
+This isolated mode:
+  * keeps and reads the original wagon epgamma/eppi0 trees;
+  * checks exact runnum+evnum event recovery in the nSidis trees;
+  * compares old and new epgamma kinematics below 2 GeV;
+  * recomputes full ep pi0 exclusivity and exposes the inclusive/SIDIS pi0
+    population in the loose eppi0X sample;
+  * scans the missing-photon mass-shell support without cutting pTmiss;
+  * does NOT form a new efficiency scale factor.
+
+After inspecting those outputs, an optional diagnostic composition pilot is:
+    --nsidis-pilot-fit
+
+which uses the already-selected M_X^2(ep) x pTmiss denominator model and may
+extend the fit above 2 GeV.  It remains diagnostic until the overlap study is
+accepted.
+
 """
 
 from __future__ import annotations
@@ -128,6 +156,8 @@ class PeriodConfig:
     epgamma_dvcs_mc: str
     epgamma_pi0_mc: str
     eppi0_pi0_mc: str
+    nsidis_epgamma_data: Optional[str] = None
+    nsidis_eppi0_data: Optional[str] = None
 
 
 PERIODS: Tuple[PeriodConfig, ...] = (
@@ -138,6 +168,14 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_fa18_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/bkg_rga_fa18_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_50nA_10604MeV.root",
+        nsidis_epgamma_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/"
+            "dvcs/efficiency_study/nSidis_rga_fa18_inb_epgamma.root"
+        ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_fa18_inb_eppi0.root"
+        ),
     ),
     PeriodConfig(
         "fa18_out", "Fa18 Out", 10.604,
@@ -1471,28 +1509,35 @@ def build_epgamma_denominator_features(
         "valid_tag": np.asarray(valid, dtype=bool),
     }
 
+    # pTmiss(epgamma) is fully reconstructable from the measured four-vectors.
+    # The loose nSidis trees are not required to store the old skim-level branch,
+    # so always compute it and use it as a fallback.
+    recomputed_ptmiss = np.asarray(
+        np.sqrt(px * px + py * py),
+        dtype=np.float32,
+    )
+    out["recomputed_pTmiss"] = recomputed_ptmiss
+
     if not mixed_tag_shift:
-        for raw_name, out_name in (
-            ("pTmiss", "stored_pTmiss"),
-            ("theta_gamma_gamma", "stored_theta_gamma_gamma"),
-        ):
-            if raw_name in epg.raw:
-                out[out_name] = np.asarray(
-                    epg.raw[raw_name], dtype=np.float32
-                )
-            #endif
-        #endfor
+        if "pTmiss" in epg.raw:
+            out["stored_pTmiss"] = np.asarray(
+                epg.raw["pTmiss"], dtype=np.float32
+            )
+            out["pTmiss_recomputed_fallback"] = np.zeros(n, dtype=bool)
+        else:
+            out["stored_pTmiss"] = recomputed_ptmiss
+            out["pTmiss_recomputed_fallback"] = np.ones(n, dtype=bool)
+        #endif
+
+        if "theta_gamma_gamma" in epg.raw:
+            out["stored_theta_gamma_gamma"] = np.asarray(
+                epg.raw["theta_gamma_gamma"], dtype=np.float32
+            )
+        #endif
     else:
-        # For the mixed-event wrong-photon template the skim-level pTmiss
-        # belongs to the original photon and is therefore invalid. Recompute
-        # the epgamma missing transverse momentum after substituting the
-        # deterministically shifted photon. This makes the mixed template
-        # usable in the same pTmiss production driver without borrowing the
-        # original event's correlated value.
-        out["stored_pTmiss"] = np.asarray(
-            np.sqrt(px * px + py * py),
-            dtype=np.float32,
-        )
+        # The original stored pTmiss is invalid after mixed-event substitution.
+        out["stored_pTmiss"] = recomputed_ptmiss
+        out["pTmiss_recomputed_fallback"] = np.ones(n, dtype=bool)
     #endif
 
     if "runnum" in epg.raw:
@@ -8235,6 +8280,71 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--nsidis-study",
+        action="store_true",
+        help=(
+            "Run the isolated loose-nSidis overlap/exclusivity study and exit "
+            "before the normal Stage-II/III chain."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-epgamma",
+        default=None,
+        help=(
+            "Override nSidis epgamma ROOT file. Requires exactly one --period."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-eppi0",
+        default=None,
+        help=(
+            "Override nSidis eppi0 ROOT file. Requires exactly one --period."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-eppi0-envelope-quantile",
+        type=float,
+        default=0.995,
+        help=(
+            "Quantile of the old wagon eppi0 sample used to define a diagnostic "
+            "fully-exclusive envelope. Default: 0.995."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-probe-m2-scan",
+        default="0.02,0.04,0.06,0.08,0.10,0.15,0.20,0.30,0.60",
+        help=(
+            "Comma-separated |M_X^2(epgamma_tag)| support cuts scanned in the "
+            "nSidis overlap study. pTmiss is deliberately left uncut."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-pilot-fit",
+        action="store_true",
+        help=(
+            "Also run a diagnostic nSidis M_X^2(ep) x pTmiss composition fit. "
+            "This still does not form an efficiency scale factor."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-pilot-energy-max",
+        type=float,
+        default=9.5,
+        help=(
+            "Maximum predicted probe energy for the optional nSidis pilot fit. "
+            "Default: 9.5 GeV."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-pilot-probe-m2-max",
+        type=float,
+        default=0.10,
+        help=(
+            "Mass-shell support |M_X^2(epgamma_tag)| for the optional nSidis "
+            "pilot fit. Default: 0.10 GeV^2."
+        ),
+    )
+    parser.add_argument(
         "--diagnostics",
         choices=("selection", "full"),
         default="selection",
@@ -8508,6 +8618,1260 @@ def parse_args() -> argparse.Namespace:
     )
     return parser.parse_args()
 
+
+
+
+# -----------------------------------------------------------------------------
+# Loose nSidis transition study
+# -----------------------------------------------------------------------------
+
+def resolve_nsidis_paths(
+    period: PeriodConfig,
+    args_dict: Dict[str, object],
+) -> Tuple[str, str]:
+    """Resolve period defaults, optionally overridden from the command line."""
+    epg_override = args_dict.get("nsidis_epgamma")
+    epi_override = args_dict.get("nsidis_eppi0")
+
+    epg_path = (
+        str(epg_override)
+        if epg_override
+        else period.nsidis_epgamma_data
+    )
+    epi_path = (
+        str(epi_override)
+        if epi_override
+        else period.nsidis_eppi0_data
+    )
+
+    if not epg_path or not epi_path:
+        raise FileNotFoundError(
+            f"{period.label}: nSidis files are not configured. "
+            "Supply --nsidis-epgamma and --nsidis-eppi0."
+        )
+    #endif
+    return str(epg_path), str(epi_path)
+
+
+def _structured_event_keys(raw: Dict[str, np.ndarray]) -> np.ndarray:
+    """Collision-free structured runnum/evnum event keys."""
+    if "runnum" not in raw or "evnum" not in raw:
+        raise KeyError("runnum and evnum are required for nSidis overlap checks.")
+    #endif
+
+    run = np.asarray(raw["runnum"], dtype=np.int64)
+    ev = np.asarray(raw["evnum"], dtype=np.int64)
+    if run.shape != ev.shape:
+        raise ValueError("runnum and evnum arrays have different shapes.")
+    #endif
+
+    keys = np.empty(
+        run.size,
+        dtype=np.dtype([("runnum", "<i8"), ("evnum", "<i8")]),
+    )
+    keys["runnum"] = run
+    keys["evnum"] = ev
+    return keys
+
+
+def event_overlap_masks(
+    reference_raw: Dict[str, np.ndarray],
+    candidate_raw: Dict[str, np.ndarray],
+) -> Tuple[np.ndarray, Dict[str, object]]:
+    """
+    Exact event-level overlap.
+
+    Multiple photon/pi0 candidates per event are intentionally retained in the
+    candidate-entry mask.  The unique-event recall is the primary skim sanity
+    check.
+    """
+    ref_keys = _structured_event_keys(reference_raw)
+    cand_keys = _structured_event_keys(candidate_raw)
+
+    ref_unique = np.unique(ref_keys)
+    cand_unique = np.unique(cand_keys)
+    common = np.intersect1d(ref_unique, cand_unique, assume_unique=True)
+
+    # np.isin is safe for structured arrays and avoids any packed-key collision.
+    candidate_overlap = np.isin(cand_keys, ref_unique)
+
+    summary = {
+        "reference_entries": int(ref_keys.size),
+        "candidate_entries": int(cand_keys.size),
+        "reference_unique_events": int(ref_unique.size),
+        "candidate_unique_events": int(cand_unique.size),
+        "common_unique_events": int(common.size),
+        "reference_unique_event_recall": (
+            float(common.size) / float(ref_unique.size)
+            if ref_unique.size else float("nan")
+        ),
+        "candidate_unique_event_overlap_fraction": (
+            float(common.size) / float(cand_unique.size)
+            if cand_unique.size else float("nan")
+        ),
+        "candidate_entry_overlap_fraction": (
+            float(np.count_nonzero(candidate_overlap))
+            / float(candidate_overlap.size)
+            if candidate_overlap.size else float("nan")
+        ),
+    }
+    return candidate_overlap, summary
+
+
+def build_eppi0_exclusivity_features(
+    period: PeriodConfig,
+    sample: EPPi0Sample,
+) -> Dict[str, np.ndarray]:
+    """
+    Recompute full e p -> e p pi0 exclusivity from the measured four-vectors.
+
+    For a genuinely exclusive reconstructed pi0 event:
+      Emiss(ep pi0) -> 0,
+      |p_miss(ep pi0)| -> 0,
+      pTmiss(ep pi0) -> 0,
+      Mx2(ep pi0) -> 0.
+
+    These are therefore the natural handles for rejecting the enormous
+    inclusive/SIDIS pi0 population in the loose nSidis eppi0X tree.
+    """
+    e3 = sample.electron_p3
+    p3 = sample.proton_p3
+    pi3 = sample.pi0_p3
+
+    e_E = np.sqrt(np.einsum("ij,ij->i", e3, e3) + M_E * M_E)
+    p_E = np.sqrt(np.einsum("ij,ij->i", p3, p3) + M_P * M_P)
+    pi_E = np.sqrt(
+        np.einsum("ij,ij->i", pi3, pi3)
+        + np.asarray(sample.pi0_mass, dtype=float) ** 2
+    )
+
+    beam_p = math.sqrt(max(0.0, period.beam_energy**2 - M_E**2))
+    miss_E = period.beam_energy + M_P - e_E - p_E - pi_E
+
+    px = -e3[:, 0] - p3[:, 0] - pi3[:, 0]
+    py = -e3[:, 1] - p3[:, 1] - pi3[:, 1]
+    pz = beam_p - e3[:, 2] - p3[:, 2] - pi3[:, 2]
+
+    p2 = px * px + py * py + pz * pz
+    pmiss = np.sqrt(p2)
+    ptmiss = np.sqrt(px * px + py * py)
+    mx2 = miss_E * miss_E - p2
+
+    out = {
+        "Emiss": np.asarray(miss_E, dtype=np.float32),
+        "pmiss": np.asarray(pmiss, dtype=np.float32),
+        "pTmiss": np.asarray(ptmiss, dtype=np.float32),
+        "Mx2": np.asarray(mx2, dtype=np.float32),
+        "Mgg": np.asarray(sample.pi0_mass, dtype=np.float32),
+    }
+    if "runnum" in sample.raw:
+        out["runnum"] = np.asarray(sample.raw["runnum"])
+    #endif
+    if "evnum" in sample.raw:
+        out["evnum"] = np.asarray(sample.raw["evnum"])
+    #endif
+    return out
+
+
+def _normalized_hist(
+    values: np.ndarray,
+    bins: np.ndarray,
+    mask: Optional[np.ndarray] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    values = np.asarray(values, dtype=float)
+    good = np.isfinite(values)
+    if mask is not None:
+        good &= np.asarray(mask, dtype=bool)
+    #endif
+    hist, edges = np.histogram(values[good], bins=bins)
+    hist = hist.astype(float)
+    total = float(np.sum(hist))
+    if total > 0.0:
+        hist /= total
+    #endif
+    return hist, edges
+
+
+def _quantile_finite(values: np.ndarray, q: float) -> float:
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    if not values.size:
+        return float("nan")
+    #endif
+    return float(np.quantile(values, q))
+
+
+def derive_wagon_eppi0_envelope(
+    features: Dict[str, np.ndarray],
+    quantile: float,
+) -> Dict[str, float]:
+    """
+    Diagnostic, data-driven fully-exclusive envelope.
+
+    It deliberately retains nearly all of the old wagon eppi0 population and
+    is used to quantify how much of the loose nSidis eppi0X sample is compatible
+    with the already-used exclusive sample.  It is NOT silently promoted to the
+    final production cut.
+    """
+    q = float(np.clip(quantile, 0.90, 0.9999))
+    return {
+        "quantile": q,
+        "abs_Emiss_max_GeV": _quantile_finite(
+            np.abs(features["Emiss"]), q
+        ),
+        "pmiss_max_GeV": _quantile_finite(features["pmiss"], q),
+        "pTmiss_max_GeV": _quantile_finite(features["pTmiss"], q),
+        "abs_Mx2_max_GeV2": _quantile_finite(
+            np.abs(features["Mx2"]), q
+        ),
+    }
+
+
+def apply_wagon_eppi0_envelope(
+    features: Dict[str, np.ndarray],
+    envelope: Dict[str, float],
+) -> np.ndarray:
+    return (
+        np.isfinite(features["Emiss"])
+        & np.isfinite(features["pmiss"])
+        & np.isfinite(features["pTmiss"])
+        & np.isfinite(features["Mx2"])
+        & (np.abs(features["Emiss"]) <= envelope["abs_Emiss_max_GeV"])
+        & (features["pmiss"] <= envelope["pmiss_max_GeV"])
+        & (features["pTmiss"] <= envelope["pTmiss_max_GeV"])
+        & (np.abs(features["Mx2"]) <= envelope["abs_Mx2_max_GeV2"])
+    )
+
+
+def make_nsidis_epgamma_overlap_canvas(
+    period: PeriodConfig,
+    wagon_f: Dict[str, np.ndarray],
+    nsidis_f: Dict[str, np.ndarray],
+    nsidis_event_overlap: np.ndarray,
+    outdir: Path,
+) -> None:
+    """
+    Old-vs-new epgamma comparison below 2 GeV, where both samples should cover
+    the same physics and the old wagon reference is known to exist.
+    """
+    wagon_mask = (
+        wagon_f["valid_tag"]
+        & (wagon_f["pred_probe_energy"] >= 0.40)
+        & (wagon_f["pred_probe_energy"] < 2.0)
+    )
+    ns_mask = (
+        nsidis_f["valid_tag"]
+        & (nsidis_f["pred_probe_energy"] >= 0.40)
+        & (nsidis_f["pred_probe_energy"] < 2.0)
+    )
+
+    specs = (
+        (
+            "ep_missing_mass2",
+            np.linspace(-0.30, 0.40, 141),
+            r"$M_X^2(ep)$ (GeV$^2$)",
+        ),
+        (
+            "pred_probe_mass2",
+            np.linspace(-0.40, 0.40, 161),
+            r"$M_X^2(ep\gamma_{\rm tag})$ (GeV$^2$)",
+        ),
+        (
+            "stored_pTmiss",
+            np.linspace(0.0, 1.0, 121),
+            r"$p_{T,\rm miss}(ep\gamma)$ (GeV)",
+        ),
+        (
+            "pred_probe_energy",
+            np.linspace(0.40, 2.00, 81),
+            r"$E_{\rm probe}^{pred}$ (GeV)",
+        ),
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 9.0))
+    for ax, (key, bins, xlabel) in zip(axes.ravel(), specs):
+        h_old, edges = _normalized_hist(
+            wagon_f[key], bins, wagon_mask
+        )
+        h_overlap, _ = _normalized_hist(
+            nsidis_f[key],
+            bins,
+            ns_mask & nsidis_event_overlap,
+        )
+        h_extra, _ = _normalized_hist(
+            nsidis_f[key],
+            bins,
+            ns_mask & ~nsidis_event_overlap,
+        )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+
+        ax.step(
+            centers, h_old, where="mid", linewidth=1.3,
+            label="original wagon",
+        )
+        ax.step(
+            centers, h_overlap, where="mid", linewidth=1.1,
+            label="nSidis: event also in wagon",
+        )
+        ax.step(
+            centers, h_extra, where="mid", linewidth=1.0,
+            label="nSidis: event absent from wagon",
+        )
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("unit-normalized entries")
+        ax.grid(alpha=0.18)
+    #endfor
+
+    axes[0, 0].legend(fontsize=8, frameon=False)
+    fig.suptitle(
+        f"{period.label}: old wagon versus loose nSidis epgammaX, "
+        r"$0.4<E_{\rm probe}^{pred}<2$ GeV",
+        fontsize=13.5,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_epgamma_overlap_below2.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
+
+
+def make_nsidis_overlap_vs_energy_canvas(
+    period: PeriodConfig,
+    nsidis_f: Dict[str, np.ndarray],
+    nsidis_event_overlap: np.ndarray,
+    outdir: Path,
+    tag_max: float,
+) -> None:
+    """
+    Show where the old wagon ceases to represent the loose nSidis sample.
+    """
+    valid = (
+        nsidis_f["valid_tag"]
+        & (nsidis_f["pred_probe_energy"] >= 0.40)
+        & (nsidis_f["pred_probe_energy"] < tag_max)
+    )
+
+    edges = np.asarray(
+        [0.40, 0.50, 0.60, 0.80, 1.00, 1.25, 1.50, 2.00,
+         2.50, 3.00, 4.00, 5.00, 6.50, 8.00, tag_max],
+        dtype=float,
+    )
+    edges = np.unique(
+        edges[(edges >= 0.40) & (edges <= tag_max)]
+    )
+    if edges.size < 2:
+        return
+    #endif
+    if edges[-1] < tag_max:
+        edges = np.append(edges, tag_max)
+    #endif
+
+    total, _ = np.histogram(
+        nsidis_f["pred_probe_energy"][valid],
+        bins=edges,
+    )
+    overlap, _ = np.histogram(
+        nsidis_f["pred_probe_energy"][
+            valid & nsidis_event_overlap
+        ],
+        bins=edges,
+    )
+    frac = np.divide(
+        overlap.astype(float),
+        total.astype(float),
+        out=np.full(total.shape, np.nan, dtype=float),
+        where=total > 0,
+    )
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    fig, ax = plt.subplots(figsize=(9.5, 5.6))
+    ax.plot(centers, frac, marker="o", linewidth=1.2)
+    ax.axvline(2.0, linestyle="--", linewidth=1.0)
+    ax.set_ylim(-0.03, 1.03)
+    ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    ax.set_ylabel("nSidis entries whose event occurs in old wagon")
+    ax.set_title(
+        f"{period.label}: old-wagon event overlap versus predicted probe energy"
+    )
+    ax.grid(alpha=0.18)
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_wagon_overlap_vs_energy.png",
+    )
+    plt.close(fig)
+
+
+def make_nsidis_eppi0_exclusivity_canvas(
+    period: PeriodConfig,
+    wagon_f: Dict[str, np.ndarray],
+    nsidis_f: Dict[str, np.ndarray],
+    nsidis_event_overlap: np.ndarray,
+    envelope: Dict[str, float],
+    outdir: Path,
+) -> None:
+    """
+    Directly expose the inclusive/SIDIS pi0 background in the loose eppi0X
+    sample and the exclusive peak represented by the old wagon sample.
+    """
+    specs = (
+        (
+            "Emiss",
+            np.linspace(-1.0, 1.0, 161),
+            r"$E_{\rm miss}(ep\pi^0)$ (GeV)",
+            (-envelope["abs_Emiss_max_GeV"],
+             envelope["abs_Emiss_max_GeV"]),
+        ),
+        (
+            "pmiss",
+            np.linspace(0.0, 1.5, 151),
+            r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
+            (envelope["pmiss_max_GeV"],),
+        ),
+        (
+            "pTmiss",
+            np.linspace(0.0, 1.0, 141),
+            r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)",
+            (envelope["pTmiss_max_GeV"],),
+        ),
+        (
+            "Mx2",
+            np.linspace(-0.50, 0.50, 161),
+            r"$M_X^2(ep\pi^0)$ (GeV$^2$)",
+            (-envelope["abs_Mx2_max_GeV2"],
+             envelope["abs_Mx2_max_GeV2"]),
+        ),
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 9.0))
+    for ax, (key, bins, xlabel, cut_lines) in zip(
+        axes.ravel(), specs
+    ):
+        h_old, edges = _normalized_hist(wagon_f[key], bins)
+        h_overlap, _ = _normalized_hist(
+            nsidis_f[key], bins, nsidis_event_overlap
+        )
+        h_extra, _ = _normalized_hist(
+            nsidis_f[key], bins, ~nsidis_event_overlap
+        )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+
+        ax.step(
+            centers, h_old, where="mid", linewidth=1.3,
+            label="original wagon",
+        )
+        ax.step(
+            centers, h_overlap, where="mid", linewidth=1.1,
+            label="nSidis: event also in wagon",
+        )
+        ax.step(
+            centers, h_extra, where="mid", linewidth=1.0,
+            label="nSidis: event absent from wagon",
+        )
+        for value in cut_lines:
+            ax.axvline(value, linestyle="--", linewidth=0.9)
+        #endfor
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("unit-normalized entries")
+        ax.grid(alpha=0.18)
+    #endfor
+
+    axes[0, 0].legend(fontsize=8, frameon=False)
+    fig.suptitle(
+        f"{period.label}: eppi0X exclusivity — loose nSidis versus old wagon",
+        fontsize=13.5,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_eppi0_exclusivity.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
+
+
+def build_nsidis_probe_mass2_scan(
+    period: PeriodConfig,
+    wagon_f: Dict[str, np.ndarray],
+    nsidis_f: Dict[str, np.ndarray],
+    nsidis_event_overlap: np.ndarray,
+    mm2_min: float,
+    mm2_max: float,
+    scan_values: Sequence[float],
+) -> List[Dict[str, object]]:
+    """
+    Scan |M_X^2(epgamma_tag)| only.
+
+    pTmiss is deliberately NOT cut because it is the selected composition
+    discriminator.  This scan asks how strongly the mass-shell requirement
+    enriches the old exclusive population while preserving it below 2 GeV.
+    """
+    rows: List[Dict[str, object]] = []
+
+    for range_name, elo, ehi in (
+        ("overlap_0p4_2", 0.40, 2.00),
+        ("extension_2_9p5", 2.00, 9.50),
+    ):
+        wagon_base = (
+            wagon_f["valid_tag"]
+            & (wagon_f["pred_probe_energy"] >= elo)
+            & (wagon_f["pred_probe_energy"] < ehi)
+            & (wagon_f["ep_missing_mass2"] >= mm2_min)
+            & (wagon_f["ep_missing_mass2"] < mm2_max)
+        )
+        ns_base = (
+            nsidis_f["valid_tag"]
+            & (nsidis_f["pred_probe_energy"] >= elo)
+            & (nsidis_f["pred_probe_energy"] < ehi)
+            & (nsidis_f["ep_missing_mass2"] >= mm2_min)
+            & (nsidis_f["ep_missing_mass2"] < mm2_max)
+        )
+
+        wb = int(np.count_nonzero(wagon_base))
+        nb = int(np.count_nonzero(ns_base))
+        ob = int(np.count_nonzero(ns_base & nsidis_event_overlap))
+        xb = int(np.count_nonzero(ns_base & ~nsidis_event_overlap))
+
+        for cut in scan_values:
+            cut = float(cut)
+            wm = wagon_base & (
+                np.abs(wagon_f["pred_probe_mass2"]) < cut
+            )
+            nm = ns_base & (
+                np.abs(nsidis_f["pred_probe_mass2"]) < cut
+            )
+            om = nm & nsidis_event_overlap
+            xm = nm & ~nsidis_event_overlap
+
+            wc = int(np.count_nonzero(wm))
+            nc = int(np.count_nonzero(nm))
+            oc = int(np.count_nonzero(om))
+            xc = int(np.count_nonzero(xm))
+
+            rows.append({
+                "period": period.key,
+                "label": period.label,
+                "energy_range": range_name,
+                "energy_low_GeV": elo,
+                "energy_high_GeV": ehi,
+                "abs_pred_probe_m2_max_GeV2": cut,
+                "wagon_retention": (
+                    wc / wb if wb else float("nan")
+                ),
+                "nsidis_total_retention": (
+                    nc / nb if nb else float("nan")
+                ),
+                "nsidis_wagon_event_retention": (
+                    oc / ob if ob else float("nan")
+                ),
+                "nsidis_nonwagon_event_retention": (
+                    xc / xb if xb else float("nan")
+                ),
+                "surviving_nsidis_wagon_event_fraction": (
+                    oc / nc if nc else float("nan")
+                ),
+                "wagon_surviving_count": wc,
+                "nsidis_surviving_count": nc,
+                "nsidis_wagon_event_surviving_count": oc,
+                "nsidis_nonwagon_event_surviving_count": xc,
+            })
+        #endfor
+    #endfor
+
+    return rows
+
+
+def make_nsidis_probe_mass2_scan_canvas(
+    period: PeriodConfig,
+    rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    rr = sorted(
+        [
+            row for row in rows
+            if row["energy_range"] == "overlap_0p4_2"
+        ],
+        key=lambda row: float(row["abs_pred_probe_m2_max_GeV2"]),
+    )
+    if not rr:
+        return
+    #endif
+
+    x = [
+        float(row["abs_pred_probe_m2_max_GeV2"])
+        for row in rr
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+    axes[0].plot(
+        x,
+        [float(row["wagon_retention"]) for row in rr],
+        marker="o",
+        label="old wagon",
+    )
+    axes[0].plot(
+        x,
+        [
+            float(row["nsidis_wagon_event_retention"])
+            for row in rr
+        ],
+        marker="o",
+        label="nSidis entries from wagon events",
+    )
+    axes[0].plot(
+        x,
+        [
+            float(row["nsidis_nonwagon_event_retention"])
+            for row in rr
+        ],
+        marker="o",
+        label="nSidis entries from non-wagon events",
+    )
+    axes[0].set_ylim(-0.03, 1.03)
+    axes[0].set_xlabel(
+        r"$|M_X^2(ep\gamma_{\rm tag})|_{\max}$ (GeV$^2$)"
+    )
+    axes[0].set_ylabel("retention")
+    axes[0].set_title(
+        r"$0.4<E_{\rm probe}^{pred}<2$ GeV; "
+        r"$M_X^2(ep)$ fit window already applied"
+    )
+    axes[0].grid(alpha=0.18)
+    axes[0].legend(fontsize=7.5, frameon=False)
+
+    axes[1].plot(
+        x,
+        [
+            float(row["surviving_nsidis_wagon_event_fraction"])
+            for row in rr
+        ],
+        marker="o",
+    )
+    axes[1].set_ylim(-0.03, 1.03)
+    axes[1].set_xlabel(
+        r"$|M_X^2(ep\gamma_{\rm tag})|_{\max}$ (GeV$^2$)"
+    )
+    axes[1].set_ylabel("wagon-event fraction of surviving nSidis entries")
+    axes[1].set_title("exclusive-sample enrichment below 2 GeV")
+    axes[1].grid(alpha=0.18)
+
+    fig.suptitle(
+        f"{period.label}: nSidis mass-shell support scan "
+        "(pTmiss deliberately uncut)",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_probe_mass2_scan.png",
+        rect=(0, 0, 1, 0.94),
+    )
+    plt.close(fig)
+
+
+def run_nsidis_ptmiss_pilot_fits(
+    period: PeriodConfig,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    *,
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    mm2_bins: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    min_data_count: int,
+    min_template_count: int,
+    nuisance_shift_prior: float,
+    nuisance_sigma_prior: float,
+    max_shift_bins: float,
+    max_sigma_bins: float,
+) -> List[Dict[str, object]]:
+    """
+    Diagnostic-only extension of the already-selected production candidate:
+        M_X^2(ep) x pTmiss.
+    """
+    rows: List[Dict[str, object]] = []
+    edges = stage2_energy_edges(max_probe_energy)
+    disc = "mx2_ep_x_pTmiss"
+
+    for region in ("FT", "FD_all"):
+        for ib in range(len(edges) - 1):
+            elo = float(edges[ib])
+            ehi = float(edges[ib + 1])
+
+            masks = {
+                name: stage2_fit_mask(
+                    feat,
+                    region,
+                    ft_theta_max,
+                    elo,
+                    ehi,
+                    mm2_min,
+                    mm2_max,
+                    probe_m2_max,
+                )
+                for name, feat in (
+                    ("data", data_f),
+                    ("pi0", pi0_f),
+                    ("dvcs", dvcs_f),
+                )
+            }
+
+            hists = {}
+            for name, feat in (
+                ("data", data_f),
+                ("pi0", pi0_f),
+                ("dvcs", dvcs_f),
+            ):
+                hists[name] = histogram_for_discriminator(
+                    disc,
+                    feat,
+                    masks[name],
+                    mm2_min=mm2_min,
+                    mm2_max=mm2_max,
+                    probe_m2_max=probe_m2_max,
+                    mm2_bins_2d=mm2_bins,
+                    probe_m2_bins_2d=48,
+                    bins_1d=90,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=4.0,
+                    theta_bins=80,
+                )
+            #endfor
+
+            row = {
+                "period": period.key,
+                "label": period.label,
+                "region": region,
+                "energy_low_GeV": elo,
+                "energy_high_GeV": ehi,
+                "energy_center_GeV": 0.5 * (elo + ehi),
+                "probe_m2_support_max_GeV2": probe_m2_max,
+                "data_candidate_count": int(np.sum(hists["data"])),
+                "aaogen_candidate_count": int(np.sum(hists["pi0"])),
+                "dvcsgen_candidate_count": int(np.sum(hists["dvcs"])),
+                "status": "diagnostic_only_not_efficiency",
+            }
+
+            if (
+                np.sum(hists["data"]) < min_data_count
+                or np.sum(hists["pi0"]) < min_template_count
+                or np.sum(hists["dvcs"]) < min_template_count
+            ):
+                row.update({
+                    "fit_success": 0,
+                    "pi0_fraction": float("nan"),
+                    "deviance_per_ndof": float("nan"),
+                })
+                rows.append(row)
+                continue
+            #endif
+
+            fit = fit_shared_morphed_composition(
+                {
+                    disc: (
+                        hists["data"],
+                        hists["pi0"],
+                        hists["dvcs"],
+                    )
+                },
+                {},
+                nuisance_shift_prior,
+                nuisance_sigma_prior,
+                max_shift_bins,
+                max_sigma_bins,
+                driver_names=(disc,),
+            )
+
+            row.update({
+                "fit_success": int(fit.success),
+                "pi0_fraction": float(fit.pi0_fraction),
+                "dvcs_fraction": (
+                    1.0 - float(fit.pi0_fraction)
+                    if np.isfinite(fit.pi0_fraction)
+                    else float("nan")
+                ),
+                "poisson_deviance": float(fit.poisson_deviance),
+                "ndof": int(fit.ndof),
+                "deviance_per_ndof": (
+                    float(fit.poisson_deviance / fit.ndof)
+                    if fit.ndof else float("nan")
+                ),
+            })
+            if fit.nuisance:
+                row.update(fit.nuisance)
+            #endif
+            rows.append(row)
+        #endfor
+    #endfor
+
+    return rows
+
+
+def make_nsidis_pilot_composition_canvas(
+    period: PeriodConfig,
+    wagon_rows: List[Dict[str, object]],
+    nsidis_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    fig, axes = plt.subplots(2, 2, figsize=(13.0, 8.5))
+
+    for irow, region in enumerate(("FT", "FD_all")):
+        for rows, label in (
+            (wagon_rows, "old wagon"),
+            (nsidis_rows, "nSidis"),
+        ):
+            rr = sorted(
+                [
+                    row for row in rows
+                    if row["region"] == region
+                    and int(row.get("fit_success", 0)) == 1
+                ],
+                key=lambda row: float(row["energy_center_GeV"]),
+            )
+            if not rr:
+                continue
+            #endif
+
+            x = [
+                float(row["energy_center_GeV"])
+                for row in rr
+            ]
+            axes[irow, 0].plot(
+                x,
+                [float(row["pi0_fraction"]) for row in rr],
+                marker="o",
+                linewidth=1.0,
+                label=label,
+            )
+            axes[irow, 1].plot(
+                x,
+                [float(row["deviance_per_ndof"]) for row in rr],
+                marker="o",
+                linewidth=1.0,
+                label=label,
+            )
+        #endfor
+
+        axes[irow, 0].set_ylim(0.0, 1.02)
+        axes[irow, 0].set_ylabel(r"$f_{\pi^0}$")
+        axes[irow, 0].set_title(f"{region}: composition")
+        axes[irow, 1].set_ylabel("Poisson deviance / ndof")
+        axes[irow, 1].set_title(f"{region}: template goodness")
+
+        for ax in axes[irow]:
+            ax.axvline(2.0, linestyle="--", linewidth=0.9)
+            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.grid(alpha=0.18)
+        #endfor
+    #endfor
+
+    axes[0, 0].legend(fontsize=8, frameon=False)
+    axes[0, 1].legend(fontsize=8, frameon=False)
+
+    fig.suptitle(
+        f"{period.label}: diagnostic nSidis composition pilot "
+        r"using $M_X^2(ep)\otimes p_{T,\rm miss}$",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_pilot_composition.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
+
+
+def preflight_nsidis_study(
+    periods: Sequence[PeriodConfig],
+    args_dict: Dict[str, object],
+) -> None:
+    """Fail before the long run if paths or required event IDs are missing."""
+    missing = []
+    schema_problems = []
+
+    for period in periods:
+        ns_epg, ns_epi = resolve_nsidis_paths(period, args_dict)
+
+        checks = [
+            ("old epgamma", period.epgamma_data, EPG_REQUIRED),
+            ("old eppi0", period.eppi0_data, EPPIO_REQUIRED),
+            ("nSidis epgamma", ns_epg, EPG_REQUIRED),
+            ("nSidis eppi0", ns_epi, EPPIO_REQUIRED),
+        ]
+        if bool(args_dict.get("nsidis_pilot_fit", False)):
+            checks.extend([
+                ("aaogen epgamma", period.epgamma_pi0_mc, EPG_REQUIRED),
+                ("dvcsgen epgamma", period.epgamma_dvcs_mc, EPG_REQUIRED),
+            ])
+        #endif
+
+        for label, path, required in checks:
+            if not Path(path).exists():
+                missing.append(f"{period.label}: {label}: {path}")
+                continue
+            #endif
+
+            # Only data samples need exact event IDs.
+            needs_event_ids = label in (
+                "old epgamma",
+                "old eppi0",
+                "nSidis epgamma",
+                "nSidis eppi0",
+            )
+
+            with uproot.open(path) as root_file:
+                found, tree = find_tree(
+                    root_file,
+                    args_dict.get("tree"),
+                )
+                available = set(tree.keys())
+                needed = set(required)
+                if needs_event_ids:
+                    needed |= {"runnum", "evnum"}
+                #endif
+                absent = sorted(needed - available)
+                if absent:
+                    schema_problems.append(
+                        f"{period.label}: {label}: tree '{found}' missing "
+                        + ", ".join(absent)
+                    )
+                #endif
+            #endwith
+        #endfor
+    #endfor
+
+    if missing:
+        raise FileNotFoundError(
+            "Missing nSidis-study input file(s):\n  "
+            + "\n  ".join(missing)
+        )
+    #endif
+    if schema_problems:
+        raise KeyError(
+            "nSidis-study branch preflight failed:\n  "
+            + "\n  ".join(schema_problems)
+        )
+    #endif
+
+
+def process_nsidis_study_period(
+    period: PeriodConfig,
+    args_dict: Dict[str, object],
+    output_root: str,
+) -> Dict[str, object]:
+    """
+    Isolated nSidis development path.
+
+    It does not call process_period(), Stage III, closure studies, mixed-event
+    diagnostics, or the old candidate-selection machinery.
+    """
+    t0 = time.perf_counter()
+    outdir = Path(output_root) / "nsidis_study" / period.key
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    max_entries = int(args_dict["max_entries"])
+    tree_name = args_dict.get("tree")
+    angle_mode = str(args_dict["angles"])
+    tag_min = float(args_dict["tag_min"])
+    tag_max = float(args_dict["tag_max"])
+    ft_theta_max = float(args_dict["ft_theta_max"])
+
+    ns_epg_path, ns_epi_path = resolve_nsidis_paths(
+        period, args_dict
+    )
+
+    loaded = {}
+    for key, path, required, optional, extractor in (
+        (
+            "wagon_epgamma",
+            period.epgamma_data,
+            EPG_REQUIRED,
+            EPG_OPTIONAL_DATA,
+            extract_epgamma,
+        ),
+        (
+            "nsidis_epgamma",
+            ns_epg_path,
+            EPG_REQUIRED,
+            EPG_OPTIONAL_DATA,
+            extract_epgamma,
+        ),
+        (
+            "wagon_eppi0",
+            period.eppi0_data,
+            EPPIO_REQUIRED,
+            EPPIO_OPTIONAL_DATA,
+            extract_eppi0,
+        ),
+        (
+            "nsidis_eppi0",
+            ns_epi_path,
+            EPPIO_REQUIRED,
+            EPPIO_OPTIONAL_DATA,
+            extract_eppi0,
+        ),
+    ):
+        log(f"{period.label}: reading {key}.")
+        arrays, found_tree, total = read_branches(
+            path,
+            required,
+            optional,
+            tree_name,
+            max_entries,
+        )
+        sample = extractor(arrays, angle_mode)
+        del arrays
+        loaded[key] = sample
+        log(
+            f"{period.label}: {key} tree '{found_tree}', "
+            f"loaded {len(sample.electron_p3):,}/{total:,} entries."
+        )
+    #endfor
+
+    wagon_epg = loaded["wagon_epgamma"]
+    ns_epg = loaded["nsidis_epgamma"]
+    wagon_epi = loaded["wagon_eppi0"]
+    ns_epi = loaded["nsidis_eppi0"]
+
+    epg_overlap, epg_overlap_summary = event_overlap_masks(
+        wagon_epg.raw,
+        ns_epg.raw,
+    )
+    epi_overlap, epi_overlap_summary = event_overlap_masks(
+        wagon_epi.raw,
+        ns_epi.raw,
+    )
+
+    wagon_epg_f = build_epgamma_denominator_features(
+        period,
+        wagon_epg,
+        tag_min,
+        tag_max,
+        ft_theta_max,
+    )
+    ns_epg_f = build_epgamma_denominator_features(
+        period,
+        ns_epg,
+        tag_min,
+        tag_max,
+        ft_theta_max,
+    )
+
+    wagon_epi_f = build_eppi0_exclusivity_features(
+        period, wagon_epi
+    )
+    ns_epi_f = build_eppi0_exclusivity_features(
+        period, ns_epi
+    )
+
+    envelope = derive_wagon_eppi0_envelope(
+        wagon_epi_f,
+        float(args_dict["nsidis_eppi0_envelope_quantile"]),
+    )
+    wagon_epi_keep = apply_wagon_eppi0_envelope(
+        wagon_epi_f, envelope
+    )
+    ns_epi_keep = apply_wagon_eppi0_envelope(
+        ns_epi_f, envelope
+    )
+
+    make_nsidis_epgamma_overlap_canvas(
+        period,
+        wagon_epg_f,
+        ns_epg_f,
+        epg_overlap,
+        outdir,
+    )
+    make_nsidis_overlap_vs_energy_canvas(
+        period,
+        ns_epg_f,
+        epg_overlap,
+        outdir,
+        tag_max,
+    )
+    make_nsidis_eppi0_exclusivity_canvas(
+        period,
+        wagon_epi_f,
+        ns_epi_f,
+        epi_overlap,
+        envelope,
+        outdir,
+    )
+
+    scan_values = parse_float_edges(
+        str(args_dict["nsidis_probe_m2_scan"]),
+        "--nsidis-probe-m2-scan",
+    )
+    scan_rows = build_nsidis_probe_mass2_scan(
+        period,
+        wagon_epg_f,
+        ns_epg_f,
+        epg_overlap,
+        float(args_dict["den_fit_mm2_min"]),
+        float(args_dict["den_fit_mm2_max"]),
+        scan_values,
+    )
+    write_rows_csv(
+        scan_rows,
+        outdir / "nsidis_probe_mass2_scan.csv",
+    )
+    make_nsidis_probe_mass2_scan_canvas(
+        period,
+        scan_rows,
+        outdir,
+    )
+
+    pilot_wagon_rows = []
+    pilot_nsidis_rows = []
+
+    if bool(args_dict.get("nsidis_pilot_fit", False)):
+        log(
+            f"{period.label}: optional nSidis composition pilot enabled; "
+            "reading aaogen and dvcsgen epgamma templates."
+        )
+        pi_arrays, _, _ = read_branches(
+            period.epgamma_pi0_mc,
+            EPG_REQUIRED,
+            EPG_OPTIONAL_PI0_MC,
+            tree_name,
+            max_entries,
+        )
+        pi_epg = extract_epgamma(pi_arrays, angle_mode)
+        del pi_arrays
+
+        dv_arrays, _, _ = read_branches(
+            period.epgamma_dvcs_mc,
+            EPG_REQUIRED,
+            EPG_OPTIONAL_DVCS_MC,
+            tree_name,
+            max_entries,
+        )
+        dv_epg = extract_epgamma(dv_arrays, angle_mode)
+        del dv_arrays
+
+        pi0_f = build_epgamma_denominator_features(
+            period,
+            pi_epg,
+            tag_min,
+            tag_max,
+            ft_theta_max,
+        )
+        dvcs_f = build_epgamma_denominator_features(
+            period,
+            dv_epg,
+            tag_min,
+            tag_max,
+            ft_theta_max,
+        )
+        del pi_epg, dv_epg
+
+        common = {
+            "period": period,
+            "pi0_f": pi0_f,
+            "dvcs_f": dvcs_f,
+            "ft_theta_max": ft_theta_max,
+            "mm2_min": float(args_dict["den_fit_mm2_min"]),
+            "mm2_max": float(args_dict["den_fit_mm2_max"]),
+            "probe_m2_max": float(
+                args_dict["nsidis_pilot_probe_m2_max"]
+            ),
+            "mm2_bins": int(args_dict["den_fit_mm2_bins"]),
+            "ptmiss_max": float(args_dict["disc_ptmiss_max"]),
+            "ptmiss_bins": int(args_dict["disc_ptmiss_bins"]),
+            "min_data_count": int(args_dict["den_min_data_count"]),
+            "min_template_count": int(
+                args_dict["den_min_template_count"]
+            ),
+            "nuisance_shift_prior": float(
+                args_dict["morph_shift_prior_bins"]
+            ),
+            "nuisance_sigma_prior": float(
+                args_dict["morph_sigma_prior_bins"]
+            ),
+            "max_shift_bins": float(
+                args_dict["morph_max_shift_bins"]
+            ),
+            "max_sigma_bins": float(
+                args_dict["morph_max_sigma_bins"]
+            ),
+        }
+
+        pilot_nsidis_rows = run_nsidis_ptmiss_pilot_fits(
+            data_f=ns_epg_f,
+            max_probe_energy=float(
+                args_dict["nsidis_pilot_energy_max"]
+            ),
+            **common,
+        )
+        pilot_wagon_rows = run_nsidis_ptmiss_pilot_fits(
+            data_f=wagon_epg_f,
+            max_probe_energy=min(
+                2.0,
+                float(args_dict["nsidis_pilot_energy_max"]),
+            ),
+            **common,
+        )
+
+        write_rows_csv(
+            pilot_nsidis_rows,
+            outdir / "nsidis_pilot_composition_fits.csv",
+        )
+        write_rows_csv(
+            pilot_wagon_rows,
+            outdir / "wagon_pilot_composition_fits.csv",
+        )
+        make_nsidis_pilot_composition_canvas(
+            period,
+            pilot_wagon_rows,
+            pilot_nsidis_rows,
+            outdir,
+        )
+    #endif
+
+    n_wagon_epi = len(wagon_epi_f["Emiss"])
+    n_ns_epi = len(ns_epi_f["Emiss"])
+
+    summary = {
+        "period": period.key,
+        "label": period.label,
+        "beam_energy_GeV": period.beam_energy,
+        "nsidis_epgamma_path": ns_epg_path,
+        "nsidis_eppi0_path": ns_epi_path,
+        "epgamma_overlap": epg_overlap_summary,
+        "eppi0_overlap": epi_overlap_summary,
+        "eppi0_wagon_envelope": envelope,
+        "wagon_eppi0_envelope_retention": (
+            float(np.count_nonzero(wagon_epi_keep))
+            / float(n_wagon_epi)
+            if n_wagon_epi else float("nan")
+        ),
+        "nsidis_eppi0_envelope_retention": (
+            float(np.count_nonzero(ns_epi_keep))
+            / float(n_ns_epi)
+            if n_ns_epi else float("nan")
+        ),
+        "nsidis_pilot_fit_enabled": bool(
+            args_dict.get("nsidis_pilot_fit", False)
+        ),
+        "wall_time_s": float(time.perf_counter() - t0),
+        "status": (
+            "diagnostic only; no nSidis efficiency scale factor formed"
+        ),
+    }
+
+    with (outdir / "nsidis_study_summary.json").open("w") as f:
+        json.dump(summary, f, indent=2, allow_nan=True)
+    #endwith
+
+    log(
+        f"{period.label}: nSidis study complete in "
+        f"{summary['wall_time_s']:.1f} s."
+    )
+    return summary
 
 
 def process_period(
@@ -10111,6 +11475,82 @@ def main() -> int:
         p for p in PERIODS
         if args.period is None or p.key in set(args.period)
     ]
+
+    if args.nsidis_study:
+        if not selected:
+            raise ValueError("No periods selected.")
+        #endif
+        if (
+            (args.nsidis_epgamma is not None or args.nsidis_eppi0 is not None)
+            and len(selected) != 1
+        ):
+            raise ValueError(
+                "--nsidis-epgamma/--nsidis-eppi0 overrides require exactly one "
+                "--period selection."
+            )
+        #endif
+        if not (0.90 <= args.nsidis_eppi0_envelope_quantile < 1.0):
+            raise ValueError(
+                "--nsidis-eppi0-envelope-quantile must be in [0.90,1)."
+            )
+        #endif
+        if not (2.0 <= args.nsidis_pilot_energy_max <= 10.0):
+            raise ValueError(
+                "--nsidis-pilot-energy-max must lie in [2,10] GeV."
+            )
+        #endif
+        if args.nsidis_pilot_probe_m2_max <= 0.0:
+            raise ValueError(
+                "--nsidis-pilot-probe-m2-max must be > 0."
+            )
+        #endif
+
+        ns_args_dict = vars(args).copy()
+        preflight_nsidis_study(selected, ns_args_dict)
+
+        nsroot = Path(args.output_dir) / "nsidis_study"
+        nsroot.mkdir(parents=True, exist_ok=True)
+
+        summary_rows = []
+        for period in selected:
+            summary = process_nsidis_study_period(
+                period,
+                ns_args_dict,
+                str(Path(args.output_dir)),
+            )
+            summary_rows.append({
+                "period": period.key,
+                "label": period.label,
+                "epgamma_reference_event_recall": (
+                    summary["epgamma_overlap"][
+                        "reference_unique_event_recall"
+                    ]
+                ),
+                "eppi0_reference_event_recall": (
+                    summary["eppi0_overlap"][
+                        "reference_unique_event_recall"
+                    ]
+                ),
+                "wagon_eppi0_envelope_retention": (
+                    summary["wagon_eppi0_envelope_retention"]
+                ),
+                "nsidis_eppi0_envelope_retention": (
+                    summary["nsidis_eppi0_envelope_retention"]
+                ),
+                "pilot_fit_enabled": int(
+                    summary["nsidis_pilot_fit_enabled"]
+                ),
+                "wall_time_s": summary["wall_time_s"],
+            })
+        #endfor
+
+        write_rows_csv(
+            summary_rows,
+            nsroot / "nsidis_study_summary.csv",
+        )
+        log(f"Done. nSidis-study outputs are in {nsroot}.")
+        return 0
+    #endif
 
     outroot = Path(args.output_dir)
     outroot.mkdir(parents=True, exist_ok=True)
