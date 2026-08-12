@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v041.py
+derive_photon_efficiency_scale_factors_v042.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -46,10 +46,10 @@ Default --plot-mode compact keeps only high-value plots. --plot-mode full
 restores development/debug canvases.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v041.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v042.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v041.py \
+    python derive_photon_efficiency_scale_factors_v042.py \
         --max-entries 0 --period fa18_out
 """
 
@@ -8545,12 +8545,12 @@ def process_period(
         #endif
     #endif
 
-    summary["wall_time_s"] = float(time.perf_counter() - t0)
-    with (period_dir / "stage1_summary.json").open("w") as f:
-        json.dump(summary, f, indent=2, allow_nan=True)
-    #endwith
+    wall_time_s = float(time.perf_counter() - t0)
+    mc_association_summary["wall_time_s"] = wall_time_s
 
-    log(f"{period.label}: total worker wall time = {summary['wall_time_s']:.1f} s.")
+    log(
+        f"{period.label}: total worker wall time = {wall_time_s:.1f} s."
+    )
 
     return {
         "mc_association_summary": mc_association_summary,
