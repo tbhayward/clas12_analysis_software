@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v047.py
+derive_photon_efficiency_scale_factors_v048.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v047.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v048.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v047.py \
+    python derive_photon_efficiency_scale_factors_v048.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,24 +61,30 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v047.py \
+    python derive_photon_efficiency_scale_factors_v048.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
   * keeps and reads the original wagon epgamma/eppi0 trees;
   * checks exact runnum+evnum event recovery in the nSidis trees;
   * compares old and new epgamma kinematics below 2 GeV;
-  * recomputes full ep pi0 exclusivity and exposes the inclusive/SIDIS pi0
-    population in the loose eppi0X sample;
+  * conditions old-wagon overlap checks on the nSidis parent requirement
+    e_p > 2 GeV;
+  * reconstructs the central exclusive ep pi0 peak, scans high-retention
+    exclusivity-core cuts, and quantifies rejection of the loose SIDIS-rich
+    eppi0X population;
   * scans the missing-photon mass-shell support without cutting pTmiss;
+  * optionally runs the finalized M_X^2(ep) x pTmiss composition model below
+    and above 2 GeV, including support-cut stability and actual fit projections;
   * does NOT form a new efficiency scale factor.
 
 After inspecting those outputs, an optional diagnostic composition pilot is:
     --nsidis-pilot-fit
 
-which uses the already-selected M_X^2(ep) x pTmiss denominator model and may
-extend the fit above 2 GeV.  It remains diagnostic until the overlap study is
-accepted.
+which uses the finalized M_X^2(ep) x pTmiss denominator model, compares the
+old-wagon and nSidis results below 2 GeV, scans |M_probe^2| support, and extends
+the diagnostic fit above 2 GeV. It remains diagnostic until the nSidis
+reconstructed-pi0 exclusivity prescription is accepted.
 
 """
 
@@ -1329,24 +1335,22 @@ def write_rows_csv(rows: List[Dict[str, object]], path: Path) -> None:
 
 STAGE2_DISCRIMINATORS: Tuple[str, ...] = (
     "mx2_ep_1d",
-    "probe_m2_1d",
     "theta_gg_1d",
-    "mx2_ep_x_probe_m2",
     "mx2_ep_x_pTmiss",
     "mx2_ep_x_theta_gg",
 )
 
-STAGE2_NOMINAL_DISCRIMINATOR = "mx2_ep_x_probe_m2"
-STAGE2_PRODUCTION_MODEL = "shared_morphed_2d"
+# Production choice established by the Fa18 Inb driver study:
+# M_X^2(ep) x pTmiss is the only nominal composition driver.
+STAGE2_NOMINAL_DISCRIMINATOR = "mx2_ep_x_pTmiss"
+STAGE2_PRODUCTION_MODEL = "morphed_mx2_ep_x_pTmiss"
 STAGE2_DRIVER_DISCRIMINATORS: Tuple[str, ...] = (
-    "mx2_ep_x_probe_m2",
     "mx2_ep_x_pTmiss",
 )
 STAGE2_VALIDATION_DISCRIMINATORS: Tuple[str, ...] = (
     "theta_gg_1d",
     "mx2_ep_x_theta_gg",
     "mx2_ep_1d",
-    "probe_m2_1d",
 )
 
 
@@ -3933,7 +3937,7 @@ def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.nda
                    for k,f in (("data",data_f),("pi0",pi0_f),("dvcs",dvcs_f))}
             row={"period":period.key,"label":period.label,"beam_energy_GeV":period.beam_energy,"region":region,
                  "energy_low_GeV":elo,"energy_high_GeV":ehi,"energy_center_GeV":0.5*(elo+ehi),
-                 "fit_model":"shared_morphed_2d",
+                 "fit_model":STAGE2_PRODUCTION_MODEL,
                  "data_candidate_count":int(np.count_nonzero(masks["data"])),
                  "aaogen_candidate_count":int(np.count_nonzero(masks["pi0"])),
                  "dvcsgen_candidate_count":int(np.count_nonzero(masks["dvcs"]))}
@@ -8302,15 +8306,6 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
-        "--nsidis-eppi0-envelope-quantile",
-        type=float,
-        default=0.995,
-        help=(
-            "Quantile of the old wagon eppi0 sample used to define a diagnostic "
-            "fully-exclusive envelope. Default: 0.995."
-        ),
-    )
-    parser.add_argument(
         "--nsidis-probe-m2-scan",
         default="0.02,0.04,0.06,0.08,0.10,0.15,0.20,0.30,0.60",
         help=(
@@ -8336,12 +8331,45 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--nsidis-eppi0-core-nsigma-scan",
+        default="2.0,2.5,3.0,3.5,4.0",
+        help=(
+            "Comma-separated Gaussian-core n-sigma values for the nSidis "
+            "eppi0 exclusivity scan. Default: 2,2.5,3,3.5,4."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-eppi0-momentum-quantile-scan",
+        default="0.95,0.975,0.99",
+        help=(
+            "Comma-separated old-wagon pmiss/pTmiss core quantiles scanned "
+            "after the Emiss/Mx2 core requirement. Default: 0.95,0.975,0.99."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-eppi0-target-wagon-retention",
+        type=float,
+        default=0.95,
+        help=(
+            "Minimum old-wagon e_p>2 retention used to choose the diagnostic "
+            "recommended eppi0 exclusive-core point. Default: 0.95."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-pilot-probe-m2-values",
+        default="0.06,0.08,0.10",
+        help=(
+            "Comma-separated mass-shell support values tested in the nSidis "
+            "production-model pilot. Default: 0.06,0.08,0.10 GeV^2."
+        ),
+    )
+    parser.add_argument(
         "--nsidis-pilot-probe-m2-max",
         type=float,
-        default=0.10,
+        default=0.08,
         help=(
-            "Mass-shell support |M_X^2(epgamma_tag)| for the optional nSidis "
-            "pilot fit. Default: 0.10 GeV^2."
+            "Central mass-shell support used for the detailed nSidis pilot fit "
+            "projection canvases. Default: 0.08 GeV^2."
         ),
     )
     parser.add_argument(
@@ -8653,7 +8681,16 @@ def resolve_nsidis_paths(
     return str(epg_path), str(epi_path)
 
 
-def _structured_event_keys(raw: Dict[str, np.ndarray]) -> np.ndarray:
+def electron_momentum_from_p3(p3: np.ndarray) -> np.ndarray:
+    """Magnitude of the reconstructed electron three-momentum."""
+    p3 = np.asarray(p3, dtype=float)
+    return np.sqrt(np.einsum("ij,ij->i", p3, p3))
+
+
+def _structured_event_keys(
+    raw: Dict[str, np.ndarray],
+    mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
     """Collision-free structured runnum/evnum event keys."""
     if "runnum" not in raw or "evnum" not in raw:
         raise KeyError("runnum and evnum are required for nSidis overlap checks.")
@@ -8663,6 +8700,15 @@ def _structured_event_keys(raw: Dict[str, np.ndarray]) -> np.ndarray:
     ev = np.asarray(raw["evnum"], dtype=np.int64)
     if run.shape != ev.shape:
         raise ValueError("runnum and evnum arrays have different shapes.")
+    #endif
+
+    if mask is not None:
+        mask = np.asarray(mask, dtype=bool)
+        if mask.shape != run.shape:
+            raise ValueError("event-key mask has incompatible shape.")
+        #endif
+        run = run[mask]
+        ev = ev[mask]
     #endif
 
     keys = np.empty(
@@ -8677,29 +8723,36 @@ def _structured_event_keys(raw: Dict[str, np.ndarray]) -> np.ndarray:
 def event_overlap_masks(
     reference_raw: Dict[str, np.ndarray],
     candidate_raw: Dict[str, np.ndarray],
+    reference_mask: Optional[np.ndarray] = None,
+    candidate_mask: Optional[np.ndarray] = None,
 ) -> Tuple[np.ndarray, Dict[str, object]]:
     """
     Exact event-level overlap.
 
-    Multiple photon/pi0 candidates per event are intentionally retained in the
-    candidate-entry mask.  The unique-event recall is the primary skim sanity
-    check.
+    The returned mask has candidate-entry length and marks entries whose
+    (runnum,evnum) occurs in the selected reference-event population.
+
+    For the nSidis transition, reference_mask is used to impose e_p > 2 GeV on
+    the old wagon before computing recall, matching the nSidis parent skim.
     """
-    ref_keys = _structured_event_keys(reference_raw)
-    cand_keys = _structured_event_keys(candidate_raw)
+    ref_keys = _structured_event_keys(reference_raw, reference_mask)
+    cand_all = _structured_event_keys(candidate_raw, None)
+    cand_keys = _structured_event_keys(candidate_raw, candidate_mask)
 
     ref_unique = np.unique(ref_keys)
     cand_unique = np.unique(cand_keys)
     common = np.intersect1d(ref_unique, cand_unique, assume_unique=True)
 
-    # np.isin is safe for structured arrays and avoids any packed-key collision.
-    candidate_overlap = np.isin(cand_keys, ref_unique)
+    candidate_overlap = np.isin(cand_all, ref_unique)
+    if candidate_mask is not None:
+        candidate_overlap &= np.asarray(candidate_mask, dtype=bool)
+    #endif
 
     summary = {
-        "reference_entries": int(ref_keys.size),
-        "candidate_entries": int(cand_keys.size),
-        "reference_unique_events": int(ref_unique.size),
-        "candidate_unique_events": int(cand_unique.size),
+        "reference_entries_after_parent_cut": int(ref_keys.size),
+        "candidate_entries_after_parent_cut": int(cand_keys.size),
+        "reference_unique_events_after_parent_cut": int(ref_unique.size),
+        "candidate_unique_events_after_parent_cut": int(cand_unique.size),
         "common_unique_events": int(common.size),
         "reference_unique_event_recall": (
             float(common.size) / float(ref_unique.size)
@@ -8711,8 +8764,14 @@ def event_overlap_masks(
         ),
         "candidate_entry_overlap_fraction": (
             float(np.count_nonzero(candidate_overlap))
-            / float(candidate_overlap.size)
-            if candidate_overlap.size else float("nan")
+            / float(np.count_nonzero(candidate_mask))
+            if candidate_mask is not None
+            and np.count_nonzero(candidate_mask) > 0
+            else (
+                float(np.count_nonzero(candidate_overlap))
+                / float(candidate_overlap.size)
+                if candidate_overlap.size else float("nan")
+            )
         ),
     }
     return candidate_overlap, summary
@@ -8723,16 +8782,10 @@ def build_eppi0_exclusivity_features(
     sample: EPPi0Sample,
 ) -> Dict[str, np.ndarray]:
     """
-    Recompute full e p -> e p pi0 exclusivity from the measured four-vectors.
+    Recompute e p -> e p pi0 exclusivity from measured four-vectors.
 
-    For a genuinely exclusive reconstructed pi0 event:
-      Emiss(ep pi0) -> 0,
-      |p_miss(ep pi0)| -> 0,
-      pTmiss(ep pi0) -> 0,
-      Mx2(ep pi0) -> 0.
-
-    These are therefore the natural handles for rejecting the enormous
-    inclusive/SIDIS pi0 population in the loose nSidis eppi0X tree.
+    This is intentionally independent of the upstream skim cuts and therefore
+    provides a common old-wagon / loose-nSidis comparison.
     """
     e3 = sample.electron_p3
     p3 = sample.proton_p3
@@ -8758,6 +8811,9 @@ def build_eppi0_exclusivity_features(
     mx2 = miss_E * miss_E - p2
 
     out = {
+        "electron_p": np.asarray(
+            electron_momentum_from_p3(e3), dtype=np.float32
+        ),
         "Emiss": np.asarray(miss_E, dtype=np.float32),
         "pmiss": np.asarray(pmiss, dtype=np.float32),
         "pTmiss": np.asarray(ptmiss, dtype=np.float32),
@@ -8792,55 +8848,276 @@ def _normalized_hist(
     return hist, edges
 
 
-def _quantile_finite(values: np.ndarray, q: float) -> float:
-    values = np.asarray(values, dtype=float)
-    values = values[np.isfinite(values)]
-    if not values.size:
-        return float("nan")
+def robust_gaussian_core(
+    values: np.ndarray,
+    *,
+    broad_abs_max: float,
+    iterations: int = 6,
+    clip_sigma: float = 2.5,
+) -> Tuple[float, float, int]:
+    """
+    Estimate the central near-zero exclusive peak while rejecting long tails.
+
+    The first scale is MAD-based, then the mean/RMS are iterated inside a
+    symmetric clip. This is used only to characterize the old-wagon exclusive
+    core, not to fit the inclusive nSidis tails.
+    """
+    v = np.asarray(values, dtype=float)
+    v = v[np.isfinite(v) & (np.abs(v) < float(broad_abs_max))]
+    if v.size < 100:
+        return float("nan"), float("nan"), int(v.size)
     #endif
-    return float(np.quantile(values, q))
+
+    center = float(np.median(v))
+    mad = float(np.median(np.abs(v - center)))
+    sigma = 1.4826 * mad
+    if not np.isfinite(sigma) or sigma <= 0.0:
+        sigma = float(np.std(v))
+    #endif
+
+    for _ in range(max(1, int(iterations))):
+        keep = np.abs(v - center) < float(clip_sigma) * max(sigma, 1.0e-8)
+        vv = v[keep]
+        if vv.size < 100:
+            break
+        #endif
+        new_center = float(np.mean(vv))
+        new_sigma = float(np.std(vv, ddof=1))
+        if not np.isfinite(new_sigma) or new_sigma <= 0.0:
+            break
+        #endif
+        center, sigma = new_center, new_sigma
+    #endfor
+    return center, sigma, int(vv.size if "vv" in locals() else v.size)
 
 
-def derive_wagon_eppi0_envelope(
-    features: Dict[str, np.ndarray],
-    quantile: float,
+def derive_eppi0_core_model(
+    wagon_f: Dict[str, np.ndarray],
+    parent_mask: np.ndarray,
 ) -> Dict[str, float]:
     """
-    Diagnostic, data-driven fully-exclusive envelope.
+    Characterize only the central old-wagon exclusive peak.
 
-    It deliberately retains nearly all of the old wagon eppi0 population and
-    is used to quantify how much of the loose nSidis eppi0X sample is compatible
-    with the already-used exclusive sample.  It is NOT silently promoted to the
-    final production cut.
+    Emiss and Mx2 get robust Gaussian cores. Momentum thresholds are derived
+    later from the already-core-selected old wagon, avoiding the long-tail
+    pathology of the former 99.5% envelope.
     """
-    q = float(np.clip(quantile, 0.90, 0.9999))
+    parent_mask = np.asarray(parent_mask, dtype=bool)
+
+    mu_e, sig_e, n_e = robust_gaussian_core(
+        wagon_f["Emiss"][parent_mask],
+        broad_abs_max=0.80,
+    )
+    mu_m, sig_m, n_m = robust_gaussian_core(
+        wagon_f["Mx2"][parent_mask],
+        broad_abs_max=0.35,
+    )
+
+    if not np.isfinite(sig_e) or sig_e <= 0.0:
+        raise RuntimeError("Could not determine old-wagon Emiss exclusive core.")
+    #endif
+    if not np.isfinite(sig_m) or sig_m <= 0.0:
+        raise RuntimeError("Could not determine old-wagon Mx2 exclusive core.")
+    #endif
+
     return {
-        "quantile": q,
-        "abs_Emiss_max_GeV": _quantile_finite(
-            np.abs(features["Emiss"]), q
-        ),
-        "pmiss_max_GeV": _quantile_finite(features["pmiss"], q),
-        "pTmiss_max_GeV": _quantile_finite(features["pTmiss"], q),
-        "abs_Mx2_max_GeV2": _quantile_finite(
-            np.abs(features["Mx2"]), q
-        ),
+        "Emiss_center_GeV": mu_e,
+        "Emiss_sigma_GeV": sig_e,
+        "Mx2_center_GeV2": mu_m,
+        "Mx2_sigma_GeV2": sig_m,
+        "Emiss_core_fit_count": n_e,
+        "Mx2_core_fit_count": n_m,
     }
 
 
-def apply_wagon_eppi0_envelope(
+def eppi0_core_mask(
     features: Dict[str, np.ndarray],
-    envelope: Dict[str, float],
+    model: Dict[str, float],
+    nsigma: float,
+    pmiss_max: float,
+    ptmiss_max: float,
+    parent_mask: Optional[np.ndarray] = None,
 ) -> np.ndarray:
-    return (
+    mask = (
         np.isfinite(features["Emiss"])
+        & np.isfinite(features["Mx2"])
         & np.isfinite(features["pmiss"])
         & np.isfinite(features["pTmiss"])
-        & np.isfinite(features["Mx2"])
-        & (np.abs(features["Emiss"]) <= envelope["abs_Emiss_max_GeV"])
-        & (features["pmiss"] <= envelope["pmiss_max_GeV"])
-        & (features["pTmiss"] <= envelope["pTmiss_max_GeV"])
-        & (np.abs(features["Mx2"]) <= envelope["abs_Mx2_max_GeV2"])
+        & (
+            np.abs(
+                features["Emiss"] - model["Emiss_center_GeV"]
+            )
+            <= float(nsigma) * model["Emiss_sigma_GeV"]
+        )
+        & (
+            np.abs(
+                features["Mx2"] - model["Mx2_center_GeV2"]
+            )
+            <= float(nsigma) * model["Mx2_sigma_GeV2"]
+        )
+        & (features["pmiss"] <= float(pmiss_max))
+        & (features["pTmiss"] <= float(ptmiss_max))
     )
+    if parent_mask is not None:
+        mask &= np.asarray(parent_mask, dtype=bool)
+    #endif
+    return mask
+
+
+def build_eppi0_core_scan(
+    period: PeriodConfig,
+    wagon_f: Dict[str, np.ndarray],
+    nsidis_f: Dict[str, np.ndarray],
+    nsidis_event_overlap: np.ndarray,
+    wagon_parent_mask: np.ndarray,
+    nsidis_parent_mask: np.ndarray,
+    model: Dict[str, float],
+    nsigma_values: Sequence[float],
+    momentum_quantiles: Sequence[float],
+    target_wagon_retention: float,
+) -> Tuple[List[Dict[str, object]], Dict[str, object]]:
+    """
+    Scan compact, physically interpretable exclusive-core cuts.
+
+    For each n-sigma choice, pmiss/pTmiss thresholds are taken from quantiles of
+    the old wagon AFTER the Emiss/Mx2 Gaussian-core cuts. The recommended point
+    is the most rejecting choice that still retains at least the requested
+    fraction of the e_p>2 old-wagon population.
+    """
+    rows: List[Dict[str, object]] = []
+    wagon_parent_mask = np.asarray(wagon_parent_mask, dtype=bool)
+    nsidis_parent_mask = np.asarray(nsidis_parent_mask, dtype=bool)
+
+    n_wagon_parent = int(np.count_nonzero(wagon_parent_mask))
+    n_ns_nonwagon_parent = int(
+        np.count_nonzero(nsidis_parent_mask & ~nsidis_event_overlap)
+    )
+    n_ns_overlap_parent = int(
+        np.count_nonzero(nsidis_parent_mask & nsidis_event_overlap)
+    )
+
+    for nsigma in nsigma_values:
+        core2 = (
+            wagon_parent_mask
+            & (
+                np.abs(
+                    wagon_f["Emiss"] - model["Emiss_center_GeV"]
+                )
+                <= float(nsigma) * model["Emiss_sigma_GeV"]
+            )
+            & (
+                np.abs(
+                    wagon_f["Mx2"] - model["Mx2_center_GeV2"]
+                )
+                <= float(nsigma) * model["Mx2_sigma_GeV2"]
+            )
+        )
+
+        pvals = wagon_f["pmiss"][core2]
+        ptvals = wagon_f["pTmiss"][core2]
+        pvals = pvals[np.isfinite(pvals)]
+        ptvals = ptvals[np.isfinite(ptvals)]
+        if pvals.size < 100 or ptvals.size < 100:
+            continue
+        #endif
+
+        for q in momentum_quantiles:
+            q = float(q)
+            pmiss_max = float(np.quantile(pvals, q))
+            ptmiss_max = float(np.quantile(ptvals, q))
+
+            wm = eppi0_core_mask(
+                wagon_f, model, nsigma, pmiss_max, ptmiss_max,
+                wagon_parent_mask,
+            )
+            nm = eppi0_core_mask(
+                nsidis_f, model, nsigma, pmiss_max, ptmiss_max,
+                nsidis_parent_mask,
+            )
+            no = nm & nsidis_event_overlap
+            nx = nm & ~nsidis_event_overlap
+
+            wc = int(np.count_nonzero(wm))
+            nc = int(np.count_nonzero(nm))
+            oc = int(np.count_nonzero(no))
+            xc = int(np.count_nonzero(nx))
+
+            rows.append({
+                "period": period.key,
+                "label": period.label,
+                "nsigma": float(nsigma),
+                "momentum_quantile": q,
+                "Emiss_low_GeV": (
+                    model["Emiss_center_GeV"]
+                    - float(nsigma) * model["Emiss_sigma_GeV"]
+                ),
+                "Emiss_high_GeV": (
+                    model["Emiss_center_GeV"]
+                    + float(nsigma) * model["Emiss_sigma_GeV"]
+                ),
+                "Mx2_low_GeV2": (
+                    model["Mx2_center_GeV2"]
+                    - float(nsigma) * model["Mx2_sigma_GeV2"]
+                ),
+                "Mx2_high_GeV2": (
+                    model["Mx2_center_GeV2"]
+                    + float(nsigma) * model["Mx2_sigma_GeV2"]
+                ),
+                "pmiss_max_GeV": pmiss_max,
+                "pTmiss_max_GeV": ptmiss_max,
+                "wagon_epgt2_retention": (
+                    wc / n_wagon_parent if n_wagon_parent else float("nan")
+                ),
+                "nsidis_overlap_event_entry_retention": (
+                    oc / n_ns_overlap_parent
+                    if n_ns_overlap_parent else float("nan")
+                ),
+                "nsidis_nonwagon_event_entry_retention": (
+                    xc / n_ns_nonwagon_parent
+                    if n_ns_nonwagon_parent else float("nan")
+                ),
+                "wagon_surviving_count": wc,
+                "nsidis_surviving_count": nc,
+                "nsidis_overlap_event_surviving_count": oc,
+                "nsidis_nonwagon_event_surviving_count": xc,
+                "nsidis_surviving_overlap_event_fraction": (
+                    oc / nc if nc else float("nan")
+                ),
+            })
+        #endfor
+    #endfor
+
+    eligible = [
+        row for row in rows
+        if np.isfinite(row["wagon_epgt2_retention"])
+        and float(row["wagon_epgt2_retention"])
+        >= float(target_wagon_retention)
+    ]
+    if eligible:
+        # Primary objective: reject non-wagon nSidis entries while respecting
+        # the requested signal-retention floor. Secondary: retain more wagon.
+        recommended = min(
+            eligible,
+            key=lambda row: (
+                float(row["nsidis_nonwagon_event_entry_retention"]),
+                -float(row["wagon_epgt2_retention"]),
+            ),
+        )
+    elif rows:
+        recommended = max(
+            rows,
+            key=lambda row: float(row["wagon_epgt2_retention"]),
+        )
+    else:
+        raise RuntimeError("eppi0 core scan produced no valid working points.")
+    #endif
+
+    recommended = dict(recommended)
+    recommended["target_wagon_retention"] = float(target_wagon_retention)
+    recommended["selection_status"] = (
+        "recommended_diagnostic_working_point_not_yet_production"
+    )
+    return rows, recommended
 
 
 def make_nsidis_epgamma_overlap_canvas(
@@ -8848,19 +9125,20 @@ def make_nsidis_epgamma_overlap_canvas(
     wagon_f: Dict[str, np.ndarray],
     nsidis_f: Dict[str, np.ndarray],
     nsidis_event_overlap: np.ndarray,
+    wagon_parent_mask: np.ndarray,
+    nsidis_parent_mask: np.ndarray,
     outdir: Path,
 ) -> None:
-    """
-    Old-vs-new epgamma comparison below 2 GeV, where both samples should cover
-    the same physics and the old wagon reference is known to exist.
-    """
+    """Old-vs-new epgamma comparison below 2 GeV with matched e_p>2 support."""
     wagon_mask = (
-        wagon_f["valid_tag"]
+        np.asarray(wagon_parent_mask, dtype=bool)
+        & wagon_f["valid_tag"]
         & (wagon_f["pred_probe_energy"] >= 0.40)
         & (wagon_f["pred_probe_energy"] < 2.0)
     )
     ns_mask = (
-        nsidis_f["valid_tag"]
+        np.asarray(nsidis_parent_mask, dtype=bool)
+        & nsidis_f["valid_tag"]
         & (nsidis_f["pred_probe_energy"] >= 0.40)
         & (nsidis_f["pred_probe_energy"] < 2.0)
     )
@@ -8907,7 +9185,7 @@ def make_nsidis_epgamma_overlap_canvas(
 
         ax.step(
             centers, h_old, where="mid", linewidth=1.3,
-            label="original wagon",
+            label=r"original wagon, $e_p>2$ GeV",
         )
         ax.step(
             centers, h_overlap, where="mid", linewidth=1.1,
@@ -8925,8 +9203,9 @@ def make_nsidis_epgamma_overlap_canvas(
     axes[0, 0].legend(fontsize=8, frameon=False)
     fig.suptitle(
         f"{period.label}: old wagon versus loose nSidis epgammaX, "
+        r"matched $e_p>2$ GeV support and "
         r"$0.4<E_{\rm probe}^{pred}<2$ GeV",
-        fontsize=13.5,
+        fontsize=13.0,
     )
     safe_finalize_figure(
         fig,
@@ -8940,14 +9219,13 @@ def make_nsidis_overlap_vs_energy_canvas(
     period: PeriodConfig,
     nsidis_f: Dict[str, np.ndarray],
     nsidis_event_overlap: np.ndarray,
+    nsidis_parent_mask: np.ndarray,
     outdir: Path,
     tag_max: float,
 ) -> None:
-    """
-    Show where the old wagon ceases to represent the loose nSidis sample.
-    """
     valid = (
-        nsidis_f["valid_tag"]
+        np.asarray(nsidis_parent_mask, dtype=bool)
+        & nsidis_f["valid_tag"]
         & (nsidis_f["pred_probe_energy"] >= 0.40)
         & (nsidis_f["pred_probe_energy"] < tag_max)
     )
@@ -9002,44 +9280,50 @@ def make_nsidis_overlap_vs_energy_canvas(
     plt.close(fig)
 
 
-def make_nsidis_eppi0_exclusivity_canvas(
+def make_nsidis_eppi0_core_canvas(
     period: PeriodConfig,
     wagon_f: Dict[str, np.ndarray],
     nsidis_f: Dict[str, np.ndarray],
     nsidis_event_overlap: np.ndarray,
-    envelope: Dict[str, float],
+    wagon_parent_mask: np.ndarray,
+    nsidis_parent_mask: np.ndarray,
+    model: Dict[str, float],
+    recommended: Dict[str, object],
     outdir: Path,
 ) -> None:
     """
-    Directly expose the inclusive/SIDIS pi0 background in the loose eppi0X
-    sample and the exclusive peak represented by the old wagon sample.
+    Show the actual exclusive core and the selected diagnostic working point.
     """
     specs = (
         (
             "Emiss",
-            np.linspace(-1.0, 1.0, 161),
+            np.linspace(-0.80, 0.80, 161),
             r"$E_{\rm miss}(ep\pi^0)$ (GeV)",
-            (-envelope["abs_Emiss_max_GeV"],
-             envelope["abs_Emiss_max_GeV"]),
-        ),
-        (
-            "pmiss",
-            np.linspace(0.0, 1.5, 151),
-            r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
-            (envelope["pmiss_max_GeV"],),
-        ),
-        (
-            "pTmiss",
-            np.linspace(0.0, 1.0, 141),
-            r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)",
-            (envelope["pTmiss_max_GeV"],),
+            (
+                float(recommended["Emiss_low_GeV"]),
+                float(recommended["Emiss_high_GeV"]),
+            ),
         ),
         (
             "Mx2",
-            np.linspace(-0.50, 0.50, 161),
+            np.linspace(-0.35, 0.35, 161),
             r"$M_X^2(ep\pi^0)$ (GeV$^2$)",
-            (-envelope["abs_Mx2_max_GeV2"],
-             envelope["abs_Mx2_max_GeV2"]),
+            (
+                float(recommended["Mx2_low_GeV2"]),
+                float(recommended["Mx2_high_GeV2"]),
+            ),
+        ),
+        (
+            "pmiss",
+            np.linspace(0.0, 1.2, 151),
+            r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
+            (float(recommended["pmiss_max_GeV"]),),
+        ),
+        (
+            "pTmiss",
+            np.linspace(0.0, 0.80, 141),
+            r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)",
+            (float(recommended["pTmiss_max_GeV"]),),
         ),
     )
 
@@ -9047,18 +9331,24 @@ def make_nsidis_eppi0_exclusivity_canvas(
     for ax, (key, bins, xlabel, cut_lines) in zip(
         axes.ravel(), specs
     ):
-        h_old, edges = _normalized_hist(wagon_f[key], bins)
+        h_old, edges = _normalized_hist(
+            wagon_f[key], bins, wagon_parent_mask
+        )
         h_overlap, _ = _normalized_hist(
-            nsidis_f[key], bins, nsidis_event_overlap
+            nsidis_f[key],
+            bins,
+            nsidis_parent_mask & nsidis_event_overlap,
         )
         h_extra, _ = _normalized_hist(
-            nsidis_f[key], bins, ~nsidis_event_overlap
+            nsidis_f[key],
+            bins,
+            nsidis_parent_mask & ~nsidis_event_overlap,
         )
         centers = 0.5 * (edges[:-1] + edges[1:])
 
         ax.step(
             centers, h_old, where="mid", linewidth=1.3,
-            label="original wagon",
+            label=r"old wagon, $e_p>2$ GeV",
         )
         ax.step(
             centers, h_overlap, where="mid", linewidth=1.1,
@@ -9078,13 +9368,105 @@ def make_nsidis_eppi0_exclusivity_canvas(
 
     axes[0, 0].legend(fontsize=8, frameon=False)
     fig.suptitle(
-        f"{period.label}: eppi0X exclusivity — loose nSidis versus old wagon",
-        fontsize=13.5,
+        f"{period.label}: eppi0X exclusive-core study "
+        f"(recommended diagnostic point retains "
+        f"{100.0*float(recommended['wagon_epgt2_retention']):.1f}% "
+        r"of old-wagon $e_p>2$ entries)",
+        fontsize=12.8,
     )
     safe_finalize_figure(
         fig,
-        outdir / "canvas_nsidis_eppi0_exclusivity.png",
+        outdir / "canvas_nsidis_eppi0_exclusive_core.png",
         rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
+
+
+def make_nsidis_eppi0_core_scan_canvas(
+    period: PeriodConfig,
+    rows: List[Dict[str, object]],
+    recommended: Dict[str, object],
+    outdir: Path,
+) -> None:
+    if not rows:
+        return
+    #endif
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+
+    quantiles = sorted({
+        float(row["momentum_quantile"]) for row in rows
+    })
+    for q in quantiles:
+        rr = sorted(
+            [
+                row for row in rows
+                if abs(float(row["momentum_quantile"]) - q) < 1.0e-12
+            ],
+            key=lambda row: float(row["nsigma"]),
+        )
+        axes[0].plot(
+            [float(row["wagon_epgt2_retention"]) for row in rr],
+            [
+                float(row["nsidis_nonwagon_event_entry_retention"])
+                for row in rr
+            ],
+            marker="o",
+            linewidth=1.0,
+            label=f"momentum q={q:.3f}",
+        )
+    #endfor
+
+    axes[0].scatter(
+        [float(recommended["wagon_epgt2_retention"])],
+        [float(recommended["nsidis_nonwagon_event_entry_retention"])],
+        marker="*",
+        s=110,
+        zorder=8,
+        label="recommended",
+    )
+    axes[0].set_xlabel(r"old-wagon $e_p>2$ retention")
+    axes[0].set_ylabel("retention of nSidis entries from non-wagon events")
+    axes[0].set_title("signal retention versus loose-background retention")
+    axes[0].grid(alpha=0.18)
+    axes[0].legend(fontsize=7.5, frameon=False)
+
+    rr = sorted(rows, key=lambda row: (
+        float(row["nsigma"]), float(row["momentum_quantile"])
+    ))
+    x = np.arange(len(rr))
+    axes[1].plot(
+        x,
+        [float(row["wagon_epgt2_retention"]) for row in rr],
+        marker="o",
+        linewidth=0.9,
+        label="old-wagon retention",
+    )
+    axes[1].plot(
+        x,
+        [
+            float(row["nsidis_nonwagon_event_entry_retention"])
+            for row in rr
+        ],
+        marker="o",
+        linewidth=0.9,
+        label="non-wagon nSidis retention",
+    )
+    axes[1].set_ylim(-0.03, 1.03)
+    axes[1].set_xlabel("core-scan working point index")
+    axes[1].set_ylabel("retention")
+    axes[1].set_title("all scanned working points")
+    axes[1].grid(alpha=0.18)
+    axes[1].legend(fontsize=8, frameon=False)
+
+    fig.suptitle(
+        f"{period.label}: exclusive eppi0X core-cut scan",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_eppi0_core_scan.png",
+        rect=(0, 0, 1, 0.94),
     )
     plt.close(fig)
 
@@ -9094,16 +9476,14 @@ def build_nsidis_probe_mass2_scan(
     wagon_f: Dict[str, np.ndarray],
     nsidis_f: Dict[str, np.ndarray],
     nsidis_event_overlap: np.ndarray,
+    wagon_parent_mask: np.ndarray,
+    nsidis_parent_mask: np.ndarray,
     mm2_min: float,
     mm2_max: float,
     scan_values: Sequence[float],
 ) -> List[Dict[str, object]]:
     """
-    Scan |M_X^2(epgamma_tag)| only.
-
-    pTmiss is deliberately NOT cut because it is the selected composition
-    discriminator.  This scan asks how strongly the mass-shell requirement
-    enriches the old exclusive population while preserving it below 2 GeV.
+    Scan |M_X^2(epgamma_tag)| while deliberately leaving pTmiss uncut.
     """
     rows: List[Dict[str, object]] = []
 
@@ -9112,14 +9492,16 @@ def build_nsidis_probe_mass2_scan(
         ("extension_2_9p5", 2.00, 9.50),
     ):
         wagon_base = (
-            wagon_f["valid_tag"]
+            np.asarray(wagon_parent_mask, dtype=bool)
+            & wagon_f["valid_tag"]
             & (wagon_f["pred_probe_energy"] >= elo)
             & (wagon_f["pred_probe_energy"] < ehi)
             & (wagon_f["ep_missing_mass2"] >= mm2_min)
             & (wagon_f["ep_missing_mass2"] < mm2_max)
         )
         ns_base = (
-            nsidis_f["valid_tag"]
+            np.asarray(nsidis_parent_mask, dtype=bool)
+            & nsidis_f["valid_tag"]
             & (nsidis_f["pred_probe_energy"] >= elo)
             & (nsidis_f["pred_probe_energy"] < ehi)
             & (nsidis_f["ep_missing_mass2"] >= mm2_min)
@@ -9206,7 +9588,7 @@ def make_nsidis_probe_mass2_scan_canvas(
         x,
         [float(row["wagon_retention"]) for row in rr],
         marker="o",
-        label="old wagon",
+        label=r"old wagon, $e_p>2$",
     )
     axes[0].plot(
         x,
@@ -9277,7 +9659,7 @@ def run_nsidis_ptmiss_pilot_fits(
     max_probe_energy: float,
     mm2_min: float,
     mm2_max: float,
-    probe_m2_max: float,
+    support_values: Sequence[float],
     mm2_bins: int,
     ptmiss_max: float,
     ptmiss_bins: int,
@@ -9287,19 +9669,332 @@ def run_nsidis_ptmiss_pilot_fits(
     nuisance_sigma_prior: float,
     max_shift_bins: float,
     max_sigma_bins: float,
+    source_label: str,
+    parent_mask: Optional[np.ndarray] = None,
 ) -> List[Dict[str, object]]:
     """
-    Diagnostic-only extension of the already-selected production candidate:
+    Diagnostic production-model pilot using only
         M_X^2(ep) x pTmiss.
+
+    Each mass-shell support value is fit independently in each region/energy bin.
     """
     rows: List[Dict[str, object]] = []
     edges = stage2_energy_edges(max_probe_energy)
     disc = "mx2_ep_x_pTmiss"
 
+    for support in support_values:
+        support = float(support)
+
+        for region in ("FT", "FD_all"):
+            for ib in range(len(edges) - 1):
+                elo = float(edges[ib])
+                ehi = float(edges[ib + 1])
+
+                masks = {
+                    name: stage2_fit_mask(
+                        feat,
+                        region,
+                        ft_theta_max,
+                        elo,
+                        ehi,
+                        mm2_min,
+                        mm2_max,
+                        support,
+                    )
+                    for name, feat in (
+                        ("data", data_f),
+                        ("pi0", pi0_f),
+                        ("dvcs", dvcs_f),
+                    )
+                }
+                if parent_mask is not None:
+                    pmask = np.asarray(parent_mask, dtype=bool)
+                    if pmask.shape != masks["data"].shape:
+                        raise ValueError(
+                            "pilot parent_mask has incompatible data shape"
+                        )
+                    #endif
+                    masks["data"] &= pmask
+                #endif
+
+                hists = {}
+                for name, feat in (
+                    ("data", data_f),
+                    ("pi0", pi0_f),
+                    ("dvcs", dvcs_f),
+                ):
+                    hists[name] = histogram_for_discriminator(
+                        disc,
+                        feat,
+                        masks[name],
+                        mm2_min=mm2_min,
+                        mm2_max=mm2_max,
+                        probe_m2_max=support,
+                        mm2_bins_2d=mm2_bins,
+                        probe_m2_bins_2d=48,
+                        bins_1d=90,
+                        ptmiss_max=ptmiss_max,
+                        ptmiss_bins=ptmiss_bins,
+                        theta_max=4.0,
+                        theta_bins=80,
+                    )
+                #endfor
+
+                row = {
+                    "period": period.key,
+                    "label": period.label,
+                    "source": source_label,
+                    "region": region,
+                    "energy_low_GeV": elo,
+                    "energy_high_GeV": ehi,
+                    "energy_center_GeV": 0.5 * (elo + ehi),
+                    "probe_m2_support_max_GeV2": support,
+                    "data_candidate_count": int(np.sum(hists["data"])),
+                    "aaogen_candidate_count": int(np.sum(hists["pi0"])),
+                    "dvcsgen_candidate_count": int(np.sum(hists["dvcs"])),
+                    "status": "diagnostic_only_not_efficiency",
+                    "fit_model": STAGE2_PRODUCTION_MODEL,
+                }
+
+                if (
+                    np.sum(hists["data"]) < min_data_count
+                    or np.sum(hists["pi0"]) < min_template_count
+                    or np.sum(hists["dvcs"]) < min_template_count
+                ):
+                    row.update({
+                        "fit_success": 0,
+                        "pi0_fraction": float("nan"),
+                        "deviance_per_ndof": float("nan"),
+                        "fit_message": "insufficient statistics",
+                    })
+                    rows.append(row)
+                    continue
+                #endif
+
+                fit = fit_shared_morphed_composition(
+                    {
+                        disc: (
+                            hists["data"],
+                            hists["pi0"],
+                            hists["dvcs"],
+                        )
+                    },
+                    {},
+                    nuisance_shift_prior,
+                    nuisance_sigma_prior,
+                    max_shift_bins,
+                    max_sigma_bins,
+                    driver_names=(disc,),
+                )
+
+                row.update({
+                    "fit_success": int(fit.success),
+                    "fit_message": fit.message,
+                    "pi0_fraction": float(fit.pi0_fraction),
+                    "dvcs_fraction": (
+                        1.0 - float(fit.pi0_fraction)
+                        if np.isfinite(fit.pi0_fraction)
+                        else float("nan")
+                    ),
+                    "poisson_deviance": float(fit.poisson_deviance),
+                    "ndof": int(fit.ndof),
+                    "deviance_per_ndof": (
+                        float(fit.poisson_deviance / fit.ndof)
+                        if fit.ndof else float("nan")
+                    ),
+                })
+                if fit.nuisance:
+                    row.update(fit.nuisance)
+                #endif
+                rows.append(row)
+            #endfor
+        #endfor
+    #endfor
+
+    return rows
+
+
+def make_nsidis_pilot_summary_canvas(
+    period: PeriodConfig,
+    wagon_rows: List[Dict[str, object]],
+    nsidis_rows: List[Dict[str, object]],
+    central_support: float,
+    outdir: Path,
+) -> None:
+    """
+    Summary of overlap agreement, high-energy extension, support stability, and
+    absolute fit quality.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(13.2, 8.8))
+
+    for irow, region in enumerate(("FT", "FD_all")):
+        ax_frac = axes[irow, 0]
+        ax_dev = axes[irow, 1]
+
+        supports = sorted({
+            float(row["probe_m2_support_max_GeV2"])
+            for row in nsidis_rows
+        })
+        for support in supports:
+            rr = sorted(
+                [
+                    row for row in nsidis_rows
+                    if row["region"] == region
+                    and int(row.get("fit_success", 0)) == 1
+                    and abs(
+                        float(row["probe_m2_support_max_GeV2"]) - support
+                    ) < 1.0e-12
+                ],
+                key=lambda row: float(row["energy_center_GeV"]),
+            )
+            if not rr:
+                continue
+            #endif
+
+            x = [float(row["energy_center_GeV"]) for row in rr]
+            ax_frac.plot(
+                x,
+                [float(row["pi0_fraction"]) for row in rr],
+                marker="o",
+                linewidth=1.0,
+                label=rf"nSidis $|M^2_{{probe}}|<{support:.2f}$",
+            )
+            ax_dev.plot(
+                x,
+                [float(row["deviance_per_ndof"]) for row in rr],
+                marker="o",
+                linewidth=1.0,
+                label=rf"nSidis {support:.2f}",
+            )
+        #endfor
+
+        wr = sorted(
+            [
+                row for row in wagon_rows
+                if row["region"] == region
+                and int(row.get("fit_success", 0)) == 1
+                and abs(
+                    float(row["probe_m2_support_max_GeV2"])
+                    - float(central_support)
+                ) < 1.0e-12
+            ],
+            key=lambda row: float(row["energy_center_GeV"]),
+        )
+        if wr:
+            x = [float(row["energy_center_GeV"]) for row in wr]
+            ax_frac.plot(
+                x,
+                [float(row["pi0_fraction"]) for row in wr],
+                marker="s",
+                linestyle="--",
+                linewidth=1.2,
+                label="old wagon, central support",
+            )
+            ax_dev.plot(
+                x,
+                [float(row["deviance_per_ndof"]) for row in wr],
+                marker="s",
+                linestyle="--",
+                linewidth=1.2,
+                label="old wagon",
+            )
+        #endif
+
+        ax_frac.axvline(2.0, linestyle="--", linewidth=0.9)
+        ax_dev.axvline(2.0, linestyle="--", linewidth=0.9)
+        ax_frac.set_ylim(0.0, 1.02)
+        ax_frac.set_ylabel(r"$f_{\pi^0}$")
+        ax_dev.set_ylabel("Poisson deviance / ndof")
+        ax_frac.set_title(f"{region}: composition")
+        ax_dev.set_title(f"{region}: template goodness")
+        for ax in (ax_frac, ax_dev):
+            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.grid(alpha=0.18)
+        #endfor
+    #endfor
+
+    axes[0, 0].legend(fontsize=7.2, frameon=False)
+    axes[0, 1].legend(fontsize=7.2, frameon=False)
+
+    fig.suptitle(
+        f"{period.label}: nSidis pilot with production "
+        r"$M_X^2(ep)\otimes p_{T,\rm miss}$ model",
+        fontsize=13.0,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_pilot_summary.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
+
+
+def make_nsidis_pilot_fit_projection_canvases(
+    period: PeriodConfig,
+    rows: List[Dict[str, object]],
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    outdir: Path,
+    *,
+    central_support: float,
+    ft_theta_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    mm2_bins: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+) -> None:
+    """
+    Show the ACTUAL central-support nSidis pilot fit in every energy bin.
+
+    Column 1 is the M_X^2(ep) projection.
+    Column 2 is the pTmiss projection of the same 2D fit.
+    Thin dashed curves are the unmorphed starting templates.
+    """
+    disc = "mx2_ep_x_pTmiss"
+    row_map = {
+        (
+            str(row["region"]),
+            round(float(row["energy_low_GeV"]), 10),
+            round(float(row["energy_high_GeV"]), 10),
+        ): row
+        for row in rows
+        if int(row.get("fit_success", 0)) == 1
+        and abs(
+            float(row["probe_m2_support_max_GeV2"])
+            - float(central_support)
+        ) < 1.0e-12
+    }
+
+    edges = stage2_energy_edges(9.5)
+
     for region in ("FT", "FD_all"):
-        for ib in range(len(edges) - 1):
+        nrows = len(edges) - 1
+        fig, axes = plt.subplots(
+            nrows, 2,
+            figsize=(13.5, max(9.0, 2.55 * nrows)),
+            squeeze=False,
+        )
+
+        for ib in range(nrows):
             elo = float(edges[ib])
             ehi = float(edges[ib + 1])
+            row = row_map.get(
+                (region, round(elo, 10), round(ehi, 10))
+            )
+
+            if row is None:
+                for ax in axes[ib]:
+                    ax.text(
+                        0.5, 0.5, "no successful fit",
+                        transform=ax.transAxes,
+                        ha="center", va="center",
+                    )
+                    ax.set_axis_off()
+                #endfor
+                continue
+            #endif
 
             masks = {
                 name: stage2_fit_mask(
@@ -9310,7 +10005,7 @@ def run_nsidis_ptmiss_pilot_fits(
                     ehi,
                     mm2_min,
                     mm2_max,
-                    probe_m2_max,
+                    central_support,
                 )
                 for name, feat in (
                     ("data", data_f),
@@ -9319,170 +10014,184 @@ def run_nsidis_ptmiss_pilot_fits(
                 )
             }
 
-            hists = {}
-            for name, feat in (
-                ("data", data_f),
-                ("pi0", pi0_f),
-                ("dvcs", dvcs_f),
-            ):
-                hists[name] = histogram_for_discriminator(
-                    disc,
-                    feat,
-                    masks[name],
-                    mm2_min=mm2_min,
-                    mm2_max=mm2_max,
-                    probe_m2_max=probe_m2_max,
-                    mm2_bins_2d=mm2_bins,
-                    probe_m2_bins_2d=48,
-                    bins_1d=90,
-                    ptmiss_max=ptmiss_max,
-                    ptmiss_bins=ptmiss_bins,
-                    theta_max=4.0,
-                    theta_bins=80,
-                )
-            #endfor
+            hd = histogram_for_discriminator(
+                disc, data_f, masks["data"],
+                mm2_min=mm2_min,
+                mm2_max=mm2_max,
+                probe_m2_max=central_support,
+                mm2_bins_2d=mm2_bins,
+                probe_m2_bins_2d=48,
+                bins_1d=90,
+                ptmiss_max=ptmiss_max,
+                ptmiss_bins=ptmiss_bins,
+                theta_max=4.0,
+                theta_bins=80,
+            )
+            hp = histogram_for_discriminator(
+                disc, pi0_f, masks["pi0"],
+                mm2_min=mm2_min,
+                mm2_max=mm2_max,
+                probe_m2_max=central_support,
+                mm2_bins_2d=mm2_bins,
+                probe_m2_bins_2d=48,
+                bins_1d=90,
+                ptmiss_max=ptmiss_max,
+                ptmiss_bins=ptmiss_bins,
+                theta_max=4.0,
+                theta_bins=80,
+            )
+            hv = histogram_for_discriminator(
+                disc, dvcs_f, masks["dvcs"],
+                mm2_min=mm2_min,
+                mm2_max=mm2_max,
+                probe_m2_max=central_support,
+                mm2_bins_2d=mm2_bins,
+                probe_m2_bins_2d=48,
+                bins_1d=90,
+                ptmiss_max=ptmiss_max,
+                ptmiss_bins=ptmiss_bins,
+                theta_max=4.0,
+                theta_bins=80,
+            )
 
-            row = {
-                "period": period.key,
-                "label": period.label,
-                "region": region,
-                "energy_low_GeV": elo,
-                "energy_high_GeV": ehi,
-                "energy_center_GeV": 0.5 * (elo + ehi),
-                "probe_m2_support_max_GeV2": probe_m2_max,
-                "data_candidate_count": int(np.sum(hists["data"])),
-                "aaogen_candidate_count": int(np.sum(hists["pi0"])),
-                "dvcsgen_candidate_count": int(np.sum(hists["dvcs"])),
-                "status": "diagnostic_only_not_efficiency",
-            }
+            tp = morph_template_second_axis(
+                hp,
+                float(row.get(f"{disc}_pi0_shift_bins", 0.0)),
+                float(row.get(f"{disc}_pi0_sigma_bins", 0.0)),
+            )
+            td = morph_template_second_axis(
+                hv,
+                float(row.get(f"{disc}_dvcs_shift_bins", 0.0)),
+                float(row.get(f"{disc}_dvcs_sigma_bins", 0.0)),
+            )
 
-            if (
-                np.sum(hists["data"]) < min_data_count
-                or np.sum(hists["pi0"]) < min_template_count
-                or np.sum(hists["dvcs"]) < min_template_count
-            ):
-                row.update({
-                    "fit_success": 0,
-                    "pi0_fraction": float("nan"),
-                    "deviance_per_ndof": float("nan"),
-                })
-                rows.append(row)
-                continue
-            #endif
+            fpi0 = float(row["pi0_fraction"])
+            ndata = float(np.sum(hd))
 
-            fit = fit_shared_morphed_composition(
-                {
-                    disc: (
-                        hists["data"],
-                        hists["pi0"],
-                        hists["dvcs"],
+            rawp = normalized_template(hp).reshape(hp.shape)
+            rawd = normalized_template(hv).reshape(hv.shape)
+
+            for col, axis_name in enumerate(("mx2", "ptmiss")):
+                ax = axes[ib, col]
+                if axis_name == "mx2":
+                    data_proj = np.sum(hd, axis=1)
+                    pshape = np.sum(tp, axis=1)
+                    dshape = np.sum(td, axis=1)
+                    rawp_shape = np.sum(rawp, axis=1)
+                    rawd_shape = np.sum(rawd, axis=1)
+                    plot_edges = np.linspace(
+                        mm2_min, mm2_max, mm2_bins + 1
                     )
-                },
-                {},
-                nuisance_shift_prior,
-                nuisance_sigma_prior,
-                max_shift_bins,
-                max_sigma_bins,
-                driver_names=(disc,),
-            )
+                    xlabel = r"$M_X^2(ep)$ (GeV$^2$)"
+                else:
+                    data_proj = np.sum(hd, axis=0)
+                    pshape = np.sum(tp, axis=0)
+                    dshape = np.sum(td, axis=0)
+                    rawp_shape = np.sum(rawp, axis=0)
+                    rawd_shape = np.sum(rawd, axis=0)
+                    plot_edges = np.linspace(
+                        0.0, ptmiss_max, ptmiss_bins + 1
+                    )
+                    xlabel = r"$p_{T,\rm miss}$ (GeV)"
+                #endif
 
-            row.update({
-                "fit_success": int(fit.success),
-                "pi0_fraction": float(fit.pi0_fraction),
-                "dvcs_fraction": (
-                    1.0 - float(fit.pi0_fraction)
-                    if np.isfinite(fit.pi0_fraction)
-                    else float("nan")
-                ),
-                "poisson_deviance": float(fit.poisson_deviance),
-                "ndof": int(fit.ndof),
-                "deviance_per_ndof": (
-                    float(fit.poisson_deviance / fit.ndof)
-                    if fit.ndof else float("nan")
-                ),
-            })
-            if fit.nuisance:
-                row.update(fit.nuisance)
-            #endif
-            rows.append(row)
+                for arr in (
+                    pshape, dshape, rawp_shape, rawd_shape
+                ):
+                    arr /= max(float(np.sum(arr)), 1.0e-30)
+                #endfor
+
+                pcomp = ndata * fpi0 * pshape
+                dcomp = ndata * (1.0 - fpi0) * dshape
+                model_curve = pcomp + dcomp
+                rawp_comp = ndata * fpi0 * rawp_shape
+                rawd_comp = ndata * (1.0 - fpi0) * rawd_shape
+
+                centers = 0.5 * (plot_edges[:-1] + plot_edges[1:])
+                ax.errorbar(
+                    centers, data_proj,
+                    yerr=np.sqrt(np.maximum(data_proj, 1.0)),
+                    fmt="o", ms=2.0, linewidth=0.65,
+                    color=SAMPLE_COLORS["data"],
+                    label="data",
+                    zorder=6,
+                )
+                ax.step(
+                    centers, rawd_comp, where="mid",
+                    color=SAMPLE_COLORS["dvcs_mc"],
+                    linewidth=0.65, linestyle="--", alpha=0.55,
+                    label="BH/DVCS pre-morph",
+                )
+                ax.step(
+                    centers, rawp_comp, where="mid",
+                    color=SAMPLE_COLORS["pi0_mc"],
+                    linewidth=0.65, linestyle="--", alpha=0.55,
+                    label=r"$\pi^0$ pre-morph",
+                )
+                ax.step(
+                    centers, dcomp, where="mid",
+                    color=SAMPLE_COLORS["dvcs_mc"],
+                    linewidth=1.15,
+                    label="BH/DVCS fitted",
+                )
+                ax.step(
+                    centers, pcomp, where="mid",
+                    color=SAMPLE_COLORS["pi0_mc"],
+                    linewidth=1.15,
+                    label=r"$\pi^0$ fitted",
+                )
+                ax.step(
+                    centers, model_curve, where="mid",
+                    color=SAMPLE_COLORS["fit"],
+                    linewidth=1.45,
+                    label="total fit",
+                )
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel("entries / bin")
+                if axis_name == "ptmiss":
+                    ax.set_xlim(
+                        0.0,
+                        0.30 if region == "FT" else ptmiss_max,
+                    )
+                #endif
+                ax.set_title(
+                    f"{elo:.2f}-{ehi:.2f} GeV; "
+                    + rf"$f_{{\pi^0}}={fpi0:.3f}$, "
+                    + rf"$D/\mathrm{{ndof}}={float(row['deviance_per_ndof']):.2f}$",
+                    fontsize=9,
+                )
+                ax.grid(alpha=0.16)
+            #endfor
         #endfor
+
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        if handles:
+            fig.legend(
+                handles, labels,
+                loc="upper center",
+                ncol=6,
+                fontsize=7.5,
+                frameon=False,
+                bbox_to_anchor=(0.5, 0.985),
+            )
+        #endif
+
+        fig.suptitle(
+            f"{period.label}: ACTUAL nSidis pilot "
+            f"{region} fits at "
+            rf"$|M_X^2(ep\gamma_{{tag}})|<{central_support:.2f}$ GeV$^2$"
+            "\n"
+            r"production candidate $M_X^2(ep)\otimes p_{T,\rm miss}$",
+            fontsize=12.5,
+            y=0.999,
+        )
+        safe_finalize_figure(
+            fig,
+            outdir / f"canvas_nsidis_pilot_fit_projections_{region.lower()}.png",
+            rect=(0, 0, 1, 0.965),
+        )
+        plt.close(fig)
     #endfor
-
-    return rows
-
-
-def make_nsidis_pilot_composition_canvas(
-    period: PeriodConfig,
-    wagon_rows: List[Dict[str, object]],
-    nsidis_rows: List[Dict[str, object]],
-    outdir: Path,
-) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=(13.0, 8.5))
-
-    for irow, region in enumerate(("FT", "FD_all")):
-        for rows, label in (
-            (wagon_rows, "old wagon"),
-            (nsidis_rows, "nSidis"),
-        ):
-            rr = sorted(
-                [
-                    row for row in rows
-                    if row["region"] == region
-                    and int(row.get("fit_success", 0)) == 1
-                ],
-                key=lambda row: float(row["energy_center_GeV"]),
-            )
-            if not rr:
-                continue
-            #endif
-
-            x = [
-                float(row["energy_center_GeV"])
-                for row in rr
-            ]
-            axes[irow, 0].plot(
-                x,
-                [float(row["pi0_fraction"]) for row in rr],
-                marker="o",
-                linewidth=1.0,
-                label=label,
-            )
-            axes[irow, 1].plot(
-                x,
-                [float(row["deviance_per_ndof"]) for row in rr],
-                marker="o",
-                linewidth=1.0,
-                label=label,
-            )
-        #endfor
-
-        axes[irow, 0].set_ylim(0.0, 1.02)
-        axes[irow, 0].set_ylabel(r"$f_{\pi^0}$")
-        axes[irow, 0].set_title(f"{region}: composition")
-        axes[irow, 1].set_ylabel("Poisson deviance / ndof")
-        axes[irow, 1].set_title(f"{region}: template goodness")
-
-        for ax in axes[irow]:
-            ax.axvline(2.0, linestyle="--", linewidth=0.9)
-            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
-            ax.grid(alpha=0.18)
-        #endfor
-    #endfor
-
-    axes[0, 0].legend(fontsize=8, frameon=False)
-    axes[0, 1].legend(fontsize=8, frameon=False)
-
-    fig.suptitle(
-        f"{period.label}: diagnostic nSidis composition pilot "
-        r"using $M_X^2(ep)\otimes p_{T,\rm miss}$",
-        fontsize=13,
-    )
-    safe_finalize_figure(
-        fig,
-        outdir / "canvas_nsidis_pilot_composition.png",
-        rect=(0, 0, 1, 0.95),
-    )
-    plt.close(fig)
 
 
 def preflight_nsidis_study(
@@ -9515,7 +10224,6 @@ def preflight_nsidis_study(
                 continue
             #endif
 
-            # Only data samples need exact event IDs.
             needs_event_ids = label in (
                 "old epgamma",
                 "old eppi0",
@@ -9566,8 +10274,8 @@ def process_nsidis_study_period(
     """
     Isolated nSidis development path.
 
-    It does not call process_period(), Stage III, closure studies, mixed-event
-    diagnostics, or the old candidate-selection machinery.
+    It never forms an efficiency scale factor. The optional pilot tests only
+    denominator composition with the finalized M_X^2(ep) x pTmiss model.
     """
     t0 = time.perf_counter()
     outdir = Path(output_root) / "nsidis_study" / period.key
@@ -9637,28 +10345,46 @@ def process_nsidis_study_period(
     wagon_epi = loaded["wagon_eppi0"]
     ns_epi = loaded["nsidis_eppi0"]
 
+    # Match the upstream nSidis parent support exactly for overlap checks.
+    wagon_epg_parent = electron_momentum_from_p3(
+        wagon_epg.electron_p3
+    ) > 2.0
+    ns_epg_parent = electron_momentum_from_p3(
+        ns_epg.electron_p3
+    ) > 2.0
+    wagon_epi_parent = electron_momentum_from_p3(
+        wagon_epi.electron_p3
+    ) > 2.0
+    ns_epi_parent = electron_momentum_from_p3(
+        ns_epi.electron_p3
+    ) > 2.0
+
     epg_overlap, epg_overlap_summary = event_overlap_masks(
         wagon_epg.raw,
         ns_epg.raw,
+        reference_mask=wagon_epg_parent,
+        candidate_mask=ns_epg_parent,
     )
     epi_overlap, epi_overlap_summary = event_overlap_masks(
         wagon_epi.raw,
         ns_epi.raw,
+        reference_mask=wagon_epi_parent,
+        candidate_mask=ns_epi_parent,
     )
 
     wagon_epg_f = build_epgamma_denominator_features(
-        period,
-        wagon_epg,
-        tag_min,
-        tag_max,
-        ft_theta_max,
+        period, wagon_epg, tag_min, tag_max, ft_theta_max
     )
     ns_epg_f = build_epgamma_denominator_features(
-        period,
-        ns_epg,
-        tag_min,
-        tag_max,
-        ft_theta_max,
+        period, ns_epg, tag_min, tag_max, ft_theta_max
+    )
+    wagon_epg_f["electron_p"] = np.asarray(
+        electron_momentum_from_p3(wagon_epg.electron_p3),
+        dtype=np.float32,
+    )
+    ns_epg_f["electron_p"] = np.asarray(
+        electron_momentum_from_p3(ns_epg.electron_p3),
+        dtype=np.float32,
     )
 
     wagon_epi_f = build_eppi0_exclusivity_features(
@@ -9668,37 +10394,83 @@ def process_nsidis_study_period(
         period, ns_epi
     )
 
-    envelope = derive_wagon_eppi0_envelope(
-        wagon_epi_f,
-        float(args_dict["nsidis_eppi0_envelope_quantile"]),
-    )
-    wagon_epi_keep = apply_wagon_eppi0_envelope(
-        wagon_epi_f, envelope
-    )
-    ns_epi_keep = apply_wagon_eppi0_envelope(
-        ns_epi_f, envelope
-    )
-
     make_nsidis_epgamma_overlap_canvas(
         period,
         wagon_epg_f,
         ns_epg_f,
         epg_overlap,
+        wagon_epg_parent,
+        ns_epg_parent,
         outdir,
     )
     make_nsidis_overlap_vs_energy_canvas(
         period,
         ns_epg_f,
         epg_overlap,
+        ns_epg_parent,
         outdir,
         tag_max,
     )
-    make_nsidis_eppi0_exclusivity_canvas(
+
+    # Proper exclusive-core study: robust peak characterization + scan.
+    core_model = derive_eppi0_core_model(
+        wagon_epi_f,
+        wagon_epi_parent,
+    )
+    core_nsigma = parse_float_edges(
+        str(args_dict["nsidis_eppi0_core_nsigma_scan"]),
+        "--nsidis-eppi0-core-nsigma-scan",
+    )
+    core_quantiles = parse_float_edges(
+        str(args_dict["nsidis_eppi0_momentum_quantile_scan"]),
+        "--nsidis-eppi0-momentum-quantile-scan",
+    )
+    core_rows, core_recommended = build_eppi0_core_scan(
         period,
         wagon_epi_f,
         ns_epi_f,
         epi_overlap,
-        envelope,
+        wagon_epi_parent,
+        ns_epi_parent,
+        core_model,
+        core_nsigma,
+        core_quantiles,
+        float(args_dict["nsidis_eppi0_target_wagon_retention"]),
+    )
+    write_rows_csv(
+        core_rows,
+        outdir / "nsidis_eppi0_exclusive_core_scan.csv",
+    )
+    with (
+        outdir / "nsidis_eppi0_recommended_core.json"
+    ).open("w") as f:
+        json.dump(
+            {
+                "period": period.key,
+                "label": period.label,
+                "core_model": core_model,
+                "recommended": core_recommended,
+            },
+            f,
+            indent=2,
+            allow_nan=True,
+        )
+    #endwith
+    make_nsidis_eppi0_core_canvas(
+        period,
+        wagon_epi_f,
+        ns_epi_f,
+        epi_overlap,
+        wagon_epi_parent,
+        ns_epi_parent,
+        core_model,
+        core_recommended,
+        outdir,
+    )
+    make_nsidis_eppi0_core_scan_canvas(
+        period,
+        core_rows,
+        core_recommended,
         outdir,
     )
 
@@ -9711,6 +10483,8 @@ def process_nsidis_study_period(
         wagon_epg_f,
         ns_epg_f,
         epg_overlap,
+        wagon_epg_parent,
+        ns_epg_parent,
         float(args_dict["den_fit_mm2_min"]),
         float(args_dict["den_fit_mm2_max"]),
         scan_values,
@@ -9725,12 +10499,12 @@ def process_nsidis_study_period(
         outdir,
     )
 
-    pilot_wagon_rows = []
-    pilot_nsidis_rows = []
+    pilot_wagon_rows: List[Dict[str, object]] = []
+    pilot_nsidis_rows: List[Dict[str, object]] = []
 
     if bool(args_dict.get("nsidis_pilot_fit", False)):
         log(
-            f"{period.label}: optional nSidis composition pilot enabled; "
+            f"{period.label}: nSidis production-model pilot enabled; "
             "reading aaogen and dvcsgen epgamma templates."
         )
         pi_arrays, _, _ = read_branches(
@@ -9754,20 +10528,28 @@ def process_nsidis_study_period(
         del dv_arrays
 
         pi0_f = build_epgamma_denominator_features(
-            period,
-            pi_epg,
-            tag_min,
-            tag_max,
-            ft_theta_max,
+            period, pi_epg, tag_min, tag_max, ft_theta_max
         )
         dvcs_f = build_epgamma_denominator_features(
-            period,
-            dv_epg,
-            tag_min,
-            tag_max,
-            ft_theta_max,
+            period, dv_epg, tag_min, tag_max, ft_theta_max
         )
         del pi_epg, dv_epg
+
+        support_values = parse_float_edges(
+            str(args_dict["nsidis_pilot_probe_m2_values"]),
+            "--nsidis-pilot-probe-m2-values",
+        )
+        central_support = float(
+            args_dict["nsidis_pilot_probe_m2_max"]
+        )
+        if all(
+            abs(float(x) - central_support) > 1.0e-12
+            for x in support_values
+        ):
+            support_values = sorted(
+                list(support_values) + [central_support]
+            )
+        #endif
 
         common = {
             "period": period,
@@ -9776,9 +10558,7 @@ def process_nsidis_study_period(
             "ft_theta_max": ft_theta_max,
             "mm2_min": float(args_dict["den_fit_mm2_min"]),
             "mm2_max": float(args_dict["den_fit_mm2_max"]),
-            "probe_m2_max": float(
-                args_dict["nsidis_pilot_probe_m2_max"]
-            ),
+            "support_values": support_values,
             "mm2_bins": int(args_dict["den_fit_mm2_bins"]),
             "ptmiss_max": float(args_dict["disc_ptmiss_max"]),
             "ptmiss_bins": int(args_dict["disc_ptmiss_bins"]),
@@ -9805,6 +10585,8 @@ def process_nsidis_study_period(
             max_probe_energy=float(
                 args_dict["nsidis_pilot_energy_max"]
             ),
+            source_label="nsidis",
+            parent_mask=ns_epg_parent,
             **common,
         )
         pilot_wagon_rows = run_nsidis_ptmiss_pilot_fits(
@@ -9813,6 +10595,8 @@ def process_nsidis_study_period(
                 2.0,
                 float(args_dict["nsidis_pilot_energy_max"]),
             ),
+            source_label="wagon_epgt2_reference",
+            parent_mask=wagon_epg_parent,
             **common,
         )
 
@@ -9822,18 +10606,31 @@ def process_nsidis_study_period(
         )
         write_rows_csv(
             pilot_wagon_rows,
-            outdir / "wagon_pilot_composition_fits.csv",
+            outdir / "wagon_overlap_pilot_composition_fits.csv",
         )
-        make_nsidis_pilot_composition_canvas(
+        make_nsidis_pilot_summary_canvas(
             period,
             pilot_wagon_rows,
             pilot_nsidis_rows,
+            central_support,
             outdir,
         )
+        make_nsidis_pilot_fit_projection_canvases(
+            period,
+            pilot_nsidis_rows,
+            ns_epg_f,
+            pi0_f,
+            dvcs_f,
+            outdir,
+            central_support=central_support,
+            ft_theta_max=ft_theta_max,
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            mm2_bins=int(args_dict["den_fit_mm2_bins"]),
+            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+            ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+        )
     #endif
-
-    n_wagon_epi = len(wagon_epi_f["Emiss"])
-    n_ns_epi = len(ns_epi_f["Emiss"])
 
     summary = {
         "period": period.key,
@@ -9841,25 +10638,20 @@ def process_nsidis_study_period(
         "beam_energy_GeV": period.beam_energy,
         "nsidis_epgamma_path": ns_epg_path,
         "nsidis_eppi0_path": ns_epi_path,
+        "overlap_parent_requirement": "electron momentum > 2 GeV",
         "epgamma_overlap": epg_overlap_summary,
         "eppi0_overlap": epi_overlap_summary,
-        "eppi0_wagon_envelope": envelope,
-        "wagon_eppi0_envelope_retention": (
-            float(np.count_nonzero(wagon_epi_keep))
-            / float(n_wagon_epi)
-            if n_wagon_epi else float("nan")
-        ),
-        "nsidis_eppi0_envelope_retention": (
-            float(np.count_nonzero(ns_epi_keep))
-            / float(n_ns_epi)
-            if n_ns_epi else float("nan")
-        ),
+        "eppi0_core_model": core_model,
+        "eppi0_recommended_core": core_recommended,
         "nsidis_pilot_fit_enabled": bool(
             args_dict.get("nsidis_pilot_fit", False)
         ),
+        "production_denominator_driver": (
+            "M_X^2(ep) x pTmiss"
+        ),
         "wall_time_s": float(time.perf_counter() - t0),
         "status": (
-            "diagnostic only; no nSidis efficiency scale factor formed"
+            "diagnostic nSidis transition study; no efficiency scale factor formed"
         ),
     }
 
@@ -10181,58 +10973,69 @@ def process_period(
             )
         #endif
 
-        # Always perform the focused discriminator-selection study.
-        candidate_model_rows = run_stage2_candidate_model_study(
-            period,
-            data_f,
-            pi0_f,
-            dvcs_f,
-            ft_theta_max,
-            max_probe_energy,
-            float(args_dict["den_fit_mm2_min"]),
-            float(args_dict["den_fit_mm2_max"]),
-            float(args_dict["den_fit_probe_m2_max"]),
-            int(args_dict["den_fit_mm2_bins"]),
-            int(args_dict["den_fit_probe_m2_bins"]),
-            float(args_dict["disc_ptmiss_max"]),
-            int(args_dict["disc_ptmiss_bins"]),
-            float(args_dict["disc_theta_max"]),
-            int(args_dict["disc_theta_bins"]),
-            int(args_dict["den_min_data_count"]),
-            int(args_dict["den_min_template_count"]),
-            float(args_dict["morph_shift_prior_bins"]),
-            float(args_dict["morph_sigma_prior_bins"]),
-            float(args_dict["morph_max_shift_bins"]),
-            float(args_dict["morph_max_sigma_bins"]),
-        )
-        write_rows_csv(
-            candidate_model_rows,
-            stage2_dir / "candidate_model_selection.csv",
-        )
-        make_candidate_model_summary_canvas(
-            period,
-            candidate_model_rows,
-            stage2_dir,
-        )
-        make_selection_driver_fit_canvases(
-            period,
-            data_f,
-            pi0_f,
-            dvcs_f,
-            stage2_dir,
-            ft_theta_max,
-            max_probe_energy,
-            float(args_dict["den_fit_mm2_min"]),
-            float(args_dict["den_fit_mm2_max"]),
-            float(args_dict["den_fit_probe_m2_max"]),
-            int(args_dict["den_fit_mm2_bins"]),
-            float(args_dict["disc_ptmiss_max"]),
-            int(args_dict["disc_ptmiss_bins"]),
-            float(args_dict["disc_theta_max"]),
-            int(args_dict["disc_theta_bins"]),
-            int(args_dict["den_min_data_count"]),
-            int(args_dict["den_min_template_count"]),
-        )
+        # The discriminator decision is now settled: production uses only
+        # M_X^2(ep) x pTmiss. The former theta-driver comparison remains
+        # available only in --diagnostics full for archival/debug purposes.
+        if full_diagnostics:
+            # Always perform the focused discriminator-selection study.
+            candidate_model_rows = run_stage2_candidate_model_study(
+                period,
+                data_f,
+                pi0_f,
+                dvcs_f,
+                ft_theta_max,
+                max_probe_energy,
+                float(args_dict["den_fit_mm2_min"]),
+                float(args_dict["den_fit_mm2_max"]),
+                float(args_dict["den_fit_probe_m2_max"]),
+                int(args_dict["den_fit_mm2_bins"]),
+                int(args_dict["den_fit_probe_m2_bins"]),
+                float(args_dict["disc_ptmiss_max"]),
+                int(args_dict["disc_ptmiss_bins"]),
+                float(args_dict["disc_theta_max"]),
+                int(args_dict["disc_theta_bins"]),
+                int(args_dict["den_min_data_count"]),
+                int(args_dict["den_min_template_count"]),
+                float(args_dict["morph_shift_prior_bins"]),
+                float(args_dict["morph_sigma_prior_bins"]),
+                float(args_dict["morph_max_shift_bins"]),
+                float(args_dict["morph_max_sigma_bins"]),
+            )
+            write_rows_csv(
+                candidate_model_rows,
+                stage2_dir / "candidate_model_selection.csv",
+            )
+            make_candidate_model_summary_canvas(
+                period,
+                candidate_model_rows,
+                stage2_dir,
+            )
+            make_selection_driver_fit_canvases(
+                period,
+                data_f,
+                pi0_f,
+                dvcs_f,
+                stage2_dir,
+                ft_theta_max,
+                max_probe_energy,
+                float(args_dict["den_fit_mm2_min"]),
+                float(args_dict["den_fit_mm2_max"]),
+                float(args_dict["den_fit_probe_m2_max"]),
+                int(args_dict["den_fit_mm2_bins"]),
+                float(args_dict["disc_ptmiss_max"]),
+                int(args_dict["disc_ptmiss_bins"]),
+                float(args_dict["disc_theta_max"]),
+                int(args_dict["disc_theta_bins"]),
+                int(args_dict["den_min_data_count"]),
+                int(args_dict["den_min_template_count"]),
+            )
+
+        else:
+            log(
+                f"{period.label}: production discriminator fixed to "
+                "M_X^2(ep) x pTmiss; skipped archived driver-comparison study."
+            )
+        #endif
 
         # The old nominal-driver canvases are redundant with the new selection
         # canvases because they hid Mx2. Keep them only in full/debug plotting.
@@ -10258,11 +11061,13 @@ def process_period(
             )
         #endif
 
-        make_theta_gg_alternative_canvas(
-            period,
-            stage2_rows,
-            stage2_dir,
-        )
+        if full_diagnostics:
+            make_theta_gg_alternative_canvas(
+                period,
+                stage2_rows,
+                stage2_dir,
+            )
+        #endif
 
         stage2_spread_rows = discriminator_spread_rows(stage2_rows)
         write_rows_csv(
@@ -11489,11 +12294,6 @@ def main() -> int:
                 "--period selection."
             )
         #endif
-        if not (0.90 <= args.nsidis_eppi0_envelope_quantile < 1.0):
-            raise ValueError(
-                "--nsidis-eppi0-envelope-quantile must be in [0.90,1)."
-            )
-        #endif
         if not (2.0 <= args.nsidis_pilot_energy_max <= 10.0):
             raise ValueError(
                 "--nsidis-pilot-energy-max must lie in [2,10] GeV."
@@ -11502,6 +12302,13 @@ def main() -> int:
         if args.nsidis_pilot_probe_m2_max <= 0.0:
             raise ValueError(
                 "--nsidis-pilot-probe-m2-max must be > 0."
+            )
+        #endif
+        if not (
+            0.50 <= args.nsidis_eppi0_target_wagon_retention < 1.0
+        ):
+            raise ValueError(
+                "--nsidis-eppi0-target-wagon-retention must be in [0.5,1)."
             )
         #endif
 
@@ -11531,11 +12338,15 @@ def main() -> int:
                         "reference_unique_event_recall"
                     ]
                 ),
-                "wagon_eppi0_envelope_retention": (
-                    summary["wagon_eppi0_envelope_retention"]
+                "eppi0_recommended_wagon_retention": (
+                    summary["eppi0_recommended_core"][
+                        "wagon_epgt2_retention"
+                    ]
                 ),
-                "nsidis_eppi0_envelope_retention": (
-                    summary["nsidis_eppi0_envelope_retention"]
+                "eppi0_recommended_nonwagon_retention": (
+                    summary["eppi0_recommended_core"][
+                        "nsidis_nonwagon_event_entry_retention"
+                    ]
                 ),
                 "pilot_fit_enabled": int(
                     summary["nsidis_pilot_fit_enabled"]
