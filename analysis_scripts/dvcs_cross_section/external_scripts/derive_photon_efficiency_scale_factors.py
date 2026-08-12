@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v057.py
+derive_photon_efficiency_scale_factors_v058.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v057.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v058.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v057.py \
+    python derive_photon_efficiency_scale_factors_v058.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v057.py \
+    python derive_photon_efficiency_scale_factors_v058.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -94,6 +94,9 @@ reconstructed-pi0 exclusivity prescription is accepted.
 from __future__ import annotations
 
 import argparse
+import ast
+import inspect
+import textwrap
 import csv
 import gc
 import json
@@ -12304,6 +12307,120 @@ def make_nsidis_period_comparison(
 
 
 
+
+def direct_args_dict_keys(function) -> set[str]:
+    """Return literal keys used as args_dict['key'] inside a function."""
+    source = textwrap.dedent(inspect.getsource(function))
+    tree = ast.parse(source)
+    keys: set[str] = set()
+
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "args_dict"
+        ):
+            continue
+        #endif
+        if (
+            isinstance(node.slice, ast.Constant)
+            and isinstance(node.slice.value, str)
+        ):
+            keys.add(node.slice.value)
+        #endif
+    #endfor
+    return keys
+
+
+def module_argparse_destinations() -> set[str]:
+    """
+    Extract every argparse destination from the entire current source file.
+
+    The parser is assembled across several helper functions, so scanning only
+    main() is insufficient.
+    """
+    source = Path(__file__).read_text()
+    tree = ast.parse(source)
+    dests: set[str] = set()
+
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "add_argument"
+        ):
+            continue
+        #endif
+
+        options: List[str] = []
+        explicit_dest = None
+
+        for arg in node.args:
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                options.append(arg.value)
+            #endif
+        #endfor
+
+        for kw in node.keywords:
+            if (
+                kw.arg == "dest"
+                and isinstance(kw.value, ast.Constant)
+                and isinstance(kw.value.value, str)
+            ):
+                explicit_dest = kw.value.value
+            #endif
+        #endfor
+
+        if explicit_dest is not None:
+            dests.add(explicit_dest)
+            continue
+        #endif
+
+        long_options = [
+            option for option in options if option.startswith("--")
+        ]
+        if long_options:
+            dests.add(
+                long_options[0][2:].replace("-", "_")
+            )
+        #endif
+    #endfor
+
+    return dests
+
+
+def validate_nsidis_argument_contract(
+    args_dict: Dict[str, object],
+) -> None:
+    """
+    Fail before expensive I/O if the nSidis worker contains a stale/misspelled
+    direct args_dict key.
+
+    This is intentionally executed before preflight_nsidis_study().
+    """
+    required = direct_args_dict_keys(process_nsidis_study_period)
+    parser_dests = module_argparse_destinations()
+
+    missing_from_parser = sorted(required.difference(parser_dests))
+    if missing_from_parser:
+        raise RuntimeError(
+            "nSidis worker/argparse contract failure BEFORE processing: "
+            "worker references destination(s) that do not exist in the parser: "
+            + ", ".join(missing_from_parser)
+        )
+    #endif
+
+    missing_from_runtime = sorted(required.difference(args_dict))
+    if missing_from_runtime:
+        raise RuntimeError(
+            "nSidis runtime argument-contract failure BEFORE processing: "
+            "vars(args) is missing required worker key(s): "
+            + ", ".join(missing_from_runtime)
+        )
+    #endif
+
+
+
 def preflight_nsidis_study(
     periods: Sequence[PeriodConfig],
     args_dict: Dict[str, object],
@@ -12534,7 +12651,7 @@ def process_nsidis_study_period(
     log(
         f"{period.label}: probe-mass2 development scan retired; "
         "using fixed central support |M_probe^2| < "
-        f"{float(args_dict['nsidis_pilot_probe_m2_support']):.3g} GeV^2."
+        f"{float(args_dict['nsidis_pilot_probe_m2_max']):.3g} GeV^2."
     )
 
     pilot_wagon_rows: List[Dict[str, object]] = []
@@ -14678,6 +14795,10 @@ def main() -> int:
         #endif
 
         ns_args_dict = vars(args).copy()
+
+        # Cheap refactor guard before opening any ROOT file.
+        validate_nsidis_argument_contract(ns_args_dict)
+
         preflight_nsidis_study(selected, ns_args_dict)
 
         nsroot = Path(args.output_dir) / "nsidis_study"
