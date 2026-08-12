@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v034.py
+derive_photon_efficiency_scale_factors_v035.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v034.py
+    python derive_photon_efficiency_scale_factors_v035.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v034.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v035.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v034.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v035.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v034.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v035.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v034.py --angles rad
+    python derive_photon_efficiency_scale_factors_v035.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -3141,6 +3141,447 @@ def make_stage2_template_mixture_closure_canvas(
     )
     plt.close(fig)
 
+
+def run_stage2_ft_coarse_shared_morphed_fits(
+    period: PeriodConfig,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    pi0_control: Dict[str, object],
+    ft_theta_max: float,
+    energy_edges: Sequence[float],
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+    mm2_bins_2d: int,
+    probe_m2_bins_2d: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+    min_data_count: int,
+    min_template_count: int,
+    nuisance_shift_prior: float,
+    nuisance_sigma_prior: float,
+    max_shift_bins: float,
+    max_sigma_bins: float,
+    closure_truth_fractions: Sequence[float],
+) -> Tuple[List[Dict[str, object]], List[Dict[str, object]]]:
+    """
+    Diagnostic coarse-energy FT version of the nominal shared-morphed Stage-II
+    fit.
+
+    Physics model, discriminators, nuisance priors, and template morphing are
+    identical to the nominal fit. Only the FT predicted-probe energy binning is
+    coarsened. These results are *not* used by Stage III.
+    """
+    edges = np.asarray(energy_edges, dtype=float)
+    if edges.ndim != 1 or edges.size < 2 or np.any(~np.isfinite(edges)):
+        raise ValueError("FT coarse energy edges must be a finite 1D array.")
+    #endif
+    if np.any(np.diff(edges) <= 0.0):
+        raise ValueError("FT coarse energy edges must be strictly increasing.")
+    #endif
+
+    rows: List[Dict[str, object]] = []
+    closure_rows: List[Dict[str, object]] = []
+
+    for ib in range(len(edges) - 1):
+        elo = float(edges[ib])
+        ehi = float(edges[ib + 1])
+
+        masks = {
+            key: stage2_fit_mask(
+                feat,
+                "FT",
+                ft_theta_max,
+                elo,
+                ehi,
+                mm2_min,
+                mm2_max,
+                probe_m2_max,
+            )
+            for key, feat in (
+                ("data", data_f),
+                ("pi0", pi0_f),
+                ("dvcs", dvcs_f),
+            )
+        }
+
+        row: Dict[str, object] = {
+            "period": period.key,
+            "label": period.label,
+            "beam_energy_GeV": period.beam_energy,
+            "region": "FT",
+            "energy_low_GeV": elo,
+            "energy_high_GeV": ehi,
+            "energy_center_GeV": 0.5 * (elo + ehi),
+            "fit_model": "shared_morphed_2d_FT_coarse_energy",
+            "data_candidate_count": int(np.count_nonzero(masks["data"])),
+            "aaogen_candidate_count": int(np.count_nonzero(masks["pi0"])),
+            "dvcsgen_candidate_count": int(np.count_nonzero(masks["dvcs"])),
+        }
+
+        hist: Dict[str, Tuple[np.ndarray, np.ndarray, np.ndarray]] = {}
+        for disc in STAGE2_DRIVER_DISCRIMINATORS:
+            if not discriminator_available(disc, data_f, pi0_f, dvcs_f):
+                continue
+            #endif
+            hd = histogram_for_discriminator(
+                disc, data_f, masks["data"],
+                mm2_min=mm2_min, mm2_max=mm2_max,
+                probe_m2_max=probe_m2_max,
+                mm2_bins_2d=mm2_bins_2d,
+                probe_m2_bins_2d=probe_m2_bins_2d,
+                bins_1d=90,
+                ptmiss_max=ptmiss_max, ptmiss_bins=ptmiss_bins,
+                theta_max=theta_max, theta_bins=theta_bins,
+            )
+            hp = histogram_for_discriminator(
+                disc, pi0_f, masks["pi0"],
+                mm2_min=mm2_min, mm2_max=mm2_max,
+                probe_m2_max=probe_m2_max,
+                mm2_bins_2d=mm2_bins_2d,
+                probe_m2_bins_2d=probe_m2_bins_2d,
+                bins_1d=90,
+                ptmiss_max=ptmiss_max, ptmiss_bins=ptmiss_bins,
+                theta_max=theta_max, theta_bins=theta_bins,
+            )
+            hv = histogram_for_discriminator(
+                disc, dvcs_f, masks["dvcs"],
+                mm2_min=mm2_min, mm2_max=mm2_max,
+                probe_m2_max=probe_m2_max,
+                mm2_bins_2d=mm2_bins_2d,
+                probe_m2_bins_2d=probe_m2_bins_2d,
+                bins_1d=90,
+                ptmiss_max=ptmiss_max, ptmiss_bins=ptmiss_bins,
+                theta_max=theta_max, theta_bins=theta_bins,
+            )
+
+            if (
+                float(np.sum(hd)) >= min_data_count
+                and float(np.sum(hp)) >= min_template_count
+                and float(np.sum(hv)) >= min_template_count
+            ):
+                hist[disc] = (hd, hp, hv)
+            #endif
+        #endfor
+
+        fit = fit_shared_morphed_composition(
+            hist,
+            pi0_control,
+            nuisance_shift_prior,
+            nuisance_sigma_prior,
+            max_shift_bins,
+            max_sigma_bins,
+        )
+
+        row.update({
+            "fit_success": int(fit.success),
+            "fit_message": fit.message,
+            "n_drivers": len(hist),
+            "pi0_fraction": float(fit.pi0_fraction),
+            "dvcs_fraction": (
+                1.0 - float(fit.pi0_fraction)
+                if np.isfinite(fit.pi0_fraction)
+                else float("nan")
+            ),
+            "objective": float(fit.objective),
+            "poisson_deviance": float(fit.poisson_deviance),
+            "ndof": int(fit.ndof),
+            "deviance_per_ndof": (
+                float(fit.poisson_deviance / fit.ndof)
+                if fit.ndof else float("nan")
+            ),
+        })
+        if fit.nuisance:
+            row.update(fit.nuisance)
+        #endif
+        rows.append(row)
+
+        if hist and fit.success:
+            closure_rows.extend(
+                build_stage2_template_mixture_closure(
+                    period,
+                    "FT",
+                    elo,
+                    ehi,
+                    hist,
+                    fit,
+                    pi0_control,
+                    closure_truth_fractions,
+                    nuisance_shift_prior,
+                    nuisance_sigma_prior,
+                    max_shift_bins,
+                    max_sigma_bins,
+                )
+            )
+        #endif
+    #endfor
+
+    return rows, closure_rows
+
+
+def make_ft_coarse_composition_canvas(
+    period: PeriodConfig,
+    fine_rows: List[Dict[str, object]],
+    coarse_rows: List[Dict[str, object]],
+    coarse_closure_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """
+    Compare the nominal fine-bin FT composition with the diagnostic coarse-bin
+    FT composition and show closure quality of the coarse fits.
+    """
+    if not coarse_rows:
+        return
+    #endif
+
+    fig, axes = plt.subplots(1, 2, figsize=(15.2, 5.7))
+
+    fine = sorted(
+        [
+            r for r in fine_rows
+            if str(r.get("region", "")) == "FT"
+            and int(r.get("fit_success", 0)) == 1
+        ],
+        key=lambda r: float(r["energy_center_GeV"]),
+    )
+    coarse = sorted(
+        [r for r in coarse_rows if int(r.get("fit_success", 0)) == 1],
+        key=lambda r: float(r["energy_low_GeV"]),
+    )
+
+    if fine:
+        axes[0].plot(
+            [float(r["energy_center_GeV"]) for r in fine],
+            [float(r["pi0_fraction"]) for r in fine],
+            marker="o",
+            linewidth=1.1,
+            label="nominal fine bins",
+        )
+    #endif
+
+    for i, row in enumerate(coarse):
+        elo = float(row["energy_low_GeV"])
+        ehi = float(row["energy_high_GeV"])
+        f = float(row["pi0_fraction"])
+        axes[0].hlines(
+            f,
+            elo,
+            ehi,
+            linewidth=3.0,
+            label="coarse FT fit" if i == 0 else None,
+        )
+        axes[0].plot(
+            [0.5 * (elo + ehi)],
+            [f],
+            marker="s",
+            markersize=6,
+        )
+    #endfor
+
+    axes[0].set_ylim(0.0, 1.02)
+    axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[0].set_ylabel(r"fitted $f_{\pi^0}$")
+    axes[0].set_title("FT composition: fine versus coarse energy bins")
+    axes[0].grid(alpha=0.20)
+    axes[0].legend(frameon=False, fontsize=8)
+
+    # Worst closure bias per coarse energy bin.
+    grouped: Dict[Tuple[float, float], List[float]] = {}
+    for row in coarse_closure_rows:
+        if int(row.get("fit_success", 0)) != 1:
+            continue
+        #endif
+        key = (
+            float(row["energy_low_GeV"]),
+            float(row["energy_high_GeV"]),
+        )
+        grouped.setdefault(key, []).append(
+            abs(float(row["closure_bias"]))
+        )
+    #endfor
+
+    for (elo, ehi), values in sorted(grouped.items()):
+        axes[1].bar(
+            0.5 * (elo + ehi),
+            max(values),
+            width=0.85 * (ehi - elo),
+            alpha=0.65,
+        )
+    #endfor
+    axes[1].axhline(
+        0.01,
+        color="black",
+        linestyle=":",
+        linewidth=1.0,
+        label="1% bias",
+    )
+    axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+    axes[1].set_ylabel(r"max injected-fraction $|\Delta f_{\pi^0}|$")
+    axes[1].set_title("Coarse-bin FT template-mixture closure")
+    axes[1].grid(alpha=0.20)
+    axes[1].legend(frameon=False, fontsize=8)
+
+    fig.suptitle(
+        f"{period.label}: diagnostic coarse-energy FT composition",
+        fontsize=14,
+    )
+    safe_finalize_figure(
+        fig,
+        Path(outdir) / "canvas_ft_coarse_energy_composition.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+
+def build_cross_section_style_transfer_crosscheck(
+    period: PeriodConfig,
+    data_epg: EPGammaSample,
+    data_eppi0: EPPi0Sample,
+    pi0_as_epg_mc: EPGammaSample,
+    pi0_rec_mc: EPPi0Sample,
+    shared_rows: List[Dict[str, object]],
+    max_probe_energy: float,
+) -> Dict[str, object]:
+    """
+    Reproduce the algebraic structure of the production pi0-contamination
+    calculation as a *skim-level raw-count diagnostic*:
+
+        f_pi0^transfer =
+            N(pi0 MC -> epgamma) * N(eppi0 data)
+            -----------------------------------
+            N(eppi0 reconstructed MC) * N(epgamma data)
+
+    This is intentionally not promoted to a production normalization because
+    this standalone study does not apply the cross-section suite's charge and
+    MC current-efficiency corrections, and the direct eppi0 skim cannot be
+    sliced in the predicted missing-probe energy using the currently stored
+    branches.
+
+    The result is therefore an overall period-level sanity check only.
+    """
+    n_epg_data = int(len(data_epg.tag_energy))
+    n_eppi0_data = int(len(data_eppi0.pi0_mass))
+    n_mis_mc = int(len(pi0_as_epg_mc.tag_energy))
+    n_rec_mc = int(len(pi0_rec_mc.pi0_mass))
+
+    transfer = (
+        float(n_mis_mc) / float(n_rec_mc)
+        if n_rec_mc > 0 else float("nan")
+    )
+    fraction = (
+        transfer * float(n_eppi0_data) / float(n_epg_data)
+        if n_epg_data > 0 and np.isfinite(transfer)
+        else float("nan")
+    )
+
+    # Compare with the candidate-count-weighted nominal all-region Stage-II
+    # fraction over the current 0.4--max_probe_energy reference range.
+    fit_num = 0.0
+    fit_den = 0.0
+    for row in shared_rows:
+        if (
+            str(row.get("region", "")) != "all"
+            or int(row.get("fit_success", 0)) != 1
+        ):
+            continue
+        #endif
+        elo = float(row.get("energy_low_GeV", np.nan))
+        ehi = float(row.get("energy_high_GeV", np.nan))
+        if not (
+            np.isfinite(elo)
+            and np.isfinite(ehi)
+            and elo >= 0.40 - 1.0e-9
+            and ehi <= max_probe_energy + 1.0e-9
+        ):
+            continue
+        #endif
+        n = float(row.get("data_candidate_count", 0.0))
+        f = float(row.get("pi0_fraction", np.nan))
+        if n > 0.0 and np.isfinite(f):
+            fit_num += n * f
+            fit_den += n
+        #endif
+    #endfor
+    fitted_weighted = (
+        fit_num / fit_den if fit_den > 0.0 else float("nan")
+    )
+
+    return {
+        "period": period.key,
+        "label": period.label,
+        "beam_energy_GeV": period.beam_energy,
+        "diagnostic": "cross_section_style_raw_skim_transfer_factor",
+        "epgamma_data_entries": n_epg_data,
+        "eppi0_data_entries": n_eppi0_data,
+        "aaogen_pi0_as_epgamma_entries": n_mis_mc,
+        "aaogen_reconstructed_eppi0_entries": n_rec_mc,
+        "mc_misid_transfer_factor": transfer,
+        "raw_skim_transfer_pi0_fraction": fraction,
+        "stage2_weighted_all_region_pi0_fraction": fitted_weighted,
+        "difference_transfer_minus_stage2": (
+            fraction - fitted_weighted
+            if np.isfinite(fraction) and np.isfinite(fitted_weighted)
+            else float("nan")
+        ),
+        "normalization_caveat": (
+            "raw skim counts only; no charge normalization or MC current-efficiency "
+            "correction; direct eppi0 sample not sliced by predicted probe energy"
+        ),
+    }
+
+
+def make_cross_section_style_transfer_canvas(
+    rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    if not rows:
+        return
+    #endif
+
+    order = {p.key: i for i, p in enumerate(PERIODS)}
+    rr = sorted(rows, key=lambda r: order.get(str(r["period"]), 999))
+    x = np.arange(len(rr), dtype=float)
+
+    fig, ax = plt.subplots(figsize=(10.5, 5.8))
+    ax.plot(
+        x,
+        [float(r["raw_skim_transfer_pi0_fraction"]) for r in rr],
+        marker="o",
+        linewidth=1.2,
+        label="cross-section-style raw transfer",
+    )
+    ax.plot(
+        x,
+        [float(r["stage2_weighted_all_region_pi0_fraction"]) for r in rr],
+        marker="s",
+        linewidth=1.2,
+        label="Stage-II weighted all-region fit",
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        [str(r["label"]) for r in rr],
+        rotation=25,
+        ha="right",
+    )
+    ax.set_ylabel(r"$\pi^0$ fraction")
+    ax.set_ylim(bottom=0.0)
+    ax.grid(alpha=0.20)
+    ax.legend(frameon=False, fontsize=8)
+    ax.set_title(
+        "Skim-level cross-section-style $\\pi^0$ transfer-factor sanity check"
+    )
+
+    safe_finalize_figure(
+        fig,
+        Path(outdir) / "canvas_cross_section_style_pi0_transfer_crosscheck.png",
+        rect=(0, 0, 1, 0.94),
+    )
+    plt.close(fig)
+
+
 def run_stage2_shared_morphed_fits(period: PeriodConfig, data_f: Dict[str,np.ndarray], pi0_f: Dict[str,np.ndarray],
                                    dvcs_f: Dict[str,np.ndarray], pi0_control: Dict[str,Dict[str,float]],
                                    ft_theta_max: float, max_probe_energy: float, mm2_min: float, mm2_max: float,
@@ -3943,6 +4384,18 @@ def make_ft_fd_fit_overlay_canvas(
                 display_bin_factor=2,
             )
 
+            if not np.allclose(
+                model,
+                dvcs_c + pi0_c,
+                rtol=1.0e-12,
+                atol=1.0e-10,
+            ):
+                raise RuntimeError(
+                    f"{period.label} {region} {elo:.2f}-{ehi:.2f} GeV: "
+                    "display-model component closure failed."
+                )
+            #endif
+
             # Match the visual language of the main exclusivity fitter:
             # black points = data; blue = BH/DVCS; red = pi0; green = total fit.
             # Thin dashed curves show the starting/unmorphed templates; solid
@@ -3967,7 +4420,7 @@ def make_ft_fd_fit_overlay_canvas(
                 linewidth=0.75,
                 linestyle="--",
                 alpha=0.75,
-                label="raw BH/DVCS",
+                label="BH/DVCS pre-morph shape (reference)",
                 zorder=1,
             )
             ax.step(
@@ -3978,7 +4431,7 @@ def make_ft_fd_fit_overlay_canvas(
                 linewidth=0.75,
                 linestyle="--",
                 alpha=0.75,
-                label=r"raw $\pi^0$",
+                label=r"$\pi^0$ pre-morph shape (reference)",
                 zorder=1,
             )
             ax.step(
@@ -3987,7 +4440,7 @@ def make_ft_fd_fit_overlay_canvas(
                 where="mid",
                 color=SAMPLE_COLORS["dvcs_mc"],
                 linewidth=1.6,
-                label="morphed BH/DVCS",
+                label="BH/DVCS fitted component",
                 zorder=3,
             )
             ax.step(
@@ -3996,7 +4449,7 @@ def make_ft_fd_fit_overlay_canvas(
                 where="mid",
                 color=SAMPLE_COLORS["pi0_mc"],
                 linewidth=1.6,
-                label=r"morphed $\pi^0$",
+                label=r"$\pi^0$ fitted component",
                 zorder=3,
             )
             ax.step(
@@ -4005,7 +4458,7 @@ def make_ft_fd_fit_overlay_canvas(
                 where="mid",
                 color=SAMPLE_COLORS["fit"],
                 linewidth=2.0,
-                label="total fit",
+                label=r"total fit = fitted BH/DVCS + fitted $\pi^0$",
                 zorder=4,
             )
             ax.set_xlabel(r"$p_{T,\mathrm{miss}}$ (GeV)")
@@ -4028,6 +4481,17 @@ def make_ft_fd_fit_overlay_canvas(
                 f"{region}, {elo:.2f}–{ehi:.2f} GeV\n"
                 f"BH/DVCS={fbh:.2f}, $\\pi^0$={fpi0:.2f}; "
                 f"smear=({smear_dvcs:.1f},{smear_pi0:.1f}) bins"
+            )
+            ax.text(
+                0.985,
+                0.025,
+                "solid blue + solid red = green\n"
+                "dashed curves are pre-morph references only",
+                transform=ax.transAxes,
+                ha="right",
+                va="bottom",
+                fontsize=6.7,
+                alpha=0.75,
             )
             ax.grid(alpha=0.20)
         #endfor
@@ -6797,6 +7261,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--morph-max-shift-bins", type=float, default=4.0, help="Hard bound on template shifts in histogram bins. Default: 4.0.")
     parser.add_argument("--morph-max-sigma-bins", type=float, default=6.0, help="Hard bound on additional template smearing in histogram bins. Default: 6.0.")
     parser.add_argument(
+        "--ft-coarse-energy-edges",
+        default="0.40,0.60,1.00,2.00",
+        help=(
+            "Comma-separated predicted-probe energy edges (GeV) for the "
+            "diagnostic coarse-bin FT composition study. This does not alter "
+            "the nominal Stage-II or Stage-III binning. "
+            "Default: 0.40,0.60,1.00,2.00."
+        ),
+    )
+    parser.add_argument(
         "--stage2-closure-truth-fractions",
         default="0.2,0.5,0.8",
         help=(
@@ -7053,6 +7527,9 @@ def process_period(
     profile_rows: List[Dict[str, object]] = []
     shared_rows: List[Dict[str, object]] = []
     closure_rows: List[Dict[str, object]] = []
+    ft_coarse_rows: List[Dict[str, object]] = []
+    ft_coarse_closure_rows: List[Dict[str, object]] = []
+    transfer_crosscheck_rows: List[Dict[str, object]] = []
     control_rows: List[Dict[str, object]] = []
     stage3_rows: List[Dict[str, object]] = []
     stage3_summary: Optional[Dict[str, object]] = None
@@ -7185,8 +7662,8 @@ def process_period(
             f"{period.label}: reconstructed-eppi0 control validation written; "
             "control calibration is diagnostic-only and is not used as a morph prior."
         )
-        del eppi0
-        gc.collect()
+        # Keep the object through the transfer-factor calculation below; it is
+        # still modest compared with the epgamma MC samples.
         shared_rows, closure_rows = run_stage2_shared_morphed_fits(
             period, data_f, pi0_f, dvcs_f, pi0_control, ft_theta_max, max_probe_energy,
             float(args_dict["den_fit_mm2_min"]), float(args_dict["den_fit_mm2_max"]), float(args_dict["den_fit_probe_m2_max"]),
@@ -7206,6 +7683,74 @@ def process_period(
             closure_rows,
             stage2_dir,
         )
+
+        ft_coarse_edges = parse_float_edges(
+            str(args_dict["ft_coarse_energy_edges"]),
+            "--ft-coarse-energy-edges",
+        )
+        ft_coarse_rows, ft_coarse_closure_rows = (
+            run_stage2_ft_coarse_shared_morphed_fits(
+                period,
+                data_f,
+                pi0_f,
+                dvcs_f,
+                pi0_control,
+                ft_theta_max,
+                ft_coarse_edges,
+                float(args_dict["den_fit_mm2_min"]),
+                float(args_dict["den_fit_mm2_max"]),
+                float(args_dict["den_fit_probe_m2_max"]),
+                int(args_dict["den_fit_mm2_bins"]),
+                int(args_dict["den_fit_probe_m2_bins"]),
+                float(args_dict["disc_ptmiss_max"]),
+                int(args_dict["disc_ptmiss_bins"]),
+                float(args_dict["disc_theta_max"]),
+                int(args_dict["disc_theta_bins"]),
+                int(args_dict["den_min_data_count"]),
+                int(args_dict["den_min_template_count"]),
+                float(args_dict["morph_shift_prior_bins"]),
+                float(args_dict["morph_sigma_prior_bins"]),
+                float(args_dict["morph_max_shift_bins"]),
+                float(args_dict["morph_max_sigma_bins"]),
+                parse_float_edges(
+                    str(args_dict["stage2_closure_truth_fractions"]),
+                    "--stage2-closure-truth-fractions",
+                ),
+            )
+        )
+        write_rows_csv(
+            ft_coarse_rows,
+            stage2_dir / "ft_coarse_shared_morphed_fits.csv",
+        )
+        write_rows_csv(
+            ft_coarse_closure_rows,
+            stage2_dir / "ft_coarse_template_mixture_closure.csv",
+        )
+        make_ft_coarse_composition_canvas(
+            period,
+            shared_rows,
+            ft_coarse_rows,
+            ft_coarse_closure_rows,
+            stage2_dir,
+        )
+
+        transfer_row = build_cross_section_style_transfer_crosscheck(
+            period,
+            data_epg,
+            eppi0_data,
+            epg,
+            eppi0,
+            shared_rows,
+            max_probe_energy,
+        )
+        transfer_crosscheck_rows = [transfer_row]
+        write_rows_csv(
+            transfer_crosscheck_rows,
+            stage2_dir / "cross_section_style_pi0_transfer_crosscheck.csv",
+        )
+
+        del eppi0
+        gc.collect()
         log(
             f"{period.label}: wrote per-period shared-morphed numerical results "
             f"({len(shared_rows)} rows) before canvas rendering."
@@ -7510,6 +8055,9 @@ def process_period(
         "profile_rows": profile_rows,
         "shared_rows": shared_rows,
         "closure_rows": closure_rows,
+        "ft_coarse_rows": ft_coarse_rows,
+        "ft_coarse_closure_rows": ft_coarse_closure_rows,
+        "transfer_crosscheck_rows": transfer_crosscheck_rows,
         "control_rows": control_rows,
         "stage3_rows": stage3_rows,
         "stage3_summary": stage3_summary,
@@ -7795,6 +8343,23 @@ def main() -> int:
         args.stage2_closure_truth_fractions,
         "--stage2-closure-truth-fractions",
     )
+    ft_coarse_energy_edges = np.asarray(
+        parse_float_edges(
+            args.ft_coarse_energy_edges,
+            "--ft-coarse-energy-edges",
+        ),
+        dtype=float,
+    )
+    if (
+        ft_coarse_energy_edges.size < 2
+        or np.any(~np.isfinite(ft_coarse_energy_edges))
+        or np.any(np.diff(ft_coarse_energy_edges) <= 0.0)
+    ):
+        raise ValueError(
+            "--ft-coarse-energy-edges must contain at least two finite, "
+            "strictly increasing values."
+        )
+    #endif
     if (
         closure_truth_fractions.size == 0
         or np.any(closure_truth_fractions <= 0.0)
@@ -7960,7 +8525,7 @@ def main() -> int:
                 "No generator relative normalization is imposed. Shared morphing "
                 "uses zero-centered weak priors in v031; reconstructed-eppi0 control "
                 "results are diagnostic and are not injected as nuisance centers. "
-                "Mixed-data wrong-tag templates remain diagnostic-only stress tests."
+                "Mixed-data wrong-tag templates remain diagnostic-only stress tests. A diagnostic coarse-energy FT fit tests whether limited FT statistics and composition/morph degeneracy improve when neighboring probe-energy bins are combined. A raw-count cross-section-style pi0 transfer-factor check is also reported but is not used as a production normalization."
             ),
         },
     }
@@ -7974,6 +8539,9 @@ def main() -> int:
     all_mixed_diag_rows: List[Dict[str, object]] = []
     all_shared_rows: List[Dict[str, object]] = []
     all_closure_rows: List[Dict[str, object]] = []
+    all_ft_coarse_rows: List[Dict[str, object]] = []
+    all_ft_coarse_closure_rows: List[Dict[str, object]] = []
+    all_transfer_crosscheck_rows: List[Dict[str, object]] = []
     all_profile_rows: List[Dict[str, object]] = []
     all_control_rows: List[Dict[str, object]] = []
     all_stage3_rows: List[Dict[str, object]] = []
@@ -7997,6 +8565,9 @@ def main() -> int:
                 all_profile_rows.extend(result.get("profile_rows", []))
                 all_shared_rows.extend(result.get("shared_rows", []))
                 all_closure_rows.extend(result.get("closure_rows", []))
+                all_ft_coarse_rows.extend(result.get("ft_coarse_rows", []))
+                all_ft_coarse_closure_rows.extend(result.get("ft_coarse_closure_rows", []))
+                all_transfer_crosscheck_rows.extend(result.get("transfer_crosscheck_rows", []))
                 all_control_rows.extend(result.get("control_rows", []))
                 all_stage3_rows.extend(result.get("stage3_rows", []))
                 if result.get("stage3_summary") is not None:
@@ -8031,6 +8602,9 @@ def main() -> int:
                         all_profile_rows.extend(result.get("profile_rows", []))
                         all_shared_rows.extend(result.get("shared_rows", []))
                         all_closure_rows.extend(result.get("closure_rows", []))
+                        all_ft_coarse_rows.extend(result.get("ft_coarse_rows", []))
+                        all_ft_coarse_closure_rows.extend(result.get("ft_coarse_closure_rows", []))
+                        all_transfer_crosscheck_rows.extend(result.get("transfer_crosscheck_rows", []))
                         all_control_rows.extend(result.get("control_rows", []))
                         all_stage3_rows.extend(result.get("stage3_rows", []))
                         if result.get("stage3_summary") is not None:
@@ -8159,6 +8733,47 @@ def main() -> int:
             )
             make_stage2_template_mixture_closure_canvas(
                 all_closure_rows,
+                stage2_outroot,
+            )
+        #endif
+
+        if all_ft_coarse_rows:
+            all_ft_coarse_rows.sort(
+                key=lambda r: (
+                    order.get(str(r.get("period", "")), 999),
+                    float(r.get("energy_low_GeV", "nan")),
+                )
+            )
+            write_rows_csv(
+                all_ft_coarse_rows,
+                stage2_outroot / "ft_coarse_shared_morphed_fits.csv",
+            )
+        #endif
+
+        if all_ft_coarse_closure_rows:
+            all_ft_coarse_closure_rows.sort(
+                key=lambda r: (
+                    order.get(str(r.get("period", "")), 999),
+                    float(r.get("energy_low_GeV", "nan")),
+                    float(r.get("injected_pi0_fraction", "nan")),
+                )
+            )
+            write_rows_csv(
+                all_ft_coarse_closure_rows,
+                stage2_outroot / "ft_coarse_template_mixture_closure.csv",
+            )
+        #endif
+
+        if all_transfer_crosscheck_rows:
+            all_transfer_crosscheck_rows.sort(
+                key=lambda r: order.get(str(r.get("period", "")), 999)
+            )
+            write_rows_csv(
+                all_transfer_crosscheck_rows,
+                stage2_outroot / "cross_section_style_pi0_transfer_crosscheck.csv",
+            )
+            make_cross_section_style_transfer_canvas(
+                all_transfer_crosscheck_rows,
                 stage2_outroot,
             )
         #endif
