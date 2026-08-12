@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v054.py
+derive_photon_efficiency_scale_factors_v055.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,21 +47,21 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v054.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v055.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v054.py \
+    python derive_photon_efficiency_scale_factors_v055.py \
         --max-entries 0 --period fa18_out
 
 
 LOOSE nSIDIS TRANSITION STUDY
 -----------------------------
-Fa18 Inb now has loose nSidis-derived epgammaX and eppi0X data trees whose only
+Fa18 Inb and Sp19 Inb now have loose nSidis-derived epgammaX and eppi0X data trees whose only
 upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v054.py \
+    python derive_photon_efficiency_scale_factors_v055.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -222,6 +222,14 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_sp19_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/bkg_rga_sp19_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_50nA_10200MeV.root",
+        nsidis_epgamma_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/"
+            "dvcs/efficiency_study/nSidis_rga_sp19_inb_epgamma.root"
+        ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_sp19_inb_eppi0.root"
+        ),
     ),
 )
 
@@ -11312,6 +11320,536 @@ def make_nsidis_associated_eppi0_exclusivity_canvas(
     }
 
 
+
+def build_mc_probe_stage_lookup(
+    n_epgamma: int,
+    pair_np: Dict[str, np.ndarray],
+    *,
+    mgg_min: float,
+    mgg_max: float,
+    remainder_mass2_max: float,
+    reco_probe_energy_min: float,
+    probe_angle_max_deg: float,
+    probe_frac_energy_max: float,
+) -> Dict[str, np.ndarray]:
+    """
+    Convert the internal aaogen tag/probe association into one boolean lookup
+    per original aaogen epgamma entry.
+
+    The DATA association stages and MC stages are deliberately aligned:
+
+      same_event              -> successful e/p parent match in MC
+      positive_remainder      -> physical P_pi0 - k_tag photon remainder
+      tag_mass_shell          -> pi0 mass window + photon-like remainder
+      probe_energy            -> reconstructed companion above threshold
+      probe_pred_consistent   -> loose predicted/reconstructed agreement
+
+    The pi0 mass window is explicit in MC because the reconstructed MC eppi0
+    source need not be assumed to have exactly the same upstream mass window
+    as the nSidis data tree.
+    """
+    stages = (
+        "same_event",
+        "positive_remainder",
+        "tag_mass_shell",
+        "probe_energy",
+        "probe_pred_consistent",
+    )
+    lookup = {
+        stage: np.zeros(int(n_epgamma), dtype=bool)
+        for stage in stages
+    }
+    if not pair_np:
+        return lookup
+    #endif
+
+    idx = np.asarray(pair_np["epg_index"], dtype=np.int64)
+    valid_index = (idx >= 0) & (idx < int(n_epgamma))
+    if not np.any(valid_index):
+        return lookup
+    #endif
+
+    idx = idx[valid_index]
+
+    def arr(name: str) -> np.ndarray:
+        return np.asarray(pair_np[name])[valid_index]
+    #enddef
+
+    positive = (
+        np.isfinite(arr("reco_probe_energy"))
+        & np.isfinite(arr("reco_probe_p"))
+        & (arr("reco_probe_energy") > 0.0)
+        & (arr("reco_probe_p") > 0.0)
+    )
+    mass_shell = (
+        positive
+        & np.isfinite(arr("pi0_mass"))
+        & (arr("pi0_mass") >= float(mgg_min))
+        & (arr("pi0_mass") <= float(mgg_max))
+        & np.isfinite(arr("reco_probe_mass2"))
+        & (
+            np.abs(arr("reco_probe_mass2"))
+            <= float(remainder_mass2_max)
+        )
+    )
+    above_threshold = (
+        mass_shell
+        & (
+            arr("reco_probe_energy")
+            >= float(reco_probe_energy_min)
+        )
+    )
+    pred_consistent = (
+        above_threshold
+        & np.isfinite(arr("pred_probe_energy"))
+        & (arr("pred_probe_energy") > 0.0)
+        & np.isfinite(arr("probe_opening_residual_deg"))
+        & (
+            arr("probe_opening_residual_deg")
+            <= float(probe_angle_max_deg)
+        )
+        & np.isfinite(arr("probe_delta_E_over_E"))
+        & (
+            np.abs(arr("probe_delta_E_over_E"))
+            <= float(probe_frac_energy_max)
+        )
+    )
+
+    lookup["same_event"][np.unique(idx)] = True
+    for name, pair_mask in (
+        ("positive_remainder", positive),
+        ("tag_mass_shell", mass_shell),
+        ("probe_energy", above_threshold),
+        ("probe_pred_consistent", pred_consistent),
+    ):
+        lookup[name][np.unique(idx[pair_mask])] = True
+    #endfor
+
+    return lookup
+
+
+def binomial_error_from_counts(
+    passed: int,
+    total: int,
+) -> float:
+    """Simple binomial counting uncertainty for an MC reconstruction efficiency."""
+    if total <= 0:
+        return float("nan")
+    #endif
+    p = float(passed) / float(total)
+    if not np.isfinite(p):
+        return float("nan")
+    #endif
+    return math.sqrt(max(0.0, p * (1.0 - p) / float(total)))
+
+
+def build_aaogen_mc_efficiency_rows(
+    period: PeriodConfig,
+    pi0_f: Dict[str, np.ndarray],
+    mc_stage_lookup: Dict[str, np.ndarray],
+    *,
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+) -> List[Dict[str, object]]:
+    """
+    Measure aaogen reconstructed-companion efficiency with the exact same
+    denominator support used for the data composition fit.
+
+    Unlike data, no fitted f_pi0 factor is needed: every selected aaogen epgamma
+    tag is a true exclusive-pi0 denominator tag.
+    """
+    edges = stage2_energy_edges(max_probe_energy)
+    stages = (
+        "same_event",
+        "positive_remainder",
+        "tag_mass_shell",
+        "probe_energy",
+        "probe_pred_consistent",
+    )
+    for stage in stages:
+        if stage not in mc_stage_lookup:
+            raise KeyError(f"MC stage lookup is missing '{stage}'.")
+        #endif
+    #endfor
+
+    rows: List[Dict[str, object]] = []
+    for region in ("FT", "FD_all"):
+        for ib in range(len(edges) - 1):
+            elo = float(edges[ib])
+            ehi = float(edges[ib + 1])
+
+            mask = stage2_fit_mask(
+                pi0_f,
+                region,
+                ft_theta_max,
+                elo,
+                ehi,
+                mm2_min,
+                mm2_max,
+                probe_m2_max,
+            )
+            # Match the nSidis parent support exactly.
+            if "electron_p" in pi0_f:
+                mask &= (
+                    np.isfinite(pi0_f["electron_p"])
+                    & (pi0_f["electron_p"] > 2.0)
+                )
+            #endif
+
+            n_tags = int(np.count_nonzero(mask))
+            counts = {
+                stage: int(
+                    np.count_nonzero(mask & mc_stage_lookup[stage])
+                )
+                for stage in stages
+            }
+            n_mass = counts["probe_energy"]
+            n_final = counts["probe_pred_consistent"]
+
+            eff_mass = (
+                n_mass / n_tags if n_tags else float("nan")
+            )
+            eff_final = (
+                n_final / n_tags if n_tags else float("nan")
+            )
+
+            rows.append({
+                "period": period.key,
+                "label": period.label,
+                "source": "aaogen",
+                "region": region,
+                "energy_low_GeV": elo,
+                "energy_high_GeV": ehi,
+                "energy_center_GeV": 0.5 * (elo + ehi),
+                "probe_m2_support_max_GeV2": float(probe_m2_max),
+                "selected_true_pi0_tags": n_tags,
+                "reconstructed_probe_mass_shell": n_mass,
+                "reconstructed_probe_final": n_final,
+                "mc_efficiency_mass_shell_only": eff_mass,
+                "mc_efficiency_final": eff_final,
+                "mc_efficiency_final_stat_error": (
+                    binomial_error_from_counts(n_final, n_tags)
+                ),
+                "status": (
+                    "ok" if n_tags > 0
+                    else "no_selected_true_pi0_tags"
+                ),
+                **{
+                    f"cutflow_{stage}": counts[stage]
+                    for stage in stages
+                },
+            })
+        #endfor
+    #endfor
+    return rows
+
+
+def combine_data_mc_scale_factor_rows(
+    data_rows: Sequence[Dict[str, object]],
+    mc_rows: Sequence[Dict[str, object]],
+) -> List[Dict[str, object]]:
+    """
+    Form SF_gamma = epsilon_data / epsilon_MC for matching period/region/E bins.
+
+    The data error remains provisional because the fitted-pi0 denominator
+    uncertainty/covariance is not yet propagated.  MC binomial counting error is
+    propagated together with the provisional data counting error.
+    """
+    mc_map = {
+        (
+            str(r["period"]),
+            str(r["region"]),
+            round(float(r["energy_low_GeV"]), 9),
+            round(float(r["energy_high_GeV"]), 9),
+        ): r
+        for r in mc_rows
+    }
+
+    out: List[Dict[str, object]] = []
+    for d in data_rows:
+        key = (
+            str(d["period"]),
+            str(d["region"]),
+            round(float(d["energy_low_GeV"]), 9),
+            round(float(d["energy_high_GeV"]), 9),
+        )
+        m = mc_map.get(key)
+
+        ed = float(d.get("data_efficiency_final", np.nan))
+        sed = float(
+            d.get("counting_error_final_provisional", np.nan)
+        )
+        em = (
+            float(m.get("mc_efficiency_final", np.nan))
+            if m is not None else float("nan")
+        )
+        sem = (
+            float(m.get("mc_efficiency_final_stat_error", np.nan))
+            if m is not None else float("nan")
+        )
+
+        sf = (
+            ed / em
+            if np.isfinite(ed) and np.isfinite(em) and em > 0.0
+            else float("nan")
+        )
+
+        rel2 = 0.0
+        nrel = 0
+        if np.isfinite(sed) and np.isfinite(ed) and ed > 0.0:
+            rel2 += (sed / ed) ** 2
+            nrel += 1
+        #endif
+        if np.isfinite(sem) and np.isfinite(em) and em > 0.0:
+            rel2 += (sem / em) ** 2
+            nrel += 1
+        #endif
+        sf_err = (
+            abs(sf) * math.sqrt(rel2)
+            if np.isfinite(sf) and nrel > 0
+            else float("nan")
+        )
+
+        out.append({
+            "period": d["period"],
+            "label": d["label"],
+            "source": d["source"],
+            "region": d["region"],
+            "energy_low_GeV": d["energy_low_GeV"],
+            "energy_high_GeV": d["energy_high_GeV"],
+            "energy_center_GeV": d["energy_center_GeV"],
+            "probe_m2_support_max_GeV2": d[
+                "probe_m2_support_max_GeV2"
+            ],
+            "fitted_pi0_fraction_data": d["fitted_pi0_fraction"],
+            "data_efficiency_final": ed,
+            "data_efficiency_counting_error_provisional": sed,
+            "mc_efficiency_final": em,
+            "mc_efficiency_stat_error": sem,
+            "photon_efficiency_scale_factor": sf,
+            "scale_factor_stat_error_provisional": sf_err,
+            "data_status": d["status"],
+            "mc_status": (
+                m["status"] if m is not None else "missing_mc_row"
+            ),
+            "status": (
+                "PRELIMINARY_data_pi0_fit_uncertainty_not_propagated"
+                if np.isfinite(sf)
+                else "invalid_scale_factor"
+            ),
+        })
+    #endfor
+    return out
+
+
+def make_nsidis_scale_factor_canvas(
+    period: PeriodConfig,
+    sf_rows: Sequence[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """Per-period data/MC efficiency and preliminary scale-factor summary."""
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 8.8))
+
+    for irow, region in enumerate(("FT", "FD_all")):
+        rr = sorted(
+            [
+                r for r in sf_rows
+                if r["region"] == region
+                and np.isfinite(
+                    float(r.get(
+                        "photon_efficiency_scale_factor", np.nan
+                    ))
+                )
+            ],
+            key=lambda r: float(r["energy_center_GeV"]),
+        )
+        if not rr:
+            continue
+        #endif
+
+        x = np.asarray(
+            [float(r["energy_center_GeV"]) for r in rr],
+            dtype=float,
+        )
+        ed = np.asarray(
+            [float(r["data_efficiency_final"]) for r in rr],
+            dtype=float,
+        )
+        em = np.asarray(
+            [float(r["mc_efficiency_final"]) for r in rr],
+            dtype=float,
+        )
+        sf = np.asarray(
+            [float(r["photon_efficiency_scale_factor"]) for r in rr],
+            dtype=float,
+        )
+        se = np.asarray(
+            [
+                float(r.get(
+                    "scale_factor_stat_error_provisional", np.nan
+                ))
+                for r in rr
+            ],
+            dtype=float,
+        )
+
+        ax_e = axes[irow, 0]
+        ax_s = axes[irow, 1]
+        ax_e.plot(
+            x, ed, marker="o", linewidth=1.2,
+            label="data",
+        )
+        ax_e.plot(
+            x, em, marker="s", linewidth=1.2,
+            label="aaogen MC",
+        )
+        ax_s.errorbar(
+            x, sf, yerr=se, marker="o", linewidth=1.1,
+            capsize=2,
+        )
+
+        for ax in (ax_e, ax_s):
+            ax.axvline(2.0, linestyle=":", linewidth=0.9)
+            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.grid(alpha=0.18)
+        #endfor
+        ax_e.set_ylabel("reconstructed-probe efficiency")
+        ax_e.set_title("FT" if region == "FT" else "FD all")
+        ax_s.axhline(1.0, linestyle="--", linewidth=1.0)
+        ax_s.set_ylabel(
+            r"$SF_\gamma=\epsilon_{\rm data}/\epsilon_{\rm MC}$"
+        )
+        ax_s.set_title("preliminary data/MC scale factor")
+    #endfor
+
+    axes[0, 0].legend(fontsize=8, frameon=False)
+    fig.suptitle(
+        f"{period.label}: nSidis photon-efficiency data/MC pilot\n"
+        "statistical bars are provisional; fitted-pi0 denominator "
+        "uncertainty is not yet propagated",
+        fontsize=12.5,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_data_mc_scale_factor.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+
+def read_csv_rows_simple(path: Path) -> List[Dict[str, str]]:
+    """Read a CSV into string-valued dictionaries for aggregate plotting."""
+    if not path.exists():
+        return []
+    #endif
+    with path.open("r", newline="") as f:
+        return list(csv.DictReader(f))
+    #endwith
+
+
+def make_nsidis_period_comparison(
+    nsroot: Path,
+    periods: Sequence[PeriodConfig],
+) -> None:
+    """
+    Compare available nSidis scale factors across periods.
+
+    This is particularly useful for Fa18 Inb and Sp19 Inb, which share the
+    relevant inbending detector/software configuration and are expected to be
+    similar.
+    """
+    period_rows: Dict[str, List[Dict[str, str]]] = {}
+    period_labels: Dict[str, str] = {}
+
+    for period in periods:
+        path = (
+            nsroot / period.key
+            / "nsidis_photon_efficiency_scale_factors.csv"
+        )
+        rows = read_csv_rows_simple(path)
+        if rows:
+            period_rows[period.key] = rows
+            period_labels[period.key] = period.label
+        #endif
+    #endfor
+
+    if len(period_rows) < 2:
+        return
+    #endif
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.2))
+    combined_rows: List[Dict[str, object]] = []
+
+    for ax, region in zip(axes, ("FT", "FD_all")):
+        for period_key, rows in period_rows.items():
+            rr = []
+            for r in rows:
+                if r.get("region") != region:
+                    continue
+                #endif
+                try:
+                    x = float(r["energy_center_GeV"])
+                    y = float(r["photon_efficiency_scale_factor"])
+                    e = float(r["scale_factor_stat_error_provisional"])
+                except (KeyError, TypeError, ValueError):
+                    continue
+                #endtry
+                if np.isfinite(x) and np.isfinite(y):
+                    rr.append((x, y, e, r))
+                #endif
+            #endfor
+
+            rr.sort(key=lambda item: item[0])
+            if not rr:
+                continue
+            #endif
+            x = np.asarray([item[0] for item in rr], dtype=float)
+            y = np.asarray([item[1] for item in rr], dtype=float)
+            e = np.asarray([item[2] for item in rr], dtype=float)
+            ax.errorbar(
+                x, y, yerr=e, marker="o", linewidth=1.1,
+                capsize=2, label=period_labels[period_key],
+            )
+            for _, _, _, raw in rr:
+                combined_rows.append({
+                    "period": period_key,
+                    "label": period_labels[period_key],
+                    **raw,
+                })
+            #endfor
+        #endfor
+
+        ax.axhline(1.0, linestyle="--", linewidth=1.0)
+        ax.axvline(2.0, linestyle=":", linewidth=0.9)
+        ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+        ax.set_ylabel(
+            r"$SF_\gamma=\epsilon_{\rm data}/\epsilon_{\rm MC}$"
+        )
+        ax.set_title("FT" if region == "FT" else "FD all")
+        ax.grid(alpha=0.18)
+        ax.legend(fontsize=8, frameon=False)
+    #endfor
+
+    fig.suptitle(
+        "nSidis photon-efficiency period comparison",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        nsroot / "canvas_nsidis_period_scale_factor_comparison.png",
+        rect=(0, 0, 1, 0.94),
+    )
+    plt.close(fig)
+
+    write_rows_csv(
+        combined_rows,
+        nsroot / "nsidis_period_scale_factor_comparison.csv",
+    )
+
+
 def preflight_nsidis_study(
     periods: Sequence[PeriodConfig],
     args_dict: Dict[str, object],
@@ -11395,8 +11933,7 @@ def process_nsidis_study_period(
     """
     Isolated nSidis development path.
 
-    It never forms an efficiency scale factor. The optional pilot tests only
-    denominator composition with the finalized M_X^2(ep) x pTmiss model.
+    The optional pilot now forms the first preliminary data/aaogen photon-efficiency scale factor after validating denominator composition and association-first numerator purity. The fitted-pi0 denominator uncertainty is not yet propagated.
     """
     t0 = time.perf_counter()
     outdir = Path(output_root) / "nsidis_study" / period.key
@@ -11629,7 +12166,18 @@ def process_nsidis_study_period(
         for _feat in (pi0_f, dvcs_f):
             attach_photon_angular_acceptance(_feat, photon_acceptance)
         #endfor
-        del pi_epg, dv_epg
+        pi0_f["electron_p"] = np.asarray(
+            electron_momentum_from_p3(pi_epg.electron_p3),
+            dtype=np.float32,
+        )
+        dvcs_f["electron_p"] = np.asarray(
+            electron_momentum_from_p3(dv_epg.electron_p3),
+            dtype=np.float32,
+        )
+        # Keep pi_epg resident for the aaogen reconstructed-companion
+        # association below. dvcsgen is no longer needed after its features
+        # have been built.
+        del dv_epg
 
         support_values = parse_float_edges(
             str(args_dict["nsidis_pilot_probe_m2_values"]),
@@ -11727,6 +12275,89 @@ def process_nsidis_study_period(
             ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
         )
 
+
+        # --------------------------------------------------------------
+        # aaogen MC reconstructed-companion efficiency.
+        # --------------------------------------------------------------
+        log(
+            f"{period.label}: reading reconstructed aaogen eppi0 MC for "
+            "the data/MC efficiency ratio."
+        )
+        mc_epi_arrays, _, _ = read_branches(
+            period.eppi0_pi0_mc,
+            EPPIO_REQUIRED,
+            EPPIO_OPTIONAL_PI0_MC,
+            tree_name,
+            max_entries,
+        )
+        mc_epi = extract_eppi0(mc_epi_arrays, angle_mode)
+        del mc_epi_arrays
+
+        log(
+            f"{period.label}: matching aaogen epgamma/eppi0 parents for "
+            "the MC reconstructed-probe efficiency."
+        )
+        mc_matches = match_parent_kinematics(
+            pi_epg,
+            mc_epi,
+            tag_min=tag_min,
+            tag_max=tag_max,
+            component_tolerance=float(
+                args_dict["parent_component_tol"]
+            ),
+            nearest_distance_max=float(
+                args_dict["parent_distance_max"]
+            ),
+            kdtree_workers=int(args_dict["kdtree_workers"]),
+            query_chunk_size=int(
+                args_dict["kdtree_query_chunk"]
+            ),
+        )
+        mc_pair_np, mc_pair_counters = build_stage1_arrays(
+            period,
+            pi_epg,
+            mc_epi,
+            mc_matches,
+        )
+        mc_stage_lookup = build_mc_probe_stage_lookup(
+            len(pi_epg.tag_energy),
+            mc_pair_np,
+            mgg_min=float(args_dict["assoc_mgg_min"]),
+            mgg_max=float(args_dict["assoc_mgg_max"]),
+            remainder_mass2_max=float(
+                args_dict["stage3_tag_remainder_m2_max"]
+            ),
+            reco_probe_energy_min=float(
+                args_dict["assoc_probe_energy_min"]
+            ),
+            probe_angle_max_deg=float(
+                args_dict["stage3_probe_angle_max_deg"]
+            ),
+            probe_frac_energy_max=float(
+                args_dict["stage3_probe_frac_energy_max"]
+            ),
+        )
+
+        mc_eff_rows = build_aaogen_mc_efficiency_rows(
+            period,
+            pi0_f,
+            mc_stage_lookup,
+            ft_theta_max=ft_theta_max,
+            max_probe_energy=float(
+                args_dict["nsidis_pilot_energy_max"]
+            ),
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=central_support,
+        )
+        write_rows_csv(
+            mc_eff_rows,
+            outdir / "aaogen_mc_efficiency.csv",
+        )
+        log(
+            f"{period.label}: aaogen MC efficiency built from "
+            f"{len(mc_matches.epg_index):,} parent matches."
+        )
 
         # Association-first numerator pilot.
         log(
@@ -11876,6 +12507,28 @@ def process_nsidis_study_period(
             outdir,
         )
 
+        sf_rows = combine_data_mc_scale_factor_rows(
+            ns_eff_rows,
+            mc_eff_rows,
+        )
+        wagon_sf_rows = combine_data_mc_scale_factor_rows(
+            wagon_eff_rows,
+            mc_eff_rows,
+        )
+        write_rows_csv(
+            sf_rows,
+            outdir / "nsidis_photon_efficiency_scale_factors.csv",
+        )
+        write_rows_csv(
+            wagon_sf_rows,
+            outdir / "wagon_photon_efficiency_scale_factor_reference.csv",
+        )
+        make_nsidis_scale_factor_canvas(
+            period,
+            sf_rows,
+            outdir,
+        )
+
         assoc_excl_summary = (
             make_nsidis_associated_eppi0_exclusivity_canvas(
                 period,
@@ -11898,9 +12551,19 @@ def process_nsidis_study_period(
                     "nsidis_association_counters": ns_assoc.counters,
                     "wagon_association_counters": wagon_assoc.counters,
                     "associated_eppi0_exclusivity": assoc_excl_summary,
+                    "aaogen_mc_association": {
+                        "parent_matches": int(
+                            len(mc_matches.epg_index)
+                        ),
+                        "pair_counters": mc_pair_counters,
+                        "selected_mc_efficiency_rows": int(
+                            len(mc_eff_rows)
+                        ),
+                    },
                     "status": (
-                        "preliminary association-first DATA numerator; "
-                        "no MC scale factor formed"
+                        "preliminary association-first data/MC photon "
+                        "efficiency scale factor formed; fitted-pi0 "
+                        "denominator uncertainty not yet propagated"
                     ),
                 },
                 f,
@@ -11932,8 +12595,9 @@ def process_nsidis_study_period(
         ),
         "wall_time_s": float(time.perf_counter() - t0),
         "status": (
-            "nSidis denominator + preliminary association-first DATA "
-            "efficiency pilot; no data/MC scale factor formed"
+            "nSidis denominator + association-first DATA/aaogen MC "
+            "photon-efficiency scale-factor pilot; fitted-pi0 denominator "
+            "uncertainty not yet propagated"
         ),
     }
 
@@ -13653,6 +14317,12 @@ def main() -> int:
             summary_rows,
             nsroot / "nsidis_study_summary.csv",
         )
+        if args.nsidis_pilot_fit:
+            make_nsidis_period_comparison(
+                nsroot,
+                selected,
+            )
+        #endif
         log(f"Done. nSidis-study outputs are in {nsroot}.")
         return 0
     #endif
