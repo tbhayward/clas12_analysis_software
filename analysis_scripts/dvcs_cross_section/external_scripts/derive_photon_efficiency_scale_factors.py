@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v048.py
+derive_photon_efficiency_scale_factors_v049.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v048.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v049.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v048.py \
+    python derive_photon_efficiency_scale_factors_v049.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v048.py \
+    python derive_photon_efficiency_scale_factors_v049.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -70,9 +70,8 @@ This isolated mode:
   * compares old and new epgamma kinematics below 2 GeV;
   * conditions old-wagon overlap checks on the nSidis parent requirement
     e_p > 2 GeV;
-  * reconstructs the central exclusive ep pi0 peak, scans high-retention
-    exclusivity-core cuts, and quantifies rejection of the loose SIDIS-rich
-    eppi0X population;
+  * reconstructs the sharp M_X^2(ep pi0) exclusive core, scans M_X^2 + missing-momentum cuts, and quantifies rejection of the loose SIDIS-rich
+    eppi0X population; E_miss is diagnostic-only;
   * scans the missing-photon mass-shell support without cutting pTmiss;
   * optionally runs the finalized M_X^2(ep) x pTmiss composition model below
     and above 2 GeV, including support-cut stability and actual fit projections;
@@ -143,7 +142,10 @@ PHOTON_DETECTOR_FT = 0
 PHOTON_DETECTOR_FD = 1
 
 PROBE_ENERGY_EDGES = np.asarray(
-    [0.40, 0.50, 0.60, 0.80, 1.00, 1.25, 1.50, 2.00, 3.00, 4.50, 6.00, 10.00],
+    # The former 4.5-6 and 6-10 GeV bins were individually too sparse,
+    # especially in FT.  Use one terminal bin; stage2_energy_edges() truncates
+    # the upper edge to the requested data endpoint (9.5 GeV for nSidis).
+    [0.40, 0.50, 0.60, 0.80, 1.00, 1.25, 1.50, 2.00, 3.00, 4.50, 10.00],
     dtype=float,
 )
 
@@ -1754,6 +1756,130 @@ def poisson_deviance_quality(
     populated = int(np.count_nonzero((data > 0.0) | (mu > 1.0e-10)))
     ndof = max(1, populated - n_parameters)
     return deviance, ndof
+
+
+
+def poisson_deviance_value(
+    data: np.ndarray,
+    mu: np.ndarray,
+) -> float:
+    """Raw binned Poisson deviance without attaching an ndof interpretation."""
+    data = np.asarray(data, dtype=float)
+    mu = np.clip(np.asarray(mu, dtype=float), 1.0e-12, None)
+    positive = data > 0.0
+    terms = np.zeros_like(data, dtype=float)
+    terms[positive] = data[positive] * np.log(data[positive] / mu[positive])
+    return 2.0 * float(np.sum(mu - data + terms))
+
+
+def binned_model_quality(
+    data: np.ndarray,
+    mu: np.ndarray,
+    *,
+    active_mu_threshold: float = 1.0,
+    pearson_mu_threshold: float = 5.0,
+) -> Dict[str, float]:
+    """
+    Transparent descriptive goodness metrics for a histogram/model pair.
+
+    The old code reported Poisson deviance / ndof after counting essentially
+    every 2D cell with a tiny nonzero model expectation as a degree of freedom.
+    With finely binned sparse 2D histograms this can make a visibly poor
+    projection appear to have D/ndof ~ 1.  The deviance itself is valid, but
+    that reduced-number interpretation is not robust.
+
+    Here:
+      active bins = data > 0 OR model expectation >= active_mu_threshold;
+      D/active-bin is a descriptive sparse-histogram metric;
+      Pearson chi2/bin is reported only where model expectation >= 5.
+
+    These are diagnostics, not p-values.
+    """
+    d = np.asarray(data, dtype=float)
+    m = np.clip(np.asarray(mu, dtype=float), 1.0e-12, None)
+    if d.shape != m.shape:
+        raise ValueError("data/model shapes differ in binned_model_quality")
+    #endif
+
+    dev = poisson_deviance_value(d, m)
+    active = (d > 0.0) | (m >= float(active_mu_threshold))
+    n_active = int(np.count_nonzero(active))
+    dev_active = poisson_deviance_value(d[active], m[active]) if n_active else float("nan")
+
+    pearson_mask = m >= float(pearson_mu_threshold)
+    n_pearson = int(np.count_nonzero(pearson_mask))
+    if n_pearson:
+        chi2 = float(np.sum(
+            (d[pearson_mask] - m[pearson_mask]) ** 2 / m[pearson_mask]
+        ))
+    else:
+        chi2 = float("nan")
+    #endif
+
+    return {
+        "poisson_deviance": float(dev),
+        "active_bins": n_active,
+        "poisson_deviance_active": float(dev_active),
+        "deviance_per_active_bin": (
+            float(dev_active / n_active) if n_active else float("nan")
+        ),
+        "pearson_chi2_mu_ge5": float(chi2),
+        "pearson_bins_mu_ge5": n_pearson,
+        "pearson_chi2_per_bin_mu_ge5": (
+            float(chi2 / n_pearson) if n_pearson else float("nan")
+        ),
+    }
+
+
+def fit_quality_for_morphed_2d_model(
+    data_hist: np.ndarray,
+    pi0_hist: np.ndarray,
+    dvcs_hist: np.ndarray,
+    fit: SharedMorphedFitResult,
+    discriminator: str,
+) -> Dict[str, float]:
+    """
+    Compute 2D and both 1D-projection quality metrics for the ACTUAL fitted
+    morphed model.  These metrics correspond directly to the plotted curves.
+    """
+    if not fit.success or not fit.nuisance:
+        return {}
+    #endif
+
+    hp = np.asarray(pi0_hist, dtype=float)
+    hv = np.asarray(dvcs_hist, dtype=float)
+    hd = np.asarray(data_hist, dtype=float)
+
+    tp = morph_template_second_axis(
+        hp,
+        float(fit.nuisance.get(f"{discriminator}_pi0_shift_bins", 0.0)),
+        float(fit.nuisance.get(f"{discriminator}_pi0_sigma_bins", 0.0)),
+    )
+    td = morph_template_second_axis(
+        hv,
+        float(fit.nuisance.get(f"{discriminator}_dvcs_shift_bins", 0.0)),
+        float(fit.nuisance.get(f"{discriminator}_dvcs_sigma_bins", 0.0)),
+    )
+
+    ndata = float(np.sum(hd))
+    fpi0 = float(fit.pi0_fraction)
+    mu2d = ndata * (fpi0 * tp + (1.0 - fpi0) * td)
+
+    q2 = binned_model_quality(hd, mu2d)
+    qx = binned_model_quality(np.sum(hd, axis=1), np.sum(mu2d, axis=1))
+    qy = binned_model_quality(np.sum(hd, axis=0), np.sum(mu2d, axis=0))
+
+    out: Dict[str, float] = {}
+    for prefix, q in (
+        ("quality_2d", q2),
+        ("quality_mx2_projection", qx),
+        ("quality_ptmiss_projection", qy),
+    ):
+        for key, value in q.items():
+            out[f"{prefix}_{key}"] = value
+        #endfor
+    #endfor
+    return out
 
 
 def fit_two_component_poisson(
@@ -8332,7 +8458,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--nsidis-eppi0-core-nsigma-scan",
-        default="2.0,2.5,3.0,3.5,4.0",
+        default="2.5,3.0,3.5,4.0,5.0,6.0",
         help=(
             "Comma-separated Gaussian-core n-sigma values for the nSidis "
             "eppi0 exclusivity scan. Default: 2,2.5,3,3.5,4."
@@ -8340,10 +8466,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--nsidis-eppi0-momentum-quantile-scan",
-        default="0.95,0.975,0.99",
+        default="0.95,0.975,0.99,0.995,0.999",
         help=(
             "Comma-separated old-wagon pmiss/pTmiss core quantiles scanned "
-            "after the Emiss/Mx2 core requirement. Default: 0.95,0.975,0.99."
+            "after the Mx2 core requirement. Default: 0.95,0.975,0.99,0.995,0.999."
         ),
     )
     parser.add_argument(
@@ -8896,37 +9022,45 @@ def derive_eppi0_core_model(
     parent_mask: np.ndarray,
 ) -> Dict[str, float]:
     """
-    Characterize only the central old-wagon exclusive peak.
+    Characterize the sharp M_X^2(ep pi0) exclusive peak in the old wagon.
 
-    Emiss and Mx2 get robust Gaussian cores. Momentum thresholds are derived
-    later from the already-core-selected old wagon, avoiding the long-tail
-    pathology of the former 99.5% envelope.
+    E_miss is intentionally NOT Gaussianized and is not used as a cut.  Its
+    broad/asymmetric shape is retained only as a diagnostic.  This avoids the
+    previous failure in which an E_miss Gaussian-core requirement limited the
+    maximum old-wagon retention to ~71%.
     """
     parent_mask = np.asarray(parent_mask, dtype=bool)
 
-    mu_e, sig_e, n_e = robust_gaussian_core(
-        wagon_f["Emiss"][parent_mask],
-        broad_abs_max=0.80,
-    )
     mu_m, sig_m, n_m = robust_gaussian_core(
         wagon_f["Mx2"][parent_mask],
-        broad_abs_max=0.35,
+        broad_abs_max=0.20,
+        iterations=8,
+        clip_sigma=2.5,
     )
-
-    if not np.isfinite(sig_e) or sig_e <= 0.0:
-        raise RuntimeError("Could not determine old-wagon Emiss exclusive core.")
-    #endif
     if not np.isfinite(sig_m) or sig_m <= 0.0:
         raise RuntimeError("Could not determine old-wagon Mx2 exclusive core.")
     #endif
 
+    # Quantiles of E_miss are recorded only to document its asymmetric/non-core
+    # behavior; they never enter the selection mask.
+    emiss = np.asarray(wagon_f["Emiss"][parent_mask], dtype=float)
+    emiss = emiss[np.isfinite(emiss)]
+    if emiss.size:
+        eq = np.quantile(emiss, [0.01, 0.16, 0.50, 0.84, 0.99])
+    else:
+        eq = np.full(5, np.nan)
+    #endif
+
     return {
-        "Emiss_center_GeV": mu_e,
-        "Emiss_sigma_GeV": sig_e,
-        "Mx2_center_GeV2": mu_m,
-        "Mx2_sigma_GeV2": sig_m,
-        "Emiss_core_fit_count": n_e,
-        "Mx2_core_fit_count": n_m,
+        "Mx2_center_GeV2": float(mu_m),
+        "Mx2_sigma_GeV2": float(sig_m),
+        "Mx2_core_fit_count": int(n_m),
+        "Emiss_used_in_selection": 0,
+        "Emiss_q01_GeV": float(eq[0]),
+        "Emiss_q16_GeV": float(eq[1]),
+        "Emiss_q50_GeV": float(eq[2]),
+        "Emiss_q84_GeV": float(eq[3]),
+        "Emiss_q99_GeV": float(eq[4]),
     }
 
 
@@ -8938,21 +9072,22 @@ def eppi0_core_mask(
     ptmiss_max: float,
     parent_mask: Optional[np.ndarray] = None,
 ) -> np.ndarray:
+    """
+    Exclusive-candidate mask.
+
+    Selection variables:
+      * M_X^2(ep pi0): symmetric robust-core window;
+      * |p_miss(ep pi0)|: upper threshold;
+      * pTmiss(ep pi0): upper threshold.
+
+    E_miss is diagnostic-only.
+    """
     mask = (
-        np.isfinite(features["Emiss"])
-        & np.isfinite(features["Mx2"])
+        np.isfinite(features["Mx2"])
         & np.isfinite(features["pmiss"])
         & np.isfinite(features["pTmiss"])
         & (
-            np.abs(
-                features["Emiss"] - model["Emiss_center_GeV"]
-            )
-            <= float(nsigma) * model["Emiss_sigma_GeV"]
-        )
-        & (
-            np.abs(
-                features["Mx2"] - model["Mx2_center_GeV2"]
-            )
+            np.abs(features["Mx2"] - model["Mx2_center_GeV2"])
             <= float(nsigma) * model["Mx2_sigma_GeV2"]
         )
         & (features["pmiss"] <= float(pmiss_max))
@@ -8977,12 +9112,14 @@ def build_eppi0_core_scan(
     target_wagon_retention: float,
 ) -> Tuple[List[Dict[str, object]], Dict[str, object]]:
     """
-    Scan compact, physically interpretable exclusive-core cuts.
+    Scan an Mx2-core + missing-momentum exclusivity selection.
 
-    For each n-sigma choice, pmiss/pTmiss thresholds are taken from quantiles of
-    the old wagon AFTER the Emiss/Mx2 Gaussian-core cuts. The recommended point
-    is the most rejecting choice that still retains at least the requested
-    fraction of the e_p>2 old-wagon population.
+    For each Mx2 n-sigma window, the pmiss and pTmiss thresholds are taken from
+    old-wagon quantiles AFTER the Mx2 requirement.  The chosen working point is
+    the most rejecting point that ACTUALLY reaches target_wagon_retention.
+
+    If no point reaches the target, the returned status explicitly says so; it
+    is never labeled "recommended".
     """
     rows: List[Dict[str, object]] = []
     wagon_parent_mask = np.asarray(wagon_parent_mask, dtype=bool)
@@ -8997,24 +9134,16 @@ def build_eppi0_core_scan(
     )
 
     for nsigma in nsigma_values:
-        core2 = (
+        mx2_core = (
             wagon_parent_mask
             & (
-                np.abs(
-                    wagon_f["Emiss"] - model["Emiss_center_GeV"]
-                )
-                <= float(nsigma) * model["Emiss_sigma_GeV"]
-            )
-            & (
-                np.abs(
-                    wagon_f["Mx2"] - model["Mx2_center_GeV2"]
-                )
+                np.abs(wagon_f["Mx2"] - model["Mx2_center_GeV2"])
                 <= float(nsigma) * model["Mx2_sigma_GeV2"]
             )
         )
 
-        pvals = wagon_f["pmiss"][core2]
-        ptvals = wagon_f["pTmiss"][core2]
+        pvals = np.asarray(wagon_f["pmiss"][mx2_core], dtype=float)
+        ptvals = np.asarray(wagon_f["pTmiss"][mx2_core], dtype=float)
         pvals = pvals[np.isfinite(pvals)]
         ptvals = ptvals[np.isfinite(ptvals)]
         if pvals.size < 100 or ptvals.size < 100:
@@ -9045,16 +9174,8 @@ def build_eppi0_core_scan(
             rows.append({
                 "period": period.key,
                 "label": period.label,
-                "nsigma": float(nsigma),
+                "nsigma_Mx2": float(nsigma),
                 "momentum_quantile": q,
-                "Emiss_low_GeV": (
-                    model["Emiss_center_GeV"]
-                    - float(nsigma) * model["Emiss_sigma_GeV"]
-                ),
-                "Emiss_high_GeV": (
-                    model["Emiss_center_GeV"]
-                    + float(nsigma) * model["Emiss_sigma_GeV"]
-                ),
                 "Mx2_low_GeV2": (
                     model["Mx2_center_GeV2"]
                     - float(nsigma) * model["Mx2_sigma_GeV2"]
@@ -9065,6 +9186,7 @@ def build_eppi0_core_scan(
                 ),
                 "pmiss_max_GeV": pmiss_max,
                 "pTmiss_max_GeV": ptmiss_max,
+                "Emiss_cut_applied": 0,
                 "wagon_epgt2_retention": (
                     wc / n_wagon_parent if n_wagon_parent else float("nan")
                 ),
@@ -9087,37 +9209,41 @@ def build_eppi0_core_scan(
         #endfor
     #endfor
 
+    if not rows:
+        raise RuntimeError("eppi0 core scan produced no valid working points.")
+    #endif
+
     eligible = [
         row for row in rows
         if np.isfinite(row["wagon_epgt2_retention"])
         and float(row["wagon_epgt2_retention"])
         >= float(target_wagon_retention)
     ]
+
     if eligible:
-        # Primary objective: reject non-wagon nSidis entries while respecting
-        # the requested signal-retention floor. Secondary: retain more wagon.
-        recommended = min(
+        chosen = min(
             eligible,
             key=lambda row: (
                 float(row["nsidis_nonwagon_event_entry_retention"]),
                 -float(row["wagon_epgt2_retention"]),
             ),
         )
-    elif rows:
-        recommended = max(
+        status = "recommended_diagnostic_working_point"
+        meets_target = 1
+    else:
+        chosen = max(
             rows,
             key=lambda row: float(row["wagon_epgt2_retention"]),
         )
-    else:
-        raise RuntimeError("eppi0 core scan produced no valid working points.")
+        status = "NO_RECOMMENDATION_target_retention_not_reached"
+        meets_target = 0
     #endif
 
-    recommended = dict(recommended)
-    recommended["target_wagon_retention"] = float(target_wagon_retention)
-    recommended["selection_status"] = (
-        "recommended_diagnostic_working_point_not_yet_production"
-    )
-    return rows, recommended
+    chosen = dict(chosen)
+    chosen["target_wagon_retention"] = float(target_wagon_retention)
+    chosen["meets_target_retention"] = int(meets_target)
+    chosen["selection_status"] = status
+    return rows, chosen
 
 
 def make_nsidis_epgamma_overlap_canvas(
@@ -9292,43 +9418,47 @@ def make_nsidis_eppi0_core_canvas(
     outdir: Path,
 ) -> None:
     """
-    Show the actual exclusive core and the selected diagnostic working point.
+    Show the old-wagon exclusive population against the loose nSidis sample.
+
+    E_miss is displayed precisely so its broad/asymmetric behavior is visible,
+    but NO E_miss cut is drawn or applied.
     """
     specs = (
         (
-            "Emiss",
-            np.linspace(-0.80, 0.80, 161),
-            r"$E_{\rm miss}(ep\pi^0)$ (GeV)",
-            (
-                float(recommended["Emiss_low_GeV"]),
-                float(recommended["Emiss_high_GeV"]),
-            ),
-        ),
-        (
             "Mx2",
-            np.linspace(-0.35, 0.35, 161),
+            np.linspace(-0.20, 0.20, 181),
             r"$M_X^2(ep\pi^0)$ (GeV$^2$)",
             (
                 float(recommended["Mx2_low_GeV2"]),
                 float(recommended["Mx2_high_GeV2"]),
             ),
-        ),
-        (
-            "pmiss",
-            np.linspace(0.0, 1.2, 151),
-            r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
-            (float(recommended["pmiss_max_GeV"]),),
+            "selection variable",
         ),
         (
             "pTmiss",
-            np.linspace(0.0, 0.80, 141),
+            np.linspace(0.0, 0.80, 161),
             r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)",
             (float(recommended["pTmiss_max_GeV"]),),
+            "selection variable",
+        ),
+        (
+            "pmiss",
+            np.linspace(0.0, 1.5, 181),
+            r"$|\vec p_{\rm miss}(ep\pi^0)|$ (GeV)",
+            (float(recommended["pmiss_max_GeV"]),),
+            "selection variable",
+        ),
+        (
+            "Emiss",
+            np.linspace(-1.5, 2.5, 201),
+            r"$E_{\rm miss}(ep\pi^0)$ (GeV)",
+            (),
+            "DIAGNOSTIC ONLY — no cut applied",
         ),
     )
 
     fig, axes = plt.subplots(2, 2, figsize=(13.5, 9.0))
-    for ax, (key, bins, xlabel, cut_lines) in zip(
+    for ax, (key, bins, xlabel, cut_lines, subtitle) in zip(
         axes.ravel(), specs
     ):
         h_old, edges = _normalized_hist(
@@ -9363,23 +9493,31 @@ def make_nsidis_eppi0_core_canvas(
         #endfor
         ax.set_xlabel(xlabel)
         ax.set_ylabel("unit-normalized entries")
+        ax.set_title(subtitle, fontsize=10)
         ax.grid(alpha=0.18)
     #endfor
 
     axes[0, 0].legend(fontsize=8, frameon=False)
+    meets = int(recommended.get("meets_target_retention", 0)) == 1
+    status_text = (
+        "recommended diagnostic point"
+        if meets else
+        "best scanned point — target retention NOT reached"
+    )
     fig.suptitle(
-        f"{period.label}: eppi0X exclusive-core study "
-        f"(recommended diagnostic point retains "
-        f"{100.0*float(recommended['wagon_epgt2_retention']):.1f}% "
-        r"of old-wagon $e_p>2$ entries)",
-        fontsize=12.8,
+        f"{period.label}: eppi0X exclusivity study — {status_text}\n"
+        f"old-wagon retention = "
+        f"{100.0*float(recommended['wagon_epgt2_retention']):.1f}%; "
+        r"$E_{\rm miss}$ is shown but is not used",
+        fontsize=12.5,
     )
     safe_finalize_figure(
         fig,
         outdir / "canvas_nsidis_eppi0_exclusive_core.png",
-        rect=(0, 0, 1, 0.95),
+        rect=(0, 0, 1, 0.93),
     )
     plt.close(fig)
+
 
 
 def make_nsidis_eppi0_core_scan_canvas(
@@ -9403,7 +9541,7 @@ def make_nsidis_eppi0_core_scan_canvas(
                 row for row in rows
                 if abs(float(row["momentum_quantile"]) - q) < 1.0e-12
             ],
-            key=lambda row: float(row["nsigma"]),
+            key=lambda row: float(row["nsigma_Mx2"]),
         )
         axes[0].plot(
             [float(row["wagon_epgt2_retention"]) for row in rr],
@@ -9432,7 +9570,7 @@ def make_nsidis_eppi0_core_scan_canvas(
     axes[0].legend(fontsize=7.5, frameon=False)
 
     rr = sorted(rows, key=lambda row: (
-        float(row["nsigma"]), float(row["momentum_quantile"])
+        float(row["nsigma_Mx2"]), float(row["momentum_quantile"])
     ))
     x = np.arange(len(rr))
     axes[1].plot(
@@ -9460,7 +9598,7 @@ def make_nsidis_eppi0_core_scan_canvas(
     axes[1].legend(fontsize=8, frameon=False)
 
     fig.suptitle(
-        f"{period.label}: exclusive eppi0X core-cut scan",
+        f"{period.label}: eppi0X Mx2-core + missing-momentum cut scan",
         fontsize=13,
     )
     safe_finalize_figure(
@@ -9806,6 +9944,24 @@ def run_nsidis_ptmiss_pilot_fits(
                 if fit.nuisance:
                     row.update(fit.nuisance)
                 #endif
+
+                # The legacy fit.poisson_deviance/ndof is retained in the CSV
+                # for backward comparison, but no longer treated as the primary
+                # goodness metric.  Compute quality measures that correspond
+                # directly to the actual fitted 2D model and its projections.
+                row["legacy_sparse_2d_deviance_per_ndof"] = (
+                    float(fit.poisson_deviance / fit.ndof)
+                    if fit.ndof else float("nan")
+                )
+                row.update(
+                    fit_quality_for_morphed_2d_model(
+                        hists["data"],
+                        hists["pi0"],
+                        hists["dvcs"],
+                        fit,
+                        disc,
+                    )
+                )
                 rows.append(row)
             #endfor
         #endfor
@@ -9823,7 +9979,7 @@ def make_nsidis_pilot_summary_canvas(
 ) -> None:
     """
     Summary of overlap agreement, high-energy extension, support stability, and
-    absolute fit quality.
+    projection-level fit quality.
     """
     fig, axes = plt.subplots(2, 2, figsize=(13.2, 8.8))
 
@@ -9861,7 +10017,7 @@ def make_nsidis_pilot_summary_canvas(
             )
             ax_dev.plot(
                 x,
-                [float(row["deviance_per_ndof"]) for row in rr],
+                [float(row.get("quality_ptmiss_projection_deviance_per_active_bin", float("nan"))) for row in rr],
                 marker="o",
                 linewidth=1.0,
                 label=rf"nSidis {support:.2f}",
@@ -9892,7 +10048,7 @@ def make_nsidis_pilot_summary_canvas(
             )
             ax_dev.plot(
                 x,
-                [float(row["deviance_per_ndof"]) for row in wr],
+                [float(row.get("quality_ptmiss_projection_deviance_per_active_bin", float("nan"))) for row in wr],
                 marker="s",
                 linestyle="--",
                 linewidth=1.2,
@@ -9904,9 +10060,9 @@ def make_nsidis_pilot_summary_canvas(
         ax_dev.axvline(2.0, linestyle="--", linewidth=0.9)
         ax_frac.set_ylim(0.0, 1.02)
         ax_frac.set_ylabel(r"$f_{\pi^0}$")
-        ax_dev.set_ylabel("Poisson deviance / ndof")
+        ax_dev.set_ylabel(r"$p_T$ projection deviance / active bin")
         ax_frac.set_title(f"{region}: composition")
-        ax_dev.set_title(f"{region}: template goodness")
+        ax_dev.set_title(f"{region}: visible pT-projection goodness")
         for ax in (ax_frac, ax_dev):
             ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
             ax.grid(alpha=0.18)
@@ -10154,11 +10310,21 @@ def make_nsidis_pilot_fit_projection_canvases(
                         0.30 if region == "FT" else ptmiss_max,
                     )
                 #endif
+                if axis_name == "mx2":
+                    qkey = "quality_mx2_projection_deviance_per_active_bin"
+                    ckey = "quality_mx2_projection_pearson_chi2_per_bin_mu_ge5"
+                else:
+                    qkey = "quality_ptmiss_projection_deviance_per_active_bin"
+                    ckey = "quality_ptmiss_projection_pearson_chi2_per_bin_mu_ge5"
+                #endif
+                qval = float(row.get(qkey, float("nan")))
+                cval = float(row.get(ckey, float("nan")))
                 ax.set_title(
                     f"{elo:.2f}-{ehi:.2f} GeV; "
-                    + rf"$f_{{\pi^0}}={fpi0:.3f}$, "
-                    + rf"$D/\mathrm{{ndof}}={float(row['deviance_per_ndof']):.2f}$",
-                    fontsize=9,
+                    + rf"$f_{{\pi^0}}={fpi0:.3f}$; "
+                    + rf"$D/N_{{active}}={qval:.2f}$; "
+                    + rf"$\chi_P^2/N_{{\mu\geq5}}={cval:.2f}$",
+                    fontsize=8.5,
                 )
                 ax.grid(alpha=0.16)
             #endfor
@@ -10181,7 +10347,9 @@ def make_nsidis_pilot_fit_projection_canvases(
             f"{region} fits at "
             rf"$|M_X^2(ep\gamma_{{tag}})|<{central_support:.2f}$ GeV$^2$"
             "\n"
-            r"production candidate $M_X^2(ep)\otimes p_{T,\rm miss}$",
+            r"production candidate $M_X^2(ep)\otimes p_{T,\rm miss}$"
+            "\nGoodness numbers are projection diagnostics; the old sparse-2D "
+            "D/ndof is intentionally not displayed.",
             fontsize=12.5,
             y=0.999,
         )
