@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v055.py
+derive_photon_efficiency_scale_factors_v056.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v055.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v056.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v055.py \
+    python derive_photon_efficiency_scale_factors_v056.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v055.py \
+    python derive_photon_efficiency_scale_factors_v056.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -1470,6 +1470,50 @@ STAGE2_VALIDATION_DISCRIMINATORS: Tuple[str, ...] = (
     "mx2_ep_x_theta_gg",
     "mx2_ep_1d",
 )
+
+
+
+def masked_finite_mean(values: np.ndarray, mask: np.ndarray) -> float:
+    """Finite arithmetic mean of values selected by mask."""
+    vv = np.asarray(values, dtype=float)
+    mm = np.asarray(mask, dtype=bool)
+    if vv.shape != mm.shape:
+        raise ValueError(
+            f"masked_finite_mean shape mismatch: values={vv.shape}, mask={mm.shape}"
+        )
+    #endif
+    good = mm & np.isfinite(vv)
+    if not np.any(good):
+        return float("nan")
+    #endif
+    return float(np.mean(vv[good]))
+
+
+def row_energy_coordinate(row: Dict[str, object]) -> float:
+    """
+    Plot binned energy points at the actual average predicted-probe energy.
+
+    Legacy rows without an average-energy field fall back to the bin midpoint.
+    """
+    for key in (
+        "mean_probe_energy_GeV",
+        "data_mean_probe_energy_GeV",
+        "plot_energy_GeV",
+    ):
+        try:
+            value = float(row.get(key, float("nan")))
+        except (TypeError, ValueError):
+            continue
+        #endtry
+        if np.isfinite(value):
+            return value
+        #endif
+    #endfor
+    return 0.5 * (
+        float(row["energy_low_GeV"])
+        + float(row["energy_high_GeV"])
+    )
+
 
 
 def stage2_energy_edges(max_energy: float) -> np.ndarray:
@@ -10134,6 +10178,173 @@ def make_nsidis_probe_mass2_scan_canvas(
     plt.close(fig)
 
 
+
+def profile_pi0_fraction_uncertainty_one_driver(
+    hd: np.ndarray,
+    hp: np.ndarray,
+    hv: np.ndarray,
+    fit: SharedMorphedFitResult,
+    *,
+    discriminator: str,
+    nuisance_shift_prior: float,
+    nuisance_sigma_prior: float,
+    max_shift_bins: float,
+    max_sigma_bins: float,
+    delta_nll: float = 0.5,
+) -> Dict[str, float]:
+    """
+    One-sigma profile-likelihood interval for f_pi0 in the one-driver pilot.
+
+    All four template-morph nuisance parameters are re-profiled at each fixed
+    f_pi0.  Since the production pilot uses only M_X^2(ep) x pTmiss,
+    Delta NLL = 0.5 is the usual 68% one-parameter interval.
+    """
+    if (
+        not fit.success
+        or not np.isfinite(fit.pi0_fraction)
+        or fit.nuisance is None
+    ):
+        return {
+            "pi0_fraction_err_low": float("nan"),
+            "pi0_fraction_err_high": float("nan"),
+            "pi0_fraction_profile_low": float("nan"),
+            "pi0_fraction_profile_high": float("nan"),
+            "pi0_fraction_profile_status": "fit_unavailable",
+        }
+    #endif
+
+    data = np.asarray(hd, dtype=float).ravel()
+    raw_pi0 = np.asarray(hp, dtype=float)
+    raw_dvcs = np.asarray(hv, dtype=float)
+    ndata = float(np.sum(data))
+    if ndata <= 0.0:
+        return {
+            "pi0_fraction_err_low": float("nan"),
+            "pi0_fraction_err_high": float("nan"),
+            "pi0_fraction_profile_low": float("nan"),
+            "pi0_fraction_profile_high": float("nan"),
+            "pi0_fraction_profile_status": "empty_data",
+        }
+    #endif
+
+    keys = (
+        f"{discriminator}_pi0_shift_bins",
+        f"{discriminator}_pi0_sigma_bins",
+        f"{discriminator}_dvcs_shift_bins",
+        f"{discriminator}_dvcs_sigma_bins",
+    )
+    x_best = np.asarray(
+        [float(fit.nuisance.get(key, 0.0)) for key in keys],
+        dtype=float,
+    )
+    bounds = (
+        (-float(max_shift_bins), float(max_shift_bins)),
+        (0.0, float(max_sigma_bins)),
+        (-float(max_shift_bins), float(max_shift_bins)),
+        (0.0, float(max_sigma_bins)),
+    )
+
+    def objective_fixed_fraction(fraction: float, x: np.ndarray) -> float:
+        f = float(np.clip(fraction, 3.0e-4, 1.0 - 3.0e-4))
+        tp = morph_template_second_axis(
+            raw_pi0, float(x[0]), float(x[1])
+        ).ravel()
+        td = morph_template_second_axis(
+            raw_dvcs, float(x[2]), float(x[3])
+        ).ravel()
+        mu = np.clip(
+            ndata * (f * tp + (1.0 - f) * td),
+            1.0e-12,
+            None,
+        )
+        penalty = (
+            0.5 * (float(x[0]) / nuisance_shift_prior) ** 2
+            + 0.5 * (float(x[1]) / nuisance_sigma_prior) ** 2
+            + 0.5 * (float(x[2]) / nuisance_shift_prior) ** 2
+            + 0.5 * (float(x[3]) / nuisance_sigma_prior) ** 2
+        )
+        return float(np.sum(mu - data * np.log(mu)) + penalty)
+    #enddef
+
+    cache: Dict[float, Tuple[float, np.ndarray]] = {}
+
+    def profile_objective(fraction: float) -> float:
+        f = float(np.clip(fraction, 3.0e-4, 1.0 - 3.0e-4))
+        key = round(f, 10)
+        if key in cache:
+            return cache[key][0]
+        #endif
+
+        x0 = x_best
+        if cache:
+            nearest = min(cache, key=lambda kk: abs(kk - key))
+            x0 = cache[nearest][1]
+        #endif
+
+        result = minimize(
+            lambda xx: objective_fixed_fraction(f, xx),
+            np.asarray(x0, dtype=float),
+            method="L-BFGS-B",
+            bounds=bounds,
+            options={"maxiter": 180, "ftol": 2.0e-9, "maxls": 30},
+        )
+        if result.success and np.isfinite(result.fun):
+            value = float(result.fun)
+            state = np.asarray(result.x, dtype=float)
+        else:
+            value = objective_fixed_fraction(f, np.asarray(x0, dtype=float))
+            state = np.asarray(x0, dtype=float)
+        #endif
+
+        cache[key] = (value, state)
+        return value
+    #enddef
+
+    f_best = float(np.clip(fit.pi0_fraction, 3.0e-4, 1.0 - 3.0e-4))
+    best_value = profile_objective(f_best)
+    target = best_value + float(delta_nll)
+
+    def root_fn(f: float) -> float:
+        return profile_objective(f) - target
+    #enddef
+
+    f_min = 3.0e-4
+    f_max = 1.0 - 3.0e-4
+    low_status = "ok"
+    high_status = "ok"
+
+    if root_fn(f_min) <= 0.0:
+        f_low = f_min
+        low_status = "lower_interval_hits_boundary"
+    else:
+        f_low = float(brentq(
+            root_fn, f_min, f_best,
+            xtol=2.0e-5, rtol=2.0e-5, maxiter=60,
+        ))
+    #endif
+
+    if root_fn(f_max) <= 0.0:
+        f_high = f_max
+        high_status = "upper_interval_hits_boundary"
+    else:
+        f_high = float(brentq(
+            root_fn, f_best, f_max,
+            xtol=2.0e-5, rtol=2.0e-5, maxiter=60,
+        ))
+    #endif
+
+    return {
+        "pi0_fraction_err_low": max(0.0, f_best - f_low),
+        "pi0_fraction_err_high": max(0.0, f_high - f_best),
+        "pi0_fraction_profile_low": f_low,
+        "pi0_fraction_profile_high": f_high,
+        "pi0_fraction_profile_status": (
+            f"{low_status};{high_status}"
+        ),
+    }
+
+
+
 def run_nsidis_ptmiss_pilot_fits(
     period: PeriodConfig,
     data_f: Dict[str, np.ndarray],
@@ -10156,6 +10367,7 @@ def run_nsidis_ptmiss_pilot_fits(
     max_sigma_bins: float,
     source_label: str,
     parent_mask: Optional[np.ndarray] = None,
+    uncertainty_support: Optional[float] = None,
 ) -> List[Dict[str, object]]:
     """
     Diagnostic production-model pilot using only
@@ -10253,6 +10465,18 @@ def run_nsidis_ptmiss_pilot_fits(
                     "energy_low_GeV": elo,
                     "energy_high_GeV": ehi,
                     "energy_center_GeV": 0.5 * (elo + ehi),
+                    "mean_probe_energy_GeV": masked_finite_mean(
+                        data_f["pred_probe_energy"], masks["data"]
+                    ),
+                    "data_mean_probe_energy_GeV": masked_finite_mean(
+                        data_f["pred_probe_energy"], masks["data"]
+                    ),
+                    "aaogen_mean_probe_energy_GeV": masked_finite_mean(
+                        pi0_f["pred_probe_energy"], masks["pi0"]
+                    ),
+                    "dvcsgen_mean_probe_energy_GeV": masked_finite_mean(
+                        dvcs_f["pred_probe_energy"], masks["dvcs"]
+                    ),
                     "probe_m2_support_max_GeV2": support,
                     "data_candidate_count": int(np.sum(hists["data"])),
                     "aaogen_candidate_count": int(np.sum(hists["pi0"])),
@@ -10329,6 +10553,39 @@ def run_nsidis_ptmiss_pilot_fits(
                         disc,
                     )
                 )
+
+                if (
+                    uncertainty_support is not None
+                    and abs(
+                        support - float(uncertainty_support)
+                    ) < 1.0e-12
+                    and fit.success
+                ):
+                    row.update(
+                        profile_pi0_fraction_uncertainty_one_driver(
+                            hists["data"],
+                            hists["pi0"],
+                            hists["dvcs"],
+                            fit,
+                            discriminator=disc,
+                            nuisance_shift_prior=nuisance_shift_prior,
+                            nuisance_sigma_prior=nuisance_sigma_prior,
+                            max_shift_bins=max_shift_bins,
+                            max_sigma_bins=max_sigma_bins,
+                        )
+                    )
+                else:
+                    row.update({
+                        "pi0_fraction_err_low": float("nan"),
+                        "pi0_fraction_err_high": float("nan"),
+                        "pi0_fraction_profile_low": float("nan"),
+                        "pi0_fraction_profile_high": float("nan"),
+                        "pi0_fraction_profile_status": (
+                            "not_evaluated_noncentral_support"
+                        ),
+                    })
+                #endif
+
                 rows.append(row)
             #endfor
         #endfor
@@ -10368,13 +10625,13 @@ def make_nsidis_pilot_summary_canvas(
                         float(row["probe_m2_support_max_GeV2"]) - support
                     ) < 1.0e-12
                 ],
-                key=lambda row: float(row["energy_center_GeV"]),
+                key=row_energy_coordinate,
             )
             if not rr:
                 continue
             #endif
 
-            x = [float(row["energy_center_GeV"]) for row in rr]
+            x = [row_energy_coordinate(row) for row in rr]
             ax_frac.plot(
                 x,
                 [float(row["pi0_fraction"]) for row in rr],
@@ -10401,7 +10658,7 @@ def make_nsidis_pilot_summary_canvas(
                     - float(central_support)
                 ) < 1.0e-12
             ],
-            key=lambda row: float(row["energy_center_GeV"]),
+            key=row_energy_coordinate,
         )
         if wr:
             x = [float(row["energy_center_GeV"]) for row in wr]
@@ -10683,10 +10940,20 @@ def make_nsidis_pilot_fit_projection_canvases(
                 ax.set_xlabel(xlabel)
                 ax.set_ylabel("entries / bin")
                 if axis_name == "ptmiss":
-                    ax.set_xlim(
-                        0.0,
-                        0.30 if region == "FT" else ptmiss_max,
-                    )
+                    if region == "FT":
+                        ft_plot_max = min(
+                            float(ptmiss_max),
+                            max(
+                                0.30,
+                                1.12 * ehi * math.sin(
+                                    math.radians(5.0)
+                                ),
+                            ),
+                        )
+                        ax.set_xlim(0.0, ft_plot_max)
+                    else:
+                        ax.set_xlim(0.0, ptmiss_max)
+                    #endif
                 #endif
                 if axis_name == "mx2":
                     qkey = "quality_mx2_projection_deviance_per_active_bin"
@@ -10791,7 +11058,7 @@ def make_nsidis_photon_acceptance_canvas(
     axes[0].set_xlabel(r"reconstructed photon $\theta_\gamma$ (deg)")
     axes[0].set_ylabel("density")
     axes[0].set_title(
-        "measured photon angular support\n"
+        "fixed photon angular acceptance\n"
         f"FT=[{acceptance.ft_theta_min_deg:.3f},"
         f"{acceptance.ft_theta_max_deg:.3f}] deg; "
         f"FD=[{acceptance.fd_theta_min_deg:.3f},"
@@ -10816,7 +11083,7 @@ def make_nsidis_photon_acceptance_canvas(
         ns_epg_f, "FT", 5.5
     )
 
-    ptbins = np.linspace(0.0, 0.30, 81)
+    ptbins = np.linspace(0.0, 0.90, 121)
     axes[1].hist(
         ns_epg_f["stored_pTmiss"][legacy_ft],
         bins=ptbins,
@@ -10842,7 +11109,7 @@ def make_nsidis_photon_acceptance_canvas(
     axes[1].grid(alpha=0.18)
 
     fig.suptitle(
-        f"{period.label}: data-derived FT/FD photon angular acceptance",
+        f"{period.label}: fixed FT/FD photon angular acceptance",
         fontsize=13,
     )
     safe_finalize_figure(
@@ -10998,6 +11265,14 @@ def build_nsidis_data_efficiency_rows(
                 if fit is not None
                 else float("nan")
             )
+            fpi0_err_low = (
+                float(fit.get("pi0_fraction_err_low", np.nan))
+                if fit is not None else float("nan")
+            )
+            fpi0_err_high = (
+                float(fit.get("pi0_fraction_err_high", np.nan))
+                if fit is not None else float("nan")
+            )
             data_den = (
                 fpi0 * float(n_tags)
                 if np.isfinite(fpi0) and fpi0 > 0.0
@@ -11015,6 +11290,52 @@ def build_nsidis_data_efficiency_rows(
                 float(n_final) / data_den
                 if np.isfinite(data_den) and data_den > 0.0
                 else float("nan")
+            )
+
+            counting_err = provisional_ratio_error(
+                float(n_final), data_den
+            )
+            pi0_eff_err_low = float("nan")
+            pi0_eff_err_high = float("nan")
+            if (
+                np.isfinite(eff_final)
+                and np.isfinite(fpi0)
+                and fpi0 > 0.0
+                and np.isfinite(fpi0_err_low)
+                and np.isfinite(fpi0_err_high)
+                and n_tags > 0
+            ):
+                f_hi = fpi0 + fpi0_err_high
+                f_lo = max(3.0e-4, fpi0 - fpi0_err_low)
+                eff_at_f_hi = float(n_final) / (
+                    f_hi * float(n_tags)
+                )
+                eff_at_f_lo = float(n_final) / (
+                    f_lo * float(n_tags)
+                )
+                pi0_eff_err_low = max(
+                    0.0, eff_final - eff_at_f_hi
+                )
+                pi0_eff_err_high = max(
+                    0.0, eff_at_f_lo - eff_final
+                )
+            #endif
+
+            eff_err_low = (
+                math.sqrt(
+                    counting_err ** 2 + pi0_eff_err_low ** 2
+                )
+                if np.isfinite(counting_err)
+                and np.isfinite(pi0_eff_err_low)
+                else counting_err
+            )
+            eff_err_high = (
+                math.sqrt(
+                    counting_err ** 2 + pi0_eff_err_high ** 2
+                )
+                if np.isfinite(counting_err)
+                and np.isfinite(pi0_eff_err_high)
+                else counting_err
             )
 
             status = "ok"
@@ -11038,18 +11359,25 @@ def build_nsidis_data_efficiency_rows(
                 "energy_low_GeV": elo,
                 "energy_high_GeV": ehi,
                 "energy_center_GeV": 0.5 * (elo + ehi),
+                "mean_probe_energy_GeV": masked_finite_mean(
+                    selected_feat["pred_probe_energy"], m
+                ),
                 "probe_m2_support_max_GeV2": float(probe_m2_max),
                 "denominator_fit_success": int(fit is not None),
                 "fitted_pi0_fraction": fpi0,
+                "fitted_pi0_fraction_err_low": fpi0_err_low,
+                "fitted_pi0_fraction_err_high": fpi0_err_high,
                 "selected_epgamma_tags": n_tags,
                 "fitted_pi0_denominator": data_den,
                 "reconstructed_probe_mass_shell": n_mass_shell,
                 "reconstructed_probe_final": n_final,
                 "data_efficiency_mass_shell_only": eff_mass,
                 "data_efficiency_final": eff_final,
-                "counting_error_final_provisional": provisional_ratio_error(
-                    float(n_final), data_den
-                ),
+                "counting_error_final": counting_err,
+                "pi0_profile_efficiency_error_low": pi0_eff_err_low,
+                "pi0_profile_efficiency_error_high": pi0_eff_err_high,
+                "data_efficiency_error_low": eff_err_low,
+                "data_efficiency_error_high": eff_err_high,
                 "status": status,
                 "interpretation": (
                     "preliminary data-only association efficiency; "
@@ -11095,7 +11423,7 @@ def make_nsidis_data_efficiency_canvas(
                     float(r.get("data_efficiency_final", np.nan))
                 )
             ],
-            key=lambda r: float(r["energy_center_GeV"]),
+            key=row_energy_coordinate,
         )
         wr = sorted(
             [
@@ -11105,12 +11433,12 @@ def make_nsidis_data_efficiency_canvas(
                     float(r.get("data_efficiency_final", np.nan))
                 )
             ],
-            key=lambda r: float(r["energy_center_GeV"]),
+            key=row_energy_coordinate,
         )
 
         if nr:
             x = np.asarray(
-                [float(r["energy_center_GeV"]) for r in nr],
+                [row_energy_coordinate(r) for r in nr],
                 dtype=float,
             )
             ax_eff.plot(
@@ -11148,7 +11476,7 @@ def make_nsidis_data_efficiency_canvas(
 
         if wr:
             xw = np.asarray(
-                [float(r["energy_center_GeV"]) for r in wr],
+                [row_energy_coordinate(r) for r in wr],
                 dtype=float,
             )
             ax_eff.plot(
@@ -11222,7 +11550,7 @@ def make_nsidis_associated_eppi0_exclusivity_canvas(
     final_unique = np.unique(final_idx)
 
     specs = (
-        ("Mx2", np.linspace(-0.20, 0.20, 161),
+        ("Mx2", np.linspace(-0.08, 0.08, 161),
          r"$M_X^2(ep\pi^0)$ (GeV$^2$)"),
         ("pTmiss", np.linspace(0.0, 0.80, 161),
          r"$p_{T,\rm miss}(ep\pi^0)$ (GeV)"),
@@ -11524,6 +11852,9 @@ def build_aaogen_mc_efficiency_rows(
                 "energy_low_GeV": elo,
                 "energy_high_GeV": ehi,
                 "energy_center_GeV": 0.5 * (elo + ehi),
+                "mean_probe_energy_GeV": masked_finite_mean(
+                    pi0_f["pred_probe_energy"], mask
+                ),
                 "probe_m2_support_max_GeV2": float(probe_m2_max),
                 "selected_true_pi0_tags": n_tags,
                 "reconstructed_probe_mass_shell": n_mass,
@@ -11579,8 +11910,11 @@ def combine_data_mc_scale_factor_rows(
         m = mc_map.get(key)
 
         ed = float(d.get("data_efficiency_final", np.nan))
-        sed = float(
-            d.get("counting_error_final_provisional", np.nan)
+        sed_low = float(
+            d.get("data_efficiency_error_low", np.nan)
+        )
+        sed_high = float(
+            d.get("data_efficiency_error_high", np.nan)
         )
         em = (
             float(m.get("mc_efficiency_final", np.nan))
@@ -11597,21 +11931,38 @@ def combine_data_mc_scale_factor_rows(
             else float("nan")
         )
 
-        rel2 = 0.0
-        nrel = 0
-        if np.isfinite(sed) and np.isfinite(ed) and ed > 0.0:
-            rel2 += (sed / ed) ** 2
-            nrel += 1
-        #endif
-        if np.isfinite(sem) and np.isfinite(em) and em > 0.0:
-            rel2 += (sem / em) ** 2
-            nrel += 1
-        #endif
-        sf_err = (
-            abs(sf) * math.sqrt(rel2)
-            if np.isfinite(sf) and nrel > 0
-            else float("nan")
-        )
+        def propagated_sf_error(
+            data_error: float,
+            mc_error: float,
+        ) -> float:
+            rel2 = 0.0
+            nrel = 0
+            if (
+                np.isfinite(data_error)
+                and np.isfinite(ed)
+                and ed > 0.0
+            ):
+                rel2 += (data_error / ed) ** 2
+                nrel += 1
+            #endif
+            if (
+                np.isfinite(mc_error)
+                and np.isfinite(em)
+                and em > 0.0
+            ):
+                rel2 += (mc_error / em) ** 2
+                nrel += 1
+            #endif
+            return (
+                abs(sf) * math.sqrt(rel2)
+                if np.isfinite(sf) and nrel > 0
+                else float("nan")
+            )
+        #enddef
+
+        sf_err_low = propagated_sf_error(sed_low, sem)
+        sf_err_high = propagated_sf_error(sed_high, sem)
+
 
         out.append({
             "period": d["period"],
@@ -11621,22 +11972,31 @@ def combine_data_mc_scale_factor_rows(
             "energy_low_GeV": d["energy_low_GeV"],
             "energy_high_GeV": d["energy_high_GeV"],
             "energy_center_GeV": d["energy_center_GeV"],
+            "mean_probe_energy_GeV": d.get(
+                "mean_probe_energy_GeV", d["energy_center_GeV"]
+            ),
+            "mc_mean_probe_energy_GeV": (
+                m.get("mean_probe_energy_GeV", np.nan)
+                if m is not None else float("nan")
+            ),
             "probe_m2_support_max_GeV2": d[
                 "probe_m2_support_max_GeV2"
             ],
             "fitted_pi0_fraction_data": d["fitted_pi0_fraction"],
             "data_efficiency_final": ed,
-            "data_efficiency_counting_error_provisional": sed,
+            "data_efficiency_error_low": sed_low,
+            "data_efficiency_error_high": sed_high,
             "mc_efficiency_final": em,
             "mc_efficiency_stat_error": sem,
             "photon_efficiency_scale_factor": sf,
-            "scale_factor_stat_error_provisional": sf_err,
+            "scale_factor_stat_error_low": sf_err_low,
+            "scale_factor_stat_error_high": sf_err_high,
             "data_status": d["status"],
             "mc_status": (
                 m["status"] if m is not None else "missing_mc_row"
             ),
             "status": (
-                "PRELIMINARY_data_pi0_fit_uncertainty_not_propagated"
+                "PRELIMINARY_statistical_error_includes_profiled_pi0_fraction"
                 if np.isfinite(sf)
                 else "invalid_scale_factor"
             ),
@@ -11664,14 +12024,14 @@ def make_nsidis_scale_factor_canvas(
                     ))
                 )
             ],
-            key=lambda r: float(r["energy_center_GeV"]),
+            key=row_energy_coordinate,
         )
         if not rr:
             continue
         #endif
 
         x = np.asarray(
-            [float(r["energy_center_GeV"]) for r in rr],
+            [row_energy_coordinate(r) for r in rr],
             dtype=float,
         )
         ed = np.asarray(
@@ -11686,10 +12046,19 @@ def make_nsidis_scale_factor_canvas(
             [float(r["photon_efficiency_scale_factor"]) for r in rr],
             dtype=float,
         )
-        se = np.asarray(
+        se_low = np.asarray(
             [
                 float(r.get(
-                    "scale_factor_stat_error_provisional", np.nan
+                    "scale_factor_stat_error_low", np.nan
+                ))
+                for r in rr
+            ],
+            dtype=float,
+        )
+        se_high = np.asarray(
+            [
+                float(r.get(
+                    "scale_factor_stat_error_high", np.nan
                 ))
                 for r in rr
             ],
@@ -11707,7 +12076,7 @@ def make_nsidis_scale_factor_canvas(
             label="aaogen MC",
         )
         ax_s.errorbar(
-            x, sf, yerr=se, marker="o", linewidth=1.1,
+            x, sf, yerr=np.vstack((se_low, se_high)), marker="o", linewidth=1.1,
             capsize=2,
         )
 
@@ -11728,8 +12097,7 @@ def make_nsidis_scale_factor_canvas(
     axes[0, 0].legend(fontsize=8, frameon=False)
     fig.suptitle(
         f"{period.label}: nSidis photon-efficiency data/MC pilot\n"
-        "statistical bars are provisional; fitted-pi0 denominator "
-        "uncertainty is not yet propagated",
+        "statistical bars include profiled $f_{\\pi^0}$ uncertainty and MC counting statistics",
         fontsize=12.5,
     )
     safe_finalize_figure(
@@ -11757,9 +12125,9 @@ def make_nsidis_period_comparison(
     """
     Compare available nSidis scale factors across periods.
 
-    This is particularly useful for Fa18 Inb and Sp19 Inb, which share the
-    relevant inbending detector/software configuration and are expected to be
-    similar.
+    Top row: full energy range.
+    Bottom row: E_probe^pred > 2 GeV only, with common y=[0.7,1.3].
+    All x coordinates are actual mean predicted-probe energies.
     """
     period_rows: Dict[str, List[Dict[str, str]]] = {}
     period_labels: Dict[str, str] = {}
@@ -11780,57 +12148,93 @@ def make_nsidis_period_comparison(
         return
     #endif
 
-    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.2))
+    fig, axes = plt.subplots(2, 2, figsize=(13.8, 9.2))
     combined_rows: List[Dict[str, object]] = []
 
-    for ax, region in zip(axes, ("FT", "FD_all")):
-        for period_key, rows in period_rows.items():
-            rr = []
-            for r in rows:
-                if r.get("region") != region:
+    for icol, region in enumerate(("FT", "FD_all")):
+        for irow, high_only in enumerate((False, True)):
+            ax = axes[irow, icol]
+
+            for period_key, rows in period_rows.items():
+                rr = []
+                for r in rows:
+                    if r.get("region") != region:
+                        continue
+                    #endif
+                    try:
+                        x = row_energy_coordinate(r)
+                        y = float(r["photon_efficiency_scale_factor"])
+                        elo = float(r["energy_low_GeV"])
+                        el = float(
+                            r.get("scale_factor_stat_error_low", "nan")
+                        )
+                        eh = float(
+                            r.get("scale_factor_stat_error_high", "nan")
+                        )
+                    except (KeyError, TypeError, ValueError):
+                        continue
+                    #endtry
+
+                    if high_only and elo < 2.0 - 1.0e-12:
+                        continue
+                    #endif
+                    if np.isfinite(x) and np.isfinite(y):
+                        rr.append((x, y, el, eh, r))
+                    #endif
+                #endfor
+
+                rr.sort(key=lambda item: item[0])
+                if not rr:
                     continue
                 #endif
-                try:
-                    x = float(r["energy_center_GeV"])
-                    y = float(r["photon_efficiency_scale_factor"])
-                    e = float(r["scale_factor_stat_error_provisional"])
-                except (KeyError, TypeError, ValueError):
-                    continue
-                #endtry
-                if np.isfinite(x) and np.isfinite(y):
-                    rr.append((x, y, e, r))
-                #endif
+
+                x = np.asarray([item[0] for item in rr], dtype=float)
+                y = np.asarray([item[1] for item in rr], dtype=float)
+                el = np.asarray([item[2] for item in rr], dtype=float)
+                eh = np.asarray([item[3] for item in rr], dtype=float)
+
+                ax.errorbar(
+                    x,
+                    y,
+                    yerr=np.vstack((el, eh)),
+                    marker="o",
+                    linewidth=1.1,
+                    capsize=2,
+                    label=period_labels[period_key],
+                )
+
+                if not high_only:
+                    for _, _, _, _, raw in rr:
+                        combined_rows.append({
+                            "period": period_key,
+                            "label": period_labels[period_key],
+                            **raw,
+                        })
+                    #endfor
             #endfor
 
-            rr.sort(key=lambda item: item[0])
-            if not rr:
-                continue
-            #endif
-            x = np.asarray([item[0] for item in rr], dtype=float)
-            y = np.asarray([item[1] for item in rr], dtype=float)
-            e = np.asarray([item[2] for item in rr], dtype=float)
-            ax.errorbar(
-                x, y, yerr=e, marker="o", linewidth=1.1,
-                capsize=2, label=period_labels[period_key],
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.set_ylabel(
+                r"$SF_\gamma=\epsilon_{\rm data}/\epsilon_{\rm MC}$"
             )
-            for _, _, _, raw in rr:
-                combined_rows.append({
-                    "period": period_key,
-                    "label": period_labels[period_key],
-                    **raw,
-                })
-            #endfor
+            if high_only:
+                ax.set_ylim(0.7, 1.3)
+                ax.set_title(
+                    "FT — $E_{\rm probe}^{pred}>2$ GeV"
+                    if region == "FT"
+                    else "FD all — $E_{\rm probe}^{pred}>2$ GeV"
+                )
+            else:
+                ax.set_title(
+                    "FT — all energies"
+                    if region == "FT"
+                    else "FD all — all energies"
+                )
+            #endif
+            ax.grid(alpha=0.18)
+            ax.legend(fontsize=8, frameon=False)
         #endfor
-
-        ax.axhline(1.0, linestyle="--", linewidth=1.0)
-        ax.axvline(2.0, linestyle=":", linewidth=0.9)
-        ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
-        ax.set_ylabel(
-            r"$SF_\gamma=\epsilon_{\rm data}/\epsilon_{\rm MC}$"
-        )
-        ax.set_title("FT" if region == "FT" else "FD all")
-        ax.grid(alpha=0.18)
-        ax.legend(fontsize=8, frameon=False)
     #endfor
 
     fig.suptitle(
@@ -11840,7 +12244,7 @@ def make_nsidis_period_comparison(
     safe_finalize_figure(
         fig,
         nsroot / "canvas_nsidis_period_scale_factor_comparison.png",
-        rect=(0, 0, 1, 0.94),
+        rect=(0, 0, 1, 0.96),
     )
     plt.close(fig)
 
@@ -11848,6 +12252,7 @@ def make_nsidis_period_comparison(
         combined_rows,
         nsroot / "nsidis_period_scale_factor_comparison.csv",
     )
+
 
 
 def preflight_nsidis_study(
@@ -12222,6 +12627,7 @@ def process_nsidis_study_period(
             "max_sigma_bins": float(
                 args_dict["morph_max_sigma_bins"]
             ),
+            "uncertainty_support": central_support,
         }
 
         pilot_nsidis_rows = run_nsidis_ptmiss_pilot_fits(
@@ -14283,13 +14689,58 @@ def main() -> int:
         nsroot = Path(args.output_dir) / "nsidis_study"
         nsroot.mkdir(parents=True, exist_ok=True)
 
+        n_nsidis_workers = min(
+            max(1, int(args.workers)),
+            len(selected),
+        )
+        log(
+            f"nSidis period-level parallelism: "
+            f"{n_nsidis_workers} process(es)."
+        )
+
+        summaries_by_period: Dict[str, Dict[str, object]] = {}
+
+        if n_nsidis_workers == 1:
+            for period in selected:
+                summaries_by_period[period.key] = (
+                    process_nsidis_study_period(
+                        period,
+                        ns_args_dict,
+                        str(Path(args.output_dir)),
+                    )
+                )
+            #endfor
+        else:
+            with ProcessPoolExecutor(
+                max_workers=n_nsidis_workers
+            ) as executor:
+                future_to_period = {
+                    executor.submit(
+                        process_nsidis_study_period,
+                        period,
+                        ns_args_dict,
+                        str(Path(args.output_dir)),
+                    ): period
+                    for period in selected
+                }
+
+                for future in as_completed(future_to_period):
+                    period = future_to_period[future]
+                    try:
+                        summaries_by_period[period.key] = future.result()
+                    except Exception as exc:
+                        raise RuntimeError(
+                            "Parallel nSidis photon-efficiency processing "
+                            f"failed for {period.label}: {exc}"
+                        ) from exc
+                    #endtry
+                #endfor
+            #endwith
+        #endif
+
         summary_rows = []
         for period in selected:
-            summary = process_nsidis_study_period(
-                period,
-                ns_args_dict,
-                str(Path(args.output_dir)),
-            )
+            summary = summaries_by_period[period.key]
             summary_rows.append({
                 "period": period.key,
                 "label": period.label,
