@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v050.py
+derive_photon_efficiency_scale_factors_v051.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v050.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v051.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v050.py \
+    python derive_photon_efficiency_scale_factors_v051.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v050.py \
+    python derive_photon_efficiency_scale_factors_v051.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -1394,7 +1394,12 @@ def parse_mix_shifts(value: str) -> List[int]:
 
 @dataclass(frozen=True)
 class PhotonAngularAcceptance:
-    """Observed reconstructed-photon polar-angle support for one run period."""
+    """
+    Robust reconstructed-photon polar-angle support for one run period.
+
+    The operational FT/FD boundaries are central-containment quantiles, not
+    literal extrema.  Raw extrema are retained for diagnostics/provenance.
+    """
     ft_theta_min_deg: float
     ft_theta_max_deg: float
     fd_theta_min_deg: float
@@ -1402,6 +1407,17 @@ class PhotonAngularAcceptance:
     ft_count: int
     fd_count: int
     source: str
+    containment: float
+    quantile_low: float
+    quantile_high: float
+    ft_raw_min_deg: float
+    ft_raw_max_deg: float
+    fd_raw_min_deg: float
+    fd_raw_max_deg: float
+    ft_q001_deg: float
+    ft_q999_deg: float
+    fd_q001_deg: float
+    fd_q999_deg: float
 
     def as_dict(self) -> Dict[str, object]:
         return {
@@ -1412,6 +1428,17 @@ class PhotonAngularAcceptance:
             "ft_count": int(self.ft_count),
             "fd_count": int(self.fd_count),
             "source": str(self.source),
+            "containment": float(self.containment),
+            "quantile_low": float(self.quantile_low),
+            "quantile_high": float(self.quantile_high),
+            "ft_raw_min_deg": float(self.ft_raw_min_deg),
+            "ft_raw_max_deg": float(self.ft_raw_max_deg),
+            "fd_raw_min_deg": float(self.fd_raw_min_deg),
+            "fd_raw_max_deg": float(self.fd_raw_max_deg),
+            "ft_q001_deg": float(self.ft_q001_deg),
+            "ft_q999_deg": float(self.ft_q999_deg),
+            "fd_q001_deg": float(self.fd_q001_deg),
+            "fd_q999_deg": float(self.fd_q999_deg),
         }
 
 
@@ -1431,18 +1458,29 @@ def infer_photon_angular_acceptance(
     *,
     source: str,
     parent_mask: Optional[np.ndarray] = None,
+    containment: float = 0.999,
 ) -> PhotonAngularAcceptance:
     """
-    Infer FT/FD theta support directly from reconstructed data.
+    Infer robust FT/FD theta support directly from reconstructed data.
 
     Confirmed detector convention:
       detector2 == 0 -> FT
       detector2 == 1 -> FD
 
-    The requested operational definition is the exact observed finite
-    min/max theta for each detector code.  The resulting FT and FD intervals
-    must be disjoint; otherwise the script stops rather than ambiguously
-    assigning a predicted probe to both detector systems.
+    Literal min/max values are too sensitive to rare malformed or badly
+    reconstructed entries.  The operational interval therefore retains a
+    central fraction ``containment`` of each detector's reconstructed photons.
+
+    Default:
+      containment = 0.999
+      q_low  = 0.0005
+      q_high = 0.9995
+
+    i.e. only 0.05% of entries are discarded from each angular tail.
+
+    Raw extrema and 0.1%/99.9% quantiles are retained in the returned metadata.
+    If the robust FT and FD intervals still overlap, the function stops with a
+    detailed diagnostic rather than inventing an arbitrary boundary.
     """
     if "detector2" not in sample.raw:
         raise KeyError(
@@ -1450,9 +1488,21 @@ def infer_photon_angular_acceptance(
         )
     #endif
 
+    containment = float(containment)
+    if not (0.90 <= containment < 1.0):
+        raise ValueError(
+            f"{source}: angular containment must satisfy 0.90 <= value < 1; "
+            f"got {containment}."
+        )
+    #endif
+    tail = 0.5 * (1.0 - containment)
+    qlo = tail
+    qhi = 1.0 - tail
+
     det = np.asarray(sample.raw["detector2"], dtype=np.int16)
     theta = photon_theta_deg_from_epgamma(sample)
-    base = np.isfinite(theta)
+    base = np.isfinite(theta) & (theta >= 0.0) & (theta <= 180.0)
+
     if parent_mask is not None:
         pm = np.asarray(parent_mask, dtype=bool)
         if pm.shape != base.shape:
@@ -1463,42 +1513,64 @@ def infer_photon_angular_acceptance(
         base &= pm
     #endif
 
-    ft = base & (det == PHOTON_DETECTOR_FT)
-    fd = base & (det == PHOTON_DETECTOR_FD)
-    nft = int(np.count_nonzero(ft))
-    nfd = int(np.count_nonzero(fd))
-    if nft < 100 or nfd < 100:
-        raise RuntimeError(
-            f"{source}: insufficient reconstructed photons to derive acceptance "
-            f"(FT={nft}, FD={nfd})."
-        )
-    #endif
+    values = {}
+    for name, code in (("FT", PHOTON_DETECTOR_FT), ("FD", PHOTON_DETECTOR_FD)):
+        vv = np.asarray(theta[base & (det == code)], dtype=float)
+        if vv.size < 100:
+            raise RuntimeError(
+                f"{source}: insufficient reconstructed photons to derive "
+                f"{name} acceptance (N={vv.size})."
+            )
+        #endif
+        values[name] = vv
+    #endfor
 
-    ft_min = float(np.min(theta[ft]))
-    ft_max = float(np.max(theta[ft]))
-    fd_min = float(np.min(theta[fd]))
-    fd_max = float(np.max(theta[fd]))
+    ftv = values["FT"]
+    fdv = values["FD"]
+
+    ft_raw_min = float(np.min(ftv))
+    ft_raw_max = float(np.max(ftv))
+    fd_raw_min = float(np.min(fdv))
+    fd_raw_max = float(np.max(fdv))
+
+    ft_min, ft_max = np.quantile(ftv, [qlo, qhi])
+    fd_min, fd_max = np.quantile(fdv, [qlo, qhi])
+    ft_min = float(ft_min)
+    ft_max = float(ft_max)
+    fd_min = float(fd_min)
+    fd_max = float(fd_max)
+
+    ft_q001, ft_q999 = np.quantile(ftv, [0.001, 0.999])
+    fd_q001, fd_q999 = np.quantile(fdv, [0.001, 0.999])
 
     vals = (ft_min, ft_max, fd_min, fd_max)
     if not all(np.isfinite(x) for x in vals):
-        raise RuntimeError(f"{source}: non-finite detector angular boundary.")
+        raise RuntimeError(f"{source}: non-finite robust detector angular boundary.")
     #endif
     if not (0.0 <= ft_min < ft_max <= 180.0):
         raise RuntimeError(
-            f"{source}: invalid FT theta range [{ft_min}, {ft_max}] deg."
+            f"{source}: invalid robust FT theta range [{ft_min}, {ft_max}] deg."
         )
     #endif
     if not (0.0 <= fd_min < fd_max <= 180.0):
         raise RuntimeError(
-            f"{source}: invalid FD theta range [{fd_min}, {fd_max}] deg."
+            f"{source}: invalid robust FD theta range [{fd_min}, {fd_max}] deg."
         )
     #endif
+
     if ft_max >= fd_min:
         raise RuntimeError(
-            f"{source}: observed FT and FD theta ranges overlap: "
-            f"FT=[{ft_min:.6g},{ft_max:.6g}] deg, "
+            f"{source}: robust FT and FD theta intervals still overlap at "
+            f"{100.0*containment:.4f}% central containment. "
+            f"Operational FT=[{ft_min:.6g},{ft_max:.6g}] deg, "
             f"FD=[{fd_min:.6g},{fd_max:.6g}] deg. "
-            "Predicted-region assignment would be ambiguous; inspect detector2/theta."
+            f"Raw extrema were FT=[{ft_raw_min:.6g},{ft_raw_max:.6g}] deg, "
+            f"FD=[{fd_raw_min:.6g},{fd_raw_max:.6g}] deg. "
+            f"0.1%-99.9% intervals are "
+            f"FT=[{float(ft_q001):.6g},{float(ft_q999):.6g}] deg and "
+            f"FD=[{float(fd_q001):.6g},{float(fd_q999):.6g}] deg. "
+            "This is no longer consistent with a few isolated outliers; inspect "
+            "detector2 versus reconstructed photon theta before assigning regions."
         )
     #endif
 
@@ -1507,10 +1579,22 @@ def infer_photon_angular_acceptance(
         ft_theta_max_deg=ft_max,
         fd_theta_min_deg=fd_min,
         fd_theta_max_deg=fd_max,
-        ft_count=nft,
-        fd_count=nfd,
+        ft_count=int(ftv.size),
+        fd_count=int(fdv.size),
         source=source,
+        containment=containment,
+        quantile_low=qlo,
+        quantile_high=qhi,
+        ft_raw_min_deg=ft_raw_min,
+        ft_raw_max_deg=ft_raw_max,
+        fd_raw_min_deg=fd_raw_min,
+        fd_raw_max_deg=fd_raw_max,
+        ft_q001_deg=float(ft_q001),
+        ft_q999_deg=float(ft_q999),
+        fd_q001_deg=float(fd_q001),
+        fd_q999_deg=float(fd_q999),
     )
+
 
 
 def attach_photon_angular_acceptance(
@@ -8648,6 +8732,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--photon-angular-containment",
+        type=float,
+        default=0.999,
+        help=(
+            "Central reconstructed-photon theta containment used to derive "
+            "period-specific FT/FD angular support from data. Default: 0.999 "
+            "(99.9%% containment; 0.05%% removed from each tail)."
+        ),
+    )
+    parser.add_argument(
         "--ft-theta-max",
         type=float,
         default=5.5,
@@ -10741,7 +10835,7 @@ def make_nsidis_photon_acceptance_canvas(
         histtype="step",
         density=True,
         linewidth=1.2,
-        label="inside measured FT theta support",
+        label="inside robust FT theta support",
     )
     axes[1].set_xlabel(r"$p_{T,\rm miss}(ep\gamma)$ (GeV)")
     axes[1].set_ylabel("density")
@@ -10938,15 +11032,19 @@ def process_nsidis_study_period(
         ns_epg,
         source=f"{period.label} nSidis epgamma data",
         parent_mask=ns_epg_parent,
+        containment=float(args_dict["photon_angular_containment"]),
     )
     log(
-        f"{period.label}: nSidis-derived photon angular acceptance: "
+        f"{period.label}: nSidis-derived photon angular acceptance "
+        f"({100.0*photon_acceptance.containment:.3f}% central containment): "
         f"FT {photon_acceptance.ft_theta_min_deg:.4f}-"
         f"{photon_acceptance.ft_theta_max_deg:.4f} deg "
-        f"(N={photon_acceptance.ft_count:,}); "
+        f"(raw {photon_acceptance.ft_raw_min_deg:.4f}-"
+        f"{photon_acceptance.ft_raw_max_deg:.4f}, N={photon_acceptance.ft_count:,}); "
         f"FD {photon_acceptance.fd_theta_min_deg:.4f}-"
         f"{photon_acceptance.fd_theta_max_deg:.4f} deg "
-        f"(N={photon_acceptance.fd_count:,})."
+        f"(raw {photon_acceptance.fd_raw_min_deg:.4f}-"
+        f"{photon_acceptance.fd_raw_max_deg:.4f}, N={photon_acceptance.fd_count:,})."
     )
 
     epg_overlap, epg_overlap_summary = event_overlap_masks(
@@ -11463,15 +11561,19 @@ def process_period(
         photon_acceptance = infer_photon_angular_acceptance(
             data_epg,
             source=f"{period.label} epgamma data",
+            containment=float(args_dict["photon_angular_containment"]),
         )
         log(
-            f"{period.label}: photon angular acceptance from data: "
+            f"{period.label}: photon angular acceptance from data "
+            f"({100.0*photon_acceptance.containment:.3f}% central containment): "
             f"FT {photon_acceptance.ft_theta_min_deg:.4f}-"
             f"{photon_acceptance.ft_theta_max_deg:.4f} deg "
-            f"(N={photon_acceptance.ft_count:,}); "
+            f"(raw {photon_acceptance.ft_raw_min_deg:.4f}-"
+            f"{photon_acceptance.ft_raw_max_deg:.4f}, N={photon_acceptance.ft_count:,}); "
             f"FD {photon_acceptance.fd_theta_min_deg:.4f}-"
             f"{photon_acceptance.fd_theta_max_deg:.4f} deg "
-            f"(N={photon_acceptance.fd_count:,})."
+            f"(raw {photon_acceptance.fd_raw_min_deg:.4f}-"
+            f"{photon_acceptance.fd_raw_max_deg:.4f}, N={photon_acceptance.fd_count:,})."
         )
 
         # Reuse aaogen epgamma already resident from Stage I.
@@ -12803,6 +12905,12 @@ def run_period_result_merge_self_test() -> None:
 
 def main() -> int:
     args = parse_args()
+
+    if not (0.90 <= args.photon_angular_containment < 1.0):
+        raise ValueError(
+            "--photon-angular-containment must satisfy 0.90 <= value < 1."
+        )
+    #endif
 
     if args.max_entries < 0:
         raise ValueError("--max-entries must be >= 0.")
