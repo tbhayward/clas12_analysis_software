@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v036.py
+derive_photon_efficiency_scale_factors_v037.py
 
 Stage-I + Stage-II + Stage-III development script for a relative data/MC photon-reconstruction
 efficiency measurement in CLAS12 RGA.
@@ -98,23 +98,23 @@ Typical usage
 -------------
 Quick orientation run over the first 500k entries of each relevant file:
 
-    python derive_photon_efficiency_scale_factors_v036.py
+    python derive_photon_efficiency_scale_factors_v037.py
 
 Run one period:
 
-    python derive_photon_efficiency_scale_factors_v036.py --period fa18_inb
+    python derive_photon_efficiency_scale_factors_v037.py --period fa18_inb
 
 Run all available entries:
 
-    python derive_photon_efficiency_scale_factors_v036.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v037.py --max-entries 0
 
 Use up to eight worker processes (default):
 
-    python derive_photon_efficiency_scale_factors_v036.py --max-entries 0 --workers 8
+    python derive_photon_efficiency_scale_factors_v037.py --max-entries 0 --workers 8
 
 If the ROOT angles are known explicitly:
 
-    python derive_photon_efficiency_scale_factors_v036.py --angles rad
+    python derive_photon_efficiency_scale_factors_v037.py --angles rad
 
 The Stage-I defaults intentionally require a reconstructed tag energy
 E_tag >= 2 GeV, while no efficiency denominator is formed yet.
@@ -4308,7 +4308,7 @@ def make_shared_fit_canvas(period: PeriodConfig, shared_rows: List[Dict[str,obje
         if np.any(np.isfinite(values)): ax[1,1].plot(x,values,marker=".",label=f"truth {truth/100:.1f}")
         #endif
     #endfor
-    ax[1,1].axhline(0,linewidth=.8); ax[1,1].set_ylabel(r"closure $f_{\mathrm{fit}}-f_{\mathrm{true}}$"); ax[1,1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"); ax[1,1].legend(fontsize=8); ax[1,1].grid(alpha=.18)
+    ax[1,1].axhline(0,linewidth=.8); ax[1,1].set_ylabel(r"closure $f_{\mathrm{fit}}-f_{\mathrm{true}}$"); ax[1,1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"); handles_11, labels_11 = ax[1,1].get_legend_handles_labels(); ax[1,1].legend(fontsize=8) if handles_11 else None; ax[1,1].grid(alpha=.18)
     core=pi0_control.get("robust_core_global",{}) if isinstance(pi0_control,dict) else {}
     sadd=core.get("sigma_add_core_GeV",float("nan")) if isinstance(core,dict) else float("nan")
     fig.suptitle(
@@ -5857,6 +5857,7 @@ def make_stage3_canvases(
     period: PeriodConfig,
     rows: List[Dict[str, object]],
     outdir: Path,
+    compact: bool = True,
 ) -> None:
     """
     Compact Stage-III production-development output.
@@ -5872,109 +5873,112 @@ def make_stage3_canvases(
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # ------------------------------------------------------------------
-    # 1. Efficiencies: FT and FD sectors.
-    # ------------------------------------------------------------------
-    fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
-    ft = _stage3_rows_for_region(rows, "FT")
-    if ft:
-        x = np.asarray([r["energy_center_GeV"] for r in ft], dtype=float)
-        axes[0].errorbar(
-            x,
-            [r["data_efficiency"] for r in ft],
-            yerr=[
-                r["data_efficiency_counting_error_provisional"]
-                for r in ft
-            ],
-            marker="o",
-            linestyle="-",
-            label="Data",
-        )
-        axes[0].errorbar(
-            x,
-            [r["mc_efficiency"] for r in ft],
-            yerr=[
-                r["mc_efficiency_binomial_error_provisional"]
-                for r in ft
-            ],
-            marker="o",
-            linestyle="--",
-            label="aaogen MC",
-        )
-        # Retain mass-shell-only as a small diagnostic overlay, not a separate
-        # canvas.
-        axes[0].plot(
-            x,
-            [r["data_efficiency_mass_shell_only"] for r in ft],
-            marker=".",
-            linestyle=":",
-            linewidth=0.9,
-            label="Data, mass-shell only",
-        )
-    #endif
-
-    finite_eff = [
-        float(r[key])
-        for r in rows
-        for key in (
-            "data_efficiency",
-            "data_efficiency_mass_shell_only",
-            "mc_efficiency",
-        )
-        if np.isfinite(r.get(key, np.nan))
-    ]
-    eff_ymax = (
-        max(1.15, min(2.0, 1.10 * max(finite_eff)))
-        if finite_eff else 1.15
-    )
-    axes[0].set_ylim(0.0, eff_ymax)
-    axes[0].axhline(1.0, linestyle="--", linewidth=0.8)
-    axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[0].set_ylabel("Photon reconstruction efficiency")
-    axes[0].set_title("FT")
-    axes[0].legend(fontsize=8)
-    axes[0].grid(alpha=0.18)
-
-    for s in range(1, 7):
-        rr = _stage3_rows_for_region(rows, f"FD_S{s}")
-        if not rr:
-            continue
+    if not compact:
+        # ------------------------------------------------------------------
+        # 1. Efficiencies: FT and FD sectors.
+        # ------------------------------------------------------------------
+        fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
+        ft = _stage3_rows_for_region(rows, "FT")
+        if ft:
+            x = np.asarray([r["energy_center_GeV"] for r in ft], dtype=float)
+            axes[0].errorbar(
+                x,
+                [r["data_efficiency"] for r in ft],
+                yerr=[
+                    r["data_efficiency_counting_error_provisional"]
+                    for r in ft
+                ],
+                marker="o",
+                linestyle="-",
+                label="Data",
+            )
+            axes[0].errorbar(
+                x,
+                [r["mc_efficiency"] for r in ft],
+                yerr=[
+                    r["mc_efficiency_binomial_error_provisional"]
+                    for r in ft
+                ],
+                marker="o",
+                linestyle="--",
+                label="aaogen MC",
+            )
+            # Retain mass-shell-only as a small diagnostic overlay, not a separate
+            # canvas.
+            axes[0].plot(
+                x,
+                [r["data_efficiency_mass_shell_only"] for r in ft],
+                marker=".",
+                linestyle=":",
+                linewidth=0.9,
+                label="Data, mass-shell only",
+            )
         #endif
-        x = [r["energy_center_GeV"] for r in rr]
-        axes[1].plot(
-            x,
-            [r["data_efficiency"] for r in rr],
-            marker="o",
-            linewidth=1.0,
-            label=f"Data S{s}",
-        )
-        axes[1].plot(
-            x,
-            [r["mc_efficiency"] for r in rr],
-            marker=".",
-            linestyle="--",
-            linewidth=0.8,
-            label=f"MC S{s}",
-        )
-    #endfor
-    axes[1].axhline(1.0, linestyle="--", linewidth=0.8)
-    axes[1].set_ylim(0.0, eff_ymax)
-    axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-    axes[1].set_ylabel("Photon reconstruction efficiency")
-    axes[1].set_title("FD sectors")
-    axes[1].legend(fontsize=7, ncol=3)
-    axes[1].grid(alpha=0.18)
 
-    fig.suptitle(
-        f"{period.label}: Stage-III reference photon efficiencies",
-        fontsize=13,
-    )
-    safe_finalize_figure(
-        fig,
-        outdir / "canvas_reference_efficiencies.png",
-        rect=(0, 0, 1, 0.93),
-    )
-    plt.close(fig)
+        finite_eff = [
+            float(r[key])
+            for r in rows
+            for key in (
+                "data_efficiency",
+                "data_efficiency_mass_shell_only",
+                "mc_efficiency",
+            )
+            if np.isfinite(r.get(key, np.nan))
+        ]
+        eff_ymax = (
+            max(1.15, min(2.0, 1.10 * max(finite_eff)))
+            if finite_eff else 1.15
+        )
+        axes[0].set_ylim(0.0, eff_ymax)
+        axes[0].axhline(1.0, linestyle="--", linewidth=0.8)
+        axes[0].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        axes[0].set_ylabel("Photon reconstruction efficiency")
+        axes[0].set_title("FT")
+        axes[0].legend(fontsize=8)
+        axes[0].grid(alpha=0.18)
+
+        for s in range(1, 7):
+            rr = _stage3_rows_for_region(rows, f"FD_S{s}")
+            if not rr:
+                continue
+            #endif
+            x = [r["energy_center_GeV"] for r in rr]
+            axes[1].plot(
+                x,
+                [r["data_efficiency"] for r in rr],
+                marker="o",
+                linewidth=1.0,
+                label=f"Data S{s}",
+            )
+            axes[1].plot(
+                x,
+                [r["mc_efficiency"] for r in rr],
+                marker=".",
+                linestyle="--",
+                linewidth=0.8,
+                label=f"MC S{s}",
+            )
+        #endfor
+        axes[1].axhline(1.0, linestyle="--", linewidth=0.8)
+        axes[1].set_ylim(0.0, eff_ymax)
+        axes[1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        axes[1].set_ylabel("Photon reconstruction efficiency")
+        axes[1].set_title("FD sectors")
+        axes[1].legend(fontsize=7, ncol=3)
+        axes[1].grid(alpha=0.18)
+
+        fig.suptitle(
+            f"{period.label}: Stage-III reference photon efficiencies",
+            fontsize=13,
+        )
+        safe_finalize_figure(
+            fig,
+            outdir / "canvas_reference_efficiencies.png",
+            rect=(0, 0, 1, 0.93),
+        )
+        plt.close(fig)
+
+    #endif
 
     # ------------------------------------------------------------------
     # 2. Data/MC scale factors.
@@ -6039,57 +6043,59 @@ def make_stage3_canvases(
     )
     plt.close(fig)
 
-    # ------------------------------------------------------------------
-    # 3. Minimal bookkeeping: fitted pi0 denominator and final numerator.
-    # ------------------------------------------------------------------
-    fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
-    for ax, region, title in (
-        (axes[0], "FT", "FT"),
-        (axes[1], "FD_all", "FD all"),
-    ):
-        rr = _stage3_rows_for_region(rows, region)
-        if rr:
-            x = [r["energy_center_GeV"] for r in rr]
-            ax.plot(
-                x,
-                [r["data_fitted_pi0_denominator"] for r in rr],
-                marker="o",
-                label=r"Fitted data $\pi^0$ denominator",
-            )
-            ax.plot(
-                x,
-                [r["data_clean_reconstructed_probe"] for r in rr],
-                marker="o",
-                label="Final reconstructed-probe numerator",
-            )
-            ax.plot(
-                x,
-                [r["mc_clean_reconstructed_probe"] for r in rr],
-                marker=".",
-                linestyle="--",
-                label="aaogen reconstructed probe",
-            )
-        #endif
-        ax.set_yscale("log")
-        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-        ax.set_ylabel("Directed tag-probe candidates")
-        ax.set_title(title)
-        ax.legend(fontsize=8)
-        ax.grid(alpha=0.18)
-    #endfor
+    if not compact:
+        # ------------------------------------------------------------------
+        # 3. Minimal bookkeeping: fitted pi0 denominator and final numerator.
+        # ------------------------------------------------------------------
+        fig, axes = plt.subplots(1, 2, figsize=(15.0, 5.8))
+        for ax, region, title in (
+            (axes[0], "FT", "FT"),
+            (axes[1], "FD_all", "FD all"),
+        ):
+            rr = _stage3_rows_for_region(rows, region)
+            if rr:
+                x = [r["energy_center_GeV"] for r in rr]
+                ax.plot(
+                    x,
+                    [r["data_fitted_pi0_denominator"] for r in rr],
+                    marker="o",
+                    label=r"Fitted data $\pi^0$ denominator",
+                )
+                ax.plot(
+                    x,
+                    [r["data_clean_reconstructed_probe"] for r in rr],
+                    marker="o",
+                    label="Final reconstructed-probe numerator",
+                )
+                ax.plot(
+                    x,
+                    [r["mc_clean_reconstructed_probe"] for r in rr],
+                    marker=".",
+                    linestyle="--",
+                    label="aaogen reconstructed probe",
+                )
+            #endif
+            ax.set_yscale("log")
+            ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+            ax.set_ylabel("Directed tag-probe candidates")
+            ax.set_title(title)
+            ax.legend(fontsize=8)
+            ax.grid(alpha=0.18)
+        #endfor
 
-    fig.suptitle(
-        f"{period.label}: Stage-III numerator/denominator bookkeeping",
-        fontsize=13,
-    )
-    safe_finalize_figure(
-        fig,
-        outdir / "canvas_reference_bookkeeping.png",
-        rect=(0, 0, 1, 0.93),
-    )
-    plt.close(fig)
+        fig.suptitle(
+            f"{period.label}: Stage-III numerator/denominator bookkeeping",
+            fontsize=13,
+        )
+        safe_finalize_figure(
+            fig,
+            outdir / "canvas_reference_bookkeeping.png",
+            rect=(0, 0, 1, 0.93),
+        )
+        plt.close(fig)
 
 
+    #endif
 def summarize_stage3(
     period: PeriodConfig,
     rows: List[Dict[str, object]],
@@ -7327,6 +7333,16 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--plot-mode",
+        choices=("compact", "full"),
+        default="compact",
+        help=(
+            "Plot-output mode. 'compact' writes the physics-summary canvases "
+            "and a reduced diagnostic set; 'full' additionally restores the "
+            "legacy development canvases. Default: compact."
+        ),
+    )
+    parser.add_argument(
         "--save-npz",
         action="store_true",
         help=(
@@ -7936,19 +7952,21 @@ def process_period(
         with (stage2_dir / "pi0_control_calibration.json").open("w") as f:
             json.dump(pi0_control, f, indent=2, allow_nan=True)
         #endwith
-        make_pi0_control_canvases(
-            period,
-            eppi0_data,
-            eppi0,
-            control_rows,
-            stage2_dir,
-            mgg_min=float(args_dict["control_mgg_min"]),
-            mgg_max=float(args_dict["control_mgg_max"]),
-            emiss_abs_max=float(args_dict["control_emiss_abs_max"]),
-            ft_theta_max=ft_theta_max,
-            pi0_energy_edges=control_energy_edges,
-            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
-        )
+        if not compact_plot_enabled(args_dict):
+            make_pi0_control_canvases(
+                period,
+                eppi0_data,
+                eppi0,
+                control_rows,
+                stage2_dir,
+                mgg_min=float(args_dict["control_mgg_min"]),
+                mgg_max=float(args_dict["control_mgg_max"]),
+                emiss_abs_max=float(args_dict["control_emiss_abs_max"]),
+                ft_theta_max=ft_theta_max,
+                pi0_energy_edges=control_energy_edges,
+                ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+            )
+        #endif
         log(
             f"{period.label}: reconstructed-eppi0 control validation written; "
             "control calibration is diagnostic-only and is not used as a morph prior."
@@ -8032,7 +8050,9 @@ def process_period(
             f"{period.label}: wrote per-period shared-morphed numerical results "
             f"({len(shared_rows)} rows) before canvas rendering."
         )
-        make_shared_fit_canvas(period, shared_rows, stage2_rows, pi0_control, stage2_dir)
+        if not compact_plot_enabled(args_dict):
+            make_shared_fit_canvas(period, shared_rows, stage2_rows, pi0_control, stage2_dir)
+        #endif
         make_ft_fd_composition_canvas(
             period,
             shared_rows,
@@ -8306,6 +8326,7 @@ def process_period(
                 period,
                 stage3_rows,
                 stage3_dir,
+                compact=compact_plot_enabled(args_dict),
             )
             stage3_summary = summarize_stage3(
                 period,
@@ -8615,6 +8636,149 @@ def make_cross_period_stage2_composition_canvas(
     plt.close(fig)
 
 
+
+def make_summary_dashboard(
+    stage2_shared_rows: List[Dict[str, object]],
+    stage2_discriminator_rows: List[Dict[str, object]],
+    stage3_rows: List[Dict[str, object]],
+    ft_three_component_summary_rows: List[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """
+    Create a deliberately small physics dashboard for routine inspection.
+
+    The summary directory contains only high-value cross-period plots:
+      1. Stage-III data/MC photon-efficiency scale factors;
+      2. Stage-II pi0 composition + driver disagreement;
+      3. coarse-FT three-component diagnostic across periods;
+      4. template-mixture closure summary.
+
+    No physics calculation is performed here; only already-computed rows are
+    visualized.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # Reuse the existing cross-period summary makers, but render into summary/.
+    if stage3_rows:
+        make_cross_period_stage3_scale_factor_canvas(stage3_rows, outdir)
+    #endif
+
+    if stage2_shared_rows and stage2_discriminator_rows:
+        make_cross_period_stage2_composition_canvas(
+            stage2_shared_rows,
+            stage2_discriminator_rows,
+            outdir,
+        )
+    #endif
+
+    if ft_three_component_summary_rows:
+        order = {p.key: i for i, p in enumerate(PERIODS)}
+        rr = sorted(
+            ft_three_component_summary_rows,
+            key=lambda r: (
+                float(r.get("energy_low_GeV", np.nan)),
+                order.get(str(r.get("period", "")), 999),
+            ),
+        )
+
+        fig, axes = plt.subplots(1, 3, figsize=(18.0, 5.7))
+
+        for period in PERIODS:
+            pr = sorted(
+                [
+                    r for r in rr
+                    if str(r.get("period", "")) == period.key
+                ],
+                key=lambda r: float(r["energy_center_GeV"]),
+            )
+            if not pr:
+                continue
+            #endif
+
+            x = np.asarray(
+                [float(r["energy_center_GeV"]) for r in pr],
+                dtype=float,
+            )
+
+            axes[0].plot(
+                x,
+                [float(r["two_component_pi0_fraction"]) for r in pr],
+                marker="o",
+                linestyle="--",
+                linewidth=1.0,
+                alpha=0.70,
+            )
+            axes[0].plot(
+                x,
+                [
+                    float(r["median_three_component_pi0_fraction"])
+                    for r in pr
+                ],
+                marker="s",
+                linewidth=1.2,
+                label=period.label,
+            )
+
+            axes[1].plot(
+                x,
+                [
+                    float(r["median_three_component_mixed_fraction"])
+                    for r in pr
+                ],
+                marker="o",
+                linewidth=1.2,
+                label=period.label,
+            )
+
+            axes[2].plot(
+                x,
+                [
+                    float(r["median_driver_abs_delta_pi0_fraction"])
+                    for r in pr
+                ],
+                marker="o",
+                linewidth=1.2,
+                label=period.label,
+            )
+        #endfor
+
+        axes[0].set_title(r"FT $f_{\pi^0}$: dashed 2-comp, solid 3-comp")
+        axes[0].set_ylabel(r"$f_{\pi^0}$")
+        axes[0].set_ylim(0.0, 1.0)
+
+        axes[1].set_title("FT mixed/wrong-photon fraction")
+        axes[1].set_ylabel(r"$f_{\mathrm{mixed}}$")
+        axes[1].set_ylim(0.0, 0.35)
+
+        axes[2].set_title(r"FT driver disagreement after 3-comp fit")
+        axes[2].set_ylabel(r"$|\Delta f_{\pi^0}|$")
+        axes[2].set_ylim(bottom=0.0)
+
+        for ax in axes:
+            ax.set_xlabel(
+                r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+            )
+            ax.grid(alpha=0.20)
+        #endfor
+        axes[1].legend(fontsize=8, frameon=False)
+
+        fig.suptitle(
+            "RGA coarse-FT three-component diagnostic",
+            fontsize=14,
+        )
+        safe_finalize_figure(
+            fig,
+            Path(outdir) / "canvas_summary_ft_three_component.png",
+            rect=(0, 0, 1, 0.93),
+        )
+        plt.close(fig)
+    #endif
+
+
+def compact_plot_enabled(args_dict: Dict[str, object]) -> bool:
+    return str(args_dict.get("plot_mode", "compact")) == "compact"
+
+
 def main() -> int:
     args = parse_args()
 
@@ -8824,6 +8988,7 @@ def main() -> int:
                 "2 period processes to reduce RAM/page-cache and filesystem thrashing"
             ),
             "kdtree_query_chunk": int(args.kdtree_query_chunk),
+            "plot_mode": str(args.plot_mode),
             "memory_model": (
                 "sample-specific ROOT branch reads; slim sample objects; float32 "
                 "persistent Stage-II histogram features; prompt release of large "
@@ -9186,7 +9351,16 @@ def main() -> int:
                 stage3_summaries,
                 stage3_outroot / "stage3_summary.csv",
             )
-            with (stage3_outroot / "stage3_summary.json").open("w") as f:
+            summary_outroot = outroot / "summary"
+        make_summary_dashboard(
+            all_shared_rows,
+            all_stage2_rows,
+            all_stage3_rows,
+            all_ft_coarse_three_component_summary_rows,
+            summary_outroot,
+        )
+
+        with (stage3_outroot / "stage3_summary.json").open("w") as f:
                 json.dump(
                     {
                         "status": "preliminary wagon-reference extraction",
