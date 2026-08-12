@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v056.py
+derive_photon_efficiency_scale_factors_v057.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v056.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v057.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v056.py \
+    python derive_photon_efficiency_scale_factors_v057.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v056.py \
+    python derive_photon_efficiency_scale_factors_v057.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -148,10 +148,12 @@ PHOTON_DETECTOR_FD = 1
 THETA_EP_MIN_DEG = 5.0
 
 PROBE_ENERGY_EDGES = np.asarray(
-    # The former 4.5-6 and 6-10 GeV bins were individually too sparse,
-    # especially in FT.  Use one terminal bin; stage2_energy_edges() truncates
-    # the upper edge to the requested data endpoint (9.5 GeV for nSidis).
-    [0.40, 0.50, 0.60, 0.80, 1.00, 1.25, 1.50, 2.00, 3.00, 4.50, 10.00],
+    # The original three sub-0.8 GeV bins produced a poorly constrained FT
+    # pi0 fraction and correspondingly enormous profile-likelihood tails.
+    # Use one 0.40-0.80 GeV bin.  The former 4.5-6 and 6-10 GeV bins are also
+    # kept merged because of sparse FT statistics. stage2_energy_edges()
+    # truncates the upper edge to the requested endpoint (9.5 GeV for nSidis).
+    [0.40, 0.80, 1.00, 1.25, 1.50, 2.00, 3.00, 4.50, 10.00],
     dtype=float,
 )
 
@@ -9679,7 +9681,7 @@ def make_nsidis_epgamma_overlap_canvas(
         (
             "pred_probe_energy",
             np.linspace(0.40, 2.00, 81),
-            r"$E_{\rm probe}^{pred}$ (GeV)",
+            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)",
         ),
     )
 
@@ -9784,7 +9786,7 @@ def make_nsidis_overlap_vs_energy_canvas(
     ax.plot(centers, frac, marker="o", linewidth=1.2)
     ax.axvline(2.0, linestyle="--", linewidth=1.0)
     ax.set_ylim(-0.03, 1.03)
-    ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+    ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     ax.set_ylabel("nSidis entries whose event occurs in old wagon")
     ax.set_title(
         f"{period.label}: old-wagon event overlap versus predicted probe energy"
@@ -10688,7 +10690,7 @@ def make_nsidis_pilot_summary_canvas(
         ax_frac.set_title(f"{region}: composition")
         ax_dev.set_title(f"{region}: visible pT-projection goodness")
         for ax in (ax_frac, ax_dev):
-            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
             ax.grid(alpha=0.18)
         #endfor
     #endfor
@@ -11491,7 +11493,7 @@ def make_nsidis_data_efficiency_canvas(
 
         for ax in (ax_eff, ax_flow):
             ax.axvline(2.0, linestyle=":", linewidth=1.0)
-            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
             ax.grid(alpha=0.18)
         #endfor
         ax_eff.axhline(1.0, linestyle=":", linewidth=0.9)
@@ -12082,14 +12084,14 @@ def make_nsidis_scale_factor_canvas(
 
         for ax in (ax_e, ax_s):
             ax.axvline(2.0, linestyle=":", linewidth=0.9)
-            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
             ax.grid(alpha=0.18)
         #endfor
         ax_e.set_ylabel("reconstructed-probe efficiency")
         ax_e.set_title("FT" if region == "FT" else "FD all")
         ax_s.axhline(1.0, linestyle="--", linewidth=1.0)
         ax_s.set_ylabel(
-            r"$SF_\gamma=\epsilon_{\rm data}/\epsilon_{\rm MC}$"
+            r"$SF_{\gamma}=\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$"
         )
         ax_s.set_title("preliminary data/MC scale factor")
     #endfor
@@ -12154,6 +12156,9 @@ def make_nsidis_period_comparison(
     for icol, region in enumerate(("FT", "FD_all")):
         for irow, high_only in enumerate((False, True)):
             ax = axes[irow, icol]
+            visible_central_values: List[float] = []
+            full_error_low: List[float] = []
+            full_error_high: List[float] = []
 
             for period_key, rows in period_rows.items():
                 rr = []
@@ -12202,6 +12207,23 @@ def make_nsidis_period_comparison(
                     capsize=2,
                     label=period_labels[period_key],
                 )
+                visible_central_values.extend(
+                    [float(v) for v in y if np.isfinite(v)]
+                )
+                full_error_low.extend(
+                    [
+                        float(v - e)
+                        for v, e in zip(y, el)
+                        if np.isfinite(v) and np.isfinite(e)
+                    ]
+                )
+                full_error_high.extend(
+                    [
+                        float(v + e)
+                        for v, e in zip(y, eh)
+                        if np.isfinite(v) and np.isfinite(e)
+                    ]
+                )
 
                 if not high_only:
                     for _, _, _, _, raw in rr:
@@ -12214,16 +12236,16 @@ def make_nsidis_period_comparison(
             #endfor
 
             ax.axhline(1.0, linestyle="--", linewidth=1.0)
-            ax.set_xlabel(r"$E_{\rm probe}^{pred}$ (GeV)")
+            ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
             ax.set_ylabel(
-                r"$SF_\gamma=\epsilon_{\rm data}/\epsilon_{\rm MC}$"
+                r"$SF_{\gamma}=\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$"
             )
             if high_only:
                 ax.set_ylim(0.7, 1.3)
                 ax.set_title(
-                    "FT — $E_{\rm probe}^{pred}>2$ GeV"
+                    r"FT — $E_{\mathrm{probe}}^{\mathrm{pred}}>2$ GeV"
                     if region == "FT"
-                    else "FD all — $E_{\rm probe}^{pred}>2$ GeV"
+                    else r"FD all — $E_{\mathrm{probe}}^{\mathrm{pred}}>2$ GeV"
                 )
             else:
                 ax.set_title(
@@ -12232,6 +12254,33 @@ def make_nsidis_period_comparison(
                     else "FD all — all energies"
                 )
             #endif
+
+            if (not high_only) and visible_central_values:
+                vals = np.asarray(visible_central_values, dtype=float)
+                central_low = min(1.0, float(np.min(vals)))
+                central_high = max(1.0, float(np.max(vals)))
+                span = max(0.20, central_high - central_low)
+                ylo = max(0.0, central_low - 0.12 * span)
+                yhi = central_high + 0.15 * span
+                ax.set_ylim(ylo, yhi)
+
+                clipped = (
+                    any(v < ylo for v in full_error_low)
+                    or any(v > yhi for v in full_error_high)
+                )
+                if clipped:
+                    ax.text(
+                        0.02,
+                        0.97,
+                        "some profile-error bars extend beyond frame",
+                        transform=ax.transAxes,
+                        ha="left",
+                        va="top",
+                        fontsize=7.5,
+                    )
+                #endif
+            #endif
+
             ax.grid(alpha=0.18)
             ax.legend(fontsize=8, frameon=False)
         #endfor
@@ -12473,33 +12522,6 @@ def process_nsidis_study_period(
         period, ns_epi
     )
 
-    make_nsidis_photon_acceptance_canvas(
-        period,
-        ns_epg,
-        ns_epg_f,
-        ns_epg_parent,
-        photon_acceptance,
-        outdir,
-    )
-
-    make_nsidis_epgamma_overlap_canvas(
-        period,
-        wagon_epg_f,
-        ns_epg_f,
-        epg_overlap,
-        wagon_epg_parent,
-        ns_epg_parent,
-        outdir,
-    )
-    make_nsidis_overlap_vs_energy_canvas(
-        period,
-        ns_epg_f,
-        epg_overlap,
-        ns_epg_parent,
-        outdir,
-        tag_max,
-    )
-
     # Retire the old global eppi0 "95% wagon-core" optimization.
     # The full old eppi0 wagon contains long exclusivity tails, so maximizing
     # retention of that entire tree is not the correct numerator-purity target.
@@ -12509,33 +12531,19 @@ def process_nsidis_study_period(
         "numerator purity will be evaluated after exact association."
     )
 
-    scan_values = parse_float_edges(
-        str(args_dict["nsidis_probe_m2_scan"]),
-        "--nsidis-probe-m2-scan",
-    )
-    scan_rows = build_nsidis_probe_mass2_scan(
-        period,
-        wagon_epg_f,
-        ns_epg_f,
-        epg_overlap,
-        wagon_epg_parent,
-        ns_epg_parent,
-        float(args_dict["den_fit_mm2_min"]),
-        float(args_dict["den_fit_mm2_max"]),
-        scan_values,
-    )
-    write_rows_csv(
-        scan_rows,
-        outdir / "nsidis_probe_mass2_scan.csv",
-    )
-    make_nsidis_probe_mass2_scan_canvas(
-        period,
-        scan_rows,
-        outdir,
+    log(
+        f"{period.label}: probe-mass2 development scan retired; "
+        "using fixed central support |M_probe^2| < "
+        f"{float(args_dict['nsidis_pilot_probe_m2_support']):.3g} GeV^2."
     )
 
     pilot_wagon_rows: List[Dict[str, object]] = []
     pilot_nsidis_rows: List[Dict[str, object]] = []
+    log(
+        f"{period.label}: compact production diagnostics enabled: "
+        "fit projections, data/MC scale factor, and post-association "
+        "eppi0 exclusivity only."
+    )
 
     if bool(args_dict.get("nsidis_pilot_fit", False)):
         log(
@@ -12657,13 +12665,6 @@ def process_nsidis_study_period(
         write_rows_csv(
             pilot_wagon_rows,
             outdir / "wagon_overlap_pilot_composition_fits.csv",
-        )
-        make_nsidis_pilot_summary_canvas(
-            period,
-            pilot_wagon_rows,
-            pilot_nsidis_rows,
-            central_support,
-            outdir,
         )
         make_nsidis_pilot_fit_projection_canvases(
             period,
@@ -12906,13 +12907,6 @@ def process_nsidis_study_period(
             wagon_eff_rows,
             outdir / "wagon_data_efficiency_reference.csv",
         )
-        make_nsidis_data_efficiency_canvas(
-            period,
-            wagon_eff_rows,
-            ns_eff_rows,
-            outdir,
-        )
-
         sf_rows = combine_data_mc_scale_factor_rows(
             ns_eff_rows,
             mc_eff_rows,
@@ -12968,8 +12962,8 @@ def process_nsidis_study_period(
                     },
                     "status": (
                         "preliminary association-first data/MC photon "
-                        "efficiency scale factor formed; fitted-pi0 "
-                        "denominator uncertainty not yet propagated"
+                        "efficiency scale factor formed; profiled fitted-pi0 "
+                        "statistical uncertainty propagated"
                     ),
                 },
                 f,
