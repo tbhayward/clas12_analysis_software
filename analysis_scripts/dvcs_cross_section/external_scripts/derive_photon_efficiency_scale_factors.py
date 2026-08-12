@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v039.py
+derive_photon_efficiency_scale_factors_v040.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -46,10 +46,10 @@ Default --plot-mode compact keeps only high-value plots. --plot-mode full
 restores development/debug canvases.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v039.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v040.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v039.py \
+    python derive_photon_efficiency_scale_factors_v040.py \
         --max-entries 0 --period fa18_out
 """
 
@@ -4540,17 +4540,18 @@ def make_ft_fd_fit_overlay_canvas(
     theta_bins: int,
 ) -> None:
     """
-    Explicitly show what is being fit in FT versus FD.
+    DIAGNOSTIC ONLY: representative 1D pTmiss projections of three ACTUAL
+    nominal shared Stage-II fit rows.
 
-    Rows:
-      top    = FT
-      bottom = all FD sectors combined
+    This function does NOT perform separate/example fits.  The nominal fit is
+    performed in every Stage-II energy bin with BOTH production 2D drivers:
 
-    Columns:
-      representative predicted-probe energy bins.
+        M_X^2(ep) x M_probe^2
+        M_X^2(ep) x pTmiss
 
-    The pTmiss projection is used because it currently provides the clearest
-    shape leverage and is where morphing is most strongly preferred.
+    The canvas merely projects the pTmiss driver for three representative
+    energy bins (0.40-0.50, 0.80-1.00, 1.50-2.00 GeV) so the component shapes
+    can be inspected visually.  It is available only in --plot-mode full.
     """
     targets = ((0.40, 0.50), (0.80, 1.00), (1.50, 2.00))
     fig, axes = plt.subplots(2, 3, figsize=(18.5, 10.2))
@@ -6983,6 +6984,10 @@ def aggregate_existing_outputs(
             stage3_rows,
             Path(stage3_outroot) / "reference_efficiency_scale_factors.csv",
         )
+        write_rows_csv(
+            final_reference_input_rows(stage3_rows),
+            Path(stage3_outroot) / "final_reference_inputs.csv",
+        )
         make_cross_period_stage3_scale_factor_canvas(
             stage3_rows, Path(stage3_outroot)
         )
@@ -6997,6 +7002,12 @@ def aggregate_existing_outputs(
         )
     #endif
 
+    write_analysis_flow_guide(
+        Path(summary_outroot).parent,
+        Path(stage2_outroot),
+        Path(stage3_outroot),
+    )
+
     make_summary_dashboard(
         shared_rows,
         disc_rows,
@@ -7005,6 +7016,92 @@ def aggregate_existing_outputs(
         ft3_summary_rows,
         Path(summary_outroot),
     )
+
+
+# -----------------------------------------------------------------------------
+# Preflight
+# -----------------------------------------------------------------------------
+
+def preflight(
+    periods: Sequence[PeriodConfig],
+    include_stage2: bool,
+    include_stage3: bool = False,
+) -> None:
+    """Validate required files and exact data-event identifiers before processing."""
+    log("Preflight: checking required photon-efficiency input files.")
+    missing: List[str] = []
+
+    for p in periods:
+        checks = [
+            ("epgamma pi0 MC", p.epgamma_pi0_mc),
+            ("eppi0 pi0 MC", p.eppi0_pi0_mc),
+            ("eppi0 data control", p.eppi0_data),
+        ]
+        if include_stage2:
+            checks.extend([
+                ("epgamma data", p.epgamma_data),
+                ("epgamma BH/DVCS MC", p.epgamma_dvcs_mc),
+            ])
+        #endif
+
+        for label, path in checks:
+            if not Path(path).exists():
+                missing.append(f"{p.label}: {label}: {path}")
+            else:
+                log(f"Preflight OK: {p.label}: {label}")
+            #endif
+        #endfor
+    #endfor
+
+    if missing:
+        raise FileNotFoundError(
+            "The following required input files do not exist:\n  "
+            + "\n  ".join(missing)
+        )
+    #endif
+
+    if include_stage3:
+        log(
+            "Preflight efficiency stage: verifying exact data-event identifiers "
+            "(runnum, evnum) before expensive processing."
+        )
+        branch_missing: List[str] = []
+
+        for p in periods:
+            for label, path in (
+                ("epgamma data", p.epgamma_data),
+                ("eppi0 data", p.eppi0_data),
+            ):
+                with uproot.open(path) as root_file:
+                    found_name, tree = find_tree(root_file, None)
+                    available = set(tree.keys())
+                    absent = [
+                        b for b in ("runnum", "evnum")
+                        if b not in available
+                    ]
+                    if absent:
+                        branch_missing.append(
+                            f"{p.label}: {label}: tree '{found_name}' missing "
+                            + ", ".join(absent)
+                        )
+                    else:
+                        log(
+                            f"Preflight efficiency OK: {p.label}: {label}: "
+                            "runnum+evnum available."
+                        )
+                    #endif
+                #endwith
+            #endfor
+        #endfor
+
+        if branch_missing:
+            raise KeyError(
+                "Exact data matching cannot run because:\n  "
+                + "\n  ".join(branch_missing)
+            )
+        #endif
+    #endif
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -7794,24 +7891,26 @@ def process_period(
             shared_rows,
             stage2_dir,
         )
-        make_ft_fd_fit_overlay_canvas(
-            period,
-            shared_rows,
-            data_f,
-            pi0_f,
-            dvcs_f,
-            stage2_dir,
-            ft_theta_max=ft_theta_max,
-            mm2_min=float(args_dict["den_fit_mm2_min"]),
-            mm2_max=float(args_dict["den_fit_mm2_max"]),
-            probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-            mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
-            probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
-            ptmiss_max=float(args_dict["disc_ptmiss_max"]),
-            ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
-            theta_max=float(args_dict["disc_theta_max"]),
-            theta_bins=int(args_dict["disc_theta_bins"]),
-        )
+        if not compact_plot_enabled(args_dict):
+            make_ft_fd_fit_overlay_canvas(
+                period,
+                shared_rows,
+                data_f,
+                pi0_f,
+                dvcs_f,
+                stage2_dir,
+                ft_theta_max=ft_theta_max,
+                mm2_min=float(args_dict["den_fit_mm2_min"]),
+                mm2_max=float(args_dict["den_fit_mm2_max"]),
+                probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
+                mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
+                probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
+                ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+                ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+                theta_max=float(args_dict["disc_theta_max"]),
+                theta_bins=int(args_dict["disc_theta_bins"]),
+            )
+        #endif
 
         shift_profile_grid = np.asarray(
             parse_float_edges(
@@ -8052,6 +8151,10 @@ def process_period(
                 stage3_rows,
                 stage3_dir / "reference_efficiency_scale_factors.csv",
             )
+            write_rows_csv(
+                final_reference_input_rows(stage3_rows),
+                stage3_dir / "final_reference_inputs.csv",
+            )
             make_stage3_canvases(
                 period,
                 stage3_rows,
@@ -8126,6 +8229,121 @@ def process_period(
         "stage3_summary": stage3_summary,
     }
 
+
+
+
+def final_reference_input_rows(
+    stage3_rows: Sequence[Dict[str, object]],
+) -> List[Dict[str, object]]:
+    """
+    Return a compact provenance table containing only quantities that directly
+    enter the preliminary reference scale factor.
+
+    For each period/region/energy bin:
+
+        data denominator = fitted_pi0_fraction * data_tag_candidates
+        epsilon_data     = data_clean_reconstructed_probe / data denominator
+        epsilon_MC       = mc_clean_reconstructed_probe / mc_tag_candidates
+        SF_gamma         = epsilon_data / epsilon_MC
+
+    This table is intended to answer "what actually fed the final point?"
+    without requiring inspection of the much larger development CSVs.
+    """
+    fields = (
+        "period",
+        "label",
+        "region",
+        "energy_low_GeV",
+        "energy_high_GeV",
+        "fitted_pi0_fraction",
+        "stage2_deviance_per_ndof",
+        "data_tag_candidates",
+        "data_fitted_pi0_denominator",
+        "data_clean_reconstructed_probe",
+        "data_efficiency",
+        "mc_tag_candidates",
+        "mc_clean_reconstructed_probe",
+        "mc_efficiency",
+        "data_over_mc_scale_factor",
+        "scale_factor_counting_error_provisional",
+        "status",
+    )
+
+    out: List[Dict[str, object]] = []
+    for row in stage3_rows:
+        out.append({field: row.get(field, "") for field in fields})
+    #endfor
+    return out
+
+
+def write_analysis_flow_guide(
+    output_root: Path,
+    stage2_outroot: Path,
+    stage3_outroot: Path,
+) -> None:
+    """Write a short guide separating nominal inputs from diagnostics."""
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    edges = [float(x) for x in stage2_energy_edges(2.0)]
+    edge_text = ", ".join(f"{x:g}" for x in edges)
+
+    guide = f"""PHOTON EFFICIENCY ANALYSIS FLOW
+================================
+
+NOMINAL quantities that feed the preliminary efficiency scale factor
+--------------------------------------------------------------------
+Energy-bin edges (GeV):
+  {edge_text}
+
+For EACH period, region, and energy bin:
+
+1. Nominal denominator-composition fit
+   File:
+     {stage2_outroot}/denominator_shared_morphed_fits.csv
+
+   The fit is a shared two-component aaogen-pi0 + dvcsgen-BH/DVCS fit using
+   BOTH production 2D discriminator spaces simultaneously:
+     - M_X^2(ep) x M_probe^2
+     - M_X^2(ep) x pTmiss
+
+   The fitted pi0 fraction f_pi0 from that exact energy/region row is used.
+
+2. Data efficiency
+     N_data_den = f_pi0 * N_data_tag_candidates
+     epsilon_data = N_data_clean_reconstructed_probe / N_data_den
+
+3. MC efficiency
+     epsilon_MC =
+       N_MC_clean_reconstructed_probe / N_MC_tag_candidates
+
+   The MC numerator uses the internal aaogen epgamma<->eppi0 parent association.
+   It is not a separate user-visible analysis stage.
+
+4. Relative correction
+     SF_gamma = epsilon_data / epsilon_MC
+
+Compact table of EXACT quantities entering every displayed reference point:
+  {stage3_outroot}/final_reference_inputs.csv
+
+Full Stage-III numerical table:
+  {stage3_outroot}/reference_efficiency_scale_factors.csv
+
+
+DIAGNOSTIC ONLY -- these do NOT feed the nominal reference SF
+--------------------------------------------------------------
+- individual discriminator fits / discriminator spread;
+- mixed-event stress tests;
+- template-mixture closure studies;
+- coarse FT 0.40-1.20 / 1.20-2.00 GeV studies;
+- FT three-component wrong-photon diagnostic;
+- morph nuisance scans;
+- representative FT/FD pTmiss fit-overlay canvases;
+- all --plot-mode full development canvases.
+
+The coarse FT bins are diagnostics only.  The preliminary reference efficiency
+continues to use the fine Stage-II energy bins listed above.
+"""
+    (output_root / "README_analysis_flow.txt").write_text(guide)
 
 
 def make_cross_period_stage3_scale_factor_canvas(
@@ -8704,6 +8922,11 @@ def main() -> int:
     if not args.skip_stage3:
         stage3_outroot.mkdir(parents=True, exist_ok=True)
     #endif
+    write_analysis_flow_guide(
+        outroot,
+        stage2_outroot,
+        stage3_outroot,
+    )
 
     run_internal_self_tests(outroot)
 
@@ -8721,6 +8944,14 @@ def main() -> int:
     log(
         "Internal MC tag definition: "
         f"{args.tag_min:g} <= E_tag < {args.tag_max:g} GeV."
+    )
+    nominal_edges = stage2_energy_edges(
+        min(2.0, float(args.den_max_probe_energy))
+    )
+    log(
+        "Nominal reference probe-energy bin edges (GeV): "
+        + ", ".join(f"{x:g}" for x in nominal_edges)
+        + ". Coarse FT bins are diagnostic-only."
     )
     if args.skip_stage3:
         log(
