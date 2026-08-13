@@ -150,6 +150,8 @@ STAGE2_VARIABLE_KEYS: Tuple[str, ...] = (
 
 STAGE2_OUTPUT_DIRNAME = "stage2_integrated_fits"
 
+CURRENT_MAX_STAGE = 2
+
 # Morph priors and hard bounds are intentionally modest.  Their role is to
 # absorb small data/MC resolution and centering differences without allowing
 # either template to morph into the other physics component.
@@ -2012,6 +2014,41 @@ def draw_period_canvas(
             dvcs_y, _ = normalized_histogram(dvcs_counts)
             aaogen_y, _ = normalized_histogram(aaogen_counts)
 
+            # In the post-exclusivity row, also show the MC events rejected
+            # by the M_X^2(epgamma) requirement.  Each rejected distribution
+            # is independently unit normalized so its shape can be compared
+            # directly with the retained populations.
+            dvcs_rejected_y = None
+            aaogen_rejected_y = None
+            if row == 1:
+                dvcs_before_counts = dvcs.counts_before[
+                    region_key
+                ][variable.branch]
+                aaogen_before_counts = aaogen.counts_before[
+                    region_key
+                ][variable.branch]
+
+                dvcs_rejected_counts = np.clip(
+                    np.asarray(dvcs_before_counts, dtype=np.int64)
+                    - np.asarray(dvcs_counts, dtype=np.int64),
+                    0,
+                    None,
+                )
+                aaogen_rejected_counts = np.clip(
+                    np.asarray(aaogen_before_counts, dtype=np.int64)
+                    - np.asarray(aaogen_counts, dtype=np.int64),
+                    0,
+                    None,
+                )
+
+                dvcs_rejected_y, _ = normalized_histogram(
+                    dvcs_rejected_counts
+                )
+                aaogen_rejected_y, _ = normalized_histogram(
+                    aaogen_rejected_counts
+                )
+            #endif
+
             ax.step(
                 edges[:-1],
                 dvcs_y,
@@ -2028,6 +2065,29 @@ def draw_period_canvas(
                 color="red",
                 label=r"$e\pi^0$ MC as $ep\gamma$",
             )
+
+            if row == 1:
+                ax.step(
+                    edges[:-1],
+                    dvcs_rejected_y,
+                    where="post",
+                    linewidth=1.15,
+                    linestyle="--",
+                    color="tab:blue",
+                    label=r"DVCS MC rejected by $M_X^2$ cut",
+                )
+                ax.step(
+                    edges[:-1],
+                    aaogen_rejected_y,
+                    where="post",
+                    linewidth=1.15,
+                    linestyle="--",
+                    color="red",
+                    label=(
+                        r"$e\pi^0$ MC rejected by $M_X^2$ cut"
+                    ),
+                )
+            #endif
 
             positive_data = data_y > 0.0
             ax.errorbar(
@@ -2054,13 +2114,20 @@ def draw_period_canvas(
             # bins are naturally ignored by the log transform.
             ax.set_yscale("log")
 
-            positive = np.concatenate(
-                (
-                    data_y[data_y > 0.0],
-                    dvcs_y[dvcs_y > 0.0],
-                    aaogen_y[aaogen_y > 0.0],
+            positive_arrays = [
+                data_y[data_y > 0.0],
+                dvcs_y[dvcs_y > 0.0],
+                aaogen_y[aaogen_y > 0.0],
+            ]
+            if row == 1:
+                positive_arrays.extend(
+                    [
+                        dvcs_rejected_y[dvcs_rejected_y > 0.0],
+                        aaogen_rejected_y[aaogen_rejected_y > 0.0],
+                    ]
                 )
-            )
+            #endif
+            positive = np.concatenate(positive_arrays)
             if len(positive) > 0:
                 ymin = max(
                     float(np.min(positive)) * 0.5,
@@ -2099,7 +2166,21 @@ def draw_period_canvas(
         #endfor
     #endfor
 
-    handles, labels = axes[0, 0].get_legend_handles_labels()
+    # Merge the top-row cut marker with the bottom-row rejected-template
+    # legend entries, preserving first occurrence of each label.
+    legend_items = []
+    seen_labels = set()
+    for legend_ax in (axes[0, 0], axes[1, 0]):
+        row_handles, row_labels = legend_ax.get_legend_handles_labels()
+        for handle, label in zip(row_handles, row_labels):
+            if label not in seen_labels:
+                legend_items.append((handle, label))
+                seen_labels.add(label)
+            #endif
+        #endfor
+    #endfor
+    handles = [item[0] for item in legend_items]
+    labels = [item[1] for item in legend_items]
 
     n_data_before = data.selection_counts[
         f"{region_key}_minimal"
@@ -2142,9 +2223,9 @@ def draw_period_canvas(
         labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.885),
-        ncol=4,
+        ncol=6,
         frameon=False,
-        fontsize=9.5,
+        fontsize=8.8,
     )
 
     fig.subplots_adjust(
@@ -2177,6 +2258,7 @@ def process_period(
 
     outdir = Path(str(args_dict["output_dir"]))
     outdir.mkdir(parents=True, exist_ok=True)
+    requested_stage = int(args_dict.get("stage", CURRENT_MAX_STAGE))
 
     sample_specs = (
         ("data", r"$e'p'\gamma$ data", period.nsidis_epgamma_data),
@@ -2222,102 +2304,106 @@ def process_period(
         )
     #endfor
 
-    # Stage 2: integrated composition fit.  Reuse the Stage-2 histograms
-    # accumulated in the same ROOT streaming pass above.
-    stage2_outdir = outdir.parent / STAGE2_OUTPUT_DIRNAME
-    stage2_outdir.mkdir(parents=True, exist_ok=True)
     stage2_results = {}
+    if requested_stage >= 2:
+        # Stage 2: integrated composition fit.  Reuse the Stage-2 histograms
+        # accumulated in the same ROOT streaming pass above.
+        stage2_outdir = outdir.parent / STAGE2_OUTPUT_DIRNAME
+        stage2_outdir.mkdir(parents=True, exist_ok=True)
+        stage2_results = {}
 
-    for region_key, region_label, _ in TAG_REGIONS:
-        data_hists = {
-            branch: results["data"].stage2_counts[region_key][branch]
-            for branch in STAGE2_VARIABLE_KEYS
-        }
-        dvcs_hists = {
-            branch: results["dvcsgen"].stage2_counts[region_key][branch]
-            for branch in STAGE2_VARIABLE_KEYS
-        }
-        pi0_hists = {
-            branch: results["aaogen"].stage2_counts[region_key][branch]
-            for branch in STAGE2_VARIABLE_KEYS
-        }
+        for region_key, region_label, _ in TAG_REGIONS:
+            data_hists = {
+                branch: results["data"].stage2_counts[region_key][branch]
+                for branch in STAGE2_VARIABLE_KEYS
+            }
+            dvcs_hists = {
+                branch: results["dvcsgen"].stage2_counts[region_key][branch]
+                for branch in STAGE2_VARIABLE_KEYS
+            }
+            pi0_hists = {
+                branch: results["aaogen"].stage2_counts[region_key][branch]
+                for branch in STAGE2_VARIABLE_KEYS
+            }
 
-        fit = stage2_fit_shared(
-            data_hists,
-            dvcs_hists,
-            pi0_hists,
-        )
-
-        common = {
-            "data_n": results["data"].selection_counts[
-                f"{region_key}_stage2_common"
-            ],
-            "dvcs_n": results["dvcsgen"].selection_counts[
-                f"{region_key}_stage2_common"
-            ],
-            "pi0_n": results["aaogen"].selection_counts[
-                f"{region_key}_stage2_common"
-            ],
-            "dvcs_hists": dvcs_hists,
-            "pi0_hists": pi0_hists,
-        }
-
-        canvas = draw_stage2_integrated_canvas(
-            period,
-            region_key,
-            region_label,
-            fit,
-            stage2_outdir,
-            common,
-        )
-
-        stage2_results[region_key] = {
-            "success": bool(fit.success),
-            "f_pi0": float(fit.f_pi0),
-            "f_pi0_err_curvature": float(fit.f_pi0_err),
-            "deviance": float(fit.deviance),
-            "ndf": int(fit.ndf),
-            "individual_fractions": (
-                {
-                    key: float(value)
-                    for key, value in fit.individual_fractions.items()
-                }
-                if fit.individual_fractions
-                else {}
-            ),
-            "shared_morph_nuisance": (
-                {
-                    branch: [
-                        float(value)
-                        for value in variable_result.shared_nuisance
-                    ]
-                    for branch, variable_result
-                    in fit.variable_results.items()
-                    if variable_result.shared_nuisance is not None
-                }
-                if fit.variable_results
-                else {}
-            ),
-            "common_population": {
-                "data": int(common["data_n"]),
-                "dvcs_mc": int(common["dvcs_n"]),
-                "pi0_mc": int(common["pi0_n"]),
-            },
-            "canvas": str(canvas) if canvas is not None else None,
-            "message": fit.message,
-        }
-
-        log(
-            f"{period.label} {region_label}: Stage 2 "
-            f"{'OK' if fit.success else 'FAILED'}; "
-            f"f_pi0={fit.f_pi0:.4f}"
-            + (
-                f" +/- {fit.f_pi0_err:.4f}"
-                if math.isfinite(fit.f_pi0_err)
-                else ""
+            fit = stage2_fit_shared(
+                data_hists,
+                dvcs_hists,
+                pi0_hists,
             )
-        )
-    #endfor
+
+            common = {
+                "data_n": results["data"].selection_counts[
+                    f"{region_key}_stage2_common"
+                ],
+                "dvcs_n": results["dvcsgen"].selection_counts[
+                    f"{region_key}_stage2_common"
+                ],
+                "pi0_n": results["aaogen"].selection_counts[
+                    f"{region_key}_stage2_common"
+                ],
+                "dvcs_hists": dvcs_hists,
+                "pi0_hists": pi0_hists,
+            }
+
+            canvas = draw_stage2_integrated_canvas(
+                period,
+                region_key,
+                region_label,
+                fit,
+                stage2_outdir,
+                common,
+            )
+
+            stage2_results[region_key] = {
+                "success": bool(fit.success),
+                "f_pi0": float(fit.f_pi0),
+                "f_pi0_err_curvature": float(fit.f_pi0_err),
+                "deviance": float(fit.deviance),
+                "ndf": int(fit.ndf),
+                "individual_fractions": (
+                    {
+                        key: float(value)
+                        for key, value in fit.individual_fractions.items()
+                    }
+                    if fit.individual_fractions
+                    else {}
+                ),
+                "shared_morph_nuisance": (
+                    {
+                        branch: [
+                            float(value)
+                            for value in variable_result.shared_nuisance
+                        ]
+                        for branch, variable_result
+                        in fit.variable_results.items()
+                        if variable_result.shared_nuisance is not None
+                    }
+                    if fit.variable_results
+                    else {}
+                ),
+                "common_population": {
+                    "data": int(common["data_n"]),
+                    "dvcs_mc": int(common["dvcs_n"]),
+                    "pi0_mc": int(common["pi0_n"]),
+                },
+                "canvas": str(canvas) if canvas is not None else None,
+                "message": fit.message,
+            }
+
+            log(
+                f"{period.label} {region_label}: Stage 2 "
+                f"{'OK' if fit.success else 'FAILED'}; "
+                f"f_pi0={fit.f_pi0:.4f}"
+                + (
+                    f" +/- {fit.f_pi0_err:.4f}"
+                    if math.isfinite(fit.f_pi0_err)
+                    else ""
+                )
+            )
+        #endfor
+
+    #endif
 
     summary = {
         "period": period.key,
@@ -2342,7 +2428,7 @@ def process_period(
     }
 
     log(
-        f"{period.label}: Stage 1 complete in "
+        f"{period.label}: completed through Stage {requested_stage} in "
         f"{summary['wall_time_s']:.1f} s."
     )
     return summary
@@ -2358,6 +2444,19 @@ def build_parser() -> argparse.ArgumentParser:
             "CLAS12 RGA photon-efficiency clean refactor: "
             "Stage 1 shape comparison + Stage 2 integrated composition fit."
         )
+    )
+
+    parser.add_argument(
+        "--stage",
+        type=int,
+        default=CURRENT_MAX_STAGE,
+        help=(
+            "Highest analysis stage to execute. "
+            "For example, --stage 1 runs Stage 1 only; "
+            "--stage 2 runs Stages 1 and 2. "
+            f"Currently implemented through Stage {CURRENT_MAX_STAGE}. "
+            f"Default: {CURRENT_MAX_STAGE}."
+        ),
     )
 
     parser.add_argument(
@@ -2445,6 +2544,17 @@ def main() -> int:
 
     periods = selected_periods(args.period)
 
+    if args.stage < 1:
+        parser.error("--stage must be >= 1.")
+    #endif
+
+    if args.stage > CURRENT_MAX_STAGE:
+        parser.error(
+            f"--stage {args.stage} requested, but this script currently "
+            f"implements only Stages 1-{CURRENT_MAX_STAGE}."
+        )
+    #endif
+
     if args.max_entries < 0:
         parser.error("--max-entries must be >= 0.")
     #endif
@@ -2462,13 +2572,25 @@ def main() -> int:
         exist_ok=True,
     )
 
-    log("Stages 1+2: shape comparison followed by integrated DVCS/pi0 composition fits.")
-    log("Minimal selection: e_p>2 GeV, theta_egamma>5 deg, 0.4<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
+    if args.stage == 1:
+        log("Stage 1 only: shape comparison; stopping before Stage 2.")
+    else:
+        log(
+            "Stages 1+2: shape comparison followed by integrated "
+            "DVCS/pi0 composition fits."
+        )
+    #endif
+    log(
+        "Minimal selection: e_p>2 GeV, theta_egamma>5 deg, "
+        "0.4<=E_tag<9.5 GeV; no probe-energy or probe-angle cut."
+    )
 
-    # Exercise the full Stage-2 optimizer before any large ROOT read. This is
-    # specifically intended to catch refactor/runtime errors early.
-    run_stage2_internal_self_test()
-    log("Internal Stage-2 fit self-test passed.")
+    if args.stage >= 2:
+        # Exercise the full Stage-2 optimizer before any large ROOT read.
+        # This catches fit/refactor failures before expensive ROOT I/O.
+        run_stage2_internal_self_test()
+        log("Internal Stage-2 fit self-test passed.")
+    #endif
 
     # Complete ROOT schema preflight BEFORE any large read.
     preflight_periods(periods, args.tree_name)
@@ -2479,6 +2601,7 @@ def main() -> int:
         "chunk_size": args.chunk_size,
         "tree_name": args.tree_name,
         "output_dir": args.output_dir,
+        "stage": args.stage,
     }
 
     workers = min(
@@ -2520,7 +2643,7 @@ def main() -> int:
                     # This should now be rare because the complete ROOT
                     # schema preflight happens before workers launch.
                     raise RuntimeError(
-                        f"Stage 1 failed for {period.label}: {exc}"
+                        f"Processing through Stage {args.stage} failed for {period.label}: {exc}"
                     ) from exc
                 #endtry
             #endfor
@@ -2548,46 +2671,56 @@ def main() -> int:
         json.dump(compact_summary, stream, indent=2)
     #endwith
 
-    stage2_summary = {
-        "stage": "stage2_integrated_fits",
-        "selection": {
-            "stage1_minimal": {
-                "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
-                "theta_egamma_min_deg": THETA_EGAMMA_MIN_DEG,
-                "tag_energy_GeV": [TAG_E_MIN_GEV, TAG_E_MAX_GEV],
+    if args.stage >= 2:
+        stage2_summary = {
+            "stage": "stage2_integrated_fits",
+            "selection": {
+                "stage1_minimal": {
+                    "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
+                    "theta_egamma_min_deg": THETA_EGAMMA_MIN_DEG,
+                    "tag_energy_GeV": [TAG_E_MIN_GEV, TAG_E_MAX_GEV],
+                },
+                "exclusivity": {
+                    "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
+                },
+                "fraction_variables": list(STAGE2_VARIABLE_KEYS),
+                "common_population_across_fraction_variables": True,
             },
-            "exclusivity": {
-                "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
-            },
-            "fraction_variables": list(STAGE2_VARIABLE_KEYS),
-            "common_population_across_fraction_variables": True,
-        },
-        "periods": [
-            {
-                "period": period.key,
-                "results": summaries[period.key].get(
-                    "stage2_integrated_fits",
-                    {},
-                ),
-            }
-            for period in periods
-            if period.key in summaries
-        ],
-    }
+            "periods": [
+                {
+                    "period": period.key,
+                    "results": summaries[period.key].get(
+                        "stage2_integrated_fits",
+                        {},
+                    ),
+                }
+                for period in periods
+                if period.key in summaries
+            ],
+        }
 
-    stage2_outdir = Path(args.output_dir).parent / STAGE2_OUTPUT_DIRNAME
-    stage2_outdir.mkdir(parents=True, exist_ok=True)
-    with (
-        stage2_outdir / "stage2_summary.json"
-    ).open("w", encoding="utf-8") as stream:
-        json.dump(stage2_summary, stream, indent=2)
-    #endwith
+        stage2_outdir = Path(args.output_dir).parent / STAGE2_OUTPUT_DIRNAME
+        stage2_outdir.mkdir(parents=True, exist_ok=True)
+        with (
+            stage2_outdir / "stage2_summary.json"
+        ).open("w", encoding="utf-8") as stream:
+            json.dump(stage2_summary, stream, indent=2)
+        #endwith
 
-    log(
-        "Done. Stage-1 outputs are in "
-        f"{Path(args.output_dir)}; Stage-2 outputs are in "
-        f"{stage2_outdir}."
-    )
+    #endif
+
+    if args.stage >= 2:
+        log(
+            "Done. Stage-1 outputs are in "
+            f"{Path(args.output_dir)}; Stage-2 outputs are in "
+            f"{stage2_outdir}."
+        )
+    else:
+        log(
+            "Done. Stage-1 outputs are in "
+            f"{Path(args.output_dir)}."
+        )
+    #endif
     return 0
 
 
