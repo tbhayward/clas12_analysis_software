@@ -7,7 +7,7 @@ CLAS12 RGA photon-efficiency study -- clean refactor.
 CURRENT IMPLEMENTED SCOPE
 =========================
 Stage 1: Shape Comparison
-Stage 2: Integrated DVCS/pi0 Composition Fit
+Stage 2: Integrated DVCS/pi0 Template Fits
 
 This script intentionally does ONE thing only:
 
@@ -22,7 +22,7 @@ again after one explicit exclusivity requirement:
     |M_X^2(epgamma)| < 0.075 GeV^2.
 
 Stage 2 fits the post-exclusivity Delta_phi, pTmiss, and Emiss shapes as
-DVCS+pi0 template mixtures. There is still NO eppi0 numerator efficiency,
+DVCS+pi0 template mixtures with one shared response morph per variable. There is still NO eppi0 numerator efficiency,
 NO bootstrap, and NO final systematic extraction.
 
 Stage-1 interpretation note
@@ -147,7 +147,7 @@ STAGE2_VARIABLE_KEYS: Tuple[str, ...] = (
     "Emiss2",
 )
 
-STAGE2_OUTPUT_DIRNAME = "stage2_integrated_composition"
+STAGE2_OUTPUT_DIRNAME = "stage2_integrated_fits"
 
 # Morph priors and hard bounds are intentionally modest.  Their role is to
 # absorb small data/MC resolution and centering differences without allowing
@@ -204,8 +204,8 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         "Delta_phi",
         r"$\Delta\phi$",
         r"$\Delta\phi$ (rad)",
-        math.pi - 0.50,
-        math.pi + 0.50,
+        math.pi - 0.40,
+        math.pi + 0.40,
         100,
     ),
     PlotVariable(
@@ -220,7 +220,7 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         "Emiss2",
         r"$E_{\mathrm{miss}}$",
         r"$E_{\mathrm{miss}}$ (GeV)",
-        -2.0,
+        -0.10,
         4.0,
         100,
     ),
@@ -1039,8 +1039,7 @@ class Stage2VariableFit:
     pi0_component_counts: Optional[np.ndarray] = None
     morphed_dvcs_shape: Optional[np.ndarray] = None
     morphed_pi0_shape: Optional[np.ndarray] = None
-    dvcs_nuisance: Optional[np.ndarray] = None
-    pi0_nuisance: Optional[np.ndarray] = None
+    shared_nuisance: Optional[np.ndarray] = None
     message: str = ""
 
 
@@ -1282,19 +1281,24 @@ def stage2_build_model(
 ) -> Optional[
     Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
 ]:
-    size = stage2_nuisance_size(branch)
-    dvcs_nuisance = np.asarray(nuisance[:size], dtype=float)
-    pi0_nuisance = np.asarray(nuisance[size:], dtype=float)
+    nuisance = np.asarray(nuisance, dtype=float)
+    if nuisance.size != stage2_nuisance_size(branch):
+        return None
+    #endif
 
+    # The same detector-response morph is applied to both templates because
+    # both are reconstructed e'p'gamma final states.  This removes a large
+    # composition/morph degeneracy while preserving the distinct raw physics
+    # shapes of dvcsgen and aaogen.
     dvcs_morphed = stage2_transform(
         dvcs_shape,
         branch,
-        dvcs_nuisance,
+        nuisance,
     )
     pi0_morphed = stage2_transform(
         pi0_shape,
         branch,
-        pi0_nuisance,
+        nuisance,
     )
     if dvcs_morphed is None or pi0_morphed is None:
         return None
@@ -1335,10 +1339,11 @@ def stage2_fit_shared(
     """
     Fit one common pi0 fraction to several projections of the SAME events.
 
-    The fraction is shared, while each variable and each physics template has
-    its own small morph nuisance.  The alternating profile procedure mirrors
-    the robust strategy used in the exclusivity-selection code, but is kept
-    intentionally compact and explicit here.
+    The fraction is shared across all variables.  Each variable has one
+    common data-vs-MC response morph that is applied identically to the DVCS
+    and pi0 templates because both are reconstructed e'p'gamma final states.
+    The alternating profile procedure mirrors the robust strategy used in the
+    exclusivity-selection code, but with this stronger physical constraint.
     """
     if minimize is None or minimize_scalar is None or gaussian_filter1d is None:
         return Stage2SharedFit(
@@ -1366,12 +1371,10 @@ def stage2_fit_shared(
     #endfor
 
     def nuisance_bounds(branch: str):
-        one = stage2_single_bounds(branch)
-        return one + one
+        return stage2_single_bounds(branch)
 
     def nuisance_start(branch: str):
-        one = stage2_single_start(branch)
-        return np.concatenate((one, one))
+        return stage2_single_start(branch).copy()
 
     def variable_objective(
         branch: str,
@@ -1393,14 +1396,9 @@ def stage2_fit_shared(
         #endif
         value = 0.5 * poisson_deviance(data, built[0])
         if include_penalty:
-            size = stage2_nuisance_size(branch)
             value += stage2_single_penalty(
                 branch,
-                nuisance[:size],
-            )
-            value += stage2_single_penalty(
-                branch,
-                nuisance[size:],
+                nuisance,
             )
         #endif
         return float(value)
@@ -1519,7 +1517,6 @@ def stage2_fit_shared(
         total_bins += len(data)
         nuisance_parameters += len(nuisance)
 
-        size = stage2_nuisance_size(branch)
         variable_results[branch] = Stage2VariableFit(
             success=True,
             branch=branch,
@@ -1538,9 +1535,8 @@ def stage2_fit_shared(
             pi0_component_counts=built[2].copy(),
             morphed_dvcs_shape=built[3].copy(),
             morphed_pi0_shape=built[4].copy(),
-            dvcs_nuisance=nuisance[:size].copy(),
-            pi0_nuisance=nuisance[size:].copy(),
-            message="shared-fraction integrated fit",
+            shared_nuisance=nuisance.copy(),
+            message="shared-fraction, shared-response integrated fit",
         )
     #endfor
 
@@ -1599,7 +1595,7 @@ def stage2_fit_shared(
         ),
         variable_results=variable_results,
         individual_fractions=individual_fractions,
-        message="integrated common-population shared-fraction fit",
+        message="integrated common-population shared-fraction/shared-response fit",
     )
 
 
@@ -1664,6 +1660,38 @@ def run_stage2_internal_self_test() -> None:
     #endif
 
 
+def format_stage2_nuisance(
+    branch: str,
+    nuisance: Optional[np.ndarray],
+) -> str:
+    if nuisance is None:
+        return "shared morph unavailable"
+    #endif
+
+    values = np.asarray(nuisance, dtype=float)
+    if branch == "Delta_phi":
+        return (
+            rf"shared morph: $\Delta={values[0]:+.4f}$ rad, "
+            rf"$\sigma={values[1]:.4f}$ rad"
+        )
+    #endif
+    if branch == "pTmiss":
+        return (
+            rf"shared log-morph: $\Delta_{{\log}}={values[0]:+.4f}$, "
+            rf"$\sigma_{{\log}}={values[1]:.4f}$"
+        )
+    #endif
+    if branch == "Emiss2":
+        return (
+            rf"shared morph: $\Delta={values[0]:+.4f}$ GeV, "
+            rf"$\sigma_L={values[1]:.4f}$ GeV, "
+            rf"$\sigma_R={values[2]:.4f}$ GeV"
+        )
+    #endif
+    return "shared morph"
+#enddef
+
+
 def draw_stage2_integrated_canvas(
     period: PeriodConfig,
     region_key: str,
@@ -1679,7 +1707,7 @@ def draw_stage2_integrated_canvas(
     fig, axes = plt.subplots(
         2,
         len(STAGE2_VARIABLE_KEYS),
-        figsize=(15.5, 7.4),
+        figsize=(15.5, 8.1),
         squeeze=False,
         gridspec_kw={"height_ratios": [3.0, 1.0]},
     )
@@ -1768,12 +1796,18 @@ def draw_stage2_integrated_canvas(
             if fit.individual_fractions
             else math.nan
         )
+        nuisance_text = format_stage2_nuisance(
+            branch,
+            result.shared_nuisance,
+        )
         ax.set_title(
             f"{variable.title}\n"
             rf"shared $f_{{\pi^0}}={fit.f_pi0:.3f}$; "
             rf"single-var $f_{{\pi^0}}={independent:.3f}$; "
-            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$",
-            fontsize=10,
+            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$"
+            "\n"
+            f"{nuisance_text}",
+            fontsize=9.4,
         )
         ax.set_ylabel("entries / bin")
         ax.set_xlim(variable.low, variable.high)
@@ -1799,46 +1833,46 @@ def draw_stage2_integrated_canvas(
     #endfor
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
+
+    fpi0_text = rf"$f_{{\pi^0}}={fit.f_pi0:.4f}"
+    if math.isfinite(fit.f_pi0_err):
+        fpi0_text += rf"\pm{fit.f_pi0_err:.4f}"
+    #endif
+    fpi0_text += "$"
+
+    fig.suptitle(
+        f"Stage 2 integrated fit: {period.label} — {region_label}\n"
+        rf"$|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$; "
+        f"common entries: data={common_counts['data_n']:,}, "
+        f"DVCS MC={common_counts['dvcs_n']:,}, "
+        rf"$e\pi^0$ MC={common_counts['pi0_n']:,}; "
+        f"shared {fpi0_text}",
+        fontsize=12.5,
+        y=0.987,
+    )
+
     fig.legend(
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.925),
+        bbox_to_anchor=(0.5, 0.885),
         ncol=6,
         frameon=False,
         fontsize=8.5,
-    )
-
-    fig.suptitle(
-        f"Stage 2 integrated composition fit: {period.label} — {region_label}\n"
-        rf"after $|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$; "
-        f"common-population entries: "
-        f"data={common_counts['data_n']:,}, "
-        f"DVCS MC={common_counts['dvcs_n']:,}, "
-        rf"$e\pi^0$ MC={common_counts['pi0_n']:,}"
-        "\n"
-        rf"nominal shared $f_{{\pi^0}}={fit.f_pi0:.4f}"
-        + (
-            rf"\pm{fit.f_pi0_err:.4f}"
-            if math.isfinite(fit.f_pi0_err)
-            else ""
-        ),
-        fontsize=13,
-        y=0.992,
     )
 
     fig.subplots_adjust(
         left=0.065,
         right=0.992,
         bottom=0.085,
-        top=0.83,
+        top=0.795,
         wspace=0.24,
-        hspace=0.18,
+        hspace=0.25,
     )
 
     outpath = (
         outdir
-        / f"stage2_integrated_composition_{period.key}_{region_key.lower()}.png"
+        / f"stage2_integrated_fits_{period.key}_{region_key.lower()}.png"
     )
     fig.savefig(outpath, dpi=180)
     plt.close(fig)
@@ -2191,6 +2225,19 @@ def process_period(
                 if fit.individual_fractions
                 else {}
             ),
+            "shared_morph_nuisance": (
+                {
+                    branch: [
+                        float(value)
+                        for value in variable_result.shared_nuisance
+                    ]
+                    for branch, variable_result
+                    in fit.variable_results.items()
+                    if variable_result.shared_nuisance is not None
+                }
+                if fit.variable_results
+                else {}
+            ),
             "common_population": {
                 "data": int(common["data_n"]),
                 "dvcs_mc": int(common["dvcs_n"]),
@@ -2216,7 +2263,7 @@ def process_period(
         "period": period.key,
         "label": period.label,
         "canvases": canvases,
-        "stage2_integrated_composition": stage2_results,
+        "stage2_integrated_fits": stage2_results,
         "samples": {
             key: {
                 "entries_read": result.entries_read,
@@ -2442,7 +2489,7 @@ def main() -> int:
     #endwith
 
     stage2_summary = {
-        "stage": "stage2_integrated_composition",
+        "stage": "stage2_integrated_fits",
         "selection": {
             "stage1_minimal": {
                 "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
@@ -2459,7 +2506,7 @@ def main() -> int:
             {
                 "period": period.key,
                 "results": summaries[period.key].get(
-                    "stage2_integrated_composition",
+                    "stage2_integrated_fits",
                     {},
                 ),
             }
