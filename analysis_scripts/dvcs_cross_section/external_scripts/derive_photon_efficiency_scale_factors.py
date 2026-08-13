@@ -10,7 +10,7 @@ Stage 1: Shape Comparison
 
 This script intentionally does ONE thing only:
 
-    Compare six epgamma/event-shape observables in:
+    Compare four epgamma/event-shape observables in:
       1. loose nSidis epgamma DATA,
       2. dvcsgen epgamma MC,
       3. aaogen epgamma MC,
@@ -50,13 +50,11 @@ E_miss = 0 and makes the raw data/MC shape comparison interpretable.
 Plotted observables
 -------------------
     M_X^2(epgamma)    computed from P_beam + P_target - P_e - P_p - P_gamma
-    M_X^2(ep)         computed from P_beam + P_target - P_e - P_p
     Delta_phi         stored branch
     pTmiss            stored branch
-    theta_gamma_gamma stored branch, plotted exactly as stored
     Emiss2            stored branch (despite the name, this is E_miss)
 
-Each period produces TWO 2x6 canvases, split by detected tag photon:
+Each period produces TWO 2x4 canvases, split by detected tag photon:
     FT canvas: detector2 == 0
     FD canvas: detector2 == 1
 
@@ -152,14 +150,6 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         100,
     ),
     PlotVariable(
-        "Mx2_ep",
-        r"$M_X^2(ep)$",
-        r"$M_X^2(ep)$ (GeV$^2$)",
-        -0.20,
-        0.50,
-        100,
-    ),
-    PlotVariable(
         "Delta_phi",
         r"$\Delta\phi$",
         r"$\Delta\phi$ (rad)",
@@ -174,14 +164,6 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         0.0,
         1.0,
         100,
-    ),
-    PlotVariable(
-        "theta_gamma_gamma",
-        r"$\theta_{\gamma\gamma}$",
-        r"$\theta_{\gamma\gamma}$ (rad)",
-        0.0,
-        3.0,
-        80,
     ),
     PlotVariable(
         "Emiss2",
@@ -956,7 +938,7 @@ def draw_period_canvas(
     region_label: str,
 ) -> Path:
     """
-    Draw one compact 2x6 canvas for one reconstructed TAG-photon detector:
+    Draw one compact 2x4 canvas for one reconstructed TAG-photon detector:
       top    = minimal selection only
       bottom = after |M_X^2(epgamma)| < 0.075 GeV^2
     """
@@ -1023,15 +1005,9 @@ def draw_period_canvas(
 
             positive_data = data_y > 0.0
             ax.errorbar(
-                centers[positive_data]
-                if variable.branch == "Mx2_epgamma"
-                else centers,
-                data_y[positive_data]
-                if variable.branch == "Mx2_epgamma"
-                else data_y,
-                yerr=data_err[positive_data]
-                if variable.branch == "Mx2_epgamma"
-                else data_err,
+                centers[positive_data],
+                data_y[positive_data],
+                yerr=data_err[positive_data],
                 fmt="o",
                 markersize=2.2,
                 linewidth=0.5,
@@ -1043,24 +1019,25 @@ def draw_period_canvas(
 
             ax.set_xlim(variable.low, variable.high)
 
-            if variable.branch == "Mx2_epgamma":
-                ax.set_yscale("log")
+            # Every Stage-1 shape is displayed on a logarithmic y axis.
+            # Zero-content data bins are omitted above; zero-content step
+            # bins are naturally ignored by the log transform.
+            ax.set_yscale("log")
 
-                positive = np.concatenate(
-                    (
-                        data_y[data_y > 0.0],
-                        dvcs_y[dvcs_y > 0.0],
-                        aaogen_y[aaogen_y > 0.0],
-                    )
+            positive = np.concatenate(
+                (
+                    data_y[data_y > 0.0],
+                    dvcs_y[dvcs_y > 0.0],
+                    aaogen_y[aaogen_y > 0.0],
                 )
-                if len(positive) > 0:
-                    ymin = max(
-                        float(np.min(positive)) * 0.5,
-                        1.0e-6,
-                    )
-                    ymax = float(np.max(positive)) * 2.0
-                    ax.set_ylim(ymin, ymax)
-                #endif
+            )
+            if len(positive) > 0:
+                ymin = max(
+                    float(np.min(positive)) * 0.5,
+                    1.0e-6,
+                )
+                ymax = float(np.max(positive)) * 2.0
+                ax.set_ylim(ymin, ymax)
             #endif
 
             if row == 0 and variable.branch == "Mx2_epgamma":
@@ -1357,7 +1334,7 @@ def main() -> int:
         exist_ok=True,
     )
 
-    log("Stage 1 only: six epgamma shape comparisons; no fits or efficiency calculation.")
+    log("Stage 1 only: four epgamma shape comparisons; no fits or efficiency calculation.")
     log("Minimal selection: e_p>2 GeV, theta_egamma>5 deg, 2<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
 
     # Complete preflight BEFORE any large read.
