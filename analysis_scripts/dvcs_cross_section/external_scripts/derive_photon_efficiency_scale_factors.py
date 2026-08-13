@@ -2081,39 +2081,50 @@ def draw_period_canvas(
                 ][variable.branch]
             #endif
 
-            # Independently unit-normalize the two DVCS energy slices so this
-            # diagnostic compares where the populations live in each variable,
-            # rather than simply reflecting their very different statistics.
-            dvcs_below2_y, _ = normalized_histogram(dvcs_below2_counts)
-            dvcs_above2_y, _ = normalized_histogram(dvcs_above2_counts)
+            # Normalize the two DVCS energy slices with ONE COMMON
+            # denominator. Their sum therefore has unit area, preserving
+            # the true relative sizes of the low- and high-energy subsets.
+            dvcs_split_total = float(
+                np.sum(dvcs_below2_counts)
+                + np.sum(dvcs_above2_counts)
+            )
+            if dvcs_split_total > 0.0:
+                dvcs_below2_y = (
+                    np.asarray(dvcs_below2_counts, dtype=float)
+                    / dvcs_split_total
+                )
+                dvcs_above2_y = (
+                    np.asarray(dvcs_above2_counts, dtype=float)
+                    / dvcs_split_total
+                )
+            else:
+                dvcs_below2_y = np.zeros_like(
+                    dvcs_below2_counts,
+                    dtype=float,
+                )
+                dvcs_above2_y = np.zeros_like(
+                    dvcs_above2_counts,
+                    dtype=float,
+                )
+            #endif
 
             ax.step(
                 edges[:-1],
-                dvcs_y,
+                dvcs_above2_y,
                 where="post",
-                linewidth=1.35,
+                linewidth=1.6,
                 color="tab:blue",
-                label="DVCS MC — all tag energies",
+                label=r"DVCS MC: $E_{\gamma,\mathrm{tag}}\geq2$ GeV",
             )
             ax.step(
                 edges[:-1],
                 dvcs_below2_y,
                 where="post",
-                linewidth=0.75,
+                linewidth=1.0,
                 linestyle="--",
                 color="tab:blue",
-                alpha=0.78,
+                alpha=0.85,
                 label=r"DVCS MC: $E_{\gamma,\mathrm{tag}}<2$ GeV",
-            )
-            ax.step(
-                edges[:-1],
-                dvcs_above2_y,
-                where="post",
-                linewidth=2.0,
-                linestyle="--",
-                color="tab:blue",
-                alpha=0.95,
-                label=r"DVCS MC: $E_{\gamma,\mathrm{tag}}\geq2$ GeV",
             )
             ax.step(
                 edges[:-1],
@@ -2152,7 +2163,6 @@ def draw_period_canvas(
             positive = np.concatenate(
                 (
                     data_y[data_y > 0.0],
-                    dvcs_y[dvcs_y > 0.0],
                     dvcs_below2_y[dvcs_below2_y > 0.0],
                     dvcs_above2_y[dvcs_above2_y > 0.0],
                     aaogen_y[aaogen_y > 0.0],
@@ -2239,9 +2249,9 @@ def draw_period_canvas(
         labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.885),
-        ncol=6,
+        ncol=5,
         frameon=False,
-        fontsize=8.6,
+        fontsize=8.9,
     )
 
     fig.subplots_adjust(
