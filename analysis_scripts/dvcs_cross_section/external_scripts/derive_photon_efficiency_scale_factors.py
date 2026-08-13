@@ -22,6 +22,7 @@ again after one explicit exclusivity requirement:
     |M_X^2(epgamma)| < 0.075 GeV^2.
 
 Stage 2 fits the post-exclusivity Delta_phi, pTmiss, and Emiss shapes as
+FT-tag canvases display pTmiss only to 0.6 GeV and Emiss only to 3 GeV; these are display-only limits and do not alter the fit.
 DVCS+pi0 template mixtures with one shared response morph per variable. There is still NO eppi0 numerator efficiency,
 NO bootstrap, and NO final systematic extraction.
 
@@ -1810,7 +1811,11 @@ def draw_stage2_integrated_canvas(
             fontsize=9.4,
         )
         ax.set_ylabel("entries / bin")
-        ax.set_xlim(variable.low, variable.high)
+        display_low, display_high = displayed_xlimits_for_region(
+            variable,
+            region_key,
+        )
+        ax.set_xlim(display_low, display_high)
         ax.grid(alpha=0.18)
 
         pull_ax = axes[1, col]
@@ -1826,7 +1831,7 @@ def draw_stage2_integrated_canvas(
             color="black",
         )
         pull_ax.set_ylim(-6.0, 6.0)
-        pull_ax.set_xlim(variable.low, variable.high)
+        pull_ax.set_xlim(display_low, display_high)
         pull_ax.set_xlabel(variable.xlabel)
         pull_ax.set_ylabel("pull")
         pull_ax.grid(alpha=0.18)
@@ -1898,6 +1903,29 @@ def normalized_histogram(
     normalized = values / total
     errors = np.sqrt(values) / total
     return normalized, errors
+
+
+def displayed_xlimits_for_region(
+    variable: PlotVariable,
+    region_key: str,
+) -> Tuple[float, float]:
+    """
+    Return plotting limits only.
+
+    For FT-tag canvases:
+      pTmiss is displayed only to 0.60 GeV;
+      Emiss is displayed only to 3.00 GeV.
+
+    Histogram accumulation and Stage-2 fit ranges remain unchanged.
+    """
+    if region_key == "FT" and variable.branch == "pTmiss":
+        return variable.low, 0.60
+    #endif
+    if region_key == "FT" and variable.branch == "Emiss2":
+        return variable.low, 3.00
+    #endif
+    return variable.low, variable.high
+#enddef
 
 
 def draw_period_canvas(
@@ -1987,7 +2015,11 @@ def draw_period_canvas(
                 zorder=5,
             )
 
-            ax.set_xlim(variable.low, variable.high)
+            display_low, display_high = displayed_xlimits_for_region(
+                variable,
+                region_key,
+            )
+            ax.set_xlim(display_low, display_high)
 
             # Every Stage-1 shape is displayed on a logarithmic y axis.
             # Zero-content data bins are omitted above; zero-content step
