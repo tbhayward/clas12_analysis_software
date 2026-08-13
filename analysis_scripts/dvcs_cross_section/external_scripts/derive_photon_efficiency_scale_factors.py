@@ -1816,6 +1816,34 @@ def draw_stage2_integrated_canvas(
             region_key,
         )
         ax.set_xlim(display_low, display_high)
+        ax.set_yscale("log")
+
+        # Keep the log-scale floor positive while leaving the upper limit
+        # data-driven.  Include all positive displayed data/model/component
+        # values when choosing a sensible lower bound.
+        visible = (centers >= display_low) & (centers <= display_high)
+        positive_values = []
+        for values in (
+            data,
+            model,
+            result.dvcs_component_counts,
+            result.pi0_component_counts,
+        ):
+            selected = np.asarray(values, dtype=float)[visible]
+            selected = selected[
+                np.isfinite(selected) & (selected > 0.0)
+            ]
+            if selected.size:
+                positive_values.append(float(np.min(selected)))
+            #endif
+        #endfor
+
+        if positive_values:
+            ymin = max(0.5, 0.5 * min(positive_values))
+        else:
+            ymin = 0.5
+        #endif
+        ax.set_ylim(bottom=ymin)
         ax.grid(alpha=0.18)
 
         pull_ax = axes[1, col]
