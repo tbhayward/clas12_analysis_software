@@ -10,67 +10,55 @@ Stage 1: Shape Comparison
 
 This script intentionally does ONE thing only:
 
-    Compare eight epgamma shape observables in:
+    Compare six epgamma/event-shape observables in:
       1. loose nSidis epgamma DATA,
       2. dvcsgen epgamma MC,
       3. aaogen epgamma MC,
 
-after applying the same minimal tag/probe support definition to all three
-samples.
+first after a genuinely minimal common reconstructed-tag selection, and then
+again after one explicit exclusivity requirement:
+
+    |M_X^2(epgamma)| < 0.075 GeV^2.
 
 There are NO fits, NO eppi0 input files, NO efficiency calculation, NO
-numerator association, NO bootstrap, and NO systematic extraction in this
-version.
+numerator association, NO bootstrap, and NO systematic extraction.
 
-The reconstructed epgamma photon is the tag.  The missing four-vector
-
-    P_probe^pred = P_beam + P_target - P_e - P_p - P_gamma(tag)
-
-defines the predicted probe photon used only for the common support selection:
-
+Minimal common selection
+------------------------
     e_p > 2 GeV
     theta_ep > 5 deg
-    2 <= E_tag < 9.5 GeV
-    0.4 <= E_probe^pred < 9.5 GeV
-    predicted probe in:
-        FT: 2.4 <= theta_probe^pred < 5 deg
-        OR
-        FD: 6 <= theta_probe^pred < 35 deg
+    2 <= E_gamma(tag) < 9.5 GeV
 
-No exclusivity cut is imposed.
+Importantly, Stage 1 does NOT require:
+    - positive missing/probe energy,
+    - E_probe^pred > 0.4 GeV,
+    - predicted-probe FT/FD angular acceptance.
 
-The Stage-1 shape variables are:
+Those requirements belong to a later tag/probe-denominator stage.  Keeping
+them out here preserves the genuine exclusive DVCS/BH population near
+E_miss = 0 and makes the raw data/MC shape comparison interpretable.
 
+Plotted observables
+-------------------
     M_X^2(epgamma)    computed from P_beam + P_target - P_e - P_p - P_gamma
     M_X^2(ep)         computed from P_beam + P_target - P_e - P_p
     Delta_phi         stored branch
     pTmiss            stored branch
-    theta             stored branch
-    theta_gamma_gamma stored branch
+    theta_gamma_gamma stored branch, displayed in degrees
     Emiss2            stored branch (despite the name, this is E_miss)
-    z                 stored branch
 
-M_X^2(epgamma) is exactly the squared missing mass of the epgammaX topology.
-Equivalently, under the tag/probe hypothesis it is the predicted probe
-four-vector mass squared.
+Each period produces ONE 2x6 canvas:
+    top row    = minimal selection only
+    bottom row = same population after |M_X^2(epgamma)| < 0.075 GeV^2
 
-No M_X^2(epgamma) cut is applied in Stage 1.  Dashed lines at +/-0.08 GeV^2
-show the support cut that may be used in the next stage.
+The M_X^2(epgamma) top-row panel shows dashed vertical lines at +/-0.075
+GeV^2.  The output directory is flat: at most one PNG per requested period.
 
-One 2x4 unit-normalized shape-comparison canvas is written per run period.
+Only one compact JSON file is written for the whole invocation:
+    stage1_summary.json
 
 Default output:
     output/photon_efficiency/stage1_shape_comparison/
-
-Typical commands:
-    # Fa18 Inb only
-    python derive_photon_efficiency_scale_factors.py --period fa18_inb
-
-    # all configured periods
-    python derive_photon_efficiency_scale_factors.py --workers 2
-
-Development convention:
-    --max-entries 0 means read all entries.
 """
 
 from __future__ import annotations
@@ -106,6 +94,7 @@ THETA_EP_MIN_DEG = 5.0
 
 TAG_E_MIN_GEV = 2.0
 TAG_E_MAX_GEV = 9.5
+MX2_EPGAMMA_ABS_MAX_GEV2 = 0.075
 
 PROBE_E_MIN_GEV = 0.4
 PROBE_E_MAX_GEV = 9.5
@@ -140,8 +129,8 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         "Mx2_epgamma",
         r"$M_X^2(ep\gamma)$",
         r"$M_X^2(ep\gamma)$ (GeV$^2$)",
-        -0.30,
-        0.30,
+        -0.20,
+        0.50,
         100,
     ),
     PlotVariable(
@@ -149,39 +138,31 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         r"$M_X^2(ep)$",
         r"$M_X^2(ep)$ (GeV$^2$)",
         -0.20,
-        0.40,
+        0.50,
         100,
     ),
     PlotVariable(
         "Delta_phi",
         r"$\Delta\phi$",
         r"$\Delta\phi$ (rad)",
-        2.80,
-        3.45,
-        80,
+        math.pi / 2.0,
+        math.pi,
+        100,
     ),
     PlotVariable(
         "pTmiss",
         r"$p_{T,\mathrm{miss}}$",
         r"$p_{T,\mathrm{miss}}$ (GeV)",
         0.0,
-        1.0,
-        80,
-    ),
-    PlotVariable(
-        "theta",
-        r"$\theta$",
-        r"$\theta$ (rad)",
-        0.0,
-        math.pi,
-        80,
+        1.20,
+        100,
     ),
     PlotVariable(
         "theta_gamma_gamma",
         r"$\theta_{\gamma\gamma}$",
-        r"$\theta_{\gamma\gamma}$ (rad)",
+        r"$\theta_{\gamma\gamma}$ (deg)",
         0.0,
-        3.0,
+        4.0,
         80,
     ),
     PlotVariable(
@@ -191,14 +172,6 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         -2.0,
         4.0,
         100,
-    ),
-    PlotVariable(
-        "z",
-        r"$z$",
-        r"$z$",
-        0.0,
-        1.6,
-        80,
     ),
 )
 
@@ -561,9 +534,10 @@ def common_support_mask(
     angle_unit: str,
 ) -> Tuple[np.ndarray, Dict[str, int]]:
     """
-    Apply only the already-established tag/probe support definition.
+    Apply the genuinely minimal Stage-1 common selection only.
 
-    No exclusivity selection is made in Stage 1.
+    The missing/probe four-vector is NOT used to select events here.
+    In particular there is no probe-energy or predicted-probe angular cut.
     """
     e_p = np.asarray(arrays["e_p"], dtype=float)
     p_p = np.asarray(arrays["p1_p"], dtype=float)
@@ -590,63 +564,27 @@ def common_support_mask(
         p_pz,
     )
 
-    missing = stage1_missing_kinematics(
-        arrays,
-        beam_energy_GeV,
-        angle_unit,
-    )
-    pred_E = missing["pred_probe_energy"]
-    pred_theta_deg = missing["pred_probe_theta_deg"]
-
     finite = (
         np.isfinite(e_p)
         & np.isfinite(p_p)
         & np.isfinite(g_E)
         & np.isfinite(theta_ep_deg)
-        & np.isfinite(pred_E)
-        & np.isfinite(pred_theta_deg)
     )
 
     electron = finite & (e_p > ELECTRON_P_MIN_GEV)
-
     opening = electron & (theta_ep_deg > THETA_EP_MIN_DEG)
-
-    tag = (
+    accepted = (
         opening
         & (g_E >= TAG_E_MIN_GEV)
         & (g_E < TAG_E_MAX_GEV)
     )
-
-    probe_energy = (
-        tag
-        & (pred_E >= PROBE_E_MIN_GEV)
-        & (pred_E < PROBE_E_MAX_GEV)
-    )
-
-    probe_ft = (
-        probe_energy
-        & (pred_theta_deg >= FT_THETA_MIN_DEG)
-        & (pred_theta_deg < FT_THETA_MAX_DEG)
-    )
-
-    probe_fd = (
-        probe_energy
-        & (pred_theta_deg >= FD_THETA_MIN_DEG)
-        & (pred_theta_deg < FD_THETA_MAX_DEG)
-    )
-
-    accepted = probe_ft | probe_fd
 
     counters = {
         "input": int(len(e_p)),
         "finite": int(np.count_nonzero(finite)),
         "electron_p_gt_2": int(np.count_nonzero(electron)),
         "theta_ep_gt_5deg": int(np.count_nonzero(opening)),
-        "tag_2_to_9p5_GeV": int(np.count_nonzero(tag)),
-        "probe_0p4_to_9p5_GeV": int(np.count_nonzero(probe_energy)),
-        "predicted_probe_FT": int(np.count_nonzero(probe_ft)),
-        "predicted_probe_FD": int(np.count_nonzero(probe_fd)),
-        "accepted_FT_or_FD": int(np.count_nonzero(accepted)),
+        "tag_2_to_9p5_GeV": int(np.count_nonzero(accepted)),
     }
 
     return accepted, counters
@@ -663,9 +601,8 @@ class HistogramResult:
     file_path: str
     entries_read: int
     selection_counts: Dict[str, int]
-    counts: Dict[str, np.ndarray]
-    underflow: Dict[str, int]
-    overflow: Dict[str, int]
+    counts_before: Dict[str, np.ndarray]
+    counts_after: Dict[str, np.ndarray]
     angle_unit: str
 
 
@@ -686,18 +623,13 @@ def accumulate_shape_histograms(
     chunk_size: int,
 ) -> HistogramResult:
     """
-    Stream only the 15 branches required by Stage 1.
+    Stream the minimal Stage-1 branch set once.
 
-    No multi-million-entry event arrays are retained.  This is intentionally
-    histogram-only so the runtime and memory footprint remain small.
+    Both the pre-exclusivity and post-exclusivity histograms are filled during
+    the same pass, so the second plot row costs essentially no extra I/O.
     """
-    counts = empty_histograms()
-    underflow = {
-        variable.branch: 0 for variable in PLOT_VARIABLES
-    }
-    overflow = {
-        variable.branch: 0 for variable in PLOT_VARIABLES
-    }
+    counts_before = empty_histograms()
+    counts_after = empty_histograms()
 
     totals = {
         "input": 0,
@@ -705,10 +637,7 @@ def accumulate_shape_histograms(
         "electron_p_gt_2": 0,
         "theta_ep_gt_5deg": 0,
         "tag_2_to_9p5_GeV": 0,
-        "probe_0p4_to_9p5_GeV": 0,
-        "predicted_probe_FT": 0,
-        "predicted_probe_FD": 0,
-        "accepted_FT_or_FD": 0,
+        "after_mx2_epgamma_cut": 0,
     }
 
     entries_read = 0
@@ -747,7 +676,7 @@ def accumulate_shape_histograms(
                 )
             #endif
 
-            selection, chunk_counts = common_support_mask(
+            minimal, chunk_counts = common_support_mask(
                 arrays,
                 beam_energy_GeV,
                 angle_unit,
@@ -758,10 +687,27 @@ def accumulate_shape_histograms(
                 angle_unit,
             )
 
+            mx2_epgamma = np.asarray(
+                missing["Mx2_epgamma"],
+                dtype=float,
+            )
+            after = (
+                minimal
+                & np.isfinite(mx2_epgamma)
+                & (np.abs(mx2_epgamma) < MX2_EPGAMMA_ABS_MAX_GEV2)
+            )
+
             entries_read += n
-            for key in totals:
+            for key in (
+                "input",
+                "finite",
+                "electron_p_gt_2",
+                "theta_ep_gt_5deg",
+                "tag_2_to_9p5_GeV",
+            ):
                 totals[key] += int(chunk_counts[key])
             #endfor
+            totals["after_mx2_epgamma_cut"] += int(np.count_nonzero(after))
 
             for variable in PLOT_VARIABLES:
                 if variable.branch in COMPUTED_PLOT_KEYS:
@@ -776,23 +722,32 @@ def accumulate_shape_histograms(
                     )
                 #endif
 
-                selected_values = values[
-                    selection & np.isfinite(values)
-                ]
+                # Stored angular branches follow the same angular convention
+                # as the event tree.  Display theta_gamma_gamma in degrees.
+                if variable.branch == "theta_gamma_gamma":
+                    if angle_unit == "rad":
+                        values = np.degrees(values)
+                    #endif
+                #endif
 
-                hist, _ = np.histogram(
-                    selected_values,
+                finite_values = np.isfinite(values)
+
+                before_values = values[minimal & finite_values]
+                after_values = values[after & finite_values]
+
+                hist_before, _ = np.histogram(
+                    before_values,
                     bins=variable.bins,
                     range=(variable.low, variable.high),
                 )
-                counts[variable.branch] += hist.astype(np.int64)
+                hist_after, _ = np.histogram(
+                    after_values,
+                    bins=variable.bins,
+                    range=(variable.low, variable.high),
+                )
 
-                underflow[variable.branch] += int(
-                    np.count_nonzero(selected_values < variable.low)
-                )
-                overflow[variable.branch] += int(
-                    np.count_nonzero(selected_values >= variable.high)
-                )
+                counts_before[variable.branch] += hist_before.astype(np.int64)
+                counts_after[variable.branch] += hist_after.astype(np.int64)
             #endfor
         #endfor
 
@@ -806,9 +761,8 @@ def accumulate_shape_histograms(
         file_path=file_path,
         entries_read=entries_read,
         selection_counts=totals,
-        counts=counts,
-        underflow=underflow,
-        overflow=overflow,
+        counts_before=counts_before,
+        counts_after=counts_after,
         angle_unit=angle_unit,
     )
 
@@ -940,107 +894,127 @@ def draw_period_canvas(
     outdir: Path,
 ) -> Path:
     """
-    Match the supplied exclusivity-shape aesthetic:
-      - blue step = dvcsgen
-      - red step = aaogen
-      - black points = data
-      - unit-normalized entries/bin
-      - one shared legend above the 2x4 canvas
+    Draw one compact 2x6 canvas:
+      top    = minimal selection only
+      bottom = after |M_X^2(epgamma)| < 0.075 GeV^2
     """
     fig, axes = plt.subplots(
         2,
-        4,
-        figsize=(19.5, 9.2),
+        len(PLOT_VARIABLES),
+        figsize=(24.0, 8.0),
+        squeeze=False,
     )
-    axes_flat = axes.ravel()
 
     data = results["data"]
     dvcs = results["dvcsgen"]
     aaogen = results["aaogen"]
 
-    for ax, variable in zip(axes_flat, PLOT_VARIABLES):
-        edges = np.linspace(
-            variable.low,
-            variable.high,
-            variable.bins + 1,
+    for row, (row_name, count_attr) in enumerate(
+        (
+            ("Minimal selection", "counts_before"),
+            (
+                rf"After $|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$",
+                "counts_after",
+            ),
         )
-        centers = 0.5 * (edges[:-1] + edges[1:])
-
-        data_y, data_err = normalized_histogram(
-            data.counts[variable.branch]
-        )
-        dvcs_y, _ = normalized_histogram(
-            dvcs.counts[variable.branch]
-        )
-        aaogen_y, _ = normalized_histogram(
-            aaogen.counts[variable.branch]
-        )
-
-        ax.step(
-            edges[:-1],
-            dvcs_y,
-            where="post",
-            linewidth=1.35,
-            color="tab:blue",
-            label="DVCS MC",
-        )
-        ax.step(
-            edges[:-1],
-            aaogen_y,
-            where="post",
-            linewidth=1.35,
-            color="red",
-            label=r"$e\pi^0$ MC as $ep\gamma$",
-        )
-        ax.errorbar(
-            centers,
-            data_y,
-            yerr=data_err,
-            fmt="o",
-            markersize=2.4,
-            linewidth=0.55,
-            capsize=0,
-            color="black",
-            label=r"$e'p'\gamma$ data",
-            zorder=5,
-        )
-
-        ax.set_xlim(variable.low, variable.high)
-
-        if variable.branch == "Mx2_epgamma":
-            ax.axvline(
-                -0.08,
-                linestyle="--",
-                linewidth=1.0,
-                color="0.35",
-                label=r"$|M_X^2(ep\gamma)|<0.08$ GeV$^2$",
+    ):
+        for col, variable in enumerate(PLOT_VARIABLES):
+            ax = axes[row, col]
+            edges = np.linspace(
+                variable.low,
+                variable.high,
+                variable.bins + 1,
             )
-            ax.axvline(
-                +0.08,
-                linestyle="--",
-                linewidth=1.0,
-                color="0.35",
-            )
-        #endif
+            centers = 0.5 * (edges[:-1] + edges[1:])
 
-        ax.set_xlabel(variable.xlabel)
-        ax.set_ylabel("unit-normalized entries / bin")
-        ax.grid(alpha=0.18)
+            data_counts = getattr(data, count_attr)[variable.branch]
+            dvcs_counts = getattr(dvcs, count_attr)[variable.branch]
+            aaogen_counts = getattr(aaogen, count_attr)[variable.branch]
+
+            data_y, data_err = normalized_histogram(data_counts)
+            dvcs_y, _ = normalized_histogram(dvcs_counts)
+            aaogen_y, _ = normalized_histogram(aaogen_counts)
+
+            ax.step(
+                edges[:-1],
+                dvcs_y,
+                where="post",
+                linewidth=1.35,
+                color="tab:blue",
+                label="DVCS MC",
+            )
+            ax.step(
+                edges[:-1],
+                aaogen_y,
+                where="post",
+                linewidth=1.35,
+                color="red",
+                label=r"$e\pi^0$ MC as $ep\gamma$",
+            )
+            ax.errorbar(
+                centers,
+                data_y,
+                yerr=data_err,
+                fmt="o",
+                markersize=2.2,
+                linewidth=0.5,
+                capsize=0,
+                color="black",
+                label=r"$e'p'\gamma$ data",
+                zorder=5,
+            )
+
+            ax.set_xlim(variable.low, variable.high)
+
+            if row == 0 and variable.branch == "Mx2_epgamma":
+                ax.axvline(
+                    -MX2_EPGAMMA_ABS_MAX_GEV2,
+                    linestyle="--",
+                    linewidth=1.0,
+                    color="0.35",
+                    label=(
+                        rf"$|M_X^2(ep\gamma)|"
+                        rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$"
+                    ),
+                )
+                ax.axvline(
+                    +MX2_EPGAMMA_ABS_MAX_GEV2,
+                    linestyle="--",
+                    linewidth=1.0,
+                    color="0.35",
+                )
+            #endif
+
+            ax.set_xlabel(variable.xlabel)
+            if col == 0:
+                ax.set_ylabel(
+                    f"{row_name}\nunit-normalized entries / bin"
+                )
+            #endif
+            ax.grid(alpha=0.18)
+        #endfor
     #endfor
 
-    handles, labels = axes_flat[0].get_legend_handles_labels()
+    handles, labels = axes[0, 0].get_legend_handles_labels()
 
-    n_data = data.selection_counts["accepted_FT_or_FD"]
-    n_dvcs = dvcs.selection_counts["accepted_FT_or_FD"]
-    n_aaogen = aaogen.selection_counts["accepted_FT_or_FD"]
+    n_data_before = data.selection_counts["tag_2_to_9p5_GeV"]
+    n_dvcs_before = dvcs.selection_counts["tag_2_to_9p5_GeV"]
+    n_aaogen_before = aaogen.selection_counts["tag_2_to_9p5_GeV"]
+
+    n_data_after = data.selection_counts["after_mx2_epgamma_cut"]
+    n_dvcs_after = dvcs.selection_counts["after_mx2_epgamma_cut"]
+    n_aaogen_after = aaogen.selection_counts["after_mx2_epgamma_cut"]
 
     fig.suptitle(
         f"Stage 1 shape comparison: {period.label}\n"
-        "minimal tag/probe support only; no exclusivity cuts\n"
-        f"selected entries: data={n_data:,}, "
-        f"DVCS MC={n_dvcs:,}, "
-        rf"$e\pi^0$ MC as $ep\gamma$={n_aaogen:,}",
-        fontsize=14,
+        r"minimal selection: $E_e>2$ GeV, $\theta_{ep}>5^\circ$, "
+        r"$2\leq E_{\gamma,\mathrm{tag}}<9.5$ GeV"
+        "\n"
+        f"before cut: data={n_data_before:,}, DVCS MC={n_dvcs_before:,}, "
+        rf"$e\pi^0$ MC={n_aaogen_before:,}; "
+        f"after cut: data={n_data_after:,}, DVCS MC={n_dvcs_after:,}, "
+        rf"$e\pi^0$ MC={n_aaogen_after:,}",
+        fontsize=13,
         y=0.985,
     )
 
@@ -1048,14 +1022,20 @@ def draw_period_canvas(
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.900),
-        ncol=3,
+        bbox_to_anchor=(0.5, 0.885),
+        ncol=4,
         frameon=False,
-        fontsize=10,
+        fontsize=9.5,
     )
 
-    fig.tight_layout(
-        rect=(0.02, 0.03, 0.99, 0.83)
+    # Deliberately reserve much less dead space than the previous version.
+    fig.subplots_adjust(
+        left=0.055,
+        right=0.992,
+        bottom=0.085,
+        top=0.825,
+        wspace=0.30,
+        hspace=0.38,
     )
 
     outpath = outdir / f"stage1_shape_comparison_{period.key}.png"
@@ -1078,29 +1058,15 @@ def process_period(
     outdir.mkdir(parents=True, exist_ok=True)
 
     sample_specs = (
-        (
-            "data",
-            r"$e'p'\gamma$ data",
-            period.nsidis_epgamma_data,
-        ),
-        (
-            "dvcsgen",
-            "DVCS MC",
-            period.dvcsgen_epgamma_mc,
-        ),
-        (
-            "aaogen",
-            r"$e\pi^0$ MC as $ep\gamma$",
-            period.aaogen_epgamma_mc,
-        ),
+        ("data", r"$e'p'\gamma$ data", period.nsidis_epgamma_data),
+        ("dvcsgen", "DVCS MC", period.dvcsgen_epgamma_mc),
+        ("aaogen", r"$e\pi^0$ MC as $ep\gamma$", period.aaogen_epgamma_mc),
     )
 
     results: Dict[str, HistogramResult] = {}
 
     for sample_key, sample_label, file_path in sample_specs:
-        log(
-            f"{period.label}: streaming {sample_key} Stage-1 shapes."
-        )
+        log(f"{period.label}: streaming {sample_key} Stage-1 shapes.")
 
         result = accumulate_shape_histograms(
             file_path=file_path,
@@ -1114,72 +1080,33 @@ def process_period(
         results[sample_key] = result
 
         log(
-            f"{period.label}: {sample_key}: "
-            f"read {result.entries_read:,}; "
-            f"selected {result.selection_counts['accepted_FT_or_FD']:,}."
+            f"{period.label}: {sample_key}: read {result.entries_read:,}; "
+            f"minimal={result.selection_counts['tag_2_to_9p5_GeV']:,}; "
+            f"after Mx2 cut={result.selection_counts['after_mx2_epgamma_cut']:,}."
         )
     #endfor
 
-    canvas = draw_period_canvas(
-        period,
-        results,
-        outdir,
-    )
+    canvas = draw_period_canvas(period, results, outdir)
 
     summary = {
-        "stage": "stage1_shape_comparison",
-        "period": asdict(period),
-        "selection": {
-            "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
-            "theta_ep_min_deg": THETA_EP_MIN_DEG,
-            "tag_energy_GeV": [
-                TAG_E_MIN_GEV,
-                TAG_E_MAX_GEV,
-            ],
-            "probe_energy_GeV": [
-                PROBE_E_MIN_GEV,
-                PROBE_E_MAX_GEV,
-            ],
-            "FT_theta_deg": [
-                FT_THETA_MIN_DEG,
-                FT_THETA_MAX_DEG,
-            ],
-            "FD_theta_deg": [
-                FD_THETA_MIN_DEG,
-                FD_THETA_MAX_DEG,
-            ],
-            "exclusivity_cuts": "none",
+        "period": period.key,
+        "label": period.label,
+        "canvas": str(canvas),
+        "samples": {
+            key: {
+                "entries_read": result.entries_read,
+                "minimal_selected": result.selection_counts["tag_2_to_9p5_GeV"],
+                "after_mx2_epgamma_cut": result.selection_counts["after_mx2_epgamma_cut"],
+            }
+            for key, result in results.items()
         },
-        "samples": {},
-        "output_canvas": str(canvas),
         "wall_time_s": float(time.perf_counter() - t0),
     }
-
-    for key, result in results.items():
-        summary["samples"][key] = {
-            "file": result.file_path,
-            "entries_read": result.entries_read,
-            "angle_unit": result.angle_unit,
-            "selection_counts": result.selection_counts,
-            "plot_underflow": result.underflow,
-            "plot_overflow": result.overflow,
-        }
-    #endfor
-
-    with (
-        outdir / f"stage1_summary_{period.key}.json"
-    ).open(
-        "w",
-        encoding="utf-8",
-    ) as stream:
-        json.dump(summary, stream, indent=2)
-    #endwith
 
     log(
         f"{period.label}: Stage 1 complete in "
         f"{summary['wall_time_s']:.1f} s."
     )
-
     return summary
 
 
@@ -1297,28 +1224,11 @@ def main() -> int:
         exist_ok=True,
     )
 
-    log(
-        "Stage 1 only: six epgamma shape comparisons; "
-        "no fits or efficiency calculation."
-    )
-    log(
-        "Minimal support: "
-        "e_p>2 GeV, theta_ep>5 deg, "
-        "2<=E_tag<9.5 GeV, 0.4<=E_probe^pred<9.5 GeV, "
-        "probe in FT or FD angular acceptance."
-    )
+    log("Stage 1 only: six epgamma shape comparisons; no fits or efficiency calculation.")
+    log("Minimal selection: e_p>2 GeV, theta_ep>5 deg, 2<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
 
     # Complete preflight BEFORE any large read.
-    preflight_report = preflight_periods(
-        periods,
-        args.tree_name,
-    )
-
-    with (
-        Path(args.output_dir) / "stage1_preflight.json"
-    ).open("w", encoding="utf-8") as stream:
-        json.dump(preflight_report, stream, indent=2)
-    #endwith
+    preflight_periods(periods, args.tree_name)
 
     args_dict: Dict[str, object] = {
         "max_entries": args.max_entries,
@@ -1374,8 +1284,14 @@ def main() -> int:
         #endwith
     #endif
 
-    ordered_summary = {
+    compact_summary = {
         "stage": "stage1_shape_comparison",
+        "selection": {
+            "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
+            "theta_ep_min_deg": THETA_EP_MIN_DEG,
+            "tag_energy_GeV": [TAG_E_MIN_GEV, TAG_E_MAX_GEV],
+            "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
+        },
         "periods": [
             summaries[period.key]
             for period in periods
@@ -1384,9 +1300,9 @@ def main() -> int:
     }
 
     with (
-        Path(args.output_dir) / "stage1_all_periods_summary.json"
+        Path(args.output_dir) / "stage1_summary.json"
     ).open("w", encoding="utf-8") as stream:
-        json.dump(ordered_summary, stream, indent=2)
+        json.dump(compact_summary, stream, indent=2)
     #endwith
 
     log(
