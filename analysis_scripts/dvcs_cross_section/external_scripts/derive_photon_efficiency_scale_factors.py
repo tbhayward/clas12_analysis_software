@@ -148,9 +148,11 @@ STAGE2_VARIABLE_KEYS: Tuple[str, ...] = (
     "Emiss2",
 )
 
-STAGE2_OUTPUT_DIRNAME = "stage2_integrated_fits"
+STAGE2_OUTPUT_DIRNAME = "stage2_three_template_TEMPORARY"
 
 CURRENT_MAX_STAGE = 2
+
+DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV = 1.8
 
 # Morph priors and hard bounds are intentionally modest.  Their role is to
 # absorb small data/MC resolution and centering differences without allowing
@@ -682,6 +684,8 @@ class HistogramResult:
     counts_before: Dict[str, Dict[str, np.ndarray]]
     counts_after: Dict[str, Dict[str, np.ndarray]]
     stage2_counts: Dict[str, Dict[str, np.ndarray]]
+    stage2_counts_tag_below_split: Dict[str, Dict[str, np.ndarray]]
+    stage2_counts_tag_above_split: Dict[str, Dict[str, np.ndarray]]
     counts_before_tag_below2: Dict[str, Dict[str, np.ndarray]]
     counts_before_tag_above2: Dict[str, Dict[str, np.ndarray]]
     counts_after_tag_below2: Dict[str, Dict[str, np.ndarray]]
@@ -725,6 +729,8 @@ def accumulate_shape_histograms(
     counts_before = empty_region_histograms()
     counts_after = empty_region_histograms()
     stage2_counts = empty_region_histograms()
+    stage2_counts_tag_below_split = empty_region_histograms()
+    stage2_counts_tag_above_split = empty_region_histograms()
     counts_before_tag_below2 = empty_region_histograms()
     counts_before_tag_above2 = empty_region_histograms()
     counts_after_tag_below2 = empty_region_histograms()
@@ -822,22 +828,22 @@ def accumulate_shape_histograms(
                 region_before_tag_below2 = (
                     region_minimal
                     & np.isfinite(tag_energy)
-                    & (tag_energy < 2.0)
+                    & (tag_energy < DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV)
                 )
                 region_before_tag_above2 = (
                     region_minimal
                     & np.isfinite(tag_energy)
-                    & (tag_energy >= 2.0)
+                    & (tag_energy >= DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV)
                 )
                 region_after_tag_below2 = (
                     region_after
                     & np.isfinite(tag_energy)
-                    & (tag_energy < 2.0)
+                    & (tag_energy < DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV)
                 )
                 region_after_tag_above2 = (
                     region_after
                     & np.isfinite(tag_energy)
-                    & (tag_energy >= 2.0)
+                    & (tag_energy >= DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV)
                 )
 
                 totals[f"{region_key}_minimal"] += int(
@@ -869,6 +875,23 @@ def accumulate_shape_histograms(
                 #endfor
                 totals[f"{region_key}_stage2_common"] += int(
                     np.count_nonzero(stage2_common)
+                )
+
+                stage2_common_tag_below_split = (
+                    stage2_common
+                    & np.isfinite(tag_energy)
+                    & (
+                        tag_energy
+                        < DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV
+                    )
+                )
+                stage2_common_tag_above_split = (
+                    stage2_common
+                    & np.isfinite(tag_energy)
+                    & (
+                        tag_energy
+                        >= DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV
+                    )
                 )
 
                 for variable in PLOT_VARIABLES:
@@ -949,6 +972,31 @@ def accumulate_shape_histograms(
                         stage2_counts[region_key][
                             variable.branch
                         ] += hist_stage2.astype(np.int64)
+
+                        below_values = values[
+                            stage2_common_tag_below_split
+                            & finite_values
+                        ]
+                        above_values = values[
+                            stage2_common_tag_above_split
+                            & finite_values
+                        ]
+                        hist_below, _ = np.histogram(
+                            below_values,
+                            bins=variable.bins,
+                            range=(variable.low, variable.high),
+                        )
+                        hist_above, _ = np.histogram(
+                            above_values,
+                            bins=variable.bins,
+                            range=(variable.low, variable.high),
+                        )
+                        stage2_counts_tag_below_split[region_key][
+                            variable.branch
+                        ] += hist_below.astype(np.int64)
+                        stage2_counts_tag_above_split[region_key][
+                            variable.branch
+                        ] += hist_above.astype(np.int64)
                     #endif
                 #endfor
             #endfor
@@ -967,6 +1015,8 @@ def accumulate_shape_histograms(
         counts_before=counts_before,
         counts_after=counts_after,
         stage2_counts=stage2_counts,
+        stage2_counts_tag_below_split=stage2_counts_tag_below_split,
+        stage2_counts_tag_above_split=stage2_counts_tag_above_split,
         counts_before_tag_below2=counts_before_tag_below2,
         counts_before_tag_above2=counts_before_tag_above2,
         counts_after_tag_below2=counts_after_tag_below2,
@@ -1653,6 +1703,591 @@ def stage2_fit_shared(
     )
 
 
+
+@dataclass
+class Stage2ThreeTemplateVariableFit:
+    success: bool
+    branch: str
+    f_dvcs: float = math.nan
+    f_pi0: float = math.nan
+    f_nonprimary: float = math.nan
+    objective: float = math.nan
+    deviance: float = math.nan
+    ndf: int = 0
+    data_counts: Optional[np.ndarray] = None
+    model_counts: Optional[np.ndarray] = None
+    dvcs_component_counts: Optional[np.ndarray] = None
+    pi0_component_counts: Optional[np.ndarray] = None
+    nonprimary_component_counts: Optional[np.ndarray] = None
+    shared_nuisance: Optional[np.ndarray] = None
+    message: str = ""
+
+
+@dataclass
+class Stage2ThreeTemplateFit:
+    success: bool
+    f_dvcs: float = math.nan
+    f_pi0: float = math.nan
+    f_nonprimary: float = math.nan
+    objective: float = math.nan
+    deviance: float = math.nan
+    ndf: int = 0
+    variable_results: Optional[
+        Dict[str, Stage2ThreeTemplateVariableFit]
+    ] = None
+    individual_fractions: Optional[
+        Dict[str, Dict[str, float]]
+    ] = None
+    message: str = ""
+
+
+def three_template_logits_to_fractions(
+    logits: Sequence[float],
+) -> Tuple[float, float, float]:
+    """
+    Softmax parameterization with DVCS as the reference logit.
+
+    Returns:
+      f_dvcs, f_pi0, f_nonprimary
+    with all fractions positive and summing exactly to one.
+    """
+    values = np.asarray([0.0, logits[0], logits[1]], dtype=float)
+    values -= np.max(values)
+    weights = np.exp(values)
+    weights /= np.sum(weights)
+    return (
+        float(weights[0]),
+        float(weights[1]),
+        float(weights[2]),
+    )
+
+
+def three_template_fractions_to_logits(
+    f_pi0: float,
+    f_nonprimary: float,
+) -> np.ndarray:
+    f_pi0 = max(float(f_pi0), 1.0e-6)
+    f_nonprimary = max(float(f_nonprimary), 1.0e-6)
+    f_dvcs = max(1.0 - f_pi0 - f_nonprimary, 1.0e-6)
+    return np.asarray(
+        [
+            math.log(f_pi0 / f_dvcs),
+            math.log(f_nonprimary / f_dvcs),
+        ],
+        dtype=float,
+    )
+
+
+def stage2_build_three_template_model(
+    data_counts: np.ndarray,
+    dvcs_shape: np.ndarray,
+    pi0_shape: np.ndarray,
+    nonprimary_shape: np.ndarray,
+    branch: str,
+    fractions: Tuple[float, float, float],
+    nuisance: np.ndarray,
+) -> Optional[
+    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+]:
+    """
+    Build a three-component model.
+
+    One common response morph is applied to all three reconstructed epgamma
+    templates for a given discriminator. This intentionally prevents the
+    temporary non-primary component from gaining extra shape freedom.
+    """
+    nuisance = np.asarray(nuisance, dtype=float)
+    if nuisance.size != stage2_nuisance_size(branch):
+        return None
+    #endif
+
+    dvcs_morphed = stage2_transform(
+        dvcs_shape,
+        branch,
+        nuisance,
+    )
+    pi0_morphed = stage2_transform(
+        pi0_shape,
+        branch,
+        nuisance,
+    )
+    nonprimary_morphed = stage2_transform(
+        nonprimary_shape,
+        branch,
+        nuisance,
+    )
+
+    if (
+        dvcs_morphed is None
+        or pi0_morphed is None
+        or nonprimary_morphed is None
+    ):
+        return None
+    #endif
+
+    f_dvcs, f_pi0, f_nonprimary = fractions
+    mixture = (
+        f_dvcs * dvcs_morphed
+        + f_pi0 * pi0_morphed
+        + f_nonprimary * nonprimary_morphed
+    )
+    mixture_sum = float(np.sum(mixture))
+    data_total = float(np.sum(data_counts))
+    if mixture_sum <= 0.0 or data_total <= 0.0:
+        return None
+    #endif
+
+    scale = data_total / mixture_sum
+    model = scale * mixture
+    dvcs_component = scale * f_dvcs * dvcs_morphed
+    pi0_component = scale * f_pi0 * pi0_morphed
+    nonprimary_component = (
+        scale * f_nonprimary * nonprimary_morphed
+    )
+
+    return (
+        model,
+        dvcs_component,
+        pi0_component,
+        nonprimary_component,
+    )
+
+
+def stage2_fit_three_template(
+    data_hists: Dict[str, np.ndarray],
+    dvcs_hists: Dict[str, np.ndarray],
+    pi0_hists: Dict[str, np.ndarray],
+    nonprimary_hists: Dict[str, np.ndarray],
+    branches: Sequence[str] = STAGE2_VARIABLE_KEYS,
+    compute_individual: bool = True,
+) -> Stage2ThreeTemplateFit:
+    """
+    Temporary three-template hypothesis test.
+
+    Shared composition:
+      primary-like DVCS + pi0 + non-primary reconstructed photon.
+
+    The two independent composition parameters are shared across all requested
+    projections. Each projection has its own small response morph, applied
+    identically to all three templates.
+    """
+    if minimize is None or gaussian_filter1d is None:
+        return Stage2ThreeTemplateFit(
+            False,
+            message="scipy optimization/ndimage is unavailable",
+        )
+    #endif
+
+    prepared = {}
+    for branch in branches:
+        data = np.asarray(data_hists[branch], dtype=float)
+        dvcs_shape = normalized_shape(dvcs_hists[branch])
+        pi0_shape = normalized_shape(pi0_hists[branch])
+        nonprimary_shape = normalized_shape(
+            nonprimary_hists[branch]
+        )
+        if (
+            float(np.sum(data)) <= 0.0
+            or dvcs_shape is None
+            or pi0_shape is None
+            or nonprimary_shape is None
+        ):
+            return Stage2ThreeTemplateFit(
+                False,
+                message=f"empty data/template for {branch}",
+            )
+        #endif
+        prepared[branch] = (
+            data,
+            dvcs_shape,
+            pi0_shape,
+            nonprimary_shape,
+        )
+    #endfor
+
+    nuisances = {
+        branch: stage2_single_start(branch).copy()
+        for branch in branches
+    }
+
+    def variable_objective(
+        branch: str,
+        fractions: Tuple[float, float, float],
+        nuisance: np.ndarray,
+        include_penalty: bool,
+    ) -> float:
+        data, dvcs_shape, pi0_shape, nonprimary_shape = prepared[
+            branch
+        ]
+        built = stage2_build_three_template_model(
+            data,
+            dvcs_shape,
+            pi0_shape,
+            nonprimary_shape,
+            branch,
+            fractions,
+            nuisance,
+        )
+        if built is None:
+            return 1.0e100
+        #endif
+
+        value = 0.5 * poisson_deviance(data, built[0])
+        if include_penalty:
+            value += stage2_single_penalty(
+                branch,
+                nuisance,
+            )
+        #endif
+        return float(value)
+
+    best_objective = math.inf
+    best_logits = None
+    best_nuisances = None
+
+    starting_compositions = (
+        (0.20, 0.05),
+        (0.40, 0.05),
+        (0.20, 0.20),
+        (0.50, 0.20),
+        (0.10, 0.40),
+    )
+
+    for initial_pi0, initial_nonprimary in starting_compositions:
+        if initial_pi0 + initial_nonprimary >= 0.98:
+            continue
+        #endif
+
+        logits = three_template_fractions_to_logits(
+            initial_pi0,
+            initial_nonprimary,
+        )
+        local_nuisances = {
+            branch: values.copy()
+            for branch, values in nuisances.items()
+        }
+        previous = math.inf
+
+        for _ in range(14):
+            fractions = three_template_logits_to_fractions(
+                logits
+            )
+
+            for branch in branches:
+                result = minimize(
+                    lambda values, b=branch, f=fractions:
+                        variable_objective(
+                            b,
+                            f,
+                            values,
+                            True,
+                        ),
+                    local_nuisances[branch],
+                    method="L-BFGS-B",
+                    bounds=stage2_single_bounds(branch),
+                    options={
+                        "maxiter": 300,
+                        "ftol": 1.0e-10,
+                    },
+                )
+                if (
+                    result.success
+                    and np.all(np.isfinite(result.x))
+                ):
+                    local_nuisances[branch] = np.asarray(
+                        result.x,
+                        dtype=float,
+                    )
+                #endif
+            #endfor
+
+            def composition_objective(
+                candidate_logits: np.ndarray,
+            ) -> float:
+                candidate_fractions = (
+                    three_template_logits_to_fractions(
+                        candidate_logits
+                    )
+                )
+                return sum(
+                    variable_objective(
+                        branch,
+                        candidate_fractions,
+                        local_nuisances[branch],
+                        False,
+                    )
+                    for branch in branches
+                )
+
+            composition_result = minimize(
+                composition_objective,
+                logits,
+                method="L-BFGS-B",
+                bounds=[(-8.0, 8.0), (-8.0, 8.0)],
+                options={
+                    "maxiter": 300,
+                    "ftol": 1.0e-11,
+                },
+            )
+            if (
+                composition_result.success
+                and np.all(
+                    np.isfinite(composition_result.x)
+                )
+            ):
+                logits = np.asarray(
+                    composition_result.x,
+                    dtype=float,
+                )
+            #endif
+
+            current = composition_objective(logits)
+            if (
+                abs(previous - current)
+                <= 1.0e-8 * max(1.0, current)
+            ):
+                break
+            #endif
+            previous = current
+        #endfor
+
+        fractions = three_template_logits_to_fractions(logits)
+        objective = sum(
+            variable_objective(
+                branch,
+                fractions,
+                local_nuisances[branch],
+                True,
+            )
+            for branch in branches
+        )
+
+        if objective < best_objective:
+            best_objective = float(objective)
+            best_logits = logits.copy()
+            best_nuisances = {
+                branch: values.copy()
+                for branch, values in local_nuisances.items()
+            }
+        #endif
+    #endfor
+
+    if best_logits is None or best_nuisances is None:
+        return Stage2ThreeTemplateFit(
+            False,
+            message="three-template fit did not converge",
+        )
+    #endif
+
+    fractions = three_template_logits_to_fractions(
+        best_logits
+    )
+    f_dvcs, f_pi0, f_nonprimary = fractions
+
+    variable_results = {}
+    total_deviance = 0.0
+    total_bins = 0
+    nuisance_parameters = 0
+
+    for branch in branches:
+        (
+            data,
+            dvcs_shape,
+            pi0_shape,
+            nonprimary_shape,
+        ) = prepared[branch]
+        nuisance = best_nuisances[branch]
+
+        built = stage2_build_three_template_model(
+            data,
+            dvcs_shape,
+            pi0_shape,
+            nonprimary_shape,
+            branch,
+            fractions,
+            nuisance,
+        )
+        if built is None:
+            return Stage2ThreeTemplateFit(
+                False,
+                message=(
+                    f"failed to build final {branch} "
+                    "three-template model"
+                ),
+            )
+        #endif
+
+        deviance = poisson_deviance(data, built[0])
+        total_deviance += deviance
+        total_bins += len(data)
+        nuisance_parameters += len(nuisance)
+
+        variable_results[branch] = (
+            Stage2ThreeTemplateVariableFit(
+                success=True,
+                branch=branch,
+                f_dvcs=f_dvcs,
+                f_pi0=f_pi0,
+                f_nonprimary=f_nonprimary,
+                objective=variable_objective(
+                    branch,
+                    fractions,
+                    nuisance,
+                    True,
+                ),
+                deviance=deviance,
+                ndf=max(
+                    1,
+                    len(data) - len(nuisance) - 2,
+                ),
+                data_counts=data.copy(),
+                model_counts=built[0].copy(),
+                dvcs_component_counts=built[1].copy(),
+                pi0_component_counts=built[2].copy(),
+                nonprimary_component_counts=built[3].copy(),
+                shared_nuisance=nuisance.copy(),
+                message="three-template shared-composition fit",
+            )
+        )
+    #endfor
+
+    individual_fractions = {}
+    if compute_individual and len(branches) > 1:
+        for branch in branches:
+            single = stage2_fit_three_template(
+                data_hists,
+                dvcs_hists,
+                pi0_hists,
+                nonprimary_hists,
+                branches=(branch,),
+                compute_individual=False,
+            )
+            if single.success:
+                individual_fractions[branch] = {
+                    "f_dvcs": single.f_dvcs,
+                    "f_pi0": single.f_pi0,
+                    "f_nonprimary": single.f_nonprimary,
+                }
+            #endif
+        #endfor
+    elif len(branches) == 1:
+        branch = branches[0]
+        individual_fractions[branch] = {
+            "f_dvcs": f_dvcs,
+            "f_pi0": f_pi0,
+            "f_nonprimary": f_nonprimary,
+        }
+    #endif
+
+    return Stage2ThreeTemplateFit(
+        success=True,
+        f_dvcs=f_dvcs,
+        f_pi0=f_pi0,
+        f_nonprimary=f_nonprimary,
+        objective=best_objective,
+        deviance=total_deviance,
+        ndf=max(
+            1,
+            total_bins - nuisance_parameters - 2,
+        ),
+        variable_results=variable_results,
+        individual_fractions=individual_fractions,
+        message=(
+            "TEMPORARY three-template shared-composition "
+            "hypothesis test"
+        ),
+    )
+
+
+def run_stage2_three_template_self_test() -> None:
+    """Exercise the temporary three-template optimizer before ROOT I/O."""
+    if minimize is None or gaussian_filter1d is None:
+        raise RuntimeError(
+            "Stage 2 three-template test requires scipy."
+        )
+    #endif
+
+    rng = np.random.default_rng(202608131)
+    test_hists = {
+        "data": {},
+        "dvcs": {},
+        "pi0": {},
+        "nonprimary": {},
+    }
+    true_fractions = (0.55, 0.30, 0.15)
+
+    for branch in STAGE2_VARIABLE_KEYS:
+        variable = stage2_variable(branch)
+        x = stage2_bin_centers(variable)
+
+        if branch == "Delta_phi":
+            dvcs = np.exp(
+                -0.5 * ((x - math.pi) / 0.045) ** 2
+            )
+            pi0 = np.exp(
+                -0.5 * ((x - math.pi) / 0.17) ** 2
+            )
+            nonprimary = np.exp(
+                -0.5 * ((x - math.pi) / 0.28) ** 2
+            )
+        elif branch == "pTmiss":
+            dvcs = np.exp(-x / 0.075)
+            pi0 = np.exp(-x / 0.28)
+            nonprimary = np.exp(-x / 0.50)
+        else:
+            dvcs = np.exp(
+                -0.5 * ((x - 0.05) / 0.22) ** 2
+            )
+            pi0 = np.exp(
+                -0.5 * ((x - 0.45) / 0.55) ** 2
+            )
+            nonprimary = np.exp(-np.maximum(x, 0.0) / 1.8)
+        #endif
+
+        dvcs = np.clip(dvcs, 0.0, None)
+        pi0 = np.clip(pi0, 0.0, None)
+        nonprimary = np.clip(nonprimary, 0.0, None)
+
+        dvcs /= np.sum(dvcs)
+        pi0 /= np.sum(pi0)
+        nonprimary /= np.sum(nonprimary)
+
+        expected = 9000.0 * (
+            true_fractions[0] * dvcs
+            + true_fractions[1] * pi0
+            + true_fractions[2] * nonprimary
+        )
+
+        test_hists["data"][branch] = rng.poisson(expected)
+        test_hists["dvcs"][branch] = 200000.0 * dvcs
+        test_hists["pi0"][branch] = 200000.0 * pi0
+        test_hists["nonprimary"][branch] = (
+            200000.0 * nonprimary
+        )
+    #endfor
+
+    result = stage2_fit_three_template(
+        test_hists["data"],
+        test_hists["dvcs"],
+        test_hists["pi0"],
+        test_hists["nonprimary"],
+    )
+    if (
+        not result.success
+        or abs(result.f_pi0 - true_fractions[1]) > 0.15
+        or abs(
+            result.f_nonprimary - true_fractions[2]
+        ) > 0.15
+    ):
+        raise RuntimeError(
+            "Stage-2 three-template internal self-test failed: "
+            f"success={result.success}, "
+            f"f_pi0={result.f_pi0}, "
+            f"f_nonprimary={result.f_nonprimary}."
+        )
+    #endif
+
+
 def run_stage2_internal_self_test() -> None:
     """Catch Stage-2 refactor errors before any expensive ROOT I/O."""
     if minimize is None or minimize_scalar is None or gaussian_filter1d is None:
@@ -1750,9 +2385,9 @@ def draw_stage2_integrated_canvas(
     period: PeriodConfig,
     region_key: str,
     region_label: str,
-    fit: Stage2SharedFit,
+    fit: Stage2ThreeTemplateFit,
     outdir: Path,
-    common_counts: Dict[str, int],
+    common_counts: Dict[str, object],
 ) -> Optional[Path]:
     if not fit.success or fit.variable_results is None:
         return None
@@ -1761,7 +2396,7 @@ def draw_stage2_integrated_canvas(
     fig, axes = plt.subplots(
         2,
         len(STAGE2_VARIABLE_KEYS),
-        figsize=(15.5, 8.1),
+        figsize=(15.8, 8.3),
         squeeze=False,
         gridspec_kw={"height_ratios": [3.0, 1.0]},
     )
@@ -1769,45 +2404,20 @@ def draw_stage2_integrated_canvas(
     for col, branch in enumerate(STAGE2_VARIABLE_KEYS):
         variable = stage2_variable(branch)
         result = fit.variable_results[branch]
-        edges = np.linspace(variable.low, variable.high, variable.bins + 1)
+        edges = np.linspace(
+            variable.low,
+            variable.high,
+            variable.bins + 1,
+        )
         centers = 0.5 * (edges[:-1] + edges[1:])
 
         ax = axes[0, col]
-        data = result.data_counts
-        model = np.clip(result.model_counts, 1.0e-12, None)
-
-        # Raw MC shapes, normalized to the data total, are thin dashed curves.
-        data_total = float(np.sum(data))
-        raw_dvcs = normalized_shape(
-            common_counts["dvcs_hists"][branch]
+        data = np.asarray(result.data_counts, dtype=float)
+        model = np.clip(
+            np.asarray(result.model_counts, dtype=float),
+            1.0e-12,
+            None,
         )
-        raw_pi0 = normalized_shape(
-            common_counts["pi0_hists"][branch]
-        )
-        if raw_dvcs is not None:
-            ax.step(
-                edges[:-1],
-                data_total * raw_dvcs,
-                where="post",
-                linestyle="--",
-                linewidth=0.8,
-                alpha=0.55,
-                color="tab:blue",
-                label="raw DVCS shape",
-            )
-        #endif
-        if raw_pi0 is not None:
-            ax.step(
-                edges[:-1],
-                data_total * raw_pi0,
-                where="post",
-                linestyle="--",
-                linewidth=0.8,
-                alpha=0.55,
-                color="red",
-                label=r"raw $e\pi^0$ shape",
-            )
-        #endif
 
         ax.step(
             edges[:-1],
@@ -1815,7 +2425,7 @@ def draw_stage2_integrated_canvas(
             where="post",
             linewidth=1.35,
             color="tab:blue",
-            label="fitted DVCS component",
+            label=r"primary-like DVCS ($E_{\gamma,\rm tag}\geq1.8$ GeV)",
         )
         ax.step(
             edges[:-1],
@@ -1823,15 +2433,23 @@ def draw_stage2_integrated_canvas(
             where="post",
             linewidth=1.35,
             color="red",
-            label=r"fitted $e\pi^0$ component",
+            label=r"$e\pi^0$ component",
+        )
+        ax.step(
+            edges[:-1],
+            result.nonprimary_component_counts,
+            where="post",
+            linewidth=1.35,
+            color="tab:orange",
+            label=r"non-primary photon ($E_{\gamma,\rm tag}<1.8$ GeV DVCS MC)",
         )
         ax.step(
             edges[:-1],
             model,
             where="post",
-            linewidth=1.6,
+            linewidth=1.7,
             color="green",
-            label="total fit",
+            label="total three-template fit",
         )
         ax.errorbar(
             centers,
@@ -1845,25 +2463,38 @@ def draw_stage2_integrated_canvas(
             zorder=5,
         )
 
-        independent = (
-            fit.individual_fractions.get(branch, math.nan)
+        single = (
+            fit.individual_fractions.get(branch, {})
             if fit.individual_fractions
-            else math.nan
+            else {}
         )
+        single_text = ""
+        if single:
+            single_text = (
+                rf"; single-var: "
+                rf"$f_{{\pi^0}}={single['f_pi0']:.3f}$, "
+                rf"$f_{{\rm NP}}={single['f_nonprimary']:.3f}$"
+            )
+        #endif
+
         nuisance_text = format_stage2_nuisance(
             branch,
             result.shared_nuisance,
         )
+
         ax.set_title(
             f"{variable.title}\n"
-            rf"shared $f_{{\pi^0}}={fit.f_pi0:.3f}$; "
-            rf"single-var $f_{{\pi^0}}={independent:.3f}$; "
-            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$"
+            rf"shared: $f_{{\rm DVCS}}={fit.f_dvcs:.3f}$, "
+            rf"$f_{{\pi^0}}={fit.f_pi0:.3f}$, "
+            rf"$f_{{\rm NP}}={fit.f_nonprimary:.3f}$"
+            f"{single_text}"
             "\n"
+            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$; "
             f"{nuisance_text}",
-            fontsize=9.4,
+            fontsize=9.0,
         )
         ax.set_ylabel("entries / bin")
+
         display_low, display_high = displayed_xlimits_for_region(
             variable,
             region_key,
@@ -1871,39 +2502,58 @@ def draw_stage2_integrated_canvas(
         ax.set_xlim(display_low, display_high)
         ax.set_yscale("log")
 
-        # Keep the log-scale floor positive while leaving the upper limit
-        # data-driven.  Include all positive displayed data/model/component
-        # values when choosing a sensible lower bound.
-        visible = (centers >= display_low) & (centers <= display_high)
+        visible = (
+            (centers >= display_low)
+            & (centers <= display_high)
+        )
         positive_values = []
         for values in (
             data,
             model,
             result.dvcs_component_counts,
             result.pi0_component_counts,
+            result.nonprimary_component_counts,
         ):
             selected = np.asarray(values, dtype=float)[visible]
             selected = selected[
                 np.isfinite(selected) & (selected > 0.0)
             ]
             if selected.size:
-                positive_values.append(float(np.min(selected)))
+                positive_values.append(
+                    float(np.min(selected))
+                )
             #endif
         #endfor
 
         if positive_values:
-            ymin = max(0.5, 0.5 * min(positive_values))
-        else:
-            ymin = 0.5
+            ax.set_ylim(
+                bottom=max(
+                    0.5,
+                    0.5 * min(positive_values),
+                )
+            )
         #endif
-        ax.set_ylim(bottom=ymin)
         ax.grid(alpha=0.18)
 
         pull_ax = axes[1, col]
         pull = (data - model) / np.sqrt(model)
-        pull_ax.axhline(0.0, color="0.35", linewidth=0.9)
-        pull_ax.axhline(+2.0, color="0.6", linewidth=0.7, linestyle="--")
-        pull_ax.axhline(-2.0, color="0.6", linewidth=0.7, linestyle="--")
+        pull_ax.axhline(
+            0.0,
+            color="0.35",
+            linewidth=0.9,
+        )
+        pull_ax.axhline(
+            +2.0,
+            color="0.6",
+            linewidth=0.7,
+            linestyle="--",
+        )
+        pull_ax.axhline(
+            -2.0,
+            color="0.6",
+            linewidth=0.7,
+            linestyle="--",
+        )
         pull_ax.plot(
             centers,
             pull,
@@ -1920,45 +2570,50 @@ def draw_stage2_integrated_canvas(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
 
-    fpi0_text = rf"$f_{{\pi^0}}={fit.f_pi0:.4f}"
-    if math.isfinite(fit.f_pi0_err):
-        fpi0_text += rf"\pm{fit.f_pi0_err:.4f}"
-    #endif
-    fpi0_text += "$"
-
     fig.suptitle(
-        f"Stage 2 integrated fit: {period.label} — {region_label}\n"
-        rf"$|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$; "
+        f"Stage 2 TEMPORARY three-template hypothesis: "
+        f"{period.label} — {region_label}\n"
+        rf"$|M_X^2(ep\gamma)|"
+        rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$; "
         f"common entries: data={common_counts['data_n']:,}, "
-        f"DVCS MC={common_counts['dvcs_n']:,}, "
-        rf"$e\pi^0$ MC={common_counts['pi0_n']:,}; "
-        f"shared {fpi0_text}",
-        fontsize=12.5,
-        y=0.987,
+        f"primary-like DVCS MC={common_counts['dvcs_primary_n']:,}, "
+        rf"$e\pi^0$ MC={common_counts['pi0_n']:,}, "
+        f"non-primary DVCS-MC photons="
+        f"{common_counts['nonprimary_n']:,}"
+        "\n"
+        rf"shared fractions: "
+        rf"$f_{{\rm DVCS}}={fit.f_dvcs:.4f}$, "
+        rf"$f_{{\pi^0}}={fit.f_pi0:.4f}$, "
+        rf"$f_{{\rm NP}}={fit.f_nonprimary:.4f}$",
+        fontsize=12.1,
+        y=0.992,
     )
 
     fig.legend(
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.885),
-        ncol=6,
+        bbox_to_anchor=(0.5, 0.875),
+        ncol=5,
         frameon=False,
-        fontsize=8.5,
+        fontsize=8.4,
     )
 
     fig.subplots_adjust(
         left=0.065,
         right=0.992,
         bottom=0.085,
-        top=0.795,
+        top=0.775,
         wspace=0.24,
         hspace=0.25,
     )
 
     outpath = (
         outdir
-        / f"stage2_integrated_fits_{period.key}_{region_key.lower()}.png"
+        / (
+            f"stage2_three_template_"
+            f"{period.key}_{region_key.lower()}.png"
+        )
     )
     fig.savefig(outpath, dpi=180)
     plt.close(fig)
@@ -2083,7 +2738,7 @@ def draw_period_canvas(
 
             # Normalize the two DVCS energy slices with ONE COMMON
             # denominator. Their sum therefore has unit area, preserving
-            # the true relative sizes of the low- and high-energy subsets.
+            # the true relative sizes of the sub-1.8-GeV and >=1.8-GeV subsets.
             dvcs_split_total = float(
                 np.sum(dvcs_below2_counts)
                 + np.sum(dvcs_above2_counts)
@@ -2114,7 +2769,7 @@ def draw_period_canvas(
                 where="post",
                 linewidth=1.6,
                 color="tab:blue",
-                label=r"DVCS MC: $E_{\gamma,\mathrm{tag}}\geq2$ GeV",
+                label=(rf"DVCS MC: $E_{{\gamma,\mathrm{{tag}}}}\geq" rf"{DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV:g}$ GeV"),
             )
             ax.step(
                 edges[:-1],
@@ -2124,7 +2779,7 @@ def draw_period_canvas(
                 linestyle="--",
                 color="tab:blue",
                 alpha=0.85,
-                label=r"DVCS MC: $E_{\gamma,\mathrm{tag}}<2$ GeV",
+                label=(rf"DVCS MC: $E_{{\gamma,\mathrm{{tag}}}}<" rf"{DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV:g}$ GeV"),
             )
             ax.step(
                 edges[:-1],
@@ -2343,33 +2998,62 @@ def process_period(
                 branch: results["data"].stage2_counts[region_key][branch]
                 for branch in STAGE2_VARIABLE_KEYS
             }
-            dvcs_hists = {
-                branch: results["dvcsgen"].stage2_counts[region_key][branch]
+            dvcs_primary_hists = {
+                branch: (
+                    results["dvcsgen"]
+                    .stage2_counts_tag_above_split[
+                        region_key
+                    ][branch]
+                )
+                for branch in STAGE2_VARIABLE_KEYS
+            }
+            nonprimary_hists = {
+                branch: (
+                    results["dvcsgen"]
+                    .stage2_counts_tag_below_split[
+                        region_key
+                    ][branch]
+                )
                 for branch in STAGE2_VARIABLE_KEYS
             }
             pi0_hists = {
-                branch: results["aaogen"].stage2_counts[region_key][branch]
+                branch: results["aaogen"].stage2_counts[
+                    region_key
+                ][branch]
                 for branch in STAGE2_VARIABLE_KEYS
             }
 
-            fit = stage2_fit_shared(
+            fit = stage2_fit_three_template(
                 data_hists,
-                dvcs_hists,
+                dvcs_primary_hists,
                 pi0_hists,
+                nonprimary_hists,
             )
 
             common = {
                 "data_n": results["data"].selection_counts[
                     f"{region_key}_stage2_common"
                 ],
-                "dvcs_n": results["dvcsgen"].selection_counts[
-                    f"{region_key}_stage2_common"
-                ],
+                "dvcs_primary_n": int(
+                    np.sum(
+                        dvcs_primary_hists[
+                            STAGE2_VARIABLE_KEYS[0]
+                        ]
+                    )
+                ),
                 "pi0_n": results["aaogen"].selection_counts[
                     f"{region_key}_stage2_common"
                 ],
-                "dvcs_hists": dvcs_hists,
+                "nonprimary_n": int(
+                    np.sum(
+                        nonprimary_hists[
+                            STAGE2_VARIABLE_KEYS[0]
+                        ]
+                    )
+                ),
+                "dvcs_hists": dvcs_primary_hists,
                 "pi0_hists": pi0_hists,
+                "nonprimary_hists": nonprimary_hists,
             }
 
             canvas = draw_stage2_integrated_canvas(
@@ -2382,15 +3066,21 @@ def process_period(
             )
 
             stage2_results[region_key] = {
+                "temporary_mode": "three_template_hypothesis",
                 "success": bool(fit.success),
+                "f_dvcs": float(fit.f_dvcs),
                 "f_pi0": float(fit.f_pi0),
-                "f_pi0_err_curvature": float(fit.f_pi0_err),
+                "f_nonprimary": float(fit.f_nonprimary),
                 "deviance": float(fit.deviance),
                 "ndf": int(fit.ndf),
                 "individual_fractions": (
                     {
-                        key: float(value)
-                        for key, value in fit.individual_fractions.items()
+                        branch: {
+                            key: float(value)
+                            for key, value in fractions.items()
+                        }
+                        for branch, fractions
+                        in fit.individual_fractions.items()
                     }
                     if fit.individual_fractions
                     else {}
@@ -2399,7 +3089,8 @@ def process_period(
                     {
                         branch: [
                             float(value)
-                            for value in variable_result.shared_nuisance
+                            for value
+                            in variable_result.shared_nuisance
                         ]
                         for branch, variable_result
                         in fit.variable_results.items()
@@ -2410,22 +3101,28 @@ def process_period(
                 ),
                 "common_population": {
                     "data": int(common["data_n"]),
-                    "dvcs_mc": int(common["dvcs_n"]),
+                    "dvcs_primary_like_mc": int(
+                        common["dvcs_primary_n"]
+                    ),
                     "pi0_mc": int(common["pi0_n"]),
+                    "nonprimary_dvcs_mc": int(
+                        common["nonprimary_n"]
+                    ),
                 },
-                "canvas": str(canvas) if canvas is not None else None,
+                "canvas": (
+                    str(canvas)
+                    if canvas is not None
+                    else None
+                ),
                 "message": fit.message,
             }
 
             log(
-                f"{period.label} {region_label}: Stage 2 "
-                f"{'OK' if fit.success else 'FAILED'}; "
-                f"f_pi0={fit.f_pi0:.4f}"
-                + (
-                    f" +/- {fit.f_pi0_err:.4f}"
-                    if math.isfinite(fit.f_pi0_err)
-                    else ""
-                )
+                f"{period.label} {region_label}: Stage 2 TEMP "
+                f"three-template {'OK' if fit.success else 'FAILED'}; "
+                f"f_DVCS={fit.f_dvcs:.4f}, "
+                f"f_pi0={fit.f_pi0:.4f}, "
+                f"f_nonprimary={fit.f_nonprimary:.4f}"
             )
         #endfor
 
@@ -2468,7 +3165,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "CLAS12 RGA photon-efficiency clean refactor: "
-            "Stage 1 shape comparison + Stage 2 integrated composition fit."
+            "Stage 1 shape comparison + TEMP Stage 2 three-template hypothesis test."
         )
     )
 
@@ -2615,7 +3312,11 @@ def main() -> int:
         # Exercise the full Stage-2 optimizer before any large ROOT read.
         # This catches fit/refactor failures before expensive ROOT I/O.
         run_stage2_internal_self_test()
-        log("Internal Stage-2 fit self-test passed.")
+        run_stage2_three_template_self_test()
+        log(
+            "Internal Stage-2 two-template and TEMP three-template "
+            "self-tests passed."
+        )
     #endif
 
     # Complete ROOT schema preflight BEFORE any large read.
@@ -2699,7 +3400,7 @@ def main() -> int:
 
     if args.stage >= 2:
         stage2_summary = {
-            "stage": "stage2_integrated_fits",
+            "stage": "stage2_three_template_TEMPORARY",
             "selection": {
                 "stage1_minimal": {
                     "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
