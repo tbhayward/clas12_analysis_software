@@ -10,7 +10,7 @@ Stage 1: Shape Comparison
 
 This script intentionally does ONE thing only:
 
-    Compare four epgamma/event-shape observables in:
+    Compare five epgamma/event-shape observables in:
       1. loose nSidis epgamma DATA,
       2. dvcsgen epgamma MC,
       3. aaogen epgamma MC,
@@ -53,8 +53,9 @@ Plotted observables
     Delta_phi         stored branch
     pTmiss            stored branch
     Emiss2            stored branch (despite the name, this is E_miss)
+    E_gamma,tag       p2_p branch (reconstructed/tag photon energy)
 
-Each period produces TWO 2x4 canvases, split by detected tag photon:
+Each period produces TWO 2x5 canvases, split by detected tag photon:
     FT canvas: detector2 == 0
     FD canvas: detector2 == 1
 
@@ -173,14 +174,26 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         4.0,
         100,
     ),
+    PlotVariable(
+        "Egamma_tag",
+        r"$E_{\gamma,\mathrm{tag}}$",
+        r"$E_{\gamma,\mathrm{tag}}$ (GeV)",
+        0.4,
+        9.5,
+        100,
+    ),
 )
 
 COMPUTED_PLOT_KEYS = frozenset(("Mx2_epgamma", "Mx2_ep"))
+ALIASED_PLOT_KEYS = frozenset(("Egamma_tag",))
 
 STORED_SHAPE_BRANCHES: Tuple[str, ...] = tuple(
     variable.branch
     for variable in PLOT_VARIABLES
-    if variable.branch not in COMPUTED_PLOT_KEYS
+    if (
+        variable.branch not in COMPUTED_PLOT_KEYS
+        and variable.branch not in ALIASED_PLOT_KEYS
+    )
 )
 
 
@@ -754,6 +767,13 @@ def accumulate_shape_histograms(
                             missing[variable.branch],
                             dtype=float,
                         )
+                    elif variable.branch == "Egamma_tag":
+                        # The reconstructed/tag photon energy is p2_p in the
+                        # epgamma tree. Photons are massless, so E_gamma=p.
+                        values = np.asarray(
+                            arrays["p2_p"],
+                            dtype=float,
+                        )
                     else:
                         # IMPORTANT: stored branches are plotted exactly as
                         # stored in the ROOT tree.
@@ -938,7 +958,7 @@ def draw_period_canvas(
     region_label: str,
 ) -> Path:
     """
-    Draw one compact 2x4 canvas for one reconstructed TAG-photon detector:
+    Draw one compact 2x5 canvas for one reconstructed TAG-photon detector:
       top    = minimal selection only
       bottom = after |M_X^2(epgamma)| < 0.075 GeV^2
     """
@@ -1334,7 +1354,7 @@ def main() -> int:
         exist_ok=True,
     )
 
-    log("Stage 1 only: four epgamma shape comparisons; no fits or efficiency calculation.")
+    log("Stage 1 only: five epgamma shape comparisons; no fits or efficiency calculation.")
     log("Minimal selection: e_p>2 GeV, theta_egamma>5 deg, 0.4<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
 
     # Complete preflight BEFORE any large read.
