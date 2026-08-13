@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v064.py
+derive_photon_efficiency_scale_factors_v066.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v064.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v066.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v064.py \
+    python derive_photon_efficiency_scale_factors_v066.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v064.py \
+    python derive_photon_efficiency_scale_factors_v066.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -857,6 +857,18 @@ def match_data_event_candidates(
         name: np.zeros(n_epg, dtype=bool)
         for name in stage_names
     }
+    empty_best_diagnostics = {
+        "epg_index": np.asarray([], dtype=np.int64),
+        "eppi0_index": np.asarray([], dtype=np.int64),
+        "reco_probe_energy": np.asarray([], dtype=float),
+        "pred_probe_energy": np.asarray([], dtype=float),
+        "pred_probe_theta_deg": np.asarray([], dtype=float),
+        "pi0_mass": np.asarray([], dtype=float),
+        "reco_probe_mass2": np.asarray([], dtype=float),
+        "probe_delta_theta_deg": np.asarray([], dtype=float),
+        "probe_delta_E_over_E": np.asarray([], dtype=float),
+        "passes_pred_consistency": np.asarray([], dtype=bool),
+    }
 
     def empty_result(extra_counters: Optional[Dict[str, int]] = None) -> DataAssociationResult:
         counters = {
@@ -877,7 +889,10 @@ def match_data_event_candidates(
             best_match=empty_match,
             stage_lookup={k: v.copy() for k, v in empty_lookup.items()},
             counters=counters,
-            best_diagnostics={},
+            best_diagnostics={
+                key: value.copy()
+                for key, value in empty_best_diagnostics.items()
+            },
         )
     #enddef
 
@@ -1005,7 +1020,10 @@ def match_data_event_candidates(
     eligible_idx = np.flatnonzero(above_threshold)
     if eligible_idx.size == 0:
         best_match = empty_match
-        best_diag: Dict[str, np.ndarray] = {}
+        best_diag = {
+            key: value.copy()
+            for key, value in empty_best_diagnostics.items()
+        }
     else:
         angle_term = np.nan_to_num(
             delta_theta_deg[eligible_idx] / max(probe_angle_max_deg, 1.0e-9),
@@ -6648,7 +6666,17 @@ def safe_finalize_figure(
     sanitize_figure_text(fig, strip_math=False)
 
     try:
-        fig.tight_layout(rect=rect)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=(
+                    "This figure includes Axes that are not compatible "
+                    "with tight_layout.*"
+                ),
+                category=UserWarning,
+            )
+            fig.tight_layout(rect=rect)
+        #endwith
     except Exception as exc:
         log(
             f"WARNING: tight_layout failed for {output_path.name}: {exc}. "
@@ -14102,6 +14130,66 @@ def _aaogen_final_association_mask(
     )
 
 
+
+def association_stage_rows(
+    period: PeriodConfig,
+    label: str,
+    assoc: DataAssociationResult,
+) -> List[Dict[str, object]]:
+    """One compact table of exact-association survival fractions."""
+    counters = assoc.counters
+    n_tags = int(counters.get("epgamma_entries", 0))
+    stages = (
+        ("same_event", "same_event"),
+        ("positive_remainder", "positive_remainder"),
+        ("tag_mass_shell", "tag_mass_shell"),
+        ("probe_energy", "probe_energy"),
+        ("probe_pred_consistent", "probe_pred_consistent"),
+    )
+    rows: List[Dict[str, object]] = []
+    previous = n_tags
+    for stage_name, counter_key in stages:
+        count = int(counters.get(counter_key, 0))
+        rows.append(
+            {
+                "period": period.key,
+                "label": period.label,
+                "sample": label,
+                "stage": stage_name,
+                "count": count,
+                "fraction_of_tags": (
+                    float(count) / float(n_tags)
+                    if n_tags > 0 else float("nan")
+                ),
+                "conditional_survival": (
+                    float(count) / float(previous)
+                    if previous > 0 else float("nan")
+                ),
+            }
+        )
+        previous = count
+    #endfor
+    return rows
+
+
+def log_association_summary(
+    period: PeriodConfig,
+    label: str,
+    assoc: DataAssociationResult,
+) -> None:
+    c = assoc.counters
+    log(
+        f"{period.label}: {label} association stages: "
+        f"tags={int(c.get('epgamma_entries', 0)):,}, "
+        f"same-event={int(c.get('same_event', 0)):,}, "
+        f"positive={int(c.get('positive_remainder', 0)):,}, "
+        f"mass-shell={int(c.get('tag_mass_shell', 0)):,}, "
+        f"Eprobe={int(c.get('probe_energy', 0)):,}, "
+        f"pred-consistent={int(c.get('probe_pred_consistent', 0)):,}."
+    )
+
+
+
 def build_associated_numerator_purity_rows(
     period: PeriodConfig,
     data_assoc: DataAssociationResult,
@@ -14156,6 +14244,7 @@ def build_associated_numerator_purity_rows(
     data_final = np.asarray(
         best["passes_pred_consistency"], dtype=bool
     )
+    data_association_empty = (len(data_mass) == 0)
 
     mc_final = _aaogen_final_association_mask(
         mc_pair_np,
@@ -14298,6 +14387,11 @@ def build_associated_numerator_purity_rows(
                 ),
                 "constant_fit_success": int(
                     fit_constant["fit_success"]
+                ),
+                "association_status": (
+                    "no_final_associated_candidates"
+                    if data_association_empty
+                    else "ok"
                 ),
                 "nominal_background_model": "linear",
                 "purity_applied_to_efficiency": 1,
@@ -14780,17 +14874,6 @@ def process_nsidis_study_period(
     # The full old eppi0 wagon contains long exclusivity tails, so maximizing
     # retention of that entire tree is not the correct numerator-purity target.
     # Numerator exclusivity is evaluated below AFTER exact tag/probe association.
-    log(
-        f"{period.label}: skipped retired global eppi0 core optimization; "
-        "numerator purity will be evaluated after exact association."
-    )
-
-    log(
-        f"{period.label}: probe-mass2 development scan retired; "
-        "using fixed central support |M_probe^2| < "
-        f"{float(args_dict['nsidis_pilot_probe_m2_max']):.3g} GeV^2."
-    )
-
     pilot_wagon_rows: List[Dict[str, object]] = []
     pilot_nsidis_rows: List[Dict[str, object]] = []
     log(
@@ -15234,6 +15317,43 @@ def process_nsidis_study_period(
             ),
         )
 
+        log_association_summary(period, "nSidis", ns_assoc)
+        log_association_summary(period, "old-wagon", wagon_assoc)
+        association_rows = (
+            association_stage_rows(period, "nSidis", ns_assoc)
+            + association_stage_rows(period, "old-wagon", wagon_assoc)
+        )
+        write_rows_csv(
+            association_rows,
+            outdir / "association_stage_summary.csv",
+        )
+
+        if int(
+            ns_assoc.counters.get("probe_energy", 0)
+        ) == 0:
+            log(
+                f"{period.label}: WARNING: no nSidis candidate survives the "
+                "photon-like remainder + reconstructed-probe-energy stage. "
+                "Skipping numerator-purity/SF construction for this period; "
+                "association_stage_summary.csv contains the failure location."
+            )
+
+            summary = {
+                "period": period.key,
+                "label": period.label,
+                "status": "invalid_nsidis_association_no_probe_energy_candidates",
+                "wall_time_s": float(time.perf_counter() - t0),
+                "association_counters": ns_assoc.counters,
+                "wagon_association_counters": wagon_assoc.counters,
+            }
+            with (outdir / "nsidis_period_summary.json").open(
+                "w", encoding="utf-8"
+            ) as fout:
+                json.dump(summary, fout, indent=2, default=json_default)
+            #endif
+            return summary
+        #endif
+
         # --------------------------------------------------------------
         # Associated-numerator pi0 purity diagnostic.
         #
@@ -15256,7 +15376,7 @@ def process_nsidis_study_period(
 
         log(
             f"{period.label}: fitting final-associated numerator "
-            "M_gammagamma purity (diagnostic-only)."
+            "M_gammagamma purity."
         )
         numerator_purity_rows, numerator_purity_detail = (
             build_associated_numerator_purity_rows(
