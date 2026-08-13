@@ -10,7 +10,7 @@ Stage 1: Shape Comparison
 
 This script intentionally does ONE thing only:
 
-    Compare the shapes of six stored epgamma observables in:
+    Compare eight epgamma shape observables in:
       1. loose nSidis epgamma DATA,
       2. dvcsgen epgamma MC,
       3. aaogen epgamma MC,
@@ -39,16 +39,25 @@ defines the predicted probe photon used only for the common support selection:
 
 No exclusivity cut is imposed.
 
-The six SHAPE variables are read directly from the epgamma ROOT trees:
+The Stage-1 shape variables are:
 
-    Delta_phi
-    pTmiss
-    theta
-    theta_gamma_gamma
-    Emiss2       (despite the branch name, this is E_miss, not E_miss^2)
-    z
+    M_X^2(epgamma)    computed from P_beam + P_target - P_e - P_p - P_gamma
+    M_X^2(ep)         computed from P_beam + P_target - P_e - P_p
+    Delta_phi         stored branch
+    pTmiss            stored branch
+    theta             stored branch
+    theta_gamma_gamma stored branch
+    Emiss2            stored branch (despite the name, this is E_miss)
+    z                 stored branch
 
-One 2x3 unit-normalized shape-comparison canvas is written per run period.
+M_X^2(epgamma) is exactly the squared missing mass of the epgammaX topology.
+Equivalently, under the tag/probe hypothesis it is the predicted probe
+four-vector mass squared.
+
+No M_X^2(epgamma) cut is applied in Stage 1.  Dashed lines at +/-0.08 GeV^2
+show the support cut that may be used in the next stage.
+
+One 2x4 unit-normalized shape-comparison canvas is written per run period.
 
 Default output:
     output/photon_efficiency/stage1_shape_comparison/
@@ -128,6 +137,22 @@ class PlotVariable:
 
 PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
     PlotVariable(
+        "Mx2_epgamma",
+        r"$M_X^2(ep\gamma)$",
+        r"$M_X^2(ep\gamma)$ (GeV$^2$)",
+        -0.30,
+        0.30,
+        100,
+    ),
+    PlotVariable(
+        "Mx2_ep",
+        r"$M_X^2(ep)$",
+        r"$M_X^2(ep)$ (GeV$^2$)",
+        -0.20,
+        0.40,
+        100,
+    ),
+    PlotVariable(
         "Delta_phi",
         r"$\Delta\phi$",
         r"$\Delta\phi$ (rad)",
@@ -176,6 +201,15 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         80,
     ),
 )
+
+COMPUTED_PLOT_KEYS = frozenset(("Mx2_epgamma", "Mx2_ep"))
+
+STORED_SHAPE_BRANCHES: Tuple[str, ...] = tuple(
+    variable.branch
+    for variable in PLOT_VARIABLES
+    if variable.branch not in COMPUTED_PLOT_KEYS
+)
+
 
 
 # =============================================================================
@@ -311,9 +345,7 @@ KINEMATIC_BRANCHES: Tuple[str, ...] = (
     "p2_phi",
 )
 
-SHAPE_BRANCHES: Tuple[str, ...] = tuple(
-    variable.branch for variable in PLOT_VARIABLES
-)
+SHAPE_BRANCHES: Tuple[str, ...] = STORED_SHAPE_BRANCHES
 
 REQUIRED_BRANCHES: Tuple[str, ...] = (
     *KINEMATIC_BRANCHES,
@@ -408,21 +440,39 @@ def electron_proton_opening_angle_deg(
     return np.degrees(np.arccos(cosine))
 
 
-def predicted_probe_kinematics(
+def stage1_missing_kinematics(
     arrays: Dict[str, np.ndarray],
     beam_energy_GeV: float,
     angle_unit: str,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> Dict[str, np.ndarray]:
     """
-    Return (E_probe^pred, theta_probe^pred_deg).
+    Compute the Stage-1 missing-system quantities from measured e, p, gamma.
 
-    Electron energy is computed with the electron-mass-negligible
-    approximation E_e = |p_e|, which is more than sufficient on this scale.
-    The reconstructed photon is massless, so E_tag = p2_p.
+    P_X(ep) =
+        P_beam + P_target - P_e - P_p
+
+    P_X(epgamma) =
+        P_beam + P_target - P_e - P_p - P_gamma_tag
+
+    Therefore:
+
+        M_X^2(ep)      = P_X(ep)^2
+
+        M_X^2(epgamma) = P_X(epgamma)^2
+
+    In the tag/probe interpretation, P_X(epgamma) is also the predicted
+    probe-photon four-vector.  Thus M_X^2(epgamma) is the same quantity that
+    the legacy script called M_probe^2.
+
+    The reconstructed tag photon is massless:
+        E_gamma = |p_gamma|
+
+    The electron mass is neglected:
+        E_e = |p_e|
     """
     e_p = np.asarray(arrays["e_p"], dtype=float)
     p_p = np.asarray(arrays["p1_p"], dtype=float)
-    g_E = np.asarray(arrays["p2_p"], dtype=float)
+    g_p = np.asarray(arrays["p2_p"], dtype=float)
 
     e_theta = to_radians(arrays["e_theta"], angle_unit)
     e_phi = to_radians(arrays["e_phi"], angle_unit)
@@ -434,42 +484,75 @@ def predicted_probe_kinematics(
     g_phi = to_radians(arrays["p2_phi"], angle_unit)
 
     e_px, e_py, e_pz = cartesian_from_spherical(
-        e_p, e_theta, e_phi
+        e_p,
+        e_theta,
+        e_phi,
     )
     p_px, p_py, p_pz = cartesian_from_spherical(
-        p_p, p_theta, p_phi
+        p_p,
+        p_theta,
+        p_phi,
     )
     g_px, g_py, g_pz = cartesian_from_spherical(
-        g_E, g_theta, g_phi
+        g_p,
+        g_theta,
+        g_phi,
     )
 
     proton_E = np.sqrt(
-        np.maximum(p_p * p_p + PROTON_MASS_GEV * PROTON_MASS_GEV, 0.0)
+        np.maximum(
+            p_p * p_p + PROTON_MASS_GEV * PROTON_MASS_GEV,
+            0.0,
+        )
     )
 
-    pred_E = (
+    # Missing system after e and p.
+    mx_ep_E = (
         beam_energy_GeV
         + PROTON_MASS_GEV
         - e_p
         - proton_E
-        - g_E
+    )
+    mx_ep_px = -e_px - p_px
+    mx_ep_py = -e_py - p_py
+    mx_ep_pz = beam_energy_GeV - e_pz - p_pz
+
+    mx2_ep = (
+        mx_ep_E * mx_ep_E
+        - mx_ep_px * mx_ep_px
+        - mx_ep_py * mx_ep_py
+        - mx_ep_pz * mx_ep_pz
     )
 
-    pred_px = -e_px - p_px - g_px
-    pred_py = -e_py - p_py - g_py
-    pred_pz = beam_energy_GeV - e_pz - p_pz - g_pz
+    # Missing system after e, p, and reconstructed gamma_tag.
+    pred_E = mx_ep_E - g_p
+    pred_px = mx_ep_px - g_px
+    pred_py = mx_ep_py - g_py
+    pred_pz = mx_ep_pz - g_pz
 
-    pred_p = np.sqrt(
-        pred_px * pred_px + pred_py * pred_py + pred_pz * pred_pz
+    pred_p2 = (
+        pred_px * pred_px
+        + pred_py * pred_py
+        + pred_pz * pred_pz
     )
+    pred_p = np.sqrt(np.maximum(pred_p2, 0.0))
+
+    mx2_epgamma = pred_E * pred_E - pred_p2
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        cosine = pred_pz / pred_p
+        cos_theta = pred_pz / pred_p
     #endwith
-    cosine = np.clip(cosine, -1.0, 1.0)
-    pred_theta_deg = np.degrees(np.arccos(cosine))
 
-    return pred_E, pred_theta_deg
+    cos_theta = np.clip(cos_theta, -1.0, 1.0)
+    pred_theta_deg = np.degrees(np.arccos(cos_theta))
+
+    return {
+        "pred_probe_energy": pred_E,
+        "pred_probe_theta_deg": pred_theta_deg,
+        "Mx2_epgamma": mx2_epgamma,
+        "Mx2_ep": mx2_ep,
+    }
+
 
 
 def common_support_mask(
@@ -507,11 +590,13 @@ def common_support_mask(
         p_pz,
     )
 
-    pred_E, pred_theta_deg = predicted_probe_kinematics(
+    missing = stage1_missing_kinematics(
         arrays,
         beam_energy_GeV,
         angle_unit,
     )
+    pred_E = missing["pred_probe_energy"]
+    pred_theta_deg = missing["pred_probe_theta_deg"]
 
     finite = (
         np.isfinite(e_p)
@@ -667,6 +752,11 @@ def accumulate_shape_histograms(
                 beam_energy_GeV,
                 angle_unit,
             )
+            missing = stage1_missing_kinematics(
+                arrays,
+                beam_energy_GeV,
+                angle_unit,
+            )
 
             entries_read += n
             for key in totals:
@@ -674,10 +764,18 @@ def accumulate_shape_histograms(
             #endfor
 
             for variable in PLOT_VARIABLES:
-                values = np.asarray(
-                    arrays[variable.branch],
-                    dtype=float,
-                )
+                if variable.branch in COMPUTED_PLOT_KEYS:
+                    values = np.asarray(
+                        missing[variable.branch],
+                        dtype=float,
+                    )
+                else:
+                    values = np.asarray(
+                        arrays[variable.branch],
+                        dtype=float,
+                    )
+                #endif
+
                 selected_values = values[
                     selection & np.isfinite(values)
                 ]
@@ -847,12 +945,12 @@ def draw_period_canvas(
       - red step = aaogen
       - black points = data
       - unit-normalized entries/bin
-      - one shared legend above the 2x3 canvas
+      - one shared legend above the 2x4 canvas
     """
     fig, axes = plt.subplots(
         2,
-        3,
-        figsize=(16.0, 9.2),
+        4,
+        figsize=(19.5, 9.2),
     )
     axes_flat = axes.ravel()
 
@@ -908,6 +1006,23 @@ def draw_period_canvas(
         )
 
         ax.set_xlim(variable.low, variable.high)
+
+        if variable.branch == "Mx2_epgamma":
+            ax.axvline(
+                -0.08,
+                linestyle="--",
+                linewidth=1.0,
+                color="0.35",
+                label=r"$|M_X^2(ep\gamma)|<0.08$ GeV$^2$",
+            )
+            ax.axvline(
+                +0.08,
+                linestyle="--",
+                linewidth=1.0,
+                color="0.35",
+            )
+        #endif
+
         ax.set_xlabel(variable.xlabel)
         ax.set_ylabel("unit-normalized entries / bin")
         ax.grid(alpha=0.18)
@@ -933,14 +1048,14 @@ def draw_period_canvas(
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.905),
+        bbox_to_anchor=(0.5, 0.900),
         ncol=3,
         frameon=False,
         fontsize=10,
     )
 
     fig.tight_layout(
-        rect=(0.02, 0.03, 0.99, 0.84)
+        rect=(0.02, 0.03, 0.99, 0.83)
     )
 
     outpath = outdir / f"stage1_shape_comparison_{period.key}.png"
@@ -953,23 +1068,13 @@ def draw_period_canvas(
 # Per-period execution
 # =============================================================================
 
-def period_output_dir(
-    base_output_dir: str,
-    period: PeriodConfig,
-) -> Path:
-    return Path(base_output_dir) / period.key
-
-
 def process_period(
     period: PeriodConfig,
     args_dict: Dict[str, object],
 ) -> Dict[str, object]:
     t0 = time.perf_counter()
 
-    outdir = period_output_dir(
-        str(args_dict["output_dir"]),
-        period,
-    )
+    outdir = Path(str(args_dict["output_dir"]))
     outdir.mkdir(parents=True, exist_ok=True)
 
     sample_specs = (
@@ -1061,7 +1166,9 @@ def process_period(
         }
     #endfor
 
-    with (outdir / "stage1_summary.json").open(
+    with (
+        outdir / f"stage1_summary_{period.key}.json"
+    ).open(
         "w",
         encoding="utf-8",
     ) as stream:
