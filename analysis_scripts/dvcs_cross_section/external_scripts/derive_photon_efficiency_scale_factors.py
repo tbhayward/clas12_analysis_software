@@ -148,7 +148,7 @@ STAGE2_VARIABLE_KEYS: Tuple[str, ...] = (
     "Emiss2",
 )
 
-STAGE2_OUTPUT_DIRNAME = "stage2_integrated_fits"
+STAGE2_OUTPUT_DIRNAME = "stage2_individual_fits_TEMPORARY"
 
 CURRENT_MAX_STAGE = 2
 
@@ -1699,11 +1699,42 @@ def draw_stage2_integrated_canvas(
     period: PeriodConfig,
     region_key: str,
     region_label: str,
-    fit: Stage2SharedFit,
+    shared_reference_fit: Stage2SharedFit,
     outdir: Path,
-    common_counts: Dict[str, int],
+    common_counts: Dict[str, object],
 ) -> Optional[Path]:
-    if not fit.success or fit.variable_results is None:
+    """
+    TEMPORARY Stage-2 diagnostic.
+
+    Plot three genuinely independent fits instead of the combined/shared fit.
+    Each variable independently determines:
+      - its own f_pi0;
+      - its own response-morph nuisance parameters.
+
+    The shared fit passed into this function is NOT used to draw the curves.
+    It remains available elsewhere only as a numerical reference.
+    """
+    data_hists = common_counts["data_hists"]
+    dvcs_hists = common_counts["dvcs_hists"]
+    pi0_hists = common_counts["pi0_hists"]
+
+    individual_fits = {
+        branch: stage2_fit_shared(
+            data_hists,
+            dvcs_hists,
+            pi0_hists,
+            branches=(branch,),
+        )
+        for branch in STAGE2_VARIABLE_KEYS
+    }
+
+    if any(
+        (
+            not individual_fits[branch].success
+            or individual_fits[branch].variable_results is None
+        )
+        for branch in STAGE2_VARIABLE_KEYS
+    ):
         return None
     #endif
 
@@ -1717,22 +1748,28 @@ def draw_stage2_integrated_canvas(
 
     for col, branch in enumerate(STAGE2_VARIABLE_KEYS):
         variable = stage2_variable(branch)
+        fit = individual_fits[branch]
         result = fit.variable_results[branch]
-        edges = np.linspace(variable.low, variable.high, variable.bins + 1)
+
+        edges = np.linspace(
+            variable.low,
+            variable.high,
+            variable.bins + 1,
+        )
         centers = 0.5 * (edges[:-1] + edges[1:])
 
         ax = axes[0, col]
-        data = result.data_counts
-        model = np.clip(result.model_counts, 1.0e-12, None)
+        data = np.asarray(result.data_counts, dtype=float)
+        model = np.clip(
+            np.asarray(result.model_counts, dtype=float),
+            1.0e-12,
+            None,
+        )
 
-        # Raw MC shapes, normalized to the data total, are thin dashed curves.
         data_total = float(np.sum(data))
-        raw_dvcs = normalized_shape(
-            common_counts["dvcs_hists"][branch]
-        )
-        raw_pi0 = normalized_shape(
-            common_counts["pi0_hists"][branch]
-        )
+        raw_dvcs = normalized_shape(dvcs_hists[branch])
+        raw_pi0 = normalized_shape(pi0_hists[branch])
+
         if raw_dvcs is not None:
             ax.step(
                 edges[:-1],
@@ -1745,6 +1782,7 @@ def draw_stage2_integrated_canvas(
                 label="raw DVCS shape",
             )
         #endif
+
         if raw_pi0 is not None:
             ax.step(
                 edges[:-1],
@@ -1794,25 +1832,27 @@ def draw_stage2_integrated_canvas(
             zorder=5,
         )
 
-        independent = (
-            fit.individual_fractions.get(branch, math.nan)
-            if fit.individual_fractions
-            else math.nan
-        )
         nuisance_text = format_stage2_nuisance(
             branch,
             result.shared_nuisance,
         )
+        uncertainty_text = (
+            rf"\pm{fit.f_pi0_err:.4f}"
+            if math.isfinite(fit.f_pi0_err)
+            else ""
+        )
+
         ax.set_title(
             f"{variable.title}\n"
-            rf"shared $f_{{\pi^0}}={fit.f_pi0:.3f}$; "
-            rf"single-var $f_{{\pi^0}}={independent:.3f}$; "
+            rf"independent $f_{{\pi^0}}="
+            rf"{fit.f_pi0:.4f}{uncertainty_text}$; "
             rf"$D/ndf={result.deviance:.1f}/{result.ndf}$"
             "\n"
             f"{nuisance_text}",
             fontsize=9.4,
         )
         ax.set_ylabel("entries / bin")
+
         display_low, display_high = displayed_xlimits_for_region(
             variable,
             region_key,
@@ -1820,10 +1860,10 @@ def draw_stage2_integrated_canvas(
         ax.set_xlim(display_low, display_high)
         ax.set_yscale("log")
 
-        # Keep the log-scale floor positive while leaving the upper limit
-        # data-driven.  Include all positive displayed data/model/component
-        # values when choosing a sensible lower bound.
-        visible = (centers >= display_low) & (centers <= display_high)
+        visible = (
+            (centers >= display_low)
+            & (centers <= display_high)
+        )
         positive_values = []
         for values in (
             data,
@@ -1836,7 +1876,9 @@ def draw_stage2_integrated_canvas(
                 np.isfinite(selected) & (selected > 0.0)
             ]
             if selected.size:
-                positive_values.append(float(np.min(selected)))
+                positive_values.append(
+                    float(np.min(selected))
+                )
             #endif
         #endfor
 
@@ -1850,9 +1892,23 @@ def draw_stage2_integrated_canvas(
 
         pull_ax = axes[1, col]
         pull = (data - model) / np.sqrt(model)
-        pull_ax.axhline(0.0, color="0.35", linewidth=0.9)
-        pull_ax.axhline(+2.0, color="0.6", linewidth=0.7, linestyle="--")
-        pull_ax.axhline(-2.0, color="0.6", linewidth=0.7, linestyle="--")
+        pull_ax.axhline(
+            0.0,
+            color="0.35",
+            linewidth=0.9,
+        )
+        pull_ax.axhline(
+            +2.0,
+            color="0.6",
+            linewidth=0.7,
+            linestyle="--",
+        )
+        pull_ax.axhline(
+            -2.0,
+            color="0.6",
+            linewidth=0.7,
+            linestyle="--",
+        )
         pull_ax.plot(
             centers,
             pull,
@@ -1869,19 +1925,29 @@ def draw_stage2_integrated_canvas(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
 
-    fpi0_text = rf"$f_{{\pi^0}}={fit.f_pi0:.4f}"
-    if math.isfinite(fit.f_pi0_err):
-        fpi0_text += rf"\pm{fit.f_pi0_err:.4f}"
+    shared_reference_text = ""
+    if (
+        shared_reference_fit.success
+        and math.isfinite(shared_reference_fit.f_pi0)
+    ):
+        shared_reference_text = (
+            rf"; shared-fit reference "
+            rf"$f_{{\pi^0}}={shared_reference_fit.f_pi0:.4f}$"
+        )
     #endif
-    fpi0_text += "$"
 
     fig.suptitle(
-        f"Stage 2 integrated fit: {period.label} — {region_label}\n"
-        rf"$|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$; "
+        f"Stage 2 TEMPORARY independent fits: "
+        f"{period.label} — {region_label}\n"
+        rf"$|M_X^2(ep\gamma)|"
+        rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$; "
         f"common entries: data={common_counts['data_n']:,}, "
         f"DVCS MC={common_counts['dvcs_n']:,}, "
-        rf"$e\pi^0$ MC={common_counts['pi0_n']:,}; "
-        f"shared {fpi0_text}",
+        rf"$e\pi^0$ MC={common_counts['pi0_n']:,}"
+        f"{shared_reference_text}"
+        "\n"
+        r"each column independently fits its own "
+        r"$f_{\pi^0}$ and morph nuisance",
         fontsize=12.5,
         y=0.987,
     )
@@ -1890,7 +1956,7 @@ def draw_stage2_integrated_canvas(
         handles,
         labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.885),
+        bbox_to_anchor=(0.5, 0.87),
         ncol=6,
         frameon=False,
         fontsize=8.5,
@@ -1900,18 +1966,22 @@ def draw_stage2_integrated_canvas(
         left=0.065,
         right=0.992,
         bottom=0.085,
-        top=0.795,
+        top=0.78,
         wspace=0.24,
         hspace=0.25,
     )
 
     outpath = (
         outdir
-        / f"stage2_integrated_fits_{period.key}_{region_key.lower()}.png"
+        / (
+            f"stage2_individual_fits_"
+            f"{period.key}_{region_key.lower()}.png"
+        )
     )
     fig.savefig(outpath, dpi=180)
     plt.close(fig)
     return outpath
+
 
 # =============================================================================
 # Plotting
@@ -2014,41 +2084,6 @@ def draw_period_canvas(
             dvcs_y, _ = normalized_histogram(dvcs_counts)
             aaogen_y, _ = normalized_histogram(aaogen_counts)
 
-            # In the post-exclusivity row, also show the MC events rejected
-            # by the M_X^2(epgamma) requirement.  Each rejected distribution
-            # is independently unit normalized so its shape can be compared
-            # directly with the retained populations.
-            dvcs_rejected_y = None
-            aaogen_rejected_y = None
-            if row == 1:
-                dvcs_before_counts = dvcs.counts_before[
-                    region_key
-                ][variable.branch]
-                aaogen_before_counts = aaogen.counts_before[
-                    region_key
-                ][variable.branch]
-
-                dvcs_rejected_counts = np.clip(
-                    np.asarray(dvcs_before_counts, dtype=np.int64)
-                    - np.asarray(dvcs_counts, dtype=np.int64),
-                    0,
-                    None,
-                )
-                aaogen_rejected_counts = np.clip(
-                    np.asarray(aaogen_before_counts, dtype=np.int64)
-                    - np.asarray(aaogen_counts, dtype=np.int64),
-                    0,
-                    None,
-                )
-
-                dvcs_rejected_y, _ = normalized_histogram(
-                    dvcs_rejected_counts
-                )
-                aaogen_rejected_y, _ = normalized_histogram(
-                    aaogen_rejected_counts
-                )
-            #endif
-
             ax.step(
                 edges[:-1],
                 dvcs_y,
@@ -2065,29 +2100,6 @@ def draw_period_canvas(
                 color="red",
                 label=r"$e\pi^0$ MC as $ep\gamma$",
             )
-
-            if row == 1:
-                ax.step(
-                    edges[:-1],
-                    dvcs_rejected_y,
-                    where="post",
-                    linewidth=1.15,
-                    linestyle="--",
-                    color="tab:blue",
-                    label=r"DVCS MC rejected by $M_X^2$ cut",
-                )
-                ax.step(
-                    edges[:-1],
-                    aaogen_rejected_y,
-                    where="post",
-                    linewidth=1.15,
-                    linestyle="--",
-                    color="red",
-                    label=(
-                        r"$e\pi^0$ MC rejected by $M_X^2$ cut"
-                    ),
-                )
-            #endif
 
             positive_data = data_y > 0.0
             ax.errorbar(
@@ -2114,20 +2126,13 @@ def draw_period_canvas(
             # bins are naturally ignored by the log transform.
             ax.set_yscale("log")
 
-            positive_arrays = [
-                data_y[data_y > 0.0],
-                dvcs_y[dvcs_y > 0.0],
-                aaogen_y[aaogen_y > 0.0],
-            ]
-            if row == 1:
-                positive_arrays.extend(
-                    [
-                        dvcs_rejected_y[dvcs_rejected_y > 0.0],
-                        aaogen_rejected_y[aaogen_rejected_y > 0.0],
-                    ]
+            positive = np.concatenate(
+                (
+                    data_y[data_y > 0.0],
+                    dvcs_y[dvcs_y > 0.0],
+                    aaogen_y[aaogen_y > 0.0],
                 )
-            #endif
-            positive = np.concatenate(positive_arrays)
+            )
             if len(positive) > 0:
                 ymin = max(
                     float(np.min(positive)) * 0.5,
@@ -2166,21 +2171,7 @@ def draw_period_canvas(
         #endfor
     #endfor
 
-    # Merge the top-row cut marker with the bottom-row rejected-template
-    # legend entries, preserving first occurrence of each label.
-    legend_items = []
-    seen_labels = set()
-    for legend_ax in (axes[0, 0], axes[1, 0]):
-        row_handles, row_labels = legend_ax.get_legend_handles_labels()
-        for handle, label in zip(row_handles, row_labels):
-            if label not in seen_labels:
-                legend_items.append((handle, label))
-                seen_labels.add(label)
-            #endif
-        #endfor
-    #endfor
-    handles = [item[0] for item in legend_items]
-    labels = [item[1] for item in legend_items]
+    handles, labels = axes[0, 0].get_legend_handles_labels()
 
     n_data_before = data.selection_counts[
         f"{region_key}_minimal"
@@ -2223,9 +2214,9 @@ def draw_period_canvas(
         labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.885),
-        ncol=6,
+        ncol=4,
         frameon=False,
-        fontsize=8.8,
+        fontsize=9.5,
     )
 
     fig.subplots_adjust(
@@ -2342,6 +2333,7 @@ def process_period(
                 "pi0_n": results["aaogen"].selection_counts[
                     f"{region_key}_stage2_common"
                 ],
+                "data_hists": data_hists,
                 "dvcs_hists": dvcs_hists,
                 "pi0_hists": pi0_hists,
             }
@@ -2673,7 +2665,7 @@ def main() -> int:
 
     if args.stage >= 2:
         stage2_summary = {
-            "stage": "stage2_integrated_fits",
+            "stage": "stage2_individual_fits_TEMPORARY",
             "selection": {
                 "stage1_minimal": {
                     "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
