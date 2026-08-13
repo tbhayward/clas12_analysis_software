@@ -22,7 +22,7 @@ again after one explicit exclusivity requirement:
     |M_X^2(epgamma)| < 0.075 GeV^2.
 
 Stage 2 fits the post-exclusivity Delta_phi, pTmiss, and Emiss shapes as
-FT-tag canvases display pTmiss only to 0.6 GeV and Emiss only to 3 GeV; these are display-only limits and do not alter the fit.
+FT-tag canvases display pTmiss only to 0.6 GeV; Emiss uses the full configured range.
 DVCS+pi0 template mixtures with one shared response morph per variable. There is still NO eppi0 numerator efficiency,
 NO bootstrap, and NO final systematic extraction.
 
@@ -224,8 +224,8 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         r"$E_{\mathrm{miss}}$",
         r"$E_{\mathrm{miss}}$ (GeV)",
         -0.10,
-        4.0,
-        100,
+        6.0,
+        120,
     ),
     PlotVariable(
         "Egamma_tag",
@@ -2013,16 +2013,14 @@ def displayed_xlimits_for_region(
     Return plotting limits only.
 
     For FT-tag canvases:
-      pTmiss is displayed only to 0.60 GeV;
-      Emiss is displayed only to 3.00 GeV.
+      pTmiss is displayed only to 0.60 GeV.
 
-    Histogram accumulation and Stage-2 fit ranges remain unchanged.
+    Emiss uses the full configured range in both FT and FD.
+    Histogram accumulation and Stage-2 fit ranges remain unchanged except
+    where explicitly configured in PLOT_VARIABLES.
     """
     if region_key == "FT" and variable.branch == "pTmiss":
         return variable.low, 0.60
-    #endif
-    if region_key == "FT" and variable.branch == "Emiss2":
-        return variable.low, 3.00
     #endif
     return variable.low, variable.high
 #enddef
