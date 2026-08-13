@@ -35,8 +35,8 @@ public class parent_hadron_creation {
         LorentzVector lv_pi0_candidate = new LorentzVector(lv_gamma_1); lv_pi0_candidate.add(lv_gamma_2);
         
         // candidate is in the mass range for pi0
-        if (0.11 < lv_pi0_candidate.mass() && lv_pi0_candidate.mass() < 0.16) {
-//        if (0.08 < lv_pi0_candidate.mass() && lv_pi0_candidate.mass() < 0.22) {
+//        if (0.11 < lv_pi0_candidate.mass() && lv_pi0_candidate.mass() < 0.16) {
+        if (0.08 < lv_pi0_candidate.mass() && lv_pi0_candidate.mass() < 0.22) {
             Particle part = new Particle(111, lv_pi0_candidate.px(), lv_pi0_candidate.py(), 
                 lv_pi0_candidate.pz(), 0, 0, 0);
             return part;
