@@ -26,7 +26,7 @@ numerator association, NO bootstrap, and NO systematic extraction.
 Minimal common selection
 ------------------------
     e_p > 2 GeV
-    theta_ep > 5 deg
+    theta_egamma > 5 deg
     2 <= E_gamma(tag) < 9.5 GeV
 
 Importantly, Stage 1 does NOT require:
@@ -90,7 +90,7 @@ import uproot
 PROTON_MASS_GEV = 0.9382720813
 
 ELECTRON_P_MIN_GEV = 2.0
-THETA_EP_MIN_DEG = 5.0
+THETA_EGAMMA_MIN_DEG = 5.0
 
 TAG_E_MIN_GEV = 2.0
 TAG_E_MAX_GEV = 9.5
@@ -146,7 +146,7 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         r"$\Delta\phi$",
         r"$\Delta\phi$ (rad)",
         math.pi / 2.0,
-        math.pi,
+        3.0 * math.pi / 2.0,
         100,
     ),
     PlotVariable(
@@ -154,7 +154,7 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         r"$p_{T,\mathrm{miss}}$",
         r"$p_{T,\mathrm{miss}}$ (GeV)",
         0.0,
-        1.20,
+        1.0,
         100,
     ),
     PlotVariable(
@@ -393,7 +393,7 @@ def to_radians(values: np.ndarray, angle_unit: str) -> np.ndarray:
     return array
 
 
-def electron_proton_opening_angle_deg(
+def opening_angle_deg(
     e_px: np.ndarray,
     e_py: np.ndarray,
     e_pz: np.ndarray,
@@ -536,54 +536,65 @@ def common_support_mask(
     """
     Apply the genuinely minimal Stage-1 common selection only.
 
-    The missing/probe four-vector is NOT used to select events here.
-    In particular there is no probe-energy or predicted-probe angular cut.
+    Requirements:
+        e_p > 2 GeV
+        opening angle(e, gamma_tag) > 5 deg
+        2 <= E_gamma_tag < 9.5 GeV
+
+    The e-gamma opening-angle requirement suppresses radiative events.
+
+    No missing/probe-energy requirement and no predicted-probe angular
+    acceptance requirement are imposed in Stage 1.
     """
     e_p = np.asarray(arrays["e_p"], dtype=float)
-    p_p = np.asarray(arrays["p1_p"], dtype=float)
-    g_E = np.asarray(arrays["p2_p"], dtype=float)
+    g_p = np.asarray(arrays["p2_p"], dtype=float)
 
     e_theta = to_radians(arrays["e_theta"], angle_unit)
     e_phi = to_radians(arrays["e_phi"], angle_unit)
-    p_theta = to_radians(arrays["p1_theta"], angle_unit)
-    p_phi = to_radians(arrays["p1_phi"], angle_unit)
+    g_theta = to_radians(arrays["p2_theta"], angle_unit)
+    g_phi = to_radians(arrays["p2_phi"], angle_unit)
 
     e_px, e_py, e_pz = cartesian_from_spherical(
-        e_p, e_theta, e_phi
+        e_p,
+        e_theta,
+        e_phi,
     )
-    p_px, p_py, p_pz = cartesian_from_spherical(
-        p_p, p_theta, p_phi
+    g_px, g_py, g_pz = cartesian_from_spherical(
+        g_p,
+        g_theta,
+        g_phi,
     )
 
-    theta_ep_deg = electron_proton_opening_angle_deg(
+    theta_egamma_deg = opening_angle_deg(
         e_px,
         e_py,
         e_pz,
-        p_px,
-        p_py,
-        p_pz,
+        g_px,
+        g_py,
+        g_pz,
     )
 
     finite = (
         np.isfinite(e_p)
-        & np.isfinite(p_p)
-        & np.isfinite(g_E)
-        & np.isfinite(theta_ep_deg)
+        & np.isfinite(g_p)
+        & np.isfinite(theta_egamma_deg)
     )
 
     electron = finite & (e_p > ELECTRON_P_MIN_GEV)
-    opening = electron & (theta_ep_deg > THETA_EP_MIN_DEG)
+    nonradiative = electron & (
+        theta_egamma_deg > THETA_EGAMMA_MIN_DEG
+    )
     accepted = (
-        opening
-        & (g_E >= TAG_E_MIN_GEV)
-        & (g_E < TAG_E_MAX_GEV)
+        nonradiative
+        & (g_p >= TAG_E_MIN_GEV)
+        & (g_p < TAG_E_MAX_GEV)
     )
 
     counters = {
         "input": int(len(e_p)),
         "finite": int(np.count_nonzero(finite)),
         "electron_p_gt_2": int(np.count_nonzero(electron)),
-        "theta_ep_gt_5deg": int(np.count_nonzero(opening)),
+        "theta_egamma_gt_5deg": int(np.count_nonzero(nonradiative)),
         "tag_2_to_9p5_GeV": int(np.count_nonzero(accepted)),
     }
 
@@ -635,7 +646,7 @@ def accumulate_shape_histograms(
         "input": 0,
         "finite": 0,
         "electron_p_gt_2": 0,
-        "theta_ep_gt_5deg": 0,
+        "theta_egamma_gt_5deg": 0,
         "tag_2_to_9p5_GeV": 0,
         "after_mx2_epgamma_cut": 0,
     }
@@ -702,7 +713,7 @@ def accumulate_shape_histograms(
                 "input",
                 "finite",
                 "electron_p_gt_2",
-                "theta_ep_gt_5deg",
+                "theta_egamma_gt_5deg",
                 "tag_2_to_9p5_GeV",
             ):
                 totals[key] += int(chunk_counts[key])
@@ -1007,7 +1018,7 @@ def draw_period_canvas(
 
     fig.suptitle(
         f"Stage 1 shape comparison: {period.label}\n"
-        r"minimal selection: $E_e>2$ GeV, $\theta_{ep}>5^\circ$, "
+        r"minimal selection: $E_e>2$ GeV, $\theta_{e\gamma}>5^\circ$, "
         r"$2\leq E_{\gamma,\mathrm{tag}}<9.5$ GeV"
         "\n"
         f"before cut: data={n_data_before:,}, DVCS MC={n_dvcs_before:,}, "
@@ -1225,7 +1236,7 @@ def main() -> int:
     )
 
     log("Stage 1 only: six epgamma shape comparisons; no fits or efficiency calculation.")
-    log("Minimal selection: e_p>2 GeV, theta_ep>5 deg, 2<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
+    log("Minimal selection: e_p>2 GeV, theta_egamma>5 deg, 2<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
 
     # Complete preflight BEFORE any large read.
     preflight_periods(periods, args.tree_name)
@@ -1288,7 +1299,7 @@ def main() -> int:
         "stage": "stage1_shape_comparison",
         "selection": {
             "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
-            "theta_ep_min_deg": THETA_EP_MIN_DEG,
+            "theta_egamma_min_deg": THETA_EGAMMA_MIN_DEG,
             "tag_energy_GeV": [TAG_E_MIN_GEV, TAG_E_MAX_GEV],
             "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
         },
