@@ -56,7 +56,11 @@ Plotted observables
     theta_gamma_gamma stored branch, plotted exactly as stored
     Emiss2            stored branch (despite the name, this is E_miss)
 
-Each period produces ONE 2x6 canvas:
+Each period produces TWO 2x6 canvases, split by detected tag photon:
+    FT canvas: detector2 == 0
+    FD canvas: detector2 == 1
+
+In each canvas:
     top row    = minimal selection only
     bottom row = same population after |M_X^2(epgamma)| < 0.075 GeV^2
 
@@ -118,6 +122,11 @@ DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_OUTPUT_DIR = "output/photon_efficiency/stage1_shape_comparison"
 DEFAULT_CHUNK_SIZE = 500_000
 
+TAG_REGIONS: Tuple[Tuple[str, str, int], ...] = (
+    ("FT", "FT tag", 0),
+    ("FD", "FD tag", 1),
+)
+
 
 # =============================================================================
 # Plot definitions
@@ -139,7 +148,7 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         r"$M_X^2(ep\gamma)$",
         r"$M_X^2(ep\gamma)$ (GeV$^2$)",
         -0.20,
-        0.50,
+        0.30,
         100,
     ),
     PlotVariable(
@@ -316,6 +325,7 @@ PERIOD_BY_KEY: Dict[str, PeriodConfig] = {
 # =============================================================================
 
 KINEMATIC_BRANCHES: Tuple[str, ...] = (
+    "detector2",
     "e_p",
     "e_theta",
     "e_phi",
@@ -621,8 +631,8 @@ class HistogramResult:
     file_path: str
     entries_read: int
     selection_counts: Dict[str, int]
-    counts_before: Dict[str, np.ndarray]
-    counts_after: Dict[str, np.ndarray]
+    counts_before: Dict[str, Dict[str, np.ndarray]]
+    counts_after: Dict[str, Dict[str, np.ndarray]]
     angle_unit: str
 
 
@@ -630,6 +640,13 @@ def empty_histograms() -> Dict[str, np.ndarray]:
     return {
         variable.branch: np.zeros(variable.bins, dtype=np.int64)
         for variable in PLOT_VARIABLES
+    }
+
+
+def empty_region_histograms() -> Dict[str, Dict[str, np.ndarray]]:
+    return {
+        region_key: empty_histograms()
+        for region_key, _, _ in TAG_REGIONS
     }
 
 
@@ -645,11 +662,15 @@ def accumulate_shape_histograms(
     """
     Stream the minimal Stage-1 branch set once.
 
-    Both the pre-exclusivity and post-exclusivity histograms are filled during
-    the same pass, so the second plot row costs essentially no extra I/O.
+    The selected reconstructed tag photon is split by detector2:
+        detector2 == 0 -> FT tag
+        detector2 == 1 -> FD tag
+
+    Both tag regions and both pre-/post-exclusivity rows are accumulated in
+    this same pass over the ROOT tree.
     """
-    counts_before = empty_histograms()
-    counts_after = empty_histograms()
+    counts_before = empty_region_histograms()
+    counts_after = empty_region_histograms()
 
     totals = {
         "input": 0,
@@ -657,8 +678,11 @@ def accumulate_shape_histograms(
         "electron_p_gt_2": 0,
         "theta_egamma_gt_5deg": 0,
         "tag_2_to_9p5_GeV": 0,
-        "after_mx2_epgamma_cut": 0,
     }
+    for region_key, _, _ in TAG_REGIONS:
+        totals[f"{region_key}_minimal"] = 0
+        totals[f"{region_key}_after_mx2_epgamma_cut"] = 0
+    #endfor
 
     entries_read = 0
     angle_unit: Optional[str] = None
@@ -707,14 +731,10 @@ def accumulate_shape_histograms(
                 angle_unit,
             )
 
+            detector2 = np.asarray(arrays["detector2"], dtype=int)
             mx2_epgamma = np.asarray(
                 missing["Mx2_epgamma"],
                 dtype=float,
-            )
-            after = (
-                minimal
-                & np.isfinite(mx2_epgamma)
-                & (np.abs(mx2_epgamma) < MX2_EPGAMMA_ABS_MAX_GEV2)
             )
 
             entries_read += n
@@ -727,39 +747,67 @@ def accumulate_shape_histograms(
             ):
                 totals[key] += int(chunk_counts[key])
             #endfor
-            totals["after_mx2_epgamma_cut"] += int(np.count_nonzero(after))
 
-            for variable in PLOT_VARIABLES:
-                if variable.branch in COMPUTED_PLOT_KEYS:
-                    values = np.asarray(
-                        missing[variable.branch],
-                        dtype=float,
+            for region_key, _, detector_value in TAG_REGIONS:
+                region_minimal = minimal & (detector2 == detector_value)
+                region_after = (
+                    region_minimal
+                    & np.isfinite(mx2_epgamma)
+                    & (
+                        np.abs(mx2_epgamma)
+                        < MX2_EPGAMMA_ABS_MAX_GEV2
                     )
-                else:
-                    values = np.asarray(
-                        arrays[variable.branch],
-                        dtype=float,
-                    )
-                #endif
-
-                finite_values = np.isfinite(values)
-
-                before_values = values[minimal & finite_values]
-                after_values = values[after & finite_values]
-
-                hist_before, _ = np.histogram(
-                    before_values,
-                    bins=variable.bins,
-                    range=(variable.low, variable.high),
-                )
-                hist_after, _ = np.histogram(
-                    after_values,
-                    bins=variable.bins,
-                    range=(variable.low, variable.high),
                 )
 
-                counts_before[variable.branch] += hist_before.astype(np.int64)
-                counts_after[variable.branch] += hist_after.astype(np.int64)
+                totals[f"{region_key}_minimal"] += int(
+                    np.count_nonzero(region_minimal)
+                )
+                totals[
+                    f"{region_key}_after_mx2_epgamma_cut"
+                ] += int(np.count_nonzero(region_after))
+
+                for variable in PLOT_VARIABLES:
+                    if variable.branch in COMPUTED_PLOT_KEYS:
+                        values = np.asarray(
+                            missing[variable.branch],
+                            dtype=float,
+                        )
+                    else:
+                        # IMPORTANT: stored branches are plotted exactly as
+                        # stored in the ROOT tree.
+                        values = np.asarray(
+                            arrays[variable.branch],
+                            dtype=float,
+                        )
+                    #endif
+
+                    finite_values = np.isfinite(values)
+
+                    before_values = values[
+                        region_minimal & finite_values
+                    ]
+                    after_values = values[
+                        region_after & finite_values
+                    ]
+
+                    hist_before, _ = np.histogram(
+                        before_values,
+                        bins=variable.bins,
+                        range=(variable.low, variable.high),
+                    )
+                    hist_after, _ = np.histogram(
+                        after_values,
+                        bins=variable.bins,
+                        range=(variable.low, variable.high),
+                    )
+
+                    counts_before[region_key][
+                        variable.branch
+                    ] += hist_before.astype(np.int64)
+                    counts_after[region_key][
+                        variable.branch
+                    ] += hist_after.astype(np.int64)
+                #endfor
             #endfor
         #endfor
 
@@ -904,9 +952,11 @@ def draw_period_canvas(
     period: PeriodConfig,
     results: Dict[str, HistogramResult],
     outdir: Path,
+    region_key: str,
+    region_label: str,
 ) -> Path:
     """
-    Draw one compact 2x6 canvas:
+    Draw one compact 2x6 canvas for one reconstructed TAG-photon detector:
       top    = minimal selection only
       bottom = after |M_X^2(epgamma)| < 0.075 GeV^2
     """
@@ -925,7 +975,8 @@ def draw_period_canvas(
         (
             ("Minimal selection", "counts_before"),
             (
-                rf"After $|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$",
+                rf"After $|M_X^2(ep\gamma)|"
+                rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$",
                 "counts_after",
             ),
         )
@@ -939,9 +990,15 @@ def draw_period_canvas(
             )
             centers = 0.5 * (edges[:-1] + edges[1:])
 
-            data_counts = getattr(data, count_attr)[variable.branch]
-            dvcs_counts = getattr(dvcs, count_attr)[variable.branch]
-            aaogen_counts = getattr(aaogen, count_attr)[variable.branch]
+            data_counts = getattr(data, count_attr)[
+                region_key
+            ][variable.branch]
+            dvcs_counts = getattr(dvcs, count_attr)[
+                region_key
+            ][variable.branch]
+            aaogen_counts = getattr(aaogen, count_attr)[
+                region_key
+            ][variable.branch]
 
             data_y, data_err = normalized_histogram(data_counts)
             dvcs_y, _ = normalized_histogram(dvcs_counts)
@@ -963,10 +1020,18 @@ def draw_period_canvas(
                 color="red",
                 label=r"$e\pi^0$ MC as $ep\gamma$",
             )
+
+            positive_data = data_y > 0.0
             ax.errorbar(
-                centers,
-                data_y,
-                yerr=data_err,
+                centers[positive_data]
+                if variable.branch == "Mx2_epgamma"
+                else centers,
+                data_y[positive_data]
+                if variable.branch == "Mx2_epgamma"
+                else data_y,
+                yerr=data_err[positive_data]
+                if variable.branch == "Mx2_epgamma"
+                else data_err,
                 fmt="o",
                 markersize=2.2,
                 linewidth=0.5,
@@ -977,6 +1042,26 @@ def draw_period_canvas(
             )
 
             ax.set_xlim(variable.low, variable.high)
+
+            if variable.branch == "Mx2_epgamma":
+                ax.set_yscale("log")
+
+                positive = np.concatenate(
+                    (
+                        data_y[data_y > 0.0],
+                        dvcs_y[dvcs_y > 0.0],
+                        aaogen_y[aaogen_y > 0.0],
+                    )
+                )
+                if len(positive) > 0:
+                    ymin = max(
+                        float(np.min(positive)) * 0.5,
+                        1.0e-6,
+                    )
+                    ymax = float(np.max(positive)) * 2.0
+                    ax.set_ylim(ymin, ymax)
+                #endif
+            #endif
 
             if row == 0 and variable.branch == "Mx2_epgamma":
                 ax.axvline(
@@ -1009,22 +1094,37 @@ def draw_period_canvas(
 
     handles, labels = axes[0, 0].get_legend_handles_labels()
 
-    n_data_before = data.selection_counts["tag_2_to_9p5_GeV"]
-    n_dvcs_before = dvcs.selection_counts["tag_2_to_9p5_GeV"]
-    n_aaogen_before = aaogen.selection_counts["tag_2_to_9p5_GeV"]
+    n_data_before = data.selection_counts[
+        f"{region_key}_minimal"
+    ]
+    n_dvcs_before = dvcs.selection_counts[
+        f"{region_key}_minimal"
+    ]
+    n_aaogen_before = aaogen.selection_counts[
+        f"{region_key}_minimal"
+    ]
 
-    n_data_after = data.selection_counts["after_mx2_epgamma_cut"]
-    n_dvcs_after = dvcs.selection_counts["after_mx2_epgamma_cut"]
-    n_aaogen_after = aaogen.selection_counts["after_mx2_epgamma_cut"]
+    n_data_after = data.selection_counts[
+        f"{region_key}_after_mx2_epgamma_cut"
+    ]
+    n_dvcs_after = dvcs.selection_counts[
+        f"{region_key}_after_mx2_epgamma_cut"
+    ]
+    n_aaogen_after = aaogen.selection_counts[
+        f"{region_key}_after_mx2_epgamma_cut"
+    ]
 
     fig.suptitle(
-        f"Stage 1 shape comparison: {period.label}\n"
-        r"minimal selection: $E_e>2$ GeV, $\theta_{e\gamma}>5^\circ$, "
+        f"Stage 1 shape comparison: {period.label} — {region_label}\n"
+        r"minimal selection: $E_e>2$ GeV, "
+        r"$\theta_{e\gamma}>5^\circ$, "
         r"$2\leq E_{\gamma,\mathrm{tag}}<9.5$ GeV"
         "\n"
-        f"before cut: data={n_data_before:,}, DVCS MC={n_dvcs_before:,}, "
+        f"before cut: data={n_data_before:,}, "
+        f"DVCS MC={n_dvcs_before:,}, "
         rf"$e\pi^0$ MC={n_aaogen_before:,}; "
-        f"after cut: data={n_data_after:,}, DVCS MC={n_dvcs_after:,}, "
+        f"after cut: data={n_data_after:,}, "
+        f"DVCS MC={n_dvcs_after:,}, "
         rf"$e\pi^0$ MC={n_aaogen_after:,}",
         fontsize=13,
         y=0.985,
@@ -1040,7 +1140,6 @@ def draw_period_canvas(
         fontsize=9.5,
     )
 
-    # Deliberately reserve much less dead space than the previous version.
     fig.subplots_adjust(
         left=0.055,
         right=0.992,
@@ -1050,7 +1149,10 @@ def draw_period_canvas(
         hspace=0.38,
     )
 
-    outpath = outdir / f"stage1_shape_comparison_{period.key}.png"
+    outpath = (
+        outdir
+        / f"stage1_shape_comparison_{period.key}_{region_key.lower()}.png"
+    )
     fig.savefig(outpath, dpi=180)
     plt.close(fig)
     return outpath
@@ -1093,22 +1195,41 @@ def process_period(
 
         log(
             f"{period.label}: {sample_key}: read {result.entries_read:,}; "
-            f"minimal={result.selection_counts['tag_2_to_9p5_GeV']:,}; "
-            f"after Mx2 cut={result.selection_counts['after_mx2_epgamma_cut']:,}."
+            f"FT={result.selection_counts['FT_minimal']:,}"
+            f"->{result.selection_counts['FT_after_mx2_epgamma_cut']:,}; "
+            f"FD={result.selection_counts['FD_minimal']:,}"
+            f"->{result.selection_counts['FD_after_mx2_epgamma_cut']:,}."
         )
     #endfor
 
-    canvas = draw_period_canvas(period, results, outdir)
+    canvases = {}
+    for region_key, region_label, _ in TAG_REGIONS:
+        canvases[region_key] = str(
+            draw_period_canvas(
+                period,
+                results,
+                outdir,
+                region_key,
+                region_label,
+            )
+        )
+    #endfor
 
     summary = {
         "period": period.key,
         "label": period.label,
-        "canvas": str(canvas),
+        "canvases": canvases,
         "samples": {
             key: {
                 "entries_read": result.entries_read,
-                "minimal_selected": result.selection_counts["tag_2_to_9p5_GeV"],
-                "after_mx2_epgamma_cut": result.selection_counts["after_mx2_epgamma_cut"],
+                "FT_minimal": result.selection_counts["FT_minimal"],
+                "FT_after_mx2_cut": result.selection_counts[
+                    "FT_after_mx2_epgamma_cut"
+                ],
+                "FD_minimal": result.selection_counts["FD_minimal"],
+                "FD_after_mx2_cut": result.selection_counts[
+                    "FD_after_mx2_epgamma_cut"
+                ],
             }
             for key, result in results.items()
         },
