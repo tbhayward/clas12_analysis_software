@@ -7,6 +7,7 @@ CLAS12 RGA photon-efficiency study -- clean refactor.
 CURRENT IMPLEMENTED SCOPE
 =========================
 Stage 1: Shape Comparison
+Stage 2: Integrated DVCS/pi0 Composition Fit
 
 This script intentionally does ONE thing only:
 
@@ -20,8 +21,9 @@ again after one explicit exclusivity requirement:
 
     |M_X^2(epgamma)| < 0.075 GeV^2.
 
-There are NO fits, NO eppi0 input files, NO efficiency calculation, NO
-numerator association, NO bootstrap, and NO systematic extraction.
+Stage 2 fits the post-exclusivity Delta_phi, pTmiss, and Emiss shapes as
+DVCS+pi0 template mixtures. There is still NO eppi0 numerator efficiency,
+NO bootstrap, and NO final systematic extraction.
 
 Stage-1 interpretation note
 ---------------------------
@@ -94,6 +96,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import uproot
 
+try:
+    from scipy.ndimage import gaussian_filter1d
+    from scipy.optimize import minimize, minimize_scalar
+except Exception:
+    gaussian_filter1d = None
+    minimize = None
+    minimize_scalar = None
+
 
 # =============================================================================
 # Fixed physics definitions
@@ -125,6 +135,46 @@ TAG_REGIONS: Tuple[Tuple[str, str, int], ...] = (
     ("FT", "FT tag", 0),
     ("FD", "FD tag", 1),
 )
+
+
+# =============================================================================
+# Stage 2: integrated exclusive-sample composition fit
+# =============================================================================
+
+STAGE2_VARIABLE_KEYS: Tuple[str, ...] = (
+    "Delta_phi",
+    "pTmiss",
+    "Emiss2",
+)
+
+STAGE2_OUTPUT_DIRNAME = "stage2_integrated_composition"
+
+# Morph priors and hard bounds are intentionally modest.  Their role is to
+# absorb small data/MC resolution and centering differences without allowing
+# either template to morph into the other physics component.
+STAGE2_MORPH_CONFIG = {
+    "Delta_phi": {
+        "kind": "additive",
+        "shift_bound": 0.060,       # rad
+        "smear_bound": 0.080,       # rad
+        "shift_prior": 0.020,       # rad
+        "smear_prior": 0.040,       # rad
+    },
+    "pTmiss": {
+        "kind": "positive_log",
+        "shift_bound": 0.25,        # log(x+eps) shift
+        "smear_bound": 0.35,        # log-space Gaussian sigma
+        "shift_prior": 0.10,
+        "smear_prior": 0.15,
+    },
+    "Emiss2": {
+        "kind": "asymmetric_additive",
+        "shift_bound": 0.35,        # GeV
+        "smear_bound": 0.50,        # GeV, independently left/right
+        "shift_prior": 0.15,        # GeV
+        "smear_prior": 0.20,        # GeV
+    },
+}
 
 
 # =============================================================================
@@ -628,6 +678,7 @@ class HistogramResult:
     selection_counts: Dict[str, int]
     counts_before: Dict[str, Dict[str, np.ndarray]]
     counts_after: Dict[str, Dict[str, np.ndarray]]
+    stage2_counts: Dict[str, Dict[str, np.ndarray]]
     angle_unit: str
 
 
@@ -666,6 +717,7 @@ def accumulate_shape_histograms(
     """
     counts_before = empty_region_histograms()
     counts_after = empty_region_histograms()
+    stage2_counts = empty_region_histograms()
 
     totals = {
         "input": 0,
@@ -677,6 +729,7 @@ def accumulate_shape_histograms(
     for region_key, _, _ in TAG_REGIONS:
         totals[f"{region_key}_minimal"] = 0
         totals[f"{region_key}_after_mx2_epgamma_cut"] = 0
+        totals[f"{region_key}_stage2_common"] = 0
     #endfor
 
     entries_read = 0
@@ -761,6 +814,30 @@ def accumulate_shape_histograms(
                     f"{region_key}_after_mx2_epgamma_cut"
                 ] += int(np.count_nonzero(region_after))
 
+                # Stage 2 uses exactly the SAME events in Delta_phi, pTmiss,
+                # and Emiss.  This prevents a variable-range difference from
+                # masquerading as a composition difference.
+                stage2_common = region_after.copy()
+                for stage2_key in STAGE2_VARIABLE_KEYS:
+                    stage2_variable = next(
+                        variable
+                        for variable in PLOT_VARIABLES
+                        if variable.branch == stage2_key
+                    )
+                    stage2_values = np.asarray(
+                        arrays[stage2_key],
+                        dtype=float,
+                    )
+                    stage2_common &= (
+                        np.isfinite(stage2_values)
+                        & (stage2_values >= stage2_variable.low)
+                        & (stage2_values < stage2_variable.high)
+                    )
+                #endfor
+                totals[f"{region_key}_stage2_common"] += int(
+                    np.count_nonzero(stage2_common)
+                )
+
                 for variable in PLOT_VARIABLES:
                     if variable.branch in COMPUTED_PLOT_KEYS:
                         values = np.asarray(
@@ -809,6 +886,20 @@ def accumulate_shape_histograms(
                     counts_after[region_key][
                         variable.branch
                     ] += hist_after.astype(np.int64)
+
+                    if variable.branch in STAGE2_VARIABLE_KEYS:
+                        stage2_values = values[
+                            stage2_common & finite_values
+                        ]
+                        hist_stage2, _ = np.histogram(
+                            stage2_values,
+                            bins=variable.bins,
+                            range=(variable.low, variable.high),
+                        )
+                        stage2_counts[region_key][
+                            variable.branch
+                        ] += hist_stage2.astype(np.int64)
+                    #endif
                 #endfor
             #endfor
         #endfor
@@ -825,6 +916,7 @@ def accumulate_shape_histograms(
         selection_counts=totals,
         counts_before=counts_before,
         counts_after=counts_after,
+        stage2_counts=stage2_counts,
         angle_unit=angle_unit,
     )
 
@@ -927,6 +1019,830 @@ def preflight_periods(
     log("Preflight complete: all requested files, trees, and branches are valid.")
     return report
 
+
+
+# =============================================================================
+# Stage 2 fit machinery
+# =============================================================================
+
+@dataclass
+class Stage2VariableFit:
+    success: bool
+    branch: str
+    f_pi0: float = math.nan
+    objective: float = math.nan
+    deviance: float = math.nan
+    ndf: int = 0
+    data_counts: Optional[np.ndarray] = None
+    model_counts: Optional[np.ndarray] = None
+    dvcs_component_counts: Optional[np.ndarray] = None
+    pi0_component_counts: Optional[np.ndarray] = None
+    morphed_dvcs_shape: Optional[np.ndarray] = None
+    morphed_pi0_shape: Optional[np.ndarray] = None
+    dvcs_nuisance: Optional[np.ndarray] = None
+    pi0_nuisance: Optional[np.ndarray] = None
+    message: str = ""
+
+
+@dataclass
+class Stage2SharedFit:
+    success: bool
+    f_pi0: float = math.nan
+    f_pi0_err: float = math.nan
+    objective: float = math.nan
+    deviance: float = math.nan
+    ndf: int = 0
+    variable_results: Optional[Dict[str, Stage2VariableFit]] = None
+    individual_fractions: Optional[Dict[str, float]] = None
+    message: str = ""
+
+
+def stage2_variable(branch: str) -> PlotVariable:
+    return next(
+        variable for variable in PLOT_VARIABLES
+        if variable.branch == branch
+    )
+
+
+def normalized_shape(counts: np.ndarray) -> Optional[np.ndarray]:
+    shape = np.asarray(counts, dtype=float)
+    total = float(np.sum(shape))
+    if total <= 0.0 or not math.isfinite(total):
+        return None
+    #endif
+    return np.clip(shape, 0.0, None) / total
+
+
+def poisson_deviance(
+    observed: np.ndarray,
+    expected: np.ndarray,
+) -> float:
+    observed = np.asarray(observed, dtype=float)
+    expected = np.clip(np.asarray(expected, dtype=float), 1.0e-12, None)
+    positive = observed > 0.0
+    terms = expected - observed
+    terms[positive] += observed[positive] * np.log(
+        observed[positive] / expected[positive]
+    )
+    return 2.0 * float(np.sum(terms))
+
+
+def stage2_bin_centers(variable: PlotVariable) -> np.ndarray:
+    edges = np.linspace(variable.low, variable.high, variable.bins + 1)
+    return 0.5 * (edges[:-1] + edges[1:])
+
+
+def transform_additive_stage2(
+    base_shape: np.ndarray,
+    variable: PlotVariable,
+    shift: float,
+    sigma: float,
+) -> Optional[np.ndarray]:
+    centers = stage2_bin_centers(variable)
+    bin_width = (variable.high - variable.low) / variable.bins
+
+    # Positive shift moves the template toward larger x.
+    shifted = np.interp(
+        centers - shift,
+        centers,
+        base_shape,
+        left=0.0,
+        right=0.0,
+    )
+    sigma_bins = max(float(sigma) / bin_width, 0.0)
+    if sigma_bins > 1.0e-8:
+        shifted = gaussian_filter1d(
+            shifted,
+            sigma=sigma_bins,
+            mode="constant",
+            cval=0.0,
+            truncate=5.0,
+        )
+    #endif
+    shifted = np.clip(shifted, 0.0, None)
+    total = float(np.sum(shifted))
+    return shifted / total if total > 0.0 else None
+
+
+def transform_positive_log_stage2(
+    base_shape: np.ndarray,
+    variable: PlotVariable,
+    log_shift: float,
+    log_sigma: float,
+) -> Optional[np.ndarray]:
+    """Morph a positive-definite shape in log(x+epsilon)."""
+    centers = stage2_bin_centers(variable)
+    bin_width = (variable.high - variable.low) / variable.bins
+    epsilon = max(0.5 * bin_width, 1.0e-4)
+
+    source_log = np.log(centers + epsilon) + float(log_shift)
+    target_log = np.log(centers + epsilon)
+
+    sigma = max(float(log_sigma), 1.0e-6)
+    if log_sigma <= 1.0e-8:
+        transformed = np.interp(
+            target_log,
+            source_log,
+            base_shape,
+            left=0.0,
+            right=0.0,
+        )
+    else:
+        delta = target_log[:, None] - source_log[None, :]
+        kernel = np.exp(-0.5 * (delta / sigma) ** 2)
+        kernel_sum = np.sum(kernel, axis=0)
+        valid = kernel_sum > 0.0
+        kernel[:, valid] /= kernel_sum[valid][None, :]
+        transformed = kernel @ base_shape
+    #endif
+
+    transformed = np.clip(transformed, 0.0, None)
+    total = float(np.sum(transformed))
+    return transformed / total if total > 0.0 else None
+
+
+def transform_asymmetric_additive_stage2(
+    base_shape: np.ndarray,
+    variable: PlotVariable,
+    shift: float,
+    sigma_left: float,
+    sigma_right: float,
+) -> Optional[np.ndarray]:
+    """
+    Additive shift with a split-Gaussian response.
+
+    This is used for E_miss, whose detector/data-MC mismatch can have a
+    different width on the negative and positive sides.
+    """
+    centers = stage2_bin_centers(variable)
+    source_means = centers + float(shift)
+
+    delta = centers[:, None] - source_means[None, :]
+    widths = np.where(
+        delta < 0.0,
+        max(float(sigma_left), 1.0e-6),
+        max(float(sigma_right), 1.0e-6),
+    )
+    kernel = np.exp(-0.5 * (delta / widths) ** 2)
+    kernel_sum = np.sum(kernel, axis=0)
+    valid = kernel_sum > 0.0
+    kernel[:, valid] /= kernel_sum[valid][None, :]
+    transformed = kernel @ base_shape
+
+    transformed = np.clip(transformed, 0.0, None)
+    total = float(np.sum(transformed))
+    return transformed / total if total > 0.0 else None
+
+
+def stage2_nuisance_size(branch: str) -> int:
+    return 3 if branch == "Emiss2" else 2
+
+
+def stage2_single_bounds(branch: str) -> List[Tuple[float, float]]:
+    config = STAGE2_MORPH_CONFIG[branch]
+    if branch == "Emiss2":
+        return [
+            (-config["shift_bound"], config["shift_bound"]),
+            (0.0, config["smear_bound"]),
+            (0.0, config["smear_bound"]),
+        ]
+    #endif
+    return [
+        (-config["shift_bound"], config["shift_bound"]),
+        (0.0, config["smear_bound"]),
+    ]
+
+
+def stage2_single_start(branch: str) -> np.ndarray:
+    if branch == "Emiss2":
+        return np.asarray([0.0, 0.05, 0.08], dtype=float)
+    #endif
+    if branch == "pTmiss":
+        return np.asarray([0.0, 0.04], dtype=float)
+    #endif
+    return np.asarray([0.0, 0.01], dtype=float)
+
+
+def stage2_transform(
+    base_shape: np.ndarray,
+    branch: str,
+    nuisance: np.ndarray,
+) -> Optional[np.ndarray]:
+    variable = stage2_variable(branch)
+    if branch == "pTmiss":
+        return transform_positive_log_stage2(
+            base_shape,
+            variable,
+            float(nuisance[0]),
+            float(nuisance[1]),
+        )
+    #endif
+    if branch == "Emiss2":
+        return transform_asymmetric_additive_stage2(
+            base_shape,
+            variable,
+            float(nuisance[0]),
+            float(nuisance[1]),
+            float(nuisance[2]),
+        )
+    #endif
+    return transform_additive_stage2(
+        base_shape,
+        variable,
+        float(nuisance[0]),
+        float(nuisance[1]),
+    )
+
+
+def stage2_single_penalty(
+    branch: str,
+    nuisance: np.ndarray,
+) -> float:
+    config = STAGE2_MORPH_CONFIG[branch]
+    shift = float(nuisance[0])
+    value = 0.5 * (shift / config["shift_prior"]) ** 2
+    value += 0.5 * (
+        float(nuisance[1]) / config["smear_prior"]
+    ) ** 2
+    if branch == "Emiss2":
+        value += 0.5 * (
+            float(nuisance[2]) / config["smear_prior"]
+        ) ** 2
+    #endif
+    return value
+
+
+def stage2_build_model(
+    data_counts: np.ndarray,
+    dvcs_shape: np.ndarray,
+    pi0_shape: np.ndarray,
+    branch: str,
+    fraction: float,
+    nuisance: np.ndarray,
+) -> Optional[
+    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+]:
+    size = stage2_nuisance_size(branch)
+    dvcs_nuisance = np.asarray(nuisance[:size], dtype=float)
+    pi0_nuisance = np.asarray(nuisance[size:], dtype=float)
+
+    dvcs_morphed = stage2_transform(
+        dvcs_shape,
+        branch,
+        dvcs_nuisance,
+    )
+    pi0_morphed = stage2_transform(
+        pi0_shape,
+        branch,
+        pi0_nuisance,
+    )
+    if dvcs_morphed is None or pi0_morphed is None:
+        return None
+    #endif
+
+    mixture = (
+        (1.0 - fraction) * dvcs_morphed
+        + fraction * pi0_morphed
+    )
+    mixture_sum = float(np.sum(mixture))
+    data_total = float(np.sum(data_counts))
+    if mixture_sum <= 0.0 or data_total <= 0.0:
+        return None
+    #endif
+
+    model = data_total * mixture / mixture_sum
+    dvcs_component = (
+        data_total * (1.0 - fraction) * dvcs_morphed / mixture_sum
+    )
+    pi0_component = (
+        data_total * fraction * pi0_morphed / mixture_sum
+    )
+    return (
+        model,
+        dvcs_component,
+        pi0_component,
+        dvcs_morphed,
+        pi0_morphed,
+    )
+
+
+def stage2_fit_shared(
+    data_hists: Dict[str, np.ndarray],
+    dvcs_hists: Dict[str, np.ndarray],
+    pi0_hists: Dict[str, np.ndarray],
+    branches: Sequence[str] = STAGE2_VARIABLE_KEYS,
+) -> Stage2SharedFit:
+    """
+    Fit one common pi0 fraction to several projections of the SAME events.
+
+    The fraction is shared, while each variable and each physics template has
+    its own small morph nuisance.  The alternating profile procedure mirrors
+    the robust strategy used in the exclusivity-selection code, but is kept
+    intentionally compact and explicit here.
+    """
+    if minimize is None or minimize_scalar is None or gaussian_filter1d is None:
+        return Stage2SharedFit(
+            False,
+            message="scipy optimization/ndimage is unavailable",
+        )
+    #endif
+
+    prepared = {}
+    for branch in branches:
+        data = np.asarray(data_hists[branch], dtype=float)
+        dvcs_shape = normalized_shape(dvcs_hists[branch])
+        pi0_shape = normalized_shape(pi0_hists[branch])
+        if (
+            float(np.sum(data)) <= 0.0
+            or dvcs_shape is None
+            or pi0_shape is None
+        ):
+            return Stage2SharedFit(
+                False,
+                message=f"empty data/template for {branch}",
+            )
+        #endif
+        prepared[branch] = (data, dvcs_shape, pi0_shape)
+    #endfor
+
+    def nuisance_bounds(branch: str):
+        one = stage2_single_bounds(branch)
+        return one + one
+
+    def nuisance_start(branch: str):
+        one = stage2_single_start(branch)
+        return np.concatenate((one, one))
+
+    def variable_objective(
+        branch: str,
+        fraction: float,
+        nuisance: np.ndarray,
+        include_penalty: bool,
+    ) -> float:
+        data, dvcs_shape, pi0_shape = prepared[branch]
+        built = stage2_build_model(
+            data,
+            dvcs_shape,
+            pi0_shape,
+            branch,
+            fraction,
+            nuisance,
+        )
+        if built is None:
+            return 1.0e100
+        #endif
+        value = 0.5 * poisson_deviance(data, built[0])
+        if include_penalty:
+            size = stage2_nuisance_size(branch)
+            value += stage2_single_penalty(
+                branch,
+                nuisance[:size],
+            )
+            value += stage2_single_penalty(
+                branch,
+                nuisance[size:],
+            )
+        #endif
+        return float(value)
+
+    best_objective = math.inf
+    best_fraction = math.nan
+    best_nuisances = None
+
+    for initial_fraction in (0.10, 0.30, 0.60, 0.85):
+        fraction = float(initial_fraction)
+        nuisances = {
+            branch: nuisance_start(branch)
+            for branch in branches
+        }
+        previous = math.inf
+
+        for _ in range(12):
+            for branch in branches:
+                result = minimize(
+                    lambda values, b=branch, f=fraction:
+                        variable_objective(
+                            b,
+                            f,
+                            values,
+                            True,
+                        ),
+                    nuisances[branch],
+                    method="L-BFGS-B",
+                    bounds=nuisance_bounds(branch),
+                    options={"maxiter": 300, "ftol": 1.0e-10},
+                )
+                if result.success and np.all(np.isfinite(result.x)):
+                    nuisances[branch] = np.asarray(
+                        result.x,
+                        dtype=float,
+                    )
+                #endif
+            #endfor
+
+            def fraction_objective(candidate: float) -> float:
+                return sum(
+                    variable_objective(
+                        branch,
+                        candidate,
+                        nuisances[branch],
+                        False,
+                    )
+                    for branch in branches
+                )
+
+            f_result = minimize_scalar(
+                fraction_objective,
+                bounds=(0.0, 1.0),
+                method="bounded",
+                options={"xatol": 1.0e-5, "maxiter": 200},
+            )
+            if f_result.success and math.isfinite(float(f_result.x)):
+                fraction = float(f_result.x)
+            #endif
+
+            current = fraction_objective(fraction)
+            if abs(previous - current) <= 1.0e-8 * max(1.0, current):
+                break
+            #endif
+            previous = current
+        #endfor
+
+        # Final objective includes the nuisance priors.
+        objective = sum(
+            variable_objective(
+                branch,
+                fraction,
+                nuisances[branch],
+                True,
+            )
+            for branch in branches
+        )
+        if objective < best_objective:
+            best_objective = float(objective)
+            best_fraction = float(fraction)
+            best_nuisances = {
+                branch: values.copy()
+                for branch, values in nuisances.items()
+            }
+        #endif
+    #endfor
+
+    if best_nuisances is None or not math.isfinite(best_fraction):
+        return Stage2SharedFit(False, message="shared fit did not converge")
+    #endif
+
+    variable_results: Dict[str, Stage2VariableFit] = {}
+    total_deviance = 0.0
+    total_bins = 0
+    nuisance_parameters = 0
+
+    for branch in branches:
+        data, dvcs_shape, pi0_shape = prepared[branch]
+        nuisance = best_nuisances[branch]
+        built = stage2_build_model(
+            data,
+            dvcs_shape,
+            pi0_shape,
+            branch,
+            best_fraction,
+            nuisance,
+        )
+        if built is None:
+            return Stage2SharedFit(
+                False,
+                message=f"failed to build final {branch} model",
+            )
+        #endif
+        deviance = poisson_deviance(data, built[0])
+        total_deviance += deviance
+        total_bins += len(data)
+        nuisance_parameters += len(nuisance)
+
+        size = stage2_nuisance_size(branch)
+        variable_results[branch] = Stage2VariableFit(
+            success=True,
+            branch=branch,
+            f_pi0=best_fraction,
+            objective=variable_objective(
+                branch,
+                best_fraction,
+                nuisance,
+                True,
+            ),
+            deviance=deviance,
+            ndf=max(1, len(data) - len(nuisance) - 1),
+            data_counts=data.copy(),
+            model_counts=built[0].copy(),
+            dvcs_component_counts=built[1].copy(),
+            pi0_component_counts=built[2].copy(),
+            morphed_dvcs_shape=built[3].copy(),
+            morphed_pi0_shape=built[4].copy(),
+            dvcs_nuisance=nuisance[:size].copy(),
+            pi0_nuisance=nuisance[size:].copy(),
+            message="shared-fraction integrated fit",
+        )
+    #endfor
+
+    # Independent one-variable fits are intentionally retained as a diagnostic
+    # of model dependence. They do NOT define the nominal shared result.
+    individual_fractions = {}
+    for branch in branches:
+        single = stage2_fit_shared(
+            data_hists,
+            dvcs_hists,
+            pi0_hists,
+            branches=(branch,),
+        ) if len(branches) > 1 else None
+        if single is not None and single.success:
+            individual_fractions[branch] = single.f_pi0
+        elif len(branches) == 1:
+            # Avoid recursion for the single-variable call.
+            individual_fractions[branch] = best_fraction
+        #endif
+    #endfor
+
+    # Curvature estimate of the integrated statistical uncertainty with
+    # nuisance parameters held at their final profiled values. This is a
+    # development diagnostic; bootstrap/profile uncertainties come later.
+    f_error = math.nan
+    step = 1.0e-3
+    if step < best_fraction < 1.0 - step:
+        def fixed_nuisance_objective(candidate: float) -> float:
+            return sum(
+                variable_objective(
+                    branch,
+                    candidate,
+                    best_nuisances[branch],
+                    False,
+                )
+                for branch in branches
+            )
+        left = fixed_nuisance_objective(best_fraction - step)
+        center = fixed_nuisance_objective(best_fraction)
+        right = fixed_nuisance_objective(best_fraction + step)
+        curvature = (left - 2.0 * center + right) / (step ** 2)
+        if curvature > 0.0:
+            f_error = 1.0 / math.sqrt(curvature)
+        #endif
+    #endif
+
+    return Stage2SharedFit(
+        success=True,
+        f_pi0=best_fraction,
+        f_pi0_err=f_error,
+        objective=best_objective,
+        deviance=total_deviance,
+        ndf=max(
+            1,
+            total_bins - nuisance_parameters - 1,
+        ),
+        variable_results=variable_results,
+        individual_fractions=individual_fractions,
+        message="integrated common-population shared-fraction fit",
+    )
+
+
+def run_stage2_internal_self_test() -> None:
+    """Catch Stage-2 refactor errors before any expensive ROOT I/O."""
+    if minimize is None or minimize_scalar is None or gaussian_filter1d is None:
+        raise RuntimeError(
+            "Stage 2 requires scipy.optimize and scipy.ndimage."
+        )
+    #endif
+
+    rng = np.random.default_rng(20260813)
+    test_hists = {"data": {}, "dvcs": {}, "pi0": {}}
+    true_fraction = 0.42
+
+    for branch in STAGE2_VARIABLE_KEYS:
+        variable = stage2_variable(branch)
+        x = stage2_bin_centers(variable)
+
+        if branch == "Delta_phi":
+            dvcs = np.exp(-0.5 * ((x - math.pi) / 0.045) ** 2)
+            pi0 = np.exp(-0.5 * ((x - math.pi) / 0.18) ** 2)
+        elif branch == "pTmiss":
+            dvcs = np.exp(-x / 0.08)
+            pi0 = np.exp(-x / 0.32)
+        else:
+            dvcs = np.exp(-0.5 * (x / 0.22) ** 2)
+            pi0 = np.where(
+                x < 0.2,
+                np.exp(-0.5 * ((x - 0.15) / 0.45) ** 2),
+                np.exp(-(x - 0.2) / 1.2),
+            )
+        #endif
+
+        dvcs /= np.sum(dvcs)
+        pi0 /= np.sum(pi0)
+        model = 6000.0 * (
+            (1.0 - true_fraction) * dvcs
+            + true_fraction * pi0
+        )
+        data = rng.poisson(model)
+
+        test_hists["data"][branch] = data
+        test_hists["dvcs"][branch] = 200000.0 * dvcs
+        test_hists["pi0"][branch] = 200000.0 * pi0
+    #endfor
+
+    result = stage2_fit_shared(
+        test_hists["data"],
+        test_hists["dvcs"],
+        test_hists["pi0"],
+    )
+    if (
+        not result.success
+        or not math.isfinite(result.f_pi0)
+        or abs(result.f_pi0 - true_fraction) > 0.12
+    ):
+        raise RuntimeError(
+            "Stage-2 internal fit self-test failed: "
+            f"success={result.success}, f_pi0={result.f_pi0}."
+        )
+    #endif
+
+
+def draw_stage2_integrated_canvas(
+    period: PeriodConfig,
+    region_key: str,
+    region_label: str,
+    fit: Stage2SharedFit,
+    outdir: Path,
+    common_counts: Dict[str, int],
+) -> Optional[Path]:
+    if not fit.success or fit.variable_results is None:
+        return None
+    #endif
+
+    fig, axes = plt.subplots(
+        2,
+        len(STAGE2_VARIABLE_KEYS),
+        figsize=(15.5, 7.4),
+        squeeze=False,
+        gridspec_kw={"height_ratios": [3.0, 1.0]},
+    )
+
+    for col, branch in enumerate(STAGE2_VARIABLE_KEYS):
+        variable = stage2_variable(branch)
+        result = fit.variable_results[branch]
+        edges = np.linspace(variable.low, variable.high, variable.bins + 1)
+        centers = 0.5 * (edges[:-1] + edges[1:])
+
+        ax = axes[0, col]
+        data = result.data_counts
+        model = np.clip(result.model_counts, 1.0e-12, None)
+
+        # Raw MC shapes, normalized to the data total, are thin dashed curves.
+        data_total = float(np.sum(data))
+        raw_dvcs = normalized_shape(
+            common_counts["dvcs_hists"][branch]
+        )
+        raw_pi0 = normalized_shape(
+            common_counts["pi0_hists"][branch]
+        )
+        if raw_dvcs is not None:
+            ax.step(
+                edges[:-1],
+                data_total * raw_dvcs,
+                where="post",
+                linestyle="--",
+                linewidth=0.8,
+                alpha=0.55,
+                color="tab:blue",
+                label="raw DVCS shape",
+            )
+        #endif
+        if raw_pi0 is not None:
+            ax.step(
+                edges[:-1],
+                data_total * raw_pi0,
+                where="post",
+                linestyle="--",
+                linewidth=0.8,
+                alpha=0.55,
+                color="red",
+                label=r"raw $e\pi^0$ shape",
+            )
+        #endif
+
+        ax.step(
+            edges[:-1],
+            result.dvcs_component_counts,
+            where="post",
+            linewidth=1.35,
+            color="tab:blue",
+            label="fitted DVCS component",
+        )
+        ax.step(
+            edges[:-1],
+            result.pi0_component_counts,
+            where="post",
+            linewidth=1.35,
+            color="red",
+            label=r"fitted $e\pi^0$ component",
+        )
+        ax.step(
+            edges[:-1],
+            model,
+            where="post",
+            linewidth=1.6,
+            color="green",
+            label="total fit",
+        )
+        ax.errorbar(
+            centers,
+            data,
+            yerr=np.sqrt(np.maximum(data, 1.0)),
+            fmt="o",
+            markersize=2.6,
+            linewidth=0.6,
+            color="black",
+            label="data",
+            zorder=5,
+        )
+
+        independent = (
+            fit.individual_fractions.get(branch, math.nan)
+            if fit.individual_fractions
+            else math.nan
+        )
+        ax.set_title(
+            f"{variable.title}\n"
+            rf"shared $f_{{\pi^0}}={fit.f_pi0:.3f}$; "
+            rf"single-var $f_{{\pi^0}}={independent:.3f}$; "
+            rf"$D/ndf={result.deviance:.1f}/{result.ndf}$",
+            fontsize=10,
+        )
+        ax.set_ylabel("entries / bin")
+        ax.set_xlim(variable.low, variable.high)
+        ax.grid(alpha=0.18)
+
+        pull_ax = axes[1, col]
+        pull = (data - model) / np.sqrt(model)
+        pull_ax.axhline(0.0, color="0.35", linewidth=0.9)
+        pull_ax.axhline(+2.0, color="0.6", linewidth=0.7, linestyle="--")
+        pull_ax.axhline(-2.0, color="0.6", linewidth=0.7, linestyle="--")
+        pull_ax.plot(
+            centers,
+            pull,
+            "o",
+            markersize=2.3,
+            color="black",
+        )
+        pull_ax.set_ylim(-6.0, 6.0)
+        pull_ax.set_xlim(variable.low, variable.high)
+        pull_ax.set_xlabel(variable.xlabel)
+        pull_ax.set_ylabel("pull")
+        pull_ax.grid(alpha=0.18)
+    #endfor
+
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.925),
+        ncol=6,
+        frameon=False,
+        fontsize=8.5,
+    )
+
+    fig.suptitle(
+        f"Stage 2 integrated composition fit: {period.label} — {region_label}\n"
+        rf"after $|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$; "
+        f"common-population entries: "
+        f"data={common_counts['data_n']:,}, "
+        f"DVCS MC={common_counts['dvcs_n']:,}, "
+        rf"$e\pi^0$ MC={common_counts['pi0_n']:,}"
+        "\n"
+        rf"nominal shared $f_{{\pi^0}}={fit.f_pi0:.4f}"
+        + (
+            rf"\pm{fit.f_pi0_err:.4f}"
+            if math.isfinite(fit.f_pi0_err)
+            else ""
+        ),
+        fontsize=13,
+        y=0.992,
+    )
+
+    fig.subplots_adjust(
+        left=0.065,
+        right=0.992,
+        bottom=0.085,
+        top=0.83,
+        wspace=0.24,
+        hspace=0.18,
+    )
+
+    outpath = (
+        outdir
+        / f"stage2_integrated_composition_{period.key}_{region_key.lower()}.png"
+    )
+    fig.savefig(outpath, dpi=180)
+    plt.close(fig)
+    return outpath
 
 # =============================================================================
 # Plotting
@@ -1212,10 +2128,95 @@ def process_period(
         )
     #endfor
 
+    # Stage 2: integrated composition fit.  Reuse the Stage-2 histograms
+    # accumulated in the same ROOT streaming pass above.
+    stage2_outdir = outdir.parent / STAGE2_OUTPUT_DIRNAME
+    stage2_outdir.mkdir(parents=True, exist_ok=True)
+    stage2_results = {}
+
+    for region_key, region_label, _ in TAG_REGIONS:
+        data_hists = {
+            branch: results["data"].stage2_counts[region_key][branch]
+            for branch in STAGE2_VARIABLE_KEYS
+        }
+        dvcs_hists = {
+            branch: results["dvcsgen"].stage2_counts[region_key][branch]
+            for branch in STAGE2_VARIABLE_KEYS
+        }
+        pi0_hists = {
+            branch: results["aaogen"].stage2_counts[region_key][branch]
+            for branch in STAGE2_VARIABLE_KEYS
+        }
+
+        fit = stage2_fit_shared(
+            data_hists,
+            dvcs_hists,
+            pi0_hists,
+        )
+
+        common = {
+            "data_n": results["data"].selection_counts[
+                f"{region_key}_stage2_common"
+            ],
+            "dvcs_n": results["dvcsgen"].selection_counts[
+                f"{region_key}_stage2_common"
+            ],
+            "pi0_n": results["aaogen"].selection_counts[
+                f"{region_key}_stage2_common"
+            ],
+            "dvcs_hists": dvcs_hists,
+            "pi0_hists": pi0_hists,
+        }
+
+        canvas = draw_stage2_integrated_canvas(
+            period,
+            region_key,
+            region_label,
+            fit,
+            stage2_outdir,
+            common,
+        )
+
+        stage2_results[region_key] = {
+            "success": bool(fit.success),
+            "f_pi0": float(fit.f_pi0),
+            "f_pi0_err_curvature": float(fit.f_pi0_err),
+            "deviance": float(fit.deviance),
+            "ndf": int(fit.ndf),
+            "individual_fractions": (
+                {
+                    key: float(value)
+                    for key, value in fit.individual_fractions.items()
+                }
+                if fit.individual_fractions
+                else {}
+            ),
+            "common_population": {
+                "data": int(common["data_n"]),
+                "dvcs_mc": int(common["dvcs_n"]),
+                "pi0_mc": int(common["pi0_n"]),
+            },
+            "canvas": str(canvas) if canvas is not None else None,
+            "message": fit.message,
+        }
+
+        log(
+            f"{period.label} {region_label}: Stage 2 "
+            f"{'OK' if fit.success else 'FAILED'}; "
+            f"f_pi0={fit.f_pi0:.4f}"
+            + (
+                f" +/- {fit.f_pi0_err:.4f}"
+                if math.isfinite(fit.f_pi0_err)
+                else ""
+            )
+        )
+    #endfor
+
     summary = {
         "period": period.key,
         "label": period.label,
         "canvases": canvases,
+        "stage2_integrated_composition": stage2_results,
         "samples": {
             key: {
                 "entries_read": result.entries_read,
@@ -1248,7 +2249,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "CLAS12 RGA photon-efficiency clean refactor: "
-            "Stage 1 shape comparison only."
+            "Stage 1 shape comparison + Stage 2 integrated composition fit."
         )
     )
 
@@ -1354,10 +2355,15 @@ def main() -> int:
         exist_ok=True,
     )
 
-    log("Stage 1 only: five epgamma shape comparisons; no fits or efficiency calculation.")
+    log("Stages 1+2: shape comparison followed by integrated DVCS/pi0 composition fits.")
     log("Minimal selection: e_p>2 GeV, theta_egamma>5 deg, 0.4<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
 
-    # Complete preflight BEFORE any large read.
+    # Exercise the full Stage-2 optimizer before any large ROOT read. This is
+    # specifically intended to catch refactor/runtime errors early.
+    run_stage2_internal_self_test()
+    log("Internal Stage-2 fit self-test passed.")
+
+    # Complete ROOT schema preflight BEFORE any large read.
     preflight_periods(periods, args.tree_name)
 
     args_dict: Dict[str, object] = {
@@ -1435,9 +2441,45 @@ def main() -> int:
         json.dump(compact_summary, stream, indent=2)
     #endwith
 
+    stage2_summary = {
+        "stage": "stage2_integrated_composition",
+        "selection": {
+            "stage1_minimal": {
+                "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
+                "theta_egamma_min_deg": THETA_EGAMMA_MIN_DEG,
+                "tag_energy_GeV": [TAG_E_MIN_GEV, TAG_E_MAX_GEV],
+            },
+            "exclusivity": {
+                "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
+            },
+            "fraction_variables": list(STAGE2_VARIABLE_KEYS),
+            "common_population_across_fraction_variables": True,
+        },
+        "periods": [
+            {
+                "period": period.key,
+                "results": summaries[period.key].get(
+                    "stage2_integrated_composition",
+                    {},
+                ),
+            }
+            for period in periods
+            if period.key in summaries
+        ],
+    }
+
+    stage2_outdir = Path(args.output_dir).parent / STAGE2_OUTPUT_DIRNAME
+    stage2_outdir.mkdir(parents=True, exist_ok=True)
+    with (
+        stage2_outdir / "stage2_summary.json"
+    ).open("w", encoding="utf-8") as stream:
+        json.dump(stage2_summary, stream, indent=2)
+    #endwith
+
     log(
         "Done. Stage-1 outputs are in "
-        f"{Path(args.output_dir)}."
+        f"{Path(args.output_dir)}; Stage-2 outputs are in "
+        f"{stage2_outdir}."
     )
     return 0
 
