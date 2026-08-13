@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v059.py
+derive_photon_efficiency_scale_factors_v060.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v059.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v060.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v059.py \
+    python derive_photon_efficiency_scale_factors_v060.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v059.py \
+    python derive_photon_efficiency_scale_factors_v060.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -368,11 +368,13 @@ EPG_OPTIONAL_PI0_MC = (
     "detector2",
     "pTmiss",
     "theta_gamma_gamma",
+    "Delta_phi",
 )
 
 EPG_OPTIONAL_DVCS_MC = (
     "pTmiss",
     "theta_gamma_gamma",
+    "Delta_phi",
 )
 
 EPG_OPTIONAL_DATA = (
@@ -381,6 +383,7 @@ EPG_OPTIONAL_DATA = (
     "detector2",
     "pTmiss",
     "theta_gamma_gamma",
+    "Delta_phi",
 )
 
 EPPIO_REQUIRED = (
@@ -1874,6 +1877,19 @@ def build_epgamma_denominator_features(
         if "theta_gamma_gamma" in epg.raw:
             out["stored_theta_gamma_gamma"] = np.asarray(
                 epg.raw["theta_gamma_gamma"], dtype=np.float32
+            )
+        #endif
+        if "Delta_phi" in epg.raw:
+            raw_delta_phi = np.asarray(
+                epg.raw["Delta_phi"], dtype=float
+            )
+            wrapped_delta_phi = np.abs(
+                (raw_delta_phi + math.pi) % (2.0 * math.pi)
+                - math.pi
+            )
+            out["stored_delta_phi_abs_rad"] = np.asarray(
+                wrapped_delta_phi,
+                dtype=np.float32,
             )
         #endif
     else:
@@ -8848,9 +8864,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Run the dedicated denominator-variable study on the nSidis sample. "
-            "Compares pTmiss only, theta_gamma_gamma only, "
-            "theta_gamma_gamma x pTmiss, M_X^2(ep) x pTmiss, and "
-            "M_X^2(ep) x theta_gamma_gamma on one common event population. "
+            "Compares pTmiss only, theta_gamma_gamma only, |Delta_phi| "
+            "only, theta_gamma_gamma x pTmiss, |Delta_phi| x pTmiss, "
+            "M_X^2(ep) x pTmiss, and M_X^2(ep) x theta_gamma_gamma on one "
+            "common event population. "
             "When enabled with --nsidis-study, the worker exits after this "
             "study and skips the reconstructed-probe efficiency calculation."
         ),
@@ -12452,9 +12469,19 @@ NSIDIS_DRIVER_STUDY_MODELS: Tuple[
         "theta_gg",
     ),
     (
+        "delta_phi_only",
+        r"$|\Delta\phi|$ only",
+        "delta_phi",
+    ),
+    (
         "theta_gg_x_ptmiss",
         r"$\theta_{\gamma\gamma}\otimes p_{T,\mathrm{miss}}$",
         "theta_gg_x_pTmiss",
+    ),
+    (
+        "delta_phi_x_ptmiss",
+        r"$|\Delta\phi|\otimes p_{T,\mathrm{miss}}$",
+        "delta_phi_x_pTmiss",
     ),
     (
         "mx2_ep_x_ptmiss",
@@ -12500,6 +12527,7 @@ def nsidis_driver_study_common_mask(
     electron_p = feat.get("electron_p")
     pt = feat.get("stored_pTmiss")
     th = feat.get("stored_theta_gamma_gamma")
+    dphi = feat.get("stored_delta_phi_abs_rad")
 
     mask = (
         np.asarray(feat["valid_tag"], dtype=bool)
@@ -12528,7 +12556,7 @@ def nsidis_driver_study_common_mask(
         )
     #endif
 
-    if pt is None or th is None:
+    if pt is None or th is None or dphi is None:
         return np.zeros(n, dtype=bool)
     #endif
 
@@ -12539,6 +12567,9 @@ def nsidis_driver_study_common_mask(
         & np.isfinite(th)
         & (th >= 0.0)
         & (th < theta_max)
+        & np.isfinite(dphi)
+        & (dphi >= 0.0)
+        & (dphi <= math.pi)
     )
 
     if parent_mask is not None:
@@ -12570,6 +12601,10 @@ def nsidis_driver_histogram(
     mx2 = np.asarray(feat["ep_missing_mass2"], dtype=float)
     pt = np.asarray(feat["stored_pTmiss"], dtype=float)
     th = np.asarray(feat["stored_theta_gamma_gamma"], dtype=float)
+    dphi = np.asarray(
+        feat["stored_delta_phi_abs_rad"],
+        dtype=float,
+    )
 
     if driver == "pTmiss":
         h, _ = np.histogram(
@@ -12587,6 +12622,14 @@ def nsidis_driver_histogram(
         return h.astype(float)[None, :]
     #endif
 
+    if driver == "delta_phi":
+        h, _ = np.histogram(
+            dphi[mask],
+            bins=np.linspace(0.0, math.pi, 65),
+        )
+        return h.astype(float)[None, :]
+    #endif
+
     if driver == "theta_gg_x_pTmiss":
         # pTmiss is intentionally the SECOND axis, so the existing nuisance
         # morphing shifts/smears the same pTmiss coordinate used in the current
@@ -12596,6 +12639,20 @@ def nsidis_driver_histogram(
             pt[mask],
             bins=(
                 np.linspace(0.0, theta_max, theta_bins + 1),
+                np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+            ),
+        )
+        return h.astype(float)
+    #endif
+
+    if driver == "delta_phi_x_pTmiss":
+        # Keep pTmiss on the SECOND axis for the same morph-nuisance convention
+        # as the other pTmiss-based candidates.
+        h, _, _ = np.histogram2d(
+            dphi[mask],
+            pt[mask],
+            bins=(
+                np.linspace(0.0, math.pi, 65),
                 np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
             ),
         )
@@ -13003,6 +13060,7 @@ def make_nsidis_driver_study_summary_canvas(
     fig.suptitle(
         f"{period.label}: dedicated denominator-driver study\n"
         "all methods fit the same common population; "
+        r"$|\Delta\phi|$ is folded to $[0,\pi]$; "
         r"$E_{\mathrm{miss}}$ excluded because it is "
         r"$E_{\mathrm{probe}}^{\mathrm{pred}}$",
         fontsize=12.5,
@@ -13042,11 +13100,27 @@ def _driver_study_axis_edges(
             r"$\theta_{\gamma\gamma}$ (deg)",
         )
     #endif
+    if driver == "delta_phi":
+        return (
+            np.asarray([0.0, 1.0]),
+            np.linspace(0.0, math.pi, 65),
+            "",
+            r"$|\Delta\phi|$ (rad)",
+        )
+    #endif
     if driver == "theta_gg_x_pTmiss":
         return (
             np.linspace(0.0, theta_max, theta_bins + 1),
             np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
             r"$\theta_{\gamma\gamma}$ (deg)",
+            r"$p_{T,\mathrm{miss}}$ (GeV)",
+        )
+    #endif
+    if driver == "delta_phi_x_pTmiss":
+        return (
+            np.linspace(0.0, math.pi, 65),
+            np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+            r"$|\Delta\phi|$ (rad)",
             r"$p_{T,\mathrm{miss}}$ (GeV)",
         )
     #endif
@@ -13716,6 +13790,20 @@ def process_nsidis_study_period(
                 f"{period.label}: running dedicated denominator-driver study "
                 "on a common data/aaogen/dvcsgen population."
             )
+            for _sample_label, _feat in (
+                ("nSidis data", ns_epg_f),
+                ("aaogen pi0 MC", pi0_f),
+                ("dvcsgen BH/DVCS MC", dvcs_f),
+            ):
+                if "stored_delta_phi_abs_rad" not in _feat:
+                    raise RuntimeError(
+                        f"{period.label}: dedicated driver study requires "
+                        f"Delta_phi in {_sample_label}, but the branch was "
+                        "not loaded/found. This check occurs before fitting."
+                    )
+                #endif
+            #endfor
+
             driver_rows, driver_detail = run_nsidis_driver_study(
                 period,
                 ns_epg_f,
@@ -13778,8 +13866,8 @@ def process_nsidis_study_period(
             summary = {
                 "period": period.key,
                 "label": period.label,
-                "epgamma_overlap": epg_overlap,
-                "eppi0_overlap": epi_overlap,
+                "epgamma_overlap": epg_overlap_summary,
+                "eppi0_overlap": epi_overlap_summary,
                 "eppi0_numerator_strategy": (
                     "driver-study-only; numerator efficiency not evaluated"
                 ),
@@ -15930,14 +16018,24 @@ def main() -> int:
                 "period": period.key,
                 "label": period.label,
                 "epgamma_reference_event_recall": (
-                    summary["epgamma_overlap"][
-                        "reference_unique_event_recall"
-                    ]
+                    summary.get("epgamma_overlap", {}).get(
+                        "reference_unique_event_recall",
+                        float("nan"),
+                    )
+                    if isinstance(
+                        summary.get("epgamma_overlap", {}), dict
+                    )
+                    else float("nan")
                 ),
                 "eppi0_reference_event_recall": (
-                    summary["eppi0_overlap"][
-                        "reference_unique_event_recall"
-                    ]
+                    summary.get("eppi0_overlap", {}).get(
+                        "reference_unique_event_recall",
+                        float("nan"),
+                    )
+                    if isinstance(
+                        summary.get("eppi0_overlap", {}), dict
+                    )
+                    else float("nan")
                 ),
                 "eppi0_numerator_strategy": (
                     summary["eppi0_numerator_strategy"]
