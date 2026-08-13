@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v062.py
+derive_photon_efficiency_scale_factors_v063.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v062.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v063.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v062.py \
+    python derive_photon_efficiency_scale_factors_v063.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v062.py \
+    python derive_photon_efficiency_scale_factors_v063.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -211,6 +211,14 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_sp18_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/bkg_rga_sp18_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_50nA_10594MeV.root",
+        nsidis_epgamma_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/"
+            "dvcs/efficiency_study/nSidis_rga_sp18_inb_epgamma.root"
+        ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_sp18_inb_eppi0.root"
+        ),
     ),
     PeriodConfig(
         "sp18_out", "Sp18 Out", 10.594,
@@ -1547,6 +1555,38 @@ def stage2_energy_edges(max_energy: float) -> np.ndarray:
     edges = np.concatenate((base, np.asarray([max_energy], dtype=float)))
     edges = np.unique(edges)
     return edges[edges >= PROBE_ENERGY_EDGES[0]]
+
+
+def nsidis_energy_edges_for_region(
+    region: str,
+    max_energy: float,
+) -> np.ndarray:
+    """
+    Region-specific nSidis production binning.
+
+    FD keeps the standard energy binning.
+    FT merges the three lowest standard bins into 0.40-1.25 GeV because the
+    low-energy FT numerator/denominator statistics are sparse and the user
+    explicitly prefers one combined low-energy FT correction.
+    """
+    edges = stage2_energy_edges(max_energy)
+    if str(region) != "FT":
+        return edges
+    #endif
+
+    merged = [float(edges[0])]
+    for edge in edges[1:]:
+        edge = float(edge)
+        if edge < 1.25 - 1.0e-12:
+            continue
+        #endif
+        merged.append(edge)
+    #endfor
+
+    if merged[-1] < float(max_energy) - 1.0e-12:
+        merged.append(float(max_energy))
+    #endif
+    return np.asarray(sorted(set(merged)), dtype=float)
 
 
 def parse_mix_shifts(value: str) -> List[int]:
@@ -10440,13 +10480,15 @@ def run_nsidis_ptmiss_pilot_fits(
     Each mass-shell support value is fit independently in each region/energy bin.
     """
     rows: List[Dict[str, object]] = []
-    edges = stage2_energy_edges(max_probe_energy)
     disc = "mx2_ep_x_pTmiss"
 
     for support in support_values:
         support = float(support)
 
         for region in ("FT", "FD_all"):
+            edges = nsidis_energy_edges_for_region(
+                region, max_probe_energy
+            )
             for ib in range(len(edges) - 1):
                 elo = float(edges[ib])
                 ehi = float(edges[ib + 1])
@@ -10792,9 +10834,11 @@ def make_nsidis_pilot_fit_projection_canvases(
     """
     Show the ACTUAL central-support nSidis pilot fit in every energy bin.
 
-    Column 1 is the M_X^2(ep) projection.
-    Column 2 is the pTmiss projection of the same 2D fit.
-    Thin dashed curves are the unmorphed starting templates.
+    Layout is optimized for inspection:
+      - up to four ENERGY BINS across each figure row;
+      - within each energy-bin tile, M_X^2(ep) is the upper half and pTmiss
+        is the lower half;
+      - both panels are projections of the SAME fitted 2D model.
     """
     disc = "mx2_ep_x_pTmiss"
     row_map = {
@@ -10811,25 +10855,44 @@ def make_nsidis_pilot_fit_projection_canvases(
         ) < 1.0e-12
     }
 
-    edges = stage2_energy_edges(9.5)
-
     for region in ("FT", "FD_all"):
-        nrows = len(edges) - 1
-        fig, axes = plt.subplots(
-            nrows, 2,
-            figsize=(13.5, max(9.0, 2.55 * nrows)),
-            squeeze=False,
+        edges = nsidis_energy_edges_for_region(region, 9.5)
+        nbins = len(edges) - 1
+        ncols = min(4, max(1, nbins))
+        ntile_rows = int(math.ceil(nbins / ncols))
+
+        fig = plt.figure(
+            figsize=(4.8 * ncols, 5.2 * ntile_rows)
+        )
+        outer = fig.add_gridspec(
+            ntile_rows,
+            ncols,
+            wspace=0.25,
+            hspace=0.33,
         )
 
-        for ib in range(nrows):
+        first_axes = None
+
+        for ib in range(nbins):
             elo = float(edges[ib])
             ehi = float(edges[ib + 1])
+            tile_row = ib // ncols
+            tile_col = ib % ncols
+            inner = outer[tile_row, tile_col].subgridspec(
+                2, 1,
+                hspace=0.18,
+            )
+            ax_mx = fig.add_subplot(inner[0, 0])
+            ax_pt = fig.add_subplot(inner[1, 0])
+            if first_axes is None:
+                first_axes = ax_mx
+            #endif
+
             row = row_map.get(
                 (region, round(elo, 10), round(ehi, 10))
             )
-
             if row is None:
-                for ax in axes[ib]:
+                for ax in (ax_mx, ax_pt):
                     ax.text(
                         0.5, 0.5, "no successful fit",
                         transform=ax.transAxes,
@@ -10857,7 +10920,6 @@ def make_nsidis_pilot_fit_projection_canvases(
                     ("dvcs", dvcs_f),
                 )
             }
-            # Match the nSidis parent support used in the actual pilot fit.
             for _name, _feat in (
                 ("data", data_f),
                 ("pi0", pi0_f),
@@ -10869,45 +10931,32 @@ def make_nsidis_pilot_fit_projection_canvases(
                 )
             #endfor
 
-            hd = histogram_for_discriminator(
-                disc, data_f, masks["data"],
-                mm2_min=mm2_min,
-                mm2_max=mm2_max,
-                probe_m2_max=central_support,
-                mm2_bins_2d=mm2_bins,
-                probe_m2_bins_2d=48,
-                bins_1d=90,
-                ptmiss_max=ptmiss_max,
-                ptmiss_bins=ptmiss_bins,
-                theta_max=4.0,
-                theta_bins=80,
-            )
-            hp = histogram_for_discriminator(
-                disc, pi0_f, masks["pi0"],
-                mm2_min=mm2_min,
-                mm2_max=mm2_max,
-                probe_m2_max=central_support,
-                mm2_bins_2d=mm2_bins,
-                probe_m2_bins_2d=48,
-                bins_1d=90,
-                ptmiss_max=ptmiss_max,
-                ptmiss_bins=ptmiss_bins,
-                theta_max=4.0,
-                theta_bins=80,
-            )
-            hv = histogram_for_discriminator(
-                disc, dvcs_f, masks["dvcs"],
-                mm2_min=mm2_min,
-                mm2_max=mm2_max,
-                probe_m2_max=central_support,
-                mm2_bins_2d=mm2_bins,
-                probe_m2_bins_2d=48,
-                bins_1d=90,
-                ptmiss_max=ptmiss_max,
-                ptmiss_bins=ptmiss_bins,
-                theta_max=4.0,
-                theta_bins=80,
-            )
+            hists = {}
+            for name, feat in (
+                ("data", data_f),
+                ("pi0", pi0_f),
+                ("dvcs", dvcs_f),
+            ):
+                hists[name] = histogram_for_discriminator(
+                    disc,
+                    feat,
+                    masks[name],
+                    mm2_min=mm2_min,
+                    mm2_max=mm2_max,
+                    probe_m2_max=central_support,
+                    mm2_bins_2d=mm2_bins,
+                    probe_m2_bins_2d=48,
+                    bins_1d=90,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=4.0,
+                    theta_bins=80,
+                )
+            #endfor
+
+            hd = hists["data"]
+            hp = hists["pi0"]
+            hv = hists["dvcs"]
 
             tp = morph_template_second_axis(
                 hp,
@@ -10922,12 +10971,13 @@ def make_nsidis_pilot_fit_projection_canvases(
 
             fpi0 = float(row["pi0_fraction"])
             ndata = float(np.sum(hd))
-
             rawp = normalized_template(hp).reshape(hp.shape)
             rawd = normalized_template(hv).reshape(hv.shape)
 
-            for col, axis_name in enumerate(("mx2", "ptmiss")):
-                ax = axes[ib, col]
+            for axis_name, ax in (
+                ("mx2", ax_mx),
+                ("ptmiss", ax_pt),
+            ):
                 if axis_name == "mx2":
                     data_proj = np.sum(hd, axis=1)
                     pshape = np.sum(tp, axis=1)
@@ -10938,6 +10988,12 @@ def make_nsidis_pilot_fit_projection_canvases(
                         mm2_min, mm2_max, mm2_bins + 1
                     )
                     xlabel = r"$M_X^2(ep)$ (GeV$^2$)"
+                    qkey = (
+                        "quality_mx2_projection_deviance_per_active_bin"
+                    )
+                    ckey = (
+                        "quality_mx2_projection_pearson_chi2_per_bin_mu_ge5"
+                    )
                 else:
                     data_proj = np.sum(hd, axis=0)
                     pshape = np.sum(tp, axis=0)
@@ -10948,70 +11004,96 @@ def make_nsidis_pilot_fit_projection_canvases(
                         0.0, ptmiss_max, ptmiss_bins + 1
                     )
                     xlabel = r"$p_{T,\rm miss}$ (GeV)"
+                    qkey = (
+                        "quality_ptmiss_projection_deviance_per_active_bin"
+                    )
+                    ckey = (
+                        "quality_ptmiss_projection_pearson_chi2_per_bin_mu_ge5"
+                    )
                 #endif
 
                 for arr in (
-                    pshape, dshape, rawp_shape, rawd_shape
+                    pshape,
+                    dshape,
+                    rawp_shape,
+                    rawd_shape,
                 ):
                     arr /= max(float(np.sum(arr)), 1.0e-30)
                 #endfor
 
                 pcomp = ndata * fpi0 * pshape
                 dcomp = ndata * (1.0 - fpi0) * dshape
-                model_curve = pcomp + dcomp
+                total = pcomp + dcomp
                 rawp_comp = ndata * fpi0 * rawp_shape
                 rawd_comp = ndata * (1.0 - fpi0) * rawd_shape
 
-                centers = 0.5 * (plot_edges[:-1] + plot_edges[1:])
+                centers = 0.5 * (
+                    plot_edges[:-1] + plot_edges[1:]
+                )
                 ax.errorbar(
-                    centers, data_proj,
+                    centers,
+                    data_proj,
                     yerr=np.sqrt(np.maximum(data_proj, 1.0)),
-                    fmt="o", ms=2.0, linewidth=0.65,
+                    fmt="o",
+                    ms=1.8,
+                    linewidth=0.55,
                     color=SAMPLE_COLORS["data"],
                     label="data",
                     zorder=6,
                 )
                 ax.step(
-                    centers, rawd_comp, where="mid",
+                    centers,
+                    rawd_comp,
+                    where="mid",
                     color=SAMPLE_COLORS["dvcs_mc"],
-                    linewidth=0.65, linestyle="--", alpha=0.55,
+                    linewidth=0.55,
+                    linestyle="--",
+                    alpha=0.5,
                     label="BH/DVCS pre-morph",
                 )
                 ax.step(
-                    centers, rawp_comp, where="mid",
+                    centers,
+                    rawp_comp,
+                    where="mid",
                     color=SAMPLE_COLORS["pi0_mc"],
-                    linewidth=0.65, linestyle="--", alpha=0.55,
+                    linewidth=0.55,
+                    linestyle="--",
+                    alpha=0.5,
                     label=r"$\pi^0$ pre-morph",
                 )
                 ax.step(
-                    centers, dcomp, where="mid",
+                    centers,
+                    dcomp,
+                    where="mid",
                     color=SAMPLE_COLORS["dvcs_mc"],
-                    linewidth=1.15,
+                    linewidth=1.0,
                     label="BH/DVCS fitted",
                 )
                 ax.step(
-                    centers, pcomp, where="mid",
+                    centers,
+                    pcomp,
+                    where="mid",
                     color=SAMPLE_COLORS["pi0_mc"],
-                    linewidth=1.15,
+                    linewidth=1.0,
                     label=r"$\pi^0$ fitted",
                 )
                 ax.step(
-                    centers, model_curve, where="mid",
+                    centers,
+                    total,
+                    where="mid",
                     color=SAMPLE_COLORS["fit"],
-                    linewidth=1.45,
+                    linewidth=1.3,
                     label="total fit",
                 )
-                ax.set_xlabel(xlabel)
-                ax.set_ylabel("entries / bin")
+
                 if axis_name == "ptmiss":
                     if region == "FT":
                         ft_plot_max = min(
                             float(ptmiss_max),
                             max(
                                 0.30,
-                                1.12 * ehi * math.sin(
-                                    math.radians(5.0)
-                                ),
+                                1.12 * ehi
+                                * math.sin(math.radians(5.0)),
                             ),
                         )
                         ax.set_xlim(0.0, ft_plot_max)
@@ -11019,53 +11101,69 @@ def make_nsidis_pilot_fit_projection_canvases(
                         ax.set_xlim(0.0, ptmiss_max)
                     #endif
                 #endif
-                if axis_name == "mx2":
-                    qkey = "quality_mx2_projection_deviance_per_active_bin"
-                    ckey = "quality_mx2_projection_pearson_chi2_per_bin_mu_ge5"
-                else:
-                    qkey = "quality_ptmiss_projection_deviance_per_active_bin"
-                    ckey = "quality_ptmiss_projection_pearson_chi2_per_bin_mu_ge5"
-                #endif
+
                 qval = float(row.get(qkey, float("nan")))
                 cval = float(row.get(ckey, float("nan")))
-                ax.set_title(
-                    f"{elo:.2f}-{ehi:.2f} GeV; "
-                    + rf"$f_{{\pi^0}}={fpi0:.3f}$; "
-                    + rf"$D/N_{{active}}={qval:.2f}$; "
-                    + rf"$\chi_P^2/N_{{\mu\geq5}}={cval:.2f}$",
-                    fontsize=8.5,
+                ax.text(
+                    0.02,
+                    0.95,
+                    rf"$D/N={qval:.2f}$; "
+                    rf"$\chi_P^2/N={cval:.2f}$",
+                    transform=ax.transAxes,
+                    ha="left",
+                    va="top",
+                    fontsize=7.0,
                 )
-                ax.grid(alpha=0.16)
+                ax.set_xlabel(xlabel, fontsize=8)
+                ax.set_ylabel("entries / bin", fontsize=7.5)
+                ax.tick_params(labelsize=7)
+                ax.grid(alpha=0.15)
             #endfor
+
+            ax_mx.set_title(
+                f"{elo:.2f}-{ehi:.2f} GeV; "
+                rf"$f_{{\pi^0}}={fpi0:.3f}$",
+                fontsize=9.0,
+            )
         #endfor
 
-        handles, labels = axes[0, 0].get_legend_handles_labels()
-        if handles:
-            fig.legend(
-                handles, labels,
-                loc="upper center",
-                ncol=6,
-                fontsize=7.5,
-                frameon=False,
-                bbox_to_anchor=(0.5, 0.985),
-            )
+        # Disable empty tiles.
+        for itile in range(nbins, ntile_rows * ncols):
+            tile_row = itile // ncols
+            tile_col = itile % ncols
+            ax = fig.add_subplot(outer[tile_row, tile_col])
+            ax.set_axis_off()
+        #endfor
+
+        if first_axes is not None:
+            handles, labels = first_axes.get_legend_handles_labels()
+            if handles:
+                fig.legend(
+                    handles,
+                    labels,
+                    loc="upper center",
+                    ncol=6,
+                    fontsize=7.5,
+                    frameon=False,
+                    bbox_to_anchor=(0.5, 0.965),
+                )
+            #endif
         #endif
 
         fig.suptitle(
-            f"{period.label}: ACTUAL nSidis pilot "
-            f"{region} fits at "
+            f"{period.label}: ACTUAL nSidis pilot {region} fits at "
             rf"$|M_X^2(ep\gamma_{{tag}})|<{central_support:.2f}$ GeV$^2$"
-            "\n"
-            r"production candidate $M_X^2(ep)\otimes p_{T,\rm miss}$"
-            "\nGoodness numbers are projection diagnostics; the old sparse-2D "
-            "D/ndof is intentionally not displayed.",
-            fontsize=12.5,
-            y=0.999,
+            "\nEach energy-bin tile: upper = "
+            r"$M_X^2(ep)$, lower = $p_{T,\rm miss}$; "
+            r"same shared 2D $M_X^2(ep)\otimes p_T$ fit",
+            fontsize=12.0,
+            y=0.995,
         )
         safe_finalize_figure(
             fig,
-            outdir / f"canvas_nsidis_pilot_fit_projections_{region.lower()}.png",
-            rect=(0, 0, 1, 0.965),
+            outdir
+            / f"canvas_nsidis_pilot_fit_projections_{region.lower()}.png",
+            rect=(0, 0, 1, 0.94),
         )
         plt.close(fig)
     #endfor
@@ -11261,6 +11359,9 @@ def build_nsidis_data_efficiency_rows(
     mm2_max: float,
     probe_m2_max: float,
     source_label: str,
+    numerator_purity_rows: Optional[
+        Sequence[Dict[str, object]]
+    ] = None,
 ) -> List[Dict[str, object]]:
     """
     Association-first DATA efficiency pilot.
@@ -11272,8 +11373,15 @@ def build_nsidis_data_efficiency_rows(
 
     No MC division is performed here yet.
     """
-    edges = stage2_energy_edges(max_probe_energy)
     fit_map = _fit_row_map_for_support(fit_rows, probe_m2_max)
+    purity_map = {
+        (
+            str(row["region"]),
+            round(float(row["energy_low_GeV"]), 9),
+            round(float(row["energy_high_GeV"]), 9),
+        ): row
+        for row in (numerator_purity_rows or [])
+    }
 
     stages = (
         "same_event",
@@ -11292,6 +11400,9 @@ def build_nsidis_data_efficiency_rows(
 
     rows: List[Dict[str, object]] = []
     for region in ("FT", "FD_all"):
+        edges = nsidis_energy_edges_for_region(
+            region, max_probe_energy
+        )
         for ib in range(len(edges) - 1):
             elo = float(edges[ib])
             ehi = float(edges[ib + 1])
@@ -11344,7 +11455,52 @@ def build_nsidis_data_efficiency_rows(
             )
 
             n_mass_shell = counts["probe_energy"]
-            n_final = counts["probe_pred_consistent"]
+            n_final_raw = counts["probe_pred_consistent"]
+
+            purity_row = purity_map.get(
+                (region, round(elo, 9), round(ehi, 9))
+            )
+            numerator_purity = (
+                float(purity_row.get("purity_linear", np.nan))
+                if purity_row is not None
+                else float("nan")
+            )
+            numerator_purity_err_low = (
+                float(
+                    purity_row.get(
+                        "purity_linear_err_low", np.nan
+                    )
+                )
+                if purity_row is not None
+                else float("nan")
+            )
+            numerator_purity_err_high = (
+                float(
+                    purity_row.get(
+                        "purity_linear_err_high", np.nan
+                    )
+                )
+                if purity_row is not None
+                else float("nan")
+            )
+            numerator_purity_model_shift = (
+                float(
+                    purity_row.get(
+                        "background_model_abs_shift", np.nan
+                    )
+                )
+                if purity_row is not None
+                else float("nan")
+            )
+
+            n_final = (
+                float(n_final_raw) * numerator_purity
+                if np.isfinite(numerator_purity)
+                else float("nan")
+            )
+
+            # The mass-shell-only diagnostic remains unpurified because the
+            # purity fit is defined after the FINAL predicted-probe association.
             eff_mass = (
                 float(n_mass_shell) / data_den
                 if np.isfinite(data_den) and data_den > 0.0
@@ -11356,8 +11512,16 @@ def build_nsidis_data_efficiency_rows(
                 else float("nan")
             )
 
-            counting_err = provisional_ratio_error(
-                float(n_final), data_den
+            # Counting fluctuation belongs to the raw associated count, then
+            # scales by the fitted purity.
+            raw_counting_err = provisional_ratio_error(
+                float(n_final_raw), data_den
+            )
+            counting_err = (
+                abs(numerator_purity) * raw_counting_err
+                if np.isfinite(numerator_purity)
+                and np.isfinite(raw_counting_err)
+                else float("nan")
             )
             pi0_eff_err_low = float("nan")
             pi0_eff_err_high = float("nan")
@@ -11385,25 +11549,64 @@ def build_nsidis_data_efficiency_rows(
                 )
             #endif
 
-            eff_err_low = (
-                math.sqrt(
-                    counting_err ** 2 + pi0_eff_err_low ** 2
-                )
-                if np.isfinite(counting_err)
-                and np.isfinite(pi0_eff_err_low)
-                else counting_err
+            numerator_purity_eff_err_low = (
+                abs(eff_final)
+                * numerator_purity_err_low
+                / numerator_purity
+                if np.isfinite(eff_final)
+                and np.isfinite(numerator_purity)
+                and numerator_purity > 0.0
+                and np.isfinite(numerator_purity_err_low)
+                else float("nan")
             )
-            eff_err_high = (
-                math.sqrt(
-                    counting_err ** 2 + pi0_eff_err_high ** 2
+            numerator_purity_eff_err_high = (
+                abs(eff_final)
+                * numerator_purity_err_high
+                / numerator_purity
+                if np.isfinite(eff_final)
+                and np.isfinite(numerator_purity)
+                and numerator_purity > 0.0
+                and np.isfinite(numerator_purity_err_high)
+                else float("nan")
+            )
+            numerator_purity_model_eff_shift = (
+                abs(eff_final)
+                * numerator_purity_model_shift
+                / numerator_purity
+                if np.isfinite(eff_final)
+                and np.isfinite(numerator_purity)
+                and numerator_purity > 0.0
+                and np.isfinite(numerator_purity_model_shift)
+                else float("nan")
+            )
+
+            def _quadrature(*values: float) -> float:
+                finite = [
+                    float(value)
+                    for value in values
+                    if np.isfinite(value)
+                ]
+                return (
+                    math.sqrt(sum(value * value for value in finite))
+                    if finite else float("nan")
                 )
-                if np.isfinite(counting_err)
-                and np.isfinite(pi0_eff_err_high)
-                else counting_err
+            #enddef
+
+            eff_err_low = _quadrature(
+                counting_err,
+                pi0_eff_err_low,
+                numerator_purity_eff_err_low,
+            )
+            eff_err_high = _quadrature(
+                counting_err,
+                pi0_eff_err_high,
+                numerator_purity_eff_err_high,
             )
 
             status = "ok"
-            if fit is None:
+            if purity_row is None or not np.isfinite(numerator_purity):
+                status = "no_successful_numerator_purity_fit"
+            elif fit is None:
                 status = "no_successful_denominator_fit"
             elif n_tags <= 0:
                 status = "no_selected_tags"
@@ -11434,18 +11637,39 @@ def build_nsidis_data_efficiency_rows(
                 "selected_epgamma_tags": n_tags,
                 "fitted_pi0_denominator": data_den,
                 "reconstructed_probe_mass_shell": n_mass_shell,
-                "reconstructed_probe_final": n_final,
+                "reconstructed_probe_final_raw": n_final_raw,
+                "numerator_pi0_purity": numerator_purity,
+                "numerator_pi0_purity_err_low": (
+                    numerator_purity_err_low
+                ),
+                "numerator_pi0_purity_err_high": (
+                    numerator_purity_err_high
+                ),
+                "numerator_pi0_purity_background_model_abs_shift": (
+                    numerator_purity_model_shift
+                ),
+                "reconstructed_probe_final_purity_corrected": n_final,
                 "data_efficiency_mass_shell_only": eff_mass,
                 "data_efficiency_final": eff_final,
                 "counting_error_final": counting_err,
                 "pi0_profile_efficiency_error_low": pi0_eff_err_low,
                 "pi0_profile_efficiency_error_high": pi0_eff_err_high,
+                "numerator_purity_efficiency_error_low": (
+                    numerator_purity_eff_err_low
+                ),
+                "numerator_purity_efficiency_error_high": (
+                    numerator_purity_eff_err_high
+                ),
+                "numerator_purity_background_model_efficiency_shift": (
+                    numerator_purity_model_eff_shift
+                ),
                 "data_efficiency_error_low": eff_err_low,
                 "data_efficiency_error_high": eff_err_high,
                 "status": status,
                 "interpretation": (
-                    "preliminary data-only association efficiency; "
-                    "not yet divided by aaogen MC efficiency"
+                    "data-only association efficiency corrected by "
+                    "final-associated numerator pi0 purity; not yet divided "
+                    "by aaogen MC efficiency"
                 ),
             }
             previous = n_tags
@@ -11853,7 +12077,6 @@ def build_aaogen_mc_efficiency_rows(
     Unlike data, no fitted f_pi0 factor is needed: every selected aaogen epgamma
     tag is a true exclusive-pi0 denominator tag.
     """
-    edges = stage2_energy_edges(max_probe_energy)
     stages = (
         "same_event",
         "positive_remainder",
@@ -11869,6 +12092,9 @@ def build_aaogen_mc_efficiency_rows(
 
     rows: List[Dict[str, object]] = []
     for region in ("FT", "FD_all"):
+        edges = nsidis_energy_edges_for_region(
+            region, max_probe_energy
+        )
         for ib in range(len(edges) - 1):
             elo = float(edges[ib])
             ehi = float(edges[ib + 1])
@@ -12027,6 +12253,31 @@ def combine_data_mc_scale_factor_rows(
         sf_err_low = propagated_sf_error(sed_low, sem)
         sf_err_high = propagated_sf_error(sed_high, sem)
 
+        numerator_purity_sf_model_shift = (
+            abs(sf)
+            * float(
+                d.get(
+                    "numerator_pi0_purity_background_model_abs_shift",
+                    np.nan,
+                )
+            )
+            / float(d.get("numerator_pi0_purity", np.nan))
+            if np.isfinite(sf)
+            and np.isfinite(
+                float(d.get("numerator_pi0_purity", np.nan))
+            )
+            and float(d.get("numerator_pi0_purity", np.nan)) > 0.0
+            and np.isfinite(
+                float(
+                    d.get(
+                        "numerator_pi0_purity_background_model_abs_shift",
+                        np.nan,
+                    )
+                )
+            )
+            else float("nan")
+        )
+
 
         out.append({
             "period": d["period"],
@@ -12047,6 +12298,18 @@ def combine_data_mc_scale_factor_rows(
                 "probe_m2_support_max_GeV2"
             ],
             "fitted_pi0_fraction_data": d["fitted_pi0_fraction"],
+            "numerator_pi0_purity": d.get(
+                "numerator_pi0_purity", np.nan
+            ),
+            "numerator_pi0_purity_err_low": d.get(
+                "numerator_pi0_purity_err_low", np.nan
+            ),
+            "numerator_pi0_purity_err_high": d.get(
+                "numerator_pi0_purity_err_high", np.nan
+            ),
+            "numerator_pi0_purity_background_model_abs_shift": d.get(
+                "numerator_pi0_purity_background_model_abs_shift", np.nan
+            ),
             "data_efficiency_final": ed,
             "data_efficiency_error_low": sed_low,
             "data_efficiency_error_high": sed_high,
@@ -12055,12 +12318,15 @@ def combine_data_mc_scale_factor_rows(
             "photon_efficiency_scale_factor": sf,
             "scale_factor_stat_error_low": sf_err_low,
             "scale_factor_stat_error_high": sf_err_high,
+            "scale_factor_numerator_purity_background_model_abs_shift": (
+                numerator_purity_sf_model_shift
+            ),
             "data_status": d["status"],
             "mc_status": (
                 m["status"] if m is not None else "missing_mc_row"
             ),
             "status": (
-                "PRELIMINARY_statistical_error_includes_profiled_pi0_fraction"
+                "PRELIMINARY_stat_error_includes_denominator_and_numerator_pi0_fits"
                 if np.isfinite(sf)
                 else "invalid_scale_factor"
             ),
@@ -12785,9 +13051,11 @@ def run_nsidis_driver_study(
         Tuple[str, float, float, str],
         Dict[str, object],
     ] = {}
-    edges = stage2_energy_edges(max_probe_energy)
 
     for region in ("FT", "FD_all"):
+        edges = nsidis_energy_edges_for_region(
+            region, max_probe_energy
+        )
         for ib in range(len(edges) - 1):
             elo = float(edges[ib])
             ehi = float(edges[ib + 1])
@@ -13565,18 +13833,30 @@ def _numerator_mass_nll(
         return float("inf")
     #endif
 
+    order = int(background_order)
     if fixed_purity is None:
         purity = float(params[0])
-        slope = float(params[1])
-        curvature = float(params[2]) if int(background_order) >= 2 else 0.0
+        nuisance = np.asarray(params[1:], dtype=float)
     else:
         purity = float(fixed_purity)
-        slope = float(params[0])
-        curvature = float(params[1]) if int(background_order) >= 2 else 0.0
+        nuisance = np.asarray(params, dtype=float)
     #endif
 
     if not (0.0 <= purity <= 1.0):
         return float("inf")
+    #endif
+
+    if order <= 0:
+        slope = 0.0
+        curvature = 0.0
+    elif order == 1:
+        slope = float(nuisance[0]) if len(nuisance) else 0.0
+        curvature = 0.0
+    else:
+        raise ValueError(
+            "Associated-numerator production study supports only "
+            "constant (order 0) and linear (order 1) backgrounds."
+        )
     #endif
 
     bkg = _numerator_background_shape(edges, slope, curvature)
@@ -13596,17 +13876,15 @@ def fit_associated_numerator_mass(
     background_order: int = 1,
 ) -> Dict[str, float]:
     """
-    Fit the FINAL associated data M_gg spectrum with:
+    Fit the FINAL associated-data M_gg spectrum with an associated-aaogen
+    pi0 signal template plus a smooth combinatorial background.
 
-        data = pi0_purity * reconstructed-aaogen signal template
-             + (1-pi0_purity) * smooth combinatorial background.
+    background_order:
+      0 -> constant background
+      1 -> linear background (NOMINAL)
 
-    The fit is shape-only; the total model normalization is fixed to the
-    observed associated-data count.  The 68% statistical interval on purity is
-    obtained from a 1D profile likelihood, Delta(-ln L)=0.5.
-
-    This result is DIAGNOSTIC ONLY in v062 and is not yet multiplied into
-    epsilon_data or SF_gamma.
+    The 68% purity interval is a one-dimensional profile-likelihood interval
+    using Delta(-ln L)=0.5.  The result now feeds the data numerator efficiency.
     """
     data_counts = np.asarray(data_counts, dtype=float)
     aaogen_counts = np.asarray(aaogen_counts, dtype=float)
@@ -13622,7 +13900,6 @@ def fit_associated_numerator_mass(
             "purity_err_low": float("nan"),
             "purity_err_high": float("nan"),
             "background_slope": float("nan"),
-            "background_curvature": float("nan"),
             "nll": float("nan"),
         }
     #endif
@@ -13636,17 +13913,21 @@ def fit_associated_numerator_mass(
             "purity_err_low": float("nan"),
             "purity_err_high": float("nan"),
             "background_slope": float("nan"),
-            "background_curvature": float("nan"),
             "nll": float("nan"),
         }
     #endif
 
-    if int(background_order) >= 2:
-        x0 = np.asarray([0.90, 0.0, 0.0], dtype=float)
-        bounds = ((0.0, 1.0), (-1.9, 1.9), (-3.0, 6.0))
-    else:
+    order = int(background_order)
+    if order <= 0:
+        x0 = np.asarray([0.90], dtype=float)
+        bounds = ((0.0, 1.0),)
+    elif order == 1:
         x0 = np.asarray([0.90, 0.0], dtype=float)
         bounds = ((0.0, 1.0), (-1.9, 1.9))
+    else:
+        raise ValueError(
+            "Use background_order=0 (constant) or 1 (linear)."
+        )
     #endif
 
     result = minimize(
@@ -13656,7 +13937,7 @@ def fit_associated_numerator_mass(
             data_counts,
             signal_shape,
             edges,
-            int(background_order),
+            order,
             None,
         ),
         method="L-BFGS-B",
@@ -13672,38 +13953,38 @@ def fit_associated_numerator_mass(
             "purity_err_low": float("nan"),
             "purity_err_high": float("nan"),
             "background_slope": float("nan"),
-            "background_curvature": float("nan"),
             "nll": float("nan"),
         }
     #endif
 
     purity = float(result.x[0])
-    slope = float(result.x[1])
-    curvature = float(result.x[2]) if int(background_order) >= 2 else 0.0
+    slope = float(result.x[1]) if order == 1 else 0.0
     nll_min = float(result.fun)
 
-    # Profile likelihood versus purity.
     def profile_nll(p: float) -> float:
-        if int(background_order) >= 2:
-            nuisance_x0 = np.asarray([slope, curvature], dtype=float)
-            nuisance_bounds = ((-1.9, 1.9), (-3.0, 6.0))
-        else:
-            nuisance_x0 = np.asarray([slope], dtype=float)
-            nuisance_bounds = ((-1.9, 1.9),)
+        if order <= 0:
+            return _numerator_mass_nll(
+                np.asarray([], dtype=float),
+                data_counts,
+                signal_shape,
+                edges,
+                order,
+                float(p),
+            )
         #endif
 
         prof = minimize(
             _numerator_mass_nll,
-            nuisance_x0,
+            np.asarray([slope], dtype=float),
             args=(
                 data_counts,
                 signal_shape,
                 edges,
-                int(background_order),
+                order,
                 float(p),
             ),
             method="L-BFGS-B",
-            bounds=nuisance_bounds,
+            bounds=((-1.9, 1.9),),
             options={"maxiter": 500, "ftol": 1.0e-11},
         )
         return float(prof.fun) if prof.success else float("inf")
@@ -13748,9 +14029,9 @@ def fit_associated_numerator_mass(
         "purity_err_low": float(max(0.0, purity - p_low)),
         "purity_err_high": float(max(0.0, p_high - purity)),
         "background_slope": slope,
-        "background_curvature": curvature,
         "nll": nll_min,
     }
+
 
 
 def _aaogen_final_association_mask(
@@ -13881,7 +14162,6 @@ def build_associated_numerator_purity_rows(
         mc_pair_np["pred_probe_theta_deg"], dtype=float
     )
 
-    energy_edges = stage2_energy_edges(max_probe_energy)
     mass_edges = np.linspace(
         float(mgg_min),
         float(mgg_max),
@@ -13895,6 +14175,9 @@ def build_associated_numerator_purity_rows(
     ] = {}
 
     for region in ("FT", "FD_all"):
+        energy_edges = nsidis_energy_edges_for_region(
+            region, max_probe_energy
+        )
         for ib in range(len(energy_edges) - 1):
             elo = float(energy_edges[ib])
             ehi = float(energy_edges[ib + 1])
@@ -13941,11 +14224,11 @@ def build_associated_numerator_purity_rows(
                 mass_edges,
                 background_order=1,
             )
-            fit_quadratic = fit_associated_numerator_mass(
+            fit_constant = fit_associated_numerator_mass(
                 data_hist,
                 mc_hist,
                 mass_edges,
-                background_order=2,
+                background_order=0,
             )
 
             mean_E = (
@@ -13955,10 +14238,10 @@ def build_associated_numerator_purity_rows(
             )
 
             p_lin = float(fit_linear["purity"])
-            p_quad = float(fit_quadratic["purity"])
+            p_const = float(fit_constant["purity"])
             model_shift = (
-                abs(p_lin - p_quad)
-                if np.isfinite(p_lin) and np.isfinite(p_quad)
+                abs(p_lin - p_const)
+                if np.isfinite(p_lin) and np.isfinite(p_const)
                 else float("nan")
             )
 
@@ -13978,22 +14261,22 @@ def build_associated_numerator_purity_rows(
                 "purity_linear_err_high": float(
                     fit_linear["purity_err_high"]
                 ),
-                "purity_quadratic": p_quad,
-                "purity_quadratic_err_low": float(
-                    fit_quadratic["purity_err_low"]
+                "purity_constant": p_const,
+                "purity_constant_err_low": float(
+                    fit_constant["purity_err_low"]
                 ),
-                "purity_quadratic_err_high": float(
-                    fit_quadratic["purity_err_high"]
+                "purity_constant_err_high": float(
+                    fit_constant["purity_err_high"]
                 ),
                 "background_model_abs_shift": model_shift,
                 "linear_fit_success": int(
                     fit_linear["fit_success"]
                 ),
-                "quadratic_fit_success": int(
-                    fit_quadratic["fit_success"]
+                "constant_fit_success": int(
+                    fit_constant["fit_success"]
                 ),
                 "nominal_background_model": "linear",
-                "purity_applied_to_efficiency": 0,
+                "purity_applied_to_efficiency": 1,
             }
             rows.append(row)
 
@@ -14063,7 +14346,7 @@ def make_associated_numerator_purity_summary_canvas(
                 dtype=float,
             )
             yq = np.asarray(
-                [float(row["purity_quadratic"]) for row in rr],
+                [float(row["purity_constant"]) for row in rr],
                 dtype=float,
             )
 
@@ -14082,7 +14365,7 @@ def make_associated_numerator_purity_summary_canvas(
                 marker="s",
                 linestyle="--",
                 linewidth=1.0,
-                label="quadratic-background alternative",
+                label="constant-background alternative",
             )
         #endif
 
@@ -14100,7 +14383,8 @@ def make_associated_numerator_purity_summary_canvas(
     )
     fig.suptitle(
         f"{period.label}: numerator $M_{{\\gamma\\gamma}}$ purity diagnostic\n"
-        "not yet applied to data efficiency or photon scale factor",
+        "linear-background purity is applied to data efficiency; "
+        "constant-background result is retained as a model variation",
         fontsize=12.5,
     )
     safe_finalize_figure(
@@ -14135,12 +14419,12 @@ def make_associated_numerator_mass_fit_canvases(
             continue
         #endif
 
-        ncols = 2
+        ncols = min(4, max(1, len(rr)))
         nrows = int(math.ceil(len(rr) / ncols))
         fig, axes = plt.subplots(
             nrows,
             ncols,
-            figsize=(12.5, 3.2 * nrows),
+            figsize=(4.7 * ncols, 3.4 * nrows),
             squeeze=False,
         )
 
@@ -14234,7 +14518,8 @@ def make_associated_numerator_mass_fit_canvases(
         fig.suptitle(
             f"{period.label}: final-associated numerator "
             f"$M_{{\\gamma\\gamma}}$ fits — {region_label}\n"
-            "aaogen signal template + linear combinatorial background",
+            "aaogen signal template + linear combinatorial background "
+            "(constant background is the alternative)",
             fontsize=12.5,
         )
         safe_finalize_figure(
@@ -14991,7 +15276,8 @@ def process_nsidis_study_period(
         )
         log(
             f"{period.label}: numerator-purity diagnostic complete; "
-            "purity has NOT been applied to epsilon_data or SF_gamma."
+            "linear-background numerator purity has been applied to "
+            "epsilon_data and SF_gamma."
         )
 
         ns_eff_rows = build_nsidis_data_efficiency_rows(
@@ -15005,6 +15291,7 @@ def process_nsidis_study_period(
             mm2_max=float(args_dict["den_fit_mm2_max"]),
             probe_m2_max=central_support,
             source_label="nsidis",
+            numerator_purity_rows=numerator_purity_rows,
         )
         wagon_eff_rows = build_nsidis_data_efficiency_rows(
             period,
@@ -15084,15 +15371,14 @@ def process_nsidis_study_period(
                     },
                     "numerator_pi0_purity": {
                         "status": (
-                            "diagnostic-only; not applied to epsilon_data "
-                            "or SF_gamma"
+                            "applied to epsilon_data and SF_gamma"
                         ),
                         "signal_model": (
                             "final-associated reconstructed aaogen "
                             "M_gammagamma template"
                         ),
                         "nominal_background_model": "linear",
-                        "alternative_background_model": "quadratic",
+                        "alternative_background_model": "constant",
                         "available_mass_window_GeV": [
                             float(args_dict["assoc_mgg_min"]),
                             float(args_dict["assoc_mgg_max"]),
