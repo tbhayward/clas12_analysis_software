@@ -23,6 +23,15 @@ again after one explicit exclusivity requirement:
 There are NO fits, NO eppi0 input files, NO efficiency calculation, NO
 numerator association, NO bootstrap, and NO systematic extraction.
 
+Stage-1 interpretation note
+---------------------------
+This clean Stage 1 intentionally retains genuine exclusive BH/DVCS events
+near E_miss = 0 and M_X^2(epgamma) = 0. Earlier legacy-development canvases
+required a positive predicted-probe energy and predicted-probe detector
+acceptance, which removed much of that exclusive DVCS peak. Therefore the
+raw M_X^2(epgamma) distribution here is expected to be much more sharply
+peaked at zero.
+
 Minimal common selection
 ------------------------
     e_p > 2 GeV
@@ -44,7 +53,7 @@ Plotted observables
     M_X^2(ep)         computed from P_beam + P_target - P_e - P_p
     Delta_phi         stored branch
     pTmiss            stored branch
-    theta_gamma_gamma stored branch, displayed in degrees
+    theta_gamma_gamma stored branch, plotted exactly as stored
     Emiss2            stored branch (despite the name, this is E_miss)
 
 Each period produces ONE 2x6 canvas:
@@ -145,8 +154,8 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
         "Delta_phi",
         r"$\Delta\phi$",
         r"$\Delta\phi$ (rad)",
-        math.pi / 2.0,
-        3.0 * math.pi / 2.0,
+        math.pi - 0.50,
+        math.pi + 0.50,
         100,
     ),
     PlotVariable(
@@ -160,9 +169,9 @@ PLOT_VARIABLES: Tuple[PlotVariable, ...] = (
     PlotVariable(
         "theta_gamma_gamma",
         r"$\theta_{\gamma\gamma}$",
-        r"$\theta_{\gamma\gamma}$ (deg)",
+        r"$\theta_{\gamma\gamma}$ (rad)",
         0.0,
-        4.0,
+        3.0,
         80,
     ),
     PlotVariable(
@@ -731,14 +740,6 @@ def accumulate_shape_histograms(
                         arrays[variable.branch],
                         dtype=float,
                     )
-                #endif
-
-                # Stored angular branches follow the same angular convention
-                # as the event tree.  Display theta_gamma_gamma in degrees.
-                if variable.branch == "theta_gamma_gamma":
-                    if angle_unit == "rad":
-                        values = np.degrees(values)
-                    #endif
                 #endif
 
                 finite_values = np.isfinite(values)
