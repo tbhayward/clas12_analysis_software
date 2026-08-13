@@ -36,7 +36,7 @@ Minimal common selection
 ------------------------
     e_p > 2 GeV
     theta_egamma > 5 deg
-    2 <= E_gamma(tag) < 9.5 GeV
+    0.4 <= E_gamma(tag) < 9.5 GeV
 
 Importantly, Stage 1 does NOT require:
     - positive missing/probe energy,
@@ -103,7 +103,7 @@ PROTON_MASS_GEV = 0.9382720813
 ELECTRON_P_MIN_GEV = 2.0
 THETA_EGAMMA_MIN_DEG = 5.0
 
-TAG_E_MIN_GEV = 2.0
+TAG_E_MIN_GEV = 0.4
 TAG_E_MAX_GEV = 9.5
 MX2_EPGAMMA_ABS_MAX_GEV2 = 0.075
 
@@ -540,7 +540,7 @@ def common_support_mask(
     Requirements:
         e_p > 2 GeV
         opening angle(e, gamma_tag) > 5 deg
-        2 <= E_gamma_tag < 9.5 GeV
+        0.4 <= E_gamma_tag < 9.5 GeV
 
     The e-gamma opening-angle requirement suppresses radiative events.
 
@@ -596,7 +596,7 @@ def common_support_mask(
         "finite": int(np.count_nonzero(finite)),
         "electron_p_gt_2": int(np.count_nonzero(electron)),
         "theta_egamma_gt_5deg": int(np.count_nonzero(nonradiative)),
-        "tag_2_to_9p5_GeV": int(np.count_nonzero(accepted)),
+        "tag_0p4_to_9p5_GeV": int(np.count_nonzero(accepted)),
     }
 
     return accepted, counters
@@ -659,7 +659,7 @@ def accumulate_shape_histograms(
         "finite": 0,
         "electron_p_gt_2": 0,
         "theta_egamma_gt_5deg": 0,
-        "tag_2_to_9p5_GeV": 0,
+        "tag_0p4_to_9p5_GeV": 0,
     }
     for region_key, _, _ in TAG_REGIONS:
         totals[f"{region_key}_minimal"] = 0
@@ -725,7 +725,7 @@ def accumulate_shape_histograms(
                 "finite",
                 "electron_p_gt_2",
                 "theta_egamma_gt_5deg",
-                "tag_2_to_9p5_GeV",
+                "tag_0p4_to_9p5_GeV",
             ):
                 totals[key] += int(chunk_counts[key])
             #endfor
@@ -1095,7 +1095,7 @@ def draw_period_canvas(
         f"Stage 1 shape comparison: {period.label} — {region_label}\n"
         r"minimal selection: $E_e>2$ GeV, "
         r"$\theta_{e\gamma}>5^\circ$, "
-        r"$2\leq E_{\gamma,\mathrm{tag}}<9.5$ GeV"
+        r"$0.4\leq E_{\gamma,\mathrm{tag}}<9.5$ GeV"
         "\n"
         f"before cut: data={n_data_before:,}, "
         f"DVCS MC={n_dvcs_before:,}, "
@@ -1335,7 +1335,7 @@ def main() -> int:
     )
 
     log("Stage 1 only: four epgamma shape comparisons; no fits or efficiency calculation.")
-    log("Minimal selection: e_p>2 GeV, theta_egamma>5 deg, 2<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
+    log("Minimal selection: e_p>2 GeV, theta_egamma>5 deg, 0.4<=E_tag<9.5 GeV; no probe-energy or probe-angle cut.")
 
     # Complete preflight BEFORE any large read.
     preflight_periods(periods, args.tree_name)
