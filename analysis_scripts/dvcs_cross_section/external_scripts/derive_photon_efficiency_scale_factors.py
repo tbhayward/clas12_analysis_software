@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v061.py
+derive_photon_efficiency_scale_factors_v062.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v061.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v062.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v061.py \
+    python derive_photon_efficiency_scale_factors_v062.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v061.py \
+    python derive_photon_efficiency_scale_factors_v062.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -930,6 +930,17 @@ def match_data_event_candidates(
     pred_E = initial_E - e_E - p_E - tag_E
     pred3 = initial_p3[None, :] - e3 - p3 - tag3
     pred_p = np.linalg.norm(pred3, axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pred_theta_deg = np.degrees(
+            np.arccos(
+                np.clip(
+                    pred3[:, 2] / pred_p,
+                    -1.0,
+                    1.0,
+                )
+            )
+        )
+    #endwith
 
     dot = np.sum(pred3 * reco3, axis=1)
     denom = pred_p * reco_p
@@ -1013,6 +1024,10 @@ def match_data_event_candidates(
             "eppi0_index": np.asarray(pi_rep[chosen], dtype=np.int64),
             "reco_probe_energy": np.asarray(reco_E[chosen], dtype=float),
             "pred_probe_energy": np.asarray(pred_E[chosen], dtype=float),
+            "pred_probe_theta_deg": np.asarray(
+                pred_theta_deg[chosen], dtype=float
+            ),
+            "pi0_mass": np.asarray(pi_m[chosen], dtype=float),
             "reco_probe_mass2": np.asarray(reco_m2[chosen], dtype=float),
             "probe_delta_theta_deg": np.asarray(
                 delta_theta_deg[chosen], dtype=float
@@ -13502,6 +13517,737 @@ def make_cross_period_nsidis_driver_study_canvas(
 
 
 
+
+# -----------------------------------------------------------------------------
+# Associated-numerator pi0-purity diagnostic
+# -----------------------------------------------------------------------------
+
+def _normalize_template_1d(counts: np.ndarray) -> np.ndarray:
+    arr = np.asarray(counts, dtype=float)
+    total = float(np.sum(arr))
+    if not np.isfinite(total) or total <= 0.0:
+        return np.zeros_like(arr, dtype=float)
+    #endif
+    return arr / total
+
+
+def _numerator_background_shape(
+    edges: np.ndarray,
+    slope: float,
+    curvature: float = 0.0,
+) -> np.ndarray:
+    """
+    Positive smooth background over the already-skimmed 0.11-0.16 GeV window.
+
+    u is centered and scaled to roughly [-0.5,0.5].  The nominal model has
+    curvature=0 (linear); a quadratic alternative is used only as a diagnostic
+    model-dependence check.
+    """
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    width = max(float(edges[-1] - edges[0]), 1.0e-12)
+    u = (centers - 0.5 * (edges[0] + edges[-1])) / width
+    shape = 1.0 + float(slope) * u + float(curvature) * u * u
+    shape = np.clip(shape, 1.0e-10, None)
+    return _normalize_template_1d(shape)
+
+
+def _numerator_mass_nll(
+    params: np.ndarray,
+    observed: np.ndarray,
+    signal_shape: np.ndarray,
+    edges: np.ndarray,
+    background_order: int,
+    fixed_purity: Optional[float] = None,
+) -> float:
+    obs = np.asarray(observed, dtype=float)
+    nobs = float(np.sum(obs))
+    if nobs <= 0.0:
+        return float("inf")
+    #endif
+
+    if fixed_purity is None:
+        purity = float(params[0])
+        slope = float(params[1])
+        curvature = float(params[2]) if int(background_order) >= 2 else 0.0
+    else:
+        purity = float(fixed_purity)
+        slope = float(params[0])
+        curvature = float(params[1]) if int(background_order) >= 2 else 0.0
+    #endif
+
+    if not (0.0 <= purity <= 1.0):
+        return float("inf")
+    #endif
+
+    bkg = _numerator_background_shape(edges, slope, curvature)
+    model_shape = (
+        purity * np.asarray(signal_shape, dtype=float)
+        + (1.0 - purity) * bkg
+    )
+    mu = np.clip(nobs * model_shape, 1.0e-12, None)
+    return float(np.sum(mu - obs * np.log(mu)))
+
+
+def fit_associated_numerator_mass(
+    data_counts: np.ndarray,
+    aaogen_counts: np.ndarray,
+    edges: np.ndarray,
+    *,
+    background_order: int = 1,
+) -> Dict[str, float]:
+    """
+    Fit the FINAL associated data M_gg spectrum with:
+
+        data = pi0_purity * reconstructed-aaogen signal template
+             + (1-pi0_purity) * smooth combinatorial background.
+
+    The fit is shape-only; the total model normalization is fixed to the
+    observed associated-data count.  The 68% statistical interval on purity is
+    obtained from a 1D profile likelihood, Delta(-ln L)=0.5.
+
+    This result is DIAGNOSTIC ONLY in v062 and is not yet multiplied into
+    epsilon_data or SF_gamma.
+    """
+    data_counts = np.asarray(data_counts, dtype=float)
+    aaogen_counts = np.asarray(aaogen_counts, dtype=float)
+    edges = np.asarray(edges, dtype=float)
+
+    ndata = float(np.sum(data_counts))
+    nmc = float(np.sum(aaogen_counts))
+    if ndata < 20.0 or nmc < 20.0:
+        return {
+            "fit_success": 0,
+            "fit_message": "insufficient associated mass statistics",
+            "purity": float("nan"),
+            "purity_err_low": float("nan"),
+            "purity_err_high": float("nan"),
+            "background_slope": float("nan"),
+            "background_curvature": float("nan"),
+            "nll": float("nan"),
+        }
+    #endif
+
+    signal_shape = _normalize_template_1d(aaogen_counts)
+    if not np.any(signal_shape > 0.0):
+        return {
+            "fit_success": 0,
+            "fit_message": "empty aaogen signal template",
+            "purity": float("nan"),
+            "purity_err_low": float("nan"),
+            "purity_err_high": float("nan"),
+            "background_slope": float("nan"),
+            "background_curvature": float("nan"),
+            "nll": float("nan"),
+        }
+    #endif
+
+    if int(background_order) >= 2:
+        x0 = np.asarray([0.90, 0.0, 0.0], dtype=float)
+        bounds = ((0.0, 1.0), (-1.9, 1.9), (-3.0, 6.0))
+    else:
+        x0 = np.asarray([0.90, 0.0], dtype=float)
+        bounds = ((0.0, 1.0), (-1.9, 1.9))
+    #endif
+
+    result = minimize(
+        _numerator_mass_nll,
+        x0,
+        args=(
+            data_counts,
+            signal_shape,
+            edges,
+            int(background_order),
+            None,
+        ),
+        method="L-BFGS-B",
+        bounds=bounds,
+        options={"maxiter": 1000, "ftol": 1.0e-12},
+    )
+
+    if not result.success or not np.isfinite(result.fun):
+        return {
+            "fit_success": 0,
+            "fit_message": str(result.message),
+            "purity": float("nan"),
+            "purity_err_low": float("nan"),
+            "purity_err_high": float("nan"),
+            "background_slope": float("nan"),
+            "background_curvature": float("nan"),
+            "nll": float("nan"),
+        }
+    #endif
+
+    purity = float(result.x[0])
+    slope = float(result.x[1])
+    curvature = float(result.x[2]) if int(background_order) >= 2 else 0.0
+    nll_min = float(result.fun)
+
+    # Profile likelihood versus purity.
+    def profile_nll(p: float) -> float:
+        if int(background_order) >= 2:
+            nuisance_x0 = np.asarray([slope, curvature], dtype=float)
+            nuisance_bounds = ((-1.9, 1.9), (-3.0, 6.0))
+        else:
+            nuisance_x0 = np.asarray([slope], dtype=float)
+            nuisance_bounds = ((-1.9, 1.9),)
+        #endif
+
+        prof = minimize(
+            _numerator_mass_nll,
+            nuisance_x0,
+            args=(
+                data_counts,
+                signal_shape,
+                edges,
+                int(background_order),
+                float(p),
+            ),
+            method="L-BFGS-B",
+            bounds=nuisance_bounds,
+            options={"maxiter": 500, "ftol": 1.0e-11},
+        )
+        return float(prof.fun) if prof.success else float("inf")
+    #enddef
+
+    target = nll_min + 0.5
+
+    def root_function(p: float) -> float:
+        return profile_nll(float(p)) - target
+    #enddef
+
+    p_low = 0.0
+    if purity > 0.0:
+        try:
+            f0 = root_function(0.0)
+            fp = root_function(purity)
+            if np.isfinite(f0) and f0 > 0.0 and fp <= 0.0:
+                p_low = float(brentq(root_function, 0.0, purity))
+            #endif
+        except Exception:
+            p_low = 0.0
+        #endtry
+    #endif
+
+    p_high = 1.0
+    if purity < 1.0:
+        try:
+            fp = root_function(purity)
+            f1 = root_function(1.0)
+            if np.isfinite(f1) and f1 > 0.0 and fp <= 0.0:
+                p_high = float(brentq(root_function, purity, 1.0))
+            #endif
+        except Exception:
+            p_high = 1.0
+        #endtry
+    #endif
+
+    return {
+        "fit_success": 1,
+        "fit_message": "ok",
+        "purity": purity,
+        "purity_err_low": float(max(0.0, purity - p_low)),
+        "purity_err_high": float(max(0.0, p_high - purity)),
+        "background_slope": slope,
+        "background_curvature": curvature,
+        "nll": nll_min,
+    }
+
+
+def _aaogen_final_association_mask(
+    pair_np: Dict[str, np.ndarray],
+    *,
+    mgg_min: float,
+    mgg_max: float,
+    remainder_mass2_max: float,
+    reco_probe_energy_min: float,
+    probe_angle_max_deg: float,
+    probe_frac_energy_max: float,
+) -> np.ndarray:
+    """Pair-level version of the final aaogen association definition."""
+    if not pair_np:
+        return np.zeros(0, dtype=bool)
+    #endif
+
+    pi0_mass = np.asarray(pair_np["pi0_mass"], dtype=float)
+    reco_E = np.asarray(pair_np["reco_probe_energy"], dtype=float)
+    reco_p = np.asarray(pair_np["reco_probe_p"], dtype=float)
+    reco_m2 = np.asarray(pair_np["reco_probe_mass2"], dtype=float)
+    pred_E = np.asarray(pair_np["pred_probe_energy"], dtype=float)
+    opening = np.asarray(
+        pair_np["probe_opening_residual_deg"], dtype=float
+    )
+    frac_E = np.asarray(pair_np["probe_delta_E_over_E"], dtype=float)
+
+    return (
+        np.isfinite(pi0_mass)
+        & (pi0_mass >= float(mgg_min))
+        & (pi0_mass <= float(mgg_max))
+        & np.isfinite(reco_E)
+        & np.isfinite(reco_p)
+        & (reco_E >= float(reco_probe_energy_min))
+        & (reco_p > 0.0)
+        & np.isfinite(reco_m2)
+        & (np.abs(reco_m2) <= float(remainder_mass2_max))
+        & np.isfinite(pred_E)
+        & (pred_E > 0.0)
+        & np.isfinite(opening)
+        & (opening <= float(probe_angle_max_deg))
+        & np.isfinite(frac_E)
+        & (np.abs(frac_E) <= float(probe_frac_energy_max))
+    )
+
+
+def build_associated_numerator_purity_rows(
+    period: PeriodConfig,
+    data_assoc: DataAssociationResult,
+    mc_pair_np: Dict[str, np.ndarray],
+    pi0_features: Dict[str, np.ndarray],
+    *,
+    central_pi0_tag_mask: np.ndarray,
+    max_probe_energy: float,
+    mgg_min: float,
+    mgg_max: float,
+    remainder_mass2_max: float,
+    reco_probe_energy_min: float,
+    probe_angle_max_deg: float,
+    probe_frac_energy_max: float,
+    mass_bins: int = 40,
+) -> Tuple[
+    List[Dict[str, object]],
+    Dict[Tuple[str, float, float], Dict[str, np.ndarray]],
+]:
+    """
+    Extract associated-numerator pi0 purity versus probe energy for FT/FD_all.
+
+    Data:
+      use the FINAL best same-event eppi0 association and require
+      passes_pred_consistency.
+
+    Signal template:
+      use reconstructed aaogen eppi0 pairs passing the analogous final
+      association definition and whose aaogen epgamma tag belongs to the same
+      central denominator support.
+
+    No purity correction is applied to the efficiency in this version.
+    """
+    best = data_assoc.best_diagnostics
+    required_data = (
+        "pi0_mass",
+        "pred_probe_energy",
+        "pred_probe_theta_deg",
+        "passes_pred_consistency",
+    )
+    missing = [name for name in required_data if name not in best]
+    if missing:
+        raise RuntimeError(
+            f"{period.label}: numerator-purity data association is missing "
+            f"diagnostics: {', '.join(missing)}"
+        )
+    #endif
+
+    data_mass = np.asarray(best["pi0_mass"], dtype=float)
+    data_E = np.asarray(best["pred_probe_energy"], dtype=float)
+    data_theta = np.asarray(best["pred_probe_theta_deg"], dtype=float)
+    data_final = np.asarray(
+        best["passes_pred_consistency"], dtype=bool
+    )
+
+    mc_final = _aaogen_final_association_mask(
+        mc_pair_np,
+        mgg_min=mgg_min,
+        mgg_max=mgg_max,
+        remainder_mass2_max=remainder_mass2_max,
+        reco_probe_energy_min=reco_probe_energy_min,
+        probe_angle_max_deg=probe_angle_max_deg,
+        probe_frac_energy_max=probe_frac_energy_max,
+    )
+
+    mc_epg_idx = np.asarray(mc_pair_np["epg_index"], dtype=np.int64)
+    valid_mc_idx = (
+        (mc_epg_idx >= 0)
+        & (mc_epg_idx < len(central_pi0_tag_mask))
+    )
+    mc_final &= valid_mc_idx
+    mc_final &= np.asarray(
+        central_pi0_tag_mask[mc_epg_idx.clip(
+            0, max(0, len(central_pi0_tag_mask) - 1)
+        )],
+        dtype=bool,
+    )
+
+    mc_mass = np.asarray(mc_pair_np["pi0_mass"], dtype=float)
+    mc_E = np.asarray(mc_pair_np["pred_probe_energy"], dtype=float)
+    mc_theta = np.asarray(
+        mc_pair_np["pred_probe_theta_deg"], dtype=float
+    )
+
+    energy_edges = stage2_energy_edges(max_probe_energy)
+    mass_edges = np.linspace(
+        float(mgg_min),
+        float(mgg_max),
+        int(mass_bins) + 1,
+    )
+
+    rows: List[Dict[str, object]] = []
+    detail: Dict[
+        Tuple[str, float, float],
+        Dict[str, np.ndarray],
+    ] = {}
+
+    for region in ("FT", "FD_all"):
+        for ib in range(len(energy_edges) - 1):
+            elo = float(energy_edges[ib])
+            ehi = float(energy_edges[ib + 1])
+
+            dmask = (
+                data_final
+                & np.isfinite(data_mass)
+                & np.isfinite(data_E)
+                & np.isfinite(data_theta)
+                & (data_mass >= mgg_min)
+                & (data_mass <= mgg_max)
+                & (data_E >= elo)
+                & (data_E < ehi)
+            )
+            mmask = (
+                mc_final
+                & np.isfinite(mc_mass)
+                & np.isfinite(mc_E)
+                & np.isfinite(mc_theta)
+                & (mc_mass >= mgg_min)
+                & (mc_mass <= mgg_max)
+                & (mc_E >= elo)
+                & (mc_E < ehi)
+            )
+
+            if region == "FT":
+                dmask &= (data_theta >= 2.4) & (data_theta < 5.0)
+                mmask &= (mc_theta >= 2.4) & (mc_theta < 5.0)
+            else:
+                dmask &= (data_theta >= 6.0) & (data_theta < 35.0)
+                mmask &= (mc_theta >= 6.0) & (mc_theta < 35.0)
+            #endif
+
+            data_hist, _ = np.histogram(
+                data_mass[dmask], bins=mass_edges
+            )
+            mc_hist, _ = np.histogram(
+                mc_mass[mmask], bins=mass_edges
+            )
+
+            fit_linear = fit_associated_numerator_mass(
+                data_hist,
+                mc_hist,
+                mass_edges,
+                background_order=1,
+            )
+            fit_quadratic = fit_associated_numerator_mass(
+                data_hist,
+                mc_hist,
+                mass_edges,
+                background_order=2,
+            )
+
+            mean_E = (
+                float(np.mean(data_E[dmask]))
+                if np.any(dmask)
+                else float("nan")
+            )
+
+            p_lin = float(fit_linear["purity"])
+            p_quad = float(fit_quadratic["purity"])
+            model_shift = (
+                abs(p_lin - p_quad)
+                if np.isfinite(p_lin) and np.isfinite(p_quad)
+                else float("nan")
+            )
+
+            row: Dict[str, object] = {
+                "period": period.key,
+                "label": period.label,
+                "region": region,
+                "energy_low_GeV": elo,
+                "energy_high_GeV": ehi,
+                "mean_probe_energy_GeV": mean_E,
+                "associated_data_count": int(np.sum(data_hist)),
+                "associated_aaogen_count": int(np.sum(mc_hist)),
+                "purity_linear": p_lin,
+                "purity_linear_err_low": float(
+                    fit_linear["purity_err_low"]
+                ),
+                "purity_linear_err_high": float(
+                    fit_linear["purity_err_high"]
+                ),
+                "purity_quadratic": p_quad,
+                "purity_quadratic_err_low": float(
+                    fit_quadratic["purity_err_low"]
+                ),
+                "purity_quadratic_err_high": float(
+                    fit_quadratic["purity_err_high"]
+                ),
+                "background_model_abs_shift": model_shift,
+                "linear_fit_success": int(
+                    fit_linear["fit_success"]
+                ),
+                "quadratic_fit_success": int(
+                    fit_quadratic["fit_success"]
+                ),
+                "nominal_background_model": "linear",
+                "purity_applied_to_efficiency": 0,
+            }
+            rows.append(row)
+
+            if int(fit_linear["fit_success"]) == 1:
+                signal_shape = _normalize_template_1d(mc_hist)
+                bkg_shape = _numerator_background_shape(
+                    mass_edges,
+                    float(fit_linear["background_slope"]),
+                    0.0,
+                )
+                ndata = float(np.sum(data_hist))
+                sig_comp = ndata * p_lin * signal_shape
+                bkg_comp = ndata * (1.0 - p_lin) * bkg_shape
+                detail[(region, elo, ehi)] = {
+                    "mass_edges": mass_edges,
+                    "data_hist": data_hist.astype(float),
+                    "aaogen_hist": mc_hist.astype(float),
+                    "signal_component": sig_comp,
+                    "background_component": bkg_comp,
+                    "total_model": sig_comp + bkg_comp,
+                }
+            #endif
+        #endfor
+    #endfor
+
+    return rows, detail
+
+
+def make_associated_numerator_purity_summary_canvas(
+    period: PeriodConfig,
+    rows: Sequence[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """One compact FT/FD summary of numerator purity versus energy."""
+    fig, axes = plt.subplots(
+        1, 2,
+        figsize=(12.5, 4.8),
+        sharey=True,
+    )
+
+    for ax, region in zip(axes, ("FT", "FD_all")):
+        rr = sorted(
+            [row for row in rows if row["region"] == region],
+            key=row_energy_coordinate,
+        )
+        if rr:
+            x = np.asarray(
+                [row_energy_coordinate(row) for row in rr],
+                dtype=float,
+            )
+            y = np.asarray(
+                [float(row["purity_linear"]) for row in rr],
+                dtype=float,
+            )
+            el = np.asarray(
+                [
+                    float(row["purity_linear_err_low"])
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            eh = np.asarray(
+                [
+                    float(row["purity_linear_err_high"])
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            yq = np.asarray(
+                [float(row["purity_quadratic"]) for row in rr],
+                dtype=float,
+            )
+
+            ax.errorbar(
+                x,
+                y,
+                yerr=np.vstack((el, eh)),
+                marker="o",
+                linewidth=1.1,
+                capsize=2,
+                label="aaogen template + linear background",
+            )
+            ax.plot(
+                x,
+                yq,
+                marker="s",
+                linestyle="--",
+                linewidth=1.0,
+                label="quadratic-background alternative",
+            )
+        #endif
+
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel(
+            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+        )
+        ax.set_title("FT" if region == "FT" else "FD all")
+        ax.grid(alpha=0.18)
+        ax.legend(fontsize=8, frameon=False)
+    #endfor
+
+    axes[0].set_ylabel(
+        r"final-associated numerator $\pi^0$ purity"
+    )
+    fig.suptitle(
+        f"{period.label}: numerator $M_{{\\gamma\\gamma}}$ purity diagnostic\n"
+        "not yet applied to data efficiency or photon scale factor",
+        fontsize=12.5,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_numerator_pi0_purity_summary.png",
+        rect=(0, 0, 1, 0.91),
+    )
+    plt.close(fig)
+
+
+def make_associated_numerator_mass_fit_canvases(
+    period: PeriodConfig,
+    rows: Sequence[Dict[str, object]],
+    detail: Dict[
+        Tuple[str, float, float],
+        Dict[str, np.ndarray],
+    ],
+    outdir: Path,
+) -> None:
+    """
+    One readable all-energy M_gg fit canvas per detector region.
+
+    Eight current energy bins fit naturally in a 4x2 canvas; if the binning
+    changes, the layout grows automatically.
+    """
+    for region in ("FT", "FD_all"):
+        rr = sorted(
+            [row for row in rows if row["region"] == region],
+            key=lambda r: float(r["energy_low_GeV"]),
+        )
+        if not rr:
+            continue
+        #endif
+
+        ncols = 2
+        nrows = int(math.ceil(len(rr) / ncols))
+        fig, axes = plt.subplots(
+            nrows,
+            ncols,
+            figsize=(12.5, 3.2 * nrows),
+            squeeze=False,
+        )
+
+        for ip, row in enumerate(rr):
+            ax = axes[ip // ncols, ip % ncols]
+            key = (
+                region,
+                float(row["energy_low_GeV"]),
+                float(row["energy_high_GeV"]),
+            )
+            entry = detail.get(key)
+            if entry is None:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "fit unavailable",
+                    transform=ax.transAxes,
+                    ha="center",
+                    va="center",
+                )
+                ax.set_axis_off()
+                continue
+            #endif
+
+            edges = entry["mass_edges"]
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            data_hist = entry["data_hist"]
+
+            ax.errorbar(
+                centers,
+                data_hist,
+                yerr=np.sqrt(np.clip(data_hist, 0.0, None)),
+                fmt="o",
+                ms=3,
+                linewidth=0.7,
+                label="associated data",
+            )
+            ax.step(
+                edges[:-1],
+                entry["signal_component"],
+                where="post",
+                linewidth=1.0,
+                label=r"fitted $\pi^0$ signal",
+            )
+            ax.step(
+                edges[:-1],
+                entry["background_component"],
+                where="post",
+                linewidth=1.0,
+                label="smooth background",
+            )
+            ax.step(
+                edges[:-1],
+                entry["total_model"],
+                where="post",
+                linewidth=1.3,
+                label="total fit",
+            )
+
+            p = float(row["purity_linear"])
+            elo = float(row["energy_low_GeV"])
+            ehi = float(row["energy_high_GeV"])
+            ax.set_title(
+                f"{elo:.2f}-{ehi:.2f} GeV; "
+                rf"$P_{{\pi^0}}={p:.3f}$",
+                fontsize=9.5,
+            )
+            ax.set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+            ax.set_ylabel("entries / bin")
+            ax.grid(alpha=0.16)
+        #endfor
+
+        for ip in range(len(rr), nrows * ncols):
+            axes[ip // ncols, ip % ncols].set_axis_off()
+        #endfor
+
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        if handles:
+            fig.legend(
+                handles,
+                labels,
+                loc="upper center",
+                ncol=4,
+                frameon=False,
+                fontsize=8,
+            )
+        #endif
+
+        region_label = "FT" if region == "FT" else "FD all"
+        region_slug = "ft" if region == "FT" else "fd_all"
+        fig.suptitle(
+            f"{period.label}: final-associated numerator "
+            f"$M_{{\\gamma\\gamma}}$ fits — {region_label}\n"
+            "aaogen signal template + linear combinatorial background",
+            fontsize=12.5,
+        )
+        safe_finalize_figure(
+            fig,
+            outdir
+            / f"canvas_numerator_pi0_mass_fits_{region_slug}.png",
+            rect=(0, 0, 1, 0.95),
+        )
+        plt.close(fig)
+    #endfor
+
+
+
 def preflight_nsidis_study(
     periods: Sequence[PeriodConfig],
     args_dict: Dict[str, object],
@@ -14178,6 +14924,76 @@ def process_nsidis_study_period(
             ),
         )
 
+        # --------------------------------------------------------------
+        # Associated-numerator pi0 purity diagnostic.
+        #
+        # The eppi0X skim itself is restricted to 0.11 < M_gg < 0.16 GeV.
+        # Fit the FINAL associated candidates in that available window with
+        # a reconstructed-aaogen signal template + smooth combinatorial
+        # background.  The result is deliberately NOT applied to epsilon_data
+        # or SF_gamma in this version; inspect/validate it first.
+        # --------------------------------------------------------------
+        pi0_central_tag_mask = nsidis_central_tag_mask(
+            pi0_f,
+            ft_theta_max=ft_theta_max,
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=central_support,
+            max_probe_energy=float(
+                args_dict["nsidis_pilot_energy_max"]
+            ),
+        )
+
+        log(
+            f"{period.label}: fitting final-associated numerator "
+            "M_gammagamma purity (diagnostic-only)."
+        )
+        numerator_purity_rows, numerator_purity_detail = (
+            build_associated_numerator_purity_rows(
+                period,
+                ns_assoc,
+                mc_pair_np,
+                pi0_f,
+                central_pi0_tag_mask=pi0_central_tag_mask,
+                max_probe_energy=float(
+                    args_dict["nsidis_pilot_energy_max"]
+                ),
+                mgg_min=float(args_dict["assoc_mgg_min"]),
+                mgg_max=float(args_dict["assoc_mgg_max"]),
+                remainder_mass2_max=float(
+                    args_dict["stage3_tag_remainder_m2_max"]
+                ),
+                reco_probe_energy_min=float(
+                    args_dict["assoc_probe_energy_min"]
+                ),
+                probe_angle_max_deg=float(
+                    args_dict["stage3_probe_angle_max_deg"]
+                ),
+                probe_frac_energy_max=float(
+                    args_dict["stage3_probe_frac_energy_max"]
+                ),
+            )
+        )
+        write_rows_csv(
+            numerator_purity_rows,
+            outdir / "nsidis_numerator_pi0_purity.csv",
+        )
+        make_associated_numerator_purity_summary_canvas(
+            period,
+            numerator_purity_rows,
+            outdir,
+        )
+        make_associated_numerator_mass_fit_canvases(
+            period,
+            numerator_purity_rows,
+            numerator_purity_detail,
+            outdir,
+        )
+        log(
+            f"{period.label}: numerator-purity diagnostic complete; "
+            "purity has NOT been applied to epsilon_data or SF_gamma."
+        )
+
         ns_eff_rows = build_nsidis_data_efficiency_rows(
             period,
             pilot_nsidis_rows,
@@ -14266,6 +15082,23 @@ def process_nsidis_study_period(
                             len(mc_eff_rows)
                         ),
                     },
+                    "numerator_pi0_purity": {
+                        "status": (
+                            "diagnostic-only; not applied to epsilon_data "
+                            "or SF_gamma"
+                        ),
+                        "signal_model": (
+                            "final-associated reconstructed aaogen "
+                            "M_gammagamma template"
+                        ),
+                        "nominal_background_model": "linear",
+                        "alternative_background_model": "quadratic",
+                        "available_mass_window_GeV": [
+                            float(args_dict["assoc_mgg_min"]),
+                            float(args_dict["assoc_mgg_max"]),
+                        ],
+                        "rows": int(len(numerator_purity_rows)),
+                    },
                     "status": (
                         "preliminary association-first data/MC photon "
                         "efficiency scale factor formed; profiled fitted-pi0 "
@@ -14303,7 +15136,8 @@ def process_nsidis_study_period(
         "status": (
             "nSidis denominator + association-first DATA/aaogen MC "
             "photon-efficiency scale-factor pilot; fitted-pi0 denominator "
-            "uncertainty not yet propagated"
+            "uncertainty propagated; numerator-purity correction diagnostic "
+            "only and not yet applied"
         ),
     }
 
