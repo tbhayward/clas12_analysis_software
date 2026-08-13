@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v063.py
+derive_photon_efficiency_scale_factors_v064.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v063.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v064.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v063.py \
+    python derive_photon_efficiency_scale_factors_v064.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v063.py \
+    python derive_photon_efficiency_scale_factors_v064.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -203,6 +203,14 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_fa18_out_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/bkg_rga_fa18_out_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root",
+        nsidis_epgamma_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/"
+            "dvcs/efficiency_study/nSidis_rga_fa18_out_epgamma.root"
+        ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_fa18_out_eppi0.root"
+        ),
     ),
     PeriodConfig(
         "sp18_inb", "Sp18 Inb", 10.594,
@@ -227,6 +235,14 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_sp18_out_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/bkg_rga_sp18_out_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root",
+        nsidis_epgamma_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/"
+            "dvcs/efficiency_study/nSidis_rga_sp18_out_epgamma.root"
+        ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_sp18_out_eppi0.root"
+        ),
     ),
     PeriodConfig(
         "sp19_inb", "Sp19 Inb", 10.1998,
@@ -1577,9 +1593,17 @@ def nsidis_energy_edges_for_region(
     merged = [float(edges[0])]
     for edge in edges[1:]:
         edge = float(edge)
+
+        # Merge the three low-energy bins into 0.40-1.25 GeV.
         if edge < 1.25 - 1.0e-12:
             continue
         #endif
+
+        # Also merge 1.25-1.50 and 1.50-2.00 into 1.25-2.00 GeV.
+        if 1.25 + 1.0e-12 < edge < 2.00 - 1.0e-12:
+            continue
+        #endif
+
         merged.append(edge)
     #endfor
 
@@ -10862,13 +10886,13 @@ def make_nsidis_pilot_fit_projection_canvases(
         ntile_rows = int(math.ceil(nbins / ncols))
 
         fig = plt.figure(
-            figsize=(4.8 * ncols, 5.2 * ntile_rows)
+            figsize=(4.8 * ncols, 5.8 * ntile_rows)
         )
         outer = fig.add_gridspec(
             ntile_rows,
             ncols,
             wspace=0.25,
-            hspace=0.33,
+            hspace=0.42,
         )
 
         first_axes = None
@@ -11163,7 +11187,7 @@ def make_nsidis_pilot_fit_projection_canvases(
             fig,
             outdir
             / f"canvas_nsidis_pilot_fit_projections_{region.lower()}.png",
-            rect=(0, 0, 1, 0.94),
+            rect=(0, 0.035, 1, 0.94),
         )
         plt.close(fig)
     #endfor
@@ -14355,6 +14379,7 @@ def make_associated_numerator_purity_summary_canvas(
                 y,
                 yerr=np.vstack((el, eh)),
                 marker="o",
+                linestyle="none",
                 linewidth=1.1,
                 capsize=2,
                 label="aaogen template + linear background",
@@ -14363,7 +14388,7 @@ def make_associated_numerator_purity_summary_canvas(
                 x,
                 yq,
                 marker="s",
-                linestyle="--",
+                linestyle="none",
                 linewidth=1.0,
                 label="constant-background alternative",
             )
