@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v060.py
+derive_photon_efficiency_scale_factors_v061.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v060.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v061.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v060.py \
+    python derive_photon_efficiency_scale_factors_v061.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v060.py \
+    python derive_photon_efficiency_scale_factors_v061.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -3444,6 +3444,13 @@ def fit_shared_morphed_composition(
         )
     #endif
 
+    if not np.isfinite(f_final):
+        return SharedMorphedFitResult(
+            False,
+            "non-finite fitted pi0 fraction after profiling/refinement",
+        )
+    #endif
+
     nuisance: Dict[str, float] = {
         "control_prior_applied": 0.0,
         "profile_initialized": 1.0,
@@ -4524,7 +4531,15 @@ def _profile_fraction_for_templates(
     fallback for pathological inputs.  The objective, allowed fraction range,
     and returned NLL are unchanged.
     """
-    names = [n for n in STAGE2_DRIVER_DISCRIMINATORS if n in data_hists]
+    # Use exactly the histogram keys supplied by the calling fit.  Earlier
+    # versions intersected with STAGE2_DRIVER_DISCRIMINATORS, which silently
+    # discarded diagnostic-only/custom driver names and produced NaN fractions
+    # despite fit_success=True.
+    names = [
+        str(name)
+        for name in data_hists
+        if name in pi0_templates and name in dvcs_templates
+    ]
     if not names:
         return float("nan"), float("nan")
     #endif
@@ -12964,10 +12979,13 @@ def make_nsidis_driver_study_summary_canvas(
     Right column: descriptive full-histogram D/active-bin.
     Top: FT. Bottom: FD_all.
     """
-    fig, axes = plt.subplots(2, 2, figsize=(14.0, 9.0))
+    fig, axes = plt.subplots(2, 2, figsize=(16.0, 10.5))
 
     for irow, region in enumerate(("FT", "FD_all")):
-        for model_name, model_label, _driver in NSIDIS_DRIVER_STUDY_MODELS:
+        marker_cycle = ("o", "s", "^", "D", "v", "P", "X")
+        for imodel, (model_name, model_label, _driver) in enumerate(
+            NSIDIS_DRIVER_STUDY_MODELS
+        ):
             rr = sorted(
                 [
                     row for row in rows
@@ -13018,7 +13036,7 @@ def make_nsidis_driver_study_summary_canvas(
                 x,
                 y,
                 yerr=np.vstack((el, eh)),
-                marker="o",
+                marker=marker_cycle[imodel % len(marker_cycle)],
                 linewidth=1.0,
                 capsize=2,
                 label=model_label,
@@ -13026,11 +13044,26 @@ def make_nsidis_driver_study_summary_canvas(
             axes[irow, 1].plot(
                 x,
                 q,
-                marker="o",
+                marker=marker_cycle[imodel % len(marker_cycle)],
                 linewidth=1.0,
                 label=model_label,
             )
         #endfor
+
+        goodness_values = []
+        for line in axes[irow, 1].get_lines():
+            yy = np.asarray(line.get_ydata(), dtype=float)
+            goodness_values.extend(
+                [float(v) for v in yy if np.isfinite(v) and v > 0.0]
+            )
+        #endfor
+        if goodness_values:
+            gmin = min(goodness_values)
+            gmax = max(goodness_values)
+            if gmax / max(gmin, 1.0e-12) > 8.0:
+                axes[irow, 1].set_yscale("log")
+            #endif
+        #endif
 
         axes[irow, 0].set_ylim(0.0, 1.0)
         axes[irow, 0].set_ylabel(r"fitted $f_{\pi^0}$")
@@ -13054,8 +13087,8 @@ def make_nsidis_driver_study_summary_canvas(
         #endfor
     #endfor
 
-    axes[0, 0].legend(fontsize=7.5, frameon=False)
-    axes[0, 1].legend(fontsize=7.5, frameon=False)
+    axes[0, 0].legend(fontsize=8, frameon=False, ncol=2)
+    axes[0, 1].legend(fontsize=8, frameon=False, ncol=2)
 
     fig.suptitle(
         f"{period.label}: dedicated denominator-driver study\n"
@@ -13162,25 +13195,25 @@ def make_nsidis_driver_study_focus_canvas(
     theta_bins: int,
 ) -> None:
     """
-    One focused visual inspection canvas for the currently suspicious
-    3.0-4.5 GeV bin.
+    Readable visual inspection of the currently suspicious 3.0-4.5 GeV bin.
 
-    Rows are candidate models.
-    Columns are FT primary/secondary and FD primary/secondary projections.
-    For a 1D model the redundant projection is intentionally blank.
+    Write one canvas per detector region rather than squeezing FT and FD into
+    four columns.  Rows are candidate models; columns are the two physical
+    projections of a 2D fit.  For a 1D candidate the right panel is left blank.
     """
     nrows = len(NSIDIS_DRIVER_STUDY_MODELS)
-    fig, axes = plt.subplots(
-        nrows,
-        4,
-        figsize=(17.0, 3.0 * nrows),
-        squeeze=False,
-    )
 
-    for irow, (model_name, model_label, driver) in enumerate(
-        NSIDIS_DRIVER_STUDY_MODELS
-    ):
-        for iregion, region in enumerate(("FT", "FD_all")):
+    for region in ("FT", "FD_all"):
+        fig, axes = plt.subplots(
+            nrows,
+            2,
+            figsize=(13.5, 3.0 * nrows),
+            squeeze=False,
+        )
+
+        for irow, (model_name, model_label, driver) in enumerate(
+            NSIDIS_DRIVER_STUDY_MODELS
+        ):
             entry = detail.get(
                 (
                     region,
@@ -13189,10 +13222,8 @@ def make_nsidis_driver_study_focus_canvas(
                     model_name,
                 )
             )
-            c0 = 2 * iregion
-            c1 = c0 + 1
-            ax0 = axes[irow, c0]
-            ax1 = axes[irow, c1]
+            ax0 = axes[irow, 0]
+            ax1 = axes[irow, 1]
 
             if entry is None:
                 ax0.text(
@@ -13223,129 +13254,129 @@ def make_nsidis_driver_study_focus_canvas(
                 )
             )
 
-            # For 1D-as-(1,N) models, show only the physical second axis.
-            if hd.shape[0] == 1:
-                centers = 0.5 * (yedges[:-1] + yedges[1:])
-                ax0.errorbar(
+            def draw_projection(
+                ax,
+                edges: np.ndarray,
+                data: np.ndarray,
+                dvcs: np.ndarray,
+                pi0: np.ndarray,
+                total: np.ndarray,
+                xlabel: str,
+            ) -> None:
+                centers = 0.5 * (edges[:-1] + edges[1:])
+                ax.errorbar(
                     centers,
-                    hd[0],
-                    yerr=np.sqrt(np.clip(hd[0], 0.0, None)),
+                    data,
+                    yerr=np.sqrt(np.clip(data, 0.0, None)),
                     fmt="o",
-                    ms=2.5,
+                    ms=2.6,
                     linewidth=0.7,
                     label="data",
                 )
-                ax0.step(
-                    yedges[:-1], hv[0],
+                ax.step(
+                    edges[:-1], dvcs,
                     where="post", linewidth=1.0, label="BH/DVCS"
                 )
-                ax0.step(
-                    yedges[:-1], hp[0],
+                ax.step(
+                    edges[:-1], pi0,
                     where="post", linewidth=1.0, label=r"$\pi^0$"
                 )
-                ax0.step(
-                    yedges[:-1], ht[0],
-                    where="post", linewidth=1.2, label="total"
+                ax.step(
+                    edges[:-1], total,
+                    where="post", linewidth=1.3, label="total"
                 )
-                ax0.set_xlabel(xlabel1)
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel("entries / bin")
+                ax.grid(alpha=0.15)
+            #enddef
+
+            if hd.shape[0] == 1:
+                draw_projection(
+                    ax0,
+                    yedges,
+                    hd[0],
+                    hv[0],
+                    hp[0],
+                    ht[0],
+                    xlabel1,
+                )
                 ax1.axis("off")
             else:
-                proj0_d = np.sum(hd, axis=1)
-                proj0_p = np.sum(hp, axis=1)
-                proj0_v = np.sum(hv, axis=1)
-                proj0_t = np.sum(ht, axis=1)
-                centers0 = 0.5 * (xedges[:-1] + xedges[1:])
-
-                proj1_d = np.sum(hd, axis=0)
-                proj1_p = np.sum(hp, axis=0)
-                proj1_v = np.sum(hv, axis=0)
-                proj1_t = np.sum(ht, axis=0)
-                centers1 = 0.5 * (yedges[:-1] + yedges[1:])
-
-                ax0.errorbar(
-                    centers0,
-                    proj0_d,
-                    yerr=np.sqrt(np.clip(proj0_d, 0.0, None)),
-                    fmt="o", ms=2.4, linewidth=0.7,
+                draw_projection(
+                    ax0,
+                    xedges,
+                    np.sum(hd, axis=1),
+                    np.sum(hv, axis=1),
+                    np.sum(hp, axis=1),
+                    np.sum(ht, axis=1),
+                    xlabel0,
                 )
-                ax0.step(
-                    xedges[:-1], proj0_v,
-                    where="post", linewidth=1.0,
+                draw_projection(
+                    ax1,
+                    yedges,
+                    np.sum(hd, axis=0),
+                    np.sum(hv, axis=0),
+                    np.sum(hp, axis=0),
+                    np.sum(ht, axis=0),
+                    xlabel1,
                 )
-                ax0.step(
-                    xedges[:-1], proj0_p,
-                    where="post", linewidth=1.0,
-                )
-                ax0.step(
-                    xedges[:-1], proj0_t,
-                    where="post", linewidth=1.2,
-                )
-
-                ax1.errorbar(
-                    centers1,
-                    proj1_d,
-                    yerr=np.sqrt(np.clip(proj1_d, 0.0, None)),
-                    fmt="o", ms=2.4, linewidth=0.7,
-                )
-                ax1.step(
-                    yedges[:-1], proj1_v,
-                    where="post", linewidth=1.0,
-                )
-                ax1.step(
-                    yedges[:-1], proj1_p,
-                    where="post", linewidth=1.0,
-                )
-                ax1.step(
-                    yedges[:-1], proj1_t,
-                    where="post", linewidth=1.2,
-                )
-                ax0.set_xlabel(xlabel0)
-                ax1.set_xlabel(xlabel1)
             #endif
 
-            for ax in (ax0, ax1):
-                if ax.axison:
-                    ax.grid(alpha=0.15)
-                    ax.set_ylabel("entries / bin")
-                #endif
-            #endfor
-
-            region_label = "FT" if region == "FT" else "FD all"
             fpi0 = float(row.get("pi0_fraction", np.nan))
+            elo = float(row.get("pi0_fraction_err_low", np.nan))
+            ehi = float(row.get("pi0_fraction_err_high", np.nan))
             q = float(
                 row.get(
                     "quality_full_deviance_per_active_bin",
                     np.nan,
                 )
             )
-            ax0.set_title(
-                f"{region_label}: {model_label}\n"
-                rf"$f_{{\pi^0}}={fpi0:.3f}$, D/active={q:.2f}",
-                fontsize=9,
+            region_label = "FT" if region == "FT" else "FD all"
+            title = (
+                f"{region_label}: {model_label}; "
+                rf"$f_{{\pi^0}}={fpi0:.3f}"
             )
+            if np.isfinite(elo) and np.isfinite(ehi):
+                title += rf"^{{+{ehi:.3f}}}_{{-{elo:.3f}}}"
+            #endif
+            title += rf"$; D/active={q:.2f}"
+            ax0.set_title(title, fontsize=9.5)
+            if ax1.axison:
+                ax1.set_title("same fit: second-axis projection", fontsize=9)
+            #endif
         #endfor
+
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        if handles:
+            fig.legend(
+                handles,
+                labels,
+                fontsize=8,
+                frameon=False,
+                ncol=4,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.985),
+            )
+        #endif
+
+        region_slug = "ft" if region == "FT" else "fd_all"
+        region_label = "FT" if region == "FT" else "FD all"
+        fig.suptitle(
+            f"{period.label}: denominator-driver visual check — {region_label}\n"
+            f"{focus_low:.1f}-{focus_high:.1f} GeV; "
+            "same common population for every candidate",
+            fontsize=13,
+            y=0.998,
+        )
+        safe_finalize_figure(
+            fig,
+            outdir
+            / f"canvas_nsidis_driver_study_focus_3p0_4p5_{region_slug}.png",
+            rect=(0, 0, 1, 0.975),
+        )
+        plt.close(fig)
     #endfor
 
-    axes[0, 0].legend(
-        fontsize=7.5,
-        frameon=False,
-        ncol=4,
-        loc="upper center",
-        bbox_to_anchor=(2.1, 1.35),
-    )
-
-    fig.suptitle(
-        f"{period.label}: denominator-driver visual check, "
-        f"{focus_low:.1f}-{focus_high:.1f} GeV\n"
-        "same common population for every candidate",
-        fontsize=13,
-    )
-    safe_finalize_figure(
-        fig,
-        outdir / "canvas_nsidis_driver_study_focus_3p0_4p5.png",
-        rect=(0, 0, 1, 0.95),
-    )
-    plt.close(fig)
 
 
 def make_cross_period_nsidis_driver_study_canvas(
