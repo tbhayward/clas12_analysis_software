@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-derive_photon_efficiency_scale_factors_v058.py
+derive_photon_efficiency_scale_factors_v059.py
 
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
@@ -47,10 +47,10 @@ study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
-    python derive_photon_efficiency_scale_factors_v058.py --max-entries 0
+    python derive_photon_efficiency_scale_factors_v059.py --max-entries 0
 
 One period:
-    python derive_photon_efficiency_scale_factors_v058.py \
+    python derive_photon_efficiency_scale_factors_v059.py \
         --max-entries 0 --period fa18_out
 
 
@@ -61,7 +61,7 @@ upstream event requirement is the nSidis electron selection.  These trees do
 not impose the old DVCS/DVPi0P wagon missing-energy requirement.
 
 Use:
-    python derive_photon_efficiency_scale_factors_v058.py \
+    python derive_photon_efficiency_scale_factors_v059.py \
         --max-entries 0 --period fa18_inb --nsidis-study
 
 This isolated mode:
@@ -8839,8 +8839,20 @@ def parse_args() -> argparse.Namespace:
         "--nsidis-pilot-fit",
         action="store_true",
         help=(
-            "Also run a diagnostic nSidis M_X^2(ep) x pTmiss composition fit. "
-            "This still does not form an efficiency scale factor."
+            "Run the nominal nSidis M_X^2(ep) x pTmiss composition fit and "
+            "association-first photon-efficiency extraction."
+        ),
+    )
+    parser.add_argument(
+        "--nsidis-driver-study",
+        action="store_true",
+        help=(
+            "Run the dedicated denominator-variable study on the nSidis sample. "
+            "Compares pTmiss only, theta_gamma_gamma only, "
+            "theta_gamma_gamma x pTmiss, M_X^2(ep) x pTmiss, and "
+            "M_X^2(ep) x theta_gamma_gamma on one common event population. "
+            "When enabled with --nsidis-study, the worker exits after this "
+            "study and skips the reconstructed-probe efficiency calculation."
         ),
     )
     parser.add_argument(
@@ -12421,6 +12433,970 @@ def validate_nsidis_argument_contract(
 
 
 
+
+# -----------------------------------------------------------------------------
+# Dedicated nSidis denominator-driver study
+# -----------------------------------------------------------------------------
+
+NSIDIS_DRIVER_STUDY_MODELS: Tuple[
+    Tuple[str, str, str], ...
+] = (
+    (
+        "ptmiss_only",
+        r"$p_{T,\mathrm{miss}}$ only",
+        "pTmiss",
+    ),
+    (
+        "theta_gg_only",
+        r"$\theta_{\gamma\gamma}$ only",
+        "theta_gg",
+    ),
+    (
+        "theta_gg_x_ptmiss",
+        r"$\theta_{\gamma\gamma}\otimes p_{T,\mathrm{miss}}$",
+        "theta_gg_x_pTmiss",
+    ),
+    (
+        "mx2_ep_x_ptmiss",
+        r"$M_X^2(ep)\otimes p_{T,\mathrm{miss}}$",
+        "mx2_ep_x_pTmiss",
+    ),
+    (
+        "mx2_ep_x_theta_gg",
+        r"$M_X^2(ep)\otimes\theta_{\gamma\gamma}$",
+        "mx2_ep_x_theta_gg",
+    ),
+)
+
+
+def nsidis_driver_study_common_mask(
+    feat: Dict[str, np.ndarray],
+    region_name: str,
+    ft_theta_max: float,
+    elo: float,
+    ehi: float,
+    probe_m2_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    ptmiss_max: float,
+    theta_max: float,
+    parent_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """
+    Common-population selection used by every candidate discriminator.
+
+    This is intentionally stricter than "candidate-specific available data":
+    every method is evaluated on the SAME events, so differences in fitted
+    f_pi0 genuinely reflect the driver/model and not a different event sample.
+
+    Emiss2 is deliberately not included as a candidate.  For epgamma,
+    the missing energy after the measured e,p,gamma is exactly the same
+    kinematic quantity used here as E_probe^pred, i.e. the binning variable.
+    Fitting it inside an E_probe^pred bin would therefore be partly circular
+    and unusually sensitive to generator spectral shapes.
+    """
+    n = len(feat["pred_probe_energy"])
+    theta_ep = feat.get("theta_ep_deg")
+    electron_p = feat.get("electron_p")
+    pt = feat.get("stored_pTmiss")
+    th = feat.get("stored_theta_gamma_gamma")
+
+    mask = (
+        np.asarray(feat["valid_tag"], dtype=bool)
+        & stage2_region_mask(feat, region_name, ft_theta_max)
+        & np.isfinite(feat["pred_probe_energy"])
+        & (feat["pred_probe_energy"] >= elo)
+        & (feat["pred_probe_energy"] < ehi)
+        & np.isfinite(feat["pred_probe_mass2"])
+        & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
+        & np.isfinite(feat["ep_missing_mass2"])
+        & (feat["ep_missing_mass2"] >= mm2_min)
+        & (feat["ep_missing_mass2"] < mm2_max)
+    )
+
+    if theta_ep is not None:
+        mask &= (
+            np.isfinite(theta_ep)
+            & (theta_ep > THETA_EP_MIN_DEG)
+        )
+    #endif
+
+    if electron_p is not None:
+        mask &= (
+            np.isfinite(electron_p)
+            & (electron_p > 2.0)
+        )
+    #endif
+
+    if pt is None or th is None:
+        return np.zeros(n, dtype=bool)
+    #endif
+
+    mask &= (
+        np.isfinite(pt)
+        & (pt >= 0.0)
+        & (pt < ptmiss_max)
+        & np.isfinite(th)
+        & (th >= 0.0)
+        & (th < theta_max)
+    )
+
+    if parent_mask is not None:
+        mask &= np.asarray(parent_mask, dtype=bool)
+    #endif
+
+    return mask
+
+
+def nsidis_driver_histogram(
+    driver: str,
+    feat: Dict[str, np.ndarray],
+    mask: np.ndarray,
+    *,
+    mm2_min: float,
+    mm2_max: float,
+    mm2_bins: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+) -> np.ndarray:
+    """
+    Build a 2D histogram for every candidate, including 1D candidates.
+
+    1D candidates are represented as shape (1,N) so the existing template
+    morphing/profiling machinery can operate on their physical axis.
+    """
+    mx2 = np.asarray(feat["ep_missing_mass2"], dtype=float)
+    pt = np.asarray(feat["stored_pTmiss"], dtype=float)
+    th = np.asarray(feat["stored_theta_gamma_gamma"], dtype=float)
+
+    if driver == "pTmiss":
+        h, _ = np.histogram(
+            pt[mask],
+            bins=np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+        )
+        return h.astype(float)[None, :]
+    #endif
+
+    if driver == "theta_gg":
+        h, _ = np.histogram(
+            th[mask],
+            bins=np.linspace(0.0, theta_max, theta_bins + 1),
+        )
+        return h.astype(float)[None, :]
+    #endif
+
+    if driver == "theta_gg_x_pTmiss":
+        # pTmiss is intentionally the SECOND axis, so the existing nuisance
+        # morphing shifts/smears the same pTmiss coordinate used in the current
+        # Mx2 x pTmiss production model.
+        h, _, _ = np.histogram2d(
+            th[mask],
+            pt[mask],
+            bins=(
+                np.linspace(0.0, theta_max, theta_bins + 1),
+                np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+            ),
+        )
+        return h.astype(float)
+    #endif
+
+    if driver == "mx2_ep_x_pTmiss":
+        h, _, _ = np.histogram2d(
+            mx2[mask],
+            pt[mask],
+            bins=(
+                np.linspace(mm2_min, mm2_max, mm2_bins + 1),
+                np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+            ),
+        )
+        return h.astype(float)
+    #endif
+
+    if driver == "mx2_ep_x_theta_gg":
+        h, _, _ = np.histogram2d(
+            mx2[mask],
+            th[mask],
+            bins=(
+                np.linspace(mm2_min, mm2_max, mm2_bins + 1),
+                np.linspace(0.0, theta_max, theta_bins + 1),
+            ),
+        )
+        return h.astype(float)
+    #endif
+
+    raise ValueError(f"Unknown nSidis driver-study discriminator '{driver}'")
+
+
+def nsidis_driver_model_components(
+    data_hist: np.ndarray,
+    pi0_hist: np.ndarray,
+    dvcs_hist: np.ndarray,
+    fit: SharedMorphedFitResult,
+    driver: str,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return fitted pi0, DVCS, and total model arrays in event counts."""
+    if not fit.success or not fit.nuisance:
+        shape = np.asarray(data_hist).shape
+        nan = np.full(shape, np.nan, dtype=float)
+        return nan, nan, nan
+    #endif
+
+    hp = morph_template_second_axis(
+        np.asarray(pi0_hist, dtype=float),
+        float(fit.nuisance.get(f"{driver}_pi0_shift_bins", 0.0)),
+        float(fit.nuisance.get(f"{driver}_pi0_sigma_bins", 0.0)),
+    )
+    hv = morph_template_second_axis(
+        np.asarray(dvcs_hist, dtype=float),
+        float(fit.nuisance.get(f"{driver}_dvcs_shift_bins", 0.0)),
+        float(fit.nuisance.get(f"{driver}_dvcs_sigma_bins", 0.0)),
+    )
+
+    ndata = float(np.sum(data_hist))
+    fpi0 = float(fit.pi0_fraction)
+    pi_comp = ndata * fpi0 * hp
+    dv_comp = ndata * (1.0 - fpi0) * hv
+    total = pi_comp + dv_comp
+    return pi_comp, dv_comp, total
+
+
+def run_nsidis_driver_study(
+    period: PeriodConfig,
+    data_f: Dict[str, np.ndarray],
+    pi0_f: Dict[str, np.ndarray],
+    dvcs_f: Dict[str, np.ndarray],
+    *,
+    parent_mask: Optional[np.ndarray],
+    ft_theta_max: float,
+    max_probe_energy: float,
+    probe_m2_max: float,
+    mm2_min: float,
+    mm2_max: float,
+    mm2_bins: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+    min_data_count: int,
+    min_template_count: int,
+    nuisance_shift_prior: float,
+    nuisance_sigma_prior: float,
+    max_shift_bins: float,
+    max_sigma_bins: float,
+) -> Tuple[List[Dict[str, object]], Dict[Tuple[str, float, float, str], Dict[str, object]]]:
+    """
+    Compare five physically motivated denominator-composition drivers.
+
+    All candidates use the same selected data/MC population in each
+    region/energy bin.  The nominal production fit is NOT changed by this
+    diagnostic study.
+    """
+    rows: List[Dict[str, object]] = []
+    detail: Dict[
+        Tuple[str, float, float, str],
+        Dict[str, object],
+    ] = {}
+    edges = stage2_energy_edges(max_probe_energy)
+
+    for region in ("FT", "FD_all"):
+        for ib in range(len(edges) - 1):
+            elo = float(edges[ib])
+            ehi = float(edges[ib + 1])
+
+            masks = {
+                "data": nsidis_driver_study_common_mask(
+                    data_f, region, ft_theta_max, elo, ehi,
+                    probe_m2_max, mm2_min, mm2_max,
+                    ptmiss_max, theta_max, parent_mask,
+                ),
+                "pi0": nsidis_driver_study_common_mask(
+                    pi0_f, region, ft_theta_max, elo, ehi,
+                    probe_m2_max, mm2_min, mm2_max,
+                    ptmiss_max, theta_max, None,
+                ),
+                "dvcs": nsidis_driver_study_common_mask(
+                    dvcs_f, region, ft_theta_max, elo, ehi,
+                    probe_m2_max, mm2_min, mm2_max,
+                    ptmiss_max, theta_max, None,
+                ),
+            }
+
+            mean_e = masked_finite_mean(
+                data_f["pred_probe_energy"], masks["data"]
+            )
+            n_data = int(np.count_nonzero(masks["data"]))
+            n_pi0 = int(np.count_nonzero(masks["pi0"]))
+            n_dvcs = int(np.count_nonzero(masks["dvcs"]))
+
+            for model_name, model_label, driver in NSIDIS_DRIVER_STUDY_MODELS:
+                row: Dict[str, object] = {
+                    "period": period.key,
+                    "label": period.label,
+                    "region": region,
+                    "energy_low_GeV": elo,
+                    "energy_high_GeV": ehi,
+                    "mean_probe_energy_GeV": mean_e,
+                    "model": model_name,
+                    "model_label": model_label,
+                    "driver": driver,
+                    "common_population_data_count": n_data,
+                    "common_population_pi0_count": n_pi0,
+                    "common_population_dvcs_count": n_dvcs,
+                }
+
+                hd = nsidis_driver_histogram(
+                    driver, data_f, masks["data"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    mm2_bins=mm2_bins,
+                    ptmiss_max=ptmiss_max, ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max, theta_bins=theta_bins,
+                )
+                hp = nsidis_driver_histogram(
+                    driver, pi0_f, masks["pi0"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    mm2_bins=mm2_bins,
+                    ptmiss_max=ptmiss_max, ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max, theta_bins=theta_bins,
+                )
+                hv = nsidis_driver_histogram(
+                    driver, dvcs_f, masks["dvcs"],
+                    mm2_min=mm2_min, mm2_max=mm2_max,
+                    mm2_bins=mm2_bins,
+                    ptmiss_max=ptmiss_max, ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max, theta_bins=theta_bins,
+                )
+
+                if (
+                    np.sum(hd) < min_data_count
+                    or np.sum(hp) < min_template_count
+                    or np.sum(hv) < min_template_count
+                ):
+                    row.update({
+                        "fit_success": 0,
+                        "fit_message": "insufficient common-population statistics",
+                        "pi0_fraction": float("nan"),
+                        "pi0_fraction_err_low": float("nan"),
+                        "pi0_fraction_err_high": float("nan"),
+                        "quality_full_deviance_per_active_bin": float("nan"),
+                        "quality_axis0_deviance_per_active_bin": float("nan"),
+                        "quality_axis1_deviance_per_active_bin": float("nan"),
+                    })
+                    rows.append(row)
+                    continue
+                #endif
+
+                fit = fit_shared_morphed_composition(
+                    {driver: (hd, hp, hv)},
+                    {},
+                    nuisance_shift_prior,
+                    nuisance_sigma_prior,
+                    max_shift_bins,
+                    max_sigma_bins,
+                    driver_names=(driver,),
+                )
+
+                row.update({
+                    "fit_success": int(fit.success),
+                    "fit_message": fit.message,
+                    "pi0_fraction": float(fit.pi0_fraction),
+                    "dvcs_fraction": (
+                        1.0 - float(fit.pi0_fraction)
+                        if np.isfinite(fit.pi0_fraction)
+                        else float("nan")
+                    ),
+                    "fit_poisson_deviance": float(fit.poisson_deviance),
+                    "fit_ndof_legacy": int(fit.ndof),
+                })
+
+                if fit.success:
+                    unc = profile_pi0_fraction_uncertainty_one_driver(
+                        hd, hp, hv, fit,
+                        discriminator=driver,
+                        nuisance_shift_prior=nuisance_shift_prior,
+                        nuisance_sigma_prior=nuisance_sigma_prior,
+                        max_shift_bins=max_shift_bins,
+                        max_sigma_bins=max_sigma_bins,
+                    )
+                    row.update(unc)
+
+                    pi_comp, dv_comp, total = (
+                        nsidis_driver_model_components(
+                            hd, hp, hv, fit, driver
+                        )
+                    )
+                    q_full = binned_model_quality(hd, total)
+                    q0 = binned_model_quality(
+                        np.sum(hd, axis=1),
+                        np.sum(total, axis=1),
+                    )
+                    q1 = binned_model_quality(
+                        np.sum(hd, axis=0),
+                        np.sum(total, axis=0),
+                    )
+
+                    row.update({
+                        "quality_full_deviance_per_active_bin": float(
+                            q_full["deviance_per_active_bin"]
+                        ),
+                        "quality_full_pearson_chi2_per_bin_mu_ge5": float(
+                            q_full["pearson_chi2_per_bin_mu_ge5"]
+                        ),
+                        "quality_axis0_deviance_per_active_bin": float(
+                            q0["deviance_per_active_bin"]
+                        ),
+                        "quality_axis0_pearson_chi2_per_bin_mu_ge5": float(
+                            q0["pearson_chi2_per_bin_mu_ge5"]
+                        ),
+                        "quality_axis1_deviance_per_active_bin": float(
+                            q1["deviance_per_active_bin"]
+                        ),
+                        "quality_axis1_pearson_chi2_per_bin_mu_ge5": float(
+                            q1["pearson_chi2_per_bin_mu_ge5"]
+                        ),
+                    })
+                    if fit.nuisance:
+                        row.update(fit.nuisance)
+                    #endif
+
+                    detail[
+                        (
+                            region,
+                            round(elo, 9),
+                            round(ehi, 9),
+                            model_name,
+                        )
+                    ] = {
+                        "row": row,
+                        "data_hist": hd,
+                        "pi0_hist": hp,
+                        "dvcs_hist": hv,
+                        "pi0_component": pi_comp,
+                        "dvcs_component": dv_comp,
+                        "total_model": total,
+                        "driver": driver,
+                    }
+                else:
+                    row.update({
+                        "pi0_fraction_err_low": float("nan"),
+                        "pi0_fraction_err_high": float("nan"),
+                        "quality_full_deviance_per_active_bin": float("nan"),
+                        "quality_axis0_deviance_per_active_bin": float("nan"),
+                        "quality_axis1_deviance_per_active_bin": float("nan"),
+                    })
+                #endif
+
+                rows.append(row)
+            #endfor
+        #endfor
+    #endfor
+
+    return rows, detail
+
+
+def make_nsidis_driver_study_summary_canvas(
+    period: PeriodConfig,
+    rows: Sequence[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """
+    Compact 2x2 variable-selection summary.
+
+    Left column: fitted f_pi0.
+    Right column: descriptive full-histogram D/active-bin.
+    Top: FT. Bottom: FD_all.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14.0, 9.0))
+
+    for irow, region in enumerate(("FT", "FD_all")):
+        for model_name, model_label, _driver in NSIDIS_DRIVER_STUDY_MODELS:
+            rr = sorted(
+                [
+                    row for row in rows
+                    if row.get("region") == region
+                    and row.get("model") == model_name
+                    and int(row.get("fit_success", 0)) == 1
+                ],
+                key=row_energy_coordinate,
+            )
+            if not rr:
+                continue
+            #endif
+
+            x = np.asarray(
+                [row_energy_coordinate(row) for row in rr],
+                dtype=float,
+            )
+            y = np.asarray(
+                [float(row["pi0_fraction"]) for row in rr],
+                dtype=float,
+            )
+            el = np.asarray(
+                [
+                    float(row.get("pi0_fraction_err_low", np.nan))
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            eh = np.asarray(
+                [
+                    float(row.get("pi0_fraction_err_high", np.nan))
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            q = np.asarray(
+                [
+                    float(row.get(
+                        "quality_full_deviance_per_active_bin",
+                        np.nan,
+                    ))
+                    for row in rr
+                ],
+                dtype=float,
+            )
+
+            axes[irow, 0].errorbar(
+                x,
+                y,
+                yerr=np.vstack((el, eh)),
+                marker="o",
+                linewidth=1.0,
+                capsize=2,
+                label=model_label,
+            )
+            axes[irow, 1].plot(
+                x,
+                q,
+                marker="o",
+                linewidth=1.0,
+                label=model_label,
+            )
+        #endfor
+
+        axes[irow, 0].set_ylim(0.0, 1.0)
+        axes[irow, 0].set_ylabel(r"fitted $f_{\pi^0}$")
+        axes[irow, 1].set_ylabel(
+            "Poisson deviance / active bin"
+        )
+
+        title = "FT" if region == "FT" else "FD all"
+        axes[irow, 0].set_title(
+            f"{title}: composition stability"
+        )
+        axes[irow, 1].set_title(
+            f"{title}: absolute template goodness"
+        )
+
+        for ax in axes[irow, :]:
+            ax.set_xlabel(
+                r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+            )
+            ax.grid(alpha=0.18)
+        #endfor
+    #endfor
+
+    axes[0, 0].legend(fontsize=7.5, frameon=False)
+    axes[0, 1].legend(fontsize=7.5, frameon=False)
+
+    fig.suptitle(
+        f"{period.label}: dedicated denominator-driver study\n"
+        "all methods fit the same common population; "
+        r"$E_{\mathrm{miss}}$ excluded because it is "
+        r"$E_{\mathrm{probe}}^{\mathrm{pred}}$",
+        fontsize=12.5,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_driver_study_summary.png",
+        rect=(0, 0, 1, 0.94),
+    )
+    plt.close(fig)
+
+
+def _driver_study_axis_edges(
+    driver: str,
+    *,
+    mm2_min: float,
+    mm2_max: float,
+    mm2_bins: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+) -> Tuple[np.ndarray, np.ndarray, str, str]:
+    if driver == "pTmiss":
+        return (
+            np.asarray([0.0, 1.0]),
+            np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+            "",
+            r"$p_{T,\mathrm{miss}}$ (GeV)",
+        )
+    #endif
+    if driver == "theta_gg":
+        return (
+            np.asarray([0.0, 1.0]),
+            np.linspace(0.0, theta_max, theta_bins + 1),
+            "",
+            r"$\theta_{\gamma\gamma}$ (deg)",
+        )
+    #endif
+    if driver == "theta_gg_x_pTmiss":
+        return (
+            np.linspace(0.0, theta_max, theta_bins + 1),
+            np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+            r"$\theta_{\gamma\gamma}$ (deg)",
+            r"$p_{T,\mathrm{miss}}$ (GeV)",
+        )
+    #endif
+    if driver == "mx2_ep_x_pTmiss":
+        return (
+            np.linspace(mm2_min, mm2_max, mm2_bins + 1),
+            np.linspace(0.0, ptmiss_max, ptmiss_bins + 1),
+            r"$M_X^2(ep)$ (GeV$^2$)",
+            r"$p_{T,\mathrm{miss}}$ (GeV)",
+        )
+    #endif
+    if driver == "mx2_ep_x_theta_gg":
+        return (
+            np.linspace(mm2_min, mm2_max, mm2_bins + 1),
+            np.linspace(0.0, theta_max, theta_bins + 1),
+            r"$M_X^2(ep)$ (GeV$^2$)",
+            r"$\theta_{\gamma\gamma}$ (deg)",
+        )
+    #endif
+    raise ValueError(driver)
+
+
+def make_nsidis_driver_study_focus_canvas(
+    period: PeriodConfig,
+    detail: Dict[
+        Tuple[str, float, float, str],
+        Dict[str, object],
+    ],
+    outdir: Path,
+    *,
+    focus_low: float,
+    focus_high: float,
+    mm2_min: float,
+    mm2_max: float,
+    mm2_bins: int,
+    ptmiss_max: float,
+    ptmiss_bins: int,
+    theta_max: float,
+    theta_bins: int,
+) -> None:
+    """
+    One focused visual inspection canvas for the currently suspicious
+    3.0-4.5 GeV bin.
+
+    Rows are candidate models.
+    Columns are FT primary/secondary and FD primary/secondary projections.
+    For a 1D model the redundant projection is intentionally blank.
+    """
+    nrows = len(NSIDIS_DRIVER_STUDY_MODELS)
+    fig, axes = plt.subplots(
+        nrows,
+        4,
+        figsize=(17.0, 3.0 * nrows),
+        squeeze=False,
+    )
+
+    for irow, (model_name, model_label, driver) in enumerate(
+        NSIDIS_DRIVER_STUDY_MODELS
+    ):
+        for iregion, region in enumerate(("FT", "FD_all")):
+            entry = detail.get(
+                (
+                    region,
+                    round(float(focus_low), 9),
+                    round(float(focus_high), 9),
+                    model_name,
+                )
+            )
+            c0 = 2 * iregion
+            c1 = c0 + 1
+            ax0 = axes[irow, c0]
+            ax1 = axes[irow, c1]
+
+            if entry is None:
+                ax0.text(
+                    0.5, 0.5, "fit unavailable",
+                    transform=ax0.transAxes,
+                    ha="center", va="center",
+                )
+                ax1.axis("off")
+                continue
+            #endif
+
+            hd = np.asarray(entry["data_hist"], dtype=float)
+            hp = np.asarray(entry["pi0_component"], dtype=float)
+            hv = np.asarray(entry["dvcs_component"], dtype=float)
+            ht = np.asarray(entry["total_model"], dtype=float)
+            row = entry["row"]
+
+            xedges, yedges, xlabel0, xlabel1 = (
+                _driver_study_axis_edges(
+                    driver,
+                    mm2_min=mm2_min,
+                    mm2_max=mm2_max,
+                    mm2_bins=mm2_bins,
+                    ptmiss_max=ptmiss_max,
+                    ptmiss_bins=ptmiss_bins,
+                    theta_max=theta_max,
+                    theta_bins=theta_bins,
+                )
+            )
+
+            # For 1D-as-(1,N) models, show only the physical second axis.
+            if hd.shape[0] == 1:
+                centers = 0.5 * (yedges[:-1] + yedges[1:])
+                ax0.errorbar(
+                    centers,
+                    hd[0],
+                    yerr=np.sqrt(np.clip(hd[0], 0.0, None)),
+                    fmt="o",
+                    ms=2.5,
+                    linewidth=0.7,
+                    label="data",
+                )
+                ax0.step(
+                    yedges[:-1], hv[0],
+                    where="post", linewidth=1.0, label="BH/DVCS"
+                )
+                ax0.step(
+                    yedges[:-1], hp[0],
+                    where="post", linewidth=1.0, label=r"$\pi^0$"
+                )
+                ax0.step(
+                    yedges[:-1], ht[0],
+                    where="post", linewidth=1.2, label="total"
+                )
+                ax0.set_xlabel(xlabel1)
+                ax1.axis("off")
+            else:
+                proj0_d = np.sum(hd, axis=1)
+                proj0_p = np.sum(hp, axis=1)
+                proj0_v = np.sum(hv, axis=1)
+                proj0_t = np.sum(ht, axis=1)
+                centers0 = 0.5 * (xedges[:-1] + xedges[1:])
+
+                proj1_d = np.sum(hd, axis=0)
+                proj1_p = np.sum(hp, axis=0)
+                proj1_v = np.sum(hv, axis=0)
+                proj1_t = np.sum(ht, axis=0)
+                centers1 = 0.5 * (yedges[:-1] + yedges[1:])
+
+                ax0.errorbar(
+                    centers0,
+                    proj0_d,
+                    yerr=np.sqrt(np.clip(proj0_d, 0.0, None)),
+                    fmt="o", ms=2.4, linewidth=0.7,
+                )
+                ax0.step(
+                    xedges[:-1], proj0_v,
+                    where="post", linewidth=1.0,
+                )
+                ax0.step(
+                    xedges[:-1], proj0_p,
+                    where="post", linewidth=1.0,
+                )
+                ax0.step(
+                    xedges[:-1], proj0_t,
+                    where="post", linewidth=1.2,
+                )
+
+                ax1.errorbar(
+                    centers1,
+                    proj1_d,
+                    yerr=np.sqrt(np.clip(proj1_d, 0.0, None)),
+                    fmt="o", ms=2.4, linewidth=0.7,
+                )
+                ax1.step(
+                    yedges[:-1], proj1_v,
+                    where="post", linewidth=1.0,
+                )
+                ax1.step(
+                    yedges[:-1], proj1_p,
+                    where="post", linewidth=1.0,
+                )
+                ax1.step(
+                    yedges[:-1], proj1_t,
+                    where="post", linewidth=1.2,
+                )
+                ax0.set_xlabel(xlabel0)
+                ax1.set_xlabel(xlabel1)
+            #endif
+
+            for ax in (ax0, ax1):
+                if ax.axison:
+                    ax.grid(alpha=0.15)
+                    ax.set_ylabel("entries / bin")
+                #endif
+            #endfor
+
+            region_label = "FT" if region == "FT" else "FD all"
+            fpi0 = float(row.get("pi0_fraction", np.nan))
+            q = float(
+                row.get(
+                    "quality_full_deviance_per_active_bin",
+                    np.nan,
+                )
+            )
+            ax0.set_title(
+                f"{region_label}: {model_label}\n"
+                rf"$f_{{\pi^0}}={fpi0:.3f}$, D/active={q:.2f}",
+                fontsize=9,
+            )
+        #endfor
+    #endfor
+
+    axes[0, 0].legend(
+        fontsize=7.5,
+        frameon=False,
+        ncol=4,
+        loc="upper center",
+        bbox_to_anchor=(2.1, 1.35),
+    )
+
+    fig.suptitle(
+        f"{period.label}: denominator-driver visual check, "
+        f"{focus_low:.1f}-{focus_high:.1f} GeV\n"
+        "same common population for every candidate",
+        fontsize=13,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / "canvas_nsidis_driver_study_focus_3p0_4p5.png",
+        rect=(0, 0, 1, 0.95),
+    )
+    plt.close(fig)
+
+
+def make_cross_period_nsidis_driver_study_canvas(
+    nsroot: Path,
+    periods: Sequence[PeriodConfig],
+) -> None:
+    """
+    Cross-period stability test for candidate denominator methods.
+
+    Plot |Delta f_pi0| between the first two available periods as a function
+    of actual mean E_probe^pred.  The purpose is not to choose a method merely
+    because it forces periods to agree; this is a robustness diagnostic used
+    together with absolute template goodness.
+    """
+    period_rows: Dict[str, List[Dict[str, str]]] = {}
+    labels: Dict[str, str] = {}
+
+    for period in periods:
+        path = (
+            nsroot / period.key
+            / "nsidis_driver_study.csv"
+        )
+        if not path.exists():
+            continue
+        #endif
+        rows = read_csv_rows_simple(path)
+        if rows:
+            period_rows[period.key] = rows
+            labels[period.key] = period.label
+        #endif
+    #endfor
+
+    available = [
+        period.key for period in periods
+        if period.key in period_rows
+    ]
+    if len(available) < 2:
+        return
+    #endif
+
+    p0, p1 = available[:2]
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.2))
+
+    for ax, region in zip(axes, ("FT", "FD_all")):
+        for model_name, model_label, _driver in NSIDIS_DRIVER_STUDY_MODELS:
+            map0 = {}
+            for row in period_rows[p0]:
+                if (
+                    row.get("region") == region
+                    and row.get("model") == model_name
+                    and row.get("fit_success") == "1"
+                ):
+                    key = (
+                        round(float(row["energy_low_GeV"]), 9),
+                        round(float(row["energy_high_GeV"]), 9),
+                    )
+                    map0[key] = row
+                #endif
+            #endfor
+
+            x = []
+            y = []
+            for row in period_rows[p1]:
+                if not (
+                    row.get("region") == region
+                    and row.get("model") == model_name
+                    and row.get("fit_success") == "1"
+                ):
+                    continue
+                #endif
+                key = (
+                    round(float(row["energy_low_GeV"]), 9),
+                    round(float(row["energy_high_GeV"]), 9),
+                )
+                r0 = map0.get(key)
+                if r0 is None:
+                    continue
+                #endif
+                f0 = float(r0["pi0_fraction"])
+                f1 = float(row["pi0_fraction"])
+                e0 = row_energy_coordinate(r0)
+                e1 = row_energy_coordinate(row)
+                if np.isfinite(f0) and np.isfinite(f1):
+                    x.append(0.5 * (e0 + e1))
+                    y.append(abs(f0 - f1))
+                #endif
+            #endfor
+
+            if x:
+                ax.plot(
+                    x, y,
+                    marker="o",
+                    linewidth=1.0,
+                    label=model_label,
+                )
+            #endif
+        #endfor
+
+        ax.set_xlabel(
+            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+        )
+        ax.set_ylabel(
+            rf"$|f_{{\pi^0}}^{{{labels[p0]}}}"
+            rf"-f_{{\pi^0}}^{{{labels[p1]}}}|$"
+        )
+        ax.set_title("FT" if region == "FT" else "FD all")
+        ax.grid(alpha=0.18)
+        ax.legend(fontsize=7.5, frameon=False)
+    #endfor
+
+    fig.suptitle(
+        "nSidis denominator-driver cross-period stability\n"
+        "use together with absolute goodness; smaller period difference alone "
+        "does not define the preferred model",
+        fontsize=12.5,
+    )
+    safe_finalize_figure(
+        fig,
+        nsroot / "canvas_nsidis_driver_study_cross_period.png",
+        rect=(0, 0, 1, 0.93),
+    )
+    plt.close(fig)
+
+
+
 def preflight_nsidis_study(
     periods: Sequence[PeriodConfig],
     args_dict: Dict[str, object],
@@ -12662,11 +13638,21 @@ def process_nsidis_study_period(
         "eppi0 exclusivity only."
     )
 
-    if bool(args_dict.get("nsidis_pilot_fit", False)):
-        log(
-            f"{period.label}: nSidis production-model pilot enabled; "
-            "reading aaogen and dvcsgen epgamma templates."
-        )
+    if (
+        bool(args_dict.get("nsidis_pilot_fit", False))
+        or bool(args_dict.get("nsidis_driver_study", False))
+    ):
+        if bool(args_dict.get("nsidis_driver_study", False)):
+            log(
+                f"{period.label}: dedicated nSidis denominator-driver study "
+                "enabled; reading aaogen and dvcsgen epgamma templates."
+            )
+        else:
+            log(
+                f"{period.label}: nSidis production-model pilot enabled; "
+                "reading aaogen and dvcsgen epgamma templates."
+            )
+        #endif
         pi_arrays, _, _ = read_branches(
             period.epgamma_pi0_mc,
             EPG_REQUIRED,
@@ -12723,6 +13709,90 @@ def process_nsidis_study_period(
             support_values = sorted(
                 list(support_values) + [central_support]
             )
+        #endif
+
+        if bool(args_dict.get("nsidis_driver_study", False)):
+            log(
+                f"{period.label}: running dedicated denominator-driver study "
+                "on a common data/aaogen/dvcsgen population."
+            )
+            driver_rows, driver_detail = run_nsidis_driver_study(
+                period,
+                ns_epg_f,
+                pi0_f,
+                dvcs_f,
+                parent_mask=ns_epg_parent,
+                ft_theta_max=ft_theta_max,
+                max_probe_energy=float(
+                    args_dict["nsidis_pilot_energy_max"]
+                ),
+                probe_m2_max=central_support,
+                mm2_min=float(args_dict["den_fit_mm2_min"]),
+                mm2_max=float(args_dict["den_fit_mm2_max"]),
+                mm2_bins=int(args_dict["den_fit_mm2_bins"]),
+                ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+                ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+                theta_max=float(args_dict["disc_theta_max"]),
+                theta_bins=int(args_dict["disc_theta_bins"]),
+                min_data_count=int(args_dict["den_min_data_count"]),
+                min_template_count=int(
+                    args_dict["den_min_template_count"]
+                ),
+                nuisance_shift_prior=float(
+                    args_dict["morph_shift_prior_bins"]
+                ),
+                nuisance_sigma_prior=float(
+                    args_dict["morph_sigma_prior_bins"]
+                ),
+                max_shift_bins=float(
+                    args_dict["morph_max_shift_bins"]
+                ),
+                max_sigma_bins=float(
+                    args_dict["morph_max_sigma_bins"]
+                ),
+            )
+            write_rows_csv(
+                driver_rows,
+                outdir / "nsidis_driver_study.csv",
+            )
+            make_nsidis_driver_study_summary_canvas(
+                period,
+                driver_rows,
+                outdir,
+            )
+            make_nsidis_driver_study_focus_canvas(
+                period,
+                driver_detail,
+                outdir,
+                focus_low=3.0,
+                focus_high=4.5,
+                mm2_min=float(args_dict["den_fit_mm2_min"]),
+                mm2_max=float(args_dict["den_fit_mm2_max"]),
+                mm2_bins=int(args_dict["den_fit_mm2_bins"]),
+                ptmiss_max=float(args_dict["disc_ptmiss_max"]),
+                ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
+                theta_max=float(args_dict["disc_theta_max"]),
+                theta_bins=int(args_dict["disc_theta_bins"]),
+            )
+
+            summary = {
+                "period": period.key,
+                "label": period.label,
+                "epgamma_overlap": epg_overlap,
+                "eppi0_overlap": epi_overlap,
+                "eppi0_numerator_strategy": (
+                    "driver-study-only; numerator efficiency not evaluated"
+                ),
+                "nsidis_pilot_fit_enabled": False,
+                "nsidis_driver_study_enabled": True,
+                "driver_study_rows": len(driver_rows),
+                "wall_time_s": float(time.perf_counter() - t0),
+            }
+            log(
+                f"{period.label}: dedicated denominator-driver study complete "
+                f"in {summary['wall_time_s']:.1f} s."
+            )
+            return summary
         #endif
 
         common = {
@@ -14873,7 +15943,10 @@ def main() -> int:
                     summary["eppi0_numerator_strategy"]
                 ),
                 "pilot_fit_enabled": int(
-                    summary["nsidis_pilot_fit_enabled"]
+                    summary.get("nsidis_pilot_fit_enabled", False)
+                ),
+                "driver_study_enabled": int(
+                    summary.get("nsidis_driver_study_enabled", False)
                 ),
                 "wall_time_s": summary["wall_time_s"],
             })
@@ -14883,7 +15956,12 @@ def main() -> int:
             summary_rows,
             nsroot / "nsidis_study_summary.csv",
         )
-        if args.nsidis_pilot_fit:
+        if args.nsidis_driver_study:
+            make_cross_period_nsidis_driver_study_canvas(
+                nsroot,
+                selected,
+            )
+        elif args.nsidis_pilot_fit:
             make_nsidis_period_comparison(
                 nsroot,
                 selected,
