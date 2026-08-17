@@ -154,7 +154,7 @@ STAGE2_OUTPUT_DIRNAME = "stage2_integrated_fits"
 
 CURRENT_MAX_STAGE = 2
 
-DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV = 1.8
+DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV = 2.0
 
 # Morph priors and hard bounds are intentionally modest.  Their role is to
 # absorb small data/MC resolution and centering differences without allowing
@@ -745,6 +745,8 @@ def accumulate_shape_histograms(
         totals[f"{region_key}_minimal"] = 0
         totals[f"{region_key}_after_mx2_epgamma_cut"] = 0
         totals[f"{region_key}_stage2_common"] = 0
+        totals[f"{region_key}_stage2_tag_lt2"] = 0
+        totals[f"{region_key}_stage2_tag_ge2"] = 0
     #endfor
 
     entries_read = 0
@@ -848,6 +850,12 @@ def accumulate_shape_histograms(
                     region_after
                     & np.isfinite(tag_energy)
                     & (tag_energy >= DVCS_FAKE_PHOTON_DIAGNOSTIC_SPLIT_GEV)
+                )
+                totals[f"{region_key}_stage2_tag_lt2"] += int(
+                    np.count_nonzero(region_after_tag_below2)
+                )
+                totals[f"{region_key}_stage2_tag_ge2"] += int(
+                    np.count_nonzero(region_after_tag_above2)
                 )
 
                 totals[f"{region_key}_minimal"] += int(
@@ -2352,94 +2360,122 @@ def process_period(
         stage2_results = {}
 
         for region_key, region_label, _ in TAG_REGIONS:
-            data_hists = {
-                branch: results["data"].stage2_counts[region_key][branch]
-                for branch in STAGE2_VARIABLE_KEYS
-            }
-            dvcs_hists = {
-                branch: results["dvcsgen"].stage2_counts[region_key][branch]
-                for branch in STAGE2_VARIABLE_KEYS
-            }
-            pi0_hists = {
-                branch: results["aaogen"].stage2_counts[region_key][branch]
-                for branch in STAGE2_VARIABLE_KEYS
-            }
+            stage2_results[region_key] = {}
 
-            fit = stage2_fit_shared(
-                data_hists,
-                dvcs_hists,
-                pi0_hists,
-            )
-
-            common = {
-                "data_n": results["data"].selection_counts[
-                    f"{region_key}_stage2_common"
-                ],
-                "dvcs_n": results["dvcsgen"].selection_counts[
-                    f"{region_key}_stage2_common"
-                ],
-                "pi0_n": results["aaogen"].selection_counts[
-                    f"{region_key}_stage2_common"
-                ],
-                "dvcs_hists": dvcs_hists,
-                "pi0_hists": pi0_hists,
-            }
-
-            canvas = draw_stage2_integrated_canvas(
-                period,
-                region_key,
-                region_label,
-                fit,
-                stage2_outdir,
-                common,
-            )
-
-            stage2_results[region_key] = {
-                "success": bool(fit.success),
-                "f_pi0": float(fit.f_pi0),
-                "f_pi0_err_curvature": float(fit.f_pi0_err),
-                "deviance": float(fit.deviance),
-                "ndf": int(fit.ndf),
-                "individual_fractions": (
-                    {
-                        key: float(value)
-                        for key, value in fit.individual_fractions.items()
-                    }
-                    if fit.individual_fractions
-                    else {}
+            for tag_category, tag_label, hist_attr, count_suffix in (
+                (
+                    "tag_lt2",
+                    r"$E_{\gamma,\mathrm{tag}}<2$ GeV",
+                    "counts_after_tag_below2",
+                    "stage2_tag_lt2",
                 ),
-                "shared_morph_nuisance": (
-                    {
-                        branch: [
-                            float(value)
-                            for value in variable_result.shared_nuisance
-                        ]
-                        for branch, variable_result
-                        in fit.variable_results.items()
-                        if variable_result.shared_nuisance is not None
-                    }
-                    if fit.variable_results
-                    else {}
+                (
+                    "tag_ge2",
+                    r"$E_{\gamma,\mathrm{tag}}\geq2$ GeV",
+                    "counts_after_tag_above2",
+                    "stage2_tag_ge2",
                 ),
-                "common_population": {
-                    "data": int(common["data_n"]),
-                    "dvcs_mc": int(common["dvcs_n"]),
-                    "pi0_mc": int(common["pi0_n"]),
-                },
-                "canvas": str(canvas) if canvas is not None else None,
-                "message": fit.message,
-            }
+            ):
+                data_hists = {
+                    branch: getattr(results["data"], hist_attr)[region_key][branch]
+                    for branch in STAGE2_VARIABLE_KEYS
+                }
+                dvcs_hists = {
+                    branch: getattr(results["dvcsgen"], hist_attr)[region_key][branch]
+                    for branch in STAGE2_VARIABLE_KEYS
+                }
+                pi0_hists = {
+                    branch: getattr(results["aaogen"], hist_attr)[region_key][branch]
+                    for branch in STAGE2_VARIABLE_KEYS
+                }
 
-            log(
-                f"{period.label} {region_label}: Stage 2 "
-                f"{'OK' if fit.success else 'FAILED'}; "
-                f"f_pi0={fit.f_pi0:.4f}"
-                + (
-                    f" +/- {fit.f_pi0_err:.4f}"
-                    if math.isfinite(fit.f_pi0_err)
-                    else ""
+                fit = stage2_fit_shared(
+                    data_hists,
+                    dvcs_hists,
+                    pi0_hists,
                 )
-            )
+
+                common = {
+                    "data_n": results["data"].selection_counts[
+                        f"{region_key}_{count_suffix}"
+                    ],
+                    "dvcs_n": results["dvcsgen"].selection_counts[
+                        f"{region_key}_{count_suffix}"
+                    ],
+                    "pi0_n": results["aaogen"].selection_counts[
+                        f"{region_key}_{count_suffix}"
+                    ],
+                    "dvcs_hists": dvcs_hists,
+                    "pi0_hists": pi0_hists,
+                }
+
+                canvas = draw_stage2_integrated_canvas(
+                    period,
+                    region_key,
+                    f"{region_label}; {tag_label}",
+                    fit,
+                    stage2_outdir,
+                    common,
+                )
+
+                # Give the two canvases unique, explicit filenames.
+                desired_canvas = (
+                    stage2_outdir
+                    / f"stage2_integrated_fits_{period.key}_{region_key.lower()}_{tag_category}.png"
+                )
+                if canvas is not None and Path(canvas) != desired_canvas:
+                    Path(canvas).replace(desired_canvas)
+                    canvas = desired_canvas
+                #endif
+
+                stage2_results[region_key][tag_category] = {
+                    "tag_energy_selection": tag_label,
+                    "success": bool(fit.success),
+                    "f_pi0": float(fit.f_pi0),
+                    "f_pi0_err_curvature": float(fit.f_pi0_err),
+                    "deviance": float(fit.deviance),
+                    "ndf": int(fit.ndf),
+                    "individual_fractions": (
+                        {
+                            key: float(value)
+                            for key, value in fit.individual_fractions.items()
+                        }
+                        if fit.individual_fractions
+                        else {}
+                    ),
+                    "shared_morph_nuisance": (
+                        {
+                            branch: [
+                                float(value)
+                                for value in variable_result.shared_nuisance
+                            ]
+                            for branch, variable_result
+                            in fit.variable_results.items()
+                            if variable_result.shared_nuisance is not None
+                        }
+                        if fit.variable_results
+                        else {}
+                    ),
+                    "common_population": {
+                        "data": int(common["data_n"]),
+                        "dvcs_mc": int(common["dvcs_n"]),
+                        "pi0_mc": int(common["pi0_n"]),
+                    },
+                    "canvas": str(canvas) if canvas is not None else None,
+                    "message": fit.message,
+                }
+
+                log(
+                    f"{period.label} {region_label} {tag_category}: Stage 2 "
+                    f"{'OK' if fit.success else 'FAILED'}; "
+                    f"f_pi0={fit.f_pi0:.4f}"
+                    + (
+                        f" +/- {fit.f_pi0_err:.4f}"
+                        if math.isfinite(fit.f_pi0_err)
+                        else ""
+                    )
+                )
+            #endfor
         #endfor
 
     #endif
@@ -2724,6 +2760,7 @@ def main() -> int:
                 },
                 "fraction_variables": list(STAGE2_VARIABLE_KEYS),
                 "common_population_across_fraction_variables": True,
+                "tag_energy_categories_GeV": ["0.4 <= E_tag < 2.0", "2.0 <= E_tag < 9.5"],
             },
             "periods": [
                 {
