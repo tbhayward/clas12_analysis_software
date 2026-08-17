@@ -65,7 +65,7 @@ Each period produces TWO 2x5 canvases, split by detected tag photon:
 In each canvas:
     top row    = minimal selection only
     bottom row = same population after |M_X^2(epgamma)| < 0.075 GeV^2
-                 and E_miss < 1 GeV
+                 and E_miss < 2 GeV
 
 The M_X^2(epgamma) top-row panel shows dashed vertical lines at +/-0.075
 GeV^2.  The output directory is flat: at most one PNG per requested period.
@@ -119,7 +119,7 @@ THETA_EGAMMA_MIN_DEG = 5.0
 TAG_E_MIN_GEV = 0.4
 TAG_E_MAX_GEV = 9.5
 MX2_EPGAMMA_ABS_MAX_GEV2 = 0.075
-EMISS_MAX_GEV = 1.0
+EMISS_MAX_GEV = 2.0
 
 PROBE_E_MIN_GEV = 0.4
 PROBE_E_MAX_GEV = 9.5
@@ -859,7 +859,7 @@ def accumulate_shape_histograms(
 
                 # Stage 2 inherits region_after exactly, including BOTH:
                 #   |Mx2(epgamma)| < 0.075 GeV^2
-                #   Emiss < 1.0 GeV
+                #   Emiss < 2.0 GeV
                 # It then requires the SAME finite/in-range population in
                 # Delta_phi, pTmiss, and Emiss.
                 stage2_common = region_after.copy()
@@ -2031,7 +2031,7 @@ def draw_period_canvas(
     """
     Draw one compact 2x5 canvas for one reconstructed TAG-photon detector:
       top    = minimal selection only
-      bottom = after |M_X^2(epgamma)| < 0.075 GeV^2 and E_miss < 1 GeV
+      bottom = after |M_X^2(epgamma)| < 0.075 GeV^2 and E_miss < 2 GeV
     """
     fig, axes = plt.subplots(
         2,
