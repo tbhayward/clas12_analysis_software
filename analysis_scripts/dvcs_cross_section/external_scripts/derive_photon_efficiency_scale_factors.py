@@ -65,7 +65,7 @@ Each period produces TWO 2x5 canvases, split by detected tag photon:
 In each canvas:
     top row    = minimal selection only
     bottom row = same population after |M_X^2(epgamma)| < 0.075 GeV^2
-                 and E_miss < 2 GeV
+                 and E_miss < 1.5 GeV
 
 The M_X^2(epgamma) top-row panel shows dashed vertical lines at +/-0.075
 GeV^2.  The output directory is flat: at most one PNG per requested period.
@@ -119,7 +119,7 @@ THETA_EGAMMA_MIN_DEG = 5.0
 TAG_E_MIN_GEV = 0.4
 TAG_E_MAX_GEV = 9.5
 MX2_EPGAMMA_ABS_MAX_GEV2 = 0.075
-EMISS_MAX_GEV = 2.0
+EMISS_MAX_GEV = 1.5
 
 PROBE_E_MIN_GEV = 0.4
 PROBE_E_MAX_GEV = 9.5
@@ -150,7 +150,8 @@ STAGE2_VARIABLE_KEYS: Tuple[str, ...] = (
     "Emiss2",
 )
 
-STAGE2_OUTPUT_DIRNAME = "stage2_integrated_fits"
+STAGE2_OUTPUT_DIRNAME = "stage2_sequential_normalization"
+STAGE2_TEMPLATE_FIT_OUTPUT_DIRNAME = "stage2_template_fits_optional"
 
 CURRENT_MAX_STAGE = 2
 
@@ -867,7 +868,7 @@ def accumulate_shape_histograms(
 
                 # Stage 2 inherits region_after exactly, including BOTH:
                 #   |Mx2(epgamma)| < 0.075 GeV^2
-                #   Emiss < 2.0 GeV
+                #   Emiss < 1.5 GeV
                 # It then requires the SAME finite/in-range population in
                 # Delta_phi, pTmiss, and Emiss.
                 stage2_common = region_after.copy()
@@ -1098,6 +1099,396 @@ def preflight_periods(
 # =============================================================================
 # Stage 2 fit machinery
 # =============================================================================
+
+
+@dataclass
+class SequentialNormalizationResult:
+    success: bool
+    alpha_pi0: float = math.nan
+    alpha_pi0_err: float = math.nan
+    alpha_dvcs: float = math.nan
+    alpha_dvcs_err: float = math.nan
+    data_low: float = 0.0
+    pi0_low: float = 0.0
+    dvcs_low: float = 0.0
+    data_high: float = 0.0
+    pi0_high: float = 0.0
+    dvcs_high: float = 0.0
+    high_residual_after_pi0: float = math.nan
+    low_dvcs_fraction_of_data: float = math.nan
+    message: str = ""
+
+
+def poisson_ratio_uncertainty(
+    numerator: float,
+    denominator: float,
+) -> float:
+    """
+    Delta-method statistical uncertainty for a ratio of independent Poisson
+    counts. BOTH numerator and denominator counting statistics are included.
+    """
+    if numerator <= 0.0 or denominator <= 0.0:
+        return math.nan
+    #endif
+    ratio = numerator / denominator
+    return ratio * math.sqrt(
+        1.0 / numerator + 1.0 / denominator
+    )
+
+
+def sequential_normalization_from_counts(
+    data_low: float,
+    pi0_low: float,
+    dvcs_low: float,
+    data_high: float,
+    pi0_high: float,
+    dvcs_high: float,
+) -> SequentialNormalizationResult:
+    """
+    Two-step Stage-2 normalization.
+
+    Step 1, 0.4 <= E_tag < 2 GeV:
+      assume the selected data yield is pi0 dominated and determine
+          alpha_pi0 = D_low / A_low.
+
+    Step 2, 2 <= E_tag < 9.5 GeV:
+      freeze alpha_pi0 and determine
+          alpha_dvcs = (D_high - alpha_pi0 A_high) / V_high.
+
+    Statistical uncertainties include the finite statistics of DATA AND BOTH
+    MC samples. Low/high energy regions are disjoint, so their Poisson
+    counting uncertainties are treated as independent.
+    """
+    values = (
+        data_low,
+        pi0_low,
+        dvcs_low,
+        data_high,
+        pi0_high,
+        dvcs_high,
+    )
+    if any((not math.isfinite(float(v)) or float(v) < 0.0) for v in values):
+        return SequentialNormalizationResult(
+            False,
+            message="non-finite or negative input count",
+        )
+    #endif
+
+    if pi0_low <= 0.0:
+        return SequentialNormalizationResult(
+            False,
+            message="zero pi0-MC yield in low-energy normalization region",
+        )
+    #endif
+    if dvcs_high <= 0.0:
+        return SequentialNormalizationResult(
+            False,
+            message="zero DVCS-MC yield in high-energy normalization region",
+        )
+    #endif
+
+    alpha_pi0 = data_low / pi0_low
+    alpha_pi0_err = poisson_ratio_uncertainty(
+        data_low,
+        pi0_low,
+    )
+
+    high_residual = data_high - alpha_pi0 * pi0_high
+    alpha_dvcs = high_residual / dvcs_high
+
+    # Full first-order propagation, retaining all MC counting statistics.
+    #
+    # R = D_H - alpha_pi0 A_H
+    # Var(R) = Var(D_H)
+    #        + alpha_pi0^2 Var(A_H)
+    #        + A_H^2 Var(alpha_pi0)
+    #
+    # beta = R / V_H
+    # Var(beta) = Var(R)/V_H^2 + beta^2 Var(V_H)/V_H^2
+    #
+    # with Poisson Var(N)=N for the raw counts.
+    if math.isfinite(alpha_pi0_err):
+        var_residual = (
+            data_high
+            + alpha_pi0 * alpha_pi0 * pi0_high
+            + pi0_high * pi0_high
+            * alpha_pi0_err * alpha_pi0_err
+        )
+        var_alpha_dvcs = (
+            var_residual / (dvcs_high * dvcs_high)
+            + alpha_dvcs * alpha_dvcs / dvcs_high
+        )
+        alpha_dvcs_err = (
+            math.sqrt(max(var_alpha_dvcs, 0.0))
+            if math.isfinite(var_alpha_dvcs)
+            else math.nan
+        )
+    else:
+        alpha_dvcs_err = math.nan
+    #endif
+
+    low_dvcs_fraction = (
+        dvcs_low / data_low
+        if data_low > 0.0
+        else math.nan
+    )
+
+    message = "two-step normalization succeeded"
+    if high_residual < 0.0:
+        message += (
+            "; WARNING: normalized pi0 MC exceeds the high-energy data yield"
+        )
+    #endif
+
+    return SequentialNormalizationResult(
+        success=True,
+        alpha_pi0=float(alpha_pi0),
+        alpha_pi0_err=float(alpha_pi0_err),
+        alpha_dvcs=float(alpha_dvcs),
+        alpha_dvcs_err=float(alpha_dvcs_err),
+        data_low=float(data_low),
+        pi0_low=float(pi0_low),
+        dvcs_low=float(dvcs_low),
+        data_high=float(data_high),
+        pi0_high=float(pi0_high),
+        dvcs_high=float(dvcs_high),
+        high_residual_after_pi0=float(high_residual),
+        low_dvcs_fraction_of_data=float(low_dvcs_fraction),
+        message=message,
+    )
+
+
+def run_sequential_normalization_self_test() -> None:
+    """Exercise the default Stage-2 normalization before expensive ROOT I/O."""
+    result = sequential_normalization_from_counts(
+        data_low=1000.0,
+        pi0_low=500.0,
+        dvcs_low=20.0,
+        data_high=1200.0,
+        pi0_high=200.0,
+        dvcs_high=400.0,
+    )
+    if not result.success:
+        raise RuntimeError(
+            "Sequential-normalization self-test failed to return success."
+        )
+    #endif
+    # alpha_pi0 = 2; high residual = 800; alpha_dvcs = 2.
+    if (
+        abs(result.alpha_pi0 - 2.0) > 1.0e-12
+        or abs(result.alpha_dvcs - 2.0) > 1.0e-12
+        or not math.isfinite(result.alpha_pi0_err)
+        or not math.isfinite(result.alpha_dvcs_err)
+    ):
+        raise RuntimeError(
+            "Sequential-normalization self-test recovered wrong factors."
+        )
+    #endif
+
+
+def draw_stage2_sequential_normalization_canvas(
+    period: PeriodConfig,
+    region_key: str,
+    region_label: str,
+    result: SequentialNormalizationResult,
+    results: Dict[str, HistogramResult],
+    outdir: Path,
+) -> Optional[Path]:
+    """
+    Show the sequential normalization and fixed-normalization validation.
+
+    Column 1:
+      E_gamma,tag spectrum demonstrating the low-energy pi0 normalization and
+      high-energy DVCS residual normalization.
+
+    Columns 2-4:
+      Delta_phi, pTmiss, and Emiss validation. NO fitting is performed in
+      these panels; alpha_pi0 and alpha_dvcs are fixed by E_gamma only.
+    """
+    if not result.success:
+        return None
+    #endif
+
+    variable_keys = (
+        "Egamma_tag",
+        "Delta_phi",
+        "pTmiss",
+        "Emiss2",
+    )
+    fig, axes = plt.subplots(
+        1,
+        len(variable_keys),
+        figsize=(20.0, 5.8),
+        squeeze=False,
+    )
+    axes = axes[0]
+
+    for col, branch in enumerate(variable_keys):
+        variable = next(
+            item for item in PLOT_VARIABLES
+            if item.branch == branch
+        )
+        ax = axes[col]
+        edges = np.linspace(
+            variable.low,
+            variable.high,
+            variable.bins + 1,
+        )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+
+        data_counts = np.asarray(
+            results["data"].counts_after[region_key][branch],
+            dtype=float,
+        )
+        pi0_counts = np.asarray(
+            results["aaogen"].counts_after[region_key][branch],
+            dtype=float,
+        )
+        dvcs_counts = np.asarray(
+            results["dvcsgen"].counts_after[region_key][branch],
+            dtype=float,
+        )
+
+        scaled_pi0 = result.alpha_pi0 * pi0_counts
+        scaled_dvcs = result.alpha_dvcs * dvcs_counts
+        total_model = scaled_pi0 + scaled_dvcs
+
+        ax.step(
+            edges[:-1],
+            scaled_pi0,
+            where="post",
+            linewidth=1.35,
+            color="red",
+            label=(
+                rf"$e\pi^0$ MC $\times\,"
+                rf"{result.alpha_pi0:.3g}$"
+            ),
+        )
+        ax.step(
+            edges[:-1],
+            scaled_dvcs,
+            where="post",
+            linewidth=1.35,
+            color="tab:blue",
+            label=(
+                rf"DVCS MC $\times\,"
+                rf"{result.alpha_dvcs:.3g}$"
+            ),
+        )
+        ax.step(
+            edges[:-1],
+            total_model,
+            where="post",
+            linewidth=1.65,
+            color="green",
+            label="fixed normalized sum",
+        )
+        ax.errorbar(
+            centers,
+            data_counts,
+            yerr=np.sqrt(np.maximum(data_counts, 1.0)),
+            fmt="o",
+            markersize=2.3,
+            linewidth=0.55,
+            color="black",
+            label="data",
+            zorder=5,
+        )
+
+        if branch == "Egamma_tag":
+            ax.axvline(
+                2.0,
+                linestyle="--",
+                linewidth=1.0,
+                color="0.35",
+            )
+            ax.set_title(
+                r"$E_{\gamma,\mathrm{tag}}$ normalization"
+                "\n"
+                r"$0.4\!-\!2$: normalize $\pi^0$; "
+                r"$2\!-\!9.5$: normalize DVCS residual",
+                fontsize=9.5,
+            )
+        else:
+            ax.set_title(
+                f"{variable.title}\nfixed-normalization validation",
+                fontsize=9.5,
+            )
+        #endif
+
+        display_low, display_high = displayed_xlimits_for_region(
+            variable,
+            region_key,
+        )
+        ax.set_xlim(display_low, display_high)
+        ax.set_yscale("log")
+
+        positive = np.concatenate(
+            (
+                data_counts[data_counts > 0.0],
+                scaled_pi0[scaled_pi0 > 0.0],
+                scaled_dvcs[scaled_dvcs > 0.0],
+                total_model[total_model > 0.0],
+            )
+        )
+        if positive.size > 0:
+            ax.set_ylim(
+                bottom=max(
+                    0.5,
+                    0.5 * float(np.min(positive)),
+                )
+            )
+        #endif
+
+        ax.set_xlabel(variable.xlabel)
+        if col == 0:
+            ax.set_ylabel("entries / bin")
+        #endif
+        ax.grid(alpha=0.18)
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.885),
+        ncol=4,
+        frameon=False,
+        fontsize=9.0,
+    )
+
+    fig.suptitle(
+        f"Stage 2 sequential normalization: "
+        f"{period.label} — {region_label}\n"
+        rf"$|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$, "
+        rf"$E_{{\rm miss}}<{EMISS_MAX_GEV:.1f}$ GeV; "
+        rf"$\alpha_{{\pi^0}}={result.alpha_pi0:.4f}"
+        rf"\pm{result.alpha_pi0_err:.4f}$, "
+        rf"$\alpha_{{\rm DVCS}}={result.alpha_dvcs:.4f}"
+        rf"\pm{result.alpha_dvcs_err:.4f}$",
+        fontsize=12.3,
+        y=0.985,
+    )
+    fig.subplots_adjust(
+        left=0.055,
+        right=0.992,
+        bottom=0.12,
+        top=0.78,
+        wspace=0.25,
+    )
+
+    outpath = (
+        outdir
+        / (
+            f"stage2_sequential_normalization_"
+            f"{period.key}_{region_key.lower()}.png"
+        )
+    )
+    fig.savefig(outpath, dpi=180)
+    plt.close(fig)
+    return outpath
+
 
 @dataclass
 class Stage2VariableFit:
@@ -2039,7 +2430,7 @@ def draw_period_canvas(
     """
     Draw one compact 2x5 canvas for one reconstructed TAG-photon detector:
       top    = minimal selection only
-      bottom = after |M_X^2(epgamma)| < 0.075 GeV^2 and E_miss < 2 GeV
+      bottom = after |M_X^2(epgamma)| < 0.075 GeV^2 and E_miss < 1.5 GeV
     """
     fig, axes = plt.subplots(
         2,
@@ -2353,129 +2744,315 @@ def process_period(
 
     stage2_results = {}
     if requested_stage >= 2:
-        # Stage 2: integrated composition fit.  Reuse the Stage-2 histograms
-        # accumulated in the same ROOT streaming pass above.
-        stage2_outdir = outdir.parent / STAGE2_OUTPUT_DIRNAME
-        stage2_outdir.mkdir(parents=True, exist_ok=True)
-        stage2_results = {}
+        sequential_outdir = (
+            outdir.parent / STAGE2_OUTPUT_DIRNAME
+        )
+        sequential_outdir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        run_template_fit = bool(
+            args_dict.get(
+                "run_stage2_template_fit",
+                False,
+            )
+        )
+
+        template_fit_outdir = (
+            outdir.parent
+            / STAGE2_TEMPLATE_FIT_OUTPUT_DIRNAME
+        )
+        if run_template_fit:
+            template_fit_outdir.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+        #endif
 
         for region_key, region_label, _ in TAG_REGIONS:
-            stage2_results[region_key] = {}
-
-            for tag_category, tag_label, hist_attr, count_suffix in (
-                (
-                    "tag_lt2",
-                    r"$E_{\gamma,\mathrm{tag}}<2$ GeV",
-                    "counts_after_tag_below2",
-                    "stage2_tag_lt2",
-                ),
-                (
-                    "tag_ge2",
-                    r"$E_{\gamma,\mathrm{tag}}\geq2$ GeV",
-                    "counts_after_tag_above2",
-                    "stage2_tag_ge2",
-                ),
-            ):
-                data_hists = {
-                    branch: getattr(results["data"], hist_attr)[region_key][branch]
-                    for branch in STAGE2_VARIABLE_KEYS
-                }
-                dvcs_hists = {
-                    branch: getattr(results["dvcsgen"], hist_attr)[region_key][branch]
-                    for branch in STAGE2_VARIABLE_KEYS
-                }
-                pi0_hists = {
-                    branch: getattr(results["aaogen"], hist_attr)[region_key][branch]
-                    for branch in STAGE2_VARIABLE_KEYS
-                }
-
-                fit = stage2_fit_shared(
-                    data_hists,
-                    dvcs_hists,
-                    pi0_hists,
+            # -------------------------------------------------------------
+            # DEFAULT: two-step energy normalization.
+            # These counts are after BOTH exclusivity-support cuts:
+            #   |Mx2(epgamma)| < 0.075 GeV^2
+            #   Emiss < 1.5 GeV
+            # -------------------------------------------------------------
+            data_low = float(
+                np.sum(
+                    results["data"].counts_after_tag_below2[
+                        region_key
+                    ]["Egamma_tag"]
                 )
+            )
+            pi0_low = float(
+                np.sum(
+                    results["aaogen"].counts_after_tag_below2[
+                        region_key
+                    ]["Egamma_tag"]
+                )
+            )
+            dvcs_low = float(
+                np.sum(
+                    results["dvcsgen"].counts_after_tag_below2[
+                        region_key
+                    ]["Egamma_tag"]
+                )
+            )
 
-                common = {
-                    "data_n": results["data"].selection_counts[
-                        f"{region_key}_{count_suffix}"
-                    ],
-                    "dvcs_n": results["dvcsgen"].selection_counts[
-                        f"{region_key}_{count_suffix}"
-                    ],
-                    "pi0_n": results["aaogen"].selection_counts[
-                        f"{region_key}_{count_suffix}"
-                    ],
-                    "dvcs_hists": dvcs_hists,
-                    "pi0_hists": pi0_hists,
-                }
+            data_high = float(
+                np.sum(
+                    results["data"].counts_after_tag_above2[
+                        region_key
+                    ]["Egamma_tag"]
+                )
+            )
+            pi0_high = float(
+                np.sum(
+                    results["aaogen"].counts_after_tag_above2[
+                        region_key
+                    ]["Egamma_tag"]
+                )
+            )
+            dvcs_high = float(
+                np.sum(
+                    results["dvcsgen"].counts_after_tag_above2[
+                        region_key
+                    ]["Egamma_tag"]
+                )
+            )
 
-                canvas = draw_stage2_integrated_canvas(
+            normalization = (
+                sequential_normalization_from_counts(
+                    data_low=data_low,
+                    pi0_low=pi0_low,
+                    dvcs_low=dvcs_low,
+                    data_high=data_high,
+                    pi0_high=pi0_high,
+                    dvcs_high=dvcs_high,
+                )
+            )
+
+            sequential_canvas = (
+                draw_stage2_sequential_normalization_canvas(
                     period,
                     region_key,
-                    f"{region_label}; {tag_label}",
-                    fit,
-                    stage2_outdir,
-                    common,
+                    region_label,
+                    normalization,
+                    results,
+                    sequential_outdir,
                 )
+            )
 
-                # Give the two canvases unique, explicit filenames.
-                desired_canvas = (
-                    stage2_outdir
-                    / f"stage2_integrated_fits_{period.key}_{region_key.lower()}_{tag_category}.png"
-                )
-                if canvas is not None and Path(canvas) != desired_canvas:
-                    Path(canvas).replace(desired_canvas)
-                    canvas = desired_canvas
-                #endif
-
-                stage2_results[region_key][tag_category] = {
-                    "tag_energy_selection": tag_label,
-                    "success": bool(fit.success),
-                    "f_pi0": float(fit.f_pi0),
-                    "f_pi0_err_curvature": float(fit.f_pi0_err),
-                    "deviance": float(fit.deviance),
-                    "ndf": int(fit.ndf),
-                    "individual_fractions": (
-                        {
-                            key: float(value)
-                            for key, value in fit.individual_fractions.items()
-                        }
-                        if fit.individual_fractions
-                        else {}
+            region_summary = {
+                "sequential_normalization": {
+                    "success": bool(
+                        normalization.success
                     ),
-                    "shared_morph_nuisance": (
-                        {
-                            branch: [
-                                float(value)
-                                for value in variable_result.shared_nuisance
-                            ]
-                            for branch, variable_result
-                            in fit.variable_results.items()
-                            if variable_result.shared_nuisance is not None
-                        }
-                        if fit.variable_results
-                        else {}
+                    "alpha_pi0": float(
+                        normalization.alpha_pi0
                     ),
-                    "common_population": {
-                        "data": int(common["data_n"]),
-                        "dvcs_mc": int(common["dvcs_n"]),
-                        "pi0_mc": int(common["pi0_n"]),
+                    "alpha_pi0_stat_err": float(
+                        normalization.alpha_pi0_err
+                    ),
+                    "alpha_dvcs": float(
+                        normalization.alpha_dvcs
+                    ),
+                    "alpha_dvcs_stat_err": float(
+                        normalization.alpha_dvcs_err
+                    ),
+                    "low_energy_counts": {
+                        "data": float(
+                            normalization.data_low
+                        ),
+                        "pi0_mc": float(
+                            normalization.pi0_low
+                        ),
+                        "dvcs_mc_diagnostic": float(
+                            normalization.dvcs_low
+                        ),
                     },
-                    "canvas": str(canvas) if canvas is not None else None,
-                    "message": fit.message,
+                    "high_energy_counts": {
+                        "data": float(
+                            normalization.data_high
+                        ),
+                        "pi0_mc": float(
+                            normalization.pi0_high
+                        ),
+                        "dvcs_mc": float(
+                            normalization.dvcs_high
+                        ),
+                        "data_minus_scaled_pi0": float(
+                            normalization
+                            .high_residual_after_pi0
+                        ),
+                    },
+                    "diagnostics": {
+                        "raw_dvcs_low_over_data_low": float(
+                            normalization
+                            .low_dvcs_fraction_of_data
+                        ),
+                    },
+                    "canvas": (
+                        str(sequential_canvas)
+                        if sequential_canvas is not None
+                        else None
+                    ),
+                    "message": normalization.message,
                 }
+            }
 
-                log(
-                    f"{period.label} {region_label} {tag_category}: Stage 2 "
-                    f"{'OK' if fit.success else 'FAILED'}; "
-                    f"f_pi0={fit.f_pi0:.4f}"
-                    + (
-                        f" +/- {fit.f_pi0_err:.4f}"
-                        if math.isfinite(fit.f_pi0_err)
-                        else ""
+            log(
+                f"{period.label} {region_label}: "
+                f"Stage-2 sequential normalization "
+                f"{'OK' if normalization.success else 'FAILED'}; "
+                f"alpha_pi0={normalization.alpha_pi0:.5f} "
+                f"+/- {normalization.alpha_pi0_err:.5f}; "
+                f"alpha_DVCS={normalization.alpha_dvcs:.5f} "
+                f"+/- {normalization.alpha_dvcs_err:.5f}."
+            )
+
+            # -------------------------------------------------------------
+            # OPTIONAL CROSS-CHECK: preserve the existing morph/template
+            # fitter, but do not run it unless explicitly requested.
+            # -------------------------------------------------------------
+            if run_template_fit:
+                template_fit_results = {}
+
+                for (
+                    tag_category,
+                    tag_label,
+                    hist_attr,
+                    count_suffix,
+                ) in (
+                    (
+                        "tag_lt2",
+                        r"$E_{\gamma,\mathrm{tag}}<2$ GeV",
+                        "counts_after_tag_below2",
+                        "stage2_tag_lt2",
+                    ),
+                    (
+                        "tag_ge2",
+                        r"$E_{\gamma,\mathrm{tag}}\geq2$ GeV",
+                        "counts_after_tag_above2",
+                        "stage2_tag_ge2",
+                    ),
+                ):
+                    data_hists = {
+                        branch: getattr(
+                            results["data"],
+                            hist_attr,
+                        )[region_key][branch]
+                        for branch in STAGE2_VARIABLE_KEYS
+                    }
+                    dvcs_hists = {
+                        branch: getattr(
+                            results["dvcsgen"],
+                            hist_attr,
+                        )[region_key][branch]
+                        for branch in STAGE2_VARIABLE_KEYS
+                    }
+                    pi0_hists = {
+                        branch: getattr(
+                            results["aaogen"],
+                            hist_attr,
+                        )[region_key][branch]
+                        for branch in STAGE2_VARIABLE_KEYS
+                    }
+
+                    fit = stage2_fit_shared(
+                        data_hists,
+                        dvcs_hists,
+                        pi0_hists,
                     )
-                )
-            #endfor
+
+                    common = {
+                        "data_n": results[
+                            "data"
+                        ].selection_counts[
+                            f"{region_key}_{count_suffix}"
+                        ],
+                        "dvcs_n": results[
+                            "dvcsgen"
+                        ].selection_counts[
+                            f"{region_key}_{count_suffix}"
+                        ],
+                        "pi0_n": results[
+                            "aaogen"
+                        ].selection_counts[
+                            f"{region_key}_{count_suffix}"
+                        ],
+                        "dvcs_hists": dvcs_hists,
+                        "pi0_hists": pi0_hists,
+                    }
+
+                    canvas = draw_stage2_integrated_canvas(
+                        period,
+                        region_key,
+                        f"{region_label}; {tag_label}",
+                        fit,
+                        template_fit_outdir,
+                        common,
+                    )
+
+                    desired_canvas = (
+                        template_fit_outdir
+                        / (
+                            f"stage2_template_fit_"
+                            f"{period.key}_"
+                            f"{region_key.lower()}_"
+                            f"{tag_category}.png"
+                        )
+                    )
+                    if (
+                        canvas is not None
+                        and Path(canvas)
+                        != desired_canvas
+                    ):
+                        Path(canvas).replace(
+                            desired_canvas
+                        )
+                        canvas = desired_canvas
+                    #endif
+
+                    template_fit_results[
+                        tag_category
+                    ] = {
+                        "tag_energy_selection": tag_label,
+                        "success": bool(fit.success),
+                        "f_pi0": float(fit.f_pi0),
+                        "f_pi0_err_curvature": float(
+                            fit.f_pi0_err
+                        ),
+                        "deviance": float(
+                            fit.deviance
+                        ),
+                        "ndf": int(fit.ndf),
+                        "individual_fractions": (
+                            {
+                                key: float(value)
+                                for key, value
+                                in fit.individual_fractions.items()
+                            }
+                            if fit.individual_fractions
+                            else {}
+                        ),
+                        "canvas": (
+                            str(canvas)
+                            if canvas is not None
+                            else None
+                        ),
+                        "message": fit.message,
+                    }
+                #endfor
+
+                region_summary[
+                    "optional_template_fit"
+                ] = template_fit_results
+            #endif
+
+            stage2_results[
+                region_key
+            ] = region_summary
         #endfor
 
     #endif
@@ -2531,6 +3108,16 @@ def build_parser() -> argparse.ArgumentParser:
             "--stage 2 runs Stages 1 and 2. "
             f"Currently implemented through Stage {CURRENT_MAX_STAGE}. "
             f"Default: {CURRENT_MAX_STAGE}."
+        ),
+    )
+
+    parser.add_argument(
+        "--run-stage2-template-fit",
+        action="store_true",
+        help=(
+            "Also run the legacy Stage-2 morph/template fits as a diagnostic "
+            "cross-check. They are disabled by default; the default Stage-2 "
+            "method is sequential energy normalization."
         ),
     )
 
@@ -2651,8 +3238,8 @@ def main() -> int:
         log("Stage 1 only: shape comparison; stopping before Stage 2.")
     else:
         log(
-            "Stages 1+2: shape comparison followed by integrated "
-            "DVCS/pi0 composition fits."
+            "Stages 1+2: shape comparison followed by sequential "
+            "energy normalization."
         )
     #endif
     log(
@@ -2661,10 +3248,21 @@ def main() -> int:
     )
 
     if args.stage >= 2:
-        # Exercise the full Stage-2 optimizer before any large ROOT read.
-        # This catches fit/refactor failures before expensive ROOT I/O.
-        run_stage2_internal_self_test()
-        log("Internal Stage-2 fit self-test passed.")
+        run_sequential_normalization_self_test()
+        log(
+            "Internal Stage-2 sequential-normalization "
+            "self-test passed."
+        )
+
+        if args.run_stage2_template_fit:
+            # Exercise the optional morph/template optimizer before any
+            # expensive ROOT I/O only when that cross-check is requested.
+            run_stage2_internal_self_test()
+            log(
+                "Internal optional Stage-2 template-fit "
+                "self-test passed."
+            )
+        #endif
     #endif
 
     # Complete ROOT schema preflight BEFORE any large read.
@@ -2677,6 +3275,9 @@ def main() -> int:
         "tree_name": args.tree_name,
         "output_dir": args.output_dir,
         "stage": args.stage,
+        "run_stage2_template_fit": bool(
+            args.run_stage2_template_fit
+        ),
     }
 
     workers = min(
@@ -2748,7 +3349,7 @@ def main() -> int:
 
     if args.stage >= 2:
         stage2_summary = {
-            "stage": "stage2_integrated_fits",
+            "stage": "stage2_sequential_normalization",
             "selection": {
                 "stage1_minimal": {
                     "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
@@ -2757,10 +3358,20 @@ def main() -> int:
                 },
                 "exclusivity": {
                     "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
+                    "emiss_max_GeV": EMISS_MAX_GEV,
                 },
-                "fraction_variables": list(STAGE2_VARIABLE_KEYS),
-                "common_population_across_fraction_variables": True,
-                "tag_energy_categories_GeV": ["0.4 <= E_tag < 2.0", "2.0 <= E_tag < 9.5"],
+                "default_method": "sequential_energy_normalization",
+                "normalization_regions_GeV": {
+                    "pi0": [0.4, 2.0],
+                    "dvcs": [2.0, 9.5],
+                },
+                "assumption": (
+                    "Selected 0.4<=E_tag<2 GeV data are treated as pi0 "
+                    "for the default normalization."
+                ),
+                "optional_template_fit_enabled": bool(
+                    args.run_stage2_template_fit
+                ),
             },
             "periods": [
                 {
@@ -2788,8 +3399,8 @@ def main() -> int:
     if args.stage >= 2:
         log(
             "Done. Stage-1 outputs are in "
-            f"{Path(args.output_dir)}; Stage-2 outputs are in "
-            f"{stage2_outdir}."
+            f"{Path(args.output_dir)}; default Stage-2 sequential "
+            f"normalization outputs are in {stage2_outdir}."
         )
     else:
         log(
