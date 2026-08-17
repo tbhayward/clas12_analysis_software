@@ -118,6 +118,7 @@ THETA_EGAMMA_MIN_DEG = 5.0
 
 TAG_E_MIN_GEV = 0.4
 TAG_E_MAX_GEV = 9.5
+DVCS_NORMALIZATION_E_MIN_GEV = 3.0
 MX2_EPGAMMA_ABS_MAX_GEV2 = 0.075
 EMISS_MAX_GEV = 1.5
 
@@ -1151,7 +1152,7 @@ def sequential_normalization_from_counts(
       assume the selected data yield is pi0 dominated and determine
           alpha_pi0 = D_low / A_low.
 
-    Step 2, 2 <= E_tag < 9.5 GeV:
+    Step 2, 3 <= E_tag < 9.5 GeV:
       freeze alpha_pi0 and determine
           alpha_dvcs = (D_high - alpha_pi0 A_high) / V_high.
 
@@ -1403,11 +1404,18 @@ def draw_stage2_sequential_normalization_canvas(
                 linewidth=1.0,
                 color="0.35",
             )
+            ax.axvline(
+                DVCS_NORMALIZATION_E_MIN_GEV,
+                linestyle=":",
+                linewidth=1.0,
+                color="0.35",
+            )
             ax.set_title(
                 r"$E_{\gamma,\mathrm{tag}}$ normalization"
                 "\n"
                 r"$0.4\!-\!2$: normalize $\pi^0$; "
-                r"$2\!-\!9.5$: normalize DVCS residual",
+                rf"${DVCS_NORMALIZATION_E_MIN_GEV:g}\!-\!9.5$: "
+                r"normalize DVCS residual",
                 fontsize=9.5,
             )
         else:
@@ -2828,25 +2836,44 @@ def process_period(
                 )
             )
 
+            # DVCS normalization region:
+            #   3.0 <= E_tag < 9.5 GeV
+            # The 2.0-3.0 GeV interval is intentionally excluded from the
+            # determination of alpha_DVCS, but remains in validation plots.
+            egamma_variable = next(
+                variable
+                for variable in PLOT_VARIABLES
+                if variable.branch == "Egamma_tag"
+            )
+            egamma_edges = np.linspace(
+                egamma_variable.low,
+                egamma_variable.high,
+                egamma_variable.bins + 1,
+            )
+            high_bin_mask = (
+                egamma_edges[:-1]
+                >= DVCS_NORMALIZATION_E_MIN_GEV
+            )
+
             data_high = float(
                 np.sum(
-                    results["data"].counts_after_tag_above2[
+                    results["data"].counts_after[
                         region_key
-                    ]["Egamma_tag"]
+                    ]["Egamma_tag"][high_bin_mask]
                 )
             )
             pi0_high = float(
                 np.sum(
-                    results["aaogen"].counts_after_tag_above2[
+                    results["aaogen"].counts_after[
                         region_key
-                    ]["Egamma_tag"]
+                    ]["Egamma_tag"][high_bin_mask]
                 )
             )
             dvcs_high = float(
                 np.sum(
-                    results["dvcsgen"].counts_after_tag_above2[
+                    results["dvcsgen"].counts_after[
                         region_key
-                    ]["Egamma_tag"]
+                    ]["Egamma_tag"][high_bin_mask]
                 )
             )
 
@@ -3414,7 +3441,10 @@ def main() -> int:
                 "default_method": "sequential_energy_normalization",
                 "normalization_regions_GeV": {
                     "pi0": [0.4, 2.0],
-                    "dvcs": [2.0, 9.5],
+                    "dvcs": [
+                        DVCS_NORMALIZATION_E_MIN_GEV,
+                        9.5,
+                    ],
                 },
                 "assumption": (
                     "Selected 0.4<=E_tag<2 GeV data are treated as pi0 "
