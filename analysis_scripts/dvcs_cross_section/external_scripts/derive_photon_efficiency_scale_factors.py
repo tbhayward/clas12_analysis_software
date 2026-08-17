@@ -273,6 +273,8 @@ class PeriodConfig:
     nsidis_epgamma_data: str
     dvcsgen_epgamma_mc: str
     aaogen_epgamma_mc: str
+    nsidis_eppi0_data: str
+    aaogen_eppi0_mc: str
 
 
 PERIODS: Tuple[PeriodConfig, ...] = (
@@ -294,6 +296,15 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_fa18_inb_epgamma_0.40GeV.root"
         ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_fa18_inb_eppi0.root"
+        ),
+        aaogen_eppi0_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
+            "aaogen_rga_fa18_inb_eppi0_0.40GeV.root"
+        ),
     ),
     PeriodConfig(
         key="fa18_out",
@@ -312,6 +323,15 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_fa18_out_epgamma_0.40GeV.root"
+        ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_fa18_out_eppi0.root"
+        ),
+        aaogen_eppi0_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
+            "aaogen_rga_fa18_out_eppi0_0.40GeV.root"
         ),
     ),
     PeriodConfig(
@@ -332,6 +352,15 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_sp18_inb_epgamma_0.40GeV.root"
         ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_sp18_inb_eppi0.root"
+        ),
+        aaogen_eppi0_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
+            "aaogen_rga_sp18_inb_eppi0_0.40GeV.root"
+        ),
     ),
     PeriodConfig(
         key="sp18_out",
@@ -351,6 +380,15 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_sp18_out_epgamma_0.40GeV.root"
         ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_sp18_out_eppi0.root"
+        ),
+        aaogen_eppi0_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
+            "aaogen_rga_sp18_out_eppi0_0.40GeV.root"
+        ),
     ),
     PeriodConfig(
         key="sp19_inb",
@@ -369,6 +407,15 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_sp19_inb_epgamma_0.40GeV.root"
+        ),
+        nsidis_eppi0_data=(
+            "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+            "efficiency_study/nSidis_rga_sp19_inb_eppi0.root"
+        ),
+        aaogen_eppi0_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
+            "aaogen_rga_sp19_inb_eppi0_0.40GeV.root"
         ),
     ),
 )
@@ -401,6 +448,17 @@ REQUIRED_BRANCHES: Tuple[str, ...] = (
     *KINEMATIC_BRANCHES,
     *SHAPE_BRANCHES,
 )
+
+
+EPPI0_PHOTON_BRANCHES: Tuple[str, ...] = (
+    "detector_gamma1",
+    "detector_gamma2",
+    "p1_p",
+    "p1_theta",
+    "p2_p",
+    "p2_theta",
+)
+
 
 
 # =============================================================================
@@ -1093,6 +1151,64 @@ def inspect_root_file(
     #endtry
 
 
+
+def inspect_root_file_with_branches(
+    file_path: str,
+    tree_name: str,
+    required_branches: Sequence[str],
+    description: str,
+) -> Dict[str, object]:
+    """Preflight a ROOT file against an explicit branch list."""
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Required ROOT file does not exist: {file_path}"
+        )
+    #endif
+
+    try:
+        with uproot.open(file_path) as root_file:
+            if tree_name not in root_file:
+                available = [
+                    str(key).split(";")[0]
+                    for key in root_file.keys()
+                ]
+                raise RuntimeError(
+                    f"{file_path}: tree '{tree_name}' is missing. "
+                    f"Available keys: {available}"
+                )
+            #endif
+
+            tree = root_file[tree_name]
+            available_branches = set(
+                str(key) for key in tree.keys()
+            )
+            missing = [
+                branch
+                for branch in required_branches
+                if branch not in available_branches
+            ]
+
+            if missing:
+                raise RuntimeError(
+                    f"{file_path}: missing required {description} branches: "
+                    + ", ".join(missing)
+                )
+            #endif
+
+            return {
+                "path": file_path,
+                "tree": tree_name,
+                "entries": int(tree.num_entries),
+                "required_branches_present": True,
+            }
+    except Exception as exc:
+        raise RuntimeError(
+            f"Preflight failed for {file_path}: {exc}"
+        ) from exc
+    #endtry
+
+
 def preflight_periods(
     periods: Sequence[PeriodConfig],
     tree_name: str,
@@ -1129,6 +1245,31 @@ def preflight_periods(
             info = inspect_root_file(file_path, tree_name)
             report[period.key][sample_key] = info
 
+            log(
+                f"Preflight OK: {period.label} {sample_key}: "
+                f"{info['entries']:,} entries."
+            )
+        #endfor
+
+        eppi0_samples = (
+            (
+                "eppi0_data",
+                period.nsidis_eppi0_data,
+            ),
+            (
+                "eppi0_aaogen",
+                period.aaogen_eppi0_mc,
+            ),
+        )
+
+        for sample_key, file_path in eppi0_samples:
+            info = inspect_root_file_with_branches(
+                file_path,
+                tree_name,
+                EPPI0_PHOTON_BRANCHES,
+                "two-photon",
+            )
+            report[period.key][sample_key] = info
             log(
                 f"Preflight OK: {period.label} {sample_key}: "
                 f"{info['entries']:,} entries."
@@ -3265,6 +3406,305 @@ def draw_period_canvas(
 # =============================================================================
 
 
+
+def accumulate_eppi0_ft_energy_theta(
+    file_path: str,
+    tree_name: str,
+    max_entries: int,
+    chunk_size: int,
+) -> Tuple[np.ndarray, int, int]:
+    """
+    Accumulate BOTH reconstructed photons from an eppi0 file into one FT
+    theta-vs-energy histogram.
+
+    Each photon contributes independently if:
+      detector_gamma{1,2} == 0,
+      0.4 <= E_gamma < 9.5 GeV,
+      2.4 <= theta_gamma <= 5.0 deg.
+
+    No additional M_gamma_gamma or epgamma exclusivity cut is imposed here.
+    The purpose is simply to compare the reconstructed two-photon phase space
+    in data and aaogen.
+    """
+    counts = np.zeros(
+        (
+            FT_ENERGY_THETA_E_BINS,
+            FT_ENERGY_THETA_THETA_BINS,
+        ),
+        dtype=np.int64,
+    )
+
+    entries_read = 0
+    photons_selected = 0
+    entry_stop = (
+        None
+        if int(max_entries) <= 0
+        else int(max_entries)
+    )
+
+    with uproot.open(file_path) as root_file:
+        tree = root_file[tree_name]
+
+        for arrays in tree.iterate(
+            expressions=list(EPPI0_PHOTON_BRANCHES),
+            step_size=int(chunk_size),
+            entry_stop=entry_stop,
+            library="np",
+        ):
+            if len(arrays["p1_p"]) == 0:
+                continue
+            #endif
+
+            entries_read += len(arrays["p1_p"])
+
+            # Infer the angle unit directly from the photon polar-angle
+            # branches. These trees are normally radians.
+            theta_probe = np.concatenate(
+                (
+                    np.asarray(arrays["p1_theta"], dtype=float),
+                    np.asarray(arrays["p2_theta"], dtype=float),
+                )
+            )
+            finite_theta = theta_probe[
+                np.isfinite(theta_probe)
+            ]
+            if finite_theta.size == 0:
+                angle_unit = "rad"
+            elif float(np.nanmax(np.abs(finite_theta))) <= math.pi + 0.25:
+                angle_unit = "rad"
+            elif float(np.nanmax(np.abs(finite_theta))) <= 180.0 + 1.0:
+                angle_unit = "deg"
+            else:
+                raise RuntimeError(
+                    f"{file_path}: could not infer eppi0 photon-theta units."
+                )
+            #endif
+
+            for index in (1, 2):
+                energy = np.asarray(
+                    arrays[f"p{index}_p"],
+                    dtype=float,
+                )
+                theta_raw = np.asarray(
+                    arrays[f"p{index}_theta"],
+                    dtype=float,
+                )
+                detector = np.asarray(
+                    arrays[f"detector_gamma{index}"],
+                    dtype=int,
+                )
+
+                theta_deg = (
+                    np.degrees(theta_raw)
+                    if angle_unit == "rad"
+                    else theta_raw
+                )
+
+                mask = (
+                    (detector == 0)
+                    & np.isfinite(energy)
+                    & np.isfinite(theta_deg)
+                    & (energy >= TAG_E_MIN_GEV)
+                    & (energy < TAG_E_MAX_GEV)
+                    & (theta_deg >= FT_THETA_MIN_DEG)
+                    & (theta_deg <= FT_THETA_MAX_DEG)
+                )
+
+                photons_selected += int(
+                    np.count_nonzero(mask)
+                )
+
+                hist2d, _, _ = np.histogram2d(
+                    energy[mask],
+                    theta_deg[mask],
+                    bins=(
+                        FT_ENERGY_THETA_E_BINS,
+                        FT_ENERGY_THETA_THETA_BINS,
+                    ),
+                    range=(
+                        (TAG_E_MIN_GEV, TAG_E_MAX_GEV),
+                        (FT_THETA_MIN_DEG, FT_THETA_MAX_DEG),
+                    ),
+                )
+                counts += hist2d.astype(
+                    np.int64
+                )
+            #endfor
+        #endfor
+    #endwith
+
+    return (
+        counts,
+        entries_read,
+        photons_selected,
+    )
+
+
+def draw_eppi0_ft_energy_theta_canvas(
+    period: PeriodConfig,
+    data_counts: np.ndarray,
+    mc_counts: np.ndarray,
+    outdir: Path,
+) -> Path:
+    """
+    Two-panel FT theta-vs-energy comparison using both reconstructed photons
+    from the eppi0 DATA and aaogen eppi0 MC files.
+
+    Each panel is independently normalized to unit integral. The two panels
+    share one logarithmic z scale.
+    """
+    panels = (
+        (
+            np.asarray(data_counts, dtype=float),
+            r"$e'p'\gamma\gamma$ data",
+        ),
+        (
+            np.asarray(mc_counts, dtype=float),
+            r"aaogen $e\pi^0$ MC",
+        ),
+    )
+
+    normalized = []
+    positive_values = []
+
+    for counts, title in panels:
+        total = float(np.sum(counts))
+        density = (
+            counts / total
+            if total > 0.0
+            else np.zeros_like(counts)
+        )
+        normalized.append((density, title))
+
+        positive = density[
+            np.isfinite(density)
+            & (density > 0.0)
+        ]
+        if positive.size:
+            positive_values.append(positive)
+        #endif
+    #endfor
+
+    if positive_values:
+        all_positive = np.concatenate(
+            positive_values
+        )
+        zmax = float(np.max(all_positive))
+        zmin = max(
+            float(
+                np.percentile(
+                    all_positive,
+                    2.0,
+                )
+            ),
+            zmax * 1.0e-5,
+        )
+        norm = LogNorm(
+            vmin=zmin,
+            vmax=zmax,
+        )
+    else:
+        norm = Normalize(
+            vmin=0.0,
+            vmax=1.0,
+        )
+    #endif
+
+    e_edges = np.linspace(
+        TAG_E_MIN_GEV,
+        TAG_E_MAX_GEV,
+        FT_ENERGY_THETA_E_BINS + 1,
+    )
+    theta_edges = np.linspace(
+        FT_THETA_MIN_DEG,
+        FT_THETA_MAX_DEG,
+        FT_ENERGY_THETA_THETA_BINS + 1,
+    )
+
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(11.5, 5.2),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+    axes = axes[0]
+
+    mesh = None
+    for ax, (density, title) in zip(
+        axes,
+        normalized,
+    ):
+        mesh = ax.pcolormesh(
+            theta_edges,
+            e_edges,
+            density,
+            shading="auto",
+            norm=norm,
+        )
+        ax.set_title(title)
+        ax.set_xlabel(
+            r"$\theta_{\gamma}$ (deg)"
+        )
+        ax.set_xlim(
+            FT_THETA_MIN_DEG,
+            FT_THETA_MAX_DEG,
+        )
+        ax.set_ylim(
+            TAG_E_MIN_GEV,
+            TAG_E_MAX_GEV,
+        )
+    #endfor
+
+    axes[0].set_ylabel(
+        r"$E_{\gamma}$ (GeV)"
+    )
+
+    if mesh is not None:
+        cbar = fig.colorbar(
+            mesh,
+            ax=list(axes),
+            fraction=0.035,
+            pad=0.025,
+        )
+        cbar.set_label(
+            "unit-normalized fraction / 2D bin"
+        )
+    #endif
+
+    fig.suptitle(
+        f"FT photons in two-photon files: {period.label}\n"
+        r"both reconstructed photons combined; "
+        r"$0.4\leq E_\gamma<9.5$ GeV; "
+        r"no additional $M_{\gamma\gamma}$ cut",
+        fontsize=12.2,
+        y=0.985,
+    )
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.89,
+        bottom=0.13,
+        top=0.82,
+        wspace=0.08,
+    )
+
+    outpath = (
+        outdir
+        / (
+            f"ft_two_photon_theta_vs_energy_"
+            f"{period.key}.png"
+        )
+    )
+    fig.savefig(
+        outpath,
+        dpi=180,
+    )
+    plt.close(fig)
+    return outpath
+
+
+
 def draw_ft_energy_theta_canvas(
     period: PeriodConfig,
     results: Dict[str, HistogramResult],
@@ -3468,7 +3908,45 @@ def process_period(
         )
     #endfor
 
+    log(
+        f"{period.label}: streaming eppi0 data for FT two-photon "
+        "energy-vs-theta diagnostic."
+    )
+    (
+        eppi0_data_ft_2d,
+        eppi0_data_entries,
+        eppi0_data_photons,
+    ) = accumulate_eppi0_ft_energy_theta(
+        file_path=period.nsidis_eppi0_data,
+        tree_name=str(args_dict["tree_name"]),
+        max_entries=int(args_dict["max_entries"]),
+        chunk_size=int(args_dict["chunk_size"]),
+    )
+
+    log(
+        f"{period.label}: streaming aaogen eppi0 MC for FT two-photon "
+        "energy-vs-theta diagnostic."
+    )
+    (
+        eppi0_mc_ft_2d,
+        eppi0_mc_entries,
+        eppi0_mc_photons,
+    ) = accumulate_eppi0_ft_energy_theta(
+        file_path=period.aaogen_eppi0_mc,
+        tree_name=str(args_dict["tree_name"]),
+        max_entries=int(args_dict["max_entries"]),
+        chunk_size=int(args_dict["chunk_size"]),
+    )
+
     canvases = {}
+    canvases["FT_two_photon_energy_theta_2d"] = str(
+        draw_eppi0_ft_energy_theta_canvas(
+            period,
+            eppi0_data_ft_2d,
+            eppi0_mc_ft_2d,
+            outdir,
+        )
+    )
     canvases["FT_energy_theta_2d"] = str(
         draw_ft_energy_theta_canvas(
             period,
