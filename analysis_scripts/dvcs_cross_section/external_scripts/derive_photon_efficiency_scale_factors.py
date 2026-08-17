@@ -151,7 +151,7 @@ STAGE2_VARIABLE_KEYS: Tuple[str, ...] = (
     "Emiss2",
 )
 
-STAGE2_OUTPUT_DIRNAME = "stage2_sequential_normalization"
+STAGE2_OUTPUT_DIRNAME = "stage2_ratio_normalization"
 STAGE2_TEMPLATE_FIT_OUTPUT_DIRNAME = "stage2_template_fits_optional"
 
 CURRENT_MAX_STAGE = 2
@@ -1109,135 +1109,402 @@ class SequentialNormalizationResult:
     alpha_pi0_err: float = math.nan
     alpha_dvcs: float = math.nan
     alpha_dvcs_err: float = math.nan
+
+    low_ratio_chi2: float = math.nan
+    low_ratio_ndf: int = 0
+    high_ratio_chi2: float = math.nan
+    high_ratio_ndf: int = 0
+
+    low_ratio_x: Optional[np.ndarray] = None
+    low_ratio_y: Optional[np.ndarray] = None
+    low_ratio_err: Optional[np.ndarray] = None
+
+    high_ratio_x: Optional[np.ndarray] = None
+    high_ratio_y: Optional[np.ndarray] = None
+    high_ratio_err: Optional[np.ndarray] = None
+
     data_low: float = 0.0
     pi0_low: float = 0.0
     dvcs_low: float = 0.0
     data_high: float = 0.0
     pi0_high: float = 0.0
     dvcs_high: float = 0.0
+
     high_residual_after_pi0: float = math.nan
     low_dvcs_fraction_of_data: float = math.nan
     message: str = ""
 
 
-def poisson_ratio_uncertainty(
-    numerator: float,
-    denominator: float,
-) -> float:
+def fit_constant_diagonal(
+    y: np.ndarray,
+    sigma: np.ndarray,
+) -> Tuple[float, float, float, int]:
     """
-    Delta-method statistical uncertainty for a ratio of independent Poisson
-    counts. BOTH numerator and denominator counting statistics are included.
+    Weighted constant fit for independent points.
+
+    Returns:
+      value, uncertainty, chi2, ndf
     """
-    if numerator <= 0.0 or denominator <= 0.0:
-        return math.nan
-    #endif
-    ratio = numerator / denominator
-    return ratio * math.sqrt(
-        1.0 / numerator + 1.0 / denominator
+    y = np.asarray(y, dtype=float)
+    sigma = np.asarray(sigma, dtype=float)
+
+    valid = (
+        np.isfinite(y)
+        & np.isfinite(sigma)
+        & (sigma > 0.0)
     )
+    y = y[valid]
+    sigma = sigma[valid]
+
+    if y.size < 1:
+        return math.nan, math.nan, math.nan, 0
+    #endif
+
+    weights = 1.0 / (sigma * sigma)
+    weight_sum = float(np.sum(weights))
+    if weight_sum <= 0.0:
+        return math.nan, math.nan, math.nan, 0
+    #endif
+
+    value = float(np.sum(weights * y) / weight_sum)
+    uncertainty = math.sqrt(1.0 / weight_sum)
+    chi2 = float(
+        np.sum(
+            ((y - value) / sigma) ** 2
+        )
+    )
+    ndf = max(0, int(y.size) - 1)
+    return value, uncertainty, chi2, ndf
 
 
-def sequential_normalization_from_counts(
-    data_low: float,
-    pi0_low: float,
-    dvcs_low: float,
-    data_high: float,
-    pi0_high: float,
-    dvcs_high: float,
+def fit_constant_covariance(
+    y: np.ndarray,
+    covariance: np.ndarray,
+) -> Tuple[float, float, float, int]:
+    """
+    Generalized least-squares constant fit with a full covariance matrix.
+
+    This is used for the high-energy residual/DVCS ratio because the same
+    fitted alpha_pi0 enters every high-energy bin, creating a correlated
+    uncertainty across the ratio points.
+    """
+    y = np.asarray(y, dtype=float)
+    covariance = np.asarray(covariance, dtype=float)
+
+    if (
+        y.ndim != 1
+        or covariance.shape != (y.size, y.size)
+        or y.size < 1
+        or not np.all(np.isfinite(y))
+        or not np.all(np.isfinite(covariance))
+    ):
+        return math.nan, math.nan, math.nan, 0
+    #endif
+
+    # Pseudoinverse is deliberately used: the covariance can become nearly
+    # singular if the common alpha_pi0 uncertainty dominates.
+    inv_cov = np.linalg.pinv(
+        covariance,
+        rcond=1.0e-12,
+    )
+    ones = np.ones_like(y)
+
+    denominator = float(
+        ones @ inv_cov @ ones
+    )
+    if denominator <= 0.0:
+        return math.nan, math.nan, math.nan, 0
+    #endif
+
+    value = float(
+        (ones @ inv_cov @ y) / denominator
+    )
+    uncertainty = math.sqrt(1.0 / denominator)
+
+    residual = y - value
+    chi2 = float(
+        residual @ inv_cov @ residual
+    )
+    ndf = max(0, int(y.size) - 1)
+
+    return value, uncertainty, chi2, ndf
+
+
+def sequential_normalization_from_energy_histograms(
+    data_counts: np.ndarray,
+    pi0_counts: np.ndarray,
+    dvcs_counts: np.ndarray,
+    edges: np.ndarray,
 ) -> SequentialNormalizationResult:
     """
-    Two-step Stage-2 normalization.
+    Two-stage normalization using constant fits to energy-bin ratios.
 
-    Step 1, 0.4 <= E_tag < 2 GeV:
-      assume the selected data yield is pi0 dominated and determine
-          alpha_pi0 = D_low / A_low.
+    LOW-ENERGY PI0 NORMALIZATION
+    ----------------------------
+    In 0.4 <= E_tag < 2 GeV assume the selected data are pi0 dominated:
 
-    Step 2, 3 <= E_tag < 9.5 GeV:
-      freeze alpha_pi0 and determine
-          alpha_dvcs = (D_high - alpha_pi0 A_high) / V_high.
+        R_pi0(E_i) = D_i / A_i.
 
-    Statistical uncertainties include the finite statistics of DATA AND BOTH
-    MC samples. Low/high energy regions are disjoint, so their Poisson
-    counting uncertainties are treated as independent.
+    Fit R_pi0 to a constant alpha_pi0.  The point uncertainty contains finite
+    Poisson statistics from BOTH D_i and A_i.
+
+    HIGH-ENERGY DVCS NORMALIZATION
+    ------------------------------
+    Freeze alpha_pi0.  In
+
+        DVCS_NORMALIZATION_E_MIN_GEV <= E_tag < 9.5 GeV
+
+    construct
+
+        R_DVCS(E_i)
+          = [D_i - alpha_pi0 A_i] / V_i
+
+    and fit that ratio to a constant alpha_dvcs.
+
+    The high-energy covariance includes:
+      * finite data statistics;
+      * finite aaogen statistics;
+      * finite dvcsgen statistics;
+      * the COMMON uncertainty of alpha_pi0, propagated coherently across all
+        high-energy bins.
+
+    The 2-3 GeV region is not used to determine either normalization factor.
     """
-    values = (
-        data_low,
-        pi0_low,
-        dvcs_low,
-        data_high,
-        pi0_high,
-        dvcs_high,
+    data_counts = np.asarray(data_counts, dtype=float)
+    pi0_counts = np.asarray(pi0_counts, dtype=float)
+    dvcs_counts = np.asarray(dvcs_counts, dtype=float)
+    edges = np.asarray(edges, dtype=float)
+
+    if not (
+        data_counts.shape
+        == pi0_counts.shape
+        == dvcs_counts.shape
+    ):
+        return SequentialNormalizationResult(
+            False,
+            message="energy histograms have inconsistent shapes",
+        )
+    #endif
+
+    if edges.size != data_counts.size + 1:
+        return SequentialNormalizationResult(
+            False,
+            message="energy histogram edges do not match counts",
+        )
+    #endif
+
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    # Use only bins completely contained in the requested normalization
+    # intervals. This avoids letting a bin that straddles 2 or 3 GeV leak into
+    # either control region.
+    low_mask = (
+        (edges[:-1] >= TAG_E_MIN_GEV)
+        & (edges[1:] <= 2.0)
     )
-    if any((not math.isfinite(float(v)) or float(v) < 0.0) for v in values):
-        return SequentialNormalizationResult(
-            False,
-            message="non-finite or negative input count",
-        )
-    #endif
-
-    if pi0_low <= 0.0:
-        return SequentialNormalizationResult(
-            False,
-            message="zero pi0-MC yield in low-energy normalization region",
-        )
-    #endif
-    if dvcs_high <= 0.0:
-        return SequentialNormalizationResult(
-            False,
-            message="zero DVCS-MC yield in high-energy normalization region",
-        )
-    #endif
-
-    alpha_pi0 = data_low / pi0_low
-    alpha_pi0_err = poisson_ratio_uncertainty(
-        data_low,
-        pi0_low,
+    high_mask = (
+        (edges[:-1] >= DVCS_NORMALIZATION_E_MIN_GEV)
+        & (edges[1:] <= TAG_E_MAX_GEV)
     )
 
-    high_residual = data_high - alpha_pi0 * pi0_high
-    alpha_dvcs = high_residual / dvcs_high
+    # ---------------------------------------------------------------------
+    # Step 1: D/A below 2 GeV.
+    # ---------------------------------------------------------------------
+    low_valid = (
+        low_mask
+        & (data_counts > 0.0)
+        & (pi0_counts > 0.0)
+        & np.isfinite(data_counts)
+        & np.isfinite(pi0_counts)
+    )
 
-    # Full first-order propagation, retaining all MC counting statistics.
-    #
-    # R = D_H - alpha_pi0 A_H
-    # Var(R) = Var(D_H)
-    #        + alpha_pi0^2 Var(A_H)
-    #        + A_H^2 Var(alpha_pi0)
-    #
-    # beta = R / V_H
-    # Var(beta) = Var(R)/V_H^2 + beta^2 Var(V_H)/V_H^2
-    #
-    # with Poisson Var(N)=N for the raw counts.
-    if math.isfinite(alpha_pi0_err):
-        var_residual = (
-            data_high
-            + alpha_pi0 * alpha_pi0 * pi0_high
-            + pi0_high * pi0_high
-            * alpha_pi0_err * alpha_pi0_err
+    if np.count_nonzero(low_valid) < 2:
+        return SequentialNormalizationResult(
+            False,
+            message=(
+                "fewer than two valid low-energy bins for the pi0 ratio fit"
+            ),
         )
-        var_alpha_dvcs = (
-            var_residual / (dvcs_high * dvcs_high)
-            + alpha_dvcs * alpha_dvcs / dvcs_high
-        )
-        alpha_dvcs_err = (
-            math.sqrt(max(var_alpha_dvcs, 0.0))
-            if math.isfinite(var_alpha_dvcs)
-            else math.nan
-        )
-    else:
-        alpha_dvcs_err = math.nan
     #endif
+
+    D_low = data_counts[low_valid]
+    A_low = pi0_counts[low_valid]
+    low_ratio = D_low / A_low
+
+    low_ratio_variance = (
+        low_ratio * low_ratio
+        * (
+            1.0 / D_low
+            + 1.0 / A_low
+        )
+    )
+    low_ratio_error = np.sqrt(
+        np.clip(
+            low_ratio_variance,
+            0.0,
+            None,
+        )
+    )
+
+    (
+        alpha_pi0,
+        alpha_pi0_err,
+        low_chi2,
+        low_ndf,
+    ) = fit_constant_diagonal(
+        low_ratio,
+        low_ratio_error,
+    )
+
+    if (
+        not math.isfinite(alpha_pi0)
+        or not math.isfinite(alpha_pi0_err)
+    ):
+        return SequentialNormalizationResult(
+            False,
+            message="low-energy pi0 ratio constant fit failed",
+        )
+    #endif
+
+    # ---------------------------------------------------------------------
+    # Step 2: (D - alpha*A)/V above the DVCS normalization threshold.
+    # ---------------------------------------------------------------------
+    high_valid = (
+        high_mask
+        & (data_counts > 0.0)
+        & (pi0_counts >= 0.0)
+        & (dvcs_counts > 0.0)
+        & np.isfinite(data_counts)
+        & np.isfinite(pi0_counts)
+        & np.isfinite(dvcs_counts)
+    )
+
+    if np.count_nonzero(high_valid) < 2:
+        return SequentialNormalizationResult(
+            False,
+            message=(
+                "fewer than two valid high-energy bins for the DVCS ratio fit"
+            ),
+        )
+    #endif
+
+    D_high = data_counts[high_valid]
+    A_high = pi0_counts[high_valid]
+    V_high = dvcs_counts[high_valid]
+
+    residual_high = (
+        D_high
+        - alpha_pi0 * A_high
+    )
+    high_ratio = residual_high / V_high
+
+    # Diagonal variance excluding the common alpha_pi0 uncertainty.
+    #
+    # y_i = (D_i - alpha A_i) / V_i
+    #
+    # Var_i,diag =
+    #   D_i/V_i^2
+    # + alpha^2 A_i/V_i^2
+    # + y_i^2/V_i
+    #
+    # The last term is the denominator (dvcsgen) Poisson contribution.
+    high_diag_variance = (
+        D_high / (V_high * V_high)
+        + alpha_pi0 * alpha_pi0
+        * A_high / (V_high * V_high)
+        + high_ratio * high_ratio / V_high
+    )
+
+    # Common correlated contribution from the fitted pi0 normalization:
+    #
+    # dy_i/dalpha = -A_i/V_i
+    #
+    # C_ij,alpha =
+    #   (A_i/V_i)(A_j/V_j) Var(alpha_pi0)
+    alpha_sensitivity = (
+        A_high / V_high
+    )
+    high_covariance = np.diag(
+        np.clip(
+            high_diag_variance,
+            1.0e-30,
+            None,
+        )
+    )
+    high_covariance += (
+        alpha_pi0_err * alpha_pi0_err
+        * np.outer(
+            alpha_sensitivity,
+            alpha_sensitivity,
+        )
+    )
+
+    (
+        alpha_dvcs,
+        alpha_dvcs_err,
+        high_chi2,
+        high_ndf,
+    ) = fit_constant_covariance(
+        high_ratio,
+        high_covariance,
+    )
+
+    if (
+        not math.isfinite(alpha_dvcs)
+        or not math.isfinite(alpha_dvcs_err)
+    ):
+        return SequentialNormalizationResult(
+            False,
+            message="high-energy DVCS ratio constant fit failed",
+        )
+    #endif
+
+    high_ratio_error = np.sqrt(
+        np.clip(
+            np.diag(high_covariance),
+            0.0,
+            None,
+        )
+    )
+
+    # Integrated counts are retained only as transparent diagnostics.
+    data_low_total = float(
+        np.sum(data_counts[low_mask])
+    )
+    pi0_low_total = float(
+        np.sum(pi0_counts[low_mask])
+    )
+    dvcs_low_total = float(
+        np.sum(dvcs_counts[low_mask])
+    )
+    data_high_total = float(
+        np.sum(data_counts[high_mask])
+    )
+    pi0_high_total = float(
+        np.sum(pi0_counts[high_mask])
+    )
+    dvcs_high_total = float(
+        np.sum(dvcs_counts[high_mask])
+    )
+
+    high_residual_total = (
+        data_high_total
+        - alpha_pi0 * pi0_high_total
+    )
 
     low_dvcs_fraction = (
-        dvcs_low / data_low
-        if data_low > 0.0
+        dvcs_low_total / data_low_total
+        if data_low_total > 0.0
         else math.nan
     )
 
-    message = "two-step normalization succeeded"
-    if high_residual < 0.0:
+    message = (
+        "two-stage energy-ratio constant fits succeeded"
+    )
+    if high_residual_total < 0.0:
         message += (
-            "; WARNING: normalized pi0 MC exceeds the high-energy data yield"
+            "; WARNING: normalized pi0 MC exceeds the integrated "
+            "high-energy data yield"
         )
     #endif
 
@@ -1247,42 +1514,117 @@ def sequential_normalization_from_counts(
         alpha_pi0_err=float(alpha_pi0_err),
         alpha_dvcs=float(alpha_dvcs),
         alpha_dvcs_err=float(alpha_dvcs_err),
-        data_low=float(data_low),
-        pi0_low=float(pi0_low),
-        dvcs_low=float(dvcs_low),
-        data_high=float(data_high),
-        pi0_high=float(pi0_high),
-        dvcs_high=float(dvcs_high),
-        high_residual_after_pi0=float(high_residual),
-        low_dvcs_fraction_of_data=float(low_dvcs_fraction),
+
+        low_ratio_chi2=float(low_chi2),
+        low_ratio_ndf=int(low_ndf),
+        high_ratio_chi2=float(high_chi2),
+        high_ratio_ndf=int(high_ndf),
+
+        low_ratio_x=centers[low_valid].copy(),
+        low_ratio_y=low_ratio.copy(),
+        low_ratio_err=low_ratio_error.copy(),
+
+        high_ratio_x=centers[high_valid].copy(),
+        high_ratio_y=high_ratio.copy(),
+        high_ratio_err=high_ratio_error.copy(),
+
+        data_low=data_low_total,
+        pi0_low=pi0_low_total,
+        dvcs_low=dvcs_low_total,
+        data_high=data_high_total,
+        pi0_high=pi0_high_total,
+        dvcs_high=dvcs_high_total,
+
+        high_residual_after_pi0=float(
+            high_residual_total
+        ),
+        low_dvcs_fraction_of_data=float(
+            low_dvcs_fraction
+        ),
         message=message,
     )
 
 
 def run_sequential_normalization_self_test() -> None:
-    """Exercise the default Stage-2 normalization before expensive ROOT I/O."""
-    result = sequential_normalization_from_counts(
-        data_low=1000.0,
-        pi0_low=500.0,
-        dvcs_low=20.0,
-        data_high=1200.0,
-        pi0_high=200.0,
-        dvcs_high=400.0,
+    """
+    Exercise both ratio fits before any expensive ROOT I/O.
+    """
+    edges = np.linspace(
+        TAG_E_MIN_GEV,
+        TAG_E_MAX_GEV,
+        101,
     )
+    centers = 0.5 * (
+        edges[:-1] + edges[1:]
+    )
+
+    pi0 = (
+        3500.0
+        * np.exp(
+            -(centers - TAG_E_MIN_GEV) / 2.0
+        )
+        + 40.0
+    )
+    dvcs = (
+        50.0
+        + 1800.0
+        * np.exp(
+            -0.5
+            * ((centers - 5.0) / 1.8) ** 2
+        )
+    )
+
+    true_alpha_pi0 = 1.70
+    true_alpha_dvcs = 0.82
+
+    data = (
+        true_alpha_pi0 * pi0
+        + true_alpha_dvcs * dvcs
+    )
+
+    # Enforce the hypothesis used by the normalization test itself: below
+    # 2 GeV, the data control region is treated as pi0 only.
+    low = centers < 2.0
+    data[low] = (
+        true_alpha_pi0 * pi0[low]
+    )
+
+    result = (
+        sequential_normalization_from_energy_histograms(
+            data,
+            pi0,
+            dvcs,
+            edges,
+        )
+    )
+
     if not result.success:
         raise RuntimeError(
-            "Sequential-normalization self-test failed to return success."
+            "Sequential ratio-normalization self-test failed."
         )
     #endif
-    # alpha_pi0 = 2; high residual = 800; alpha_dvcs = 2.
+
     if (
-        abs(result.alpha_pi0 - 2.0) > 1.0e-12
-        or abs(result.alpha_dvcs - 2.0) > 1.0e-12
-        or not math.isfinite(result.alpha_pi0_err)
-        or not math.isfinite(result.alpha_dvcs_err)
+        abs(
+            result.alpha_pi0
+            - true_alpha_pi0
+        ) > 0.03
+        or abs(
+            result.alpha_dvcs
+            - true_alpha_dvcs
+        ) > 0.05
+        or not math.isfinite(
+            result.alpha_pi0_err
+        )
+        or not math.isfinite(
+            result.alpha_dvcs_err
+        )
     ):
         raise RuntimeError(
-            "Sequential-normalization self-test recovered wrong factors."
+            "Sequential ratio-normalization self-test recovered "
+            "incorrect constants: "
+            f"alpha_pi0={result.alpha_pi0}, "
+            f"alpha_dvcs={result.alpha_dvcs}."
         )
     #endif
 
@@ -1297,15 +1639,18 @@ def draw_stage2_sequential_normalization_canvas(
     linear_scale: bool = False,
 ) -> Optional[Path]:
     """
-    Show the sequential normalization and fixed-normalization validation.
+    Stage-2 sequential-normalization diagnostic.
 
-    Column 1:
-      E_gamma,tag spectrum demonstrating the low-energy pi0 normalization and
-      high-energy DVCS residual normalization.
+    Top row:
+      E_gamma spectrum and fixed-normalization validation projections.
 
-    Columns 2-4:
-      Delta_phi, pTmiss, and Emiss validation. NO fitting is performed in
-      these panels; alpha_pi0 and alpha_dvcs are fixed by E_gamma only.
+    Bottom row:
+      left half  = data/pi0-MC ratio below 2 GeV with constant fit;
+      right half = [data - normalized pi0 MC]/DVCS-MC ratio above 3 GeV
+                   with constant fit.
+
+    The 2-3 GeV region is deliberately not used in either ratio fit and is
+    therefore a prediction/validation region.
     """
     if not result.success:
         return None
@@ -1317,43 +1662,72 @@ def draw_stage2_sequential_normalization_canvas(
         "pTmiss",
         "Emiss2",
     )
-    fig, axes = plt.subplots(
-        1,
-        len(variable_keys),
-        figsize=(20.0, 5.8),
-        squeeze=False,
+
+    fig = plt.figure(
+        figsize=(20.0, 9.3),
     )
-    axes = axes[0]
+    grid = fig.add_gridspec(
+        2,
+        4,
+        height_ratios=(2.25, 1.0),
+        hspace=0.34,
+        wspace=0.25,
+    )
+
+    top_axes = [
+        fig.add_subplot(grid[0, col])
+        for col in range(4)
+    ]
+    low_ratio_ax = fig.add_subplot(
+        grid[1, 0:2]
+    )
+    high_ratio_ax = fig.add_subplot(
+        grid[1, 2:4]
+    )
 
     for col, branch in enumerate(variable_keys):
         variable = next(
             item for item in PLOT_VARIABLES
             if item.branch == branch
         )
-        ax = axes[col]
+        ax = top_axes[col]
         edges = np.linspace(
             variable.low,
             variable.high,
             variable.bins + 1,
         )
-        centers = 0.5 * (edges[:-1] + edges[1:])
+        centers = 0.5 * (
+            edges[:-1] + edges[1:]
+        )
 
         data_counts = np.asarray(
-            results["data"].counts_after[region_key][branch],
+            results["data"].counts_after[
+                region_key
+            ][branch],
             dtype=float,
         )
         pi0_counts = np.asarray(
-            results["aaogen"].counts_after[region_key][branch],
+            results["aaogen"].counts_after[
+                region_key
+            ][branch],
             dtype=float,
         )
         dvcs_counts = np.asarray(
-            results["dvcsgen"].counts_after[region_key][branch],
+            results["dvcsgen"].counts_after[
+                region_key
+            ][branch],
             dtype=float,
         )
 
-        scaled_pi0 = result.alpha_pi0 * pi0_counts
-        scaled_dvcs = result.alpha_dvcs * dvcs_counts
-        total_model = scaled_pi0 + scaled_dvcs
+        scaled_pi0 = (
+            result.alpha_pi0 * pi0_counts
+        )
+        scaled_dvcs = (
+            result.alpha_dvcs * dvcs_counts
+        )
+        total_model = (
+            scaled_pi0 + scaled_dvcs
+        )
 
         ax.step(
             edges[:-1],
@@ -1388,7 +1762,12 @@ def draw_stage2_sequential_normalization_canvas(
         ax.errorbar(
             centers,
             data_counts,
-            yerr=np.sqrt(np.maximum(data_counts, 1.0)),
+            yerr=np.sqrt(
+                np.maximum(
+                    data_counts,
+                    1.0,
+                )
+            ),
             fmt="o",
             markersize=2.3,
             linewidth=0.55,
@@ -1411,25 +1790,32 @@ def draw_stage2_sequential_normalization_canvas(
                 color="0.35",
             )
             ax.set_title(
-                r"$E_{\gamma,\mathrm{tag}}$ normalization"
+                r"$E_{\gamma,\mathrm{tag}}$"
                 "\n"
-                r"$0.4\!-\!2$: normalize $\pi^0$; "
-                rf"${DVCS_NORMALIZATION_E_MIN_GEV:g}\!-\!9.5$: "
-                r"normalize DVCS residual",
+                r"$0.4$-$2$: $\pi^0$ ratio fit; "
+                rf"${DVCS_NORMALIZATION_E_MIN_GEV:g}$-$9.5$: "
+                r"DVCS ratio fit",
                 fontsize=9.5,
             )
         else:
             ax.set_title(
-                f"{variable.title}\nfixed-normalization validation",
+                f"{variable.title}\n"
+                "fixed-normalization validation",
                 fontsize=9.5,
             )
         #endif
 
-        display_low, display_high = displayed_xlimits_for_region(
-            variable,
-            region_key,
+        display_low, display_high = (
+            displayed_xlimits_for_region(
+                variable,
+                region_key,
+            )
         )
-        ax.set_xlim(display_low, display_high)
+        ax.set_xlim(
+            display_low,
+            display_high,
+        )
+
         if linear_scale:
             ax.set_yscale("linear")
             ax.set_ylim(bottom=0.0)
@@ -1438,17 +1824,28 @@ def draw_stage2_sequential_normalization_canvas(
 
             positive = np.concatenate(
                 (
-                    data_counts[data_counts > 0.0],
-                    scaled_pi0[scaled_pi0 > 0.0],
-                    scaled_dvcs[scaled_dvcs > 0.0],
-                    total_model[total_model > 0.0],
+                    data_counts[
+                        data_counts > 0.0
+                    ],
+                    scaled_pi0[
+                        scaled_pi0 > 0.0
+                    ],
+                    scaled_dvcs[
+                        scaled_dvcs > 0.0
+                    ],
+                    total_model[
+                        total_model > 0.0
+                    ],
                 )
             )
             if positive.size > 0:
                 ax.set_ylim(
                     bottom=max(
                         0.5,
-                        0.5 * float(np.min(positive)),
+                        0.5
+                        * float(
+                            np.min(positive)
+                        ),
                     )
                 )
             #endif
@@ -1461,7 +1858,101 @@ def draw_stage2_sequential_normalization_canvas(
         ax.grid(alpha=0.18)
     #endfor
 
-    handles, labels = axes[0].get_legend_handles_labels()
+    # ---------------------------------------------------------------------
+    # Bottom-left: low-energy data / pi0 MC.
+    # ---------------------------------------------------------------------
+    low_ratio_ax.errorbar(
+        result.low_ratio_x,
+        result.low_ratio_y,
+        yerr=result.low_ratio_err,
+        fmt="o",
+        markersize=3.0,
+        linewidth=0.7,
+        color="black",
+    )
+    low_ratio_ax.axhline(
+        result.alpha_pi0,
+        linewidth=1.4,
+        color="red",
+        label=(
+            rf"constant = "
+            rf"${result.alpha_pi0:.4f}"
+            rf"\pm{result.alpha_pi0_err:.4f}$"
+        ),
+    )
+    low_ratio_ax.set_xlim(
+        TAG_E_MIN_GEV,
+        2.0,
+    )
+    low_ratio_ax.set_xlabel(
+        r"$E_{\gamma,\mathrm{tag}}$ (GeV)"
+    )
+    low_ratio_ax.set_ylabel(
+        r"data / $e\pi^0$ MC"
+    )
+    low_ratio_ax.set_title(
+        r"Low-energy $\pi^0$ normalization"
+        "\n"
+        rf"$\chi^2/\mathrm{{ndf}}="
+        rf"{result.low_ratio_chi2:.1f}/"
+        rf"{result.low_ratio_ndf}$",
+        fontsize=10.0,
+    )
+    low_ratio_ax.legend(
+        frameon=False,
+        fontsize=9.0,
+    )
+    low_ratio_ax.grid(alpha=0.18)
+
+    # ---------------------------------------------------------------------
+    # Bottom-right: residual / DVCS MC.
+    # ---------------------------------------------------------------------
+    high_ratio_ax.errorbar(
+        result.high_ratio_x,
+        result.high_ratio_y,
+        yerr=result.high_ratio_err,
+        fmt="o",
+        markersize=3.0,
+        linewidth=0.7,
+        color="black",
+    )
+    high_ratio_ax.axhline(
+        result.alpha_dvcs,
+        linewidth=1.4,
+        color="tab:blue",
+        label=(
+            rf"constant = "
+            rf"${result.alpha_dvcs:.4f}"
+            rf"\pm{result.alpha_dvcs_err:.4f}$"
+        ),
+    )
+    high_ratio_ax.set_xlim(
+        DVCS_NORMALIZATION_E_MIN_GEV,
+        TAG_E_MAX_GEV,
+    )
+    high_ratio_ax.set_xlabel(
+        r"$E_{\gamma,\mathrm{tag}}$ (GeV)"
+    )
+    high_ratio_ax.set_ylabel(
+        r"$(\mathrm{data}-\alpha_{\pi^0}\pi^0)/\mathrm{DVCS\ MC}$"
+    )
+    high_ratio_ax.set_title(
+        r"High-energy DVCS normalization"
+        "\n"
+        rf"$\chi^2/\mathrm{{ndf}}="
+        rf"{result.high_ratio_chi2:.1f}/"
+        rf"{result.high_ratio_ndf}$",
+        fontsize=10.0,
+    )
+    high_ratio_ax.legend(
+        frameon=False,
+        fontsize=9.0,
+    )
+    high_ratio_ax.grid(alpha=0.18)
+
+    handles, labels = (
+        top_axes[0].get_legend_handles_labels()
+    )
     fig.legend(
         handles,
         labels,
@@ -1473,33 +1964,40 @@ def draw_stage2_sequential_normalization_canvas(
     )
 
     fig.suptitle(
-        f"Stage 2 sequential normalization: "
+        f"Stage 2 sequential ratio normalization: "
         f"{period.label} — {region_label}\n"
-        rf"$|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$, "
+        rf"$|M_X^2(ep\gamma)|"
+        rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$, "
         rf"$E_{{\rm miss}}<{EMISS_MAX_GEV:.1f}$ GeV; "
-        rf"$\alpha_{{\pi^0}}={result.alpha_pi0:.4f}"
+        rf"$\alpha_{{\pi^0}}="
+        rf"{result.alpha_pi0:.4f}"
         rf"\pm{result.alpha_pi0_err:.4f}$, "
-        rf"$\alpha_{{\rm DVCS}}={result.alpha_dvcs:.4f}"
+        rf"$\alpha_{{\rm DVCS}}="
+        rf"{result.alpha_dvcs:.4f}"
         rf"\pm{result.alpha_dvcs_err:.4f}$",
-        fontsize=12.3,
+        fontsize=12.2,
         y=0.985,
     )
+
     fig.subplots_adjust(
         left=0.055,
         right=0.992,
-        bottom=0.12,
-        top=0.78,
-        wspace=0.25,
+        bottom=0.08,
+        top=0.79,
     )
 
     outpath = (
         outdir
         / (
-            f"stage2_sequential_normalization_"
-            f"{period.key}_{region_key.lower()}.png"
+            f"stage2_ratio_normalization_"
+            f"{period.key}_"
+            f"{region_key.lower()}.png"
         )
     )
-    fig.savefig(outpath, dpi=180)
+    fig.savefig(
+        outpath,
+        dpi=180,
+    )
     plt.close(fig)
     return outpath
 
@@ -2809,37 +3307,18 @@ def process_period(
 
         for region_key, region_label, _ in TAG_REGIONS:
             # -------------------------------------------------------------
-            # DEFAULT: two-step energy normalization.
-            # These counts are after BOTH exclusivity-support cuts:
-            #   |Mx2(epgamma)| < 0.075 GeV^2
-            #   Emiss < 1.5 GeV
+            # DEFAULT: two-stage constant fits to energy-bin ratios.
+            #
+            # Step 1:
+            #   fit data/aaogen to a constant in 0.4 <= E_tag < 2 GeV.
+            #
+            # Step 2:
+            #   freeze alpha_pi0 and fit
+            #       (data - alpha_pi0*aaogen) / dvcsgen
+            #   to a constant above DVCS_NORMALIZATION_E_MIN_GEV.
+            #
+            # The 2-3 GeV interval is not used in either normalization fit.
             # -------------------------------------------------------------
-            data_low = float(
-                np.sum(
-                    results["data"].counts_after_tag_below2[
-                        region_key
-                    ]["Egamma_tag"]
-                )
-            )
-            pi0_low = float(
-                np.sum(
-                    results["aaogen"].counts_after_tag_below2[
-                        region_key
-                    ]["Egamma_tag"]
-                )
-            )
-            dvcs_low = float(
-                np.sum(
-                    results["dvcsgen"].counts_after_tag_below2[
-                        region_key
-                    ]["Egamma_tag"]
-                )
-            )
-
-            # DVCS normalization region:
-            #   3.0 <= E_tag < 9.5 GeV
-            # The 2.0-3.0 GeV interval is intentionally excluded from the
-            # determination of alpha_DVCS, but remains in validation plots.
             egamma_variable = next(
                 variable
                 for variable in PLOT_VARIABLES
@@ -2850,41 +3329,32 @@ def process_period(
                 egamma_variable.high,
                 egamma_variable.bins + 1,
             )
-            high_bin_mask = (
-                egamma_edges[:-1]
-                >= DVCS_NORMALIZATION_E_MIN_GEV
-            )
 
-            data_high = float(
-                np.sum(
-                    results["data"].counts_after[
-                        region_key
-                    ]["Egamma_tag"][high_bin_mask]
-                )
+            data_energy = np.asarray(
+                results["data"].counts_after[
+                    region_key
+                ]["Egamma_tag"],
+                dtype=float,
             )
-            pi0_high = float(
-                np.sum(
-                    results["aaogen"].counts_after[
-                        region_key
-                    ]["Egamma_tag"][high_bin_mask]
-                )
+            pi0_energy = np.asarray(
+                results["aaogen"].counts_after[
+                    region_key
+                ]["Egamma_tag"],
+                dtype=float,
             )
-            dvcs_high = float(
-                np.sum(
-                    results["dvcsgen"].counts_after[
-                        region_key
-                    ]["Egamma_tag"][high_bin_mask]
-                )
+            dvcs_energy = np.asarray(
+                results["dvcsgen"].counts_after[
+                    region_key
+                ]["Egamma_tag"],
+                dtype=float,
             )
 
             normalization = (
-                sequential_normalization_from_counts(
-                    data_low=data_low,
-                    pi0_low=pi0_low,
-                    dvcs_low=dvcs_low,
-                    data_high=data_high,
-                    pi0_high=pi0_high,
-                    dvcs_high=dvcs_high,
+                sequential_normalization_from_energy_histograms(
+                    data_counts=data_energy,
+                    pi0_counts=pi0_energy,
+                    dvcs_counts=dvcs_energy,
+                    edges=egamma_edges,
                 )
             )
 
@@ -2897,13 +3367,19 @@ def process_period(
                     results,
                     sequential_outdir,
                     linear_scale=bool(
-                        args_dict.get("linear_scale", False)
+                        args_dict.get(
+                            "linear_scale",
+                            False,
+                        )
                     ),
                 )
             )
 
             region_summary = {
                 "sequential_normalization": {
+                    "method": (
+                        "constant_fits_to_energy_bin_ratios"
+                    ),
                     "success": bool(
                         normalization.success
                     ),
@@ -2919,6 +3395,38 @@ def process_period(
                     "alpha_dvcs_stat_err": float(
                         normalization.alpha_dvcs_err
                     ),
+                    "low_ratio_fit": {
+                        "chi2": float(
+                            normalization.low_ratio_chi2
+                        ),
+                        "ndf": int(
+                            normalization.low_ratio_ndf
+                        ),
+                        "n_points": int(
+                            len(
+                                normalization.low_ratio_y
+                            )
+                            if normalization.low_ratio_y
+                            is not None
+                            else 0
+                        ),
+                    },
+                    "high_ratio_fit": {
+                        "chi2": float(
+                            normalization.high_ratio_chi2
+                        ),
+                        "ndf": int(
+                            normalization.high_ratio_ndf
+                        ),
+                        "n_points": int(
+                            len(
+                                normalization.high_ratio_y
+                            )
+                            if normalization.high_ratio_y
+                            is not None
+                            else 0
+                        ),
+                    },
                     "low_energy_counts": {
                         "data": float(
                             normalization.data_low
@@ -2953,7 +3461,8 @@ def process_period(
                     },
                     "canvas": (
                         str(sequential_canvas)
-                        if sequential_canvas is not None
+                        if sequential_canvas
+                        is not None
                         else None
                     ),
                     "message": normalization.message,
@@ -2962,12 +3471,18 @@ def process_period(
 
             log(
                 f"{period.label} {region_label}: "
-                f"Stage-2 sequential normalization "
+                f"Stage-2 ratio normalization "
                 f"{'OK' if normalization.success else 'FAILED'}; "
                 f"alpha_pi0={normalization.alpha_pi0:.5f} "
-                f"+/- {normalization.alpha_pi0_err:.5f}; "
+                f"+/- {normalization.alpha_pi0_err:.5f} "
+                f"(chi2/ndf="
+                f"{normalization.low_ratio_chi2:.1f}/"
+                f"{normalization.low_ratio_ndf}); "
                 f"alpha_DVCS={normalization.alpha_dvcs:.5f} "
-                f"+/- {normalization.alpha_dvcs_err:.5f}."
+                f"+/- {normalization.alpha_dvcs_err:.5f} "
+                f"(chi2/ndf="
+                f"{normalization.high_ratio_chi2:.1f}/"
+                f"{normalization.high_ratio_ndf})."
             )
 
             # -------------------------------------------------------------
@@ -3316,7 +3831,7 @@ def main() -> int:
     else:
         log(
             "Stages 1+2: shape comparison followed by sequential "
-            "energy normalization."
+            "constant fits to energy-bin normalization ratios."
         )
     #endif
     log(
@@ -3427,7 +3942,7 @@ def main() -> int:
 
     if args.stage >= 2:
         stage2_summary = {
-            "stage": "stage2_sequential_normalization",
+            "stage": "stage2_ratio_normalization",
             "selection": {
                 "stage1_minimal": {
                     "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
@@ -3438,7 +3953,7 @@ def main() -> int:
                     "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
                     "emiss_max_GeV": EMISS_MAX_GEV,
                 },
-                "default_method": "sequential_energy_normalization",
+                "default_method": "sequential_energy_ratio_constant_fits",
                 "normalization_regions_GeV": {
                     "pi0": [0.4, 2.0],
                     "dvcs": [
@@ -3480,7 +3995,7 @@ def main() -> int:
     if args.stage >= 2:
         log(
             "Done. Stage-1 outputs are in "
-            f"{Path(args.output_dir)}; default Stage-2 sequential "
+            f"{Path(args.output_dir)}; default Stage-2 ratio-fit "
             f"normalization outputs are in {stage2_outdir}."
         )
     else:
