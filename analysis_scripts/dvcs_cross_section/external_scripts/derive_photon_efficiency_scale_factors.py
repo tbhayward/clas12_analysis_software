@@ -95,6 +95,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm, Normalize
 import numpy as np
 import uproot
 
@@ -127,6 +128,9 @@ PROBE_E_MAX_GEV = 9.5
 
 FT_THETA_MIN_DEG = 2.4
 FT_THETA_MAX_DEG = 5.0
+
+FT_ENERGY_THETA_E_BINS = 91
+FT_ENERGY_THETA_THETA_BINS = 65
 
 FD_THETA_MIN_DEG = 6.0
 FD_THETA_MAX_DEG = 35.0
@@ -692,6 +696,7 @@ class HistogramResult:
     counts_before_tag_above2: Dict[str, Dict[str, np.ndarray]]
     counts_after_tag_below2: Dict[str, Dict[str, np.ndarray]]
     counts_after_tag_above2: Dict[str, Dict[str, np.ndarray]]
+    ft_energy_theta_after: np.ndarray
     angle_unit: str
 
 
@@ -735,6 +740,14 @@ def accumulate_shape_histograms(
     counts_before_tag_above2 = empty_region_histograms()
     counts_after_tag_below2 = empty_region_histograms()
     counts_after_tag_above2 = empty_region_histograms()
+
+    ft_energy_theta_after = np.zeros(
+        (
+            FT_ENERGY_THETA_E_BINS,
+            FT_ENERGY_THETA_THETA_BINS,
+        ),
+        dtype=np.int64,
+    )
 
     totals = {
         "input": 0,
@@ -833,6 +846,36 @@ def accumulate_shape_histograms(
                 )
 
                 tag_energy = np.asarray(arrays["p2_p"], dtype=float)
+
+                if region_key == "FT":
+                    tag_theta_deg = np.degrees(
+                        to_radians(
+                            arrays["p2_theta"],
+                            angle_unit,
+                        )
+                    )
+                    ft_2d_mask = (
+                        region_after
+                        & np.isfinite(tag_energy)
+                        & np.isfinite(tag_theta_deg)
+                    )
+                    hist2d, _, _ = np.histogram2d(
+                        tag_energy[ft_2d_mask],
+                        tag_theta_deg[ft_2d_mask],
+                        bins=(
+                            FT_ENERGY_THETA_E_BINS,
+                            FT_ENERGY_THETA_THETA_BINS,
+                        ),
+                        range=(
+                            (TAG_E_MIN_GEV, TAG_E_MAX_GEV),
+                            (FT_THETA_MIN_DEG, FT_THETA_MAX_DEG),
+                        ),
+                    )
+                    ft_energy_theta_after += hist2d.astype(
+                        np.int64
+                    )
+                #endif
+
                 region_before_tag_below2 = (
                     region_minimal
                     & np.isfinite(tag_energy)
@@ -993,6 +1036,7 @@ def accumulate_shape_histograms(
         counts_before_tag_above2=counts_before_tag_above2,
         counts_after_tag_below2=counts_after_tag_below2,
         counts_after_tag_above2=counts_after_tag_above2,
+        ft_energy_theta_after=ft_energy_theta_after,
         angle_unit=angle_unit,
     )
 
@@ -3220,6 +3264,177 @@ def draw_period_canvas(
 # Per-period execution
 # =============================================================================
 
+
+def draw_ft_energy_theta_canvas(
+    period: PeriodConfig,
+    results: Dict[str, HistogramResult],
+    outdir: Path,
+    linear_scale: bool = False,
+) -> Path:
+    """
+    Draw one 1x3 FT-only diagnostic after the current exclusivity selection.
+
+    Panels:
+      1. data
+      2. aaogen reconstructed as epgamma
+      3. dvcsgen epgamma
+
+    Each 2D histogram is normalized to unit integral independently so this is
+    a SHAPE comparison.  All three panels use the same z scale.
+    """
+    panel_specs = (
+        ("data", r"$e'p'\gamma$ data"),
+        ("aaogen", r"$e\pi^0$ MC as $ep\gamma$"),
+        ("dvcsgen", "DVCS MC"),
+    )
+
+    normalized = {}
+    positive_values = []
+
+    for sample_key, _ in panel_specs:
+        counts = np.asarray(
+            results[sample_key].ft_energy_theta_after,
+            dtype=float,
+        )
+        total = float(np.sum(counts))
+        if total > 0.0:
+            density = counts / total
+        else:
+            density = np.zeros_like(counts)
+        #endif
+        normalized[sample_key] = density
+
+        positive = density[
+            np.isfinite(density)
+            & (density > 0.0)
+        ]
+        if positive.size:
+            positive_values.append(positive)
+        #endif
+    #endfor
+
+    if positive_values:
+        all_positive = np.concatenate(positive_values)
+        zmax = float(np.max(all_positive))
+        if linear_scale:
+            norm = Normalize(
+                vmin=0.0,
+                vmax=zmax,
+            )
+        else:
+            # Avoid letting a handful of single-event cells determine an
+            # unusably deep logarithmic scale.
+            zmin = max(
+                float(np.percentile(all_positive, 2.0)),
+                zmax * 1.0e-5,
+            )
+            norm = LogNorm(
+                vmin=zmin,
+                vmax=zmax,
+            )
+        #endif
+    else:
+        norm = Normalize(
+            vmin=0.0,
+            vmax=1.0,
+        )
+    #endif
+
+    e_edges = np.linspace(
+        TAG_E_MIN_GEV,
+        TAG_E_MAX_GEV,
+        FT_ENERGY_THETA_E_BINS + 1,
+    )
+    theta_edges = np.linspace(
+        FT_THETA_MIN_DEG,
+        FT_THETA_MAX_DEG,
+        FT_ENERGY_THETA_THETA_BINS + 1,
+    )
+
+    fig, axes = plt.subplots(
+        1,
+        3,
+        figsize=(16.5, 5.2),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+    axes = axes[0]
+
+    mesh = None
+    for ax, (sample_key, title) in zip(
+        axes,
+        panel_specs,
+    ):
+        mesh = ax.pcolormesh(
+            e_edges,
+            theta_edges,
+            normalized[sample_key].T,
+            shading="auto",
+            norm=norm,
+        )
+        ax.set_title(title)
+        ax.set_xlabel(
+            r"$E_{\gamma,\mathrm{tag}}$ (GeV)"
+        )
+        ax.set_xlim(
+            TAG_E_MIN_GEV,
+            TAG_E_MAX_GEV,
+        )
+        ax.set_ylim(
+            FT_THETA_MIN_DEG,
+            FT_THETA_MAX_DEG,
+        )
+    #endfor
+
+    axes[0].set_ylabel(
+        r"$\theta_{\gamma,\mathrm{tag}}$ (deg)"
+    )
+
+    if mesh is not None:
+        cbar = fig.colorbar(
+            mesh,
+            ax=list(axes),
+            fraction=0.025,
+            pad=0.02,
+        )
+        cbar.set_label(
+            "unit-normalized fraction / 2D bin"
+        )
+    #endif
+
+    fig.suptitle(
+        f"FT photon energy vs polar angle: {period.label}\n"
+        rf"after $|M_X^2(ep\gamma)|"
+        rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$ "
+        rf"and $E_{{\rm miss}}<{EMISS_MAX_GEV:.1f}$ GeV",
+        fontsize=12.5,
+        y=0.985,
+    )
+    fig.subplots_adjust(
+        left=0.065,
+        right=0.91,
+        bottom=0.13,
+        top=0.84,
+        wspace=0.08,
+    )
+
+    outpath = (
+        outdir
+        / (
+            f"ft_photon_energy_vs_theta_"
+            f"{period.key}.png"
+        )
+    )
+    fig.savefig(
+        outpath,
+        dpi=180,
+    )
+    plt.close(fig)
+    return outpath
+
+
+
 def process_period(
     period: PeriodConfig,
     args_dict: Dict[str, object],
@@ -3262,6 +3477,17 @@ def process_period(
     #endfor
 
     canvases = {}
+    canvases["FT_energy_theta_2d"] = str(
+        draw_ft_energy_theta_canvas(
+            period,
+            results,
+            outdir,
+            linear_scale=bool(
+                args_dict.get("linear_scale", False)
+            ),
+        )
+    )
+
     for region_key, region_label, _ in TAG_REGIONS:
         canvases[region_key] = str(
             draw_period_canvas(
