@@ -21,7 +21,7 @@ again after the following temporary exclusivity test:
 
     -0.231 < MM^2(epX) < 0.309 GeV^2
     MM^2(egammaX) > 1.4 GeV^2
-    |Delta_phi(p,gamma)| < 5.7 deg
+    |Delta_phi - pi| < 5.7 deg
     Angle(e,X) < 9.2 deg
 
 Stage 2 fits the post-exclusivity Delta_phi, pTmiss, and Emiss shapes as
@@ -124,7 +124,7 @@ TAG_E_MAX_GEV = 9.5
 MM2_EP_MIN_GEV2 = -0.231
 MM2_EP_MAX_GEV2 = 0.309
 MM2_EGAMMA_MIN_GEV2 = 1.4
-DELTA_PHI_PGAMMA_ABS_MAX_DEG = 5.7
+DELTA_PHI_ABS_FROM_PI_MAX_DEG = 5.7
 ANGLE_EX_MAX_DEG = 9.2
 
 PROBE_E_MIN_GEV = 0.4
@@ -607,13 +607,6 @@ def stage1_missing_kinematics(
         x_e_pz,
     )
 
-    # Proton-photon acoplanarity relative to perfect back-to-back topology.
-    delta_phi_pgamma = np.arctan2(
-        np.sin(p_phi - g_phi - math.pi),
-        np.cos(p_phi - g_phi - math.pi),
-    )
-    delta_phi_pgamma_deg = np.degrees(delta_phi_pgamma)
-
     # Missing system after e, p, and reconstructed gamma_tag.
     pred_E = mx_ep_E - g_p
     pred_px = mx_ep_px - g_px
@@ -642,7 +635,6 @@ def stage1_missing_kinematics(
         "Mx2_epgamma": mx2_epgamma,
         "Mx2_ep": mx2_ep,
         "MM2_egamma": mm2_egamma,
-        "delta_phi_pgamma_deg": delta_phi_pgamma_deg,
         "angle_eX_deg": angle_eX_deg,
     }
 
@@ -872,9 +864,17 @@ def accumulate_shape_histograms(
                     missing["MM2_egamma"],
                     dtype=float,
                 )
-                delta_phi_pgamma_deg = np.asarray(
-                    missing["delta_phi_pgamma_deg"],
+                # Use the existing ROOT-tree Delta_phi branch directly.
+                # It is centered near pi radians in these epgamma trees.
+                delta_phi = np.asarray(
+                    arrays["Delta_phi"],
                     dtype=float,
+                )
+                delta_phi_from_pi_deg = np.degrees(
+                    np.arctan2(
+                        np.sin(delta_phi - math.pi),
+                        np.cos(delta_phi - math.pi),
+                    )
                 )
                 angle_eX_deg = np.asarray(
                     missing["angle_eX_deg"],
@@ -888,10 +888,10 @@ def accumulate_shape_histograms(
                     & (mm2_ep < MM2_EP_MAX_GEV2)
                     & np.isfinite(mm2_egamma)
                     & (mm2_egamma > MM2_EGAMMA_MIN_GEV2)
-                    & np.isfinite(delta_phi_pgamma_deg)
+                    & np.isfinite(delta_phi_from_pi_deg)
                     & (
-                        np.abs(delta_phi_pgamma_deg)
-                        < DELTA_PHI_PGAMMA_ABS_MAX_DEG
+                        np.abs(delta_phi_from_pi_deg)
+                        < DELTA_PHI_ABS_FROM_PI_MAX_DEG
                     )
                     & np.isfinite(angle_eX_deg)
                     & (angle_eX_deg < ANGLE_EX_MAX_DEG)
@@ -935,7 +935,7 @@ def accumulate_shape_histograms(
                 # Stage 2 inherits region_after exactly, including:
                 #   -0.231 < MM2(epX) < 0.309 GeV^2
                 #   MM2(egammaX) > 1.4 GeV^2
-                #   |Delta_phi(p,gamma)| < 5.7 deg
+                #   |Delta_phi - pi| < 5.7 deg
                 #   Angle(e,X) < 9.2 deg
                 # It then requires the SAME finite/in-range population in
                 # Delta_phi, pTmiss, and Emiss.
@@ -2521,7 +2521,7 @@ def draw_period_canvas(
     """
     Draw one compact 2x5 canvas for one reconstructed TAG-photon detector:
       top    = minimal selection only
-      bottom = after temporary exclusivity cuts and E_miss < 1.5 GeV
+      bottom = after temporary exclusivity cuts
     """
     fig, axes = plt.subplots(
         2,
@@ -2722,7 +2722,7 @@ def draw_period_canvas(
         rf"temporary exclusivity: "
         rf"${MM2_EP_MIN_GEV2:g}<MM^2(epX)<{MM2_EP_MAX_GEV2:g}$ GeV$^2$, "
         rf"$MM^2(e\gamma X)>{MM2_EGAMMA_MIN_GEV2:g}$ GeV$^2$, "
-        rf"$|\Delta\phi(p,\gamma)|<{DELTA_PHI_PGAMMA_ABS_MAX_DEG:g}^\circ$, "
+        rf"$|\Delta\phi-\pi|<{DELTA_PHI_ABS_FROM_PI_MAX_DEG:g}^\circ$, "
         rf"$\mathrm{{Angle}}(e,X)<{ANGLE_EX_MAX_DEG:g}^\circ$"
         "\n"
         f"before cut: data={n_data_before:,}, "
@@ -3437,8 +3437,8 @@ def main() -> int:
             "mm2_ep_min_GeV2": MM2_EP_MIN_GEV2,
             "mm2_ep_max_GeV2": MM2_EP_MAX_GEV2,
             "mm2_egamma_min_GeV2": MM2_EGAMMA_MIN_GEV2,
-            "delta_phi_pgamma_abs_max_deg": (
-                DELTA_PHI_PGAMMA_ABS_MAX_DEG
+            "delta_phi_abs_from_pi_max_deg": (
+                DELTA_PHI_ABS_FROM_PI_MAX_DEG
             ),
             "angle_eX_max_deg": ANGLE_EX_MAX_DEG,
         },
@@ -3468,8 +3468,8 @@ def main() -> int:
                     "mm2_ep_min_GeV2": MM2_EP_MIN_GEV2,
                     "mm2_ep_max_GeV2": MM2_EP_MAX_GEV2,
                     "mm2_egamma_min_GeV2": MM2_EGAMMA_MIN_GEV2,
-                    "delta_phi_pgamma_abs_max_deg": (
-                        DELTA_PHI_PGAMMA_ABS_MAX_DEG
+                    "delta_phi_abs_from_pi_max_deg": (
+                        DELTA_PHI_ABS_FROM_PI_MAX_DEG
                     ),
                     "angle_eX_max_deg": ANGLE_EX_MAX_DEG,
                 },
