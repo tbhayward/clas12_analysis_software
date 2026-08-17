@@ -3316,23 +3316,15 @@ def draw_ft_energy_theta_canvas(
     if positive_values:
         all_positive = np.concatenate(positive_values)
         zmax = float(np.max(all_positive))
-        if linear_scale:
-            norm = Normalize(
-                vmin=0.0,
-                vmax=zmax,
-            )
-        else:
-            # Avoid letting a handful of single-event cells determine an
-            # unusably deep logarithmic scale.
-            zmin = max(
-                float(np.percentile(all_positive, 2.0)),
-                zmax * 1.0e-5,
-            )
-            norm = LogNorm(
-                vmin=zmin,
-                vmax=zmax,
-            )
-        #endif
+        # This FT 2D diagnostic always uses a logarithmic color scale.
+        zmin = max(
+            float(np.percentile(all_positive, 2.0)),
+            zmax * 1.0e-5,
+        )
+        norm = LogNorm(
+            vmin=zmin,
+            vmax=zmax,
+        )
     else:
         norm = Normalize(
             vmin=0.0,
@@ -3367,28 +3359,28 @@ def draw_ft_energy_theta_canvas(
         panel_specs,
     ):
         mesh = ax.pcolormesh(
-            e_edges,
             theta_edges,
-            normalized[sample_key].T,
+            e_edges,
+            normalized[sample_key],
             shading="auto",
             norm=norm,
         )
         ax.set_title(title)
         ax.set_xlabel(
-            r"$E_{\gamma,\mathrm{tag}}$ (GeV)"
+            r"$\theta_{\gamma,\mathrm{tag}}$ (deg)"
         )
         ax.set_xlim(
-            TAG_E_MIN_GEV,
-            TAG_E_MAX_GEV,
-        )
-        ax.set_ylim(
             FT_THETA_MIN_DEG,
             FT_THETA_MAX_DEG,
+        )
+        ax.set_ylim(
+            TAG_E_MIN_GEV,
+            TAG_E_MAX_GEV,
         )
     #endfor
 
     axes[0].set_ylabel(
-        r"$\theta_{\gamma,\mathrm{tag}}$ (deg)"
+        r"$E_{\gamma,\mathrm{tag}}$ (GeV)"
     )
 
     if mesh is not None:
@@ -3404,7 +3396,7 @@ def draw_ft_energy_theta_canvas(
     #endif
 
     fig.suptitle(
-        f"FT photon energy vs polar angle: {period.label}\n"
+        f"FT photon polar angle vs energy: {period.label}\n"
         rf"after $|M_X^2(ep\gamma)|"
         rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$ "
         rf"and $E_{{\rm miss}}<{EMISS_MAX_GEV:.1f}$ GeV",
@@ -3422,7 +3414,7 @@ def draw_ft_energy_theta_canvas(
     outpath = (
         outdir
         / (
-            f"ft_photon_energy_vs_theta_"
+            f"ft_photon_theta_vs_energy_"
             f"{period.key}.png"
         )
     )
