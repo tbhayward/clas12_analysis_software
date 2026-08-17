@@ -273,7 +273,7 @@ class PeriodConfig:
     nsidis_epgamma_data: str
     dvcsgen_epgamma_mc: str
     aaogen_epgamma_mc: str
-    nsidis_eppi0_data: str
+    eppi0_data: str
     aaogen_eppi0_mc: str
 
 
@@ -296,9 +296,9 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_fa18_inb_epgamma_0.40GeV.root"
         ),
-        nsidis_eppi0_data=(
+        eppi0_data=(
             "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-            "efficiency_study/nSidis_rga_fa18_inb_eppi0.root"
+            "rga_fa18_inb_eppi0.root"
         ),
         aaogen_eppi0_mc=(
             "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
@@ -324,9 +324,9 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_fa18_out_epgamma_0.40GeV.root"
         ),
-        nsidis_eppi0_data=(
+        eppi0_data=(
             "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-            "efficiency_study/nSidis_rga_fa18_out_eppi0.root"
+            "rga_fa18_out_eppi0.root"
         ),
         aaogen_eppi0_mc=(
             "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
@@ -352,9 +352,9 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_sp18_inb_epgamma_0.40GeV.root"
         ),
-        nsidis_eppi0_data=(
+        eppi0_data=(
             "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-            "efficiency_study/nSidis_rga_sp18_inb_eppi0.root"
+            "rga_sp18_inb_eppi0.root"
         ),
         aaogen_eppi0_mc=(
             "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
@@ -380,9 +380,9 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_sp18_out_epgamma_0.40GeV.root"
         ),
-        nsidis_eppi0_data=(
+        eppi0_data=(
             "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-            "efficiency_study/nSidis_rga_sp18_out_eppi0.root"
+            "rga_sp18_out_eppi0.root"
         ),
         aaogen_eppi0_mc=(
             "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
@@ -408,9 +408,9 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "dvcsgen/dvcsgen_files_greater_than_0.40GeV/"
             "bkg_rga_sp19_inb_epgamma_0.40GeV.root"
         ),
-        nsidis_eppi0_data=(
+        eppi0_data=(
             "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-            "efficiency_study/nSidis_rga_sp19_inb_eppi0.root"
+            "rga_sp19_inb_eppi0.root"
         ),
         aaogen_eppi0_mc=(
             "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
@@ -1254,7 +1254,7 @@ def preflight_periods(
         eppi0_samples = (
             (
                 "eppi0_data",
-                period.nsidis_eppi0_data,
+                period.eppi0_data,
             ),
             (
                 "eppi0_aaogen",
@@ -3909,7 +3909,7 @@ def process_period(
     #endfor
 
     log(
-        f"{period.label}: streaming eppi0 data for FT two-photon "
+        f"{period.label}: streaming original eppi0 data for FT two-photon "
         "energy-vs-theta diagnostic."
     )
     (
@@ -3917,7 +3917,7 @@ def process_period(
         eppi0_data_entries,
         eppi0_data_photons,
     ) = accumulate_eppi0_ft_energy_theta(
-        file_path=period.nsidis_eppi0_data,
+        file_path=period.eppi0_data,
         tree_name=str(args_dict["tree_name"]),
         max_entries=int(args_dict["max_entries"]),
         chunk_size=int(args_dict["chunk_size"]),
