@@ -1293,6 +1293,7 @@ def draw_stage2_sequential_normalization_canvas(
     result: SequentialNormalizationResult,
     results: Dict[str, HistogramResult],
     outdir: Path,
+    linear_scale: bool = False,
 ) -> Optional[Path]:
     """
     Show the sequential normalization and fixed-normalization validation.
@@ -1421,23 +1422,28 @@ def draw_stage2_sequential_normalization_canvas(
             region_key,
         )
         ax.set_xlim(display_low, display_high)
-        ax.set_yscale("log")
+        if linear_scale:
+            ax.set_yscale("linear")
+            ax.set_ylim(bottom=0.0)
+        else:
+            ax.set_yscale("log")
 
-        positive = np.concatenate(
-            (
-                data_counts[data_counts > 0.0],
-                scaled_pi0[scaled_pi0 > 0.0],
-                scaled_dvcs[scaled_dvcs > 0.0],
-                total_model[total_model > 0.0],
-            )
-        )
-        if positive.size > 0:
-            ax.set_ylim(
-                bottom=max(
-                    0.5,
-                    0.5 * float(np.min(positive)),
+            positive = np.concatenate(
+                (
+                    data_counts[data_counts > 0.0],
+                    scaled_pi0[scaled_pi0 > 0.0],
+                    scaled_dvcs[scaled_dvcs > 0.0],
+                    total_model[total_model > 0.0],
                 )
             )
+            if positive.size > 0:
+                ax.set_ylim(
+                    bottom=max(
+                        0.5,
+                        0.5 * float(np.min(positive)),
+                    )
+                )
+            #endif
         #endif
 
         ax.set_xlabel(variable.xlabel)
@@ -2164,6 +2170,7 @@ def draw_stage2_integrated_canvas(
     fit: Stage2SharedFit,
     outdir: Path,
     common_counts: Dict[str, int],
+    linear_scale: bool = False,
 ) -> Optional[Path]:
     if not fit.success or fit.variable_results is None:
         return None
@@ -2280,34 +2287,50 @@ def draw_stage2_integrated_canvas(
             region_key,
         )
         ax.set_xlim(display_low, display_high)
-        ax.set_yscale("log")
-
-        # Keep the log-scale floor positive while leaving the upper limit
-        # data-driven.  Include all positive displayed data/model/component
-        # values when choosing a sensible lower bound.
-        visible = (centers >= display_low) & (centers <= display_high)
-        positive_values = []
-        for values in (
-            data,
-            model,
-            result.dvcs_component_counts,
-            result.pi0_component_counts,
-        ):
-            selected = np.asarray(values, dtype=float)[visible]
-            selected = selected[
-                np.isfinite(selected) & (selected > 0.0)
-            ]
-            if selected.size:
-                positive_values.append(float(np.min(selected)))
-            #endif
-        #endfor
-
-        if positive_values:
-            ymin = max(0.5, 0.5 * min(positive_values))
+        if linear_scale:
+            ax.set_yscale("linear")
+            ax.set_ylim(bottom=0.0)
         else:
-            ymin = 0.5
+            ax.set_yscale("log")
+
+            # Keep the log-scale floor positive while leaving the upper limit
+            # data-driven.
+            visible = (
+                (centers >= display_low)
+                & (centers <= display_high)
+            )
+            positive_values = []
+            for values in (
+                data,
+                model,
+                result.dvcs_component_counts,
+                result.pi0_component_counts,
+            ):
+                selected = np.asarray(
+                    values,
+                    dtype=float,
+                )[visible]
+                selected = selected[
+                    np.isfinite(selected)
+                    & (selected > 0.0)
+                ]
+                if selected.size:
+                    positive_values.append(
+                        float(np.min(selected))
+                    )
+                #endif
+            #endfor
+
+            if positive_values:
+                ymin = max(
+                    0.5,
+                    0.5 * min(positive_values),
+                )
+            else:
+                ymin = 0.5
+            #endif
+            ax.set_ylim(bottom=ymin)
         #endif
-        ax.set_ylim(bottom=ymin)
         ax.grid(alpha=0.18)
 
         pull_ax = axes[1, col]
@@ -2426,6 +2449,7 @@ def draw_period_canvas(
     outdir: Path,
     region_key: str,
     region_label: str,
+    linear_scale: bool = False,
 ) -> Path:
     """
     Draw one compact 2x5 canvas for one reconstructed TAG-photon detector:
@@ -2567,26 +2591,28 @@ def draw_period_canvas(
             )
             ax.set_xlim(display_low, display_high)
 
-            # Every Stage-1 shape is displayed on a logarithmic y axis.
-            # Zero-content data bins are omitted above; zero-content step
-            # bins are naturally ignored by the log transform.
-            ax.set_yscale("log")
+            if linear_scale:
+                ax.set_yscale("linear")
+                ax.set_ylim(bottom=0.0)
+            else:
+                ax.set_yscale("log")
 
-            positive = np.concatenate(
-                (
-                    data_y[data_y > 0.0],
-                    dvcs_below2_y[dvcs_below2_y > 0.0],
-                    dvcs_above2_y[dvcs_above2_y > 0.0],
-                    aaogen_y[aaogen_y > 0.0],
+                positive = np.concatenate(
+                    (
+                        data_y[data_y > 0.0],
+                        dvcs_below2_y[dvcs_below2_y > 0.0],
+                        dvcs_above2_y[dvcs_above2_y > 0.0],
+                        aaogen_y[aaogen_y > 0.0],
+                    )
                 )
-            )
-            if len(positive) > 0:
-                ymin = max(
-                    float(np.min(positive)) * 0.5,
-                    1.0e-6,
-                )
-                ymax = float(np.max(positive)) * 2.0
-                ax.set_ylim(ymin, ymax)
+                if len(positive) > 0:
+                    ymin = max(
+                        float(np.min(positive)) * 0.5,
+                        1.0e-6,
+                    )
+                    ymax = float(np.max(positive)) * 2.0
+                    ax.set_ylim(ymin, ymax)
+                #endif
             #endif
 
             if row == 0 and variable.branch == "Mx2_epgamma":
@@ -2738,6 +2764,9 @@ def process_period(
                 outdir,
                 region_key,
                 region_label,
+                linear_scale=bool(
+                    args_dict.get("linear_scale", False)
+                ),
             )
         )
     #endfor
@@ -2840,6 +2869,9 @@ def process_period(
                     normalization,
                     results,
                     sequential_outdir,
+                    linear_scale=bool(
+                        args_dict.get("linear_scale", False)
+                    ),
                 )
             )
 
@@ -2992,6 +3024,9 @@ def process_period(
                         fit,
                         template_fit_outdir,
                         common,
+                        linear_scale=bool(
+                            args_dict.get("linear_scale", False)
+                        ),
                     )
 
                     desired_canvas = (
@@ -3108,6 +3143,15 @@ def build_parser() -> argparse.ArgumentParser:
             "--stage 2 runs Stages 1 and 2. "
             f"Currently implemented through Stage {CURRENT_MAX_STAGE}. "
             f"Default: {CURRENT_MAX_STAGE}."
+        ),
+    )
+
+    parser.add_argument(
+        "--linear-scale",
+        action="store_true",
+        help=(
+            "Display all Stage-1 and Stage-2 histogram panels with linear "
+            "y axes instead of the default logarithmic axes. Plotting only."
         ),
     )
 
@@ -3234,6 +3278,12 @@ def main() -> int:
         exist_ok=True,
     )
 
+    if args.linear_scale:
+        log(
+            "Plotting override: all histogram panels use linear y axes."
+        )
+    #endif
+
     if args.stage == 1:
         log("Stage 1 only: shape comparison; stopping before Stage 2.")
     else:
@@ -3278,6 +3328,7 @@ def main() -> int:
         "run_stage2_template_fit": bool(
             args.run_stage2_template_fit
         ),
+        "linear_scale": bool(args.linear_scale),
     }
 
     workers = min(
