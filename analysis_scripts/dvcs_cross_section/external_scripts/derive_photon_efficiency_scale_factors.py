@@ -17,12 +17,9 @@ This script intentionally does ONE thing only:
       3. aaogen epgamma MC,
 
 first after a genuinely minimal common reconstructed-tag selection, and then
-again after the following temporary exclusivity test:
+again after one explicit exclusivity requirement:
 
-    -0.231 < MM^2(epX) < 0.309 GeV^2
-    MM^2(egammaX) > 1.4 GeV^2
-    |Delta_phi - pi| < 5.7 deg
-    Angle(e,X) < 9.2 deg
+    |M_X^2(epgamma)| < 0.075 GeV^2.
 
 Stage 2 fits the post-exclusivity Delta_phi, pTmiss, and Emiss shapes as
 FT-tag canvases display pTmiss only to 0.6 GeV and Emiss only to 3 GeV; these are display-only limits and do not alter the fit.
@@ -67,7 +64,7 @@ Each period produces TWO 2x5 canvases, split by detected tag photon:
 
 In each canvas:
     top row    = minimal selection only
-    bottom row = same population after temporary exclusivity cuts
+    bottom row = same population after |M_X^2(epgamma)| < 0.075 GeV^2
                  and E_miss < 1.5 GeV
 
 The M_X^2(epgamma) top-row panel shows dashed vertical lines at +/-0.075
@@ -121,11 +118,8 @@ THETA_EGAMMA_MIN_DEG = 5.0
 
 TAG_E_MIN_GEV = 0.4
 TAG_E_MAX_GEV = 9.5
-MM2_EP_MIN_GEV2 = -0.231
-MM2_EP_MAX_GEV2 = 0.309
-MM2_EGAMMA_MIN_GEV2 = 1.4
-DELTA_PHI_ABS_FROM_PI_MAX_DEG = 5.7
-ANGLE_EX_MAX_DEG = 9.2
+MX2_EPGAMMA_ABS_MAX_GEV2 = 0.075
+EMISS_MAX_GEV = 1.5
 
 PROBE_E_MIN_GEV = 0.4
 PROBE_E_MAX_GEV = 9.5
@@ -575,38 +569,6 @@ def stage1_missing_kinematics(
         - mx_ep_pz * mx_ep_pz
     )
 
-    # Missing system after e and reconstructed gamma_tag.
-    mx_egamma_E = (
-        beam_energy_GeV
-        + PROTON_MASS_GEV
-        - e_p
-        - g_p
-    )
-    mx_egamma_px = -e_px - g_px
-    mx_egamma_py = -e_py - g_py
-    mx_egamma_pz = beam_energy_GeV - e_pz - g_pz
-
-    mm2_egamma = (
-        mx_egamma_E * mx_egamma_E
-        - mx_egamma_px * mx_egamma_px
-        - mx_egamma_py * mx_egamma_py
-        - mx_egamma_pz * mx_egamma_pz
-    )
-
-    # X is the missing-electron system inferred from measured proton+photon.
-    x_e_px = -p_px - g_px
-    x_e_py = -p_py - g_py
-    x_e_pz = beam_energy_GeV - p_pz - g_pz
-
-    angle_eX_deg = opening_angle_deg(
-        e_px,
-        e_py,
-        e_pz,
-        x_e_px,
-        x_e_py,
-        x_e_pz,
-    )
-
     # Missing system after e, p, and reconstructed gamma_tag.
     pred_E = mx_ep_E - g_p
     pred_px = mx_ep_px - g_px
@@ -634,8 +596,6 @@ def stage1_missing_kinematics(
         "pred_probe_theta_deg": pred_theta_deg,
         "Mx2_epgamma": mx2_epgamma,
         "Mx2_ep": mx2_ep,
-        "MM2_egamma": mm2_egamma,
-        "angle_eX_deg": angle_eX_deg,
     }
 
 
@@ -784,7 +744,7 @@ def accumulate_shape_histograms(
     }
     for region_key, _, _ in TAG_REGIONS:
         totals[f"{region_key}_minimal"] = 0
-        totals[f"{region_key}_after_exclusivity_cuts"] = 0
+        totals[f"{region_key}_after_mx2_epgamma_cut"] = 0
         totals[f"{region_key}_stage2_common"] = 0
         totals[f"{region_key}_stage2_tag_lt2"] = 0
         totals[f"{region_key}_stage2_tag_ge2"] = 0
@@ -856,45 +816,19 @@ def accumulate_shape_histograms(
 
             for region_key, _, detector_value in TAG_REGIONS:
                 region_minimal = minimal & (detector2 == detector_value)
-                mm2_ep = np.asarray(
-                    missing["Mx2_ep"],
+                emiss = np.asarray(
+                    arrays["Emiss2"],
                     dtype=float,
                 )
-                mm2_egamma = np.asarray(
-                    missing["MM2_egamma"],
-                    dtype=float,
-                )
-                # Use the existing ROOT-tree Delta_phi branch directly.
-                # It is centered near pi radians in these epgamma trees.
-                delta_phi = np.asarray(
-                    arrays["Delta_phi"],
-                    dtype=float,
-                )
-                delta_phi_from_pi_deg = np.degrees(
-                    np.arctan2(
-                        np.sin(delta_phi - math.pi),
-                        np.cos(delta_phi - math.pi),
-                    )
-                )
-                angle_eX_deg = np.asarray(
-                    missing["angle_eX_deg"],
-                    dtype=float,
-                )
-
                 region_after = (
                     region_minimal
-                    & np.isfinite(mm2_ep)
-                    & (mm2_ep > MM2_EP_MIN_GEV2)
-                    & (mm2_ep < MM2_EP_MAX_GEV2)
-                    & np.isfinite(mm2_egamma)
-                    & (mm2_egamma > MM2_EGAMMA_MIN_GEV2)
-                    & np.isfinite(delta_phi_from_pi_deg)
+                    & np.isfinite(mx2_epgamma)
                     & (
-                        np.abs(delta_phi_from_pi_deg)
-                        < DELTA_PHI_ABS_FROM_PI_MAX_DEG
+                        np.abs(mx2_epgamma)
+                        < MX2_EPGAMMA_ABS_MAX_GEV2
                     )
-                    & np.isfinite(angle_eX_deg)
-                    & (angle_eX_deg < ANGLE_EX_MAX_DEG)
+                    & np.isfinite(emiss)
+                    & (emiss < EMISS_MAX_GEV)
                 )
 
                 tag_energy = np.asarray(arrays["p2_p"], dtype=float)
@@ -929,14 +863,12 @@ def accumulate_shape_histograms(
                     np.count_nonzero(region_minimal)
                 )
                 totals[
-                    f"{region_key}_after_exclusivity_cuts"
+                    f"{region_key}_after_mx2_epgamma_cut"
                 ] += int(np.count_nonzero(region_after))
 
-                # Stage 2 inherits region_after exactly, including:
-                #   -0.231 < MM2(epX) < 0.309 GeV^2
-                #   MM2(egammaX) > 1.4 GeV^2
-                #   |Delta_phi - pi| < 5.7 deg
-                #   Angle(e,X) < 9.2 deg
+                # Stage 2 inherits region_after exactly, including BOTH:
+                #   |Mx2(epgamma)| < 0.075 GeV^2
+                #   Emiss < 1.5 GeV
                 # It then requires the SAME finite/in-range population in
                 # Delta_phi, pTmiss, and Emiss.
                 stage2_common = region_after.copy()
@@ -1535,7 +1467,8 @@ def draw_stage2_sequential_normalization_canvas(
     fig.suptitle(
         f"Stage 2 sequential normalization: "
         f"{period.label} — {region_label}\n"
-        "temporary exclusivity cuts applied; "
+        rf"$|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$, "
+        rf"$E_{{\rm miss}}<{EMISS_MAX_GEV:.1f}$ GeV; "
         rf"$\alpha_{{\pi^0}}={result.alpha_pi0:.4f}"
         rf"\pm{result.alpha_pi0_err:.4f}$, "
         rf"$\alpha_{{\rm DVCS}}={result.alpha_dvcs:.4f}"
@@ -2429,7 +2362,7 @@ def draw_stage2_integrated_canvas(
 
     fig.suptitle(
         f"Stage 2 integrated fit: {period.label} — {region_label}\n"
-        "temporary exclusivity cuts applied; "
+        rf"$|M_X^2(ep\gamma)|<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$; "
         f"common entries: data={common_counts['data_n']:,}, "
         f"DVCS MC={common_counts['dvcs_n']:,}, "
         rf"$e\pi^0$ MC={common_counts['pi0_n']:,}; "
@@ -2521,7 +2454,7 @@ def draw_period_canvas(
     """
     Draw one compact 2x5 canvas for one reconstructed TAG-photon detector:
       top    = minimal selection only
-      bottom = after temporary exclusivity cuts
+      bottom = after |M_X^2(epgamma)| < 0.075 GeV^2 and E_miss < 1.5 GeV
     """
     fig, axes = plt.subplots(
         2,
@@ -2538,7 +2471,9 @@ def draw_period_canvas(
         (
             ("Minimal selection", "counts_before"),
             (
-                "After temporary exclusivity cuts",
+                rf"After $|M_X^2(ep\gamma)|"
+                rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$, "
+                rf"$E_{{\rm miss}}<{EMISS_MAX_GEV:.1f}$ GeV",
                 "counts_after",
             ),
         )
@@ -2680,6 +2615,24 @@ def draw_period_canvas(
                 #endif
             #endif
 
+            if row == 0 and variable.branch == "Mx2_epgamma":
+                ax.axvline(
+                    -MX2_EPGAMMA_ABS_MAX_GEV2,
+                    linestyle="--",
+                    linewidth=1.0,
+                    color="0.35",
+                    label=(
+                        rf"$|M_X^2(ep\gamma)|"
+                        rf"<{MX2_EPGAMMA_ABS_MAX_GEV2:.3f}$ GeV$^2$"
+                    ),
+                )
+                ax.axvline(
+                    +MX2_EPGAMMA_ABS_MAX_GEV2,
+                    linestyle="--",
+                    linewidth=1.0,
+                    color="0.35",
+                )
+            #endif
 
             ax.set_xlabel(variable.xlabel)
             if col == 0:
@@ -2704,13 +2657,13 @@ def draw_period_canvas(
     ]
 
     n_data_after = data.selection_counts[
-        f"{region_key}_after_exclusivity_cuts"
+        f"{region_key}_after_mx2_epgamma_cut"
     ]
     n_dvcs_after = dvcs.selection_counts[
-        f"{region_key}_after_exclusivity_cuts"
+        f"{region_key}_after_mx2_epgamma_cut"
     ]
     n_aaogen_after = aaogen.selection_counts[
-        f"{region_key}_after_exclusivity_cuts"
+        f"{region_key}_after_mx2_epgamma_cut"
     ]
 
     fig.suptitle(
@@ -2718,12 +2671,6 @@ def draw_period_canvas(
         r"minimal selection: $E_e>2$ GeV, "
         r"$\theta_{e\gamma}>5^\circ$, "
         r"$0.4\leq E_{\gamma,\mathrm{tag}}<9.5$ GeV"
-        "\n"
-        rf"temporary exclusivity: "
-        rf"${MM2_EP_MIN_GEV2:g}<MM^2(epX)<{MM2_EP_MAX_GEV2:g}$ GeV$^2$, "
-        rf"$MM^2(e\gamma X)>{MM2_EGAMMA_MIN_GEV2:g}$ GeV$^2$, "
-        rf"$|\Delta\phi-\pi|<{DELTA_PHI_ABS_FROM_PI_MAX_DEG:g}^\circ$, "
-        rf"$\mathrm{{Angle}}(e,X)<{ANGLE_EX_MAX_DEG:g}^\circ$"
         "\n"
         f"before cut: data={n_data_before:,}, "
         f"DVCS MC={n_dvcs_before:,}, "
@@ -2802,9 +2749,9 @@ def process_period(
         log(
             f"{period.label}: {sample_key}: read {result.entries_read:,}; "
             f"FT={result.selection_counts['FT_minimal']:,}"
-            f"->{result.selection_counts['FT_after_exclusivity_cuts']:,}; "
+            f"->{result.selection_counts['FT_after_mx2_epgamma_cut']:,}; "
             f"FD={result.selection_counts['FD_minimal']:,}"
-            f"->{result.selection_counts['FD_after_exclusivity_cuts']:,}."
+            f"->{result.selection_counts['FD_after_mx2_epgamma_cut']:,}."
         )
     #endfor
 
@@ -2855,7 +2802,9 @@ def process_period(
         for region_key, region_label, _ in TAG_REGIONS:
             # -------------------------------------------------------------
             # DEFAULT: two-step energy normalization.
-            # These counts are after all four temporary exclusivity cuts.
+            # These counts are after BOTH exclusivity-support cuts:
+            #   |Mx2(epgamma)| < 0.075 GeV^2
+            #   Emiss < 1.5 GeV
             # -------------------------------------------------------------
             data_low = float(
                 np.sum(
@@ -3153,11 +3102,11 @@ def process_period(
                 "entries_read": result.entries_read,
                 "FT_minimal": result.selection_counts["FT_minimal"],
                 "FT_after_mx2_cut": result.selection_counts[
-                    "FT_after_exclusivity_cuts"
+                    "FT_after_mx2_epgamma_cut"
                 ],
                 "FD_minimal": result.selection_counts["FD_minimal"],
                 "FD_after_mx2_cut": result.selection_counts[
-                    "FD_after_exclusivity_cuts"
+                    "FD_after_mx2_epgamma_cut"
                 ],
             }
             for key, result in results.items()
@@ -3434,13 +3383,7 @@ def main() -> int:
             "electron_p_min_GeV": ELECTRON_P_MIN_GEV,
             "theta_egamma_min_deg": THETA_EGAMMA_MIN_DEG,
             "tag_energy_GeV": [TAG_E_MIN_GEV, TAG_E_MAX_GEV],
-            "mm2_ep_min_GeV2": MM2_EP_MIN_GEV2,
-            "mm2_ep_max_GeV2": MM2_EP_MAX_GEV2,
-            "mm2_egamma_min_GeV2": MM2_EGAMMA_MIN_GEV2,
-            "delta_phi_abs_from_pi_max_deg": (
-                DELTA_PHI_ABS_FROM_PI_MAX_DEG
-            ),
-            "angle_eX_max_deg": ANGLE_EX_MAX_DEG,
+            "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
         },
         "periods": [
             summaries[period.key]
@@ -3465,13 +3408,8 @@ def main() -> int:
                     "tag_energy_GeV": [TAG_E_MIN_GEV, TAG_E_MAX_GEV],
                 },
                 "exclusivity": {
-                    "mm2_ep_min_GeV2": MM2_EP_MIN_GEV2,
-                    "mm2_ep_max_GeV2": MM2_EP_MAX_GEV2,
-                    "mm2_egamma_min_GeV2": MM2_EGAMMA_MIN_GEV2,
-                    "delta_phi_abs_from_pi_max_deg": (
-                        DELTA_PHI_ABS_FROM_PI_MAX_DEG
-                    ),
-                    "angle_eX_max_deg": ANGLE_EX_MAX_DEG,
+                    "mx2_epgamma_abs_max_GeV2": MX2_EPGAMMA_ABS_MAX_GEV2,
+                    "emiss_max_GeV": EMISS_MAX_GEV,
                 },
                 "default_method": "sequential_energy_normalization",
                 "normalization_regions_GeV": {
