@@ -9764,6 +9764,25 @@ def build_eppi0_core_scan(
             oc = int(np.count_nonzero(no))
             xc = int(np.count_nonzero(nx))
 
+            xF2_lo, xF2_hi, _ = NOMINAL_THREE_RANGES["xF2"]
+            xF2_values_data = _nominal_three_values(
+                data_f,
+                "xF2",
+            )
+            xF2_selected = xF2_values_data[masks["data"]]
+            xF2_underflow_count = int(
+                np.count_nonzero(
+                    np.isfinite(xF2_selected)
+                    & (xF2_selected < xF2_lo)
+                )
+            )
+            xF2_overflow_count = int(
+                np.count_nonzero(
+                    np.isfinite(xF2_selected)
+                    & (xF2_selected >= xF2_hi)
+                )
+            )
+
             rows.append({
                 "period": period.key,
                 "label": period.label,
@@ -10552,7 +10571,7 @@ NOMINAL_THREE_VARIABLES = ("Delta_phi", "pTmiss", "xF2")
 NOMINAL_THREE_RANGES = {
     "Delta_phi": (math.pi - 0.40, math.pi + 0.40, 80),
     "pTmiss": (0.0, 1.0, 80),
-    "xF2": (0.40, 1.40, 80),
+    "xF2": (0.00, 1.20, 96),
 }
 
 
@@ -10576,28 +10595,14 @@ def _nominal_three_hist_values(
     """
     Values used for the nominal 1D composition histograms.
 
-    IMPORTANT: xF2 is NOT a selection cut.  All finite xF2 values are
-    retained.  Values outside the displayed histogram range are folded into
-    the first/last bins so the full selected event population contributes to
-    the simultaneous likelihood.
+    No clipping or under/overflow folding is performed for xF2.  The raw ROOT
+    branch values are histogrammed directly.  Values outside the displayed
+    histogram interval are therefore not collapsed into artificial edge-bin
+    spikes.
     """
-    values = _nominal_three_values(
+    return _nominal_three_values(
         feat,
         variable,
-    )
-    if variable != "xF2":
-        return values
-    #endif
-
-    lo, hi, _ = NOMINAL_THREE_RANGES["xF2"]
-    tiny = max(
-        1.0e-9,
-        1.0e-7 * (hi - lo),
-    )
-    return np.clip(
-        values,
-        lo + tiny,
-        hi - tiny,
     )
 
 
@@ -10830,17 +10835,17 @@ def run_nsidis_three_variable_nominal_fits(
                 "fit_message": fit.message,
                 "fit_model": "simultaneous_Delta_phi_pTmiss_xF2",
                 "xF2_selection_cut": "none",
-                "xF2_histogram_range": "0.40_to_1.40",
-                "xF2_histogram_overflow_policy": (
-                    "underflow_and_overflow_folded_into_edge_bins"
-                ),
+                "xF2_histogram_range": "0.00_to_1.20",
+                "xF2_data_underflow_count": xF2_underflow_count,
+                "xF2_data_overflow_count": xF2_overflow_count,
+                "xF2_histogram_overflow_policy": "none_raw_branch_values",
                 "pi0_fraction": f0,
                 "dvcs_fraction": 1.0-f0 if np.isfinite(f0) else float("nan"),
                 "pi0_fraction_err_low": err_lo,
                 "pi0_fraction_err_high": err_hi,
                 "pi0_fraction_single_Delta_phi": singles.get("Delta_phi", float("nan")),
                 "pi0_fraction_single_pTmiss": singles.get("pTmiss", float("nan")),
-                "pi0_fraction_single_xF2": singles.get("Emiss2", float("nan")),
+                "pi0_fraction_single_xF2": singles.get("xF2", float("nan")),
                 "pi0_fraction_single_Delta_phi_usable": int(
                     "Delta_phi" in usable_single_fractions
                 ),
@@ -15373,7 +15378,7 @@ def make_nsidis_shape_comparison_canvases(
         ("pTmiss", r"$p_{T,\rm miss}$",
          r"$p_{T,\rm miss}$ (GeV)", 0.0, 1.0, 100),
         ("xF2", r"$x_{F,2}(\gamma)$",
-         r"$x_{F,2}(\gamma)$", 0.40, 1.40, 100),
+         r"$x_{F,2}(\gamma)$", 0.00, 1.20, 120),
         ("Egamma", r"$E_{\gamma,\rm tag}$",
          r"$E_{\gamma,\rm tag}$ (GeV)", 0.40, max_probe_energy, 100),
     )
@@ -15811,8 +15816,7 @@ def make_nsidis_three_variable_fit_canvases(
             rf"{probe_m2_max:.2f}$ GeV$^2$, "
             r"$p_e>2$ GeV, "
             r"$\theta_{e\gamma}>5^\circ$; "
-            r"$x_{F,2}$ is not selection-cut "
-            r"(under/overflow folded into edge bins)",
+            r"$x_{F,2}$ is not selection-cut",
             fontsize=11.0,
             y=0.997,
         )
