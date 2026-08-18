@@ -158,7 +158,8 @@ SAMPLE_LABELS = {
 PHOTON_DETECTOR_FT = 0
 PHOTON_DETECTOR_FD = 1
 
-THETA_EP_MIN_DEG = 5.0
+THETA_EP_MIN_DEG = 5.0  # legacy diagnostic name
+THETA_EGAMMA_MIN_DEG = 5.0
 
 PROBE_ENERGY_EDGES = np.asarray(
     # The original three sub-0.8 GeV bins produced a poorly constrained FT
@@ -1962,6 +1963,17 @@ def build_epgamma_denominator_features(
             electron_proton_opening_angle_deg(e3, p3),
             dtype=np.float32,
         ),
+        "theta_egamma_deg": np.asarray(
+            electron_proton_opening_angle_deg(
+                e3,
+                (
+                    tag_source
+                    if tag_index is None
+                    else tag_source[tag_index]
+                ),
+            ),
+            dtype=np.float32,
+        ),
         "valid_tag": np.asarray(valid, dtype=bool),
     }
 
@@ -2090,20 +2102,21 @@ def stage2_fit_mask(
     dvcsgen.  Detector-region acceptance is also common through
     stage2_region_mask().
     """
-    theta_ep = feat.get("theta_ep_deg")
-    if theta_ep is None:
-        theta_ep_mask = np.ones(
+    theta_egamma = feat.get("theta_egamma_deg")
+    if theta_egamma is None:
+        theta_egamma_mask = np.ones(
             len(feat["pred_probe_energy"]), dtype=bool
         )
     else:
-        theta_ep_mask = (
-            np.isfinite(theta_ep) & (theta_ep > THETA_EP_MIN_DEG)
+        theta_egamma_mask = (
+            np.isfinite(theta_egamma)
+            & (theta_egamma > THETA_EGAMMA_MIN_DEG)
         )
     #endif
 
     return (
         feat["valid_tag"]
-        & theta_ep_mask
+        & theta_egamma_mask
         & stage2_region_mask(feat, region_name, ft_theta_max)
         & (feat["pred_probe_energy"] >= elo)
         & (feat["pred_probe_energy"] < ehi)
@@ -10530,7 +10543,7 @@ NOMINAL_THREE_VARIABLES = ("Delta_phi", "pTmiss", "Emiss2")
 NOMINAL_THREE_RANGES = {
     "Delta_phi": (math.pi - 0.40, math.pi + 0.40, 80),
     "pTmiss": (0.0, 1.0, 80),
-    "Emiss2": (-0.10, 4.0, 80),
+    "Emiss2": (-0.10, 6.0, 100),
 }
 
 
@@ -10717,7 +10730,19 @@ def run_nsidis_three_variable_nominal_fits(
             #endif
 
             f0 = float(fit.pi0_fraction) if fit.success else float("nan")
-            vals = np.asarray([x for x in singles.values() if np.isfinite(x)])
+            usable_single_fractions = {
+                key: value
+                for key, value in singles.items()
+                if (
+                    np.isfinite(value)
+                    and value > 1.0e-3
+                    and value < 1.0 - 1.0e-3
+                )
+            }
+            vals = np.asarray(
+                list(usable_single_fractions.values()),
+                dtype=float,
+            )
             if np.isfinite(f0) and vals.size:
                 diffs = vals - f0
                 spread_max = float(np.max(np.abs(diffs)))
@@ -10750,6 +10775,15 @@ def run_nsidis_three_variable_nominal_fits(
                 "pi0_fraction_single_Delta_phi": singles.get("Delta_phi", float("nan")),
                 "pi0_fraction_single_pTmiss": singles.get("pTmiss", float("nan")),
                 "pi0_fraction_single_Emiss2": singles.get("Emiss2", float("nan")),
+                "pi0_fraction_single_Delta_phi_usable": int(
+                    "Delta_phi" in usable_single_fractions
+                ),
+                "pi0_fraction_single_pTmiss_usable": int(
+                    "pTmiss" in usable_single_fractions
+                ),
+                "pi0_fraction_single_Emiss2_usable": int(
+                    "Emiss2" in usable_single_fractions
+                ),
                 "pi0_fraction_model_max_abs_shift": spread_max,
                 "pi0_fraction_model_rms_shift": spread_rms,
                 **(
@@ -11776,19 +11810,16 @@ def build_nsidis_data_efficiency_rows(
                 float(fit.get("pi0_fraction_err_high", np.nan))
                 if fit is not None else float("nan")
             )
-            fpi0_model_alternatives = []
-            if fit is not None:
-                for key in (
-                    "pi0_fraction_single_Delta_phi",
-                    "pi0_fraction_single_pTmiss",
-                    "pi0_fraction_single_Emiss2",
-                ):
-                    value = float(fit.get(key, np.nan))
-                    if np.isfinite(value) and value > 0.0:
-                        fpi0_model_alternatives.append(value)
-                    #endif
-                #endfor
-            #endif
+            fpi0_model_spread = (
+                float(
+                    fit.get(
+                        "pi0_fraction_model_max_abs_shift",
+                        np.nan,
+                    )
+                )
+                if fit is not None
+                else float("nan")
+            )
             data_den = (
                 fpi0 * float(n_tags)
                 if np.isfinite(fpi0) and fpi0 > 0.0
@@ -11853,22 +11884,43 @@ def build_nsidis_data_efficiency_rows(
                 else float("nan")
             )
 
-            alternative_efficiencies = []
-            if n_tags > 0:
-                for f_alt in fpi0_model_alternatives:
-                    alternative_efficiencies.append(
-                        float(n_final) / (f_alt * float(n_tags))
-                    )
-                #endfor
-            #endif
-
-            if np.isfinite(eff_final) and alternative_efficiencies:
-                eff_model_min = min([eff_final] + alternative_efficiencies)
-                eff_model_max = max([eff_final] + alternative_efficiencies)
+            if (
+                np.isfinite(fpi0)
+                and fpi0 > 0.0
+                and np.isfinite(fpi0_model_spread)
+                and fpi0_model_spread >= 0.0
+                and n_tags > 0
+            ):
+                f_model_low = max(
+                    1.0e-3,
+                    fpi0 - fpi0_model_spread,
+                )
+                f_model_high = min(
+                    1.0 - 1.0e-3,
+                    fpi0 + fpi0_model_spread,
+                )
+                eff_at_f_low = (
+                    float(n_final)
+                    / (f_model_low * float(n_tags))
+                )
+                eff_at_f_high = (
+                    float(n_final)
+                    / (f_model_high * float(n_tags))
+                )
+                eff_model_min = min(
+                    eff_final, eff_at_f_low, eff_at_f_high
+                )
+                eff_model_max = max(
+                    eff_final, eff_at_f_low, eff_at_f_high
+                )
                 eff_model_sys_low = eff_final - eff_model_min
                 eff_model_sys_high = eff_model_max - eff_final
-                eff_model_sys = max(eff_model_sys_low, eff_model_sys_high)
+                eff_model_sys = max(
+                    eff_model_sys_low,
+                    eff_model_sys_high,
+                )
             else:
+                f_model_low = f_model_high = float("nan")
                 eff_model_min = eff_model_max = float("nan")
                 eff_model_sys_low = eff_model_sys_high = float("nan")
                 eff_model_sys = float("nan")
@@ -12013,6 +12065,8 @@ def build_nsidis_data_efficiency_rows(
                 "reconstructed_probe_final_purity_corrected": n_final,
                 "data_efficiency_mass_shell_only": eff_mass,
                 "data_efficiency_final": eff_final,
+                "composition_model_fraction_low": f_model_low,
+                "composition_model_fraction_high": f_model_high,
                 "data_efficiency_composition_model_alt_min": eff_model_min,
                 "data_efficiency_composition_model_alt_max": eff_model_max,
                 "data_efficiency_composition_model_sys_low": eff_model_sys_low,
@@ -12892,7 +12946,9 @@ def make_nsidis_period_comparison(
 
     for period in periods:
         path = (
-            nsroot / period.key
+            nsroot
+            / "stage3_efficiency"
+            / period.key
             / "nsidis_photon_efficiency_scale_factors.csv"
         )
         rows = read_csv_rows_simple(path)
@@ -12954,12 +13010,47 @@ def make_nsidis_period_comparison(
                 el = np.asarray([item[2] for item in rr], dtype=float)
                 eh = np.asarray([item[3] for item in rr], dtype=float)
 
+                sys_low = np.asarray(
+                    [
+                        float(
+                            item[4].get(
+                                "scale_factor_composition_model_sys_low",
+                                "nan",
+                            )
+                        )
+                        for item in rr
+                    ],
+                    dtype=float,
+                )
+                sys_high = np.asarray(
+                    [
+                        float(
+                            item[4].get(
+                                "scale_factor_composition_model_sys_high",
+                                "nan",
+                            )
+                        )
+                        for item in rr
+                    ],
+                    dtype=float,
+                )
+
+                ax.errorbar(
+                    x,
+                    y,
+                    yerr=np.vstack((sys_low, sys_high)),
+                    fmt="none",
+                    elinewidth=5.0,
+                    alpha=0.18,
+                    capsize=0,
+                )
                 ax.errorbar(
                     x,
                     y,
                     yerr=np.vstack((el, eh)),
-                    marker="o",
-                    linewidth=1.1,
+                    fmt="o",
+                    linestyle="none",
+                    linewidth=1.0,
                     capsize=2,
                     label=period_labels[period_key],
                 )
@@ -12997,7 +13088,11 @@ def make_nsidis_period_comparison(
                 r"$SF_{\gamma}=\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$"
             )
             if high_only:
-                ax.set_ylim(0.7, 1.3)
+                if region == "FT":
+                    ax.set_ylim(0.4, 1.3)
+                else:
+                    ax.set_ylim(0.65, 1.05)
+                #endif
                 ax.set_title(
                     r"FT — $E_{\mathrm{probe}}^{\mathrm{pred}}>2$ GeV"
                     if region == "FT"
@@ -13043,7 +13138,7 @@ def make_nsidis_period_comparison(
     #endfor
 
     fig.suptitle(
-        "nSidis photon-efficiency period comparison",
+        "Photon-efficiency period comparison",
         fontsize=13,
     )
     safe_finalize_figure(
@@ -15126,7 +15221,7 @@ def make_nsidis_shape_comparison_canvases(
         ("pTmiss", r"$p_{T,\rm miss}$",
          r"$p_{T,\rm miss}$ (GeV)", 0.0, 1.0, 100),
         ("Emiss2", r"$E_{\rm miss}$",
-         r"$E_{\rm miss}$ (GeV)", -0.10, 4.0, 100),
+         r"$E_{\rm miss}$ (GeV)", -0.10, 6.0, 120),
         ("Egamma", r"$E_{\gamma,\rm tag}$",
          r"$E_{\gamma,\rm tag}$ (GeV)", 0.40, max_probe_energy, 100),
     )
@@ -15160,6 +15255,11 @@ def make_nsidis_shape_comparison_canvases(
                 & stage2_region_mask(feat, region, ft_theta_max)
                 & np.isfinite(feat["electron_p"])
                 & (feat["electron_p"] > 2.0)
+                & np.isfinite(feat["theta_egamma_deg"])
+                & (
+                    feat["theta_egamma_deg"]
+                    > THETA_EGAMMA_MIN_DEG
+                )
                 & np.isfinite(feat["pred_probe_energy"])
                 & (feat["pred_probe_energy"] >= 0.40)
                 & (feat["pred_probe_energy"] < max_probe_energy)
@@ -15210,12 +15310,14 @@ def make_nsidis_shape_comparison_canvases(
         axes[0, 0].legend(frameon=False, fontsize=8)
         fig.suptitle(
             f"{period.label}: {region} denominator shape comparison\n"
-            r"data vs aaogen $\pi^0$ vs dvcsgen BH/DVCS",
-            fontsize=13,
+            r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
+            rf"nominal adds ${mm2_min:.2f}<M_X^2(ep)<{mm2_max:.2f}$ GeV$^2$ "
+            rf"and $|M_X^2(ep\gamma)|<{probe_m2_max:.2f}$ GeV$^2$",
+            fontsize=12.0,
         )
         safe_finalize_figure(
             fig,
-            outdir / f"canvas_shape_comparison_{region.lower()}.png",
+            outdir / f"canvas_shape_comparison_{period.key}_{region.lower()}.png",
             rect=(0, 0, 1, 0.94),
         )
         plt.close(fig)
@@ -15236,154 +15338,300 @@ def make_nsidis_three_variable_fit_canvases(
     probe_m2_max,
 ):
     """
-    Explicit nominal fit display: data, raw templates, morphed templates,
-    total fit, and nuisance values for all 3 variables in every energy bin.
+    Explicit nominal fit display.
+
+    Columns are successful predicted-probe energy bins; rows are
+    Delta_phi, pTmiss, and Emiss. Failed bins are omitted.
     """
     for region in ("FT", "FD_all"):
         rr = sorted(
-            [r for r in rows if r["region"] == region],
-            key=lambda r: float(r["energy_low_GeV"]),
+            [
+                row
+                for row in rows
+                if (
+                    row["region"] == region
+                    and int(row.get("fit_success", 0)) == 1
+                )
+            ],
+            key=lambda row: float(row["energy_low_GeV"]),
         )
         if not rr:
             continue
         #endif
 
         fig, axes = plt.subplots(
-            len(rr), 3,
-            figsize=(15.8, max(4.0, 3.25*len(rr))),
+            3,
+            len(rr),
+            figsize=(max(15.0, 3.55 * len(rr)), 10.0),
             squeeze=False,
         )
 
-        for irow, row in enumerate(rr):
+        for icol, row in enumerate(rr):
             elo = float(row["energy_low_GeV"])
             ehi = float(row["energy_high_GeV"])
 
-            if int(row.get("fit_success", 0)) != 1:
-                for ax in axes[irow]:
-                    ax.text(0.5, 0.5, "fit unavailable",
-                            transform=ax.transAxes, ha="center", va="center")
-                #endfor
-                continue
-            #endif
-
             masks = {}
             for name, feat in (
-                ("data", data_f), ("pi0", pi0_f), ("dvcs", dvcs_f)
+                ("data", data_f),
+                ("pi0", pi0_f),
+                ("dvcs", dvcs_f),
             ):
-                m = stage2_fit_mask(
-                    feat, region, ft_theta_max, elo, ehi,
-                    mm2_min, mm2_max, probe_m2_max,
+                mask = stage2_fit_mask(
+                    feat,
+                    region,
+                    ft_theta_max,
+                    elo,
+                    ehi,
+                    mm2_min,
+                    mm2_max,
+                    probe_m2_max,
                 )
-                m &= np.isfinite(feat["electron_p"]) & (feat["electron_p"] > 2.0)
+                mask &= (
+                    np.isfinite(feat["electron_p"])
+                    & (feat["electron_p"] > 2.0)
+                )
                 for var in NOMINAL_THREE_VARIABLES:
                     lo, hi, _ = NOMINAL_THREE_RANGES[var]
-                    v = _nominal_three_values(feat, var)
-                    m &= np.isfinite(v) & (v >= lo) & (v < hi)
+                    values = _nominal_three_values(
+                        feat, var
+                    )
+                    mask &= (
+                        np.isfinite(values)
+                        & (values >= lo)
+                        & (values < hi)
+                    )
                 #endfor
-                masks[name] = m
+                masks[name] = mask
             #endfor
 
             fpi0 = float(row["pi0_fraction"])
 
-            for icol, var in enumerate(NOMINAL_THREE_VARIABLES):
-                lo, hi, nb = NOMINAL_THREE_RANGES[var]
-                edges = np.linspace(lo, hi, nb+1)
-                centers = 0.5*(edges[:-1] + edges[1:])
-                hs = {}
+            for irow, var in enumerate(
+                NOMINAL_THREE_VARIABLES
+            ):
+                lo, hi, nbins = NOMINAL_THREE_RANGES[var]
+                edges = np.linspace(lo, hi, nbins + 1)
+                centers = 0.5 * (
+                    edges[:-1] + edges[1:]
+                )
+
+                hist = {}
                 for name, feat in (
-                    ("data", data_f), ("pi0", pi0_f), ("dvcs", dvcs_f)
+                    ("data", data_f),
+                    ("pi0", pi0_f),
+                    ("dvcs", dvcs_f),
                 ):
                     h, _ = np.histogram(
-                        _nominal_three_values(feat, var)[masks[name]],
+                        _nominal_three_values(
+                            feat, var
+                        )[masks[name]],
                         bins=edges,
                     )
-                    hs[name] = h.astype(float)
+                    hist[name] = h.astype(float)
                 #endfor
 
-                hp = hs["pi0"][None, :]
-                hv = hs["dvcs"][None, :]
+                hp = hist["pi0"][None, :]
+                hv = hist["dvcs"][None, :]
 
-                ps = float(row.get(f"{var}_pi0_shift_bins", 0.0))
-                pw = float(row.get(f"{var}_pi0_sigma_bins", 0.0))
-                ds = float(row.get(f"{var}_dvcs_shift_bins", 0.0))
-                dw = float(row.get(f"{var}_dvcs_sigma_bins", 0.0))
+                pshift = float(
+                    row.get(
+                        f"{var}_pi0_shift_bins", 0.0
+                    )
+                )
+                psigma = float(
+                    row.get(
+                        f"{var}_pi0_sigma_bins", 0.0
+                    )
+                )
+                dshift = float(
+                    row.get(
+                        f"{var}_dvcs_shift_bins", 0.0
+                    )
+                )
+                dsigma = float(
+                    row.get(
+                        f"{var}_dvcs_sigma_bins", 0.0
+                    )
+                )
 
-                rawp = normalized_template(hp).reshape(hp.shape).ravel()
-                rawd = normalized_template(hv).reshape(hv.shape).ravel()
-                mp = morph_template_second_axis(hp, ps, pw).ravel()
-                md = morph_template_second_axis(hv, ds, dw).ravel()
+                raw_pi0 = normalized_template(
+                    hp
+                ).reshape(hp.shape).ravel()
+                raw_dvcs = normalized_template(
+                    hv
+                ).reshape(hv.shape).ravel()
+                morph_pi0 = morph_template_second_axis(
+                    hp, pshift, psigma
+                ).ravel()
+                morph_dvcs = morph_template_second_axis(
+                    hv, dshift, dsigma
+                ).ravel()
 
-                ndata = float(np.sum(hs["data"]))
-                rawp *= ndata*fpi0
-                rawd *= ndata*(1.0-fpi0)
-                mp *= ndata*fpi0
-                md *= ndata*(1.0-fpi0)
-                total = mp + md
+                ndata = float(np.sum(hist["data"]))
+                raw_pi0 *= ndata * fpi0
+                raw_dvcs *= ndata * (1.0 - fpi0)
+                morph_pi0 *= ndata * fpi0
+                morph_dvcs *= (
+                    ndata * (1.0 - fpi0)
+                )
+                total = morph_pi0 + morph_dvcs
 
                 ax = axes[irow, icol]
                 ax.errorbar(
-                    centers, hs["data"],
-                    yerr=np.sqrt(np.maximum(hs["data"], 1.0)),
-                    fmt="o", ms=2.0, linewidth=0.5,
-                    color="black", label="data", zorder=6,
+                    centers,
+                    hist["data"],
+                    yerr=np.sqrt(
+                        np.maximum(hist["data"], 1.0)
+                    ),
+                    fmt="o",
+                    ms=2.0,
+                    linewidth=0.5,
+                    color="black",
+                    label="data",
+                    zorder=6,
                 )
-                ax.step(centers, rawp, where="mid", color="tab:red",
-                        linestyle="--", alpha=0.5, linewidth=0.8,
-                        label=r"$\pi^0$ pre-morph")
-                ax.step(centers, rawd, where="mid", color="tab:blue",
-                        linestyle="--", alpha=0.5, linewidth=0.8,
-                        label="DVCS pre-morph")
-                ax.step(centers, mp, where="mid", color="tab:red",
-                        linewidth=1.2, label=r"$\pi^0$ morphed")
-                ax.step(centers, md, where="mid", color="tab:blue",
-                        linewidth=1.2, label="DVCS morphed")
-                ax.step(centers, total, where="mid", color="tab:green",
-                        linewidth=1.5, label="total fit")
+                ax.step(
+                    centers,
+                    raw_pi0,
+                    where="mid",
+                    color="tab:red",
+                    linestyle="--",
+                    alpha=0.5,
+                    linewidth=0.8,
+                    label=r"$\pi^0$ pre-morph",
+                )
+                ax.step(
+                    centers,
+                    raw_dvcs,
+                    where="mid",
+                    color="tab:blue",
+                    linestyle="--",
+                    alpha=0.5,
+                    linewidth=0.8,
+                    label="DVCS pre-morph",
+                )
+                ax.step(
+                    centers,
+                    morph_pi0,
+                    where="mid",
+                    color="tab:red",
+                    linewidth=1.2,
+                    label=r"$\pi^0$ morphed",
+                )
+                ax.step(
+                    centers,
+                    morph_dvcs,
+                    where="mid",
+                    color="tab:blue",
+                    linewidth=1.2,
+                    label="DVCS morphed",
+                )
+                ax.step(
+                    centers,
+                    total,
+                    where="mid",
+                    color="tab:green",
+                    linewidth=1.5,
+                    label="total fit",
+                )
+
                 ax.set_yscale("log")
                 ax.set_xlim(lo, hi)
                 ax.grid(alpha=0.16)
 
                 xlabel = (
-                    r"$\Delta\phi$ (rad)" if var == "Delta_phi"
-                    else r"$p_{T,\rm miss}$ (GeV)" if var == "pTmiss"
-                    else r"$E_{\rm miss}$ (GeV)"
+                    r"$\Delta\phi$ (rad)"
+                    if var == "Delta_phi"
+                    else (
+                        r"$p_{T,\rm miss}$ (GeV)"
+                        if var == "pTmiss"
+                        else r"$E_{\rm miss}$ (GeV)"
+                    )
                 )
                 ax.set_xlabel(xlabel)
 
-                single = float(row.get(f"pi0_fraction_single_{var}", np.nan))
-                ax.set_title(
-                    f"{elo:.2f}-{ehi:.2f} GeV; "
-                    rf"$f_{{\pi^0}}^{{shared}}={fpi0:.3f}$; "
-                    rf"single={single:.3f}",
-                    fontsize=8.8,
+                if irow == 0:
+                    ax.set_title(
+                        f"{elo:.2f}-{ehi:.2f} GeV\n"
+                        rf"$f_{{\pi^0}}^{{shared}}="
+                        rf"{fpi0:.3f}$",
+                        fontsize=8.8,
+                    )
+                #endif
+
+                single = float(
+                    row.get(
+                        f"pi0_fraction_single_{var}",
+                        np.nan,
+                    )
+                )
+                usable = int(
+                    row.get(
+                        f"pi0_fraction_single_{var}_usable",
+                        1,
+                    )
+                )
+                boundary_text = (
+                    ""
+                    if usable
+                    else " (boundary; excluded)"
                 )
                 ax.text(
-                    0.02, 0.04,
-                    rf"$\pi^0$: shift={ps:.2f}, $\sigma$={pw:.2f} bins"
-                    "\n"
-                    rf"DVCS: shift={ds:.2f}, $\sigma$={dw:.2f} bins",
-                    transform=ax.transAxes, fontsize=6.8,
-                    va="bottom", ha="left",
+                    0.02,
+                    0.04,
+                    (
+                        rf"single $f_{{\pi^0}}="
+                        rf"{single:.3f}$"
+                        + boundary_text
+                        + "\n"
+                        + rf"$\pi^0$: shift={pshift:.2f}, "
+                        rf"$\sigma$={psigma:.2f} bins"
+                        + "\n"
+                        + rf"DVCS: shift={dshift:.2f}, "
+                        rf"$\sigma$={dsigma:.2f} bins"
+                    ),
+                    transform=ax.transAxes,
+                    fontsize=6.5,
+                    va="bottom",
+                    ha="left",
                 )
             #endfor
         #endfor
 
-        handles, labels = axes[0, 0].get_legend_handles_labels()
+        handles, labels = (
+            axes[0, 0].get_legend_handles_labels()
+        )
         fig.legend(
-            handles, labels, loc="upper center", ncol=6,
-            fontsize=7.5, frameon=False, bbox_to_anchor=(0.5, 0.98),
+            handles,
+            labels,
+            loc="upper center",
+            ncol=6,
+            fontsize=7.5,
+            frameon=False,
+            bbox_to_anchor=(0.5, 0.972),
         )
         fig.suptitle(
             f"{period.label}: {region} nominal denominator fits\n"
-            r"simultaneous shared $f_{\pi^0}$ from "
-            r"$\Delta\phi$, $p_{T,\rm miss}$, and $E_{\rm miss}$",
-            fontsize=12.5,
+            r"shared $f_{\pi^0}$ from "
+            r"$\Delta\phi$, $p_{T,\rm miss}$, "
+            r"$E_{\rm miss}$; "
+            rf"${mm2_min:.2f}<M_X^2(ep)<"
+            rf"{mm2_max:.2f}$ GeV$^2$, "
+            rf"$|M_X^2(ep\gamma)|<"
+            rf"{probe_m2_max:.2f}$ GeV$^2$, "
+            r"$p_e>2$ GeV, "
+            r"$\theta_{e\gamma}>5^\circ$",
+            fontsize=11.5,
             y=0.997,
         )
         safe_finalize_figure(
             fig,
-            outdir / f"canvas_nominal_three_variable_fits_{region.lower()}.png",
-            rect=(0, 0, 1, 0.96),
+            outdir
+            / (
+                "canvas_nominal_three_variable_fits_"
+                f"{period.key}_{region.lower()}.png"
+            ),
+            rect=(0, 0, 1, 0.95),
         )
         plt.close(fig)
     #endfor
@@ -15395,13 +15643,29 @@ def process_nsidis_study_period(
     output_root: str,
 ) -> Dict[str, object]:
     """
-    Isolated nSidis development path.
+    Default nSidis production path.
 
     The optional pilot now forms the first preliminary data/aaogen photon-efficiency scale factor after validating denominator composition and association-first numerator purity. The fitted-pi0 denominator uncertainty is not yet propagated.
     """
     t0 = time.perf_counter()
-    outdir = Path(output_root) / "nsidis_study" / period.key
-    outdir.mkdir(parents=True, exist_ok=True)
+    production_root = Path(output_root)
+    stage1_outdir = (
+        production_root / "stage1_shape_comparison"
+    )
+    stage2_outdir = (
+        production_root / "stage2_composition_fits"
+    )
+    stage3_outdir = (
+        production_root / "stage3_efficiency" / period.key
+    )
+    for directory in (
+        stage1_outdir,
+        stage2_outdir,
+        stage3_outdir,
+    ):
+        directory.mkdir(parents=True, exist_ok=True)
+    #endfor
+    outdir = stage3_outdir
 
     max_entries = int(args_dict["max_entries"])
     tree_name = args_dict.get("tree")
@@ -15779,7 +16043,7 @@ def process_nsidis_study_period(
         }
 
         make_nsidis_shape_comparison_canvases(
-            period, ns_epg_f, pi0_f, dvcs_f, outdir,
+            period, ns_epg_f, pi0_f, dvcs_f, stage1_outdir,
             ft_theta_max=ft_theta_max,
             max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
             mm2_min=float(args_dict["den_fit_mm2_min"]),
@@ -15822,16 +16086,29 @@ def process_nsidis_study_period(
 
         write_rows_csv(
             pilot_nsidis_rows,
-            outdir / "nsidis_nominal_composition_fits.csv",
+            stage2_outdir / f"nsidis_nominal_composition_fits_{period.key}.csv",
         )
+        failed_production_bins = [
+            row
+            for row in pilot_nsidis_rows
+            if int(row.get("fit_success", 0)) != 1
+        ]
+        if failed_production_bins:
+            log(
+                f"{period.label}: WARNING: "
+                f"{len(failed_production_bins)} nominal composition "
+                "bin(s) failed; they are omitted from fit canvases "
+                "and cannot produce final scale factors."
+            )
+        #endif
         write_rows_csv(
             pilot_wagon_rows,
-            outdir / "wagon_nominal_composition_fits.csv",
+            stage2_outdir / f"wagon_nominal_composition_fits_{period.key}.csv",
         )
 
         make_nsidis_three_variable_fit_canvases(
             period, pilot_nsidis_rows,
-            ns_epg_f, pi0_f, dvcs_f, outdir,
+            ns_epg_f, pi0_f, dvcs_f, stage2_outdir,
             ft_theta_max=ft_theta_max,
             mm2_min=float(args_dict["den_fit_mm2_min"]),
             mm2_max=float(args_dict["den_fit_mm2_max"]),
@@ -17985,7 +18262,7 @@ def main() -> int:
 
         preflight_nsidis_study(selected, ns_args_dict)
 
-        nsroot = Path(args.output_dir) / "nsidis_study"
+        nsroot = Path(args.output_dir)
         nsroot.mkdir(parents=True, exist_ok=True)
 
         n_nsidis_workers = min(
@@ -18078,7 +18355,7 @@ def main() -> int:
 
         write_rows_csv(
             summary_rows,
-            nsroot / "nsidis_study_summary.csv",
+            nsroot / "photon_efficiency_run_summary.csv",
         )
         if args.nsidis_driver_study:
             make_cross_period_nsidis_driver_study_canvas(
@@ -18091,7 +18368,7 @@ def main() -> int:
                 selected,
             )
         #endif
-        log(f"Done. nSidis-study outputs are in {nsroot}.")
+        log(f"Done. Photon-efficiency outputs are in {nsroot}.")
         return 0
     #endif
 
