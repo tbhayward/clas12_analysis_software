@@ -12841,19 +12841,21 @@ def make_nsidis_scale_factor_canvas(
     sf_rows: Sequence[Dict[str, object]],
     outdir: Path,
 ) -> None:
-    """Per-period data/MC efficiency and preliminary scale-factor summary."""
-    fig, axes = plt.subplots(2, 2, figsize=(13.5, 8.8))
+    """
+    Per-period efficiency and data/MC scale-factor summary.
+
+    Neighboring energy bins are connected by lines. Statistical uncertainties
+    are thin error bars. Composition-model systematics are shaded rectangles
+    spanning the full energy-bin width.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(13.8, 9.4))
 
     for irow, region in enumerate(("FT", "FD_all")):
         rr = sorted(
             [
-                r for r in sf_rows
-                if r["region"] == region
-                and np.isfinite(
-                    float(r.get(
-                        "photon_efficiency_scale_factor", np.nan
-                    ))
-                )
+                row for row in sf_rows
+                if row["region"] == region
+                and np.isfinite(float(row.get("photon_efficiency_scale_factor", np.nan)))
             ],
             key=row_energy_coordinate,
         )
@@ -12861,98 +12863,73 @@ def make_nsidis_scale_factor_canvas(
             continue
         #endif
 
-        x = np.asarray(
-            [row_energy_coordinate(r) for r in rr],
-            dtype=float,
-        )
-        ed = np.asarray(
-            [float(r["data_efficiency_final"]) for r in rr],
-            dtype=float,
-        )
-        em = np.asarray(
-            [float(r["mc_efficiency_final"]) for r in rr],
-            dtype=float,
-        )
-        sf = np.asarray(
-            [float(r["photon_efficiency_scale_factor"]) for r in rr],
-            dtype=float,
-        )
-        se_low = np.asarray(
-            [
-                float(r.get(
-                    "scale_factor_stat_error_low", np.nan
-                ))
-                for r in rr
-            ],
-            dtype=float,
-        )
-        se_high = np.asarray(
-            [
-                float(r.get(
-                    "scale_factor_stat_error_high", np.nan
-                ))
-                for r in rr
-            ],
-            dtype=float,
-        )
+        x = np.asarray([row_energy_coordinate(row) for row in rr], dtype=float)
+        elo = np.asarray([float(row["energy_low_GeV"]) for row in rr], dtype=float)
+        ehi = np.asarray([float(row["energy_high_GeV"]) for row in rr], dtype=float)
+        ed = np.asarray([float(row["data_efficiency_final"]) for row in rr], dtype=float)
+        em = np.asarray([float(row["mc_efficiency_final"]) for row in rr], dtype=float)
+        sf = np.asarray([float(row["photon_efficiency_scale_factor"]) for row in rr], dtype=float)
+
+        edlo = np.asarray([float(row.get("data_efficiency_error_low", np.nan)) for row in rr])
+        edhi = np.asarray([float(row.get("data_efficiency_error_high", np.nan)) for row in rr])
+        emerr = np.asarray([float(row.get("mc_efficiency_stat_error", np.nan)) for row in rr])
+        sflo = np.asarray([float(row.get("scale_factor_stat_error_low", np.nan)) for row in rr])
+        sfhi = np.asarray([float(row.get("scale_factor_stat_error_high", np.nan)) for row in rr])
+        syslo = np.asarray([float(row.get("scale_factor_composition_model_sys_low", np.nan)) for row in rr])
+        syshi = np.asarray([float(row.get("scale_factor_composition_model_sys_high", np.nan)) for row in rr])
+
+        edsyslo = syslo * em
+        edsyshi = syshi * em
 
         ax_e = axes[irow, 0]
         ax_s = axes[irow, 1]
-        ax_e.plot(
-            x, ed, marker="o", linewidth=1.2,
-            label="data",
-        )
-        ax_e.plot(
-            x, em, marker="s", linewidth=1.2,
-            label="aaogen MC",
-        )
-        sys_low = np.asarray(
-            [
-                float(r.get(
-                    "scale_factor_composition_model_sys_low", np.nan
-                ))
-                for r in rr
-            ],
-            dtype=float,
-        )
-        sys_high = np.asarray(
-            [
-                float(r.get(
-                    "scale_factor_composition_model_sys_high", np.nan
-                ))
-                for r in rr
-            ],
-            dtype=float,
-        )
 
-        ax_s.errorbar(
-            x,
-            sf,
-            yerr=np.vstack((sys_low, sys_high)),
-            fmt="none",
-            elinewidth=5.0,
-            alpha=0.22,
-            capsize=0,
-            color="tab:orange",
-            label="composition-model systematic",
+        for j in range(len(rr)):
+            if np.isfinite(ed[j]) and np.isfinite(edsyslo[j]) and np.isfinite(edsyshi[j]):
+                ax_e.fill_between(
+                    [elo[j], ehi[j]],
+                    [ed[j]-edsyslo[j]]*2,
+                    [ed[j]+edsyshi[j]]*2,
+                    color="tab:orange", alpha=0.16, linewidth=0.0,
+                    label="composition-model systematic" if j == 0 else None,
+                )
+            #endif
+            if np.isfinite(sf[j]) and np.isfinite(syslo[j]) and np.isfinite(syshi[j]):
+                ax_s.fill_between(
+                    [elo[j], ehi[j]],
+                    [sf[j]-syslo[j]]*2,
+                    [sf[j]+syshi[j]]*2,
+                    color="tab:orange", alpha=0.16, linewidth=0.0,
+                    label="composition-model systematic" if j == 0 else None,
+                )
+            #endif
+        #endfor
+
+        ax_e.errorbar(
+            x, ed, yerr=np.vstack((edlo, edhi)),
+            marker="o", linestyle="-", linewidth=1.2, capsize=2,
+            color="black", label="data", zorder=5,
+        )
+        ax_e.errorbar(
+            x, em, yerr=emerr,
+            marker="s", linestyle="-", linewidth=1.2, capsize=2,
+            label="aaogen MC", zorder=5,
         )
         ax_s.errorbar(
-            x,
-            sf,
-            yerr=np.vstack((se_low, se_high)),
-            marker="o",
-            linewidth=1.1,
-            capsize=2,
-            color="black",
-            label="statistical",
+            x, sf, yerr=np.vstack((sflo, sfhi)),
+            marker="o", linestyle="-", linewidth=1.2, capsize=2,
+            color="black", label="statistical", zorder=5,
         )
 
         for ax in (ax_e, ax_s):
             ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
             ax.grid(alpha=0.18)
         #endfor
+
         ax_e.set_ylabel("reconstructed-probe efficiency")
         ax_e.set_title("FT" if region == "FT" else "FD all")
+        ax_e.legend(fontsize=7.5, frameon=False)
+
         ax_s.axhline(1.0, linestyle="--", linewidth=1.0)
         ax_s.set_ylabel(
             r"$SF_{\gamma}=\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$"
@@ -12961,16 +12938,15 @@ def make_nsidis_scale_factor_canvas(
         ax_s.legend(fontsize=7.5, frameon=False)
     #endfor
 
-    axes[0, 0].legend(fontsize=8, frameon=False)
     fig.suptitle(
-        f"{period.label}: nSidis photon-efficiency data/MC scale factor\n"
-        "thin bars = statistical; thick orange bars = denominator-composition model systematic",
-        fontsize=12.5,
+        f"{period.label}: photon efficiency and data/MC scale factor\\n"
+        "thin bars = statistical; orange boxes = denominator-composition systematic",
+        fontsize=12.5, y=0.985,
     )
     safe_finalize_figure(
         fig,
         outdir / "canvas_nsidis_data_mc_scale_factor.png",
-        rect=(0, 0, 1, 0.93),
+        rect=(0.0, 0.0, 1.0, 0.92),
     )
     plt.close(fig)
 
@@ -12990,20 +12966,16 @@ def make_nsidis_period_comparison(
     periods: Sequence[PeriodConfig],
 ) -> None:
     """
-    Compare available nSidis scale factors across periods.
-
-    Top row: full energy range.
-    Bottom row: E_probe^pred > 2 GeV only, with common y=[0.7,1.3].
-    All x coordinates are actual mean predicted-probe energies.
+    Final all-period scale-factor comparison: FT and FD-all, full energy range.
+    No composition-systematic boxes are drawn because all five periods are
+    overlaid on the same canvas.
     """
-    period_rows: Dict[str, List[Dict[str, str]]] = {}
-    period_labels: Dict[str, str] = {}
+    period_rows = {}
+    period_labels = {}
 
     for period in periods:
         path = (
-            nsroot
-            / "stage3_efficiency"
-            / period.key
+            nsroot / "stage3_efficiency" / period.key
             / "nsidis_photon_efficiency_scale_factors.csv"
         )
         rows = read_csv_rows_simple(path)
@@ -13017,189 +12989,68 @@ def make_nsidis_period_comparison(
         return
     #endif
 
-    fig, axes = plt.subplots(2, 2, figsize=(13.8, 9.2))
-    combined_rows: List[Dict[str, object]] = []
+    fig, axes = plt.subplots(1, 2, figsize=(13.8, 5.6), squeeze=False)
+    axes = axes[0]
+    combined_rows = []
 
-    for icol, region in enumerate(("FT", "FD_all")):
-        for irow, high_only in enumerate((False, True)):
-            ax = axes[irow, icol]
-            visible_central_values: List[float] = []
-            full_error_low: List[float] = []
-            full_error_high: List[float] = []
-
-            for period_key, rows in period_rows.items():
-                rr = []
-                for r in rows:
-                    if r.get("region") != region:
-                        continue
-                    #endif
-                    try:
-                        x = row_energy_coordinate(r)
-                        y = float(r["photon_efficiency_scale_factor"])
-                        elo = float(r["energy_low_GeV"])
-                        el = float(
-                            r.get("scale_factor_stat_error_low", "nan")
-                        )
-                        eh = float(
-                            r.get("scale_factor_stat_error_high", "nan")
-                        )
-                    except (KeyError, TypeError, ValueError):
-                        continue
-                    #endtry
-
-                    if high_only and elo < 2.0 - 1.0e-12:
-                        continue
-                    #endif
-                    if np.isfinite(x) and np.isfinite(y):
-                        rr.append((x, y, el, eh, r))
-                    #endif
-                #endfor
-
-                rr.sort(key=lambda item: item[0])
-                if not rr:
+    for ax, region in zip(axes, ("FT", "FD_all")):
+        for period_key, rows in period_rows.items():
+            rr = []
+            for row in rows:
+                if row.get("region") != region:
                     continue
                 #endif
-
-                x = np.asarray([item[0] for item in rr], dtype=float)
-                y = np.asarray([item[1] for item in rr], dtype=float)
-                el = np.asarray([item[2] for item in rr], dtype=float)
-                eh = np.asarray([item[3] for item in rr], dtype=float)
-
-                sys_low = np.asarray(
-                    [
-                        float(
-                            item[4].get(
-                                "scale_factor_composition_model_sys_low",
-                                "nan",
-                            )
-                        )
-                        for item in rr
-                    ],
-                    dtype=float,
-                )
-                sys_high = np.asarray(
-                    [
-                        float(
-                            item[4].get(
-                                "scale_factor_composition_model_sys_high",
-                                "nan",
-                            )
-                        )
-                        for item in rr
-                    ],
-                    dtype=float,
-                )
-
-                ax.errorbar(
-                    x,
-                    y,
-                    yerr=np.vstack((sys_low, sys_high)),
-                    fmt="none",
-                    elinewidth=5.0,
-                    alpha=0.18,
-                    capsize=0,
-                )
-                ax.errorbar(
-                    x,
-                    y,
-                    yerr=np.vstack((el, eh)),
-                    fmt="o",
-                    linestyle="none",
-                    linewidth=1.0,
-                    capsize=2,
-                    label=period_labels[period_key],
-                )
-                visible_central_values.extend(
-                    [float(v) for v in y if np.isfinite(v)]
-                )
-                full_error_low.extend(
-                    [
-                        float(v - e)
-                        for v, e in zip(y, el)
-                        if np.isfinite(v) and np.isfinite(e)
-                    ]
-                )
-                full_error_high.extend(
-                    [
-                        float(v + e)
-                        for v, e in zip(y, eh)
-                        if np.isfinite(v) and np.isfinite(e)
-                    ]
-                )
-
-                if not high_only:
-                    for _, _, _, _, raw in rr:
-                        combined_rows.append({
-                            "period": period_key,
-                            "label": period_labels[period_key],
-                            **raw,
-                        })
-                    #endfor
+                try:
+                    x = row_energy_coordinate(row)
+                    y = float(row["photon_efficiency_scale_factor"])
+                    el = float(row.get("scale_factor_stat_error_low", "nan"))
+                    eh = float(row.get("scale_factor_stat_error_high", "nan"))
+                except (KeyError, TypeError, ValueError):
+                    continue
+                #endtry
+                if np.isfinite(x) and np.isfinite(y):
+                    rr.append((x, y, el, eh, row))
+                #endif
             #endfor
 
-            ax.axhline(1.0, linestyle="--", linewidth=1.0)
-            ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-            ax.set_ylabel(
-                r"$SF_{\gamma}=\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$"
+            rr.sort(key=lambda item: item[0])
+            if not rr:
+                continue
+            #endif
+
+            x = np.asarray([item[0] for item in rr], dtype=float)
+            y = np.asarray([item[1] for item in rr], dtype=float)
+            el = np.asarray([item[2] for item in rr], dtype=float)
+            eh = np.asarray([item[3] for item in rr], dtype=float)
+
+            ax.errorbar(
+                x, y, yerr=np.vstack((el, eh)),
+                marker="o", linestyle="-", linewidth=1.0, capsize=2,
+                label=period_labels[period_key],
             )
-            if high_only:
-                if region == "FT":
-                    ax.set_ylim(0.4, 1.3)
-                else:
-                    ax.set_ylim(0.65, 1.05)
-                #endif
-                ax.set_title(
-                    r"FT — $E_{\mathrm{probe}}^{\mathrm{pred}}>2$ GeV"
-                    if region == "FT"
-                    else r"FD all — $E_{\mathrm{probe}}^{\mathrm{pred}}>2$ GeV"
-                )
-            else:
-                ax.set_title(
-                    "FT — all energies"
-                    if region == "FT"
-                    else "FD all — all energies"
-                )
-            #endif
 
-            if (not high_only) and visible_central_values:
-                vals = np.asarray(visible_central_values, dtype=float)
-                central_low = min(1.0, float(np.min(vals)))
-                central_high = max(1.0, float(np.max(vals)))
-                span = max(0.20, central_high - central_low)
-                ylo = max(0.0, central_low - 0.12 * span)
-                yhi = central_high + 0.15 * span
-                ax.set_ylim(ylo, yhi)
-
-                clipped = (
-                    any(v < ylo for v in full_error_low)
-                    or any(v > yhi for v in full_error_high)
+            for _, _, _, _, raw in rr:
+                combined_rows.append(
+                    {"period": period_key, "label": period_labels[period_key], **raw}
                 )
-                if clipped:
-                    ax.text(
-                        0.02,
-                        0.97,
-                        "some profile-error bars extend beyond frame",
-                        transform=ax.transAxes,
-                        ha="left",
-                        va="top",
-                        fontsize=7.5,
-                    )
-                #endif
-            #endif
-
-            ax.grid(alpha=0.18)
-            ax.legend(fontsize=8, frameon=False)
+            #endfor
         #endfor
+
+        ax.axhline(1.0, linestyle="--", linewidth=1.0)
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel(
+            r"$SF_{\gamma}=\epsilon_{\mathrm{data}}/\epsilon_{\mathrm{MC}}$"
+        )
+        ax.set_title("FT" if region == "FT" else "FD all")
+        ax.grid(alpha=0.18)
+        ax.legend(fontsize=8, frameon=False)
     #endfor
 
-    fig.suptitle(
-        "Photon-efficiency period comparison",
-        fontsize=13,
-    )
+    fig.suptitle("Photon-efficiency period comparison", fontsize=13, y=0.985)
     safe_finalize_figure(
         fig,
         nsroot / "canvas_nsidis_period_scale_factor_comparison.png",
-        rect=(0, 0, 1, 0.96),
+        rect=(0.0, 0.0, 1.0, 0.93),
     )
     plt.close(fig)
 
@@ -13208,7 +13059,70 @@ def make_nsidis_period_comparison(
         nsroot / "nsidis_period_scale_factor_comparison.csv",
     )
 
+    make_nsidis_period_efficiency_summary(nsroot, periods, period_rows)
 
+
+def make_nsidis_period_efficiency_summary(
+    nsroot: Path,
+    periods: Sequence[PeriodConfig],
+    period_rows: Dict[str, List[Dict[str, str]]],
+) -> None:
+    """3x2 parent summary: one efficiency subplot per period; sixth is blank."""
+    fig, axes = plt.subplots(3, 2, figsize=(13.8, 13.0), squeeze=False)
+    flat = axes.ravel()
+
+    for ip, period in enumerate(periods):
+        ax = flat[ip]
+        rows = period_rows.get(period.key, [])
+        if not rows:
+            ax.set_axis_off()
+            continue
+        #endif
+
+        for region, label, md, mm in (
+            ("FT", "FT", "o", "s"),
+            ("FD_all", "FD", "^", "D"),
+        ):
+            rr = sorted(
+                [row for row in rows if row.get("region") == region],
+                key=row_energy_coordinate,
+            )
+            if not rr:
+                continue
+            #endif
+            x = np.asarray([row_energy_coordinate(row) for row in rr], dtype=float)
+            ed = np.asarray([float(row["data_efficiency_final"]) for row in rr])
+            em = np.asarray([float(row["mc_efficiency_final"]) for row in rr])
+
+            ax.plot(x, ed, marker=md, linewidth=1.2, label=f"{label} data")
+            ax.plot(
+                x, em, marker=mm, linewidth=1.2, linestyle="--",
+                label=f"{label} MC",
+            )
+        #endfor
+
+        ax.set_title(period.label)
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel("reconstructed-probe efficiency")
+        ax.set_ylim(bottom=0.0)
+        ax.grid(alpha=0.18)
+        ax.legend(fontsize=7.5, frameon=False)
+    #endfor
+
+    for ip in range(len(periods), len(flat)):
+        flat[ip].set_axis_off()
+    #endfor
+
+    fig.suptitle(
+        "Photon reconstruction efficiency by run period",
+        fontsize=13, y=0.985,
+    )
+    safe_finalize_figure(
+        fig,
+        nsroot / "canvas_nsidis_period_efficiency_summary.png",
+        rect=(0.0, 0.0, 1.0, 0.96),
+    )
+    plt.close(fig)
 
 
 def direct_args_dict_keys(function) -> set[str]:
@@ -15069,7 +14983,7 @@ def make_associated_numerator_mass_fit_canvases(
         fig, axes = plt.subplots(
             nrows,
             ncols,
-            figsize=(4.7 * ncols, 3.4 * nrows),
+            figsize=(4.7 * ncols, 3.7 * nrows + 0.8),
             squeeze=False,
         )
 
@@ -15152,6 +15066,7 @@ def make_associated_numerator_mass_fit_canvases(
                 handles,
                 labels,
                 loc="upper center",
+                bbox_to_anchor=(0.5, 0.915),
                 ncol=4,
                 frameon=False,
                 fontsize=8,
@@ -15166,12 +15081,13 @@ def make_associated_numerator_mass_fit_canvases(
             "aaogen signal template + linear combinatorial background "
             "(constant background is the alternative)",
             fontsize=12.5,
+            y=0.985,
         )
         safe_finalize_figure(
             fig,
             outdir
             / f"canvas_numerator_pi0_mass_fits_{region_slug}.png",
-            rect=(0, 0, 1, 0.95),
+            rect=(0.0, 0.0, 1.0, 0.84),
         )
         plt.close(fig)
     #endfor
@@ -15418,7 +15334,7 @@ def make_nsidis_three_variable_fit_canvases(
         fig, axes = plt.subplots(
             3,
             len(rr),
-            figsize=(max(15.0, 3.55 * len(rr)), 10.0),
+            figsize=(max(15.0, 3.55 * len(rr)), 11.2),
             squeeze=False,
         )
 
@@ -15701,7 +15617,7 @@ def make_nsidis_three_variable_fit_canvases(
             ncol=6,
             fontsize=7.5,
             frameon=False,
-            bbox_to_anchor=(0.5, 0.972),
+            bbox_to_anchor=(0.5, 0.915),
         )
         fig.suptitle(
             f"{period.label}: {region} nominal denominator fits\n"
@@ -15726,10 +15642,100 @@ def make_nsidis_three_variable_fit_canvases(
                 "canvas_nominal_three_variable_fits_"
                 f"{period.key}_{region.lower()}.png"
             ),
-            rect=(0, 0, 1, 0.95),
+            rect=(0.0, 0.0, 1.0, 0.84),
         )
         plt.close(fig)
     #endfor
+
+
+
+def make_nsidis_pi0_fraction_energy_canvas(
+    period: PeriodConfig,
+    rows: Sequence[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """Show shared and single-variable fitted pi0 fractions versus energy."""
+    fig, axes = plt.subplots(1, 2, figsize=(13.8, 5.6), squeeze=False)
+    axes = axes[0]
+
+    for ax, region in zip(axes, ("FT", "FD_all")):
+        rr = sorted(
+            [
+                row for row in rows
+                if row.get("region") == region
+                and int(row.get("fit_success", 0)) == 1
+            ],
+            key=lambda row: float(row["energy_low_GeV"]),
+        )
+        if not rr:
+            ax.set_axis_off()
+            continue
+        #endif
+
+        x = np.asarray([row_energy_coordinate(row) for row in rr], dtype=float)
+        shared = np.asarray([float(row["pi0_fraction"]) for row in rr], dtype=float)
+        ax.plot(
+            x, shared, marker="o", linewidth=1.8, color="black",
+            label="shared 3-variable fit", zorder=5,
+        )
+
+        specs = (
+            ("Delta_phi", r"$\Delta\phi$ only", "tab:blue", "s"),
+            ("pTmiss", r"$p_{T,\rm miss}$ only", "tab:orange", "^"),
+            ("Emiss2", r"$E_{\rm miss}$ only", "tab:green", "D"),
+        )
+        for var, label, color, marker in specs:
+            y = np.asarray(
+                [float(row.get(f"pi0_fraction_single_{var}", np.nan)) for row in rr],
+                dtype=float,
+            )
+            usable = np.asarray(
+                [
+                    int(row.get(f"pi0_fraction_single_{var}_usable", 1)) == 1
+                    for row in rr
+                ],
+                dtype=bool,
+            )
+            good = np.isfinite(x) & np.isfinite(y) & usable
+            if np.any(good):
+                ax.plot(
+                    x[good], y[good], marker=marker, linewidth=1.0,
+                    color=color, label=label,
+                )
+            #endif
+            bad = np.isfinite(x) & np.isfinite(y) & (~usable)
+            if np.any(bad):
+                ax.plot(
+                    x[bad], y[bad], linestyle="none", marker=marker,
+                    markersize=6.0, markerfacecolor="none",
+                    markeredgecolor=color,
+                )
+            #endif
+        #endfor
+
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        ax.set_ylabel(r"$f_{\pi^0}$")
+        ax.set_title("FT" if region == "FT" else "FD all")
+        ax.grid(alpha=0.18)
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.91),
+        ncol=4, frameon=False, fontsize=8.5,
+    )
+    fig.suptitle(
+        f"{period.label}: Stage-2 fitted $\\pi^0$ fraction versus energy",
+        fontsize=13.0, y=0.985,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / f"canvas_pi0_fraction_vs_energy_{period.key}.png",
+        rect=(0.0, 0.0, 1.0, 0.82),
+    )
+    plt.close(fig)
+
 
 
 def process_nsidis_study_period(
@@ -16210,6 +16216,12 @@ def process_nsidis_study_period(
             probe_m2_max=central_support,
         )
 
+        make_nsidis_pi0_fraction_energy_canvas(
+            period,
+            pilot_nsidis_rows,
+            stage2_outdir,
+        )
+
 
         # --------------------------------------------------------------
         # aaogen MC reconstructed-companion efficiency.
@@ -16566,14 +16578,9 @@ def process_nsidis_study_period(
             outdir,
         )
 
-        assoc_excl_summary = (
-            make_nsidis_associated_eppi0_exclusivity_canvas(
-                period,
-                ns_epi_f,
-                ns_assoc,
-                outdir,
-            )
-        )
+        assoc_excl_summary = {
+            "status": "diagnostic_removed_not_used_in_production"
+        }
 
         with (
             outdir / "nsidis_numerator_association_summary.json"
