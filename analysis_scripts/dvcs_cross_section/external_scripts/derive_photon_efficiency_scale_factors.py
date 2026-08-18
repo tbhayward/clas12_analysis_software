@@ -551,11 +551,6 @@ GRAND_STAGE1_GROUPS = {
         ("open_angle_ep2", ("open_angle_ep2",), "open_angle_ep2", "identity"),
         ("open_angle_p1p2", ("open_angle_p1p2",), "open_angle_p1p2", "identity"),
     ),
-    "vertices": (
-        ("vz_e", ("vz_e",), r"$v_z(e)$", "identity"),
-        ("vz_p1", ("vz_p1",), r"$v_z(p_1)$", "identity"),
-        ("vz_p2", ("vz_p2",), r"$v_z(p_2)$", "identity"),
-    ),
     "inclusive_exclusive_kinematics": (
         ("W", ("W",), r"$W$ (GeV)", "identity"),
         ("x", ("x",), r"$x_B$", "identity"),
@@ -567,11 +562,11 @@ GRAND_STAGE1_GROUPS = {
         ("Mx2", ("Mx2",), r"$M_X^2$ (GeV$^2$)", "identity"),
         ("Mx2_1", ("Mx2_1",), r"$M_{X,1}^2$ (GeV$^2$)", "identity"),
         ("Mx2_2", ("Mx2_2",), r"$M_{X,2}^2$ (GeV$^2$)", "identity"),
-        ("derived_Mx2_ep", (), r"derived $M_X^2(ep)$ (GeV$^2$)", "derived_Mx2_ep"),
+        ("selection_Mx2_ep", (), r"selection $M_X^2(ep)$ [recomputed] (GeV$^2$)", "derived_Mx2_ep"),
         (
-            "derived_Mx2_epgamma",
+            "selection_Mx2_epgamma",
             (),
-            r"derived $M_X^2(ep\gamma)$ (GeV$^2$)",
+            r"selection $M_X^2(ep\gamma)$ [recomputed] (GeV$^2$)",
             "derived_Mx2_epgamma",
         ),
     ),
@@ -624,11 +619,11 @@ GRAND_STAGE1_GROUPS = {
             "identity",
         ),
         ("pTmiss", ("pTmiss",), r"$p_{T,miss}$ (GeV)", "identity"),
-        ("derived_Mx2_ep", (), r"derived $M_X^2(ep)$ (GeV$^2$)", "derived_Mx2_ep"),
+        ("selection_Mx2_ep", (), r"selection $M_X^2(ep)$ [recomputed] (GeV$^2$)", "derived_Mx2_ep"),
         (
-            "derived_Mx2_epgamma",
+            "selection_Mx2_epgamma",
             (),
-            r"derived $M_X^2(ep\gamma)$ (GeV$^2$)",
+            r"selection $M_X^2(ep\gamma)$ [recomputed] (GeV$^2$)",
             "derived_Mx2_epgamma",
         ),
     ),
@@ -791,8 +786,8 @@ def make_grand_stage1_diagnostics(
     Broad visual search for composition discriminators.
 
     For each variable group and detector region this writes:
-      * unit-normalized 1D data/pi0/DVCS overlays under the MINIMAL selection;
-      * the same overlays under the NOMINAL exclusivity support;
+      * unit-normalized 1D data/pi0/DVCS overlays under the NOMINAL
+        exclusivity support;
       * E_gamma,tag correlations after the NOMINAL support, with one row per
         variable and columns = data, aaogen pi0, dvcsgen.
 
@@ -854,110 +849,107 @@ def make_grand_stage1_diagnostics(
             #endif
 
             # ----------------------------------------------------------
-            # 1D overlays: minimal and nominal as separate canvases.
+            # 1D overlays after the nominal exclusivity support only.
+            # The old "minimal" duplicates were intentionally removed.
             # ----------------------------------------------------------
-            for selection_name, masks in (
-                ("minimal", minimal_masks),
-                ("nominal", nominal_masks),
-            ):
-                nvars = len(available_specs)
-                ncols = min(4, nvars)
-                nrows = int(math.ceil(nvars / ncols))
-                fig, axes = plt.subplots(
-                    nrows,
-                    ncols,
-                    figsize=(4.4 * ncols, 3.3 * nrows + 0.7),
-                    squeeze=False,
-                )
-                flat = axes.ravel()
+            masks = nominal_masks
+            nvars = len(available_specs)
+            ncols = min(4, nvars)
+            nrows = int(math.ceil(nvars / ncols))
+            fig, axes = plt.subplots(
+                nrows,
+                ncols,
+                figsize=(4.4 * ncols, 3.3 * nrows + 0.7),
+                squeeze=False,
+            )
+            flat = axes.ravel()
 
-                for ivar, (
-                    display_key,
-                    aliases,
-                    label,
-                    transform,
-                ) in enumerate(available_specs):
-                    ax = flat[ivar]
-                    lo, hi = ranges[display_key]
+            for ivar, (
+                display_key,
+                aliases,
+                label,
+                transform,
+            ) in enumerate(available_specs):
+                ax = flat[ivar]
+                lo, hi = ranges[display_key]
 
-                    for sample_name, sample_label, color in sample_specs:
-                        values = grand_stage1_value(
-                            arrays_by_sample[sample_name],
-                            features_by_sample[sample_name],
-                            aliases,
-                            transform,
-                            angle_units[sample_name],
-                        )
-                        mask = (
-                            masks[sample_name]
-                            & np.isfinite(values)
-                            & (values >= lo)
-                            & (values < hi)
-                        )
-                        h, edges = np.histogram(
-                            values[mask],
-                            bins=80,
-                            range=(lo, hi),
-                        )
-                        h = h.astype(float)
-                        if np.sum(h) > 0.0:
-                            h /= np.sum(h)
-                        #endif
-                        centers = 0.5 * (
-                            edges[:-1] + edges[1:]
-                        )
-                        ax.step(
-                            centers,
-                            h,
-                            where="mid",
-                            linewidth=1.15,
-                            color=color,
-                            label=sample_label,
-                        )
-                    #endfor
-
-                    ax.set_xlim(lo, hi)
-                    ax.set_ylim(bottom=0.0)
-                    ax.set_xlabel(label)
-                    ax.set_ylabel("unit-normalized")
-                    ax.grid(alpha=0.15)
-                    ax.set_title(display_key)
+                for sample_name, sample_label, color in sample_specs:
+                    values = grand_stage1_value(
+                        arrays_by_sample[sample_name],
+                        features_by_sample[sample_name],
+                        aliases,
+                        transform,
+                        angle_units[sample_name],
+                    )
+                    mask = (
+                        masks[sample_name]
+                        & np.isfinite(values)
+                        & (values >= lo)
+                        & (values < hi)
+                    )
+                    h, edges = np.histogram(
+                        values[mask],
+                        bins=80,
+                        range=(lo, hi),
+                    )
+                    h = h.astype(float)
+                    if np.sum(h) > 0.0:
+                        h /= np.sum(h)
+                    #endif
+                    centers = 0.5 * (
+                        edges[:-1] + edges[1:]
+                    )
+                    ax.step(
+                        centers,
+                        h,
+                        where="mid",
+                        linewidth=1.15,
+                        color=color,
+                        label=sample_label,
+                    )
                 #endfor
 
-                for iax in range(
-                    len(available_specs),
-                    len(flat),
-                ):
-                    flat[iax].set_axis_off()
-                #endfor
-
-                handles, labels = flat[0].get_legend_handles_labels()
-                fig.legend(
-                    handles,
-                    labels,
-                    loc="upper center",
-                    ncol=3,
-                    frameon=False,
-                    bbox_to_anchor=(0.5, 0.935),
-                    fontsize=8.5,
-                )
-                fig.suptitle(
-                    f"{period.label}: {region} grand Stage-1 "
-                    f"{group_name.replace('_', ' ')} — {selection_name}",
-                    fontsize=12.5,
-                    y=0.99,
-                )
-                safe_finalize_figure(
-                    fig,
-                    outdir
-                    / (
-                        f"grand_{group_name}_{selection_name}_"
-                        f"{period.key}_{region.lower()}.png"
-                    ),
-                    rect=(0.0, 0.0, 1.0, 0.88),
-                )
-                plt.close(fig)
+                ax.set_xlim(lo, hi)
+                ax.set_ylim(bottom=0.0)
+                ax.set_xlabel(label)
+                ax.set_ylabel("unit-normalized")
+                ax.grid(alpha=0.15)
+                ax.set_title(display_key)
             #endfor
+
+            for iax in range(
+                len(available_specs),
+                len(flat),
+            ):
+                flat[iax].set_axis_off()
+            #endfor
+
+            handles, labels = flat[0].get_legend_handles_labels()
+            fig.legend(
+                handles,
+                labels,
+                loc="upper center",
+                ncol=3,
+                frameon=False,
+                bbox_to_anchor=(0.5, 0.935),
+                fontsize=8.5,
+            )
+            fig.suptitle(
+                f"{period.label}: {region} grand Stage-1 "
+                f"{group_name.replace('_', ' ')} — nominal exclusivity",
+                fontsize=12.5,
+                y=0.99,
+            )
+            safe_finalize_figure(
+                fig,
+                outdir
+                / (
+                    f"grand_{group_name}_nominal_"
+                    f"{period.key}_{region.lower()}.png"
+                ),
+                rect=(0.0, 0.0, 1.0, 0.88),
+            )
+            plt.close(fig)
 
             # ----------------------------------------------------------
             # 2D E_tag correlations after nominal exclusivity support.
@@ -16660,7 +16652,9 @@ def process_nsidis_stage1_only_period(
         production_root / "stage1_shape_comparison"
     )
     grand_outdir = (
-        production_root / "stage1_grand_diagnostics"
+        production_root
+        / "stage1_grand_diagnostics"
+        / period.key
     )
     stage1_outdir.mkdir(parents=True, exist_ok=True)
     grand_outdir.mkdir(parents=True, exist_ok=True)
@@ -19593,7 +19587,8 @@ def main() -> int:
             log(
                 "Done. Stage-1-only photon-efficiency diagnostics are in "
                 f"{nsroot / 'stage1_shape_comparison'} and "
-                f"{nsroot / 'stage1_grand_diagnostics'}."
+                f"{nsroot / 'stage1_grand_diagnostics'} "
+                "(one subdirectory per run period)."
             )
             return 0
         #endif
