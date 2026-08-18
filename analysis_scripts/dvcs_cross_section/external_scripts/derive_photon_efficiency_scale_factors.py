@@ -9625,6 +9625,27 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--skip-grand-diagnostics",
+        action="store_true",
+        help=(
+            "Skip the broad Stage-1 grand diagnostic canvases in a full "
+            "production run. By default they are produced because they are "
+            "part of the visual validation record."
+        ),
+    )
+    parser.add_argument(
+        "--grand-diagnostics-max-entries",
+        type=int,
+        default=4000000,
+        help=(
+            "Maximum entries per epgamma sample used only for the broad grand "
+            "diagnostic canvases during a full production run. Default: "
+            "4,000,000. Use 0 for all entries. This does not truncate the "
+            "actual Stage-1/2/3 production analysis."
+        ),
+    )
+
+    parser.add_argument(
         "--stage1-only",
         action="store_true",
         help=(
@@ -17087,6 +17108,158 @@ def make_nsidis_pt_category_canvas(
 
 
 
+
+def run_grand_stage1_diagnostics_for_period(
+    period: PeriodConfig,
+    args_dict: Dict[str, object],
+    production_root: Path,
+) -> None:
+    """
+    Produce the broad all-variable diagnostic suite for a normal production run.
+
+    This deliberately uses an independent, bounded epgamma read.  The grand
+    diagnostics are visual cross-checks only; keeping their I/O separate means
+    they cannot alter the production event population or force dozens of
+    extra branches to remain resident during Stage 2/3.
+
+    By default only the first 4M entries of each data/template tree are used.
+    Override with --grand-diagnostics-max-entries; 0 means all entries.
+    """
+    if bool(args_dict.get("skip_grand_diagnostics", False)):
+        return
+    #endif
+
+    diag_max_entries = int(
+        args_dict.get(
+            "grand_diagnostics_max_entries",
+            4000000,
+        )
+    )
+    tree_name = args_dict.get("tree")
+    angle_mode = str(args_dict["angles"])
+    tag_min = float(args_dict["tag_min"])
+    tag_max = float(args_dict["tag_max"])
+    ft_theta_max = float(args_dict["ft_theta_max"])
+    max_probe_energy = float(
+        args_dict["nsidis_pilot_energy_max"]
+    )
+    mm2_min = float(args_dict["den_fit_mm2_min"])
+    mm2_max = float(args_dict["den_fit_mm2_max"])
+    probe_m2_max = float(
+        args_dict["nsidis_pilot_probe_m2_max"]
+    )
+
+    ns_epg_path, _ = resolve_nsidis_paths(
+        period,
+        args_dict,
+    )
+    outdir = (
+        production_root
+        / "stage1_grand_diagnostics"
+        / period.key
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    grand_optional = tuple(
+        dict.fromkeys(
+            grand_stage1_optional_branches()
+            + EPG_OPTIONAL_PI0_MC
+            + EPG_OPTIONAL_DVCS_MC
+            + EPG_OPTIONAL_DATA
+        )
+    )
+
+    input_specs = (
+        ("data", ns_epg_path),
+        ("pi0", period.epgamma_pi0_mc),
+        ("dvcs", period.epgamma_dvcs_mc),
+    )
+
+    arrays_by_sample = {}
+    samples_by_name = {}
+    features_by_sample = {}
+
+    log(
+        f"{period.label}: producing grand Stage-1 diagnostics "
+        f"(max entries/sample = "
+        f"{'all' if diag_max_entries == 0 else f'{diag_max_entries:,}'})."
+    )
+
+    for sample_name, path in input_specs:
+        arrays, found_tree, total = read_branches(
+            path,
+            EPG_REQUIRED,
+            grand_optional,
+            tree_name,
+            diag_max_entries,
+        )
+        sample = extract_epgamma(
+            arrays,
+            angle_mode,
+        )
+        feat = build_epgamma_denominator_features(
+            period,
+            sample,
+            tag_min,
+            tag_max,
+            ft_theta_max,
+        )
+        feat["electron_p"] = np.asarray(
+            electron_momentum_from_p3(
+                sample.electron_p3
+            ),
+            dtype=np.float32,
+        )
+
+        arrays_by_sample[sample_name] = arrays
+        samples_by_name[sample_name] = sample
+        features_by_sample[sample_name] = feat
+
+        log(
+            f"{period.label}: grand diagnostics {sample_name} "
+            f"loaded {len(sample.tag_energy):,}/{total:,} entries "
+            f"from tree '{found_tree}'."
+        )
+    #endfor
+
+    photon_acceptance = infer_photon_angular_acceptance(
+        samples_by_name["data"],
+        source=(
+            f"{period.label} nSidis epgamma data; "
+            "grand Stage-1 diagnostics"
+        ),
+    )
+    for feat in features_by_sample.values():
+        attach_photon_angular_acceptance(
+            feat,
+            photon_acceptance,
+        )
+    #endfor
+
+    make_grand_stage1_diagnostics(
+        period,
+        arrays_by_sample,
+        samples_by_name,
+        features_by_sample,
+        outdir,
+        ft_theta_max=ft_theta_max,
+        max_probe_energy=max_probe_energy,
+        mm2_min=mm2_min,
+        mm2_max=mm2_max,
+        probe_m2_max=probe_m2_max,
+    )
+
+    # Drop the large diagnostic-only arrays immediately.
+    arrays_by_sample.clear()
+    samples_by_name.clear()
+    features_by_sample.clear()
+
+    log(
+        f"{period.label}: grand Stage-1 diagnostics complete: {outdir}"
+    )
+
+
+
 def process_nsidis_stage1_only_period(
     period: PeriodConfig,
     args_dict: Dict[str, object],
@@ -17742,6 +17915,15 @@ def process_nsidis_study_period(
             probe_m2_max=central_support,
         )
 
+        # Keep the full visual diagnostic suite in ordinary production runs.
+        # It is intentionally generated from a bounded, independent read so
+        # the exploratory branch inventory does not bloat Stage-2/3 memory.
+        run_grand_stage1_diagnostics_for_period(
+            period,
+            args_dict,
+            production_root,
+        )
+
         pilot_nsidis_rows = run_nsidis_three_variable_nominal_fits(
             period, ns_epg_f, pi0_f, dvcs_f,
             ft_theta_max=ft_theta_max,
@@ -17816,6 +17998,10 @@ def process_nsidis_study_period(
             period,
             pilot_nsidis_rows,
             stage2_outdir,
+        )
+        log(
+            f"{period.label}: wrote visible two-category pT composition "
+            f"canvas to {stage2_outdir / ('canvas_pt_category_composition_' + period.key + '.png')}."
         )
 
 
@@ -19797,6 +19983,9 @@ def main() -> int:
 
     if args.max_entries < 0:
         raise ValueError("--max-entries must be >= 0.")
+    #endif
+    if args.grand_diagnostics_max_entries < 0:
+        raise ValueError("--grand-diagnostics-max-entries must be >= 0.")
     #endif
     if args.pt_category_split <= 0.0:
         raise ValueError("--pt-category-split must be > 0.")
