@@ -453,6 +453,633 @@ EPPIO_OPTIONAL_DATA = (
 )
 
 
+# -----------------------------------------------------------------------------
+# Stage-1 "grand diagnostic" inventory
+# -----------------------------------------------------------------------------
+#
+# This is deliberately separate from the normal production branch list.  The
+# full inventory is read only for --stage1-only, so the normal efficiency run
+# does not pay the I/O/memory cost of dozens of extra branches.
+GRAND_STAGE1_OPTIONAL_BRANCHES = (
+    # lab/opening-angle kinematics
+    "open_angle_ep",
+    "open_angle_ep1",
+    "open_angle_ep2",
+    "open_angle_p1p2",
+    # vertices
+    "vz_e",
+    "vz_p1",
+    "vz_p2",
+    # inclusive/exclusive kinematics
+    "W",
+    "x",
+    "t",
+    "t1",
+    "t2",
+    "tmin",
+    "y",
+    "Mx2",
+    "Mx2_1",
+    "Mx2_2",
+    # SIDIS
+    "z",
+    "xF",
+    "pT",
+    "eta",
+    "eta_gN",
+    "xi",
+    # SIDIS dihadron
+    "z1",
+    "z2",
+    "xF1",
+    "xF2",
+    "xi1",
+    "xi2",
+    "Mh",
+    "pT1",
+    "pT2",
+    "pTpT",
+    "eta1",
+    "eta2",
+    "Delta_eta",
+    "eta1_gN",
+    "eta2_gN",
+    # angles
+    "phi1",
+    "phi2",
+    "Delta_phi",
+    "phih",
+    "phi",
+    "phiR",
+    "theta",
+    # depolarization factors: support both common tree spellings
+    "DepA",
+    "DepB",
+    "DepC",
+    "DepV",
+    "DepW",
+    "Depolarization_A",
+    "Depolarization_B",
+    "Depolarization_C",
+    "Depolarization_V",
+    "Depolarization_W",
+    # exclusivity
+    "Emiss2",
+    "theta_gamma_gamma",
+    "pTmiss",
+)
+
+# Each tuple is:
+#   (display_key, branch aliases, plot label, transform)
+#
+# "lab_angle_deg" converts the raw lab-angle branch according to the detected
+# input angle convention.  Other analysis angles are kept in the ROOT-tree
+# convention because they are derived observables rather than detector angles.
+GRAND_STAGE1_GROUPS = {
+    "lab_kinematics": (
+        ("e_p", ("e_p",), r"$p_e$ (GeV)", "identity"),
+        ("e_theta", ("e_theta",), r"$\theta_e$ (deg)", "lab_angle_deg"),
+        ("e_phi", ("e_phi",), r"$\phi_e$ (deg)", "lab_angle_deg"),
+        ("p1_p", ("p1_p",), r"$p_1$ (GeV)", "identity"),
+        ("p1_theta", ("p1_theta",), r"$\theta_1$ (deg)", "lab_angle_deg"),
+        ("p1_phi", ("p1_phi",), r"$\phi_1^{lab}$ (deg)", "lab_angle_deg"),
+        ("p2_p", ("p2_p",), r"$p_2$ (GeV)", "identity"),
+        ("p2_theta", ("p2_theta",), r"$\theta_2$ (deg)", "lab_angle_deg"),
+        ("p2_phi", ("p2_phi",), r"$\phi_2^{lab}$ (deg)", "lab_angle_deg"),
+        ("open_angle_ep", ("open_angle_ep",), "open_angle_ep", "identity"),
+        ("open_angle_ep1", ("open_angle_ep1",), "open_angle_ep1", "identity"),
+        ("open_angle_ep2", ("open_angle_ep2",), "open_angle_ep2", "identity"),
+        ("open_angle_p1p2", ("open_angle_p1p2",), "open_angle_p1p2", "identity"),
+    ),
+    "vertices": (
+        ("vz_e", ("vz_e",), r"$v_z(e)$", "identity"),
+        ("vz_p1", ("vz_p1",), r"$v_z(p_1)$", "identity"),
+        ("vz_p2", ("vz_p2",), r"$v_z(p_2)$", "identity"),
+    ),
+    "inclusive_exclusive_kinematics": (
+        ("W", ("W",), r"$W$ (GeV)", "identity"),
+        ("x", ("x",), r"$x_B$", "identity"),
+        ("t", ("t",), r"$t$ (GeV$^2$)", "identity"),
+        ("t1", ("t1",), r"$t_1$ (GeV$^2$)", "identity"),
+        ("t2", ("t2",), r"$t_2$ (GeV$^2$)", "identity"),
+        ("tmin", ("tmin",), r"$t_{min}$ (GeV$^2$)", "identity"),
+        ("y", ("y",), r"$y$", "identity"),
+        ("Mx2", ("Mx2",), r"$M_X^2$ (GeV$^2$)", "identity"),
+        ("Mx2_1", ("Mx2_1",), r"$M_{X,1}^2$ (GeV$^2$)", "identity"),
+        ("Mx2_2", ("Mx2_2",), r"$M_{X,2}^2$ (GeV$^2$)", "identity"),
+        ("derived_Mx2_ep", (), r"derived $M_X^2(ep)$ (GeV$^2$)", "derived_Mx2_ep"),
+        (
+            "derived_Mx2_epgamma",
+            (),
+            r"derived $M_X^2(ep\gamma)$ (GeV$^2$)",
+            "derived_Mx2_epgamma",
+        ),
+    ),
+    "sidis": (
+        ("z", ("z",), r"$z$", "identity"),
+        ("xF", ("xF",), r"$x_F$", "identity"),
+        ("pT", ("pT",), r"$p_T$ (GeV)", "identity"),
+        ("eta", ("eta",), r"$\eta$", "identity"),
+        ("eta_gN", ("eta_gN",), r"$\eta_{gN}$", "identity"),
+        ("xi", ("xi",), r"$\xi$", "identity"),
+    ),
+    "sidis_dihadron": (
+        ("z1", ("z1",), r"$z_1$", "identity"),
+        ("z2", ("z2",), r"$z_2$", "identity"),
+        ("xF1", ("xF1",), r"$x_{F,1}$", "identity"),
+        ("xF2", ("xF2",), r"$x_{F,2}$", "identity"),
+        ("xi1", ("xi1",), r"$\xi_1$", "identity"),
+        ("xi2", ("xi2",), r"$\xi_2$", "identity"),
+        ("Mh", ("Mh",), r"$M_h$ (GeV)", "identity"),
+        ("pT1", ("pT1",), r"$p_{T,1}$ (GeV)", "identity"),
+        ("pT2", ("pT2",), r"$p_{T,2}$ (GeV)", "identity"),
+        ("pTpT", ("pTpT",), r"$p_{T}p_{T}$", "identity"),
+        ("eta1", ("eta1",), r"$\eta_1$", "identity"),
+        ("eta2", ("eta2",), r"$\eta_2$", "identity"),
+        ("Delta_eta", ("Delta_eta",), r"$\Delta\eta$", "identity"),
+        ("eta1_gN", ("eta1_gN",), r"$\eta_{1,gN}$", "identity"),
+        ("eta2_gN", ("eta2_gN",), r"$\eta_{2,gN}$", "identity"),
+    ),
+    "angles": (
+        ("phi1", ("phi1",), r"$\phi_1$", "identity"),
+        ("phi2", ("phi2",), r"$\phi_2$", "identity"),
+        ("Delta_phi", ("Delta_phi",), r"$\Delta\phi$", "identity"),
+        ("phih", ("phih", "phi"), r"$\phi_h$", "identity"),
+        ("phiR", ("phiR",), r"$\phi_R$", "identity"),
+        ("theta", ("theta",), r"$\theta$", "identity"),
+    ),
+    "depolarization": (
+        ("DepA", ("DepA", "Depolarization_A"), r"$A$", "identity"),
+        ("DepB", ("DepB", "Depolarization_B"), r"$B$", "identity"),
+        ("DepC", ("DepC", "Depolarization_C"), r"$C$", "identity"),
+        ("DepV", ("DepV", "Depolarization_V"), r"$V$", "identity"),
+        ("DepW", ("DepW", "Depolarization_W"), r"$W_{dep}$", "identity"),
+    ),
+    "exclusivity": (
+        ("Emiss2", ("Emiss2",), r"$E_{miss}$", "identity"),
+        (
+            "theta_gamma_gamma",
+            ("theta_gamma_gamma",),
+            r"$\theta_{\gamma\gamma}$",
+            "identity",
+        ),
+        ("pTmiss", ("pTmiss",), r"$p_{T,miss}$ (GeV)", "identity"),
+        ("derived_Mx2_ep", (), r"derived $M_X^2(ep)$ (GeV$^2$)", "derived_Mx2_ep"),
+        (
+            "derived_Mx2_epgamma",
+            (),
+            r"derived $M_X^2(ep\gamma)$ (GeV$^2$)",
+            "derived_Mx2_epgamma",
+        ),
+    ),
+}
+
+
+def grand_stage1_optional_branches() -> Tuple[str, ...]:
+    """Deduplicated optional branch list for the all-variable Stage-1 scan."""
+    names = list(EPG_OPTIONAL_DATA)
+    names.extend(GRAND_STAGE1_OPTIONAL_BRANCHES)
+    return tuple(dict.fromkeys(names))
+
+
+def grand_stage1_value(
+    arrays: Dict[str, np.ndarray],
+    features: Dict[str, np.ndarray],
+    aliases: Sequence[str],
+    transform: str,
+    angle_unit: str,
+) -> Optional[np.ndarray]:
+    """Return one diagnostic variable, or None when the branch is unavailable."""
+    if transform == "derived_Mx2_ep":
+        return np.asarray(features["ep_missing_mass2"], dtype=float)
+    #endif
+    if transform == "derived_Mx2_epgamma":
+        return np.asarray(features["pred_probe_mass2"], dtype=float)
+    #endif
+
+    branch = next(
+        (name for name in aliases if name in arrays),
+        None,
+    )
+    if branch is None:
+        return None
+    #endif
+
+    values = np.asarray(arrays[branch], dtype=float)
+    if transform == "lab_angle_deg":
+        if angle_unit == "rad":
+            values = np.degrees(values)
+        #endif
+    #endif
+    return values
+
+
+def grand_stage1_range(
+    arrays_by_sample: Dict[str, Dict[str, np.ndarray]],
+    features_by_sample: Dict[str, Dict[str, np.ndarray]],
+    masks_by_sample: Dict[str, np.ndarray],
+    aliases: Sequence[str],
+    transform: str,
+    angle_units: Dict[str, str],
+) -> Optional[Tuple[float, float]]:
+    """Common robust plotting range from all three samples."""
+    pooled = []
+    for sample_name in ("data", "pi0", "dvcs"):
+        values = grand_stage1_value(
+            arrays_by_sample[sample_name],
+            features_by_sample[sample_name],
+            aliases,
+            transform,
+            angle_units[sample_name],
+        )
+        if values is None:
+            return None
+        #endif
+        mask = masks_by_sample[sample_name]
+        local = values[mask & np.isfinite(values)]
+        if local.size:
+            # Bound the contribution of giant samples to percentile estimation.
+            stride = max(1, local.size // 250_000)
+            pooled.append(local[::stride])
+        #endif
+    #endfor
+
+    if not pooled:
+        return None
+    #endif
+
+    values = np.concatenate(pooled)
+    if values.size == 0:
+        return None
+    #endif
+
+    lo, hi = np.nanpercentile(values, [0.5, 99.5])
+    if not np.isfinite(lo) or not np.isfinite(hi):
+        return None
+    #endif
+    if hi <= lo:
+        pad = max(1.0e-6, abs(lo) * 0.05 + 1.0e-6)
+        lo -= pad
+        hi += pad
+    else:
+        pad = 0.04 * (hi - lo)
+        lo -= pad
+        hi += pad
+    #endif
+    return float(lo), float(hi)
+
+
+def grand_stage1_masks(
+    feat: Dict[str, np.ndarray],
+    region: str,
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Minimal and nominal selections for the grand Stage-1 scan."""
+    minimal = (
+        np.asarray(feat["valid_tag"], dtype=bool)
+        & stage2_region_mask(
+            feat,
+            region,
+            ft_theta_max,
+        )
+        & np.isfinite(feat["electron_p"])
+        & (feat["electron_p"] > 2.0)
+        & np.isfinite(feat["theta_egamma_deg"])
+        & (
+            feat["theta_egamma_deg"]
+            > THETA_EGAMMA_MIN_DEG
+        )
+        & np.isfinite(feat["pred_probe_energy"])
+        & (feat["pred_probe_energy"] >= 0.40)
+        & (feat["pred_probe_energy"] < max_probe_energy)
+    )
+    nominal = stage2_fit_mask(
+        feat,
+        region,
+        ft_theta_max,
+        0.40,
+        max_probe_energy,
+        mm2_min,
+        mm2_max,
+        probe_m2_max,
+    )
+    nominal &= (
+        np.isfinite(feat["electron_p"])
+        & (feat["electron_p"] > 2.0)
+    )
+    return minimal, nominal
+
+
+def make_grand_stage1_diagnostics(
+    period: PeriodConfig,
+    arrays_by_sample: Dict[str, Dict[str, np.ndarray]],
+    samples_by_name: Dict[str, EPGammaSample],
+    features_by_sample: Dict[str, Dict[str, np.ndarray]],
+    outdir: Path,
+    *,
+    ft_theta_max: float,
+    max_probe_energy: float,
+    mm2_min: float,
+    mm2_max: float,
+    probe_m2_max: float,
+) -> None:
+    """
+    Broad visual search for composition discriminators.
+
+    For each variable group and detector region this writes:
+      * unit-normalized 1D data/pi0/DVCS overlays under the MINIMAL selection;
+      * the same overlays under the NOMINAL exclusivity support;
+      * E_gamma,tag correlations after the NOMINAL support, with one row per
+        variable and columns = data, aaogen pi0, dvcsgen.
+
+    All axes are linear.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    sample_specs = (
+        ("data", "data", "black"),
+        ("pi0", r"$\pi^0$ MC", "tab:red"),
+        ("dvcs", "BH/DVCS MC", "tab:blue"),
+    )
+    angle_units = {
+        name: sample.angle_unit
+        for name, sample in samples_by_name.items()
+    }
+
+    for region in ("FT", "FD_all"):
+        minimal_masks = {}
+        nominal_masks = {}
+        for sample_name in ("data", "pi0", "dvcs"):
+            minimal, nominal = grand_stage1_masks(
+                features_by_sample[sample_name],
+                region,
+                ft_theta_max,
+                max_probe_energy,
+                mm2_min,
+                mm2_max,
+                probe_m2_max,
+            )
+            minimal_masks[sample_name] = minimal
+            nominal_masks[sample_name] = nominal
+        #endfor
+
+        for group_name, group_specs in GRAND_STAGE1_GROUPS.items():
+            # Keep only variables actually available in all three samples.
+            available_specs = []
+            ranges = {}
+            for display_key, aliases, label, transform in group_specs:
+                plot_range = grand_stage1_range(
+                    arrays_by_sample,
+                    features_by_sample,
+                    minimal_masks,
+                    aliases,
+                    transform,
+                    angle_units,
+                )
+                if plot_range is None:
+                    continue
+                #endif
+                available_specs.append(
+                    (display_key, aliases, label, transform)
+                )
+                ranges[display_key] = plot_range
+            #endfor
+
+            if not available_specs:
+                continue
+            #endif
+
+            # ----------------------------------------------------------
+            # 1D overlays: minimal and nominal as separate canvases.
+            # ----------------------------------------------------------
+            for selection_name, masks in (
+                ("minimal", minimal_masks),
+                ("nominal", nominal_masks),
+            ):
+                nvars = len(available_specs)
+                ncols = min(4, nvars)
+                nrows = int(math.ceil(nvars / ncols))
+                fig, axes = plt.subplots(
+                    nrows,
+                    ncols,
+                    figsize=(4.4 * ncols, 3.3 * nrows + 0.7),
+                    squeeze=False,
+                )
+                flat = axes.ravel()
+
+                for ivar, (
+                    display_key,
+                    aliases,
+                    label,
+                    transform,
+                ) in enumerate(available_specs):
+                    ax = flat[ivar]
+                    lo, hi = ranges[display_key]
+
+                    for sample_name, sample_label, color in sample_specs:
+                        values = grand_stage1_value(
+                            arrays_by_sample[sample_name],
+                            features_by_sample[sample_name],
+                            aliases,
+                            transform,
+                            angle_units[sample_name],
+                        )
+                        mask = (
+                            masks[sample_name]
+                            & np.isfinite(values)
+                            & (values >= lo)
+                            & (values < hi)
+                        )
+                        h, edges = np.histogram(
+                            values[mask],
+                            bins=80,
+                            range=(lo, hi),
+                        )
+                        h = h.astype(float)
+                        if np.sum(h) > 0.0:
+                            h /= np.sum(h)
+                        #endif
+                        centers = 0.5 * (
+                            edges[:-1] + edges[1:]
+                        )
+                        ax.step(
+                            centers,
+                            h,
+                            where="mid",
+                            linewidth=1.15,
+                            color=color,
+                            label=sample_label,
+                        )
+                    #endfor
+
+                    ax.set_xlim(lo, hi)
+                    ax.set_ylim(bottom=0.0)
+                    ax.set_xlabel(label)
+                    ax.set_ylabel("unit-normalized")
+                    ax.grid(alpha=0.15)
+                    ax.set_title(display_key)
+                #endfor
+
+                for iax in range(
+                    len(available_specs),
+                    len(flat),
+                ):
+                    flat[iax].set_axis_off()
+                #endfor
+
+                handles, labels = flat[0].get_legend_handles_labels()
+                fig.legend(
+                    handles,
+                    labels,
+                    loc="upper center",
+                    ncol=3,
+                    frameon=False,
+                    bbox_to_anchor=(0.5, 0.935),
+                    fontsize=8.5,
+                )
+                fig.suptitle(
+                    f"{period.label}: {region} grand Stage-1 "
+                    f"{group_name.replace('_', ' ')} — {selection_name}",
+                    fontsize=12.5,
+                    y=0.99,
+                )
+                safe_finalize_figure(
+                    fig,
+                    outdir
+                    / (
+                        f"grand_{group_name}_{selection_name}_"
+                        f"{period.key}_{region.lower()}.png"
+                    ),
+                    rect=(0.0, 0.0, 1.0, 0.88),
+                )
+                plt.close(fig)
+            #endfor
+
+            # ----------------------------------------------------------
+            # 2D E_tag correlations after nominal exclusivity support.
+            # One row per variable, columns = data/pi0/DVCS.
+            # ----------------------------------------------------------
+            nvars = len(available_specs)
+            fig, axes = plt.subplots(
+                nvars,
+                3,
+                figsize=(13.4, max(4.0, 2.55 * nvars + 0.8)),
+                squeeze=False,
+            )
+
+            for irow, (
+                display_key,
+                aliases,
+                label,
+                transform,
+            ) in enumerate(available_specs):
+                lo, hi = ranges[display_key]
+
+                # Shared z maximum across data/pi0/DVCS for this variable.
+                histograms = {}
+                zmax = 0.0
+                for sample_name, _, _ in sample_specs:
+                    values = grand_stage1_value(
+                        arrays_by_sample[sample_name],
+                        features_by_sample[sample_name],
+                        aliases,
+                        transform,
+                        angle_units[sample_name],
+                    )
+                    feat = features_by_sample[sample_name]
+                    etag = np.asarray(
+                        feat["tag_energy"],
+                        dtype=float,
+                    )
+                    mask = (
+                        nominal_masks[sample_name]
+                        & np.isfinite(etag)
+                        & np.isfinite(values)
+                        & (etag >= 0.4)
+                        & (etag < 9.5)
+                        & (values >= lo)
+                        & (values < hi)
+                    )
+                    h2, xedges, yedges = np.histogram2d(
+                        etag[mask],
+                        values[mask],
+                        bins=(60, 60),
+                        range=((0.4, 9.5), (lo, hi)),
+                    )
+                    h2 = h2.astype(float)
+                    if np.sum(h2) > 0.0:
+                        h2 /= np.sum(h2)
+                    #endif
+                    histograms[sample_name] = (
+                        h2,
+                        xedges,
+                        yedges,
+                    )
+                    zmax = max(
+                        zmax,
+                        float(np.max(h2))
+                        if h2.size
+                        else 0.0,
+                    )
+                #endfor
+
+                for icol, (
+                    sample_name,
+                    sample_label,
+                    _,
+                ) in enumerate(sample_specs):
+                    ax = axes[irow, icol]
+                    h2, xedges, yedges = histograms[
+                        sample_name
+                    ]
+                    mesh = ax.pcolormesh(
+                        xedges,
+                        yedges,
+                        h2.T,
+                        shading="auto",
+                        vmin=0.0,
+                        vmax=zmax if zmax > 0.0 else 1.0,
+                    )
+                    ax.set_xlim(0.4, 9.5)
+                    ax.set_ylim(lo, hi)
+                    ax.set_xlabel(
+                        r"$E_{\gamma,\mathrm{tag}}$ (GeV)"
+                    )
+                    ax.set_ylabel(label)
+                    if irow == 0:
+                        ax.set_title(sample_label)
+                    #endif
+                #endfor
+            #endfor
+
+            fig.suptitle(
+                f"{period.label}: {region} "
+                f"$E_{{\\gamma,tag}}$ correlations — "
+                f"{group_name.replace('_', ' ')}\n"
+                "nominal exclusivity support",
+                fontsize=12.5,
+                y=0.995,
+            )
+            safe_finalize_figure(
+                fig,
+                outdir
+                / (
+                    f"grand_{group_name}_etag_correlations_"
+                    f"{period.key}_{region.lower()}.png"
+                ),
+                rect=(0.0, 0.0, 1.0, 0.965),
+            )
+            plt.close(fig)
+        #endfor
+    #endfor
+
+
+
+
 @dataclass
 class EPGammaSample:
     electron_p3: np.ndarray
@@ -8997,6 +9624,18 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--stage1-only",
+        action="store_true",
+        help=(
+            "Run only the nSidis Stage-1 shape diagnostics and exit. "
+            "This reads nSidis data, aaogen epgamma, and dvcsgen epgamma, "
+            "makes the standard FT/FD shape canvases plus the grand "
+            "all-variable diagnostic suite, and skips eppi0 association, "
+            "template fitting, and efficiency extraction."
+        ),
+    )
+
+    parser.add_argument(
         "--nsidis-study",
         action="store_true",
         help=(
@@ -15323,17 +15962,25 @@ def preflight_nsidis_study(
     for period in periods:
         ns_epg, ns_epi = resolve_nsidis_paths(period, args_dict)
 
-        checks = [
-            ("old epgamma", period.epgamma_data, EPG_REQUIRED),
-            ("old eppi0", period.eppi0_data, EPPIO_REQUIRED),
-            ("nSidis epgamma", ns_epg, EPG_REQUIRED),
-            ("nSidis eppi0", ns_epi, EPPIO_REQUIRED),
-        ]
-        if bool(args_dict.get("nsidis_pilot_fit", False)):
-            checks.extend([
+        if bool(args_dict.get("stage1_only", False)):
+            checks = [
+                ("nSidis epgamma", ns_epg, EPG_REQUIRED),
                 ("aaogen epgamma", period.epgamma_pi0_mc, EPG_REQUIRED),
                 ("dvcsgen epgamma", period.epgamma_dvcs_mc, EPG_REQUIRED),
-            ])
+            ]
+        else:
+            checks = [
+                ("old epgamma", period.epgamma_data, EPG_REQUIRED),
+                ("old eppi0", period.eppi0_data, EPPIO_REQUIRED),
+                ("nSidis epgamma", ns_epg, EPG_REQUIRED),
+                ("nSidis eppi0", ns_epi, EPPIO_REQUIRED),
+            ]
+            if bool(args_dict.get("nsidis_pilot_fit", False)):
+                checks.extend([
+                    ("aaogen epgamma", period.epgamma_pi0_mc, EPG_REQUIRED),
+                    ("dvcsgen epgamma", period.epgamma_dvcs_mc, EPG_REQUIRED),
+                ])
+            #endif
         #endif
 
         for label, path, required in checks:
@@ -15342,11 +15989,14 @@ def preflight_nsidis_study(
                 continue
             #endif
 
-            needs_event_ids = label in (
-                "old epgamma",
-                "old eppi0",
-                "nSidis epgamma",
-                "nSidis eppi0",
+            needs_event_ids = (
+                not bool(args_dict.get("stage1_only", False))
+                and label in (
+                    "old epgamma",
+                    "old eppi0",
+                    "nSidis epgamma",
+                    "nSidis eppi0",
+                )
             )
 
             with uproot.open(path) as root_file:
@@ -15401,8 +16051,10 @@ def make_nsidis_shape_comparison_canvases(
     mm2_max,
     probe_m2_max,
 ):
-    """2x5 transparent data/template shape comparison for FT and FD_all."""
+    """2x6 transparent data/template shape comparison for FT and FD_all."""
     specs = (
+        ("Mx2_ep", r"$M_X^2(ep)$",
+         r"$M_X^2(ep)$ (GeV$^2$)", -0.20, 0.50, 120),
         ("Mx2_epgamma", r"$M_X^2(ep\gamma)$",
          r"$M_X^2(ep\gamma)$ (GeV$^2$)", -0.20, 0.30, 100),
         ("Delta_phi", r"$\Delta\phi$",
@@ -15416,6 +16068,9 @@ def make_nsidis_shape_comparison_canvases(
     )
 
     def vals(feat, key):
+        if key == "Mx2_ep":
+            return np.asarray(feat["ep_missing_mass2"], dtype=float)
+        #endif
         if key == "Mx2_epgamma":
             return np.asarray(feat["pred_probe_mass2"], dtype=float)
         #endif
@@ -15437,7 +16092,7 @@ def make_nsidis_shape_comparison_canvases(
     )
 
     for region in ("FT", "FD_all"):
-        fig, axes = plt.subplots(2, 5, figsize=(18.8, 7.4))
+        fig, axes = plt.subplots(2, 6, figsize=(22.0, 7.4))
         for _, feat, label, color in samples:
             minimal = (
                 np.asarray(feat["valid_tag"], dtype=bool)
@@ -15488,6 +16143,38 @@ def make_nsidis_shape_comparison_canvases(
                 ax.set_xlim(spec[3], spec[4])
                 ax.set_xlabel(spec[2])
                 ax.grid(alpha=0.16)
+
+                # Explicitly show the exclusivity support used by the nominal
+                # denominator selection.  These are visual guides only on the
+                # top/minimal row; the bottom row is already selected by them.
+                if spec[0] == "Mx2_ep":
+                    ax.axvline(
+                        mm2_min,
+                        linestyle="--",
+                        linewidth=0.9,
+                        color="0.35",
+                    )
+                    ax.axvline(
+                        mm2_max,
+                        linestyle="--",
+                        linewidth=0.9,
+                        color="0.35",
+                    )
+                elif spec[0] == "Mx2_epgamma":
+                    ax.axvline(
+                        -probe_m2_max,
+                        linestyle="--",
+                        linewidth=0.9,
+                        color="0.35",
+                    )
+                    ax.axvline(
+                        probe_m2_max,
+                        linestyle="--",
+                        linewidth=0.9,
+                        color="0.35",
+                    )
+                #endif
+
                 if irow == 0:
                     ax.set_title(spec[1])
                 #endif
@@ -15501,8 +16188,7 @@ def make_nsidis_shape_comparison_canvases(
             f"{period.label}: {region} denominator shape comparison\n"
             r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
             rf"nominal adds ${mm2_min:.2f}<M_X^2(ep)<{mm2_max:.2f}$ GeV$^2$ "
-            rf"and $|M_X^2(ep\gamma)|<{probe_m2_max:.2f}$ GeV$^2$; "
-            r"$x_{F,2}$ is used only as a composition discriminator",
+            rf"and $|M_X^2(ep\gamma)|<{probe_m2_max:.2f}$ GeV$^2$",
             fontsize=12.0,
         )
         safe_finalize_figure(
@@ -15955,6 +16641,184 @@ def make_nsidis_pi0_fraction_energy_canvas(
 
 
 
+
+def process_nsidis_stage1_only_period(
+    period: PeriodConfig,
+    args_dict: Dict[str, object],
+    output_root: str,
+) -> Dict[str, object]:
+    """
+    Quick Stage-1-only diagnostic path.
+
+    Reads only:
+      * nSidis epgamma data;
+      * aaogen-as-epgamma MC;
+      * dvcsgen epgamma MC.
+
+    It intentionally does NOT read wagon files or any eppi0 files and does not
+    perform association, composition fitting, or efficiency extraction.
+    """
+    t0 = time.perf_counter()
+    production_root = Path(output_root)
+    stage1_outdir = (
+        production_root / "stage1_shape_comparison"
+    )
+    grand_outdir = (
+        production_root / "stage1_grand_diagnostics"
+    )
+    stage1_outdir.mkdir(parents=True, exist_ok=True)
+    grand_outdir.mkdir(parents=True, exist_ok=True)
+
+    max_entries = int(args_dict["max_entries"])
+    tree_name = args_dict.get("tree")
+    angle_mode = str(args_dict["angles"])
+    tag_min = float(args_dict["tag_min"])
+    tag_max = float(args_dict["tag_max"])
+    ft_theta_max = float(args_dict["ft_theta_max"])
+    max_probe_energy = float(
+        args_dict["nsidis_pilot_energy_max"]
+    )
+    mm2_min = float(args_dict["den_fit_mm2_min"])
+    mm2_max = float(args_dict["den_fit_mm2_max"])
+    probe_m2_max = float(
+        args_dict["nsidis_pilot_probe_m2_max"]
+    )
+
+    ns_epg_path, _ = resolve_nsidis_paths(
+        period,
+        args_dict,
+    )
+
+    optional = grand_stage1_optional_branches()
+    input_specs = (
+        (
+            "data",
+            ns_epg_path,
+            EPG_OPTIONAL_DATA,
+        ),
+        (
+            "pi0",
+            period.epgamma_pi0_mc,
+            EPG_OPTIONAL_PI0_MC,
+        ),
+        (
+            "dvcs",
+            period.epgamma_dvcs_mc,
+            EPG_OPTIONAL_DVCS_MC,
+        ),
+    )
+
+    arrays_by_sample = {}
+    samples_by_name = {}
+    features_by_sample = {}
+
+    # Read all user-requested diagnostic branches, but only in this explicit
+    # Stage-1-only path.
+    grand_optional = tuple(
+        dict.fromkeys(
+            optional
+            + EPG_OPTIONAL_PI0_MC
+            + EPG_OPTIONAL_DVCS_MC
+            + EPG_OPTIONAL_DATA
+        )
+    )
+
+    for sample_name, path, _base_optional in input_specs:
+        log(
+            f"{period.label}: Stage-1-only reading "
+            f"{sample_name} epgamma."
+        )
+        arrays, found_tree, total = read_branches(
+            path,
+            EPG_REQUIRED,
+            grand_optional,
+            tree_name,
+            max_entries,
+        )
+        sample = extract_epgamma(
+            arrays,
+            angle_mode,
+        )
+        feat = build_epgamma_denominator_features(
+            period,
+            sample,
+            tag_min,
+            tag_max,
+            ft_theta_max,
+        )
+        feat["electron_p"] = np.asarray(
+            electron_momentum_from_p3(
+                sample.electron_p3
+            ),
+            dtype=np.float32,
+        )
+
+        arrays_by_sample[sample_name] = arrays
+        samples_by_name[sample_name] = sample
+        features_by_sample[sample_name] = feat
+
+        log(
+            f"{period.label}: {sample_name} tree "
+            f"'{found_tree}', loaded "
+            f"{len(sample.tag_energy):,}/{total:,} entries."
+        )
+    #endfor
+
+    # Use the same fixed angular acceptance inferred from aaogen.
+    photon_acceptance = infer_photon_angular_acceptance(
+        features_by_sample["pi0"],
+        ft_theta_max,
+    )
+    for feat in features_by_sample.values():
+        attach_photon_angular_acceptance(
+            feat,
+            photon_acceptance,
+        )
+    #endfor
+
+    make_nsidis_shape_comparison_canvases(
+        period,
+        features_by_sample["data"],
+        features_by_sample["pi0"],
+        features_by_sample["dvcs"],
+        stage1_outdir,
+        ft_theta_max=ft_theta_max,
+        max_probe_energy=max_probe_energy,
+        mm2_min=mm2_min,
+        mm2_max=mm2_max,
+        probe_m2_max=probe_m2_max,
+    )
+
+    make_grand_stage1_diagnostics(
+        period,
+        arrays_by_sample,
+        samples_by_name,
+        features_by_sample,
+        grand_outdir,
+        ft_theta_max=ft_theta_max,
+        max_probe_energy=max_probe_energy,
+        mm2_min=mm2_min,
+        mm2_max=mm2_max,
+        probe_m2_max=probe_m2_max,
+    )
+
+    elapsed = float(
+        time.perf_counter() - t0
+    )
+    log(
+        f"{period.label}: Stage-1-only diagnostics complete "
+        f"in {elapsed:.1f} s."
+    )
+    return {
+        "period": period.key,
+        "label": period.label,
+        "stage1_only": True,
+        "wall_time_s": elapsed,
+        "status": "stage1_only_complete",
+    }
+
+
+
 def process_nsidis_study_period(
     period: PeriodConfig,
     args_dict: Dict[str, object],
@@ -15965,6 +16829,14 @@ def process_nsidis_study_period(
 
     The optional pilot now forms the first preliminary data/aaogen photon-efficiency scale factor after validating denominator composition and association-first numerator purity. The fitted-pi0 denominator uncertainty is not yet propagated.
     """
+    if bool(args_dict.get("stage1_only", False)):
+        return process_nsidis_stage1_only_period(
+            period,
+            args_dict,
+            output_root,
+        )
+    #endif
+
     t0 = time.perf_counter()
     production_root = Path(output_root)
     stage1_outdir = (
@@ -18584,7 +19456,10 @@ def main() -> int:
         # Carry the nSidis denominator extraction all the way through the
         # reconstructed-probe efficiency and epsilon_data/epsilon_MC scale
         # factor by default, including E_probe > 2 GeV.
-        if not args.nsidis_driver_study:
+        if (
+            not args.nsidis_driver_study
+            and not args.stage1_only
+        ):
             args.nsidis_pilot_fit = True
         #endif
 
