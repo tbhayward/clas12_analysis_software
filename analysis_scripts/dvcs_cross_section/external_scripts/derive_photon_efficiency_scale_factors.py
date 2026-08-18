@@ -303,7 +303,7 @@ def direction(theta: float, phi: float) -> np.ndarray:
 def cartesian_from_spherical(p: np.ndarray, theta: np.ndarray, phi: np.ndarray) -> np.ndarray:
     st = np.sin(theta)
     return np.column_stack((
-        p * st * np.cos(phi),
+        p * st * np.cos(phi).astype(np.float32, copy=False),
         p * st * np.sin(phi),
         p * np.cos(theta),
     ))
@@ -599,9 +599,12 @@ def extract_epgamma(arrays: Dict[str, np.ndarray], angle_mode: str) -> EPGammaSa
     g_theta = to_radians(arrays["p2_theta"], unit)
     g_phi = to_radians(arrays["p2_phi"], unit)
 
-    e_p = np.asarray(arrays["e_p"], dtype=float)
-    p_p = np.asarray(arrays["p1_p"], dtype=float)
-    g_e = np.asarray(arrays["p2_p"], dtype=float)
+    # Bulk reconstructed kinematics do not need float64 precision.
+    # Converting here (rather than after feature construction) cuts the
+    # memory traffic of the very large nSidis samples approximately in half.
+    e_p = np.asarray(arrays["e_p"], dtype=np.float32)
+    p_p = np.asarray(arrays["p1_p"], dtype=np.float32)
+    g_e = np.asarray(arrays["p2_p"], dtype=np.float32)
 
     return EPGammaSample(
         electron_p3=cartesian_from_spherical(e_p, e_theta, e_phi),
@@ -623,10 +626,10 @@ def extract_eppi0(arrays: Dict[str, np.ndarray], angle_mode: str) -> EPPi0Sample
     pi_theta = to_radians(arrays["p2_theta"], unit)
     pi_phi = to_radians(arrays["p2_phi"], unit)
 
-    e_p = np.asarray(arrays["e_p"], dtype=float)
-    p_p = np.asarray(arrays["p1_p"], dtype=float)
-    pi_p = np.asarray(arrays["p2_p"], dtype=float)
-    pi_mass = np.asarray(arrays["Mh_gammagamma"], dtype=float)
+    e_p = np.asarray(arrays["e_p"], dtype=np.float32)
+    p_p = np.asarray(arrays["p1_p"], dtype=np.float32)
+    pi_p = np.asarray(arrays["p2_p"], dtype=np.float32)
+    pi_mass = np.asarray(arrays["Mh_gammagamma"], dtype=np.float32)
 
     return EPPi0Sample(
         electron_p3=cartesian_from_spherical(e_p, e_theta, e_phi),
@@ -7711,7 +7714,7 @@ def make_stage3_canvases(
                     label="aaogen reconstructed probe",
                 )
             #endif
-            ax.set_yscale("log")
+            ax.set_yscale("linear")
             ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
             ax.set_ylabel("Directed tag-probe candidates")
             ax.set_title(title)
@@ -7922,7 +7925,7 @@ def save_hist(
         ax.set_xlim(*xlim)
     #endif
     if logy:
-        ax.set_yscale("log")
+        ax.set_yscale("linear")
     #endif
     ax.grid(alpha=0.20)
     safe_finalize_figure(fig, Path(path), rect=(0, 0, 1, 1))
@@ -8042,7 +8045,7 @@ def _hist_panel(
         ax.set_xlim(*xlim)
     #endif
     if logy:
-        ax.set_yscale("log")
+        ax.set_yscale("linear")
     #endif
     ax.grid(alpha=0.18)
 
@@ -8132,7 +8135,7 @@ def make_plots(
     axes[0, 1].axvline(-assoc_mass2_max, linestyle="--")
     axes[0, 1].axvline(+assoc_mass2_max, linestyle="--")
     axes[0, 1].set_xlim(-0.02, 0.02)
-    axes[0, 1].set_yscale("log")
+    axes[0, 1].set_yscale("linear")
     axes[0, 1].set_xlabel(r"$(P_{\pi^0}^{reco}-k_{tag}^{reco})^2$ (GeV$^2$)")
     axes[0, 1].set_ylabel("Entries")
     axes[0, 1].set_title("Companion-photon mass shell")
@@ -8162,7 +8165,7 @@ def make_plots(
         arrays["probe_opening_residual_deg"][clean],
         bins=bins_a, histtype="step", linewidth=1.3, label="Clean association"
     )
-    axes[1, 1].set_yscale("log")
+    axes[1, 1].set_yscale("linear")
     axes[1, 1].set_xlim(0.0, 180.0)
     axes[1, 1].set_xlabel(r"$\Delta\alpha_{\rm probe}$ (deg)")
     axes[1, 1].set_ylabel("Entries")
@@ -8275,7 +8278,7 @@ def make_plots(
         [r["count"] for r in rr],
         where="mid",
     )
-    axes[1, 1].set_yscale("log")
+    axes[1, 1].set_yscale("linear")
     axes[1, 1].set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
     axes[1, 1].set_ylabel("Clean entries")
     axes[1, 1].set_title("Statistics by predicted energy")
@@ -11678,7 +11681,7 @@ def make_nsidis_photon_acceptance_canvas(
     ):
         axes[0].axvline(x, linestyle="--", linewidth=0.9)
     #endfor
-    axes[0].set_yscale("log")
+    axes[0].set_yscale("linear")
     axes[0].set_xlabel(r"reconstructed photon $\theta_\gamma$ (deg)")
     axes[0].set_ylabel("density")
     axes[0].set_title(
@@ -14051,7 +14054,7 @@ def make_nsidis_driver_study_summary_canvas(
             gmin = min(goodness_values)
             gmax = max(goodness_values)
             if gmax / max(gmin, 1.0e-12) > 8.0:
-                axes[irow, 1].set_yscale("log")
+                axes[irow, 1].set_yscale("linear")
             #endif
         #endif
 
@@ -15481,7 +15484,7 @@ def make_nsidis_shape_comparison_canvases(
         for irow in range(2):
             for icol, spec in enumerate(specs):
                 ax = axes[irow, icol]
-                ax.set_yscale("log")
+                ax.set_yscale("linear")
                 ax.set_xlim(spec[3], spec[4])
                 ax.set_xlabel(spec[2])
                 ax.grid(alpha=0.16)
@@ -15994,7 +15997,7 @@ def process_nsidis_study_period(
     )
 
     loaded = {}
-    for key, path, required, optional, extractor in (
+    load_specs = (
         (
             "wagon_epgamma",
             period.epgamma_data,
@@ -16023,7 +16026,33 @@ def process_nsidis_study_period(
             EPPIO_OPTIONAL_DATA,
             extract_eppi0,
         ),
-    ):
+    )
+
+    # The current production configuration intentionally uses the original
+    # eppi0 file for both labels.  Reuse the already extracted object when
+    # paths are identical instead of paying ROOT I/O + vector construction
+    # twice.
+    loaded_by_path = {}
+    for key, path, required, optional, extractor in load_specs:
+        canonical_path = str(Path(path).expanduser().resolve())
+        cache_key = (
+            canonical_path,
+            tuple(required),
+            tuple(optional),
+            extractor.__name__,
+            str(angle_mode),
+            int(max_entries),
+        )
+        if cache_key in loaded_by_path:
+            loaded[key] = loaded_by_path[cache_key]
+            log(
+                f"{period.label}: reusing {key} from already-loaded identical "
+                f"ROOT source ({Path(path).name})."
+            )
+            continue
+        #endif
+
+        read_t0 = time.perf_counter()
         log(f"{period.label}: reading {key}.")
         arrays, found_tree, total = read_branches(
             path,
@@ -16035,9 +16064,11 @@ def process_nsidis_study_period(
         sample = extractor(arrays, angle_mode)
         del arrays
         loaded[key] = sample
+        loaded_by_path[cache_key] = sample
         log(
             f"{period.label}: {key} tree '{found_tree}', "
-            f"loaded {len(sample.electron_p3):,}/{total:,} entries."
+            f"loaded {len(sample.electron_p3):,}/{total:,} entries "
+            f"in {time.perf_counter() - read_t0:.1f} s."
         )
     #endfor
 
@@ -16047,22 +16078,38 @@ def process_nsidis_study_period(
     ns_epi = loaded["nsidis_eppi0"]
 
     # Match the upstream nSidis parent support exactly for overlap checks.
-    wagon_epg_parent = electron_momentum_from_p3(
-        wagon_epg.electron_p3
-    ) > 2.0
-    ns_epg_parent = electron_momentum_from_p3(
-        ns_epg.electron_p3
-    ) > 2.0
-    wagon_epi_parent = electron_momentum_from_p3(
-        wagon_epi.electron_p3
-    ) > 2.0
-    ns_epi_parent = electron_momentum_from_p3(
-        ns_epi.electron_p3
-    ) > 2.0
+    # Compute these large vector norms once.  They are reused both by the
+    # parent masks and the feature stores below.
+    wagon_epg_electron_p = np.asarray(
+        electron_momentum_from_p3(wagon_epg.electron_p3),
+        dtype=np.float32,
+    )
+    ns_epg_electron_p = np.asarray(
+        electron_momentum_from_p3(ns_epg.electron_p3),
+        dtype=np.float32,
+    )
+    wagon_epi_electron_p = np.asarray(
+        electron_momentum_from_p3(wagon_epi.electron_p3),
+        dtype=np.float32,
+    )
+    if ns_epi is wagon_epi:
+        ns_epi_electron_p = wagon_epi_electron_p
+    else:
+        ns_epi_electron_p = np.asarray(
+            electron_momentum_from_p3(ns_epi.electron_p3),
+            dtype=np.float32,
+        )
+    #endif
+
+    wagon_epg_parent = wagon_epg_electron_p > 2.0
+    ns_epg_parent = ns_epg_electron_p > 2.0
+    wagon_epi_parent = wagon_epi_electron_p > 2.0
+    ns_epi_parent = ns_epi_electron_p > 2.0
 
     # Use the enormous loose nSidis epgamma sample itself to measure the
     # reconstructed-photon angular support. This is the geometry the predicted
     # probe must fall inside to count as potentially reconstructable.
+    feature_t0 = time.perf_counter()
     photon_acceptance = infer_photon_angular_acceptance(
         ns_epg,
         source=f"{period.label} nSidis epgamma data",
@@ -16095,26 +16142,29 @@ def process_nsidis_study_period(
     for _feat in (wagon_epg_f, ns_epg_f):
         attach_photon_angular_acceptance(_feat, photon_acceptance)
     #endfor
-    wagon_epg_f["electron_p"] = np.asarray(
-        electron_momentum_from_p3(wagon_epg.electron_p3),
-        dtype=np.float32,
-    )
-    ns_epg_f["electron_p"] = np.asarray(
-        electron_momentum_from_p3(ns_epg.electron_p3),
-        dtype=np.float32,
-    )
+    wagon_epg_f["electron_p"] = wagon_epg_electron_p
+    ns_epg_f["electron_p"] = ns_epg_electron_p
 
     wagon_epi_f = build_eppi0_exclusivity_features(
         period, wagon_epi
     )
-    ns_epi_f = build_eppi0_exclusivity_features(
-        period, ns_epi
-    )
+    if ns_epi is wagon_epi:
+        ns_epi_f = wagon_epi_f
+    else:
+        ns_epi_f = build_eppi0_exclusivity_features(
+            period, ns_epi
+        )
+    #endif
 
     # Retire the old global eppi0 "95% wagon-core" optimization.
     # The full old eppi0 wagon contains long exclusivity tails, so maximizing
     # retention of that entire tree is not the correct numerator-purity target.
     # Numerator exclusivity is evaluated below AFTER exact tag/probe association.
+    log(
+        f"{period.label}: initial data feature construction/overlap setup "
+        f"completed in {time.perf_counter() - feature_t0:.1f} s."
+    )
+
     pilot_wagon_rows: List[Dict[str, object]] = []
     pilot_nsidis_rows: List[Dict[str, object]] = []
     log(
