@@ -8861,8 +8861,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tag-min",
         type=float,
-        default=2.0,
-        help="Minimum reconstructed epgamma tag energy in GeV. Default: 2.0.",
+        default=0.4,
+        help=(
+            "Minimum reconstructed epgamma tag energy in GeV. "
+            "Default: 0.4. The nSidis production workflow intentionally "
+            "keeps reconstructed tag photons down to the skim threshold."
+        ),
     )
     parser.add_argument(
         "--tag-max",
@@ -8885,7 +8889,7 @@ def parse_args() -> argparse.Namespace:
         default=2.0,
         help=(
             "Maximum six-dimensional KD-tree distance after scaling each momentum "
-            "component by --parent-component-tol. Default: 2.0."
+            "component by --parent-component-tol. Default: 0.4."
         ),
     )
     parser.add_argument(
@@ -18523,6 +18527,10 @@ def main() -> int:
     args.nsidis_study = True
 
     if args.nsidis_study:
+        log(
+            "nSidis production tag support: "
+            f"{args.tag_min:.3g} <= E_gamma,tag < {args.tag_max:.3g} GeV."
+        )
         # Carry the nSidis denominator extraction all the way through the
         # reconstructed-probe efficiency and epsilon_data/epsilon_MC scale
         # factor by default, including E_probe > 2 GeV.
