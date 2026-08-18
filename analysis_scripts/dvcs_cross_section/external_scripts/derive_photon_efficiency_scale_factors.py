@@ -114,6 +114,7 @@ import os
 import re
 import sys
 import time
+import warnings
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -1948,6 +1949,7 @@ def build_epgamma_denominator_features(
 
     out = {
         "ep_missing_mass2": np.asarray(epmiss_m2, dtype=np.float32),
+        "tag_energy": np.asarray(tag_E, dtype=np.float32),
         "pred_probe_energy": np.asarray(pred_E, dtype=np.float32),
         "pred_probe_mass2": np.asarray(pred_m2, dtype=np.float32),
         "pred_probe_theta_deg": np.asarray(pred_theta_deg, dtype=np.float32),
@@ -15594,6 +15596,39 @@ def process_nsidis_study_period(
             electron_momentum_from_p3(dv_epg.electron_p3),
             dtype=np.float32,
         )
+
+        # Production/refactor invariant: all quantities needed by the restored
+        # shape-comparison and nominal 3-variable fit canvases must exist before
+        # any downstream plotting/fitting starts.
+        required_production_features = (
+            "tag_energy",
+            "pred_probe_energy",
+            "pred_probe_mass2",
+            "stored_delta_phi_rad",
+            "stored_pTmiss",
+            "stored_Emiss2",
+            "electron_p",
+            "valid_tag",
+        )
+        for sample_name, feat in (
+            ("nSidis data", ns_epg_f),
+            ("aaogen epgamma", pi0_f),
+            ("dvcsgen epgamma", dvcs_f),
+        ):
+            missing = [
+                key
+                for key in required_production_features
+                if key not in feat
+            ]
+            if missing:
+                raise RuntimeError(
+                    f"{period.label}: {sample_name} feature store is "
+                    "missing production quantities: "
+                    + ", ".join(missing)
+                )
+            #endif
+        #endfor
+
         # Keep pi_epg resident for the aaogen reconstructed-companion
         # association below. dvcsgen is no longer needed after its features
         # have been built.
@@ -17935,6 +17970,13 @@ def main() -> int:
                 "--nsidis-eppi0-target-wagon-retention must be in [0.5,1)."
             )
         #endif
+
+        log(
+            "Default production path: nSidis; "
+            f"E_probe^pred endpoint = "
+            f"{args.nsidis_pilot_energy_max:.3g} GeV. "
+            "Only the old wagon overlap reference is capped at 2 GeV."
+        )
 
         ns_args_dict = vars(args).copy()
 
