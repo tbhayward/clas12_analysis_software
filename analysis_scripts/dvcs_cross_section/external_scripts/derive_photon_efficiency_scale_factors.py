@@ -16760,10 +16760,13 @@ def process_nsidis_stage1_only_period(
         )
     #endfor
 
-    # Use the same fixed angular acceptance inferred from aaogen.
+    # Use the exact same fixed production angular-acceptance interface as
+    # the normal nSidis workflow.  infer_photon_angular_acceptance() accepts an
+    # EPGammaSample plus keyword-only metadata; it does NOT accept a feature
+    # dictionary or ft_theta_max as a positional argument.
     photon_acceptance = infer_photon_angular_acceptance(
-        features_by_sample["pi0"],
-        ft_theta_max,
+        samples_by_name["data"],
+        source=f"{period.label} nSidis epgamma data; Stage-1-only",
     )
     for feat in features_by_sample.values():
         attach_photon_angular_acceptance(
@@ -16771,6 +16774,10 @@ def process_nsidis_stage1_only_period(
             photon_acceptance,
         )
     #endfor
+    log(
+        f"{period.label}: Stage-1-only fixed photon angular acceptance: "
+        "FT 2.4-5.0 deg; FD 6.0-35.0 deg."
+    )
 
     make_nsidis_shape_comparison_canvases(
         period,
@@ -19554,6 +19561,41 @@ def main() -> int:
                     #endtry
                 #endfor
             #endwith
+        #endif
+
+        if args.stage1_only:
+            stage1_summary_rows = []
+            for period in selected:
+                summary = summaries_by_period[period.key]
+                stage1_summary_rows.append(
+                    {
+                        "period": period.key,
+                        "label": period.label,
+                        "stage1_only": 1,
+                        "wall_time_s": float(
+                            summary.get(
+                                "wall_time_s",
+                                float("nan"),
+                            )
+                        ),
+                        "status": summary.get(
+                            "status",
+                            "stage1_only_complete",
+                        ),
+                    }
+                )
+            #endfor
+
+            write_rows_csv(
+                stage1_summary_rows,
+                nsroot / "stage1_run_summary.csv",
+            )
+            log(
+                "Done. Stage-1-only photon-efficiency diagnostics are in "
+                f"{nsroot / 'stage1_shape_comparison'} and "
+                f"{nsroot / 'stage1_grand_diagnostics'}."
+            )
+            return 0
         #endif
 
         summary_rows = []
