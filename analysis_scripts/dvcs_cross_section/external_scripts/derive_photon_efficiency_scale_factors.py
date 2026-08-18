@@ -17893,9 +17893,15 @@ def main() -> int:
         if args.period is None or p.key in set(args.period)
     ]
 
+    # The nSidis path is now the DEFAULT production workflow.  The old
+    # --nsidis-study flag is retained only for backwards-compatible command
+    # lines; users no longer need to specify it.
+    args.nsidis_study = True
+
     if args.nsidis_study:
-        # The nSidis path is the intended wrap-up extraction. Avoid requiring
-        # a second easy-to-forget flag for the denominator+efficiency chain.
+        # Carry the nSidis denominator extraction all the way through the
+        # reconstructed-probe efficiency and epsilon_data/epsilon_MC scale
+        # factor by default, including E_probe > 2 GeV.
         if not args.nsidis_driver_study:
             args.nsidis_pilot_fit = True
         #endif
