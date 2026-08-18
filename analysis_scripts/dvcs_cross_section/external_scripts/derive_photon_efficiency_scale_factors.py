@@ -15540,11 +15540,17 @@ def make_nsidis_three_variable_fit_canvases(
                 total = morph_pi0 + morph_dvcs
 
                 ax = axes[irow, icol]
-                ax.errorbar(
-                    centers,
+                data_counts = np.asarray(
                     hist["data"],
+                    dtype=float,
+                )
+                populated = data_counts > 0.0
+
+                ax.errorbar(
+                    centers[populated],
+                    data_counts[populated],
                     yerr=np.sqrt(
-                        np.maximum(hist["data"], 1.0)
+                        data_counts[populated]
                     ),
                     fmt="o",
                     ms=2.0,
@@ -15598,8 +15604,32 @@ def make_nsidis_three_variable_fit_canvases(
                     label="total fit",
                 )
 
-                ax.set_yscale("log")
+                # Linear y scale is substantially clearer for these
+                # component fits.  It also avoids log-axis pathologies in
+                # sparsely populated tails.
+                ax.set_yscale("linear")
                 ax.set_xlim(lo, hi)
+
+                ymax = max(
+                    float(np.max(data_counts))
+                    if data_counts.size
+                    else 0.0,
+                    float(np.max(total))
+                    if total.size
+                    else 0.0,
+                    float(np.max(morph_pi0))
+                    if morph_pi0.size
+                    else 0.0,
+                    float(np.max(morph_dvcs))
+                    if morph_dvcs.size
+                    else 0.0,
+                )
+                ax.set_ylim(
+                    0.0,
+                    1.12 * ymax
+                    if ymax > 0.0
+                    else 1.0,
+                )
                 ax.grid(alpha=0.16)
 
                 xlabel = (
