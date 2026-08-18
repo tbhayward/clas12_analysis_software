@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import uproot
 
 
-DEFAULT_DATA = "/scratch/thayward/rga_fa18_out_eppi+pi-pi0X_test.root"
+DEFAULT_DATA = "/scratch/thayward/rga_fa18_out_epi+pi-pi0X_test.root"
 DEFAULT_MC   = "/scratch/thayward/clasdis_fa18_out_epi+pi-pi0X_test.root"
 
 
