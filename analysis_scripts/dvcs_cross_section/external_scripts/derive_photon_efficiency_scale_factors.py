@@ -9750,11 +9750,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     # Stage-II denominator-composition controls.
-    parser.add_argument(
-        "--stage1-only",
-        action="store_true",
-        help=argparse.SUPPRESS,
-    )
+    
     parser.add_argument(
         "--stage2-output-dir",
         default="output/photon_efficiency/stage2",
