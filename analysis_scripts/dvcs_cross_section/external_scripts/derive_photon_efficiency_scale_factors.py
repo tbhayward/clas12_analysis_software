@@ -10560,6 +10560,40 @@ def _nominal_three_values(feat, variable):
     raise KeyError(variable)
 
 
+def _nominal_three_hist_values(
+    feat,
+    variable,
+):
+    """
+    Values used for the nominal 1D composition histograms.
+
+    IMPORTANT: Emiss is NOT a selection cut.  All finite Emiss values are
+    retained.  Values outside the displayed histogram range are folded into
+    the first/last bins so the full selected event population contributes to
+    the simultaneous likelihood.
+    """
+    values = _nominal_three_values(
+        feat,
+        variable,
+    )
+    if variable != "Emiss2":
+        return values
+    #endif
+
+    lo, hi, _ = NOMINAL_THREE_RANGES["Emiss2"]
+    tiny = max(
+        1.0e-9,
+        1.0e-7 * (hi - lo),
+    )
+    return np.clip(
+        values,
+        lo + tiny,
+        hi - tiny,
+    )
+
+
+
+
 def _fixed_morph_fraction_error(histograms, fit):
     if (
         not fit.success
@@ -10666,7 +10700,18 @@ def run_nsidis_three_variable_nominal_fits(
                 for var in NOMINAL_THREE_VARIABLES:
                     lo, hi, _ = NOMINAL_THREE_RANGES[var]
                     v = _nominal_three_values(feat, var)
-                    m &= np.isfinite(v) & (v >= lo) & (v < hi)
+
+                    if var == "Emiss2":
+                        # No Emiss selection cut.  Keep every finite value;
+                        # histogram under/overflow is folded into edge bins.
+                        m &= np.isfinite(v)
+                    else:
+                        m &= (
+                            np.isfinite(v)
+                            & (v >= lo)
+                            & (v < hi)
+                        )
+                    #endif
                 #endfor
                 masks[name] = m
             #endfor
@@ -10689,7 +10734,13 @@ def run_nsidis_three_variable_nominal_fits(
                     (pi0_f, masks["pi0"]),
                     (dvcs_f, masks["dvcs"]),
                 ):
-                    h, _ = np.histogram(_nominal_three_values(feat, var)[m], bins=be)
+                    h, _ = np.histogram(
+                        _nominal_three_hist_values(
+                            feat,
+                            var,
+                        )[m],
+                        bins=be,
+                    )
                     hh.append(h.astype(float)[None, :])
                 #endfor
                 hists[var] = tuple(hh)
@@ -10768,6 +10819,10 @@ def run_nsidis_three_variable_nominal_fits(
                 "fit_success": int(fit.success),
                 "fit_message": fit.message,
                 "fit_model": "simultaneous_Delta_phi_pTmiss_Emiss2",
+                "Emiss_selection_cut": "none",
+                "Emiss_histogram_overflow_policy": (
+                    "underflow_and_overflow_folded_into_edge_bins"
+                ),
                 "pi0_fraction": f0,
                 "dvcs_fraction": 1.0-f0 if np.isfinite(f0) else float("nan"),
                 "pi0_fraction_err_low": err_lo,
@@ -15312,7 +15367,8 @@ def make_nsidis_shape_comparison_canvases(
             f"{period.label}: {region} denominator shape comparison\n"
             r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
             rf"nominal adds ${mm2_min:.2f}<M_X^2(ep)<{mm2_max:.2f}$ GeV$^2$ "
-            rf"and $|M_X^2(ep\gamma)|<{probe_m2_max:.2f}$ GeV$^2$",
+            rf"and $|M_X^2(ep\gamma)|<{probe_m2_max:.2f}$ GeV$^2$; "
+            r"no $E_{\rm miss}$ cut",
             fontsize=12.0,
         )
         safe_finalize_figure(
@@ -15393,13 +15449,19 @@ def make_nsidis_three_variable_fit_canvases(
                 for var in NOMINAL_THREE_VARIABLES:
                     lo, hi, _ = NOMINAL_THREE_RANGES[var]
                     values = _nominal_three_values(
-                        feat, var
+                        feat,
+                        var,
                     )
-                    mask &= (
-                        np.isfinite(values)
-                        & (values >= lo)
-                        & (values < hi)
-                    )
+                    if var == "Emiss2":
+                        # Match the production fit: no Emiss selection cut.
+                        mask &= np.isfinite(values)
+                    else:
+                        mask &= (
+                            np.isfinite(values)
+                            & (values >= lo)
+                            & (values < hi)
+                        )
+                    #endif
                 #endfor
                 masks[name] = mask
             #endfor
@@ -15422,8 +15484,9 @@ def make_nsidis_three_variable_fit_canvases(
                     ("dvcs", dvcs_f),
                 ):
                     h, _ = np.histogram(
-                        _nominal_three_values(
-                            feat, var
+                        _nominal_three_hist_values(
+                            feat,
+                            var,
                         )[masks[name]],
                         bins=edges,
                     )
@@ -15620,8 +15683,10 @@ def make_nsidis_three_variable_fit_canvases(
             rf"$|M_X^2(ep\gamma)|<"
             rf"{probe_m2_max:.2f}$ GeV$^2$, "
             r"$p_e>2$ GeV, "
-            r"$\theta_{e\gamma}>5^\circ$",
-            fontsize=11.5,
+            r"$\theta_{e\gamma}>5^\circ$; "
+            r"no $E_{\rm miss}$ cut "
+            r"(under/overflow folded into edge bins)",
+            fontsize=11.0,
             y=0.997,
         )
         safe_finalize_figure(
