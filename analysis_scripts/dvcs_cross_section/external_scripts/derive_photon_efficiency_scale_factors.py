@@ -2,7 +2,7 @@
 """
 ---------------
 For the nSidis denominator, the nominal pi0 fraction is now the simultaneous
-shared fit to Delta_phi, pTmiss, and Emiss2 in each detector/energy bin.
+shared fit to Delta_phi, pTmiss, and xF2 in each detector/energy bin.
 The three one-variable fits are retained as model alternatives. The reported
 composition systematic on epsilon_data and SF_gamma is the envelope obtained
 by recalculating the full result with each alternative fraction. The RMS and
@@ -405,6 +405,7 @@ EPG_OPTIONAL_PI0_MC = (
     "theta_gamma_gamma",
     "Delta_phi",
     "Emiss2",
+    "xF2",
 )
 
 EPG_OPTIONAL_DVCS_MC = (
@@ -412,6 +413,7 @@ EPG_OPTIONAL_DVCS_MC = (
     "theta_gamma_gamma",
     "Delta_phi",
     "Emiss2",
+    "xF2",
 )
 
 EPG_OPTIONAL_DATA = (
@@ -422,6 +424,7 @@ EPG_OPTIONAL_DATA = (
     "theta_gamma_gamma",
     "Delta_phi",
     "Emiss2",
+    "xF2",
 )
 
 EPPIO_REQUIRED = (
@@ -2022,6 +2025,12 @@ def build_epgamma_denominator_features(
         if "Emiss2" in epg.raw:
             out["stored_Emiss2"] = np.asarray(
                 epg.raw["Emiss2"],
+                dtype=np.float32,
+            )
+        #endif
+        if "xF2" in epg.raw:
+            out["stored_xF2"] = np.asarray(
+                epg.raw["xF2"],
                 dtype=np.float32,
             )
         #endif
@@ -10539,11 +10548,11 @@ def profile_pi0_fraction_uncertainty_one_driver(
 
 
 
-NOMINAL_THREE_VARIABLES = ("Delta_phi", "pTmiss", "Emiss2")
+NOMINAL_THREE_VARIABLES = ("Delta_phi", "pTmiss", "xF2")
 NOMINAL_THREE_RANGES = {
     "Delta_phi": (math.pi - 0.40, math.pi + 0.40, 80),
     "pTmiss": (0.0, 1.0, 80),
-    "Emiss2": (-0.10, 6.0, 100),
+    "xF2": (0.40, 1.40, 80),
 }
 
 
@@ -10554,8 +10563,8 @@ def _nominal_three_values(feat, variable):
     if variable == "pTmiss":
         return np.asarray(feat["stored_pTmiss"], dtype=float)
     #endif
-    if variable == "Emiss2":
-        return np.asarray(feat["stored_Emiss2"], dtype=float)
+    if variable == "xF2":
+        return np.asarray(feat["stored_xF2"], dtype=float)
     #endif
     raise KeyError(variable)
 
@@ -10567,7 +10576,7 @@ def _nominal_three_hist_values(
     """
     Values used for the nominal 1D composition histograms.
 
-    IMPORTANT: Emiss is NOT a selection cut.  All finite Emiss values are
+    IMPORTANT: xF2 is NOT a selection cut.  All finite xF2 values are
     retained.  Values outside the displayed histogram range are folded into
     the first/last bins so the full selected event population contributes to
     the simultaneous likelihood.
@@ -10576,11 +10585,11 @@ def _nominal_three_hist_values(
         feat,
         variable,
     )
-    if variable != "Emiss2":
+    if variable != "xF2":
         return values
     #endif
 
-    lo, hi, _ = NOMINAL_THREE_RANGES["Emiss2"]
+    lo, hi, _ = NOMINAL_THREE_RANGES["xF2"]
     tiny = max(
         1.0e-9,
         1.0e-7 * (hi - lo),
@@ -10671,7 +10680,7 @@ def run_nsidis_three_variable_nominal_fits(
         for key in (
             "stored_delta_phi_rad",
             "stored_pTmiss",
-            "stored_Emiss2",
+            "stored_xF2",
             "electron_p",
         ):
             if key not in feat:
@@ -10701,9 +10710,10 @@ def run_nsidis_three_variable_nominal_fits(
                     lo, hi, _ = NOMINAL_THREE_RANGES[var]
                     v = _nominal_three_values(feat, var)
 
-                    if var == "Emiss2":
-                        # No Emiss selection cut.  Keep every finite value;
-                        # histogram under/overflow is folded into edge bins.
+                    if var == "xF2":
+                        # xF2 is a discriminator, not an event-selection cut.
+                        # Keep every finite value and fold histogram
+                        # under/overflow into the visible edge bins.
                         m &= np.isfinite(v)
                     else:
                         m &= (
@@ -10818,9 +10828,10 @@ def run_nsidis_three_variable_nominal_fits(
                 "probe_m2_support_max_GeV2": float(probe_m2_max),
                 "fit_success": int(fit.success),
                 "fit_message": fit.message,
-                "fit_model": "simultaneous_Delta_phi_pTmiss_Emiss2",
-                "Emiss_selection_cut": "none",
-                "Emiss_histogram_overflow_policy": (
+                "fit_model": "simultaneous_Delta_phi_pTmiss_xF2",
+                "xF2_selection_cut": "none",
+                "xF2_histogram_range": "0.40_to_1.40",
+                "xF2_histogram_overflow_policy": (
                     "underflow_and_overflow_folded_into_edge_bins"
                 ),
                 "pi0_fraction": f0,
@@ -10829,15 +10840,15 @@ def run_nsidis_three_variable_nominal_fits(
                 "pi0_fraction_err_high": err_hi,
                 "pi0_fraction_single_Delta_phi": singles.get("Delta_phi", float("nan")),
                 "pi0_fraction_single_pTmiss": singles.get("pTmiss", float("nan")),
-                "pi0_fraction_single_Emiss2": singles.get("Emiss2", float("nan")),
+                "pi0_fraction_single_xF2": singles.get("Emiss2", float("nan")),
                 "pi0_fraction_single_Delta_phi_usable": int(
                     "Delta_phi" in usable_single_fractions
                 ),
                 "pi0_fraction_single_pTmiss_usable": int(
                     "pTmiss" in usable_single_fractions
                 ),
-                "pi0_fraction_single_Emiss2_usable": int(
-                    "Emiss2" in usable_single_fractions
+                "pi0_fraction_single_xF2_usable": int(
+                    "xF2" in usable_single_fractions
                 ),
                 "pi0_fraction_model_max_abs_shift": spread_max,
                 "pi0_fraction_model_rms_shift": spread_rms,
@@ -13067,59 +13078,229 @@ def make_nsidis_period_efficiency_summary(
     periods: Sequence[PeriodConfig],
     period_rows: Dict[str, List[Dict[str, str]]],
 ) -> None:
-    """3x2 parent summary: one efficiency subplot per period; sixth is blank."""
-    fig, axes = plt.subplots(3, 2, figsize=(13.8, 13.0), squeeze=False)
+    """
+    Parent-level 3x2 summary of the DATA/MC EFFICIENCY RATIO only.
+
+    One subplot per run period; the sixth panel is intentionally blank.
+    Each period shows the FT and FD-all photon-efficiency scale factors,
+
+        SF_gamma = epsilon_data / epsilon_MC,
+
+    versus predicted probe-photon energy.
+
+    Because this is another multi-period summary canvas, composition-model
+    systematic boxes are intentionally omitted.  Only statistical error bars
+    are shown, with lines connecting neighboring energy bins.
+    """
+    fig, axes = plt.subplots(
+        3,
+        2,
+        figsize=(13.8, 13.0),
+        squeeze=False,
+    )
     flat = axes.ravel()
 
     for ip, period in enumerate(periods):
         ax = flat[ip]
-        rows = period_rows.get(period.key, [])
+        rows = period_rows.get(
+            period.key,
+            [],
+        )
         if not rows:
             ax.set_axis_off()
             continue
         #endif
 
-        for region, label, md, mm in (
-            ("FT", "FT", "o", "s"),
-            ("FD_all", "FD", "^", "D"),
+        for region, label, marker in (
+            ("FT", "FT", "o"),
+            ("FD_all", "FD", "s"),
         ):
             rr = sorted(
-                [row for row in rows if row.get("region") == region],
+                [
+                    row
+                    for row in rows
+                    if row.get("region") == region
+                ],
                 key=row_energy_coordinate,
             )
             if not rr:
                 continue
             #endif
-            x = np.asarray([row_energy_coordinate(row) for row in rr], dtype=float)
-            ed = np.asarray([float(row["data_efficiency_final"]) for row in rr])
-            em = np.asarray([float(row["mc_efficiency_final"]) for row in rr])
 
-            ax.plot(x, ed, marker=md, linewidth=1.2, label=f"{label} data")
-            ax.plot(
-                x, em, marker=mm, linewidth=1.2, linestyle="--",
-                label=f"{label} MC",
+            x = np.asarray(
+                [
+                    row_energy_coordinate(row)
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            sf = np.asarray(
+                [
+                    float(
+                        row[
+                            "photon_efficiency_scale_factor"
+                        ]
+                    )
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            sf_low = np.asarray(
+                [
+                    float(
+                        row.get(
+                            "scale_factor_stat_error_low",
+                            np.nan,
+                        )
+                    )
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            sf_high = np.asarray(
+                [
+                    float(
+                        row.get(
+                            "scale_factor_stat_error_high",
+                            np.nan,
+                        )
+                    )
+                    for row in rr
+                ],
+                dtype=float,
+            )
+
+            finite = np.isfinite(x) & np.isfinite(sf)
+            if not np.any(finite):
+                continue
+            #endif
+
+            elo = np.asarray(
+                [
+                    float(row["energy_low_GeV"])
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            ehi = np.asarray(
+                [
+                    float(row["energy_high_GeV"])
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            sys_low = np.asarray(
+                [
+                    float(
+                        row.get(
+                            "scale_factor_composition_model_sys_low",
+                            np.nan,
+                        )
+                    )
+                    for row in rr
+                ],
+                dtype=float,
+            )
+            sys_high = np.asarray(
+                [
+                    float(
+                        row.get(
+                            "scale_factor_composition_model_sys_high",
+                            np.nan,
+                        )
+                    )
+                    for row in rr
+                ],
+                dtype=float,
+            )
+
+            # Composition-model systematic as a shaded box spanning the
+            # full energy-bin width.  This summary has one period per panel,
+            # so FT/FD systematic boxes remain readable.
+            first_sys_label = True
+            for j in range(len(rr)):
+                if (
+                    finite[j]
+                    and np.isfinite(sys_low[j])
+                    and np.isfinite(sys_high[j])
+                ):
+                    ax.fill_between(
+                        [elo[j], ehi[j]],
+                        [
+                            sf[j] - sys_low[j],
+                            sf[j] - sys_low[j],
+                        ],
+                        [
+                            sf[j] + sys_high[j],
+                            sf[j] + sys_high[j],
+                        ],
+                        alpha=0.14,
+                        linewidth=0.0,
+                        label=(
+                            "composition-model systematic"
+                            if first_sys_label
+                            else None
+                        ),
+                    )
+                    first_sys_label = False
+                #endif
+            #endfor
+
+            ax.errorbar(
+                x[finite],
+                sf[finite],
+                yerr=np.vstack(
+                    (
+                        sf_low[finite],
+                        sf_high[finite],
+                    )
+                ),
+                marker=marker,
+                linestyle="-",
+                linewidth=1.2,
+                capsize=2,
+                label=label,
+                zorder=5,
             )
         #endfor
 
+        ax.axhline(
+            1.0,
+            linestyle="--",
+            linewidth=1.0,
+        )
         ax.set_title(period.label)
-        ax.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
-        ax.set_ylabel("reconstructed-probe efficiency")
-        ax.set_ylim(bottom=0.0)
+        ax.set_xlabel(
+            r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)"
+        )
+        ax.set_ylabel(
+            r"$SF_{\gamma}="
+            r"\epsilon_{\mathrm{data}}/"
+            r"\epsilon_{\mathrm{MC}}$"
+        )
         ax.grid(alpha=0.18)
-        ax.legend(fontsize=7.5, frameon=False)
+        ax.legend(
+            fontsize=8,
+            frameon=False,
+        )
     #endfor
 
-    for ip in range(len(periods), len(flat)):
+    for ip in range(
+        len(periods),
+        len(flat),
+    ):
         flat[ip].set_axis_off()
     #endfor
 
     fig.suptitle(
-        "Photon reconstruction efficiency by run period",
-        fontsize=13, y=0.985,
+        "Photon-efficiency data/MC ratio by run period",
+        fontsize=13,
+        y=0.985,
     )
     safe_finalize_figure(
         fig,
-        nsroot / "canvas_nsidis_period_efficiency_summary.png",
+        nsroot
+        / "canvas_nsidis_period_scale_factor_by_period.png",
         rect=(0.0, 0.0, 1.0, 0.96),
     )
     plt.close(fig)
@@ -15191,8 +15372,8 @@ def make_nsidis_shape_comparison_canvases(
          r"$\Delta\phi$ (rad)", math.pi-0.40, math.pi+0.40, 100),
         ("pTmiss", r"$p_{T,\rm miss}$",
          r"$p_{T,\rm miss}$ (GeV)", 0.0, 1.0, 100),
-        ("Emiss2", r"$E_{\rm miss}$",
-         r"$E_{\rm miss}$ (GeV)", -0.10, 6.0, 120),
+        ("xF2", r"$x_{F,2}(\gamma)$",
+         r"$x_{F,2}(\gamma)$", 0.40, 1.40, 100),
         ("Egamma", r"$E_{\gamma,\rm tag}$",
          r"$E_{\gamma,\rm tag}$ (GeV)", 0.40, max_probe_energy, 100),
     )
@@ -15207,8 +15388,8 @@ def make_nsidis_shape_comparison_canvases(
         if key == "pTmiss":
             return np.asarray(feat["stored_pTmiss"], dtype=float)
         #endif
-        if key == "Emiss2":
-            return np.asarray(feat["stored_Emiss2"], dtype=float)
+        if key == "xF2":
+            return np.asarray(feat["stored_xF2"], dtype=float)
         #endif
         return np.asarray(feat["tag_energy"], dtype=float)
 
@@ -15284,7 +15465,7 @@ def make_nsidis_shape_comparison_canvases(
             r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
             rf"nominal adds ${mm2_min:.2f}<M_X^2(ep)<{mm2_max:.2f}$ GeV$^2$ "
             rf"and $|M_X^2(ep\gamma)|<{probe_m2_max:.2f}$ GeV$^2$; "
-            r"no $E_{\rm miss}$ cut",
+            r"$x_{F,2}$ is used only as a composition discriminator",
             fontsize=12.0,
         )
         safe_finalize_figure(
@@ -15313,7 +15494,7 @@ def make_nsidis_three_variable_fit_canvases(
     Explicit nominal fit display.
 
     Columns are successful predicted-probe energy bins; rows are
-    Delta_phi, pTmiss, and Emiss. Failed bins are omitted.
+    Delta_phi, pTmiss, and xF2. Failed bins are omitted.
     """
     for region in ("FT", "FD_all"):
         rr = sorted(
@@ -15368,8 +15549,8 @@ def make_nsidis_three_variable_fit_canvases(
                         feat,
                         var,
                     )
-                    if var == "Emiss2":
-                        # Match the production fit: no Emiss selection cut.
+                    if var == "xF2":
+                        # Match the production fit: no xF2 selection cut.
                         mask &= np.isfinite(values)
                     else:
                         mask &= (
@@ -15554,7 +15735,7 @@ def make_nsidis_three_variable_fit_canvases(
                     else (
                         r"$p_{T,\rm miss}$ (GeV)"
                         if var == "pTmiss"
-                        else r"$E_{\rm miss}$ (GeV)"
+                        else r"$x_{F,2}(\gamma)$"
                     )
                 )
                 ax.set_xlabel(xlabel)
@@ -15623,14 +15804,14 @@ def make_nsidis_three_variable_fit_canvases(
             f"{period.label}: {region} nominal denominator fits\n"
             r"shared $f_{\pi^0}$ from "
             r"$\Delta\phi$, $p_{T,\rm miss}$, "
-            r"$E_{\rm miss}$; "
+            r"$x_{F,2}(\gamma)$; "
             rf"${mm2_min:.2f}<M_X^2(ep)<"
             rf"{mm2_max:.2f}$ GeV$^2$, "
             rf"$|M_X^2(ep\gamma)|<"
             rf"{probe_m2_max:.2f}$ GeV$^2$, "
             r"$p_e>2$ GeV, "
             r"$\theta_{e\gamma}>5^\circ$; "
-            r"no $E_{\rm miss}$ cut "
+            r"$x_{F,2}$ is not selection-cut "
             r"(under/overflow folded into edge bins)",
             fontsize=11.0,
             y=0.997,
@@ -15682,7 +15863,7 @@ def make_nsidis_pi0_fraction_energy_canvas(
         specs = (
             ("Delta_phi", r"$\Delta\phi$ only", "tab:blue", "s"),
             ("pTmiss", r"$p_{T,\rm miss}$ only", "tab:orange", "^"),
-            ("Emiss2", r"$E_{\rm miss}$ only", "tab:green", "D"),
+            ("xF2", r"$x_{F,2}(\gamma)$ only", "tab:green", "D"),
         )
         for var, label, color, marker in specs:
             y = np.asarray(
@@ -16651,7 +16832,7 @@ def process_nsidis_study_period(
             args_dict.get("nsidis_pilot_fit", False)
         ),
         "production_denominator_driver": (
-            "simultaneous Delta_phi + pTmiss + Emiss2"
+            "simultaneous Delta_phi + pTmiss + xF2"
         ),
         "wall_time_s": float(time.perf_counter() - t0),
         "status": (
