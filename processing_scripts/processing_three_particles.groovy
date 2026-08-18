@@ -90,7 +90,7 @@ public static void main(String[] args) {
     if (args.length < 8) {
         println("No indication of QADB provided. Will use QADB.");
     } else {
-        userProvidedOverride = Integer.parseInt(args[6]);
+        userProvidedOverride = Integer.parseInt(args[7]);
     }
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //

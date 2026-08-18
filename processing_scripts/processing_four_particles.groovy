@@ -90,6 +90,14 @@ public static void main(String[] args) {
 		userProvidedRun = Integer.parseInt(args[7]);
 	}
 
+	// Allow for QADB override (usually meaning you're processing MC)
+	Integer userProvidedOverride = 0;
+	if (args.length < 9) {
+	    println("No indication of QADB override provided. Will use QADB.");
+	} else {
+	    userProvidedOverride = Integer.parseInt(args[8]);
+	}
+
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
