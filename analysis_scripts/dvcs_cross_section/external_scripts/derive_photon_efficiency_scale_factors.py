@@ -10717,8 +10717,9 @@ def run_nsidis_three_variable_nominal_fits(
 
                     if var == "xF2":
                         # xF2 is a discriminator, not an event-selection cut.
-                        # Keep every finite value and fold histogram
-                        # under/overflow into the visible edge bins.
+                        # Keep every finite raw branch value. The histogram
+                        # displays only its configured range; no clipping or
+                        # edge-bin folding is applied.
                         m &= np.isfinite(v)
                     else:
                         m &= (
@@ -10818,6 +10819,30 @@ def run_nsidis_three_variable_nominal_fits(
             #endif
 
             err_lo, err_hi = _fixed_morph_fraction_error(hists, fit)
+
+            # Raw xF2 range diagnostics. These counts are informational only:
+            # xF2 is not used as an event-selection cut. The histogram itself
+            # uses the visible 0.0--1.2 interval without clipping/folding.
+            xF2_lo, xF2_hi, _ = NOMINAL_THREE_RANGES["xF2"]
+            xF2_values_data = _nominal_three_values(
+                data_f,
+                "xF2",
+            )
+            xF2_selected = xF2_values_data[
+                masks["data"]
+            ]
+            xF2_underflow_count = int(
+                np.count_nonzero(
+                    np.isfinite(xF2_selected)
+                    & (xF2_selected < xF2_lo)
+                )
+            )
+            xF2_overflow_count = int(
+                np.count_nonzero(
+                    np.isfinite(xF2_selected)
+                    & (xF2_selected >= xF2_hi)
+                )
+            )
 
             rows.append({
                 "period": period.key,
