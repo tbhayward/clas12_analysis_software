@@ -402,6 +402,7 @@ EPG_REQUIRED = (
 EPG_OPTIONAL_PI0_MC = (
     "detector2",
     "pTmiss",
+    "pT",
     "theta_gamma_gamma",
     "Delta_phi",
     "Emiss2",
@@ -410,6 +411,7 @@ EPG_OPTIONAL_PI0_MC = (
 
 EPG_OPTIONAL_DVCS_MC = (
     "pTmiss",
+    "pT",
     "theta_gamma_gamma",
     "Delta_phi",
     "Emiss2",
@@ -421,6 +423,7 @@ EPG_OPTIONAL_DATA = (
     "evnum",
     "detector2",
     "pTmiss",
+    "pT",
     "theta_gamma_gamma",
     "Delta_phi",
     "Emiss2",
@@ -2653,6 +2656,12 @@ def build_epgamma_denominator_features(
         if "xF2" in epg.raw:
             out["stored_xF2"] = np.asarray(
                 epg.raw["xF2"],
+                dtype=np.float32,
+            )
+        #endif
+        if "pT" in epg.raw:
+            out["stored_sidis_pT"] = np.asarray(
+                epg.raw["pT"],
                 dtype=np.float32,
             )
         #endif
@@ -9749,6 +9758,17 @@ def parse_args() -> argparse.Namespace:
         help="Stage-II output directory. Default: output/photon_efficiency/stage2.",
     )
     parser.add_argument(
+        "--pt-category-split",
+        type=float,
+        default=0.10,
+        help=(
+            "SIDIS pT split (GeV) for the two-category composition cross-check. "
+            "pT below the split is DVCS-rich; pT at/above the split is pi0-rich. "
+            "Both categories are retained and fit simultaneously. Default: 0.10."
+        ),
+    )
+
+    parser.add_argument(
         "--den-fit-mm2-min",
         type=float,
         default=-0.08,
@@ -11289,6 +11309,194 @@ def _fixed_morph_fraction_error(histograms, fit):
     )
 
 
+
+@dataclass
+class TwoCategoryCompositionResult:
+    success: bool
+    message: str
+    pi0_fraction: float = float("nan")
+    err_low: float = float("nan")
+    err_high: float = float("nan")
+    pi0_high_eff: float = float("nan")
+    dvcs_high_eff: float = float("nan")
+    data_high_fraction: float = float("nan")
+    nll: float = float("nan")
+
+
+def _binomial_nll(k: int, n: int, p: float) -> float:
+    """Binomial NLL, dropping only the parameter-independent combinatorial term."""
+    if n <= 0:
+        return 0.0
+    #endif
+    p = float(np.clip(p, 1.0e-10, 1.0 - 1.0e-10))
+    return -(
+        float(k) * math.log(p)
+        + float(n - k) * math.log1p(-p)
+    )
+
+
+def fit_two_category_composition(
+    data_low: int,
+    data_high: int,
+    pi0_low: int,
+    pi0_high: int,
+    dvcs_low: int,
+    dvcs_high: int,
+) -> TwoCategoryCompositionResult:
+    """
+    Fit one pi0 fraction from low/high SIDIS-pT categories.
+
+    The data category probability is
+        q_high = f_pi0*eps_pi0_high + (1-f_pi0)*eps_dvcs_high.
+
+    Finite aaogen and dvcsgen statistics are included by treating the two MC
+    category efficiencies as nuisance parameters constrained by their own
+    binomial likelihoods.
+    """
+    from scipy.optimize import minimize, minimize_scalar
+
+    n_data = int(data_low + data_high)
+    n_pi0 = int(pi0_low + pi0_high)
+    n_dvcs = int(dvcs_low + dvcs_high)
+
+    if min(n_data, n_pi0, n_dvcs) <= 0:
+        return TwoCategoryCompositionResult(
+            False,
+            "empty data/template category total",
+        )
+    #endif
+
+    obs_data = float(data_high) / float(n_data)
+    obs_pi0 = float(pi0_high) / float(n_pi0)
+    obs_dvcs = float(dvcs_high) / float(n_dvcs)
+
+    if abs(obs_pi0 - obs_dvcs) < 1.0e-6:
+        return TwoCategoryCompositionResult(
+            False,
+            "pi0 and DVCS category efficiencies are indistinguishable",
+            pi0_high_eff=obs_pi0,
+            dvcs_high_eff=obs_dvcs,
+            data_high_fraction=obs_data,
+        )
+    #endif
+
+    f_seed = float(np.clip(
+        (obs_data - obs_dvcs) / (obs_pi0 - obs_dvcs),
+        1.0e-5,
+        1.0 - 1.0e-5,
+    ))
+
+    def full_nll(x):
+        f, eps_pi0, eps_dvcs = map(float, x)
+        q = f * eps_pi0 + (1.0 - f) * eps_dvcs
+        return (
+            _binomial_nll(data_high, n_data, q)
+            + _binomial_nll(pi0_high, n_pi0, eps_pi0)
+            + _binomial_nll(dvcs_high, n_dvcs, eps_dvcs)
+        )
+
+    result = minimize(
+        full_nll,
+        x0=np.asarray([f_seed, obs_pi0, obs_dvcs], dtype=float),
+        method="L-BFGS-B",
+        bounds=(
+            (1.0e-8, 1.0 - 1.0e-8),
+            (1.0e-8, 1.0 - 1.0e-8),
+            (1.0e-8, 1.0 - 1.0e-8),
+        ),
+        options={"maxiter": 500, "ftol": 1.0e-12},
+    )
+
+    if not result.success or not np.all(np.isfinite(result.x)):
+        return TwoCategoryCompositionResult(
+            False,
+            f"optimizer failed: {result.message}",
+            pi0_high_eff=obs_pi0,
+            dvcs_high_eff=obs_dvcs,
+            data_high_fraction=obs_data,
+        )
+    #endif
+
+    fhat, eps_pi0_hat, eps_dvcs_hat = map(float, result.x)
+    nll_min = float(result.fun)
+
+    def profile_nll(fixed_f: float) -> float:
+        fixed_f = float(np.clip(fixed_f, 1.0e-8, 1.0 - 1.0e-8))
+
+        def nuisance_nll(y):
+            eps_pi0, eps_dvcs = map(float, y)
+            q = fixed_f * eps_pi0 + (1.0 - fixed_f) * eps_dvcs
+            return (
+                _binomial_nll(data_high, n_data, q)
+                + _binomial_nll(pi0_high, n_pi0, eps_pi0)
+                + _binomial_nll(dvcs_high, n_dvcs, eps_dvcs)
+            )
+
+        rr = minimize(
+            nuisance_nll,
+            x0=np.asarray([eps_pi0_hat, eps_dvcs_hat], dtype=float),
+            method="L-BFGS-B",
+            bounds=(
+                (1.0e-8, 1.0 - 1.0e-8),
+                (1.0e-8, 1.0 - 1.0e-8),
+            ),
+            options={"maxiter": 300, "ftol": 1.0e-12},
+        )
+        return float(rr.fun) if rr.success else float("inf")
+
+    target = nll_min + 0.5
+    grid = np.linspace(1.0e-5, 1.0 - 1.0e-5, 201)
+    prof = np.asarray([profile_nll(f) for f in grid], dtype=float)
+    allowed = grid[np.isfinite(prof) & (prof <= target)]
+
+    if allowed.size:
+        flo = float(np.min(allowed))
+        fhi = float(np.max(allowed))
+
+        if flo < fhat:
+            rr = minimize_scalar(
+                lambda f: abs(profile_nll(f) - target),
+                bounds=(max(1.0e-8, flo - 0.01), fhat),
+                method="bounded",
+                options={"xatol": 1.0e-5},
+            )
+            if rr.success:
+                flo = float(rr.x)
+            #endif
+        #endif
+
+        if fhi > fhat:
+            rr = minimize_scalar(
+                lambda f: abs(profile_nll(f) - target),
+                bounds=(fhat, min(1.0 - 1.0e-8, fhi + 0.01)),
+                method="bounded",
+                options={"xatol": 1.0e-5},
+            )
+            if rr.success:
+                fhi = float(rr.x)
+            #endif
+        #endif
+
+        err_low = max(0.0, fhat - flo)
+        err_high = max(0.0, fhi - fhat)
+    else:
+        err_low = err_high = float("nan")
+    #endif
+
+    return TwoCategoryCompositionResult(
+        True,
+        "ok",
+        pi0_fraction=fhat,
+        err_low=err_low,
+        err_high=err_high,
+        pi0_high_eff=eps_pi0_hat,
+        dvcs_high_eff=eps_dvcs_hat,
+        data_high_fraction=obs_data,
+        nll=nll_min,
+    )
+
+
+
 def run_nsidis_three_variable_nominal_fits(
     period,
     data_f,
@@ -11307,6 +11515,7 @@ def run_nsidis_three_variable_nominal_fits(
     max_shift_bins,
     max_sigma_bins,
     source_label,
+    pt_category_split=0.10,
     parent_mask=None,
 ):
     rows = []
@@ -11454,6 +11663,60 @@ def run_nsidis_three_variable_nominal_fits(
 
             err_lo, err_hi = _fixed_morph_fraction_error(hists, fit)
 
+            pt_category = TwoCategoryCompositionResult(
+                False,
+                "SIDIS pT branch unavailable",
+            )
+            pt_category_counts = {
+                "data_low": 0,
+                "data_high": 0,
+                "pi0_low": 0,
+                "pi0_high": 0,
+                "dvcs_low": 0,
+                "dvcs_high": 0,
+            }
+
+            if all(
+                "stored_sidis_pT" in feat
+                for feat in (data_f, pi0_f, dvcs_f)
+            ):
+                for sample_name, feat in (
+                    ("data", data_f),
+                    ("pi0", pi0_f),
+                    ("dvcs", dvcs_f),
+                ):
+                    pt_values = np.asarray(
+                        feat["stored_sidis_pT"],
+                        dtype=float,
+                    )
+                    base = (
+                        masks[sample_name]
+                        & np.isfinite(pt_values)
+                    )
+                    low = base & (
+                        pt_values < float(pt_category_split)
+                    )
+                    high = base & (
+                        pt_values >= float(pt_category_split)
+                    )
+                    pt_category_counts[f"{sample_name}_low"] = int(
+                        np.count_nonzero(low)
+                    )
+                    pt_category_counts[f"{sample_name}_high"] = int(
+                        np.count_nonzero(high)
+                    )
+                #endfor
+
+                pt_category = fit_two_category_composition(
+                    pt_category_counts["data_low"],
+                    pt_category_counts["data_high"],
+                    pt_category_counts["pi0_low"],
+                    pt_category_counts["pi0_high"],
+                    pt_category_counts["dvcs_low"],
+                    pt_category_counts["dvcs_high"],
+                )
+            #endif
+
             # Raw xF2 range diagnostics. These counts are informational only:
             # xF2 is not used as an event-selection cut. The histogram itself
             # uses the visible 0.0--1.2 interval without clipping/folding.
@@ -11516,6 +11779,32 @@ def run_nsidis_three_variable_nominal_fits(
                 ),
                 "pi0_fraction_model_max_abs_shift": spread_max,
                 "pi0_fraction_model_rms_shift": spread_rms,
+                "pt_category_split_GeV": float(pt_category_split),
+                "pt_category_fit_success": int(pt_category.success),
+                "pt_category_fit_message": pt_category.message,
+                "pt_category_pi0_fraction": float(pt_category.pi0_fraction),
+                "pt_category_pi0_fraction_err_low": float(pt_category.err_low),
+                "pt_category_pi0_fraction_err_high": float(pt_category.err_high),
+                "pt_category_pi0_high_eff": float(pt_category.pi0_high_eff),
+                "pt_category_dvcs_high_eff": float(pt_category.dvcs_high_eff),
+                "pt_category_data_high_fraction": float(
+                    pt_category.data_high_fraction
+                ),
+                "pt_category_template_separation": (
+                    float(
+                        pt_category.pi0_high_eff
+                        - pt_category.dvcs_high_eff
+                    )
+                    if (
+                        np.isfinite(pt_category.pi0_high_eff)
+                        and np.isfinite(pt_category.dvcs_high_eff)
+                    )
+                    else float("nan")
+                ),
+                **{
+                    f"pt_category_{key}_count": int(value)
+                    for key, value in pt_category_counts.items()
+                },
                 **(
                     {
                         key: float(value)
@@ -16570,6 +16859,54 @@ def make_nsidis_pi0_fraction_energy_canvas(
             label="shared 3-variable fit", zorder=5,
         )
 
+        ptcat = np.asarray(
+            [
+                float(row.get("pt_category_pi0_fraction", np.nan))
+                for row in rr
+            ],
+            dtype=float,
+        )
+        ptcat_lo = np.asarray(
+            [
+                float(row.get("pt_category_pi0_fraction_err_low", np.nan))
+                for row in rr
+            ],
+            dtype=float,
+        )
+        ptcat_hi = np.asarray(
+            [
+                float(row.get("pt_category_pi0_fraction_err_high", np.nan))
+                for row in rr
+            ],
+            dtype=float,
+        )
+        ptcat_ok = np.asarray(
+            [
+                int(row.get("pt_category_fit_success", 0)) == 1
+                for row in rr
+            ],
+            dtype=bool,
+        )
+        good_ptcat = np.isfinite(ptcat) & ptcat_ok
+        if np.any(good_ptcat):
+            ax.errorbar(
+                x[good_ptcat],
+                ptcat[good_ptcat],
+                yerr=np.vstack(
+                    (
+                        ptcat_lo[good_ptcat],
+                        ptcat_hi[good_ptcat],
+                    )
+                ),
+                marker="P",
+                linestyle="--",
+                linewidth=1.2,
+                capsize=2,
+                label=r"two-category $p_T$ fit",
+                zorder=4,
+            )
+        #endif
+
         specs = (
             ("Delta_phi", r"$\Delta\phi$ only", "tab:blue", "s"),
             ("pTmiss", r"$p_{T,\rm miss}$ only", "tab:orange", "^"),
@@ -16627,6 +16964,126 @@ def make_nsidis_pi0_fraction_energy_canvas(
     )
     plt.close(fig)
 
+
+
+
+
+def make_nsidis_pt_category_canvas(
+    period: PeriodConfig,
+    rows: Sequence[Dict[str, object]],
+    outdir: Path,
+) -> None:
+    """Show the two-category SIDIS-pT composition cross-check."""
+    fig, axes = plt.subplots(2, 2, figsize=(13.8, 9.2), squeeze=False)
+
+    for icol, region in enumerate(("FT", "FD_all")):
+        rr = sorted(
+            [row for row in rows if row.get("region") == region],
+            key=lambda row: float(row["energy_low_GeV"]),
+        )
+        if not rr:
+            axes[0, icol].set_axis_off()
+            axes[1, icol].set_axis_off()
+            continue
+        #endif
+
+        x = np.asarray([row_energy_coordinate(row) for row in rr], dtype=float)
+        shared = np.asarray(
+            [float(row.get("pi0_fraction", np.nan)) for row in rr],
+            dtype=float,
+        )
+        ptcat = np.asarray(
+            [float(row.get("pt_category_pi0_fraction", np.nan)) for row in rr],
+            dtype=float,
+        )
+        ptcat_lo = np.asarray(
+            [float(row.get("pt_category_pi0_fraction_err_low", np.nan)) for row in rr],
+            dtype=float,
+        )
+        ptcat_hi = np.asarray(
+            [float(row.get("pt_category_pi0_fraction_err_high", np.nan)) for row in rr],
+            dtype=float,
+        )
+        ok = np.asarray(
+            [int(row.get("pt_category_fit_success", 0)) == 1 for row in rr],
+            dtype=bool,
+        )
+
+        top = axes[0, icol]
+        top.plot(
+            x, shared,
+            marker="o", linewidth=1.4, color="black",
+            label="shared 3-variable fit",
+        )
+        good = ok & np.isfinite(ptcat)
+        if np.any(good):
+            top.errorbar(
+                x[good],
+                ptcat[good],
+                yerr=np.vstack((ptcat_lo[good], ptcat_hi[good])),
+                marker="P",
+                linestyle="--",
+                linewidth=1.2,
+                capsize=2,
+                label=r"two-category $p_T$ fit",
+            )
+        #endif
+        top.set_ylim(0.0, 1.05)
+        top.set_ylabel(r"$f_{\pi^0}$")
+        top.set_title("FT" if region == "FT" else "FD all")
+        top.grid(alpha=0.18)
+        top.legend(fontsize=8, frameon=False)
+
+        bottom = axes[1, icol]
+        pi0_high = np.asarray(
+            [float(row.get("pt_category_pi0_high_eff", np.nan)) for row in rr],
+            dtype=float,
+        )
+        dvcs_high = np.asarray(
+            [float(row.get("pt_category_dvcs_high_eff", np.nan)) for row in rr],
+            dtype=float,
+        )
+        data_high = np.asarray(
+            [float(row.get("pt_category_data_high_fraction", np.nan)) for row in rr],
+            dtype=float,
+        )
+
+        bottom.plot(x, pi0_high, marker="o", linewidth=1.2, label=r"$\pi^0$ MC")
+        bottom.plot(x, dvcs_high, marker="s", linewidth=1.2, label="BH/DVCS MC")
+        bottom.plot(
+            x, data_high, marker="^", linewidth=1.2, color="black", label="data"
+        )
+        bottom.set_ylim(0.0, 1.05)
+        bottom.set_xlabel(r"$E_{\mathrm{probe}}^{\mathrm{pred}}$ (GeV)")
+        bottom.set_ylabel(r"fraction with $p_T \geq p_T^{\rm split}$")
+        bottom.grid(alpha=0.18)
+        bottom.legend(fontsize=8, frameon=False)
+    #endfor
+
+    split_values = {
+        float(row.get("pt_category_split_GeV", np.nan))
+        for row in rows
+        if np.isfinite(float(row.get("pt_category_split_GeV", np.nan)))
+    }
+    split = next(iter(split_values)) if len(split_values) == 1 else float("nan")
+
+    fig.suptitle(
+        f"{period.label}: two-category SIDIS-$p_T$ composition test\n"
+        + (
+            rf"$p_T^{{split}}={split:.3g}$ GeV; "
+            if np.isfinite(split)
+            else ""
+        )
+        + "finite MC statistics included in likelihood",
+        fontsize=12.5,
+        y=0.985,
+    )
+    safe_finalize_figure(
+        fig,
+        outdir / f"canvas_pt_category_composition_{period.key}.png",
+        rect=(0.0, 0.0, 1.0, 0.93),
+    )
+    plt.close(fig)
 
 
 
@@ -17299,6 +17756,7 @@ def process_nsidis_study_period(
             max_shift_bins=float(args_dict["morph_max_shift_bins"]),
             max_sigma_bins=float(args_dict["morph_max_sigma_bins"]),
             source_label="nsidis",
+            pt_category_split=float(args_dict["pt_category_split"]),
             parent_mask=ns_epg_parent,
         )
         pilot_wagon_rows = run_nsidis_three_variable_nominal_fits(
@@ -17350,6 +17808,11 @@ def process_nsidis_study_period(
         )
 
         make_nsidis_pi0_fraction_energy_canvas(
+            period,
+            pilot_nsidis_rows,
+            stage2_outdir,
+        )
+        make_nsidis_pt_category_canvas(
             period,
             pilot_nsidis_rows,
             stage2_outdir,
@@ -19334,6 +19797,9 @@ def main() -> int:
 
     if args.max_entries < 0:
         raise ValueError("--max-entries must be >= 0.")
+    #endif
+    if args.pt_category_split <= 0.0:
+        raise ValueError("--pt-category-split must be > 0.")
     #endif
     if (
         not args.stage1_only
