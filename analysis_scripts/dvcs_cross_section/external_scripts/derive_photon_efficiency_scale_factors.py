@@ -19335,7 +19335,8 @@ def main() -> int:
         raise ValueError("--max-entries must be >= 0.")
     #endif
     if (
-        not args.skip_stage3
+        not args.stage1_only
+        and not args.skip_stage3
         and args.max_entries != 0
     ):
         raise ValueError(
