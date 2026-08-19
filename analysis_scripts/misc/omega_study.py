@@ -45,7 +45,7 @@ def load_branch(filename, branch_name):
 def load_parent_theta(filename):
     """
     Combine p1, p2, and p3 three-momenta and return the polar angle of the
-    parent momentum in degrees.
+    three-pion parent momentum in degrees.
 
     Assumes p*_theta and p*_phi are stored in radians.
     """
@@ -120,7 +120,10 @@ def percentile_range(data_values, mc_values, low=0.5, high=99.5):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Quick data/MC comparison of Mh, Mx2, and three-pion parent theta."
+        description=(
+            "Quick data/MC comparison of Mh, Mx2, pi0 theta, "
+            "and three-pion parent theta."
+        )
     )
     parser.add_argument(
         "data",
@@ -151,11 +154,16 @@ def main():
     data_mx2 = finite(load_branch(args.data, "Mx2"))
     mc_mx2   = finite(load_branch(args.mc, "Mx2"))
 
+    # p3 is the pi0. The stored p3_theta is assumed to be in radians.
+    data_pi0_theta = np.degrees(finite(load_branch(args.data, "p3_theta")))
+    mc_pi0_theta   = np.degrees(finite(load_branch(args.mc, "p3_theta")))
+
     data_parent_theta = load_parent_theta(args.data)
     mc_parent_theta   = load_parent_theta(args.mc)
 
     print(f"Loaded Mh:           data={len(data_mh):,}, MC={len(mc_mh):,}")
     print(f"Loaded Mx2:          data={len(data_mx2):,}, MC={len(mc_mx2):,}")
+    print(f"Loaded pi0 theta:    data={len(data_pi0_theta):,}, MC={len(mc_pi0_theta):,}")
     print(
         f"Loaded parent theta: data={len(data_parent_theta):,}, "
         f"MC={len(mc_parent_theta):,}"
@@ -163,6 +171,11 @@ def main():
 
     mh_range = percentile_range(data_mh, mc_mh)
     mx2_range = percentile_range(data_mx2, mc_mx2)
+
+    # Show the full physically relevant forward-angle region for the pi0
+    # rather than clipping by percentiles, so any FT population is visible.
+    pi0_theta_range = (0.0, 40.0)
+
     parent_theta_range = percentile_range(
         data_parent_theta,
         mc_parent_theta,
@@ -170,7 +183,8 @@ def main():
         high=100.0,
     )
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes = axes.flatten()
 
     comparisons = [
         (
@@ -191,6 +205,14 @@ def main():
         ),
         (
             axes[2],
+            data_pi0_theta,
+            mc_pi0_theta,
+            r"$\pi^0$ polar angle",
+            pi0_theta_range,
+            r"$\theta_{\pi^0}$ (deg)",
+        ),
+        (
+            axes[3],
             data_parent_theta,
             mc_parent_theta,
             "Three-pion parent polar angle",
