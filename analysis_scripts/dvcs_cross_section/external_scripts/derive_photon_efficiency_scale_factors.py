@@ -47,7 +47,6 @@ below 2 GeV and permit extension above 2 GeV.
 
 The nominal denominator model remains aaogen pi0 + dvcsgen BH/DVCS. Mixed data
 remain diagnostic-only. In FT, a coarse 0.40--1.20 / 1.20--2.00 GeV diagnostic
-also floats the deterministic mixed-event wrong-photon template as a third
 component with the two-component morph nuisance values held fixed. This does
 not feed the nominal efficiency extraction.
 
@@ -57,7 +56,7 @@ Routine outputs:
     output/photon_efficiency/stage3/
 
 Default --diagnostics selection runs only the focused discriminator-selection
-study. --diagnostics full restores the expensive closure/mixed/profile/coarse-FT
+study. --diagnostics full restores the expensive closure/profile/coarse-FT
 suite. --plot-mode compact remains the default plotting mode.
 
 Typical full-statistics run:
@@ -529,6 +528,7 @@ EPG_REQUIRED = (
     "e_p", "e_theta", "e_phi",
     "p1_p", "p1_theta", "p1_phi",
     "p2_p", "p2_theta", "p2_phi",
+    "Mx2", "Mx2_1", "Mx2_2",
 )
 
 EPG_OPTIONAL_PI0_MC = (
@@ -2414,26 +2414,6 @@ def nsidis_energy_edges_for_region(
     return np.asarray(sorted(set(merged)), dtype=float)
 
 
-def parse_mix_shifts(value: str) -> List[int]:
-    shifts: List[int] = []
-    for token in str(value).split(","):
-        token = token.strip()
-        if not token:
-            continue
-        #endif
-        shift = int(token)
-        if shift == 0:
-            raise ValueError("--mix-shifts may not contain zero.")
-        #endif
-        shifts.append(shift)
-    #endfor
-    if not shifts:
-        raise ValueError("--mix-shifts must contain at least one nonzero integer.")
-    #endif
-    return shifts
-
-
-
 @dataclass(frozen=True)
 class PhotonAngularAcceptance:
     """
@@ -2635,29 +2615,17 @@ def build_epgamma_denominator_features(
     tag_min: float,
     tag_max: float,
     ft_theta_max: float,
-    mixed_tag_shift: int = 0,
 ) -> Dict[str, np.ndarray]:
     """
-    Same Stage-II kinematics with lower peak memory and a float32 persistent
-    histogram feature store. Standard missing-mass observables are read directly
-    from the ROOT-tree Mx2/Mx2_1/Mx2_2 branches.
+    Build denominator kinematics for real epgamma events. Missing-mass
+    observables are read directly from the ROOT-tree Mx2/Mx2_1/Mx2_2 branches;
+    no mixed-event/synthetic-photon construction is performed.
     """
     e3 = epg.electron_p3
     p3 = epg.proton_p3
     tag_source = epg.tag_p3
     n = len(epg.tag_energy)
-
-    if mixed_tag_shift and n:
-        shift = int(mixed_tag_shift) % n
-        if shift == 0:
-            shift = max(1, n // 2)
-        #endif
-        tag_index = (np.arange(n, dtype=np.int64) - shift) % n
-        tag_E = epg.tag_energy[tag_index]
-    else:
-        tag_index = None
-        tag_E = epg.tag_energy
-    #endif
+    tag_E = epg.tag_energy
 
     e_E = np.sqrt(np.einsum("ij,ij->i", e3, e3) + M_E * M_E)
     p_E = np.sqrt(np.einsum("ij,ij->i", p3, p3) + M_P * M_P)
@@ -2674,103 +2642,38 @@ def build_epgamma_denominator_features(
     epmiss_m2 = epmiss_E * epmiss_E - (px * px + py * py + pz * pz)
     pred_E = epmiss_E - tag_E
 
-    # Valerii's MM^2(e gamma X): missing mass after subtracting only the
-    # scattered electron and the measured/tag photon.  The missing system is
-    # therefore p + X for the e p -> e p gamma X denominator topology.
-    if tag_index is None:
-        selected_tag_p3 = tag_source
-    else:
-        selected_tag_p3 = tag_source[tag_index]
-    #endif
+    # Use the missing-mass quantities already stored in the ROOT tree.
+    # The processing convention is fixed: p1 = proton and p2 = photon.
+    # Therefore ThreeParticles stores:
+    #   Mx2_1 = MM^2(epX)
+    #   Mx2_2 = MM^2(e gamma X)
+    #   Mx2   = MM^2(ep gamma X)
+    epmiss_m2 = np.asarray(epg.raw["Mx2_1"], dtype=float)
+    egamma_miss_m2 = np.asarray(epg.raw["Mx2_2"], dtype=float)
+    epgamma_miss_m2 = np.asarray(epg.raw["Mx2"], dtype=float)
 
-    egamma_miss_E = initial_E - np.sqrt(
-        np.einsum("ij,ij->i", e3, e3) + M_E * M_E
-    ) - tag_E
-    egamma_px = -e3[:, 0] - selected_tag_p3[:, 0]
-    egamma_py = -e3[:, 1] - selected_tag_p3[:, 1]
-    egamma_pz = beam_p - e3[:, 2] - selected_tag_p3[:, 2]
-    egamma_miss_m2_derived = (
-        egamma_miss_E * egamma_miss_E
-        - egamma_px * egamma_px
-        - egamma_py * egamma_py
-        - egamma_pz * egamma_pz
-    )
-
-    # For every ordinary epgamma sample, use the missing-mass quantities
-    # already stored in the ROOT tree.  The processing convention is fixed:
-    #
-    #     p1 = proton, p2 = photon
-    #
-    # and ThreeParticles therefore stores
-    #
-    #     Mx2_1 = MM^2(epX),
-    #     Mx2_2 = MM^2(e gamma X),
-    #     Mx2   = MM^2(ep gamma X).
-    #
-    # Do not rederive these quantities from the reconstructed four-vectors:
-    # using the tree values guarantees that the photon-efficiency study uses
-    # exactly the same kinematic definitions as the standard processing.
-    # The sole exception is the mixed-tag accidental diagnostic.  There the
-    # photon is deliberately shifted to a different event, so the original
-    # event's Mx2_2 and Mx2 branches are no longer self-consistent with that
-    # artificial photon and must be recomputed for the shifted combination.
-    if not mixed_tag_shift:
-        epmiss_m2 = np.asarray(epg.raw["Mx2_1"], dtype=float)
-        egamma_miss_m2 = np.asarray(epg.raw["Mx2_2"], dtype=float)
-        epgamma_miss_m2 = np.asarray(epg.raw["Mx2"], dtype=float)
-    else:
-        # MM^2(epX) does not involve the shifted photon, so the tree value is
-        # still valid.  The e-gamma and ep-gamma quantities must follow the
-        # artificial shifted photon.
-        epmiss_m2 = np.asarray(epg.raw["Mx2_1"], dtype=float)
-        egamma_miss_m2 = egamma_miss_m2_derived
-        epgamma_miss_m2 = None  # filled from pred_m2 below
-    #endif
-
-    # Valerii's Delta phi(p,gamma) cut should use the Delta_phi quantity
-    # already stored in the nSidis ROOT tree, rather than re-deriving the
-    # azimuthal difference from p1_phi/p2_phi.  In these trees Delta_phi is
-    # centered near pi for an exclusive back-to-back p-gamma topology, while
-    # Valerii quotes the coplanarity residual about 180 degrees.  Therefore
-    # convert only the *stored* Delta_phi to the signed residual about pi:
-    #
-    #     Delta_phi_Valerii = wrap(Delta_phi_tree - pi) in [-pi, pi).
-    #
-    # The mixed-tag accidental construction has no self-consistent stored
-    # Delta_phi for the shifted photon.  Only for that special diagnostic do
-    # we retain a four-vector fallback using the shifted tag photon.
-    if (not mixed_tag_shift) and ("Delta_phi" in epg.raw):
+    # Use the stored Delta_phi branch for the proton-photon coplanarity.
+    # The tree value is centered near pi, so convert it to the signed residual
+    # about 180 degrees in [-pi, pi).
+    if "Delta_phi" in epg.raw:
         raw_delta_phi_tree = np.asarray(epg.raw["Delta_phi"], dtype=float)
-        dphi_pgamma = (
-            raw_delta_phi_tree - math.pi + math.pi
-        ) % TWO_PI - math.pi
+        dphi_pgamma = (raw_delta_phi_tree - math.pi + math.pi) % TWO_PI - math.pi
         dphi_pgamma_deg = np.degrees(dphi_pgamma)
     else:
         proton_phi = np.arctan2(p3[:, 1], p3[:, 0])
-        tag_phi = np.arctan2(selected_tag_p3[:, 1], selected_tag_p3[:, 0])
+        tag_phi = np.arctan2(tag_source[:, 1], tag_source[:, 0])
         raw_pair_delta_phi = proton_phi - tag_phi
-        dphi_pgamma = (
-            raw_pair_delta_phi - math.pi + math.pi
-        ) % TWO_PI - math.pi
+        dphi_pgamma = (raw_pair_delta_phi - math.pi + math.pi) % TWO_PI - math.pi
         dphi_pgamma_deg = np.degrees(dphi_pgamma)
     #endif
 
-    if tag_index is None:
-        px -= tag_source[:, 0]
-        py -= tag_source[:, 1]
-        pz -= tag_source[:, 2]
-    else:
-        px -= tag_source[tag_index, 0]
-        py -= tag_source[tag_index, 1]
-        pz -= tag_source[tag_index, 2]
-    #endif
+    px -= tag_source[:, 0]
+    py -= tag_source[:, 1]
+    pz -= tag_source[:, 2]
 
     pred_p2 = px * px + py * py + pz * pz
     pred_p = np.sqrt(pred_p2)
     pred_m2 = pred_E * pred_E - pred_p2
-    if epgamma_miss_m2 is None:
-        epgamma_miss_m2 = pred_m2
-    #endif
 
     pred_p3 = np.column_stack((px, py, pz))
     theta_eX_deg = electron_proton_opening_angle_deg(e3, pred_p3)
@@ -2825,14 +2728,7 @@ def build_epgamma_denominator_features(
             dtype=np.float32,
         ),
         "theta_egamma_deg": np.asarray(
-            electron_proton_opening_angle_deg(
-                e3,
-                (
-                    tag_source
-                    if tag_index is None
-                    else tag_source[tag_index]
-                ),
-            ),
+            electron_proton_opening_angle_deg(e3, tag_source),
             dtype=np.float32,
         ),
         "valid_tag": np.asarray(valid, dtype=bool),
@@ -2847,7 +2743,7 @@ def build_epgamma_denominator_features(
     )
     out["recomputed_pTmiss"] = recomputed_ptmiss
 
-    if not mixed_tag_shift:
+    if True:
         if "pTmiss" in epg.raw:
             out["stored_pTmiss"] = np.asarray(
                 epg.raw["pTmiss"], dtype=np.float32
@@ -10108,15 +10004,6 @@ def parse_args() -> argparse.Namespace:
             "Maximum predicted probe energy (GeV) used for Stage-II denominator "
             "fits. The real epgamma skim has an observed missing-energy endpoint "
             "near 2 GeV, so 2.0 is the default supported upper boundary."
-        ),
-    )
-    parser.add_argument(
-        "--mix-shifts",
-        default="7919,15401,32749",
-        help=(
-            "Comma-separated deterministic cyclic shifts used only for the "
-            "mixed-data wrong-tag diagnostic. Mixed events are NOT part of the "
-            "nominal denominator fit. Default: 7919,15401,32749."
         ),
     )
     parser.add_argument(
@@ -19502,90 +19389,9 @@ def process_period(
                 f"({len(profile_rows)} rows)."
             )
 
-            for shift in parse_mix_shifts(str(args_dict["mix_shifts"])):
-                log(
-                    f"{period.label}: mixed-data diagnostic shift {shift}."
-                )
-                mixed_f = build_epgamma_denominator_features(
-                    period,
-                    data_epg,
-                    tag_min=tag_min,
-                    tag_max=tag_max,
-                    ft_theta_max=ft_theta_max,
-                    mixed_tag_shift=shift,
-                )
-                attach_photon_angular_acceptance(
-                    mixed_f, photon_acceptance
-                )
-                mixed_diag_rows.extend(
-                    run_mixed_shift_diagnostic(
-                        period,
-                        data_f=data_f,
-                        pi0_f=pi0_f,
-                        dvcs_f=dvcs_f,
-                        mixed_f=mixed_f,
-                        fit_rows=stage2_rows,
-                        shift=shift,
-                        ft_theta_max=ft_theta_max,
-                        mm2_min=float(args_dict["den_fit_mm2_min"]),
-                        mm2_max=float(args_dict["den_fit_mm2_max"]),
-                        probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-                        mm2_bins=int(args_dict["den_fit_mm2_bins"]),
-                        probe_m2_bins=int(args_dict["den_fit_probe_m2_bins"]),
-                        min_template_count=int(args_dict["den_min_template_count"]),
-                    )
-                )
-                three_rows_shift, three_closure_shift = (
-                    run_ft_coarse_three_component_diagnostic(
-                        period,
-                        data_f=data_f,
-                        pi0_f=pi0_f,
-                        dvcs_f=dvcs_f,
-                        mixed_f=mixed_f,
-                        coarse_rows=ft_coarse_rows,
-                        shift=shift,
-                        ft_theta_max=ft_theta_max,
-                        mm2_min=float(args_dict["den_fit_mm2_min"]),
-                        mm2_max=float(args_dict["den_fit_mm2_max"]),
-                        probe_m2_max=float(args_dict["den_fit_probe_m2_max"]),
-                        mm2_bins_2d=int(args_dict["den_fit_mm2_bins"]),
-                        probe_m2_bins_2d=int(args_dict["den_fit_probe_m2_bins"]),
-                        ptmiss_max=float(args_dict["disc_ptmiss_max"]),
-                        ptmiss_bins=int(args_dict["disc_ptmiss_bins"]),
-                        theta_max=float(args_dict["disc_theta_max"]),
-                        theta_bins=int(args_dict["disc_theta_bins"]),
-                        min_data_count=int(args_dict["den_min_data_count"]),
-                        min_template_count=int(args_dict["den_min_template_count"]),
-                    )
-                )
-                ft_coarse_three_component_rows.extend(three_rows_shift)
-                ft_coarse_three_component_closure_rows.extend(
-                    three_closure_shift
-                )
-                del mixed_f
-            #endfor
-
-            write_rows_csv(
-                mixed_diag_rows,
-                stage2_dir / "mixed_component_diagnostics.csv",
-            )
-            ft_coarse_three_component_summary_rows = (
-                summarize_ft_coarse_three_component_shifts(
-                    ft_coarse_three_component_rows
-                )
-            )
-            write_rows_csv(
-                ft_coarse_three_component_rows,
-                stage2_dir / "ft_coarse_three_component_by_mix_shift.csv",
-            )
-            write_rows_csv(
-                ft_coarse_three_component_closure_rows,
-                stage2_dir / "ft_coarse_three_component_closure.csv",
-            )
-            write_rows_csv(
-                ft_coarse_three_component_summary_rows,
-                stage2_dir / "ft_coarse_three_component_summary.csv",
-            )
+            # Mixed-event accidental/wrong-photon diagnostics were removed.
+            # The denominator study now uses only real data plus the AAO,
+            # CLASDIS, and DVCSgen samples.
 
             if not compact_plot_enabled(args_dict):
                 make_morph_profile_canvas(
@@ -19600,12 +19406,6 @@ def process_period(
                     ft_coarse_closure_rows,
                     stage2_dir,
                 )
-                make_ft_coarse_three_component_canvas(
-                    period,
-                    ft_coarse_three_component_summary_rows,
-                    ft_coarse_three_component_closure_rows,
-                    stage2_dir,
-                )
                 make_stage2_canvases(
                     period,
                     data_f=data_f,
@@ -19613,7 +19413,7 @@ def process_period(
                     dvcs_f=dvcs_f,
                     fit_rows=stage2_rows,
                     spread_rows=stage2_spread_rows,
-                    mixed_rows=mixed_diag_rows,
+                    mixed_rows=[],
                     outdir=stage2_dir,
                     ft_theta_max=ft_theta_max,
                     max_probe_energy=max_probe_energy,
@@ -19625,7 +19425,7 @@ def process_period(
         else:
             log(
                 f"{period.label}: selection diagnostics mode: skipped "
-                "closure/coarse-FT/morph-profile/mixed-event diagnostics."
+                "closure/coarse-FT/morph-profile diagnostics."
             )
         #endif
 
@@ -19633,7 +19433,7 @@ def process_period(
             period,
             fit_rows=stage2_rows,
             spread_rows=stage2_spread_rows,
-            mixed_rows=mixed_diag_rows,
+            mixed_rows=[],
             data_total=data_total,
             pi0_total=epg_total,
             dvcs_total=dv_total,
@@ -20614,7 +20414,6 @@ def main() -> int:
             "--disc-theta-max must be > 0 and --disc-theta-bins >= 8."
         )
     #endif
-    parse_mix_shifts(args.mix_shifts)
     if not (args.control_mgg_min < args.control_mgg_max):
         raise ValueError("Require --control-mgg-min < --control-mgg-max.")
     #endif
