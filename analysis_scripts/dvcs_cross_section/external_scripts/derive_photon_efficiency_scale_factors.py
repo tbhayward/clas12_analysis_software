@@ -2926,6 +2926,8 @@ def stage2_fit_mask(
 
     The pre-existing measured e-gamma opening-angle support is retained.
     Detector-region acceptance is common through stage2_region_mask().
+    MM^2(ep gamma X) is NOT an additional nominal cut; it remains available as
+    a diagnostic/discriminator variable only.
     """
     theta_egamma = feat.get("theta_egamma_deg")
     if theta_egamma is None:
@@ -2953,7 +2955,6 @@ def stage2_fit_mask(
         & (np.abs(feat["delta_phi_pgamma_deg"]) < VALERII_DPHI_PGAMMA_MAX_DEG)
         & np.isfinite(feat["theta_eX_deg"])
         & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
-        & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
     )
 
 
@@ -7628,7 +7629,12 @@ def make_stage2_canvases(
             & (feat["pred_probe_energy"] < max_probe_energy)
             & (feat["ep_missing_mass2"] >= mm2_min)
             & (feat["ep_missing_mass2"] < mm2_max)
-            & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
+            & np.isfinite(feat["egamma_missing_mass2"])
+            & (feat["egamma_missing_mass2"] > VALERII_EGAMMA_MM2_MIN_GEV2)
+            & np.isfinite(feat["delta_phi_pgamma_deg"])
+            & (np.abs(feat["delta_phi_pgamma_deg"]) < VALERII_DPHI_PGAMMA_MAX_DEG)
+            & np.isfinite(feat["theta_eX_deg"])
+            & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
         )
     #endfor
 
@@ -14686,10 +14692,15 @@ def nsidis_driver_study_common_mask(
         & (feat["pred_probe_energy"] >= elo)
         & (feat["pred_probe_energy"] < ehi)
         & np.isfinite(feat["pred_probe_mass2"])
-        & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
         & np.isfinite(feat["ep_missing_mass2"])
         & (feat["ep_missing_mass2"] >= mm2_min)
         & (feat["ep_missing_mass2"] < mm2_max)
+        & np.isfinite(feat["egamma_missing_mass2"])
+        & (feat["egamma_missing_mass2"] > VALERII_EGAMMA_MM2_MIN_GEV2)
+        & np.isfinite(feat["delta_phi_pgamma_deg"])
+        & (np.abs(feat["delta_phi_pgamma_deg"]) < VALERII_DPHI_PGAMMA_MAX_DEG)
+        & np.isfinite(feat["theta_eX_deg"])
+        & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
     )
 
     if theta_ep is not None:
@@ -16570,31 +16581,108 @@ def make_nsidis_shape_comparison_canvases(
     mm2_max,
     probe_m2_max,
 ):
-    """2x6 transparent data/template shape comparison for FT and FD_all."""
+    """
+    2x8 transparent data/template shape comparison for FT and FD_all.
+
+    The first three columns intentionally show all three distinct missing-mass
+    definitions used in this study:
+
+      * MM^2(epX)      = missing mass after the measured e and p,
+      * MM^2(e gamma X)= missing mass after the measured e and tag gamma,
+      * MM^2(ep gamma X)= missing mass after the measured e, p, and tag gamma.
+
+    The nominal row applies Valerii Klimenko's four exclusivity cuts exactly:
+
+      -0.231 < MM^2(epX) < 0.309 GeV^2,
+      MM^2(e gamma X) > 1.4 GeV^2,
+      -5.7 deg < Delta phi(p,gamma) < 5.7 deg,
+      Angle(e,X) < 9.2 deg.
+
+    MM^2(ep gamma X) is plotted only as a diagnostic here; it is no longer an
+    additional denominator-support cut.
+    """
     specs = (
-        ("Mx2_ep", r"$M_X^2(ep)$",
-         r"$M_X^2(ep)$ (GeV$^2$)", -0.20, 0.50, 120),
-        ("Mx2_epgamma", r"$M_X^2(ep\gamma)$",
-         r"$M_X^2(ep\gamma)$ (GeV$^2$)", -0.20, 0.30, 100),
-        ("Delta_phi", r"$\Delta\phi$",
-         r"$\Delta\phi$ (rad)", math.pi-0.40, math.pi+0.40, 100),
-        ("pTmiss", r"$p_{T,\rm miss}$",
-         r"$p_{T,\rm miss}$ (GeV)", 0.0, 1.0, 100),
-        ("xF2", r"$x_{F,2}(\gamma)$",
-         r"$x_{F,2}(\gamma)$", 0.00, 1.20, 120),
-        ("Egamma", r"$E_{\gamma,\rm tag}$",
-         r"$E_{\gamma,\rm tag}$ (GeV)", 0.40, max_probe_energy, 100),
+        (
+            "Mx2_ep",
+            r"$MM^2(epX)$",
+            r"$MM^2(epX)$ (GeV$^2$)",
+            -0.20,
+            0.50,
+            120,
+        ),
+        (
+            "Mx2_egamma",
+            r"$MM^2(e\gamma X)$",
+            r"$MM^2(e\gamma X)$ (GeV$^2$)",
+            -0.25,
+            4.00,
+            140,
+        ),
+        (
+            "Mx2_epgamma",
+            r"$MM^2(ep\gamma X)$",
+            r"$MM^2(ep\gamma X)$ (GeV$^2$)",
+            -0.20,
+            0.30,
+            100,
+        ),
+        (
+            "Delta_phi_pgamma",
+            r"$\Delta\phi(p,\gamma)$",
+            r"$\Delta\phi(p,\gamma)$ (deg)",
+            -25.0,
+            25.0,
+            120,
+        ),
+        (
+            "Angle_eX",
+            r"$\mathrm{Angle}(e,X)$",
+            r"$\mathrm{Angle}(e,X)$ (deg)",
+            0.0,
+            30.0,
+            120,
+        ),
+        (
+            "pTmiss",
+            r"$p_{T,\rm miss}$",
+            r"$p_{T,\rm miss}$ (GeV)",
+            0.0,
+            1.0,
+            100,
+        ),
+        (
+            "xF2",
+            r"$x_{F,2}(\gamma)$",
+            r"$x_{F,2}(\gamma)$",
+            0.00,
+            1.20,
+            120,
+        ),
+        (
+            "Egamma",
+            r"$E_{\gamma,\rm tag}$",
+            r"$E_{\gamma,\rm tag}$ (GeV)",
+            0.40,
+            max_probe_energy,
+            100,
+        ),
     )
 
     def vals(feat, key):
         if key == "Mx2_ep":
             return np.asarray(feat["ep_missing_mass2"], dtype=float)
         #endif
+        if key == "Mx2_egamma":
+            return np.asarray(feat["egamma_missing_mass2"], dtype=float)
+        #endif
         if key == "Mx2_epgamma":
             return np.asarray(feat["pred_probe_mass2"], dtype=float)
         #endif
-        if key == "Delta_phi":
-            return np.asarray(feat["stored_delta_phi_rad"], dtype=float)
+        if key == "Delta_phi_pgamma":
+            return np.asarray(feat["delta_phi_pgamma_deg"], dtype=float)
+        #endif
+        if key == "Angle_eX":
+            return np.asarray(feat["theta_eX_deg"], dtype=float)
         #endif
         if key == "pTmiss":
             return np.asarray(feat["stored_pTmiss"], dtype=float)
@@ -16618,7 +16706,7 @@ def make_nsidis_shape_comparison_canvases(
     )
 
     for region in ("FT", "FD_all"):
-        fig, axes = plt.subplots(2, 6, figsize=(22.0, 7.4))
+        fig, axes = plt.subplots(2, 8, figsize=(28.0, 7.6))
         for _, feat, label, color in samples:
             minimal = (
                 np.asarray(feat["valid_tag"], dtype=bool)
@@ -16626,17 +16714,20 @@ def make_nsidis_shape_comparison_canvases(
                 & np.isfinite(feat["electron_p"])
                 & (feat["electron_p"] > 2.0)
                 & np.isfinite(feat["theta_egamma_deg"])
-                & (
-                    feat["theta_egamma_deg"]
-                    > THETA_EGAMMA_MIN_DEG
-                )
+                & (feat["theta_egamma_deg"] > THETA_EGAMMA_MIN_DEG)
                 & np.isfinite(feat["pred_probe_energy"])
                 & (feat["pred_probe_energy"] >= 0.40)
                 & (feat["pred_probe_energy"] < max_probe_energy)
             )
             nominal = stage2_fit_mask(
-                feat, region, ft_theta_max, 0.40, max_probe_energy,
-                mm2_min, mm2_max, probe_m2_max,
+                feat,
+                region,
+                ft_theta_max,
+                0.40,
+                max_probe_energy,
+                mm2_min,
+                mm2_max,
+                probe_m2_max,
             )
             nominal &= (
                 np.isfinite(feat["electron_p"])
@@ -16653,10 +16744,14 @@ def make_nsidis_shape_comparison_canvases(
                     if np.sum(h) > 0:
                         h /= np.sum(h)
                     #endif
-                    centers = 0.5*(edges[:-1] + edges[1:])
+                    centers = 0.5 * (edges[:-1] + edges[1:])
                     axes[irow, icol].step(
-                        centers, h, where="mid", linewidth=1.25,
-                        color=color, label=label,
+                        centers,
+                        h,
+                        where="mid",
+                        linewidth=1.25,
+                        color=color,
+                        label=label,
                     )
                 #endfor
             #endfor
@@ -16670,9 +16765,9 @@ def make_nsidis_shape_comparison_canvases(
                 ax.set_xlabel(spec[2])
                 ax.grid(alpha=0.16)
 
-                # Explicitly show the exclusivity support used by the nominal
-                # denominator selection.  These are visual guides only on the
-                # top/minimal row; the bottom row is already selected by them.
+                # Visual guides for Valerii's four exclusivity cuts.  The same
+                # guides are shown on both rows; only the nominal/bottom row is
+                # actually selected by these cuts.
                 if spec[0] == "Mx2_ep":
                     ax.axvline(
                         mm2_min,
@@ -16686,15 +16781,29 @@ def make_nsidis_shape_comparison_canvases(
                         linewidth=0.9,
                         color="0.35",
                     )
-                elif spec[0] == "Mx2_epgamma":
+                elif spec[0] == "Mx2_egamma":
                     ax.axvline(
-                        -probe_m2_max,
+                        VALERII_EGAMMA_MM2_MIN_GEV2,
+                        linestyle="--",
+                        linewidth=0.9,
+                        color="0.35",
+                    )
+                elif spec[0] == "Delta_phi_pgamma":
+                    ax.axvline(
+                        -VALERII_DPHI_PGAMMA_MAX_DEG,
                         linestyle="--",
                         linewidth=0.9,
                         color="0.35",
                     )
                     ax.axvline(
-                        probe_m2_max,
+                        VALERII_DPHI_PGAMMA_MAX_DEG,
+                        linestyle="--",
+                        linewidth=0.9,
+                        color="0.35",
+                    )
+                elif spec[0] == "Angle_eX":
+                    ax.axvline(
+                        VALERII_ANGLE_EX_MAX_DEG,
                         linestyle="--",
                         linewidth=0.9,
                         color="0.35",
@@ -16708,14 +16817,14 @@ def make_nsidis_shape_comparison_canvases(
         #endfor
 
         axes[0, 0].set_ylabel("minimal selection\nunit-normalized")
-        axes[1, 0].set_ylabel("nominal denominator support\nunit-normalized")
+        axes[1, 0].set_ylabel("Valerii nominal selection\nunit-normalized")
         handles, labels = axes[0, 0].get_legend_handles_labels()
         if handles:
             fig.legend(
                 handles,
                 labels,
                 loc="upper center",
-                bbox_to_anchor=(0.5, 0.935),
+                bbox_to_anchor=(0.5, 0.925),
                 ncol=min(4, len(handles)),
                 frameon=False,
                 fontsize=8.5,
@@ -16724,14 +16833,17 @@ def make_nsidis_shape_comparison_canvases(
         fig.suptitle(
             f"{period.label}: {region} denominator shape comparison\n"
             r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
-            rf"nominal adds ${mm2_min:.2f}<M_X^2(ep)<{mm2_max:.2f}$ GeV$^2$ "
-            rf"and $|M_X^2(ep\gamma)|<{probe_m2_max:.2f}$ GeV$^2$",
-            fontsize=12.0,
+            r"Valerii nominal: "
+            rf"${mm2_min:.3f}<MM^2(epX)<{mm2_max:.3f}$ GeV$^2$, "
+            rf"$MM^2(e\gamma X)>{VALERII_EGAMMA_MM2_MIN_GEV2:.1f}$ GeV$^2$, "
+            rf"$|\Delta\phi(p,\gamma)|<{VALERII_DPHI_PGAMMA_MAX_DEG:.1f}^\circ$, "
+            rf"$\mathrm{{Angle}}(e,X)<{VALERII_ANGLE_EX_MAX_DEG:.1f}^\circ$",
+            fontsize=11.2,
         )
         safe_finalize_figure(
             fig,
             outdir / f"canvas_shape_comparison_{period.key}_{region.lower()}.png",
-            rect=(0, 0, 1, 0.89),
+            rect=(0, 0, 1, 0.88),
         )
         plt.close(fig)
     #endfor
