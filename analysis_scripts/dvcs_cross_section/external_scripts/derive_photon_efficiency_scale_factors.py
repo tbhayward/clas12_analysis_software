@@ -2935,19 +2935,15 @@ def stage2_fit_mask(
     """
     Common denominator/template selection.
 
-    In addition to the directed-probe energy and detector-acceptance support,
-    impose Valerii Klimenko's e p -> e p gamma X exclusivity requirements
-    identically on real data and every MC template:
+    The nominal exclusivity requirement is now the M_X^2(epX) window only.
+    The lower edge is supplied by ``mm2_min`` and the upper edge is the
+    period-specific CLASDIS FD valley between the missing-pi0 and missing-eta
+    peaks.  That same upper edge is imposed in FT and FD.
 
-      * mm2_min < MM^2(epX) < mm2_max (defaults: -0.231, 0.309 GeV^2),
-      * MM^2(e gamma X) > 1.4 GeV^2,
-      * |Delta phi(p,gamma)| < 5.7 deg,
-      * Angle(e,X) < 9.2 deg.
-
-    The pre-existing measured e-gamma opening-angle support is retained.
-    Detector-region acceptance is common through stage2_region_mask().
-    MM^2(ep gamma X) is NOT an additional nominal cut; it remains available as
-    a diagnostic/discriminator variable only.
+    The previously tested Valerii-labelled MM^2(e gamma X), Delta phi, and
+    Angle(e,X) requirements are no longer imposed because the labels/cut
+    definitions in the presentation are not sufficiently self-consistent for
+    production use.  Those quantities remain diagnostic variables.
     """
     theta_egamma = feat.get("theta_egamma_deg")
     if theta_egamma is None:
@@ -2967,14 +2963,9 @@ def stage2_fit_mask(
         & stage2_region_mask(feat, region_name, ft_theta_max)
         & (feat["pred_probe_energy"] >= elo)
         & (feat["pred_probe_energy"] < ehi)
+        & np.isfinite(feat["ep_missing_mass2"])
         & (feat["ep_missing_mass2"] >= mm2_min)
         & (feat["ep_missing_mass2"] < mm2_max)
-        & np.isfinite(feat["egamma_missing_mass2"])
-        & (feat["egamma_missing_mass2"] > VALERII_EGAMMA_MM2_MIN_GEV2)
-        & np.isfinite(feat["delta_phi_pgamma_deg"])
-        & (np.abs(feat["delta_phi_pgamma_deg"]) < VALERII_DPHI_PGAMMA_MAX_DEG)
-        & np.isfinite(feat["theta_eX_deg"])
-        & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
     )
 
 
@@ -7649,12 +7640,6 @@ def make_stage2_canvases(
             & (feat["pred_probe_energy"] < max_probe_energy)
             & (feat["ep_missing_mass2"] >= mm2_min)
             & (feat["ep_missing_mass2"] < mm2_max)
-            & np.isfinite(feat["egamma_missing_mass2"])
-            & (feat["egamma_missing_mass2"] > VALERII_EGAMMA_MM2_MIN_GEV2)
-            & np.isfinite(feat["delta_phi_pgamma_deg"])
-            & (np.abs(feat["delta_phi_pgamma_deg"]) < VALERII_DPHI_PGAMMA_MAX_DEG)
-            & np.isfinite(feat["theta_eX_deg"])
-            & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
         )
     #endfor
 
@@ -10030,8 +10015,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=0.309,
         help=(
-            "Upper M_X^2(ep) selection/fit edge (GeV^2). "
-            "Default: 0.309 (Valerii photon-efficiency cut)."
+            "Fallback upper M_X^2(epX) selection edge (GeV^2) used only "
+            "when a CLASDIS-derived FD pi0/eta valley cannot be determined. "
+            "In normal production the period-specific upper edge is derived "
+            "from the FD CLASDIS distribution and then imposed identically "
+            "in FT and FD. Default fallback: 0.309."
         ),
     )
     parser.add_argument(
@@ -14715,12 +14703,6 @@ def nsidis_driver_study_common_mask(
         & np.isfinite(feat["ep_missing_mass2"])
         & (feat["ep_missing_mass2"] >= mm2_min)
         & (feat["ep_missing_mass2"] < mm2_max)
-        & np.isfinite(feat["egamma_missing_mass2"])
-        & (feat["egamma_missing_mass2"] > VALERII_EGAMMA_MM2_MIN_GEV2)
-        & np.isfinite(feat["delta_phi_pgamma_deg"])
-        & (np.abs(feat["delta_phi_pgamma_deg"]) < VALERII_DPHI_PGAMMA_MAX_DEG)
-        & np.isfinite(feat["theta_eX_deg"])
-        & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
     )
 
     if theta_ep is not None:
@@ -16587,6 +16569,116 @@ def preflight_nsidis_study(
 
 
 
+def derive_clasdis_epx_valley_cut(
+    period: PeriodConfig,
+    clasdis_f: Dict[str, np.ndarray],
+    *,
+    ft_theta_max: float,
+    max_probe_energy: float,
+    fallback_cut: float,
+) -> float:
+    """
+    Determine the period-specific upper M_X^2(epX) cut from CLASDIS FD events.
+
+    The CLASDIS FD distribution contains the missing-pi0 peak near m_pi0^2 and
+    the missing-eta peak near m_eta^2.  We smooth a fine histogram and take the
+    minimum between the two observed peak locations.  The resulting single
+    upper edge is then used identically in both FD and FT.
+
+    If either peak cannot be identified robustly, return ``fallback_cut`` and
+    emit a warning rather than silently inventing a cut.
+    """
+    mm2 = np.asarray(clasdis_f["ep_missing_mass2"], dtype=float)
+    electron_p = np.asarray(clasdis_f["electron_p"], dtype=float)
+    theta_egamma = np.asarray(clasdis_f["theta_egamma_deg"], dtype=float)
+    eprobe = np.asarray(clasdis_f["pred_probe_energy"], dtype=float)
+
+    base = (
+        np.asarray(clasdis_f["valid_tag"], dtype=bool)
+        & stage2_region_mask(clasdis_f, "FD_all", ft_theta_max)
+        & np.isfinite(electron_p)
+        & (electron_p > 2.0)
+        & np.isfinite(theta_egamma)
+        & (theta_egamma > THETA_EGAMMA_MIN_DEG)
+        & np.isfinite(eprobe)
+        & (eprobe >= 0.40)
+        & (eprobe < max_probe_energy)
+        & np.isfinite(mm2)
+        & (mm2 >= -0.10)
+        & (mm2 < 0.60)
+    )
+
+    values = mm2[base]
+    if values.size < 500:
+        log(
+            f"{period.label}: WARNING: only {values.size:,} CLASDIS FD events "
+            "available for the M_X^2(epX) pi0/eta valley determination; "
+            f"using fallback upper cut {fallback_cut:.4f} GeV^2."
+        )
+        return float(fallback_cut)
+    #endif
+
+    edges = np.linspace(-0.10, 0.60, 351)
+    hist, _ = np.histogram(values, bins=edges)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    smooth = gaussian_filter1d(hist.astype(float), sigma=3.0, mode="nearest")
+
+    # Peak searches are intentionally broad enough to follow the observed
+    # CLASDIS shape while encoding only the known pi0/eta mass ordering.
+    pi0_window = (centers >= -0.02) & (centers <= 0.12)
+    eta_window = (centers >= 0.20) & (centers <= 0.42)
+    if not np.any(pi0_window) or not np.any(eta_window):
+        log(
+            f"{period.label}: WARNING: invalid histogram windows for CLASDIS "
+            f"valley search; using fallback {fallback_cut:.4f} GeV^2."
+        )
+        return float(fallback_cut)
+    #endif
+
+    pi0_indices = np.flatnonzero(pi0_window)
+    eta_indices = np.flatnonzero(eta_window)
+    i_pi0 = int(pi0_indices[np.argmax(smooth[pi0_indices])])
+    i_eta = int(eta_indices[np.argmax(smooth[eta_indices])])
+
+    if i_eta <= i_pi0 + 2:
+        log(
+            f"{period.label}: WARNING: CLASDIS pi0/eta peaks were not resolved "
+            f"in the expected order; using fallback {fallback_cut:.4f} GeV^2."
+        )
+        return float(fallback_cut)
+    #endif
+
+    between = np.arange(i_pi0 + 1, i_eta, dtype=int)
+    if between.size == 0:
+        log(
+            f"{period.label}: WARNING: no bins lie between the CLASDIS pi0 "
+            f"and eta peaks; using fallback {fallback_cut:.4f} GeV^2."
+        )
+        return float(fallback_cut)
+    #endif
+
+    i_valley = int(between[np.argmin(smooth[between])])
+    cut = float(centers[i_valley])
+
+    # Guard against pathological minima at the very edges of the search span.
+    if not (0.08 < cut < 0.26):
+        log(
+            f"{period.label}: WARNING: CLASDIS valley candidate {cut:.4f} "
+            "GeV^2 is outside the accepted pi0/eta separation range "
+            f"(0.08, 0.26); using fallback {fallback_cut:.4f} GeV^2."
+        )
+        return float(fallback_cut)
+    #endif
+
+    log(
+        f"{period.label}: CLASDIS FD M_X^2(epX) peaks at approximately "
+        f"{centers[i_pi0]:.4f} GeV^2 (pi0) and {centers[i_eta]:.4f} GeV^2 "
+        f"(eta); valley upper cut = {cut:.4f} GeV^2. "
+        "This same cut will be imposed in FD and FT."
+    )
+    return cut
+
+
 def make_nsidis_shape_comparison_canvases(
     period,
     data_f,
@@ -16602,26 +16694,16 @@ def make_nsidis_shape_comparison_canvases(
     probe_m2_max,
 ):
     """
-    5x8 cumulative cut-flow shape comparison for FT and FD_all.
+    2x8 denominator-shape comparison for FT and FD_all.
 
-    Columns show the three missing-mass definitions plus the other denominator
-    diagnostics.  Rows apply Valerii Klimenko's four exclusivity cuts one at a
-    time, cumulatively, so it is immediately visible which requirement removes
-    the sample:
+    Row 1 is the minimal common support.  Row 2 adds only the accepted
+    M_X^2(epX) exclusivity window.  The upper edge is determined period by
+    period from the minimum between the missing-pi0 and missing-eta peaks in
+    the FD CLASDIS distribution, then imposed identically in FD and FT.
 
-      row 1: minimal denominator support only,
-      row 2: + -0.231 < MM^2(epX) < 0.309 GeV^2,
-      row 3: + MM^2(e gamma X) > 1.4 GeV^2,
-      row 4: + -5.7 deg < Delta phi(p,gamma) < 5.7 deg,
-      row 5: + Angle(e,X) < 9.2 deg.
-
-    Delta phi(p,gamma) is taken from the ROOT-tree Delta_phi branch and only
-    recentered from its pi-centered convention to Valerii's zero-centered
-    coplanarity residual.  It is not re-derived from particle azimuths for the
-    ordinary data/MC samples.
-
-    MM^2(ep gamma X) is diagnostic only and is not part of Valerii's four-cut
-    selection.
+    MM^2(e gamma X), MM^2(ep gamma X), Delta phi, and Angle(e,X) remain purely
+    diagnostic while the Valerii presentation labels/cut definitions are being
+    treated as unreliable.
     """
     specs = (
         (
@@ -16629,15 +16711,15 @@ def make_nsidis_shape_comparison_canvases(
             r"$MM^2(epX)$",
             r"$MM^2(epX)$ (GeV$^2$)",
             -0.20,
-            0.50,
-            120,
+            0.60,
+            140,
         ),
         (
             "Mx2_egamma",
             r"$MM^2(e\gamma X)$",
             r"$MM^2(e\gamma X)$ (GeV$^2$)",
-            -0.25,
-            4.00,
+            1.00,
+            5.00,
             140,
         ),
         (
@@ -16719,28 +16801,21 @@ def make_nsidis_shape_comparison_canvases(
         ("pi0", pi0_f, r"exclusive $\pi^0$ (AAO)", "tab:red"),
     ]
     if clasdis_f is not None:
-        samples.append(
-            ("clasdis", clasdis_f, "SIDIS (CLASDIS)", "tab:orange")
-        )
+        samples.append(("clasdis", clasdis_f, "SIDIS (CLASDIS)", "tab:orange"))
     #endif
-    samples.append(
-        ("dvcs", dvcs_f, "BH/DVCS (DVCSgen)", "tab:blue")
-    )
+    samples.append(("dvcs", dvcs_f, "BH/DVCS (DVCSgen)", "tab:blue"))
 
     row_labels = (
         "minimal",
-        r"$+\ MM^2(epX)$",
-        r"$+\ MM^2(e\gamma X)$",
-        r"$+\ \Delta\phi(p,\gamma)$",
-        r"$+\ \mathrm{Angle}(e,X)$",
+        r"$+\ M_X^2(epX)$ cut",
     )
 
     for region in ("FT", "FD_all"):
-        fig, axes = plt.subplots(5, 8, figsize=(28.0, 16.5))
-
-        # Keep a small textual cut-flow summary in the terminal as well.  This
-        # is particularly useful when a later row is visually empty.
-        log(f"{period.label} {region}: cumulative Valerii cut flow")
+        fig, axes = plt.subplots(2, 8, figsize=(28.0, 8.6))
+        log(
+            f"{period.label} {region}: denominator support -> "
+            f"M_X^2(epX) window [{mm2_min:.4f}, {mm2_max:.4f}) GeV^2"
+        )
 
         for sample_key, feat, label, color in samples:
             minimal = (
@@ -16754,57 +16829,18 @@ def make_nsidis_shape_comparison_canvases(
                 & (feat["pred_probe_energy"] >= 0.40)
                 & (feat["pred_probe_energy"] < max_probe_energy)
             )
-
             cut_ep = (
                 np.isfinite(feat["ep_missing_mass2"])
-                & (feat["ep_missing_mass2"] > mm2_min)
+                & (feat["ep_missing_mass2"] >= mm2_min)
                 & (feat["ep_missing_mass2"] < mm2_max)
             )
-            cut_egamma = (
-                np.isfinite(feat["egamma_missing_mass2"])
-                & (
-                    feat["egamma_missing_mass2"]
-                    > VALERII_EGAMMA_MM2_MIN_GEV2
-                )
-            )
-            cut_dphi = (
-                np.isfinite(feat["delta_phi_pgamma_deg"])
-                & (
-                    np.abs(feat["delta_phi_pgamma_deg"])
-                    < VALERII_DPHI_PGAMMA_MAX_DEG
-                )
-            )
-            cut_angle = (
-                np.isfinite(feat["theta_eX_deg"])
-                & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
-            )
-
-            masks = (
-                minimal,
-                minimal & cut_ep,
-                minimal & cut_ep & cut_egamma,
-                minimal & cut_ep & cut_egamma & cut_dphi,
-                minimal & cut_ep & cut_egamma & cut_dphi & cut_angle,
-            )
+            masks = (minimal, minimal & cut_ep)
 
             counts = [int(np.count_nonzero(m)) for m in masks]
-            efficiencies = [
-                (100.0 * counts[i] / counts[i - 1])
-                if i > 0 and counts[i - 1] > 0
-                else (100.0 if i == 0 else 0.0)
-                for i in range(len(counts))
-            ]
+            frac = 100.0 * counts[1] / counts[0] if counts[0] > 0 else 0.0
             log(
-                f"  {label}: "
-                + " -> ".join(
-                    f"{row_labels[i]}={counts[i]:,}"
-                    + (
-                        ""
-                        if i == 0
-                        else f" ({efficiencies[i]:.2f}% of previous)"
-                    )
-                    for i in range(len(counts))
-                )
+                f"  {label}: minimal={counts[0]:,} -> epX cut={counts[1]:,} "
+                f"({frac:.2f}% retained)"
             )
 
             for irow, mask in enumerate(masks):
@@ -16830,65 +16866,21 @@ def make_nsidis_shape_comparison_canvases(
             #endfor
         #endfor
 
-        for irow in range(5):
+        for irow in range(2):
             for icol, spec in enumerate(specs):
                 ax = axes[irow, icol]
-                ax.set_yscale("linear")
                 ax.set_xlim(spec[3], spec[4])
                 ax.set_xlabel(spec[2])
                 ax.grid(alpha=0.16)
-
-                # Show all four cut locations on every row.  The row ordering
-                # makes clear which guides have actually been imposed so far.
                 if spec[0] == "Mx2_ep":
-                    ax.axvline(
-                        mm2_min,
-                        linestyle="--",
-                        linewidth=0.9,
-                        color="0.35",
-                    )
-                    ax.axvline(
-                        mm2_max,
-                        linestyle="--",
-                        linewidth=0.9,
-                        color="0.35",
-                    )
-                elif spec[0] == "Mx2_egamma":
-                    ax.axvline(
-                        VALERII_EGAMMA_MM2_MIN_GEV2,
-                        linestyle="--",
-                        linewidth=0.9,
-                        color="0.35",
-                    )
-                elif spec[0] == "Delta_phi_pgamma":
-                    ax.axvline(
-                        -VALERII_DPHI_PGAMMA_MAX_DEG,
-                        linestyle="--",
-                        linewidth=0.9,
-                        color="0.35",
-                    )
-                    ax.axvline(
-                        VALERII_DPHI_PGAMMA_MAX_DEG,
-                        linestyle="--",
-                        linewidth=0.9,
-                        color="0.35",
-                    )
-                elif spec[0] == "Angle_eX":
-                    ax.axvline(
-                        VALERII_ANGLE_EX_MAX_DEG,
-                        linestyle="--",
-                        linewidth=0.9,
-                        color="0.35",
-                    )
+                    ax.axvline(mm2_min, linestyle="--", linewidth=0.9, color="0.35")
+                    ax.axvline(mm2_max, linestyle="--", linewidth=0.9, color="0.35")
                 #endif
-
                 if irow == 0:
                     ax.set_title(spec[1])
                 #endif
             #endfor
-            axes[irow, 0].set_ylabel(
-                row_labels[irow] + "\nunit-normalized"
-            )
+            axes[irow, 0].set_ylabel(row_labels[irow] + "\nunit-normalized")
         #endfor
 
         handles, labels = axes[0, 0].get_legend_handles_labels()
@@ -16897,28 +16889,27 @@ def make_nsidis_shape_comparison_canvases(
                 handles,
                 labels,
                 loc="upper center",
-                bbox_to_anchor=(0.5, 0.957),
+                bbox_to_anchor=(0.5, 0.947),
                 ncol=min(4, len(handles)),
                 frameon=False,
                 fontsize=8.5,
             )
         #endif
         fig.suptitle(
-            f"{period.label}: {region} cumulative denominator cut flow\n"
-            r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; rows then add "
-            rf"${mm2_min:.3f}<MM^2(epX)<{mm2_max:.3f}$ GeV$^2$, "
-            rf"$MM^2(e\gamma X)>{VALERII_EGAMMA_MM2_MIN_GEV2:.1f}$ GeV$^2$, "
-            rf"$|\Delta\phi(p,\gamma)|<{VALERII_DPHI_PGAMMA_MAX_DEG:.1f}^\circ$, "
-            rf"$\mathrm{{Angle}}(e,X)<{VALERII_ANGLE_EX_MAX_DEG:.1f}^\circ$",
+            f"{period.label}: {region} denominator shape comparison\n"
+            r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
+            rf"nominal adds ${mm2_min:.3f}<MM^2(epX)<{mm2_max:.3f}$ GeV$^2$ "
+            r"(upper edge from FD CLASDIS $\pi^0$/$\eta$ valley; same cut in FT and FD)",
             fontsize=11.2,
         )
         safe_finalize_figure(
             fig,
             outdir / f"canvas_shape_comparison_{period.key}_{region.lower()}.png",
-            rect=(0, 0, 1, 0.93),
+            rect=(0, 0, 1, 0.91),
         )
         plt.close(fig)
     #endfor
+
 
 
 def make_nsidis_three_variable_fit_canvases(
@@ -18322,6 +18313,28 @@ def process_nsidis_study_period(
                 )
             #endif
         #endif
+
+        # Derive the nominal upper M_X^2(epX) edge from the FD CLASDIS
+        # pi0/eta valley for this run period.  Use that same edge in both FD
+        # and FT throughout all downstream denominator fits and efficiencies.
+        fallback_mm2_max = float(args_dict["den_fit_mm2_max"])
+        if clasdis_f is not None:
+            derived_mm2_max = derive_clasdis_epx_valley_cut(
+                period,
+                clasdis_f,
+                ft_theta_max=ft_theta_max,
+                max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
+                fallback_cut=fallback_mm2_max,
+            )
+        else:
+            derived_mm2_max = fallback_mm2_max
+            log(
+                f"{period.label}: WARNING: CLASDIS is unavailable, so the "
+                f"fallback M_X^2(epX) upper cut {derived_mm2_max:.4f} GeV^2 "
+                "will be used in both FD and FT."
+            )
+        #endif
+        args_dict["den_fit_mm2_max"] = float(derived_mm2_max)
 
         common = {
             "period": period,
