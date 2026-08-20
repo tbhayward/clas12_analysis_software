@@ -636,14 +636,22 @@ PUBLISHED_SYSTEMATIC_PARAMETERS: tuple[str, ...] = (
     "lu1", "ul1", "ul2", "ut3", "ll0", "ll1", "lt2",
 )
 
-# Physics-motivated panel layout:
-#   top row:    unpolarized cosine modulations
-#   middle row: beam- and target-single-spin ratios
-#   bottom row: double-spin ratios
-AGGREGATED_PANEL_ORDER: tuple[str | None, ...] = (
-    "u1", "u2", "lu1",
-    "ul1", "ul2", "ut3",
-    "ll0", "ll1", "lt2",
+# Physics-motivated 3x4 canvas layout:
+#   top row:    UU (unpolarized) structure-function ratios
+#   middle row: all single-spin ratios (LU, UL, and UT)
+#   bottom row: all double-spin ratios (LL and LT)
+#
+# The unused cells in the top and bottom rows are intentionally left blank.
+PHYSICS_PANEL_ROWS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("UU", ("u1", "u2")),
+    ("Single-spin", ("lu1", "ul1", "ul2", "ut3")),
+    ("Double-spin", ("ll0", "ll1", "lt2")),
+)
+
+AGGREGATED_PANEL_ORDER: tuple[str, ...] = tuple(
+    parameter
+    for _, row_parameters in PHYSICS_PANEL_ROWS
+    for parameter in row_parameters
 )
 
 PROBABILITY_FLOOR = 1.0e-300
@@ -3412,32 +3420,79 @@ def plot_parameter_summaries(
     return paths
 
 
+def make_grouped_physics_canvas(
+    *,
+    figsize: tuple[float, float] = (18.0, 12.0),
+) -> tuple[plt.Figure, dict[str, plt.Axes], list[plt.Axes]]:
+    """
+    Create the common 3x4 physics canvas used by the aggregate plots.
+
+    Row 1 contains the two UU ratios, row 2 contains all four single-spin
+    ratios, and row 3 contains the three double-spin ratios.  The remaining
+    three cells are left blank.
+    """
+    fig, axes = plt.subplots(
+        3,
+        4,
+        figsize=figsize,
+        sharex=True,
+        squeeze=False,
+    )
+
+    panel_positions: dict[str, tuple[int, int]] = {
+        "u1": (0, 0),
+        "u2": (0, 1),
+        "lu1": (1, 0),
+        "ul1": (1, 1),
+        "ul2": (1, 2),
+        "ut3": (1, 3),
+        "ll0": (2, 0),
+        "ll1": (2, 1),
+        "lt2": (2, 2),
+    }
+
+    axes_by_parameter: dict[str, plt.Axes] = {}
+    axes_in_order: list[plt.Axes] = []
+    for parameter in AGGREGATED_PANEL_ORDER:
+        row_index, column_index = panel_positions[parameter]
+        ax = axes[row_index, column_index]
+        axes_by_parameter[parameter] = ax
+        axes_in_order.append(ax)
+    # endfor
+
+    used_positions = set(panel_positions.values())
+    for row_index in range(3):
+        for column_index in range(4):
+            if (row_index, column_index) not in used_positions:
+                axes[row_index, column_index].axis("off")
+            # endif
+        # endfor
+    # endfor
+
+    return fig, axes_by_parameter, axes_in_order
+
 def plot_aggregated_by_x(
     frame: pd.DataFrame,
     output_dir: Path,
     include_target_axis_uncertainty: bool,
 ) -> list[str]:
     """
-    Write one physics-ordered 3x3 canvas per xB bin.
+    Write one polarization-grouped 3x4 canvas per xB bin.
 
-    Top row: unpolarized cosine modulations.
-    Middle row: LU, UL sin(phi), and UL sin(2phi).
-    Bottom row: LL and LL cos(phi).
+    Top row: the two UU ratios.
+    Middle row: all four single-spin ratios (LU, UL, UL, UT).
+    Bottom row: all three double-spin ratios (LL, LL, LT).
+    Unused cells are left blank.
     """
     ensure_directory(output_dir)
     paths: list[str] = []
 
     for x_index, (x_low, x_high) in enumerate(XB_BINS):
         subset = frame.loc[frame["x_index"] == x_index].sort_values("t_index")
-        fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
-        axes_flat = axes.ravel()
+        fig, axes_by_parameter, axes_in_order = make_grouped_physics_canvas()
 
-        for panel, parameter in enumerate(AGGREGATED_PANEL_ORDER):
-            ax = axes_flat[panel]
-            if parameter is None:
-                ax.axis("off")
-                continue
-            # endif
+        for parameter in AGGREGATED_PANEL_ORDER:
+            ax = axes_by_parameter[parameter]
 
             x_values = subset["mean_minus_tprime_gev2"]
             point_to_point_column = f"{parameter}_point_to_point_systematic"
@@ -3492,12 +3547,12 @@ def plot_aggregated_by_x(
             ax.set_ylabel(PARAMETER_LABELS[parameter])
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
-            if panel >= 6:
+            if parameter in PHYSICS_PANEL_ROWS[-1][1]:
                 ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
             # endif
         # endfor
 
-        handles, labels = axes_flat[0].get_legend_handles_labels()
+        handles, labels = axes_in_order[0].get_legend_handles_labels()
         fig.legend(
             handles,
             labels,
@@ -3521,7 +3576,7 @@ def plot_aggregated_by_period(
     output_dir: Path,
 ) -> list[str]:
     """
-    Write physics-ordered 3x3 canvases comparing the simultaneous result with
+    Write polarization-grouped canvases comparing the simultaneous result with
     independent Su22, Fa22, and Sp23 diagnostic fits.
 
     Invalid or covariance-defective period fits are not drawn as ordinary
@@ -3534,15 +3589,10 @@ def plot_aggregated_by_period(
     for x_index, (x_low, x_high) in enumerate(XB_BINS):
         subset = frame.loc[frame["x_index"] == x_index].sort_values("t_index")
         x_values = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
-        fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
-        axes_flat = axes.ravel()
+        fig, axes_by_parameter, axes_in_order = make_grouped_physics_canvas()
 
-        for panel, parameter in enumerate(AGGREGATED_PANEL_ORDER):
-            ax = axes_flat[panel]
-            if parameter is None:
-                ax.axis("off")
-                continue
-            # endif
+        for parameter in AGGREGATED_PANEL_ORDER:
+            ax = axes_by_parameter[parameter]
 
             ax.errorbar(
                 x_values,
@@ -3594,7 +3644,7 @@ def plot_aggregated_by_period(
             ax.set_ylabel(PARAMETER_LABELS[parameter])
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
-            if panel >= 6:
+            if parameter in PHYSICS_PANEL_ROWS[-1][1]:
                 ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
             # endif
         # endfor
@@ -3602,7 +3652,7 @@ def plot_aggregated_by_period(
         # Deduplicate legend entries produced in every panel.
         handles: list[Any] = []
         labels: list[str] = []
-        for ax in axes_flat:
+        for ax in axes_in_order:
             panel_handles, panel_labels = ax.get_legend_handles_labels()
             for handle, label in zip(panel_handles, panel_labels):
                 if label not in labels:
@@ -3642,15 +3692,10 @@ def plot_target_axis_variants(
     for x_index, (x_low, x_high) in enumerate(XB_BINS):
         subset = frame.loc[frame["x_index"] == x_index].sort_values("t_index")
         x_values = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
-        fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
-        axes_flat = axes.ravel()
+        fig, axes_by_parameter, axes_in_order = make_grouped_physics_canvas()
 
-        for panel, parameter in enumerate(AGGREGATED_PANEL_ORDER):
-            ax = axes_flat[panel]
-            if parameter is None:
-                ax.axis("off")
-                continue
-            # endif
+        for parameter in AGGREGATED_PANEL_ORDER:
+            ax = axes_by_parameter[parameter]
 
             for variant in variants:
                 if (
@@ -3714,12 +3759,12 @@ def plot_target_axis_variants(
             ax.set_ylabel(PARAMETER_LABELS[parameter])
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
-            if panel >= 6:
+            if parameter in PHYSICS_PANEL_ROWS[-1][1]:
                 ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
             # endif
         # endfor
 
-        handles, labels = axes_flat[0].get_legend_handles_labels()
+        handles, labels = axes_in_order[0].get_legend_handles_labels()
         fig.legend(
             handles,
             labels,
@@ -3763,15 +3808,10 @@ def plot_period_stability(
                 frame["x_index"] == x_index
             ].sort_values("t_index")
             x_values = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
-            fig, axes = plt.subplots(3, 3, figsize=(15, 12), sharex=True)
-            axes_flat = axes.ravel()
+            fig, axes_by_parameter, axes_in_order = make_grouped_physics_canvas()
 
-            for panel, parameter in enumerate(AGGREGATED_PANEL_ORDER):
-                ax = axes_flat[panel]
-                if parameter is None:
-                    ax.axis("off")
-                    continue
-                # endif
+            for parameter in AGGREGATED_PANEL_ORDER:
+                ax = axes_by_parameter[parameter]
 
                 for constraint_name, label, marker, color in constraint_specs:
                     if constraint_name == "free":
@@ -3804,12 +3844,12 @@ def plot_period_stability(
                 ax.set_ylabel(PARAMETER_LABELS[parameter])
                 apply_parameter_y_limits(ax, parameter)
                 ax.grid(alpha=0.25)
-                if panel >= 6:
+                if parameter in PHYSICS_PANEL_ROWS[-1][1]:
                     ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
                 # endif
             # endfor
 
-            handles, labels = axes_flat[0].get_legend_handles_labels()
+            handles, labels = axes_in_order[0].get_legend_handles_labels()
             fig.legend(
                 handles,
                 labels,
