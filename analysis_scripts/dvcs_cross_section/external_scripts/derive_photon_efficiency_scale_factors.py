@@ -17786,6 +17786,38 @@ def process_nsidis_stage1_only_period(
         "FT 2.4-5.0 deg; FD 6.0-35.0 deg."
     )
 
+    # IMPORTANT: Stage-1-only used to pass the command-line fallback
+    # --den-fit-mm2-max straight into the diagnostic canvas.  That meant the
+    # CLASDIS FD pi0/eta-valley finder was never called in --stage1-only mode,
+    # so the plots misleadingly continued to show the old 0.309 GeV^2 edge.
+    # Derive the period-specific upper edge here as well, before making either
+    # the FT or FD canvas.  The same FD-derived number is then imposed in both
+    # detector regions.
+    fallback_mm2_max = float(mm2_max)
+    clasdis_feat = features_by_sample.get("clasdis")
+    if clasdis_feat is not None:
+        mm2_max = derive_clasdis_epx_valley_cut(
+            period,
+            clasdis_feat,
+            ft_theta_max=ft_theta_max,
+            max_probe_energy=max_probe_energy,
+            fallback_cut=fallback_mm2_max,
+        )
+    else:
+        mm2_max = fallback_mm2_max
+        log(
+            f"{period.label}: WARNING: Stage-1-only CLASDIS sample is "
+            "unavailable; using fallback M_X^2(epX) upper edge "
+            f"{mm2_max:.4f} GeV^2 in both FD and FT."
+        )
+    #endif
+
+    log(
+        f"{period.label}: Stage-1-only FINAL M_X^2(epX) window = "
+        f"[{mm2_min:.4f}, {mm2_max:.4f}) GeV^2; upper edge derived from "
+        "FD CLASDIS and applied identically to FD and FT."
+    )
+
     make_nsidis_shape_comparison_canvases(
         period,
         features_by_sample["data"],
