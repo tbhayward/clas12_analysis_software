@@ -16580,13 +16580,21 @@ def derive_clasdis_epx_valley_cut(
     """
     Determine the period-specific upper M_X^2(epX) cut from CLASDIS FD events.
 
-    The CLASDIS FD distribution contains the missing-pi0 peak near m_pi0^2 and
-    the missing-eta peak near m_eta^2.  We smooth a fine histogram and take the
-    minimum between the two observed peak locations.  The resulting single
-    upper edge is then used identically in both FD and FT.
+    The relevant CLASDIS FD spectrum has a missing-pi0 peak at low M_X^2 and
+    a missing-eta peak near m_eta^2.  The desired cut is NOT the eta-peak
+    location; it is the local minimum in the trough separating the two peaks.
 
-    If either peak cannot be identified robustly, return ``fallback_cut`` and
-    emit a warning rather than silently inventing a cut.
+    To make that definition explicit and robust, we:
+      1. build the same minimally-selected FD CLASDIS spectrum used by the
+         diagnostic canvas;
+      2. identify the pi0 peak in [-0.02, 0.10] GeV^2;
+      3. identify the eta peak in [0.24, 0.38] GeV^2;
+      4. search ONLY the physical inter-peak trough [0.10, 0.24] GeV^2 and
+         take the minimum of the smoothed histogram there.
+
+    The resulting single upper edge is imposed identically in FD and FT.
+    ``fallback_cut`` is used only if there are too few CLASDIS events or the
+    histogram cannot be formed at all.
     """
     mm2 = np.asarray(clasdis_f["ep_missing_mass2"], dtype=float)
     electron_p = np.asarray(clasdis_f["electron_p"], dtype=float)
@@ -16618,63 +16626,55 @@ def derive_clasdis_epx_valley_cut(
         return float(fallback_cut)
     #endif
 
+    # 2 MeV^2-wide bins over the displayed range, followed by modest Gaussian
+    # smoothing.  The cut is selected from the smoothed spectrum but reported
+    # at the corresponding physical histogram-bin center.
     edges = np.linspace(-0.10, 0.60, 351)
     hist, _ = np.histogram(values, bins=edges)
     centers = 0.5 * (edges[:-1] + edges[1:])
     smooth = gaussian_filter1d(hist.astype(float), sigma=3.0, mode="nearest")
 
-    # Peak searches are intentionally broad enough to follow the observed
-    # CLASDIS shape while encoding only the known pi0/eta mass ordering.
-    pi0_window = (centers >= -0.02) & (centers <= 0.12)
-    eta_window = (centers >= 0.20) & (centers <= 0.42)
-    if not np.any(pi0_window) or not np.any(eta_window):
+    if not np.any(smooth > 0):
         log(
-            f"{period.label}: WARNING: invalid histogram windows for CLASDIS "
-            f"valley search; using fallback {fallback_cut:.4f} GeV^2."
+            f"{period.label}: WARNING: empty CLASDIS FD M_X^2(epX) histogram; "
+            f"using fallback upper cut {fallback_cut:.4f} GeV^2."
         )
         return float(fallback_cut)
     #endif
+
+    pi0_window = (centers >= -0.02) & (centers <= 0.10)
+    eta_window = (centers >= 0.24) & (centers <= 0.38)
+    valley_window = (centers >= 0.10) & (centers <= 0.24)
 
     pi0_indices = np.flatnonzero(pi0_window)
     eta_indices = np.flatnonzero(eta_window)
+    valley_indices = np.flatnonzero(valley_window)
+
     i_pi0 = int(pi0_indices[np.argmax(smooth[pi0_indices])])
     i_eta = int(eta_indices[np.argmax(smooth[eta_indices])])
 
-    if i_eta <= i_pi0 + 2:
-        log(
-            f"{period.label}: WARNING: CLASDIS pi0/eta peaks were not resolved "
-            f"in the expected order; using fallback {fallback_cut:.4f} GeV^2."
-        )
-        return float(fallback_cut)
-    #endif
-
-    between = np.arange(i_pi0 + 1, i_eta, dtype=int)
+    # Restrict the trough search to bins that are simultaneously inside the
+    # physical 0.10--0.24 GeV^2 valley window and strictly between the two
+    # observed peak locations.  This prevents the eta maximum itself from ever
+    # being returned as the cut.
+    between = valley_indices[
+        (valley_indices > i_pi0) & (valley_indices < i_eta)
+    ]
     if between.size == 0:
-        log(
-            f"{period.label}: WARNING: no bins lie between the CLASDIS pi0 "
-            f"and eta peaks; using fallback {fallback_cut:.4f} GeV^2."
-        )
-        return float(fallback_cut)
+        # This should be extremely unusual.  Fall back to the minimum in the
+        # physical valley window itself rather than to the eta-peak-scale
+        # nominal bound.
+        between = valley_indices
     #endif
 
     i_valley = int(between[np.argmin(smooth[between])])
     cut = float(centers[i_valley])
 
-    # Guard against pathological minima at the very edges of the search span.
-    if not (0.08 < cut < 0.26):
-        log(
-            f"{period.label}: WARNING: CLASDIS valley candidate {cut:.4f} "
-            "GeV^2 is outside the accepted pi0/eta separation range "
-            f"(0.08, 0.26); using fallback {fallback_cut:.4f} GeV^2."
-        )
-        return float(fallback_cut)
-    #endif
-
     log(
-        f"{period.label}: CLASDIS FD M_X^2(epX) peaks at approximately "
-        f"{centers[i_pi0]:.4f} GeV^2 (pi0) and {centers[i_eta]:.4f} GeV^2 "
-        f"(eta); valley upper cut = {cut:.4f} GeV^2. "
-        "This same cut will be imposed in FD and FT."
+        f"{period.label}: CLASDIS FD M_X^2(epX): pi0 peak ~= "
+        f"{centers[i_pi0]:.4f} GeV^2, eta peak ~= {centers[i_eta]:.4f} GeV^2, "
+        f"inter-peak minimum = {cut:.4f} GeV^2. "
+        "Using that minimum as the upper M_X^2(epX) cut in BOTH FD and FT."
     )
     return cut
 
@@ -16899,7 +16899,7 @@ def make_nsidis_shape_comparison_canvases(
             f"{period.label}: {region} denominator shape comparison\n"
             r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
             rf"nominal adds ${mm2_min:.3f}<MM^2(epX)<{mm2_max:.3f}$ GeV$^2$ "
-            r"(upper edge from FD CLASDIS $\pi^0$/$\eta$ valley; same cut in FT and FD)",
+            r"(upper edge = FD CLASDIS inter-peak minimum between $\pi^0$ and $\eta$; same cut in FT and FD)",
             fontsize=11.2,
         )
         safe_finalize_figure(
