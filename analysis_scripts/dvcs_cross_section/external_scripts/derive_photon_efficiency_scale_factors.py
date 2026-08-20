@@ -2578,7 +2578,7 @@ def electron_proton_opening_angle_deg(
     electron_p3: np.ndarray,
     proton_p3: np.ndarray,
 ) -> np.ndarray:
-    """Lab opening angle theta_ep between reconstructed electron and proton."""
+    """Lab opening angle between two supplied three-momentum vectors."""
     e3 = np.asarray(electron_p3, dtype=float)
     p3 = np.asarray(proton_p3, dtype=float)
     en = np.sqrt(np.einsum("ij,ij->i", e3, e3))
@@ -2691,7 +2691,18 @@ def build_epgamma_denominator_features(
     pred_m2 = pred_E * pred_E - pred_p2
 
     pred_p3 = np.column_stack((px, py, pz))
-    theta_eX_deg = electron_proton_opening_angle_deg(e3, pred_p3)
+
+    # Angle(e,X) follows the inclusive e + X definition used by Valerii:
+    #   P_X = P_beam + P_target - P_e.
+    # Only the scattered electron is subtracted.  In particular, X contains
+    # the recoil proton and all produced hadrons/photons; this is NOT the
+    # residual system after subtracting e+p+gamma.
+    ex_p3 = np.column_stack((
+        -e3[:, 0],
+        -e3[:, 1],
+        beam_p - e3[:, 2],
+    ))
+    theta_eX_deg = electron_proton_opening_angle_deg(e3, ex_p3)
 
     with np.errstate(invalid="ignore", divide="ignore"):
         pred_theta_deg = np.degrees(
