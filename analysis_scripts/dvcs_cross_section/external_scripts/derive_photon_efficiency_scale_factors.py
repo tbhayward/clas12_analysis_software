@@ -26,6 +26,11 @@ CURRENT USER-FACING WORKFLOW
 
        SF_gamma = epsilon_data / epsilon_MC.
 
+The production denominator/template selection now also applies Valerii
+Klimenko's photon-efficiency exclusivity cuts: -0.231 < MM^2(epX) < 0.309
+GeV^2, MM^2(e gamma X) > 1.4 GeV^2, |Delta phi(p,gamma)| < 5.7 deg, and
+Angle(e,X) < 9.2 deg.
+
 The old "Stage I" resolution study is no longer a user-visible analysis stage.
 Its only surviving role is an INTERNAL aaogen MC association kernel. Because
 runnum/evnum are not useful identifiers in MC, aaogen epgamma and reconstructed
@@ -160,6 +165,18 @@ PHOTON_DETECTOR_FD = 1
 
 THETA_EP_MIN_DEG = 5.0  # legacy diagnostic name
 THETA_EGAMMA_MIN_DEG = 5.0
+
+# Valerii Klimenko photon-efficiency exclusivity cuts (June 30, 2026):
+#   -0.231 < MM^2(epX) < 0.309 GeV^2
+#   MM^2(e gamma X) > 1.4 GeV^2
+#   -5.7 deg < Delta phi(p,gamma) < 5.7 deg
+#   Angle(e,X) < 9.2 deg
+# Here Delta phi(p,gamma) is the signed coplanarity residual relative to
+# 180 deg, and X is the photon predicted from four-momentum conservation
+# in e p -> e p gamma X.
+VALERII_EGAMMA_MM2_MIN_GEV2 = 1.4
+VALERII_DPHI_PGAMMA_MAX_DEG = 5.7
+VALERII_ANGLE_EX_MAX_DEG = 9.2
 
 PROBE_ENERGY_EDGES = np.asarray(
     # The original three sub-0.8 GeV bins produced a poorly constrained FT
@@ -2656,6 +2673,36 @@ def build_epgamma_denominator_features(
     epmiss_m2 = epmiss_E * epmiss_E - (px * px + py * py + pz * pz)
     pred_E = epmiss_E - tag_E
 
+    # Valerii's MM^2(e gamma X): missing mass after subtracting only the
+    # scattered electron and the measured/tag photon.  The missing system is
+    # therefore p + X for the e p -> e p gamma X denominator topology.
+    if tag_index is None:
+        selected_tag_p3 = tag_source
+    else:
+        selected_tag_p3 = tag_source[tag_index]
+    #endif
+
+    egamma_miss_E = initial_E - np.sqrt(
+        np.einsum("ij,ij->i", e3, e3) + M_E * M_E
+    ) - tag_E
+    egamma_px = -e3[:, 0] - selected_tag_p3[:, 0]
+    egamma_py = -e3[:, 1] - selected_tag_p3[:, 1]
+    egamma_pz = beam_p - e3[:, 2] - selected_tag_p3[:, 2]
+    egamma_miss_m2 = (
+        egamma_miss_E * egamma_miss_E
+        - egamma_px * egamma_px
+        - egamma_py * egamma_py
+        - egamma_pz * egamma_pz
+    )
+
+    # Valerii's Delta phi(p,gamma) is treated as a coplanarity residual: zero
+    # corresponds to the proton and tag photon being separated by 180 degrees
+    # in lab azimuth.  Keep the signed residual in [-180,180) degrees.
+    proton_phi = np.arctan2(p3[:, 1], p3[:, 0])
+    tag_phi = np.arctan2(selected_tag_p3[:, 1], selected_tag_p3[:, 0])
+    dphi_pgamma = (proton_phi - tag_phi - math.pi + math.pi) % TWO_PI - math.pi
+    dphi_pgamma_deg = np.degrees(dphi_pgamma)
+
     if tag_index is None:
         px -= tag_source[:, 0]
         py -= tag_source[:, 1]
@@ -2669,6 +2716,9 @@ def build_epgamma_denominator_features(
     pred_p2 = px * px + py * py + pz * pz
     pred_p = np.sqrt(pred_p2)
     pred_m2 = pred_E * pred_E - pred_p2
+
+    pred_p3 = np.column_stack((px, py, pz))
+    theta_eX_deg = electron_proton_opening_angle_deg(e3, pred_p3)
 
     with np.errstate(invalid="ignore", divide="ignore"):
         pred_theta_deg = np.degrees(
@@ -2702,6 +2752,9 @@ def build_epgamma_denominator_features(
 
     out = {
         "ep_missing_mass2": np.asarray(epmiss_m2, dtype=np.float32),
+        "egamma_missing_mass2": np.asarray(egamma_miss_m2, dtype=np.float32),
+        "delta_phi_pgamma_deg": np.asarray(dphi_pgamma_deg, dtype=np.float32),
+        "theta_eX_deg": np.asarray(theta_eX_deg, dtype=np.float32),
         "tag_energy": np.asarray(tag_E, dtype=np.float32),
         "pred_probe_energy": np.asarray(pred_E, dtype=np.float32),
         "pred_probe_mass2": np.asarray(pred_m2, dtype=np.float32),
@@ -2862,9 +2915,17 @@ def stage2_fit_mask(
     """
     Common denominator/template selection.
 
-    theta_ep > 5 deg is now imposed identically on real data, aaogen, and
-    dvcsgen.  Detector-region acceptance is also common through
-    stage2_region_mask().
+    In addition to the directed-probe energy and detector-acceptance support,
+    impose Valerii Klimenko's e p -> e p gamma X exclusivity requirements
+    identically on real data and every MC template:
+
+      * mm2_min < MM^2(epX) < mm2_max (defaults: -0.231, 0.309 GeV^2),
+      * MM^2(e gamma X) > 1.4 GeV^2,
+      * |Delta phi(p,gamma)| < 5.7 deg,
+      * Angle(e,X) < 9.2 deg.
+
+    The pre-existing measured e-gamma opening-angle support is retained.
+    Detector-region acceptance is common through stage2_region_mask().
     """
     theta_egamma = feat.get("theta_egamma_deg")
     if theta_egamma is None:
@@ -2886,6 +2947,12 @@ def stage2_fit_mask(
         & (feat["pred_probe_energy"] < ehi)
         & (feat["ep_missing_mass2"] >= mm2_min)
         & (feat["ep_missing_mass2"] < mm2_max)
+        & np.isfinite(feat["egamma_missing_mass2"])
+        & (feat["egamma_missing_mass2"] > VALERII_EGAMMA_MM2_MIN_GEV2)
+        & np.isfinite(feat["delta_phi_pgamma_deg"])
+        & (np.abs(feat["delta_phi_pgamma_deg"]) < VALERII_DPHI_PGAMMA_MAX_DEG)
+        & np.isfinite(feat["theta_eX_deg"])
+        & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
         & (np.abs(feat["pred_probe_mass2"]) < probe_m2_max)
     )
 
@@ -9926,14 +9993,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--den-fit-mm2-min",
         type=float,
-        default=-0.08,
-        help="Lower M_X^2(ep) fit edge (GeV^2). Default: -0.08.",
+        default=-0.231,
+        help=(
+            "Lower M_X^2(ep) selection/fit edge (GeV^2). "
+            "Default: -0.231 (Valerii photon-efficiency cut)."
+        ),
     )
     parser.add_argument(
         "--den-fit-mm2-max",
         type=float,
-        default=0.10,
-        help="Upper M_X^2(ep) fit edge (GeV^2). Default: 0.11 (matches the upstream eppi0 skim).",
+        default=0.309,
+        help=(
+            "Upper M_X^2(ep) selection/fit edge (GeV^2). "
+            "Default: 0.309 (Valerii photon-efficiency cut)."
+        ),
     )
     parser.add_argument(
         "--den-fit-probe-m2-max",
