@@ -188,6 +188,8 @@ class PeriodConfig:
     eppi0_pi0_mc: str
     nsidis_epgamma_data: Optional[str] = None
     nsidis_eppi0_data: Optional[str] = None
+    clasdis_epgamma_mc: Optional[str] = None
+    clasdis_eppi0_mc: Optional[str] = None
 
 
 PERIODS: Tuple[PeriodConfig, ...] = (
@@ -206,6 +208,14 @@ PERIODS: Tuple[PeriodConfig, ...] = (
             "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
             "rga_fa18_inb_eppi0.root"
         ),
+        clasdis_epgamma_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "clasdis/rec_clasdis_rga_fa18_inb_epgammaX.root"
+        ),
+        clasdis_eppi0_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "clasdis/rec_clasdis_rga_fa18_inb_eppi0X.root"
+        ),
     ),
     PeriodConfig(
         "fa18_out", "Fa18 Out", 10.604,
@@ -221,6 +231,14 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         nsidis_eppi0_data=(
             "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
             "rga_fa18_out_eppi0.root"
+        ),
+        clasdis_epgamma_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "clasdis/rec_clasdis_rga_fa18_out_epgammaX.root"
+        ),
+        clasdis_eppi0_mc=(
+            "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/"
+            "clasdis/rec_clasdis_rga_fa18_out_eppi0X.root"
         ),
     ),
     PeriodConfig(
@@ -389,6 +407,103 @@ def read_branches(
         return arrays, found_name, int(tree.num_entries)
 
 
+def read_branches_with_progress(
+    path: str,
+    required: Sequence[str],
+    optional: Sequence[str],
+    tree_name: Optional[str],
+    max_entries: int,
+    *,
+    progress_label: str,
+    chunk_entries: int = 500_000,
+) -> Tuple[Dict[str, np.ndarray], str, int]:
+    """Read scalar ROOT branches in chunks with visible progress."""
+    with uproot.open(path) as root_file:
+        found_name, tree = find_tree(root_file, tree_name)
+        available = set(tree.keys())
+
+        missing = sorted(set(required) - available)
+        if missing:
+            raise KeyError(
+                f"{path}\nTree '{found_name}' is missing required branches:\n  "
+                + "\n  ".join(missing)
+            )
+        #endif
+
+        chosen = list(required) + [
+            b for b in optional
+            if b in available and b not in required
+        ]
+
+        total_entries = int(tree.num_entries)
+        target_entries = (
+            total_entries
+            if max_entries == 0
+            else min(int(max_entries), total_entries)
+        )
+
+        log(
+            f"{progress_label}: reading {len(chosen)} branches, "
+            f"{target_entries:,}/{total_entries:,} entries "
+            f"in {int(chunk_entries):,}-entry chunks."
+        )
+
+        if target_entries == 0:
+            return {}, found_name, total_entries
+        #endif
+
+        output: Dict[str, np.ndarray] = {}
+        start = 0
+        t0 = time.perf_counter()
+
+        while start < target_entries:
+            stop = min(
+                start + int(chunk_entries),
+                target_entries,
+            )
+            chunk = tree.arrays(
+                chosen,
+                entry_start=start,
+                entry_stop=stop,
+                library="np",
+            )
+
+            if not output:
+                for name in chosen:
+                    values = np.asarray(chunk[name])
+                    output[name] = np.empty(
+                        (target_entries,) + tuple(values.shape[1:]),
+                        dtype=values.dtype,
+                    )
+                #endfor
+            #endif
+
+            for name in chosen:
+                output[name][start:stop] = np.asarray(
+                    chunk[name]
+                )
+            #endfor
+
+            start = stop
+            elapsed = time.perf_counter() - t0
+            rate = (
+                float(start) / elapsed
+                if elapsed > 0.0
+                else float("nan")
+            )
+            log(
+                f"{progress_label}: "
+                f"{start:,}/{target_entries:,} "
+                f"({100.0 * start / target_entries:.1f}%), "
+                f"{rate / 1.0e6:.2f} M entries/s."
+            )
+        #endwhile
+
+        return output, found_name, total_entries
+
+
+
+
 # -----------------------------------------------------------------------------
 # Schema adapters
 # -----------------------------------------------------------------------------
@@ -410,6 +525,15 @@ EPG_OPTIONAL_PI0_MC = (
 )
 
 EPG_OPTIONAL_DVCS_MC = (
+    "pTmiss",
+    "pT",
+    "theta_gamma_gamma",
+    "Delta_phi",
+    "Emiss2",
+    "xF2",
+)
+
+EPG_OPTIONAL_CLASDIS_MC = (
     "pTmiss",
     "pT",
     "theta_gamma_gamma",
@@ -9646,6 +9770,16 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--stage1-grand-diagnostics",
+        action="store_true",
+        help=(
+            "When combined with --stage1-only, also run the broad all-variable "
+            "grand-diagnostic suite. This is opt-in because it reads dozens "
+            "of extra branches and is much heavier in memory/I/O."
+        ),
+    )
+
+    parser.add_argument(
         "--stage1-only",
         action="store_true",
         help=(
@@ -16281,6 +16415,19 @@ def preflight_nsidis_study(
             #endif
         #endif
 
+        if period.clasdis_epgamma_mc is not None:
+            clasdis_path = Path(period.clasdis_epgamma_mc)
+            if clasdis_path.exists():
+                checks.append(
+                    (
+                        "clasdis epgammaX",
+                        str(clasdis_path),
+                        EPG_REQUIRED,
+                    )
+                )
+            #endif
+        #endif
+
         for label, path, required in checks:
             if not Path(path).exists():
                 missing.append(f"{period.label}: {label}: {path}")
@@ -16343,6 +16490,7 @@ def make_nsidis_shape_comparison_canvases(
     dvcs_f,
     outdir,
     *,
+    clasdis_f=None,
     ft_theta_max,
     max_probe_energy,
     mm2_min,
@@ -16383,10 +16531,17 @@ def make_nsidis_shape_comparison_canvases(
         #endif
         return np.asarray(feat["tag_energy"], dtype=float)
 
-    samples = (
+    samples = [
         ("data", data_f, "data", "black"),
-        ("pi0", pi0_f, r"$\pi^0$ MC", "tab:red"),
-        ("dvcs", dvcs_f, "BH/DVCS MC", "tab:blue"),
+        ("pi0", pi0_f, r"exclusive $\pi^0$ (AAO)", "tab:red"),
+    ]
+    if clasdis_f is not None:
+        samples.append(
+            ("clasdis", clasdis_f, "SIDIS (CLASDIS)", "tab:orange")
+        )
+    #endif
+    samples.append(
+        ("dvcs", dvcs_f, "BH/DVCS (DVCSgen)", "tab:blue")
     )
 
     for region in ("FT", "FD_all"):
@@ -16481,7 +16636,18 @@ def make_nsidis_shape_comparison_canvases(
 
         axes[0, 0].set_ylabel("minimal selection\nunit-normalized")
         axes[1, 0].set_ylabel("nominal denominator support\nunit-normalized")
-        axes[0, 0].legend(frameon=False, fontsize=8)
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        if handles:
+            fig.legend(
+                handles,
+                labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.935),
+                ncol=min(4, len(handles)),
+                frameon=False,
+                fontsize=8.5,
+            )
+        #endif
         fig.suptitle(
             f"{period.label}: {region} denominator shape comparison\n"
             r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
@@ -16492,7 +16658,7 @@ def make_nsidis_shape_comparison_canvases(
         safe_finalize_figure(
             fig,
             outdir / f"canvas_shape_comparison_{period.key}_{region.lower()}.png",
-            rect=(0, 0, 1, 0.94),
+            rect=(0, 0, 1, 0.89),
         )
         plt.close(fig)
     #endfor
@@ -17266,28 +17432,16 @@ def process_nsidis_stage1_only_period(
     output_root: str,
 ) -> Dict[str, object]:
     """
-    Quick Stage-1-only diagnostic path.
+    Fast Stage-1 shape-comparison path.
 
-    Reads only:
-      * nSidis epgamma data;
-      * aaogen-as-epgamma MC;
-      * dvcsgen epgamma MC.
-
-    It intentionally does NOT read wagon files or any eppi0 files and does not
-    perform association, composition fitting, or efficiency extraction.
+    The normal --stage1-only mode reads only the branches required for the
+    standard data/AAO/CLASDIS/DVCS shape comparison. The broad all-variable
+    grand diagnostics are opt-in via --stage1-grand-diagnostics.
     """
     t0 = time.perf_counter()
     production_root = Path(output_root)
-    stage1_outdir = (
-        production_root / "stage1_shape_comparison"
-    )
-    grand_outdir = (
-        production_root
-        / "stage1_grand_diagnostics"
-        / period.key
-    )
+    stage1_outdir = production_root / "stage1_shape_comparison"
     stage1_outdir.mkdir(parents=True, exist_ok=True)
-    grand_outdir.mkdir(parents=True, exist_ok=True)
 
     max_entries = int(args_dict["max_entries"])
     tree_name = args_dict.get("tree")
@@ -17295,70 +17449,57 @@ def process_nsidis_stage1_only_period(
     tag_min = float(args_dict["tag_min"])
     tag_max = float(args_dict["tag_max"])
     ft_theta_max = float(args_dict["ft_theta_max"])
-    max_probe_energy = float(
-        args_dict["nsidis_pilot_energy_max"]
-    )
+    max_probe_energy = float(args_dict["nsidis_pilot_energy_max"])
     mm2_min = float(args_dict["den_fit_mm2_min"])
     mm2_max = float(args_dict["den_fit_mm2_max"])
-    probe_m2_max = float(
-        args_dict["nsidis_pilot_probe_m2_max"]
+    probe_m2_max = float(args_dict["nsidis_pilot_probe_m2_max"])
+
+    ns_epg_path, _ = resolve_nsidis_paths(period, args_dict)
+
+    input_specs = [
+        ("data", ns_epg_path, EPG_OPTIONAL_DATA),
+        ("pi0", period.epgamma_pi0_mc, EPG_OPTIONAL_PI0_MC),
+    ]
+
+    if period.clasdis_epgamma_mc is not None:
+        clasdis_path = Path(period.clasdis_epgamma_mc)
+        if clasdis_path.exists():
+            input_specs.append(
+                (
+                    "clasdis",
+                    str(clasdis_path),
+                    EPG_OPTIONAL_CLASDIS_MC,
+                )
+            )
+        else:
+            log(
+                f"{period.label}: CLASDIS epgammaX configured but not present; "
+                f"omitting it from the shape comparison: {clasdis_path}"
+            )
+        #endif
+    #endif
+
+    input_specs.append(
+        ("dvcs", period.epgamma_dvcs_mc, EPG_OPTIONAL_DVCS_MC)
     )
 
-    ns_epg_path, _ = resolve_nsidis_paths(
-        period,
-        args_dict,
-    )
+    samples_by_name: Dict[str, EPGammaSample] = {}
+    features_by_sample: Dict[str, Dict[str, np.ndarray]] = {}
 
-    optional = grand_stage1_optional_branches()
-    input_specs = (
-        (
-            "data",
-            ns_epg_path,
-            EPG_OPTIONAL_DATA,
-        ),
-        (
-            "pi0",
-            period.epgamma_pi0_mc,
-            EPG_OPTIONAL_PI0_MC,
-        ),
-        (
-            "dvcs",
-            period.epgamma_dvcs_mc,
-            EPG_OPTIONAL_DVCS_MC,
-        ),
-    )
+    for sample_name, path, base_optional in input_specs:
+        progress_label = f"{period.label}: Stage-1 {sample_name}"
+        log(f"{period.label}: Stage-1-only reading {sample_name} epgamma.")
 
-    arrays_by_sample = {}
-    samples_by_name = {}
-    features_by_sample = {}
-
-    # Read all user-requested diagnostic branches, but only in this explicit
-    # Stage-1-only path.
-    grand_optional = tuple(
-        dict.fromkeys(
-            optional
-            + EPG_OPTIONAL_PI0_MC
-            + EPG_OPTIONAL_DVCS_MC
-            + EPG_OPTIONAL_DATA
-        )
-    )
-
-    for sample_name, path, _base_optional in input_specs:
-        log(
-            f"{period.label}: Stage-1-only reading "
-            f"{sample_name} epgamma."
-        )
-        arrays, found_tree, total = read_branches(
+        arrays, found_tree, total = read_branches_with_progress(
             path,
             EPG_REQUIRED,
-            grand_optional,
+            base_optional,
             tree_name,
             max_entries,
+            progress_label=progress_label,
         )
-        sample = extract_epgamma(
-            arrays,
-            angle_mode,
-        )
+
+        sample = extract_epgamma(arrays, angle_mode)
         feat = build_epgamma_denominator_features(
             period,
             sample,
@@ -17367,37 +17508,31 @@ def process_nsidis_stage1_only_period(
             ft_theta_max,
         )
         feat["electron_p"] = np.asarray(
-            electron_momentum_from_p3(
-                sample.electron_p3
-            ),
+            electron_momentum_from_p3(sample.electron_p3),
             dtype=np.float32,
         )
 
-        arrays_by_sample[sample_name] = arrays
+        # Raw arrays are not needed by the standard shape comparison.
+        del arrays
+
         samples_by_name[sample_name] = sample
         features_by_sample[sample_name] = feat
 
         log(
-            f"{period.label}: {sample_name} tree "
-            f"'{found_tree}', loaded "
-            f"{len(sample.tag_energy):,}/{total:,} entries."
+            f"{period.label}: {sample_name} tree '{found_tree}', "
+            f"loaded {len(sample.tag_energy):,}/{total:,} entries; "
+            "feature construction complete."
         )
     #endfor
 
-    # Use the exact same fixed production angular-acceptance interface as
-    # the normal nSidis workflow.  infer_photon_angular_acceptance() accepts an
-    # EPGammaSample plus keyword-only metadata; it does NOT accept a feature
-    # dictionary or ft_theta_max as a positional argument.
     photon_acceptance = infer_photon_angular_acceptance(
         samples_by_name["data"],
         source=f"{period.label} nSidis epgamma data; Stage-1-only",
     )
     for feat in features_by_sample.values():
-        attach_photon_angular_acceptance(
-            feat,
-            photon_acceptance,
-        )
+        attach_photon_angular_acceptance(feat, photon_acceptance)
     #endfor
+
     log(
         f"{period.label}: Stage-1-only fixed photon angular acceptance: "
         "FT 2.4-5.0 deg; FD 6.0-35.0 deg."
@@ -17409,6 +17544,7 @@ def process_nsidis_stage1_only_period(
         features_by_sample["pi0"],
         features_by_sample["dvcs"],
         stage1_outdir,
+        clasdis_f=features_by_sample.get("clasdis"),
         ft_theta_max=ft_theta_max,
         max_probe_energy=max_probe_energy,
         mm2_min=mm2_min,
@@ -17416,22 +17552,26 @@ def process_nsidis_stage1_only_period(
         probe_m2_max=probe_m2_max,
     )
 
-    make_grand_stage1_diagnostics(
-        period,
-        arrays_by_sample,
-        samples_by_name,
-        features_by_sample,
-        grand_outdir,
-        ft_theta_max=ft_theta_max,
-        max_probe_energy=max_probe_energy,
-        mm2_min=mm2_min,
-        mm2_max=mm2_max,
-        probe_m2_max=probe_m2_max,
-    )
+    samples_by_name.clear()
+    features_by_sample.clear()
 
-    elapsed = float(
-        time.perf_counter() - t0
-    )
+    if bool(args_dict.get("stage1_grand_diagnostics", False)):
+        log(
+            f"{period.label}: starting optional grand Stage-1 diagnostics."
+        )
+        run_grand_stage1_diagnostics_for_period(
+            period,
+            args_dict,
+            production_root,
+        )
+    else:
+        log(
+            f"{period.label}: grand Stage-1 diagnostics skipped "
+            "(add --stage1-grand-diagnostics to enable them)."
+        )
+    #endif
+
+    elapsed = float(time.perf_counter() - t0)
     log(
         f"{period.label}: Stage-1-only diagnostics complete "
         f"in {elapsed:.1f} s."
@@ -17443,7 +17583,6 @@ def process_nsidis_stage1_only_period(
         "wall_time_s": elapsed,
         "status": "stage1_only_complete",
     }
-
 
 
 def process_nsidis_study_period(
@@ -17876,6 +18015,57 @@ def process_nsidis_study_period(
             return summary
         #endif
 
+        clasdis_f = None
+        if period.clasdis_epgamma_mc is not None:
+            clasdis_path = Path(period.clasdis_epgamma_mc)
+            if clasdis_path.exists():
+                log(
+                    f"{period.label}: reading CLASDIS epgammaX for Stage-1 "
+                    "shape comparison."
+                )
+                clasdis_arrays, clasdis_tree, clasdis_total = read_branches(
+                    str(clasdis_path),
+                    EPG_REQUIRED,
+                    EPG_OPTIONAL_CLASDIS_MC,
+                    tree_name,
+                    max_entries,
+                )
+                clasdis_epg = extract_epgamma(
+                    clasdis_arrays,
+                    angle_mode,
+                )
+                del clasdis_arrays
+                clasdis_f = build_epgamma_denominator_features(
+                    period,
+                    clasdis_epg,
+                    tag_min,
+                    tag_max,
+                    ft_theta_max,
+                )
+                attach_photon_angular_acceptance(
+                    clasdis_f,
+                    photon_acceptance,
+                )
+                clasdis_f["electron_p"] = np.asarray(
+                    electron_momentum_from_p3(
+                        clasdis_epg.electron_p3
+                    ),
+                    dtype=np.float32,
+                )
+                log(
+                    f"{period.label}: CLASDIS tree '{clasdis_tree}', "
+                    f"loaded {len(clasdis_epg.tag_energy):,}/"
+                    f"{clasdis_total:,} entries."
+                )
+            else:
+                log(
+                    f"{period.label}: CLASDIS epgammaX is configured but not "
+                    f"present yet; Stage-1 comparison will omit it: "
+                    f"{clasdis_path}"
+                )
+            #endif
+        #endif
+
         common = {
             "period": period,
             "pi0_f": pi0_f,
@@ -17908,12 +18098,18 @@ def process_nsidis_study_period(
 
         make_nsidis_shape_comparison_canvases(
             period, ns_epg_f, pi0_f, dvcs_f, stage1_outdir,
+            clasdis_f=clasdis_f,
             ft_theta_max=ft_theta_max,
             max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
             mm2_min=float(args_dict["den_fit_mm2_min"]),
             mm2_max=float(args_dict["den_fit_mm2_max"]),
             probe_m2_max=central_support,
         )
+
+        if clasdis_f is not None:
+            del clasdis_f
+            del clasdis_epg
+        #endif
 
         # Keep the full visual diagnostic suite in ordinary production runs.
         # It is intentionally generated from a bounded, independent read so
@@ -20171,6 +20367,16 @@ def main() -> int:
             f"nSidis period-level parallelism: "
             f"{n_nsidis_workers} process(es)."
         )
+        if (
+            args.stage1_only
+            and args.stage1_grand_diagnostics
+            and n_nsidis_workers > 2
+        ):
+            log(
+                "WARNING: grand Stage-1 diagnostics read dozens of extra "
+                "branches; use --workers 2 if node memory is limited."
+            )
+        #endif
 
         summaries_by_period: Dict[str, Dict[str, object]] = {}
 
@@ -20240,11 +20446,16 @@ def main() -> int:
                 nsroot / "stage1_run_summary.csv",
             )
             log(
-                "Done. Stage-1-only photon-efficiency diagnostics are in "
-                f"{nsroot / 'stage1_shape_comparison'} and "
-                f"{nsroot / 'stage1_grand_diagnostics'} "
-                "(one subdirectory per run period)."
+                "Done. Stage-1-only shape comparisons are in "
+                f"{nsroot / 'stage1_shape_comparison'}."
             )
+            if args.stage1_grand_diagnostics:
+                log(
+                    "Grand Stage-1 diagnostics are in "
+                    f"{nsroot / 'stage1_grand_diagnostics'} "
+                    "(one subdirectory per run period)."
+                )
+            #endif
             return 0
         #endif
 
