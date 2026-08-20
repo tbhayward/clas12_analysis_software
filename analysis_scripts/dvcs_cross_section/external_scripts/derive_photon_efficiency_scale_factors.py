@@ -2639,7 +2639,8 @@ def build_epgamma_denominator_features(
 ) -> Dict[str, np.ndarray]:
     """
     Same Stage-II kinematics with lower peak memory and a float32 persistent
-    histogram feature store.
+    histogram feature store. Standard missing-mass observables are read directly
+    from the ROOT-tree Mx2/Mx2_1/Mx2_2 branches.
     """
     e3 = epg.electron_p3
     p3 = epg.proton_p3
@@ -2688,12 +2689,43 @@ def build_epgamma_denominator_features(
     egamma_px = -e3[:, 0] - selected_tag_p3[:, 0]
     egamma_py = -e3[:, 1] - selected_tag_p3[:, 1]
     egamma_pz = beam_p - e3[:, 2] - selected_tag_p3[:, 2]
-    egamma_miss_m2 = (
+    egamma_miss_m2_derived = (
         egamma_miss_E * egamma_miss_E
         - egamma_px * egamma_px
         - egamma_py * egamma_py
         - egamma_pz * egamma_pz
     )
+
+    # For every ordinary epgamma sample, use the missing-mass quantities
+    # already stored in the ROOT tree.  The processing convention is fixed:
+    #
+    #     p1 = proton, p2 = photon
+    #
+    # and ThreeParticles therefore stores
+    #
+    #     Mx2_1 = MM^2(epX),
+    #     Mx2_2 = MM^2(e gamma X),
+    #     Mx2   = MM^2(ep gamma X).
+    #
+    # Do not rederive these quantities from the reconstructed four-vectors:
+    # using the tree values guarantees that the photon-efficiency study uses
+    # exactly the same kinematic definitions as the standard processing.
+    # The sole exception is the mixed-tag accidental diagnostic.  There the
+    # photon is deliberately shifted to a different event, so the original
+    # event's Mx2_2 and Mx2 branches are no longer self-consistent with that
+    # artificial photon and must be recomputed for the shifted combination.
+    if not mixed_tag_shift:
+        epmiss_m2 = np.asarray(epg.raw["Mx2_1"], dtype=float)
+        egamma_miss_m2 = np.asarray(epg.raw["Mx2_2"], dtype=float)
+        epgamma_miss_m2 = np.asarray(epg.raw["Mx2"], dtype=float)
+    else:
+        # MM^2(epX) does not involve the shifted photon, so the tree value is
+        # still valid.  The e-gamma and ep-gamma quantities must follow the
+        # artificial shifted photon.
+        epmiss_m2 = np.asarray(epg.raw["Mx2_1"], dtype=float)
+        egamma_miss_m2 = egamma_miss_m2_derived
+        epgamma_miss_m2 = None  # filled from pred_m2 below
+    #endif
 
     # Valerii's Delta phi(p,gamma) cut should use the Delta_phi quantity
     # already stored in the nSidis ROOT tree, rather than re-deriving the
@@ -2736,6 +2768,9 @@ def build_epgamma_denominator_features(
     pred_p2 = px * px + py * py + pz * pz
     pred_p = np.sqrt(pred_p2)
     pred_m2 = pred_E * pred_E - pred_p2
+    if epgamma_miss_m2 is None:
+        epgamma_miss_m2 = pred_m2
+    #endif
 
     pred_p3 = np.column_stack((px, py, pz))
     theta_eX_deg = electron_proton_opening_angle_deg(e3, pred_p3)
@@ -2773,6 +2808,7 @@ def build_epgamma_denominator_features(
     out = {
         "ep_missing_mass2": np.asarray(epmiss_m2, dtype=np.float32),
         "egamma_missing_mass2": np.asarray(egamma_miss_m2, dtype=np.float32),
+        "epgamma_missing_mass2": np.asarray(epgamma_miss_m2, dtype=np.float32),
         "delta_phi_pgamma_deg": np.asarray(dphi_pgamma_deg, dtype=np.float32),
         "theta_eX_deg": np.asarray(theta_eX_deg, dtype=np.float32),
         "tag_energy": np.asarray(tag_E, dtype=np.float32),
@@ -16780,7 +16816,7 @@ def make_nsidis_shape_comparison_canvases(
             return np.asarray(feat["egamma_missing_mass2"], dtype=float)
         #endif
         if key == "Mx2_epgamma":
-            return np.asarray(feat["pred_probe_mass2"], dtype=float)
+            return np.asarray(feat["epgamma_missing_mass2"], dtype=float)
         #endif
         if key == "Delta_phi_pgamma":
             return np.asarray(feat["delta_phi_pgamma_deg"], dtype=float)
