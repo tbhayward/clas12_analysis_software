@@ -16116,7 +16116,7 @@ def make_nsidis_shape_comparison_canvases(
     period from the minimum between the missing-pi0 and missing-eta peaks in
     the FD CLASDIS distribution, then imposed identically in FD and FT.
 
-    MM^2(e gamma X), MM^2(ep gamma X), Delta phi, and Angle(e,X) remain purely
+    MM^2(e gamma X), MM^2(ep gamma X), Delta phi, and Angle(e,X_epgamma) remain purely
     diagnostic while the Valerii presentation labels/cut definitions are being
     treated as unreliable.
     """
@@ -16154,9 +16154,9 @@ def make_nsidis_shape_comparison_canvases(
             120,
         ),
         (
-            "Angle_gammaX",
-            r"$\mathrm{Angle}(\gamma,X)$",
-            r"$\mathrm{Angle}(\gamma,X)$ (deg)",
+            "Angle_eX_epgamma",
+            r"$\mathrm{Angle}(e,X_{ep\gamma})$",
+            r"$\mathrm{Angle}(e,X_{ep\gamma})$ (deg)",
             0.0,
             30.0,
             120,
@@ -16200,7 +16200,7 @@ def make_nsidis_shape_comparison_canvases(
         if key == "Delta_phi_pgamma":
             return np.asarray(feat["delta_phi_pgamma_deg"], dtype=float)
         #endif
-        if key == "Angle_gammaX":
+        if key == "Angle_eX_epgamma":
             return np.asarray(feat["theta_eX_deg"], dtype=float)
         #endif
         if key == "pTmiss":
@@ -16220,13 +16220,23 @@ def make_nsidis_shape_comparison_canvases(
     #endif
     samples.append(("dvcs", dvcs_f, "BH/DVCS (DVCSgen)", "tab:blue"))
 
-    row_labels = (
-        "minimal",
-        r"$+\ M_X^2(epX)$ cut",
-    )
+    row_labels = {
+        "FT": (
+            "minimal",
+            r"$+\ M_X^2(epX)$ cut",
+            r"$+\ p_{T,\rm miss}>0.10$ GeV",
+        ),
+        "FD_all": (
+            "minimal",
+            r"$+\ M_X^2(epX)$ cut",
+            r"$+\ \mathrm{Angle}(e,X_{ep\gamma})>15^\circ$"
+            "\n"
+            r"$+\ p_{T,\rm miss}>0.20$ GeV",
+        ),
+    }
 
     for region in ("FT", "FD_all"):
-        fig, axes = plt.subplots(2, 8, figsize=(28.0, 8.6))
+        fig, axes = plt.subplots(3, 8, figsize=(28.0, 12.2))
         log(
             f"{period.label} {region}: denominator support -> "
             f"M_X^2(epX) window [{mm2_min:.4f}, {mm2_max:.4f}) GeV^2"
@@ -16249,14 +16259,47 @@ def make_nsidis_shape_comparison_canvases(
                 & (feat["ep_missing_mass2"] >= mm2_min)
                 & (feat["ep_missing_mass2"] < mm2_max)
             )
-            masks = (minimal, minimal & cut_ep)
+            after_ep = minimal & cut_ep
+
+            ptmiss_cut = (
+                np.isfinite(feat["stored_pTmiss"])
+                & (
+                    feat["stored_pTmiss"]
+                    > (0.10 if region == "FT" else 0.20)
+                )
+            )
+
+            if region == "FD_all":
+                angle_cut = (
+                    np.isfinite(feat["theta_eX_deg"])
+                    & (feat["theta_eX_deg"] > 15.0)
+                )
+                final_mask = after_ep & angle_cut & ptmiss_cut
+            else:
+                final_mask = after_ep & ptmiss_cut
+            #endif
+
+            masks = (minimal, after_ep, final_mask)
 
             counts = [int(np.count_nonzero(m)) for m in masks]
-            frac = 100.0 * counts[1] / counts[0] if counts[0] > 0 else 0.0
-            log(
-                f"  {label}: minimal={counts[0]:,} -> epX cut={counts[1]:,} "
-                f"({frac:.2f}% retained)"
-            )
+            frac_ep = 100.0 * counts[1] / counts[0] if counts[0] > 0 else 0.0
+            frac_final = 100.0 * counts[2] / counts[1] if counts[1] > 0 else 0.0
+
+            if region == "FD_all":
+                log(
+                    f"  {label}: minimal={counts[0]:,} -> epX cut={counts[1]:,} "
+                    f"({frac_ep:.2f}% retained) -> "
+                    f"Angle(e,X_epgamma)>15 deg + pTmiss>0.20 GeV={counts[2]:,} "
+                    f"({frac_final:.2f}% of row 2 retained)"
+                )
+            else:
+                log(
+                    f"  {label}: minimal={counts[0]:,} -> epX cut={counts[1]:,} "
+                    f"({frac_ep:.2f}% retained) -> "
+                    f"pTmiss>0.10 GeV={counts[2]:,} "
+                    f"({frac_final:.2f}% of row 2 retained)"
+                )
+            #endif
 
             for irow, mask in enumerate(masks):
                 for icol, spec in enumerate(specs):
@@ -16281,7 +16324,7 @@ def make_nsidis_shape_comparison_canvases(
             #endfor
         #endfor
 
-        for irow in range(2):
+        for irow in range(3):
             for icol, spec in enumerate(specs):
                 ax = axes[irow, icol]
                 ax.set_xlim(spec[3], spec[4])
@@ -16291,11 +16334,22 @@ def make_nsidis_shape_comparison_canvases(
                     ax.axvline(mm2_min, linestyle="--", linewidth=0.9, color="0.35")
                     ax.axvline(mm2_max, linestyle="--", linewidth=0.9, color="0.35")
                 #endif
+                if spec[0] == "Angle_eX_epgamma" and region == "FD_all":
+                    ax.axvline(15.0, linestyle="--", linewidth=0.9, color="0.35")
+                #endif
+                if spec[0] == "pTmiss":
+                    ax.axvline(
+                        0.10 if region == "FT" else 0.20,
+                        linestyle="--",
+                        linewidth=0.9,
+                        color="0.35",
+                    )
+                #endif
                 if irow == 0:
                     ax.set_title(spec[1])
                 #endif
             #endfor
-            axes[irow, 0].set_ylabel(row_labels[irow] + "\nunit-normalized")
+            axes[irow, 0].set_ylabel(row_labels[region][irow] + "\nunit-normalized")
         #endfor
 
         handles, labels = axes[0, 0].get_legend_handles_labels()
@@ -16310,12 +16364,25 @@ def make_nsidis_shape_comparison_canvases(
                 fontsize=8.5,
             )
         #endif
+        if region == "FD_all":
+            final_cut_text = (
+                r"row 3 adds $\mathrm{Angle}(e,X_{ep\gamma})>15^\circ$ "
+                r"and $p_{T,\rm miss}>0.20$ GeV"
+            )
+        else:
+            final_cut_text = (
+                r"row 3 adds $p_{T,\rm miss}>0.10$ GeV; "
+                r"no $\mathrm{Angle}(e,X_{ep\gamma})$ cut is applied in FT"
+            )
+        #endif
+
         fig.suptitle(
             f"{period.label}: {region} denominator shape comparison\n"
-            r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
-            rf"nominal adds ${mm2_min:.3f}<MM^2(epX)<{mm2_max:.3f}$ GeV$^2$ "
-            r"(upper edge = FD CLASDIS inter-peak minimum between $\pi^0$ and $\eta$; same cut in FT and FD)",
-            fontsize=11.2,
+            r"row 1: minimal support ($p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$); "
+            rf"row 2 adds ${mm2_min:.3f}<MM^2(epX)<{mm2_max:.3f}$ GeV$^2$ "
+            r"(upper edge from the FD CLASDIS $\pi^0$--$\eta$ inter-peak minimum); "
+            + final_cut_text,
+            fontsize=10.6,
         )
         safe_finalize_figure(
             fig,
