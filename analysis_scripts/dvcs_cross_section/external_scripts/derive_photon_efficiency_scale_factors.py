@@ -29,7 +29,7 @@ CURRENT USER-FACING WORKFLOW
 The production denominator/template selection now also applies Valerii
 Klimenko's photon-efficiency exclusivity cuts: -0.231 < MM^2(epX) < 0.309
 GeV^2, MM^2(e gamma X) > 1.4 GeV^2, |Delta phi(p,gamma)| < 5.7 deg, and
-Angle(e,X) < 9.2 deg.
+Angle(gamma,X) diagnostic.
 
 The old "Stage I" resolution study is no longer a user-visible analysis stage.
 Its only surviving role is an INTERNAL aaogen MC association kernel. Because
@@ -169,7 +169,7 @@ THETA_EGAMMA_MIN_DEG = 5.0
 #   -0.231 < MM^2(epX) < 0.309 GeV^2
 #   MM^2(e gamma X) > 1.4 GeV^2
 #   -5.7 deg < Delta phi(p,gamma) < 5.7 deg
-#   Angle(e,X) < 9.2 deg
+#   Angle(gamma,X) is retained as a diagnostic only
 # Here Delta phi(p,gamma) is the signed coplanarity residual relative to
 # 180 deg, and X is the photon predicted from four-momentum conservation
 # in e p -> e p gamma X.
@@ -2692,17 +2692,18 @@ def build_epgamma_denominator_features(
 
     pred_p3 = np.column_stack((px, py, pz))
 
-    # Angle(e,X) follows the inclusive e + X definition used by Valerii:
+    # Angle(gamma,X): X is the inclusive hadronic system recoiling against
+    # the scattered electron,
     #   P_X = P_beam + P_target - P_e.
-    # Only the scattered electron is subtracted.  In particular, X contains
-    # the recoil proton and all produced hadrons/photons; this is NOT the
-    # residual system after subtracting e+p+gamma.
+    # Therefore X contains the recoil proton and the complete produced
+    # hadronic/photon final state.  Compare its three-momentum direction to
+    # the reconstructed tag-photon direction.
     ex_p3 = np.column_stack((
         -e3[:, 0],
         -e3[:, 1],
         beam_p - e3[:, 2],
     ))
-    theta_eX_deg = electron_proton_opening_angle_deg(e3, ex_p3)
+    theta_gammaX_deg = electron_proton_opening_angle_deg(tag_source, ex_p3)
 
     with np.errstate(invalid="ignore", divide="ignore"):
         pred_theta_deg = np.degrees(
@@ -2739,7 +2740,7 @@ def build_epgamma_denominator_features(
         "egamma_missing_mass2": np.asarray(egamma_miss_m2, dtype=np.float32),
         "epgamma_missing_mass2": np.asarray(epgamma_miss_m2, dtype=np.float32),
         "delta_phi_pgamma_deg": np.asarray(dphi_pgamma_deg, dtype=np.float32),
-        "theta_eX_deg": np.asarray(theta_eX_deg, dtype=np.float32),
+        "theta_gammaX_deg": np.asarray(theta_gammaX_deg, dtype=np.float32),
         "tag_energy": np.asarray(tag_E, dtype=np.float32),
         "pred_probe_energy": np.asarray(pred_E, dtype=np.float32),
         "pred_probe_mass2": np.asarray(pred_m2, dtype=np.float32),
@@ -2899,7 +2900,7 @@ def stage2_fit_mask(
     peaks.  That same upper edge is imposed in FT and FD.
 
     The previously tested Valerii-labelled MM^2(e gamma X), Delta phi, and
-    Angle(e,X) requirements are no longer imposed because the labels/cut
+    Angle(gamma,X) requirements are not imposed because the labels/cut
     definitions in the presentation are not sufficiently self-consistent for
     production use.  Those quantities remain diagnostic variables.
     """
@@ -16122,7 +16123,7 @@ def make_nsidis_shape_comparison_canvases(
     period from the minimum between the missing-pi0 and missing-eta peaks in
     the FD CLASDIS distribution, then imposed identically in FD and FT.
 
-    MM^2(e gamma X), MM^2(ep gamma X), Delta phi, and Angle(e,X) remain purely
+    MM^2(e gamma X), MM^2(ep gamma X), Delta phi, and Angle(gamma,X) remain purely
     diagnostic while the Valerii presentation labels/cut definitions are being
     treated as unreliable.
     """
@@ -16160,9 +16161,9 @@ def make_nsidis_shape_comparison_canvases(
             120,
         ),
         (
-            "Angle_eX",
-            r"$\mathrm{Angle}(e,X)$",
-            r"$\mathrm{Angle}(e,X)$ (deg)",
+            "Angle_gammaX",
+            r"$\mathrm{Angle}(\gamma,X)$",
+            r"$\mathrm{Angle}(\gamma,X)$ (deg)",
             0.0,
             30.0,
             120,
@@ -16206,8 +16207,8 @@ def make_nsidis_shape_comparison_canvases(
         if key == "Delta_phi_pgamma":
             return np.asarray(feat["delta_phi_pgamma_deg"], dtype=float)
         #endif
-        if key == "Angle_eX":
-            return np.asarray(feat["theta_eX_deg"], dtype=float)
+        if key == "Angle_gammaX":
+            return np.asarray(feat["theta_gammaX_deg"], dtype=float)
         #endif
         if key == "pTmiss":
             return np.asarray(feat["stored_pTmiss"], dtype=float)
