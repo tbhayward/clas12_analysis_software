@@ -2695,13 +2695,33 @@ def build_epgamma_denominator_features(
         - egamma_pz * egamma_pz
     )
 
-    # Valerii's Delta phi(p,gamma) is treated as a coplanarity residual: zero
-    # corresponds to the proton and tag photon being separated by 180 degrees
-    # in lab azimuth.  Keep the signed residual in [-180,180) degrees.
-    proton_phi = np.arctan2(p3[:, 1], p3[:, 0])
-    tag_phi = np.arctan2(selected_tag_p3[:, 1], selected_tag_p3[:, 0])
-    dphi_pgamma = (proton_phi - tag_phi - math.pi + math.pi) % TWO_PI - math.pi
-    dphi_pgamma_deg = np.degrees(dphi_pgamma)
+    # Valerii's Delta phi(p,gamma) cut should use the Delta_phi quantity
+    # already stored in the nSidis ROOT tree, rather than re-deriving the
+    # azimuthal difference from p1_phi/p2_phi.  In these trees Delta_phi is
+    # centered near pi for an exclusive back-to-back p-gamma topology, while
+    # Valerii quotes the coplanarity residual about 180 degrees.  Therefore
+    # convert only the *stored* Delta_phi to the signed residual about pi:
+    #
+    #     Delta_phi_Valerii = wrap(Delta_phi_tree - pi) in [-pi, pi).
+    #
+    # The mixed-tag accidental construction has no self-consistent stored
+    # Delta_phi for the shifted photon.  Only for that special diagnostic do
+    # we retain a four-vector fallback using the shifted tag photon.
+    if (not mixed_tag_shift) and ("Delta_phi" in epg.raw):
+        raw_delta_phi_tree = np.asarray(epg.raw["Delta_phi"], dtype=float)
+        dphi_pgamma = (
+            raw_delta_phi_tree - math.pi + math.pi
+        ) % TWO_PI - math.pi
+        dphi_pgamma_deg = np.degrees(dphi_pgamma)
+    else:
+        proton_phi = np.arctan2(p3[:, 1], p3[:, 0])
+        tag_phi = np.arctan2(selected_tag_p3[:, 1], selected_tag_p3[:, 0])
+        raw_pair_delta_phi = proton_phi - tag_phi
+        dphi_pgamma = (
+            raw_pair_delta_phi - math.pi + math.pi
+        ) % TWO_PI - math.pi
+        dphi_pgamma_deg = np.degrees(dphi_pgamma)
+    #endif
 
     if tag_index is None:
         px -= tag_source[:, 0]
@@ -16582,24 +16602,26 @@ def make_nsidis_shape_comparison_canvases(
     probe_m2_max,
 ):
     """
-    2x8 transparent data/template shape comparison for FT and FD_all.
+    5x8 cumulative cut-flow shape comparison for FT and FD_all.
 
-    The first three columns intentionally show all three distinct missing-mass
-    definitions used in this study:
+    Columns show the three missing-mass definitions plus the other denominator
+    diagnostics.  Rows apply Valerii Klimenko's four exclusivity cuts one at a
+    time, cumulatively, so it is immediately visible which requirement removes
+    the sample:
 
-      * MM^2(epX)      = missing mass after the measured e and p,
-      * MM^2(e gamma X)= missing mass after the measured e and tag gamma,
-      * MM^2(ep gamma X)= missing mass after the measured e, p, and tag gamma.
+      row 1: minimal denominator support only,
+      row 2: + -0.231 < MM^2(epX) < 0.309 GeV^2,
+      row 3: + MM^2(e gamma X) > 1.4 GeV^2,
+      row 4: + -5.7 deg < Delta phi(p,gamma) < 5.7 deg,
+      row 5: + Angle(e,X) < 9.2 deg.
 
-    The nominal row applies Valerii Klimenko's four exclusivity cuts exactly:
+    Delta phi(p,gamma) is taken from the ROOT-tree Delta_phi branch and only
+    recentered from its pi-centered convention to Valerii's zero-centered
+    coplanarity residual.  It is not re-derived from particle azimuths for the
+    ordinary data/MC samples.
 
-      -0.231 < MM^2(epX) < 0.309 GeV^2,
-      MM^2(e gamma X) > 1.4 GeV^2,
-      -5.7 deg < Delta phi(p,gamma) < 5.7 deg,
-      Angle(e,X) < 9.2 deg.
-
-    MM^2(ep gamma X) is plotted only as a diagnostic here; it is no longer an
-    additional denominator-support cut.
+    MM^2(ep gamma X) is diagnostic only and is not part of Valerii's four-cut
+    selection.
     """
     specs = (
         (
@@ -16705,9 +16727,22 @@ def make_nsidis_shape_comparison_canvases(
         ("dvcs", dvcs_f, "BH/DVCS (DVCSgen)", "tab:blue")
     )
 
+    row_labels = (
+        "minimal",
+        r"$+\ MM^2(epX)$",
+        r"$+\ MM^2(e\gamma X)$",
+        r"$+\ \Delta\phi(p,\gamma)$",
+        r"$+\ \mathrm{Angle}(e,X)$",
+    )
+
     for region in ("FT", "FD_all"):
-        fig, axes = plt.subplots(2, 8, figsize=(28.0, 7.6))
-        for _, feat, label, color in samples:
+        fig, axes = plt.subplots(5, 8, figsize=(28.0, 16.5))
+
+        # Keep a small textual cut-flow summary in the terminal as well.  This
+        # is particularly useful when a later row is visually empty.
+        log(f"{period.label} {region}: cumulative Valerii cut flow")
+
+        for sample_key, feat, label, color in samples:
             minimal = (
                 np.asarray(feat["valid_tag"], dtype=bool)
                 & stage2_region_mask(feat, region, ft_theta_max)
@@ -16719,22 +16754,60 @@ def make_nsidis_shape_comparison_canvases(
                 & (feat["pred_probe_energy"] >= 0.40)
                 & (feat["pred_probe_energy"] < max_probe_energy)
             )
-            nominal = stage2_fit_mask(
-                feat,
-                region,
-                ft_theta_max,
-                0.40,
-                max_probe_energy,
-                mm2_min,
-                mm2_max,
-                probe_m2_max,
+
+            cut_ep = (
+                np.isfinite(feat["ep_missing_mass2"])
+                & (feat["ep_missing_mass2"] > mm2_min)
+                & (feat["ep_missing_mass2"] < mm2_max)
             )
-            nominal &= (
-                np.isfinite(feat["electron_p"])
-                & (feat["electron_p"] > 2.0)
+            cut_egamma = (
+                np.isfinite(feat["egamma_missing_mass2"])
+                & (
+                    feat["egamma_missing_mass2"]
+                    > VALERII_EGAMMA_MM2_MIN_GEV2
+                )
+            )
+            cut_dphi = (
+                np.isfinite(feat["delta_phi_pgamma_deg"])
+                & (
+                    np.abs(feat["delta_phi_pgamma_deg"])
+                    < VALERII_DPHI_PGAMMA_MAX_DEG
+                )
+            )
+            cut_angle = (
+                np.isfinite(feat["theta_eX_deg"])
+                & (feat["theta_eX_deg"] < VALERII_ANGLE_EX_MAX_DEG)
             )
 
-            for irow, mask in enumerate((minimal, nominal)):
+            masks = (
+                minimal,
+                minimal & cut_ep,
+                minimal & cut_ep & cut_egamma,
+                minimal & cut_ep & cut_egamma & cut_dphi,
+                minimal & cut_ep & cut_egamma & cut_dphi & cut_angle,
+            )
+
+            counts = [int(np.count_nonzero(m)) for m in masks]
+            efficiencies = [
+                (100.0 * counts[i] / counts[i - 1])
+                if i > 0 and counts[i - 1] > 0
+                else (100.0 if i == 0 else 0.0)
+                for i in range(len(counts))
+            ]
+            log(
+                f"  {label}: "
+                + " -> ".join(
+                    f"{row_labels[i]}={counts[i]:,}"
+                    + (
+                        ""
+                        if i == 0
+                        else f" ({efficiencies[i]:.2f}% of previous)"
+                    )
+                    for i in range(len(counts))
+                )
+            )
+
+            for irow, mask in enumerate(masks):
                 for icol, spec in enumerate(specs):
                     key, _, _, lo, hi, nb = spec
                     v = vals(feat, key)
@@ -16749,7 +16822,7 @@ def make_nsidis_shape_comparison_canvases(
                         centers,
                         h,
                         where="mid",
-                        linewidth=1.25,
+                        linewidth=1.20,
                         color=color,
                         label=label,
                     )
@@ -16757,7 +16830,7 @@ def make_nsidis_shape_comparison_canvases(
             #endfor
         #endfor
 
-        for irow in range(2):
+        for irow in range(5):
             for icol, spec in enumerate(specs):
                 ax = axes[irow, icol]
                 ax.set_yscale("linear")
@@ -16765,9 +16838,8 @@ def make_nsidis_shape_comparison_canvases(
                 ax.set_xlabel(spec[2])
                 ax.grid(alpha=0.16)
 
-                # Visual guides for Valerii's four exclusivity cuts.  The same
-                # guides are shown on both rows; only the nominal/bottom row is
-                # actually selected by these cuts.
+                # Show all four cut locations on every row.  The row ordering
+                # makes clear which guides have actually been imposed so far.
                 if spec[0] == "Mx2_ep":
                     ax.axvline(
                         mm2_min,
@@ -16814,26 +16886,26 @@ def make_nsidis_shape_comparison_canvases(
                     ax.set_title(spec[1])
                 #endif
             #endfor
+            axes[irow, 0].set_ylabel(
+                row_labels[irow] + "\nunit-normalized"
+            )
         #endfor
 
-        axes[0, 0].set_ylabel("minimal selection\nunit-normalized")
-        axes[1, 0].set_ylabel("Valerii nominal selection\nunit-normalized")
         handles, labels = axes[0, 0].get_legend_handles_labels()
         if handles:
             fig.legend(
                 handles,
                 labels,
                 loc="upper center",
-                bbox_to_anchor=(0.5, 0.925),
+                bbox_to_anchor=(0.5, 0.957),
                 ncol=min(4, len(handles)),
                 frameon=False,
                 fontsize=8.5,
             )
         #endif
         fig.suptitle(
-            f"{period.label}: {region} denominator shape comparison\n"
-            r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; "
-            r"Valerii nominal: "
+            f"{period.label}: {region} cumulative denominator cut flow\n"
+            r"minimal: $p_e>2$ GeV, $\theta_{e\gamma}>5^\circ$; rows then add "
             rf"${mm2_min:.3f}<MM^2(epX)<{mm2_max:.3f}$ GeV$^2$, "
             rf"$MM^2(e\gamma X)>{VALERII_EGAMMA_MM2_MIN_GEV2:.1f}$ GeV$^2$, "
             rf"$|\Delta\phi(p,\gamma)|<{VALERII_DPHI_PGAMMA_MAX_DEG:.1f}^\circ$, "
@@ -16843,7 +16915,7 @@ def make_nsidis_shape_comparison_canvases(
         safe_finalize_figure(
             fig,
             outdir / f"canvas_shape_comparison_{period.key}_{region.lower()}.png",
-            rect=(0, 0, 1, 0.88),
+            rect=(0, 0, 1, 0.93),
         )
         plt.close(fig)
     #endfor
