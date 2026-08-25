@@ -82,6 +82,12 @@ Use all entries:
     python derive_photon_efficiency_scale_factors_concept.py \
         --max-entries 0
 
+By default all shape-comparison panels use a logarithmic y-axis. Add
+
+    --linear
+
+for a linear y-axis.
+
 Outputs are written under:
 
     output/photon_efficiency_concept/stage1_shape_comparison/
@@ -324,6 +330,14 @@ def parse_args() -> argparse.Namespace:
             "Maximum number of run periods processed concurrently. "
             "Useful range is 1-5 because there are five RGA periods. "
             "Default: 5."
+        ),
+    )
+    parser.add_argument(
+        "--linear",
+        action="store_true",
+        help=(
+            "Use a linear y-axis for the shape-comparison canvases. "
+            "Default: logarithmic y-axis."
         ),
     )
     parser.add_argument(
@@ -662,6 +676,7 @@ def make_canvas(
     sample_hists: Dict[str, Dict[str, Dict[str, Dict[str, np.ndarray]]]],
     sample_counts: Dict[str, Dict[str, int]],
     output_dir: Path,
+    linear_y: bool,
 ) -> Path:
     fig, axes = plt.subplots(3, 8, figsize=(27.5, 11.8))
     edges_by_key = histogram_edges()
@@ -724,6 +739,15 @@ def make_canvas(
             #endif
 
             ax.set_xlim(edges[0], edges[-1])
+
+            if not linear_y:
+                # The histograms are unit-normalized. A small positive floor
+                # keeps empty bins from causing log-scale warnings while not
+                # distorting any nonzero bin content.
+                ax.set_yscale("log")
+                ax.set_ylim(bottom=1.0e-6)
+            #endif
+
             ax.tick_params(axis="both", labelsize=7.8)
             ax.grid(alpha=0.18)
 
@@ -779,6 +803,8 @@ def make_canvas(
         + r"; Row 2: $+\,Mx2_1<0.15$ GeV$^2$"
         + r"; Row 3: $+\,E_{\rm miss}>1$ GeV"
         + "\n"
+        + ("\nLinear y scale" if linear_y else "\nLogarithmic y scale")
+        + "\n"
         + f"Counts — row 1: {row1_counts}    |    "
         + f"row 2: {row2_counts}    |    row 3: {row3_counts}",
         fontsize=10.8,
@@ -824,6 +850,7 @@ def process_period(
     max_entries: int,
     step_size: int,
     output_dir: Path,
+    linear_y: bool,
 ) -> None:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -868,6 +895,7 @@ def process_period(
             sample_hists,
             sample_counts,
             output_dir,
+            linear_y,
         )
         log(f"{period.label}: wrote {out}")
     #endfor
@@ -884,6 +912,7 @@ def process_period_worker(
     max_entries: int,
     step_size: int,
     output_dir_str: str,
+    linear_y: bool,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -898,6 +927,7 @@ def process_period_worker(
         max_entries,
         step_size,
         Path(output_dir_str),
+        linear_y,
     )
     return period.key
 
@@ -926,6 +956,10 @@ def main() -> int:
         "data + AAO pi0 + DVCSgen only; CLASDIS disabled."
     )
     log(
+        "Shape-comparison y-axis: "
+        + ("linear (--linear override)." if args.linear else "logarithmic (default).")
+    )
+    log(
         "ONLY event-selection cut: "
         f"Angle(e,gamma) > {THETA_EGAMMA_MIN_DEG:.1f} deg. "
         f"Photon regions: FT {FT_THETA_MIN_DEG:.1f}-{FT_THETA_MAX_DEG:.1f} deg, "
@@ -946,6 +980,7 @@ def main() -> int:
                 args.max_entries,
                 args.step_size,
                 output_dir,
+                args.linear,
             )
         #endfor
     else:
@@ -958,6 +993,7 @@ def main() -> int:
                     args.max_entries,
                     args.step_size,
                     str(output_dir),
+                    args.linear,
                 ): period
                 for period in selected_periods
             }
