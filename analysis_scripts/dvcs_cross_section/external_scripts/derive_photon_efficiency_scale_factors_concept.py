@@ -88,14 +88,24 @@ By default all shape-comparison panels use a logarithmic y-axis. Add
 
 for a linear y-axis.
 
-Outputs are written under:
+The script also runs a first greedy rectangular-cut optimizer by default.
+The optimizer is NEVER combined across periods: each of the five run periods
+is optimized independently, and FT/FD are optimized independently within each
+period. It uses reconstructed AAO and DVCSgen variables only.
+
+Shape canvases are written under:
 
     output/photon_efficiency_concept/stage1_shape_comparison/
+
+Optimizer CSV/TXT/progression plots are written under:
+
+    output/photon_efficiency_concept/rectangular_optimizer/
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import math
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -278,6 +288,20 @@ SAMPLES = (
 )
 
 
+# Reconstructed variables available to the first rectangular-cut optimizer.
+# The optimizer is run separately for every period and independently in FT/FD.
+OPTIMIZER_FEATURES: Tuple[str, ...] = (
+    "Mx2",
+    "Mx2_1",
+    "Mx2_2",
+    "Emiss2",
+    "E_tag",
+    "Delta_phi_residual_deg",
+    "pTmiss",
+    "theta_gamma_gamma",
+)
+
+
 # =============================================================================
 # Small utilities
 # =============================================================================
@@ -338,6 +362,67 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Use a linear y-axis for the shape-comparison canvases. "
             "Default: logarithmic y-axis."
+        ),
+    )
+    parser.add_argument(
+        "--no-optimize-cuts",
+        action="store_true",
+        help=(
+            "Disable the iterative rectangular-cut optimizer. "
+            "Default: run it independently for every selected period and "
+            "separately in FT and FD."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-max-events",
+        type=int,
+        default=200_000,
+        help=(
+            "Maximum AAO or DVCSgen baseline events retained in memory per "
+            "period and detector region for cut optimization. A uniform "
+            "priority reservoir is used while streaming. Default: 200000."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-steps",
+        type=int,
+        default=4,
+        help="Maximum number of greedy rectangular cuts. Default: 4.",
+    )
+    parser.add_argument(
+        "--optimizer-quantiles",
+        type=int,
+        default=80,
+        help=(
+            "Number of quantile positions scanned per variable and direction "
+            "at each optimizer step. Default: 80."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-min-step-pi0-eff",
+        type=float,
+        default=0.75,
+        help=(
+            "Each newly added cut must retain at least this fraction of the "
+            "AAO events surviving the previous step. Default: 0.75."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-min-total-pi0-eff",
+        type=float,
+        default=0.20,
+        help=(
+            "Never accept a cut that reduces cumulative AAO retention below "
+            "this fraction of the baseline. Default: 0.20."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-min-improvement",
+        type=float,
+        default=1.02,
+        help=(
+            "Stop if the best new cut improves the current separation score "
+            "by less than this multiplicative factor. Default: 1.02."
         ),
     )
     parser.add_argument(
@@ -487,6 +572,370 @@ def histogram_edges() -> Dict[str, np.ndarray]:
     }
 
 
+
+# =============================================================================
+# Rectangular-cut optimizer support
+# =============================================================================
+
+class PriorityReservoir:
+    """
+    Uniform fixed-size event sample maintained with random priorities.
+
+    Every accepted event receives an independent U(0,1) priority. We retain
+    only the K smallest priorities seen so far. This is a vectorized uniform
+    reservoir across all streamed chunks and avoids keeping the full event
+    sample in memory.
+    """
+
+    def __init__(self, capacity: int, n_features: int, seed: int) -> None:
+        self.capacity = int(capacity)
+        self.n_features = int(n_features)
+        self.rng = np.random.default_rng(int(seed))
+        self.priorities = np.empty(0, dtype=np.float32)
+        self.values = np.empty((0, n_features), dtype=np.float32)
+
+    def update(self, values: np.ndarray) -> None:
+        if self.capacity <= 0 or values.size == 0:
+            return
+        #endif
+
+        values = np.asarray(values, dtype=np.float32)
+        finite = np.all(np.isfinite(values), axis=1)
+        values = values[finite]
+        if values.shape[0] == 0:
+            return
+        #endif
+
+        priorities = self.rng.random(values.shape[0]).astype(np.float32)
+
+        if self.values.shape[0] == 0:
+            combined_values = values
+            combined_priorities = priorities
+        else:
+            combined_values = np.concatenate((self.values, values), axis=0)
+            combined_priorities = np.concatenate(
+                (self.priorities, priorities),
+                axis=0,
+            )
+        #endif
+
+        if combined_values.shape[0] <= self.capacity:
+            self.values = combined_values
+            self.priorities = combined_priorities
+            return
+        #endif
+
+        keep = np.argpartition(
+            combined_priorities,
+            self.capacity - 1,
+        )[: self.capacity]
+        self.values = combined_values[keep]
+        self.priorities = combined_priorities[keep]
+
+    def array(self) -> np.ndarray:
+        return np.asarray(self.values, dtype=np.float32)
+
+
+def optimizer_matrix(values: Dict[str, np.ndarray], mask: np.ndarray) -> np.ndarray:
+    """Build the reconstructed-feature matrix used by the optimizer."""
+    if not np.any(mask):
+        return np.empty((0, len(OPTIMIZER_FEATURES)), dtype=np.float32)
+    #endif
+
+    return np.column_stack(
+        [
+            np.asarray(values[key][mask], dtype=np.float32)
+            for key in OPTIMIZER_FEATURES
+        ]
+    )
+
+
+def _candidate_thresholds(
+    pi_values: np.ndarray,
+    dvcs_values: np.ndarray,
+    n_quantiles: int,
+) -> np.ndarray:
+    """
+    Quantile-based thresholds avoid wasting scan points in empty phase space.
+    """
+    combined = np.concatenate((pi_values, dvcs_values))
+    combined = combined[np.isfinite(combined)]
+
+    if combined.size < 10:
+        return np.empty(0, dtype=float)
+    #endif
+
+    q = np.linspace(0.02, 0.98, max(3, int(n_quantiles)))
+    thresholds = np.quantile(combined, q)
+    return np.unique(np.asarray(thresholds, dtype=float))
+
+
+def optimize_rectangular_cuts(
+    pi0_events: np.ndarray,
+    dvcs_events: np.ndarray,
+    max_steps: int,
+    n_quantiles: int,
+    min_step_pi0_eff: float,
+    min_total_pi0_eff: float,
+    min_improvement: float,
+) -> list:
+    """
+    Greedy one-sided rectangular-cut optimizer.
+
+    At each step, scan X < c and X > c for every still-unused reconstructed
+    variable. Candidate thresholds are quantiles of the currently surviving
+    AAO+DVCSgen events.
+
+    The selected cut maximizes
+
+        F = epsilon_pi0 / sqrt(epsilon_DVCS + 1e-9)
+
+    using cumulative efficiencies relative to the original baseline, while
+    requiring the new cut to retain at least min_step_pi0_eff of the AAO
+    population from the previous step and at least min_total_pi0_eff of the
+    original AAO baseline.
+
+    A variable is used at most once in this first simple implementation.
+    """
+    if pi0_events.shape[0] == 0 or dvcs_events.shape[0] == 0:
+        return []
+    #endif
+
+    pi_mask = np.ones(pi0_events.shape[0], dtype=bool)
+    dvcs_mask = np.ones(dvcs_events.shape[0], dtype=bool)
+
+    n_pi0_0 = int(pi0_events.shape[0])
+    n_dvcs_0 = int(dvcs_events.shape[0])
+
+    current_score = 1.0
+    used_features = set()
+    results = []
+
+    for step in range(1, int(max_steps) + 1):
+        n_pi_before = int(np.count_nonzero(pi_mask))
+        n_dvcs_before = int(np.count_nonzero(dvcs_mask))
+
+        if n_pi_before == 0 or n_dvcs_before == 0:
+            break
+        #endif
+
+        best = None
+
+        for ifeature, feature in enumerate(OPTIMIZER_FEATURES):
+            if feature in used_features:
+                continue
+            #endif
+
+            pi_current_values = pi0_events[pi_mask, ifeature]
+            dvcs_current_values = dvcs_events[dvcs_mask, ifeature]
+            thresholds = _candidate_thresholds(
+                pi_current_values,
+                dvcs_current_values,
+                n_quantiles,
+            )
+
+            for threshold in thresholds:
+                for direction in ("lt", "gt"):
+                    if direction == "lt":
+                        pi_local = pi0_events[:, ifeature] < threshold
+                        dvcs_local = dvcs_events[:, ifeature] < threshold
+                    else:
+                        pi_local = pi0_events[:, ifeature] > threshold
+                        dvcs_local = dvcs_events[:, ifeature] > threshold
+                    #endif
+
+                    pi_test = pi_mask & pi_local
+                    dvcs_test = dvcs_mask & dvcs_local
+
+                    n_pi = int(np.count_nonzero(pi_test))
+                    n_dvcs = int(np.count_nonzero(dvcs_test))
+
+                    step_pi_eff = n_pi / n_pi_before
+                    step_dvcs_eff = (
+                        n_dvcs / n_dvcs_before
+                        if n_dvcs_before > 0
+                        else 0.0
+                    )
+                    total_pi_eff = n_pi / n_pi0_0
+                    total_dvcs_eff = n_dvcs / n_dvcs_0
+
+                    if step_pi_eff < min_step_pi0_eff:
+                        continue
+                    #endif
+                    if total_pi_eff < min_total_pi0_eff:
+                        continue
+                    #endif
+
+                    score = total_pi_eff / math.sqrt(total_dvcs_eff + 1.0e-9)
+
+                    if best is None or score > best["score"]:
+                        best = {
+                            "step": step,
+                            "feature": feature,
+                            "direction": direction,
+                            "threshold": float(threshold),
+                            "score": float(score),
+                            "step_pi0_eff": float(step_pi_eff),
+                            "step_dvcs_eff": float(step_dvcs_eff),
+                            "total_pi0_eff": float(total_pi_eff),
+                            "total_dvcs_eff": float(total_dvcs_eff),
+                            "n_pi0": n_pi,
+                            "n_dvcs": n_dvcs,
+                            "pi_mask": pi_test,
+                            "dvcs_mask": dvcs_test,
+                        }
+                    #endif
+                #endfor
+            #endfor
+        #endfor
+
+        if best is None:
+            break
+        #endif
+
+        improvement = best["score"] / max(current_score, 1.0e-12)
+        if improvement < min_improvement:
+            break
+        #endif
+
+        results.append(
+            {
+                key: value
+                for key, value in best.items()
+                if key not in ("pi_mask", "dvcs_mask")
+            }
+        )
+        pi_mask = best["pi_mask"]
+        dvcs_mask = best["dvcs_mask"]
+        current_score = best["score"]
+        used_features.add(best["feature"])
+    #endfor
+
+    return results
+
+
+def cut_expression(result: dict) -> str:
+    op = "<" if result["direction"] == "lt" else ">"
+    return f"{result['feature']} {op} {result['threshold']:.6g}"
+
+
+def write_optimizer_outputs(
+    period: Period,
+    region: str,
+    pi0_events: np.ndarray,
+    dvcs_events: np.ndarray,
+    results: list,
+    output_dir: Path,
+) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stem = f"rectangular_optimizer_{period.key}_{region.lower()}"
+
+    csv_path = output_dir / f"{stem}.csv"
+    txt_path = output_dir / f"{stem}.txt"
+    png_path = output_dir / f"{stem}.png"
+
+    fields = (
+        "step",
+        "feature",
+        "direction",
+        "threshold",
+        "step_pi0_eff",
+        "step_dvcs_eff",
+        "total_pi0_eff",
+        "total_dvcs_eff",
+        "score",
+        "n_pi0",
+        "n_dvcs",
+    )
+
+    with csv_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for result in results:
+            writer.writerow({key: result[key] for key in fields})
+        #endfor
+    #endwith
+
+    lines = [
+        f"{period.label} {region} rectangular-cut optimizer",
+        "=" * 72,
+        (
+            "Baseline: "
+            f"AAO={pi0_events.shape[0]:,}, "
+            f"DVCSgen={dvcs_events.shape[0]:,}"
+        ),
+        (
+            "Objective: maximize cumulative "
+            "epsilon_pi0/sqrt(epsilon_DVCS), with configured AAO-retention "
+            "constraints."
+        ),
+        "",
+    ]
+
+    if not results:
+        lines.append("No accepted optimizer step.")
+    else:
+        for result in results:
+            lines.extend(
+                [
+                    f"Step {result['step']}: {cut_expression(result)}",
+                    (
+                        f"  step retention: "
+                        f"AAO={100.0*result['step_pi0_eff']:.2f}%  "
+                        f"DVCSgen={100.0*result['step_dvcs_eff']:.2f}%"
+                    ),
+                    (
+                        f"  cumulative:     "
+                        f"AAO={100.0*result['total_pi0_eff']:.2f}%  "
+                        f"DVCSgen={100.0*result['total_dvcs_eff']:.2f}%  "
+                        f"F={result['score']:.4g}"
+                    ),
+                    "",
+                ]
+            )
+        #endfor
+    #endif
+
+    txt_path.write_text("\n".join(lines) + "\n")
+
+    # Compact progression plot.
+    x = [0] + [int(result["step"]) for result in results]
+    pi_eff = [1.0] + [result["total_pi0_eff"] for result in results]
+    dvcs_eff = [1.0] + [result["total_dvcs_eff"] for result in results]
+
+    fig, ax = plt.subplots(figsize=(7.2, 5.0))
+    ax.plot(x, pi_eff, marker="o", label=r"AAO $\pi^0$")
+    ax.plot(x, dvcs_eff, marker="o", label="DVCSgen")
+    ax.set_yscale("log")
+    ax.set_ylim(1.0e-4, 1.1)
+    ax.set_xticks(x)
+    ax.set_xlabel("Greedy cut step")
+    ax.set_ylabel("Cumulative retained fraction")
+    ax.set_title(f"{period.label}: {region} rectangular-cut optimization")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=True)
+
+    if results:
+        annotation = "\n".join(
+            f"{r['step']}. {cut_expression(r)}"
+            for r in results
+        )
+        ax.text(
+            0.02,
+            0.03,
+            annotation,
+            transform=ax.transAxes,
+            fontsize=8.5,
+            va="bottom",
+            ha="left",
+            bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "0.5"},
+        )
+    #endif
+
+    fig.tight_layout()
+    fig.savefig(png_path, dpi=180)
+    plt.close(fig)
+
 # =============================================================================
 # Streaming histogrammer
 # =============================================================================
@@ -497,11 +946,20 @@ def stream_sample_histograms(
     tree_name: str,
     max_entries: int,
     step_size: int,
-) -> Tuple[Dict[str, Dict[str, Dict[str, np.ndarray]]], Dict[str, int]]:
+    collect_optimizer: bool = False,
+    optimizer_max_events: int = 0,
+    optimizer_seed: int = 12345,
+) -> Tuple[
+    Dict[str, Dict[str, Dict[str, np.ndarray]]],
+    Dict[str, int],
+    Dict[str, np.ndarray],
+]:
     """
     Read one ROOT sample exactly once and fill both FT and FD histograms.
 
-    Nothing event-level survives beyond the current chunk.
+    If requested for AAO/DVCSgen, also maintain a bounded uniform reservoir of
+    baseline reconstructed events for the rectangular-cut optimizer. The
+    optimizer therefore costs no second ROOT-file pass.
     """
     hist = empty_histograms()
     edges = histogram_edges()
@@ -514,6 +972,19 @@ def stream_sample_histograms(
         "FD_mx2_1_cut": 0,
         "FT_emiss_cut": 0,
         "FD_emiss_cut": 0,
+    }
+
+    reservoirs = {
+        "FT": PriorityReservoir(
+            optimizer_max_events,
+            len(OPTIMIZER_FEATURES),
+            optimizer_seed + 11,
+        ),
+        "FD": PriorityReservoir(
+            optimizer_max_events,
+            len(OPTIMIZER_FEATURES),
+            optimizer_seed + 29,
+        ),
     }
 
     with uproot.open(path) as root_file:
@@ -552,8 +1023,9 @@ def stream_sample_histograms(
             )
             photon_theta = photon_theta_deg(arrays["p2_theta"], angle_unit)
 
-            # This is intentionally the only event-selection cut.
-            base = np.isfinite(theta_egamma) & (theta_egamma > THETA_EGAMMA_MIN_DEG)
+            base = np.isfinite(theta_egamma) & (
+                theta_egamma > THETA_EGAMMA_MIN_DEG
+            )
             counts["opening_angle"] += int(np.count_nonzero(base))
 
             region_masks = {
@@ -576,30 +1048,32 @@ def stream_sample_histograms(
                 "Mx2_1": np.asarray(arrays["Mx2_1"], dtype=float),
                 "Mx2_2": np.asarray(arrays["Mx2_2"], dtype=float),
                 "Emiss2": np.asarray(arrays["Emiss2"], dtype=float),
-                # For a photon, E = |p|, and p2 is always the photon in these
-                # processed epgamma trees.
                 "E_tag": np.asarray(arrays["p2_p"], dtype=float),
                 "Delta_phi_residual_deg": delta_phi_residual_deg(
                     arrays["Delta_phi"]
                 ),
                 "pTmiss": np.asarray(arrays["pTmiss"], dtype=float),
-                # kinematic_variables.java explicitly stores this in degrees.
                 "theta_gamma_gamma": np.asarray(
-                    arrays["theta_gamma_gamma"], dtype=float
+                    arrays["theta_gamma_gamma"],
+                    dtype=float,
                 ),
             }
 
             for region, region_mask in region_masks.items():
                 counts[region] += int(np.count_nonzero(region_mask))
 
-                # Row 1: only Angle(e,gamma) > 5 deg plus FT/FD assignment.
+                if collect_optimizer:
+                    reservoirs[region].update(
+                        optimizer_matrix(values, region_mask)
+                    )
+                #endif
+
                 mx2_1_mask = (
                     region_mask
                     & np.isfinite(values["Mx2_1"])
                     & (values["Mx2_1"] < 0.15)
                 )
 
-                # Row 3 is cumulative: Row 2 plus Emiss2 > 1 GeV.
                 emiss_mask = (
                     mx2_1_mask
                     & np.isfinite(values["Emiss2"])
@@ -634,8 +1108,15 @@ def stream_sample_histograms(
                 #endfor
             #endfor
 
-            if counts["read"] == entry_stop or counts["read"] % max(step_size, 1_000_000) == 0:
-                frac = 100.0 * counts["read"] / entry_stop if entry_stop else 100.0
+            if (
+                counts["read"] == entry_stop
+                or counts["read"] % max(step_size, 1_000_000) == 0
+            ):
+                frac = (
+                    100.0 * counts["read"] / entry_stop
+                    if entry_stop
+                    else 100.0
+                )
                 log(
                     f"{sample_label}: {counts['read']:,}/{entry_stop:,} "
                     f"({frac:.1f}%)"
@@ -654,7 +1135,12 @@ def stream_sample_histograms(
         f"FT={counts['FT_emiss_cut']:,}, "
         f"FD={counts['FD_emiss_cut']:,}."
     )
-    return hist, counts
+
+    optimizer_events = {
+        region: reservoirs[region].array()
+        for region in ("FT", "FD")
+    }
+    return hist, counts, optimizer_events
 
 
 # =============================================================================
@@ -851,6 +1337,13 @@ def process_period(
     step_size: int,
     output_dir: Path,
     linear_y: bool,
+    run_optimizer: bool,
+    optimizer_max_events: int,
+    optimizer_steps: int,
+    optimizer_quantiles: int,
+    optimizer_min_step_pi0_eff: float,
+    optimizer_min_total_pi0_eff: float,
+    optimizer_min_improvement: float,
 ) -> None:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -861,7 +1354,6 @@ def process_period(
         "dvcs": period.dvcs_mc,
     }
 
-    # Fail early, before reading millions of events.
     for sample_key, path in paths.items():
         found_tree, total = preflight_file(path, tree_name)
         log(
@@ -875,17 +1367,33 @@ def process_period(
         Dict[str, Dict[str, Dict[str, np.ndarray]]],
     ] = {}
     sample_counts: Dict[str, Dict[str, int]] = {}
+    optimizer_events: Dict[str, Dict[str, np.ndarray]] = {}
 
-    for sample_key, label, _color in SAMPLES:
-        hists, counts = stream_sample_histograms(
+    period_index = [p.key for p in PERIODS].index(period.key)
+
+    for sample_index, (sample_key, label, _color) in enumerate(SAMPLES):
+        collect_optimizer = run_optimizer and sample_key in ("pi0", "dvcs")
+
+        hists, counts, opt_events = stream_sample_histograms(
             paths[sample_key],
             f"{period.label} {label}",
             tree_name,
             max_entries,
             step_size,
+            collect_optimizer=collect_optimizer,
+            optimizer_max_events=optimizer_max_events,
+            optimizer_seed=(
+                100_000
+                + 10_000 * period_index
+                + 100 * sample_index
+            ),
         )
         sample_hists[sample_key] = hists
         sample_counts[sample_key] = counts
+
+        if collect_optimizer:
+            optimizer_events[sample_key] = opt_events
+        #endif
     #endfor
 
     for region in ("FT", "FD"):
@@ -900,6 +1408,57 @@ def process_period(
         log(f"{period.label}: wrote {out}")
     #endfor
 
+    if run_optimizer:
+        optimizer_outdir = output_dir.parent / "rectangular_optimizer"
+
+        for region in ("FT", "FD"):
+            pi0_events = optimizer_events["pi0"][region]
+            dvcs_events = optimizer_events["dvcs"][region]
+
+            log(
+                f"{period.label} {region}: rectangular optimizer uses "
+                f"{pi0_events.shape[0]:,} AAO and "
+                f"{dvcs_events.shape[0]:,} DVCSgen baseline events."
+            )
+
+            results = optimize_rectangular_cuts(
+                pi0_events,
+                dvcs_events,
+                max_steps=optimizer_steps,
+                n_quantiles=optimizer_quantiles,
+                min_step_pi0_eff=optimizer_min_step_pi0_eff,
+                min_total_pi0_eff=optimizer_min_total_pi0_eff,
+                min_improvement=optimizer_min_improvement,
+            )
+
+            write_optimizer_outputs(
+                period,
+                region,
+                pi0_events,
+                dvcs_events,
+                results,
+                optimizer_outdir,
+            )
+
+            if results:
+                log(
+                    f"{period.label} {region}: optimizer selected "
+                    + " -> ".join(cut_expression(r) for r in results)
+                )
+                log(
+                    f"{period.label} {region}: final retained fractions: "
+                    f"AAO={100.0*results[-1]['total_pi0_eff']:.2f}%, "
+                    f"DVCSgen={100.0*results[-1]['total_dvcs_eff']:.2f}%."
+                )
+            else:
+                log(
+                    f"{period.label} {region}: optimizer selected no cut "
+                    "under the configured retention/improvement constraints."
+                )
+            #endif
+        #endfor
+    #endif
+
     log(
         f"{period.label}: complete in "
         f"{time.perf_counter() - t0:.1f} s."
@@ -913,6 +1472,13 @@ def process_period_worker(
     step_size: int,
     output_dir_str: str,
     linear_y: bool,
+    run_optimizer: bool,
+    optimizer_max_events: int,
+    optimizer_steps: int,
+    optimizer_quantiles: int,
+    optimizer_min_step_pi0_eff: float,
+    optimizer_min_total_pi0_eff: float,
+    optimizer_min_improvement: float,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -928,6 +1494,13 @@ def process_period_worker(
         step_size,
         Path(output_dir_str),
         linear_y,
+        run_optimizer,
+        optimizer_max_events,
+        optimizer_steps,
+        optimizer_quantiles,
+        optimizer_min_step_pi0_eff,
+        optimizer_min_total_pi0_eff,
+        optimizer_min_improvement,
     )
     return period.key
 
@@ -944,6 +1517,24 @@ def main() -> int:
     if args.workers <= 0:
         raise ValueError("--workers must be > 0.")
     #endif
+    if args.optimizer_max_events <= 0:
+        raise ValueError("--optimizer-max-events must be > 0.")
+    #endif
+    if args.optimizer_steps < 0:
+        raise ValueError("--optimizer-steps must be >= 0.")
+    #endif
+    if args.optimizer_quantiles < 3:
+        raise ValueError("--optimizer-quantiles must be >= 3.")
+    #endif
+    if not 0.0 < args.optimizer_min_step_pi0_eff <= 1.0:
+        raise ValueError("--optimizer-min-step-pi0-eff must be in (0,1].")
+    #endif
+    if not 0.0 < args.optimizer_min_total_pi0_eff <= 1.0:
+        raise ValueError("--optimizer-min-total-pi0-eff must be in (0,1].")
+    #endif
+    if args.optimizer_min_improvement < 1.0:
+        raise ValueError("--optimizer-min-improvement must be >= 1.")
+    #endif
 
     selected_keys = set(args.period or [p.key for p in PERIODS])
     selected_periods = [p for p in PERIODS if p.key in selected_keys]
@@ -959,6 +1550,16 @@ def main() -> int:
         "Shape-comparison y-axis: "
         + ("linear (--linear override)." if args.linear else "logarithmic (default).")
     )
+    if args.no_optimize_cuts:
+        log("Rectangular-cut optimizer: disabled.")
+    else:
+        log(
+            "Rectangular-cut optimizer: enabled independently for every "
+            "period and separately in FT/FD; "
+            f"reservoir <= {args.optimizer_max_events:,} events/class/region, "
+            f"max steps={args.optimizer_steps}."
+        )
+    #endif
     log(
         "ONLY event-selection cut: "
         f"Angle(e,gamma) > {THETA_EGAMMA_MIN_DEG:.1f} deg. "
@@ -981,6 +1582,13 @@ def main() -> int:
                 args.step_size,
                 output_dir,
                 args.linear,
+                not args.no_optimize_cuts,
+                args.optimizer_max_events,
+                args.optimizer_steps,
+                args.optimizer_quantiles,
+                args.optimizer_min_step_pi0_eff,
+                args.optimizer_min_total_pi0_eff,
+                args.optimizer_min_improvement,
             )
         #endfor
     else:
@@ -994,6 +1602,13 @@ def main() -> int:
                     args.step_size,
                     str(output_dir),
                     args.linear,
+                    not args.no_optimize_cuts,
+                    args.optimizer_max_events,
+                    args.optimizer_steps,
+                    args.optimizer_quantiles,
+                    args.optimizer_min_step_pi0_eff,
+                    args.optimizer_min_total_pi0_eff,
+                    args.optimizer_min_improvement,
                 ): period
                 for period in selected_periods
             }
