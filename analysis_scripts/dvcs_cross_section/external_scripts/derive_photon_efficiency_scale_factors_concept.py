@@ -195,11 +195,11 @@ same bounded AAO-only morphing.  The fallback is labeled on the plots and in
 the single per-period summary CSV rather than silently pretending that the
 sideband fraction is known.
 
-FD sector diagnostics are now added WITHOUT refitting the physics composition
+FD predicted-probe sector diagnostics are now added WITHOUT refitting the physics composition
 independently in each sector. The optimizer cuts, operating step, fit
 discriminator, fitted composition fractions, and AAO morph nuisance parameters
 remain those obtained from the period-level FD_all fit. The same quantities
-are then applied independently to sectors 1-6 using sector-specific data/MC
+are then applied independently to sectors 1-6 using predicted-probe-sector-specific data/MC
 template shapes. This exposes detector-sector response differences without
 allowing a sector-by-sector composition fit to absorb them.
 
@@ -315,8 +315,12 @@ BRANCHES: Tuple[str, ...] = (
     "Delta_phi",
     "pTmiss",
     "theta_gamma_gamma",
+    "e_p",
     "e_theta",
     "e_phi",
+    "p1_p",
+    "p1_theta",
+    "p1_phi",
     "p2_p",
     "p2_theta",
     "p2_phi",
@@ -414,6 +418,15 @@ _DATA_BASE = (
     "dvcs/efficiency_study"
 )
 
+BEAM_ENERGY_GEV = {
+    "fa18_inb": 10.604,
+    "fa18_out": 10.604,
+    "sp18_inb": 10.594,
+    "sp18_out": 10.594,
+    "sp19_inb": 10.200,
+}
+
+
 PERIODS: Tuple[Period, ...] = (
     Period(
         "fa18_inb",
@@ -496,7 +509,11 @@ DATA_FIT_FEATURES: Tuple[str, ...] = tuple(OPTIMIZER_SCAN_FEATURES)
 
 # Extra event metadata retained in the same reservoir. It is never scanned by
 # the optimizer and exists only for downstream detector diagnostics.
-EVENT_METADATA: Tuple[str, ...] = ("fd_sector",)
+EVENT_METADATA: Tuple[str, ...] = (
+    "pred_probe_sector",
+    "pred_probe_theta_deg",
+    "pred_probe_phi_deg",
+)
 EVENT_COLUMNS: Tuple[str, ...] = OPTIMIZER_FEATURES + EVENT_METADATA
 
 
@@ -872,29 +889,160 @@ def photon_theta_deg(values: np.ndarray, unit: str) -> np.ndarray:
 
 
 
-def photon_phi_deg(values: np.ndarray, unit: str) -> np.ndarray:
-    """Return reconstructed photon azimuth in degrees."""
-    values = np.asarray(values, dtype=float)
-    return values if unit == "deg" else np.rad2deg(values)
+def _angles_to_radians(
+    theta: np.ndarray,
+    phi: np.ndarray,
+    unit: str,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Convert stored polar/azimuthal angles to radians."""
+    theta = np.asarray(theta, dtype=float)
+    phi = np.asarray(phi, dtype=float)
+
+    if unit == "deg":
+        return np.deg2rad(theta), np.deg2rad(phi)
+    #endif
+
+    return theta, phi
+
+
+def predicted_probe_direction_deg(
+    arrays: Dict[str, np.ndarray],
+    angle_unit: str,
+    beam_energy_gev: float,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Predict the missing probe-photon direction from the reconstructed
+    e + p + tag-gamma system.
+
+    With the target proton at rest, the missing three-momentum is
+
+        p_probe^pred = p_beam - p_e - p_p - p_gamma,tag.
+
+    The incoming electron beam is taken along +z with |p_beam| ~= E_beam.
+    Only the direction is needed here, so the target mass does not enter.
+
+    Returns:
+        theta_pred_deg, phi_pred_deg
+
+    with phi wrapped to [0, 360).
+    """
+    e_theta, e_phi = _angles_to_radians(
+        arrays["e_theta"],
+        arrays["e_phi"],
+        angle_unit,
+    )
+    p_theta, p_phi = _angles_to_radians(
+        arrays["p1_theta"],
+        arrays["p1_phi"],
+        angle_unit,
+    )
+    g_theta, g_phi = _angles_to_radians(
+        arrays["p2_theta"],
+        arrays["p2_phi"],
+        angle_unit,
+    )
+
+    e_p = np.asarray(arrays["e_p"], dtype=float)
+    p_p = np.asarray(arrays["p1_p"], dtype=float)
+    g_p = np.asarray(arrays["p2_p"], dtype=float)
+
+    e_px = e_p * np.sin(e_theta) * np.cos(e_phi)
+    e_py = e_p * np.sin(e_theta) * np.sin(e_phi)
+    e_pz = e_p * np.cos(e_theta)
+
+    p_px = p_p * np.sin(p_theta) * np.cos(p_phi)
+    p_py = p_p * np.sin(p_theta) * np.sin(p_phi)
+    p_pz = p_p * np.cos(p_theta)
+
+    g_px = g_p * np.sin(g_theta) * np.cos(g_phi)
+    g_py = g_p * np.sin(g_theta) * np.sin(g_phi)
+    g_pz = g_p * np.cos(g_theta)
+
+    pred_px = -(e_px + p_px + g_px)
+    pred_py = -(e_py + p_py + g_py)
+    pred_pz = (
+        float(beam_energy_gev)
+        - e_pz
+        - p_pz
+        - g_pz
+    )
+
+    pred_pt = np.hypot(pred_px, pred_py)
+    pred_p = np.sqrt(
+        pred_px * pred_px
+        + pred_py * pred_py
+        + pred_pz * pred_pz
+    )
+
+    theta_deg = np.rad2deg(
+        np.arctan2(pred_pt, pred_pz)
+    )
+    phi_deg = np.mod(
+        np.rad2deg(np.arctan2(pred_py, pred_px)),
+        360.0,
+    )
+
+    valid = (
+        np.isfinite(pred_p)
+        & (pred_p > 1.0e-9)
+        & np.isfinite(theta_deg)
+        & np.isfinite(phi_deg)
+    )
+
+    theta_deg = np.where(valid, theta_deg, np.nan)
+    phi_deg = np.where(valid, phi_deg, np.nan)
+
+    return theta_deg, phi_deg
 
 
 def fd_sector_from_phi_deg(phi_deg: np.ndarray) -> np.ndarray:
     """
-    CLAS12 FD sector from reconstructed photon azimuth:
-      S1 330-360 or 0-30; S2 30-90; S3 90-150;
-      S4 150-210; S5 210-270; S6 270-330 deg.
+    CLAS12 FD sector assigned from the PREDICTED probe-photon azimuth.
+
+      S1: 330-360 or   0-30 deg
+      S2:  30-90 deg
+      S3:  90-150 deg
+      S4: 150-210 deg
+      S5: 210-270 deg
+      S6: 270-330 deg
+
+    Non-finite entries receive sector 0.
     """
     phi = np.asarray(phi_deg, dtype=float)
     wrapped = np.mod(phi, 360.0)
     sector = np.zeros(phi.shape, dtype=np.float32)
-    finite = np.isfinite(wrapped)
 
-    sector[finite & ((wrapped >= 330.0) | (wrapped < 30.0))] = 1.0
-    sector[finite & (wrapped >= 30.0) & (wrapped < 90.0)] = 2.0
-    sector[finite & (wrapped >= 90.0) & (wrapped < 150.0)] = 3.0
-    sector[finite & (wrapped >= 150.0) & (wrapped < 210.0)] = 4.0
-    sector[finite & (wrapped >= 210.0) & (wrapped < 270.0)] = 5.0
-    sector[finite & (wrapped >= 270.0) & (wrapped < 330.0)] = 6.0
+    finite = np.isfinite(wrapped)
+    sector[
+        finite
+        & ((wrapped >= 330.0) | (wrapped < 30.0))
+    ] = 1.0
+    sector[
+        finite
+        & (wrapped >= 30.0)
+        & (wrapped < 90.0)
+    ] = 2.0
+    sector[
+        finite
+        & (wrapped >= 90.0)
+        & (wrapped < 150.0)
+    ] = 3.0
+    sector[
+        finite
+        & (wrapped >= 150.0)
+        & (wrapped < 210.0)
+    ] = 4.0
+    sector[
+        finite
+        & (wrapped >= 210.0)
+        & (wrapped < 270.0)
+    ] = 5.0
+    sector[
+        finite
+        & (wrapped >= 270.0)
+        & (wrapped < 330.0)
+    ] = 6.0
+
     return sector
 
 
@@ -2869,13 +3017,13 @@ def feature_plot_label(feature: str) -> str:
 
 
 # =============================================================================
-# FD sector diagnostics
+# FD predicted-probe sector diagnostics
 # =============================================================================
 
 def fd_sector_mask(events: np.ndarray, sector: int) -> np.ndarray:
-    """Mask one reconstructed-photon FD sector in a reservoir array."""
+    """Mask one PREDICTED probe-photon FD sector in a reservoir array."""
     values = np.asarray(
-        events[:, EVENT_INDEX["fd_sector"]],
+        events[:, EVENT_INDEX["pred_probe_sector"]],
         dtype=float,
     )
     return np.isfinite(values) & (np.rint(values).astype(int) == int(sector))
@@ -3256,7 +3404,7 @@ def make_fd_sector_template_fit_canvases(
 
         fig.suptitle(
             (
-                f"{period.label}: FD sector diagnostics, "
+                f"{period.label}: FD predicted-probe sector diagnostics, "
                 f"{e_min:g} <= E_probe < {e_max:g} GeV\n"
                 + fit_description
             ),
@@ -3307,7 +3455,7 @@ def make_fd_sector_overview_canvas(
         ax.set_yticks(range(6))
         ax.set_yticklabels(ylabels)
         ax.set_xlabel(r"$E_{\rm probe}$ bin (GeV)")
-        ax.set_ylabel("FD photon sector")
+        ax.set_ylabel("FD predicted-probe sector")
         ax.set_title(title)
         for isector in range(6):
             for ibin in range(len(E_PROBE_BINS)):
@@ -5003,6 +5151,7 @@ def stream_sample_histograms(
     tree_name: str,
     max_entries: int,
     step_size: int,
+    beam_energy_gev: float,
     collect_optimizer: bool = False,
     optimizer_max_events: int = 0,
     optimizer_seed: int = 12345,
@@ -5081,27 +5230,36 @@ def stream_sample_histograms(
                 arrays["p2_phi"],
                 angle_unit,
             )
-            photon_theta = photon_theta_deg(arrays["p2_theta"], angle_unit)
-            photon_phi = photon_phi_deg(arrays["p2_phi"], angle_unit)
-            photon_sector = fd_sector_from_phi_deg(photon_phi)
+            pred_probe_theta, pred_probe_phi = (
+                predicted_probe_direction_deg(
+                    arrays,
+                    angle_unit,
+                    beam_energy_gev,
+                )
+            )
+            pred_probe_sector = fd_sector_from_phi_deg(
+                pred_probe_phi
+            )
 
             base = np.isfinite(theta_egamma) & (
                 theta_egamma > THETA_EGAMMA_MIN_DEG
             )
             counts["opening_angle"] += int(np.count_nonzero(base))
 
+            # Detector region is defined by the PREDICTED probe direction,
+            # not by the reconstructed tag photon p2.
             region_masks = {
                 "FT": (
                     base
-                    & np.isfinite(photon_theta)
-                    & (photon_theta >= FT_THETA_MIN_DEG)
-                    & (photon_theta < FT_THETA_MAX_DEG)
+                    & np.isfinite(pred_probe_theta)
+                    & (pred_probe_theta >= FT_THETA_MIN_DEG)
+                    & (pred_probe_theta < FT_THETA_MAX_DEG)
                 ),
                 "FD": (
                     base
-                    & np.isfinite(photon_theta)
-                    & (photon_theta >= FD_THETA_MIN_DEG)
-                    & (photon_theta < FD_THETA_MAX_DEG)
+                    & np.isfinite(pred_probe_theta)
+                    & (pred_probe_theta >= FD_THETA_MIN_DEG)
+                    & (pred_probe_theta < FD_THETA_MAX_DEG)
                 ),
             }
 
@@ -5119,7 +5277,9 @@ def stream_sample_histograms(
                     arrays["theta_gamma_gamma"],
                     dtype=float,
                 ),
-                "fd_sector": photon_sector,
+                "pred_probe_sector": pred_probe_sector,
+                "pred_probe_theta_deg": pred_probe_theta,
+                "pred_probe_phi_deg": pred_probe_phi,
             }
 
             e_probe = values["Emiss2"]
@@ -5789,6 +5949,7 @@ def process_period(
             tree_name,
             max_entries,
             step_size,
+            BEAM_ENERGY_GEV[period.key],
             collect_optimizer=collect_optimizer,
             optimizer_max_events=optimizer_max_events,
             optimizer_seed=(
@@ -6184,7 +6345,7 @@ def process_period(
             f"{mx2_control_canvas}"
         )
 
-        # FD sector diagnostics: deliberately keep the period-level FD
+        # FD predicted-probe sector diagnostics: deliberately keep the period-level FD
         # composition fit fixed and only expose sector-dependent shapes.
         sector_diagnostics = build_fd_sector_diagnostics(
             optimizer_events,
@@ -6634,9 +6795,11 @@ def main() -> int:
             "third-template sideband accepted only when near/far each have "
             f">={args.data_fit_sideband_min_events} events and "
             f"JS<={args.data_fit_sideband_max_js:g}, otherwise AAO+DVCS "
-            "fallback is used; FD sector diagnostics keep the global FD "
+            "fallback is used; FD predicted-probe sector diagnostics keep the global FD "
             "composition/cuts/discriminator/morph fixed in sectors 1-6 and "
-            "do not refit f_pi0 by sector."
+            "do not refit f_pi0 by sector. FD/FT region and sector are "
+            "assigned from the missing-momentum predicted probe direction "
+            "p_beam - p_e - p_p - p_gamma,tag."
         )
     #endif
     log(
