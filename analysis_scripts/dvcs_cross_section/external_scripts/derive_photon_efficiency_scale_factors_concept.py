@@ -195,7 +195,7 @@ same bounded AAO-only morphing.  The fallback is labeled on the plots and in
 the single per-period summary CSV rather than silently pretending that the
 sideband fraction is known.
 
-FD predicted-probe sector diagnostics are now added WITHOUT refitting the physics composition
+TAG-FD / predicted-probe-sector diagnostics are now added WITHOUT refitting the physics composition
 independently in each sector. The optimizer cuts, operating step, fit
 discriminator, fitted composition fractions, and AAO morph nuisance parameters
 remain those obtained from the period-level FD_all fit. The same quantities
@@ -510,6 +510,7 @@ DATA_FIT_FEATURES: Tuple[str, ...] = tuple(OPTIMIZER_SCAN_FEATURES)
 # Extra event metadata retained in the same reservoir. It is never scanned by
 # the optimizer and exists only for downstream detector diagnostics.
 EVENT_METADATA: Tuple[str, ...] = (
+    "tag_theta_deg",
     "pred_probe_sector",
     "pred_probe_theta_deg",
     "pred_probe_phi_deg",
@@ -3017,7 +3018,7 @@ def feature_plot_label(feature: str) -> str:
 
 
 # =============================================================================
-# FD predicted-probe sector diagnostics
+# TAG-FD / predicted-probe-sector diagnostics
 # =============================================================================
 
 def fd_sector_mask(events: np.ndarray, sector: int) -> np.ndarray:
@@ -3283,7 +3284,7 @@ def make_fd_sector_template_fit_canvases(
                 ax.text(
                     0.5, 0.5,
                     (
-                        f"Sector {sector}\n"
+                        f"predicted probe sector {sector}\n"
                         f"{result.get('status', 'unavailable')}\n"
                         f"Ndata={result.get('n_data', 0):,}"
                     ),
@@ -3345,7 +3346,7 @@ def make_fd_sector_template_fit_canvases(
             #endif
 
             ax.set_title(
-                f"FD sector {sector} | {feature_plot_label(result['feature'])}",
+                f"predicted probe sector {sector} | {feature_plot_label(result['feature'])}",
                 fontsize=9.5,
             )
             ax.set_ylabel("Events / bin")
@@ -3404,7 +3405,7 @@ def make_fd_sector_template_fit_canvases(
 
         fig.suptitle(
             (
-                f"{period.label}: FD predicted-probe sector diagnostics, "
+                f"{period.label}: TAG-FD / predicted-probe-sector diagnostics, "
                 f"{e_min:g} <= E_probe < {e_max:g} GeV\n"
                 + fit_description
             ),
@@ -3455,7 +3456,7 @@ def make_fd_sector_overview_canvas(
         ax.set_yticks(range(6))
         ax.set_yticklabels(ylabels)
         ax.set_xlabel(r"$E_{\rm probe}$ bin (GeV)")
-        ax.set_ylabel("FD predicted-probe sector")
+        ax.set_ylabel("predicted probe FD sector")
         ax.set_title(title)
         for isector in range(6):
             for ibin in range(len(E_PROBE_BINS)):
@@ -5161,7 +5162,10 @@ def stream_sample_histograms(
     Dict[str, Dict[str, np.ndarray]],
 ]:
     """
-    Read one ROOT sample exactly once and fill both FT and FD histograms.
+    Read one ROOT sample exactly once and fill tag-FT and tag-FD histograms.
+
+    FT/FD here always refers to the reconstructed tag photon p2.  Predicted
+    probe theta/phi/sector are retained independently as event metadata.
 
     When optimizer collection is enabled, maintain an independent bounded
     uniform reservoir for every detector region AND every E_probe bin. This
@@ -5230,6 +5234,16 @@ def stream_sample_histograms(
                 arrays["p2_phi"],
                 angle_unit,
             )
+            # Reconstructed p2 is the TAG photon.  Its theta defines the
+            # FT/FD composition category.
+            tag_theta = photon_theta_deg(
+                arrays["p2_theta"],
+                angle_unit,
+            )
+
+            # The missing momentum predicts the PARTNER/PROBE photon.  Its
+            # direction is retained separately for the eventual efficiency
+            # binning and FD-sector diagnostics.
             pred_probe_theta, pred_probe_phi = (
                 predicted_probe_direction_deg(
                     arrays,
@@ -5246,20 +5260,21 @@ def stream_sample_histograms(
             )
             counts["opening_angle"] += int(np.count_nonzero(base))
 
-            # Detector region is defined by the PREDICTED probe direction,
-            # not by the reconstructed tag photon p2.
+            # Composition categories are defined by the RECONSTRUCTED TAG
+            # photon p2.  Predicted probe direction is deliberately NOT used
+            # here; it is a separate downstream efficiency coordinate.
             region_masks = {
                 "FT": (
                     base
-                    & np.isfinite(pred_probe_theta)
-                    & (pred_probe_theta >= FT_THETA_MIN_DEG)
-                    & (pred_probe_theta < FT_THETA_MAX_DEG)
+                    & np.isfinite(tag_theta)
+                    & (tag_theta >= FT_THETA_MIN_DEG)
+                    & (tag_theta < FT_THETA_MAX_DEG)
                 ),
                 "FD": (
                     base
-                    & np.isfinite(pred_probe_theta)
-                    & (pred_probe_theta >= FD_THETA_MIN_DEG)
-                    & (pred_probe_theta < FD_THETA_MAX_DEG)
+                    & np.isfinite(tag_theta)
+                    & (tag_theta >= FD_THETA_MIN_DEG)
+                    & (tag_theta < FD_THETA_MAX_DEG)
                 ),
             }
 
@@ -5277,6 +5292,7 @@ def stream_sample_histograms(
                     arrays["theta_gamma_gamma"],
                     dtype=float,
                 ),
+                "tag_theta_deg": tag_theta,
                 "pred_probe_sector": pred_probe_sector,
                 "pred_probe_theta_deg": pred_probe_theta,
                 "pred_probe_phi_deg": pred_probe_phi,
@@ -6345,7 +6361,7 @@ def process_period(
             f"{mx2_control_canvas}"
         )
 
-        # FD predicted-probe sector diagnostics: deliberately keep the period-level FD
+        # TAG-FD / predicted-probe-sector diagnostics: deliberately keep the period-level FD
         # composition fit fixed and only expose sector-dependent shapes.
         sector_diagnostics = build_fd_sector_diagnostics(
             optimizer_events,
@@ -6795,11 +6811,11 @@ def main() -> int:
             "third-template sideband accepted only when near/far each have "
             f">={args.data_fit_sideband_min_events} events and "
             f"JS<={args.data_fit_sideband_max_js:g}, otherwise AAO+DVCS "
-            "fallback is used; FD predicted-probe sector diagnostics keep the global FD "
+            "fallback is used; TAG-FD / predicted-probe-sector diagnostics keep the global FD "
             "composition/cuts/discriminator/morph fixed in sectors 1-6 and "
-            "do not refit f_pi0 by sector. FD/FT region and sector are "
-            "assigned from the missing-momentum predicted probe direction "
-            "p_beam - p_e - p_p - p_gamma,tag."
+            "do not refit f_pi0 by sector. FT/FD composition categories "
+            "come from reconstructed tag p2_theta; only the downstream probe "
+            "theta/phi/sector comes from p_beam - p_e - p_p - p_gamma,tag."
         )
     #endif
     log(
