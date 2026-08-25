@@ -91,8 +91,21 @@ for a linear y-axis.
 The script runs the greedy rectangular-cut optimizer BEFORE making the
 shape-comparison canvases. The optimizer is NEVER combined across periods:
 each of the five run periods is optimized independently, and FT/FD are
-optimized independently within each period. It uses reconstructed AAO and
-DVCSgen variables only.
+optimized independently within each period.
+
+Before optimization, a loose exclusivity preselection is imposed:
+
+    Mx2_1 < 0.30 GeV^2
+
+by default. The real-data interval
+
+    0.20 <= Mx2_1 < 0.30 GeV^2
+
+is used as an empirical nonexclusive/SIDIS-like sideband. Because Mx2_1
+defines both the loose preselection and the sideband, Mx2_1 itself is excluded
+from the greedy threshold scan. The optimizer therefore seeks reconstructed
+cuts that simultaneously retain AAO pi0, suppress DVCSgen, and suppress this
+data sideband.
 
 After the optimizer selects its period- and detector-specific cut sequence,
 the shape-comparison canvas is constructed with one cumulative row per selected
@@ -306,6 +319,14 @@ OPTIMIZER_FEATURES: Tuple[str, ...] = (
     "theta_gamma_gamma",
 )
 
+# Mx2_1 defines the loose exclusivity preselection and empirical data sideband,
+# so it is deliberately excluded from the greedy threshold scan.
+OPTIMIZER_SCAN_FEATURES: Tuple[str, ...] = tuple(
+    feature
+    for feature in OPTIMIZER_FEATURES
+    if feature != "Mx2_1"
+)
+
 
 # =============================================================================
 # Small utilities
@@ -428,6 +449,42 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Stop if the best new cut improves the current separation score "
             "by less than this multiplicative factor. Default: 1.02."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-mx2-1-preselection-max",
+        type=float,
+        default=0.30,
+        help=(
+            "Loose exclusivity preselection Mx2_1 < value in GeV^2, applied "
+            "before optimization and in the post-optimizer shape canvases. "
+            "Default: 0.30."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-data-sideband-min",
+        type=float,
+        default=0.20,
+        help=(
+            "Lower Mx2_1 edge in GeV^2 of the real-data sideband used as an "
+            "empirical nonexclusive/SIDIS-like background proxy. Default: 0.20."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-data-sideband-max",
+        type=float,
+        default=0.30,
+        help=(
+            "Upper Mx2_1 edge in GeV^2 of the real-data sideband. Default: 0.30."
+        ),
+    )
+    parser.add_argument(
+        "--optimizer-data-sideband-weight",
+        type=float,
+        default=1.0,
+        help=(
+            "Relative weight lambda of data-sideband retention in the "
+            "optimizer score denominator. Default: 1.0."
         ),
     )
     parser.add_argument(
@@ -675,67 +732,89 @@ def _candidate_thresholds(
     return np.unique(np.asarray(thresholds, dtype=float))
 
 
+def _candidate_thresholds_three(
+    pi_values: np.ndarray,
+    dvcs_values: np.ndarray,
+    side_values: np.ndarray,
+    n_quantiles: int,
+) -> np.ndarray:
+    """Quantile thresholds from surviving AAO, DVCSgen, and data sideband."""
+    combined = np.concatenate((pi_values, dvcs_values, side_values))
+    combined = combined[np.isfinite(combined)]
+
+    if combined.size < 10:
+        return np.empty(0, dtype=float)
+    #endif
+
+    q = np.linspace(0.02, 0.98, max(3, int(n_quantiles)))
+    return np.unique(np.asarray(np.quantile(combined, q), dtype=float))
+
+
 def optimize_rectangular_cuts(
     pi0_events: np.ndarray,
     dvcs_events: np.ndarray,
+    data_sideband_events: np.ndarray,
     max_steps: int,
     n_quantiles: int,
     min_step_pi0_eff: float,
     min_total_pi0_eff: float,
     min_improvement: float,
+    data_sideband_weight: float,
 ) -> list:
     """
-    Greedy one-sided rectangular-cut optimizer.
+    Greedy one-sided optimizer balancing AAO retention against two backgrounds.
 
-    At each step, scan X < c and X > c for every still-unused reconstructed
-    variable. Candidate thresholds are quantiles of the currently surviving
-    AAO+DVCSgen events.
+    At each step it scans X<c and X>c over OPTIMIZER_SCAN_FEATURES and maximizes
 
-    The selected cut maximizes
+        F = eps_pi0 / sqrt(
+            eps_DVCS + lambda * eps_data_sideband + 1e-9
+        )
 
-        F = epsilon_pi0 / sqrt(epsilon_DVCS + 1e-9)
-
-    using cumulative efficiencies relative to the original baseline, while
-    requiring the new cut to retain at least min_step_pi0_eff of the AAO
-    population from the previous step and at least min_total_pi0_eff of the
-    original AAO baseline.
-
-    A variable is used at most once in this first simple implementation.
+    using cumulative efficiencies relative to the corresponding baseline
+    populations.  Mx2_1 is excluded from the scan because it defines both the
+    loose exclusivity preselection and the real-data sideband.
     """
-    if pi0_events.shape[0] == 0 or dvcs_events.shape[0] == 0:
+    if (
+        pi0_events.shape[0] == 0
+        or dvcs_events.shape[0] == 0
+        or data_sideband_events.shape[0] == 0
+    ):
         return []
     #endif
 
     pi_mask = np.ones(pi0_events.shape[0], dtype=bool)
     dvcs_mask = np.ones(dvcs_events.shape[0], dtype=bool)
+    side_mask = np.ones(data_sideband_events.shape[0], dtype=bool)
 
     n_pi0_0 = int(pi0_events.shape[0])
     n_dvcs_0 = int(dvcs_events.shape[0])
+    n_side_0 = int(data_sideband_events.shape[0])
 
-    current_score = 1.0
+    current_score = 1.0 / math.sqrt(1.0 + float(data_sideband_weight))
     used_features = set()
     results = []
 
     for step in range(1, int(max_steps) + 1):
         n_pi_before = int(np.count_nonzero(pi_mask))
         n_dvcs_before = int(np.count_nonzero(dvcs_mask))
+        n_side_before = int(np.count_nonzero(side_mask))
 
-        if n_pi_before == 0 or n_dvcs_before == 0:
+        if min(n_pi_before, n_dvcs_before, n_side_before) == 0:
             break
         #endif
 
         best = None
 
-        for ifeature, feature in enumerate(OPTIMIZER_FEATURES):
+        for feature in OPTIMIZER_SCAN_FEATURES:
             if feature in used_features:
                 continue
             #endif
 
-            pi_current_values = pi0_events[pi_mask, ifeature]
-            dvcs_current_values = dvcs_events[dvcs_mask, ifeature]
-            thresholds = _candidate_thresholds(
-                pi_current_values,
-                dvcs_current_values,
+            ifeature = FEATURE_INDEX[feature]
+            thresholds = _candidate_thresholds_three(
+                pi0_events[pi_mask, ifeature],
+                dvcs_events[dvcs_mask, ifeature],
+                data_sideband_events[side_mask, ifeature],
                 n_quantiles,
             )
 
@@ -744,25 +823,28 @@ def optimize_rectangular_cuts(
                     if direction == "lt":
                         pi_local = pi0_events[:, ifeature] < threshold
                         dvcs_local = dvcs_events[:, ifeature] < threshold
+                        side_local = data_sideband_events[:, ifeature] < threshold
                     else:
                         pi_local = pi0_events[:, ifeature] > threshold
                         dvcs_local = dvcs_events[:, ifeature] > threshold
+                        side_local = data_sideband_events[:, ifeature] > threshold
                     #endif
 
                     pi_test = pi_mask & pi_local
                     dvcs_test = dvcs_mask & dvcs_local
+                    side_test = side_mask & side_local
 
                     n_pi = int(np.count_nonzero(pi_test))
                     n_dvcs = int(np.count_nonzero(dvcs_test))
+                    n_side = int(np.count_nonzero(side_test))
 
                     step_pi_eff = n_pi / n_pi_before
-                    step_dvcs_eff = (
-                        n_dvcs / n_dvcs_before
-                        if n_dvcs_before > 0
-                        else 0.0
-                    )
+                    step_dvcs_eff = n_dvcs / n_dvcs_before
+                    step_side_eff = n_side / n_side_before
+
                     total_pi_eff = n_pi / n_pi0_0
                     total_dvcs_eff = n_dvcs / n_dvcs_0
+                    total_side_eff = n_side / n_side_0
 
                     if step_pi_eff < min_step_pi0_eff:
                         continue
@@ -771,7 +853,11 @@ def optimize_rectangular_cuts(
                         continue
                     #endif
 
-                    score = total_pi_eff / math.sqrt(total_dvcs_eff + 1.0e-9)
+                    score = total_pi_eff / math.sqrt(
+                        total_dvcs_eff
+                        + float(data_sideband_weight) * total_side_eff
+                        + 1.0e-9
+                    )
 
                     if best is None or score > best["score"]:
                         best = {
@@ -782,12 +868,16 @@ def optimize_rectangular_cuts(
                             "score": float(score),
                             "step_pi0_eff": float(step_pi_eff),
                             "step_dvcs_eff": float(step_dvcs_eff),
+                            "step_data_sideband_eff": float(step_side_eff),
                             "total_pi0_eff": float(total_pi_eff),
                             "total_dvcs_eff": float(total_dvcs_eff),
+                            "total_data_sideband_eff": float(total_side_eff),
                             "n_pi0": n_pi,
                             "n_dvcs": n_dvcs,
+                            "n_data_sideband": n_side,
                             "pi_mask": pi_test,
                             "dvcs_mask": dvcs_test,
+                            "side_mask": side_test,
                         }
                     #endif
                 #endfor
@@ -807,11 +897,13 @@ def optimize_rectangular_cuts(
             {
                 key: value
                 for key, value in best.items()
-                if key not in ("pi_mask", "dvcs_mask")
+                if key not in ("pi_mask", "dvcs_mask", "side_mask")
             }
         )
+
         pi_mask = best["pi_mask"]
         dvcs_mask = best["dvcs_mask"]
+        side_mask = best["side_mask"]
         current_score = best["score"]
         used_features.add(best["feature"])
     #endfor
@@ -829,6 +921,7 @@ def write_optimizer_outputs(
     region: str,
     pi0_events: np.ndarray,
     dvcs_events: np.ndarray,
+    data_sideband_events: np.ndarray,
     results: list,
     output_dir: Path,
 ) -> None:
@@ -851,11 +944,14 @@ def write_optimizer_outputs(
         "threshold",
         "step_pi0_eff",
         "step_dvcs_eff",
+        "step_data_sideband_eff",
         "total_pi0_eff",
         "total_dvcs_eff",
+        "total_data_sideband_eff",
         "score",
         "n_pi0",
         "n_dvcs",
+        "n_data_sideband",
     )
 
     with csv_path.open("w", newline="") as handle:
@@ -872,12 +968,13 @@ def write_optimizer_outputs(
         (
             "Baseline: "
             f"AAO={pi0_events.shape[0]:,}, "
-            f"DVCSgen={dvcs_events.shape[0]:,}"
+            f"DVCSgen={dvcs_events.shape[0]:,}, "
+            f"data sideband={data_sideband_events.shape[0]:,}"
         ),
         (
-            "Objective: maximize cumulative "
-            "epsilon_pi0/sqrt(epsilon_DVCS), with configured AAO-retention "
-            "constraints."
+            "Objective: maximize cumulative eps_pi0 / "
+            "sqrt(eps_DVCS + lambda*eps_data_sideband), with configured "
+            "AAO-retention constraints."
         ),
         "",
     ]
@@ -892,12 +989,14 @@ def write_optimizer_outputs(
                     (
                         f"  step retention: "
                         f"AAO={100.0*result['step_pi0_eff']:.2f}%  "
-                        f"DVCSgen={100.0*result['step_dvcs_eff']:.2f}%"
+                        f"DVCSgen={100.0*result['step_dvcs_eff']:.2f}%  "
+                        f"data-SB={100.0*result['step_data_sideband_eff']:.2f}%"
                     ),
                     (
                         f"  cumulative:     "
                         f"AAO={100.0*result['total_pi0_eff']:.2f}%  "
                         f"DVCSgen={100.0*result['total_dvcs_eff']:.2f}%  "
+                        f"data-SB={100.0*result['total_data_sideband_eff']:.2f}%  "
                         f"F={result['score']:.4g}"
                     ),
                     "",
@@ -940,9 +1039,14 @@ def make_combined_optimizer_canvas(
         x = [0] + [int(result["step"]) for result in results]
         pi_eff = [1.0] + [result["total_pi0_eff"] for result in results]
         dvcs_eff = [1.0] + [result["total_dvcs_eff"] for result in results]
+        side_eff = [1.0] + [
+            result["total_data_sideband_eff"]
+            for result in results
+        ]
 
         ax.plot(x, pi_eff, marker="o", label=r"AAO $\pi^0$")
         ax.plot(x, dvcs_eff, marker="o", label="DVCSgen")
+        ax.plot(x, side_eff, marker="o", label="data sideband")
         ax.set_yscale("log")
         ax.set_ylim(1.0e-4, 1.1)
         ax.set_xticks(x)
@@ -950,7 +1054,8 @@ def make_combined_optimizer_canvas(
         ax.set_title(
             f"{region}\n"
             f"baseline AAO={region_summary['n_pi0_baseline']:,}, "
-            f"DVCSgen={region_summary['n_dvcs_baseline']:,}"
+            f"DVCSgen={region_summary['n_dvcs_baseline']:,}, "
+            f"data-SB={region_summary['n_data_sideband_baseline']:,}"
         )
         ax.grid(alpha=0.25)
 
@@ -963,7 +1068,8 @@ def make_combined_optimizer_canvas(
             annotation += (
                 "\n"
                 f"final: AAO {100.0*final['total_pi0_eff']:.1f}%, "
-                f"DVCS {100.0*final['total_dvcs_eff']:.2f}%"
+                f"DVCS {100.0*final['total_dvcs_eff']:.2f}%, "
+                f"data-SB {100.0*final['total_data_sideband_eff']:.2f}%"
             )
             ax.text(
                 0.02,
@@ -1273,6 +1379,7 @@ def make_optimizer_cut_shape_canvas(
     optimizer_results: list,
     output_dir: Path,
     linear_y: bool,
+    mx2_1_preselection_max: float,
 ) -> Path:
     """
     Build the shape-comparison canvas AFTER optimization.
@@ -1301,7 +1408,12 @@ def make_optimizer_cut_shape_canvas(
 
     for sample_key, _label, _color in SAMPLES:
         events = sample_events[sample_key][region]
-        masks = [np.ones(events.shape[0], dtype=bool)]
+        mx2_1_values = events[:, FEATURE_INDEX["Mx2_1"]]
+        baseline_mask = (
+            np.isfinite(mx2_1_values)
+            & (mx2_1_values < mx2_1_preselection_max)
+        )
+        masks = [baseline_mask]
 
         current = masks[0]
         for result in optimizer_results:
@@ -1320,7 +1432,11 @@ def make_optimizer_cut_shape_canvas(
     legend_labels = []
 
     row_labels = [
-        r"baseline: $\mathrm{Angle}(e,\gamma)>5^\circ$"
+        (
+            r"baseline: $\mathrm{Angle}(e,\gamma)>5^\circ$"
+            + "\n"
+            + rf"$Mx2_1<{mx2_1_preselection_max:.3g}$ GeV$^2$"
+        )
     ]
     row_labels.extend(
         [
@@ -1386,6 +1502,15 @@ def make_optimizer_cut_shape_canvas(
             ax.tick_params(axis="both", labelsize=7.4)
             ax.grid(alpha=0.18)
 
+            if key == "Mx2_1":
+                ax.axvline(
+                    mx2_1_preselection_max,
+                    linestyle="--",
+                    linewidth=0.9,
+                    color="0.35",
+                )
+            #endif
+
             # On each row after a cut is introduced, show that threshold on
             # the corresponding variable's panel.
             for applied_result in optimizer_results[:irow]:
@@ -1426,6 +1551,7 @@ def make_optimizer_cut_shape_canvas(
         f"{period.label}: {region} post-optimizer shape comparison\n"
         rf"baseline: $\mathrm{{Angle}}(e,\gamma)>"
         rf"{THETA_EGAMMA_MIN_DEG:.0f}^\circ$; "
+        + rf"$Mx2_1<{mx2_1_preselection_max:.3g}$ GeV$^2$; "
         + region_text
         + "\n"
         + f"optimizer sequence: {cut_sequence}"
@@ -1668,6 +1794,10 @@ def process_period(
     optimizer_min_step_pi0_eff: float,
     optimizer_min_total_pi0_eff: float,
     optimizer_min_improvement: float,
+    optimizer_mx2_1_preselection_max: float,
+    optimizer_data_sideband_min: float,
+    optimizer_data_sideband_max: float,
+    optimizer_data_sideband_weight: float,
 ) -> dict:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -1733,23 +1863,51 @@ def process_period(
         optimizer_outdir = output_dir.parent / "rectangular_optimizer"
 
         for region in ("FT", "FD"):
-            pi0_events = optimizer_events["pi0"][region]
-            dvcs_events = optimizer_events["dvcs"][region]
+            pi0_all = optimizer_events["pi0"][region]
+            dvcs_all = optimizer_events["dvcs"][region]
+            data_all = optimizer_events["data"][region]
+
+            mx2_idx = FEATURE_INDEX["Mx2_1"]
+
+            pi0_pre = (
+                np.isfinite(pi0_all[:, mx2_idx])
+                & (pi0_all[:, mx2_idx] < optimizer_mx2_1_preselection_max)
+            )
+            dvcs_pre = (
+                np.isfinite(dvcs_all[:, mx2_idx])
+                & (dvcs_all[:, mx2_idx] < optimizer_mx2_1_preselection_max)
+            )
+            sideband_mask = (
+                np.isfinite(data_all[:, mx2_idx])
+                & (data_all[:, mx2_idx] >= optimizer_data_sideband_min)
+                & (data_all[:, mx2_idx] < optimizer_data_sideband_max)
+            )
+
+            pi0_events = pi0_all[pi0_pre]
+            dvcs_events = dvcs_all[dvcs_pre]
+            data_sideband_events = data_all[sideband_mask]
 
             log(
-                f"{period.label} {region}: rectangular optimizer uses "
-                f"{pi0_events.shape[0]:,} AAO and "
-                f"{dvcs_events.shape[0]:,} DVCSgen baseline events."
+                f"{period.label} {region}: optimizer baseline after "
+                f"Mx2_1<{optimizer_mx2_1_preselection_max:.3g} GeV^2 -> "
+                f"AAO={pi0_events.shape[0]:,}, "
+                f"DVCSgen={dvcs_events.shape[0]:,}; "
+                f"data sideband "
+                f"{optimizer_data_sideband_min:.3g}<=Mx2_1<"
+                f"{optimizer_data_sideband_max:.3g} GeV^2 -> "
+                f"{data_sideband_events.shape[0]:,}."
             )
 
             results = optimize_rectangular_cuts(
                 pi0_events,
                 dvcs_events,
+                data_sideband_events,
                 max_steps=optimizer_steps,
                 n_quantiles=optimizer_quantiles,
                 min_step_pi0_eff=optimizer_min_step_pi0_eff,
                 min_total_pi0_eff=optimizer_min_total_pi0_eff,
                 min_improvement=optimizer_min_improvement,
+                data_sideband_weight=optimizer_data_sideband_weight,
             )
 
             write_optimizer_outputs(
@@ -1757,6 +1915,7 @@ def process_period(
                 region,
                 pi0_events,
                 dvcs_events,
+                data_sideband_events,
                 results,
                 optimizer_outdir,
             )
@@ -1764,6 +1923,9 @@ def process_period(
             optimizer_summary["regions"][region] = {
                 "n_pi0_baseline": int(pi0_events.shape[0]),
                 "n_dvcs_baseline": int(dvcs_events.shape[0]),
+                "n_data_sideband_baseline": int(
+                    data_sideband_events.shape[0]
+                ),
                 "results": results,
             }
         #endfor
@@ -1790,6 +1952,7 @@ def process_period(
                 region_results,
                 output_dir,
                 linear_y,
+                optimizer_mx2_1_preselection_max,
             )
             log(
                 f"{period.label}: wrote post-optimizer {region} shape canvas "
@@ -1834,6 +1997,10 @@ def process_period_worker(
     optimizer_min_step_pi0_eff: float,
     optimizer_min_total_pi0_eff: float,
     optimizer_min_improvement: float,
+    optimizer_mx2_1_preselection_max: float,
+    optimizer_data_sideband_min: float,
+    optimizer_data_sideband_max: float,
+    optimizer_data_sideband_weight: float,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -1856,6 +2023,10 @@ def process_period_worker(
         optimizer_min_step_pi0_eff,
         optimizer_min_total_pi0_eff,
         optimizer_min_improvement,
+        optimizer_mx2_1_preselection_max,
+        optimizer_data_sideband_min,
+        optimizer_data_sideband_max,
+        optimizer_data_sideband_weight,
     )
 
 
@@ -1897,7 +2068,8 @@ def print_optimizer_summary(
 
             print(
                 f"  {region}: baseline AAO={region_summary['n_pi0_baseline']:,}, "
-                f"DVCSgen={region_summary['n_dvcs_baseline']:,}",
+                f"DVCSgen={region_summary['n_dvcs_baseline']:,}, "
+                f"data-SB={region_summary['n_data_sideband_baseline']:,}",
                 flush=True,
             )
 
@@ -1915,8 +2087,10 @@ def print_optimizer_summary(
                     f"    {result['step']}. {cut_expression(result)}"
                     f"  | step AAO={100.0*result['step_pi0_eff']:.2f}%"
                     f", DVCS={100.0*result['step_dvcs_eff']:.2f}%"
+                    f", data-SB={100.0*result['step_data_sideband_eff']:.2f}%"
                     f"  | cumulative AAO={100.0*result['total_pi0_eff']:.2f}%"
-                    f", DVCS={100.0*result['total_dvcs_eff']:.2f}%",
+                    f", DVCS={100.0*result['total_dvcs_eff']:.2f}%"
+                    f", data-SB={100.0*result['total_data_sideband_eff']:.2f}%",
                     flush=True,
                 )
             #endfor
@@ -1925,6 +2099,8 @@ def print_optimizer_summary(
             print(
                 f"    FINAL: AAO retained={100.0*final['total_pi0_eff']:.2f}%"
                 f", DVCSgen retained={100.0*final['total_dvcs_eff']:.2f}%"
+                f", data-SB retained="
+                f"{100.0*final['total_data_sideband_eff']:.2f}%"
                 f", F={final['score']:.4g}",
                 flush=True,
             )
@@ -1964,6 +2140,27 @@ def main() -> int:
     if args.optimizer_min_improvement < 1.0:
         raise ValueError("--optimizer-min-improvement must be >= 1.")
     #endif
+    if (
+        args.optimizer_data_sideband_min
+        >= args.optimizer_data_sideband_max
+    ):
+        raise ValueError(
+            "--optimizer-data-sideband-min must be < "
+            "--optimizer-data-sideband-max."
+        )
+    #endif
+    if (
+        args.optimizer_data_sideband_max
+        > args.optimizer_mx2_1_preselection_max
+    ):
+        raise ValueError(
+            "--optimizer-data-sideband-max must be <= "
+            "--optimizer-mx2-1-preselection-max."
+        )
+    #endif
+    if args.optimizer_data_sideband_weight < 0.0:
+        raise ValueError("--optimizer-data-sideband-weight must be >= 0.")
+    #endif
 
     selected_keys = set(args.period or [p.key for p in PERIODS])
     selected_periods = [p for p in PERIODS if p.key in selected_keys]
@@ -1986,7 +2183,11 @@ def main() -> int:
             "Rectangular-cut optimizer: enabled independently for every "
             "period and separately in FT/FD; "
             f"reservoir <= {args.optimizer_max_events:,} events/class/region, "
-            f"max steps={args.optimizer_steps}."
+            f"max steps={args.optimizer_steps}; "
+            f"loose Mx2_1<{args.optimizer_mx2_1_preselection_max:.3g} GeV^2; "
+            f"data sideband {args.optimizer_data_sideband_min:.3g}<=Mx2_1<"
+            f"{args.optimizer_data_sideband_max:.3g} GeV^2; "
+            f"sideband weight={args.optimizer_data_sideband_weight:.3g}."
         )
     #endif
     log(
@@ -2020,6 +2221,10 @@ def main() -> int:
                 args.optimizer_min_step_pi0_eff,
                 args.optimizer_min_total_pi0_eff,
                 args.optimizer_min_improvement,
+                args.optimizer_mx2_1_preselection_max,
+                args.optimizer_data_sideband_min,
+                args.optimizer_data_sideband_max,
+                args.optimizer_data_sideband_weight,
             )
         #endfor
     else:
@@ -2040,6 +2245,10 @@ def main() -> int:
                     args.optimizer_min_step_pi0_eff,
                     args.optimizer_min_total_pi0_eff,
                     args.optimizer_min_improvement,
+                    args.optimizer_mx2_1_preselection_max,
+                    args.optimizer_data_sideband_min,
+                    args.optimizer_data_sideband_max,
+                    args.optimizer_data_sideband_weight,
                 ): period
                 for period in selected_periods
             }
