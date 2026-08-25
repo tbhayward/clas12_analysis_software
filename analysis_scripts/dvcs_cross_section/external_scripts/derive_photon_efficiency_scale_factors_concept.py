@@ -130,20 +130,31 @@ Shape canvases are written under:
 
     output/photon_efficiency_concept/stage1_shape_comparison/
 
-Optimizer CSV/TXT/progression plots are written under:
+The script intentionally keeps machine-readable output compact.  For each
+period it writes ONE combined CSV containing both optimizer and closure results:
+
+    output/photon_efficiency_concept/summary/
+        concept_summary_<period>.csv
+
+No per-bin TXT files and no per-bin optimizer/closure CSV files are produced.
+
+The main diagnostics are visual:
 
     output/photon_efficiency_concept/rectangular_optimizer/
-
-Template-fit closure CSV/TXT/summary canvases are written under:
+        rectangular_optimizer_<period>.png
 
     output/photon_efficiency_concept/template_fit_closure/
+        template_fit_closure_<period>.png
+        template_fit_response_<period>.png
+
+The first closure canvas shows RMS error in the fitted pi0 fraction versus cut
+step.  The response canvas shows fitted versus injected pi0 fraction, with the
+ideal y=x relation, so loss of template identifiability is visible directly.
 
 For every cumulative cut step, the closure test automatically chooses the
 single surviving reconstructed variable with the largest AAO-vs-DVCS
 Jensen-Shannon divergence, builds independent training and held-out templates,
-creates pseudo-data at known pi0 fractions, and refits those fractions. This
-tests whether increasing purity has made the remaining AAO and DVCS shapes too
-degenerate to determine their normalization from data.
+creates pseudo-data at known pi0 fractions, and refits those fractions.
 """
 
 from __future__ import annotations
@@ -1594,6 +1605,308 @@ def make_combined_closure_canvas(
     return out
 
 
+
+def write_period_summary_csv(
+    period: Period,
+    optimizer_summary: dict,
+    output_dir: Path,
+) -> Path:
+    """
+    Write ONE compact CSV per period containing both optimizer and closure
+    information for all E_probe bins and both detector regions.
+
+    This replaces the previous many-per-bin CSV/TXT output scheme.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out = output_dir / f"concept_summary_{period.key}.csv"
+
+    fields = (
+        "record_type",
+        "period",
+        "region",
+        "energy_bin",
+        "energy_min",
+        "energy_max",
+        "step",
+        "feature",
+        "direction",
+        "threshold",
+        "step_pi0_eff",
+        "step_dvcs_eff",
+        "step_data_sideband_eff",
+        "total_pi0_eff",
+        "total_dvcs_eff",
+        "total_data_sideband_eff",
+        "score",
+        "js_divergence",
+        "true_fraction",
+        "mean_fit",
+        "bias",
+        "rms_error",
+        "std_fit",
+        "mean_sigma",
+        "boundary_fraction",
+        "n_pi0_baseline",
+        "n_dvcs_baseline",
+        "n_data_sideband_baseline",
+    )
+
+    rows = []
+
+    for bin_key, e_min, e_max in E_PROBE_BINS:
+        bin_summary = optimizer_summary.get("energy_bins", {}).get(
+            bin_key,
+            {},
+        )
+
+        for region in ("FT", "FD"):
+            region_summary = bin_summary.get("regions", {}).get(region)
+            if region_summary is None:
+                continue
+            #endif
+
+            common = {
+                "period": period.key,
+                "region": region,
+                "energy_bin": bin_key,
+                "energy_min": e_min,
+                "energy_max": e_max,
+                "n_pi0_baseline": region_summary.get(
+                    "n_pi0_baseline",
+                    "",
+                ),
+                "n_dvcs_baseline": region_summary.get(
+                    "n_dvcs_baseline",
+                    "",
+                ),
+                "n_data_sideband_baseline": region_summary.get(
+                    "n_data_sideband_baseline",
+                    "",
+                ),
+            }
+
+            for result in region_summary.get("results", []):
+                row = {field: "" for field in fields}
+                row.update(common)
+                row.update(
+                    {
+                        "record_type": "optimizer",
+                        "step": result["step"],
+                        "feature": result["feature"],
+                        "direction": result["direction"],
+                        "threshold": result["threshold"],
+                        "step_pi0_eff": result["step_pi0_eff"],
+                        "step_dvcs_eff": result["step_dvcs_eff"],
+                        "step_data_sideband_eff": result[
+                            "step_data_sideband_eff"
+                        ],
+                        "total_pi0_eff": result["total_pi0_eff"],
+                        "total_dvcs_eff": result["total_dvcs_eff"],
+                        "total_data_sideband_eff": result[
+                            "total_data_sideband_eff"
+                        ],
+                        "score": result["score"],
+                    }
+                )
+                rows.append(row)
+            #endfor
+
+            for result in region_summary.get("closure_results", []):
+                row = {field: "" for field in fields}
+                row.update(common)
+                row.update(
+                    {
+                        "record_type": "closure",
+                        "step": result["step"],
+                        "feature": result["feature"],
+                        "js_divergence": result["js_divergence"],
+                        "true_fraction": result["true_fraction"],
+                        "mean_fit": result["mean_fit"],
+                        "bias": result["bias"],
+                        "rms_error": result["rms_error"],
+                        "std_fit": result["std_fit"],
+                        "mean_sigma": result["mean_sigma"],
+                        "boundary_fraction": result[
+                            "boundary_fraction"
+                        ],
+                    }
+                )
+                rows.append(row)
+            #endfor
+        #endfor
+    #endfor
+
+    with out.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    #endwith
+
+    return out
+
+
+def make_combined_closure_response_canvas(
+    period: Period,
+    optimizer_summary: dict,
+    output_dir: Path,
+) -> Path:
+    """
+    One 4x2 fitted-vs-injected pi0-fraction canvas per period.
+
+    Rows are E_probe bins and columns are FD/FT.  Each line is a cumulative
+    optimizer step.  The dashed diagonal is perfect closure.  This directly
+    visualizes whether the AAO/DVCS templates still contain enough shape
+    information to determine their relative normalization.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(
+        len(E_PROBE_BINS),
+        2,
+        figsize=(13.8, 4.0 * len(E_PROBE_BINS) + 1.0),
+        squeeze=False,
+    )
+
+    legend_handles = []
+    legend_labels = []
+
+    for irow, (bin_key, e_min, e_max) in enumerate(E_PROBE_BINS):
+        bin_summary = optimizer_summary.get("energy_bins", {}).get(
+            bin_key,
+            {},
+        )
+
+        for icol, region in enumerate(("FD", "FT")):
+            ax = axes[irow, icol]
+            region_summary = bin_summary.get("regions", {}).get(region)
+
+            closure_results = (
+                region_summary.get("closure_results", [])
+                if region_summary is not None
+                else []
+            )
+
+            ax.plot(
+                [0.0, 1.0],
+                [0.0, 1.0],
+                linestyle="--",
+                linewidth=1.0,
+                label="ideal",
+            )
+
+            if not closure_results:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "Insufficient closure statistics",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+            else:
+                steps = sorted(
+                    {
+                        int(result["step"])
+                        for result in closure_results
+                    }
+                )
+
+                for step in steps:
+                    rows = [
+                        result
+                        for result in closure_results
+                        if int(result["step"]) == step
+                    ]
+                    rows.sort(
+                        key=lambda result: result["true_fraction"]
+                    )
+
+                    line, = ax.plot(
+                        [row["true_fraction"] for row in rows],
+                        [row["mean_fit"] for row in rows],
+                        marker="o",
+                        linewidth=1.3,
+                        label=f"step {step}",
+                    )
+
+                    if irow == 0 and icol == 0:
+                        legend_handles.append(line)
+                        legend_labels.append(f"step {step}")
+                    #endif
+                #endfor
+
+                # Also annotate the best remaining 1D discriminator at the
+                # final cut step and its JS divergence.
+                final_step = max(steps)
+                final_rows = [
+                    row
+                    for row in closure_results
+                    if int(row["step"]) == final_step
+                ]
+                if final_rows:
+                    ref = final_rows[0]
+                    ax.text(
+                        0.03,
+                        0.97,
+                        (
+                            f"final best: {ref['feature']}\n"
+                            f"JS={ref['js_divergence']:.3f}"
+                        ),
+                        transform=ax.transAxes,
+                        va="top",
+                        ha="left",
+                        fontsize=8.0,
+                        bbox={
+                            "facecolor": "white",
+                            "alpha": 0.82,
+                            "edgecolor": "0.6",
+                        },
+                    )
+                #endif
+            #endif
+
+            ax.set_xlim(0.0, 1.0)
+            ax.set_ylim(0.0, 1.0)
+            ax.set_xlabel(r"Injected $f_{\pi^0}$")
+            ax.set_ylabel(r"Mean fitted $f_{\pi^0}$")
+            ax.set_title(
+                f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
+            )
+            ax.grid(alpha=0.25)
+        #endfor
+    #endfor
+
+    if legend_handles:
+        fig.legend(
+            legend_handles,
+            legend_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.975),
+            ncol=min(5, len(legend_handles)),
+            frameon=True,
+        )
+    #endif
+
+    fig.suptitle(
+        f"{period.label}: template-fit response by cumulative cut step",
+        fontsize=13,
+        y=0.998,
+    )
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.985,
+        bottom=0.055,
+        top=0.93,
+        wspace=0.18,
+        hspace=0.42,
+    )
+
+    out = output_dir / f"template_fit_response_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
 def write_optimizer_outputs(
     period: Period,
     region: str,
@@ -2730,19 +3043,6 @@ def process_period(
                     data_sideband_weight=optimizer_data_sideband_weight,
                 )
 
-                write_optimizer_outputs(
-                    period,
-                    region,
-                    bin_key,
-                    energy_min,
-                    energy_max,
-                    pi0_events,
-                    dvcs_events,
-                    data_sideband_events,
-                    results,
-                    optimizer_outdir,
-                )
-
                 closure_results = run_template_fit_closure(
                     pi0_events,
                     dvcs_events,
@@ -2758,19 +3058,6 @@ def process_period(
                         )
                         + (0 if region == "FT" else 100)
                     ),
-                )
-
-                closure_outdir = (
-                    output_dir.parent / "template_fit_closure"
-                )
-                write_template_fit_closure_outputs(
-                    period,
-                    region,
-                    bin_key,
-                    energy_min,
-                    energy_max,
-                    closure_results,
-                    closure_outdir,
                 )
 
                 optimizer_summary["energy_bins"][bin_key]["regions"][region] = {
@@ -2803,6 +3090,28 @@ def process_period(
         log(
             f"{period.label}: wrote combined template-fit closure canvas "
             f"{combined_closure_plot}"
+        )
+
+        combined_response_plot = (
+            make_combined_closure_response_canvas(
+                period,
+                optimizer_summary,
+                output_dir.parent / "template_fit_closure",
+            )
+        )
+        log(
+            f"{period.label}: wrote fitted-vs-injected closure response "
+            f"canvas {combined_response_plot}"
+        )
+
+        summary_csv = write_period_summary_csv(
+            period,
+            optimizer_summary,
+            output_dir.parent / "summary",
+        )
+        log(
+            f"{period.label}: wrote single combined optimizer/closure CSV "
+            f"{summary_csv}"
         )
 
         # Make one cumulative shape canvas for every period x detector x
