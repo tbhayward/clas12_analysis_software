@@ -2171,7 +2171,7 @@ def make_combined_data_template_fit_canvas(
 
     n_energy = len(E_PROBE_BINS)
     fig = plt.figure(
-        figsize=(14.4, 5.0 * n_energy + 1.2),
+        figsize=(14.6, 5.8 * n_energy + 1.4),
     )
     grid = fig.add_gridspec(
         2 * n_energy,
@@ -2179,9 +2179,12 @@ def make_combined_data_template_fit_canvas(
         height_ratios=[
             value
             for _ in range(n_energy)
-            for value in (3.2, 1.0)
+            for value in (3.4, 1.0)
         ],
-        hspace=0.13,
+        # Keep the fit and its pull panel visually grouped, while leaving
+        # enough total vertical space that the next E_probe-row title never
+        # collides with the previous pull-panel x label.
+        hspace=0.28,
         wspace=0.20,
     )
 
@@ -2223,7 +2226,8 @@ def make_combined_data_template_fit_canvas(
                     transform=ax.transAxes,
                 )
                 ax.set_title(
-                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
+                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV",
+                    pad=10,
                 )
                 ax_pull.axis("off")
                 continue
@@ -2286,7 +2290,12 @@ def make_combined_data_template_fit_canvas(
 
             ax.set_ylabel("Events / bin")
             ax.set_title(
-                f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
+                (
+                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
+                    f"   |   fit variable: {fit['feature']}"
+                ),
+                pad=10,
+                fontsize=10.5,
             )
             ax.grid(alpha=0.20)
 
@@ -2314,14 +2323,20 @@ def make_combined_data_template_fit_canvas(
                 "o",
                 markersize=3.0,
             )
-            ax_pull.set_ylabel("pull")
+            ax_pull.set_ylabel(
+                "pull",
+                fontsize=9.0,
+                labelpad=4,
+            )
             ax_pull.set_xlabel(
-                feature_plot_label(fit["feature"])
+                feature_plot_label(fit["feature"]),
+                labelpad=8,
+                fontsize=9.5,
             )
             ax_pull.grid(alpha=0.18)
 
             annotation = (
-                f"step {fit['step']}: {fit['feature']}\n"
+                f"selected cut step {fit['step']}\n"
                 rf"$f_{{\pi^0}}={fit['fraction_pi0']:.3f}"
                 rf"\pm{fit['fraction_pi0_stat']:.3f}$"
                 + "\n"
@@ -2340,7 +2355,7 @@ def make_combined_data_template_fit_canvas(
                 transform=ax.transAxes,
                 ha="right",
                 va="top",
-                fontsize=8.0,
+                fontsize=7.6,
                 bbox={
                     "facecolor": "white",
                     "alpha": 0.86,
@@ -2372,7 +2387,7 @@ def make_combined_data_template_fit_canvas(
     fig.subplots_adjust(
         left=0.075,
         right=0.985,
-        bottom=0.035,
+        bottom=0.045,
         top=0.945,
     )
 
