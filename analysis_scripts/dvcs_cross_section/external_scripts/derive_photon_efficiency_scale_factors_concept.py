@@ -745,7 +745,7 @@ def make_canvas(
                 # keeps empty bins from causing log-scale warnings while not
                 # distorting any nonzero bin content.
                 ax.set_yscale("log")
-                ax.set_ylim(bottom=1.0e-6)
+                ax.set_ylim(1.0e-3, 1.0)
             #endif
 
             ax.tick_params(axis="both", labelsize=7.8)
