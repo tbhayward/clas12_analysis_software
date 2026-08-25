@@ -520,7 +520,8 @@ PERIODS: Tuple[Period, ...] = (
         f"{_BASE}/bkg_rga_fa18_inb_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_fa18_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-        "rga_fa18_inb_eppi0.root",
+        "efficiency_study/"
+        "nSidis_rga_fa18_inb_eppi0.root",
         f"{_BASE}/aaogen_rga_fa18_inb_eppi0_0.40GeV.root",
     ),
     Period(
@@ -530,7 +531,8 @@ PERIODS: Tuple[Period, ...] = (
         f"{_BASE}/bkg_rga_fa18_out_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_fa18_out_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-        "rga_fa18_out_eppi0.root",
+        "efficiency_study/"
+        "nSidis_rga_fa18_out_eppi0.root",
         f"{_BASE}/aaogen_rga_fa18_out_eppi0_0.40GeV.root",
     ),
     Period(
@@ -540,7 +542,8 @@ PERIODS: Tuple[Period, ...] = (
         f"{_BASE}/bkg_rga_sp18_inb_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_sp18_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-        "rga_sp18_inb_eppi0.root",
+        "efficiency_study/"
+        "nSidis_rga_sp18_inb_eppi0.root",
         f"{_BASE}/aaogen_rga_sp18_inb_eppi0_0.40GeV.root",
     ),
     Period(
@@ -550,7 +553,8 @@ PERIODS: Tuple[Period, ...] = (
         f"{_BASE}/bkg_rga_sp18_out_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_sp18_out_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-        "rga_sp18_out_eppi0.root",
+        "efficiency_study/"
+        "nSidis_rga_sp18_out_eppi0.root",
         f"{_BASE}/aaogen_rga_sp18_out_eppi0_0.40GeV.root",
     ),
     Period(
@@ -560,7 +564,8 @@ PERIODS: Tuple[Period, ...] = (
         f"{_BASE}/bkg_rga_sp19_inb_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_sp19_inb_epgamma_0.40GeV.root",
         "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
-        "rga_sp19_inb_eppi0.root",
+        "efficiency_study/"
+        "nSidis_rga_sp19_inb_eppi0.root",
         f"{_BASE}/aaogen_rga_sp19_inb_eppi0_0.40GeV.root",
     ),
 )
@@ -6327,7 +6332,12 @@ def preflight_custom_branches(
 ) -> Tuple[str, int]:
     """Preflight a ROOT tree against an explicit branch list."""
     if not Path(path).exists():
-        raise FileNotFoundError(path)
+        raise FileNotFoundError(
+            f"Required ROOT file does not exist: {path}\n"
+            "For the data efficiency numerator, this must be the nSidis "
+            "eppi0 companion production corresponding to the nSidis epgamma "
+            "denominator file."
+        )
     #endif
     with uproot.open(path) as root_file:
         tree, found = get_tree(root_file, tree_name)
