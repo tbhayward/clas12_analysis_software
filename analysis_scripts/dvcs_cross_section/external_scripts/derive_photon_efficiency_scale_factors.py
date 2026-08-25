@@ -22,7 +22,7 @@ run-group demonstration:
   * E_miss (= E_probe^pred) < 2.0 GeV
   * keep the full morphed/nuisance pi0-vs-DVCS/BH composition fit
   * keep reconstructed eppi0 association and the final data/MC efficiency
-  * skip CLASDIS and development-only Stage-I/grand diagnostics for speed
+  * skip CLASDIS and the expensive grand-diagnostic reread/canvas suite
 
 CURRENT USER-FACING WORKFLOW
 ----------------------------
@@ -17936,25 +17936,28 @@ def process_nsidis_study_period(
             "uncertainty_support": central_support,
         }
 
+        # Retain the compact Stage-I shape-comparison canvases in demo mode:
+        # they are useful for showing the cumulative cuts and template
+        # separation. CLASDIS is absent in demo mode, so those canvases contain
+        # data, AAO pi0, and DVCSgen BH/DVCS only.
+        make_nsidis_shape_comparison_canvases(
+            period, ns_epg_f, pi0_f, dvcs_f, stage1_outdir,
+            clasdis_f=clasdis_f,
+            ft_theta_max=ft_theta_max,
+            max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
+            mm2_min=float(args_dict["den_fit_mm2_min"]),
+            mm2_max=float(args_dict["den_fit_mm2_max"]),
+            probe_m2_max=central_support,
+        )
+
         if bool(args_dict.get("run_group_demo_tight", False)):
             log(
-                f"{period.label}: RUN-GROUP DEMO: skipping development-only "
-                "Stage-I shape-comparison and grand-diagnostic canvases. "
-                "Nominal morphed composition-fit canvases and Stage-III "
-                "efficiency outputs remain enabled."
+                f"{period.label}: RUN-GROUP DEMO: retained Stage-I "
+                "shape-comparison canvases; skipping only the expensive grand "
+                "diagnostic reread/canvas suite. Morphed composition fits and "
+                "Stage-III efficiency outputs remain enabled."
             )
         else:
-            make_nsidis_shape_comparison_canvases(
-                period, ns_epg_f, pi0_f, dvcs_f, stage1_outdir,
-                clasdis_f=clasdis_f,
-                ft_theta_max=ft_theta_max,
-                max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
-                mm2_min=float(args_dict["den_fit_mm2_min"]),
-                mm2_max=float(args_dict["den_fit_mm2_max"]),
-                probe_m2_max=central_support,
-            )
-
-            # Keep the full visual diagnostic suite in ordinary production.
             run_grand_stage1_diagnostics_for_period(
                 period,
                 args_dict,
