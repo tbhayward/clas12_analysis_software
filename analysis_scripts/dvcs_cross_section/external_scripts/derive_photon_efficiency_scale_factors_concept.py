@@ -195,6 +195,24 @@ same bounded AAO-only morphing.  The fallback is labeled on the plots and in
 the single per-period summary CSV rather than silently pretending that the
 sideband fraction is known.
 
+FD sector diagnostics are now added WITHOUT refitting the physics composition
+independently in each sector. The optimizer cuts, operating step, fit
+discriminator, fitted composition fractions, and AAO morph nuisance parameters
+remain those obtained from the period-level FD_all fit. The same quantities
+are then applied independently to sectors 1-6 using sector-specific data/MC
+template shapes. This exposes detector-sector response differences without
+allowing a sector-by-sector composition fit to absorb them.
+
+The sector diagnostic files are kept in one dedicated hierarchy:
+
+    output/photon_efficiency_concept/fd_sector_diagnostics/<period>/
+        sector_template_fit_<Eprobe-bin>.png
+        sector_overview_<period>.png
+        sector_summary_<period>.csv
+
+There are four sector-fit canvases plus one overview and one compact CSV per
+period; no per-sector files are generated.
+
 The visual outputs per period are:
 
     output/photon_efficiency_concept/data_template_fit/
@@ -475,6 +493,11 @@ OPTIMIZER_ALLOWED_DIRECTIONS = {
 # Mx2_1 defines signal versus sideband and Emiss2 defines the E_probe bin,
 # therefore the real-data composition fit uses only these remaining variables.
 DATA_FIT_FEATURES: Tuple[str, ...] = tuple(OPTIMIZER_SCAN_FEATURES)
+
+# Extra event metadata retained in the same reservoir. It is never scanned by
+# the optimizer and exists only for downstream detector diagnostics.
+EVENT_METADATA: Tuple[str, ...] = ("fd_sector",)
+EVENT_COLUMNS: Tuple[str, ...] = OPTIMIZER_FEATURES + EVENT_METADATA
 
 
 # =============================================================================
@@ -848,6 +871,33 @@ def photon_theta_deg(values: np.ndarray, unit: str) -> np.ndarray:
     return values if unit == "deg" else np.rad2deg(values)
 
 
+
+def photon_phi_deg(values: np.ndarray, unit: str) -> np.ndarray:
+    """Return reconstructed photon azimuth in degrees."""
+    values = np.asarray(values, dtype=float)
+    return values if unit == "deg" else np.rad2deg(values)
+
+
+def fd_sector_from_phi_deg(phi_deg: np.ndarray) -> np.ndarray:
+    """
+    CLAS12 FD sector from reconstructed photon azimuth:
+      S1 330-360 or 0-30; S2 30-90; S3 90-150;
+      S4 150-210; S5 210-270; S6 270-330 deg.
+    """
+    phi = np.asarray(phi_deg, dtype=float)
+    wrapped = np.mod(phi, 360.0)
+    sector = np.zeros(phi.shape, dtype=np.float32)
+    finite = np.isfinite(wrapped)
+
+    sector[finite & ((wrapped >= 330.0) | (wrapped < 30.0))] = 1.0
+    sector[finite & (wrapped >= 30.0) & (wrapped < 90.0)] = 2.0
+    sector[finite & (wrapped >= 90.0) & (wrapped < 150.0)] = 3.0
+    sector[finite & (wrapped >= 150.0) & (wrapped < 210.0)] = 4.0
+    sector[finite & (wrapped >= 210.0) & (wrapped < 270.0)] = 5.0
+    sector[finite & (wrapped >= 270.0) & (wrapped < 330.0)] = 6.0
+    return sector
+
+
 def delta_phi_residual_deg(values: np.ndarray) -> np.ndarray:
     """
     Use the stored ROOT-tree Delta_phi branch; do NOT reconstruct Delta_phi
@@ -955,15 +1005,18 @@ class PriorityReservoir:
 
 
 def optimizer_matrix(values: Dict[str, np.ndarray], mask: np.ndarray) -> np.ndarray:
-    """Build the reconstructed-feature matrix used by the optimizer."""
+    """
+    Build the reservoir event matrix. Physics variables come first, followed by
+    detector metadata that the optimizer never scans.
+    """
     if not np.any(mask):
-        return np.empty((0, len(OPTIMIZER_FEATURES)), dtype=np.float32)
+        return np.empty((0, len(EVENT_COLUMNS)), dtype=np.float32)
     #endif
 
     return np.column_stack(
         [
             np.asarray(values[key][mask], dtype=np.float32)
-            for key in OPTIMIZER_FEATURES
+            for key in EVENT_COLUMNS
         ]
     )
 
@@ -2814,6 +2867,531 @@ def feature_plot_label(feature: str) -> str:
     return labels.get(feature, feature)
 
 
+
+# =============================================================================
+# FD sector diagnostics
+# =============================================================================
+
+def fd_sector_mask(events: np.ndarray, sector: int) -> np.ndarray:
+    """Mask one reconstructed-photon FD sector in a reservoir array."""
+    values = np.asarray(
+        events[:, EVENT_INDEX["fd_sector"]],
+        dtype=float,
+    )
+    return np.isfinite(values) & (np.rint(values).astype(int) == int(sector))
+
+
+def build_fixed_composition_sector_result(
+    data_all: np.ndarray,
+    pi0_all: np.ndarray,
+    dvcs_all: np.ndarray,
+    optimizer_results: list,
+    global_fit: dict,
+    sector: int,
+    n_bins: int,
+) -> dict:
+    """
+    Sector detector diagnostic using the GLOBAL FD composition and morph.
+
+    No fraction or nuisance parameter is refitted by sector. Only the
+    sector-specific reconstructed template shapes change.
+    """
+    if not global_fit or not global_fit.get("success", False):
+        return {
+            "success": False,
+            "status": "global_fd_fit_unavailable",
+            "sector": int(sector),
+        }
+    #endif
+
+    feature = str(global_fit["feature"])
+    step = int(global_fit["step"])
+    mx2_idx = FEATURE_INDEX["Mx2_1"]
+
+    def sector_signal(events: np.ndarray) -> np.ndarray:
+        return events[
+            fd_sector_mask(events, sector)
+            & np.isfinite(events[:, mx2_idx])
+            & (events[:, mx2_idx] < SIGNAL_MX2_1_MAX)
+        ]
+
+    signal_data = sector_signal(data_all)
+    signal_pi0 = sector_signal(pi0_all)
+    signal_dvcs = sector_signal(dvcs_all)
+    near_sideband = data_all[
+        fd_sector_mask(data_all, sector)
+        & np.isfinite(data_all[:, mx2_idx])
+        & (data_all[:, mx2_idx] >= NEAR_SIDEBAND_MIN)
+        & (data_all[:, mx2_idx] < NEAR_SIDEBAND_MAX)
+    ]
+
+    def apply_step(events: np.ndarray) -> np.ndarray:
+        masks = build_cumulative_optimizer_masks(events, optimizer_results)
+        return events[masks[min(step, len(masks) - 1)]]
+
+    signal_data = apply_step(signal_data)
+    signal_pi0 = apply_step(signal_pi0)
+    signal_dvcs = apply_step(signal_dvcs)
+    near_sideband = apply_step(near_sideband)
+
+    edges = data_fit_edges_for_feature(feature, n_bins=n_bins)
+    if edges.size < 5:
+        return {
+            "success": False,
+            "status": "invalid_fit_edges",
+            "sector": int(sector),
+        }
+    #endif
+
+    ifeature = FEATURE_INDEX[feature]
+    fit_min = float(edges[0])
+    fit_max = float(edges[-1])
+
+    def template_probability(events: np.ndarray) -> Tuple[np.ndarray, int]:
+        values = np.asarray(events[:, ifeature], dtype=float)
+        in_range = (
+            np.isfinite(values)
+            & (values >= fit_min)
+            & (values < fit_max)
+        )
+        counts, _ = np.histogram(values[in_range], bins=edges)
+        probs = counts.astype(float) + 0.5
+        probs /= np.sum(probs)
+        return probs, int(np.sum(counts))
+
+    p_pi0_nominal, n_pi0 = template_probability(signal_pi0)
+    p_dvcs, n_dvcs = template_probability(signal_dvcs)
+
+    data_values = np.asarray(signal_data[:, ifeature], dtype=float)
+    data_in_range = (
+        np.isfinite(data_values)
+        & (data_values >= fit_min)
+        & (data_values < fit_max)
+    )
+    data_counts, _ = np.histogram(data_values[data_in_range], bins=edges)
+    n_data = int(np.sum(data_counts))
+
+    use_sideband = str(global_fit.get("fit_mode", "")) == "three_template"
+    if use_sideband:
+        p_sideband, n_sideband = template_probability(near_sideband)
+    else:
+        p_sideband = np.zeros_like(p_pi0_nominal)
+        n_sideband = 0
+    #endif
+
+    required = [n_data, n_pi0, n_dvcs]
+    if use_sideband:
+        required.append(n_sideband)
+    #endif
+    if min(required) < 20:
+        return {
+            "success": False,
+            "status": "insufficient_sector_statistics",
+            "sector": int(sector),
+            "n_data": n_data,
+            "n_pi0_template": n_pi0,
+            "n_dvcs_template": n_dvcs,
+            "n_sideband_template": n_sideband,
+        }
+    #endif
+
+    p_pi0 = morph_template_probability(
+        p_pi0_nominal,
+        float(global_fit.get("morph_shift_bins", 0.0)),
+        float(global_fit.get("morph_smear_sigma_bins", 0.0)),
+    )
+
+    f_pi0 = float(global_fit["fraction_pi0"])
+    f_dvcs = float(global_fit["fraction_dvcs"])
+    f_side = float(global_fit["fraction_sideband"]) if use_sideband else 0.0
+
+    total_probability = (
+        f_pi0 * p_pi0
+        + f_dvcs * p_dvcs
+        + f_side * p_sideband
+    )
+    total_probability = np.clip(total_probability, 1.0e-15, None)
+    total_probability /= np.sum(total_probability)
+
+    expected_total = n_data * total_probability
+    expected_pi0 = n_data * f_pi0 * p_pi0
+    expected_dvcs = n_data * f_dvcs * p_dvcs
+    expected_sideband = n_data * f_side * p_sideband
+
+    pull = (
+        data_counts - expected_total
+    ) / np.sqrt(np.maximum(expected_total, 1.0))
+    deviance = poisson_deviance(data_counts, expected_total)
+
+    return {
+        "success": True,
+        "status": "ok",
+        "sector": int(sector),
+        "fit_mode": str(global_fit.get("fit_mode", "")),
+        "feature": feature,
+        "step": step,
+        "fraction_pi0": f_pi0,
+        "fraction_dvcs": f_dvcs,
+        "fraction_sideband": f_side,
+        "n_data": n_data,
+        "n_pi0_template": n_pi0,
+        "n_dvcs_template": n_dvcs,
+        "n_sideband_template": n_sideband,
+        "deviance": float(deviance),
+        "deviance_per_bin": float(deviance / max(data_counts.size, 1)),
+        "rms_pull": float(np.sqrt(np.mean(pull * pull))),
+        "max_abs_pull": float(np.max(np.abs(pull))),
+        "edges": np.asarray(edges, dtype=float),
+        "data_counts": np.asarray(data_counts, dtype=float),
+        "expected_total": np.asarray(expected_total, dtype=float),
+        "expected_pi0": np.asarray(expected_pi0, dtype=float),
+        "expected_dvcs": np.asarray(expected_dvcs, dtype=float),
+        "expected_sideband": np.asarray(expected_sideband, dtype=float),
+        "pull": np.asarray(pull, dtype=float),
+    }
+
+
+def build_fd_sector_diagnostics(
+    optimizer_events: dict,
+    optimizer_summary: dict,
+    n_bins: int,
+) -> dict:
+    """Build sectors 1-6 using the global FD fit in each E_probe bin."""
+    result = {"energy_bins": {}}
+
+    for bin_key, e_min, e_max in E_PROBE_BINS:
+        fd_summary = (
+            optimizer_summary.get("energy_bins", {})
+            .get(bin_key, {})
+            .get("regions", {})
+            .get("FD")
+        )
+        global_fit = fd_summary.get("data_fit") if fd_summary else None
+        optimizer_results = fd_summary.get("results", []) if fd_summary else []
+
+        sector_results = {}
+        for sector in range(1, 7):
+            sector_results[sector] = build_fixed_composition_sector_result(
+                optimizer_events["data"]["FD"][bin_key],
+                optimizer_events["pi0"]["FD"][bin_key],
+                optimizer_events["dvcs"]["FD"][bin_key],
+                optimizer_results,
+                global_fit,
+                sector,
+                n_bins,
+            )
+        #endfor
+
+        result["energy_bins"][bin_key] = {
+            "energy_min": e_min,
+            "energy_max": e_max,
+            "global_fit": global_fit,
+            "sectors": sector_results,
+        }
+    #endfor
+
+    return result
+
+
+def make_fd_sector_template_fit_canvases(
+    period: Period,
+    sector_diagnostics: dict,
+    output_dir: Path,
+) -> list:
+    """One 3x2 sector canvas per E_probe bin; no per-sector files."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    outputs = []
+
+    for bin_key, e_min, e_max in E_PROBE_BINS:
+        bin_result = sector_diagnostics["energy_bins"][bin_key]
+        global_fit = bin_result.get("global_fit")
+
+        fig = plt.figure(figsize=(15.0, 14.2))
+        outer = fig.add_gridspec(
+            3, 2,
+            hspace=0.36,
+            wspace=0.20,
+            left=0.07,
+            right=0.985,
+            bottom=0.055,
+            top=0.91,
+        )
+        legend_handles = []
+        legend_labels = []
+
+        for sector in range(1, 7):
+            row = (sector - 1) // 2
+            col = (sector - 1) % 2
+            inner = outer[row, col].subgridspec(
+                2, 1,
+                height_ratios=(3.2, 1.0),
+                hspace=0.06,
+            )
+            ax = fig.add_subplot(inner[0, 0])
+            ax_pull = fig.add_subplot(inner[1, 0], sharex=ax)
+            result = bin_result["sectors"][sector]
+
+            if not result.get("success", False):
+                ax.text(
+                    0.5, 0.5,
+                    (
+                        f"Sector {sector}\n"
+                        f"{result.get('status', 'unavailable')}\n"
+                        f"Ndata={result.get('n_data', 0):,}"
+                    ),
+                    ha="center", va="center", transform=ax.transAxes,
+                )
+                ax.set_title(f"FD sector {sector}")
+                ax_pull.axis("off")
+                continue
+            #endif
+
+            edges = np.asarray(result["edges"], dtype=float)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            widths = edges[1:] - edges[:-1]
+            counts = np.asarray(result["data_counts"], dtype=float)
+
+            data_handle = ax.errorbar(
+                centers, counts,
+                yerr=np.sqrt(np.maximum(counts, 1.0)),
+                xerr=0.5 * widths,
+                fmt="o", markersize=3.0, linewidth=0.9,
+                label="data",
+            )
+            total_handle, = ax.step(
+                centers, result["expected_total"],
+                where="mid", linewidth=1.6,
+                label="fixed global composition",
+            )
+            pi_handle, = ax.step(
+                centers, result["expected_pi0"],
+                where="mid", linewidth=1.2, linestyle="--",
+                label=r"$\pi^0$",
+            )
+            dvcs_handle, = ax.step(
+                centers, result["expected_dvcs"],
+                where="mid", linewidth=1.2, linestyle=":",
+                label="DVCS",
+            )
+
+            side_handle = None
+            if result["fit_mode"] == "three_template":
+                side_handle, = ax.step(
+                    centers, result["expected_sideband"],
+                    where="mid", linewidth=1.1, linestyle="-.",
+                    label="sideband",
+                )
+            #endif
+
+            if sector == 1:
+                legend_handles = [
+                    data_handle, total_handle, pi_handle, dvcs_handle
+                ]
+                legend_labels = [
+                    "data", "fixed global composition", r"$\pi^0$", "DVCS"
+                ]
+                if side_handle is not None:
+                    legend_handles.append(side_handle)
+                    legend_labels.append("sideband")
+                #endif
+            #endif
+
+            ax.set_title(
+                f"FD sector {sector} | {feature_plot_label(result['feature'])}",
+                fontsize=9.5,
+            )
+            ax.set_ylabel("Events / bin")
+            ax.grid(alpha=0.18)
+
+            annotation = (
+                f"global {result['fit_mode']}\n"
+                rf"$f_{{\pi^0}}={result['fraction_pi0']:.3f}$, "
+                rf"$f_{{DVCS}}={result['fraction_dvcs']:.3f}$"
+                + (
+                    rf", $f_{{SB}}={result['fraction_sideband']:.3f}$"
+                    if result["fit_mode"] == "three_template" else ""
+                )
+                + "\n"
+                + (
+                    f"D/Nbin={result['deviance_per_bin']:.2f}; "
+                    f"RMS pull={result['rms_pull']:.2f}; N={result['n_data']:,}"
+                )
+            )
+            ax.text(
+                0.98, 0.96, annotation,
+                transform=ax.transAxes,
+                ha="right", va="top", fontsize=7.4,
+                bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "0.6"},
+            )
+
+            ax_pull.axhline(0.0, linestyle="--", linewidth=0.9)
+            ax_pull.axhline(3.0, linestyle=":", linewidth=0.7)
+            ax_pull.axhline(-3.0, linestyle=":", linewidth=0.7)
+            ax_pull.plot(centers, result["pull"], "o", markersize=2.7)
+            ax_pull.set_ylabel("pull", fontsize=8.5)
+            ax_pull.set_xlabel(
+                feature_plot_label(result["feature"]), fontsize=8.8
+            )
+            ax_pull.grid(alpha=0.16)
+            plt.setp(ax.get_xticklabels(), visible=False)
+        #endfor
+
+        if legend_handles:
+            fig.legend(
+                legend_handles, legend_labels,
+                loc="upper center", bbox_to_anchor=(0.5, 0.955),
+                ncol=len(legend_handles), frameon=True,
+            )
+        #endif
+
+        fit_description = "global FD fit unavailable"
+        if global_fit and global_fit.get("success", False):
+            fit_description = (
+                f"global fractions fixed: "
+                f"f_pi0={global_fit['fraction_pi0']:.3f}, "
+                f"f_DVCS={global_fit['fraction_dvcs']:.3f}, "
+                f"f_SB={global_fit['fraction_sideband']:.3f}"
+            )
+        #endif
+
+        fig.suptitle(
+            (
+                f"{period.label}: FD sector diagnostics, "
+                f"{e_min:g} <= E_probe < {e_max:g} GeV\n"
+                + fit_description
+            ),
+            fontsize=12.5, y=0.995,
+        )
+
+        out = output_dir / f"sector_template_fit_{bin_key}.png"
+        fig.savefig(out, dpi=180)
+        plt.close(fig)
+        outputs.append(out)
+    #endfor
+
+    return outputs
+
+
+def make_fd_sector_overview_canvas(
+    period: Period,
+    sector_diagnostics: dict,
+    output_dir: Path,
+) -> Path:
+    """Sector x E_probe overview of residual quality."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    shape = (6, len(E_PROBE_BINS))
+    deviance = np.full(shape, np.nan)
+    rms_pull = np.full(shape, np.nan)
+
+    for ibin, (bin_key, _emin, _emax) in enumerate(E_PROBE_BINS):
+        for sector in range(1, 7):
+            result = sector_diagnostics["energy_bins"][bin_key]["sectors"][sector]
+            if result.get("success", False):
+                deviance[sector - 1, ibin] = result["deviance_per_bin"]
+                rms_pull[sector - 1, ibin] = result["rms_pull"]
+            #endif
+        #endfor
+    #endfor
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.0), constrained_layout=True)
+    xlabels = [f"{emin:g}-{emax:g}" for _key, emin, emax in E_PROBE_BINS]
+    ylabels = [f"S{s}" for s in range(1, 7)]
+
+    for ax, matrix, title, cbar_label in (
+        (axes[0], deviance, "Poisson deviance / histogram bin", "D / Nbin"),
+        (axes[1], rms_pull, "RMS Pearson pull", "RMS pull"),
+    ):
+        image = ax.imshow(matrix, aspect="auto", origin="upper")
+        ax.set_xticks(range(len(xlabels)))
+        ax.set_xticklabels(xlabels)
+        ax.set_yticks(range(6))
+        ax.set_yticklabels(ylabels)
+        ax.set_xlabel(r"$E_{\rm probe}$ bin (GeV)")
+        ax.set_ylabel("FD photon sector")
+        ax.set_title(title)
+        for isector in range(6):
+            for ibin in range(len(E_PROBE_BINS)):
+                value = matrix[isector, ibin]
+                if np.isfinite(value):
+                    ax.text(
+                        ibin, isector, f"{value:.1f}",
+                        ha="center", va="center", fontsize=8,
+                    )
+                #endif
+            #endfor
+        #endfor
+        cbar = fig.colorbar(image, ax=ax)
+        cbar.set_label(cbar_label)
+    #endfor
+
+    fig.suptitle(
+        (
+            f"{period.label}: FD sector residual overview\n"
+            "global FD composition/cuts/morph fixed in every sector"
+        ),
+        fontsize=12.5,
+    )
+    out = output_dir / f"sector_overview_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
+def write_fd_sector_summary_csv(
+    period: Period,
+    sector_diagnostics: dict,
+    output_dir: Path,
+) -> Path:
+    """One compact FD-sector summary CSV per period."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out = output_dir / f"sector_summary_{period.key}.csv"
+
+    fields = (
+        "period", "energy_bin", "energy_min", "energy_max", "sector",
+        "status", "global_fit_mode", "feature", "step",
+        "global_fraction_pi0", "global_fraction_dvcs",
+        "global_fraction_sideband", "n_data", "n_pi0_template",
+        "n_dvcs_template", "n_sideband_template", "deviance",
+        "deviance_per_bin", "rms_pull", "max_abs_pull",
+    )
+
+    rows = []
+    for bin_key, e_min, e_max in E_PROBE_BINS:
+        for sector in range(1, 7):
+            result = sector_diagnostics["energy_bins"][bin_key]["sectors"][sector]
+            rows.append({
+                "period": period.key,
+                "energy_bin": bin_key,
+                "energy_min": e_min,
+                "energy_max": e_max,
+                "sector": sector,
+                "status": result.get("status", ""),
+                "global_fit_mode": result.get("fit_mode", ""),
+                "feature": result.get("feature", ""),
+                "step": result.get("step", ""),
+                "global_fraction_pi0": result.get("fraction_pi0", ""),
+                "global_fraction_dvcs": result.get("fraction_dvcs", ""),
+                "global_fraction_sideband": result.get("fraction_sideband", ""),
+                "n_data": result.get("n_data", ""),
+                "n_pi0_template": result.get("n_pi0_template", ""),
+                "n_dvcs_template": result.get("n_dvcs_template", ""),
+                "n_sideband_template": result.get("n_sideband_template", ""),
+                "deviance": result.get("deviance", ""),
+                "deviance_per_bin": result.get("deviance_per_bin", ""),
+                "rms_pull": result.get("rms_pull", ""),
+                "max_abs_pull": result.get("max_abs_pull", ""),
+            })
+        #endfor
+    #endfor
+
+    with out.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(rows)
+    #endwith
+    return out
+
+
 def make_combined_data_template_fit_canvas(
     period: Period,
     optimizer_summary: dict,
@@ -4459,7 +5037,7 @@ def stream_sample_histograms(
         region: {
             bin_key: PriorityReservoir(
                 optimizer_max_events,
-                len(OPTIMIZER_FEATURES),
+                len(EVENT_COLUMNS),
                 optimizer_seed
                 + region_seed_offset[region]
                 + 1000 * ibin,
@@ -4504,6 +5082,8 @@ def stream_sample_histograms(
                 angle_unit,
             )
             photon_theta = photon_theta_deg(arrays["p2_theta"], angle_unit)
+            photon_phi = photon_phi_deg(arrays["p2_phi"], angle_unit)
+            photon_sector = fd_sector_from_phi_deg(photon_phi)
 
             base = np.isfinite(theta_egamma) & (
                 theta_egamma > THETA_EGAMMA_MIN_DEG
@@ -4539,6 +5119,7 @@ def stream_sample_histograms(
                     arrays["theta_gamma_gamma"],
                     dtype=float,
                 ),
+                "fd_sector": photon_sector,
             }
 
             e_probe = values["Emiss2"]
@@ -4588,7 +5169,7 @@ def stream_sample_histograms(
                 )
 
                 for row_name, row_mask in row_masks.items():
-                    for key in values:
+                    for key in OPTIMIZER_FEATURES:
                         v = values[key]
                         mask = row_mask & np.isfinite(v)
                         if np.any(mask):
@@ -4660,6 +5241,12 @@ def stream_sample_histograms(
 FEATURE_INDEX = {
     feature: i
     for i, feature in enumerate(OPTIMIZER_FEATURES)
+}
+
+
+EVENT_INDEX = {
+    column: i
+    for i, column in enumerate(EVENT_COLUMNS)
 }
 
 
@@ -5597,6 +6184,43 @@ def process_period(
             f"{mx2_control_canvas}"
         )
 
+        # FD sector diagnostics: deliberately keep the period-level FD
+        # composition fit fixed and only expose sector-dependent shapes.
+        sector_diagnostics = build_fd_sector_diagnostics(
+            optimizer_events,
+            optimizer_summary,
+            n_bins=closure_bins,
+        )
+        sector_outdir = (
+            output_dir.parent
+            / "fd_sector_diagnostics"
+            / period.key
+        )
+
+        sector_fit_canvases = make_fd_sector_template_fit_canvases(
+            period,
+            sector_diagnostics,
+            sector_outdir,
+        )
+        log(
+            f"{period.label}: wrote {len(sector_fit_canvases)} FD sector "
+            f"canvases under {sector_outdir}."
+        )
+
+        sector_overview = make_fd_sector_overview_canvas(
+            period,
+            sector_diagnostics,
+            sector_outdir,
+        )
+        log(f"{period.label}: wrote FD sector overview {sector_overview}.")
+
+        sector_csv = write_fd_sector_summary_csv(
+            period,
+            sector_diagnostics,
+            sector_outdir,
+        )
+        log(f"{period.label}: wrote FD sector summary {sector_csv}.")
+
         summary_csv = write_period_summary_csv(
             period,
             optimizer_summary,
@@ -6010,7 +6634,9 @@ def main() -> int:
             "third-template sideband accepted only when near/far each have "
             f">={args.data_fit_sideband_min_events} events and "
             f"JS<={args.data_fit_sideband_max_js:g}, otherwise AAO+DVCS "
-            "fallback is used."
+            "fallback is used; FD sector diagnostics keep the global FD "
+            "composition/cuts/discriminator/morph fixed in sectors 1-6 and "
+            "do not refit f_pi0 by sector."
         )
     #endif
     log(
