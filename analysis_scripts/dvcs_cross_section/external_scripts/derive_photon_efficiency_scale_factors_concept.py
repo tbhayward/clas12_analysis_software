@@ -480,7 +480,7 @@ def infer_angle_unit(
     e_phi: np.ndarray,
     g_theta: np.ndarray,
     g_phi: np.ndarray,
-) -> str:
+) -> dict:
     # The production files have historically contained angular variables in
     # either radians or degrees depending on the processing path. Infer the
     # convention locally and robustly.
@@ -1344,9 +1344,15 @@ def process_period(
     optimizer_min_step_pi0_eff: float,
     optimizer_min_total_pi0_eff: float,
     optimizer_min_improvement: float,
-) -> None:
+) -> dict:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
+
+    optimizer_summary = {
+        "period_key": period.key,
+        "period_label": period.label,
+        "regions": {},
+    }
 
     paths = {
         "data": period.data,
@@ -1440,22 +1446,11 @@ def process_period(
                 optimizer_outdir,
             )
 
-            if results:
-                log(
-                    f"{period.label} {region}: optimizer selected "
-                    + " -> ".join(cut_expression(r) for r in results)
-                )
-                log(
-                    f"{period.label} {region}: final retained fractions: "
-                    f"AAO={100.0*results[-1]['total_pi0_eff']:.2f}%, "
-                    f"DVCSgen={100.0*results[-1]['total_dvcs_eff']:.2f}%."
-                )
-            else:
-                log(
-                    f"{period.label} {region}: optimizer selected no cut "
-                    "under the configured retention/improvement constraints."
-                )
-            #endif
+            optimizer_summary["regions"][region] = {
+                "n_pi0_baseline": int(pi0_events.shape[0]),
+                "n_dvcs_baseline": int(dvcs_events.shape[0]),
+                "results": results,
+            }
         #endfor
     #endif
 
@@ -1463,6 +1458,8 @@ def process_period(
         f"{period.label}: complete in "
         f"{time.perf_counter() - t0:.1f} s."
     )
+
+    return optimizer_summary
 
 
 def process_period_worker(
@@ -1487,7 +1484,7 @@ def process_period_worker(
     sequentially. FT and FD are filled simultaneously within each file,
     avoiding nested ROOT I/O parallelism.
     """
-    process_period(
+    return process_period(
         period,
         tree_name,
         max_entries,
@@ -1502,7 +1499,81 @@ def process_period_worker(
         optimizer_min_total_pi0_eff,
         optimizer_min_improvement,
     )
-    return period.key
+
+
+
+def print_optimizer_summary(
+    summaries_by_period: Dict[str, dict],
+    selected_periods: Sequence[Period],
+) -> None:
+    """
+    Print the optimizer result only once, from the parent process, after every
+    period has finished. This keeps the scientifically relevant terminal
+    summary readable even when ROOT processing itself is parallel.
+    """
+    print("", flush=True)
+    print("=" * 88, flush=True)
+    print("RECTANGULAR CUT OPTIMIZER SUMMARY", flush=True)
+    print("=" * 88, flush=True)
+
+    for period in selected_periods:
+        summary = summaries_by_period.get(period.key)
+        if summary is None:
+            continue
+        #endif
+
+        print(f"\n{period.label}", flush=True)
+        print("-" * len(period.label), flush=True)
+
+        regions = summary.get("regions", {})
+        if not regions:
+            print("  Optimizer disabled or no optimizer result.", flush=True)
+            continue
+        #endif
+
+        for region in ("FT", "FD"):
+            region_summary = regions.get(region)
+            if region_summary is None:
+                continue
+            #endif
+
+            print(
+                f"  {region}: baseline AAO={region_summary['n_pi0_baseline']:,}, "
+                f"DVCSgen={region_summary['n_dvcs_baseline']:,}",
+                flush=True,
+            )
+
+            results = region_summary.get("results", [])
+            if not results:
+                print(
+                    "    No cut passed the configured retention/improvement constraints.",
+                    flush=True,
+                )
+                continue
+            #endif
+
+            for result in results:
+                print(
+                    f"    {result['step']}. {cut_expression(result)}"
+                    f"  | step AAO={100.0*result['step_pi0_eff']:.2f}%"
+                    f", DVCS={100.0*result['step_dvcs_eff']:.2f}%"
+                    f"  | cumulative AAO={100.0*result['total_pi0_eff']:.2f}%"
+                    f", DVCS={100.0*result['total_dvcs_eff']:.2f}%",
+                    flush=True,
+                )
+            #endfor
+
+            final = results[-1]
+            print(
+                f"    FINAL: AAO retained={100.0*final['total_pi0_eff']:.2f}%"
+                f", DVCSgen retained={100.0*final['total_dvcs_eff']:.2f}%"
+                f", F={final['score']:.4g}",
+                flush=True,
+            )
+        #endfor
+    #endfor
+
+    print("\n" + "=" * 88, flush=True)
 
 
 def main() -> int:
@@ -1573,9 +1644,11 @@ def main() -> int:
         f"{len(selected_periods)} selected period(s)."
     )
 
+    summaries_by_period: Dict[str, dict] = {}
+
     if n_workers == 1:
         for period in selected_periods:
-            process_period(
+            summaries_by_period[period.key] = process_period(
                 period,
                 args.tree,
                 args.max_entries,
@@ -1616,8 +1689,7 @@ def main() -> int:
             for future in as_completed(future_to_period):
                 period = future_to_period[future]
                 try:
-                    completed_key = future.result()
-                    log(f"{period.label}: worker completed ({completed_key}).")
+                    summaries_by_period[period.key] = future.result()
                 except Exception as exc:
                     raise RuntimeError(
                         f"Parallel concept-study processing failed for "
@@ -1626,6 +1698,13 @@ def main() -> int:
                 #endtry
             #endfor
         #endwith
+    #endif
+
+    if not args.no_optimize_cuts:
+        print_optimizer_summary(
+            summaries_by_period,
+            selected_periods,
+        )
     #endif
 
     log(f"Done. Outputs are in {output_dir}")
