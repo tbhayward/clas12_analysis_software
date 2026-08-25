@@ -14,6 +14,15 @@ derive_photon_efficiency_scale_factors_v067_wrapup_nominal.py
 Development script for the relative data/MC photon-reconstruction efficiency
 measurement in CLAS12 RGA.
 
+RUN-GROUP DEMO OVERRIDE
+-----------------------
+Use --run-group-demo-tight to impose a deliberately tight, transparent
+pi0-enrichment test selection:
+  * E_tag >= 2.0 GeV
+  * E_miss (= E_probe^pred) < 2.0 GeV
+The override leaves the remaining nominal Stage-II denominator selections and
+template-fit machinery unchanged.
+
 CURRENT USER-FACING WORKFLOW
 ----------------------------
 1. Denominator composition:
@@ -9130,6 +9139,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=9.5,
         help="Exclusive upper reconstructed epgamma tag energy in GeV. Default: 9.5.",
+    )
+    parser.add_argument(
+        "--run-group-demo-tight",
+        action="store_true",
+        help=(
+            "Run-group/demo override for a deliberately tight pi0-enriched "
+            "denominator selection. It enforces E_tag >= 2.0 GeV and "
+            "E_miss (= E_probe^pred) < 2.0 GeV before the normal Stage-II "
+            "composition fit. All other nominal denominator selections remain "
+            "unchanged. Intended as a transparent demonstration/diagnostic, "
+            "not as the default production prescription."
+        ),
     )
     parser.add_argument(
         "--parent-component-tol",
@@ -18669,6 +18690,14 @@ def process_period(
             disc for disc in STAGE2_DISCRIMINATORS
             if discriminator_available(disc, data_f, pi0_f, dvcs_f)
         ]
+        if bool(args_dict.get("run_group_demo_tight", False)):
+            log(
+                f"{period.label}: Stage II RUN-GROUP DEMO selection: "
+                "E_tag >= 2.0 GeV; "
+                f"0.4 <= E_miss (= E_probe^pred) < {max_probe_energy:g} GeV; "
+                "then apply the nominal M_X^2(epX) support and composition fit."
+            )
+        #endif
         log(
             f"{period.label}: Stage II discriminator study for "
             f"0.4 <= E_probe^pred < {max_probe_energy:g} GeV: "
@@ -19891,6 +19920,20 @@ def run_period_result_merge_self_test() -> None:
 def main() -> int:
     args = parse_args()
 
+    # Deliberately simple run-group/demo mode:
+    #   E_tag >= 2 GeV
+    #   E_miss (= predicted missing/probe photon energy) < 2 GeV
+    #
+    # The normal Stage-II selection already bins/cuts on pred_probe_energy, so
+    # setting den_probe_energy_max=2.0 propagates the E_miss requirement through
+    # every denominator/template fit and the downstream reference-efficiency
+    # bookkeeping.  Setting tag_min=2.0 makes the same reconstructed-tag
+    # requirement apply consistently to data and all MC templates.
+    if args.run_group_demo_tight:
+        args.tag_min = 2.0
+        args.den_probe_energy_max = 2.0
+    #endif
+
     if args.max_entries < 0:
         raise ValueError("--max-entries must be >= 0.")
     #endif
@@ -20011,6 +20054,14 @@ def main() -> int:
     args.nsidis_study = True
 
     if args.nsidis_study:
+        if args.run_group_demo_tight:
+            log(
+                "RUN-GROUP DEMO TIGHT OVERRIDE ENABLED: "
+                "E_tag >= 2.0 GeV and E_miss (= E_probe^pred) < 2.0 GeV. "
+                "These cuts are applied identically to data, AAO, CLASDIS, "
+                "and DVCSgen before the normal Stage-II composition fit."
+            )
+        #endif
         log(
             "nSidis production tag support: "
             f"{args.tag_min:.3g} <= E_gamma,tag < {args.tag_max:.3g} GeV."
