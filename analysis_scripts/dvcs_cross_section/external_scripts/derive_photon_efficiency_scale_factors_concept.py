@@ -88,10 +88,15 @@ By default all shape-comparison panels use a logarithmic y-axis. Add
 
 for a linear y-axis.
 
-The script also runs a first greedy rectangular-cut optimizer by default.
-The optimizer is NEVER combined across periods: each of the five run periods
-is optimized independently, and FT/FD are optimized independently within each
-period. It uses reconstructed AAO and DVCSgen variables only.
+The script runs the greedy rectangular-cut optimizer BEFORE making the
+shape-comparison canvases. The optimizer is NEVER combined across periods:
+each of the five run periods is optimized independently, and FT/FD are
+optimized independently within each period. It uses reconstructed AAO and
+DVCSgen variables only.
+
+After the optimizer selects its period- and detector-specific cut sequence,
+the shape-comparison canvas is constructed with one cumulative row per selected
+cut. The same selected cuts are then shown on data, AAO, and DVCSgen.
 
 Shape canvases are written under:
 
@@ -827,12 +832,17 @@ def write_optimizer_outputs(
     results: list,
     output_dir: Path,
 ) -> None:
+    """
+    Write detailed per-region CSV/TXT optimizer results.
+
+    Plotting is handled separately so each period gets one combined FD+FT
+    progression canvas rather than separate FD and FT PNG files.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = f"rectangular_optimizer_{period.key}_{region.lower()}"
 
     csv_path = output_dir / f"{stem}.csv"
     txt_path = output_dir / f"{stem}.txt"
-    png_path = output_dir / f"{stem}.png"
 
     fields = (
         "step",
@@ -898,43 +908,109 @@ def write_optimizer_outputs(
 
     txt_path.write_text("\n".join(lines) + "\n")
 
-    # Compact progression plot.
-    x = [0] + [int(result["step"]) for result in results]
-    pi_eff = [1.0] + [result["total_pi0_eff"] for result in results]
-    dvcs_eff = [1.0] + [result["total_dvcs_eff"] for result in results]
 
-    fig, ax = plt.subplots(figsize=(7.2, 5.0))
-    ax.plot(x, pi_eff, marker="o", label=r"AAO $\pi^0$")
-    ax.plot(x, dvcs_eff, marker="o", label="DVCSgen")
-    ax.set_yscale("log")
-    ax.set_ylim(1.0e-4, 1.1)
-    ax.set_xticks(x)
-    ax.set_xlabel("Greedy cut step")
-    ax.set_ylabel("Cumulative retained fraction")
-    ax.set_title(f"{period.label}: {region} rectangular-cut optimization")
-    ax.grid(alpha=0.25)
-    ax.legend(frameon=True)
+def make_combined_optimizer_canvas(
+    period: Period,
+    optimizer_summary: dict,
+    output_dir: Path,
+) -> Path:
+    """
+    One optimizer progression canvas per period: FD left, FT right.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.4), sharey=True)
 
-    if results:
-        annotation = "\n".join(
-            f"{r['step']}. {cut_expression(r)}"
-            for r in results
+    for ax, region in zip(axes, ("FD", "FT")):
+        region_summary = optimizer_summary.get("regions", {}).get(region)
+
+        if region_summary is None:
+            ax.text(
+                0.5,
+                0.5,
+                "No optimizer result",
+                ha="center",
+                va="center",
+                transform=ax.transAxes,
+            )
+            ax.set_title(region)
+            continue
+        #endif
+
+        results = region_summary.get("results", [])
+        x = [0] + [int(result["step"]) for result in results]
+        pi_eff = [1.0] + [result["total_pi0_eff"] for result in results]
+        dvcs_eff = [1.0] + [result["total_dvcs_eff"] for result in results]
+
+        ax.plot(x, pi_eff, marker="o", label=r"AAO $\pi^0$")
+        ax.plot(x, dvcs_eff, marker="o", label="DVCSgen")
+        ax.set_yscale("log")
+        ax.set_ylim(1.0e-4, 1.1)
+        ax.set_xticks(x)
+        ax.set_xlabel("Greedy cut step")
+        ax.set_title(
+            f"{region}\n"
+            f"baseline AAO={region_summary['n_pi0_baseline']:,}, "
+            f"DVCSgen={region_summary['n_dvcs_baseline']:,}"
         )
-        ax.text(
-            0.02,
-            0.03,
-            annotation,
-            transform=ax.transAxes,
-            fontsize=8.5,
-            va="bottom",
-            ha="left",
-            bbox={"facecolor": "white", "alpha": 0.85, "edgecolor": "0.5"},
-        )
-    #endif
+        ax.grid(alpha=0.25)
 
-    fig.tight_layout()
-    fig.savefig(png_path, dpi=180)
+        if results:
+            annotation = "\n".join(
+                f"{r['step']}. {cut_expression(r)}"
+                for r in results
+            )
+            final = results[-1]
+            annotation += (
+                "\n"
+                f"final: AAO {100.0*final['total_pi0_eff']:.1f}%, "
+                f"DVCS {100.0*final['total_dvcs_eff']:.2f}%"
+            )
+            ax.text(
+                0.02,
+                0.03,
+                annotation,
+                transform=ax.transAxes,
+                fontsize=8.4,
+                va="bottom",
+                ha="left",
+                bbox={
+                    "facecolor": "white",
+                    "alpha": 0.88,
+                    "edgecolor": "0.5",
+                },
+            )
+        #endif
+    #endfor
+
+    axes[0].set_ylabel("Cumulative retained fraction")
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.94),
+        ncol=2,
+        frameon=True,
+    )
+    fig.suptitle(
+        f"{period.label}: rectangular-cut optimization",
+        fontsize=13,
+        y=0.995,
+    )
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.98,
+        bottom=0.12,
+        top=0.82,
+        wspace=0.15,
+    )
+
+    out = output_dir / f"rectangular_optimizer_{period.key}.png"
+    fig.savefig(out, dpi=180)
     plt.close(fig)
+    return out
+
 
 # =============================================================================
 # Streaming histogrammer
@@ -1141,6 +1217,254 @@ def stream_sample_histograms(
         for region in ("FT", "FD")
     }
     return hist, counts, optimizer_events
+
+
+
+# =============================================================================
+# Dynamic post-optimizer shape-comparison support
+# =============================================================================
+
+FEATURE_INDEX = {
+    feature: i
+    for i, feature in enumerate(OPTIMIZER_FEATURES)
+}
+
+
+def apply_optimizer_cut(
+    events: np.ndarray,
+    current_mask: np.ndarray,
+    result: dict,
+) -> np.ndarray:
+    """Apply one selected rectangular cut cumulatively to one sample."""
+    feature = result["feature"]
+    threshold = float(result["threshold"])
+    values = events[:, FEATURE_INDEX[feature]]
+
+    if result["direction"] == "lt":
+        return current_mask & np.isfinite(values) & (values < threshold)
+    #endif
+
+    return current_mask & np.isfinite(values) & (values > threshold)
+
+
+def optimizer_row_label(result: dict) -> str:
+    """Compact human-readable label for one optimizer-selected cut."""
+    op = "<" if result["direction"] == "lt" else ">"
+    feature = result["feature"]
+
+    pretty = {
+        "Mx2": r"$Mx2$",
+        "Mx2_1": r"$Mx2_1$",
+        "Mx2_2": r"$Mx2_2$",
+        "Emiss2": r"$E_{\rm miss}$",
+        "E_tag": r"$E_{\rm tag}$",
+        "Delta_phi_residual_deg": r"$\Delta\phi(p,\gamma)$",
+        "pTmiss": r"$p_{T,\rm miss}$",
+        "theta_gamma_gamma": r"$\theta_{\gamma\gamma}$",
+    }[feature]
+
+    return rf"$+\,{pretty}{op}{result['threshold']:.3g}$"
+
+
+def make_optimizer_cut_shape_canvas(
+    period: Period,
+    region: str,
+    sample_events: Dict[str, Dict[str, np.ndarray]],
+    optimizer_results: list,
+    output_dir: Path,
+    linear_y: bool,
+) -> Path:
+    """
+    Build the shape-comparison canvas AFTER optimization.
+
+    Row 1 is the common baseline. Each subsequent row cumulatively applies the
+    optimizer-selected cut from the previous optimization step. The same cut
+    sequence is applied to data, AAO, and DVCSgen.
+    """
+    n_rows = 1 + len(optimizer_results)
+    n_cols = len(PLOT_SPECS)
+
+    fig_height = max(4.2, 3.25 * n_rows + 1.8)
+    fig, axes = plt.subplots(
+        n_rows,
+        n_cols,
+        figsize=(27.5, fig_height),
+        squeeze=False,
+    )
+
+    sample_meta = {key: (label, color) for key, label, color in SAMPLES}
+    edges_by_key = histogram_edges()
+
+    # Build cumulative masks once per sample.
+    masks_by_sample = {}
+    counts_by_sample = {}
+
+    for sample_key, _label, _color in SAMPLES:
+        events = sample_events[sample_key][region]
+        masks = [np.ones(events.shape[0], dtype=bool)]
+
+        current = masks[0]
+        for result in optimizer_results:
+            current = apply_optimizer_cut(events, current, result)
+            masks.append(current.copy())
+        #endfor
+
+        masks_by_sample[sample_key] = masks
+        counts_by_sample[sample_key] = [
+            int(np.count_nonzero(mask))
+            for mask in masks
+        ]
+    #endfor
+
+    legend_handles = []
+    legend_labels = []
+
+    row_labels = [
+        r"baseline: $\mathrm{Angle}(e,\gamma)>5^\circ$"
+    ]
+    row_labels.extend(
+        [
+            f"step {i}: {optimizer_row_label(result)}"
+            for i, result in enumerate(optimizer_results, start=1)
+        ]
+    )
+
+    for irow in range(n_rows):
+        for icol, spec in enumerate(PLOT_SPECS):
+            ax = axes[irow, icol]
+            key, title, xlabel, _xmin, _xmax, _nbins = spec
+            edges = edges_by_key[key]
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            ifeature = FEATURE_INDEX[key]
+
+            for sample_key, _label, _color in SAMPLES:
+                label, color = sample_meta[sample_key]
+                events = sample_events[sample_key][region]
+                mask = masks_by_sample[sample_key][irow]
+
+                values = events[:, ifeature]
+                finite = mask & np.isfinite(values)
+                h, _ = np.histogram(values[finite], bins=edges)
+
+                y = normalized_hist(h)
+                line = ax.step(
+                    centers,
+                    y,
+                    where="mid",
+                    linewidth=1.45,
+                    color=color,
+                    label=label,
+                )[0]
+
+                if irow == 0 and icol == 0:
+                    legend_handles.append(line)
+                    legend_labels.append(label)
+                #endif
+            #endfor
+
+            if irow == 0:
+                ax.set_title(title, fontsize=10.5)
+            #endif
+
+            ax.set_xlabel(xlabel, fontsize=8.8)
+            if icol == 0:
+                ax.set_ylabel(
+                    row_labels[irow] + "\nunit-normalized",
+                    fontsize=8.8,
+                )
+            else:
+                ax.set_ylabel("unit-normalized", fontsize=8.8)
+            #endif
+
+            ax.set_xlim(edges[0], edges[-1])
+
+            if not linear_y:
+                ax.set_yscale("log")
+                ax.set_ylim(1.0e-3, 1.0)
+            #endif
+
+            ax.tick_params(axis="both", labelsize=7.4)
+            ax.grid(alpha=0.18)
+
+            # On each row after a cut is introduced, show that threshold on
+            # the corresponding variable's panel.
+            for applied_result in optimizer_results[:irow]:
+                if applied_result["feature"] != key:
+                    continue
+                #endif
+                ax.axvline(
+                    float(applied_result["threshold"]),
+                    linestyle="--",
+                    linewidth=0.9,
+                    color="0.35",
+                )
+            #endfor
+        #endfor
+    #endfor
+
+    region_text = (
+        rf"FT: ${FT_THETA_MIN_DEG:.1f}^\circ\leq\theta_\gamma"
+        rf"<{FT_THETA_MAX_DEG:.1f}^\circ$"
+        if region == "FT"
+        else
+        rf"FD: ${FD_THETA_MIN_DEG:.1f}^\circ\leq\theta_\gamma"
+        rf"<{FD_THETA_MAX_DEG:.1f}^\circ$"
+    )
+
+    final_count_text = ", ".join(
+        f"{sample_meta[key][0]}={counts_by_sample[key][-1]:,}"
+        for key, _label, _color in SAMPLES
+    )
+
+    cut_sequence = (
+        " -> ".join(cut_expression(result) for result in optimizer_results)
+        if optimizer_results
+        else "no optimizer cut accepted"
+    )
+
+    fig.suptitle(
+        f"{period.label}: {region} post-optimizer shape comparison\n"
+        rf"baseline: $\mathrm{{Angle}}(e,\gamma)>"
+        rf"{THETA_EGAMMA_MIN_DEG:.0f}^\circ$; "
+        + region_text
+        + "\n"
+        + f"optimizer sequence: {cut_sequence}"
+        + "\n"
+        + f"final sampled counts: {final_count_text}",
+        fontsize=10.5,
+        y=0.995,
+    )
+
+    fig.legend(
+        legend_handles,
+        legend_labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.915),
+        ncol=3,
+        fontsize=9.2,
+        frameon=True,
+        fancybox=False,
+        edgecolor="black",
+    )
+
+    fig.subplots_adjust(
+        left=0.047,
+        right=0.995,
+        bottom=0.055,
+        top=0.83,
+        wspace=0.35,
+        hspace=0.48,
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out = (
+        output_dir
+        / f"canvas_shape_comparison_{period.key}_{region.lower()}_optimized.png"
+    )
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
 
 
 # =============================================================================
@@ -1378,7 +1702,10 @@ def process_period(
     period_index = [p.key for p in PERIODS].index(period.key)
 
     for sample_index, (sample_key, label, _color) in enumerate(SAMPLES):
-        collect_optimizer = run_optimizer and sample_key in ("pi0", "dvcs")
+        # In optimizer mode, retain a bounded uniform event reservoir for
+        # all three samples. AAO and DVCSgen determine the cuts; the data
+        # reservoir is used only afterward to visualize those same cuts.
+        collect_optimizer = run_optimizer
 
         hists, counts, opt_events = stream_sample_histograms(
             paths[sample_key],
@@ -1400,18 +1727,6 @@ def process_period(
         if collect_optimizer:
             optimizer_events[sample_key] = opt_events
         #endif
-    #endfor
-
-    for region in ("FT", "FD"):
-        out = make_canvas(
-            period,
-            region,
-            sample_hists,
-            sample_counts,
-            output_dir,
-            linear_y,
-        )
-        log(f"{period.label}: wrote {out}")
     #endfor
 
     if run_optimizer:
@@ -1451,6 +1766,49 @@ def process_period(
                 "n_dvcs_baseline": int(dvcs_events.shape[0]),
                 "results": results,
             }
+        #endfor
+
+        combined_optimizer_plot = make_combined_optimizer_canvas(
+            period,
+            optimizer_summary,
+            optimizer_outdir,
+        )
+        log(
+            f"{period.label}: wrote combined FD+FT optimizer canvas "
+            f"{combined_optimizer_plot}"
+        )
+
+        # Only after optimization is complete do we make the shape-comparison
+        # canvases. Each row now corresponds exactly to the cut sequence that
+        # was selected for that period and detector region.
+        for region in ("FT", "FD"):
+            region_results = optimizer_summary["regions"][region]["results"]
+            shape_out = make_optimizer_cut_shape_canvas(
+                period,
+                region,
+                optimizer_events,
+                region_results,
+                output_dir,
+                linear_y,
+            )
+            log(
+                f"{period.label}: wrote post-optimizer {region} shape canvas "
+                f"{shape_out}"
+            )
+        #endfor
+    else:
+        # If optimization is explicitly disabled, preserve the old fixed
+        # three-row concept canvases.
+        for region in ("FT", "FD"):
+            out = make_canvas(
+                period,
+                region,
+                sample_hists,
+                sample_counts,
+                output_dir,
+                linear_y,
+            )
+            log(f"{period.label}: wrote {out}")
         #endfor
     #endif
 
