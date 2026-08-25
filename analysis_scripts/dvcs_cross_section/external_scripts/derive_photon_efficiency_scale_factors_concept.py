@@ -10,15 +10,16 @@ Make only the first-stage epgamma shape-comparison canvases, with essentially
 no analysis machinery beyond the minimum needed to compare the samples.
 
 For each of the five RGA periods and separately for FT and FD photons, make a
-2x7 canvas comparing:
+3x8 canvas comparing:
 
     1. Mx2
     2. Mx2_1
     3. Mx2_2
     4. Emiss2
-    5. Delta_phi (tree branch, displayed as a residual about 180 degrees)
-    6. pTmiss
-    7. theta_gamma_gamma
+    5. E_tag (= p2_p, because p2 is always the photon)
+    6. Delta_phi (tree branch, displayed as a residual about 180 degrees)
+    7. pTmiss
+    8. theta_gamma_gamma
 
 Samples:
     * nSidis data
@@ -36,6 +37,10 @@ apart from assigning the reconstructed photon to FT or FD by its polar angle.
 The second row cumulatively adds
 
     Mx2_1 < 0.15 GeV^2.
+
+The third row cumulatively adds
+
+    Emiss2 > 1.0 GeV.
 
 The FT/FD angular assignment is:
 
@@ -57,7 +62,7 @@ This script is intentionally optimized for speed:
     * Run periods are processed concurrently with ProcessPoolExecutor.
     * ROOT files within one period are still read sequentially to avoid nested
       I/O contention and excessive memory pressure.
-    * Only the 11 branches actually needed here are read.
+    * Only the 12 branches actually needed here are read.
     * No eppi0 files, event association, fitting, bootstrapping, CLASDIS,
       Stage-II, Stage-III, or grand diagnostics are touched.
 
@@ -124,6 +129,7 @@ BRANCHES: Tuple[str, ...] = (
     "theta_gamma_gamma",
     "e_theta",
     "e_phi",
+    "p2_p",
     "p2_theta",
     "p2_phi",
 )
@@ -138,8 +144,8 @@ PLOT_SPECS = (
         "Mx2",
         r"$MM^2(ep\gamma X)$",
         r"$MM^2(ep\gamma X)$ (GeV$^2$)",
-        -0.10,
-        0.15,
+        -0.05,
+        0.10,
         100,
     ),
     (
@@ -167,6 +173,14 @@ PLOT_SPECS = (
         120,
     ),
     (
+        "E_tag",
+        r"$E_{\rm tag}$",
+        r"$E_{\rm tag}$ (GeV)",
+        0.0,
+        9.5,
+        120,
+    ),
+    (
         "Delta_phi_residual_deg",
         r"$\Delta\phi(p,\gamma)$",
         r"$\Delta\phi(p,\gamma)$ residual from $180^\circ$ (deg)",
@@ -187,7 +201,7 @@ PLOT_SPECS = (
         r"$\theta_{\gamma\gamma}$",
         r"$\theta_{\gamma\gamma}$ (deg)",
         0.0,
-        10.0,
+        6.0,
         120,
     ),
 )
@@ -442,7 +456,7 @@ def empty_histograms() -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
     out: Dict[str, Dict[str, Dict[str, np.ndarray]]] = {}
     for region in ("FT", "FD"):
         out[region] = {}
-        for row in ("minimal", "mx2_1_cut"):
+        for row in ("minimal", "mx2_1_cut", "emiss_cut"):
             out[region][row] = {}
             for key, _title, _xlabel, x_min, x_max, n_bins in PLOT_SPECS:
                 out[region][row][key] = np.zeros(n_bins, dtype=np.int64)
@@ -484,6 +498,8 @@ def stream_sample_histograms(
         "FD": 0,
         "FT_mx2_1_cut": 0,
         "FD_mx2_1_cut": 0,
+        "FT_emiss_cut": 0,
+        "FD_emiss_cut": 0,
     }
 
     with uproot.open(path) as root_file:
@@ -546,6 +562,9 @@ def stream_sample_histograms(
                 "Mx2_1": np.asarray(arrays["Mx2_1"], dtype=float),
                 "Mx2_2": np.asarray(arrays["Mx2_2"], dtype=float),
                 "Emiss2": np.asarray(arrays["Emiss2"], dtype=float),
+                # For a photon, E = |p|, and p2 is always the photon in these
+                # processed epgamma trees.
+                "E_tag": np.asarray(arrays["p2_p"], dtype=float),
                 "Delta_phi_residual_deg": delta_phi_residual_deg(
                     arrays["Delta_phi"]
                 ),
@@ -560,17 +579,30 @@ def stream_sample_histograms(
                 counts[region] += int(np.count_nonzero(region_mask))
 
                 # Row 1: only Angle(e,gamma) > 5 deg plus FT/FD assignment.
+                mx2_1_mask = (
+                    region_mask
+                    & np.isfinite(values["Mx2_1"])
+                    & (values["Mx2_1"] < 0.15)
+                )
+
+                # Row 3 is cumulative: Row 2 plus Emiss2 > 1 GeV.
+                emiss_mask = (
+                    mx2_1_mask
+                    & np.isfinite(values["Emiss2"])
+                    & (values["Emiss2"] > 1.0)
+                )
+
                 row_masks = {
                     "minimal": region_mask,
-                    # Row 2: cumulative addition of Mx2_1 < 0.15 GeV^2.
-                    "mx2_1_cut": (
-                        region_mask
-                        & np.isfinite(values["Mx2_1"])
-                        & (values["Mx2_1"] < 0.15)
-                    ),
+                    "mx2_1_cut": mx2_1_mask,
+                    "emiss_cut": emiss_mask,
                 }
+
                 counts[f"{region}_mx2_1_cut"] += int(
-                    np.count_nonzero(row_masks["mx2_1_cut"])
+                    np.count_nonzero(mx2_1_mask)
+                )
+                counts[f"{region}_emiss_cut"] += int(
+                    np.count_nonzero(emiss_mask)
                 )
 
                 for row_name, row_mask in row_masks.items():
@@ -603,7 +635,10 @@ def stream_sample_histograms(
         f"FT={counts['FT']:,}, FD={counts['FD']:,}; "
         f"after additionally Mx2_1<0.15 GeV^2: "
         f"FT={counts['FT_mx2_1_cut']:,}, "
-        f"FD={counts['FD_mx2_1_cut']:,}."
+        f"FD={counts['FD_mx2_1_cut']:,}; "
+        f"after additionally Emiss2>1 GeV: "
+        f"FT={counts['FT_emiss_cut']:,}, "
+        f"FD={counts['FD_emiss_cut']:,}."
     )
     return hist, counts
 
@@ -628,7 +663,7 @@ def make_canvas(
     sample_counts: Dict[str, Dict[str, int]],
     output_dir: Path,
 ) -> Path:
-    fig, axes = plt.subplots(2, 7, figsize=(25.0, 8.5))
+    fig, axes = plt.subplots(3, 8, figsize=(27.5, 11.8))
     edges_by_key = histogram_edges()
 
     sample_meta = {key: (label, color) for key, label, color in SAMPLES}
@@ -640,6 +675,10 @@ def make_canvas(
         (
             "mx2_1_cut",
             r"Row 2: additionally $Mx2_1<0.15$ GeV$^2$",
+        ),
+        (
+            "emiss_cut",
+            r"Row 3: additionally $E_{\rm miss}>1$ GeV",
         ),
     )
 
@@ -676,21 +715,30 @@ def make_canvas(
             if irow == 0:
                 ax.set_title(title, fontsize=11)
             #endif
-            ax.set_xlabel(xlabel, fontsize=9.5)
+
+            ax.set_xlabel(xlabel, fontsize=9.2)
             if icol == 0:
-                ax.set_ylabel(row_label + "\nunit-normalized", fontsize=9.5)
+                ax.set_ylabel(row_label + "\nunit-normalized", fontsize=9.2)
             else:
-                ax.set_ylabel("unit-normalized", fontsize=9.5)
+                ax.set_ylabel("unit-normalized", fontsize=9.2)
             #endif
 
             ax.set_xlim(edges[0], edges[-1])
-            ax.tick_params(axis="both", labelsize=8)
+            ax.tick_params(axis="both", labelsize=7.8)
             ax.grid(alpha=0.18)
 
-            # Make the new second-row cut visually obvious on Mx2_1.
+            # Show the cumulative selection thresholds on the relevant panels.
             if key == "Mx2_1":
                 ax.axvline(
                     0.15,
+                    linestyle="--",
+                    linewidth=1.0,
+                    color="0.35",
+                )
+            #endif
+            if key == "Emiss2":
+                ax.axvline(
+                    1.0,
                     linestyle="--",
                     linewidth=1.0,
                     color="0.35",
@@ -717,25 +765,32 @@ def make_canvas(
         f"{sample_counts[key][region + '_mx2_1_cut']:,}"
         for key, _label, _color in SAMPLES
     )
+    row3_counts = ", ".join(
+        f"{sample_meta[key][0]}="
+        f"{sample_counts[key][region + '_emiss_cut']:,}"
+        for key, _label, _color in SAMPLES
+    )
 
     fig.suptitle(
         f"{period.label}: {region} epgamma shape comparison\n"
-        rf"Row 1 only: $\mathrm{{Angle}}(e,\gamma)>"
+        rf"Row 1: $\mathrm{{Angle}}(e,\gamma)>"
         rf"{THETA_EGAMMA_MIN_DEG:.0f}^\circ$; "
         + region_text
-        + r"; Row 2 additionally: $Mx2_1<0.15$ GeV$^2$"
+        + r"; Row 2: $+\,Mx2_1<0.15$ GeV$^2$"
+        + r"; Row 3: $+\,E_{\rm miss}>1$ GeV"
         + "\n"
-        + f"Row 1 counts: {row1_counts}    |    Row 2 counts: {row2_counts}",
-        fontsize=11.0,
-        y=0.985,
+        + f"Counts — row 1: {row1_counts}    |    "
+        + f"row 2: {row2_counts}    |    row 3: {row3_counts}",
+        fontsize=10.8,
+        y=0.992,
     )
 
-    # One boxed canvas-level legend centered immediately beneath the title.
+    # One boxed canvas-level legend centered directly beneath the title.
     fig.legend(
         legend_handles,
         legend_labels,
         loc="upper center",
-        bbox_to_anchor=(0.5, 0.895),
+        bbox_to_anchor=(0.5, 0.905),
         ncol=3,
         fontsize=9.5,
         frameon=True,
@@ -744,12 +799,12 @@ def make_canvas(
     )
 
     fig.subplots_adjust(
-        left=0.050,
+        left=0.048,
         right=0.995,
-        bottom=0.09,
-        top=0.80,
-        wspace=0.34,
-        hspace=0.42,
+        bottom=0.075,
+        top=0.82,
+        wspace=0.36,
+        hspace=0.46,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
