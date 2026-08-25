@@ -62,9 +62,10 @@ This script is intentionally optimized for speed:
     * Run periods are processed concurrently with ProcessPoolExecutor.
     * ROOT files within one period are still read sequentially to avoid nested
       I/O contention and excessive memory pressure.
-    * Only the 12 branches actually needed here are read.
-    * No eppi0 files, event association, CLASDIS, Stage-II, Stage-III, or
-      grand diagnostics are touched.
+    * The purity/shape stage reads only the compact epgamma branch set.
+    * The final efficiency stage then makes ONE additional epgamma pass and
+      reads the companion eppi0 data/AAO files needed for tag-probe matching.
+    * CLASDIS and the old broad development machinery remain disabled.
     * A lightweight AAO-vs-DVCS template-fit closure test is run after every
       cumulative optimizer step to quantify whether the surviving templates
       remain distinguishable enough to fit their mixture fraction.
@@ -184,8 +185,8 @@ and the SAME cumulative optimizer cuts are applied to all three. Their
 unit-normalized shapes are compared in the exact variable used by the
 composition fit. Pairwise Jensen-Shannon divergences are reported on the plot.
 The lowest slice is deliberately treated as a signal-adjacent diagnostic, not
-as an independent background template; the key background-transfer test is the
-stability of the 0.20-0.25 and 0.25-0.30 GeV^2 slices.
+as an independent background template; the key background-transfer test is the stability of the eta-safe
+0.15-0.19 and 0.19-0.23 GeV^2 slices.
 
 The empirical sideband is used adaptively.  A three-template fit is attempted
 only when, after the selected operating cuts, both eta-safe sidebands have
@@ -224,6 +225,78 @@ components, the chosen cut step/discriminator, f_pi0 +/- statistical error,
 and deviance/ndf. The second summarizes the fitted pi0 fraction versus E_probe
 for FD and FT.
 
+
+Final tag-probe efficiency extraction
+-------------------------------------
+After the period-level tag-purity fits are complete, the script performs the
+actual photon-efficiency extraction.
+
+The tag/probe roles are deliberately distinct:
+
+  * reconstructed p2 is the TAG photon;
+  * tag FT/FD classification therefore comes from reconstructed p2_theta;
+  * the missing PARTNER/PROBE is predicted from
+
+        p_probe^pred = p_beam - p_e - p_p - p_gamma,tag;
+
+  * predicted probe theta/phi determine the detector efficiency bin.
+
+The data denominator is a purity-weighted expected-pi0 count.  In one probe
+efficiency bin b,
+
+    N_expected^data(b)
+      = sum_{tag category t} f_pi0(t,E_probe) N_tag^data(t,E_probe,b).
+
+The fitted f_pi0 is NOT allowed to depend on predicted probe sector.
+
+The AAO denominator is simply the number of selected reconstructed epgamma tags
+because the AAO sample is exclusive pi0 MC.
+
+The numerator asks whether the predicted partner is present in the reconstructed
+eppi0 sample:
+
+  * DATA: epgamma/eppi0 association first requires exact (runnum,evnum), then
+    checks the reconstructed e/p parent consistency and the reconstructed-side
+    pi0/tag remainder.
+  * AAO MC: runnum/evnum are deliberately NOT used (MC runnum is always 11 and
+    evnum is not a reliable cross-file identifier).  The two trees are matched
+    exclusively through reconstructed electron/proton Cartesian momenta using
+    a six-dimensional cKDTree, as in the established photon-efficiency study.
+
+The reconstructed partner is obtained from the eppi0 tree as
+
+    P_probe^reco = P_pi0^reco - k_tag^reco,
+
+because these eppi0 trees store the reconstructed pi0 four-vector rather than
+the two daughter-photon four-vectors.
+
+A clean association requires the reconstructed pi0 mass window, an
+approximately massless positive-energy remainder, and the photon threshold.
+The final probe match uses Delta p_x, Delta p_y, Delta p_z windows derived from
+the AAO MC itself.  The MC residual center and robust sigma are determined
+separately for predicted FT and FD probes; the same MC-derived windows are then
+applied to data and MC.
+
+Efficiency binning:
+
+  * predicted FT: one FT bin in every E_probe bin;
+  * predicted FD, E_probe < 4 GeV: sectors 1-6 independently;
+  * predicted FD, 4 <= E_probe < 9.5 GeV: all six sectors combined (FD_all).
+
+All five run periods remain independent.
+
+Outputs are intentionally compact and plot-driven:
+
+    output/photon_efficiency_concept/efficiency/<period>/
+        matching_resolution_<period>.png
+        association_cutflow_<period>.png
+        efficiency_counts_<period>.png
+        efficiency_summary_<period>.png
+        efficiency_summary_<period>.csv
+
+There is exactly one machine-readable efficiency CSV per period; no per-bin or
+per-sector CSV/TXT files are created.
+
 For every cumulative cut step, the closure test automatically chooses the
 single surviving reconstructed variable with the largest AAO-vs-DVCS
 Jensen-Shannon divergence, builds independent training and held-out templates,
@@ -239,13 +312,14 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import uproot
+from scipy.spatial import cKDTree
 
 
 # =============================================================================
@@ -261,6 +335,15 @@ FT_THETA_MIN_DEG = 2.4
 FT_THETA_MAX_DEG = 5.0
 FD_THETA_MIN_DEG = 6.0
 FD_THETA_MAX_DEG = 35.0
+
+
+# Particle masses used in the explicit four-vector tag-probe construction.
+M_E_GEV = 0.00051099895
+M_P_GEV = 0.93827208816
+
+# The highest FD energy bin is intentionally NOT split by sector because the
+# present statistics are too sparse after the purity/exclusivity selections.
+HIGH_ENERGY_FD_COMBINE_MIN_GEV = 4.0
 
 
 # Predicted missing-photon energy bins used for the purity optimization.
@@ -406,6 +489,8 @@ class Period:
     data: str
     pi0_mc: str
     dvcs_mc: str
+    eppi0_data: str
+    eppi0_pi0_mc: str
 
 
 _BASE = (
@@ -434,6 +519,9 @@ PERIODS: Tuple[Period, ...] = (
         f"{_DATA_BASE}/nSidis_rga_fa18_inb_epgamma.root",
         f"{_BASE}/bkg_rga_fa18_inb_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_fa18_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+        "rga_fa18_inb_eppi0.root",
+        f"{_BASE}/aaogen_rga_fa18_inb_eppi0_0.40GeV.root",
     ),
     Period(
         "fa18_out",
@@ -441,6 +529,9 @@ PERIODS: Tuple[Period, ...] = (
         f"{_DATA_BASE}/nSidis_rga_fa18_out_epgamma.root",
         f"{_BASE}/bkg_rga_fa18_out_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_fa18_out_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+        "rga_fa18_out_eppi0.root",
+        f"{_BASE}/aaogen_rga_fa18_out_eppi0_0.40GeV.root",
     ),
     Period(
         "sp18_inb",
@@ -448,6 +539,9 @@ PERIODS: Tuple[Period, ...] = (
         f"{_DATA_BASE}/nSidis_rga_sp18_inb_epgamma.root",
         f"{_BASE}/bkg_rga_sp18_inb_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_sp18_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+        "rga_sp18_inb_eppi0.root",
+        f"{_BASE}/aaogen_rga_sp18_inb_eppi0_0.40GeV.root",
     ),
     Period(
         "sp18_out",
@@ -455,6 +549,9 @@ PERIODS: Tuple[Period, ...] = (
         f"{_DATA_BASE}/nSidis_rga_sp18_out_epgamma.root",
         f"{_BASE}/bkg_rga_sp18_out_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_sp18_out_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+        "rga_sp18_out_eppi0.root",
+        f"{_BASE}/aaogen_rga_sp18_out_eppi0_0.40GeV.root",
     ),
     Period(
         "sp19_inb",
@@ -462,6 +559,9 @@ PERIODS: Tuple[Period, ...] = (
         f"{_DATA_BASE}/nSidis_rga_sp19_inb_epgamma.root",
         f"{_BASE}/bkg_rga_sp19_inb_epgamma_0.40GeV.root",
         f"{_BASE}/dvcsgen_rga_sp19_inb_epgamma_0.40GeV.root",
+        "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/"
+        "rga_sp19_inb_eppi0.root",
+        f"{_BASE}/aaogen_rga_sp19_inb_eppi0_0.40GeV.root",
     ),
 )
 
@@ -518,6 +618,27 @@ EVENT_METADATA: Tuple[str, ...] = (
 EVENT_COLUMNS: Tuple[str, ...] = OPTIMIZER_FEATURES + EVENT_METADATA
 
 
+# Additional branches needed only during the final tag-probe efficiency pass.
+EFF_EPG_REQUIRED: Tuple[str, ...] = (
+    "e_p", "e_theta", "e_phi",
+    "p1_p", "p1_theta", "p1_phi",
+    "p2_p", "p2_theta", "p2_phi",
+    "Mx2", "Mx2_1", "Mx2_2",
+    "Emiss2", "Delta_phi", "pTmiss", "theta_gamma_gamma",
+)
+
+EFF_EPG_DATA_IDS: Tuple[str, ...] = ("runnum", "evnum")
+
+EFF_EPPIO_REQUIRED: Tuple[str, ...] = (
+    "e_p", "e_theta", "e_phi",
+    "p1_p", "p1_theta", "p1_phi",
+    "p2_p", "p2_theta", "p2_phi",
+    "Mh_gammagamma",
+)
+
+EFF_EPPIO_DATA_IDS: Tuple[str, ...] = ("runnum", "evnum")
+
+
 # =============================================================================
 # Small utilities
 # =============================================================================
@@ -570,6 +691,99 @@ def parse_args() -> argparse.Namespace:
             "Maximum number of run periods processed concurrently. "
             "Useful range is 1-5 because there are five RGA periods. "
             "Default: 5."
+        ),
+    )
+    parser.add_argument(
+        "--skip-efficiency",
+        action="store_true",
+        help=(
+            "Run the purity/optimizer/template study only and skip the final "
+            "epgamma<->eppi0 tag-probe efficiency extraction."
+        ),
+    )
+    parser.add_argument(
+        "--efficiency-eppi0-max-entries",
+        type=int,
+        default=0,
+        help=(
+            "Maximum entries loaded from each companion eppi0 file for the "
+            "efficiency stage. 0 means the full eppi0 tree (recommended even "
+            "when --max-entries limits epgamma, so cross-file matching is not "
+            "artificially truncated). Default: 0."
+        ),
+    )
+    parser.add_argument(
+        "--parent-component-tol",
+        type=float,
+        default=0.002,
+        help=(
+            "Maximum absolute reconstructed e/p Cartesian-component mismatch "
+            "(GeV) used for AAO epgamma<->eppi0 matching and as the data-parent "
+            "consistency check. Default: 0.002."
+        ),
+    )
+    parser.add_argument(
+        "--parent-distance-max",
+        type=float,
+        default=2.0,
+        help=(
+            "Maximum six-dimensional cKDTree distance after scaling each e/p "
+            "component by --parent-component-tol. Used only for MC. Default: 2."
+        ),
+    )
+    parser.add_argument(
+        "--kdtree-workers",
+        type=int,
+        default=1,
+        help=(
+            "Threads used inside each MC cKDTree query. Keep at 1 when periods "
+            "are processed in parallel to avoid oversubscription. Default: 1."
+        ),
+    )
+    parser.add_argument(
+        "--assoc-mgg-min",
+        type=float,
+        default=0.11,
+        help="Lower reconstructed pi0 mass for a clean tag association. Default: 0.11 GeV.",
+    )
+    parser.add_argument(
+        "--assoc-mgg-max",
+        type=float,
+        default=0.16,
+        help="Upper reconstructed pi0 mass for a clean tag association. Default: 0.16 GeV.",
+    )
+    parser.add_argument(
+        "--assoc-remainder-mass2-max",
+        type=float,
+        default=1.0e-3,
+        help=(
+            "Require |(P_pi0-k_tag)^2| below this value for a clean "
+            "reconstructed-side association. Default: 1e-3 GeV^2."
+        ),
+    )
+    parser.add_argument(
+        "--assoc-probe-energy-min",
+        type=float,
+        default=0.40,
+        help="Minimum reconstructed companion-photon energy. Default: 0.40 GeV.",
+    )
+    parser.add_argument(
+        "--probe-match-nsigma",
+        type=float,
+        default=3.0,
+        help=(
+            "Final |Delta p_i-center_i| < N sigma_i probe-match window, with "
+            "centers/sigmas derived from AAO. Default: 3."
+        ),
+    )
+    parser.add_argument(
+        "--probe-match-min-resolution-events",
+        type=int,
+        default=200,
+        help=(
+            "Minimum clean AAO pairs required to derive a separate FT or FD "
+            "Delta-p resolution. Otherwise that region falls back to the "
+            "period-wide AAO residual model. Default: 200."
         ),
     )
     parser.add_argument(
@@ -5886,6 +6100,2019 @@ def make_canvas(
     return out
 
 
+
+# =============================================================================
+# Final tag-probe efficiency extraction
+# =============================================================================
+
+@dataclass
+class EfficiencyEPPi0Store:
+    electron_p3: np.ndarray
+    proton_p3: np.ndarray
+    pi0_p3: np.ndarray
+    pi0_mass: np.ndarray
+    runnum: Optional[np.ndarray]
+    evnum: Optional[np.ndarray]
+    angle_unit: str
+
+
+@dataclass
+class EfficiencyResolution:
+    center: np.ndarray
+    sigma: np.ndarray
+    n: int
+    source: str
+
+
+def spherical_to_cartesian(
+    p: np.ndarray,
+    theta: np.ndarray,
+    phi: np.ndarray,
+    unit: str,
+) -> np.ndarray:
+    """Vectorized spherical -> Cartesian momentum."""
+    theta_r, phi_r = _angles_to_radians(theta, phi, unit)
+    p = np.asarray(p, dtype=float)
+    st = np.sin(theta_r)
+    return np.column_stack(
+        (
+            p * st * np.cos(phi_r),
+            p * st * np.sin(phi_r),
+            p * np.cos(theta_r),
+        )
+    )
+
+
+def efficiency_predicted_probe(
+    arrays: Dict[str, np.ndarray],
+    unit: str,
+    beam_energy_gev: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Return (pred_E, pred_p3, pred_theta_deg) from exact reconstructed
+    four-vector missing kinematics.
+    """
+    e3 = spherical_to_cartesian(
+        arrays["e_p"], arrays["e_theta"], arrays["e_phi"], unit
+    )
+    p3 = spherical_to_cartesian(
+        arrays["p1_p"], arrays["p1_theta"], arrays["p1_phi"], unit
+    )
+    tag3 = spherical_to_cartesian(
+        arrays["p2_p"], arrays["p2_theta"], arrays["p2_phi"], unit
+    )
+
+    e_p = np.linalg.norm(e3, axis=1)
+    p_p = np.linalg.norm(p3, axis=1)
+    tag_e = np.linalg.norm(tag3, axis=1)
+    e_e = np.sqrt(e_p * e_p + M_E_GEV * M_E_GEV)
+    p_e = np.sqrt(p_p * p_p + M_P_GEV * M_P_GEV)
+
+    beam_p = math.sqrt(
+        max(0.0, beam_energy_gev * beam_energy_gev - M_E_GEV * M_E_GEV)
+    )
+    initial_p3 = np.asarray([0.0, 0.0, beam_p], dtype=float)
+
+    pred_e = beam_energy_gev + M_P_GEV - e_e - p_e - tag_e
+    pred3 = initial_p3[None, :] - e3 - p3 - tag3
+    pred_p = np.linalg.norm(pred3, axis=1)
+
+    with np.errstate(invalid="ignore", divide="ignore"):
+        pred_theta = np.degrees(
+            np.arccos(
+                np.clip(
+                    pred3[:, 2] / pred_p,
+                    -1.0,
+                    1.0,
+                )
+            )
+        )
+    #endwith
+    return pred_e, pred3, pred_theta
+
+
+def efficiency_epgamma_feature_matrix(
+    arrays: Dict[str, np.ndarray],
+    beam_energy_gev: float,
+) -> Tuple[np.ndarray, Dict[str, np.ndarray]]:
+    """
+    Build exactly the same purity-cut variables as the streaming concept stage,
+    plus explicit tag/probe vectors used by the efficiency association.
+    """
+    unit = infer_angle_unit(
+        arrays["e_theta"],
+        arrays["e_phi"],
+        arrays["p2_theta"],
+        arrays["p2_phi"],
+    )
+
+    theta_egamma = opening_angle_deg(
+        arrays["e_theta"],
+        arrays["e_phi"],
+        arrays["p2_theta"],
+        arrays["p2_phi"],
+        unit,
+    )
+    tag_theta = photon_theta_deg(arrays["p2_theta"], unit)
+
+    pred_e, pred3, pred_theta = efficiency_predicted_probe(
+        arrays,
+        unit,
+        beam_energy_gev,
+    )
+    pred_phi = np.mod(
+        np.degrees(np.arctan2(pred3[:, 1], pred3[:, 0])),
+        360.0,
+    )
+    pred_sector = fd_sector_from_phi_deg(pred_phi)
+
+    values = {
+        "Mx2": np.asarray(arrays["Mx2"], dtype=float),
+        "Mx2_1": np.asarray(arrays["Mx2_1"], dtype=float),
+        "Mx2_2": np.asarray(arrays["Mx2_2"], dtype=float),
+        "Emiss2": np.asarray(arrays["Emiss2"], dtype=float),
+        "E_tag": np.asarray(arrays["p2_p"], dtype=float),
+        "Delta_phi_residual_deg": delta_phi_residual_deg(
+            arrays["Delta_phi"]
+        ),
+        "pTmiss": np.asarray(arrays["pTmiss"], dtype=float),
+        "theta_gamma_gamma": np.asarray(
+            arrays["theta_gamma_gamma"], dtype=float
+        ),
+        "tag_theta_deg": tag_theta,
+        "pred_probe_sector": pred_sector,
+        "pred_probe_theta_deg": pred_theta,
+        "pred_probe_phi_deg": pred_phi,
+    }
+    matrix = np.column_stack(
+        [
+            np.asarray(values[key], dtype=np.float32)
+            for key in EVENT_COLUMNS
+        ]
+    )
+
+    extra = {
+        "unit": unit,
+        "theta_egamma_deg": theta_egamma,
+        "pred_probe_energy_4vec": pred_e,
+        "pred_probe_p3": pred3,
+        "electron_p3": spherical_to_cartesian(
+            arrays["e_p"], arrays["e_theta"], arrays["e_phi"], unit
+        ),
+        "proton_p3": spherical_to_cartesian(
+            arrays["p1_p"], arrays["p1_theta"], arrays["p1_phi"], unit
+        ),
+        "tag_p3": spherical_to_cartesian(
+            arrays["p2_p"], arrays["p2_theta"], arrays["p2_phi"], unit
+        ),
+        "tag_theta_deg": tag_theta,
+        "pred_probe_theta_deg": pred_theta,
+        "pred_probe_phi_deg": pred_phi,
+        "pred_probe_sector": pred_sector,
+    }
+    return matrix, extra
+
+
+def efficiency_probe_bin(
+    energy_bin_key: str,
+    energy_min: float,
+    pred_theta_deg: np.ndarray,
+    pred_sector: np.ndarray,
+) -> np.ndarray:
+    """
+    Vector string labels for the downstream efficiency coordinate.
+
+    FT is kept as one bin.  FD uses sectors 1-6 below 4 GeV and FD_all in the
+    highest energy bin.
+    """
+    theta = np.asarray(pred_theta_deg, dtype=float)
+    sector = np.rint(np.asarray(pred_sector, dtype=float)).astype(int)
+    labels = np.full(theta.shape, "", dtype="<U12")
+
+    ft = (
+        np.isfinite(theta)
+        & (theta >= FT_THETA_MIN_DEG)
+        & (theta < FT_THETA_MAX_DEG)
+    )
+    fd = (
+        np.isfinite(theta)
+        & (theta >= FD_THETA_MIN_DEG)
+        & (theta < FD_THETA_MAX_DEG)
+    )
+    labels[ft] = "FT"
+
+    if energy_min >= HIGH_ENERGY_FD_COMBINE_MIN_GEV:
+        labels[fd] = "FD_all"
+    else:
+        for s in range(1, 7):
+            labels[fd & (sector == s)] = f"FD_S{s}"
+        #endfor
+    #endif
+    return labels
+
+
+def efficiency_bin_order(
+    energy_min: float,
+) -> Tuple[str, ...]:
+    if energy_min >= HIGH_ENERGY_FD_COMBINE_MIN_GEV:
+        return ("FT", "FD_all")
+    #endif
+    return ("FT", "FD_S1", "FD_S2", "FD_S3", "FD_S4", "FD_S5", "FD_S6")
+
+
+def preflight_custom_branches(
+    path: str,
+    tree_name: str,
+    required: Sequence[str],
+) -> Tuple[str, int]:
+    """Preflight a ROOT tree against an explicit branch list."""
+    if not Path(path).exists():
+        raise FileNotFoundError(path)
+    #endif
+    with uproot.open(path) as root_file:
+        tree, found = get_tree(root_file, tree_name)
+        available = set(tree.keys())
+        missing = [name for name in required if name not in available]
+        if missing:
+            raise RuntimeError(
+                f"{path}: tree '{found}' missing required efficiency branches: "
+                + ", ".join(missing)
+            )
+        #endif
+        return found, int(tree.num_entries)
+    #endwith
+
+
+def iterate_efficiency_tree_arrays(
+    path: str,
+    tree_name: str,
+    expressions: Sequence[str],
+    max_entries: int,
+    step_size: int,
+):
+    """Yield bounded NumPy chunks from one ROOT tree."""
+    with uproot.open(path) as root_file:
+        tree, _ = get_tree(root_file, tree_name)
+        total = int(tree.num_entries)
+        entry_stop = total if max_entries <= 0 else min(total, int(max_entries))
+        for arrays in tree.iterate(
+            expressions=list(expressions),
+            entry_start=0,
+            entry_stop=entry_stop,
+            step_size=step_size,
+            library="np",
+        ):
+            yield arrays
+        #endfor
+    #endwith
+
+
+def load_eppi0_efficiency_store(
+    path: str,
+    tree_name: str,
+    max_entries: int,
+    step_size: int,
+    require_event_ids: bool,
+    label: str,
+) -> EfficiencyEPPi0Store:
+    """Load only the compact reconstructed eppi0 information needed to match."""
+    required = list(EFF_EPPIO_REQUIRED)
+    if require_event_ids:
+        required.extend(EFF_EPPIO_DATA_IDS)
+    #endif
+
+    found_tree, total = preflight_custom_branches(
+        path, tree_name, required
+    )
+    n_read = total if max_entries <= 0 else min(total, max_entries)
+    log(
+        f"{label}: loading eppi0 match store: {n_read:,}/{total:,} entries "
+        f"from '{found_tree}'."
+    )
+
+    pieces: Dict[str, List[np.ndarray]] = {name: [] for name in required}
+    for arrays in iterate_efficiency_tree_arrays(
+        path,
+        found_tree,
+        required,
+        max_entries,
+        step_size,
+    ):
+        for name in required:
+            pieces[name].append(np.asarray(arrays[name]))
+        #endfor
+    #endfor
+
+    arr = {
+        name: np.concatenate(values) if values else np.asarray([])
+        for name, values in pieces.items()
+    }
+    unit = infer_angle_unit(
+        arr["e_theta"], arr["e_phi"], arr["p2_theta"], arr["p2_phi"]
+    )
+
+    store = EfficiencyEPPi0Store(
+        electron_p3=spherical_to_cartesian(
+            arr["e_p"], arr["e_theta"], arr["e_phi"], unit
+        ).astype(np.float32, copy=False),
+        proton_p3=spherical_to_cartesian(
+            arr["p1_p"], arr["p1_theta"], arr["p1_phi"], unit
+        ).astype(np.float32, copy=False),
+        pi0_p3=spherical_to_cartesian(
+            arr["p2_p"], arr["p2_theta"], arr["p2_phi"], unit
+        ).astype(np.float32, copy=False),
+        pi0_mass=np.asarray(arr["Mh_gammagamma"], dtype=np.float32),
+        runnum=(
+            np.asarray(arr["runnum"], dtype=np.int64)
+            if require_event_ids else None
+        ),
+        evnum=(
+            np.asarray(arr["evnum"], dtype=np.int64)
+            if require_event_ids else None
+        ),
+        angle_unit=unit,
+    )
+    return store
+
+
+def packed_event_keys_eff(
+    runnum: np.ndarray,
+    evnum: np.ndarray,
+) -> np.ndarray:
+    run = np.asarray(runnum, dtype=np.int64)
+    ev = np.asarray(evnum, dtype=np.int64)
+    if np.any(run < 0) or np.any(ev < 0):
+        raise ValueError("Negative data runnum/evnum encountered.")
+    #endif
+    return (
+        (run.astype(np.uint64) << np.uint64(32))
+        | ev.astype(np.uint64)
+    )
+
+
+def clean_reconstructed_probe_from_pairs(
+    electron_p3: np.ndarray,
+    proton_p3: np.ndarray,
+    tag_p3: np.ndarray,
+    pred_probe_p3: np.ndarray,
+    eppi0: EfficiencyEPPi0Store,
+    eppi0_index: np.ndarray,
+    mgg_min: float,
+    mgg_max: float,
+    remainder_mass2_max: float,
+    reco_probe_energy_min: float,
+) -> Dict[str, np.ndarray]:
+    """
+    Reconstruct P_probe = P_pi0 - k_tag for already-associated parent pairs.
+    """
+    j = np.asarray(eppi0_index, dtype=np.int64)
+    pi3 = np.asarray(eppi0.pi0_p3[j], dtype=float)
+    pi_mass = np.asarray(eppi0.pi0_mass[j], dtype=float)
+    tag3 = np.asarray(tag_p3, dtype=float)
+
+    pi_p = np.linalg.norm(pi3, axis=1)
+    tag_e = np.linalg.norm(tag3, axis=1)
+    pi_e = np.sqrt(np.maximum(0.0, pi_p * pi_p + pi_mass * pi_mass))
+
+    reco_e = pi_e - tag_e
+    reco3 = pi3 - tag3
+    reco_p = np.linalg.norm(reco3, axis=1)
+    reco_m2 = reco_e * reco_e - reco_p * reco_p
+    delta_p3 = reco3 - np.asarray(pred_probe_p3, dtype=float)
+
+    finite = (
+        np.isfinite(pi_mass)
+        & np.isfinite(reco_e)
+        & np.isfinite(reco_p)
+        & np.all(np.isfinite(delta_p3), axis=1)
+    )
+    positive = finite & (reco_e > 0.0) & (reco_p > 0.0)
+    mass_window = (
+        positive
+        & (pi_mass >= mgg_min)
+        & (pi_mass <= mgg_max)
+    )
+    mass_shell = (
+        mass_window
+        & np.isfinite(reco_m2)
+        & (np.abs(reco_m2) <= remainder_mass2_max)
+    )
+    threshold = mass_shell & (reco_e >= reco_probe_energy_min)
+
+    return {
+        "pi0_mass": pi_mass,
+        "reco_probe_energy": reco_e,
+        "reco_probe_mass2": reco_m2,
+        "delta_p3": delta_p3,
+        "positive": positive,
+        "mass_window": mass_window,
+        "mass_shell": mass_shell,
+        "threshold": threshold,
+    }
+
+
+def build_mc_parent_index(
+    eppi0: EfficiencyEPPi0Store,
+    component_tolerance: float,
+) -> Tuple[cKDTree, np.ndarray]:
+    good = (
+        np.all(np.isfinite(eppi0.electron_p3), axis=1)
+        & np.all(np.isfinite(eppi0.proton_p3), axis=1)
+    )
+    indices = np.flatnonzero(good)
+    search = np.empty((len(indices), 6), dtype=np.float32)
+    search[:, :3] = (
+        eppi0.electron_p3[indices] / component_tolerance
+    ).astype(np.float32, copy=False)
+    search[:, 3:] = (
+        eppi0.proton_p3[indices] / component_tolerance
+    ).astype(np.float32, copy=False)
+    tree = cKDTree(search, compact_nodes=True, balanced_tree=True)
+    return tree, indices
+
+
+def match_mc_parent_chunk(
+    electron_p3: np.ndarray,
+    proton_p3: np.ndarray,
+    tree: cKDTree,
+    tree_indices: np.ndarray,
+    eppi0: EfficiencyEPPi0Store,
+    component_tolerance: float,
+    distance_max: float,
+    workers: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Match MC ONLY through reconstructed electron/proton kinematics.
+
+    No runnum or evnum enters this function.
+    """
+    n = len(electron_p3)
+    if n == 0:
+        return (
+            np.asarray([], dtype=np.int64),
+            np.asarray([], dtype=np.int64),
+            np.asarray([], dtype=float),
+        )
+    #endif
+
+    query = np.empty((n, 6), dtype=np.float32)
+    query[:, :3] = (
+        np.asarray(electron_p3, dtype=np.float32) / component_tolerance
+    )
+    query[:, 3:] = (
+        np.asarray(proton_p3, dtype=np.float32) / component_tolerance
+    )
+    distance, local = tree.query(
+        query,
+        k=1,
+        workers=max(1, int(workers)),
+    )
+    candidate = tree_indices[local]
+
+    de = np.abs(
+        np.asarray(electron_p3, dtype=float)
+        - np.asarray(eppi0.electron_p3[candidate], dtype=float)
+    )
+    dp = np.abs(
+        np.asarray(proton_p3, dtype=float)
+        - np.asarray(eppi0.proton_p3[candidate], dtype=float)
+    )
+    max_component = np.maximum(np.max(de, axis=1), np.max(dp, axis=1))
+    accepted = (
+        np.isfinite(distance)
+        & (distance <= distance_max)
+        & (max_component <= component_tolerance)
+    )
+    epg_index = np.flatnonzero(accepted)
+    return epg_index, candidate[accepted], max_component[accepted]
+
+
+def prepare_data_event_index(
+    eppi0: EfficiencyEPPi0Store,
+) -> Tuple[np.ndarray, np.ndarray]:
+    if eppi0.runnum is None or eppi0.evnum is None:
+        raise ValueError("Data eppi0 store has no run/event identifiers.")
+    #endif
+    keys = packed_event_keys_eff(eppi0.runnum, eppi0.evnum)
+    order = np.argsort(keys, kind="mergesort")
+    return keys[order], order
+
+
+def match_data_parent_chunk(
+    runnum: np.ndarray,
+    evnum: np.ndarray,
+    electron_p3: np.ndarray,
+    proton_p3: np.ndarray,
+    sorted_eppi0_keys: np.ndarray,
+    sorted_eppi0_order: np.ndarray,
+    eppi0: EfficiencyEPPi0Store,
+    component_tolerance: float,
+) -> Tuple[np.ndarray, np.ndarray, Dict[str, int]]:
+    """
+    DATA association:
+      1) exact runnum/evnum event identity,
+      2) reconstructed e/p parent consistency.
+
+    The best same-event candidate is the one with the smallest six-component
+    e/p distance. This remains independent of the probe-momentum residual.
+    """
+    keys = packed_event_keys_eff(runnum, evnum)
+    left = np.searchsorted(sorted_eppi0_keys, keys, side="left")
+    right = np.searchsorted(sorted_eppi0_keys, keys, side="right")
+    counts = right - left
+    same_event = counts > 0
+
+    total_pairs = int(np.sum(counts))
+    if total_pairs == 0:
+        return (
+            np.asarray([], dtype=np.int64),
+            np.asarray([], dtype=np.int64),
+            {
+                "selected_tags": int(len(keys)),
+                "same_event": 0,
+                "same_event_pairs": 0,
+                "parent_consistent": 0,
+            },
+        )
+    #endif
+
+    epg_rep = np.repeat(np.arange(len(keys), dtype=np.int64), counts)
+    left_rep = np.repeat(left.astype(np.int64), counts)
+    prefix = np.repeat((np.cumsum(counts) - counts), counts)
+    offsets = np.arange(total_pairs, dtype=np.int64) - prefix
+    pi_idx = sorted_eppi0_order[left_rep + offsets]
+
+    de = np.abs(
+        np.asarray(electron_p3[epg_rep], dtype=float)
+        - np.asarray(eppi0.electron_p3[pi_idx], dtype=float)
+    )
+    dp = np.abs(
+        np.asarray(proton_p3[epg_rep], dtype=float)
+        - np.asarray(eppi0.proton_p3[pi_idx], dtype=float)
+    )
+    max_component = np.maximum(np.max(de, axis=1), np.max(dp, axis=1))
+    good_parent = np.isfinite(max_component) & (
+        max_component <= component_tolerance
+    )
+
+    eligible = np.flatnonzero(good_parent)
+    if len(eligible) == 0:
+        return (
+            np.asarray([], dtype=np.int64),
+            np.asarray([], dtype=np.int64),
+            {
+                "selected_tags": int(len(keys)),
+                "same_event": int(np.count_nonzero(same_event)),
+                "same_event_pairs": total_pairs,
+                "parent_consistent": 0,
+            },
+        )
+    #endif
+
+    # One candidate per epgamma tag, chosen only from parent consistency.
+    score = max_component[eligible]
+    g = epg_rep[eligible]
+    order = np.lexsort((score, g))
+    eligible = eligible[order]
+    g = epg_rep[eligible]
+    first = np.ones(len(eligible), dtype=bool)
+    if len(eligible) > 1:
+        first[1:] = g[1:] != g[:-1]
+    #endif
+    chosen = eligible[first]
+
+    return (
+        epg_rep[chosen],
+        pi_idx[chosen],
+        {
+            "selected_tags": int(len(keys)),
+            "same_event": int(np.count_nonzero(same_event)),
+            "same_event_pairs": total_pairs,
+            "parent_consistent": int(len(chosen)),
+        },
+    )
+
+
+def robust_resolution_model(
+    delta_p3: np.ndarray,
+    min_events: int,
+    source: str,
+) -> EfficiencyResolution:
+    values = np.asarray(delta_p3, dtype=float)
+    values = values[np.all(np.isfinite(values), axis=1)]
+    if len(values) == 0:
+        return EfficiencyResolution(
+            center=np.zeros(3, dtype=float),
+            sigma=np.full(3, np.nan, dtype=float),
+            n=0,
+            source=source,
+        )
+    #endif
+
+    center = np.nanmedian(values, axis=0)
+    q_lo = np.nanpercentile(values, 15.865, axis=0)
+    q_hi = np.nanpercentile(values, 84.135, axis=0)
+    sigma = 0.5 * (q_hi - q_lo)
+
+    # Guard against pathological zero-width quantization.
+    sigma = np.maximum(sigma, 1.0e-4)
+    return EfficiencyResolution(
+        center=np.asarray(center, dtype=float),
+        sigma=np.asarray(sigma, dtype=float),
+        n=int(len(values)),
+        source=source,
+    )
+
+
+def apply_resolution_match(
+    delta_p3: np.ndarray,
+    model: EfficiencyResolution,
+    nsigma: float,
+) -> np.ndarray:
+    delta = np.asarray(delta_p3, dtype=float)
+    if (
+        model.n <= 0
+        or not np.all(np.isfinite(model.center))
+        or not np.all(np.isfinite(model.sigma))
+    ):
+        return np.zeros(len(delta), dtype=bool)
+    #endif
+    z = np.abs(
+        (delta - model.center[None, :])
+        / model.sigma[None, :]
+    )
+    return np.all(np.isfinite(z) & (z <= nsigma), axis=1)
+
+
+def initialize_efficiency_accumulator() -> Dict[str, dict]:
+    out: Dict[str, dict] = {}
+    for key, emin, emax in E_PROBE_BINS:
+        for probe_bin in efficiency_bin_order(emin):
+            out[f"{key}:{probe_bin}"] = {
+                "energy_bin": key,
+                "energy_min": float(emin),
+                "energy_max": float(emax),
+                "probe_bin": probe_bin,
+                "data_raw_tags": 0,
+                "data_expected_pi0": 0.0,
+                "data_expected_variance": 0.0,
+                "data_matched": 0,
+                "data_tagFT_raw": 0,
+                "data_tagFD_raw": 0,
+                "data_tagFT_fpi0": float("nan"),
+                "data_tagFT_fpi0_stat": float("nan"),
+                "data_tagFD_fpi0": float("nan"),
+                "data_tagFD_fpi0_stat": float("nan"),
+                "mc_denominator": 0,
+                "mc_matched": 0,
+                "mc_tagFT_raw": 0,
+                "mc_tagFD_raw": 0,
+            }
+        #endfor
+    #endfor
+    return out
+
+
+def efficiency_selected_indices(
+    matrix: np.ndarray,
+    theta_egamma_deg: np.ndarray,
+    tag_theta_deg: np.ndarray,
+    region: str,
+    energy_min: float,
+    energy_max: float,
+    optimizer_results: list,
+    operating_step: int,
+) -> np.ndarray:
+    """Apply exactly the purity-fit signal selection to one epgamma chunk."""
+    emiss_idx = FEATURE_INDEX["Emiss2"]
+    mx2_idx = FEATURE_INDEX["Mx2_1"]
+
+    base = (
+        np.isfinite(theta_egamma_deg)
+        & (theta_egamma_deg > THETA_EGAMMA_MIN_DEG)
+        & np.isfinite(matrix[:, emiss_idx])
+        & (matrix[:, emiss_idx] >= energy_min)
+        & (matrix[:, emiss_idx] < energy_max)
+        & np.isfinite(matrix[:, mx2_idx])
+        & (matrix[:, mx2_idx] < SIGNAL_MX2_1_MAX)
+    )
+
+    if region == "FT":
+        base &= (
+            np.isfinite(tag_theta_deg)
+            & (tag_theta_deg >= FT_THETA_MIN_DEG)
+            & (tag_theta_deg < FT_THETA_MAX_DEG)
+        )
+    else:
+        base &= (
+            np.isfinite(tag_theta_deg)
+            & (tag_theta_deg >= FD_THETA_MIN_DEG)
+            & (tag_theta_deg < FD_THETA_MAX_DEG)
+        )
+    #endif
+
+    idx = np.flatnonzero(base)
+    if len(idx) == 0:
+        return idx
+    #endif
+
+    subset = matrix[idx]
+    masks = build_cumulative_optimizer_masks(
+        subset,
+        optimizer_results,
+    )
+    step = min(int(operating_step), len(masks) - 1)
+    return idx[masks[step]]
+
+
+def period_efficiency_fit_config(
+    optimizer_summary: dict,
+    bin_key: str,
+    tag_region: str,
+) -> Optional[dict]:
+    region_summary = (
+        optimizer_summary.get("energy_bins", {})
+        .get(bin_key, {})
+        .get("regions", {})
+        .get(tag_region)
+    )
+    if region_summary is None:
+        return None
+    #endif
+    fit = region_summary.get("data_fit")
+    if not fit or not fit.get("success", False):
+        return None
+    #endif
+    return {
+        "fit": fit,
+        "optimizer_results": region_summary.get("results", []),
+        "step": int(fit["step"]),
+    }
+
+
+def efficiency_resolution_region(
+    pred_theta_deg: np.ndarray,
+) -> np.ndarray:
+    theta = np.asarray(pred_theta_deg, dtype=float)
+    region = np.full(theta.shape, "", dtype="<U3")
+    region[
+        np.isfinite(theta)
+        & (theta >= FT_THETA_MIN_DEG)
+        & (theta < FT_THETA_MAX_DEG)
+    ] = "FT"
+    region[
+        np.isfinite(theta)
+        & (theta >= FD_THETA_MIN_DEG)
+        & (theta < FD_THETA_MAX_DEG)
+    ] = "FD"
+    return region
+
+
+def accumulate_selected_tags(
+    accumulator: Dict[str, dict],
+    bin_key: str,
+    energy_min: float,
+    probe_labels: np.ndarray,
+    tag_region: str,
+    is_data: bool,
+    f_pi0: float = 1.0,
+    f_pi0_stat: float = 0.0,
+) -> None:
+    for probe_bin in efficiency_bin_order(energy_min):
+        count = int(np.count_nonzero(probe_labels == probe_bin))
+        if count == 0:
+            continue
+        #endif
+        row = accumulator[f"{bin_key}:{probe_bin}"]
+        if is_data:
+            row["data_raw_tags"] += count
+            row["data_expected_pi0"] += f_pi0 * count
+            count_key = (
+                "data_tagFT_raw" if tag_region == "FT" else "data_tagFD_raw"
+            )
+            row[count_key] += count
+            prefix = "data_tagFT" if tag_region == "FT" else "data_tagFD"
+            row[f"{prefix}_fpi0"] = float(f_pi0)
+            row[f"{prefix}_fpi0_stat"] = float(f_pi0_stat)
+        else:
+            row["mc_denominator"] += count
+            row[
+                "mc_tagFT_raw" if tag_region == "FT" else "mc_tagFD_raw"
+            ] += count
+        #endif
+    #endfor
+
+
+def accumulate_matched_tags(
+    accumulator: Dict[str, dict],
+    bin_key: str,
+    energy_min: float,
+    probe_labels: np.ndarray,
+    matched_mask: np.ndarray,
+    is_data: bool,
+) -> None:
+    for probe_bin in efficiency_bin_order(energy_min):
+        count = int(
+            np.count_nonzero(
+                (probe_labels == probe_bin)
+                & np.asarray(matched_mask, dtype=bool)
+            )
+        )
+        if count == 0:
+            continue
+        #endif
+        row = accumulator[f"{bin_key}:{probe_bin}"]
+        if is_data:
+            row["data_matched"] += count
+        else:
+            row["mc_matched"] += count
+        #endif
+    #endfor
+
+
+def process_mc_efficiency_pass(
+    period: Period,
+    optimizer_summary: dict,
+    tree_name: str,
+    max_entries: int,
+    step_size: int,
+    eppi0: EfficiencyEPPi0Store,
+    parent_component_tol: float,
+    parent_distance_max: float,
+    kdtree_workers: int,
+    assoc_mgg_min: float,
+    assoc_mgg_max: float,
+    assoc_remainder_mass2_max: float,
+    assoc_probe_energy_min: float,
+    accumulator: Dict[str, dict],
+) -> Dict[str, object]:
+    """
+    One additional AAO epgamma pass:
+      denominator counting + e/p cKDTree parent association + clean residuals.
+    """
+    tree, tree_indices = build_mc_parent_index(
+        eppi0,
+        parent_component_tol,
+    )
+
+    found_tree, total = preflight_custom_branches(
+        period.pi0_mc,
+        tree_name,
+        EFF_EPG_REQUIRED,
+    )
+    residual_parts = {"FT": [], "FD": [], "ALL": []}
+    clean_records: List[dict] = []
+    counters = {
+        "selected_tags": 0,
+        "parent_matched": 0,
+        "positive": 0,
+        "mass_window": 0,
+        "mass_shell": 0,
+        "threshold": 0,
+    }
+    matched_parent_indices_all: List[np.ndarray] = []
+
+    for arrays in iterate_efficiency_tree_arrays(
+        period.pi0_mc,
+        found_tree,
+        EFF_EPG_REQUIRED,
+        max_entries,
+        step_size,
+    ):
+        matrix, extra = efficiency_epgamma_feature_matrix(
+            arrays,
+            BEAM_ENERGY_GEV[period.key],
+        )
+
+        for bin_key, emin, emax in E_PROBE_BINS:
+            for tag_region in ("FT", "FD"):
+                config = period_efficiency_fit_config(
+                    optimizer_summary,
+                    bin_key,
+                    tag_region,
+                )
+                if config is None:
+                    continue
+                #endif
+
+                selected = efficiency_selected_indices(
+                    matrix,
+                    extra["theta_egamma_deg"],
+                    extra["tag_theta_deg"],
+                    tag_region,
+                    emin,
+                    emax,
+                    config["optimizer_results"],
+                    config["step"],
+                )
+                if len(selected) == 0:
+                    continue
+                #endif
+
+                probe_labels = efficiency_probe_bin(
+                    bin_key,
+                    emin,
+                    extra["pred_probe_theta_deg"][selected],
+                    matrix[selected, EVENT_INDEX["pred_probe_sector"]],
+                )
+                valid_probe = probe_labels != ""
+                selected = selected[valid_probe]
+                probe_labels = probe_labels[valid_probe]
+                if len(selected) == 0:
+                    continue
+                #endif
+
+                counters["selected_tags"] += len(selected)
+                accumulate_selected_tags(
+                    accumulator,
+                    bin_key,
+                    emin,
+                    probe_labels,
+                    tag_region,
+                    is_data=False,
+                )
+
+                local_epg, pi_idx, _parent_delta = match_mc_parent_chunk(
+                    extra["electron_p3"][selected],
+                    extra["proton_p3"][selected],
+                    tree,
+                    tree_indices,
+                    eppi0,
+                    parent_component_tol,
+                    parent_distance_max,
+                    kdtree_workers,
+                )
+                if len(local_epg) == 0:
+                    continue
+                #endif
+                counters["parent_matched"] += len(local_epg)
+                matched_parent_indices_all.append(pi_idx)
+
+                selected_m = selected[local_epg]
+                probe_labels_m = probe_labels[local_epg]
+
+                reco = clean_reconstructed_probe_from_pairs(
+                    extra["electron_p3"][selected_m],
+                    extra["proton_p3"][selected_m],
+                    extra["tag_p3"][selected_m],
+                    extra["pred_probe_p3"][selected_m],
+                    eppi0,
+                    pi_idx,
+                    assoc_mgg_min,
+                    assoc_mgg_max,
+                    assoc_remainder_mass2_max,
+                    assoc_probe_energy_min,
+                )
+
+                for stage in ("positive", "mass_window", "mass_shell", "threshold"):
+                    counters[stage] += int(np.count_nonzero(reco[stage]))
+                #endfor
+
+                clean = np.asarray(reco["threshold"], dtype=bool)
+                if not np.any(clean):
+                    continue
+                #endif
+
+                delta = np.asarray(reco["delta_p3"][clean], dtype=float)
+                theta = extra["pred_probe_theta_deg"][selected_m][clean]
+                res_region = efficiency_resolution_region(theta)
+                residual_parts["ALL"].append(delta)
+                for rr in ("FT", "FD"):
+                    if np.any(res_region == rr):
+                        residual_parts[rr].append(delta[res_region == rr])
+                    #endif
+                #endfor
+
+                clean_records.append(
+                    {
+                        "bin_key": bin_key,
+                        "energy_min": emin,
+                        "probe_labels": probe_labels_m[clean],
+                        "resolution_region": res_region,
+                        "delta_p3": delta,
+                    }
+                )
+            #endfor
+        #endfor
+    #endfor
+
+    residuals = {}
+    for region, parts in residual_parts.items():
+        residuals[region] = (
+            np.concatenate(parts, axis=0)
+            if parts else np.empty((0, 3), dtype=float)
+        )
+    #endfor
+
+    # Directed-tag duplication audit: how often multiple selected epgamma tags
+    # found the same AAO eppi0 parent.
+    duplicate_fraction = float("nan")
+    if matched_parent_indices_all:
+        all_idx = np.concatenate(matched_parent_indices_all)
+        if len(all_idx):
+            _, multiplicity = np.unique(all_idx, return_counts=True)
+            duplicate_fraction = float(
+                np.sum(multiplicity[multiplicity > 1])
+                / max(np.sum(multiplicity), 1)
+            )
+        #endif
+    #endif
+
+    return {
+        "residuals": residuals,
+        "clean_records": clean_records,
+        "counters": counters,
+        "directed_tag_duplicate_fraction": duplicate_fraction,
+        "tree_entries_total": int(total),
+    }
+
+
+def derive_efficiency_resolutions(
+    mc_pass: Dict[str, object],
+    min_events: int,
+) -> Dict[str, EfficiencyResolution]:
+    all_model = robust_resolution_model(
+        mc_pass["residuals"]["ALL"],
+        min_events,
+        "period-wide AAO",
+    )
+    models = {}
+    for region in ("FT", "FD"):
+        values = mc_pass["residuals"][region]
+        if len(values) >= min_events:
+            models[region] = robust_resolution_model(
+                values,
+                min_events,
+                f"{region}-specific AAO",
+            )
+        else:
+            models[region] = EfficiencyResolution(
+                center=all_model.center.copy(),
+                sigma=all_model.sigma.copy(),
+                n=int(len(values)),
+                source=f"period-wide AAO fallback ({len(values)} local)",
+            )
+        #endif
+    #endfor
+    return models
+
+
+def finalize_mc_numerator(
+    accumulator: Dict[str, dict],
+    mc_pass: Dict[str, object],
+    models: Dict[str, EfficiencyResolution],
+    nsigma: float,
+) -> Dict[str, int]:
+    matched_total = 0
+    clean_total = 0
+
+    for record in mc_pass["clean_records"]:
+        delta = record["delta_p3"]
+        region = record["resolution_region"]
+        matched = np.zeros(len(delta), dtype=bool)
+        for rr in ("FT", "FD"):
+            mask = region == rr
+            if np.any(mask):
+                matched[mask] = apply_resolution_match(
+                    delta[mask],
+                    models[rr],
+                    nsigma,
+                )
+            #endif
+        #endfor
+
+        clean_total += len(delta)
+        matched_total += int(np.count_nonzero(matched))
+        accumulate_matched_tags(
+            accumulator,
+            record["bin_key"],
+            record["energy_min"],
+            record["probe_labels"],
+            matched,
+            is_data=False,
+        )
+    #endfor
+    return {
+        "clean_associations": int(clean_total),
+        "probe_matched": int(matched_total),
+    }
+
+
+def process_data_efficiency_pass(
+    period: Period,
+    optimizer_summary: dict,
+    tree_name: str,
+    max_entries: int,
+    step_size: int,
+    eppi0: EfficiencyEPPi0Store,
+    parent_component_tol: float,
+    assoc_mgg_min: float,
+    assoc_mgg_max: float,
+    assoc_remainder_mass2_max: float,
+    assoc_probe_energy_min: float,
+    models: Dict[str, EfficiencyResolution],
+    nsigma: float,
+    accumulator: Dict[str, dict],
+) -> Dict[str, object]:
+    """
+    One additional nSidis epgamma pass:
+      purity-weighted denominator + exact-event/e-p association + probe match.
+    """
+    sorted_keys, sorted_order = prepare_data_event_index(eppi0)
+
+    required = list(EFF_EPG_REQUIRED) + list(EFF_EPG_DATA_IDS)
+    found_tree, total = preflight_custom_branches(
+        period.data,
+        tree_name,
+        required,
+    )
+    counters = {
+        "selected_tags": 0,
+        "same_event": 0,
+        "same_event_pairs": 0,
+        "parent_consistent": 0,
+        "positive": 0,
+        "mass_window": 0,
+        "mass_shell": 0,
+        "threshold": 0,
+        "probe_matched": 0,
+        "purity_fit_unavailable_tags": 0,
+    }
+    residual_parts = {"FT": [], "FD": []}
+    selected_event_key_parts: List[np.ndarray] = []
+
+    for arrays in iterate_efficiency_tree_arrays(
+        period.data,
+        found_tree,
+        required,
+        max_entries,
+        step_size,
+    ):
+        matrix, extra = efficiency_epgamma_feature_matrix(
+            arrays,
+            BEAM_ENERGY_GEV[period.key],
+        )
+
+        for bin_key, emin, emax in E_PROBE_BINS:
+            for tag_region in ("FT", "FD"):
+                config = period_efficiency_fit_config(
+                    optimizer_summary,
+                    bin_key,
+                    tag_region,
+                )
+                if config is None:
+                    continue
+                #endif
+                fit = config["fit"]
+
+                selected = efficiency_selected_indices(
+                    matrix,
+                    extra["theta_egamma_deg"],
+                    extra["tag_theta_deg"],
+                    tag_region,
+                    emin,
+                    emax,
+                    config["optimizer_results"],
+                    config["step"],
+                )
+                if len(selected) == 0:
+                    continue
+                #endif
+
+                probe_labels = efficiency_probe_bin(
+                    bin_key,
+                    emin,
+                    extra["pred_probe_theta_deg"][selected],
+                    matrix[selected, EVENT_INDEX["pred_probe_sector"]],
+                )
+                valid_probe = probe_labels != ""
+                selected = selected[valid_probe]
+                probe_labels = probe_labels[valid_probe]
+                if len(selected) == 0:
+                    continue
+                #endif
+
+                counters["selected_tags"] += len(selected)
+                selected_event_key_parts.append(
+                    packed_event_keys_eff(
+                        arrays["runnum"][selected],
+                        arrays["evnum"][selected],
+                    )
+                )
+
+                accumulate_selected_tags(
+                    accumulator,
+                    bin_key,
+                    emin,
+                    probe_labels,
+                    tag_region,
+                    is_data=True,
+                    f_pi0=float(fit["fraction_pi0"]),
+                    f_pi0_stat=float(fit.get("fraction_pi0_stat", 0.0)),
+                )
+
+                local_epg, pi_idx, assoc_counts = match_data_parent_chunk(
+                    arrays["runnum"][selected],
+                    arrays["evnum"][selected],
+                    extra["electron_p3"][selected],
+                    extra["proton_p3"][selected],
+                    sorted_keys,
+                    sorted_order,
+                    eppi0,
+                    parent_component_tol,
+                )
+                counters["same_event"] += assoc_counts["same_event"]
+                counters["same_event_pairs"] += assoc_counts["same_event_pairs"]
+                counters["parent_consistent"] += assoc_counts["parent_consistent"]
+
+                if len(local_epg) == 0:
+                    continue
+                #endif
+
+                selected_m = selected[local_epg]
+                probe_labels_m = probe_labels[local_epg]
+
+                reco = clean_reconstructed_probe_from_pairs(
+                    extra["electron_p3"][selected_m],
+                    extra["proton_p3"][selected_m],
+                    extra["tag_p3"][selected_m],
+                    extra["pred_probe_p3"][selected_m],
+                    eppi0,
+                    pi_idx,
+                    assoc_mgg_min,
+                    assoc_mgg_max,
+                    assoc_remainder_mass2_max,
+                    assoc_probe_energy_min,
+                )
+                for stage in ("positive", "mass_window", "mass_shell", "threshold"):
+                    counters[stage] += int(np.count_nonzero(reco[stage]))
+                #endfor
+
+                clean = np.asarray(reco["threshold"], dtype=bool)
+                if not np.any(clean):
+                    continue
+                #endif
+
+                delta = np.asarray(reco["delta_p3"][clean], dtype=float)
+                theta = extra["pred_probe_theta_deg"][selected_m][clean]
+                rr = efficiency_resolution_region(theta)
+                probe_labels_c = probe_labels_m[clean]
+
+                matched = np.zeros(len(delta), dtype=bool)
+                for region_name in ("FT", "FD"):
+                    mask = rr == region_name
+                    if np.any(mask):
+                        matched[mask] = apply_resolution_match(
+                            delta[mask],
+                            models[region_name],
+                            nsigma,
+                        )
+                        # Keep a bounded diagnostic sample.
+                        residual_parts[region_name].append(
+                            delta[mask][:50_000]
+                        )
+                    #endif
+                #endfor
+
+                counters["probe_matched"] += int(np.count_nonzero(matched))
+                accumulate_matched_tags(
+                    accumulator,
+                    bin_key,
+                    emin,
+                    probe_labels_c,
+                    matched,
+                    is_data=True,
+                )
+            #endfor
+        #endfor
+    #endfor
+
+    duplicate_fraction = float("nan")
+    if selected_event_key_parts:
+        keys = np.concatenate(selected_event_key_parts)
+        if len(keys):
+            _, multiplicity = np.unique(keys, return_counts=True)
+            duplicate_fraction = float(
+                np.sum(multiplicity[multiplicity > 1])
+                / max(np.sum(multiplicity), 1)
+            )
+        #endif
+    #endif
+
+    residuals = {}
+    for rr in ("FT", "FD"):
+        residuals[rr] = (
+            np.concatenate(residual_parts[rr], axis=0)
+            if residual_parts[rr]
+            else np.empty((0, 3), dtype=float)
+        )
+    #endfor
+
+    return {
+        "counters": counters,
+        "residuals": residuals,
+        "directed_tag_event_multiplicity_fraction": duplicate_fraction,
+        "tree_entries_total": int(total),
+    }
+
+
+def calculate_efficiency_results(
+    accumulator: Dict[str, dict],
+) -> List[dict]:
+    rows: List[dict] = []
+
+    for key, row in accumulator.items():
+        data_den = float(row["data_expected_pi0"])
+        data_num = int(row["data_matched"])
+        mc_den = int(row["mc_denominator"])
+        mc_num = int(row["mc_matched"])
+
+        data_eff = data_num / data_den if data_den > 0.0 else float("nan")
+        mc_eff = mc_num / mc_den if mc_den > 0 else float("nan")
+
+        # Keep the common f_pi0 uncertainty correlated across ROOT chunks.
+        data_den_variance = 0.0
+        for prefix in ("data_tagFT", "data_tagFD"):
+            n_tag = int(row[f"{prefix}_raw"])
+            f = float(row[f"{prefix}_fpi0"])
+            sf = float(row[f"{prefix}_fpi0_stat"])
+            if n_tag > 0 and np.isfinite(f):
+                data_den_variance += f * f * n_tag
+                if np.isfinite(sf):
+                    data_den_variance += (n_tag * sf) ** 2
+                #endif
+            #endif
+        #endfor
+        row["data_expected_variance"] = data_den_variance
+        data_den_sigma = math.sqrt(max(data_den_variance, 0.0))
+        if data_num > 0 and data_den > 0:
+            data_eff_sigma = data_eff * math.sqrt(
+                1.0 / data_num
+                + (data_den_sigma / data_den) ** 2
+            )
+        else:
+            data_eff_sigma = float("nan")
+        #endif
+
+        if mc_den > 0 and np.isfinite(mc_eff):
+            mc_eff_sigma = math.sqrt(
+                max(mc_eff * (1.0 - mc_eff), 0.0) / mc_den
+            )
+        else:
+            mc_eff_sigma = float("nan")
+        #endif
+
+        ratio = (
+            data_eff / mc_eff
+            if np.isfinite(data_eff)
+            and np.isfinite(mc_eff)
+            and mc_eff > 0.0
+            else float("nan")
+        )
+        if (
+            np.isfinite(ratio)
+            and data_eff > 0.0
+            and mc_eff > 0.0
+            and np.isfinite(data_eff_sigma)
+            and np.isfinite(mc_eff_sigma)
+        ):
+            ratio_sigma = ratio * math.sqrt(
+                (data_eff_sigma / data_eff) ** 2
+                + (mc_eff_sigma / mc_eff) ** 2
+            )
+        else:
+            ratio_sigma = float("nan")
+        #endif
+
+        rows.append(
+            {
+                **row,
+                "data_expected_sigma": data_den_sigma,
+                "data_efficiency": data_eff,
+                "data_efficiency_sigma_preliminary": data_eff_sigma,
+                "mc_efficiency": mc_eff,
+                "mc_efficiency_sigma": mc_eff_sigma,
+                "data_mc_ratio": ratio,
+                "data_mc_ratio_sigma_preliminary": ratio_sigma,
+            }
+        )
+    #endfor
+
+    order_map = {key: i for i, (key, _a, _b) in enumerate(E_PROBE_BINS)}
+    rows.sort(
+        key=lambda r: (
+            order_map[r["energy_bin"]],
+            efficiency_bin_order(r["energy_min"]).index(r["probe_bin"]),
+        )
+    )
+    return rows
+
+
+def make_matching_resolution_canvas(
+    period: Period,
+    mc_pass: Dict[str, object],
+    data_pass: Dict[str, object],
+    models: Dict[str, EfficiencyResolution],
+    nsigma: float,
+    output_dir: Path,
+) -> Path:
+    """AAO-derived Delta-p matching windows with data overlaid diagnostically."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(
+        2,
+        3,
+        figsize=(14.5, 8.2),
+        squeeze=False,
+    )
+
+    labels = (r"$\Delta p_x$ (GeV)", r"$\Delta p_y$ (GeV)", r"$\Delta p_z$ (GeV)")
+    for irow, region in enumerate(("FT", "FD")):
+        mc = np.asarray(mc_pass["residuals"][region], dtype=float)
+        data = np.asarray(data_pass["residuals"][region], dtype=float)
+        model = models[region]
+
+        for icomp in range(3):
+            ax = axes[irow, icomp]
+            if len(mc):
+                lo, hi = np.nanpercentile(mc[:, icomp], [0.5, 99.5])
+                span = max(hi - lo, 0.02)
+                lo -= 0.1 * span
+                hi += 0.1 * span
+                ax.hist(
+                    mc[:, icomp],
+                    bins=80,
+                    range=(lo, hi),
+                    histtype="step",
+                    density=True,
+                    linewidth=1.5,
+                    label="AAO clean association",
+                )
+                if len(data):
+                    ax.hist(
+                        data[:, icomp],
+                        bins=80,
+                        range=(lo, hi),
+                        histtype="step",
+                        density=True,
+                        linewidth=1.2,
+                        label="data clean association",
+                    )
+                #endif
+                center = model.center[icomp]
+                sigma = model.sigma[icomp]
+                ax.axvline(center, linestyle="--", linewidth=1.0)
+                ax.axvline(
+                    center - nsigma * sigma,
+                    linestyle=":",
+                    linewidth=1.0,
+                )
+                ax.axvline(
+                    center + nsigma * sigma,
+                    linestyle=":",
+                    linewidth=1.0,
+                )
+            #endif
+            ax.set_xlabel(labels[icomp])
+            ax.set_ylabel("density")
+            ax.grid(alpha=0.18)
+            ax.set_title(
+                (
+                    f"{region}: center={model.center[icomp]:+.4f}, "
+                    f"sigma={model.sigma[icomp]:.4f} GeV\n"
+                    f"N_AAO={model.n:,}; {model.source}"
+                ),
+                fontsize=9.0,
+            )
+        #endfor
+    #endfor
+
+    handles, labels_legend = axes[0, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(
+            handles,
+            labels_legend,
+            loc="upper center",
+            ncol=2,
+            frameon=True,
+        )
+    #endif
+    fig.suptitle(
+        (
+            f"{period.label}: reconstructed-probe momentum matching\n"
+            f"final window = MC center +/- {nsigma:g} robust sigma"
+        ),
+        fontsize=13,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.93))
+    out = output_dir / f"matching_resolution_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
+def make_association_cutflow_canvas(
+    period: Period,
+    mc_pass: Dict[str, object],
+    mc_final: Dict[str, int],
+    data_pass: Dict[str, object],
+    output_dir: Path,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    mc = mc_pass["counters"]
+    da = data_pass["counters"]
+
+    stages = (
+        "selected tags",
+        "parent/event",
+        "positive remainder",
+        r"$M_{\gamma\gamma}$",
+        "massless remainder",
+        r"$E_{\rm probe}^{reco}>0.4$",
+        r"$\Delta\vec p$ match",
+    )
+    mc_values = np.asarray(
+        [
+            mc["selected_tags"],
+            mc["parent_matched"],
+            mc["positive"],
+            mc["mass_window"],
+            mc["mass_shell"],
+            mc["threshold"],
+            mc_final["probe_matched"],
+        ],
+        dtype=float,
+    )
+    data_values = np.asarray(
+        [
+            da["selected_tags"],
+            da["parent_consistent"],
+            da["positive"],
+            da["mass_window"],
+            da["mass_shell"],
+            da["threshold"],
+            da["probe_matched"],
+        ],
+        dtype=float,
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.0))
+    x = np.arange(len(stages))
+
+    for ax, vals, title in (
+        (axes[0], data_values, "data"),
+        (axes[1], mc_values, "AAO MC"),
+    ):
+        denom = vals[0] if vals[0] > 0 else 1.0
+        ax.bar(x, vals / denom)
+        ax.set_xticks(x)
+        ax.set_xticklabels(stages, rotation=32, ha="right")
+        ax.set_ylim(0.0, 1.05)
+        ax.set_ylabel("fraction of selected tags")
+        ax.set_title(title)
+        ax.grid(axis="y", alpha=0.2)
+        for xi, value in zip(x, vals):
+            ax.text(
+                xi,
+                min(value / denom + 0.025, 1.02),
+                f"{int(value):,}",
+                ha="center",
+                va="bottom",
+                fontsize=7.5,
+                rotation=90,
+            )
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        (
+            f"{period.label}: tag-probe association cut flow\n"
+            "data uses exact run/event + e/p parent; MC uses e/p cKDTree only"
+        ),
+        fontsize=12.5,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.93))
+    out = output_dir / f"association_cutflow_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
+def make_efficiency_counts_canvas(
+    period: Period,
+    rows: Sequence[dict],
+    output_dir: Path,
+) -> Path:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(
+        len(E_PROBE_BINS),
+        2,
+        figsize=(13.0, 3.3 * len(E_PROBE_BINS) + 0.8),
+        squeeze=False,
+    )
+
+    for irow, (bin_key, emin, emax) in enumerate(E_PROBE_BINS):
+        subset = [r for r in rows if r["energy_bin"] == bin_key]
+        labels = [r["probe_bin"] for r in subset]
+        x = np.arange(len(labels))
+
+        ax = axes[irow, 0]
+        ax.bar(x - 0.18, [r["data_expected_pi0"] for r in subset], width=0.36, label="expected pi0 tags")
+        ax.bar(x + 0.18, [r["data_matched"] for r in subset], width=0.36, label="matched probes")
+        ax.set_title(f"Data: {emin:g} <= E_probe < {emax:g} GeV")
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.set_ylabel("events")
+        ax.grid(axis="y", alpha=0.18)
+
+        ax = axes[irow, 1]
+        ax.bar(x - 0.18, [r["mc_denominator"] for r in subset], width=0.36, label="AAO tags")
+        ax.bar(x + 0.18, [r["mc_matched"] for r in subset], width=0.36, label="matched probes")
+        ax.set_title(f"AAO MC: {emin:g} <= E_probe < {emax:g} GeV")
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels)
+        ax.set_ylabel("events")
+        ax.grid(axis="y", alpha=0.18)
+
+        if irow == 0:
+            axes[irow, 0].legend(frameon=True)
+            axes[irow, 1].legend(frameon=True)
+        #endif
+    #endfor
+
+    fig.suptitle(
+        f"{period.label}: efficiency numerator/denominator statistics",
+        fontsize=13,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.965))
+    out = output_dir / f"efficiency_counts_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
+def make_efficiency_summary_canvas(
+    period: Period,
+    rows: Sequence[dict],
+    output_dir: Path,
+) -> Path:
+    """
+    Four rows (E_probe bins) x three columns:
+      epsilon_data, epsilon_MC, epsilon_data/epsilon_MC.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(
+        len(E_PROBE_BINS),
+        3,
+        figsize=(14.5, 3.2 * len(E_PROBE_BINS) + 0.8),
+        squeeze=False,
+    )
+
+    for irow, (bin_key, emin, emax) in enumerate(E_PROBE_BINS):
+        subset = [r for r in rows if r["energy_bin"] == bin_key]
+        labels = [r["probe_bin"] for r in subset]
+        x = np.arange(len(labels))
+
+        panels = (
+            (
+                "data_efficiency",
+                "data_efficiency_sigma_preliminary",
+                r"$\epsilon_{\rm data}$",
+                (0.0, 1.2),
+            ),
+            (
+                "mc_efficiency",
+                "mc_efficiency_sigma",
+                r"$\epsilon_{\rm MC}$",
+                (0.0, 1.05),
+            ),
+            (
+                "data_mc_ratio",
+                "data_mc_ratio_sigma_preliminary",
+                r"$\epsilon_{\rm data}/\epsilon_{\rm MC}$",
+                (0.5, 1.5),
+            ),
+        )
+
+        for icol, (ykey, ekey, ylabel, ylim) in enumerate(panels):
+            ax = axes[irow, icol]
+            y = np.asarray([r[ykey] for r in subset], dtype=float)
+            yerr = np.asarray([r[ekey] for r in subset], dtype=float)
+            finite = np.isfinite(y)
+            ax.errorbar(
+                x[finite],
+                y[finite],
+                yerr=np.where(
+                    np.isfinite(yerr[finite]),
+                    yerr[finite],
+                    0.0,
+                ),
+                fmt="o",
+                capsize=2,
+            )
+            if icol == 2:
+                ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            #endif
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels)
+            ax.set_ylim(*ylim)
+            ax.set_ylabel(ylabel)
+            ax.grid(alpha=0.2)
+            ax.set_title(
+                f"{emin:g} <= E_probe < {emax:g} GeV"
+                if icol == 1 else ""
+            )
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        (
+            f"{period.label}: preliminary photon reconstruction efficiency\n"
+            "FD sectors separate below 4 GeV; 4-9.5 GeV FD combined"
+        ),
+        fontsize=13,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.955))
+    out = output_dir / f"efficiency_summary_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
+def write_efficiency_summary_csv(
+    period: Period,
+    rows: Sequence[dict],
+    mc_pass: Dict[str, object],
+    data_pass: Dict[str, object],
+    models: Dict[str, EfficiencyResolution],
+    nsigma: float,
+    output_dir: Path,
+) -> Path:
+    """Exactly one compact machine-readable efficiency table per period."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out = output_dir / f"efficiency_summary_{period.key}.csv"
+
+    fields = (
+        "period",
+        "energy_bin",
+        "energy_min",
+        "energy_max",
+        "probe_bin",
+        "data_raw_tags",
+        "data_tagFT_raw",
+        "data_tagFD_raw",
+        "data_expected_pi0",
+        "data_expected_sigma",
+        "data_matched",
+        "data_efficiency",
+        "data_efficiency_sigma_preliminary",
+        "mc_denominator",
+        "mc_tagFT_raw",
+        "mc_tagFD_raw",
+        "mc_matched",
+        "mc_efficiency",
+        "mc_efficiency_sigma",
+        "data_mc_ratio",
+        "data_mc_ratio_sigma_preliminary",
+        "match_nsigma",
+        "ft_dp_center_x",
+        "ft_dp_center_y",
+        "ft_dp_center_z",
+        "ft_dp_sigma_x",
+        "ft_dp_sigma_y",
+        "ft_dp_sigma_z",
+        "fd_dp_center_x",
+        "fd_dp_center_y",
+        "fd_dp_center_z",
+        "fd_dp_sigma_x",
+        "fd_dp_sigma_y",
+        "fd_dp_sigma_z",
+    )
+
+    with out.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    **{key: row.get(key, "") for key in fields},
+                    "period": period.key,
+                    "match_nsigma": nsigma,
+                    "ft_dp_center_x": models["FT"].center[0],
+                    "ft_dp_center_y": models["FT"].center[1],
+                    "ft_dp_center_z": models["FT"].center[2],
+                    "ft_dp_sigma_x": models["FT"].sigma[0],
+                    "ft_dp_sigma_y": models["FT"].sigma[1],
+                    "ft_dp_sigma_z": models["FT"].sigma[2],
+                    "fd_dp_center_x": models["FD"].center[0],
+                    "fd_dp_center_y": models["FD"].center[1],
+                    "fd_dp_center_z": models["FD"].center[2],
+                    "fd_dp_sigma_x": models["FD"].sigma[0],
+                    "fd_dp_sigma_y": models["FD"].sigma[1],
+                    "fd_dp_sigma_z": models["FD"].sigma[2],
+                }
+            )
+        #endfor
+    #endwith
+    return out
+
+
+def run_efficiency_extraction(
+    period: Period,
+    optimizer_summary: dict,
+    tree_name: str,
+    max_entries: int,
+    eppi0_max_entries: int,
+    step_size: int,
+    parent_component_tol: float,
+    parent_distance_max: float,
+    kdtree_workers: int,
+    assoc_mgg_min: float,
+    assoc_mgg_max: float,
+    assoc_remainder_mass2_max: float,
+    assoc_probe_energy_min: float,
+    probe_match_nsigma: float,
+    min_resolution_events: int,
+    output_root: Path,
+) -> dict:
+    """End-to-end efficiency stage for one period."""
+    t0 = time.perf_counter()
+    outdir = output_root / "efficiency" / period.key
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # Preflight first so a missing companion file fails before expensive work.
+    for label, path, req in (
+        (
+            "data eppi0",
+            period.eppi0_data,
+            EFF_EPPIO_REQUIRED + EFF_EPPIO_DATA_IDS,
+        ),
+        (
+            "AAO eppi0",
+            period.eppi0_pi0_mc,
+            EFF_EPPIO_REQUIRED,
+        ),
+    ):
+        found, total = preflight_custom_branches(
+            path,
+            tree_name,
+            req,
+        )
+        log(
+            f"{period.label}: efficiency preflight {label}: "
+            f"{Path(path).name}, tree '{found}', {total:,} entries."
+        )
+    #endfor
+
+    # Full eppi0 stores are recommended even in a limited epgamma concept run;
+    # otherwise the two independently truncated files need not overlap.
+    data_eppi0 = load_eppi0_efficiency_store(
+        period.eppi0_data,
+        tree_name,
+        eppi0_max_entries,
+        step_size,
+        require_event_ids=True,
+        label=f"{period.label} data",
+    )
+    mc_eppi0 = load_eppi0_efficiency_store(
+        period.eppi0_pi0_mc,
+        tree_name,
+        eppi0_max_entries,
+        step_size,
+        require_event_ids=False,
+        label=f"{period.label} AAO",
+    )
+
+    accumulator = initialize_efficiency_accumulator()
+
+    log(
+        f"{period.label}: efficiency MC pass — runnum/evnum intentionally ignored; "
+        "matching AAO epgamma<->eppi0 by reconstructed e/p only."
+    )
+    mc_pass = process_mc_efficiency_pass(
+        period,
+        optimizer_summary,
+        tree_name,
+        max_entries,
+        step_size,
+        mc_eppi0,
+        parent_component_tol,
+        parent_distance_max,
+        kdtree_workers,
+        assoc_mgg_min,
+        assoc_mgg_max,
+        assoc_remainder_mass2_max,
+        assoc_probe_energy_min,
+        accumulator,
+    )
+
+    models = derive_efficiency_resolutions(
+        mc_pass,
+        min_resolution_events,
+    )
+    mc_final = finalize_mc_numerator(
+        accumulator,
+        mc_pass,
+        models,
+        probe_match_nsigma,
+    )
+
+    log(
+        f"{period.label}: efficiency data pass — exact (runnum,evnum) + "
+        "reconstructed e/p parent consistency."
+    )
+    data_pass = process_data_efficiency_pass(
+        period,
+        optimizer_summary,
+        tree_name,
+        max_entries,
+        step_size,
+        data_eppi0,
+        parent_component_tol,
+        assoc_mgg_min,
+        assoc_mgg_max,
+        assoc_remainder_mass2_max,
+        assoc_probe_energy_min,
+        models,
+        probe_match_nsigma,
+        accumulator,
+    )
+
+    rows = calculate_efficiency_results(accumulator)
+
+    matching_plot = make_matching_resolution_canvas(
+        period,
+        mc_pass,
+        data_pass,
+        models,
+        probe_match_nsigma,
+        outdir,
+    )
+    cutflow_plot = make_association_cutflow_canvas(
+        period,
+        mc_pass,
+        mc_final,
+        data_pass,
+        outdir,
+    )
+    counts_plot = make_efficiency_counts_canvas(
+        period,
+        rows,
+        outdir,
+    )
+    summary_plot = make_efficiency_summary_canvas(
+        period,
+        rows,
+        outdir,
+    )
+    summary_csv = write_efficiency_summary_csv(
+        period,
+        rows,
+        mc_pass,
+        data_pass,
+        models,
+        probe_match_nsigma,
+        outdir,
+    )
+
+    log(
+        f"{period.label}: efficiency outputs -> {outdir}; "
+        f"plots: {matching_plot.name}, {cutflow_plot.name}, "
+        f"{counts_plot.name}, {summary_plot.name}; "
+        f"one CSV: {summary_csv.name}."
+    )
+    log(
+        f"{period.label}: directed-tag audit: "
+        f"data selected-event multiplicity fraction="
+        f"{data_pass['directed_tag_event_multiplicity_fraction']:.3f}; "
+        f"AAO repeated-eppi0-parent fraction="
+        f"{mc_pass['directed_tag_duplicate_fraction']:.3f}. "
+        "These are diagnostics; directed tags are retained rather than silently "
+        "deduplicated."
+    )
+
+    return {
+        "rows": rows,
+        "data_counters": data_pass["counters"],
+        "mc_counters": mc_pass["counters"],
+        "mc_final": mc_final,
+        "resolution_ft": {
+            "center": models["FT"].center.tolist(),
+            "sigma": models["FT"].sigma.tolist(),
+            "n": models["FT"].n,
+            "source": models["FT"].source,
+        },
+        "resolution_fd": {
+            "center": models["FD"].center.tolist(),
+            "sigma": models["FD"].sigma.tolist(),
+            "n": models["FD"].n,
+            "source": models["FD"].source,
+        },
+        "elapsed_s": float(time.perf_counter() - t0),
+    }
+
+
 # =============================================================================
 # Period driver
 # =============================================================================
@@ -5920,6 +8147,17 @@ def process_period(
     data_fit_morph_smear_steps: int,
     data_fit_sideband_min_events: int,
     data_fit_sideband_max_js: float,
+    run_efficiency: bool,
+    efficiency_eppi0_max_entries: int,
+    parent_component_tol: float,
+    parent_distance_max: float,
+    kdtree_workers: int,
+    assoc_mgg_min: float,
+    assoc_mgg_max: float,
+    assoc_remainder_mass2_max: float,
+    assoc_probe_energy_min: float,
+    probe_match_nsigma: float,
+    probe_match_min_resolution_events: int,
 ) -> dict:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -6451,6 +8689,33 @@ def process_period(
         #endfor
     #endif
 
+    if run_efficiency and run_optimizer:
+        efficiency_summary = run_efficiency_extraction(
+            period,
+            optimizer_summary,
+            tree_name,
+            max_entries,
+            efficiency_eppi0_max_entries,
+            step_size,
+            parent_component_tol,
+            parent_distance_max,
+            kdtree_workers,
+            assoc_mgg_min,
+            assoc_mgg_max,
+            assoc_remainder_mass2_max,
+            assoc_probe_energy_min,
+            probe_match_nsigma,
+            probe_match_min_resolution_events,
+            output_dir.parent,
+        )
+        optimizer_summary["efficiency"] = efficiency_summary
+    elif run_efficiency and not run_optimizer:
+        log(
+            f"{period.label}: efficiency extraction skipped because the "
+            "purity optimizer/data-fit stage is disabled."
+        )
+    #endif
+
     log(
         f"{period.label}: complete in "
         f"{time.perf_counter() - t0:.1f} s."
@@ -6489,6 +8754,17 @@ def process_period_worker(
     data_fit_morph_smear_steps: int,
     data_fit_sideband_min_events: int,
     data_fit_sideband_max_js: float,
+    run_efficiency: bool,
+    efficiency_eppi0_max_entries: int,
+    parent_component_tol: float,
+    parent_distance_max: float,
+    kdtree_workers: int,
+    assoc_mgg_min: float,
+    assoc_mgg_max: float,
+    assoc_remainder_mass2_max: float,
+    assoc_probe_energy_min: float,
+    probe_match_nsigma: float,
+    probe_match_min_resolution_events: int,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -6527,6 +8803,17 @@ def process_period_worker(
         data_fit_morph_smear_steps,
         data_fit_sideband_min_events,
         data_fit_sideband_max_js,
+        run_efficiency,
+        efficiency_eppi0_max_entries,
+        parent_component_tol,
+        parent_distance_max,
+        kdtree_workers,
+        assoc_mgg_min,
+        assoc_mgg_max,
+        assoc_remainder_mass2_max,
+        assoc_probe_energy_min,
+        probe_match_nsigma,
+        probe_match_min_resolution_events,
     )
 
 
@@ -6769,6 +9056,33 @@ def main() -> int:
     if args.data_fit_sideband_max_js < 0.0:
         raise ValueError("--data-fit-sideband-max-js must be >= 0.")
     #endif
+    if args.efficiency_eppi0_max_entries < 0:
+        raise ValueError("--efficiency-eppi0-max-entries must be >= 0.")
+    #endif
+    if args.parent_component_tol <= 0.0:
+        raise ValueError("--parent-component-tol must be > 0.")
+    #endif
+    if args.parent_distance_max <= 0.0:
+        raise ValueError("--parent-distance-max must be > 0.")
+    #endif
+    if args.kdtree_workers <= 0:
+        raise ValueError("--kdtree-workers must be > 0.")
+    #endif
+    if not args.assoc_mgg_min < args.assoc_mgg_max:
+        raise ValueError("--assoc-mgg-min must be < --assoc-mgg-max.")
+    #endif
+    if args.assoc_remainder_mass2_max <= 0.0:
+        raise ValueError("--assoc-remainder-mass2-max must be > 0.")
+    #endif
+    if args.assoc_probe_energy_min < 0.0:
+        raise ValueError("--assoc-probe-energy-min must be >= 0.")
+    #endif
+    if args.probe_match_nsigma <= 0.0:
+        raise ValueError("--probe-match-nsigma must be > 0.")
+    #endif
+    if args.probe_match_min_resolution_events < 20:
+        raise ValueError("--probe-match-min-resolution-events must be >= 20.")
+    #endif
 
     selected_keys = set(args.period or [p.key for p in PERIODS])
     selected_periods = [p for p in PERIODS if p.key in selected_keys]
@@ -6818,6 +9132,20 @@ def main() -> int:
             "theta/phi/sector comes from p_beam - p_e - p_p - p_gamma,tag."
         )
     #endif
+    if args.skip_efficiency:
+        log("Final tag-probe efficiency extraction: disabled (--skip-efficiency).")
+    else:
+        log(
+            "Final tag-probe efficiency extraction: enabled. "
+            "Tag FT/FD from reconstructed p2; predicted probe determines FT/FD "
+            "efficiency bin and FD sector. FD sectors 1-6 below 4 GeV; "
+            "4-9.5 GeV FD combined. DATA association = exact run/event + e/p; "
+            "AAO association = e/p cKDTree only (MC run/ev never used); "
+            f"probe match = AAO-derived +/-{args.probe_match_nsigma:g} sigma "
+            "windows in Delta px,py,pz."
+        )
+    #endif
+
     log(
         "Common pre-binning selection: "
         f"Angle(e,gamma) > {THETA_EGAMMA_MIN_DEG:.1f} deg. "
@@ -6865,6 +9193,17 @@ def main() -> int:
                 args.data_fit_morph_smear_steps,
                 args.data_fit_sideband_min_events,
                 args.data_fit_sideband_max_js,
+                not args.skip_efficiency,
+                args.efficiency_eppi0_max_entries,
+                args.parent_component_tol,
+                args.parent_distance_max,
+                args.kdtree_workers,
+                args.assoc_mgg_min,
+                args.assoc_mgg_max,
+                args.assoc_remainder_mass2_max,
+                args.assoc_probe_energy_min,
+                args.probe_match_nsigma,
+                args.probe_match_min_resolution_events,
             )
         #endfor
     else:
@@ -6901,6 +9240,17 @@ def main() -> int:
                     args.data_fit_morph_smear_steps,
                     args.data_fit_sideband_min_events,
                     args.data_fit_sideband_max_js,
+                    not args.skip_efficiency,
+                    args.efficiency_eppi0_max_entries,
+                    args.parent_component_tol,
+                    args.parent_distance_max,
+                    args.kdtree_workers,
+                    args.assoc_mgg_min,
+                    args.assoc_mgg_max,
+                    args.assoc_remainder_mass2_max,
+                    args.assoc_probe_energy_min,
+                    args.probe_match_nsigma,
+                    args.probe_match_min_resolution_events,
                 ): period
                 for period in selected_periods
             }
