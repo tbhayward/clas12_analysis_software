@@ -148,8 +148,26 @@ The main diagnostics are visual:
         template_fit_response_<period>.png
 
 The first closure canvas shows RMS error in the fitted pi0 fraction versus cut
-step.  The response canvas shows fitted versus injected pi0 fraction, with the
+step. The response canvas shows fitted versus injected pi0 fraction, with the
 ideal y=x relation, so loss of template identifiability is visible directly.
+
+A final real-data composition-fit stage then chooses one closure-safe cumulative
+cut step independently in every period x detector x E_probe bin and fits the
+surviving nSidis data as
+
+    data = f_pi0 * AAO + (1 - f_pi0) * DVCSgen.
+
+The fit uses the same 1D reconstructed variable selected by the closure study
+at that operating step. Two compact plots are produced per period:
+
+    output/photon_efficiency_concept/data_template_fit/
+        data_template_fit_<period>.png
+        pi0_fraction_summary_<period>.png
+
+The first is a 4x2 canvas showing data, fitted total, the two fitted template
+components, the chosen cut step/discriminator, f_pi0 +/- statistical error,
+and deviance/ndf. The second summarizes the fitted pi0 fraction versus E_probe
+for FD and FT.
 
 For every cumulative cut step, the closure test automatically chooses the
 single surviving reconstructed variable with the largest AAO-vs-DVCS
@@ -571,6 +589,34 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Maximum quantile bins for the automatically selected 1D closure "
             "discriminator. Default: 24."
+        ),
+    )
+    parser.add_argument(
+        "--data-fit-max-closure-bias",
+        type=float,
+        default=0.01,
+        help=(
+            "Maximum allowed absolute closure bias at injected f_pi0=0.5 "
+            "when selecting the real-data fit operating step. Default: 0.01."
+        ),
+    )
+    parser.add_argument(
+        "--data-fit-max-closure-rms",
+        type=float,
+        default=0.03,
+        help=(
+            "Absolute ceiling on closure RMS when selecting the real-data fit "
+            "operating step. Default: 0.03."
+        ),
+    )
+    parser.add_argument(
+        "--data-fit-background-near-best",
+        type=float,
+        default=1.10,
+        help=(
+            "Among closure-safe cut steps, choose the earliest step whose "
+            "DVCS+data-sideband retention is within this factor of the best "
+            "available value. Default: 1.10."
         ),
     )
     parser.add_argument(
@@ -1606,6 +1652,688 @@ def make_combined_closure_canvas(
 
 
 
+
+# =============================================================================
+# Real-data two-template composition fit
+# =============================================================================
+
+def closure_row_for_step(
+    closure_results: list,
+    step: int,
+    true_fraction: float = 0.50,
+) -> Optional[dict]:
+    """Return the closure result nearest the requested injected fraction."""
+    rows = [
+        result
+        for result in closure_results
+        if int(result["step"]) == int(step)
+    ]
+    if not rows:
+        return None
+    #endif
+
+    return min(
+        rows,
+        key=lambda result: abs(
+            float(result["true_fraction"]) - float(true_fraction)
+        ),
+    )
+
+
+def optimizer_retention_at_step(
+    optimizer_results: list,
+    step: int,
+) -> Tuple[float, float, float]:
+    """Cumulative AAO, DVCSgen, and data-sideband retention at one step."""
+    if int(step) <= 0:
+        return 1.0, 1.0, 1.0
+    #endif
+
+    for result in optimizer_results:
+        if int(result["step"]) == int(step):
+            return (
+                float(result["total_pi0_eff"]),
+                float(result["total_dvcs_eff"]),
+                float(result["total_data_sideband_eff"]),
+            )
+        #endif
+    #endfor
+
+    return float("nan"), float("nan"), float("nan")
+
+
+def choose_data_fit_operating_step(
+    optimizer_results: list,
+    closure_results: list,
+    sideband_weight: float,
+    max_abs_bias: float,
+    max_rms: float,
+    near_best_factor: float,
+) -> dict:
+    """
+    Pick a cut step that rejects backgrounds without sacrificing closure.
+
+    Closure safety is evaluated at injected f_pi0=0.5. Relative to the
+    baseline closure RMS, the allowed RMS is
+
+        min(max_rms, max(1.5 * RMS_0, RMS_0 + 0.005)).
+
+    A step must also satisfy |closure bias| <= max_abs_bias.
+
+    Among closure-safe steps, compute
+
+        B = eps_DVCS + lambda * eps_data_sideband.
+
+    The chosen operating point is the EARLIEST step whose B is within
+    near_best_factor of the minimum closure-safe B. This avoids adding a later
+    cut for a negligible purity gain.
+    """
+    baseline = closure_row_for_step(
+        closure_results,
+        0,
+        true_fraction=0.50,
+    )
+
+    if baseline is None:
+        return {
+            "step": 0,
+            "status": "fallback_no_baseline_closure",
+            "closure_rms_limit": float(max_rms),
+            "background_metric": 1.0 + float(sideband_weight),
+        }
+    #endif
+
+    baseline_rms = float(baseline["rms_error"])
+    rms_limit = min(
+        float(max_rms),
+        max(1.5 * baseline_rms, baseline_rms + 0.005),
+    )
+
+    max_step = len(optimizer_results)
+    candidates = []
+
+    for step in range(max_step + 1):
+        closure = closure_row_for_step(
+            closure_results,
+            step,
+            true_fraction=0.50,
+        )
+        if closure is None:
+            continue
+        #endif
+
+        if abs(float(closure["bias"])) > float(max_abs_bias):
+            continue
+        #endif
+        if float(closure["rms_error"]) > rms_limit:
+            continue
+        #endif
+
+        _pi_eff, dvcs_eff, side_eff = optimizer_retention_at_step(
+            optimizer_results,
+            step,
+        )
+        if not np.isfinite(dvcs_eff) or not np.isfinite(side_eff):
+            continue
+        #endif
+
+        background_metric = (
+            float(dvcs_eff)
+            + float(sideband_weight) * float(side_eff)
+        )
+
+        candidates.append(
+            {
+                "step": int(step),
+                "closure": closure,
+                "background_metric": float(background_metric),
+            }
+        )
+    #endfor
+
+    if not candidates:
+        return {
+            "step": 0,
+            "status": "fallback_no_closure_safe_step",
+            "closure_rms_limit": float(rms_limit),
+            "background_metric": 1.0 + float(sideband_weight),
+        }
+    #endif
+
+    best_background = min(
+        candidate["background_metric"]
+        for candidate in candidates
+    )
+    allowed_background = (
+        float(near_best_factor) * best_background
+        + 1.0e-15
+    )
+
+    near_best = [
+        candidate
+        for candidate in candidates
+        if candidate["background_metric"] <= allowed_background
+    ]
+    chosen = min(near_best, key=lambda candidate: candidate["step"])
+
+    return {
+        "step": int(chosen["step"]),
+        "status": "closure_safe_near_best_background",
+        "closure_rms_limit": float(rms_limit),
+        "background_metric": float(chosen["background_metric"]),
+    }
+
+
+def best_template_feature_for_events(
+    pi0_events: np.ndarray,
+    dvcs_events: np.ndarray,
+    n_bins: int,
+) -> Tuple[Optional[str], Optional[np.ndarray], float]:
+    """
+    Find the surviving 1D reconstructed variable with maximum JS divergence.
+
+    This is primarily a fallback if closure information for the chosen step is
+    unavailable; normally the real-data fit uses the discriminator selected by
+    the closure study itself.
+    """
+    best_feature = None
+    best_edges = None
+    best_js = -1.0
+
+    for feature in OPTIMIZER_FEATURES:
+        ifeature = FEATURE_INDEX[feature]
+        pi_values = pi0_events[:, ifeature]
+        dvcs_values = dvcs_events[:, ifeature]
+
+        edges = closure_quantile_edges(
+            pi_values,
+            dvcs_values,
+            n_bins,
+        )
+        if edges.size == 0:
+            continue
+        #endif
+
+        p_pi = closure_histogram_probabilities(
+            pi_values,
+            edges,
+        )
+        p_dvcs = closure_histogram_probabilities(
+            dvcs_values,
+            edges,
+        )
+        js = jensen_shannon_divergence(p_pi, p_dvcs)
+
+        if js > best_js:
+            best_feature = feature
+            best_edges = edges
+            best_js = float(js)
+        #endif
+    #endfor
+
+    return best_feature, best_edges, best_js
+
+
+def poisson_deviance(
+    observed: np.ndarray,
+    expected: np.ndarray,
+) -> float:
+    """Poisson deviance for a binned goodness-of-fit diagnostic."""
+    observed = np.asarray(observed, dtype=float)
+    expected = np.clip(np.asarray(expected, dtype=float), 1.0e-15, None)
+
+    positive = observed > 0.0
+    terms = np.array(expected - observed, copy=True)
+    terms[positive] += (
+        observed[positive]
+        * np.log(observed[positive] / expected[positive])
+    )
+    return float(2.0 * np.sum(terms))
+
+
+def fit_real_data_two_templates(
+    data_events: np.ndarray,
+    pi0_events: np.ndarray,
+    dvcs_events: np.ndarray,
+    optimizer_results: list,
+    chosen_step: int,
+    closure_results: list,
+    n_bins: int,
+) -> dict:
+    """
+    Fit surviving real data as a normalized AAO + DVCSgen two-template mixture.
+
+    The same cumulative optimizer cuts are applied to data and both MC samples.
+    The discriminator is the closure-selected best 1D variable at the chosen
+    step. Templates are normalized to unit area, so the fit determines only
+    f_pi0. The total expected count is fixed to the observed data count.
+    """
+    pi_masks = build_cumulative_optimizer_masks(
+        pi0_events,
+        optimizer_results,
+    )
+    dvcs_masks = build_cumulative_optimizer_masks(
+        dvcs_events,
+        optimizer_results,
+    )
+    data_masks = build_cumulative_optimizer_masks(
+        data_events,
+        optimizer_results,
+    )
+
+    if chosen_step >= len(pi_masks):
+        chosen_step = len(pi_masks) - 1
+    #endif
+
+    pi_selected = pi0_events[pi_masks[chosen_step]]
+    dvcs_selected = dvcs_events[dvcs_masks[chosen_step]]
+    data_selected = data_events[data_masks[chosen_step]]
+
+    if (
+        pi_selected.shape[0] < 20
+        or dvcs_selected.shape[0] < 20
+        or data_selected.shape[0] < 20
+    ):
+        return {
+            "success": False,
+            "status": "insufficient_selected_statistics",
+            "step": int(chosen_step),
+        }
+    #endif
+
+    closure = closure_row_for_step(
+        closure_results,
+        chosen_step,
+        true_fraction=0.50,
+    )
+
+    if closure is not None:
+        feature = str(closure["feature"])
+        js_from_closure = float(closure["js_divergence"])
+    else:
+        feature = None
+        js_from_closure = float("nan")
+    #endif
+
+    edges = None
+    js_value = js_from_closure
+
+    if feature is not None:
+        ifeature = FEATURE_INDEX[feature]
+        edges = closure_quantile_edges(
+            pi_selected[:, ifeature],
+            dvcs_selected[:, ifeature],
+            n_bins,
+        )
+        if edges.size == 0:
+            feature = None
+        #endif
+    #endif
+
+    if feature is None:
+        feature, edges, js_value = best_template_feature_for_events(
+            pi_selected,
+            dvcs_selected,
+            n_bins,
+        )
+    #endif
+
+    if feature is None or edges is None or edges.size < 5:
+        return {
+            "success": False,
+            "status": "no_valid_discriminator",
+            "step": int(chosen_step),
+        }
+    #endif
+
+    ifeature = FEATURE_INDEX[feature]
+
+    p_pi0 = closure_histogram_probabilities(
+        pi_selected[:, ifeature],
+        edges,
+    )
+    p_dvcs = closure_histogram_probabilities(
+        dvcs_selected[:, ifeature],
+        edges,
+    )
+
+    data_values = data_selected[:, ifeature]
+    data_values = data_values[np.isfinite(data_values)]
+    data_counts, _ = np.histogram(data_values, bins=edges)
+
+    if np.sum(data_counts) < 20:
+        return {
+            "success": False,
+            "status": "insufficient_data_in_fit_histogram",
+            "step": int(chosen_step),
+        }
+    #endif
+
+    f_hat, sigma_f = fit_two_template_fraction(
+        data_counts,
+        p_pi0,
+        p_dvcs,
+    )
+
+    n_data = int(np.sum(data_counts))
+    total_probability = (
+        f_hat * p_pi0
+        + (1.0 - f_hat) * p_dvcs
+    )
+    expected_total = n_data * total_probability
+    expected_pi0 = n_data * f_hat * p_pi0
+    expected_dvcs = n_data * (1.0 - f_hat) * p_dvcs
+
+    deviance = poisson_deviance(
+        data_counts,
+        expected_total,
+    )
+    ndf = max(int(data_counts.size) - 2, 1)
+
+    return {
+        "success": True,
+        "status": "ok",
+        "step": int(chosen_step),
+        "feature": str(feature),
+        "js_divergence": float(js_value),
+        "fraction_pi0": float(f_hat),
+        "fraction_pi0_stat": float(sigma_f),
+        "deviance": float(deviance),
+        "ndf": int(ndf),
+        "deviance_per_ndf": float(deviance / ndf),
+        "n_data": int(n_data),
+        "n_pi0_template": int(pi_selected.shape[0]),
+        "n_dvcs_template": int(dvcs_selected.shape[0]),
+        "edges": np.asarray(edges, dtype=float),
+        "data_counts": np.asarray(data_counts, dtype=float),
+        "expected_total": np.asarray(expected_total, dtype=float),
+        "expected_pi0": np.asarray(expected_pi0, dtype=float),
+        "expected_dvcs": np.asarray(expected_dvcs, dtype=float),
+    }
+
+
+def feature_plot_label(feature: str) -> str:
+    """Readable x-axis label for a fit discriminator."""
+    labels = {
+        "Mx2": r"$MM^2(ep\gamma X)$ (GeV$^2$)",
+        "Mx2_1": r"$MM^2(epX)$ (GeV$^2$)",
+        "Mx2_2": r"$MM^2(e\gamma X)$ (GeV$^2$)",
+        "Emiss2": r"$E_{\rm probe}$ (GeV)",
+        "E_tag": r"$E_{\rm tag}$ (GeV)",
+        "Delta_phi_residual_deg": (
+            r"$\Delta\phi(p,\gamma)-180^\circ$ (deg)"
+        ),
+        "pTmiss": r"$p_{T,\rm miss}$ (GeV)",
+        "theta_gamma_gamma": r"$\theta_{\gamma\gamma}$ (deg)",
+    }
+    return labels.get(feature, feature)
+
+
+def make_combined_data_template_fit_canvas(
+    period: Period,
+    optimizer_summary: dict,
+    output_dir: Path,
+) -> Path:
+    """
+    One 4x2 real-data template-fit canvas per period.
+
+    Rows are E_probe bins and columns are FD/FT. Each panel is the actual
+    selected real-data distribution with the fitted AAO+DVCSgen composition.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(
+        len(E_PROBE_BINS),
+        2,
+        figsize=(14.2, 4.0 * len(E_PROBE_BINS) + 1.2),
+        squeeze=False,
+    )
+
+    legend_handles = []
+    legend_labels = []
+
+    for irow, (bin_key, e_min, e_max) in enumerate(E_PROBE_BINS):
+        bin_summary = optimizer_summary.get("energy_bins", {}).get(
+            bin_key,
+            {},
+        )
+
+        for icol, region in enumerate(("FD", "FT")):
+            ax = axes[irow, icol]
+            region_summary = bin_summary.get("regions", {}).get(region)
+            fit = (
+                region_summary.get("data_fit")
+                if region_summary is not None
+                else None
+            )
+
+            if not fit or not fit.get("success", False):
+                status = (
+                    fit.get("status", "no fit")
+                    if fit
+                    else "no fit"
+                )
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"Real-data fit unavailable\n{status}",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+                ax.set_title(
+                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
+                )
+                continue
+            #endif
+
+            edges = np.asarray(fit["edges"], dtype=float)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            widths = edges[1:] - edges[:-1]
+            counts = np.asarray(fit["data_counts"], dtype=float)
+
+            data_handle = ax.errorbar(
+                centers,
+                counts,
+                yerr=np.sqrt(np.maximum(counts, 1.0)),
+                xerr=0.5 * widths,
+                fmt="o",
+                markersize=3.5,
+                linewidth=1.0,
+                label="data",
+            )
+            total_handle, = ax.step(
+                centers,
+                fit["expected_total"],
+                where="mid",
+                linewidth=1.8,
+                label="AAO + DVCS fit",
+            )
+            pi_handle, = ax.step(
+                centers,
+                fit["expected_pi0"],
+                where="mid",
+                linewidth=1.3,
+                linestyle="--",
+                label=r"fitted $\pi^0$ component",
+            )
+            dvcs_handle, = ax.step(
+                centers,
+                fit["expected_dvcs"],
+                where="mid",
+                linewidth=1.3,
+                linestyle=":",
+                label="fitted DVCS component",
+            )
+
+            if irow == 0 and icol == 0:
+                legend_handles = [
+                    data_handle,
+                    total_handle,
+                    pi_handle,
+                    dvcs_handle,
+                ]
+                legend_labels = [
+                    "data",
+                    "AAO + DVCS fit",
+                    r"fitted $\pi^0$ component",
+                    "fitted DVCS component",
+                ]
+            #endif
+
+            ax.set_xlabel(feature_plot_label(fit["feature"]))
+            ax.set_ylabel("Events / bin")
+            ax.set_title(
+                f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
+            )
+            ax.grid(alpha=0.20)
+
+            annotation = (
+                f"step {fit['step']}: {fit['feature']}\n"
+                rf"$f_{{\pi^0}}={fit['fraction_pi0']:.3f}"
+                rf"\pm{fit['fraction_pi0_stat']:.3f}$"
+                + "\n"
+                + rf"$D/ndf={fit['deviance_per_ndf']:.2f}$"
+                + f", N={fit['n_data']:,}"
+            )
+            ax.text(
+                0.98,
+                0.96,
+                annotation,
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=8.5,
+                bbox={
+                    "facecolor": "white",
+                    "alpha": 0.86,
+                    "edgecolor": "0.6",
+                },
+            )
+        #endfor
+    #endfor
+
+    if legend_handles:
+        fig.legend(
+            legend_handles,
+            legend_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.978),
+            ncol=4,
+            frameon=True,
+        )
+    #endif
+
+    fig.suptitle(
+        f"{period.label}: real-data AAO + DVCS template fits",
+        fontsize=13,
+        y=0.999,
+    )
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.985,
+        bottom=0.055,
+        top=0.93,
+        wspace=0.20,
+        hspace=0.42,
+    )
+
+    out = output_dir / f"data_template_fit_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
+def make_pi0_fraction_summary_canvas(
+    period: Period,
+    optimizer_summary: dict,
+    output_dir: Path,
+) -> Path:
+    """Compact fitted pi0-fraction versus E_probe summary for FD and FT."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(11.5, 4.8),
+        sharey=True,
+    )
+
+    for ax, region in zip(axes, ("FD", "FT")):
+        x = []
+        xerr_low = []
+        xerr_high = []
+        y = []
+        yerr = []
+        labels = []
+
+        for bin_key, e_min, e_max in E_PROBE_BINS:
+            region_summary = (
+                optimizer_summary.get("energy_bins", {})
+                .get(bin_key, {})
+                .get("regions", {})
+                .get(region)
+            )
+            if region_summary is None:
+                continue
+            #endif
+
+            fit = region_summary.get("data_fit")
+            if not fit or not fit.get("success", False):
+                continue
+            #endif
+
+            center = 0.5 * (e_min + e_max)
+            x.append(center)
+            xerr_low.append(center - e_min)
+            xerr_high.append(e_max - center)
+            y.append(float(fit["fraction_pi0"]))
+            yerr.append(float(fit["fraction_pi0_stat"]))
+            labels.append(f"step {fit['step']}")
+        #endfor
+
+        if x:
+            ax.errorbar(
+                x,
+                y,
+                xerr=np.vstack((xerr_low, xerr_high)),
+                yerr=yerr,
+                fmt="o",
+                capsize=3,
+            )
+
+            for xi, yi, label in zip(x, y, labels):
+                ax.annotate(
+                    label,
+                    (xi, yi),
+                    xytext=(4, 5),
+                    textcoords="offset points",
+                    fontsize=8,
+                )
+            #endfor
+        #endif
+
+        ax.set_xlim(0.35, 9.6)
+        ax.set_ylim(0.0, 1.0)
+        ax.set_xlabel(r"$E_{\rm probe}$ (GeV)")
+        ax.set_title(region)
+        ax.grid(alpha=0.25)
+    #endfor
+
+    axes[0].set_ylabel(r"Fitted $f_{\pi^0}$")
+
+    fig.suptitle(
+        f"{period.label}: preliminary fitted pi0 fraction",
+        fontsize=13,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
+
+    out = output_dir / f"pi0_fraction_summary_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
 def write_period_summary_csv(
     period: Period,
     optimizer_summary: dict,
@@ -1649,6 +2377,15 @@ def write_period_summary_csv(
         "n_pi0_baseline",
         "n_dvcs_baseline",
         "n_data_sideband_baseline",
+        "operating_step",
+        "operating_step_status",
+        "data_fit_feature",
+        "data_fit_fraction_pi0",
+        "data_fit_fraction_pi0_stat",
+        "data_fit_deviance",
+        "data_fit_ndf",
+        "data_fit_deviance_per_ndf",
+        "data_fit_n_data",
     )
 
     rows = []
@@ -1733,6 +2470,39 @@ def write_period_summary_csv(
                 )
                 rows.append(row)
             #endfor
+
+            data_fit = region_summary.get("data_fit")
+            if data_fit is not None:
+                row = {field: "" for field in fields}
+                row.update(common)
+                row.update(
+                    {
+                        "record_type": "data_fit",
+                        "operating_step": data_fit.get("step", ""),
+                        "operating_step_status": data_fit.get(
+                            "operating_step_status",
+                            data_fit.get("status", ""),
+                        ),
+                        "data_fit_feature": data_fit.get("feature", ""),
+                        "data_fit_fraction_pi0": data_fit.get(
+                            "fraction_pi0",
+                            "",
+                        ),
+                        "data_fit_fraction_pi0_stat": data_fit.get(
+                            "fraction_pi0_stat",
+                            "",
+                        ),
+                        "data_fit_deviance": data_fit.get("deviance", ""),
+                        "data_fit_ndf": data_fit.get("ndf", ""),
+                        "data_fit_deviance_per_ndf": data_fit.get(
+                            "deviance_per_ndf",
+                            "",
+                        ),
+                        "data_fit_n_data": data_fit.get("n_data", ""),
+                    }
+                )
+                rows.append(row)
+            #endif
         #endfor
     #endfor
 
@@ -2908,6 +3678,9 @@ def process_period(
     closure_toys: int,
     closure_events: int,
     closure_bins: int,
+    data_fit_max_closure_bias: float,
+    data_fit_max_closure_rms: float,
+    data_fit_background_near_best: float,
 ) -> dict:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -3072,6 +3845,100 @@ def process_period(
             #endfor
         #endfor
 
+        # --------------------------------------------------------------
+        # Real-data AAO + DVCSgen composition fit.
+        # --------------------------------------------------------------
+        for bin_key, energy_min, energy_max in E_PROBE_BINS:
+            for region in ("FT", "FD"):
+                region_summary = (
+                    optimizer_summary["energy_bins"][bin_key]
+                    ["regions"][region]
+                )
+                optimizer_results = region_summary.get("results", [])
+                closure_results = region_summary.get(
+                    "closure_results",
+                    [],
+                )
+
+                operating = choose_data_fit_operating_step(
+                    optimizer_results,
+                    closure_results,
+                    sideband_weight=optimizer_data_sideband_weight,
+                    max_abs_bias=data_fit_max_closure_bias,
+                    max_rms=data_fit_max_closure_rms,
+                    near_best_factor=data_fit_background_near_best,
+                )
+
+                mx2_idx = FEATURE_INDEX["Mx2_1"]
+
+                # AAO/DVCS baselines are exactly the same loose-preselected
+                # samples used by the optimizer/closure study.
+                pi0_all = optimizer_events["pi0"][region][bin_key]
+                dvcs_all = optimizer_events["dvcs"][region][bin_key]
+                data_all = optimizer_events["data"][region][bin_key]
+
+                pi0_events = pi0_all[
+                    np.isfinite(pi0_all[:, mx2_idx])
+                    & (
+                        pi0_all[:, mx2_idx]
+                        < optimizer_mx2_1_preselection_max
+                    )
+                ]
+                dvcs_events = dvcs_all[
+                    np.isfinite(dvcs_all[:, mx2_idx])
+                    & (
+                        dvcs_all[:, mx2_idx]
+                        < optimizer_mx2_1_preselection_max
+                    )
+                ]
+                data_events = data_all[
+                    np.isfinite(data_all[:, mx2_idx])
+                    & (
+                        data_all[:, mx2_idx]
+                        < optimizer_mx2_1_preselection_max
+                    )
+                ]
+
+                data_fit = fit_real_data_two_templates(
+                    data_events,
+                    pi0_events,
+                    dvcs_events,
+                    optimizer_results,
+                    chosen_step=int(operating["step"]),
+                    closure_results=closure_results,
+                    n_bins=closure_bins,
+                )
+                data_fit["operating_step_status"] = operating["status"]
+                data_fit["closure_rms_limit"] = operating[
+                    "closure_rms_limit"
+                ]
+                data_fit["background_metric"] = operating[
+                    "background_metric"
+                ]
+
+                region_summary["data_fit"] = data_fit
+
+                if data_fit.get("success", False):
+                    log(
+                        f"{period.label} {region} "
+                        f"{energy_min:g}-{energy_max:g} GeV: "
+                        f"real-data fit step {data_fit['step']} "
+                        f"({data_fit['feature']}), "
+                        f"f_pi0={data_fit['fraction_pi0']:.4f} +/- "
+                        f"{data_fit['fraction_pi0_stat']:.4f}, "
+                        f"D/ndf={data_fit['deviance_per_ndf']:.2f}."
+                    )
+                else:
+                    log(
+                        f"{period.label} {region} "
+                        f"{energy_min:g}-{energy_max:g} GeV: "
+                        f"real-data fit unavailable "
+                        f"({data_fit.get('status', 'unknown')})."
+                    )
+                #endif
+            #endfor
+        #endfor
+
         combined_optimizer_plot = make_combined_optimizer_canvas(
             period,
             optimizer_summary,
@@ -3104,13 +3971,35 @@ def process_period(
             f"canvas {combined_response_plot}"
         )
 
+        data_fit_outdir = output_dir.parent / "data_template_fit"
+
+        data_fit_canvas = make_combined_data_template_fit_canvas(
+            period,
+            optimizer_summary,
+            data_fit_outdir,
+        )
+        log(
+            f"{period.label}: wrote combined real-data template-fit canvas "
+            f"{data_fit_canvas}"
+        )
+
+        fraction_summary_canvas = make_pi0_fraction_summary_canvas(
+            period,
+            optimizer_summary,
+            data_fit_outdir,
+        )
+        log(
+            f"{period.label}: wrote pi0-fraction summary canvas "
+            f"{fraction_summary_canvas}"
+        )
+
         summary_csv = write_period_summary_csv(
             period,
             optimizer_summary,
             output_dir.parent / "summary",
         )
         log(
-            f"{period.label}: wrote single combined optimizer/closure CSV "
+            f"{period.label}: wrote single combined optimizer/closure/data-fit CSV "
             f"{summary_csv}"
         )
 
@@ -3186,6 +4075,9 @@ def process_period_worker(
     closure_toys: int,
     closure_events: int,
     closure_bins: int,
+    data_fit_max_closure_bias: float,
+    data_fit_max_closure_rms: float,
+    data_fit_background_near_best: float,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -3215,6 +4107,9 @@ def process_period_worker(
         closure_toys,
         closure_events,
         closure_bins,
+        data_fit_max_closure_bias,
+        data_fit_max_closure_rms,
+        data_fit_background_near_best,
     )
 
 
@@ -3340,6 +4235,18 @@ def print_optimizer_summary(
                         flush=True,
                     )
                 #endif
+
+                data_fit = region_summary.get("data_fit")
+                if data_fit and data_fit.get("success", False):
+                    print(
+                        f"      DATA FIT: step {data_fit['step']}, "
+                        f"{data_fit['feature']}, "
+                        f"f_pi0={data_fit['fraction_pi0']:.4f} +/- "
+                        f"{data_fit['fraction_pi0_stat']:.4f}, "
+                        f"D/ndf={data_fit['deviance_per_ndf']:.2f}",
+                        flush=True,
+                    )
+                #endif
             #endfor
         #endfor
     #endfor
@@ -3407,6 +4314,17 @@ def main() -> int:
     if args.closure_bins < 4:
         raise ValueError("--closure-bins must be >= 4.")
     #endif
+    if args.data_fit_max_closure_bias < 0.0:
+        raise ValueError("--data-fit-max-closure-bias must be >= 0.")
+    #endif
+    if args.data_fit_max_closure_rms <= 0.0:
+        raise ValueError("--data-fit-max-closure-rms must be > 0.")
+    #endif
+    if args.data_fit_background_near_best < 1.0:
+        raise ValueError(
+            "--data-fit-background-near-best must be >= 1."
+        )
+    #endif
 
     selected_keys = set(args.period or [p.key for p in PERIODS])
     selected_periods = [p for p in PERIODS if p.key in selected_keys]
@@ -3438,7 +4356,10 @@ def main() -> int:
             "0.4-1, 1-2, 2-4, 4-9.5 GeV; "
             "Emiss2 excluded from optimizer thresholds; "
             f"closure={args.closure_toys} toys x "
-            f"{args.closure_events} events at f_pi0=0.2,0.5,0.8."
+            f"{args.closure_events} events at f_pi0=0.2,0.5,0.8; "
+            "real-data AAO+DVCS fit enabled with closure-safe operating-step "
+            f"selection (|bias|<={args.data_fit_max_closure_bias:g}, "
+            f"RMS<={args.data_fit_max_closure_rms:g})."
         )
     #endif
     log(
@@ -3479,6 +4400,9 @@ def main() -> int:
                 args.closure_toys,
                 args.closure_events,
                 args.closure_bins,
+                args.data_fit_max_closure_bias,
+                args.data_fit_max_closure_rms,
+                args.data_fit_background_near_best,
             )
         #endfor
     else:
@@ -3506,6 +4430,9 @@ def main() -> int:
                     args.closure_toys,
                     args.closure_events,
                     args.closure_bins,
+                    args.data_fit_max_closure_bias,
+                    args.data_fit_max_closure_rms,
+                    args.data_fit_background_near_best,
                 ): period
                 for period in selected_periods
             }
