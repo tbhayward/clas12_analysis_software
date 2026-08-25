@@ -111,6 +111,13 @@ After the optimizer selects its period- and detector-specific cut sequence,
 the shape-comparison canvas is constructed with one cumulative row per selected
 cut. The same selected cuts are then shown on data, AAO, and DVCSgen.
 
+To preserve sensitivity to high-energy probe photons, Emiss2 is allowed only
+as a lower-bound optimizer variable:
+
+    Emiss2 > c
+
+and never as Emiss2 < c.
+
 Shape canvases are written under:
 
     output/photon_efficiency_concept/stage1_shape_comparison/
@@ -326,6 +333,15 @@ OPTIMIZER_SCAN_FEATURES: Tuple[str, ...] = tuple(
     for feature in OPTIMIZER_FEATURES
     if feature != "Mx2_1"
 )
+
+
+# Protect the high-E_miss probe phase space: Emiss2 may only enter as a LOWER
+# bound (Emiss2 > c).  An upper bound would explicitly remove the high-energy
+# photons whose efficiency we ultimately want to measure.
+OPTIMIZER_ALLOWED_DIRECTIONS = {
+    feature: (("gt",) if feature == "Emiss2" else ("lt", "gt"))
+    for feature in OPTIMIZER_SCAN_FEATURES
+}
 
 
 # =============================================================================
@@ -764,15 +780,23 @@ def optimize_rectangular_cuts(
     """
     Greedy one-sided optimizer balancing AAO retention against two backgrounds.
 
-    At each step it scans X<c and X>c over OPTIMIZER_SCAN_FEATURES and maximizes
+    At each step it scans one-sided rectangular thresholds over
+    OPTIMIZER_SCAN_FEATURES and maximizes
 
         F = eps_pi0 / sqrt(
             eps_DVCS + lambda * eps_data_sideband + 1e-9
         )
 
     using cumulative efficiencies relative to the corresponding baseline
-    populations.  Mx2_1 is excluded from the scan because it defines both the
-    loose exclusivity preselection and the real-data sideband.
+    populations.
+
+    Mx2_1 is excluded from the scan because it defines both the loose
+    exclusivity preselection and the real-data sideband.
+
+    Emiss2 is restricted to LOWER cuts only (Emiss2 > c).  Upper cuts on
+    Emiss2 are forbidden so the optimizer cannot improve purity by discarding
+    the high-energy predicted-probe photons whose efficiency is ultimately of
+    interest.
     """
     if (
         pi0_events.shape[0] == 0
@@ -819,7 +843,7 @@ def optimize_rectangular_cuts(
             )
 
             for threshold in thresholds:
-                for direction in ("lt", "gt"):
+                for direction in OPTIMIZER_ALLOWED_DIRECTIONS[feature]:
                     if direction == "lt":
                         pi_local = pi0_events[:, ifeature] < threshold
                         dvcs_local = dvcs_events[:, ifeature] < threshold
@@ -2187,7 +2211,9 @@ def main() -> int:
             f"loose Mx2_1<{args.optimizer_mx2_1_preselection_max:.3g} GeV^2; "
             f"data sideband {args.optimizer_data_sideband_min:.3g}<=Mx2_1<"
             f"{args.optimizer_data_sideband_max:.3g} GeV^2; "
-            f"sideband weight={args.optimizer_data_sideband_weight:.3g}."
+            f"sideband weight={args.optimizer_data_sideband_weight:.3g}; "
+            "Emiss2 optimizer direction restricted to lower bounds only "
+            "(Emiss2 > c)."
         )
     #endif
     log(
