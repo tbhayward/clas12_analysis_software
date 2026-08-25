@@ -172,7 +172,22 @@ sideband template remain fixed. The fit plots report the deviance before and
 after AAO morphing so the benefit of the detector-resolution nuisance model is
 immediately visible.
 
-Two compact plots are produced per period:
+A dedicated sideband-transfer validation is also performed after the operating
+cut step is selected. The real data are divided into three adjacent Mx2_1
+slices,
+
+    0.15 <= Mx2_1 < 0.20 GeV^2
+    0.20 <= Mx2_1 < 0.25 GeV^2
+    0.25 <= Mx2_1 < 0.30 GeV^2,
+
+and the SAME cumulative optimizer cuts are applied to all three. Their
+unit-normalized shapes are compared in the exact variable used by the
+composition fit. Pairwise Jensen-Shannon divergences are reported on the plot.
+The lowest slice is deliberately treated as a signal-adjacent diagnostic, not
+as an independent background template; the key background-transfer test is the
+stability of the 0.20-0.25 and 0.25-0.30 GeV^2 slices.
+
+The visual outputs per period are:
 
     output/photon_efficiency_concept/data_template_fit/
         data_template_fit_<period>.png
@@ -232,6 +247,15 @@ E_PROBE_BINS: Tuple[Tuple[str, float, float], ...] = (
     ("1p0_2p0", 1.0, 2.0),
     ("2p0_4p0", 2.0, 4.0),
     ("4p0_9p5", 4.0, 9.5),
+)
+
+
+# Adjacent Mx2_1 slices used only to validate whether the empirical
+# nonexclusive sideband shape is stable as one approaches the signal region.
+SIDEBAND_VALIDATION_SLICES: Tuple[Tuple[str, float, float], ...] = (
+    ("near", 0.15, 0.20),
+    ("mid", 0.20, 0.25),
+    ("far", 0.25, 0.30),
 )
 
 # Only these branches are read from the very large epgamma ROOT files.
@@ -2788,6 +2812,328 @@ def make_pi0_fraction_summary_canvas(
     return out
 
 
+
+# =============================================================================
+# Empirical sideband-transfer validation
+# =============================================================================
+
+def build_sideband_stability_result(
+    data_all: np.ndarray,
+    optimizer_results: list,
+    chosen_step: int,
+    feature: str,
+    n_bins: int,
+) -> dict:
+    """
+    Compare adjacent Mx2_1 slices after the exact cumulative cuts used for the
+    real-data composition fit.
+
+    The returned histograms are unit normalized and use the same fixed physical
+    fit range as the selected real-data discriminator.
+    """
+    if feature not in DATA_FIT_FEATURES:
+        return {
+            "success": False,
+            "status": "invalid_fit_feature",
+        }
+    #endif
+
+    edges = data_fit_edges_for_feature(feature, n_bins=n_bins)
+    if edges.size < 5:
+        return {
+            "success": False,
+            "status": "invalid_fit_edges",
+        }
+    #endif
+
+    mx2_idx = FEATURE_INDEX["Mx2_1"]
+    ifeature = FEATURE_INDEX[feature]
+
+    slice_events = {}
+    slice_counts = {}
+
+    for slice_key, low, high in SIDEBAND_VALIDATION_SLICES:
+        mask = (
+            np.isfinite(data_all[:, mx2_idx])
+            & (data_all[:, mx2_idx] >= low)
+            & (data_all[:, mx2_idx] < high)
+        )
+        events = data_all[mask]
+
+        masks = build_cumulative_optimizer_masks(
+            events,
+            optimizer_results,
+        )
+        step = min(int(chosen_step), len(masks) - 1)
+        selected = events[masks[step]]
+
+        values = np.asarray(selected[:, ifeature], dtype=float)
+        in_range = (
+            np.isfinite(values)
+            & (values >= edges[0])
+            & (values < edges[-1])
+        )
+        values = values[in_range]
+
+        counts, _ = np.histogram(values, bins=edges)
+        probs = counts.astype(float) + 0.5
+        probs /= np.sum(probs)
+
+        slice_events[slice_key] = probs
+        slice_counts[slice_key] = int(np.sum(counts))
+    #endfor
+
+    if min(slice_counts.values()) < 20:
+        return {
+            "success": False,
+            "status": "insufficient_slice_statistics",
+            "edges": edges,
+            "slice_counts": slice_counts,
+        }
+    #endif
+
+    p_near = slice_events["near"]
+    p_mid = slice_events["mid"]
+    p_far = slice_events["far"]
+
+    return {
+        "success": True,
+        "status": "ok",
+        "feature": feature,
+        "step": int(chosen_step),
+        "edges": np.asarray(edges, dtype=float),
+        "probabilities": slice_events,
+        "slice_counts": slice_counts,
+        "js_near_mid": float(
+            jensen_shannon_divergence(p_near, p_mid)
+        ),
+        "js_mid_far": float(
+            jensen_shannon_divergence(p_mid, p_far)
+        ),
+        "js_near_far": float(
+            jensen_shannon_divergence(p_near, p_far)
+        ),
+    }
+
+
+def make_sideband_stability_canvas(
+    period: Period,
+    optimizer_summary: dict,
+    output_dir: Path,
+) -> Path:
+    """
+    One 4x2 sideband-transfer canvas per period.
+
+    Top panel: unit-normalized shapes in the three adjacent Mx2_1 slices.
+    Bottom panel: ratio to the central 0.20-0.25 GeV^2 slice.
+
+    The pairwise JS divergences are shown directly in each panel.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    n_energy = len(E_PROBE_BINS)
+
+    fig = plt.figure(
+        figsize=(14.8, 6.2 * n_energy + 1.4),
+    )
+    outer = fig.add_gridspec(
+        n_energy,
+        2,
+        hspace=0.50,
+        wspace=0.20,
+        left=0.075,
+        right=0.985,
+        bottom=0.045,
+        top=0.945,
+    )
+
+    legend_handles = []
+    legend_labels = []
+
+    labels = {
+        "near": r"$0.15\leq Mx2_1<0.20$",
+        "mid": r"$0.20\leq Mx2_1<0.25$",
+        "far": r"$0.25\leq Mx2_1<0.30$",
+    }
+
+    linestyles = {
+        "near": "-",
+        "mid": "--",
+        "far": ":",
+    }
+
+    for irow, (bin_key, e_min, e_max) in enumerate(E_PROBE_BINS):
+        bin_summary = optimizer_summary.get("energy_bins", {}).get(
+            bin_key,
+            {},
+        )
+
+        for icol, region in enumerate(("FD", "FT")):
+            inner = outer[irow, icol].subgridspec(
+                2,
+                1,
+                height_ratios=(3.3, 1.0),
+                hspace=0.06,
+            )
+            ax = fig.add_subplot(inner[0, 0])
+            ax_ratio = fig.add_subplot(
+                inner[1, 0],
+                sharex=ax,
+            )
+
+            region_summary = bin_summary.get("regions", {}).get(region)
+            stability = (
+                region_summary.get("sideband_stability")
+                if region_summary is not None
+                else None
+            )
+
+            if not stability or not stability.get("success", False):
+                status = (
+                    stability.get("status", "no result")
+                    if stability
+                    else "no result"
+                )
+                ax.text(
+                    0.5,
+                    0.5,
+                    f"Sideband stability unavailable\n{status}",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+                ax.set_title(
+                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV",
+                    fontsize=10.5,
+                )
+                ax_ratio.axis("off")
+                continue
+            #endif
+
+            edges = np.asarray(stability["edges"], dtype=float)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            mid = np.asarray(
+                stability["probabilities"]["mid"],
+                dtype=float,
+            )
+
+            for slice_key in ("near", "mid", "far"):
+                probs = np.asarray(
+                    stability["probabilities"][slice_key],
+                    dtype=float,
+                )
+
+                line, = ax.step(
+                    centers,
+                    probs,
+                    where="mid",
+                    linewidth=1.5,
+                    linestyle=linestyles[slice_key],
+                    label=labels[slice_key],
+                )
+
+                if irow == 0 and icol == 0:
+                    legend_handles.append(line)
+                    legend_labels.append(labels[slice_key])
+                #endif
+
+                if slice_key != "mid":
+                    ratio = np.divide(
+                        probs,
+                        mid,
+                        out=np.full_like(probs, np.nan),
+                        where=mid > 1.0e-12,
+                    )
+                    ax_ratio.step(
+                        centers,
+                        ratio,
+                        where="mid",
+                        linewidth=1.2,
+                        linestyle=linestyles[slice_key],
+                    )
+                #endif
+            #endfor
+
+            ax.set_ylabel("unit-normalized")
+            ax.grid(alpha=0.20)
+            ax.set_title(
+                (
+                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV\n"
+                    f"fit variable: {feature_plot_label(stability['feature'])}"
+                ),
+                fontsize=10.2,
+                pad=8,
+            )
+
+            annotation = (
+                rf"$JS_{{near,mid}}={stability['js_near_mid']:.3f}$"
+                + "\n"
+                + rf"$JS_{{mid,far}}={stability['js_mid_far']:.3f}$"
+                + "\n"
+                + rf"$JS_{{near,far}}={stability['js_near_far']:.3f}$"
+                + "\n"
+                + (
+                    "N=("
+                    f"{stability['slice_counts']['near']:,}, "
+                    f"{stability['slice_counts']['mid']:,}, "
+                    f"{stability['slice_counts']['far']:,})"
+                )
+            )
+            ax.text(
+                0.98,
+                0.96,
+                annotation,
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=8.0,
+                bbox={
+                    "facecolor": "white",
+                    "alpha": 0.86,
+                    "edgecolor": "0.6",
+                },
+            )
+
+            ax_ratio.axhline(
+                1.0,
+                linestyle="--",
+                linewidth=1.0,
+            )
+            ax_ratio.set_ylabel("ratio\nto mid", fontsize=8.5)
+            ax_ratio.set_xlabel(
+                feature_plot_label(stability["feature"]),
+                fontsize=9.2,
+                labelpad=5,
+            )
+            ax_ratio.set_ylim(0.0, 2.0)
+            ax_ratio.grid(alpha=0.18)
+
+            plt.setp(ax.get_xticklabels(), visible=False)
+        #endfor
+    #endfor
+
+    if legend_handles:
+        fig.legend(
+            legend_handles,
+            legend_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.982),
+            ncol=3,
+            frameon=True,
+        )
+    #endif
+
+    fig.suptitle(
+        f"{period.label}: empirical Mx2_1 sideband-shape stability",
+        fontsize=13,
+        y=0.999,
+    )
+
+    out = output_dir / f"sideband_stability_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
 def write_period_summary_csv(
     period: Period,
     optimizer_summary: dict,
@@ -2845,6 +3191,12 @@ def write_period_summary_csv(
         "data_fit_ndf",
         "data_fit_deviance_per_ndf",
         "data_fit_n_data",
+        "sideband_js_near_mid",
+        "sideband_js_mid_far",
+        "sideband_js_near_far",
+        "sideband_n_near",
+        "sideband_n_mid",
+        "sideband_n_far",
     )
 
     rows = []
@@ -2980,6 +3332,34 @@ def write_period_summary_csv(
                         "data_fit_n_data": data_fit.get("n_data", ""),
                     }
                 )
+                stability = region_summary.get(
+                    "sideband_stability",
+                    {},
+                )
+                if stability.get("success", False):
+                    row.update(
+                        {
+                            "sideband_js_near_mid": stability[
+                                "js_near_mid"
+                            ],
+                            "sideband_js_mid_far": stability[
+                                "js_mid_far"
+                            ],
+                            "sideband_js_near_far": stability[
+                                "js_near_far"
+                            ],
+                            "sideband_n_near": stability[
+                                "slice_counts"
+                            ]["near"],
+                            "sideband_n_mid": stability[
+                                "slice_counts"
+                            ]["mid"],
+                            "sideband_n_far": stability[
+                                "slice_counts"
+                            ]["far"],
+                        }
+                    )
+                #endif
                 rows.append(row)
             #endif
         #endfor
@@ -4410,6 +4790,25 @@ def process_period(
                 region_summary["data_fit"] = data_fit
 
                 if data_fit.get("success", False):
+                    sideband_stability = build_sideband_stability_result(
+                        data_all,
+                        optimizer_results,
+                        chosen_step=int(data_fit["step"]),
+                        feature=str(data_fit["feature"]),
+                        n_bins=closure_bins,
+                    )
+                else:
+                    sideband_stability = {
+                        "success": False,
+                        "status": "data_fit_unavailable",
+                    }
+                #endif
+
+                region_summary["sideband_stability"] = (
+                    sideband_stability
+                )
+
+                if data_fit.get("success", False):
                     log(
                         f"{period.label} {region} "
                         f"{energy_min:g}-{energy_max:g} GeV: "
@@ -4484,8 +4883,18 @@ def process_period(
             data_fit_outdir,
         )
         log(
-            f"{period.label}: wrote pi0-fraction summary canvas "
+            f"{period.label}: wrote composition-fraction summary canvas "
             f"{fraction_summary_canvas}"
+        )
+
+        sideband_stability_canvas = make_sideband_stability_canvas(
+            period,
+            optimizer_summary,
+            data_fit_outdir,
+        )
+        log(
+            f"{period.label}: wrote empirical sideband-stability canvas "
+            f"{sideband_stability_canvas}"
         )
 
         summary_csv = write_period_summary_csv(
@@ -4751,6 +5160,19 @@ def print_optimizer_summary(
                         f"{data_fit['morph_smear_sigma_bins']:.2f}) bins, "
                         f"D/ndf={data_fit['nominal_deviance_per_ndf']:.2f}"
                         f"->{data_fit['deviance_per_ndf']:.2f}",
+                        flush=True,
+                    )
+                #endif
+                stability = region_summary.get(
+                    "sideband_stability",
+                    {},
+                )
+                if stability.get("success", False):
+                    print(
+                        f"      SIDEBAND SHAPE: JS(0.20-0.25,0.25-0.30)="
+                        f"{stability['js_mid_far']:.4f}; "
+                        f"JS(0.15-0.20,0.20-0.25)="
+                        f"{stability['js_near_mid']:.4f}",
                         flush=True,
                     )
                 #endif
