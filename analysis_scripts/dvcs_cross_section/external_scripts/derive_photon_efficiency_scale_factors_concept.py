@@ -2159,33 +2159,37 @@ def make_combined_data_template_fit_canvas(
     """
     One real-data template-fit canvas per period.
 
-    Rows are E_probe bins and columns are FD/FT.  Each logical panel has:
+    Rows are E_probe bins and columns are FD/FT. Each logical panel is built
+    with a NESTED GridSpec:
       * top: data + fitted AAO + fitted DVCSgen + total;
       * bottom: Pearson pull (data-fit)/sqrt(fit).
 
+    The nested layout keeps the fit and pull visually grouped while giving a
+    much larger gap between successive E_probe rows. This prevents the pull
+    x-axis label from colliding with the title of the next fit panel.
+
     The real-data fit uses fixed-width bins over the established physical
-    plotting range of the selected discriminator.  Events outside that range
+    plotting range of the selected discriminator. Events outside that range
     are excluded explicitly, never folded into a giant edge bin.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
     n_energy = len(E_PROBE_BINS)
+
     fig = plt.figure(
-        figsize=(14.6, 5.8 * n_energy + 1.4),
+        figsize=(14.8, 6.4 * n_energy + 1.5),
     )
-    grid = fig.add_gridspec(
-        2 * n_energy,
+
+    # Outer grid controls spacing BETWEEN distinct E_probe regions.
+    outer = fig.add_gridspec(
+        n_energy,
         2,
-        height_ratios=[
-            value
-            for _ in range(n_energy)
-            for value in (3.4, 1.0)
-        ],
-        # Keep the fit and its pull panel visually grouped, while leaving
-        # enough total vertical space that the next E_probe-row title never
-        # collides with the previous pull-panel x label.
-        hspace=0.28,
+        hspace=0.52,
         wspace=0.20,
+        left=0.075,
+        right=0.985,
+        bottom=0.045,
+        top=0.945,
     )
 
     legend_handles = []
@@ -2198,9 +2202,17 @@ def make_combined_data_template_fit_canvas(
         )
 
         for icol, region in enumerate(("FD", "FT")):
-            ax = fig.add_subplot(grid[2 * irow, icol])
+            # Inner grid keeps main panel and pull panel close together.
+            inner = outer[irow, icol].subgridspec(
+                2,
+                1,
+                height_ratios=(3.5, 1.0),
+                hspace=0.06,
+            )
+
+            ax = fig.add_subplot(inner[0, 0])
             ax_pull = fig.add_subplot(
-                grid[2 * irow + 1, icol],
+                inner[1, 0],
                 sharex=ax,
             )
 
@@ -2226,8 +2238,12 @@ def make_combined_data_template_fit_canvas(
                     transform=ax.transAxes,
                 )
                 ax.set_title(
-                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV",
-                    pad=10,
+                    (
+                        f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV\n"
+                        "fit unavailable"
+                    ),
+                    fontsize=10.5,
+                    pad=8,
                 )
                 ax_pull.axis("off")
                 continue
@@ -2288,20 +2304,23 @@ def make_combined_data_template_fit_canvas(
                 ]
             #endif
 
-            ax.set_ylabel("Events / bin")
+            # Put the discriminator on its own second title line. This is much
+            # easier to read than appending it to the E_probe title.
             ax.set_title(
                 (
-                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
-                    f"   |   fit variable: {fit['feature']}"
+                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV\n"
+                    f"fit variable: {feature_plot_label(fit['feature'])}"
                 ),
-                pad=10,
-                fontsize=10.5,
+                pad=8,
+                fontsize=10.2,
             )
+            ax.set_ylabel("Events / bin")
             ax.grid(alpha=0.20)
 
             pull = (
                 counts - expected
             ) / np.sqrt(np.maximum(expected, 1.0))
+
             ax_pull.axhline(
                 0.0,
                 linewidth=1.0,
@@ -2328,10 +2347,13 @@ def make_combined_data_template_fit_canvas(
                 fontsize=9.0,
                 labelpad=4,
             )
+
+            # The variable is already explicit in the panel title. Keep the
+            # x-axis label compact and only on the pull panel.
             ax_pull.set_xlabel(
                 feature_plot_label(fit["feature"]),
-                labelpad=8,
-                fontsize=9.5,
+                labelpad=5,
+                fontsize=9.2,
             )
             ax_pull.grid(alpha=0.18)
 
@@ -2345,7 +2367,7 @@ def make_combined_data_template_fit_canvas(
                 + (
                     f"fit range: {fit['fit_range_min']:.3g} to "
                     f"{fit['fit_range_max']:.3g}; "
-                    f"data in range={100.0*fit['data_in_range_fraction']:.1f}%"
+                    f"in range={100.0*fit['data_in_range_fraction']:.1f}%"
                 )
             )
             ax.text(
@@ -2363,7 +2385,6 @@ def make_combined_data_template_fit_canvas(
                 },
             )
 
-            # Keep shared x tick labels only on the pull panel.
             plt.setp(ax.get_xticklabels(), visible=False)
         #endfor
     #endfor
@@ -2383,12 +2404,6 @@ def make_combined_data_template_fit_canvas(
         f"{period.label}: real-data AAO + DVCS template fits",
         fontsize=13,
         y=0.999,
-    )
-    fig.subplots_adjust(
-        left=0.075,
-        right=0.985,
-        bottom=0.045,
-        top=0.945,
     )
 
     out = output_dir / f"data_template_fit_{period.key}.png"
