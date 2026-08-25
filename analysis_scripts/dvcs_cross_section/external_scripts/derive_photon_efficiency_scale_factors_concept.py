@@ -63,8 +63,11 @@ This script is intentionally optimized for speed:
     * ROOT files within one period are still read sequentially to avoid nested
       I/O contention and excessive memory pressure.
     * Only the 12 branches actually needed here are read.
-    * No eppi0 files, event association, fitting, bootstrapping, CLASDIS,
-      Stage-II, Stage-III, or grand diagnostics are touched.
+    * No eppi0 files, event association, CLASDIS, Stage-II, Stage-III, or
+      grand diagnostics are touched.
+    * A lightweight AAO-vs-DVCS template-fit closure test is run after every
+      cumulative optimizer step to quantify whether the surviving templates
+      remain distinguishable enough to fit their mixture fraction.
 
 Examples
 --------
@@ -130,6 +133,17 @@ Shape canvases are written under:
 Optimizer CSV/TXT/progression plots are written under:
 
     output/photon_efficiency_concept/rectangular_optimizer/
+
+Template-fit closure CSV/TXT/summary canvases are written under:
+
+    output/photon_efficiency_concept/template_fit_closure/
+
+For every cumulative cut step, the closure test automatically chooses the
+single surviving reconstructed variable with the largest AAO-vs-DVCS
+Jensen-Shannon divergence, builds independent training and held-out templates,
+creates pseudo-data at known pi0 fractions, and refits those fractions. This
+tests whether increasing purity has made the remaining AAO and DVCS shapes too
+degenerate to determine their normalization from data.
 """
 
 from __future__ import annotations
@@ -518,6 +532,34 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Relative weight lambda of data-sideband retention in the "
             "optimizer score denominator. Default: 1.0."
+        ),
+    )
+    parser.add_argument(
+        "--closure-toys",
+        type=int,
+        default=100,
+        help=(
+            "Pseudoexperiments per true pi0 fraction and cumulative optimizer "
+            "step for template-fit closure. Default: 100."
+        ),
+    )
+    parser.add_argument(
+        "--closure-events",
+        type=int,
+        default=5000,
+        help=(
+            "Reference pseudo-data event count used in each closure toy. "
+            "This fixes the statistical scale for comparing identifiability "
+            "between cut steps. Default: 5000."
+        ),
+    )
+    parser.add_argument(
+        "--closure-bins",
+        type=int,
+        default=24,
+        help=(
+            "Maximum quantile bins for the automatically selected 1D closure "
+            "discriminator. Default: 24."
         ),
     )
     parser.add_argument(
@@ -954,6 +996,602 @@ def optimize_rectangular_cuts(
 def cut_expression(result: dict) -> str:
     op = "<" if result["direction"] == "lt" else ">"
     return f"{result['feature']} {op} {result['threshold']:.6g}"
+
+
+
+# =============================================================================
+# Template-fit closure / identifiability study
+# =============================================================================
+
+CLOSURE_TRUE_FRACTIONS: Tuple[float, ...] = (0.20, 0.50, 0.80)
+
+
+def jensen_shannon_divergence(
+    p: np.ndarray,
+    q: np.ndarray,
+) -> float:
+    """Jensen-Shannon divergence in natural-log units."""
+    p = np.asarray(p, dtype=float)
+    q = np.asarray(q, dtype=float)
+
+    p = p / np.sum(p)
+    q = q / np.sum(q)
+    m = 0.5 * (p + q)
+
+    return float(
+        0.5 * np.sum(p * np.log(p / m))
+        + 0.5 * np.sum(q * np.log(q / m))
+    )
+
+
+def closure_histogram_probabilities(
+    values: np.ndarray,
+    edges: np.ndarray,
+    pseudocount: float = 0.5,
+) -> np.ndarray:
+    """
+    Histogram probability vector with a small Jeffreys-like pseudocount so
+    finite MC statistics never produce impossible zero-probability bins.
+    """
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+    counts, _ = np.histogram(values, bins=edges)
+    probs = counts.astype(float) + float(pseudocount)
+    return probs / np.sum(probs)
+
+
+def closure_quantile_edges(
+    pi_values: np.ndarray,
+    dvcs_values: np.ndarray,
+    n_bins: int,
+) -> np.ndarray:
+    """
+    Quantile bins from the combined training templates.
+
+    Quantile binning gives approximately useful occupancy everywhere and is
+    more stable than a fixed-width histogram for long-tailed variables.
+    """
+    combined = np.concatenate((pi_values, dvcs_values))
+    combined = combined[np.isfinite(combined)]
+
+    if combined.size < 20:
+        return np.empty(0, dtype=float)
+    #endif
+
+    edges = np.quantile(
+        combined,
+        np.linspace(0.0, 1.0, max(4, int(n_bins)) + 1),
+    )
+    edges = np.unique(np.asarray(edges, dtype=float))
+
+    if edges.size < 5:
+        return np.empty(0, dtype=float)
+    #endif
+
+    # Include the extrema robustly in np.histogram.
+    edges[0] = np.nextafter(edges[0], -np.inf)
+    edges[-1] = np.nextafter(edges[-1], np.inf)
+    return edges
+
+
+def fit_two_template_fraction(
+    counts: np.ndarray,
+    p_pi0: np.ndarray,
+    p_dvcs: np.ndarray,
+) -> Tuple[float, float]:
+    """
+    Maximum-likelihood fit of
+
+        p_i(f) = f p_pi0,i + (1-f) p_dvcs,i
+
+    to multinomial-binned pseudo-data.
+
+    The score equation is monotonic in f, so a bounded bisection gives the
+    exact one-parameter maximum without scipy.  The returned uncertainty is
+    the local inverse-curvature estimate.
+    """
+    counts = np.asarray(counts, dtype=float)
+    p_pi0 = np.asarray(p_pi0, dtype=float)
+    p_dvcs = np.asarray(p_dvcs, dtype=float)
+    delta = p_pi0 - p_dvcs
+
+    def gradient(f_value: float) -> float:
+        mixture = p_dvcs + f_value * delta
+        mixture = np.clip(mixture, 1.0e-15, None)
+        return float(np.sum(counts * delta / mixture))
+
+    g0 = gradient(0.0)
+    g1 = gradient(1.0)
+
+    if g0 <= 0.0:
+        f_hat = 0.0
+    elif g1 >= 0.0:
+        f_hat = 1.0
+    else:
+        lo = 0.0
+        hi = 1.0
+        for _ in range(50):
+            mid = 0.5 * (lo + hi)
+            if gradient(mid) > 0.0:
+                lo = mid
+            else:
+                hi = mid
+            #endif
+        #endfor
+        f_hat = 0.5 * (lo + hi)
+    #endif
+
+    mixture = p_dvcs + f_hat * delta
+    mixture = np.clip(mixture, 1.0e-15, None)
+    information = float(
+        np.sum(counts * (delta * delta) / (mixture * mixture))
+    )
+    sigma = (
+        1.0 / math.sqrt(information)
+        if information > 0.0
+        else float("inf")
+    )
+
+    return float(f_hat), float(sigma)
+
+
+def build_cumulative_optimizer_masks(
+    events: np.ndarray,
+    optimizer_results: list,
+) -> list:
+    """Baseline plus one cumulative mask after each optimizer-selected cut."""
+    masks = [np.ones(events.shape[0], dtype=bool)]
+    current = masks[0]
+
+    for result in optimizer_results:
+        current = apply_optimizer_cut(events, current, result)
+        masks.append(current.copy())
+    #endfor
+
+    return masks
+
+
+def run_template_fit_closure(
+    pi0_events: np.ndarray,
+    dvcs_events: np.ndarray,
+    optimizer_results: list,
+    n_toys: int,
+    n_pseudodata_events: int,
+    n_bins: int,
+    seed: int,
+) -> list:
+    """
+    Test AAO/DVCS mixture identifiability at every cumulative cut step.
+
+    Procedure at each step:
+      1. Apply all cuts through that step.
+      2. Split surviving AAO and DVCS events into independent template-training
+         and held-out pseudo-data halves.
+      3. Among the allowed reconstructed variables, find the single 1D
+         variable with the largest AAO-vs-DVCS Jensen-Shannon divergence in the
+         training templates.
+      4. Build pseudo-data from the held-out shapes at true pi0 fractions
+         0.20, 0.50, and 0.80.
+      5. Fit each pseudo-data sample with the independent training templates.
+
+    Large fit RMS/bias after later cuts means that purity optimization has made
+    the residual AAO and DVCS templates too degenerate for a reliable fraction
+    extraction.
+    """
+    if (
+        pi0_events.shape[0] < 40
+        or dvcs_events.shape[0] < 40
+        or n_toys <= 0
+        or n_pseudodata_events <= 0
+    ):
+        return []
+    #endif
+
+    rng = np.random.default_rng(int(seed))
+
+    # Split once before cut application so the training/held-out samples remain
+    # statistically independent at every cumulative optimizer step.
+    pi_perm = rng.permutation(pi0_events.shape[0])
+    dvcs_perm = rng.permutation(dvcs_events.shape[0])
+
+    pi_train_flag = np.zeros(pi0_events.shape[0], dtype=bool)
+    dvcs_train_flag = np.zeros(dvcs_events.shape[0], dtype=bool)
+    pi_train_flag[pi_perm[: pi_perm.size // 2]] = True
+    dvcs_train_flag[dvcs_perm[: dvcs_perm.size // 2]] = True
+
+    pi_test_flag = ~pi_train_flag
+    dvcs_test_flag = ~dvcs_train_flag
+
+    pi_masks = build_cumulative_optimizer_masks(
+        pi0_events,
+        optimizer_results,
+    )
+    dvcs_masks = build_cumulative_optimizer_masks(
+        dvcs_events,
+        optimizer_results,
+    )
+
+    closure_results = []
+
+    for step_index, (pi_mask, dvcs_mask) in enumerate(
+        zip(pi_masks, dvcs_masks)
+    ):
+        pi_train = pi_mask & pi_train_flag
+        pi_test = pi_mask & pi_test_flag
+        dvcs_train = dvcs_mask & dvcs_train_flag
+        dvcs_test = dvcs_mask & dvcs_test_flag
+
+        n_pi_train = int(np.count_nonzero(pi_train))
+        n_pi_test = int(np.count_nonzero(pi_test))
+        n_dvcs_train = int(np.count_nonzero(dvcs_train))
+        n_dvcs_test = int(np.count_nonzero(dvcs_test))
+
+        if min(n_pi_train, n_pi_test, n_dvcs_train, n_dvcs_test) < 20:
+            continue
+        #endif
+
+        best_feature = None
+        best_edges = None
+        best_p_pi_train = None
+        best_p_dvcs_train = None
+        best_js = -1.0
+
+        # Emiss2 and Mx2_1 are still valid closure diagnostics even though they
+        # are not optimizer variables.  The closure study asks only whether
+        # any surviving reconstructed 1D shape retains normalization leverage.
+        for feature in OPTIMIZER_FEATURES:
+            ifeature = FEATURE_INDEX[feature]
+
+            pi_values = pi0_events[pi_train, ifeature]
+            dvcs_values = dvcs_events[dvcs_train, ifeature]
+
+            edges = closure_quantile_edges(
+                pi_values,
+                dvcs_values,
+                n_bins,
+            )
+            if edges.size == 0:
+                continue
+            #endif
+
+            p_pi_train = closure_histogram_probabilities(
+                pi_values,
+                edges,
+            )
+            p_dvcs_train = closure_histogram_probabilities(
+                dvcs_values,
+                edges,
+            )
+
+            js = jensen_shannon_divergence(
+                p_pi_train,
+                p_dvcs_train,
+            )
+
+            if js > best_js:
+                best_js = js
+                best_feature = feature
+                best_edges = edges
+                best_p_pi_train = p_pi_train
+                best_p_dvcs_train = p_dvcs_train
+            #endif
+        #endfor
+
+        if best_feature is None:
+            continue
+        #endif
+
+        ifeature = FEATURE_INDEX[best_feature]
+        p_pi_test = closure_histogram_probabilities(
+            pi0_events[pi_test, ifeature],
+            best_edges,
+        )
+        p_dvcs_test = closure_histogram_probabilities(
+            dvcs_events[dvcs_test, ifeature],
+            best_edges,
+        )
+
+        for true_fraction in CLOSURE_TRUE_FRACTIONS:
+            truth_probability = (
+                true_fraction * p_pi_test
+                + (1.0 - true_fraction) * p_dvcs_test
+            )
+            truth_probability /= np.sum(truth_probability)
+
+            fitted = np.empty(n_toys, dtype=float)
+            fitted_sigma = np.empty(n_toys, dtype=float)
+
+            for itoy in range(n_toys):
+                toy_counts = rng.multinomial(
+                    int(n_pseudodata_events),
+                    truth_probability,
+                )
+                fitted[itoy], fitted_sigma[itoy] = (
+                    fit_two_template_fraction(
+                        toy_counts,
+                        best_p_pi_train,
+                        best_p_dvcs_train,
+                    )
+                )
+            #endfor
+
+            delta = fitted - float(true_fraction)
+
+            closure_results.append(
+                {
+                    "step": int(step_index),
+                    "feature": str(best_feature),
+                    "js_divergence": float(best_js),
+                    "true_fraction": float(true_fraction),
+                    "mean_fit": float(np.mean(fitted)),
+                    "bias": float(np.mean(delta)),
+                    "rms_error": float(np.sqrt(np.mean(delta * delta))),
+                    "std_fit": float(np.std(fitted, ddof=1)),
+                    "mean_sigma": float(np.mean(fitted_sigma)),
+                    "boundary_fraction": float(
+                        np.mean(
+                            (fitted <= 1.0e-6)
+                            | (fitted >= 1.0 - 1.0e-6)
+                        )
+                    ),
+                    "n_pi0_train": n_pi_train,
+                    "n_pi0_test": n_pi_test,
+                    "n_dvcs_train": n_dvcs_train,
+                    "n_dvcs_test": n_dvcs_test,
+                    "n_toys": int(n_toys),
+                    "n_pseudodata_events": int(n_pseudodata_events),
+                }
+            )
+        #endfor
+    #endfor
+
+    return closure_results
+
+
+def write_template_fit_closure_outputs(
+    period: Period,
+    region: str,
+    energy_bin_key: str,
+    energy_min: float,
+    energy_max: float,
+    closure_results: list,
+    output_dir: Path,
+) -> None:
+    """Write detailed closure results for one period/region/E_probe bin."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stem = (
+        f"template_fit_closure_{period.key}_{region.lower()}_"
+        f"eprobe_{energy_bin_key}"
+    )
+
+    csv_path = output_dir / f"{stem}.csv"
+    txt_path = output_dir / f"{stem}.txt"
+
+    fields = (
+        "step",
+        "feature",
+        "js_divergence",
+        "true_fraction",
+        "mean_fit",
+        "bias",
+        "rms_error",
+        "std_fit",
+        "mean_sigma",
+        "boundary_fraction",
+        "n_pi0_train",
+        "n_pi0_test",
+        "n_dvcs_train",
+        "n_dvcs_test",
+        "n_toys",
+        "n_pseudodata_events",
+    )
+
+    with csv_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for result in closure_results:
+            writer.writerow({field: result[field] for field in fields})
+        #endfor
+    #endwith
+
+    lines = [
+        (
+            f"{period.label} {region}: template-fit closure, "
+            f"{energy_min:g} <= E_probe < {energy_max:g} GeV"
+        ),
+        "=" * 88,
+        (
+            "At each cumulative optimizer step, the single reconstructed "
+            "variable with maximum AAO-vs-DVCS Jensen-Shannon divergence is "
+            "used for an independent train/held-out two-template closure fit."
+        ),
+        "",
+    ]
+
+    if not closure_results:
+        lines.append("Insufficient statistics for closure.")
+    else:
+        steps = sorted({int(result["step"]) for result in closure_results})
+        for step in steps:
+            step_rows = [
+                result
+                for result in closure_results
+                if int(result["step"]) == step
+            ]
+            if not step_rows:
+                continue
+            #endif
+
+            lines.append(
+                f"Step {step}: best feature={step_rows[0]['feature']}, "
+                f"JS={step_rows[0]['js_divergence']:.5f}"
+            )
+
+            for result in step_rows:
+                lines.append(
+                    f"  f_true={result['true_fraction']:.2f}: "
+                    f"<f_fit>={result['mean_fit']:.4f}, "
+                    f"bias={result['bias']:+.4f}, "
+                    f"RMS={result['rms_error']:.4f}, "
+                    f"<sigma_fit>={result['mean_sigma']:.4f}, "
+                    f"boundary={100.0*result['boundary_fraction']:.1f}%"
+                )
+            #endfor
+            lines.append("")
+        #endfor
+    #endif
+
+    txt_path.write_text("\n".join(lines) + "\n")
+
+
+def make_combined_closure_canvas(
+    period: Period,
+    optimizer_summary: dict,
+    output_dir: Path,
+) -> Path:
+    """
+    One 4x2 closure canvas per period.
+
+    Each panel shows RMS(f_fit-f_true) versus cumulative cut step for the three
+    injected pi0 fractions.  Growth of the RMS after later cuts is the direct
+    warning that template identifiability is being lost.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(
+        len(E_PROBE_BINS),
+        2,
+        figsize=(13.8, 4.0 * len(E_PROBE_BINS) + 1.0),
+        squeeze=False,
+    )
+
+    legend_handles = []
+    legend_labels = []
+
+    for irow, (bin_key, e_min, e_max) in enumerate(E_PROBE_BINS):
+        bin_summary = optimizer_summary.get("energy_bins", {}).get(
+            bin_key,
+            {},
+        )
+
+        for icol, region in enumerate(("FD", "FT")):
+            ax = axes[irow, icol]
+            region_summary = bin_summary.get("regions", {}).get(region)
+            closure_results = (
+                region_summary.get("closure_results", [])
+                if region_summary is not None
+                else []
+            )
+
+            if not closure_results:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "Insufficient closure statistics",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+                ax.set_title(
+                    f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
+                )
+                continue
+            #endif
+
+            for true_fraction in CLOSURE_TRUE_FRACTIONS:
+                rows = [
+                    result
+                    for result in closure_results
+                    if abs(
+                        result["true_fraction"] - true_fraction
+                    ) < 1.0e-9
+                ]
+                rows.sort(key=lambda result: result["step"])
+
+                line, = ax.plot(
+                    [result["step"] for result in rows],
+                    [result["rms_error"] for result in rows],
+                    marker="o",
+                    label=rf"$f_{{\pi^0}}^{{true}}={true_fraction:.1f}$",
+                )
+
+                if irow == 0 and icol == 0:
+                    legend_handles.append(line)
+                    legend_labels.append(
+                        rf"$f_{{\pi^0}}^{{true}}={true_fraction:.1f}$"
+                    )
+                #endif
+            #endfor
+
+            # Annotate which 1D shape carried the most separation at each step.
+            step_rows = {}
+            for result in closure_results:
+                step_rows.setdefault(
+                    int(result["step"]),
+                    result,
+                )
+            #endfor
+
+            annotation = "\n".join(
+                (
+                    f"{step}: {row['feature']} "
+                    f"(JS={row['js_divergence']:.3f})"
+                )
+                for step, row in sorted(step_rows.items())
+            )
+            ax.text(
+                0.98,
+                0.97,
+                annotation,
+                transform=ax.transAxes,
+                fontsize=7.4,
+                va="top",
+                ha="right",
+                bbox={
+                    "facecolor": "white",
+                    "alpha": 0.82,
+                    "edgecolor": "0.6",
+                },
+            )
+
+            ax.set_xlabel("Cumulative cut step")
+            ax.set_ylabel(r"closure RMS of $f_{\pi^0}$")
+            ax.set_ylim(bottom=0.0)
+            ax.grid(alpha=0.25)
+            ax.set_title(
+                f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
+            )
+        #endfor
+    #endfor
+
+    if legend_handles:
+        fig.legend(
+            legend_handles,
+            legend_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.975),
+            ncol=3,
+            frameon=True,
+        )
+    #endif
+
+    fig.suptitle(
+        f"{period.label}: AAO/DVCS template-fit closure by cut step",
+        fontsize=13,
+        y=0.998,
+    )
+    fig.subplots_adjust(
+        left=0.08,
+        right=0.985,
+        bottom=0.055,
+        top=0.93,
+        wspace=0.18,
+        hspace=0.42,
+    )
+
+    out = output_dir / f"template_fit_closure_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
 
 
 def write_optimizer_outputs(
@@ -1954,6 +2592,9 @@ def process_period(
     optimizer_data_sideband_min: float,
     optimizer_data_sideband_max: float,
     optimizer_data_sideband_weight: float,
+    closure_toys: int,
+    closure_events: int,
+    closure_bins: int,
 ) -> dict:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -2102,6 +2743,36 @@ def process_period(
                     optimizer_outdir,
                 )
 
+                closure_results = run_template_fit_closure(
+                    pi0_events,
+                    dvcs_events,
+                    results,
+                    n_toys=closure_toys,
+                    n_pseudodata_events=closure_events,
+                    n_bins=closure_bins,
+                    seed=(
+                        700_000
+                        + 10_000 * period_index
+                        + 1000 * [key for key, _lo, _hi in E_PROBE_BINS].index(
+                            bin_key
+                        )
+                        + (0 if region == "FT" else 100)
+                    ),
+                )
+
+                closure_outdir = (
+                    output_dir.parent / "template_fit_closure"
+                )
+                write_template_fit_closure_outputs(
+                    period,
+                    region,
+                    bin_key,
+                    energy_min,
+                    energy_max,
+                    closure_results,
+                    closure_outdir,
+                )
+
                 optimizer_summary["energy_bins"][bin_key]["regions"][region] = {
                     "n_pi0_baseline": int(pi0_events.shape[0]),
                     "n_dvcs_baseline": int(dvcs_events.shape[0]),
@@ -2109,6 +2780,7 @@ def process_period(
                         data_sideband_events.shape[0]
                     ),
                     "results": results,
+                    "closure_results": closure_results,
                 }
             #endfor
         #endfor
@@ -2121,6 +2793,16 @@ def process_period(
         log(
             f"{period.label}: wrote E_probe-binned FD+FT optimizer canvas "
             f"{combined_optimizer_plot}"
+        )
+
+        combined_closure_plot = make_combined_closure_canvas(
+            period,
+            optimizer_summary,
+            output_dir.parent / "template_fit_closure",
+        )
+        log(
+            f"{period.label}: wrote combined template-fit closure canvas "
+            f"{combined_closure_plot}"
         )
 
         # Make one cumulative shape canvas for every period x detector x
@@ -2192,6 +2874,9 @@ def process_period_worker(
     optimizer_data_sideband_min: float,
     optimizer_data_sideband_max: float,
     optimizer_data_sideband_weight: float,
+    closure_toys: int,
+    closure_events: int,
+    closure_bins: int,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -2218,6 +2903,9 @@ def process_period_worker(
         optimizer_data_sideband_min,
         optimizer_data_sideband_max,
         optimizer_data_sideband_weight,
+        closure_toys,
+        closure_events,
+        closure_bins,
     )
 
 
@@ -2320,6 +3008,29 @@ def print_optimizer_summary(
                     f"F={final['score']:.4g}",
                     flush=True,
                 )
+
+                closure_results = region_summary.get(
+                    "closure_results",
+                    [],
+                )
+                final_closure = [
+                    result
+                    for result in closure_results
+                    if int(result["step"]) == len(results)
+                    and abs(result["true_fraction"] - 0.50) < 1.0e-9
+                ]
+                if final_closure:
+                    closure = final_closure[0]
+                    print(
+                        f"      CLOSURE @ final step, f_pi0=0.50: "
+                        f"best={closure['feature']}, "
+                        f"JS={closure['js_divergence']:.4f}, "
+                        f"<f_fit>={closure['mean_fit']:.4f}, "
+                        f"bias={closure['bias']:+.4f}, "
+                        f"RMS={closure['rms_error']:.4f}",
+                        flush=True,
+                    )
+                #endif
             #endfor
         #endfor
     #endfor
@@ -2378,6 +3089,15 @@ def main() -> int:
     if args.optimizer_data_sideband_weight < 0.0:
         raise ValueError("--optimizer-data-sideband-weight must be >= 0.")
     #endif
+    if args.closure_toys <= 0:
+        raise ValueError("--closure-toys must be > 0.")
+    #endif
+    if args.closure_events <= 0:
+        raise ValueError("--closure-events must be > 0.")
+    #endif
+    if args.closure_bins < 4:
+        raise ValueError("--closure-bins must be >= 4.")
+    #endif
 
     selected_keys = set(args.period or [p.key for p in PERIODS])
     selected_periods = [p for p in PERIODS if p.key in selected_keys]
@@ -2407,7 +3127,9 @@ def main() -> int:
             f"sideband weight={args.optimizer_data_sideband_weight:.3g}; "
             "E_probe (= Emiss2) bins: "
             "0.4-1, 1-2, 2-4, 4-9.5 GeV; "
-            "Emiss2 excluded from optimizer thresholds."
+            "Emiss2 excluded from optimizer thresholds; "
+            f"closure={args.closure_toys} toys x "
+            f"{args.closure_events} events at f_pi0=0.2,0.5,0.8."
         )
     #endif
     log(
@@ -2445,6 +3167,9 @@ def main() -> int:
                 args.optimizer_data_sideband_min,
                 args.optimizer_data_sideband_max,
                 args.optimizer_data_sideband_weight,
+                args.closure_toys,
+                args.closure_events,
+                args.closure_bins,
             )
         #endfor
     else:
@@ -2469,6 +3194,9 @@ def main() -> int:
                     args.optimizer_data_sideband_min,
                     args.optimizer_data_sideband_max,
                     args.optimizer_data_sideband_weight,
+                    args.closure_toys,
+                    args.closure_events,
+                    args.closure_bins,
                 ): period
                 for period in selected_periods
             }
