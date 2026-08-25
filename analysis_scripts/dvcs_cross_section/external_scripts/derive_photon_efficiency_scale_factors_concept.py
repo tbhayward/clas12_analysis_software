@@ -187,6 +187,14 @@ The lowest slice is deliberately treated as a signal-adjacent diagnostic, not
 as an independent background template; the key background-transfer test is the
 stability of the 0.20-0.25 and 0.25-0.30 GeV^2 slices.
 
+The empirical sideband is used adaptively.  A three-template fit is attempted
+only when, after the selected operating cuts, both eta-safe sidebands have
+adequate statistics and the near/far sideband shapes are sufficiently stable.
+Otherwise the code falls back explicitly to an AAO + DVCSgen fit, retaining the
+same bounded AAO-only morphing.  The fallback is labeled on the plots and in
+the single per-period summary CSV rather than silently pretending that the
+sideband fraction is known.
+
 The visual outputs per period are:
 
     output/photon_efficiency_concept/data_template_fit/
@@ -713,6 +721,27 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=9,
         help="Number of bounded AAO smearing values scanned. Default: 9.",
+    )
+    parser.add_argument(
+        "--data-fit-sideband-min-events",
+        type=int,
+        default=100,
+        help=(
+            "Minimum in-range events required independently in the eta-safe "
+            "near and far sidebands before the empirical sideband is allowed "
+            "as a third fit template. Default: 100."
+        ),
+    )
+    parser.add_argument(
+        "--data-fit-sideband-max-js",
+        type=float,
+        default=0.05,
+        help=(
+            "Maximum allowed Jensen-Shannon divergence between the eta-safe "
+            "near (0.15-0.19) and far (0.19-0.23) sideband shapes before "
+            "using the near sideband as a transported third template. "
+            "Default: 0.05."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -2214,6 +2243,305 @@ def poisson_deviance(
     return float(2.0 * np.sum(terms))
 
 
+
+def choose_real_data_fit_feature(
+    pi0_events: np.ndarray,
+    dvcs_events: np.ndarray,
+    optimizer_results: list,
+    chosen_step: int,
+    closure_results: list,
+    n_bins: int,
+) -> Optional[str]:
+    """
+    Resolve the real-data discriminator once, before deciding whether the
+    empirical sideband is stable enough to enter the fit.
+
+    Prefer the closure-selected discriminator at the chosen operating step.
+    If that variable is not allowed for the real-data fit, fall back to the
+    strongest AAO/DVCS discriminator among DATA_FIT_FEATURES.
+    """
+    closure = closure_row_for_step(
+        closure_results,
+        chosen_step,
+        true_fraction=0.50,
+    )
+    if closure is not None:
+        candidate = str(closure["feature"])
+        if candidate in DATA_FIT_FEATURES:
+            return candidate
+        #endif
+    #endif
+
+    pi_masks = build_cumulative_optimizer_masks(
+        pi0_events,
+        optimizer_results,
+    )
+    dvcs_masks = build_cumulative_optimizer_masks(
+        dvcs_events,
+        optimizer_results,
+    )
+    step = min(
+        int(chosen_step),
+        len(pi_masks) - 1,
+        len(dvcs_masks) - 1,
+    )
+
+    pi_selected = pi0_events[pi_masks[step]]
+    dvcs_selected = dvcs_events[dvcs_masks[step]]
+
+    feature, _edges, _js = best_template_feature_for_events(
+        pi_selected,
+        dvcs_selected,
+        n_bins,
+    )
+    return feature
+
+
+def fit_real_data_two_templates_morphed(
+    data_events: np.ndarray,
+    pi0_events: np.ndarray,
+    dvcs_events: np.ndarray,
+    optimizer_results: list,
+    chosen_step: int,
+    feature: str,
+    n_bins: int,
+    morph_shift_max_bins: float,
+    morph_smear_max_bins: float,
+    morph_shift_steps: int,
+    morph_smear_steps: int,
+    fallback_reason: str,
+) -> dict:
+    """
+    Adaptive fallback fit: signal-like data = morphed AAO + fixed DVCSgen.
+
+    The AAO nuisance prescription is identical to the three-template case.
+    """
+    pi_masks = build_cumulative_optimizer_masks(
+        pi0_events,
+        optimizer_results,
+    )
+    dvcs_masks = build_cumulative_optimizer_masks(
+        dvcs_events,
+        optimizer_results,
+    )
+    data_masks = build_cumulative_optimizer_masks(
+        data_events,
+        optimizer_results,
+    )
+
+    chosen_step = min(
+        int(chosen_step),
+        len(pi_masks) - 1,
+        len(dvcs_masks) - 1,
+        len(data_masks) - 1,
+    )
+
+    pi_selected = pi0_events[pi_masks[chosen_step]]
+    dvcs_selected = dvcs_events[dvcs_masks[chosen_step]]
+    data_selected = data_events[data_masks[chosen_step]]
+
+    if min(
+        pi_selected.shape[0],
+        dvcs_selected.shape[0],
+        data_selected.shape[0],
+    ) < 20:
+        return {
+            "success": False,
+            "status": "insufficient_selected_statistics",
+            "step": int(chosen_step),
+            "fit_mode": "two_template_fallback",
+            "fallback_reason": fallback_reason,
+        }
+    #endif
+
+    edges = data_fit_edges_for_feature(feature, n_bins=n_bins)
+    if edges.size < 5:
+        return {
+            "success": False,
+            "status": "no_valid_fit_range",
+            "step": int(chosen_step),
+            "fit_mode": "two_template_fallback",
+            "fallback_reason": fallback_reason,
+        }
+    #endif
+
+    ifeature = FEATURE_INDEX[feature]
+    fit_min = float(edges[0])
+    fit_max = float(edges[-1])
+
+    def extract(events: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        values = np.asarray(events[:, ifeature], dtype=float)
+        mask = (
+            np.isfinite(values)
+            & (values >= fit_min)
+            & (values < fit_max)
+        )
+        return values, mask
+
+    pi_values, pi_mask = extract(pi_selected)
+    dvcs_values, dvcs_mask = extract(dvcs_selected)
+    data_values, data_mask = extract(data_selected)
+
+    if min(
+        np.count_nonzero(pi_mask),
+        np.count_nonzero(dvcs_mask),
+    ) < 20:
+        return {
+            "success": False,
+            "status": "insufficient_template_statistics_in_fit_range",
+            "step": int(chosen_step),
+            "fit_mode": "two_template_fallback",
+            "fallback_reason": fallback_reason,
+        }
+    #endif
+
+    p_pi0_nominal = closure_histogram_probabilities(
+        pi_values[pi_mask],
+        edges,
+    )
+    p_dvcs = closure_histogram_probabilities(
+        dvcs_values[dvcs_mask],
+        edges,
+    )
+    data_counts, _ = np.histogram(
+        data_values[data_mask],
+        bins=edges,
+    )
+
+    if np.sum(data_counts) < 20:
+        return {
+            "success": False,
+            "status": "insufficient_data_in_fit_histogram",
+            "step": int(chosen_step),
+            "fit_mode": "two_template_fallback",
+            "fallback_reason": fallback_reason,
+        }
+    #endif
+
+    # Unmorphed reference.
+    f_nominal, _sigma_nominal = fit_two_template_fraction(
+        data_counts,
+        p_pi0_nominal,
+        p_dvcs,
+    )
+    nominal_probability = (
+        f_nominal * p_pi0_nominal
+        + (1.0 - f_nominal) * p_dvcs
+    )
+
+    best = None
+    for shift_bins in np.linspace(
+        -float(morph_shift_max_bins),
+        float(morph_shift_max_bins),
+        max(3, int(morph_shift_steps)),
+    ):
+        for smear_bins in np.linspace(
+            0.0,
+            float(morph_smear_max_bins),
+            max(2, int(morph_smear_steps)),
+        ):
+            p_pi0 = morph_template_probability(
+                p_pi0_nominal,
+                shift_bins,
+                smear_bins,
+            )
+            f_pi0, sigma_pi0 = fit_two_template_fraction(
+                data_counts,
+                p_pi0,
+                p_dvcs,
+            )
+            probability = (
+                f_pi0 * p_pi0
+                + (1.0 - f_pi0) * p_dvcs
+            )
+            probability = np.clip(probability, 1.0e-15, None)
+            log_likelihood = float(
+                np.sum(data_counts * np.log(probability))
+            )
+
+            if (
+                best is None
+                or log_likelihood > best["log_likelihood"]
+            ):
+                best = {
+                    "fraction_pi0": float(f_pi0),
+                    "fraction_pi0_stat": float(sigma_pi0),
+                    "shift_bins": float(shift_bins),
+                    "smear_sigma_bins": float(smear_bins),
+                    "p_pi0": p_pi0,
+                    "probability": probability,
+                    "log_likelihood": log_likelihood,
+                }
+            #endif
+        #endfor
+    #endfor
+
+    n_data = int(np.sum(data_counts))
+    f_pi0 = best["fraction_pi0"]
+    f_dvcs = 1.0 - f_pi0
+    expected_total = n_data * best["probability"]
+    expected_pi0 = n_data * f_pi0 * best["p_pi0"]
+    expected_dvcs = n_data * f_dvcs * p_dvcs
+    expected_sideband = np.zeros_like(expected_total)
+
+    expected_nominal = n_data * nominal_probability
+    deviance = poisson_deviance(data_counts, expected_total)
+    nominal_deviance = poisson_deviance(
+        data_counts,
+        expected_nominal,
+    )
+
+    # f_pi0 + AAO shift + AAO smear.
+    ndf = max(int(data_counts.size) - 3, 1)
+    bin_width = float(edges[1] - edges[0])
+
+    return {
+        "success": True,
+        "status": "ok",
+        "fit_mode": "two_template_fallback",
+        "fallback_reason": str(fallback_reason),
+        "step": int(chosen_step),
+        "feature": str(feature),
+        "fraction_pi0": float(f_pi0),
+        "fraction_dvcs": float(f_dvcs),
+        "fraction_sideband": 0.0,
+        "fraction_pi0_stat": float(best["fraction_pi0_stat"]),
+        "morph_shift_bins": float(best["shift_bins"]),
+        "morph_smear_sigma_bins": float(best["smear_sigma_bins"]),
+        "morph_shift_x": float(best["shift_bins"] * bin_width),
+        "morph_smear_sigma_x": float(
+            best["smear_sigma_bins"] * bin_width
+        ),
+        "deviance": float(deviance),
+        "nominal_deviance": float(nominal_deviance),
+        "ndf": int(ndf),
+        "deviance_per_ndf": float(deviance / ndf),
+        "nominal_deviance_per_ndf": float(
+            nominal_deviance / ndf
+        ),
+        "n_data": n_data,
+        "n_data_selected_total": int(data_selected.shape[0]),
+        "n_pi0_template": int(np.count_nonzero(pi_mask)),
+        "n_dvcs_template": int(np.count_nonzero(dvcs_mask)),
+        "n_sideband_template": 0,
+        "fit_range_min": fit_min,
+        "fit_range_max": fit_max,
+        "data_in_range_fraction": float(
+            n_data / max(int(data_selected.shape[0]), 1)
+        ),
+        "edges": np.asarray(edges, dtype=float),
+        "data_counts": np.asarray(data_counts, dtype=float),
+        "expected_total": np.asarray(expected_total, dtype=float),
+        "expected_nominal": np.asarray(expected_nominal, dtype=float),
+        "expected_pi0": np.asarray(expected_pi0, dtype=float),
+        "expected_dvcs": np.asarray(expected_dvcs, dtype=float),
+        "expected_sideband": np.asarray(
+            expected_sideband,
+            dtype=float,
+        ),
+    }
+
+
 def fit_real_data_three_templates(
     data_events: np.ndarray,
     pi0_events: np.ndarray,
@@ -2223,6 +2551,7 @@ def fit_real_data_three_templates(
     chosen_step: int,
     closure_results: list,
     n_bins: int,
+    forced_feature: Optional[str],
     morph_shift_max_bins: float,
     morph_smear_max_bins: float,
     morph_shift_steps: int,
@@ -2260,17 +2589,23 @@ def fit_real_data_three_templates(
         }
     #endif
 
-    closure = closure_row_for_step(
-        closure_results,
-        chosen_step,
-        true_fraction=0.50,
+    feature = (
+        str(forced_feature)
+        if forced_feature in DATA_FIT_FEATURES
+        else None
     )
 
-    feature = None
-    if closure is not None:
-        candidate = str(closure["feature"])
-        if candidate in DATA_FIT_FEATURES:
-            feature = candidate
+    if feature is None:
+        closure = closure_row_for_step(
+            closure_results,
+            chosen_step,
+            true_fraction=0.50,
+        )
+        if closure is not None:
+            candidate = str(closure["feature"])
+            if candidate in DATA_FIT_FEATURES:
+                feature = candidate
+            #endif
         #endif
     #endif
 
@@ -2396,6 +2731,8 @@ def fit_real_data_three_templates(
     return {
         "success": True,
         "status": "ok",
+        "fit_mode": "three_template",
+        "fallback_reason": "",
         "step": int(chosen_step),
         "feature": str(feature),
         "fraction_pi0": f_pi0,
@@ -2693,8 +3030,13 @@ def make_combined_data_template_fit_canvas(
             )
             ax_pull.grid(alpha=0.18)
 
+            mode_label = (
+                "3-template"
+                if fit.get("fit_mode") == "three_template"
+                else "2-template fallback"
+            )
             annotation = (
-                f"selected cut step {fit['step']}\n"
+                f"selected cut step {fit['step']}; {mode_label}\n"
                 rf"$f_{{\pi^0}}={fit['fraction_pi0']:.3f}$, "
                 rf"$f_{{DVCS}}={fit['fraction_dvcs']:.3f}$, "
                 rf"$f_{{SB}}={fit['fraction_sideband']:.3f}$"
@@ -2713,6 +3055,14 @@ def make_combined_data_template_fit_canvas(
                     f"fit range: {fit['fit_range_min']:.3g} to "
                     f"{fit['fit_range_max']:.3g}; "
                     f"in range={100.0*fit['data_in_range_fraction']:.1f}%"
+                )
+                + (
+                    (
+                        "\nSB fallback: "
+                        + str(fit.get("fallback_reason", ""))
+                    )
+                    if fit.get("fit_mode") == "two_template_fallback"
+                    else ""
                 )
             )
             ax.text(
@@ -2780,6 +3130,7 @@ def make_pi0_fraction_summary_canvas(
         f_pi0 = []
         f_dvcs = []
         f_side = []
+        fit_modes = []
 
         for bin_key, e_min, e_max in E_PROBE_BINS:
             region_summary = (
@@ -2804,6 +3155,7 @@ def make_pi0_fraction_summary_canvas(
             f_pi0.append(float(fit["fraction_pi0"]))
             f_dvcs.append(float(fit["fraction_dvcs"]))
             f_side.append(float(fit["fraction_sideband"]))
+            fit_modes.append(str(fit.get("fit_mode", "unknown")))
         #endfor
 
         if x:
@@ -2811,6 +3163,16 @@ def make_pi0_fraction_summary_canvas(
             ax.errorbar(x, f_pi0, xerr=xerr, fmt="o-", label=r"$f_{\pi^0}$")
             ax.errorbar(x, f_dvcs, xerr=xerr, fmt="s--", label=r"$f_{\rm DVCS}$")
             ax.errorbar(x, f_side, xerr=xerr, fmt="^-.", label=r"$f_{\rm sideband}$")
+
+            for xi, yi, mode in zip(x, f_pi0, fit_modes):
+                ax.annotate(
+                    "3T" if mode == "three_template" else "2T",
+                    (xi, yi),
+                    xytext=(4, 5),
+                    textcoords="offset points",
+                    fontsize=7.5,
+                )
+            #endfor
         #endif
 
         ax.set_xlim(0.35, 9.6)
@@ -2936,6 +3298,54 @@ def build_sideband_stability_result(
             jensen_shannon_divergence(p_signal_edge, p_far)
         ),
     }
+
+
+
+def decide_sideband_template_usage(
+    stability: dict,
+    min_events: int,
+    max_js: float,
+) -> Tuple[bool, str]:
+    """
+    Decide whether the near eta-safe sideband is trustworthy enough to enter
+    the composition fit as a third template.
+    """
+    if not stability.get("success", False):
+        return (
+            False,
+            f"sideband_validation_{stability.get('status', 'failed')}",
+        )
+    #endif
+
+    counts = stability.get("slice_counts", {})
+    n_near = int(counts.get("near", 0))
+    n_far = int(counts.get("far", 0))
+
+    if n_near < int(min_events) or n_far < int(min_events):
+        return (
+            False,
+            (
+                f"sideband_stats_near={n_near}_far={n_far}"
+                f"_below_{int(min_events)}"
+            ),
+        )
+    #endif
+
+    js = float(stability.get("js_near_far", float("inf")))
+    if not np.isfinite(js) or js > float(max_js):
+        return (
+            False,
+            f"sideband_js={js:.4f}_above_{float(max_js):.4f}",
+        )
+    #endif
+
+    return (
+        True,
+        (
+            f"sideband_accepted_near={n_near}_far={n_far}"
+            f"_js={js:.4f}"
+        ),
+    )
 
 
 def make_sideband_stability_canvas(
@@ -3364,6 +3774,10 @@ def write_period_summary_csv(
         "operating_step",
         "operating_step_status",
         "data_fit_feature",
+        "data_fit_mode",
+        "data_fit_fallback_reason",
+        "data_fit_sideband_accepted",
+        "data_fit_sideband_decision",
         "data_fit_fraction_pi0",
         "data_fit_fraction_pi0_stat",
         "data_fit_fraction_dvcs",
@@ -3479,6 +3893,19 @@ def write_period_summary_csv(
                             data_fit.get("status", ""),
                         ),
                         "data_fit_feature": data_fit.get("feature", ""),
+                        "data_fit_mode": data_fit.get("fit_mode", ""),
+                        "data_fit_fallback_reason": data_fit.get(
+                            "fallback_reason",
+                            "",
+                        ),
+                        "data_fit_sideband_accepted": data_fit.get(
+                            "sideband_accepted",
+                            "",
+                        ),
+                        "data_fit_sideband_decision": data_fit.get(
+                            "sideband_decision",
+                            "",
+                        ),
                         "data_fit_fraction_pi0": data_fit.get(
                             "fraction_pi0",
                             "",
@@ -4728,6 +5155,8 @@ def process_period(
     data_fit_morph_smear_max_bins: float,
     data_fit_morph_shift_steps: int,
     data_fit_morph_smear_steps: int,
+    data_fit_sideband_min_events: int,
+    data_fit_sideband_max_js: float,
 ) -> dict:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -4953,20 +5382,106 @@ def process_period(
                     )
                 ]
 
-                data_fit = fit_real_data_three_templates(
-                    data_events,
+                fit_feature = choose_real_data_fit_feature(
                     pi0_events,
                     dvcs_events,
-                    sideband_events,
                     optimizer_results,
                     chosen_step=int(operating["step"]),
                     closure_results=closure_results,
                     n_bins=closure_bins,
-                    morph_shift_max_bins=data_fit_morph_shift_max_bins,
-                    morph_smear_max_bins=data_fit_morph_smear_max_bins,
-                    morph_shift_steps=data_fit_morph_shift_steps,
-                    morph_smear_steps=data_fit_morph_smear_steps,
                 )
+
+                if fit_feature is None:
+                    sideband_stability = {
+                        "success": False,
+                        "status": "no_valid_fit_feature",
+                    }
+                    use_sideband = False
+                    sideband_decision = "no_valid_fit_feature"
+                else:
+                    sideband_stability = build_sideband_stability_result(
+                        data_all,
+                        optimizer_results,
+                        chosen_step=int(operating["step"]),
+                        feature=str(fit_feature),
+                        n_bins=closure_bins,
+                    )
+                    use_sideband, sideband_decision = (
+                        decide_sideband_template_usage(
+                            sideband_stability,
+                            min_events=data_fit_sideband_min_events,
+                            max_js=data_fit_sideband_max_js,
+                        )
+                    )
+                #endif
+
+                if use_sideband:
+                    data_fit = fit_real_data_three_templates(
+                        data_events,
+                        pi0_events,
+                        dvcs_events,
+                        sideband_events,
+                        optimizer_results,
+                        chosen_step=int(operating["step"]),
+                        closure_results=closure_results,
+                        n_bins=closure_bins,
+                        forced_feature=fit_feature,
+                        morph_shift_max_bins=data_fit_morph_shift_max_bins,
+                        morph_smear_max_bins=data_fit_morph_smear_max_bins,
+                        morph_shift_steps=data_fit_morph_shift_steps,
+                        morph_smear_steps=data_fit_morph_smear_steps,
+                    )
+
+                    # If the accepted sideband still fails technically inside
+                    # the three-template fit, fall back rather than lose the
+                    # bin entirely.
+                    if not data_fit.get("success", False):
+                        fallback_reason = (
+                            "three_template_failed_"
+                            + data_fit.get("status", "unknown")
+                        )
+                        data_fit = fit_real_data_two_templates_morphed(
+                            data_events,
+                            pi0_events,
+                            dvcs_events,
+                            optimizer_results,
+                            chosen_step=int(operating["step"]),
+                            feature=str(fit_feature),
+                            n_bins=closure_bins,
+                            morph_shift_max_bins=data_fit_morph_shift_max_bins,
+                            morph_smear_max_bins=data_fit_morph_smear_max_bins,
+                            morph_shift_steps=data_fit_morph_shift_steps,
+                            morph_smear_steps=data_fit_morph_smear_steps,
+                            fallback_reason=fallback_reason,
+                        )
+                    #endif
+                else:
+                    if fit_feature is None:
+                        data_fit = {
+                            "success": False,
+                            "status": "no_valid_fit_feature",
+                            "fit_mode": "unavailable",
+                            "fallback_reason": sideband_decision,
+                            "step": int(operating["step"]),
+                        }
+                    else:
+                        data_fit = fit_real_data_two_templates_morphed(
+                            data_events,
+                            pi0_events,
+                            dvcs_events,
+                            optimizer_results,
+                            chosen_step=int(operating["step"]),
+                            feature=str(fit_feature),
+                            n_bins=closure_bins,
+                            morph_shift_max_bins=data_fit_morph_shift_max_bins,
+                            morph_smear_max_bins=data_fit_morph_smear_max_bins,
+                            morph_shift_steps=data_fit_morph_shift_steps,
+                            morph_smear_steps=data_fit_morph_smear_steps,
+                            fallback_reason=sideband_decision,
+                        )
+                    #endif
+                #endif
+
                 data_fit["operating_step_status"] = operating["status"]
                 data_fit["closure_rms_limit"] = operating[
                     "closure_rms_limit"
@@ -4974,34 +5489,20 @@ def process_period(
                 data_fit["background_metric"] = operating[
                     "background_metric"
                 ]
+                data_fit["sideband_decision"] = sideband_decision
+                data_fit["sideband_accepted"] = bool(use_sideband)
 
                 region_summary["data_fit"] = data_fit
-
-                if data_fit.get("success", False):
-                    sideband_stability = build_sideband_stability_result(
-                        data_all,
-                        optimizer_results,
-                        chosen_step=int(data_fit["step"]),
-                        feature=str(data_fit["feature"]),
-                        n_bins=closure_bins,
-                    )
-                else:
-                    sideband_stability = {
-                        "success": False,
-                        "status": "data_fit_unavailable",
-                    }
-                #endif
-
                 region_summary["sideband_stability"] = (
                     sideband_stability
                 )
-
                 if data_fit.get("success", False):
                     log(
                         f"{period.label} {region} "
                         f"{energy_min:g}-{energy_max:g} GeV: "
                         f"real-data fit step {data_fit['step']} "
                         f"({data_fit['feature']}), "
+                        f"mode={data_fit.get('fit_mode', 'unknown')}, "
                         f"f_pi0={data_fit['fraction_pi0']:.4f}, "
                         f"f_DVCS={data_fit['fraction_dvcs']:.4f}, "
                         f"f_SB={data_fit['fraction_sideband']:.4f}, "
@@ -5185,6 +5686,8 @@ def process_period_worker(
     data_fit_morph_smear_max_bins: float,
     data_fit_morph_shift_steps: int,
     data_fit_morph_smear_steps: int,
+    data_fit_sideband_min_events: int,
+    data_fit_sideband_max_js: float,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -5221,6 +5724,8 @@ def process_period_worker(
         data_fit_morph_smear_max_bins,
         data_fit_morph_shift_steps,
         data_fit_morph_smear_steps,
+        data_fit_sideband_min_events,
+        data_fit_sideband_max_js,
     )
 
 
@@ -5352,6 +5857,7 @@ def print_optimizer_summary(
                     print(
                         f"      DATA FIT: step {data_fit['step']}, "
                         f"{data_fit['feature']}, "
+                        f"mode={data_fit.get('fit_mode', 'unknown')}, "
                         f"f_pi0={data_fit['fraction_pi0']:.4f}, "
                         f"f_DVCS={data_fit['fraction_dvcs']:.4f}, "
                         f"f_SB={data_fit['fraction_sideband']:.4f}, "
@@ -5456,6 +5962,12 @@ def main() -> int:
     if args.data_fit_morph_smear_steps < 2:
         raise ValueError("--data-fit-morph-smear-steps must be >= 2.")
     #endif
+    if args.data_fit_sideband_min_events < 20:
+        raise ValueError("--data-fit-sideband-min-events must be >= 20.")
+    #endif
+    if args.data_fit_sideband_max_js < 0.0:
+        raise ValueError("--data-fit-sideband-max-js must be >= 0.")
+    #endif
 
     selected_keys = set(args.period or [p.key for p in PERIODS])
     selected_periods = [p for p in PERIODS if p.key in selected_keys]
@@ -5494,7 +6006,11 @@ def main() -> int:
             "real-data fit uses target Mx2_1<0.15 plus AAO + DVCSgen + "
             "near empirical sideband 0.15-0.19 GeV^2, with "
             f"AAO-only |shift|<={args.data_fit_morph_shift_max_bins:g} "
-            f"and smear<={args.data_fit_morph_smear_max_bins:g} bins."
+            f"and smear<={args.data_fit_morph_smear_max_bins:g} bins; "
+            "third-template sideband accepted only when near/far each have "
+            f">={args.data_fit_sideband_min_events} events and "
+            f"JS<={args.data_fit_sideband_max_js:g}, otherwise AAO+DVCS "
+            "fallback is used."
         )
     #endif
     log(
@@ -5542,6 +6058,8 @@ def main() -> int:
                 args.data_fit_morph_smear_max_bins,
                 args.data_fit_morph_shift_steps,
                 args.data_fit_morph_smear_steps,
+                args.data_fit_sideband_min_events,
+                args.data_fit_sideband_max_js,
             )
         #endfor
     else:
@@ -5576,6 +6094,8 @@ def main() -> int:
                     args.data_fit_morph_smear_max_bins,
                     args.data_fit_morph_shift_steps,
                     args.data_fit_morph_smear_steps,
+                    args.data_fit_sideband_min_events,
+                    args.data_fit_sideband_max_js,
                 ): period
                 for period in selected_periods
             }
