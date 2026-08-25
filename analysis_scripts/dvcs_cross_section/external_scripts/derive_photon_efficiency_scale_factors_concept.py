@@ -111,12 +111,17 @@ After the optimizer selects its period- and detector-specific cut sequence,
 the shape-comparison canvas is constructed with one cumulative row per selected
 cut. The same selected cuts are then shown on data, AAO, and DVCSgen.
 
-To preserve sensitivity to high-energy probe photons, Emiss2 is allowed only
-as a lower-bound optimizer variable:
+The optimizer is run independently in four predicted-probe-energy bins:
 
-    Emiss2 > c
+    0.4 <= E_probe < 1.0 GeV
+    1.0 <= E_probe < 2.0 GeV
+    2.0 <= E_probe < 4.0 GeV
+    4.0 <= E_probe < 9.5 GeV
 
-and never as Emiss2 < c.
+with E_probe identified here with the stored Emiss2 quantity used by the
+missing-photon construction. Because E_probe now defines the optimization bin,
+Emiss2 is removed completely from the optimizer variables: the optimizer may
+not sculpt the probe-energy spectrum inside or across the requested bins.
 
 Shape canvases are written under:
 
@@ -158,6 +163,19 @@ FT_THETA_MIN_DEG = 2.4
 FT_THETA_MAX_DEG = 5.0
 FD_THETA_MIN_DEG = 6.0
 FD_THETA_MAX_DEG = 35.0
+
+
+# Predicted missing-photon energy bins used for the purity optimization.
+# These are intentionally kept fixed for this concept iteration.
+#
+# tuple format:
+#   (key, lower edge [GeV], upper edge [GeV])
+E_PROBE_BINS: Tuple[Tuple[str, float, float], ...] = (
+    ("0p4_1p0", 0.4, 1.0),
+    ("1p0_2p0", 1.0, 2.0),
+    ("2p0_4p0", 2.0, 4.0),
+    ("4p0_9p5", 4.0, 9.5),
+)
 
 # Only these branches are read from the very large epgamma ROOT files.
 BRANCHES: Tuple[str, ...] = (
@@ -326,20 +344,19 @@ OPTIMIZER_FEATURES: Tuple[str, ...] = (
     "theta_gamma_gamma",
 )
 
-# Mx2_1 defines the loose exclusivity preselection and empirical data sideband,
-# so it is deliberately excluded from the greedy threshold scan.
+# Mx2_1 defines the loose exclusivity preselection/data sideband, while
+# Emiss2 defines the E_probe bin. Both are deliberately excluded from the
+# greedy threshold scan.
 OPTIMIZER_SCAN_FEATURES: Tuple[str, ...] = tuple(
     feature
     for feature in OPTIMIZER_FEATURES
-    if feature != "Mx2_1"
+    if feature not in ("Mx2_1", "Emiss2")
 )
 
-
-# Protect the high-E_miss probe phase space: Emiss2 may only enter as a LOWER
-# bound (Emiss2 > c).  An upper bound would explicitly remove the high-energy
-# photons whose efficiency we ultimately want to measure.
+# Every remaining optimizer variable may use either one-sided direction.
+# Emiss2/E_probe is not present here because it defines the energy bin itself.
 OPTIMIZER_ALLOWED_DIRECTIONS = {
-    feature: (("gt",) if feature == "Emiss2" else ("lt", "gt"))
+    feature: ("lt", "gt")
     for feature in OPTIMIZER_SCAN_FEATURES
 }
 
@@ -420,8 +437,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=200_000,
         help=(
-            "Maximum AAO or DVCSgen baseline events retained in memory per "
-            "period and detector region for cut optimization. A uniform "
+            "Maximum events retained in memory per sample, period, detector region, "
+            "and E_probe bin for cut optimization. A uniform "
             "priority reservoir is used while streaming. Default: 200000."
         ),
     )
@@ -793,10 +810,9 @@ def optimize_rectangular_cuts(
     Mx2_1 is excluded from the scan because it defines both the loose
     exclusivity preselection and the real-data sideband.
 
-    Emiss2 is restricted to LOWER cuts only (Emiss2 > c).  Upper cuts on
-    Emiss2 are forbidden so the optimizer cannot improve purity by discarding
-    the high-energy predicted-probe photons whose efficiency is ultimately of
-    interest.
+    Emiss2 is also excluded from the scan because it defines the E_probe bin.
+    Thus the optimizer cannot improve purity by discarding part of the
+    requested photon-energy interval.
     """
     if (
         pi0_events.shape[0] == 0
@@ -943,6 +959,9 @@ def cut_expression(result: dict) -> str:
 def write_optimizer_outputs(
     period: Period,
     region: str,
+    energy_bin_key: str,
+    energy_min: float,
+    energy_max: float,
     pi0_events: np.ndarray,
     dvcs_events: np.ndarray,
     data_sideband_events: np.ndarray,
@@ -956,7 +975,10 @@ def write_optimizer_outputs(
     progression canvas rather than separate FD and FT PNG files.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    stem = f"rectangular_optimizer_{period.key}_{region.lower()}"
+    stem = (
+        f"rectangular_optimizer_{period.key}_{region.lower()}_"
+        f"eprobe_{energy_bin_key}"
+    )
 
     csv_path = output_dir / f"{stem}.csv"
     txt_path = output_dir / f"{stem}.txt"
@@ -987,7 +1009,10 @@ def write_optimizer_outputs(
     #endwith
 
     lines = [
-        f"{period.label} {region} rectangular-cut optimizer",
+        (
+            f"{period.label} {region} rectangular-cut optimizer: "
+            f"{energy_min:g} <= E_probe < {energy_max:g} GeV"
+        ),
         "=" * 72,
         (
             "Baseline: "
@@ -1038,102 +1063,159 @@ def make_combined_optimizer_canvas(
     output_dir: Path,
 ) -> Path:
     """
-    One optimizer progression canvas per period: FD left, FT right.
+    One optimizer progression canvas per period.
+
+    Rows are E_probe bins; columns are FD and FT. This keeps all eight
+    period-specific optimizations in one compact diagnostic.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.4), sharey=True)
+    fig, axes = plt.subplots(
+        len(E_PROBE_BINS),
+        2,
+        figsize=(13.8, 4.0 * len(E_PROBE_BINS) + 1.0),
+        sharey=True,
+        squeeze=False,
+    )
 
-    for ax, region in zip(axes, ("FD", "FT")):
-        region_summary = optimizer_summary.get("regions", {}).get(region)
+    legend_handles = []
+    legend_labels = []
 
-        if region_summary is None:
-            ax.text(
-                0.5,
-                0.5,
-                "No optimizer result",
-                ha="center",
-                va="center",
-                transform=ax.transAxes,
+    for irow, (bin_key, e_min, e_max) in enumerate(E_PROBE_BINS):
+        bin_summary = optimizer_summary.get("energy_bins", {}).get(bin_key, {})
+
+        for icol, region in enumerate(("FD", "FT")):
+            ax = axes[irow, icol]
+            region_summary = bin_summary.get("regions", {}).get(region)
+
+            if region_summary is None:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No optimizer result",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+                ax.set_title(
+                    f"{region}: {e_min:g}-{e_max:g} GeV"
+                )
+                continue
+            #endif
+
+            results = region_summary.get("results", [])
+            x = [0] + [int(result["step"]) for result in results]
+            pi_eff = [1.0] + [
+                result["total_pi0_eff"]
+                for result in results
+            ]
+            dvcs_eff = [1.0] + [
+                result["total_dvcs_eff"]
+                for result in results
+            ]
+            side_eff = [1.0] + [
+                result["total_data_sideband_eff"]
+                for result in results
+            ]
+
+            line_pi, = ax.plot(
+                x,
+                pi_eff,
+                marker="o",
+                label=r"AAO $\pi^0$",
             )
-            ax.set_title(region)
-            continue
-        #endif
-
-        results = region_summary.get("results", [])
-        x = [0] + [int(result["step"]) for result in results]
-        pi_eff = [1.0] + [result["total_pi0_eff"] for result in results]
-        dvcs_eff = [1.0] + [result["total_dvcs_eff"] for result in results]
-        side_eff = [1.0] + [
-            result["total_data_sideband_eff"]
-            for result in results
-        ]
-
-        ax.plot(x, pi_eff, marker="o", label=r"AAO $\pi^0$")
-        ax.plot(x, dvcs_eff, marker="o", label="DVCSgen")
-        ax.plot(x, side_eff, marker="o", label="data sideband")
-        ax.set_yscale("log")
-        ax.set_ylim(1.0e-4, 1.1)
-        ax.set_xticks(x)
-        ax.set_xlabel("Greedy cut step")
-        ax.set_title(
-            f"{region}\n"
-            f"baseline AAO={region_summary['n_pi0_baseline']:,}, "
-            f"DVCSgen={region_summary['n_dvcs_baseline']:,}, "
-            f"data-SB={region_summary['n_data_sideband_baseline']:,}"
-        )
-        ax.grid(alpha=0.25)
-
-        if results:
-            annotation = "\n".join(
-                f"{r['step']}. {cut_expression(r)}"
-                for r in results
+            line_dvcs, = ax.plot(
+                x,
+                dvcs_eff,
+                marker="o",
+                label="DVCSgen",
             )
-            final = results[-1]
-            annotation += (
-                "\n"
-                f"final: AAO {100.0*final['total_pi0_eff']:.1f}%, "
-                f"DVCS {100.0*final['total_dvcs_eff']:.2f}%, "
-                f"data-SB {100.0*final['total_data_sideband_eff']:.2f}%"
+            line_side, = ax.plot(
+                x,
+                side_eff,
+                marker="o",
+                label="data sideband",
             )
-            ax.text(
-                0.02,
-                0.03,
-                annotation,
-                transform=ax.transAxes,
-                fontsize=8.4,
-                va="bottom",
-                ha="left",
-                bbox={
-                    "facecolor": "white",
-                    "alpha": 0.88,
-                    "edgecolor": "0.5",
-                },
+
+            if irow == 0 and icol == 0:
+                legend_handles = [line_pi, line_dvcs, line_side]
+                legend_labels = [
+                    r"AAO $\pi^0$",
+                    "DVCSgen",
+                    "data sideband",
+                ]
+            #endif
+
+            ax.set_yscale("log")
+            ax.set_ylim(1.0e-4, 1.1)
+            ax.set_xticks(x)
+            ax.set_xlabel("Greedy cut step")
+            ax.set_title(
+                f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV\n"
+                f"AAO={region_summary['n_pi0_baseline']:,}, "
+                f"DVCS={region_summary['n_dvcs_baseline']:,}, "
+                f"data-SB={region_summary['n_data_sideband_baseline']:,}",
+                fontsize=10.0,
             )
-        #endif
+            ax.grid(alpha=0.25)
+
+            if results:
+                annotation = "\n".join(
+                    f"{r['step']}. {cut_expression(r)}"
+                    for r in results
+                )
+                final = results[-1]
+                annotation += (
+                    "\n"
+                    f"final: AAO {100.0*final['total_pi0_eff']:.1f}%, "
+                    f"DVCS {100.0*final['total_dvcs_eff']:.2f}%, "
+                    f"data-SB "
+                    f"{100.0*final['total_data_sideband_eff']:.2f}%"
+                )
+                ax.text(
+                    0.02,
+                    0.03,
+                    annotation,
+                    transform=ax.transAxes,
+                    fontsize=7.8,
+                    va="bottom",
+                    ha="left",
+                    bbox={
+                        "facecolor": "white",
+                        "alpha": 0.88,
+                        "edgecolor": "0.5",
+                    },
+                )
+            #endif
+        #endfor
     #endfor
 
-    axes[0].set_ylabel("Cumulative retained fraction")
+    for ax in axes[:, 0]:
+        ax.set_ylabel("Cumulative retained fraction")
+    #endfor
 
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(
-        handles,
-        labels,
-        loc="upper center",
-        bbox_to_anchor=(0.5, 0.94),
-        ncol=2,
-        frameon=True,
-    )
+    if legend_handles:
+        fig.legend(
+            legend_handles,
+            legend_labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.975),
+            ncol=3,
+            frameon=True,
+        )
+    #endif
+
     fig.suptitle(
-        f"{period.label}: rectangular-cut optimization",
+        f"{period.label}: E_probe-binned rectangular-cut optimization",
         fontsize=13,
-        y=0.995,
+        y=0.998,
     )
     fig.subplots_adjust(
         left=0.08,
-        right=0.98,
-        bottom=0.12,
-        top=0.82,
+        right=0.985,
+        bottom=0.055,
+        top=0.93,
         wspace=0.15,
+        hspace=0.42,
     )
 
     out = output_dir / f"rectangular_optimizer_{period.key}.png"
@@ -1158,14 +1240,15 @@ def stream_sample_histograms(
 ) -> Tuple[
     Dict[str, Dict[str, Dict[str, np.ndarray]]],
     Dict[str, int],
-    Dict[str, np.ndarray],
+    Dict[str, Dict[str, np.ndarray]],
 ]:
     """
     Read one ROOT sample exactly once and fill both FT and FD histograms.
 
-    If requested for AAO/DVCSgen, also maintain a bounded uniform reservoir of
-    baseline reconstructed events for the rectangular-cut optimizer. The
-    optimizer therefore costs no second ROOT-file pass.
+    When optimizer collection is enabled, maintain an independent bounded
+    uniform reservoir for every detector region AND every E_probe bin. This
+    avoids undersampling a sparse energy bin when another energy region is much
+    more populated, while still requiring only one ROOT-file pass.
     """
     hist = empty_histograms()
     edges = histogram_edges()
@@ -1180,17 +1263,19 @@ def stream_sample_histograms(
         "FD_emiss_cut": 0,
     }
 
+    region_seed_offset = {"FT": 11, "FD": 29}
     reservoirs = {
-        "FT": PriorityReservoir(
-            optimizer_max_events,
-            len(OPTIMIZER_FEATURES),
-            optimizer_seed + 11,
-        ),
-        "FD": PriorityReservoir(
-            optimizer_max_events,
-            len(OPTIMIZER_FEATURES),
-            optimizer_seed + 29,
-        ),
+        region: {
+            bin_key: PriorityReservoir(
+                optimizer_max_events,
+                len(OPTIMIZER_FEATURES),
+                optimizer_seed
+                + region_seed_offset[region]
+                + 1000 * ibin,
+            )
+            for ibin, (bin_key, _emin, _emax) in enumerate(E_PROBE_BINS)
+        }
+        for region in ("FT", "FD")
     }
 
     with uproot.open(path) as root_file:
@@ -1265,15 +1350,27 @@ def stream_sample_histograms(
                 ),
             }
 
+            e_probe = values["Emiss2"]
+
             for region, region_mask in region_masks.items():
                 counts[region] += int(np.count_nonzero(region_mask))
 
                 if collect_optimizer:
-                    reservoirs[region].update(
-                        optimizer_matrix(values, region_mask)
-                    )
+                    for bin_key, e_min, e_max in E_PROBE_BINS:
+                        energy_mask = (
+                            region_mask
+                            & np.isfinite(e_probe)
+                            & (e_probe >= e_min)
+                            & (e_probe < e_max)
+                        )
+                        reservoirs[region][bin_key].update(
+                            optimizer_matrix(values, energy_mask)
+                        )
+                    #endfor
                 #endif
 
+                # Retain the old fixed diagnostic histograms only for the
+                # --no-optimize-cuts fallback path.
                 mx2_1_mask = (
                     region_mask
                     & np.isfinite(values["Mx2_1"])
@@ -1331,23 +1428,38 @@ def stream_sample_histograms(
         #endfor
     #endwith
 
-    log(
-        f"{sample_label}: retained after Angle(e,gamma)>5 deg: "
-        f"FT={counts['FT']:,}, FD={counts['FD']:,}; "
-        f"after additionally Mx2_1<0.15 GeV^2: "
-        f"FT={counts['FT_mx2_1_cut']:,}, "
-        f"FD={counts['FD_mx2_1_cut']:,}; "
-        f"after additionally Emiss2>1 GeV: "
-        f"FT={counts['FT_emiss_cut']:,}, "
-        f"FD={counts['FD_emiss_cut']:,}."
-    )
+    if collect_optimizer:
+        energy_counts = []
+        for region in ("FT", "FD"):
+            pieces = []
+            for bin_key, e_min, e_max in E_PROBE_BINS:
+                n_bin = reservoirs[region][bin_key].array().shape[0]
+                pieces.append(
+                    f"{e_min:g}-{e_max:g} GeV={n_bin:,}"
+                )
+            #endfor
+            energy_counts.append(f"{region}: " + ", ".join(pieces))
+        #endfor
+        log(
+            f"{sample_label}: optimizer reservoirs after "
+            f"Angle(e,gamma)>{THETA_EGAMMA_MIN_DEG:g} deg -> "
+            + " | ".join(energy_counts)
+        )
+    else:
+        log(
+            f"{sample_label}: retained after Angle(e,gamma)>5 deg: "
+            f"FT={counts['FT']:,}, FD={counts['FD']:,}."
+        )
+    #endif
 
     optimizer_events = {
-        region: reservoirs[region].array()
+        region: {
+            bin_key: reservoirs[region][bin_key].array()
+            for bin_key, _e_min, _e_max in E_PROBE_BINS
+        }
         for region in ("FT", "FD")
     }
     return hist, counts, optimizer_events
-
 
 
 # =============================================================================
@@ -1399,18 +1511,21 @@ def optimizer_row_label(result: dict) -> str:
 def make_optimizer_cut_shape_canvas(
     period: Period,
     region: str,
-    sample_events: Dict[str, Dict[str, np.ndarray]],
+    energy_bin_key: str,
+    energy_min: float,
+    energy_max: float,
+    sample_events: Dict[str, Dict[str, Dict[str, np.ndarray]]],
     optimizer_results: list,
     output_dir: Path,
     linear_y: bool,
     mx2_1_preselection_max: float,
 ) -> Path:
     """
-    Build the shape-comparison canvas AFTER optimization.
+    Build one post-optimizer shape canvas for one period, detector region, and
+    E_probe bin.
 
-    Row 1 is the common baseline. Each subsequent row cumulatively applies the
-    optimizer-selected cut from the previous optimization step. The same cut
-    sequence is applied to data, AAO, and DVCSgen.
+    Row 1 is the energy-bin baseline plus the loose Mx2_1 preselection. Each
+    subsequent row cumulatively applies the optimizer-selected cut sequence.
     """
     n_rows = 1 + len(optimizer_results)
     n_cols = len(PLOT_SPECS)
@@ -1426,12 +1541,11 @@ def make_optimizer_cut_shape_canvas(
     sample_meta = {key: (label, color) for key, label, color in SAMPLES}
     edges_by_key = histogram_edges()
 
-    # Build cumulative masks once per sample.
     masks_by_sample = {}
     counts_by_sample = {}
 
     for sample_key, _label, _color in SAMPLES:
-        events = sample_events[sample_key][region]
+        events = sample_events[sample_key][region][energy_bin_key]
         mx2_1_values = events[:, FEATURE_INDEX["Mx2_1"]]
         baseline_mask = (
             np.isfinite(mx2_1_values)
@@ -1457,7 +1571,7 @@ def make_optimizer_cut_shape_canvas(
 
     row_labels = [
         (
-            r"baseline: $\mathrm{Angle}(e,\gamma)>5^\circ$"
+            rf"${energy_min:g}\leq E_{{\rm probe}}<{energy_max:g}$ GeV"
             + "\n"
             + rf"$Mx2_1<{mx2_1_preselection_max:.3g}$ GeV$^2$"
         )
@@ -1479,7 +1593,7 @@ def make_optimizer_cut_shape_canvas(
 
             for sample_key, _label, _color in SAMPLES:
                 label, color = sample_meta[sample_key]
-                events = sample_events[sample_key][region]
+                events = sample_events[sample_key][region][energy_bin_key]
                 mask = masks_by_sample[sample_key][irow]
 
                 values = events[:, ifeature]
@@ -1535,8 +1649,22 @@ def make_optimizer_cut_shape_canvas(
                 )
             #endif
 
-            # On each row after a cut is introduced, show that threshold on
-            # the corresponding variable's panel.
+            # Emiss2 is the E_probe binning variable, not an optimizer cut.
+            if key == "Emiss2":
+                ax.axvline(
+                    energy_min,
+                    linestyle=":",
+                    linewidth=1.0,
+                    color="0.35",
+                )
+                ax.axvline(
+                    energy_max,
+                    linestyle=":",
+                    linewidth=1.0,
+                    color="0.35",
+                )
+            #endif
+
             for applied_result in optimizer_results[:irow]:
                 if applied_result["feature"] != key:
                     continue
@@ -1572,7 +1700,8 @@ def make_optimizer_cut_shape_canvas(
     )
 
     fig.suptitle(
-        f"{period.label}: {region} post-optimizer shape comparison\n"
+        f"{period.label}: {region}, "
+        rf"${energy_min:g}\leq E_{{\rm probe}}<{energy_max:g}$ GeV\n"
         rf"baseline: $\mathrm{{Angle}}(e,\gamma)>"
         rf"{THETA_EGAMMA_MIN_DEG:.0f}^\circ$; "
         + rf"$Mx2_1<{mx2_1_preselection_max:.3g}$ GeV$^2$; "
@@ -1609,7 +1738,10 @@ def make_optimizer_cut_shape_canvas(
     output_dir.mkdir(parents=True, exist_ok=True)
     out = (
         output_dir
-        / f"canvas_shape_comparison_{period.key}_{region.lower()}_optimized.png"
+        / (
+            f"canvas_shape_comparison_{period.key}_{region.lower()}_"
+            f"eprobe_{energy_bin_key}_optimized.png"
+        )
     )
     fig.savefig(out, dpi=180)
     plt.close(fig)
@@ -1886,72 +2018,99 @@ def process_period(
     if run_optimizer:
         optimizer_outdir = output_dir.parent / "rectangular_optimizer"
 
-        for region in ("FT", "FD"):
-            pi0_all = optimizer_events["pi0"][region]
-            dvcs_all = optimizer_events["dvcs"][region]
-            data_all = optimizer_events["data"][region]
+        optimizer_summary["energy_bins"] = {}
 
-            mx2_idx = FEATURE_INDEX["Mx2_1"]
-
-            pi0_pre = (
-                np.isfinite(pi0_all[:, mx2_idx])
-                & (pi0_all[:, mx2_idx] < optimizer_mx2_1_preselection_max)
-            )
-            dvcs_pre = (
-                np.isfinite(dvcs_all[:, mx2_idx])
-                & (dvcs_all[:, mx2_idx] < optimizer_mx2_1_preselection_max)
-            )
-            sideband_mask = (
-                np.isfinite(data_all[:, mx2_idx])
-                & (data_all[:, mx2_idx] >= optimizer_data_sideband_min)
-                & (data_all[:, mx2_idx] < optimizer_data_sideband_max)
-            )
-
-            pi0_events = pi0_all[pi0_pre]
-            dvcs_events = dvcs_all[dvcs_pre]
-            data_sideband_events = data_all[sideband_mask]
-
-            log(
-                f"{period.label} {region}: optimizer baseline after "
-                f"Mx2_1<{optimizer_mx2_1_preselection_max:.3g} GeV^2 -> "
-                f"AAO={pi0_events.shape[0]:,}, "
-                f"DVCSgen={dvcs_events.shape[0]:,}; "
-                f"data sideband "
-                f"{optimizer_data_sideband_min:.3g}<=Mx2_1<"
-                f"{optimizer_data_sideband_max:.3g} GeV^2 -> "
-                f"{data_sideband_events.shape[0]:,}."
-            )
-
-            results = optimize_rectangular_cuts(
-                pi0_events,
-                dvcs_events,
-                data_sideband_events,
-                max_steps=optimizer_steps,
-                n_quantiles=optimizer_quantiles,
-                min_step_pi0_eff=optimizer_min_step_pi0_eff,
-                min_total_pi0_eff=optimizer_min_total_pi0_eff,
-                min_improvement=optimizer_min_improvement,
-                data_sideband_weight=optimizer_data_sideband_weight,
-            )
-
-            write_optimizer_outputs(
-                period,
-                region,
-                pi0_events,
-                dvcs_events,
-                data_sideband_events,
-                results,
-                optimizer_outdir,
-            )
-
-            optimizer_summary["regions"][region] = {
-                "n_pi0_baseline": int(pi0_events.shape[0]),
-                "n_dvcs_baseline": int(dvcs_events.shape[0]),
-                "n_data_sideband_baseline": int(
-                    data_sideband_events.shape[0]
-                ),
-                "results": results,
+        for bin_key, energy_min, energy_max in E_PROBE_BINS:
+            optimizer_summary["energy_bins"][bin_key] = {
+                "energy_min": float(energy_min),
+                "energy_max": float(energy_max),
+                "regions": {},
             }
+
+            for region in ("FT", "FD"):
+                pi0_all = optimizer_events["pi0"][region][bin_key]
+                dvcs_all = optimizer_events["dvcs"][region][bin_key]
+                data_all = optimizer_events["data"][region][bin_key]
+
+                mx2_idx = FEATURE_INDEX["Mx2_1"]
+
+                pi0_pre = (
+                    np.isfinite(pi0_all[:, mx2_idx])
+                    & (
+                        pi0_all[:, mx2_idx]
+                        < optimizer_mx2_1_preselection_max
+                    )
+                )
+                dvcs_pre = (
+                    np.isfinite(dvcs_all[:, mx2_idx])
+                    & (
+                        dvcs_all[:, mx2_idx]
+                        < optimizer_mx2_1_preselection_max
+                    )
+                )
+                sideband_mask = (
+                    np.isfinite(data_all[:, mx2_idx])
+                    & (
+                        data_all[:, mx2_idx]
+                        >= optimizer_data_sideband_min
+                    )
+                    & (
+                        data_all[:, mx2_idx]
+                        < optimizer_data_sideband_max
+                    )
+                )
+
+                pi0_events = pi0_all[pi0_pre]
+                dvcs_events = dvcs_all[dvcs_pre]
+                data_sideband_events = data_all[sideband_mask]
+
+                log(
+                    f"{period.label} {region}, "
+                    f"{energy_min:g}<=E_probe<{energy_max:g} GeV: "
+                    f"after Mx2_1<"
+                    f"{optimizer_mx2_1_preselection_max:.3g} GeV^2 -> "
+                    f"AAO={pi0_events.shape[0]:,}, "
+                    f"DVCSgen={dvcs_events.shape[0]:,}; "
+                    f"data sideband "
+                    f"{optimizer_data_sideband_min:.3g}<=Mx2_1<"
+                    f"{optimizer_data_sideband_max:.3g} GeV^2 -> "
+                    f"{data_sideband_events.shape[0]:,}."
+                )
+
+                results = optimize_rectangular_cuts(
+                    pi0_events,
+                    dvcs_events,
+                    data_sideband_events,
+                    max_steps=optimizer_steps,
+                    n_quantiles=optimizer_quantiles,
+                    min_step_pi0_eff=optimizer_min_step_pi0_eff,
+                    min_total_pi0_eff=optimizer_min_total_pi0_eff,
+                    min_improvement=optimizer_min_improvement,
+                    data_sideband_weight=optimizer_data_sideband_weight,
+                )
+
+                write_optimizer_outputs(
+                    period,
+                    region,
+                    bin_key,
+                    energy_min,
+                    energy_max,
+                    pi0_events,
+                    dvcs_events,
+                    data_sideband_events,
+                    results,
+                    optimizer_outdir,
+                )
+
+                optimizer_summary["energy_bins"][bin_key]["regions"][region] = {
+                    "n_pi0_baseline": int(pi0_events.shape[0]),
+                    "n_dvcs_baseline": int(dvcs_events.shape[0]),
+                    "n_data_sideband_baseline": int(
+                        data_sideband_events.shape[0]
+                    ),
+                    "results": results,
+                }
+            #endfor
         #endfor
 
         combined_optimizer_plot = make_combined_optimizer_canvas(
@@ -1960,32 +2119,40 @@ def process_period(
             optimizer_outdir,
         )
         log(
-            f"{period.label}: wrote combined FD+FT optimizer canvas "
+            f"{period.label}: wrote E_probe-binned FD+FT optimizer canvas "
             f"{combined_optimizer_plot}"
         )
 
-        # Only after optimization is complete do we make the shape-comparison
-        # canvases. Each row now corresponds exactly to the cut sequence that
-        # was selected for that period and detector region.
-        for region in ("FT", "FD"):
-            region_results = optimizer_summary["regions"][region]["results"]
-            shape_out = make_optimizer_cut_shape_canvas(
-                period,
-                region,
-                optimizer_events,
-                region_results,
-                output_dir,
-                linear_y,
-                optimizer_mx2_1_preselection_max,
-            )
-            log(
-                f"{period.label}: wrote post-optimizer {region} shape canvas "
-                f"{shape_out}"
-            )
+        # Make one cumulative shape canvas for every period x detector x
+        # E_probe bin, using exactly the cuts selected in that bin.
+        for bin_key, energy_min, energy_max in E_PROBE_BINS:
+            for region in ("FT", "FD"):
+                region_results = (
+                    optimizer_summary["energy_bins"][bin_key]
+                    ["regions"][region]["results"]
+                )
+                shape_out = make_optimizer_cut_shape_canvas(
+                    period,
+                    region,
+                    bin_key,
+                    energy_min,
+                    energy_max,
+                    optimizer_events,
+                    region_results,
+                    output_dir,
+                    linear_y,
+                    optimizer_mx2_1_preselection_max,
+                )
+                log(
+                    f"{period.label}: wrote {region} "
+                    f"{energy_min:g}-{energy_max:g} GeV "
+                    f"post-optimizer shape canvas {shape_out}"
+                )
+            #endfor
         #endfor
     else:
         # If optimization is explicitly disabled, preserve the old fixed
-        # three-row concept canvases.
+        # three-row unbinned concept canvases.
         for region in ("FT", "FD"):
             out = make_canvas(
                 period,
@@ -2060,14 +2227,13 @@ def print_optimizer_summary(
     selected_periods: Sequence[Period],
 ) -> None:
     """
-    Print the optimizer result only once, from the parent process, after every
-    period has finished. This keeps the scientifically relevant terminal
-    summary readable even when ROOT processing itself is parallel.
+    Print all optimizer results once, serially, after parallel processing ends.
+    Results are grouped by period, then E_probe bin, then detector region.
     """
     print("", flush=True)
-    print("=" * 88, flush=True)
-    print("RECTANGULAR CUT OPTIMIZER SUMMARY", flush=True)
-    print("=" * 88, flush=True)
+    print("=" * 100, flush=True)
+    print("E_PROBE-BINNED RECTANGULAR CUT OPTIMIZER SUMMARY", flush=True)
+    print("=" * 100, flush=True)
 
     for period in selected_periods:
         summary = summaries_by_period.get(period.key)
@@ -2078,60 +2244,87 @@ def print_optimizer_summary(
         print(f"\n{period.label}", flush=True)
         print("-" * len(period.label), flush=True)
 
-        regions = summary.get("regions", {})
-        if not regions:
-            print("  Optimizer disabled or no optimizer result.", flush=True)
+        energy_summaries = summary.get("energy_bins", {})
+        if not energy_summaries:
+            print(
+                "  Optimizer disabled or no optimizer result.",
+                flush=True,
+            )
             continue
         #endif
 
-        for region in ("FT", "FD"):
-            region_summary = regions.get(region)
-            if region_summary is None:
+        for bin_key, energy_min, energy_max in E_PROBE_BINS:
+            bin_summary = energy_summaries.get(bin_key)
+            if bin_summary is None:
                 continue
             #endif
 
             print(
-                f"  {region}: baseline AAO={region_summary['n_pi0_baseline']:,}, "
-                f"DVCSgen={region_summary['n_dvcs_baseline']:,}, "
-                f"data-SB={region_summary['n_data_sideband_baseline']:,}",
+                f"\n  {energy_min:g} <= E_probe < {energy_max:g} GeV",
                 flush=True,
             )
 
-            results = region_summary.get("results", [])
-            if not results:
+            for region in ("FT", "FD"):
+                region_summary = bin_summary.get("regions", {}).get(region)
+                if region_summary is None:
+                    continue
+                #endif
+
                 print(
-                    "    No cut passed the configured retention/improvement constraints.",
+                    f"    {region}: baseline "
+                    f"AAO={region_summary['n_pi0_baseline']:,}, "
+                    f"DVCSgen={region_summary['n_dvcs_baseline']:,}, "
+                    f"data-SB="
+                    f"{region_summary['n_data_sideband_baseline']:,}",
                     flush=True,
                 )
-                continue
-            #endif
 
-            for result in results:
+                results = region_summary.get("results", [])
+                if not results:
+                    print(
+                        "      No cut passed the configured "
+                        "retention/improvement constraints.",
+                        flush=True,
+                    )
+                    continue
+                #endif
+
+                for result in results:
+                    print(
+                        f"      {result['step']}. "
+                        f"{cut_expression(result)}"
+                        f"  | step AAO="
+                        f"{100.0*result['step_pi0_eff']:.2f}%"
+                        f", DVCS="
+                        f"{100.0*result['step_dvcs_eff']:.2f}%"
+                        f", data-SB="
+                        f"{100.0*result['step_data_sideband_eff']:.2f}%"
+                        f"  | cumulative AAO="
+                        f"{100.0*result['total_pi0_eff']:.2f}%"
+                        f", DVCS="
+                        f"{100.0*result['total_dvcs_eff']:.2f}%"
+                        f", data-SB="
+                        f"{100.0*result['total_data_sideband_eff']:.2f}%",
+                        flush=True,
+                    )
+                #endfor
+
+                final = results[-1]
                 print(
-                    f"    {result['step']}. {cut_expression(result)}"
-                    f"  | step AAO={100.0*result['step_pi0_eff']:.2f}%"
-                    f", DVCS={100.0*result['step_dvcs_eff']:.2f}%"
-                    f", data-SB={100.0*result['step_data_sideband_eff']:.2f}%"
-                    f"  | cumulative AAO={100.0*result['total_pi0_eff']:.2f}%"
-                    f", DVCS={100.0*result['total_dvcs_eff']:.2f}%"
-                    f", data-SB={100.0*result['total_data_sideband_eff']:.2f}%",
+                    f"      FINAL: AAO="
+                    f"{100.0*final['total_pi0_eff']:.2f}%, "
+                    f"DVCSgen="
+                    f"{100.0*final['total_dvcs_eff']:.2f}%, "
+                    f"data-SB="
+                    f"{100.0*final['total_data_sideband_eff']:.2f}%, "
+                    f"F={final['score']:.4g}",
                     flush=True,
                 )
             #endfor
-
-            final = results[-1]
-            print(
-                f"    FINAL: AAO retained={100.0*final['total_pi0_eff']:.2f}%"
-                f", DVCSgen retained={100.0*final['total_dvcs_eff']:.2f}%"
-                f", data-SB retained="
-                f"{100.0*final['total_data_sideband_eff']:.2f}%"
-                f", F={final['score']:.4g}",
-                flush=True,
-            )
         #endfor
     #endfor
 
-    print("\n" + "=" * 88, flush=True)
+    print("\n" + "=" * 100, flush=True)
 
 
 def main() -> int:
@@ -2212,12 +2405,13 @@ def main() -> int:
             f"data sideband {args.optimizer_data_sideband_min:.3g}<=Mx2_1<"
             f"{args.optimizer_data_sideband_max:.3g} GeV^2; "
             f"sideband weight={args.optimizer_data_sideband_weight:.3g}; "
-            "Emiss2 optimizer direction restricted to lower bounds only "
-            "(Emiss2 > c)."
+            "E_probe (= Emiss2) bins: "
+            "0.4-1, 1-2, 2-4, 4-9.5 GeV; "
+            "Emiss2 excluded from optimizer thresholds."
         )
     #endif
     log(
-        "ONLY event-selection cut: "
+        "Common pre-binning selection: "
         f"Angle(e,gamma) > {THETA_EGAMMA_MIN_DEG:.1f} deg. "
         f"Photon regions: FT {FT_THETA_MIN_DEG:.1f}-{FT_THETA_MAX_DEG:.1f} deg, "
         f"FD {FD_THETA_MIN_DEG:.1f}-{FD_THETA_MAX_DEG:.1f} deg."
