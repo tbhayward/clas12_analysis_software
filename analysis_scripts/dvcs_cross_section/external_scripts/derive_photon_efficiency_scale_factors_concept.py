@@ -153,12 +153,26 @@ ideal y=x relation, so loss of template identifiability is visible directly.
 
 A final real-data composition-fit stage then chooses one closure-safe cumulative
 cut step independently in every period x detector x E_probe bin and fits the
-surviving nSidis data as
+surviving nSidis data with THREE templates:
 
-    data = f_pi0 * AAO + (1 - f_pi0) * DVCSgen.
+    data = f_pi0 * AAO_morphed
+         + f_DVCS * DVCSgen
+         + f_SB * data_sideband,
 
-The fit uses the same 1D reconstructed variable selected by the closure study
-at that operating step. Two compact plots are produced per period:
+with non-negative fractions constrained to sum to one.
+
+The fit target uses Mx2_1 below the sideband lower edge. The empirical
+nonexclusive template comes from the disjoint configured real-data Mx2_1
+sideband and receives exactly the same cumulative optimizer cuts. Mx2_1 and
+Emiss2/E_probe are excluded as real-data fit discriminators.
+
+Only AAO is allowed to morph: a bounded centroid shift plus additional
+Gaussian smearing in units of fixed fit-bin widths. DVCSgen and the empirical
+sideband template remain fixed. The fit plots report the deviance before and
+after AAO morphing so the benefit of the detector-resolution nuisance model is
+immediately visible.
+
+Two compact plots are produced per period:
 
     output/photon_efficiency_concept/data_template_fit/
         data_template_fit_<period>.png
@@ -404,6 +418,11 @@ OPTIMIZER_ALLOWED_DIRECTIONS = {
 }
 
 
+# Mx2_1 defines signal versus sideband and Emiss2 defines the E_probe bin,
+# therefore the real-data composition fit uses only these remaining variables.
+DATA_FIT_FEATURES: Tuple[str, ...] = tuple(OPTIMIZER_SCAN_FEATURES)
+
+
 # =============================================================================
 # Small utilities
 # =============================================================================
@@ -618,6 +637,36 @@ def parse_args() -> argparse.Namespace:
             "DVCS+data-sideband retention is within this factor of the best "
             "available value. Default: 1.10."
         ),
+    )
+    parser.add_argument(
+        "--data-fit-morph-shift-max-bins",
+        type=float,
+        default=1.5,
+        help=(
+            "Maximum absolute AAO centroid shift in fixed fit-bin widths. "
+            "Default: 1.5."
+        ),
+    )
+    parser.add_argument(
+        "--data-fit-morph-smear-max-bins",
+        type=float,
+        default=1.5,
+        help=(
+            "Maximum extra Gaussian AAO smearing in fixed fit-bin widths. "
+            "Default: 1.5."
+        ),
+    )
+    parser.add_argument(
+        "--data-fit-morph-shift-steps",
+        type=int,
+        default=13,
+        help="Number of bounded AAO shift values scanned. Default: 13.",
+    )
+    parser.add_argument(
+        "--data-fit-morph-smear-steps",
+        type=int,
+        default=9,
+        help="Number of bounded AAO smearing values scanned. Default: 9.",
     )
     parser.add_argument(
         "--output",
@@ -1840,7 +1889,7 @@ def best_template_feature_for_events(
     best_edges = None
     best_js = -1.0
 
-    for feature in OPTIMIZER_FEATURES:
+    for feature in DATA_FIT_FEATURES:
         ifeature = FEATURE_INDEX[feature]
         pi_values = pi0_events[:, ifeature]
         dvcs_values = dvcs_events[:, ifeature]
@@ -1874,6 +1923,234 @@ def best_template_feature_for_events(
     return best_feature, best_edges, best_js
 
 
+
+def morph_template_probability(
+    probability: np.ndarray,
+    shift_bins: float,
+    smear_sigma_bins: float,
+) -> np.ndarray:
+    """Bounded AAO shift plus additional Gaussian smearing."""
+    probability = np.asarray(probability, dtype=float)
+    x = np.arange(probability.size, dtype=float)
+
+    shifted = np.interp(
+        x - float(shift_bins),
+        x,
+        probability,
+        left=0.0,
+        right=0.0,
+    )
+
+    sigma = float(smear_sigma_bins)
+    if sigma > 1.0e-9:
+        half_width = max(2, int(math.ceil(4.0 * sigma)))
+        kernel_x = np.arange(-half_width, half_width + 1, dtype=float)
+        kernel = np.exp(-0.5 * (kernel_x / sigma) ** 2)
+        kernel /= np.sum(kernel)
+        shifted = np.convolve(shifted, kernel, mode="same")
+    #endif
+
+    shifted = np.clip(shifted, 1.0e-15, None)
+    shifted /= np.sum(shifted)
+    return shifted
+
+
+def simplex_fraction_grid(
+    n_steps: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Triangular grid for f_pi0 + f_DVCS + f_SB = 1."""
+    values = np.linspace(0.0, 1.0, max(8, int(n_steps)) + 1)
+    f_pi0 = []
+    f_dvcs = []
+    f_side = []
+
+    for pi_value in values:
+        for side_value in values:
+            if pi_value + side_value > 1.0 + 1.0e-12:
+                continue
+            #endif
+            f_pi0.append(pi_value)
+            f_side.append(side_value)
+            f_dvcs.append(1.0 - pi_value - side_value)
+        #endfor
+    #endfor
+
+    return (
+        np.asarray(f_pi0, dtype=float),
+        np.asarray(f_dvcs, dtype=float),
+        np.asarray(f_side, dtype=float),
+    )
+
+
+def optimize_three_template_fractions(
+    counts: np.ndarray,
+    p_pi0: np.ndarray,
+    p_dvcs: np.ndarray,
+    p_sideband: np.ndarray,
+    coarse_steps: int = 40,
+) -> dict:
+    """Fast, scipy-free, bounded three-template multinomial fit."""
+    counts = np.asarray(counts, dtype=float)
+
+    def evaluate(
+        f_pi0: np.ndarray,
+        f_dvcs: np.ndarray,
+        f_side: np.ndarray,
+    ) -> Tuple[int, np.ndarray]:
+        mixtures = (
+            f_pi0[:, None] * p_pi0[None, :]
+            + f_dvcs[:, None] * p_dvcs[None, :]
+            + f_side[:, None] * p_sideband[None, :]
+        )
+        mixtures = np.clip(mixtures, 1.0e-15, None)
+        ll = np.sum(counts[None, :] * np.log(mixtures), axis=1)
+        return int(np.argmax(ll)), ll
+
+    f_pi0, f_dvcs, f_side = simplex_fraction_grid(coarse_steps)
+    best_idx, _ = evaluate(f_pi0, f_dvcs, f_side)
+
+    best_pi0 = float(f_pi0[best_idx])
+    best_side = float(f_side[best_idx])
+    coarse_spacing = 1.0 / max(8, int(coarse_steps))
+    fine_spacing = coarse_spacing / 8.0
+
+    pi_values = np.arange(
+        max(0.0, best_pi0 - 2.0 * coarse_spacing),
+        min(1.0, best_pi0 + 2.0 * coarse_spacing) + 0.5 * fine_spacing,
+        fine_spacing,
+    )
+    side_values = np.arange(
+        max(0.0, best_side - 2.0 * coarse_spacing),
+        min(1.0, best_side + 2.0 * coarse_spacing) + 0.5 * fine_spacing,
+        fine_spacing,
+    )
+
+    fine_pi0 = []
+    fine_dvcs = []
+    fine_side = []
+
+    for pi_value in pi_values:
+        for side_value in side_values:
+            if pi_value + side_value > 1.0 + 1.0e-12:
+                continue
+            #endif
+            fine_pi0.append(pi_value)
+            fine_side.append(side_value)
+            fine_dvcs.append(1.0 - pi_value - side_value)
+        #endfor
+    #endfor
+
+    fine_pi0 = np.asarray(fine_pi0, dtype=float)
+    fine_dvcs = np.asarray(fine_dvcs, dtype=float)
+    fine_side = np.asarray(fine_side, dtype=float)
+
+    best_idx, ll = evaluate(fine_pi0, fine_dvcs, fine_side)
+
+    return {
+        "fraction_pi0": float(fine_pi0[best_idx]),
+        "fraction_dvcs": float(fine_dvcs[best_idx]),
+        "fraction_sideband": float(fine_side[best_idx]),
+        "log_likelihood": float(ll[best_idx]),
+    }
+
+
+def fit_three_templates_with_aao_morph(
+    counts: np.ndarray,
+    p_pi0_nominal: np.ndarray,
+    p_dvcs: np.ndarray,
+    p_sideband: np.ndarray,
+    shift_max_bins: float,
+    smear_max_bins: float,
+    shift_steps: int,
+    smear_steps: int,
+) -> dict:
+    """Profile bounded AAO-only morphing together with three fractions."""
+    nominal = optimize_three_template_fractions(
+        counts,
+        p_pi0_nominal,
+        p_dvcs,
+        p_sideband,
+    )
+
+    best = None
+    for shift_bins in np.linspace(
+        -float(shift_max_bins),
+        float(shift_max_bins),
+        max(3, int(shift_steps)),
+    ):
+        for smear_bins in np.linspace(
+            0.0,
+            float(smear_max_bins),
+            max(2, int(smear_steps)),
+        ):
+            p_pi0 = morph_template_probability(
+                p_pi0_nominal,
+                shift_bins,
+                smear_bins,
+            )
+            fit = optimize_three_template_fractions(
+                counts,
+                p_pi0,
+                p_dvcs,
+                p_sideband,
+            )
+            if best is None or fit["log_likelihood"] > best["log_likelihood"]:
+                best = dict(fit)
+                best["shift_bins"] = float(shift_bins)
+                best["smear_sigma_bins"] = float(smear_bins)
+                best["p_pi0_morphed"] = p_pi0
+            #endif
+        #endfor
+    #endfor
+
+    best["nominal_fit"] = nominal
+    return best
+
+
+def approximate_fraction_uncertainty_three_template(
+    counts: np.ndarray,
+    p_pi0: np.ndarray,
+    p_dvcs: np.ndarray,
+    p_sideband: np.ndarray,
+    fractions: Tuple[float, float, float],
+) -> float:
+    """
+    Local curvature estimate of sigma(f_pi0) at fixed AAO morph, with the
+    sideband fraction profiled. Morph-parameter uncertainty is not included.
+    """
+    f_pi0, f_dvcs, f_side = fractions
+    mixture = (
+        f_pi0 * p_pi0
+        + f_dvcs * p_dvcs
+        + f_side * p_sideband
+    )
+    mixture = np.clip(mixture, 1.0e-15, None)
+
+    d_pi0 = p_pi0 - p_dvcs
+    d_side = p_sideband - p_dvcs
+
+    info = np.array(
+        [
+            [
+                np.sum(counts * d_pi0 * d_pi0 / (mixture * mixture)),
+                np.sum(counts * d_pi0 * d_side / (mixture * mixture)),
+            ],
+            [
+                np.sum(counts * d_pi0 * d_side / (mixture * mixture)),
+                np.sum(counts * d_side * d_side / (mixture * mixture)),
+            ],
+        ],
+        dtype=float,
+    )
+
+    try:
+        covariance = np.linalg.inv(info)
+        return math.sqrt(max(float(covariance[0, 0]), 0.0))
+    except np.linalg.LinAlgError:
+        return float("inf")
+    #endtry
+
+
 def poisson_deviance(
     observed: np.ndarray,
     expected: np.ndarray,
@@ -1891,49 +2168,45 @@ def poisson_deviance(
     return float(2.0 * np.sum(terms))
 
 
-def fit_real_data_two_templates(
+def fit_real_data_three_templates(
     data_events: np.ndarray,
     pi0_events: np.ndarray,
     dvcs_events: np.ndarray,
+    sideband_events: np.ndarray,
     optimizer_results: list,
     chosen_step: int,
     closure_results: list,
     n_bins: int,
+    morph_shift_max_bins: float,
+    morph_smear_max_bins: float,
+    morph_shift_steps: int,
+    morph_smear_steps: int,
 ) -> dict:
-    """
-    Fit surviving real data as a normalized AAO + DVCSgen two-template mixture.
+    """Fit signal-like data as morphed-AAO + DVCSgen + empirical sideband."""
+    pi_masks = build_cumulative_optimizer_masks(pi0_events, optimizer_results)
+    dvcs_masks = build_cumulative_optimizer_masks(dvcs_events, optimizer_results)
+    data_masks = build_cumulative_optimizer_masks(data_events, optimizer_results)
+    side_masks = build_cumulative_optimizer_masks(sideband_events, optimizer_results)
 
-    The same cumulative optimizer cuts are applied to data and both MC samples.
-    The discriminator is the closure-selected best 1D variable at the chosen
-    step. Templates are normalized to unit area, so the fit determines only
-    f_pi0. The total expected count is fixed to the observed data count.
-    """
-    pi_masks = build_cumulative_optimizer_masks(
-        pi0_events,
-        optimizer_results,
+    chosen_step = min(
+        int(chosen_step),
+        len(pi_masks) - 1,
+        len(dvcs_masks) - 1,
+        len(data_masks) - 1,
+        len(side_masks) - 1,
     )
-    dvcs_masks = build_cumulative_optimizer_masks(
-        dvcs_events,
-        optimizer_results,
-    )
-    data_masks = build_cumulative_optimizer_masks(
-        data_events,
-        optimizer_results,
-    )
-
-    if chosen_step >= len(pi_masks):
-        chosen_step = len(pi_masks) - 1
-    #endif
 
     pi_selected = pi0_events[pi_masks[chosen_step]]
     dvcs_selected = dvcs_events[dvcs_masks[chosen_step]]
     data_selected = data_events[data_masks[chosen_step]]
+    side_selected = sideband_events[side_masks[chosen_step]]
 
-    if (
-        pi_selected.shape[0] < 20
-        or dvcs_selected.shape[0] < 20
-        or data_selected.shape[0] < 20
-    ):
+    if min(
+        pi_selected.shape[0],
+        dvcs_selected.shape[0],
+        data_selected.shape[0],
+        side_selected.shape[0],
+    ) < 20:
         return {
             "success": False,
             "status": "insufficient_selected_statistics",
@@ -1947,42 +2220,23 @@ def fit_real_data_two_templates(
         true_fraction=0.50,
     )
 
+    feature = None
     if closure is not None:
-        feature = str(closure["feature"])
-        js_from_closure = float(closure["js_divergence"])
-    else:
-        feature = None
-        js_from_closure = float("nan")
-    #endif
-
-    edges = None
-    js_value = js_from_closure
-
-    if feature is not None:
-        edges = data_fit_edges_for_feature(
-            feature,
-            n_bins=n_bins,
-        )
-        if edges.size == 0:
-            feature = None
+        candidate = str(closure["feature"])
+        if candidate in DATA_FIT_FEATURES:
+            feature = candidate
         #endif
     #endif
 
     if feature is None:
-        feature, _quantile_edges, js_value = best_template_feature_for_events(
+        feature, _unused_edges, _unused_js = best_template_feature_for_events(
             pi_selected,
             dvcs_selected,
             n_bins,
         )
-        if feature is not None:
-            edges = data_fit_edges_for_feature(
-                feature,
-                n_bins=n_bins,
-            )
-        #endif
     #endif
 
-    if feature is None or edges is None or edges.size < 5:
+    if feature is None:
         return {
             "success": False,
             "status": "no_valid_discriminator",
@@ -1990,56 +2244,50 @@ def fit_real_data_two_templates(
         }
     #endif
 
+    edges = data_fit_edges_for_feature(feature, n_bins=n_bins)
+    if edges.size < 5:
+        return {
+            "success": False,
+            "status": "no_valid_fit_range",
+            "step": int(chosen_step),
+        }
+    #endif
+
     ifeature = FEATURE_INDEX[feature]
-
-    pi_values_all = np.asarray(
-        pi_selected[:, ifeature],
-        dtype=float,
-    )
-    dvcs_values_all = np.asarray(
-        dvcs_selected[:, ifeature],
-        dtype=float,
-    )
-    data_values_all = np.asarray(
-        data_selected[:, ifeature],
-        dtype=float,
-    )
-
     fit_min = float(edges[0])
     fit_max = float(edges[-1])
 
-    pi_in_range = (
-        np.isfinite(pi_values_all)
-        & (pi_values_all >= fit_min)
-        & (pi_values_all < fit_max)
-    )
-    dvcs_in_range = (
-        np.isfinite(dvcs_values_all)
-        & (dvcs_values_all >= fit_min)
-        & (dvcs_values_all < fit_max)
-    )
-    data_in_range = (
-        np.isfinite(data_values_all)
-        & (data_values_all >= fit_min)
-        & (data_values_all < fit_max)
-    )
+    def selected_values(events: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        values = np.asarray(events[:, ifeature], dtype=float)
+        mask = (
+            np.isfinite(values)
+            & (values >= fit_min)
+            & (values < fit_max)
+        )
+        return values, mask
 
-    p_pi0 = closure_histogram_probabilities(
-        pi_values_all[pi_in_range],
-        edges,
-    )
-    p_dvcs = closure_histogram_probabilities(
-        dvcs_values_all[dvcs_in_range],
-        edges,
-    )
-    js_value = jensen_shannon_divergence(
-        p_pi0,
-        p_dvcs,
-    )
+    pi_values, pi_mask = selected_values(pi_selected)
+    dvcs_values, dvcs_mask = selected_values(dvcs_selected)
+    data_values, data_mask = selected_values(data_selected)
+    side_values, side_mask = selected_values(side_selected)
 
-    data_values = data_values_all[data_in_range]
-    data_counts, _ = np.histogram(data_values, bins=edges)
+    if min(
+        np.count_nonzero(pi_mask),
+        np.count_nonzero(dvcs_mask),
+        np.count_nonzero(side_mask),
+    ) < 20:
+        return {
+            "success": False,
+            "status": "insufficient_template_statistics_in_fit_range",
+            "step": int(chosen_step),
+        }
+    #endif
 
+    p_pi0_nominal = closure_histogram_probabilities(pi_values[pi_mask], edges)
+    p_dvcs = closure_histogram_probabilities(dvcs_values[dvcs_mask], edges)
+    p_sideband = closure_histogram_probabilities(side_values[side_mask], edges)
+
+    data_counts, _ = np.histogram(data_values[data_mask], bins=edges)
     if np.sum(data_counts) < 20:
         return {
             "success": False,
@@ -2048,62 +2296,94 @@ def fit_real_data_two_templates(
         }
     #endif
 
-    f_hat, sigma_f = fit_two_template_fraction(
+    profiled = fit_three_templates_with_aao_morph(
         data_counts,
-        p_pi0,
+        p_pi0_nominal,
         p_dvcs,
+        p_sideband,
+        shift_max_bins=morph_shift_max_bins,
+        smear_max_bins=morph_smear_max_bins,
+        shift_steps=morph_shift_steps,
+        smear_steps=morph_smear_steps,
     )
+
+    f_pi0 = float(profiled["fraction_pi0"])
+    f_dvcs = float(profiled["fraction_dvcs"])
+    f_side = float(profiled["fraction_sideband"])
+    p_pi0 = np.asarray(profiled["p_pi0_morphed"], dtype=float)
 
     n_data = int(np.sum(data_counts))
     total_probability = (
-        f_hat * p_pi0
-        + (1.0 - f_hat) * p_dvcs
+        f_pi0 * p_pi0
+        + f_dvcs * p_dvcs
+        + f_side * p_sideband
     )
     expected_total = n_data * total_probability
-    expected_pi0 = n_data * f_hat * p_pi0
-    expected_dvcs = n_data * (1.0 - f_hat) * p_dvcs
+    expected_pi0 = n_data * f_pi0 * p_pi0
+    expected_dvcs = n_data * f_dvcs * p_dvcs
+    expected_sideband = n_data * f_side * p_sideband
 
-    deviance = poisson_deviance(
-        data_counts,
-        expected_total,
+    nominal_fit = profiled["nominal_fit"]
+    nominal_probability = (
+        nominal_fit["fraction_pi0"] * p_pi0_nominal
+        + nominal_fit["fraction_dvcs"] * p_dvcs
+        + nominal_fit["fraction_sideband"] * p_sideband
     )
-    ndf = max(int(data_counts.size) - 2, 1)
+    expected_nominal = n_data * nominal_probability
+
+    deviance = poisson_deviance(data_counts, expected_total)
+    nominal_deviance = poisson_deviance(data_counts, expected_nominal)
+
+    # 2 independent fractions + AAO shift + AAO smear.
+    ndf = max(int(data_counts.size) - 4, 1)
+
+    sigma_pi0 = approximate_fraction_uncertainty_three_template(
+        data_counts,
+        p_pi0,
+        p_dvcs,
+        p_sideband,
+        (f_pi0, f_dvcs, f_side),
+    )
+
+    bin_width = float(edges[1] - edges[0])
 
     return {
         "success": True,
         "status": "ok",
         "step": int(chosen_step),
         "feature": str(feature),
-        "js_divergence": float(js_value),
-        "fraction_pi0": float(f_hat),
-        "fraction_pi0_stat": float(sigma_f),
+        "fraction_pi0": f_pi0,
+        "fraction_dvcs": f_dvcs,
+        "fraction_sideband": f_side,
+        "fraction_pi0_stat": float(sigma_pi0),
+        "morph_shift_bins": float(profiled["shift_bins"]),
+        "morph_smear_sigma_bins": float(profiled["smear_sigma_bins"]),
+        "morph_shift_x": float(profiled["shift_bins"] * bin_width),
+        "morph_smear_sigma_x": float(
+            profiled["smear_sigma_bins"] * bin_width
+        ),
         "deviance": float(deviance),
+        "nominal_deviance": float(nominal_deviance),
         "ndf": int(ndf),
         "deviance_per_ndf": float(deviance / ndf),
-        "n_data": int(n_data),
+        "nominal_deviance_per_ndf": float(nominal_deviance / ndf),
+        "n_data": n_data,
         "n_data_selected_total": int(data_selected.shape[0]),
-        "n_pi0_template": int(np.count_nonzero(pi_in_range)),
-        "n_pi0_template_selected_total": int(pi_selected.shape[0]),
-        "n_dvcs_template": int(np.count_nonzero(dvcs_in_range)),
-        "n_dvcs_template_selected_total": int(dvcs_selected.shape[0]),
-        "fit_range_min": float(fit_min),
-        "fit_range_max": float(fit_max),
+        "n_pi0_template": int(np.count_nonzero(pi_mask)),
+        "n_dvcs_template": int(np.count_nonzero(dvcs_mask)),
+        "n_sideband_template": int(np.count_nonzero(side_mask)),
+        "fit_range_min": fit_min,
+        "fit_range_max": fit_max,
         "data_in_range_fraction": float(
             n_data / max(int(data_selected.shape[0]), 1)
-        ),
-        "pi0_in_range_fraction": float(
-            np.count_nonzero(pi_in_range)
-            / max(int(pi_selected.shape[0]), 1)
-        ),
-        "dvcs_in_range_fraction": float(
-            np.count_nonzero(dvcs_in_range)
-            / max(int(dvcs_selected.shape[0]), 1)
         ),
         "edges": np.asarray(edges, dtype=float),
         "data_counts": np.asarray(data_counts, dtype=float),
         "expected_total": np.asarray(expected_total, dtype=float),
+        "expected_nominal": np.asarray(expected_nominal, dtype=float),
         "expected_pi0": np.asarray(expected_pi0, dtype=float),
         "expected_dvcs": np.asarray(expected_dvcs, dtype=float),
+        "expected_sideband": np.asarray(expected_sideband, dtype=float),
     }
 
 
@@ -2288,6 +2568,14 @@ def make_combined_data_template_fit_canvas(
                 linestyle=":",
                 label="fitted DVCS component",
             )
+            side_handle, = ax.step(
+                centers,
+                fit["expected_sideband"],
+                where="mid",
+                linewidth=1.2,
+                linestyle="-.",
+                label="fitted data-sideband component",
+            )
 
             if irow == 0 and icol == 0:
                 legend_handles = [
@@ -2295,12 +2583,14 @@ def make_combined_data_template_fit_canvas(
                     total_handle,
                     pi_handle,
                     dvcs_handle,
+                    side_handle,
                 ]
                 legend_labels = [
                     "data",
-                    "AAO + DVCS fit",
-                    r"fitted $\pi^0$ component",
+                    "AAO + DVCS + sideband fit",
+                    r"fitted morphed $\pi^0$ component",
                     "fitted DVCS component",
+                    "fitted data-sideband component",
                 ]
             #endif
 
@@ -2359,10 +2649,19 @@ def make_combined_data_template_fit_canvas(
 
             annotation = (
                 f"selected cut step {fit['step']}\n"
-                rf"$f_{{\pi^0}}={fit['fraction_pi0']:.3f}"
-                rf"\pm{fit['fraction_pi0_stat']:.3f}$"
+                rf"$f_{{\pi^0}}={fit['fraction_pi0']:.3f}$, "
+                rf"$f_{{DVCS}}={fit['fraction_dvcs']:.3f}$, "
+                rf"$f_{{SB}}={fit['fraction_sideband']:.3f}$"
                 + "\n"
-                + rf"$D/ndf={fit['deviance_per_ndf']:.2f}$"
+                + (
+                    f"AAO morph: shift={fit['morph_shift_bins']:+.2f} bins, "
+                    f"smear={fit['morph_smear_sigma_bins']:.2f} bins"
+                )
+                + "\n"
+                + (
+                    f"D/ndf: nominal {fit['nominal_deviance_per_ndf']:.2f} "
+                    f"-> morphed {fit['deviance_per_ndf']:.2f}"
+                )
                 + f", N={fit['n_data']:,}\n"
                 + (
                     f"fit range: {fit['fit_range_min']:.3g} to "
@@ -2395,13 +2694,13 @@ def make_combined_data_template_fit_canvas(
             legend_labels,
             loc="upper center",
             bbox_to_anchor=(0.5, 0.982),
-            ncol=4,
+            ncol=5,
             frameon=True,
         )
     #endif
 
     fig.suptitle(
-        f"{period.label}: real-data AAO + DVCS template fits",
+        f"{period.label}: real-data AAO + DVCS + sideband template fits",
         fontsize=13,
         y=0.999,
     )
@@ -2418,13 +2717,13 @@ def make_pi0_fraction_summary_canvas(
     optimizer_summary: dict,
     output_dir: Path,
 ) -> Path:
-    """Compact fitted pi0-fraction versus E_probe summary for FD and FT."""
+    """Fitted AAO/DVCS/sideband composition versus E_probe for FD and FT."""
     output_dir.mkdir(parents=True, exist_ok=True)
 
     fig, axes = plt.subplots(
         1,
         2,
-        figsize=(11.5, 4.8),
+        figsize=(11.8, 4.9),
         sharey=True,
     )
 
@@ -2432,9 +2731,9 @@ def make_pi0_fraction_summary_canvas(
         x = []
         xerr_low = []
         xerr_high = []
-        y = []
-        yerr = []
-        labels = []
+        f_pi0 = []
+        f_dvcs = []
+        f_side = []
 
         for bin_key, e_min, e_max in E_PROBE_BINS:
             region_summary = (
@@ -2456,30 +2755,16 @@ def make_pi0_fraction_summary_canvas(
             x.append(center)
             xerr_low.append(center - e_min)
             xerr_high.append(e_max - center)
-            y.append(float(fit["fraction_pi0"]))
-            yerr.append(float(fit["fraction_pi0_stat"]))
-            labels.append(f"step {fit['step']}")
+            f_pi0.append(float(fit["fraction_pi0"]))
+            f_dvcs.append(float(fit["fraction_dvcs"]))
+            f_side.append(float(fit["fraction_sideband"]))
         #endfor
 
         if x:
-            ax.errorbar(
-                x,
-                y,
-                xerr=np.vstack((xerr_low, xerr_high)),
-                yerr=yerr,
-                fmt="o",
-                capsize=3,
-            )
-
-            for xi, yi, label in zip(x, y, labels):
-                ax.annotate(
-                    label,
-                    (xi, yi),
-                    xytext=(4, 5),
-                    textcoords="offset points",
-                    fontsize=8,
-                )
-            #endfor
+            xerr = np.vstack((xerr_low, xerr_high))
+            ax.errorbar(x, f_pi0, xerr=xerr, fmt="o-", label=r"$f_{\pi^0}$")
+            ax.errorbar(x, f_dvcs, xerr=xerr, fmt="s--", label=r"$f_{\rm DVCS}$")
+            ax.errorbar(x, f_side, xerr=xerr, fmt="^-.", label=r"$f_{\rm sideband}$")
         #endif
 
         ax.set_xlim(0.35, 9.6)
@@ -2487,17 +2772,17 @@ def make_pi0_fraction_summary_canvas(
         ax.set_xlabel(r"$E_{\rm probe}$ (GeV)")
         ax.set_title(region)
         ax.grid(alpha=0.25)
+        ax.legend(frameon=True)
     #endfor
 
-    axes[0].set_ylabel(r"Fitted $f_{\pi^0}$")
-
+    axes[0].set_ylabel("Fitted composition fraction")
     fig.suptitle(
-        f"{period.label}: preliminary fitted pi0 fraction",
+        f"{period.label}: preliminary three-template composition",
         fontsize=13,
     )
     fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
 
-    out = output_dir / f"pi0_fraction_summary_{period.key}.png"
+    out = output_dir / f"composition_fraction_summary_{period.key}.png"
     fig.savefig(out, dpi=180)
     plt.close(fig)
     return out
@@ -2551,6 +2836,11 @@ def write_period_summary_csv(
         "data_fit_feature",
         "data_fit_fraction_pi0",
         "data_fit_fraction_pi0_stat",
+        "data_fit_fraction_dvcs",
+        "data_fit_fraction_sideband",
+        "data_fit_morph_shift_bins",
+        "data_fit_morph_smear_sigma_bins",
+        "data_fit_nominal_deviance_per_ndf",
         "data_fit_deviance",
         "data_fit_ndf",
         "data_fit_deviance_per_ndf",
@@ -2659,6 +2949,26 @@ def write_period_summary_csv(
                         ),
                         "data_fit_fraction_pi0_stat": data_fit.get(
                             "fraction_pi0_stat",
+                            "",
+                        ),
+                        "data_fit_fraction_dvcs": data_fit.get(
+                            "fraction_dvcs",
+                            "",
+                        ),
+                        "data_fit_fraction_sideband": data_fit.get(
+                            "fraction_sideband",
+                            "",
+                        ),
+                        "data_fit_morph_shift_bins": data_fit.get(
+                            "morph_shift_bins",
+                            "",
+                        ),
+                        "data_fit_morph_smear_sigma_bins": data_fit.get(
+                            "morph_smear_sigma_bins",
+                            "",
+                        ),
+                        "data_fit_nominal_deviance_per_ndf": data_fit.get(
+                            "nominal_deviance_per_ndf",
                             "",
                         ),
                         "data_fit_deviance": data_fit.get("deviance", ""),
@@ -3850,6 +4160,10 @@ def process_period(
     data_fit_max_closure_bias: float,
     data_fit_max_closure_rms: float,
     data_fit_background_near_best: float,
+    data_fit_morph_shift_max_bins: float,
+    data_fit_morph_smear_max_bins: float,
+    data_fit_morph_shift_steps: int,
+    data_fit_morph_smear_steps: int,
 ) -> dict:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -4040,42 +4354,50 @@ def process_period(
 
                 mx2_idx = FEATURE_INDEX["Mx2_1"]
 
-                # AAO/DVCS baselines are exactly the same loose-preselected
-                # samples used by the optimizer/closure study.
                 pi0_all = optimizer_events["pi0"][region][bin_key]
                 dvcs_all = optimizer_events["dvcs"][region][bin_key]
                 data_all = optimizer_events["data"][region][bin_key]
 
+                # The target data and empirical sideband template are disjoint.
+                signal_max = optimizer_data_sideband_min
+
                 pi0_events = pi0_all[
                     np.isfinite(pi0_all[:, mx2_idx])
-                    & (
-                        pi0_all[:, mx2_idx]
-                        < optimizer_mx2_1_preselection_max
-                    )
+                    & (pi0_all[:, mx2_idx] < signal_max)
                 ]
                 dvcs_events = dvcs_all[
                     np.isfinite(dvcs_all[:, mx2_idx])
-                    & (
-                        dvcs_all[:, mx2_idx]
-                        < optimizer_mx2_1_preselection_max
-                    )
+                    & (dvcs_all[:, mx2_idx] < signal_max)
                 ]
                 data_events = data_all[
                     np.isfinite(data_all[:, mx2_idx])
+                    & (data_all[:, mx2_idx] < signal_max)
+                ]
+                sideband_events = data_all[
+                    np.isfinite(data_all[:, mx2_idx])
                     & (
                         data_all[:, mx2_idx]
-                        < optimizer_mx2_1_preselection_max
+                        >= optimizer_data_sideband_min
+                    )
+                    & (
+                        data_all[:, mx2_idx]
+                        < optimizer_data_sideband_max
                     )
                 ]
 
-                data_fit = fit_real_data_two_templates(
+                data_fit = fit_real_data_three_templates(
                     data_events,
                     pi0_events,
                     dvcs_events,
+                    sideband_events,
                     optimizer_results,
                     chosen_step=int(operating["step"]),
                     closure_results=closure_results,
                     n_bins=closure_bins,
+                    morph_shift_max_bins=data_fit_morph_shift_max_bins,
+                    morph_smear_max_bins=data_fit_morph_smear_max_bins,
+                    morph_shift_steps=data_fit_morph_shift_steps,
+                    morph_smear_steps=data_fit_morph_smear_steps,
                 )
                 data_fit["operating_step_status"] = operating["status"]
                 data_fit["closure_rms_limit"] = operating[
@@ -4093,9 +4415,13 @@ def process_period(
                         f"{energy_min:g}-{energy_max:g} GeV: "
                         f"real-data fit step {data_fit['step']} "
                         f"({data_fit['feature']}), "
-                        f"f_pi0={data_fit['fraction_pi0']:.4f} +/- "
-                        f"{data_fit['fraction_pi0_stat']:.4f}, "
-                        f"D/ndf={data_fit['deviance_per_ndf']:.2f}."
+                        f"f_pi0={data_fit['fraction_pi0']:.4f}, "
+                        f"f_DVCS={data_fit['fraction_dvcs']:.4f}, "
+                        f"f_SB={data_fit['fraction_sideband']:.4f}, "
+                        f"AAO morph=({data_fit['morph_shift_bins']:+.2f}, "
+                        f"{data_fit['morph_smear_sigma_bins']:.2f}) bins, "
+                        f"D/ndf={data_fit['nominal_deviance_per_ndf']:.2f}"
+                        f"->{data_fit['deviance_per_ndf']:.2f}."
                     )
                 else:
                     log(
@@ -4247,6 +4573,10 @@ def process_period_worker(
     data_fit_max_closure_bias: float,
     data_fit_max_closure_rms: float,
     data_fit_background_near_best: float,
+    data_fit_morph_shift_max_bins: float,
+    data_fit_morph_smear_max_bins: float,
+    data_fit_morph_shift_steps: int,
+    data_fit_morph_smear_steps: int,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -4279,6 +4609,10 @@ def process_period_worker(
         data_fit_max_closure_bias,
         data_fit_max_closure_rms,
         data_fit_background_near_best,
+        data_fit_morph_shift_max_bins,
+        data_fit_morph_smear_max_bins,
+        data_fit_morph_shift_steps,
+        data_fit_morph_smear_steps,
     )
 
 
@@ -4410,9 +4744,13 @@ def print_optimizer_summary(
                     print(
                         f"      DATA FIT: step {data_fit['step']}, "
                         f"{data_fit['feature']}, "
-                        f"f_pi0={data_fit['fraction_pi0']:.4f} +/- "
-                        f"{data_fit['fraction_pi0_stat']:.4f}, "
-                        f"D/ndf={data_fit['deviance_per_ndf']:.2f}",
+                        f"f_pi0={data_fit['fraction_pi0']:.4f}, "
+                        f"f_DVCS={data_fit['fraction_dvcs']:.4f}, "
+                        f"f_SB={data_fit['fraction_sideband']:.4f}, "
+                        f"AAO morph=({data_fit['morph_shift_bins']:+.2f},"
+                        f"{data_fit['morph_smear_sigma_bins']:.2f}) bins, "
+                        f"D/ndf={data_fit['nominal_deviance_per_ndf']:.2f}"
+                        f"->{data_fit['deviance_per_ndf']:.2f}",
                         flush=True,
                     )
                 #endif
@@ -4494,6 +4832,18 @@ def main() -> int:
             "--data-fit-background-near-best must be >= 1."
         )
     #endif
+    if args.data_fit_morph_shift_max_bins < 0.0:
+        raise ValueError("--data-fit-morph-shift-max-bins must be >= 0.")
+    #endif
+    if args.data_fit_morph_smear_max_bins < 0.0:
+        raise ValueError("--data-fit-morph-smear-max-bins must be >= 0.")
+    #endif
+    if args.data_fit_morph_shift_steps < 3:
+        raise ValueError("--data-fit-morph-shift-steps must be >= 3.")
+    #endif
+    if args.data_fit_morph_smear_steps < 2:
+        raise ValueError("--data-fit-morph-smear-steps must be >= 2.")
+    #endif
 
     selected_keys = set(args.period or [p.key for p in PERIODS])
     selected_periods = [p for p in PERIODS if p.key in selected_keys]
@@ -4528,7 +4878,10 @@ def main() -> int:
             f"{args.closure_events} events at f_pi0=0.2,0.5,0.8; "
             "real-data AAO+DVCS fit enabled with closure-safe operating-step "
             f"selection (|bias|<={args.data_fit_max_closure_bias:g}, "
-            f"RMS<={args.data_fit_max_closure_rms:g})."
+            f"RMS<={args.data_fit_max_closure_rms:g}); "
+            "real-data fit uses AAO + DVCSgen + empirical sideband with "
+            f"AAO-only |shift|<={args.data_fit_morph_shift_max_bins:g} "
+            f"and smear<={args.data_fit_morph_smear_max_bins:g} bins."
         )
     #endif
     log(
@@ -4572,6 +4925,10 @@ def main() -> int:
                 args.data_fit_max_closure_bias,
                 args.data_fit_max_closure_rms,
                 args.data_fit_background_near_best,
+                args.data_fit_morph_shift_max_bins,
+                args.data_fit_morph_smear_max_bins,
+                args.data_fit_morph_shift_steps,
+                args.data_fit_morph_smear_steps,
             )
         #endfor
     else:
@@ -4602,6 +4959,10 @@ def main() -> int:
                     args.data_fit_max_closure_bias,
                     args.data_fit_max_closure_rms,
                     args.data_fit_background_near_best,
+                    args.data_fit_morph_shift_max_bins,
+                    args.data_fit_morph_smear_max_bins,
+                    args.data_fit_morph_shift_steps,
+                    args.data_fit_morph_smear_steps,
                 ): period
                 for period in selected_periods
             }
