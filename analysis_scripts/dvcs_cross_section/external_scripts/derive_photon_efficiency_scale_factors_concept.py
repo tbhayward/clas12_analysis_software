@@ -10,13 +10,13 @@ Make only the first-stage epgamma shape-comparison canvases, with essentially
 no analysis machinery beyond the minimum needed to compare the samples.
 
 For each of the five RGA periods and separately for FT and FD photons, make a
-1x7 canvas comparing:
+2x7 canvas comparing:
 
     1. Mx2
     2. Mx2_1
     3. Mx2_2
     4. Emiss2
-    5. Delta_phi
+    5. Delta_phi (tree branch, displayed as a residual about 180 degrees)
     6. pTmiss
     7. theta_gamma_gamma
 
@@ -27,11 +27,17 @@ Samples:
 
 CLASDIS is intentionally not used anywhere in this script.
 
-The ONLY physics cut applied to the plotted populations is
+The first row uses ONLY
 
     angle(e, gamma) > 5 degrees,
 
-apart from assigning the reconstructed photon to FT or FD by its polar angle:
+apart from assigning the reconstructed photon to FT or FD by its polar angle.
+
+The second row cumulatively adds
+
+    Mx2_1 < 0.15 GeV^2.
+
+The FT/FD angular assignment is:
 
     FT: 2.4 <= theta_gamma < 5.0 degrees
     FD: 6.0 <= theta_gamma < 35.0 degrees
@@ -48,15 +54,18 @@ This script is intentionally optimized for speed:
     * Histograms are filled immediately and the chunk is discarded.
     * A given ROOT sample is read only once; FT and FD histograms are filled
       simultaneously from the same chunk.
+    * Run periods are processed concurrently with ProcessPoolExecutor.
+    * ROOT files within one period are still read sequentially to avoid nested
+      I/O contention and excessive memory pressure.
     * Only the 11 branches actually needed here are read.
     * No eppi0 files, event association, fitting, bootstrapping, CLASDIS,
       Stage-II, Stage-III, or grand diagnostics are touched.
 
 Examples
 --------
-Run all five periods with up to 4 million events per ROOT sample:
+Run all five periods concurrently with up to 4 million events per ROOT sample:
 
-    python derive_photon_efficiency_scale_factors_concept.py
+    python derive_photon_efficiency_scale_factors_concept_v2.py --workers 5
 
 Run one period:
 
@@ -78,6 +87,7 @@ from __future__ import annotations
 import argparse
 import math
 import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Sequence, Tuple
@@ -128,23 +138,23 @@ PLOT_SPECS = (
         "Mx2",
         r"$MM^2(ep\gamma X)$",
         r"$MM^2(ep\gamma X)$ (GeV$^2$)",
-        -0.20,
-        0.30,
+        -0.10,
+        0.15,
         100,
     ),
     (
         "Mx2_1",
         r"$MM^2(epX)$",
         r"$MM^2(epX)$ (GeV$^2$)",
-        -0.20,
-        0.60,
+        -0.30,
+        0.70,
         140,
     ),
     (
         "Mx2_2",
         r"$MM^2(e\gamma X)$",
         r"$MM^2(e\gamma X)$ (GeV$^2$)",
-        1.00,
+        0.00,
         5.00,
         140,
     ),
@@ -152,8 +162,8 @@ PLOT_SPECS = (
         "Emiss2",
         r"$E_{\rm miss}(ep\gamma X)$",
         r"$E_{\rm miss}(ep\gamma X)$ (GeV)",
-        -2.0,
-        4.0,
+        -1.0,
+        5.0,
         120,
     ),
     (
@@ -177,7 +187,7 @@ PLOT_SPECS = (
         r"$\theta_{\gamma\gamma}$",
         r"$\theta_{\gamma\gamma}$ (deg)",
         0.0,
-        30.0,
+        10.0,
         120,
     ),
 )
@@ -293,6 +303,16 @@ def parse_args() -> argparse.Namespace:
         help="Entries per uproot chunk. Default: 500000.",
     )
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=5,
+        help=(
+            "Maximum number of run periods processed concurrently. "
+            "Useful range is 1-5 because there are five RGA periods. "
+            "Default: 5."
+        ),
+    )
+    parser.add_argument(
         "--output",
         default="output/photon_efficiency_concept/stage1_shape_comparison",
         help=(
@@ -399,11 +419,13 @@ def photon_theta_deg(values: np.ndarray, unit: str) -> np.ndarray:
 
 def delta_phi_residual_deg(values: np.ndarray) -> np.ndarray:
     """
-    Convert the stored Delta_phi branch into the signed proton-photon
-    coplanarity residual about 180 degrees.
+    Use the stored ROOT-tree Delta_phi branch; do NOT reconstruct Delta_phi
+    from particle azimuths here.
 
-    The current DVCS processing stores Delta_phi in radians, centered near pi.
-    A defensive degree fallback is included for portability.
+    For plotting only, express that stored coplanarity angle as its signed
+    residual about 180 degrees, so a perfectly back-to-back p-gamma pair is
+    displayed at 0 degrees. The current processing stores Delta_phi in radians,
+    centered near pi. A defensive degree fallback is included for portability.
     """
     values = np.asarray(values, dtype=float)
     finite = values[np.isfinite(values)]
@@ -416,12 +438,15 @@ def delta_phi_residual_deg(values: np.ndarray) -> np.ndarray:
     return np.rad2deg(residual_rad)
 
 
-def empty_histograms() -> Dict[str, Dict[str, np.ndarray]]:
-    out: Dict[str, Dict[str, np.ndarray]] = {}
+def empty_histograms() -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
+    out: Dict[str, Dict[str, Dict[str, np.ndarray]]] = {}
     for region in ("FT", "FD"):
         out[region] = {}
-        for key, _title, _xlabel, x_min, x_max, n_bins in PLOT_SPECS:
-            out[region][key] = np.zeros(n_bins, dtype=np.int64)
+        for row in ("minimal", "mx2_1_cut"):
+            out[region][row] = {}
+            for key, _title, _xlabel, x_min, x_max, n_bins in PLOT_SPECS:
+                out[region][row][key] = np.zeros(n_bins, dtype=np.int64)
+            #endfor
         #endfor
     #endfor
     return out
@@ -444,7 +469,7 @@ def stream_sample_histograms(
     tree_name: str,
     max_entries: int,
     step_size: int,
-) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
+) -> Tuple[Dict[str, Dict[str, Dict[str, np.ndarray]]], Dict[str, int]]:
     """
     Read one ROOT sample exactly once and fill both FT and FD histograms.
 
@@ -452,7 +477,14 @@ def stream_sample_histograms(
     """
     hist = empty_histograms()
     edges = histogram_edges()
-    counts = {"read": 0, "opening_angle": 0, "FT": 0, "FD": 0}
+    counts = {
+        "read": 0,
+        "opening_angle": 0,
+        "FT": 0,
+        "FD": 0,
+        "FT_mx2_1_cut": 0,
+        "FD_mx2_1_cut": 0,
+    }
 
     with uproot.open(path) as root_file:
         tree, found_tree = get_tree(root_file, tree_name)
@@ -527,13 +559,32 @@ def stream_sample_histograms(
             for region, region_mask in region_masks.items():
                 counts[region] += int(np.count_nonzero(region_mask))
 
-                for key in values:
-                    v = values[key]
-                    mask = region_mask & np.isfinite(v)
-                    if np.any(mask):
-                        h, _ = np.histogram(v[mask], bins=edges[key])
-                        hist[region][key] += h.astype(np.int64, copy=False)
-                    #endif
+                # Row 1: only Angle(e,gamma) > 5 deg plus FT/FD assignment.
+                row_masks = {
+                    "minimal": region_mask,
+                    # Row 2: cumulative addition of Mx2_1 < 0.15 GeV^2.
+                    "mx2_1_cut": (
+                        region_mask
+                        & np.isfinite(values["Mx2_1"])
+                        & (values["Mx2_1"] < 0.15)
+                    ),
+                }
+                counts[f"{region}_mx2_1_cut"] += int(
+                    np.count_nonzero(row_masks["mx2_1_cut"])
+                )
+
+                for row_name, row_mask in row_masks.items():
+                    for key in values:
+                        v = values[key]
+                        mask = row_mask & np.isfinite(v)
+                        if np.any(mask):
+                            h, _ = np.histogram(v[mask], bins=edges[key])
+                            hist[region][row_name][key] += h.astype(
+                                np.int64,
+                                copy=False,
+                            )
+                        #endif
+                    #endfor
                 #endfor
             #endfor
 
@@ -548,8 +599,11 @@ def stream_sample_histograms(
     #endwith
 
     log(
-        f"{sample_label}: retained after theta(e,gamma)>5 deg: "
-        f"FT={counts['FT']:,}, FD={counts['FD']:,}."
+        f"{sample_label}: retained after Angle(e,gamma)>5 deg: "
+        f"FT={counts['FT']:,}, FD={counts['FD']:,}; "
+        f"after additionally Mx2_1<0.15 GeV^2: "
+        f"FT={counts['FT_mx2_1_cut']:,}, "
+        f"FD={counts['FD_mx2_1_cut']:,}."
     )
     return hist, counts
 
@@ -570,42 +624,80 @@ def normalized_hist(counts: np.ndarray) -> np.ndarray:
 def make_canvas(
     period: Period,
     region: str,
-    sample_hists: Dict[str, Dict[str, Dict[str, np.ndarray]]],
+    sample_hists: Dict[str, Dict[str, Dict[str, Dict[str, np.ndarray]]]],
     sample_counts: Dict[str, Dict[str, int]],
     output_dir: Path,
 ) -> Path:
-    fig, axes = plt.subplots(1, 7, figsize=(25.0, 4.8))
+    fig, axes = plt.subplots(2, 7, figsize=(25.0, 8.5))
     edges_by_key = histogram_edges()
 
     sample_meta = {key: (label, color) for key, label, color in SAMPLES}
+    rows = (
+        (
+            "minimal",
+            r"Row 1: only $\mathrm{Angle}(e,\gamma)>5^\circ$",
+        ),
+        (
+            "mx2_1_cut",
+            r"Row 2: additionally $Mx2_1<0.15$ GeV$^2$",
+        ),
+    )
 
-    for ax, spec in zip(axes, PLOT_SPECS):
-        key, title, xlabel, _x_min, _x_max, _n_bins = spec
-        edges = edges_by_key[key]
-        centers = 0.5 * (edges[:-1] + edges[1:])
+    legend_handles = []
+    legend_labels = []
 
-        for sample_key, _label, _color in SAMPLES:
-            label, color = sample_meta[sample_key]
-            y = normalized_hist(sample_hists[sample_key][region][key])
-            ax.step(
-                centers,
-                y,
-                where="mid",
-                linewidth=1.5,
-                color=color,
-                label=label,
-            )
+    for irow, (row_key, row_label) in enumerate(rows):
+        for icol, spec in enumerate(PLOT_SPECS):
+            ax = axes[irow, icol]
+            key, title, xlabel, _x_min, _x_max, _n_bins = spec
+            edges = edges_by_key[key]
+            centers = 0.5 * (edges[:-1] + edges[1:])
+
+            for sample_key, _label, _color in SAMPLES:
+                label, color = sample_meta[sample_key]
+                y = normalized_hist(
+                    sample_hists[sample_key][region][row_key][key]
+                )
+                line = ax.step(
+                    centers,
+                    y,
+                    where="mid",
+                    linewidth=1.5,
+                    color=color,
+                    label=label,
+                )[0]
+
+                if irow == 0 and icol == 0:
+                    legend_handles.append(line)
+                    legend_labels.append(label)
+                #endif
+            #endfor
+
+            if irow == 0:
+                ax.set_title(title, fontsize=11)
+            #endif
+            ax.set_xlabel(xlabel, fontsize=9.5)
+            if icol == 0:
+                ax.set_ylabel(row_label + "\nunit-normalized", fontsize=9.5)
+            else:
+                ax.set_ylabel("unit-normalized", fontsize=9.5)
+            #endif
+
+            ax.set_xlim(edges[0], edges[-1])
+            ax.tick_params(axis="both", labelsize=8)
+            ax.grid(alpha=0.18)
+
+            # Make the new second-row cut visually obvious on Mx2_1.
+            if key == "Mx2_1":
+                ax.axvline(
+                    0.15,
+                    linestyle="--",
+                    linewidth=1.0,
+                    color="0.35",
+                )
+            #endif
         #endfor
-
-        ax.set_title(title, fontsize=11)
-        ax.set_xlabel(xlabel, fontsize=9.5)
-        ax.set_ylabel("unit-normalized", fontsize=9.5)
-        ax.set_xlim(edges[0], edges[-1])
-        ax.tick_params(axis="both", labelsize=8)
-        ax.grid(alpha=0.18)
     #endfor
-
-    axes[0].legend(fontsize=8.5, frameon=False)
 
     region_text = (
         rf"FT: ${FT_THETA_MIN_DEG:.1f}^\circ\leq\theta_\gamma"
@@ -616,26 +708,48 @@ def make_canvas(
         rf"<{FD_THETA_MAX_DEG:.1f}^\circ$"
     )
 
-    count_text = ", ".join(
+    row1_counts = ", ".join(
         f"{sample_meta[key][0]}={sample_counts[key][region]:,}"
+        for key, _label, _color in SAMPLES
+    )
+    row2_counts = ", ".join(
+        f"{sample_meta[key][0]}="
+        f"{sample_counts[key][region + '_mx2_1_cut']:,}"
         for key, _label, _color in SAMPLES
     )
 
     fig.suptitle(
         f"{period.label}: {region} epgamma shape comparison\n"
-        rf"ONLY selection: $\mathrm{{Angle}}(e,\gamma)>{THETA_EGAMMA_MIN_DEG:.0f}^\circ$; "
+        rf"Row 1 only: $\mathrm{{Angle}}(e,\gamma)>"
+        rf"{THETA_EGAMMA_MIN_DEG:.0f}^\circ$; "
         + region_text
+        + r"; Row 2 additionally: $Mx2_1<0.15$ GeV$^2$"
         + "\n"
-        + count_text,
+        + f"Row 1 counts: {row1_counts}    |    Row 2 counts: {row2_counts}",
         fontsize=11.0,
+        y=0.985,
+    )
+
+    # One boxed canvas-level legend centered immediately beneath the title.
+    fig.legend(
+        legend_handles,
+        legend_labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.895),
+        ncol=3,
+        fontsize=9.5,
+        frameon=True,
+        fancybox=False,
+        edgecolor="black",
     )
 
     fig.subplots_adjust(
-        left=0.045,
+        left=0.050,
         right=0.995,
-        bottom=0.18,
-        top=0.76,
+        bottom=0.09,
+        top=0.80,
         wspace=0.34,
+        hspace=0.42,
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -674,7 +788,10 @@ def process_period(
         )
     #endfor
 
-    sample_hists: Dict[str, Dict[str, Dict[str, np.ndarray]]] = {}
+    sample_hists: Dict[
+        str,
+        Dict[str, Dict[str, Dict[str, np.ndarray]]],
+    ] = {}
     sample_counts: Dict[str, Dict[str, int]] = {}
 
     for sample_key, label, _color in SAMPLES:
@@ -706,6 +823,30 @@ def process_period(
     )
 
 
+def process_period_worker(
+    period: Period,
+    tree_name: str,
+    max_entries: int,
+    step_size: int,
+    output_dir_str: str,
+) -> str:
+    """
+    Picklable process-level wrapper for one run period.
+
+    Each worker streams that period's data, AAO, and DVCSgen files
+    sequentially. FT and FD are filled simultaneously within each file,
+    avoiding nested ROOT I/O parallelism.
+    """
+    process_period(
+        period,
+        tree_name,
+        max_entries,
+        step_size,
+        Path(output_dir_str),
+    )
+    return period.key
+
+
 def main() -> int:
     args = parse_args()
 
@@ -714,6 +855,9 @@ def main() -> int:
     #endif
     if args.step_size <= 0:
         raise ValueError("--step-size must be > 0.")
+    #endif
+    if args.workers <= 0:
+        raise ValueError("--workers must be > 0.")
     #endif
 
     selected_keys = set(args.period or [p.key for p in PERIODS])
@@ -733,15 +877,50 @@ def main() -> int:
         f"FD {FD_THETA_MIN_DEG:.1f}-{FD_THETA_MAX_DEG:.1f} deg."
     )
 
-    for period in selected_periods:
-        process_period(
-            period,
-            args.tree,
-            args.max_entries,
-            args.step_size,
-            output_dir,
-        )
-    #endfor
+    n_workers = min(int(args.workers), len(selected_periods))
+    log(
+        f"Period-level parallelism: {n_workers} process(es) for "
+        f"{len(selected_periods)} selected period(s)."
+    )
+
+    if n_workers == 1:
+        for period in selected_periods:
+            process_period(
+                period,
+                args.tree,
+                args.max_entries,
+                args.step_size,
+                output_dir,
+            )
+        #endfor
+    else:
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            future_to_period = {
+                executor.submit(
+                    process_period_worker,
+                    period,
+                    args.tree,
+                    args.max_entries,
+                    args.step_size,
+                    str(output_dir),
+                ): period
+                for period in selected_periods
+            }
+
+            for future in as_completed(future_to_period):
+                period = future_to_period[future]
+                try:
+                    completed_key = future.result()
+                    log(f"{period.label}: worker completed ({completed_key}).")
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Parallel concept-study processing failed for "
+                        f"{period.label}: {exc}"
+                    ) from exc
+                #endtry
+            #endfor
+        #endwith
+    #endif
 
     log(f"Done. Outputs are in {output_dir}")
     return 0
