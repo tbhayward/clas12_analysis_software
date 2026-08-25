@@ -16,12 +16,13 @@ measurement in CLAS12 RGA.
 
 RUN-GROUP DEMO OVERRIDE
 -----------------------
-Use --run-group-demo-tight to impose a deliberately tight, transparent
-pi0-enrichment test selection:
+Use --run-group-demo-tight for a deliberately tight, end-to-end preliminary
+run-group demonstration:
   * E_tag >= 2.0 GeV
   * E_miss (= E_probe^pred) < 2.0 GeV
-The override leaves the remaining nominal Stage-II denominator selections and
-template-fit machinery unchanged.
+  * keep the full morphed/nuisance pi0-vs-DVCS/BH composition fit
+  * keep reconstructed eppi0 association and the final data/MC efficiency
+  * skip CLASDIS and development-only Stage-I/grand diagnostics for speed
 
 CURRENT USER-FACING WORKFLOW
 ----------------------------
@@ -9144,12 +9145,11 @@ def parse_args() -> argparse.Namespace:
         "--run-group-demo-tight",
         action="store_true",
         help=(
-            "Run-group/demo override for a deliberately tight pi0-enriched "
-            "denominator selection. It enforces E_tag >= 2.0 GeV and "
-            "E_miss (= E_probe^pred) < 2.0 GeV before the normal Stage-II "
-            "composition fit. All other nominal denominator selections remain "
-            "unchanged. Intended as a transparent demonstration/diagnostic, "
-            "not as the default production prescription."
+            "End-to-end run-group/demo override. Enforces E_tag >= 2.0 GeV "
+            "and E_miss (= E_probe^pred) < 2.0 GeV; preserves the full "
+            "morphed/nuisance pi0-vs-DVCS/BH fit, reconstructed eppi0 "
+            "association, and final data/MC efficiency; skips CLASDIS and "
+            "development-only Stage-I/grand diagnostics for speed."
         ),
     )
     parser.add_argument(
@@ -15937,7 +15937,10 @@ def preflight_nsidis_study(
             #endif
         #endif
 
-        if period.clasdis_epgamma_mc is not None:
+        if (
+            not bool(args_dict.get("run_group_demo_tight", False))
+            and period.clasdis_epgamma_mc is not None
+        ):
             clasdis_path = Path(period.clasdis_epgamma_mc)
             if clasdis_path.exists():
                 checks.append(
@@ -17817,7 +17820,13 @@ def process_nsidis_study_period(
         #endif
 
         clasdis_f = None
-        if period.clasdis_epgamma_mc is not None:
+        if bool(args_dict.get("run_group_demo_tight", False)):
+            log(
+                f"{period.label}: RUN-GROUP DEMO: CLASDIS disabled "
+                "for speed; only aaogen pi0 and dvcsgen BH/DVCS templates "
+                "enter the denominator composition fit."
+            )
+        elif period.clasdis_epgamma_mc is not None:
             clasdis_path = Path(period.clasdis_epgamma_mc)
             if clasdis_path.exists():
                 log(
@@ -17881,11 +17890,19 @@ def process_nsidis_study_period(
             )
         else:
             derived_mm2_max = fallback_mm2_max
-            log(
-                f"{period.label}: WARNING: CLASDIS is unavailable, so the "
-                f"fallback M_X^2(epX) upper cut {derived_mm2_max:.4f} GeV^2 "
-                "will be used in both FD and FT."
-            )
+            if bool(args_dict.get("run_group_demo_tight", False)):
+                log(
+                    f"{period.label}: RUN-GROUP DEMO: using configured "
+                    f"M_X^2(epX) upper cut {derived_mm2_max:.4f} GeV^2 "
+                    "because CLASDIS is intentionally disabled."
+                )
+            else:
+                log(
+                    f"{period.label}: WARNING: CLASDIS is unavailable, so the "
+                    f"fallback M_X^2(epX) upper cut {derived_mm2_max:.4f} GeV^2 "
+                    "will be used in both FD and FT."
+                )
+            #endif
         #endif
         args_dict["den_fit_mm2_max"] = float(derived_mm2_max)
 
@@ -17919,29 +17936,36 @@ def process_nsidis_study_period(
             "uncertainty_support": central_support,
         }
 
-        make_nsidis_shape_comparison_canvases(
-            period, ns_epg_f, pi0_f, dvcs_f, stage1_outdir,
-            clasdis_f=clasdis_f,
-            ft_theta_max=ft_theta_max,
-            max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
-            mm2_min=float(args_dict["den_fit_mm2_min"]),
-            mm2_max=float(args_dict["den_fit_mm2_max"]),
-            probe_m2_max=central_support,
-        )
+        if bool(args_dict.get("run_group_demo_tight", False)):
+            log(
+                f"{period.label}: RUN-GROUP DEMO: skipping development-only "
+                "Stage-I shape-comparison and grand-diagnostic canvases. "
+                "Nominal morphed composition-fit canvases and Stage-III "
+                "efficiency outputs remain enabled."
+            )
+        else:
+            make_nsidis_shape_comparison_canvases(
+                period, ns_epg_f, pi0_f, dvcs_f, stage1_outdir,
+                clasdis_f=clasdis_f,
+                ft_theta_max=ft_theta_max,
+                max_probe_energy=float(args_dict["nsidis_pilot_energy_max"]),
+                mm2_min=float(args_dict["den_fit_mm2_min"]),
+                mm2_max=float(args_dict["den_fit_mm2_max"]),
+                probe_m2_max=central_support,
+            )
+
+            # Keep the full visual diagnostic suite in ordinary production.
+            run_grand_stage1_diagnostics_for_period(
+                period,
+                args_dict,
+                production_root,
+            )
+        #endif
 
         if clasdis_f is not None:
             del clasdis_f
             del clasdis_epg
         #endif
-
-        # Keep the full visual diagnostic suite in ordinary production runs.
-        # It is intentionally generated from a bounded, independent read so
-        # the exploratory branch inventory does not bloat Stage-2/3 memory.
-        run_grand_stage1_diagnostics_for_period(
-            period,
-            args_dict,
-            production_root,
-        )
 
         pilot_nsidis_rows = run_nsidis_three_variable_nominal_fits(
             period, ns_epg_f, pi0_f, dvcs_f,
@@ -19932,6 +19956,13 @@ def main() -> int:
     if args.run_group_demo_tight:
         args.tag_min = 2.0
         args.den_probe_energy_max = 2.0
+        log(
+            "RUN-GROUP DEMO TIGHT MODE: E_tag >= 2 GeV and "
+            "E_miss (= E_probe^pred) < 2 GeV. CLASDIS and development-only "
+            "Stage-I/grand diagnostics are disabled for speed. The full "
+            "morphed/nuisance pi0-vs-DVCS/BH fit, reconstructed eppi0 "
+            "association, and final data/MC efficiency extraction remain on."
+        )
     #endif
 
     if args.max_entries < 0:
