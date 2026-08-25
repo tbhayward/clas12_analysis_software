@@ -1959,11 +1959,9 @@ def fit_real_data_two_templates(
     js_value = js_from_closure
 
     if feature is not None:
-        ifeature = FEATURE_INDEX[feature]
-        edges = closure_quantile_edges(
-            pi_selected[:, ifeature],
-            dvcs_selected[:, ifeature],
-            n_bins,
+        edges = data_fit_edges_for_feature(
+            feature,
+            n_bins=n_bins,
         )
         if edges.size == 0:
             feature = None
@@ -1971,11 +1969,17 @@ def fit_real_data_two_templates(
     #endif
 
     if feature is None:
-        feature, edges, js_value = best_template_feature_for_events(
+        feature, _quantile_edges, js_value = best_template_feature_for_events(
             pi_selected,
             dvcs_selected,
             n_bins,
         )
+        if feature is not None:
+            edges = data_fit_edges_for_feature(
+                feature,
+                n_bins=n_bins,
+            )
+        #endif
     #endif
 
     if feature is None or edges is None or edges.size < 5:
@@ -1988,17 +1992,52 @@ def fit_real_data_two_templates(
 
     ifeature = FEATURE_INDEX[feature]
 
-    p_pi0 = closure_histogram_probabilities(
+    pi_values_all = np.asarray(
         pi_selected[:, ifeature],
+        dtype=float,
+    )
+    dvcs_values_all = np.asarray(
+        dvcs_selected[:, ifeature],
+        dtype=float,
+    )
+    data_values_all = np.asarray(
+        data_selected[:, ifeature],
+        dtype=float,
+    )
+
+    fit_min = float(edges[0])
+    fit_max = float(edges[-1])
+
+    pi_in_range = (
+        np.isfinite(pi_values_all)
+        & (pi_values_all >= fit_min)
+        & (pi_values_all < fit_max)
+    )
+    dvcs_in_range = (
+        np.isfinite(dvcs_values_all)
+        & (dvcs_values_all >= fit_min)
+        & (dvcs_values_all < fit_max)
+    )
+    data_in_range = (
+        np.isfinite(data_values_all)
+        & (data_values_all >= fit_min)
+        & (data_values_all < fit_max)
+    )
+
+    p_pi0 = closure_histogram_probabilities(
+        pi_values_all[pi_in_range],
         edges,
     )
     p_dvcs = closure_histogram_probabilities(
-        dvcs_selected[:, ifeature],
+        dvcs_values_all[dvcs_in_range],
         edges,
     )
+    js_value = jensen_shannon_divergence(
+        p_pi0,
+        p_dvcs,
+    )
 
-    data_values = data_selected[:, ifeature]
-    data_values = data_values[np.isfinite(data_values)]
+    data_values = data_values_all[data_in_range]
     data_counts, _ = np.histogram(data_values, bins=edges)
 
     if np.sum(data_counts) < 20:
@@ -2042,14 +2081,57 @@ def fit_real_data_two_templates(
         "ndf": int(ndf),
         "deviance_per_ndf": float(deviance / ndf),
         "n_data": int(n_data),
-        "n_pi0_template": int(pi_selected.shape[0]),
-        "n_dvcs_template": int(dvcs_selected.shape[0]),
+        "n_data_selected_total": int(data_selected.shape[0]),
+        "n_pi0_template": int(np.count_nonzero(pi_in_range)),
+        "n_pi0_template_selected_total": int(pi_selected.shape[0]),
+        "n_dvcs_template": int(np.count_nonzero(dvcs_in_range)),
+        "n_dvcs_template_selected_total": int(dvcs_selected.shape[0]),
+        "fit_range_min": float(fit_min),
+        "fit_range_max": float(fit_max),
+        "data_in_range_fraction": float(
+            n_data / max(int(data_selected.shape[0]), 1)
+        ),
+        "pi0_in_range_fraction": float(
+            np.count_nonzero(pi_in_range)
+            / max(int(pi_selected.shape[0]), 1)
+        ),
+        "dvcs_in_range_fraction": float(
+            np.count_nonzero(dvcs_in_range)
+            / max(int(dvcs_selected.shape[0]), 1)
+        ),
         "edges": np.asarray(edges, dtype=float),
         "data_counts": np.asarray(data_counts, dtype=float),
         "expected_total": np.asarray(expected_total, dtype=float),
         "expected_pi0": np.asarray(expected_pi0, dtype=float),
         "expected_dvcs": np.asarray(expected_dvcs, dtype=float),
     }
+
+
+
+def data_fit_edges_for_feature(
+    feature: str,
+    n_bins: int = 30,
+) -> np.ndarray:
+    """
+    Fixed-width, physically bounded histogram edges for the REAL-DATA fit.
+
+    Unlike the closure study, which deliberately uses quantile bins for stable
+    pseudoexperiment statistics, the real-data composition fit uses the
+    established plotting range for the selected discriminator.  Events outside
+    this range are explicitly excluded rather than being absorbed into a huge
+    terminal quantile bin.
+    """
+    for key, _title, _xlabel, x_min, x_max, _plot_bins in PLOT_SPECS:
+        if key == feature:
+            return np.linspace(
+                float(x_min),
+                float(x_max),
+                int(n_bins) + 1,
+            )
+        #endif
+    #endfor
+
+    return np.empty(0, dtype=float)
 
 
 def feature_plot_label(feature: str) -> str:
@@ -2075,18 +2157,32 @@ def make_combined_data_template_fit_canvas(
     output_dir: Path,
 ) -> Path:
     """
-    One 4x2 real-data template-fit canvas per period.
+    One real-data template-fit canvas per period.
 
-    Rows are E_probe bins and columns are FD/FT. Each panel is the actual
-    selected real-data distribution with the fitted AAO+DVCSgen composition.
+    Rows are E_probe bins and columns are FD/FT.  Each logical panel has:
+      * top: data + fitted AAO + fitted DVCSgen + total;
+      * bottom: Pearson pull (data-fit)/sqrt(fit).
+
+    The real-data fit uses fixed-width bins over the established physical
+    plotting range of the selected discriminator.  Events outside that range
+    are excluded explicitly, never folded into a giant edge bin.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(
-        len(E_PROBE_BINS),
+    n_energy = len(E_PROBE_BINS)
+    fig = plt.figure(
+        figsize=(14.4, 5.0 * n_energy + 1.2),
+    )
+    grid = fig.add_gridspec(
+        2 * n_energy,
         2,
-        figsize=(14.2, 4.0 * len(E_PROBE_BINS) + 1.2),
-        squeeze=False,
+        height_ratios=[
+            value
+            for _ in range(n_energy)
+            for value in (3.2, 1.0)
+        ],
+        hspace=0.13,
+        wspace=0.20,
     )
 
     legend_handles = []
@@ -2099,7 +2195,12 @@ def make_combined_data_template_fit_canvas(
         )
 
         for icol, region in enumerate(("FD", "FT")):
-            ax = axes[irow, icol]
+            ax = fig.add_subplot(grid[2 * irow, icol])
+            ax_pull = fig.add_subplot(
+                grid[2 * irow + 1, icol],
+                sharex=ax,
+            )
+
             region_summary = bin_summary.get("regions", {}).get(region)
             fit = (
                 region_summary.get("data_fit")
@@ -2124,6 +2225,7 @@ def make_combined_data_template_fit_canvas(
                 ax.set_title(
                     f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
                 )
+                ax_pull.axis("off")
                 continue
             #endif
 
@@ -2131,6 +2233,7 @@ def make_combined_data_template_fit_canvas(
             centers = 0.5 * (edges[:-1] + edges[1:])
             widths = edges[1:] - edges[:-1]
             counts = np.asarray(fit["data_counts"], dtype=float)
+            expected = np.asarray(fit["expected_total"], dtype=float)
 
             data_handle = ax.errorbar(
                 centers,
@@ -2138,13 +2241,13 @@ def make_combined_data_template_fit_canvas(
                 yerr=np.sqrt(np.maximum(counts, 1.0)),
                 xerr=0.5 * widths,
                 fmt="o",
-                markersize=3.5,
+                markersize=3.4,
                 linewidth=1.0,
                 label="data",
             )
             total_handle, = ax.step(
                 centers,
-                fit["expected_total"],
+                expected,
                 where="mid",
                 linewidth=1.8,
                 label="AAO + DVCS fit",
@@ -2181,12 +2284,41 @@ def make_combined_data_template_fit_canvas(
                 ]
             #endif
 
-            ax.set_xlabel(feature_plot_label(fit["feature"]))
             ax.set_ylabel("Events / bin")
             ax.set_title(
                 f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV"
             )
             ax.grid(alpha=0.20)
+
+            pull = (
+                counts - expected
+            ) / np.sqrt(np.maximum(expected, 1.0))
+            ax_pull.axhline(
+                0.0,
+                linewidth=1.0,
+                linestyle="--",
+            )
+            ax_pull.axhline(
+                3.0,
+                linewidth=0.8,
+                linestyle=":",
+            )
+            ax_pull.axhline(
+                -3.0,
+                linewidth=0.8,
+                linestyle=":",
+            )
+            ax_pull.plot(
+                centers,
+                pull,
+                "o",
+                markersize=3.0,
+            )
+            ax_pull.set_ylabel("pull")
+            ax_pull.set_xlabel(
+                feature_plot_label(fit["feature"])
+            )
+            ax_pull.grid(alpha=0.18)
 
             annotation = (
                 f"step {fit['step']}: {fit['feature']}\n"
@@ -2194,7 +2326,12 @@ def make_combined_data_template_fit_canvas(
                 rf"\pm{fit['fraction_pi0_stat']:.3f}$"
                 + "\n"
                 + rf"$D/ndf={fit['deviance_per_ndf']:.2f}$"
-                + f", N={fit['n_data']:,}"
+                + f", N={fit['n_data']:,}\n"
+                + (
+                    f"fit range: {fit['fit_range_min']:.3g} to "
+                    f"{fit['fit_range_max']:.3g}; "
+                    f"data in range={100.0*fit['data_in_range_fraction']:.1f}%"
+                )
             )
             ax.text(
                 0.98,
@@ -2203,13 +2340,16 @@ def make_combined_data_template_fit_canvas(
                 transform=ax.transAxes,
                 ha="right",
                 va="top",
-                fontsize=8.5,
+                fontsize=8.0,
                 bbox={
                     "facecolor": "white",
                     "alpha": 0.86,
                     "edgecolor": "0.6",
                 },
             )
+
+            # Keep shared x tick labels only on the pull panel.
+            plt.setp(ax.get_xticklabels(), visible=False)
         #endfor
     #endfor
 
@@ -2218,7 +2358,7 @@ def make_combined_data_template_fit_canvas(
             legend_handles,
             legend_labels,
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.978),
+            bbox_to_anchor=(0.5, 0.982),
             ncol=4,
             frameon=True,
         )
@@ -2230,18 +2370,17 @@ def make_combined_data_template_fit_canvas(
         y=0.999,
     )
     fig.subplots_adjust(
-        left=0.08,
+        left=0.075,
         right=0.985,
-        bottom=0.055,
-        top=0.93,
-        wspace=0.20,
-        hspace=0.42,
+        bottom=0.035,
+        top=0.945,
     )
 
     out = output_dir / f"data_template_fit_{period.key}.png"
     fig.savefig(out, dpi=180)
     plt.close(fig)
     return out
+
 
 
 def make_pi0_fraction_summary_canvas(
