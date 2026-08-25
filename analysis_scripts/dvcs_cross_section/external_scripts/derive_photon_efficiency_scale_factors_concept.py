@@ -252,10 +252,32 @@ E_PROBE_BINS: Tuple[Tuple[str, float, float], ...] = (
 
 # Adjacent Mx2_1 slices used only to validate whether the empirical
 # nonexclusive sideband shape is stable as one approaches the signal region.
+# The composition fit is deliberately kept below the eta region.
+#
+#   signal:       Mx2_1 < 0.15 GeV^2
+#   near SB:      0.15 <= Mx2_1 < 0.19 GeV^2  (fit template)
+#   farther SB:   0.19 <= Mx2_1 < 0.23 GeV^2  (transfer validation)
+#
+# The eta mass-squared is ~0.300 GeV^2, so neither sideband approaches the
+# exclusive eta peak.  A separate eta-control region is retained only as a
+# diagnostic so possible eta contamination remains visible rather than being
+# silently discarded.
+SIGNAL_MX2_1_MAX = 0.15
+NEAR_SIDEBAND_MIN = 0.15
+NEAR_SIDEBAND_MAX = 0.19
+FAR_SIDEBAND_MIN = 0.19
+FAR_SIDEBAND_MAX = 0.23
+
+ETA_MASS_GEV = 0.547862
+ETA_MASS2_GEV2 = ETA_MASS_GEV * ETA_MASS_GEV
+PI0_MASS_GEV = 0.134977
+PI0_MASS2_GEV2 = PI0_MASS_GEV * PI0_MASS_GEV
+
+# Used only for the transfer/stability plot.
 SIDEBAND_VALIDATION_SLICES: Tuple[Tuple[str, float, float], ...] = (
-    ("near", 0.15, 0.20),
-    ("mid", 0.20, 0.25),
-    ("far", 0.25, 0.30),
+    ("signal_edge", 0.11, 0.15),
+    ("near", NEAR_SIDEBAND_MIN, NEAR_SIDEBAND_MAX),
+    ("far", FAR_SIDEBAND_MIN, FAR_SIDEBAND_MAX),
 )
 
 # Only these branches are read from the very large epgamma ROOT files.
@@ -573,28 +595,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--optimizer-mx2-1-preselection-max",
         type=float,
-        default=0.30,
+        default=SIGNAL_MX2_1_MAX,
         help=(
-            "Loose exclusivity preselection Mx2_1 < value in GeV^2, applied "
-            "before optimization and in the post-optimizer shape canvases. "
-            "Default: 0.30."
+            "Signal-region exclusivity preselection Mx2_1 < value in GeV^2, "
+            "applied before AAO/DVCS optimization. Default: 0.15."
         ),
     )
     parser.add_argument(
         "--optimizer-data-sideband-min",
         type=float,
-        default=0.20,
+        default=NEAR_SIDEBAND_MIN,
         help=(
-            "Lower Mx2_1 edge in GeV^2 of the real-data sideband used as an "
-            "empirical nonexclusive/SIDIS-like background proxy. Default: 0.20."
+            "Lower Mx2_1 edge of the empirical nonexclusive background proxy. "
+            "Default: 0.15 GeV^2."
         ),
     )
     parser.add_argument(
         "--optimizer-data-sideband-max",
         type=float,
-        default=0.30,
+        default=FAR_SIDEBAND_MAX,
         help=(
-            "Upper Mx2_1 edge in GeV^2 of the real-data sideband. Default: 0.30."
+            "Upper Mx2_1 edge of the empirical background proxy used by the "
+            "optimizer. Default: 0.23 GeV^2, deliberately below eta."
         ),
     )
     parser.add_argument(
@@ -2892,8 +2914,8 @@ def build_sideband_stability_result(
         }
     #endif
 
+    p_signal_edge = slice_events["signal_edge"]
     p_near = slice_events["near"]
-    p_mid = slice_events["mid"]
     p_far = slice_events["far"]
 
     return {
@@ -2904,14 +2926,14 @@ def build_sideband_stability_result(
         "edges": np.asarray(edges, dtype=float),
         "probabilities": slice_events,
         "slice_counts": slice_counts,
-        "js_near_mid": float(
-            jensen_shannon_divergence(p_near, p_mid)
-        ),
-        "js_mid_far": float(
-            jensen_shannon_divergence(p_mid, p_far)
+        "js_signal_edge_near": float(
+            jensen_shannon_divergence(p_signal_edge, p_near)
         ),
         "js_near_far": float(
             jensen_shannon_divergence(p_near, p_far)
+        ),
+        "js_signal_edge_far": float(
+            jensen_shannon_divergence(p_signal_edge, p_far)
         ),
     }
 
@@ -2924,10 +2946,15 @@ def make_sideband_stability_canvas(
     """
     One 4x2 sideband-transfer canvas per period.
 
-    Top panel: unit-normalized shapes in the three adjacent Mx2_1 slices.
-    Bottom panel: ratio to the central 0.20-0.25 GeV^2 slice.
+    The three displayed real-data control slices are:
+      signal edge : 0.11 <= Mx2_1 < 0.15
+      near SB     : 0.15 <= Mx2_1 < 0.19
+      far SB      : 0.19 <= Mx2_1 < 0.23
 
-    The pairwise JS divergences are shown directly in each panel.
+    The near sideband is the actual empirical third template used in the
+    composition fit.  The farther sideband tests transfer stability while
+    staying well below m_eta^2 ~= 0.300 GeV^2.  The signal-edge slice is only
+    a diagnostic because it can already contain AAO/DVCS signal.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     n_energy = len(E_PROBE_BINS)
@@ -2950,14 +2977,13 @@ def make_sideband_stability_canvas(
     legend_labels = []
 
     labels = {
-        "near": r"$0.15\leq Mx2_1<0.20$",
-        "mid": r"$0.20\leq Mx2_1<0.25$",
-        "far": r"$0.25\leq Mx2_1<0.30$",
+        "signal_edge": r"signal edge: $0.11\leq Mx2_1<0.15$",
+        "near": r"near SB: $0.15\leq Mx2_1<0.19$",
+        "far": r"far SB: $0.19\leq Mx2_1<0.23$",
     }
-
     linestyles = {
-        "near": "-",
-        "mid": "--",
+        "signal_edge": "-",
+        "near": "--",
         "far": ":",
     }
 
@@ -3011,12 +3037,12 @@ def make_sideband_stability_canvas(
 
             edges = np.asarray(stability["edges"], dtype=float)
             centers = 0.5 * (edges[:-1] + edges[1:])
-            mid = np.asarray(
-                stability["probabilities"]["mid"],
+            p_near = np.asarray(
+                stability["probabilities"]["near"],
                 dtype=float,
             )
 
-            for slice_key in ("near", "mid", "far"):
+            for slice_key in ("signal_edge", "near", "far"):
                 probs = np.asarray(
                     stability["probabilities"][slice_key],
                     dtype=float,
@@ -3036,12 +3062,12 @@ def make_sideband_stability_canvas(
                     legend_labels.append(labels[slice_key])
                 #endif
 
-                if slice_key != "mid":
+                if slice_key != "near":
                     ratio = np.divide(
                         probs,
-                        mid,
+                        p_near,
                         out=np.full_like(probs, np.nan),
-                        where=mid > 1.0e-12,
+                        where=p_near > 1.0e-12,
                     )
                     ax_ratio.step(
                         centers,
@@ -3065,16 +3091,17 @@ def make_sideband_stability_canvas(
             )
 
             annotation = (
-                rf"$JS_{{near,mid}}={stability['js_near_mid']:.3f}$"
+                rf"$JS_{{near,far}}={stability['js_near_far']:.3f}$"
                 + "\n"
-                + rf"$JS_{{mid,far}}={stability['js_mid_far']:.3f}$"
-                + "\n"
-                + rf"$JS_{{near,far}}={stability['js_near_far']:.3f}$"
+                + (
+                    rf"$JS_{{signal\ edge,near}}="
+                    rf"{stability['js_signal_edge_near']:.3f}$"
+                )
                 + "\n"
                 + (
                     "N=("
+                    f"{stability['slice_counts']['signal_edge']:,}, "
                     f"{stability['slice_counts']['near']:,}, "
-                    f"{stability['slice_counts']['mid']:,}, "
                     f"{stability['slice_counts']['far']:,})"
                 )
             )
@@ -3098,7 +3125,7 @@ def make_sideband_stability_canvas(
                 linestyle="--",
                 linewidth=1.0,
             )
-            ax_ratio.set_ylabel("ratio\nto mid", fontsize=8.5)
+            ax_ratio.set_ylabel("ratio\nto near SB", fontsize=8.5)
             ax_ratio.set_xlabel(
                 feature_plot_label(stability["feature"]),
                 fontsize=9.2,
@@ -3106,7 +3133,6 @@ def make_sideband_stability_canvas(
             )
             ax_ratio.set_ylim(0.0, 2.0)
             ax_ratio.grid(alpha=0.18)
-
             plt.setp(ax.get_xticklabels(), visible=False)
         #endfor
     #endfor
@@ -3123,12 +3149,170 @@ def make_sideband_stability_canvas(
     #endif
 
     fig.suptitle(
-        f"{period.label}: empirical Mx2_1 sideband-shape stability",
+        f"{period.label}: eta-safe Mx2_1 sideband-shape stability",
         fontsize=13,
         y=0.999,
     )
 
     out = output_dir / f"sideband_stability_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
+
+def make_mx2_1_control_region_canvas(
+    period: Period,
+    optimizer_summary: dict,
+    optimizer_events: dict,
+    output_dir: Path,
+) -> Path:
+    """
+    Show where the signal/sideband definitions lie relative to the pi0 and eta
+    missing-mass-squared locations after the selected operating cuts.
+
+    This is diagnostic only; the eta region is never used as a fit template.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(
+        len(E_PROBE_BINS),
+        2,
+        figsize=(13.8, 3.6 * len(E_PROBE_BINS) + 1.2),
+        squeeze=False,
+    )
+
+    bins = np.linspace(-0.05, 0.40, 91)
+    centers = 0.5 * (bins[:-1] + bins[1:])
+
+    for irow, (bin_key, e_min, e_max) in enumerate(E_PROBE_BINS):
+        for icol, region in enumerate(("FD", "FT")):
+            ax = axes[irow, icol]
+
+            region_summary = (
+                optimizer_summary.get("energy_bins", {})
+                .get(bin_key, {})
+                .get("regions", {})
+                .get(region)
+            )
+            if region_summary is None:
+                continue
+            #endif
+
+            data_all = optimizer_events["data"][region][bin_key]
+            optimizer_results = region_summary.get("results", [])
+            data_fit = region_summary.get("data_fit", {})
+            chosen_step = int(data_fit.get("step", 0))
+
+            masks = build_cumulative_optimizer_masks(
+                data_all,
+                optimizer_results,
+            )
+            chosen_step = min(chosen_step, len(masks) - 1)
+            selected = data_all[masks[chosen_step]]
+
+            values = np.asarray(
+                selected[:, FEATURE_INDEX["Mx2_1"]],
+                dtype=float,
+            )
+            values = values[np.isfinite(values)]
+
+            counts, _ = np.histogram(values, bins=bins)
+            y = counts.astype(float)
+            if np.sum(y) > 0.0:
+                y /= np.sum(y)
+            #endif
+
+            ax.step(
+                centers,
+                y,
+                where="mid",
+                linewidth=1.4,
+                label="data",
+            )
+
+            for x_value, linestyle in (
+                (SIGNAL_MX2_1_MAX, "--"),
+                (NEAR_SIDEBAND_MAX, "--"),
+                (FAR_SIDEBAND_MAX, "--"),
+            ):
+                ax.axvline(
+                    x_value,
+                    linestyle=linestyle,
+                    linewidth=1.0,
+                )
+            #endfor
+
+            ax.axvline(
+                PI0_MASS2_GEV2,
+                linestyle=":",
+                linewidth=1.2,
+            )
+            ax.axvline(
+                ETA_MASS2_GEV2,
+                linestyle=":",
+                linewidth=1.2,
+            )
+
+            ax.text(
+                PI0_MASS2_GEV2,
+                0.97,
+                r"$m_{\pi^0}^2$",
+                transform=ax.get_xaxis_transform(),
+                rotation=90,
+                va="top",
+                ha="right",
+                fontsize=8,
+            )
+            ax.text(
+                ETA_MASS2_GEV2,
+                0.97,
+                r"$m_{\eta}^2$",
+                transform=ax.get_xaxis_transform(),
+                rotation=90,
+                va="top",
+                ha="right",
+                fontsize=8,
+            )
+
+            ax.axvspan(
+                -0.05,
+                SIGNAL_MX2_1_MAX,
+                alpha=0.08,
+            )
+            ax.axvspan(
+                NEAR_SIDEBAND_MIN,
+                NEAR_SIDEBAND_MAX,
+                alpha=0.08,
+            )
+            ax.axvspan(
+                FAR_SIDEBAND_MIN,
+                FAR_SIDEBAND_MAX,
+                alpha=0.08,
+            )
+
+            ax.set_xlim(-0.05, 0.40)
+            ax.set_xlabel(r"$Mx2_1=MM^2(epX)$ (GeV$^2$)")
+            ax.set_ylabel("unit-normalized")
+            ax.set_title(
+                f"{region}: {e_min:g} <= E_probe < {e_max:g} GeV; "
+                f"step {chosen_step}",
+                fontsize=9.5,
+            )
+            ax.grid(alpha=0.18)
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        (
+            f"{period.label}: Mx2_1 control regions "
+            "(eta shown but excluded from background template)"
+        ),
+        fontsize=12.5,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.965))
+
+    out = output_dir / f"mx2_1_control_regions_{period.key}.png"
     fig.savefig(out, dpi=180)
     plt.close(fig)
     return out
@@ -3191,11 +3375,11 @@ def write_period_summary_csv(
         "data_fit_ndf",
         "data_fit_deviance_per_ndf",
         "data_fit_n_data",
-        "sideband_js_near_mid",
-        "sideband_js_mid_far",
+        "sideband_js_signal_edge_near",
         "sideband_js_near_far",
+        "sideband_js_signal_edge_far",
+        "sideband_n_signal_edge",
         "sideband_n_near",
-        "sideband_n_mid",
         "sideband_n_far",
     )
 
@@ -3339,21 +3523,21 @@ def write_period_summary_csv(
                 if stability.get("success", False):
                     row.update(
                         {
-                            "sideband_js_near_mid": stability[
-                                "js_near_mid"
-                            ],
-                            "sideband_js_mid_far": stability[
-                                "js_mid_far"
+                            "sideband_js_signal_edge_near": stability[
+                                "js_signal_edge_near"
                             ],
                             "sideband_js_near_far": stability[
                                 "js_near_far"
                             ],
+                            "sideband_js_signal_edge_far": stability[
+                                "js_signal_edge_far"
+                            ],
+                            "sideband_n_signal_edge": stability[
+                                "slice_counts"
+                            ]["signal_edge"],
                             "sideband_n_near": stability[
                                 "slice_counts"
                             ]["near"],
-                            "sideband_n_mid": stability[
-                                "slice_counts"
-                            ]["mid"],
                             "sideband_n_far": stability[
                                 "slice_counts"
                             ]["far"],
@@ -4738,8 +4922,9 @@ def process_period(
                 dvcs_all = optimizer_events["dvcs"][region][bin_key]
                 data_all = optimizer_events["data"][region][bin_key]
 
-                # The target data and empirical sideband template are disjoint.
-                signal_max = optimizer_data_sideband_min
+                # The real-data fit target and empirical third template are
+                # disjoint and eta-safe by construction.
+                signal_max = SIGNAL_MX2_1_MAX
 
                 pi0_events = pi0_all[
                     np.isfinite(pi0_all[:, mx2_idx])
@@ -4753,15 +4938,18 @@ def process_period(
                     np.isfinite(data_all[:, mx2_idx])
                     & (data_all[:, mx2_idx] < signal_max)
                 ]
+
+                # ONLY the closest eta-safe sideband is transported into the
+                # signal region as the empirical third template.
                 sideband_events = data_all[
                     np.isfinite(data_all[:, mx2_idx])
                     & (
                         data_all[:, mx2_idx]
-                        >= optimizer_data_sideband_min
+                        >= NEAR_SIDEBAND_MIN
                     )
                     & (
                         data_all[:, mx2_idx]
-                        < optimizer_data_sideband_max
+                        < NEAR_SIDEBAND_MAX
                     )
                 ]
 
@@ -4893,8 +5081,19 @@ def process_period(
             data_fit_outdir,
         )
         log(
-            f"{period.label}: wrote empirical sideband-stability canvas "
+            f"{period.label}: wrote eta-safe sideband-stability canvas "
             f"{sideband_stability_canvas}"
+        )
+
+        mx2_control_canvas = make_mx2_1_control_region_canvas(
+            period,
+            optimizer_summary,
+            optimizer_events,
+            data_fit_outdir,
+        )
+        log(
+            f"{period.label}: wrote Mx2_1 pi0/sideband/eta control canvas "
+            f"{mx2_control_canvas}"
         )
 
         summary_csv = write_period_summary_csv(
@@ -5169,10 +5368,10 @@ def print_optimizer_summary(
                 )
                 if stability.get("success", False):
                     print(
-                        f"      SIDEBAND SHAPE: JS(0.20-0.25,0.25-0.30)="
-                        f"{stability['js_mid_far']:.4f}; "
-                        f"JS(0.15-0.20,0.20-0.25)="
-                        f"{stability['js_near_mid']:.4f}",
+                        f"      SIDEBAND SHAPE: JS(0.15-0.19,0.19-0.23)="
+                        f"{stability['js_near_far']:.4f}; "
+                        f"JS(signal-edge 0.11-0.15, near SB)="
+                        f"{stability['js_signal_edge_near']:.4f}",
                         flush=True,
                     )
                 #endif
@@ -5220,15 +5419,6 @@ def main() -> int:
         raise ValueError(
             "--optimizer-data-sideband-min must be < "
             "--optimizer-data-sideband-max."
-        )
-    #endif
-    if (
-        args.optimizer_data_sideband_max
-        > args.optimizer_mx2_1_preselection_max
-    ):
-        raise ValueError(
-            "--optimizer-data-sideband-max must be <= "
-            "--optimizer-mx2-1-preselection-max."
         )
     #endif
     if args.optimizer_data_sideband_weight < 0.0:
@@ -5301,7 +5491,8 @@ def main() -> int:
             "real-data AAO+DVCS fit enabled with closure-safe operating-step "
             f"selection (|bias|<={args.data_fit_max_closure_bias:g}, "
             f"RMS<={args.data_fit_max_closure_rms:g}); "
-            "real-data fit uses AAO + DVCSgen + empirical sideband with "
+            "real-data fit uses target Mx2_1<0.15 plus AAO + DVCSgen + "
+            "near empirical sideband 0.15-0.19 GeV^2, with "
             f"AAO-only |shift|<={args.data_fit_morph_shift_max_bins:g} "
             f"and smear<={args.data_fit_morph_smear_max_bins:g} bins."
         )
