@@ -339,9 +339,30 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Optional maximum number of ROOT entries read from EACH CLASDIS tree "
-            "before kinematic matching. Omit for the recommended full CLASDIS "
-            "matching diagnostic; partial cross-tree reads can lose true matches."
+            "Optional aligned CLASDIS quick-read size. The same entry range "
+            "[entry_start, entry_start + N) is read from BOTH epgammaX and "
+            "eppi0X so any preserved cross-tree ordering is retained. "
+            "Omit to read the full trees."
+        ),
+    )
+
+    parser.add_argument(
+        "--clasdis-entry-start",
+        type=int,
+        default=0,
+        help=(
+            "Starting ROOT entry for aligned CLASDIS quick reads. The same "
+            "entry_start is applied to epgammaX and eppi0X. Default: 0."
+        ),
+    )
+
+    parser.add_argument(
+        "--test-clasdis-ordering",
+        action="store_true",
+        help=(
+            "Compare epgammaX[i] directly with eppi0X[i] over the overlapping "
+            "loaded range using the established Cartesian e/p parent-match "
+            "criteria. This tests whether the trees preserve same-order parents."
         ),
     )
 
@@ -426,6 +447,7 @@ def load_dataframe(
     branches: Sequence[str],
     source: str,
     entry_limit: Optional[int] = None,
+    entry_start: int = 0,
 ) -> pd.DataFrame:
     stage_start = time.perf_counter()
     progress(f"LOAD {source}: opening {filename}")
@@ -437,25 +459,37 @@ def load_dataframe(
     with uproot.open(filename) as root_file:
         tree = root_file[tree_name]
         n_total = int(tree.num_entries)
-        if entry_limit is None:
-            n_read = n_total
-        else:
-            n_read = min(int(entry_limit), n_total)
+        start = max(0, int(entry_start))
+
+        if start >= n_total:
+            raise RuntimeError(
+                f"Requested entry_start={start:,} exceeds tree size "
+                f"{n_total:,} for {filename}"
+            )
         #endif
 
+        if entry_limit is None:
+            stop = n_total
+        else:
+            stop = min(start + int(entry_limit), n_total)
+        #endif
+
+        n_read = stop - start
+
         progress(
-            f"LOAD {source}: tree contains {n_total:,} rows; "
-            f"reading {n_read:,} ({100.0*n_read/max(n_total,1):.2f}%)"
+            f"LOAD {source}: tree contains {n_total:,} rows; reading "
+            f"{n_read:,} entries [{start:,}, {stop:,}) "
+            f"({100.0*n_read/max(n_total,1):.2f}% of tree)"
         )
         progress(
             f"LOAD {source}: reading {len(branches)} branches into memory "
-            f"(entry_start=0, entry_stop={n_read:,})"
+            f"(entry_start={start:,}, entry_stop={stop:,})"
         )
 
         df = tree.arrays(
             list(branches),
-            entry_start=0,
-            entry_stop=n_read,
+            entry_start=start,
+            entry_stop=stop,
             library="pd",
         )
     #endwith
@@ -1252,6 +1286,168 @@ def model_scores(
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
+
+def build_same_entry_ordering_diagnostics(
+    epg: pd.DataFrame,
+    eppi0: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Compare epgammaX[i] directly with eppi0X[i] over the overlapping loaded
+    range. This is a diagnostic only; it is not used to define the real match.
+    """
+    n = min(len(epg), len(eppi0))
+
+    if n == 0:
+        return pd.DataFrame()
+    #endif
+
+    left = epg.iloc[:n].reset_index(drop=True)
+    right = eppi0.iloc[:n].reset_index(drop=True)
+
+    left_components = build_ep_cartesian_components(left)
+    right_components = build_ep_cartesian_components(right)
+
+    residuals = {}
+    for component in [
+        "e_px", "e_py", "e_pz",
+        "p_px", "p_py", "p_pz",
+    ]:
+        residuals[f"delta_{component}"] = (
+            left_components[component]
+            - right_components[component]
+        )
+    #endfor
+
+    matrix = np.column_stack(
+        [
+            residuals["delta_e_px"],
+            residuals["delta_e_py"],
+            residuals["delta_e_pz"],
+            residuals["delta_p_px"],
+            residuals["delta_p_py"],
+            residuals["delta_p_pz"],
+        ]
+    )
+
+    scaled_distance = np.sqrt(
+        np.sum(
+            np.square(matrix / MATCH_COMPONENT_TOL_GEV),
+            axis=1,
+        )
+    )
+    max_component = np.max(np.abs(matrix), axis=1)
+
+    diagnostics = pd.DataFrame(residuals)
+    diagnostics["same_entry_scaled_distance"] = scaled_distance
+    diagnostics["same_entry_max_component"] = max_component
+    diagnostics["same_entry_parent_match"] = (
+        (scaled_distance <= MATCH_MAX_SCALED_DISTANCE)
+        & (max_component <= MATCH_COMPONENT_TOL_GEV)
+    )
+
+    return diagnostics
+
+
+def plot_same_entry_ordering_diagnostics(
+    diagnostics: pd.DataFrame,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(diagnostics) == 0:
+        return
+    #endif
+
+    matched = diagnostics["same_entry_parent_match"].to_numpy(dtype=bool)
+    match_fraction = float(np.mean(matched))
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
+
+    distance = diagnostics["same_entry_scaled_distance"].to_numpy(dtype=float)
+    finite_distance = distance[np.isfinite(distance)]
+    distance_max = max(
+        5.0,
+        float(np.quantile(finite_distance, 0.995))
+        if len(finite_distance) > 0 else 5.0,
+    )
+
+    axes[0, 0].hist(
+        distance,
+        bins=120,
+        range=(0.0, distance_max),
+        histtype="step",
+        linewidth=1.6,
+    )
+    axes[0, 0].axvline(
+        MATCH_MAX_SCALED_DISTANCE,
+        linestyle="--",
+        linewidth=1.3,
+    )
+    axes[0, 0].set_xlabel("Same-entry scaled e/p distance")
+    axes[0, 0].set_ylabel("Entry pairs")
+    axes[0, 0].set_title("Same-index parent distance")
+    axes[0, 0].grid(alpha=0.20)
+
+    max_comp = diagnostics["same_entry_max_component"].to_numpy(dtype=float)
+    finite_comp = max_comp[np.isfinite(max_comp)]
+    comp_max = max(
+        5.0 * MATCH_COMPONENT_TOL_GEV,
+        float(np.quantile(finite_comp, 0.995))
+        if len(finite_comp) > 0 else 5.0 * MATCH_COMPONENT_TOL_GEV,
+    )
+
+    axes[0, 1].hist(
+        max_comp,
+        bins=120,
+        range=(0.0, comp_max),
+        histtype="step",
+        linewidth=1.6,
+    )
+    axes[0, 1].axvline(
+        MATCH_COMPONENT_TOL_GEV,
+        linestyle="--",
+        linewidth=1.3,
+    )
+    axes[0, 1].set_xlabel(r"Same-entry $\max_i|\Delta p_i|$ (GeV)")
+    axes[0, 1].set_ylabel("Entry pairs")
+    axes[0, 1].set_title("Maximum Cartesian mismatch")
+    axes[0, 1].grid(alpha=0.20)
+
+    axes[1, 0].scatter(
+        np.arange(len(max_comp)),
+        max_comp,
+        s=2,
+        alpha=0.20,
+    )
+    axes[1, 0].axhline(
+        MATCH_COMPONENT_TOL_GEV,
+        linestyle="--",
+        linewidth=1.3,
+    )
+    axes[1, 0].set_xlabel("Overlapping loaded entry index")
+    axes[1, 0].set_ylabel(r"$\max_i|\Delta p_i|$ (GeV)")
+    axes[1, 0].set_yscale("log")
+    axes[1, 0].set_title("Ordering consistency vs entry")
+    axes[1, 0].grid(alpha=0.20)
+
+    axes[1, 1].bar(
+        ["Same-entry match", "Not same-entry match"],
+        [
+            int(np.count_nonzero(matched)),
+            int(np.count_nonzero(~matched)),
+        ],
+    )
+    axes[1, 1].set_ylabel("Overlapping entry pairs")
+    axes[1, 1].set_title(
+        f"Same-entry parent-match fraction = {100.0*match_fraction:.3f}%"
+    )
+    axes[1, 1].grid(axis="y", alpha=0.20)
+
+    fig.suptitle(
+        f"{title}\nN(overlapping loaded entries)={len(diagnostics):,}"
+    )
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
 
 def _safe_hist_range(
     values: np.ndarray,
@@ -2911,6 +3107,7 @@ def main() -> None:
     progress(
         f"START: period={args.period}, max-events-per-class={args.max_events_per_class}, "
         f"max-clasdis-read={args.max_clasdis_read}, "
+        f"clasdis-entry-start={args.clasdis_entry_start}, "
         f"max-control-events={args.max_control_events}, "
         f"n-estimators={args.n_estimators}, max-depth={args.max_depth}, seed={args.seed}"
     )
@@ -2954,13 +3151,14 @@ def main() -> None:
         progress("I/O MODE: full CLASDIS trees will be read for the control sample")
     else:
         progress(
-            f"I/O MODE: quick CLASDIS read enabled — at most "
-            f"{args.max_clasdis_read:,} rows from each CLASDIS tree"
+            f"I/O MODE: aligned CLASDIS quick read enabled — "
+            f"entry range [{args.clasdis_entry_start:,}, "
+            f"{args.clasdis_entry_start + args.max_clasdis_read:,}) "
+            f"requested from BOTH CLASDIS trees"
         )
         progress(
-            "CLASDIS WARNING: partial cross-tree reads can remove genuine "
-            "eppi0X<->epgammaX partners because the two trees need not share "
-            "entry ordering. Full CLASDIS reads are preferred for diagnostics."
+            "CLASDIS NOTE: aligned reads preserve same-order correspondence "
+            "if the two output trees retained parent-event ordering."
         )
     #endif
 
@@ -2994,6 +3192,7 @@ def main() -> None:
             branches=EPG_REQUIRED_BRANCHES,
             source="clasdis_epg",
             entry_limit=args.max_clasdis_read,
+            entry_start=args.clasdis_entry_start,
         )
 
         clasdis_eppi0 = load_dataframe(
@@ -3002,6 +3201,7 @@ def main() -> None:
             branches=EPPI0_MATCH_BRANCHES,
             source="clasdis_eppi0",
             entry_limit=args.max_clasdis_read,
+            entry_start=args.clasdis_entry_start,
         )
 
         match_output = period_output / "clasdis_matching"
@@ -3016,6 +3216,38 @@ def main() -> None:
             output_path=match_output / "direct_eppi0_detector_topology.png",
             title=f"{args.period}: direct reconstructed-pi0 detector topology",
         )
+
+        if args.test_clasdis_ordering:
+            progress(
+                "CLASDIS ORDER TEST: comparing epgammaX[i] directly with "
+                "eppi0X[i] over the overlapping loaded range"
+            )
+
+            ordering_diag = build_same_entry_ordering_diagnostics(
+                epg=clasdis_epg,
+                eppi0=clasdis_eppi0,
+            )
+
+            n_same = int(
+                np.count_nonzero(
+                    ordering_diag[
+                        "same_entry_parent_match"
+                    ].to_numpy(dtype=bool)
+                )
+            )
+
+            progress(
+                f"CLASDIS ORDER TEST: same-entry parent matches = "
+                f"{n_same:,}/{len(ordering_diag):,} "
+                f"({100.0*n_same/max(len(ordering_diag),1):.4f}%)"
+            )
+
+            plot_same_entry_ordering_diagnostics(
+                diagnostics=ordering_diag,
+                output_path=match_output / "same_entry_ordering_test.png",
+                title=f"{args.period}: CLASDIS same-entry ordering test",
+            )
+        #endif
 
         progress(
             "CLASDIS CONTROL: starting cross-tree e/p kinematic matching "
