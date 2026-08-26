@@ -5,7 +5,7 @@ train_pi0_bdt_intro.py
 Introductory BDT study for identifying reconstructed e'p'gammaX candidates
 that are pi0-like.
 
-Version-1 philosophy
+Version-5 introductory philosophy
 --------------------
 Training labels are intentionally conservative:
 
@@ -73,6 +73,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import time
 import warnings
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -94,6 +95,27 @@ from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors
 from sklearn.ensemble import HistGradientBoostingClassifier
 from sklearn.inspection import permutation_importance
+
+
+# ---------------------------------------------------------------------------
+# Progress reporting
+# ---------------------------------------------------------------------------
+
+PROGRAM_START_TIME = time.perf_counter()
+
+
+def progress(message: str) -> None:
+    """Print a timestamped progress message immediately."""
+    elapsed = time.perf_counter() - PROGRAM_START_TIME
+    print(f"[+{elapsed:8.1f} s] {message}", flush=True)
+
+
+def elapsed_since(start_time: float) -> str:
+    return f"{time.perf_counter() - start_time:.1f} s"
+
+
+def dataframe_memory_mb(df: pd.DataFrame) -> float:
+    return float(df.memory_usage(index=True, deep=True).sum()) / (1024.0 ** 2)
 
 
 # ---------------------------------------------------------------------------
@@ -371,17 +393,24 @@ def load_dataframe(
     branches: Sequence[str],
     source: str,
 ) -> pd.DataFrame:
+    stage_start = time.perf_counter()
+    progress(f"LOAD {source}: opening {filename}")
+
     tree_name = resolve_tree_name(filename, requested_tree)
+    progress(f"LOAD {source}: using tree '{tree_name}'; validating {len(branches)} branches")
     validate_branches(filename, tree_name, branches)
 
-    print(f"[load] {source}: {filename}")
-    print(f"[load] {source}: tree = {tree_name}")
-
+    progress(f"LOAD {source}: reading branches into memory")
     with uproot.open(filename) as root_file:
         df = root_file[tree_name].arrays(list(branches), library="pd")
 
     df = df.reset_index(drop=True)
     df["source"] = source
+
+    progress(
+        f"LOAD {source}: complete — {len(df):,} rows, "
+        f"~{dataframe_memory_mb(df):.1f} MB in memory ({elapsed_since(stage_start)})"
+    )
     return df
 
 
@@ -490,6 +519,7 @@ def match_epgamma_to_eppi0_by_kinematics(
     epg: pd.DataFrame,
     eppi0: pd.DataFrame,
     max_normalized_distance: float = 4.0,
+    query_chunk_size: int = 100_000,
 ) -> pd.DataFrame:
     """
     Construct a pi0-enriched CLASDIS control sample using ONLY reconstructed
@@ -497,25 +527,13 @@ def match_epgamma_to_eppi0_by_kinematics(
 
     MC runnum and evnum are not used anywhere in this matching.
 
-    For every e'p'gammaX row we query the nearest e'p'pi0X row in a scaled
-    electron/proton kinematic space. A second exact calculation then applies
-    the six-dimensional normalized distance
-
-        (Delta e_p / s_e_p)^2 + (Delta e_theta / s_e_theta)^2
-      + (wrapped Delta e_phi / s_e_phi)^2
-      + (Delta p_p / s_p_p)^2 + (Delta p_theta / s_p_theta)^2
-      + (wrapped Delta p_phi / s_p_phi)^2.
-
-    The nearest-neighbor search is only an efficient candidate finder; the
-    final acceptance uses the exact wrapped-angle metric above.
-
-    IMPORTANT:
-      A successful electron/proton match shows that an e'p'gammaX candidate
-      has a kinematically corresponding e'p'pi0X reconstruction. With the
-      current trees it still does not establish photon ancestry, so this is
-      used only as a pi0-enriched control sample, never as a training label.
+    The nearest-neighbor lookup is performed in chunks so that long jobs emit
+    useful progress messages rather than appearing to hang. The nearest-neighbor
+    stage only proposes a candidate; the final acceptance uses the exact
+    six-dimensional normalized distance with wrapped azimuthal differences.
     """
 
+    stage_start = time.perf_counter()
     match_columns = [
         "e_p",
         "e_theta",
@@ -525,20 +543,69 @@ def match_epgamma_to_eppi0_by_kinematics(
         "p1_phi",
     ]
 
+    progress(
+        f"CLASDIS MATCH: preparing kinematic samples — "
+        f"epgammaX={len(epg):,}, eppi0X={len(eppi0):,}"
+    )
+
     left = epg.dropna(subset=match_columns).copy().reset_index(names="_epg_index")
     right = eppi0.dropna(subset=match_columns).copy().reset_index(drop=True)
 
+    progress(
+        f"CLASDIS MATCH: finite e/p kinematics — "
+        f"epgammaX={len(left):,}, eppi0X={len(right):,}"
+    )
+
     if len(left) == 0 or len(right) == 0:
+        progress("CLASDIS MATCH: no usable rows; returning empty control sample")
         return epg.iloc[0:0].copy().reset_index(drop=True)
     #endif
 
+    progress("CLASDIS MATCH: building scaled e/p kinematic embeddings")
     left_embedding = _matching_embedding(left)
     right_embedding = _matching_embedding(right)
 
+    progress(
+        f"CLASDIS MATCH: fitting nearest-neighbor index to "
+        f"{len(right_embedding):,} reconstructed eppi0X candidates"
+    )
+    nn_start = time.perf_counter()
     neighbor_model = NearestNeighbors(n_neighbors=1, algorithm="auto")
     neighbor_model.fit(right_embedding)
-    _, nearest_indices = neighbor_model.kneighbors(left_embedding, return_distance=True)
-    nearest_indices = nearest_indices[:, 0]
+    progress(f"CLASDIS MATCH: nearest-neighbor index ready ({elapsed_since(nn_start)})")
+
+    n_left = len(left_embedding)
+    n_chunks = int(math.ceil(n_left / query_chunk_size))
+    nearest_indices = np.empty(n_left, dtype=np.int64)
+
+    progress(
+        f"CLASDIS MATCH: querying {n_left:,} epgammaX candidates in "
+        f"{n_chunks} chunk(s) of <= {query_chunk_size:,}"
+    )
+    query_start = time.perf_counter()
+
+    for chunk_index in range(n_chunks):
+        lo = chunk_index * query_chunk_size
+        hi = min((chunk_index + 1) * query_chunk_size, n_left)
+        _, chunk_indices = neighbor_model.kneighbors(
+            left_embedding[lo:hi],
+            return_distance=True,
+        )
+        nearest_indices[lo:hi] = chunk_indices[:, 0]
+
+        # Report every chunk for small jobs; approximately every 10% for large jobs.
+        report_every = max(1, n_chunks // 10)
+        if (chunk_index + 1) % report_every == 0 or chunk_index + 1 == n_chunks:
+            frac = 100.0 * hi / n_left
+            progress(
+                f"CLASDIS MATCH: nearest-neighbor query {hi:,}/{n_left:,} "
+                f"({frac:.1f}%)"
+            )
+        #endif
+    #endfor
+
+    progress(f"CLASDIS MATCH: neighbor queries complete ({elapsed_since(query_start)})")
+    progress("CLASDIS MATCH: applying exact wrapped-angle six-dimensional distance")
 
     nearest = right.iloc[nearest_indices].reset_index(drop=True)
 
@@ -573,6 +640,24 @@ def match_epgamma_to_eppi0_by_kinematics(
     matched["control_match"] = True
     matched["control_match_distance"] = normalized_distance[accepted]
 
+    n_accepted = int(np.count_nonzero(accepted))
+    accepted_fraction = 100.0 * n_accepted / len(left)
+    if n_accepted > 0:
+        accepted_distances = normalized_distance[accepted]
+        q50, q90, q99 = np.quantile(accepted_distances, [0.50, 0.90, 0.99])
+        progress(
+            f"CLASDIS MATCH: accepted {n_accepted:,}/{len(left):,} "
+            f"({accepted_fraction:.2f}%); distance median={q50:.3f}, "
+            f"90%={q90:.3f}, 99%={q99:.3f}"
+        )
+    else:
+        progress(
+            f"CLASDIS MATCH: accepted 0/{len(left):,} candidates at "
+            f"distance <= {max_normalized_distance}"
+        )
+    #endif
+
+    progress(f"CLASDIS MATCH: complete ({elapsed_since(stage_start)})")
     return matched.reset_index(drop=True)
 
 
@@ -671,10 +756,19 @@ def train_model(
     # HistGradientBoostingClassifier performs its own internal stratified
     # validation for early stopping. The separately held-out validation sample
     # remains available as an independent diagnostic dataset.
+    fit_start = time.perf_counter()
+    progress(
+        f"BDT FIT: fitting HistGradientBoostingClassifier on "
+        f"{len(train):,} rows x {len(features)} features"
+    )
     model.fit(
         X_train,
         y_train,
         sample_weight=w_train,
+    )
+    progress(
+        f"BDT FIT: complete after {getattr(model, 'n_iter_', '?')} boosting iterations "
+        f"({elapsed_since(fit_start)})"
     )
 
     return model
@@ -897,6 +991,11 @@ def plot_feature_importance(
     X = importance_df[list(features)].to_numpy(dtype=float)
     y = importance_df["label"].to_numpy(dtype=int)
 
+    progress(
+        f"PERMUTATION IMPORTANCE: starting on {len(importance_df):,} held-out rows, "
+        f"{len(features)} features x 3 repeats"
+    )
+    importance_start = time.perf_counter()
     result = permutation_importance(
         model,
         X,
@@ -906,6 +1005,7 @@ def plot_feature_importance(
         random_state=seed,
         n_jobs=1,
     )
+    progress(f"PERMUTATION IMPORTANCE: complete ({elapsed_since(importance_start)})")
 
     importance = np.asarray(result.importances_mean, dtype=float)
     uncertainty = np.asarray(result.importances_std, dtype=float)
@@ -1136,8 +1236,17 @@ def run_region(
     period_output: Path,
 ) -> List[DatasetSummary]:
 
+    region_start = time.perf_counter()
+    progress(f"REGION {region}: starting")
     region_output = period_output / region.lower()
     region_output.mkdir(parents=True, exist_ok=True)
+
+    raw_pos = int(np.count_nonzero(detector_region_mask(aaogen, region)))
+    raw_neg = int(np.count_nonzero(detector_region_mask(dvcsgen, region)))
+    progress(
+        f"REGION {region}: raw detector-selected rows — "
+        f"AAOgen={raw_pos:,}, DVCSgen={raw_neg:,}"
+    )
 
     combined = build_training_sample(
         aaogen=aaogen,
@@ -1150,8 +1259,8 @@ def run_region(
     n_pos = int(np.count_nonzero(combined["label"].to_numpy() == 1))
     n_neg = int(np.count_nonzero(combined["label"].to_numpy() == 0))
 
-    print(
-        f"[{args.period} {region}] training pool: "
+    progress(
+        f"REGION {region}: training pool after optional cap — "
         f"{n_pos:,} AAOgen positives, {n_neg:,} DVCSgen negatives"
     )
 
@@ -1178,8 +1287,8 @@ def run_region(
             args.seed + 10,
         )
 
-        print(
-            f"[{args.period} {region}] CLASDIS matched control: "
+        progress(
+            f"REGION {region}: CLASDIS matched control after detector selection/cap — "
             f"{len(control_region):,} candidates"
         )
     #endif
@@ -1193,12 +1302,21 @@ def run_region(
     roc_comparison: Dict[str, Tuple[np.ndarray, np.ndarray, float]] = {}
 
     for feature_set_name in feature_set_names:
+        feature_start = time.perf_counter()
         features = FEATURE_SETS[feature_set_name]
+        progress(
+            f"REGION {region} / {feature_set_name}: starting with "
+            f"{len(features)} input features"
+        )
 
         model_output = region_output / feature_set_name
         model_output.mkdir(parents=True, exist_ok=True)
 
         working = clean_feature_rows(combined, features)
+        progress(
+            f"REGION {region} / {feature_set_name}: finite-feature cleaning kept "
+            f"{len(working):,}/{len(combined):,} training-pool rows"
+        )
 
         # Clean control rows with the same feature requirements so the model is
         # always evaluated on a compatible input matrix.
@@ -1208,17 +1326,18 @@ def run_region(
             control_clean = None
         #endif
 
+        progress(f"REGION {region} / {feature_set_name}: splitting train/validation/test")
         train, validation, test = train_validation_test_split(
             working,
             args.seed,
         )
 
-        print(
-            f"[{args.period} {region} {feature_set_name}] "
-            f"train={len(train):,}, validation={len(validation):,}, "
-            f"test={len(test):,}"
+        progress(
+            f"REGION {region} / {feature_set_name}: split sizes — "
+            f"train={len(train):,}, validation={len(validation):,}, test={len(test):,}"
         )
 
+        progress(f"REGION {region} / {feature_set_name}: plotting input feature distributions")
         plot_input_feature_distributions(
             train=train,
             features=features,
@@ -1229,6 +1348,7 @@ def run_region(
             ),
         )
 
+        progress(f"REGION {region} / {feature_set_name}: input plots complete; starting BDT fit")
         model = train_model(
             train=train,
             validation=validation,
@@ -1236,6 +1356,7 @@ def run_region(
             seed=args.seed,
         )
 
+        progress(f"REGION {region} / {feature_set_name}: scoring held-out test sample")
         test_scores = model_scores(model, test, features)
 
         if control_clean is not None:
@@ -1244,6 +1365,7 @@ def run_region(
             control_scores = None
         #endif
 
+        progress(f"REGION {region} / {feature_set_name}: making ROC and score-distribution plots")
         roc_auc = plot_roc_curve(
             test=test,
             test_scores=test_scores,
@@ -1264,6 +1386,7 @@ def run_region(
             title=f"{args.period} {region}: {feature_set_name} BDT score",
         )
 
+        progress(f"REGION {region} / {feature_set_name}: starting permutation-importance diagnostic")
         plot_feature_importance(
             model=model,
             test=test,
@@ -1273,6 +1396,7 @@ def run_region(
             seed=args.seed,
         )
 
+        progress(f"REGION {region} / {feature_set_name}: permutation importance complete; making remaining diagnostics")
         plot_score_vs_selected_features(
             test=test,
             test_scores=test_scores,
@@ -1306,6 +1430,7 @@ def run_region(
         # Persist only the compact model/metadata needed to reproduce the
         # classifier. The scientific output of this introductory script is
         # intentionally plot-focused rather than CSV-focused.
+        progress(f"REGION {region} / {feature_set_name}: saving trained model")
         joblib.dump(
             {
                 "model": model,
@@ -1332,19 +1457,21 @@ def run_region(
         )
         summaries.append(summary)
 
-        print(
-            f"[{args.period} {region} {feature_set_name}] "
-            f"held-out test AUC = {roc_auc:.5f}; "
-            f"balanced accuracy at score 0.5 = {balanced_accuracy:.5f}"
+        progress(
+            f"REGION {region} / {feature_set_name}: complete — "
+            f"test AUC={roc_auc:.5f}, balanced accuracy@0.5={balanced_accuracy:.5f} "
+            f"({elapsed_since(feature_start)})"
         )
     #endfor
 
+    progress(f"REGION {region}: making topology-vs-full ROC comparison")
     plot_topology_vs_full_roc(
         roc_data=roc_comparison,
         output_path=region_output / "roc_topology_vs_full.png",
         title=f"{args.period} {region}: topology vs full feature sets",
     )
 
+    progress(f"REGION {region}: complete ({elapsed_since(region_start)})")
     return summaries
 
 
@@ -1354,8 +1481,13 @@ def run_region(
 
 def main() -> None:
     args = parse_args()
+    main_start = time.perf_counter()
 
     np.random.seed(args.seed)
+    progress(
+        f"START: period={args.period}, max-events-per-class={args.max_events_per_class}, "
+        f"max-control-events={args.max_control_events}, seed={args.seed}"
+    )
 
     period_output = Path(args.output_dir) / args.period
     period_output.mkdir(parents=True, exist_ok=True)
@@ -1366,11 +1498,11 @@ def main() -> None:
     clasdis_epg_file = args.clasdis_epg or defaults["clasdis_epg"]
     clasdis_eppi0_file = args.clasdis_eppi0 or defaults["clasdis_eppi0"]
 
-    print(f"[{args.period}] AAOgen e'p'gammaX: {aaogen_epg_file}")
-    print(f"[{args.period}] DVCSgen e'p'gammaX: {dvcsgen_epg_file}")
+    progress(f"INPUT AAOgen e'p'gammaX: {aaogen_epg_file}")
+    progress(f"INPUT DVCSgen e'p'gammaX: {dvcsgen_epg_file}")
     if not args.skip_clasdis_control:
-        print(f"[{args.period}] CLASDIS e'p'gammaX: {clasdis_epg_file}")
-        print(f"[{args.period}] CLASDIS e'p'pi0X: {clasdis_eppi0_file}")
+        progress(f"INPUT CLASDIS e'p'gammaX: {clasdis_epg_file}")
+        progress(f"INPUT CLASDIS e'p'pi0X: {clasdis_eppi0_file}")
     #endif
 
     aaogen = load_dataframe(
@@ -1406,9 +1538,9 @@ def main() -> None:
             source="clasdis_eppi0",
         )
 
-        print(
-            f"[{args.period}] matching CLASDIS e'p'gammaX to reconstructed "
-            f"e'p'pi0X using electron/proton kinematics only..."
+        progress(
+            "CLASDIS CONTROL: starting cross-tree e/p kinematic matching "
+            "(no MC runnum/evnum usage)"
         )
 
         clasdis_control = match_epgamma_to_eppi0_by_kinematics(
@@ -1416,8 +1548,8 @@ def main() -> None:
             eppi0=clasdis_eppi0,
         )
 
-        print(
-            f"[{args.period}] matched CLASDIS control sample: "
+        progress(
+            f"CLASDIS CONTROL: matched sample contains "
             f"{len(clasdis_control):,} e'p'gammaX candidates"
         )
     #endif
@@ -1449,10 +1581,10 @@ def main() -> None:
         )
     #endwith
 
+    progress(f"DONE: complete analysis runtime {elapsed_since(main_start)}")
     print("")
-    print("Done.")
-    print(f"Plots/models: {period_output}")
-    print(f"Numerical summary: {summary_path}")
+    print(f"Plots/models: {period_output}", flush=True)
+    print(f"Numerical summary: {summary_path}", flush=True)
 
 
 if __name__ == "__main__":
