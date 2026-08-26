@@ -93,7 +93,7 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors
-from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.inspection import permutation_importance
 
 
@@ -199,20 +199,21 @@ MATCH_SCALES = {
     "p1_phi": 0.20,      # degrees
 }
 
-# Default scikit-learn histogram gradient-boosting settings are intentionally
-# modest. HistGradientBoostingClassifier is available with scikit-learn and
-# avoids requiring the external xgboost package on ifarm.
+# Introductory boosted-decision-tree settings.
+#
+# We use the classic GradientBoostingClassifier rather than
+# HistGradientBoostingClassifier because the latter behaved pathologically on
+# the current ifarm scikit-learn build. This configuration uses only 100
+# shallow trees and enables sklearn's native verbose fit output so the user can
+# watch the boosting iterations proceed.
 DEFAULT_BDT_PARAMS = {
-    "max_iter": 300,
-    "max_leaf_nodes": 15,
-    "max_depth": 3,
+    "n_estimators": 100,
     "learning_rate": 0.05,
+    "max_depth": 2,
     "min_samples_leaf": 20,
-    "l2_regularization": 1.0,
-    "early_stopping": True,
-    "validation_fraction": 0.15,
-    "n_iter_no_change": 20,
+    "subsample": 0.80,
     "random_state": 42,
+    "verbose": 1,
 }
 
 # Period-specific files. Command-line overrides are still accepted, but the
@@ -344,6 +345,20 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=42,
         help="Random seed.",
+    )
+
+    parser.add_argument(
+        "--n-estimators",
+        type=int,
+        default=100,
+        help="Number of boosted trees per model. Default: 100.",
+    )
+
+    parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=2,
+        help="Maximum depth of each individual decision tree. Default: 2.",
     )
 
     parser.add_argument(
@@ -770,10 +785,16 @@ def class_balancing_weights(labels: np.ndarray) -> np.ndarray:
 # Model training
 # ---------------------------------------------------------------------------
 
-def make_model(seed: int) -> HistGradientBoostingClassifier:
+def make_model(
+    seed: int,
+    n_estimators: int,
+    max_depth: int,
+) -> GradientBoostingClassifier:
     params = dict(DEFAULT_BDT_PARAMS)
     params["random_state"] = seed
-    return HistGradientBoostingClassifier(**params)
+    params["n_estimators"] = int(n_estimators)
+    params["max_depth"] = int(max_depth)
+    return GradientBoostingClassifier(**params)
 
 
 def train_model(
@@ -781,20 +802,28 @@ def train_model(
     validation: pd.DataFrame,
     features: Sequence[str],
     seed: int,
-) -> HistGradientBoostingClassifier:
-    model = make_model(seed)
+    n_estimators: int,
+    max_depth: int,
+) -> GradientBoostingClassifier:
+    model = make_model(
+        seed=seed,
+        n_estimators=n_estimators,
+        max_depth=max_depth,
+    )
 
     X_train = train[list(features)].to_numpy(dtype=float)
     y_train = train["label"].to_numpy(dtype=int)
     w_train = class_balancing_weights(y_train)
 
-    # HistGradientBoostingClassifier performs its own internal stratified
-    # validation for early stopping. The separately held-out validation sample
-    # remains available as an independent diagnostic dataset.
     fit_start = time.perf_counter()
     progress(
-        f"BDT FIT: fitting HistGradientBoostingClassifier on "
-        f"{len(train):,} rows x {len(features)} features"
+        f"BDT FIT: fitting GradientBoostingClassifier on "
+        f"{len(train):,} rows x {len(features)} features; "
+        f"{n_estimators} shallow trees (max_depth={max_depth})"
+    )
+    progress(
+        "BDT FIT: sklearn iteration progress will print below "
+        "(Iter / Train Loss / Remaining Time)"
     )
     model.fit(
         X_train,
@@ -802,15 +831,15 @@ def train_model(
         sample_weight=w_train,
     )
     progress(
-        f"BDT FIT: complete after {getattr(model, 'n_iter_', '?')} boosting iterations "
-        f"({elapsed_since(fit_start)})"
+        f"BDT FIT: complete after {getattr(model, 'n_estimators_', DEFAULT_BDT_PARAMS['n_estimators'])} "
+        f"boosting trees ({elapsed_since(fit_start)})"
     )
 
     return model
 
 
 def model_scores(
-    model: HistGradientBoostingClassifier,
+    model: GradientBoostingClassifier,
     df: pd.DataFrame,
     features: Sequence[str],
 ) -> np.ndarray:
@@ -1007,17 +1036,16 @@ def plot_roc_curve(
 
 
 def plot_feature_importance(
-    model: HistGradientBoostingClassifier,
+    model: GradientBoostingClassifier,
     test: pd.DataFrame,
     features: Sequence[str],
     output_path: Path,
     title: str,
     seed: int,
 ) -> None:
-    # HistGradientBoostingClassifier does not expose impurity-based feature
-    # importances. Use permutation importance on a capped held-out test sample
-    # instead. This is also a more directly interpretable diagnostic: how much
-    # does shuffling each variable degrade the classifier's ROC AUC?
+    # Use permutation importance on a capped held-out test sample. This asks
+    # how much shuffling each variable degrades the classifier's ROC AUC and is
+    # more directly useful here than the tree's built-in impurity importance.
     importance_df = test.copy()
     if len(importance_df) > 20000:
         importance_df = importance_df.sample(n=20000, random_state=seed)
@@ -1389,6 +1417,8 @@ def run_region(
             validation=validation,
             features=features,
             seed=args.seed,
+            n_estimators=args.n_estimators,
+            max_depth=args.max_depth,
         )
 
         progress(f"REGION {region} / {feature_set_name}: scoring held-out test sample")
@@ -1522,7 +1552,8 @@ def main() -> None:
     progress(
         f"START: period={args.period}, max-events-per-class={args.max_events_per_class}, "
         f"max-clasdis-read={args.max_clasdis_read}, "
-        f"max-control-events={args.max_control_events}, seed={args.seed}"
+        f"max-control-events={args.max_control_events}, "
+        f"n-estimators={args.n_estimators}, max-depth={args.max_depth}, seed={args.seed}"
     )
 
     period_output = Path(args.output_dir) / args.period
