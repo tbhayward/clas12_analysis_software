@@ -5,7 +5,7 @@ train_pi0_bdt_intro.py
 Introductory BDT study for identifying reconstructed e'p'gammaX candidates
 that are pi0-like.
 
-Version-5 introductory philosophy
+Version-8 diagnostic philosophy
 --------------------
 Training labels are intentionally conservative:
 
@@ -34,18 +34,24 @@ The MC runnum/evnum branches are never used for matching or event identity.
 CLASDIS cross-tree matching relies only on reconstructed electron/proton
 kinematics.
 
-For each topology it trains two feature configurations:
+Only the topology/exclusivity BDT is trained in this version. Earlier
+iterations showed no meaningful performance gain from additionally supplying
+Q2, W, x, y, t, and tmin, so the production-kinematics BDT has been removed
+to reduce runtime and keep the diagnostic question focused.
 
-    topology:
-        Uses only reconstructed e'p'gammaX topology/exclusivity variables.
+This version adds detailed CLASDIS cross-tree matching diagnostics:
+    * six individual e/p nearest-neighbor residuals;
+    * real-versus-scrambled nearest-neighbor distance;
+    * accepted-match multiplicity per reconstructed e'p'pi0X candidate;
+    * detector composition of matched e'p'gammaX candidates;
+    * matched e'p'gammaX detector versus reconstructed pi0 daughter topology;
+    * BDT score versus CLASDIS match distance;
+    * CLASDIS BDT score for progressively tighter match-quality selections.
 
-    full:
-        Uses the topology variables plus broad production kinematics
-        (Q2, W, x, y, t, tmin).
-
-The comparison is useful because a large improvement from "topology" to
-"full" can indicate that the classifier is exploiting generator phase-space
-differences rather than genuinely learning the one-photon remnant of a pi0.
+The scrambled control destroys the electron-proton correlation in the e'p'pi0X
+sample before repeating the nearest-neighbor search. It therefore provides a
+combinatorial reference for how close unrelated events can appear in the same
+six-dimensional e/p kinematic space.
 
 No reconstructed e'p'pi0X-only variable (for example M_gamma_gamma) is ever
 passed to the BDT.
@@ -154,7 +160,6 @@ PRODUCTION_FEATURES: List[str] = [
 
 FEATURE_SETS: Dict[str, List[str]] = {
     "topology": TOPOLOGY_FEATURES,
-    "full": TOPOLOGY_FEATURES + PRODUCTION_FEATURES,
 }
 
 # Branches needed for detector-region selection, kinematic matching,
@@ -174,7 +179,6 @@ EPG_REQUIRED_BRANCHES: List[str] = sorted(
             "p2_phi",
         ]
         + TOPOLOGY_FEATURES
-        + PRODUCTION_FEATURES
     )
 )
 
@@ -186,6 +190,8 @@ EPPI0_MATCH_BRANCHES: List[str] = [
     "p1_theta",
     "p1_phi",
     "Mh_gammagamma",
+    "detector_gamma1",
+    "detector_gamma2",
 ]
 
 # Matching scales are deliberately fairly tight. Cross-tree MC matching uses
@@ -328,8 +334,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help=(
             "Optional maximum number of ROOT entries read from EACH CLASDIS tree "
-            "before kinematic matching. Recommended for quick pipeline tests. "
-            "Omit for the eventual full CLASDIS control-sample study."
+            "before kinematic matching. Omit for the recommended full CLASDIS "
+            "matching diagnostic; partial cross-tree reads can lose true matches."
         ),
     )
 
@@ -359,12 +365,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=2,
         help="Maximum depth of each individual decision tree. Default: 2.",
-    )
-
-    parser.add_argument(
-        "--skip-full",
-        action="store_true",
-        help="Train only the topology feature set.",
     )
 
     parser.add_argument(
@@ -565,22 +565,165 @@ def _matching_embedding(df: pd.DataFrame) -> np.ndarray:
     )
 
 
+def _nearest_match_diagnostics(
+    left: pd.DataFrame,
+    right: pd.DataFrame,
+    query_chunk_size: int,
+    label: str,
+) -> pd.DataFrame:
+    """
+    For every row in left, find the nearest right-side e/p candidate and return
+    the exact physical residuals plus the six-dimensional normalized distance.
+    """
+
+    left_embedding = _matching_embedding(left)
+    right_embedding = _matching_embedding(right)
+
+    progress(
+        f"CLASDIS MATCH [{label}]: fitting nearest-neighbor index to "
+        f"{len(right_embedding):,} right-side candidates"
+    )
+    neighbor_model = NearestNeighbors(n_neighbors=1, algorithm="auto")
+    neighbor_model.fit(right_embedding)
+
+    n_left = len(left_embedding)
+    n_chunks = int(math.ceil(n_left / query_chunk_size))
+    nearest_indices = np.empty(n_left, dtype=np.int64)
+
+    progress(
+        f"CLASDIS MATCH [{label}]: querying {n_left:,} epgammaX candidates in "
+        f"{n_chunks} chunk(s)"
+    )
+
+    for chunk_index in range(n_chunks):
+        lo = chunk_index * query_chunk_size
+        hi = min((chunk_index + 1) * query_chunk_size, n_left)
+
+        _, chunk_indices = neighbor_model.kneighbors(
+            left_embedding[lo:hi],
+            return_distance=True,
+        )
+        nearest_indices[lo:hi] = chunk_indices[:, 0]
+
+        report_every = max(1, n_chunks // 10)
+        if (chunk_index + 1) % report_every == 0 or chunk_index + 1 == n_chunks:
+            progress(
+                f"CLASDIS MATCH [{label}]: nearest-neighbor query "
+                f"{hi:,}/{n_left:,} ({100.0 * hi / n_left:.1f}%)"
+            )
+        #endif
+    #endfor
+
+    nearest = right.iloc[nearest_indices].reset_index(drop=True)
+
+    delta_e_p = (
+        left["e_p"].to_numpy(dtype=float)
+        - nearest["e_p"].to_numpy(dtype=float)
+    )
+    delta_e_theta = (
+        left["e_theta"].to_numpy(dtype=float)
+        - nearest["e_theta"].to_numpy(dtype=float)
+    )
+    delta_e_phi = angle_difference_deg(
+        left["e_phi"].to_numpy(dtype=float),
+        nearest["e_phi"].to_numpy(dtype=float),
+    )
+    delta_p_p = (
+        left["p1_p"].to_numpy(dtype=float)
+        - nearest["p1_p"].to_numpy(dtype=float)
+    )
+    delta_p_theta = (
+        left["p1_theta"].to_numpy(dtype=float)
+        - nearest["p1_theta"].to_numpy(dtype=float)
+    )
+    delta_p_phi = angle_difference_deg(
+        left["p1_phi"].to_numpy(dtype=float),
+        nearest["p1_phi"].to_numpy(dtype=float),
+    )
+
+    components = np.column_stack(
+        [
+            delta_e_p / MATCH_SCALES["e_p"],
+            delta_e_theta / MATCH_SCALES["e_theta"],
+            delta_e_phi / MATCH_SCALES["e_phi"],
+            delta_p_p / MATCH_SCALES["p1_p"],
+            delta_p_theta / MATCH_SCALES["p1_theta"],
+            delta_p_phi / MATCH_SCALES["p1_phi"],
+        ]
+    )
+    normalized_distance = np.sqrt(np.sum(np.square(components), axis=1))
+
+    diagnostics = pd.DataFrame(
+        {
+            "_epg_index": left["_epg_index"].to_numpy(dtype=int),
+            "_nearest_eppi0_index": nearest["_eppi0_index"].to_numpy(dtype=int),
+            "delta_e_p": delta_e_p,
+            "delta_e_theta": delta_e_theta,
+            "delta_e_phi": delta_e_phi,
+            "delta_p_p": delta_p_p,
+            "delta_p_theta": delta_p_theta,
+            "delta_p_phi": delta_p_phi,
+            "match_distance": normalized_distance,
+            "detector2": left["detector2"].to_numpy(dtype=int),
+            "p2_p": left["p2_p"].to_numpy(dtype=float),
+            "p2_theta": left["p2_theta"].to_numpy(dtype=float),
+        }
+    )
+
+    if "Mh_gammagamma" in nearest.columns:
+        diagnostics["matched_Mh_gammagamma"] = nearest[
+            "Mh_gammagamma"
+        ].to_numpy(dtype=float)
+    #endif
+
+    if "detector_gamma1" in nearest.columns:
+        diagnostics["matched_detector_gamma1"] = nearest[
+            "detector_gamma1"
+        ].to_numpy(dtype=int)
+    #endif
+
+    if "detector_gamma2" in nearest.columns:
+        diagnostics["matched_detector_gamma2"] = nearest[
+            "detector_gamma2"
+        ].to_numpy(dtype=int)
+    #endif
+
+    return diagnostics
+
+
 def match_epgamma_to_eppi0_by_kinematics(
     epg: pd.DataFrame,
     eppi0: pd.DataFrame,
     max_normalized_distance: float = 4.0,
     query_chunk_size: int = 100_000,
-) -> pd.DataFrame:
+    seed: int = 42,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
     Construct a pi0-enriched CLASDIS control sample using ONLY reconstructed
     electron/proton kinematics.
 
-    MC runnum and evnum are not used anywhere in this matching.
+    Returns
+    -------
+    matched:
+        Accepted real CLASDIS e'p'gammaX candidates. These retain the original
+        e'p'gammaX branches and receive detailed match-quality columns.
 
-    The nearest-neighbor lookup is performed in chunks so that long jobs emit
-    useful progress messages rather than appearing to hang. The nearest-neighbor
-    stage only proposes a candidate; the final acceptance uses the exact
-    six-dimensional normalized distance with wrapped azimuthal differences.
+    real_diagnostics:
+        One row per finite e'p'gammaX candidate, containing its nearest real
+        reconstructed e'p'pi0X candidate and the full e/p residual information.
+
+    scrambled_diagnostics:
+        The same nearest-neighbor exercise after destroying the electron-proton
+        association inside the e'p'pi0X sample. This is a combinatorial control.
+
+    Notes
+    -----
+    MC runnum/evnum are never used.
+
+    Multiple e'p'gammaX candidates are explicitly allowed to match the same
+    e'p'pi0X candidate. That multiplicity is one of the diagnostics produced
+    later because one physical e/p event may contribute multiple photon
+    candidates.
     """
 
     stage_start = time.perf_counter()
@@ -598,8 +741,16 @@ def match_epgamma_to_eppi0_by_kinematics(
         f"epgammaX={len(epg):,}, eppi0X={len(eppi0):,}"
     )
 
-    left = epg.dropna(subset=match_columns).copy().reset_index(names="_epg_index")
-    right = eppi0.dropna(subset=match_columns).copy().reset_index(drop=True)
+    left = (
+        epg.dropna(subset=match_columns)
+        .copy()
+        .reset_index(names="_epg_index")
+    )
+    right = (
+        eppi0.dropna(subset=match_columns)
+        .copy()
+        .reset_index(names="_eppi0_index")
+    )
 
     progress(
         f"CLASDIS MATCH: finite e/p kinematics — "
@@ -607,108 +758,131 @@ def match_epgamma_to_eppi0_by_kinematics(
     )
 
     if len(left) == 0 or len(right) == 0:
-        progress("CLASDIS MATCH: no usable rows; returning empty control sample")
-        return epg.iloc[0:0].copy().reset_index(drop=True)
+        progress("CLASDIS MATCH: no usable rows")
+        empty_match = epg.iloc[0:0].copy().reset_index(drop=True)
+        empty_diag = pd.DataFrame()
+        return empty_match, empty_diag, empty_diag.copy()
     #endif
 
-    progress("CLASDIS MATCH: building scaled e/p kinematic embeddings")
-    left_embedding = _matching_embedding(left)
-    right_embedding = _matching_embedding(right)
-
-    progress(
-        f"CLASDIS MATCH: fitting nearest-neighbor index to "
-        f"{len(right_embedding):,} reconstructed eppi0X candidates"
+    progress("CLASDIS MATCH: running REAL nearest-neighbor association")
+    real_diagnostics = _nearest_match_diagnostics(
+        left=left,
+        right=right,
+        query_chunk_size=query_chunk_size,
+        label="REAL",
     )
-    nn_start = time.perf_counter()
-    neighbor_model = NearestNeighbors(n_neighbors=1, algorithm="auto")
-    neighbor_model.fit(right_embedding)
-    progress(f"CLASDIS MATCH: nearest-neighbor index ready ({elapsed_since(nn_start)})")
 
-    n_left = len(left_embedding)
-    n_chunks = int(math.ceil(n_left / query_chunk_size))
-    nearest_indices = np.empty(n_left, dtype=np.int64)
-
-    progress(
-        f"CLASDIS MATCH: querying {n_left:,} epgammaX candidates in "
-        f"{n_chunks} chunk(s) of <= {query_chunk_size:,}"
+    real_diagnostics["accepted"] = (
+        real_diagnostics["match_distance"] <= max_normalized_distance
     )
-    query_start = time.perf_counter()
 
-    for chunk_index in range(n_chunks):
-        lo = chunk_index * query_chunk_size
-        hi = min((chunk_index + 1) * query_chunk_size, n_left)
-        _, chunk_indices = neighbor_model.kneighbors(
-            left_embedding[lo:hi],
-            return_distance=True,
+    # Scrambled control:
+    # Keep the reconstructed electron rows fixed, but independently permute the
+    # proton quantities. This destroys the true e-p event correlation while
+    # retaining the one-particle marginal distributions.
+    progress(
+        "CLASDIS MATCH: constructing SCRAMBLED control by permuting proton "
+        "kinematics relative to the electron"
+    )
+    rng = np.random.default_rng(seed)
+    scrambled_right = right.copy()
+    proton_permutation = rng.permutation(len(scrambled_right))
+
+    for column in ["p1_p", "p1_theta", "p1_phi"]:
+        scrambled_right[column] = (
+            right[column].to_numpy()[proton_permutation]
         )
-        nearest_indices[lo:hi] = chunk_indices[:, 0]
+    #endfor
 
-        # Report every chunk for small jobs; approximately every 10% for large jobs.
-        report_every = max(1, n_chunks // 10)
-        if (chunk_index + 1) % report_every == 0 or chunk_index + 1 == n_chunks:
-            frac = 100.0 * hi / n_left
-            progress(
-                f"CLASDIS MATCH: nearest-neighbor query {hi:,}/{n_left:,} "
-                f"({frac:.1f}%)"
-            )
+    scrambled_diagnostics = _nearest_match_diagnostics(
+        left=left,
+        right=scrambled_right,
+        query_chunk_size=query_chunk_size,
+        label="SCRAMBLED",
+    )
+    scrambled_diagnostics["accepted"] = (
+        scrambled_diagnostics["match_distance"] <= max_normalized_distance
+    )
+
+    accepted = real_diagnostics["accepted"].to_numpy(dtype=bool)
+    matched_diag = real_diagnostics.loc[accepted].copy().reset_index(drop=True)
+
+    matched_indices = matched_diag["_epg_index"].to_numpy(dtype=int)
+    matched = epg.iloc[matched_indices].copy().reset_index(drop=True)
+
+    matched["control_match"] = True
+    matched["control_match_distance"] = matched_diag[
+        "match_distance"
+    ].to_numpy(dtype=float)
+    matched["control_nearest_eppi0_index"] = matched_diag[
+        "_nearest_eppi0_index"
+    ].to_numpy(dtype=int)
+
+    for column in [
+        "delta_e_p",
+        "delta_e_theta",
+        "delta_e_phi",
+        "delta_p_p",
+        "delta_p_theta",
+        "delta_p_phi",
+        "matched_Mh_gammagamma",
+        "matched_detector_gamma1",
+        "matched_detector_gamma2",
+    ]:
+        if column in matched_diag.columns:
+            matched[f"control_{column}"] = matched_diag[column].to_numpy()
         #endif
     #endfor
 
-    progress(f"CLASDIS MATCH: neighbor queries complete ({elapsed_since(query_start)})")
-    progress("CLASDIS MATCH: applying exact wrapped-angle six-dimensional distance")
+    n_accepted = len(matched)
+    accepted_fraction = 100.0 * n_accepted / len(real_diagnostics)
 
-    nearest = right.iloc[nearest_indices].reset_index(drop=True)
-
-    components = np.column_stack(
-        [
-            (left["e_p"].to_numpy() - nearest["e_p"].to_numpy())
-            / MATCH_SCALES["e_p"],
-            (left["e_theta"].to_numpy() - nearest["e_theta"].to_numpy())
-            / MATCH_SCALES["e_theta"],
-            angle_difference_deg(
-                left["e_phi"].to_numpy(),
-                nearest["e_phi"].to_numpy(),
-            )
-            / MATCH_SCALES["e_phi"],
-            (left["p1_p"].to_numpy() - nearest["p1_p"].to_numpy())
-            / MATCH_SCALES["p1_p"],
-            (left["p1_theta"].to_numpy() - nearest["p1_theta"].to_numpy())
-            / MATCH_SCALES["p1_theta"],
-            angle_difference_deg(
-                left["p1_phi"].to_numpy(),
-                nearest["p1_phi"].to_numpy(),
-            )
-            / MATCH_SCALES["p1_phi"],
-        ]
+    n_scrambled_accepted = int(
+        np.count_nonzero(scrambled_diagnostics["accepted"].to_numpy())
+    )
+    scrambled_fraction = (
+        100.0 * n_scrambled_accepted / len(scrambled_diagnostics)
     )
 
-    normalized_distance = np.sqrt(np.sum(np.square(components), axis=1))
-    accepted = normalized_distance <= max_normalized_distance
-
-    matched_indices = left.loc[accepted, "_epg_index"].to_numpy(dtype=int)
-    matched = epg.iloc[matched_indices].copy()
-    matched["control_match"] = True
-    matched["control_match_distance"] = normalized_distance[accepted]
-
-    n_accepted = int(np.count_nonzero(accepted))
-    accepted_fraction = 100.0 * n_accepted / len(left)
     if n_accepted > 0:
-        accepted_distances = normalized_distance[accepted]
-        q50, q90, q99 = np.quantile(accepted_distances, [0.50, 0.90, 0.99])
+        accepted_distances = matched["control_match_distance"].to_numpy()
+        q50, q90, q99 = np.quantile(
+            accepted_distances,
+            [0.50, 0.90, 0.99],
+        )
         progress(
-            f"CLASDIS MATCH: accepted {n_accepted:,}/{len(left):,} "
-            f"({accepted_fraction:.2f}%); distance median={q50:.3f}, "
-            f"90%={q90:.3f}, 99%={q99:.3f}"
+            f"CLASDIS MATCH: REAL accepted {n_accepted:,}/"
+            f"{len(real_diagnostics):,} ({accepted_fraction:.2f}%); "
+            f"distance median={q50:.3f}, 90%={q90:.3f}, 99%={q99:.3f}"
         )
     else:
+        progress("CLASDIS MATCH: REAL accepted zero candidates")
+    #endif
+
+    progress(
+        f"CLASDIS MATCH: SCRAMBLED accepted {n_scrambled_accepted:,}/"
+        f"{len(scrambled_diagnostics):,} ({scrambled_fraction:.2f}%) "
+        f"at the same d <= {max_normalized_distance:.2f} requirement"
+    )
+
+    if n_accepted > 0:
+        unique_pi0 = matched[
+            "control_nearest_eppi0_index"
+        ].nunique()
         progress(
-            f"CLASDIS MATCH: accepted 0/{len(left):,} candidates at "
-            f"distance <= {max_normalized_distance}"
+            f"CLASDIS MATCH: accepted epgammaX candidates map to "
+            f"{unique_pi0:,} unique reconstructed eppi0X candidates; "
+            f"mean multiplicity={n_accepted / max(unique_pi0, 1):.2f}"
         )
     #endif
 
     progress(f"CLASDIS MATCH: complete ({elapsed_since(stage_start)})")
-    return matched.reset_index(drop=True)
+
+    return (
+        matched,
+        real_diagnostics.reset_index(drop=True),
+        scrambled_diagnostics.reset_index(drop=True),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -854,6 +1028,422 @@ def model_scores(
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
+
+def _safe_hist_range(
+    values: np.ndarray,
+    central_quantile: float = 0.995,
+    symmetric: bool = False,
+) -> Tuple[float, float]:
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+
+    if len(values) == 0:
+        return (-1.0, 1.0)
+    #endif
+
+    if symmetric:
+        bound = float(np.quantile(np.abs(values), central_quantile))
+        if bound <= 0.0 or not np.isfinite(bound):
+            bound = 1.0
+        #endif
+        return (-bound, bound)
+    #endif
+
+    low = float(np.quantile(values, 1.0 - central_quantile))
+    high = float(np.quantile(values, central_quantile))
+    if low == high:
+        high = low + 1.0
+    #endif
+    return (low, high)
+
+
+def pi0_detector_topology(
+    gamma1: np.ndarray,
+    gamma2: np.ndarray,
+) -> np.ndarray:
+    """
+    Encode reconstructed pi0 daughter detector topology using detector IDs:
+        0 -> FT
+        1 -> FD
+    """
+    gamma1 = np.asarray(gamma1, dtype=int)
+    gamma2 = np.asarray(gamma2, dtype=int)
+
+    labels = np.full(len(gamma1), "other", dtype=object)
+
+    ftft = (gamma1 == 0) & (gamma2 == 0)
+    ftfd = (
+        ((gamma1 == 0) & (gamma2 == 1))
+        | ((gamma1 == 1) & (gamma2 == 0))
+    )
+    fdfd = (gamma1 == 1) & (gamma2 == 1)
+
+    labels[ftft] = "FT-FT"
+    labels[ftfd] = "FT-FD"
+    labels[fdfd] = "FD-FD"
+
+    return labels
+
+
+def plot_clasdis_match_residuals(
+    real_diag: pd.DataFrame,
+    scrambled_diag: pd.DataFrame,
+    output_path: Path,
+    title: str,
+) -> None:
+    residual_specs = [
+        ("delta_e_p", r"$\Delta p_e$ (GeV)"),
+        ("delta_e_theta", r"$\Delta\theta_e$ (deg)"),
+        ("delta_e_phi", r"$\Delta\phi_e$ (deg)"),
+        ("delta_p_p", r"$\Delta p_p$ (GeV)"),
+        ("delta_p_theta", r"$\Delta\theta_p$ (deg)"),
+        ("delta_p_phi", r"$\Delta\phi_p$ (deg)"),
+    ]
+
+    fig, axes = plt.subplots(2, 3, figsize=(15.0, 8.5))
+    axes = axes.ravel()
+
+    for ax, (column, xlabel) in zip(axes, residual_specs):
+        real_values = real_diag[column].to_numpy(dtype=float)
+        scrambled_values = scrambled_diag[column].to_numpy(dtype=float)
+
+        combined = np.concatenate([real_values, scrambled_values])
+        low, high = _safe_hist_range(
+            combined,
+            central_quantile=0.995,
+            symmetric=True,
+        )
+
+        ax.hist(
+            scrambled_values,
+            bins=100,
+            range=(low, high),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label="Scrambled nearest neighbor",
+        )
+        ax.hist(
+            real_values,
+            bins=100,
+            range=(low, high),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label="Real nearest neighbor",
+        )
+
+        ax.axvline(0.0, linestyle="--", linewidth=1.0)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Normalized density")
+        ax.grid(alpha=0.20)
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=2)
+    fig.suptitle(title, y=1.01)
+    fig.tight_layout()
+
+    save_figure(fig, output_path)
+
+
+def plot_clasdis_match_distance(
+    real_diag: pd.DataFrame,
+    scrambled_diag: pd.DataFrame,
+    max_distance: float,
+    output_path: Path,
+    title: str,
+) -> None:
+    real = real_diag["match_distance"].to_numpy(dtype=float)
+    scrambled = scrambled_diag["match_distance"].to_numpy(dtype=float)
+
+    finite = np.concatenate(
+        [
+            real[np.isfinite(real)],
+            scrambled[np.isfinite(scrambled)],
+        ]
+    )
+
+    if len(finite) == 0:
+        return
+    #endif
+
+    x_max = max(
+        max_distance * 2.0,
+        float(np.quantile(finite, 0.995)),
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+
+    for ax in axes:
+        ax.hist(
+            scrambled,
+            bins=120,
+            range=(0.0, x_max),
+            density=True,
+            histtype="step",
+            linewidth=1.6,
+            label="Scrambled",
+        )
+        ax.hist(
+            real,
+            bins=120,
+            range=(0.0, x_max),
+            density=True,
+            histtype="step",
+            linewidth=1.6,
+            label="Real",
+        )
+        ax.axvline(
+            max_distance,
+            linestyle="--",
+            linewidth=1.4,
+            label=f"Current cut d={max_distance:g}",
+        )
+        ax.set_xlabel("Six-dimensional normalized match distance d")
+        ax.set_ylabel("Normalized density")
+        ax.grid(alpha=0.20)
+    #endfor
+
+    axes[1].set_yscale("log")
+    axes[0].set_title("Linear scale")
+    axes[1].set_title("Log scale")
+    axes[0].legend()
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_clasdis_match_multiplicity(
+    real_diag: pd.DataFrame,
+    n_eppi0: int,
+    max_distance: float,
+    output_path: Path,
+    title: str,
+) -> None:
+    accepted = real_diag.loc[
+        real_diag["match_distance"] <= max_distance
+    ]
+
+    nearest = accepted["_nearest_eppi0_index"].to_numpy(dtype=int)
+
+    counts = np.bincount(
+        nearest,
+        minlength=max(n_eppi0, 1),
+    )
+
+    max_display = max(10, min(50, int(np.quantile(counts, 0.995)) + 2))
+    clipped = np.minimum(counts, max_display)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+
+    bins = np.arange(-0.5, max_display + 1.5, 1.0)
+    axes[0].hist(clipped, bins=bins)
+    axes[0].set_xlabel(
+        f"Accepted epgammaX candidates per eppi0X candidate"
+        + (f" (last bin >= {max_display})" if np.any(counts > max_display) else "")
+    )
+    axes[0].set_ylabel("Number of reconstructed eppi0X candidates")
+    axes[0].set_yscale("log")
+    axes[0].grid(alpha=0.20)
+
+    nonzero = counts[counts > 0]
+    if len(nonzero) > 0:
+        sorted_counts = np.sort(nonzero)[::-1]
+        axes[1].plot(
+            np.arange(1, len(sorted_counts) + 1),
+            sorted_counts,
+            marker=".",
+            linestyle="none",
+            markersize=3,
+        )
+        axes[1].set_yscale("log")
+    #endif
+    axes[1].set_xlabel("Matched eppi0X candidate rank")
+    axes[1].set_ylabel("Accepted epgammaX multiplicity")
+    axes[1].grid(alpha=0.20)
+
+    fig.suptitle(
+        f"{title}\n"
+        f"{len(accepted):,} accepted epgammaX candidates map to "
+        f"{np.count_nonzero(counts):,}/{n_eppi0:,} eppi0X candidates"
+    )
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_clasdis_detector_composition(
+    real_diag: pd.DataFrame,
+    max_distance: float,
+    output_path: Path,
+    title: str,
+) -> None:
+    accepted = real_diag.loc[
+        real_diag["match_distance"] <= max_distance
+    ].copy()
+
+    if len(accepted) == 0:
+        return
+    #endif
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.3))
+
+    detector_categories = ["FT (0)", "FD (1)", "Other"]
+    detector_counts = [
+        int(np.count_nonzero(accepted["detector2"].to_numpy() == 0)),
+        int(np.count_nonzero(accepted["detector2"].to_numpy() == 1)),
+        int(np.count_nonzero(
+            ~np.isin(accepted["detector2"].to_numpy(), [0, 1])
+        )),
+    ]
+
+    axes[0].bar(detector_categories, detector_counts)
+    axes[0].set_ylabel("Accepted matched epgammaX candidates")
+    axes[0].set_title("Matched epgammaX photon detector")
+    axes[0].grid(axis="y", alpha=0.20)
+
+    if (
+        "matched_detector_gamma1" in accepted.columns
+        and "matched_detector_gamma2" in accepted.columns
+    ):
+        pi0_topology = pi0_detector_topology(
+            accepted["matched_detector_gamma1"].to_numpy(),
+            accepted["matched_detector_gamma2"].to_numpy(),
+        )
+
+        row_labels = ["FT epgamma", "FD epgamma"]
+        column_labels = ["FT-FT", "FT-FD", "FD-FD", "other"]
+        matrix = np.zeros((2, 4), dtype=int)
+
+        for row_index, epg_detector in enumerate([0, 1]):
+            row_mask = accepted["detector2"].to_numpy() == epg_detector
+            for column_index, topology in enumerate(column_labels):
+                matrix[row_index, column_index] = int(
+                    np.count_nonzero(row_mask & (pi0_topology == topology))
+                )
+            #endfor
+        #endfor
+
+        image = axes[1].imshow(matrix, aspect="auto")
+        axes[1].set_xticks(
+            np.arange(len(column_labels)),
+            column_labels,
+        )
+        axes[1].set_yticks(
+            np.arange(len(row_labels)),
+            row_labels,
+        )
+        axes[1].set_xlabel("Matched reconstructed pi0 daughter topology")
+        axes[1].set_ylabel("epgammaX p2 detector")
+        axes[1].set_title("Detector-topology association")
+
+        for i in range(matrix.shape[0]):
+            for j in range(matrix.shape[1]):
+                axes[1].text(
+                    j,
+                    i,
+                    f"{matrix[i, j]:,}",
+                    ha="center",
+                    va="center",
+                )
+            #endfor
+        #endfor
+
+        fig.colorbar(image, ax=axes[1], label="Candidate count")
+    else:
+        axes[1].axis("off")
+    #endif
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_control_score_vs_match_distance(
+    control: pd.DataFrame,
+    control_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(control) == 0 or "control_match_distance" not in control.columns:
+        return
+    #endif
+
+    distance = control["control_match_distance"].to_numpy(dtype=float)
+    score = np.asarray(control_scores, dtype=float)
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.8))
+
+    if len(control) > 5_000:
+        hb = ax.hexbin(
+            distance,
+            score,
+            gridsize=55,
+            mincnt=1,
+            bins="log",
+        )
+        fig.colorbar(hb, ax=ax, label="log10(candidate count)")
+    else:
+        ax.scatter(
+            distance,
+            score,
+            s=8,
+            alpha=0.30,
+        )
+    #endif
+
+    ax.set_xlabel("CLASDIS e/p match distance d")
+    ax.set_ylabel("BDT pi0 score")
+    ax.set_ylim(0.0, 1.0)
+    ax.grid(alpha=0.20)
+    ax.set_title(title)
+
+    save_figure(fig, output_path)
+
+
+def plot_control_score_by_match_quality(
+    control: pd.DataFrame,
+    control_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(control) == 0 or "control_match_distance" not in control.columns:
+        return
+    #endif
+
+    distance = control["control_match_distance"].to_numpy(dtype=float)
+    score = np.asarray(control_scores, dtype=float)
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.8))
+
+    thresholds = [1.0, 2.0, 3.0, 4.0]
+    for threshold in thresholds:
+        mask = distance <= threshold
+        if np.count_nonzero(mask) == 0:
+            continue
+        #endif
+
+        ax.hist(
+            score[mask],
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label=f"d <= {threshold:g} (N={np.count_nonzero(mask):,})",
+        )
+    #endfor
+
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Normalized density")
+    ax.set_xlim(0.0, 1.0)
+    ax.grid(alpha=0.20)
+    ax.legend()
+    ax.set_title(title)
+
+    save_figure(fig, output_path)
+
 
 def save_figure(fig: plt.Figure, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1253,38 +1843,6 @@ def plot_control_score_vs_kinematics(
     save_figure(fig, output_path)
 
 
-def plot_topology_vs_full_roc(
-    roc_data: Dict[str, Tuple[np.ndarray, np.ndarray, float]],
-    output_path: Path,
-    title: str,
-) -> None:
-    if len(roc_data) < 2:
-        return
-    #endif
-
-    fig, ax = plt.subplots(figsize=(6.5, 6.0))
-
-    for feature_set_name, (fpr, tpr, roc_auc) in roc_data.items():
-        ax.plot(
-            fpr,
-            tpr,
-            linewidth=2.0,
-            label=f"{feature_set_name}: AUC = {roc_auc:.4f}",
-        )
-    #endfor
-
-    ax.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", label="Random classifier")
-
-    ax.set_xlim(0.0, 1.0)
-    ax.set_ylim(0.0, 1.0)
-    ax.set_xlabel("False-positive rate")
-    ax.set_ylabel("True-positive rate")
-    ax.set_title(title)
-    ax.grid(alpha=0.20)
-    ax.legend(loc="lower right")
-
-    save_figure(fig, output_path)
-
 
 # ---------------------------------------------------------------------------
 # Main per-region training
@@ -1301,11 +1859,14 @@ def run_region(
 
     region_start = time.perf_counter()
     progress(f"REGION {region}: starting")
+
     region_output = period_output / region.lower()
-    region_output.mkdir(parents=True, exist_ok=True)
+    model_output = region_output / "topology"
+    model_output.mkdir(parents=True, exist_ok=True)
 
     raw_pos = int(np.count_nonzero(detector_region_mask(aaogen, region)))
     raw_neg = int(np.count_nonzero(detector_region_mask(dvcsgen, region)))
+
     progress(
         f"REGION {region}: raw detector-selected rows — "
         f"AAOgen={raw_pos:,}, DVCSgen={raw_neg:,}"
@@ -1338,10 +1899,7 @@ def run_region(
 
     if clasdis_control is not None:
         control_region = clasdis_control.loc[
-            detector_region_mask(
-                clasdis_control,
-                region,
-            )
+            detector_region_mask(clasdis_control, region)
         ].copy()
 
         control_region = random_cap(
@@ -1356,188 +1914,191 @@ def run_region(
         )
     #endif
 
-    feature_set_names = ["topology"]
-    if not args.skip_full:
-        feature_set_names.append("full")
+    feature_start = time.perf_counter()
+    features = TOPOLOGY_FEATURES
+
+    progress(
+        f"REGION {region} / topology: starting with "
+        f"{len(features)} input features"
+    )
+
+    working = clean_feature_rows(combined, features)
+
+    progress(
+        f"REGION {region} / topology: finite-feature cleaning kept "
+        f"{len(working):,}/{len(combined):,} training-pool rows"
+    )
+
+    if control_region is not None:
+        control_clean = clean_feature_rows(control_region, features)
+    else:
+        control_clean = None
     #endif
 
-    summaries: List[DatasetSummary] = []
-    roc_comparison: Dict[str, Tuple[np.ndarray, np.ndarray, float]] = {}
+    progress(f"REGION {region} / topology: splitting train/validation/test")
 
-    for feature_set_name in feature_set_names:
-        feature_start = time.perf_counter()
-        features = FEATURE_SETS[feature_set_name]
-        progress(
-            f"REGION {region} / {feature_set_name}: starting with "
-            f"{len(features)} input features"
+    train, validation, test = train_validation_test_split(
+        working,
+        args.seed,
+    )
+
+    progress(
+        f"REGION {region} / topology: split sizes — "
+        f"train={len(train):,}, validation={len(validation):,}, test={len(test):,}"
+    )
+
+    progress(
+        f"REGION {region} / topology: plotting input feature distributions"
+    )
+
+    plot_input_feature_distributions(
+        train=train,
+        features=features,
+        output_path=model_output / "input_feature_distributions.png",
+        title=f"{args.period} {region}: topology-BDT training inputs",
+    )
+
+    progress(
+        f"REGION {region} / topology: input plots complete; starting BDT fit"
+    )
+
+    model = train_model(
+        train=train,
+        validation=validation,
+        features=features,
+        seed=args.seed,
+        n_estimators=args.n_estimators,
+        max_depth=args.max_depth,
+    )
+
+    progress(f"REGION {region} / topology: scoring held-out test sample")
+    test_scores = model_scores(model, test, features)
+
+    if control_clean is not None:
+        control_scores = model_scores(model, control_clean, features)
+    else:
+        control_scores = None
+    #endif
+
+    progress(
+        f"REGION {region} / topology: making ROC and score-distribution plots"
+    )
+
+    roc_auc = plot_roc_curve(
+        test=test,
+        test_scores=test_scores,
+        output_path=model_output / "roc_curve.png",
+        title=f"{args.period} {region}: topology BDT",
+    )
+
+    plot_score_distribution(
+        test=test,
+        test_scores=test_scores,
+        control=control_clean,
+        control_scores=control_scores,
+        output_path=model_output / "bdt_score_distribution.png",
+        title=f"{args.period} {region}: topology BDT score",
+    )
+
+    progress(
+        f"REGION {region} / topology: starting permutation-importance diagnostic"
+    )
+
+    plot_feature_importance(
+        model=model,
+        test=test,
+        features=features,
+        output_path=model_output / "feature_importance.png",
+        title=f"{args.period} {region}: topology feature importance",
+        seed=args.seed,
+    )
+
+    progress(
+        f"REGION {region} / topology: permutation importance complete; "
+        f"making remaining diagnostics"
+    )
+
+    plot_score_vs_selected_features(
+        test=test,
+        test_scores=test_scores,
+        output_path=model_output / "score_vs_selected_features.png",
+        title=f"{args.period} {region}: score behavior on held-out MC",
+    )
+
+    balanced_accuracy = plot_confusion_matrix_at_half(
+        test=test,
+        test_scores=test_scores,
+        output_path=model_output / "confusion_matrix_score_0p5.png",
+        title=f"{args.period} {region}: topology BDT",
+    )
+
+    if (
+        control_clean is not None
+        and control_scores is not None
+        and len(control_clean) > 0
+    ):
+        plot_control_score_vs_kinematics(
+            control=control_clean,
+            control_scores=control_scores,
+            output_path=model_output / "clasdis_control_score_vs_kinematics.png",
+            title=f"{args.period} {region}: CLASDIS matched control",
         )
 
-        model_output = region_output / feature_set_name
-        model_output.mkdir(parents=True, exist_ok=True)
-
-        working = clean_feature_rows(combined, features)
-        progress(
-            f"REGION {region} / {feature_set_name}: finite-feature cleaning kept "
-            f"{len(working):,}/{len(combined):,} training-pool rows"
-        )
-
-        # Clean control rows with the same feature requirements so the model is
-        # always evaluated on a compatible input matrix.
-        if control_region is not None:
-            control_clean = clean_feature_rows(control_region, features)
-        else:
-            control_clean = None
-        #endif
-
-        progress(f"REGION {region} / {feature_set_name}: splitting train/validation/test")
-        train, validation, test = train_validation_test_split(
-            working,
-            args.seed,
-        )
-
-        progress(
-            f"REGION {region} / {feature_set_name}: split sizes — "
-            f"train={len(train):,}, validation={len(validation):,}, test={len(test):,}"
-        )
-
-        progress(f"REGION {region} / {feature_set_name}: plotting input feature distributions")
-        plot_input_feature_distributions(
-            train=train,
-            features=features,
-            output_path=model_output / "input_feature_distributions.png",
+        plot_control_score_vs_match_distance(
+            control=control_clean,
+            control_scores=control_scores,
+            output_path=model_output / "clasdis_score_vs_match_distance.png",
             title=(
-                f"{args.period} {region}: training inputs "
-                f"({feature_set_name} feature set)"
+                f"{args.period} {region}: CLASDIS BDT score vs e/p match quality"
             ),
         )
 
-        progress(f"REGION {region} / {feature_set_name}: input plots complete; starting BDT fit")
-        model = train_model(
-            train=train,
-            validation=validation,
-            features=features,
-            seed=args.seed,
-            n_estimators=args.n_estimators,
-            max_depth=args.max_depth,
-        )
-
-        progress(f"REGION {region} / {feature_set_name}: scoring held-out test sample")
-        test_scores = model_scores(model, test, features)
-
-        if control_clean is not None:
-            control_scores = model_scores(model, control_clean, features)
-        else:
-            control_scores = None
-        #endif
-
-        progress(f"REGION {region} / {feature_set_name}: making ROC and score-distribution plots")
-        roc_auc = plot_roc_curve(
-            test=test,
-            test_scores=test_scores,
-            output_path=model_output / "roc_curve.png",
-            title=f"{args.period} {region}: {feature_set_name} BDT",
-        )
-
-        y_test = test["label"].to_numpy(dtype=int)
-        fpr, tpr, _ = roc_curve(y_test, test_scores)
-        roc_comparison[feature_set_name] = (fpr, tpr, roc_auc)
-
-        plot_score_distribution(
-            test=test,
-            test_scores=test_scores,
+        plot_control_score_by_match_quality(
             control=control_clean,
             control_scores=control_scores,
-            output_path=model_output / "bdt_score_distribution.png",
-            title=f"{args.period} {region}: {feature_set_name} BDT score",
+            output_path=model_output / "clasdis_score_by_match_quality.png",
+            title=(
+                f"{args.period} {region}: CLASDIS score under tighter match cuts"
+            ),
         )
+    #endif
 
-        progress(f"REGION {region} / {feature_set_name}: starting permutation-importance diagnostic")
-        plot_feature_importance(
-            model=model,
-            test=test,
-            features=features,
-            output_path=model_output / "feature_importance.png",
-            title=f"{args.period} {region}: {feature_set_name} feature importance",
-            seed=args.seed,
-        )
+    progress(f"REGION {region} / topology: saving trained model")
 
-        progress(f"REGION {region} / {feature_set_name}: permutation importance complete; making remaining diagnostics")
-        plot_score_vs_selected_features(
-            test=test,
-            test_scores=test_scores,
-            output_path=model_output / "score_vs_selected_features.png",
-            title=f"{args.period} {region}: score behavior on held-out MC",
-        )
+    joblib.dump(
+        {
+            "model": model,
+            "features": list(features),
+            "period": args.period,
+            "region": region,
+            "feature_set": "topology",
+        },
+        model_output / "bdt_model.joblib",
+    )
 
-        balanced_accuracy = plot_confusion_matrix_at_half(
-            test=test,
-            test_scores=test_scores,
-            output_path=model_output / "confusion_matrix_score_0p5.png",
-            title=f"{args.period} {region}: {feature_set_name} BDT",
-        )
+    summary = DatasetSummary(
+        period=args.period,
+        region=region,
+        feature_set="topology",
+        n_positive_total=n_pos,
+        n_negative_total=n_neg,
+        n_train=len(train),
+        n_validation=len(validation),
+        n_test=len(test),
+        n_clasdis_control=0 if control_clean is None else len(control_clean),
+        auc_test=roc_auc,
+        balanced_accuracy_test_at_050=balanced_accuracy,
+    )
 
-        if (
-            control_clean is not None
-            and control_scores is not None
-            and len(control_clean) > 0
-        ):
-            plot_control_score_vs_kinematics(
-                control=control_clean,
-                control_scores=control_scores,
-                output_path=model_output / "clasdis_control_score_vs_kinematics.png",
-                title=(
-                    f"{args.period} {region}: CLASDIS matched-pi0 control "
-                    f"({feature_set_name})"
-                ),
-            )
-        #endif
-
-        # Persist only the compact model/metadata needed to reproduce the
-        # classifier. The scientific output of this introductory script is
-        # intentionally plot-focused rather than CSV-focused.
-        progress(f"REGION {region} / {feature_set_name}: saving trained model")
-        joblib.dump(
-            {
-                "model": model,
-                "features": list(features),
-                "period": args.period,
-                "region": region,
-                "feature_set": feature_set_name,
-            },
-            model_output / "bdt_model.joblib",
-        )
-
-        summary = DatasetSummary(
-            period=args.period,
-            region=region,
-            feature_set=feature_set_name,
-            n_positive_total=n_pos,
-            n_negative_total=n_neg,
-            n_train=len(train),
-            n_validation=len(validation),
-            n_test=len(test),
-            n_clasdis_control=0 if control_clean is None else len(control_clean),
-            auc_test=roc_auc,
-            balanced_accuracy_test_at_050=balanced_accuracy,
-        )
-        summaries.append(summary)
-
-        progress(
-            f"REGION {region} / {feature_set_name}: complete — "
-            f"test AUC={roc_auc:.5f}, balanced accuracy@0.5={balanced_accuracy:.5f} "
-            f"({elapsed_since(feature_start)})"
-        )
-    #endfor
-
-    progress(f"REGION {region}: making topology-vs-full ROC comparison")
-    plot_topology_vs_full_roc(
-        roc_data=roc_comparison,
-        output_path=region_output / "roc_topology_vs_full.png",
-        title=f"{args.period} {region}: topology vs full feature sets",
+    progress(
+        f"REGION {region} / topology: complete — "
+        f"test AUC={roc_auc:.5f}, "
+        f"balanced accuracy@0.5={balanced_accuracy:.5f} "
+        f"({elapsed_since(feature_start)})"
     )
 
     progress(f"REGION {region}: complete ({elapsed_since(region_start)})")
-    return summaries
+    return [summary]
 
 
 # ---------------------------------------------------------------------------
@@ -1598,6 +2159,11 @@ def main() -> None:
             f"I/O MODE: quick CLASDIS read enabled — at most "
             f"{args.max_clasdis_read:,} rows from each CLASDIS tree"
         )
+        progress(
+            "CLASDIS WARNING: partial cross-tree reads can remove genuine "
+            "eppi0X<->epgammaX partners because the two trees need not share "
+            "entry ordering. Full CLASDIS reads are preferred for diagnostics."
+        )
     #endif
 
     aaogen = load_dataframe(
@@ -1617,6 +2183,9 @@ def main() -> None:
     )
 
     clasdis_control: Optional[pd.DataFrame] = None
+    clasdis_real_diagnostics: Optional[pd.DataFrame] = None
+    clasdis_scrambled_diagnostics: Optional[pd.DataFrame] = None
+    n_clasdis_eppi0 = 0
 
     have_clasdis_pair = not args.skip_clasdis_control
 
@@ -1642,15 +2211,61 @@ def main() -> None:
             "(no MC runnum/evnum usage)"
         )
 
-        clasdis_control = match_epgamma_to_eppi0_by_kinematics(
+        n_clasdis_eppi0 = len(clasdis_eppi0)
+
+        (
+            clasdis_control,
+            clasdis_real_diagnostics,
+            clasdis_scrambled_diagnostics,
+        ) = match_epgamma_to_eppi0_by_kinematics(
             epg=clasdis_epg,
             eppi0=clasdis_eppi0,
+            seed=args.seed,
         )
 
         progress(
             f"CLASDIS CONTROL: matched sample contains "
             f"{len(clasdis_control):,} e'p'gammaX candidates"
         )
+
+        match_output = period_output / "clasdis_matching"
+        match_output.mkdir(parents=True, exist_ok=True)
+
+        progress("CLASDIS DIAGNOSTICS: plotting real-vs-scrambled residuals")
+        plot_clasdis_match_residuals(
+            real_diag=clasdis_real_diagnostics,
+            scrambled_diag=clasdis_scrambled_diagnostics,
+            output_path=match_output / "match_residuals_real_vs_scrambled.png",
+            title=f"{args.period}: CLASDIS e/p nearest-neighbor residuals",
+        )
+
+        progress("CLASDIS DIAGNOSTICS: plotting nearest-neighbor distance")
+        plot_clasdis_match_distance(
+            real_diag=clasdis_real_diagnostics,
+            scrambled_diag=clasdis_scrambled_diagnostics,
+            max_distance=4.0,
+            output_path=match_output / "match_distance_real_vs_scrambled.png",
+            title=f"{args.period}: CLASDIS real vs scrambled matching",
+        )
+
+        progress("CLASDIS DIAGNOSTICS: plotting accepted-match multiplicity")
+        plot_clasdis_match_multiplicity(
+            real_diag=clasdis_real_diagnostics,
+            n_eppi0=n_clasdis_eppi0,
+            max_distance=4.0,
+            output_path=match_output / "match_multiplicity.png",
+            title=f"{args.period}: CLASDIS matched-candidate multiplicity",
+        )
+
+        progress("CLASDIS DIAGNOSTICS: plotting detector composition")
+        plot_clasdis_detector_composition(
+            real_diag=clasdis_real_diagnostics,
+            max_distance=4.0,
+            output_path=match_output / "match_detector_composition.png",
+            title=f"{args.period}: CLASDIS matched detector composition",
+        )
+
+        progress("CLASDIS DIAGNOSTICS: matching diagnostic plots complete")
     #endif
 
     all_summaries: List[DatasetSummary] = []
