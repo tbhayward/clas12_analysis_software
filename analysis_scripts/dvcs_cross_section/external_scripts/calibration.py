@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v15.py
+plot_calibration_v16.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -37,6 +37,22 @@ Current modules
    - Known localized dead-channel exclusions are applied, but the global
      PCal lv/lw edge requirement is deliberately NOT applied.
 
+4. Drift-chamber edge-cut determination
+   - Electron and proton tracks are studied separately.
+   - Mean track chi2/ndf is accumulated versus traj_edge_6, traj_edge_18,
+     and traj_edge_36 (DC regions 1, 2, and 3).
+   - Polar-angle bins reproduce the study used to finalize the cuts:
+     5-10, 10-15, 15-20, 20-25, and 25-40 degrees.
+   - Track bending is inferred from particle charge and the period's torus
+     polarity, following the physical inbending/outbending grouping used
+     in the fiducial-cut presentation.
+   - Final reference cuts are shown directly on the plots:
+       outbending: R1 edge>3, R2 edge>3, R3 edge>10
+       inbending:  R1/R2 edge>10 for theta<10 deg, otherwise edge>3;
+                   R3 edge>10
+   - Sector-uniformity summaries and theta-dependence summaries are made
+     for data and MC without applying the DC edge cuts themselves.
+
 Performance model
 -----------------
 One worker process handles one complete run period.  Each ROOT file is read
@@ -61,35 +77,40 @@ output/calibration/calorimeter/after_cuts/pcal/
 output/calibration/calorimeter/after_cuts/ecin/
 output/calibration/calorimeter/after_cuts/ecout/
 output/calibration/calorimeter/edge_cuts/
+output/calibration/drift_chamber/edge_cuts/
 
 Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v15.py
+  python3 external_scripts/plot_calibration_v16.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v15.py --rgc
+  python3 external_scripts/plot_calibration_v16.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v15.py \
+  python3 external_scripts/plot_calibration_v16.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v15.py --skip-ft
+  python3 external_scripts/plot_calibration_v16.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v15.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v16.py --skip-calorimeter
 
 Only the PCal edge-cut / sampling-fraction diagnostics:
 
-  python3 external_scripts/plot_calibration_v15.py --edge-cuts-only
+  python3 external_scripts/plot_calibration_v16.py --edge-cuts-only
+
+Only the drift-chamber edge-cut diagnostics:
+
+  python3 external_scripts/plot_calibration_v16.py --dc-only
 """
 
 from __future__ import annotations
@@ -187,6 +208,39 @@ EDGE_SF_MAX_DEFAULT = 1.2
 EDGE_SF_BINS_DEFAULT = 120
 
 
+DC_PARTICLE_KEYS: tuple[str, ...] = ("electron", "proton")
+DC_PARTICLE_PIDS = np.asarray((11, 2212), dtype=np.int32)
+DC_PARTICLE_LABELS = {
+    "electron": r"$e^{-}$",
+    "proton": r"$p$",
+}
+
+DC_REGION_KEYS: tuple[str, ...] = ("region1", "region2", "region3")
+DC_REGION_LABELS: tuple[str, ...] = ("Region 1", "Region 2", "Region 3")
+DC_EDGE_BRANCHES: tuple[str, ...] = (
+    "traj_edge_6",
+    "traj_edge_18",
+    "traj_edge_36",
+)
+
+# Reproduce the angular binning used in the original DC determination study.
+DC_THETA_EDGES_DEG = np.asarray(
+    (5.0, 10.0, 15.0, 20.0, 25.0, 40.0),
+    dtype=np.float64,
+)
+DC_THETA_LABELS: tuple[str, ...] = (
+    r"$5\leq\theta<10^\circ$",
+    r"$10\leq\theta<15^\circ$",
+    r"$15\leq\theta<20^\circ$",
+    r"$20\leq\theta<25^\circ$",
+    r"$25\leq\theta<40^\circ$",
+)
+
+DC_EDGE_MAX_CM_DEFAULT = 25.0
+DC_EDGE_BIN_WIDTH_CM_DEFAULT = 1.0
+DC_MIN_BIN_COUNT_DEFAULT = 20
+
+
 @dataclass(frozen=True)
 class Dataset:
     key: str
@@ -215,6 +269,8 @@ class HistogramConfig:
     cal_bin_width_cm: float = 4.5
     cal_min_cm: float = 0.0
     cal_max_cm: float = 450.0
+    dc_edge_max_cm: float = DC_EDGE_MAX_CM_DEFAULT
+    dc_edge_bin_width_cm: float = DC_EDGE_BIN_WIDTH_CM_DEFAULT
 
     @property
     def ft_edges(self) -> np.ndarray:
@@ -275,6 +331,26 @@ class HistogramConfig:
         )
 
 
+    @property
+    def dc_edge_edges(self) -> np.ndarray:
+        bins_float = self.dc_edge_max_cm / self.dc_edge_bin_width_cm
+        bins = int(round(bins_float))
+        if not np.isclose(bins_float, bins, rtol=0.0, atol=1.0e-10):
+            raise ValueError(
+                "DC edge maximum must be an integer multiple of "
+                "the DC edge bin width."
+            )
+        #endif
+        return self.dc_edge_bin_width_cm * np.arange(
+            bins + 1,
+            dtype=np.float64,
+        )
+
+    @property
+    def dc_edge_bins(self) -> int:
+        return self.dc_edge_edges.size - 1
+
+
 @dataclass
 class SampleResult:
     ft_before: np.ndarray
@@ -295,6 +371,9 @@ class SampleResult:
     pcal_edge_sf_sums: np.ndarray
     pcal_edge_sf_sums2: np.ndarray
     pcal_edge_sf_2d_counts: np.ndarray
+    dc_counts: np.ndarray
+    dc_chi2_sums: np.ndarray
+    dc_chi2_sums2: np.ndarray
     rows_read: int
     photon_rows: int
     valid_ft_photons: int
@@ -694,6 +773,19 @@ def parse_arguments() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--skip-dc",
+        action="store_true",
+        help="Do not create drift-chamber edge-cut diagnostics.",
+    )
+    parser.add_argument(
+        "--dc-only",
+        action="store_true",
+        help=(
+            "Run only the drift-chamber edge-cut diagnostics. This reads "
+            "only the PID, theta, DC track-quality, sector, and edge branches."
+        ),
+    )
+    parser.add_argument(
         "--ft-bins",
         type=int,
         default=100,
@@ -758,6 +850,26 @@ def parse_arguments() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--dc-edge-max",
+        type=float,
+        default=DC_EDGE_MAX_CM_DEFAULT,
+        help="Maximum DC edge value shown and accumulated, in cm.",
+    )
+    parser.add_argument(
+        "--dc-edge-bin-width",
+        type=float,
+        default=DC_EDGE_BIN_WIDTH_CM_DEFAULT,
+        help="DC edge bin width in cm.",
+    )
+    parser.add_argument(
+        "--dc-min-bin-count",
+        type=int,
+        default=DC_MIN_BIN_COUNT_DEFAULT,
+        help=(
+            "Minimum entries required to display a mean DC chi2/ndf point."
+        ),
+    )
+    parser.add_argument(
         "--dpi",
         type=int,
         default=180,
@@ -766,8 +878,16 @@ def parse_arguments() -> argparse.Namespace:
 
     args = parser.parse_args()
 
-    if args.skip_ft and args.skip_calorimeter:
-        parser.error("--skip-ft and --skip-calorimeter cannot both be set")
+    if args.skip_ft and args.skip_calorimeter and args.skip_dc:
+        parser.error(
+            "--skip-ft, --skip-calorimeter, and --skip-dc cannot all be set"
+        )
+    #endif
+    if args.edge_cuts_only and args.dc_only:
+        parser.error("--edge-cuts-only and --dc-only are mutually exclusive")
+    #endif
+    if args.dc_only and args.skip_dc:
+        parser.error("--dc-only cannot be combined with --skip-dc")
     #endif
     if args.workers <= 0:
         parser.error("--workers must be positive")
@@ -795,6 +915,15 @@ def parse_arguments() -> argparse.Namespace:
     #endif
     if args.edge_min_bin_count <= 0:
         parser.error("--edge-min-bin-count must be positive")
+    #endif
+    if args.dc_edge_max <= 0.0:
+        parser.error("--dc-edge-max must be positive")
+    #endif
+    if args.dc_edge_bin_width <= 0.0:
+        parser.error("--dc-edge-bin-width must be positive")
+    #endif
+    if args.dc_min_bin_count <= 0:
+        parser.error("--dc-min-bin-count must be positive")
     #endif
     if args.edge_cuts_only and args.skip_calorimeter:
         parser.error(
@@ -840,6 +969,215 @@ def choose_datasets(
 
 
 # =============================================================================
+# Drift-chamber helpers
+# =============================================================================
+
+
+def dc_track_bending_category(
+    dataset_key: str,
+    particle_key: str,
+) -> str:
+    """
+    Return the physical track-bending category used in the DC study.
+
+    For an inbending electron-torus setting, negative particles bend inward
+    and positive particles bend outward.  Reversing the torus reverses those
+    assignments.  The current DVCS calibration study uses e- and p.
+    """
+
+    electron_torus_outbending = dataset_key.endswith("_out")
+
+    if particle_key == "electron":
+        return "outbending" if electron_torus_outbending else "inbending"
+    #endif
+
+    if particle_key == "proton":
+        return "inbending" if electron_torus_outbending else "outbending"
+    #endif
+
+    raise ValueError(f"Unsupported DC particle key: {particle_key}")
+
+
+def dc_final_threshold_cm(
+    bending_category: str,
+    region_index: int,
+    theta_deg: float | None = None,
+) -> float:
+    """Return the finalized DC edge threshold for the requested category."""
+
+    if region_index == 2:
+        return 10.0
+    #endif
+
+    if bending_category == "inbending":
+        if theta_deg is not None and theta_deg < 10.0:
+            return 10.0
+        #endif
+        return 3.0
+    #endif
+
+    if bending_category == "outbending":
+        return 3.0
+    #endif
+
+    raise ValueError(f"Unknown bending category: {bending_category}")
+
+
+def empty_dc_moments(
+    histogram_config: HistogramConfig,
+) -> np.ndarray:
+    # Axes:
+    #   particle(e,p), region(1,2,3), sector(1..6),
+    #   theta slot(all + 5 bins), edge bin
+    return np.zeros(
+        (
+            len(DC_PARTICLE_KEYS),
+            len(DC_REGION_KEYS),
+            6,
+            1 + len(DC_THETA_LABELS),
+            histogram_config.dc_edge_bins,
+        ),
+        dtype=np.float64,
+    )
+
+
+def accumulate_dc_binned_moments(
+    counts: np.ndarray,
+    sums: np.ndarray,
+    sums2: np.ndarray,
+    particle_index: int,
+    region_index: int,
+    sectors: np.ndarray,
+    theta_deg: np.ndarray,
+    edge_values: np.ndarray,
+    chi2_ndf: np.ndarray,
+    valid_mask: np.ndarray,
+    histogram_config: HistogramConfig,
+) -> None:
+    """
+    Fast vectorized accumulation of all-theta and theta-binned moments.
+
+    np.bincount is used instead of repeatedly calling np.histogram inside
+    sector/theta loops; this is substantially faster for the large trees.
+    """
+
+    if not np.any(valid_mask):
+        return
+    #endif
+
+    number_of_edge_bins = histogram_config.dc_edge_bins
+    number_of_theta_slots = 1 + len(DC_THETA_LABELS)
+    edge_bin_width = histogram_config.dc_edge_bin_width_cm
+
+    valid_indices = np.flatnonzero(valid_mask)
+    sector_index = sectors[valid_indices].astype(np.int64) - 1
+    edge = edge_values[valid_indices]
+    values = chi2_ndf[valid_indices]
+
+    edge_bin = np.floor(edge / edge_bin_width).astype(np.int64)
+    edge_bin = np.clip(edge_bin, 0, number_of_edge_bins - 1)
+
+    # All-theta slot = 0.
+    flat_all = (
+        (sector_index * number_of_theta_slots) * number_of_edge_bins
+        + edge_bin
+    )
+    flat_size = 6 * number_of_theta_slots * number_of_edge_bins
+
+    all_counts = np.bincount(flat_all, minlength=flat_size)
+    all_sums = np.bincount(
+        flat_all,
+        weights=values,
+        minlength=flat_size,
+    )
+    all_sums2 = np.bincount(
+        flat_all,
+        weights=values * values,
+        minlength=flat_size,
+    )
+
+    reshaped_counts = all_counts.reshape(
+        6,
+        number_of_theta_slots,
+        number_of_edge_bins,
+    )
+    reshaped_sums = all_sums.reshape(
+        6,
+        number_of_theta_slots,
+        number_of_edge_bins,
+    )
+    reshaped_sums2 = all_sums2.reshape(
+        6,
+        number_of_theta_slots,
+        number_of_edge_bins,
+    )
+
+    counts[particle_index, region_index] += reshaped_counts
+    sums[particle_index, region_index] += reshaped_sums
+    sums2[particle_index, region_index] += reshaped_sums2
+
+    # Theta-specific slots = 1..5.
+    theta = theta_deg[valid_indices]
+    theta_index = np.searchsorted(
+        DC_THETA_EDGES_DEG,
+        theta,
+        side="right",
+    ) - 1
+
+    in_theta_range = (
+        (theta_index >= 0)
+        & (theta_index < len(DC_THETA_LABELS))
+        & (theta >= DC_THETA_EDGES_DEG[0])
+        & (theta < DC_THETA_EDGES_DEG[-1])
+    )
+    if not np.any(in_theta_range):
+        return
+    #endif
+
+    sector_theta = sector_index[in_theta_range]
+    edge_bin_theta = edge_bin[in_theta_range]
+    theta_slot = theta_index[in_theta_range] + 1
+    values_theta = values[in_theta_range]
+
+    flat_theta = (
+        (
+            sector_theta * number_of_theta_slots
+            + theta_slot
+        )
+        * number_of_edge_bins
+        + edge_bin_theta
+    )
+
+    theta_counts = np.bincount(flat_theta, minlength=flat_size).reshape(
+        6,
+        number_of_theta_slots,
+        number_of_edge_bins,
+    )
+    theta_sums = np.bincount(
+        flat_theta,
+        weights=values_theta,
+        minlength=flat_size,
+    ).reshape(
+        6,
+        number_of_theta_slots,
+        number_of_edge_bins,
+    )
+    theta_sums2 = np.bincount(
+        flat_theta,
+        weights=values_theta * values_theta,
+        minlength=flat_size,
+    ).reshape(
+        6,
+        number_of_theta_slots,
+        number_of_edge_bins,
+    )
+
+    counts[particle_index, region_index] += theta_counts
+    sums[particle_index, region_index] += theta_sums
+    sums2[particle_index, region_index] += theta_sums2
+
+
+# =============================================================================
 # ROOT reading and accumulation
 # =============================================================================
 
@@ -848,6 +1186,7 @@ def required_branches(
     do_ft: bool,
     do_standard_calorimeter: bool,
     do_edge_cuts: bool,
+    do_dc: bool,
 ) -> tuple[str, ...]:
     branches: list[str] = ["particle_pid"]
 
@@ -858,8 +1197,6 @@ def required_branches(
     if do_standard_calorimeter or do_edge_cuts:
         branches.append("cal_sector")
 
-        # Both calorimeter modes need the coordinates because localized
-        # dead-channel exclusions can involve PCal, ECin, or ECout.
         for layer_number in LAYER_NUMBERS:
             for coordinate_key in COORD_KEYS:
                 branches.append(f"cal_{coordinate_key}_{layer_number}")
@@ -878,7 +1215,20 @@ def required_branches(
         #endfor
     #endif
 
-    # Preserve order while removing duplicates such as p.
+    if do_dc:
+        branches.extend(
+            (
+                "theta",
+                "track_sector_6",
+                "track_chi2_6",
+                "track_ndf_6",
+                "traj_edge_6",
+                "traj_edge_18",
+                "traj_edge_36",
+            )
+        )
+    #endif
+
     return tuple(dict.fromkeys(branches))
 
 
@@ -1090,6 +1440,7 @@ def accumulate_sample(
     do_ft: bool,
     do_standard_calorimeter: bool,
     do_edge_cuts: bool,
+    do_dc: bool,
     dataset_key: str,
     calorimeter_strictness: int,
     is_rgc: bool,
@@ -1099,6 +1450,7 @@ def accumulate_sample(
         do_ft,
         do_standard_calorimeter,
         do_edge_cuts,
+        do_dc,
     )
     validate_root_tree(file_path, tree_name, branches)
 
@@ -1137,6 +1489,10 @@ def accumulate_sample(
     pcal_edge_sf_sums = empty_pcal_edge_sf_sums(histogram_config)
     pcal_edge_sf_sums2 = empty_pcal_edge_sf_sums(histogram_config)
     pcal_edge_sf_2d_counts = empty_pcal_edge_sf_2d_counts(histogram_config)
+
+    dc_counts = empty_dc_moments(histogram_config)
+    dc_chi2_sums = empty_dc_moments(histogram_config)
+    dc_chi2_sums2 = empty_dc_moments(histogram_config)
 
     ft_edges = histogram_config.ft_edges
     cal_edges = histogram_config.cal_edges
@@ -1737,6 +2093,94 @@ def accumulate_sample(
             #endfor
         #endif
 
+
+        if do_dc:
+            dc_sector = np.asarray(
+                arrays["track_sector_6"],
+                dtype=np.int16,
+            )
+            dc_track_chi2 = np.asarray(
+                arrays["track_chi2_6"],
+                dtype=np.float64,
+            )
+            dc_track_ndf = np.asarray(
+                arrays["track_ndf_6"],
+                dtype=np.int32,
+            )
+            dc_theta = np.asarray(
+                arrays["theta"],
+                dtype=np.float64,
+            )
+
+            dc_valid_base = (
+                (dc_sector >= 1)
+                & (dc_sector <= 6)
+                & np.isfinite(dc_track_chi2)
+                & (dc_track_chi2 != INVALID_SENTINEL)
+                & (dc_track_ndf > 0)
+                & np.isfinite(dc_theta)
+                & (dc_theta != INVALID_SENTINEL)
+            )
+
+            dc_chi2_ndf = np.zeros_like(dc_track_chi2)
+            np.divide(
+                dc_track_chi2,
+                dc_track_ndf,
+                out=dc_chi2_ndf,
+                where=dc_track_ndf > 0,
+            )
+            dc_valid_base &= (
+                np.isfinite(dc_chi2_ndf)
+                & (dc_chi2_ndf >= 0.0)
+            )
+
+            dc_edge_arrays = tuple(
+                np.asarray(arrays[branch], dtype=np.float64)
+                for branch in DC_EDGE_BRANCHES
+            )
+
+            for dc_particle_index, dc_particle_pid in enumerate(
+                DC_PARTICLE_PIDS
+            ):
+                particle_mask = (
+                    dc_valid_base
+                    & (pid == dc_particle_pid)
+                )
+                if not np.any(particle_mask):
+                    continue
+                #endif
+
+                for dc_region_index, dc_edge_values in enumerate(
+                    dc_edge_arrays
+                ):
+                    region_mask = (
+                        particle_mask
+                        & np.isfinite(dc_edge_values)
+                        & (dc_edge_values != INVALID_SENTINEL)
+                        & (dc_edge_values >= 0.0)
+                        & (
+                            dc_edge_values
+                            < histogram_config.dc_edge_max_cm
+                        )
+                    )
+
+                    accumulate_dc_binned_moments(
+                        counts=dc_counts,
+                        sums=dc_chi2_sums,
+                        sums2=dc_chi2_sums2,
+                        particle_index=dc_particle_index,
+                        region_index=dc_region_index,
+                        sectors=dc_sector,
+                        theta_deg=dc_theta,
+                        edge_values=dc_edge_values,
+                        chi2_ndf=dc_chi2_ndf,
+                        valid_mask=region_mask,
+                        histogram_config=histogram_config,
+                    )
+                #endfor
+            #endfor
+        #endif
+
     #endfor
 
     return SampleResult(
@@ -1770,6 +2214,9 @@ def accumulate_sample(
         pcal_edge_sf_sums=pcal_edge_sf_sums,
         pcal_edge_sf_sums2=pcal_edge_sf_sums2,
         pcal_edge_sf_2d_counts=pcal_edge_sf_2d_counts,
+        dc_counts=dc_counts,
+        dc_chi2_sums=dc_chi2_sums,
+        dc_chi2_sums2=dc_chi2_sums2,
         rows_read=rows_read,
         photon_rows=photon_rows,
         valid_ft_photons=valid_ft_photons,
@@ -1789,6 +2236,7 @@ def process_period(
     do_ft: bool,
     do_standard_calorimeter: bool,
     do_edge_cuts: bool,
+    do_dc: bool,
     calorimeter_strictness: int,
     is_rgc: bool,
 ) -> PeriodResult:
@@ -1804,6 +2252,7 @@ def process_period(
         do_ft,
         do_standard_calorimeter,
         do_edge_cuts,
+        do_dc,
         dataset.key,
         calorimeter_strictness,
         is_rgc,
@@ -1821,6 +2270,7 @@ def process_period(
             do_ft,
             do_standard_calorimeter,
             do_edge_cuts,
+            do_dc,
             dataset.key,
             calorimeter_strictness,
             is_rgc,
@@ -3448,6 +3898,421 @@ def save_pcal_edge_2d_summary(
 
 
 # =============================================================================
+# Drift-chamber plotting
+# =============================================================================
+
+
+def dc_mean_and_sem(
+    counts: np.ndarray,
+    sums: np.ndarray,
+    sums2: np.ndarray,
+    minimum_count: int,
+) -> tuple[np.ma.MaskedArray, np.ma.MaskedArray]:
+    valid = counts >= minimum_count
+
+    mean = np.zeros_like(sums, dtype=np.float64)
+    np.divide(sums, counts, out=mean, where=valid)
+
+    second = np.zeros_like(sums2, dtype=np.float64)
+    np.divide(sums2, counts, out=second, where=valid)
+
+    variance = np.maximum(second - mean * mean, 0.0)
+    sem = np.zeros_like(mean)
+    np.divide(
+        np.sqrt(variance),
+        np.sqrt(counts),
+        out=sem,
+        where=valid,
+    )
+
+    return (
+        np.ma.array(mean, mask=~valid),
+        np.ma.array(sem, mask=~valid),
+    )
+
+
+def dc_draw_cut_reference(
+    axis: plt.Axes,
+    bending_category: str,
+    region_index: int,
+) -> None:
+    if region_index == 2:
+        axis.axvspan(0.0, 10.0, alpha=0.10, color="black")
+        axis.axvline(10.0, linestyle="--", linewidth=1.2, color="black")
+        return
+    #endif
+
+    if bending_category == "inbending":
+        # edge<3 is rejected for all theta; 3-10 is additionally rejected
+        # only for theta<10 degrees.
+        axis.axvspan(0.0, 3.0, alpha=0.13, color="black")
+        axis.axvspan(3.0, 10.0, alpha=0.055, color="black")
+        axis.axvline(3.0, linestyle="--", linewidth=1.1, color="black")
+        axis.axvline(10.0, linestyle=":", linewidth=1.1, color="black")
+    else:
+        axis.axvspan(0.0, 3.0, alpha=0.10, color="black")
+        axis.axvline(3.0, linestyle="--", linewidth=1.2, color="black")
+    #endif
+
+
+def dc_auto_ylim(
+    arrays: list[np.ma.MaskedArray],
+) -> tuple[float, float]:
+    finite_values: list[np.ndarray] = []
+    for values in arrays:
+        compressed = np.asarray(values.compressed(), dtype=np.float64)
+        if compressed.size:
+            finite_values.append(compressed)
+        #endif
+    #endfor
+
+    if not finite_values:
+        return 0.0, 5.0
+    #endif
+
+    combined = np.concatenate(finite_values)
+    robust_high = float(np.nanpercentile(combined, 98.5))
+    upper = max(3.0, min(100.0, 1.25 * robust_high))
+    return 0.0, upper
+
+
+def save_dc_theta_dependence_summary(
+    result: PeriodResult,
+    output_base: Path,
+    histogram_config: HistogramConfig,
+    particle_index: int,
+    minimum_bin_count: int,
+    dpi: int,
+) -> Path:
+    particle_key = DC_PARTICLE_KEYS[particle_index]
+    particle_label = DC_PARTICLE_LABELS[particle_key]
+    bending = dc_track_bending_category(result.dataset.key, particle_key)
+
+    has_mc = result.mc is not None
+    number_of_rows = 2 if has_mc else 1
+
+    figure, axes = plt.subplots(
+        number_of_rows,
+        3,
+        figsize=(15.0, 8.2 if has_mc else 4.8),
+        squeeze=False,
+        sharex=True,
+    )
+    figure.subplots_adjust(
+        left=0.065,
+        right=0.985,
+        bottom=0.105,
+        top=0.845,
+        wspace=0.16,
+        hspace=0.13,
+    )
+
+    edges = histogram_config.dc_edge_edges
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    sample_rows: list[tuple[str, SampleResult]] = [("Data", result.data)]
+    if result.mc is not None:
+        sample_rows.append(("MC", result.mc))
+    #endif
+
+    all_means_for_scale: list[np.ma.MaskedArray] = []
+
+    for row_index, (sample_label, sample) in enumerate(sample_rows):
+        for region_index in range(3):
+            axis = axes[row_index, region_index]
+
+            # Sum over sectors; the separate sector-uniformity canvas
+            # validates that this aggregation is appropriate.
+            region_counts = np.sum(
+                sample.dc_counts[
+                    particle_index,
+                    region_index,
+                ],
+                axis=0,
+            )
+            region_sums = np.sum(
+                sample.dc_chi2_sums[
+                    particle_index,
+                    region_index,
+                ],
+                axis=0,
+            )
+            region_sums2 = np.sum(
+                sample.dc_chi2_sums2[
+                    particle_index,
+                    region_index,
+                ],
+                axis=0,
+            )
+
+            all_mean, all_sem = dc_mean_and_sem(
+                region_counts[0],
+                region_sums[0],
+                region_sums2[0],
+                minimum_bin_count,
+            )
+            all_means_for_scale.append(all_mean)
+
+            axis.errorbar(
+                centers,
+                all_mean,
+                yerr=all_sem,
+                marker="o",
+                markersize=3.2,
+                linewidth=1.2,
+                capsize=1.5,
+                label=r"All $\theta$",
+            )
+
+            for theta_index, theta_label in enumerate(DC_THETA_LABELS):
+                theta_mean, theta_sem = dc_mean_and_sem(
+                    region_counts[theta_index + 1],
+                    region_sums[theta_index + 1],
+                    region_sums2[theta_index + 1],
+                    minimum_bin_count,
+                )
+                all_means_for_scale.append(theta_mean)
+
+                axis.errorbar(
+                    centers,
+                    theta_mean,
+                    yerr=theta_sem,
+                    marker="o",
+                    markersize=2.7,
+                    linewidth=1.0,
+                    capsize=1.2,
+                    label=theta_label,
+                )
+            #endfor
+
+            dc_draw_cut_reference(axis, bending, region_index)
+
+            axis.set_title(DC_REGION_LABELS[region_index])
+            axis.set_xlim(0.0, histogram_config.dc_edge_max_cm)
+            axis.grid(alpha=0.20)
+
+            if row_index == number_of_rows - 1:
+                axis.set_xlabel("DC edge (cm)")
+            #endif
+
+            if region_index == 0:
+                axis.set_ylabel(
+                    f"{sample_label}\n"
+                    r"Mean track $\chi^{2}/\mathrm{ndf}$"
+                )
+            #endif
+
+            if row_index == 0 and region_index == 0:
+                axis.legend(
+                    fontsize=8,
+                    ncol=2,
+                    loc="upper right",
+                )
+            #endif
+        #endfor
+    #endfor
+
+    y_min, y_max = dc_auto_ylim(all_means_for_scale)
+    for axis in axes.ravel():
+        axis.set_ylim(y_min, y_max)
+    #endfor
+
+    cut_text = (
+        r"Inbending cuts: R1/R2 $>3$ cm "
+        r"($>10$ cm for $\theta<10^\circ$); R3 $>10$ cm"
+        if bending == "inbending"
+        else r"Outbending cuts: R1 $>3$ cm; R2 $>3$ cm; R3 $>10$ cm"
+    )
+
+    figure.suptitle(
+        f"{result.dataset.label}: DC edge dependence for "
+        f"{particle_label} ({bending} tracks)\n"
+        f"{cut_text}; sectors combined",
+        fontsize=14,
+        y=0.965,
+    )
+
+    output_dir = output_base / "drift_chamber" / "edge_cuts"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / (
+        f"{result.dataset.key}_dc_{particle_key}_{bending}_"
+        "theta_dependence.png"
+    )
+    figure.savefig(
+        output_path,
+        dpi=dpi,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
+    plt.close(figure)
+    return output_path
+
+
+def save_dc_sector_dependence_summary(
+    result: PeriodResult,
+    output_base: Path,
+    histogram_config: HistogramConfig,
+    particle_index: int,
+    minimum_bin_count: int,
+    dpi: int,
+) -> Path:
+    particle_key = DC_PARTICLE_KEYS[particle_index]
+    particle_label = DC_PARTICLE_LABELS[particle_key]
+    bending = dc_track_bending_category(result.dataset.key, particle_key)
+
+    figure, axes = plt.subplots(
+        3,
+        2,
+        figsize=(12.0, 10.5),
+        sharex=True,
+        sharey=True,
+        constrained_layout=True,
+    )
+
+    edges = histogram_config.dc_edge_edges
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    all_means_for_scale: list[np.ma.MaskedArray] = []
+
+    for sector_index, axis in enumerate(axes.ravel()):
+        sector = sector_index + 1
+
+        for region_index in range(3):
+            data_mean, data_sem = dc_mean_and_sem(
+                result.data.dc_counts[
+                    particle_index,
+                    region_index,
+                    sector_index,
+                    0,
+                ],
+                result.data.dc_chi2_sums[
+                    particle_index,
+                    region_index,
+                    sector_index,
+                    0,
+                ],
+                result.data.dc_chi2_sums2[
+                    particle_index,
+                    region_index,
+                    sector_index,
+                    0,
+                ],
+                minimum_bin_count,
+            )
+            all_means_for_scale.append(data_mean)
+
+            axis.errorbar(
+                centers,
+                data_mean,
+                yerr=data_sem,
+                marker="o",
+                markersize=2.7,
+                linewidth=1.0,
+                capsize=1.0,
+                label=f"Data {DC_REGION_LABELS[region_index]}",
+            )
+
+            if result.mc is not None:
+                mc_mean, mc_sem = dc_mean_and_sem(
+                    result.mc.dc_counts[
+                        particle_index,
+                        region_index,
+                        sector_index,
+                        0,
+                    ],
+                    result.mc.dc_chi2_sums[
+                        particle_index,
+                        region_index,
+                        sector_index,
+                        0,
+                    ],
+                    result.mc.dc_chi2_sums2[
+                        particle_index,
+                        region_index,
+                        sector_index,
+                        0,
+                    ],
+                    minimum_bin_count,
+                )
+                all_means_for_scale.append(mc_mean)
+
+                axis.errorbar(
+                    centers,
+                    mc_mean,
+                    yerr=mc_sem,
+                    marker="s",
+                    markersize=2.3,
+                    linewidth=0.9,
+                    linestyle="--",
+                    capsize=1.0,
+                    label=f"MC {DC_REGION_LABELS[region_index]}",
+                )
+            #endif
+        #endfor
+
+        axis.axvline(
+            3.0,
+            linestyle="--",
+            linewidth=1.0,
+            color="black",
+            alpha=0.75,
+        )
+        axis.axvline(
+            10.0,
+            linestyle=":",
+            linewidth=1.0,
+            color="black",
+            alpha=0.75,
+        )
+
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlim(0.0, histogram_config.dc_edge_max_cm)
+        axis.grid(alpha=0.20)
+
+        if sector_index >= 4:
+            axis.set_xlabel("DC edge (cm)")
+        #endif
+        if sector_index % 2 == 0:
+            axis.set_ylabel(r"Mean track $\chi^{2}/\mathrm{ndf}$")
+        #endif
+
+        if sector_index == 0:
+            axis.legend(
+                fontsize=7,
+                ncol=2 if result.mc is not None else 1,
+                loc="upper right",
+            )
+        #endif
+    #endfor
+
+    y_min, y_max = dc_auto_ylim(all_means_for_scale)
+    for axis in axes.ravel():
+        axis.set_ylim(y_min, y_max)
+    #endfor
+
+    figure.suptitle(
+        f"{result.dataset.label}: DC sector comparison for "
+        f"{particle_label} ({bending} tracks)\n"
+        r"All $\theta$; vertical references at edge = 3 and 10 cm",
+        fontsize=14,
+    )
+
+    output_dir = output_base / "drift_chamber" / "edge_cuts"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / (
+        f"{result.dataset.key}_dc_{particle_key}_{bending}_"
+        "sector_dependence.png"
+    )
+    figure.savefig(
+        output_path,
+        dpi=dpi,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
+    plt.close(figure)
+    return output_path
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -3488,11 +4353,23 @@ def main() -> int:
         return 2
     #endif
 
-    do_ft = not args.skip_ft and not args.edge_cuts_only
-    do_standard_calorimeter = (
-        not args.skip_calorimeter and not args.edge_cuts_only
-    )
-    do_edge_cuts = not args.skip_calorimeter
+    if args.dc_only:
+        do_ft = False
+        do_standard_calorimeter = False
+        do_edge_cuts = False
+        do_dc = True
+    elif args.edge_cuts_only:
+        do_ft = False
+        do_standard_calorimeter = False
+        do_edge_cuts = True
+        do_dc = False
+    else:
+        do_ft = not args.skip_ft
+        do_standard_calorimeter = not args.skip_calorimeter
+        do_edge_cuts = not args.skip_calorimeter
+        do_dc = not args.skip_dc
+    #endif
+
     is_rgc = mode_label == "RGC"
 
     histogram_config = HistogramConfig(
@@ -3502,6 +4379,8 @@ def main() -> int:
         cal_bin_width_cm=args.cal_bin_width,
         cal_min_cm=args.cal_min,
         cal_max_cm=args.cal_max,
+        dc_edge_max_cm=args.dc_edge_max,
+        dc_edge_bin_width_cm=args.dc_edge_bin_width,
     )
     fiducial_config = FTFiducialConfig()
 
@@ -3526,11 +4405,19 @@ def main() -> int:
         f"Standard calorimeter:   {do_standard_calorimeter}"
     )
     print(f"PCal edge-cut study:    {do_edge_cuts}")
+    print(f"DC edge-cut study:      {do_dc}")
     print(f"Calorimeter bin width:  {args.cal_bin_width:.3f} cm")
     print(f"Calorimeter strictness: {args.calorimeter_strictness}")
     print(
         f"Kinematic min count:    {args.kinematic_min_bin_count}"
     )
+    if do_dc:
+        print(
+            f"DC edge range/binning:  0-{args.dc_edge_max:g} cm / "
+            f"{args.dc_edge_bin_width:g} cm"
+        )
+        print(f"DC min bin count:       {args.dc_min_bin_count}")
+    #endif
     if args.max_events is not None:
         print(f"Per-file row limit:     {args.max_events:,}")
     #endif
@@ -3554,6 +4441,7 @@ def main() -> int:
                 do_ft,
                 do_standard_calorimeter,
                 do_edge_cuts,
+                do_dc,
                 args.calorimeter_strictness,
                 is_rgc,
             ): dataset
@@ -3640,6 +4528,30 @@ def main() -> int:
                     )
                     print(f"[PLOT] {output_path}", flush=True)
                 #endfor
+            #endfor
+        #endif
+
+        if do_dc:
+            for dc_particle_index in range(len(DC_PARTICLE_KEYS)):
+                output_path = save_dc_theta_dependence_summary(
+                    result=result,
+                    output_base=args.output_base,
+                    histogram_config=histogram_config,
+                    particle_index=dc_particle_index,
+                    minimum_bin_count=args.dc_min_bin_count,
+                    dpi=args.dpi,
+                )
+                print(f"[PLOT] {output_path}", flush=True)
+
+                output_path = save_dc_sector_dependence_summary(
+                    result=result,
+                    output_base=args.output_base,
+                    histogram_config=histogram_config,
+                    particle_index=dc_particle_index,
+                    minimum_bin_count=args.dc_min_bin_count,
+                    dpi=args.dpi,
+                )
+                print(f"[PLOT] {output_path}", flush=True)
             #endfor
         #endif
 
