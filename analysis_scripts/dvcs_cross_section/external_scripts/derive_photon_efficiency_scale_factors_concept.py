@@ -6130,18 +6130,19 @@ def make_canvas(
 # Raw nSidis epgamma <-> eppi0 run/event coverage audit
 # =============================================================================
 
-def load_unique_run_event_keys(
+def load_eppi0_coverage_reference(
     path: str,
     tree_name: str,
     step_size: int,
     label: str,
-) -> Tuple[np.ndarray, np.ndarray]:
+) -> dict:
     """
-    Read only runnum/evnum over the FULL tree and return sorted unique packed
-    event keys and their run numbers.
+    Load the SMALLER eppi0 run/event set once.
 
-    This intentionally ignores --max-entries. File ordering therefore cannot
-    affect this diagnostic.
+    The coverage question we actually need to answer is whether each eppi0
+    event exists somewhere in the much larger nSidis epgamma file.  We
+    therefore sort only the eppi0 keys and never construct/sort the full
+    epgamma key array.
     """
     found_tree, total = preflight_custom_branches(
         path,
@@ -6149,11 +6150,11 @@ def load_unique_run_event_keys(
         ("runnum", "evnum"),
     )
     log(
-        f"{label}: coverage audit reading full tree "
+        f"{label}: coverage reference reading full eppi0 tree "
         f"({total:,} entries) from '{found_tree}'."
     )
 
-    keys_parts: List[np.ndarray] = []
+    key_parts: List[np.ndarray] = []
     run_parts: List[np.ndarray] = []
 
     for arrays in iterate_efficiency_tree_arrays(
@@ -6165,19 +6166,24 @@ def load_unique_run_event_keys(
     ):
         run = np.asarray(arrays["runnum"], dtype=np.int64)
         ev = np.asarray(arrays["evnum"], dtype=np.int64)
-        keys_parts.append(packed_event_keys_eff(run, ev))
+        key_parts.append(packed_event_keys_eff(run, ev))
         run_parts.append(run)
     #endfor
 
-    if not keys_parts:
-        return (
-            np.asarray([], dtype=np.uint64),
-            np.asarray([], dtype=np.int64),
-        )
+    if not key_parts:
+        return {
+            "keys": np.asarray([], dtype=np.uint64),
+            "runs": np.asarray([], dtype=np.int64),
+            "n_rows": 0,
+        }
     #endif
 
-    keys = np.concatenate(keys_parts)
+    keys = np.concatenate(key_parts)
     runs = np.concatenate(run_parts)
+    n_rows = int(len(keys))
+
+    # Sorting ~10^6 eppi0 keys is cheap.  This is the ONLY global key sort in
+    # the coverage audit.
     order = np.argsort(keys, kind="mergesort")
     keys = keys[order]
     runs = runs[order]
@@ -6186,7 +6192,12 @@ def load_unique_run_event_keys(
     if len(keys) > 1:
         unique[1:] = keys[1:] != keys[:-1]
     #endif
-    return keys[unique], runs[unique]
+
+    return {
+        "keys": keys[unique],
+        "runs": runs[unique],
+        "n_rows": n_rows,
+    }
 
 
 def raw_run_event_coverage(
@@ -6194,67 +6205,165 @@ def raw_run_event_coverage(
     tree_name: str,
     step_size: int,
 ) -> dict:
-    """Exact FULL-file set intersection before any physics selections."""
-    epg_keys, epg_runs = load_unique_run_event_keys(
-        period.data,
-        tree_name,
-        step_size,
-        f"{period.label} epgamma",
-    )
-    pi_keys, pi_runs = load_unique_run_event_keys(
+    """
+    Fast FULL-file exact-event coverage audit.
+
+    Algorithm:
+      1. Load/sort/uniquify only the relatively small eppi0 key set.
+      2. Stream the huge epgamma tree chunk-by-chunk.
+      3. For each epgamma key, binary-search the sorted eppi0 keys.
+      4. Mark the corresponding eppi0 event as found.
+      5. Stop early if every eppi0 event has been found.
+
+    We never concatenate or sort the tens-of-millions-entry epgamma tree.
+    File ordering is irrelevant.
+    """
+    reference = load_eppi0_coverage_reference(
         period.eppi0_data,
         tree_name,
         step_size,
         f"{period.label} eppi0",
     )
+    pi_keys = np.asarray(reference["keys"], dtype=np.uint64)
+    pi_runs = np.asarray(reference["runs"], dtype=np.int64)
 
-    epg_run_values, epg_run_counts = np.unique(
-        epg_runs,
-        return_counts=True,
-    )
+    if len(pi_keys) == 0:
+        return {
+            "period": period.key,
+            "rows": [],
+            "n_epgamma_rows_scanned": 0,
+            "n_epgamma_rows_total": 0,
+            "n_eppi0_rows": int(reference["n_rows"]),
+            "n_eppi0_unique": 0,
+            "n_common_unique": 0,
+            "common_over_eppi0": float("nan"),
+            "n_epgamma_runs_seen": 0,
+            "n_eppi0_runs": 0,
+            "n_common_runs": 0,
+            "epgamma_only_runs": [],
+            "eppi0_only_runs": [],
+            "stopped_early": False,
+        }
+    #endif
+
     pi_run_values, pi_run_counts = np.unique(
         pi_runs,
         return_counts=True,
     )
-    all_runs = np.union1d(epg_run_values, pi_run_values)
-    common_runs = np.intersect1d(epg_run_values, pi_run_values)
-
-    epg_map = dict(zip(epg_run_values.tolist(), epg_run_counts.tolist()))
-    pi_map = dict(zip(pi_run_values.tolist(), pi_run_counts.tolist()))
-
-    common_keys = np.intersect1d(
-        epg_keys,
-        pi_keys,
-        assume_unique=True,
+    pi_count_map = dict(
+        zip(pi_run_values.tolist(), pi_run_counts.tolist())
     )
-    common_key_runs = (
-        (common_keys >> np.uint64(32)).astype(np.int64)
-        if len(common_keys)
-        else np.asarray([], dtype=np.int64)
+
+    matched_pi = np.zeros(len(pi_keys), dtype=bool)
+
+    epg_found_tree, epg_total = preflight_custom_branches(
+        period.data,
+        tree_name,
+        ("runnum", "evnum"),
     )
+    log(
+        f"{period.label} epgamma: fast coverage scan of full tree "
+        f"({epg_total:,} rows) from '{epg_found_tree}'; "
+        f"searching against {len(pi_keys):,} unique eppi0 events."
+    )
+
+    # Only run-level epgamma row counts are accumulated.  There is no reason
+    # to globally uniquify the enormous epgamma sample for the eppi0-coverage
+    # question.
+    epg_rows_by_run: Dict[int, int] = {}
+    epg_runs_seen: set = set()
+    rows_scanned = 0
+    stopped_early = False
+    t_scan = time.perf_counter()
+
+    for arrays in iterate_efficiency_tree_arrays(
+        period.data,
+        epg_found_tree,
+        ("runnum", "evnum"),
+        0,
+        step_size,
+    ):
+        run = np.asarray(arrays["runnum"], dtype=np.int64)
+        ev = np.asarray(arrays["evnum"], dtype=np.int64)
+        keys = packed_event_keys_eff(run, ev)
+        rows_scanned += len(keys)
+
+        chunk_runs, chunk_counts = np.unique(
+            run,
+            return_counts=True,
+        )
+        for run_value, count in zip(chunk_runs, chunk_counts):
+            run_i = int(run_value)
+            epg_runs_seen.add(run_i)
+            epg_rows_by_run[run_i] = (
+                epg_rows_by_run.get(run_i, 0) + int(count)
+            )
+        #endfor
+
+        # Binary search the sorted SMALL reference array.
+        pos = np.searchsorted(pi_keys, keys, side="left")
+        in_bounds = pos < len(pi_keys)
+        if np.any(in_bounds):
+            epg_idx = np.flatnonzero(in_bounds)
+            candidate_pos = pos[in_bounds]
+            exact = pi_keys[candidate_pos] == keys[epg_idx]
+            if np.any(exact):
+                matched_pi[candidate_pos[exact]] = True
+            #endif
+        #endif
+
+        if np.all(matched_pi):
+            stopped_early = True
+            log(
+                f"{period.label}: all {len(pi_keys):,} unique eppi0 events "
+                f"found after scanning {rows_scanned:,}/{epg_total:,} "
+                f"epgamma rows; stopping coverage scan early."
+            )
+            break
+        #endif
+
+        # Lightweight progress every ~10M scanned rows.
+        if rows_scanned % 10_000_000 < len(keys):
+            elapsed = max(time.perf_counter() - t_scan, 1.0e-9)
+            found = int(np.count_nonzero(matched_pi))
+            log(
+                f"{period.label}: coverage scan {rows_scanned:,}/"
+                f"{epg_total:,} epgamma rows; "
+                f"found {found:,}/{len(pi_keys):,} eppi0 events "
+                f"({100.0 * found / len(pi_keys):.2f}%); "
+                f"{rows_scanned / elapsed / 1.0e6:.2f} M rows/s."
+            )
+        #endif
+    #endfor
+
+    common_keys = pi_keys[matched_pi]
+    common_runs = pi_runs[matched_pi]
     common_run_values, common_run_counts = np.unique(
-        common_key_runs,
+        common_runs,
         return_counts=True,
     )
-    common_map = dict(
+    common_count_map = dict(
         zip(common_run_values.tolist(), common_run_counts.tolist())
     )
 
+    all_runs = np.union1d(
+        np.asarray(sorted(epg_runs_seen), dtype=np.int64),
+        pi_run_values,
+    )
+
     rows = []
-    for run in all_runs:
-        run_i = int(run)
-        n_epg = int(epg_map.get(run_i, 0))
-        n_pi = int(pi_map.get(run_i, 0))
-        n_common = int(common_map.get(run_i, 0))
+    for run_value in all_runs:
+        run_i = int(run_value)
+        n_epg_rows = int(epg_rows_by_run.get(run_i, 0))
+        n_pi = int(pi_count_map.get(run_i, 0))
+        n_common = int(common_count_map.get(run_i, 0))
+
         rows.append(
             {
                 "run": run_i,
-                "epgamma_unique": n_epg,
+                "epgamma_rows_scanned": n_epg_rows,
                 "eppi0_unique": n_pi,
                 "common_unique": n_common,
-                "common_over_epgamma": (
-                    n_common / n_epg if n_epg > 0 else float("nan")
-                ),
                 "common_over_eppi0": (
                     n_common / n_pi if n_pi > 0 else float("nan")
                 ),
@@ -6262,31 +6371,28 @@ def raw_run_event_coverage(
         )
     #endfor
 
-    n_epg = int(len(epg_keys))
-    n_pi = int(len(pi_keys))
-    n_common = int(len(common_keys))
+    n_common = int(np.count_nonzero(matched_pi))
+    common_run_set = set(common_run_values.astype(int).tolist())
+    epg_run_set = set(int(x) for x in epg_runs_seen)
+    pi_run_set = set(pi_run_values.astype(int).tolist())
 
     return {
         "period": period.key,
         "rows": rows,
-        "n_epgamma_unique": n_epg,
-        "n_eppi0_unique": n_pi,
+        "n_epgamma_rows_scanned": int(rows_scanned),
+        "n_epgamma_rows_total": int(epg_total),
+        "n_eppi0_rows": int(reference["n_rows"]),
+        "n_eppi0_unique": int(len(pi_keys)),
         "n_common_unique": n_common,
-        "common_over_epgamma": (
-            n_common / n_epg if n_epg > 0 else float("nan")
-        ),
         "common_over_eppi0": (
-            n_common / n_pi if n_pi > 0 else float("nan")
+            n_common / len(pi_keys) if len(pi_keys) else float("nan")
         ),
-        "n_epgamma_runs": int(len(epg_run_values)),
-        "n_eppi0_runs": int(len(pi_run_values)),
-        "n_common_runs": int(len(common_runs)),
-        "epgamma_only_runs": np.setdiff1d(
-            epg_run_values, pi_run_values
-        ).astype(int).tolist(),
-        "eppi0_only_runs": np.setdiff1d(
-            pi_run_values, epg_run_values
-        ).astype(int).tolist(),
+        "n_epgamma_runs_seen": int(len(epg_run_set)),
+        "n_eppi0_runs": int(len(pi_run_set)),
+        "n_common_runs": int(len(common_run_set)),
+        "epgamma_only_runs": sorted(epg_run_set - pi_run_set),
+        "eppi0_only_runs": sorted(pi_run_set - epg_run_set),
+        "stopped_early": bool(stopped_early),
     }
 
 
@@ -6295,18 +6401,32 @@ def make_raw_coverage_canvas(
     coverage: dict,
     output_dir: Path,
 ) -> Path:
-    """One compact full-file coverage diagnostic per period."""
+    """
+    Compact full-file coverage diagnostic.
+
+    The relevant physics/production metric is common/eppi0: essentially every
+    event reconstructed in eppi0 should occur somewhere in the more inclusive
+    nSidis epgamma tree.  We deliberately do not globally unique/sort epgamma.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     rows = coverage["rows"]
 
     runs = np.asarray([r["run"] for r in rows], dtype=int)
-    epg = np.asarray([r["epgamma_unique"] for r in rows], dtype=float)
-    pi = np.asarray([r["eppi0_unique"] for r in rows], dtype=float)
-    frac_epg = np.asarray(
-        [r["common_over_epgamma"] for r in rows], dtype=float
+    epg_rows = np.asarray(
+        [r["epgamma_rows_scanned"] for r in rows],
+        dtype=float,
+    )
+    pi = np.asarray(
+        [r["eppi0_unique"] for r in rows],
+        dtype=float,
+    )
+    common = np.asarray(
+        [r["common_unique"] for r in rows],
+        dtype=float,
     )
     frac_pi = np.asarray(
-        [r["common_over_eppi0"] for r in rows], dtype=float
+        [r["common_over_eppi0"] for r in rows],
+        dtype=float,
     )
 
     fig = plt.figure(figsize=(14.5, 9.0))
@@ -6327,40 +6447,41 @@ def make_raw_coverage_canvas(
 
     ax_counts.step(
         runs,
-        epg,
+        epg_rows,
         where="mid",
-        linewidth=1.3,
-        label="epgamma unique events",
+        linewidth=1.2,
+        label="epgamma rows scanned / run",
     )
     ax_counts.step(
         runs,
         pi,
         where="mid",
         linewidth=1.3,
-        label="eppi0 unique events",
+        label="eppi0 unique events / run",
     )
-    ax_counts.set_ylabel("Unique events / run")
+    ax_counts.step(
+        runs,
+        common,
+        where="mid",
+        linewidth=1.3,
+        linestyle="--",
+        label="eppi0 events found in epgamma",
+    )
+    ax_counts.set_ylabel("Events / run")
     ax_counts.set_yscale("log")
     ax_counts.grid(alpha=0.18)
     ax_counts.legend(frameon=True)
 
     ax_frac.plot(
         runs,
-        frac_epg,
-        "o",
-        markersize=3.0,
-        label="common / epgamma",
-    )
-    ax_frac.plot(
-        runs,
         frac_pi,
         "o",
-        markersize=3.0,
+        markersize=3.2,
         label="common / eppi0",
     )
     ax_frac.axhline(1.0, linestyle="--", linewidth=0.9)
     ax_frac.set_ylim(-0.03, 1.05)
-    ax_frac.set_ylabel("Exact event overlap")
+    ax_frac.set_ylabel("eppi0 coverage in epgamma")
     ax_frac.set_xlabel("Run number")
     ax_frac.grid(alpha=0.18)
     ax_frac.legend(frameon=True)
@@ -6368,25 +6489,29 @@ def make_raw_coverage_canvas(
     ax_text.axis("off")
     epg_only = coverage["epgamma_only_runs"]
     pi_only = coverage["eppi0_only_runs"]
+    scan_text = (
+        f"{coverage['n_epgamma_rows_scanned']:,}/"
+        f"{coverage['n_epgamma_rows_total']:,}"
+    )
     lines = [
         (
-            f"epgamma: {coverage['n_epgamma_unique']:,} unique events, "
-            f"{coverage['n_epgamma_runs']} runs"
+            f"epgamma rows scanned: {scan_text}"
+            + (" (early stop: all eppi0 found)" if coverage["stopped_early"] else "")
         ),
         (
-            f"eppi0:   {coverage['n_eppi0_unique']:,} unique events, "
+            f"eppi0: {coverage['n_eppi0_rows']:,} rows -> "
+            f"{coverage['n_eppi0_unique']:,} unique events, "
             f"{coverage['n_eppi0_runs']} runs"
         ),
         (
-            f"common:  {coverage['n_common_unique']:,} unique events, "
-            f"{coverage['n_common_runs']} common runs"
+            f"found in epgamma: {coverage['n_common_unique']:,} unique eppi0 "
+            f"events in {coverage['n_common_runs']} runs"
         ),
         (
-            f"common/epgamma = {coverage['common_over_epgamma']:.3%}; "
             f"common/eppi0 = {coverage['common_over_eppi0']:.3%}"
         ),
         (
-            "epgamma-only runs: "
+            "epgamma-only runs seen: "
             + (
                 ", ".join(map(str, epg_only[:30]))
                 + (" ..." if len(epg_only) > 30 else "")
@@ -6415,15 +6540,17 @@ def make_raw_coverage_canvas(
 
     fig.suptitle(
         (
-            f"{period.label}: raw nSidis epgamma/eppi0 event coverage\n"
-            "FULL trees; exact (runnum,evnum) set intersection; no physics cuts"
+            f"{period.label}: fast raw nSidis eppi0 coverage in epgamma\n"
+            "FULL files; exact (runnum,evnum); no physics cuts; no global epgamma sort"
         ),
         fontsize=13,
     )
+
     out = output_dir / f"event_coverage_{period.key}.png"
     fig.savefig(out, dpi=180)
     plt.close(fig)
     return out
+
 
 
 def run_raw_coverage_audit(
@@ -6441,14 +6568,14 @@ def run_raw_coverage_audit(
     log(
         (
             f"{period.label}: RAW COVERAGE: "
-            f"epgamma={coverage['n_epgamma_unique']:,}/"
-            f"{coverage['n_epgamma_runs']} runs; "
-            f"eppi0={coverage['n_eppi0_unique']:,}/"
+            f"epgamma rows scanned={coverage['n_epgamma_rows_scanned']:,}/"
+            f"{coverage['n_epgamma_rows_total']:,}; "
+            f"eppi0={coverage['n_eppi0_unique']:,} unique events/"
             f"{coverage['n_eppi0_runs']} runs; "
-            f"common={coverage['n_common_unique']:,}/"
+            f"found={coverage['n_common_unique']:,}/"
             f"{coverage['n_common_runs']} runs; "
-            f"common/epgamma={coverage['common_over_epgamma']:.3%}; "
-            f"common/eppi0={coverage['common_over_eppi0']:.3%}. "
+            f"common/eppi0={coverage['common_over_eppi0']:.3%}; "
+            f"early_stop={coverage['stopped_early']}. "
             f"Plot: {plot}"
         )
     )
@@ -6472,13 +6599,15 @@ def run_raw_coverage_audit(
                     ),
                     (
                         f"  common runs = {coverage['n_common_runs']} "
-                        f"(epgamma {coverage['n_epgamma_runs']}, "
+                        f"(epgamma runs seen {coverage['n_epgamma_runs_seen']}, "
                         f"eppi0 {coverage['n_eppi0_runs']})"
                     ),
                     (
-                        "  epgamma-only runs: "
+                        "  epgamma-only runs seen: "
                         + (
-                            ", ".join(map(str, coverage["epgamma_only_runs"][:40]))
+                            ", ".join(
+                                map(str, coverage["epgamma_only_runs"][:40])
+                            )
                             if coverage["epgamma_only_runs"]
                             else "none"
                         )
@@ -6486,7 +6615,9 @@ def run_raw_coverage_audit(
                     (
                         "  eppi0-only runs: "
                         + (
-                            ", ".join(map(str, coverage["eppi0_only_runs"][:40]))
+                            ", ".join(
+                                map(str, coverage["eppi0_only_runs"][:40])
+                            )
                             if coverage["eppi0_only_runs"]
                             else "none"
                         )
@@ -8530,14 +8661,15 @@ def run_efficiency_extraction(
             "source": models["FD"].source,
         },
         "coverage": {
-            "n_epgamma_unique": coverage["n_epgamma_unique"],
+            "n_epgamma_rows_scanned": coverage["n_epgamma_rows_scanned"],
+            "n_epgamma_rows_total": coverage["n_epgamma_rows_total"],
             "n_eppi0_unique": coverage["n_eppi0_unique"],
             "n_common_unique": coverage["n_common_unique"],
-            "common_over_epgamma": coverage["common_over_epgamma"],
             "common_over_eppi0": coverage["common_over_eppi0"],
-            "n_epgamma_runs": coverage["n_epgamma_runs"],
+            "n_epgamma_runs_seen": coverage["n_epgamma_runs_seen"],
             "n_eppi0_runs": coverage["n_eppi0_runs"],
             "n_common_runs": coverage["n_common_runs"],
+            "stopped_early": coverage["stopped_early"],
         },
         "elapsed_s": float(time.perf_counter() - t0),
     }
@@ -9610,7 +9742,7 @@ def main() -> int:
     #endif
     log(
         "Raw data-file coverage audit: enabled before efficiency extraction. "
-        "FULL epgamma/eppi0 run-event sets are compared independent of "
+        "FULL eppi0 run-event keys are searched in streamed epgamma chunks, independent of "
         "--max-entries and row ordering; "
         f"required common/eppi0 >= {args.coverage_min_eppi0_overlap:.0%}."
     )
