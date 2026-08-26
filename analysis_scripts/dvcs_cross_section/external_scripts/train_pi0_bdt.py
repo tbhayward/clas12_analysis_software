@@ -291,16 +291,16 @@ PERIOD_FILES = {
         "dvcsgen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_fa18_inb_epgamma_0.40GeV.root",
         "clasdis_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_epgammaX.root",
         "clasdis_eppi0": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_eppi0X.root",
-        "data_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/rga_fa18_inb_epgamma_0.40GeV.root",
-        "data_eppi0": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
+        "data_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/efficiency_study/nSidis_rga_fa18_inb_epgamma.root",
+        "data_eppi0": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/efficiency_study/nSidis_rga_fa18_inb_eppi0.root",
     },
     "fa18_out": {
         "aaogen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/bkg_rga_fa18_out_epgamma_0.40GeV.root",
         "dvcsgen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_fa18_out_epgamma_0.40GeV.root",
         "clasdis_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_out_epgammaX.root",
         "clasdis_eppi0": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_out_eppi0X.root",
-        "data_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/rga_fa18_out_epgamma_0.40GeV.root",
-        "data_eppi0": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
+        "data_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/efficiency_study/nSidis_rga_fa18_out_epgamma.root",
+        "data_eppi0": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/efficiency_study/nSidis_rga_fa18_out_eppi0.root",
     },
 }
 
