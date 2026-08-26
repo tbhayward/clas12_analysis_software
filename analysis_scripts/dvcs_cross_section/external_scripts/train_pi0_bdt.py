@@ -27,8 +27,12 @@ CLASDIS e'p'pi0X events are used as an independent pi0-enriched positive
 control sample.
 
 The script trains separate models for:
-    * FT photons: p2_theta <= --ft-theta-max (default 5.5 deg)
-    * FD photons: p2_theta >  --ft-theta-max
+    * FT photons: detector2 == 0
+    * FD photons: detector2 == 1
+
+The MC runnum/evnum branches are never used for matching or event identity.
+CLASDIS cross-tree matching relies only on reconstructed electron/proton
+kinematics.
 
 For each topology it trains two feature configurations:
 
@@ -90,7 +94,8 @@ from sklearn.metrics import (
     confusion_matrix,
     roc_curve,
 )
-from sklearn.model_selection import GroupShuffleSplit
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import NearestNeighbors
 from xgboost import XGBClassifier
 
 
@@ -133,13 +138,12 @@ FEATURE_SETS: Dict[str, List[str]] = {
     "full": TOPOLOGY_FEATURES + PRODUCTION_FEATURES,
 }
 
-# Branches needed for event identity, detector-region selection, matching,
-# and all possible model inputs.
+# Branches needed for detector-region selection, kinematic matching,
+# and all possible model inputs. MC runnum/evnum are deliberately not read.
 EPG_REQUIRED_BRANCHES: List[str] = sorted(
     set(
         [
-            "runnum",
-            "evnum",
+            "detector2",
             "e_p",
             "e_theta",
             "e_phi",
@@ -156,8 +160,6 @@ EPG_REQUIRED_BRANCHES: List[str] = sorted(
 )
 
 EPPI0_MATCH_BRANCHES: List[str] = [
-    "runnum",
-    "evnum",
     "e_p",
     "e_theta",
     "e_phi",
@@ -167,9 +169,8 @@ EPPI0_MATCH_BRANCHES: List[str] = [
     "Mh_gammagamma",
 ]
 
-# Matching scales are deliberately fairly tight, but the matching algorithm
-# first requires the same (runnum, evnum). The normalized distance below then
-# chooses/accepts the most compatible electron+proton candidate in that event.
+# Matching scales are deliberately fairly tight. Cross-tree MC matching uses
+# only reconstructed electron/proton kinematics; runnum/evnum are never used.
 MATCH_SCALES = {
     "e_p": 0.010,        # GeV
     "e_theta": 0.10,     # degrees
@@ -264,13 +265,6 @@ def parse_args() -> argparse.Namespace:
         "--output-dir",
         default="output/pi0_bdt_intro",
         help="Top-level output directory.",
-    )
-
-    parser.add_argument(
-        "--ft-theta-max",
-        type=float,
-        default=5.5,
-        help="Maximum photon polar angle in degrees used to define FT.",
     )
 
     parser.add_argument(
@@ -378,18 +372,6 @@ def wrap_delta_phi_deg(delta_phi: np.ndarray) -> np.ndarray:
     return (delta_phi + 180.0) % 360.0 - 180.0
 
 
-def make_group_id(df: pd.DataFrame) -> pd.Series:
-    # The source prefix prevents unrelated generator events with the same
-    # run/event numbers from being treated as one group.
-    return (
-        df["source"].astype(str)
-        + ":"
-        + df["runnum"].astype(str)
-        + ":"
-        + df["evnum"].astype(str)
-    )
-
-
 def clean_feature_rows(
     df: pd.DataFrame,
     features: Sequence[str],
@@ -420,12 +402,12 @@ def random_cap(
 def detector_region_mask(
     df: pd.DataFrame,
     region: str,
-    ft_theta_max: float,
 ) -> pd.Series:
+    """Use the reconstructed photon detector assignment directly."""
     if region == "FT":
-        return df["p2_theta"] <= ft_theta_max
+        return df["detector2"] == 0
     elif region == "FD":
-        return df["p2_theta"] > ft_theta_max
+        return df["detector2"] == 1
     else:
         raise ValueError(f"Unknown detector region: {region}")
     #endif
@@ -435,12 +417,11 @@ def build_training_sample(
     aaogen: pd.DataFrame,
     dvcsgen: pd.DataFrame,
     region: str,
-    ft_theta_max: float,
     max_events_per_class: Optional[int],
     seed: int,
 ) -> pd.DataFrame:
-    pos = aaogen.loc[detector_region_mask(aaogen, region, ft_theta_max)].copy()
-    neg = dvcsgen.loc[detector_region_mask(dvcsgen, region, ft_theta_max)].copy()
+    pos = aaogen.loc[detector_region_mask(aaogen, region)].copy()
+    neg = dvcsgen.loc[detector_region_mask(dvcsgen, region)].copy()
 
     pos["label"] = 1
     neg["label"] = 0
@@ -448,46 +429,73 @@ def build_training_sample(
     pos = random_cap(pos, max_events_per_class, seed)
     neg = random_cap(neg, max_events_per_class, seed + 1)
 
-    combined = pd.concat([pos, neg], ignore_index=True)
-    combined["group_id"] = make_group_id(combined)
-
-    return combined
+    return pd.concat([pos, neg], ignore_index=True)
 
 
-def angle_difference_deg(a: float, b: float) -> float:
-    return float((a - b + 180.0) % 360.0 - 180.0)
+def angle_difference_deg(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    return (np.asarray(a) - np.asarray(b) + 180.0) % 360.0 - 180.0
 
 
-def match_epgamma_to_eppi0_by_event(
+def _matching_embedding(df: pd.DataFrame) -> np.ndarray:
+    """
+    Build a KD/nearest-neighbor-friendly embedding of the electron/proton
+    kinematics. Azimuths are represented by sin/cos components so the
+    +/-180-degree boundary is handled correctly.
+
+    For small angular differences, the chord-distance scaling below is
+    approximately the wrapped delta-phi divided by the requested phi scale.
+    """
+    e_phi = np.deg2rad(df["e_phi"].to_numpy(dtype=float))
+    p_phi = np.deg2rad(df["p1_phi"].to_numpy(dtype=float))
+
+    e_phi_factor = (180.0 / np.pi) / MATCH_SCALES["e_phi"]
+    p_phi_factor = (180.0 / np.pi) / MATCH_SCALES["p1_phi"]
+
+    return np.column_stack(
+        [
+            df["e_p"].to_numpy(dtype=float) / MATCH_SCALES["e_p"],
+            df["e_theta"].to_numpy(dtype=float) / MATCH_SCALES["e_theta"],
+            np.cos(e_phi) * e_phi_factor,
+            np.sin(e_phi) * e_phi_factor,
+            df["p1_p"].to_numpy(dtype=float) / MATCH_SCALES["p1_p"],
+            df["p1_theta"].to_numpy(dtype=float) / MATCH_SCALES["p1_theta"],
+            np.cos(p_phi) * p_phi_factor,
+            np.sin(p_phi) * p_phi_factor,
+        ]
+    )
+
+
+def match_epgamma_to_eppi0_by_kinematics(
     epg: pd.DataFrame,
     eppi0: pd.DataFrame,
     max_normalized_distance: float = 4.0,
 ) -> pd.DataFrame:
     """
-    Construct a pi0-enriched CLASDIS control sample.
+    Construct a pi0-enriched CLASDIS control sample using ONLY reconstructed
+    electron/proton kinematics.
 
-    Matching logic:
-      1. Require exactly the same (runnum, evnum).
-      2. Compare electron and proton reconstructed kinematics.
-      3. For each e'p'gammaX candidate, retain it if at least one e'p'pi0X
-         candidate in the same event lies within a normalized six-dimensional
-         electron+proton distance.
+    MC runnum and evnum are not used anywhere in this matching.
+
+    For every e'p'gammaX row we query the nearest e'p'pi0X row in a scaled
+    electron/proton kinematic space. A second exact calculation then applies
+    the six-dimensional normalized distance
+
+        (Delta e_p / s_e_p)^2 + (Delta e_theta / s_e_theta)^2
+      + (wrapped Delta e_phi / s_e_phi)^2
+      + (Delta p_p / s_p_p)^2 + (Delta p_theta / s_p_theta)^2
+      + (wrapped Delta p_phi / s_p_phi)^2.
+
+    The nearest-neighbor search is only an efficient candidate finder; the
+    final acceptance uses the exact wrapped-angle metric above.
 
     IMPORTANT:
-      This establishes that the e'p'gammaX candidate belongs to an event in
-      which a pi0 was successfully reconstructed with compatible e/p
-      kinematics. It does NOT prove that the particular p2 photon in the
-      e'p'gammaX row was one of the reconstructed pi0 daughters, because the
-      present e'p'pi0X tree does not contain enough individual-photon
-      information for an unambiguous daughter match.
-
-      Consequently this sample is used only as a pi0-enriched CONTROL SAMPLE,
-      never as a truth-pure training label.
+      A successful electron/proton match shows that an e'p'gammaX candidate
+      has a kinematically corresponding e'p'pi0X reconstruction. With the
+      current trees it still does not establish photon ancestry, so this is
+      used only as a pi0-enriched control sample, never as a training label.
     """
 
     match_columns = [
-        "runnum",
-        "evnum",
         "e_p",
         "e_theta",
         "e_phi",
@@ -496,47 +504,54 @@ def match_epgamma_to_eppi0_by_event(
         "p1_phi",
     ]
 
-    right = eppi0[match_columns].copy()
-    grouped = {
-        key: group.reset_index(drop=True)
-        for key, group in right.groupby(["runnum", "evnum"], sort=False)
-    }
+    left = epg.dropna(subset=match_columns).copy().reset_index(names="_epg_index")
+    right = eppi0.dropna(subset=match_columns).copy().reset_index(drop=True)
 
-    keep_indices: List[int] = []
+    if len(left) == 0 or len(right) == 0:
+        return epg.iloc[0:0].copy().reset_index(drop=True)
+    #endif
 
-    for idx, row in epg.iterrows():
-        key = (row["runnum"], row["evnum"])
-        candidates = grouped.get(key)
+    left_embedding = _matching_embedding(left)
+    right_embedding = _matching_embedding(right)
 
-        if candidates is None:
-            continue
-        #endif
+    neighbor_model = NearestNeighbors(n_neighbors=1, algorithm="auto")
+    neighbor_model.fit(right_embedding)
+    _, nearest_indices = neighbor_model.kneighbors(left_embedding, return_distance=True)
+    nearest_indices = nearest_indices[:, 0]
 
-        best_distance2 = math.inf
+    nearest = right.iloc[nearest_indices].reset_index(drop=True)
 
-        for _, cand in candidates.iterrows():
-            components = [
-                (row["e_p"] - cand["e_p"]) / MATCH_SCALES["e_p"],
-                (row["e_theta"] - cand["e_theta"]) / MATCH_SCALES["e_theta"],
-                angle_difference_deg(row["e_phi"], cand["e_phi"])
-                / MATCH_SCALES["e_phi"],
-                (row["p1_p"] - cand["p1_p"]) / MATCH_SCALES["p1_p"],
-                (row["p1_theta"] - cand["p1_theta"]) / MATCH_SCALES["p1_theta"],
-                angle_difference_deg(row["p1_phi"], cand["p1_phi"])
-                / MATCH_SCALES["p1_phi"],
-            ]
+    components = np.column_stack(
+        [
+            (left["e_p"].to_numpy() - nearest["e_p"].to_numpy())
+            / MATCH_SCALES["e_p"],
+            (left["e_theta"].to_numpy() - nearest["e_theta"].to_numpy())
+            / MATCH_SCALES["e_theta"],
+            angle_difference_deg(
+                left["e_phi"].to_numpy(),
+                nearest["e_phi"].to_numpy(),
+            )
+            / MATCH_SCALES["e_phi"],
+            (left["p1_p"].to_numpy() - nearest["p1_p"].to_numpy())
+            / MATCH_SCALES["p1_p"],
+            (left["p1_theta"].to_numpy() - nearest["p1_theta"].to_numpy())
+            / MATCH_SCALES["p1_theta"],
+            angle_difference_deg(
+                left["p1_phi"].to_numpy(),
+                nearest["p1_phi"].to_numpy(),
+            )
+            / MATCH_SCALES["p1_phi"],
+        ]
+    )
 
-            distance2 = float(np.sum(np.square(components)))
-            best_distance2 = min(best_distance2, distance2)
-        #endfor
+    normalized_distance = np.sqrt(np.sum(np.square(components), axis=1))
+    accepted = normalized_distance <= max_normalized_distance
 
-        if math.sqrt(best_distance2) <= max_normalized_distance:
-            keep_indices.append(idx)
-        #endif
-    #endfor
-
-    matched = epg.loc[keep_indices].copy()
+    matched_indices = left.loc[accepted, "_epg_index"].to_numpy(dtype=int)
+    matched = epg.iloc[matched_indices].copy()
     matched["control_match"] = True
+    matched["control_match_distance"] = normalized_distance[accepted]
+
     return matched.reset_index(drop=True)
 
 
@@ -544,42 +559,35 @@ def match_epgamma_to_eppi0_by_event(
 # Train/validation/test splitting and weighting
 # ---------------------------------------------------------------------------
 
-def grouped_train_validation_test_split(
+def train_validation_test_split(
     df: pd.DataFrame,
     seed: int,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Approximately 70% train, 15% validation, 15% test, grouped by event.
+    Approximately 70% train, 15% validation, 15% test with class stratification.
 
-    Because AAOgen and DVCSgen are independent sources and the group_id includes
-    source, candidates from the same generated event cannot leak between sets.
+    MC runnum/evnum are deliberately not used for grouping or identity. This
+    introductory version therefore performs a row-level split. If later study
+    shows that a single generated event can contribute multiple highly
+    correlated e'p'gammaX rows, the production version should construct a
+    kinematic event-group identifier without using runnum/evnum.
     """
 
-    first_split = GroupShuffleSplit(
-        n_splits=1,
+    train, remainder = train_test_split(
+        df,
         train_size=0.70,
         random_state=seed,
+        stratify=df["label"],
+        shuffle=True,
     )
 
-    train_idx, remainder_idx = next(
-        first_split.split(df, groups=df["group_id"])
-    )
-
-    train = df.iloc[train_idx].copy()
-    remainder = df.iloc[remainder_idx].copy()
-
-    second_split = GroupShuffleSplit(
-        n_splits=1,
+    validation, test = train_test_split(
+        remainder,
         train_size=0.50,
         random_state=seed + 1,
+        stratify=remainder["label"],
+        shuffle=True,
     )
-
-    validation_rel_idx, test_rel_idx = next(
-        second_split.split(remainder, groups=remainder["group_id"])
-    )
-
-    validation = remainder.iloc[validation_rel_idx].copy()
-    test = remainder.iloc[test_rel_idx].copy()
 
     return (
         train.reset_index(drop=True),
@@ -1093,7 +1101,6 @@ def run_region(
         aaogen=aaogen,
         dvcsgen=dvcsgen,
         region=region,
-        ft_theta_max=args.ft_theta_max,
         max_events_per_class=args.max_events_per_class,
         seed=args.seed,
     )
@@ -1120,7 +1127,6 @@ def run_region(
             detector_region_mask(
                 clasdis_control,
                 region,
-                args.ft_theta_max,
             )
         ].copy()
 
@@ -1160,7 +1166,7 @@ def run_region(
             control_clean = None
         #endif
 
-        train, validation, test = grouped_train_validation_test_split(
+        train, validation, test = train_validation_test_split(
             working,
             args.seed,
         )
@@ -1263,7 +1269,6 @@ def run_region(
                 "period": args.period,
                 "region": region,
                 "feature_set": feature_set_name,
-                "ft_theta_max": args.ft_theta_max,
             },
             model_output / "bdt_model.joblib",
         )
@@ -1350,10 +1355,10 @@ def main() -> None:
 
         print(
             f"[{args.period}] matching CLASDIS e'p'gammaX to reconstructed "
-            f"e'p'pi0X using run/event + electron/proton kinematics..."
+            f"e'p'pi0X using electron/proton kinematics only..."
         )
 
-        clasdis_control = match_epgamma_to_eppi0_by_event(
+        clasdis_control = match_epgamma_to_eppi0_by_kinematics(
             epg=clasdis_epg,
             eppi0=clasdis_eppi0,
         )
