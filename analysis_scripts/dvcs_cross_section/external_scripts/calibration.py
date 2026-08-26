@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-plot_calibration_v14.py
+plot_calibration_v15.py
 
 Fast calibration diagnostics for the CLAS12 DVCS calibration trees.
 
@@ -28,6 +28,15 @@ Current modules
    - Sector-resolved one-dimensional mean momentum and mean theta curves
      are also made versus lu, lv, and lw.
 
+3. PCal edge-cut / sampling-fraction study
+   - Electron and photon calorimeter response versus PCal lv and lw.
+   - Uses 4.5 cm strip-width coordinate bins.
+   - Makes sector-by-sector data/MC mean-response profiles.
+   - Makes sector-by-sector 2D response-versus-coordinate occupancy maps.
+   - Reference lines mark 9.0, 13.5, and 18.0 cm (2, 3, and 4 strips).
+   - Known localized dead-channel exclusions are applied, but the global
+     PCal lv/lw edge requirement is deliberately NOT applied.
+
 Performance model
 -----------------
 One worker process handles one complete run period.  Each ROOT file is read
@@ -51,31 +60,36 @@ output/calibration/calorimeter/before_cuts/ecout/
 output/calibration/calorimeter/after_cuts/pcal/
 output/calibration/calorimeter/after_cuts/ecin/
 output/calibration/calorimeter/after_cuts/ecout/
+output/calibration/calorimeter/edge_cuts/
 
 Examples
 --------
 All five RGA periods:
 
-  python3 external_scripts/plot_calibration_v14.py
+  python3 external_scripts/plot_calibration_v15.py
 
 RGC data:
 
-  python3 external_scripts/plot_calibration_v14.py --rgc
+  python3 external_scripts/plot_calibration_v15.py --rgc
 
 One period, limited test:
 
-  python3 external_scripts/plot_calibration_v14.py \
+  python3 external_scripts/plot_calibration_v15.py \
       --period rga_sp18_inb \
       --max-events 5000000 \
       --workers 1
 
 Only calorimeter plots:
 
-  python3 external_scripts/plot_calibration_v14.py --skip-ft
+  python3 external_scripts/plot_calibration_v15.py --skip-ft
 
 Only FT plots:
 
-  python3 external_scripts/plot_calibration_v14.py --skip-calorimeter
+  python3 external_scripts/plot_calibration_v15.py --skip-calorimeter
+
+Only the PCal edge-cut / sampling-fraction diagnostics:
+
+  python3 external_scripts/plot_calibration_v15.py --edge-cuts-only
 """
 
 from __future__ import annotations
@@ -165,6 +179,14 @@ KINEMATIC_FILENAME_KEYS = {
 }
 
 
+EDGE_COORD_KEYS: tuple[str, ...] = ("lv", "lw")
+EDGE_COORD_REFERENCE_CM: tuple[float, ...] = (9.0, 13.5, 18.0)
+EDGE_COORD_MAX_CM_DEFAULT = 90.0
+EDGE_SF_MIN_DEFAULT = 0.0
+EDGE_SF_MAX_DEFAULT = 1.2
+EDGE_SF_BINS_DEFAULT = 120
+
+
 @dataclass(frozen=True)
 class Dataset:
     key: str
@@ -224,6 +246,35 @@ class HistogramConfig:
         return self.cal_edges.size - 1
 
 
+    @property
+    def edge_coord_edges(self) -> np.ndarray:
+        bins_float = EDGE_COORD_MAX_CM_DEFAULT / self.cal_bin_width_cm
+        bins = int(round(bins_float))
+        if not np.isclose(bins_float, bins, rtol=0.0, atol=1.0e-10):
+            raise ValueError(
+                "The PCal edge-study coordinate range must be an integer "
+                "multiple of the calorimeter strip width."
+            )
+        #endif
+        return self.cal_bin_width_cm * np.arange(
+            bins + 1,
+            dtype=np.float64,
+        )
+
+    @property
+    def edge_coord_bins(self) -> int:
+        return self.edge_coord_edges.size - 1
+
+    @property
+    def edge_sf_edges(self) -> np.ndarray:
+        return np.linspace(
+            EDGE_SF_MIN_DEFAULT,
+            EDGE_SF_MAX_DEFAULT,
+            EDGE_SF_BINS_DEFAULT + 1,
+            dtype=np.float64,
+        )
+
+
 @dataclass
 class SampleResult:
     ft_before: np.ndarray
@@ -240,6 +291,10 @@ class SampleResult:
     pcal_electron_kin_1d_counts_after: np.ndarray
     pcal_electron_kin_1d_sums_before: np.ndarray
     pcal_electron_kin_1d_sums_after: np.ndarray
+    pcal_edge_counts: np.ndarray
+    pcal_edge_sf_sums: np.ndarray
+    pcal_edge_sf_sums2: np.ndarray
+    pcal_edge_sf_2d_counts: np.ndarray
     rows_read: int
     photon_rows: int
     valid_ft_photons: int
@@ -434,6 +489,55 @@ def exclusion_intervals(
     return intervals
 
 
+def localized_calorimeter_mask(
+    particle_mask: np.ndarray,
+    sectors: np.ndarray,
+    coordinate_arrays: dict[tuple[str, str], np.ndarray],
+    dataset_key: str,
+    is_rgc: bool,
+) -> np.ndarray:
+    """
+    Apply only localized dead-channel exclusions.
+
+    This intentionally does NOT apply the generic PCal lv/lw edge threshold.
+    It is used by the sampling-fraction edge study so that the detector
+    response can be examined continuously through the 9.0, 13.5, and
+    18.0 cm candidate boundaries without contamination from known localized
+    detector defects elsewhere in the calorimeter.
+    """
+
+    accepted = particle_mask.copy()
+
+    if is_rgc:
+        return accepted
+    #endif
+
+    for (
+        layer_key,
+        sector,
+        coordinate_key,
+        lower,
+        upper,
+        applicable_dataset_keys,
+    ) in DEAD_STRIP_EXCLUSIONS:
+        if dataset_key not in applicable_dataset_keys:
+            continue
+        #endif
+
+        values = coordinate_arrays[(layer_key, coordinate_key)]
+        in_interval = (
+            (sectors == sector)
+            & np.isfinite(values)
+            & (values != INVALID_SENTINEL)
+            & (values > lower)
+            & (values < upper)
+        )
+        accepted &= ~in_interval
+    #endfor
+
+    return accepted
+
+
 def calorimeter_fiducial_mask(
     particle_mask: np.ndarray,
     sectors: np.ndarray,
@@ -581,6 +685,15 @@ def parse_arguments() -> argparse.Namespace:
         help="Do not create calorimeter plots or read calorimeter branches.",
     )
     parser.add_argument(
+        "--edge-cuts-only",
+        action="store_true",
+        help=(
+            "Run only the PCal sampling-fraction edge-cut diagnostics. "
+            "This skips FT and the existing calorimeter matching/kinematic "
+            "accumulation and plotting for maximum efficiency."
+        ),
+    )
+    parser.add_argument(
         "--ft-bins",
         type=int,
         default=100,
@@ -636,6 +749,15 @@ def parse_arguments() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--edge-min-bin-count",
+        type=int,
+        default=20,
+        help=(
+            "Minimum entries required to display a mean PCal response point "
+            "in the edge-cut profile."
+        ),
+    )
+    parser.add_argument(
         "--dpi",
         type=int,
         default=180,
@@ -670,6 +792,14 @@ def parse_arguments() -> argparse.Namespace:
     #endif
     if args.kinematic_min_bin_count <= 0:
         parser.error("--kinematic-min-bin-count must be positive")
+    #endif
+    if args.edge_min_bin_count <= 0:
+        parser.error("--edge-min-bin-count must be positive")
+    #endif
+    if args.edge_cuts_only and args.skip_calorimeter:
+        parser.error(
+            "--edge-cuts-only cannot be combined with --skip-calorimeter"
+        )
     #endif
     if args.dpi <= 0:
         parser.error("--dpi must be positive")
@@ -716,7 +846,8 @@ def choose_datasets(
 
 def required_branches(
     do_ft: bool,
-    do_calorimeter: bool,
+    do_standard_calorimeter: bool,
+    do_edge_cuts: bool,
 ) -> tuple[str, ...]:
     branches: list[str] = ["particle_pid"]
 
@@ -724,8 +855,11 @@ def required_branches(
         branches.extend(("ft_x", "ft_y"))
     #endif
 
-    if do_calorimeter:
-        branches.extend(("p", "theta", "cal_sector"))
+    if do_standard_calorimeter or do_edge_cuts:
+        branches.append("cal_sector")
+
+        # Both calorimeter modes need the coordinates because localized
+        # dead-channel exclusions can involve PCal, ECin, or ECout.
         for layer_number in LAYER_NUMBERS:
             for coordinate_key in COORD_KEYS:
                 branches.append(f"cal_{coordinate_key}_{layer_number}")
@@ -733,7 +867,19 @@ def required_branches(
         #endfor
     #endif
 
-    return tuple(branches)
+    if do_standard_calorimeter:
+        branches.extend(("p", "theta"))
+    #endif
+
+    if do_edge_cuts:
+        branches.append("p")
+        for layer_number in LAYER_NUMBERS:
+            branches.append(f"cal_energy_{layer_number}")
+        #endfor
+    #endif
+
+    # Preserve order while removing duplicates such as p.
+    return tuple(dict.fromkeys(branches))
 
 
 def validate_root_tree(
@@ -887,6 +1033,53 @@ def empty_pcal_electron_kinematic_1d_sums(
     )
 
 
+def empty_pcal_edge_counts(
+    histogram_config: HistogramConfig,
+) -> np.ndarray:
+    # Axes: particle, sector, coordinate(lv/lw), strip bin
+    return np.zeros(
+        (
+            len(PARTICLE_KEYS),
+            6,
+            len(EDGE_COORD_KEYS),
+            histogram_config.edge_coord_bins,
+        ),
+        dtype=np.uint64,
+    )
+
+
+def empty_pcal_edge_sf_sums(
+    histogram_config: HistogramConfig,
+) -> np.ndarray:
+    # Axes: particle, sector, coordinate(lv/lw), strip bin
+    return np.zeros(
+        (
+            len(PARTICLE_KEYS),
+            6,
+            len(EDGE_COORD_KEYS),
+            histogram_config.edge_coord_bins,
+        ),
+        dtype=np.float64,
+    )
+
+
+def empty_pcal_edge_sf_2d_counts(
+    histogram_config: HistogramConfig,
+) -> np.ndarray:
+    # Axes:
+    #   particle, sector, coordinate(lv/lw), coordinate bin, response bin
+    return np.zeros(
+        (
+            len(PARTICLE_KEYS),
+            6,
+            len(EDGE_COORD_KEYS),
+            histogram_config.edge_coord_bins,
+            EDGE_SF_BINS_DEFAULT,
+        ),
+        dtype=np.uint32,
+    )
+
+
 def accumulate_sample(
     file_path: Path,
     tree_name: str,
@@ -895,13 +1088,18 @@ def accumulate_sample(
     chunk_size: int,
     max_events: int | None,
     do_ft: bool,
-    do_calorimeter: bool,
+    do_standard_calorimeter: bool,
+    do_edge_cuts: bool,
     dataset_key: str,
     calorimeter_strictness: int,
     is_rgc: bool,
 ) -> SampleResult:
     start_time = time.perf_counter()
-    branches = required_branches(do_ft, do_calorimeter)
+    branches = required_branches(
+        do_ft,
+        do_standard_calorimeter,
+        do_edge_cuts,
+    )
     validate_root_tree(file_path, tree_name, branches)
 
     ft_shape = (histogram_config.ft_bins, histogram_config.ft_bins)
@@ -935,9 +1133,15 @@ def accumulate_sample(
     pcal_electron_kin_1d_sums_after = (
         empty_pcal_electron_kinematic_1d_sums(histogram_config)
     )
+    pcal_edge_counts = empty_pcal_edge_counts(histogram_config)
+    pcal_edge_sf_sums = empty_pcal_edge_sf_sums(histogram_config)
+    pcal_edge_sf_sums2 = empty_pcal_edge_sf_sums(histogram_config)
+    pcal_edge_sf_2d_counts = empty_pcal_edge_sf_2d_counts(histogram_config)
 
     ft_edges = histogram_config.ft_edges
     cal_edges = histogram_config.cal_edges
+    edge_coord_edges = histogram_config.edge_coord_edges
+    edge_sf_edges = histogram_config.edge_sf_edges
 
     rows_read = 0
     photon_rows = 0
@@ -1001,13 +1205,10 @@ def accumulate_sample(
             #endif
         #endif
 
-        if do_calorimeter:
+        if do_standard_calorimeter or do_edge_cuts:
             sectors = np.asarray(arrays["cal_sector"], dtype=np.int16)
-            electron_momentum = np.asarray(arrays["p"], dtype=np.float64)
-            electron_theta = np.asarray(arrays["theta"], dtype=np.float64)
             valid_sector = (sectors >= 1) & (sectors <= 6)
 
-            # Read each calorimeter coordinate array exactly once per chunk.
             coordinate_arrays = {
                 (layer_key, coordinate_key): np.asarray(
                     arrays[f"cal_{coordinate_key}_{layer_number}"],
@@ -1020,6 +1221,9 @@ def accumulate_sample(
                 for coordinate_key in COORD_KEYS
             }
 
+        if do_standard_calorimeter:
+            electron_momentum = np.asarray(arrays["p"], dtype=np.float64)
+            electron_theta = np.asarray(arrays["theta"], dtype=np.float64)
             for particle_index, particle_pid in enumerate(PARTICLE_PIDS):
                 particle_mask = valid_sector & (pid == particle_pid)
                 if not np.any(particle_mask):
@@ -1391,6 +1595,148 @@ def accumulate_sample(
                 #endfor
             #endfor
         #endif
+
+        if do_edge_cuts:
+            momentum = np.asarray(arrays["p"], dtype=np.float64)
+            cal_energy_1 = np.asarray(
+                arrays["cal_energy_1"],
+                dtype=np.float64,
+            )
+            cal_energy_4 = np.asarray(
+                arrays["cal_energy_4"],
+                dtype=np.float64,
+            )
+            cal_energy_7 = np.asarray(
+                arrays["cal_energy_7"],
+                dtype=np.float64,
+            )
+
+            total_cal_energy = (
+                cal_energy_1 + cal_energy_4 + cal_energy_7
+            )
+            valid_response = (
+                np.isfinite(momentum)
+                & (momentum > 0.0)
+                & np.isfinite(cal_energy_1)
+                & np.isfinite(cal_energy_4)
+                & np.isfinite(cal_energy_7)
+                & (cal_energy_1 != INVALID_SENTINEL)
+                & (cal_energy_4 != INVALID_SENTINEL)
+                & (cal_energy_7 != INVALID_SENTINEL)
+                & np.isfinite(total_cal_energy)
+                & (total_cal_energy > 0.0)
+            )
+
+            response = np.zeros_like(total_cal_energy)
+            np.divide(
+                total_cal_energy,
+                momentum,
+                out=response,
+                where=valid_response,
+            )
+
+            for particle_index, particle_pid in enumerate(PARTICLE_PIDS):
+                particle_mask = (
+                    valid_sector
+                    & (pid == particle_pid)
+                    & valid_response
+                )
+                if not np.any(particle_mask):
+                    continue
+                #endif
+
+                localized_mask = localized_calorimeter_mask(
+                    particle_mask=particle_mask,
+                    sectors=sectors,
+                    coordinate_arrays=coordinate_arrays,
+                    dataset_key=dataset_key,
+                    is_rgc=is_rgc,
+                )
+
+                for sector in range(1, 7):
+                    sector_mask = localized_mask & (sectors == sector)
+                    if not np.any(sector_mask):
+                        continue
+                    #endif
+
+                    for edge_coord_index, coordinate_key in enumerate(
+                        EDGE_COORD_KEYS
+                    ):
+                        coordinate_values = coordinate_arrays[
+                            ("pcal", coordinate_key)
+                        ]
+
+                        valid = (
+                            sector_mask
+                            & np.isfinite(coordinate_values)
+                            & (
+                                coordinate_values
+                                != INVALID_SENTINEL
+                            )
+                            & (
+                                coordinate_values
+                                >= edge_coord_edges[0]
+                            )
+                            & (
+                                coordinate_values
+                                <= edge_coord_edges[-1]
+                            )
+                            & (response >= edge_sf_edges[0])
+                            & (response <= edge_sf_edges[-1])
+                        )
+
+                        if not np.any(valid):
+                            continue
+                        #endif
+
+                        x = coordinate_values[valid]
+                        y = response[valid]
+
+                        counts, _ = np.histogram(
+                            x,
+                            bins=edge_coord_edges,
+                        )
+                        sf_sums, _ = np.histogram(
+                            x,
+                            bins=edge_coord_edges,
+                            weights=y,
+                        )
+                        sf_sums2, _ = np.histogram(
+                            x,
+                            bins=edge_coord_edges,
+                            weights=y * y,
+                        )
+                        counts_2d, _, _ = np.histogram2d(
+                            x,
+                            y,
+                            bins=(edge_coord_edges, edge_sf_edges),
+                        )
+
+                        pcal_edge_counts[
+                            particle_index,
+                            sector - 1,
+                            edge_coord_index,
+                        ] += counts.astype(np.uint64, copy=False)
+                        pcal_edge_sf_sums[
+                            particle_index,
+                            sector - 1,
+                            edge_coord_index,
+                        ] += sf_sums
+                        pcal_edge_sf_sums2[
+                            particle_index,
+                            sector - 1,
+                            edge_coord_index,
+                        ] += sf_sums2
+                        pcal_edge_sf_2d_counts[
+                            particle_index,
+                            sector - 1,
+                            edge_coord_index,
+                        ] += counts_2d.astype(np.uint32, copy=False)
+                    #endfor
+                #endfor
+            #endfor
+        #endif
+
     #endfor
 
     return SampleResult(
@@ -1420,6 +1766,10 @@ def accumulate_sample(
         pcal_electron_kin_1d_sums_after=(
             pcal_electron_kin_1d_sums_after
         ),
+        pcal_edge_counts=pcal_edge_counts,
+        pcal_edge_sf_sums=pcal_edge_sf_sums,
+        pcal_edge_sf_sums2=pcal_edge_sf_sums2,
+        pcal_edge_sf_2d_counts=pcal_edge_sf_2d_counts,
         rows_read=rows_read,
         photon_rows=photon_rows,
         valid_ft_photons=valid_ft_photons,
@@ -1437,7 +1787,8 @@ def process_period(
     chunk_size: int,
     max_events: int | None,
     do_ft: bool,
-    do_calorimeter: bool,
+    do_standard_calorimeter: bool,
+    do_edge_cuts: bool,
     calorimeter_strictness: int,
     is_rgc: bool,
 ) -> PeriodResult:
@@ -1451,7 +1802,8 @@ def process_period(
         chunk_size,
         max_events,
         do_ft,
-        do_calorimeter,
+        do_standard_calorimeter,
+        do_edge_cuts,
         dataset.key,
         calorimeter_strictness,
         is_rgc,
@@ -1467,7 +1819,8 @@ def process_period(
             chunk_size,
             max_events,
             do_ft,
-            do_calorimeter,
+            do_standard_calorimeter,
+            do_edge_cuts,
             dataset.key,
             calorimeter_strictness,
             is_rgc,
@@ -2743,6 +3096,358 @@ def save_pcal_electron_kinematic_1d_summary(
 
 
 # =============================================================================
+# PCal edge-cut / sampling-fraction plotting
+# =============================================================================
+
+
+def pcal_response_moments(
+    counts: np.ndarray,
+    sums: np.ndarray,
+    sums2: np.ndarray,
+    minimum_count: int,
+) -> tuple[np.ma.MaskedArray, np.ma.MaskedArray]:
+    valid = counts >= minimum_count
+
+    mean = np.zeros_like(sums, dtype=np.float64)
+    np.divide(sums, counts, out=mean, where=valid)
+
+    second_moment = np.zeros_like(sums2, dtype=np.float64)
+    np.divide(sums2, counts, out=second_moment, where=valid)
+
+    variance = np.maximum(second_moment - mean * mean, 0.0)
+    rms = np.sqrt(variance)
+
+    return (
+        np.ma.array(mean, mask=~valid),
+        np.ma.array(rms, mask=~valid),
+    )
+
+
+def draw_edge_reference_lines(axis: plt.Axes) -> None:
+    line_styles = (":", "--", "-.")
+    for reference_cm, line_style in zip(
+        EDGE_COORD_REFERENCE_CM,
+        line_styles,
+    ):
+        axis.axvline(
+            reference_cm,
+            linestyle=line_style,
+            linewidth=1.2,
+            color="black",
+            alpha=0.85,
+        )
+    #endfor
+
+
+def save_pcal_edge_profile_summary(
+    result: PeriodResult,
+    output_base: Path,
+    histogram_config: HistogramConfig,
+    particle_index: int,
+    edge_coord_index: int,
+    minimum_bin_count: int,
+    dpi: int,
+) -> Path:
+    particle_key = PARTICLE_KEYS[particle_index]
+    particle_label = particle_key.capitalize()
+    coordinate_key = EDGE_COORD_KEYS[edge_coord_index]
+
+    edges = histogram_config.edge_coord_edges
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    figure, axes = plt.subplots(
+        3,
+        2,
+        figsize=(12.5, 10.5),
+        sharex=True,
+        constrained_layout=True,
+    )
+
+    for sector_index, axis in enumerate(axes.ravel()):
+        sector = sector_index + 1
+
+        data_mean, _ = pcal_response_moments(
+            result.data.pcal_edge_counts[
+                particle_index,
+                sector_index,
+                edge_coord_index,
+            ],
+            result.data.pcal_edge_sf_sums[
+                particle_index,
+                sector_index,
+                edge_coord_index,
+            ],
+            result.data.pcal_edge_sf_sums2[
+                particle_index,
+                sector_index,
+                edge_coord_index,
+            ],
+            minimum_bin_count,
+        )
+        axis.plot(
+            centers,
+            data_mean,
+            marker="o",
+            markersize=3.0,
+            linewidth=1.2,
+            label="Data",
+        )
+
+        if result.mc is not None:
+            mc_mean, _ = pcal_response_moments(
+                result.mc.pcal_edge_counts[
+                    particle_index,
+                    sector_index,
+                    edge_coord_index,
+                ],
+                result.mc.pcal_edge_sf_sums[
+                    particle_index,
+                    sector_index,
+                    edge_coord_index,
+                ],
+                result.mc.pcal_edge_sf_sums2[
+                    particle_index,
+                    sector_index,
+                    edge_coord_index,
+                ],
+                minimum_bin_count,
+            )
+            axis.plot(
+                centers,
+                mc_mean,
+                marker="o",
+                markersize=3.0,
+                linewidth=1.2,
+                label="MC",
+            )
+        #endif
+
+        draw_edge_reference_lines(axis)
+        axis.set_title(f"Sector {sector}")
+        axis.set_xlim(0.0, EDGE_COORD_MAX_CM_DEFAULT)
+        axis.set_ylabel(
+            r"$\langle E_{\mathrm{cal}}/p\rangle$"
+        )
+        axis.grid(alpha=0.20)
+
+        if sector_index >= 4:
+            axis.set_xlabel(COORD_LABELS[coordinate_key])
+        #endif
+
+        if sector_index == 0:
+            axis.legend()
+            axis.text(
+                0.98,
+                0.04,
+                "vertical lines: 9, 13.5, 18 cm",
+                transform=axis.transAxes,
+                ha="right",
+                va="bottom",
+                fontsize=8,
+            )
+        #endif
+    #endfor
+
+    figure.suptitle(
+        f"{result.dataset.label}: PCal {particle_label} calorimeter "
+        f"response versus {coordinate_key}\n"
+        "Known localized exclusions applied; no global PCal edge cut applied",
+        fontsize=15,
+    )
+
+    output_dir = output_base / "calorimeter" / "edge_cuts"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / (
+        f"{result.dataset.key}_pcal_{particle_key}_"
+        f"sampling_fraction_vs_{coordinate_key}_profile.png"
+    )
+    figure.savefig(
+        output_path,
+        dpi=dpi,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
+    plt.close(figure)
+    return output_path
+
+
+def save_pcal_edge_2d_summary(
+    result: PeriodResult,
+    output_base: Path,
+    histogram_config: HistogramConfig,
+    particle_index: int,
+    edge_coord_index: int,
+    dpi: int,
+) -> Path:
+    particle_key = PARTICLE_KEYS[particle_index]
+    particle_label = particle_key.capitalize()
+    coordinate_key = EDGE_COORD_KEYS[edge_coord_index]
+
+    has_mc = result.mc is not None
+    number_of_rows = 2 if has_mc else 1
+
+    figure, axes = plt.subplots(
+        number_of_rows,
+        6,
+        figsize=(19.5, 6.9 if has_mc else 3.9),
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+    )
+    figure.subplots_adjust(
+        left=0.050,
+        right=0.925,
+        bottom=0.110,
+        top=0.830,
+        wspace=0.075,
+        hspace=0.090,
+    )
+
+    data_histograms = [
+        result.data.pcal_edge_sf_2d_counts[
+            particle_index,
+            sector_index,
+            edge_coord_index,
+        ]
+        for sector_index in range(6)
+    ]
+    data_norm = row_log_norm(data_histograms)
+
+    mc_histograms: list[np.ndarray] = []
+    mc_norm = None
+    if has_mc:
+        assert result.mc is not None
+        mc_histograms = [
+            result.mc.pcal_edge_sf_2d_counts[
+                particle_index,
+                sector_index,
+                edge_coord_index,
+            ]
+            for sector_index in range(6)
+        ]
+        mc_norm = row_log_norm(mc_histograms)
+    #endif
+
+    response_max = 0.50 if particle_key == "electron" else 1.20
+    extent = (
+        0.0,
+        EDGE_COORD_MAX_CM_DEFAULT,
+        EDGE_SF_MIN_DEFAULT,
+        EDGE_SF_MAX_DEFAULT,
+    )
+
+    first_data_image = None
+    first_mc_image = None
+
+    for sector_index in range(6):
+        sector = sector_index + 1
+
+        data_axis = axes[0, sector_index]
+        data_image = data_axis.imshow(
+            data_histograms[sector_index].T,
+            origin="lower",
+            extent=extent,
+            interpolation="nearest",
+            aspect="auto",
+            cmap="viridis",
+            norm=data_norm,
+            rasterized=True,
+        )
+        if first_data_image is None:
+            first_data_image = data_image
+        #endif
+
+        data_axis.set_title(f"Sector {sector}", fontsize=11, pad=4)
+        data_axis.set_ylim(0.0, response_max)
+        draw_edge_reference_lines(data_axis)
+
+        if has_mc:
+            data_axis.tick_params(labelbottom=False)
+        else:
+            data_axis.set_xlabel(COORD_LABELS[coordinate_key], fontsize=9)
+        #endif
+
+        if sector_index == 0:
+            data_axis.set_ylabel(
+                "Data\n" + r"$E_{\mathrm{cal}}/p$",
+                fontsize=9,
+            )
+        #endif
+        data_axis.tick_params(labelsize=8)
+
+        if has_mc:
+            mc_axis = axes[1, sector_index]
+            mc_image = mc_axis.imshow(
+                mc_histograms[sector_index].T,
+                origin="lower",
+                extent=extent,
+                interpolation="nearest",
+                aspect="auto",
+                cmap="viridis",
+                norm=mc_norm,
+                rasterized=True,
+            )
+            if first_mc_image is None:
+                first_mc_image = mc_image
+            #endif
+
+            mc_axis.set_ylim(0.0, response_max)
+            mc_axis.set_xlabel(COORD_LABELS[coordinate_key], fontsize=9)
+            draw_edge_reference_lines(mc_axis)
+
+            if sector_index == 0:
+                mc_axis.set_ylabel(
+                    "MC\n" + r"$E_{\mathrm{cal}}/p$",
+                    fontsize=9,
+                )
+            #endif
+            mc_axis.tick_params(labelsize=8)
+        #endif
+    #endfor
+
+    if first_data_image is not None:
+        data_cax = figure.add_axes(
+            [0.942, 0.535 if has_mc else 0.140, 0.012, 0.295 if has_mc else 0.650]
+        )
+        data_cb = figure.colorbar(first_data_image, cax=data_cax)
+        data_cb.set_label("Data entries per bin", fontsize=9)
+        data_cb.ax.tick_params(labelsize=8)
+    #endif
+
+    if has_mc and first_mc_image is not None:
+        mc_cax = figure.add_axes([0.942, 0.110, 0.012, 0.295])
+        mc_cb = figure.colorbar(first_mc_image, cax=mc_cax)
+        mc_cb.set_label("MC entries per bin", fontsize=9)
+        mc_cb.ax.tick_params(labelsize=8)
+    #endif
+
+    figure.suptitle(
+        f"{result.dataset.label}: PCal {particle_label} response versus "
+        f"{coordinate_key}\n"
+        "4.5 cm strip bins; vertical lines at 9, 13.5, and 18 cm; "
+        "known localized exclusions applied",
+        fontsize=14,
+        y=0.965,
+    )
+
+    output_dir = output_base / "calorimeter" / "edge_cuts"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = output_dir / (
+        f"{result.dataset.key}_pcal_{particle_key}_"
+        f"sampling_fraction_vs_{coordinate_key}_2d.png"
+    )
+    figure.savefig(
+        output_path,
+        dpi=dpi,
+        bbox_inches="tight",
+        pad_inches=0.08,
+    )
+    plt.close(figure)
+    return output_path
+
+
+
+# =============================================================================
 # Main
 # =============================================================================
 
@@ -2783,8 +3488,11 @@ def main() -> int:
         return 2
     #endif
 
-    do_ft = not args.skip_ft
-    do_calorimeter = not args.skip_calorimeter
+    do_ft = not args.skip_ft and not args.edge_cuts_only
+    do_standard_calorimeter = (
+        not args.skip_calorimeter and not args.edge_cuts_only
+    )
+    do_edge_cuts = not args.skip_calorimeter
     is_rgc = mode_label == "RGC"
 
     histogram_config = HistogramConfig(
@@ -2814,7 +3522,10 @@ def main() -> int:
     print(f"Workers:                {effective_workers}")
     print(f"Chunk size:             {args.chunk_size:,}")
     print(f"FT enabled:             {do_ft}")
-    print(f"Calorimeter enabled:    {do_calorimeter}")
+    print(
+        f"Standard calorimeter:   {do_standard_calorimeter}"
+    )
+    print(f"PCal edge-cut study:    {do_edge_cuts}")
     print(f"Calorimeter bin width:  {args.cal_bin_width:.3f} cm")
     print(f"Calorimeter strictness: {args.calorimeter_strictness}")
     print(
@@ -2841,7 +3552,8 @@ def main() -> int:
                 args.chunk_size,
                 args.max_events,
                 do_ft,
-                do_calorimeter,
+                do_standard_calorimeter,
+                do_edge_cuts,
                 args.calorimeter_strictness,
                 is_rgc,
             ): dataset
@@ -2904,7 +3616,34 @@ def main() -> int:
             print(f"[PLOT] {output_path}", flush=True)
         #endif
 
-        if do_calorimeter:
+        if do_edge_cuts:
+            for particle_index in range(len(PARTICLE_KEYS)):
+                for edge_coord_index in range(len(EDGE_COORD_KEYS)):
+                    output_path = save_pcal_edge_profile_summary(
+                        result=result,
+                        output_base=args.output_base,
+                        histogram_config=histogram_config,
+                        particle_index=particle_index,
+                        edge_coord_index=edge_coord_index,
+                        minimum_bin_count=args.edge_min_bin_count,
+                        dpi=args.dpi,
+                    )
+                    print(f"[PLOT] {output_path}", flush=True)
+
+                    output_path = save_pcal_edge_2d_summary(
+                        result=result,
+                        output_base=args.output_base,
+                        histogram_config=histogram_config,
+                        particle_index=particle_index,
+                        edge_coord_index=edge_coord_index,
+                        dpi=args.dpi,
+                    )
+                    print(f"[PLOT] {output_path}", flush=True)
+                #endfor
+            #endfor
+        #endif
+
+        if do_standard_calorimeter:
             for cut_stage in ("before_cuts", "after_cuts"):
                 for coordinate_index in range(len(COORD_KEYS)):
                     for kinematic_index in range(len(KINEMATIC_KEYS)):
