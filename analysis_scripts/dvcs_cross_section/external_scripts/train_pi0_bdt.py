@@ -152,6 +152,46 @@ TOPOLOGY_FEATURES: List[str] = [
     "pTmiss",
 ]
 
+# Diagnostic feature configurations. The nominal topology BDT remains the
+# production/reference classifier. The additional models are trained only to
+# understand where its discrimination comes from.
+ABLATION_FEATURE_SETS: Dict[str, List[str]] = {
+    "nominal": list(TOPOLOGY_FEATURES),
+
+    # Leave-one-important-variable-out tests.
+    "no_p2_p": [
+        feature for feature in TOPOLOGY_FEATURES
+        if feature != "p2_p"
+    ],
+    "no_theta_gamma_gamma": [
+        feature for feature in TOPOLOGY_FEATURES
+        if feature != "theta_gamma_gamma"
+    ],
+    "no_Emiss2": [
+        feature for feature in TOPOLOGY_FEATURES
+        if feature != "Emiss2"
+    ],
+    "no_pTmiss": [
+        feature for feature in TOPOLOGY_FEATURES
+        if feature != "pTmiss"
+    ],
+
+    # Remove all three stored missing-mass-like branches together.
+    "no_Mx2_group": [
+        feature for feature in TOPOLOGY_FEATURES
+        if feature not in {"Mx2", "Mx2_1", "Mx2_2"}
+    ],
+
+    # Compact model containing the variables that have repeatedly appeared
+    # among the strongest diagnostics.
+    "minimal4": [
+        "p2_p",
+        "theta_gamma_gamma",
+        "Emiss2",
+        "pTmiss",
+    ],
+}
+
 PRODUCTION_FEATURES: List[str] = [
     "Q2",
     "W",
@@ -339,30 +379,9 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Optional aligned CLASDIS quick-read size. The same entry range "
-            "[entry_start, entry_start + N) is read from BOTH epgammaX and "
-            "eppi0X so any preserved cross-tree ordering is retained. "
-            "Omit to read the full trees."
-        ),
-    )
-
-    parser.add_argument(
-        "--clasdis-entry-start",
-        type=int,
-        default=0,
-        help=(
-            "Starting ROOT entry for aligned CLASDIS quick reads. The same "
-            "entry_start is applied to epgammaX and eppi0X. Default: 0."
-        ),
-    )
-
-    parser.add_argument(
-        "--test-clasdis-ordering",
-        action="store_true",
-        help=(
-            "Compare epgammaX[i] directly with eppi0X[i] over the overlapping "
-            "loaded range using the established Cartesian e/p parent-match "
-            "criteria. This tests whether the trees preserve same-order parents."
+            "Optional maximum number of ROOT entries read from EACH CLASDIS tree "
+            "before kinematic matching. Omit for the recommended full CLASDIS "
+            "matching diagnostic; partial cross-tree reads can lose true matches."
         ),
     )
 
@@ -385,6 +404,15 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=100,
         help="Number of boosted trees per model. Default: 100.",
+    )
+
+    parser.add_argument(
+        "--skip-ablations",
+        action="store_true",
+        help=(
+            "Train only the nominal topology BDT and skip the diagnostic "
+            "feature-ablation models."
+        ),
     )
 
     parser.add_argument(
@@ -447,7 +475,6 @@ def load_dataframe(
     branches: Sequence[str],
     source: str,
     entry_limit: Optional[int] = None,
-    entry_start: int = 0,
 ) -> pd.DataFrame:
     stage_start = time.perf_counter()
     progress(f"LOAD {source}: opening {filename}")
@@ -459,37 +486,25 @@ def load_dataframe(
     with uproot.open(filename) as root_file:
         tree = root_file[tree_name]
         n_total = int(tree.num_entries)
-        start = max(0, int(entry_start))
-
-        if start >= n_total:
-            raise RuntimeError(
-                f"Requested entry_start={start:,} exceeds tree size "
-                f"{n_total:,} for {filename}"
-            )
-        #endif
-
         if entry_limit is None:
-            stop = n_total
+            n_read = n_total
         else:
-            stop = min(start + int(entry_limit), n_total)
+            n_read = min(int(entry_limit), n_total)
         #endif
-
-        n_read = stop - start
 
         progress(
-            f"LOAD {source}: tree contains {n_total:,} rows; reading "
-            f"{n_read:,} entries [{start:,}, {stop:,}) "
-            f"({100.0*n_read/max(n_total,1):.2f}% of tree)"
+            f"LOAD {source}: tree contains {n_total:,} rows; "
+            f"reading {n_read:,} ({100.0*n_read/max(n_total,1):.2f}%)"
         )
         progress(
             f"LOAD {source}: reading {len(branches)} branches into memory "
-            f"(entry_start={start:,}, entry_stop={stop:,})"
+            f"(entry_start=0, entry_stop={n_read:,})"
         )
 
         df = tree.arrays(
             list(branches),
-            entry_start=start,
-            entry_stop=stop,
+            entry_start=0,
+            entry_stop=n_read,
             library="pd",
         )
     #endwith
@@ -1286,168 +1301,6 @@ def model_scores(
 # ---------------------------------------------------------------------------
 # Plotting
 # ---------------------------------------------------------------------------
-
-def build_same_entry_ordering_diagnostics(
-    epg: pd.DataFrame,
-    eppi0: pd.DataFrame,
-) -> pd.DataFrame:
-    """
-    Compare epgammaX[i] directly with eppi0X[i] over the overlapping loaded
-    range. This is a diagnostic only; it is not used to define the real match.
-    """
-    n = min(len(epg), len(eppi0))
-
-    if n == 0:
-        return pd.DataFrame()
-    #endif
-
-    left = epg.iloc[:n].reset_index(drop=True)
-    right = eppi0.iloc[:n].reset_index(drop=True)
-
-    left_components = build_ep_cartesian_components(left)
-    right_components = build_ep_cartesian_components(right)
-
-    residuals = {}
-    for component in [
-        "e_px", "e_py", "e_pz",
-        "p_px", "p_py", "p_pz",
-    ]:
-        residuals[f"delta_{component}"] = (
-            left_components[component]
-            - right_components[component]
-        )
-    #endfor
-
-    matrix = np.column_stack(
-        [
-            residuals["delta_e_px"],
-            residuals["delta_e_py"],
-            residuals["delta_e_pz"],
-            residuals["delta_p_px"],
-            residuals["delta_p_py"],
-            residuals["delta_p_pz"],
-        ]
-    )
-
-    scaled_distance = np.sqrt(
-        np.sum(
-            np.square(matrix / MATCH_COMPONENT_TOL_GEV),
-            axis=1,
-        )
-    )
-    max_component = np.max(np.abs(matrix), axis=1)
-
-    diagnostics = pd.DataFrame(residuals)
-    diagnostics["same_entry_scaled_distance"] = scaled_distance
-    diagnostics["same_entry_max_component"] = max_component
-    diagnostics["same_entry_parent_match"] = (
-        (scaled_distance <= MATCH_MAX_SCALED_DISTANCE)
-        & (max_component <= MATCH_COMPONENT_TOL_GEV)
-    )
-
-    return diagnostics
-
-
-def plot_same_entry_ordering_diagnostics(
-    diagnostics: pd.DataFrame,
-    output_path: Path,
-    title: str,
-) -> None:
-    if len(diagnostics) == 0:
-        return
-    #endif
-
-    matched = diagnostics["same_entry_parent_match"].to_numpy(dtype=bool)
-    match_fraction = float(np.mean(matched))
-
-    fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
-
-    distance = diagnostics["same_entry_scaled_distance"].to_numpy(dtype=float)
-    finite_distance = distance[np.isfinite(distance)]
-    distance_max = max(
-        5.0,
-        float(np.quantile(finite_distance, 0.995))
-        if len(finite_distance) > 0 else 5.0,
-    )
-
-    axes[0, 0].hist(
-        distance,
-        bins=120,
-        range=(0.0, distance_max),
-        histtype="step",
-        linewidth=1.6,
-    )
-    axes[0, 0].axvline(
-        MATCH_MAX_SCALED_DISTANCE,
-        linestyle="--",
-        linewidth=1.3,
-    )
-    axes[0, 0].set_xlabel("Same-entry scaled e/p distance")
-    axes[0, 0].set_ylabel("Entry pairs")
-    axes[0, 0].set_title("Same-index parent distance")
-    axes[0, 0].grid(alpha=0.20)
-
-    max_comp = diagnostics["same_entry_max_component"].to_numpy(dtype=float)
-    finite_comp = max_comp[np.isfinite(max_comp)]
-    comp_max = max(
-        5.0 * MATCH_COMPONENT_TOL_GEV,
-        float(np.quantile(finite_comp, 0.995))
-        if len(finite_comp) > 0 else 5.0 * MATCH_COMPONENT_TOL_GEV,
-    )
-
-    axes[0, 1].hist(
-        max_comp,
-        bins=120,
-        range=(0.0, comp_max),
-        histtype="step",
-        linewidth=1.6,
-    )
-    axes[0, 1].axvline(
-        MATCH_COMPONENT_TOL_GEV,
-        linestyle="--",
-        linewidth=1.3,
-    )
-    axes[0, 1].set_xlabel(r"Same-entry $\max_i|\Delta p_i|$ (GeV)")
-    axes[0, 1].set_ylabel("Entry pairs")
-    axes[0, 1].set_title("Maximum Cartesian mismatch")
-    axes[0, 1].grid(alpha=0.20)
-
-    axes[1, 0].scatter(
-        np.arange(len(max_comp)),
-        max_comp,
-        s=2,
-        alpha=0.20,
-    )
-    axes[1, 0].axhline(
-        MATCH_COMPONENT_TOL_GEV,
-        linestyle="--",
-        linewidth=1.3,
-    )
-    axes[1, 0].set_xlabel("Overlapping loaded entry index")
-    axes[1, 0].set_ylabel(r"$\max_i|\Delta p_i|$ (GeV)")
-    axes[1, 0].set_yscale("log")
-    axes[1, 0].set_title("Ordering consistency vs entry")
-    axes[1, 0].grid(alpha=0.20)
-
-    axes[1, 1].bar(
-        ["Same-entry match", "Not same-entry match"],
-        [
-            int(np.count_nonzero(matched)),
-            int(np.count_nonzero(~matched)),
-        ],
-    )
-    axes[1, 1].set_ylabel("Overlapping entry pairs")
-    axes[1, 1].set_title(
-        f"Same-entry parent-match fraction = {100.0*match_fraction:.3f}%"
-    )
-    axes[1, 1].grid(axis="y", alpha=0.20)
-
-    fig.suptitle(
-        f"{title}\nN(overlapping loaded entries)={len(diagnostics):,}"
-    )
-    fig.tight_layout()
-    save_figure(fig, output_path)
-
 
 def _safe_hist_range(
     values: np.ndarray,
@@ -2838,6 +2691,291 @@ def plot_control_score_vs_kinematics(
 
 
 
+
+def plot_ablation_auc_summary(
+    results: Dict[str, float],
+    output_path: Path,
+    title: str,
+) -> None:
+    labels = list(results.keys())
+    auc_values = np.asarray([results[label] for label in labels], dtype=float)
+
+    nominal_auc = float(results["nominal"])
+    delta_auc = auc_values - nominal_auc
+
+    fig, axes = plt.subplots(1, 2, figsize=(14.0, 5.5))
+
+    x = np.arange(len(labels))
+
+    axes[0].bar(x, auc_values)
+    axes[0].axhline(nominal_auc, linestyle="--", linewidth=1.2)
+    axes[0].set_xticks(x, labels, rotation=35, ha="right")
+    axes[0].set_ylabel("Held-out ROC AUC")
+    axes[0].set_ylim(
+        max(0.5, float(np.min(auc_values)) - 0.02),
+        min(1.0, float(np.max(auc_values)) + 0.01),
+    )
+    axes[0].set_title("Classifier performance")
+    axes[0].grid(axis="y", alpha=0.20)
+
+    axes[1].bar(x, delta_auc)
+    axes[1].axhline(0.0, linestyle="--", linewidth=1.2)
+    axes[1].set_xticks(x, labels, rotation=35, ha="right")
+    axes[1].set_ylabel(r"$\Delta$AUC relative to nominal")
+    axes[1].set_title("Loss/gain relative to nominal")
+    axes[1].grid(axis="y", alpha=0.20)
+
+    for ax in axes:
+        for tick in ax.get_xticklabels():
+            tick.set_fontsize(9)
+        #endfor
+    #endfor
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_ablation_score_overlays(
+    score_map: Dict[str, Tuple[np.ndarray, np.ndarray]],
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Compare AAOgen and DVCSgen test-score shapes for nominal and selected
+    ablation models. To avoid an unreadable plot, show nominal, minimal4, and
+    the two ablations with the largest AUC loss (supplied by caller).
+    """
+    names = list(score_map.keys())
+    n = len(names)
+
+    fig, axes = plt.subplots(
+        nrows=n,
+        ncols=1,
+        figsize=(8.5, max(4.0, 3.2 * n)),
+        sharex=True,
+    )
+    axes = np.atleast_1d(axes)
+
+    for ax, name in zip(axes, names):
+        neg_scores, pos_scores = score_map[name]
+
+        ax.hist(
+            neg_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label="DVCSgen",
+        )
+        ax.hist(
+            pos_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label="AAOgen",
+        )
+
+        ax.set_ylabel("Density")
+        ax.set_title(name)
+        ax.grid(alpha=0.20)
+        ax.legend()
+    #endfor
+
+    axes[-1].set_xlabel("BDT pi0 score")
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def binned_score_statistics(
+    values: np.ndarray,
+    scores: np.ndarray,
+    edges: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    values = np.asarray(values, dtype=float)
+    scores = np.asarray(scores, dtype=float)
+
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    median = np.full(len(centers), np.nan)
+    mean = np.full(len(centers), np.nan)
+    q16 = np.full(len(centers), np.nan)
+    q84 = np.full(len(centers), np.nan)
+
+    for i in range(len(centers)):
+        if i == len(centers) - 1:
+            mask = (values >= edges[i]) & (values <= edges[i + 1])
+        else:
+            mask = (values >= edges[i]) & (values < edges[i + 1])
+        #endif
+
+        if np.count_nonzero(mask) < 5:
+            continue
+        #endif
+
+        selected = scores[mask]
+        median[i] = np.median(selected)
+        mean[i] = np.mean(selected)
+        q16[i], q84[i] = np.quantile(selected, [0.16, 0.84])
+    #endfor
+
+    return centers, mean, median, np.vstack([q16, q84])
+
+
+def plot_clasdis_transfer_vs_kinematics(
+    control: pd.DataFrame,
+    control_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Quantify whether the independent CLASDIS pi0-enriched control remains
+    high-score across photon energy and polar angle.
+    """
+    if len(control) == 0:
+        return
+    #endif
+
+    energy = control["p2_p"].to_numpy(dtype=float)
+    theta_raw = control["p2_theta"].to_numpy(dtype=float)
+
+    theta_unit = infer_angle_unit(theta_raw, "p2_theta")
+    if theta_unit == "rad":
+        theta_deg_values = np.rad2deg(theta_raw)
+    else:
+        theta_deg_values = theta_raw
+    #endif
+
+    score = np.asarray(control_scores, dtype=float)
+
+    energy_finite = energy[np.isfinite(energy)]
+    theta_finite = theta_deg_values[np.isfinite(theta_deg_values)]
+
+    if len(energy_finite) == 0 or len(theta_finite) == 0:
+        return
+    #endif
+
+    e_lo, e_hi = np.quantile(energy_finite, [0.01, 0.99])
+    t_lo, t_hi = np.quantile(theta_finite, [0.01, 0.99])
+
+    e_edges = np.linspace(e_lo, e_hi, 9)
+    t_edges = np.linspace(t_lo, t_hi, 9)
+
+    e_centers, e_mean, e_median, e_band = binned_score_statistics(
+        energy, score, e_edges
+    )
+    t_centers, t_mean, t_median, t_band = binned_score_statistics(
+        theta_deg_values, score, t_edges
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+
+    for ax, centers, mean, median, band, xlabel in [
+        (
+            axes[0],
+            e_centers,
+            e_mean,
+            e_median,
+            e_band,
+            r"$E_\gamma$ / $p_\gamma$ (GeV)",
+        ),
+        (
+            axes[1],
+            t_centers,
+            t_mean,
+            t_median,
+            t_band,
+            r"$\theta_\gamma$ (deg)",
+        ),
+    ]:
+        valid = np.isfinite(median)
+
+        ax.plot(
+            centers[valid],
+            median[valid],
+            marker="o",
+            label="Median score",
+        )
+        ax.plot(
+            centers[valid],
+            mean[valid],
+            marker="s",
+            linestyle="--",
+            label="Mean score",
+        )
+        ax.fill_between(
+            centers[valid],
+            band[0, valid],
+            band[1, valid],
+            alpha=0.20,
+            label="16–84% interval",
+        )
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("CLASDIS BDT pi0 score")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(alpha=0.20)
+        ax.legend()
+    #endfor
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_clasdis_vs_aaogen_transfer(
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    control: pd.DataFrame,
+    control_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Directly compare the score distribution of AAOgen pi0 positives with the
+    independent CLASDIS pi0-enriched control.
+    """
+    if len(control) == 0:
+        return
+    #endif
+
+    y = test["label"].to_numpy(dtype=int)
+    aaogen_scores = test_scores[y == 1]
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.5))
+
+    ax.hist(
+        aaogen_scores,
+        bins=50,
+        range=(0.0, 1.0),
+        density=True,
+        histtype="step",
+        linewidth=1.7,
+        label=f"AAOgen held-out (N={len(aaogen_scores):,})",
+    )
+    ax.hist(
+        control_scores,
+        bins=50,
+        range=(0.0, 1.0),
+        density=True,
+        histtype="step",
+        linewidth=1.7,
+        label=f"CLASDIS matched pi0 control (N={len(control_scores):,})",
+    )
+
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Normalized density")
+    ax.set_xlim(0.0, 1.0)
+    ax.grid(alpha=0.20)
+    ax.legend()
+    ax.set_title(title)
+
+    save_figure(fig, output_path)
+
+
 # ---------------------------------------------------------------------------
 # Main per-region training
 # ---------------------------------------------------------------------------
@@ -2855,8 +2993,11 @@ def run_region(
     progress(f"REGION {region}: starting")
 
     region_output = period_output / region.lower()
-    model_output = region_output / "topology"
-    model_output.mkdir(parents=True, exist_ok=True)
+    nominal_output = region_output / "topology"
+    ablation_output = region_output / "ablations"
+
+    nominal_output.mkdir(parents=True, exist_ok=True)
+    ablation_output.mkdir(parents=True, exist_ok=True)
 
     raw_pos = int(np.count_nonzero(detector_region_mask(aaogen, region)))
     raw_neg = int(np.count_nonzero(detector_region_mask(dvcsgen, region)))
@@ -2878,7 +3019,7 @@ def run_region(
     n_neg = int(np.count_nonzero(combined["label"].to_numpy() == 0))
 
     progress(
-        f"REGION {region}: training pool after optional cap — "
+        f"REGION {region}: training pool — "
         f"{n_pos:,} AAOgen positives, {n_neg:,} DVCSgen negatives"
     )
 
@@ -2890,7 +3031,6 @@ def run_region(
     #endif
 
     control_region = None
-
     if clasdis_control is not None:
         control_region = clasdis_control.loc[
             detector_region_mask(clasdis_control, region)
@@ -2903,33 +3043,27 @@ def run_region(
         )
 
         progress(
-            f"REGION {region}: CLASDIS matched control after detector selection/cap — "
+            f"REGION {region}: CLASDIS matched control — "
             f"{len(control_region):,} candidates"
         )
     #endif
 
-    feature_start = time.perf_counter()
-    features = TOPOLOGY_FEATURES
-
-    progress(
-        f"REGION {region} / topology: starting with "
-        f"{len(features)} input features"
-    )
-
-    working = clean_feature_rows(combined, features)
-
-    progress(
-        f"REGION {region} / topology: finite-feature cleaning kept "
-        f"{len(working):,}/{len(combined):,} training-pool rows"
+    # Use the NOMINAL feature list to define the common finite sample and one
+    # common train/validation/test split for all ablation models. This makes AUC
+    # differences directly interpretable.
+    working = clean_feature_rows(
+        combined,
+        ABLATION_FEATURE_SETS["nominal"],
     )
 
     if control_region is not None:
-        control_clean = clean_feature_rows(control_region, features)
+        control_clean = clean_feature_rows(
+            control_region,
+            ABLATION_FEATURE_SETS["nominal"],
+        )
     else:
         control_clean = None
     #endif
-
-    progress(f"REGION {region} / topology: splitting train/validation/test")
 
     train, validation, test = train_validation_test_split(
         working,
@@ -2937,26 +3071,26 @@ def run_region(
     )
 
     progress(
-        f"REGION {region} / topology: split sizes — "
-        f"train={len(train):,}, validation={len(validation):,}, test={len(test):,}"
+        f"REGION {region}: common split — "
+        f"train={len(train):,}, validation={len(validation):,}, "
+        f"test={len(test):,}"
     )
 
-    progress(
-        f"REGION {region} / topology: plotting input feature distributions"
-    )
+    # ---------------------------------------------------------------------
+    # Nominal topology model
+    # ---------------------------------------------------------------------
+    features = ABLATION_FEATURE_SETS["nominal"]
+
+    progress(f"REGION {region}: training nominal topology BDT")
 
     plot_input_feature_distributions(
         train=train,
         features=features,
-        output_path=model_output / "input_feature_distributions.png",
+        output_path=nominal_output / "input_feature_distributions.png",
         title=f"{args.period} {region}: topology-BDT training inputs",
     )
 
-    progress(
-        f"REGION {region} / topology: input plots complete; starting BDT fit"
-    )
-
-    model = train_model(
+    nominal_model = train_model(
         train=train,
         validation=validation,
         features=features,
@@ -2965,24 +3099,27 @@ def run_region(
         max_depth=args.max_depth,
     )
 
-    progress(f"REGION {region} / topology: scoring held-out test sample")
-    test_scores = model_scores(model, test, features)
+    test_scores = model_scores(
+        nominal_model,
+        test,
+        features,
+    )
 
     if control_clean is not None:
-        control_scores = model_scores(model, control_clean, features)
+        control_scores = model_scores(
+            nominal_model,
+            control_clean,
+            features,
+        )
     else:
         control_scores = None
     #endif
 
-    progress(
-        f"REGION {region} / topology: making ROC and score-distribution plots"
-    )
-
     roc_auc = plot_roc_curve(
         test=test,
         test_scores=test_scores,
-        output_path=model_output / "roc_curve.png",
-        title=f"{args.period} {region}: topology BDT",
+        output_path=nominal_output / "roc_curve.png",
+        title=f"{args.period} {region}: nominal topology BDT",
     )
 
     plot_score_distribution(
@@ -2990,40 +3127,24 @@ def run_region(
         test_scores=test_scores,
         control=control_clean,
         control_scores=control_scores,
-        output_path=model_output / "bdt_score_distribution.png",
-        title=f"{args.period} {region}: topology BDT score",
-    )
-
-    progress(
-        f"REGION {region} / topology: starting permutation-importance diagnostic"
+        output_path=nominal_output / "bdt_score_distribution.png",
+        title=f"{args.period} {region}: nominal topology BDT score",
     )
 
     plot_feature_importance(
-        model=model,
+        model=nominal_model,
         test=test,
         features=features,
-        output_path=model_output / "feature_importance.png",
-        title=f"{args.period} {region}: topology feature importance",
+        output_path=nominal_output / "feature_importance.png",
+        title=f"{args.period} {region}: permutation feature importance",
         seed=args.seed,
-    )
-
-    progress(
-        f"REGION {region} / topology: permutation importance complete; "
-        f"making remaining diagnostics"
-    )
-
-    plot_score_vs_selected_features(
-        test=test,
-        test_scores=test_scores,
-        output_path=model_output / "score_vs_selected_features.png",
-        title=f"{args.period} {region}: score behavior on held-out MC",
     )
 
     balanced_accuracy = plot_confusion_matrix_at_half(
         test=test,
         test_scores=test_scores,
-        output_path=model_output / "confusion_matrix_score_0p5.png",
-        title=f"{args.period} {region}: topology BDT",
+        output_path=nominal_output / "confusion_matrix_score_0p5.png",
+        title=f"{args.period} {region}: nominal topology BDT",
     )
 
     if (
@@ -3031,44 +3152,129 @@ def run_region(
         and control_scores is not None
         and len(control_clean) > 0
     ):
-        plot_control_score_vs_kinematics(
+        plot_clasdis_vs_aaogen_transfer(
+            test=test,
+            test_scores=test_scores,
             control=control_clean,
             control_scores=control_scores,
-            output_path=model_output / "clasdis_control_score_vs_kinematics.png",
-            title=f"{args.period} {region}: CLASDIS matched control",
+            output_path=nominal_output / "clasdis_vs_aaogen_score.png",
+            title=f"{args.period} {region}: AAOgen vs CLASDIS pi0-score transfer",
         )
 
-        plot_control_score_vs_match_distance(
+        plot_clasdis_transfer_vs_kinematics(
             control=control_clean,
             control_scores=control_scores,
-            output_path=model_output / "clasdis_score_vs_match_distance.png",
-            title=(
-                f"{args.period} {region}: CLASDIS BDT score vs e/p match quality"
-            ),
-        )
-
-        plot_control_score_by_match_quality(
-            control=control_clean,
-            control_scores=control_scores,
-            output_path=model_output / "clasdis_score_by_match_quality.png",
-            title=(
-                f"{args.period} {region}: CLASDIS score under tighter match cuts"
-            ),
+            output_path=nominal_output / "clasdis_score_vs_kinematics.png",
+            title=f"{args.period} {region}: CLASDIS score stability vs photon kinematics",
         )
     #endif
 
-    progress(f"REGION {region} / topology: saving trained model")
-
     joblib.dump(
         {
-            "model": model,
+            "model": nominal_model,
             "features": list(features),
             "period": args.period,
             "region": region,
-            "feature_set": "topology",
+            "feature_set": "topology_nominal",
         },
-        model_output / "bdt_model.joblib",
+        nominal_output / "bdt_model.joblib",
     )
+
+    # ---------------------------------------------------------------------
+    # Ablation models
+    # ---------------------------------------------------------------------
+    ablation_auc: Dict[str, float] = {"nominal": roc_auc}
+    ablation_score_cache: Dict[str, Tuple[np.ndarray, np.ndarray]] = {}
+
+    y_test = test["label"].to_numpy(dtype=int)
+    ablation_score_cache["nominal"] = (
+        test_scores[y_test == 0],
+        test_scores[y_test == 1],
+    )
+
+    if not args.skip_ablations:
+        for index, (name, ablation_features) in enumerate(
+            ABLATION_FEATURE_SETS.items()
+        ):
+            if name == "nominal":
+                continue
+            #endif
+
+            progress(
+                f"REGION {region}: ablation '{name}' — "
+                f"{len(ablation_features)} features"
+            )
+
+            model = train_model(
+                train=train,
+                validation=validation,
+                features=ablation_features,
+                seed=args.seed + index + 1,
+                n_estimators=args.n_estimators,
+                max_depth=args.max_depth,
+            )
+
+            scores = model_scores(
+                model,
+                test,
+                ablation_features,
+            )
+
+            fpr, tpr, _ = roc_curve(
+                y_test,
+                scores,
+            )
+            model_auc = float(auc(fpr, tpr))
+
+            ablation_auc[name] = model_auc
+            ablation_score_cache[name] = (
+                scores[y_test == 0],
+                scores[y_test == 1],
+            )
+
+            progress(
+                f"REGION {region}: ablation '{name}' AUC={model_auc:.5f} "
+                f"(delta={model_auc-roc_auc:+.5f})"
+            )
+        #endfor
+
+        plot_ablation_auc_summary(
+            results=ablation_auc,
+            output_path=ablation_output / "ablation_auc_summary.png",
+            title=f"{args.period} {region}: feature-ablation performance",
+        )
+
+        # Show nominal, minimal4, and the two non-minimal ablations with the
+        # largest degradation relative to nominal.
+        degradation = sorted(
+            [
+                (name, value - roc_auc)
+                for name, value in ablation_auc.items()
+                if name not in {"nominal", "minimal4"}
+            ],
+            key=lambda item: item[1],
+        )
+
+        overlay_names = ["nominal"]
+        if "minimal4" in ablation_score_cache:
+            overlay_names.append("minimal4")
+        #endif
+        overlay_names.extend(
+            [name for name, _ in degradation[:2]]
+        )
+
+        overlay_map = {
+            name: ablation_score_cache[name]
+            for name in overlay_names
+            if name in ablation_score_cache
+        }
+
+        plot_ablation_score_overlays(
+            score_map=overlay_map,
+            output_path=ablation_output / "ablation_score_overlays.png",
+            title=f"{args.period} {region}: score-shape sensitivity to feature removal",
+        )
+    #endif
 
     summary = DatasetSummary(
         period=args.period,
@@ -3085,13 +3291,11 @@ def run_region(
     )
 
     progress(
-        f"REGION {region} / topology: complete — "
-        f"test AUC={roc_auc:.5f}, "
+        f"REGION {region}: complete — nominal AUC={roc_auc:.5f}, "
         f"balanced accuracy@0.5={balanced_accuracy:.5f} "
-        f"({elapsed_since(feature_start)})"
+        f"({elapsed_since(region_start)})"
     )
 
-    progress(f"REGION {region}: complete ({elapsed_since(region_start)})")
     return [summary]
 
 
@@ -3107,7 +3311,6 @@ def main() -> None:
     progress(
         f"START: period={args.period}, max-events-per-class={args.max_events_per_class}, "
         f"max-clasdis-read={args.max_clasdis_read}, "
-        f"clasdis-entry-start={args.clasdis_entry_start}, "
         f"max-control-events={args.max_control_events}, "
         f"n-estimators={args.n_estimators}, max-depth={args.max_depth}, seed={args.seed}"
     )
@@ -3151,14 +3354,13 @@ def main() -> None:
         progress("I/O MODE: full CLASDIS trees will be read for the control sample")
     else:
         progress(
-            f"I/O MODE: aligned CLASDIS quick read enabled — "
-            f"entry range [{args.clasdis_entry_start:,}, "
-            f"{args.clasdis_entry_start + args.max_clasdis_read:,}) "
-            f"requested from BOTH CLASDIS trees"
+            f"I/O MODE: quick CLASDIS read enabled — at most "
+            f"{args.max_clasdis_read:,} rows from each CLASDIS tree"
         )
         progress(
-            "CLASDIS NOTE: aligned reads preserve same-order correspondence "
-            "if the two output trees retained parent-event ordering."
+            "CLASDIS WARNING: partial cross-tree reads can remove genuine "
+            "eppi0X<->epgammaX partners because the two trees need not share "
+            "entry ordering. Full CLASDIS reads are preferred for diagnostics."
         )
     #endif
 
@@ -3192,7 +3394,6 @@ def main() -> None:
             branches=EPG_REQUIRED_BRANCHES,
             source="clasdis_epg",
             entry_limit=args.max_clasdis_read,
-            entry_start=args.clasdis_entry_start,
         )
 
         clasdis_eppi0 = load_dataframe(
@@ -3201,7 +3402,6 @@ def main() -> None:
             branches=EPPI0_MATCH_BRANCHES,
             source="clasdis_eppi0",
             entry_limit=args.max_clasdis_read,
-            entry_start=args.clasdis_entry_start,
         )
 
         match_output = period_output / "clasdis_matching"
@@ -3216,38 +3416,6 @@ def main() -> None:
             output_path=match_output / "direct_eppi0_detector_topology.png",
             title=f"{args.period}: direct reconstructed-pi0 detector topology",
         )
-
-        if args.test_clasdis_ordering:
-            progress(
-                "CLASDIS ORDER TEST: comparing epgammaX[i] directly with "
-                "eppi0X[i] over the overlapping loaded range"
-            )
-
-            ordering_diag = build_same_entry_ordering_diagnostics(
-                epg=clasdis_epg,
-                eppi0=clasdis_eppi0,
-            )
-
-            n_same = int(
-                np.count_nonzero(
-                    ordering_diag[
-                        "same_entry_parent_match"
-                    ].to_numpy(dtype=bool)
-                )
-            )
-
-            progress(
-                f"CLASDIS ORDER TEST: same-entry parent matches = "
-                f"{n_same:,}/{len(ordering_diag):,} "
-                f"({100.0*n_same/max(len(ordering_diag),1):.4f}%)"
-            )
-
-            plot_same_entry_ordering_diagnostics(
-                diagnostics=ordering_diag,
-                output_path=match_output / "same_entry_ordering_test.png",
-                title=f"{args.period}: CLASDIS same-entry ordering test",
-            )
-        #endif
 
         progress(
             "CLASDIS CONTROL: starting cross-tree e/p kinematic matching "
@@ -3282,83 +3450,9 @@ def main() -> None:
             title=f"{args.period}: CLASDIS epgammaX detector composition",
         )
 
-        progress("CLASDIS DIAGNOSTICS: plotting real-vs-scrambled residuals")
-        plot_clasdis_match_residuals(
-            real_diag=clasdis_real_diagnostics,
-            scrambled_diag=clasdis_scrambled_diagnostics,
-            output_path=match_output / "match_residuals_real_vs_scrambled.png",
-            title=f"{args.period}: CLASDIS e/p nearest-neighbor residuals",
-        )
-
-        progress("CLASDIS DIAGNOSTICS: plotting nearest-neighbor distance")
-        plot_clasdis_match_distance(
-            real_diag=clasdis_real_diagnostics,
-            scrambled_diag=clasdis_scrambled_diagnostics,
-            max_distance=MATCH_MAX_SCALED_DISTANCE,
-            output_path=match_output / "match_distance_real_vs_scrambled.png",
-            title=f"{args.period}: CLASDIS real vs scrambled matching",
-        )
-
-        progress("CLASDIS DIAGNOSTICS: plotting maximum component mismatch")
-        plot_clasdis_max_component_delta(
-            real_diag=clasdis_real_diagnostics,
-            scrambled_diag=clasdis_scrambled_diagnostics,
-            component_tolerance_gev=MATCH_COMPONENT_TOL_GEV,
-            output_path=match_output / "max_component_delta_real_vs_scrambled.png",
-            title=f"{args.period}: CLASDIS maximum Cartesian component mismatch",
-        )
-
-        progress("CLASDIS DIAGNOSTICS: plotting accepted-match multiplicity")
-        plot_clasdis_match_multiplicity(
-            real_diag=clasdis_real_diagnostics,
-            n_eppi0=n_clasdis_eppi0,
-            max_distance=MATCH_MAX_SCALED_DISTANCE,
-            output_path=match_output / "match_multiplicity.png",
-            title=f"{args.period}: CLASDIS matched-candidate multiplicity",
-        )
-
-        progress("CLASDIS DIAGNOSTICS: plotting detector composition")
-        plot_clasdis_detector_composition(
-            real_diag=clasdis_real_diagnostics,
-            max_distance=MATCH_MAX_SCALED_DISTANCE,
-            output_path=match_output / "match_detector_composition.png",
-            title=f"{args.period}: CLASDIS matched detector composition",
-        )
-
-        progress(
-            "CLASDIS DIAGNOSTICS: plotting match multiplicity separated by "
-            "DIRECT pi0 detector topology"
-        )
-        plot_match_multiplicity_by_pi0_topology(
-            real_diag=clasdis_real_diagnostics,
-            eppi0=clasdis_eppi0,
-            output_path=match_output / "match_multiplicity_by_pi0_topology.png",
-            title=f"{args.period}: matching multiplicity by direct pi0 topology",
-        )
-
-        progress(
-            "CLASDIS DIAGNOSTICS: building exact-two-photon closure sample"
-        )
-        closure = build_two_photon_closure_dataframe(
-            epg=clasdis_epg,
-            eppi0=clasdis_eppi0,
-            real_diag=clasdis_real_diagnostics,
-        )
         progress(
             f"CLASDIS DIAGNOSTICS: exact-two-photon closure sample contains "
             f"{len(closure):,} reconstructed pi0 candidates"
-        )
-
-        plot_two_photon_closure(
-            closure=closure,
-            output_path=match_output / "two_matched_photon_pi0_closure.png",
-            title=f"{args.period}: two-matched-photon pi0 closure",
-        )
-
-        plot_two_photon_detector_pair_confusion(
-            closure=closure,
-            output_path=match_output / "two_matched_photon_detector_confusion.png",
-            title=f"{args.period}: matched-photon vs stored pi0 detector topology",
         )
 
         progress("CLASDIS DIAGNOSTICS: matching diagnostic plots complete")
