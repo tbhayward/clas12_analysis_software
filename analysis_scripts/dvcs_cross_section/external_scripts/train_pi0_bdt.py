@@ -3450,11 +3450,6 @@ def main() -> None:
             title=f"{args.period}: CLASDIS epgammaX detector composition",
         )
 
-        progress(
-            f"CLASDIS DIAGNOSTICS: exact-two-photon closure sample contains "
-            f"{len(closure):,} reconstructed pi0 candidates"
-        )
-
         progress("CLASDIS DIAGNOSTICS: matching diagnostic plots complete")
     #endif
 
