@@ -699,6 +699,25 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--coverage-only",
+        action="store_true",
+        help=(
+            "Run only the raw full-file nSidis epgamma/eppi0 run-event "
+            "coverage audit for the requested periods, write the coverage "
+            "plots, and exit."
+        ),
+    )
+    parser.add_argument(
+        "--coverage-min-eppi0-overlap",
+        type=float,
+        default=0.50,
+        help=(
+            "Minimum fraction of unique eppi0 (runnum,evnum) keys that must "
+            "also occur in the corresponding epgamma file before the full "
+            "efficiency stage is allowed to proceed. Default: 0.50."
+        ),
+    )
+    parser.add_argument(
         "--skip-efficiency",
         action="store_true",
         help=(
@@ -6106,6 +6125,384 @@ def make_canvas(
 
 
 
+
+# =============================================================================
+# Raw nSidis epgamma <-> eppi0 run/event coverage audit
+# =============================================================================
+
+def load_unique_run_event_keys(
+    path: str,
+    tree_name: str,
+    step_size: int,
+    label: str,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Read only runnum/evnum over the FULL tree and return sorted unique packed
+    event keys and their run numbers.
+
+    This intentionally ignores --max-entries. File ordering therefore cannot
+    affect this diagnostic.
+    """
+    found_tree, total = preflight_custom_branches(
+        path,
+        tree_name,
+        ("runnum", "evnum"),
+    )
+    log(
+        f"{label}: coverage audit reading full tree "
+        f"({total:,} entries) from '{found_tree}'."
+    )
+
+    keys_parts: List[np.ndarray] = []
+    run_parts: List[np.ndarray] = []
+
+    for arrays in iterate_efficiency_tree_arrays(
+        path,
+        found_tree,
+        ("runnum", "evnum"),
+        0,
+        step_size,
+    ):
+        run = np.asarray(arrays["runnum"], dtype=np.int64)
+        ev = np.asarray(arrays["evnum"], dtype=np.int64)
+        keys_parts.append(packed_event_keys_eff(run, ev))
+        run_parts.append(run)
+    #endfor
+
+    if not keys_parts:
+        return (
+            np.asarray([], dtype=np.uint64),
+            np.asarray([], dtype=np.int64),
+        )
+    #endif
+
+    keys = np.concatenate(keys_parts)
+    runs = np.concatenate(run_parts)
+    order = np.argsort(keys, kind="mergesort")
+    keys = keys[order]
+    runs = runs[order]
+
+    unique = np.ones(len(keys), dtype=bool)
+    if len(keys) > 1:
+        unique[1:] = keys[1:] != keys[:-1]
+    #endif
+    return keys[unique], runs[unique]
+
+
+def raw_run_event_coverage(
+    period: Period,
+    tree_name: str,
+    step_size: int,
+) -> dict:
+    """Exact FULL-file set intersection before any physics selections."""
+    epg_keys, epg_runs = load_unique_run_event_keys(
+        period.data,
+        tree_name,
+        step_size,
+        f"{period.label} epgamma",
+    )
+    pi_keys, pi_runs = load_unique_run_event_keys(
+        period.eppi0_data,
+        tree_name,
+        step_size,
+        f"{period.label} eppi0",
+    )
+
+    epg_run_values, epg_run_counts = np.unique(
+        epg_runs,
+        return_counts=True,
+    )
+    pi_run_values, pi_run_counts = np.unique(
+        pi_runs,
+        return_counts=True,
+    )
+    all_runs = np.union1d(epg_run_values, pi_run_values)
+    common_runs = np.intersect1d(epg_run_values, pi_run_values)
+
+    epg_map = dict(zip(epg_run_values.tolist(), epg_run_counts.tolist()))
+    pi_map = dict(zip(pi_run_values.tolist(), pi_run_counts.tolist()))
+
+    common_keys = np.intersect1d(
+        epg_keys,
+        pi_keys,
+        assume_unique=True,
+    )
+    common_key_runs = (
+        (common_keys >> np.uint64(32)).astype(np.int64)
+        if len(common_keys)
+        else np.asarray([], dtype=np.int64)
+    )
+    common_run_values, common_run_counts = np.unique(
+        common_key_runs,
+        return_counts=True,
+    )
+    common_map = dict(
+        zip(common_run_values.tolist(), common_run_counts.tolist())
+    )
+
+    rows = []
+    for run in all_runs:
+        run_i = int(run)
+        n_epg = int(epg_map.get(run_i, 0))
+        n_pi = int(pi_map.get(run_i, 0))
+        n_common = int(common_map.get(run_i, 0))
+        rows.append(
+            {
+                "run": run_i,
+                "epgamma_unique": n_epg,
+                "eppi0_unique": n_pi,
+                "common_unique": n_common,
+                "common_over_epgamma": (
+                    n_common / n_epg if n_epg > 0 else float("nan")
+                ),
+                "common_over_eppi0": (
+                    n_common / n_pi if n_pi > 0 else float("nan")
+                ),
+            }
+        )
+    #endfor
+
+    n_epg = int(len(epg_keys))
+    n_pi = int(len(pi_keys))
+    n_common = int(len(common_keys))
+
+    return {
+        "period": period.key,
+        "rows": rows,
+        "n_epgamma_unique": n_epg,
+        "n_eppi0_unique": n_pi,
+        "n_common_unique": n_common,
+        "common_over_epgamma": (
+            n_common / n_epg if n_epg > 0 else float("nan")
+        ),
+        "common_over_eppi0": (
+            n_common / n_pi if n_pi > 0 else float("nan")
+        ),
+        "n_epgamma_runs": int(len(epg_run_values)),
+        "n_eppi0_runs": int(len(pi_run_values)),
+        "n_common_runs": int(len(common_runs)),
+        "epgamma_only_runs": np.setdiff1d(
+            epg_run_values, pi_run_values
+        ).astype(int).tolist(),
+        "eppi0_only_runs": np.setdiff1d(
+            pi_run_values, epg_run_values
+        ).astype(int).tolist(),
+    }
+
+
+def make_raw_coverage_canvas(
+    period: Period,
+    coverage: dict,
+    output_dir: Path,
+) -> Path:
+    """One compact full-file coverage diagnostic per period."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rows = coverage["rows"]
+
+    runs = np.asarray([r["run"] for r in rows], dtype=int)
+    epg = np.asarray([r["epgamma_unique"] for r in rows], dtype=float)
+    pi = np.asarray([r["eppi0_unique"] for r in rows], dtype=float)
+    frac_epg = np.asarray(
+        [r["common_over_epgamma"] for r in rows], dtype=float
+    )
+    frac_pi = np.asarray(
+        [r["common_over_eppi0"] for r in rows], dtype=float
+    )
+
+    fig = plt.figure(figsize=(14.5, 9.0))
+    gs = fig.add_gridspec(
+        3,
+        1,
+        height_ratios=(2.5, 2.1, 1.25),
+        hspace=0.30,
+        left=0.075,
+        right=0.985,
+        bottom=0.07,
+        top=0.92,
+    )
+
+    ax_counts = fig.add_subplot(gs[0, 0])
+    ax_frac = fig.add_subplot(gs[1, 0], sharex=ax_counts)
+    ax_text = fig.add_subplot(gs[2, 0])
+
+    ax_counts.step(
+        runs,
+        epg,
+        where="mid",
+        linewidth=1.3,
+        label="epgamma unique events",
+    )
+    ax_counts.step(
+        runs,
+        pi,
+        where="mid",
+        linewidth=1.3,
+        label="eppi0 unique events",
+    )
+    ax_counts.set_ylabel("Unique events / run")
+    ax_counts.set_yscale("log")
+    ax_counts.grid(alpha=0.18)
+    ax_counts.legend(frameon=True)
+
+    ax_frac.plot(
+        runs,
+        frac_epg,
+        "o",
+        markersize=3.0,
+        label="common / epgamma",
+    )
+    ax_frac.plot(
+        runs,
+        frac_pi,
+        "o",
+        markersize=3.0,
+        label="common / eppi0",
+    )
+    ax_frac.axhline(1.0, linestyle="--", linewidth=0.9)
+    ax_frac.set_ylim(-0.03, 1.05)
+    ax_frac.set_ylabel("Exact event overlap")
+    ax_frac.set_xlabel("Run number")
+    ax_frac.grid(alpha=0.18)
+    ax_frac.legend(frameon=True)
+
+    ax_text.axis("off")
+    epg_only = coverage["epgamma_only_runs"]
+    pi_only = coverage["eppi0_only_runs"]
+    lines = [
+        (
+            f"epgamma: {coverage['n_epgamma_unique']:,} unique events, "
+            f"{coverage['n_epgamma_runs']} runs"
+        ),
+        (
+            f"eppi0:   {coverage['n_eppi0_unique']:,} unique events, "
+            f"{coverage['n_eppi0_runs']} runs"
+        ),
+        (
+            f"common:  {coverage['n_common_unique']:,} unique events, "
+            f"{coverage['n_common_runs']} common runs"
+        ),
+        (
+            f"common/epgamma = {coverage['common_over_epgamma']:.3%}; "
+            f"common/eppi0 = {coverage['common_over_eppi0']:.3%}"
+        ),
+        (
+            "epgamma-only runs: "
+            + (
+                ", ".join(map(str, epg_only[:30]))
+                + (" ..." if len(epg_only) > 30 else "")
+                if epg_only else "none"
+            )
+        ),
+        (
+            "eppi0-only runs: "
+            + (
+                ", ".join(map(str, pi_only[:30]))
+                + (" ..." if len(pi_only) > 30 else "")
+                if pi_only else "none"
+            )
+        ),
+    ]
+    ax_text.text(
+        0.01,
+        0.98,
+        "\n".join(lines),
+        ha="left",
+        va="top",
+        fontsize=10,
+        family="monospace",
+        transform=ax_text.transAxes,
+    )
+
+    fig.suptitle(
+        (
+            f"{period.label}: raw nSidis epgamma/eppi0 event coverage\n"
+            "FULL trees; exact (runnum,evnum) set intersection; no physics cuts"
+        ),
+        fontsize=13,
+    )
+    out = output_dir / f"event_coverage_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
+
+
+def run_raw_coverage_audit(
+    period: Period,
+    tree_name: str,
+    step_size: int,
+    output_root: Path,
+    min_eppi0_overlap: float,
+    fail_on_pathology: bool,
+) -> dict:
+    coverage = raw_run_event_coverage(period, tree_name, step_size)
+    outdir = output_root / "coverage" / period.key
+    plot = make_raw_coverage_canvas(period, coverage, outdir)
+
+    log(
+        (
+            f"{period.label}: RAW COVERAGE: "
+            f"epgamma={coverage['n_epgamma_unique']:,}/"
+            f"{coverage['n_epgamma_runs']} runs; "
+            f"eppi0={coverage['n_eppi0_unique']:,}/"
+            f"{coverage['n_eppi0_runs']} runs; "
+            f"common={coverage['n_common_unique']:,}/"
+            f"{coverage['n_common_runs']} runs; "
+            f"common/epgamma={coverage['common_over_epgamma']:.3%}; "
+            f"common/eppi0={coverage['common_over_eppi0']:.3%}. "
+            f"Plot: {plot}"
+        )
+    )
+
+    pathological = (
+        coverage["n_common_runs"] == 0
+        or coverage["n_common_unique"] == 0
+        or not np.isfinite(coverage["common_over_eppi0"])
+        or coverage["common_over_eppi0"] < min_eppi0_overlap
+    )
+
+    if pathological and fail_on_pathology:
+        raise RuntimeError(
+            "\n".join(
+                [
+                    f"{period.label}: PATHOLOGICAL raw data-file coverage.",
+                    (
+                        f"  common/eppi0 = "
+                        f"{coverage['common_over_eppi0']:.3%}; "
+                        f"required >= {min_eppi0_overlap:.3%}"
+                    ),
+                    (
+                        f"  common runs = {coverage['n_common_runs']} "
+                        f"(epgamma {coverage['n_epgamma_runs']}, "
+                        f"eppi0 {coverage['n_eppi0_runs']})"
+                    ),
+                    (
+                        "  epgamma-only runs: "
+                        + (
+                            ", ".join(map(str, coverage["epgamma_only_runs"][:40]))
+                            if coverage["epgamma_only_runs"]
+                            else "none"
+                        )
+                    ),
+                    (
+                        "  eppi0-only runs: "
+                        + (
+                            ", ".join(map(str, coverage["eppi0_only_runs"][:40]))
+                            if coverage["eppi0_only_runs"]
+                            else "none"
+                        )
+                    ),
+                    (
+                        "Efficiency extraction is aborted before matching. "
+                        "Verify that both ROOT files are the corresponding "
+                        "complete nSidis productions."
+                    ),
+                ]
+            )
+        )
+    #endif
+    return coverage
+
+
 # =============================================================================
 # Final tag-probe efficiency extraction
 # =============================================================================
@@ -7944,12 +8341,25 @@ def run_efficiency_extraction(
     assoc_probe_energy_min: float,
     probe_match_nsigma: float,
     min_resolution_events: int,
+    coverage_min_eppi0_overlap: float,
     output_root: Path,
 ) -> dict:
     """End-to-end efficiency stage for one period."""
     t0 = time.perf_counter()
     outdir = output_root / "efficiency" / period.key
     outdir.mkdir(parents=True, exist_ok=True)
+
+    # First establish that the two DATA skims really cover the same event
+    # population. This is a FULL-tree set intersection, independent of
+    # --max-entries, row ordering, and all physics cuts.
+    coverage = run_raw_coverage_audit(
+        period,
+        tree_name,
+        step_size,
+        output_root,
+        min_eppi0_overlap=coverage_min_eppi0_overlap,
+        fail_on_pathology=True,
+    )
 
     # Preflight first so a missing companion file fails before expensive work.
     for label, path, req in (
@@ -8119,6 +8529,16 @@ def run_efficiency_extraction(
             "n": models["FD"].n,
             "source": models["FD"].source,
         },
+        "coverage": {
+            "n_epgamma_unique": coverage["n_epgamma_unique"],
+            "n_eppi0_unique": coverage["n_eppi0_unique"],
+            "n_common_unique": coverage["n_common_unique"],
+            "common_over_epgamma": coverage["common_over_epgamma"],
+            "common_over_eppi0": coverage["common_over_eppi0"],
+            "n_epgamma_runs": coverage["n_epgamma_runs"],
+            "n_eppi0_runs": coverage["n_eppi0_runs"],
+            "n_common_runs": coverage["n_common_runs"],
+        },
         "elapsed_s": float(time.perf_counter() - t0),
     }
 
@@ -8168,6 +8588,7 @@ def process_period(
     assoc_probe_energy_min: float,
     probe_match_nsigma: float,
     probe_match_min_resolution_events: int,
+    coverage_min_eppi0_overlap: float,
 ) -> dict:
     t0 = time.perf_counter()
     log(f"{period.label}: starting.")
@@ -8716,6 +9137,7 @@ def process_period(
             assoc_probe_energy_min,
             probe_match_nsigma,
             probe_match_min_resolution_events,
+            coverage_min_eppi0_overlap,
             output_dir.parent,
         )
         optimizer_summary["efficiency"] = efficiency_summary
@@ -8775,6 +9197,7 @@ def process_period_worker(
     assoc_probe_energy_min: float,
     probe_match_nsigma: float,
     probe_match_min_resolution_events: int,
+    coverage_min_eppi0_overlap: float,
 ) -> str:
     """
     Picklable process-level wrapper for one run period.
@@ -8824,6 +9247,7 @@ def process_period_worker(
         assoc_probe_energy_min,
         probe_match_nsigma,
         probe_match_min_resolution_events,
+        coverage_min_eppi0_overlap,
     )
 
 
@@ -9066,6 +9490,11 @@ def main() -> int:
     if args.data_fit_sideband_max_js < 0.0:
         raise ValueError("--data-fit-sideband-max-js must be >= 0.")
     #endif
+    if not (0.0 <= args.coverage_min_eppi0_overlap <= 1.0):
+        raise ValueError(
+            "--coverage-min-eppi0-overlap must be between 0 and 1."
+        )
+    #endif
     if args.efficiency_eppi0_max_entries < 0:
         raise ValueError("--efficiency-eppi0-max-entries must be >= 0.")
     #endif
@@ -9099,6 +9528,43 @@ def main() -> int:
 
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.coverage_only:
+        log(
+            "Coverage-only mode: scanning FULL nSidis epgamma/eppi0 trees. "
+            "--max-entries is intentionally ignored."
+        )
+        failures = []
+        for period in selected_periods:
+            try:
+                run_raw_coverage_audit(
+                    period,
+                    args.tree,
+                    args.step_size,
+                    output_dir,
+                    min_eppi0_overlap=args.coverage_min_eppi0_overlap,
+                    fail_on_pathology=False,
+                )
+            except Exception as exc:
+                failures.append((period.label, str(exc)))
+            #endtry
+        #endfor
+
+        if failures:
+            print("\nCoverage-audit failures:", flush=True)
+            for label, message in failures:
+                print(f"  {label}: {message}", flush=True)
+            #endfor
+            return 1
+        #endif
+
+        print(
+            "\nCoverage-only audit complete. "
+            f"See {output_dir / 'coverage'}/<period>/.",
+            flush=True,
+        )
+        return 0
+    #endif
 
     log(
         "Standalone photon-efficiency concept study: "
@@ -9142,6 +9608,12 @@ def main() -> int:
             "theta/phi/sector comes from p_beam - p_e - p_p - p_gamma,tag."
         )
     #endif
+    log(
+        "Raw data-file coverage audit: enabled before efficiency extraction. "
+        "FULL epgamma/eppi0 run-event sets are compared independent of "
+        "--max-entries and row ordering; "
+        f"required common/eppi0 >= {args.coverage_min_eppi0_overlap:.0%}."
+    )
     if args.skip_efficiency:
         log("Final tag-probe efficiency extraction: disabled (--skip-efficiency).")
     else:
@@ -9214,6 +9686,7 @@ def main() -> int:
                 args.assoc_probe_energy_min,
                 args.probe_match_nsigma,
                 args.probe_match_min_resolution_events,
+                args.coverage_min_eppi0_overlap,
             )
         #endfor
     else:
@@ -9261,6 +9734,7 @@ def main() -> int:
                     args.assoc_probe_energy_min,
                     args.probe_match_nsigma,
                     args.probe_match_min_resolution_events,
+                    args.coverage_min_eppi0_overlap,
                 ): period
                 for period in selected_periods
             }
