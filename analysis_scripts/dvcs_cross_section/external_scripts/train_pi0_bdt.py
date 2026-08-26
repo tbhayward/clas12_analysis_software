@@ -1,0 +1,1408 @@
+#!/usr/bin/env python3
+"""
+train_pi0_bdt_intro.py
+
+Introductory BDT study for identifying reconstructed e'p'gammaX candidates
+that are pi0-like.
+
+Version-1 philosophy
+--------------------
+Training labels are intentionally conservative:
+
+    positive (y = 1):
+        AAOgen e'p'gammaX
+        -> the generator is exclusive pi0, so the reconstructed photon sample
+           is treated as the clean pi0-origin class.
+
+    negative (y = 0):
+        DVCSgen e'p'gammaX
+        -> genuine single-photon DVCS/BH events.
+
+CLASDIS is NOT used as a negative training sample because, without generator
+ancestry, an unmatched e'p'gammaX event can still be a pi0 event in which the
+second photon was not reconstructed.
+
+Instead, CLASDIS e'p'gammaX events that can be matched to reconstructed
+CLASDIS e'p'pi0X events are used as an independent pi0-enriched positive
+control sample.
+
+The script trains separate models for:
+    * FT photons: p2_theta <= --ft-theta-max (default 5.5 deg)
+    * FD photons: p2_theta >  --ft-theta-max
+
+For each topology it trains two feature configurations:
+
+    topology:
+        Uses only reconstructed e'p'gammaX topology/exclusivity variables.
+
+    full:
+        Uses the topology variables plus broad production kinematics
+        (Q2, W, x, y, t, tmin).
+
+The comparison is useful because a large improvement from "topology" to
+"full" can indicate that the classifier is exploiting generator phase-space
+differences rather than genuinely learning the one-photon remnant of a pi0.
+
+No reconstructed e'p'pi0X-only variable (for example M_gamma_gamma) is ever
+passed to the BDT.
+
+Requirements
+------------
+    python -m pip install uproot pandas numpy matplotlib scikit-learn xgboost joblib
+
+Example
+-------
+python train_pi0_bdt_intro.py \
+    --period fa18_inb \
+    --aaogen-epg /path/to/aaogen_fa18_inb_epgammaX.root \
+    --dvcsgen-epg /path/to/dvcsgen_fa18_inb_epgammaX.root \
+    --clasdis-epg /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_epgammaX.root \
+    --clasdis-eppi0 /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_eppi0X.root
+
+Run once for fa18_inb and once for fa18_out.
+
+Important
+---------
+The XGBoost predict_proba output is called a "BDT score" here. It is NOT
+interpreted as an absolute physical P(pi0 | event), because the training
+sample class priors are artificial and the score has not been calibrated.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import warnings
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+import joblib
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import uproot
+
+from sklearn.metrics import (
+    auc,
+    balanced_accuracy_score,
+    confusion_matrix,
+    roc_curve,
+)
+from sklearn.model_selection import GroupShuffleSplit
+from xgboost import XGBClassifier
+
+
+# ---------------------------------------------------------------------------
+# Feature definitions
+# ---------------------------------------------------------------------------
+
+# These are quantities available in the e'p'gammaX tree itself.
+#
+# p2 is the reconstructed photon in e'p'gammaX.
+#
+# We intentionally do not assign physics names to Mx2/Mx2_1/Mx2_2 here,
+# because their precise definitions are analysis-code-specific. The BDT can
+# use the branches directly; plot labels retain the branch names so there is
+# no possibility of silently mislabeling them.
+TOPOLOGY_FEATURES: List[str] = [
+    "p2_p",
+    "p2_theta",
+    "open_angle_ep2",
+    "open_angle_p1p2",
+    "Mx2",
+    "Mx2_1",
+    "Mx2_2",
+    "Emiss2",
+    "theta_gamma_gamma",
+    "pTmiss",
+]
+
+PRODUCTION_FEATURES: List[str] = [
+    "Q2",
+    "W",
+    "x",
+    "y",
+    "t",
+    "tmin",
+]
+
+FEATURE_SETS: Dict[str, List[str]] = {
+    "topology": TOPOLOGY_FEATURES,
+    "full": TOPOLOGY_FEATURES + PRODUCTION_FEATURES,
+}
+
+# Branches needed for event identity, detector-region selection, matching,
+# and all possible model inputs.
+EPG_REQUIRED_BRANCHES: List[str] = sorted(
+    set(
+        [
+            "runnum",
+            "evnum",
+            "e_p",
+            "e_theta",
+            "e_phi",
+            "p1_p",
+            "p1_theta",
+            "p1_phi",
+            "p2_p",
+            "p2_theta",
+            "p2_phi",
+        ]
+        + TOPOLOGY_FEATURES
+        + PRODUCTION_FEATURES
+    )
+)
+
+EPPI0_MATCH_BRANCHES: List[str] = [
+    "runnum",
+    "evnum",
+    "e_p",
+    "e_theta",
+    "e_phi",
+    "p1_p",
+    "p1_theta",
+    "p1_phi",
+    "Mh_gammagamma",
+]
+
+# Matching scales are deliberately fairly tight, but the matching algorithm
+# first requires the same (runnum, evnum). The normalized distance below then
+# chooses/accepts the most compatible electron+proton candidate in that event.
+MATCH_SCALES = {
+    "e_p": 0.010,        # GeV
+    "e_theta": 0.10,     # degrees
+    "e_phi": 0.20,       # degrees
+    "p1_p": 0.010,       # GeV
+    "p1_theta": 0.10,    # degrees
+    "p1_phi": 0.20,      # degrees
+}
+
+# Default XGBoost settings are intentionally modest. This is an introductory
+# diagnostic model, not an aggressively optimized classifier.
+DEFAULT_BDT_PARAMS = {
+    "n_estimators": 400,
+    "max_depth": 3,
+    "learning_rate": 0.05,
+    "subsample": 0.80,
+    "colsample_bytree": 0.80,
+    "min_child_weight": 2.0,
+    "reg_lambda": 1.0,
+    "objective": "binary:logistic",
+    "eval_metric": "logloss",
+    "tree_method": "hist",
+    "n_jobs": 1,
+    "random_state": 42,
+}
+
+
+@dataclass
+class DatasetSummary:
+    period: str
+    region: str
+    feature_set: str
+    n_positive_total: int
+    n_negative_total: int
+    n_train: int
+    n_validation: int
+    n_test: int
+    n_clasdis_control: int
+    auc_test: float
+    balanced_accuracy_test_at_050: float
+
+
+# ---------------------------------------------------------------------------
+# I/O helpers
+# ---------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Train introductory FT/FD BDTs to identify pi0-like e'p'gammaX "
+            "candidates using AAOgen positives and DVCSgen negatives."
+        )
+    )
+
+    parser.add_argument(
+        "--period",
+        required=True,
+        choices=["fa18_inb", "fa18_out"],
+        help="Run period label used for output organization.",
+    )
+
+    parser.add_argument("--aaogen-epg", required=True, help="AAOgen e'p'gammaX ROOT file.")
+    parser.add_argument("--dvcsgen-epg", required=True, help="DVCSgen e'p'gammaX ROOT file.")
+
+    parser.add_argument(
+        "--clasdis-epg",
+        default=None,
+        help=(
+            "Optional CLASDIS e'p'gammaX ROOT file. Used only for an independent "
+            "pi0-enriched control sample."
+        ),
+    )
+    parser.add_argument(
+        "--clasdis-eppi0",
+        default=None,
+        help=(
+            "Optional CLASDIS e'p'pi0X ROOT file. Must be supplied together with "
+            "--clasdis-epg to construct the control sample."
+        ),
+    )
+
+    parser.add_argument(
+        "--tree",
+        default=None,
+        help=(
+            "ROOT TTree name. If omitted, the script automatically uses the first "
+            "TTree found in each file."
+        ),
+    )
+
+    parser.add_argument(
+        "--output-dir",
+        default="output/pi0_bdt_intro",
+        help="Top-level output directory.",
+    )
+
+    parser.add_argument(
+        "--ft-theta-max",
+        type=float,
+        default=5.5,
+        help="Maximum photon polar angle in degrees used to define FT.",
+    )
+
+    parser.add_argument(
+        "--max-events-per-class",
+        type=int,
+        default=None,
+        help=(
+            "Optional random cap applied independently to AAOgen and DVCSgen "
+            "before splitting. Useful for quick tests."
+        ),
+    )
+
+    parser.add_argument(
+        "--max-control-events",
+        type=int,
+        default=None,
+        help="Optional random cap on the matched CLASDIS control sample.",
+    )
+
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed.",
+    )
+
+    parser.add_argument(
+        "--skip-full",
+        action="store_true",
+        help="Train only the topology feature set.",
+    )
+
+    parser.add_argument(
+        "--skip-clasdis-control",
+        action="store_true",
+        help="Do not construct the optional CLASDIS matched control sample.",
+    )
+
+    return parser.parse_args()
+
+
+def first_tree_name(filename: str) -> str:
+    with uproot.open(filename) as root_file:
+        for key, obj in root_file.items():
+            if isinstance(obj, uproot.behaviors.TTree.TTree):
+                return key.split(";")[0]
+            #endif
+        #endfor
+    raise RuntimeError(f"No TTree found in {filename}")
+
+
+def resolve_tree_name(filename: str, requested_tree: Optional[str]) -> str:
+    if requested_tree is not None:
+        return requested_tree
+    #endif
+    return first_tree_name(filename)
+
+
+def validate_branches(
+    filename: str,
+    tree_name: str,
+    requested_branches: Sequence[str],
+) -> List[str]:
+    with uproot.open(filename) as root_file:
+        tree = root_file[tree_name]
+        available = set(tree.keys())
+
+    missing = [branch for branch in requested_branches if branch not in available]
+    if missing:
+        raise RuntimeError(
+            f"\nFile: {filename}\n"
+            f"Tree: {tree_name}\n"
+            f"Missing required branches:\n  " + "\n  ".join(missing)
+        )
+    #endif
+
+    return list(requested_branches)
+
+
+def load_dataframe(
+    filename: str,
+    requested_tree: Optional[str],
+    branches: Sequence[str],
+    source: str,
+) -> pd.DataFrame:
+    tree_name = resolve_tree_name(filename, requested_tree)
+    validate_branches(filename, tree_name, branches)
+
+    print(f"[load] {source}: {filename}")
+    print(f"[load] {source}: tree = {tree_name}")
+
+    with uproot.open(filename) as root_file:
+        df = root_file[tree_name].arrays(list(branches), library="pd")
+
+    df = df.reset_index(drop=True)
+    df["source"] = source
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Data preparation
+# ---------------------------------------------------------------------------
+
+def wrap_delta_phi_deg(delta_phi: np.ndarray) -> np.ndarray:
+    return (delta_phi + 180.0) % 360.0 - 180.0
+
+
+def make_group_id(df: pd.DataFrame) -> pd.Series:
+    # The source prefix prevents unrelated generator events with the same
+    # run/event numbers from being treated as one group.
+    return (
+        df["source"].astype(str)
+        + ":"
+        + df["runnum"].astype(str)
+        + ":"
+        + df["evnum"].astype(str)
+    )
+
+
+def clean_feature_rows(
+    df: pd.DataFrame,
+    features: Sequence[str],
+) -> pd.DataFrame:
+    out = df.copy()
+
+    # Replace +/-inf with NaN. XGBoost can technically handle NaN, but for this
+    # first diagnostic study we require all chosen inputs to be finite so that
+    # feature plots and class comparisons are straightforward.
+    out[list(features)] = out[list(features)].replace([np.inf, -np.inf], np.nan)
+    out = out.dropna(subset=list(features))
+
+    return out.reset_index(drop=True)
+
+
+def random_cap(
+    df: pd.DataFrame,
+    max_rows: Optional[int],
+    seed: int,
+) -> pd.DataFrame:
+    if max_rows is None or len(df) <= max_rows:
+        return df.reset_index(drop=True)
+    #endif
+
+    return df.sample(n=max_rows, random_state=seed).reset_index(drop=True)
+
+
+def detector_region_mask(
+    df: pd.DataFrame,
+    region: str,
+    ft_theta_max: float,
+) -> pd.Series:
+    if region == "FT":
+        return df["p2_theta"] <= ft_theta_max
+    elif region == "FD":
+        return df["p2_theta"] > ft_theta_max
+    else:
+        raise ValueError(f"Unknown detector region: {region}")
+    #endif
+
+
+def build_training_sample(
+    aaogen: pd.DataFrame,
+    dvcsgen: pd.DataFrame,
+    region: str,
+    ft_theta_max: float,
+    max_events_per_class: Optional[int],
+    seed: int,
+) -> pd.DataFrame:
+    pos = aaogen.loc[detector_region_mask(aaogen, region, ft_theta_max)].copy()
+    neg = dvcsgen.loc[detector_region_mask(dvcsgen, region, ft_theta_max)].copy()
+
+    pos["label"] = 1
+    neg["label"] = 0
+
+    pos = random_cap(pos, max_events_per_class, seed)
+    neg = random_cap(neg, max_events_per_class, seed + 1)
+
+    combined = pd.concat([pos, neg], ignore_index=True)
+    combined["group_id"] = make_group_id(combined)
+
+    return combined
+
+
+def angle_difference_deg(a: float, b: float) -> float:
+    return float((a - b + 180.0) % 360.0 - 180.0)
+
+
+def match_epgamma_to_eppi0_by_event(
+    epg: pd.DataFrame,
+    eppi0: pd.DataFrame,
+    max_normalized_distance: float = 4.0,
+) -> pd.DataFrame:
+    """
+    Construct a pi0-enriched CLASDIS control sample.
+
+    Matching logic:
+      1. Require exactly the same (runnum, evnum).
+      2. Compare electron and proton reconstructed kinematics.
+      3. For each e'p'gammaX candidate, retain it if at least one e'p'pi0X
+         candidate in the same event lies within a normalized six-dimensional
+         electron+proton distance.
+
+    IMPORTANT:
+      This establishes that the e'p'gammaX candidate belongs to an event in
+      which a pi0 was successfully reconstructed with compatible e/p
+      kinematics. It does NOT prove that the particular p2 photon in the
+      e'p'gammaX row was one of the reconstructed pi0 daughters, because the
+      present e'p'pi0X tree does not contain enough individual-photon
+      information for an unambiguous daughter match.
+
+      Consequently this sample is used only as a pi0-enriched CONTROL SAMPLE,
+      never as a truth-pure training label.
+    """
+
+    match_columns = [
+        "runnum",
+        "evnum",
+        "e_p",
+        "e_theta",
+        "e_phi",
+        "p1_p",
+        "p1_theta",
+        "p1_phi",
+    ]
+
+    right = eppi0[match_columns].copy()
+    grouped = {
+        key: group.reset_index(drop=True)
+        for key, group in right.groupby(["runnum", "evnum"], sort=False)
+    }
+
+    keep_indices: List[int] = []
+
+    for idx, row in epg.iterrows():
+        key = (row["runnum"], row["evnum"])
+        candidates = grouped.get(key)
+
+        if candidates is None:
+            continue
+        #endif
+
+        best_distance2 = math.inf
+
+        for _, cand in candidates.iterrows():
+            components = [
+                (row["e_p"] - cand["e_p"]) / MATCH_SCALES["e_p"],
+                (row["e_theta"] - cand["e_theta"]) / MATCH_SCALES["e_theta"],
+                angle_difference_deg(row["e_phi"], cand["e_phi"])
+                / MATCH_SCALES["e_phi"],
+                (row["p1_p"] - cand["p1_p"]) / MATCH_SCALES["p1_p"],
+                (row["p1_theta"] - cand["p1_theta"]) / MATCH_SCALES["p1_theta"],
+                angle_difference_deg(row["p1_phi"], cand["p1_phi"])
+                / MATCH_SCALES["p1_phi"],
+            ]
+
+            distance2 = float(np.sum(np.square(components)))
+            best_distance2 = min(best_distance2, distance2)
+        #endfor
+
+        if math.sqrt(best_distance2) <= max_normalized_distance:
+            keep_indices.append(idx)
+        #endif
+    #endfor
+
+    matched = epg.loc[keep_indices].copy()
+    matched["control_match"] = True
+    return matched.reset_index(drop=True)
+
+
+# ---------------------------------------------------------------------------
+# Train/validation/test splitting and weighting
+# ---------------------------------------------------------------------------
+
+def grouped_train_validation_test_split(
+    df: pd.DataFrame,
+    seed: int,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Approximately 70% train, 15% validation, 15% test, grouped by event.
+
+    Because AAOgen and DVCSgen are independent sources and the group_id includes
+    source, candidates from the same generated event cannot leak between sets.
+    """
+
+    first_split = GroupShuffleSplit(
+        n_splits=1,
+        train_size=0.70,
+        random_state=seed,
+    )
+
+    train_idx, remainder_idx = next(
+        first_split.split(df, groups=df["group_id"])
+    )
+
+    train = df.iloc[train_idx].copy()
+    remainder = df.iloc[remainder_idx].copy()
+
+    second_split = GroupShuffleSplit(
+        n_splits=1,
+        train_size=0.50,
+        random_state=seed + 1,
+    )
+
+    validation_rel_idx, test_rel_idx = next(
+        second_split.split(remainder, groups=remainder["group_id"])
+    )
+
+    validation = remainder.iloc[validation_rel_idx].copy()
+    test = remainder.iloc[test_rel_idx].copy()
+
+    return (
+        train.reset_index(drop=True),
+        validation.reset_index(drop=True),
+        test.reset_index(drop=True),
+    )
+
+
+def class_balancing_weights(labels: np.ndarray) -> np.ndarray:
+    """
+    Give the positive and negative classes equal total training weight.
+
+    This prevents the arbitrary generated event counts from becoming an
+    implicit prior P(pi0).
+    """
+
+    labels = np.asarray(labels, dtype=int)
+
+    n_pos = np.count_nonzero(labels == 1)
+    n_neg = np.count_nonzero(labels == 0)
+
+    if n_pos == 0 or n_neg == 0:
+        raise RuntimeError(
+            f"Cannot construct class weights: n_pos={n_pos}, n_neg={n_neg}"
+        )
+    #endif
+
+    weights = np.ones(len(labels), dtype=float)
+    weights[labels == 1] = 0.5 / n_pos
+    weights[labels == 0] = 0.5 / n_neg
+
+    # Rescale to mean weight ~1 for numerical convenience.
+    weights *= len(labels)
+
+    return weights
+
+
+# ---------------------------------------------------------------------------
+# Model training
+# ---------------------------------------------------------------------------
+
+def make_model(seed: int) -> XGBClassifier:
+    params = dict(DEFAULT_BDT_PARAMS)
+    params["random_state"] = seed
+    return XGBClassifier(**params)
+
+
+def train_model(
+    train: pd.DataFrame,
+    validation: pd.DataFrame,
+    features: Sequence[str],
+    seed: int,
+) -> XGBClassifier:
+    model = make_model(seed)
+
+    X_train = train[list(features)].to_numpy(dtype=float)
+    y_train = train["label"].to_numpy(dtype=int)
+    w_train = class_balancing_weights(y_train)
+
+    X_validation = validation[list(features)].to_numpy(dtype=float)
+    y_validation = validation["label"].to_numpy(dtype=int)
+
+    # eval_set lets XGBoost print/track validation loss. We do not enable early
+    # stopping in this introductory version so the behavior is reproducible
+    # across XGBoost versions with slightly different sklearn wrappers.
+    model.fit(
+        X_train,
+        y_train,
+        sample_weight=w_train,
+        eval_set=[(X_validation, y_validation)],
+        verbose=False,
+    )
+
+    return model
+
+
+def model_scores(
+    model: XGBClassifier,
+    df: pd.DataFrame,
+    features: Sequence[str],
+) -> np.ndarray:
+    if len(df) == 0:
+        return np.asarray([], dtype=float)
+    #endif
+
+    X = df[list(features)].to_numpy(dtype=float)
+    return model.predict_proba(X)[:, 1]
+
+
+# ---------------------------------------------------------------------------
+# Plotting
+# ---------------------------------------------------------------------------
+
+def save_figure(fig: plt.Figure, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+
+
+def finite_common_range(
+    values_a: np.ndarray,
+    values_b: np.ndarray,
+    lower_quantile: float = 0.005,
+    upper_quantile: float = 0.995,
+) -> Tuple[float, float]:
+    values = np.concatenate([values_a, values_b])
+    values = values[np.isfinite(values)]
+
+    if len(values) == 0:
+        return 0.0, 1.0
+    #endif
+
+    low = float(np.quantile(values, lower_quantile))
+    high = float(np.quantile(values, upper_quantile))
+
+    if not np.isfinite(low) or not np.isfinite(high) or low == high:
+        low = float(np.min(values))
+        high = float(np.max(values))
+    #endif
+
+    if low == high:
+        high = low + 1.0
+    #endif
+
+    return low, high
+
+
+def plot_input_feature_distributions(
+    train: pd.DataFrame,
+    features: Sequence[str],
+    output_path: Path,
+    title: str,
+) -> None:
+    ncols = 3
+    nrows = int(math.ceil(len(features) / ncols))
+
+    fig, axes = plt.subplots(
+        nrows=nrows,
+        ncols=ncols,
+        figsize=(5.0 * ncols, 3.8 * nrows),
+    )
+    axes = np.atleast_1d(axes).ravel()
+
+    pos = train.loc[train["label"] == 1]
+    neg = train.loc[train["label"] == 0]
+
+    for ax, feature in zip(axes, features):
+        a = neg[feature].to_numpy(dtype=float)
+        b = pos[feature].to_numpy(dtype=float)
+
+        low, high = finite_common_range(a, b)
+
+        ax.hist(
+            a,
+            bins=60,
+            range=(low, high),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label="DVCSgen: y=0",
+        )
+        ax.hist(
+            b,
+            bins=60,
+            range=(low, high),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label="AAOgen: y=1",
+        )
+
+        ax.set_xlabel(feature)
+        ax.set_ylabel("Normalized density")
+        ax.grid(alpha=0.20)
+    #endfor
+
+    for ax in axes[len(features):]:
+        ax.axis("off")
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=2)
+    fig.suptitle(title, y=1.01)
+    fig.tight_layout()
+
+    save_figure(fig, output_path)
+
+
+def plot_score_distribution(
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    control: Optional[pd.DataFrame],
+    control_scores: Optional[np.ndarray],
+    output_path: Path,
+    title: str,
+) -> None:
+    fig, ax = plt.subplots(figsize=(8.0, 5.5))
+
+    y = test["label"].to_numpy(dtype=int)
+
+    ax.hist(
+        test_scores[y == 0],
+        bins=50,
+        range=(0.0, 1.0),
+        density=True,
+        histtype="step",
+        linewidth=1.8,
+        label="DVCSgen test: genuine gamma",
+    )
+    ax.hist(
+        test_scores[y == 1],
+        bins=50,
+        range=(0.0, 1.0),
+        density=True,
+        histtype="step",
+        linewidth=1.8,
+        label="AAOgen test: pi0",
+    )
+
+    if (
+        control is not None
+        and control_scores is not None
+        and len(control_scores) > 0
+    ):
+        ax.hist(
+            control_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.8,
+            linestyle="--",
+            label="CLASDIS matched eppi0 control",
+        )
+    #endif
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Normalized density")
+    ax.set_title(title)
+    ax.grid(alpha=0.20)
+    ax.legend()
+
+    save_figure(fig, output_path)
+
+
+def plot_roc_curve(
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> float:
+    y = test["label"].to_numpy(dtype=int)
+    fpr, tpr, _ = roc_curve(y, test_scores)
+    roc_auc = float(auc(fpr, tpr))
+
+    fig, ax = plt.subplots(figsize=(6.5, 6.0))
+
+    ax.plot(fpr, tpr, linewidth=2.0, label=f"BDT AUC = {roc_auc:.4f}")
+    ax.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", label="Random classifier")
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("False-positive rate: genuine gamma tagged as pi0")
+    ax.set_ylabel("True-positive rate: pi0 tagged as pi0")
+    ax.set_title(title)
+    ax.grid(alpha=0.20)
+    ax.legend(loc="lower right")
+
+    save_figure(fig, output_path)
+    return roc_auc
+
+
+def plot_feature_importance(
+    model: XGBClassifier,
+    features: Sequence[str],
+    output_path: Path,
+    title: str,
+) -> None:
+    importance = np.asarray(model.feature_importances_, dtype=float)
+    order = np.argsort(importance)
+
+    fig, ax = plt.subplots(figsize=(8.0, max(5.0, 0.42 * len(features))))
+
+    ax.barh(
+        np.asarray(features)[order],
+        importance[order],
+    )
+
+    ax.set_xlabel("XGBoost feature importance")
+    ax.set_title(title)
+    ax.grid(axis="x", alpha=0.20)
+
+    save_figure(fig, output_path)
+
+
+def plot_score_vs_selected_features(
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    selected = [
+        feature
+        for feature in ["p2_p", "p2_theta", "Mx2", "Mx2_1", "Mx2_2", "pTmiss"]
+        if feature in test.columns
+    ]
+
+    ncols = 3
+    nrows = int(math.ceil(len(selected) / ncols))
+
+    fig, axes = plt.subplots(
+        nrows=nrows,
+        ncols=ncols,
+        figsize=(5.0 * ncols, 4.0 * nrows),
+    )
+    axes = np.atleast_1d(axes).ravel()
+
+    y = test["label"].to_numpy(dtype=int)
+
+    for ax, feature in zip(axes, selected):
+        values = test[feature].to_numpy(dtype=float)
+
+        # Plot a deterministic subset if the test sample is huge.
+        if len(values) > 100_000:
+            rng = np.random.default_rng(12345)
+            idx = rng.choice(len(values), size=100_000, replace=False)
+        else:
+            idx = np.arange(len(values))
+        #endif
+
+        neg_idx = idx[y[idx] == 0]
+        pos_idx = idx[y[idx] == 1]
+
+        ax.scatter(
+            values[neg_idx],
+            test_scores[neg_idx],
+            s=3,
+            alpha=0.12,
+            label="DVCSgen",
+        )
+        ax.scatter(
+            values[pos_idx],
+            test_scores[pos_idx],
+            s=3,
+            alpha=0.12,
+            label="AAOgen",
+        )
+
+        ax.set_xlabel(feature)
+        ax.set_ylabel("BDT pi0 score")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(alpha=0.20)
+    #endfor
+
+    for ax in axes[len(selected):]:
+        ax.axis("off")
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=2)
+    fig.suptitle(title, y=1.01)
+    fig.tight_layout()
+
+    save_figure(fig, output_path)
+
+
+def plot_confusion_matrix_at_half(
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> float:
+    y_true = test["label"].to_numpy(dtype=int)
+    y_pred = (test_scores >= 0.5).astype(int)
+
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1], normalize="true")
+    bal_acc = float(balanced_accuracy_score(y_true, y_pred))
+
+    fig, ax = plt.subplots(figsize=(6.2, 5.5))
+
+    image = ax.imshow(cm, vmin=0.0, vmax=1.0)
+
+    for i in range(2):
+        for j in range(2):
+            ax.text(
+                j,
+                i,
+                f"{100.0 * cm[i, j]:.1f}%",
+                ha="center",
+                va="center",
+                fontsize=13,
+            )
+        #endfor
+    #endfor
+
+    ax.set_xticks([0, 1], ["tag gamma", "tag pi0"])
+    ax.set_yticks([0, 1], ["true gamma", "true pi0"])
+    ax.set_xlabel("Prediction at score = 0.5")
+    ax.set_ylabel("Truth label")
+    ax.set_title(f"{title}\nBalanced accuracy = {bal_acc:.4f}")
+    fig.colorbar(image, ax=ax, label="Row-normalized fraction")
+
+    save_figure(fig, output_path)
+    return bal_acc
+
+
+def plot_control_score_vs_kinematics(
+    control: pd.DataFrame,
+    control_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(control) == 0:
+        return
+    #endif
+
+    selected = ["p2_p", "p2_theta", "x", "Q2", "t", "pTmiss"]
+    selected = [feature for feature in selected if feature in control.columns]
+
+    ncols = 3
+    nrows = int(math.ceil(len(selected) / ncols))
+
+    fig, axes = plt.subplots(
+        nrows=nrows,
+        ncols=ncols,
+        figsize=(5.0 * ncols, 4.0 * nrows),
+    )
+    axes = np.atleast_1d(axes).ravel()
+
+    if len(control) > 100_000:
+        rng = np.random.default_rng(67890)
+        idx = rng.choice(len(control), size=100_000, replace=False)
+    else:
+        idx = np.arange(len(control))
+    #endif
+
+    for ax, feature in zip(axes, selected):
+        ax.scatter(
+            control[feature].to_numpy(dtype=float)[idx],
+            control_scores[idx],
+            s=3,
+            alpha=0.15,
+        )
+        ax.set_xlabel(feature)
+        ax.set_ylabel("BDT pi0 score")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(alpha=0.20)
+    #endfor
+
+    for ax in axes[len(selected):]:
+        ax.axis("off")
+    #endfor
+
+    fig.suptitle(title)
+    fig.tight_layout()
+
+    save_figure(fig, output_path)
+
+
+def plot_topology_vs_full_roc(
+    roc_data: Dict[str, Tuple[np.ndarray, np.ndarray, float]],
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(roc_data) < 2:
+        return
+    #endif
+
+    fig, ax = plt.subplots(figsize=(6.5, 6.0))
+
+    for feature_set_name, (fpr, tpr, roc_auc) in roc_data.items():
+        ax.plot(
+            fpr,
+            tpr,
+            linewidth=2.0,
+            label=f"{feature_set_name}: AUC = {roc_auc:.4f}",
+        )
+    #endfor
+
+    ax.plot([0.0, 1.0], [0.0, 1.0], linestyle="--", label="Random classifier")
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_xlabel("False-positive rate")
+    ax.set_ylabel("True-positive rate")
+    ax.set_title(title)
+    ax.grid(alpha=0.20)
+    ax.legend(loc="lower right")
+
+    save_figure(fig, output_path)
+
+
+# ---------------------------------------------------------------------------
+# Main per-region training
+# ---------------------------------------------------------------------------
+
+def run_region(
+    args: argparse.Namespace,
+    aaogen: pd.DataFrame,
+    dvcsgen: pd.DataFrame,
+    clasdis_control: Optional[pd.DataFrame],
+    region: str,
+    period_output: Path,
+) -> List[DatasetSummary]:
+
+    region_output = period_output / region.lower()
+    region_output.mkdir(parents=True, exist_ok=True)
+
+    combined = build_training_sample(
+        aaogen=aaogen,
+        dvcsgen=dvcsgen,
+        region=region,
+        ft_theta_max=args.ft_theta_max,
+        max_events_per_class=args.max_events_per_class,
+        seed=args.seed,
+    )
+
+    n_pos = int(np.count_nonzero(combined["label"].to_numpy() == 1))
+    n_neg = int(np.count_nonzero(combined["label"].to_numpy() == 0))
+
+    print(
+        f"[{args.period} {region}] training pool: "
+        f"{n_pos:,} AAOgen positives, {n_neg:,} DVCSgen negatives"
+    )
+
+    if n_pos < 100 or n_neg < 100:
+        warnings.warn(
+            f"{args.period} {region}: very small training sample "
+            f"(positive={n_pos}, negative={n_neg})."
+        )
+    #endif
+
+    control_region = None
+
+    if clasdis_control is not None:
+        control_region = clasdis_control.loc[
+            detector_region_mask(
+                clasdis_control,
+                region,
+                args.ft_theta_max,
+            )
+        ].copy()
+
+        control_region = random_cap(
+            control_region,
+            args.max_control_events,
+            args.seed + 10,
+        )
+
+        print(
+            f"[{args.period} {region}] CLASDIS matched control: "
+            f"{len(control_region):,} candidates"
+        )
+    #endif
+
+    feature_set_names = ["topology"]
+    if not args.skip_full:
+        feature_set_names.append("full")
+    #endif
+
+    summaries: List[DatasetSummary] = []
+    roc_comparison: Dict[str, Tuple[np.ndarray, np.ndarray, float]] = {}
+
+    for feature_set_name in feature_set_names:
+        features = FEATURE_SETS[feature_set_name]
+
+        model_output = region_output / feature_set_name
+        model_output.mkdir(parents=True, exist_ok=True)
+
+        working = clean_feature_rows(combined, features)
+
+        # Clean control rows with the same feature requirements so the model is
+        # always evaluated on a compatible input matrix.
+        if control_region is not None:
+            control_clean = clean_feature_rows(control_region, features)
+        else:
+            control_clean = None
+        #endif
+
+        train, validation, test = grouped_train_validation_test_split(
+            working,
+            args.seed,
+        )
+
+        print(
+            f"[{args.period} {region} {feature_set_name}] "
+            f"train={len(train):,}, validation={len(validation):,}, "
+            f"test={len(test):,}"
+        )
+
+        plot_input_feature_distributions(
+            train=train,
+            features=features,
+            output_path=model_output / "input_feature_distributions.png",
+            title=(
+                f"{args.period} {region}: training inputs "
+                f"({feature_set_name} feature set)"
+            ),
+        )
+
+        model = train_model(
+            train=train,
+            validation=validation,
+            features=features,
+            seed=args.seed,
+        )
+
+        test_scores = model_scores(model, test, features)
+
+        if control_clean is not None:
+            control_scores = model_scores(model, control_clean, features)
+        else:
+            control_scores = None
+        #endif
+
+        roc_auc = plot_roc_curve(
+            test=test,
+            test_scores=test_scores,
+            output_path=model_output / "roc_curve.png",
+            title=f"{args.period} {region}: {feature_set_name} BDT",
+        )
+
+        y_test = test["label"].to_numpy(dtype=int)
+        fpr, tpr, _ = roc_curve(y_test, test_scores)
+        roc_comparison[feature_set_name] = (fpr, tpr, roc_auc)
+
+        plot_score_distribution(
+            test=test,
+            test_scores=test_scores,
+            control=control_clean,
+            control_scores=control_scores,
+            output_path=model_output / "bdt_score_distribution.png",
+            title=f"{args.period} {region}: {feature_set_name} BDT score",
+        )
+
+        plot_feature_importance(
+            model=model,
+            features=features,
+            output_path=model_output / "feature_importance.png",
+            title=f"{args.period} {region}: {feature_set_name} feature importance",
+        )
+
+        plot_score_vs_selected_features(
+            test=test,
+            test_scores=test_scores,
+            output_path=model_output / "score_vs_selected_features.png",
+            title=f"{args.period} {region}: score behavior on held-out MC",
+        )
+
+        balanced_accuracy = plot_confusion_matrix_at_half(
+            test=test,
+            test_scores=test_scores,
+            output_path=model_output / "confusion_matrix_score_0p5.png",
+            title=f"{args.period} {region}: {feature_set_name} BDT",
+        )
+
+        if (
+            control_clean is not None
+            and control_scores is not None
+            and len(control_clean) > 0
+        ):
+            plot_control_score_vs_kinematics(
+                control=control_clean,
+                control_scores=control_scores,
+                output_path=model_output / "clasdis_control_score_vs_kinematics.png",
+                title=(
+                    f"{args.period} {region}: CLASDIS matched-pi0 control "
+                    f"({feature_set_name})"
+                ),
+            )
+        #endif
+
+        # Persist only the compact model/metadata needed to reproduce the
+        # classifier. The scientific output of this introductory script is
+        # intentionally plot-focused rather than CSV-focused.
+        joblib.dump(
+            {
+                "model": model,
+                "features": list(features),
+                "period": args.period,
+                "region": region,
+                "feature_set": feature_set_name,
+                "ft_theta_max": args.ft_theta_max,
+            },
+            model_output / "bdt_model.joblib",
+        )
+
+        summary = DatasetSummary(
+            period=args.period,
+            region=region,
+            feature_set=feature_set_name,
+            n_positive_total=n_pos,
+            n_negative_total=n_neg,
+            n_train=len(train),
+            n_validation=len(validation),
+            n_test=len(test),
+            n_clasdis_control=0 if control_clean is None else len(control_clean),
+            auc_test=roc_auc,
+            balanced_accuracy_test_at_050=balanced_accuracy,
+        )
+        summaries.append(summary)
+
+        print(
+            f"[{args.period} {region} {feature_set_name}] "
+            f"held-out test AUC = {roc_auc:.5f}; "
+            f"balanced accuracy at score 0.5 = {balanced_accuracy:.5f}"
+        )
+    #endfor
+
+    plot_topology_vs_full_roc(
+        roc_data=roc_comparison,
+        output_path=region_output / "roc_topology_vs_full.png",
+        title=f"{args.period} {region}: topology vs full feature sets",
+    )
+
+    return summaries
+
+
+# ---------------------------------------------------------------------------
+# Program entry point
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    args = parse_args()
+
+    np.random.seed(args.seed)
+
+    period_output = Path(args.output_dir) / args.period
+    period_output.mkdir(parents=True, exist_ok=True)
+
+    aaogen = load_dataframe(
+        filename=args.aaogen_epg,
+        requested_tree=args.tree,
+        branches=EPG_REQUIRED_BRANCHES,
+        source="aaogen",
+    )
+
+    dvcsgen = load_dataframe(
+        filename=args.dvcsgen_epg,
+        requested_tree=args.tree,
+        branches=EPG_REQUIRED_BRANCHES,
+        source="dvcsgen",
+    )
+
+    clasdis_control: Optional[pd.DataFrame] = None
+
+    have_clasdis_pair = (
+        args.clasdis_epg is not None
+        and args.clasdis_eppi0 is not None
+        and not args.skip_clasdis_control
+    )
+
+    if have_clasdis_pair:
+        clasdis_epg = load_dataframe(
+            filename=args.clasdis_epg,
+            requested_tree=args.tree,
+            branches=EPG_REQUIRED_BRANCHES,
+            source="clasdis_epg",
+        )
+
+        clasdis_eppi0 = load_dataframe(
+            filename=args.clasdis_eppi0,
+            requested_tree=args.tree,
+            branches=EPPI0_MATCH_BRANCHES,
+            source="clasdis_eppi0",
+        )
+
+        print(
+            f"[{args.period}] matching CLASDIS e'p'gammaX to reconstructed "
+            f"e'p'pi0X using run/event + electron/proton kinematics..."
+        )
+
+        clasdis_control = match_epgamma_to_eppi0_by_event(
+            epg=clasdis_epg,
+            eppi0=clasdis_eppi0,
+        )
+
+        print(
+            f"[{args.period}] matched CLASDIS control sample: "
+            f"{len(clasdis_control):,} e'p'gammaX candidates"
+        )
+    elif (
+        (args.clasdis_epg is None) != (args.clasdis_eppi0 is None)
+        and not args.skip_clasdis_control
+    ):
+        raise RuntimeError(
+            "Supply both --clasdis-epg and --clasdis-eppi0, or neither."
+        )
+    #endif
+
+    all_summaries: List[DatasetSummary] = []
+
+    for region in ["FT", "FD"]:
+        region_summaries = run_region(
+            args=args,
+            aaogen=aaogen,
+            dvcsgen=dvcsgen,
+            clasdis_control=clasdis_control,
+            region=region,
+            period_output=period_output,
+        )
+        all_summaries.extend(region_summaries)
+    #endfor
+
+    # A tiny JSON summary is kept only so the numerical headline results can
+    # be inspected without reading plots by eye. The workflow remains
+    # deliberately plot-centered.
+    summary_path = period_output / "training_summary.json"
+
+    with summary_path.open("w") as f:
+        json.dump(
+            [asdict(summary) for summary in all_summaries],
+            f,
+            indent=2,
+        )
+    #endwith
+
+    print("")
+    print("Done.")
+    print(f"Plots/models: {period_output}")
+    print(f"Numerical summary: {summary_path}")
+
+
+if __name__ == "__main__":
+    main()
