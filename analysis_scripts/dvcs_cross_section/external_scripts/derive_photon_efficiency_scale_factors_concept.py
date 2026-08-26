@@ -290,6 +290,9 @@ Outputs are intentionally compact and plot-driven:
     output/photon_efficiency_concept/efficiency/<period>/
         matching_resolution_<period>.png
         association_cutflow_<period>.png
+        selected_event_overlap_<period>.png
+        matching_resolution_<period>.png
+        association_cutflow_<period>.png
         efficiency_counts_<period>.png
         efficiency_summary_<period>.png
         efficiency_summary_<period>.csv
@@ -7779,6 +7782,15 @@ def process_data_efficiency_pass(
     residual_parts = {"FT": [], "FD": []}
     selected_event_key_parts: List[np.ndarray] = []
 
+    # Keep only compact packed event keys for the selected-tag diagnostic.
+    # There are just 4 E_probe bins x 2 tag regions, so this remains small
+    # compared with the ROOT data and does not require another file pass.
+    selected_keys_by_category: Dict[Tuple[str, str], List[np.ndarray]] = {
+        (bin_key, tag_region): []
+        for bin_key, _emin, _emax in E_PROBE_BINS
+        for tag_region in ("FT", "FD")
+    }
+
     for arrays in iterate_efficiency_tree_arrays(
         period.data,
         found_tree,
@@ -7831,11 +7843,13 @@ def process_data_efficiency_pass(
                 #endif
 
                 counters["selected_tags"] += len(selected)
-                selected_event_key_parts.append(
-                    packed_event_keys_eff(
-                        arrays["runnum"][selected],
-                        arrays["evnum"][selected],
-                    )
+                selected_keys = packed_event_keys_eff(
+                    arrays["runnum"][selected],
+                    arrays["evnum"][selected],
+                )
+                selected_event_key_parts.append(selected_keys)
+                selected_keys_by_category[(bin_key, tag_region)].append(
+                    selected_keys
                 )
 
                 accumulate_selected_tags(
@@ -7925,6 +7939,112 @@ def process_data_efficiency_pass(
         #endfor
     #endfor
 
+    # ------------------------------------------------------------------
+    # Selected-tag event-overlap diagnostic.
+    #
+    # This is intentionally evaluated at the EXACT point where the purity
+    # selection has finished, but BEFORE e/p parent checks or reconstructed
+    # pi0/probe requirements.  It therefore answers the narrow question:
+    #
+    #   "Do the physical events selected by the epgamma purity machinery
+    #    actually exist in the companion eppi0 file?"
+    #
+    # Row ordering cannot matter because this is a packed-key set lookup.
+    # ------------------------------------------------------------------
+    eppi0_unique_keys = np.unique(sorted_keys)
+    selected_overlap_summary = []
+
+    for bin_key, emin, emax in E_PROBE_BINS:
+        for tag_region in ("FT", "FD"):
+            parts = selected_keys_by_category[(bin_key, tag_region)]
+            if parts:
+                selected_rows_keys = np.concatenate(parts)
+            else:
+                selected_rows_keys = np.asarray([], dtype=np.uint64)
+            #endif
+
+            n_rows = int(len(selected_rows_keys))
+            if n_rows:
+                unique_keys, multiplicity = np.unique(
+                    selected_rows_keys,
+                    return_counts=True,
+                )
+                positions = np.searchsorted(
+                    eppi0_unique_keys,
+                    unique_keys,
+                    side="left",
+                )
+                in_bounds = positions < len(eppi0_unique_keys)
+                in_eppi0 = np.zeros(len(unique_keys), dtype=bool)
+                if np.any(in_bounds):
+                    valid_idx = np.flatnonzero(in_bounds)
+                    in_eppi0[valid_idx] = (
+                        eppi0_unique_keys[positions[valid_idx]]
+                        == unique_keys[valid_idx]
+                    )
+                #endif
+
+                n_unique = int(len(unique_keys))
+                n_overlap_unique = int(np.count_nonzero(in_eppi0))
+                n_overlap_rows = int(np.sum(multiplicity[in_eppi0]))
+                mean_multiplicity = float(
+                    n_rows / max(n_unique, 1)
+                )
+                repeated_event_fraction = float(
+                    np.count_nonzero(multiplicity > 1)
+                    / max(n_unique, 1)
+                )
+                max_multiplicity = int(np.max(multiplicity))
+            else:
+                n_unique = 0
+                n_overlap_unique = 0
+                n_overlap_rows = 0
+                mean_multiplicity = float("nan")
+                repeated_event_fraction = float("nan")
+                max_multiplicity = 0
+            #endif
+
+            config = period_efficiency_fit_config(
+                optimizer_summary,
+                bin_key,
+                tag_region,
+            )
+            fit = config["fit"] if config is not None else None
+            f_pi0 = (
+                float(fit["fraction_pi0"])
+                if fit is not None
+                else float("nan")
+            )
+
+            selected_overlap_summary.append(
+                {
+                    "energy_bin": bin_key,
+                    "energy_min": float(emin),
+                    "energy_max": float(emax),
+                    "tag_region": tag_region,
+                    "selected_rows": n_rows,
+                    "selected_unique_events": n_unique,
+                    "overlap_unique_events": n_overlap_unique,
+                    "overlap_rows": n_overlap_rows,
+                    "overlap_unique_fraction": (
+                        n_overlap_unique / n_unique
+                        if n_unique > 0
+                        else float("nan")
+                    ),
+                    "overlap_row_fraction": (
+                        n_overlap_rows / n_rows
+                        if n_rows > 0
+                        else float("nan")
+                    ),
+                    "mean_rows_per_unique_event": mean_multiplicity,
+                    "repeated_event_fraction": repeated_event_fraction,
+                    "max_rows_per_event": max_multiplicity,
+                    "f_pi0_fit": f_pi0,
+                }
+            )
+        #endfor
+    #endfor
+
     duplicate_fraction = float("nan")
     if selected_event_key_parts:
         keys = np.concatenate(selected_event_key_parts)
@@ -7949,6 +8069,7 @@ def process_data_efficiency_pass(
     return {
         "counters": counters,
         "residuals": residuals,
+        "selected_overlap_summary": selected_overlap_summary,
         "directed_tag_event_multiplicity_fraction": duplicate_fraction,
         "tree_entries_total": int(total),
     }
@@ -8044,6 +8165,136 @@ def calculate_efficiency_results(
         )
     )
     return rows
+
+
+
+def make_selected_event_overlap_canvas(
+    period: Period,
+    data_pass: Dict[str, object],
+    output_dir: Path,
+) -> Path:
+    """
+    Diagnose selected epgamma -> eppi0 event overlap BEFORE parent/probe cuts.
+
+    Each panel corresponds to one E_probe bin and one reconstructed TAG region.
+    The bar is the fraction of selected UNIQUE physical events that exist in
+    the eppi0 file.  The fitted f_pi0 is overlaid only as context; it is NOT an
+    expected equality because eppi0 additionally requires reconstruction of the
+    partner photon.
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary = data_pass.get("selected_overlap_summary", [])
+
+    lookup = {
+        (row["energy_bin"], row["tag_region"]): row
+        for row in summary
+    }
+
+    fig, axes = plt.subplots(
+        len(E_PROBE_BINS),
+        2,
+        figsize=(12.5, 3.1 * len(E_PROBE_BINS) + 1.0),
+        squeeze=False,
+    )
+
+    for irow, (bin_key, emin, emax) in enumerate(E_PROBE_BINS):
+        for icol, tag_region in enumerate(("FT", "FD")):
+            ax = axes[irow, icol]
+            row = lookup.get((bin_key, tag_region))
+
+            if row is None or row["selected_unique_events"] <= 0:
+                ax.text(
+                    0.5,
+                    0.5,
+                    "No selected events",
+                    ha="center",
+                    va="center",
+                    transform=ax.transAxes,
+                )
+                ax.set_title(
+                    f"tag {tag_region}: {emin:g} <= E_probe < {emax:g} GeV"
+                )
+                ax.set_ylim(0.0, 1.05)
+                continue
+            #endif
+
+            overlap = float(row["overlap_unique_fraction"])
+            f_pi0 = float(row["f_pi0_fit"])
+
+            ax.bar(
+                [0],
+                [overlap],
+                width=0.55,
+                label="selected unique events also in eppi0",
+            )
+            if np.isfinite(f_pi0):
+                ax.axhline(
+                    f_pi0,
+                    linestyle="--",
+                    linewidth=1.2,
+                    label=r"fitted $f_{\pi^0}$ (context only)",
+                )
+            #endif
+
+            ax.set_xlim(-0.75, 0.75)
+            ax.set_ylim(0.0, 1.05)
+            ax.set_xticks([0])
+            ax.set_xticklabels(["event overlap"])
+            ax.set_ylabel("fraction")
+            ax.grid(axis="y", alpha=0.18)
+            ax.set_title(
+                f"tag {tag_region}: {emin:g} <= E_probe < {emax:g} GeV",
+                fontsize=10,
+            )
+
+            annotation = (
+                f"selected rows = {row['selected_rows']:,}\n"
+                f"unique events = {row['selected_unique_events']:,}\n"
+                f"unique in eppi0 = {row['overlap_unique_events']:,}\n"
+                f"overlap = {100.0*overlap:.2f}%\n"
+                f"rows/event = {row['mean_rows_per_unique_event']:.3f}\n"
+                f"events with >1 row = "
+                f"{100.0*row['repeated_event_fraction']:.2f}%\n"
+                f"max rows/event = {row['max_rows_per_event']}"
+            )
+            ax.text(
+                0.98,
+                0.96,
+                annotation,
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=8.1,
+                bbox={
+                    "facecolor": "white",
+                    "alpha": 0.88,
+                    "edgecolor": "0.6",
+                },
+            )
+
+            if irow == 0 and icol == 0:
+                ax.legend(
+                    loc="lower left",
+                    frameon=True,
+                    fontsize=8,
+                )
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        (
+            f"{period.label}: selected epgamma event overlap with eppi0\n"
+            "exact (runnum,evnum), BEFORE e/p-parent, pi0, or probe-matching cuts"
+        ),
+        fontsize=13,
+    )
+    fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.955))
+
+    out = output_dir / f"selected_event_overlap_{period.key}.png"
+    fig.savefig(out, dpi=180)
+    plt.close(fig)
+    return out
 
 
 def make_matching_resolution_canvas(
@@ -8592,6 +8843,11 @@ def run_efficiency_extraction(
 
     rows = calculate_efficiency_results(accumulator)
 
+    selected_overlap_plot = make_selected_event_overlap_canvas(
+        period,
+        data_pass,
+        outdir,
+    )
     matching_plot = make_matching_resolution_canvas(
         period,
         mc_pass,
@@ -8629,10 +8885,23 @@ def run_efficiency_extraction(
 
     log(
         f"{period.label}: efficiency outputs -> {outdir}; "
-        f"plots: {matching_plot.name}, {cutflow_plot.name}, "
-        f"{counts_plot.name}, {summary_plot.name}; "
+        f"plots: {selected_overlap_plot.name}, {matching_plot.name}, "
+        f"{cutflow_plot.name}, {counts_plot.name}, {summary_plot.name}; "
         f"one CSV: {summary_csv.name}."
     )
+    for overlap_row in data_pass.get("selected_overlap_summary", []):
+        log(
+            f"{period.label}: SELECTED EVENT OVERLAP "
+            f"{overlap_row['energy_bin']} tag-{overlap_row['tag_region']}: "
+            f"{overlap_row['overlap_unique_events']:,}/"
+            f"{overlap_row['selected_unique_events']:,} unique events "
+            f"({100.0*overlap_row['overlap_unique_fraction']:.2f}%) are in "
+            f"eppi0; {overlap_row['selected_rows']:,} selected rows, "
+            f"{overlap_row['mean_rows_per_unique_event']:.3f} rows/event, "
+            f"f_pi0_fit={overlap_row['f_pi0_fit']:.3f}."
+        )
+    #endfor
+
     log(
         f"{period.label}: directed-tag audit: "
         f"data selected-event multiplicity fraction="
@@ -8646,6 +8915,10 @@ def run_efficiency_extraction(
     return {
         "rows": rows,
         "data_counters": data_pass["counters"],
+        "selected_overlap_summary": data_pass.get(
+            "selected_overlap_summary",
+            [],
+        ),
         "mc_counters": mc_pass["counters"],
         "mc_final": mc_final,
         "resolution_ft": {
