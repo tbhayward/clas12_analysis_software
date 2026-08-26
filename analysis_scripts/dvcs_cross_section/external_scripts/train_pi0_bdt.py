@@ -52,22 +52,18 @@ passed to the BDT.
 
 Requirements
 ------------
-    python -m pip install uproot pandas numpy matplotlib scikit-learn xgboost joblib
+    python -m pip install uproot pandas numpy matplotlib scikit-learn joblib
 
 Example
 -------
-python train_pi0_bdt_intro.py \
-    --period fa18_inb \
-    --aaogen-epg /path/to/aaogen_fa18_inb_epgammaX.root \
-    --dvcsgen-epg /path/to/dvcsgen_fa18_inb_epgammaX.root \
-    --clasdis-epg /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_epgammaX.root \
-    --clasdis-eppi0 /work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_eppi0X.root
+python train_pi0_bdt.py --period fa18_inb --max-events-per-class 200000 --max-control-events 100000
 
-Run once for fa18_inb and once for fa18_out.
+Run once for fa18_inb and once for fa18_out. The standard ROOT-file paths are
+hard-coded by period; explicit file arguments remain available as overrides.
 
 Important
 ---------
-The XGBoost predict_proba output is called a "BDT score" here. It is NOT
+The BDT predict_proba output is called a "BDT score" here. It is NOT
 interpreted as an absolute physical P(pi0 | event), because the training
 sample class priors are artificial and the score has not been calibrated.
 """
@@ -96,7 +92,8 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 from sklearn.neighbors import NearestNeighbors
-from xgboost import XGBClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier
+from sklearn.inspection import permutation_importance
 
 
 # ---------------------------------------------------------------------------
@@ -180,21 +177,37 @@ MATCH_SCALES = {
     "p1_phi": 0.20,      # degrees
 }
 
-# Default XGBoost settings are intentionally modest. This is an introductory
-# diagnostic model, not an aggressively optimized classifier.
+# Default scikit-learn histogram gradient-boosting settings are intentionally
+# modest. HistGradientBoostingClassifier is available with scikit-learn and
+# avoids requiring the external xgboost package on ifarm.
 DEFAULT_BDT_PARAMS = {
-    "n_estimators": 400,
+    "max_iter": 300,
+    "max_leaf_nodes": 15,
     "max_depth": 3,
     "learning_rate": 0.05,
-    "subsample": 0.80,
-    "colsample_bytree": 0.80,
-    "min_child_weight": 2.0,
-    "reg_lambda": 1.0,
-    "objective": "binary:logistic",
-    "eval_metric": "logloss",
-    "tree_method": "hist",
-    "n_jobs": 1,
+    "min_samples_leaf": 20,
+    "l2_regularization": 1.0,
+    "early_stopping": True,
+    "validation_fraction": 0.15,
+    "n_iter_no_change": 20,
     "random_state": 42,
+}
+
+# Period-specific files. Command-line overrides are still accepted, but the
+# normal invocation only needs --period.
+PERIOD_FILES = {
+    "fa18_inb": {
+        "aaogen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/bkg_rga_fa18_inb_epgamma_0.40GeV.root",
+        "dvcsgen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_rga_fa18_inb_epgamma_0.40GeV.root",
+        "clasdis_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_epgammaX.root",
+        "clasdis_eppi0": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_eppi0X.root",
+    },
+    "fa18_out": {
+        "aaogen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/bkg_rga_fa18_out_epgamma_0.40GeV.root",
+        "dvcsgen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_rga_fa18_out_epgamma_0.40GeV.root",
+        "clasdis_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_out_epgammaX.root",
+        "clasdis_eppi0": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_out_eppi0X.root",
+    },
 }
 
 
@@ -232,8 +245,16 @@ def parse_args() -> argparse.Namespace:
         help="Run period label used for output organization.",
     )
 
-    parser.add_argument("--aaogen-epg", required=True, help="AAOgen e'p'gammaX ROOT file.")
-    parser.add_argument("--dvcsgen-epg", required=True, help="DVCSgen e'p'gammaX ROOT file.")
+    parser.add_argument(
+        "--aaogen-epg",
+        default=None,
+        help="Optional AAOgen e'p'gammaX ROOT-file override.",
+    )
+    parser.add_argument(
+        "--dvcsgen-epg",
+        default=None,
+        help="Optional DVCSgen e'p'gammaX ROOT-file override.",
+    )
 
     parser.add_argument(
         "--clasdis-epg",
@@ -378,7 +399,7 @@ def clean_feature_rows(
 ) -> pd.DataFrame:
     out = df.copy()
 
-    # Replace +/-inf with NaN. XGBoost can technically handle NaN, but for this
+    # Replace +/-inf with NaN. scikit-learn gradient boosting can technically handle NaN, but for this
     # first diagnostic study we require all chosen inputs to be finite so that
     # feature plots and class comparisons are straightforward.
     out[list(features)] = out[list(features)].replace([np.inf, -np.inf], np.nan)
@@ -629,10 +650,10 @@ def class_balancing_weights(labels: np.ndarray) -> np.ndarray:
 # Model training
 # ---------------------------------------------------------------------------
 
-def make_model(seed: int) -> XGBClassifier:
+def make_model(seed: int) -> HistGradientBoostingClassifier:
     params = dict(DEFAULT_BDT_PARAMS)
     params["random_state"] = seed
-    return XGBClassifier(**params)
+    return HistGradientBoostingClassifier(**params)
 
 
 def train_model(
@@ -640,32 +661,27 @@ def train_model(
     validation: pd.DataFrame,
     features: Sequence[str],
     seed: int,
-) -> XGBClassifier:
+) -> HistGradientBoostingClassifier:
     model = make_model(seed)
 
     X_train = train[list(features)].to_numpy(dtype=float)
     y_train = train["label"].to_numpy(dtype=int)
     w_train = class_balancing_weights(y_train)
 
-    X_validation = validation[list(features)].to_numpy(dtype=float)
-    y_validation = validation["label"].to_numpy(dtype=int)
-
-    # eval_set lets XGBoost print/track validation loss. We do not enable early
-    # stopping in this introductory version so the behavior is reproducible
-    # across XGBoost versions with slightly different sklearn wrappers.
+    # HistGradientBoostingClassifier performs its own internal stratified
+    # validation for early stopping. The separately held-out validation sample
+    # remains available as an independent diagnostic dataset.
     model.fit(
         X_train,
         y_train,
         sample_weight=w_train,
-        eval_set=[(X_validation, y_validation)],
-        verbose=False,
     )
 
     return model
 
 
 def model_scores(
-    model: XGBClassifier,
+    model: HistGradientBoostingClassifier,
     df: pd.DataFrame,
     features: Sequence[str],
 ) -> np.ndarray:
@@ -862,12 +878,37 @@ def plot_roc_curve(
 
 
 def plot_feature_importance(
-    model: XGBClassifier,
+    model: HistGradientBoostingClassifier,
+    test: pd.DataFrame,
     features: Sequence[str],
     output_path: Path,
     title: str,
+    seed: int,
 ) -> None:
-    importance = np.asarray(model.feature_importances_, dtype=float)
+    # HistGradientBoostingClassifier does not expose impurity-based feature
+    # importances. Use permutation importance on a capped held-out test sample
+    # instead. This is also a more directly interpretable diagnostic: how much
+    # does shuffling each variable degrade the classifier's ROC AUC?
+    importance_df = test.copy()
+    if len(importance_df) > 20000:
+        importance_df = importance_df.sample(n=20000, random_state=seed)
+    #endif
+
+    X = importance_df[list(features)].to_numpy(dtype=float)
+    y = importance_df["label"].to_numpy(dtype=int)
+
+    result = permutation_importance(
+        model,
+        X,
+        y,
+        scoring="roc_auc",
+        n_repeats=3,
+        random_state=seed,
+        n_jobs=1,
+    )
+
+    importance = np.asarray(result.importances_mean, dtype=float)
+    uncertainty = np.asarray(result.importances_std, dtype=float)
     order = np.argsort(importance)
 
     fig, ax = plt.subplots(figsize=(8.0, max(5.0, 0.42 * len(features))))
@@ -875,9 +916,10 @@ def plot_feature_importance(
     ax.barh(
         np.asarray(features)[order],
         importance[order],
+        xerr=uncertainty[order],
     )
 
-    ax.set_xlabel("XGBoost feature importance")
+    ax.set_xlabel("Permutation importance: decrease in ROC AUC")
     ax.set_title(title)
     ax.grid(axis="x", alpha=0.20)
 
@@ -1224,9 +1266,11 @@ def run_region(
 
         plot_feature_importance(
             model=model,
+            test=test,
             features=features,
             output_path=model_output / "feature_importance.png",
             title=f"{args.period} {region}: {feature_set_name} feature importance",
+            seed=args.seed,
         )
 
         plot_score_vs_selected_features(
@@ -1316,15 +1360,28 @@ def main() -> None:
     period_output = Path(args.output_dir) / args.period
     period_output.mkdir(parents=True, exist_ok=True)
 
+    defaults = PERIOD_FILES[args.period]
+    aaogen_epg_file = args.aaogen_epg or defaults["aaogen_epg"]
+    dvcsgen_epg_file = args.dvcsgen_epg or defaults["dvcsgen_epg"]
+    clasdis_epg_file = args.clasdis_epg or defaults["clasdis_epg"]
+    clasdis_eppi0_file = args.clasdis_eppi0 or defaults["clasdis_eppi0"]
+
+    print(f"[{args.period}] AAOgen e'p'gammaX: {aaogen_epg_file}")
+    print(f"[{args.period}] DVCSgen e'p'gammaX: {dvcsgen_epg_file}")
+    if not args.skip_clasdis_control:
+        print(f"[{args.period}] CLASDIS e'p'gammaX: {clasdis_epg_file}")
+        print(f"[{args.period}] CLASDIS e'p'pi0X: {clasdis_eppi0_file}")
+    #endif
+
     aaogen = load_dataframe(
-        filename=args.aaogen_epg,
+        filename=aaogen_epg_file,
         requested_tree=args.tree,
         branches=EPG_REQUIRED_BRANCHES,
         source="aaogen",
     )
 
     dvcsgen = load_dataframe(
-        filename=args.dvcsgen_epg,
+        filename=dvcsgen_epg_file,
         requested_tree=args.tree,
         branches=EPG_REQUIRED_BRANCHES,
         source="dvcsgen",
@@ -1332,22 +1389,18 @@ def main() -> None:
 
     clasdis_control: Optional[pd.DataFrame] = None
 
-    have_clasdis_pair = (
-        args.clasdis_epg is not None
-        and args.clasdis_eppi0 is not None
-        and not args.skip_clasdis_control
-    )
+    have_clasdis_pair = not args.skip_clasdis_control
 
     if have_clasdis_pair:
         clasdis_epg = load_dataframe(
-            filename=args.clasdis_epg,
+            filename=clasdis_epg_file,
             requested_tree=args.tree,
             branches=EPG_REQUIRED_BRANCHES,
             source="clasdis_epg",
         )
 
         clasdis_eppi0 = load_dataframe(
-            filename=args.clasdis_eppi0,
+            filename=clasdis_eppi0_file,
             requested_tree=args.tree,
             branches=EPPI0_MATCH_BRANCHES,
             source="clasdis_eppi0",
@@ -1366,13 +1419,6 @@ def main() -> None:
         print(
             f"[{args.period}] matched CLASDIS control sample: "
             f"{len(clasdis_control):,} e'p'gammaX candidates"
-        )
-    elif (
-        (args.clasdis_epg is None) != (args.clasdis_eppi0 is None)
-        and not args.skip_clasdis_control
-    ):
-        raise RuntimeError(
-            "Supply both --clasdis-epg and --clasdis-eppi0, or neither."
         )
     #endif
 
