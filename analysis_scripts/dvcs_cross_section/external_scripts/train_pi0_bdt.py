@@ -43,8 +43,11 @@ This version adds detailed CLASDIS cross-tree matching diagnostics:
     * six individual e/p nearest-neighbor residuals;
     * real-versus-scrambled nearest-neighbor distance;
     * accepted-match multiplicity per reconstructed e'p'pi0X candidate;
-    * detector composition of matched e'p'gammaX candidates;
+    * DIRECT reconstructed-pi0 topology from detector_gamma1/detector_gamma2;
+    * detector composition of all and matched e'p'gammaX candidates;
     * matched e'p'gammaX detector versus reconstructed pi0 daughter topology;
+    * multiplicity separated by direct FT-FT / FT-FD / FD-FD pi0 topology;
+    * exact-two-photon M(gamma gamma), pi0 momentum, and detector-pair closure;
     * BDT score versus CLASDIS match distance;
     * CLASDIS BDT score for progressively tighter match-quality selections.
 
@@ -189,6 +192,9 @@ EPPI0_MATCH_BRANCHES: List[str] = [
     "p1_p",
     "p1_theta",
     "p1_phi",
+    "p2_p",
+    "p2_theta",
+    "p2_phi",
     "Mh_gammagamma",
     "detector_gamma1",
     "detector_gamma2",
@@ -779,11 +785,13 @@ def _nearest_match_diagnostics(
 
     diagnostics = pd.DataFrame(diagnostics_dict)
 
-    if "Mh_gammagamma" in nearest.columns:
-        diagnostics["matched_Mh_gammagamma"] = nearest[
-            "Mh_gammagamma"
-        ].to_numpy(dtype=float)
-    #endif
+    for column in ["p2_p", "p2_theta", "p2_phi", "Mh_gammagamma"]:
+        if column in nearest.columns:
+            diagnostics[f"matched_{column}"] = nearest[
+                column
+            ].to_numpy(dtype=float)
+        #endif
+    #endfor
 
     if "detector_gamma1" in nearest.columns:
         diagnostics["matched_detector_gamma1"] = nearest[
@@ -999,6 +1007,9 @@ def match_epgamma_to_eppi0_by_kinematics(
         "delta_p_px",
         "delta_p_py",
         "delta_p_pz",
+        "matched_p2_p",
+        "matched_p2_theta",
+        "matched_p2_phi",
         "matched_Mh_gammagamma",
         "matched_detector_gamma1",
         "matched_detector_gamma2",
@@ -1523,6 +1534,28 @@ def plot_clasdis_max_component_delta(
     save_figure(fig, output_path)
 
 
+def accepted_match_rows(
+    diagnostics: pd.DataFrame,
+    max_distance: float = MATCH_MAX_SCALED_DISTANCE,
+) -> pd.DataFrame:
+    """
+    Return rows satisfying the complete parent-match prescription.
+
+    Prefer the explicit boolean 'accepted' column, which includes BOTH the
+    scaled-distance requirement and the individual Cartesian-component cut.
+    Fall back to the distance cut only for older diagnostic frames.
+    """
+    if "accepted" in diagnostics.columns:
+        return diagnostics.loc[
+            diagnostics["accepted"].to_numpy(dtype=bool)
+        ].copy()
+    #endif
+
+    return diagnostics.loc[
+        diagnostics["match_distance"].to_numpy(dtype=float) <= max_distance
+    ].copy()
+
+
 def plot_clasdis_match_multiplicity(
     real_diag: pd.DataFrame,
     n_eppi0: int,
@@ -1530,9 +1563,7 @@ def plot_clasdis_match_multiplicity(
     output_path: Path,
     title: str,
 ) -> None:
-    accepted = real_diag.loc[
-        real_diag["match_distance"] <= max_distance
-    ]
+    accepted = accepted_match_rows(real_diag, max_distance=max_distance)
 
     nearest = accepted["_nearest_eppi0_index"].to_numpy(dtype=int)
 
@@ -1581,15 +1612,474 @@ def plot_clasdis_match_multiplicity(
     save_figure(fig, output_path)
 
 
+def plot_direct_eppi0_detector_topology(
+    eppi0: pd.DataFrame,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Detector topology of the reconstructed pi0 sample itself.
+
+    This plot uses ONLY detector_gamma1 and detector_gamma2 from the e'p'pi0X
+    tree. No cross-tree matching enters this diagnostic.
+    """
+    g1 = eppi0["detector_gamma1"].to_numpy(dtype=int)
+    g2 = eppi0["detector_gamma2"].to_numpy(dtype=int)
+    topology = pi0_detector_topology(g1, g2)
+
+    topology_labels = ["FT-FT", "FT-FD", "FD-FD", "other"]
+    topology_counts = [
+        int(np.count_nonzero(topology == label))
+        for label in topology_labels
+    ]
+
+    all_daughters = np.concatenate([g1, g2])
+    daughter_labels = ["FT (0)", "FD (1)", "Other"]
+    daughter_counts = [
+        int(np.count_nonzero(all_daughters == 0)),
+        int(np.count_nonzero(all_daughters == 1)),
+        int(np.count_nonzero(~np.isin(all_daughters, [0, 1]))),
+    ]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.3))
+
+    axes[0].bar(topology_labels, topology_counts)
+    axes[0].set_ylabel("Reconstructed eppi0X candidates")
+    axes[0].set_title("Direct pi0 detector topology")
+    axes[0].grid(axis="y", alpha=0.20)
+
+    for i, count in enumerate(topology_counts):
+        axes[0].text(i, count, f"{count:,}", ha="center", va="bottom")
+    #endfor
+
+    axes[1].bar(daughter_labels, daughter_counts)
+    axes[1].set_ylabel("Reconstructed pi0 daughter photons")
+    axes[1].set_title("Direct daughter-detector composition")
+    axes[1].grid(axis="y", alpha=0.20)
+
+    for i, count in enumerate(daughter_counts):
+        axes[1].text(i, count, f"{count:,}", ha="center", va="bottom")
+    #endfor
+
+    n_total = len(eppi0)
+    fig.suptitle(
+        f"{title}\n"
+        f"N(pi0 candidates)={n_total:,}; classification comes directly from "
+        f"detector_gamma1/detector_gamma2"
+    )
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_all_vs_matched_epgamma_detector_composition(
+    epg: pd.DataFrame,
+    matched: pd.DataFrame,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Compare detector2 for every CLASDIS e'p'gammaX row with detector2 for the
+    subset passing the e/p parent match.
+    """
+    labels = ["FT (0)", "FD (1)", "Other"]
+
+    def counts(df: pd.DataFrame) -> np.ndarray:
+        detector = df["detector2"].to_numpy(dtype=int)
+        return np.asarray(
+            [
+                np.count_nonzero(detector == 0),
+                np.count_nonzero(detector == 1),
+                np.count_nonzero(~np.isin(detector, [0, 1])),
+            ],
+            dtype=int,
+        )
+    #enddef
+
+    all_counts = counts(epg)
+    matched_counts = counts(matched)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.3))
+
+    x = np.arange(len(labels))
+    width = 0.38
+
+    axes[0].bar(x - width / 2.0, all_counts, width=width, label="All CLASDIS epgammaX")
+    axes[0].bar(x + width / 2.0, matched_counts, width=width, label="Matched subset")
+    axes[0].set_xticks(x, labels)
+    axes[0].set_ylabel("Candidate count")
+    axes[0].set_title("Absolute counts")
+    axes[0].grid(axis="y", alpha=0.20)
+    axes[0].legend()
+
+    all_frac = all_counts / max(np.sum(all_counts), 1)
+    matched_frac = matched_counts / max(np.sum(matched_counts), 1)
+
+    axes[1].bar(x - width / 2.0, all_frac, width=width, label="All CLASDIS epgammaX")
+    axes[1].bar(x + width / 2.0, matched_frac, width=width, label="Matched subset")
+    axes[1].set_xticks(x, labels)
+    axes[1].set_ylabel("Fraction")
+    axes[1].set_ylim(0.0, 1.0)
+    axes[1].set_title("Normalized composition")
+    axes[1].grid(axis="y", alpha=0.20)
+    axes[1].legend()
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_match_multiplicity_by_pi0_topology(
+    real_diag: pd.DataFrame,
+    eppi0: pd.DataFrame,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    For each reconstructed eppi0X candidate, count how many accepted epgammaX
+    candidates map to it, and separate that multiplicity by the pi0's DIRECT
+    detector_gamma1/detector_gamma2 topology.
+    """
+    accepted = accepted_match_rows(real_diag)
+
+    n_pi0 = len(eppi0)
+    nearest = accepted["_nearest_eppi0_index"].to_numpy(dtype=int)
+    multiplicity = np.bincount(nearest, minlength=max(n_pi0, 1))
+
+    pi0_topology = pi0_detector_topology(
+        eppi0["detector_gamma1"].to_numpy(dtype=int),
+        eppi0["detector_gamma2"].to_numpy(dtype=int),
+    )
+
+    labels = ["FT-FT", "FT-FD", "FD-FD", "other"]
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.4))
+
+    max_mult = max(5, min(10, int(np.quantile(multiplicity, 0.995)) + 1))
+    bins = np.arange(-0.5, max_mult + 1.5, 1.0)
+
+    for label in labels:
+        vals = multiplicity[pi0_topology == label]
+        if len(vals) == 0:
+            continue
+        #endif
+        vals = np.minimum(vals, max_mult)
+        axes[0].hist(
+            vals,
+            bins=bins,
+            histtype="step",
+            linewidth=1.6,
+            label=f"{label} (Npi0={len(vals):,})",
+        )
+    #endfor
+
+    axes[0].set_xlabel(
+        "Accepted epgammaX candidates per reconstructed pi0"
+        + (f" (last bin >= {max_mult})" if np.any(multiplicity > max_mult) else "")
+    )
+    axes[0].set_ylabel("Number of eppi0X candidates")
+    axes[0].set_yscale("log")
+    axes[0].set_title("Multiplicity by direct pi0 topology")
+    axes[0].grid(alpha=0.20)
+    axes[0].legend()
+
+    mean_mult = []
+    zero_frac = []
+    for label in labels:
+        vals = multiplicity[pi0_topology == label]
+        if len(vals) == 0:
+            mean_mult.append(0.0)
+            zero_frac.append(0.0)
+        else:
+            mean_mult.append(float(np.mean(vals)))
+            zero_frac.append(float(np.mean(vals == 0)))
+        #endif
+    #endfor
+
+    x = np.arange(len(labels))
+    axes[1].bar(x - 0.18, mean_mult, width=0.36, label="Mean matched multiplicity")
+    axes[1].bar(x + 0.18, zero_frac, width=0.36, label="Fraction with zero matches")
+    axes[1].set_xticks(x, labels)
+    axes[1].set_ylabel("Value")
+    axes[1].set_title("Matching efficiency/multiplicity by topology")
+    axes[1].grid(axis="y", alpha=0.20)
+    axes[1].legend()
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def build_two_photon_closure_dataframe(
+    epg: pd.DataFrame,
+    eppi0: pd.DataFrame,
+    real_diag: pd.DataFrame,
+) -> pd.DataFrame:
+    """
+    Build closure quantities for reconstructed pi0 candidates with exactly TWO
+    accepted e'p'gammaX partners.
+
+    The two matched p2 photons are treated as massless four-vectors. We compare:
+      * their reconstructed M(gamma gamma) to stored Mh_gammagamma;
+      * their summed three-momentum to the stored eppi0X p2 pi0 vector;
+      * their detector2 pair to detector_gamma1/detector_gamma2.
+    """
+    accepted = accepted_match_rows(real_diag)
+
+    grouped = accepted.groupby("_nearest_eppi0_index", sort=False)
+
+    rows = []
+
+    for pi0_index, group in grouped:
+        if len(group) != 2:
+            continue
+        #endif
+
+        epg_indices = group["_epg_index"].to_numpy(dtype=int)
+        photons = epg.iloc[epg_indices].copy().reset_index(drop=True)
+
+        p = photons["p2_p"].to_numpy(dtype=float)
+        theta = photons["p2_theta"].to_numpy(dtype=float)
+        phi = photons["p2_phi"].to_numpy(dtype=float)
+
+        px, py, pz = spherical_to_cartesian(
+            p=p,
+            theta=theta,
+            phi=phi,
+            theta_name="p2_theta",
+            phi_name="p2_phi",
+        )
+
+        energy = p.copy()  # massless photons
+
+        e_sum = float(np.sum(energy))
+        px_sum = float(np.sum(px))
+        py_sum = float(np.sum(py))
+        pz_sum = float(np.sum(pz))
+
+        m2 = (
+            e_sum * e_sum
+            - px_sum * px_sum
+            - py_sum * py_sum
+            - pz_sum * pz_sum
+        )
+        mgg = math.sqrt(max(m2, 0.0))
+
+        pi0_row = eppi0.iloc[int(pi0_index)]
+
+        pi0_px, pi0_py, pi0_pz = spherical_to_cartesian(
+            p=np.asarray([pi0_row["p2_p"]], dtype=float),
+            theta=np.asarray([pi0_row["p2_theta"]], dtype=float),
+            phi=np.asarray([pi0_row["p2_phi"]], dtype=float),
+            theta_name="p2_theta",
+            phi_name="p2_phi",
+        )
+
+        epg_detectors = np.sort(
+            photons["detector2"].to_numpy(dtype=int)
+        )
+        stored_detectors = np.sort(
+            np.asarray(
+                [
+                    pi0_row["detector_gamma1"],
+                    pi0_row["detector_gamma2"],
+                ],
+                dtype=int,
+            )
+        )
+
+        rows.append(
+            {
+                "pi0_index": int(pi0_index),
+                "mgg_from_two_epgamma": mgg,
+                "stored_Mh_gammagamma": float(pi0_row["Mh_gammagamma"]),
+                "delta_mgg": mgg - float(pi0_row["Mh_gammagamma"]),
+                "delta_pi0_px": px_sum - float(pi0_px[0]),
+                "delta_pi0_py": py_sum - float(pi0_py[0]),
+                "delta_pi0_pz": pz_sum - float(pi0_pz[0]),
+                "epg_detector_a": int(epg_detectors[0]),
+                "epg_detector_b": int(epg_detectors[1]),
+                "stored_detector_a": int(stored_detectors[0]),
+                "stored_detector_b": int(stored_detectors[1]),
+                "detector_pair_matches": bool(
+                    np.array_equal(epg_detectors, stored_detectors)
+                ),
+                "stored_pi0_topology": str(
+                    pi0_detector_topology(
+                        np.asarray([pi0_row["detector_gamma1"]], dtype=int),
+                        np.asarray([pi0_row["detector_gamma2"]], dtype=int),
+                    )[0]
+                ),
+            }
+        )
+    #endfor
+
+    return pd.DataFrame(rows)
+
+
+def plot_two_photon_closure(
+    closure: pd.DataFrame,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(closure) == 0:
+        return
+    #endif
+
+    fig, axes = plt.subplots(2, 3, figsize=(15.0, 9.0))
+    axes = axes.ravel()
+
+    axes[0].hist(
+        closure["mgg_from_two_epgamma"],
+        bins=80,
+        range=(0.05, 0.25),
+        histtype="step",
+        linewidth=1.6,
+        label="From two matched epgammaX photons",
+    )
+    axes[0].hist(
+        closure["stored_Mh_gammagamma"],
+        bins=80,
+        range=(0.05, 0.25),
+        histtype="step",
+        linewidth=1.6,
+        label="Stored eppi0X Mh_gammagamma",
+    )
+    axes[0].set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+    axes[0].set_ylabel("Candidates")
+    axes[0].grid(alpha=0.20)
+    axes[0].legend()
+
+    axes[1].hist(
+        closure["delta_mgg"],
+        bins=100,
+        histtype="step",
+        linewidth=1.6,
+    )
+    axes[1].set_xlabel(
+        r"$M_{\gamma\gamma}^{2\,ep\gamma}-M_{\gamma\gamma}^{eppi0}$ (GeV)"
+    )
+    axes[1].set_ylabel("Candidates")
+    axes[1].grid(alpha=0.20)
+
+    axes[2].scatter(
+        closure["stored_Mh_gammagamma"],
+        closure["mgg_from_two_epgamma"],
+        s=8,
+        alpha=0.35,
+    )
+    axes[2].plot([0.10, 0.17], [0.10, 0.17], linestyle="--")
+    axes[2].set_xlim(0.10, 0.17)
+    axes[2].set_ylim(0.10, 0.17)
+    axes[2].set_xlabel("Stored eppi0X Mgg (GeV)")
+    axes[2].set_ylabel("Two matched epgammaX Mgg (GeV)")
+    axes[2].grid(alpha=0.20)
+
+    for ax, column, label in [
+        (axes[3], "delta_pi0_px", r"$\Delta p_{x,\pi^0}$ (GeV)"),
+        (axes[4], "delta_pi0_py", r"$\Delta p_{y,\pi^0}$ (GeV)"),
+        (axes[5], "delta_pi0_pz", r"$\Delta p_{z,\pi^0}$ (GeV)"),
+    ]:
+        ax.hist(
+            closure[column],
+            bins=100,
+            histtype="step",
+            linewidth=1.6,
+        )
+        ax.set_xlabel(label)
+        ax.set_ylabel("Candidates")
+        ax.grid(alpha=0.20)
+    #endfor
+
+    detector_match_fraction = float(
+        np.mean(closure["detector_pair_matches"].to_numpy(dtype=bool))
+    )
+
+    fig.suptitle(
+        f"{title}\n"
+        f"N(exactly-two matched photons)={len(closure):,}; "
+        f"detector-pair agreement={100.0*detector_match_fraction:.2f}%"
+    )
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_two_photon_detector_pair_confusion(
+    closure: pd.DataFrame,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(closure) == 0:
+        return
+    #endif
+
+    labels = ["FT-FT", "FT-FD", "FD-FD", "other"]
+
+    def pair_topology(a: int, b: int) -> str:
+        return str(
+            pi0_detector_topology(
+                np.asarray([a], dtype=int),
+                np.asarray([b], dtype=int),
+            )[0]
+        )
+    #enddef
+
+    reconstructed = np.asarray(
+        [
+            pair_topology(a, b)
+            for a, b in zip(
+                closure["epg_detector_a"],
+                closure["epg_detector_b"],
+            )
+        ],
+        dtype=object,
+    )
+    stored = closure["stored_pi0_topology"].to_numpy(dtype=object)
+
+    matrix = np.zeros((4, 4), dtype=int)
+    for i, stored_label in enumerate(labels):
+        for j, reco_label in enumerate(labels):
+            matrix[i, j] = int(
+                np.count_nonzero(
+                    (stored == stored_label)
+                    & (reconstructed == reco_label)
+                )
+            )
+        #endfor
+    #endfor
+
+    fig, ax = plt.subplots(figsize=(7.0, 6.3))
+    image = ax.imshow(matrix, aspect="auto")
+
+    ax.set_xticks(np.arange(4), labels)
+    ax.set_yticks(np.arange(4), labels)
+    ax.set_xlabel("Topology from the two matched epgammaX detector2 values")
+    ax.set_ylabel("Stored eppi0X detector_gamma1/gamma2 topology")
+    ax.set_title(title)
+
+    for i in range(4):
+        for j in range(4):
+            ax.text(
+                j,
+                i,
+                f"{matrix[i, j]:,}",
+                ha="center",
+                va="center",
+            )
+        #endfor
+    #endfor
+
+    fig.colorbar(image, ax=ax, label="Candidate count")
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
 def plot_clasdis_detector_composition(
     real_diag: pd.DataFrame,
     max_distance: float,
     output_path: Path,
     title: str,
 ) -> None:
-    accepted = real_diag.loc[
-        real_diag["match_distance"] <= max_distance
-    ].copy()
+    accepted = accepted_match_rows(real_diag, max_distance=max_distance)
 
     if len(accepted) == 0:
         return
@@ -1642,9 +2132,9 @@ def plot_clasdis_detector_composition(
             np.arange(len(row_labels)),
             row_labels,
         )
-        axes[1].set_xlabel("Matched reconstructed pi0 daughter topology")
+        axes[1].set_xlabel("Nearest eppi0X direct detector_gamma1/gamma2 topology")
         axes[1].set_ylabel("epgammaX p2 detector")
-        axes[1].set_title("Detector-topology association")
+        axes[1].set_title("Candidate-level parent association")
 
         for i in range(matrix.shape[0]):
             for j in range(matrix.shape[1]):
@@ -2514,6 +3004,19 @@ def main() -> None:
             entry_limit=args.max_clasdis_read,
         )
 
+        match_output = period_output / "clasdis_matching"
+        match_output.mkdir(parents=True, exist_ok=True)
+
+        progress(
+            "CLASDIS DIAGNOSTICS: plotting DIRECT reconstructed-pi0 detector "
+            "topology from detector_gamma1/detector_gamma2"
+        )
+        plot_direct_eppi0_detector_topology(
+            eppi0=clasdis_eppi0,
+            output_path=match_output / "direct_eppi0_detector_topology.png",
+            title=f"{args.period}: direct reconstructed-pi0 detector topology",
+        )
+
         progress(
             "CLASDIS CONTROL: starting cross-tree e/p kinematic matching "
             "(no MC runnum/evnum usage)"
@@ -2536,8 +3039,16 @@ def main() -> None:
             f"{len(clasdis_control):,} e'p'gammaX candidates"
         )
 
-        match_output = period_output / "clasdis_matching"
-        match_output.mkdir(parents=True, exist_ok=True)
+        progress(
+            "CLASDIS DIAGNOSTICS: comparing all CLASDIS epgammaX detector "
+            "composition to accepted matched candidates"
+        )
+        plot_all_vs_matched_epgamma_detector_composition(
+            epg=clasdis_epg,
+            matched=clasdis_control,
+            output_path=match_output / "all_vs_matched_epgamma_detector_composition.png",
+            title=f"{args.period}: CLASDIS epgammaX detector composition",
+        )
 
         progress("CLASDIS DIAGNOSTICS: plotting real-vs-scrambled residuals")
         plot_clasdis_match_residuals(
@@ -2580,6 +3091,42 @@ def main() -> None:
             max_distance=MATCH_MAX_SCALED_DISTANCE,
             output_path=match_output / "match_detector_composition.png",
             title=f"{args.period}: CLASDIS matched detector composition",
+        )
+
+        progress(
+            "CLASDIS DIAGNOSTICS: plotting match multiplicity separated by "
+            "DIRECT pi0 detector topology"
+        )
+        plot_match_multiplicity_by_pi0_topology(
+            real_diag=clasdis_real_diagnostics,
+            eppi0=clasdis_eppi0,
+            output_path=match_output / "match_multiplicity_by_pi0_topology.png",
+            title=f"{args.period}: matching multiplicity by direct pi0 topology",
+        )
+
+        progress(
+            "CLASDIS DIAGNOSTICS: building exact-two-photon closure sample"
+        )
+        closure = build_two_photon_closure_dataframe(
+            epg=clasdis_epg,
+            eppi0=clasdis_eppi0,
+            real_diag=clasdis_real_diagnostics,
+        )
+        progress(
+            f"CLASDIS DIAGNOSTICS: exact-two-photon closure sample contains "
+            f"{len(closure):,} reconstructed pi0 candidates"
+        )
+
+        plot_two_photon_closure(
+            closure=closure,
+            output_path=match_output / "two_matched_photon_pi0_closure.png",
+            title=f"{args.period}: two-matched-photon pi0 closure",
+        )
+
+        plot_two_photon_detector_pair_confusion(
+            closure=closure,
+            output_path=match_output / "two_matched_photon_detector_confusion.png",
+            title=f"{args.period}: matched-photon vs stored pi0 detector topology",
         )
 
         progress("CLASDIS DIAGNOSTICS: matching diagnostic plots complete")
