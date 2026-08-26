@@ -240,6 +240,21 @@ EPPI0_MATCH_BRANCHES: List[str] = [
     "detector_gamma2",
 ]
 
+DATA_EPG_BRANCHES: List[str] = sorted(
+    set(EPG_REQUIRED_BRANCHES + ["runnum", "evnum"])
+)
+
+DATA_EPPI0_BRANCHES: List[str] = sorted(
+    set(EPPI0_MATCH_BRANCHES + ["runnum", "evnum"])
+)
+
+# Golden real-data daughter closure requirements. Because the eppi0 p2 four
+# vector was constructed from the same reconstructed photons, genuine daughter
+# pairs should close very tightly. These tolerances are deliberately still
+# loose enough to survive small numerical/processing differences.
+DATA_GOLDEN_MGG_TOL_GEV = 0.005
+DATA_GOLDEN_PI0_DP_TOL_GEV = 0.010
+
 # CLASDIS parent-event matching configuration.
 #
 # This intentionally follows the established matching used in the photon-
@@ -276,12 +291,16 @@ PERIOD_FILES = {
         "dvcsgen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_fa18_inb_epgamma_0.40GeV.root",
         "clasdis_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_epgammaX.root",
         "clasdis_eppi0": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_inb_eppi0X.root",
+        "data_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/rga_fa18_inb_epgamma_0.40GeV.root",
+        "data_eppi0": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
     },
     "fa18_out": {
         "aaogen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/bkg_rga_fa18_out_epgamma_0.40GeV.root",
         "dvcsgen_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/dvcsgen_files_greater_than_0.40GeV/dvcsgen_rga_fa18_out_epgamma_0.40GeV.root",
         "clasdis_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_out_epgammaX.root",
         "clasdis_eppi0": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/clasdis/rec_clasdis_rga_fa18_out_eppi0X.root",
+        "data_epg": "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/rga_fa18_out_epgamma_0.40GeV.root",
+        "data_eppi0": "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
     },
 }
 
@@ -339,6 +358,31 @@ def parse_args() -> argparse.Namespace:
             "pi0-enriched control sample."
         ),
     )
+    parser.add_argument(
+        "--data-epg",
+        default=None,
+        help="Optional real-data e'p'gammaX ROOT-file override.",
+    )
+    parser.add_argument(
+        "--data-eppi0",
+        default=None,
+        help="Optional real-data e'p'pi0X ROOT-file override.",
+    )
+    parser.add_argument(
+        "--skip-data-control",
+        action="store_true",
+        help="Skip real-data reconstructed-pi0 daughter validation.",
+    )
+    parser.add_argument(
+        "--max-data-read",
+        type=int,
+        default=None,
+        help=(
+            "Optional maximum entries read from each real-data tree. "
+            "Omit for full real-data control statistics."
+        ),
+    )
+
     parser.add_argument(
         "--clasdis-eppi0",
         default=None,
@@ -1156,6 +1200,278 @@ def match_epgamma_to_eppi0_by_kinematics(
         real_diagnostics.reset_index(drop=True),
         scrambled_diagnostics.reset_index(drop=True),
     )
+
+
+
+def _parent_match_mask_against_pi0(
+    epg_candidates: pd.DataFrame,
+    pi0_row: pd.Series,
+) -> np.ndarray:
+    """
+    Check e/p parent consistency for data candidates already sharing run/ev.
+    Uses the same Cartesian 2-MeV component prescription as the MC parent
+    matcher.
+    """
+    if len(epg_candidates) == 0:
+        return np.zeros(0, dtype=bool)
+    #endif
+
+    pi0_df = pd.DataFrame([pi0_row])
+    pi0_components = build_ep_cartesian_components(pi0_df)
+    epg_components = build_ep_cartesian_components(epg_candidates)
+
+    residual_matrix = np.column_stack(
+        [
+            epg_components["e_px"] - pi0_components["e_px"][0],
+            epg_components["e_py"] - pi0_components["e_py"][0],
+            epg_components["e_pz"] - pi0_components["e_pz"][0],
+            epg_components["p_px"] - pi0_components["p_px"][0],
+            epg_components["p_py"] - pi0_components["p_py"][0],
+            epg_components["p_pz"] - pi0_components["p_pz"][0],
+        ]
+    )
+
+    max_component = np.max(np.abs(residual_matrix), axis=1)
+    scaled_distance = np.sqrt(
+        np.sum(
+            np.square(residual_matrix / MATCH_COMPONENT_TOL_GEV),
+            axis=1,
+        )
+    )
+
+    return (
+        (max_component <= MATCH_COMPONENT_TOL_GEV)
+        & (scaled_distance <= MATCH_MAX_SCALED_DISTANCE)
+    )
+
+
+def _photon_pair_closure(
+    photon_a: pd.Series,
+    photon_b: pd.Series,
+    pi0_row: pd.Series,
+) -> Tuple[float, float, float]:
+    """
+    Return:
+        reconstructed Mgg,
+        |Mgg - stored Mh_gammagamma|,
+        |p_gamma1 + p_gamma2 - p_pi0| in Cartesian momentum.
+    """
+    photon_df = pd.DataFrame([photon_a, photon_b])
+
+    g_px, g_py, g_pz = spherical_to_cartesian(
+        photon_df["p2_p"].to_numpy(dtype=float),
+        photon_df["p2_theta"].to_numpy(dtype=float),
+        photon_df["p2_phi"].to_numpy(dtype=float),
+        theta_name="p2_theta",
+        phi_name="p2_phi",
+    )
+
+    energy = photon_df["p2_p"].to_numpy(dtype=float)
+    e_sum = float(np.sum(energy))
+    px_sum = float(np.sum(g_px))
+    py_sum = float(np.sum(g_py))
+    pz_sum = float(np.sum(g_pz))
+
+    m2 = (
+        e_sum * e_sum
+        - px_sum * px_sum
+        - py_sum * py_sum
+        - pz_sum * pz_sum
+    )
+    mgg = math.sqrt(max(m2, 0.0))
+
+    pi0_px, pi0_py, pi0_pz = spherical_to_cartesian(
+        np.asarray([pi0_row["p2_p"]], dtype=float),
+        np.asarray([pi0_row["p2_theta"]], dtype=float),
+        np.asarray([pi0_row["p2_phi"]], dtype=float),
+        theta_name="p2_theta",
+        phi_name="p2_phi",
+    )
+
+    dp = math.sqrt(
+        (px_sum - float(pi0_px[0])) ** 2
+        + (py_sum - float(pi0_py[0])) ** 2
+        + (pz_sum - float(pi0_pz[0])) ** 2
+    )
+
+    dm = abs(mgg - float(pi0_row["Mh_gammagamma"]))
+
+    return mgg, dm, dp
+
+
+def build_real_data_pi0_controls(
+    epg: pd.DataFrame,
+    eppi0: pd.DataFrame,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Construct two real-data controls.
+
+    parent_control:
+        Every e'p'gammaX candidate sharing (runnum,evnum) with an e'p'pi0X row
+        and satisfying the tight e/p parent consistency requirement.
+
+    golden_control:
+        Photon candidates belonging to the BEST photon pair for an e'p'pi0X
+        row, provided that pair reproduces both stored M(gamma gamma) and the
+        reconstructed pi0 momentum within tight tolerances.
+
+    closure:
+        One row per golden pi0 pair with closure diagnostics.
+    """
+    stage_start = time.perf_counter()
+
+    progress(
+        f"DATA CONTROL: grouping epgammaX={len(epg):,} and "
+        f"eppi0X={len(eppi0):,} by meaningful runnum/evnum"
+    )
+
+    epg_work = epg.copy().reset_index(drop=True)
+    epg_work["_data_epg_index"] = np.arange(len(epg_work), dtype=int)
+
+    groups = {
+        key: group
+        for key, group in epg_work.groupby(
+            ["runnum", "evnum"],
+            sort=False,
+        )
+    }
+
+    parent_indices = set()
+    golden_indices = set()
+    closure_rows = []
+
+    n_same_event = 0
+    n_parent_pi0 = 0
+    n_pairable = 0
+
+    report_every = max(1, len(eppi0) // 10)
+
+    for i, pi0_row in eppi0.reset_index(drop=True).iterrows():
+        key = (pi0_row["runnum"], pi0_row["evnum"])
+        candidates = groups.get(key)
+
+        if candidates is None or len(candidates) == 0:
+            continue
+        #endif
+        n_same_event += 1
+
+        mask = _parent_match_mask_against_pi0(
+            candidates,
+            pi0_row,
+        )
+        parent_candidates = candidates.loc[mask].copy()
+
+        if len(parent_candidates) == 0:
+            continue
+        #endif
+
+        n_parent_pi0 += 1
+        parent_indices.update(
+            parent_candidates["_data_epg_index"].astype(int).tolist()
+        )
+
+        if len(parent_candidates) < 2:
+            continue
+        #endif
+        n_pairable += 1
+
+        best = None
+
+        local = parent_candidates.reset_index(drop=True)
+        for ia in range(len(local)):
+            for ib in range(ia + 1, len(local)):
+                mgg, dm, dp = _photon_pair_closure(
+                    local.iloc[ia],
+                    local.iloc[ib],
+                    pi0_row,
+                )
+
+                # Dimensionless ranking metric. The acceptance remains an
+                # independent rectangular requirement below.
+                quality = (
+                    (dm / DATA_GOLDEN_MGG_TOL_GEV) ** 2
+                    + (dp / DATA_GOLDEN_PI0_DP_TOL_GEV) ** 2
+                )
+
+                if best is None or quality < best["quality"]:
+                    best = {
+                        "ia": ia,
+                        "ib": ib,
+                        "mgg": mgg,
+                        "dm": dm,
+                        "dp": dp,
+                        "quality": quality,
+                    }
+                #endif
+            #endfor
+        #endfor
+
+        if (
+            best is not None
+            and best["dm"] <= DATA_GOLDEN_MGG_TOL_GEV
+            and best["dp"] <= DATA_GOLDEN_PI0_DP_TOL_GEV
+        ):
+            row_a = local.iloc[int(best["ia"])]
+            row_b = local.iloc[int(best["ib"])]
+
+            golden_indices.add(int(row_a["_data_epg_index"]))
+            golden_indices.add(int(row_b["_data_epg_index"]))
+
+            closure_rows.append(
+                {
+                    "runnum": int(pi0_row["runnum"]),
+                    "evnum": int(pi0_row["evnum"]),
+                    "mgg_pair": float(best["mgg"]),
+                    "mgg_stored": float(pi0_row["Mh_gammagamma"]),
+                    "delta_mgg": float(best["dm"]),
+                    "delta_pi0_p": float(best["dp"]),
+                    "detector_a": int(row_a["detector2"]),
+                    "detector_b": int(row_b["detector2"]),
+                    "stored_detector_gamma1": int(pi0_row["detector_gamma1"]),
+                    "stored_detector_gamma2": int(pi0_row["detector_gamma2"]),
+                }
+            )
+        #endif
+
+        if (i + 1) % report_every == 0:
+            progress(
+                f"DATA CONTROL: processed {i+1:,}/{len(eppi0):,} pi0 rows; "
+                f"parent-matched pi0={n_parent_pi0:,}, "
+                f"golden pi0={len(closure_rows):,}"
+            )
+        #endif
+    #endfor
+
+    parent_control = (
+        epg_work.loc[
+            epg_work["_data_epg_index"].isin(parent_indices)
+        ]
+        .drop(columns=["_data_epg_index"])
+        .reset_index(drop=True)
+    )
+
+    golden_control = (
+        epg_work.loc[
+            epg_work["_data_epg_index"].isin(golden_indices)
+        ]
+        .drop(columns=["_data_epg_index"])
+        .reset_index(drop=True)
+    )
+
+    closure = pd.DataFrame(closure_rows)
+
+    progress(
+        f"DATA CONTROL: same-event pi0 rows={n_same_event:,}; "
+        f"parent-matched pi0 rows={n_parent_pi0:,}; pairable={n_pairable:,}; "
+        f"golden pi0 rows={len(closure):,}"
+    )
+    progress(
+        f"DATA CONTROL: parent photon candidates={len(parent_control):,}; "
+        f"golden daughter photons={len(golden_control):,} "
+        f"({elapsed_since(stage_start)})"
+    )
+
+    return parent_control, golden_control, closure
 
 
 # ---------------------------------------------------------------------------
@@ -2326,6 +2642,236 @@ def finite_common_range(
     return low, high
 
 
+
+def plot_real_data_closure(
+    closure: pd.DataFrame,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(closure) == 0:
+        return
+    #endif
+
+    fig, axes = plt.subplots(1, 3, figsize=(14.5, 4.6))
+
+    axes[0].hist(
+        closure["mgg_pair"],
+        bins=80,
+        histtype="step",
+        linewidth=1.6,
+        label="Matched epgamma pair",
+    )
+    axes[0].hist(
+        closure["mgg_stored"],
+        bins=80,
+        histtype="step",
+        linewidth=1.6,
+        label="Stored eppi0 Mgg",
+    )
+    axes[0].set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+    axes[0].set_ylabel("Golden pi0 candidates")
+    axes[0].grid(alpha=0.20)
+    axes[0].legend(fontsize=9)
+
+    axes[1].hist(
+        closure["delta_mgg"],
+        bins=80,
+        histtype="step",
+        linewidth=1.6,
+    )
+    axes[1].axvline(
+        DATA_GOLDEN_MGG_TOL_GEV,
+        linestyle="--",
+        linewidth=1.2,
+    )
+    axes[1].set_xlabel(r"$|\Delta M_{\gamma\gamma}|$ (GeV)")
+    axes[1].set_ylabel("Candidates")
+    axes[1].grid(alpha=0.20)
+
+    axes[2].hist(
+        closure["delta_pi0_p"],
+        bins=80,
+        histtype="step",
+        linewidth=1.6,
+    )
+    axes[2].axvline(
+        DATA_GOLDEN_PI0_DP_TOL_GEV,
+        linestyle="--",
+        linewidth=1.2,
+    )
+    axes[2].set_xlabel(r"$|\Delta\vec{p}_{\pi^0}|$ (GeV)")
+    axes[2].set_ylabel("Candidates")
+    axes[2].grid(alpha=0.20)
+
+    fig.suptitle(title, y=0.98)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.92])
+    save_figure(fig, output_path)
+
+
+def plot_data_control_score_distribution(
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    clasdis_control: Optional[pd.DataFrame],
+    clasdis_scores: Optional[np.ndarray],
+    parent_control: Optional[pd.DataFrame],
+    parent_scores: Optional[np.ndarray],
+    golden_control: Optional[pd.DataFrame],
+    golden_scores: Optional[np.ndarray],
+    output_path: Path,
+    title: str,
+) -> None:
+    fig, ax = plt.subplots(figsize=(8.5, 5.8))
+
+    y = test["label"].to_numpy(dtype=int)
+
+    ax.hist(
+        test_scores[y == 0],
+        bins=50,
+        range=(0.0, 1.0),
+        density=True,
+        histtype="step",
+        linewidth=1.5,
+        label="DVCSgen genuine gamma",
+    )
+    ax.hist(
+        test_scores[y == 1],
+        bins=50,
+        range=(0.0, 1.0),
+        density=True,
+        histtype="step",
+        linewidth=1.7,
+        label="AAOgen pi0 daughter",
+    )
+
+    if clasdis_scores is not None and len(clasdis_scores) > 0:
+        ax.hist(
+            clasdis_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            linestyle="--",
+            label="CLASDIS matched pi0 control",
+        )
+    #endif
+
+    if parent_scores is not None and len(parent_scores) > 0:
+        ax.hist(
+            parent_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.4,
+            linestyle=":",
+            label="Data parent-matched candidates",
+        )
+    #endif
+
+    if golden_scores is not None and len(golden_scores) > 0:
+        ax.hist(
+            golden_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=2.0,
+            label="Data golden pi0 daughters",
+        )
+    #endif
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Normalized density")
+    ax.set_title(title, pad=14)
+    ax.grid(alpha=0.20)
+
+    # Put the legend outside the plotting area so it cannot cover data/title.
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.16),
+        ncol=2,
+        fontsize=9,
+        frameon=True,
+    )
+
+    fig.tight_layout(rect=[0.0, 0.16, 1.0, 1.0])
+    save_figure(fig, output_path)
+
+
+def plot_data_golden_transfer_vs_kinematics(
+    golden: pd.DataFrame,
+    scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(golden) == 0:
+        return
+    #endif
+
+    energy = golden["p2_p"].to_numpy(dtype=float)
+    theta = golden["p2_theta"].to_numpy(dtype=float)
+
+    if infer_angle_unit(theta, "p2_theta") == "rad":
+        theta = np.rad2deg(theta)
+    #endif
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.0))
+
+    for ax, values, xlabel in [
+        (axes[0], energy, r"$E_\gamma$ / $p_\gamma$ (GeV)"),
+        (axes[1], theta, r"$\theta_\gamma$ (deg)"),
+    ]:
+        finite = np.isfinite(values) & np.isfinite(scores)
+        vv = values[finite]
+        ss = scores[finite]
+
+        if len(vv) < 10:
+            continue
+        #endif
+
+        lo, hi = np.quantile(vv, [0.01, 0.99])
+        edges = np.linspace(lo, hi, 9)
+        centers, mean, median, band = binned_score_statistics(
+            vv,
+            ss,
+            edges,
+        )
+        valid = np.isfinite(median)
+
+        ax.plot(
+            centers[valid],
+            median[valid],
+            marker="o",
+            label="Median",
+        )
+        ax.plot(
+            centers[valid],
+            mean[valid],
+            marker="s",
+            linestyle="--",
+            label="Mean",
+        )
+        ax.fill_between(
+            centers[valid],
+            band[0, valid],
+            band[1, valid],
+            alpha=0.20,
+            label="16–84%",
+        )
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Data golden-pi0 BDT score")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(alpha=0.20)
+        ax.legend(fontsize=9)
+    #endfor
+
+    fig.suptitle(title, y=0.98)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.93])
+    save_figure(fig, output_path)
+
+
 def plot_input_feature_distributions(
     train: pd.DataFrame,
     features: Sequence[str],
@@ -2380,9 +2926,17 @@ def plot_input_feature_distributions(
     #endfor
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2)
-    fig.suptitle(title, y=1.01)
-    fig.tight_layout()
+    fig.suptitle(title, y=0.995)
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.965),
+        ncol=2,
+        fontsize=9,
+        frameon=True,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.925])
 
     save_figure(fig, output_path)
 
@@ -2590,9 +3144,17 @@ def plot_score_vs_selected_features(
     #endfor
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2)
-    fig.suptitle(title, y=1.01)
-    fig.tight_layout()
+    fig.suptitle(title, y=0.995)
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.965),
+        ncol=2,
+        fontsize=9,
+        frameon=True,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.925])
 
     save_figure(fig, output_path)
 
@@ -2985,6 +3547,8 @@ def run_region(
     aaogen: pd.DataFrame,
     dvcsgen: pd.DataFrame,
     clasdis_control: Optional[pd.DataFrame],
+    data_parent_control: Optional[pd.DataFrame],
+    data_golden_control: Optional[pd.DataFrame],
     region: str,
     period_output: Path,
 ) -> List[DatasetSummary]:
@@ -3048,6 +3612,28 @@ def run_region(
         )
     #endif
 
+    data_parent_region = None
+    if data_parent_control is not None:
+        data_parent_region = data_parent_control.loc[
+            detector_region_mask(data_parent_control, region)
+        ].copy()
+        progress(
+            f"REGION {region}: real-data parent-matched control — "
+            f"{len(data_parent_region):,} candidates"
+        )
+    #endif
+
+    data_golden_region = None
+    if data_golden_control is not None:
+        data_golden_region = data_golden_control.loc[
+            detector_region_mask(data_golden_control, region)
+        ].copy()
+        progress(
+            f"REGION {region}: real-data golden pi0 daughters — "
+            f"{len(data_golden_region):,} candidates"
+        )
+    #endif
+
     # Use the NOMINAL feature list to define the common finite sample and one
     # common train/validation/test split for all ablation models. This makes AUC
     # differences directly interpretable.
@@ -3063,6 +3649,24 @@ def run_region(
         )
     else:
         control_clean = None
+    #endif
+
+    if data_parent_region is not None:
+        data_parent_clean = clean_feature_rows(
+            data_parent_region,
+            ABLATION_FEATURE_SETS["nominal"],
+        )
+    else:
+        data_parent_clean = None
+    #endif
+
+    if data_golden_region is not None:
+        data_golden_clean = clean_feature_rows(
+            data_golden_region,
+            ABLATION_FEATURE_SETS["nominal"],
+        )
+    else:
+        data_golden_clean = None
     #endif
 
     train, validation, test = train_validation_test_split(
@@ -3115,6 +3719,26 @@ def run_region(
         control_scores = None
     #endif
 
+    if data_parent_clean is not None:
+        data_parent_scores = model_scores(
+            nominal_model,
+            data_parent_clean,
+            features,
+        )
+    else:
+        data_parent_scores = None
+    #endif
+
+    if data_golden_clean is not None:
+        data_golden_scores = model_scores(
+            nominal_model,
+            data_golden_clean,
+            features,
+        )
+    else:
+        data_golden_scores = None
+    #endif
+
     roc_auc = plot_roc_curve(
         test=test,
         test_scores=test_scores,
@@ -3130,6 +3754,24 @@ def run_region(
         output_path=nominal_output / "bdt_score_distribution.png",
         title=f"{args.period} {region}: nominal topology BDT score",
     )
+
+    if (
+        data_parent_scores is not None
+        or data_golden_scores is not None
+    ):
+        plot_data_control_score_distribution(
+            test=test,
+            test_scores=test_scores,
+            clasdis_control=control_clean,
+            clasdis_scores=control_scores,
+            parent_control=data_parent_clean,
+            parent_scores=data_parent_scores,
+            golden_control=data_golden_clean,
+            golden_scores=data_golden_scores,
+            output_path=nominal_output / "data_control_bdt_scores.png",
+            title=f"{args.period} {region}: MC-trained BDT applied to real pi0 controls",
+        )
+    #endif
 
     plot_feature_importance(
         model=nominal_model,
@@ -3152,20 +3794,25 @@ def run_region(
         and control_scores is not None
         and len(control_clean) > 0
     ):
-        plot_clasdis_vs_aaogen_transfer(
-            test=test,
-            test_scores=test_scores,
-            control=control_clean,
-            control_scores=control_scores,
-            output_path=nominal_output / "clasdis_vs_aaogen_score.png",
-            title=f"{args.period} {region}: AAOgen vs CLASDIS pi0-score transfer",
-        )
 
         plot_clasdis_transfer_vs_kinematics(
             control=control_clean,
             control_scores=control_scores,
             output_path=nominal_output / "clasdis_score_vs_kinematics.png",
             title=f"{args.period} {region}: CLASDIS score stability vs photon kinematics",
+        )
+    #endif
+
+    if (
+        data_golden_clean is not None
+        and data_golden_scores is not None
+        and len(data_golden_clean) > 0
+    ):
+        plot_data_golden_transfer_vs_kinematics(
+            golden=data_golden_clean,
+            scores=data_golden_scores,
+            output_path=nominal_output / "data_golden_score_vs_kinematics.png",
+            title=f"{args.period} {region}: real golden-pi0 BDT-score stability",
         )
     #endif
 
@@ -3323,12 +3970,19 @@ def main() -> None:
     dvcsgen_epg_file = args.dvcsgen_epg or defaults["dvcsgen_epg"]
     clasdis_epg_file = args.clasdis_epg or defaults["clasdis_epg"]
     clasdis_eppi0_file = args.clasdis_eppi0 or defaults["clasdis_eppi0"]
+    data_epg_file = args.data_epg or defaults.get("data_epg")
+    data_eppi0_file = args.data_eppi0 or defaults.get("data_eppi0")
 
     progress(f"INPUT AAOgen e'p'gammaX: {aaogen_epg_file}")
     progress(f"INPUT DVCSgen e'p'gammaX: {dvcsgen_epg_file}")
     if not args.skip_clasdis_control:
         progress(f"INPUT CLASDIS e'p'gammaX: {clasdis_epg_file}")
         progress(f"INPUT CLASDIS e'p'pi0X: {clasdis_eppi0_file}")
+    #endif
+
+    if not args.skip_data_control:
+        progress(f"INPUT DATA e'p'gammaX: {data_epg_file}")
+        progress(f"INPUT DATA e'p'pi0X: {data_eppi0_file}")
     #endif
 
     # IMPORTANT: for quick tests, constrain ROOT I/O itself rather than
@@ -3453,6 +4107,56 @@ def main() -> None:
         progress("CLASDIS DIAGNOSTICS: matching diagnostic plots complete")
     #endif
 
+
+    data_parent_control: Optional[pd.DataFrame] = None
+    data_golden_control: Optional[pd.DataFrame] = None
+    data_closure = pd.DataFrame()
+
+    if not args.skip_data_control:
+        if data_epg_file is None or data_eppi0_file is None:
+            raise RuntimeError(
+                "Real-data control requested but no data paths are available. "
+                "Supply --data-epg and --data-eppi0."
+            )
+        #endif
+
+        progress("DATA CONTROL: loading real-data e'p'gammaX")
+        data_epg = load_dataframe(
+            filename=data_epg_file,
+            requested_tree=args.tree,
+            branches=DATA_EPG_BRANCHES,
+            source="data_epg",
+            entry_limit=args.max_data_read,
+        )
+
+        progress("DATA CONTROL: loading real-data e'p'pi0X")
+        data_eppi0 = load_dataframe(
+            filename=data_eppi0_file,
+            requested_tree=args.tree,
+            branches=DATA_EPPI0_BRANCHES,
+            source="data_eppi0",
+            entry_limit=args.max_data_read,
+        )
+
+        (
+            data_parent_control,
+            data_golden_control,
+            data_closure,
+        ) = build_real_data_pi0_controls(
+            epg=data_epg,
+            eppi0=data_eppi0,
+        )
+
+        data_output = period_output / "data_control"
+        data_output.mkdir(parents=True, exist_ok=True)
+
+        plot_real_data_closure(
+            closure=data_closure,
+            output_path=data_output / "golden_pi0_pair_closure.png",
+            title=f"{args.period}: real-data golden pi0 daughter closure",
+        )
+    #endif
+
     all_summaries: List[DatasetSummary] = []
 
     for region in ["FT", "FD"]:
@@ -3461,6 +4165,8 @@ def main() -> None:
             aaogen=aaogen,
             dvcsgen=dvcsgen,
             clasdis_control=clasdis_control,
+            data_parent_control=data_parent_control,
+            data_golden_control=data_golden_control,
             region=region,
             period_output=period_output,
         )
