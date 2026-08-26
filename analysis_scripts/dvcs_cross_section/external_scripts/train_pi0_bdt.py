@@ -315,8 +315,20 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Optional random cap applied independently to AAOgen and DVCSgen "
-            "before splitting. Useful for quick tests."
+            "Optional per-region training cap. For quick tests this also limits "
+            "the AAOgen/DVCSgen ROOT read to 2x this value per file, so the full "
+            "trees are not needlessly materialized before capping."
+        ),
+    )
+
+    parser.add_argument(
+        "--max-clasdis-read",
+        type=int,
+        default=None,
+        help=(
+            "Optional maximum number of ROOT entries read from EACH CLASDIS tree "
+            "before kinematic matching. Recommended for quick pipeline tests. "
+            "Omit for the eventual full CLASDIS control-sample study."
         ),
     )
 
@@ -392,6 +404,7 @@ def load_dataframe(
     requested_tree: Optional[str],
     branches: Sequence[str],
     source: str,
+    entry_limit: Optional[int] = None,
 ) -> pd.DataFrame:
     stage_start = time.perf_counter()
     progress(f"LOAD {source}: opening {filename}")
@@ -400,9 +413,31 @@ def load_dataframe(
     progress(f"LOAD {source}: using tree '{tree_name}'; validating {len(branches)} branches")
     validate_branches(filename, tree_name, branches)
 
-    progress(f"LOAD {source}: reading branches into memory")
     with uproot.open(filename) as root_file:
-        df = root_file[tree_name].arrays(list(branches), library="pd")
+        tree = root_file[tree_name]
+        n_total = int(tree.num_entries)
+        if entry_limit is None:
+            n_read = n_total
+        else:
+            n_read = min(int(entry_limit), n_total)
+        #endif
+
+        progress(
+            f"LOAD {source}: tree contains {n_total:,} rows; "
+            f"reading {n_read:,} ({100.0*n_read/max(n_total,1):.2f}%)"
+        )
+        progress(
+            f"LOAD {source}: reading {len(branches)} branches into memory "
+            f"(entry_start=0, entry_stop={n_read:,})"
+        )
+
+        df = tree.arrays(
+            list(branches),
+            entry_start=0,
+            entry_stop=n_read,
+            library="pd",
+        )
+    #endwith
 
     df = df.reset_index(drop=True)
     df["source"] = source
@@ -1486,6 +1521,7 @@ def main() -> None:
     np.random.seed(args.seed)
     progress(
         f"START: period={args.period}, max-events-per-class={args.max_events_per_class}, "
+        f"max-clasdis-read={args.max_clasdis_read}, "
         f"max-control-events={args.max_control_events}, seed={args.seed}"
     )
 
@@ -1505,11 +1541,40 @@ def main() -> None:
         progress(f"INPUT CLASDIS e'p'pi0X: {clasdis_eppi0_file}")
     #endif
 
+    # IMPORTANT: for quick tests, constrain ROOT I/O itself rather than
+    # reading the complete generator trees and only capping afterward.
+    if args.max_events_per_class is None:
+        training_read_limit = None
+    else:
+        training_read_limit = 2 * int(args.max_events_per_class)
+    #endif
+
+    if training_read_limit is None:
+        progress("I/O MODE: full AAOgen/DVCSgen ROOT trees will be read")
+    else:
+        progress(
+            f"I/O MODE: quick training read enabled — at most "
+            f"{training_read_limit:,} rows from each AAOgen/DVCSgen file"
+        )
+    #endif
+
+    if args.skip_clasdis_control:
+        progress("I/O MODE: CLASDIS control disabled")
+    elif args.max_clasdis_read is None:
+        progress("I/O MODE: full CLASDIS trees will be read for the control sample")
+    else:
+        progress(
+            f"I/O MODE: quick CLASDIS read enabled — at most "
+            f"{args.max_clasdis_read:,} rows from each CLASDIS tree"
+        )
+    #endif
+
     aaogen = load_dataframe(
         filename=aaogen_epg_file,
         requested_tree=args.tree,
         branches=EPG_REQUIRED_BRANCHES,
         source="aaogen",
+        entry_limit=training_read_limit,
     )
 
     dvcsgen = load_dataframe(
@@ -1517,6 +1582,7 @@ def main() -> None:
         requested_tree=args.tree,
         branches=EPG_REQUIRED_BRANCHES,
         source="dvcsgen",
+        entry_limit=training_read_limit,
     )
 
     clasdis_control: Optional[pd.DataFrame] = None
@@ -1529,6 +1595,7 @@ def main() -> None:
             requested_tree=args.tree,
             branches=EPG_REQUIRED_BRANCHES,
             source="clasdis_epg",
+            entry_limit=args.max_clasdis_read,
         )
 
         clasdis_eppi0 = load_dataframe(
@@ -1536,6 +1603,7 @@ def main() -> None:
             requested_tree=args.tree,
             branches=EPPI0_MATCH_BRANCHES,
             source="clasdis_eppi0",
+            entry_limit=args.max_clasdis_read,
         )
 
         progress(
