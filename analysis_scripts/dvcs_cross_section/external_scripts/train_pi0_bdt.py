@@ -194,16 +194,16 @@ EPPI0_MATCH_BRANCHES: List[str] = [
     "detector_gamma2",
 ]
 
-# Matching scales are deliberately fairly tight. Cross-tree MC matching uses
-# only reconstructed electron/proton kinematics; runnum/evnum are never used.
-MATCH_SCALES = {
-    "e_p": 0.010,        # GeV
-    "e_theta": 0.10,     # degrees
-    "e_phi": 0.20,       # degrees
-    "p1_p": 0.010,       # GeV
-    "p1_theta": 0.10,    # degrees
-    "p1_phi": 0.20,      # degrees
-}
+# CLASDIS parent-event matching configuration.
+#
+# This intentionally follows the established matching used in the photon-
+# efficiency study: convert reconstructed electron/proton momenta to Cartesian
+# (px, py, pz), build a six-dimensional nearest-neighbor index, and require
+# both a small scaled Euclidean distance and a tight per-component momentum
+# agreement.
+MATCH_COMPONENT_TOL_GEV = 0.002
+MATCH_MAX_SCALED_DISTANCE = 2.0
+
 
 # Introductory boosted-decision-tree settings.
 #
@@ -532,37 +532,129 @@ def build_training_sample(
     return pd.concat([pos, neg], ignore_index=True)
 
 
-def angle_difference_deg(a: np.ndarray, b: np.ndarray) -> np.ndarray:
-    return (np.asarray(a) - np.asarray(b) + 180.0) % 360.0 - 180.0
+def infer_angle_unit(values: np.ndarray, name: str) -> str:
+    """
+    Infer whether an angular branch is stored in radians or degrees.
+
+    CLAS12 analysis trees used here are normally in radians, but this helper
+    keeps the matcher robust and mirrors the explicit angle handling used in
+    the photon-efficiency analysis.
+
+    Heuristic:
+        values comfortably within [-2*pi, 2*pi] -> radians
+        otherwise                                -> degrees
+    """
+    values = np.asarray(values, dtype=float)
+    finite = values[np.isfinite(values)]
+
+    if len(finite) == 0:
+        raise RuntimeError(f"Cannot infer angle unit for empty/non-finite branch {name}")
+    #endif
+
+    q995 = float(np.quantile(np.abs(finite), 0.995))
+
+    if q995 <= (2.0 * np.pi + 0.25):
+        return "rad"
+    #endif
+
+    return "deg"
+
+
+def angles_to_radians(
+    theta: np.ndarray,
+    phi: np.ndarray,
+    theta_name: str,
+    phi_name: str,
+) -> Tuple[np.ndarray, np.ndarray]:
+    theta = np.asarray(theta, dtype=float)
+    phi = np.asarray(phi, dtype=float)
+
+    theta_unit = infer_angle_unit(theta, theta_name)
+    phi_unit = infer_angle_unit(phi, phi_name)
+
+    if theta_unit == "deg":
+        theta = np.deg2rad(theta)
+    #endif
+
+    if phi_unit == "deg":
+        phi = np.deg2rad(phi)
+    #endif
+
+    return theta, phi
+
+
+def spherical_to_cartesian(
+    p: np.ndarray,
+    theta: np.ndarray,
+    phi: np.ndarray,
+    theta_name: str,
+    phi_name: str,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Convert momentum magnitude and polar/azimuthal angles to Cartesian
+    momentum components. Angles are auto-detected as radians or degrees.
+    """
+    p = np.asarray(p, dtype=float)
+    theta_rad, phi_rad = angles_to_radians(
+        theta,
+        phi,
+        theta_name=theta_name,
+        phi_name=phi_name,
+    )
+
+    sin_theta = np.sin(theta_rad)
+
+    px = p * sin_theta * np.cos(phi_rad)
+    py = p * sin_theta * np.sin(phi_rad)
+    pz = p * np.cos(theta_rad)
+
+    return px, py, pz
+
+
+def build_ep_cartesian_components(
+    df: pd.DataFrame,
+) -> Dict[str, np.ndarray]:
+    e_px, e_py, e_pz = spherical_to_cartesian(
+        p=df["e_p"].to_numpy(dtype=float),
+        theta=df["e_theta"].to_numpy(dtype=float),
+        phi=df["e_phi"].to_numpy(dtype=float),
+        theta_name="e_theta",
+        phi_name="e_phi",
+    )
+
+    p_px, p_py, p_pz = spherical_to_cartesian(
+        p=df["p1_p"].to_numpy(dtype=float),
+        theta=df["p1_theta"].to_numpy(dtype=float),
+        phi=df["p1_phi"].to_numpy(dtype=float),
+        theta_name="p1_theta",
+        phi_name="p1_phi",
+    )
+
+    return {
+        "e_px": e_px,
+        "e_py": e_py,
+        "e_pz": e_pz,
+        "p_px": p_px,
+        "p_py": p_py,
+        "p_pz": p_pz,
+    }
 
 
 def _matching_embedding(df: pd.DataFrame) -> np.ndarray:
-    """
-    Build a KD/nearest-neighbor-friendly embedding of the electron/proton
-    kinematics. Azimuths are represented by sin/cos components so the
-    +/-180-degree boundary is handled correctly.
+    components = build_ep_cartesian_components(df)
 
-    For small angular differences, the chord-distance scaling below is
-    approximately the wrapped delta-phi divided by the requested phi scale.
-    """
-    e_phi = np.deg2rad(df["e_phi"].to_numpy(dtype=float))
-    p_phi = np.deg2rad(df["p1_phi"].to_numpy(dtype=float))
-
-    e_phi_factor = (180.0 / np.pi) / MATCH_SCALES["e_phi"]
-    p_phi_factor = (180.0 / np.pi) / MATCH_SCALES["p1_phi"]
-
-    return np.column_stack(
+    matrix = np.column_stack(
         [
-            df["e_p"].to_numpy(dtype=float) / MATCH_SCALES["e_p"],
-            df["e_theta"].to_numpy(dtype=float) / MATCH_SCALES["e_theta"],
-            np.cos(e_phi) * e_phi_factor,
-            np.sin(e_phi) * e_phi_factor,
-            df["p1_p"].to_numpy(dtype=float) / MATCH_SCALES["p1_p"],
-            df["p1_theta"].to_numpy(dtype=float) / MATCH_SCALES["p1_theta"],
-            np.cos(p_phi) * p_phi_factor,
-            np.sin(p_phi) * p_phi_factor,
+            components["e_px"],
+            components["e_py"],
+            components["e_pz"],
+            components["p_px"],
+            components["p_py"],
+            components["p_pz"],
         ]
     )
+
+    return matrix / MATCH_COMPONENT_TOL_GEV
 
 
 def _nearest_match_diagnostics(
@@ -572,8 +664,12 @@ def _nearest_match_diagnostics(
     label: str,
 ) -> pd.DataFrame:
     """
-    For every row in left, find the nearest right-side e/p candidate and return
-    the exact physical residuals plus the six-dimensional normalized distance.
+    For every e'p'gammaX candidate in left, find the nearest e'p'pi0X parent
+    candidate in six-dimensional Cartesian electron/proton momentum space.
+
+    Distances are measured in units of MATCH_COMPONENT_TOL_GEV, i.e. each
+    Cartesian momentum component is scaled by 0.002 GeV before constructing
+    the Euclidean nearest-neighbor distance.
     """
 
     left_embedding = _matching_embedding(left)
@@ -581,14 +677,19 @@ def _nearest_match_diagnostics(
 
     progress(
         f"CLASDIS MATCH [{label}]: fitting nearest-neighbor index to "
-        f"{len(right_embedding):,} right-side candidates"
+        f"{len(right_embedding):,} right-side candidates in Cartesian e/p momentum space"
     )
-    neighbor_model = NearestNeighbors(n_neighbors=1, algorithm="auto")
+
+    neighbor_model = NearestNeighbors(
+        n_neighbors=1,
+        algorithm="auto",
+    )
     neighbor_model.fit(right_embedding)
 
     n_left = len(left_embedding)
     n_chunks = int(math.ceil(n_left / query_chunk_size))
     nearest_indices = np.empty(n_left, dtype=np.int64)
+    nearest_scaled_distances = np.empty(n_left, dtype=float)
 
     progress(
         f"CLASDIS MATCH [{label}]: querying {n_left:,} epgammaX candidates in "
@@ -599,11 +700,13 @@ def _nearest_match_diagnostics(
         lo = chunk_index * query_chunk_size
         hi = min((chunk_index + 1) * query_chunk_size, n_left)
 
-        _, chunk_indices = neighbor_model.kneighbors(
+        chunk_distances, chunk_indices = neighbor_model.kneighbors(
             left_embedding[lo:hi],
             return_distance=True,
         )
+
         nearest_indices[lo:hi] = chunk_indices[:, 0]
+        nearest_scaled_distances[lo:hi] = chunk_distances[:, 0]
 
         report_every = max(1, n_chunks // 10)
         if (chunk_index + 1) % report_every == 0 or chunk_index + 1 == n_chunks:
@@ -616,59 +719,65 @@ def _nearest_match_diagnostics(
 
     nearest = right.iloc[nearest_indices].reset_index(drop=True)
 
-    delta_e_p = (
-        left["e_p"].to_numpy(dtype=float)
-        - nearest["e_p"].to_numpy(dtype=float)
-    )
-    delta_e_theta = (
-        left["e_theta"].to_numpy(dtype=float)
-        - nearest["e_theta"].to_numpy(dtype=float)
-    )
-    delta_e_phi = angle_difference_deg(
-        left["e_phi"].to_numpy(dtype=float),
-        nearest["e_phi"].to_numpy(dtype=float),
-    )
-    delta_p_p = (
-        left["p1_p"].to_numpy(dtype=float)
-        - nearest["p1_p"].to_numpy(dtype=float)
-    )
-    delta_p_theta = (
-        left["p1_theta"].to_numpy(dtype=float)
-        - nearest["p1_theta"].to_numpy(dtype=float)
-    )
-    delta_p_phi = angle_difference_deg(
-        left["p1_phi"].to_numpy(dtype=float),
-        nearest["p1_phi"].to_numpy(dtype=float),
-    )
+    left_components = build_ep_cartesian_components(left)
+    right_components = build_ep_cartesian_components(nearest)
 
-    components = np.column_stack(
+    residual_columns = {}
+    for component in [
+        "e_px",
+        "e_py",
+        "e_pz",
+        "p_px",
+        "p_py",
+        "p_pz",
+    ]:
+        residual_columns[f"delta_{component}"] = (
+            left_components[component]
+            - right_components[component]
+        )
+    #endfor
+
+    residual_matrix = np.column_stack(
         [
-            delta_e_p / MATCH_SCALES["e_p"],
-            delta_e_theta / MATCH_SCALES["e_theta"],
-            delta_e_phi / MATCH_SCALES["e_phi"],
-            delta_p_p / MATCH_SCALES["p1_p"],
-            delta_p_theta / MATCH_SCALES["p1_theta"],
-            delta_p_phi / MATCH_SCALES["p1_phi"],
+            residual_columns["delta_e_px"],
+            residual_columns["delta_e_py"],
+            residual_columns["delta_e_pz"],
+            residual_columns["delta_p_px"],
+            residual_columns["delta_p_py"],
+            residual_columns["delta_p_pz"],
         ]
     )
-    normalized_distance = np.sqrt(np.sum(np.square(components), axis=1))
 
-    diagnostics = pd.DataFrame(
-        {
-            "_epg_index": left["_epg_index"].to_numpy(dtype=int),
-            "_nearest_eppi0_index": nearest["_eppi0_index"].to_numpy(dtype=int),
-            "delta_e_p": delta_e_p,
-            "delta_e_theta": delta_e_theta,
-            "delta_e_phi": delta_e_phi,
-            "delta_p_p": delta_p_p,
-            "delta_p_theta": delta_p_theta,
-            "delta_p_phi": delta_p_phi,
-            "match_distance": normalized_distance,
-            "detector2": left["detector2"].to_numpy(dtype=int),
-            "p2_p": left["p2_p"].to_numpy(dtype=float),
-            "p2_theta": left["p2_theta"].to_numpy(dtype=float),
-        }
+    max_abs_component_delta = np.max(
+        np.abs(residual_matrix),
+        axis=1,
     )
+
+    # Recompute the exact scaled Euclidean distance from the Cartesian
+    # residuals. This should agree with the nearest-neighbor distance returned
+    # above up to floating-point precision.
+    exact_scaled_distance = np.sqrt(
+        np.sum(
+            np.square(
+                residual_matrix / MATCH_COMPONENT_TOL_GEV
+            ),
+            axis=1,
+        )
+    )
+
+    diagnostics_dict = {
+        "_epg_index": left["_epg_index"].to_numpy(dtype=int),
+        "_nearest_eppi0_index": nearest["_eppi0_index"].to_numpy(dtype=int),
+        "match_distance": exact_scaled_distance,
+        "neighbor_distance": nearest_scaled_distances,
+        "max_abs_component_delta": max_abs_component_delta,
+        "detector2": left["detector2"].to_numpy(dtype=int),
+        "p2_p": left["p2_p"].to_numpy(dtype=float),
+        "p2_theta": left["p2_theta"].to_numpy(dtype=float),
+    }
+    diagnostics_dict.update(residual_columns)
+
+    diagnostics = pd.DataFrame(diagnostics_dict)
 
     if "Mh_gammagamma" in nearest.columns:
         diagnostics["matched_Mh_gammagamma"] = nearest[
@@ -694,39 +803,51 @@ def _nearest_match_diagnostics(
 def match_epgamma_to_eppi0_by_kinematics(
     epg: pd.DataFrame,
     eppi0: pd.DataFrame,
-    max_normalized_distance: float = 4.0,
+    max_scaled_distance: float = MATCH_MAX_SCALED_DISTANCE,
+    component_tolerance_gev: float = MATCH_COMPONENT_TOL_GEV,
     query_chunk_size: int = 100_000,
     seed: int = 42,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Construct a pi0-enriched CLASDIS control sample using ONLY reconstructed
-    electron/proton kinematics.
+    Construct a pi0-enriched CLASDIS control sample using the established
+    photon-efficiency parent-event matching prescription.
+
+    Matching uses ONLY reconstructed electron/proton kinematics:
+        electron: (px, py, pz)
+        proton:   (px, py, pz)
+
+    The spherical branches (p, theta, phi) are converted to Cartesian momentum
+    components with explicit radian/degree handling.
+
+    A real match is accepted only if BOTH:
+        1. scaled six-dimensional Euclidean distance <= max_scaled_distance
+        2. every individual Cartesian component residual satisfies
+           |Delta p_component| <= component_tolerance_gev
+
+    Default values follow the established photon-efficiency matcher:
+        component_tolerance_gev = 0.002 GeV
+        max_scaled_distance     = 2.0
+
+    MC runnum/evnum are never used.
 
     Returns
     -------
     matched:
-        Accepted real CLASDIS e'p'gammaX candidates. These retain the original
-        e'p'gammaX branches and receive detailed match-quality columns.
+        Accepted CLASDIS e'p'gammaX candidates with detailed matching columns.
 
     real_diagnostics:
-        One row per finite e'p'gammaX candidate, containing its nearest real
-        reconstructed e'p'pi0X candidate and the full e/p residual information.
+        One row per finite e'p'gammaX candidate with its nearest real
+        reconstructed e'p'pi0X parent candidate.
 
     scrambled_diagnostics:
-        The same nearest-neighbor exercise after destroying the electron-proton
-        association inside the e'p'pi0X sample. This is a combinatorial control.
-
-    Notes
-    -----
-    MC runnum/evnum are never used.
-
-    Multiple e'p'gammaX candidates are explicitly allowed to match the same
-    e'p'pi0X candidate. That multiplicity is one of the diagnostics produced
-    later because one physical e/p event may contribute multiple photon
-    candidates.
+        The same nearest-neighbor exercise after independently permuting the
+        proton Cartesian kinematics relative to the electron in the e'p'pi0X
+        sample. This destroys the true e-p parent association while preserving
+        one-particle marginal distributions.
     """
 
     stage_start = time.perf_counter()
+
     match_columns = [
         "e_p",
         "e_theta",
@@ -737,17 +858,24 @@ def match_epgamma_to_eppi0_by_kinematics(
     ]
 
     progress(
-        f"CLASDIS MATCH: preparing kinematic samples — "
+        f"CLASDIS MATCH: preparing established Cartesian parent matcher — "
         f"epgammaX={len(epg):,}, eppi0X={len(eppi0):,}"
+    )
+    progress(
+        f"CLASDIS MATCH: criteria — max scaled distance <= "
+        f"{max_scaled_distance:.3f}; every Cartesian component |Delta p| <= "
+        f"{component_tolerance_gev:.4f} GeV"
     )
 
     left = (
-        epg.dropna(subset=match_columns)
+        epg.replace([np.inf, -np.inf], np.nan)
+        .dropna(subset=match_columns)
         .copy()
         .reset_index(names="_epg_index")
     )
     right = (
-        eppi0.dropna(subset=match_columns)
+        eppi0.replace([np.inf, -np.inf], np.nan)
+        .dropna(subset=match_columns)
         .copy()
         .reset_index(names="_eppi0_index")
     )
@@ -764,7 +892,19 @@ def match_epgamma_to_eppi0_by_kinematics(
         return empty_match, empty_diag, empty_diag.copy()
     #endif
 
-    progress("CLASDIS MATCH: running REAL nearest-neighbor association")
+    # Report inferred angular units once for transparency.
+    for branch in ["e_theta", "e_phi", "p1_theta", "p1_phi"]:
+        unit = infer_angle_unit(
+            pd.concat([left[branch], right[branch]], ignore_index=True).to_numpy(),
+            branch,
+        )
+        progress(f"CLASDIS MATCH: inferred {branch} unit = {unit}")
+    #endfor
+
+    progress(
+        "CLASDIS MATCH: running REAL Cartesian nearest-neighbor association"
+    )
+
     real_diagnostics = _nearest_match_diagnostics(
         left=left,
         right=right,
@@ -772,18 +912,29 @@ def match_epgamma_to_eppi0_by_kinematics(
         label="REAL",
     )
 
-    real_diagnostics["accepted"] = (
-        real_diagnostics["match_distance"] <= max_normalized_distance
+    real_distance_ok = (
+        real_diagnostics["match_distance"].to_numpy(dtype=float)
+        <= max_scaled_distance
+    )
+    real_component_ok = (
+        real_diagnostics["max_abs_component_delta"].to_numpy(dtype=float)
+        <= component_tolerance_gev
     )
 
-    # Scrambled control:
-    # Keep the reconstructed electron rows fixed, but independently permute the
-    # proton quantities. This destroys the true e-p event correlation while
-    # retaining the one-particle marginal distributions.
+    real_diagnostics["distance_ok"] = real_distance_ok
+    real_diagnostics["component_ok"] = real_component_ok
+    real_diagnostics["accepted"] = real_distance_ok & real_component_ok
+
+    # Scrambled control.
+    #
+    # We scramble proton rows relative to electron rows BEFORE Cartesian
+    # matching. That removes any true e-p parent correlation but preserves the
+    # marginal electron and proton distributions.
     progress(
         "CLASDIS MATCH: constructing SCRAMBLED control by permuting proton "
-        "kinematics relative to the electron"
+        "kinematics relative to electron kinematics"
     )
+
     rng = np.random.default_rng(seed)
     scrambled_right = right.copy()
     proton_permutation = rng.permutation(len(scrambled_right))
@@ -800,79 +951,141 @@ def match_epgamma_to_eppi0_by_kinematics(
         query_chunk_size=query_chunk_size,
         label="SCRAMBLED",
     )
+
+    scrambled_distance_ok = (
+        scrambled_diagnostics["match_distance"].to_numpy(dtype=float)
+        <= max_scaled_distance
+    )
+    scrambled_component_ok = (
+        scrambled_diagnostics["max_abs_component_delta"].to_numpy(dtype=float)
+        <= component_tolerance_gev
+    )
+
+    scrambled_diagnostics["distance_ok"] = scrambled_distance_ok
+    scrambled_diagnostics["component_ok"] = scrambled_component_ok
     scrambled_diagnostics["accepted"] = (
-        scrambled_diagnostics["match_distance"] <= max_normalized_distance
+        scrambled_distance_ok & scrambled_component_ok
     )
 
     accepted = real_diagnostics["accepted"].to_numpy(dtype=bool)
-    matched_diag = real_diagnostics.loc[accepted].copy().reset_index(drop=True)
+    matched_diag = (
+        real_diagnostics.loc[accepted]
+        .copy()
+        .reset_index(drop=True)
+    )
 
     matched_indices = matched_diag["_epg_index"].to_numpy(dtype=int)
-    matched = epg.iloc[matched_indices].copy().reset_index(drop=True)
+    matched = (
+        epg.iloc[matched_indices]
+        .copy()
+        .reset_index(drop=True)
+    )
 
     matched["control_match"] = True
     matched["control_match_distance"] = matched_diag[
         "match_distance"
+    ].to_numpy(dtype=float)
+    matched["control_max_abs_component_delta"] = matched_diag[
+        "max_abs_component_delta"
     ].to_numpy(dtype=float)
     matched["control_nearest_eppi0_index"] = matched_diag[
         "_nearest_eppi0_index"
     ].to_numpy(dtype=int)
 
     for column in [
-        "delta_e_p",
-        "delta_e_theta",
-        "delta_e_phi",
-        "delta_p_p",
-        "delta_p_theta",
-        "delta_p_phi",
+        "delta_e_px",
+        "delta_e_py",
+        "delta_e_pz",
+        "delta_p_px",
+        "delta_p_py",
+        "delta_p_pz",
         "matched_Mh_gammagamma",
         "matched_detector_gamma1",
         "matched_detector_gamma2",
     ]:
         if column in matched_diag.columns:
-            matched[f"control_{column}"] = matched_diag[column].to_numpy()
+            matched[f"control_{column}"] = (
+                matched_diag[column].to_numpy()
+            )
         #endif
     #endfor
 
-    n_accepted = len(matched)
-    accepted_fraction = 100.0 * n_accepted / len(real_diagnostics)
+    n_real_total = len(real_diagnostics)
+    n_real_distance = int(np.count_nonzero(real_distance_ok))
+    n_real_component = int(np.count_nonzero(real_component_ok))
+    n_real_accepted = int(np.count_nonzero(accepted))
 
+    n_scrambled_total = len(scrambled_diagnostics)
     n_scrambled_accepted = int(
-        np.count_nonzero(scrambled_diagnostics["accepted"].to_numpy())
-    )
-    scrambled_fraction = (
-        100.0 * n_scrambled_accepted / len(scrambled_diagnostics)
+        np.count_nonzero(
+            scrambled_diagnostics["accepted"].to_numpy(dtype=bool)
+        )
     )
 
-    if n_accepted > 0:
-        accepted_distances = matched["control_match_distance"].to_numpy()
-        q50, q90, q99 = np.quantile(
+    progress(
+        f"CLASDIS MATCH: REAL distance criterion alone accepts "
+        f"{n_real_distance:,}/{n_real_total:,} "
+        f"({100.0*n_real_distance/max(n_real_total,1):.3f}%)"
+    )
+    progress(
+        f"CLASDIS MATCH: REAL component criterion alone accepts "
+        f"{n_real_component:,}/{n_real_total:,} "
+        f"({100.0*n_real_component/max(n_real_total,1):.3f}%)"
+    )
+    progress(
+        f"CLASDIS MATCH: REAL final accepted "
+        f"{n_real_accepted:,}/{n_real_total:,} "
+        f"({100.0*n_real_accepted/max(n_real_total,1):.3f}%)"
+    )
+    progress(
+        f"CLASDIS MATCH: SCRAMBLED final accepted "
+        f"{n_scrambled_accepted:,}/{n_scrambled_total:,} "
+        f"({100.0*n_scrambled_accepted/max(n_scrambled_total,1):.5f}%)"
+    )
+
+    if n_real_accepted > 0:
+        accepted_distances = matched[
+            "control_match_distance"
+        ].to_numpy(dtype=float)
+        accepted_components = matched[
+            "control_max_abs_component_delta"
+        ].to_numpy(dtype=float)
+
+        qd50, qd90, qd99 = np.quantile(
             accepted_distances,
             [0.50, 0.90, 0.99],
         )
-        progress(
-            f"CLASDIS MATCH: REAL accepted {n_accepted:,}/"
-            f"{len(real_diagnostics):,} ({accepted_fraction:.2f}%); "
-            f"distance median={q50:.3f}, 90%={q90:.3f}, 99%={q99:.3f}"
+        qc50, qc90, qc99 = np.quantile(
+            accepted_components,
+            [0.50, 0.90, 0.99],
         )
-    else:
-        progress("CLASDIS MATCH: REAL accepted zero candidates")
-    #endif
 
-    progress(
-        f"CLASDIS MATCH: SCRAMBLED accepted {n_scrambled_accepted:,}/"
-        f"{len(scrambled_diagnostics):,} ({scrambled_fraction:.2f}%) "
-        f"at the same d <= {max_normalized_distance:.2f} requirement"
-    )
+        progress(
+            f"CLASDIS MATCH: accepted scaled-distance quantiles — "
+            f"median={qd50:.4f}, 90%={qd90:.4f}, 99%={qd99:.4f}"
+        )
+        progress(
+            f"CLASDIS MATCH: accepted max-component |Delta p| quantiles (GeV) — "
+            f"median={qc50:.6f}, 90%={qc90:.6f}, 99%={qc99:.6f}"
+        )
 
-    if n_accepted > 0:
         unique_pi0 = matched[
             "control_nearest_eppi0_index"
         ].nunique()
+
         progress(
             f"CLASDIS MATCH: accepted epgammaX candidates map to "
-            f"{unique_pi0:,} unique reconstructed eppi0X candidates; "
-            f"mean multiplicity={n_accepted / max(unique_pi0, 1):.2f}"
+            f"{unique_pi0:,}/{len(right):,} unique reconstructed eppi0X candidates; "
+            f"mean multiplicity={n_real_accepted/max(unique_pi0,1):.3f}"
+        )
+
+        n_ft = int(np.count_nonzero(matched["detector2"].to_numpy() == 0))
+        n_fd = int(np.count_nonzero(matched["detector2"].to_numpy() == 1))
+        n_other = n_real_accepted - n_ft - n_fd
+
+        progress(
+            f"CLASDIS MATCH: accepted epgammaX detector composition — "
+            f"FT={n_ft:,}, FD={n_fd:,}, other={n_other:,}"
         )
     #endif
 
@@ -1092,12 +1305,12 @@ def plot_clasdis_match_residuals(
     title: str,
 ) -> None:
     residual_specs = [
-        ("delta_e_p", r"$\Delta p_e$ (GeV)"),
-        ("delta_e_theta", r"$\Delta\theta_e$ (deg)"),
-        ("delta_e_phi", r"$\Delta\phi_e$ (deg)"),
-        ("delta_p_p", r"$\Delta p_p$ (GeV)"),
-        ("delta_p_theta", r"$\Delta\theta_p$ (deg)"),
-        ("delta_p_phi", r"$\Delta\phi_p$ (deg)"),
+        ("delta_e_px", r"$\Delta p_{x,e}$ (GeV)"),
+        ("delta_e_py", r"$\Delta p_{y,e}$ (GeV)"),
+        ("delta_e_pz", r"$\Delta p_{z,e}$ (GeV)"),
+        ("delta_p_px", r"$\Delta p_{x,p}$ (GeV)"),
+        ("delta_p_py", r"$\Delta p_{y,p}$ (GeV)"),
+        ("delta_p_pz", r"$\Delta p_{z,p}$ (GeV)"),
     ]
 
     fig, axes = plt.subplots(2, 3, figsize=(15.0, 8.5))
@@ -1114,33 +1327,54 @@ def plot_clasdis_match_residuals(
             symmetric=True,
         )
 
+        # Ensure the physically relevant +/- few-MeV region is always visible.
+        display_bound = max(
+            5.0 * MATCH_COMPONENT_TOL_GEV,
+            abs(low),
+            abs(high),
+        )
+        low = -display_bound
+        high = display_bound
+
         ax.hist(
             scrambled_values,
-            bins=100,
+            bins=120,
             range=(low, high),
             density=True,
             histtype="step",
-            linewidth=1.5,
+            linewidth=1.4,
             label="Scrambled nearest neighbor",
         )
         ax.hist(
             real_values,
-            bins=100,
+            bins=120,
             range=(low, high),
             density=True,
             histtype="step",
-            linewidth=1.5,
+            linewidth=1.6,
             label="Real nearest neighbor",
         )
 
-        ax.axvline(0.0, linestyle="--", linewidth=1.0)
+        ax.axvline(
+            -MATCH_COMPONENT_TOL_GEV,
+            linestyle="--",
+            linewidth=1.0,
+        )
+        ax.axvline(
+            MATCH_COMPONENT_TOL_GEV,
+            linestyle="--",
+            linewidth=1.0,
+            label=r"$|\Delta p_i|=0.002$ GeV",
+        )
+        ax.axvline(0.0, linestyle=":", linewidth=1.0)
+
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Normalized density")
         ax.grid(alpha=0.20)
     #endfor
 
     handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc="upper center", ncol=2)
+    fig.legend(handles, labels, loc="upper center", ncol=3)
     fig.suptitle(title, y=1.01)
     fig.tight_layout()
 
@@ -1201,6 +1435,80 @@ def plot_clasdis_match_distance(
             label=f"Current cut d={max_distance:g}",
         )
         ax.set_xlabel("Six-dimensional normalized match distance d")
+        ax.set_ylabel("Normalized density")
+        ax.grid(alpha=0.20)
+    #endfor
+
+    axes[1].set_yscale("log")
+    axes[0].set_title("Linear scale")
+    axes[1].set_title("Log scale")
+    axes[0].legend()
+
+    fig.suptitle(title)
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_clasdis_max_component_delta(
+    real_diag: pd.DataFrame,
+    scrambled_diag: pd.DataFrame,
+    component_tolerance_gev: float,
+    output_path: Path,
+    title: str,
+) -> None:
+    real = real_diag["max_abs_component_delta"].to_numpy(dtype=float)
+    scrambled = scrambled_diag["max_abs_component_delta"].to_numpy(dtype=float)
+
+    finite = np.concatenate(
+        [
+            real[np.isfinite(real)],
+            scrambled[np.isfinite(scrambled)],
+        ]
+    )
+
+    if len(finite) == 0:
+        return
+    #endif
+
+    x_max = max(
+        5.0 * component_tolerance_gev,
+        float(np.quantile(finite, 0.995)),
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+
+    for ax in axes:
+        ax.hist(
+            scrambled,
+            bins=120,
+            range=(0.0, x_max),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label="Scrambled",
+        )
+        ax.hist(
+            real,
+            bins=120,
+            range=(0.0, x_max),
+            density=True,
+            histtype="step",
+            linewidth=1.6,
+            label="Real",
+        )
+        ax.axvline(
+            component_tolerance_gev,
+            linestyle="--",
+            linewidth=1.4,
+            label=(
+                f"Current component cut "
+                f"{component_tolerance_gev:.3f} GeV"
+            ),
+        )
+        ax.set_xlabel(
+            r"Maximum Cartesian component mismatch "
+            r"$\max_i |\Delta p_i|$ (GeV)"
+        )
         ax.set_ylabel("Normalized density")
         ax.grid(alpha=0.20)
     #endfor
@@ -1417,7 +1725,7 @@ def plot_control_score_by_match_quality(
 
     fig, ax = plt.subplots(figsize=(8.0, 5.8))
 
-    thresholds = [1.0, 2.0, 3.0, 4.0]
+    thresholds = [0.5, 1.0, 1.5, 2.0]
     for threshold in thresholds:
         mask = distance <= threshold
         if np.count_nonzero(mask) == 0:
@@ -2243,16 +2551,25 @@ def main() -> None:
         plot_clasdis_match_distance(
             real_diag=clasdis_real_diagnostics,
             scrambled_diag=clasdis_scrambled_diagnostics,
-            max_distance=4.0,
+            max_distance=MATCH_MAX_SCALED_DISTANCE,
             output_path=match_output / "match_distance_real_vs_scrambled.png",
             title=f"{args.period}: CLASDIS real vs scrambled matching",
+        )
+
+        progress("CLASDIS DIAGNOSTICS: plotting maximum component mismatch")
+        plot_clasdis_max_component_delta(
+            real_diag=clasdis_real_diagnostics,
+            scrambled_diag=clasdis_scrambled_diagnostics,
+            component_tolerance_gev=MATCH_COMPONENT_TOL_GEV,
+            output_path=match_output / "max_component_delta_real_vs_scrambled.png",
+            title=f"{args.period}: CLASDIS maximum Cartesian component mismatch",
         )
 
         progress("CLASDIS DIAGNOSTICS: plotting accepted-match multiplicity")
         plot_clasdis_match_multiplicity(
             real_diag=clasdis_real_diagnostics,
             n_eppi0=n_clasdis_eppi0,
-            max_distance=4.0,
+            max_distance=MATCH_MAX_SCALED_DISTANCE,
             output_path=match_output / "match_multiplicity.png",
             title=f"{args.period}: CLASDIS matched-candidate multiplicity",
         )
@@ -2260,7 +2577,7 @@ def main() -> None:
         progress("CLASDIS DIAGNOSTICS: plotting detector composition")
         plot_clasdis_detector_composition(
             real_diag=clasdis_real_diagnostics,
-            max_distance=4.0,
+            max_distance=MATCH_MAX_SCALED_DISTANCE,
             output_path=match_output / "match_detector_composition.png",
             title=f"{args.period}: CLASDIS matched detector composition",
         )
