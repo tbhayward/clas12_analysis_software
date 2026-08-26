@@ -255,6 +255,10 @@ DATA_EPPI0_BRANCHES: List[str] = sorted(
 DATA_GOLDEN_MGG_TOL_GEV = 0.005
 DATA_GOLDEN_PI0_DP_TOL_GEV = 0.010
 
+# Common e'-gamma separation requirement applied to every e'p'gammaX sample
+# before BDT training or scoring.
+OPEN_ANGLE_EP2_MIN_DEG = 7.0
+
 # CLASDIS parent-event matching configuration.
 #
 # This intentionally follows the established matching used in the photon-
@@ -619,8 +623,14 @@ def build_training_sample(
     max_events_per_class: Optional[int],
     seed: int,
 ) -> pd.DataFrame:
-    pos = aaogen.loc[detector_region_mask(aaogen, region)].copy()
-    neg = dvcsgen.loc[detector_region_mask(dvcsgen, region)].copy()
+    pos = aaogen.loc[
+        detector_region_mask(aaogen, region)
+        & photon_open_angle_mask(aaogen)
+    ].copy()
+    neg = dvcsgen.loc[
+        detector_region_mask(dvcsgen, region)
+        & photon_open_angle_mask(dvcsgen)
+    ].copy()
 
     pos["label"] = 1
     neg["label"] = 0
@@ -657,6 +667,29 @@ def infer_angle_unit(values: np.ndarray, name: str) -> str:
     #endif
 
     return "deg"
+
+
+def photon_open_angle_mask(
+    df: pd.DataFrame,
+    minimum_degrees: float = OPEN_ANGLE_EP2_MIN_DEG,
+) -> pd.Series:
+    """
+    Require the reconstructed electron-photon opening angle to exceed the
+    analysis minimum. The branch may be stored in radians or degrees.
+    """
+    values = df["open_angle_ep2"].to_numpy(dtype=float)
+    unit = infer_angle_unit(values, "open_angle_ep2")
+
+    if unit == "rad":
+        threshold = np.deg2rad(minimum_degrees)
+    else:
+        threshold = minimum_degrees
+    #endif
+
+    return pd.Series(
+        np.isfinite(values) & (values > threshold),
+        index=df.index,
+    )
 
 
 def angles_to_radians(
@@ -2720,9 +2753,29 @@ def plot_data_control_score_distribution(
     output_path: Path,
     title: str,
 ) -> None:
-    fig, ax = plt.subplots(figsize=(8.5, 5.8))
+    """
+    Two-row score summary.
+
+    Top:
+        Full MC/control comparison, including the two real-data controls.
+
+    Bottom:
+        Real-data controls alone, so the golden-pi0 distribution can be read
+        without being visually buried by the MC curves.
+    """
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(9.5, 9.0),
+        sharex=True,
+    )
 
     y = test["label"].to_numpy(dtype=int)
+
+    # ------------------------------
+    # Top: complete comparison
+    # ------------------------------
+    ax = axes[0]
 
     ax.hist(
         test_scores[y == 0],
@@ -2776,7 +2829,46 @@ def plot_data_control_score_distribution(
             range=(0.0, 1.0),
             density=True,
             histtype="step",
-            linewidth=2.0,
+            linewidth=2.1,
+            label="Data golden pi0 daughters",
+        )
+    #endif
+
+    ax.set_ylabel("Normalized density")
+    ax.set_title("MC and control-sample comparison", pad=10)
+    ax.grid(alpha=0.20)
+    ax.legend(
+        loc="upper left",
+        fontsize=8.5,
+        frameon=True,
+    )
+
+    # ------------------------------
+    # Bottom: data controls only
+    # ------------------------------
+    ax = axes[1]
+
+    if parent_scores is not None and len(parent_scores) > 0:
+        ax.hist(
+            parent_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.6,
+            linestyle=":",
+            label="Data parent-matched candidates",
+        )
+    #endif
+
+    if golden_scores is not None and len(golden_scores) > 0:
+        ax.hist(
+            golden_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=2.2,
             label="Data golden pi0 daughters",
         )
     #endif
@@ -2784,20 +2876,18 @@ def plot_data_control_score_distribution(
     ax.set_xlim(0.0, 1.0)
     ax.set_xlabel("BDT pi0 score")
     ax.set_ylabel("Normalized density")
-    ax.set_title(title, pad=14)
+    ax.set_title("Real-data controls only", pad=10)
     ax.grid(alpha=0.20)
-
-    # Put the legend outside the plotting area so it cannot cover data/title.
     ax.legend(
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.16),
-        ncol=2,
+        loc="upper left",
         fontsize=9,
         frameon=True,
     )
 
-    fig.tight_layout(rect=[0.0, 0.16, 1.0, 1.0])
+    fig.suptitle(title, y=0.99)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.965])
     save_figure(fig, output_path)
+
 
 
 def plot_data_golden_transfer_vs_kinematics(
@@ -2877,6 +2967,7 @@ def plot_input_feature_distributions(
     features: Sequence[str],
     output_path: Path,
     title: str,
+    golden_data: Optional[pd.DataFrame] = None,
 ) -> None:
     ncols = 3
     nrows = int(math.ceil(len(features) / ncols))
@@ -2916,6 +3007,32 @@ def plot_input_feature_distributions(
             label="AAOgen: y=1",
         )
 
+        if (
+            golden_data is not None
+            and feature in golden_data.columns
+            and len(golden_data) > 0
+        ):
+            data_values = (
+                golden_data[feature]
+                .replace([np.inf, -np.inf], np.nan)
+                .dropna()
+                .to_numpy(dtype=float)
+            )
+
+            if len(data_values) > 0:
+                ax.hist(
+                    data_values,
+                    bins=60,
+                    range=(low, high),
+                    density=True,
+                    histtype="step",
+                    linewidth=1.8,
+                    color="black",
+                    label="Data golden pi0 daughters",
+                )
+            #endif
+        #endif
+
         ax.set_xlabel(feature)
         ax.set_ylabel("Normalized density")
         ax.grid(alpha=0.20)
@@ -2932,7 +3049,7 @@ def plot_input_feature_distributions(
         labels,
         loc="upper center",
         bbox_to_anchor=(0.5, 0.965),
-        ncol=2,
+        ncol=3,
         fontsize=9,
         frameon=True,
     )
@@ -3554,7 +3671,10 @@ def run_region(
 ) -> List[DatasetSummary]:
 
     region_start = time.perf_counter()
-    progress(f"REGION {region}: starting")
+    progress(
+        f"REGION {region}: starting; requiring "
+        f"open_angle_ep2 > {OPEN_ANGLE_EP2_MIN_DEG:.1f} deg"
+    )
 
     region_output = period_output / region.lower()
     nominal_output = region_output / "topology"
@@ -3563,8 +3683,18 @@ def run_region(
     nominal_output.mkdir(parents=True, exist_ok=True)
     ablation_output.mkdir(parents=True, exist_ok=True)
 
-    raw_pos = int(np.count_nonzero(detector_region_mask(aaogen, region)))
-    raw_neg = int(np.count_nonzero(detector_region_mask(dvcsgen, region)))
+    raw_pos = int(
+        np.count_nonzero(
+            detector_region_mask(aaogen, region)
+            & photon_open_angle_mask(aaogen)
+        )
+    )
+    raw_neg = int(
+        np.count_nonzero(
+            detector_region_mask(dvcsgen, region)
+            & photon_open_angle_mask(dvcsgen)
+        )
+    )
 
     progress(
         f"REGION {region}: raw detector-selected rows — "
@@ -3598,6 +3728,7 @@ def run_region(
     if clasdis_control is not None:
         control_region = clasdis_control.loc[
             detector_region_mask(clasdis_control, region)
+            & photon_open_angle_mask(clasdis_control)
         ].copy()
 
         control_region = random_cap(
@@ -3616,6 +3747,7 @@ def run_region(
     if data_parent_control is not None:
         data_parent_region = data_parent_control.loc[
             detector_region_mask(data_parent_control, region)
+            & photon_open_angle_mask(data_parent_control)
         ].copy()
         progress(
             f"REGION {region}: real-data parent-matched control — "
@@ -3627,6 +3759,7 @@ def run_region(
     if data_golden_control is not None:
         data_golden_region = data_golden_control.loc[
             detector_region_mask(data_golden_control, region)
+            & photon_open_angle_mask(data_golden_control)
         ].copy()
         progress(
             f"REGION {region}: real-data golden pi0 daughters — "
@@ -3691,7 +3824,11 @@ def run_region(
         train=train,
         features=features,
         output_path=nominal_output / "input_feature_distributions.png",
-        title=f"{args.period} {region}: topology-BDT training inputs",
+        title=(
+            f"{args.period} {region}: topology-BDT inputs "
+            f"(open_angle_ep2 > {OPEN_ANGLE_EP2_MIN_DEG:.0f} deg)"
+        ),
+        golden_data=data_golden_clean,
     )
 
     nominal_model = train_model(
