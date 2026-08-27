@@ -259,6 +259,12 @@ DATA_GOLDEN_PI0_DP_TOL_GEV = 0.010
 # before BDT training or scoring.
 OPEN_ANGLE_EP2_MIN_DEG = 7.0
 
+# Exploratory massless-missing-system requirement.
+# Mx2 is M_X^2(e p gamma). The default window is intentionally loose and can
+# be overridden from the command line after inspecting the pre-cut zoom plot.
+DEFAULT_MX2_EPG_MIN = -0.5
+DEFAULT_MX2_EPG_MAX = 0.5
+
 # CLASDIS parent-event matching configuration.
 #
 # This intentionally follows the established matching used in the photon-
@@ -461,6 +467,34 @@ def parse_args() -> argparse.Namespace:
         default=100,
         help="Number of boosted trees per model. Default: 100.",
     )
+    parser.add_argument(
+        "--mx2-epg-min",
+        type=float,
+        default=DEFAULT_MX2_EPG_MIN,
+        help=(
+            "Lower bound for Mx2 = M_X^2(epgamma) in GeV^2. "
+            f"Default: {DEFAULT_MX2_EPG_MIN}."
+        ),
+    )
+
+    parser.add_argument(
+        "--mx2-epg-max",
+        type=float,
+        default=DEFAULT_MX2_EPG_MAX,
+        help=(
+            "Upper bound for Mx2 = M_X^2(epgamma) in GeV^2. "
+            f"Default: {DEFAULT_MX2_EPG_MAX}."
+        ),
+    )
+
+    parser.add_argument(
+        "--disable-mx2-epg-cut",
+        action="store_true",
+        help=(
+            "Disable the exploratory M_X^2(epgamma) window while still "
+            "producing the pre-cut zoom diagnostic."
+        ),
+    )
 
     parser.add_argument(
         "--skip-ablations",
@@ -630,14 +664,29 @@ def build_training_sample(
     region: str,
     max_events_per_class: Optional[int],
     seed: int,
+    mx2_min: float,
+    mx2_max: float,
+    disable_mx2_cut: bool,
 ) -> pd.DataFrame:
     pos = aaogen.loc[
         detector_region_mask(aaogen, region)
         & photon_open_angle_mask(aaogen)
+        & mx2_epgamma_mask(
+            aaogen,
+            mx2_min,
+            mx2_max,
+            disabled=disable_mx2_cut,
+        )
     ].copy()
     neg = dvcsgen.loc[
         detector_region_mask(dvcsgen, region)
         & photon_open_angle_mask(dvcsgen)
+        & mx2_epgamma_mask(
+            dvcsgen,
+            mx2_min,
+            mx2_max,
+            disabled=disable_mx2_cut,
+        )
     ].copy()
 
     pos["label"] = 1
@@ -698,6 +747,32 @@ def photon_open_angle_mask(
         np.isfinite(values) & (values > threshold),
         index=df.index,
     )
+
+
+
+def mx2_epgamma_mask(
+    df: pd.DataFrame,
+    minimum: float,
+    maximum: float,
+    disabled: bool = False,
+) -> pd.Series:
+    """
+    Selection on Mx2 = M_X^2(e p gamma).
+
+    When disabled=True, only require a finite Mx2 value so every downstream
+    sample is still well-defined.
+    """
+    values = df["Mx2"].to_numpy(dtype=float)
+    finite = np.isfinite(values)
+
+    if disabled:
+        mask = finite
+    else:
+        mask = finite & (values > minimum) & (values < maximum)
+    #endif
+
+    return pd.Series(mask, index=df.index)
+
 
 
 def angles_to_radians(
@@ -1117,11 +1192,9 @@ def match_epgamma_to_eppi0_by_kinematics(
     )
 
     matched_indices = matched_diag["_epg_index"].to_numpy(dtype=int)
-    matched = (
-        epg.iloc[matched_indices]
-        .copy()
-        .reset_index(drop=True)
-    )
+    matched = epg.iloc[matched_indices].copy()
+    matched["_clasdis_epg_source_index"] = matched.index.to_numpy(dtype=int)
+    matched = matched.reset_index(drop=True)
 
     matched["control_match"] = True
     matched["control_match_distance"] = matched_diag[
@@ -2972,6 +3045,205 @@ def plot_data_golden_transfer_vs_kinematics(
 
 
 
+
+def plot_mx2_epgamma_precut_zoom(
+    aaogen_region: pd.DataFrame,
+    dvcsgen_region: pd.DataFrame,
+    ordinary_region: Optional[pd.DataFrame],
+    reconstructed_pi0_region: Optional[pd.DataFrame],
+    output_path: Path,
+    title: str,
+    proposed_min: float,
+    proposed_max: float,
+) -> None:
+    """
+    Fine pre-cut comparison of Mx2 = M_X^2(epgamma) in the fixed range
+    [-1, 1] GeV^2. This is the plot used to inspect/tune the exploratory
+    massless-missing-system selection.
+    """
+    fig, ax = plt.subplots(figsize=(9.0, 5.8))
+
+    datasets = [
+        ("DVCSgen", dvcsgen_region, None),
+        ("AAOgen", aaogen_region, None),
+    ]
+
+    if ordinary_region is not None and len(ordinary_region) > 0:
+        datasets.append(("Ordinary data", ordinary_region, "black"))
+    #endif
+
+    if reconstructed_pi0_region is not None and len(reconstructed_pi0_region) > 0:
+        datasets.append(
+            ("Data reconstructed-pi0 daughters", reconstructed_pi0_region, None)
+        )
+    #endif
+
+    for name, df, color in datasets:
+        if "Mx2" not in df.columns or len(df) == 0:
+            continue
+        #endif
+
+        values = (
+            df["Mx2"]
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+            .to_numpy(dtype=float)
+        )
+        values = values[(values >= -1.0) & (values <= 1.0)]
+
+        if len(values) == 0:
+            continue
+        #endif
+
+        kwargs = dict(
+            bins=200,
+            range=(-1.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.6,
+            label=name,
+        )
+        if color is not None:
+            kwargs["color"] = color
+            kwargs["linewidth"] = 1.9
+        #endif
+
+        ax.hist(values, **kwargs)
+    #endfor
+
+    ax.axvline(0.0, linestyle=":", linewidth=1.1)
+    ax.axvline(
+        proposed_min,
+        linestyle="--",
+        linewidth=1.2,
+        label=f"Proposed window [{proposed_min:.2f}, {proposed_max:.2f}]",
+    )
+    ax.axvline(
+        proposed_max,
+        linestyle="--",
+        linewidth=1.2,
+    )
+
+    ax.set_xlim(-1.0, 1.0)
+    ax.set_xlabel(r"$M_X^2(ep\gamma)$ (GeV$^2$)")
+    ax.set_ylabel("Normalized density")
+    ax.grid(alpha=0.20)
+    ax.legend(fontsize=8.5, ncol=2)
+    ax.set_title(title, pad=10)
+
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+def plot_clasdis_matched_unmatched_mx2(
+    clasdis_all_region: pd.DataFrame,
+    clasdis_matched_region: pd.DataFrame,
+    output_path: Path,
+    title: str,
+    minimum: float,
+    maximum: float,
+) -> None:
+    """
+    Compare CLASDIS epgammaX candidates that DO and DO NOT have a matched
+    reconstructed eppi0X parent, after the common Mx2(epgamma) window.
+
+    This is diagnostic only; the unmatched population is NOT yet used as a
+    negative training class.
+    """
+    if len(clasdis_all_region) == 0:
+        return
+    #endif
+
+    all_indices = set(clasdis_all_region.index.tolist())
+    matched_indices = set(clasdis_matched_region.index.tolist())
+    unmatched_indices = all_indices - matched_indices
+
+    matched = clasdis_all_region.loc[
+        clasdis_all_region.index.isin(matched_indices)
+    ].copy()
+    unmatched = clasdis_all_region.loc[
+        clasdis_all_region.index.isin(unmatched_indices)
+    ].copy()
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+
+    # Left: Mx2 shape before the cut is already applied at region level only
+    # for detector/open-angle. Show the common window explicitly.
+    for df, label in [
+        (matched, "Matched to reconstructed pi0"),
+        (unmatched, "Unmatched CLASDIS epgammaX"),
+    ]:
+        values = (
+            df["Mx2"]
+            .replace([np.inf, -np.inf], np.nan)
+            .dropna()
+            .to_numpy(dtype=float)
+        )
+        values = values[(values >= -1.0) & (values <= 1.0)]
+
+        if len(values) > 0:
+            axes[0].hist(
+                values,
+                bins=160,
+                range=(-1.0, 1.0),
+                density=True,
+                histtype="step",
+                linewidth=1.6,
+                label=label,
+            )
+        #endif
+    #endfor
+
+    axes[0].axvline(minimum, linestyle="--", linewidth=1.1)
+    axes[0].axvline(maximum, linestyle="--", linewidth=1.1)
+    axes[0].set_xlabel(r"$M_X^2(ep\gamma)$ (GeV$^2$)")
+    axes[0].set_ylabel("Normalized density")
+    axes[0].set_title("Matched vs unmatched CLASDIS")
+    axes[0].grid(alpha=0.20)
+    axes[0].legend(fontsize=8.5)
+
+    # Right: simple composition after the window.
+    matched_in = int(
+        np.count_nonzero(
+            mx2_epgamma_mask(
+                matched,
+                minimum,
+                maximum,
+                disabled=False,
+            ).to_numpy(dtype=bool)
+        )
+    ) if len(matched) > 0 else 0
+
+    unmatched_in = int(
+        np.count_nonzero(
+            mx2_epgamma_mask(
+                unmatched,
+                minimum,
+                maximum,
+                disabled=False,
+            ).to_numpy(dtype=bool)
+        )
+    ) if len(unmatched) > 0 else 0
+
+    axes[1].bar(
+        ["Matched pi0", "Unmatched"],
+        [matched_in, unmatched_in],
+    )
+    axes[1].set_ylabel("CLASDIS epgammaX candidates in Mx2 window")
+    axes[1].set_title(
+        f"{minimum:.2f} < Mx2(epgamma) < {maximum:.2f} GeV$^2$"
+    )
+    axes[1].grid(axis="y", alpha=0.20)
+
+    for i, value in enumerate([matched_in, unmatched_in]):
+        axes[1].text(i, value, f"{value:,}", ha="center", va="bottom")
+    #endfor
+
+    fig.suptitle(title, y=0.99)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
 def plot_missing_mass_diagnostics(
     ordinary: Optional[pd.DataFrame],
     test: pd.DataFrame,
@@ -4352,6 +4624,7 @@ def run_region(
     args: argparse.Namespace,
     aaogen: pd.DataFrame,
     dvcsgen: pd.DataFrame,
+    clasdis_all: Optional[pd.DataFrame],
     clasdis_control: Optional[pd.DataFrame],
     data_parent_control: Optional[pd.DataFrame],
     data_golden_control: Optional[pd.DataFrame],
@@ -4361,10 +4634,21 @@ def run_region(
 ) -> List[DatasetSummary]:
 
     region_start = time.perf_counter()
+    mx2_cut_enabled = not args.disable_mx2_epg_cut
+
     progress(
         f"REGION {region}: starting; requiring "
         f"open_angle_ep2 > {OPEN_ANGLE_EP2_MIN_DEG:.1f} deg"
     )
+    if mx2_cut_enabled:
+        progress(
+            f"REGION {region}: applying exploratory "
+            f"{args.mx2_epg_min:.3f} < Mx2(epgamma) < "
+            f"{args.mx2_epg_max:.3f} GeV^2"
+        )
+    else:
+        progress(f"REGION {region}: Mx2(epgamma) cut DISABLED")
+    #endif
 
     region_output = period_output / region.lower()
     nominal_output = region_output / "topology"
@@ -4373,16 +4657,74 @@ def run_region(
     nominal_output.mkdir(parents=True, exist_ok=True)
     ablation_output.mkdir(parents=True, exist_ok=True)
 
+    aaogen_precut = aaogen.loc[
+        detector_region_mask(aaogen, region)
+        & photon_open_angle_mask(aaogen)
+    ].copy()
+
+    dvcsgen_precut = dvcsgen.loc[
+        detector_region_mask(dvcsgen, region)
+        & photon_open_angle_mask(dvcsgen)
+    ].copy()
+
+    ordinary_precut = None
+    if ordinary_data is not None:
+        ordinary_precut = ordinary_data.loc[
+            detector_region_mask(ordinary_data, region)
+            & photon_open_angle_mask(ordinary_data)
+        ].copy()
+    #endif
+
+    golden_precut = None
+    if data_golden_control is not None:
+        golden_precut = data_golden_control.loc[
+            detector_region_mask(data_golden_control, region)
+            & photon_open_angle_mask(data_golden_control)
+        ].copy()
+    #endif
+
+    diagnostic_output = region_output / "selection_diagnostics"
+    diagnostic_output.mkdir(parents=True, exist_ok=True)
+
+    plot_mx2_epgamma_precut_zoom(
+        aaogen_region=aaogen_precut,
+        dvcsgen_region=dvcsgen_precut,
+        ordinary_region=ordinary_precut,
+        reconstructed_pi0_region=golden_precut,
+        output_path=diagnostic_output / "mx2_epgamma_precut_zoom.png",
+        title=(
+            f"{args.period} {region}: pre-cut Mx2(epgamma) zoom"
+        ),
+        proposed_min=args.mx2_epg_min,
+        proposed_max=args.mx2_epg_max,
+    )
+
     raw_pos = int(
         np.count_nonzero(
-            detector_region_mask(aaogen, region)
-            & photon_open_angle_mask(aaogen)
+            (
+                detector_region_mask(aaogen, region)
+                & photon_open_angle_mask(aaogen)
+                & mx2_epgamma_mask(
+                    aaogen,
+                    args.mx2_epg_min,
+                    args.mx2_epg_max,
+                    disabled=not mx2_cut_enabled,
+                )
+            ).to_numpy(dtype=bool)
         )
     )
     raw_neg = int(
         np.count_nonzero(
-            detector_region_mask(dvcsgen, region)
-            & photon_open_angle_mask(dvcsgen)
+            (
+                detector_region_mask(dvcsgen, region)
+                & photon_open_angle_mask(dvcsgen)
+                & mx2_epgamma_mask(
+                    dvcsgen,
+                    args.mx2_epg_min,
+                    args.mx2_epg_max,
+                    disabled=not mx2_cut_enabled,
+                )
+            ).to_numpy(dtype=bool)
         )
     )
 
@@ -4397,6 +4739,9 @@ def run_region(
         region=region,
         max_events_per_class=args.max_events_per_class,
         seed=args.seed,
+        mx2_min=args.mx2_epg_min,
+        mx2_max=args.mx2_epg_max,
+        disable_mx2_cut=not mx2_cut_enabled,
     )
 
     n_pos = int(np.count_nonzero(combined["label"].to_numpy() == 1))
@@ -4414,11 +4759,50 @@ def run_region(
         )
     #endif
 
+    if (
+        clasdis_all is not None
+        and clasdis_control is not None
+    ):
+        clasdis_all_precut = clasdis_all.loc[
+            detector_region_mask(clasdis_all, region)
+            & photon_open_angle_mask(clasdis_all)
+        ].copy()
+
+        # Map the matched-control rows back to source indices.
+        if "_clasdis_epg_source_index" in clasdis_control.columns:
+            source_indices = set(
+                clasdis_control["_clasdis_epg_source_index"]
+                .to_numpy(dtype=int)
+                .tolist()
+            )
+            clasdis_matched_precut = clasdis_all_precut.loc[
+                clasdis_all_precut.index.isin(source_indices)
+            ].copy()
+        else:
+            clasdis_matched_precut = clasdis_all_precut.iloc[0:0].copy()
+        #endif
+
+        plot_clasdis_matched_unmatched_mx2(
+            clasdis_all_region=clasdis_all_precut,
+            clasdis_matched_region=clasdis_matched_precut,
+            output_path=diagnostic_output / "clasdis_matched_unmatched_mx2.png",
+            title=f"{args.period} {region}: CLASDIS matched/unmatched Mx2(epgamma)",
+            minimum=args.mx2_epg_min,
+            maximum=args.mx2_epg_max,
+        )
+    #endif
+
     control_region = None
     if clasdis_control is not None:
         control_region = clasdis_control.loc[
             detector_region_mask(clasdis_control, region)
             & photon_open_angle_mask(clasdis_control)
+            & mx2_epgamma_mask(
+                clasdis_control,
+                args.mx2_epg_min,
+                args.mx2_epg_max,
+                disabled=not mx2_cut_enabled,
+            )
         ].copy()
 
         control_region = random_cap(
@@ -4438,6 +4822,12 @@ def run_region(
         data_parent_region = data_parent_control.loc[
             detector_region_mask(data_parent_control, region)
             & photon_open_angle_mask(data_parent_control)
+            & mx2_epgamma_mask(
+                data_parent_control,
+                args.mx2_epg_min,
+                args.mx2_epg_max,
+                disabled=not mx2_cut_enabled,
+            )
         ].copy()
         progress(
             f"REGION {region}: real-data parent-matched control — "
@@ -4450,6 +4840,12 @@ def run_region(
         data_golden_region = data_golden_control.loc[
             detector_region_mask(data_golden_control, region)
             & photon_open_angle_mask(data_golden_control)
+            & mx2_epgamma_mask(
+                data_golden_control,
+                args.mx2_epg_min,
+                args.mx2_epg_max,
+                disabled=not mx2_cut_enabled,
+            )
         ].copy()
         progress(
             f"REGION {region}: real-data golden pi0 daughters — "
@@ -4462,6 +4858,12 @@ def run_region(
         ordinary_region = ordinary_data.loc[
             detector_region_mask(ordinary_data, region)
             & photon_open_angle_mask(ordinary_data)
+            & mx2_epgamma_mask(
+                ordinary_data,
+                args.mx2_epg_min,
+                args.mx2_epg_max,
+                disabled=not mx2_cut_enabled,
+            )
         ].copy()
 
         progress(
@@ -4538,7 +4940,8 @@ def run_region(
         output_path=nominal_output / "input_feature_distributions.png",
         title=(
             f"{args.period} {region}: topology-BDT inputs "
-            f"(open_angle_ep2 > {OPEN_ANGLE_EP2_MIN_DEG:.0f} deg)"
+            f"(open_angle_ep2 > {OPEN_ANGLE_EP2_MIN_DEG:.0f} deg, "
+            f"{args.mx2_epg_min:.2f}<Mx2(epgamma)<{args.mx2_epg_max:.2f})"
         ),
         golden_data=data_golden_clean,
     )
@@ -4992,6 +5395,7 @@ def main() -> None:
         entry_limit=training_read_limit,
     )
 
+    clasdis_all: Optional[pd.DataFrame] = None
     clasdis_control: Optional[pd.DataFrame] = None
     clasdis_real_diagnostics: Optional[pd.DataFrame] = None
     clasdis_scrambled_diagnostics: Optional[pd.DataFrame] = None
@@ -5007,6 +5411,7 @@ def main() -> None:
             source="clasdis_epg",
             entry_limit=args.max_clasdis_read,
         )
+        clasdis_all = clasdis_epg
 
         clasdis_eppi0 = load_dataframe(
             filename=clasdis_eppi0_file,
@@ -5149,6 +5554,7 @@ def main() -> None:
             args=args,
             aaogen=aaogen,
             dvcsgen=dvcsgen,
+            clasdis_all=clasdis_all,
             clasdis_control=clasdis_control,
             data_parent_control=data_parent_control,
             data_golden_control=data_golden_control,
