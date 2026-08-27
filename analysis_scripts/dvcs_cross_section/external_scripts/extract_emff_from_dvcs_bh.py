@@ -47,18 +47,29 @@ By default the CLAS12 fit uncertainty treatment is
 where c_BH is 0.01 ... 0.05 for Fits 1 ... 5, following the additional
 uncorrelated uncertainty prescription of arXiv:2512.06554.
 
-The CSV "combination sys" is an overall fractional normalization
-systematic. It is therefore treated as a correlated multiplicative
-normalization nuisance N rather than being added independently to every
-cross-section point:
+The CLAS12 correlated scale uncertainties are represented by two
+independent Gaussian nuisance parameters:
+
+  beta_global ~ N(0,1)
+  beta_comb   ~ N(0,1)
+
+with the per-point multiplicative scale factor
+
+  S_i = (1 + beta_global * 0.0476)
+        (1 + beta_comb * combination_sys_i).
+
+Thus the 4.76% target-thickness/absolute-charge uncertainty moves every
+point by the same fraction, while the combination systematic remains fully
+correlated but has the correct bin-dependent magnitude.
+
+The fit chi2 is
 
   chi2 =
-      sum_i [(N * sigma_BH,i - sigma_i)/delta_i]^2
-    + [(N - 1)/delta_N]^2 .
+      sum_i [(S_i sigma_BH,i - sigma_i)/delta_i]^2
+    + beta_global^2 + beta_comb^2.
 
-The default delta_N is the median combination-systematic fraction of the
-selected data set. Both the point-to-point and combination-normalization
-systematics are included by default.
+The point-to-point systematic and both correlated scale nuisances are
+included by default.
 
 Efficiency
 ----------
@@ -78,7 +89,7 @@ Input:
   ../output/csvs/dvcs_pass2_analysis.csv
 
 Output:
-  output/emff_from_bh_paper_method_v5/
+  output/emff_from_bh_paper_method/
 """
 
 from __future__ import annotations
@@ -116,10 +127,14 @@ MP = 0.9382720813          # GeV
 MP2 = MP * MP
 MU_P = 2.79284734463       # proton magnetic moment
 KAPPA_P = MU_P - 1.0
+
+A1_BERNAUER_Q2_MIN = 3.0e-3
+PRAD_Q2_MIN = 2.0e-4
+GLOBAL_SCALE_FRAC = 0.0476
 HBARC = 0.1973269804       # GeV fm
 
 DEFAULT_CSV = "../output/csvs/dvcs_pass2_analysis.csv"
-DEFAULT_OUTDIR = "output/emff_from_bh_paper_method_v5"
+DEFAULT_OUTDIR = "output/emff_from_bh_paper_method"
 
 COL_XB = "xBavg, 10.6 GeV"
 COL_Q2 = "Q2avg, 10.6 GeV"
@@ -647,18 +662,19 @@ def fit_paper_model(data: pd.DataFrame,
                     bh_cut: float,
                     include_clas12_ptp_sys: bool,
                     include_bh_sys: bool,
-                    include_combination_norm_sys: bool) -> FitResult:
+                    include_combination_norm_sys: bool,
+                    include_global_norm_sys: bool) -> FitResult:
     """
-    Perform one Moradi-et-al.-style chi^2 fit with iMinuit, augmented by
-    the CLAS12 correlated run-period-combination normalization systematic.
+    Paper-method chi2 fit with two correlated CLAS12 scale nuisances.
 
-    The normalization nuisance N multiplies the fitted BH prediction:
+      beta_global : common 4.76% scale uncertainty
+      beta_comb   : common nuisance with per-bin coefficient comb_sys_frac_i
 
-      chi2 = sum_i [(N * sigma_BH,i - sigma_i)/err_i]^2
-             + [(N - 1)/sigma_N]^2
+      pred_i = sigma_BH,i
+               * (1 + beta_global * GLOBAL_SCALE_FRAC)
+               * (1 + beta_comb * comb_sys_frac_i)
 
-    where sigma_N is taken from the median fractional "combination sys"
-    value in the selected CLAS12 sample.
+      chi2 += beta_global^2 + beta_comb^2
     """
     q = data["t_abs"].to_numpy(float)
     y = data["xs"].to_numpy(float)
@@ -672,42 +688,75 @@ def fit_paper_model(data: pd.DataFrame,
     B = data["bh_B"].to_numpy(float)
     C = data["bh_C"].to_numpy(float)
 
-    names, p0 = paper_model_setup(kind)
-
     comb = data["comb_sys_frac"].to_numpy(float)
-    good_comb = comb[np.isfinite(comb) & (comb > 0.0)]
-    if len(good_comb) > 0:
-        sigma_norm = float(np.median(good_comb))
-    else:
-        sigma_norm = 0.0
+    comb = np.where(np.isfinite(comb) & (comb >= 0.0), comb, 0.0)
+
+    names, p0 = paper_model_setup(kind)
+    fit_names = list(names)
+    fit_p0 = list(p0)
+
+    if include_global_norm_sys:
+        fit_names.append("beta_global")
+        fit_p0.append(0.0)
     #endif
 
-    if include_combination_norm_sys and sigma_norm > 0.0:
-        fit_names = names + ["N"]
-        fit_p0 = np.concatenate([p0, np.array([1.0])])
-    else:
-        fit_names = names
-        fit_p0 = p0.copy()
+    use_comb = include_combination_norm_sys and np.any(comb > 0.0)
+    if use_comb:
+        fit_names.append("beta_comb")
+        fit_p0.append(0.0)
     #endif
 
-    def split_params(p: np.ndarray) -> Tuple[np.ndarray, float]:
-        if include_combination_norm_sys and sigma_norm > 0.0:
-            return p[:-1], float(p[-1])
+    fit_p0 = np.asarray(fit_p0, dtype=float)
+
+    def split_params(p: np.ndarray):
+        p = np.asarray(p, dtype=float)
+        ff_pars = p[:len(names)]
+        cursor = len(names)
+
+        beta_global = 0.0
+        beta_comb = 0.0
+
+        if include_global_norm_sys:
+            beta_global = float(p[cursor])
+            cursor += 1
         #endif
-        return p, 1.0
+
+        if use_comb:
+            beta_comb = float(p[cursor])
+        #endif
+
+        return ff_pars, beta_global, beta_comb
+    #enddef
+
+    def scale_vector(beta_global: float,
+                     beta_comb: float) -> np.ndarray:
+        global_factor = (
+            1.0 + beta_global * GLOBAL_SCALE_FRAC
+            if include_global_norm_sys
+            else 1.0
+        )
+        comb_factor = (
+            1.0 + beta_comb * comb
+            if use_comb
+            else np.ones_like(comb)
+        )
+        return global_factor * comb_factor
     #enddef
 
     def chi2_array(p: np.ndarray) -> float:
-        ff_pars, norm = split_params(np.asarray(p, dtype=float))
+        ff_pars, beta_global, beta_comb = split_params(p)
         f1, f2 = paper_model_f1f2(kind, q, ff_pars)
-        pred = norm * bh_from_f1f2(A, B, C, f1, f2)
+        bare_bh = bh_from_f1f2(A, B, C, f1, f2)
+        pred = scale_vector(beta_global, beta_comb) * bare_bh
         pull = (pred - y) / err
         chi2 = float(np.dot(pull, pull))
 
-        if include_combination_norm_sys and sigma_norm > 0.0:
-            chi2 += ((norm - 1.0) / sigma_norm)**2
+        if include_global_norm_sys:
+            chi2 += beta_global**2
         #endif
-
+        if use_comb:
+            chi2 += beta_comb**2
+        #endif
         return chi2
     #enddef
 
@@ -721,10 +770,11 @@ def fit_paper_model(data: pd.DataFrame,
     for name in names:
         m.limits[name] = (1.0e-6, None)
     #endfor
-
-    if "N" in fit_names:
-        # Keep N positive but otherwise let the Gaussian prior determine it.
-        m.limits["N"] = (1.0e-6, None)
+    if "beta_global" in fit_names:
+        m.limits["beta_global"] = (-10.0, 10.0)
+    #endif
+    if "beta_comb" in fit_names:
+        m.limits["beta_comb"] = (-10.0, 10.0)
     #endif
 
     m.migrad()
@@ -744,17 +794,37 @@ def fit_paper_model(data: pd.DataFrame,
         #endfor
     #endif
 
-    if "N" in fit_names:
-        params = all_params[:-1]
-        cov = full_cov[:-1, :-1]
-        norm = float(all_params[-1])
-        norm_err = math.sqrt(max(full_cov[-1, -1], 0.0))
-    else:
-        params = all_params
-        cov = full_cov
-        norm = 1.0
-        norm_err = 0.0
-    #endif
+    params = all_params[:len(names)]
+    cov = full_cov[:len(names), :len(names)]
+
+    beta_global = (
+        float(all_params[fit_names.index("beta_global")])
+        if "beta_global" in fit_names
+        else 0.0
+    )
+    beta_comb = (
+        float(all_params[fit_names.index("beta_comb")])
+        if "beta_comb" in fit_names
+        else 0.0
+    )
+
+    def par_error(name: str) -> float:
+        if name not in fit_names or not np.all(np.isfinite(full_cov)):
+            return np.nan
+        #endif
+        idx = fit_names.index(name)
+        return math.sqrt(max(full_cov[idx, idx], 0.0))
+    #enddef
+
+    beta_global_err = par_error("beta_global")
+    beta_comb_err = par_error("beta_comb")
+
+    global_norm = 1.0 + beta_global * GLOBAL_SCALE_FRAC
+    global_norm_err = (
+        GLOBAL_SCALE_FRAC * beta_global_err
+        if np.isfinite(beta_global_err)
+        else np.nan
+    )
 
     chi2 = float(m.fval)
     npar = len(all_params)
@@ -805,8 +875,8 @@ def fit_paper_model(data: pd.DataFrame,
         rE_err_fm=drE,
         rM_fm=rM,
         rM_err_fm=drM,
-        norm=norm,
-        norm_err=norm_err,
+        norm=global_norm,
+        norm_err=global_norm_err,
         model_kind=kind,
         meta={
             "minuit_valid": bool(m.valid),
@@ -815,8 +885,16 @@ def fit_paper_model(data: pd.DataFrame,
             "has_posdef_covar": bool(m.fmin.has_posdef_covar),
             "include_clas12_ptp_sys": bool(include_clas12_ptp_sys),
             "include_bh_selection_sys": bool(include_bh_sys),
-            "include_combination_norm_sys": bool(include_combination_norm_sys),
-            "combination_norm_sigma": float(sigma_norm),
+            "include_combination_norm_sys": bool(use_comb),
+            "include_global_norm_sys": bool(include_global_norm_sys),
+            "global_scale_frac": float(GLOBAL_SCALE_FRAC),
+            "beta_global": float(beta_global),
+            "beta_global_err": float(beta_global_err),
+            "beta_comb": float(beta_comb),
+            "beta_comb_err": float(beta_comb_err),
+            "combination_sys_median": float(np.nanmedian(comb)),
+            "combination_sys_min": float(np.nanmin(comb)),
+            "combination_sys_max": float(np.nanmax(comb)),
         },
     )
 #enddef
@@ -833,17 +911,43 @@ def evaluate_fit_form_factors(fr: FitResult,
 
 
 def evaluate_fit_cross_section(fr: FitResult,
-                               data: pd.DataFrame) -> np.ndarray:
-    """Evaluate a fitted pure-BH prediction at each measured CLAS12 point."""
+                               data: pd.DataFrame,
+                               apply_nuisances: bool = True) -> np.ndarray:
+    """Evaluate fitted BH at the measured CLAS12 points."""
     q = data["t_abs"].to_numpy(float)
     f1, f2 = paper_model_f1f2(fr.model_kind, q, fr.params)
-    return fr.norm * bh_from_f1f2(
+    bare = bh_from_f1f2(
         data["bh_A"].to_numpy(float),
         data["bh_B"].to_numpy(float),
         data["bh_C"].to_numpy(float),
         f1,
         f2,
     )
+
+    if not apply_nuisances:
+        return bare
+    #endif
+
+    beta_global = float(fr.meta.get("beta_global", 0.0))
+    beta_comb = float(fr.meta.get("beta_comb", 0.0))
+    use_global = bool(fr.meta.get("include_global_norm_sys", False))
+    use_comb = bool(fr.meta.get("include_combination_norm_sys", False))
+
+    global_factor = (
+        1.0 + beta_global * GLOBAL_SCALE_FRAC
+        if use_global
+        else 1.0
+    )
+
+    comb = data["comb_sys_frac"].to_numpy(float)
+    comb = np.where(np.isfinite(comb) & (comb >= 0.0), comb, 0.0)
+    combination_factor = (
+        1.0 + beta_comb * comb
+        if use_comb
+        else np.ones_like(comb)
+    )
+
+    return bare * global_factor * combination_factor
 #enddef
 
 
@@ -868,7 +972,15 @@ def fitresult_to_record(fr: FitResult) -> Dict[str, object]:
         "rM_err_fm": fr.rM_err_fm,
         "norm": fr.norm,
         "norm_err": fr.norm_err,
-        "combination_norm_sigma": fr.meta.get("combination_norm_sigma", np.nan),
+        "global_norm_factor": fr.norm,
+        "global_norm_factor_err": fr.norm_err,
+        "beta_global": fr.meta.get("beta_global", np.nan),
+        "beta_global_err": fr.meta.get("beta_global_err", np.nan),
+        "beta_comb": fr.meta.get("beta_comb", np.nan),
+        "beta_comb_err": fr.meta.get("beta_comb_err", np.nan),
+        "combination_sys_median": fr.meta.get("combination_sys_median", np.nan),
+        "combination_sys_min": fr.meta.get("combination_sys_min", np.nan),
+        "combination_sys_max": fr.meta.get("combination_sys_max", np.nan),
     }
     for name, value in zip(fr.param_names, fr.params):
         rec[name] = value
@@ -911,16 +1023,34 @@ def form_factor_band(fr: FitResult,
 # -----------------------------------------------------------------------------
 # Plotting
 # -----------------------------------------------------------------------------
-def shade_fit_t_range(ax, data: pd.DataFrame) -> None:
-    """Mark the |t| interval actually constrained by the selected CLAS12 data."""
+def draw_t_reference_lines(ax, data: pd.DataFrame) -> None:
+    """Draw thin |t|/Q2 reference lines without obscuring Hessian bands."""
     if len(data) == 0:
         return
     #endif
-    ax.axvspan(
+
+    ax.axvline(
         float(data["t_abs"].min()),
+        linewidth=0.8,
+        linestyle="-",
+        label="CLAS12 fitted |t| limits",
+    )
+    ax.axvline(
         float(data["t_abs"].max()),
-        alpha=0.08,
-        label="CLAS12 fitted |t| range",
+        linewidth=0.8,
+        linestyle="-",
+    )
+    ax.axvline(
+        A1_BERNAUER_Q2_MIN,
+        linewidth=0.8,
+        linestyle="--",
+        label=r"A1/Bernauer $Q^2_{\min}$",
+    )
+    ax.axvline(
+        PRAD_Q2_MIN,
+        linewidth=0.8,
+        linestyle=":",
+        label=r"PRad $Q^2_{\min}$",
     )
 #enddef
 
@@ -948,7 +1078,7 @@ def save_bh_selection_plots(df: pd.DataFrame,
     ax.set_title("KM15 BH-dominance selection")
     ax.legend(fontsize=8, ncol=2)
     fig.tight_layout()
-    fig.savefig(outdir / "01_bh_fraction_distribution.pdf")
+    fig.savefig(outdir / "01_bh_fraction_distribution.png")
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(8.0, 5.4))
@@ -966,7 +1096,7 @@ def save_bh_selection_plots(df: pd.DataFrame,
     ax.set_ylabel(r"$x_B$")
     ax.set_title("Preliminary CLAS12 kinematics colored by KM15 BH fraction")
     fig.tight_layout()
-    fig.savefig(outdir / "02_bh_fraction_phi_xB.pdf")
+    fig.savefig(outdir / "02_bh_fraction_phi_xB.png")
     plt.close(fig)
 #enddef
 
@@ -974,28 +1104,42 @@ def save_bh_selection_plots(df: pd.DataFrame,
 def save_selected_cross_section_pages(data: pd.DataFrame,
                                       fit5: FitResult,
                                       fit8: FitResult,
-                                      outpath: Path) -> None:
+                                      outdir: Path) -> None:
     """
-    Observable-space CLAS12 plots.
+    Save one PNG per measured (xB,Q2,|t|) group, with the measured CLAS12
+    cross sections and fitted BH predictions above and point pulls below.
+    """
+    plotdir = outdir / "03_cross_section_fits"
+    plotdir.mkdir(parents=True, exist_ok=True)
 
-    These are the appropriate place to show the CLAS12 data points: the
-    measured quantity is the ep->e'p'gamma cross section, not F1/F2/GE/GM
-    point-by-point. Fit 5 and Fit 8 BH predictions are overlaid.
-    """
     work = data.copy()
-    work["fit5_bh"] = evaluate_fit_cross_section(fit5, work)
-    work["fit8_bh"] = evaluate_fit_cross_section(fit8, work)
+    work["fit5_bh"] = evaluate_fit_cross_section(fit5, work, True)
+    work["fit8_bh"] = evaluate_fit_cross_section(fit8, work, True)
+    work["fit5_bh_bare"] = evaluate_fit_cross_section(fit5, work, False)
+    work["fit8_bh_bare"] = evaluate_fit_cross_section(fit8, work, False)
+
+    work["fit5_pull"] = (
+        (work["fit5_bh"] - work["xs"]) / work["fit_sigma_default"]
+    )
+    work["fit8_pull"] = (
+        (work["fit8_bh"] - work["xs"]) / work["fit_sigma_default"]
+    )
+    work["fit5_frac_residual"] = (
+        (work["fit5_bh"] - work["xs"]) / work["xs"]
+    )
+    work["fit8_frac_residual"] = (
+        (work["fit8_bh"] - work["xs"]) / work["xs"]
+    )
 
     group_cols = [
         c for c in
         ["xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max"]
         if c in work.columns
     ]
-
     if len(group_cols) < 6:
         work["_gx"] = work["xB"].round(3)
         work["_gq"] = work["Q2"].round(2)
-        work["_gt"] = work["t_abs"].round(2)
+        work["_gt"] = work["t_abs"].round(3)
         group_cols = ["_gx", "_gq", "_gt"]
     #endif
 
@@ -1004,68 +1148,147 @@ def save_selected_cross_section_pages(data: pd.DataFrame,
         for key, group in work.groupby(group_cols, dropna=False)
     ]
 
-    with PdfPages(outpath) as pdf:
-        for start in range(0, len(groups), 6):
-            chunk = groups[start:start + 6]
-            fig, axes = plt.subplots(3, 2, figsize=(11, 11), squeeze=False)
+    for igroup, (_, group) in enumerate(groups, start=1):
+        fig = plt.figure(figsize=(8.0, 7.0))
+        gs = fig.add_gridspec(
+            2, 1,
+            height_ratios=[3.0, 1.15],
+            hspace=0.05,
+        )
+        ax = fig.add_subplot(gs[0])
+        pax = fig.add_subplot(gs[1], sharex=ax)
 
-            for ax, item in zip(axes.flat, chunk):
-                _, group = item
-                ax.errorbar(
-                    group["phi_deg"],
-                    group["xs"],
-                    yerr=group["fit_sigma_default"],
-                    fmt="o",
-                    markersize=3.5,
-                    capsize=2,
-                    label="CLAS12 preliminary",
-                )
-                ax.plot(
-                    group["phi_deg"],
-                    group["fit5_bh"],
-                    "-",
-                    linewidth=1.4,
-                    label="Fit 5 BH",
-                )
-                ax.plot(
-                    group["phi_deg"],
-                    group["fit8_bh"],
-                    "--",
-                    linewidth=1.4,
-                    label=r"Fit 8 BH ($F_2$ Kelly)",
-                )
-                ax.plot(
-                    group["phi_deg"],
-                    group["km15_bh"],
-                    ":",
-                    linewidth=1.1,
-                    label="KM15 nominal BH",
-                )
-                ax.set_xlabel(r"$\phi$ (deg)")
-                ax.set_ylabel(r"$d^4\sigma$")
-                ax.set_title(
-                    rf"$\langle x_B\rangle={group['xB'].mean():.3f}$, "
-                    rf"$\langle Q^2\rangle={group['Q2'].mean():.2f}$, "
-                    rf"$\langle|t|\rangle={group['t_abs'].mean():.3f}$"
-                )
-                ax.grid(alpha=0.2)
-            #endfor
+        ax.errorbar(
+            group["phi_deg"],
+            group["xs"],
+            yerr=group["fit_sigma_default"],
+            fmt="o",
+            markersize=4.0,
+            capsize=2,
+            label="CLAS12 preliminary",
+        )
+        ax.plot(
+            group["phi_deg"],
+            group["fit5_bh"],
+            "-",
+            linewidth=1.5,
+            label="Fit 5 BH + nuisances",
+        )
+        ax.plot(
+            group["phi_deg"],
+            group["fit8_bh"],
+            "--",
+            linewidth=1.5,
+            label=r"Fit 8 BH + nuisances ($F_2$ Kelly)",
+        )
+        ax.plot(
+            group["phi_deg"],
+            group["km15_bh"],
+            ":",
+            linewidth=1.2,
+            label="KM15 nominal BH",
+        )
 
-            for ax in axes.flat[len(chunk):]:
-                ax.axis("off")
-            #endfor
-
-            handles, labels = axes.flat[0].get_legend_handles_labels()
-            fig.legend(handles, labels, loc="upper center", ncol=4, fontsize=8)
-            fig.suptitle(
-                "Set 5: preliminary CLAS12 cross sections and fitted BH predictions",
-                y=0.995,
-            )
-            fig.tight_layout(rect=(0, 0, 1, 0.965))
-            pdf.savefig(fig)
-            plt.close(fig)
+        pax.axhline(0.0, linewidth=0.8)
+        for level in (-3.0, -2.0, -1.0, 1.0, 2.0, 3.0):
+            pax.axhline(level, linewidth=0.5, linestyle="--", alpha=0.5)
         #endfor
-    #endwith
+
+        pax.plot(
+            group["phi_deg"],
+            group["fit5_pull"],
+            "o-",
+            markersize=3.5,
+            linewidth=0.9,
+            label="Fit 5 pull",
+        )
+        pax.plot(
+            group["phi_deg"],
+            group["fit8_pull"],
+            "s--",
+            markersize=3.2,
+            linewidth=0.9,
+            label="Fit 8 pull",
+        )
+
+        all_pulls = np.concatenate([
+            group["fit5_pull"].to_numpy(float),
+            group["fit8_pull"].to_numpy(float),
+        ])
+        max_pull = max(
+            4.0,
+            float(np.nanmax(np.abs(all_pulls))) + 0.5,
+        )
+        pax.set_ylim(-max_pull, max_pull)
+
+        ax.set_ylabel(r"$d^4\sigma$")
+        pax.set_ylabel("pull")
+        pax.set_xlabel(r"$\phi$ (deg)")
+        ax.grid(alpha=0.2)
+        pax.grid(alpha=0.2)
+
+        ax.set_title(
+            rf"$\langle x_B\rangle={group['xB'].mean():.3f}$, "
+            rf"$\langle Q^2\rangle={group['Q2'].mean():.2f}$ GeV$^2$, "
+            rf"$\langle|t|\rangle={group['t_abs'].mean():.3f}$ GeV$^2$"
+        )
+        ax.legend(fontsize=8)
+        pax.legend(fontsize=8, ncol=2)
+
+        plt.setp(ax.get_xticklabels(), visible=False)
+        fig.tight_layout()
+        fig.savefig(
+            plotdir / f"cross_section_fit_{igroup:03d}.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    #endfor
+
+    columns = [
+        "_row", "xB", "Q2", "t_abs", "phi_deg", "xs", "xs_stat",
+        "ptp_sys_abs", "comb_sys_frac", "fit_sigma_default",
+        "fit5_bh", "fit5_bh_bare", "fit5_pull", "fit5_frac_residual",
+        "fit8_bh", "fit8_bh_bare", "fit8_pull", "fit8_frac_residual",
+        "R_BH", "bh_delta",
+    ]
+    columns = [c for c in columns if c in work.columns]
+    outliers = work[columns].copy()
+    outliers["abs_fit5_pull"] = np.abs(work["fit5_pull"].to_numpy(float))
+    outliers = outliers.sort_values("abs_fit5_pull", ascending=False)
+    outliers.to_csv(plotdir / "fit5_points_sorted_by_abs_pull.csv", index=False)
+
+    variables = [
+        ("phi_deg", r"$\phi$ (deg)"),
+        ("t_abs", r"$|t|$ (GeV$^2$)"),
+        ("xB", r"$x_B$"),
+        ("Q2", r"$Q^2$ (GeV$^2$)"),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+    for ax, (column, xlabel) in zip(axes.flat, variables):
+        ax.scatter(work[column], work["fit5_pull"], s=14)
+        ax.axhline(0.0, linewidth=0.8)
+        ax.axhline(3.0, linewidth=0.6, linestyle="--")
+        ax.axhline(-3.0, linewidth=0.6, linestyle="--")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Fit 5 pull")
+        ax.grid(alpha=0.2)
+    #endfor
+    fig.tight_layout()
+    fig.savefig(plotdir / "fit5_pulls_vs_kinematics.png", dpi=180)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(7.2, 5.2))
+    ax.hist(work["fit5_pull"], bins=35, histtype="step", linewidth=1.4)
+    ax.axvline(0.0, linewidth=0.8)
+    ax.set_xlabel("Fit 5 pull")
+    ax.set_ylabel("CLAS12 points")
+    ax.set_title(
+        rf"Fit 5 pulls: RMS={np.sqrt(np.mean(work['fit5_pull']**2)):.2f}"
+    )
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(plotdir / "fit5_pull_distribution.png", dpi=180)
+    plt.close(fig)
 #enddef
 
 
@@ -1082,8 +1305,8 @@ def save_fit1_to_fit5_plots(results: List[FitResult],
     q = np.linspace(0.0, 1.0, 400)
 
     for which, ylabel, filename in [
-        ("F1", r"$F_1(t)$", "04_F1_fits_1_to_5.pdf"),
-        ("F2", r"$F_2(t)$", "05_F2_fits_1_to_5.pdf"),
+        ("F1", r"$F_1(t)$", "04_F1_fits_1_to_5.png"),
+        ("F2", r"$F_2(t)$", "05_F2_fits_1_to_5.png"),
     ]:
         fig, ax = plt.subplots(figsize=(7.2, 5.2))
 
@@ -1101,7 +1324,7 @@ def save_fit1_to_fit5_plots(results: List[FitResult],
             label="Fit 5 68% Hessian band",
         )
 
-        shade_fit_t_range(ax, set5_data)
+        draw_t_reference_lines(ax, set5_data)
         ax.set_xlabel(r"$|t|$ (GeV$^2$)")
         ax.set_ylabel(ylabel)
         ax.set_xlim(0.0, 1.0)
@@ -1135,7 +1358,7 @@ def save_fit5_sachs_plot(fit5: FitResult,
             alpha=0.20,
             label="68% Hessian band",
         )
-        shade_fit_t_range(ax, set5_data)
+        draw_t_reference_lines(ax, set5_data)
         ax.set_xlabel(r"$|t|$ (GeV$^2$)")
         ax.set_ylabel(ylabel)
         ax.set_xlim(0.0, 1.0)
@@ -1144,7 +1367,7 @@ def save_fit5_sachs_plot(fit5: FitResult,
 
     axes[0].legend(fontsize=8)
     fig.tight_layout()
-    fig.savefig(outdir / "06_GE_GM_fit5.pdf")
+    fig.savefig(outdir / "06_GE_GM_fit5.png")
     plt.close(fig)
 #enddef
 
@@ -1232,7 +1455,7 @@ def save_bh_f1_f2_sensitivity(outdir: Path,
     ax.legend()
     ax.grid(alpha=0.2)
     fig.tight_layout()
-    fig.savefig(outdir / "07_BH_F1_F2_sensitivity.pdf")
+    fig.savefig(outdir / "07_BH_F1_F2_sensitivity.png")
     plt.close(fig)
 #enddef
 
@@ -1263,7 +1486,7 @@ def save_fit5_to_fit8_sachs_plot(results: List[FitResult],
             alpha=0.18,
             label="Fit 8 68% Hessian band",
         )
-        shade_fit_t_range(ax, set5_data)
+        draw_t_reference_lines(ax, set5_data)
         ax.set_xlabel(r"$|t|$ (GeV$^2$)")
         ax.set_xlim(0.0, 1.0)
         ax.grid(alpha=0.2)
@@ -1273,7 +1496,7 @@ def save_fit5_to_fit8_sachs_plot(results: List[FitResult],
     axes[1].set_ylabel(r"$G_M(t)$")
     axes[0].legend(fontsize=8)
     fig.tight_layout()
-    fig.savefig(outdir / "08_GE_GM_fits_5_to_8.pdf")
+    fig.savefig(outdir / "08_GE_GM_fits_5_to_8.png")
     plt.close(fig)
 #enddef
 
@@ -1313,7 +1536,7 @@ def save_radii_plot(results: List[FitResult],
     axes[1].grid(alpha=0.2)
 
     fig.tight_layout()
-    fig.savefig(outdir / "09_radii_fits_5_to_8.pdf")
+    fig.savefig(outdir / "09_radii_fits_5_to_8.png")
     plt.close(fig)
 #enddef
 
@@ -1448,6 +1671,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--no-global-normalization-systematic",
+        action="store_true",
+        help=(
+            "Disable the correlated 4.76% target-thickness/absolute-charge "
+            "normalization nuisance. It is included by default."
+        ),
+    )
+    p.add_argument(
         "--no-bh-selection-systematic",
         action="store_true",
         help="Disable the paper's additional 1-5% uncorrelated uncertainty",
@@ -1509,13 +1740,21 @@ def main() -> int:
     )
 
     # Reuse the validated cache from the earlier analysis if present.
-    old_cache = Path("output/emff_from_bh/km15_bh_decomposition.csv").resolve()
     cache = outdir / "km15_bh_decomposition.csv"
-    if (not cache.exists()) and old_cache.exists() and (not args.force_km15):
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        import shutil
-        shutil.copy2(old_cache, cache)
-        print(f"[KM15] Copied existing validated cache: {old_cache}")
+    old_cache_candidates = [
+        Path("output/emff_from_bh_paper_method/km15_bh_decomposition.csv").resolve(),
+        Path("output/emff_from_bh/km15_bh_decomposition.csv").resolve(),
+    ]
+    if (not cache.exists()) and (not args.force_km15):
+        for old_cache in old_cache_candidates:
+            if old_cache.exists():
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                import shutil
+                shutil.copy2(old_cache, cache)
+                print(f"[KM15] Copied existing validated cache: {old_cache}")
+                break
+            #endif
+        #endfor
     #endif
 
     df = evaluate_km15_dataframe(
@@ -1610,6 +1849,7 @@ def main() -> int:
     include_ptp = not args.no_clas12_point_to_point_systematic
     include_bh_sys = not args.no_bh_selection_systematic
     include_comb_norm = not args.no_combination_normalization_systematic
+    include_global_norm = not args.no_global_normalization_systematic
 
     print(
         "[errors] point uncertainty = "
@@ -1622,8 +1862,12 @@ def main() -> int:
         + ("INCLUDED" if include_ptp else "NOT included")
     )
     print(
-        "[norm]   combination systematic as correlated normalization nuisance: "
+        "[norm]   row-dependent combination systematic nuisance: "
         + ("INCLUDED" if include_comb_norm else "NOT included")
+    )
+    print(
+        f"[norm]   global {100*GLOBAL_SCALE_FRAC:.2f}% normalization nuisance: "
+        + ("INCLUDED" if include_global_norm else "NOT included")
     )
 
     fit_results: List[FitResult] = []
@@ -1645,6 +1889,7 @@ def main() -> int:
             include_clas12_ptp_sys=include_ptp,
             include_bh_sys=include_bh_sys,
             include_combination_norm_sys=include_comb_norm,
+            include_global_norm_sys=include_global_norm,
         )
         fit_results.append(fr)
 
@@ -1658,7 +1903,8 @@ def main() -> int:
             f"chi2/dof={fr.chi2_ndof:.3f} "
             f"aE={aE:.4f}+/-{daE:.4f} "
             f"aM={aM:.4f}+/-{daM:.4f} "
-            f"N={fr.norm:.4f}+/-{fr.norm_err:.4f}"
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f} "
+            f"beta_comb={fr.meta.get('beta_comb', np.nan):+.3f}"
         )
     #endfor
 
@@ -1691,6 +1937,7 @@ def main() -> int:
             include_clas12_ptp_sys=include_ptp,
             include_bh_sys=include_bh_sys,
             include_combination_norm_sys=include_comb_norm,
+            include_global_norm_sys=include_global_norm,
         )
         fit_results.append(fr)
 
@@ -1704,7 +1951,8 @@ def main() -> int:
         print(
             f"[fit] {fit_name}: N={fr.npts:4d} "
             f"chi2/dof={fr.chi2_ndof:.3f} {parameter_text} "
-            f"N={fr.norm:.4f}+/-{fr.norm_err:.4f}"
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f} "
+            f"beta_comb={fr.meta.get('beta_comb', np.nan):+.3f}"
         )
     #endfor
 
@@ -1744,7 +1992,7 @@ def main() -> int:
         set5,
         fit5,
         fit8,
-        outdir / "03_set5_cross_sections_with_fits.pdf",
+        outdir,
     )
     save_fit1_to_fit5_plots(fit_results, set5, outdir)
     save_fit5_sachs_plot(fit5, set5, outdir)
@@ -1759,7 +2007,8 @@ def main() -> int:
             f"  {fit_name}: "
             f"rE={fr.rE_fm:.5f}+/-{fr.rE_err_fm:.5f} fm, "
             f"rM={fr.rM_fm:.5f}+/-{fr.rM_err_fm:.5f} fm, "
-            f"N={fr.norm:.5f}+/-{fr.norm_err:.5f}, "
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}, "
+            f"beta_comb={fr.meta.get('beta_comb', np.nan):+.3f}, "
             f"chi2/dof={fr.chi2_ndof:.3f}"
         )
     #endfor
