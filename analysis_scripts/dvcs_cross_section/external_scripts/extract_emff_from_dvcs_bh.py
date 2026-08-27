@@ -90,6 +90,17 @@ Input:
 
 Output:
   output/emff_from_bh_paper_method/
+
+Validation mode
+---------------
+Run
+
+  python extract_emff_from_dvcs_bh_paper_method.py --clas6-validation
+
+to bypass the CLAS12 CSV and reproduce the Moradi-et-al. analysis using
+Gepard's built-in CLAS6 2015 XUU dataset (ID 98). Results are written to
+
+  output/emff_from_bh_paper_method/clas6_validation/
 """
 
 from __future__ import annotations
@@ -131,6 +142,20 @@ KAPPA_P = MU_P - 1.0
 A1_BERNAUER_Q2_MIN = 3.0e-3
 PRAD_Q2_MIN = 2.0e-4
 GLOBAL_SCALE_FRAC = 0.0476
+
+# Gepard CLAS:2015uuo (H.S. Jo et al., arXiv:1504.02009)
+# dataset 98 = 2640-point beam-helicity-independent XUU cross section.
+CLAS6_GEPARD_DATASET_ID = 98
+CLAS6_BEAM_ENERGY = 5.75
+PAPER_SELECTION_COUNTS = {0.01: 98, 0.02: 212, 0.03: 292, 0.04: 404, 0.05: 473}
+PAPER_CHI2_NDOF = {1: 0.82, 2: 0.75, 3: 0.73, 4: 0.68, 5: 0.69, 6: 0.67, 7: 0.67, 8: 0.68}
+PAPER_DIPOLE_PARAMS = {
+    1: (0.966, 0.075, 0.585, 0.096),
+    2: (0.982, 0.058, 0.531, 0.073),
+    3: (1.033, 0.048, 0.476, 0.054),
+    4: (1.005, 0.043, 0.516, 0.053),
+    5: (0.958, 0.040, 0.562, 0.055),
+}
 HBARC = 0.1973269804       # GeV fm
 
 DEFAULT_CSV = "../output/csvs/dvcs_pass2_analysis.csv"
@@ -256,6 +281,107 @@ def load_clas12_csv(path: Path) -> pd.DataFrame:
     df = df.loc[good].copy().reset_index(drop=True)
     return df
 #enddef
+
+
+def load_clas6_gepard_dataset(dataset_id: int = CLAS6_GEPARD_DATASET_ID) -> pd.DataFrame:
+    """
+    Load the published CLAS6 unpolarized four-fold cross sections directly
+    from Gepard.
+
+    Gepard dataset 98 is:
+      CLAS:2015uuo, H.S. Jo et al., arXiv:1504.02009
+      2640 points, observable XUU, beam energy 5.75 GeV.
+
+    Gepard's shipped datasets are already transformed internally to the BMK
+    convention. We therefore retain the exact stored BMK phi (radians) for
+    the validation calculation rather than passing through the CLAS12
+    Trento/BMK conversion helper.
+    """
+    try:
+        import gepard as g
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not import gepard. The CLAS6 validation requires the "
+            "same Gepard installation used for the KM15 calculation."
+        ) from exc
+    #endtry
+
+    if dataset_id not in g.dset:
+        raise RuntimeError(
+            f"Gepard dataset {dataset_id} is not available in this installation."
+        )
+    #endif
+
+    dset = g.dset[dataset_id]
+    rows = []
+
+    for i, pt in enumerate(dset):
+        observable = str(getattr(pt, "observable", ""))
+        if observable.upper() != "XUU":
+            continue
+        #endif
+
+        err_total = float(getattr(pt, "err", np.nan))
+        err_stat = float(getattr(pt, "errstat", np.nan))
+        err_syst = float(getattr(pt, "errsyst", np.nan))
+
+        # The paper fits the published cross section with its published total
+        # uncertainty, then adds the 1--5% BH-selection uncertainty.
+        if not np.isfinite(err_total) or err_total <= 0.0:
+            if np.isfinite(err_stat) and np.isfinite(err_syst):
+                err_total = math.hypot(err_stat, err_syst)
+            elif np.isfinite(err_stat):
+                err_total = err_stat
+            #endif
+        #endif
+
+        beam_energy = float(
+            getattr(pt, "in1energy", CLAS6_BEAM_ENERGY)
+        )
+
+        rows.append({
+            "_row": i,
+            "xB": float(pt.xB),
+            "Q2": float(pt.Q2),
+            "t_abs": abs(float(pt.t)),
+            "phi_bmk_rad": float(pt.phi),
+            "phi_deg": math.degrees(float(pt.phi)),
+            "xs": float(pt.val),
+            # fit_sigma_errors() uses xs_stat as its base error. In validation
+            # mode this is intentionally the published TOTAL CLAS6 error.
+            "xs_stat": err_total,
+            "clas6_err_total": err_total,
+            "clas6_err_stat": err_stat,
+            "clas6_err_syst": err_syst,
+            "ptp_sys_abs": 0.0,
+            "comb_sys_frac": 0.0,
+            "scale_sys_frac": 0.0,
+            "ebeam": beam_energy,
+            "gepard_dataset_id": int(dataset_id),
+            "observable": observable,
+        })
+    #endfor
+
+    df = pd.DataFrame(rows)
+    good = (
+        np.isfinite(df["xB"])
+        & np.isfinite(df["Q2"])
+        & np.isfinite(df["t_abs"])
+        & np.isfinite(df["phi_bmk_rad"])
+        & np.isfinite(df["xs"])
+        & np.isfinite(df["xs_stat"])
+        & (df["xs_stat"] > 0.0)
+        & (df["t_abs"] > 0.0)
+    )
+    df = df.loc[good].copy().reset_index(drop=True)
+
+    print(
+        f"[CLAS6] Loaded Gepard dataset {dataset_id}: "
+        f"{len(df)} XUU points"
+    )
+    return df
+#enddef
+
 
 
 # -----------------------------------------------------------------------------
@@ -384,6 +510,175 @@ def evaluate_km15_point(args: Tuple[int, float, float, float, float, float]) -> 
         "km15_ep_predict": sigma_predict,
         "km15_ep_decomp_relerr": ep_relerr,
     }
+#enddef
+
+
+
+def evaluate_km15_point_bmk(args: Tuple[int, float, float, float, float, float]) -> Dict[str, float]:
+    """
+    Evaluate one Gepard CLAS6 point using its exact stored BMK azimuth.
+
+    This avoids any round-trip through the CLAS12 phi convention and is the
+    cleanest possible validation against the paper.
+    """
+    idx, xB, Q2, t_abs, phi_bmk_rad, ebeam = args
+
+    try:
+        import gepard as g
+        from gepard.fits import th_KM15
+    except Exception as exc:
+        raise RuntimeError("Could not import gepard/KM15.") from exc
+    #endtry
+
+    pt = g.DataPoint(
+        xB=float(xB),
+        t=-abs(float(t_abs)),
+        Q2=float(Q2),
+        phi=float(phi_bmk_rad),
+        observable="XUU",
+        frame="BMK",
+        process="ep2epgamma",
+        exptype="fixed target",
+        in1energy=float(ebeam),
+        in1charge=-1,
+        in1polarization=0,
+        in2particle="p",
+    )
+    pt.prepare()
+
+    th = th_KM15
+    pref = float(th.PreFacSigma(pt))
+    sigma_bh = pref * float(th.TBH2unp(pt))
+    sigma_int = pref * float(th.TINTunp(pt))
+    sigma_dvcs = pref * float(th.TDVCS2unp(pt))
+    sigma_ep = sigma_bh + sigma_int + sigma_dvcs
+
+    sigma_predict = float(th.predict(pt))
+    ep_relerr = abs(sigma_ep - sigma_predict) / max(abs(sigma_predict), 1.0e-30)
+
+    model = th.m
+    try:
+        old_f1, old_f2 = _set_eff_basis(model, 1.0, 0.0)
+        A = pref * float(th.TBH2unp(pt))
+
+        model.F1 = lambda p: 0.0
+        model.F2 = lambda p: 1.0
+        C = pref * float(th.TBH2unp(pt))
+
+        model.F1 = lambda p: 1.0
+        model.F2 = lambda p: 1.0
+        one_one = pref * float(th.TBH2unp(pt))
+        B = one_one - A - C
+    finally:
+        _restore_eff(model, old_f1, old_f2)
+    #endtry
+
+    f1_nom = float(model.F1(pt))
+    f2_nom = float(model.F2(pt))
+    sigma_bh_reco = A * f1_nom**2 + B * f1_nom * f2_nom + C * f2_nom**2
+    quad_relerr = abs(sigma_bh_reco - sigma_bh) / max(abs(sigma_bh), 1.0e-30)
+
+    rbh = sigma_bh / sigma_ep if sigma_ep != 0.0 else np.nan
+
+    return {
+        "_row": idx,
+        "km15_ep": sigma_ep,
+        "km15_bh": sigma_bh,
+        "km15_dvcs": sigma_dvcs,
+        "km15_int": sigma_int,
+        "R_BH": rbh,
+        "bh_delta": abs(1.0 - rbh) if np.isfinite(rbh) else np.nan,
+        "bh_A": A,
+        "bh_B": B,
+        "bh_C": C,
+        "bh_quad_relerr": quad_relerr,
+        "km15_F1": f1_nom,
+        "km15_F2": f2_nom,
+        "km15_ep_predict": sigma_predict,
+        "km15_ep_decomp_relerr": ep_relerr,
+    }
+#enddef
+
+
+def evaluate_km15_clas6_dataframe(df: pd.DataFrame,
+                                  workers: int,
+                                  cache_path: Path,
+                                  force: bool = False) -> pd.DataFrame:
+    """Evaluate/cache KM15 at the exact Gepard CLAS6 BMK data points."""
+    cache_cols = [
+        "_row", "km15_ep", "km15_bh", "km15_dvcs", "km15_int",
+        "R_BH", "bh_delta", "bh_A", "bh_B", "bh_C",
+        "bh_quad_relerr", "km15_F1", "km15_F2",
+        "km15_ep_predict", "km15_ep_decomp_relerr",
+    ]
+
+    if cache_path.exists() and not force:
+        cache = pd.read_csv(cache_path)
+        if len(cache) == len(df) and all(c in cache.columns for c in cache_cols):
+            outdf = df.copy()
+            for c in cache_cols:
+                if c != "_row":
+                    outdf[c] = cache[c].to_numpy()
+                #endif
+            #endfor
+            print(f"[CLAS6 KM15] Loaded cache: {cache_path}")
+            return outdf
+        #endif
+    #endif
+
+    tasks = [
+        (
+            int(i),
+            float(r.xB),
+            float(r.Q2),
+            float(r.t_abs),
+            float(r.phi_bmk_rad),
+            float(r.ebeam),
+        )
+        for i, r in df[
+            ["xB", "Q2", "t_abs", "phi_bmk_rad", "ebeam"]
+        ].iterrows()
+    ]
+
+    print(
+        f"[CLAS6 KM15] Evaluating {len(tasks)} Gepard points "
+        f"with {workers} worker(s)..."
+    )
+    t0 = time.time()
+
+    if workers <= 1:
+        rows = []
+        for j, task in enumerate(tasks, start=1):
+            rows.append(evaluate_km15_point_bmk(task))
+            if j % 200 == 0 or j == len(tasks):
+                print(
+                    f"[CLAS6 KM15] {j:5d}/{len(tasks)} "
+                    f"elapsed={time.time()-t0:8.1f} s"
+                )
+            #endif
+        #endfor
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            rows = list(ex.map(evaluate_km15_point_bmk, tasks, chunksize=12))
+        #endwith
+    #endif
+
+    km = pd.DataFrame(rows).sort_values("_row").reset_index(drop=True)
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    km.to_csv(cache_path, index=False)
+
+    print(
+        f"[CLAS6 KM15] Finished in {time.time()-t0:.1f} s; "
+        f"cache -> {cache_path}"
+    )
+
+    outdf = df.copy()
+    for c in cache_cols:
+        if c != "_row":
+            outdf[c] = km[c].to_numpy()
+        #endif
+    #endfor
+    return outdf
 #enddef
 
 
@@ -1320,23 +1615,32 @@ def save_selected_cross_section_pages(data: pd.DataFrame,
 def save_fit1_to_fit5_plots(results: List[FitResult],
                             set5_data: pd.DataFrame,
                             outdir: Path) -> None:
-    """Paper Fig. 4/5 analogue for CLAS12 Fits 1-5."""
+    """Combined paper Fig. 4/5 analogue: F1 and F2 on one 1x2 canvas."""
     fits = [
         next(r for r in results if r.name == f"Fit {i}")
         for i in range(1, 6)
     ]
     fit5 = fits[-1]
-
     q = np.linspace(0.0, 1.0, 400)
 
-    for which, ylabel, filename in [
-        ("F1", r"$F_1(t)$", "04_F1_fits_1_to_5.png"),
-        ("F2", r"$F_2(t)$", "05_F2_fits_1_to_5.png"),
+    # Remove obsolete separate-panel outputs from older script versions.
+    for obsolete in [
+        outdir / "04_F1_fits_1_to_5.png",
+        outdir / "05_F2_fits_1_to_5.png",
     ]:
-        fig, ax = plt.subplots(figsize=(7.2, 5.2))
+        if obsolete.exists():
+            obsolete.unlink()
+        #endif
+    #endfor
 
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.0))
+
+    for ax, which, ylabel, index in [
+        (axes[0], "F1", r"$F_1(t)$", 0),
+        (axes[1], "F2", r"$F_2(t)$", 1),
+    ]:
         for fr in fits:
-            values = evaluate_fit_form_factors(fr, q)[0 if which == "F1" else 1]
+            values = evaluate_fit_form_factors(fr, q)[index]
             ax.plot(q, values, linewidth=1.2, label=fr.name)
         #endfor
 
@@ -1354,11 +1658,13 @@ def save_fit1_to_fit5_plots(results: List[FitResult],
         ax.set_ylabel(ylabel)
         ax.set_xlim(0.0, 1.0)
         ax.grid(alpha=0.2)
-        ax.legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(outdir / filename)
-        plt.close(fig)
     #endfor
+
+    axes[0].legend(fontsize=8)
+    axes[1].legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(outdir / "04_F1_F2_fits_1_to_5.png", dpi=180)
+    plt.close(fig)
 #enddef
 
 
@@ -1638,12 +1944,271 @@ def save_summary_tables(results: List[FitResult],
 #enddef
 
 
+
+def run_clas6_validation(args) -> int:
+    """
+    Reproduce the Moradi et al. CLAS6 analysis using Gepard's bundled
+    CLAS:2015uuo XUU data.
+
+    This is an override/validation mode:
+      * no CLAS12 CSV is read
+      * no CLAS12 point-to-point systematic is added
+      * no CLAS12 correlated normalization nuisances are used
+      * the published Gepard point.err is used as the experimental error
+      * only the paper's additional 1--5% BH-selection uncertainty is added
+
+    Expected paper benchmarks:
+      selection counts = 98, 212, 292, 404, 473
+      chi2/dof Fits 1--5 = 0.82, 0.75, 0.73, 0.68, 0.69
+    """
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        / "clas6_validation"
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 78)
+    print("[CLAS6 VALIDATION MODE]")
+    print(f"[output] {outdir}")
+    print(
+        f"[source] Gepard dataset {args.clas6_dataset_id} "
+        "(CLAS 2015 XUU, Jo et al.)"
+    )
+    print("=" * 78)
+
+    df = load_clas6_gepard_dataset(args.clas6_dataset_id)
+    if len(df) != 2640 and args.clas6_dataset_id == 98:
+        warnings.warn(
+            f"Expected 2640 points in Gepard dataset 98, found {len(df)}."
+        )
+    #endif
+
+    cache = outdir / "km15_bh_decomposition_clas6.csv"
+    df = evaluate_km15_clas6_dataframe(
+        df,
+        max(1, args.workers),
+        cache,
+        args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["km15_ep"])
+        & np.isfinite(df["km15_bh"])
+        & np.isfinite(df["R_BH"])
+        & (df["km15_ep"] > 0.0)
+        & (df["km15_bh"] > 0.0)
+    )
+    df = df.loc[finite].copy().reset_index(drop=True)
+
+    max_ep_relerr = float(np.nanmax(df["km15_ep_decomp_relerr"]))
+    max_bh_relerr = float(np.nanmax(df["bh_quad_relerr"]))
+    print(
+        f"[check] max KM15 EP decomposition rel. error = {max_ep_relerr:.3e}"
+    )
+    print(
+        f"[check] max BH quadratic reconstruction rel. error = {max_bh_relerr:.3e}"
+    )
+
+    if max_ep_relerr > 1.0e-7 or max_bh_relerr > 1.0e-7:
+        raise RuntimeError(
+            "CLAS6 validation failed the internal Gepard decomposition checks."
+        )
+    #endif
+
+    bh_cuts = [0.01, 0.02, 0.03, 0.04, 0.05]
+    selected_sets = {}
+    selection_rows = []
+
+    print("\n[CLAS6 selection benchmark]")
+    for cut in bh_cuts:
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        selected_sets[cut] = selected
+
+        expected = PAPER_SELECTION_COUNTS[cut]
+        delta = len(selected) - expected
+        status = "PASS" if delta == 0 else "MISMATCH"
+
+        print(
+            f"  {100*cut:.0f}%: got {len(selected):4d}, "
+            f"paper {expected:4d}, delta={delta:+d}  [{status}]"
+        )
+
+        selection_rows.append({
+            "BH_cut": cut,
+            "our_Npts": len(selected),
+            "paper_Npts": expected,
+            "delta_Npts": delta,
+            "match": delta == 0,
+        })
+    #endfor
+
+    pd.DataFrame(selection_rows).to_csv(
+        outdir / "selection_count_validation.csv",
+        index=False,
+    )
+
+    # If these counts do not match, continuing the fit is still useful for
+    # diagnosis, but loudly flag that we have not reproduced the paper's
+    # selection/conventions yet.
+    counts_match = all(
+        len(selected_sets[c]) == PAPER_SELECTION_COUNTS[c]
+        for c in bh_cuts
+    )
+    if not counts_match:
+        warnings.warn(
+            "CLAS6 BH-selected counts do not exactly reproduce Table I. "
+            "Inspect phi/frame/observable conventions before interpreting "
+            "the chi2 validation."
+        )
+    #endif
+
+    fit_results = []
+
+    # Fits 1--5 exactly as the paper: published total experimental error +
+    # threshold-matched uncorrelated BH-selection systematic.
+    for fit_index, cut in enumerate(bh_cuts, start=1):
+        fr = fit_paper_model(
+            data=selected_sets[cut],
+            kind="dipole",
+            fit_name=f"Fit {fit_index}",
+            bh_cut=cut,
+            include_clas12_ptp_sys=False,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=False,
+        )
+        fit_results.append(fr)
+
+        paper_chi = PAPER_CHI2_NDOF[fit_index]
+        paper_aE, paper_daE, paper_aM, paper_daM = PAPER_DIPOLE_PARAMS[fit_index]
+
+        print(
+            f"[CLAS6 fit] Fit {fit_index}: "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"(paper {paper_chi:.2f}); "
+            f"aE={fr.params[0]:.4f} (paper {paper_aE:.3f}); "
+            f"aM={fr.params[1]:.4f} (paper {paper_aM:.3f})"
+        )
+    #endfor
+
+    set5 = selected_sets[0.05].copy()
+    set5["fit_sigma_default"] = fit_sigma_errors(
+        set5,
+        0.05,
+        include_clas12_ptp_sys=False,
+        include_bh_sys=True,
+    )
+    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
+
+    for kind, fit_name, fit_index in [
+        ("fit6_same_a", "Fit 6", 6),
+        ("fit7_same_p", "Fit 7", 7),
+        ("fit8_f2_kelly", "Fit 8", 8),
+    ]:
+        fr = fit_paper_model(
+            data=set5,
+            kind=kind,
+            fit_name=fit_name,
+            bh_cut=0.05,
+            include_clas12_ptp_sys=False,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=False,
+        )
+        fit_results.append(fr)
+        print(
+            f"[CLAS6 fit] {fit_name}: "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"(paper {PAPER_CHI2_NDOF[fit_index]:.2f})"
+        )
+    #endfor
+
+    # Direct comparison table to the published benchmarks.
+    rows = []
+    for fit_index in range(1, 9):
+        fr = next(r for r in fit_results if r.name == f"Fit {fit_index}")
+        row = {
+            "Fit": fit_index,
+            "our_chi2_ndof": fr.chi2_ndof,
+            "paper_chi2_ndof": PAPER_CHI2_NDOF[fit_index],
+            "delta_chi2_ndof": (
+                fr.chi2_ndof - PAPER_CHI2_NDOF[fit_index]
+            ),
+            "rE_fm": fr.rE_fm,
+            "rE_err_fm": fr.rE_err_fm,
+            "rM_fm": fr.rM_fm,
+            "rM_err_fm": fr.rM_err_fm,
+        }
+        if fit_index <= 5:
+            row["our_aE"] = fr.params[0]
+            row["our_aM"] = fr.params[1]
+            row["paper_aE"] = PAPER_DIPOLE_PARAMS[fit_index][0]
+            row["paper_aM"] = PAPER_DIPOLE_PARAMS[fit_index][2]
+        #endif
+        rows.append(row)
+    #endfor
+    comparison = pd.DataFrame(rows)
+    comparison.to_csv(outdir / "paper_benchmark_comparison.csv", index=False)
+
+    pd.DataFrame(
+        [fitresult_to_record(fr) for fr in fit_results]
+    ).to_csv(outdir / "fit_results.csv", index=False)
+
+    # Paper-style consolidated plots.
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    save_fit5_sachs_plot(fit5, set5, outdir)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+
+    # Validation plot: our chi2/dof against the paper values.
+    fig, ax = plt.subplots(figsize=(7.4, 5.0))
+    fit_numbers = np.arange(1, 9)
+    ours = [
+        next(r for r in fit_results if r.name == f"Fit {i}").chi2_ndof
+        for i in fit_numbers
+    ]
+    paper = [PAPER_CHI2_NDOF[i] for i in fit_numbers]
+    ax.plot(fit_numbers, ours, "o-", label="This script / Gepard data")
+    ax.plot(fit_numbers, paper, "s--", label="Moradi et al.")
+    ax.set_xlabel("Fit")
+    ax.set_ylabel(r"$\chi^2/\mathrm{dof}$")
+    ax.set_xticks(fit_numbers)
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "00_chi2_validation.png", dpi=180)
+    plt.close(fig)
+
+    print("\n[CLAS6 validation summary]")
+    print(comparison[[
+        "Fit", "our_chi2_ndof", "paper_chi2_ndof", "delta_chi2_ndof"
+    ]].to_string(index=False))
+    print(f"\nDone. CLAS6 validation results are in {outdir}")
+    return 0
+#enddef
+
+
 # -----------------------------------------------------------------------------
 # CLI / main
 # -----------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    p.add_argument(
+        "--clas6-validation",
+        action="store_true",
+        help=(
+            "Override normal CLAS12 mode: load Gepard's CLAS6 Jo et al. "
+            "XUU cross sections and reproduce the paper's Fits 1-8"
+        ),
+    )
+    p.add_argument(
+        "--clas6-dataset-id",
+        type=int,
+        default=CLAS6_GEPARD_DATASET_ID,
+        help="Gepard dataset ID for CLAS6 validation (paper data: 98)",
     )
     p.add_argument(
         "--csv",
@@ -1749,6 +2314,10 @@ def main() -> int:
             "errors. Install it in the active Python environment, e.g. "
             "`python -m pip install --user iminuit`, then rerun."
         )
+    #endif
+
+    if args.clas6_validation:
+        return run_clas6_validation(args)
     #endif
 
     csv_path = Path(args.csv).expanduser().resolve()
