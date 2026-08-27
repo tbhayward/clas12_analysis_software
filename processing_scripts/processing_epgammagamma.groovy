@@ -374,6 +374,17 @@ static void main(String[] args) {
     int qadbOverride = (args.length < 6 || args[5].trim().isEmpty()) ? 0 : Integer.parseInt(args[5])
     long maxOutputRows = (args.length < 7 || args[6].trim().isEmpty()) ? 0L : Long.parseLong(args[6])
 
+    println("Groovy epgammagamma resolved arguments:")
+    println("  raw args count = ${args.length}")
+    for (int i = 0; i < args.length; i++) {
+        println("  args[${i}] = '${args[i]}'")
+    }
+    println("  requestedFiles = ${requestedFiles}")
+    println("  beamEnergy = ${beamEnergy}")
+    println("  runOverride = ${userProvidedRun}")
+    println("  qadbOverride = ${qadbOverride}")
+    println("  maxOutputRows = ${maxOutputRows}")
+
     List<Map> schema = [
         [name:"is_mc", type:"I"],
         [name:"fiducial_status", type:"I"],
@@ -665,13 +676,23 @@ static void main(String[] args) {
     long outputRows = 0L
     boolean stopRequested = false
 
-    for (int currentFile = 0; currentFile < nFiles && !stopRequested; currentFile++) {
+    for (
+        int currentFile = 0;
+        currentFile < nFiles
+            && !stopRequested
+            && (maxOutputRows <= 0L || outputRows < maxOutputRows);
+        currentFile++
+    ) {
         println("\nOpening file ${currentFile+1} out of ${nFiles}: ${hipoList[currentFile]}")
 
         HipoDataSource reader = new HipoDataSource()
         reader.open(hipoList[currentFile])
 
-        while (reader.hasEvent()) {
+        while (
+            reader.hasEvent()
+            && !stopRequested
+            && (maxOutputRows <= 0L || outputRows < maxOutputRows)
+        ) {
             def event = reader.getNextEvent()
             inputEvents++
 
@@ -833,6 +854,10 @@ static void main(String[] args) {
                     }
 
                     if (maxOutputRows > 0L && outputRows >= maxOutputRows) {
+                        println(
+                            "Reached requested output-row limit: ${outputRows} / ${maxOutputRows}. " +
+                            "Stopping quick pass."
+                        )
                         stopRequested = true
                         break
                     }
