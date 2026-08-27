@@ -34,6 +34,14 @@ else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
 else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
     set convert_arg3 = 5 # eppi0
+else if ($arg1 == "processing_scripts/processing_epgamma.groovy") then
+    set convert_arg3 = 9 # unified data/MC epgamma with truth ancestry
+else if ($arg1 == "processing_scripts/processing_mc_epgamma.groovy") then
+    set convert_arg3 = 9 # compatibility name; script auto-detects MC
+else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy") then
+    set convert_arg3 = 10 # unified data/MC epgammagamma with truth ancestry
+else if ($arg1 == "processing_scripts/processing_mc_epgammagamma.groovy") then
+    set convert_arg3 = 10 # compatibility name; script auto-detects MC
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     set convert_arg3 = 6 # calibration
 else if ($arg1 == "processing_scripts/processing_dvcs_calibration.groovy") then
@@ -52,6 +60,10 @@ else if ($arg1 == "processing_scripts/processing_mc_two_particles.groovy") then
 else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") then
     set is_mc = 1;
 else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
+    set is_mc = 1;
+else if ($arg1 == "processing_scripts/processing_mc_epgamma.groovy") then
+    set is_mc = 1;
+else if ($arg1 == "processing_scripts/processing_mc_epgammagamma.groovy") then
     set is_mc = 1;
 endif
 
@@ -132,6 +144,43 @@ else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
     set txt_file = "$3.txt"
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+else if ($arg1 == "processing_scripts/processing_epgamma.groovy" || $arg1 == "processing_scripts/processing_mc_epgamma.groovy") then
+    # Make a quick 1M-candidate product first, then restart for full statistics.
+    set output_base = "$3"
+    set quick_txt = "${output_base}_1M.txt"
+    set quick_root = "${output_base}_1M.root"
+    set full_txt = "${output_base}.txt"
+    set full_root = "${output_base}.root"
+
+    echo "=== epgamma quick pass: stopping after 1,000,000 candidate rows ==="
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$quick_txt" "$4" "$5" "$6" "$7" "1000000"
+    if ($status != 0) exit $status
+    ./processing_scripts/convert_txt_to_root "$quick_txt" "$quick_root" $convert_arg3 $is_mc
+    if ($status != 0) exit $status
+
+    echo "=== epgamma full pass: restarting from the beginning for all statistics ==="
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$full_txt" "$4" "$5" "$6" "$7" "0"
+    if ($status != 0) exit $status
+    ./processing_scripts/convert_txt_to_root "$full_txt" "$full_root" $convert_arg3 $is_mc
+
+else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy" || $arg1 == "processing_scripts/processing_mc_epgammagamma.groovy") then
+    set output_base = "$3"
+    set quick_txt = "${output_base}_1M.txt"
+    set quick_root = "${output_base}_1M.root"
+    set full_txt = "${output_base}.txt"
+    set full_root = "${output_base}.root"
+
+    echo "=== epgammagamma quick pass: stopping after 1,000,000 candidate rows ==="
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$quick_txt" "$4" "$5" "$6" "$7" "1000000"
+    if ($status != 0) exit $status
+    ./processing_scripts/convert_txt_to_root "$quick_txt" "$quick_root" $convert_arg3 $is_mc
+    if ($status != 0) exit $status
+
+    echo "=== epgammagamma full pass: restarting from the beginning for all statistics ==="
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$full_txt" "$4" "$5" "$6" "$7" "0"
+    if ($status != 0) exit $status
+    ./processing_scripts/convert_txt_to_root "$full_txt" "$full_root" $convert_arg3 $is_mc
+
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
     # Run the convert_txt_to_root program

@@ -5,6 +5,10 @@
 #include <fstream>
 #include <cmath>
 #include <sstream>
+#include <vector>
+#include <string>
+#include <stdexcept>
+#include <unistd.h>
 #include <sys/types.h> // Include sys/types.h for stat
 #include <sys/stat.h>  // Include sys/stat.h for stat structure
 
@@ -171,6 +175,8 @@ int main(int argc, char *argv[]) {
         cout << " <script_index> = 6 for calibration" << endl;
         cout << " <script_index> = 7 for reconstructed MC dvcs (epgammaX) with MC::Event weight" << endl;
         cout << " <script_index> = 8 for reconstructed MC eppi0 with MC::Event weight" << endl;
+        cout << " <script_index> = 9 for unified epgamma data/MC schema with truth ancestry" << endl;
+        cout << " <script_index> = 10 for unified epgammagamma data/MC schema with truth ancestry" << endl;
         return 1;
     }
     
@@ -188,6 +194,202 @@ int main(int argc, char *argv[]) {
     // Determine the hadron count from the command line argument
     int script_index = atoi(argv[3]);
     int is_mc = atoi(argv[4]);
+
+    // ---------------------------------------------------------------------
+    // Schema-driven converter for the new photon-truth trees.
+    //
+    // The first text line is written by the Groovy processors as:
+    //   #SCHEMA branch_name:I branch_name:D ...
+    //
+    // This keeps the new wide photon schemas self-describing and, critically,
+    // leaves every pre-existing script_index conversion path below untouched.
+    // ---------------------------------------------------------------------
+    if (script_index == 9 || script_index == 10) {
+        std::string schemaLineText;
+
+        if (!std::getline(infile, schemaLineText)) {
+            std::cerr << "ERROR: empty input text file; expected #SCHEMA line." << std::endl;
+            return 1;
+        }
+
+        const std::string schemaPrefix = "#SCHEMA ";
+        if (schemaLineText.rfind(schemaPrefix, 0) != 0) {
+            std::cerr << "ERROR: script_index " << script_index
+                      << " requires a first line beginning with '#SCHEMA '." << std::endl;
+            return 1;
+        }
+
+        struct DynamicField {
+            std::string name;
+            char type;
+            std::size_t storage_index;
+        };
+
+        std::vector<DynamicField> fields;
+        std::vector<std::string> schemaTokens;
+
+        {
+            std::istringstream schemaStream(schemaLineText.substr(schemaPrefix.size()));
+            std::string token;
+            while (schemaStream >> token) {
+                schemaTokens.push_back(token);
+            }
+        }
+
+        std::size_t nInts = 0;
+        std::size_t nDoubles = 0;
+
+        for (const auto& token : schemaTokens) {
+            const std::size_t colon = token.rfind(':');
+            if (colon == std::string::npos || colon + 1 >= token.size()) {
+                std::cerr << "ERROR: malformed schema token: " << token << std::endl;
+                return 1;
+            }
+
+            const std::string name = token.substr(0, colon);
+            const char type = token[colon + 1];
+
+            if (type == 'I') {
+                fields.push_back({name, type, nInts++});
+            } else if (type == 'D') {
+                fields.push_back({name, type, nDoubles++});
+            } else {
+                std::cerr << "ERROR: unsupported schema type '" << type
+                          << "' for branch " << name << std::endl;
+                return 1;
+            }
+        }
+
+        std::vector<int> intValues(nInts, 0);
+        std::vector<double> doubleValues(nDoubles, 0.0);
+
+        // Preserve the beam/target polarization branches that the older
+        // hand-written converters add for reconstructed data trees.
+        double dynamic_beam_pol = 0.0;
+        double dynamic_target_pol = 0.0;
+        tree->Branch("beam_pol", &dynamic_beam_pol, "beam_pol/D");
+        tree->Branch("target_pol", &dynamic_target_pol, "target_pol/D");
+
+        // Locate runnum in the self-describing schema so polarization can be
+        // assigned after each row is parsed.
+        long long runnumIntStorageIndex = -1;
+        for (const auto& field : fields) {
+            if (field.name == "runnum" && field.type == 'I') {
+                runnumIntStorageIndex = static_cast<long long>(field.storage_index);
+                break;
+            }
+        }
+
+        // Same run-information source used by all legacy conversion paths.
+        std::string dynamic_package_location = findPackageRoot();
+        std::string dynamic_csv_location =
+            "analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv";
+        load_run_info_from_csv(dynamic_package_location + dynamic_csv_location);
+
+        for (const auto& field : fields) {
+            if (field.type == 'I') {
+                const std::string leaf = field.name + "/I";
+                tree->Branch(
+                    field.name.c_str(),
+                    &intValues[field.storage_index],
+                    leaf.c_str()
+                );
+            } else {
+                const std::string leaf = field.name + "/D";
+                tree->Branch(
+                    field.name.c_str(),
+                    &doubleValues[field.storage_index],
+                    leaf.c_str()
+                );
+            }
+        }
+
+        std::string line;
+        long long lineNumber = 1;
+        long long filledRows = 0;
+
+        while (std::getline(infile, line)) {
+            ++lineNumber;
+
+            if (line.empty()) continue;
+            if (line[0] == '#') continue;
+
+            std::istringstream rowStream(line);
+            std::string valueToken;
+            bool rowOK = true;
+
+            for (const auto& field : fields) {
+                if (!(rowStream >> valueToken)) {
+                    rowOK = false;
+                    break;
+                }
+
+                try {
+                    if (field.type == 'I') {
+                        intValues[field.storage_index] = std::stoi(valueToken);
+                    } else {
+                        // stod accepts nan/NaN on standard libstdc++.
+                        doubleValues[field.storage_index] = std::stod(valueToken);
+                    }
+                } catch (const std::exception& ex) {
+                    std::cerr << "WARNING: failed to parse line " << lineNumber
+                              << ", branch " << field.name
+                              << ", token '" << valueToken << "': "
+                              << ex.what() << std::endl;
+                    rowOK = false;
+                    break;
+                }
+            }
+
+            // Reject extra tokens too: schema/text mismatches should be loud,
+            // not silently shifted into the wrong ROOT branches.
+            if (rowOK && (rowStream >> valueToken)) {
+                std::cerr << "WARNING: extra token(s) on line " << lineNumber
+                          << "; skipping row." << std::endl;
+                rowOK = false;
+            }
+
+            if (!rowOK) {
+                std::cerr << "WARNING: skipping malformed row " << lineNumber << std::endl;
+                continue;
+            }
+
+            int dynamic_runnum = 0;
+            if (runnumIntStorageIndex >= 0) {
+                dynamic_runnum = intValues[
+                    static_cast<std::size_t>(runnumIntStorageIndex)
+                ];
+            }
+
+            dynamic_beam_pol = getPol(dynamic_runnum);
+            dynamic_target_pol = 0.0;
+
+            if (dynamic_runnum >= 16000) {
+                for (const auto& run_info : run_info_list) {
+                    if (run_info.runnum == dynamic_runnum) {
+                        dynamic_target_pol = run_info.target_polarization;
+                        break;
+                    }
+                }
+            }
+
+            tree->Fill();
+            ++filledRows;
+
+            if (filledRows % 1000000LL == 0LL) {
+                std::cout << "converted " << filledRows << " rows" << std::endl;
+            }
+        }
+
+        outfile->cd();
+        tree->Write();
+        outfile->Close();
+
+        std::cout << "Schema-driven conversion complete: "
+                  << filledRows << " rows, "
+                  << fields.size() << " branches." << std::endl;
+        return 0;
+    }
 
     // Declare common variables
     int fiducial_status;
