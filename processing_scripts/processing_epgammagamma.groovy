@@ -96,9 +96,114 @@ static int[] buildMcOccurrenceByRow(HipoDataBank mcBank) {
     return occurrenceByRow
 }
 
+
+static double momentumDistanceSquared(
+    HipoDataBank mcBank,
+    int mcRow,
+    HipoDataBank lundBank,
+    int lundRow
+) {
+    double dpx = mcBank.getFloat("px", mcRow) - lundBank.getFloat("px", lundRow)
+    double dpy = mcBank.getFloat("py", mcRow) - lundBank.getFloat("py", lundRow)
+    double dpz = mcBank.getFloat("pz", mcRow) - lundBank.getFloat("pz", lundRow)
+
+    return dpx*dpx + dpy*dpy + dpz*dpz
+}
+
+static int[] buildMcToLundRow(
+    HipoDataBank mcBank,
+    HipoDataBank lundBank
+) {
+    if (mcBank == null || lundBank == null) {
+        return new int[0]
+    }
+
+    int[] mcToLundRow = new int[mcBank.rows()]
+    Arrays.fill(mcToLundRow, -1)
+
+    List<Integer> transportedLundRows = []
+
+    for (int lundRow = 0; lundRow < lundBank.rows(); lundRow++) {
+        if (lundBank.getInt("type", lundRow) == 1) {
+            transportedLundRows << lundRow
+        }
+    }
+
+    // In CLASDIS, MC::Particle is the transported (type==1) subset of
+    // MC::Lund.  First use that ordering, but validate it against PID and
+    // momentum before trusting the correspondence.
+    boolean[] lundUsed = new boolean[lundBank.rows()]
+    final double orderedTolerance2 = 1.0e-6  // (1 MeV)^2 in momentum space
+
+    int orderedCount = Math.min(mcBank.rows(), transportedLundRows.size())
+
+    for (int mcRow = 0; mcRow < orderedCount; mcRow++) {
+        int lundRow = transportedLundRows[mcRow]
+
+        boolean pidMatches =
+            mcBank.getInt("pid", mcRow) == lundBank.getInt("pid", lundRow)
+
+        double distance2 = momentumDistanceSquared(
+            mcBank,
+            mcRow,
+            lundBank,
+            lundRow
+        )
+
+        if (pidMatches && distance2 <= orderedTolerance2) {
+            mcToLundRow[mcRow] = lundRow
+            lundUsed[lundRow] = true
+        }
+    }
+
+    // Defensive fallback: if ordering did not validate for a row, find the
+    // nearest still-unused type==1 Lund particle with the same PID.
+    final double fallbackTolerance2 = 1.0e-4  // (10 MeV)^2
+
+    for (int mcRow = 0; mcRow < mcBank.rows(); mcRow++) {
+        if (mcToLundRow[mcRow] >= 0) {
+            continue
+        }
+
+        int mcPid = mcBank.getInt("pid", mcRow)
+        int bestLundRow = -1
+        double bestDistance2 = Double.POSITIVE_INFINITY
+
+        for (int lundRow : transportedLundRows) {
+            if (lundUsed[lundRow]) {
+                continue
+            }
+
+            if (lundBank.getInt("pid", lundRow) != mcPid) {
+                continue
+            }
+
+            double distance2 = momentumDistanceSquared(
+                mcBank,
+                mcRow,
+                lundBank,
+                lundRow
+            )
+
+            if (distance2 < bestDistance2) {
+                bestDistance2 = distance2
+                bestLundRow = lundRow
+            }
+        }
+
+        if (bestLundRow >= 0 && bestDistance2 <= fallbackTolerance2) {
+            mcToLundRow[mcRow] = bestLundRow
+            lundUsed[bestLundRow] = true
+        }
+    }
+
+    return mcToLundRow
+}
+
 static Map truthMatchCached(
     Map<Integer, Integer> recToMcIndex,
     int[] mcOccurrenceByRow,
+    int[] mcToLundRow,
     HipoDataBank mcBank,
     HipoDataBank lundBank,
     int recPindex
@@ -141,9 +246,25 @@ static Map truthMatchCached(
         result.mc_occurrence = mcOccurrenceByRow[mcindex]
     }
 
-    // MC::Lund parent is one-based in the existing processing convention.
-    if (lundBank != null && mcindex < lundBank.rows()) {
-        int parentIndex = lundBank.getInt("parent", mcindex)
+    // MC::RecMatch.mcindex indexes MC::Particle, NOT MC::Lund.
+    // Resolve the corresponding transported MC::Lund row first.  The Lund
+    // "parent" value itself is one-based, so parentRow = parentIndex - 1.
+    int lundRow = -1
+
+    if (
+        mcToLundRow != null
+        && mcindex >= 0
+        && mcindex < mcToLundRow.length
+    ) {
+        lundRow = mcToLundRow[mcindex]
+    }
+
+    if (
+        lundBank != null
+        && lundRow >= 0
+        && lundRow < lundBank.rows()
+    ) {
+        int parentIndex = lundBank.getInt("parent", lundRow)
         result.parent_index = parentIndex
 
         if (parentIndex > 0) {
@@ -837,6 +958,10 @@ static void main(String[] args) {
                 ? buildMcOccurrenceByRow(mcBank)
                 : new int[0]
 
+            int[] mcToLundRow = (isMC && lundBank != null)
+                ? buildMcToLundRow(mcBank, lundBank)
+                : new int[0]
+
             int numGammas = recoEvent.countByPid(22)
             if (numGammas < 2) continue
 
@@ -847,6 +972,7 @@ static void main(String[] args) {
                 ? truthMatchCached(
                     recToMcIndex,
                     mcOccurrenceByRow,
+                    mcToLundRow,
                     mcBank,
                     lundBank,
                     recEIndex
@@ -857,6 +983,7 @@ static void main(String[] args) {
                 ? truthMatchCached(
                     recToMcIndex,
                     mcOccurrenceByRow,
+                    mcToLundRow,
                     mcBank,
                     lundBank,
                     recPIndex

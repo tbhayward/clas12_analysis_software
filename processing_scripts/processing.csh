@@ -184,8 +184,8 @@ else if ($arg1 == "processing_scripts/processing_epgamma.groovy" || $arg1 == "pr
     if ( $#argv >= 7 ) set photon_qadb_override = "$7"
 
     set output_base = "$3"
-    set quick_txt = "${output_base}_100k.txt"
-    set quick_root = "${output_base}_100k.root"
+    set quick_txt = "${output_base}_25k.txt"
+    set quick_root = "${output_base}_25k.root"
     set full_txt = "${output_base}.txt"
     set full_root = "${output_base}.root"
 
@@ -195,12 +195,12 @@ else if ($arg1 == "processing_scripts/processing_epgamma.groovy" || $arg1 == "pr
     echo "  run_override  = $photon_run_override"
     echo "  qadb_override = $photon_qadb_override"
 
-    echo "=== epgamma quick pass: stopping after 100,000 candidate rows ==="
+    echo "=== epgamma quick pass: stopping after 25,000 candidate rows ==="
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
         "$arg1" "$2" "$quick_txt" \
         "$photon_n_files" "$photon_beam_energy" \
         "$photon_run_override" "$photon_qadb_override" \
-        "100000"
+        "25000"
     if ($status != 0) exit $status
 
     ./processing_scripts/convert_txt_to_root \
@@ -241,8 +241,8 @@ else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy" || $arg1 =
     if ( $#argv >= 7 ) set photon_qadb_override = "$7"
 
     set output_base = "$3"
-    set quick_txt = "${output_base}_100k.txt"
-    set quick_root = "${output_base}_100k.root"
+    set quick_txt = "${output_base}_25k.txt"
+    set quick_root = "${output_base}_25k.root"
     set full_txt = "${output_base}.txt"
     set full_root = "${output_base}.root"
 
@@ -252,12 +252,12 @@ else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy" || $arg1 =
     echo "  run_override  = $photon_run_override"
     echo "  qadb_override = $photon_qadb_override"
 
-    echo "=== epgammagamma quick pass: stopping after 100,000 candidate rows ==="
+    echo "=== epgammagamma quick pass: stopping after 25,000 candidate rows ==="
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
         "$arg1" "$2" "$quick_txt" \
         "$photon_n_files" "$photon_beam_energy" \
         "$photon_run_override" "$photon_qadb_override" \
-        "100000"
+        "25000"
     if ($status != 0) exit $status
 
     ./processing_scripts/convert_txt_to_root \
