@@ -163,7 +163,7 @@ else if ($arg1 == "processing_scripts/processing_epgamma.groovy" || $arg1 == "pr
     #   n_files       = 0       (all files)
     #   beam_energy   = 10.604  GeV
     #   run_override  = 0       (use RUN::config)
-    #   qadb_override = 1
+    #   qadb_override = 0       (QADB enabled; pass 1 only to override)
     # ------------------------------------------------------------------
     if ( $#argv < 3 ) then
         echo "ERROR: processing_epgamma requires at least:"
@@ -180,7 +180,7 @@ else if ($arg1 == "processing_scripts/processing_epgamma.groovy" || $arg1 == "pr
     set photon_run_override = 0
     if ( $#argv >= 6 ) set photon_run_override = "$6"
 
-    set photon_qadb_override = 1
+    set photon_qadb_override = 0
     if ( $#argv >= 7 ) set photon_qadb_override = "$7"
 
     set output_base = "$3"
@@ -221,6 +221,7 @@ else if ($arg1 == "processing_scripts/processing_epgamma.groovy" || $arg1 == "pr
 else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy" || $arg1 == "processing_scripts/processing_mc_epgammagamma.groovy") then
     # Same optional argument ordering/defaults as processing_epgamma.groovy:
     # [n_files] [beam_energy] [run_override] [qadb_override]
+    # QADB is enabled by default (qadb_override = 0).
     if ( $#argv < 3 ) then
         echo "ERROR: processing_epgammagamma requires at least:"
         echo "  processing.csh <script> <hipo_dir> <output_base>"
@@ -236,7 +237,7 @@ else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy" || $arg1 =
     set photon_run_override = 0
     if ( $#argv >= 6 ) set photon_run_override = "$6"
 
-    set photon_qadb_override = 1
+    set photon_qadb_override = 0
     if ( $#argv >= 7 ) set photon_qadb_override = "$7"
 
     set output_base = "$3"
