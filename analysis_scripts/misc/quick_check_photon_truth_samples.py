@@ -409,7 +409,20 @@ def print_epg_truth_summary(
         formatted = ", ".join(
             f"{int(pid)}:{int(count)}" for pid, count in zip(pids, counts)
         )
-        print(f"  most common parent PIDs: {formatted}")
+        print(f"  most common parent PIDs (all reco candidates): {formatted}")
+
+        true_gamma_parent = parent[true_gamma]
+        if len(true_gamma_parent) > 0:
+            pids_g, counts_g = top_pid_values(true_gamma_parent, n=12)
+            formatted_g = ", ".join(
+                f"{int(pid)}:{int(count)}"
+                for pid, count in zip(pids_g, counts_g)
+            )
+            print(
+                "  parent PIDs among matching_gamma_pid==22: "
+                f"{formatted_g}"
+            )
+        #endif
     #endfor
 
 
@@ -467,7 +480,9 @@ def plot_epg_kinematics(
         #endfor
 
         hist_range = fixed_range
-        if hist_range is None:
+        if hist_range == "angle":
+            hist_range = robust_range(converted.values())
+        elif hist_range is None:
             hist_range = robust_range(converted.values())
         #endif
 
@@ -556,6 +571,95 @@ def plot_epg_truth_overview(
     save(fig, output / "02_epgamma_truth_pid_overview.png")
 
 
+
+def plot_clasdis_ancestry_consistency(
+    samples: Mapping[str, Mapping[str, np.ndarray]],
+    output: Path,
+) -> None:
+    """
+    Explicitly test whether the stored MC::Lund ancestry looks physically
+    credible.  This is intentionally redundant with the broad PID overview:
+    it conditions on reconstructed candidates truth-matched specifically to a
+    photon (matching_gamma_pid == 22).
+    """
+    epg = samples["clasdis_epg"]
+
+    matching = np.asarray(epg["matching_gamma_pid"], dtype=np.int64)
+    parent = np.asarray(epg["gamma_parent_pid"], dtype=np.int64)
+    grandparent = np.asarray(epg["gamma_grandparent_pid"], dtype=np.int64)
+    mcindex = np.asarray(epg["gamma_mcindex"], dtype=np.int64)
+    parent_index = np.asarray(epg["gamma_parent_index"], dtype=np.int64)
+
+    true_gamma = (matching == 22) & (mcindex >= 0)
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 9.5))
+
+    ax = axes[0, 0]
+    pids, counts = top_pid_values(parent[true_gamma], n=18)
+    ax.bar(np.arange(len(pids)), counts)
+    ax.set_xticks(np.arange(len(pids)))
+    ax.set_xticklabels([str(int(pid)) for pid in pids], rotation=45)
+    ax.set_xlabel("Stored immediate parent PID")
+    ax.set_ylabel("Truth-matched photons")
+    ax.set_title("CLASDIS: parent PID conditioned on truth PID = 22")
+    ax.grid(axis="y", alpha=0.2)
+
+    ax = axes[0, 1]
+    pids, counts = top_pid_values(grandparent[true_gamma], n=18)
+    ax.bar(np.arange(len(pids)), counts)
+    ax.set_xticks(np.arange(len(pids)))
+    ax.set_xticklabels([str(int(pid)) for pid in pids], rotation=45)
+    ax.set_xlabel("Stored grandparent PID")
+    ax.set_ylabel("Truth-matched photons")
+    ax.set_title("CLASDIS: grandparent PID conditioned on truth PID = 22")
+    ax.grid(axis="y", alpha=0.2)
+
+    ax = axes[1, 0]
+    labels = [
+        "parent=pi0",
+        "parent=eta",
+        "parent=0",
+        "parent=e",
+        "parent=p",
+        "other",
+    ]
+    masks = [
+        true_gamma & (parent == 111),
+        true_gamma & (parent == 221),
+        true_gamma & (parent == 0),
+        true_gamma & (parent == 11),
+        true_gamma & (parent == 2212),
+        true_gamma
+        & ~np.isin(parent, [111, 221, 0, 11, 2212]),
+    ]
+    counts = [int(np.sum(mask)) for mask in masks]
+    ax.bar(np.arange(len(labels)), counts)
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels, rotation=30, ha="right")
+    ax.set_ylabel("Truth-matched photons")
+    ax.set_title("Immediate-parent summary")
+    ax.grid(axis="y", alpha=0.2)
+
+    ax = axes[1, 1]
+    valid_parent_index = true_gamma & (parent_index > 0)
+    invalid_parent_index = true_gamma & (parent_index <= 0)
+    counts = [
+        int(np.sum(valid_parent_index)),
+        int(np.sum(invalid_parent_index)),
+    ]
+    ax.bar(["parent index > 0", "parent index <= 0"], counts)
+    ax.set_ylabel("Truth-matched photons")
+    ax.set_title("Stored MC::Lund parent-index availability")
+    ax.grid(axis="y", alpha=0.2)
+
+    fig.suptitle(
+        "CLASDIS ancestry consistency check — use this before trusting parent PID",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.965])
+    save(fig, output / "03_clasdis_ancestry_consistency.png")
+
+
 def plot_clasdis_truth_categories(
     samples: Mapping[str, Mapping[str, np.ndarray]],
     output: Path,
@@ -596,7 +700,9 @@ def plot_clasdis_truth_categories(
         #endif
 
         hist_range = fixed_range
-        if hist_range is None:
+        if hist_range == "angle":
+            hist_range = robust_range([values])
+        elif hist_range is None:
             hist_range = robust_range([values])
         #endif
 
@@ -624,7 +730,7 @@ def plot_clasdis_truth_categories(
     axes[0, 1].legend(fontsize=7.5)
     fig.suptitle("CLASDIS single-photon truth composition", y=0.995)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.965])
-    save(fig, output / "03_clasdis_epgamma_truth_categories.png")
+    save(fig, output / "04_clasdis_epgamma_truth_categories.png")
 
 
 def plot_detector_populations(
@@ -681,7 +787,7 @@ def plot_detector_populations(
 
     fig.suptitle("Photon detector assignments", y=0.995)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
-    save(fig, output / "04_detector_populations.png")
+    save(fig, output / "05_detector_populations.png")
 
 
 def plot_mgg_overview(
@@ -750,7 +856,7 @@ def plot_mgg_overview(
 
     fig.suptitle("Two-photon mass and truth-parent validation", y=0.995)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
-    save(fig, output / "05_mgammagamma_truth_validation.png")
+    save(fig, output / "06_mgammagamma_truth_validation.png")
 
 
 def plot_parent_pair_matrix(
@@ -789,7 +895,7 @@ def plot_parent_pair_matrix(
 
     fig.suptitle("Immediate-parent PID pair matrix", y=0.995)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
-    save(fig, output / "06_epgammagamma_parent_pid_matrix.png")
+    save(fig, output / "07_epgammagamma_parent_pid_matrix.png")
 
 
 def plot_epg_reco_gen_closure(
@@ -861,7 +967,7 @@ def plot_epg_reco_gen_closure(
 
     fig.suptitle("Single-photon reconstructed/generated closure (gen_valid == 1)", y=0.995)
     fig.tight_layout(rect=[0.03, 0.0, 1.0, 0.965])
-    save(fig, output / "07_epgamma_reco_gen_closure.png")
+    save(fig, output / "08_epgamma_reco_gen_closure.png")
 
 
 def plot_epgg_reco_gen_closure(
@@ -928,7 +1034,7 @@ def plot_epgg_reco_gen_closure(
 
     fig.suptitle("Two-photon reconstructed/generated closure (gen_valid == 1)", y=0.995)
     fig.tight_layout(rect=[0.035, 0.0, 1.0, 0.965])
-    save(fig, output / "08_epgammagamma_reco_gen_closure.png")
+    save(fig, output / "09_epgammagamma_reco_gen_closure.png")
 
 
 # -----------------------------------------------------------------------------
@@ -1009,6 +1115,7 @@ def main() -> None:
 
     plot_epg_kinematics(samples, args.output)
     plot_epg_truth_overview(samples, args.output)
+    plot_clasdis_ancestry_consistency(samples, args.output)
     plot_clasdis_truth_categories(samples, args.output)
     plot_detector_populations(samples, args.output)
     plot_mgg_overview(samples, args.output)
@@ -1022,10 +1129,10 @@ def main() -> None:
     print(f"Plots written to: {args.output}")
     print("Most important first checks:")
     print("  02_epgamma_truth_pid_overview.png")
-    print("  03_clasdis_epgamma_truth_categories.png")
-    print("  05_mgammagamma_truth_validation.png")
-    print("  07_epgamma_reco_gen_closure.png")
-    print("  08_epgammagamma_reco_gen_closure.png")
+    print("  03_clasdis_ancestry_consistency.png")
+    print("  06_mgammagamma_truth_validation.png")
+    print("  08_epgamma_reco_gen_closure.png")
+    print("  09_epgammagamma_reco_gen_closure.png")
 
 
 if __name__ == "__main__":
