@@ -378,6 +378,14 @@ def parse_args() -> argparse.Namespace:
         help="Skip real-data reconstructed-pi0 daughter validation.",
     )
     parser.add_argument(
+        "--skip-ordinary-data",
+        action="store_true",
+        help=(
+            "Skip scoring/fitting the ordinary real e'p'gammaX sample. "
+            "The reconstructed-pi0 data control can still be run."
+        ),
+    )
+    parser.add_argument(
         "--max-data-read",
         type=int,
         default=None,
@@ -2760,7 +2768,7 @@ def plot_data_control_score_distribution(
         Full MC/control comparison, including the two real-data controls.
 
     Bottom:
-        Real-data controls alone, so the golden-pi0 distribution can be read
+        Real-data controls alone, so the reconstructed-pi0 distribution can be read
         without being visually buried by the MC curves.
     """
     fig, axes = plt.subplots(
@@ -2830,7 +2838,7 @@ def plot_data_control_score_distribution(
             density=True,
             histtype="step",
             linewidth=2.1,
-            label="Data golden pi0 daughters",
+            label="Data reconstructed-pi0 daughters",
         )
     #endif
 
@@ -2869,7 +2877,7 @@ def plot_data_control_score_distribution(
             density=True,
             histtype="step",
             linewidth=2.2,
-            label="Data golden pi0 daughters",
+            label="Data reconstructed-pi0 daughters",
         )
     #endif
 
@@ -2951,7 +2959,7 @@ def plot_data_golden_transfer_vs_kinematics(
             label="16–84%",
         )
         ax.set_xlabel(xlabel)
-        ax.set_ylabel("Data golden-pi0 BDT score")
+        ax.set_ylabel("Data reconstructed-pi0 BDT score")
         ax.set_ylim(0.0, 1.0)
         ax.grid(alpha=0.20)
         ax.legend(fontsize=9)
@@ -2959,6 +2967,567 @@ def plot_data_golden_transfer_vs_kinematics(
 
     fig.suptitle(title, y=0.98)
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.93])
+    save_figure(fig, output_path)
+
+
+
+def fit_two_template_fraction(
+    data_scores: np.ndarray,
+    pi0_scores: np.ndarray,
+    gamma_scores: np.ndarray,
+    bins: int = 40,
+) -> Dict[str, object]:
+    """
+    Exploratory two-template SHAPE fit:
+
+        data(s) = f_pi0 * T_pi0(s) + (1-f_pi0) * T_gamma(s)
+
+    The total data yield is fixed to the observed number of entries; only the
+    pi0-like fraction is varied. AAOgen supplies T_pi0 and DVCSgen supplies
+    T_gamma. This is deliberately simple and should not yet be interpreted as
+    a physical contamination measurement.
+    """
+    data_scores = np.asarray(data_scores, dtype=float)
+    pi0_scores = np.asarray(pi0_scores, dtype=float)
+    gamma_scores = np.asarray(gamma_scores, dtype=float)
+
+    data_scores = data_scores[np.isfinite(data_scores)]
+    pi0_scores = pi0_scores[np.isfinite(pi0_scores)]
+    gamma_scores = gamma_scores[np.isfinite(gamma_scores)]
+
+    edges = np.linspace(0.0, 1.0, bins + 1)
+
+    data_counts, _ = np.histogram(data_scores, bins=edges)
+    pi0_counts, _ = np.histogram(pi0_scores, bins=edges)
+    gamma_counts, _ = np.histogram(gamma_scores, bins=edges)
+
+    if (
+        len(data_scores) == 0
+        or np.sum(pi0_counts) == 0
+        or np.sum(gamma_counts) == 0
+    ):
+        return {
+            "fraction": np.nan,
+            "edges": edges,
+            "data_counts": data_counts.astype(float),
+            "model_counts": np.zeros_like(data_counts, dtype=float),
+            "pi0_component": np.zeros_like(data_counts, dtype=float),
+            "gamma_component": np.zeros_like(data_counts, dtype=float),
+            "pull": np.full_like(data_counts, np.nan, dtype=float),
+            "chi2": np.nan,
+            "ndf": 0,
+        }
+    #endif
+
+    pi0_pdf = pi0_counts / np.sum(pi0_counts)
+    gamma_pdf = gamma_counts / np.sum(gamma_counts)
+    n_data = float(np.sum(data_counts))
+
+    # A dense one-dimensional scan is robust, dependency-free, and negligible
+    # computationally compared with the ROOT I/O.
+    fraction_grid = np.linspace(0.0, 1.0, 2001)
+    best = None
+
+    for fraction in fraction_grid:
+        model = n_data * (
+            fraction * pi0_pdf
+            + (1.0 - fraction) * gamma_pdf
+        )
+
+        # Pearson chi2; ignore completely empty model bins.
+        valid = model > 0.0
+        chi2 = float(
+            np.sum(
+                np.square(data_counts[valid] - model[valid])
+                / model[valid]
+            )
+        )
+
+        if best is None or chi2 < best[0]:
+            best = (chi2, float(fraction), model)
+        #endif
+    #endfor
+
+    chi2, fraction, model = best
+    pi0_component = n_data * fraction * pi0_pdf
+    gamma_component = n_data * (1.0 - fraction) * gamma_pdf
+
+    pull = np.full(len(data_counts), np.nan, dtype=float)
+    valid = model > 0.0
+    pull[valid] = (
+        data_counts[valid] - model[valid]
+    ) / np.sqrt(model[valid])
+
+    ndf = max(int(np.count_nonzero(valid)) - 1, 1)
+
+    return {
+        "fraction": fraction,
+        "edges": edges,
+        "data_counts": data_counts.astype(float),
+        "model_counts": model.astype(float),
+        "pi0_component": pi0_component.astype(float),
+        "gamma_component": gamma_component.astype(float),
+        "pull": pull,
+        "chi2": chi2,
+        "ndf": ndf,
+    }
+
+
+def plot_ordinary_data_score_fit(
+    ordinary_scores: np.ndarray,
+    pi0_scores: np.ndarray,
+    gamma_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    fit = fit_two_template_fraction(
+        ordinary_scores,
+        pi0_scores,
+        gamma_scores,
+    )
+
+    edges = fit["edges"]
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    fig, axes = plt.subplots(
+        2,
+        1,
+        figsize=(8.8, 7.8),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3.0, 1.0]},
+    )
+
+    ax = axes[0]
+    ax.step(
+        centers,
+        fit["data_counts"],
+        where="mid",
+        linewidth=1.7,
+        label="Ordinary real epgammaX data",
+    )
+    ax.step(
+        centers,
+        fit["model_counts"],
+        where="mid",
+        linewidth=1.7,
+        label="Two-template fit",
+    )
+    ax.step(
+        centers,
+        fit["pi0_component"],
+        where="mid",
+        linestyle="--",
+        linewidth=1.4,
+        label="AAOgen-like component",
+    )
+    ax.step(
+        centers,
+        fit["gamma_component"],
+        where="mid",
+        linestyle=":",
+        linewidth=1.4,
+        label="DVCSgen-like component",
+    )
+
+    ax.set_ylabel("Candidates / score bin")
+    ax.set_title(
+        rf"Exploratory shape fit: $f_{{\pi^0}}={fit['fraction']:.3f}$, "
+        rf"$\chi^2/\mathrm{{ndf}}={fit['chi2']:.1f}/{fit['ndf']}$",
+        pad=9,
+    )
+    ax.grid(alpha=0.20)
+    ax.legend(fontsize=8.5, ncol=2)
+
+    ax = axes[1]
+    ax.axhline(0.0, linestyle="--", linewidth=1.0)
+    ax.step(
+        centers,
+        fit["pull"],
+        where="mid",
+        linewidth=1.4,
+    )
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Pull")
+    ax.set_xlim(0.0, 1.0)
+    ax.grid(alpha=0.20)
+
+    fig.suptitle(title, y=0.995)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.965])
+    save_figure(fig, output_path)
+
+
+def plot_ordinary_data_score_2d(
+    ordinary: pd.DataFrame,
+    scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    if len(ordinary) == 0:
+        return
+    #endif
+
+    energy = ordinary["p2_p"].to_numpy(dtype=float)
+    theta = ordinary["p2_theta"].to_numpy(dtype=float)
+
+    if infer_angle_unit(theta, "p2_theta") == "rad":
+        theta = np.rad2deg(theta)
+    #endif
+
+    score = np.asarray(scores, dtype=float)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
+
+    for ax, values, xlabel in [
+        (axes[0], energy, r"$E_\gamma$ / $p_\gamma$ (GeV)"),
+        (axes[1], theta, r"$\theta_\gamma$ (deg)"),
+    ]:
+        finite = np.isfinite(values) & np.isfinite(score)
+        vv = values[finite]
+        ss = score[finite]
+
+        if len(vv) == 0:
+            continue
+        #endif
+
+        lo, hi = np.quantile(vv, [0.005, 0.995])
+        keep = (vv >= lo) & (vv <= hi)
+
+        hb = ax.hexbin(
+            vv[keep],
+            ss[keep],
+            gridsize=55,
+            mincnt=1,
+            bins="log",
+        )
+        fig.colorbar(hb, ax=ax, label="log10(candidate count)")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("BDT pi0 score")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(alpha=0.15)
+    #endfor
+
+    fig.suptitle(title, y=0.99)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def _coarse_edges(values: np.ndarray, n_bins: int = 4) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    values = values[np.isfinite(values)]
+
+    if len(values) < n_bins:
+        return np.asarray([])
+    #endif
+
+    # Quantile bins give comparable statistics per panel for an exploratory
+    # study and avoid sparse edge bins.
+    edges = np.quantile(
+        values,
+        np.linspace(0.0, 1.0, n_bins + 1),
+    )
+    edges = np.unique(edges)
+
+    return edges
+
+
+def plot_score_distributions_in_kinematic_bins(
+    ordinary: pd.DataFrame,
+    ordinary_scores: np.ndarray,
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    variable: str,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Four coarse data-score panels. The AAOgen and DVCSgen templates are selected
+    in the SAME kinematic bin before overlaying, so differences are not merely
+    caused by comparing different energy/theta populations.
+    """
+    if variable == "p2_theta":
+        ordinary_values = ordinary[variable].to_numpy(dtype=float)
+        test_values = test[variable].to_numpy(dtype=float)
+
+        if infer_angle_unit(ordinary_values, variable) == "rad":
+            ordinary_values = np.rad2deg(ordinary_values)
+        #endif
+        if infer_angle_unit(test_values, variable) == "rad":
+            test_values = np.rad2deg(test_values)
+        #endif
+
+        xlabel_value = r"$\theta_\gamma$ (deg)"
+    else:
+        ordinary_values = ordinary[variable].to_numpy(dtype=float)
+        test_values = test[variable].to_numpy(dtype=float)
+        xlabel_value = r"$E_\gamma$ / $p_\gamma$ (GeV)"
+    #endif
+
+    edges = _coarse_edges(ordinary_values, n_bins=4)
+
+    if len(edges) < 3:
+        return
+    #endif
+
+    n_bins = len(edges) - 1
+    fig, axes = plt.subplots(2, 2, figsize=(12.0, 8.8), sharex=True, sharey=True)
+    axes = axes.ravel()
+
+    y_test = test["label"].to_numpy(dtype=int)
+
+    for i in range(min(n_bins, 4)):
+        ax = axes[i]
+
+        if i == n_bins - 1:
+            data_mask = (
+                (ordinary_values >= edges[i])
+                & (ordinary_values <= edges[i + 1])
+            )
+            mc_mask = (
+                (test_values >= edges[i])
+                & (test_values <= edges[i + 1])
+            )
+        else:
+            data_mask = (
+                (ordinary_values >= edges[i])
+                & (ordinary_values < edges[i + 1])
+            )
+            mc_mask = (
+                (test_values >= edges[i])
+                & (test_values < edges[i + 1])
+            )
+        #endif
+
+        data_s = ordinary_scores[data_mask]
+        pi0_s = test_scores[mc_mask & (y_test == 1)]
+        gamma_s = test_scores[mc_mask & (y_test == 0)]
+
+        ax.hist(
+            data_s,
+            bins=40,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.7,
+            label="Data",
+        )
+
+        if len(pi0_s) > 0:
+            ax.hist(
+                pi0_s,
+                bins=40,
+                range=(0.0, 1.0),
+                density=True,
+                histtype="step",
+                linewidth=1.4,
+                label="AAOgen",
+            )
+        #endif
+
+        if len(gamma_s) > 0:
+            ax.hist(
+                gamma_s,
+                bins=40,
+                range=(0.0, 1.0),
+                density=True,
+                histtype="step",
+                linewidth=1.4,
+                label="DVCSgen",
+            )
+        #endif
+
+        ax.set_title(
+            f"{edges[i]:.3g} < {xlabel_value.replace('$','')} < {edges[i+1]:.3g}",
+            fontsize=10,
+        )
+        ax.grid(alpha=0.20)
+    #endfor
+
+    for ax in axes[n_bins:]:
+        ax.axis("off")
+    #endfor
+
+    axes[0].legend(fontsize=8.5)
+    fig.supxlabel("BDT pi0 score")
+    fig.supylabel("Normalized density")
+    fig.suptitle(title, y=0.995)
+    fig.tight_layout(rect=[0.04, 0.04, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_template_fraction_vs_kinematics(
+    ordinary: pd.DataFrame,
+    ordinary_scores: np.ndarray,
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Exploratory fitted AAOgen-like fraction in four coarse energy bins and four
+    coarse theta bins. Templates are taken from the same kinematic bin.
+    """
+    y_test = test["label"].to_numpy(dtype=int)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0))
+
+    for ax, variable, xlabel in [
+        (axes[0], "p2_p", r"$E_\gamma$ / $p_\gamma$ (GeV)"),
+        (axes[1], "p2_theta", r"$\theta_\gamma$ (deg)"),
+    ]:
+        data_values = ordinary[variable].to_numpy(dtype=float)
+        mc_values = test[variable].to_numpy(dtype=float)
+
+        if variable == "p2_theta":
+            if infer_angle_unit(data_values, variable) == "rad":
+                data_values = np.rad2deg(data_values)
+            #endif
+            if infer_angle_unit(mc_values, variable) == "rad":
+                mc_values = np.rad2deg(mc_values)
+            #endif
+        #endif
+
+        edges = _coarse_edges(data_values, n_bins=4)
+
+        centers = []
+        fractions = []
+        chi2_ndf = []
+
+        for i in range(len(edges) - 1):
+            if i == len(edges) - 2:
+                dm = (
+                    (data_values >= edges[i])
+                    & (data_values <= edges[i + 1])
+                )
+                mm = (
+                    (mc_values >= edges[i])
+                    & (mc_values <= edges[i + 1])
+                )
+            else:
+                dm = (
+                    (data_values >= edges[i])
+                    & (data_values < edges[i + 1])
+                )
+                mm = (
+                    (mc_values >= edges[i])
+                    & (mc_values < edges[i + 1])
+                )
+            #endif
+
+            fit = fit_two_template_fraction(
+                ordinary_scores[dm],
+                test_scores[mm & (y_test == 1)],
+                test_scores[mm & (y_test == 0)],
+            )
+
+            centers.append(0.5 * (edges[i] + edges[i + 1]))
+            fractions.append(fit["fraction"])
+            chi2_ndf.append(
+                fit["chi2"] / fit["ndf"]
+                if fit["ndf"] > 0 else np.nan
+            )
+        #endfor
+
+        centers = np.asarray(centers)
+        fractions = np.asarray(fractions)
+        chi2_ndf = np.asarray(chi2_ndf)
+
+        ax.plot(
+            centers,
+            fractions,
+            marker="o",
+            linewidth=1.5,
+            label="Fitted AAOgen-like fraction",
+        )
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Exploratory fitted pi0-like fraction")
+        ax.set_ylim(0.0, 1.0)
+        ax.grid(alpha=0.20)
+
+        for x, y, c in zip(centers, fractions, chi2_ndf):
+            if np.isfinite(y) and np.isfinite(c):
+                ax.annotate(
+                    rf"$\chi^2$/ndf={c:.1f}",
+                    (x, y),
+                    xytext=(0, 8),
+                    textcoords="offset points",
+                    ha="center",
+                    fontsize=7.5,
+                )
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(title, y=0.99)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_pi0_control_template_closure(
+    control_scores: np.ndarray,
+    pi0_scores: np.ndarray,
+    gamma_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Run the identical two-template fit on known reconstructed-pi0 daughter data.
+    A sensible template procedure should return a strongly AAOgen-like mixture.
+    """
+    fit = fit_two_template_fraction(
+        control_scores,
+        pi0_scores,
+        gamma_scores,
+    )
+
+    edges = fit["edges"]
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    fig, ax = plt.subplots(figsize=(8.3, 5.5))
+
+    ax.step(
+        centers,
+        fit["data_counts"],
+        where="mid",
+        linewidth=1.8,
+        label="Known real pi0 daughters",
+    )
+    ax.step(
+        centers,
+        fit["model_counts"],
+        where="mid",
+        linewidth=1.7,
+        label="AAOgen + DVCSgen fit",
+    )
+    ax.step(
+        centers,
+        fit["pi0_component"],
+        where="mid",
+        linestyle="--",
+        linewidth=1.4,
+        label="AAOgen-like component",
+    )
+    ax.step(
+        centers,
+        fit["gamma_component"],
+        where="mid",
+        linestyle=":",
+        linewidth=1.4,
+        label="DVCSgen-like component",
+    )
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Candidates / score bin")
+    ax.set_title(
+        rf"Control closure: fitted $f_{{\pi^0}}={fit['fraction']:.3f}$, "
+        rf"$\chi^2/\mathrm{{ndf}}={fit['chi2']:.1f}/{fit['ndf']}$",
+        pad=10,
+    )
+    ax.grid(alpha=0.20)
+    ax.legend(fontsize=8.5)
+
+    fig.suptitle(title, y=0.99)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
     save_figure(fig, output_path)
 
 
@@ -3028,7 +3597,7 @@ def plot_input_feature_distributions(
                     histtype="step",
                     linewidth=1.8,
                     color="black",
-                    label="Data golden pi0 daughters",
+                    label="Data reconstructed-pi0 daughters",
                 )
             #endif
         #endif
@@ -3666,6 +4235,7 @@ def run_region(
     clasdis_control: Optional[pd.DataFrame],
     data_parent_control: Optional[pd.DataFrame],
     data_golden_control: Optional[pd.DataFrame],
+    ordinary_data: Optional[pd.DataFrame],
     region: str,
     period_output: Path,
 ) -> List[DatasetSummary]:
@@ -3767,6 +4337,19 @@ def run_region(
         )
     #endif
 
+    ordinary_region = None
+    if ordinary_data is not None and not args.skip_ordinary_data:
+        ordinary_region = ordinary_data.loc[
+            detector_region_mask(ordinary_data, region)
+            & photon_open_angle_mask(ordinary_data)
+        ].copy()
+
+        progress(
+            f"REGION {region}: ordinary real epgammaX sample — "
+            f"{len(ordinary_region):,} selected candidates"
+        )
+    #endif
+
     # Use the NOMINAL feature list to define the common finite sample and one
     # common train/validation/test split for all ablation models. This makes AUC
     # differences directly interpretable.
@@ -3800,6 +4383,15 @@ def run_region(
         )
     else:
         data_golden_clean = None
+    #endif
+
+    if ordinary_region is not None:
+        ordinary_clean = clean_feature_rows(
+            ordinary_region,
+            ABLATION_FEATURE_SETS["nominal"],
+        )
+    else:
+        ordinary_clean = None
     #endif
 
     train, validation, test = train_validation_test_split(
@@ -3876,6 +4468,20 @@ def run_region(
         data_golden_scores = None
     #endif
 
+    if ordinary_clean is not None:
+        progress(
+            f"REGION {region}: scoring {len(ordinary_clean):,} ordinary "
+            f"real-data epgammaX candidates"
+        )
+        ordinary_scores = model_scores(
+            nominal_model,
+            ordinary_clean,
+            features,
+        )
+    else:
+        ordinary_scores = None
+    #endif
+
     roc_auc = plot_roc_curve(
         test=test,
         test_scores=test_scores,
@@ -3949,8 +4555,88 @@ def run_region(
             golden=data_golden_clean,
             scores=data_golden_scores,
             output_path=nominal_output / "data_golden_score_vs_kinematics.png",
-            title=f"{args.period} {region}: real golden-pi0 BDT-score stability",
+            title=f"{args.period} {region}: real reconstructed-pi0 BDT-score stability",
         )
+    #endif
+
+    if (
+        ordinary_clean is not None
+        and ordinary_scores is not None
+        and len(ordinary_clean) > 0
+    ):
+        ordinary_output = region_output / "ordinary_data"
+        ordinary_output.mkdir(parents=True, exist_ok=True)
+
+        y_test = test["label"].to_numpy(dtype=int)
+        pi0_template_scores = test_scores[y_test == 1]
+        gamma_template_scores = test_scores[y_test == 0]
+
+        progress(
+            f"REGION {region}: making ordinary-data score/template diagnostics"
+        )
+
+        plot_ordinary_data_score_fit(
+            ordinary_scores=ordinary_scores,
+            pi0_scores=pi0_template_scores,
+            gamma_scores=gamma_template_scores,
+            output_path=ordinary_output / "score_distribution_and_template_fit.png",
+            title=f"{args.period} {region}: ordinary real epgammaX BDT scores",
+        )
+
+        plot_ordinary_data_score_2d(
+            ordinary=ordinary_clean,
+            scores=ordinary_scores,
+            output_path=ordinary_output / "score_vs_kinematics_2d.png",
+            title=f"{args.period} {region}: ordinary-data BDT score vs photon kinematics",
+        )
+
+        plot_score_distributions_in_kinematic_bins(
+            ordinary=ordinary_clean,
+            ordinary_scores=ordinary_scores,
+            test=test,
+            test_scores=test_scores,
+            variable="p2_p",
+            output_path=ordinary_output / "score_distributions_energy_bins.png",
+            title=f"{args.period} {region}: BDT-score distributions in energy bins",
+        )
+
+        plot_score_distributions_in_kinematic_bins(
+            ordinary=ordinary_clean,
+            ordinary_scores=ordinary_scores,
+            test=test,
+            test_scores=test_scores,
+            variable="p2_theta",
+            output_path=ordinary_output / "score_distributions_theta_bins.png",
+            title=f"{args.period} {region}: BDT-score distributions in theta bins",
+        )
+
+        plot_template_fraction_vs_kinematics(
+            ordinary=ordinary_clean,
+            ordinary_scores=ordinary_scores,
+            test=test,
+            test_scores=test_scores,
+            output_path=ordinary_output / "template_fraction_vs_kinematics.png",
+            title=(
+                f"{args.period} {region}: exploratory two-template fraction "
+                f"vs photon kinematics"
+            ),
+        )
+
+        if (
+            data_golden_scores is not None
+            and len(data_golden_scores) > 0
+        ):
+            plot_pi0_control_template_closure(
+                control_scores=data_golden_scores,
+                pi0_scores=pi0_template_scores,
+                gamma_scores=gamma_template_scores,
+                output_path=ordinary_output / "pi0_daughter_template_closure.png",
+                title=(
+                    f"{args.period} {region}: template-fit closure on known "
+                    f"real pi0 daughters"
+                ),
+            )
+        #endif
     #endif
 
     joblib.dump(
@@ -4247,6 +4933,7 @@ def main() -> None:
 
     data_parent_control: Optional[pd.DataFrame] = None
     data_golden_control: Optional[pd.DataFrame] = None
+    ordinary_data: Optional[pd.DataFrame] = None
     data_closure = pd.DataFrame()
 
     if not args.skip_data_control:
@@ -4264,6 +4951,12 @@ def main() -> None:
             branches=DATA_EPG_BRANCHES,
             source="data_epg",
             entry_limit=args.max_data_read,
+        )
+
+        ordinary_data = data_epg
+        progress(
+            f"ORDINARY DATA: reusing the same loaded data_epg dataframe "
+            f"({len(ordinary_data):,} rows); no second ROOT read"
         )
 
         progress("DATA CONTROL: loading real-data e'p'pi0X")
@@ -4294,6 +4987,26 @@ def main() -> None:
         )
     #endif
 
+    if (
+        args.skip_data_control
+        and not args.skip_ordinary_data
+    ):
+        if data_epg_file is None:
+            raise RuntimeError(
+                "Ordinary-data scoring requested but no data epgamma path is available."
+            )
+        #endif
+
+        progress("ORDINARY DATA: loading real-data e'p'gammaX")
+        ordinary_data = load_dataframe(
+            filename=data_epg_file,
+            requested_tree=args.tree,
+            branches=DATA_EPG_BRANCHES,
+            source="data_epg",
+            entry_limit=args.max_data_read,
+        )
+    #endif
+
     all_summaries: List[DatasetSummary] = []
 
     for region in ["FT", "FD"]:
@@ -4304,6 +5017,7 @@ def main() -> None:
             clasdis_control=clasdis_control,
             data_parent_control=data_parent_control,
             data_golden_control=data_golden_control,
+            ordinary_data=ordinary_data,
             region=region,
             period_output=period_output,
         )
