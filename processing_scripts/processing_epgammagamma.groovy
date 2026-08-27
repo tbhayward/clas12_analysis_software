@@ -335,11 +335,28 @@ static void main(String[] args) {
         System.exit(1)
     }
 
+    File inputDirectory = args[0] as File
+
+    if (!inputDirectory.exists() || !inputDirectory.isDirectory()) {
+        println("ERROR: input path is not a directory: ${inputDirectory}")
+        System.exit(1)
+    }
+
+    // Deliberately NON-RECURSIVE: process only .hipo files directly inside
+    // the exact directory supplied by the user. Do not crawl subdirectories.
     List<File> hipoList = []
-    (args[0] as File).eachFileRecurse(FileType.FILES) {
+    inputDirectory.eachFile(FileType.FILES) {
         if (it.name.endsWith(".hipo")) hipoList << it
     }
     hipoList.sort { a, b -> a.absolutePath <=> b.absolutePath }
+
+    if (hipoList.isEmpty()) {
+        println("ERROR: no .hipo files found directly in: ${inputDirectory}")
+        println("Subdirectories are intentionally not searched.")
+        System.exit(1)
+    }
+
+    println("Found ${hipoList.size()} .hipo file(s) directly in ${inputDirectory}")
 
     String outputFile = args.length < 2 ? "epgammagamma_dummy_out.txt" : args[1]
     int requestedFiles = args.length < 3 ? 0 : Integer.parseInt(args[2])
