@@ -91,15 +91,19 @@ Input:
 Output:
   output/emff_from_bh_paper_method/
 
-Validation modes
-----------------
-For the legacy CLAS12 pass-1 cross sections:
+Run modes
+---------
+With no mode flag the script runs all three studies:
+  CLAS12 pass 2, CLAS12 pass 1, and CLAS6.
 
-  python extract_emff_from_dvcs_bh_paper_method.py --pass1-validation
+Manual single-study overrides:
+  --only-pass2
+  --only-pass1
+  --only-clas6
 
-For the published CLAS6 benchmark:
-
-  python extract_emff_from_dvcs_bh_paper_method.py --clas6-validation
+After the default all-three run, comparison plots of Fit 5 and Fit 8
+F1, F2, GE, and GM with propagated Hessian bands are written under
+output/emff_from_bh_paper_method/comparisons/.
 
 to bypass the CLAS12 CSV and reproduce the Moradi-et-al. analysis using
 Gepard's built-in CLAS6 2015 XUU dataset (ID 98). Results are written to
@@ -2253,7 +2257,158 @@ def save_summary_tables(results: List[FitResult],
 
 
 
-def run_pass1_validation(args) -> int:
+
+def get_named_fit(bundle: Dict[str, object], fit_name: str) -> FitResult:
+    return next(r for r in bundle["results"] if r.name == fit_name)
+#enddef
+
+
+def save_cross_dataset_form_factor_comparison(
+        bundles: Sequence[Dict[str, object]],
+        outdir: Path,
+        fit_name: str) -> None:
+    """
+    Overlay CLAS6, CLAS12 pass-1, and CLAS12 pass-2 fitted form factors
+    with propagated 68% Hessian bands. No KM15/Gepard calls are made here.
+    """
+    observed_max = max(
+        float(bundle["set5"]["t_abs"].max()) for bundle in bundles
+    )
+    q = np.linspace(0.0, max(1.0, observed_max), 500)
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.0, 9.0))
+    panels = [
+        ("F1", r"$F_1(t)$"),
+        ("F2", r"$F_2(t)$"),
+        ("GE", r"$G_E(t)$"),
+        ("GM", r"$G_M(t)$"),
+    ]
+
+    for ax, (which, ylabel) in zip(axes.flat, panels):
+        for bundle in bundles:
+            fr = get_named_fit(bundle, fit_name)
+            central, sigma = form_factor_band(fr, q, which)
+            line, = ax.plot(q, central, linewidth=1.5, label=bundle["label"])
+            ax.fill_between(
+                q, central - sigma, central + sigma,
+                alpha=0.18, color=line.get_color()
+            )
+
+            tmin = float(bundle["set5"]["t_abs"].min())
+            tmax = float(bundle["set5"]["t_abs"].max())
+            ax.axvline(tmin, linewidth=0.55, alpha=0.55,
+                       color=line.get_color())
+            ax.axvline(tmax, linewidth=0.55, alpha=0.55,
+                       color=line.get_color())
+        #endfor
+
+        ax.axvline(A1_BERNAUER_Q2_MIN, linewidth=0.7, linestyle="--")
+        ax.axvline(PRAD_Q2_MIN, linewidth=0.7, linestyle=":")
+        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.2)
+    #endfor
+
+    axes[0, 0].legend(fontsize=9)
+    fig.suptitle(f"{fit_name}: CLAS6 vs CLAS12 extracted form factors", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.975))
+    safe = fit_name.lower().replace(" ", "_")
+    fig.savefig(outdir / f"comparison_{safe}_form_factors.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+def save_cross_dataset_radius_comparison(
+        bundles: Sequence[Dict[str, object]],
+        outdir: Path) -> None:
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 5.2))
+    labels = [b["label"] for b in bundles]
+    x = np.arange(len(labels), dtype=float)
+    offsets = {"Fit 5": -0.10, "Fit 8": 0.10}
+
+    for fit_name in ["Fit 5", "Fit 8"]:
+        fits = [get_named_fit(b, fit_name) for b in bundles]
+        axes[0].errorbar(
+            x + offsets[fit_name],
+            [f.rE_fm for f in fits],
+            yerr=[f.rE_err_fm for f in fits],
+            fmt="o", capsize=2, label=fit_name
+        )
+        axes[1].errorbar(
+            x + offsets[fit_name],
+            [f.rM_fm for f in fits],
+            yerr=[f.rM_err_fm for f in fits],
+            fmt="o", capsize=2, label=fit_name
+        )
+    #endfor
+
+    for ax, ylabel in zip(axes, [r"$r_E$ (fm)", r"$r_M$ (fm)"]):
+        ax.set_xticks(x, labels, rotation=15)
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.2)
+    #endfor
+    axes[0].legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "comparison_radii_fit5_fit8.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+def save_cross_dataset_summary(
+        bundles: Sequence[Dict[str, object]],
+        outdir: Path) -> None:
+    rows = []
+    for bundle in bundles:
+        for fit_name in ["Fit 5", "Fit 8"]:
+            fr = get_named_fit(bundle, fit_name)
+            rows.append({
+                "dataset": bundle["label"],
+                "fit": fit_name,
+                "N_set5": len(bundle["set5"]),
+                "chi2_ndof": fr.chi2_ndof,
+                "rE_fm": fr.rE_fm,
+                "rE_err_fm": fr.rE_err_fm,
+                "rM_fm": fr.rM_fm,
+                "rM_err_fm": fr.rM_err_fm,
+                "tmin": float(bundle["set5"]["t_abs"].min()),
+                "tmax": float(bundle["set5"]["t_abs"].max()),
+            })
+        #endfor
+    #endfor
+    pd.DataFrame(rows).to_csv(
+        outdir / "comparison_fit5_fit8_summary.csv", index=False
+    )
+#enddef
+
+
+def run_all_three(args) -> int:
+    print("\\n" + "=" * 78)
+    print("[DEFAULT MODE] Running pass 2, pass 1, and CLAS6")
+    print("=" * 78)
+
+    pass2 = run_pass2_analysis(args, return_results=True)
+    pass1 = run_pass1_validation(args, return_results=True)
+    clas6 = run_clas6_validation(args, return_results=True)
+
+    comparison_dir = Path(args.outdir).expanduser().resolve() / "comparisons"
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+
+    bundles = [clas6, pass1, pass2]
+    save_cross_dataset_form_factor_comparison(
+        bundles, comparison_dir, "Fit 5"
+    )
+    save_cross_dataset_form_factor_comparison(
+        bundles, comparison_dir, "Fit 8"
+    )
+    save_cross_dataset_radius_comparison(bundles, comparison_dir)
+    save_cross_dataset_summary(bundles, comparison_dir)
+
+    print(f"\\n[comparison] Results written to {comparison_dir}")
+    return 0
+#enddef
+
+
+def run_pass1_validation(args, return_results: bool = False):
     """
     Run the same BH-dominance/form-factor diagnostic on the legacy CLAS12
     pass-1 cross sections.
@@ -2427,11 +2582,15 @@ def run_pass1_validation(args) -> int:
     #endfor
 
     print(f"\nDone. Pass-1 validation results are in {outdir}")
+    if return_results:
+        return {"label": "CLAS12 pass 1", "results": fit_results,
+                "set5": set5, "outdir": outdir}
+    #endif
     return 0
 #enddef
 
 
-def run_clas6_validation(args) -> int:
+def run_clas6_validation(args, return_results: bool = False):
     """
     Reproduce the Moradi et al. CLAS6 analysis using Gepard's bundled
     CLAS:2015uuo XUU data.
@@ -2671,6 +2830,10 @@ def run_clas6_validation(args) -> int:
         "Fit", "our_chi2_ndof", "paper_chi2_ndof", "delta_chi2_ndof"
     ]].to_string(index=False))
     print(f"\nDone. CLAS6 validation results are in {outdir}")
+    if return_results:
+        return {"label": "CLAS6", "results": fit_results,
+                "set5": set5, "outdir": outdir}
+    #endif
     return 0
 #enddef
 
@@ -2682,26 +2845,26 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
-    p.add_argument(
-        "--pass1-validation",
+    mode = p.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--only-pass2",
         action="store_true",
-        help=(
-            "Override normal pass-2 mode and run the same BH/F1/F2 "
-            "diagnostic on the legacy CLAS12 pass-1 all_bin_v3.csv"
-        ),
+        help="Run only the CLAS12 pass-2 analysis",
+    )
+    mode.add_argument(
+        "--only-pass1",
+        action="store_true",
+        help="Run only the CLAS12 pass-1 diagnostic",
+    )
+    mode.add_argument(
+        "--only-clas6",
+        action="store_true",
+        help="Run only the CLAS6/Gepard validation",
     )
     p.add_argument(
         "--pass1-csv",
         default=DEFAULT_PASS1_CSV,
         help="Legacy CLAS12 pass-1 cross-section CSV",
-    )
-    p.add_argument(
-        "--clas6-validation",
-        action="store_true",
-        help=(
-            "Override normal CLAS12 mode: load Gepard's CLAS6 Jo et al. "
-            "XUU cross sections and reproduce the paper's Fits 1-8"
-        ),
     )
     p.add_argument(
         "--clas6-dataset-id",
@@ -2802,33 +2965,7 @@ def apply_optional_t_range(data: pd.DataFrame,
 #enddef
 
 
-def main() -> int:
-    args = build_parser().parse_args()
-
-    # Require the paper's minimizer explicitly.
-    if Minuit is None:
-        raise RuntimeError(
-            "iminuit is required because arXiv:2512.06554 performs the "
-            "chi^2 minimization with iMinuit and Hessian Delta-chi^2=1 "
-            "errors. Install it in the active Python environment, e.g. "
-            "`python -m pip install --user iminuit`, then rerun."
-        )
-    #endif
-
-    if args.pass1_validation and args.clas6_validation:
-        raise ValueError(
-            "--pass1-validation and --clas6-validation are mutually exclusive."
-        )
-    #endif
-
-    if args.pass1_validation:
-        return run_pass1_validation(args)
-    #endif
-
-    if args.clas6_validation:
-        return run_clas6_validation(args)
-    #endif
-
+def run_pass2_analysis(args, return_results: bool = False):
     csv_path = Path(args.csv).expanduser().resolve()
     outdir = Path(args.outdir).expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
@@ -3117,7 +3254,36 @@ def main() -> int:
     #endfor
 
     print(f"\nDone. Results are in {outdir}")
+
+#enddef
+    if return_results:
+        return {"label": "CLAS12 pass 2", "results": fit_results,
+                "set5": set5, "outdir": outdir}
+    #endif
     return 0
+#enddef
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+
+    if Minuit is None:
+        raise RuntimeError(
+            "iminuit is required. Install it in the active Python environment."
+        )
+    #endif
+
+    if args.only_pass2:
+        return run_pass2_analysis(args)
+    #endif
+    if args.only_pass1:
+        return run_pass1_validation(args)
+    #endif
+    if args.only_clas6:
+        return run_clas6_validation(args)
+    #endif
+
+    return run_all_three(args)
 #enddef
 
 
