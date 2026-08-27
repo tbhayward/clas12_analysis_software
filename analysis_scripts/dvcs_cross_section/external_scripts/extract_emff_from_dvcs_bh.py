@@ -520,11 +520,28 @@ def sachs_shape(family: str, q: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
 
 
 def family_order(family: str) -> int:
-    family = family.upper()
+    """Return the number of free shape coefficients for a Sachs fit family."""
+    family = family.upper().strip()
+
     if family.startswith("IP"):
-        return int(family[2:])
+        suffix = family[2:]
+    elif family.startswith("CF"):
+        suffix = family[2:]
+    elif family.startswith("P"):
+        suffix = family[1:]
+    else:
+        raise ValueError(f"Unknown Sachs family: {family}")
     #endif
-    return int(family[1:])
+
+    if not suffix.isdigit():
+        raise ValueError(f"Could not parse order from Sachs family: {family}")
+    #endif
+
+    n = int(suffix)
+    if n < 1:
+        raise ValueError(f"Sachs family order must be >= 1: {family}")
+    #endif
+    return n
 #enddef
 
 
