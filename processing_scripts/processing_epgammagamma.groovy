@@ -1021,7 +1021,8 @@ static void main(String[] args) {
                         ? truthMatchCached(
                             recToMcIndex,
                             mcOccurrenceByRow,
-                            mcBank,
+                                                        mcToLundRow,
+mcBank,
                             lundBank,
                             recGamma1Index
                         )
@@ -1031,7 +1032,8 @@ static void main(String[] args) {
                         ? truthMatchCached(
                             recToMcIndex,
                             mcOccurrenceByRow,
-                            mcBank,
+                                                        mcToLundRow,
+mcBank,
                             lundBank,
                             recGamma2Index
                         )
