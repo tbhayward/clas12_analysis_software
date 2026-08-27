@@ -91,9 +91,13 @@ Input:
 Output:
   output/emff_from_bh_paper_method/
 
-Validation mode
----------------
-Run
+Validation modes
+----------------
+For the legacy CLAS12 pass-1 cross sections:
+
+  python extract_emff_from_dvcs_bh_paper_method.py --pass1-validation
+
+For the published CLAS6 benchmark:
 
   python extract_emff_from_dvcs_bh_paper_method.py --clas6-validation
 
@@ -147,6 +151,8 @@ GLOBAL_SCALE_FRAC = 0.0476
 # dataset 98 = 2640-point beam-helicity-independent XUU cross section.
 CLAS6_GEPARD_DATASET_ID = 98
 CLAS6_BEAM_ENERGY = 5.75
+DEFAULT_PASS1_CSV = "../imports/all_bin_v3.csv"
+PASS1_GLOBAL_SCALE_FRAC = 0.31
 PAPER_SELECTION_COUNTS = {0.01: 98, 0.02: 212, 0.03: 292, 0.04: 404, 0.05: 473}
 PAPER_CHI2_NDOF = {1: 0.82, 2: 0.75, 3: 0.73, 4: 0.68, 5: 0.69, 6: 0.67, 7: 0.67, 8: 0.68}
 PAPER_DIPOLE_PARAMS = {
@@ -280,6 +286,127 @@ def load_clas12_csv(path: Path) -> pd.DataFrame:
     )
     df = df.loc[good].copy().reset_index(drop=True)
     return df
+#enddef
+
+
+
+def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
+    """
+    Load the legacy/pass-1 CLAS12 DVCS cross-section table all_bin_v3.csv.
+
+    Relevant columns in the attached file:
+      xBavg, Q2avg, t_abs_avg, phiavg
+      cross sections, ep->epg, exp
+      cross sections, ep->epg, exp, stat. unc.
+      cross sections, ep->epg, exp, syst. unc. (up/down)
+      valid bin
+
+    The pass-1 systematic column is treated as an absolute pointwise
+    systematic uncertainty. The large 31% overall scale uncertainty is kept
+    separate and represented by one correlated normalization nuisance.
+    """
+    raw = pd.read_csv(csv_path, low_memory=False)
+
+    required = [
+        "xBavg",
+        "Q2avg",
+        "t_abs_avg",
+        "phiavg",
+        "cross sections, ep->epg, exp",
+        "cross sections, ep->epg, exp, stat. unc.",
+        "cross sections, ep->epg, exp, syst. unc. (up)",
+        "cross sections, ep->epg, exp, syst. unc. (down)",
+        "valid bin",
+    ]
+    missing = [c for c in required if c not in raw.columns]
+    if missing:
+        raise KeyError(
+            "Pass-1 CSV is missing required columns: "
+            + ", ".join(missing)
+        )
+    #endif
+
+    valid = pd.to_numeric(raw["valid bin"], errors="coerce") == 1
+    work = raw.loc[valid].copy()
+
+    outdf = pd.DataFrame({
+        "_row": work.index.to_numpy(int),
+        "xB": pd.to_numeric(work["xBavg"], errors="coerce"),
+        "Q2": pd.to_numeric(work["Q2avg"], errors="coerce"),
+        "t_abs": pd.to_numeric(work["t_abs_avg"], errors="coerce"),
+        "phi_deg": pd.to_numeric(work["phiavg"], errors="coerce"),
+        "xs": pd.to_numeric(
+            work["cross sections, ep->epg, exp"], errors="coerce"
+        ),
+        "xs_stat": pd.to_numeric(
+            work["cross sections, ep->epg, exp, stat. unc."],
+            errors="coerce",
+        ),
+        "pass1_sys_up": pd.to_numeric(
+            work["cross sections, ep->epg, exp, syst. unc. (up)"],
+            errors="coerce",
+        ),
+        "pass1_sys_down": pd.to_numeric(
+            work["cross sections, ep->epg, exp, syst. unc. (down)"],
+            errors="coerce",
+        ),
+    })
+
+    # Use the mean absolute up/down uncertainty as the symmetric pointwise
+    # systematic entering chi2. In the attached CSV up and down are in fact
+    # equal for the inspected rows, but this remains robust if some bins differ.
+    outdf["ptp_sys_abs"] = 0.5 * (
+        np.abs(outdf["pass1_sys_up"].to_numpy(float))
+        + np.abs(outdf["pass1_sys_down"].to_numpy(float))
+    )
+
+    outdf["comb_sys_frac"] = 0.0
+    outdf["scale_sys_frac"] = PASS1_GLOBAL_SCALE_FRAC
+    outdf["ebeam"] = 10.604
+
+    # Carry bin-boundary columns through for grouped phi plots when available.
+    passthrough = [
+        "Bin Name",
+        "xBmin", "xBmax",
+        "Q2min", "Q2max",
+        "t_abs_min", "t_abs_max",
+        "phimin", "phimax",
+        "cross sections, ep->epg, sim(KM15)",
+        "cross sections, ep->epg, sim(pureBH)",
+    ]
+    for col in passthrough:
+        if col in work.columns:
+            outdf[col] = work[col].to_numpy()
+        #endif
+    #endfor
+
+    finite = (
+        np.isfinite(outdf["xB"])
+        & np.isfinite(outdf["Q2"])
+        & np.isfinite(outdf["t_abs"])
+        & np.isfinite(outdf["phi_deg"])
+        & np.isfinite(outdf["xs"])
+        & np.isfinite(outdf["xs_stat"])
+        & np.isfinite(outdf["ptp_sys_abs"])
+        & (outdf["xs"] > 0.0)
+        & (outdf["xs_stat"] > 0.0)
+        & (outdf["t_abs"] > 0.0)
+    )
+    outdf = outdf.loc[finite].copy().reset_index(drop=True)
+
+    print(
+        f"[PASS1] Loaded {len(outdf)} valid pass-1 CLAS12 "
+        f"cross-section points from {csv_path}"
+    )
+
+    rel_stat = outdf["xs_stat"] / outdf["xs"]
+    rel_sys = outdf["ptp_sys_abs"] / outdf["xs"]
+    print(
+        f"[PASS1] median stat/xs={100*np.nanmedian(rel_stat):.1f}%, "
+        f"median pointwise syst/xs={100*np.nanmedian(rel_sys):.1f}%, "
+        f"global scale={100*PASS1_GLOBAL_SCALE_FRAC:.1f}%"
+    )
+    return outdf
 #enddef
 
 
@@ -958,7 +1085,8 @@ def fit_paper_model(data: pd.DataFrame,
                     include_clas12_ptp_sys: bool,
                     include_bh_sys: bool,
                     include_combination_norm_sys: bool,
-                    include_global_norm_sys: bool) -> FitResult:
+                    include_global_norm_sys: bool,
+                    global_scale_frac: float = GLOBAL_SCALE_FRAC) -> FitResult:
     """
     Paper-method chi2 fit with two correlated CLAS12 scale nuisances.
 
@@ -966,7 +1094,7 @@ def fit_paper_model(data: pd.DataFrame,
       beta_comb   : common nuisance with per-bin coefficient comb_sys_frac_i
 
       pred_i = sigma_BH,i
-               * (1 + beta_global * GLOBAL_SCALE_FRAC)
+               * (1 + beta_global * global_scale_frac)
                * (1 + beta_comb * comb_sys_frac_i)
 
       chi2 += beta_global^2 + beta_comb^2
@@ -1229,7 +1357,7 @@ def evaluate_fit_cross_section(fr: FitResult,
     use_comb = bool(fr.meta.get("include_combination_norm_sys", False))
 
     global_factor = (
-        1.0 + beta_global * GLOBAL_SCALE_FRAC
+        1.0 + beta_global * float(fr.meta.get('global_scale_frac', GLOBAL_SCALE_FRAC))
         if use_global
         else 1.0
     )
@@ -1612,6 +1740,185 @@ def save_selected_cross_section_pages(data: pd.DataFrame,
 #enddef
 
 
+
+def save_pass1_cross_section_diagnostics(data: pd.DataFrame,
+                                         fit5: FitResult,
+                                         fit8: FitResult,
+                                         outdir: Path) -> None:
+    """Per-bin pass-1 data-vs-fit PNGs plus pull summaries."""
+    plotdir = outdir / "03_cross_section_fits"
+    plotdir.mkdir(parents=True, exist_ok=True)
+
+    work = data.copy()
+    work["fit5_bh"] = evaluate_fit_cross_section(fit5, work, True)
+    work["fit8_bh"] = evaluate_fit_cross_section(fit8, work, True)
+    work["fit5_pull"] = (
+        (work["fit5_bh"] - work["xs"]) / work["fit_sigma_default"]
+    )
+    work["fit8_pull"] = (
+        (work["fit8_bh"] - work["xs"]) / work["fit_sigma_default"]
+    )
+
+    group_cols = [
+        c for c in
+        ["xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max"]
+        if c in work.columns
+    ]
+    if len(group_cols) < 6:
+        work["_gx"] = work["xB"].round(3)
+        work["_gq"] = work["Q2"].round(2)
+        work["_gt"] = work["t_abs"].round(3)
+        group_cols = ["_gx", "_gq", "_gt"]
+    #endif
+
+    groups = [
+        (key, group.sort_values("phi_deg"))
+        for key, group in work.groupby(group_cols, dropna=False)
+    ]
+
+    for igroup, (_, group) in enumerate(groups, start=1):
+        fig = plt.figure(figsize=(8.0, 7.0))
+        gs = fig.add_gridspec(
+            2, 1,
+            height_ratios=[3.0, 1.15],
+            hspace=0.05,
+        )
+        ax = fig.add_subplot(gs[0])
+        pax = fig.add_subplot(gs[1], sharex=ax)
+
+        ax.errorbar(
+            group["phi_deg"],
+            group["xs"],
+            yerr=group["fit_sigma_default"],
+            fmt="o",
+            markersize=4.0,
+            capsize=2,
+            label="CLAS12 pass-1",
+        )
+        ax.plot(
+            group["phi_deg"],
+            group["fit5_bh"],
+            marker="o",
+            linestyle="none",
+            markersize=5.0,
+            markerfacecolor="none",
+            label="Fit 5 BH at pass-1 points",
+        )
+        ax.plot(
+            group["phi_deg"],
+            group["fit8_bh"],
+            marker="s",
+            linestyle="none",
+            markersize=4.8,
+            markerfacecolor="none",
+            label=r"Fit 8 BH at pass-1 points ($F_2$ Kelly)",
+        )
+        ax.plot(
+            group["phi_deg"],
+            group["km15_bh"],
+            marker="^",
+            linestyle="none",
+            markersize=4.6,
+            markerfacecolor="none",
+            label="KM15 nominal BH",
+        )
+
+        pax.axhline(0.0, linewidth=0.8)
+        for level in (-3.0, -2.0, -1.0, 1.0, 2.0, 3.0):
+            pax.axhline(level, linewidth=0.5, linestyle="--", alpha=0.5)
+        #endfor
+
+        pax.plot(
+            group["phi_deg"],
+            group["fit5_pull"],
+            "o-",
+            markersize=3.5,
+            linewidth=0.9,
+            label="Fit 5 pull",
+        )
+        pax.plot(
+            group["phi_deg"],
+            group["fit8_pull"],
+            "s--",
+            markersize=3.2,
+            linewidth=0.9,
+            label="Fit 8 pull",
+        )
+
+        all_pulls = np.concatenate([
+            group["fit5_pull"].to_numpy(float),
+            group["fit8_pull"].to_numpy(float),
+        ])
+        max_pull = max(
+            4.0,
+            float(np.nanmax(np.abs(all_pulls))) + 0.5,
+        )
+        pax.set_ylim(-max_pull, max_pull)
+
+        ax.set_ylabel(r"$d^4\sigma$")
+        pax.set_ylabel("pull")
+        pax.set_xlabel(r"$\phi$ (deg)")
+        ax.grid(alpha=0.2)
+        pax.grid(alpha=0.2)
+        ax.set_title(
+            rf"Pass 1: $\langle x_B\rangle={group['xB'].mean():.3f}$, "
+            rf"$\langle Q^2\rangle={group['Q2'].mean():.2f}$ GeV$^2$, "
+            rf"$\langle|t|\rangle={group['t_abs'].mean():.3f}$ GeV$^2$"
+        )
+        ax.legend(fontsize=8)
+        pax.legend(fontsize=8, ncol=2)
+        plt.setp(ax.get_xticklabels(), visible=False)
+
+        fig.tight_layout()
+        fig.savefig(
+            plotdir / f"pass1_cross_section_fit_{igroup:03d}.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    #endfor
+
+    columns = [
+        "_row", "xB", "Q2", "t_abs", "phi_deg", "xs", "xs_stat",
+        "ptp_sys_abs", "fit_sigma_default",
+        "fit5_bh", "fit5_pull",
+        "fit8_bh", "fit8_pull",
+        "R_BH", "bh_delta",
+    ]
+    columns = [c for c in columns if c in work.columns]
+    outliers = work[columns].copy()
+    outliers["abs_fit5_pull"] = np.abs(work["fit5_pull"].to_numpy(float))
+    outliers.sort_values(
+        "abs_fit5_pull",
+        ascending=False,
+    ).to_csv(
+        plotdir / "pass1_fit5_points_sorted_by_abs_pull.csv",
+        index=False,
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8))
+    for ax, (column, xlabel) in zip(
+        axes.flat,
+        [
+            ("phi_deg", r"$\phi$ (deg)"),
+            ("t_abs", r"$|t|$ (GeV$^2$)"),
+            ("xB", r"$x_B$"),
+            ("Q2", r"$Q^2$ (GeV$^2$)"),
+        ],
+    ):
+        ax.scatter(work[column], work["fit5_pull"], s=14)
+        ax.axhline(0.0, linewidth=0.8)
+        ax.axhline(3.0, linewidth=0.6, linestyle="--")
+        ax.axhline(-3.0, linewidth=0.6, linestyle="--")
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Fit 5 pull")
+        ax.grid(alpha=0.2)
+    #endfor
+    fig.tight_layout()
+    fig.savefig(plotdir / "pass1_fit5_pulls_vs_kinematics.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
 def save_fit1_to_fit5_plots(results: List[FitResult],
                             set5_data: pd.DataFrame,
                             outdir: Path) -> None:
@@ -1945,6 +2252,185 @@ def save_summary_tables(results: List[FitResult],
 
 
 
+
+def run_pass1_validation(args) -> int:
+    """
+    Run the same BH-dominance/form-factor diagnostic on the legacy CLAS12
+    pass-1 cross sections.
+
+    This mode bypasses the pass-2 CSV and uses:
+      * pass-1 stat uncertainty
+      * pass-1 per-point systematic uncertainty
+      * paper's 1--5% BH-selection uncertainty
+      * one correlated 31% overall normalization nuisance
+      * no pass-2 combination-systematic nuisance
+    """
+    csv_path = Path(args.pass1_csv).expanduser().resolve()
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        / "pass1_validation"
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 78)
+    print("[CLAS12 PASS-1 VALIDATION MODE]")
+    print(f"[input]  {csv_path}")
+    print(f"[output] {outdir}")
+    print("=" * 78)
+
+    df = load_clas12_pass1_csv(csv_path)
+
+    cache = outdir / "km15_bh_decomposition_pass1.csv"
+    df = evaluate_km15_dataframe(
+        df,
+        10.604,
+        max(1, args.workers),
+        cache,
+        args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["km15_ep"])
+        & np.isfinite(df["km15_bh"])
+        & np.isfinite(df["R_BH"])
+        & (df["km15_ep"] > 0.0)
+        & (df["km15_bh"] > 0.0)
+    )
+    df = df.loc[finite].copy().reset_index(drop=True)
+
+    max_ep_relerr = float(np.nanmax(df["km15_ep_decomp_relerr"]))
+    max_bh_relerr = float(np.nanmax(df["bh_quad_relerr"]))
+    print(
+        f"[check] max KM15 EP decomposition rel. error = {max_ep_relerr:.3e}"
+    )
+    print(
+        f"[check] max BH quadratic reconstruction rel. error = {max_bh_relerr:.3e}"
+    )
+
+    if max_ep_relerr > 1.0e-7 or max_bh_relerr > 1.0e-7:
+        raise RuntimeError(
+            "Pass-1 validation failed internal KM15 decomposition checks."
+        )
+    #endif
+
+    bh_cuts = [0.01, 0.02, 0.03, 0.04, 0.05]
+    selected_sets = {}
+    selection_rows = []
+
+    print("\n[PASS1 BH selections]")
+    for cut in bh_cuts:
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        selected_sets[cut] = selected
+        print(
+            f"  |1-R_BH| <= {100*cut:.0f}% : {len(selected)} points"
+        )
+        selection_rows.append({
+            "BH_cut": cut,
+            "Npts": len(selected),
+            "xB_min": selected["xB"].min() if len(selected) else np.nan,
+            "xB_max": selected["xB"].max() if len(selected) else np.nan,
+            "Q2_min": selected["Q2"].min() if len(selected) else np.nan,
+            "Q2_max": selected["Q2"].max() if len(selected) else np.nan,
+            "t_min": selected["t_abs"].min() if len(selected) else np.nan,
+            "t_max": selected["t_abs"].max() if len(selected) else np.nan,
+        })
+    #endfor
+
+    pd.DataFrame(selection_rows).to_csv(
+        outdir / "bh_selection_summary.csv",
+        index=False,
+    )
+
+    fit_results = []
+
+    for fit_index, cut in enumerate(bh_cuts, start=1):
+        data = selected_sets[cut]
+        fr = fit_paper_model(
+            data=data,
+            kind="dipole",
+            fit_name=f"Fit {fit_index}",
+            bh_cut=cut,
+            include_clas12_ptp_sys=True,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=True,
+            global_scale_frac=PASS1_GLOBAL_SCALE_FRAC,
+        )
+        fit_results.append(fr)
+
+        print(
+            f"[PASS1 fit] Fit {fit_index}: "
+            f"N={fr.npts:4d} "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"aE={fr.params[0]:.4f} "
+            f"aM={fr.params[1]:.4f} "
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}"
+        )
+    #endfor
+
+    set5 = selected_sets[0.05].copy()
+    set5["fit_sigma_default"] = fit_sigma_errors(
+        set5,
+        0.05,
+        include_clas12_ptp_sys=True,
+        include_bh_sys=True,
+    )
+    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
+
+    for kind, fit_name in [
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
+    ]:
+        fr = fit_paper_model(
+            data=set5,
+            kind=kind,
+            fit_name=fit_name,
+            bh_cut=0.05,
+            include_clas12_ptp_sys=True,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=True,
+            global_scale_frac=PASS1_GLOBAL_SCALE_FRAC,
+        )
+        fit_results.append(fr)
+        print(
+            f"[PASS1 fit] {fit_name}: "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}"
+        )
+    #endfor
+
+    pd.DataFrame(
+        [fitresult_to_record(fr) for fr in fit_results]
+    ).to_csv(outdir / "fit_results.csv", index=False)
+
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    fit8 = next(r for r in fit_results if r.name == "Fit 8")
+
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    save_fit5_sachs_plot(fit5, set5, outdir)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+    save_pass1_cross_section_diagnostics(set5, fit5, fit8, outdir)
+
+    print("\n[PASS1 radii]")
+    for fit_name in ["Fit 5", "Fit 6", "Fit 7", "Fit 8"]:
+        fr = next(r for r in fit_results if r.name == fit_name)
+        print(
+            f"  {fit_name}: "
+            f"rE={fr.rE_fm:.5f}+/-{fr.rE_err_fm:.5f} fm, "
+            f"rM={fr.rM_fm:.5f}+/-{fr.rM_err_fm:.5f} fm, "
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}, "
+            f"chi2/dof={fr.chi2_ndof:.3f}"
+        )
+    #endfor
+
+    print(f"\nDone. Pass-1 validation results are in {outdir}")
+    return 0
+#enddef
+
+
 def run_clas6_validation(args) -> int:
     """
     Reproduce the Moradi et al. CLAS6 analysis using Gepard's bundled
@@ -2197,6 +2683,19 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     p.add_argument(
+        "--pass1-validation",
+        action="store_true",
+        help=(
+            "Override normal pass-2 mode and run the same BH/F1/F2 "
+            "diagnostic on the legacy CLAS12 pass-1 all_bin_v3.csv"
+        ),
+    )
+    p.add_argument(
+        "--pass1-csv",
+        default=DEFAULT_PASS1_CSV,
+        help="Legacy CLAS12 pass-1 cross-section CSV",
+    )
+    p.add_argument(
         "--clas6-validation",
         action="store_true",
         help=(
@@ -2314,6 +2813,16 @@ def main() -> int:
             "errors. Install it in the active Python environment, e.g. "
             "`python -m pip install --user iminuit`, then rerun."
         )
+    #endif
+
+    if args.pass1_validation and args.clas6_validation:
+        raise ValueError(
+            "--pass1-validation and --clas6-validation are mutually exclusive."
+        )
+    #endif
+
+    if args.pass1_validation:
+        return run_pass1_validation(args)
     #endif
 
     if args.clas6_validation:
