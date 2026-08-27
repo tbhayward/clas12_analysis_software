@@ -414,6 +414,17 @@ def parse_args() -> argparse.Namespace:
             "Default: 250000."
         ),
     )
+    parser.add_argument(
+        "--io-chunk-size",
+        type=int,
+        default=250000,
+        help=(
+            "ROOT entries per NumPy I/O chunk for large reads. "
+            "Avoids uproot's expensive direct pandas concatenation and "
+            "provides visible progress for multi-million-row samples. "
+            "Default: 250000."
+        ),
+    )
 
     parser.add_argument(
         "--max-2d-plot-events",
@@ -633,17 +644,34 @@ def load_dataframe(
     branches: Sequence[str],
     source: str,
     entry_limit: Optional[int] = None,
+    io_chunk_size: int = 250_000,
 ) -> pd.DataFrame:
+    """
+    Read ROOT branches through NumPy rather than uproot's direct pandas backend.
+
+    The old library="pd" path caused pandas.concat/block consolidation to become
+    extremely expensive for multi-million-row samples. Here each ROOT chunk is
+    read as NumPy arrays, the arrays are concatenated branch-by-branch, and one
+    DataFrame is constructed at the end.
+
+    This also gives explicit progress for large reads.
+    """
     stage_start = time.perf_counter()
     progress(f"LOAD {source}: opening {filename}")
 
     tree_name = resolve_tree_name(filename, requested_tree)
-    progress(f"LOAD {source}: using tree '{tree_name}'; validating {len(branches)} branches")
+    progress(
+        f"LOAD {source}: using tree '{tree_name}'; "
+        f"validating {len(branches)} branches"
+    )
     validate_branches(filename, tree_name, branches)
+
+    io_chunk_size = max(1, int(io_chunk_size))
 
     with uproot.open(filename) as root_file:
         tree = root_file[tree_name]
         n_total = int(tree.num_entries)
+
         if entry_limit is None:
             n_read = n_total
         else:
@@ -654,27 +682,73 @@ def load_dataframe(
             f"LOAD {source}: tree contains {n_total:,} rows; "
             f"reading {n_read:,} ({100.0*n_read/max(n_total,1):.2f}%)"
         )
+
+        n_chunks = int(math.ceil(n_read / io_chunk_size))
+        branch_chunks: Dict[str, List[np.ndarray]] = {
+            branch: [] for branch in branches
+        }
+
         progress(
-            f"LOAD {source}: reading {len(branches)} branches into memory "
-            f"(entry_start=0, entry_stop={n_read:,})"
+            f"LOAD {source}: NumPy I/O in {n_chunks} chunk(s) of "
+            f"<= {io_chunk_size:,} entries"
         )
 
-        df = tree.arrays(
-            list(branches),
-            entry_start=0,
-            entry_stop=n_read,
-            library="pd",
-        )
+        for chunk_index in range(n_chunks):
+            lo = chunk_index * io_chunk_size
+            hi = min((chunk_index + 1) * io_chunk_size, n_read)
+
+            chunk = tree.arrays(
+                list(branches),
+                entry_start=lo,
+                entry_stop=hi,
+                library="np",
+            )
+
+            for branch in branches:
+                branch_chunks[branch].append(
+                    np.asarray(chunk[branch])
+                )
+            #endfor
+
+            progress(
+                f"LOAD {source}: ROOT read {hi:,}/{n_read:,} "
+                f"({100.0*hi/max(n_read,1):.1f}%)"
+            )
+        #endfor
     #endwith
 
-    df = df.reset_index(drop=True)
+    progress(
+        f"LOAD {source}: ROOT arrays complete; concatenating branches"
+    )
+
+    arrays: Dict[str, np.ndarray] = {}
+    for branch in branches:
+        pieces = branch_chunks[branch]
+
+        if len(pieces) == 1:
+            arrays[branch] = pieces[0]
+        else:
+            arrays[branch] = np.concatenate(pieces)
+        #endif
+    #endfor
+
+    # Construct once from a dict of contiguous arrays; this avoids the expensive
+    # pandas.concat performed internally by uproot's library="pd" backend.
+    progress(
+        f"LOAD {source}: constructing DataFrame from NumPy arrays"
+    )
+    df = pd.DataFrame(arrays, copy=False)
     df["source"] = source
 
     progress(
         f"LOAD {source}: complete — {len(df):,} rows, "
-        f"~{dataframe_memory_mb(df):.1f} MB in memory ({elapsed_since(stage_start)})"
+        f"~{dataframe_memory_mb(df):.1f} MB in memory "
+        f"({elapsed_since(stage_start)})"
     )
+
     return df
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -905,50 +979,69 @@ def spherical_to_cartesian(
     return px, py, pz
 
 
-def build_ep_cartesian_components(
+def build_ep_cartesian_matrix(
     df: pd.DataFrame,
-) -> Dict[str, np.ndarray]:
+) -> np.ndarray:
+    """
+    Return [e_px,e_py,e_pz,p_px,p_py,p_pz] as one contiguous NumPy matrix.
+    """
+    e_p = df["e_p"].to_numpy(dtype=float, copy=False)
+    e_theta = df["e_theta"].to_numpy(dtype=float, copy=False)
+    e_phi = df["e_phi"].to_numpy(dtype=float, copy=False)
+
+    p_p = df["p1_p"].to_numpy(dtype=float, copy=False)
+    p_theta = df["p1_theta"].to_numpy(dtype=float, copy=False)
+    p_phi = df["p1_phi"].to_numpy(dtype=float, copy=False)
+
     e_px, e_py, e_pz = spherical_to_cartesian(
-        p=df["e_p"].to_numpy(dtype=float),
-        theta=df["e_theta"].to_numpy(dtype=float),
-        phi=df["e_phi"].to_numpy(dtype=float),
+        p=e_p,
+        theta=e_theta,
+        phi=e_phi,
         theta_name="e_theta",
         phi_name="e_phi",
     )
 
     p_px, p_py, p_pz = spherical_to_cartesian(
-        p=df["p1_p"].to_numpy(dtype=float),
-        theta=df["p1_theta"].to_numpy(dtype=float),
-        phi=df["p1_phi"].to_numpy(dtype=float),
+        p=p_p,
+        theta=p_theta,
+        phi=p_phi,
         theta_name="p1_theta",
         phi_name="p1_phi",
     )
 
+    return np.column_stack(
+        [e_px, e_py, e_pz, p_px, p_py, p_pz]
+    )
+
+
+def build_ep_cartesian_components(
+    df: pd.DataFrame,
+) -> Dict[str, np.ndarray]:
+    """
+    Compatibility wrapper for the smaller diagnostic routines.
+    """
+    matrix = build_ep_cartesian_matrix(df)
+
     return {
-        "e_px": e_px,
-        "e_py": e_py,
-        "e_pz": e_pz,
-        "p_px": p_px,
-        "p_py": p_py,
-        "p_pz": p_pz,
+        "e_px": matrix[:, 0],
+        "e_py": matrix[:, 1],
+        "e_pz": matrix[:, 2],
+        "p_px": matrix[:, 3],
+        "p_py": matrix[:, 4],
+        "p_pz": matrix[:, 5],
     }
 
 
-def _matching_embedding(df: pd.DataFrame) -> np.ndarray:
-    components = build_ep_cartesian_components(df)
-
-    matrix = np.column_stack(
-        [
-            components["e_px"],
-            components["e_py"],
-            components["e_pz"],
-            components["p_px"],
-            components["p_py"],
-            components["p_pz"],
-        ]
-    )
-
+def _matching_embedding_from_matrix(
+    matrix: np.ndarray,
+) -> np.ndarray:
     return matrix / MATCH_COMPONENT_TOL_GEV
+
+
+def _matching_embedding(df: pd.DataFrame) -> np.ndarray:
+    return _matching_embedding_from_matrix(
+        build_ep_cartesian_matrix(df)
+    )
 
 
 def _nearest_match_diagnostics(
@@ -958,12 +1051,28 @@ def _nearest_match_diagnostics(
     label: str,
 ) -> pd.DataFrame:
     """
-    Find the nearest e'p'pi0X parent in six-dimensional Cartesian e/p momentum
-    space using scipy.spatial.cKDTree.
-    """
+    Find the nearest e'p'pi0X parent using cKDTree.
 
-    left_embedding = _matching_embedding(left)
-    right_embedding = _matching_embedding(right)
+    Cartesian momenta are computed exactly once for each side. The same matrices
+    are reused for nearest-neighbor residuals, avoiding the previous second full
+    spherical->Cartesian conversion after the tree query.
+    """
+    prep_start = time.perf_counter()
+
+    left_cartesian = build_ep_cartesian_matrix(left)
+    right_cartesian = build_ep_cartesian_matrix(right)
+
+    left_embedding = _matching_embedding_from_matrix(
+        left_cartesian
+    )
+    right_embedding = _matching_embedding_from_matrix(
+        right_cartesian
+    )
+
+    progress(
+        f"CLASDIS MATCH [{label}]: Cartesian embeddings prepared "
+        f"({elapsed_since(prep_start)})"
+    )
 
     progress(
         f"CLASDIS MATCH [{label}]: building cKDTree for "
@@ -992,53 +1101,25 @@ def _nearest_match_diagnostics(
             workers=-1,
         )
 
-        nearest_indices[lo:hi] = np.asarray(chunk_indices, dtype=np.int64)
+        nearest_indices[lo:hi] = np.asarray(
+            chunk_indices,
+            dtype=np.int64,
+        )
         nearest_scaled_distances[lo:hi] = np.asarray(
             chunk_distances,
             dtype=float,
         )
 
-        if (
-            chunk_index == 0
-            or chunk_index + 1 == n_chunks
-            or (chunk_index + 1) % max(1, n_chunks // 5) == 0
-        ):
-            progress(
-                f"CLASDIS MATCH [{label}]: query "
-                f"{hi:,}/{n_left:,} ({100.0*hi/n_left:.1f}%)"
-            )
-        #endif
-    #endfor
-
-    nearest = right.iloc[nearest_indices].reset_index(drop=True)
-
-    left_components = build_ep_cartesian_components(left)
-    right_components = build_ep_cartesian_components(nearest)
-
-    residual_columns = {}
-    for component in [
-        "e_px",
-        "e_py",
-        "e_pz",
-        "p_px",
-        "p_py",
-        "p_pz",
-    ]:
-        residual_columns[f"delta_{component}"] = (
-            left_components[component]
-            - right_components[component]
+        progress(
+            f"CLASDIS MATCH [{label}]: query "
+            f"{hi:,}/{n_left:,} ({100.0*hi/max(n_left,1):.1f}%)"
         )
     #endfor
 
-    residual_matrix = np.column_stack(
-        [
-            residual_columns["delta_e_px"],
-            residual_columns["delta_e_py"],
-            residual_columns["delta_e_pz"],
-            residual_columns["delta_p_px"],
-            residual_columns["delta_p_py"],
-            residual_columns["delta_p_pz"],
-        ]
+    # Exact Cartesian residuals without rebuilding any spherical coordinates.
+    residual_matrix = (
+        left_cartesian
+        - right_cartesian[nearest_indices]
     )
 
     max_abs_component_delta = np.max(
@@ -1046,53 +1127,51 @@ def _nearest_match_diagnostics(
         axis=1,
     )
 
-    # Recompute the exact scaled Euclidean distance from the Cartesian
-    # residuals. This should agree with the nearest-neighbor distance returned
-    # above up to floating-point precision.
-    exact_scaled_distance = np.sqrt(
-        np.sum(
-            np.square(
-                residual_matrix / MATCH_COMPONENT_TOL_GEV
+    diagnostics = pd.DataFrame(
+        {
+            "_epg_index": left["_epg_index"].to_numpy(
+                dtype=np.int64,
+                copy=False,
             ),
-            axis=1,
-        )
+            "_nearest_eppi0_index": right.iloc[
+                nearest_indices
+            ]["_eppi0_index"].to_numpy(
+                dtype=np.int64,
+                copy=False,
+            ),
+            "match_distance": nearest_scaled_distances,
+            "max_abs_component_delta": max_abs_component_delta,
+            "delta_e_px": residual_matrix[:, 0],
+            "delta_e_py": residual_matrix[:, 1],
+            "delta_e_pz": residual_matrix[:, 2],
+            "delta_p_px": residual_matrix[:, 3],
+            "delta_p_py": residual_matrix[:, 4],
+            "delta_p_pz": residual_matrix[:, 5],
+        }
     )
 
-    diagnostics_dict = {
-        "_epg_index": left["_epg_index"].to_numpy(dtype=int),
-        "_nearest_eppi0_index": nearest["_eppi0_index"].to_numpy(dtype=int),
-        "match_distance": exact_scaled_distance,
-        "neighbor_distance": nearest_scaled_distances,
-        "max_abs_component_delta": max_abs_component_delta,
-        "detector2": left["detector2"].to_numpy(dtype=int),
-        "p2_p": left["p2_p"].to_numpy(dtype=float),
-        "p2_theta": left["p2_theta"].to_numpy(dtype=float),
+    # Attach the few matched-pi0 quantities still used by downstream diagnostics.
+    nearest = right.iloc[nearest_indices]
+
+    optional_map = {
+        "p2_p": "matched_p2_p",
+        "p2_theta": "matched_p2_theta",
+        "p2_phi": "matched_p2_phi",
+        "Mh_gammagamma": "matched_Mh_gammagamma",
+        "detector_gamma1": "matched_detector_gamma1",
+        "detector_gamma2": "matched_detector_gamma2",
     }
-    diagnostics_dict.update(residual_columns)
 
-    diagnostics = pd.DataFrame(diagnostics_dict)
-
-    for column in ["p2_p", "p2_theta", "p2_phi", "Mh_gammagamma"]:
-        if column in nearest.columns:
-            diagnostics[f"matched_{column}"] = nearest[
-                column
-            ].to_numpy(dtype=float)
+    for source_column, output_column in optional_map.items():
+        if source_column in nearest.columns:
+            diagnostics[output_column] = nearest[
+                source_column
+            ].to_numpy(copy=False)
         #endif
     #endfor
 
-    if "detector_gamma1" in nearest.columns:
-        diagnostics["matched_detector_gamma1"] = nearest[
-            "detector_gamma1"
-        ].to_numpy(dtype=int)
-    #endif
-
-    if "detector_gamma2" in nearest.columns:
-        diagnostics["matched_detector_gamma2"] = nearest[
-            "detector_gamma2"
-        ].to_numpy(dtype=int)
-    #endif
-
     return diagnostics
+
 
 
 def match_epgamma_to_eppi0_by_kinematics(
@@ -1159,18 +1238,39 @@ def match_epgamma_to_eppi0_by_kinematics(
         f"{component_tolerance_gev:.4f} GeV"
     )
 
-    left = (
-        epg.replace([np.inf, -np.inf], np.nan)
-        .dropna(subset=match_columns)
-        .copy()
-        .reset_index(names="_epg_index")
+    # Build finite masks directly from the six matching columns. The previous
+    # DataFrame.replace(...).dropna(...).copy() path was surprisingly expensive
+    # at O(300k) rows on ifarm.
+    left_matrix = epg.loc[:, match_columns].to_numpy(
+        dtype=float,
+        copy=False,
     )
-    right = (
-        eppi0.replace([np.inf, -np.inf], np.nan)
-        .dropna(subset=match_columns)
-        .copy()
-        .reset_index(names="_eppi0_index")
+    right_matrix = eppi0.loc[:, match_columns].to_numpy(
+        dtype=float,
+        copy=False,
     )
+
+    left_finite = np.all(np.isfinite(left_matrix), axis=1)
+    right_finite = np.all(np.isfinite(right_matrix), axis=1)
+
+    left_indices = np.flatnonzero(left_finite)
+    right_indices = np.flatnonzero(right_finite)
+
+    left = epg.iloc[left_indices].copy()
+    left.insert(
+        0,
+        "_epg_index",
+        left_indices.astype(np.int64),
+    )
+    left = left.reset_index(drop=True)
+
+    right = eppi0.iloc[right_indices].copy()
+    right.insert(
+        0,
+        "_eppi0_index",
+        right_indices.astype(np.int64),
+    )
+    right = right.reset_index(drop=True)
 
     progress(
         f"CLASDIS MATCH: finite e/p kinematics — "
@@ -1181,7 +1281,7 @@ def match_epgamma_to_eppi0_by_kinematics(
         progress("CLASDIS MATCH: no usable rows")
         empty_match = epg.iloc[0:0].copy().reset_index(drop=True)
         empty_diag = pd.DataFrame()
-        return empty_match, empty_diag, empty_diag.copy()
+        return empty_match, empty_diag
     #endif
 
     # Report inferred angular units once for transparency.
@@ -6140,6 +6240,7 @@ def main() -> None:
         f"max-data-control-read={args.max_data_control_read}, "
         f"max-control-events={args.max_control_events}, "
         f"score-chunk-size={args.score_chunk_size}, "
+        f"io-chunk-size={args.io_chunk_size}, "
         f"ablations={'ON' if args.ablations else 'OFF'}, "
         f"broadened-negative={'OFF' if args.disable_broadened_negative else 'ON'}, "
         f"unmatched-weight={args.unmatched_negative_weight}, "
@@ -6208,6 +6309,7 @@ def main() -> None:
         branches=EPG_REQUIRED_BRANCHES,
         source="aaogen",
         entry_limit=training_read_limit,
+        io_chunk_size=args.io_chunk_size,
     )
 
     dvcsgen = load_dataframe(
@@ -6216,6 +6318,7 @@ def main() -> None:
         branches=EPG_REQUIRED_BRANCHES,
         source="dvcsgen",
         entry_limit=training_read_limit,
+        io_chunk_size=args.io_chunk_size,
     )
 
     clasdis_all: Optional[pd.DataFrame] = None
@@ -6232,6 +6335,7 @@ def main() -> None:
             branches=EPG_REQUIRED_BRANCHES,
             source="clasdis_epg",
             entry_limit=args.max_clasdis_read,
+            io_chunk_size=args.io_chunk_size,
         )
         clasdis_all = clasdis_epg
 
@@ -6241,6 +6345,7 @@ def main() -> None:
             branches=EPPI0_MATCH_BRANCHES,
             source="clasdis_eppi0",
             entry_limit=args.max_clasdis_read,
+            io_chunk_size=args.io_chunk_size,
         )
 
         match_output = period_output / "clasdis_matching"
@@ -6293,6 +6398,7 @@ def main() -> None:
             branches=DATA_EPG_BRANCHES,
             source="data_epg",
             entry_limit=args.max_data_read,
+            io_chunk_size=args.io_chunk_size,
         )
 
         ordinary_data = data_epg
@@ -6326,6 +6432,7 @@ def main() -> None:
             branches=DATA_EPPI0_BRANCHES,
             source="data_eppi0",
             entry_limit=control_limit,
+            io_chunk_size=args.io_chunk_size,
         )
 
         (
@@ -6364,6 +6471,7 @@ def main() -> None:
             branches=DATA_EPG_BRANCHES,
             source="data_epg",
             entry_limit=args.max_data_read,
+            io_chunk_size=args.io_chunk_size,
         )
     #endif
 
