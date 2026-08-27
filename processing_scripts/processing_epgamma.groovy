@@ -25,29 +25,79 @@ import clasqa.QADB
 // Shared helpers
 // -----------------------------------------------------------------------------
 
-static int recIndexForPidOccurrence(HipoDataBank recBank, int pid, int occurrence) {
-    int found = 0
+static Map<Integer, List<Integer>> buildRecPidRows(HipoDataBank recBank) {
+    Map<Integer, List<Integer>> pidRows = [:].withDefault { [] }
+
     for (int row = 0; row < recBank.rows(); row++) {
-        if (recBank.getInt("pid", row) != pid) continue
-        if (found == occurrence) return row
-        found++
+        int pid = recBank.getInt("pid", row)
+        pidRows[pid] << row
     }
-    return -1
+
+    return pidRows
 }
 
-static int occurrenceForMcRow(HipoDataBank mcBank, int pid, int mcRow) {
-    if (mcBank == null || mcRow < 0 || mcRow >= mcBank.rows()) return -1
-    int occurrence = 0
-    for (int row = 0; row < mcBank.rows(); row++) {
-        if (mcBank.getInt("pid", row) != pid) continue
-        if (row == mcRow) return occurrence
-        occurrence++
+static int recIndexForPidOccurrence(
+    Map<Integer, List<Integer>> pidRows,
+    int pid,
+    int occurrence
+) {
+    List<Integer> rows = pidRows[pid]
+
+    if (rows == null || occurrence < 0 || occurrence >= rows.size()) {
+        return -1
     }
-    return -1
+
+    return rows[occurrence]
 }
 
-static Map truthMatch(
+static Map<Integer, Integer> buildRecToMcIndex(
     HipoDataBank recMatchBank,
+    HipoDataBank mcBank
+) {
+    Map<Integer, Integer> recToMcIndex = [:]
+
+    if (recMatchBank == null || mcBank == null) {
+        return recToMcIndex
+    }
+
+    for (int row = 0; row < recMatchBank.rows(); row++) {
+        int recPindex = recMatchBank.getInt("pindex", row)
+        int mcindex = recMatchBank.getInt("mcindex", row)
+
+        if (
+            mcindex >= 0
+            && mcindex < mcBank.rows()
+            && !recToMcIndex.containsKey(recPindex)
+        ) {
+            recToMcIndex[recPindex] = mcindex
+        }
+    }
+
+    return recToMcIndex
+}
+
+static int[] buildMcOccurrenceByRow(HipoDataBank mcBank) {
+    if (mcBank == null) {
+        return new int[0]
+    }
+
+    int[] occurrenceByRow = new int[mcBank.rows()]
+    Map<Integer, Integer> nextOccurrence = [:].withDefault { 0 }
+
+    for (int row = 0; row < mcBank.rows(); row++) {
+        int pid = mcBank.getInt("pid", row)
+        int occurrence = nextOccurrence[pid]
+
+        occurrenceByRow[row] = occurrence
+        nextOccurrence[pid] = occurrence + 1
+    }
+
+    return occurrenceByRow
+}
+
+static Map truthMatchCached(
+    Map<Integer, Integer> recToMcIndex,
+    int[] mcOccurrenceByRow,
     HipoDataBank mcBank,
     HipoDataBank lundBank,
     int recPindex
@@ -62,34 +112,42 @@ static Map truthMatch(
         grandparent_pid: 0
     ]
 
-    if (recMatchBank == null || mcBank == null || recPindex < 0) return result
-
-    int mcindex = -1
-    for (int row = 0; row < recMatchBank.rows(); row++) {
-        if (recMatchBank.getInt("pindex", row) == recPindex) {
-            int candidate = recMatchBank.getInt("mcindex", row)
-            if (candidate >= 0 && candidate < mcBank.rows()) {
-                mcindex = candidate
-                break
-            }
-        }
+    if (
+        recToMcIndex == null
+        || mcBank == null
+        || recPindex < 0
+        || !recToMcIndex.containsKey(recPindex)
+    ) {
+        return result
     }
 
-    if (mcindex < 0) return result
+    int mcindex = recToMcIndex[recPindex]
+
+    if (mcindex < 0 || mcindex >= mcBank.rows()) {
+        return result
+    }
 
     int truthPid = mcBank.getInt("pid", mcindex)
+
     result.matching_pid = truthPid
     result.mcindex = mcindex
-    result.mc_occurrence = occurrenceForMcRow(mcBank, truthPid, mcindex)
+
+    if (
+        mcOccurrenceByRow != null
+        && mcindex >= 0
+        && mcindex < mcOccurrenceByRow.length
+    ) {
+        result.mc_occurrence = mcOccurrenceByRow[mcindex]
+    }
 
     // MC::Lund parent is one-based in the existing processing convention.
-    // This mirrors processing_mc_two_particles.groovy.
     if (lundBank != null && mcindex < lundBank.rows()) {
         int parentIndex = lundBank.getInt("parent", mcindex)
         result.parent_index = parentIndex
 
         if (parentIndex > 0) {
             int parentRow = parentIndex - 1
+
             if (parentRow >= 0 && parentRow < lundBank.rows()) {
                 result.parent_pid = lundBank.getInt("pid", parentRow)
 
@@ -98,8 +156,15 @@ static Map truthMatch(
 
                 if (grandparentIndex > 0) {
                     int grandparentRow = grandparentIndex - 1
-                    if (grandparentRow >= 0 && grandparentRow < lundBank.rows()) {
-                        result.grandparent_pid = lundBank.getInt("pid", grandparentRow)
+
+                    if (
+                        grandparentRow >= 0
+                        && grandparentRow < lundBank.rows()
+                    ) {
+                        result.grandparent_pid = lundBank.getInt(
+                            "pid",
+                            grandparentRow
+                        )
                     }
                 }
             }
@@ -107,6 +172,18 @@ static Map truthMatch(
     }
 
     return result
+}
+
+static Map emptyTruthMatch() {
+    return [
+        matching_pid: 0,
+        mcindex: -1,
+        mc_occurrence: -1,
+        parent_index: 0,
+        parent_pid: 0,
+        grandparent_index: 0,
+        grandparent_pid: 0
+    ]
 }
 
 static void appendRow(
@@ -454,6 +531,7 @@ static void main(String[] args) {
     StringBuilder batchLines = new StringBuilder()
     int bufferedRows = 0
     long inputEvents = 0L
+    long rawTopologyRejected = 0L
     long outputRows = 0L
     boolean stopRequested = false
 
@@ -478,10 +556,34 @@ static void main(String[] args) {
             inputEvents++
 
             if (inputEvents % 500000L == 0L) {
-                println("processed HIPO events: ${inputEvents}, output epgamma rows: ${outputRows}")
+                println(
+                    "processed HIPO events: ${inputEvents}, " +
+                    "raw-topology rejected: ${rawTopologyRejected}, " +
+                    "output epgamma rows: ${outputRows}"
+                )
             }
 
             if (!event.hasBank("REC::Particle") || !event.hasBank("RUN::config")) continue
+
+            // Cheap raw-bank topology prefilter. analysis_fitter can remove an
+            // EventBuilder PID assignment but does not reassign one PID to a
+            // different species, so an event lacking the required raw PIDs can
+            // never become a valid e'p'gammaX event.
+            HipoDataBank recBank = (HipoDataBank)event.getBank("REC::Particle")
+            Map<Integer, List<Integer>> recPidRows = buildRecPidRows(recBank)
+
+            int rawElectronCount = recPidRows[11].size()
+            int rawProtonCount = recPidRows[2212].size()
+            int rawPhotonCount = recPidRows[22].size()
+
+            if (
+                rawElectronCount < 1
+                || rawProtonCount < 1
+                || rawPhotonCount < 1
+            ) {
+                rawTopologyRejected++
+                continue
+            }
 
             boolean isMC = event.hasBank("MC::Particle")
             HipoDataBank runBank = (HipoDataBank)event.getBank("RUN::config")
@@ -501,26 +603,67 @@ static void main(String[] args) {
                 energy = Eb.Eb()
             }
 
-            HipoDataBank recBank = (HipoDataBank)event.getBank("REC::Particle")
             HipoDataBank recMatchBank = event.hasBank("MC::RecMatch") ? (HipoDataBank)event.getBank("MC::RecMatch") : null
             HipoDataBank mcBank = isMC ? (HipoDataBank)event.getBank("MC::Particle") : null
             HipoDataBank lundBank = event.hasBank("MC::Lund") ? (HipoDataBank)event.getBank("MC::Lund") : null
             PhysicsEvent mcEvent = isMC ? mcFitter.getPhysicsEvent(event) : null
 
+            // Build MC lookup tables once per accepted reconstructed event.
+            // This replaces repeated scans through MC::RecMatch and
+            // MC::Particle for every photon candidate.
+            Map<Integer, Integer> recToMcIndex = isMC
+                ? buildRecToMcIndex(recMatchBank, mcBank)
+                : [:]
+
+            int[] mcOccurrenceByRow = isMC
+                ? buildMcOccurrenceByRow(mcBank)
+                : new int[0]
+
             int numGammas = recoEvent.countByPid(22)
             if (numGammas < 1) continue
 
-            int recEIndex = recIndexForPidOccurrence(recBank, 11, 0)
-            int recPIndex = recIndexForPidOccurrence(recBank, 2212, 0)
-            Map eTruth = isMC ? truthMatch(recMatchBank, mcBank, lundBank, recEIndex) : truthMatch(null,null,null,-1)
-            Map pTruth = isMC ? truthMatch(recMatchBank, mcBank, lundBank, recPIndex) : truthMatch(null,null,null,-1)
+            int recEIndex = recIndexForPidOccurrence(recPidRows, 11, 0)
+            int recPIndex = recIndexForPidOccurrence(recPidRows, 2212, 0)
+
+            Map eTruth = isMC
+                ? truthMatchCached(
+                    recToMcIndex,
+                    mcOccurrenceByRow,
+                    mcBank,
+                    lundBank,
+                    recEIndex
+                )
+                : emptyTruthMatch()
+
+            Map pTruth = isMC
+                ? truthMatchCached(
+                    recToMcIndex,
+                    mcOccurrenceByRow,
+                    mcBank,
+                    lundBank,
+                    recPIndex
+                )
+                : emptyTruthMatch()
 
             for (int currentGamma = 0; currentGamma < numGammas; currentGamma++) {
                 ThreeParticles recoVars = new ThreeParticles(event, recoEvent, 2212, 0, 22, currentGamma, energy)
                 if (!recoVars.channel_test(recoVars)) continue
 
-                int recGammaIndex = recIndexForPidOccurrence(recBank, 22, currentGamma)
-                Map gammaTruth = isMC ? truthMatch(recMatchBank, mcBank, lundBank, recGammaIndex) : truthMatch(null,null,null,-1)
+                int recGammaIndex = recIndexForPidOccurrence(
+                    recPidRows,
+                    22,
+                    currentGamma
+                )
+
+                Map gammaTruth = isMC
+                    ? truthMatchCached(
+                        recToMcIndex,
+                        mcOccurrenceByRow,
+                        mcBank,
+                        lundBank,
+                        recGammaIndex
+                    )
+                    : emptyTruthMatch()
 
                 int genValid = 0
                 List<Double> genValues = nanList(61)
@@ -601,6 +744,7 @@ static void main(String[] args) {
 
     println("output file: ${file}")
     println("input HIPO events processed: ${inputEvents}")
+    println("raw-topology prefilter rejected: ${rawTopologyRejected}")
     println("output epgamma candidate rows: ${outputRows}")
     println("MC truth is filled only when MC::Particle exists; parent ancestry additionally requires MC::Lund.")
     println("Elapsed time: " + (System.currentTimeMillis()-startTime) + " ms")
