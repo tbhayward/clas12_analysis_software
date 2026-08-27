@@ -2,7 +2,7 @@
 """
 quick_check_photon_truth_samples.py
 
-Quick validation of the new Fa18 Inb photon-truth ROOT samples.
+Quick validation of the new Fa18 Inb 25k photon-truth ROOT samples.
 
 This is intentionally diagnostic and plot-focused.  It checks that:
   * all expected trees/branches are readable;
@@ -42,19 +42,19 @@ import uproot
 
 
 # -----------------------------------------------------------------------------
-# Hard-coded Fa18 Inb 100k samples
+# Hard-coded Fa18 Inb 25k samples
 # -----------------------------------------------------------------------------
 
 BASE = Path("/work/clas12/thayward/pi0_BDT/training_sample/fa18_inb")
 
 FILES: Dict[str, Path] = {
-    "dvcsgen_epg": BASE / "dvcsgen_rga_fa18_inb_epgammaX_100k.root",
-    "aaogen_epg": BASE / "aaogen_rga_fa18_inb_epgammaX_100k.root",
-    "aaogen_epgg": BASE / "aaogen_rga_fa18_inb_epgammagammaX_100k.root",
-    "clasdis_epg": BASE / "clasdis_rga_fa18_inb_epgammaX_100k.root",
-    "clasdis_epgg": BASE / "clasdis_rga_fa18_inb_epgammagammaX_100k.root",
-    "data_epg": BASE / "data_rga_fa18_inb_epgammaX_100k.root",
-    "data_epgg": BASE / "data_rga_fa18_inb_epgammagammaX_100k.root",
+    "dvcsgen_epg": BASE / "dvcsgen_rga_fa18_inb_epgammaX_25k.root",
+    "aaogen_epg": BASE / "aaogen_rga_fa18_inb_epgammaX_25k.root",
+    "aaogen_epgg": BASE / "aaogen_rga_fa18_inb_epgammagammaX_25k.root",
+    "clasdis_epg": BASE / "clasdis_rga_fa18_inb_epgammaX_25k.root",
+    "clasdis_epgg": BASE / "clasdis_rga_fa18_inb_epgammagammaX_25k.root",
+    "data_epg": BASE / "data_rga_fa18_inb_epgammaX_25k.root",
+    "data_epgg": BASE / "data_rga_fa18_inb_epgammagammaX_25k.root",
 }
 
 DISPLAY_NAMES = {
