@@ -537,6 +537,49 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--disable-broadened-negative",
+        action="store_true",
+        help=(
+            "Disable the diagnostic broadened-negative model. By default a "
+            "second model is trained with weakly weighted unmatched CLASDIS "
+            "added to the negative class."
+        ),
+    )
+
+    parser.add_argument(
+        "--unmatched-negative-weight",
+        type=float,
+        default=0.25,
+        help=(
+            "Relative per-event training weight for unmatched CLASDIS "
+            "compared with a clean DVCSgen negative in the broadened model. "
+            "Default: 0.25."
+        ),
+    )
+
+    parser.add_argument(
+        "--max-unmatched-negative",
+        type=int,
+        default=20000,
+        help=(
+            "Maximum unmatched CLASDIS candidates used across train+holdout "
+            "for the broadened-negative study in each FT/FD region. "
+            "Default: 20000."
+        ),
+    )
+
+    parser.add_argument(
+        "--unmatched-holdout-fraction",
+        type=float,
+        default=0.30,
+        help=(
+            "Fraction of the capped unmatched CLASDIS sample held out from "
+            "broadened-model training for an independent diagnostic. "
+            "Default: 0.30."
+        ),
+    )
+
+    parser.add_argument(
         "--skip-clasdis-control",
         action="store_true",
         help="Do not construct the optional CLASDIS matched control sample.",
@@ -1670,7 +1713,21 @@ def train_model(
     seed: int,
     n_estimators: int,
     max_depth: int,
+    sample_weight_multiplier_column: Optional[str] = None,
+    model_label: str = "BDT",
 ) -> GradientBoostingClassifier:
+    """
+    Train the GradientBoostingClassifier.
+
+    For the nominal model, class-balancing weights are used exactly as before.
+
+    For the broadened-negative diagnostic, an optional per-row multiplier can
+    downweight noisy unmatched-CLASDIS negatives relative to clean DVCSgen.
+    After applying those multipliers, the two classes are renormalized to carry
+    equal total training weight. Thus the multiplier controls composition
+    WITHIN the negative class rather than accidentally changing the overall
+    positive-vs-negative class balance.
+    """
     model = make_model(
         seed=seed,
         n_estimators=n_estimators,
@@ -1679,29 +1736,72 @@ def train_model(
 
     X_train = train[list(features)].to_numpy(dtype=float)
     y_train = train["label"].to_numpy(dtype=int)
+
     w_train = class_balancing_weights(y_train)
+
+    if (
+        sample_weight_multiplier_column is not None
+        and sample_weight_multiplier_column in train.columns
+    ):
+        multipliers = train[
+            sample_weight_multiplier_column
+        ].to_numpy(dtype=float)
+
+        multipliers = np.where(
+            np.isfinite(multipliers) & (multipliers > 0.0),
+            multipliers,
+            1.0,
+        )
+        w_train = w_train * multipliers
+
+        # Restore equal total positive and negative class weights after the
+        # source-dependent multiplier has been applied.
+        class_totals = {}
+        for label in [0, 1]:
+            mask = y_train == label
+            class_totals[label] = float(np.sum(w_train[mask]))
+        #endfor
+
+        target_total = 0.5 * (
+            class_totals.get(0, 0.0)
+            + class_totals.get(1, 0.0)
+        )
+
+        for label in [0, 1]:
+            mask = y_train == label
+            total = class_totals.get(label, 0.0)
+
+            if total > 0.0:
+                w_train[mask] *= target_total / total
+            #endif
+        #endfor
+    #endif
 
     fit_start = time.perf_counter()
     progress(
-        f"BDT FIT: fitting GradientBoostingClassifier on "
+        f"{model_label} FIT: fitting GradientBoostingClassifier on "
         f"{len(train):,} rows x {len(features)} features; "
         f"{n_estimators} shallow trees (max_depth={max_depth})"
     )
     progress(
-        "BDT FIT: sklearn iteration progress will print below "
+        f"{model_label} FIT: sklearn iteration progress will print below "
         "(Iter / Train Loss / Remaining Time)"
     )
+
     model.fit(
         X_train,
         y_train,
         sample_weight=w_train,
     )
+
     progress(
-        f"BDT FIT: complete after {getattr(model, 'n_estimators_', DEFAULT_BDT_PARAMS['n_estimators'])} "
+        f"{model_label} FIT: complete after "
+        f"{getattr(model, 'n_estimators_', DEFAULT_BDT_PARAMS['n_estimators'])} "
         f"boosting trees ({elapsed_since(fit_start)})"
     )
 
     return model
+
 
 
 def model_scores(
@@ -3274,6 +3374,162 @@ def plot_clasdis_matched_unmatched_mx2(
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
     save_figure(fig, output_path)
 
+
+
+
+def plot_broadened_negative_comparison(
+    test: pd.DataFrame,
+    nominal_test_scores: np.ndarray,
+    broadened_test_scores: np.ndarray,
+    pi0_data_scores_nominal: Optional[np.ndarray],
+    pi0_data_scores_broadened: Optional[np.ndarray],
+    ordinary_scores_nominal: Optional[np.ndarray],
+    ordinary_scores_broadened: Optional[np.ndarray],
+    unmatched_holdout_scores_nominal: np.ndarray,
+    unmatched_holdout_scores_broadened: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Four-panel diagnostic showing exactly what changes when weakly weighted
+    unmatched CLASDIS is added to the negative training class.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(13.0, 9.3))
+    axes = axes.ravel()
+
+    y_test = test["label"].to_numpy(dtype=int)
+
+    # Clean MC test sample.
+    ax = axes[0]
+    for label_value, class_name in [(0, "DVCSgen"), (1, "AAOgen")]:
+        mask = y_test == label_value
+        ax.hist(
+            nominal_test_scores[mask],
+            bins=45,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            label=f"{class_name}: nominal",
+        )
+        ax.hist(
+            broadened_test_scores[mask],
+            bins=45,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.5,
+            linestyle="--",
+            label=f"{class_name}: broadened",
+        )
+    #endfor
+    ax.set_title("Clean AAOgen / DVCSgen held-out test")
+    ax.set_ylabel("Normalized density")
+    ax.grid(alpha=0.20)
+    ax.legend(fontsize=7.5)
+
+    # Real known pi0 daughters.
+    ax = axes[1]
+    if (
+        pi0_data_scores_nominal is not None
+        and pi0_data_scores_broadened is not None
+        and len(pi0_data_scores_nominal) > 0
+    ):
+        ax.hist(
+            pi0_data_scores_nominal,
+            bins=45,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.7,
+            label="Nominal",
+        )
+        ax.hist(
+            pi0_data_scores_broadened,
+            bins=45,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.7,
+            linestyle="--",
+            label="Broadened negative",
+        )
+    #endif
+    ax.set_title("Known real reconstructed-pi0 daughters")
+    ax.set_ylabel("Normalized density")
+    ax.grid(alpha=0.20)
+    ax.legend(fontsize=8)
+
+    # Ordinary data.
+    ax = axes[2]
+    if (
+        ordinary_scores_nominal is not None
+        and ordinary_scores_broadened is not None
+        and len(ordinary_scores_nominal) > 0
+    ):
+        ax.hist(
+            ordinary_scores_nominal,
+            bins=45,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.7,
+            color="black",
+            label="Nominal",
+        )
+        ax.hist(
+            ordinary_scores_broadened,
+            bins=45,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.7,
+            linestyle="--",
+            label="Broadened negative",
+        )
+    #endif
+    ax.set_title("Ordinary real epgammaX data")
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Normalized density")
+    ax.grid(alpha=0.20)
+    ax.legend(fontsize=8)
+
+    # Independent unmatched-CLASDIS holdout.
+    ax = axes[3]
+    if len(unmatched_holdout_scores_nominal) > 0:
+        ax.hist(
+            unmatched_holdout_scores_nominal,
+            bins=45,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.7,
+            label="Nominal",
+        )
+        ax.hist(
+            unmatched_holdout_scores_broadened,
+            bins=45,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.7,
+            linestyle="--",
+            label="Broadened negative",
+        )
+    #endif
+    ax.set_title("Held-out unmatched CLASDIS")
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Normalized density")
+    ax.grid(alpha=0.20)
+    ax.legend(fontsize=8)
+
+    for ax in axes:
+        ax.set_xlim(0.0, 1.0)
+    #endfor
+
+    fig.suptitle(title, y=0.995)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.965])
+    save_figure(fig, output_path)
 
 
 def plot_clasdis_matched_unmatched_scores(
@@ -5229,6 +5485,43 @@ def run_region(
         clasdis_unmatched_clean = None
     #endif
 
+    unmatched_train = None
+    unmatched_holdout = None
+
+    if (
+        clasdis_unmatched_clean is not None
+        and len(clasdis_unmatched_clean) > 1
+        and not args.disable_broadened_negative
+    ):
+        unmatched_for_study = random_cap(
+            clasdis_unmatched_clean,
+            args.max_unmatched_negative,
+            args.seed + 200,
+        )
+
+        holdout_fraction = min(
+            max(float(args.unmatched_holdout_fraction), 0.05),
+            0.80,
+        )
+
+        unmatched_train, unmatched_holdout = train_test_split(
+            unmatched_for_study,
+            test_size=holdout_fraction,
+            random_state=args.seed + 201,
+            shuffle=True,
+        )
+
+        unmatched_train = unmatched_train.reset_index(drop=True)
+        unmatched_holdout = unmatched_holdout.reset_index(drop=True)
+
+        progress(
+            f"REGION {region}: broadened-negative unmatched CLASDIS — "
+            f"train={len(unmatched_train):,}, "
+            f"holdout={len(unmatched_holdout):,}, "
+            f"relative negative weight={args.unmatched_negative_weight:.3f}"
+        )
+    #endif
+
     train, validation, test = train_validation_test_split(
         working,
         args.seed,
@@ -5343,6 +5636,155 @@ def run_region(
         )
     else:
         clasdis_unmatched_scores = np.asarray([], dtype=float)
+    #endif
+
+    broadened_model = None
+    broadened_test_scores = None
+    broadened_data_golden_scores = None
+    broadened_ordinary_scores = None
+    broadened_unmatched_holdout_scores = np.asarray([], dtype=float)
+    nominal_unmatched_holdout_scores = np.asarray([], dtype=float)
+
+    if (
+        not args.disable_broadened_negative
+        and unmatched_train is not None
+        and len(unmatched_train) > 0
+    ):
+        broadened_output = region_output / "broadened_negative"
+        broadened_output.mkdir(parents=True, exist_ok=True)
+
+        broadened_clean_train = train.copy()
+        broadened_clean_train["_training_weight_multiplier"] = 1.0
+        broadened_clean_train["_training_source"] = "clean_mc"
+
+        unmatched_training_rows = unmatched_train.copy()
+        unmatched_training_rows["label"] = 0
+        unmatched_training_rows["_training_weight_multiplier"] = float(
+            args.unmatched_negative_weight
+        )
+        unmatched_training_rows["_training_source"] = "clasdis_unmatched"
+
+        broadened_train = pd.concat(
+            [
+                broadened_clean_train,
+                unmatched_training_rows,
+            ],
+            ignore_index=True,
+            sort=False,
+        )
+
+        # Shuffle once so weak negatives are interspersed throughout training.
+        broadened_train = broadened_train.sample(
+            frac=1.0,
+            random_state=args.seed + 202,
+        ).reset_index(drop=True)
+
+        progress(
+            f"REGION {region}: training broadened-negative BDT with "
+            f"{len(train):,} clean MC training rows + "
+            f"{len(unmatched_training_rows):,} weak unmatched-CLASDIS negatives"
+        )
+
+        broadened_model = train_model(
+            train=broadened_train,
+            validation=validation,
+            features=features,
+            seed=args.seed + 203,
+            n_estimators=args.n_estimators,
+            max_depth=args.max_depth,
+            sample_weight_multiplier_column="_training_weight_multiplier",
+            model_label="BROADENED BDT",
+        )
+
+        broadened_test_scores = model_scores(
+            broadened_model,
+            test,
+            features,
+            chunk_size=args.score_chunk_size,
+        )
+
+        if data_golden_clean is not None:
+            broadened_data_golden_scores = model_scores(
+                broadened_model,
+                data_golden_clean,
+                features,
+                chunk_size=args.score_chunk_size,
+            )
+        #endif
+
+        if ordinary_clean is not None:
+            broadened_ordinary_scores = model_scores(
+                broadened_model,
+                ordinary_clean,
+                features,
+                chunk_size=args.score_chunk_size,
+            )
+        #endif
+
+        if unmatched_holdout is not None and len(unmatched_holdout) > 0:
+            nominal_unmatched_holdout_scores = model_scores(
+                nominal_model,
+                unmatched_holdout,
+                features,
+                chunk_size=args.score_chunk_size,
+            )
+            broadened_unmatched_holdout_scores = model_scores(
+                broadened_model,
+                unmatched_holdout,
+                features,
+                chunk_size=args.score_chunk_size,
+            )
+        #endif
+
+        y_test_broad = test["label"].to_numpy(dtype=int)
+        broadened_auc = float(
+            roc_auc_score(
+                y_test_broad,
+                broadened_test_scores,
+            )
+        )
+
+        progress(
+            f"REGION {region}: broadened-negative clean-test AUC="
+            f"{broadened_auc:.5f} versus nominal AUC pending ROC plot"
+        )
+
+        plot_broadened_negative_comparison(
+            test=test,
+            nominal_test_scores=test_scores,
+            broadened_test_scores=broadened_test_scores,
+            pi0_data_scores_nominal=data_golden_scores,
+            pi0_data_scores_broadened=broadened_data_golden_scores,
+            ordinary_scores_nominal=ordinary_scores,
+            ordinary_scores_broadened=broadened_ordinary_scores,
+            unmatched_holdout_scores_nominal=nominal_unmatched_holdout_scores,
+            unmatched_holdout_scores_broadened=broadened_unmatched_holdout_scores,
+            output_path=broadened_output / "broadened_negative_comparison.png",
+            title=(
+                f"{args.period} {region}: nominal vs weakly broadened-negative BDT "
+                f"(unmatched CLASDIS weight={args.unmatched_negative_weight:.2f})"
+            ),
+        )
+
+        joblib.dump(
+            {
+                "model": broadened_model,
+                "features": list(features),
+                "period": args.period,
+                "region": region,
+                "feature_set": "topology_broadened_negative",
+                "unmatched_negative_weight": float(
+                    args.unmatched_negative_weight
+                ),
+                "unmatched_training_rows": int(
+                    len(unmatched_training_rows)
+                ),
+                "unmatched_holdout_rows": int(
+                    0 if unmatched_holdout is None else len(unmatched_holdout)
+                ),
+            },
+            broadened_output / "bdt_model_broadened_negative.joblib",
+        )
     #endif
 
 
@@ -5698,6 +6140,8 @@ def main() -> None:
         f"max-control-events={args.max_control_events}, "
         f"score-chunk-size={args.score_chunk_size}, "
         f"ablations={'ON' if args.ablations else 'OFF'}, "
+        f"broadened-negative={'OFF' if args.disable_broadened_negative else 'ON'}, "
+        f"unmatched-weight={args.unmatched_negative_weight}, "
         f"n-estimators={args.n_estimators}, max-depth={args.max_depth}, seed={args.seed}"
     )
 
