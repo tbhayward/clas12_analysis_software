@@ -10,10 +10,8 @@ else
     set arg1 = "$1"
 endif
 # Determine the third argument for ./convert_txt_to_root based on arg1
-# Initialize to 0 as default value
 set convert_arg3 = 0
 
-# Set convert_arg3 based on the value of arg1
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
     set convert_arg3 = 0
 else if ($arg1 == "processing_scripts/processing_mc_inclusive.groovy") then
@@ -29,133 +27,23 @@ else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") the
 else if ($arg1 == "processing_scripts/processing_four_particles.groovy") then
     set convert_arg3 = 3
 else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
-    set convert_arg3 = 4 # dvcs
+    set convert_arg3 = 4
 else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
-    set convert_arg3 = 4 # dvcs
+    set convert_arg3 = 4
 else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
-    set convert_arg3 = 5 # eppi0
-else if ($arg1 == "processing_scripts/processing_epgamma.groovy" || $arg1 == "processing_scripts/processing_mc_epgamma.groovy") then
-    # ------------------------------------------------------------------
-    # Unified data/MC e'p'gammaX processor.
-    #
-    # Required:
-    #   $1 processing script
-    #   $2 HIPO input directory
-    #   $3 output base
-    #
-    # Optional defaults:
-    #   $4 n_files       = 0       (all files)
-    #   $5 beam_energy   = 10.604  GeV
-    #   $6 run_override  = 0       (use RUN::config)
-    #   $7 qadb_override = 1       (irrelevant for MC; bypass QADB if desired)
-    #
-    # The Groovy script auto-detects MC from MC::Particle.
-    # ------------------------------------------------------------------
-    if ( $#argv < 3 ) then
-        echo "ERROR: processing_epgamma requires at least:"
-        echo "  processing.csh <script> <hipo_dir> <output_base>"
-        exit 1
-    endif
-
-    set photon_n_files = 0
-    if ( $#argv >= 4 ) set photon_n_files = "$4"
-
-    set photon_beam_energy = 10.604
-    if ( $#argv >= 5 ) set photon_beam_energy = "$5"
-
-    set photon_run_override = 0
-    if ( $#argv >= 6 ) set photon_run_override = "$6"
-
-    set photon_qadb_override = 1
-    if ( $#argv >= 7 ) set photon_qadb_override = "$7"
-
-    set output_base = "$3"
-    set quick_txt = "${output_base}_1M.txt"
-    set quick_root = "${output_base}_1M.root"
-    set full_txt = "${output_base}.txt"
-    set full_root = "${output_base}.root"
-
-    echo "Photon-processing defaults/resolved arguments:"
-    echo "  n_files       = $photon_n_files"
-    echo "  beam_energy   = $photon_beam_energy GeV"
-    echo "  run_override  = $photon_run_override"
-    echo "  qadb_override = $photon_qadb_override"
-
-    echo "=== epgamma quick pass: stopping after 1,000,000 candidate rows ==="
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
-        "$arg1" "$arg2" "$quick_txt" \
-        "$photon_n_files" "$photon_beam_energy" "$photon_run_override" "$photon_qadb_override" \
-        "1000000"
-    if ($status != 0) exit $status
-
-    ./processing_scripts/convert_txt_to_root "$quick_txt" "$quick_root" $convert_arg3 $is_mc
-    if ($status != 0) exit $status
-
-    echo "=== epgamma full pass: restarting from the beginning for all statistics ==="
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
-        "$arg1" "$arg2" "$full_txt" \
-        "$photon_n_files" "$photon_beam_energy" "$photon_run_override" "$photon_qadb_override" \
-        "0"
-    if ($status != 0) exit $status
-
-    ./processing_scripts/convert_txt_to_root "$full_txt" "$full_root" $convert_arg3 $is_mc
-
-else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy" || $arg1 == "processing_scripts/processing_mc_epgammagamma.groovy") then
-    # Unified data/MC e'p'gamma gamma X processor.
-    # Same optional defaults as processing_epgamma.groovy.
-    if ( $#argv < 3 ) then
-        echo "ERROR: processing_epgammagamma requires at least:"
-        echo "  processing.csh <script> <hipo_dir> <output_base>"
-        exit 1
-    endif
-
-    set photon_n_files = 0
-    if ( $#argv >= 4 ) set photon_n_files = "$4"
-
-    set photon_beam_energy = 10.604
-    if ( $#argv >= 5 ) set photon_beam_energy = "$5"
-
-    set photon_run_override = 0
-    if ( $#argv >= 6 ) set photon_run_override = "$6"
-
-    set photon_qadb_override = 1
-    if ( $#argv >= 7 ) set photon_qadb_override = "$7"
-
-    set output_base = "$3"
-    set quick_txt = "${output_base}_1M.txt"
-    set quick_root = "${output_base}_1M.root"
-    set full_txt = "${output_base}.txt"
-    set full_root = "${output_base}.root"
-
-    echo "Photon-processing defaults/resolved arguments:"
-    echo "  n_files       = $photon_n_files"
-    echo "  beam_energy   = $photon_beam_energy GeV"
-    echo "  run_override  = $photon_run_override"
-    echo "  qadb_override = $photon_qadb_override"
-
-    echo "=== epgammagamma quick pass: stopping after 1,000,000 candidate rows ==="
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
-        "$arg1" "$arg2" "$quick_txt" \
-        "$photon_n_files" "$photon_beam_energy" "$photon_run_override" "$photon_qadb_override" \
-        "1000000"
-    if ($status != 0) exit $status
-
-    ./processing_scripts/convert_txt_to_root "$quick_txt" "$quick_root" $convert_arg3 $is_mc
-    if ($status != 0) exit $status
-
-    echo "=== epgammagamma full pass: restarting from the beginning for all statistics ==="
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
-        "$arg1" "$arg2" "$full_txt" \
-        "$photon_n_files" "$photon_beam_energy" "$photon_run_override" "$photon_qadb_override" \
-        "0"
-    if ($status != 0) exit $status
-
-    ./processing_scripts/convert_txt_to_root "$full_txt" "$full_root" $convert_arg3 $is_mc
-
+    set convert_arg3 = 5
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
-    set convert_arg3 = 6 # calibration
+    set convert_arg3 = 6
 else if ($arg1 == "processing_scripts/processing_dvcs_calibration.groovy") then
-    set convert_arg3 = 6 # calibration
+    set convert_arg3 = 6
+else if ($arg1 == "processing_scripts/processing_epgamma.groovy") then
+    set convert_arg3 = 9
+else if ($arg1 == "processing_scripts/processing_mc_epgamma.groovy") then
+    set convert_arg3 = 9
+else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy") then
+    set convert_arg3 = 10
+else if ($arg1 == "processing_scripts/processing_mc_epgammagamma.groovy") then
+    set convert_arg3 = 10
 else
     echo "Error: unrecognized processing script: $arg1"
     exit 1
@@ -259,41 +147,127 @@ else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
 else if ($arg1 == "processing_scripts/processing_epgamma.groovy" || $arg1 == "processing_scripts/processing_mc_epgamma.groovy") then
-    # Make a quick 1M-candidate product first, then restart for full statistics.
+    # ------------------------------------------------------------------
+    # Unified data/MC e'p'gammaX processor.
+    #
+    # Calling convention:
+    #   processing.csh <script> <hipo_dir> <output_base>
+    #                  [n_files] [beam_energy] [run_override] [qadb_override]
+    #
+    # Defaults:
+    #   n_files       = 0       (all files)
+    #   beam_energy   = 10.604  GeV
+    #   run_override  = 0       (use RUN::config)
+    #   qadb_override = 1
+    # ------------------------------------------------------------------
+    if ( $#argv < 3 ) then
+        echo "ERROR: processing_epgamma requires at least:"
+        echo "  processing.csh <script> <hipo_dir> <output_base>"
+        exit 1
+    endif
+
+    set photon_n_files = 0
+    if ( $#argv >= 4 ) set photon_n_files = "$4"
+
+    set photon_beam_energy = 10.604
+    if ( $#argv >= 5 ) set photon_beam_energy = "$5"
+
+    set photon_run_override = 0
+    if ( $#argv >= 6 ) set photon_run_override = "$6"
+
+    set photon_qadb_override = 1
+    if ( $#argv >= 7 ) set photon_qadb_override = "$7"
+
     set output_base = "$3"
     set quick_txt = "${output_base}_1M.txt"
     set quick_root = "${output_base}_1M.root"
     set full_txt = "${output_base}.txt"
     set full_root = "${output_base}.root"
 
+    echo "Photon-processing resolved arguments:"
+    echo "  n_files       = $photon_n_files (0 = all)"
+    echo "  beam_energy   = $photon_beam_energy GeV"
+    echo "  run_override  = $photon_run_override"
+    echo "  qadb_override = $photon_qadb_override"
+
     echo "=== epgamma quick pass: stopping after 1,000,000 candidate rows ==="
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$quick_txt" "$4" "$5" "$6" "$7" "1000000"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
+        "$arg1" "$arg2" "$quick_txt" \
+        "$photon_n_files" "$photon_beam_energy" \
+        "$photon_run_override" "$photon_qadb_override" \
+        "1000000"
     if ($status != 0) exit $status
-    ./processing_scripts/convert_txt_to_root "$quick_txt" "$quick_root" $convert_arg3 $is_mc
+
+    ./processing_scripts/convert_txt_to_root \
+        "$quick_txt" "$quick_root" $convert_arg3 $is_mc
     if ($status != 0) exit $status
 
     echo "=== epgamma full pass: restarting from the beginning for all statistics ==="
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$full_txt" "$4" "$5" "$6" "$7" "0"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
+        "$arg1" "$arg2" "$full_txt" \
+        "$photon_n_files" "$photon_beam_energy" \
+        "$photon_run_override" "$photon_qadb_override" \
+        "0"
     if ($status != 0) exit $status
-    ./processing_scripts/convert_txt_to_root "$full_txt" "$full_root" $convert_arg3 $is_mc
+
+    ./processing_scripts/convert_txt_to_root \
+        "$full_txt" "$full_root" $convert_arg3 $is_mc
 
 else if ($arg1 == "processing_scripts/processing_epgammagamma.groovy" || $arg1 == "processing_scripts/processing_mc_epgammagamma.groovy") then
+    # Same optional argument ordering/defaults as processing_epgamma.groovy:
+    # [n_files] [beam_energy] [run_override] [qadb_override]
+    if ( $#argv < 3 ) then
+        echo "ERROR: processing_epgammagamma requires at least:"
+        echo "  processing.csh <script> <hipo_dir> <output_base>"
+        exit 1
+    endif
+
+    set photon_n_files = 0
+    if ( $#argv >= 4 ) set photon_n_files = "$4"
+
+    set photon_beam_energy = 10.604
+    if ( $#argv >= 5 ) set photon_beam_energy = "$5"
+
+    set photon_run_override = 0
+    if ( $#argv >= 6 ) set photon_run_override = "$6"
+
+    set photon_qadb_override = 1
+    if ( $#argv >= 7 ) set photon_qadb_override = "$7"
+
     set output_base = "$3"
     set quick_txt = "${output_base}_1M.txt"
     set quick_root = "${output_base}_1M.root"
     set full_txt = "${output_base}.txt"
     set full_root = "${output_base}.root"
 
+    echo "Photon-processing resolved arguments:"
+    echo "  n_files       = $photon_n_files (0 = all)"
+    echo "  beam_energy   = $photon_beam_energy GeV"
+    echo "  run_override  = $photon_run_override"
+    echo "  qadb_override = $photon_qadb_override"
+
     echo "=== epgammagamma quick pass: stopping after 1,000,000 candidate rows ==="
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$quick_txt" "$4" "$5" "$6" "$7" "1000000"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
+        "$arg1" "$arg2" "$quick_txt" \
+        "$photon_n_files" "$photon_beam_energy" \
+        "$photon_run_override" "$photon_qadb_override" \
+        "1000000"
     if ($status != 0) exit $status
-    ./processing_scripts/convert_txt_to_root "$quick_txt" "$quick_root" $convert_arg3 $is_mc
+
+    ./processing_scripts/convert_txt_to_root \
+        "$quick_txt" "$quick_root" $convert_arg3 $is_mc
     if ($status != 0) exit $status
 
     echo "=== epgammagamma full pass: restarting from the beginning for all statistics ==="
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$full_txt" "$4" "$5" "$6" "$7" "0"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar \
+        "$arg1" "$arg2" "$full_txt" \
+        "$photon_n_files" "$photon_beam_energy" \
+        "$photon_run_override" "$photon_qadb_override" \
+        "0"
     if ($status != 0) exit $status
-    ./processing_scripts/convert_txt_to_root "$full_txt" "$full_root" $convert_arg3 $is_mc
+
+    ./processing_scripts/convert_txt_to_root \
+        "$full_txt" "$full_root" $convert_arg3 $is_mc
 
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
