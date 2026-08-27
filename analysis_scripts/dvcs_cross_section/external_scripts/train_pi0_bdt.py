@@ -39,22 +39,14 @@ iterations showed no meaningful performance gain from additionally supplying
 Q2, W, x, y, t, and tmin, so the production-kinematics BDT has been removed
 to reduce runtime and keep the diagnostic question focused.
 
-This version adds detailed CLASDIS cross-tree matching diagnostics:
-    * six individual e/p nearest-neighbor residuals;
-    * real-versus-scrambled nearest-neighbor distance;
-    * accepted-match multiplicity per reconstructed e'p'pi0X candidate;
-    * DIRECT reconstructed-pi0 topology from detector_gamma1/detector_gamma2;
-    * detector composition of all and matched e'p'gammaX candidates;
-    * matched e'p'gammaX detector versus reconstructed pi0 daughter topology;
-    * multiplicity separated by direct FT-FT / FT-FD / FD-FD pi0 topology;
-    * exact-two-photon M(gamma gamma), pi0 momentum, and detector-pair closure;
-    * BDT score versus CLASDIS match distance;
-    * CLASDIS BDT score for progressively tighter match-quality selections.
+The current version keeps CLASDIS matching intentionally streamlined:
+    * the established six-dimensional Cartesian e/p parent match;
+    * matched-versus-unmatched M_X^2(epgamma) diagnostics;
+    * no repeated scrambled-control pass, since that validation has already
+      established negligible accidental acceptance.
 
-The scrambled control destroys the electron-proton correlation in the e'p'pi0X
-sample before repeating the nearest-neighbor search. It therefore provides a
-combinatorial reference for how close unrelated events can appear in the same
-six-dimensional e/p kinematic space.
+Real-data performance is optimized by separating the large ordinary epgammaX
+scoring sample from the smaller reconstructed-pi0 control-matching sample.
 
 No reconstructed e'p'pi0X-only variable (for example M_gamma_gamma) is ever
 passed to the BDT.
@@ -101,7 +93,7 @@ from sklearn.metrics import (
     roc_curve,
 )
 from sklearn.model_selection import train_test_split
-from sklearn.neighbors import NearestNeighbors
+from scipy.spatial import cKDTree
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.inspection import permutation_importance
 
@@ -396,8 +388,40 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help=(
-            "Optional maximum entries read from each real-data tree. "
-            "Omit for full real-data control statistics."
+            "Maximum e'p'gammaX real-data entries loaded for ordinary-data "
+            "BDT scoring. This can be large because scoring is cheap."
+        ),
+    )
+
+    parser.add_argument(
+        "--max-data-control-read",
+        type=int,
+        default=200000,
+        help=(
+            "Maximum real-data entries used for the more expensive "
+            "e'p'gammaX <-> e'p'pi0X control matching. This is intentionally "
+            "decoupled from --max-data-read. Default: 200000."
+        ),
+    )
+
+    parser.add_argument(
+        "--score-chunk-size",
+        type=int,
+        default=250000,
+        help=(
+            "Rows per predict_proba call when scoring large samples. "
+            "Default: 250000."
+        ),
+    )
+
+    parser.add_argument(
+        "--max-2d-plot-events",
+        type=int,
+        default=300000,
+        help=(
+            "Maximum ordinary-data events used only for expensive 2D hexbin "
+            "visualizations. All selected events are still used for 1D score "
+            "histograms and template fits. Default: 300000."
         ),
     )
 
@@ -621,15 +645,26 @@ def clean_feature_rows(
     df: pd.DataFrame,
     features: Sequence[str],
 ) -> pd.DataFrame:
-    out = df.copy()
+    """
+    Retain rows with finite BDT features.
 
-    # Replace +/-inf with NaN. scikit-learn gradient boosting can technically handle NaN, but for this
-    # first diagnostic study we require all chosen inputs to be finite so that
-    # feature plots and class comparisons are straightforward.
-    out[list(features)] = out[list(features)].replace([np.inf, -np.inf], np.nan)
-    out = out.dropna(subset=list(features))
+    This avoids copying the entire dataframe merely to replace inf values.
+    For large ordinary-data samples, constructing the finite mask directly
+    from the feature matrix is substantially cheaper.
+    """
+    if len(df) == 0:
+        return df.iloc[0:0].copy().reset_index(drop=True)
+    #endif
 
-    return out.reset_index(drop=True)
+    matrix = df.loc[:, list(features)].to_numpy(dtype=float, copy=False)
+    finite_mask = np.all(np.isfinite(matrix), axis=1)
+
+    if np.all(finite_mask):
+        return df.reset_index(drop=True)
+    #endif
+
+    return df.loc[finite_mask].reset_index(drop=True)
+
 
 
 def random_cap(
@@ -879,27 +914,19 @@ def _nearest_match_diagnostics(
     label: str,
 ) -> pd.DataFrame:
     """
-    For every e'p'gammaX candidate in left, find the nearest e'p'pi0X parent
-    candidate in six-dimensional Cartesian electron/proton momentum space.
-
-    Distances are measured in units of MATCH_COMPONENT_TOL_GEV, i.e. each
-    Cartesian momentum component is scaled by 0.002 GeV before constructing
-    the Euclidean nearest-neighbor distance.
+    Find the nearest e'p'pi0X parent in six-dimensional Cartesian e/p momentum
+    space using scipy.spatial.cKDTree.
     """
 
     left_embedding = _matching_embedding(left)
     right_embedding = _matching_embedding(right)
 
     progress(
-        f"CLASDIS MATCH [{label}]: fitting nearest-neighbor index to "
-        f"{len(right_embedding):,} right-side candidates in Cartesian e/p momentum space"
+        f"CLASDIS MATCH [{label}]: building cKDTree for "
+        f"{len(right_embedding):,} right-side candidates"
     )
 
-    neighbor_model = NearestNeighbors(
-        n_neighbors=1,
-        algorithm="auto",
-    )
-    neighbor_model.fit(right_embedding)
+    tree = cKDTree(right_embedding)
 
     n_left = len(left_embedding)
     n_chunks = int(math.ceil(n_left / query_chunk_size))
@@ -907,27 +934,34 @@ def _nearest_match_diagnostics(
     nearest_scaled_distances = np.empty(n_left, dtype=float)
 
     progress(
-        f"CLASDIS MATCH [{label}]: querying {n_left:,} epgammaX candidates in "
-        f"{n_chunks} chunk(s)"
+        f"CLASDIS MATCH [{label}]: querying {n_left:,} epgammaX candidates "
+        f"in {n_chunks} chunk(s)"
     )
 
     for chunk_index in range(n_chunks):
         lo = chunk_index * query_chunk_size
         hi = min((chunk_index + 1) * query_chunk_size, n_left)
 
-        chunk_distances, chunk_indices = neighbor_model.kneighbors(
+        chunk_distances, chunk_indices = tree.query(
             left_embedding[lo:hi],
-            return_distance=True,
+            k=1,
+            workers=-1,
         )
 
-        nearest_indices[lo:hi] = chunk_indices[:, 0]
-        nearest_scaled_distances[lo:hi] = chunk_distances[:, 0]
+        nearest_indices[lo:hi] = np.asarray(chunk_indices, dtype=np.int64)
+        nearest_scaled_distances[lo:hi] = np.asarray(
+            chunk_distances,
+            dtype=float,
+        )
 
-        report_every = max(1, n_chunks // 10)
-        if (chunk_index + 1) % report_every == 0 or chunk_index + 1 == n_chunks:
+        if (
+            chunk_index == 0
+            or chunk_index + 1 == n_chunks
+            or (chunk_index + 1) % max(1, n_chunks // 5) == 0
+        ):
             progress(
-                f"CLASDIS MATCH [{label}]: nearest-neighbor query "
-                f"{hi:,}/{n_left:,} ({100.0 * hi / n_left:.1f}%)"
+                f"CLASDIS MATCH [{label}]: query "
+                f"{hi:,}/{n_left:,} ({100.0*hi/n_left:.1f}%)"
             )
         #endif
     #endfor
@@ -1024,7 +1058,7 @@ def match_epgamma_to_eppi0_by_kinematics(
     component_tolerance_gev: float = MATCH_COMPONENT_TOL_GEV,
     query_chunk_size: int = 100_000,
     seed: int = 42,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Construct a pi0-enriched CLASDIS control sample using the established
     photon-efficiency parent-event matching prescription.
@@ -1056,11 +1090,8 @@ def match_epgamma_to_eppi0_by_kinematics(
         One row per finite e'p'gammaX candidate with its nearest real
         reconstructed e'p'pi0X parent candidate.
 
-    scrambled_diagnostics:
-        The same nearest-neighbor exercise after independently permuting the
-        proton Cartesian kinematics relative to the electron in the e'p'pi0X
-        sample. This destroys the true e-p parent association while preserving
-        one-particle marginal distributions.
+    real_diagnostics:
+        Detailed nearest-neighbor diagnostics for the real CLASDIS association.
     """
 
     stage_start = time.perf_counter()
@@ -1142,48 +1173,6 @@ def match_epgamma_to_eppi0_by_kinematics(
     real_diagnostics["component_ok"] = real_component_ok
     real_diagnostics["accepted"] = real_distance_ok & real_component_ok
 
-    # Scrambled control.
-    #
-    # We scramble proton rows relative to electron rows BEFORE Cartesian
-    # matching. That removes any true e-p parent correlation but preserves the
-    # marginal electron and proton distributions.
-    progress(
-        "CLASDIS MATCH: constructing SCRAMBLED control by permuting proton "
-        "kinematics relative to electron kinematics"
-    )
-
-    rng = np.random.default_rng(seed)
-    scrambled_right = right.copy()
-    proton_permutation = rng.permutation(len(scrambled_right))
-
-    for column in ["p1_p", "p1_theta", "p1_phi"]:
-        scrambled_right[column] = (
-            right[column].to_numpy()[proton_permutation]
-        )
-    #endfor
-
-    scrambled_diagnostics = _nearest_match_diagnostics(
-        left=left,
-        right=scrambled_right,
-        query_chunk_size=query_chunk_size,
-        label="SCRAMBLED",
-    )
-
-    scrambled_distance_ok = (
-        scrambled_diagnostics["match_distance"].to_numpy(dtype=float)
-        <= max_scaled_distance
-    )
-    scrambled_component_ok = (
-        scrambled_diagnostics["max_abs_component_delta"].to_numpy(dtype=float)
-        <= component_tolerance_gev
-    )
-
-    scrambled_diagnostics["distance_ok"] = scrambled_distance_ok
-    scrambled_diagnostics["component_ok"] = scrambled_component_ok
-    scrambled_diagnostics["accepted"] = (
-        scrambled_distance_ok & scrambled_component_ok
-    )
-
     accepted = real_diagnostics["accepted"].to_numpy(dtype=bool)
     matched_diag = (
         real_diagnostics.loc[accepted]
@@ -1233,33 +1222,6 @@ def match_epgamma_to_eppi0_by_kinematics(
     n_real_component = int(np.count_nonzero(real_component_ok))
     n_real_accepted = int(np.count_nonzero(accepted))
 
-    n_scrambled_total = len(scrambled_diagnostics)
-    n_scrambled_accepted = int(
-        np.count_nonzero(
-            scrambled_diagnostics["accepted"].to_numpy(dtype=bool)
-        )
-    )
-
-    progress(
-        f"CLASDIS MATCH: REAL distance criterion alone accepts "
-        f"{n_real_distance:,}/{n_real_total:,} "
-        f"({100.0*n_real_distance/max(n_real_total,1):.3f}%)"
-    )
-    progress(
-        f"CLASDIS MATCH: REAL component criterion alone accepts "
-        f"{n_real_component:,}/{n_real_total:,} "
-        f"({100.0*n_real_component/max(n_real_total,1):.3f}%)"
-    )
-    progress(
-        f"CLASDIS MATCH: REAL final accepted "
-        f"{n_real_accepted:,}/{n_real_total:,} "
-        f"({100.0*n_real_accepted/max(n_real_total,1):.3f}%)"
-    )
-    progress(
-        f"CLASDIS MATCH: SCRAMBLED final accepted "
-        f"{n_scrambled_accepted:,}/{n_scrambled_total:,} "
-        f"({100.0*n_scrambled_accepted/max(n_scrambled_total,1):.5f}%)"
-    )
 
     if n_real_accepted > 0:
         accepted_distances = matched[
@@ -1312,7 +1274,6 @@ def match_epgamma_to_eppi0_by_kinematics(
     return (
         matched,
         real_diagnostics.reset_index(drop=True),
-        scrambled_diagnostics.reset_index(drop=True),
     )
 
 
@@ -1416,7 +1377,7 @@ def _photon_pair_closure(
 def build_real_data_pi0_controls(
     epg: pd.DataFrame,
     eppi0: pd.DataFrame,
-) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Construct two real-data controls.
 
@@ -1441,12 +1402,40 @@ def build_real_data_pi0_controls(
 
     epg_work = epg.copy().reset_index(drop=True)
     epg_work["_data_epg_index"] = np.arange(len(epg_work), dtype=int)
+    eppi0_work = eppi0.copy().reset_index(drop=True)
+
+    # First perform a vectorized run/event key intersection. Only epgamma rows
+    # belonging to events that actually occur in the reconstructed-pi0 tree
+    # can possibly contribute to this control. This avoids constructing Python
+    # group objects for the overwhelming majority of ordinary epgamma events.
+    pi0_keys = pd.MultiIndex.from_frame(
+        eppi0_work[["runnum", "evnum"]]
+    )
+    epg_keys = pd.MultiIndex.from_frame(
+        epg_work[["runnum", "evnum"]]
+    )
+
+    same_event_mask = epg_keys.isin(pi0_keys)
+    epg_control_candidates = epg_work.loc[same_event_mask].copy()
+
+    candidate_keys = pd.MultiIndex.from_frame(
+        epg_control_candidates[["runnum", "evnum"]]
+    ).unique()
+    pi0_has_epg_mask = pi0_keys.isin(candidate_keys)
+    eppi0_work = eppi0_work.loc[pi0_has_epg_mask].reset_index(drop=True)
+
+    progress(
+        f"DATA CONTROL: run/ev prefilter kept "
+        f"{len(epg_control_candidates):,}/{len(epg_work):,} epgamma rows and "
+        f"{len(eppi0_work):,}/{len(eppi0):,} eppi0 rows"
+    )
 
     groups = {
         key: group
-        for key, group in epg_work.groupby(
+        for key, group in epg_control_candidates.groupby(
             ["runnum", "evnum"],
             sort=False,
+            observed=True,
         )
     }
 
@@ -1458,9 +1447,9 @@ def build_real_data_pi0_controls(
     n_parent_pi0 = 0
     n_pairable = 0
 
-    report_every = max(1, len(eppi0) // 10)
+    report_every = max(1, len(eppi0_work) // 10)
 
-    for i, pi0_row in eppi0.reset_index(drop=True).iterrows():
+    for i, pi0_row in eppi0_work.iterrows():
         key = (pi0_row["runnum"], pi0_row["evnum"])
         candidates = groups.get(key)
 
@@ -1549,7 +1538,7 @@ def build_real_data_pi0_controls(
 
         if (i + 1) % report_every == 0:
             progress(
-                f"DATA CONTROL: processed {i+1:,}/{len(eppi0):,} pi0 rows; "
+                f"DATA CONTROL: processed {i+1:,}/{len(eppi0_work):,} pi0 rows; "
                 f"parent-matched pi0={n_parent_pi0:,}, "
                 f"golden pi0={len(closure_rows):,}"
             )
@@ -1719,13 +1708,55 @@ def model_scores(
     model: GradientBoostingClassifier,
     df: pd.DataFrame,
     features: Sequence[str],
+    chunk_size: int = 250_000,
 ) -> np.ndarray:
-    if len(df) == 0:
+    """
+    Score a dataframe in bounded-memory chunks.
+
+    The returned score array still contains one value per input row, but the
+    temporary feature matrix never needs to contain millions of rows at once.
+    """
+    n_rows = len(df)
+
+    if n_rows == 0:
         return np.asarray([], dtype=float)
     #endif
 
-    X = df[list(features)].to_numpy(dtype=float)
-    return model.predict_proba(X)[:, 1]
+    chunk_size = max(1, int(chunk_size))
+
+    if n_rows <= chunk_size:
+        X = df.loc[:, list(features)].to_numpy(dtype=float, copy=False)
+        return model.predict_proba(X)[:, 1]
+    #endif
+
+    scores = np.empty(n_rows, dtype=float)
+    n_chunks = int(math.ceil(n_rows / chunk_size))
+
+    for chunk_index in range(n_chunks):
+        lo = chunk_index * chunk_size
+        hi = min((chunk_index + 1) * chunk_size, n_rows)
+
+        X = df.iloc[lo:hi].loc[:, list(features)].to_numpy(
+            dtype=float,
+            copy=False,
+        )
+        scores[lo:hi] = model.predict_proba(X)[:, 1]
+
+        if (
+            chunk_index == 0
+            or chunk_index + 1 == n_chunks
+            or (chunk_index + 1) % max(1, n_chunks // 5) == 0
+        ):
+            progress(
+                f"BDT SCORE: {hi:,}/{n_rows:,} rows "
+                f"({100.0*hi/n_rows:.1f}%)"
+            )
+        #endif
+    #endfor
+
+    return scores
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -3553,6 +3584,7 @@ def plot_ordinary_data_score_2d(
     scores: np.ndarray,
     output_path: Path,
     title: str,
+    max_plot_events: int = 300_000,
 ) -> None:
     if len(ordinary) == 0:
         return
@@ -3566,6 +3598,21 @@ def plot_ordinary_data_score_2d(
     #endif
 
     score = np.asarray(scores, dtype=float)
+
+    # 2D hexbins do not gain visible information from millions of points.
+    # Use an evenly spaced deterministic subsample only for this visualization.
+    max_plot_events = max(1, int(max_plot_events))
+    if len(ordinary) > max_plot_events:
+        plot_indices = np.linspace(
+            0,
+            len(ordinary) - 1,
+            max_plot_events,
+            dtype=np.int64,
+        )
+        energy = energy[plot_indices]
+        theta = theta[plot_indices]
+        score = score[plot_indices]
+    #endif
 
     fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.2))
 
@@ -4959,6 +5006,7 @@ def run_region(
         nominal_model,
         test,
         features,
+        chunk_size=args.score_chunk_size,
     )
 
     if control_clean is not None:
@@ -4966,6 +5014,7 @@ def run_region(
             nominal_model,
             control_clean,
             features,
+            chunk_size=args.score_chunk_size,
         )
     else:
         control_scores = None
@@ -4976,6 +5025,7 @@ def run_region(
             nominal_model,
             data_parent_clean,
             features,
+            chunk_size=args.score_chunk_size,
         )
     else:
         data_parent_scores = None
@@ -4986,6 +5036,7 @@ def run_region(
             nominal_model,
             data_golden_clean,
             features,
+            chunk_size=args.score_chunk_size,
         )
     else:
         data_golden_scores = None
@@ -5000,6 +5051,7 @@ def run_region(
             nominal_model,
             ordinary_clean,
             features,
+            chunk_size=args.score_chunk_size,
         )
     else:
         ordinary_scores = None
@@ -5126,6 +5178,7 @@ def run_region(
             scores=ordinary_scores,
             output_path=ordinary_output / "score_vs_kinematics_2d.png",
             title=f"{args.period} {region}: ordinary-data BDT score vs photon kinematics",
+            max_plot_events=args.max_2d_plot_events,
         )
 
         plot_score_distributions_in_kinematic_bins(
@@ -5319,7 +5372,10 @@ def main() -> None:
     progress(
         f"START: period={args.period}, max-events-per-class={args.max_events_per_class}, "
         f"max-clasdis-read={args.max_clasdis_read}, "
+        f"max-data-read={args.max_data_read}, "
+        f"max-data-control-read={args.max_data_control_read}, "
         f"max-control-events={args.max_control_events}, "
+        f"score-chunk-size={args.score_chunk_size}, "
         f"n-estimators={args.n_estimators}, max-depth={args.max_depth}, seed={args.seed}"
     )
 
@@ -5398,7 +5454,6 @@ def main() -> None:
     clasdis_all: Optional[pd.DataFrame] = None
     clasdis_control: Optional[pd.DataFrame] = None
     clasdis_real_diagnostics: Optional[pd.DataFrame] = None
-    clasdis_scrambled_diagnostics: Optional[pd.DataFrame] = None
     n_clasdis_eppi0 = 0
 
     have_clasdis_pair = not args.skip_clasdis_control
@@ -5424,15 +5479,6 @@ def main() -> None:
         match_output = period_output / "clasdis_matching"
         match_output.mkdir(parents=True, exist_ok=True)
 
-        progress(
-            "CLASDIS DIAGNOSTICS: plotting DIRECT reconstructed-pi0 detector "
-            "topology from detector_gamma1/detector_gamma2"
-        )
-        plot_direct_eppi0_detector_topology(
-            eppi0=clasdis_eppi0,
-            output_path=match_output / "direct_eppi0_detector_topology.png",
-            title=f"{args.period}: direct reconstructed-pi0 detector topology",
-        )
 
         progress(
             "CLASDIS CONTROL: starting cross-tree e/p kinematic matching "
@@ -5444,7 +5490,6 @@ def main() -> None:
         (
             clasdis_control,
             clasdis_real_diagnostics,
-            clasdis_scrambled_diagnostics,
         ) = match_epgamma_to_eppi0_by_kinematics(
             epg=clasdis_epg,
             eppi0=clasdis_eppi0,
@@ -5456,16 +5501,6 @@ def main() -> None:
             f"{len(clasdis_control):,} e'p'gammaX candidates"
         )
 
-        progress(
-            "CLASDIS DIAGNOSTICS: comparing all CLASDIS epgammaX detector "
-            "composition to accepted matched candidates"
-        )
-        plot_all_vs_matched_epgamma_detector_composition(
-            epg=clasdis_epg,
-            matched=clasdis_control,
-            output_path=match_output / "all_vs_matched_epgamma_detector_composition.png",
-            title=f"{args.period}: CLASDIS epgammaX detector composition",
-        )
 
         progress("CLASDIS DIAGNOSTICS: matching diagnostic plots complete")
     #endif
@@ -5499,13 +5534,31 @@ def main() -> None:
             f"({len(ordinary_data):,} rows); no second ROOT read"
         )
 
+        # The ordinary-data score study can use millions of epgamma rows, but
+        # reconstructed-pi0 control matching is much more expensive and does not
+        # need identical statistics. Use a separate cap for that task.
+        control_limit = args.max_data_control_read
+        if control_limit is None:
+            data_epg_control = data_epg
+        else:
+            data_epg_control = data_epg.iloc[
+                :min(int(control_limit), len(data_epg))
+            ].copy()
+        #endif
+
+        progress(
+            f"DATA CONTROL: using {len(data_epg_control):,} epgamma rows "
+            f"for run/event + daughter matching; ordinary scoring still uses "
+            f"{len(data_epg):,} rows"
+        )
+
         progress("DATA CONTROL: loading real-data e'p'pi0X")
         data_eppi0 = load_dataframe(
             filename=data_eppi0_file,
             requested_tree=args.tree,
             branches=DATA_EPPI0_BRANCHES,
             source="data_eppi0",
-            entry_limit=args.max_data_read,
+            entry_limit=control_limit,
         )
 
         (
@@ -5513,7 +5566,7 @@ def main() -> None:
             data_golden_control,
             data_closure,
         ) = build_real_data_pi0_controls(
-            epg=data_epg,
+            epg=data_epg_control,
             eppi0=data_eppi0,
         )
 
