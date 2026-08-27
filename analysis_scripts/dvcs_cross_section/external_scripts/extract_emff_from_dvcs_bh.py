@@ -1,68 +1,84 @@
 #!/usr/bin/env python3
 """
-Version 2: extract proton electromagnetic form-factor information from BH-dominated
-CLAS12 ep -> e'p'gamma cross sections.
+CLAS12 reproduction of the analysis in
 
-This script is designed to be run from
-  /u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/external_scripts/
+  Moradi et al., "Determination of proton electromagnetic form factors
+  from DVCS measurements", arXiv:2512.06554.
 
-Default input:
+This version intentionally removes the Hayward et al. (2018) P/IP/CF Sachs
+fit families and follows the fitting strategy of arXiv:2512.06554 directly.
+
+Workflow
+--------
+1. Read the preliminary CLAS12 10.6-GeV unpolarized ep -> e'p'gamma
+   four-fold cross sections.
+2. Evaluate the KM15 full EP, BH, DVCS, and interference contributions at
+   each measured CLAS12 bin center.
+3. Construct the five nested BH-dominated samples used in the paper:
+      |1 - sigma_BH/sigma_EP| <= 1%, 2%, 3%, 4%, 5%.
+4. Add the paper's corresponding 1%, 2%, 3%, 4%, or 5% uncorrelated
+   BH-selection uncertainty to each retained cross-section point.
+5. Reproduce Fits 1-5 using
+      F1(t) = (1 - t/aE)^(-2)
+      F2(t) = kappa (1 - t/aM)^(-2).
+6. On Set 5 reproduce the P-pole studies:
+      Fit 6: aE = aM = a, with PE and PM free.
+      Fit 7: PE = PM = P, with aE and aM free.
+7. Reproduce Fit 8:
+      F2(t) fixed to Kelly,
+      F1(t) = (1 - t/aE)^(-PE).
+8. Convert F1,F2 -> GE,GM and extract rE,rM from their t=0 slopes.
+9. Produce paper-style FF/radius plots plus CLAS12 observable-space plots
+   showing the measured cross-section points together with the fitted BH
+   predictions. No pseudo "CLAS12 GE/GM data points" are constructed.
+
+Fit implementation
+------------------
+The paper uses iMinuit, the standard Hessian errors, and Delta chi^2 = 1
+for 68% confidence intervals. This script does the same.
+
+By default the CLAS12 fit uncertainty treatment is
+
+  delta_i^2 =
+      delta_stat,i^2
+    + delta_point-to-point,i^2
+    + (c_BH * sigma_i)^2,
+
+where c_BH is 0.01 ... 0.05 for Fits 1 ... 5, following the additional
+uncorrelated uncertainty prescription of arXiv:2512.06554.
+
+The CSV "combination sys" is an overall fractional normalization
+systematic. It is therefore treated as a correlated multiplicative
+normalization nuisance N rather than being added independently to every
+cross-section point:
+
+  chi2 =
+      sum_i [(N * sigma_BH,i - sigma_i)/delta_i]^2
+    + [(N - 1)/delta_N]^2 .
+
+The default delta_N is the median combination-systematic fraction of the
+selected data set. Both the point-to-point and combination-normalization
+systematics are included by default.
+
+Efficiency
+----------
+KM15 is evaluated only once per measured point and cached. The BH cross
+section is then represented exactly as
+
+  sigma_BH = A F1^2 + B F1 F2 + C F2^2,
+
+so the Minuit fits use only fast vectorized NumPy operations.
+
+Default paths assume this script is run from
+
+  /u/home/thayward/clas12_analysis_software/analysis_scripts/
+      dvcs_cross_section/external_scripts/
+
+Input:
   ../output/csvs/dvcs_pass2_analysis.csv
 
-Main workflow
--------------
-1. Read the preliminary CLAS12 10.6-GeV unpolarized cross section.
-2. Evaluate KM15 at every measured bin center and decompose the prediction into
-   BH, DVCS^2, and interference contributions using Gepard.
-3. Build the five nested BH-dominated samples used in arXiv:2512.06554:
-      |1 - sigma_BH/sigma_EP| <= 1%, 2%, 3%, 4%, 5%.
-4. Precompute the exact quadratic BH dependence
-      sigma_BH = A F1^2 + B F1 F2 + C F2^2
-   at every data point. This makes fitting very fast; no KM15/CFF calculation
-   is done inside the minimizer.
-5. Reproduce the paper-style F1/F2 and GE/GM fits (dipole, P-pole, fixed-Kelly).
-6. Perform direct Sachs-form-factor fits using the fitting families from
-   Hayward et al., Phys. Rev. C 98, 045204 (2018), arXiv:1804.09150:
-      P1-P4, IP1-IP4, CF2-CF4.
-   CF4 is included explicitly as the preferred flexible fit.
-7. Extract electric and magnetic rms radii from the slopes at Q^2=|t|=0.
-8. Write fit tables, selected-point tables, and diagnostic/reproduction plots.
-
-Physics conventions
--------------------
-* q = |t| = -t > 0 is used as the form-factor argument.
-* GE(0)=1 and GM(0)=mu_p for the direct Sachs fits.
-* F1 = (GE + tau GM)/(1+tau), F2 = (GM-GE)/(1+tau),
-  tau = q/(4 M_p^2).
-* r_E^2 = -6/GE(0) dGE/dq |_{q=0};
-  r_M^2 = -6/GM(0) dGM/dq |_{q=0}.
-* The CSV phi is converted to the Trento angle exactly as in the existing
-  km15_cli.py: phi_trento = pi - phi_csv.
-
-Uncertainties
--------------
-By default the pointwise fit uncertainty is
-  sqrt(stat^2 + point_to_point_total^2 + (BH_cut * sigma)^2),
-where the last term follows arXiv:2512.06554. The CSV "total scale sys" is
-handled as one correlated multiplicative normalization nuisance N with a
-Gaussian prior N=1 +/- median(total_scale_sys). The run-period-combination
-systematic is retained as a diagnostic but is not double counted separately.
-
-Dependencies
-------------
-Required: numpy, pandas, scipy, matplotlib, gepard
-
-Typical usage
--------------
-  python extract_emff_from_dvcs_bh_v1.py
-
-  python extract_emff_from_dvcs_bh_v1.py --workers 6
-
-  python extract_emff_from_dvcs_bh_v1.py --bh-cuts 0.01 0.02 0.03 0.04 0.05 \
-      --fit-bh-cut 0.05 --sachs-families all
-
-Outputs are written under:
-  output/emff_from_bh/
+Output:
+  output/emff_from_bh_paper_method_v5/
 """
 
 from __future__ import annotations
@@ -83,8 +99,13 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
-from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
+
+try:
+    from iminuit import Minuit
+except ImportError:
+    Minuit = None
+#endtry
 from matplotlib.backends.backend_pdf import PdfPages
 
 
@@ -98,7 +119,7 @@ KAPPA_P = MU_P - 1.0
 HBARC = 0.1973269804       # GeV fm
 
 DEFAULT_CSV = "../output/csvs/dvcs_pass2_analysis.csv"
-DEFAULT_OUTDIR = "output/emff_from_bh"
+DEFAULT_OUTDIR = "output/emff_from_bh_paper_method_v5"
 
 COL_XB = "xBavg, 10.6 GeV"
 COL_Q2 = "Q2avg, 10.6 GeV"
@@ -464,174 +485,75 @@ def bh_from_f1f2(A: np.ndarray, B: np.ndarray, C: np.ndarray,
 #enddef
 
 
-# -----------------------------------------------------------------------------
-# 2018 Sachs fitting families
-# -----------------------------------------------------------------------------
-def polynomial_shape(q: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
-    q = np.asarray(q, dtype=float)
-    out = np.ones_like(q)
-    for power, coeff in enumerate(coeffs, start=1):
-        out = out + coeff * q**power
-    #endfor
-    return out
-#enddef
-
-
-def inverse_polynomial_shape(q: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
-    q = np.asarray(q, dtype=float)
-    den = np.ones_like(q)
-    for power, coeff in enumerate(coeffs, start=1):
-        den = den + coeff * q**power
-    #endfor
-    return 1.0 / den
-#enddef
-
-
-def continued_fraction_shape(q: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
-    """
-    Continued fraction used in arXiv:1804.09150, normalized to one at q=0:
-      1 / [1 + c1 q/(1 + c2 q/(1 + ...))].
-    """
-    q = np.asarray(q, dtype=float)
-    if len(coeffs) < 2:
-        raise ValueError("CF family requires at least CF2.")
-    #endif
-    den = np.ones_like(q)
-    for coeff in coeffs[:0:-1]:
-        den = 1.0 + coeff * q / den
-    #endfor
-    return 1.0 / (1.0 + coeffs[0] * q / den)
-#enddef
-
-
-def sachs_shape(family: str, q: np.ndarray, coeffs: np.ndarray) -> np.ndarray:
-    family = family.upper()
-    if family.startswith("IP"):
-        return inverse_polynomial_shape(q, coeffs)
-    #endif
-    if family.startswith("CF"):
-        return continued_fraction_shape(q, coeffs)
-    #endif
-    if family.startswith("P"):
-        return polynomial_shape(q, coeffs)
-    #endif
-    raise ValueError(f"Unknown Sachs family: {family}")
-#enddef
-
-
-def family_order(family: str) -> int:
-    """Return the number of free shape coefficients for a Sachs fit family."""
-    family = family.upper().strip()
-
-    if family.startswith("IP"):
-        suffix = family[2:]
-    elif family.startswith("CF"):
-        suffix = family[2:]
-    elif family.startswith("P"):
-        suffix = family[1:]
-    else:
-        raise ValueError(f"Unknown Sachs family: {family}")
-    #endif
-
-    if not suffix.isdigit():
-        raise ValueError(f"Could not parse order from Sachs family: {family}")
-    #endif
-
-    n = int(suffix)
-    if n < 1:
-        raise ValueError(f"Sachs family order must be >= 1: {family}")
-    #endif
-    return n
-#enddef
-
-
-def family_initial(family: str, electric: bool) -> np.ndarray:
-    """Reasonable low-q starting values; minimizer is not sensitive to exact choice."""
-    n = family_order(family)
-    family = family.upper()
-    r0 = 0.84 if electric else 0.85
-    slope = (r0 / HBARC)**2 / 6.0  # positive magnitude in GeV^-2
-    if family.startswith("P") and not family.startswith("IP"):
-        arr = np.zeros(n)
-        arr[0] = -slope
-    else:
-        arr = np.zeros(n)
-        arr[0] = slope
-    #endif
-    return arr
-#enddef
-
 
 # -----------------------------------------------------------------------------
-# Generic least-squares machinery
+# Paper-method fit helpers
 # -----------------------------------------------------------------------------
-def covariance_from_least_squares(res, ndata_residuals: int) -> np.ndarray:
-    """Hessian/Jacobian covariance, with Delta-chi2=1 convention."""
-    J = np.asarray(res.jac, dtype=float)
-    try:
-        jtj_inv = np.linalg.pinv(J.T @ J, rcond=1e-12)
-    except Exception:
-        jtj_inv = np.full((J.shape[1], J.shape[1]), np.nan)
-    #endtry
-    return jtj_inv
-#enddef
-
-
-def numerical_gradient(fun: Callable[[np.ndarray], float], p: np.ndarray) -> np.ndarray:
-    grad = np.zeros_like(p, dtype=float)
+def numerical_gradient(fun: Callable[[np.ndarray], float],
+                       p: np.ndarray) -> np.ndarray:
+    """Central finite-difference gradient used only for propagated quantities."""
+    p = np.asarray(p, dtype=float)
+    grad = np.zeros_like(p)
     for i in range(len(p)):
-        step = 1e-5 * max(1.0, abs(float(p[i])))
-        pp = p.copy(); pm = p.copy()
-        pp[i] += step; pm[i] -= step
-        fp = fun(pp); fm = fun(pm)
-        grad[i] = (fp - fm) / (2.0 * step)
+        step = 1.0e-5 * max(1.0, abs(p[i]))
+        pp = p.copy()
+        pm = p.copy()
+        pp[i] += step
+        pm[i] -= step
+        grad[i] = (fun(pp) - fun(pm)) / (2.0 * step)
     #endfor
     return grad
 #enddef
 
 
-def propagate_scalar(fun: Callable[[np.ndarray], float], p: np.ndarray,
+def propagate_scalar(fun: Callable[[np.ndarray], float],
+                     p: np.ndarray,
                      cov: np.ndarray) -> Tuple[float, float]:
     value = float(fun(p))
-    if not np.isfinite(value) or cov.size == 0 or not np.all(np.isfinite(cov)):
+    if cov.size == 0 or not np.all(np.isfinite(cov)):
         return value, np.nan
     #endif
     grad = numerical_gradient(fun, p)
     var = float(grad @ cov @ grad)
-    err = math.sqrt(max(var, 0.0)) if np.isfinite(var) else np.nan
-    return value, err
+    return value, math.sqrt(max(var, 0.0)) if np.isfinite(var) else np.nan
 #enddef
 
 
-def radius_from_shape(shape_fun: Callable[[np.ndarray], np.ndarray], g0: float) -> float:
-    """Numerically extract rms radius from normalized or unnormalized FF shape."""
-    h = 1e-6  # GeV^2
-    g_at_0 = float(np.asarray(shape_fun(np.array([0.0])))[0])
-    g_h = float(np.asarray(shape_fun(np.array([h])))[0])
-    deriv = (g_h - g_at_0) / h
-    r2_gev = -6.0 * deriv / g_at_0
-    if not np.isfinite(r2_gev) or r2_gev <= 0:
+def radius_from_shape(shape_fun: Callable[[np.ndarray], np.ndarray],
+                      g0: float) -> float:
+    """
+    RMS radius in fm from a form factor written as a function of q=|t|=-t.
+
+      r^2 = -6/G(0) dG/dq |_(q=0)
+
+    which is equivalent to the paper's r^2 = +6/G(0) dG/dt at t=0.
+    """
+    h = 1.0e-6
+    g_at_0 = float(shape_fun(np.array([0.0]))[0])
+    g_at_h = float(shape_fun(np.array([h]))[0])
+    slope_q = (g_at_h - g_at_0) / h
+    r2_gev2 = -6.0 * slope_q / g0
+    if not np.isfinite(r2_gev2) or r2_gev2 < 0.0:
         return np.nan
     #endif
-    return math.sqrt(r2_gev) * HBARC
+    return math.sqrt(r2_gev2) * HBARC
 #enddef
 
 
-def fit_sigma_errors(data: pd.DataFrame, bh_cut: float,
-                     include_ptp_sys: bool, include_bh_sys: bool) -> np.ndarray:
+def fit_sigma_errors(data: pd.DataFrame,
+                     bh_cut: float,
+                     include_clas12_ptp_sys: bool,
+                     include_bh_sys: bool) -> np.ndarray:
     """
-    Construct the uncorrelated pointwise uncertainty.
+    Pointwise uncertainty for the paper-method fit.
 
-    Default:
+    Nominal CLAS12 treatment:
       sqrt(stat^2 + ptp_total^2 + (BH_cut * sigma)^2)
-
-    The pass-2 total-scale uncertainty is handled separately as a single
-    correlated normalization nuisance.
     """
     stat = data["xs_stat"].to_numpy(float)
     var = stat**2
 
-    if include_ptp_sys:
+    if include_clas12_ptp_sys:
         ptp = data["ptp_sys_abs"].to_numpy(float)
         var = var + ptp**2
     #endif
@@ -649,279 +571,304 @@ def fit_sigma_errors(data: pd.DataFrame, bh_cut: float,
 #enddef
 
 
-def scale_prior_sigma(data: pd.DataFrame, fallback: float) -> float:
-    vals = data["scale_sys_frac"].to_numpy(float)
-    vals = vals[np.isfinite(vals) & (vals > 0)]
-    if len(vals) == 0:
-        return fallback
-    #endif
-    return float(np.median(vals))
-#enddef
-
-
 # -----------------------------------------------------------------------------
-# Paper-style F1/F2 fits
+# Moradi et al. F1/F2 models: Fits 1-8
 # -----------------------------------------------------------------------------
-def paper_model_f1f2(kind: str, q: np.ndarray, pars: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def paper_model_f1f2(kind: str,
+                     q: np.ndarray,
+                     pars: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Evaluate the exact fit forms used in arXiv:2512.06554.
+
+    q = |t| = -t, hence (1 - t/a) = (1 + q/a).
+    """
+    q = np.asarray(q, dtype=float)
     kind = kind.lower()
+
     if kind == "dipole":
-        aE, aM = pars[:2]
-        f1 = (1.0 + q / aE)**-2
-        f2 = KAPPA_P * (1.0 + q / aM)**-2
+        aE, aM = pars
+        f1 = (1.0 + q / aE)**(-2.0)
+        f2 = KAPPA_P * (1.0 + q / aM)**(-2.0)
         return f1, f2
     #endif
-    if kind == "ppole_same_a":
-        a, pE, pM = pars[:3]
+
+    if kind == "fit6_same_a":
+        a, pE, pM = pars
         f1 = (1.0 + q / a)**(-pE)
         f2 = KAPPA_P * (1.0 + q / a)**(-pM)
         return f1, f2
     #endif
-    if kind == "ppole_same_p":
-        aE, aM, p = pars[:3]
+
+    if kind == "fit7_same_p":
+        aE, aM, p = pars
         f1 = (1.0 + q / aE)**(-p)
         f2 = KAPPA_P * (1.0 + q / aM)**(-p)
         return f1, f2
     #endif
-    if kind == "f2_kelly_ppole_f1":
-        aE, pE = pars[:2]
+
+    if kind == "fit8_f2_kelly":
+        aE, pE = pars
         f1 = (1.0 + q / aE)**(-pE)
         _, f2 = kelly_f1_f2(q)
         return f1, f2
     #endif
-    raise ValueError(kind)
+
+    raise ValueError(f"Unknown paper fit kind: {kind}")
 #enddef
 
 
-def paper_model_setup(kind: str) -> Tuple[List[str], np.ndarray, np.ndarray, np.ndarray]:
+def paper_model_setup(kind: str) -> Tuple[List[str], np.ndarray]:
+    """Initial values are seeded near the paper's reported solutions."""
     kind = kind.lower()
+
     if kind == "dipole":
-        return ["aE", "aM"], np.array([0.95, 0.56]), np.array([0.05, 0.05]), np.array([5.0, 5.0])
+        return ["aE", "aM"], np.array([0.95, 0.56], dtype=float)
     #endif
-    if kind == "ppole_same_a":
-        return ["a", "pE", "pM"], np.array([0.53, 1.2, 1.9]), np.array([0.03, 0.1, 0.1]), np.array([5.0, 6.0, 6.0])
+
+    if kind == "fit6_same_a":
+        return ["a", "PE", "PM"], np.array([0.53, 1.2, 1.96], dtype=float)
     #endif
-    if kind == "ppole_same_p":
-        return ["aE", "aM", "p"], np.array([0.65, 0.35, 1.4]), np.array([0.03, 0.03, 0.1]), np.array([5.0, 5.0, 6.0])
+
+    if kind == "fit7_same_p":
+        return ["aE", "aM", "P"], np.array([0.65, 0.35, 1.42], dtype=float)
     #endif
-    if kind == "f2_kelly_ppole_f1":
-        return ["aE", "pE"], np.array([0.56, 1.3]), np.array([0.03, 0.1]), np.array([5.0, 6.0])
+
+    if kind == "fit8_f2_kelly":
+        return ["aE", "PE"], np.array([0.565, 1.318], dtype=float)
     #endif
-    raise ValueError(kind)
+
+    raise ValueError(f"Unknown paper fit kind: {kind}")
 #enddef
 
 
-def fit_paper_model(data: pd.DataFrame, kind: str, bh_cut: float,
-                    include_ptp_sys: bool, include_bh_sys: bool,
-                    use_scale_nuisance: bool, scale_fallback: float) -> FitResult:
+def fit_paper_model(data: pd.DataFrame,
+                    kind: str,
+                    fit_name: str,
+                    bh_cut: float,
+                    include_clas12_ptp_sys: bool,
+                    include_bh_sys: bool,
+                    include_combination_norm_sys: bool) -> FitResult:
+    """
+    Perform one Moradi-et-al.-style chi^2 fit with iMinuit, augmented by
+    the CLAS12 correlated run-period-combination normalization systematic.
+
+    The normalization nuisance N multiplies the fitted BH prediction:
+
+      chi2 = sum_i [(N * sigma_BH,i - sigma_i)/err_i]^2
+             + [(N - 1)/sigma_N]^2
+
+    where sigma_N is taken from the median fractional "combination sys"
+    value in the selected CLAS12 sample.
+    """
     q = data["t_abs"].to_numpy(float)
     y = data["xs"].to_numpy(float)
-    err = fit_sigma_errors(data, bh_cut, include_ptp_sys, include_bh_sys)
+    err = fit_sigma_errors(
+        data,
+        bh_cut,
+        include_clas12_ptp_sys,
+        include_bh_sys,
+    )
     A = data["bh_A"].to_numpy(float)
     B = data["bh_B"].to_numpy(float)
     C = data["bh_C"].to_numpy(float)
 
-    names, p0, lo, hi = paper_model_setup(kind)
-    scale_sig = scale_prior_sigma(data, scale_fallback)
-    if use_scale_nuisance:
-        names = names + ["N"]
-        p0 = np.r_[p0, 1.0]
-        lo = np.r_[lo, 0.5]
-        hi = np.r_[hi, 1.5]
+    names, p0 = paper_model_setup(kind)
+
+    comb = data["comb_sys_frac"].to_numpy(float)
+    good_comb = comb[np.isfinite(comb) & (comb > 0.0)]
+    if len(good_comb) > 0:
+        sigma_norm = float(np.median(good_comb))
+    else:
+        sigma_norm = 0.0
     #endif
 
-    def residuals(p):
-        core = p[:-1] if use_scale_nuisance else p
-        norm = p[-1] if use_scale_nuisance else 1.0
-        f1, f2 = paper_model_f1f2(kind, q, core)
-        pred = norm * bh_from_f1f2(A, B, C, f1, f2)
-        res = (pred - y) / err
-        if use_scale_nuisance:
-            res = np.r_[res, (norm - 1.0) / scale_sig]
+    if include_combination_norm_sys and sigma_norm > 0.0:
+        fit_names = names + ["N"]
+        fit_p0 = np.concatenate([p0, np.array([1.0])])
+    else:
+        fit_names = names
+        fit_p0 = p0.copy()
+    #endif
+
+    def split_params(p: np.ndarray) -> Tuple[np.ndarray, float]:
+        if include_combination_norm_sys and sigma_norm > 0.0:
+            return p[:-1], float(p[-1])
         #endif
-        return res
+        return p, 1.0
     #enddef
 
-    res = least_squares(residuals, p0, bounds=(lo, hi), method="trf",
-                        x_scale="jac", max_nfev=20000)
-    cov = covariance_from_least_squares(res, len(y))
-    chi2 = float(np.sum(res.fun**2))
-    npar = len(res.x)
-    ndof = max(len(res.fun) - npar, 1)
+    def chi2_array(p: np.ndarray) -> float:
+        ff_pars, norm = split_params(np.asarray(p, dtype=float))
+        f1, f2 = paper_model_f1f2(kind, q, ff_pars)
+        pred = norm * bh_from_f1f2(A, B, C, f1, f2)
+        pull = (pred - y) / err
+        chi2 = float(np.dot(pull, pull))
+
+        if include_combination_norm_sys and sigma_norm > 0.0:
+            chi2 += ((norm - 1.0) / sigma_norm)**2
+        #endif
+
+        return chi2
+    #enddef
+
+    def minuit_chi2(*values):
+        return chi2_array(np.asarray(values, dtype=float))
+    #enddef
+
+    m = Minuit(minuit_chi2, *fit_p0, name=tuple(fit_names))
+    m.errordef = Minuit.LEAST_SQUARES
+
+    for name in names:
+        m.limits[name] = (1.0e-6, None)
+    #endfor
+
+    if "N" in fit_names:
+        # Keep N positive but otherwise let the Gaussian prior determine it.
+        m.limits["N"] = (1.0e-6, None)
+    #endif
+
+    m.migrad()
+    m.hesse()
+
+    all_params = np.array(
+        [float(m.values[name]) for name in fit_names],
+        dtype=float,
+    )
+
+    full_cov = np.full((len(fit_names), len(fit_names)), np.nan, dtype=float)
+    if m.covariance is not None:
+        for i, ni in enumerate(fit_names):
+            for j, nj in enumerate(fit_names):
+                full_cov[i, j] = float(m.covariance[ni, nj])
+            #endfor
+        #endfor
+    #endif
+
+    if "N" in fit_names:
+        params = all_params[:-1]
+        cov = full_cov[:-1, :-1]
+        norm = float(all_params[-1])
+        norm_err = math.sqrt(max(full_cov[-1, -1], 0.0))
+    else:
+        params = all_params
+        cov = full_cov
+        norm = 1.0
+        norm_err = 0.0
+    #endif
+
+    chi2 = float(m.fval)
+    npar = len(all_params)
+    ndof = max(len(y) - npar, 1)
 
     def re_of_p(p):
-        core = p[:-1] if use_scale_nuisance else p
         return radius_from_shape(
-            lambda qq: f1f2_to_sachs(qq, *paper_model_f1f2(kind, qq, core))[0], 1.0
-        )
-    #enddef
-    def rm_of_p(p):
-        core = p[:-1] if use_scale_nuisance else p
-        return radius_from_shape(
-            lambda qq: f1f2_to_sachs(qq, *paper_model_f1f2(kind, qq, core))[1], MU_P
+            lambda qq: f1f2_to_sachs(
+                qq, *paper_model_f1f2(kind, qq, p)
+            )[0],
+            1.0,
         )
     #enddef
 
-    rE, drE = propagate_scalar(re_of_p, res.x, cov)
-    rM, drM = propagate_scalar(rm_of_p, res.x, cov)
-    norm = float(res.x[-1]) if use_scale_nuisance else 1.0
-    norm_err = math.sqrt(max(cov[-1, -1], 0.0)) if use_scale_nuisance and np.isfinite(cov[-1, -1]) else 0.0
+    def rm_of_p(p):
+        return radius_from_shape(
+            lambda qq: f1f2_to_sachs(
+                qq, *paper_model_f1f2(kind, qq, p)
+            )[1],
+            MU_P,
+        )
+    #enddef
+
+    rE, drE = propagate_scalar(re_of_p, params, cov)
+    rM, drM = propagate_scalar(rm_of_p, params, cov)
+
+    message = (
+        f"valid={m.valid}; accurate={m.accurate}; "
+        f"edm={float(m.fmin.edm):.3e}; "
+        f"has_posdef_covar={bool(m.fmin.has_posdef_covar)}"
+    )
 
     return FitResult(
-        name=kind,
+        name=fit_name,
         category="paper_F1F2",
         bh_cut=bh_cut,
-        npts=len(y), npar=npar, chi2=chi2, ndof=ndof,
-        chi2_ndof=chi2/ndof, success=bool(res.success), message=str(res.message),
-        params=res.x.copy(), param_names=names, covariance=cov,
-        rE_fm=rE, rE_err_fm=drE, rM_fm=rM, rM_err_fm=drM,
-        norm=norm, norm_err=norm_err, model_kind=kind,
-        meta={"scale_prior_sigma": scale_sig},
+        npts=len(y),
+        npar=npar,
+        chi2=chi2,
+        ndof=ndof,
+        chi2_ndof=chi2 / ndof,
+        success=bool(m.valid),
+        message=message,
+        params=params,
+        param_names=names,
+        covariance=cov,
+        rE_fm=rE,
+        rE_err_fm=drE,
+        rM_fm=rM,
+        rM_err_fm=drM,
+        norm=norm,
+        norm_err=norm_err,
+        model_kind=kind,
+        meta={
+            "minuit_valid": bool(m.valid),
+            "minuit_accurate": bool(m.accurate),
+            "minuit_edm": float(m.fmin.edm),
+            "has_posdef_covar": bool(m.fmin.has_posdef_covar),
+            "include_clas12_ptp_sys": bool(include_clas12_ptp_sys),
+            "include_bh_selection_sys": bool(include_bh_sys),
+            "include_combination_norm_sys": bool(include_combination_norm_sys),
+            "combination_norm_sigma": float(sigma_norm),
+        },
     )
 #enddef
 
 
-# -----------------------------------------------------------------------------
-# Direct Sachs fits (YAHL18-style families)
-# -----------------------------------------------------------------------------
-def fit_sachs_family(data: pd.DataFrame, family: str, bh_cut: float,
-                     include_ptp_sys: bool, include_bh_sys: bool,
-                     use_scale_nuisance: bool, scale_fallback: float,
-                     fix_gm_to_kelly: bool = False) -> FitResult:
-    family = family.upper()
-    n = family_order(family)
-    q = data["t_abs"].to_numpy(float)
-    y = data["xs"].to_numpy(float)
-    err = fit_sigma_errors(data, bh_cut, include_ptp_sys, include_bh_sys)
-    A = data["bh_A"].to_numpy(float)
-    B = data["bh_B"].to_numpy(float)
-    C = data["bh_C"].to_numpy(float)
-
-    pE0 = family_initial(family, electric=True)
-    names = [f"GE_c{i}" for i in range(1, n+1)]
-    p0 = pE0.copy()
-
-    if fix_gm_to_kelly:
-        gm_n = 0
-    else:
-        pM0 = family_initial(family, electric=False)
-        p0 = np.r_[p0, pM0]
-        names += [f"GM_c{i}" for i in range(1, n+1)]
-        gm_n = n
-    #endif
-
-    scale_sig = scale_prior_sigma(data, scale_fallback)
-    if use_scale_nuisance:
-        p0 = np.r_[p0, 1.0]
-        names += ["N"]
-    #endif
-
-    # Broad finite bounds protect continued fractions from pathological poles
-    # while remaining much wider than physically useful low-|t| coefficients.
-    lo = np.full(len(p0), -100.0)
-    hi = np.full(len(p0), +100.0)
-    if use_scale_nuisance:
-        lo[-1], hi[-1] = 0.5, 1.5
-    #endif
-
-    def unpack(p, qq):
-        pcore = p[:-1] if use_scale_nuisance else p
-        ce = pcore[:n]
-        ge = sachs_shape(family, qq, ce)
-        if fix_gm_to_kelly:
-            kf1, kf2 = kelly_f1_f2(qq)
-            _, gm = f1f2_to_sachs(qq, kf1, kf2)
-        else:
-            cm = pcore[n:n+gm_n]
-            gm = MU_P * sachs_shape(family, qq, cm)
-        #endif
-        return ge, gm
-    #enddef
-
-    def residuals(p):
-        norm = p[-1] if use_scale_nuisance else 1.0
-        ge, gm = unpack(p, q)
-        f1, f2 = sachs_to_f1f2(q, ge, gm)
-        pred = norm * bh_from_f1f2(A, B, C, f1, f2)
-        res = (pred - y) / err
-        if use_scale_nuisance:
-            res = np.r_[res, (norm - 1.0) / scale_sig]
-        #endif
-        if not np.all(np.isfinite(res)):
-            res = np.nan_to_num(res, nan=1e12, posinf=1e12, neginf=-1e12)
-        #endif
-        return res
-    #enddef
-
-    res = least_squares(residuals, p0, bounds=(lo, hi), method="trf",
-                        x_scale="jac", max_nfev=30000)
-    cov = covariance_from_least_squares(res, len(y))
-    chi2 = float(np.sum(res.fun**2))
-    npar = len(res.x)
-    ndof = max(len(res.fun) - npar, 1)
-
-    def re_of_p(p):
-        return radius_from_shape(lambda qq: unpack(p, qq)[0], 1.0)
-    #enddef
-    def rm_of_p(p):
-        return radius_from_shape(lambda qq: unpack(p, qq)[1], MU_P)
-    #enddef
-
-    rE, drE = propagate_scalar(re_of_p, res.x, cov)
-    rM, drM = propagate_scalar(rm_of_p, res.x, cov)
-    norm = float(res.x[-1]) if use_scale_nuisance else 1.0
-    norm_err = math.sqrt(max(cov[-1, -1], 0.0)) if use_scale_nuisance and np.isfinite(cov[-1, -1]) else 0.0
-    suffix = "_GMKelly" if fix_gm_to_kelly else ""
-
-    return FitResult(
-        name=f"{family}{suffix}", category="Sachs_2018", bh_cut=bh_cut,
-        npts=len(y), npar=npar, chi2=chi2, ndof=ndof, chi2_ndof=chi2/ndof,
-        success=bool(res.success), message=str(res.message),
-        params=res.x.copy(), param_names=names, covariance=cov,
-        rE_fm=rE, rE_err_fm=drE, rM_fm=rM, rM_err_fm=drM,
-        norm=norm, norm_err=norm_err, model_kind=family,
-        meta={"fix_gm_to_kelly": fix_gm_to_kelly, "scale_prior_sigma": scale_sig},
-    )
-#enddef
-
-
-def evaluate_fit_form_factors(fr: FitResult, q: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """Return F1,F2,GE,GM for plotting for any FitResult."""
-    q = np.asarray(q, dtype=float)
-    use_n = "N" in fr.param_names
-    core = fr.params[:-1] if use_n else fr.params
-
-    if fr.category == "paper_F1F2":
-        f1, f2 = paper_model_f1f2(fr.model_kind, q, core)
-        ge, gm = f1f2_to_sachs(q, f1, f2)
-        return f1, f2, ge, gm
-    #endif
-
-    family = fr.model_kind.upper()
-    n = family_order(family)
-    ge = sachs_shape(family, q, core[:n])
-    if bool(fr.meta.get("fix_gm_to_kelly", False)):
-        f1k, f2k = kelly_f1_f2(q)
-        _, gm = f1f2_to_sachs(q, f1k, f2k)
-    else:
-        gm = MU_P * sachs_shape(family, q, core[n:2*n])
-    #endif
-    f1, f2 = sachs_to_f1f2(q, ge, gm)
+def evaluate_fit_form_factors(fr: FitResult,
+                              q: np.ndarray) -> Tuple[np.ndarray, np.ndarray,
+                                                      np.ndarray, np.ndarray]:
+    """Return F1, F2, GE, GM for a paper-method FitResult."""
+    f1, f2 = paper_model_f1f2(fr.model_kind, q, fr.params)
+    ge, gm = f1f2_to_sachs(q, f1, f2)
     return f1, f2, ge, gm
 #enddef
 
 
+def evaluate_fit_cross_section(fr: FitResult,
+                               data: pd.DataFrame) -> np.ndarray:
+    """Evaluate a fitted pure-BH prediction at each measured CLAS12 point."""
+    q = data["t_abs"].to_numpy(float)
+    f1, f2 = paper_model_f1f2(fr.model_kind, q, fr.params)
+    return fr.norm * bh_from_f1f2(
+        data["bh_A"].to_numpy(float),
+        data["bh_B"].to_numpy(float),
+        data["bh_C"].to_numpy(float),
+        f1,
+        f2,
+    )
+#enddef
+
+
 # -----------------------------------------------------------------------------
-# Fit bookkeeping / uncertainties bands
+# Fit bookkeeping and Hessian uncertainty bands
 # -----------------------------------------------------------------------------
 def fitresult_to_record(fr: FitResult) -> Dict[str, object]:
     rec = {
-        "name": fr.name, "category": fr.category, "bh_cut": fr.bh_cut,
-        "npts": fr.npts, "npar": fr.npar, "chi2": fr.chi2,
-        "ndof": fr.ndof, "chi2_ndof": fr.chi2_ndof,
-        "success": fr.success, "message": fr.message,
-        "rE_fm": fr.rE_fm, "rE_err_fm": fr.rE_err_fm,
-        "rM_fm": fr.rM_fm, "rM_err_fm": fr.rM_err_fm,
-        "norm": fr.norm, "norm_err": fr.norm_err,
+        "name": fr.name,
+        "category": fr.category,
+        "bh_cut": fr.bh_cut,
+        "npts": fr.npts,
+        "npar": fr.npar,
+        "chi2": fr.chi2,
+        "ndof": fr.ndof,
+        "chi2_ndof": fr.chi2_ndof,
+        "success": fr.success,
+        "message": fr.message,
+        "rE_fm": fr.rE_fm,
+        "rE_err_fm": fr.rE_err_fm,
+        "rM_fm": fr.rM_fm,
+        "rM_err_fm": fr.rM_err_fm,
+        "norm": fr.norm,
+        "norm_err": fr.norm_err,
+        "combination_norm_sigma": fr.meta.get("combination_norm_sigma", np.nan),
     }
     for name, value in zip(fr.param_names, fr.params):
         rec[name] = value
@@ -930,102 +877,190 @@ def fitresult_to_record(fr: FitResult) -> Dict[str, object]:
 #enddef
 
 
-def form_factor_band(fr: FitResult, q: np.ndarray, which: str) -> Tuple[np.ndarray, np.ndarray]:
-    idx = {"F1": 0, "F2": 1, "GE": 2, "GM": 3}[which]
-    central = evaluate_fit_form_factors(fr, q)[idx]
+def form_factor_band(fr: FitResult,
+                     q: np.ndarray,
+                     which: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Central value and 1-sigma Hessian band."""
+    index = {"F1": 0, "F2": 1, "GE": 2, "GM": 3}[which]
+    central = evaluate_fit_form_factors(fr, q)[index]
+
     if not np.all(np.isfinite(fr.covariance)):
         return central, np.full_like(central, np.nan)
     #endif
 
-    sig = np.zeros_like(q)
-    for j, qj in enumerate(q):
+    sigma = np.zeros_like(q, dtype=float)
+    for iq, q_value in enumerate(q):
         def scalar(p):
-            tmp = FitResult(**{**fr.__dict__, "params": p})
-            return float(evaluate_fit_form_factors(tmp, np.array([qj]))[idx][0])
+            tmp = FitResult(**{**fr.__dict__, "params": np.asarray(p, dtype=float)})
+            return float(
+                evaluate_fit_form_factors(
+                    tmp, np.array([q_value], dtype=float)
+                )[index][0]
+            )
         #enddef
+
         grad = numerical_gradient(scalar, fr.params)
         var = float(grad @ fr.covariance @ grad)
-        sig[j] = math.sqrt(max(var, 0.0)) if np.isfinite(var) else np.nan
+        sigma[iq] = math.sqrt(max(var, 0.0)) if np.isfinite(var) else np.nan
     #endfor
-    return central, sig
+
+    return central, sigma
 #enddef
 
 
 # -----------------------------------------------------------------------------
 # Plotting
 # -----------------------------------------------------------------------------
-def save_bh_selection_plots(df: pd.DataFrame, bh_cuts: Sequence[float], outdir: Path) -> None:
+def shade_fit_t_range(ax, data: pd.DataFrame) -> None:
+    """Mark the |t| interval actually constrained by the selected CLAS12 data."""
+    if len(data) == 0:
+        return
+    #endif
+    ax.axvspan(
+        float(data["t_abs"].min()),
+        float(data["t_abs"].max()),
+        alpha=0.08,
+        label="CLAS12 fitted |t| range",
+    )
+#enddef
+
+
+def save_bh_selection_plots(df: pd.DataFrame,
+                            bh_cuts: Sequence[float],
+                            outdir: Path) -> None:
     fig, ax = plt.subplots(figsize=(7.5, 5.2))
     vals = df["R_BH"].to_numpy(float)
     vals = vals[np.isfinite(vals)]
     ax.hist(vals, bins=80, histtype="step", linewidth=1.5)
+
     for cut in bh_cuts:
-        ax.axvline(1.0-cut, linestyle="--", linewidth=1.0, label=f"{100*cut:.0f}% lower bound")
-        ax.axvline(1.0+cut, linestyle="--", linewidth=1.0)
+        ax.axvline(
+            1.0 - cut,
+            linestyle="--",
+            linewidth=1.0,
+            label=rf"$\Delta\sigma/\sigma\leq{100*cut:.0f}\%$",
+        )
+        ax.axvline(1.0 + cut, linestyle="--", linewidth=1.0)
     #endfor
-    ax.set_xlabel(r"$R_{BH}=\sigma_{BH}/\sigma_{EP}^{KM15}$")
-    ax.set_ylabel("CLAS12 bins")
-    ax.set_title("KM15 BH dominance for preliminary CLAS12 bins")
+
+    ax.set_xlabel(r"$R_{\rm BH}=\sigma_{\rm BH}/\sigma_{\rm EP}^{\rm KM15}$")
+    ax.set_ylabel("CLAS12 cross-section points")
+    ax.set_title("KM15 BH-dominance selection")
     ax.legend(fontsize=8, ncol=2)
     fig.tight_layout()
     fig.savefig(outdir / "01_bh_fraction_distribution.pdf")
     plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(8.0, 5.4))
-    sc = ax.scatter(df["phi_deg"], df["xB"], c=df["R_BH"], s=15,
-                    vmin=0.8, vmax=1.05)
+    sc = ax.scatter(
+        df["phi_deg"],
+        df["xB"],
+        c=df["R_BH"],
+        s=15,
+        vmin=0.8,
+        vmax=1.05,
+    )
     cb = fig.colorbar(sc, ax=ax)
-    cb.set_label(r"$R_{BH}$")
+    cb.set_label(r"$R_{\rm BH}$")
     ax.set_xlabel(r"$\phi$ (deg)")
     ax.set_ylabel(r"$x_B$")
-    ax.set_title("CLAS12 kinematics colored by KM15 BH fraction")
+    ax.set_title("Preliminary CLAS12 kinematics colored by KM15 BH fraction")
     fig.tight_layout()
     fig.savefig(outdir / "02_bh_fraction_phi_xB.pdf")
     plt.close(fig)
 #enddef
 
 
-def save_selected_cross_section_pages(data: pd.DataFrame, outpath: Path) -> None:
-    """Data-vs-KM15/BH phi panels, grouped by the parent xB,Q2,t bin edges when available."""
-    group_cols = [c for c in ["xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max"] if c in data.columns]
+def save_selected_cross_section_pages(data: pd.DataFrame,
+                                      fit5: FitResult,
+                                      fit8: FitResult,
+                                      outpath: Path) -> None:
+    """
+    Observable-space CLAS12 plots.
+
+    These are the appropriate place to show the CLAS12 data points: the
+    measured quantity is the ep->e'p'gamma cross section, not F1/F2/GE/GM
+    point-by-point. Fit 5 and Fit 8 BH predictions are overlaid.
+    """
+    work = data.copy()
+    work["fit5_bh"] = evaluate_fit_cross_section(fit5, work)
+    work["fit8_bh"] = evaluate_fit_cross_section(fit8, work)
+
+    group_cols = [
+        c for c in
+        ["xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max"]
+        if c in work.columns
+    ]
+
     if len(group_cols) < 6:
-        # Robust fallback: grouping by rounded mean kinematics.
-        work = data.copy()
         work["_gx"] = work["xB"].round(3)
         work["_gq"] = work["Q2"].round(2)
         work["_gt"] = work["t_abs"].round(2)
         group_cols = ["_gx", "_gq", "_gt"]
-    else:
-        work = data.copy()
     #endif
 
-    groups = [(key, g.sort_values("phi_deg")) for key, g in work.groupby(group_cols, dropna=False)]
+    groups = [
+        (key, group.sort_values("phi_deg"))
+        for key, group in work.groupby(group_cols, dropna=False)
+    ]
+
     with PdfPages(outpath) as pdf:
         for start in range(0, len(groups), 6):
-            chunk = groups[start:start+6]
+            chunk = groups[start:start + 6]
             fig, axes = plt.subplots(3, 2, figsize=(11, 11), squeeze=False)
+
             for ax, item in zip(axes.flat, chunk):
-                key, g = item
-                yerr = g["xs_stat"].to_numpy(float)
-                ax.errorbar(g["phi_deg"], g["xs"], yerr=yerr, fmt="o", markersize=3.5,
-                            capsize=2, label="CLAS12 preliminary")
-                ax.plot(g["phi_deg"], g["km15_ep"], "-", linewidth=1.2, label="KM15 EP")
-                ax.plot(g["phi_deg"], g["km15_bh"], "--", linewidth=1.2, label="BH only")
+                _, group = item
+                ax.errorbar(
+                    group["phi_deg"],
+                    group["xs"],
+                    yerr=group["fit_sigma_default"],
+                    fmt="o",
+                    markersize=3.5,
+                    capsize=2,
+                    label="CLAS12 preliminary",
+                )
+                ax.plot(
+                    group["phi_deg"],
+                    group["fit5_bh"],
+                    "-",
+                    linewidth=1.4,
+                    label="Fit 5 BH",
+                )
+                ax.plot(
+                    group["phi_deg"],
+                    group["fit8_bh"],
+                    "--",
+                    linewidth=1.4,
+                    label=r"Fit 8 BH ($F_2$ Kelly)",
+                )
+                ax.plot(
+                    group["phi_deg"],
+                    group["km15_bh"],
+                    ":",
+                    linewidth=1.1,
+                    label="KM15 nominal BH",
+                )
                 ax.set_xlabel(r"$\phi$ (deg)")
                 ax.set_ylabel(r"$d^4\sigma$")
                 ax.set_title(
-                    rf"$\langle x_B\rangle={g['xB'].mean():.3f}$, "
-                    rf"$\langle Q^2\rangle={g['Q2'].mean():.2f}$, "
-                    rf"$\langle|t|\rangle={g['t_abs'].mean():.3f}$"
+                    rf"$\langle x_B\rangle={group['xB'].mean():.3f}$, "
+                    rf"$\langle Q^2\rangle={group['Q2'].mean():.2f}$, "
+                    rf"$\langle|t|\rangle={group['t_abs'].mean():.3f}$"
                 )
                 ax.grid(alpha=0.2)
             #endfor
+
             for ax in axes.flat[len(chunk):]:
                 ax.axis("off")
             #endfor
+
             handles, labels = axes.flat[0].get_legend_handles_labels()
-            fig.legend(handles, labels, loc="upper center", ncol=3)
-            fig.suptitle("BH-dominated CLAS12 cross sections", y=0.995)
+            fig.legend(handles, labels, loc="upper center", ncol=4, fontsize=8)
+            fig.suptitle(
+                "Set 5: preliminary CLAS12 cross sections and fitted BH predictions",
+                y=0.995,
+            )
             fig.tight_layout(rect=(0, 0, 1, 0.965))
             pdf.savefig(fig)
             plt.close(fig)
@@ -1034,181 +1069,324 @@ def save_selected_cross_section_pages(data: pd.DataFrame, outpath: Path) -> None
 #enddef
 
 
-def save_paper_ff_plots(results: List[FitResult], outdir: Path, preferred_cut: float) -> None:
-    paper = [r for r in results if r.category == "paper_F1F2" and abs(r.bh_cut-preferred_cut) < 1e-12]
-    if not paper:
-        return
-    #endif
-    q = np.linspace(0.0, 1.0, 300)
-    f1k, f2k = kelly_f1_f2(q)
-    gek, gmk = f1f2_to_sachs(q, f1k, f2k)
+def save_fit1_to_fit5_plots(results: List[FitResult],
+                            set5_data: pd.DataFrame,
+                            outdir: Path) -> None:
+    """Paper Fig. 4/5 analogue for CLAS12 Fits 1-5."""
+    fits = [
+        next(r for r in results if r.name == f"Fit {i}")
+        for i in range(1, 6)
+    ]
+    fit5 = fits[-1]
+
+    q = np.linspace(0.0, 1.0, 400)
 
     for which, ylabel, filename in [
-        ("F1", r"$F_1(t)$", "04_F1_paper_style.pdf"),
-        ("F2", r"$F_2(t)$", "05_F2_paper_style.pdf"),
+        ("F1", r"$F_1(t)$", "04_F1_fits_1_to_5.pdf"),
+        ("F2", r"$F_2(t)$", "05_F2_fits_1_to_5.pdf"),
     ]:
         fig, ax = plt.subplots(figsize=(7.2, 5.2))
-        for fr in paper:
-            vals = evaluate_fit_form_factors(fr, q)[0 if which == "F1" else 1]
-            ax.plot(q, vals, linewidth=1.2, label=fr.name)
+
+        for fr in fits:
+            values = evaluate_fit_form_factors(fr, q)[0 if which == "F1" else 1]
+            ax.plot(q, values, linewidth=1.2, label=fr.name)
         #endfor
-        ax.plot(q, f1k if which == "F1" else f2k, linewidth=1.7, label="Kelly")
+
+        central, sigma = form_factor_band(fit5, q, which)
+        ax.fill_between(
+            q,
+            central - sigma,
+            central + sigma,
+            alpha=0.20,
+            label="Fit 5 68% Hessian band",
+        )
+
+        shade_fit_t_range(ax, set5_data)
         ax.set_xlabel(r"$|t|$ (GeV$^2$)")
         ax.set_ylabel(ylabel)
-        ax.set_xlim(0, 1.0)
+        ax.set_xlim(0.0, 1.0)
         ax.grid(alpha=0.2)
         ax.legend(fontsize=8)
         fig.tight_layout()
         fig.savefig(outdir / filename)
         plt.close(fig)
     #endfor
+#enddef
 
+
+def save_fit5_sachs_plot(fit5: FitResult,
+                         set5_data: pd.DataFrame,
+                         outdir: Path) -> None:
+    """Paper Fig. 6 analogue using CLAS12 Fit 5."""
+    q = np.linspace(0.0, 1.0, 400)
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.8))
-    for fr in paper:
-        _, _, ge, gm = evaluate_fit_form_factors(fr, q)
-        axes[0].plot(q, ge, linewidth=1.2, label=fr.name)
-        axes[1].plot(q, gm, linewidth=1.2, label=fr.name)
-    #endfor
-    axes[0].plot(q, gek, linewidth=1.7, label="Kelly")
-    axes[1].plot(q, gmk, linewidth=1.7, label="Kelly")
-    axes[0].set_ylabel(r"$G_E(t)$")
-    axes[1].set_ylabel(r"$G_M(t)$")
-    for ax in axes:
+
+    for ax, which, ylabel in zip(
+        axes,
+        ["GE", "GM"],
+        [r"$G_E(t)$", r"$G_M(t)$"],
+    ):
+        central, sigma = form_factor_band(fit5, q, which)
+        ax.plot(q, central, linewidth=1.5, label="Fit 5")
+        ax.fill_between(
+            q,
+            central - sigma,
+            central + sigma,
+            alpha=0.20,
+            label="68% Hessian band",
+        )
+        shade_fit_t_range(ax, set5_data)
         ax.set_xlabel(r"$|t|$ (GeV$^2$)")
-        ax.set_xlim(0, 1.0)
+        ax.set_ylabel(ylabel)
+        ax.set_xlim(0.0, 1.0)
         ax.grid(alpha=0.2)
     #endfor
+
     axes[0].legend(fontsize=8)
     fig.tight_layout()
-    fig.savefig(outdir / "06_GE_GM_paper_style.pdf")
+    fig.savefig(outdir / "06_GE_GM_fit5.pdf")
     plt.close(fig)
 #enddef
 
 
-def save_sachs_family_plots(results: List[FitResult], outdir: Path, preferred_cut: float) -> None:
-    fam = [r for r in results if r.category == "Sachs_2018" and abs(r.bh_cut-preferred_cut) < 1e-12
-           and not bool(r.meta.get("fix_gm_to_kelly", False))]
-    if not fam:
-        return
-    #endif
-    q = np.linspace(0.0, 0.8, 300)
-    f1k, f2k = kelly_f1_f2(q)
-    gek, gmk = f1f2_to_sachs(q, f1k, f2k)
+def save_bh_f1_f2_sensitivity(outdir: Path,
+                              ebeam: float,
+                              reference_data: pd.DataFrame) -> None:
+    """
+    Paper Fig. 7 analogue.
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.5, 5.0))
-    for fr in fam:
-        _, _, ge, gm = evaluate_fit_form_factors(fr, q)
-        lw = 2.2 if fr.name == "CF4" else 1.0
-        axes[0].plot(q, ge, linewidth=lw, label=fr.name)
-        axes[1].plot(q, gm, linewidth=lw, label=fr.name)
-    #endfor
-    axes[0].plot(q, gek, "k--", linewidth=1.5, label="Kelly")
-    axes[1].plot(q, gmk, "k--", linewidth=1.5, label="Kelly")
-    axes[0].set_ylabel(r"$G_E$")
-    axes[1].set_ylabel(r"$G_M$")
-    for ax in axes:
-        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
-        ax.grid(alpha=0.2)
-    #endfor
-    axes[0].legend(fontsize=7, ncol=2)
-    fig.suptitle("Direct Sachs fits using the 2018 fitting families")
-    fig.tight_layout()
-    fig.savefig(outdir / "07_GE_GM_2018_families.pdf")
-    plt.close(fig)
-
-    cf4 = next((r for r in fam if r.name == "CF4"), None)
-    if cf4 is not None:
-        fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.8))
-        for ax, which, ylabel in zip(axes, ["GE", "GM"], [r"$G_E$", r"$G_M$"]):
-            cen, sig = form_factor_band(cf4, q, which)
-            ax.plot(q, cen, linewidth=1.8, label="CLAS12 CF4")
-            ax.fill_between(q, cen-sig, cen+sig, alpha=0.25)
-            ref = gek if which == "GE" else gmk
-            ax.plot(q, ref, "k--", linewidth=1.5, label="Kelly")
-            ax.set_xlabel(r"$|t|$ (GeV$^2$)")
-            ax.set_ylabel(ylabel)
-            ax.grid(alpha=0.2)
-        #endfor
-        axes[0].legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(outdir / "08_CF4_GE_GM_with_band.pdf")
-        plt.close(fig)
-    #endif
-#enddef
-
-
-def save_radii_plot(results: List[FitResult], outdir: Path, preferred_cut: float) -> None:
-    rows = [r for r in results if abs(r.bh_cut-preferred_cut) < 1e-12]
-    rows = [r for r in rows if np.isfinite(r.rE_fm) or np.isfinite(r.rM_fm)]
-    if not rows:
-        return
-    #endif
-    labels = [r.name for r in rows]
-    y = np.arange(len(rows))
-    fig, axes = plt.subplots(1, 2, figsize=(12, max(5.0, 0.38*len(rows)+1.5)), sharey=True)
-    axes[0].errorbar([r.rE_fm for r in rows], y,
-                     xerr=[r.rE_err_fm for r in rows], fmt="o", capsize=2)
-    axes[1].errorbar([r.rM_fm for r in rows], y,
-                     xerr=[r.rM_err_fm for r in rows], fmt="o", capsize=2)
-    axes[0].axvline(0.8409, linestyle="--", linewidth=1.2, label="PDG rE ~ 0.8409 fm")
-    axes[1].axvline(0.851, linestyle="--", linewidth=1.2, label="reference rM ~ 0.851 fm")
-    axes[0].set_yticks(y, labels)
-    axes[0].invert_yaxis()
-    axes[0].set_xlabel(r"$r_E$ (fm)")
-    axes[1].set_xlabel(r"$r_M$ (fm)")
-    axes[0].grid(alpha=0.2); axes[1].grid(alpha=0.2)
-    axes[0].legend(fontsize=8); axes[1].legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(outdir / "09_extracted_radii.pdf")
-    plt.close(fig)
-#enddef
-
-
-def save_bh_f1_f2_sensitivity(outdir: Path, ebeam: float) -> None:
-    """Reproduce the qualitative Fig. 7 exercise at the paper's representative point."""
+    Use a representative CLAS12 Set-5 kinematic point rather than importing
+    elastic-scattering data. The point chosen is the Set-5 event closest to
+    the medians in xB, Q2, and phi.
+    """
     try:
         import gepard as g
         from gepard.fits import th_KM15
     except Exception:
         return
     #endtry
-    q = np.linspace(0.01, 0.45, 180)
-    full = np.zeros_like(q); f1zero = np.zeros_like(q); f2zero = np.zeros_like(q)
+
+    med_x = float(reference_data["xB"].median())
+    med_q2 = float(reference_data["Q2"].median())
+    med_phi = float(reference_data["phi_deg"].median())
+
+    scale_x = max(float(reference_data["xB"].std()), 1.0e-6)
+    scale_q2 = max(float(reference_data["Q2"].std()), 1.0e-6)
+    scale_phi = max(float(reference_data["phi_deg"].std()), 1.0e-6)
+
+    metric = (
+        ((reference_data["xB"] - med_x) / scale_x)**2
+        + ((reference_data["Q2"] - med_q2) / scale_q2)**2
+        + ((reference_data["phi_deg"] - med_phi) / scale_phi)**2
+    )
+    row = reference_data.loc[metric.idxmin()]
+
+    qmax = max(0.45, float(reference_data["t_abs"].max()))
+    q = np.linspace(0.01, qmax, 220)
+    full = np.zeros_like(q)
+    f1zero = np.zeros_like(q)
+    f2zero = np.zeros_like(q)
+
     for i, qi in enumerate(q):
         th = th_KM15
-        # Paper uses phi=3.012 rad. Convert back to CSV-angle convention so
-        # make_gepard_point applies phi_trento = pi - phi_csv.
-        phi_csv_deg = math.degrees(math.pi - 3.012)
-        pt = make_gepard_point(g, 0.1, 1.0, qi, phi_csv_deg, ebeam)
+        pt = make_gepard_point(
+            g,
+            float(row["xB"]),
+            float(row["Q2"]),
+            float(qi),
+            float(row["phi_deg"]),
+            ebeam,
+        )
         pref = float(th.PreFacSigma(pt))
         model = th.m
         old_f1, old_f2 = model.F1, model.F2
         f1k, f2k = kelly_f1_f2(np.array([qi]))
+
         try:
-            model.F1 = lambda p, v=float(f1k[0]): v
-            model.F2 = lambda p, v=float(f2k[0]): v
+            model.F1 = lambda p, value=float(f1k[0]): value
+            model.F2 = lambda p, value=float(f2k[0]): value
             full[i] = pref * float(th.TBH2unp(pt))
+
             model.F1 = lambda p: 0.0
             f1zero[i] = pref * float(th.TBH2unp(pt))
-            model.F1 = lambda p, v=float(f1k[0]): v
+
+            model.F1 = lambda p, value=float(f1k[0]): value
             model.F2 = lambda p: 0.0
             f2zero[i] = pref * float(th.TBH2unp(pt))
         finally:
             model.F1, model.F2 = old_f1, old_f2
         #endtry
     #endfor
+
     fig, ax = plt.subplots(figsize=(7.2, 5.2))
     ax.plot(q, full, label="Full BH")
     ax.plot(q, f1zero, "--", label=r"$F_1=0$")
     ax.plot(q, f2zero, ":", label=r"$F_2=0$")
     ax.set_xlabel(r"$|t|$ (GeV$^2$)")
     ax.set_ylabel(r"$d^4\sigma$")
-    ax.set_title(r"BH sensitivity at $x_B=0.1$, $Q^2=1$ GeV$^2$, $\phi=3.012$ rad")
+    ax.set_title(
+        rf"BH sensitivity: $x_B={row['xB']:.3f}$, "
+        rf"$Q^2={row['Q2']:.2f}$ GeV$^2$, "
+        rf"$\phi={row['phi_deg']:.1f}^\circ$"
+    )
     ax.legend()
     ax.grid(alpha=0.2)
     fig.tight_layout()
-    fig.savefig(outdir / "10_BH_F1_F2_sensitivity.pdf")
+    fig.savefig(outdir / "07_BH_F1_F2_sensitivity.pdf")
     plt.close(fig)
+#enddef
+
+
+def save_fit5_to_fit8_sachs_plot(results: List[FitResult],
+                                 set5_data: pd.DataFrame,
+                                 outdir: Path) -> None:
+    """Paper Fig. 8 analogue: Fits 5-8 in GE and GM."""
+    names = ["Fit 5", "Fit 6", "Fit 7", "Fit 8"]
+    fits = [next(r for r in results if r.name == name) for name in names]
+    q = np.linspace(0.0, 1.0, 400)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.8))
+
+    for fr in fits:
+        _, _, ge, gm = evaluate_fit_form_factors(fr, q)
+        axes[0].plot(q, ge, linewidth=1.3, label=fr.name)
+        axes[1].plot(q, gm, linewidth=1.3, label=fr.name)
+    #endfor
+
+    # Show only the Fit-8 uncertainty band to keep the comparison legible.
+    for ax, which in zip(axes, ["GE", "GM"]):
+        central, sigma = form_factor_band(fits[-1], q, which)
+        ax.fill_between(
+            q,
+            central - sigma,
+            central + sigma,
+            alpha=0.18,
+            label="Fit 8 68% Hessian band",
+        )
+        shade_fit_t_range(ax, set5_data)
+        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        ax.set_xlim(0.0, 1.0)
+        ax.grid(alpha=0.2)
+    #endfor
+
+    axes[0].set_ylabel(r"$G_E(t)$")
+    axes[1].set_ylabel(r"$G_M(t)$")
+    axes[0].legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(outdir / "08_GE_GM_fits_5_to_8.pdf")
+    plt.close(fig)
+#enddef
+
+
+def save_radii_plot(results: List[FitResult],
+                    outdir: Path) -> None:
+    """Paper Table-V-style visual summary for Fits 5-8."""
+    rows = [
+        next(r for r in results if r.name == f"Fit {i}")
+        for i in range(5, 9)
+    ]
+    labels = [r.name for r in rows]
+    y = np.arange(len(rows))
+
+    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.8), sharey=True)
+
+    axes[0].errorbar(
+        [r.rE_fm for r in rows],
+        y,
+        xerr=[r.rE_err_fm for r in rows],
+        fmt="o",
+        capsize=2,
+    )
+    axes[1].errorbar(
+        [r.rM_fm for r in rows],
+        y,
+        xerr=[r.rM_err_fm for r in rows],
+        fmt="o",
+        capsize=2,
+    )
+
+    axes[0].set_yticks(y, labels)
+    axes[0].invert_yaxis()
+    axes[0].set_xlabel(r"$r_E$ (fm)")
+    axes[1].set_xlabel(r"$r_M$ (fm)")
+    axes[0].grid(alpha=0.2)
+    axes[1].grid(alpha=0.2)
+
+    fig.tight_layout()
+    fig.savefig(outdir / "09_radii_fits_5_to_8.pdf")
+    plt.close(fig)
+#enddef
+
+
+def save_summary_tables(results: List[FitResult],
+                        selection_records: List[Dict[str, float]],
+                        outdir: Path) -> None:
+    """Write compact paper-like Tables I-V to CSV files."""
+    pd.DataFrame(selection_records).to_csv(
+        outdir / "table_I_bh_datasets.csv",
+        index=False,
+    )
+
+    fits15 = [
+        next(r for r in results if r.name == f"Fit {i}")
+        for i in range(1, 6)
+    ]
+    pd.DataFrame([
+        {
+            "Fit": fr.name,
+            "BH criterion": f"<= {100*fr.bh_cut:.0f}%",
+            "Npts": fr.npts,
+            "chi2": fr.chi2,
+            "dof": fr.ndof,
+            "chi2/dof": fr.chi2_ndof,
+        }
+        for fr in fits15
+    ]).to_csv(outdir / "table_II_fits_1_to_5_chi2.csv", index=False)
+
+    pd.DataFrame([
+        {
+            "Fit": fr.name,
+            "aE_GeV2": fr.params[0],
+            "aE_err_GeV2": math.sqrt(fr.covariance[0, 0]),
+            "aM_GeV2": fr.params[1],
+            "aM_err_GeV2": math.sqrt(fr.covariance[1, 1]),
+        }
+        for fr in fits15
+    ]).to_csv(outdir / "table_III_dipole_parameters.csv", index=False)
+
+    fit6 = next(r for r in results if r.name == "Fit 6")
+    fit7 = next(r for r in results if r.name == "Fit 7")
+    fit8 = next(r for r in results if r.name == "Fit 8")
+
+    rows = []
+    for fr in [fit6, fit7, fit8]:
+        row = {
+            "Fit": fr.name,
+            "chi2/dof": fr.chi2_ndof,
+        }
+        for i, name in enumerate(fr.param_names):
+            row[name] = fr.params[i]
+            row[name + "_err"] = math.sqrt(
+                max(fr.covariance[i, i], 0.0)
+            )
+        #endfor
+        rows.append(row)
+    #endfor
+    pd.DataFrame(rows).to_csv(
+        outdir / "table_IV_ppole_and_fit8_parameters.csv",
+        index=False,
+    )
+
+    pd.DataFrame([
+        {
+            "Fit": fr.name,
+            "rE_fm": fr.rE_fm,
+            "rE_err_fm": fr.rE_err_fm,
+            "rM_fm": fr.rM_fm,
+            "rM_err_fm": fr.rM_err_fm,
+        }
+        for fr in [fits15[-1], fit6, fit7, fit8]
+    ]).to_csv(outdir / "table_V_radii.csv", index=False)
 #enddef
 
 
@@ -1216,215 +1394,375 @@ def save_bh_f1_f2_sensitivity(outdir: Path, ebeam: float) -> None:
 # CLI / main
 # -----------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    p.add_argument("--csv", default=DEFAULT_CSV, help="CLAS12 DVCS cross-section CSV")
-    p.add_argument("--outdir", default=DEFAULT_OUTDIR, help="Output directory")
-    p.add_argument("--ebeam", type=float, default=10.604, help="Beam energy in GeV")
-    p.add_argument("--workers", type=int, default=min(6, os.cpu_count() or 1), help="KM15 worker processes")
-    p.add_argument("--bh-cuts", type=float, nargs="+", default=[0.01, 0.02, 0.03, 0.04, 0.05],
-                   help="Nested |1-R_BH| selection thresholds")
-    p.add_argument("--fit-bh-cut", type=float, default=0.05,
-                   help="BH cut used for the flexible/Sachs fits")
-    p.add_argument("--force-km15", action="store_true", help="Ignore the cached KM15 decomposition")
-    p.add_argument("--no-point-to-point-systematics", action="store_true",
-                   help="Omit the CSV absolute point-to-point systematic from the fit uncertainty")
-    p.add_argument("--no-bh-selection-systematic", action="store_true",
-                   help="Do not add the paper's 1-5% uncorrelated BH-selection uncertainty")
-    p.add_argument("--no-scale-nuisance", action="store_true",
-                   help="Do not use the correlated total-scale normalization nuisance")
-    p.add_argument("--scale-fallback", type=float, default=0.077,
-                   help="Fallback fractional normalization prior if total-scale column is absent")
-    p.add_argument("--sachs-families", nargs="+", default=["all"],
-                   help="Subset of P1-P4 IP1-IP4 CF2-CF4, or 'all'")
-    p.add_argument("--fit-gm-kelly-variants", action="store_true",
-                   help="Also fit each Sachs GE family with GM fixed to Kelly")
-    p.add_argument("--tmin", type=float, default=None, help="Optional minimum |t| for fits")
-    p.add_argument("--tmax", type=float, default=None, help="Optional maximum |t| for fits")
+    p = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    p.add_argument(
+        "--csv",
+        default=DEFAULT_CSV,
+        help="CLAS12 DVCS cross-section CSV",
+    )
+    p.add_argument(
+        "--outdir",
+        default=DEFAULT_OUTDIR,
+        help="Output directory",
+    )
+    p.add_argument(
+        "--ebeam",
+        type=float,
+        default=10.604,
+        help="Beam energy in GeV",
+    )
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=min(6, os.cpu_count() or 1),
+        help="KM15 worker processes",
+    )
+    p.add_argument(
+        "--bh-cuts",
+        type=float,
+        nargs="+",
+        default=[0.01, 0.02, 0.03, 0.04, 0.05],
+        help="Nested |1-R_BH| thresholds; nominal paper values are 1-5%",
+    )
+    p.add_argument(
+        "--force-km15",
+        action="store_true",
+        help="Ignore the cached KM15 decomposition",
+    )
+    p.add_argument(
+        "--no-clas12-point-to-point-systematic",
+        action="store_true",
+        help=(
+            "Disable the preliminary CLAS12 absolute point-to-point "
+            "systematic. It is included by default."
+        ),
+    )
+    p.add_argument(
+        "--no-combination-normalization-systematic",
+        action="store_true",
+        help=(
+            "Disable the correlated normalization nuisance from the CSV "
+            "combination systematic. It is included by default."
+        ),
+    )
+    p.add_argument(
+        "--no-bh-selection-systematic",
+        action="store_true",
+        help="Disable the paper's additional 1-5% uncorrelated uncertainty",
+    )
+    p.add_argument(
+        "--tmin",
+        type=float,
+        default=None,
+        help="Optional minimum |t|; normally leave unset",
+    )
+    p.add_argument(
+        "--tmax",
+        type=float,
+        default=None,
+        help="Optional maximum |t|; normally leave unset",
+    )
     return p
+#enddef
+
+
+def apply_optional_t_range(data: pd.DataFrame,
+                           tmin: Optional[float],
+                           tmax: Optional[float]) -> pd.DataFrame:
+    result = data.copy()
+    if tmin is not None:
+        result = result.loc[result["t_abs"] >= tmin]
+    #endif
+    if tmax is not None:
+        result = result.loc[result["t_abs"] <= tmax]
+    #endif
+    return result.copy()
 #enddef
 
 
 def main() -> int:
     args = build_parser().parse_args()
+
+    # Require the paper's minimizer explicitly.
+    if Minuit is None:
+        raise RuntimeError(
+            "iminuit is required because arXiv:2512.06554 performs the "
+            "chi^2 minimization with iMinuit and Hessian Delta-chi^2=1 "
+            "errors. Install it in the active Python environment, e.g. "
+            "`python -m pip install --user iminuit`, then rerun."
+        )
+    #endif
+
     csv_path = Path(args.csv).expanduser().resolve()
     outdir = Path(args.outdir).expanduser().resolve()
     outdir.mkdir(parents=True, exist_ok=True)
 
     print(f"[input]  {csv_path}")
     print(f"[output] {outdir}")
-    df = load_clas12_csv(csv_path)
-    print(f"[data]   {len(df)} valid 10.6-GeV unpolarized cross-section points")
 
+    df = load_clas12_csv(csv_path)
+    print(
+        f"[data]   {len(df)} valid 10.6-GeV unpolarized "
+        "cross-section points"
+    )
+
+    # Reuse the validated cache from the earlier analysis if present.
+    old_cache = Path("output/emff_from_bh/km15_bh_decomposition.csv").resolve()
     cache = outdir / "km15_bh_decomposition.csv"
-    df = evaluate_km15_dataframe(df, args.ebeam, max(1, args.workers), cache, args.force_km15)
+    if (not cache.exists()) and old_cache.exists() and (not args.force_km15):
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy2(old_cache, cache)
+        print(f"[KM15] Copied existing validated cache: {old_cache}")
+    #endif
+
+    df = evaluate_km15_dataframe(
+        df,
+        args.ebeam,
+        max(1, args.workers),
+        cache,
+        args.force_km15,
+    )
 
     finite_model = (
-        np.isfinite(df["km15_ep"]) & np.isfinite(df["km15_bh"]) &
-        np.isfinite(df["R_BH"]) & (df["km15_ep"] > 0) & (df["km15_bh"] > 0)
+        np.isfinite(df["km15_ep"])
+        & np.isfinite(df["km15_bh"])
+        & np.isfinite(df["R_BH"])
+        & (df["km15_ep"] > 0)
+        & (df["km15_bh"] > 0)
     )
     df = df.loc[finite_model].copy().reset_index(drop=True)
     print(f"[KM15]   {len(df)} points have finite positive model predictions")
 
     max_ep_relerr = float(np.nanmax(df["km15_ep_decomp_relerr"]))
     max_bh_relerr = float(np.nanmax(df["bh_quad_relerr"]))
-    print(f"[check]  max KM15 EP decomposition relative error = {max_ep_relerr:.3e}")
-    print(f"[check]  max BH quadratic reconstruction relative error = {max_bh_relerr:.3e}")
+    print(
+        "[check]  max KM15 EP decomposition relative error "
+        f"= {max_ep_relerr:.3e}"
+    )
+    print(
+        "[check]  max BH quadratic reconstruction relative error "
+        f"= {max_bh_relerr:.3e}"
+    )
+
     if max_ep_relerr > 1.0e-7:
         raise RuntimeError(
-            "KM15 BH+INT+DVCS decomposition does not reproduce th_KM15.predict. "
-            "Check the installed Gepard version/conventions before fitting."
+            "KM15 BH+INT+DVCS decomposition does not reproduce "
+            "th_KM15.predict."
         )
     #endif
+
     if max_bh_relerr > 1.0e-7:
         raise RuntimeError(
-            "Precomputed BH quadratic coefficients do not reproduce the nominal BH cross section."
+            "Precomputed BH quadratic coefficients do not reproduce "
+            "the nominal BH cross section."
         )
     #endif
 
-    # BH-selection summary and nested flags.
+    bh_cuts = sorted(float(cut) for cut in args.bh_cuts)
+    if bh_cuts != [0.01, 0.02, 0.03, 0.04, 0.05]:
+        warnings.warn(
+            "The paper defines Fits 1-5 with 1%,2%,3%,4%,5% cuts. "
+            "Nonstandard --bh-cuts change that correspondence."
+        )
+    #endif
+
     selection_records = []
-    for cut in sorted(args.bh_cuts):
+    selected_sets: Dict[float, pd.DataFrame] = {}
+
+    for cut in bh_cuts:
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        selected = apply_optional_t_range(selected, args.tmin, args.tmax)
+        selected_sets[cut] = selected
+
         flag = df["bh_delta"] <= cut
         df[f"BH_{int(round(100*cut))}pct"] = flag
+
         selection_records.append({
-            "bh_cut": cut,
-            "bh_fraction_min": 1-cut,
-            "npts": int(flag.sum()),
-            "xB_min": float(df.loc[flag, "xB"].min()) if flag.any() else np.nan,
-            "xB_max": float(df.loc[flag, "xB"].max()) if flag.any() else np.nan,
-            "Q2_min": float(df.loc[flag, "Q2"].min()) if flag.any() else np.nan,
-            "Q2_max": float(df.loc[flag, "Q2"].max()) if flag.any() else np.nan,
-            "t_min": float(df.loc[flag, "t_abs"].min()) if flag.any() else np.nan,
-            "t_max": float(df.loc[flag, "t_abs"].max()) if flag.any() else np.nan,
+            "Set": int(round(100 * cut)),
+            "BH_cut": cut,
+            "criterion": f"|1-R_BH| <= {100*cut:.0f}%",
+            "Npts": len(selected),
+            "xB_min": float(selected["xB"].min()) if len(selected) else np.nan,
+            "xB_max": float(selected["xB"].max()) if len(selected) else np.nan,
+            "Q2_min": float(selected["Q2"].min()) if len(selected) else np.nan,
+            "Q2_max": float(selected["Q2"].max()) if len(selected) else np.nan,
+            "t_min": float(selected["t_abs"].min()) if len(selected) else np.nan,
+            "t_max": float(selected["t_abs"].max()) if len(selected) else np.nan,
+            "phi_min": float(selected["phi_deg"].min()) if len(selected) else np.nan,
+            "phi_max": float(selected["phi_deg"].max()) if len(selected) else np.nan,
         })
-        print(f"[select] |1-R_BH| <= {100*cut:.0f}% : {int(flag.sum())} points")
+
+        print(
+            f"[select] |1-R_BH| <= {100*cut:.0f}% : "
+            f"{len(selected)} points"
+        )
     #endfor
-    pd.DataFrame(selection_records).to_csv(outdir / "bh_selection_summary.csv", index=False)
-    df.to_csv(outdir / "clas12_with_km15_bh_decomposition.csv", index=False)
 
-    save_bh_selection_plots(df, args.bh_cuts, outdir)
+    df.to_csv(
+        outdir / "clas12_with_km15_bh_decomposition.csv",
+        index=False,
+    )
+    save_bh_selection_plots(df, bh_cuts, outdir)
 
-    include_ptp = not args.no_point_to_point_systematics
+    include_ptp = not args.no_clas12_point_to_point_systematic
     include_bh_sys = not args.no_bh_selection_systematic
-    use_scale_nuisance = not args.no_scale_nuisance
+    include_comb_norm = not args.no_combination_normalization_systematic
+
+    print(
+        "[errors] point uncertainty = "
+        "sqrt(stat^2 + point-to-point^2 + BH-selection^2)"
+        if include_ptp
+        else "[errors] point uncertainty = sqrt(stat^2 + BH-selection^2)"
+    )
+    print(
+        "[errors] CLAS12 point-to-point systematic: "
+        + ("INCLUDED" if include_ptp else "NOT included")
+    )
+    print(
+        "[norm]   combination systematic as correlated normalization nuisance: "
+        + ("INCLUDED" if include_comb_norm else "NOT included")
+    )
 
     fit_results: List[FitResult] = []
 
-    # Reproduce paper Fits 1-5: dipole F1/F2 for every BH threshold.
-    for cut in sorted(args.bh_cuts):
-        d = df.loc[df["bh_delta"] <= cut].copy()
-        if args.tmin is not None:
-            d = d.loc[d["t_abs"] >= args.tmin]
+    # Fits 1-5: dipole F1 and F2 on the five nested BH samples.
+    for fit_index, cut in enumerate(bh_cuts, start=1):
+        data = selected_sets[cut]
+        if len(data) < 10:
+            raise RuntimeError(
+                f"Fit {fit_index} has only {len(data)} selected points."
+            )
         #endif
-        if args.tmax is not None:
-            d = d.loc[d["t_abs"] <= args.tmax]
-        #endif
-        if len(d) < 10:
-            print(f"[fit] skip dipole at {100*cut:.0f}%: only {len(d)} points")
-            continue
-        #endif
-        fr = fit_paper_model(d, "dipole", cut, include_ptp, include_bh_sys,
-                             use_scale_nuisance, args.scale_fallback)
-        fr.name = f"Dipole_{int(round(100*cut))}pct"
+
+        fr = fit_paper_model(
+            data=data,
+            kind="dipole",
+            fit_name=f"Fit {fit_index}",
+            bh_cut=cut,
+            include_clas12_ptp_sys=include_ptp,
+            include_bh_sys=include_bh_sys,
+            include_combination_norm_sys=include_comb_norm,
+        )
         fit_results.append(fr)
-        print(f"[fit] {fr.name:18s} N={fr.npts:4d} chi2/dof={fr.chi2_ndof:.3f} "
-              f"rE={fr.rE_fm:.4f} rM={fr.rM_fm:.4f}")
+
+        aE = fr.params[0]
+        aM = fr.params[1]
+        daE = math.sqrt(max(fr.covariance[0, 0], 0.0))
+        daM = math.sqrt(max(fr.covariance[1, 1], 0.0))
+
+        print(
+            f"[fit] Fit {fit_index}: N={fr.npts:4d} "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"aE={aE:.4f}+/-{daE:.4f} "
+            f"aM={aM:.4f}+/-{daM:.4f} "
+            f"N={fr.norm:.4f}+/-{fr.norm_err:.4f}"
+        )
     #endfor
 
-    # Paper's more flexible Set-5 fits.
-    cut = float(args.fit_bh_cut)
-    d5 = df.loc[df["bh_delta"] <= cut].copy()
-    if args.tmin is not None:
-        d5 = d5.loc[d5["t_abs"] >= args.tmin]
-    #endif
-    if args.tmax is not None:
-        d5 = d5.loc[d5["t_abs"] <= args.tmax]
-    #endif
-    if len(d5) < 10:
-        raise RuntimeError(f"Preferred BH sample has only {len(d5)} points.")
+    if 0.05 not in selected_sets:
+        raise RuntimeError(
+            "The exact paper-method Fit 6-8 stage requires the 5% Set 5."
+        )
     #endif
 
-    d5 = d5.copy()
-    d5["fit_sigma_default"] = fit_sigma_errors(
-        d5, cut, include_ptp, include_bh_sys
+    set5 = selected_sets[0.05].copy()
+    set5["fit_sigma_default"] = fit_sigma_errors(
+        set5,
+        0.05,
+        include_ptp,
+        include_bh_sys,
     )
-    d5.to_csv(outdir / "preferred_BH_sample.csv", index=False)
+    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
 
-    save_selected_cross_section_pages(d5, outdir / "03_selected_cross_sections_vs_KM15_BH.pdf")
-
-    for kind, label in [
-        ("ppole_same_a", "Ppole_same_a"),
-        ("ppole_same_p", "Ppole_same_P"),
-        ("f2_kelly_ppole_f1", "Ppole_F1_F2Kelly"),
+    # Fits 6-8 exactly as in the paper.
+    for kind, fit_name in [
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
     ]:
-        fr = fit_paper_model(d5, kind, cut, include_ptp, include_bh_sys,
-                             use_scale_nuisance, args.scale_fallback)
-        fr.name = label
+        fr = fit_paper_model(
+            data=set5,
+            kind=kind,
+            fit_name=fit_name,
+            bh_cut=0.05,
+            include_clas12_ptp_sys=include_ptp,
+            include_bh_sys=include_bh_sys,
+            include_combination_norm_sys=include_comb_norm,
+        )
         fit_results.append(fr)
-        print(f"[fit] {fr.name:18s} N={fr.npts:4d} chi2/dof={fr.chi2_ndof:.3f} "
-              f"rE={fr.rE_fm:.4f} rM={fr.rM_fm:.4f}")
+
+        parameter_text = " ".join(
+            f"{name}={value:.4f}+/-"
+            f"{math.sqrt(max(fr.covariance[i, i], 0.0)):.4f}"
+            for i, (name, value) in enumerate(
+                zip(fr.param_names, fr.params)
+            )
+        )
+        print(
+            f"[fit] {fit_name}: N={fr.npts:4d} "
+            f"chi2/dof={fr.chi2_ndof:.3f} {parameter_text} "
+            f"N={fr.norm:.4f}+/-{fr.norm_err:.4f}"
+        )
     #endfor
 
-    all_families = ["P1", "P2", "P3", "P4", "IP1", "IP2", "IP3", "IP4", "CF2", "CF3", "CF4"]
-    if len(args.sachs_families) == 1 and args.sachs_families[0].lower() == "all":
-        families = all_families
-    else:
-        families = [x.upper() for x in args.sachs_families]
-        bad = [x for x in families if x not in all_families]
-        if bad:
-            raise ValueError(f"Unknown Sachs families: {bad}")
-        #endif
-    #endif
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    fit8 = next(r for r in fit_results if r.name == "Fit 8")
 
-    for family in families:
-        fr = fit_sachs_family(d5, family, cut, include_ptp, include_bh_sys,
-                              use_scale_nuisance, args.scale_fallback, fix_gm_to_kelly=False)
-        fit_results.append(fr)
-        print(f"[fit] {fr.name:18s} N={fr.npts:4d} chi2/dof={fr.chi2_ndof:.3f} "
-              f"rE={fr.rE_fm:.4f} rM={fr.rM_fm:.4f}")
-        if args.fit_gm_kelly_variants:
-            frk = fit_sachs_family(d5, family, cut, include_ptp, include_bh_sys,
-                                   use_scale_nuisance, args.scale_fallback, fix_gm_to_kelly=True)
-            fit_results.append(frk)
-            print(f"[fit] {frk.name:18s} N={frk.npts:4d} chi2/dof={frk.chi2_ndof:.3f} "
-                  f"rE={frk.rE_fm:.4f} rM={frk.rM_fm:.4f}")
-        #endif
-    #endfor
+    # Save machine-readable outputs.
+    pd.DataFrame(
+        [fitresult_to_record(fr) for fr in fit_results]
+    ).to_csv(outdir / "fit_results.csv", index=False)
 
-    records = [fitresult_to_record(r) for r in fit_results]
-    pd.DataFrame(records).to_csv(outdir / "fit_results.csv", index=False)
-
-    # Full covariance matrices and metadata in a machine-readable NPZ/JSON pair.
     arrays = {}
     metadata = []
     for i, fr in enumerate(fit_results):
-        key = f"fit_{i:03d}"
+        key = f"fit_{i + 1}"
         arrays[key + "_params"] = fr.params
         arrays[key + "_cov"] = fr.covariance
         metadata.append({
-            "key": key, "name": fr.name, "category": fr.category,
-            "param_names": fr.param_names, "bh_cut": fr.bh_cut, "meta": fr.meta,
+            "key": key,
+            "name": fr.name,
+            "param_names": fr.param_names,
+            "bh_cut": fr.bh_cut,
+            "model_kind": fr.model_kind,
+            "meta": fr.meta,
         })
     #endfor
+
     np.savez_compressed(outdir / "fit_covariances.npz", **arrays)
-    with open(outdir / "fit_metadata.json", "w") as f:
-        json.dump(metadata, f, indent=2)
+    with open(outdir / "fit_metadata.json", "w") as handle:
+        json.dump(metadata, handle, indent=2)
     #endwith
 
-    save_paper_ff_plots(fit_results, outdir, cut)
-    save_sachs_family_plots(fit_results, outdir, cut)
-    save_radii_plot(fit_results, outdir, cut)
-    save_bh_f1_f2_sensitivity(outdir, args.ebeam)
+    save_summary_tables(fit_results, selection_records, outdir)
 
-    # Preferred CF4 summary, if available.
-    cf4 = next((r for r in fit_results if r.name == "CF4" and abs(r.bh_cut-cut) < 1e-12), None)
-    if cf4 is not None:
-        print("\n[CF4 preferred direct Sachs fit]")
-        print(f"  chi2/dof = {cf4.chi2:.3f}/{cf4.ndof} = {cf4.chi2_ndof:.3f}")
-        print(f"  rE = {cf4.rE_fm:.5f} +/- {cf4.rE_err_fm:.5f} fm")
-        print(f"  rM = {cf4.rM_fm:.5f} +/- {cf4.rM_err_fm:.5f} fm")
-        print(f"  N  = {cf4.norm:.5f} +/- {cf4.norm_err:.5f}")
-    #endif
+    # Paper-style and observable-space plots.
+    save_selected_cross_section_pages(
+        set5,
+        fit5,
+        fit8,
+        outdir / "03_set5_cross_sections_with_fits.pdf",
+    )
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    save_fit5_sachs_plot(fit5, set5, outdir)
+    save_bh_f1_f2_sensitivity(outdir, args.ebeam, set5)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+
+    print("\n[paper-method radii]")
+    for fit_name in ["Fit 5", "Fit 6", "Fit 7", "Fit 8"]:
+        fr = next(r for r in fit_results if r.name == fit_name)
+        print(
+            f"  {fit_name}: "
+            f"rE={fr.rE_fm:.5f}+/-{fr.rE_err_fm:.5f} fm, "
+            f"rM={fr.rM_fm:.5f}+/-{fr.rM_err_fm:.5f} fm, "
+            f"N={fr.norm:.5f}+/-{fr.norm_err:.5f}, "
+            f"chi2/dof={fr.chi2_ndof:.3f}"
+        )
+    #endfor
 
     print(f"\nDone. Results are in {outdir}")
     return 0
