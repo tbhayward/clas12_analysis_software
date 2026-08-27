@@ -185,7 +185,7 @@ static List<Double> threePhysicsValues(ThreeParticles v) {
         v.phi1(),
         v.phi2(),
         v.Delta_phi(),
-        v.phi(),
+        v.phih(),
         v.phiR(),
         v.theta(),
         v.Depolarization_A(),
