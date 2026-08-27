@@ -91,6 +91,7 @@ from sklearn.metrics import (
     balanced_accuracy_score,
     confusion_matrix,
     roc_curve,
+    roc_auc_score,
 )
 from sklearn.model_selection import train_test_split
 from scipy.spatial import cKDTree
