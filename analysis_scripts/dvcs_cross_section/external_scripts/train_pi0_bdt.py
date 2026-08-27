@@ -521,11 +521,11 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
-        "--skip-ablations",
+        "--ablations",
         action="store_true",
         help=(
-            "Train only the nominal topology BDT and skip the diagnostic "
-            "feature-ablation models."
+            "Enable the diagnostic feature-ablation study. "
+            "Ablations are skipped by default for faster normal runs."
         ),
     )
 
@@ -3275,6 +3275,197 @@ def plot_clasdis_matched_unmatched_mx2(
     save_figure(fig, output_path)
 
 
+
+def plot_clasdis_matched_unmatched_scores(
+    test: pd.DataFrame,
+    test_scores: np.ndarray,
+    ordinary_scores: Optional[np.ndarray],
+    matched_scores: np.ndarray,
+    unmatched_scores: np.ndarray,
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Compare BDT scores for matched and unmatched CLASDIS candidates after the
+    same detector, open-angle, and Mx2(epgamma) selections used elsewhere.
+    """
+    fig, ax = plt.subplots(figsize=(9.2, 6.0))
+
+    y = test["label"].to_numpy(dtype=int)
+
+    ax.hist(
+        test_scores[y == 0],
+        bins=50,
+        range=(0.0, 1.0),
+        density=True,
+        histtype="step",
+        linewidth=1.5,
+        label="DVCSgen",
+    )
+    ax.hist(
+        test_scores[y == 1],
+        bins=50,
+        range=(0.0, 1.0),
+        density=True,
+        histtype="step",
+        linewidth=1.6,
+        label="AAOgen",
+    )
+
+    if len(matched_scores) > 0:
+        ax.hist(
+            matched_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.8,
+            linestyle="--",
+            label=f"CLASDIS matched pi0 (N={len(matched_scores):,})",
+        )
+    #endif
+
+    if len(unmatched_scores) > 0:
+        ax.hist(
+            unmatched_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.8,
+            linestyle=":",
+            label=f"CLASDIS unmatched (N={len(unmatched_scores):,})",
+        )
+    #endif
+
+    if ordinary_scores is not None and len(ordinary_scores) > 0:
+        ax.hist(
+            ordinary_scores,
+            bins=50,
+            range=(0.0, 1.0),
+            density=True,
+            histtype="step",
+            linewidth=1.8,
+            color="black",
+            label=f"Ordinary data (N={len(ordinary_scores):,})",
+        )
+    #endif
+
+    ax.set_xlim(0.0, 1.0)
+    ax.set_xlabel("BDT pi0 score")
+    ax.set_ylabel("Normalized density")
+    ax.set_title(title, pad=10)
+    ax.grid(alpha=0.20)
+    ax.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.14),
+        ncol=2,
+        fontsize=8.5,
+        frameon=True,
+    )
+
+    fig.tight_layout(rect=[0.0, 0.14, 1.0, 1.0])
+    save_figure(fig, output_path)
+
+
+def plot_clasdis_matched_unmatched_features(
+    matched: pd.DataFrame,
+    unmatched: pd.DataFrame,
+    ordinary: Optional[pd.DataFrame],
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Compare the four repeatedly dominant nominal-BDT inputs:
+      Emiss2, theta_gamma_gamma, p2_p, pTmiss.
+    """
+    specs = [
+        ("Emiss2", r"$E_{\rm miss}$"),
+        ("theta_gamma_gamma", r"$\theta_{\gamma\gamma}$"),
+        ("p2_p", r"$p_\gamma$ (GeV)"),
+        ("pTmiss", r"$p_T^{\rm miss}$ (GeV)"),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.0, 8.6))
+    axes = axes.ravel()
+
+    datasets = [
+        ("CLASDIS matched pi0", matched, None, "--"),
+        ("CLASDIS unmatched", unmatched, None, ":"),
+    ]
+
+    if ordinary is not None and len(ordinary) > 0:
+        datasets.append(("Ordinary data", ordinary, "black", "-"))
+    #endif
+
+    for ax, (feature, xlabel) in zip(axes, specs):
+        collected = []
+
+        for label, df, color, linestyle in datasets:
+            if df is None or len(df) == 0 or feature not in df.columns:
+                continue
+            #endif
+
+            values = df[feature].to_numpy(dtype=float)
+            values = values[np.isfinite(values)]
+
+            if len(values) > 0:
+                collected.append((label, values, color, linestyle))
+            #endif
+        #endfor
+
+        if len(collected) == 0:
+            ax.axis("off")
+            continue
+        #endif
+
+        all_values = np.concatenate(
+            [values for _, values, _, _ in collected]
+        )
+        low, high = np.quantile(all_values, [0.005, 0.995])
+
+        if not np.isfinite(low) or not np.isfinite(high) or low == high:
+            low = float(np.min(all_values))
+            high = float(np.max(all_values))
+        #endif
+
+        for label, values, color, linestyle in collected:
+            kwargs = dict(
+                bins=80,
+                range=(low, high),
+                density=True,
+                histtype="step",
+                linewidth=1.7,
+                linestyle=linestyle,
+                label=label,
+            )
+            if color is not None:
+                kwargs["color"] = color
+            #endif
+
+            ax.hist(values, **kwargs)
+        #endfor
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Normalized density")
+        ax.grid(alpha=0.20)
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.965),
+        ncol=min(3, max(1, len(labels))),
+        fontsize=9,
+        frameon=True,
+    )
+    fig.suptitle(title, y=0.995)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.91])
+    save_figure(fig, output_path)
+
+
 def plot_missing_mass_diagnostics(
     ordinary: Optional[pd.DataFrame],
     test: pd.DataFrame,
@@ -4839,6 +5030,63 @@ def run_region(
         )
     #endif
 
+    clasdis_matched_selected = None
+    clasdis_unmatched_selected = None
+
+    if clasdis_all is not None:
+        clasdis_all_selected = clasdis_all.loc[
+            detector_region_mask(clasdis_all, region)
+            & photon_open_angle_mask(clasdis_all)
+            & mx2_epgamma_mask(
+                clasdis_all,
+                args.mx2_epg_min,
+                args.mx2_epg_max,
+                disabled=not mx2_cut_enabled,
+            )
+        ].copy()
+
+        if (
+            clasdis_control is not None
+            and "_clasdis_epg_source_index" in clasdis_control.columns
+        ):
+            matched_source_indices = set(
+                clasdis_control[
+                    "_clasdis_epg_source_index"
+                ].to_numpy(dtype=int).tolist()
+            )
+
+            matched_mask = clasdis_all_selected.index.isin(
+                matched_source_indices
+            )
+
+            clasdis_matched_selected = (
+                clasdis_all_selected.loc[matched_mask]
+                .copy()
+                .reset_index(drop=True)
+            )
+            clasdis_unmatched_selected = (
+                clasdis_all_selected.loc[~matched_mask]
+                .copy()
+                .reset_index(drop=True)
+            )
+
+            progress(
+                f"REGION {region}: CLASDIS after common selections — "
+                f"matched={len(clasdis_matched_selected):,}, "
+                f"unmatched={len(clasdis_unmatched_selected):,}"
+            )
+        else:
+            clasdis_matched_selected = (
+                clasdis_all_selected.iloc[0:0]
+                .copy()
+                .reset_index(drop=True)
+            )
+            clasdis_unmatched_selected = (
+                clasdis_all_selected.copy().reset_index(drop=True)
+            )
+        #endif
+    #endif
+
     control_region = None
     if clasdis_control is not None:
         control_region = clasdis_control.loc[
@@ -4963,6 +5211,24 @@ def run_region(
         ordinary_clean = None
     #endif
 
+    if clasdis_matched_selected is not None:
+        clasdis_matched_clean = clean_feature_rows(
+            clasdis_matched_selected,
+            ABLATION_FEATURE_SETS["nominal"],
+        )
+    else:
+        clasdis_matched_clean = None
+    #endif
+
+    if clasdis_unmatched_selected is not None:
+        clasdis_unmatched_clean = clean_feature_rows(
+            clasdis_unmatched_selected,
+            ABLATION_FEATURE_SETS["nominal"],
+        )
+    else:
+        clasdis_unmatched_clean = None
+    #endif
+
     train, validation, test = train_validation_test_split(
         working,
         args.seed,
@@ -5056,6 +5322,29 @@ def run_region(
     else:
         ordinary_scores = None
     #endif
+
+    if clasdis_matched_clean is not None:
+        clasdis_matched_scores = model_scores(
+            nominal_model,
+            clasdis_matched_clean,
+            features,
+            chunk_size=args.score_chunk_size,
+        )
+    else:
+        clasdis_matched_scores = np.asarray([], dtype=float)
+    #endif
+
+    if clasdis_unmatched_clean is not None:
+        clasdis_unmatched_scores = model_scores(
+            nominal_model,
+            clasdis_unmatched_clean,
+            features,
+            chunk_size=args.score_chunk_size,
+        )
+    else:
+        clasdis_unmatched_scores = np.asarray([], dtype=float)
+    #endif
+
 
     roc_auc = plot_roc_curve(
         test=test,
@@ -5241,6 +5530,38 @@ def run_region(
         nominal_output / "bdt_model.joblib",
     )
 
+    if (
+        clasdis_matched_clean is not None
+        and clasdis_unmatched_clean is not None
+    ):
+        clasdis_output = region_output / "clasdis_composition"
+        clasdis_output.mkdir(parents=True, exist_ok=True)
+
+        plot_clasdis_matched_unmatched_scores(
+            test=test,
+            test_scores=test_scores,
+            ordinary_scores=ordinary_scores,
+            matched_scores=clasdis_matched_scores,
+            unmatched_scores=clasdis_unmatched_scores,
+            output_path=clasdis_output / "matched_unmatched_bdt_scores.png",
+            title=(
+                f"{args.period} {region}: CLASDIS matched/unmatched "
+                f"BDT-score comparison"
+            ),
+        )
+
+        plot_clasdis_matched_unmatched_features(
+            matched=clasdis_matched_clean,
+            unmatched=clasdis_unmatched_clean,
+            ordinary=ordinary_clean,
+            output_path=clasdis_output / "matched_unmatched_key_features.png",
+            title=(
+                f"{args.period} {region}: CLASDIS matched/unmatched "
+                f"key BDT inputs"
+            ),
+        )
+    #endif
+
     # ---------------------------------------------------------------------
     # Ablation models
     # ---------------------------------------------------------------------
@@ -5253,7 +5574,7 @@ def run_region(
         test_scores[y_test == 1],
     )
 
-    if not args.skip_ablations:
+    if args.ablations:
         for index, (name, ablation_features) in enumerate(
             ABLATION_FEATURE_SETS.items()
         ):
@@ -5376,6 +5697,7 @@ def main() -> None:
         f"max-data-control-read={args.max_data_control_read}, "
         f"max-control-events={args.max_control_events}, "
         f"score-chunk-size={args.score_chunk_size}, "
+        f"ablations={'ON' if args.ablations else 'OFF'}, "
         f"n-estimators={args.n_estimators}, max-depth={args.max_depth}, seed={args.seed}"
     )
 
