@@ -1106,8 +1106,19 @@ def save_selected_cross_section_pages(data: pd.DataFrame,
                                       fit8: FitResult,
                                       outdir: Path) -> None:
     """
-    Save one PNG per measured (xB,Q2,|t|) group, with the measured CLAS12
-    cross sections and fitted BH predictions above and point pulls below.
+    Save one PNG per measured (xB,Q2,|t|) group.
+
+    Upper panel:
+      - filled points: measured preliminary CLAS12 cross sections
+      - open markers: fitted BH predictions evaluated at those exact measured
+        CLAS12 points only
+      - no connecting theory lines are drawn
+
+    Lower panel:
+      - point-by-point pulls using exactly the uncertainty entering chi2
+
+    The continuous fitted quantities are F1(t), F2(t), GE(t), and GM(t);
+    those are shown as smooth analytic curves in the form-factor figures.
     """
     plotdir = outdir / "03_cross_section_fits"
     plotdir.mkdir(parents=True, exist_ok=True)
@@ -1167,26 +1178,40 @@ def save_selected_cross_section_pages(data: pd.DataFrame,
             capsize=2,
             label="CLAS12 preliminary",
         )
+        # The cross-section fit exists only at the measured CLAS12 points.
+        # Do NOT connect these predictions with straight segments: that would
+        # visually imply a continuous phi-dependent fit curve that was never
+        # evaluated.  The continuous fitted objects are F1(t) and F2(t), shown
+        # separately in the form-factor plots.
         ax.plot(
             group["phi_deg"],
             group["fit5_bh"],
-            "-",
-            linewidth=1.5,
-            label="Fit 5 BH + nuisances",
+            marker="o",
+            linestyle="none",
+            markersize=5.0,
+            markerfacecolor="none",
+            markeredgewidth=1.2,
+            label="Fit 5 BH at CLAS12 points",
         )
         ax.plot(
             group["phi_deg"],
             group["fit8_bh"],
-            "--",
-            linewidth=1.5,
-            label=r"Fit 8 BH + nuisances ($F_2$ Kelly)",
+            marker="s",
+            linestyle="none",
+            markersize=4.8,
+            markerfacecolor="none",
+            markeredgewidth=1.2,
+            label=r"Fit 8 BH at CLAS12 points ($F_2$ Kelly)",
         )
         ax.plot(
             group["phi_deg"],
             group["km15_bh"],
-            ":",
-            linewidth=1.2,
-            label="KM15 nominal BH",
+            marker="^",
+            linestyle="none",
+            markersize=4.6,
+            markerfacecolor="none",
+            markeredgewidth=1.0,
+            label="KM15 nominal BH at CLAS12 points",
         )
 
         pax.axhline(0.0, linewidth=0.8)
