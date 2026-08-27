@@ -2971,6 +2971,126 @@ def plot_data_golden_transfer_vs_kinematics(
 
 
 
+
+def plot_missing_mass_diagnostics(
+    ordinary: Optional[pd.DataFrame],
+    test: pd.DataFrame,
+    reconstructed_pi0_data: Optional[pd.DataFrame],
+    output_path: Path,
+    title: str,
+) -> None:
+    """
+    Plot the three missing-mass-squared observables used in these trees:
+
+        Mx2   = M_X^2(e p gamma)
+        Mx2_1 = M_X^2(e p)
+        Mx2_2 = M_X^2(e gamma)
+
+    The purpose is diagnostic only: determine whether a useful
+    M_X^2(epgamma) ~ 0 selection exists before introducing such a cut.
+    """
+    specs = [
+        ("Mx2",   r"$M_X^2(ep\gamma)$ (GeV$^2$)"),
+        ("Mx2_1", r"$M_X^2(ep)$ (GeV$^2$)"),
+        ("Mx2_2", r"$M_X^2(e\gamma)$ (GeV$^2$)"),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(16.0, 5.2))
+
+    y = test["label"].to_numpy(dtype=int)
+
+    datasets = [
+        ("DVCSgen", test.loc[y == 0]),
+        ("AAOgen", test.loc[y == 1]),
+    ]
+
+    if ordinary is not None and len(ordinary) > 0:
+        datasets.append(("Ordinary data", ordinary))
+    #endif
+
+    if reconstructed_pi0_data is not None and len(reconstructed_pi0_data) > 0:
+        datasets.append(("Data reconstructed-pi0 daughters", reconstructed_pi0_data))
+    #endif
+
+    for ax, (branch, xlabel) in zip(axes, specs):
+        available = []
+        for name, df in datasets:
+            if branch not in df.columns:
+                continue
+            #endif
+
+            values = (
+                df[branch]
+                .replace([np.inf, -np.inf], np.nan)
+                .dropna()
+                .to_numpy(dtype=float)
+            )
+
+            if len(values) > 0:
+                available.append((name, values))
+            #endif
+        #endfor
+
+        if len(available) == 0:
+            ax.axis("off")
+            continue
+        #endif
+
+        all_values = np.concatenate([values for _, values in available])
+
+        # Use the common central 99% region so extreme tails do not destroy
+        # readability. All samples are then plotted over exactly the same range.
+        low, high = np.quantile(all_values, [0.005, 0.995])
+
+        # Always include zero visibly for Mx2(epgamma), since that is the
+        # physically interesting massless-missing-system region.
+        if branch == "Mx2":
+            low = min(low, -0.05)
+            high = max(high, 0.05)
+        #endif
+
+        for name, values in available:
+            kwargs = dict(
+                bins=100,
+                range=(low, high),
+                density=True,
+                histtype="step",
+                linewidth=1.5,
+                label=name,
+            )
+
+            if name == "Ordinary data":
+                kwargs["color"] = "black"
+                kwargs["linewidth"] = 1.8
+            #endif
+
+            ax.hist(values, **kwargs)
+        #endfor
+
+        if branch == "Mx2":
+            ax.axvline(0.0, linestyle="--", linewidth=1.1)
+        #endif
+
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Normalized density")
+        ax.grid(alpha=0.20)
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.965),
+        ncol=min(4, max(1, len(labels))),
+        fontsize=9,
+        frameon=True,
+    )
+    fig.suptitle(title, y=0.995)
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.90])
+    save_figure(fig, output_path)
+
+
 def fit_two_template_fraction(
     data_scores: np.ndarray,
     pi0_scores: np.ndarray,
@@ -4566,6 +4686,21 @@ def run_region(
     ):
         ordinary_output = region_output / "ordinary_data"
         ordinary_output.mkdir(parents=True, exist_ok=True)
+
+        progress(
+            f"REGION {region}: plotting Mx2, Mx2_1, Mx2_2 diagnostics "
+            f"before introducing any missing-mass cut"
+        )
+        plot_missing_mass_diagnostics(
+            ordinary=ordinary_clean,
+            test=test,
+            reconstructed_pi0_data=data_golden_clean,
+            output_path=ordinary_output / "missing_mass_diagnostics.png",
+            title=(
+                f"{args.period} {region}: missing-mass diagnostics "
+                f"before any Mx2(epgamma) selection"
+            ),
+        )
 
         y_test = test["label"].to_numpy(dtype=int)
         pi0_template_scores = test_scores[y_test == 1]
