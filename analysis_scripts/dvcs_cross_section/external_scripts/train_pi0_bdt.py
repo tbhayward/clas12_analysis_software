@@ -106,8 +106,9 @@ Plots are preferred over text/CSV products.  The script writes:
         11_data_mgg_by_pair_score.png
         12_aaogen_mgg_by_pair_score.png
         13_data_pi0_mass_fits_by_score_bin.png
-        14_data_pi0_peak_fraction_by_score_bin.png
-        15_data_pi0_peak_fraction_cumulative.png
+        14_data_pi0_fraction_of_all_pairs_by_score_bin.png
+        15_data_pi0_local_fit_purity_by_score_bin.png
+        16_data_pi0_local_fit_purity_cumulative.png
 
 No CSV files are produced.
 
@@ -202,6 +203,13 @@ PI0_FIT_MIN = 0.070
 PI0_FIT_MAX = 0.200
 PI0_FIT_BINS = 65
 PI0_FIT_NSIGMA = 2.0
+
+# Fixed reconstructed-pi0 counting window used for the raw "fraction of all
+# gamma-gamma candidates in the pi0 peak" diagnostic. This fraction uses the
+# FULL available M_gammagamma range in the denominator; it is deliberately
+# different from the local fitted S/(S+B) purity.
+PI0_COUNT_MIN = 0.110
+PI0_COUNT_MAX = 0.160
 PAIR_SCORE_THRESHOLDS = np.arange(0.0, 0.81, 0.1)
 
 # Disjoint pair-score intervals used for the data Mgg overlay and the
@@ -2267,6 +2275,82 @@ def fit_pi0_mass_peak(
     }
 
 
+
+def plot_data_pi0_fraction_of_all_pairs_by_score(
+    arrays: Mapping[str, np.ndarray],
+    models: Mapping[str, GradientBoostingClassifier],
+    args: argparse.Namespace,
+    output_dir: Path,
+) -> None:
+    """
+    Plot the fraction of ALL reconstructed gamma-gamma candidates that lie in
+    a fixed pi0 mass window, separately in each disjoint pair-score interval.
+
+    fraction = N(PI0_COUNT_MIN <= Mgg < PI0_COUNT_MAX) / N(all finite Mgg)
+
+    This is intentionally a raw counting fraction: no sideband subtraction and
+    no local S/(S+B) fit purity enters this diagnostic.
+    """
+    s1, s2, valid = score_epgg_photons(arrays, models, args)
+    mgg = np.asarray(arrays["Mh_gammagamma"], dtype=float)
+    min_score = np.minimum(s1, s2)
+    finite = valid & np.isfinite(mgg) & np.isfinite(min_score)
+
+    score_centers = []
+    score_half_widths = []
+    raw_fractions = []
+    raw_errors = []
+    total_counts = []
+    peak_counts = []
+    used_bins = []
+
+    for lo, hi in PAIR_SCORE_BINS:
+        mask = finite & (min_score >= lo) & (min_score < hi)
+        masses = mgg[mask]
+        n_total = int(len(masses))
+        n_peak = int(np.sum((masses >= PI0_COUNT_MIN) & (masses < PI0_COUNT_MAX)))
+        if n_total <= 0:
+            continue
+        #endif
+        fraction = n_peak / n_total
+        error = np.sqrt(max(fraction * (1.0 - fraction) / n_total, 0.0))
+        hi_plot = min(hi, 1.0)
+        score_centers.append(0.5 * (lo + hi_plot))
+        score_half_widths.append(0.5 * (hi_plot - lo))
+        raw_fractions.append(100.0 * fraction)
+        raw_errors.append(100.0 * error)
+        total_counts.append(n_total)
+        peak_counts.append(n_peak)
+        used_bins.append((lo, hi_plot))
+    #endfor
+
+    if not score_centers:
+        return
+    #endif
+
+    score_centers = np.asarray(score_centers, dtype=float)
+    score_half_widths = np.asarray(score_half_widths, dtype=float)
+    raw_fractions = np.asarray(raw_fractions, dtype=float)
+    raw_errors = np.asarray(raw_errors, dtype=float)
+
+    fig, ax = plt.subplots(figsize=(8.8, 6.6))
+    ax.errorbar(score_centers, raw_fractions, xerr=score_half_widths, yerr=raw_errors, fmt="o-", linewidth=1.8, capsize=3)
+
+    for x_value, y_value, n_peak, n_total, (lo, hi) in zip(score_centers, raw_fractions, peak_counts, total_counts, used_bins):
+        ax.annotate(f"{lo:.1f}-{hi:.1f}\\n{n_peak:,}/{n_total:,}", (x_value, y_value), xytext=(0, 8), textcoords="offset points", ha="center", fontsize=8)
+    #endfor
+
+    ax.set_xlabel(r"Pair-score interval using min(score$_1$, score$_2$)")
+    ax.set_ylabel(rf"Fraction of ALL $\gamma\gamma$ candidates with {PI0_COUNT_MIN:.3f} $\leq M_{{\gamma\gamma}} <$ {PI0_COUNT_MAX:.3f} GeV [%]")
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, min(105.0, max(raw_fractions) * 1.20 + 5.0))
+    ax.grid(alpha=0.2)
+    ax.set_title(r"Real data: fraction of all reconstructed $\gamma\gamma$ pairs inside the $\pi^0$ mass window")
+    fig.tight_layout()
+    save_figure(fig, output_dir / "14_data_pi0_fraction_of_all_pairs_by_score_bin.png")
+
+
+
 def plot_data_pi0_mass_fits_vs_score(
     arrays: Mapping[str, np.ndarray],
     models: Mapping[str, GradientBoostingClassifier],
@@ -2490,7 +2574,7 @@ def plot_data_pi0_mass_fits_vs_score(
         fig.tight_layout()
         save_figure(
             fig,
-            output_dir / "14_data_pi0_peak_fraction_by_score_bin.png",
+            output_dir / "15_data_pi0_local_fit_purity_by_score_bin.png",
         )
     #endif
 
@@ -2584,7 +2668,7 @@ def plot_data_pi0_mass_fits_vs_score(
     fig.tight_layout()
     save_figure(
         fig,
-        output_dir / "15_data_pi0_peak_fraction_cumulative.png",
+        output_dir / "16_data_pi0_local_fit_purity_cumulative.png",
     )
 
 
@@ -2893,6 +2977,13 @@ def main() -> None:
         ),
     )
 
+    plot_data_pi0_fraction_of_all_pairs_by_score(
+        data_epgg,
+        models,
+        args,
+        output_dir,
+    )
+
     plot_data_pi0_mass_fits_vs_score(
         data_epgg,
         models,
@@ -2926,8 +3017,9 @@ def main() -> None:
     print("  11_data_mgg_by_pair_score.png")
     print("  12_aaogen_mgg_by_pair_score.png")
     print("  13_data_pi0_mass_fits_by_score_bin.png")
-    print("  14_data_pi0_peak_fraction_by_score_bin.png")
-    print("  15_data_pi0_peak_fraction_cumulative.png")
+    print("  14_data_pi0_fraction_of_all_pairs_by_score_bin.png")
+    print("  15_data_pi0_local_fit_purity_by_score_bin.png")
+    print("  16_data_pi0_local_fit_purity_cumulative.png")
     print("=" * 90)
 
 
