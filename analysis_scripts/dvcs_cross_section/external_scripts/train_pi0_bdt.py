@@ -45,15 +45,17 @@ Negative class:
 The negative categories are NOT allowed to acquire arbitrary importance merely
 because one generator produces many more examples.  The training weights are
 hierarchical:
-    * total positive weight = total negative weight;
-    * AAOgen pi0 and CLASDIS pi0 share positive weight equally;
-    * negative weight is split equally among:
-          genuine DVCS/BH gamma,
-          genuine CLASDIS non-pi0 gamma,
-          matched non-photon reconstruction artifacts,
-          unmatched reconstruction artifacts;
-    * within an artifact macro-category, available generator sources share the
-      macro-category weight equally.
+    * total positive weight = total negative weight = 0.5;
+    * AAOgen pi0 and CLASDIS pi0 share positive weight equally (0.25 each);
+    * the nominal negative-class target weights are:
+          genuine DVCS/BH gamma                         0.300,
+          genuine CLASDIS non-pi0 gamma                 0.050,
+          matched non-photon reconstruction artifacts   0.075,
+          unmatched reconstruction artifacts            0.075;
+    * within any negative macro-category containing multiple fine categories,
+      the macro weight is divided in proportion to the observed retained event
+      populations rather than equally.  In particular eta and other genuine
+      CLASDIS photons follow their actual CLASDIS population ratio.
 
 Separate BDTs are trained for:
     * FT: detector2 == 0
@@ -88,6 +90,7 @@ Plots are preferred over text/CSV products.  The script writes:
             02_input_features_core.png
             03_input_features_reco_artifacts.png
             04_roc_curves.png
+            04b_core_operating_points.png
             05_bdt_score_by_truth_category.png
             06_bdt_score_core_and_data.png
             07_feature_importance.png
@@ -254,6 +257,15 @@ NEGATIVE_MACRO_GROUPS = {
         "aaogen_unmatched",
         "clasdis_unmatched",
     ],
+}
+
+# Nominal total training weight assigned to each negative macro-category.
+# These sum to 0.5, matching the total positive-class weight.
+NEGATIVE_MACRO_TARGETS = {
+    "dvcs_true_gamma": 0.300,
+    "clasdis_nonpi0_true_gamma": 0.050,
+    "nonphoton_match": 0.075,
+    "unmatched": 0.075,
 }
 
 CORE_PLOT_CATEGORIES = [
@@ -855,7 +867,22 @@ def training_weight_targets(
     """
     Return desired total training weight for each fine category.
 
-    Positive class gets total weight 0.5 and negative class total 0.5.
+    The positive and negative classes each receive total target weight 0.5.
+
+    Positive:
+        AAOgen true pi0 photons and CLASDIS true pi0 photons share the positive
+        weight equally when both are available.
+
+    Negative:
+        Macro-category priorities are fixed by NEGATIVE_MACRO_TARGETS. If a
+        whole macro-category is absent, the available macro targets are
+        renormalized back to total negative weight 0.5 while preserving their
+        nominal relative priorities.
+
+        Within a macro-category, its weight is divided among the available fine
+        categories in proportion to their retained event populations. Thus
+        rare eta/other/artifact categories are represented, but are not given
+        the same total influence merely because they have distinct truth labels.
     """
     targets: Dict[str, float] = {}
 
@@ -888,13 +915,30 @@ def training_weight_targets(
     #endfor
 
     if available_macros:
-        per_macro = 0.5 / len(available_macros)
+        available_nominal_total = sum(
+            NEGATIVE_MACRO_TARGETS[macro]
+            for macro, _ in available_macros
+        )
 
-        for _, fine_names in available_macros:
-            per_fine = per_macro / len(fine_names)
+        for macro, fine_names in available_macros:
+            macro_target = (
+                0.5
+                * NEGATIVE_MACRO_TARGETS[macro]
+                / available_nominal_total
+            )
 
-            for name in fine_names:
-                targets[name] = per_fine
+            counts = np.asarray(
+                [len(categories[name].X) for name in fine_names],
+                dtype=float,
+            )
+            count_total = float(np.sum(counts))
+
+            if count_total <= 0.0:
+                continue
+            #endif
+
+            for name, count in zip(fine_names, counts):
+                targets[name] = macro_target * float(count) / count_total
             #endfor
         #endfor
     #endif
@@ -1306,6 +1350,78 @@ def plot_roc(
     save_figure(fig, output_path)
 
     return overall_auc, core_auc
+
+
+def plot_core_operating_points(
+    model: GradientBoostingClassifier,
+    test: SplitData,
+    output_path: Path,
+    region_name: str,
+) -> None:
+    """
+    Plot pi0 efficiency versus genuine-DVCS photon mis-tag probability.
+
+    Selected BDT-score thresholds are marked directly on the curve. No
+    particular threshold is privileged.
+    """
+    positive = np.isin(
+        test.categories,
+        ["aaogen_pi0_gamma", "clasdis_pi0_gamma"],
+    )
+    negative = test.categories == "dvcsgen_true_gamma"
+    mask = positive | negative
+
+    if np.sum(mask) < 2 or len(np.unique(test.y[mask])) < 2:
+        return
+    #endif
+
+    y_true = test.y[mask]
+    scores = score(model, test.X[mask])
+    fpr, tpr, thresholds = roc_curve(y_true, scores)
+
+    finite = np.isfinite(thresholds)
+    fpr = fpr[finite]
+    tpr = tpr[finite]
+    thresholds = thresholds[finite]
+
+    fig, ax = plt.subplots(figsize=(8.0, 6.5))
+    ax.plot(
+        100.0 * fpr,
+        100.0 * tpr,
+        linewidth=2.0,
+        label=r"True $\pi^0$ daughter vs genuine DVCS/BH $\gamma$",
+    )
+
+    requested_thresholds = np.arange(0.1, 1.0, 0.1)
+
+    for requested in requested_thresholds:
+        idx = int(np.argmin(np.abs(thresholds - requested)))
+        x_value = 100.0 * fpr[idx]
+        y_value = 100.0 * tpr[idx]
+        actual = thresholds[idx]
+
+        ax.scatter([x_value], [y_value], s=28, zorder=4)
+        ax.annotate(
+            f"{actual:.1f}",
+            (x_value, y_value),
+            xytext=(5, 4),
+            textcoords="offset points",
+            fontsize=8,
+        )
+    #endfor
+
+    ax.set_xlabel("Genuine DVCS/BH photon mis-tag rate [%]")
+    ax.set_ylabel(r"True $\pi^0$-daughter efficiency [%]")
+    ax.set_xlim(0.0, 100.0)
+    ax.set_ylim(0.0, 101.0)
+    ax.set_title(
+        f"{region_name}: core BDT operating points\n"
+        "numbers mark BDT-score thresholds"
+    )
+    ax.grid(alpha=0.2)
+    ax.legend(loc="lower right", fontsize=9)
+    fig.tight_layout()
+    save_figure(fig, output_path)
 
 
 def plot_scores_by_category(
@@ -1955,6 +2071,13 @@ def run_region(
         region_name,
     )
 
+    plot_core_operating_points(
+        model,
+        test,
+        region_dir / "04b_core_operating_points.png",
+        region_name,
+    )
+
     plot_scores_by_category(
         model,
         category_arrays,
@@ -1999,6 +2122,10 @@ def run_region(
         ),
         "positive_categories": sorted(POSITIVE_CATEGORIES),
         "negative_macro_groups": NEGATIVE_MACRO_GROUPS,
+        "negative_macro_targets": NEGATIVE_MACRO_TARGETS,
+        "negative_fine_weight_rule": (
+            "Population-proportional within each negative macro-category."
+        ),
     }
     joblib.dump(bundle, region_dir / "pi0_bdt_model.joblib")
     progress(f"MODEL: {region_dir / 'pi0_bdt_model.joblib'}")
