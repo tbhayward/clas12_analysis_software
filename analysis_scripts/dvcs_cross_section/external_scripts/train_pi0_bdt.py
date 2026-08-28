@@ -476,6 +476,15 @@ def parse_args() -> argparse.Namespace:
         default=42,
         help="Random seed.",
     )
+    parser.add_argument(
+        "--diagnostics-only",
+        action="store_true",
+        help=(
+            "Skip FT/FD retraining and load the existing pi0_bdt_model.joblib "
+            "bundles from the current output directory. Useful for resuming "
+            "post-training diagnostics after a late plotting crash."
+        ),
+    )
 
     parser.add_argument(
         "--open-angle-min",
@@ -2045,7 +2054,7 @@ def plot_clasdis_truth_ancestry(
     )
     detector = np.asarray(clasdis["detector2"], dtype=np.int64)
     mx2_ep = np.asarray(clasdis["Mx2_1"], dtype=float)
-    common = common_selection_mask(clasdis, args, X_all)
+    common = common_candidate_mask(clasdis, args, X_all)
 
     # Immediate parents of the opaque "other true gamma" category.
     fig, axes = plt.subplots(1, 2, figsize=(14.0, 6.0))
@@ -2532,7 +2541,7 @@ def plot_data_pi0_fraction_of_all_pairs_by_score(
     ax.errorbar(score_centers, raw_fractions, xerr=score_half_widths, yerr=raw_errors, fmt="o-", linewidth=1.8, capsize=3)
 
     for x_value, y_value, n_peak, n_total, (lo, hi) in zip(score_centers, raw_fractions, peak_counts, total_counts, used_bins):
-        ax.annotate(f"{lo:.1f}-{hi:.1f}\\n{n_peak:,}/{n_total:,}", (x_value, y_value), xytext=(0, 8), textcoords="offset points", ha="center", fontsize=8)
+        ax.annotate(f"{lo:.1f}-{hi:.1f}\n{n_peak:,}/{n_total:,}", (x_value, y_value), xytext=(0, 8), textcoords="offset points", ha="center", fontsize=8)
     #endfor
 
     ax.set_xlabel(r"Pair-score interval using min(score$_1$, score$_2$)")
@@ -3060,7 +3069,8 @@ def main() -> None:
     progress("TRUTH-LABELLED PI0 BDT")
     progress(
         f"period={args.period}, sample_tag={args.sample_tag}, "
-        f"category_cap={args.max_events_per_category}, seed={args.seed}"
+        f"category_cap={args.max_events_per_category}, seed={args.seed}, "
+        f"diagnostics_only={args.diagnostics_only}"
     )
     progress(
         f"common cuts: open_angle_ep2>{args.open_angle_min:.2f} deg; "
@@ -3110,18 +3120,44 @@ def main() -> None:
     region_results: Dict[str, RegionResult] = {}
     models: Dict[str, GradientBoostingClassifier] = {}
 
-    for region_name, detector_value in REGIONS.items():
-        result, _ = run_region(
-            region_name,
-            detector_value,
-            categories_by_region[region_name],
-            data,
-            args,
-            output_dir,
-        )
-        region_results[region_name] = result
-        models[region_name] = result.model
-    #endfor
+    if args.diagnostics_only:
+        progress("DIAGNOSTICS-ONLY MODE: loading existing FT/FD model bundles")
+
+        for region_name in REGIONS:
+            model_path = output_dir / region_name / "pi0_bdt_model.joblib"
+
+            if not model_path.exists():
+                raise FileNotFoundError(
+                    "Diagnostics-only mode requested, but the saved model "
+                    f"bundle does not exist: {model_path}"
+                )
+            #endif
+
+            bundle = joblib.load(model_path)
+
+            if "model" not in bundle:
+                raise KeyError(
+                    f"Saved model bundle has no 'model' entry: {model_path}"
+                )
+            #endif
+
+            models[region_name] = bundle["model"]
+            progress(f"MODEL LOADED: {model_path}")
+        #endfor
+    else:
+        for region_name, detector_value in REGIONS.items():
+            result, _ = run_region(
+                region_name,
+                detector_value,
+                categories_by_region[region_name],
+                data,
+                args,
+                output_dir,
+            )
+            region_results[region_name] = result
+            models[region_name] = result.model
+        #endfor
+    #endif
 
     # Truth ancestry diagnostics use the already-loaded CLASDIS epgamma tree.
     plot_clasdis_truth_ancestry(
@@ -3198,15 +3234,22 @@ def main() -> None:
     print("FINAL SUMMARY")
     print("=" * 90)
 
-    for region_name in ["FT", "FD"]:
-        result = region_results[region_name]
+    if args.diagnostics_only:
         print(
-            f"{region_name}: "
-            f"all-category test AUC={result.test_auc:.4f}, "
-            f"pi0-vs-DVCS-gamma AUC={result.core_auc:.4f}, "
-            f"balanced accuracy@0.5={result.balanced_accuracy:.4f}"
+            "FT/FD training metrics not recomputed in --diagnostics-only mode; "
+            "existing saved models were reused."
         )
-    #endfor
+    else:
+        for region_name in ["FT", "FD"]:
+            result = region_results[region_name]
+            print(
+                f"{region_name}: "
+                f"all-category test AUC={result.test_auc:.4f}, "
+                f"pi0-vs-DVCS-gamma AUC={result.core_auc:.4f}, "
+                f"balanced accuracy@0.5={result.balanced_accuracy:.4f}"
+            )
+        #endfor
+    #endif
 
     print(f"\nPlots/models written under:\n  {output_dir}")
     print("\nMost important plots to inspect first:")
