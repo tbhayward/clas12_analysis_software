@@ -106,7 +106,7 @@ No CSV files are produced.
 
 Examples
 --------
-Current 25k validation samples:
+Current in-progress temporary samples:
 
     python train_pi0_bdt.py --period fa18_inb
 
@@ -396,9 +396,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--sample-tag",
-        default="25k",
+        default="temp",
         help=(
-            "Filename suffix between X and .root. Default: 25k. "
+            "Filename suffix between X and .root. Default: temp. "
             "Use 'full' for uncapped files with no suffix."
         ),
     )
@@ -1138,19 +1138,25 @@ def plot_feature_distributions(
 
     handles, labels = axes[0].get_legend_handles_labels()
 
+    # Reserve separate, non-overlapping vertical bands for the figure title
+    # and the shared legend.  In particular, do not let fig.legend() occupy
+    # the same top-of-canvas region as fig.suptitle().
+    fig.suptitle(title, y=0.985)
+
     if handles:
         fig.legend(
             handles,
             labels,
             loc="upper center",
+            bbox_to_anchor=(0.5, 0.935),
             ncol=min(3, len(labels)),
             fontsize=8,
             frameon=True,
         )
     #endif
 
-    fig.suptitle(title, y=0.995)
-    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.92])
+    # Keep the subplot grid entirely below the title+legend header band.
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.82])
     save_figure(fig, output_path)
 
 
