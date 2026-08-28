@@ -105,8 +105,9 @@ Plots are preferred over text/CSV products.  The script writes:
         10_clasdis_mgg_vs_pair_score.png
         11_data_mgg_by_pair_score.png
         12_aaogen_mgg_by_pair_score.png
-        13_data_pi0_mass_fits_vs_score.png
-        14_data_pi0_peak_fraction_vs_score.png
+        13_data_pi0_mass_fits_by_score_bin.png
+        14_data_pi0_peak_fraction_by_score_bin.png
+        15_data_pi0_peak_fraction_cumulative.png
 
 No CSV files are produced.
 
@@ -202,6 +203,16 @@ PI0_FIT_MAX = 0.200
 PI0_FIT_BINS = 65
 PI0_FIT_NSIGMA = 2.0
 PAIR_SCORE_THRESHOLDS = np.arange(0.0, 0.81, 0.1)
+
+# Disjoint pair-score intervals used for the data Mgg overlay and the
+# score-binned pi0-purity fits. Keep these identical so the two diagnostics
+# can be compared directly.
+PAIR_SCORE_BINS = [
+    (0.0, 0.2),
+    (0.2, 0.5),
+    (0.5, 0.8),
+    (0.8, 1.000001),
+]
 
 DEFAULT_BDT_PARAMS = {
     "n_estimators": 100,
@@ -2085,16 +2096,9 @@ def plot_mgg_by_pair_score(
 
     finite = valid & np.isfinite(mgg) & np.isfinite(min_score)
 
-    score_bins = [
-        (0.0, 0.2),
-        (0.2, 0.5),
-        (0.5, 0.8),
-        (0.8, 1.000001),
-    ]
-
     fig, ax = plt.subplots(figsize=(10.5, 6.7))
 
-    for lo, hi in score_bins:
+    for lo, hi in PAIR_SCORE_BINS:
         mask = finite & (min_score >= lo) & (min_score < hi)
 
         if np.sum(mask) == 0:
@@ -2270,9 +2274,17 @@ def plot_data_pi0_mass_fits_vs_score(
     output_dir: Path,
 ) -> None:
     """
-    Fit the real-data pi0 mass peak for cumulative pair-score requirements.
+    Fit the real-data pi0 mass peak as a function of pair BDT score.
 
-    Uses the conservative pair discriminator min(score1, score2).
+    PRIMARY diagnostic:
+        disjoint min(score1,score2) intervals identical to those used in
+        11_data_mgg_by_pair_score.png. This answers the question:
+        "Among events IN this score range, what fraction under the pi0 peak
+        is fitted pi0 signal?"
+
+    SECONDARY diagnostic:
+        cumulative min(score1,score2) >= threshold selections, retained only
+        because they are useful when choosing an eventual operating cut.
     """
     s1, s2, valid = score_epgg_photons(arrays, models, args)
     mgg = np.asarray(arrays["Mh_gammagamma"], dtype=float)
@@ -2280,15 +2292,19 @@ def plot_data_pi0_mass_fits_vs_score(
 
     finite = valid & np.isfinite(mgg) & np.isfinite(min_score)
 
-    thresholds = np.asarray(PAIR_SCORE_THRESHOLDS, dtype=float)
-    fit_results: List[Optional[Dict[str, object]]] = []
+    # ------------------------------------------------------------------
+    # A) DISJOINT SCORE BINS -- directly comparable with plot 11.
+    # ------------------------------------------------------------------
+    binned_results: List[
+        Tuple[float, float, Optional[Dict[str, object]], int]
+    ] = []
 
-    fig, axes = plt.subplots(3, 3, figsize=(15.0, 12.0))
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 9.5))
 
-    for ax, threshold in zip(axes.flat, thresholds):
-        mask = finite & (min_score >= threshold)
+    for ax, (lo, hi) in zip(axes.flat, PAIR_SCORE_BINS):
+        mask = finite & (min_score >= lo) & (min_score < hi)
         result = fit_pi0_mass_peak(mgg[mask])
-        fit_results.append(result)
+        binned_results.append((lo, hi, result, int(np.sum(mask))))
 
         masses = mgg[
             mask
@@ -2323,7 +2339,12 @@ def plot_data_pi0_mass_fits_vs_score(
                 + params[4] * (x_dense - PI0_MASS_GEV)
             )
 
-            ax.plot(x_dense, total, linewidth=1.5, label="Gaussian + linear bg")
+            ax.plot(
+                x_dense,
+                total,
+                linewidth=1.5,
+                label="Gaussian + linear bg",
+            )
             ax.plot(
                 x_dense,
                 np.maximum(background, 0.0),
@@ -2335,11 +2356,13 @@ def plot_data_pi0_mass_fits_vs_score(
             mean = float(result["mean"])
             sigma = float(result["sigma"])
             purity = float(result["purity"])
+
             ax.axvspan(
                 mean - PI0_FIT_NSIGMA * sigma,
                 mean + PI0_FIT_NSIGMA * sigma,
                 alpha=0.10,
             )
+
             annotation = (
                 f"N={np.sum(mask):,}\n"
                 rf"$\mu={mean*1000:.1f}$ MeV" + "\n"
@@ -2359,24 +2382,20 @@ def plot_data_pi0_mass_fits_vs_score(
             va="top",
             fontsize=8,
         )
-        ax.set_title(rf"min pair score $\geq {threshold:.1f}$")
+        ax.set_title(
+            rf"{lo:.1f} $\leq$ min pair score $<$ {min(hi, 1.0):.1f}"
+        )
         ax.set_xlim(PI0_FIT_MIN, PI0_FIT_MAX)
-        ax.grid(alpha=0.2)
-    #endfor
-
-    for ax in axes[-1, :]:
         ax.set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
-    #endfor
-
-    for ax in axes[:, 0]:
         ax.set_ylabel("Counts / bin")
+        ax.grid(alpha=0.2)
     #endfor
 
     handles, labels = axes.flat[0].get_legend_handles_labels()
     fig.suptitle(
         (
-            r"Real data: fitted $\pi^0\to\gamma\gamma$ mass peak versus "
-            r"minimum single-photon BDT score"
+            r"Real data: fitted $\pi^0\to\gamma\gamma$ peak in disjoint "
+            r"pair-score intervals"
         ),
         y=0.992,
     )
@@ -2393,29 +2412,120 @@ def plot_data_pi0_mass_fits_vs_score(
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.90])
     save_figure(
         fig,
-        output_dir / "13_data_pi0_mass_fits_vs_score.png",
+        output_dir / "13_data_pi0_mass_fits_by_score_bin.png",
     )
 
-    good = [
-        (threshold, result)
-        for threshold, result in zip(thresholds, fit_results)
+    good_binned = [
+        (lo, hi, result, count)
+        for lo, hi, result, count in binned_results
         if result is not None and np.isfinite(result["purity"])
     ]
 
-    if not good:
+    if good_binned:
+        centers = np.asarray(
+            [0.5 * (lo + min(hi, 1.0)) for lo, hi, _, _ in good_binned],
+            dtype=float,
+        )
+        half_widths = np.asarray(
+            [0.5 * (min(hi, 1.0) - lo) for lo, hi, _, _ in good_binned],
+            dtype=float,
+        )
+        purities = np.asarray(
+            [100.0 * float(result["purity"])
+             for _, _, result, _ in good_binned],
+            dtype=float,
+        )
+        counts = np.asarray(
+            [count for _, _, _, count in good_binned],
+            dtype=float,
+        )
+
+        fig, ax = plt.subplots(figsize=(8.6, 6.5))
+        ax.errorbar(
+            centers,
+            purities,
+            xerr=half_widths,
+            fmt="o-",
+            linewidth=1.8,
+            capsize=3,
+            label=(
+                rf"Fitted $\pi^0$ fraction in $\pm"
+                f"{PI0_FIT_NSIGMA:.0f}\\sigma$ peak window"
+            ),
+        )
+
+        for x_value, y_value, count, (lo, hi, _, _) in zip(
+            centers,
+            purities,
+            counts,
+            good_binned,
+        ):
+            ax.annotate(
+                (
+                    f"{lo:.1f}-{min(hi,1.0):.1f}\n"
+                    f"N={int(count):,}"
+                ),
+                (x_value, y_value),
+                xytext=(0, 8),
+                textcoords="offset points",
+                ha="center",
+                fontsize=8,
+            )
+        #endfor
+
+        ax.set_xlabel(
+            r"Pair-score interval using min(score$_1$, score$_2$)"
+        )
+        ax.set_ylabel(r"Fitted $\pi^0$ fraction $S/(S+B)$ [%]")
+        ax.set_xlim(0.0, 1.0)
+        ax.set_ylim(0.0, 105.0)
+        ax.grid(alpha=0.2)
+        ax.set_title(
+            (
+                r"Real data: $\pi^0$ peak fraction in disjoint "
+                "pair-score intervals"
+            )
+        )
+        ax.legend(loc="lower right", fontsize=8.5)
+        fig.tight_layout()
+        save_figure(
+            fig,
+            output_dir / "14_data_pi0_peak_fraction_by_score_bin.png",
+        )
+    #endif
+
+    # ------------------------------------------------------------------
+    # B) CUMULATIVE CUTS -- useful for eventual operating-point choice,
+    #    but conceptually different from the score-binned diagnostic above.
+    # ------------------------------------------------------------------
+    thresholds = np.asarray(PAIR_SCORE_THRESHOLDS, dtype=float)
+    cumulative_results: List[Optional[Dict[str, object]]] = []
+
+    for threshold in thresholds:
+        mask = finite & (min_score >= threshold)
+        cumulative_results.append(fit_pi0_mass_peak(mgg[mask]))
+    #endfor
+
+    good_cumulative = [
+        (threshold, result)
+        for threshold, result in zip(thresholds, cumulative_results)
+        if result is not None and np.isfinite(result["purity"])
+    ]
+
+    if not good_cumulative:
         return
     #endif
 
     threshold_values = np.asarray(
-        [item[0] for item in good],
+        [item[0] for item in good_cumulative],
         dtype=float,
     )
     purity_values = np.asarray(
-        [100.0 * float(item[1]["purity"]) for item in good],
+        [100.0 * float(item[1]["purity"]) for item in good_cumulative],
         dtype=float,
     )
     signal_values = np.asarray(
-        [float(item[1]["signal"]) for item in good],
+        [float(item[1]["signal"]) for item in good_cumulative],
         dtype=float,
     )
 
@@ -2425,18 +2535,20 @@ def plot_data_pi0_mass_fits_vs_score(
         retained_signal = np.full_like(signal_values, np.nan)
     #endif
 
-    fig, ax = plt.subplots(figsize=(8.5, 6.4))
+    fig, ax = plt.subplots(figsize=(8.6, 6.5))
     ax.plot(
         threshold_values,
         purity_values,
         marker="o",
         linewidth=1.8,
         label=(
-            rf"Fitted $\pi^0$ fraction in $\pm{PI0_FIT_NSIGMA:.0f}\sigma$ "
-            "mass window"
+            rf"Fitted $\pi^0$ fraction in $\pm"
+            f"{PI0_FIT_NSIGMA:.0f}\\sigma$ mass window"
         ),
     )
-    ax.set_xlabel(r"Minimum required pair score: min(score$_1$, score$_2$)")
+    ax.set_xlabel(
+        r"Cumulative requirement: min(score$_1$, score$_2$) $\geq$ threshold"
+    )
     ax.set_ylabel(r"Fitted $\pi^0$ fraction $S/(S+B)$ [%]")
     ax.set_ylim(0.0, 105.0)
     ax.grid(alpha=0.2)
@@ -2450,7 +2562,9 @@ def plot_data_pi0_mass_fits_vs_score(
         linewidth=1.5,
         label=r"Fitted $\pi^0$ signal retained",
     )
-    ax2.set_ylabel(r"Fitted $\pi^0$ signal retained [% of score $\geq0$]")
+    ax2.set_ylabel(
+        r"Fitted $\pi^0$ signal retained [% of threshold $\geq0$]"
+    )
     ax2.set_ylim(0.0, 105.0)
 
     handles1, labels1 = ax.get_legend_handles_labels()
@@ -2463,16 +2577,15 @@ def plot_data_pi0_mass_fits_vs_score(
     )
     ax.set_title(
         (
-            r"Real data: $\pi^0$ peak purity and retained signal versus "
-            "pair-score requirement"
+            r"Real data: cumulative $\pi^0$ purity and retained signal "
+            "versus pair-score cut"
         )
     )
     fig.tight_layout()
     save_figure(
         fig,
-        output_dir / "14_data_pi0_peak_fraction_vs_score.png",
+        output_dir / "15_data_pi0_peak_fraction_cumulative.png",
     )
-
 
 
 
@@ -2812,8 +2925,9 @@ def main() -> None:
     print("  10_clasdis_mgg_vs_pair_score.png")
     print("  11_data_mgg_by_pair_score.png")
     print("  12_aaogen_mgg_by_pair_score.png")
-    print("  13_data_pi0_mass_fits_vs_score.png")
-    print("  14_data_pi0_peak_fraction_vs_score.png")
+    print("  13_data_pi0_mass_fits_by_score_bin.png")
+    print("  14_data_pi0_peak_fraction_by_score_bin.png")
+    print("  15_data_pi0_peak_fraction_cumulative.png")
     print("=" * 90)
 
 
