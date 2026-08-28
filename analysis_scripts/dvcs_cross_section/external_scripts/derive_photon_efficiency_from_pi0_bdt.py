@@ -1761,6 +1761,699 @@ def plot_raw_angle_branches(
     save_figure(fig, output_path)
 
 
+
+def binomial_efficiency(
+    passed: np.ndarray,
+    total: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    passed = np.asarray(passed, dtype=float)
+    total = np.asarray(total, dtype=float)
+
+    efficiency = np.full_like(total, np.nan, dtype=float)
+    uncertainty = np.full_like(total, np.nan, dtype=float)
+
+    valid = total > 0.0
+    efficiency[valid] = passed[valid] / total[valid]
+    uncertainty[valid] = np.sqrt(
+        efficiency[valid]
+        * (1.0 - efficiency[valid])
+        / total[valid]
+    )
+
+    return efficiency, uncertainty
+
+
+def binned_matching_efficiency(
+    diagnostics: Mapping[str, np.ndarray],
+    variable: np.ndarray,
+    bin_edges: np.ndarray,
+    region: int,
+    angle_cut: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Conditional efficiency of the final angular association cut.
+
+    Denominator:
+      - predicted probe lies in requested FT/FD region,
+      - reconstructed partner is in the same detector region,
+      - reconstructed partner is above the nominal energy threshold.
+
+    Numerator:
+      denominator plus DeltaOmega(pred,reco) < angle_cut.
+
+    This intentionally isolates ONLY the angular-matching requirement.
+    """
+    base = (
+        diagnostics["mask_partner_energy"]
+        & (diagnostics["pred_region"] == region)
+        & np.isfinite(variable)
+        & np.isfinite(diagnostics["match_angle"])
+    )
+
+    passed = base & (diagnostics["match_angle"] < angle_cut)
+
+    total_counts, _ = np.histogram(
+        variable[base],
+        bins=bin_edges,
+    )
+    pass_counts, _ = np.histogram(
+        variable[passed],
+        bins=bin_edges,
+    )
+
+    efficiency, uncertainty = binomial_efficiency(
+        pass_counts,
+        total_counts,
+    )
+
+    return efficiency, uncertainty, total_counts
+
+
+def binned_containment_angles(
+    diagnostics: Mapping[str, np.ndarray],
+    variable: np.ndarray,
+    bin_edges: np.ndarray,
+    region: int,
+    quantiles: Tuple[float, ...] = (0.68, 0.90, 0.95, 0.99),
+) -> Dict[float, np.ndarray]:
+    """
+    Angular containment of DeltaOmega(pred,reco) before applying the final
+    angular-match requirement.
+    """
+    out = {
+        q: np.full(len(bin_edges) - 1, np.nan, dtype=float)
+        for q in quantiles
+    }
+
+    base = (
+        diagnostics["mask_partner_energy"]
+        & (diagnostics["pred_region"] == region)
+        & np.isfinite(variable)
+        & np.isfinite(diagnostics["match_angle"])
+    )
+
+    for ibin in range(len(bin_edges) - 1):
+        in_bin = (
+            base
+            & (variable >= bin_edges[ibin])
+            & (variable < bin_edges[ibin + 1])
+        )
+        angles = diagnostics["match_angle"][in_bin]
+
+        if len(angles) < 20:
+            continue
+        #endif
+
+        for q in quantiles:
+            out[q][ibin] = np.quantile(angles, q)
+        #endfor
+    #endfor
+
+    return out
+
+
+def combine_direction_diagnostics(
+    first: Mapping[str, np.ndarray],
+    second: Mapping[str, np.ndarray],
+) -> Dict[str, np.ndarray]:
+    """
+    Concatenate only the event-wise arrays needed by the matching study.
+    """
+    keys = [
+        "pred_energy",
+        "pred_theta",
+        "pred_region",
+        "tag_energy",
+        "partner_energy",
+        "match_angle",
+        "mask_partner_energy",
+    ]
+
+    return {
+        key: np.concatenate(
+            [
+                np.asarray(first[key]),
+                np.asarray(second[key]),
+            ]
+        )
+        for key in keys
+    }
+
+
+def plot_matching_efficiency_study(
+    source_name: str,
+    numdiag1: Mapping[str, np.ndarray],
+    numdiag2: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    Matching efficiency versus predicted probe energy and theta.
+
+    Direction 1 and direction 2 are kept separate, and their combination is
+    shown as well.  FT and FD occupy separate columns.
+    """
+    energy_edges = np.asarray(
+        [0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.5, 5.0, 7.0, 9.5],
+        dtype=float,
+    )
+    theta_edges_by_region = {
+        0: np.asarray([2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5]),
+        1: np.asarray([5.5, 7.0, 9.0, 12.0, 16.0, 21.0, 27.0, 35.0]),
+    }
+    region_names = {0: "FT", 1: "FD"}
+
+    combined = combine_direction_diagnostics(
+        numdiag1,
+        numdiag2,
+    )
+    samples = [
+        ("tag direction 1", numdiag1),
+        ("tag direction 2", numdiag2),
+        ("combined", combined),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.0, 9.5))
+
+    for icol, region in enumerate((0, 1)):
+        # Energy dependence.
+        centers = 0.5 * (energy_edges[:-1] + energy_edges[1:])
+
+        for label, diag in samples:
+            eff, err, counts = binned_matching_efficiency(
+                diag,
+                np.asarray(diag["pred_energy"], dtype=float),
+                energy_edges,
+                region,
+                args.probe_match_angle_max,
+            )
+            valid = np.isfinite(eff) & (counts > 0)
+
+            axes[0, icol].errorbar(
+                centers[valid],
+                eff[valid],
+                yerr=err[valid],
+                marker="o",
+                linestyle="-",
+                linewidth=1.1,
+                markersize=4,
+                label=label,
+            )
+        #endfor
+
+        axes[0, icol].set_title(
+            f"{region_names[region]}: matching efficiency vs predicted energy"
+        )
+        axes[0, icol].set_xlabel(
+            r"Predicted $E_{\rm probe}$ (GeV)"
+        )
+        axes[0, icol].set_ylabel(
+            rf"$P(\Delta\Omega<{args.probe_match_angle_max:g}^\circ)$"
+        )
+        axes[0, icol].set_ylim(0.0, 1.05)
+
+        # Theta dependence.
+        theta_edges = theta_edges_by_region[region]
+        theta_centers = 0.5 * (
+            theta_edges[:-1] + theta_edges[1:]
+        )
+
+        for label, diag in samples:
+            eff, err, counts = binned_matching_efficiency(
+                diag,
+                np.asarray(diag["pred_theta"], dtype=float),
+                theta_edges,
+                region,
+                args.probe_match_angle_max,
+            )
+            valid = np.isfinite(eff) & (counts > 0)
+
+            axes[1, icol].errorbar(
+                theta_centers[valid],
+                eff[valid],
+                yerr=err[valid],
+                marker="o",
+                linestyle="-",
+                linewidth=1.1,
+                markersize=4,
+                label=label,
+            )
+        #endfor
+
+        axes[1, icol].set_title(
+            f"{region_names[region]}: matching efficiency vs predicted theta"
+        )
+        axes[1, icol].set_xlabel(
+            r"Predicted $\theta_{\rm probe}$ (deg)"
+        )
+        axes[1, icol].set_ylabel(
+            rf"$P(\Delta\Omega<{args.probe_match_angle_max:g}^\circ)$"
+        )
+        axes[1, icol].set_ylim(0.0, 1.05)
+    #endfor
+
+    for ax in axes.flat:
+        ax.grid(alpha=0.2)
+    #endfor
+
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.945),
+        ncol=3,
+        fontsize=9,
+    )
+    fig.suptitle(
+        f"{source_name}: conditional angular-matching efficiency",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.89])
+    save_figure(fig, output_path)
+
+
+def plot_matching_containment_study(
+    source_name: str,
+    numdiag1: Mapping[str, np.ndarray],
+    numdiag2: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    68%, 90%, 95%, and 99% containment angle versus predicted E and theta.
+    Uses both tag directions combined.
+    """
+    energy_edges = np.asarray(
+        [0.4, 0.6, 0.8, 1.0, 1.25, 1.5, 2.0, 2.5, 3.5, 5.0, 7.0, 9.5],
+        dtype=float,
+    )
+    theta_edges_by_region = {
+        0: np.asarray([2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0, 5.5]),
+        1: np.asarray([5.5, 7.0, 9.0, 12.0, 16.0, 21.0, 27.0, 35.0]),
+    }
+    region_names = {0: "FT", 1: "FD"}
+    quantiles = (0.68, 0.90, 0.95, 0.99)
+
+    combined = combine_direction_diagnostics(
+        numdiag1,
+        numdiag2,
+    )
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.0, 9.5))
+
+    for icol, region in enumerate((0, 1)):
+        energy_centers = 0.5 * (
+            energy_edges[:-1] + energy_edges[1:]
+        )
+        energy_q = binned_containment_angles(
+            combined,
+            combined["pred_energy"],
+            energy_edges,
+            region,
+            quantiles,
+        )
+
+        for q in quantiles:
+            values = energy_q[q]
+            valid = np.isfinite(values)
+            axes[0, icol].plot(
+                energy_centers[valid],
+                values[valid],
+                marker="o",
+                linewidth=1.2,
+                markersize=4,
+                label=f"{int(round(100*q))}% containment",
+            )
+        #endfor
+
+        axes[0, icol].axhline(
+            args.probe_match_angle_max,
+            linestyle="--",
+            linewidth=1.0,
+            label=f"nominal {args.probe_match_angle_max:g} deg cut",
+        )
+        axes[0, icol].set_title(
+            f"{region_names[region]}: angular containment vs energy"
+        )
+        axes[0, icol].set_xlabel(
+            r"Predicted $E_{\rm probe}$ (GeV)"
+        )
+        axes[0, icol].set_ylabel(
+            r"$\Delta\Omega$ containment angle (deg)"
+        )
+
+        theta_edges = theta_edges_by_region[region]
+        theta_centers = 0.5 * (
+            theta_edges[:-1] + theta_edges[1:]
+        )
+        theta_q = binned_containment_angles(
+            combined,
+            combined["pred_theta"],
+            theta_edges,
+            region,
+            quantiles,
+        )
+
+        for q in quantiles:
+            values = theta_q[q]
+            valid = np.isfinite(values)
+            axes[1, icol].plot(
+                theta_centers[valid],
+                values[valid],
+                marker="o",
+                linewidth=1.2,
+                markersize=4,
+                label=f"{int(round(100*q))}% containment",
+            )
+        #endfor
+
+        axes[1, icol].axhline(
+            args.probe_match_angle_max,
+            linestyle="--",
+            linewidth=1.0,
+            label=f"nominal {args.probe_match_angle_max:g} deg cut",
+        )
+        axes[1, icol].set_title(
+            f"{region_names[region]}: angular containment vs theta"
+        )
+        axes[1, icol].set_xlabel(
+            r"Predicted $\theta_{\rm probe}$ (deg)"
+        )
+        axes[1, icol].set_ylabel(
+            r"$\Delta\Omega$ containment angle (deg)"
+        )
+    #endfor
+
+    for ax in axes.flat:
+        ax.grid(alpha=0.2)
+    #endfor
+
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.945),
+        ncol=5,
+        fontsize=8,
+    )
+    fig.suptitle(
+        f"{source_name}: reconstructed-probe angular containment",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.89])
+    save_figure(fig, output_path)
+
+
+def plot_matching_angle_slices(
+    source_name: str,
+    numdiag1: Mapping[str, np.ndarray],
+    numdiag2: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    Direct DeltaOmega distributions in broad predicted-energy and theta bins.
+    Uses both tag directions combined and shows FT/FD separately.
+    """
+    combined = combine_direction_diagnostics(
+        numdiag1,
+        numdiag2,
+    )
+
+    energy_slices = [
+        (0.4, 1.0),
+        (1.0, 2.0),
+        (2.0, 9.5),
+    ]
+    theta_slices = {
+        0: [(2.0, 3.2), (3.2, 4.4), (4.4, 5.5)],
+        1: [(5.5, 10.0), (10.0, 20.0), (20.0, 35.0)],
+    }
+    region_names = {0: "FT", 1: "FD"}
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.0, 9.5))
+
+    for icol, region in enumerate((0, 1)):
+        base = (
+            combined["mask_partner_energy"]
+            & (combined["pred_region"] == region)
+            & np.isfinite(combined["match_angle"])
+        )
+
+        for lo, hi in energy_slices:
+            mask = (
+                base
+                & (combined["pred_energy"] >= lo)
+                & (combined["pred_energy"] < hi)
+            )
+            angles = combined["match_angle"][mask]
+
+            axes[0, icol].hist(
+                angles,
+                bins=np.linspace(0.0, 12.0, 121),
+                histtype="step",
+                linewidth=1.4,
+                density=True,
+                label=f"{lo:g}-{hi:g} GeV (N={len(angles):,})",
+            )
+        #endfor
+
+        axes[0, icol].axvline(
+            args.probe_match_angle_max,
+            linestyle="--",
+            linewidth=1.0,
+            label=f"{args.probe_match_angle_max:g} deg cut",
+        )
+        axes[0, icol].set_title(
+            f"{region_names[region]}: DeltaOmega by predicted energy"
+        )
+        axes[0, icol].set_xlabel(
+            r"$\Delta\Omega_{\rm pred,reco}$ (deg)"
+        )
+        axes[0, icol].set_ylabel("Normalized density")
+        axes[0, icol].set_yscale("log")
+        axes[0, icol].legend(fontsize=7)
+
+        for lo, hi in theta_slices[region]:
+            mask = (
+                base
+                & (combined["pred_theta"] >= lo)
+                & (combined["pred_theta"] < hi)
+            )
+            angles = combined["match_angle"][mask]
+
+            axes[1, icol].hist(
+                angles,
+                bins=np.linspace(0.0, 12.0, 121),
+                histtype="step",
+                linewidth=1.4,
+                density=True,
+                label=f"{lo:g}-{hi:g} deg (N={len(angles):,})",
+            )
+        #endfor
+
+        axes[1, icol].axvline(
+            args.probe_match_angle_max,
+            linestyle="--",
+            linewidth=1.0,
+            label=f"{args.probe_match_angle_max:g} deg cut",
+        )
+        axes[1, icol].set_title(
+            f"{region_names[region]}: DeltaOmega by predicted theta"
+        )
+        axes[1, icol].set_xlabel(
+            r"$\Delta\Omega_{\rm pred,reco}$ (deg)"
+        )
+        axes[1, icol].set_ylabel("Normalized density")
+        axes[1, icol].set_yscale("log")
+        axes[1, icol].legend(fontsize=7)
+    #endfor
+
+    for ax in axes.flat:
+        ax.grid(alpha=0.2)
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: angular-resolution slices before final match cut",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_tag_direction_energy_ordering(
+    source_name: str,
+    epgg: Mapping[str, np.ndarray],
+    numdiag1: Mapping[str, np.ndarray],
+    numdiag2: Mapping[str, np.ndarray],
+    output_path: Path,
+) -> None:
+    """
+    Diagnose whether p2/p3 ordering explains the direction-dependent matching
+    efficiency.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
+
+    p2 = np.asarray(epgg["p2_p"], dtype=float)
+    p3 = np.asarray(epgg["p3_p"], dtype=float)
+    finite = np.isfinite(p2) & np.isfinite(p3)
+
+    axes[0, 0].hist2d(
+        p2[finite],
+        p3[finite],
+        bins=[
+            np.linspace(0.4, 8.0, 80),
+            np.linspace(0.4, 8.0, 80),
+        ],
+    )
+    axes[0, 0].plot(
+        [0.4, 8.0],
+        [0.4, 8.0],
+        linestyle="--",
+        linewidth=1.0,
+    )
+    axes[0, 0].set_xlabel(r"$E_{\gamma_1}=p2_p$ (GeV)")
+    axes[0, 0].set_ylabel(r"$E_{\gamma_2}=p3_p$ (GeV)")
+    axes[0, 0].set_title("Raw reconstructed photon-energy ordering")
+
+    frac_p2_higher = (
+        np.sum(finite & (p2 >= p3)) / np.sum(finite)
+        if np.sum(finite) > 0
+        else np.nan
+    )
+    axes[0, 0].text(
+        0.04,
+        0.96,
+        f"P(p2 >= p3) = {frac_p2_higher:.3f}",
+        transform=axes[0, 0].transAxes,
+        va="top",
+    )
+
+    for label, diag in [
+        ("tag direction 1: probe=p3", numdiag1),
+        ("tag direction 2: probe=p2", numdiag2),
+    ]:
+        base = diag["mask_partner_energy"]
+        energies = diag["pred_energy"][base]
+        axes[0, 1].hist(
+            energies,
+            bins=np.linspace(0.4, 9.5, 80),
+            histtype="step",
+            linewidth=1.4,
+            density=True,
+            label=label,
+        )
+
+        angles = diag["match_angle"][base]
+        axes[1, 0].hist(
+            angles,
+            bins=np.linspace(0.0, 12.0, 121),
+            histtype="step",
+            linewidth=1.4,
+            density=True,
+            label=label,
+        )
+
+        tag_energy = diag["tag_energy"][base]
+        partner_energy = diag["partner_energy"][base]
+        denom = tag_energy + partner_energy
+        sharing = np.full_like(denom, np.nan, dtype=float)
+        valid = np.isfinite(denom) & (denom > 0.0)
+        sharing[valid] = partner_energy[valid] / denom[valid]
+
+        axes[1, 1].hist(
+            sharing[np.isfinite(sharing)],
+            bins=np.linspace(0.0, 1.0, 80),
+            histtype="step",
+            linewidth=1.4,
+            density=True,
+            label=label,
+        )
+    #endfor
+
+    axes[0, 1].set_xlabel(
+        r"Predicted probe energy (GeV)"
+    )
+    axes[0, 1].set_ylabel("Normalized density")
+    axes[0, 1].set_yscale("log")
+    axes[0, 1].set_title("Probe-energy distributions by tag direction")
+    axes[0, 1].legend(fontsize=8)
+
+    axes[1, 0].set_xlabel(
+        r"$\Delta\Omega_{\rm pred,reco}$ (deg)"
+    )
+    axes[1, 0].set_ylabel("Normalized density")
+    axes[1, 0].set_yscale("log")
+    axes[1, 0].set_title("Angular resolution by tag direction")
+    axes[1, 0].legend(fontsize=8)
+
+    axes[1, 1].set_xlabel(
+        r"$E_{\rm probe}/(E_{\rm tag}+E_{\rm probe})$"
+    )
+    axes[1, 1].set_ylabel("Normalized density")
+    axes[1, 1].set_title("Photon energy sharing by tag direction")
+    axes[1, 1].legend(fontsize=8)
+
+    for ax in axes.flat:
+        ax.grid(alpha=0.2)
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: tag-direction ordering diagnostics",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def print_matching_efficiency_summary(
+    source_name: str,
+    numdiag1: Mapping[str, np.ndarray],
+    numdiag2: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+) -> None:
+    progress(
+        f"{source_name.upper()} conditional angular-matching summary:"
+    )
+
+    for region, region_name in [(0, "FT"), (1, "FD")]:
+        for label, diag in [
+            ("direction 1", numdiag1),
+            ("direction 2", numdiag2),
+        ]:
+            base = (
+                diag["mask_partner_energy"]
+                & (diag["pred_region"] == region)
+                & np.isfinite(diag["match_angle"])
+            )
+            n_total = int(np.sum(base))
+            n_pass = int(
+                np.sum(
+                    base
+                    & (
+                        diag["match_angle"]
+                        < args.probe_match_angle_max
+                    )
+                )
+            )
+            efficiency = (
+                n_pass / n_total
+                if n_total > 0
+                else np.nan
+            )
+
+            print(
+                f"    {region_name:2s} {label:11s}: "
+                f"{n_pass:9,d}/{n_total:9,d} = "
+                f"{efficiency:7.4f}"
+            )
+        #endfor
+    #endfor
+
+
+
 def plot_pre_match_probe_diagnostics(
     source_name: str,
     diagnostics: Mapping[str, np.ndarray],
@@ -2275,6 +2968,41 @@ def process_source(
 
     print_numerator_cutflow(source_name, numdiag1)
     print_numerator_cutflow(source_name, numdiag2)
+
+    print_matching_efficiency_summary(
+        source_name,
+        numdiag1,
+        numdiag2,
+        args,
+    )
+    plot_matching_efficiency_study(
+        source_name.upper(),
+        numdiag1,
+        numdiag2,
+        output_dir / f"07_{source_name}_matching_efficiency_vs_kinematics.png",
+        args,
+    )
+    plot_matching_containment_study(
+        source_name.upper(),
+        numdiag1,
+        numdiag2,
+        output_dir / f"08_{source_name}_matching_angle_containment.png",
+        args,
+    )
+    plot_matching_angle_slices(
+        source_name.upper(),
+        numdiag1,
+        numdiag2,
+        output_dir / f"09_{source_name}_matching_angle_slices.png",
+        args,
+    )
+    plot_tag_direction_energy_ordering(
+        source_name.upper(),
+        epgg,
+        numdiag1,
+        numdiag2,
+        output_dir / f"10_{source_name}_tag_direction_ordering.png",
+    )
 
     numerator = concatenate_directed(num1, num2)
     numerator_diagnostics = concatenate_numerator_diagnostics(
