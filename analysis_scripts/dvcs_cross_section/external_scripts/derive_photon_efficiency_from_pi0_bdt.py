@@ -421,6 +421,66 @@ def angle_to_degrees(values: np.ndarray) -> np.ndarray:
     return arr
 
 
+
+def spherical_to_cartesian_explicit(
+    momentum: np.ndarray,
+    theta: np.ndarray,
+    phi: np.ndarray,
+    theta_units: str,
+    phi_units: str,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Convert spherical coordinates using an EXPLICIT unit hypothesis.
+
+    This exists only for the geometry-debug study.  It intentionally avoids
+    the automatic branch-level angle-unit heuristic so that we can determine
+    unambiguously which convention reproduces the reconstructed partner
+    photon in e'p'gammagamma events.
+    """
+    p = np.asarray(momentum, dtype=float)
+    theta_arr = np.asarray(theta, dtype=float)
+    phi_arr = np.asarray(phi, dtype=float)
+
+    if theta_units == "deg":
+        theta_rad = np.radians(theta_arr)
+    elif theta_units == "rad":
+        theta_rad = theta_arr
+    else:
+        raise ValueError(f"Unsupported theta_units={theta_units}")
+    #endif
+
+    if phi_units == "deg":
+        phi_rad = np.radians(phi_arr)
+    elif phi_units == "rad":
+        phi_rad = phi_arr
+    else:
+        raise ValueError(f"Unsupported phi_units={phi_units}")
+    #endif
+
+    px = p * np.sin(theta_rad) * np.cos(phi_rad)
+    py = p * np.sin(theta_rad) * np.sin(phi_rad)
+    pz = p * np.cos(theta_rad)
+    return px, py, pz
+
+
+def vector_phi_deg(
+    px: np.ndarray,
+    py: np.ndarray,
+) -> np.ndarray:
+    return np.degrees(np.arctan2(py, px))
+
+
+def wrapped_delta_phi_deg(
+    phi_a_deg: np.ndarray,
+    phi_b_deg: np.ndarray,
+) -> np.ndarray:
+    return (
+        np.asarray(phi_a_deg, dtype=float)
+        - np.asarray(phi_b_deg, dtype=float)
+        + 180.0
+    ) % 360.0 - 180.0
+
+
 def spherical_to_cartesian(
     momentum: np.ndarray,
     theta: np.ndarray,
@@ -732,6 +792,182 @@ def predicted_probe_from_tag(
     }
 
 
+
+def predicted_probe_from_tag_explicit_units(
+    arrays: Mapping[str, np.ndarray],
+    beam_energy: float,
+    tag_p_branch: str,
+    tag_theta_branch: str,
+    tag_phi_branch: str,
+    theta_units: str,
+    phi_units: str,
+) -> Dict[str, np.ndarray]:
+    """
+    Missing-photon four-vector under a specified angular-unit hypothesis.
+    """
+    epx, epy, epz = spherical_to_cartesian_explicit(
+        arrays["e_p"],
+        arrays["e_theta"],
+        arrays["e_phi"],
+        theta_units,
+        phi_units,
+    )
+    ppx, ppy, ppz = spherical_to_cartesian_explicit(
+        arrays["p1_p"],
+        arrays["p1_theta"],
+        arrays["p1_phi"],
+        theta_units,
+        phi_units,
+    )
+    gpx, gpy, gpz = spherical_to_cartesian_explicit(
+        arrays[tag_p_branch],
+        arrays[tag_theta_branch],
+        arrays[tag_phi_branch],
+        theta_units,
+        phi_units,
+    )
+
+    e_p = np.asarray(arrays["e_p"], dtype=float)
+    proton_p = np.asarray(arrays["p1_p"], dtype=float)
+    gamma_p = np.asarray(arrays[tag_p_branch], dtype=float)
+
+    electron_energy = e_p
+    proton_energy = np.sqrt(
+        proton_p * proton_p + PROTON_MASS * PROTON_MASS
+    )
+    gamma_energy = gamma_p
+
+    missing_energy = (
+        beam_energy
+        + PROTON_MASS
+        - electron_energy
+        - proton_energy
+        - gamma_energy
+    )
+
+    missing_px = -epx - ppx - gpx
+    missing_py = -epy - ppy - gpy
+    missing_pz = beam_energy - epz - ppz - gpz
+    missing_p = np.sqrt(
+        missing_px * missing_px
+        + missing_py * missing_py
+        + missing_pz * missing_pz
+    )
+
+    return {
+        "energy": missing_energy,
+        "px": missing_px,
+        "py": missing_py,
+        "pz": missing_pz,
+        "p": missing_p,
+        "theta": vector_theta_deg(
+            missing_px,
+            missing_py,
+            missing_pz,
+        ),
+        "phi": vector_phi_deg(
+            missing_px,
+            missing_py,
+        ),
+    }
+
+
+ANGLE_HYPOTHESES = {
+    "theta=rad, phi=rad": ("rad", "rad"),
+    "theta=deg, phi=deg": ("deg", "deg"),
+    "theta=deg, phi=rad": ("deg", "rad"),
+    "theta=rad, phi=deg": ("rad", "deg"),
+}
+
+
+def geometry_hypothesis_diagnostics(
+    arrays: Mapping[str, np.ndarray],
+    beam_energy: float,
+    tag_index: int,
+    base_mask: np.ndarray,
+) -> Dict[str, Dict[str, np.ndarray]]:
+    """
+    Compare several explicit angular-unit hypotheses before imposing any
+    predicted FT/FD acceptance or angular matching.
+
+    The correct convention should give a narrow peak near zero in the full 3D
+    opening angle and in Delta-theta / Delta-phi for true exclusive pi0 pairs.
+    """
+    if tag_index == 1:
+        tag_p = "p2_p"
+        tag_theta = "p2_theta"
+        tag_phi = "p2_phi"
+        probe_p = "p3_p"
+        probe_theta = "p3_theta"
+        probe_phi = "p3_phi"
+    elif tag_index == 2:
+        tag_p = "p3_p"
+        tag_theta = "p3_theta"
+        tag_phi = "p3_phi"
+        probe_p = "p2_p"
+        probe_theta = "p2_theta"
+        probe_phi = "p2_phi"
+    else:
+        raise ValueError("tag_index must be 1 or 2")
+    #endif
+
+    out: Dict[str, Dict[str, np.ndarray]] = {}
+
+    for label, (theta_units, phi_units) in ANGLE_HYPOTHESES.items():
+        pred = predicted_probe_from_tag_explicit_units(
+            arrays,
+            beam_energy,
+            tag_p,
+            tag_theta,
+            tag_phi,
+            theta_units,
+            phi_units,
+        )
+        rpx, rpy, rpz = spherical_to_cartesian_explicit(
+            arrays[probe_p],
+            arrays[probe_theta],
+            arrays[probe_phi],
+            theta_units,
+            phi_units,
+        )
+        reco_theta = vector_theta_deg(rpx, rpy, rpz)
+        reco_phi = vector_phi_deg(rpx, rpy)
+
+        opening = opening_angle_deg(
+            pred["px"],
+            pred["py"],
+            pred["pz"],
+            rpx,
+            rpy,
+            rpz,
+        )
+        delta_theta = pred["theta"] - reco_theta
+        delta_phi = wrapped_delta_phi_deg(pred["phi"], reco_phi)
+
+        finite = (
+            np.asarray(base_mask, dtype=bool)
+            & np.isfinite(opening)
+            & np.isfinite(delta_theta)
+            & np.isfinite(delta_phi)
+            & np.isfinite(pred["energy"])
+        )
+
+        out[label] = {
+            "mask": finite,
+            "opening": opening,
+            "delta_theta": delta_theta,
+            "delta_phi": delta_phi,
+            "pred_theta": pred["theta"],
+            "pred_phi": pred["phi"],
+            "pred_energy": pred["energy"],
+            "reco_theta": reco_theta,
+            "reco_phi": reco_phi,
+        }
+    #endfor
+
+    return out
+
+
 # =============================================================================
 # Directed denominator / numerator construction
 # =============================================================================
@@ -944,8 +1180,13 @@ def numerator_direction_from_epgg(
         & (pred["energy"] >= args.probe_energy_min)
         & (pred["energy"] < args.probe_energy_max)
     )
+    # This is the last stage BEFORE any predicted angular-acceptance
+    # requirement.  Geometry-debug plots use it deliberately so that a bad
+    # predicted direction cannot preselect the diagnostic sample.
+    masks["pre_acceptance"] = masks["probe_energy"]
+
     masks["probe_acceptance"] = (
-        masks["probe_energy"]
+        masks["pre_acceptance"]
         & (predicted_region >= 0)
     )
     masks["finite_match"] = (
@@ -1024,6 +1265,7 @@ def print_numerator_cutflow(
         ("tag_energy", "tag energy cut"),
         ("mx2_ep", "Mx2(ep) cleanup"),
         ("probe_energy", "physical probe-energy range"),
+        ("pre_acceptance", "pre-acceptance geometry sample"),
         ("probe_acceptance", "predicted FT/FD acceptance"),
         ("finite_match", "finite predicted/reco angle"),
         ("same_detector", "reco probe in predicted detector"),
@@ -1318,6 +1560,196 @@ def plot_pure_sample_inputs(
     save_figure(fig, output_path)
 
 
+
+def print_geometry_hypothesis_summary(
+    source_name: str,
+    tag_index: int,
+    results: Mapping[str, Mapping[str, np.ndarray]],
+) -> None:
+    progress(
+        f"{source_name.upper()} EPGG tag-direction {tag_index} "
+        "geometry hypotheses:"
+    )
+
+    for label, values in results.items():
+        mask = values["mask"]
+        opening = values["opening"][mask]
+        dtheta = values["delta_theta"][mask]
+        dphi = values["delta_phi"][mask]
+
+        if len(opening) == 0:
+            print(f"    {label:24s}: no finite trials")
+            continue
+        #endif
+
+        print(
+            f"    {label:24s}: "
+            f"N={len(opening):9,d}, "
+            f"median 3D={np.nanmedian(opening):8.3f} deg, "
+            f"median |dtheta|={np.nanmedian(np.abs(dtheta)):8.3f} deg, "
+            f"median |dphi|={np.nanmedian(np.abs(dphi)):8.3f} deg"
+        )
+    #endfor
+
+
+def plot_geometry_hypotheses(
+    source_name: str,
+    tag_index: int,
+    results: Mapping[str, Mapping[str, np.ndarray]],
+    output_path: Path,
+) -> None:
+    """
+    Unit-convention debugging plot.  No predicted FT/FD acceptance cut is
+    applied here.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(13.0, 9.5))
+
+    for label, values in results.items():
+        mask = values["mask"]
+        opening = values["opening"][mask]
+        dtheta = values["delta_theta"][mask]
+        dphi = values["delta_phi"][mask]
+        pred_theta = values["pred_theta"][mask]
+
+        axes[0, 0].hist(
+            opening,
+            bins=np.linspace(0.0, 60.0, 181),
+            histtype="step",
+            linewidth=1.35,
+            label=label,
+        )
+        axes[0, 1].hist(
+            dtheta,
+            bins=np.linspace(-60.0, 60.0, 241),
+            histtype="step",
+            linewidth=1.35,
+            label=label,
+        )
+        axes[1, 0].hist(
+            dphi,
+            bins=np.linspace(-180.0, 180.0, 241),
+            histtype="step",
+            linewidth=1.35,
+            label=label,
+        )
+        axes[1, 1].hist(
+            pred_theta,
+            bins=np.linspace(0.0, 60.0, 181),
+            histtype="step",
+            linewidth=1.35,
+            label=label,
+        )
+    #endfor
+
+    axes[0, 0].set_xlabel(
+        r"$\angle(\gamma_{\rm pred},\gamma_{\rm reco})$ (deg)"
+    )
+    axes[0, 0].set_ylabel("Directed trials")
+    axes[0, 0].set_yscale("log")
+
+    axes[0, 1].set_xlabel(
+        r"$\theta_{\rm pred}-\theta_{\rm reco}$ (deg)"
+    )
+    axes[0, 1].set_ylabel("Directed trials")
+    axes[0, 1].set_yscale("log")
+
+    axes[1, 0].set_xlabel(
+        r"$\phi_{\rm pred}-\phi_{\rm reco}$ (deg)"
+    )
+    axes[1, 0].set_ylabel("Directed trials")
+    axes[1, 0].set_yscale("log")
+
+    axes[1, 1].set_xlabel(
+        r"Predicted $\theta_{\rm probe}$ (deg)"
+    )
+    axes[1, 1].set_ylabel("Directed trials")
+    axes[1, 1].set_yscale("log")
+
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(
+        handles,
+        labels,
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.945),
+        ncol=2,
+        fontsize=8,
+    )
+
+    for ax in axes.flat:
+        ax.grid(alpha=0.2)
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: geometry-unit hypotheses, tag direction {tag_index}",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.89])
+    save_figure(fig, output_path)
+
+
+def plot_raw_angle_branches(
+    source_name: str,
+    arrays: Mapping[str, np.ndarray],
+    output_path: Path,
+) -> None:
+    """
+    Show the raw stored angular branch ranges without any conversion.  This
+    makes radians-vs-degrees immediately visible.
+    """
+    branches = [
+        ("e_theta", r"$e'$ theta"),
+        ("e_phi", r"$e'$ phi"),
+        ("p1_theta", r"$p'$ theta"),
+        ("p1_phi", r"$p'$ phi"),
+        ("p2_theta", r"$\gamma_1$ theta"),
+        ("p2_phi", r"$\gamma_1$ phi"),
+        ("p3_theta", r"$\gamma_2$ theta"),
+        ("p3_phi", r"$\gamma_2$ phi"),
+    ]
+
+    fig, axes = plt.subplots(2, 4, figsize=(16.0, 7.5))
+
+    for ax, (branch, label) in zip(axes.flat, branches):
+        values = np.asarray(arrays[branch], dtype=float)
+        values = values[np.isfinite(values)]
+
+        if len(values) > 0:
+            lo, hi = np.nanpercentile(values, [0.2, 99.8])
+
+            if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+                lo = np.nanmin(values)
+                hi = np.nanmax(values)
+            #endif
+
+            ax.hist(
+                values,
+                bins=np.linspace(lo, hi, 120),
+                histtype="step",
+                linewidth=1.4,
+            )
+            ax.set_title(
+                f"{branch}\n"
+                f"p1={np.nanpercentile(values, 1):.3g}, "
+                f"p50={np.nanmedian(values):.3g}, "
+                f"p99={np.nanpercentile(values, 99):.3g}",
+                fontsize=9,
+            )
+        #endif
+
+        ax.set_xlabel(f"raw {label}")
+        ax.set_ylabel("Rows")
+        ax.set_yscale("log")
+        ax.grid(alpha=0.2)
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: raw stored angular branches",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
 def plot_pre_match_probe_diagnostics(
     source_name: str,
     diagnostics: Mapping[str, np.ndarray],
@@ -1325,27 +1757,33 @@ def plot_pre_match_probe_diagnostics(
     args: argparse.Namespace,
 ) -> None:
     """
-    Plot predicted-vs-reconstructed probe behavior BEFORE imposing the final
-    angular-match requirement.  This is the key debugging view for the
-    directed e'pgammagamma numerator.
+    Plot predicted-vs-reconstructed probe behavior BEFORE predicted angular
+    acceptance and before the final angular-match requirement.
     """
-    base = diagnostics["mask_probe_acceptance"]
+    base = diagnostics["mask_pre_acceptance"]
+    accepted = diagnostics["mask_probe_acceptance"]
 
     fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
 
-    for region_name, region_value in REGIONS.items():
-        region_mask = base & (diagnostics["pred_region"] == region_value)
-        values = diagnostics["match_angle"][region_mask]
-        values = values[np.isfinite(values)]
+    values_all = diagnostics["match_angle"][base]
+    values_all = values_all[np.isfinite(values_all)]
+    axes[0, 0].hist(
+        values_all,
+        bins=np.linspace(0.0, 60.0, 181),
+        histtype="step",
+        linewidth=1.5,
+        label=f"all pre-acceptance (N={len(values_all):,})",
+    )
 
-        axes[0, 0].hist(
-            values,
-            bins=np.linspace(0.0, 30.0, 121),
-            histtype="step",
-            linewidth=1.5,
-            label=f"{region_name} (N={len(values):,})",
-        )
-    #endfor
+    values_acc = diagnostics["match_angle"][accepted]
+    values_acc = values_acc[np.isfinite(values_acc)]
+    axes[0, 0].hist(
+        values_acc,
+        bins=np.linspace(0.0, 60.0, 181),
+        histtype="step",
+        linewidth=1.5,
+        label=f"predicted FT/FD accepted (N={len(values_acc):,})",
+    )
 
     axes[0, 0].axvline(
         args.probe_match_angle_max,
@@ -1373,7 +1811,12 @@ def plot_pre_match_probe_diagnostics(
         y,
         bins=[np.linspace(0.4, 9.5, 70), np.linspace(0.4, 9.5, 70)],
     )
-    axes[0, 1].plot([0.4, 9.5], [0.4, 9.5], linestyle="--", linewidth=1.0)
+    axes[0, 1].plot(
+        [0.4, 9.5],
+        [0.4, 9.5],
+        linestyle="--",
+        linewidth=1.0,
+    )
     axes[0, 1].set_xlabel(r"Predicted $E_{\rm probe}$ (GeV)")
     axes[0, 1].set_ylabel(r"Reconstructed $E_{\rm probe}$ (GeV)")
 
@@ -1417,11 +1860,12 @@ def plot_pre_match_probe_diagnostics(
     #endfor
 
     fig.suptitle(
-        f"{source_name}: probe prediction before angular matching",
+        f"{source_name}: probe prediction before angular acceptance/matching",
         y=0.99,
     )
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
     save_figure(fig, output_path)
+
 
 
 def plot_partner_matching(
@@ -1820,6 +2264,51 @@ def process_source(
 
     print_numerator_cutflow(source_name, numdiag1)
     print_numerator_cutflow(source_name, numdiag2)
+
+    # Geometry debugging is performed before predicted angular acceptance.
+    # The BDT + tag-energy + Mx2(ep) + physical probe-energy selection is
+    # retained, but no FT/FD or 3-degree match requirement can sculpt it.
+    geom1 = geometry_hypothesis_diagnostics(
+        epgg,
+        beam_energy,
+        tag_index=1,
+        base_mask=numdiag1["mask_pre_acceptance"],
+    )
+    geom2 = geometry_hypothesis_diagnostics(
+        epgg,
+        beam_energy,
+        tag_index=2,
+        base_mask=numdiag2["mask_pre_acceptance"],
+    )
+
+    print_geometry_hypothesis_summary(
+        source_name,
+        1,
+        geom1,
+    )
+    print_geometry_hypothesis_summary(
+        source_name,
+        2,
+        geom2,
+    )
+
+    plot_geometry_hypotheses(
+        source_name.upper(),
+        1,
+        geom1,
+        output_dir / f"00_{source_name}_geometry_hypotheses_tag1.png",
+    )
+    plot_geometry_hypotheses(
+        source_name.upper(),
+        2,
+        geom2,
+        output_dir / f"00_{source_name}_geometry_hypotheses_tag2.png",
+    )
+    plot_raw_angle_branches(
+        source_name.upper(),
+        epgg,
+        output_dir / f"00_{source_name}_raw_angle_branches.png",
+    )
 
     numerator = concatenate_directed(num1, num2)
     numerator_diagnostics = concatenate_numerator_diagnostics(
