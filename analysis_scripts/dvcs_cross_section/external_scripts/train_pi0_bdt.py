@@ -93,6 +93,7 @@ Plots are preferred over text/CSV products.  The script writes:
             04b_core_operating_points.png
             05_bdt_score_by_truth_category.png
             06_bdt_score_core_and_data.png
+            06b_low_mx2ep_score_shift.png
             07_feature_importance.png
             08_confusion_matrix_score_0p5.png
             pi0_bdt_model.joblib
@@ -104,6 +105,8 @@ Plots are preferred over text/CSV products.  The script writes:
         10_clasdis_mgg_vs_pair_score.png
         11_data_mgg_by_pair_score.png
         12_aaogen_mgg_by_pair_score.png
+        13_data_pi0_mass_fits_vs_score.png
+        14_data_pi0_peak_fraction_vs_score.png
 
 No CSV files are produced.
 
@@ -119,8 +122,7 @@ When the uncapped/full processing products exist:
 
 A larger category cap:
 
-    python train_pi0_bdt.py --period fa18_inb \
-        --max-events-per-category 50000
+    python train_pi0_bdt.py --period fa18_inb --max-events-per-category 50000
 
 Disable the exploratory Mx2(epgamma) selection:
 
@@ -140,6 +142,8 @@ import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import uproot
+
+from scipy.optimize import curve_fit
 
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.metrics import (
@@ -185,6 +189,19 @@ FEATURE_LABELS: Dict[str, str] = {
 OPEN_ANGLE_MIN_DEG = 7.0
 DEFAULT_MX2_MIN = -0.5
 DEFAULT_MX2_MAX = 0.5
+
+# Diagnostic only: study classifier response in a low-Mx2(ep) region below
+# the eta peak. This does NOT change the training sample.
+ETA_MASS_GEV = 0.547862
+DEFAULT_LOW_MX2_EP_MAX = 0.25
+
+# Reconstructed pi0 mass-fit diagnostics in real epgammagamma data.
+PI0_MASS_GEV = 0.134977
+PI0_FIT_MIN = 0.070
+PI0_FIT_MAX = 0.200
+PI0_FIT_BINS = 65
+PI0_FIT_NSIGMA = 2.0
+PAIR_SCORE_THRESHOLDS = np.arange(0.0, 0.81, 0.1)
 
 DEFAULT_BDT_PARAMS = {
     "n_estimators": 100,
@@ -459,6 +476,16 @@ def parse_args() -> argparse.Namespace:
         "--disable-mx2-cut",
         action="store_true",
         help="Do not apply the exploratory Mx2(epgamma) window.",
+    )
+    parser.add_argument(
+        "--low-mx2-ep-max",
+        type=float,
+        default=DEFAULT_LOW_MX2_EP_MAX,
+        help=(
+            "Upper Mx2(ep) boundary used ONLY for the post-training low-Mx2(ep) "
+            "score diagnostic. Default 0.25 GeV^2, below the eta peak at "
+            f"m_eta^2={ETA_MASS_GEV**2:.3f} GeV^2."
+        ),
     )
 
     parser.add_argument(
@@ -1359,10 +1386,14 @@ def plot_core_operating_points(
     region_name: str,
 ) -> None:
     """
-    Plot pi0 efficiency versus genuine-DVCS photon mis-tag probability.
+    Show the physically interpretable core operating curve.
 
-    Selected BDT-score thresholds are marked directly on the curve. No
-    particular threshold is privileged.
+    x = fraction of genuine DVCS/BH photons that would be falsely tagged pi0
+        when requiring BDT score >= threshold.
+    y = fraction of true pi0-daughter photons retained by the same threshold.
+
+    The labelled points are evaluated DIRECTLY at the stated thresholds rather
+    than snapped to the nearest internal sklearn ROC threshold.
     """
     positive = np.isin(
         test.categories,
@@ -1377,14 +1408,10 @@ def plot_core_operating_points(
 
     y_true = test.y[mask]
     scores = score(model, test.X[mask])
-    fpr, tpr, thresholds = roc_curve(y_true, scores)
 
-    finite = np.isfinite(thresholds)
-    fpr = fpr[finite]
-    tpr = tpr[finite]
-    thresholds = thresholds[finite]
+    fpr, tpr, _ = roc_curve(y_true, scores)
 
-    fig, ax = plt.subplots(figsize=(8.0, 6.5))
+    fig, ax = plt.subplots(figsize=(8.2, 6.6))
     ax.plot(
         100.0 * fpr,
         100.0 * tpr,
@@ -1392,18 +1419,27 @@ def plot_core_operating_points(
         label=r"True $\pi^0$ daughter vs genuine DVCS/BH $\gamma$",
     )
 
-    requested_thresholds = np.arange(0.1, 1.0, 0.1)
+    for threshold in np.arange(0.1, 1.0, 0.1):
+        predicted_positive = scores >= threshold
 
-    for requested in requested_thresholds:
-        idx = int(np.argmin(np.abs(thresholds - requested)))
-        x_value = 100.0 * fpr[idx]
-        y_value = 100.0 * tpr[idx]
-        actual = thresholds[idx]
+        pos_eff = (
+            np.sum(predicted_positive & (y_true == 1))
+            / np.sum(y_true == 1)
+        )
+        dvcs_mistag = (
+            np.sum(predicted_positive & (y_true == 0))
+            / np.sum(y_true == 0)
+        )
 
-        ax.scatter([x_value], [y_value], s=28, zorder=4)
+        ax.scatter(
+            [100.0 * dvcs_mistag],
+            [100.0 * pos_eff],
+            s=34,
+            zorder=4,
+        )
         ax.annotate(
-            f"{actual:.1f}",
-            (x_value, y_value),
+            f"{threshold:.1f}",
+            (100.0 * dvcs_mistag, 100.0 * pos_eff),
             xytext=(5, 4),
             textcoords="offset points",
             fontsize=8,
@@ -1416,7 +1452,7 @@ def plot_core_operating_points(
     ax.set_ylim(0.0, 101.0)
     ax.set_title(
         f"{region_name}: core BDT operating points\n"
-        "numbers mark BDT-score thresholds"
+        r"label = requirement BDT score $\geq$ threshold"
     )
     ax.grid(alpha=0.2)
     ax.legend(loc="lower right", fontsize=9)
@@ -1541,6 +1577,107 @@ def plot_core_scores_and_data(
     ax.legend(fontsize=8)
     fig.tight_layout()
     save_figure(fig, output_path)
+
+
+
+def plot_low_mx2ep_score_shift(
+    model: GradientBoostingClassifier,
+    category_arrays: Mapping[str, np.ndarray],
+    data_X: np.ndarray,
+    output_path: Path,
+    region_name: str,
+    mx2_ep_max: float,
+) -> None:
+    """
+    Compare BDT-score distributions before/after a LOW Mx2(ep) requirement.
+
+    This is deliberately a post-training diagnostic only. Mx2(ep) is itself a
+    BDT input feature, so any score shift is NOT an independent validation of
+    the classifier. The useful question is whether the inclusive CLASDIS pi0
+    population becomes more AAOgen-like in an exclusive-like low-missing-mass
+    region.
+    """
+    feature_index = FEATURES.index("Mx2_1")
+
+    panels = [
+        ("aaogen_pi0_gamma", r"AAOgen true $\pi^0\to\gamma$"),
+        ("clasdis_pi0_gamma", r"CLASDIS true $\pi^0\to\gamma$"),
+        ("dvcsgen_true_gamma", r"DVCSgen genuine $\gamma$"),
+        ("data", "Real data"),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.2, 9.0), sharex=True)
+    bins = np.linspace(0.0, 1.0, 61)
+
+    for ax, (category, label) in zip(axes.flat, panels):
+        if category == "data":
+            X = data_X
+        else:
+            X = category_arrays.get(category, np.empty((0, len(FEATURES))))
+        #endif
+
+        if len(X) == 0:
+            ax.set_axis_off()
+            continue
+        #endif
+
+        scores_all = score(model, X)
+        low_mask = (
+            np.isfinite(X[:, feature_index])
+            & (X[:, feature_index] < mx2_ep_max)
+        )
+        scores_low = scores_all[low_mask]
+
+        if len(scores_all) > 0:
+            ax.hist(
+                scores_all,
+                bins=bins,
+                density=True,
+                histtype="step",
+                linewidth=1.7,
+                label=(
+                    f"All selected: N={len(scores_all):,}, "
+                    f"mean={np.mean(scores_all):.3f}"
+                ),
+            )
+        #endif
+
+        if len(scores_low) > 0:
+            retained = 100.0 * len(scores_low) / len(scores_all)
+            ax.hist(
+                scores_low,
+                bins=bins,
+                density=True,
+                histtype="step",
+                linewidth=1.7,
+                label=(
+                    rf"$M_X^2(ep)<{mx2_ep_max:.2f}$: "
+                    f"N={len(scores_low):,} ({retained:.1f}%), "
+                    f"mean={np.mean(scores_low):.3f}"
+                ),
+            )
+        #endif
+
+        ax.set_title(label)
+        ax.set_ylabel("Normalized density")
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8)
+    #endfor
+
+    for ax in axes[-1, :]:
+        ax.set_xlabel(r"BDT $\pi^0$ score")
+    #endfor
+
+    fig.suptitle(
+        (
+            f"{region_name}: BDT response in a low-$M_X^2(ep)$ region "
+            f"(diagnostic only; $m_\\eta^2={ETA_MASS_GEV**2:.3f}$ GeV$^2$)"
+        ),
+        y=0.985,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+    save_figure(fig, output_path)
+
 
 
 def plot_feature_importance(
@@ -1987,6 +2124,358 @@ def plot_mgg_by_pair_score(
     save_figure(fig, output_path)
 
 
+def pi0_mass_model(
+    x: np.ndarray,
+    amplitude: float,
+    mean: float,
+    sigma: float,
+    background0: float,
+    background1: float,
+) -> np.ndarray:
+    """Gaussian pi0 peak plus locally linear combinatorial background."""
+    gaussian = amplitude * np.exp(-0.5 * ((x - mean) / sigma) ** 2)
+    background = background0 + background1 * (x - PI0_MASS_GEV)
+    return gaussian + background
+
+
+def fit_pi0_mass_peak(
+    masses: np.ndarray,
+) -> Optional[Dict[str, object]]:
+    """
+    Fit the reconstructed pi0 peak in one cumulative BDT-score selection.
+
+    The reported purity is S/(S+B) from the fitted Gaussian and fitted linear
+    background inside +/- PI0_FIT_NSIGMA fitted sigma around the fitted mean.
+    """
+    values = np.asarray(masses, dtype=float)
+    values = values[
+        np.isfinite(values)
+        & (values >= PI0_FIT_MIN)
+        & (values <= PI0_FIT_MAX)
+    ]
+
+    if len(values) < 250:
+        return None
+    #endif
+
+    counts, edges = np.histogram(
+        values,
+        bins=PI0_FIT_BINS,
+        range=(PI0_FIT_MIN, PI0_FIT_MAX),
+    )
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    sideband = (
+        (centers < 0.105)
+        | (centers > 0.165)
+    )
+    background_guess = float(
+        np.median(counts[sideband])
+        if np.any(sideband)
+        else np.median(counts)
+    )
+    amplitude_guess = max(
+        float(np.max(counts) - background_guess),
+        1.0,
+    )
+
+    p0 = [
+        amplitude_guess,
+        PI0_MASS_GEV,
+        0.010,
+        max(background_guess, 0.1),
+        0.0,
+    ]
+
+    lower = [
+        0.0,
+        0.120,
+        0.003,
+        0.0,
+        -1.0e7,
+    ]
+    upper = [
+        np.inf,
+        0.150,
+        0.030,
+        np.inf,
+        1.0e7,
+    ]
+
+    sigma_counts = np.sqrt(np.maximum(counts, 1.0))
+
+    try:
+        params, covariance = curve_fit(
+            pi0_mass_model,
+            centers,
+            counts,
+            p0=p0,
+            sigma=sigma_counts,
+            absolute_sigma=True,
+            bounds=(lower, upper),
+            maxfev=50000,
+        )
+    except Exception:
+        return None
+    #endtry
+
+    amplitude, mean, sigma, background0, background1 = params
+
+    if not (
+        np.isfinite(mean)
+        and np.isfinite(sigma)
+        and sigma > 0.0
+    ):
+        return None
+    #endif
+
+    peak_window = (
+        np.abs(centers - mean)
+        <= PI0_FIT_NSIGMA * sigma
+    )
+
+    gaussian_counts = amplitude * np.exp(
+        -0.5 * ((centers - mean) / sigma) ** 2
+    )
+    background_counts = (
+        background0
+        + background1 * (centers - PI0_MASS_GEV)
+    )
+    background_counts = np.maximum(background_counts, 0.0)
+
+    signal = float(np.sum(gaussian_counts[peak_window]))
+    background = float(np.sum(background_counts[peak_window]))
+    denominator = signal + background
+    purity = signal / denominator if denominator > 0.0 else np.nan
+
+    return {
+        "params": params,
+        "covariance": covariance,
+        "centers": centers,
+        "counts": counts,
+        "edges": edges,
+        "mean": float(mean),
+        "sigma": float(sigma),
+        "signal": signal,
+        "background": background,
+        "purity": float(purity),
+        "n_fit_range": int(len(values)),
+    }
+
+
+def plot_data_pi0_mass_fits_vs_score(
+    arrays: Mapping[str, np.ndarray],
+    models: Mapping[str, GradientBoostingClassifier],
+    args: argparse.Namespace,
+    output_dir: Path,
+) -> None:
+    """
+    Fit the real-data pi0 mass peak for cumulative pair-score requirements.
+
+    Uses the conservative pair discriminator min(score1, score2).
+    """
+    s1, s2, valid = score_epgg_photons(arrays, models, args)
+    mgg = np.asarray(arrays["Mh_gammagamma"], dtype=float)
+    min_score = np.minimum(s1, s2)
+
+    finite = valid & np.isfinite(mgg) & np.isfinite(min_score)
+
+    thresholds = np.asarray(PAIR_SCORE_THRESHOLDS, dtype=float)
+    fit_results: List[Optional[Dict[str, object]]] = []
+
+    fig, axes = plt.subplots(3, 3, figsize=(15.0, 12.0))
+
+    for ax, threshold in zip(axes.flat, thresholds):
+        mask = finite & (min_score >= threshold)
+        result = fit_pi0_mass_peak(mgg[mask])
+        fit_results.append(result)
+
+        masses = mgg[
+            mask
+            & (mgg >= PI0_FIT_MIN)
+            & (mgg <= PI0_FIT_MAX)
+        ]
+
+        if len(masses) > 0:
+            counts, edges = np.histogram(
+                masses,
+                bins=PI0_FIT_BINS,
+                range=(PI0_FIT_MIN, PI0_FIT_MAX),
+            )
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            ax.errorbar(
+                centers,
+                counts,
+                yerr=np.sqrt(np.maximum(counts, 1.0)),
+                fmt=".",
+                markersize=3.5,
+                linewidth=0.8,
+                label="Data",
+            )
+        #endif
+
+        if result is not None:
+            params = result["params"]
+            x_dense = np.linspace(PI0_FIT_MIN, PI0_FIT_MAX, 500)
+            total = pi0_mass_model(x_dense, *params)
+            background = (
+                params[3]
+                + params[4] * (x_dense - PI0_MASS_GEV)
+            )
+
+            ax.plot(x_dense, total, linewidth=1.5, label="Gaussian + linear bg")
+            ax.plot(
+                x_dense,
+                np.maximum(background, 0.0),
+                linestyle="--",
+                linewidth=1.2,
+                label="Fitted bg",
+            )
+
+            mean = float(result["mean"])
+            sigma = float(result["sigma"])
+            purity = float(result["purity"])
+            ax.axvspan(
+                mean - PI0_FIT_NSIGMA * sigma,
+                mean + PI0_FIT_NSIGMA * sigma,
+                alpha=0.10,
+            )
+            annotation = (
+                f"N={np.sum(mask):,}\n"
+                rf"$\mu={mean*1000:.1f}$ MeV" + "\n"
+                rf"$\sigma={sigma*1000:.1f}$ MeV" + "\n"
+                rf"$S/(S+B)={100.0*purity:.1f}\%$"
+            )
+        else:
+            annotation = f"N={np.sum(mask):,}\nfit unavailable"
+        #endif
+
+        ax.text(
+            0.03,
+            0.95,
+            annotation,
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=8,
+        )
+        ax.set_title(rf"min pair score $\geq {threshold:.1f}$")
+        ax.set_xlim(PI0_FIT_MIN, PI0_FIT_MAX)
+        ax.grid(alpha=0.2)
+    #endfor
+
+    for ax in axes[-1, :]:
+        ax.set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+    #endfor
+
+    for ax in axes[:, 0]:
+        ax.set_ylabel("Counts / bin")
+    #endfor
+
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    fig.suptitle(
+        (
+            r"Real data: fitted $\pi^0\to\gamma\gamma$ mass peak versus "
+            r"minimum single-photon BDT score"
+        ),
+        y=0.992,
+    )
+    if handles:
+        fig.legend(
+            handles,
+            labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.955),
+            ncol=3,
+            fontsize=8,
+        )
+    #endif
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.90])
+    save_figure(
+        fig,
+        output_dir / "13_data_pi0_mass_fits_vs_score.png",
+    )
+
+    good = [
+        (threshold, result)
+        for threshold, result in zip(thresholds, fit_results)
+        if result is not None and np.isfinite(result["purity"])
+    ]
+
+    if not good:
+        return
+    #endif
+
+    threshold_values = np.asarray(
+        [item[0] for item in good],
+        dtype=float,
+    )
+    purity_values = np.asarray(
+        [100.0 * float(item[1]["purity"]) for item in good],
+        dtype=float,
+    )
+    signal_values = np.asarray(
+        [float(item[1]["signal"]) for item in good],
+        dtype=float,
+    )
+
+    if signal_values[0] > 0.0:
+        retained_signal = 100.0 * signal_values / signal_values[0]
+    else:
+        retained_signal = np.full_like(signal_values, np.nan)
+    #endif
+
+    fig, ax = plt.subplots(figsize=(8.5, 6.4))
+    ax.plot(
+        threshold_values,
+        purity_values,
+        marker="o",
+        linewidth=1.8,
+        label=(
+            rf"Fitted $\pi^0$ fraction in $\pm{PI0_FIT_NSIGMA:.0f}\sigma$ "
+            "mass window"
+        ),
+    )
+    ax.set_xlabel(r"Minimum required pair score: min(score$_1$, score$_2$)")
+    ax.set_ylabel(r"Fitted $\pi^0$ fraction $S/(S+B)$ [%]")
+    ax.set_ylim(0.0, 105.0)
+    ax.grid(alpha=0.2)
+
+    ax2 = ax.twinx()
+    ax2.plot(
+        threshold_values,
+        retained_signal,
+        marker="s",
+        linestyle="--",
+        linewidth=1.5,
+        label=r"Fitted $\pi^0$ signal retained",
+    )
+    ax2.set_ylabel(r"Fitted $\pi^0$ signal retained [% of score $\geq0$]")
+    ax2.set_ylim(0.0, 105.0)
+
+    handles1, labels1 = ax.get_legend_handles_labels()
+    handles2, labels2 = ax2.get_legend_handles_labels()
+    ax.legend(
+        handles1 + handles2,
+        labels1 + labels2,
+        loc="center right",
+        fontsize=8.5,
+    )
+    ax.set_title(
+        (
+            r"Real data: $\pi^0$ peak purity and retained signal versus "
+            "pair-score requirement"
+        )
+    )
+    fig.tight_layout()
+    save_figure(
+        fig,
+        output_dir / "14_data_pi0_peak_fraction_vs_score.png",
+    )
+
+
+
+
 # =============================================================================
 # Region workflow
 # =============================================================================
@@ -2091,6 +2580,15 @@ def run_region(
         data_X,
         region_dir / "06_bdt_score_core_and_data.png",
         region_name,
+    )
+
+    plot_low_mx2ep_score_shift(
+        model,
+        category_arrays,
+        data_X,
+        region_dir / "06b_low_mx2ep_score_shift.png",
+        region_name,
+        args.low_mx2_ep_max,
     )
 
     plot_feature_importance(
@@ -2282,6 +2780,13 @@ def main() -> None:
         ),
     )
 
+    plot_data_pi0_mass_fits_vs_score(
+        data_epgg,
+        models,
+        args,
+        output_dir,
+    )
+
     print("\n" + "=" * 90)
     print("FINAL SUMMARY")
     print("=" * 90)
@@ -2307,6 +2812,8 @@ def main() -> None:
     print("  10_clasdis_mgg_vs_pair_score.png")
     print("  11_data_mgg_by_pair_score.png")
     print("  12_aaogen_mgg_by_pair_score.png")
+    print("  13_data_pi0_mass_fits_vs_score.png")
+    print("  14_data_pi0_peak_fraction_vs_score.png")
     print("=" * 90)
 
 
