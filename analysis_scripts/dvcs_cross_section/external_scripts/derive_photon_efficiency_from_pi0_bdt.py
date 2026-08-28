@@ -392,21 +392,32 @@ def read_arrays(
 
 
 def angle_to_radians(values: np.ndarray) -> np.ndarray:
-    arr = np.asarray(values, dtype=float)
-    finite = arr[np.isfinite(arr)]
+    """
+    Convert stored reconstruction angles to radians.
 
-    if len(finite) == 0:
-        return arr
-    #endif
+    The epgamma / epgammagamma ROOT trees used by this analysis store the
+    reconstructed spherical angles in radians:
+      theta ~ O(0.1-1.0)
+      phi   ~ 0..2*pi
 
-    if np.nanpercentile(np.abs(finite), 99.0) <= 3.5:
-        return arr
-    #endif
+    Earlier versions used a magnitude heuristic that treated phi values above
+    3.5 as degrees and therefore applied np.radians() to an angle that was
+    already in radians.  That compressed phi by a factor of ~57.3 and broke the
+    missing-probe direction while leaving the missing energy unchanged.
 
-    return np.radians(arr)
+    For these trees, return the stored angle directly.
+    """
+    return np.asarray(values, dtype=float)
 
 
 def angle_to_degrees(values: np.ndarray) -> np.ndarray:
+    """
+    Convert the angular BDT features to degrees.
+
+    This helper is used only for theta-like BDT inputs, not phi.  Their stored
+    values are in radians and occupy the small-angle CLAS12 range, so values
+    below 3.5 are converted to degrees.  Do not use this helper for azimuth.
+    """
     arr = np.asarray(values, dtype=float)
     finite = arr[np.isfinite(arr)]
 
@@ -1860,7 +1871,7 @@ def plot_pre_match_probe_diagnostics(
     #endfor
 
     fig.suptitle(
-        f"{source_name}: probe prediction before angular acceptance/matching",
+        f"{source_name}: probe prediction validation before final matching",
         y=0.99,
     )
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
@@ -2264,51 +2275,6 @@ def process_source(
 
     print_numerator_cutflow(source_name, numdiag1)
     print_numerator_cutflow(source_name, numdiag2)
-
-    # Geometry debugging is performed before predicted angular acceptance.
-    # The BDT + tag-energy + Mx2(ep) + physical probe-energy selection is
-    # retained, but no FT/FD or 3-degree match requirement can sculpt it.
-    geom1 = geometry_hypothesis_diagnostics(
-        epgg,
-        beam_energy,
-        tag_index=1,
-        base_mask=numdiag1["mask_pre_acceptance"],
-    )
-    geom2 = geometry_hypothesis_diagnostics(
-        epgg,
-        beam_energy,
-        tag_index=2,
-        base_mask=numdiag2["mask_pre_acceptance"],
-    )
-
-    print_geometry_hypothesis_summary(
-        source_name,
-        1,
-        geom1,
-    )
-    print_geometry_hypothesis_summary(
-        source_name,
-        2,
-        geom2,
-    )
-
-    plot_geometry_hypotheses(
-        source_name.upper(),
-        1,
-        geom1,
-        output_dir / f"00_{source_name}_geometry_hypotheses_tag1.png",
-    )
-    plot_geometry_hypotheses(
-        source_name.upper(),
-        2,
-        geom2,
-        output_dir / f"00_{source_name}_geometry_hypotheses_tag2.png",
-    )
-    plot_raw_angle_branches(
-        source_name.upper(),
-        epgg,
-        output_dir / f"00_{source_name}_raw_angle_branches.png",
-    )
 
     numerator = concatenate_directed(num1, num2)
     numerator_diagnostics = concatenate_numerator_diagnostics(
