@@ -142,6 +142,7 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 import joblib
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 import numpy as np
 import uproot
 
@@ -329,6 +330,7 @@ EPG_REQUIRED = sorted(
             "matching_gamma_pid",
             "gamma_mcindex",
             "gamma_parent_pid",
+            "gamma_grandparent_pid",
         ]
     )
 )
@@ -375,10 +377,12 @@ EPGG_TRUTH = [
     "gamma1_mcindex",
     "gamma1_parent_index",
     "gamma1_parent_pid",
+    "gamma1_grandparent_pid",
     "matching_gamma2_pid",
     "gamma2_mcindex",
     "gamma2_parent_index",
     "gamma2_parent_pid",
+    "gamma2_grandparent_pid",
 ]
 
 
@@ -1982,6 +1986,194 @@ PAIR_LABELS = {
 }
 
 
+
+def _pid_count_arrays(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Return integer PID values and counts, sorted by descending population."""
+    values = np.asarray(values, dtype=np.int64)
+    pids, counts = np.unique(values, return_counts=True)
+    order = np.argsort(counts)[::-1]
+    return pids[order], counts[order]
+
+
+def _plot_pid_counts(
+    ax: plt.Axes,
+    values: np.ndarray,
+    title: str,
+    max_categories: int = 18,
+) -> None:
+    """Plot the most populated truth-PID categories on a log-count axis."""
+    pids, counts = _pid_count_arrays(values)
+
+    if len(pids) == 0:
+        ax.set_axis_off()
+        return
+    #endif
+
+    pids = pids[:max_categories]
+    counts = counts[:max_categories]
+    x = np.arange(len(pids))
+
+    ax.bar(x, counts)
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        [str(int(pid)) for pid in pids],
+        rotation=45,
+        ha="right",
+    )
+    ax.set_yscale("log")
+    ax.set_ylabel("Photons")
+    ax.set_xlabel("PDG PID")
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=0.2)
+
+
+def plot_clasdis_truth_ancestry(
+    clasdis: Mapping[str, np.ndarray],
+    models: Mapping[str, GradientBoostingClassifier],
+    args: argparse.Namespace,
+    output_dir: Path,
+) -> None:
+    """
+    Truth-ancestry diagnostics for the physically interesting CLASDIS classes.
+    """
+    X_all = feature_matrix(clasdis)
+    masks = category_masks("clasdis", clasdis)
+    parent = np.asarray(clasdis["gamma_parent_pid"], dtype=np.int64)
+    grandparent = np.asarray(
+        clasdis["gamma_grandparent_pid"],
+        dtype=np.int64,
+    )
+    detector = np.asarray(clasdis["detector2"], dtype=np.int64)
+    mx2_ep = np.asarray(clasdis["Mx2_1"], dtype=float)
+    common = common_selection_mask(clasdis, args, X_all)
+
+    # Immediate parents of the opaque "other true gamma" category.
+    fig, axes = plt.subplots(1, 2, figsize=(14.0, 6.0))
+
+    for ax, (region_name, detector_value) in zip(axes, REGIONS.items()):
+        mask = (
+            common
+            & (detector == detector_value)
+            & masks["clasdis_other_true_gamma"]
+        )
+        _plot_pid_counts(
+            ax,
+            parent[mask],
+            (
+                f"{region_name}: other genuine photons\n"
+                f"N={np.sum(mask):,}"
+            ),
+        )
+    #endfor
+
+    fig.suptitle(
+        (
+            r"CLASDIS other true $\gamma$: immediate truth-parent PID "
+            r"(excluding $\pi^0$ and $\eta$)"
+        ),
+        y=0.99,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.93])
+    save_figure(
+        fig,
+        output_dir / "17_clasdis_other_true_gamma_parent_pids.png",
+    )
+
+    # Grandparents of true pi0 daughters, before/after low-Mx2(ep).
+    fig, axes = plt.subplots(2, 2, figsize=(14.0, 10.0))
+
+    for row, (region_name, detector_value) in enumerate(REGIONS.items()):
+        base = (
+            common
+            & (detector == detector_value)
+            & masks["clasdis_pi0_gamma"]
+        )
+        low = (
+            base
+            & np.isfinite(mx2_ep)
+            & (mx2_ep < args.low_mx2_ep_max)
+        )
+
+        _plot_pid_counts(
+            axes[row, 0],
+            grandparent[base],
+            f"{region_name}: all true pi0 daughters\nN={np.sum(base):,}",
+        )
+        _plot_pid_counts(
+            axes[row, 1],
+            grandparent[low],
+            (
+                f"{region_name}: Mx2(ep) < {args.low_mx2_ep_max:.2f} GeV2\n"
+                f"N={np.sum(low):,}"
+            ),
+        )
+    #endfor
+
+    fig.suptitle(
+        r"CLASDIS true $\pi^0\to\gamma$: photon grandparent PID "
+        r"($\gamma\leftarrow\pi^0\leftarrow ?$)",
+        y=0.99,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+    save_figure(
+        fig,
+        output_dir / "18_clasdis_pi0_gamma_grandparent_pids_low_mx2ep.png",
+    )
+
+    # Grandparent composition in the score structures visible in CLASDIS.
+    score_bands = [
+        (0.0, 0.5),
+        (0.5, 0.7),
+        (0.7, 0.8),
+        (0.8, 1.000001),
+    ]
+
+    for region_name, detector_value in REGIONS.items():
+        base = (
+            common
+            & (detector == detector_value)
+            & masks["clasdis_pi0_gamma"]
+        )
+        indices = np.flatnonzero(base)
+
+        if len(indices) == 0:
+            continue
+        #endif
+
+        scores = score(models[region_name], X_all[indices])
+        gps = grandparent[indices]
+
+        fig, axes = plt.subplots(2, 2, figsize=(14.0, 10.0))
+
+        for ax, (lo, hi) in zip(axes.flat, score_bands):
+            band = (scores >= lo) & (scores < hi)
+            _plot_pid_counts(
+                ax,
+                gps[band],
+                (
+                    rf"{lo:.1f} <= BDT score < {min(hi,1.0):.1f}"
+                    + f"\nN={np.sum(band):,}"
+                ),
+            )
+        #endfor
+
+        fig.suptitle(
+            (
+                rf"{region_name}: CLASDIS true $\pi^0\to\gamma$ "
+                r"grandparent PID versus BDT score"
+            ),
+            y=0.99,
+        )
+        fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+        save_figure(
+            fig,
+            output_dir
+            / f"19_{region_name.lower()}_clasdis_pi0_grandparent_vs_score.png",
+        )
+    #endfor
+
+
+
 def plot_clasdis_pair_validation(
     arrays: Mapping[str, np.ndarray],
     models: Mapping[str, GradientBoostingClassifier],
@@ -2053,6 +2245,7 @@ def plot_clasdis_pair_validation(
         min_score[mask],
         bins=(100, 70),
         range=((0.0, 0.8), (0.0, 1.0)),
+        norm=LogNorm(vmin=1),
     )
     ax.axvline(0.13498, linestyle="--", linewidth=1.0)
     ax.axvline(0.54786, linestyle="--", linewidth=1.0)
@@ -2071,6 +2264,7 @@ def plot_clasdis_pair_validation(
         min_score[same_pi0],
         bins=(80, 70),
         range=((0.0, 0.3), (0.0, 1.0)),
+        norm=LogNorm(vmin=1),
     )
     ax.axvline(0.13498, linestyle="--", linewidth=1.0)
     ax.set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
@@ -2129,6 +2323,7 @@ def plot_mgg_by_pair_score(
     ax.axvline(0.54786, linestyle="--", linewidth=1.0)
     ax.set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
     ax.set_ylabel("Normalized density")
+    ax.set_yscale("log")
     ax.set_title(title)
     ax.grid(alpha=0.2)
     ax.legend(fontsize=8)
@@ -2927,6 +3122,14 @@ def main() -> None:
         region_results[region_name] = result
         models[region_name] = result.model
     #endfor
+
+    # Truth ancestry diagnostics use the already-loaded CLASDIS epgamma tree.
+    plot_clasdis_truth_ancestry(
+        clasdis,
+        models,
+        args,
+        output_dir,
+    )
 
     # The pair-level validation files are deliberately loaded only after both
     # models have finished training. They never enter model fitting.
