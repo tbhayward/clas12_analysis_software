@@ -12,13 +12,20 @@ The nominal first-stage result is only a function of predicted probe energy,
 with FT and FD treated separately.  Sector/theta dependence is deliberately
 left for a later iteration.
 
-This version also performs two validation studies before interpreting the
-efficiency:
+This version also performs the validation studies needed before interpreting
+the efficiency:
     1) denominator closure: compare the missing-vector prediction against the
        reconstructed truth-qualified sister photon in MC;
     2) angular-association plateau: scan the predicted/reconstructed opening
-       angle and determine where correct-pair recovery saturates while wrong
-       candidate contamination remains small.
+       angle and determine where correct-pair recovery saturates;
+    3) extract the numerator from fits to M(gamma gamma), in bins of the SAME
+       predicted probe energy used for the denominator;
+    4) repeat those fits for 8, 10, and 12 degree association windows;
+    5) build a fine probe-energy response diagnostic for AAOgen and CLASDIS.
+
+The raw efficiency in earlier versions was already binned in predicted probe
+energy for BOTH numerator and denominator.  The new fit-based numerator keeps
+that definition; it replaces raw numerator counts with fitted pi0 yields.
 
 The current ROOT schema does not store generated sister-photon four-vectors.
 Therefore the denominator-closure study uses the reconstructed sister photon
@@ -83,6 +90,7 @@ from typing import Dict, List, Mapping, Optional, Sequence, Tuple
 
 import joblib
 import matplotlib.pyplot as plt
+from scipy.optimize import curve_fit
 import numpy as np
 import uproot
 
@@ -188,6 +196,21 @@ ASSOCIATION_ENERGY_BINS = (
     (2.00, 9.50),
 )
 
+# Association windows used for the fitted-yield stability test.
+MGG_FIT_ASSOCIATION_ANGLES = (8.0, 10.0, 12.0)
+MGG_FIT_NOMINAL_ANGLE = 10.0
+
+# Fit range deliberately wider than the nominal pi0 window so the continuum
+# is constrained by data rather than by a hard mass-window count.
+MGG_FIT_RANGE = (0.070, 0.240)
+MGG_FIT_BINS = 85
+
+# Fine response binning used only as a migration diagnostic.
+RESPONSE_ENERGY_EDGES = np.asarray(
+    [0.40, 0.60, 0.80, 1.00, 1.25, 1.50, 2.00, 2.50, 3.50, 5.00, 7.00, 9.50],
+    dtype=float,
+)
+
 
 # =============================================================================
 # Small containers
@@ -216,6 +239,35 @@ class EfficiencyCurve:
     numerator: np.ndarray
     efficiency: np.ndarray
     uncertainty: np.ndarray
+
+
+@dataclass
+class MassFitResult:
+    success: bool
+    yield_pi0: float
+    yield_uncertainty: float
+    mean: float
+    sigma: float
+    chi2_ndf: float
+    x_centers: np.ndarray
+    counts: np.ndarray
+    model_counts: np.ndarray
+    signal_counts: np.ndarray
+    background_counts: np.ndarray
+
+
+@dataclass
+class FitEfficiencyCurve:
+    edges: np.ndarray
+    centers: np.ndarray
+    denominator: np.ndarray
+    numerator_yield: np.ndarray
+    numerator_uncertainty: np.ndarray
+    efficiency: np.ndarray
+    uncertainty: np.ndarray
+    fit_mean: np.ndarray
+    fit_sigma: np.ndarray
+    fit_chi2_ndf: np.ndarray
 
 
 # =============================================================================
@@ -2156,6 +2208,657 @@ def plot_mgg_angle_scan(
 
 
 
+
+# =============================================================================
+# M(gamma gamma) fit numerator and probe-energy response
+# =============================================================================
+
+def mgg_model(
+    x: np.ndarray,
+    amplitude: float,
+    mean: float,
+    sigma: float,
+    b0: float,
+    b1: float,
+    b2: float,
+) -> np.ndarray:
+    """
+    Gaussian pi0 peak plus a smooth quadratic continuum.
+
+    amplitude is the Gaussian peak height in histogram counts per bin.
+    """
+    dx = x - 0.135
+    signal = amplitude * np.exp(
+        -0.5 * ((x - mean) / sigma) ** 2
+    )
+    background = b0 + b1 * dx + b2 * dx * dx
+    return signal + background
+
+
+def fit_mgg_spectrum(
+    masses: np.ndarray,
+) -> MassFitResult:
+    masses = np.asarray(masses, dtype=float)
+    masses = masses[
+        np.isfinite(masses)
+        & (masses >= MGG_FIT_RANGE[0])
+        & (masses < MGG_FIT_RANGE[1])
+    ]
+
+    hist_edges = np.linspace(
+        MGG_FIT_RANGE[0],
+        MGG_FIT_RANGE[1],
+        MGG_FIT_BINS + 1,
+    )
+    counts, _ = np.histogram(masses, bins=hist_edges)
+    counts = counts.astype(float)
+    centers = 0.5 * (hist_edges[:-1] + hist_edges[1:])
+    bin_width = hist_edges[1] - hist_edges[0]
+
+    empty = np.zeros_like(centers, dtype=float)
+
+    if len(masses) < 80 or np.sum(counts) <= 0:
+        return MassFitResult(
+            success=False,
+            yield_pi0=np.nan,
+            yield_uncertainty=np.nan,
+            mean=np.nan,
+            sigma=np.nan,
+            chi2_ndf=np.nan,
+            x_centers=centers,
+            counts=counts,
+            model_counts=np.full_like(centers, np.nan),
+            signal_counts=np.full_like(centers, np.nan),
+            background_counts=np.full_like(centers, np.nan),
+        )
+    #endif
+
+    sideband = (
+        (centers < 0.110)
+        | (centers > 0.165)
+    )
+    background_guess = (
+        float(np.median(counts[sideband]))
+        if np.any(sideband)
+        else float(np.median(counts))
+    )
+    peak_region = (
+        (centers >= 0.120)
+        & (centers <= 0.150)
+    )
+    peak_guess = max(
+        float(np.max(counts[peak_region])) - background_guess,
+        1.0,
+    )
+
+    p0 = [
+        peak_guess,
+        0.135,
+        0.010,
+        max(background_guess, 0.0),
+        0.0,
+        0.0,
+    ]
+
+    # Keep the peak physical.  Background-shape coefficients remain broad;
+    # the continuum is diagnostic and the peak is very prominent in these
+    # samples.
+    lower = [
+        0.0,
+        0.125,
+        0.003,
+        0.0,
+        -1.0e7,
+        -1.0e8,
+    ]
+    upper = [
+        max(10.0 * np.max(counts), 10.0),
+        0.145,
+        0.030,
+        max(10.0 * np.max(counts), 10.0),
+        1.0e7,
+        1.0e8,
+    ]
+
+    sigma_y = np.sqrt(np.maximum(counts, 1.0))
+
+    try:
+        popt, pcov = curve_fit(
+            mgg_model,
+            centers,
+            counts,
+            p0=p0,
+            sigma=sigma_y,
+            absolute_sigma=True,
+            bounds=(lower, upper),
+            maxfev=50000,
+        )
+
+        amplitude, mean, width, b0, b1, b2 = popt
+        model_counts = mgg_model(centers, *popt)
+
+        signal_counts = amplitude * np.exp(
+            -0.5 * ((centers - mean) / width) ** 2
+        )
+        dx = centers - 0.135
+        background_counts = b0 + b1 * dx + b2 * dx * dx
+
+        yield_pi0 = (
+            amplitude
+            * width
+            * np.sqrt(2.0 * np.pi)
+            / bin_width
+        )
+
+        # Propagate the amplitude-width covariance to the integrated
+        # Gaussian yield.
+        grad_a = (
+            width
+            * np.sqrt(2.0 * np.pi)
+            / bin_width
+        )
+        grad_s = (
+            amplitude
+            * np.sqrt(2.0 * np.pi)
+            / bin_width
+        )
+        variance = (
+            grad_a * grad_a * pcov[0, 0]
+            + grad_s * grad_s * pcov[2, 2]
+            + 2.0 * grad_a * grad_s * pcov[0, 2]
+        )
+        yield_uncertainty = np.sqrt(max(float(variance), 0.0))
+
+        residual = (counts - model_counts) / sigma_y
+        ndf = max(len(counts) - len(popt), 1)
+        chi2_ndf = float(np.sum(residual * residual) / ndf)
+
+        success = (
+            np.isfinite(yield_pi0)
+            and yield_pi0 >= 0.0
+            and np.isfinite(yield_uncertainty)
+            and 0.125 <= mean <= 0.145
+            and 0.003 <= width <= 0.030
+        )
+
+        return MassFitResult(
+            success=bool(success),
+            yield_pi0=float(yield_pi0),
+            yield_uncertainty=float(yield_uncertainty),
+            mean=float(mean),
+            sigma=float(width),
+            chi2_ndf=chi2_ndf,
+            x_centers=centers,
+            counts=counts,
+            model_counts=model_counts,
+            signal_counts=signal_counts,
+            background_counts=background_counts,
+        )
+    except Exception as exc:
+        progress(f"WARNING: Mgg fit failed: {exc}")
+        return MassFitResult(
+            success=False,
+            yield_pi0=np.nan,
+            yield_uncertainty=np.nan,
+            mean=np.nan,
+            sigma=np.nan,
+            chi2_ndf=np.nan,
+            x_centers=centers,
+            counts=counts,
+            model_counts=np.full_like(centers, np.nan),
+            signal_counts=np.full_like(centers, np.nan),
+            background_counts=np.full_like(centers, np.nan),
+        )
+    #endtry
+
+
+def mgg_fit_candidate_mask(
+    diagnostics: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+    region_value: int,
+    e_low: float,
+    e_high: float,
+    angle_max: float,
+) -> np.ndarray:
+    """
+    Candidate mask for the fit-based numerator.
+
+    Important:
+      * region and energy bin are defined by the PREDICTED probe;
+      * no probe BDT requirement;
+      * do not require actual_detector == predicted_region;
+      * reconstructed partner only needs to exist above threshold and lie
+        within the deliberately loose association cone.
+    """
+    pred_energy = np.asarray(
+        diagnostics["pred_energy"],
+        dtype=float,
+    )
+    pred_region = np.asarray(
+        diagnostics["pred_region"],
+        dtype=np.int64,
+    )
+    partner_energy = np.asarray(
+        diagnostics["partner_energy"],
+        dtype=float,
+    )
+    match_angle = np.asarray(
+        diagnostics["match_angle"],
+        dtype=float,
+    )
+
+    return (
+        np.asarray(diagnostics["mask_finite_match"], dtype=bool)
+        & np.isfinite(partner_energy)
+        & (partner_energy >= args.probe_energy_min)
+        & (pred_region == region_value)
+        & (pred_energy >= e_low)
+        & (pred_energy < e_high)
+        & np.isfinite(match_angle)
+        & (match_angle < angle_max)
+    )
+
+
+def fit_efficiency_curve(
+    denominator: DirectedSample,
+    diagnostics: Mapping[str, np.ndarray],
+    region_value: int,
+    edges: np.ndarray,
+    angle_max: float,
+    args: argparse.Namespace,
+) -> Tuple[FitEfficiencyCurve, list[MassFitResult]]:
+    den_values = denominator.predicted_energy[
+        denominator.region == region_value
+    ]
+    den, _ = np.histogram(den_values, bins=edges)
+    den = den.astype(float)
+
+    nbin = len(edges) - 1
+    numerator_yield = np.full(nbin, np.nan)
+    numerator_uncertainty = np.full(nbin, np.nan)
+    fit_mean = np.full(nbin, np.nan)
+    fit_sigma = np.full(nbin, np.nan)
+    fit_chi2_ndf = np.full(nbin, np.nan)
+    fits: list[MassFitResult] = []
+
+    pair_mass = np.asarray(
+        diagnostics["pair_mass"],
+        dtype=float,
+    )
+
+    for ibin in range(nbin):
+        mask = mgg_fit_candidate_mask(
+            diagnostics,
+            args,
+            region_value,
+            edges[ibin],
+            edges[ibin + 1],
+            angle_max,
+        )
+        fit = fit_mgg_spectrum(pair_mass[mask])
+        fits.append(fit)
+
+        if fit.success:
+            numerator_yield[ibin] = fit.yield_pi0
+            numerator_uncertainty[ibin] = fit.yield_uncertainty
+            fit_mean[ibin] = fit.mean
+            fit_sigma[ibin] = fit.sigma
+            fit_chi2_ndf[ibin] = fit.chi2_ndf
+        #endif
+    #endfor
+
+    efficiency = np.divide(
+        numerator_yield,
+        den,
+        out=np.full(nbin, np.nan),
+        where=den > 0.0,
+    )
+    uncertainty = np.divide(
+        numerator_uncertainty,
+        den,
+        out=np.full(nbin, np.nan),
+        where=den > 0.0,
+    )
+
+    return (
+        FitEfficiencyCurve(
+            edges=edges,
+            centers=0.5 * (edges[:-1] + edges[1:]),
+            denominator=den,
+            numerator_yield=numerator_yield,
+            numerator_uncertainty=numerator_uncertainty,
+            efficiency=efficiency,
+            uncertainty=uncertainty,
+            fit_mean=fit_mean,
+            fit_sigma=fit_sigma,
+            fit_chi2_ndf=fit_chi2_ndf,
+        ),
+        fits,
+    )
+
+
+def plot_mgg_fit_examples(
+    source_name: str,
+    fits_by_region: Mapping[str, list[MassFitResult]],
+    edges: np.ndarray,
+    output_path: Path,
+    angle_max: float,
+) -> None:
+    nbin = len(edges) - 1
+    fig, axes = plt.subplots(
+        2,
+        nbin,
+        figsize=(4.8 * nbin, 8.2),
+        squeeze=False,
+    )
+
+    for irow, region_name in enumerate(["FT", "FD"]):
+        fits = fits_by_region[region_name]
+
+        for ibin in range(nbin):
+            ax = axes[irow, ibin]
+            fit = fits[ibin]
+
+            ax.step(
+                fit.x_centers,
+                fit.counts,
+                where="mid",
+                linewidth=1.2,
+                label="Candidates",
+            )
+
+            if fit.success:
+                ax.plot(
+                    fit.x_centers,
+                    fit.model_counts,
+                    linewidth=1.5,
+                    label="Total fit",
+                )
+                ax.plot(
+                    fit.x_centers,
+                    fit.background_counts,
+                    linestyle="--",
+                    linewidth=1.2,
+                    label="Background",
+                )
+                ax.plot(
+                    fit.x_centers,
+                    fit.signal_counts,
+                    linestyle=":",
+                    linewidth=1.2,
+                    label=r"$\pi^0$ Gaussian",
+                )
+                fit_text = (
+                    f"Npi0={fit.yield_pi0:,.0f}\\n"
+                    f"mu={1000.0*fit.mean:.1f} MeV\\n"
+                    f"sigma={1000.0*fit.sigma:.1f} MeV\\n"
+                    f"chi2/ndf={fit.chi2_ndf:.2f}"
+                )
+            else:
+                fit_text = "fit failed / insufficient statistics"
+            #endif
+
+            ax.text(
+                0.03,
+                0.96,
+                fit_text,
+                transform=ax.transAxes,
+                va="top",
+                fontsize=8,
+            )
+            ax.set_title(
+                f"{region_name}, "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+            ax.set_ylabel("Candidate pairs / bin")
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: M(gamma gamma) fits, "
+        f"association < {angle_max:g} deg",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_fit_efficiency_angle_stability(
+    source_name: str,
+    curves_by_angle: Mapping[float, Mapping[str, FitEfficiencyCurve]],
+    output_path: Path,
+) -> None:
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.9))
+
+    for iax, region_name in enumerate(["FT", "FD"]):
+        ax = axes[iax]
+
+        for angle_max in MGG_FIT_ASSOCIATION_ANGLES:
+            curve = curves_by_angle[angle_max][region_name]
+            ax.errorbar(
+                curve.centers,
+                curve.efficiency,
+                yerr=curve.uncertainty,
+                marker="o",
+                linestyle="-",
+                capsize=2,
+                label=f"{angle_max:g} deg",
+            )
+        #endfor
+
+        ax.set_xlabel(r"Predicted probe energy $E_{\rm pred}$ (GeV)")
+        ax.set_ylabel(
+            r"Fitted $N_{\pi^0}$ / tag denominator"
+        )
+        ax.set_title(region_name)
+        ax.grid(alpha=0.2)
+        ax.legend()
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: fitted-efficiency association-angle stability",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+    save_figure(fig, output_path)
+
+
+def plot_fit_efficiency_data_mc_ratio(
+    fit_curves: Mapping[
+        str,
+        Mapping[str, FitEfficiencyCurve],
+    ],
+    output_path: Path,
+) -> None:
+    """
+    Nominal 10-degree fitted efficiencies and data/MC ratios.
+
+    With partial data or CLASDIS epgg files the absolute ratios are not yet
+    physically interpretable; the plot is nevertheless useful once exposures
+    are complete/matched.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
+
+    for icol, region_name in enumerate(["FT", "FD"]):
+        ax_eff = axes[0, icol]
+        ax_ratio = axes[1, icol]
+
+        for source_name in ["data", "aaogen", "clasdis"]:
+            curve = fit_curves[source_name][region_name]
+            ax_eff.errorbar(
+                curve.centers,
+                curve.efficiency,
+                yerr=curve.uncertainty,
+                marker="o",
+                linestyle="-",
+                capsize=2,
+                label=source_name.upper(),
+            )
+        #endfor
+
+        data_curve = fit_curves["data"][region_name]
+
+        for mc_name in ["aaogen", "clasdis"]:
+            mc_curve = fit_curves[mc_name][region_name]
+            ratio = np.divide(
+                data_curve.efficiency,
+                mc_curve.efficiency,
+                out=np.full_like(data_curve.efficiency, np.nan),
+                where=(
+                    np.isfinite(mc_curve.efficiency)
+                    & (mc_curve.efficiency > 0.0)
+                ),
+            )
+
+            rel_data = np.divide(
+                data_curve.uncertainty,
+                data_curve.efficiency,
+                out=np.zeros_like(data_curve.efficiency),
+                where=(
+                    np.isfinite(data_curve.efficiency)
+                    & (data_curve.efficiency > 0.0)
+                ),
+            )
+            rel_mc = np.divide(
+                mc_curve.uncertainty,
+                mc_curve.efficiency,
+                out=np.zeros_like(mc_curve.efficiency),
+                where=(
+                    np.isfinite(mc_curve.efficiency)
+                    & (mc_curve.efficiency > 0.0)
+                ),
+            )
+            ratio_unc = ratio * np.sqrt(
+                rel_data * rel_data
+                + rel_mc * rel_mc
+            )
+
+            ax_ratio.errorbar(
+                data_curve.centers,
+                ratio,
+                yerr=ratio_unc,
+                marker="o",
+                linestyle="-",
+                capsize=2,
+                label=f"data / {mc_name}",
+            )
+        #endfor
+
+        ax_eff.set_title(f"{region_name}: fitted efficiency")
+        ax_eff.set_xlabel(r"Predicted probe energy $E_{\rm pred}$ (GeV)")
+        ax_eff.set_ylabel(r"Fitted $N_{\pi^0}/N_{\rm tag}$")
+        ax_eff.grid(alpha=0.2)
+        ax_eff.legend()
+
+        ax_ratio.axhline(1.0, linestyle="--", linewidth=1.0)
+        ax_ratio.set_title(f"{region_name}: data / MC")
+        ax_ratio.set_xlabel(r"Predicted probe energy $E_{\rm pred}$ (GeV)")
+        ax_ratio.set_ylabel("Efficiency ratio")
+        ax_ratio.grid(alpha=0.2)
+        ax_ratio.legend()
+    #endfor
+
+    fig.suptitle(
+        "Nominal 10 deg M(gamma gamma)-fit efficiency",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_probe_energy_response_fine(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    Fine response of E_pred against the reconstructed truth-qualified sister.
+
+    NOTE: generated sister-photon kinematics are not present in the current
+    ROOT schema.  The x-axis is therefore reconstructed sister energy after
+    truth qualification, not E_true.  This is intentionally labeled as such
+    rather than pretending that a generator-level response is available.
+    """
+    base = denominator_closure_base_mask(
+        source_name.lower(),
+        diagnostics,
+        args,
+    )
+
+    if base is None or np.sum(base) == 0:
+        return
+    #endif
+
+    pred_e = np.asarray(
+        diagnostics["pred_energy"],
+        dtype=float,
+    )[base]
+    sister_e = np.asarray(
+        diagnostics["partner_energy"],
+        dtype=float,
+    )[base]
+
+    edges = RESPONSE_ENERGY_EDGES
+    matrix = np.zeros(
+        (len(edges) - 1, len(edges) - 1),
+        dtype=float,
+    )
+
+    sister_bin = np.digitize(sister_e, edges) - 1
+    pred_bin = np.digitize(pred_e, edges) - 1
+
+    for true_like_bin in range(len(edges) - 1):
+        denom = np.sum(sister_bin == true_like_bin)
+
+        for predicted_bin in range(len(edges) - 1):
+            if denom > 0:
+                matrix[predicted_bin, true_like_bin] = (
+                    np.sum(
+                        (pred_bin == predicted_bin)
+                        & (sister_bin == true_like_bin)
+                    )
+                    / denom
+                )
+            #endif
+        #endfor
+    #endfor
+
+    labels = [
+        f"{edges[i]:g}-{edges[i+1]:g}"
+        for i in range(len(edges) - 1)
+    ]
+
+    fig, ax = plt.subplots(figsize=(11.5, 9.0))
+    im = ax.imshow(
+        matrix,
+        origin="lower",
+        vmin=0.0,
+        vmax=1.0,
+        aspect="auto",
+    )
+    ax.set_xticks(range(len(labels)), labels, rotation=45, ha="right")
+    ax.set_yticks(range(len(labels)), labels)
+    ax.set_xlabel(
+        "Reconstructed truth-qualified sister E bin (GeV)"
+    )
+    ax.set_ylabel("Predicted probe E bin (GeV)")
+    ax.set_title(
+        f"{source_name}: fine probe-energy response; columns normalized"
+    )
+    fig.colorbar(im, ax=ax, label="Fraction")
+
+    fig.tight_layout()
+    save_figure(fig, output_path)
+
+
+
 # =============================================================================
 # Efficiency calculation
 # =============================================================================
@@ -3700,7 +4403,13 @@ def process_source(
     beam_energy: float,
     args: argparse.Namespace,
     output_dir: Path,
-) -> Tuple[DirectedSample, DirectedSample, Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+) -> Tuple[
+    DirectedSample,
+    DirectedSample,
+    Dict[str, np.ndarray],
+    Dict[str, np.ndarray],
+    Dict[str, np.ndarray],
+]:
     truth_epg = EPG_OPTIONAL_TRUTH if source_name != "data" else []
     truth_epgg = EPGG_OPTIONAL_TRUTH if source_name != "data" else []
 
@@ -3772,6 +4481,13 @@ def process_source(
             / f"09_{source_name}_association_plateau.png",
             args,
         )
+        plot_probe_energy_response_fine(
+            source_name.upper(),
+            numerator_diagnostics,
+            output_dir
+            / f"13_{source_name}_probe_energy_response_fine.png",
+            args,
+        )
     #endif
 
     plot_mgg_angle_scan(
@@ -3807,7 +4523,13 @@ def process_source(
         output_dir / f"02b_{source_name}_matched_probe_diagnostics.png",
     )
 
-    return denominator, numerator, diagnostics, epg
+    return (
+        denominator,
+        numerator,
+        diagnostics,
+        epg,
+        numerator_diagnostics,
+    )
 
 
 # =============================================================================
@@ -3865,9 +4587,19 @@ def main() -> None:
     denominators: Dict[str, DirectedSample] = {}
     numerators: Dict[str, DirectedSample] = {}
     epg_arrays: Dict[str, Mapping[str, np.ndarray]] = {}
+    numerator_diagnostics_by_source: Dict[
+        str,
+        Dict[str, np.ndarray],
+    ] = {}
 
     for source_name in ["data", "aaogen", "clasdis"]:
-        denominator, numerator, _, epg = process_source(
+        (
+            denominator,
+            numerator,
+            _,
+            epg,
+            numerator_diagnostics,
+        ) = process_source(
             source_name,
             paths[f"{source_name}_epg"],
             paths[f"{source_name}_epgg"],
@@ -3879,6 +4611,9 @@ def main() -> None:
         denominators[source_name] = denominator
         numerators[source_name] = numerator
         epg_arrays[source_name] = epg
+        numerator_diagnostics_by_source[source_name] = (
+            numerator_diagnostics
+        )
     #endfor
 
     curves: Dict[str, Dict[str, EfficiencyCurve]] = {}
@@ -3935,6 +4670,83 @@ def main() -> None:
         output_dir / "06_tag_score_threshold_scan.png",
     )
 
+    # ------------------------------------------------------------------
+    # M(gamma gamma)-fit numerator.
+    # Both numerator and denominator remain binned in E_pred.  The only
+    # conceptual change here is replacing raw reconstructed-pair counts by
+    # the fitted pi0 signal yield.
+    # ------------------------------------------------------------------
+    fitted_curves_by_source_angle: Dict[
+        str,
+        Dict[float, Dict[str, FitEfficiencyCurve]],
+    ] = {}
+
+    nominal_fit_curves: Dict[
+        str,
+        Dict[str, FitEfficiencyCurve],
+    ] = {}
+
+    for source_name in ["data", "aaogen", "clasdis"]:
+        fitted_curves_by_source_angle[source_name] = {}
+
+        for angle_max in MGG_FIT_ASSOCIATION_ANGLES:
+            fitted_curves_by_source_angle[source_name][angle_max] = {}
+            fits_for_nominal: Dict[str, list[MassFitResult]] = {}
+
+            for region_name, region_value in REGIONS.items():
+                curve, fits = fit_efficiency_curve(
+                    denominators[source_name],
+                    numerator_diagnostics_by_source[source_name],
+                    region_value,
+                    edges,
+                    angle_max,
+                    args,
+                )
+                fitted_curves_by_source_angle[
+                    source_name
+                ][angle_max][region_name] = curve
+
+                if np.isclose(
+                    angle_max,
+                    MGG_FIT_NOMINAL_ANGLE,
+                ):
+                    fits_for_nominal[region_name] = fits
+                #endif
+            #endfor
+
+            if np.isclose(
+                angle_max,
+                MGG_FIT_NOMINAL_ANGLE,
+            ):
+                nominal_fit_curves[source_name] = (
+                    fitted_curves_by_source_angle[
+                        source_name
+                    ][angle_max]
+                )
+                plot_mgg_fit_examples(
+                    source_name.upper(),
+                    fits_for_nominal,
+                    edges,
+                    output_dir
+                    / f"11_{source_name}_mgg_fit_examples_10deg.png",
+                    angle_max,
+                )
+            #endif
+        #endfor
+
+        plot_fit_efficiency_angle_stability(
+            source_name.upper(),
+            fitted_curves_by_source_angle[source_name],
+            output_dir
+            / f"12_{source_name}_fitted_efficiency_angle_stability.png",
+        )
+    #endfor
+
+    plot_fit_efficiency_data_mc_ratio(
+        nominal_fit_curves,
+        output_dir / "14_mgg_fit_efficiency_and_data_mc_ratio.png",
+    )
+
     print("\n" + "=" * 92)
     print("SUMMARY")
     print("=" * 92)
@@ -3954,11 +4766,38 @@ def main() -> None:
         #endfor
     #endfor
 
+    print("\nNominal 10-degree Mgg-fit efficiencies:")
+
+    for region_name in ["FT", "FD"]:
+        print(f"  {region_name}")
+
+        for source_name in ["data", "aaogen", "clasdis"]:
+            curve = nominal_fit_curves[source_name][region_name]
+            values = []
+
+            for ibin in range(len(curve.centers)):
+                values.append(
+                    f"{curve.edges[ibin]:g}-{curve.edges[ibin+1]:g}:"
+                    f"{curve.efficiency[ibin]:.4f}"
+                )
+            #endfor
+
+            print(
+                f"    {source_name:8s}: "
+                + ", ".join(values)
+            )
+        #endfor
+    #endfor
+
     print("\nOutputs:")
     print(f"  {output_dir / '03_raw_probe_counts.png'}")
     print(f"  {output_dir / '04_efficiency_and_data_mc_ratio.png'}")
     print(f"  {output_dir / '05_clasdis_tag_truth_purity.png'}")
     print(f"  {output_dir / '06_tag_score_threshold_scan.png'}")
+    print("  11_<source>_mgg_fit_examples_10deg.png")
+    print("  12_<source>_fitted_efficiency_angle_stability.png")
+    print("  13_<mc>_probe_energy_response_fine.png")
+    print("  14_mgg_fit_efficiency_and_data_mc_ratio.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
