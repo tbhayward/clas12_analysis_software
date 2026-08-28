@@ -88,14 +88,11 @@ Plots are preferred over text/CSV products.  The script writes:
         FT/
             01_training_category_counts.png
             02_input_features_core.png
-            03_input_features_reco_artifacts.png
             04_roc_curves.png
             04b_core_operating_points.png
             05_bdt_score_by_truth_category.png
-            06_bdt_score_core_and_data.png
             06b_low_mx2ep_score_shift.png
             07_feature_importance.png
-            08_confusion_matrix_score_0p5.png
             pi0_bdt_model.joblib
 
         FD/
@@ -104,11 +101,7 @@ Plots are preferred over text/CSV products.  The script writes:
         09_clasdis_pair_score_validation.png
         10_clasdis_mgg_vs_pair_score.png
         11_data_mgg_by_pair_score.png
-        12_aaogen_mgg_by_pair_score.png
-        13_data_pi0_mass_fits_by_score_bin.png
         14_data_pi0_fraction_of_all_pairs_by_score_bin.png
-        15_data_pi0_local_fit_purity_by_score_bin.png
-        16_data_pi0_local_fit_purity_cumulative.png
 
 No CSV files are produced.
 
@@ -237,6 +230,53 @@ REGIONS = {
     "FT": 0,
     "FD": 1,
 }
+
+
+# Human-readable labels for truth-ancestry plots.  Keep the numerical PDG code
+# visible as well so the plots remain unambiguous.
+PDG_LABELS = {
+    0: r"primary / none",
+    11: r"$e^-$",
+    -11: r"$e^+$",
+    22: r"$\gamma$",
+    111: r"$\pi^0$",
+    211: r"$\pi^+$",
+    -211: r"$\pi^-$",
+    221: r"$\eta$",
+    331: r"$\eta^\prime$",
+    113: r"$\rho^0$",
+    213: r"$\rho^+$",
+    -213: r"$\rho^-$",
+    223: r"$\omega$",
+    333: r"$\phi$",
+    311: r"$K^0$",
+    321: r"$K^+$",
+    -321: r"$K^-$",
+    313: r"$K^{*0}$",
+    -313: r"$\bar{K}^{*0}$",
+    323: r"$K^{*+}$",
+    -323: r"$K^{*-}$",
+    2112: r"$n$",
+    2212: r"$p$",
+    1114: r"$\Delta^-$",
+    2114: r"$\Delta^0$",
+    2214: r"$\Delta^+$",
+    2224: r"$\Delta^{++}$",
+    3112: r"$\Sigma^-$",
+    3212: r"$\Sigma^0$",
+    3222: r"$\Sigma^+$",
+    3122: r"$\Lambda$",
+    3322: r"$\Xi^0$",
+    3312: r"$\Xi^-$",
+    130: r"$K_L^0$",
+    310: r"$K_S^0$",
+}
+
+
+def pdg_tick_label(pid: int) -> str:
+    """Return a compact particle-name + numerical-PDG tick label."""
+    name = PDG_LABELS.get(int(pid), "other")
+    return f"{name}\\n({int(pid)})"
 
 BASE_DIRS = {
     "fa18_inb": Path(
@@ -2025,7 +2065,7 @@ def _plot_pid_counts(
     ax.bar(x, counts)
     ax.set_xticks(x)
     ax.set_xticklabels(
-        [str(int(pid)) for pid in pids],
+        [pdg_tick_label(int(pid)) for pid in pids],
         rotation=45,
         ha="right",
     )
@@ -2975,14 +3015,6 @@ def run_region(
         region_name,
     )
 
-    plot_core_scores_and_data(
-        model,
-        category_arrays,
-        data_X,
-        region_dir / "06_bdt_score_core_and_data.png",
-        region_name,
-    )
-
     plot_low_mx2ep_score_shift(
         model,
         category_arrays,
@@ -3205,25 +3237,7 @@ def main() -> None:
         ),
     )
 
-    plot_mgg_by_pair_score(
-        aaogen_epgg,
-        models,
-        args,
-        output_dir / "12_aaogen_mgg_by_pair_score.png",
-        (
-            "AAOgen: reconstructed M_gamma_gamma versus "
-            "single-photon BDT pair score"
-        ),
-    )
-
     plot_data_pi0_fraction_of_all_pairs_by_score(
-        data_epgg,
-        models,
-        args,
-        output_dir,
-    )
-
-    plot_data_pi0_mass_fits_vs_score(
         data_epgg,
         models,
         args,
@@ -3261,11 +3275,7 @@ def main() -> None:
     print("  09_clasdis_pair_score_validation.png")
     print("  10_clasdis_mgg_vs_pair_score.png")
     print("  11_data_mgg_by_pair_score.png")
-    print("  12_aaogen_mgg_by_pair_score.png")
-    print("  13_data_pi0_mass_fits_by_score_bin.png")
     print("  14_data_pi0_fraction_of_all_pairs_by_score_bin.png")
-    print("  15_data_pi0_local_fit_purity_by_score_bin.png")
-    print("  16_data_pi0_local_fit_purity_cumulative.png")
     print("=" * 90)
 
 
