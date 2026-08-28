@@ -19,8 +19,11 @@ DENOMINATOR (e'p'gamma X tree):
     * tag passes the same loose single-photon BDT preselection
     * tag BDT score >= an aggressive threshold (default 0.80)
     * tag energy >= 0.4 GeV (the reconstructed-photon threshold)
-    * low Mx2(ep) requirement to suppress heavier hadronic systems
-      (default Mx2(ep) < 0.25 GeV^2)
+    * modest low-Mx2(ep) requirement to suppress obviously heavier hadronic
+      systems (default Mx2(ep) < 0.25 GeV^2)
+    * NO tight Mx2(epgamma_tag) requirement in the nominal sample: the
+      aggressiveness is intentionally supplied by the BDT score, not by
+      kinematic sculpting
     * the missing four-vector after e'p'gamma is interpreted as the predicted
       probe photon
     * predicted probe E >= 0.4 GeV
@@ -133,12 +136,14 @@ TAG_ENERGY_MIN = 0.40
 PROBE_ENERGY_MIN = 0.40
 PROBE_ENERGY_MAX = 9.50
 
-# Low Mx2(ep) suppresses eta/omega/heavier hadronic systems.  It does NOT
-# distinguish pi0 from DVCS by itself; the BDT is doing that work.
+# Low Mx2(ep) is kept only as a modest hadronic-environment cleanup.
+# The dominant purity requirement is the BDT score.
 MX2_EP_MIN = -0.10
 MX2_EP_MAX = 0.25
 
-# The missing object after e'p'gamma should be photon-like.
+# Retained only for plotting / optional future studies.  The nominal v3
+# selection does NOT cut on Mx2(epgamma_tag), because that strongly sculpted
+# the predicted-probe energy and removed the FT probe population.
 MISSING_MASS2_MIN = -0.08
 MISSING_MASS2_MAX = 0.08
 
@@ -783,9 +788,9 @@ def denominator_from_epg(
     base &= np.isfinite(mx2_ep)
     base &= mx2_ep >= args.mx2_ep_min
     base &= mx2_ep < args.mx2_ep_max
+    # Mx2(epgamma_tag) is deliberately NOT cut here.  Keep it as a
+    # diagnostic variable only; the aggressive purity selection is the BDT.
     base &= np.isfinite(branch_missing_mass2)
-    base &= branch_missing_mass2 >= args.missing_mass2_min
-    base &= branch_missing_mass2 < args.missing_mass2_max
     base &= np.isfinite(pred["energy"])
     base &= pred["energy"] >= args.probe_energy_min
     base &= pred["energy"] < args.probe_energy_max
@@ -860,7 +865,7 @@ def numerator_direction_from_epgg(
     beam_energy: float,
     args: argparse.Namespace,
     tag_index: int,
-) -> DirectedSample:
+) -> Tuple[DirectedSample, Dict[str, np.ndarray]]:
     if tag_index == 1:
         tag_p = "p2_p"
         tag_theta = "p2_theta"
@@ -918,25 +923,49 @@ def numerator_direction_from_epgg(
     actual_detector = np.asarray(arrays[probe_detector], dtype=np.int64)
     predicted_region = assign_region(pred["theta"], args)
 
-    base = np.isfinite(scores)
-    base &= scores >= args.tag_score_min
-    base &= tag_energy >= args.tag_energy_min
-    base &= np.isfinite(mx2_ep)
-    base &= mx2_ep >= args.mx2_ep_min
-    base &= mx2_ep < args.mx2_ep_max
-    base &= np.isfinite(branch_missing_mass2)
-    base &= branch_missing_mass2 >= args.missing_mass2_min
-    base &= branch_missing_mass2 < args.missing_mass2_max
-    base &= np.isfinite(pred["energy"])
-    base &= pred["energy"] >= args.probe_energy_min
-    base &= pred["energy"] < args.probe_energy_max
-    base &= predicted_region >= 0
+    # Build the numerator cut flow explicitly.  The nominal purity selection
+    # is intentionally dominated by the BDT score; Mx2(epgamma_tag) is only
+    # retained as a diagnostic.
+    masks: Dict[str, np.ndarray] = {}
 
-    # Reconstruction-positive definition.
-    base &= np.isfinite(match_angle)
-    base &= match_angle < args.probe_match_angle_max
-    base &= partner_energy >= args.probe_energy_min
-    base &= actual_detector == predicted_region
+    masks["all"] = np.ones(len(scores), dtype=bool)
+    masks["finite_bdt"] = np.isfinite(scores)
+    masks["score"] = masks["finite_bdt"] & (scores >= args.tag_score_min)
+    masks["tag_energy"] = masks["score"] & (tag_energy >= args.tag_energy_min)
+    masks["mx2_ep"] = (
+        masks["tag_energy"]
+        & np.isfinite(mx2_ep)
+        & (mx2_ep >= args.mx2_ep_min)
+        & (mx2_ep < args.mx2_ep_max)
+    )
+    masks["probe_energy"] = (
+        masks["mx2_ep"]
+        & np.isfinite(pred["energy"])
+        & (pred["energy"] >= args.probe_energy_min)
+        & (pred["energy"] < args.probe_energy_max)
+    )
+    masks["probe_acceptance"] = (
+        masks["probe_energy"]
+        & (predicted_region >= 0)
+    )
+    masks["finite_match"] = (
+        masks["probe_acceptance"]
+        & np.isfinite(match_angle)
+    )
+    masks["same_detector"] = (
+        masks["finite_match"]
+        & (actual_detector == predicted_region)
+    )
+    masks["partner_energy"] = (
+        masks["same_detector"]
+        & (partner_energy >= args.probe_energy_min)
+    )
+    masks["angular_match"] = (
+        masks["partner_energy"]
+        & (match_angle < args.probe_match_angle_max)
+    )
+
+    base = masks["angular_match"]
 
     tag_parent = None
 
@@ -947,7 +976,7 @@ def numerator_direction_from_epgg(
         )[base]
     #endif
 
-    return DirectedSample(
+    sample = DirectedSample(
         predicted_energy=pred["energy"][base],
         predicted_theta=pred["theta"][base],
         tag_score=scores[base],
@@ -960,6 +989,104 @@ def numerator_direction_from_epgg(
         pair_mass=np.asarray(arrays["Mh_gammagamma"], dtype=float)[base],
         tag_parent_pid=tag_parent,
     )
+
+    diagnostics = {
+        "tag_index": np.asarray([tag_index], dtype=np.int64),
+        "scores": scores,
+        "tag_energy": tag_energy,
+        "mx2_ep": mx2_ep,
+        "missing_mass2": branch_missing_mass2,
+        "pred_energy": pred["energy"],
+        "pred_theta": pred["theta"],
+        "pred_region": predicted_region,
+        "actual_detector": actual_detector,
+        "partner_energy": partner_energy,
+        "match_angle": match_angle,
+        "pair_mass": np.asarray(arrays["Mh_gammagamma"], dtype=float),
+    }
+
+    for name, mask in masks.items():
+        diagnostics[f"mask_{name}"] = mask
+    #endfor
+
+    return sample, diagnostics
+
+
+def print_numerator_cutflow(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+) -> None:
+    tag_index = int(diagnostics["tag_index"][0])
+    ordered = [
+        ("all", "all directed pairs"),
+        ("finite_bdt", "finite BDT / training preselection"),
+        ("score", "tag BDT score cut"),
+        ("tag_energy", "tag energy cut"),
+        ("mx2_ep", "Mx2(ep) cleanup"),
+        ("probe_energy", "physical probe-energy range"),
+        ("probe_acceptance", "predicted FT/FD acceptance"),
+        ("finite_match", "finite predicted/reco angle"),
+        ("same_detector", "reco probe in predicted detector"),
+        ("partner_energy", "reco probe above threshold"),
+        ("angular_match", "angular match"),
+    ]
+
+    progress(
+        f"{source_name.upper()} EPGG tag-direction {tag_index} cut flow:"
+    )
+
+    previous = None
+
+    for key, label in ordered:
+        count = int(np.sum(diagnostics[f"mask_{key}"]))
+
+        if previous is None or previous == 0:
+            frac = 1.0 if previous is None else 0.0
+        else:
+            frac = count / previous
+        #endif
+
+        print(
+            f"    {label:38s}: {count:10,d}"
+            + ("" if previous is None else f"  ({100.0*frac:6.2f}% of previous)")
+        )
+        previous = count
+    #endfor
+
+
+def concatenate_numerator_diagnostics(
+    first: Mapping[str, np.ndarray],
+    second: Mapping[str, np.ndarray],
+) -> Dict[str, np.ndarray]:
+    keys = [
+        "scores",
+        "tag_energy",
+        "mx2_ep",
+        "missing_mass2",
+        "pred_energy",
+        "pred_theta",
+        "pred_region",
+        "actual_detector",
+        "partner_energy",
+        "match_angle",
+        "pair_mass",
+    ]
+    out = {
+        key: np.concatenate([first[key], second[key]])
+        for key in keys
+    }
+
+    mask_keys = [
+        key
+        for key in first
+        if key.startswith("mask_") and key in second
+    ]
+
+    for key in mask_keys:
+        out[key] = np.concatenate([first[key], second[key]])
+    #endfor
+
+    return out
 
 
 def concatenate_directed(
@@ -1184,10 +1311,116 @@ def plot_pure_sample_inputs(
     #endfor
 
     fig.suptitle(
-        f"{source_name}: aggressive BDT tag-and-probe denominator selection",
+        f"{source_name}: BDT-driven tag-and-probe denominator selection",
         y=0.99,
     )
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
+def plot_pre_match_probe_diagnostics(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    Plot predicted-vs-reconstructed probe behavior BEFORE imposing the final
+    angular-match requirement.  This is the key debugging view for the
+    directed e'pgammagamma numerator.
+    """
+    base = diagnostics["mask_probe_acceptance"]
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
+
+    for region_name, region_value in REGIONS.items():
+        region_mask = base & (diagnostics["pred_region"] == region_value)
+        values = diagnostics["match_angle"][region_mask]
+        values = values[np.isfinite(values)]
+
+        axes[0, 0].hist(
+            values,
+            bins=np.linspace(0.0, 30.0, 121),
+            histtype="step",
+            linewidth=1.5,
+            label=f"{region_name} (N={len(values):,})",
+        )
+    #endfor
+
+    axes[0, 0].axvline(
+        args.probe_match_angle_max,
+        linestyle="--",
+        linewidth=1.0,
+        label=f"nominal match < {args.probe_match_angle_max:g} deg",
+    )
+    axes[0, 0].set_xlabel(
+        r"$\angle(\gamma_{\rm pred},\gamma_{\rm reco})$ (deg)"
+    )
+    axes[0, 0].set_ylabel("Directed trials")
+    axes[0, 0].set_yscale("log")
+    axes[0, 0].legend(fontsize=8)
+
+    finite = (
+        base
+        & np.isfinite(diagnostics["pred_energy"])
+        & np.isfinite(diagnostics["partner_energy"])
+    )
+    x = diagnostics["pred_energy"][finite]
+    y = diagnostics["partner_energy"][finite]
+
+    axes[0, 1].hist2d(
+        x,
+        y,
+        bins=[np.linspace(0.4, 9.5, 70), np.linspace(0.4, 9.5, 70)],
+    )
+    axes[0, 1].plot([0.4, 9.5], [0.4, 9.5], linestyle="--", linewidth=1.0)
+    axes[0, 1].set_xlabel(r"Predicted $E_{\rm probe}$ (GeV)")
+    axes[0, 1].set_ylabel(r"Reconstructed $E_{\rm probe}$ (GeV)")
+
+    finite_res = finite & (diagnostics["pred_energy"] > 0.0)
+    residual = (
+        diagnostics["partner_energy"][finite_res]
+        - diagnostics["pred_energy"][finite_res]
+    ) / diagnostics["pred_energy"][finite_res]
+
+    axes[1, 0].hist(
+        residual[np.isfinite(residual)],
+        bins=np.linspace(-1.0, 1.0, 120),
+        histtype="step",
+        linewidth=1.5,
+    )
+    axes[1, 0].set_xlabel(
+        r"$(E_{\rm reco}-E_{\rm pred})/E_{\rm pred}$"
+    )
+    axes[1, 0].set_ylabel("Directed trials")
+
+    pair_mask = base & np.isfinite(diagnostics["pair_mass"])
+    axes[1, 1].hist(
+        diagnostics["pair_mass"][pair_mask],
+        bins=np.linspace(0.0, 0.8, 120),
+        histtype="step",
+        linewidth=1.5,
+    )
+    axes[1, 1].axvspan(
+        PI0_MASS_WINDOW[0],
+        PI0_MASS_WINDOW[1],
+        alpha=0.12,
+        label=r"$\pi^0$ mass window (diagnostic only)",
+    )
+    axes[1, 1].set_yscale("log")
+    axes[1, 1].set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+    axes[1, 1].set_ylabel("Directed trials")
+    axes[1, 1].legend(fontsize=8)
+
+    for ax in axes.flat:
+        ax.grid(alpha=0.2)
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: probe prediction before angular matching",
+        y=0.99,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
     save_figure(fig, output_path)
 
 
@@ -1570,21 +1803,29 @@ def process_source(
         args,
     )
 
-    num1 = numerator_direction_from_epgg(
+    num1, numdiag1 = numerator_direction_from_epgg(
         epgg,
         models,
         beam_energy,
         args,
         tag_index=1,
     )
-    num2 = numerator_direction_from_epgg(
+    num2, numdiag2 = numerator_direction_from_epgg(
         epgg,
         models,
         beam_energy,
         args,
         tag_index=2,
     )
+
+    print_numerator_cutflow(source_name, numdiag1)
+    print_numerator_cutflow(source_name, numdiag2)
+
     numerator = concatenate_directed(num1, num2)
+    numerator_diagnostics = concatenate_numerator_diagnostics(
+        numdiag1,
+        numdiag2,
+    )
 
     progress(
         f"{source_name.upper()}: denominator directed probes="
@@ -1600,10 +1841,16 @@ def process_source(
         output_dir / f"01_{source_name}_tag_selection.png",
         args,
     )
+    plot_pre_match_probe_diagnostics(
+        source_name.upper(),
+        numerator_diagnostics,
+        output_dir / f"02_{source_name}_probe_prediction_before_match.png",
+        args,
+    )
     plot_partner_matching(
         source_name.upper(),
         numerator,
-        output_dir / f"02_{source_name}_probe_matching.png",
+        output_dir / f"02b_{source_name}_matched_probe_diagnostics.png",
     )
 
     return denominator, numerator, diagnostics, epg
@@ -1640,9 +1887,8 @@ def main() -> None:
         "Aggressive tag definition: "
         f"score>={args.tag_score_min:.2f}, "
         f"Etag>={args.tag_energy_min:.2f} GeV, "
-        f"{args.mx2_ep_min:.3f}<=Mx2(ep)<{args.mx2_ep_max:.3f} GeV^2, "
-        f"{args.missing_mass2_min:.3f}<=Mx2(epgamma_tag)"
-        f"<{args.missing_mass2_max:.3f} GeV^2"
+        f"{args.mx2_ep_min:.3f}<=Mx2(ep)<{args.mx2_ep_max:.3f} GeV^2; "
+        "NO nominal Mx2(epgamma_tag) cut"
     )
     print(
         "Probe definition: "
