@@ -12,6 +12,19 @@ The nominal first-stage result is only a function of predicted probe energy,
 with FT and FD treated separately.  Sector/theta dependence is deliberately
 left for a later iteration.
 
+This version also performs two validation studies before interpreting the
+efficiency:
+    1) denominator closure: compare the missing-vector prediction against the
+       reconstructed truth-qualified sister photon in MC;
+    2) angular-association plateau: scan the predicted/reconstructed opening
+       angle and determine where correct-pair recovery saturates while wrong
+       candidate contamination remains small.
+
+The current ROOT schema does not store generated sister-photon four-vectors.
+Therefore the denominator-closure study uses the reconstructed sister photon
+after truth qualification.  This tests the missing-vector bin assignment plus
+detector resolution; it is not a generator-level resolution study.
+
 Core philosophy
 ---------------
 DENOMINATOR (e'p'gamma X tree):
@@ -160,6 +173,20 @@ PROBE_MATCH_ANGLE_MAX = 3.0
 # numerator, because doing so would add an extra reconstruction-resolution
 # requirement that is absent from the denominator.
 PI0_MASS_WINDOW = (0.110, 0.160)
+
+# Angular-association validation scan.  The nominal 3-degree requirement is
+# NOT changed by this study; the scan is used to determine whether a looser
+# matching window reaches a stable plateau.
+ASSOCIATION_ANGLE_SCAN = np.asarray(
+    [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 15.0],
+    dtype=float,
+)
+
+ASSOCIATION_ENERGY_BINS = (
+    (0.40, 1.00),
+    (1.00, 2.00),
+    (2.00, 9.50),
+)
 
 
 # =============================================================================
@@ -1122,6 +1149,11 @@ def numerator_direction_from_epgg(
         probe_phi = "p3_phi"
         probe_detector = "detector_gamma2"
         tag_parent_branch = "gamma1_parent_pid"
+        tag_pid_branch = "matching_gamma1_pid"
+        tag_mcindex_branch = "gamma1_mcindex"
+        probe_pid_branch = "matching_gamma2_pid"
+        probe_mcindex_branch = "gamma2_mcindex"
+        probe_parent_branch = "gamma2_parent_pid"
     elif tag_index == 2:
         tag_p = "p3_p"
         tag_theta = "p3_theta"
@@ -1131,6 +1163,11 @@ def numerator_direction_from_epgg(
         probe_phi = "p2_phi"
         probe_detector = "detector_gamma1"
         tag_parent_branch = "gamma2_parent_pid"
+        tag_pid_branch = "matching_gamma2_pid"
+        tag_mcindex_branch = "gamma2_mcindex"
+        probe_pid_branch = "matching_gamma1_pid"
+        probe_mcindex_branch = "gamma1_mcindex"
+        probe_parent_branch = "gamma1_parent_pid"
     else:
         raise ValueError("tag_index must be 1 or 2")
     #endif
@@ -1242,6 +1279,13 @@ def numerator_direction_from_epgg(
         tag_parent_pid=tag_parent,
     )
 
+    reco_probe_theta = angle_to_degrees(
+        np.asarray(arrays[probe_theta], dtype=float)
+    )
+    reco_probe_phi = angle_to_degrees(
+        np.asarray(arrays[probe_phi], dtype=float)
+    )
+
     diagnostics = {
         "tag_index": np.asarray([tag_index], dtype=np.int64),
         "scores": scores,
@@ -1253,9 +1297,29 @@ def numerator_direction_from_epgg(
         "pred_region": predicted_region,
         "actual_detector": actual_detector,
         "partner_energy": partner_energy,
+        "partner_theta": reco_probe_theta,
+        "partner_phi": reco_probe_phi,
         "match_angle": match_angle,
         "pair_mass": np.asarray(arrays["Mh_gammagamma"], dtype=float),
     }
+
+    truth_branches = {
+        "tag_truth_pid": tag_pid_branch,
+        "tag_truth_mcindex": tag_mcindex_branch,
+        "tag_truth_parent_pid": tag_parent_branch,
+        "probe_truth_pid": probe_pid_branch,
+        "probe_truth_mcindex": probe_mcindex_branch,
+        "probe_truth_parent_pid": probe_parent_branch,
+    }
+
+    for output_name, branch_name in truth_branches.items():
+        if branch_name in arrays:
+            diagnostics[output_name] = np.asarray(
+                arrays[branch_name],
+                dtype=np.int64,
+            )
+        #endif
+    #endfor
 
     for name, mask in masks.items():
         diagnostics[f"mask_{name}"] = mask
@@ -1321,9 +1385,26 @@ def concatenate_numerator_diagnostics(
         "pred_region",
         "actual_detector",
         "partner_energy",
+        "partner_theta",
+        "partner_phi",
         "match_angle",
         "pair_mass",
     ]
+
+    optional_keys = [
+        "tag_truth_pid",
+        "tag_truth_mcindex",
+        "tag_truth_parent_pid",
+        "probe_truth_pid",
+        "probe_truth_mcindex",
+        "probe_truth_parent_pid",
+    ]
+
+    for key in optional_keys:
+        if key in first and key in second:
+            keys.append(key)
+        #endif
+    #endfor
     out = {
         key: np.concatenate([first[key], second[key]])
         for key in keys
@@ -1383,6 +1464,696 @@ def concatenate_directed(
             second.tag_parent_pid,
         ),
     )
+
+
+
+# =============================================================================
+# Denominator-closure and association-plateau validation
+# =============================================================================
+
+def truth_pair_mask_for_source(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+) -> Optional[np.ndarray]:
+    """
+    Candidate-level truth qualification for the reconstructed sister photon.
+
+    AAOgen:
+        The generator is exclusive ep pi0, so two distinct truth-matched
+        photons are the two pi0 daughters.
+
+    CLASDIS:
+        Require both reconstructed photons to be truth-matched photons whose
+        immediate parent PID is 111, plus distinct MC::Particle indices.
+        The current ROOT schema does not store the parent row/index, so this
+        cannot prove that both photons came from the exact same pi0 object.
+        It is therefore a truth-enriched CLASDIS diagnostic, not an exact
+        same-parent truth label.
+
+    Data:
+        No truth mask is available.
+    """
+    required = [
+        "tag_truth_pid",
+        "tag_truth_mcindex",
+        "probe_truth_pid",
+        "probe_truth_mcindex",
+    ]
+
+    if any(key not in diagnostics for key in required):
+        return None
+    #endif
+
+    tag_pid = np.asarray(diagnostics["tag_truth_pid"], dtype=np.int64)
+    probe_pid = np.asarray(diagnostics["probe_truth_pid"], dtype=np.int64)
+    tag_mcindex = np.asarray(
+        diagnostics["tag_truth_mcindex"],
+        dtype=np.int64,
+    )
+    probe_mcindex = np.asarray(
+        diagnostics["probe_truth_mcindex"],
+        dtype=np.int64,
+    )
+
+    mask = (
+        (tag_pid == 22)
+        & (probe_pid == 22)
+        & (tag_mcindex >= 0)
+        & (probe_mcindex >= 0)
+        & (tag_mcindex != probe_mcindex)
+    )
+
+    if source_name == "clasdis":
+        if (
+            "tag_truth_parent_pid" not in diagnostics
+            or "probe_truth_parent_pid" not in diagnostics
+        ):
+            return None
+        #endif
+
+        tag_parent = np.asarray(
+            diagnostics["tag_truth_parent_pid"],
+            dtype=np.int64,
+        )
+        probe_parent = np.asarray(
+            diagnostics["probe_truth_parent_pid"],
+            dtype=np.int64,
+        )
+        mask &= (tag_parent == 111) & (probe_parent == 111)
+    #endif
+
+    return mask
+
+
+def reconstructed_partner_region(
+    diagnostics: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+) -> np.ndarray:
+    theta = np.asarray(diagnostics["partner_theta"], dtype=float)
+    return assign_region(theta, args)
+
+
+def denominator_closure_base_mask(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+) -> Optional[np.ndarray]:
+    truth_mask = truth_pair_mask_for_source(
+        source_name,
+        diagnostics,
+    )
+
+    if truth_mask is None:
+        return None
+    #endif
+
+    # Use the tag-side denominator selection through physical predicted probe
+    # energy, but DO NOT require predicted angular acceptance.  Otherwise the
+    # FT/FD migration test would preselect away failures of the prediction.
+    base = (
+        np.asarray(diagnostics["mask_probe_energy"], dtype=bool)
+        & truth_mask
+        & np.isfinite(diagnostics["partner_energy"])
+        & np.isfinite(diagnostics["partner_theta"])
+        & (
+            np.asarray(diagnostics["partner_energy"], dtype=float)
+            >= args.probe_energy_min
+        )
+    )
+
+    return base
+
+
+def plot_denominator_closure_migrations(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    Compare missing-vector probe assignment to the reconstructed truth-qualified
+    sister photon.  This is the strongest closure test available with the
+    current ROOT schema because generated sister four-vectors are not stored.
+    """
+    base = denominator_closure_base_mask(
+        source_name.lower(),
+        diagnostics,
+        args,
+    )
+
+    if base is None or np.sum(base) == 0:
+        progress(
+            f"SKIP: {source_name} denominator closure -- "
+            "truth-qualified sister information unavailable"
+        )
+        return
+    #endif
+
+    pred_e = np.asarray(diagnostics["pred_energy"], dtype=float)[base]
+    reco_e = np.asarray(diagnostics["partner_energy"], dtype=float)[base]
+    pred_theta = np.asarray(diagnostics["pred_theta"], dtype=float)[base]
+    reco_theta = np.asarray(diagnostics["partner_theta"], dtype=float)[base]
+
+    pred_region = assign_region(pred_theta, args)
+    reco_region = assign_region(reco_theta, args)
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.5, 10.0))
+
+    h = axes[0, 0].hist2d(
+        reco_e,
+        pred_e,
+        bins=[
+            np.linspace(args.probe_energy_min, args.probe_energy_max, 70),
+            np.linspace(args.probe_energy_min, args.probe_energy_max, 70),
+        ],
+        cmin=1,
+    )
+    axes[0, 0].plot(
+        [args.probe_energy_min, args.probe_energy_max],
+        [args.probe_energy_min, args.probe_energy_max],
+        linestyle="--",
+        linewidth=1.0,
+    )
+    axes[0, 0].set_xlabel(r"Reconstructed sister $E_\gamma$ (GeV)")
+    axes[0, 0].set_ylabel(r"Predicted missing-vector $E_\gamma$ (GeV)")
+    axes[0, 0].set_title("Probe-energy closure")
+    fig.colorbar(h[3], ax=axes[0, 0], label="Candidates")
+
+    h = axes[0, 1].hist2d(
+        reco_theta,
+        pred_theta,
+        bins=[
+            np.linspace(2.0, 35.0, 70),
+            np.linspace(2.0, 35.0, 70),
+        ],
+        cmin=1,
+    )
+    axes[0, 1].plot(
+        [2.0, 35.0],
+        [2.0, 35.0],
+        linestyle="--",
+        linewidth=1.0,
+    )
+    axes[0, 1].set_xlabel(
+        r"Reconstructed sister $\theta_\gamma$ (deg)"
+    )
+    axes[0, 1].set_ylabel(
+        r"Predicted missing-vector $\theta_\gamma$ (deg)"
+    )
+    axes[0, 1].set_title("Probe-angle closure")
+    fig.colorbar(h[3], ax=axes[0, 1], label="Candidates")
+
+    # Region migration.  Include outside acceptance explicitly so a bad
+    # prediction cannot disappear from the matrix.
+    region_labels = ["FT", "FD", "outside"]
+    pred_region3 = np.where(pred_region < 0, 2, pred_region)
+    reco_region3 = np.where(reco_region < 0, 2, reco_region)
+    region_matrix = np.zeros((3, 3), dtype=float)
+
+    for true_bin in range(3):
+        denom = np.sum(reco_region3 == true_bin)
+
+        for pred_bin in range(3):
+            if denom > 0:
+                region_matrix[pred_bin, true_bin] = (
+                    np.sum(
+                        (pred_region3 == pred_bin)
+                        & (reco_region3 == true_bin)
+                    )
+                    / denom
+                )
+            #endif
+        #endfor
+    #endfor
+
+    im = axes[1, 0].imshow(
+        region_matrix,
+        origin="lower",
+        vmin=0.0,
+        vmax=1.0,
+        aspect="auto",
+    )
+    axes[1, 0].set_xticks(range(3), region_labels)
+    axes[1, 0].set_yticks(range(3), region_labels)
+    axes[1, 0].set_xlabel("Reconstructed sister region")
+    axes[1, 0].set_ylabel("Predicted region")
+    axes[1, 0].set_title("FT/FD migration; columns normalized")
+
+    for iy in range(3):
+        for ix in range(3):
+            axes[1, 0].text(
+                ix,
+                iy,
+                f"{100.0*region_matrix[iy, ix]:.1f}%",
+                ha="center",
+                va="center",
+            )
+        #endfor
+    #endfor
+
+    fig.colorbar(im, ax=axes[1, 0], label="Fraction")
+
+    # Energy-bin migration in the exact nominal broad bins.
+    energy_edges = np.asarray(
+        [args.probe_energy_min, 1.0, 2.0, args.probe_energy_max],
+        dtype=float,
+    )
+    pred_bin = np.digitize(pred_e, energy_edges) - 1
+    reco_bin = np.digitize(reco_e, energy_edges) - 1
+    nbin = len(energy_edges) - 1
+    energy_matrix = np.zeros((nbin, nbin), dtype=float)
+
+    for true_bin in range(nbin):
+        denom = np.sum(reco_bin == true_bin)
+
+        for predicted_bin in range(nbin):
+            if denom > 0:
+                energy_matrix[predicted_bin, true_bin] = (
+                    np.sum(
+                        (pred_bin == predicted_bin)
+                        & (reco_bin == true_bin)
+                    )
+                    / denom
+                )
+            #endif
+        #endfor
+    #endfor
+
+    labels = [
+        f"{energy_edges[i]:g}-{energy_edges[i+1]:g}"
+        for i in range(nbin)
+    ]
+    im = axes[1, 1].imshow(
+        energy_matrix,
+        origin="lower",
+        vmin=0.0,
+        vmax=1.0,
+        aspect="auto",
+    )
+    axes[1, 1].set_xticks(range(nbin), labels)
+    axes[1, 1].set_yticks(range(nbin), labels)
+    axes[1, 1].set_xlabel("Reconstructed sister E bin (GeV)")
+    axes[1, 1].set_ylabel("Predicted E bin (GeV)")
+    axes[1, 1].set_title("Energy-bin migration; columns normalized")
+
+    for iy in range(nbin):
+        for ix in range(nbin):
+            axes[1, 1].text(
+                ix,
+                iy,
+                f"{100.0*energy_matrix[iy, ix]:.1f}%",
+                ha="center",
+                va="center",
+            )
+        #endfor
+    #endfor
+
+    fig.colorbar(im, ax=axes[1, 1], label="Fraction")
+
+    fig.suptitle(
+        f"{source_name}: denominator probe-assignment closure",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
+def plot_denominator_closure_resolution(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    Resolution summaries versus the reconstructed truth-qualified sister.
+    """
+    base = denominator_closure_base_mask(
+        source_name.lower(),
+        diagnostics,
+        args,
+    )
+
+    if base is None or np.sum(base) == 0:
+        return
+    #endif
+
+    pred_e = np.asarray(diagnostics["pred_energy"], dtype=float)[base]
+    reco_e = np.asarray(diagnostics["partner_energy"], dtype=float)[base]
+    pred_theta = np.asarray(diagnostics["pred_theta"], dtype=float)[base]
+    reco_theta = np.asarray(diagnostics["partner_theta"], dtype=float)[base]
+
+    frac_de = np.divide(
+        pred_e - reco_e,
+        reco_e,
+        out=np.full_like(pred_e, np.nan),
+        where=reco_e > 0.0,
+    )
+    dtheta = pred_theta - reco_theta
+
+    energy_edges = np.asarray(
+        [0.40, 0.60, 0.80, 1.00, 1.25, 1.50, 2.00, 2.50, 3.50, 5.00, 7.00, 9.50],
+        dtype=float,
+    )
+    theta_edges = np.asarray(
+        [2.0, 3.0, 4.0, 5.5, 7.0, 9.0, 12.0, 16.0, 21.0, 27.0, 35.0],
+        dtype=float,
+    )
+
+    def summarize(
+        x: np.ndarray,
+        y: np.ndarray,
+        edges: np.ndarray,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        centers = 0.5 * (edges[:-1] + edges[1:])
+        median = np.full(len(centers), np.nan)
+        half68 = np.full(len(centers), np.nan)
+
+        for ibin in range(len(centers)):
+            mask = (
+                np.isfinite(x)
+                & np.isfinite(y)
+                & (x >= edges[ibin])
+                & (x < edges[ibin + 1])
+            )
+            values = y[mask]
+
+            if len(values) < 20:
+                continue
+            #endif
+
+            q16, q50, q84 = np.quantile(
+                values,
+                [0.16, 0.50, 0.84],
+            )
+            median[ibin] = q50
+            half68[ibin] = 0.5 * (q84 - q16)
+        #endfor
+
+        return centers, median, half68
+
+    e_centers, e_med, e_width = summarize(
+        reco_e,
+        frac_de,
+        energy_edges,
+    )
+    t_centers, t_med, t_width = summarize(
+        reco_theta,
+        dtheta,
+        theta_edges,
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.8))
+
+    axes[0].errorbar(
+        e_centers,
+        e_med,
+        yerr=e_width,
+        marker="o",
+        linestyle="-",
+        capsize=2,
+    )
+    axes[0].axhline(0.0, linestyle="--", linewidth=1.0)
+    axes[0].set_xlabel(r"Reconstructed sister $E_\gamma$ (GeV)")
+    axes[0].set_ylabel(
+        r"$(E_{\rm pred}-E_{\rm reco})/E_{\rm reco}$"
+    )
+    axes[0].set_title("Median and central 68% half-width")
+
+    axes[1].errorbar(
+        t_centers,
+        t_med,
+        yerr=t_width,
+        marker="o",
+        linestyle="-",
+        capsize=2,
+    )
+    axes[1].axhline(0.0, linestyle="--", linewidth=1.0)
+    axes[1].set_xlabel(
+        r"Reconstructed sister $\theta_\gamma$ (deg)"
+    )
+    axes[1].set_ylabel(
+        r"$\theta_{\rm pred}-\theta_{\rm reco}$ (deg)"
+    )
+    axes[1].set_title("Median and central 68% half-width")
+
+    for ax in axes:
+        ax.grid(alpha=0.2)
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: denominator prediction resolution",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+    save_figure(fig, output_path)
+
+
+def association_plateau_curves(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+    region_value: int,
+    energy_range: Tuple[float, float],
+) -> Optional[Dict[str, np.ndarray]]:
+    truth_mask = truth_pair_mask_for_source(
+        source_name,
+        diagnostics,
+    )
+
+    if truth_mask is None:
+        return None
+    #endif
+
+    pred_e = np.asarray(diagnostics["pred_energy"], dtype=float)
+    pred_region = np.asarray(diagnostics["pred_region"], dtype=np.int64)
+    match_angle = np.asarray(diagnostics["match_angle"], dtype=float)
+
+    # Reconstructed partner already exists by construction of epgg.  Start
+    # from the tag-side denominator-like selection and require the partner to
+    # be above threshold.  Do not impose the nominal angular cut.
+    base = (
+        np.asarray(diagnostics["mask_partner_energy"], dtype=bool)
+        & (pred_region == region_value)
+        & (pred_e >= energy_range[0])
+        & (pred_e < energy_range[1])
+        & np.isfinite(match_angle)
+    )
+
+    correct = base & truth_mask
+    wrong = base & ~truth_mask
+
+    n_correct_total = int(np.sum(correct))
+
+    recovery = np.full(len(ASSOCIATION_ANGLE_SCAN), np.nan)
+    wrong_fraction = np.full(len(ASSOCIATION_ANGLE_SCAN), np.nan)
+
+    for iangle, angle_max in enumerate(ASSOCIATION_ANGLE_SCAN):
+        correct_pass = np.sum(
+            correct & (match_angle < angle_max)
+        )
+        wrong_pass = np.sum(
+            wrong & (match_angle < angle_max)
+        )
+        all_pass = correct_pass + wrong_pass
+
+        if n_correct_total > 0:
+            recovery[iangle] = correct_pass / n_correct_total
+        #endif
+
+        if all_pass > 0:
+            wrong_fraction[iangle] = wrong_pass / all_pass
+        #endif
+    #endfor
+
+    return {
+        "angle": ASSOCIATION_ANGLE_SCAN.copy(),
+        "recovery": recovery,
+        "wrong_fraction": wrong_fraction,
+        "n_correct_total": np.asarray([n_correct_total]),
+    }
+
+
+def plot_association_plateau(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    Correct-pair recovery and wrong-candidate fraction versus angular window.
+
+    For AAOgen this is a clean candidate-level truth study because the
+    generator contains the exclusive pi0 -> gamma gamma final state.
+
+    For CLASDIS the current ancestry schema only proves both photons have
+    parent PID 111, not that they share the same parent row.  Treat the
+    resulting wrong-fraction estimate as diagnostic.
+    """
+    if truth_pair_mask_for_source(
+        source_name.lower(),
+        diagnostics,
+    ) is None:
+        progress(
+            f"SKIP: {source_name} association plateau -- truth unavailable"
+        )
+        return
+    #endif
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.5))
+    region_names = {0: "FT", 1: "FD"}
+
+    for icol, region_value in enumerate((0, 1)):
+        for energy_range in ASSOCIATION_ENERGY_BINS:
+            result = association_plateau_curves(
+                source_name.lower(),
+                diagnostics,
+                args,
+                region_value,
+                energy_range,
+            )
+
+            if result is None:
+                continue
+            #endif
+
+            label = (
+                f"{energy_range[0]:g}-{energy_range[1]:g} GeV"
+            )
+
+            axes[0, icol].plot(
+                result["angle"],
+                result["recovery"],
+                marker="o",
+                label=label,
+            )
+            axes[1, icol].plot(
+                result["angle"],
+                result["wrong_fraction"],
+                marker="o",
+                label=label,
+            )
+        #endfor
+
+        axes[0, icol].axvline(
+            args.probe_match_angle_max,
+            linestyle="--",
+            linewidth=1.0,
+            label=f"nominal {args.probe_match_angle_max:g} deg",
+        )
+        axes[1, icol].axvline(
+            args.probe_match_angle_max,
+            linestyle="--",
+            linewidth=1.0,
+        )
+
+        axes[0, icol].set_title(
+            f"{region_names[region_value]}: correct-pair recovery"
+        )
+        axes[0, icol].set_xlabel(
+            r"Association window $\Delta\Omega_{\max}$ (deg)"
+        )
+        axes[0, icol].set_ylabel(
+            "Fraction of truth-qualified pairs recovered"
+        )
+        axes[0, icol].set_ylim(0.0, 1.05)
+
+        axes[1, icol].set_title(
+            f"{region_names[region_value]}: wrong-candidate fraction"
+        )
+        axes[1, icol].set_xlabel(
+            r"Association window $\Delta\Omega_{\max}$ (deg)"
+        )
+        axes[1, icol].set_ylabel(
+            "Wrong candidates / accepted candidates"
+        )
+        axes[1, icol].set_ylim(0.0, 1.0)
+    #endfor
+
+    for ax in axes.flat:
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8)
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: angular-association plateau study",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_mgg_angle_scan(
+    source_name: str,
+    diagnostics: Mapping[str, np.ndarray],
+    output_path: Path,
+    args: argparse.Namespace,
+) -> None:
+    """
+    Show how the reconstructed pi0 peak and combinatorial continuum evolve as
+    the angular association window is loosened.  This is deliberately NOT the
+    final numerator extraction; the final numerator should come from fits to
+    these Mgg spectra.
+    """
+    pred_region = np.asarray(
+        diagnostics["pred_region"],
+        dtype=np.int64,
+    )
+    match_angle = np.asarray(
+        diagnostics["match_angle"],
+        dtype=float,
+    )
+    pair_mass = np.asarray(
+        diagnostics["pair_mass"],
+        dtype=float,
+    )
+    base = (
+        np.asarray(diagnostics["mask_partner_energy"], dtype=bool)
+        & np.isfinite(match_angle)
+        & np.isfinite(pair_mass)
+    )
+
+    scan_angles = [3.0, 5.0, 8.0, 12.0]
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.8))
+    region_names = {0: "FT", 1: "FD"}
+
+    for iax, region_value in enumerate((0, 1)):
+        region_base = base & (pred_region == region_value)
+
+        for angle_max in scan_angles:
+            mask = region_base & (match_angle < angle_max)
+            masses = pair_mass[mask]
+
+            axes[iax].hist(
+                masses,
+                bins=np.linspace(0.0, 0.40, 121),
+                histtype="step",
+                linewidth=1.2,
+                label=f"< {angle_max:g} deg (N={len(masses):,})",
+            )
+        #endfor
+
+        axes[iax].axvspan(
+            PI0_MASS_WINDOW[0],
+            PI0_MASS_WINDOW[1],
+            alpha=0.08,
+        )
+        axes[iax].set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+        axes[iax].set_ylabel("Candidate pairs")
+        axes[iax].set_yscale("log")
+        axes[iax].set_title(
+            f"{region_names[region_value]}: pair-mass evolution"
+        )
+        axes[iax].grid(alpha=0.2)
+        axes[iax].legend(fontsize=8)
+    #endfor
+
+    fig.suptitle(
+        f"{source_name}: pi0 mass peak versus association window",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+    save_figure(fig, output_path)
+
 
 
 # =============================================================================
@@ -2969,45 +3740,45 @@ def process_source(
     print_numerator_cutflow(source_name, numdiag1)
     print_numerator_cutflow(source_name, numdiag2)
 
-    print_matching_efficiency_summary(
-        source_name,
-        numdiag1,
-        numdiag2,
-        args,
-    )
-    plot_matching_efficiency_study(
-        source_name.upper(),
-        numdiag1,
-        numdiag2,
-        output_dir / f"07_{source_name}_matching_efficiency_vs_kinematics.png",
-        args,
-    )
-    plot_matching_containment_study(
-        source_name.upper(),
-        numdiag1,
-        numdiag2,
-        output_dir / f"08_{source_name}_matching_angle_containment.png",
-        args,
-    )
-    plot_matching_angle_slices(
-        source_name.upper(),
-        numdiag1,
-        numdiag2,
-        output_dir / f"09_{source_name}_matching_angle_slices.png",
-        args,
-    )
-    plot_tag_direction_energy_ordering(
-        source_name.upper(),
-        epgg,
-        numdiag1,
-        numdiag2,
-        output_dir / f"10_{source_name}_tag_direction_ordering.png",
-    )
-
     numerator = concatenate_directed(num1, num2)
     numerator_diagnostics = concatenate_numerator_diagnostics(
         numdiag1,
         numdiag2,
+    )
+
+    # Focused validation studies:
+    #   07-08: can the missing-vector construction assign the probe kinematics?
+    #   09:    how loose can the angular association be before recovery plateaus?
+    #   10:    how does the pi0 mass peak/background evolve as the window opens?
+    if source_name != "data":
+        plot_denominator_closure_migrations(
+            source_name.upper(),
+            numerator_diagnostics,
+            output_dir
+            / f"07_{source_name}_denominator_closure_migrations.png",
+            args,
+        )
+        plot_denominator_closure_resolution(
+            source_name.upper(),
+            numerator_diagnostics,
+            output_dir
+            / f"08_{source_name}_denominator_closure_resolution.png",
+            args,
+        )
+        plot_association_plateau(
+            source_name.upper(),
+            numerator_diagnostics,
+            output_dir
+            / f"09_{source_name}_association_plateau.png",
+            args,
+        )
+    #endif
+
+    plot_mgg_angle_scan(
+        source_name.upper(),
+        numerator_diagnostics,
+        output_dir / f"10_{source_name}_mgg_vs_association_angle.png",
+        args,
     )
 
     progress(
