@@ -2737,6 +2737,7 @@ def denominator_counts_for_score_threshold(
     theta_low: Optional[float] = None,
     theta_high: Optional[float] = None,
     fd_sector: Optional[int] = None,
+    mx2_epgamma_abs_max: Optional[float] = None,
 ) -> np.ndarray:
     """
     Rebuild the epgamma denominator directly from the pre-cut diagnostic
@@ -2783,6 +2784,13 @@ def denominator_counts_for_score_threshold(
         & (pred_energy < args.probe_energy_max)
         & (region == region_value)
     )
+
+    if mx2_epgamma_abs_max is not None:
+        mask &= (
+            np.abs(missing_mass2)
+            < float(mx2_epgamma_abs_max)
+        )
+    #endif
 
     if theta_low is not None:
         mask &= pred_theta >= float(theta_low)
@@ -2841,6 +2849,7 @@ def fit_numerator_for_score_threshold(
     theta_low: Optional[float] = None,
     theta_high: Optional[float] = None,
     fd_sector: Optional[int] = None,
+    mx2_epgamma_abs_max: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray, list[MassFitResult]]:
     """
     Fit the pi0 numerator in each E_pred bin at an arbitrary minimum tag score.
@@ -2896,6 +2905,18 @@ def fit_numerator_for_score_threshold(
         & (match_angle < angle_max)
         & np.isfinite(pair_mass)
     )
+
+    if mx2_epgamma_abs_max is not None:
+        common &= (
+            np.abs(
+                np.asarray(
+                    diagnostics["missing_mass2"],
+                    dtype=float,
+                )
+            )
+            < float(mx2_epgamma_abs_max)
+        )
+    #endif
 
     if theta_low is not None:
         common &= np.asarray(
@@ -4136,6 +4157,17 @@ SECTOR_BDT_STABILITY_THRESHOLDS = np.asarray(
     dtype=float,
 )
 
+# Extra |Mx2(epgamma_tag)| requirements for the high-energy exclusivity
+# stability test.  None corresponds to the nominal analysis: no additional
+# cut beyond the loose BDT/training preselection.
+EXCLUSIVITY_MX2_EPGAMMA_ABS_MAX = (
+    None,
+    0.25,
+    0.15,
+    0.10,
+    0.05,
+)
+
 
 def build_fd_sector_bdt_stability_scan(
     denominator_diagnostics_by_source: Mapping[
@@ -4477,6 +4509,278 @@ def plot_fd_sector_shape_bdt_stability(
     fig.suptitle(
         "FD sector-shape stability versus BDT threshold: "
         f"DATA / {mc_name.upper()}",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
+
+def build_fd_sector_exclusivity_stability_scan(
+    denominator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    numerator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[
+    str,
+    Dict[str, Dict[int, Dict[str, np.ndarray]]],
+]:
+    """
+    Repeat the nominal sector-resolved extraction while progressively
+    tightening |Mx2(epgamma_tag)|.
+
+    This test is restricted in interpretation to E_pred >= 2 GeV, where the
+    eventual BH/DVCS photons live.  The full energy axis is retained in the
+    arrays so the existing bin edges can be reused without special casing.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_cut = len(EXCLUSIVITY_MX2_EPGAMMA_ABS_MAX)
+    n_energy = len(edges) - 1
+
+    results: Dict[
+        str,
+        Dict[str, Dict[int, Dict[str, np.ndarray]]],
+    ] = {}
+
+    for source_name in ["data", "aaogen", "clasdis"]:
+        results[source_name] = {}
+
+        for label, region_value, theta_low, theta_high in fd_bins:
+            results[source_name][label] = {}
+
+            for sector in range(1, 7):
+                den = np.zeros((n_cut, n_energy), dtype=float)
+                num = np.full((n_cut, n_energy), np.nan)
+                num_unc = np.full((n_cut, n_energy), np.nan)
+                eff = np.full((n_cut, n_energy), np.nan)
+                eff_unc = np.full((n_cut, n_energy), np.nan)
+
+                for icut, abs_max in enumerate(
+                    EXCLUSIVITY_MX2_EPGAMMA_ABS_MAX
+                ):
+                    den[icut] = denominator_counts_for_score_threshold(
+                        denominator_diagnostics_by_source[source_name],
+                        region_value,
+                        edges,
+                        float(args.tag_score_min),
+                        args,
+                        theta_low=theta_low,
+                        theta_high=theta_high,
+                        fd_sector=sector,
+                        mx2_epgamma_abs_max=abs_max,
+                    )
+
+                    (
+                        num[icut],
+                        num_unc[icut],
+                        _,
+                    ) = fit_numerator_for_score_threshold(
+                        numerator_diagnostics_by_source[source_name],
+                        region_value,
+                        edges,
+                        float(args.tag_score_min),
+                        MGG_FIT_NOMINAL_ANGLE,
+                        args,
+                        theta_low=theta_low,
+                        theta_high=theta_high,
+                        fd_sector=sector,
+                        mx2_epgamma_abs_max=abs_max,
+                    )
+
+                    eff[icut] = np.divide(
+                        num[icut],
+                        den[icut],
+                        out=np.full(n_energy, np.nan),
+                        where=den[icut] > 0.0,
+                    )
+                    eff_unc[icut] = np.divide(
+                        num_unc[icut],
+                        den[icut],
+                        out=np.full(n_energy, np.nan),
+                        where=den[icut] > 0.0,
+                    )
+                #endfor
+
+                results[source_name][label][sector] = {
+                    "denominator": den,
+                    "numerator": num,
+                    "numerator_uncertainty": num_unc,
+                    "efficiency": eff,
+                    "efficiency_uncertainty": eff_unc,
+                }
+            #endfor
+        #endfor
+    #endfor
+
+    return results
+
+
+def exclusivity_cut_label(
+    abs_max: Optional[float],
+) -> str:
+    if abs_max is None:
+        return "nominal (no extra cut)"
+    #endif
+    return rf"$|M_X^2(ep\gamma_{{tag}})|<{abs_max:.2f}$"
+
+
+def plot_fd_sector_exclusivity_stability(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, np.ndarray]]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    mc_name: str,
+    normalize_sector_shape: bool,
+    output_path: Path,
+) -> None:
+    """
+    High-energy DATA/MC sector correction versus progressively tighter
+    |Mx2(epgamma_tag)| selections.
+
+    Only E_pred bins whose lower edge is >=2 GeV are shown.  With
+    normalize_sector_shape=True each six-sector curve is divided by its own
+    finite-sector mean, isolating whether the sector hierarchy survives the
+    tighter exclusivity requirement.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    high_energy_bins = [
+        ibin
+        for ibin in range(len(edges) - 1)
+        if edges[ibin] >= 2.0
+    ]
+
+    if not high_energy_bins:
+        raise RuntimeError(
+            "Exclusivity stability diagnostic requires at least one "
+            "E_pred bin starting at or above 2 GeV."
+        )
+    #endif
+
+    sectors = np.arange(1, 7, dtype=float)
+    fig, axes = plt.subplots(
+        len(fd_bins),
+        len(high_energy_bins),
+        figsize=(
+            5.3 * len(high_energy_bins),
+            4.2 * len(fd_bins),
+        ),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, (label, _, _, _) in enumerate(fd_bins):
+        for icol, ibin in enumerate(high_energy_bins):
+            ax = axes[irow, icol]
+
+            for icut, abs_max in enumerate(
+                EXCLUSIVITY_MX2_EPGAMMA_ABS_MAX
+            ):
+                ratio = np.full(6, np.nan)
+                ratio_unc = np.full(6, np.nan)
+
+                for isec, sector in enumerate(range(1, 7)):
+                    data = results["data"][label][sector]
+                    mc = results[mc_name][label][sector]
+
+                    data_eff = data["efficiency"][icut, ibin]
+                    data_unc = (
+                        data["efficiency_uncertainty"][icut, ibin]
+                    )
+                    mc_eff = mc["efficiency"][icut, ibin]
+                    mc_unc = (
+                        mc["efficiency_uncertainty"][icut, ibin]
+                    )
+
+                    if (
+                        np.isfinite(data_eff)
+                        and np.isfinite(data_unc)
+                        and np.isfinite(mc_eff)
+                        and np.isfinite(mc_unc)
+                        and data_eff > 0.0
+                        and mc_eff > 0.0
+                    ):
+                        ratio[isec] = data_eff / mc_eff
+                        ratio_unc[isec] = (
+                            ratio[isec]
+                            * np.sqrt(
+                                (data_unc / data_eff) ** 2
+                                + (mc_unc / mc_eff) ** 2
+                            )
+                        )
+                    #endif
+                #endfor
+
+                finite = np.isfinite(ratio)
+
+                if normalize_sector_shape and np.any(finite):
+                    mean_ratio = float(np.mean(ratio[finite]))
+                    if mean_ratio > 0.0:
+                        ratio[finite] /= mean_ratio
+                        ratio_unc[finite] /= mean_ratio
+                    #endif
+                #endif
+
+                ax.errorbar(
+                    sectors,
+                    ratio,
+                    yerr=ratio_unc,
+                    marker="o",
+                    linestyle="-",
+                    capsize=2,
+                    label=exclusivity_cut_label(abs_max),
+                )
+            #endfor
+
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.set_title(
+                f"{label}; "
+                f"{edges[ibin]:g} <= Epred < "
+                f"{edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("FD sector")
+            ax.set_xticks(range(1, 7))
+            ax.grid(alpha=0.2)
+
+            if normalize_sector_shape:
+                ax.set_ylabel(
+                    "Sector correction / six-sector mean"
+                )
+            else:
+                ax.set_ylabel(
+                    f"Efficiency ratio DATA / {mc_name.upper()}"
+                )
+            #endif
+
+            if irow == 0 and icol == 0:
+                ax.legend(fontsize=7)
+            #endif
+        #endfor
+    #endfor
+
+    descriptor = (
+        "sector-shape"
+        if normalize_sector_shape
+        else "absolute correction"
+    )
+    fig.suptitle(
+        "High-E FD exclusivity stability of "
+        f"{descriptor}: DATA / {mc_name.upper()}",
         y=0.995,
     )
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
@@ -7445,6 +7749,40 @@ def main() -> None:
         )
     #endfor
 
+    progress(
+        "Building high-E FD exclusivity-stability scan versus "
+        "|Mx2(epgamma_tag)|..."
+    )
+    fd_sector_exclusivity_scan = (
+        build_fd_sector_exclusivity_stability_scan(
+            denominator_diagnostics_by_source,
+            numerator_diagnostics_by_source,
+            edges,
+            args,
+        )
+    )
+
+    for mc_name in ["aaogen", "clasdis"]:
+        plot_fd_sector_exclusivity_stability(
+            fd_sector_exclusivity_scan,
+            edges,
+            args,
+            mc_name,
+            False,
+            output_dir
+            / f"32_fd_sector_exclusivity_stability_{mc_name}.png",
+        )
+        plot_fd_sector_exclusivity_stability(
+            fd_sector_exclusivity_scan,
+            edges,
+            args,
+            mc_name,
+            True,
+            output_dir
+            / f"33_fd_sector_shape_exclusivity_stability_{mc_name}.png",
+        )
+    #endfor
+
     print("\n" + "=" * 92)
     print("SUMMARY")
     print("=" * 92)
@@ -7688,6 +8026,10 @@ def main() -> None:
     print("  30_fd_sector_bdt_stability_clasdis.png")
     print("  31_fd_sector_shape_bdt_stability_aaogen.png")
     print("  31_fd_sector_shape_bdt_stability_clasdis.png")
+    print("  32_fd_sector_exclusivity_stability_aaogen.png")
+    print("  32_fd_sector_exclusivity_stability_clasdis.png")
+    print("  33_fd_sector_shape_exclusivity_stability_aaogen.png")
+    print("  33_fd_sector_shape_exclusivity_stability_clasdis.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
