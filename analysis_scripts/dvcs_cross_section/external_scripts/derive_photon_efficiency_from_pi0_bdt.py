@@ -4005,6 +4005,131 @@ def plot_fd_sector_raw_efficiencies(
     save_figure(fig, output_path)
 
 
+
+def plot_data_sector_resolved_mgg_fits(
+    numerator_diagnostics: Mapping[str, np.ndarray],
+    args: argparse.Namespace,
+    energy_low: float,
+    energy_high: float,
+    output_path: Path,
+) -> None:
+    """
+    Show the DATA M(gamma gamma) fits separately in each coarse FD theta bin
+    and each predicted photon sector for one E_pred interval.
+
+    Rows are the three FD theta bins and columns are sectors 1-6.  These plots
+    diagnose whether the strong sector dependence in the extracted efficiency
+    is actually present in the reconstructed pi0 yield or instead originates
+    from unstable/poor Mgg fits.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+
+    local_edges = np.asarray(
+        [float(energy_low), float(energy_high)],
+        dtype=float,
+    )
+
+    fig, axes = plt.subplots(
+        len(fd_bins),
+        6,
+        figsize=(4.0 * 6, 3.8 * len(fd_bins)),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, (label, region_value, theta_low, theta_high) in enumerate(
+        fd_bins
+    ):
+        for sector in range(1, 7):
+            ax = axes[irow, sector - 1]
+
+            _, _, fits = fit_numerator_for_score_threshold(
+                numerator_diagnostics,
+                region_value,
+                local_edges,
+                float(args.tag_score_min),
+                MGG_FIT_NOMINAL_ANGLE,
+                args,
+                theta_low=theta_low,
+                theta_high=theta_high,
+                fd_sector=sector,
+            )
+            fit = fits[0]
+
+            ax.step(
+                fit.x_centers,
+                fit.counts,
+                where="mid",
+                linewidth=1.1,
+                label="DATA candidates",
+            )
+
+            if fit.success:
+                ax.plot(
+                    fit.x_centers,
+                    fit.model_counts,
+                    linewidth=1.4,
+                    label="Total fit",
+                )
+                ax.plot(
+                    fit.x_centers,
+                    fit.background_counts,
+                    linestyle="--",
+                    linewidth=1.1,
+                    label="Background",
+                )
+                ax.plot(
+                    fit.x_centers,
+                    fit.signal_counts,
+                    linestyle=":",
+                    linewidth=1.1,
+                    label=r"$\pi^0$ signal",
+                )
+
+                fit_text = (
+                    f"Npi0={fit.yield_pi0:,.0f}\n"
+                    f"mu={1000.0 * fit.mean:.1f} MeV\n"
+                    f"sig.c={1000.0 * fit.sigma_core:.1f} MeV\n"
+                    f"sig.t={1000.0 * fit.sigma_tail:.1f} MeV\n"
+                    f"chi2/ndf={fit.chi2_ndf:.2f}"
+                )
+            else:
+                fit_text = "fit failed / insufficient statistics"
+            #endif
+
+            ax.text(
+                0.03,
+                0.96,
+                fit_text,
+                transform=ax.transAxes,
+                va="top",
+                fontsize=7,
+            )
+            ax.set_title(f"{label}, S{sector}", fontsize=9)
+            ax.set_xlabel(r"$M_{\gamma\gamma}$ (GeV)")
+            ax.set_ylabel("Pairs / bin")
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and sector == 1:
+                ax.legend(fontsize=7)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "DATA sector-resolved M(gamma gamma) fits: "
+        f"{energy_low:g} <= Epred < {energy_high:g} GeV, "
+        f"BDT >= {args.tag_score_min:.2f}",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
 def plot_aaogen_truth_tag_score_phase_space(
     diagnostics: Mapping[str, np.ndarray],
     edges: np.ndarray,
@@ -6920,6 +7045,24 @@ def main() -> None:
         output_dir / "27_fd_sector_raw_efficiencies.png",
     )
 
+    progress(
+        "Building sector-resolved DATA Mgg fit diagnostics for high-E probes..."
+    )
+    plot_data_sector_resolved_mgg_fits(
+        numerator_diagnostics_by_source["data"],
+        args,
+        2.0,
+        3.0,
+        output_dir / "28_data_sector_mgg_fits_2to3GeV.png",
+    )
+    plot_data_sector_resolved_mgg_fits(
+        numerator_diagnostics_by_source["data"],
+        args,
+        3.0,
+        9.5,
+        output_dir / "29_data_sector_mgg_fits_3to9p5GeV.png",
+    )
+
     print("\n" + "=" * 92)
     print("SUMMARY")
     print("=" * 92)
@@ -7157,6 +7300,8 @@ def main() -> None:
     print("  25_fd_sector_migration.png")
     print("  26_fd_sector_statistics.png")
     print("  27_fd_sector_raw_efficiencies.png")
+    print("  28_data_sector_mgg_fits_2to3GeV.png")
+    print("  29_data_sector_mgg_fits_3to9p5GeV.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
