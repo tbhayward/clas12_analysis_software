@@ -4748,6 +4748,7 @@ def plot_fd_sector_exclusivity_stability(
             #endfor
 
             ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.set_ylim(0.2, 1.6)
             ax.set_title(
                 f"{label}; "
                 f"{edges[ibin]:g} <= Epred < "
