@@ -211,6 +211,11 @@ BDT_EFFICIENCY_SCAN_THRESHOLDS = np.asarray(
     dtype=float,
 )
 
+# Coarse probe-polar-angle dependence for the correction.
+# FT remains one angular region.  FD is split into three broad bins,
+# motivated by the strong score-dependent theta migration seen in AAOgen.
+FD_PROBE_THETA_SPLITS = (10.0, 15.0)
+
 # Fit range deliberately wider than the nominal pi0 window so the continuum
 # is constrained by data rather than by a hard mass-window count.
 MGG_FIT_RANGE = (0.070, 0.240)
@@ -637,6 +642,58 @@ def opening_angle_deg(
     )
     cos_angle = np.clip(cos_angle, -1.0, 1.0)
     return np.degrees(np.arccos(cos_angle))
+
+
+
+def probe_theta_bins(
+    args: argparse.Namespace,
+) -> list[Tuple[str, int, float, float]]:
+    """
+    Return the coarse probe-theta bins used by the correction study.
+
+    FT is kept as one bin.  FD is divided into 5.5-10, 10-15, and 15-35 deg
+    for the default acceptance.  The outer limits continue to respect the
+    command-line FT/FD acceptance bounds.
+    """
+    split1, split2 = FD_PROBE_THETA_SPLITS
+
+    if not (
+        args.fd_theta_min < split1
+        and split1 < split2
+        and split2 < args.fd_theta_max
+    ):
+        raise ValueError(
+            "FD theta acceptance must contain the fixed coarse splits "
+            f"{split1:g} and {split2:g} deg."
+        )
+    #endif
+
+    return [
+        (
+            f"FT {args.ft_theta_min:g}-{args.ft_theta_max:g} deg",
+            REGIONS["FT"],
+            float(args.ft_theta_min),
+            float(args.ft_theta_max),
+        ),
+        (
+            f"FD {args.fd_theta_min:g}-{split1:g} deg",
+            REGIONS["FD"],
+            float(args.fd_theta_min),
+            float(split1),
+        ),
+        (
+            f"FD {split1:g}-{split2:g} deg",
+            REGIONS["FD"],
+            float(split1),
+            float(split2),
+        ),
+        (
+            f"FD {split2:g}-{args.fd_theta_max:g} deg",
+            REGIONS["FD"],
+            float(split2),
+            float(args.fd_theta_max),
+        ),
+    ]
 
 
 def assign_region(
@@ -2615,6 +2672,8 @@ def denominator_counts_for_score_threshold(
     score_threshold: float,
     args: argparse.Namespace,
     require_truth_matched_photon: bool = False,
+    theta_low: Optional[float] = None,
+    theta_high: Optional[float] = None,
 ) -> np.ndarray:
     """
     Rebuild the epgamma denominator directly from the pre-cut diagnostic
@@ -2662,6 +2721,13 @@ def denominator_counts_for_score_threshold(
         & (region == region_value)
     )
 
+    if theta_low is not None:
+        mask &= pred_theta >= float(theta_low)
+    #endif
+    if theta_high is not None:
+        mask &= pred_theta < float(theta_high)
+    #endif
+
     if require_truth_matched_photon:
         if (
             "all_matching_gamma_pid" not in diagnostics
@@ -2701,6 +2767,8 @@ def fit_numerator_for_score_threshold(
     angle_max: float,
     args: argparse.Namespace,
     require_truth_matched_tag: bool = False,
+    theta_low: Optional[float] = None,
+    theta_high: Optional[float] = None,
 ) -> Tuple[np.ndarray, np.ndarray, list[MassFitResult]]:
     """
     Fit the pi0 numerator in each E_pred bin at an arbitrary minimum tag score.
@@ -2756,6 +2824,19 @@ def fit_numerator_for_score_threshold(
         & (match_angle < angle_max)
         & np.isfinite(pair_mass)
     )
+
+    if theta_low is not None:
+        common &= np.asarray(
+            diagnostics["pred_theta"],
+            dtype=float,
+        ) >= float(theta_low)
+    #endif
+    if theta_high is not None:
+        common &= np.asarray(
+            diagnostics["pred_theta"],
+            dtype=float,
+        ) < float(theta_high)
+    #endif
 
     if require_truth_matched_tag:
         if (
@@ -2967,6 +3048,297 @@ def build_aaogen_truth_tag_threshold_scan(
 
     return results
 
+
+
+
+def build_theta_binned_bdt_scan(
+    denominator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    numerator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
+    """
+    Repeat the apparent-efficiency threshold scan inside coarse probe-theta
+    bins.  This controls the dominant phase-space migration induced by the
+    BDT score and directly prepares the eventual E_pred x theta_pred
+    correction structure.
+    """
+    results: Dict[str, Dict[str, Dict[str, np.ndarray]]] = {}
+    theta_bins = probe_theta_bins(args)
+    n_threshold = len(BDT_EFFICIENCY_SCAN_THRESHOLDS)
+    n_energy = len(edges) - 1
+
+    for source_name in ["data", "aaogen", "clasdis"]:
+        results[source_name] = {}
+
+        for label, region_value, theta_low, theta_high in theta_bins:
+            den = np.zeros((n_threshold, n_energy), dtype=float)
+            num = np.full((n_threshold, n_energy), np.nan)
+            num_unc = np.full((n_threshold, n_energy), np.nan)
+            eff = np.full((n_threshold, n_energy), np.nan)
+            eff_unc = np.full((n_threshold, n_energy), np.nan)
+
+            for ithr, threshold in enumerate(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS
+            ):
+                den[ithr] = denominator_counts_for_score_threshold(
+                    denominator_diagnostics_by_source[source_name],
+                    region_value,
+                    edges,
+                    float(threshold),
+                    args,
+                    theta_low=theta_low,
+                    theta_high=theta_high,
+                )
+
+                (
+                    num[ithr],
+                    num_unc[ithr],
+                    _,
+                ) = fit_numerator_for_score_threshold(
+                    numerator_diagnostics_by_source[source_name],
+                    region_value,
+                    edges,
+                    float(threshold),
+                    MGG_FIT_NOMINAL_ANGLE,
+                    args,
+                    theta_low=theta_low,
+                    theta_high=theta_high,
+                )
+
+                eff[ithr] = np.divide(
+                    num[ithr],
+                    den[ithr],
+                    out=np.full(n_energy, np.nan),
+                    where=den[ithr] > 0.0,
+                )
+                eff_unc[ithr] = np.divide(
+                    num_unc[ithr],
+                    den[ithr],
+                    out=np.full(n_energy, np.nan),
+                    where=den[ithr] > 0.0,
+                )
+            #endfor
+
+            results[source_name][label] = {
+                "denominator": den,
+                "numerator": num,
+                "numerator_uncertainty": num_unc,
+                "efficiency": eff,
+                "efficiency_uncertainty": eff_unc,
+                "theta_low": np.asarray([theta_low], dtype=float),
+                "theta_high": np.asarray([theta_high], dtype=float),
+            }
+        #endfor
+    #endfor
+
+    return results
+
+
+def plot_theta_binned_nominal_data_mc_ratio(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[str, np.ndarray]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    Nominal DATA/MC correction versus E_pred in one FT and three FD theta bins.
+    """
+    theta_bins = probe_theta_bins(args)
+
+    # Use the scan point nearest the nominal requested BDT threshold.
+    ithr = int(
+        np.argmin(
+            np.abs(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS
+                - float(args.tag_score_min)
+            )
+        )
+    )
+    used_threshold = float(
+        BDT_EFFICIENCY_SCAN_THRESHOLDS[ithr]
+    )
+
+    fig, axes = plt.subplots(
+        2,
+        2,
+        figsize=(11.5, 8.5),
+        squeeze=False,
+    )
+
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    for iax, (label, _, _, _) in enumerate(theta_bins):
+        ax = axes.flat[iax]
+        data = results["data"][label]
+
+        for mc_name in ["aaogen", "clasdis"]:
+            mc = results[mc_name][label]
+
+            data_eff = data["efficiency"][ithr]
+            data_unc = data["efficiency_uncertainty"][ithr]
+            mc_eff = mc["efficiency"][ithr]
+            mc_unc = mc["efficiency_uncertainty"][ithr]
+
+            valid = (
+                np.isfinite(data_eff)
+                & np.isfinite(data_unc)
+                & np.isfinite(mc_eff)
+                & np.isfinite(mc_unc)
+                & (data_eff > 0.0)
+                & (mc_eff > 0.0)
+            )
+
+            ratio = np.full_like(data_eff, np.nan)
+            ratio_unc = np.full_like(data_eff, np.nan)
+            ratio[valid] = data_eff[valid] / mc_eff[valid]
+            ratio_unc[valid] = ratio[valid] * np.sqrt(
+                (data_unc[valid] / data_eff[valid]) ** 2
+                + (mc_unc[valid] / mc_eff[valid]) ** 2
+            )
+
+            ax.errorbar(
+                centers,
+                ratio,
+                yerr=ratio_unc,
+                marker="o",
+                linestyle="-",
+                capsize=2,
+                label=f"DATA / {mc_name.upper()}",
+            )
+        #endfor
+
+        ax.axhline(1.0, linestyle="--", linewidth=1.0)
+        ax.set_title(label)
+        ax.set_xlabel(r"Predicted probe energy $E_{\rm pred}$ (GeV)")
+        ax.set_ylabel("Photon-efficiency ratio DATA / MC")
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8)
+    #endfor
+
+    fig.suptitle(
+        "Probe-theta-binned photon-efficiency correction "
+        f"(BDT >= {used_threshold:.2f}, 10 deg association)",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_fd_theta_binned_bdt_ratio_scan(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[str, np.ndarray]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    DATA/MC ratio versus BDT threshold after controlling the probe theta.
+
+    Rows are the three coarse FD theta bins; columns are E_pred bins.  If the
+    broad-bin threshold dependence was largely caused by theta migration,
+    these curves should be appreciably flatter than the old FD-integrated
+    threshold scan.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_energy = len(edges) - 1
+
+    fig, axes = plt.subplots(
+        len(fd_bins),
+        n_energy,
+        figsize=(5.0 * n_energy, 4.1 * len(fd_bins)),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, (label, _, _, _) in enumerate(fd_bins):
+        data = results["data"][label]
+
+        for ibin in range(n_energy):
+            ax = axes[irow, ibin]
+
+            for mc_name in ["aaogen", "clasdis"]:
+                mc = results[mc_name][label]
+
+                data_eff = data["efficiency"][:, ibin]
+                data_unc = data["efficiency_uncertainty"][:, ibin]
+                mc_eff = mc["efficiency"][:, ibin]
+                mc_unc = mc["efficiency_uncertainty"][:, ibin]
+
+                valid = (
+                    np.isfinite(data_eff)
+                    & np.isfinite(data_unc)
+                    & np.isfinite(mc_eff)
+                    & np.isfinite(mc_unc)
+                    & (data_eff > 0.0)
+                    & (mc_eff > 0.0)
+                )
+
+                ratio = np.full_like(data_eff, np.nan)
+                ratio_unc = np.full_like(data_eff, np.nan)
+                ratio[valid] = data_eff[valid] / mc_eff[valid]
+                ratio_unc[valid] = ratio[valid] * np.sqrt(
+                    (data_unc[valid] / data_eff[valid]) ** 2
+                    + (mc_unc[valid] / mc_eff[valid]) ** 2
+                )
+
+                ax.errorbar(
+                    BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                    ratio,
+                    yerr=ratio_unc,
+                    marker="o",
+                    linestyle="-",
+                    capsize=2,
+                    label=f"DATA / {mc_name.upper()}",
+                )
+            #endfor
+
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.axvline(
+                float(args.tag_score_min),
+                linestyle=":",
+                linewidth=1.0,
+            )
+            ax.set_title(
+                f"{label}; "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("Minimum tag BDT score")
+            ax.set_ylabel("Efficiency ratio DATA / MC")
+            ax.set_xlim(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS[0] - 0.01,
+                0.99,
+            )
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "FD DATA/MC efficiency ratio versus BDT score "
+        "inside coarse probe-theta bins",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
 
 
 def plot_aaogen_truth_tag_score_phase_space(
@@ -5823,6 +6195,28 @@ def main() -> None:
         output_dir / "20_aaogen_truth_tag_score_phase_space.png",
     )
 
+    progress(
+        "Building coarse Epred x theta_pred photon-efficiency diagnostics..."
+    )
+    theta_binned_scan = build_theta_binned_bdt_scan(
+        denominator_diagnostics_by_source,
+        numerator_diagnostics_by_source,
+        edges,
+        args,
+    )
+    plot_theta_binned_nominal_data_mc_ratio(
+        theta_binned_scan,
+        edges,
+        args,
+        output_dir / "21_theta_binned_nominal_data_mc_ratio.png",
+    )
+    plot_fd_theta_binned_bdt_ratio_scan(
+        theta_binned_scan,
+        edges,
+        args,
+        output_dir / "22_fd_theta_binned_bdt_ratio_scan.png",
+    )
+
     print("\n" + "=" * 92)
     print("SUMMARY")
     print("=" * 92)
@@ -5972,6 +6366,41 @@ def main() -> None:
         #endfor
     #endfor
 
+    print("\nNominal coarse Epred x theta_pred DATA/MC correction:")
+    nominal_index = int(
+        np.argmin(
+            np.abs(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS
+                - float(args.tag_score_min)
+            )
+        )
+    )
+    for label, _, _, _ in probe_theta_bins(args):
+        print(f"  {label}")
+        data_block = theta_binned_scan["data"][label]
+        for mc_name in ["aaogen", "clasdis"]:
+            mc_block = theta_binned_scan[mc_name][label]
+            data_eff = data_block["efficiency"][nominal_index]
+            mc_eff = mc_block["efficiency"][nominal_index]
+            ratio = np.divide(
+                data_eff,
+                mc_eff,
+                out=np.full_like(data_eff, np.nan),
+                where=(
+                    np.isfinite(data_eff)
+                    & np.isfinite(mc_eff)
+                    & (mc_eff > 0.0)
+                ),
+            )
+            values = ", ".join(
+                f"{edges[i]:g}-{edges[i+1]:g}:{ratio[i]:.3f}"
+                for i in range(len(ratio))
+                if np.isfinite(ratio[i])
+            )
+            print(f"    DATA/{mc_name.upper()}: {values}")
+        #endfor
+    #endfor
+
     print("\nOutputs retained after diagnostic pruning:")
     print(f"  {output_dir / '05_clasdis_tag_truth_purity.png'}")
     print("  11_<source>_mgg_fit_examples_10deg.png")
@@ -5980,6 +6409,8 @@ def main() -> None:
     print("  17_bdt_threshold_data_mc_ratio.png")
     print("  18_aaogen_truth_tag_bdt_threshold_scan.png")
     print("  20_aaogen_truth_tag_score_phase_space.png")
+    print("  21_theta_binned_nominal_data_mc_ratio.png")
+    print("  22_fd_theta_binned_bdt_ratio_scan.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
