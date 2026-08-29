@@ -4130,6 +4130,359 @@ def plot_data_sector_resolved_mgg_fits(
     save_figure(fig, output_path)
 
 
+
+SECTOR_BDT_STABILITY_THRESHOLDS = np.asarray(
+    [0.50, 0.60, 0.70, 0.80],
+    dtype=float,
+)
+
+
+def build_fd_sector_bdt_stability_scan(
+    denominator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    numerator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[
+    str,
+    Dict[str, Dict[int, Dict[str, np.ndarray]]],
+]:
+    """
+    Repeat the FD sector-resolved extraction at several BDT working points.
+
+    Arrays have shape (N_threshold, N_energy_bin).  This is deliberately
+    limited to 0.50, 0.60, 0.70, and 0.80: above 0.80 the numerator fits
+    rapidly become statistics-limited and are not useful for judging whether
+    the sector hierarchy itself is stable.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_threshold = len(SECTOR_BDT_STABILITY_THRESHOLDS)
+    n_energy = len(edges) - 1
+
+    results: Dict[
+        str,
+        Dict[str, Dict[int, Dict[str, np.ndarray]]],
+    ] = {}
+
+    for source_name in ["data", "aaogen", "clasdis"]:
+        results[source_name] = {}
+
+        for label, region_value, theta_low, theta_high in fd_bins:
+            results[source_name][label] = {}
+
+            for sector in range(1, 7):
+                den = np.zeros(
+                    (n_threshold, n_energy),
+                    dtype=float,
+                )
+                num = np.full(
+                    (n_threshold, n_energy),
+                    np.nan,
+                )
+                num_unc = np.full(
+                    (n_threshold, n_energy),
+                    np.nan,
+                )
+                eff = np.full(
+                    (n_threshold, n_energy),
+                    np.nan,
+                )
+                eff_unc = np.full(
+                    (n_threshold, n_energy),
+                    np.nan,
+                )
+
+                for ithr, threshold in enumerate(
+                    SECTOR_BDT_STABILITY_THRESHOLDS
+                ):
+                    den[ithr] = (
+                        denominator_counts_for_score_threshold(
+                            denominator_diagnostics_by_source[
+                                source_name
+                            ],
+                            region_value,
+                            edges,
+                            float(threshold),
+                            args,
+                            theta_low=theta_low,
+                            theta_high=theta_high,
+                            fd_sector=sector,
+                        )
+                    )
+
+                    (
+                        num[ithr],
+                        num_unc[ithr],
+                        _,
+                    ) = fit_numerator_for_score_threshold(
+                        numerator_diagnostics_by_source[
+                            source_name
+                        ],
+                        region_value,
+                        edges,
+                        float(threshold),
+                        MGG_FIT_NOMINAL_ANGLE,
+                        args,
+                        theta_low=theta_low,
+                        theta_high=theta_high,
+                        fd_sector=sector,
+                    )
+
+                    eff[ithr] = np.divide(
+                        num[ithr],
+                        den[ithr],
+                        out=np.full(n_energy, np.nan),
+                        where=den[ithr] > 0.0,
+                    )
+                    eff_unc[ithr] = np.divide(
+                        num_unc[ithr],
+                        den[ithr],
+                        out=np.full(n_energy, np.nan),
+                        where=den[ithr] > 0.0,
+                    )
+                #endfor
+
+                results[source_name][label][sector] = {
+                    "denominator": den,
+                    "numerator": num,
+                    "numerator_uncertainty": num_unc,
+                    "efficiency": eff,
+                    "efficiency_uncertainty": eff_unc,
+                }
+            #endfor
+        #endfor
+    #endfor
+
+    return results
+
+
+def plot_fd_sector_bdt_stability(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, np.ndarray]]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    mc_name: str,
+    output_path: Path,
+) -> None:
+    """
+    Show DATA/MC sector dependence at several minimum BDT scores.
+
+    Rows are coarse FD theta bins, columns are E_pred bins, and x is sector.
+    If the sector pattern is a genuine detector effect rather than a BDT
+    artifact, the relative sector hierarchy should remain similar as the
+    threshold is changed even if the overall correction level moves.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_energy = len(edges) - 1
+    sectors = np.arange(1, 7, dtype=float)
+
+    fig, axes = plt.subplots(
+        len(fd_bins),
+        n_energy,
+        figsize=(4.5 * n_energy, 4.0 * len(fd_bins)),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, (label, _, _, _) in enumerate(fd_bins):
+        for ibin in range(n_energy):
+            ax = axes[irow, ibin]
+
+            for ithr, threshold in enumerate(
+                SECTOR_BDT_STABILITY_THRESHOLDS
+            ):
+                ratio = np.full(6, np.nan)
+                ratio_unc = np.full(6, np.nan)
+
+                for isec, sector in enumerate(range(1, 7)):
+                    data = results["data"][label][sector]
+                    mc = results[mc_name][label][sector]
+
+                    data_eff = data["efficiency"][ithr, ibin]
+                    data_unc = (
+                        data["efficiency_uncertainty"][ithr, ibin]
+                    )
+                    mc_eff = mc["efficiency"][ithr, ibin]
+                    mc_unc = (
+                        mc["efficiency_uncertainty"][ithr, ibin]
+                    )
+
+                    if (
+                        np.isfinite(data_eff)
+                        and np.isfinite(data_unc)
+                        and np.isfinite(mc_eff)
+                        and np.isfinite(mc_unc)
+                        and data_eff > 0.0
+                        and mc_eff > 0.0
+                    ):
+                        ratio[isec] = data_eff / mc_eff
+                        ratio_unc[isec] = (
+                            ratio[isec]
+                            * np.sqrt(
+                                (data_unc / data_eff) ** 2
+                                + (mc_unc / mc_eff) ** 2
+                            )
+                        )
+                    #endif
+                #endfor
+
+                ax.errorbar(
+                    sectors,
+                    ratio,
+                    yerr=ratio_unc,
+                    marker="o",
+                    linestyle="-",
+                    capsize=2,
+                    label=f"BDT >= {threshold:.2f}",
+                )
+            #endfor
+
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.set_title(
+                f"{label}; "
+                f"{edges[ibin]:g} <= Epred < "
+                f"{edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("FD sector")
+            ax.set_ylabel(
+                f"Efficiency ratio DATA / {mc_name.upper()}"
+            )
+            ax.set_xticks(range(1, 7))
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "FD sector-dependence stability versus BDT threshold: "
+        f"DATA / {mc_name.upper()}",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
+def plot_fd_sector_shape_bdt_stability(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, np.ndarray]]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    mc_name: str,
+    output_path: Path,
+) -> None:
+    """
+    Same sector-BDT stability test, but normalize each threshold curve to its
+    six-sector mean.  This removes the global BDT-dependent normalization and
+    isolates whether the *sector shape/hierarchy* itself changes.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_energy = len(edges) - 1
+    sectors = np.arange(1, 7, dtype=float)
+
+    fig, axes = plt.subplots(
+        len(fd_bins),
+        n_energy,
+        figsize=(4.5 * n_energy, 4.0 * len(fd_bins)),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, (label, _, _, _) in enumerate(fd_bins):
+        for ibin in range(n_energy):
+            ax = axes[irow, ibin]
+
+            for ithr, threshold in enumerate(
+                SECTOR_BDT_STABILITY_THRESHOLDS
+            ):
+                ratio = np.full(6, np.nan)
+
+                for isec, sector in enumerate(range(1, 7)):
+                    data_eff = (
+                        results["data"][label][sector]
+                        ["efficiency"][ithr, ibin]
+                    )
+                    mc_eff = (
+                        results[mc_name][label][sector]
+                        ["efficiency"][ithr, ibin]
+                    )
+
+                    if (
+                        np.isfinite(data_eff)
+                        and np.isfinite(mc_eff)
+                        and data_eff > 0.0
+                        and mc_eff > 0.0
+                    ):
+                        ratio[isec] = data_eff / mc_eff
+                    #endif
+                #endfor
+
+                finite = np.isfinite(ratio)
+                if np.any(finite):
+                    mean_ratio = np.mean(ratio[finite])
+                    if mean_ratio > 0.0:
+                        ratio = ratio / mean_ratio
+                    #endif
+                #endif
+
+                ax.plot(
+                    sectors,
+                    ratio,
+                    marker="o",
+                    linestyle="-",
+                    label=f"BDT >= {threshold:.2f}",
+                )
+            #endfor
+
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.set_title(
+                f"{label}; "
+                f"{edges[ibin]:g} <= Epred < "
+                f"{edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("FD sector")
+            ax.set_ylabel("Sector correction / six-sector mean")
+            ax.set_xticks(range(1, 7))
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "FD sector-shape stability versus BDT threshold: "
+        f"DATA / {mc_name.upper()}",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
 def plot_aaogen_truth_tag_score_phase_space(
     diagnostics: Mapping[str, np.ndarray],
     edges: np.ndarray,
@@ -7063,6 +7416,35 @@ def main() -> None:
         output_dir / "29_data_sector_mgg_fits_3to9p5GeV.png",
     )
 
+    progress(
+        "Building FD sector-dependence stability scan versus BDT threshold..."
+    )
+    fd_sector_bdt_scan = build_fd_sector_bdt_stability_scan(
+        denominator_diagnostics_by_source,
+        numerator_diagnostics_by_source,
+        edges,
+        args,
+    )
+
+    for mc_name in ["aaogen", "clasdis"]:
+        plot_fd_sector_bdt_stability(
+            fd_sector_bdt_scan,
+            edges,
+            args,
+            mc_name,
+            output_dir
+            / f"30_fd_sector_bdt_stability_{mc_name}.png",
+        )
+        plot_fd_sector_shape_bdt_stability(
+            fd_sector_bdt_scan,
+            edges,
+            args,
+            mc_name,
+            output_dir
+            / f"31_fd_sector_shape_bdt_stability_{mc_name}.png",
+        )
+    #endfor
+
     print("\n" + "=" * 92)
     print("SUMMARY")
     print("=" * 92)
@@ -7302,6 +7684,10 @@ def main() -> None:
     print("  27_fd_sector_raw_efficiencies.png")
     print("  28_data_sector_mgg_fits_2to3GeV.png")
     print("  29_data_sector_mgg_fits_3to9p5GeV.png")
+    print("  30_fd_sector_bdt_stability_aaogen.png")
+    print("  30_fd_sector_bdt_stability_clasdis.png")
+    print("  31_fd_sector_shape_bdt_stability_aaogen.png")
+    print("  31_fd_sector_shape_bdt_stability_clasdis.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
