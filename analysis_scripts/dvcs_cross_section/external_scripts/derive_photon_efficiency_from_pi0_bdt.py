@@ -2968,6 +2968,207 @@ def build_aaogen_truth_tag_threshold_scan(
     return results
 
 
+
+def plot_aaogen_truth_tag_score_phase_space(
+    diagnostics: Mapping[str, np.ndarray],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    Diagnose why truth-matched AAOgen efficiency changes with BDT threshold.
+
+    Focus on FD, where the final correction is currently best constrained.
+    Within each broad E_pred bin, overlay unit-normalized distributions of
+    predicted probe theta and tag energy for DISJOINT tag-score ranges:
+      0.50-0.60, 0.60-0.70, 0.70-0.80, and >=0.80.
+
+    A corresponding numerical table of means for E_pred, theta_pred, E_tag,
+    Mx2(ep), and Mx2(epgamma_tag) is printed to stdout.
+    """
+    score = np.asarray(diagnostics["all_score"], dtype=float)
+    tag_energy = np.asarray(
+        diagnostics["all_tag_energy"],
+        dtype=float,
+    )
+    mx2_ep = np.asarray(
+        diagnostics["all_mx2_ep"],
+        dtype=float,
+    )
+    mx2_epgamma = np.asarray(
+        diagnostics["all_missing_mass2"],
+        dtype=float,
+    )
+    pred_energy = np.asarray(
+        diagnostics["all_pred_energy"],
+        dtype=float,
+    )
+    pred_theta = np.asarray(
+        diagnostics["all_pred_theta"],
+        dtype=float,
+    )
+    truth_pid = np.asarray(
+        diagnostics["all_matching_gamma_pid"],
+        dtype=np.int64,
+    )
+    truth_mcindex = np.asarray(
+        diagnostics["all_gamma_mcindex"],
+        dtype=np.int64,
+    )
+    region = assign_region(pred_theta, args)
+
+    base = (
+        np.isfinite(score)
+        & np.isfinite(tag_energy)
+        & (tag_energy >= args.tag_energy_min)
+        & np.isfinite(mx2_ep)
+        & (mx2_ep >= args.mx2_ep_min)
+        & (mx2_ep < args.mx2_ep_max)
+        & np.isfinite(mx2_epgamma)
+        & np.isfinite(pred_energy)
+        & (pred_energy >= args.probe_energy_min)
+        & (pred_energy < args.probe_energy_max)
+        & np.isfinite(pred_theta)
+        & (region == REGIONS["FD"])
+        & (truth_pid == 22)
+        & (truth_mcindex >= 0)
+    )
+
+    score_ranges = [
+        (0.50, 0.60, "0.50-0.60"),
+        (0.60, 0.70, "0.60-0.70"),
+        (0.70, 0.80, "0.70-0.80"),
+        (0.80, np.inf, ">=0.80"),
+    ]
+
+    nbin = len(edges) - 1
+    fig, axes = plt.subplots(
+        2,
+        nbin,
+        figsize=(5.1 * nbin, 8.0),
+        squeeze=False,
+    )
+
+    progress(
+        "AAOgen FD truth-matched tag phase-space means by disjoint BDT range:"
+    )
+
+    for ibin in range(nbin):
+        e_mask = (
+            base
+            & (pred_energy >= edges[ibin])
+            & (pred_energy < edges[ibin + 1])
+        )
+
+        # Use common axes within each E_pred bin so score-range shape changes
+        # are visually meaningful.
+        theta_values = pred_theta[e_mask]
+        tag_values = tag_energy[e_mask]
+
+        if np.any(np.isfinite(theta_values)):
+            theta_lo, theta_hi = np.nanpercentile(
+                theta_values,
+                [0.5, 99.5],
+            )
+        else:
+            theta_lo, theta_hi = 5.5, 35.0
+        #endif
+
+        if np.any(np.isfinite(tag_values)):
+            tag_lo, tag_hi = np.nanpercentile(
+                tag_values,
+                [0.5, 99.5],
+            )
+        else:
+            tag_lo, tag_hi = args.tag_energy_min, 9.5
+        #endif
+
+        theta_bins = np.linspace(theta_lo, theta_hi, 45)
+        tag_bins = np.linspace(tag_lo, tag_hi, 45)
+
+        print(
+            f"  FD Epred {edges[ibin]:g}-{edges[ibin+1]:g} GeV:"
+        )
+
+        for low, high, label in score_ranges:
+            score_mask = (
+                e_mask
+                & (score >= low)
+                & (score < high)
+            )
+
+            n = int(np.sum(score_mask))
+            if n == 0:
+                print(f"    score {label:9s}: N=0")
+                continue
+            #endif
+
+            axes[0, ibin].hist(
+                pred_theta[score_mask],
+                bins=theta_bins,
+                histtype="step",
+                density=True,
+                linewidth=1.5,
+                label=label,
+            )
+            axes[1, ibin].hist(
+                tag_energy[score_mask],
+                bins=tag_bins,
+                histtype="step",
+                density=True,
+                linewidth=1.5,
+                label=label,
+            )
+
+            def mean_or_nan(values: np.ndarray) -> float:
+                finite = np.isfinite(values)
+                return (
+                    float(np.mean(values[finite]))
+                    if np.any(finite)
+                    else np.nan
+                )
+            #enddef
+
+            print(
+                f"    score {label:9s}: N={n:9,d}, "
+                f"<Epred>={mean_or_nan(pred_energy[score_mask]):.3f} GeV, "
+                f"<theta_pred>={mean_or_nan(pred_theta[score_mask]):.3f} deg, "
+                f"<Etag>={mean_or_nan(tag_energy[score_mask]):.3f} GeV, "
+                f"<Mx2(ep)>={mean_or_nan(mx2_ep[score_mask]):.4f} GeV^2, "
+                f"<Mx2(epgamma)>={mean_or_nan(mx2_epgamma[score_mask]):.4f} GeV^2"
+            )
+        #endfor
+
+        axes[0, ibin].set_title(
+            f"FD, {edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+        )
+        axes[0, ibin].set_xlabel(
+            r"Predicted probe $\theta$ (deg)"
+        )
+        axes[0, ibin].set_ylabel("Unit-normalized density")
+        axes[0, ibin].grid(alpha=0.2)
+
+        axes[1, ibin].set_xlabel(r"Tag photon energy $E_{\rm tag}$ (GeV)")
+        axes[1, ibin].set_ylabel("Unit-normalized density")
+        axes[1, ibin].grid(alpha=0.2)
+
+        if ibin == 0:
+            axes[0, ibin].legend(
+                title="BDT score",
+                fontsize=8,
+                title_fontsize=8,
+            )
+        #endif
+    #endfor
+
+    fig.suptitle(
+        "AAOgen truth-matched FD tags: phase-space evolution with BDT score",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
 def plot_aaogen_truth_tag_threshold_scan(
     standard_scan: Mapping[
         str,
@@ -5344,72 +5545,16 @@ def process_source(
         numdiag2,
     )
 
-    # Focused validation studies:
-    #   07-08: can the missing-vector construction assign the probe kinematics?
-    #   09:    how loose can the angular association be before recovery plateaus?
-    #   10:    how does the pi0 mass peak/background evolve as the window opens?
-    if source_name != "data":
-        plot_denominator_closure_migrations(
-            source_name.upper(),
-            numerator_diagnostics,
-            output_dir
-            / f"07_{source_name}_denominator_closure_migrations.png",
-            args,
-        )
-        plot_denominator_closure_resolution(
-            source_name.upper(),
-            numerator_diagnostics,
-            output_dir
-            / f"08_{source_name}_denominator_closure_resolution.png",
-            args,
-        )
-        plot_association_plateau(
-            source_name.upper(),
-            numerator_diagnostics,
-            output_dir
-            / f"09_{source_name}_association_plateau.png",
-            args,
-        )
-        plot_probe_energy_response_fine(
-            source_name.upper(),
-            numerator_diagnostics,
-            output_dir
-            / f"13_{source_name}_probe_energy_response_fine.png",
-            args,
-        )
-    #endif
-
-    plot_mgg_angle_scan(
-        source_name.upper(),
-        numerator_diagnostics,
-        output_dir / f"10_{source_name}_mgg_vs_association_angle.png",
-        args,
-    )
+    # The earlier geometry, closure, association-plateau, and raw-input
+    # canvases served their development purpose and are no longer produced.
+    # Keep the numerical cut flow above, but reserve output plots for the
+    # diagnostics that directly inform the final tag-and-probe correction.
 
     progress(
         f"{source_name.upper()}: denominator directed probes="
         f"{len(denominator.predicted_energy):,}; "
         f"numerator reconstructed probes="
         f"{len(numerator.predicted_energy):,}"
-    )
-
-    plot_pure_sample_inputs(
-        source_name.upper(),
-        epg,
-        diagnostics,
-        output_dir / f"01_{source_name}_tag_selection.png",
-        args,
-    )
-    plot_pre_match_probe_diagnostics(
-        source_name.upper(),
-        numerator_diagnostics,
-        output_dir / f"02_{source_name}_probe_prediction_before_match.png",
-        args,
-    )
-    plot_partner_matching(
-        source_name.upper(),
-        numerator,
-        output_dir / f"02b_{source_name}_matched_probe_diagnostics.png",
     )
 
     return (
@@ -5550,25 +5695,10 @@ def main() -> None:
         #endfor
     #endfor
 
-    plot_counts(
-        curves,
-        output_dir / "03_raw_probe_counts.png",
-    )
-    plot_efficiencies(
-        curves,
-        output_dir / "04_efficiency_and_data_mc_ratio.png",
-    )
     plot_clasdis_tag_truth_purity(
         denominators["clasdis"],
         output_dir / "05_clasdis_tag_truth_purity.png",
         edges,
-    )
-    plot_threshold_scan(
-        epg_arrays,
-        models,
-        beam_energy,
-        args,
-        output_dir / "06_tag_score_threshold_scan.png",
     )
 
     # ------------------------------------------------------------------
@@ -5635,12 +5765,14 @@ def main() -> None:
             #endif
         #endfor
 
-        plot_fit_efficiency_angle_stability(
-            source_name.upper(),
-            fitted_curves_by_source_angle[source_name],
-            output_dir
-            / f"12_{source_name}_fitted_efficiency_angle_stability.png",
-        )
+        if source_name == "data":
+            plot_fit_efficiency_angle_stability(
+                source_name.upper(),
+                fitted_curves_by_source_angle[source_name],
+                output_dir
+                / "12_data_fitted_efficiency_angle_stability.png",
+            )
+        #endif
     #endfor
 
     plot_fit_efficiency_data_mc_ratio(
@@ -5650,8 +5782,9 @@ def main() -> None:
 
     # ------------------------------------------------------------------
     # BDT-threshold diagnostic.
-    # Test directly whether the anomalously low apparent data efficiency
-    # rises as the tag definition becomes progressively purer.
+    # The DATA/MC ratio scan is retained as the primary working-point test.
+    # Earlier raw-retention and apparent-efficiency canvases are no longer
+    # produced because they are superseded by the ratio diagnostic.
     # ------------------------------------------------------------------
     progress(
         "Building apparent-efficiency scan versus minimum BDT tag score..."
@@ -5661,16 +5794,6 @@ def main() -> None:
         numerator_diagnostics_by_source,
         edges,
         args,
-    )
-    plot_bdt_efficiency_threshold_scan(
-        bdt_efficiency_scan,
-        edges,
-        output_dir / "15_bdt_threshold_efficiency_scan.png",
-    )
-    plot_data_bdt_threshold_retention(
-        bdt_efficiency_scan,
-        edges,
-        output_dir / "16_data_bdt_threshold_retention.png",
     )
     plot_bdt_threshold_data_mc_ratio(
         bdt_efficiency_scan,
@@ -5693,11 +5816,11 @@ def main() -> None:
         edges,
         output_dir / "18_aaogen_truth_tag_bdt_threshold_scan.png",
     )
-    plot_data_truth_aaogen_ratio_scan(
-        bdt_efficiency_scan,
-        aaogen_truth_tag_scan,
+    plot_aaogen_truth_tag_score_phase_space(
+        denominator_diagnostics_by_source["aaogen"],
         edges,
-        output_dir / "19_data_truth_aaogen_bdt_ratio_scan.png",
+        args,
+        output_dir / "20_aaogen_truth_tag_score_phase_space.png",
     )
 
     print("\n" + "=" * 92)
@@ -5849,20 +5972,14 @@ def main() -> None:
         #endfor
     #endfor
 
-    print("\nOutputs:")
-    print(f"  {output_dir / '03_raw_probe_counts.png'}")
-    print(f"  {output_dir / '04_efficiency_and_data_mc_ratio.png'}")
+    print("\nOutputs retained after diagnostic pruning:")
     print(f"  {output_dir / '05_clasdis_tag_truth_purity.png'}")
-    print(f"  {output_dir / '06_tag_score_threshold_scan.png'}")
     print("  11_<source>_mgg_fit_examples_10deg.png")
-    print("  12_<source>_fitted_efficiency_angle_stability.png")
-    print("  13_<mc>_probe_energy_response_fine.png")
+    print("  12_data_fitted_efficiency_angle_stability.png")
     print("  14_mgg_fit_efficiency_and_data_mc_ratio.png")
-    print("  15_bdt_threshold_efficiency_scan.png")
-    print("  16_data_bdt_threshold_retention.png")
     print("  17_bdt_threshold_data_mc_ratio.png")
     print("  18_aaogen_truth_tag_bdt_threshold_scan.png")
-    print("  19_data_truth_aaogen_bdt_ratio_scan.png")
+    print("  20_aaogen_truth_tag_score_phase_space.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
