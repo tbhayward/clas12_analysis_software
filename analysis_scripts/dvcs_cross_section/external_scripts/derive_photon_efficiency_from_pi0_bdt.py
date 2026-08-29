@@ -135,7 +135,7 @@ BASE_DIRS = {
 }
 
 DEFAULT_ENERGY_BINS = np.asarray(
-    [0.40, 1.00, 2.00, 9.50],
+    [0.40, 1.00, 2.00, 3.00, 9.50],
     dtype=float,
 )
 
@@ -3693,6 +3693,311 @@ def plot_fd_sector_averaged_correction(
     save_figure(fig, output_path)
 
 
+
+def plot_predicted_vs_reconstructed_sector_migration(
+    numerator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    Compare the sector assigned from the missing-vector predicted probe phi
+    with the sector of the actually reconstructed partner photon.
+
+    Each predicted-sector row is normalized to unity.  A strong diagonal is
+    required before large sector-dependent correction factors are interpreted
+    as detector effects rather than sector-migration artifacts.
+    """
+    sources = ["data", "aaogen", "clasdis"]
+    fig, axes = plt.subplots(
+        1,
+        len(sources),
+        figsize=(5.2 * len(sources), 4.8),
+        squeeze=False,
+    )
+
+    im = None
+
+    for iax, source_name in enumerate(sources):
+        ax = axes[0, iax]
+        d = numerator_diagnostics_by_source[source_name]
+
+        score = np.asarray(d["scores"], dtype=float)
+        pred_theta = np.asarray(d["pred_theta"], dtype=float)
+        pred_phi = np.asarray(d["pred_phi"], dtype=float)
+        partner_phi = np.asarray(d["partner_phi"], dtype=float)
+        partner_energy = np.asarray(d["partner_energy"], dtype=float)
+        match_angle = np.asarray(d["match_angle"], dtype=float)
+        mx2_ep = np.asarray(d["mx2_ep"], dtype=float)
+        tag_energy = np.asarray(d["tag_energy"], dtype=float)
+
+        pred_sector = assign_fd_sector(pred_phi)
+        reco_sector = assign_fd_sector(partner_phi)
+
+        mask = (
+            np.isfinite(score)
+            & (score >= args.tag_score_min)
+            & np.isfinite(tag_energy)
+            & (tag_energy >= args.tag_energy_min)
+            & np.isfinite(mx2_ep)
+            & (mx2_ep >= args.mx2_ep_min)
+            & (mx2_ep < args.mx2_ep_max)
+            & np.isfinite(pred_theta)
+            & (pred_theta >= args.fd_theta_min)
+            & (pred_theta < args.fd_theta_max)
+            & np.isfinite(partner_energy)
+            & (partner_energy >= args.probe_energy_min)
+            & np.isfinite(match_angle)
+            & (match_angle < MGG_FIT_NOMINAL_ANGLE)
+            & (pred_sector >= 1)
+            & (reco_sector >= 1)
+        )
+
+        matrix = np.zeros((6, 6), dtype=float)
+
+        for pred_sec in range(1, 7):
+            for reco_sec in range(1, 7):
+                matrix[pred_sec - 1, reco_sec - 1] = np.sum(
+                    mask
+                    & (pred_sector == pred_sec)
+                    & (reco_sector == reco_sec)
+                )
+            #endfor
+        #endfor
+
+        row_sum = np.sum(matrix, axis=1, keepdims=True)
+        matrix_norm = np.divide(
+            matrix,
+            row_sum,
+            out=np.zeros_like(matrix),
+            where=row_sum > 0.0,
+        )
+
+        im = ax.imshow(
+            matrix_norm,
+            origin="lower",
+            vmin=0.0,
+            vmax=1.0,
+            aspect="equal",
+        )
+
+        for irow in range(6):
+            for icol in range(6):
+                ax.text(
+                    icol,
+                    irow,
+                    f"{100.0 * matrix_norm[irow, icol]:.0f}%",
+                    ha="center",
+                    va="center",
+                    fontsize=8,
+                )
+            #endfor
+        #endfor
+
+        diagonal = np.trace(matrix)
+        total = np.sum(matrix)
+        agreement = diagonal / total if total > 0.0 else np.nan
+
+        ax.set_title(
+            f"{source_name.upper()}\n"
+            f"same-sector fraction = {agreement:.3f}"
+        )
+        ax.set_xlabel("Reconstructed partner sector")
+        ax.set_ylabel("Predicted probe sector")
+        ax.set_xticks(np.arange(6))
+        ax.set_xticklabels(np.arange(1, 7))
+        ax.set_yticks(np.arange(6))
+        ax.set_yticklabels(np.arange(1, 7))
+    #endfor
+
+    if im is not None:
+        fig.colorbar(
+            im,
+            ax=axes.ravel().tolist(),
+            fraction=0.025,
+            pad=0.02,
+            label="Row-normalized fraction",
+        )
+    #endif
+
+    fig.suptitle(
+        "FD predicted-versus-reconstructed probe sector migration "
+        "(nominal BDT and 10 deg association)",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 0.97, 0.94])
+    save_figure(fig, output_path)
+
+
+def plot_fd_sector_statistics(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, np.ndarray]]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    Show the nominal tag-denominator population in every sector cell.
+
+    This is primarily a fit-stability diagnostic: sector corrections with very
+    small populations should not be interpreted as true detector response.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_energy = len(edges) - 1
+    sectors = np.arange(1, 7)
+
+    fig, axes = plt.subplots(
+        len(fd_bins),
+        n_energy,
+        figsize=(4.4 * n_energy, 4.0 * len(fd_bins)),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, (label, _, _, _) in enumerate(fd_bins):
+        for ibin in range(n_energy):
+            ax = axes[irow, ibin]
+
+            for source_name in ["data", "aaogen", "clasdis"]:
+                counts = np.asarray(
+                    [
+                        results[source_name][label][sector][
+                            "denominator"
+                        ][ibin]
+                        for sector in range(1, 7)
+                    ],
+                    dtype=float,
+                )
+                ax.plot(
+                    sectors,
+                    counts,
+                    marker="o",
+                    linestyle="-",
+                    label=source_name.upper(),
+                )
+            #endfor
+
+            ax.set_yscale("log")
+            ax.set_title(
+                f"{label}; "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("FD sector")
+            ax.set_ylabel("Tag denominator count")
+            ax.set_xticks(range(1, 7))
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "Nominal FD sector statistics",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
+def plot_fd_sector_raw_efficiencies(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, np.ndarray]]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    Plot fitted apparent efficiency before DATA/MC division.
+
+    This identifies whether an anomalous correction originates predominantly
+    in DATA, AAOgen, CLASDIS, or a low-statistics Mgg fit.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_energy = len(edges) - 1
+    sectors = np.arange(1, 7)
+
+    fig, axes = plt.subplots(
+        len(fd_bins),
+        n_energy,
+        figsize=(4.4 * n_energy, 4.0 * len(fd_bins)),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, (label, _, _, _) in enumerate(fd_bins):
+        for ibin in range(n_energy):
+            ax = axes[irow, ibin]
+
+            for source_name in ["data", "aaogen", "clasdis"]:
+                eff = np.asarray(
+                    [
+                        results[source_name][label][sector][
+                            "efficiency"
+                        ][ibin]
+                        for sector in range(1, 7)
+                    ],
+                    dtype=float,
+                )
+                unc = np.asarray(
+                    [
+                        results[source_name][label][sector][
+                            "efficiency_uncertainty"
+                        ][ibin]
+                        for sector in range(1, 7)
+                    ],
+                    dtype=float,
+                )
+
+                ax.errorbar(
+                    sectors,
+                    eff,
+                    yerr=unc,
+                    marker="o",
+                    linestyle="-",
+                    capsize=2,
+                    label=source_name.upper(),
+                )
+            #endfor
+
+            ax.set_title(
+                f"{label}; "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("FD sector")
+            ax.set_ylabel(r"Fitted $N_{\pi^0}/N_{\rm tag}$")
+            ax.set_xticks(range(1, 7))
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "Nominal apparent photon efficiency versus FD sector",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
 def plot_aaogen_truth_tag_score_phase_space(
     diagnostics: Mapping[str, np.ndarray],
     edges: np.ndarray,
@@ -6590,6 +6895,23 @@ def main() -> None:
         args,
         output_dir / "24_fd_sector_specific_corrections.png",
     )
+    plot_predicted_vs_reconstructed_sector_migration(
+        numerator_diagnostics_by_source,
+        args,
+        output_dir / "25_fd_sector_migration.png",
+    )
+    plot_fd_sector_statistics(
+        fd_sector_scan,
+        edges,
+        args,
+        output_dir / "26_fd_sector_statistics.png",
+    )
+    plot_fd_sector_raw_efficiencies(
+        fd_sector_scan,
+        edges,
+        args,
+        output_dir / "27_fd_sector_raw_efficiencies.png",
+    )
 
     print("\n" + "=" * 92)
     print("SUMMARY")
@@ -6825,6 +7147,9 @@ def main() -> None:
     print("  22_fd_theta_binned_bdt_ratio_scan.png")
     print("  23_fd_sector_dependence_nominal.png")
     print("  24_fd_sector_specific_corrections.png")
+    print("  25_fd_sector_migration.png")
+    print("  26_fd_sector_statistics.png")
+    print("  27_fd_sector_raw_efficiencies.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
