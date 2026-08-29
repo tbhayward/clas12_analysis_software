@@ -645,6 +645,61 @@ def opening_angle_deg(
 
 
 
+
+def assign_fd_sector(
+    phi_deg: np.ndarray,
+) -> np.ndarray:
+    """
+    Assign CLAS12 FD sector from predicted probe azimuth.
+
+    Sector convention:
+      S1: 330-360 or 0-30 deg
+      S2: 30-90 deg
+      S3: 90-150 deg
+      S4: 150-210 deg
+      S5: 210-270 deg
+      S6: 270-330 deg
+
+    Returns 1-6, or -1 for non-finite values.
+    """
+    phi = np.asarray(phi_deg, dtype=float)
+    wrapped = np.mod(phi, 360.0)
+    sector = np.full(len(wrapped), -1, dtype=np.int8)
+
+    finite = np.isfinite(wrapped)
+    sector[
+        finite
+        & ((wrapped >= 330.0) | (wrapped < 30.0))
+    ] = 1
+    sector[
+        finite
+        & (wrapped >= 30.0)
+        & (wrapped < 90.0)
+    ] = 2
+    sector[
+        finite
+        & (wrapped >= 90.0)
+        & (wrapped < 150.0)
+    ] = 3
+    sector[
+        finite
+        & (wrapped >= 150.0)
+        & (wrapped < 210.0)
+    ] = 4
+    sector[
+        finite
+        & (wrapped >= 210.0)
+        & (wrapped < 270.0)
+    ] = 5
+    sector[
+        finite
+        & (wrapped >= 270.0)
+        & (wrapped < 330.0)
+    ] = 6
+
+    return sector
+
+
 def probe_theta_bins(
     args: argparse.Namespace,
 ) -> list[Tuple[str, int, float, float]]:
@@ -950,6 +1005,10 @@ def predicted_probe_from_tag(
         "p": missing_p,
         "mass2": missing_mass2,
         "theta": missing_theta,
+        "phi": vector_phi_deg(
+            missing_px,
+            missing_py,
+        ),
     }
 
 
@@ -1217,6 +1276,7 @@ def denominator_from_epg(
         "all_missing_mass2": branch_missing_mass2,
         "all_pred_energy": pred["energy"],
         "all_pred_theta": pred["theta"],
+        "all_pred_phi": pred["phi"],
         "selected_mask": base,
         # Compare the branch Mx2(epgamma) against a direct four-vector check.
         "computed_missing_mass2": pred["mass2"],
@@ -1439,6 +1499,7 @@ def numerator_direction_from_epgg(
         "missing_mass2": branch_missing_mass2,
         "pred_energy": pred["energy"],
         "pred_theta": pred["theta"],
+        "pred_phi": pred["phi"],
         "pred_region": predicted_region,
         "actual_detector": actual_detector,
         "partner_energy": partner_energy,
@@ -1527,6 +1588,7 @@ def concatenate_numerator_diagnostics(
         "missing_mass2",
         "pred_energy",
         "pred_theta",
+        "pred_phi",
         "pred_region",
         "actual_detector",
         "partner_energy",
@@ -2674,6 +2736,7 @@ def denominator_counts_for_score_threshold(
     require_truth_matched_photon: bool = False,
     theta_low: Optional[float] = None,
     theta_high: Optional[float] = None,
+    fd_sector: Optional[int] = None,
 ) -> np.ndarray:
     """
     Rebuild the epgamma denominator directly from the pre-cut diagnostic
@@ -2728,6 +2791,14 @@ def denominator_counts_for_score_threshold(
         mask &= pred_theta < float(theta_high)
     #endif
 
+    if fd_sector is not None:
+        pred_phi = np.asarray(
+            diagnostics["all_pred_phi"],
+            dtype=float,
+        )
+        mask &= assign_fd_sector(pred_phi) == int(fd_sector)
+    #endif
+
     if require_truth_matched_photon:
         if (
             "all_matching_gamma_pid" not in diagnostics
@@ -2769,6 +2840,7 @@ def fit_numerator_for_score_threshold(
     require_truth_matched_tag: bool = False,
     theta_low: Optional[float] = None,
     theta_high: Optional[float] = None,
+    fd_sector: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray, list[MassFitResult]]:
     """
     Fit the pi0 numerator in each E_pred bin at an arbitrary minimum tag score.
@@ -2836,6 +2908,14 @@ def fit_numerator_for_score_threshold(
             diagnostics["pred_theta"],
             dtype=float,
         ) < float(theta_high)
+    #endif
+
+    if fd_sector is not None:
+        pred_phi = np.asarray(
+            diagnostics["pred_phi"],
+            dtype=float,
+        )
+        common &= assign_fd_sector(pred_phi) == int(fd_sector)
     #endif
 
     if require_truth_matched_tag:
@@ -3338,6 +3418,278 @@ def plot_fd_theta_binned_bdt_ratio_scan(
         y=0.995,
     )
     fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
+
+def build_fd_theta_sector_nominal_scan(
+    denominator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    numerator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[str, Dict[str, Dict[int, Dict[str, np.ndarray]]]]:
+    """
+    Build the nominal FD correction in E_pred x theta_pred x sector.
+
+    Only the nominal BDT threshold is used here.  The purpose is to establish
+    whether sector-to-sector response differences are large enough to retain
+    in the final photon-efficiency correction.
+    """
+    results: Dict[
+        str,
+        Dict[str, Dict[int, Dict[str, np.ndarray]]],
+    ] = {}
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_energy = len(edges) - 1
+
+    for source_name in ["data", "aaogen", "clasdis"]:
+        results[source_name] = {}
+
+        for label, region_value, theta_low, theta_high in fd_bins:
+            results[source_name][label] = {}
+
+            for sector in range(1, 7):
+                den = denominator_counts_for_score_threshold(
+                    denominator_diagnostics_by_source[source_name],
+                    region_value,
+                    edges,
+                    float(args.tag_score_min),
+                    args,
+                    theta_low=theta_low,
+                    theta_high=theta_high,
+                    fd_sector=sector,
+                )
+                num, num_unc, _ = fit_numerator_for_score_threshold(
+                    numerator_diagnostics_by_source[source_name],
+                    region_value,
+                    edges,
+                    float(args.tag_score_min),
+                    MGG_FIT_NOMINAL_ANGLE,
+                    args,
+                    theta_low=theta_low,
+                    theta_high=theta_high,
+                    fd_sector=sector,
+                )
+
+                eff = np.divide(
+                    num,
+                    den,
+                    out=np.full(n_energy, np.nan),
+                    where=den > 0.0,
+                )
+                eff_unc = np.divide(
+                    num_unc,
+                    den,
+                    out=np.full(n_energy, np.nan),
+                    where=den > 0.0,
+                )
+
+                results[source_name][label][sector] = {
+                    "denominator": den,
+                    "numerator": num,
+                    "numerator_uncertainty": num_unc,
+                    "efficiency": eff,
+                    "efficiency_uncertainty": eff_unc,
+                }
+            #endfor
+        #endfor
+    #endfor
+
+    return results
+
+
+def plot_fd_sector_dependence_nominal(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, np.ndarray]]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    Sector dependence of the nominal DATA/MC correction.
+
+    Rows are coarse FD theta bins, columns are E_pred bins, and the horizontal
+    axis is CLAS12 sector.  This compactly shows whether the final correction
+    needs explicit sector dependence.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    n_energy = len(edges) - 1
+    sectors = np.arange(1, 7, dtype=float)
+
+    fig, axes = plt.subplots(
+        len(fd_bins),
+        n_energy,
+        figsize=(5.0 * n_energy, 4.1 * len(fd_bins)),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, (label, _, _, _) in enumerate(fd_bins):
+        for ibin in range(n_energy):
+            ax = axes[irow, ibin]
+
+            for mc_name in ["aaogen", "clasdis"]:
+                ratio = np.full(6, np.nan)
+                ratio_unc = np.full(6, np.nan)
+
+                for isec, sector in enumerate(range(1, 7)):
+                    data = results["data"][label][sector]
+                    mc = results[mc_name][label][sector]
+
+                    data_eff = data["efficiency"][ibin]
+                    data_unc = data["efficiency_uncertainty"][ibin]
+                    mc_eff = mc["efficiency"][ibin]
+                    mc_unc = mc["efficiency_uncertainty"][ibin]
+
+                    if (
+                        np.isfinite(data_eff)
+                        and np.isfinite(data_unc)
+                        and np.isfinite(mc_eff)
+                        and np.isfinite(mc_unc)
+                        and data_eff > 0.0
+                        and mc_eff > 0.0
+                    ):
+                        ratio[isec] = data_eff / mc_eff
+                        ratio_unc[isec] = ratio[isec] * np.sqrt(
+                            (data_unc / data_eff) ** 2
+                            + (mc_unc / mc_eff) ** 2
+                        )
+                    #endif
+                #endfor
+
+                ax.errorbar(
+                    sectors,
+                    ratio,
+                    yerr=ratio_unc,
+                    marker="o",
+                    linestyle="-",
+                    capsize=2,
+                    label=f"DATA / {mc_name.upper()}",
+                )
+            #endfor
+
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.set_title(
+                f"{label}; "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("FD sector")
+            ax.set_ylabel("Photon-efficiency ratio DATA / MC")
+            ax.set_xticks(range(1, 7))
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "Nominal FD photon-efficiency correction versus sector "
+        f"(BDT >= {args.tag_score_min:.2f}, 10 deg association)",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    save_figure(fig, output_path)
+
+
+def plot_fd_sector_averaged_correction(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, np.ndarray]]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    Show all six sector-specific correction curves versus E_pred, one panel
+    per coarse FD theta bin.  DATA/AAOgen is used for the main sector-shape
+    view; DATA/CLASDIS remains available in the companion sector canvas and
+    printed numerical summary.
+    """
+    fd_bins = [
+        item
+        for item in probe_theta_bins(args)
+        if item[1] == REGIONS["FD"]
+    ]
+    centers = 0.5 * (edges[:-1] + edges[1:])
+
+    fig, axes = plt.subplots(
+        1,
+        len(fd_bins),
+        figsize=(5.2 * len(fd_bins), 4.8),
+        squeeze=False,
+    )
+
+    for iax, (label, _, _, _) in enumerate(fd_bins):
+        ax = axes[0, iax]
+
+        for sector in range(1, 7):
+            data = results["data"][label][sector]
+            mc = results["aaogen"][label][sector]
+
+            data_eff = data["efficiency"]
+            data_unc = data["efficiency_uncertainty"]
+            mc_eff = mc["efficiency"]
+            mc_unc = mc["efficiency_uncertainty"]
+
+            valid = (
+                np.isfinite(data_eff)
+                & np.isfinite(data_unc)
+                & np.isfinite(mc_eff)
+                & np.isfinite(mc_unc)
+                & (data_eff > 0.0)
+                & (mc_eff > 0.0)
+            )
+            ratio = np.full_like(data_eff, np.nan)
+            ratio_unc = np.full_like(data_eff, np.nan)
+            ratio[valid] = data_eff[valid] / mc_eff[valid]
+            ratio_unc[valid] = ratio[valid] * np.sqrt(
+                (data_unc[valid] / data_eff[valid]) ** 2
+                + (mc_unc[valid] / mc_eff[valid]) ** 2
+            )
+
+            ax.errorbar(
+                centers,
+                ratio,
+                yerr=ratio_unc,
+                marker="o",
+                linestyle="-",
+                capsize=2,
+                label=f"S{sector}",
+            )
+        #endfor
+
+        ax.axhline(1.0, linestyle="--", linewidth=1.0)
+        ax.set_title(label)
+        ax.set_xlabel(r"Predicted probe energy $E_{\rm pred}$ (GeV)")
+        ax.set_ylabel("DATA / AAOgen efficiency ratio")
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8, ncol=2)
+    #endfor
+
+    fig.suptitle(
+        "FD sector-specific photon-efficiency corrections",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
     save_figure(fig, output_path)
 
 
@@ -6217,6 +6569,28 @@ def main() -> None:
         output_dir / "22_fd_theta_binned_bdt_ratio_scan.png",
     )
 
+    progress(
+        "Building nominal FD Epred x theta_pred x sector corrections..."
+    )
+    fd_sector_scan = build_fd_theta_sector_nominal_scan(
+        denominator_diagnostics_by_source,
+        numerator_diagnostics_by_source,
+        edges,
+        args,
+    )
+    plot_fd_sector_dependence_nominal(
+        fd_sector_scan,
+        edges,
+        args,
+        output_dir / "23_fd_sector_dependence_nominal.png",
+    )
+    plot_fd_sector_averaged_correction(
+        fd_sector_scan,
+        edges,
+        args,
+        output_dir / "24_fd_sector_specific_corrections.png",
+    )
+
     print("\n" + "=" * 92)
     print("SUMMARY")
     print("=" * 92)
@@ -6401,6 +6775,44 @@ def main() -> None:
         #endfor
     #endfor
 
+    print("\nNominal FD sector-specific DATA/MC correction:")
+    for label, region_value, theta_low, theta_high in probe_theta_bins(args):
+        if region_value != REGIONS["FD"]:
+            continue
+        #endif
+        print(f"  {label}")
+        for sector in range(1, 7):
+            pieces = []
+            for mc_name in ["aaogen", "clasdis"]:
+                data_eff = (
+                    fd_sector_scan["data"][label][sector]["efficiency"]
+                )
+                mc_eff = (
+                    fd_sector_scan[mc_name][label][sector]["efficiency"]
+                )
+                ratio = np.divide(
+                    data_eff,
+                    mc_eff,
+                    out=np.full_like(data_eff, np.nan),
+                    where=(
+                        np.isfinite(data_eff)
+                        & np.isfinite(mc_eff)
+                        & (mc_eff > 0.0)
+                    ),
+                )
+                values = ", ".join(
+                    f"{edges[i]:g}-{edges[i+1]:g}:{ratio[i]:.3f}"
+                    for i in range(len(ratio))
+                    if np.isfinite(ratio[i])
+                )
+                pieces.append(
+                    f"DATA/{mc_name.upper()} [{values}]"
+                )
+            #endfor
+            print(f"    S{sector}: " + " ; ".join(pieces))
+        #endfor
+    #endfor
+
     print("\nOutputs retained after diagnostic pruning:")
     print(f"  {output_dir / '05_clasdis_tag_truth_purity.png'}")
     print("  11_<source>_mgg_fit_examples_10deg.png")
@@ -6411,6 +6823,8 @@ def main() -> None:
     print("  20_aaogen_truth_tag_score_phase_space.png")
     print("  21_theta_binned_nominal_data_mc_ratio.png")
     print("  22_fd_theta_binned_bdt_ratio_scan.png")
+    print("  23_fd_sector_dependence_nominal.png")
+    print("  24_fd_sector_specific_corrections.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
