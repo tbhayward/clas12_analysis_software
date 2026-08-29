@@ -202,6 +202,15 @@ ASSOCIATION_ENERGY_BINS = (
 MGG_FIT_ASSOCIATION_ANGLES = (8.0, 10.0, 12.0)
 MGG_FIT_NOMINAL_ANGLE = 10.0
 
+# Diagnostic scan of the minimum BDT tag score.  This deliberately extends
+# below the nominal 0.80 working point and very close to 1.0 so we can test
+# whether denominator contamination is responsible for an anomalously low
+# apparent photon efficiency in data.
+BDT_EFFICIENCY_SCAN_THRESHOLDS = np.asarray(
+    [0.50, 0.60, 0.70, 0.80, 0.85, 0.90, 0.925, 0.95, 0.975],
+    dtype=float,
+)
+
 # Fit range deliberately wider than the nominal pi0 window so the continuum
 # is constrained by data rather than by a hard mass-window count.
 MGG_FIT_RANGE = (0.070, 0.240)
@@ -2576,6 +2585,411 @@ def fit_efficiency_curve(
     )
 
 
+
+def denominator_counts_for_score_threshold(
+    diagnostics: Mapping[str, np.ndarray],
+    region_value: int,
+    edges: np.ndarray,
+    score_threshold: float,
+    args: argparse.Namespace,
+) -> np.ndarray:
+    """
+    Rebuild the epgamma denominator directly from the pre-cut diagnostic
+    arrays for an arbitrary BDT threshold.
+
+    This does NOT use the nominal denominator DirectedSample because that
+    object has already been filtered at args.tag_score_min and therefore
+    cannot support a scan below the nominal score cut.
+    """
+    score = np.asarray(diagnostics["all_score"], dtype=float)
+    tag_energy = np.asarray(
+        diagnostics["all_tag_energy"],
+        dtype=float,
+    )
+    mx2_ep = np.asarray(
+        diagnostics["all_mx2_ep"],
+        dtype=float,
+    )
+    missing_mass2 = np.asarray(
+        diagnostics["all_missing_mass2"],
+        dtype=float,
+    )
+    pred_energy = np.asarray(
+        diagnostics["all_pred_energy"],
+        dtype=float,
+    )
+    pred_theta = np.asarray(
+        diagnostics["all_pred_theta"],
+        dtype=float,
+    )
+    region = assign_region(pred_theta, args)
+
+    mask = (
+        np.isfinite(score)
+        & (score >= score_threshold)
+        & np.isfinite(tag_energy)
+        & (tag_energy >= args.tag_energy_min)
+        & np.isfinite(mx2_ep)
+        & (mx2_ep >= args.mx2_ep_min)
+        & (mx2_ep < args.mx2_ep_max)
+        & np.isfinite(missing_mass2)
+        & np.isfinite(pred_energy)
+        & (pred_energy >= args.probe_energy_min)
+        & (pred_energy < args.probe_energy_max)
+        & (region == region_value)
+    )
+
+    counts, _ = np.histogram(
+        pred_energy[mask],
+        bins=edges,
+    )
+    return counts.astype(float)
+
+
+def fit_numerator_for_score_threshold(
+    diagnostics: Mapping[str, np.ndarray],
+    region_value: int,
+    edges: np.ndarray,
+    score_threshold: float,
+    angle_max: float,
+    args: argparse.Namespace,
+) -> Tuple[np.ndarray, np.ndarray, list[MassFitResult]]:
+    """
+    Fit the pi0 numerator in each E_pred bin at an arbitrary minimum tag score.
+
+    Selection is rebuilt from the unfiltered epgammagamma diagnostics so the
+    scan is independent of the nominal args.tag_score_min.
+    """
+    scores = np.asarray(diagnostics["scores"], dtype=float)
+    tag_energy = np.asarray(
+        diagnostics["tag_energy"],
+        dtype=float,
+    )
+    mx2_ep = np.asarray(
+        diagnostics["mx2_ep"],
+        dtype=float,
+    )
+    pred_energy = np.asarray(
+        diagnostics["pred_energy"],
+        dtype=float,
+    )
+    pred_region = np.asarray(
+        diagnostics["pred_region"],
+        dtype=np.int64,
+    )
+    partner_energy = np.asarray(
+        diagnostics["partner_energy"],
+        dtype=float,
+    )
+    match_angle = np.asarray(
+        diagnostics["match_angle"],
+        dtype=float,
+    )
+    pair_mass = np.asarray(
+        diagnostics["pair_mass"],
+        dtype=float,
+    )
+
+    common = (
+        np.isfinite(scores)
+        & (scores >= score_threshold)
+        & np.isfinite(tag_energy)
+        & (tag_energy >= args.tag_energy_min)
+        & np.isfinite(mx2_ep)
+        & (mx2_ep >= args.mx2_ep_min)
+        & (mx2_ep < args.mx2_ep_max)
+        & np.isfinite(pred_energy)
+        & (pred_energy >= args.probe_energy_min)
+        & (pred_energy < args.probe_energy_max)
+        & (pred_region == region_value)
+        & np.isfinite(partner_energy)
+        & (partner_energy >= args.probe_energy_min)
+        & np.isfinite(match_angle)
+        & (match_angle < angle_max)
+        & np.isfinite(pair_mass)
+    )
+
+    nbin = len(edges) - 1
+    yields = np.full(nbin, np.nan)
+    uncertainties = np.full(nbin, np.nan)
+    fits: list[MassFitResult] = []
+
+    for ibin in range(nbin):
+        mask = (
+            common
+            & (pred_energy >= edges[ibin])
+            & (pred_energy < edges[ibin + 1])
+        )
+        fit = fit_mgg_spectrum(pair_mass[mask])
+        fits.append(fit)
+
+        if fit.success:
+            yields[ibin] = fit.yield_pi0
+            uncertainties[ibin] = fit.yield_uncertainty
+        #endif
+    #endfor
+
+    return yields, uncertainties, fits
+
+
+def build_bdt_efficiency_threshold_scan(
+    denominator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    numerator_diagnostics_by_source: Mapping[
+        str,
+        Mapping[str, np.ndarray],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[str, Dict[str, Dict[str, np.ndarray]]]:
+    """
+    Scan apparent fitted efficiency versus minimum BDT tag score.
+
+    Returned arrays have shape (N_threshold, N_energy_bin).
+    """
+    results: Dict[
+        str,
+        Dict[str, Dict[str, np.ndarray]],
+    ] = {}
+
+    n_threshold = len(BDT_EFFICIENCY_SCAN_THRESHOLDS)
+    n_bin = len(edges) - 1
+
+    for source_name in ["data", "aaogen", "clasdis"]:
+        results[source_name] = {}
+
+        for region_name, region_value in REGIONS.items():
+            den = np.zeros((n_threshold, n_bin), dtype=float)
+            num = np.full((n_threshold, n_bin), np.nan)
+            num_unc = np.full((n_threshold, n_bin), np.nan)
+            eff = np.full((n_threshold, n_bin), np.nan)
+            eff_unc = np.full((n_threshold, n_bin), np.nan)
+
+            for ithr, threshold in enumerate(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS
+            ):
+                den[ithr] = denominator_counts_for_score_threshold(
+                    denominator_diagnostics_by_source[source_name],
+                    region_value,
+                    edges,
+                    float(threshold),
+                    args,
+                )
+
+                (
+                    num[ithr],
+                    num_unc[ithr],
+                    _,
+                ) = fit_numerator_for_score_threshold(
+                    numerator_diagnostics_by_source[source_name],
+                    region_value,
+                    edges,
+                    float(threshold),
+                    MGG_FIT_NOMINAL_ANGLE,
+                    args,
+                )
+
+                eff[ithr] = np.divide(
+                    num[ithr],
+                    den[ithr],
+                    out=np.full(n_bin, np.nan),
+                    where=den[ithr] > 0.0,
+                )
+                eff_unc[ithr] = np.divide(
+                    num_unc[ithr],
+                    den[ithr],
+                    out=np.full(n_bin, np.nan),
+                    where=den[ithr] > 0.0,
+                )
+            #endfor
+
+            results[source_name][region_name] = {
+                "denominator": den,
+                "numerator": num,
+                "numerator_uncertainty": num_unc,
+                "efficiency": eff,
+                "efficiency_uncertainty": eff_unc,
+            }
+        #endfor
+    #endfor
+
+    return results
+
+
+def plot_bdt_efficiency_threshold_scan(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[str, np.ndarray]],
+    ],
+    edges: np.ndarray,
+    output_path: Path,
+) -> None:
+    """
+    Primary diagnostic: apparent efficiency versus minimum BDT tag score.
+
+    Rows are FT/FD; columns are E_pred bins.  Data, AAOgen, and CLASDIS are
+    shown together so a purity-driven rise in data can be compared directly
+    with the MC behavior.
+    """
+    nbin = len(edges) - 1
+    fig, axes = plt.subplots(
+        2,
+        nbin,
+        figsize=(5.0 * nbin, 8.5),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, region_name in enumerate(["FT", "FD"]):
+        for ibin in range(nbin):
+            ax = axes[irow, ibin]
+
+            for source_name in ["data", "aaogen", "clasdis"]:
+                block = results[source_name][region_name]
+                ax.errorbar(
+                    BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                    block["efficiency"][:, ibin],
+                    yerr=block["efficiency_uncertainty"][:, ibin],
+                    marker="o",
+                    linestyle="-",
+                    capsize=2,
+                    label=source_name.upper(),
+                )
+            #endfor
+
+            ax.axvline(
+                0.80,
+                linestyle="--",
+                linewidth=1.0,
+            )
+            ax.set_title(
+                f"{region_name}, "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("Minimum tag BDT score")
+            ax.set_ylabel(
+                r"Fitted $N_{\pi^0}/N_{\rm tag}$"
+            )
+            ax.set_xlim(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS[0] - 0.01,
+                0.99,
+            )
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "Apparent photon efficiency versus minimum tag BDT score "
+        "(10 deg association)",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_data_bdt_threshold_retention(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[str, np.ndarray]],
+    ],
+    edges: np.ndarray,
+    output_path: Path,
+) -> None:
+    """
+    Data-only retention diagnostic.
+
+    Denominator and fitted pi0 numerator are independently normalized to their
+    values at the loosest scanned threshold.  If denominator contamination is
+    important, tightening the score should suppress the denominator faster
+    than the fitted pi0 numerator.
+    """
+    nbin = len(edges) - 1
+    fig, axes = plt.subplots(
+        2,
+        nbin,
+        figsize=(5.0 * nbin, 8.5),
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+    )
+
+    for irow, region_name in enumerate(["FT", "FD"]):
+        block = results["data"][region_name]
+
+        for ibin in range(nbin):
+            ax = axes[irow, ibin]
+            den = block["denominator"][:, ibin]
+            num = block["numerator"][:, ibin]
+
+            den0 = den[0]
+            num0 = num[0]
+
+            den_ret = np.divide(
+                den,
+                den0,
+                out=np.full_like(den, np.nan),
+                where=den0 > 0.0,
+            )
+            num_ret = np.divide(
+                num,
+                num0,
+                out=np.full_like(num, np.nan),
+                where=np.isfinite(num0) & (num0 > 0.0),
+            )
+
+            ax.plot(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                den_ret,
+                marker="o",
+                linestyle="-",
+                label="Tag denominator",
+            )
+            ax.plot(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                num_ret,
+                marker="s",
+                linestyle="--",
+                label=r"Fitted $\pi^0$ numerator",
+            )
+            ax.axvline(
+                0.80,
+                linestyle=":",
+                linewidth=1.0,
+            )
+            ax.set_title(
+                f"{region_name}, "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("Minimum tag BDT score")
+            ax.set_ylabel("Retention relative to score >= 0.50")
+            ax.set_xlim(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS[0] - 0.01,
+                0.99,
+            )
+            ax.set_ylim(0.0, 1.05)
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "Data: denominator versus fitted-pi0 numerator retention "
+        "under tighter BDT selection",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
 def plot_mgg_fit_examples(
     source_name: str,
     fits_by_region: Mapping[str, list[MassFitResult]],
@@ -4637,12 +5051,16 @@ def main() -> None:
         str,
         Dict[str, np.ndarray],
     ] = {}
+    denominator_diagnostics_by_source: Dict[
+        str,
+        Dict[str, np.ndarray],
+    ] = {}
 
     for source_name in ["data", "aaogen", "clasdis"]:
         (
             denominator,
             numerator,
-            _,
+            denominator_diagnostics,
             epg,
             numerator_diagnostics,
         ) = process_source(
@@ -4657,6 +5075,9 @@ def main() -> None:
         denominators[source_name] = denominator
         numerators[source_name] = numerator
         epg_arrays[source_name] = epg
+        denominator_diagnostics_by_source[source_name] = (
+            denominator_diagnostics
+        )
         numerator_diagnostics_by_source[source_name] = (
             numerator_diagnostics
         )
@@ -4793,6 +5214,31 @@ def main() -> None:
         output_dir / "14_mgg_fit_efficiency_and_data_mc_ratio.png",
     )
 
+    # ------------------------------------------------------------------
+    # BDT-threshold diagnostic.
+    # Test directly whether the anomalously low apparent data efficiency
+    # rises as the tag definition becomes progressively purer.
+    # ------------------------------------------------------------------
+    progress(
+        "Building apparent-efficiency scan versus minimum BDT tag score..."
+    )
+    bdt_efficiency_scan = build_bdt_efficiency_threshold_scan(
+        denominator_diagnostics_by_source,
+        numerator_diagnostics_by_source,
+        edges,
+        args,
+    )
+    plot_bdt_efficiency_threshold_scan(
+        bdt_efficiency_scan,
+        edges,
+        output_dir / "15_bdt_threshold_efficiency_scan.png",
+    )
+    plot_data_bdt_threshold_retention(
+        bdt_efficiency_scan,
+        edges,
+        output_dir / "16_data_bdt_threshold_retention.png",
+    )
+
     print("\n" + "=" * 92)
     print("SUMMARY")
     print("=" * 92)
@@ -4835,6 +5281,40 @@ def main() -> None:
         #endfor
     #endfor
 
+    print("\nBDT-threshold apparent-efficiency scan:")
+    for region_name in ["FT", "FD"]:
+        print(f"  {region_name}")
+        for source_name in ["data", "aaogen", "clasdis"]:
+            block = bdt_efficiency_scan[source_name][region_name]
+            values = []
+            for ithr, threshold in enumerate(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS
+            ):
+                finite = np.isfinite(block["efficiency"][ithr])
+                if np.any(finite):
+                    den = np.sum(
+                        block["denominator"][ithr][finite]
+                    )
+                    num = np.nansum(
+                        block["numerator"][ithr][finite]
+                    )
+                    integrated = (
+                        num / den if den > 0.0 else np.nan
+                    )
+                else:
+                    integrated = np.nan
+                #endif
+                values.append(
+                    f"{threshold:.3f}:{integrated:.4f}"
+                )
+            #endfor
+            print(
+                f"    {source_name:8s}: "
+                + ", ".join(values)
+            )
+        #endfor
+    #endfor
+
     print("\nOutputs:")
     print(f"  {output_dir / '03_raw_probe_counts.png'}")
     print(f"  {output_dir / '04_efficiency_and_data_mc_ratio.png'}")
@@ -4844,6 +5324,8 @@ def main() -> None:
     print("  12_<source>_fitted_efficiency_angle_stability.png")
     print("  13_<mc>_probe_energy_response_fine.png")
     print("  14_mgg_fit_efficiency_and_data_mc_ratio.png")
+    print("  15_bdt_threshold_efficiency_scan.png")
+    print("  16_data_bdt_threshold_retention.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
