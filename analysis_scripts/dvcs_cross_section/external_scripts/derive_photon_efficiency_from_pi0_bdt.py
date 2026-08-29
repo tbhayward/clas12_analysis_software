@@ -197,6 +197,8 @@ ASSOCIATION_ENERGY_BINS = (
 )
 
 # Association windows used for the fitted-yield stability test.
+# 10 degrees is the nominal working point; 8 and 12 degrees bracket it as
+# matching/association variations.
 MGG_FIT_ASSOCIATION_ANGLES = (8.0, 10.0, 12.0)
 MGG_FIT_NOMINAL_ANGLE = 10.0
 
@@ -248,6 +250,9 @@ class MassFitResult:
     yield_uncertainty: float
     mean: float
     sigma: float
+    sigma_core: float
+    sigma_tail: float
+    core_fraction: float
     chi2_ndf: float
     x_centers: np.ndarray
     counts: np.ndarray
@@ -2215,24 +2220,31 @@ def plot_mgg_angle_scan(
 
 def mgg_model(
     x: np.ndarray,
-    amplitude: float,
+    amplitude_core: float,
+    amplitude_tail: float,
     mean: float,
-    sigma: float,
+    sigma_core: float,
+    delta_sigma: float,
     b0: float,
     b1: float,
     b2: float,
 ) -> np.ndarray:
     """
-    Gaussian pi0 peak plus a smooth quadratic continuum.
+    Common-mean double Gaussian pi0 signal plus quadratic continuum.
 
-    amplitude is the Gaussian peak height in histogram counts per bin.
+    sigma_tail is parameterized as sigma_core + delta_sigma so the broad
+    component is guaranteed to remain broader than the core.
     """
-    dx = x - 0.135
-    signal = amplitude * np.exp(
-        -0.5 * ((x - mean) / sigma) ** 2
+    sigma_tail = sigma_core + delta_sigma
+    core = amplitude_core * np.exp(
+        -0.5 * ((x - mean) / sigma_core) ** 2
     )
+    tail = amplitude_tail * np.exp(
+        -0.5 * ((x - mean) / sigma_tail) ** 2
+    )
+    dx = x - 0.135
     background = b0 + b1 * dx + b2 * dx * dx
-    return signal + background
+    return core + tail + background
 
 
 def fit_mgg_spectrum(
@@ -2255,15 +2267,16 @@ def fit_mgg_spectrum(
     centers = 0.5 * (hist_edges[:-1] + hist_edges[1:])
     bin_width = hist_edges[1] - hist_edges[0]
 
-    empty = np.zeros_like(centers, dtype=float)
-
-    if len(masses) < 80 or np.sum(counts) <= 0:
+    def failed_result() -> MassFitResult:
         return MassFitResult(
             success=False,
             yield_pi0=np.nan,
             yield_uncertainty=np.nan,
             mean=np.nan,
             sigma=np.nan,
+            sigma_core=np.nan,
+            sigma_tail=np.nan,
+            core_fraction=np.nan,
             chi2_ndf=np.nan,
             x_centers=centers,
             counts=counts,
@@ -2271,6 +2284,9 @@ def fit_mgg_spectrum(
             signal_counts=np.full_like(centers, np.nan),
             background_counts=np.full_like(centers, np.nan),
         )
+
+    if len(masses) < 100 or np.sum(counts) <= 0:
+        return failed_result()
     #endif
 
     sideband = (
@@ -2291,31 +2307,37 @@ def fit_mgg_spectrum(
         1.0,
     )
 
+    # Start with a dominant narrow core and a smaller broad component.
     p0 = [
-        peak_guess,
-        0.135,
-        0.010,
+        0.75 * peak_guess,       # core amplitude
+        0.25 * peak_guess,       # tail amplitude
+        0.135,                   # common mean
+        0.007,                   # core width
+        0.008,                   # tail-core width difference
         max(background_guess, 0.0),
         0.0,
         0.0,
     ]
 
-    # Keep the peak physical.  Background-shape coefficients remain broad;
-    # the continuum is diagnostic and the peak is very prominent in these
-    # samples.
+    amplitude_upper = max(10.0 * np.max(counts), 10.0)
+
     lower = [
-        0.0,
-        0.125,
-        0.003,
-        0.0,
+        0.0,        # core amplitude
+        0.0,        # tail amplitude
+        0.125,      # mean
+        0.0025,     # core width
+        0.0005,     # tail-core separation
+        0.0,        # background constant
         -1.0e7,
         -1.0e8,
     ]
     upper = [
-        max(10.0 * np.max(counts), 10.0),
+        amplitude_upper,
+        amplitude_upper,
         0.145,
-        0.030,
-        max(10.0 * np.max(counts), 10.0),
+        0.018,      # core width
+        0.035,      # additional tail width
+        amplitude_upper,
         1.0e7,
         1.0e8,
     ]
@@ -2331,54 +2353,79 @@ def fit_mgg_spectrum(
             sigma=sigma_y,
             absolute_sigma=True,
             bounds=(lower, upper),
-            maxfev=50000,
+            maxfev=100000,
         )
 
-        amplitude, mean, width, b0, b1, b2 = popt
+        (
+            amplitude_core,
+            amplitude_tail,
+            mean,
+            sigma_core,
+            delta_sigma,
+            b0,
+            b1,
+            b2,
+        ) = popt
+        sigma_tail = sigma_core + delta_sigma
+
         model_counts = mgg_model(centers, *popt)
-
-        signal_counts = amplitude * np.exp(
-            -0.5 * ((centers - mean) / width) ** 2
+        core_counts = amplitude_core * np.exp(
+            -0.5 * ((centers - mean) / sigma_core) ** 2
         )
+        tail_counts = amplitude_tail * np.exp(
+            -0.5 * ((centers - mean) / sigma_tail) ** 2
+        )
+        signal_counts = core_counts + tail_counts
+
         dx = centers - 0.135
         background_counts = b0 + b1 * dx + b2 * dx * dx
 
-        yield_pi0 = (
-            amplitude
-            * width
-            * np.sqrt(2.0 * np.pi)
-            / bin_width
-        )
+        norm = np.sqrt(2.0 * np.pi) / bin_width
+        core_yield = amplitude_core * sigma_core * norm
+        tail_yield = amplitude_tail * sigma_tail * norm
+        yield_pi0 = core_yield + tail_yield
 
-        # Propagate the amplitude-width covariance to the integrated
-        # Gaussian yield.
-        grad_a = (
-            width
-            * np.sqrt(2.0 * np.pi)
-            / bin_width
+        if yield_pi0 > 0.0:
+            core_fraction = core_yield / yield_pi0
+            sigma_effective = np.sqrt(
+                (
+                    core_yield * sigma_core * sigma_core
+                    + tail_yield * sigma_tail * sigma_tail
+                )
+                / yield_pi0
+            )
+        else:
+            core_fraction = np.nan
+            sigma_effective = np.nan
+        #endif
+
+        # Full covariance propagation for
+        # Y = norm * [A_c*s_c + A_t*(s_c + delta)].
+        gradient = np.zeros(len(popt), dtype=float)
+        gradient[0] = norm * sigma_core
+        gradient[1] = norm * sigma_tail
+        gradient[2] = 0.0
+        gradient[3] = norm * (
+            amplitude_core + amplitude_tail
         )
-        grad_s = (
-            amplitude
-            * np.sqrt(2.0 * np.pi)
-            / bin_width
-        )
-        variance = (
-            grad_a * grad_a * pcov[0, 0]
-            + grad_s * grad_s * pcov[2, 2]
-            + 2.0 * grad_a * grad_s * pcov[0, 2]
-        )
-        yield_uncertainty = np.sqrt(max(float(variance), 0.0))
+        gradient[4] = norm * amplitude_tail
+        variance = float(gradient @ pcov @ gradient)
+        yield_uncertainty = np.sqrt(max(variance, 0.0))
 
         residual = (counts - model_counts) / sigma_y
         ndf = max(len(counts) - len(popt), 1)
-        chi2_ndf = float(np.sum(residual * residual) / ndf)
+        chi2_ndf = float(
+            np.sum(residual * residual) / ndf
+        )
 
         success = (
             np.isfinite(yield_pi0)
             and yield_pi0 >= 0.0
             and np.isfinite(yield_uncertainty)
             and 0.125 <= mean <= 0.145
-            and 0.003 <= width <= 0.030
+            and 0.0025 <= sigma_core <= 0.018
+            and sigma_tail > sigma_core
+            and sigma_tail <= 0.053
         )
 
         return MassFitResult(
@@ -2386,7 +2433,10 @@ def fit_mgg_spectrum(
             yield_pi0=float(yield_pi0),
             yield_uncertainty=float(yield_uncertainty),
             mean=float(mean),
-            sigma=float(width),
+            sigma=float(sigma_effective),
+            sigma_core=float(sigma_core),
+            sigma_tail=float(sigma_tail),
+            core_fraction=float(core_fraction),
             chi2_ndf=chi2_ndf,
             x_centers=centers,
             counts=counts,
@@ -2396,20 +2446,9 @@ def fit_mgg_spectrum(
         )
     except Exception as exc:
         progress(f"WARNING: Mgg fit failed: {exc}")
-        return MassFitResult(
-            success=False,
-            yield_pi0=np.nan,
-            yield_uncertainty=np.nan,
-            mean=np.nan,
-            sigma=np.nan,
-            chi2_ndf=np.nan,
-            x_centers=centers,
-            counts=counts,
-            model_counts=np.full_like(centers, np.nan),
-            signal_counts=np.full_like(centers, np.nan),
-            background_counts=np.full_like(centers, np.nan),
-        )
+        return failed_result()
     #endtry
+
 
 
 def mgg_fit_candidate_mask(
@@ -2586,12 +2625,14 @@ def plot_mgg_fit_examples(
                     fit.signal_counts,
                     linestyle=":",
                     linewidth=1.2,
-                    label=r"$\pi^0$ Gaussian",
+                    label=r"$\pi^0$ double Gaussian",
                 )
                 fit_text = (
                     f"Npi0={fit.yield_pi0:,.0f}\\n"
                     f"mu={1000.0*fit.mean:.1f} MeV\\n"
-                    f"sigma={1000.0*fit.sigma:.1f} MeV\\n"
+                    f"sigma_core={1000.0*fit.sigma_core:.1f} MeV\\n"
+                    f"sigma_tail={1000.0*fit.sigma_tail:.1f} MeV\\n"
+                    f"f_core={fit.core_fraction:.2f}\\n"
                     f"chi2/ndf={fit.chi2_ndf:.2f}"
                 )
             else:
@@ -4570,6 +4611,11 @@ def main() -> None:
         "Probe definition: "
         f"{args.probe_energy_min:.2f}<=Epred<{args.probe_energy_max:.2f} GeV, "
         f"partner angular match<{args.probe_match_angle_max:.1f} deg"
+    )
+    print(
+        "Fit numerator: common-mean double Gaussian pi0 signal + "
+        "quadratic background; nominal association=10 deg, "
+        "variations=8/12 deg"
     )
     print("=" * 92)
 
