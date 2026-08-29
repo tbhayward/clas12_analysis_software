@@ -2893,6 +2893,127 @@ def plot_bdt_efficiency_threshold_scan(
     save_figure(fig, output_path)
 
 
+
+def plot_bdt_threshold_data_mc_ratio(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[str, np.ndarray]],
+    ],
+    edges: np.ndarray,
+    output_path: Path,
+) -> None:
+    """
+    Plot the data/MC apparent-efficiency ratio versus minimum BDT tag score.
+
+    This is the key working-point diagnostic.  Absolute apparent efficiencies
+    may change with tag-score threshold because the selected pi0 population
+    changes, especially for CLASDIS where genuine non-pi0 photons are present.
+    What matters for the correction is whether the DATA/MC ratio is stable.
+
+    Ratios are shown separately for AAOgen and CLASDIS in each FT/FD and
+    E_pred bin.  Statistical uncertainties from the fitted numerator yields
+    are propagated in quadrature.
+    """
+    nbin = len(edges) - 1
+    fig, axes = plt.subplots(
+        2,
+        nbin,
+        figsize=(5.0 * nbin, 8.5),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, region_name in enumerate(["FT", "FD"]):
+        data_block = results["data"][region_name]
+
+        for ibin in range(nbin):
+            ax = axes[irow, ibin]
+
+            data_eff = data_block["efficiency"][:, ibin]
+            data_unc = data_block["efficiency_uncertainty"][:, ibin]
+
+            for mc_name in ["aaogen", "clasdis"]:
+                mc_block = results[mc_name][region_name]
+                mc_eff = mc_block["efficiency"][:, ibin]
+                mc_unc = mc_block["efficiency_uncertainty"][:, ibin]
+
+                valid = (
+                    np.isfinite(data_eff)
+                    & np.isfinite(data_unc)
+                    & np.isfinite(mc_eff)
+                    & np.isfinite(mc_unc)
+                    & (data_eff > 0.0)
+                    & (mc_eff > 0.0)
+                )
+
+                ratio = np.full_like(data_eff, np.nan, dtype=float)
+                ratio_unc = np.full_like(data_eff, np.nan, dtype=float)
+
+                ratio[valid] = (
+                    data_eff[valid] / mc_eff[valid]
+                )
+
+                rel_data = np.zeros_like(data_eff, dtype=float)
+                rel_mc = np.zeros_like(mc_eff, dtype=float)
+                rel_data[valid] = (
+                    data_unc[valid] / data_eff[valid]
+                )
+                rel_mc[valid] = (
+                    mc_unc[valid] / mc_eff[valid]
+                )
+                ratio_unc[valid] = ratio[valid] * np.sqrt(
+                    rel_data[valid] * rel_data[valid]
+                    + rel_mc[valid] * rel_mc[valid]
+                )
+
+                ax.errorbar(
+                    BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                    ratio,
+                    yerr=ratio_unc,
+                    marker="o",
+                    linestyle="-",
+                    capsize=2,
+                    label=f"DATA / {mc_name.upper()}",
+                )
+            #endfor
+
+            ax.axhline(
+                1.0,
+                linestyle="--",
+                linewidth=1.0,
+            )
+            ax.axvline(
+                0.80,
+                linestyle=":",
+                linewidth=1.0,
+            )
+            ax.set_title(
+                f"{region_name}, "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("Minimum tag BDT score")
+            ax.set_ylabel("Apparent efficiency ratio DATA / MC")
+            ax.set_xlim(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS[0] - 0.01,
+                0.99,
+            )
+            ax.grid(alpha=0.2)
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "DATA/MC photon-efficiency ratio versus minimum tag BDT score "
+        "(10 deg association)",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
 def plot_data_bdt_threshold_retention(
     results: Mapping[
         str,
@@ -5238,6 +5359,11 @@ def main() -> None:
         edges,
         output_dir / "16_data_bdt_threshold_retention.png",
     )
+    plot_bdt_threshold_data_mc_ratio(
+        bdt_efficiency_scan,
+        edges,
+        output_dir / "17_bdt_threshold_data_mc_ratio.png",
+    )
 
     print("\n" + "=" * 92)
     print("SUMMARY")
@@ -5315,6 +5441,49 @@ def main() -> None:
         #endfor
     #endfor
 
+    print("\nBDT-threshold DATA/MC ratio scan:")
+    for region_name in ["FT", "FD"]:
+        print(f"  {region_name}")
+        for ibin in range(len(edges) - 1):
+            label = (
+                f"{edges[ibin]:g}-{edges[ibin+1]:g} GeV"
+            )
+            pieces = []
+            for mc_name in ["aaogen", "clasdis"]:
+                data_eff = (
+                    bdt_efficiency_scan["data"][region_name]
+                    ["efficiency"][:, ibin]
+                )
+                mc_eff = (
+                    bdt_efficiency_scan[mc_name][region_name]
+                    ["efficiency"][:, ibin]
+                )
+                ratio = np.divide(
+                    data_eff,
+                    mc_eff,
+                    out=np.full_like(data_eff, np.nan),
+                    where=(
+                        np.isfinite(data_eff)
+                        & np.isfinite(mc_eff)
+                        & (mc_eff > 0.0)
+                    ),
+                )
+                values = ", ".join(
+                    f"{thr:.3f}:{val:.3f}"
+                    for thr, val in zip(
+                        BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                        ratio,
+                    )
+                    if np.isfinite(val)
+                )
+                pieces.append(
+                    f"DATA/{mc_name.upper()} [{values}]"
+                )
+            #endfor
+            print(f"    {label}: " + " ; ".join(pieces))
+        #endfor
+    #endfor
+
     print("\nOutputs:")
     print(f"  {output_dir / '03_raw_probe_counts.png'}")
     print(f"  {output_dir / '04_efficiency_and_data_mc_ratio.png'}")
@@ -5326,6 +5495,7 @@ def main() -> None:
     print("  14_mgg_fit_efficiency_and_data_mc_ratio.png")
     print("  15_bdt_threshold_efficiency_scan.png")
     print("  16_data_bdt_threshold_retention.png")
+    print("  17_bdt_threshold_data_mc_ratio.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
