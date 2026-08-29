@@ -1164,6 +1164,28 @@ def denominator_from_epg(
         # Compare the branch Mx2(epgamma) against a direct four-vector check.
         "computed_missing_mass2": pred["mass2"],
     }
+
+    # Keep truth labels on the unfiltered denominator population so AAOgen
+    # can be restricted to genuinely truth-matched reconstructed photons.
+    if "matching_gamma_pid" in arrays:
+        diagnostics["all_matching_gamma_pid"] = np.asarray(
+            arrays["matching_gamma_pid"],
+            dtype=np.int64,
+        )
+    #endif
+    if "gamma_mcindex" in arrays:
+        diagnostics["all_gamma_mcindex"] = np.asarray(
+            arrays["gamma_mcindex"],
+            dtype=np.int64,
+        )
+    #endif
+    if "gamma_parent_pid" in arrays:
+        diagnostics["all_gamma_parent_pid"] = np.asarray(
+            arrays["gamma_parent_pid"],
+            dtype=np.int64,
+        )
+    #endif
+
     return sample, diagnostics
 
 
@@ -2592,6 +2614,7 @@ def denominator_counts_for_score_threshold(
     edges: np.ndarray,
     score_threshold: float,
     args: argparse.Namespace,
+    require_truth_matched_photon: bool = False,
 ) -> np.ndarray:
     """
     Rebuild the epgamma denominator directly from the pre-cut diagnostic
@@ -2639,6 +2662,30 @@ def denominator_counts_for_score_threshold(
         & (region == region_value)
     )
 
+    if require_truth_matched_photon:
+        if (
+            "all_matching_gamma_pid" not in diagnostics
+            or "all_gamma_mcindex" not in diagnostics
+        ):
+            raise RuntimeError(
+                "Truth-matched denominator requested, but epgamma truth "
+                "branches are unavailable."
+            )
+        #endif
+        mask &= (
+            np.asarray(
+                diagnostics["all_matching_gamma_pid"],
+                dtype=np.int64,
+            ) == 22
+        )
+        mask &= (
+            np.asarray(
+                diagnostics["all_gamma_mcindex"],
+                dtype=np.int64,
+            ) >= 0
+        )
+    #endif
+
     counts, _ = np.histogram(
         pred_energy[mask],
         bins=edges,
@@ -2653,6 +2700,7 @@ def fit_numerator_for_score_threshold(
     score_threshold: float,
     angle_max: float,
     args: argparse.Namespace,
+    require_truth_matched_tag: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, list[MassFitResult]]:
     """
     Fit the pi0 numerator in each E_pred bin at an arbitrary minimum tag score.
@@ -2708,6 +2756,30 @@ def fit_numerator_for_score_threshold(
         & (match_angle < angle_max)
         & np.isfinite(pair_mass)
     )
+
+    if require_truth_matched_tag:
+        if (
+            "tag_truth_pid" not in diagnostics
+            or "tag_truth_mcindex" not in diagnostics
+        ):
+            raise RuntimeError(
+                "Truth-matched numerator requested, but epgammagamma truth "
+                "branches are unavailable."
+            )
+        #endif
+        common &= (
+            np.asarray(
+                diagnostics["tag_truth_pid"],
+                dtype=np.int64,
+            ) == 22
+        )
+        common &= (
+            np.asarray(
+                diagnostics["tag_truth_mcindex"],
+                dtype=np.int64,
+            ) >= 0
+        )
+    #endif
 
     nbin = len(edges) - 1
     yields = np.full(nbin, np.nan)
@@ -2816,6 +2888,247 @@ def build_bdt_efficiency_threshold_scan(
     #endfor
 
     return results
+
+
+
+def build_aaogen_truth_tag_threshold_scan(
+    denominator_diagnostics: Mapping[str, np.ndarray],
+    numerator_diagnostics: Mapping[str, np.ndarray],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+) -> Dict[str, Dict[str, np.ndarray]]:
+    """
+    AAOgen-only threshold scan requiring the reconstructed tag photon to be
+    truth matched to a generated photon in BOTH denominator and numerator.
+
+    Because AAOgen is exclusive ep pi0, a truth-matched generated photon is
+    a pi0 daughter by construction.  This isolates BDT/phase-space selection
+    effects from unmatched/nonphoton contamination in the AAOgen tag sample.
+    """
+    results: Dict[str, Dict[str, np.ndarray]] = {}
+    n_threshold = len(BDT_EFFICIENCY_SCAN_THRESHOLDS)
+    n_bin = len(edges) - 1
+
+    for region_name, region_value in REGIONS.items():
+        den = np.zeros((n_threshold, n_bin), dtype=float)
+        num = np.full((n_threshold, n_bin), np.nan)
+        num_unc = np.full((n_threshold, n_bin), np.nan)
+        eff = np.full((n_threshold, n_bin), np.nan)
+        eff_unc = np.full((n_threshold, n_bin), np.nan)
+
+        for ithr, threshold in enumerate(
+            BDT_EFFICIENCY_SCAN_THRESHOLDS
+        ):
+            den[ithr] = denominator_counts_for_score_threshold(
+                denominator_diagnostics,
+                region_value,
+                edges,
+                float(threshold),
+                args,
+                require_truth_matched_photon=True,
+            )
+
+            (
+                num[ithr],
+                num_unc[ithr],
+                _,
+            ) = fit_numerator_for_score_threshold(
+                numerator_diagnostics,
+                region_value,
+                edges,
+                float(threshold),
+                MGG_FIT_NOMINAL_ANGLE,
+                args,
+                require_truth_matched_tag=True,
+            )
+
+            eff[ithr] = np.divide(
+                num[ithr],
+                den[ithr],
+                out=np.full(n_bin, np.nan),
+                where=den[ithr] > 0.0,
+            )
+            eff_unc[ithr] = np.divide(
+                num_unc[ithr],
+                den[ithr],
+                out=np.full(n_bin, np.nan),
+                where=den[ithr] > 0.0,
+            )
+        #endfor
+
+        results[region_name] = {
+            "denominator": den,
+            "numerator": num,
+            "numerator_uncertainty": num_unc,
+            "efficiency": eff,
+            "efficiency_uncertainty": eff_unc,
+        }
+    #endfor
+
+    return results
+
+
+def plot_aaogen_truth_tag_threshold_scan(
+    standard_scan: Mapping[
+        str,
+        Mapping[str, Mapping[str, np.ndarray]],
+    ],
+    truth_scan: Mapping[str, Mapping[str, np.ndarray]],
+    edges: np.ndarray,
+    output_path: Path,
+) -> None:
+    """
+    Compare ordinary AAOgen and truth-matched-tag AAOgen efficiency versus
+    BDT threshold.  If both retain similar threshold dependence, the effect
+    is selection/phase-space correlation rather than AAOgen tag impurity.
+    """
+    nbin = len(edges) - 1
+    fig, axes = plt.subplots(
+        2,
+        nbin,
+        figsize=(5.0 * nbin, 8.5),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, region_name in enumerate(["FT", "FD"]):
+        standard = standard_scan["aaogen"][region_name]
+        truth = truth_scan[region_name]
+
+        for ibin in range(nbin):
+            ax = axes[irow, ibin]
+            ax.errorbar(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                standard["efficiency"][:, ibin],
+                yerr=standard["efficiency_uncertainty"][:, ibin],
+                marker="o",
+                linestyle="-",
+                capsize=2,
+                label="AAOgen all selected tags",
+            )
+            ax.errorbar(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                truth["efficiency"][:, ibin],
+                yerr=truth["efficiency_uncertainty"][:, ibin],
+                marker="s",
+                linestyle="--",
+                capsize=2,
+                label="AAOgen truth-matched tags",
+            )
+            ax.axvline(0.80, linestyle=":", linewidth=1.0)
+            ax.set_title(
+                f"{region_name}, "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("Minimum tag BDT score")
+            ax.set_ylabel(r"Fitted $N_{\pi^0}/N_{\rm tag}$")
+            ax.grid(alpha=0.2)
+            ax.set_xlim(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS[0] - 0.01,
+                0.99,
+            )
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "AAOgen BDT-threshold dependence: all tags versus truth-matched tags",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
+
+
+def plot_data_truth_aaogen_ratio_scan(
+    standard_scan: Mapping[
+        str,
+        Mapping[str, Mapping[str, np.ndarray]],
+    ],
+    truth_scan: Mapping[str, Mapping[str, np.ndarray]],
+    edges: np.ndarray,
+    output_path: Path,
+) -> None:
+    """
+    DATA / truth-matched-AAOgen apparent-efficiency ratio versus BDT threshold.
+
+    Persistence of threshold dependence here demonstrates that the effect
+    cannot be explained by unmatched/nonphoton AAOgen denominator tags.
+    """
+    nbin = len(edges) - 1
+    fig, axes = plt.subplots(
+        2,
+        nbin,
+        figsize=(5.0 * nbin, 8.5),
+        squeeze=False,
+        sharex=True,
+    )
+
+    for irow, region_name in enumerate(["FT", "FD"]):
+        data = standard_scan["data"][region_name]
+        truth = truth_scan[region_name]
+
+        for ibin in range(nbin):
+            ax = axes[irow, ibin]
+            data_eff = data["efficiency"][:, ibin]
+            data_unc = data["efficiency_uncertainty"][:, ibin]
+            mc_eff = truth["efficiency"][:, ibin]
+            mc_unc = truth["efficiency_uncertainty"][:, ibin]
+
+            valid = (
+                np.isfinite(data_eff)
+                & np.isfinite(data_unc)
+                & np.isfinite(mc_eff)
+                & np.isfinite(mc_unc)
+                & (data_eff > 0.0)
+                & (mc_eff > 0.0)
+            )
+
+            ratio = np.full_like(data_eff, np.nan, dtype=float)
+            ratio_unc = np.full_like(data_eff, np.nan, dtype=float)
+            ratio[valid] = data_eff[valid] / mc_eff[valid]
+            ratio_unc[valid] = ratio[valid] * np.sqrt(
+                (data_unc[valid] / data_eff[valid]) ** 2
+                + (mc_unc[valid] / mc_eff[valid]) ** 2
+            )
+
+            ax.errorbar(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS,
+                ratio,
+                yerr=ratio_unc,
+                marker="o",
+                linestyle="-",
+                capsize=2,
+                label="DATA / truth-matched AAOgen",
+            )
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.axvline(0.80, linestyle=":", linewidth=1.0)
+            ax.set_title(
+                f"{region_name}, "
+                f"{edges[ibin]:g} <= Epred < {edges[ibin+1]:g} GeV"
+            )
+            ax.set_xlabel("Minimum tag BDT score")
+            ax.set_ylabel("Apparent efficiency ratio DATA / MC")
+            ax.grid(alpha=0.2)
+            ax.set_xlim(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS[0] - 0.01,
+                0.99,
+            )
+
+            if irow == 0 and ibin == 0:
+                ax.legend(fontsize=8)
+            #endif
+        #endfor
+    #endfor
+
+    fig.suptitle(
+        "DATA / truth-matched AAOgen efficiency versus minimum tag BDT score",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.95])
+    save_figure(fig, output_path)
 
 
 def plot_bdt_efficiency_threshold_scan(
@@ -5365,6 +5678,28 @@ def main() -> None:
         output_dir / "17_bdt_threshold_data_mc_ratio.png",
     )
 
+    progress(
+        "Building AAOgen truth-matched-tag BDT-threshold diagnostic..."
+    )
+    aaogen_truth_tag_scan = build_aaogen_truth_tag_threshold_scan(
+        denominator_diagnostics_by_source["aaogen"],
+        numerator_diagnostics_by_source["aaogen"],
+        edges,
+        args,
+    )
+    plot_aaogen_truth_tag_threshold_scan(
+        bdt_efficiency_scan,
+        aaogen_truth_tag_scan,
+        edges,
+        output_dir / "18_aaogen_truth_tag_bdt_threshold_scan.png",
+    )
+    plot_data_truth_aaogen_ratio_scan(
+        bdt_efficiency_scan,
+        aaogen_truth_tag_scan,
+        edges,
+        output_dir / "19_data_truth_aaogen_bdt_ratio_scan.png",
+    )
+
     print("\n" + "=" * 92)
     print("SUMMARY")
     print("=" * 92)
@@ -5484,6 +5819,36 @@ def main() -> None:
         #endfor
     #endfor
 
+    print("\nAAOgen truth-matched-tag threshold scan:")
+    for region_name in ["FT", "FD"]:
+        print(f"  {region_name}")
+        for ibin in range(len(edges) - 1):
+            standard = (
+                bdt_efficiency_scan["aaogen"][region_name]
+                ["efficiency"][:, ibin]
+            )
+            truth = (
+                aaogen_truth_tag_scan[region_name]
+                ["efficiency"][:, ibin]
+            )
+            pieces = []
+            for ithr, threshold in enumerate(
+                BDT_EFFICIENCY_SCAN_THRESHOLDS
+            ):
+                if np.isfinite(standard[ithr]) and np.isfinite(truth[ithr]):
+                    pieces.append(
+                        f"{threshold:.3f}:"
+                        f"{standard[ithr]:.3f}->{truth[ithr]:.3f}"
+                    )
+                #endif
+            #endfor
+            print(
+                f"    {edges[ibin]:g}-{edges[ibin+1]:g} GeV: "
+                + ", ".join(pieces)
+            )
+        #endfor
+    #endfor
+
     print("\nOutputs:")
     print(f"  {output_dir / '03_raw_probe_counts.png'}")
     print(f"  {output_dir / '04_efficiency_and_data_mc_ratio.png'}")
@@ -5496,6 +5861,8 @@ def main() -> None:
     print("  15_bdt_threshold_efficiency_scan.png")
     print("  16_data_bdt_threshold_retention.png")
     print("  17_bdt_threshold_data_mc_ratio.png")
+    print("  18_aaogen_truth_tag_bdt_threshold_scan.png")
+    print("  19_data_truth_aaogen_bdt_ratio_scan.png")
     print("\nThis is a first-stage diagnostic extraction, not yet a final correction.")
 
 
