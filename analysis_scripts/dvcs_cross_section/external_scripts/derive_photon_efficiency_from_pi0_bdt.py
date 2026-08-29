@@ -3727,7 +3727,12 @@ def plot_predicted_vs_reconstructed_sector_migration(
         score = np.asarray(d["scores"], dtype=float)
         pred_theta = np.asarray(d["pred_theta"], dtype=float)
         pred_phi = np.asarray(d["pred_phi"], dtype=float)
-        partner_phi = np.asarray(d["partner_phi"], dtype=float)
+        # Reconstructed ROOT angular branches are stored in radians.
+        # Convert the partner-photon azimuth to degrees before assigning the
+        # CLAS12 FD sector.  The predicted probe phi is already in degrees.
+        partner_phi = angle_to_degrees(
+            np.asarray(d["partner_phi"], dtype=float)
+        )
         partner_energy = np.asarray(d["partner_energy"], dtype=float)
         match_angle = np.asarray(d["match_angle"], dtype=float)
         mx2_ep = np.asarray(d["mx2_ep"], dtype=float)
