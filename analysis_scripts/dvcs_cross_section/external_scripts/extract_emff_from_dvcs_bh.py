@@ -3847,6 +3847,82 @@ def make_synthetic_sachs_truth_scenarios(
 #enddef
 
 
+
+def robust_upper_limit(
+        values,
+        quantile: float = 0.98,
+        pad_fraction: float = 0.12,
+        minimum: float | None = None) -> float:
+    """
+    Robust upper plotting limit that ignores a very small number of extreme
+    failures while preserving the scale occupied by the bulk of the study.
+
+    This changes only visualization; no values are clipped in CSV output or
+    in any ranking/objective calculation.
+    """
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if len(arr) == 0:
+        return 1.0 if minimum is None else float(minimum)
+    #endif
+
+    q = float(np.nanquantile(arr, quantile))
+    med = float(np.nanmedian(arr))
+    upper = q + pad_fraction * max(abs(q - med), abs(q), 1.0e-6)
+    if minimum is not None:
+        upper = max(upper, float(minimum))
+    #endif
+    return upper
+#enddef
+
+
+def robust_symmetric_limit(
+        values,
+        quantile: float = 0.98,
+        pad_fraction: float = 0.12,
+        minimum: float = 0.02) -> float:
+    """Robust symmetric +/- plotting range around zero."""
+    arr = np.asarray(values, dtype=float)
+    arr = np.abs(arr[np.isfinite(arr)])
+    if len(arr) == 0:
+        return float(minimum)
+    #endif
+    q = float(np.nanquantile(arr, quantile))
+    return max(float(minimum), q * (1.0 + pad_fraction))
+#enddef
+
+
+def robust_radius_limits(
+        values,
+        truth_values=None,
+        lower_quantile: float = 0.01,
+        upper_quantile: float = 0.99,
+        pad_fraction: float = 0.08) -> tuple[float, float]:
+    """
+    Robust y-range for extracted-radius plots.
+
+    Extreme failed-fit radii are ignored for display only. Truth radii are
+    explicitly included so the physically relevant reference range is never
+    cropped.
+    """
+    arr = np.asarray(values, dtype=float)
+    arr = arr[np.isfinite(arr)]
+    if truth_values is not None:
+        truth = np.asarray(truth_values, dtype=float)
+        truth = truth[np.isfinite(truth)]
+        arr = np.concatenate([arr, truth])
+    #endif
+    if len(arr) == 0:
+        return 0.5, 1.1
+    #endif
+
+    lo = float(np.nanquantile(arr, lower_quantile))
+    hi = float(np.nanquantile(arr, upper_quantile))
+    span = max(hi - lo, 0.05)
+    return lo - pad_fraction * span, hi + pad_fraction * span
+#enddef
+
+
 def save_extended_radius_bias_matrices(
         table: pd.DataFrame,
         families: Sequence[str],
@@ -3922,7 +3998,25 @@ def save_extended_radius_bias_matrices(
             fig, ax = plt.subplots(
                 figsize=(1.0 + 0.85 * len(families), 2.0 + 0.55 * len(groups))
             )
-            image = ax.imshow(values, aspect="auto")
+            finite_values = values[np.isfinite(values)]
+            if metric_name == "validity":
+                vmin, vmax = 0.0, 1.0
+                extend = "neither"
+            else:
+                vmin = 0.0
+                vmax = robust_upper_limit(
+                    finite_values,
+                    quantile=0.98,
+                    pad_fraction=0.08,
+                )
+                extend = "max"
+            #endif
+            image = ax.imshow(
+                values,
+                aspect="auto",
+                vmin=vmin,
+                vmax=vmax,
+            )
             ax.set_xticks(np.arange(len(families)))
             ax.set_xticklabels(families, rotation=45, ha="right")
             ax.set_yticks(np.arange(len(groups)))
@@ -3932,7 +4026,7 @@ def save_extended_radius_bias_matrices(
             ax.set_title(
                 f"{quantity}: generating family vs fitting family ({metric_name})"
             )
-            cbar = fig.colorbar(image, ax=ax, pad=0.02)
+            cbar = fig.colorbar(image, ax=ax, pad=0.02, extend=extend)
             cbar.set_label(label)
             fig.tight_layout()
             fig.savefig(outdir / filename, dpi=180)
@@ -4038,6 +4132,16 @@ def save_extended_radius_bias_matrices(
     ax.set_xticklabels(order, rotation=45)
     ax.set_ylabel("combined RMS bias-variance objective (fm)")
     ax.set_title("Extended closure-study ranking with convergence eligibility")
+    yvals = ranking["combined_RMS_objective_fm"].to_numpy(float)
+    ax.set_ylim(
+        0.0,
+        robust_upper_limit(
+            yvals,
+            quantile=0.90,
+            pad_fraction=0.12,
+            minimum=0.05,
+        ),
+    )
     ax.grid(alpha=0.2)
     ax.legend()
     fig.tight_layout()
@@ -4059,7 +4163,7 @@ def run_radius_bias_variance_study(
     and inserted into the exact BH quadratic.
 
     Fitting families:
-      P1..P4, IP1..IP4, CF2..CF4.
+      P1..P3, IP1..IP4, CF2..CF3.
 
     Truth ensemble:
       empirical Kelly, AMT2007, Bernauer/A1, plus optional synthetic P/IP/CF
@@ -4067,9 +4171,9 @@ def run_radius_bias_variance_study(
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
-    families = [f"P{i}" for i in range(1, 5)]
+    families = [f"P{i}" for i in range(1, 4)]
     families += [f"IP{i}" for i in range(1, 5)]
-    families += [f"CF{i}" for i in range(2, 5)]
+    families += [f"CF{i}" for i in range(2, 4)]
 
     specs = [bundle_to_measurement_spec(b) for b in bundles]
     qmax = max(
@@ -4342,6 +4446,15 @@ def run_radius_bias_variance_study(
         ax.set_xticklabels(part["family"], rotation=45)
         ax.set_ylabel(r"$\sqrt{\sigma_{\rm stat}^2+b^2}$ (fm)")
         ax.set_title(quantity)
+        ax.set_ylim(
+            0.0,
+            robust_upper_limit(
+                part["RMS_objective_across_truths_fm"].to_numpy(float),
+                quantile=0.90,
+                pad_fraction=0.15,
+                minimum=0.05,
+            ),
+        )
         ax.grid(alpha=0.2)
     #endfor
     fig.suptitle(
@@ -4372,6 +4485,19 @@ def run_radius_bias_variance_study(
         ax.set_xticklabels(families, rotation=45)
         ax.set_ylabel(r"$\sqrt{\sigma_{\rm stat}^2+b^2}$ (fm)")
         ax.set_title(f"{quantity}: empirical-truth objective")
+        plotted_vals = empirical_table.loc[
+            empirical_table["quantity"] == quantity,
+            "sqrt_stat2_plus_bias2_fm",
+        ].to_numpy(float)
+        ax.set_ylim(
+            0.0,
+            robust_upper_limit(
+                plotted_vals,
+                quantile=0.95,
+                pad_fraction=0.12,
+                minimum=0.05,
+            ),
+        )
         ax.grid(alpha=0.2)
         ax.legend()
         fig.tight_layout()
@@ -4410,6 +4536,15 @@ def run_radius_bias_variance_study(
         ax.set_ylabel("fm")
         ax.set_title(
             f"{quantity}: statistical variance versus extrapolation bias"
+        )
+        ax.set_ylim(
+            0.0,
+            robust_upper_limit(
+                np.asarray(stat_rms + abs_bias_rms, dtype=float),
+                quantile=0.90,
+                pad_fraction=0.15,
+                minimum=0.05,
+            ),
         )
         ax.grid(alpha=0.2)
         ax.legend()
@@ -4487,6 +4622,17 @@ def run_radius_bias_variance_study(
         ax.set_title(
             f"{quantity}: empirical truths, mean extracted radius ± replica RMS"
         )
+        qpart = empirical_table.loc[
+            empirical_table["quantity"] == quantity
+        ]
+        lo, hi = robust_radius_limits(
+            qpart["mean_extracted_radius_fm"].to_numpy(float),
+            truth_values=qpart["truth_radius_fm"].to_numpy(float),
+            lower_quantile=0.02,
+            upper_quantile=0.98,
+            pad_fraction=0.10,
+        )
+        ax.set_ylim(lo, hi)
         ax.grid(alpha=0.2)
         ax.legend()
         fig.tight_layout()
@@ -5617,6 +5763,71 @@ def save_published_workflow_manifest(
 
 
 
+
+def export_bh_model_selection_kinematics(
+        bundles: Sequence[Dict[str, object]],
+        root_outdir: Path) -> Path:
+    """
+    Export every exact experimental point once for external VGG/GK evaluation.
+
+    The external model stage must not rerun KM15.  This table therefore carries
+    the KM15 EP/BH decomposition and the exact kinematics already used by the
+    production analysis.  Later model-selection results can be merged back by
+    the deterministic point_id.
+    """
+    rows = []
+    for bundle in bundles:
+        data = bundle.get("all_data", bundle["set5"]).copy()
+        key = str(bundle["key"])
+
+        required = ["xB", "Q2", "t_abs", "phi_deg", "ebeam"]
+        missing = [col for col in required if col not in data.columns]
+        if missing:
+            raise KeyError(
+                f"{bundle['label']}: cannot export BH-model kinematics; "
+                f"missing {missing}"
+            )
+        #endif
+
+        for local_row, (_, row) in enumerate(data.iterrows()):
+            record = {
+                "point_id": f"{key}:{local_row}",
+                "dataset": key,
+                "source_row": local_row,
+                "xB": float(row["xB"]),
+                "Q2": float(row["Q2"]),
+                "t_abs": float(row["t_abs"]),
+                "phi_deg": float(row["phi_deg"]),
+                "ebeam": float(row["ebeam"]),
+            }
+            for col in [
+                "km15_ep", "km15_bh", "km15_dvcs", "km15_int",
+                "rbh", "delta_bh", "bh_A", "bh_B", "bh_C",
+            ]:
+                if col in data.columns:
+                    record[col] = row[col]
+                #endif
+            #endfor
+            rows.append(record)
+        #endfor
+    #endfor
+
+    outdir = root_outdir / "bh_model_selection"
+    outdir.mkdir(parents=True, exist_ok=True)
+    path = outdir / "bh_model_kinematics.csv"
+    table = pd.DataFrame(rows)
+    if table["point_id"].duplicated().any():
+        raise RuntimeError("Duplicate point_id while exporting BH-model kinematics")
+    #endif
+    table.to_csv(path, index=False)
+    print(
+        f"[BH-model selection] exported {len(table)} exact points from "
+        f"{len(bundles)} measurement(s) -> {path}"
+    )
+    return path
+#enddef
+
+
 def run_published_default(args) -> int:
     """Run all available published measurements and every nontrivial combination."""
     print("\n" + "=" * 78)
@@ -5652,6 +5863,9 @@ def run_published_default(args) -> int:
 
     bundles.append(pass1)
 
+    root_outdir = Path(args.outdir).expanduser().resolve()
+    export_bh_model_selection_kinematics(bundles, root_outdir)
+
     for bundle in bundles:
         audit_measurement_bundle_for_combination(bundle)
     #endfor
@@ -5681,7 +5895,6 @@ def run_published_default(args) -> int:
     save_separate_vs_combined_table(comparison_bundles, comparison_dir)
     save_published_dataset_comparisons(bundles + [maximal], comparison_dir)
 
-    root_outdir = Path(args.outdir).expanduser().resolve()
     save_published_workflow_manifest(bundles, combos, root_outdir)
 
     print(f"\n[summary] Separate-vs-combined results -> {comparison_dir}")
