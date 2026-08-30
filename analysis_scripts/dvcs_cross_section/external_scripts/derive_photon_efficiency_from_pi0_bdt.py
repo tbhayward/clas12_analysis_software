@@ -82,6 +82,7 @@ not yet the final photon-efficiency correction implementation.
 from __future__ import annotations
 
 import argparse
+import csv
 import math
 import time
 from dataclasses import dataclass
@@ -3527,6 +3528,193 @@ def build_fd_theta_sector_nominal_scan(
     #endfor
 
     return results
+
+
+
+def write_nominal_fd_correction_table(
+    results: Mapping[
+        str,
+        Mapping[str, Mapping[int, Mapping[str, np.ndarray]]],
+    ],
+    edges: np.ndarray,
+    args: argparse.Namespace,
+    output_path: Path,
+) -> None:
+    """
+    Write the nominal FD E_pred x theta_pred x sector correction to CSV.
+
+    This is intentionally a compact machine-readable interface for external
+    closure/comparison scripts.  It contains the apparent efficiencies in
+    DATA, AAOgen, and CLASDIS and the corresponding DATA/MC ratios with
+    propagated fit-statistical uncertainties.
+    """
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    fieldnames = [
+        "period",
+        "sample_tag",
+        "tag_bdt_min",
+        "association_angle_deg",
+        "theta_bin_label",
+        "theta_min_deg",
+        "theta_max_deg",
+        "sector",
+        "Epred_min_GeV",
+        "Epred_max_GeV",
+        "data_denominator",
+        "data_pi0_yield",
+        "data_pi0_yield_unc",
+        "data_efficiency",
+        "data_efficiency_unc",
+        "aaogen_efficiency",
+        "aaogen_efficiency_unc",
+        "clasdis_efficiency",
+        "clasdis_efficiency_unc",
+        "data_over_aaogen",
+        "data_over_aaogen_unc",
+        "data_over_clasdis",
+        "data_over_clasdis_unc",
+    ]
+
+    with output_path.open("w", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=fieldnames,
+        )
+        writer.writeheader()
+
+        for (
+            label,
+            region_value,
+            theta_low,
+            theta_high,
+        ) in probe_theta_bins(args):
+            if region_value != REGIONS["FD"]:
+                continue
+            #endif
+
+            for sector in range(1, 7):
+                data = results["data"][label][sector]
+                aaogen = results["aaogen"][label][sector]
+                clasdis = results["clasdis"][label][sector]
+
+                for ibin in range(len(edges) - 1):
+                    data_eff = float(data["efficiency"][ibin])
+                    data_unc = float(
+                        data["efficiency_uncertainty"][ibin]
+                    )
+
+                    def ratio_and_unc(
+                        mc_block: Mapping[str, np.ndarray],
+                    ) -> Tuple[float, float]:
+                        mc_eff = float(
+                            mc_block["efficiency"][ibin]
+                        )
+                        mc_unc = float(
+                            mc_block[
+                                "efficiency_uncertainty"
+                            ][ibin]
+                        )
+
+                        if not (
+                            np.isfinite(data_eff)
+                            and np.isfinite(data_unc)
+                            and np.isfinite(mc_eff)
+                            and np.isfinite(mc_unc)
+                            and data_eff > 0.0
+                            and mc_eff > 0.0
+                        ):
+                            return np.nan, np.nan
+                        #endif
+
+                        ratio = data_eff / mc_eff
+                        unc = ratio * np.sqrt(
+                            (data_unc / data_eff) ** 2
+                            + (mc_unc / mc_eff) ** 2
+                        )
+                        return float(ratio), float(unc)
+                    #enddef
+
+                    ratio_aaogen, ratio_aaogen_unc = (
+                        ratio_and_unc(aaogen)
+                    )
+                    ratio_clasdis, ratio_clasdis_unc = (
+                        ratio_and_unc(clasdis)
+                    )
+
+                    writer.writerow(
+                        {
+                            "period": args.period,
+                            "sample_tag": args.sample_tag,
+                            "tag_bdt_min": (
+                                f"{args.tag_score_min:.6g}"
+                            ),
+                            "association_angle_deg": (
+                                f"{MGG_FIT_NOMINAL_ANGLE:.6g}"
+                            ),
+                            "theta_bin_label": label,
+                            "theta_min_deg": (
+                                f"{theta_low:.8g}"
+                            ),
+                            "theta_max_deg": (
+                                f"{theta_high:.8g}"
+                            ),
+                            "sector": sector,
+                            "Epred_min_GeV": (
+                                f"{edges[ibin]:.8g}"
+                            ),
+                            "Epred_max_GeV": (
+                                f"{edges[ibin + 1]:.8g}"
+                            ),
+                            "data_denominator": (
+                                f"{data['denominator'][ibin]:.12g}"
+                            ),
+                            "data_pi0_yield": (
+                                f"{data['numerator'][ibin]:.12g}"
+                            ),
+                            "data_pi0_yield_unc": (
+                                f"{data['numerator_uncertainty'][ibin]:.12g}"
+                            ),
+                            "data_efficiency": (
+                                f"{data_eff:.12g}"
+                            ),
+                            "data_efficiency_unc": (
+                                f"{data_unc:.12g}"
+                            ),
+                            "aaogen_efficiency": (
+                                f"{aaogen['efficiency'][ibin]:.12g}"
+                            ),
+                            "aaogen_efficiency_unc": (
+                                f"{aaogen['efficiency_uncertainty'][ibin]:.12g}"
+                            ),
+                            "clasdis_efficiency": (
+                                f"{clasdis['efficiency'][ibin]:.12g}"
+                            ),
+                            "clasdis_efficiency_unc": (
+                                f"{clasdis['efficiency_uncertainty'][ibin]:.12g}"
+                            ),
+                            "data_over_aaogen": (
+                                f"{ratio_aaogen:.12g}"
+                            ),
+                            "data_over_aaogen_unc": (
+                                f"{ratio_aaogen_unc:.12g}"
+                            ),
+                            "data_over_clasdis": (
+                                f"{ratio_clasdis:.12g}"
+                            ),
+                            "data_over_clasdis_unc": (
+                                f"{ratio_clasdis_unc:.12g}"
+                            ),
+                        }
+                    )
+                #endfor
+            #endfor
+        #endfor
+    #endwith
+
+    progress(
+        f"Wrote nominal FD correction table: {output_path}"
+    )
 
 
 def plot_fd_sector_dependence_nominal(
@@ -7685,6 +7873,12 @@ def main() -> None:
         args,
         output_dir / "24_fd_sector_specific_corrections.png",
     )
+    write_nominal_fd_correction_table(
+        fd_sector_scan,
+        edges,
+        args,
+        output_dir / "nominal_fd_corrections.csv",
+    )
     plot_predicted_vs_reconstructed_sector_migration(
         numerator_diagnostics_by_source,
         args,
@@ -8018,6 +8212,7 @@ def main() -> None:
     print("  22_fd_theta_binned_bdt_ratio_scan.png")
     print("  23_fd_sector_dependence_nominal.png")
     print("  24_fd_sector_specific_corrections.png")
+    print("  nominal_fd_corrections.csv")
     print("  25_fd_sector_migration.png")
     print("  26_fd_sector_statistics.png")
     print("  27_fd_sector_raw_efficiencies.png")
