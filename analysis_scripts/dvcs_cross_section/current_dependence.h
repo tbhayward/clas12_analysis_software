@@ -96,6 +96,20 @@ struct CurrentDependenceOptions {
     // current-efficiency factor for that row.
     bool use_e_theta_linear_data_current_efficiency = true;
 
+    // Photon-region current-dependence diagnostic.
+    //
+    // If true, the ordinary ep->epgamma current-dependence study is repeated
+    // diagnostically after splitting the photon into seven mutually exclusive
+    // regions: FT and FD sectors 1--6.  The resulting factors are NOT written
+    // to the production analysis CSV and are NOT used by any downstream
+    // correction.  They are written only under
+    //
+    //   output/dvcs_current_dependence/epg/sector_dependence_diagnostic/
+    //
+    // so that a possible future sector-dependent current correction can be
+    // assessed before it is implemented.
+    bool enable_photon_region_current_diagnostic = true;
+
     // Current correction convention for the misidentified pi0 background MC
     // sample ep->eppi0->epg.
     //

@@ -237,6 +237,7 @@ int main(int argc, char* argv[]) {
         current_opts.columns_3_to_5_charge_sum_scale = 1.025;
         current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
         current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+        current_opts.enable_photon_region_current_diagnostic = true;
         current_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
         current_opts.max_workers = 7;
 

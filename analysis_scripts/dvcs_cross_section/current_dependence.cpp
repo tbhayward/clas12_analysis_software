@@ -4926,6 +4926,807 @@ static std::vector<PeriodResult> run_channel_study(
     return results;
 }
 
+
+// -----------------------------------------------------------------------------
+// Photon-region current-dependence diagnostic (FT + six FD sectors)
+// -----------------------------------------------------------------------------
+//
+// This diagnostic deliberately does not alter any production current factor.
+// It repeats the ep->epgamma current-dependence extraction in seven mutually
+// exclusive photon regions and writes only plots/CSV diagnostics under
+//
+//   <output_dir>/epg/sector_dependence_diagnostic/
+//
+// DATA/reconstructed MC region assignment uses detector2 and reconstructed
+// p2_phi.  Generated MC has no reconstructed detector assignment, so the
+// generated denominator is split geometrically using generated p2_theta and
+// p2_phi: theta_gamma <= 5.5 deg is FT and larger angles are assigned to the
+// standard six CLAS12 FD phi sectors.
+// -----------------------------------------------------------------------------
+
+static constexpr double PHOTON_REGION_FT_MAX_THETA_DEG = 5.5;
+
+struct PhotonRegionSpec {
+    std::string key;
+    std::string label;
+};
+
+static const std::vector<PhotonRegionSpec> PHOTON_REGION_ORDER = {
+    {"FT", "FT"},
+    {"S1", "S1"},
+    {"S2", "S2"},
+    {"S3", "S3"},
+    {"S4", "S4"},
+    {"S5", "S5"},
+    {"S6", "S6"}
+};
+
+static int photon_region_color(int i) {
+    static const int colors[] = {
+        kBlack,
+        kBlue + 1,
+        kOrange + 7,
+        kGreen + 2,
+        kRed + 1,
+        kViolet + 1,
+        kGray + 2
+    };
+    const int n = (int)(sizeof(colors) / sizeof(colors[0]));
+    return colors[std::max(0, std::min(i, n - 1))];
+}
+
+static int photon_region_marker(int i) {
+    static const int markers[] = {20, 21, 22, 23, 33, 34, 29};
+    const int n = (int)(sizeof(markers) / sizeof(markers[0]));
+    return markers[std::max(0, std::min(i, n - 1))];
+}
+
+static bool reconstructed_photon_region(const Branches& b,
+                                        std::string& region_key) {
+    if (!b.has_detector2) {
+        return false;
+    }
+
+    if (b.detector2 == 0) {
+        region_key = "FT";
+        return true;
+    }
+
+    if (b.detector2 != 1 || !b.has_p2_phi) {
+        return false;
+    }
+
+    const int sector = fd_sector_from_phi_rad(b.p2_phi);
+    if (sector < 1 || sector > 6) {
+        return false;
+    }
+
+    region_key = "S" + std::to_string(sector);
+    return true;
+}
+
+static bool generated_photon_region(const Branches& b,
+                                    std::string& region_key) {
+    if (!(b.has_p2_theta && b.has_p2_phi)) {
+        return false;
+    }
+
+    const double theta_deg = b.p2_theta * RAD2DEG;
+    if (!std::isfinite(theta_deg) || !std::isfinite(b.p2_phi)) {
+        return false;
+    }
+
+    if (theta_deg <= PHOTON_REGION_FT_MAX_THETA_DEG) {
+        region_key = "FT";
+        return true;
+    }
+
+    const int sector = fd_sector_from_phi_rad(b.p2_phi);
+    if (sector < 1 || sector > 6) {
+        return false;
+    }
+
+    region_key = "S" + std::to_string(sector);
+    return true;
+}
+
+using PhotonRegionDataAggMap = std::map<std::string, DataAgg>;
+using PhotonRegionMcCountMap = std::map<std::string, long long>;
+using PhotonRegionResults = std::map<std::string, std::vector<PeriodResult>>;
+
+static PhotonRegionDataAggMap process_data_tree_by_photon_region(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale) {
+
+    const PeriodTags tags = parse_period_from_key(key);
+    PhotonRegionDataAggMap out;
+
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        out[spec.key].period = tags.display;
+    }
+
+    if (!tree) {
+        return out;
+    }
+
+    Branches b;
+    b.bind(tree);
+
+    if (!b.has_runnum) {
+        fatal("[current_dependence] FATAL: photon-region DATA diagnostic tree missing runnum.");
+    }
+
+    const Long64_t N = tree->GetEntries();
+    std::unordered_map<int, ResolvedRunInfo> run_info_cache;
+    run_info_cache.reserve(256);
+
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+
+        if (!passes_cone_cut(b)) {
+            continue;
+        }
+
+        auto cache_it = run_info_cache.find(b.runnum);
+        if (cache_it == run_info_cache.end()) {
+            cache_it = run_info_cache.emplace(
+                b.runnum,
+                resolve_run_info_cached(
+                    tags, b.runnum, charge_map,
+                    use_second_column_charge_for_all_unpolarized,
+                    use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    columns_3_to_5_charge_sum_scale)).first;
+        }
+
+        const ResolvedRunInfo& run_info = cache_it->second;
+        if (!run_info.valid) {
+            continue;
+        }
+
+        if (!passes_global_dispatch(b, tags)) {
+            continue;
+        }
+
+        if (!passes_sigma_dispatch(cfg, tags, data_cuts, b)) {
+            continue;
+        }
+
+        // Every selected run contributes its full charge to every photon-region
+        // denominator, even if this particular run contains zero accepted events
+        // in one of the seven regions.  This prevents low-statistics regions from
+        // accidentally dropping run charge from the normalization.
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            DataAgg& agg = out[spec.key];
+            agg.counts_by_run[b.runnum] += 0;
+            agg.current_by_run[b.runnum] = run_info.current;
+            agg.charge_by_run[b.runnum] = run_info.charge;
+        }
+
+        std::string region_key;
+        if (!reconstructed_photon_region(b, region_key)) {
+            continue;
+        }
+
+        out[region_key].counts_by_run[b.runnum] += 1;
+    }
+
+    return out;
+}
+
+static PhotonRegionMcCountMap count_generated_tree_by_photon_region(TTree* tree) {
+    PhotonRegionMcCountMap counts;
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        counts[spec.key] = 0;
+    }
+
+    if (!tree) {
+        return counts;
+    }
+
+    Branches b;
+    b.bind(tree);
+
+    if (!(b.has_p2_theta && b.has_p2_phi)) {
+        fatal("[current_dependence] FATAL: generated MC photon-region diagnostic requires p2_theta and p2_phi.");
+    }
+
+    const Long64_t N = tree->GetEntries();
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+        std::string region_key;
+        if (generated_photon_region(b, region_key)) {
+            counts[region_key] += 1;
+        }
+    }
+
+    return counts;
+}
+
+static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const TopoCutMap& mc_cuts) {
+
+    PhotonRegionMcCountMap counts;
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        counts[spec.key] = 0;
+    }
+
+    if (!tree) {
+        return counts;
+    }
+
+    const PeriodTags tags = parse_period_from_key(key);
+    Branches b;
+    b.bind(tree);
+
+    const Long64_t N = tree->GetEntries();
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+
+        if (!passes_cone_cut(b)) {
+            continue;
+        }
+
+        if (!passes_global_dispatch(b, tags)) {
+            continue;
+        }
+
+        if (!passes_sigma_dispatch(cfg, tags, mc_cuts, b)) {
+            continue;
+        }
+
+        std::string region_key;
+        if (reconstructed_photon_region(b, region_key)) {
+            counts[region_key] += 1;
+        }
+    }
+
+    return counts;
+}
+
+static const PeriodResult* find_period_result(const std::vector<PeriodResult>& rows,
+                                              const std::string& period) {
+    auto it = std::find_if(rows.begin(), rows.end(), [&](const PeriodResult& r) {
+        return r.period == period;
+    });
+    return (it == rows.end()) ? nullptr : &(*it);
+}
+
+static void write_photon_region_summary_csv(const std::string& path,
+                                            const PhotonRegionResults& results,
+                                            const std::vector<PeriodResult>& integrated_results) {
+    const size_t slash_pos = path.find_last_of('/');
+    if (slash_pos != std::string::npos) {
+        mkdir_p(path.substr(0, slash_pos));
+    }
+
+    std::ofstream fout(path);
+    if (!fout.is_open()) {
+        fatal("[current_dependence] FATAL: cannot write photon-region diagnostic CSV: " + path);
+    }
+
+    fout << "period,photon_region,data_factor,data_factor_stat,mc_factor,mc_factor_stat,"
+         << "data_slope_percent_per_nA,data_slope_percent_per_nA_stat,"
+         << "mc_slope_percent_per_nA,mc_slope_percent_per_nA_stat,"
+         << "integrated_data_factor,integrated_mc_factor\n";
+
+    for (const std::string& period : PERIOD_ORDER) {
+        const PeriodResult* integrated = find_period_result(integrated_results, period);
+
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            auto it_region = results.find(spec.key);
+            if (it_region == results.end()) {
+                continue;
+            }
+            const PeriodResult* r = find_period_result(it_region->second, period);
+            if (!r) {
+                continue;
+            }
+
+            fout << period << "," << spec.label << ","
+                 << std::setprecision(12) << r->data_factor << ","
+                 << std::setprecision(12) << r->data_factor_err << ","
+                 << std::setprecision(12) << r->mc_factor << ","
+                 << std::setprecision(12) << r->mc_factor_err << ","
+                 << std::setprecision(12) << fit_percent_slope(r->data_fit) << ","
+                 << std::setprecision(12) << fit_percent_slope_err(r->data_fit) << ","
+                 << std::setprecision(12) << fit_percent_slope(r->mc_fit) << ","
+                 << std::setprecision(12) << fit_percent_slope_err(r->mc_fit) << ","
+                 << std::setprecision(12) << (integrated ? integrated->data_factor : std::numeric_limits<double>::quiet_NaN()) << ","
+                 << std::setprecision(12) << (integrated ? integrated->mc_factor : std::numeric_limits<double>::quiet_NaN()) << "\n";
+        }
+    }
+}
+
+static void draw_photon_region_response_canvas(const std::string& out_path,
+                                               const PhotonRegionResults& results,
+                                               bool data_sample,
+                                               bool hide_sp19_inb_from_all_period_plots) {
+    mkdir_p(out_path.substr(0, out_path.find_last_of('/')));
+
+    TCanvas c(data_sample ? "c_photon_region_data_response" : "c_photon_region_mc_response",
+              data_sample ? "DATA current dependence by photon region" : "MC current dependence by photon region",
+              1800, 1200);
+    c.Divide(3, 2, 0.002, 0.002);
+
+    const std::vector<std::string> panel_order = {
+        "Sp18 Inb", "Sp18 Out", "", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"
+    };
+
+    std::vector<TObject*> owned;
+
+    for (int ipad = 0; ipad < 6; ++ipad) {
+        c.cd(ipad + 1);
+        gPad->SetGridx();
+        gPad->SetGridy();
+
+        const std::string period = panel_order[ipad];
+        if (period.empty()) {
+            TLatex lat;
+            lat.SetNDC();
+            lat.SetTextSize(0.060);
+            lat.DrawLatex(0.10, 0.88, "Photon region");
+            for (int ir = 0; ir < (int)PHOTON_REGION_ORDER.size(); ++ir) {
+                const double y = 0.76 - 0.085 * ir;
+                TLine* line = new TLine(0.14, y, 0.28, y);
+                line->SetNDC(true);
+                line->SetLineColor(photon_region_color(ir));
+                line->SetLineWidth(3);
+                line->Draw();
+                owned.push_back(line);
+                lat.SetTextSize(0.050);
+                lat.DrawLatex(0.32, y - 0.018, PHOTON_REGION_ORDER[ir].label.c_str());
+            }
+            continue;
+        }
+
+        TH1D* frame = new TH1D(("h_photon_region_response_" + std::to_string(ipad) + (data_sample ? "_d" : "_m")).c_str(),
+                               (period + ";Beam current (nA);Efficiency relative to fitted 0 nA (%)").c_str(),
+                               100, 0.0, 80.0);
+        frame->SetMinimum(40.0);
+        frame->SetMaximum(125.0);
+        frame->SetStats(0);
+        frame->Draw("AXIS");
+        owned.push_back(frame);
+
+        for (int ir = 0; ir < (int)PHOTON_REGION_ORDER.size(); ++ir) {
+            auto it = results.find(PHOTON_REGION_ORDER[ir].key);
+            if (it == results.end()) {
+                continue;
+            }
+            const PeriodResult* r = find_period_result(it->second, period);
+            if (!r) {
+                continue;
+            }
+
+            const FitResult& fit = data_sample ? r->data_fit : r->mc_fit;
+            const std::vector<CurrentPoint>& points = data_sample ? r->data_points : r->mc_points;
+            if (!std::isfinite(fit.b) || fit.b == 0.0) {
+                continue;
+            }
+
+            const int color = photon_region_color(ir);
+            TGraphErrors* pts = make_percent_points_graph_style(points, fit, color, photon_region_marker(ir), 0.85);
+            TGraph* line = make_percent_fit_line_style(fit, color, 1, 0.0, 80.0);
+            if (line) {
+                line->SetLineWidth(2);
+                line->Draw("L SAME");
+                owned.push_back(line);
+            }
+            if (pts) {
+                pts->Draw("PE SAME");
+                owned.push_back(pts);
+            }
+        }
+
+        if (period == "Sp19 Inb" && hide_sp19_inb_from_all_period_plots) {
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextSize(0.028);
+            lat.SetTextColor(kRed + 2);
+            lat.DrawLatex(0.13, 0.88, "Direct Sp19 scan shown; hypothetical factor copied from Fa18 Inb");
+        }
+    }
+
+    c.SaveAs(out_path.c_str());
+    for (TObject* obj : owned) {
+        delete obj;
+    }
+}
+
+static void draw_photon_region_factor_canvas(const std::string& out_path,
+                                             const PhotonRegionResults& results,
+                                             const std::vector<PeriodResult>& integrated_results,
+                                             bool data_sample,
+                                             bool hide_sp19_inb_from_all_period_plots) {
+    mkdir_p(out_path.substr(0, out_path.find_last_of('/')));
+
+    TCanvas c(data_sample ? "c_photon_region_data_factor" : "c_photon_region_mc_factor",
+              data_sample ? "DATA current-efficiency factor by photon region" : "MC current-efficiency factor by photon region",
+              1800, 1200);
+    c.Divide(3, 2, 0.002, 0.002);
+
+    const std::vector<std::string> panel_order = {
+        "Sp18 Inb", "Sp18 Out", "", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"
+    };
+
+    std::vector<TObject*> owned;
+
+    for (int ipad = 0; ipad < 6; ++ipad) {
+        c.cd(ipad + 1);
+        gPad->SetGridy();
+
+        const std::string period = panel_order[ipad];
+        if (period.empty()) {
+            TLatex lat;
+            lat.SetNDC();
+            lat.SetTextSize(0.055);
+            lat.DrawLatex(0.10, 0.84, data_sample ? "DATA factor" : "MC factor");
+            lat.SetTextSize(0.045);
+            lat.DrawLatex(0.10, 0.72, "Points: hypothetical FT/S1...S6 factors");
+            lat.DrawLatex(0.10, 0.63, "Dashed line: existing integrated factor");
+            lat.DrawLatex(0.10, 0.51, "Diagnostic only - not applied downstream");
+            continue;
+        }
+
+        TH1D* frame = new TH1D(("h_photon_region_factor_" + std::to_string(ipad) + (data_sample ? "_d" : "_m")).c_str(),
+                               (period + ";Photon region;Current-efficiency factor").c_str(),
+                               7, -0.5, 6.5);
+        frame->SetStats(0);
+        frame->SetMinimum(0.45);
+        frame->SetMaximum(1.15);
+        for (int ir = 0; ir < 7; ++ir) {
+            frame->GetXaxis()->SetBinLabel(ir + 1, PHOTON_REGION_ORDER[ir].label.c_str());
+        }
+        frame->Draw("AXIS");
+        owned.push_back(frame);
+
+        TGraphErrors* graph = new TGraphErrors();
+        int ip = 0;
+        for (int ir = 0; ir < 7; ++ir) {
+            auto it = results.find(PHOTON_REGION_ORDER[ir].key);
+            if (it == results.end()) continue;
+            const PeriodResult* r = find_period_result(it->second, period);
+            if (!r) continue;
+
+            const double value = data_sample ? r->data_factor : r->mc_factor;
+            const double err = data_sample ? r->data_factor_err : r->mc_factor_err;
+            if (!std::isfinite(value)) continue;
+            graph->SetPoint(ip, (double)ir, value);
+            graph->SetPointError(ip, 0.0, std::isfinite(err) ? err : 0.0);
+            ++ip;
+        }
+        graph->SetMarkerStyle(20);
+        graph->SetMarkerSize(1.2);
+        graph->SetLineWidth(2);
+        graph->Draw("PE SAME");
+        owned.push_back(graph);
+
+        const PeriodResult* integrated = find_period_result(integrated_results, period);
+        if (integrated) {
+            const double baseline = data_sample ? integrated->data_factor : integrated->mc_factor;
+            if (std::isfinite(baseline)) {
+                TLine* line = new TLine(-0.5, baseline, 6.5, baseline);
+                line->SetLineStyle(2);
+                line->SetLineWidth(2);
+                line->SetLineColor(kGray + 2);
+                line->Draw();
+                owned.push_back(line);
+            }
+        }
+
+        if (period == "Sp19 Inb" && hide_sp19_inb_from_all_period_plots) {
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextSize(0.030);
+            lat.SetTextColor(kRed + 2);
+            lat.DrawLatex(0.13, 0.88, "FT/S1...S6 factors copied from Fa18 Inb");
+        }
+    }
+
+    c.SaveAs(out_path.c_str());
+    for (TObject* obj : owned) {
+        delete obj;
+    }
+}
+
+static void draw_photon_region_slope_canvas(const std::string& out_path,
+                                            const PhotonRegionResults& results,
+                                            bool data_sample,
+                                            bool hide_sp19_inb_from_all_period_plots) {
+    mkdir_p(out_path.substr(0, out_path.find_last_of('/')));
+
+    TCanvas c(data_sample ? "c_photon_region_data_slope" : "c_photon_region_mc_slope",
+              data_sample ? "DATA current slope by photon region" : "MC current slope by photon region",
+              1800, 1200);
+    c.Divide(3, 2, 0.002, 0.002);
+
+    const std::vector<std::string> panel_order = {
+        "Sp18 Inb", "Sp18 Out", "", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"
+    };
+
+    std::vector<TObject*> owned;
+
+    for (int ipad = 0; ipad < 6; ++ipad) {
+        c.cd(ipad + 1);
+        gPad->SetGridy();
+        const std::string period = panel_order[ipad];
+
+        if (period.empty()) {
+            TLatex lat;
+            lat.SetNDC();
+            lat.SetTextSize(0.055);
+            lat.DrawLatex(0.10, 0.82, data_sample ? "DATA slope" : "MC slope");
+            lat.SetTextSize(0.045);
+            lat.DrawLatex(0.10, 0.68, "100 m / b  [% / nA]");
+            lat.DrawLatex(0.10, 0.54, "Diagnostic FT + FD-sector split");
+            continue;
+        }
+
+        TH1D* frame = new TH1D(("h_photon_region_slope_" + std::to_string(ipad) + (data_sample ? "_d" : "_m")).c_str(),
+                               (period + ";Photon region;Current-dependence slope (%/nA)").c_str(),
+                               7, -0.5, 6.5);
+        frame->SetStats(0);
+        frame->SetMinimum(-1.5);
+        frame->SetMaximum(0.5);
+        for (int ir = 0; ir < 7; ++ir) {
+            frame->GetXaxis()->SetBinLabel(ir + 1, PHOTON_REGION_ORDER[ir].label.c_str());
+        }
+        frame->Draw("AXIS");
+        owned.push_back(frame);
+
+        TLine* zero = new TLine(-0.5, 0.0, 6.5, 0.0);
+        zero->SetLineStyle(2);
+        zero->SetLineColor(kGray + 2);
+        zero->Draw();
+        owned.push_back(zero);
+
+        TGraphErrors* graph = new TGraphErrors();
+        int ip = 0;
+        for (int ir = 0; ir < 7; ++ir) {
+            auto it = results.find(PHOTON_REGION_ORDER[ir].key);
+            if (it == results.end()) continue;
+            const PeriodResult* r = find_period_result(it->second, period);
+            if (!r) continue;
+            const FitResult& fit = data_sample ? r->data_fit : r->mc_fit;
+            const double value = fit_percent_slope(fit);
+            const double err = fit_percent_slope_err(fit);
+            if (!std::isfinite(value)) continue;
+            graph->SetPoint(ip, (double)ir, value);
+            graph->SetPointError(ip, 0.0, std::isfinite(err) ? err : 0.0);
+            ++ip;
+        }
+        graph->SetMarkerStyle(20);
+        graph->SetMarkerSize(1.2);
+        graph->SetLineWidth(2);
+        graph->Draw("PE SAME");
+        owned.push_back(graph);
+
+        if (period == "Sp19 Inb" && hide_sp19_inb_from_all_period_plots) {
+            TLatex lat;
+            lat.SetNDC(true);
+            lat.SetTextSize(0.030);
+            lat.SetTextColor(kRed + 2);
+            lat.DrawLatex(0.13, 0.88, "Direct Sp19 slopes shown; factors copied from Fa18 Inb");
+        }
+    }
+
+    c.SaveAs(out_path.c_str());
+    for (TObject* obj : owned) {
+        delete obj;
+    }
+}
+
+static PhotonRegionResults run_photon_region_current_diagnostic(
+    const ChannelConfig& cfg,
+    const std::map<std::string, TTree*>& data_trees,
+    const std::map<std::string, TTree*>& gen_trees,
+    const std::map<std::string, TTree*>& rec_trees,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    const TopoCutMap& mc_cuts,
+    const std::string& output_dir,
+    int max_workers,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale,
+    bool use_fa18_inb_current_efficiency_for_sp19_inb,
+    const std::vector<PeriodResult>& integrated_results) {
+
+    std::cout << "[current_dependence] Starting photon-region diagnostic: FT + FD sectors 1--6."
+              << std::endl;
+
+    std::map<std::string, std::map<std::string, DataAgg>> data_aggs_by_region_period;
+    std::vector<std::pair<std::string, TTree*>> data_items;
+
+    for (const auto& kv : data_trees) {
+        PeriodTags tags = parse_period_from_key(kv.first);
+        if (tags.display != "Fa18 Inb Supp") {
+            data_items.push_back(kv);
+        }
+    }
+
+    std::mutex data_mutex;
+    int nth = std::max(1, std::min(7, max_workers));
+    nth = std::min(nth, std::max(1, (int)data_items.size()));
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int i = 0; i < (int)data_items.size(); ++i) {
+        const auto& item = data_items[i];
+        const PhotonRegionDataAggMap local = process_data_tree_by_photon_region(
+            cfg,
+            item.first,
+            item.second,
+            charge_map,
+            data_cuts,
+            use_second_column_charge_for_all_unpolarized,
+            use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+            columns_3_to_5_charge_sum_scale);
+
+        std::lock_guard<std::mutex> lock(data_mutex);
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            auto it = local.find(spec.key);
+            if (it != local.end()) {
+                data_aggs_by_region_period[spec.key][it->second.period] = it->second;
+            }
+        }
+    }
+
+    // MC counts are stored by region and by period/current.  Generated and
+    // reconstructed trees are looped independently, mirroring the integrated
+    // efficiency calculation.
+    std::map<std::string, std::map<std::string, McAgg>> mc_by_region_period_current;
+
+    for (const auto& kv : gen_trees) {
+        const PeriodTags tags = parse_period_from_key(kv.first);
+        if (tags.display == "Fa18 Inb Supp") continue;
+        const int current = parse_current_from_key(kv.first);
+        const PhotonRegionMcCountMap counts = count_generated_tree_by_photon_region(kv.second);
+
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            std::ostringstream k;
+            k << tags.display << "_" << current;
+            McAgg& agg = mc_by_region_period_current[spec.key][k.str()];
+            agg.period = tags.display;
+            agg.current_nA = current;
+            auto it = counts.find(spec.key);
+            if (it != counts.end()) agg.n_gen += it->second;
+        }
+    }
+
+    std::vector<std::pair<std::string, TTree*>> rec_items;
+    for (const auto& kv : rec_trees) {
+        const PeriodTags tags = parse_period_from_key(kv.first);
+        if (tags.display != "Fa18 Inb Supp") rec_items.push_back(kv);
+    }
+
+    std::mutex rec_mutex;
+    nth = std::max(1, std::min(7, max_workers));
+    nth = std::min(nth, std::max(1, (int)rec_items.size()));
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int i = 0; i < (int)rec_items.size(); ++i) {
+        const auto& item = rec_items[i];
+        const PeriodTags tags = parse_period_from_key(item.first);
+        const int current = parse_current_from_key(item.first);
+        const PhotonRegionMcCountMap counts = count_reconstructed_tree_by_photon_region(
+            cfg, item.first, item.second, mc_cuts);
+
+        std::lock_guard<std::mutex> lock(rec_mutex);
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            std::ostringstream k;
+            k << tags.display << "_" << current;
+            McAgg& agg = mc_by_region_period_current[spec.key][k.str()];
+            agg.period = tags.display;
+            agg.current_nA = current;
+            auto it = counts.find(spec.key);
+            if (it != counts.end()) agg.n_rec += it->second;
+        }
+    }
+
+    PhotonRegionResults results;
+
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        std::vector<McAgg> mc_aggs;
+        for (const auto& kv : mc_by_region_period_current[spec.key]) {
+            mc_aggs.push_back(kv.second);
+        }
+
+        std::vector<PeriodResult> region_rows;
+        for (const std::string& period : PERIOD_ORDER) {
+            PeriodResult r;
+            r.period = period;
+
+            auto it_data = data_aggs_by_region_period[spec.key].find(period);
+            if (it_data != data_aggs_by_region_period[spec.key].end()) {
+                r.data_points = data_points_from_agg(it_data->second);
+                r.data_fit = fit_points(r.data_points);
+                r.data_factor = weighted_data_rel(r.data_points, r.data_fit);
+                r.data_factor_err = weighted_data_rel_err(r.data_points, r.data_fit);
+            }
+
+            r.mc_points = mc_points_from_aggs(mc_aggs, period);
+            r.mc_fit = fit_points(r.mc_points);
+            const int ref = reference_current_nA(period);
+            r.mc_factor = rel_at_current((double)ref, r.mc_fit);
+            r.mc_factor_err = rel_err_at_current((double)ref, r.mc_fit);
+
+            region_rows.push_back(r);
+        }
+
+        if (use_fa18_inb_current_efficiency_for_sp19_inb) {
+            replace_sp19_inb_factors_with_fa18_inb(
+                region_rows,
+                cfg.csv_channel + " photon-region " + spec.label);
+        }
+
+        results[spec.key] = std::move(region_rows);
+    }
+
+    const std::string odir = output_dir + "/" + cfg.output_token + "/sector_dependence_diagnostic";
+    mkdir_p(odir);
+
+    write_photon_region_summary_csv(
+        odir + "/photon_region_current_dependence_summary.csv",
+        results,
+        integrated_results);
+
+    draw_photon_region_response_canvas(
+        odir + "/data_current_dependence_by_photon_region.png",
+        results,
+        true,
+        use_fa18_inb_current_efficiency_for_sp19_inb);
+
+    draw_photon_region_response_canvas(
+        odir + "/mc_current_dependence_by_photon_region.png",
+        results,
+        false,
+        use_fa18_inb_current_efficiency_for_sp19_inb);
+
+    draw_photon_region_factor_canvas(
+        odir + "/data_current_efficiency_factor_by_photon_region.png",
+        results,
+        integrated_results,
+        true,
+        use_fa18_inb_current_efficiency_for_sp19_inb);
+
+    draw_photon_region_factor_canvas(
+        odir + "/mc_current_efficiency_factor_by_photon_region.png",
+        results,
+        integrated_results,
+        false,
+        use_fa18_inb_current_efficiency_for_sp19_inb);
+
+    draw_photon_region_slope_canvas(
+        odir + "/data_current_slope_by_photon_region.png",
+        results,
+        true,
+        use_fa18_inb_current_efficiency_for_sp19_inb);
+
+    draw_photon_region_slope_canvas(
+        odir + "/mc_current_slope_by_photon_region.png",
+        results,
+        false,
+        use_fa18_inb_current_efficiency_for_sp19_inb);
+
+    std::cout << "[current_dependence] Photon-region diagnostic complete. Outputs: "
+              << odir << std::endl;
+
+    return results;
+}
+
 static void apply_eppi0_mc_factor_from_dvcs_ratio(std::vector<PeriodResult>& eppi0_results,
                                                   const std::vector<PeriodResult>& dvcs_results) {
     std::map<std::string, PeriodResult> dvcs_by_period;
@@ -5872,6 +6673,24 @@ bool update_current_dependence_factors_csv(
 
         if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
             replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
+        }
+
+        if (options.enable_photon_region_current_diagnostic) {
+            run_photon_region_current_diagnostic(
+                dvcs,
+                dvcsDataTrees,
+                dvcsGenMcTrees,
+                dvcsRecMcTrees,
+                charge_map,
+                data_cuts,
+                mc_cuts,
+                options.output_dir,
+                options.max_workers,
+                options.use_second_column_charge_for_all_unpolarized,
+                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                options.columns_3_to_5_charge_sum_scale,
+                options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                dvcs_results);
         }
 
         dvcs_e_theta_data_fits =
