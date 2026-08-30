@@ -3675,56 +3675,474 @@ def _radius_bias_replica_worker(
 
 
 
+
+def radius_to_normalized_slope(radius_fm: float) -> float:
+    """Return d[G/G(0)]/dQ2 at Q2=0 for a requested RMS radius."""
+    return -(float(radius_fm) / HBARC)**2 / 6.0
+#enddef
+
+
+def sachs_family_coefficients_with_radius(
+        template_coeffs: np.ndarray,
+        family: str,
+        radius_fm: float) -> np.ndarray:
+    """
+    Copy a shape template but force its Q2=0 slope to the requested radius.
+
+    For Pn, slope=c1. For IPn and CFn, slope=-c1. Higher-order coefficients
+    retain the template curvature.
+    """
+    out = np.asarray(template_coeffs, dtype=float).copy()
+    slope = radius_to_normalized_slope(radius_fm)
+    if family.startswith("P"):
+        out[0] = slope
+    elif family.startswith("IP") or family.startswith("CF"):
+        out[0] = -slope
+    else:
+        raise ValueError(f"unknown Sachs family {family}")
+    #endif
+    return out
+#enddef
+
+
+def fit_sachs_family_shape_template(
+        family: str,
+        target_q: np.ndarray,
+        target_shape: np.ndarray) -> np.ndarray:
+    """Fit a normalized P/IP/CF family to a smooth reference shape."""
+    q = np.asarray(target_q, dtype=float)
+    y = np.asarray(target_shape, dtype=float)
+    order = int(re.findall(r"\d+", family)[0])
+    names = tuple(f"c{i}" for i in range(1, order + 1))
+
+    p0 = np.zeros(order, dtype=float)
+    p0[0] = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
+
+    def objective(*values):
+        pred = sachs_family_value(q, np.asarray(values, dtype=float), family)
+        scale = np.maximum(np.abs(y), 0.10)
+        pull = (pred - y) / scale
+        return float(np.dot(pull, pull))
+    #enddef
+
+    m = Minuit(objective, *p0, name=names)
+    m.errordef = Minuit.LEAST_SQUARES
+    m.migrad()
+    if not m.valid:
+        raise RuntimeError(
+            f"Could not construct synthetic truth template for {family}"
+        )
+    #endif
+    return np.asarray([float(m.values[n]) for n in names], dtype=float)
+#enddef
+
+
+def synthetic_truth_is_physical(
+        qmax: float,
+        family: str,
+        coeffs_e: np.ndarray,
+        coeffs_m: np.ndarray) -> bool:
+    """
+    Loose physical sanity screen for synthetic normalized Sachs truth shapes.
+    """
+    q = np.linspace(0.0, max(float(qmax), 1.0e-4), 500)
+    ge = sachs_family_value(q, coeffs_e, family)
+    gm = sachs_family_value(q, coeffs_m, family)
+    if not np.all(np.isfinite(ge)) or not np.all(np.isfinite(gm)):
+        return False
+    #endif
+    if np.any(ge <= 0.0) or np.any(gm <= 0.0):
+        return False
+    #endif
+    if np.nanmax(ge) > 1.15 or np.nanmax(gm) > 1.15:
+        return False
+    #endif
+    return True
+#enddef
+
+
+def parse_radius_bias_grid(value: str) -> List[float]:
+    vals = [float(x.strip()) for x in str(value).split(",") if x.strip()]
+    if len(vals) < 2:
+        raise ValueError(
+            "--radius-bias-radius-grid must contain at least two radii"
+        )
+    #endif
+    if any((not np.isfinite(v)) or v <= 0.0 for v in vals):
+        raise ValueError("radius-bias radius grid contains an invalid radius")
+    #endif
+    return vals
+#enddef
+
+
+def make_synthetic_sachs_truth_scenarios(
+        families: Sequence[str],
+        radius_values: Sequence[float],
+        qmax: float) -> List[Dict[str, object]]:
+    """
+    Build cross-family closure truths spanning a Cartesian rE x rM grid.
+
+    Each family first approximates Kelly over the measured Q2 range to obtain
+    a smooth higher-order curvature template. Then c1 is replaced so the
+    requested radius is exact. This varies slope and functional family
+    independently while retaining smooth proton-like curvature.
+    """
+    q_template = np.linspace(0.0, max(float(qmax), 0.05), 400)
+    k_ge, k_gm = kelly_sachs(q_template)
+    k_ge = k_ge / k_ge[0]
+    k_gm = k_gm / k_gm[0]
+
+    templates = {}
+    for family in families:
+        templates[family] = {
+            "E": fit_sachs_family_shape_template(family, q_template, k_ge),
+            "M": fit_sachs_family_shape_template(family, q_template, k_gm),
+        }
+    #endfor
+
+    scenarios = []
+    skipped = 0
+    for family in families:
+        for rE in radius_values:
+            for rM in radius_values:
+                ce = sachs_family_coefficients_with_radius(
+                    templates[family]["E"], family, rE
+                )
+                cm = sachs_family_coefficients_with_radius(
+                    templates[family]["M"], family, rM
+                )
+                if not synthetic_truth_is_physical(qmax, family, ce, cm):
+                    skipped += 1
+                    continue
+                #endif
+
+                def truth_fn(q, fam=family, e=ce.copy(), m=cm.copy()):
+                    q = np.asarray(q, dtype=float)
+                    ge = sachs_family_value(q, e, fam)
+                    gm = MU_P * sachs_family_value(q, m, fam)
+                    return ge, gm
+                #enddef
+
+                scenarios.append({
+                    "truth_model": (
+                        f"synthetic_{family}_rE{rE:.3f}_rM{rM:.3f}"
+                    ),
+                    "truth_group": family,
+                    "truth_family": family,
+                    "truth_rE_fm": float(rE),
+                    "truth_rM_fm": float(rM),
+                    "truth_fn": truth_fn,
+                    "synthetic": True,
+                })
+            #endfor
+        #endfor
+    #endfor
+
+    print(
+        f"[radius-bias] synthetic truth ensemble: {len(scenarios)} accepted "
+        f"scenario(s), {skipped} rejected by physical-shape screen; "
+        f"radii={list(radius_values)}"
+    )
+    return scenarios
+#enddef
+
+
+def save_extended_radius_bias_matrices(
+        table: pd.DataFrame,
+        families: Sequence[str],
+        outdir: Path,
+        eligibility_threshold: float) -> None:
+    """Make cross-family closure matrices and an eligibility-aware ranking."""
+    groups = list(dict.fromkeys(table["truth_group"].astype(str).tolist()))
+    matrix_rows = []
+
+    for quantity in ["rE", "rM"]:
+        objective = np.full((len(groups), len(families)), np.nan)
+        abs_bias = np.full_like(objective, np.nan)
+        valid_frac = np.full_like(objective, np.nan)
+
+        for ig, group in enumerate(groups):
+            for jf, fit_family in enumerate(families):
+                part = table.loc[
+                    (table["truth_group"] == group)
+                    & (table["family"] == fit_family)
+                    & (table["quantity"] == quantity)
+                ]
+                obj = part["sqrt_stat2_plus_bias2_fm"].to_numpy(float)
+                bias = part["bias_fm"].to_numpy(float)
+                nvalid = part["valid_replicas"].to_numpy(float)
+                nreq = part["requested_replicas"].to_numpy(float)
+
+                finite_obj = obj[np.isfinite(obj)]
+                finite_bias = bias[np.isfinite(bias)]
+                if len(finite_obj):
+                    objective[ig, jf] = float(
+                        np.sqrt(np.mean(finite_obj**2))
+                    )
+                #endif
+                if len(finite_bias):
+                    abs_bias[ig, jf] = float(
+                        np.sqrt(np.mean(finite_bias**2))
+                    )
+                #endif
+                if len(nvalid):
+                    valid_frac[ig, jf] = float(
+                        np.sum(nvalid) / np.sum(nreq)
+                    )
+                #endif
+
+                matrix_rows.append({
+                    "quantity": quantity,
+                    "truth_group": group,
+                    "fit_family": fit_family,
+                    "RMS_objective_fm": objective[ig, jf],
+                    "RMS_abs_bias_fm": abs_bias[ig, jf],
+                    "aggregate_valid_fraction": valid_frac[ig, jf],
+                })
+            #endfor
+        #endfor
+
+        for metric_name, values, filename, label in [
+            (
+                "objective", objective,
+                f"07_{quantity}_truth_family_x_fit_family_objective.png",
+                r"RMS $\sqrt{\sigma_{\rm stat}^2+b^2}$ (fm)",
+            ),
+            (
+                "bias", abs_bias,
+                f"08_{quantity}_truth_family_x_fit_family_bias.png",
+                "RMS |bias| (fm)",
+            ),
+            (
+                "validity", valid_frac,
+                f"09_{quantity}_truth_family_x_fit_family_validity.png",
+                "valid replica fraction",
+            ),
+        ]:
+            fig, ax = plt.subplots(
+                figsize=(1.0 + 0.85 * len(families), 2.0 + 0.55 * len(groups))
+            )
+            image = ax.imshow(values, aspect="auto")
+            ax.set_xticks(np.arange(len(families)))
+            ax.set_xticklabels(families, rotation=45, ha="right")
+            ax.set_yticks(np.arange(len(groups)))
+            ax.set_yticklabels(groups)
+            ax.set_xlabel("fit family")
+            ax.set_ylabel("generating truth family/model")
+            ax.set_title(
+                f"{quantity}: generating family vs fitting family ({metric_name})"
+            )
+            cbar = fig.colorbar(image, ax=ax, pad=0.02)
+            cbar.set_label(label)
+            fig.tight_layout()
+            fig.savefig(outdir / filename, dpi=180)
+            plt.close(fig)
+        #endfor
+    #endfor
+
+    pd.DataFrame(matrix_rows).to_csv(
+        outdir / "radius_bias_truth_family_fit_family_matrix.csv",
+        index=False,
+    )
+
+    rank_rows = []
+    for family in families:
+        fam_all = table.loc[table["family"] == family]
+        scenario_valid = (
+            fam_all["valid_replicas"].to_numpy(float)
+            / fam_all["requested_replicas"].to_numpy(float)
+        )
+        min_valid = (
+            float(np.nanmin(scenario_valid))
+            if len(scenario_valid)
+            else np.nan
+        )
+        global_valid = float(
+            np.nansum(fam_all["valid_replicas"])
+            / np.nansum(fam_all["requested_replicas"])
+        )
+
+        row = {
+            "family": family,
+            "minimum_scenario_valid_fraction": min_valid,
+            "global_valid_fraction": global_valid,
+            "eligibility_threshold": float(eligibility_threshold),
+            "eligible": bool(
+                np.isfinite(min_valid)
+                and min_valid >= eligibility_threshold
+            ),
+        }
+
+        for quantity in ["rE", "rM"]:
+            part = fam_all.loc[fam_all["quantity"] == quantity]
+            vals = part["sqrt_stat2_plus_bias2_fm"].to_numpy(float)
+            vals = vals[np.isfinite(vals)]
+            biases = part["bias_fm"].to_numpy(float)
+            biases = biases[np.isfinite(biases)]
+            row[f"{quantity}_RMS_objective_all_truths_fm"] = (
+                float(np.sqrt(np.mean(vals**2))) if len(vals) else np.nan
+            )
+            row[f"{quantity}_max_objective_all_truths_fm"] = (
+                float(np.max(vals)) if len(vals) else np.nan
+            )
+            row[f"{quantity}_RMS_bias_all_truths_fm"] = (
+                float(np.sqrt(np.mean(biases**2))) if len(biases) else np.nan
+            )
+        #endfor
+
+        e = row["rE_RMS_objective_all_truths_fm"]
+        m = row["rM_RMS_objective_all_truths_fm"]
+        row["combined_RMS_objective_fm"] = (
+            float(math.sqrt(0.5 * (e**2 + m**2)))
+            if np.isfinite(e) and np.isfinite(m)
+            else np.nan
+        )
+        rank_rows.append(row)
+    #endfor
+
+    ranking = pd.DataFrame(rank_rows).sort_values(
+        ["eligible", "combined_RMS_objective_fm"],
+        ascending=[False, True],
+    )
+    ranking.to_csv(
+        outdir / "radius_bias_extended_eligibility_ranking.csv",
+        index=False,
+    )
+
+    fig, ax = plt.subplots(figsize=(10.5, 5.3))
+    order = ranking["family"].tolist()
+    xmap = {f: i for i, f in enumerate(order)}
+    eligible = ranking.loc[ranking["eligible"]]
+    ineligible = ranking.loc[~ranking["eligible"]]
+
+    if len(eligible):
+        ax.scatter(
+            [xmap[f] for f in eligible["family"]],
+            eligible["combined_RMS_objective_fm"],
+            marker="o",
+            label=(
+                f"eligible (min validity >= {eligibility_threshold:.1%})"
+            ),
+        )
+    #endif
+    if len(ineligible):
+        ax.scatter(
+            [xmap[f] for f in ineligible["family"]],
+            ineligible["combined_RMS_objective_fm"],
+            marker="x",
+            label="ineligible",
+        )
+    #endif
+
+    ax.set_xticks(np.arange(len(order)))
+    ax.set_xticklabels(order, rotation=45)
+    ax.set_ylabel("combined RMS bias-variance objective (fm)")
+    ax.set_title("Extended closure-study ranking with convergence eligibility")
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "10_extended_eligibility_ranking.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
 def run_radius_bias_variance_study(
         bundles: Sequence[Dict[str, object]],
         args,
         outdir: Path) -> None:
     """
-    Grifioen/Hayward-style extrapolation optimization adapted to BH data.
+    Hayward/Griffioen-style extrapolation optimization adapted to BH data.
 
-    Candidate common Sachs forms:
+    The trial parameters are normalized Sachs GE(Q2) and GM(Q2)/mu_p shapes,
+    but they are fitted through the BH cross section, not to direct GE/GM
+    pseudodata. At each measured point the trial GE/GM are converted to F1/F2
+    and inserted into the exact BH quadratic.
+
+    Fitting families:
       P1..P4, IP1..IP4, CF2..CF4.
 
-    Truth models:
-      Kelly, AMT, A1/Bernauer order-8 polyxdipole.
-
-    For every truth model the script:
-      1. evaluates pure BH at the exact selected experimental kinematics;
-      2. generates Gaussian replicas using each point's published statistical
-         uncertainty;
-      3. refits every candidate GE and GM/mu_p family;
-      4. obtains the mean extracted radii, replica RMS statistical uncertainty,
-         bias relative to the truth slope, and sqrt(stat^2+bias^2).
-
-    This is opt-in because it requires many Minuit fits.
+    Truth ensemble:
+      empirical Kelly, AMT2007, Bernauer/A1, plus optional synthetic P/IP/CF
+      closure truths spanning a Cartesian rE x rM grid.
     """
     outdir.mkdir(parents=True, exist_ok=True)
+
     families = [f"P{i}" for i in range(1, 5)]
     families += [f"IP{i}" for i in range(1, 5)]
     families += [f"CF{i}" for i in range(2, 5)]
 
     specs = [bundle_to_measurement_spec(b) for b in bundles]
-    truths = {
-        "Kelly": kelly_sachs,
-        "AMT2007": amt2007_sachs,
-        "Bernauer_order8_polyxdipole": bernauer_polyxdipole_sachs,
-    }
+    qmax = max(
+        float(np.nanmax(spec["data"]["t_abs"].to_numpy(float)))
+        for spec in specs
+    )
+
+    scenarios = [
+        {
+            "truth_model": "Kelly",
+            "truth_group": "Kelly",
+            "truth_family": "empirical",
+            "truth_fn": kelly_sachs,
+            "synthetic": False,
+        },
+        {
+            "truth_model": "AMT2007",
+            "truth_group": "AMT2007",
+            "truth_family": "empirical",
+            "truth_fn": amt2007_sachs,
+            "synthetic": False,
+        },
+        {
+            "truth_model": "Bernauer_order8_polyxdipole",
+            "truth_group": "Bernauer",
+            "truth_family": "empirical",
+            "truth_fn": bernauer_polyxdipole_sachs,
+            "synthetic": False,
+        },
+    ]
+
+    if args.radius_bias_extended_truths:
+        radius_values = parse_radius_bias_grid(args.radius_bias_radius_grid)
+        scenarios += make_synthetic_sachs_truth_scenarios(
+            families=families,
+            radius_values=radius_values,
+            qmax=qmax,
+        )
+    #endif
+
+    print(
+        f"[radius-bias] total truth scenarios={len(scenarios)}, "
+        f"fit families={len(families)}, replicas/scenario/family="
+        f"{args.radius_bias_replicas}"
+    )
 
     rows = []
     replica_rows = []
-    for truth_name, truth_fn in truths.items():
-        truth_radius = {}
-        for quantity in ["E", "M"]:
-            norm = 1.0 if quantity == "E" else MU_P
-            truth_radius[quantity] = radius_from_shape(
-                lambda qq, qn=quantity: (
-                    truth_fn(np.asarray(qq, dtype=float))[0]
-                    if qn == "E"
-                    else truth_fn(np.asarray(qq, dtype=float))[1]
-                ),
-                norm,
-            )
-        #endfor
+
+    for truth_index, scenario in enumerate(scenarios):
+        truth_name = str(scenario["truth_model"])
+        truth_group = str(scenario["truth_group"])
+        truth_fn = scenario["truth_fn"]
+
+        if bool(scenario.get("synthetic", False)):
+            truth_radius = {
+                "E": float(scenario["truth_rE_fm"]),
+                "M": float(scenario["truth_rM_fm"]),
+            }
+        else:
+            truth_radius = {}
+            for quantity in ["E", "M"]:
+                norm = 1.0 if quantity == "E" else MU_P
+                truth_radius[quantity] = radius_from_shape(
+                    lambda qq, qn=quantity: (
+                        truth_fn(np.asarray(qq, dtype=float))[0]
+                        if qn == "E"
+                        else truth_fn(np.asarray(qq, dtype=float))[1]
+                    ),
+                    norm,
+                )
+            #endfor
+        #endif
 
         central_by_key = {}
         sigma_by_key = {}
@@ -3746,8 +4164,6 @@ def run_radius_bias_variance_study(
             )
         #endfor
 
-        # A fresh process pool is used for each truth model.  The truth-model
-        # central values and statistical errors are installed once per worker.
         nworkers = (
             args.radius_bias_workers
             if args.radius_bias_workers is not None
@@ -3755,19 +4171,22 @@ def run_radius_bias_variance_study(
         )
         nworkers = max(1, int(nworkers))
 
-        # SeedSequence guarantees deterministic, non-overlapping random streams
-        # independent of worker scheduling.
-        truth_index = list(truths.keys()).index(truth_name)
         seed_root = np.random.SeedSequence(
             [int(args.radius_bias_seed), int(truth_index)]
         )
-        child_seeds = seed_root.spawn(len(families) * args.radius_bias_replicas)
+        child_seeds = seed_root.spawn(
+            len(families) * args.radius_bias_replicas
+        )
 
         tasks = []
         iseed = 0
         for family in families:
             for _ in range(args.radius_bias_replicas):
-                seed = int(child_seeds[iseed].generate_state(1, dtype=np.uint64)[0])
+                seed = int(
+                    child_seeds[iseed].generate_state(
+                        1, dtype=np.uint64
+                    )[0]
+                )
                 tasks.append((family, seed))
                 iseed += 1
             #endfor
@@ -3783,14 +4202,14 @@ def run_radius_bias_variance_study(
             f"{len(tasks)} replica fits with {nworkers} worker(s)..."
         )
         t0 = time.time()
+
         with ProcessPoolExecutor(
                 max_workers=nworkers,
                 initializer=_init_radius_bias_worker,
                 initargs=(specs, central_by_key, sigma_by_key)) as pool:
-            # map() preserves input ordering but workers execute concurrently.
-            # chunksize > 1 lowers IPC overhead for large replica campaigns.
             chunksize = max(1, len(tasks) // max(1, 8 * nworkers))
             replica_counter = {family: 0 for family in families}
+
             for family, re_val, rm_val, valid in pool.map(
                     _radius_bias_replica_worker,
                     tasks,
@@ -3800,6 +4219,9 @@ def run_radius_bias_variance_study(
 
                 replica_rows.append({
                     "truth_model": truth_name,
+                    "truth_group": truth_group,
+                    "truth_rE_fm": truth_radius["E"],
+                    "truth_rM_fm": truth_radius["M"],
                     "family": family,
                     "replica": irep,
                     "rE_fm": re_val,
@@ -3838,23 +4260,36 @@ def run_radius_bias_variance_study(
                     bias = float(mean - rtrue)
                     total = float(math.sqrt(stat**2 + bias**2))
                 #endif
+
                 rows.append({
                     "truth_model": truth_name,
+                    "truth_group": truth_group,
+                    "truth_family": str(
+                        scenario.get("truth_family", truth_group)
+                    ),
+                    "synthetic_truth": bool(
+                        scenario.get("synthetic", False)
+                    ),
                     "family": family,
                     "quantity": quantity,
                     "truth_radius_fm": rtrue,
+                    "truth_rE_fm": truth_radius["E"],
+                    "truth_rM_fm": truth_radius["M"],
                     "mean_extracted_radius_fm": mean,
                     "stat_RMS_fm": stat,
                     "bias_fm": bias,
                     "sqrt_stat2_plus_bias2_fm": total,
                     "valid_replicas": nvalid,
                     "requested_replicas": args.radius_bias_replicas,
+                    "valid_fraction": (
+                        nvalid / args.radius_bias_replicas
+                    ),
                     "workers": nworkers,
                 })
             #endfor
 
             print(
-                f"[radius-bias] truth={truth_name:28s} family={family:3s} "
+                f"[radius-bias] truth={truth_name:42s} family={family:3s} "
                 f"valid={nvalid}/{args.radius_bias_replicas}"
             )
         #endfor
@@ -3864,10 +4299,11 @@ def run_radius_bias_variance_study(
     table.to_csv(outdir / "radius_bias_variance_study.csv", index=False)
 
     replica_table = pd.DataFrame(replica_rows)
-    replica_table.to_csv(outdir / "radius_bias_replica_results.csv", index=False)
+    replica_table.to_csv(
+        outdir / "radius_bias_replica_results.csv",
+        index=False,
+    )
 
-    # Aggregate the objective across truth models.  RMS across truths gives a
-    # transparent single ranking while preserving the per-truth table above.
     agg_rows = []
     for family in families:
         for quantity in ["rE", "rM"]:
@@ -3889,6 +4325,7 @@ def run_radius_bias_variance_study(
             })
         #endfor
     #endfor
+
     agg = pd.DataFrame(agg_rows)
     agg.to_csv(outdir / "radius_bias_variance_ranking.csv", index=False)
 
@@ -3915,14 +4352,14 @@ def run_radius_bias_variance_study(
     fig.savefig(outdir / "01_radius_bias_variance_ranking.png", dpi=180)
     plt.close(fig)
 
-    # Per-truth objective curves.
+    empirical_table = table.loc[~table["synthetic_truth"]].copy()
     for quantity in ["rE", "rM"]:
         fig, ax = plt.subplots(figsize=(10.5, 5.2))
         x = np.arange(len(families))
-        for truth_name in truths:
-            part = table.loc[
-                (table["truth_model"] == truth_name)
-                & (table["quantity"] == quantity)
+        for truth_name in empirical_table["truth_model"].unique():
+            part = empirical_table.loc[
+                (empirical_table["truth_model"] == truth_name)
+                & (empirical_table["quantity"] == quantity)
             ].set_index("family").reindex(families)
             ax.plot(
                 x,
@@ -3934,16 +4371,17 @@ def run_radius_bias_variance_study(
         ax.set_xticks(x)
         ax.set_xticklabels(families, rotation=45)
         ax.set_ylabel(r"$\sqrt{\sigma_{\rm stat}^2+b^2}$ (fm)")
-        ax.set_title(f"{quantity}: objective for each truth model")
+        ax.set_title(f"{quantity}: empirical-truth objective")
         ax.grid(alpha=0.2)
         ax.legend()
         fig.tight_layout()
-        fig.savefig(outdir / f"02_{quantity}_objective_by_truth.png", dpi=180)
+        fig.savefig(
+            outdir / f"02_{quantity}_objective_empirical_truths.png",
+            dpi=180,
+        )
         plt.close(fig)
     #endfor
 
-    # Statistical RMS and absolute bias, separately, so the origin of each
-    # candidate's total objective is visible.
     for quantity in ["rE", "rM"]:
         fig, ax = plt.subplots(figsize=(10.5, 5.2))
         x = np.arange(len(families))
@@ -3954,15 +4392,25 @@ def run_radius_bias_variance_study(
             fam = part_q.loc[part_q["family"] == family]
             stat_vals = fam["stat_RMS_fm"].to_numpy(float)
             bias_vals = np.abs(fam["bias_fm"].to_numpy(float))
-            stat_rms.append(float(np.sqrt(np.nanmean(stat_vals**2))))
-            abs_bias_rms.append(float(np.sqrt(np.nanmean(bias_vals**2))))
+            stat_vals = stat_vals[np.isfinite(stat_vals)]
+            bias_vals = bias_vals[np.isfinite(bias_vals)]
+            stat_rms.append(
+                float(np.sqrt(np.mean(stat_vals**2)))
+                if len(stat_vals) else np.nan
+            )
+            abs_bias_rms.append(
+                float(np.sqrt(np.mean(bias_vals**2)))
+                if len(bias_vals) else np.nan
+            )
         #endfor
         ax.plot(x, stat_rms, marker="o", label="statistical RMS")
         ax.plot(x, abs_bias_rms, marker="s", label="RMS |bias|")
         ax.set_xticks(x)
         ax.set_xticklabels(families, rotation=45)
         ax.set_ylabel("fm")
-        ax.set_title(f"{quantity}: statistical variance versus extrapolation bias")
+        ax.set_title(
+            f"{quantity}: statistical variance versus extrapolation bias"
+        )
         ax.grid(alpha=0.2)
         ax.legend()
         fig.tight_layout()
@@ -3970,22 +4418,39 @@ def run_radius_bias_variance_study(
         plt.close(fig)
     #endfor
 
-    # Convergence/validity fraction.  This is critical for distinguishing a
-    # genuinely good flexible family from one whose objective is calculated
-    # only from a selected subset of easy replicas.
     fig, ax = plt.subplots(figsize=(10.5, 5.2))
     x = np.arange(len(families))
-    for truth_name in truths:
+    min_frac = []
+    global_frac = []
+    for family in families:
         part = table.loc[
-            (table["truth_model"] == truth_name)
+            (table["family"] == family)
             & (table["quantity"] == "rE")
-        ].set_index("family").reindex(families)
-        frac = (
+        ]
+        fractions = (
             part["valid_replicas"].to_numpy(float)
             / part["requested_replicas"].to_numpy(float)
         )
-        ax.plot(x, frac, marker="o", label=truth_name)
+        min_frac.append(float(np.nanmin(fractions)))
+        global_frac.append(
+            float(
+                np.nansum(part["valid_replicas"])
+                / np.nansum(part["requested_replicas"])
+            )
+        )
     #endfor
+
+    ax.plot(x, global_frac, marker="o", label="global valid fraction")
+    ax.plot(x, min_frac, marker="s", label="minimum truth-scenario fraction")
+    ax.axhline(
+        args.radius_bias_min_valid_fraction,
+        linestyle="--",
+        linewidth=1.0,
+        label=(
+            f"eligibility threshold "
+            f"{args.radius_bias_min_valid_fraction:.1%}"
+        ),
+    )
     ax.set_xticks(x)
     ax.set_xticklabels(families, rotation=45)
     ax.set_ylim(0.0, 1.05)
@@ -3997,16 +4462,15 @@ def run_radius_bias_variance_study(
     fig.savefig(outdir / "04_valid_replica_fraction.png", dpi=180)
     plt.close(fig)
 
-    # Mean extracted radii versus candidate family, with one panel saved per
-    # radius.  Error bars are the replica RMS, not Hessian errors.
-    for quantity, col in [("rE", "rE_fm"), ("rM", "rM_fm")]:
+    for quantity in ["rE", "rM"]:
         fig, ax = plt.subplots(figsize=(11.0, 5.6))
         x = np.arange(len(families), dtype=float)
-        offsets = np.linspace(-0.18, 0.18, len(truths))
-        for offset, truth_name in zip(offsets, truths):
-            part = table.loc[
-                (table["truth_model"] == truth_name)
-                & (table["quantity"] == quantity)
+        empirical_names = empirical_table["truth_model"].unique().tolist()
+        offsets = np.linspace(-0.18, 0.18, len(empirical_names))
+        for offset, truth_name in zip(offsets, empirical_names):
+            part = empirical_table.loc[
+                (empirical_table["truth_model"] == truth_name)
+                & (empirical_table["quantity"] == quantity)
             ].set_index("family").reindex(families)
             ax.errorbar(
                 x + offset,
@@ -4021,54 +4485,26 @@ def run_radius_bias_variance_study(
         ax.set_xticklabels(families, rotation=45)
         ax.set_ylabel(f"{quantity} extracted radius (fm)")
         ax.set_title(
-            f"{quantity}: mean extracted radius ± replica statistical RMS"
+            f"{quantity}: empirical truths, mean extracted radius ± replica RMS"
         )
         ax.grid(alpha=0.2)
         ax.legend()
         fig.tight_layout()
-        fig.savefig(outdir / f"05_{quantity}_mean_extracted_radius.png", dpi=180)
+        fig.savefig(
+            outdir / f"05_{quantity}_mean_extracted_radius_empirical.png",
+            dpi=180,
+        )
         plt.close(fig)
-
-    # Distribution boxplots from the individual valid replicas.
-    for quantity, col in [("rE", "rE_fm"), ("rM", "rM_fm")]:
-        for truth_name in truths:
-            part = replica_table.loc[
-                (replica_table["truth_model"] == truth_name)
-                & replica_table["valid"]
-            ]
-            arrays = [
-                part.loc[part["family"] == family, col].to_numpy(float)
-                for family in families
-            ]
-            fig, ax = plt.subplots(figsize=(11.0, 5.4))
-            ax.boxplot(
-                arrays,
-                tick_labels=families,
-                showfliers=False,
-            )
-            truth_row = table.loc[
-                (table["truth_model"] == truth_name)
-                & (table["quantity"] == quantity)
-            ].iloc[0]
-            ax.axhline(
-                float(truth_row["truth_radius_fm"]),
-                linestyle="--",
-                linewidth=1.0,
-                label="truth radius",
-            )
-            ax.set_ylabel(f"{quantity} (fm)")
-            ax.set_title(f"{quantity} replica distributions: {truth_name}")
-            ax.grid(alpha=0.2)
-            ax.legend()
-            fig.tight_layout()
-            safe_truth = re.sub(r"[^A-Za-z0-9]+", "_", truth_name)
-            fig.savefig(
-                outdir / f"06_{quantity}_replica_boxplot_{safe_truth}.png",
-                dpi=180,
-            )
-            plt.close(fig)
-        #endfor
     #endfor
+
+    if args.radius_bias_extended_truths:
+        save_extended_radius_bias_matrices(
+            table=table,
+            families=families,
+            outdir=outdir,
+            eligibility_threshold=args.radius_bias_min_valid_fraction,
+        )
+    #endif
 
     print(f"[radius-bias] tables and plots -> {outdir}")
 #enddef
@@ -6077,6 +6513,31 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=20260830,
         help="Random seed for the radius bias/variance pseudodata study",
+    )
+    p.add_argument(
+        "--radius-bias-extended-truths",
+        action="store_true",
+        help=(
+            "Add synthetic P/IP/CF generating families across an rE x rM "
+            "grid to the empirical Kelly/AMT/Bernauer truth ensemble"
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-radius-grid",
+        default="0.75,0.80,0.85,0.90,0.92",
+        help=(
+            "Comma-separated synthetic truth radii in fm; the extended study "
+            "uses the Cartesian rE x rM grid for every generating family"
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-min-valid-fraction",
+        type=float,
+        default=0.99,
+        help=(
+            "Minimum valid-replica fraction required in every truth scenario "
+            "for a candidate family to be eligible (default: 0.99)"
+        ),
     )
     p.add_argument(
         "--clas6-dataset-id",
