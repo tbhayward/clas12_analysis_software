@@ -442,6 +442,81 @@ def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
 
 
 
+
+def resolve_script_relative_path(path_value: str) -> Path:
+    """
+    Resolve a user path robustly.
+
+    Absolute paths are used as-is.  Relative paths are interpreted first
+    relative to the current working directory for backward compatibility; if
+    they do not exist there, they are interpreted relative to this script.
+    """
+    p = Path(path_value).expanduser()
+    if p.is_absolute():
+        return p
+    #endif
+
+    cwd_candidate = p.resolve()
+    if cwd_candidate.exists():
+        return cwd_candidate
+    #endif
+
+    return (Path(__file__).resolve().parent / p).resolve()
+#enddef
+
+
+def print_run_plan(args) -> None:
+    """Print the exact analysis branch and expected output products."""
+    if args.only_pass2:
+        mode_name = "ONLY PASS-2"
+    elif args.only_pass1:
+        mode_name = "ONLY CLAS12 LEE 2026"
+    elif args.only_clas6:
+        mode_name = "ONLY CLAS6 JO 2015"
+    elif args.only_saylor:
+        mode_name = "ONLY CLAS6 SAYLOR 2018"
+    elif args.only_clas6_pass1_combined:
+        mode_name = "ONLY JO 2015 + CLAS12 LEE 2026 (LEGACY DEBUG MODE)"
+    elif args.all_including_pass2:
+        mode_name = "FULL THREE-MEASUREMENT STUDY + PASS-2"
+    else:
+        mode_name = "FULL THREE-MEASUREMENT PUBLISHED STUDY"
+    #endif
+
+    print("\n" + "=" * 78)
+    print(f"[RUN MODE] {mode_name}")
+    print(f"[cwd]      {Path.cwd()}")
+    print(f"[script]   {Path(__file__).resolve()}")
+    print(f"[outdir]   {Path(args.outdir).expanduser().resolve()}")
+    print(f"[Saylor]   {resolve_script_relative_path(args.saylor_file)}")
+
+    if (
+        not args.only_pass2
+        and not args.only_pass1
+        and not args.only_clas6
+        and not args.only_saylor
+        and not args.only_clas6_pass1_combined
+    ):
+        print("[expected published-study products]")
+        print("  singles:")
+        print("    CLAS6 Jo 2015")
+        print("    CLAS6 Saylor 2018")
+        print("    CLAS12 Lee 2026")
+        print("  pairwise:")
+        print("    Jo 2015 + Saylor 2018")
+        print("    Jo 2015 + Lee 2026")
+        print("    Saylor 2018 + Lee 2026")
+        print("  combined:")
+        print("    Jo 2015 + Saylor 2018 + Lee 2026")
+        print("  summaries:")
+        print("    BH-cut plateau")
+        print("    separate-vs-combined comparison")
+    #endif
+    print("=" * 78)
+#enddef
+
+
+
 def maybe_download_saylor_supplement(path: Path, force: bool = False) -> Path:
     """
     Try to download the public Saylor et al. supplemental TXT.
@@ -4581,6 +4656,50 @@ def save_separate_vs_combined_table(
 #enddef
 
 
+
+def save_published_workflow_manifest(
+        bundles: Sequence[Dict[str, object]],
+        combinations: Sequence[Dict[str, object]],
+        outdir: Path) -> None:
+    """Write a simple machine- and human-readable completion manifest."""
+    rows = []
+    for bundle in bundles:
+        rows.append({
+            "category": "single",
+            "key": str(bundle["key"]),
+            "label": str(bundle["label"]),
+            "output_directory": str(Path(bundle["outdir"]).resolve()),
+            "set5_points": int(len(bundle["set5"])),
+        })
+    #endfor
+
+    for bundle in combinations:
+        rows.append({
+            "category": "combination",
+            "key": str(bundle["key"]),
+            "label": str(bundle["label"]),
+            "output_directory": str(Path(bundle["outdir"]).resolve()),
+            "set5_points": int(len(bundle["set5"])),
+        })
+    #endfor
+
+    manifest = pd.DataFrame(rows)
+    manifest.to_csv(outdir / "published_workflow_manifest.csv", index=False)
+
+    with open(outdir / "published_workflow_manifest.txt", "w") as fout:
+        fout.write("Published BH form-factor/radius workflow products\n")
+        fout.write("=" * 72 + "\n")
+        for row in rows:
+            fout.write(
+                f"{row['category']:11s} | {row['label']} | "
+                f"N5={row['set5_points']} | {row['output_directory']}\n"
+            )
+        #endfor
+    #endwith
+#enddef
+
+
+
 def run_published_default(args) -> int:
     """
     Publication-facing workflow.
@@ -4600,7 +4719,7 @@ def run_published_default(args) -> int:
     jo = run_clas6_validation(args, return_results=True)
     pass1 = run_pass1_validation(args, return_results=True)
 
-    saylor_path = Path(args.saylor_file).expanduser()
+    saylor_path = resolve_script_relative_path(args.saylor_file)
     if args.download_saylor:
         saylor_path = maybe_download_saylor_supplement(
             saylor_path, force=args.force_saylor_download
@@ -4609,15 +4728,20 @@ def run_published_default(args) -> int:
     #endif
 
     saylor = None
-    if not args.skip_saylor and saylor_path.exists():
+    if not args.skip_saylor:
+        if not saylor_path.exists():
+            raise FileNotFoundError(
+                "The default published workflow requires the Saylor 2018 "
+                "supplemental table so that all three measurements and all "
+                "pairwise/triple combinations are produced.\n"
+                f"Resolved Saylor path: {saylor_path}\n"
+                "Place saylor_CLAS6.txt there, pass --saylor-file explicitly, "
+                "or use --skip-saylor only if you intentionally want the "
+                "two-measurement Jo + Lee fallback."
+            )
+        #endif
+        args.saylor_file = str(saylor_path)
         saylor = run_saylor_validation(args, return_results=True)
-    elif not args.skip_saylor:
-        print(
-            "\n[SAYLOR] Supplemental table is not present, so the default "
-            "workflow will continue with Jo 2015 + CLAS12 Lee 2026 only.\n"
-            f"Expected path: {saylor_path.resolve()}\n"
-            "Download Supplemental-material.txt there, or use --download-saylor."
-        )
     #endif
 
     all_bundles = [jo, pass1]
@@ -4703,7 +4827,16 @@ def run_published_default(args) -> int:
         comparison_dir,
     )
 
+    root_outdir = Path(args.outdir).expanduser().resolve()
+    save_published_workflow_manifest(
+        all_bundles,
+        combos,
+        root_outdir,
+    )
+
     print(f"\n[summary] Separate-vs-combined results -> {comparison_dir}")
+    print(f"[summary] Workflow manifest -> {root_outdir / 'published_workflow_manifest.txt'}")
+    print("[summary] Published workflow completed successfully.")
     return 0
 #enddef
 
@@ -4751,7 +4884,7 @@ def run_pass1_validation(args, return_results: bool = False):
     csv_path = Path(args.pass1_csv).expanduser().resolve()
     outdir = (
         Path(args.outdir).expanduser().resolve()
-        / "pass1_validation"
+        / "clas12_lee2026"
     )
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -4938,7 +5071,7 @@ def run_saylor_validation(args, return_results: bool = False):
     )
     outdir.mkdir(parents=True, exist_ok=True)
 
-    saylor_path = Path(args.saylor_file).expanduser()
+    saylor_path = resolve_script_relative_path(args.saylor_file)
     if args.download_saylor:
         saylor_path = maybe_download_saylor_supplement(
             saylor_path, force=args.force_saylor_download
@@ -5067,7 +5200,7 @@ def run_clas6_validation(args, return_results: bool = False):
     """
     outdir = (
         Path(args.outdir).expanduser().resolve()
-        / "clas6_validation"
+        / "clas6_jo2015"
     )
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -5805,6 +5938,7 @@ def run_pass2_analysis(args, return_results: bool = False):
 
 def main() -> int:
     args = build_parser().parse_args()
+    print_run_plan(args)
 
     if Minuit is None:
         raise RuntimeError(
@@ -5825,6 +5959,11 @@ def main() -> int:
         return run_saylor_validation(args)
     #endif
     if args.only_clas6_pass1_combined:
+        print(
+            "[NOTE] --only-clas6-pass1-combined is a restricted legacy/debug "
+            "mode. It intentionally does NOT run Saylor or the other "
+            "measurement combinations."
+        )
         jo = run_clas6_validation(args, return_results=True)
         pass1 = run_pass1_validation(args, return_results=True)
         run_measurement_combination(
