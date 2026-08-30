@@ -36,6 +36,10 @@ DEFAULT_CROSS_SECTION_COLUMN = (
     "cross sections, ep->epg, exp, Fa18 Inb, unpol"
 )
 DEFAULT_GTHETA_COLUMN = "g_theta, Fa18 Inb"
+DEFAULT_XB_COLUMN = "xBavg, Fa18 Inb"
+DEFAULT_Q2_COLUMN = "Q2avg, Fa18 Inb"
+DEFAULT_TABS_COLUMN = "t_abs_avg, Fa18 Inb"
+PROTON_MASS_GEV = 0.9382720813
 DEFAULT_DETAILED_THETA_MIN = 5.5
 DEFAULT_DETAILED_THETA_MAX = 30.0
 DEFAULT_DETAILED_THETA_BINS = 7
@@ -99,6 +103,21 @@ def parse_args() -> argparse.Namespace:
         "--gtheta-column",
         default=DEFAULT_GTHETA_COLUMN,
         help="DVCS CSV column containing photon polar angle in degrees.",
+    )
+    parser.add_argument(
+        "--xb-column",
+        default=DEFAULT_XB_COLUMN,
+        help="DVCS CSV column containing average xB.",
+    )
+    parser.add_argument(
+        "--q2-column",
+        default=DEFAULT_Q2_COLUMN,
+        help="DVCS CSV column containing average Q2 in GeV^2.",
+    )
+    parser.add_argument(
+        "--tabs-column",
+        default=DEFAULT_TABS_COLUMN,
+        help="DVCS CSV column containing average -t in GeV^2.",
     )
     parser.add_argument(
         "--detailed-theta-min",
@@ -204,6 +223,9 @@ def load_sector_csv(
     sector: int,
     cross_section_column: str,
     gtheta_column: str,
+    xb_column: str,
+    q2_column: str,
+    tabs_column: str,
 ) -> pd.DataFrame:
     if not path.exists():
         raise FileNotFoundError(path)
@@ -214,6 +236,9 @@ def load_sector_csv(
     required = {
         cross_section_column,
         gtheta_column,
+        xb_column,
+        q2_column,
+        tabs_column,
         *[name for pair in VOLUME_COLUMNS for name in pair],
     }
     missing = sorted(required.difference(df.columns))
@@ -232,6 +257,33 @@ def load_sector_csv(
         values[irow], uncertainties[irow] = tuple_value_unc(cell)
     #endfor
 
+    x_b = pd.to_numeric(
+        df[xb_column],
+        errors="coerce",
+    ).to_numpy()
+    q2 = pd.to_numeric(
+        df[q2_column],
+        errors="coerce",
+    ).to_numpy()
+    t_abs = pd.to_numeric(
+        df[tabs_column],
+        errors="coerce",
+    ).to_numpy()
+
+    e_gamma = np.full(len(df), np.nan, dtype=float)
+    valid_kin = (
+        np.isfinite(x_b)
+        & np.isfinite(q2)
+        & np.isfinite(t_abs)
+        & (x_b > 0.0)
+        & (q2 > 0.0)
+        & (t_abs >= 0.0)
+    )
+    e_gamma[valid_kin] = (
+        q2[valid_kin] / (2.0 * PROTON_MASS_GEV * x_b[valid_kin])
+        - t_abs[valid_kin] / (2.0 * PROTON_MASS_GEV)
+    )
+
     out = pd.DataFrame(
         {
             "sector": sector,
@@ -239,6 +291,10 @@ def load_sector_csv(
                 df[gtheta_column],
                 errors="coerce",
             ).to_numpy(),
+            "xBavg": x_b,
+            "Q2avg": q2,
+            "t_abs_avg": t_abs,
+            "Egamma_est": e_gamma,
             "sigma": values,
             "sigma_unc": uncertainties,
             "volume": bin_volume(df),
@@ -530,6 +586,423 @@ def pearson_finite(
     return float(np.corrcoef(x_use, y_use)[0, 1])
 
 
+
+def efficiency_lookup(
+    efficiency: pd.DataFrame,
+    sector: int,
+    theta_deg: float,
+    energy_gev: float,
+    mc_name: str,
+) -> Tuple[float, float]:
+    """
+    Return C_gamma = epsilon_data / epsilon_MC for one DVCS bin.
+
+    The correction table uses the coarse photon-efficiency theta bins and the
+    high-energy E_pred bins.  The DVCS bin is mapped by its average theta_gamma
+    and the exclusive-kinematic photon-energy estimate derived from
+    <xB>, <Q2>, and <-t>.
+    """
+    if not (
+        np.isfinite(theta_deg)
+        and np.isfinite(energy_gev)
+        and energy_gev >= 2.0
+        and energy_gev < 9.5
+    ):
+        return np.nan, np.nan
+    #endif
+
+    theta_match = (
+        (efficiency["theta_min_deg"] <= theta_deg)
+        & (theta_deg < efficiency["theta_max_deg"])
+    )
+    energy_match = (
+        (efficiency["Epred_min_GeV"] <= energy_gev)
+        & (energy_gev < efficiency["Epred_max_GeV"])
+    )
+    sector_match = efficiency["sector"] == sector
+
+    subset = efficiency[
+        theta_match & energy_match & sector_match
+    ]
+
+    if len(subset) != 1:
+        return np.nan, np.nan
+    #endif
+
+    ratio_col = f"data_over_{mc_name}"
+    unc_col = f"data_over_{mc_name}_unc"
+
+    return (
+        float(subset.iloc[0][ratio_col]),
+        float(subset.iloc[0][unc_col]),
+    )
+
+
+def build_energy_weighted_dvcs_closure(
+    sectors: Mapping[int, pd.DataFrame],
+    efficiency: pd.DataFrame,
+    mc_name: str,
+) -> pd.DataFrame:
+    """
+    Apply the photon-efficiency correction to each underlying DVCS bin before
+    integrating over the matched theta regions.
+
+    For each DVCS bin:
+      E_gamma = <Q2> / (2 M <xB>) - <-t> / (2 M)
+
+    The bin is mapped to the corresponding C_gamma(E,theta,sector), and the
+    corrected contribution is
+
+      dSigma_corrected = dSigma_raw / C_gamma.
+
+    This is the appropriate direction because the existing acceptance uses MC;
+    if epsilon_data / epsilon_MC = C_gamma, the uncorrected extracted cross
+    section carries the same multiplicative C_gamma bias.
+    """
+    rows = []
+
+    for theta_low, theta_high in MATCHED_THETA_BINS:
+        raw_values = np.full(6, np.nan)
+        raw_uncs = np.full(6, np.nan)
+        corrected_values = np.full(6, np.nan)
+        corrected_uncs = np.full(6, np.nan)
+        effective_c = np.full(6, np.nan)
+        used_bins = np.zeros(6, dtype=int)
+        skipped_energy = np.zeros(6, dtype=int)
+        skipped_correction = np.zeros(6, dtype=int)
+        mean_energy = np.full(6, np.nan)
+
+        for sector in range(1, 7):
+            df = sectors[sector]
+            mask = (
+                np.isfinite(df["g_theta"].to_numpy())
+                & np.isfinite(df["sigma"].to_numpy())
+                & np.isfinite(df["volume"].to_numpy())
+                & (df["volume"].to_numpy() > 0.0)
+                & (df["g_theta"].to_numpy() >= theta_low)
+                & (df["g_theta"].to_numpy() < theta_high)
+            )
+
+            sub = df.loc[mask].copy()
+
+            if len(sub) == 0:
+                continue
+            #endif
+
+            raw_contrib = (
+                sub["sigma"].to_numpy(dtype=float)
+                * sub["volume"].to_numpy(dtype=float)
+            )
+            raw_values[sector - 1] = float(np.sum(raw_contrib))
+
+            raw_sigma_unc = sub["sigma_unc"].to_numpy(dtype=float)
+            volume = sub["volume"].to_numpy(dtype=float)
+            finite_raw_unc = np.isfinite(raw_sigma_unc)
+            raw_uncs[sector - 1] = float(
+                np.sqrt(
+                    np.sum(
+                        (
+                            raw_sigma_unc[finite_raw_unc]
+                            * volume[finite_raw_unc]
+                        ) ** 2
+                    )
+                )
+            )
+
+            corrected_contribs = []
+            corrected_variances = []
+            energy_weights = []
+            energy_values = []
+
+            for _, dvcs_bin in sub.iterrows():
+                e_gamma = float(dvcs_bin["Egamma_est"])
+
+                if not (
+                    np.isfinite(e_gamma)
+                    and e_gamma >= 2.0
+                    and e_gamma < 9.5
+                ):
+                    skipped_energy[sector - 1] += 1
+                    continue
+                #endif
+
+                c_gamma, c_unc = efficiency_lookup(
+                    efficiency,
+                    sector,
+                    float(dvcs_bin["g_theta"]),
+                    e_gamma,
+                    mc_name,
+                )
+
+                if not (
+                    np.isfinite(c_gamma)
+                    and c_gamma > 0.0
+                ):
+                    skipped_correction[sector - 1] += 1
+                    continue
+                #endif
+
+                sigma = float(dvcs_bin["sigma"])
+                sigma_unc = float(dvcs_bin["sigma_unc"])
+                vol = float(dvcs_bin["volume"])
+                raw_bin = sigma * vol
+                corrected_bin = raw_bin / c_gamma
+
+                corrected_contribs.append(corrected_bin)
+
+                # Propagate the DVCS statistical uncertainty and the
+                # tag-and-probe fit-statistical uncertainty independently.
+                rel_var = 0.0
+
+                if (
+                    np.isfinite(sigma_unc)
+                    and sigma != 0.0
+                ):
+                    rel_var += (sigma_unc / sigma) ** 2
+                #endif
+
+                if (
+                    np.isfinite(c_unc)
+                    and c_gamma != 0.0
+                ):
+                    rel_var += (c_unc / c_gamma) ** 2
+                #endif
+
+                corrected_variances.append(
+                    corrected_bin ** 2 * rel_var
+                )
+
+                if raw_bin > 0.0:
+                    energy_weights.append(raw_bin)
+                    energy_values.append(e_gamma)
+                #endif
+
+                used_bins[sector - 1] += 1
+            #endfor
+
+            if corrected_contribs:
+                corrected_values[sector - 1] = float(
+                    np.sum(corrected_contribs)
+                )
+                corrected_uncs[sector - 1] = float(
+                    np.sqrt(np.sum(corrected_variances))
+                )
+
+                if corrected_values[sector - 1] > 0.0:
+                    effective_c[sector - 1] = (
+                        raw_values[sector - 1]
+                        / corrected_values[sector - 1]
+                    )
+                #endif
+            #endif
+
+            if energy_weights:
+                mean_energy[sector - 1] = float(
+                    np.average(
+                        np.asarray(energy_values),
+                        weights=np.asarray(energy_weights),
+                    )
+                )
+            #endif
+        #endfor
+
+        raw_shape, raw_shape_unc = normalize_sector_values(
+            raw_values,
+            raw_uncs,
+        )
+        corrected_shape, corrected_shape_unc = normalize_sector_values(
+            corrected_values,
+            corrected_uncs,
+        )
+        c_shape, _ = normalize_sector_values(
+            effective_c,
+            np.full(6, np.nan),
+        )
+
+        for sector in range(1, 7):
+            rows.append(
+                {
+                    "mc": mc_name,
+                    "theta_min_deg": theta_low,
+                    "theta_max_deg": theta_high,
+                    "sector": sector,
+                    "raw_cross_section": raw_values[sector - 1],
+                    "raw_cross_section_unc": raw_uncs[sector - 1],
+                    "raw_sector_shape": raw_shape[sector - 1],
+                    "raw_sector_shape_unc": raw_shape_unc[sector - 1],
+                    "corrected_cross_section": corrected_values[sector - 1],
+                    "corrected_cross_section_unc": corrected_uncs[sector - 1],
+                    "corrected_sector_shape": corrected_shape[sector - 1],
+                    "corrected_sector_shape_unc": corrected_shape_unc[
+                        sector - 1
+                    ],
+                    "effective_Cgamma": effective_c[sector - 1],
+                    "effective_Cgamma_sector_shape": c_shape[sector - 1],
+                    "dvcs_weighted_mean_Egamma_GeV": mean_energy[
+                        sector - 1
+                    ],
+                    "used_dvcs_bins": used_bins[sector - 1],
+                    "skipped_energy_bins": skipped_energy[sector - 1],
+                    "skipped_missing_correction_bins": skipped_correction[
+                        sector - 1
+                    ],
+                }
+            )
+        #endfor
+    #endfor
+
+    return pd.DataFrame(rows)
+
+
+def sector_rms_about_unity(values: np.ndarray) -> float:
+    finite = np.isfinite(values)
+
+    if not np.any(finite):
+        return np.nan
+    #endif
+
+    return float(
+        np.sqrt(
+            np.mean((values[finite] - 1.0) ** 2)
+        )
+    )
+
+
+def plot_energy_weighted_closure(
+    closure: pd.DataFrame,
+    period: str,
+    mc_name: str,
+    output_path: Path,
+) -> None:
+    fig, axes = plt.subplots(
+        len(MATCHED_THETA_BINS),
+        1,
+        figsize=(9.0, 11.0),
+        squeeze=False,
+    )
+    sectors = np.arange(1, 7)
+
+    for irow, (theta_low, theta_high) in enumerate(
+        MATCHED_THETA_BINS
+    ):
+        ax = axes[irow, 0]
+        sub = closure[
+            np.isclose(closure["theta_min_deg"], theta_low)
+            & np.isclose(closure["theta_max_deg"], theta_high)
+        ].sort_values("sector")
+
+        raw = sub["raw_sector_shape"].to_numpy(dtype=float)
+        raw_unc = sub[
+            "raw_sector_shape_unc"
+        ].to_numpy(dtype=float)
+        corrected = sub[
+            "corrected_sector_shape"
+        ].to_numpy(dtype=float)
+        corrected_unc = sub[
+            "corrected_sector_shape_unc"
+        ].to_numpy(dtype=float)
+        c_shape = sub[
+            "effective_Cgamma_sector_shape"
+        ].to_numpy(dtype=float)
+
+        raw_rms = sector_rms_about_unity(raw)
+        corrected_rms = sector_rms_about_unity(corrected)
+
+        ax.errorbar(
+            sectors,
+            raw,
+            yerr=raw_unc,
+            marker="o",
+            linestyle="-",
+            capsize=2,
+            label=f"Raw DVCS (RMS={raw_rms:.3f})",
+        )
+        ax.errorbar(
+            sectors,
+            corrected,
+            yerr=corrected_unc,
+            marker="s",
+            linestyle="-",
+            capsize=2,
+            label=(
+                "DVCS after per-bin photon correction "
+                f"(RMS={corrected_rms:.3f})"
+            ),
+        )
+        ax.plot(
+            sectors,
+            c_shape,
+            marker="^",
+            linestyle="--",
+            label="DVCS-weighted Cgamma sector shape",
+        )
+
+        ax.axhline(1.0, linestyle=":", linewidth=1.0)
+        ax.set_ylim(0.2, 1.8)
+        ax.set_xticks(range(1, 7))
+        ax.set_xlabel("Photon FD sector")
+        ax.set_ylabel("Quantity / six-sector mean")
+        ax.set_title(
+            f"{theta_low:g} <= theta_gamma < "
+            f"{theta_high:g} deg"
+        )
+        ax.grid(alpha=0.2)
+
+        if irow == 0:
+            ax.legend(fontsize=8, ncol=1)
+        #endif
+    #endfor
+
+    fig.suptitle(
+        f"{period}: energy-weighted DVCS closure with "
+        f"DATA/{mc_name.upper()} photon correction",
+        y=0.995,
+    )
+    fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.96])
+    fig.savefig(output_path, dpi=180)
+    plt.close(fig)
+
+
+def print_energy_weighted_summary(
+    closure: pd.DataFrame,
+    mc_name: str,
+) -> None:
+    print()
+    print(
+        f"Energy-weighted DVCS closure using "
+        f"DATA/{mc_name.upper()} correction:"
+    )
+
+    for theta_low, theta_high in MATCHED_THETA_BINS:
+        sub = closure[
+            np.isclose(closure["theta_min_deg"], theta_low)
+            & np.isclose(closure["theta_max_deg"], theta_high)
+        ].sort_values("sector")
+
+        raw = sub["raw_sector_shape"].to_numpy(dtype=float)
+        corrected = sub[
+            "corrected_sector_shape"
+        ].to_numpy(dtype=float)
+
+        print(
+            f"  {theta_low:g}-{theta_high:g} deg: "
+            f"sector RMS {sector_rms_about_unity(raw):.4f} -> "
+            f"{sector_rms_about_unity(corrected):.4f}"
+        )
+
+        for _, row in sub.iterrows():
+            print(
+                f"    S{int(row['sector'])}: "
+                f"<Egamma>={row['dvcs_weighted_mean_Egamma_GeV']:.3f} "
+                f"GeV, Ceff={row['effective_Cgamma']:.3f}, "
+                f"bins used={int(row['used_dvcs_bins'])}, "
+                f"outside E range={int(row['skipped_energy_bins'])}, "
+                f"missing C={int(row['skipped_missing_correction_bins'])}"
+            )
+        #endfor
+    #endfor
+
+
 def plot_detailed_cross_section(
     detailed: pd.DataFrame,
     period: str,
@@ -775,6 +1248,9 @@ def main() -> None:
             sector,
             args.cross_section_column,
             args.gtheta_column,
+            args.xb_column,
+            args.q2_column,
+            args.tabs_column,
         )
         for sector in range(1, 7)
     }
@@ -791,6 +1267,15 @@ def main() -> None:
     )
     matched = build_matched_theta_cross_section(sectors)
     efficiency = load_efficiency_table(args.efficiency_table)
+
+    energy_weighted_closures = {
+        mc_name: build_energy_weighted_dvcs_closure(
+            sectors,
+            efficiency,
+            mc_name,
+        )
+        for mc_name in ["aaogen", "clasdis"]
+    }
 
     detailed.to_csv(
         args.output_dir / "dvcs_sector_theta_projection.csv",
@@ -816,6 +1301,24 @@ def main() -> None:
             args.period,
             args.output_dir
             / f"02_dvcs_vs_efficiency_{mc_name}.png",
+        )
+
+        closure = energy_weighted_closures[mc_name]
+        closure.to_csv(
+            args.output_dir
+            / f"energy_weighted_closure_{mc_name}.csv",
+            index=False,
+        )
+        plot_energy_weighted_closure(
+            closure,
+            args.period,
+            mc_name,
+            args.output_dir
+            / f"03_energy_weighted_dvcs_closure_{mc_name}.png",
+        )
+        print_energy_weighted_summary(
+            closure,
+            mc_name,
         )
     #endfor
 
@@ -853,6 +1356,34 @@ def main() -> None:
         + str(
             args.output_dir
             / "dvcs_efficiency_sector_shape_comparison.csv"
+        )
+    )
+    print(
+        "  "
+        + str(
+            args.output_dir
+            / "03_energy_weighted_dvcs_closure_aaogen.png"
+        )
+    )
+    print(
+        "  "
+        + str(
+            args.output_dir
+            / "03_energy_weighted_dvcs_closure_clasdis.png"
+        )
+    )
+    print(
+        "  "
+        + str(
+            args.output_dir
+            / "energy_weighted_closure_aaogen.csv"
+        )
+    )
+    print(
+        "  "
+        + str(
+            args.output_dir
+            / "energy_weighted_closure_clasdis.csv"
         )
     )
 
