@@ -5192,14 +5192,6 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
     return counts;
 }
 
-static const PeriodResult* find_period_result(const std::vector<PeriodResult>& rows,
-                                              const std::string& period) {
-    auto it = std::find_if(rows.begin(), rows.end(), [&](const PeriodResult& r) {
-        return r.period == period;
-    });
-    return (it == rows.end()) ? nullptr : &(*it);
-}
-
 static void write_photon_region_summary_csv(const std::string& path,
                                             const PhotonRegionResults& results,
                                             const std::vector<PeriodResult>& integrated_results) {
