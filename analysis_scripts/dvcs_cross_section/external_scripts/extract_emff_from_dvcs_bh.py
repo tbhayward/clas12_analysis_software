@@ -386,6 +386,11 @@ def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
         + np.abs(outdf["pass1_sys_down"].to_numpy(float))
     )
 
+    # Canonical aliases used only by generic diagnostics.  The authoritative
+    # pass-1 columns remain xs_stat and ptp_sys_abs.
+    outdf["stat"] = outdf["xs_stat"]
+    outdf["ptp_sys"] = outdf["ptp_sys_abs"]
+
     outdf["comb_sys_frac"] = 0.0
     outdf["scale_sys_frac"] = PASS1_GLOBAL_SCALE_FRAC
     outdf["ebeam"] = 10.604
@@ -698,6 +703,18 @@ def load_saylor_supplement(path: str) -> pd.DataFrame:
         f"{100*np.nanmedian(df['ptp_sys']/df['xs']):.1f}%, "
         f"global scale={100*SAYLOR_GLOBAL_SCALE_FRAC:.1f}%."
     )
+
+    rel_sys_total = df["sys_total"].to_numpy(float) / df["xs"].to_numpy(float)
+    n_gt_100 = int(np.sum(rel_sys_total > 1.0))
+    n_gt_1000 = int(np.sum(rel_sys_total > 10.0))
+    if n_gt_100 > 0:
+        print(
+            f"[SAYLOR] NOTE: {n_gt_100} unpolarized row(s) have "
+            f"sys-err > 100% of the cross section; {n_gt_1000} exceed "
+            f"1000%. These numerically valid rows are retained exactly as "
+            f"published and therefore receive very small statistical weight."
+        )
+    #endif
 
     return df
 #enddef
@@ -1839,6 +1856,70 @@ def fit_paper_model(data: pd.DataFrame,
 
 
 
+def dataset_statistical_errors(
+        data: pd.DataFrame,
+        dataset_kind: str) -> np.ndarray:
+    """
+    Return the statistical uncertainty for one published measurement.
+
+    The three loaders intentionally preserve their native column names, so all
+    cross-dataset code must come through this helper rather than assuming a
+    universal ``stat`` or ``err`` column.
+
+      Jo 2015:       clas6_err_stat when available; published total error as
+                     a defensive fallback because some Gepard points do not
+                     carry a separate finite statistical component.
+      Saylor 2018:   stat
+      CLAS12 Lee:    xs_stat
+    """
+    if dataset_kind == "jo2015":
+        if "clas6_err_stat" in data.columns:
+            arr = data["clas6_err_stat"].to_numpy(float)
+            fallback = (
+                data["clas6_err_total"].to_numpy(float)
+                if "clas6_err_total" in data.columns
+                else data["xs_stat"].to_numpy(float)
+            )
+            bad = ~np.isfinite(arr) | (arr <= 0.0)
+            arr = arr.copy()
+            arr[bad] = fallback[bad]
+            return arr
+        elif "clas6_err_total" in data.columns:
+            return data["clas6_err_total"].to_numpy(float)
+        elif "xs_stat" in data.columns:
+            return data["xs_stat"].to_numpy(float)
+        elif "err" in data.columns:
+            return data["err"].to_numpy(float)
+        else:
+            raise KeyError(
+                "Jo 2015 dataframe has no usable statistical/error column; "
+                "expected clas6_err_stat, clas6_err_total, or xs_stat."
+            )
+        #endif
+    elif dataset_kind == "saylor2018":
+        if "stat" not in data.columns:
+            raise KeyError(
+                "Saylor 2018 dataframe is missing canonical column 'stat'."
+            )
+        #endif
+        return data["stat"].to_numpy(float)
+    elif dataset_kind == "pass1":
+        if "xs_stat" in data.columns:
+            return data["xs_stat"].to_numpy(float)
+        elif "stat" in data.columns:
+            return data["stat"].to_numpy(float)
+        else:
+            raise KeyError(
+                "CLAS12 Lee 2026 dataframe is missing statistical uncertainty "
+                "column 'xs_stat'."
+            )
+        #endif
+    else:
+        raise ValueError(f"unknown dataset kind: {dataset_kind}")
+    #endif
+#enddef
+
+
 def dataset_point_errors(
         data: pd.DataFrame,
         dataset_kind: str,
@@ -1868,9 +1949,27 @@ def dataset_point_errors(
                 "expected clas6_err_total or xs_stat."
             )
         #endif
-    elif dataset_kind in {"saylor2018", "pass1"}:
-        stat = data["stat"].to_numpy(float)
-        ptp = data.get("ptp_sys", pd.Series(np.zeros(len(data)))).to_numpy(float)
+    elif dataset_kind == "saylor2018":
+        stat = dataset_statistical_errors(data, dataset_kind)
+        if "ptp_sys" not in data.columns:
+            raise KeyError(
+                "Saylor 2018 dataframe is missing canonical column 'ptp_sys'."
+            )
+        #endif
+        ptp = data["ptp_sys"].to_numpy(float)
+        base = np.sqrt(stat**2 + ptp**2)
+    elif dataset_kind == "pass1":
+        stat = dataset_statistical_errors(data, dataset_kind)
+        if "ptp_sys_abs" in data.columns:
+            ptp = data["ptp_sys_abs"].to_numpy(float)
+        elif "ptp_sys" in data.columns:
+            ptp = data["ptp_sys"].to_numpy(float)
+        else:
+            raise KeyError(
+                "CLAS12 Lee 2026 dataframe is missing point-to-point "
+                "systematic column 'ptp_sys_abs'."
+            )
+        #endif
         base = np.sqrt(stat**2 + ptp**2)
     else:
         raise ValueError(f"unknown dataset kind: {dataset_kind}")
@@ -1928,15 +2027,29 @@ def fit_multi_measurements(
             )
         #endif
 
+        point_errors = dataset_point_errors(
+            d, str(spec["kind"]), bh_cut, add_moradi_bh_systematic
+        )
+        if (
+            len(point_errors) != len(d)
+            or not np.all(np.isfinite(point_errors))
+            or np.any(point_errors <= 0.0)
+        ):
+            raise ValueError(
+                f"{spec['label']} produced invalid combined-fit point errors: "
+                f"Ndata={len(d)}, Nerr={len(point_errors)}, "
+                f"Nnonfinite={int(np.sum(~np.isfinite(point_errors)))}, "
+                f"Nnonpositive={int(np.sum(point_errors <= 0.0))}."
+            )
+        #endif
+
         prepared.append({
             "key": spec["key"],
             "kind": spec["kind"],
             "norm_frac": float(spec.get("norm_frac", 0.0)),
             "q": d["t_abs"].to_numpy(float),
             "y": d["xs"].to_numpy(float),
-            "e": dataset_point_errors(
-                d, str(spec["kind"]), bh_cut, add_moradi_bh_systematic
-            ),
+            "e": point_errors,
             "A": d["bh_A"].to_numpy(float),
             "B": d["bh_B"].to_numpy(float),
             "C": d["bh_C"].to_numpy(float),
@@ -3207,7 +3320,7 @@ def fit_cross_sections_with_sachs_family(
             else d["xs"].to_numpy(float)
         )
         if statistical_only:
-            err = d["stat"].to_numpy(float) if "stat" in d else d["err"].to_numpy(float)
+            err = dataset_statistical_errors(d, str(spec["kind"]))
         else:
             err = dataset_point_errors(
                 d, str(spec["kind"]), bh_cut, add_moradi_bh_systematic
@@ -3388,10 +3501,8 @@ def run_radius_bias_variance_study(
                 d["bh_C"].to_numpy(float),
                 f1, f2,
             )
-            sigma_by_key[str(spec["key"])] = (
-                d["stat"].to_numpy(float)
-                if "stat" in d
-                else d["err"].to_numpy(float)
+            sigma_by_key[str(spec["key"])] = dataset_statistical_errors(
+                d, str(spec["kind"])
             )
         #endfor
 
@@ -4218,6 +4329,47 @@ def bundle_to_measurement_spec(
 #enddef
 
 
+def audit_measurement_bundle_for_combination(
+        bundle: Dict[str, object]) -> None:
+    """Fail early with a complete schema/error audit before combined fits."""
+    label = str(bundle["label"])
+    kind = str(bundle["kind"])
+    d = bundle["set5"]
+
+    required = {"t_abs", "xs", "bh_A", "bh_B", "bh_C"}
+    missing = sorted(required.difference(d.columns))
+    if missing:
+        raise KeyError(
+            f"{label} is missing required 5% combined-fit columns: "
+            + ", ".join(missing)
+        )
+    #endif
+
+    stat = dataset_statistical_errors(d, kind)
+    total = dataset_point_errors(d, kind, 0.05, True)
+    for name, arr in [("statistical", stat), ("combined-fit", total)]:
+        arr = np.asarray(arr, dtype=float)
+        if (
+            len(arr) != len(d)
+            or not np.all(np.isfinite(arr))
+            or np.any(arr <= 0.0)
+        ):
+            raise ValueError(
+                f"{label} has invalid {name} errors: "
+                f"Ndata={len(d)}, Nerr={len(arr)}, "
+                f"Nnonfinite={int(np.sum(~np.isfinite(arr)))}, "
+                f"Nnonpositive={int(np.sum(arr <= 0.0))}."
+            )
+        #endif
+    #endfor
+
+    print(
+        f"[COMBINATION preflight] {label}: N={len(d)}, "
+        f"kind={kind}, error schema OK"
+    )
+#enddef
+
+
 def run_measurement_combination(
         bundles: Sequence[Dict[str, object]],
         args,
@@ -4470,6 +4622,15 @@ def run_published_default(args) -> int:
 
     all_bundles = [jo, pass1]
     combos = []
+
+    # Audit every individual measurement once before constructing any pair or
+    # triple.  This prevents late failures from inconsistent native error-column
+    # names across Jo, Saylor, and CLAS12 Lee.
+    audit_measurement_bundle_for_combination(jo)
+    audit_measurement_bundle_for_combination(pass1)
+    if saylor is not None:
+        audit_measurement_bundle_for_combination(saylor)
+    #endif
 
     if saylor is not None:
         all_bundles = [jo, saylor, pass1]
