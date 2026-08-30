@@ -1,290 +1,245 @@
 #!/usr/bin/env python3
 """
-Prepare and diagnose KM15 / VGG99 / GK16 BH-purity model selection.
+Evaluate KM15 / VGG99 / GK16 BH-purity model selection.
 
-Purpose
--------
-This script is deliberately separate from the radius bias/variance study.
+This script consumes the exact kinematic cache exported by
+extract_emff_from_dvcs_bh.py and performs the expensive alternative-model
+calculations once.  All later BH-threshold scans and EMFF fits can use the
+cached CSV products without rerunning PARTONS.
 
-Workflow:
-  1. Export the exact experimental kinematic points used by the EMFF analysis.
-  2. Keep the already-computed KM15/BH decomposition attached to each point.
-  3. Generate PARTONS XML scenarios for VGG99 and GK16 at exactly those points.
-  4. After PARTONS results have been converted to the simple result CSV schema
-     documented below, merge all three models and construct consensus BH-purity
-     selections for thresholds from 1% to 10%.
-  5. Produce model-agreement diagnostics and a compact selection CSV that the
-     EMFF fitter can consume without rerunning any GPD model.
+Model definitions
+-----------------
+KM15:
+    Gepard KM15 total cross section and Gepard BH subprocess.  These values are
+    already stored in bh_model_kinematics.csv.
 
-The model calculations are therefore cached once. Threshold scans and later
-form-factor fits are cheap.
+GK16:
+    PARTONS GPDGK16 + DVCSCFFStandard(LO) + DVCSProcessGV08.
 
-PARTONS choice
---------------
-VGG:
-  GPDVGG99 + DVCSCFFStandard(LO) + DVCSProcessVGG99.
+VGG99:
+    PARTONS GPDVGG99 + DVCSCFFStandard(LO) + DVCSProcessVGG99.
 
-GK:
-  GPDGK16 + DVCSCFFStandard(LO) + DVCSProcessGV08.
+The purity ratios are kept internally self-consistent:
 
-GK16 is used rather than GK11 because PARTONS documents GK16 as the corrected
-successor to GK11. GK19 changes the pseudoscalar/transversity sector while H
-and E remain those of GK16, so it does not add useful independent information
-for this unpolarized DVCS purity test.
+    delta_KM15 = |1 - BH_Gepard / EP_Gepard,KM15|
 
-IMPORTANT: PARTONS documents GPDGK16 as not thread-safe. Do not evaluate GK16
-with threads. Separate processes are acceptable if each process owns an
-independent PARTONS instance.
+    delta_GK16 = |1 - BH_PARTONS,GV08 / EP_PARTONS,GK16|
 
-Expected PARTONS result CSV schema
-----------------------------------
-One CSV per model:
-    point_id,ep_xs
-where ep_xs is the unpolarized e p -> e p gamma cross section in the SAME
-normalization/units as the BH cross section stored in the kinematic table.
+    delta_VGG99 = |1 - BH_PARTONS,VGG99 / EP_PARTONS,VGG99|
 
-The script intentionally validates normalization before accepting results.
+Two PARTONS BH calculations are deliberately retained.  Even though the BH
+subprocess should not depend on the GPD, GK16 and VGG99 use different PARTONS
+DVCS process modules.  Evaluating BH with the same process module used for each
+full cross section removes a needless process-implementation ambiguity.
+
+Azimuth convention
+------------------
+A direct four-point BH closure test at fixed (xB,Q2,t) established that the
+Gepard/BMK angle used in the exported cache must be transformed before it is
+sent to PARTONS:
+
+    phi_PARTONS = (180 deg - phi_Gepard) mod 360 deg.
+
+With this transformation, the tested PARTONS/Gepard BH ratios were essentially
+constant in phi (about 1.045), whereas using the untransformed angle produced a
+large shape mismatch.
+
+PARTONS execution
+-----------------
+The default farm setup is:
+
+    SIF:      partons_v4.sif
+    project:  /scratch/thayward/partons-example
+    binary:   ./bin/PARTONS_example
+
+The SIF filename is historical; the executable reports PARTONS 5.0.0.
+
+GK16/CLN is not thread-safe.  This driver parallelizes only by launching
+separate Apptainer/PARTONS operating-system processes.  Each PARTONS instance
+evaluates its chunk sequentially.
+
+Important output files
+----------------------
+    bh_model_selection_all_points.csv
+    bh_model_selection_counts.csv
+    bh_model_selection_pairwise_overlap.csv
+    bh_model_selection_km15_05pct.csv
+    bh_model_selection_vgg99_05pct.csv
+    bh_model_selection_gk16_05pct.csv
+    bh_model_selection_consensus_05pct.csv
+
+Raw PARTONS caches are written under:
+    partons_results/
+
+Chunk XML, point maps, stdout/stderr, return codes, parsed-result counts, and
+warning counts are retained for reproducibility and failure recovery.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import math
 import os
+import re
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, Iterable, List, Tuple
-from xml.sax.saxutils import escape
+from typing import Dict, Iterable, List, Sequence
 
 import numpy as np
 import pandas as pd
 
-DEFAULT_MAIN = "extract_emff_from_dvcs_bh.py"
 DEFAULT_OUTDIR = "output/emff_from_bh_paper_method/bh_model_selection"
 DEFAULT_THRESHOLDS = [0.01 * i for i in range(1, 11)]
+DEFAULT_PARTONS_SIF = "partons_v4.sif"
+DEFAULT_PARTONS_PROJECT = "/scratch/thayward/partons-example"
+DEFAULT_PARTONS_EXECUTABLE = "./bin/PARTONS_example"
 
-# Dataset labels used consistently in the model-selection cache.
-DATASET_JO = "jo2015"
-DATASET_SAYLOR = "saylor2018"
-DATASET_HALLA = "halla_defurne2015"
-DATASET_PASS1 = "pass1"
-
-
-def locate_partons() -> Dict[str, object]:
-    """Inspect PATH/environment for a usable PARTONS installation."""
-    names = [
-        "partons-example",
-        "partons",
-        "PARTONS",
-    ]
-    found = {name: shutil.which(name) for name in names}
-    env_keys = [
-        "PARTONS",
-        "PARTONS_ROOT",
-        "PARTONS_HOME",
-        "LD_LIBRARY_PATH",
-        "CMAKE_PREFIX_PATH",
-        "PKG_CONFIG_PATH",
-    ]
-    env = {key: os.environ.get(key, "") for key in env_keys}
-
-    # Lightweight filesystem hints only; avoid expensive recursive scans.
-    hints = []
-    for base in [
-        Path("/cvmfs"),
-        Path("/u/scigroup/cvmfs"),
-        Path("/usr/local"),
-        Path.home(),
-    ]:
-        if base.exists():
-            for candidate in [
-                base / "partons",
-                base / "PARTONS",
-                base / "bin" / "partons-example",
-            ]:
-                if candidate.exists():
-                    hints.append(str(candidate))
-                #endif
-            #endfor
-        #endif
-    #endfor
-
-    return {"executables": found, "environment": env, "hints": hints}
-#enddef
+PARTONS_RESULT_RE = re.compile(
+    r"Result:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*\[([^\]]+)\]"
+)
+PARTONS_WARNING_TOKEN = "[WARN]"
+PARTONS_INTEGRATOR_WARNING = "Cannot reach tolerances"
 
 
-def print_partons_check() -> None:
-    info = locate_partons()
-    print("[PARTONS check]")
-    for name, path in info["executables"].items():
-        print(f"  {name:16s}: {path or 'not found on PATH'}")
-    #endfor
-    for key, value in info["environment"].items():
-        if value:
-            print(f"  env {key}: {value}")
-        #endif
-    #endfor
-    if info["hints"]:
-        print("  filesystem hints:")
-        for item in info["hints"]:
-            print(f"    {item}")
-        #endfor
+def phi_gepard_to_partons(phi_deg: np.ndarray | Sequence[float] | float):
+    """Convert exported Gepard/BMK azimuth to the validated PARTONS convention."""
+    arr = np.asarray(phi_deg, dtype=float)
+    transformed = np.mod(180.0 - arr, 360.0)
+    if np.ndim(phi_deg) == 0:
+        return float(transformed)
     #endif
-#enddef
-
-
-def import_main_analysis(path: Path):
-    """Import the production EMFF script without copying its data loaders."""
-    import importlib.util
-
-    path = path.resolve()
-    spec = importlib.util.spec_from_file_location("emff_main_for_model_selection", path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not import analysis script: {path}")
-    #endif
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-#enddef
-
-
-def _first_existing(df: pd.DataFrame, names: Iterable[str]) -> str:
-    for name in names:
-        if name in df.columns:
-            return name
-        #endif
-    #endfor
-    raise KeyError(f"None of these columns exist: {list(names)}")
-#enddef
-
-
-def canonicalize_points(
-        df: pd.DataFrame,
-        dataset: str,
-        ebeam_default: float | None = None) -> pd.DataFrame:
-    """Convert an analysis dataframe to the common model-evaluation schema."""
-    xcol = _first_existing(df, ["xB", "xBavg", "x"])
-    qcol = _first_existing(df, ["Q2", "Q2avg"])
-    tcol = _first_existing(df, ["t_abs", "t_abs_avg", "-t", "t"])
-    pcol = _first_existing(df, ["phi_deg", "phi", "phiavg"])
-
-    if "ebeam" in df.columns:
-        ebeam = df["ebeam"].to_numpy(float)
-    elif "beam_energy" in df.columns:
-        ebeam = df["beam_energy"].to_numpy(float)
-    elif ebeam_default is not None:
-        ebeam = np.full(len(df), float(ebeam_default))
-    else:
-        raise KeyError(f"{dataset}: no beam-energy column/default")
-    #endif
-
-    t_raw = df[tcol].to_numpy(float)
-    t_abs = np.abs(t_raw)
-
-    out = pd.DataFrame({
-        "dataset": dataset,
-        "source_row": np.arange(len(df), dtype=int),
-        "xB": df[xcol].to_numpy(float),
-        "Q2": df[qcol].to_numpy(float),
-        "t_abs": t_abs,
-        "phi_deg": np.mod(df[pcol].to_numpy(float), 360.0),
-        "ebeam": ebeam,
-    })
-
-    # Carry the exact KM15/BH decomposition when available. This avoids any
-    # duplicated KM15 calculation in the model-selection stage.
-    for col in [
-        "km15_ep", "km15_bh", "km15_dvcs", "km15_int",
-        "rbh", "delta_bh", "bh_A", "bh_B", "bh_C",
-    ]:
-        if col in df.columns:
-            out[col] = df[col].to_numpy()
-        #endif
-    #endfor
-
-    return out
-#enddef
-
-
-def assign_point_ids(points: pd.DataFrame) -> pd.DataFrame:
-    out = points.copy()
-    out.insert(
-        0,
-        "point_id",
-        [f"{d}:{int(r)}" for d, r in zip(out["dataset"], out["source_row"])],
-    )
-    if out["point_id"].duplicated().any():
-        raise RuntimeError("point_id collision in exported kinematics")
-    #endif
-    return out
+    return transformed
 #enddef
 
 
 def load_points_from_cache(cache: Path) -> pd.DataFrame:
+    """Read and validate the exact experimental-point cache."""
     df = pd.read_csv(cache)
-    required = {"point_id", "dataset", "xB", "Q2", "t_abs", "phi_deg", "ebeam"}
+    required = {
+        "point_id", "dataset", "source_row", "xB", "Q2",
+        "t_abs", "phi_deg", "ebeam", "km15_ep", "km15_bh",
+    }
     missing = required - set(df.columns)
     if missing:
         raise ValueError(f"{cache}: missing columns {sorted(missing)}")
     #endif
+
+    if df["point_id"].duplicated().any():
+        duplicated = df.loc[df["point_id"].duplicated(), "point_id"].tolist()
+        raise ValueError(f"{cache}: duplicate point_id values, e.g. {duplicated[:5]}")
+    #endif
+
+    for col in ["xB", "Q2", "t_abs", "phi_deg", "ebeam", "km15_ep", "km15_bh"]:
+        vals = pd.to_numeric(df[col], errors="coerce").to_numpy(float)
+        if not np.all(np.isfinite(vals)):
+            raise ValueError(f"{cache}: nonfinite values in required column {col}")
+        #endif
+    #endfor
+
+    df = df.copy()
+    df["phi_partons_deg"] = phi_gepard_to_partons(df["phi_deg"].to_numpy(float))
+    df["delta_bh_km15"] = np.abs(
+        1.0 - df["km15_bh"].to_numpy(float) / df["km15_ep"].to_numpy(float)
+    )
     return df
 #enddef
 
 
-def make_partons_module_xml(model: str) -> str:
-    """
-    Return PARTONS module configuration.
+def locate_partons(sif: Path, project: Path, executable: str) -> None:
+    """Print the farm execution configuration and obvious preflight failures."""
+    print("[PARTONS preflight]")
+    print(f"  apptainer : {shutil.which('apptainer') or 'NOT FOUND'}")
+    print(f"  SIF       : {sif}")
+    print(f"  project   : {project}")
+    print(f"  executable: {executable}")
+    print(f"  /scratch  : {'present' if Path('/scratch').exists() else 'NOT FOUND'}")
 
-    VGG99 uses its dedicated process implementation.
-    GK16 uses the general GV08 process with standard LO CFF convolution.
-    """
-    if model == "vgg99":
-        return """<module type="DVCSObservableModule" name="DVCSCrossSectionUUMinus">
-<module type="DVCSProcessModule" name="DVCSProcessVGG99">
-<module type="DVCSScalesModule" name="DVCSScalesQ2Multiplier"><param name="lambda" value="1."/></module>
-<module type="DVCSXiConverterModule" name="DVCSXiConverterXBToXi"></module>
-<module type="DVCSConvolCoeffFunctionModule" name="DVCSCFFStandard">
-<param name="qcd_order_type" value="LO"/>
-<module type="GPDModule" name="GPDVGG99"></module>
-</module>
-</module>
-</module>"""
-    elif model == "gk16":
-        return """<module type="DVCSObservableModule" name="DVCSCrossSectionUUMinus">
-<module type="DVCSProcessModule" name="DVCSProcessGV08">
-<module type="DVCSScalesModule" name="DVCSScalesQ2Multiplier"><param name="lambda" value="1."/></module>
-<module type="DVCSXiConverterModule" name="DVCSXiConverterXBToXi"></module>
-<module type="DVCSConvolCoeffFunctionModule" name="DVCSCFFStandard">
-<param name="qcd_order_type" value="LO"/>
-<module type="GPDModule" name="GPDGK16"></module>
-</module>
-</module>
-</module>"""
-    else:
-        raise ValueError(f"Unknown PARTONS model: {model}")
+    failures = []
+    if shutil.which("apptainer") is None:
+        failures.append("apptainer is not on PATH")
+    #endif
+    if not sif.exists():
+        failures.append(f"SIF does not exist: {sif}")
+    #endif
+    if not project.exists():
+        failures.append(f"PARTONS project copy does not exist: {project}")
+    #endif
+    if not (project / "bin" / "tmp").exists():
+        failures.append(f"writable PARTONS logger directory missing: {project / 'bin' / 'tmp'}")
+    #endif
+
+    if failures:
+        raise RuntimeError("PARTONS preflight failed:\n  - " + "\n  - ".join(failures))
     #endif
 #enddef
 
 
-def make_single_point_task(row: pd.Series, model: str) -> str:
-    """
-    Generate one PARTONS task.
+def _process_module_xml(process: str, gpd: str) -> str:
+    """Return the common PARTONS process-module block."""
+    return f"""<module type="DVCSProcessModule" name="{process}">
+<module type="DVCSScalesModule" name="DVCSScalesQ2Multiplier">
+<param name="lambda" value="1." />
+</module>
+<module type="DVCSXiConverterModule" name="DVCSXiConverterXBToXi"></module>
+<module type="DVCSConvolCoeffFunctionModule" name="DVCSCFFStandard">
+<param name="qcd_order_type" value="LO" />
+<module type="GPDModule" name="{gpd}"></module>
+</module>
+</module>"""
+#enddef
 
-    PARTONS documentation defines DVCSObservableKinematic phi in degrees in
-    the automation/DAO interface. Our exported phi_deg is the experimental
-    Trento azimuth.
+
+def partons_observable_xml(calculation: str) -> str:
     """
-    module_xml = make_partons_module_xml(model)
+    Return the PARTONS observable module for one cached quantity.
+
+    Calculations:
+      bh_gv08  : BH subprocess with DVCSProcessGV08 / GPDGK16
+      gk16     : full negative-charge UU cross section with GV08 / GK16
+      bh_vgg99 : BH subprocess with DVCSProcessVGG99 / GPDVGG99
+      vgg99    : full negative-charge UU cross section with VGG99 / VGG99
+    """
+    if calculation == "bh_gv08":
+        observable = "DVCSCrossSectionUUBHSubProc"
+        process = "DVCSProcessGV08"
+        gpd = "GPDGK16"
+    elif calculation == "gk16":
+        observable = "DVCSCrossSectionUUMinus"
+        process = "DVCSProcessGV08"
+        gpd = "GPDGK16"
+    elif calculation == "bh_vgg99":
+        observable = "DVCSCrossSectionUUBHSubProc"
+        process = "DVCSProcessVGG99"
+        gpd = "GPDVGG99"
+    elif calculation == "vgg99":
+        observable = "DVCSCrossSectionUUMinus"
+        process = "DVCSProcessVGG99"
+        gpd = "GPDVGG99"
+    else:
+        raise ValueError(f"Unknown PARTONS calculation: {calculation}")
+    #endif
+
+    return (
+        f'<module type="DVCSObservableModule" name="{observable}">\n'
+        f'{_process_module_xml(process, gpd)}\n'
+        '</module>'
+    )
+#enddef
+
+
+def make_single_point_task(row: pd.Series, calculation: str) -> str:
+    """Generate one sequential PARTONS compute task for an exact experimental point."""
+    module_xml = partons_observable_xml(calculation)
     return f"""<task service="DVCSObservableService" method="computeSingleKinematic" storeInDB="0">
 <kinematics type="DVCSObservableKinematic">
-<param name="xB" value="{row.xB:.12g}"/>
-<param name="t" value="{-abs(row.t_abs):.12g}"/>
-<param name="Q2" value="{row.Q2:.12g}"/>
-<param name="E" value="{row.ebeam:.12g}"/>
-<param name="phi" value="{row.phi_deg:.12g}"/>
+<param name="xB" value="{float(row.xB):.15g}" />
+<param name="t" value="{-abs(float(row.t_abs)):.15g}" />
+<param name="Q2" value="{float(row.Q2):.15g}" />
+<param name="E" value="{float(row.ebeam):.15g}" />
+<param name="phi" value="{float(row.phi_partons_deg):.15g}" />
 </kinematics>
 <computation_configuration>
 {module_xml}
@@ -295,171 +250,519 @@ def make_single_point_task(row: pd.Series, model: str) -> str:
 
 def write_partons_xml_chunks(
         points: pd.DataFrame,
-        model: str,
+        calculation: str,
         outdir: Path,
         chunk_size: int) -> pd.DataFrame:
-    """
-    Write deterministic XML chunks and a manifest.
+    """Write deterministic XML chunks and their one-to-one point maps."""
+    if chunk_size < 1:
+        raise ValueError("--chunk-size must be >= 1")
+    #endif
 
-    Chunking bounds failure recovery and permits process-level parallelism
-    without using threads (important for GK16/CLN).
-    """
-    xml_dir = outdir / "partons_xml" / model
+    xml_dir = outdir / "partons_xml" / calculation
     xml_dir.mkdir(parents=True, exist_ok=True)
 
     manifest_rows = []
     n = len(points)
     for ichunk, start in enumerate(range(0, n, chunk_size)):
         stop = min(start + chunk_size, n)
-        part = points.iloc[start:stop]
-        xml_path = xml_dir / f"{model}_{ichunk:05d}.xml"
-        map_path = xml_dir / f"{model}_{ichunk:05d}_point_map.csv"
+        part = points.iloc[start:stop].copy()
+
+        xml_path = xml_dir / f"{calculation}_{ichunk:05d}.xml"
+        map_path = xml_dir / f"{calculation}_{ichunk:05d}_point_map.csv"
 
         tasks = "\n".join(
-            make_single_point_task(row, model)
+            make_single_point_task(row, calculation)
             for _, row in part.iterrows()
         )
-        xml = (
+        xml_text = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>\n'
-            f'<scenario date="2026-08-30" description="{escape(model)} BH-purity evaluation">\n'
-            f"{tasks}\n"
+            f'<scenario date="2026-08-30" description="{calculation} BH-purity evaluation">\n'
+            f'{tasks}\n'
             '<task service="DVCSObservableService" method="printResults"></task>\n'
             '</scenario>\n'
         )
-        xml_path.write_text(xml)
-        part[["point_id"]].to_csv(map_path, index=False)
 
-        manifest_rows.append({
-            "model": model,
-            "chunk": ichunk,
-            "start": start,
-            "stop": stop,
-            "n_points": len(part),
-            "xml": str(xml_path),
-            "point_map": str(map_path),
-        })
+        xml_path.write_text(xml_text)
+        part[
+            [
+                "point_id", "dataset", "source_row", "xB", "Q2",
+                "t_abs", "phi_deg", "phi_partons_deg", "ebeam",
+            ]
+        ].to_csv(map_path, index=False)
+
+        manifest_rows.append(
+            {
+                "calculation": calculation,
+                "chunk": ichunk,
+                "start": start,
+                "stop": stop,
+                "n_points": len(part),
+                "xml": str(xml_path.resolve()),
+                "point_map": str(map_path.resolve()),
+            }
+        )
     #endfor
 
     manifest = pd.DataFrame(manifest_rows)
-    manifest.to_csv(xml_dir / f"{model}_manifest.csv", index=False)
-    print(f"[PARTONS XML] {model}: {len(manifest)} chunk(s), {n} points -> {xml_dir}")
+    manifest_path = xml_dir / f"{calculation}_manifest.csv"
+    manifest.to_csv(manifest_path, index=False)
+    print(
+        f"[PARTONS XML] {calculation}: {len(manifest)} chunk(s), "
+        f"{n} points -> {manifest_path}"
+    )
     return manifest
 #enddef
 
 
-def validate_model_results(
-        points: pd.DataFrame,
-        result: pd.DataFrame,
-        model: str) -> pd.DataFrame:
-    required = {"point_id", "ep_xs"}
-    missing = required - set(result.columns)
-    if missing:
-        raise ValueError(f"{model} result missing {sorted(missing)}")
-    #endif
-    if result["point_id"].duplicated().any():
-        raise ValueError(f"{model}: duplicate point_id values")
+def parse_partons_stdout(stdout: str) -> tuple[List[float], List[str], int, int]:
+    """Parse printed observable values, units, total warnings, and integrator warnings."""
+    matches = PARTONS_RESULT_RE.findall(stdout)
+    values = [float(value) for value, _ in matches]
+    units = [unit.strip() for _, unit in matches]
+    n_warnings = stdout.count(PARTONS_WARNING_TOKEN)
+    n_integrator_warnings = stdout.count(PARTONS_INTEGRATOR_WARNING)
+    return values, units, n_warnings, n_integrator_warnings
+#enddef
+
+
+def _run_partons_chunk(job: dict) -> dict:
+    """
+    Execute one XML chunk in an independent Apptainer/PARTONS OS process.
+
+    This function is top-level so ProcessPoolExecutor can pickle it.
+    """
+    xml_path = Path(job["xml"])
+    point_map_path = Path(job["point_map"])
+    stdout_path = Path(job["stdout_path"])
+    stderr_path = Path(job["stderr_path"])
+
+    cmd = [
+        "apptainer",
+        "exec",
+        "--bind",
+        "/scratch:/scratch",
+        "--pwd",
+        job["project"],
+        job["sif"],
+        job["executable"],
+        str(xml_path),
+    ]
+
+    proc = subprocess.run(
+        cmd,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    stdout_path.write_text(proc.stdout)
+    stderr_path.write_text(proc.stderr)
+
+    values, units, n_warnings, n_integrator_warnings = parse_partons_stdout(
+        proc.stdout + "\n" + proc.stderr
+    )
+
+    point_map = pd.read_csv(point_map_path)
+    n_expected = len(point_map)
+    parse_ok = len(values) == n_expected
+    finite_ok = parse_ok and np.all(np.isfinite(np.asarray(values, dtype=float)))
+    units_ok = parse_ok and all(unit.lower() == "nb" for unit in units)
+
+    status = {
+        "calculation": job["calculation"],
+        "chunk": int(job["chunk"]),
+        "n_expected": int(n_expected),
+        "n_parsed": int(len(values)),
+        "returncode": int(proc.returncode),
+        "parse_ok": bool(parse_ok),
+        "finite_ok": bool(finite_ok),
+        "units_ok": bool(units_ok),
+        "n_warnings": int(n_warnings),
+        "n_integrator_warnings": int(n_integrator_warnings),
+        "stdout": str(stdout_path),
+        "stderr": str(stderr_path),
+        "xml": str(xml_path),
+        "point_map": str(point_map_path),
+    }
+
+    result_rows = []
+    if parse_ok:
+        for point_id, value, unit in zip(point_map["point_id"], values, units):
+            result_rows.append(
+                {
+                    "point_id": point_id,
+                    "xs_nb": value,
+                    "unit": unit,
+                    "chunk": int(job["chunk"]),
+                }
+            )
+        #endfor
     #endif
 
-    merged = points[["point_id"]].merge(
-        result[["point_id", "ep_xs"]],
+    return {"status": status, "results": result_rows}
+#enddef
+
+
+def run_partons_calculation(
+        points: pd.DataFrame,
+        calculation: str,
+        outdir: Path,
+        sif: Path,
+        project: Path,
+        executable: str,
+        workers: int,
+        chunk_size: int,
+        force: bool) -> pd.DataFrame:
+    """Run or reuse one complete cached PARTONS quantity."""
+    result_dir = outdir / "partons_results"
+    result_dir.mkdir(parents=True, exist_ok=True)
+
+    result_path = result_dir / f"{calculation}_results.csv"
+    status_path = result_dir / f"{calculation}_chunk_status.csv"
+
+    if result_path.exists() and not force:
+        cached = pd.read_csv(result_path)
+        required = {"point_id", "xs_nb"}
+        if required <= set(cached.columns):
+            merged = points[["point_id"]].merge(
+                cached[["point_id", "xs_nb"]],
+                on="point_id",
+                how="left",
+                validate="one_to_one",
+            )
+            coverage = np.mean(np.isfinite(merged["xs_nb"].to_numpy(float)))
+            if coverage == 1.0 and len(cached) == len(points):
+                print(
+                    f"[PARTONS cache] {calculation}: reusing {len(cached)} points "
+                    f"from {result_path}"
+                )
+                return cached
+            #endif
+        #endif
+        print(f"[PARTONS cache] {calculation}: cache incomplete; recalculating")
+    #endif
+
+    manifest = write_partons_xml_chunks(
+        points=points,
+        calculation=calculation,
+        outdir=outdir,
+        chunk_size=chunk_size,
+    )
+
+    log_dir = outdir / "partons_logs" / calculation
+    log_dir.mkdir(parents=True, exist_ok=True)
+
+    jobs = []
+    sif_abs = str(sif.resolve())
+    project_abs = str(project.resolve())
+    for row in manifest.itertuples(index=False):
+        jobs.append(
+            {
+                "calculation": calculation,
+                "chunk": int(row.chunk),
+                "xml": row.xml,
+                "point_map": row.point_map,
+                "stdout_path": str(log_dir / f"{calculation}_{int(row.chunk):05d}.stdout.txt"),
+                "stderr_path": str(log_dir / f"{calculation}_{int(row.chunk):05d}.stderr.txt"),
+                "sif": sif_abs,
+                "project": project_abs,
+                "executable": executable,
+            }
+        )
+    #endfor
+
+    statuses = []
+    result_rows = []
+
+    print(
+        f"[PARTONS run] {calculation}: {len(points)} points, "
+        f"{len(jobs)} chunks, {workers} OS process(es)"
+    )
+
+    if workers <= 1:
+        for ijob, job in enumerate(jobs, start=1):
+            payload = _run_partons_chunk(job)
+            statuses.append(payload["status"])
+            result_rows.extend(payload["results"])
+            print(
+                f"[PARTONS run] {calculation}: chunk {ijob}/{len(jobs)} "
+                f"rc={payload['status']['returncode']} "
+                f"parsed={payload['status']['n_parsed']}/{payload['status']['n_expected']} "
+                f"warnings={payload['status']['n_warnings']}"
+            )
+        #endfor
+    else:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            future_map = {
+                pool.submit(_run_partons_chunk, job): job for job in jobs
+            }
+            done = 0
+            for future in as_completed(future_map):
+                payload = future.result()
+                statuses.append(payload["status"])
+                result_rows.extend(payload["results"])
+                done += 1
+                print(
+                    f"[PARTONS run] {calculation}: chunk {done}/{len(jobs)} "
+                    f"(id={payload['status']['chunk']}) "
+                    f"rc={payload['status']['returncode']} "
+                    f"parsed={payload['status']['n_parsed']}/{payload['status']['n_expected']} "
+                    f"warnings={payload['status']['n_warnings']}"
+                )
+            #endfor
+        #endwith
+    #endif
+
+    status_df = pd.DataFrame(statuses).sort_values("chunk").reset_index(drop=True)
+    status_df.to_csv(status_path, index=False)
+
+    failed = status_df.loc[
+        (status_df["returncode"] != 0)
+        | (~status_df["parse_ok"])
+        | (~status_df["finite_ok"])
+        | (~status_df["units_ok"])
+    ]
+    if len(failed):
+        print(f"[PARTONS run] {calculation}: FAILED CHUNKS")
+        print(
+            failed[
+                [
+                    "chunk", "returncode", "n_expected", "n_parsed",
+                    "parse_ok", "finite_ok", "units_ok", "stdout", "stderr",
+                ]
+            ].to_string(index=False)
+        )
+        raise RuntimeError(
+            f"{calculation}: {len(failed)} PARTONS chunk(s) failed. "
+            f"See {status_path} and the retained logs."
+        )
+    #endif
+
+    result_df = pd.DataFrame(result_rows)
+    if result_df["point_id"].duplicated().any():
+        raise RuntimeError(f"{calculation}: duplicate point_id in parsed PARTONS output")
+    #endif
+
+    result_df = points[["point_id"]].merge(
+        result_df,
         on="point_id",
         how="left",
         validate="one_to_one",
     )
-    coverage = np.mean(np.isfinite(merged["ep_xs"].to_numpy(float)))
-    print(f"[model results] {model}: finite coverage={coverage:.3%}")
-    if coverage < 0.999:
-        raise RuntimeError(
-            f"{model}: only {coverage:.3%} of points have finite EP cross sections"
-        )
+    if len(result_df) != len(points) or not np.all(
+        np.isfinite(result_df["xs_nb"].to_numpy(float))
+    ):
+        raise RuntimeError(f"{calculation}: incomplete/nonfinite final result cache")
     #endif
-    return merged.rename(columns={"ep_xs": f"{model}_ep"})
+
+    result_df.to_csv(result_path, index=False)
+
+    print(
+        f"[PARTONS run] {calculation}: completed {len(result_df)} points; "
+        f"warnings={int(status_df['n_warnings'].sum())}, "
+        f"integrator warnings={int(status_df['n_integrator_warnings'].sum())}"
+    )
+    print(f"[PARTONS cache] {calculation} -> {result_path}")
+    return result_df
 #enddef
 
 
-def merge_models(
+def _attach_result(
         points: pd.DataFrame,
-        vgg_csv: Path,
-        gk_csv: Path,
+        result: pd.DataFrame,
+        output_column: str) -> pd.DataFrame:
+    """Attach one complete PARTONS cache by point_id."""
+    result = result[["point_id", "xs_nb"]].rename(columns={"xs_nb": output_column})
+    return points.merge(result, on="point_id", how="left", validate="one_to_one")
+#enddef
+
+
+def build_model_selection(
+        points: pd.DataFrame,
+        bh_gv08: pd.DataFrame,
+        gk16: pd.DataFrame,
+        bh_vgg99: pd.DataFrame,
+        vgg99: pd.DataFrame,
         outdir: Path,
         thresholds: List[float]) -> pd.DataFrame:
-    """Merge KM15/VGG99/GK16 and construct all-model consensus selections."""
+    """Construct self-consistent purity quantities and all threshold selections."""
     out = points.copy()
+    out = _attach_result(out, bh_gv08, "partons_bh_gv08")
+    out = _attach_result(out, gk16, "partons_ep_gk16")
+    out = _attach_result(out, bh_vgg99, "partons_bh_vgg99")
+    out = _attach_result(out, vgg99, "partons_ep_vgg99")
 
-    if "km15_bh" not in out.columns or "km15_ep" not in out.columns:
-        raise RuntimeError(
-            "Kinematic cache must contain km15_bh and km15_ep. Export it from "
-            "the production analysis after KM15 evaluation."
-        )
-    #endif
-
-    for model, path in [("vgg99", vgg_csv), ("gk16", gk_csv)]:
-        result = validate_model_results(out, pd.read_csv(path), model)
-        out = out.merge(result, on="point_id", how="left", validate="one_to_one")
-    #endfor
-
-    bh = out["km15_bh"].to_numpy(float)
-    for model, ep_col in [
-        ("km15", "km15_ep"),
-        ("vgg99", "vgg99_ep"),
-        ("gk16", "gk16_ep"),
+    for col in [
+        "partons_bh_gv08", "partons_ep_gk16",
+        "partons_bh_vgg99", "partons_ep_vgg99",
     ]:
-        ep = out[ep_col].to_numpy(float)
-        out[f"delta_bh_{model}"] = np.abs(1.0 - bh / ep)
+        if not np.all(np.isfinite(out[col].to_numpy(float))):
+            raise RuntimeError(f"Nonfinite values remain in {col}")
+        #endif
     #endfor
+
+    out["delta_bh_gk16"] = np.abs(
+        1.0
+        - out["partons_bh_gv08"].to_numpy(float)
+        / out["partons_ep_gk16"].to_numpy(float)
+    )
+    out["delta_bh_vgg99"] = np.abs(
+        1.0
+        - out["partons_bh_vgg99"].to_numpy(float)
+        / out["partons_ep_vgg99"].to_numpy(float)
+    )
+
+    # Cross-code/process diagnostics only.  These are never used as correction
+    # factors and never enter a model's purity definition.
+    out["partons_gv08_over_gepard_bh"] = (
+        out["partons_bh_gv08"].to_numpy(float)
+        / out["km15_bh"].to_numpy(float)
+    )
+    out["partons_vgg99_over_gepard_bh"] = (
+        out["partons_bh_vgg99"].to_numpy(float)
+        / out["km15_bh"].to_numpy(float)
+    )
+    out["partons_vgg99_over_gv08_bh"] = (
+        out["partons_bh_vgg99"].to_numpy(float)
+        / out["partons_bh_gv08"].to_numpy(float)
+    )
 
     deltas = out[
         ["delta_bh_km15", "delta_bh_vgg99", "delta_bh_gk16"]
     ].to_numpy(float)
-    out["delta_bh_consensus_max"] = np.nanmax(deltas, axis=1)
-    out["delta_bh_model_spread"] = np.nanmax(deltas, axis=1) - np.nanmin(
-        deltas, axis=1
+    out["delta_bh_model_max"] = np.max(deltas, axis=1)
+    out["delta_bh_model_min"] = np.min(deltas, axis=1)
+    out["delta_bh_model_spread"] = (
+        out["delta_bh_model_max"] - out["delta_bh_model_min"]
     )
 
     for threshold in thresholds:
-        tag = f"{int(round(100 * threshold)):02d}pct"
+        tag = f"{int(round(100.0 * threshold)):02d}pct"
         for model in ["km15", "vgg99", "gk16"]:
-            out[f"pass_{tag}_{model}"] = out[f"delta_bh_{model}"] <= threshold
+            out[f"pass_{tag}_{model}"] = (
+                out[f"delta_bh_{model}"].to_numpy(float) <= threshold
+            )
         #endfor
+
         out[f"pass_{tag}_all_models"] = (
             out[f"pass_{tag}_km15"]
             & out[f"pass_{tag}_vgg99"]
             & out[f"pass_{tag}_gk16"]
         )
+        out[f"pass_{tag}_any_model"] = (
+            out[f"pass_{tag}_km15"]
+            | out[f"pass_{tag}_vgg99"]
+            | out[f"pass_{tag}_gk16"]
+        )
     #endfor
 
     outdir.mkdir(parents=True, exist_ok=True)
-    out.to_csv(outdir / "bh_model_selection_all_points.csv", index=False)
+    all_path = outdir / "bh_model_selection_all_points.csv"
+    out.to_csv(all_path, index=False)
 
-    summary_rows = []
-    for dataset, d in out.groupby("dataset", sort=False):
+    count_rows = []
+    overlap_rows = []
+
+    group_items = [("ALL", out)] + list(out.groupby("dataset", sort=False))
+    for dataset, d in group_items:
         for threshold in thresholds:
-            tag = f"{int(round(100 * threshold)):02d}pct"
-            row = {
-                "dataset": dataset,
-                "threshold": threshold,
-                "n_total": len(d),
+            tag = f"{int(round(100.0 * threshold)):02d}pct"
+
+            masks = {
+                model: d[f"pass_{tag}_{model}"].to_numpy(bool)
+                for model in ["km15", "vgg99", "gk16"]
             }
-            for model in ["km15", "vgg99", "gk16", "all_models"]:
-                row[f"n_{model}"] = int(d[f"pass_{tag}_{model}"].sum())
+            all_mask = masks["km15"] & masks["vgg99"] & masks["gk16"]
+            any_mask = masks["km15"] | masks["vgg99"] | masks["gk16"]
+
+            count_rows.append(
+                {
+                    "dataset": dataset,
+                    "threshold": threshold,
+                    "n_total": len(d),
+                    "n_km15": int(masks["km15"].sum()),
+                    "n_vgg99": int(masks["vgg99"].sum()),
+                    "n_gk16": int(masks["gk16"].sum()),
+                    "n_all_models": int(all_mask.sum()),
+                    "n_any_model": int(any_mask.sum()),
+                    "common_over_union_fraction": (
+                        float(all_mask.sum() / any_mask.sum())
+                        if any_mask.sum() else np.nan
+                    ),
+                }
+            )
+
+            for a, b in [("km15", "vgg99"), ("km15", "gk16"), ("vgg99", "gk16")]:
+                ma = masks[a]
+                mb = masks[b]
+                inter = ma & mb
+                union = ma | mb
+                overlap_rows.append(
+                    {
+                        "dataset": dataset,
+                        "threshold": threshold,
+                        "model_a": a,
+                        "model_b": b,
+                        "n_a": int(ma.sum()),
+                        "n_b": int(mb.sum()),
+                        "n_intersection": int(inter.sum()),
+                        "n_union": int(union.sum()),
+                        "jaccard": (
+                            float(inter.sum() / union.sum())
+                            if union.sum() else np.nan
+                        ),
+                    }
+                )
             #endfor
-            summary_rows.append(row)
         #endfor
     #endfor
-    pd.DataFrame(summary_rows).to_csv(
+
+    pd.DataFrame(count_rows).to_csv(
         outdir / "bh_model_selection_counts.csv", index=False
     )
+    pd.DataFrame(overlap_rows).to_csv(
+        outdir / "bh_model_selection_pairwise_overlap.csv", index=False
+    )
 
-    nominal = out.loc[out["pass_05pct_all_models"]].copy()
-    nominal.to_csv(outdir / "bh_model_selection_consensus_05pct.csv", index=False)
+    for model in ["km15", "vgg99", "gk16"]:
+        selected = out.loc[out[f"pass_05pct_{model}"]].copy()
+        selected.to_csv(
+            outdir / f"bh_model_selection_{model}_05pct.csv", index=False
+        )
+        print(
+            f"[selection] 5% {model:5s}: {len(selected)}/{len(out)} points -> "
+            f"{outdir / f'bh_model_selection_{model}_05pct.csv'}"
+        )
+    #endfor
 
-    print(f"[selection] all-point cache -> {outdir / 'bh_model_selection_all_points.csv'}")
-    print(f"[selection] nominal 5% all-model consensus: {len(nominal)}/{len(out)} points")
+    consensus = out.loc[out["pass_05pct_all_models"]].copy()
+    consensus.to_csv(
+        outdir / "bh_model_selection_consensus_05pct.csv", index=False
+    )
+
+    print(f"[selection] all-point cache -> {all_path}")
+    print(
+        "[selection] note: all-model consensus is a diagnostic/stress-test sample; "
+        "it is not the nominal selection prescription."
+    )
     return out
 #enddef
 
 
+def _robust_upper(values: np.ndarray, minimum: float = 10.0) -> float:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if len(finite) == 0:
+        return minimum
+    #endif
+    return max(minimum, 1.10 * float(np.nanpercentile(finite, 99.0)))
+#enddef
+
+
 def save_diagnostic_plots(df: pd.DataFrame, outdir: Path) -> None:
+    """Write per-dataset model-selection and BH-closure diagnostics."""
     import matplotlib.pyplot as plt
 
     models = ["km15", "vgg99", "gk16"]
@@ -469,25 +772,22 @@ def save_diagnostic_plots(df: pd.DataFrame, outdir: Path) -> None:
         ddir = outdir / "plots" / dataset
         ddir.mkdir(parents=True, exist_ok=True)
 
+        # 01: alternative-model purity deviations against KM15.
         fig, ax = plt.subplots(figsize=(7.2, 6.2))
         for model in ["vgg99", "gk16"]:
             ax.scatter(
                 100.0 * d["delta_bh_km15"],
                 100.0 * d[f"delta_bh_{model}"],
-                s=10,
-                alpha=0.6,
+                s=12,
+                alpha=0.65,
                 label=labels[model],
             )
         #endfor
-        lim = max(
-            10.0,
-            float(np.nanpercentile(
-                100.0 * d[
-                    ["delta_bh_km15", "delta_bh_vgg99", "delta_bh_gk16"]
-                ].to_numpy(float),
-                99.0,
-            )),
-        )
+
+        all_delta_pct = 100.0 * d[
+            ["delta_bh_km15", "delta_bh_vgg99", "delta_bh_gk16"]
+        ].to_numpy(float)
+        lim = _robust_upper(all_delta_pct, minimum=10.0)
         ax.plot([0, lim], [0, lim], linestyle="--", linewidth=1.0)
         ax.axvline(5.0, linestyle=":", linewidth=1.0)
         ax.axhline(5.0, linestyle=":", linewidth=1.0)
@@ -502,20 +802,32 @@ def save_diagnostic_plots(df: pd.DataFrame, outdir: Path) -> None:
         fig.savefig(ddir / "01_delta_bh_model_comparison.png", dpi=180)
         plt.close(fig)
 
+        # 02: selected counts versus threshold.
         fig, ax = plt.subplots(figsize=(8.2, 5.4))
-        thresholds = np.arange(1, 11)
+        threshold_pct = np.arange(1, 11)
         for model in models:
             counts = [
                 int((d[f"delta_bh_{model}"] <= pct / 100.0).sum())
-                for pct in thresholds
+                for pct in threshold_pct
             ]
-            ax.plot(thresholds, counts, marker="o", label=labels[model])
+            ax.plot(threshold_pct, counts, marker="o", label=labels[model])
         #endfor
-        consensus = [
-            int((d["delta_bh_consensus_max"] <= pct / 100.0).sum())
-            for pct in thresholds
+        common_counts = [
+            int(
+                (
+                    (d["delta_bh_km15"] <= pct / 100.0)
+                    & (d["delta_bh_vgg99"] <= pct / 100.0)
+                    & (d["delta_bh_gk16"] <= pct / 100.0)
+                ).sum()
+            )
+            for pct in threshold_pct
         ]
-        ax.plot(thresholds, consensus, marker="s", label="all-model consensus")
+        ax.plot(
+            threshold_pct,
+            common_counts,
+            marker="s",
+            label="all-model intersection",
+        )
         ax.set_xlabel("BH-purity threshold (%)")
         ax.set_ylabel("selected points")
         ax.set_title(f"{dataset}: selected sample versus purity threshold")
@@ -525,21 +837,102 @@ def save_diagnostic_plots(df: pd.DataFrame, outdir: Path) -> None:
         fig.savefig(ddir / "02_selection_count_vs_threshold.png", dpi=180)
         plt.close(fig)
 
+        # 03: common/union overlap fraction versus threshold.
         fig, ax = plt.subplots(figsize=(8.2, 5.4))
-        disagreement = (
+        fractions = []
+        for pct in threshold_pct:
+            cut = pct / 100.0
+            masks = [
+                d[f"delta_bh_{model}"].to_numpy(float) <= cut
+                for model in models
+            ]
+            common = masks[0] & masks[1] & masks[2]
+            union = masks[0] | masks[1] | masks[2]
+            fractions.append(
+                common.sum() / union.sum() if union.sum() else np.nan
+            )
+        #endfor
+        ax.plot(threshold_pct, fractions, marker="o")
+        ax.set_ylim(0.0, 1.05)
+        ax.set_xlabel("BH-purity threshold (%)")
+        ax.set_ylabel("three-model intersection / union")
+        ax.set_title(f"{dataset}: model-selection overlap")
+        ax.grid(alpha=0.2)
+        fig.tight_layout()
+        fig.savefig(ddir / "03_common_overlap_fraction_vs_threshold.png", dpi=180)
+        plt.close(fig)
+
+        # 04: number of models accepting each point at nominal 5%.
+        fig, ax = plt.subplots(figsize=(7.2, 5.2))
+        agreement = (
             d[["pass_05pct_km15", "pass_05pct_vgg99", "pass_05pct_gk16"]]
             .astype(int)
             .sum(axis=1)
         )
-        labels_x = ["0 models", "1 model", "2 models", "3 models"]
-        counts = [(disagreement == i).sum() for i in range(4)]
-        ax.bar(np.arange(4), counts)
-        ax.set_xticks(np.arange(4))
-        ax.set_xticklabels(labels_x)
+        x = np.arange(4)
+        counts = [(agreement == i).sum() for i in x]
+        ax.bar(x, counts)
+        ax.set_xticks(x)
+        ax.set_xticklabels(["0 models", "1 model", "2 models", "3 models"])
         ax.set_ylabel("points")
         ax.set_title(f"{dataset}: 5% BH-selection agreement")
         fig.tight_layout()
-        fig.savefig(ddir / "03_selection_agreement_05pct.png", dpi=180)
+        fig.savefig(ddir / "04_selection_agreement_05pct.png", dpi=180)
+        plt.close(fig)
+
+        # 05: full-point PARTONS/Gepard BH closure versus kinematics.
+        kin_specs = [
+            ("xB", r"$x_B$"),
+            ("Q2", r"$Q^2$ (GeV$^2$)"),
+            ("t_abs", r"$|t|$ (GeV$^2$)"),
+            ("phi_deg", r"$\phi_{\rm Gepard}$ (deg)"),
+        ]
+        for index, (column, xlabel) in enumerate(kin_specs, start=1):
+            fig, ax = plt.subplots(figsize=(7.5, 5.2))
+            ax.scatter(
+                d[column],
+                d["partons_gv08_over_gepard_bh"],
+                s=12,
+                alpha=0.65,
+                label="PARTONS GV08 / Gepard BH",
+            )
+            ax.scatter(
+                d[column],
+                d["partons_vgg99_over_gepard_bh"],
+                s=12,
+                alpha=0.65,
+                marker="x",
+                label="PARTONS VGG99 / Gepard BH",
+            )
+            ax.axhline(1.0, linestyle="--", linewidth=1.0)
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(r"$\sigma_{\rm BH}^{\rm PARTONS}/\sigma_{\rm BH}^{\rm Gepard}$")
+            ax.set_title(f"{dataset}: BH implementation closure")
+            ax.grid(alpha=0.2)
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(
+                ddir / f"05_{index:02d}_partons_gepard_bh_closure_vs_{column}.png",
+                dpi=180,
+            )
+            plt.close(fig)
+        #endfor
+
+        # 06: VGG99-process BH versus GV08-process BH inside PARTONS.
+        fig, ax = plt.subplots(figsize=(7.5, 5.2))
+        ax.scatter(
+            d["t_abs"],
+            d["partons_vgg99_over_gv08_bh"],
+            s=12,
+            alpha=0.65,
+        )
+        ax.axhline(1.0, linestyle="--", linewidth=1.0)
+        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        ax.set_ylabel(r"$\sigma_{\rm BH}^{\rm VGG99\ process}/\sigma_{\rm BH}^{\rm GV08\ process}$")
+        ax.set_title(f"{dataset}: PARTONS BH process-module closure")
+        ax.grid(alpha=0.2)
+        fig.tight_layout()
+        fig.savefig(ddir / "06_partons_bh_process_module_closure.png", dpi=180)
         plt.close(fig)
     #endfor
 #enddef
@@ -547,22 +940,50 @@ def save_diagnostic_plots(df: pd.DataFrame, outdir: Path) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="KM15/VGG99/GK16 BH-purity model-selection preparation"
+        description="KM15/VGG99/GK16 BH-purity model-selection evaluator"
     )
-    p.add_argument("--check-partons", action="store_true")
-    p.add_argument("--main-script", default=DEFAULT_MAIN)
     p.add_argument("--outdir", default=DEFAULT_OUTDIR)
-    p.add_argument("--kinematics-cache", default=None)
-    p.add_argument("--vgg-results", default=None)
-    p.add_argument("--gk-results", default=None)
-    p.add_argument("--make-partons-xml", action="store_true")
-    p.add_argument("--chunk-size", type=int, default=250)
+    p.add_argument(
+        "--kinematics-cache",
+        default=None,
+        help="Default: <outdir>/bh_model_kinematics.csv",
+    )
+    p.add_argument(
+        "--run-partons",
+        action="store_true",
+        help="Run/reuse PARTONS caches and construct model selections",
+    )
+    p.add_argument(
+        "--make-partons-xml",
+        action="store_true",
+        help="Only generate all PARTONS XML scenarios and manifests",
+    )
+    p.add_argument("--partons-sif", default=DEFAULT_PARTONS_SIF)
+    p.add_argument("--partons-project", default=DEFAULT_PARTONS_PROJECT)
+    p.add_argument("--partons-executable", default=DEFAULT_PARTONS_EXECUTABLE)
+    p.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Independent Apptainer/PARTONS OS processes; default 1",
+    )
+    p.add_argument(
+        "--chunk-size",
+        type=int,
+        default=25,
+        help="Sequential points per PARTONS process invocation; default 25",
+    )
+    p.add_argument(
+        "--force-partons",
+        action="store_true",
+        help="Ignore complete PARTONS result caches and rerun all calculations",
+    )
     p.add_argument(
         "--thresholds",
         type=float,
         nargs="+",
         default=DEFAULT_THRESHOLDS,
-        help="BH-purity thresholds as fractions, default 0.01 ... 0.10",
+        help="BH-purity thresholds as fractions; default 0.01 ... 0.10",
     )
     return p
 #enddef
@@ -570,12 +991,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: List[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
     outdir = Path(args.outdir)
-
-    if args.check_partons:
-        print_partons_check()
-    #endif
-
     cache = (
         Path(args.kinematics_cache)
         if args.kinematics_cache
@@ -584,35 +1001,89 @@ def main(argv: List[str] | None = None) -> int:
 
     if not cache.exists():
         print(
-            "\nNo kinematic cache exists yet.\n"
-            "The production EMFF script should export its already-evaluated "
-            "KM15 points to:\n"
+            "No kinematic cache exists:\n"
             f"  {cache}\n"
-            "This evaluator intentionally does not duplicate the data-loading "
-            "and KM15 calculation logic.\n"
+            "Run extract_emff_from_dvcs_bh.py first so it exports the exact "
+            "KM15-evaluated experimental points."
         )
         return 2
     #endif
 
     points = load_points_from_cache(cache)
-    print(f"[kinematics] loaded {len(points)} exact experimental points from {cache}")
+    print(
+        f"[kinematics] loaded {len(points)} exact experimental points from {cache}"
+    )
+    print(
+        "[kinematics] applying validated azimuth mapping: "
+        "phi_PARTONS = (180 deg - phi_Gepard) mod 360 deg"
+    )
+
+    thresholds = sorted(set(float(x) for x in args.thresholds))
+    if 0.05 not in thresholds:
+        raise ValueError(
+            "--thresholds must include 0.05 because nominal 5% products are written"
+        )
+    #endif
+
+    calculations = ["bh_gv08", "gk16", "bh_vgg99", "vgg99"]
 
     if args.make_partons_xml:
-        write_partons_xml_chunks(points, "vgg99", outdir, args.chunk_size)
-        write_partons_xml_chunks(points, "gk16", outdir, args.chunk_size)
+        for calculation in calculations:
+            write_partons_xml_chunks(
+                points,
+                calculation,
+                outdir,
+                args.chunk_size,
+            )
+        #endfor
+        if not args.run_partons:
+            return 0
+        #endif
     #endif
 
-    if args.vgg_results and args.gk_results:
-        merged = merge_models(
-            points,
-            Path(args.vgg_results),
-            Path(args.gk_results),
-            outdir,
-            args.thresholds,
+    if not args.run_partons:
+        print(
+            "Nothing to run. Use --run-partons for the full cached PARTONS "
+            "evaluation, or --make-partons-xml to inspect generated scenarios."
         )
-        save_diagnostic_plots(merged, outdir)
+        return 0
     #endif
 
+    sif = Path(args.partons_sif).expanduser().resolve()
+    project = Path(args.partons_project).expanduser().resolve()
+    locate_partons(sif, project, args.partons_executable)
+
+    if args.workers < 1:
+        raise ValueError("--workers must be >= 1")
+    #endif
+
+    results = {}
+    for calculation in calculations:
+        results[calculation] = run_partons_calculation(
+            points=points,
+            calculation=calculation,
+            outdir=outdir,
+            sif=sif,
+            project=project,
+            executable=args.partons_executable,
+            workers=args.workers,
+            chunk_size=args.chunk_size,
+            force=args.force_partons,
+        )
+    #endfor
+
+    merged = build_model_selection(
+        points=points,
+        bh_gv08=results["bh_gv08"],
+        gk16=results["gk16"],
+        bh_vgg99=results["bh_vgg99"],
+        vgg99=results["vgg99"],
+        outdir=outdir,
+        thresholds=thresholds,
+    )
+    save_diagnostic_plots(merged, outdir)
+
+    print("[done] BH-purity model-selection evaluation complete")
     return 0
 #enddef
 
