@@ -131,6 +131,7 @@ import json
 import math
 import os
 import re
+import itertools
 import sys
 import time
 import warnings
@@ -168,8 +169,14 @@ GLOBAL_SCALE_FRAC = 0.0476
 # dataset 98 = 2640-point beam-helicity-independent XUU cross section.
 CLAS6_GEPARD_DATASET_ID = 98
 
+# Hall A E00-110 / Defurne et al. 2015, arXiv:1504.05453.
+# Original phi-dependent helicity-independent XUU datasets in Gepard:
+# 107=Kin2, 108=Kin3, 112=KinX2, 113=KinX3.
+HALLA_DEFURNE_GEPARD_DATASET_IDS = (107, 108, 112, 113)
+HALLA_DEFURNE_GLOBAL_SCALE_FRAC = 0.028
+
 SAYLOR_EBEAM = 5.88
-SAYLOR_GLOBAL_SCALE_FRAC = 0.04
+SAYLOR_GLOBAL_SCALE_FRAC = 0.05
 DEFAULT_SAYLOR_FILE = "import/saylor_CLAS6.txt"
 SAYLOR_SUPPLEMENT_URL = (
     "https://uknowledge.uky.edu/cgi/viewcontent.cgi?"
@@ -475,6 +482,8 @@ def print_run_plan(args) -> None:
         mode_name = "ONLY CLAS6 JO 2015"
     elif args.only_saylor:
         mode_name = "ONLY CLAS6 SAYLOR 2018"
+    elif args.only_halla_defurne:
+        mode_name = "ONLY HALL A DEFURNE 2015"
     elif args.only_clas6_pass1_combined:
         mode_name = "ONLY JO 2015 + CLAS12 LEE 2026 (LEGACY DEBUG MODE)"
     elif args.all_including_pass2:
@@ -495,12 +504,14 @@ def print_run_plan(args) -> None:
         and not args.only_pass1
         and not args.only_clas6
         and not args.only_saylor
+        and not args.only_halla_defurne
         and not args.only_clas6_pass1_combined
     ):
         print("[expected published-study products]")
         print("  singles:")
         print("    CLAS6 Jo 2015")
         print("    CLAS6 Saylor 2018")
+        print("    Hall A Defurne 2015")
         print("    CLAS12 Lee 2026")
         print("  pairwise:")
         print("    Jo 2015 + Saylor 2018")
@@ -759,7 +770,7 @@ def load_saylor_supplement(path: str) -> pd.DataFrame:
         )
     #endif
 
-    # Separate the explicitly quoted 4% correlated normalization contribution.
+    # Separate the final-paper 5% correlated normalization contribution.
     global_abs = SAYLOR_GLOBAL_SCALE_FRAC * np.abs(df["xs"])
     df["ptp_sys"] = np.sqrt(
         np.maximum(df["sys_total"]**2 - global_abs**2, 0.0)
@@ -913,6 +924,126 @@ def load_clas6_gepard_dataset(dataset_id: int = CLAS6_GEPARD_DATASET_ID) -> pd.D
         f"{len(df)} XUU points"
     )
     return df
+#enddef
+
+
+
+def load_halla_defurne_gepard_datasets(
+        dataset_ids: Sequence[int] = HALLA_DEFURNE_GEPARD_DATASET_IDS
+        ) -> pd.DataFrame:
+    """Load Hall A Defurne 2015 original phi-dependent XUU data from Gepard."""
+    try:
+        import gepard as g
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not import gepard. Hall A Defurne requires the same Gepard "
+            "installation used by the Jo/KM15 analysis."
+        ) from exc
+    #endtry
+
+    rows = []
+    for dataset_id in dataset_ids:
+        if dataset_id not in g.dset:
+            raise RuntimeError(f"Gepard dataset {dataset_id} is unavailable.")
+        #endif
+
+        for i, pt in enumerate(g.dset[dataset_id]):
+            observable = str(getattr(pt, "observable", ""))
+            if observable.upper() != "XUU":
+                continue
+            #endif
+
+            err_total = float(getattr(pt, "err", np.nan))
+            err_stat = float(getattr(pt, "errstat", np.nan))
+            err_syst = float(getattr(pt, "errsyst", np.nan))
+            if not np.isfinite(err_syst) or err_syst < 0.0:
+                err_syst = 0.0
+            #endif
+            if not np.isfinite(err_total) or err_total <= 0.0:
+                if np.isfinite(err_stat):
+                    err_total = math.hypot(err_stat, err_syst)
+                #endif
+            #endif
+
+            beam_energy = float(getattr(pt, "in1energy", np.nan))
+            if not np.isfinite(beam_energy) or beam_energy <= 0.0:
+                raise ValueError(
+                    f"Hall A dataset {dataset_id}, point {i}: missing beam energy."
+                )
+            #endif
+
+            rows.append({
+                "_row": len(rows),
+                "xB": float(pt.xB),
+                "Q2": float(pt.Q2),
+                "t_abs": abs(float(pt.t)),
+                "phi_bmk_rad": float(pt.phi),
+                "phi_deg": math.degrees(float(pt.phi)),
+                "xs": float(pt.val),
+                "xs_stat": err_stat,
+                "halla_err_stat": err_stat,
+                "halla_err_syst": err_syst,
+                "halla_err_total": err_total,
+                "ptp_sys_abs": err_syst,
+                "comb_sys_frac": 0.0,
+                "scale_sys_frac": HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
+                "ebeam": beam_energy,
+                "gepard_dataset_id": int(dataset_id),
+                "observable": observable,
+                "source": "Hall A Defurne 2015",
+            })
+        #endfor
+    #endfor
+
+    df = pd.DataFrame(rows)
+    good = (
+        np.isfinite(df["xB"])
+        & np.isfinite(df["Q2"])
+        & np.isfinite(df["t_abs"])
+        & np.isfinite(df["phi_bmk_rad"])
+        & np.isfinite(df["xs"])
+        & np.isfinite(df["halla_err_stat"])
+        & np.isfinite(df["halla_err_syst"])
+        & (df["xs"] > 0.0)
+        & (df["halla_err_stat"] > 0.0)
+        & (df["halla_err_syst"] >= 0.0)
+        & (df["t_abs"] > 0.0)
+    )
+    df = df.loc[good].copy().reset_index(drop=True)
+    df["_row"] = np.arange(len(df), dtype=int)
+
+    counts = df.groupby("gepard_dataset_id").size().to_dict()
+    print(
+        f"[HALLA] Loaded {len(df)} XUU points from Gepard datasets "
+        f"{tuple(dataset_ids)}; per-dataset counts={counts}; "
+        f"global scale={100*HALLA_DEFURNE_GLOBAL_SCALE_FRAC:.1f}%."
+    )
+    print(
+        f"[HALLA] median stat/xs="
+        f"{100*np.nanmedian(df['halla_err_stat']/df['xs']):.1f}%, "
+        f"median pointwise syst/xs="
+        f"{100*np.nanmedian(df['halla_err_syst']/df['xs']):.1f}%."
+    )
+    return df
+#enddef
+
+
+def evaluate_km15_halla_dataframe(
+        df: pd.DataFrame,
+        workers: int,
+        cache_path: Path,
+        force: bool = False) -> pd.DataFrame:
+    """Use exact Gepard-stored BMK phi and per-point beam energy."""
+    print(
+        f"[HALLA KM15] Evaluating {len(df)} Defurne XUU points with "
+        f"{workers} worker(s)..."
+    )
+    return evaluate_km15_clas6_dataframe(
+        df,
+        workers=workers,
+        cache_path=cache_path,
+        force=force,
+    )
 #enddef
 
 
@@ -1978,6 +2109,16 @@ def dataset_statistical_errors(
             )
         #endif
         return data["stat"].to_numpy(float)
+    elif dataset_kind == "halla_defurne2015":
+        if "halla_err_stat" in data.columns:
+            return data["halla_err_stat"].to_numpy(float)
+        elif "xs_stat" in data.columns:
+            return data["xs_stat"].to_numpy(float)
+        else:
+            raise KeyError(
+                "Hall A Defurne dataframe is missing 'halla_err_stat'."
+            )
+        #endif
     elif dataset_kind == "pass1":
         if "xs_stat" in data.columns:
             return data["xs_stat"].to_numpy(float)
@@ -2033,6 +2174,18 @@ def dataset_point_errors(
         #endif
         ptp = data["ptp_sys"].to_numpy(float)
         base = np.sqrt(stat**2 + ptp**2)
+    elif dataset_kind == "halla_defurne2015":
+        stat = dataset_statistical_errors(data, dataset_kind)
+        if "halla_err_syst" in data.columns:
+            ptp = data["halla_err_syst"].to_numpy(float)
+        elif "ptp_sys_abs" in data.columns:
+            ptp = data["ptp_sys_abs"].to_numpy(float)
+        else:
+            raise KeyError(
+                "Hall A Defurne dataframe is missing 'halla_err_syst'."
+            )
+        #endif
+        base = np.sqrt(stat**2 + ptp**2)
     elif dataset_kind == "pass1":
         stat = dataset_statistical_errors(data, dataset_kind)
         if "ptp_sys_abs" in data.columns:
@@ -2070,7 +2223,8 @@ def fit_multi_measurements(
     Each measurement has its own cross-section data and uncertainty model.
     Correlated normalization nuisances are independent between experiments:
       Jo 2015: none, matching the Moradi/Gepard treatment;
-      Saylor 2018: 4% elastic-normalization nuisance;
+      Saylor 2018: 5% global-normalization nuisance;
+      Hall A Defurne 2015: 2.8% global-normalization nuisance;
       CLAS12 Lee 2026: 31% conservative global normalization nuisance.
     """
     names, p0 = paper_model_setup(kind)
@@ -3519,7 +3673,7 @@ def run_radius_bias_variance_study(
     Grifioen/Hayward-style extrapolation optimization adapted to BH data.
 
     Candidate common Sachs forms:
-      P1..P4, IP1..IP4, CF1..CF4.
+      P1..P4, IP1..IP4, CF2..CF4.
 
     Truth models:
       Kelly, AMT, A1/Bernauer order-8 polyxdipole.
@@ -3537,7 +3691,7 @@ def run_radius_bias_variance_study(
     outdir.mkdir(parents=True, exist_ok=True)
     families = [f"P{i}" for i in range(1, 5)]
     families += [f"IP{i}" for i in range(1, 5)]
-    families += [f"CF{i}" for i in range(1, 5)]
+    families += [f"CF{i}" for i in range(2, 5)]
 
     specs = [bundle_to_measurement_spec(b) for b in bundles]
     truths = {
@@ -4353,6 +4507,7 @@ def run_clas6_pass1_combined_from_bundles(
     # The combined sample's t-range markers use the union.
     reference = pd.concat([clas6, pass1], ignore_index=True)
     save_fit5_to_fit8_sachs_plot(results, reference, outdir)
+    save_combination_f1_f2_fits_5_to_8(results, reference, outdir)
     save_radii_plot(results, outdir)
     save_low_q2_ratio_plots(results, reference, outdir)
     save_elastic_reference_comparison(results, reference, outdir, "Fit 5")
@@ -4445,6 +4600,151 @@ def audit_measurement_bundle_for_combination(
 #enddef
 
 
+
+def save_combination_f1_f2_fits_5_to_8(
+        results: Sequence[FitResult],
+        reference: pd.DataFrame,
+        outdir: Path) -> None:
+    """Explicit F1/F2 curves for Fits 5--8 for every combined fit."""
+    chosen = [fr for fr in results if fr.name in {"Fit 5", "Fit 6", "Fit 7", "Fit 8"}]
+    if not chosen:
+        return
+    #endif
+
+    qmax = float(np.nanmax(reference["t_abs"]))
+    q = np.linspace(0.0, max(qmax, 1e-3), 350)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0))
+    for fr in chosen:
+        f1, f2 = paper_model_f1f2(fr.model_kind, q, fr.params)
+        axes[0].plot(q, f1, label=fr.name)
+        axes[1].plot(q, f2, label=fr.name)
+    #endfor
+
+    kf1, kf2 = kelly_f1_f2(q)
+    axes[0].plot(q, kf1, linestyle="--", label="Kelly")
+    axes[1].plot(q, kf2, linestyle="--", label="Kelly")
+
+    axes[0].set_ylabel(r"$F_1$")
+    axes[1].set_ylabel(r"$F_2$")
+    tlo = float(np.nanmin(reference["t_abs"]))
+    thi = float(np.nanmax(reference["t_abs"]))
+    for ax in axes:
+        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        ax.grid(alpha=0.2)
+        ax.axvline(tlo, linewidth=0.8, linestyle=":")
+        ax.axvline(thi, linewidth=0.8, linestyle=":")
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="upper center", ncol=5, bbox_to_anchor=(0.5, 0.965))
+    fig.suptitle("Combined BH fit: Dirac and Pauli form factors", y=0.995)
+    fig.subplots_adjust(top=0.84, bottom=0.14, left=0.08, right=0.98, wspace=0.24)
+    fig.savefig(outdir / "07_F1_F2_fits_5_to_8.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+def save_fit5_residual_chi2_diagnostics(
+        data: pd.DataFrame,
+        fit: FitResult,
+        dataset_kind: str,
+        dataset_key: str,
+        outdir: Path,
+        bh_cut: float = 0.05) -> None:
+    """Residual/pull and per-point chi2 decomposition versus kinematics."""
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    q = data["t_abs"].to_numpy(float)
+    f1, f2 = paper_model_f1f2(fit.model_kind, q, fit.params)
+    pred = bh_from_f1f2(
+        data["bh_A"].to_numpy(float),
+        data["bh_B"].to_numpy(float),
+        data["bh_C"].to_numpy(float),
+        f1, f2,
+    )
+
+    beta_key = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", dataset_key)
+    pred *= float(fit.meta.get(beta_key + "_scale_factor", 1.0))
+
+    err = dataset_point_errors(data, dataset_kind, bh_cut, True)
+    y = data["xs"].to_numpy(float)
+    residual = y - pred
+    pull = residual / err
+    chi2_i = pull**2
+
+    diag = data.copy()
+    diag["fit5_prediction"] = pred
+    diag["fit5_residual"] = residual
+    diag["fit5_pull"] = pull
+    diag["fit5_chi2_contribution"] = chi2_i
+    diag.to_csv(outdir / "fit5_residual_chi2_per_point.csv", index=False)
+
+    fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
+    variables = [
+        ("phi_deg", r"$\phi$ (deg)"),
+        ("t_abs", r"$|t|$ (GeV$^2$)"),
+        ("xB", r"$x_B$"),
+        ("Q2", r"$Q^2$ (GeV$^2$)"),
+    ]
+
+    binned_rows = []
+    for ax, (col, xlabel) in zip(axes.flat, variables):
+        x = diag[col].to_numpy(float)
+        ax.scatter(x, pull, s=16, facecolors="none", alpha=0.45)
+        ax.axhline(0.0, linewidth=0.8)
+        ax.axhline(+2.0, linewidth=0.7, linestyle=":")
+        ax.axhline(-2.0, linewidth=0.7, linestyle=":")
+        finite = np.isfinite(x) & np.isfinite(pull)
+
+        if np.sum(finite) >= 10:
+            edges = np.linspace(np.nanmin(x[finite]), np.nanmax(x[finite]), 11)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            means = []
+            for ibin, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
+                m = finite & (x >= lo) & (
+                    (x < hi) if ibin < len(edges) - 2 else (x <= hi)
+                )
+                means.append(float(np.nanmean(pull[m])) if np.any(m) else np.nan)
+                if np.any(m):
+                    binned_rows.append({
+                        "variable": col,
+                        "bin": ibin,
+                        "low": lo,
+                        "high": hi,
+                        "N": int(np.sum(m)),
+                        "chi2_sum": float(np.sum(chi2_i[m])),
+                        "chi2_per_point": float(np.mean(chi2_i[m])),
+                        "mean_pull": float(np.mean(pull[m])),
+                        "rms_pull": float(np.sqrt(np.mean(pull[m]**2))),
+                    })
+                #endif
+            #endfor
+            ax.plot(centers, means, marker="o", linewidth=1.0, label="binned mean pull")
+        #endif
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("pull")
+        ax.grid(alpha=0.2)
+    #endfor
+
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.965))
+    #endif
+    fig.suptitle(
+        f"{dataset_key}: Fit-5 residual structure; point chi2={np.sum(chi2_i):.1f}",
+        y=0.995,
+    )
+    fig.subplots_adjust(top=0.92, bottom=0.08, left=0.08, right=0.98, hspace=0.28, wspace=0.24)
+    fig.savefig(outdir / "fit5_pulls_vs_kinematics.png", dpi=180)
+    plt.close(fig)
+
+    pd.DataFrame(binned_rows).to_csv(
+        outdir / "fit5_chi2_binned_vs_kinematics.csv", index=False
+    )
+#enddef
+
+
 def run_measurement_combination(
         bundles: Sequence[Dict[str, object]],
         args,
@@ -4483,18 +4783,15 @@ def run_measurement_combination(
         results.append(fr)
 
         nuisance_bits = []
-        for key in ["saylor2018", "pass1"]:
+        for spec in specs:
+            key = re.sub(r"[^A-Za-z0-9]+", "_", str(spec["key"]))
             beta_key = f"beta_{key}"
             scale_key = beta_key + "_scale_factor"
             if beta_key in fr.meta:
-                nuisance_bits.append(
-                    f"{beta_key}={fr.meta[beta_key]:+.3f}"
-                )
+                nuisance_bits.append(f"{beta_key}={fr.meta[beta_key]:+.3f}")
             #endif
             if scale_key in fr.meta:
-                nuisance_bits.append(
-                    f"{scale_key}={fr.meta[scale_key]:.3f}"
-                )
+                nuisance_bits.append(f"{scale_key}={fr.meta[scale_key]:.3f}")
             #endif
         #endfor
 
@@ -4701,23 +4998,14 @@ def save_published_workflow_manifest(
 
 
 def run_published_default(args) -> int:
-    """
-    Publication-facing workflow.
-
-    Always runs:
-      Jo 2015 CLAS6
-      CLAS12 Lee 2026
-
-    If the Saylor supplemental table exists (or --download-saylor succeeds),
-    also runs Saylor 2018 and constructs all pairwise and three-way
-    combinations.
-    """
+    """Run all available published measurements and every nontrivial combination."""
     print("\n" + "=" * 78)
     print("[DEFAULT MODE] Published BH form-factor/radius study")
     print("=" * 78)
 
     jo = run_clas6_validation(args, return_results=True)
     pass1 = run_pass1_validation(args, return_results=True)
+    bundles = [jo]
 
     saylor_path = resolve_script_relative_path(args.saylor_file)
     if args.download_saylor:
@@ -4727,112 +5015,54 @@ def run_published_default(args) -> int:
         args.saylor_file = str(saylor_path)
     #endif
 
-    saylor = None
     if not args.skip_saylor:
         if not saylor_path.exists():
             raise FileNotFoundError(
-                "The default published workflow requires the Saylor 2018 "
-                "supplemental table so that all three measurements and all "
-                "pairwise/triple combinations are produced.\n"
-                f"Resolved Saylor path: {saylor_path}\n"
-                "Place saylor_CLAS6.txt there, pass --saylor-file explicitly, "
-                "or use --skip-saylor only if you intentionally want the "
-                "two-measurement Jo + Lee fallback."
+                "Saylor file missing. Use --skip-saylor only if intentional.\n"
+                f"Resolved path: {saylor_path}"
             )
         #endif
         args.saylor_file = str(saylor_path)
-        saylor = run_saylor_validation(args, return_results=True)
+        bundles.append(run_saylor_validation(args, return_results=True))
     #endif
 
-    all_bundles = [jo, pass1]
+    if not args.skip_halla_defurne:
+        bundles.append(run_halla_defurne_validation(args, return_results=True))
+    #endif
+
+    bundles.append(pass1)
+
+    for bundle in bundles:
+        audit_measurement_bundle_for_combination(bundle)
+    #endfor
+
     combos = []
+    for r in range(2, len(bundles) + 1):
+        for subset in itertools.combinations(bundles, r):
+            tag = "_plus_".join(str(b["key"]) for b in subset)
+            combos.append(run_measurement_combination(subset, args, tag))
+        #endfor
+    #endfor
 
-    # Audit every individual measurement once before constructing any pair or
-    # triple.  This prevents late failures from inconsistent native error-column
-    # names across Jo, Saylor, and CLAS12 Lee.
-    audit_measurement_bundle_for_combination(jo)
-    audit_measurement_bundle_for_combination(pass1)
-    if saylor is not None:
-        audit_measurement_bundle_for_combination(saylor)
-    #endif
-
-    if saylor is not None:
-        all_bundles = [jo, saylor, pass1]
-        combos.append(run_measurement_combination(
-            [jo, saylor], args, "jo2015_plus_saylor2018"
-        ))
-        combos.append(run_measurement_combination(
-            [jo, pass1], args, "jo2015_plus_pass1"
-        ))
-        combos.append(run_measurement_combination(
-            [saylor, pass1], args, "saylor2018_plus_pass1"
-        ))
-        triple = run_measurement_combination(
-            [jo, saylor, pass1], args, "all_three"
-        )
-        combos.append(triple)
-
-        plateau_dir = (
-            Path(args.outdir).expanduser().resolve()
-            / "measurement_combinations"
-            / "all_three"
-        )
-        save_bh_cut_plateau_study_multi(
-            [jo, saylor, pass1], plateau_dir, tag="all_three"
-        )
-
-        if args.run_radius_bias_study:
-            run_radius_bias_variance_study(
-                [jo, saylor, pass1],
-                args,
-                plateau_dir / "radius_bias_variance",
-            )
-        #endif
-    else:
-        combo = run_measurement_combination(
-            [jo, pass1], args, "jo2015_plus_pass1"
-        )
-        combos.append(combo)
-        save_bh_cut_plateau_study_multi(
-            [jo, pass1],
-            combo["outdir"],
-            tag="jo2015_plus_pass1",
-        )
-        if args.run_radius_bias_study:
-            run_radius_bias_variance_study(
-                [jo, pass1],
-                args,
-                combo["outdir"] / "radius_bias_variance",
-            )
-        #endif
-    #endif
-
-    comparison_dir = (
-        Path(args.outdir).expanduser().resolve()
-        / "separate_vs_combined"
-    )
-    comparison_bundles = all_bundles + combos
-    save_separate_vs_combined_radius_summary(
-        comparison_bundles, comparison_dir
-    )
-    save_separate_vs_combined_table(
-        comparison_bundles, comparison_dir
-    )
-
-    # Keep the existing cross-dataset FF comparison focused on the individual
-    # published measurements plus the maximal combination.
     maximal = combos[-1]
-    save_published_dataset_comparisons(
-        all_bundles + [maximal],
-        comparison_dir,
+    save_bh_cut_plateau_study_multi(
+        bundles, maximal["outdir"], tag="all_available"
     )
+
+    if args.run_radius_bias_study:
+        bias_dir = maximal["outdir"] / "radius_bias_variance"
+        run_radius_bias_variance_study(bundles, args, bias_dir)
+        print(f"[radius-bias] outputs -> {bias_dir}")
+    #endif
+
+    comparison_dir = Path(args.outdir).expanduser().resolve() / "separate_vs_combined"
+    comparison_bundles = bundles + combos
+    save_separate_vs_combined_radius_summary(comparison_bundles, comparison_dir)
+    save_separate_vs_combined_table(comparison_bundles, comparison_dir)
+    save_published_dataset_comparisons(bundles + [maximal], comparison_dir)
 
     root_outdir = Path(args.outdir).expanduser().resolve()
-    save_published_workflow_manifest(
-        all_bundles,
-        combos,
-        root_outdir,
-    )
+    save_published_workflow_manifest(bundles, combos, root_outdir)
 
     print(f"\n[summary] Separate-vs-combined results -> {comparison_dir}")
     print(f"[summary] Workflow manifest -> {root_outdir / 'published_workflow_manifest.txt'}")
@@ -5160,8 +5390,11 @@ def run_saylor_validation(args, return_results: bool = False):
     save_low_q2_ratio_plots(fit_results, set5, outdir)
     save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
     save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
-    save_bh_local_f1_f2_sensitivity(
-        outdir, set5, next(r for r in fit_results if r.name == "Fit 5")
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
+    save_fit5_residual_chi2_diagnostics(
+        set5, fit5, "saylor2018", "saylor2018",
+        outdir / "12_fit5_residual_diagnostics", bh_cut=0.05,
     )
 
     bundle = {
@@ -5169,6 +5402,121 @@ def run_saylor_validation(args, return_results: bool = False):
         "key": "saylor2018",
         "kind": "saylor2018",
         "norm_frac": SAYLOR_GLOBAL_SCALE_FRAC,
+        "results": fit_results,
+        "set5": set5,
+        "all_data": df.copy(),
+        "outdir": outdir,
+    }
+    if return_results:
+        return bundle
+    #endif
+    return 0
+#enddef
+
+
+
+
+def run_halla_defurne_validation(args, return_results: bool = False):
+    """Standalone Hall A Defurne 2015 BH/form-factor analysis."""
+    outdir = Path(args.outdir).expanduser().resolve() / "halla_defurne2015"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 78)
+    print("[HALL A DEFURNE 2015 MODE]")
+    print(f"[Gepard datasets] {HALLA_DEFURNE_GEPARD_DATASET_IDS}")
+    print(f"[output] {outdir}")
+    print("=" * 78)
+
+    df = load_halla_defurne_gepard_datasets()
+    df = evaluate_km15_halla_dataframe(
+        df,
+        workers=args.workers,
+        cache_path=outdir / "km15_bh_decomposition_halla_defurne2015.csv",
+        force=args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["R_BH"])
+        & np.isfinite(df["bh_A"])
+        & np.isfinite(df["bh_B"])
+        & np.isfinite(df["bh_C"])
+    )
+    df = df.loc[finite].reset_index(drop=True)
+
+    fit_results = []
+    sets = {}
+    print("\n[HALLA BH selections]")
+    for i, cut in enumerate(args.bh_cuts, start=1):
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        sets[float(cut)] = selected
+        print(f"  |1-R_BH| <= {100*cut:.0f}% : {len(selected)} points")
+        if len(selected) < 5:
+            continue
+        #endif
+        fr = fit_multi_measurements(
+            [measurement_spec(
+                "halla_defurne2015", "Hall A Defurne 2015",
+                "halla_defurne2015", selected,
+                HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
+            )],
+            kind="dipole",
+            fit_name=f"Fit {i}",
+            bh_cut=float(cut),
+            add_moradi_bh_systematic=True,
+        )
+        fit_results.append(fr)
+        print(f"[HALLA fit] Fit {i}: N={fr.npts:4d} chi2/dof={fr.chi2_ndof:.3f}")
+    #endfor
+
+    set5 = sets.get(0.05)
+    if set5 is None or len(set5) < 5:
+        raise RuntimeError("Hall A Defurne 5% BH-selected sample has too few points.")
+    #endif
+
+    for kind, name in [
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
+    ]:
+        fit_results.append(
+            fit_multi_measurements(
+                [measurement_spec(
+                    "halla_defurne2015", "Hall A Defurne 2015",
+                    "halla_defurne2015", set5,
+                    HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
+                )],
+                kind=kind,
+                fit_name=name,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+        )
+    #endfor
+
+    pd.DataFrame([fitresult_to_record(fr) for fr in fit_results]).to_csv(
+        outdir / "fit_results.csv", index=False
+    )
+    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
+
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_combination_f1_f2_fits_5_to_8(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+    save_low_q2_ratio_plots(fit_results, set5, outdir)
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
+    save_fit5_residual_chi2_diagnostics(
+        set5, fit5, "halla_defurne2015", "halla_defurne2015",
+        outdir / "12_fit5_residual_diagnostics", bh_cut=0.05,
+    )
+
+    bundle = {
+        "label": "Hall A Defurne 2015",
+        "key": "halla_defurne2015",
+        "kind": "halla_defurne2015",
+        "norm_frac": HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
         "results": fit_results,
         "set5": set5,
         "all_data": df.copy(),
@@ -5470,6 +5818,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run only the CLAS6 Hirlinger Saylor et al. 2018 measurement",
     )
     mode.add_argument(
+        "--only-halla-defurne",
+        action="store_true",
+        help="Run only Hall A Defurne et al. 2015",
+    )
+    mode.add_argument(
         "--only-clas6-pass1-combined",
         action="store_true",
         help=(
@@ -5506,6 +5859,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-saylor",
         action="store_true",
         help="Do not run Saylor 2018 even if its supplemental file is present",
+    )
+    p.add_argument(
+        "--skip-halla-defurne",
+        action="store_true",
+        help="Do not run Hall A Defurne 2015 in the default workflow",
     )
     p.add_argument(
         "--run-radius-bias-study",
@@ -5957,6 +6315,9 @@ def main() -> int:
     #endif
     if args.only_saylor:
         return run_saylor_validation(args)
+    #endif
+    if args.only_halla_defurne:
+        return run_halla_defurne_validation(args)
     #endif
     if args.only_clas6_pass1_combined:
         print(
