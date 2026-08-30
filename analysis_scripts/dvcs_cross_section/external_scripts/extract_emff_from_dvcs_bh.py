@@ -537,20 +537,22 @@ def _saylor_column_role(token: str) -> Optional[str]:
 
 def load_saylor_supplement(path: str) -> pd.DataFrame:
     """
-    Load the Hirlinger Saylor et al. 2018 supplemental unpolarized cross sections.
+    Load the Hirlinger Saylor et al. 2018 unpolarized cross-section table.
 
-    Two input styles are supported:
-      1. A normalized CSV with columns
-         xB,Q2,t_abs,phi_deg,xs,stat,sys_total
-         (or ptp_sys instead of sys_total).
-      2. The original whitespace supplemental TXT.  The published file used
-         here has the header
+    The published supplemental TXT contains TWO tables:
+      1. unpolarized cross section:
            xB  Q2  -t  phi  sig  stat-err  sys-err
-         and this exact spelling is supported directly.
+      2. helicity-dependent difference:
+           xB  Q2  -t  phi  Dx10^l-sig  stat-err  sys-err
+
+    Only the FIRST table belongs in the unpolarized BH/form-factor analysis.
+    The parser therefore stops when the second header is reached.
 
     The published 4% elastic-normalization uncertainty is removed in quadrature
-    from ``sys_total`` to form ``ptp_sys`` and is treated separately as a
-    correlated normalization nuisance in the fits.
+    from the tabulated total systematic uncertainty to define ``ptp_sys`` and
+    is subsequently treated as a correlated normalization nuisance.
+
+    Malformed/non-numeric rows are reported and dropped rather than guessed.
     """
     path = Path(path).expanduser().resolve()
     if not path.exists():
@@ -560,155 +562,100 @@ def load_saylor_supplement(path: str) -> pd.DataFrame:
         )
     #endif
 
-    # First try the exact published Saylor whitespace format:
-    #
-    #   xB  Q2  -t  phi  sig  stat-err  sys-err
-    #
-    # This is the format used by import/saylor_CLAS6.txt.
-    try:
-        trial = pd.read_csv(
-            path,
-            sep=r"\s+",
-            comment="#",
-            engine="python",
-        )
-        exact_columns = {
-            "xB", "Q2", "-t", "phi", "sig", "stat-err", "sys-err"
-        }
-        if exact_columns.issubset(set(trial.columns)):
-            df = trial.rename(columns={
-                "-t": "t_abs",
-                "phi": "phi_deg",
-                "sig": "xs",
-                "stat-err": "stat",
-                "sys-err": "sys_total",
-            }).copy()
-            print(
-                f"[SAYLOR] Parsed published whitespace table directly: "
-                f"{len(df)} rows."
-            )
-        else:
-            raise ValueError("not the published Saylor whitespace format")
-        #endif
-    except Exception:
-        # Second try a user-normalized CSV/TSV.
-        try:
-            trial = pd.read_csv(
-                path,
-                sep=None,
-                engine="python",
-                comment="#",
-            )
-            canonical = {c.strip(): c for c in trial.columns}
-            needed = {"xB", "Q2", "t_abs", "phi_deg", "xs", "stat"}
-            if needed.issubset(canonical):
-                df = trial.copy()
-                if "sys_total" not in df.columns and "ptp_sys" not in df.columns:
-                    df["sys_total"] = 0.0
-                #endif
-                print("[SAYLOR] Parsed normalized tabular input.")
-            else:
-                raise ValueError("not normalized table")
-            #endif
-        except Exception:
-            # Final semantic-header fallback.
-            lines = path.read_text(errors="replace").splitlines()
+    lines = path.read_text(errors="replace").splitlines()
 
-            header_idx = None
-            roles = None
-            for iline, line in enumerate(lines):
-                raw_tokens = re.split(r"\s+", line.strip())
-                this_roles = [_saylor_column_role(tok) for tok in raw_tokens]
-                role_set = {r for r in this_roles if r is not None}
-                if (
-                    {"xB", "Q2", "t_abs", "phi_deg"}.issubset(role_set)
-                    and "xs" in role_set
-                ):
-                    header_idx = iline
-                    roles = this_roles
+    # Locate the published unpolarized and helicity-difference table headers.
+    unpol_header_idx = None
+    helicity_header_idx = None
+    for iline, line in enumerate(lines):
+        tokens = re.split(r"\s+", line.strip())
+        if tokens[:7] == [
+            "xB", "Q2", "-t", "phi", "sig", "stat-err", "sys-err"
+        ]:
+            unpol_header_idx = iline
+        #endif
+        if len(tokens) >= 5 and tokens[:4] == ["xB", "Q2", "-t", "phi"]:
+            if "Dx10^l-sig" in tokens[4]:
+                helicity_header_idx = iline
+                if unpol_header_idx is not None:
                     break
                 #endif
-            #endfor
-
-            if header_idx is None:
-                preview = "\n".join(lines[:35])
-                raise RuntimeError(
-                    "Could not identify the Saylor supplemental column header.\n\n"
-                    "First 35 lines were:\n"
-                    + preview
-                    + "\n\nExpected the published header "
-                      "'xB Q2 -t phi sig stat-err sys-err', or a normalized "
-                      "table with xB,Q2,t_abs,phi_deg,xs,stat,sys_total."
-                )
             #endif
+        #endif
+    #endfor
 
-            rows = []
-            ncols = len(roles)
-            for line in lines[header_idx + 1:]:
-                tokens = re.split(r"\s+", line.strip())
-                if len(tokens) < ncols:
-                    continue
-                #endif
-                try:
-                    vals = [float(tok) for tok in tokens[:ncols]]
-                except ValueError:
-                    continue
-                #endtry
-
-                row = {}
-                for role, val in zip(roles, vals):
-                    if role is not None and role not in row:
-                        row[role] = val
-                    #endif
-                #endfor
-                if {
-                    "xB", "Q2", "t_abs", "phi_deg", "xs", "stat"
-                }.issubset(row):
-                    rows.append(row)
-                #endif
-            #endfor
-
-            if not rows:
-                raise RuntimeError(
-                    "Recognized a Saylor header but extracted no numerical "
-                    "unpolarized-cross-section rows."
-                )
-            #endif
-
-            df = pd.DataFrame(rows)
-            if "sys_total" not in df:
-                df["sys_total"] = 0.0
-            #endif
-            print(
-                f"[SAYLOR] Parsed supplemental TXT with generic fallback: "
-                f"{len(df)} rows."
-            )
-        #endtry
-    #endtry
-
-    # Canonicalize signs/angles and build point-to-point systematic.
-    df = df.copy()
-    df["xB"] = pd.to_numeric(df["xB"], errors="coerce")
-    df["Q2"] = pd.to_numeric(df["Q2"], errors="coerce")
-    df["t_abs"] = np.abs(pd.to_numeric(df["t_abs"], errors="coerce"))
-    df["phi_deg"] = pd.to_numeric(df["phi_deg"], errors="coerce")
-    df["xs"] = pd.to_numeric(df["xs"], errors="coerce")
-    df["stat"] = np.abs(pd.to_numeric(df["stat"], errors="coerce"))
-
-    if "ptp_sys" in df:
-        df["ptp_sys"] = np.abs(pd.to_numeric(df["ptp_sys"], errors="coerce"))
-        df["sys_total"] = np.sqrt(
-            df["ptp_sys"]**2 + (SAYLOR_GLOBAL_SCALE_FRAC * df["xs"])**2
-        )
-    else:
-        df["sys_total"] = np.abs(
-            pd.to_numeric(df.get("sys_total", 0.0), errors="coerce")
-        )
-        global_abs = SAYLOR_GLOBAL_SCALE_FRAC * np.abs(df["xs"])
-        df["ptp_sys"] = np.sqrt(
-            np.maximum(df["sys_total"]**2 - global_abs**2, 0.0)
+    if unpol_header_idx is None:
+        raise RuntimeError(
+            "Could not find the published Saylor unpolarized header "
+            "'xB Q2 -t phi sig stat-err sys-err'."
         )
     #endif
+
+    stop_idx = helicity_header_idx if helicity_header_idx is not None else len(lines)
+    data_lines = lines[unpol_header_idx + 1:stop_idx]
+
+    rows = []
+    malformed = []
+    for iline, line in enumerate(
+            data_lines, start=unpol_header_idx + 2):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        #endif
+
+        tokens = re.split(r"\s+", stripped)
+        if len(tokens) < 7:
+            malformed.append((iline, stripped, "fewer than 7 columns"))
+            continue
+        #endif
+
+        try:
+            vals = [float(tok) for tok in tokens[:7]]
+        except ValueError:
+            malformed.append((iline, stripped, "non-numeric token"))
+            continue
+        #endtry
+
+        rows.append(vals)
+    #endfor
+
+    df = pd.DataFrame(
+        rows,
+        columns=["xB", "Q2", "t_abs", "phi_deg", "xs", "stat", "sys_total"],
+    )
+
+    print(
+        f"[SAYLOR] Parsed unpolarized table only: {len(df)} numeric rows "
+        f"(lines {unpol_header_idx + 2}--{stop_idx})."
+    )
+    if helicity_header_idx is not None:
+        print(
+            f"[SAYLOR] Ignoring second supplemental table beginning at line "
+            f"{helicity_header_idx + 1}: helicity-dependent Dx10^l-sig."
+        )
+    #endif
+
+    if malformed:
+        print(
+            f"[SAYLOR] WARNING: dropped {len(malformed)} malformed "
+            f"unpolarized-table row(s):"
+        )
+        for iline, raw, reason in malformed[:10]:
+            print(f"  line {iline}: {reason}: {raw}")
+        #endfor
+        if len(malformed) > 10:
+            print(f"  ... plus {len(malformed) - 10} additional malformed rows")
+        #endif
+    #endif
+
+    # Canonicalize.
+    for col in ["xB", "Q2", "t_abs", "phi_deg", "xs", "stat", "sys_total"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    #endfor
+
+    df["t_abs"] = np.abs(df["t_abs"])
+    df["stat"] = np.abs(df["stat"])
+    df["sys_total"] = np.abs(df["sys_total"])
 
     finite = (
         np.isfinite(df["xB"])
@@ -717,20 +664,41 @@ def load_saylor_supplement(path: str) -> pd.DataFrame:
         & np.isfinite(df["phi_deg"])
         & np.isfinite(df["xs"])
         & np.isfinite(df["stat"])
+        & np.isfinite(df["sys_total"])
         & (df["xs"] > 0.0)
         & (df["stat"] > 0.0)
+        & (df["sys_total"] >= 0.0)
     )
-    df = df.loc[finite].reset_index(drop=True)
+
+    n_before = len(df)
+    df = df.loc[finite].copy().reset_index(drop=True)
+    if len(df) != n_before:
+        print(
+            f"[SAYLOR] Dropped {n_before - len(df)} additional row(s) failing "
+            f"finite/positive cross-section uncertainty requirements."
+        )
+    #endif
+
+    # Separate the explicitly quoted 4% correlated normalization contribution.
+    global_abs = SAYLOR_GLOBAL_SCALE_FRAC * np.abs(df["xs"])
+    df["ptp_sys"] = np.sqrt(
+        np.maximum(df["sys_total"]**2 - global_abs**2, 0.0)
+    )
+
     df["phi_deg"] = np.mod(df["phi_deg"], 360.0)
     df["source"] = "CLAS6 Saylor 2018"
     df["ebeam"] = SAYLOR_EBEAM
 
     print(
         f"[SAYLOR] Loaded {len(df)} valid unpolarized points; "
-        f"median stat/xs={100*np.median(df['stat']/df['xs']):.1f}%, "
-        f"median total sys/xs={100*np.median(df['sys_total']/df['xs']):.1f}%, "
+        f"median stat/xs={100*np.nanmedian(df['stat']/df['xs']):.1f}%, "
+        f"median total sys/xs="
+        f"{100*np.nanmedian(df['sys_total']/df['xs']):.1f}%, "
+        f"median point-to-point sys/xs="
+        f"{100*np.nanmedian(df['ptp_sys']/df['xs']):.1f}%, "
         f"global scale={100*SAYLOR_GLOBAL_SCALE_FRAC:.1f}%."
     )
+
     return df
 #enddef
 
@@ -742,6 +710,10 @@ def evaluate_km15_saylor_dataframe(
         force: bool = False) -> pd.DataFrame:
     """KM15/BH decomposition for the 5.88-GeV Saylor bin centers."""
     tmp = df.copy()
+    print(
+        f"[SAYLOR KM15] Preparing {len(tmp)} unpolarized Saylor points "
+        f"at Ebeam={SAYLOR_EBEAM:.2f} GeV."
+    )
     return evaluate_km15_dataframe(
         tmp,
         ebeam=SAYLOR_EBEAM,
@@ -4201,6 +4173,232 @@ def save_published_dataset_comparisons(
     #endfor
     save_cross_dataset_radius_comparison(bundles, outdir)
     save_cross_dataset_summary(bundles, outdir)
+#enddef
+
+
+def bundle_to_measurement_spec(
+        bundle: Dict[str, object],
+        data: Optional[pd.DataFrame] = None) -> Dict[str, object]:
+    """Convert a result bundle into the generic multi-measurement fit spec."""
+    selected = bundle["set5"] if data is None else data
+    return measurement_spec(
+        key=str(bundle["key"]),
+        label=str(bundle["label"]),
+        kind=str(bundle["kind"]),
+        data=selected,
+        norm_frac=float(bundle.get("norm_frac", 0.0)),
+    )
+#enddef
+
+
+def run_measurement_combination(
+        bundles: Sequence[Dict[str, object]],
+        args,
+        tag: str) -> Dict[str, object]:
+    """
+    Fit one pair/triple measurement combination with common FF parameters.
+
+    Fits 5--8 use the common 5% BH-selected sample for each measurement.
+    Each experiment retains its own pointwise errors and correlated
+    normalization nuisance.
+    """
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        / "measurement_combinations"
+        / tag
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    specs = [bundle_to_measurement_spec(bundle) for bundle in bundles]
+    labels = [str(bundle["label"]) for bundle in bundles]
+
+    results = []
+    for kind, fit_name in [
+        ("dipole", "Fit 5"),
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
+    ]:
+        fr = fit_multi_measurements(
+            datasets=specs,
+            kind=kind,
+            fit_name=fit_name,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+        )
+        results.append(fr)
+
+        nuisance_bits = []
+        for key in ["saylor2018", "pass1"]:
+            beta_key = f"beta_{key}"
+            scale_key = beta_key + "_scale_factor"
+            if beta_key in fr.meta:
+                nuisance_bits.append(
+                    f"{beta_key}={fr.meta[beta_key]:+.3f}"
+                )
+            #endif
+            if scale_key in fr.meta:
+                nuisance_bits.append(
+                    f"{scale_key}={fr.meta[scale_key]:.3f}"
+                )
+            #endif
+        #endfor
+
+        suffix = ("; " + ", ".join(nuisance_bits)) if nuisance_bits else ""
+        print(
+            f"[COMBINATION] {' + '.join(labels)} | {fit_name}: "
+            f"N={fr.npts} chi2/dof={fr.chi2_ndof:.3f} "
+            f"rE={fr.rE_fm:.5f}+/-{fr.rE_err_fm:.5f} fm "
+            f"rM={fr.rM_fm:.5f}+/-{fr.rM_err_fm:.5f} fm"
+            f"{suffix}"
+        )
+    #endfor
+
+    pd.DataFrame(
+        [fitresult_to_record(fr) for fr in results]
+    ).to_csv(outdir / "fit_results.csv", index=False)
+
+    reference = pd.concat(
+        [bundle["set5"] for bundle in bundles],
+        ignore_index=True,
+    )
+
+    save_fit5_to_fit8_sachs_plot(results, reference, outdir)
+    save_radii_plot(results, outdir)
+    save_low_q2_ratio_plots(results, reference, outdir)
+    save_elastic_reference_comparison(
+        results, reference, outdir, "Fit 5"
+    )
+    save_elastic_reference_comparison(
+        results, reference, outdir, "Fit 8"
+    )
+
+    return {
+        "label": " + ".join(labels),
+        "key": tag,
+        "kind": "combined",
+        "norm_frac": 0.0,
+        "results": results,
+        "set5": reference,
+        "outdir": outdir,
+    }
+#enddef
+
+
+def save_separate_vs_combined_radius_summary(
+        bundles: Sequence[Dict[str, object]],
+        outdir: Path) -> None:
+    """Compare Fit-5 and Fit-8 radii for all separate/combined cases."""
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    fig, axes = plt.subplots(
+        2, 2, figsize=(13.5, 8.5),
+        sharex=False,
+    )
+
+    for irow, fit_name in enumerate(["Fit 5", "Fit 8"]):
+        labels = []
+        re_vals = []
+        re_errs = []
+        rm_vals = []
+        rm_errs = []
+
+        for bundle in bundles:
+            matches = [
+                fr for fr in bundle["results"]
+                if fr.name == fit_name
+            ]
+            if not matches:
+                continue
+            #endif
+
+            fr = matches[0]
+            labels.append(str(bundle["label"]))
+            re_vals.append(fr.rE_fm)
+            re_errs.append(fr.rE_err_fm)
+            rm_vals.append(fr.rM_fm)
+            rm_errs.append(fr.rM_err_fm)
+        #endfor
+
+        y = np.arange(len(labels))
+        axes[irow, 0].errorbar(
+            re_vals, y, xerr=re_errs,
+            fmt="o", fillstyle="none", capsize=2,
+        )
+        axes[irow, 1].errorbar(
+            rm_vals, y, xerr=rm_errs,
+            fmt="o", fillstyle="none", capsize=2,
+        )
+
+        for icol in range(2):
+            axes[irow, icol].set_yticks(y)
+            axes[irow, icol].set_yticklabels(labels, fontsize=8)
+            axes[irow, icol].grid(alpha=0.2)
+        #endfor
+
+        axes[irow, 0].set_ylabel(fit_name)
+    #endfor
+
+    axes[0, 0].set_title(r"$r_E$")
+    axes[0, 1].set_title(r"$r_M$")
+    axes[1, 0].set_xlabel("radius (fm)")
+    axes[1, 1].set_xlabel("radius (fm)")
+    fig.suptitle(
+        "BH radius extraction: separate measurements and combinations",
+        y=0.995,
+    )
+    fig.subplots_adjust(
+        top=0.93,
+        bottom=0.08,
+        left=0.28,
+        right=0.98,
+        hspace=0.28,
+        wspace=0.28,
+    )
+    fig.savefig(
+        outdir / "separate_vs_combined_radii.png",
+        dpi=180,
+    )
+    plt.close(fig)
+#enddef
+
+
+def save_separate_vs_combined_table(
+        bundles: Sequence[Dict[str, object]],
+        outdir: Path) -> None:
+    """CSV summary of Fit-5/Fit-8 separate and combined extractions."""
+    rows = []
+    for bundle in bundles:
+        for fr in bundle["results"]:
+            if fr.name not in {"Fit 5", "Fit 8"}:
+                continue
+            #endif
+            row = {
+                "dataset_or_combination": bundle["label"],
+                "fit": fr.name,
+                "N": fr.npts,
+                "chi2_ndof": fr.chi2_ndof,
+                "rE_fm": fr.rE_fm,
+                "rE_err_fm": fr.rE_err_fm,
+                "rM_fm": fr.rM_fm,
+                "rM_err_fm": fr.rM_err_fm,
+            }
+            for key, value in fr.meta.items():
+                if (
+                    key.startswith("beta_")
+                    or key.endswith("_scale_factor")
+                ):
+                    row[key] = value
+                #endif
+            #endfor
+            rows.append(row)
+        #endfor
+    #endfor
+
+    pd.DataFrame(rows).to_csv(
+        outdir / "separate_vs_combined_summary.csv",
+        index=False,
+    )
 #enddef
 
 
