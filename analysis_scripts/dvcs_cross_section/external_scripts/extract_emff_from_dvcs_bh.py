@@ -93,17 +93,28 @@ Output:
 
 Run modes
 ---------
-With no mode flag the script runs all three studies:
-  CLAS12 pass 2, CLAS12 pass 1, and CLAS6.
+The publication-facing default studies three measurements when the Saylor
+supplement is available:
 
-Manual single-study overrides:
-  --only-pass2
-  --only-pass1
-  --only-clas6
+  * CLAS6 Jo et al. 2015 (Gepard dataset 98)
+  * CLAS6 Hirlinger Saylor et al. 2018 (local supplemental table)
+  * CLAS12 Lee 2026 (all_bin_v3.csv)
 
-After the default all-three run, comparison plots of Fit 5 and Fit 8
-F1, F2, GE, and GM with propagated Hessian bands are written under
-output/emff_from_bh_paper_method/comparisons/.
+It fits each separately and every pair/triple combination with common
+form-factor parameters but independent dataset normalization nuisances.
+
+CLAS12 pass 2 is deliberately excluded from the default publication-facing
+workflow and is retained only as an explicit option.
+
+The script also contains:
+  * KM15 BH-purity threshold scans from 1--10%;
+  * separate threshold scans with published experimental errors only and
+    with the Moradi threshold-dependent extra uncertainty;
+  * direct elastic comparisons (Kelly, AMT, A1/Bernauer);
+  * low-Q2 GE/GD, GM/(mu_p GD), and mu_p GE/GM diagnostics;
+  * local BH F1/F2 logarithmic sensitivity diagnostics;
+  * a radius-extrapolation bias/variance pseudodata framework using
+    polynomial, inverse-polynomial, and continued-fraction Sachs forms.
 
 to bypass the CLAS12 CSV and reproduce the Moradi-et-al. analysis using
 Gepard's built-in CLAS6 2015 XUU dataset (ID 98). Results are written to
@@ -122,6 +133,7 @@ import os
 import sys
 import time
 import warnings
+import urllib.request
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
@@ -154,6 +166,15 @@ GLOBAL_SCALE_FRAC = 0.0476
 # Gepard CLAS:2015uuo (H.S. Jo et al., arXiv:1504.02009)
 # dataset 98 = 2640-point beam-helicity-independent XUU cross section.
 CLAS6_GEPARD_DATASET_ID = 98
+
+SAYLOR_EBEAM = 5.88
+SAYLOR_GLOBAL_SCALE_FRAC = 0.04
+DEFAULT_SAYLOR_FILE = "import/saylor_CLAS6.txt"
+SAYLOR_SUPPLEMENT_URL = (
+    "https://uknowledge.uky.edu/cgi/viewcontent.cgi?"
+    "article=1625&context=physastron_facpub&filename=1&type=additional"
+)
+
 CLAS6_BEAM_ENERGY = 5.75
 DEFAULT_PASS1_CSV = "../imports/all_bin_v3.csv"
 PASS1_GLOBAL_SCALE_FRAC = 0.31
@@ -411,6 +432,277 @@ def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
         f"global scale={100*PASS1_GLOBAL_SCALE_FRAC:.1f}%"
     )
     return outdf
+#enddef
+
+
+
+def maybe_download_saylor_supplement(path: Path, force: bool = False) -> Path:
+    """
+    Try to download the public Saylor et al. supplemental TXT.
+
+    Automated downloads from institutional repositories can occasionally
+    reject non-browser clients.  If this fails, download Supplemental-material.txt
+    manually from the PRC/UKnowledge paper page and save it at ``path``.
+    """
+    path = Path(path).expanduser().resolve()
+    if path.exists() and not force:
+        return path
+    #endif
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"[SAYLOR] Downloading supplemental table -> {path}")
+    request = urllib.request.Request(
+        SAYLOR_SUPPLEMENT_URL,
+        headers={"User-Agent": "Mozilla/5.0"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            payload = response.read()
+        #endwith
+        if len(payload) < 1000:
+            raise RuntimeError(
+                f"downloaded payload is unexpectedly small ({len(payload)} bytes)"
+            )
+        #endif
+        path.write_bytes(payload)
+        print(f"[SAYLOR] Downloaded {len(payload):,} bytes.")
+    except Exception as exc:
+        raise RuntimeError(
+            "Automatic Saylor supplemental download failed.  Download the "
+            "'Supplemental-material.txt' attachment for Phys. Rev. C 98, "
+            "045203 (2018) manually and save it as:\n"
+            f"  {path}\n"
+            "Then rerun without --download-saylor.\n"
+            f"Underlying error: {exc}"
+        ) from exc
+    #endtry
+    return path
+#enddef
+
+
+def _normalize_saylor_header_token(token: str) -> str:
+    token = token.strip().lower()
+    token = token.replace("<", "").replace(">", "")
+    token = token.replace("^", "").replace("{", "").replace("}", "")
+    token = token.replace("(", "").replace(")", "")
+    token = token.replace("[", "").replace("]", "")
+    token = token.replace("-", "")
+    token = token.replace("_", "")
+    token = token.replace("/", "")
+    return token
+#enddef
+
+
+def _saylor_column_role(token: str) -> Optional[str]:
+    """Map common supplemental-table header spellings to canonical roles."""
+    t = _normalize_saylor_header_token(token)
+
+    if t in {"xb", "x_b", "xbavg", "xmean"} or "xb" == t:
+        return "xB"
+    #endif
+    if t in {"q2", "q2avg", "q2mean"} or t.startswith("q2"):
+        return "Q2"
+    #endif
+    if t in {"t", "tavg", "tmean", "abst", "minust"}:
+        return "t_abs"
+    #endif
+    if t.startswith("phi"):
+        return "phi_deg"
+    #endif
+
+    # Unpolarized cross section and its errors.  The supplement also contains
+    # polarized quantities; require an unpolarized-like marker where possible.
+    if any(k in t for k in ["sigmaunp", "sigunp", "xsecunp", "crosssectionunp"]):
+        if "stat" in t:
+            return "stat"
+        #endif
+        if "sys" in t or "syst" in t:
+            return "sys_total"
+        #endif
+        return "xs"
+    #endif
+    if t in {"sig", "sigma", "xsec", "crosssection"}:
+        return "xs"
+    #endif
+    if "stat" in t and not any(k in t for k in ["pol", "asym"]):
+        return "stat"
+    #endif
+    if ("sys" in t or "syst" in t) and not any(k in t for k in ["pol", "asym"]):
+        return "sys_total"
+    #endif
+    return None
+#enddef
+
+
+def load_saylor_supplement(path: str) -> pd.DataFrame:
+    """
+    Load the Hirlinger Saylor et al. 2018 supplemental unpolarized cross sections.
+
+    Two input styles are supported:
+      1. A normalized CSV with columns
+         xB,Q2,t_abs,phi_deg,xs,stat,sys_total
+         (or ptp_sys instead of sys_total).
+      2. The original whitespace supplemental TXT.  The published file used
+         here has the header
+           xB  Q2  -t  phi  sig  stat-err  sys-err
+         and this exact spelling is supported directly.
+
+    The published 4% elastic-normalization uncertainty is removed in quadrature
+    from ``sys_total`` to form ``ptp_sys`` and is treated separately as a
+    correlated normalization nuisance in the fits.
+    """
+    path = Path(path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Saylor supplemental file not found: {path}\n"
+            "Place saylor_CLAS6.txt there or run with --download-saylor."
+        )
+    #endif
+
+    # First try a user-normalized CSV/TSV.
+    try:
+        trial = pd.read_csv(path, sep=None, engine="python", comment="#")
+        canonical = {c.strip(): c for c in trial.columns}
+        needed = {"xB", "Q2", "t_abs", "phi_deg", "xs", "stat"}
+        if needed.issubset(canonical):
+            df = trial.copy()
+            if "sys_total" not in df.columns and "ptp_sys" not in df.columns:
+                df["sys_total"] = 0.0
+            #endif
+            print("[SAYLOR] Parsed normalized tabular input.")
+        else:
+            raise ValueError("not normalized table")
+        #endif
+    except Exception:
+        lines = path.read_text(errors="replace").splitlines()
+
+        # Look for a header line with the essential kinematic names.
+        header_idx = None
+        roles = None
+        for iline, line in enumerate(lines):
+            raw_tokens = re.split(r"\s+", line.strip())
+            this_roles = [_saylor_column_role(tok) for tok in raw_tokens]
+            role_set = {r for r in this_roles if r is not None}
+            if {"xB", "Q2", "t_abs", "phi_deg"}.issubset(role_set) and "xs" in role_set:
+                header_idx = iline
+                roles = this_roles
+                break
+            #endif
+        #endfor
+
+        if header_idx is None:
+            preview = "\n".join(lines[:35])
+            raise RuntimeError(
+                "Could not automatically identify the Saylor supplemental "
+                "column header.  The raw file format may differ from the "
+                "archived text version expected by this script.\n\n"
+                "First 35 lines were:\n"
+                + preview
+                + "\n\nA simple fallback is to convert the file once to a CSV "
+                  "with columns xB,Q2,t_abs,phi_deg,xs,stat,sys_total."
+            )
+        #endif
+
+        rows = []
+        ncols = len(roles)
+        for line in lines[header_idx + 1:]:
+            tokens = re.split(r"\s+", line.strip())
+            if len(tokens) < ncols:
+                continue
+            #endif
+            try:
+                vals = [float(tok) for tok in tokens[:ncols]]
+            except ValueError:
+                continue
+            #endtry
+
+            row = {}
+            for role, val in zip(roles, vals):
+                if role is not None and role not in row:
+                    row[role] = val
+                #endif
+            #endfor
+            if {"xB", "Q2", "t_abs", "phi_deg", "xs", "stat"}.issubset(row):
+                rows.append(row)
+            #endif
+        #endfor
+
+        if not rows:
+            raise RuntimeError(
+                "Recognized a Saylor header but extracted no numerical "
+                "unpolarized-cross-section rows."
+            )
+        #endif
+        df = pd.DataFrame(rows)
+        if "sys_total" not in df:
+            df["sys_total"] = 0.0
+        #endif
+        print(f"[SAYLOR] Parsed original supplemental TXT: {len(df)} rows.")
+    #endtry
+
+    # Canonicalize signs/angles and build point-to-point systematic.
+    df = df.copy()
+    df["xB"] = pd.to_numeric(df["xB"], errors="coerce")
+    df["Q2"] = pd.to_numeric(df["Q2"], errors="coerce")
+    df["t_abs"] = np.abs(pd.to_numeric(df["t_abs"], errors="coerce"))
+    df["phi_deg"] = pd.to_numeric(df["phi_deg"], errors="coerce")
+    df["xs"] = pd.to_numeric(df["xs"], errors="coerce")
+    df["stat"] = np.abs(pd.to_numeric(df["stat"], errors="coerce"))
+
+    if "ptp_sys" in df:
+        df["ptp_sys"] = np.abs(pd.to_numeric(df["ptp_sys"], errors="coerce"))
+        df["sys_total"] = np.sqrt(
+            df["ptp_sys"]**2 + (SAYLOR_GLOBAL_SCALE_FRAC * df["xs"])**2
+        )
+    else:
+        df["sys_total"] = np.abs(
+            pd.to_numeric(df.get("sys_total", 0.0), errors="coerce")
+        )
+        global_abs = SAYLOR_GLOBAL_SCALE_FRAC * np.abs(df["xs"])
+        df["ptp_sys"] = np.sqrt(
+            np.maximum(df["sys_total"]**2 - global_abs**2, 0.0)
+        )
+    #endif
+
+    finite = (
+        np.isfinite(df["xB"])
+        & np.isfinite(df["Q2"])
+        & np.isfinite(df["t_abs"])
+        & np.isfinite(df["phi_deg"])
+        & np.isfinite(df["xs"])
+        & np.isfinite(df["stat"])
+        & (df["xs"] > 0.0)
+        & (df["stat"] > 0.0)
+    )
+    df = df.loc[finite].reset_index(drop=True)
+    df["phi_deg"] = np.mod(df["phi_deg"], 360.0)
+    df["source"] = "CLAS6 Saylor 2018"
+    df["ebeam"] = SAYLOR_EBEAM
+
+    print(
+        f"[SAYLOR] Loaded {len(df)} valid unpolarized points; "
+        f"median stat/xs={100*np.median(df['stat']/df['xs']):.1f}%, "
+        f"median total sys/xs={100*np.median(df['sys_total']/df['xs']):.1f}%, "
+        f"global scale={100*SAYLOR_GLOBAL_SCALE_FRAC:.1f}%."
+    )
+    return df
+#enddef
+
+
+def evaluate_km15_saylor_dataframe(
+        df: pd.DataFrame,
+        workers: int,
+        cache_path: Path,
+        force: bool = False) -> pd.DataFrame:
+    """KM15/BH decomposition for the 5.88-GeV Saylor bin centers."""
+    tmp = df.copy()
+    return evaluate_km15_dataframe(
+        tmp,
+        ebeam=SAYLOR_EBEAM,
+        workers=workers,
+        cache_path=cache_path,
+        force=force,
+    )
 #enddef
 
 
@@ -1528,6 +1820,236 @@ def fit_paper_model(data: pd.DataFrame,
 
 
 
+
+def dataset_point_errors(
+        data: pd.DataFrame,
+        dataset_kind: str,
+        bh_cut: float,
+        add_moradi_bh_systematic: bool) -> np.ndarray:
+    """Canonical uncorrelated fit errors for each published measurement."""
+    y = data["xs"].to_numpy(float)
+
+    if dataset_kind == "jo2015":
+        # Gepard pt.err is the published total point uncertainty used in the
+        # Moradi reproduction.
+        base = data["err"].to_numpy(float)
+    elif dataset_kind in {"saylor2018", "pass1"}:
+        stat = data["stat"].to_numpy(float)
+        ptp = data.get("ptp_sys", pd.Series(np.zeros(len(data)))).to_numpy(float)
+        base = np.sqrt(stat**2 + ptp**2)
+    else:
+        raise ValueError(f"unknown dataset kind: {dataset_kind}")
+    #endif
+
+    if add_moradi_bh_systematic:
+        base = np.sqrt(base**2 + (float(bh_cut) * y)**2)
+    #endif
+    return base
+#enddef
+
+
+def fit_multi_measurements(
+        datasets: Sequence[Dict[str, object]],
+        kind: str,
+        fit_name: str,
+        bh_cut: float = 0.05,
+        add_moradi_bh_systematic: bool = True) -> FitResult:
+    """
+    Simultaneous common-form-factor fit to any subset of Jo 2015,
+    Saylor 2018, and CLAS12 Lee 2026.
+
+    Each measurement has its own cross-section data and uncertainty model.
+    Correlated normalization nuisances are independent between experiments:
+      Jo 2015: none, matching the Moradi/Gepard treatment;
+      Saylor 2018: 4% elastic-normalization nuisance;
+      CLAS12 Lee 2026: 31% conservative global normalization nuisance.
+    """
+    names, p0 = paper_model_setup(kind)
+
+    nuisance_names = []
+    nuisance_fracs = {}
+    for spec in datasets:
+        frac = float(spec.get("norm_frac", 0.0))
+        if frac > 0.0:
+            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", str(spec["key"]))
+            nuisance_names.append(nname)
+            nuisance_fracs[nname] = frac
+        #endif
+    #endfor
+
+    fit_names = list(names) + nuisance_names
+    fit_p0 = np.concatenate([p0, np.zeros(len(nuisance_names), dtype=float)])
+
+    prepared = []
+    for spec in datasets:
+        d = spec["data"]
+        prepared.append({
+            "key": spec["key"],
+            "kind": spec["kind"],
+            "norm_frac": float(spec.get("norm_frac", 0.0)),
+            "q": d["t_abs"].to_numpy(float),
+            "y": d["xs"].to_numpy(float),
+            "e": dataset_point_errors(
+                d, str(spec["kind"]), bh_cut, add_moradi_bh_systematic
+            ),
+            "A": d["bh_A"].to_numpy(float),
+            "B": d["bh_B"].to_numpy(float),
+            "C": d["bh_C"].to_numpy(float),
+            "N": len(d),
+        })
+    #endfor
+
+    nuisance_index = {
+        name: len(names) + i for i, name in enumerate(nuisance_names)
+    }
+
+    def chi2_minuit(*values):
+        p = np.asarray(values, dtype=float)
+        ff = p[:len(names)]
+        total = 0.0
+
+        for item in prepared:
+            f1, f2 = paper_model_f1f2(kind, item["q"], ff)
+            pred = bh_from_f1f2(item["A"], item["B"], item["C"], f1, f2)
+
+            frac = item["norm_frac"]
+            if frac > 0.0:
+                nname = "beta_" + re.sub(
+                    r"[^A-Za-z0-9]+", "_", str(item["key"])
+                )
+                beta = p[nuisance_index[nname]]
+                pred = pred * (1.0 + frac * beta)
+            #endif
+
+            pulls = (pred - item["y"]) / item["e"]
+            total += float(np.dot(pulls, pulls))
+        #endfor
+
+        for nname in nuisance_names:
+            beta = p[nuisance_index[nname]]
+            total += float(beta**2)
+        #endfor
+        return total
+    #enddef
+
+    m = Minuit(chi2_minuit, *fit_p0, name=tuple(fit_names))
+    m.errordef = Minuit.LEAST_SQUARES
+    for name in names:
+        m.limits[name] = (1.0e-6, None)
+    #endfor
+    for nname in nuisance_names:
+        m.limits[nname] = (-10.0, 10.0)
+    #endfor
+
+    m.migrad()
+    m.hesse()
+
+    full = np.array([float(m.values[n]) for n in fit_names])
+    params = full[:len(names)]
+
+    full_cov = np.full((len(fit_names), len(fit_names)), np.nan)
+    if m.covariance is not None:
+        for i, ni in enumerate(fit_names):
+            for j, nj in enumerate(fit_names):
+                full_cov[i, j] = float(m.covariance[ni, nj])
+            #endfor
+        #endfor
+    #endif
+    cov = full_cov[:len(names), :len(names)]
+
+    def re_of_p(p):
+        return radius_from_shape(
+            lambda qq: f1f2_to_sachs(
+                qq, *paper_model_f1f2(kind, qq, p)
+            )[0],
+            1.0,
+        )
+    #enddef
+
+    def rm_of_p(p):
+        return radius_from_shape(
+            lambda qq: f1f2_to_sachs(
+                qq, *paper_model_f1f2(kind, qq, p)
+            )[1],
+            MU_P,
+        )
+    #enddef
+
+    rE, drE = propagate_scalar(re_of_p, params, cov)
+    rM, drM = propagate_scalar(rm_of_p, params, cov)
+
+    nuisance_meta = {}
+    for nname in nuisance_names:
+        i = nuisance_index[nname]
+        beta = float(full[i])
+        beta_err = (
+            math.sqrt(max(full_cov[i, i], 0.0))
+            if np.isfinite(full_cov[i, i])
+            else np.nan
+        )
+        nuisance_meta[nname] = beta
+        nuisance_meta[nname + "_err"] = beta_err
+        nuisance_meta[nname + "_scale_factor"] = (
+            1.0 + nuisance_fracs[nname] * beta
+        )
+    #endfor
+
+    npts = sum(item["N"] for item in prepared)
+    npar = len(fit_names)
+    ndof = max(npts - npar, 1)
+
+    labels = [str(spec["label"]) for spec in datasets]
+    return FitResult(
+        name=fit_name,
+        category="multi_measurement",
+        bh_cut=bh_cut,
+        npts=npts,
+        npar=npar,
+        chi2=float(m.fval),
+        ndof=ndof,
+        chi2_ndof=float(m.fval) / ndof,
+        success=bool(m.valid),
+        message=(
+            f"valid={m.valid}; accurate={m.accurate}; "
+            f"edm={float(m.fmin.edm):.3e}"
+        ),
+        params=params,
+        param_names=names,
+        covariance=cov,
+        rE_fm=rE,
+        rE_err_fm=drE,
+        rM_fm=rM,
+        rM_err_fm=drM,
+        norm=1.0,
+        norm_err=0.0,
+        model_kind=kind,
+        meta={
+            "dataset": " + ".join(labels),
+            "dataset_labels": labels,
+            "dataset_keys": [str(spec["key"]) for spec in datasets],
+            "add_moradi_bh_systematic": bool(add_moradi_bh_systematic),
+            **nuisance_meta,
+        },
+    )
+#enddef
+
+
+def measurement_spec(
+        key: str,
+        label: str,
+        kind: str,
+        data: pd.DataFrame,
+        norm_frac: float = 0.0) -> Dict[str, object]:
+    return {
+        "key": key,
+        "label": label,
+        "kind": kind,
+        "data": data,
+        "norm_frac": float(norm_frac),
+    }
+#enddef
+
+
 def fit_combined_clas6_pass1(
         clas6: pd.DataFrame,
         pass1: pd.DataFrame,
@@ -1540,7 +2062,7 @@ def fit_combined_clas6_pass1(
     CLAS6:
       published total error + BH-selection systematic; no normalization nuisance.
 
-    CLAS12 pass 1:
+    CLAS12 Lee 2026:
       stat + point-to-point systematic + BH-selection systematic, plus its
       independent 31% correlated global normalization nuisance.
 
@@ -1671,7 +2193,7 @@ def fit_combined_clas6_pass1(
         norm_err=PASS1_GLOBAL_SCALE_FRAC * beta_err,
         model_kind=kind,
         meta={
-            "dataset": "CLAS6 + CLAS12 pass 1",
+            "dataset": "CLAS6 + CLAS12 Lee 2026",
             "N_CLAS6": len(clas6),
             "N_pass1": len(pass1),
             "beta_pass1": beta,
@@ -2186,7 +2708,7 @@ def save_pass1_cross_section_diagnostics(data: pd.DataFrame,
             fmt="o",
             markersize=4.0,
             capsize=2,
-            label="CLAS12 pass-1",
+            label="CLAS12 Lee 2026",
         )
         ax.plot(
             group["phi_deg"],
@@ -2564,6 +3086,425 @@ def save_elastic_reference_comparison(
 #enddef
 
 
+
+def sachs_family_value(q: np.ndarray, coeffs: np.ndarray, family: str) -> np.ndarray:
+    """Normalized G(Q2)/G(0) candidate used by the radius-bias study."""
+    q = np.asarray(q, dtype=float)
+    c = np.asarray(coeffs, dtype=float)
+
+    if family.startswith("P"):
+        out = np.ones_like(q)
+        for i, a in enumerate(c, start=1):
+            out += a * q**i
+        #endfor
+        return out
+    #endif
+
+    if family.startswith("IP"):
+        den = np.ones_like(q)
+        for i, a in enumerate(c, start=1):
+            den += a * q**i
+        #endfor
+        return 1.0 / den
+    #endif
+
+    if family.startswith("CF"):
+        # 1 / (1 + a1 q / (1 + a2 q / (...))).
+        tail = np.ones_like(q)
+        for a in c[::-1]:
+            tail = 1.0 + a * q / tail
+        #endfor
+        return 1.0 / tail
+    #endif
+
+    raise ValueError(f"unknown Sachs family {family}")
+#enddef
+
+
+def sachs_family_radius(coeffs: np.ndarray, family: str) -> float:
+    """Radius from the Q2=0 slope of a normalized Sachs family."""
+    def shape(q):
+        return sachs_family_value(np.asarray(q, dtype=float), coeffs, family)
+    #enddef
+    return radius_from_shape(shape, 1.0)
+#enddef
+
+
+def fit_cross_sections_with_sachs_family(
+        specs: Sequence[Dict[str, object]],
+        family: str,
+        bh_cut: float,
+        add_moradi_bh_systematic: bool,
+        override_y: Optional[Dict[str, np.ndarray]] = None,
+        statistical_only: bool = False) -> Tuple[float, float, bool]:
+    """
+    Fit common GE and GM/mu_p candidate functions directly to BH cross sections.
+
+    The fit internally converts GE,GM -> F1,F2 at each measured Q2, so the
+    extracted radius slopes are defined in the physically relevant Sachs basis.
+    """
+    order = int(re.findall(r"\d+", family)[0])
+    nshape = order
+    names_e = [f"e{i}" for i in range(1, nshape + 1)]
+    names_m = [f"m{i}" for i in range(1, nshape + 1)]
+    fit_names = names_e + names_m
+    p0 = np.zeros(2 * nshape, dtype=float)
+    # Give the first slope a reasonable dipole-like starting point.
+    p0[0] = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
+    p0[nshape] = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
+
+    prepared = []
+    for spec in specs:
+        d = spec["data"]
+        y = (
+            override_y[str(spec["key"])]
+            if override_y is not None
+            else d["xs"].to_numpy(float)
+        )
+        if statistical_only:
+            err = d["stat"].to_numpy(float) if "stat" in d else d["err"].to_numpy(float)
+        else:
+            err = dataset_point_errors(
+                d, str(spec["kind"]), bh_cut, add_moradi_bh_systematic
+            )
+        #endif
+        prepared.append({
+            "q": d["t_abs"].to_numpy(float),
+            "y": np.asarray(y, dtype=float),
+            "e": np.asarray(err, dtype=float),
+            "A": d["bh_A"].to_numpy(float),
+            "B": d["bh_B"].to_numpy(float),
+            "C": d["bh_C"].to_numpy(float),
+        })
+    #endfor
+
+    def chi2(*values):
+        p = np.asarray(values, dtype=float)
+        ce = p[:nshape]
+        cm = p[nshape:]
+        total = 0.0
+        for item in prepared:
+            q = item["q"]
+            ge = sachs_family_value(q, ce, family)
+            gm = MU_P * sachs_family_value(q, cm, family)
+            tau = q / (4.0 * MP2)
+            f1 = (ge + tau * gm) / (1.0 + tau)
+            f2 = (gm - ge) / (1.0 + tau)
+            pred = bh_from_f1f2(item["A"], item["B"], item["C"], f1, f2)
+            pull = (pred - item["y"]) / item["e"]
+            total += float(np.dot(pull, pull))
+        #endfor
+        return total
+    #enddef
+
+    m = Minuit(chi2, *p0, name=tuple(fit_names))
+    m.errordef = Minuit.LEAST_SQUARES
+    m.migrad()
+    m.hesse()
+    pars = np.array([float(m.values[n]) for n in fit_names])
+    rE = sachs_family_radius(pars[:nshape], family)
+    rM = sachs_family_radius(pars[nshape:], family)
+    return rE, rM, bool(m.valid)
+#enddef
+
+
+
+# Per-process state for the radius bias/variance replica workers.  These are
+# initialized once per truth model so the experimental DataFrames and BH
+# coefficients are not serialized with every individual replica task.
+_RADIUS_BIAS_WORKER_SPECS = None
+_RADIUS_BIAS_WORKER_CENTRAL = None
+_RADIUS_BIAS_WORKER_SIGMA = None
+
+
+def _init_radius_bias_worker(
+        specs: Sequence[Dict[str, object]],
+        central_by_key: Dict[str, np.ndarray],
+        sigma_by_key: Dict[str, np.ndarray]) -> None:
+    global _RADIUS_BIAS_WORKER_SPECS
+    global _RADIUS_BIAS_WORKER_CENTRAL
+    global _RADIUS_BIAS_WORKER_SIGMA
+
+    _RADIUS_BIAS_WORKER_SPECS = specs
+    _RADIUS_BIAS_WORKER_CENTRAL = central_by_key
+    _RADIUS_BIAS_WORKER_SIGMA = sigma_by_key
+#enddef
+
+
+def _radius_bias_replica_worker(
+        task: Tuple[str, int]) -> Tuple[str, float, float, bool]:
+    """
+    Generate and fit one pseudodata replica.
+
+    Only the fit-family label and a deterministic RNG seed are sent per task;
+    the large experimental arrays live in process-global state initialized
+    once when the worker starts.
+    """
+    family, seed = task
+    rng = np.random.default_rng(int(seed))
+
+    specs = _RADIUS_BIAS_WORKER_SPECS
+    central_by_key = _RADIUS_BIAS_WORKER_CENTRAL
+    sigma_by_key = _RADIUS_BIAS_WORKER_SIGMA
+    if specs is None or central_by_key is None or sigma_by_key is None:
+        raise RuntimeError("radius-bias worker was not initialized")
+    #endif
+
+    replica_y = {}
+    for spec in specs:
+        key = str(spec["key"])
+        replica_y[key] = rng.normal(
+            central_by_key[key],
+            sigma_by_key[key],
+        )
+    #endfor
+
+    try:
+        re_val, rm_val, valid = fit_cross_sections_with_sachs_family(
+            specs,
+            family=family,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=False,
+            override_y=replica_y,
+            statistical_only=True,
+        )
+    except Exception:
+        return family, np.nan, np.nan, False
+    #endtry
+
+    valid = bool(valid and np.isfinite(re_val) and np.isfinite(rm_val))
+    return family, float(re_val), float(rm_val), valid
+#enddef
+
+
+
+def run_radius_bias_variance_study(
+        bundles: Sequence[Dict[str, object]],
+        args,
+        outdir: Path) -> None:
+    """
+    Grifioen/Hayward-style extrapolation optimization adapted to BH data.
+
+    Candidate common Sachs forms:
+      P1..P4, IP1..IP4, CF1..CF4.
+
+    Truth models:
+      Kelly, AMT, A1/Bernauer order-8 polyxdipole.
+
+    For every truth model the script:
+      1. evaluates pure BH at the exact selected experimental kinematics;
+      2. generates Gaussian replicas using each point's published statistical
+         uncertainty;
+      3. refits every candidate GE and GM/mu_p family;
+      4. obtains the mean extracted radii, replica RMS statistical uncertainty,
+         bias relative to the truth slope, and sqrt(stat^2+bias^2).
+
+    This is opt-in because it requires many Minuit fits.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    families = [f"P{i}" for i in range(1, 5)]
+    families += [f"IP{i}" for i in range(1, 5)]
+    families += [f"CF{i}" for i in range(1, 5)]
+
+    specs = [bundle_to_measurement_spec(b) for b in bundles]
+    truths = {
+        "Kelly": kelly_sachs,
+        "AMT2007": amt2007_sachs,
+        "Bernauer_order8_polyxdipole": bernauer_polyxdipole_sachs,
+    }
+
+    rows = []
+    for truth_name, truth_fn in truths.items():
+        truth_radius = {}
+        for quantity in ["E", "M"]:
+            norm = 1.0 if quantity == "E" else MU_P
+            truth_radius[quantity] = radius_from_shape(
+                lambda qq, qn=quantity: (
+                    truth_fn(np.asarray(qq, dtype=float))[0]
+                    if qn == "E"
+                    else truth_fn(np.asarray(qq, dtype=float))[1]
+                ),
+                norm,
+            )
+        #endfor
+
+        central_by_key = {}
+        sigma_by_key = {}
+        for spec in specs:
+            d = spec["data"]
+            q = d["t_abs"].to_numpy(float)
+            ge, gm = truth_fn(q)
+            tau = q / (4.0 * MP2)
+            f1 = (ge + tau * gm) / (1.0 + tau)
+            f2 = (gm - ge) / (1.0 + tau)
+            central_by_key[str(spec["key"])] = bh_from_f1f2(
+                d["bh_A"].to_numpy(float),
+                d["bh_B"].to_numpy(float),
+                d["bh_C"].to_numpy(float),
+                f1, f2,
+            )
+            sigma_by_key[str(spec["key"])] = (
+                d["stat"].to_numpy(float)
+                if "stat" in d
+                else d["err"].to_numpy(float)
+            )
+        #endfor
+
+        # A fresh process pool is used for each truth model.  The truth-model
+        # central values and statistical errors are installed once per worker.
+        nworkers = (
+            args.radius_bias_workers
+            if args.radius_bias_workers is not None
+            else args.workers
+        )
+        nworkers = max(1, int(nworkers))
+
+        # SeedSequence guarantees deterministic, non-overlapping random streams
+        # independent of worker scheduling.
+        truth_index = list(truths.keys()).index(truth_name)
+        seed_root = np.random.SeedSequence(
+            [int(args.radius_bias_seed), int(truth_index)]
+        )
+        child_seeds = seed_root.spawn(len(families) * args.radius_bias_replicas)
+
+        tasks = []
+        iseed = 0
+        for family in families:
+            for _ in range(args.radius_bias_replicas):
+                seed = int(child_seeds[iseed].generate_state(1, dtype=np.uint64)[0])
+                tasks.append((family, seed))
+                iseed += 1
+            #endfor
+        #endfor
+
+        results_by_family = {
+            family: {"rE": [], "rM": [], "nvalid": 0}
+            for family in families
+        }
+
+        print(
+            f"[radius-bias] truth={truth_name}: "
+            f"{len(tasks)} replica fits with {nworkers} worker(s)..."
+        )
+        t0 = time.time()
+        with ProcessPoolExecutor(
+                max_workers=nworkers,
+                initializer=_init_radius_bias_worker,
+                initargs=(specs, central_by_key, sigma_by_key)) as pool:
+            # map() preserves input ordering but workers execute concurrently.
+            # chunksize > 1 lowers IPC overhead for large replica campaigns.
+            chunksize = max(1, len(tasks) // max(1, 8 * nworkers))
+            for family, re_val, rm_val, valid in pool.map(
+                    _radius_bias_replica_worker,
+                    tasks,
+                    chunksize=chunksize):
+                if valid:
+                    results_by_family[family]["rE"].append(re_val)
+                    results_by_family[family]["rM"].append(rm_val)
+                    results_by_family[family]["nvalid"] += 1
+                #endif
+            #endfor
+        #endwith
+
+        print(
+            f"[radius-bias] truth={truth_name}: finished in "
+            f"{time.time() - t0:.1f} s"
+        )
+
+        for family in families:
+            re_vals = results_by_family[family]["rE"]
+            rm_vals = results_by_family[family]["rM"]
+            nvalid = int(results_by_family[family]["nvalid"])
+
+            for quantity, vals, rtrue in [
+                ("rE", re_vals, truth_radius["E"]),
+                ("rM", rm_vals, truth_radius["M"]),
+            ]:
+                arr = np.asarray(vals, dtype=float)
+                if len(arr) < max(10, args.radius_bias_replicas // 5):
+                    mean = stat = bias = total = np.nan
+                else:
+                    mean = float(np.mean(arr))
+                    stat = float(np.std(arr, ddof=1))
+                    bias = float(mean - rtrue)
+                    total = float(math.sqrt(stat**2 + bias**2))
+                #endif
+                rows.append({
+                    "truth_model": truth_name,
+                    "family": family,
+                    "quantity": quantity,
+                    "truth_radius_fm": rtrue,
+                    "mean_extracted_radius_fm": mean,
+                    "stat_RMS_fm": stat,
+                    "bias_fm": bias,
+                    "sqrt_stat2_plus_bias2_fm": total,
+                    "valid_replicas": nvalid,
+                    "requested_replicas": args.radius_bias_replicas,
+                    "workers": nworkers,
+                })
+            #endfor
+
+            print(
+                f"[radius-bias] truth={truth_name:28s} family={family:3s} "
+                f"valid={nvalid}/{args.radius_bias_replicas}"
+            )
+        #endfor
+    #endfor
+
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "radius_bias_variance_study.csv", index=False)
+
+    # Aggregate the objective across truth models.  RMS across truths gives a
+    # transparent single ranking while preserving the per-truth table above.
+    agg_rows = []
+    for family in families:
+        for quantity in ["rE", "rM"]:
+            part = table.loc[
+                (table["family"] == family)
+                & (table["quantity"] == quantity)
+            ]
+            vals = part["sqrt_stat2_plus_bias2_fm"].to_numpy(float)
+            vals = vals[np.isfinite(vals)]
+            agg_rows.append({
+                "family": family,
+                "quantity": quantity,
+                "RMS_objective_across_truths_fm": (
+                    float(np.sqrt(np.mean(vals**2))) if len(vals) else np.nan
+                ),
+                "max_objective_across_truths_fm": (
+                    float(np.max(vals)) if len(vals) else np.nan
+                ),
+            })
+        #endfor
+    #endfor
+    agg = pd.DataFrame(agg_rows)
+    agg.to_csv(outdir / "radius_bias_variance_ranking.csv", index=False)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.8))
+    for ax, quantity in zip(axes, ["rE", "rM"]):
+        part = agg.loc[agg["quantity"] == quantity].copy()
+        x = np.arange(len(part))
+        ax.plot(
+            x,
+            part["RMS_objective_across_truths_fm"],
+            marker="o",
+        )
+        ax.set_xticks(x)
+        ax.set_xticklabels(part["family"], rotation=45)
+        ax.set_ylabel(r"$\sqrt{\sigma_{\rm stat}^2+b^2}$ (fm)")
+        ax.set_title(quantity)
+        ax.grid(alpha=0.2)
+    #endfor
+    fig.suptitle(
+        "Radius extrapolation bias-variance optimization across truth models",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(outdir / "radius_bias_variance_ranking.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
 def save_bh_local_f1_f2_sensitivity(
         outdir: Path,
         reference_data: pd.DataFrame,
@@ -2878,7 +3819,7 @@ def save_cross_dataset_form_factor_comparison(
         outdir: Path,
         fit_name: str) -> None:
     """
-    Overlay CLAS6, CLAS12 pass-1, and CLAS12 pass-2 fitted form factors
+    Overlay CLAS6, CLAS12 Lee 2026, and CLAS12 pass-2 fitted form factors
     with propagated 68% Hessian bands. No KM15/Gepard calls are made here.
     """
     observed_max = max(
@@ -2993,154 +3934,144 @@ def save_cross_dataset_summary(
 
 
 
-def save_bh_selection_signed_diagnostic(
-        clas6_all: pd.DataFrame,
-        pass1_all: pd.DataFrame,
-        outdir: Path) -> None:
+def save_bh_cut_plateau_study_multi(
+        bundles: Sequence[Dict[str, object]],
+        outdir: Path,
+        tag: str = "all_three") -> None:
     """
-    Show the signed KM15 BH-purity variable.
+    Stability scan from 1% through 10% in |1-R_BH|.
 
-    R_BH = sigma_BH / sigma_EP.
-      R_BH < 1: the full EP prediction is larger than pure BH.
-      R_BH > 1: the full EP prediction is smaller than pure BH, possible when
-                destructive interference outweighs the positive DVCS^2 term.
+    Every threshold is fit twice:
+      * published_errors: published experimental point errors only;
+      * moradi_errors: same errors plus an extra uncorrelated threshold*xsec
+        uncertainty, following Moradi et al.
 
-    Selection is symmetric: |1 - R_BH| <= delta.
-    """
-    fig, ax = plt.subplots(figsize=(8.2, 5.0))
-
-    for data, label in [
-        (clas6_all, "CLAS6 Jo 2015"),
-        (pass1_all, "CLAS12 pass 1"),
-    ]:
-        delta_signed = data["R_BH"].to_numpy(float) - 1.0
-        finite = np.isfinite(delta_signed)
-        ax.hist(
-            100.0 * delta_signed[finite],
-            bins=np.linspace(-20.0, 20.0, 161),
-            histtype="step",
-            linewidth=1.3,
-            density=True,
-            label=label,
-        )
-    #endfor
-
-    for cut in [1.0, 5.0, 10.0]:
-        ax.axvline(-cut, linewidth=0.8, linestyle="--")
-        ax.axvline(+cut, linewidth=0.8, linestyle="--")
-    #endfor
-
-    ax.axvline(0.0, linewidth=0.9)
-    ax.set_xlim(-20.0, 20.0)
-    ax.set_xlabel(r"$100\,(R_{\rm BH}-1)$ (%)")
-    ax.set_ylabel("normalized density")
-    ax.set_title(
-        r"Signed KM15 BH-purity diagnostic; selection uses "
-        r"$|1-R_{\rm BH}|$"
-    )
-    ax.grid(alpha=0.2)
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(outdir / "12_signed_BH_purity_diagnostic.png", dpi=180)
-    plt.close(fig)
-#enddef
-
-
-def save_combined_bh_cut_plateau_study(
-        clas6_all: pd.DataFrame,
-        pass1_all: pd.DataFrame,
-        outdir: Path) -> None:
-    """
-    Refit the combined CLAS6 + CLAS12 pass-1 sample for symmetric KM15
-    BH-purity thresholds from 1% through 10%.
-
-    The purpose is to identify a stability plateau before residual DVCS/
-    interference begins to bias the extracted form factors.  Both Fit-5-like
-    dipole F1/F2 and Fit-8-like F1-with-Kelly-F2 solutions are followed.
+    This separation is essential because the latter mechanically inflates
+    errors as the threshold is loosened and can drive chi2/ndf downward.
     """
     cuts = np.arange(0.01, 0.101, 0.01)
     rows = []
 
     for cut in cuts:
-        c6 = clas6_all.loc[clas6_all["bh_delta"] <= cut].copy()
-        p1 = pass1_all.loc[pass1_all["bh_delta"] <= cut].copy()
+        selected_specs = []
+        counts = {}
+        for bundle in bundles:
+            all_data = bundle["all_data"]
+            selected = all_data.loc[all_data["bh_delta"] <= cut].copy()
+            counts[str(bundle["key"])] = len(selected)
+            selected_specs.append(
+                bundle_to_measurement_spec(bundle, selected)
+            )
+        #endfor
 
-        if len(c6) < 5 or len(p1) < 5:
+        if any(len(spec["data"]) < 5 for spec in selected_specs):
             continue
         #endif
 
-        for kind, fit_label in [
-            ("dipole", "Fit 5 form"),
-            ("fit8_f2_kelly", "Fit 8 form"),
+        for error_mode, add_moradi in [
+            ("published_errors", False),
+            ("moradi_errors", True),
         ]:
-            fr = fit_combined_clas6_pass1(
-                clas6=c6,
-                pass1=p1,
-                kind=kind,
-                fit_name=fit_label,
-                bh_cut=float(cut),
-            )
-            rows.append({
-                "BH_cut_fraction": float(cut),
-                "BH_cut_percent": 100.0 * float(cut),
-                "fit_form": fit_label,
-                "N_CLAS6": len(c6),
-                "N_pass1": len(p1),
-                "N_total": len(c6) + len(p1),
-                "chi2_ndof": fr.chi2_ndof,
-                "rE_fm": fr.rE_fm,
-                "rE_err_fm": fr.rE_err_fm,
-                "rM_fm": fr.rM_fm,
-                "rM_err_fm": fr.rM_err_fm,
-                "pass1_norm_factor": fr.norm,
-                "beta_pass1": fr.meta.get("beta_pass1", np.nan),
-            })
+            for kind, fit_label in [
+                ("dipole", "Fit 5 form"),
+                ("fit8_f2_kelly", "Fit 8 form"),
+            ]:
+                fr = fit_multi_measurements(
+                    selected_specs,
+                    kind=kind,
+                    fit_name=fit_label,
+                    bh_cut=float(cut),
+                    add_moradi_bh_systematic=add_moradi,
+                )
+
+                row = {
+                    "BH_cut_fraction": float(cut),
+                    "BH_cut_percent": 100.0 * float(cut),
+                    "error_mode": error_mode,
+                    "fit_form": fit_label,
+                    "N_total": sum(counts.values()),
+                    "chi2_ndof": fr.chi2_ndof,
+                    "rE_fm": fr.rE_fm,
+                    "rE_err_fm": fr.rE_err_fm,
+                    "rM_fm": fr.rM_fm,
+                    "rM_err_fm": fr.rM_err_fm,
+                }
+                for key, n in counts.items():
+                    row["N_" + key] = n
+                #endfor
+                for mk, mv in fr.meta.items():
+                    if mk.endswith("_scale_factor"):
+                        row[mk] = mv
+                    #endif
+                #endfor
+                rows.append(row)
+            #endfor
         #endfor
     #endfor
 
     table = pd.DataFrame(rows)
-    table.to_csv(outdir / "13_BH_cut_plateau_study.csv", index=False)
+    csv_name = f"BH_cut_plateau_{tag}.csv"
+    table.to_csv(outdir / csv_name, index=False)
 
-    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.0), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=(12.0, 8.2), sharex=True)
+    line_styles = {
+        "published_errors": "-",
+        "moradi_errors": "--",
+    }
 
-    for fit_label in ["Fit 5 form", "Fit 8 form"]:
-        part = table.loc[table["fit_form"] == fit_label].copy()
-        x = part["BH_cut_percent"].to_numpy(float)
+    for error_mode in ["published_errors", "moradi_errors"]:
+        for fit_label in ["Fit 5 form", "Fit 8 form"]:
+            part = table.loc[
+                (table["error_mode"] == error_mode)
+                & (table["fit_form"] == fit_label)
+            ].sort_values("BH_cut_percent")
 
-        axes[0, 0].errorbar(
-            x, part["rE_fm"], yerr=part["rE_err_fm"],
-            marker="o", markersize=4, capsize=2, label=fit_label,
-        )
-        axes[0, 1].errorbar(
-            x, part["rM_fm"], yerr=part["rM_err_fm"],
-            marker="o", markersize=4, capsize=2, label=fit_label,
-        )
-        axes[1, 0].plot(
-            x, part["chi2_ndof"], marker="o", markersize=4, label=fit_label
-        )
-        axes[1, 1].plot(
-            x, part["pass1_norm_factor"], marker="o", markersize=4,
-            label=fit_label,
-        )
+            label = (
+                f"{fit_label}, "
+                + ("published errors" if error_mode == "published_errors"
+                   else "Moradi + threshold sys.")
+            )
+            x = part["BH_cut_percent"].to_numpy(float)
+            ls = line_styles[error_mode]
+
+            axes[0, 0].errorbar(
+                x, part["rE_fm"], yerr=part["rE_err_fm"],
+                marker="o", markersize=3.5, capsize=2,
+                linestyle=ls, label=label,
+            )
+            axes[0, 1].errorbar(
+                x, part["rM_fm"], yerr=part["rM_err_fm"],
+                marker="o", markersize=3.5, capsize=2,
+                linestyle=ls, label=label,
+            )
+            axes[1, 0].plot(
+                x, part["chi2_ndof"],
+                marker="o", markersize=3.5, linestyle=ls, label=label,
+            )
+            axes[1, 1].plot(
+                x, part["N_total"],
+                marker="o", markersize=3.5, linestyle=ls, label=label,
+            )
+        #endfor
     #endfor
 
     axes[0, 0].set_ylabel(r"$r_E$ (fm)")
     axes[0, 1].set_ylabel(r"$r_M$ (fm)")
-    axes[1, 0].set_ylabel(r"$\chi^2/{\rm dof}$")
-    axes[1, 1].set_ylabel("CLAS12 pass-1 scale factor")
-    axes[1, 0].set_xlabel(r"KM15 $|1-R_{\rm BH}|$ threshold (%)")
-    axes[1, 1].set_xlabel(r"KM15 $|1-R_{\rm BH}|$ threshold (%)")
+    axes[1, 0].set_ylabel(r"$\chi^2/{\rm ndf}$")
+    axes[1, 1].set_ylabel("selected points")
+    axes[1, 0].set_xlabel(r"$|1-R_{\rm BH}|$ threshold (%)")
+    axes[1, 1].set_xlabel(r"$|1-R_{\rm BH}|$ threshold (%)")
 
     for ax in axes.ravel():
         ax.grid(alpha=0.2)
     #endfor
-    axes[0, 0].legend(fontsize=8)
+    axes[0, 0].legend(fontsize=7)
     fig.suptitle(
-        "Combined CLAS6 + CLAS12 pass-1 stability vs BH-purity threshold",
+        "BH-purity plateau: published uncertainties vs Moradi prescription",
         y=0.995,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(outdir / "13_BH_cut_plateau_study.png", dpi=180)
+    fig.savefig(outdir / f"BH_cut_plateau_{tag}.png", dpi=180)
     plt.close(fig)
 #enddef
 
@@ -3201,11 +4132,10 @@ def run_clas6_pass1_combined_from_bundles(
 
     clas6_all = clas6_bundle.get("all_data", clas6)
     pass1_all = pass1_bundle.get("all_data", pass1)
-    save_bh_selection_signed_diagnostic(clas6_all, pass1_all, outdir)
-    save_combined_bh_cut_plateau_study(clas6_all, pass1_all, outdir)
+    save_bh_cut_plateau_study_multi([clas6_bundle, pass1_bundle], outdir, tag='jo2015_plus_pass1')
 
     return {
-        "label": "CLAS6 + CLAS12 pass 1",
+        "label": "CLAS6 + CLAS12 Lee 2026",
         "results": results,
         "set5": reference,
         "outdir": outdir,
@@ -3216,7 +4146,7 @@ def run_clas6_pass1_combined_from_bundles(
 def save_published_dataset_comparisons(
         bundles: Sequence[Dict[str, object]],
         outdir: Path) -> None:
-    """CLAS6, CLAS12 pass-1, and their simultaneous-fit comparison."""
+    """CLAS6, CLAS12 Lee 2026, and their simultaneous-fit comparison."""
     outdir.mkdir(parents=True, exist_ok=True)
     for fit_name in ["Fit 5", "Fit 8"]:
         save_cross_dataset_form_factor_comparison(
@@ -3230,27 +4160,118 @@ def save_published_dataset_comparisons(
 
 def run_published_default(args) -> int:
     """
-    Default publication-facing workflow:
-      CLAS6 -> CLAS12 pass 1 -> simultaneous CLAS6+pass1.
-    Pass 2 is deliberately excluded unless explicitly requested.
+    Publication-facing workflow.
+
+    Always runs:
+      Jo 2015 CLAS6
+      CLAS12 Lee 2026
+
+    If the Saylor supplemental table exists (or --download-saylor succeeds),
+    also runs Saylor 2018 and constructs all pairwise and three-way
+    combinations.
     """
     print("\n" + "=" * 78)
-    print("[DEFAULT MODE] CLAS6 + CLAS12 pass 1 publication-facing study")
+    print("[DEFAULT MODE] Published BH form-factor/radius study")
     print("=" * 78)
 
-    clas6 = run_clas6_validation(args, return_results=True)
+    jo = run_clas6_validation(args, return_results=True)
     pass1 = run_pass1_validation(args, return_results=True)
-    combined = run_clas6_pass1_combined_from_bundles(clas6, pass1, args)
+
+    saylor_path = Path(args.saylor_file).expanduser()
+    if args.download_saylor:
+        saylor_path = maybe_download_saylor_supplement(
+            saylor_path, force=args.force_saylor_download
+        )
+        args.saylor_file = str(saylor_path)
+    #endif
+
+    saylor = None
+    if not args.skip_saylor and saylor_path.exists():
+        saylor = run_saylor_validation(args, return_results=True)
+    elif not args.skip_saylor:
+        print(
+            "\n[SAYLOR] Supplemental table is not present, so the default "
+            "workflow will continue with Jo 2015 + CLAS12 Lee 2026 only.\n"
+            f"Expected path: {saylor_path.resolve()}\n"
+            "Download Supplemental-material.txt there, or use --download-saylor."
+        )
+    #endif
+
+    all_bundles = [jo, pass1]
+    combos = []
+
+    if saylor is not None:
+        all_bundles = [jo, saylor, pass1]
+        combos.append(run_measurement_combination(
+            [jo, saylor], args, "jo2015_plus_saylor2018"
+        ))
+        combos.append(run_measurement_combination(
+            [jo, pass1], args, "jo2015_plus_pass1"
+        ))
+        combos.append(run_measurement_combination(
+            [saylor, pass1], args, "saylor2018_plus_pass1"
+        ))
+        triple = run_measurement_combination(
+            [jo, saylor, pass1], args, "all_three"
+        )
+        combos.append(triple)
+
+        plateau_dir = (
+            Path(args.outdir).expanduser().resolve()
+            / "measurement_combinations"
+            / "all_three"
+        )
+        save_bh_cut_plateau_study_multi(
+            [jo, saylor, pass1], plateau_dir, tag="all_three"
+        )
+
+        if args.run_radius_bias_study:
+            run_radius_bias_variance_study(
+                [jo, saylor, pass1],
+                args,
+                plateau_dir / "radius_bias_variance",
+            )
+        #endif
+    else:
+        combo = run_measurement_combination(
+            [jo, pass1], args, "jo2015_plus_pass1"
+        )
+        combos.append(combo)
+        save_bh_cut_plateau_study_multi(
+            [jo, pass1],
+            combo["outdir"],
+            tag="jo2015_plus_pass1",
+        )
+        if args.run_radius_bias_study:
+            run_radius_bias_variance_study(
+                [jo, pass1],
+                args,
+                combo["outdir"] / "radius_bias_variance",
+            )
+        #endif
+    #endif
 
     comparison_dir = (
         Path(args.outdir).expanduser().resolve()
-        / "comparisons_published"
+        / "separate_vs_combined"
     )
+    comparison_bundles = all_bundles + combos
+    save_separate_vs_combined_radius_summary(
+        comparison_bundles, comparison_dir
+    )
+    save_separate_vs_combined_table(
+        comparison_bundles, comparison_dir
+    )
+
+    # Keep the existing cross-dataset FF comparison focused on the individual
+    # published measurements plus the maximal combination.
+    maximal = combos[-1]
     save_published_dataset_comparisons(
-        [clas6, pass1, combined],
+        all_bundles + [maximal],
         comparison_dir,
     )
-    print(f"\n[comparison] Published-data comparisons -> {comparison_dir}")
+
+    print(f"\n[summary] Separate-vs-combined results -> {comparison_dir}")
     return 0
 #enddef
 
@@ -3461,11 +4482,139 @@ def run_pass1_validation(args, return_results: bool = False):
 
     print(f"\nDone. Pass-1 validation results are in {outdir}")
     if return_results:
-        return {"label": "CLAS12 pass 1", "results": fit_results,
-                "set5": set5, "all_data": df.copy(), "outdir": outdir}
+        return {
+            "label": "CLAS12 Lee 2026",
+            "key": "pass1",
+            "kind": "pass1",
+            "norm_frac": PASS1_GLOBAL_SCALE_FRAC,
+            "results": fit_results,
+            "set5": set5,
+            "all_data": df.copy(),
+            "outdir": outdir,
+        }
     #endif
     return 0
 #enddef
+
+
+
+def run_saylor_validation(args, return_results: bool = False):
+    """Standalone Saylor 2018 BH/form-factor analysis."""
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        / "clas6_saylor2018"
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    saylor_path = Path(args.saylor_file).expanduser()
+    if args.download_saylor:
+        saylor_path = maybe_download_saylor_supplement(
+            saylor_path, force=args.force_saylor_download
+        )
+    #endif
+
+    print("=" * 78)
+    print("[CLAS6 SAYLOR 2018 MODE]")
+    print(f"[input]  {saylor_path.resolve()}")
+    print(f"[output] {outdir}")
+    print("=" * 78)
+
+    df = load_saylor_supplement(str(saylor_path))
+    cache = outdir / "km15_bh_decomposition_saylor2018.csv"
+    df = evaluate_km15_saylor_dataframe(
+        df,
+        workers=args.workers,
+        cache_path=cache,
+        force=args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["R_BH"])
+        & np.isfinite(df["bh_A"])
+        & np.isfinite(df["bh_B"])
+        & np.isfinite(df["bh_C"])
+    )
+    df = df.loc[finite].reset_index(drop=True)
+
+    fit_results = []
+    sets = {}
+    for i, cut in enumerate(args.bh_cuts, start=1):
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        sets[float(cut)] = selected
+        if len(selected) < 5:
+            continue
+        #endif
+        fr = fit_multi_measurements(
+            [measurement_spec(
+                "saylor2018", "CLAS6 Saylor 2018", "saylor2018",
+                selected, SAYLOR_GLOBAL_SCALE_FRAC
+            )],
+            kind="dipole",
+            fit_name=f"Fit {i}",
+            bh_cut=float(cut),
+            add_moradi_bh_systematic=True,
+        )
+        fit_results.append(fr)
+        print(
+            f"[SAYLOR fit] Fit {i}: N={fr.npts:4d} "
+            f"chi2/dof={fr.chi2_ndof:.3f}"
+        )
+    #endfor
+
+    set5 = sets.get(0.05)
+    if set5 is None or len(set5) < 5:
+        raise RuntimeError("Saylor 5% BH-selected sample has too few points.")
+    #endif
+
+    for kind, name in [
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
+    ]:
+        fit_results.append(
+            fit_multi_measurements(
+                [measurement_spec(
+                    "saylor2018", "CLAS6 Saylor 2018", "saylor2018",
+                    set5, SAYLOR_GLOBAL_SCALE_FRAC
+                )],
+                kind=kind,
+                fit_name=name,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+        )
+    #endfor
+
+    pd.DataFrame(
+        [fitresult_to_record(fr) for fr in fit_results]
+    ).to_csv(outdir / "fit_results.csv", index=False)
+
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+    save_low_q2_ratio_plots(fit_results, set5, outdir)
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
+    save_bh_local_f1_f2_sensitivity(
+        outdir, set5, next(r for r in fit_results if r.name == "Fit 5")
+    )
+
+    bundle = {
+        "label": "CLAS6 Saylor 2018",
+        "key": "saylor2018",
+        "kind": "saylor2018",
+        "norm_frac": SAYLOR_GLOBAL_SCALE_FRAC,
+        "results": fit_results,
+        "set5": set5,
+        "all_data": df.copy(),
+        "outdir": outdir,
+    }
+    if return_results:
+        return bundle
+    #endif
+    return 0
+#enddef
+
 
 
 def run_clas6_validation(args, return_results: bool = False):
@@ -3712,8 +4861,16 @@ def run_clas6_validation(args, return_results: bool = False):
     ]].to_string(index=False))
     print(f"\nDone. CLAS6 validation results are in {outdir}")
     if return_results:
-        return {"label": "CLAS6", "results": fit_results,
-                "set5": set5, "all_data": df.copy(), "outdir": outdir}
+        return {
+            "label": "CLAS6 Jo 2015",
+            "key": "jo2015",
+            "kind": "jo2015",
+            "norm_frac": 0.0,
+            "results": fit_results,
+            "set5": set5,
+            "all_data": df.copy(),
+            "outdir": outdir,
+        }
     #endif
     return 0
 #enddef
@@ -3735,7 +4892,7 @@ def build_parser() -> argparse.ArgumentParser:
     mode.add_argument(
         "--only-pass1",
         action="store_true",
-        help="Run only the CLAS12 pass-1 diagnostic",
+        help="Run only the CLAS12 Lee 2026 diagnostic",
     )
     mode.add_argument(
         "--only-clas6",
@@ -3743,10 +4900,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Run only the CLAS6/Gepard validation",
     )
     mode.add_argument(
+        "--only-saylor",
+        action="store_true",
+        help="Run only the CLAS6 Hirlinger Saylor et al. 2018 measurement",
+    )
+    mode.add_argument(
         "--only-clas6-pass1-combined",
         action="store_true",
         help=(
-            "Run CLAS6 and CLAS12 pass-1 inputs and then fit them "
+            "Run CLAS6 and CLAS12 Lee 2026 inputs and then fit them "
             "simultaneously with common form-factor parameters"
         ),
     )
@@ -3758,7 +4920,56 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--pass1-csv",
         default=DEFAULT_PASS1_CSV,
-        help="Legacy CLAS12 pass-1 cross-section CSV",
+        help="Legacy CLAS12 Lee 2026 cross-section CSV",
+    )
+    p.add_argument(
+        "--saylor-file",
+        default=DEFAULT_SAYLOR_FILE,
+        help="CLAS6 Saylor 2018 saylor_CLAS6.txt or normalized CSV",
+    )
+    p.add_argument(
+        "--download-saylor",
+        action="store_true",
+        help="Attempt to download the public Saylor supplemental TXT",
+    )
+    p.add_argument(
+        "--force-saylor-download",
+        action="store_true",
+        help="Redownload the Saylor supplemental even if the local file exists",
+    )
+    p.add_argument(
+        "--skip-saylor",
+        action="store_true",
+        help="Do not run Saylor 2018 even if its supplemental file is present",
+    )
+    p.add_argument(
+        "--run-radius-bias-study",
+        action="store_true",
+        help=(
+            "Run the expensive GE/GM polynomial, inverse-polynomial, and "
+            "continued-fraction radius bias/variance pseudodata study"
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-replicas",
+        type=int,
+        default=300,
+        help="Gaussian pseudodata replicas per truth model and fit family",
+    )
+    p.add_argument(
+        "--radius-bias-workers",
+        type=int,
+        default=None,
+        help=(
+            "Process workers for the radius bias/variance replicas; "
+            "defaults to --workers"
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-seed",
+        type=int,
+        default=20260830,
+        help="Random seed for the radius bias/variance pseudodata study",
     )
     p.add_argument(
         "--clas6-dataset-id",
@@ -4178,10 +5389,15 @@ def main() -> int:
     if args.only_clas6:
         return run_clas6_validation(args)
     #endif
+    if args.only_saylor:
+        return run_saylor_validation(args)
+    #endif
     if args.only_clas6_pass1_combined:
-        clas6 = run_clas6_validation(args, return_results=True)
+        jo = run_clas6_validation(args, return_results=True)
         pass1 = run_pass1_validation(args, return_results=True)
-        run_clas6_pass1_combined_from_bundles(clas6, pass1, args)
+        run_measurement_combination(
+            [jo, pass1], args, "jo2015_plus_pass1"
+        )
         return 0
     #endif
     if args.all_including_pass2:
