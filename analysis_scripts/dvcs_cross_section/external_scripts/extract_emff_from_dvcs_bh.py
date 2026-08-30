@@ -1099,7 +1099,7 @@ def elastic_reference_curves(q: np.ndarray) -> Dict[str, Tuple[np.ndarray, np.nd
     return {
         "Kelly 2004": kelly_sachs(q),
         "AMT 2007": amt2007_sachs(q),
-        "A1/Bernauer polyxdipole": bernauer_polyxdipole_sachs(q),
+        "A1/Bernauer order-8 poly×dipole": bernauer_polyxdipole_sachs(q),
     }
 #enddef
 
@@ -1852,7 +1852,7 @@ def derived_form_factor_band(
 # Plotting
 # -----------------------------------------------------------------------------
 def draw_t_reference_lines(ax, data: pd.DataFrame) -> None:
-    """Draw thin |t|/Q2 reference lines without obscuring Hessian bands."""
+    """Draw only the fitted |t|/Q2 limits; ultra-low-Q2 reference lines are omitted."""
     if len(data) == 0:
         return
     #endif
@@ -1861,24 +1861,12 @@ def draw_t_reference_lines(ax, data: pd.DataFrame) -> None:
         float(data["t_abs"].min()),
         linewidth=0.8,
         linestyle="-",
-        label="CLAS12 fitted |t| limits",
+        label="fitted |t| limits",
     )
     ax.axvline(
         float(data["t_abs"].max()),
         linewidth=0.8,
         linestyle="-",
-    )
-    ax.axvline(
-        A1_BERNAUER_Q2_MIN,
-        linewidth=0.8,
-        linestyle="--",
-        label=r"A1/Bernauer $Q^2_{\min}$",
-    )
-    ax.axvline(
-        PRAD_Q2_MIN,
-        linewidth=0.8,
-        linestyle=":",
-        label=r"PRad $Q^2_{\min}$",
     )
 #enddef
 
@@ -2623,10 +2611,14 @@ def save_bh_local_f1_f2_sensitivity(
         ax.axhline(0.0, linewidth=0.8)
         ax.grid(alpha=0.2)
     #endfor
-    cbar = fig.colorbar(sc2, ax=axes.ravel().tolist(), pad=0.02)
+    fig.subplots_adjust(
+        top=0.90, bottom=0.12, left=0.08, right=0.84, wspace=0.25
+    )
+    cbar = fig.colorbar(
+        sc2, ax=axes.ravel().tolist(), pad=0.06, fraction=0.030
+    )
     cbar.set_label(r"$\phi$ (deg)")
     fig.suptitle("Local BH sensitivity to Dirac and Pauli form factors", y=0.995)
-    fig.subplots_adjust(top=0.90, bottom=0.12, left=0.08, right=0.90, wspace=0.25)
     fig.savefig(outdir / "11_BH_local_F1_F2_sensitivity.png", dpi=180)
     plt.close(fig)
 #enddef
@@ -3000,6 +2992,160 @@ def save_cross_dataset_summary(
 
 
 
+
+def save_bh_selection_signed_diagnostic(
+        clas6_all: pd.DataFrame,
+        pass1_all: pd.DataFrame,
+        outdir: Path) -> None:
+    """
+    Show the signed KM15 BH-purity variable.
+
+    R_BH = sigma_BH / sigma_EP.
+      R_BH < 1: the full EP prediction is larger than pure BH.
+      R_BH > 1: the full EP prediction is smaller than pure BH, possible when
+                destructive interference outweighs the positive DVCS^2 term.
+
+    Selection is symmetric: |1 - R_BH| <= delta.
+    """
+    fig, ax = plt.subplots(figsize=(8.2, 5.0))
+
+    for data, label in [
+        (clas6_all, "CLAS6 Jo 2015"),
+        (pass1_all, "CLAS12 pass 1"),
+    ]:
+        delta_signed = data["R_BH"].to_numpy(float) - 1.0
+        finite = np.isfinite(delta_signed)
+        ax.hist(
+            100.0 * delta_signed[finite],
+            bins=np.linspace(-20.0, 20.0, 161),
+            histtype="step",
+            linewidth=1.3,
+            density=True,
+            label=label,
+        )
+    #endfor
+
+    for cut in [1.0, 5.0, 10.0]:
+        ax.axvline(-cut, linewidth=0.8, linestyle="--")
+        ax.axvline(+cut, linewidth=0.8, linestyle="--")
+    #endfor
+
+    ax.axvline(0.0, linewidth=0.9)
+    ax.set_xlim(-20.0, 20.0)
+    ax.set_xlabel(r"$100\,(R_{\rm BH}-1)$ (%)")
+    ax.set_ylabel("normalized density")
+    ax.set_title(
+        r"Signed KM15 BH-purity diagnostic; selection uses "
+        r"$|1-R_{\rm BH}|$"
+    )
+    ax.grid(alpha=0.2)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(outdir / "12_signed_BH_purity_diagnostic.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+def save_combined_bh_cut_plateau_study(
+        clas6_all: pd.DataFrame,
+        pass1_all: pd.DataFrame,
+        outdir: Path) -> None:
+    """
+    Refit the combined CLAS6 + CLAS12 pass-1 sample for symmetric KM15
+    BH-purity thresholds from 1% through 10%.
+
+    The purpose is to identify a stability plateau before residual DVCS/
+    interference begins to bias the extracted form factors.  Both Fit-5-like
+    dipole F1/F2 and Fit-8-like F1-with-Kelly-F2 solutions are followed.
+    """
+    cuts = np.arange(0.01, 0.101, 0.01)
+    rows = []
+
+    for cut in cuts:
+        c6 = clas6_all.loc[clas6_all["bh_delta"] <= cut].copy()
+        p1 = pass1_all.loc[pass1_all["bh_delta"] <= cut].copy()
+
+        if len(c6) < 5 or len(p1) < 5:
+            continue
+        #endif
+
+        for kind, fit_label in [
+            ("dipole", "Fit 5 form"),
+            ("fit8_f2_kelly", "Fit 8 form"),
+        ]:
+            fr = fit_combined_clas6_pass1(
+                clas6=c6,
+                pass1=p1,
+                kind=kind,
+                fit_name=fit_label,
+                bh_cut=float(cut),
+            )
+            rows.append({
+                "BH_cut_fraction": float(cut),
+                "BH_cut_percent": 100.0 * float(cut),
+                "fit_form": fit_label,
+                "N_CLAS6": len(c6),
+                "N_pass1": len(p1),
+                "N_total": len(c6) + len(p1),
+                "chi2_ndof": fr.chi2_ndof,
+                "rE_fm": fr.rE_fm,
+                "rE_err_fm": fr.rE_err_fm,
+                "rM_fm": fr.rM_fm,
+                "rM_err_fm": fr.rM_err_fm,
+                "pass1_norm_factor": fr.norm,
+                "beta_pass1": fr.meta.get("beta_pass1", np.nan),
+            })
+        #endfor
+    #endfor
+
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "13_BH_cut_plateau_study.csv", index=False)
+
+    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.0), sharex=True)
+
+    for fit_label in ["Fit 5 form", "Fit 8 form"]:
+        part = table.loc[table["fit_form"] == fit_label].copy()
+        x = part["BH_cut_percent"].to_numpy(float)
+
+        axes[0, 0].errorbar(
+            x, part["rE_fm"], yerr=part["rE_err_fm"],
+            marker="o", markersize=4, capsize=2, label=fit_label,
+        )
+        axes[0, 1].errorbar(
+            x, part["rM_fm"], yerr=part["rM_err_fm"],
+            marker="o", markersize=4, capsize=2, label=fit_label,
+        )
+        axes[1, 0].plot(
+            x, part["chi2_ndof"], marker="o", markersize=4, label=fit_label
+        )
+        axes[1, 1].plot(
+            x, part["pass1_norm_factor"], marker="o", markersize=4,
+            label=fit_label,
+        )
+    #endfor
+
+    axes[0, 0].set_ylabel(r"$r_E$ (fm)")
+    axes[0, 1].set_ylabel(r"$r_M$ (fm)")
+    axes[1, 0].set_ylabel(r"$\chi^2/{\rm dof}$")
+    axes[1, 1].set_ylabel("CLAS12 pass-1 scale factor")
+    axes[1, 0].set_xlabel(r"KM15 $|1-R_{\rm BH}|$ threshold (%)")
+    axes[1, 1].set_xlabel(r"KM15 $|1-R_{\rm BH}|$ threshold (%)")
+
+    for ax in axes.ravel():
+        ax.grid(alpha=0.2)
+    #endfor
+    axes[0, 0].legend(fontsize=8)
+    fig.suptitle(
+        "Combined CLAS6 + CLAS12 pass-1 stability vs BH-purity threshold",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(outdir / "13_BH_cut_plateau_study.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+
 def run_clas6_pass1_combined_from_bundles(
         clas6_bundle: Dict[str, object],
         pass1_bundle: Dict[str, object],
@@ -3052,6 +3198,11 @@ def run_clas6_pass1_combined_from_bundles(
     save_bh_local_f1_f2_sensitivity(
         outdir, reference, next(r for r in results if r.name == "Fit 5")
     )
+
+    clas6_all = clas6_bundle.get("all_data", clas6)
+    pass1_all = pass1_bundle.get("all_data", pass1)
+    save_bh_selection_signed_diagnostic(clas6_all, pass1_all, outdir)
+    save_combined_bh_cut_plateau_study(clas6_all, pass1_all, outdir)
 
     return {
         "label": "CLAS6 + CLAS12 pass 1",
@@ -3311,7 +3462,7 @@ def run_pass1_validation(args, return_results: bool = False):
     print(f"\nDone. Pass-1 validation results are in {outdir}")
     if return_results:
         return {"label": "CLAS12 pass 1", "results": fit_results,
-                "set5": set5, "outdir": outdir}
+                "set5": set5, "all_data": df.copy(), "outdir": outdir}
     #endif
     return 0
 #enddef
@@ -3562,7 +3713,7 @@ def run_clas6_validation(args, return_results: bool = False):
     print(f"\nDone. CLAS6 validation results are in {outdir}")
     if return_results:
         return {"label": "CLAS6", "results": fit_results,
-                "set5": set5, "outdir": outdir}
+                "set5": set5, "all_data": df.copy(), "outdir": outdir}
     #endif
     return 0
 #enddef
