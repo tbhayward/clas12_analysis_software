@@ -3591,7 +3591,17 @@ def fit_cross_sections_with_sachs_family(
     pars = np.array([float(m.values[n]) for n in fit_names])
     rE = sachs_family_radius(pars[:nshape], family)
     rM = sachs_family_radius(pars[nshape:], family)
-    return rE, rM, bool(m.valid)
+
+    # A replica is accepted when Minuit reports a valid minimum and both
+    # extracted radii are finite.  We intentionally do not require an
+    # "accurate" covariance here because the replica study uses the fitted
+    # central radii, not the Hessian uncertainty of each individual replica.
+    valid = bool(
+        m.valid
+        and np.isfinite(rE)
+        and np.isfinite(rM)
+    )
+    return rE, rM, valid
 #enddef
 
 
@@ -3701,6 +3711,7 @@ def run_radius_bias_variance_study(
     }
 
     rows = []
+    replica_rows = []
     for truth_name, truth_fn in truths.items():
         truth_radius = {}
         for quantity in ["E", "M"]:
@@ -3779,10 +3790,23 @@ def run_radius_bias_variance_study(
             # map() preserves input ordering but workers execute concurrently.
             # chunksize > 1 lowers IPC overhead for large replica campaigns.
             chunksize = max(1, len(tasks) // max(1, 8 * nworkers))
+            replica_counter = {family: 0 for family in families}
             for family, re_val, rm_val, valid in pool.map(
                     _radius_bias_replica_worker,
                     tasks,
                     chunksize=chunksize):
+                irep = replica_counter[family]
+                replica_counter[family] += 1
+
+                replica_rows.append({
+                    "truth_model": truth_name,
+                    "family": family,
+                    "replica": irep,
+                    "rE_fm": re_val,
+                    "rM_fm": rm_val,
+                    "valid": bool(valid),
+                })
+
                 if valid:
                     results_by_family[family]["rE"].append(re_val)
                     results_by_family[family]["rM"].append(rm_val)
@@ -3839,6 +3863,9 @@ def run_radius_bias_variance_study(
     table = pd.DataFrame(rows)
     table.to_csv(outdir / "radius_bias_variance_study.csv", index=False)
 
+    replica_table = pd.DataFrame(replica_rows)
+    replica_table.to_csv(outdir / "radius_bias_replica_results.csv", index=False)
+
     # Aggregate the objective across truth models.  RMS across truths gives a
     # transparent single ranking while preserving the per-truth table above.
     agg_rows = []
@@ -3885,8 +3912,165 @@ def run_radius_bias_variance_study(
         y=0.995,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    fig.savefig(outdir / "radius_bias_variance_ranking.png", dpi=180)
+    fig.savefig(outdir / "01_radius_bias_variance_ranking.png", dpi=180)
     plt.close(fig)
+
+    # Per-truth objective curves.
+    for quantity in ["rE", "rM"]:
+        fig, ax = plt.subplots(figsize=(10.5, 5.2))
+        x = np.arange(len(families))
+        for truth_name in truths:
+            part = table.loc[
+                (table["truth_model"] == truth_name)
+                & (table["quantity"] == quantity)
+            ].set_index("family").reindex(families)
+            ax.plot(
+                x,
+                part["sqrt_stat2_plus_bias2_fm"],
+                marker="o",
+                label=truth_name,
+            )
+        #endfor
+        ax.set_xticks(x)
+        ax.set_xticklabels(families, rotation=45)
+        ax.set_ylabel(r"$\sqrt{\sigma_{\rm stat}^2+b^2}$ (fm)")
+        ax.set_title(f"{quantity}: objective for each truth model")
+        ax.grid(alpha=0.2)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(outdir / f"02_{quantity}_objective_by_truth.png", dpi=180)
+        plt.close(fig)
+    #endfor
+
+    # Statistical RMS and absolute bias, separately, so the origin of each
+    # candidate's total objective is visible.
+    for quantity in ["rE", "rM"]:
+        fig, ax = plt.subplots(figsize=(10.5, 5.2))
+        x = np.arange(len(families))
+        part_q = table.loc[table["quantity"] == quantity]
+        stat_rms = []
+        abs_bias_rms = []
+        for family in families:
+            fam = part_q.loc[part_q["family"] == family]
+            stat_vals = fam["stat_RMS_fm"].to_numpy(float)
+            bias_vals = np.abs(fam["bias_fm"].to_numpy(float))
+            stat_rms.append(float(np.sqrt(np.nanmean(stat_vals**2))))
+            abs_bias_rms.append(float(np.sqrt(np.nanmean(bias_vals**2))))
+        #endfor
+        ax.plot(x, stat_rms, marker="o", label="statistical RMS")
+        ax.plot(x, abs_bias_rms, marker="s", label="RMS |bias|")
+        ax.set_xticks(x)
+        ax.set_xticklabels(families, rotation=45)
+        ax.set_ylabel("fm")
+        ax.set_title(f"{quantity}: statistical variance versus extrapolation bias")
+        ax.grid(alpha=0.2)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(outdir / f"03_{quantity}_stat_vs_bias.png", dpi=180)
+        plt.close(fig)
+    #endfor
+
+    # Convergence/validity fraction.  This is critical for distinguishing a
+    # genuinely good flexible family from one whose objective is calculated
+    # only from a selected subset of easy replicas.
+    fig, ax = plt.subplots(figsize=(10.5, 5.2))
+    x = np.arange(len(families))
+    for truth_name in truths:
+        part = table.loc[
+            (table["truth_model"] == truth_name)
+            & (table["quantity"] == "rE")
+        ].set_index("family").reindex(families)
+        frac = (
+            part["valid_replicas"].to_numpy(float)
+            / part["requested_replicas"].to_numpy(float)
+        )
+        ax.plot(x, frac, marker="o", label=truth_name)
+    #endfor
+    ax.set_xticks(x)
+    ax.set_xticklabels(families, rotation=45)
+    ax.set_ylim(0.0, 1.05)
+    ax.set_ylabel("valid replica fraction")
+    ax.set_title("Replica-fit convergence by candidate family")
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "04_valid_replica_fraction.png", dpi=180)
+    plt.close(fig)
+
+    # Mean extracted radii versus candidate family, with one panel saved per
+    # radius.  Error bars are the replica RMS, not Hessian errors.
+    for quantity, col in [("rE", "rE_fm"), ("rM", "rM_fm")]:
+        fig, ax = plt.subplots(figsize=(11.0, 5.6))
+        x = np.arange(len(families), dtype=float)
+        offsets = np.linspace(-0.18, 0.18, len(truths))
+        for offset, truth_name in zip(offsets, truths):
+            part = table.loc[
+                (table["truth_model"] == truth_name)
+                & (table["quantity"] == quantity)
+            ].set_index("family").reindex(families)
+            ax.errorbar(
+                x + offset,
+                part["mean_extracted_radius_fm"],
+                yerr=part["stat_RMS_fm"],
+                fmt="o",
+                capsize=2,
+                label=truth_name,
+            )
+        #endfor
+        ax.set_xticks(x)
+        ax.set_xticklabels(families, rotation=45)
+        ax.set_ylabel(f"{quantity} extracted radius (fm)")
+        ax.set_title(
+            f"{quantity}: mean extracted radius ± replica statistical RMS"
+        )
+        ax.grid(alpha=0.2)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(outdir / f"05_{quantity}_mean_extracted_radius.png", dpi=180)
+        plt.close(fig)
+
+    # Distribution boxplots from the individual valid replicas.
+    for quantity, col in [("rE", "rE_fm"), ("rM", "rM_fm")]:
+        for truth_name in truths:
+            part = replica_table.loc[
+                (replica_table["truth_model"] == truth_name)
+                & replica_table["valid"]
+            ]
+            arrays = [
+                part.loc[part["family"] == family, col].to_numpy(float)
+                for family in families
+            ]
+            fig, ax = plt.subplots(figsize=(11.0, 5.4))
+            ax.boxplot(
+                arrays,
+                tick_labels=families,
+                showfliers=False,
+            )
+            truth_row = table.loc[
+                (table["truth_model"] == truth_name)
+                & (table["quantity"] == quantity)
+            ].iloc[0]
+            ax.axhline(
+                float(truth_row["truth_radius_fm"]),
+                linestyle="--",
+                linewidth=1.0,
+                label="truth radius",
+            )
+            ax.set_ylabel(f"{quantity} (fm)")
+            ax.set_title(f"{quantity} replica distributions: {truth_name}")
+            ax.grid(alpha=0.2)
+            ax.legend()
+            fig.tight_layout()
+            safe_truth = re.sub(r"[^A-Za-z0-9]+", "_", truth_name)
+            fig.savefig(
+                outdir / f"06_{quantity}_replica_boxplot_{safe_truth}.png",
+                dpi=180,
+            )
+            plt.close(fig)
+        #endfor
+    #endfor
+
+    print(f"[radius-bias] tables and plots -> {outdir}")
 #enddef
 
 
