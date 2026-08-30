@@ -1849,8 +1849,25 @@ def dataset_point_errors(
 
     if dataset_kind == "jo2015":
         # Gepard pt.err is the published total point uncertainty used in the
-        # Moradi reproduction.
-        base = data["err"].to_numpy(float)
+        # Moradi reproduction.  The Jo loader canonicalizes that quantity as
+        # ``clas6_err_total`` and also copies it to ``xs_stat`` for the
+        # standalone fit machinery.  Do not require a raw ``err`` column here:
+        # it is not present in the dataframe returned by
+        # load_clas6_gepard_dataset().
+        if "clas6_err_total" in data.columns:
+            base = data["clas6_err_total"].to_numpy(float)
+        elif "xs_stat" in data.columns:
+            base = data["xs_stat"].to_numpy(float)
+        elif "err" in data.columns:
+            # Defensive compatibility with any older externally prepared
+            # Jo dataframe.
+            base = data["err"].to_numpy(float)
+        else:
+            raise KeyError(
+                "Jo 2015 dataframe has no published-total-error column; "
+                "expected clas6_err_total or xs_stat."
+            )
+        #endif
     elif dataset_kind in {"saylor2018", "pass1"}:
         stat = data["stat"].to_numpy(float)
         ptp = data.get("ptp_sys", pd.Series(np.zeros(len(data)))).to_numpy(float)
@@ -1901,6 +1918,16 @@ def fit_multi_measurements(
     prepared = []
     for spec in datasets:
         d = spec["data"]
+
+        required_common = {"t_abs", "xs", "bh_A", "bh_B", "bh_C"}
+        missing_common = sorted(required_common.difference(d.columns))
+        if missing_common:
+            raise KeyError(
+                f"{spec['label']} is missing required combined-fit columns: "
+                + ", ".join(missing_common)
+            )
+        #endif
+
         prepared.append({
             "key": spec["key"],
             "kind": spec["kind"],
