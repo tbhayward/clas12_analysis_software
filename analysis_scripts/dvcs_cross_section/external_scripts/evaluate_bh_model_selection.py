@@ -103,7 +103,7 @@ DEFAULT_PARTONS_PROJECT = "/scratch/thayward/partons-example"
 DEFAULT_PARTONS_EXECUTABLE = "./bin/PARTONS_example"
 
 PARTONS_RESULT_RE = re.compile(
-    r"Result:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*\[([^\]]+)\]"
+    r"Result:\s*([+-]?(?:[\d,]+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*\[([^\]]+)\]"
 )
 PARTONS_WARNING_TOKEN = "[WARN]"
 PARTONS_ERROR_TOKEN = "[ERROR]"
@@ -327,7 +327,7 @@ def write_partons_xml_chunks(
 def parse_partons_stdout(stdout: str) -> tuple[List[float], List[str], int, int, int]:
     """Parse observable values, units, warnings, integrator warnings, and errors."""
     matches = PARTONS_RESULT_RE.findall(stdout)
-    values = [float(value) for value, _ in matches]
+    values = [float(value.replace(",", "")) for value, _ in matches]
     units = [unit.strip() for _, unit in matches]
     n_warnings = stdout.count(PARTONS_WARNING_TOKEN)
     n_integrator_warnings = stdout.count(PARTONS_INTEGRATOR_WARNING)
@@ -336,12 +336,90 @@ def parse_partons_stdout(stdout: str) -> tuple[List[float], List[str], int, int,
 #enddef
 
 
+def _parse_retained_partons_chunk(job: dict) -> dict | None:
+    """
+    Reparse and reuse a complete retained PARTONS chunk log.
+
+    Existing stdout/stderr files are treated as the raw cache.  A retained
+    chunk is reused only when it contains exactly the expected number of finite
+    nb-valued results, contains no PARTONS [ERROR], and closed properly.
+    """
+    point_map_path = Path(job["point_map"])
+    stdout_path = Path(job["stdout_path"])
+    stderr_path = Path(job["stderr_path"])
+
+    if not stdout_path.exists():
+        return None
+    #endif
+
+    stdout = stdout_path.read_text(errors="replace")
+    stderr = stderr_path.read_text(errors="replace") if stderr_path.exists() else ""
+    combined = stdout + "\n" + stderr
+
+    values, units, n_warnings, n_integrator_warnings, n_errors = parse_partons_stdout(
+        combined
+    )
+
+    point_map = pd.read_csv(point_map_path)
+    n_expected = len(point_map)
+    parse_ok = len(values) == n_expected
+    finite_ok = parse_ok and np.all(np.isfinite(np.asarray(values, dtype=float)))
+    units_ok = parse_ok and all(unit.lower() == "nb" for unit in units)
+    closed_ok = "Closed properly" in combined
+
+    if not (n_errors == 0 and parse_ok and finite_ok and units_ok and closed_ok):
+        return None
+    #endif
+
+    status = {
+        "calculation": job["calculation"],
+        "chunk": int(job["chunk"]),
+        "n_expected": int(n_expected),
+        "n_parsed": int(len(values)),
+        "returncode": 0,
+        "parse_ok": True,
+        "finite_ok": True,
+        "units_ok": True,
+        "n_warnings": int(n_warnings),
+        "n_integrator_warnings": int(n_integrator_warnings),
+        "n_errors": int(n_errors),
+        "stdout": str(stdout_path),
+        "stderr": str(stderr_path),
+        "xml": str(Path(job["xml"])),
+        "point_map": str(point_map_path),
+        "reused_log": True,
+    }
+
+    result_rows = []
+    for point_id, value, unit in zip(point_map["point_id"], values, units):
+        result_rows.append(
+            {
+                "point_id": point_id,
+                "xs_nb": value,
+                "unit": unit,
+                "chunk": int(job["chunk"]),
+            }
+        )
+    #endfor
+
+    return {"status": status, "results": result_rows}
+#enddef
+
+
 def _run_partons_chunk(job: dict) -> dict:
     """
     Execute one XML chunk in an independent Apptainer/PARTONS OS process.
 
-    This function is top-level so ProcessPoolExecutor can pickle it.
+    Unless force=True, first attempt to recover a complete prior calculation
+    directly from its retained stdout/stderr logs.
     """
+    if not job.get("force", False):
+        recovered = _parse_retained_partons_chunk(job)
+        if recovered is not None:
+            return recovered
+        #endif
+    #endif
+
     xml_path = Path(job["xml"])
     point_map_path = Path(job["point_map"])
     stdout_path = Path(job["stdout_path"])
@@ -403,6 +481,7 @@ def _run_partons_chunk(job: dict) -> dict:
         "stderr": str(stderr_path),
         "xml": str(xml_path),
         "point_map": str(point_map_path),
+        "reused_log": False,
     }
 
     result_rows = []
@@ -433,7 +512,7 @@ def run_partons_calculation(
         workers: int,
         chunk_size: int,
         force: bool) -> pd.DataFrame:
-    """Run or reuse one complete cached PARTONS quantity."""
+    """Run, resume from retained chunk logs, or reuse one complete PARTONS cache."""
     result_dir = outdir / "partons_results"
     result_dir.mkdir(parents=True, exist_ok=True)
 
@@ -487,6 +566,7 @@ def run_partons_calculation(
                 "sif": sif_abs,
                 "project": project_abs,
                 "executable": executable,
+                "force": bool(force),
             }
         )
     #endfor
@@ -509,7 +589,8 @@ def run_partons_calculation(
                 f"rc={payload['status']['returncode']} "
                 f"parsed={payload['status']['n_parsed']}/{payload['status']['n_expected']} "
                 f"warnings={payload['status']['n_warnings']} "
-                f"errors={payload['status']['n_errors']}"
+                f"errors={payload['status']['n_errors']} "
+                f"{'[reused log]' if payload['status'].get('reused_log', False) else '[executed]'}"
             )
 
             s = payload["status"]
@@ -547,7 +628,8 @@ def run_partons_calculation(
                     f"rc={payload['status']['returncode']} "
                     f"parsed={payload['status']['n_parsed']}/{payload['status']['n_expected']} "
                     f"warnings={payload['status']['n_warnings']} "
-                    f"errors={payload['status']['n_errors']}"
+                    f"errors={payload['status']['n_errors']} "
+                    f"{'[reused log]' if payload['status'].get('reused_log', False) else '[executed]'}"
                 )
             #endfor
         #endwith
