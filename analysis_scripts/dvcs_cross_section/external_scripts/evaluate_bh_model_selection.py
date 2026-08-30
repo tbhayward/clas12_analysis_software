@@ -72,7 +72,12 @@ Raw PARTONS caches are written under:
     partons_results/
 
 Chunk XML, point maps, stdout/stderr, return codes, parsed-result counts, and
-warning counts are retained for reproducibility and failure recovery.
+warning/error counts are retained for reproducibility and failure recovery.
+
+PARTONS 5.0 behavior verified on the JLab farm:
+  * generated XML directories must be explicitly bound into the container;
+  * in a multi-point scenario, each computeSingleKinematic task must be followed
+    immediately by printResults, otherwise only the final point is printed.
 """
 
 from __future__ import annotations
@@ -101,6 +106,7 @@ PARTONS_RESULT_RE = re.compile(
     r"Result:\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*\[([^\]]+)\]"
 )
 PARTONS_WARNING_TOKEN = "[WARN]"
+PARTONS_ERROR_TOKEN = "[ERROR]"
 PARTONS_INTEGRATOR_WARNING = "Cannot reach tolerances"
 
 
@@ -244,7 +250,8 @@ def make_single_point_task(row: pd.Series, calculation: str) -> str:
 <computation_configuration>
 {module_xml}
 </computation_configuration>
-</task>"""
+</task>
+<task service="DVCSObservableService" method="printResults"></task>"""
 #enddef
 
 
@@ -274,11 +281,14 @@ def write_partons_xml_chunks(
             make_single_point_task(row, calculation)
             for _, row in part.iterrows()
         )
+        # PARTONS 5.0 keeps only the current observable result in its print
+        # buffer.  Therefore each compute task must be followed immediately by
+        # printResults; one printResults at the end of a multi-point chunk would
+        # print only the final point.
         xml_text = (
             '<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>\n'
             f'<scenario date="2026-08-30" description="{calculation} BH-purity evaluation">\n'
             f'{tasks}\n'
-            '<task service="DVCSObservableService" method="printResults"></task>\n'
             '</scenario>\n'
         )
 
@@ -314,14 +324,15 @@ def write_partons_xml_chunks(
 #enddef
 
 
-def parse_partons_stdout(stdout: str) -> tuple[List[float], List[str], int, int]:
-    """Parse printed observable values, units, total warnings, and integrator warnings."""
+def parse_partons_stdout(stdout: str) -> tuple[List[float], List[str], int, int, int]:
+    """Parse observable values, units, warnings, integrator warnings, and errors."""
     matches = PARTONS_RESULT_RE.findall(stdout)
     values = [float(value) for value, _ in matches]
     units = [unit.strip() for _, unit in matches]
     n_warnings = stdout.count(PARTONS_WARNING_TOKEN)
     n_integrator_warnings = stdout.count(PARTONS_INTEGRATOR_WARNING)
-    return values, units, n_warnings, n_integrator_warnings
+    n_errors = stdout.count(PARTONS_ERROR_TOKEN)
+    return values, units, n_warnings, n_integrator_warnings, n_errors
 #enddef
 
 
@@ -336,16 +347,22 @@ def _run_partons_chunk(job: dict) -> dict:
     stdout_path = Path(job["stdout_path"])
     stderr_path = Path(job["stderr_path"])
 
+    # The generated XML lives under the analysis output tree, which is not
+    # necessarily visible inside the PARTONS container.  Bind the XML directory
+    # at the identical absolute path in addition to /scratch.
+    xml_bind = f"{xml_path.parent.resolve()}:{xml_path.parent.resolve()}"
     cmd = [
         "apptainer",
         "exec",
         "--bind",
         "/scratch:/scratch",
+        "--bind",
+        xml_bind,
         "--pwd",
         job["project"],
         job["sif"],
         job["executable"],
-        str(xml_path),
+        str(xml_path.resolve()),
     ]
 
     proc = subprocess.run(
@@ -360,7 +377,7 @@ def _run_partons_chunk(job: dict) -> dict:
     stdout_path.write_text(proc.stdout)
     stderr_path.write_text(proc.stderr)
 
-    values, units, n_warnings, n_integrator_warnings = parse_partons_stdout(
+    values, units, n_warnings, n_integrator_warnings, n_errors = parse_partons_stdout(
         proc.stdout + "\n" + proc.stderr
     )
 
@@ -381,6 +398,7 @@ def _run_partons_chunk(job: dict) -> dict:
         "units_ok": bool(units_ok),
         "n_warnings": int(n_warnings),
         "n_integrator_warnings": int(n_integrator_warnings),
+        "n_errors": int(n_errors),
         "stdout": str(stdout_path),
         "stderr": str(stderr_path),
         "xml": str(xml_path),
@@ -490,8 +508,27 @@ def run_partons_calculation(
                 f"[PARTONS run] {calculation}: chunk {ijob}/{len(jobs)} "
                 f"rc={payload['status']['returncode']} "
                 f"parsed={payload['status']['n_parsed']}/{payload['status']['n_expected']} "
-                f"warnings={payload['status']['n_warnings']}"
+                f"warnings={payload['status']['n_warnings']} "
+                f"errors={payload['status']['n_errors']}"
             )
+
+            s = payload["status"]
+            bad = (
+                s["returncode"] != 0
+                or s["n_errors"] != 0
+                or not s["parse_ok"]
+                or not s["finite_ok"]
+                or not s["units_ok"]
+            )
+            if bad:
+                pd.DataFrame(statuses).to_csv(status_path, index=False)
+                raise RuntimeError(
+                    f"{calculation}: chunk {s['chunk']} failed immediately "
+                    f"(rc={s['returncode']}, errors={s['n_errors']}, "
+                    f"parsed={s['n_parsed']}/{s['n_expected']}). "
+                    f"See {s['stdout']} and {s['stderr']}."
+                )
+            #endif
         #endfor
     else:
         with ProcessPoolExecutor(max_workers=workers) as pool:
@@ -509,7 +546,8 @@ def run_partons_calculation(
                     f"(id={payload['status']['chunk']}) "
                     f"rc={payload['status']['returncode']} "
                     f"parsed={payload['status']['n_parsed']}/{payload['status']['n_expected']} "
-                    f"warnings={payload['status']['n_warnings']}"
+                    f"warnings={payload['status']['n_warnings']} "
+                    f"errors={payload['status']['n_errors']}"
                 )
             #endfor
         #endwith
@@ -520,6 +558,7 @@ def run_partons_calculation(
 
     failed = status_df.loc[
         (status_df["returncode"] != 0)
+        | (status_df["n_errors"] != 0)
         | (~status_df["parse_ok"])
         | (~status_df["finite_ok"])
         | (~status_df["units_ok"])
@@ -529,7 +568,7 @@ def run_partons_calculation(
         print(
             failed[
                 [
-                    "chunk", "returncode", "n_expected", "n_parsed",
+                    "chunk", "returncode", "n_errors", "n_expected", "n_parsed",
                     "parse_ok", "finite_ok", "units_ok", "stdout", "stderr",
                 ]
             ].to_string(index=False)
