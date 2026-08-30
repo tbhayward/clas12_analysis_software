@@ -130,6 +130,7 @@ import copy
 import json
 import math
 import os
+import re
 import sys
 import time
 import warnings
@@ -559,85 +560,130 @@ def load_saylor_supplement(path: str) -> pd.DataFrame:
         )
     #endif
 
-    # First try a user-normalized CSV/TSV.
+    # First try the exact published Saylor whitespace format:
+    #
+    #   xB  Q2  -t  phi  sig  stat-err  sys-err
+    #
+    # This is the format used by import/saylor_CLAS6.txt.
     try:
-        trial = pd.read_csv(path, sep=None, engine="python", comment="#")
-        canonical = {c.strip(): c for c in trial.columns}
-        needed = {"xB", "Q2", "t_abs", "phi_deg", "xs", "stat"}
-        if needed.issubset(canonical):
-            df = trial.copy()
-            if "sys_total" not in df.columns and "ptp_sys" not in df.columns:
-                df["sys_total"] = 0.0
-            #endif
-            print("[SAYLOR] Parsed normalized tabular input.")
+        trial = pd.read_csv(
+            path,
+            sep=r"\s+",
+            comment="#",
+            engine="python",
+        )
+        exact_columns = {
+            "xB", "Q2", "-t", "phi", "sig", "stat-err", "sys-err"
+        }
+        if exact_columns.issubset(set(trial.columns)):
+            df = trial.rename(columns={
+                "-t": "t_abs",
+                "phi": "phi_deg",
+                "sig": "xs",
+                "stat-err": "stat",
+                "sys-err": "sys_total",
+            }).copy()
+            print(
+                f"[SAYLOR] Parsed published whitespace table directly: "
+                f"{len(df)} rows."
+            )
         else:
-            raise ValueError("not normalized table")
+            raise ValueError("not the published Saylor whitespace format")
         #endif
     except Exception:
-        lines = path.read_text(errors="replace").splitlines()
-
-        # Look for a header line with the essential kinematic names.
-        header_idx = None
-        roles = None
-        for iline, line in enumerate(lines):
-            raw_tokens = re.split(r"\s+", line.strip())
-            this_roles = [_saylor_column_role(tok) for tok in raw_tokens]
-            role_set = {r for r in this_roles if r is not None}
-            if {"xB", "Q2", "t_abs", "phi_deg"}.issubset(role_set) and "xs" in role_set:
-                header_idx = iline
-                roles = this_roles
-                break
-            #endif
-        #endfor
-
-        if header_idx is None:
-            preview = "\n".join(lines[:35])
-            raise RuntimeError(
-                "Could not automatically identify the Saylor supplemental "
-                "column header.  The raw file format may differ from the "
-                "archived text version expected by this script.\n\n"
-                "First 35 lines were:\n"
-                + preview
-                + "\n\nA simple fallback is to convert the file once to a CSV "
-                  "with columns xB,Q2,t_abs,phi_deg,xs,stat,sys_total."
+        # Second try a user-normalized CSV/TSV.
+        try:
+            trial = pd.read_csv(
+                path,
+                sep=None,
+                engine="python",
+                comment="#",
             )
-        #endif
-
-        rows = []
-        ncols = len(roles)
-        for line in lines[header_idx + 1:]:
-            tokens = re.split(r"\s+", line.strip())
-            if len(tokens) < ncols:
-                continue
+            canonical = {c.strip(): c for c in trial.columns}
+            needed = {"xB", "Q2", "t_abs", "phi_deg", "xs", "stat"}
+            if needed.issubset(canonical):
+                df = trial.copy()
+                if "sys_total" not in df.columns and "ptp_sys" not in df.columns:
+                    df["sys_total"] = 0.0
+                #endif
+                print("[SAYLOR] Parsed normalized tabular input.")
+            else:
+                raise ValueError("not normalized table")
             #endif
-            try:
-                vals = [float(tok) for tok in tokens[:ncols]]
-            except ValueError:
-                continue
-            #endtry
+        except Exception:
+            # Final semantic-header fallback.
+            lines = path.read_text(errors="replace").splitlines()
 
-            row = {}
-            for role, val in zip(roles, vals):
-                if role is not None and role not in row:
-                    row[role] = val
+            header_idx = None
+            roles = None
+            for iline, line in enumerate(lines):
+                raw_tokens = re.split(r"\s+", line.strip())
+                this_roles = [_saylor_column_role(tok) for tok in raw_tokens]
+                role_set = {r for r in this_roles if r is not None}
+                if (
+                    {"xB", "Q2", "t_abs", "phi_deg"}.issubset(role_set)
+                    and "xs" in role_set
+                ):
+                    header_idx = iline
+                    roles = this_roles
+                    break
                 #endif
             #endfor
-            if {"xB", "Q2", "t_abs", "phi_deg", "xs", "stat"}.issubset(row):
-                rows.append(row)
-            #endif
-        #endfor
 
-        if not rows:
-            raise RuntimeError(
-                "Recognized a Saylor header but extracted no numerical "
-                "unpolarized-cross-section rows."
+            if header_idx is None:
+                preview = "\n".join(lines[:35])
+                raise RuntimeError(
+                    "Could not identify the Saylor supplemental column header.\n\n"
+                    "First 35 lines were:\n"
+                    + preview
+                    + "\n\nExpected the published header "
+                      "'xB Q2 -t phi sig stat-err sys-err', or a normalized "
+                      "table with xB,Q2,t_abs,phi_deg,xs,stat,sys_total."
+                )
+            #endif
+
+            rows = []
+            ncols = len(roles)
+            for line in lines[header_idx + 1:]:
+                tokens = re.split(r"\s+", line.strip())
+                if len(tokens) < ncols:
+                    continue
+                #endif
+                try:
+                    vals = [float(tok) for tok in tokens[:ncols]]
+                except ValueError:
+                    continue
+                #endtry
+
+                row = {}
+                for role, val in zip(roles, vals):
+                    if role is not None and role not in row:
+                        row[role] = val
+                    #endif
+                #endfor
+                if {
+                    "xB", "Q2", "t_abs", "phi_deg", "xs", "stat"
+                }.issubset(row):
+                    rows.append(row)
+                #endif
+            #endfor
+
+            if not rows:
+                raise RuntimeError(
+                    "Recognized a Saylor header but extracted no numerical "
+                    "unpolarized-cross-section rows."
+                )
+            #endif
+
+            df = pd.DataFrame(rows)
+            if "sys_total" not in df:
+                df["sys_total"] = 0.0
+            #endif
+            print(
+                f"[SAYLOR] Parsed supplemental TXT with generic fallback: "
+                f"{len(df)} rows."
             )
-        #endif
-        df = pd.DataFrame(rows)
-        if "sys_total" not in df:
-            df["sys_total"] = 0.0
-        #endif
-        print(f"[SAYLOR] Parsed original supplemental TXT: {len(df)} rows.")
+        #endtry
     #endtry
 
     # Canonicalize signs/angles and build point-to-point systematic.
