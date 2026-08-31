@@ -37,6 +37,11 @@ Workflow
     NET non-BH contribution sigma_DVCS + sigma_INT is small, including through
     cancellation.  Model/data agreement is reported only as a diagnostic and
     never feeds back into purity-model selection, avoiding circular logic.
+11. Before any alternative-model closure study or radius fit, require the
+    PARTONS BH subprocess to reproduce the same point-by-point BH angular
+    structure as Gepard within deliberately loose sanity bounds.  This
+    BH-vs-BH preflight is independent of measured data and prevents a phi or
+    other kinematic-convention error from masquerading as GPD-model dependence.
 
 Fit implementation
 ------------------
@@ -6963,6 +6968,180 @@ def write_model_selection_diagnostics(
 #enddef
 
 
+
+def validate_external_partons_bh_consistency(
+        selection: pd.DataFrame,
+        physics_bundles: Sequence[Dict[str, object]],
+        final_dir: Path) -> None:
+    """
+    Fail-fast validation of the PARTONS BH kinematic/convention mapping.
+
+    The BH subprocess is independent of the GPD/CFF model.  Therefore the
+    PARTONS BH calculations and the Gepard BH calculation need not be exactly
+    identical, but they must describe the same BH angular structure point by
+    point.  Gross discrepancies are an implementation/convention failure, not
+    a legitimate GPD-model uncertainty.
+
+    This validation deliberately uses BH-vs-BH comparisons only.  It does not
+    use the measured cross section, so it cannot circularly prefer the model
+    that happens to describe the data better.
+
+    The bounds below are intentionally very loose compared with the few-percent
+    Jo/Hall-A differences observed in validated comparisons:
+      * >= 95% of finite points must have 0.5 < PARTONS_BH/Gepard_BH < 2.0
+      * the median ratio must lie in 0.8--1.2
+      * >= 99% of points must have finite, positive BH values
+    These are sanity checks, not physics cuts.
+    """
+    ddir = final_dir / "model_selection_diagnostics"
+    ddir.mkdir(parents=True, exist_ok=True)
+
+    df = _external_table_with_measurements(selection, physics_bundles)
+    required = {"km15_bh", "partons_bh_gv08", "partons_bh_vgg99"}
+    missing = sorted(required.difference(df.columns))
+    if missing:
+        raise RuntimeError(
+            "Cannot validate PARTONS/Gepard BH consistency; missing columns: "
+            + ", ".join(missing)
+        )
+    #endif
+
+    rows = []
+    failures = []
+    comparisons = [
+        ("gv08", "partons_bh_gv08"),
+        ("vgg99", "partons_bh_vgg99"),
+    ]
+
+    for (dataset, label), d in df.groupby(
+            ["dataset", "dataset_label"], sort=False):
+        gepard = pd.to_numeric(
+            d["km15_bh"], errors="coerce"
+        ).to_numpy(float)
+
+        for process_name, partons_col in comparisons:
+            partons = pd.to_numeric(
+                d[partons_col], errors="coerce"
+            ).to_numpy(float)
+
+            valid = (
+                np.isfinite(gepard)
+                & np.isfinite(partons)
+                & (gepard > 0.0)
+                & (partons > 0.0)
+            )
+            valid_fraction = float(valid.mean()) if len(d) else 0.0
+
+            ratio = np.full(len(d), np.nan, dtype=float)
+            ratio[valid] = partons[valid] / gepard[valid]
+            finite_ratio = ratio[np.isfinite(ratio)]
+
+            if len(finite_ratio):
+                median = float(np.median(finite_ratio))
+                q01 = float(np.quantile(finite_ratio, 0.01))
+                q05 = float(np.quantile(finite_ratio, 0.05))
+                q95 = float(np.quantile(finite_ratio, 0.95))
+                q99 = float(np.quantile(finite_ratio, 0.99))
+                rmin = float(np.min(finite_ratio))
+                rmax = float(np.max(finite_ratio))
+                broad_fraction = float(np.mean(
+                    (finite_ratio > 0.5) & (finite_ratio < 2.0)
+                ))
+            else:
+                median = np.nan
+                q01 = np.nan
+                q05 = np.nan
+                q95 = np.nan
+                q99 = np.nan
+                rmin = np.nan
+                rmax = np.nan
+                broad_fraction = 0.0
+            #endif
+
+            reasons = []
+            if valid_fraction < 0.99:
+                reasons.append(
+                    f"finite-positive fraction={valid_fraction:.4f}<0.99"
+                )
+            #endif
+            if (
+                not np.isfinite(median)
+                or median < 0.8
+                or median > 1.2
+            ):
+                reasons.append(
+                    f"median PARTONS/Gepard BH={median:.6g} outside [0.8,1.2]"
+                )
+            #endif
+            if broad_fraction < 0.95:
+                reasons.append(
+                    f"fraction in 0.5--2.0={broad_fraction:.4f}<0.95"
+                )
+            #endif
+
+            status = "FAIL" if reasons else "PASS"
+            row = {
+                "dataset": dataset,
+                "dataset_label": label,
+                "partons_bh_process": process_name,
+                "N_total": int(len(d)),
+                "N_valid_positive": int(valid.sum()),
+                "valid_positive_fraction": valid_fraction,
+                "ratio_median": median,
+                "ratio_q01": q01,
+                "ratio_q05": q05,
+                "ratio_q95": q95,
+                "ratio_q99": q99,
+                "ratio_min": rmin,
+                "ratio_max": rmax,
+                "fraction_ratio_between_0p5_and_2": broad_fraction,
+                "status": status,
+                "failure_reason": "; ".join(reasons),
+            }
+            rows.append(row)
+
+            if reasons:
+                failures.append(
+                    f"{label} / {process_name}: " + "; ".join(reasons)
+                )
+            #endif
+        #endfor
+    #endfor
+
+    table = pd.DataFrame(rows)
+    table.to_csv(
+        ddir / "partons_gepard_bh_preflight_validation.csv", index=False
+    )
+
+    print("\n[PARTONS BH preflight] process-level BH consistency")
+    print(table.to_string(index=False))
+
+    if failures:
+        message = (
+            "\nPARTONS/Gepard BH preflight FAILED.\n"
+            "The alternative-model radius analysis has been stopped BEFORE "
+            "closure studies or model-systematic fits because the BH subprocess "
+            "does not have a consistent point-by-point kinematic/convention "
+            "mapping.\n\n"
+            "This is not evidence for a large GPD uncertainty: BH itself is "
+            "already inconsistent before the GPD-dependent EP prediction is "
+            "considered.\n\n"
+            "For the current CLAS12 failure, validate the CLAS12-specific phi "
+            "mapping in the PARTONS evaluator with a small BH-only scan before "
+            "regenerating its PARTONS predictions. Do not automatically apply "
+            "the Jo/Hall-A phi transformation to CLAS12 unless that BH-only "
+            "comparison demonstrates it is correct.\n\nFailures:\n  - "
+            + "\n  - ".join(failures)
+            + "\n\nDiagnostic table: "
+            + str(ddir / "partons_gepard_bh_preflight_validation.csv")
+        )
+        raise RuntimeError(message)
+    #endif
+
+    print("[PARTONS BH preflight] PASS: all datasets/processes are convention-consistent")
+#enddef
+
+
 def run_final_model_selected_analysis(
         bundles: Sequence[Dict[str, object]],
         args,
@@ -7027,6 +7206,14 @@ def run_final_model_selected_analysis(
     # study or production fit.  They never feed measured-data agreement back
     # into model selection, avoiding circular model preference.
     write_model_selection_diagnostics(selection, physics_bundles, final_dir)
+
+    # Fail loudly before doing expensive closure studies or quoting a model
+    # envelope if the PARTONS BH subprocess does not reproduce the same
+    # point-by-point BH angular structure as Gepard.  This catches phi/convention
+    # mistakes without using the measured cross sections.
+    validate_external_partons_bh_consistency(
+        selection, physics_bundles, final_dir
+    )
 
     # Run a closure/bias study for each 5% model-selected sample.  This is
     # intentionally three studies: the extrapolation family must be robust to
