@@ -1636,8 +1636,8 @@ def run_imported_phi_convention_validation(
             merged = test[
                 [
                     "point_id", "dataset", "source_row", "xB", "Q2",
-                    "t_abs", "phi_deg", "phi_partons_deg", "ebeam",
-                    "km15_bh",
+                    "t_abs", "phi_deg", "phi_partons_deg",
+                    "phi_mapping_mode", "ebeam", "km15_bh",
                 ]
             ].copy()
             merged = merged.merge(
