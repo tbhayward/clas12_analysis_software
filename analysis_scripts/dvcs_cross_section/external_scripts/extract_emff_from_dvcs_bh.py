@@ -2422,14 +2422,15 @@ def dataset_statistical_errors(
                 "Hall A Defurne dataframe is missing 'halla_err_stat'."
             )
         #endif
-    elif dataset_kind == "pass1":
+    elif dataset_kind in ("pass1", "pass2"):
         if "xs_stat" in data.columns:
             return data["xs_stat"].to_numpy(float)
         elif "stat" in data.columns:
             return data["stat"].to_numpy(float)
         else:
+            label = "CLAS12 pass-1/Lee 2026" if dataset_kind == "pass1" else "CLAS12 pass-2"
             raise KeyError(
-                "CLAS12 Lee 2026 dataframe is missing statistical uncertainty "
+                f"{label} dataframe is missing statistical uncertainty "
                 "column 'xs_stat'."
             )
         #endif
@@ -2496,15 +2497,16 @@ def dataset_point_errors(
             )
         #endif
         base = np.sqrt(stat**2 + ptp**2)
-    elif dataset_kind == "pass1":
+    elif dataset_kind in ("pass1", "pass2"):
         stat = dataset_statistical_errors(data, dataset_kind)
         if "ptp_sys_abs" in data.columns:
             ptp = data["ptp_sys_abs"].to_numpy(float)
         elif "ptp_sys" in data.columns:
             ptp = data["ptp_sys"].to_numpy(float)
         else:
+            label = "CLAS12 Lee 2026" if dataset_kind == "pass1" else "CLAS12 pass-2"
             raise KeyError(
-                "CLAS12 Lee 2026 dataframe is missing point-to-point "
+                f"{label} dataframe is missing point-to-point "
                 "systematic column 'ptp_sys_abs'."
             )
         #endif
@@ -8805,6 +8807,162 @@ def _profile_model_normalization(
 #enddef
 
 
+
+def make_pass2_diagnostic_bundle(args) -> Dict[str, object]:
+    """
+    Build a diagnostic-only CLAS12 pass-2 bundle for all-point model scoring.
+
+    This does not enter the production Jo+Lee form-factor fit.  It exists only
+    so the published-point model-agreement comparison can include the current
+    pass-2 cross sections alongside the historical measurements.
+    """
+    csv_path = Path(args.csv).expanduser().resolve()
+    df = load_clas12_csv(csv_path)
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        / "clas12_pass2_model_diagnostic"
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # Pass-2 deliberately does NOT call Gepard/PARTONS here.  It uses the
+    # exact same kinematic binning as the pass-1 Lee dataset, so the diagnostic
+    # model comparison reuses the already-computed pass-1 KM15/VGG99/GK16
+    # predictions after an explicit point-by-point kinematic match.
+    df = df.reset_index(drop=True)
+
+    scale = pd.to_numeric(
+        df.get("scale_sys_frac", pd.Series(dtype=float)),
+        errors="coerce",
+    ).to_numpy(float)
+    scale = scale[np.isfinite(scale) & (scale > 0.0)]
+    norm_frac = float(np.median(scale)) if len(scale) else 0.0
+
+    print(
+        f"[PASS2 diagnostic] Loaded {len(df)} current pass-2 points; "
+        f"representative correlated scale={100.0*norm_frac:.2f}%."
+    )
+    print(
+        "[PASS2 model reuse] No KM15/VGG99/GK16 reevaluation requested; "
+        "predictions will be inherited from kinematically identical pass-1 points."
+    )
+    return {
+        "label": "CLAS12 pass-2",
+        "key": "pass2",
+        "kind": "pass2",
+        "norm_frac": norm_frac,
+        "results": [],
+        "set5": pd.DataFrame(),
+        "all_data": df.copy(),
+        "outdir": outdir,
+    }
+#enddef
+
+
+
+def match_pass2_to_pass1_model_rows(
+        pass2_data: pd.DataFrame,
+        selection: pd.DataFrame,
+        atol: float = 5.0e-9) -> pd.DataFrame:
+    """
+    Reuse pass-1 model predictions for pass-2 after an explicit kinematic match.
+
+    The pass-1 and pass-2 analyses use the same CLAS12 binning.  Matching by
+    kinematics rather than source_row also handles the case where one analysis
+    contains one fewer valid cross-section point.
+    """
+    pass1 = selection.loc[
+        selection["dataset"].astype(str) == "pass1"
+    ].copy().reset_index(drop=True)
+    if len(pass1) == 0:
+        raise RuntimeError(
+            "Cannot reuse pass-1 predictions for pass-2: the external model "
+            "selection table contains no pass1 rows."
+        )
+    #endif
+
+    kin_cols = ["xB", "Q2", "t_abs", "phi_deg", "ebeam"]
+    missing_ext = [c for c in kin_cols if c not in pass1.columns]
+    missing_data = [c for c in kin_cols if c not in pass2_data.columns]
+    if missing_ext or missing_data:
+        raise KeyError(
+            "Pass-2/pass-1 model reuse requires kinematic columns "
+            f"{kin_cols}; missing external={missing_ext}, pass2={missing_data}"
+        )
+    #endif
+
+    # Build a deterministic nearest-exact lookup.  Rounding is only a hash
+    # accelerator; every accepted match is subsequently checked numerically.
+    def _key(row) -> tuple:
+        return tuple(round(float(row[c]), 8) for c in kin_cols)
+    #enddef
+
+    lookup = {}
+    for _, row in pass1.iterrows():
+        key = _key(row)
+        lookup.setdefault(key, []).append(row)
+    #endfor
+
+    matched_rows = []
+    maxdiff = {c: 0.0 for c in kin_cols}
+    unmatched = []
+    ambiguous = []
+    for irow, (_, drow) in enumerate(pass2_data.iterrows()):
+        key = _key(drow)
+        candidates = lookup.get(key, [])
+        if len(candidates) != 1:
+            if len(candidates) == 0:
+                unmatched.append(irow)
+            else:
+                ambiguous.append(irow)
+            #endif
+            continue
+        #endif
+
+        erow = candidates[0].copy()
+        diffs = {
+            c: abs(float(erow[c]) - float(drow[c]))
+            for c in kin_cols
+        }
+        if any(diff > atol for diff in diffs.values()):
+            unmatched.append(irow)
+            continue
+        #endif
+        for c, diff in diffs.items():
+            maxdiff[c] = max(maxdiff[c], diff)
+        #endfor
+
+        erow["dataset"] = "pass2"
+        erow["point_id"] = f"pass2:{irow}"
+        erow["source_row"] = irow
+        matched_rows.append(erow)
+    #endfor
+
+    if unmatched or ambiguous or len(matched_rows) != len(pass2_data):
+        raise RuntimeError(
+            "Pass-2 model reuse failed: "
+            f"matched {len(matched_rows)}/{len(pass2_data)}, "
+            f"unmatched={len(unmatched)}, ambiguous={len(ambiguous)}. "
+            "The pass-1/pass-2 kinematic grids are not identical under the "
+            "current matching tolerance."
+        )
+    #endif
+
+    print(
+        f"[PASS2 model reuse] {len(matched_rows)}/{len(pass2_data)} pass-2 "
+        "points matched to pass-1 kinematics."
+    )
+    print(
+        "[PASS2 model reuse] max |differences|: "
+        + ", ".join(f"{c}={maxdiff[c]:.3e}" for c in kin_cols)
+    )
+    print(
+        "[PASS2 model reuse] Reusing KM15/VGG99/GK16 predictions; "
+        "no model reevaluation required."
+    )
+    return pd.DataFrame(matched_rows).reset_index(drop=True)
+#enddef
+
+
 def save_all_point_model_agreement_diagnostics(
         selection: pd.DataFrame,
         bundles: Sequence[Dict[str, object]],
@@ -8819,11 +8977,24 @@ def save_all_point_model_agreement_diagnostics(
     outdir.mkdir(parents=True, exist_ok=True)
     selection_datasets = set(selection["dataset"].astype(str))
     usable = [
-        b for b in bundles if str(b["key"]) in selection_datasets
+        b for b in bundles
+        if (
+            str(b["key"]) in selection_datasets
+            or (
+                str(b["key"]) == "pass2"
+                and "pass1" in selection_datasets
+            )
+        )
     ]
     missing = [
         str(b["key"]) for b in bundles
-        if str(b["key"]) not in selection_datasets
+        if not (
+            str(b["key"]) in selection_datasets
+            or (
+                str(b["key"]) == "pass2"
+                and "pass1" in selection_datasets
+            )
+        )
     ]
     if missing:
         print(
@@ -8852,9 +9023,13 @@ def save_all_point_model_agreement_diagnostics(
         label = str(bundle["label"])
         kind = str(bundle["kind"])
         data = bundle["all_data"].reset_index(drop=True)
-        ext = selection.loc[
-            selection["dataset"].astype(str) == key
-        ].copy().sort_values("source_row").reset_index(drop=True)
+        if key == "pass2":
+            ext = match_pass2_to_pass1_model_rows(data, selection)
+        else:
+            ext = selection.loc[
+                selection["dataset"].astype(str) == key
+            ].copy().sort_values("source_row").reset_index(drop=True)
+        #endif
         if len(ext) != len(data):
             print(
                 f"[model agreement diagnostic] {label}: external/current point "
@@ -8872,8 +9047,32 @@ def save_all_point_model_agreement_diagnostics(
         #endif
 
         y = data["xs"].to_numpy(float)
+        stat_err = dataset_statistical_errors(data, kind)
         err = dataset_point_errors(data, kind, 0.0, False)
         norm_frac = float(bundle.get("norm_frac", 0.0))
+
+        precision_finite = (
+            np.isfinite(y) & (y > 0.0)
+            & np.isfinite(stat_err) & (stat_err > 0.0)
+            & np.isfinite(err) & (err > 0.0)
+        )
+        stat_frac = np.full(len(data), np.nan)
+        total_frac = np.full(len(data), np.nan)
+        stat_frac[precision_finite] = stat_err[precision_finite] / y[precision_finite]
+        total_frac[precision_finite] = err[precision_finite] / y[precision_finite]
+
+        def _pct_summary(arr: np.ndarray) -> Tuple[float, float, float]:
+            vals = np.asarray(arr, dtype=float)
+            vals = vals[np.isfinite(vals)]
+            if len(vals) == 0:
+                return np.nan, np.nan, np.nan
+            #endif
+            q16, q50, q84 = np.percentile(vals, [16.0, 50.0, 84.0])
+            return float(q16), float(q50), float(q84)
+        #enddef
+
+        stat16, stat50, stat84 = _pct_summary(stat_frac)
+        total16, total50, total84 = _pct_summary(total_frac)
 
         fig, axes = plt.subplots(2, 2, figsize=(12.8, 9.2))
         for model in FINAL_MODEL_NAMES:
@@ -8905,6 +9104,11 @@ def save_all_point_model_agreement_diagnostics(
             ) / err[finite]
             ratio = np.full(len(data), np.nan)
             ratio[finite] = y[finite] / pred[finite]
+            frac_residual = np.full(len(data), np.nan)
+            frac_residual[finite] = (
+                scale * pred[finite] - y[finite]
+            ) / y[finite]
+            abs_frac_residual = np.abs(frac_residual)
 
             # Central phi is intentionally retained in the all-point score.
             phi = np.mod(data["phi_deg"].to_numpy(float), 360.0)
@@ -8928,6 +9132,18 @@ def save_all_point_model_agreement_diagnostics(
                 "profiled_chi2_per_point": float(prof_chi2 / np.sum(finite)),
                 "rms_profiled_pull": float(np.sqrt(np.mean(prof_pull_full[finite] ** 2))),
                 "median_data_over_model": float(np.nanmedian(ratio[finite])),
+                "median_abs_fractional_model_residual": float(
+                    np.nanmedian(abs_frac_residual[finite])
+                ),
+                "rms_fractional_model_residual": float(
+                    np.sqrt(np.nanmean(frac_residual[finite] ** 2))
+                ),
+                "median_stat_fraction": stat50,
+                "stat_fraction_p16": stat16,
+                "stat_fraction_p84": stat84,
+                "median_pointwise_total_fraction": total50,
+                "pointwise_total_fraction_p16": total16,
+                "pointwise_total_fraction_p84": total84,
                 "N_central_phi_pm60": int(np.sum(central)),
                 "central_phi_chi2_per_point": (
                     float(central_chi2 / np.sum(central))
@@ -9049,6 +9265,161 @@ def save_all_point_model_agreement_diagnostics(
         fig.tight_layout()
         fig.savefig(outdir / "07_all_point_model_agreement_chi2.png", dpi=180)
         plt.close(fig)
+
+        # Compact dataset-level table combining experimental precision with
+        # model agreement.  Precision columns are properties of the data and
+        # are therefore repeated only once per dataset in the rendered table.
+        summary_rows = []
+        for label in datasets:
+            drows = scores.loc[
+                scores["dataset_label"].astype(str) == label
+            ]
+            if len(drows) == 0:
+                continue
+            #endif
+            first = drows.iloc[0]
+            row = {
+                "dataset": label,
+                "N": int(first["N_all"]),
+                "median_stat_pct": 100.0 * float(first["median_stat_fraction"]),
+                "stat_p16_pct": 100.0 * float(first["stat_fraction_p16"]),
+                "stat_p84_pct": 100.0 * float(first["stat_fraction_p84"]),
+                "median_pointwise_total_pct": (
+                    100.0 * float(first["median_pointwise_total_fraction"])
+                ),
+                "pointwise_total_p16_pct": (
+                    100.0 * float(first["pointwise_total_fraction_p16"])
+                ),
+                "pointwise_total_p84_pct": (
+                    100.0 * float(first["pointwise_total_fraction_p84"])
+                ),
+            }
+            for model in FINAL_MODEL_NAMES:
+                mr = drows.loc[drows["model"].astype(str) == model]
+                if len(mr):
+                    rr = mr.iloc[0]
+                    tag = MODEL_DISPLAY[model]
+                    row[f"{tag}_chi2_per_point"] = float(
+                        rr["profiled_chi2_per_point"]
+                    )
+                    row[f"{tag}_median_abs_frac_residual_pct"] = (
+                        100.0 * float(rr["median_abs_fractional_model_residual"])
+                    )
+                    row[f"{tag}_rms_frac_residual_pct"] = (
+                        100.0 * float(rr["rms_fractional_model_residual"])
+                    )
+                    row[f"{tag}_central_phi_chi2_per_point"] = float(
+                        rr["central_phi_chi2_per_point"]
+                    )
+                #endif
+            #endfor
+            summary_rows.append(row)
+        #endfor
+
+        summary = pd.DataFrame(summary_rows)
+        summary.to_csv(
+            outdir / "08_all_point_model_agreement_with_precision.csv",
+            index=False,
+        )
+
+        if len(summary):
+            display_cols = [
+                "Dataset", "N", "Stat. precision", "Pointwise total",
+                "KM15 chi2/N", "VGG99 chi2/N", "GK16 chi2/N",
+                "KM15 |frac.|", "VGG99 |frac.|", "GK16 |frac.|",
+            ]
+            table_rows = []
+            for _, r in summary.iterrows():
+                table_rows.append([
+                    str(r["dataset"]),
+                    f'{int(r["N"])}',
+                    (
+                        f'{r["median_stat_pct"]:.1f}% '
+                        f'[{r["stat_p16_pct"]:.1f},{r["stat_p84_pct"]:.1f}]'
+                    ),
+                    (
+                        f'{r["median_pointwise_total_pct"]:.1f}% '
+                        f'[{r["pointwise_total_p16_pct"]:.1f},'
+                        f'{r["pointwise_total_p84_pct"]:.1f}]'
+                    ),
+                    f'{r.get("KM15_chi2_per_point", np.nan):.2f}',
+                    f'{r.get("VGG99_chi2_per_point", np.nan):.2f}',
+                    f'{r.get("GK16_chi2_per_point", np.nan):.2f}',
+                    f'{r.get("KM15_median_abs_frac_residual_pct", np.nan):.1f}%',
+                    f'{r.get("VGG99_median_abs_frac_residual_pct", np.nan):.1f}%',
+                    f'{r.get("GK16_median_abs_frac_residual_pct", np.nan):.1f}%',
+                ])
+            #endfor
+
+            fig_h = max(4.2, 0.55 * len(table_rows) + 2.3)
+            fig, ax = plt.subplots(figsize=(18.0, fig_h))
+            ax.axis("off")
+            tbl = ax.table(
+                cellText=table_rows,
+                colLabels=display_cols,
+                loc="center",
+                cellLoc="center",
+            )
+            tbl.auto_set_font_size(False)
+            tbl.set_fontsize(9.5)
+            tbl.scale(1.0, 1.55)
+            for (irow, icol), cell in tbl.get_celld().items():
+                if irow == 0:
+                    cell.set_text_props(weight="bold")
+                #endif
+                if icol == 0:
+                    cell.set_text_props(ha="left")
+                #endif
+            #endfor
+            ax.set_title(
+                "Experimental precision and full-electroproduction model agreement\n"
+                "median [16th,84th] relative experimental errors; "
+                "median absolute fractional model residual",
+                pad=18.0,
+            )
+            fig.tight_layout()
+            fig.savefig(
+                outdir / "08_all_point_model_agreement_with_precision.png",
+                dpi=190,
+                bbox_inches="tight",
+            )
+            plt.close(fig)
+
+            # A second diagnostic isolates model-data fractional disagreement
+            # from experimental precision.  Unlike chi2, this quantity is not
+            # amplified simply because an experiment has smaller error bars.
+            x = np.arange(len(summary), dtype=float)
+            width = 0.24
+            fig, ax = plt.subplots(figsize=(12.0, 6.8))
+            for imodel, model in enumerate(FINAL_MODEL_NAMES):
+                tag = MODEL_DISPLAY[model]
+                vals = summary[
+                    f"{tag}_median_abs_frac_residual_pct"
+                ].to_numpy(float)
+                ax.bar(
+                    x + (imodel - 1) * width,
+                    vals,
+                    width=width,
+                    label=tag,
+                )
+            #endfor
+            ax.set_xticks(x)
+            ax.set_xticklabels(
+                summary["dataset"].astype(str), rotation=20, ha="right"
+            )
+            ax.set_ylabel("Median absolute fractional model residual (%)")
+            ax.grid(axis="y", alpha=0.2)
+            ax.legend(loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.12))
+            ax.set_title(
+                "Model-data discrepancy independent of experimental error size"
+            )
+            fig.tight_layout()
+            fig.savefig(
+                outdir / "09_all_point_model_fractional_residual.png",
+                dpi=180,
+            )
+            plt.close(fig)
+        #endif
     #endif
 #enddef
 
@@ -9098,6 +9469,18 @@ def run_published_default(args) -> int:
     #endif
 
     diagnostic_bundles = list(bundles)
+
+    # Always include the two additional cross-check measurements in the
+    # diagnostic model-agreement ensemble.  They remain excluded from the
+    # production Jo+Lee FF/radius extraction unless explicitly enabled there.
+    if not any(str(b["key"]) == "halla_defurne2015" for b in diagnostic_bundles):
+        diagnostic_bundles.append(
+            run_halla_defurne_validation(args, return_results=True)
+        )
+    #endif
+    if not any(str(b["key"]) == "pass2" for b in diagnostic_bundles):
+        diagnostic_bundles.append(make_pass2_diagnostic_bundle(args))
+    #endif
     if getattr(args, "include_georges", False):
         diagnostic_bundles.append(make_georges_diagnostic_bundle(args))
     #endif
@@ -9112,7 +9495,12 @@ def run_published_default(args) -> int:
         root_outdir / "final_analysis" / "diagnostics"
         / "all_point_model_agreement_input"
     )
-    export_bh_model_selection_kinematics(diagnostic_bundles, diagnostic_input_root)
+    diagnostic_export_bundles = [
+        b for b in diagnostic_bundles if str(b["key"]) != "pass2"
+    ]
+    export_bh_model_selection_kinematics(
+        diagnostic_export_bundles, diagnostic_input_root
+    )
 
     if getattr(args, "include_saylor", False):
         saylor_bundle = next(
