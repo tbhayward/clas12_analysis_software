@@ -6226,6 +6226,31 @@ FINAL_MODEL_NAMES = ("km15", "vgg99", "gk16")
 FINAL_NOMINAL_MODEL = "km15"
 FINAL_PHYSICS_DATASETS = ("jo2015", "pass1")
 
+# Publication-facing chronological ordering.  Unknown/future datasets are
+# placed after the known sequence while preserving their input order.
+DATASET_CHRONOLOGY = {
+    "jo2015": 0,
+    "halla_defurne2015": 1,
+    "saylor2018": 2,
+    "halla_georges2022": 3,
+    "pass1": 4,
+    "pass2": 5,
+}
+
+
+def sort_bundles_chronologically(
+        bundles: Sequence[Dict[str, object]]) -> List[Dict[str, object]]:
+    """Return measurement bundles in the standard publication chronology."""
+    indexed = list(enumerate(bundles))
+    indexed.sort(
+        key=lambda item: (
+            DATASET_CHRONOLOGY.get(str(item[1].get("key", "")), 10_000),
+            item[0],
+        )
+    )
+    return [bundle for _, bundle in indexed]
+#enddef
+
 
 def load_external_bh_model_selection(path: Path) -> pd.DataFrame:
     """Load and validate the completed KM15/VGG99/GK16 model-selection table."""
@@ -8866,7 +8891,7 @@ def make_pass2_diagnostic_bundle(args) -> Dict[str, object]:
         "VGG99/GK16 will use the exported pass-2 points."
     )
     return {
-        "label": "CLAS12 pass-2",
+        "label": "CLAS12 Hayward (unpublished)",
         "key": "pass2",
         "kind": "pass2",
         "norm_frac": norm_frac,
@@ -9025,9 +9050,9 @@ def save_all_point_model_agreement_diagnostics(
     """
     outdir.mkdir(parents=True, exist_ok=True)
     selection_datasets = set(selection["dataset"].astype(str))
-    usable = [
+    usable = sort_bundles_chronologically([
         b for b in bundles if str(b["key"]) in selection_datasets
-    ]
+    ])
     missing = [
         str(b["key"]) for b in bundles
         if str(b["key"]) not in selection_datasets
@@ -9263,38 +9288,108 @@ def save_all_point_model_agreement_diagnostics(
     )
 
     if len(scores):
-        datasets = list(dict.fromkeys(scores["dataset_label"].astype(str)))
+        # Enforce the same chronology used everywhere else in publication plots.
+        label_to_key = {
+            str(b["label"]): str(b["key"]) for b in usable
+        }
+        datasets = sorted(
+            list(dict.fromkeys(scores["dataset_label"].astype(str))),
+            key=lambda label: DATASET_CHRONOLOGY.get(
+                label_to_key.get(str(label), ""), 10_000
+            ),
+        )
         x = np.arange(len(datasets), dtype=float)
         width = 0.24
-        fig, ax = plt.subplots(figsize=(11.5, 6.8))
+
+        # Dynamic range is large for rejected models, so chi2/N is shown on a
+        # logarithmic axis.  The lower panel shows the actual fractional
+        # cross-section disagreement, which separates model mismatch from the
+        # effect of experimental precision.
+        fig, axes = plt.subplots(
+            2, 1, figsize=(12.8, 9.4), sharex=True,
+            gridspec_kw={"height_ratios": [1.0, 1.0]},
+        )
+        ax_chi2, ax_frac = axes
+
         for imodel, model in enumerate(FINAL_MODEL_NAMES):
-            vals = []
+            chi2_vals = []
+            frac_vals = []
             for label in datasets:
                 row = scores.loc[
                     (scores["dataset_label"].astype(str) == label)
                     & (scores["model"].astype(str) == model)
                 ]
-                vals.append(
-                    float(row.iloc[0]["profiled_chi2_per_point"])
-                    if len(row) else np.nan
-                )
+                if len(row):
+                    chi2_vals.append(
+                        float(row.iloc[0]["profiled_chi2_per_point"])
+                    )
+                    frac_vals.append(
+                        100.0 * float(
+                            row.iloc[0]["median_abs_fractional_model_residual"]
+                        )
+                    )
+                else:
+                    chi2_vals.append(np.nan)
+                    frac_vals.append(np.nan)
+                #endif
             #endfor
-            ax.bar(
+
+            ax_chi2.bar(
                 x + (imodel - 1) * width,
-                vals,
+                chi2_vals,
+                width=width,
+                label=MODEL_DISPLAY[model],
+            )
+            ax_frac.bar(
+                x + (imodel - 1) * width,
+                frac_vals,
                 width=width,
                 label=MODEL_DISPLAY[model],
             )
         #endfor
-        ax.set_xticks(x)
-        ax.set_xticklabels(datasets, rotation=20, ha="right")
-        ax.set_ylabel(r"Profiled $\chi^2$/point, all published points")
-        ax.grid(axis="y", alpha=0.2)
-        ax.legend(loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.12))
-        ax.set_title(
+
+        # Experimental pointwise precision is a useful scale for interpreting
+        # the fractional model residuals.
+        precision_vals = []
+        for label in datasets:
+            row = scores.loc[
+                scores["dataset_label"].astype(str) == label
+            ]
+            precision_vals.append(
+                100.0 * float(row.iloc[0]["median_pointwise_total_fraction"])
+                if len(row) else np.nan
+            )
+        #endfor
+        ax_frac.plot(
+            x,
+            precision_vals,
+            marker="D",
+            linestyle="none",
+            markersize=6,
+            label="Median pointwise experimental uncertainty",
+        )
+
+        ax_chi2.set_yscale("log")
+        ax_chi2.set_ylabel(r"Profiled $\chi^2$/point")
+        ax_chi2.grid(axis="y", alpha=0.2, which="both")
+        ax_chi2.legend(
+            loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.20)
+        )
+        ax_chi2.set_title(
             "Full electroproduction model agreement (diagnostic only)"
         )
-        fig.tight_layout()
+
+        ax_frac.set_ylabel("Median absolute fractional model residual (%)")
+        ax_frac.grid(axis="y", alpha=0.2)
+        ax_frac.legend(
+            loc="upper center", ncol=4, bbox_to_anchor=(0.5, 1.14)
+        )
+        ax_frac.set_xticks(x)
+        ax_frac.set_xticklabels(datasets, rotation=20, ha="right")
+
+        fig.subplots_adjust(
+            top=0.88, bottom=0.16, left=0.09, right=0.98, hspace=0.28
+        )
         fig.savefig(outdir / "07_all_point_model_agreement_chi2.png", dpi=180)
         plt.close(fig)
 
@@ -9349,6 +9444,18 @@ def save_all_point_model_agreement_diagnostics(
         #endfor
 
         summary = pd.DataFrame(summary_rows)
+        if len(summary):
+            summary["_chronology"] = summary["dataset"].map(
+                lambda label: DATASET_CHRONOLOGY.get(
+                    label_to_key.get(str(label), ""), 10_000
+                )
+            )
+            summary = (
+                summary.sort_values("_chronology")
+                .drop(columns=["_chronology"])
+                .reset_index(drop=True)
+            )
+        #endif
         summary.to_csv(
             outdir / "08_all_point_model_agreement_with_precision.csv",
             index=False,
@@ -9510,12 +9617,16 @@ def run_published_default(args) -> int:
             run_halla_defurne_validation(args, return_results=True)
         )
     #endif
-    if not any(str(b["key"]) == "pass2" for b in diagnostic_bundles):
-        diagnostic_bundles.append(make_pass2_diagnostic_bundle(args))
-    #endif
+    # Pass-2/Hayward is intentionally omitted from the publication-facing
+    # all-point model validation for now.  It remains available through the
+    # explicit pass-2 modes, but its run-period combination systematic needs a
+    # dedicated treatment before it is compared on equal footing here.
     if getattr(args, "include_georges", False):
         diagnostic_bundles.append(make_georges_diagnostic_bundle(args))
     #endif
+
+    diagnostic_bundles = sort_bundles_chronologically(diagnostic_bundles)
+    bundles = sort_bundles_chronologically(bundles)
 
     root_outdir = Path(args.outdir).expanduser().resolve()
 

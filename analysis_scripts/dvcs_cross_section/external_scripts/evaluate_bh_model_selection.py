@@ -120,6 +120,7 @@ from typing import Dict, Iterable, List, Sequence
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 DEFAULT_OUTDIR = "/work/clas12/thayward/CLAS12_exclusive/dvcs/model_predictions"
 DEFAULT_KINEMATICS_CACHE = "output/emff_from_bh_paper_method/bh_model_selection/bh_model_kinematics.csv"
@@ -153,6 +154,7 @@ PHI_MAPPING_MODES = (
 DEFAULT_IMPORTED_PHI_MAPPING = "180-minus"
 DEFAULT_CLAS12_PHI_MAPPING = "auto"
 DEFAULT_CLAS12_SCAN_POINTS = 12
+DEFAULT_IMPORTED_SCAN_POINTS = 16
 
 
 def transform_phi_to_partons(
@@ -1491,6 +1493,307 @@ def save_diagnostic_plots(df: pd.DataFrame, outdir: Path) -> None:
 #enddef
 
 
+
+def choose_phi_validation_points(
+        points: pd.DataFrame,
+        dataset: str,
+        n_points: int = DEFAULT_IMPORTED_SCAN_POINTS) -> pd.DataFrame:
+    """Choose deterministic points spanning phi for one convention validation."""
+    d = points.loc[points["dataset"].astype(str) == str(dataset)].copy()
+    if len(d) == 0:
+        raise RuntimeError(
+            f"No dataset=={dataset!r} points are available for phi validation"
+        )
+    #endif
+
+    n_points = max(4, min(int(n_points), len(d)))
+    d = d.sort_values(["phi_deg", "xB", "Q2", "t_abs"]).reset_index(drop=True)
+    indices = np.unique(
+        np.rint(np.linspace(0, len(d) - 1, n_points)).astype(int)
+    )
+    return d.iloc[indices].copy().reset_index(drop=True)
+#enddef
+
+
+def _phi_scan_metrics(merged: pd.DataFrame, column: str) -> Dict[str, float]:
+    """Summarize PARTONS/Gepard BH closure for one process and mapping."""
+    gepard = merged["km15_bh"].to_numpy(float)
+    partons = merged[column].to_numpy(float)
+    valid = (
+        np.isfinite(gepard)
+        & np.isfinite(partons)
+        & (gepard > 0.0)
+        & (partons > 0.0)
+    )
+    ratio = np.full(len(merged), np.nan)
+    ratio[valid] = partons[valid] / gepard[valid]
+    rv = ratio[np.isfinite(ratio) & (ratio > 0.0)]
+
+    if len(rv):
+        log_r = np.log(rv)
+        return {
+            "valid_fraction": float(valid.mean()),
+            "median_ratio": float(np.median(rv)),
+            "log_ratio_std": float(np.std(log_r)),
+            "median_abs_log_offset": float(abs(np.median(log_r))),
+            "fraction_0p5_to_2": float(np.mean((rv > 0.5) & (rv < 2.0))),
+            "ratio_min": float(np.min(rv)),
+            "ratio_max": float(np.max(rv)),
+        }
+    #endif
+
+    return {
+        "valid_fraction": 0.0,
+        "median_ratio": np.nan,
+        "log_ratio_std": np.inf,
+        "median_abs_log_offset": np.inf,
+        "fraction_0p5_to_2": 0.0,
+        "ratio_min": np.nan,
+        "ratio_max": np.nan,
+    }
+#enddef
+
+
+def run_imported_phi_convention_validation(
+        points: pd.DataFrame,
+        outdir: Path,
+        sif: Path,
+        project: Path,
+        executable: str,
+        workers: int,
+        scan_points: int,
+        force: bool = False) -> pd.DataFrame:
+    """
+    Validate the Hall-A/Trento-to-PARTONS azimuth mapping with BH-only closure.
+
+    The test intentionally does not use measured electroproduction cross
+    sections or VGG/GK full-EP agreement.  For each of Defurne 2015 and
+    Georges 2022 it compares PARTONS BH against the cached Gepard/KM15 BH
+    calculation under all four plausible phi mappings.
+
+    Because unpolarized BH is even in phi, identity and negative form one
+    equivalence class, while 180-minus and 180-plus form the other.  The
+    physically documented Trento->BMK candidate is 180-minus; the scan checks
+    that its BH-equivalence class is the one supported numerically.
+    """
+    dataset_specs = [
+        ("halla_defurne2015", "Hall A Defurne 2015"),
+        ("halla_georges2022", "Hall A Georges 2022"),
+    ]
+    root = outdir / "phi_convention_validation"
+    root.mkdir(parents=True, exist_ok=True)
+
+    summary_rows = []
+    point_tables = []
+
+    for dataset, label in dataset_specs:
+        available = points.loc[
+            points["dataset"].astype(str) == dataset
+        ].copy()
+        if len(available) == 0:
+            print(
+                f"[phi validation] {label}: not present in kinematics cache; skipping"
+            )
+            continue
+        #endif
+
+        base = choose_phi_validation_points(
+            points, dataset=dataset, n_points=scan_points
+        )
+        droot = root / dataset
+        droot.mkdir(parents=True, exist_ok=True)
+        base[
+            [
+                "point_id", "dataset", "source_row", "xB", "Q2",
+                "t_abs", "phi_deg", "ebeam", "km15_bh",
+            ]
+        ].to_csv(droot / "scan_points.csv", index=False)
+
+        for mode in PHI_MAPPING_MODES:
+            test = base.copy()
+            test["phi_partons_deg"] = transform_phi_to_partons(
+                test["phi_deg"].to_numpy(float), mode
+            )
+            test["phi_mapping_mode"] = mode
+
+            mode_root = droot / mode
+            results = {}
+            for calculation in ["bh_gv08", "bh_vgg99"]:
+                results[calculation] = run_partons_calculation(
+                    points=test,
+                    calculation=calculation,
+                    outdir=mode_root,
+                    sif=sif,
+                    project=project,
+                    executable=executable,
+                    workers=min(max(1, workers), 2),
+                    chunk_size=max(1, len(test)),
+                    force=force,
+                    cache_tag=f"{dataset}_phi_{mode}",
+                )
+            #endfor
+
+            merged = test[
+                [
+                    "point_id", "dataset", "source_row", "xB", "Q2",
+                    "t_abs", "phi_deg", "phi_partons_deg", "ebeam",
+                    "km15_bh",
+                ]
+            ].copy()
+            merged = merged.merge(
+                results["bh_gv08"][["point_id", "xs_nb"]].rename(
+                    columns={"xs_nb": "partons_bh_gv08"}
+                ),
+                on="point_id", how="left", validate="one_to_one",
+            )
+            merged = merged.merge(
+                results["bh_vgg99"][["point_id", "xs_nb"]].rename(
+                    columns={"xs_nb": "partons_bh_vgg99"}
+                ),
+                on="point_id", how="left", validate="one_to_one",
+            )
+
+            for process_name, col in [
+                ("gv08", "partons_bh_gv08"),
+                ("vgg99", "partons_bh_vgg99"),
+            ]:
+                metrics = _phi_scan_metrics(merged, col)
+                summary_rows.append({
+                    "dataset": dataset,
+                    "dataset_label": label,
+                    "mapping": mode,
+                    "process": process_name,
+                    "N": int(len(merged)),
+                    **metrics,
+                })
+                ratio = (
+                    merged[col].to_numpy(float)
+                    / merged["km15_bh"].to_numpy(float)
+                )
+                merged[f"{process_name}_over_gepard"] = ratio
+            #endfor
+
+            point_tables.append(merged)
+        #endfor
+    #endfor
+
+    if not summary_rows:
+        raise RuntimeError(
+            "Neither Defurne nor Georges is present in the supplied kinematics cache"
+        )
+    #endif
+
+    summary = pd.DataFrame(summary_rows)
+    points_out = pd.concat(point_tables, ignore_index=True)
+    summary.to_csv(root / "phi_mapping_summary.csv", index=False)
+    points_out.to_csv(root / "phi_mapping_pointwise.csv", index=False)
+
+    # One publication-audit canvas: each row is a dataset; left is the explicit
+    # angle mapping, right is BH code closure for all candidate mappings.
+    present_specs = [
+        spec for spec in dataset_specs
+        if spec[0] in set(points_out["dataset"].astype(str))
+    ]
+    fig, axes = plt.subplots(
+        len(present_specs), 2,
+        figsize=(13.5, 4.8 * len(present_specs)),
+        squeeze=False,
+    )
+
+    for irow, (dataset, label) in enumerate(present_specs):
+        ax_map = axes[irow, 0]
+        ax_ratio = axes[irow, 1]
+
+        # Mapping visualization using the documented candidate.
+        d = points_out.loc[
+            (points_out["dataset"].astype(str) == dataset)
+            & (points_out["phi_mapping_mode"].astype(str) == "180-minus")
+        ].copy()
+        d = d.drop_duplicates("point_id").sort_values("phi_deg")
+        ax_map.plot(
+            d["phi_deg"].to_numpy(float),
+            d["phi_partons_deg"].to_numpy(float),
+            marker="o",
+            linestyle="none",
+        )
+        ax_map.set_xlabel(r"Stored/published $\phi$ (deg)")
+        ax_map.set_ylabel(r"Candidate PARTONS $\phi$ (deg)")
+        ax_map.set_title(f"{label}: 180° − φ mapping")
+        ax_map.grid(alpha=0.2)
+
+        # GV08 BH closure is sufficient to expose the mapping class; VGG99 BH
+        # is retained in the CSV as an independent implementation check.
+        for mode in PHI_MAPPING_MODES:
+            m = points_out.loc[
+                (points_out["dataset"].astype(str) == dataset)
+                & (points_out["phi_mapping_mode"].astype(str) == mode)
+            ].copy().sort_values("phi_deg")
+            ax_ratio.plot(
+                m["phi_deg"].to_numpy(float),
+                m["gv08_over_gepard"].to_numpy(float),
+                marker="o",
+                linewidth=1.0,
+                label=mode,
+            )
+        #endfor
+        ax_ratio.axhline(1.0, linewidth=0.8)
+        ax_ratio.set_xlabel(r"Stored/published $\phi$ (deg)")
+        ax_ratio.set_ylabel("PARTONS GV08 BH / Gepard BH")
+        ax_ratio.set_yscale("log")
+        ax_ratio.set_title(f"{label}: BH-only convention closure")
+        ax_ratio.grid(alpha=0.2, which="both")
+        ax_ratio.legend(ncol=2)
+    #endfor
+
+    fig.suptitle(
+        "Hall-A azimuth-convention validation using BH-only code closure",
+        y=0.995,
+    )
+    fig.subplots_adjust(
+        top=0.94, bottom=0.08, left=0.08, right=0.98,
+        hspace=0.34, wspace=0.25,
+    )
+    fig.savefig(root / "01_halla_phi_convention_validation.png", dpi=190)
+    plt.close(fig)
+
+    # Print a compact class-level verdict without choosing a convention from
+    # electroproduction chi2.
+    equivalence_class = {
+        "identity": "zero_shift",
+        "negative": "zero_shift",
+        "180-minus": "180_shift",
+        "180-plus": "180_shift",
+    }
+    print("\n[phi validation] Hall-A BH-only convention summary")
+    for dataset, label in present_specs:
+        dsum = summary.loc[
+            (summary["dataset"].astype(str) == dataset)
+            & (summary["process"].astype(str) == "gv08")
+        ].copy()
+        dsum["class"] = dsum["mapping"].map(equivalence_class)
+        class_scores = (
+            dsum.assign(
+                score=dsum["log_ratio_std"].to_numpy(float)
+                + 0.25 * dsum["median_abs_log_offset"].to_numpy(float)
+            )
+            .groupby("class", as_index=False)["score"].min()
+            .sort_values("score")
+        )
+        best_class = str(class_scores.iloc[0]["class"])
+        documented_supported = best_class == "180_shift"
+        m180 = dsum.loc[dsum["mapping"] == "180-minus"].iloc[0]
+        print(
+            f"  {label}: best BH class={best_class}; "
+            f"180-minus GV08 median={float(m180['median_ratio']):.5f}, "
+            f"log-std={float(m180['log_ratio_std']):.5f}; "
+            f"documented 180-shift class supported={documented_supported}"
+        )
+    #endfor
+    print(f"[phi validation] outputs -> {root}")
+    return summary
+#enddef
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="KM15/VGG99/GK16 BH-purity model-selection evaluator"
@@ -1577,6 +1880,24 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--validate-phi-conventions",
+        action="store_true",
+        help=(
+            "Run BH-only phi-convention validation for Hall A Defurne 2015 "
+            "and Georges 2022 under all four candidate mappings."
+        ),
+    )
+    p.add_argument(
+        "--imported-phi-scan-points",
+        type=int,
+        default=DEFAULT_IMPORTED_SCAN_POINTS,
+        help=(
+            "Representative points per Hall-A dataset used by "
+            "--validate-phi-conventions; default "
+            f"{DEFAULT_IMPORTED_SCAN_POINTS}."
+        ),
+    )
+    p.add_argument(
         "--thresholds",
         type=float,
         nargs="+",
@@ -1623,6 +1944,7 @@ def main(argv: List[str] | None = None) -> int:
     needs_partons_runtime = (
         args.run_partons
         or args.scan_clas12_phi_only
+        or args.validate_phi_conventions
         or args.clas12_phi_mapping == "auto"
     )
     if needs_partons_runtime:
@@ -1653,8 +1975,26 @@ def main(argv: List[str] | None = None) -> int:
         )
     #endif
 
+    if args.validate_phi_conventions:
+        run_imported_phi_convention_validation(
+            points=points,
+            outdir=outdir,
+            sif=sif,
+            project=project,
+            executable=args.partons_executable,
+            workers=args.workers,
+            scan_points=args.imported_phi_scan_points,
+            force=args.force_partons,
+        )
+    #endif
+
     if args.scan_clas12_phi_only:
         print("[done] CLAS12 BH-only phi-mapping scan complete")
+        return 0
+    #endif
+
+    if args.validate_phi_conventions and not args.run_partons:
+        print("[done] Hall-A phi-convention validation complete")
         return 0
     #endif
 
@@ -1692,7 +2032,8 @@ def main(argv: List[str] | None = None) -> int:
         print(
             "Nothing to run after phi validation. Use --run-partons for the "
             "full cached PARTONS evaluation, --scan-clas12-phi-only for the "
-            "BH-only convention test, or --make-partons-xml to inspect XML."
+            "CLAS12 BH-only convention test, --validate-phi-conventions for "
+            "Defurne/Georges BH-only validation, or --make-partons-xml to inspect XML."
         )
         return 0
     #endif
