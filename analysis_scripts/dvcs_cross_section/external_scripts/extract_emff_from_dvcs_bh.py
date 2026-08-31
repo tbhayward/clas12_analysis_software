@@ -189,6 +189,23 @@ HALLA_DEFURNE_GLOBAL_SCALE_FRAC = 0.028
 SAYLOR_EBEAM = 5.88
 SAYLOR_GLOBAL_SCALE_FRAC = 0.05
 DEFAULT_SAYLOR_FILE = "import/saylor_CLAS6.txt"
+DEFAULT_GEORGES_FILE = "import/E12-06-114.xls"
+
+# Georges et al., PRL 128, 252002 (2022), Hall A E12-06-114.
+# Nominal (xB,Q2,Ebeam) settings from Table I.  The supplemental spreadsheet
+# contains the actual average xB and Q2 in each t bin, so every row is mapped
+# to the nearest nominal setting in the (xB,Q2) plane.
+GEORGES_KINEMATIC_SETTINGS = (
+    ("Kin-36-1", 0.36, 3.20, 7.38),
+    ("Kin-36-2", 0.36, 3.60, 8.52),
+    ("Kin-36-3", 0.36, 4.47, 10.59),
+    ("Kin-48-1", 0.48, 2.70, 4.49),
+    ("Kin-48-2", 0.48, 4.37, 8.85),
+    ("Kin-48-3", 0.48, 5.33, 8.85),
+    ("Kin-48-4", 0.48, 6.90, 10.99),
+    ("Kin-60-1", 0.60, 5.54, 8.52),
+    ("Kin-60-3", 0.60, 8.40, 10.59),
+)
 SAYLOR_SUPPLEMENT_URL = (
     "https://uknowledge.uky.edu/cgi/viewcontent.cgi?"
     "article=1625&context=physastron_facpub&filename=1&type=additional"
@@ -814,6 +831,166 @@ def load_saylor_supplement(path: str) -> pd.DataFrame:
     #endif
 
     return df
+#enddef
+
+
+def _nearest_georges_setting(xb: float, q2: float):
+    """Return the unique nearest nominal E12-06-114 setting."""
+    # Scale the two coordinates by their natural separation so Q2 does not
+    # numerically dominate the xB distance.
+    ranked = []
+    for name, xb0, q20, ebeam in GEORGES_KINEMATIC_SETTINGS:
+        d2 = ((float(xb) - xb0) / 0.12)**2 + ((float(q2) - q20) / 1.0)**2
+        ranked.append((d2, name, xb0, q20, ebeam))
+    #endfor
+    ranked.sort(key=lambda item: item[0])
+    return ranked[0]
+#enddef
+
+
+def load_georges_supplement(path: str) -> pd.DataFrame:
+    """
+    Load the Hall A E12-06-114 supplemental spreadsheet (Georges et al. 2022).
+
+    Only the helicity-INDEPENDENT cross section is used here.  The spreadsheet
+    also contains the helicity-dependent cross section in columns 9--12; those
+    values are deliberately ignored for the present unpolarized BH study.
+
+    The published t column is negative; the internal convention is t_abs=|t|.
+    The two asymmetric systematic columns are retained and a symmetric
+    pointwise diagnostic uncertainty is defined as their average magnitude.
+    No separate correlated normalization nuisance is invented here because the
+    spreadsheet does not decompose its systematic uncertainty that way.
+    """
+    path = Path(path).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Georges E12-06-114 spreadsheet not found: {path}")
+    #endif
+
+    try:
+        raw = pd.read_excel(path, sheet_name=0)
+    except ImportError as exc:
+        raise ImportError(
+            "Reading the legacy .xls E12-06-114 supplement requires the Python "
+            "package 'xlrd'. Install it in the analysis environment, or save the "
+            "same spreadsheet as .xlsx and pass that filename with --georges-file."
+        ) from exc
+    #endtry
+
+    if raw.shape[1] < 8:
+        raise RuntimeError(
+            f"Unexpected E12-06-114 spreadsheet layout: only {raw.shape[1]} columns"
+        )
+    #endif
+
+    # The official supplement has fixed semantic column order.  Use positions
+    # rather than fragile embedded-newline Excel header strings.
+    out = pd.DataFrame({
+        "xB": pd.to_numeric(raw.iloc[:, 0], errors="coerce"),
+        "Q2": pd.to_numeric(raw.iloc[:, 1], errors="coerce"),
+        "t_raw": pd.to_numeric(raw.iloc[:, 2], errors="coerce"),
+        "phi_deg": pd.to_numeric(raw.iloc[:, 3], errors="coerce"),
+        "xs": pd.to_numeric(raw.iloc[:, 4], errors="coerce"),
+        "stat": pd.to_numeric(raw.iloc[:, 5], errors="coerce"),
+        "sys_upper": pd.to_numeric(raw.iloc[:, 6], errors="coerce"),
+        "sys_lower": pd.to_numeric(raw.iloc[:, 7], errors="coerce"),
+    })
+    finite = np.all(np.isfinite(out[["xB", "Q2", "t_raw", "phi_deg", "xs", "stat"]]), axis=1)
+    out = out.loc[finite].copy().reset_index(drop=True)
+    out["t_abs"] = np.abs(out["t_raw"].to_numpy(float))
+    out["phi_deg"] = np.mod(out["phi_deg"].to_numpy(float), 360.0)
+    out["stat"] = np.abs(out["stat"].to_numpy(float))
+    out["sys_upper"] = np.abs(out["sys_upper"].to_numpy(float))
+    out["sys_lower"] = np.abs(out["sys_lower"].to_numpy(float))
+    out["ptp_sys_abs"] = 0.5 * (out["sys_upper"] + out["sys_lower"])
+
+    setting_names = []
+    ebeams = []
+    nominal_xb = []
+    nominal_q2 = []
+    for xb, q2 in zip(out["xB"].to_numpy(float), out["Q2"].to_numpy(float)):
+        _, name, xb0, q20, ebeam = _nearest_georges_setting(xb, q2)
+        setting_names.append(name)
+        nominal_xb.append(xb0)
+        nominal_q2.append(q20)
+        ebeams.append(ebeam)
+    #endfor
+    out["setting"] = setting_names
+    out["ebeam"] = np.asarray(ebeams, dtype=float)
+    out["nominal_xB"] = np.asarray(nominal_xb, dtype=float)
+    out["nominal_Q2"] = np.asarray(nominal_q2, dtype=float)
+    out["source"] = "Hall A Georges 2022"
+    out["_georges_row"] = np.arange(len(out), dtype=int)
+
+    counts = out.groupby("setting", sort=False).size()
+    print(f"[GEORGES] Loaded {len(out)} helicity-independent points from {path.name}.")
+    print("[GEORGES] Setting counts: " + ", ".join(f"{k}={int(v)}" for k, v in counts.items()))
+    print(
+        f"[GEORGES] |t| range={out['t_abs'].min():.4f}--{out['t_abs'].max():.4f} GeV^2; "
+        f"Q2 range={out['Q2'].min():.2f}--{out['Q2'].max():.2f} GeV^2."
+    )
+    return out
+#enddef
+
+
+def evaluate_km15_georges_dataframe(
+        df: pd.DataFrame,
+        workers: int,
+        cache_dir: Path,
+        force: bool = False) -> pd.DataFrame:
+    """KM15/BH decomposition for Georges rows with setting-dependent Ebeam."""
+    pieces = []
+    for setting_name, group in df.groupby("setting", sort=False):
+        ebeams = np.unique(group["ebeam"].to_numpy(float))
+        if len(ebeams) != 1:
+            raise RuntimeError(f"{setting_name}: non-unique Ebeam values {ebeams}")
+        #endif
+        tmp = group.sort_values("_georges_row").reset_index(drop=True)
+        cache_path = cache_dir / f"km15_bh_decomposition_georges2022_{setting_name}.csv"
+        print(
+            f"[GEORGES KM15] {setting_name}: {len(tmp)} points at "
+            f"Ebeam={ebeams[0]:.2f} GeV"
+        )
+        evaluated = evaluate_km15_dataframe(
+            tmp,
+            ebeam=float(ebeams[0]),
+            workers=workers,
+            cache_path=cache_path,
+            force=force,
+        )
+        pieces.append(evaluated)
+    #endfor
+    out = pd.concat(pieces, ignore_index=True)
+    out = out.sort_values("_georges_row").reset_index(drop=True)
+    return out
+#enddef
+
+
+def make_georges_diagnostic_bundle(args) -> Dict[str, object]:
+    """Build diagnostic-only Georges bundle; never enters production fits."""
+    outdir = Path(args.outdir).expanduser().resolve() / "halla_georges2022"
+    outdir.mkdir(parents=True, exist_ok=True)
+    df = load_georges_supplement(str(resolve_script_relative_path(args.georges_file)))
+    df = evaluate_km15_georges_dataframe(
+        df,
+        workers=args.workers,
+        cache_dir=outdir,
+        force=args.force_model,
+    )
+    # Canonical aliases used by the shared selection/export machinery.
+    df["rbh"] = df["R_BH"].to_numpy(float)
+    df["delta_bh"] = df["bh_delta"].to_numpy(float)
+    set5 = df.loc[df["delta_bh"] <= 0.05].copy().reset_index(drop=True)
+    print(f"[GEORGES] KM15 5% BH-purity diagnostic: {len(set5)}/{len(df)} points")
+    return {
+        "key": "halla_georges2022",
+        "kind": "georges2022",
+        "label": "Hall A Georges 2022",
+        "all_data": df.reset_index(drop=True),
+        "set5": set5,
+        "norm_frac": 0.0,
+        "diagnostic_only": True,
+    }
 #enddef
 
 
@@ -2120,6 +2297,11 @@ def dataset_statistical_errors(
             )
         #endif
         return data["stat"].to_numpy(float)
+    elif dataset_kind == "georges2022":
+        if "stat" not in data.columns:
+            raise KeyError("Hall A Georges dataframe is missing 'stat'.")
+        #endif
+        return data["stat"].to_numpy(float)
     elif dataset_kind == "halla_defurne2015":
         if "halla_err_stat" in data.columns:
             return data["halla_err_stat"].to_numpy(float)
@@ -2184,6 +2366,13 @@ def dataset_point_errors(
             )
         #endif
         ptp = data["ptp_sys"].to_numpy(float)
+        base = np.sqrt(stat**2 + ptp**2)
+    elif dataset_kind == "georges2022":
+        stat = dataset_statistical_errors(data, dataset_kind)
+        if "ptp_sys_abs" not in data.columns:
+            raise KeyError("Hall A Georges dataframe is missing 'ptp_sys_abs'.")
+        #endif
+        ptp = data["ptp_sys_abs"].to_numpy(float)
         base = np.sqrt(stat**2 + ptp**2)
     elif dataset_kind == "halla_defurne2015":
         stat = dataset_statistical_errors(data, dataset_kind)
@@ -8303,6 +8492,458 @@ def run_final_model_selected_analysis(
 #enddef
 
 
+
+def _fit5_prediction_and_pull_for_bundle(
+        bundle: Dict[str, object],
+        bh_cut: float = 0.05) -> pd.DataFrame:
+    """Return Fit-5 prediction, residual, pull, and chi2 for one selected bundle."""
+    data = bundle["set5"].copy().reset_index(drop=True)
+    fit5 = next(r for r in bundle["results"] if r.name == "Fit 5")
+    q = data["t_abs"].to_numpy(float)
+    f1, f2 = paper_model_f1f2(fit5.model_kind, q, fit5.params)
+    pred = bh_from_f1f2(
+        data["bh_A"].to_numpy(float),
+        data["bh_B"].to_numpy(float),
+        data["bh_C"].to_numpy(float),
+        f1, f2,
+    )
+    beta_key = "beta_" + re.sub(
+        r"[^A-Za-z0-9]+", "_", str(bundle["key"])
+    )
+    pred *= float(fit5.meta.get(beta_key + "_scale_factor", 1.0))
+    err = dataset_point_errors(
+        data, str(bundle["kind"]), float(bh_cut), True
+    )
+    y = data["xs"].to_numpy(float)
+    out = data.copy()
+    out["fit5_prediction"] = pred
+    out["fit5_error"] = err
+    out["fit5_residual"] = y - pred
+    out["fit5_pull"] = (y - pred) / err
+    out["fit5_chi2_contribution"] = out["fit5_pull"].to_numpy(float) ** 2
+    return out
+#enddef
+
+
+def save_jo_saylor_direct_comparison(
+        jo_bundle: Dict[str, object],
+        saylor_bundle: Dict[str, object],
+        outdir: Path) -> None:
+    """
+    Directly compare why Jo 2015 and Saylor 2018 behave differently in pure-BH fits.
+
+    The comparison uses each experiment's own nominal 5% KM15-selected sample and
+    its own Fit-5 prediction.  It therefore does not require identical kinematics.
+    Binned mean pulls and chi2 per point expose whether the Saylor discrepancy is
+    localized in Q2, xB, |t|, or phi rather than merely reflecting a global offset.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    prepared = {
+        "CLAS6 Jo 2015": _fit5_prediction_and_pull_for_bundle(jo_bundle),
+        "CLAS6 Saylor 2018": _fit5_prediction_and_pull_for_bundle(saylor_bundle),
+    }
+    variables = [
+        ("Q2", r"$Q^2$ (GeV$^2$)"),
+        ("xB", r"$x_B$"),
+        ("t_abs", r"$|t|$ (GeV$^2$)"),
+        ("phi_deg", r"$\phi$ (deg)"),
+    ]
+
+    rows = []
+    fig, axes = plt.subplots(2, 4, figsize=(17.0, 8.5), sharex="col")
+    for icol, (var, xlabel) in enumerate(variables):
+        allvals = np.concatenate([
+            d[var].to_numpy(float) for d in prepared.values()
+        ])
+        finite_all = allvals[np.isfinite(allvals)]
+        if len(finite_all) < 2:
+            continue
+        #endif
+        edges = np.linspace(
+            float(np.nanmin(finite_all)),
+            float(np.nanmax(finite_all)),
+            11,
+        )
+        centers = 0.5 * (edges[:-1] + edges[1:])
+
+        for label, data in prepared.items():
+            x = data[var].to_numpy(float)
+            pull = data["fit5_pull"].to_numpy(float)
+            chi2_i = data["fit5_chi2_contribution"].to_numpy(float)
+            mean_pull = np.full(len(centers), np.nan)
+            chi2_per_point = np.full(len(centers), np.nan)
+
+            for ibin, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
+                mask = (
+                    np.isfinite(x)
+                    & np.isfinite(pull)
+                    & (x >= lo)
+                    & ((x < hi) if ibin < len(edges) - 2 else (x <= hi))
+                )
+                if not np.any(mask):
+                    continue
+                #endif
+                mean_pull[ibin] = float(np.mean(pull[mask]))
+                chi2_per_point[ibin] = float(np.mean(chi2_i[mask]))
+                rows.append({
+                    "dataset": label,
+                    "variable": var,
+                    "bin": int(ibin),
+                    "low": float(lo),
+                    "high": float(hi),
+                    "N": int(np.sum(mask)),
+                    "mean_pull": float(mean_pull[ibin]),
+                    "rms_pull": float(np.sqrt(np.mean(pull[mask] ** 2))),
+                    "chi2_sum": float(np.sum(chi2_i[mask])),
+                    "chi2_per_point": float(chi2_per_point[ibin]),
+                })
+            #endfor
+
+            axes[0, icol].plot(
+                centers, mean_pull, marker="o", linewidth=1.2, label=label
+            )
+            axes[1, icol].plot(
+                centers, chi2_per_point, marker="o", linewidth=1.2, label=label
+            )
+        #endfor
+
+        axes[0, icol].axhline(0.0, linewidth=0.8)
+        axes[0, icol].set_title(xlabel)
+        axes[1, icol].set_xlabel(xlabel)
+        axes[0, icol].grid(alpha=0.2)
+        axes[1, icol].grid(alpha=0.2)
+    #endfor
+
+    axes[0, 0].set_ylabel("Binned mean Fit-5 pull")
+    axes[1, 0].set_ylabel(r"Binned $\chi^2$/point")
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels, loc="upper center", ncol=2, bbox_to_anchor=(0.5, 0.965)
+    )
+    fig.suptitle(
+        "CLAS6 Jo 2015 vs Saylor 2018: where the nominal pure-BH fit disagrees",
+        y=0.995,
+    )
+    fig.subplots_adjust(
+        top=0.89, bottom=0.10, left=0.07, right=0.985,
+        hspace=0.22, wspace=0.24,
+    )
+    fig.savefig(outdir / "01_jo2015_vs_saylor2018_fit5_discrepancy.png", dpi=180)
+    plt.close(fig)
+
+    pd.DataFrame(rows).to_csv(
+        outdir / "jo2015_vs_saylor2018_binned_fit5_diagnostics.csv",
+        index=False,
+    )
+
+    summary_rows = []
+    for label, data in prepared.items():
+        pull = data["fit5_pull"].to_numpy(float)
+        finite = np.isfinite(pull)
+        summary_rows.append({
+            "dataset": label,
+            "N": int(np.sum(finite)),
+            "chi2_sum": float(np.sum(pull[finite] ** 2)),
+            "chi2_per_point": float(np.mean(pull[finite] ** 2)),
+            "mean_pull": float(np.mean(pull[finite])),
+            "rms_pull": float(np.sqrt(np.mean(pull[finite] ** 2))),
+            "fraction_abs_pull_gt_2": float(np.mean(np.abs(pull[finite]) > 2.0)),
+            "fraction_abs_pull_gt_3": float(np.mean(np.abs(pull[finite]) > 3.0)),
+        })
+    #endfor
+    pd.DataFrame(summary_rows).to_csv(
+        outdir / "jo2015_vs_saylor2018_fit5_summary.csv",
+        index=False,
+    )
+#enddef
+
+
+def _profile_model_normalization(
+        measured: np.ndarray,
+        predicted: np.ndarray,
+        error: np.ndarray,
+        norm_frac: float) -> Tuple[float, float, float]:
+    """Profile one Gaussian correlated normalization nuisance analytically."""
+    y = np.asarray(measured, dtype=float)
+    m = np.asarray(predicted, dtype=float)
+    e = np.asarray(error, dtype=float)
+    finite = (
+        np.isfinite(y) & np.isfinite(m) & np.isfinite(e)
+        & (e > 0.0) & (m > 0.0)
+    )
+    y = y[finite]
+    m = m[finite]
+    e = e[finite]
+    if len(y) == 0:
+        return np.nan, np.nan, np.nan
+    #endif
+
+    frac = float(norm_frac)
+    if frac > 0.0:
+        w = 1.0 / (e ** 2)
+        denom = 1.0 + frac * frac * float(np.sum(m * m * w))
+        beta = (
+            frac * float(np.sum(m * (y - m) * w)) / denom
+        )
+    else:
+        beta = 0.0
+    #endif
+    scale = 1.0 + frac * beta
+    pull = (scale * m - y) / e
+    chi2 = float(np.dot(pull, pull) + beta * beta)
+    return beta, scale, chi2
+#enddef
+
+
+def save_all_point_model_agreement_diagnostics(
+        selection: pd.DataFrame,
+        bundles: Sequence[Dict[str, object]],
+        outdir: Path) -> None:
+    """
+    Compare every published point with the full EP prediction of all three models.
+
+    This is a diagnostic model-validation score only.  It deliberately includes
+    the central-phi/DVCS-sensitive region and is NEVER fed back into BH-purity
+    selection, family ranking, or the quoted model systematic.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    selection_datasets = set(selection["dataset"].astype(str))
+    usable = [
+        b for b in bundles if str(b["key"]) in selection_datasets
+    ]
+    missing = [
+        str(b["key"]) for b in bundles
+        if str(b["key"]) not in selection_datasets
+    ]
+    if missing:
+        print(
+            "[model agreement diagnostic] external model table does not contain "
+            + ", ".join(missing)
+            + "; those datasets are omitted. Use the exported all-enabled "
+              "diagnostic kinematics file to evaluate them with KM15/VGG99/GK16."
+        )
+    #endif
+    if not usable:
+        print("[model agreement diagnostic] no enabled dataset has external model predictions")
+        return
+    #endif
+
+    score_rows = []
+    binned_rows = []
+    variables = [
+        ("Q2", r"$Q^2$ (GeV$^2$)"),
+        ("xB", r"$x_B$"),
+        ("t_abs", r"$|t|$ (GeV$^2$)"),
+        ("phi_deg", r"$\phi$ (deg)"),
+    ]
+
+    for bundle in usable:
+        key = str(bundle["key"])
+        label = str(bundle["label"])
+        kind = str(bundle["kind"])
+        data = bundle["all_data"].reset_index(drop=True)
+        ext = selection.loc[
+            selection["dataset"].astype(str) == key
+        ].copy().sort_values("source_row").reset_index(drop=True)
+        if len(ext) != len(data):
+            print(
+                f"[model agreement diagnostic] {label}: external/current point "
+                f"count mismatch ({len(ext)} vs {len(data)}); skipping"
+            )
+            continue
+        #endif
+        if not np.array_equal(
+                ext["source_row"].to_numpy(int),
+                np.arange(len(data), dtype=int)):
+            print(
+                f"[model agreement diagnostic] {label}: source_row mismatch; skipping"
+            )
+            continue
+        #endif
+
+        y = data["xs"].to_numpy(float)
+        err = dataset_point_errors(data, kind, 0.0, False)
+        norm_frac = float(bundle.get("norm_frac", 0.0))
+
+        fig, axes = plt.subplots(2, 2, figsize=(12.8, 9.2))
+        for model in FINAL_MODEL_NAMES:
+            ep_col = MODEL_EP_COLUMN[model]
+            if ep_col not in ext.columns:
+                print(
+                    f"[model agreement diagnostic] {label}: missing {ep_col}; "
+                    f"cannot score {model}"
+                )
+                continue
+            #endif
+            pred = pd.to_numeric(ext[ep_col], errors="coerce").to_numpy(float)
+            finite = (
+                np.isfinite(y) & np.isfinite(err) & (err > 0.0)
+                & np.isfinite(pred) & (pred > 0.0)
+            )
+            if not np.any(finite):
+                continue
+            #endif
+
+            raw_pull = (pred[finite] - y[finite]) / err[finite]
+            raw_chi2 = float(np.dot(raw_pull, raw_pull))
+            beta, scale, prof_chi2 = _profile_model_normalization(
+                y[finite], pred[finite], err[finite], norm_frac
+            )
+            prof_pull_full = np.full(len(data), np.nan)
+            prof_pull_full[finite] = (
+                scale * pred[finite] - y[finite]
+            ) / err[finite]
+            ratio = np.full(len(data), np.nan)
+            ratio[finite] = y[finite] / pred[finite]
+
+            # Central phi is intentionally retained in the all-point score.
+            phi = np.mod(data["phi_deg"].to_numpy(float), 360.0)
+            central = finite & (np.abs(((phi - 180.0 + 180.0) % 360.0) - 180.0) <= 60.0)
+            central_chi2 = (
+                float(np.sum(prof_pull_full[central] ** 2))
+                if np.any(central) else np.nan
+            )
+
+            score_rows.append({
+                "dataset": key,
+                "dataset_label": label,
+                "model": model,
+                "model_display": MODEL_DISPLAY[model],
+                "N_all": int(np.sum(finite)),
+                "raw_chi2": raw_chi2,
+                "raw_chi2_per_point": float(raw_chi2 / np.sum(finite)),
+                "profiled_beta": float(beta),
+                "profiled_scale": float(scale),
+                "profiled_chi2": float(prof_chi2),
+                "profiled_chi2_per_point": float(prof_chi2 / np.sum(finite)),
+                "rms_profiled_pull": float(np.sqrt(np.mean(prof_pull_full[finite] ** 2))),
+                "median_data_over_model": float(np.nanmedian(ratio[finite])),
+                "N_central_phi_pm60": int(np.sum(central)),
+                "central_phi_chi2_per_point": (
+                    float(central_chi2 / np.sum(central))
+                    if np.any(central) else np.nan
+                ),
+                "normalization_fraction": norm_frac,
+            })
+
+            for ax, (var, xlabel) in zip(axes.flat, variables):
+                x = data[var].to_numpy(float)
+                f = finite & np.isfinite(x)
+                if np.sum(f) < 4:
+                    continue
+                #endif
+                edges = np.linspace(
+                    float(np.nanmin(x[f])),
+                    float(np.nanmax(x[f])),
+                    13,
+                )
+                centers = 0.5 * (edges[:-1] + edges[1:])
+                means = np.full(len(centers), np.nan)
+                rms = np.full(len(centers), np.nan)
+                for ibin, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
+                    mask = (
+                        f & (x >= lo)
+                        & ((x < hi) if ibin < len(edges) - 2 else (x <= hi))
+                    )
+                    if not np.any(mask):
+                        continue
+                    #endif
+                    means[ibin] = float(np.mean(prof_pull_full[mask]))
+                    rms[ibin] = float(np.sqrt(np.mean(prof_pull_full[mask] ** 2)))
+                    binned_rows.append({
+                        "dataset": key,
+                        "dataset_label": label,
+                        "model": model,
+                        "variable": var,
+                        "bin": int(ibin),
+                        "low": float(lo),
+                        "high": float(hi),
+                        "N": int(np.sum(mask)),
+                        "mean_profiled_pull": float(means[ibin]),
+                        "rms_profiled_pull": float(rms[ibin]),
+                    })
+                #endfor
+                ax.plot(
+                    centers, means, marker="o", linewidth=1.1,
+                    label=MODEL_DISPLAY[model],
+                )
+                ax.axhline(0.0, linewidth=0.8)
+                ax.set_xlabel(xlabel)
+                ax.set_ylabel("Binned mean pull")
+                ax.grid(alpha=0.2)
+            #endfor
+        #endfor
+
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        if handles:
+            fig.legend(
+                handles, labels, loc="upper center", ncol=3,
+                bbox_to_anchor=(0.5, 0.965),
+            )
+        #endif
+        fig.suptitle(
+            f"{label}: all published points vs full electroproduction models",
+            y=0.995,
+        )
+        fig.subplots_adjust(
+            top=0.90, bottom=0.08, left=0.08, right=0.98,
+            hspace=0.30, wspace=0.24,
+        )
+        safe_key = re.sub(r"[^A-Za-z0-9]+", "_", key)
+        fig.savefig(
+            outdir / f"all_points_model_pulls_{safe_key}.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    #endfor
+
+    scores = pd.DataFrame(score_rows)
+    scores.to_csv(outdir / "all_point_model_agreement_scores.csv", index=False)
+    pd.DataFrame(binned_rows).to_csv(
+        outdir / "all_point_model_agreement_binned_pulls.csv",
+        index=False,
+    )
+
+    if len(scores):
+        datasets = list(dict.fromkeys(scores["dataset_label"].astype(str)))
+        x = np.arange(len(datasets), dtype=float)
+        width = 0.24
+        fig, ax = plt.subplots(figsize=(11.5, 6.8))
+        for imodel, model in enumerate(FINAL_MODEL_NAMES):
+            vals = []
+            for label in datasets:
+                row = scores.loc[
+                    (scores["dataset_label"].astype(str) == label)
+                    & (scores["model"].astype(str) == model)
+                ]
+                vals.append(
+                    float(row.iloc[0]["profiled_chi2_per_point"])
+                    if len(row) else np.nan
+                )
+            #endfor
+            ax.bar(
+                x + (imodel - 1) * width,
+                vals,
+                width=width,
+                label=MODEL_DISPLAY[model],
+            )
+        #endfor
+        ax.set_xticks(x)
+        ax.set_xticklabels(datasets, rotation=20, ha="right")
+        ax.set_ylabel(r"Profiled $\chi^2$/point, all published points")
+        ax.grid(axis="y", alpha=0.2)
+        ax.legend(loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.12))
+        ax.set_title(
+            "Full electroproduction model agreement (diagnostic only)"
+        )
+        fig.tight_layout()
+        fig.savefig(outdir / "07_all_point_model_agreement_chi2.png", dpi=180)
+        plt.close(fig)
+    #endif
+#enddef
+
+
+
 def run_published_default(args) -> int:
     """
     Run the preliminary publication-facing CLAS-only workflow.
@@ -8317,7 +8958,7 @@ def run_published_default(args) -> int:
     print("\n" + "=" * 78)
     print("[DEFAULT MODE] Preliminary CLAS-only BH form-factor/radius study")
     print("[ensemble] CLAS6 Jo 2015 + CLAS12 Lee 2026")
-    print("[excluded by default] CLAS6 Saylor 2018; Hall A Defurne 2015")
+    print("[excluded from production] CLAS6 Saylor 2018; Hall A Defurne 2015; Hall A Georges 2022")
     print("=" * 78)
 
     jo = run_clas6_validation(args, return_results=True)
@@ -8346,7 +8987,34 @@ def run_published_default(args) -> int:
         bundles.insert(-1, run_halla_defurne_validation(args, return_results=True))
     #endif
 
+    diagnostic_bundles = list(bundles)
+    if getattr(args, "include_georges", False):
+        diagnostic_bundles.append(make_georges_diagnostic_bundle(args))
+    #endif
+
     root_outdir = Path(args.outdir).expanduser().resolve()
+
+    # Always export a separate all-enabled diagnostic kinematic table.  This
+    # does not alter the Jo+Lee production cache.  If Saylor/Hall-A are enabled,
+    # this file can be passed through the external KM15/VGG99/GK16 evaluator to
+    # build full all-point model-agreement diagnostics.
+    diagnostic_input_root = (
+        root_outdir / "final_analysis" / "diagnostics"
+        / "all_point_model_agreement_input"
+    )
+    export_bh_model_selection_kinematics(diagnostic_bundles, diagnostic_input_root)
+
+    if getattr(args, "include_saylor", False):
+        saylor_bundle = next(
+            b for b in bundles if str(b["key"]) == "saylor2018"
+        )
+        save_jo_saylor_direct_comparison(
+            jo,
+            saylor_bundle,
+            root_outdir / "final_analysis" / "diagnostics"
+            / "jo2015_vs_saylor2018",
+        )
+    #endif
 
     # The external purity evaluator only needs the datasets used by the final
     # model-selected production analysis.  Keep optional diagnostic datasets
@@ -8358,6 +9026,21 @@ def run_published_default(args) -> int:
 
     if args.run_final_model_analysis:
         run_final_model_selected_analysis(final_bundles, args, root_outdir)
+
+        # Diagnostic-only comparison of every published point with each model's
+        # full electroproduction prediction.  If the current external table
+        # contains only Jo+Lee, optional Saylor/Hall-A bundles are skipped with
+        # an explicit message; evaluate the separately exported all-enabled
+        # kinematic table to add them.
+        diagnostic_selection = load_external_bh_model_selection(
+            Path(args.bh_model_selection_results).expanduser().resolve()
+        )
+        save_all_point_model_agreement_diagnostics(
+            diagnostic_selection,
+            diagnostic_bundles,
+            root_outdir / "final_analysis" / "diagnostics"
+            / "all_point_model_agreement",
+        )
     #endif
 
     # Legacy validation/combination products are still available for whichever
@@ -9193,6 +9876,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="CLAS6 Saylor 2018 saylor_CLAS6.txt or normalized CSV",
     )
     p.add_argument(
+        "--georges-file",
+        default=DEFAULT_GEORGES_FILE,
+        help="Hall A Georges 2022 E12-06-114 supplemental .xls/.xlsx file",
+    )
+    p.add_argument(
         "--download-saylor",
         action="store_true",
         help="Attempt to download the public Saylor supplemental TXT",
@@ -9216,6 +9904,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Opt in to Hall A Defurne 2015 diagnostics. It is excluded from "
             "the preliminary Jo+Lee production ensemble by default."
+        ),
+    )
+    p.add_argument(
+        "--include-georges",
+        action="store_true",
+        help=(
+            "Opt in to Hall A Georges 2022 E12-06-114 diagnostics. Georges is "
+            "diagnostic-only and is never added to the Jo+Lee production fit."
         ),
     )
     p.add_argument(
