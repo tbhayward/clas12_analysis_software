@@ -104,15 +104,15 @@ Output:
 
 Run modes
 ---------
-The publication-facing default studies three measurements when the Saylor
-supplement is available:
+The preliminary publication-facing default uses only the two CLAS
+measurements currently retained for the combined extraction:
 
   * CLAS6 Jo et al. 2015 (Gepard dataset 98)
-  * CLAS6 Hirlinger Saylor et al. 2018 (local supplemental table)
   * CLAS12 Lee 2026 (all_bin_v3.csv)
 
-It fits each separately and every pair/triple combination with common
-form-factor parameters but independent dataset normalization nuisances.
+CLAS6 Saylor 2018 and Hall A Defurne 2015 are excluded by default and can be
+enabled explicitly for diagnostic studies.  They do not enter the preliminary
+Jo+Lee model-selected radius prescription.
 
 CLAS12 pass 2 is deliberately excluded from the default publication-facing
 workflow and is retained only as an explicit option.
@@ -5863,7 +5863,7 @@ FINAL_MODEL_SELECTION_DEFAULT = (
 )
 FINAL_MODEL_NAMES = ("km15", "vgg99", "gk16")
 FINAL_NOMINAL_MODEL = "km15"
-FINAL_PHYSICS_DATASETS = ("jo2015", "halla_defurne2015", "pass1")
+FINAL_PHYSICS_DATASETS = ("jo2015", "pass1")
 
 
 def load_external_bh_model_selection(path: Path) -> pd.DataFrame:
@@ -6147,6 +6147,11 @@ def fit_sachs_family_multi_measurements(
         result[name] = float(m.values[name])
         result[name + "_err"] = float(m.errors[name])
     #endfor
+    # Preserve the complete shape covariance for final GE/GM uncertainty
+    # bands.  JSON keeps the result CSV self-contained without creating a
+    # separate covariance file for every fit.
+    result["shape_covariance_json"] = json.dumps(cov.tolist())
+
     for nname in nuisance_names:
         result[nname] = float(m.values[nname])
         result[nname + "_err"] = float(m.errors[nname])
@@ -7142,6 +7147,388 @@ def validate_external_partons_bh_consistency(
 #enddef
 
 
+
+def production_sachs_coefficients(
+        fit_result: Dict[str, object],
+        which: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Extract one production Sachs coefficient vector and its covariance."""
+    family = str(fit_result["family"])
+    order = int(re.findall(r"\d+", family)[0])
+    prefix = "e" if which.upper() == "GE" else "m"
+    coeffs = np.asarray(
+        [float(fit_result[f"{prefix}{i}"]) for i in range(1, order + 1)],
+        dtype=float,
+    )
+
+    raw_cov = fit_result.get("shape_covariance_json")
+    if raw_cov is None:
+        cov = np.diag([
+            float(fit_result.get(f"{prefix}{i}_err", np.nan)) ** 2
+            for i in range(1, order + 1)
+        ])
+        return coeffs, cov
+    #endif
+
+    full_cov = np.asarray(json.loads(str(raw_cov)), dtype=float)
+    if which.upper() == "GE":
+        cov = full_cov[:order, :order]
+    else:
+        cov = full_cov[order:2 * order, order:2 * order]
+    #endif
+    return coeffs, cov
+#enddef
+
+
+def production_sachs_band(
+        fit_result: Dict[str, object],
+        q: np.ndarray,
+        which: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Central GE/GM curve and full-Hessian one-sigma shape band."""
+    q = np.asarray(q, dtype=float)
+    family = str(fit_result["family"])
+    coeffs, cov = production_sachs_coefficients(fit_result, which)
+    norm = 1.0 if which.upper() == "GE" else MU_P
+
+    central = norm * sachs_family_value(q, coeffs, family)
+    if (
+        cov.shape != (len(coeffs), len(coeffs))
+        or not np.all(np.isfinite(cov))
+    ):
+        return central, np.full_like(central, np.nan)
+    #endif
+
+    gradients = np.empty((len(q), len(coeffs)), dtype=float)
+    for j in range(len(coeffs)):
+        step = 1.0e-5 * max(1.0, abs(float(coeffs[j])))
+        plus = coeffs.copy()
+        minus = coeffs.copy()
+        plus[j] += step
+        minus[j] -= step
+        gradients[:, j] = norm * (
+            sachs_family_value(q, plus, family)
+            - sachs_family_value(q, minus, family)
+        ) / (2.0 * step)
+    #endfor
+
+    variance = np.einsum("ij,jk,ik->i", gradients, cov, gradients)
+    sigma = np.sqrt(np.maximum(variance, 0.0))
+    return central, sigma
+#enddef
+
+
+def save_preliminary_radius_summary_figure(
+        fit_table: pd.DataFrame,
+        final_summary: pd.DataFrame,
+        figures_dir: Path) -> None:
+    """Compact preliminary rE/rM comparison across the three purity models."""
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    models = list(FINAL_MODEL_NAMES)
+    labels = {"km15": "KM15", "vgg99": "VGG99", "gk16": "GK16"}
+
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.8))
+    for ax, quantity, error_col, ylabel in [
+        (axes[0], "rE_fm", "rE_fit_err_fm", r"$r_E$ (fm)"),
+        (axes[1], "rM_fm", "rM_fit_err_fm", r"$r_M$ (fm)"),
+    ]:
+        for i, model in enumerate(models):
+            row = fit_table.loc[fit_table["model"] == model].iloc[0]
+            ax.errorbar(
+                i, float(row[quantity]), yerr=float(row[error_col]),
+                fmt="o", capsize=3.0, markersize=6.0,
+            )
+        #endfor
+        ax.set_xticks(range(len(models)), [labels[m] for m in models])
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=0.25)
+    #endfor
+
+    summary = final_summary.iloc[0]
+    axes[0].axhline(float(summary["rE_fm"]), linewidth=1.0, linestyle="--")
+    axes[1].axhline(float(summary["rM_fm"]), linewidth=1.0, linestyle="--")
+    fig.suptitle("Jo 2015 + Lee 2026: 5% BH-purity model comparison", y=0.98)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(figures_dir / "01_preliminary_radii.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+def save_final_threshold_stability_figure(
+        threshold_table: pd.DataFrame,
+        figures_dir: Path) -> None:
+    """Chosen-family radius stability versus BH-purity threshold."""
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    d = threshold_table.loc[
+        threshold_table["error_mode"].astype(str) == "published_errors"
+    ].copy()
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.8), sharex=True)
+    for model in FINAL_MODEL_NAMES:
+        m = d.loc[d["model"].astype(str) == model].sort_values("threshold")
+        x = 100.0 * m["threshold"].to_numpy(float)
+        axes[0].errorbar(
+            x, m["rE_fm"], yerr=m["rE_fit_err_fm"],
+            fmt="o-", markersize=3.5, linewidth=1.0, label=model.upper(),
+        )
+        axes[1].errorbar(
+            x, m["rM_fm"], yerr=m["rM_fit_err_fm"],
+            fmt="o-", markersize=3.5, linewidth=1.0, label=model.upper(),
+        )
+    #endfor
+
+    for ax, ylabel in zip(axes, [r"$r_E$ (fm)", r"$r_M$ (fm)"]):
+        ax.axvspan(3.0, 7.0, alpha=0.08)
+        ax.axvline(5.0, linewidth=0.9, linestyle="--")
+        ax.set_xlabel(r"BH-purity threshold $\delta_{\rm BH}$ (%)")
+        ax.set_ylabel(ylabel)
+        ax.set_xlim(1.0, 10.0)
+        ax.grid(alpha=0.22)
+    #endfor
+    axes[0].legend(fontsize=8)
+    fig.suptitle(
+        "Jo 2015 + Lee 2026: chosen-family threshold stability "
+        "(published experimental errors)",
+        y=0.98,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(figures_dir / "02_threshold_stability.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+def save_final_form_factor_comparison(
+        fit_rows: Sequence[Dict[str, object]],
+        figures_dir: Path) -> None:
+    """
+    Compare the chosen Jo+Lee Sachs parameterization with elastic references.
+
+    The top row shows GE and GM.  The bottom row shows GE/GD and
+    GM/(mu_p GD).  A1/Bernauer Rosenbluth points are displayed directly.
+    The KM15 nominal curve receives its full Hessian band; VGG99/GK16 are
+    shown as central alternative-purity curves.
+    """
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    qmax = 0.60
+    q = np.linspace(0.0, qmax, 600)
+    gd = (1.0 + q / 0.71) ** -2
+    a1 = bernauer_rosenbluth_data()
+    a1 = a1.loc[a1["Q2"] <= qmax].copy()
+
+    by_model = {str(r["model"]): r for r in fit_rows}
+    fig, axes = plt.subplots(
+        2, 2, figsize=(12.0, 8.3), sharex="col",
+        gridspec_kw={"height_ratios": [1.0, 1.0]},
+    )
+
+    for model in FINAL_MODEL_NAMES:
+        row = by_model[model]
+        ge, ge_sigma = production_sachs_band(row, q, "GE")
+        gm, gm_sigma = production_sachs_band(row, q, "GM")
+        label = model.upper()
+
+        line_ge, = axes[0, 0].plot(q, ge, linewidth=1.5, label=label)
+        line_gm, = axes[0, 1].plot(q, gm, linewidth=1.5, label=label)
+        axes[1, 0].plot(q, ge / gd, linewidth=1.5)
+        axes[1, 1].plot(q, gm / (MU_P * gd), linewidth=1.5)
+
+        if model == FINAL_NOMINAL_MODEL:
+            axes[0, 0].fill_between(
+                q, ge - ge_sigma, ge + ge_sigma,
+                alpha=0.16, color=line_ge.get_color(),
+                label="KM15 68% Hessian band",
+            )
+            axes[0, 1].fill_between(
+                q, gm - gm_sigma, gm + gm_sigma,
+                alpha=0.16, color=line_gm.get_color(),
+            )
+            axes[1, 0].fill_between(
+                q, (ge - ge_sigma) / gd, (ge + ge_sigma) / gd,
+                alpha=0.16, color=line_ge.get_color(),
+            )
+            axes[1, 1].fill_between(
+                q, (gm - gm_sigma) / (MU_P * gd),
+                (gm + gm_sigma) / (MU_P * gd),
+                alpha=0.16, color=line_gm.get_color(),
+            )
+        #endif
+    #endfor
+
+    for label, (ge_ref, gm_ref) in elastic_reference_curves(q).items():
+        axes[0, 0].plot(q, ge_ref, linewidth=1.0, linestyle="--", label=label)
+        axes[0, 1].plot(q, gm_ref, linewidth=1.0, linestyle="--")
+        axes[1, 0].plot(q, ge_ref / gd, linewidth=1.0, linestyle="--")
+        axes[1, 1].plot(q, gm_ref / (MU_P * gd), linewidth=1.0, linestyle="--")
+    #endfor
+
+    axes[0, 0].errorbar(
+        a1["Q2"], a1["GE"], yerr=a1["GE_err"],
+        fmt="o", fillstyle="none", markersize=3.2, capsize=1.5,
+        linewidth=0.8, label="A1/Bernauer Rosenbluth",
+    )
+    axes[0, 1].errorbar(
+        a1["Q2"], a1["GM"], yerr=a1["GM_err"],
+        fmt="o", fillstyle="none", markersize=3.2, capsize=1.5,
+        linewidth=0.8,
+    )
+    axes[1, 0].errorbar(
+        a1["Q2"], a1["GE"] / ((1.0 + a1["Q2"] / 0.71) ** -2),
+        yerr=a1["GE_err"] / ((1.0 + a1["Q2"] / 0.71) ** -2),
+        fmt="o", fillstyle="none", markersize=3.2, capsize=1.5,
+        linewidth=0.8,
+    )
+    axes[1, 1].errorbar(
+        a1["Q2"], a1["GM"] / (
+            MU_P * ((1.0 + a1["Q2"] / 0.71) ** -2)
+        ),
+        yerr=a1["GM_err"] / (
+            MU_P * ((1.0 + a1["Q2"] / 0.71) ** -2)
+        ),
+        fmt="o", fillstyle="none", markersize=3.2, capsize=1.5,
+        linewidth=0.8,
+    )
+
+    axes[0, 0].set_ylabel(r"$G_E$")
+    axes[0, 1].set_ylabel(r"$G_M$")
+    axes[1, 0].set_ylabel(r"$G_E/G_D$")
+    axes[1, 1].set_ylabel(r"$G_M/(\mu_p G_D)$")
+    for ax in axes.ravel():
+        ax.set_xlim(0.0, qmax)
+        ax.grid(alpha=0.22)
+    #endfor
+    for ax in axes[1, :]:
+        ax.set_xlabel(r"$Q^2=|t|$ (GeV$^2$)")
+        ax.axhline(1.0, linewidth=0.8, linestyle=":")
+    #endfor
+
+    axes[0, 0].legend(fontsize=7, ncol=2)
+    family = str(fit_rows[0]["family"])
+    fig.suptitle(
+        f"Jo 2015 + Lee 2026: chosen Sachs family {family} vs elastic data/fits",
+        y=0.985,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.955))
+    fig.savefig(figures_dir / "03_form_factors_vs_elastic.png", dpi=180)
+    plt.close(fig)
+
+    # Ratio most directly sensitive to the difference between electric and
+    # magnetic slopes.
+    fig, ax = plt.subplots(figsize=(7.0, 5.1))
+    for model in FINAL_MODEL_NAMES:
+        row = by_model[model]
+        ge, _ = production_sachs_band(row, q, "GE")
+        gm, _ = production_sachs_band(row, q, "GM")
+        ax.plot(q, MU_P * ge / gm, linewidth=1.5, label=model.upper())
+    #endfor
+    for label, (ge_ref, gm_ref) in elastic_reference_curves(q).items():
+        ax.plot(q, MU_P * ge_ref / gm_ref, linewidth=1.0, linestyle="--",
+                label=label)
+    #endfor
+    a1_ratio = MU_P * a1["GE"] / a1["GM"]
+    a1_ratio_err = np.abs(a1_ratio) * np.sqrt(
+        (a1["GE_err"] / a1["GE"]) ** 2
+        + (a1["GM_err"] / a1["GM"]) ** 2
+    )
+    ax.errorbar(
+        a1["Q2"], a1_ratio, yerr=a1_ratio_err,
+        fmt="o", fillstyle="none", markersize=3.2, capsize=1.5,
+        linewidth=0.8, label="A1/Bernauer Rosenbluth",
+    )
+    ax.axhline(1.0, linewidth=0.8, linestyle=":")
+    ax.set_xlim(0.0, qmax)
+    ax.set_xlabel(r"$Q^2=|t|$ (GeV$^2$)")
+    ax.set_ylabel(r"$\mu_p G_E/G_M$")
+    ax.grid(alpha=0.22)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout()
+    fig.savefig(figures_dir / "04_muGE_over_GM_vs_elastic.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+def save_final_family_ranking_figure(
+        ranking: pd.DataFrame,
+        figures_dir: Path) -> None:
+    """Single consolidated closure-family ranking for the final-analysis folder."""
+    figures_dir.mkdir(parents=True, exist_ok=True)
+    d = ranking.copy().sort_values("worst_combined_RMS_objective_fm")
+    fig, ax = plt.subplots(figsize=(8.2, 5.0))
+    y = np.arange(len(d))
+    ax.barh(y, d["worst_combined_RMS_objective_fm"].to_numpy(float))
+    ax.set_yticks(y, d["family"].astype(str).tolist())
+    ax.invert_yaxis()
+    ax.set_xlabel("Worst-model combined RMS bias-variance objective (fm)")
+    ax.set_title("Jo 2015 + Lee 2026 closure-family ranking")
+    ax.grid(axis="x", alpha=0.22)
+    for i, (_, row) in enumerate(d.iterrows()):
+        if not bool(row["eligible_all_models"]):
+            ax.text(
+                float(row["worst_combined_RMS_objective_fm"]),
+                i, "  ineligible", va="center", fontsize=8,
+            )
+        #endif
+    #endfor
+    fig.tight_layout()
+    fig.savefig(figures_dir / "05_closure_family_ranking.png", dpi=180)
+    plt.close(fig)
+#enddef
+
+
+def write_final_analysis_readme(
+        summary: pd.DataFrame,
+        fit_table: pd.DataFrame,
+        figures_dir: Path,
+        summary_dir: Path,
+        diagnostics_dir: Path,
+        output_path: Path) -> None:
+    """Human-readable map of the deliberately consolidated final products."""
+    s = summary.iloc[0]
+    lines = [
+        "PRELIMINARY CLAS-ONLY BH FORM-FACTOR / RADIUS ANALYSIS",
+        "=" * 62,
+        "",
+        "Production ensemble: CLAS6 Jo 2015 + CLAS12 Lee 2026.",
+        "Excluded by default: CLAS6 Saylor 2018 and Hall A Defurne 2015.",
+        "Nominal BH-purity prescription: KM15 at 5%.",
+        f"Chosen Sachs family: {s['chosen_family']}.",
+        "",
+        "Preliminary radii",
+        "-----------------",
+        (
+            f"rE = {float(s['rE_fm']):.5f} +/- "
+            f"{float(s['rE_fit_err_fm']):.5f} (fit) +/- "
+            f"{float(s['rE_method_sys_fm']):.5f} (method) fm"
+        ),
+        (
+            f"rM = {float(s['rM_fm']):.5f} +/- "
+            f"{float(s['rM_fit_err_fm']):.5f} (fit) +/- "
+            f"{float(s['rM_method_sys_fm']):.5f} (method) fm"
+        ),
+        "",
+        (
+            "Method systematic = quadrature of the joint BH-selection "
+            "systematic and closure/extrapolation bias systematic."
+        ),
+        (
+            "Joint BH-selection systematic = maximum shift from the nominal "
+            "KM15 5% published-errors result over KM15/VGG99/GK16 and the "
+            "3--7% BH-purity window."
+        ),
+        "",
+        "Primary files",
+        "-------------",
+        f"Summary table: {summary_dir / 'final_results.csv'}",
+        f"Model x threshold table: {summary_dir / 'model_threshold_summary.csv'}",
+        f"Closure ranking: {summary_dir / 'closure_summary.csv'}",
+        f"Figures: {figures_dir}",
+        f"Detailed diagnostics: {diagnostics_dir}",
+        "",
+        "The detailed diagnostics are retained for auditability but should not "
+        "be the first place to look for the result.",
+    ]
+    output_path.write_text("\n".join(lines) + "\n")
+#enddef
+
+
+
 def run_final_model_selected_analysis(
         bundles: Sequence[Dict[str, object]],
         args,
@@ -7149,11 +7536,17 @@ def run_final_model_selected_analysis(
     """
     End-to-end final analysis after the external PARTONS model-selection stage.
 
-    The three BH-purity models define three alternative selected datasets.
-    They are *not* averaged at the event/point level.  A common Sachs family is
-    selected by model-specific closure studies, then fit independently to each
-    model-selected sample.  KM15 is retained as the nominal central
-    prescription; VGG99/GK16 shifts are reported as BH-purity model dependence.
+    Preliminary CLAS-only production analysis using CLAS6 Jo 2015 + CLAS12
+    Lee 2026.  Saylor 2018 and Hall A Defurne 2015 are intentionally excluded
+    from the default/preliminary ensemble and remain opt-in diagnostics.
+
+    The three BH-purity models define alternative selected samples.  They are
+    not averaged point-by-point.  A common Sachs family is selected by
+    model-specific closure studies and then fit independently to each
+    model-selected Jo+Lee sample.  KM15 remains the nominal central
+    prescription.  For the preliminary uncertainty, model and threshold
+    dependence are treated jointly over the 3--7% BH-purity window so that
+    strongly correlated sample-migration effects are not double counted.
     """
     selection_path = Path(args.bh_model_selection_results).expanduser().resolve()
     selection = load_external_bh_model_selection(selection_path)
@@ -7165,13 +7558,21 @@ def run_final_model_selected_analysis(
     missing = [key for key in FINAL_PHYSICS_DATASETS if key not in found]
     if missing:
         raise RuntimeError(
-            "Final model-selected analysis requires Jo + Hall A + CLAS12 pass1. "
-            "Missing: " + ", ".join(missing)
+            "Preliminary final model-selected analysis requires "
+            "CLAS6 Jo 2015 + CLAS12 Lee 2026. Missing: " + ", ".join(missing)
         )
     #endif
 
-    final_dir = root_outdir / "final_model_selected_analysis"
-    final_dir.mkdir(parents=True, exist_ok=True)
+    final_dir = root_outdir / "final_analysis"
+    summary_dir = final_dir / "summary"
+    figures_dir = final_dir / "figures"
+    diagnostics_dir = final_dir / "diagnostics"
+    closure_dir = diagnostics_dir / "closure"
+    for directory in [
+        final_dir, summary_dir, figures_dir, diagnostics_dir, closure_dir
+    ]:
+        directory.mkdir(parents=True, exist_ok=True)
+    #endfor
 
     # Build all model/threshold selections once and save the counts.
     selected = {}
@@ -7198,21 +7599,22 @@ def run_final_model_selected_analysis(
             count_rows.append(row)
         #endfor
     #endfor
-    pd.DataFrame(count_rows).to_csv(
-        final_dir / "model_threshold_selected_counts.csv", index=False
+    count_table = pd.DataFrame(count_rows)
+    count_table.to_csv(
+        diagnostics_dir / "model_threshold_selected_counts.csv", index=False
     )
 
     # Comprehensive purity/process diagnostics are written BEFORE any bias
     # study or production fit.  They never feed measured-data agreement back
     # into model selection, avoiding circular model preference.
-    write_model_selection_diagnostics(selection, physics_bundles, final_dir)
+    write_model_selection_diagnostics(selection, physics_bundles, diagnostics_dir)
 
     # Fail loudly before doing expensive closure studies or quoting a model
     # envelope if the PARTONS BH subprocess does not reproduce the same
     # point-by-point BH angular structure as Gepard.  This catches phi/convention
     # mistakes without using the measured cross sections.
     validate_external_partons_bh_consistency(
-        selection, physics_bundles, final_dir
+        selection, physics_bundles, diagnostics_dir
     )
 
     # Run a closure/bias study for each 5% model-selected sample.  This is
@@ -7220,7 +7622,7 @@ def run_final_model_selected_analysis(
     # the modestly different kinematic support induced by purity-model choice.
     bias_dirs = {}
     for model in FINAL_MODEL_NAMES:
-        model_dir = final_dir / f"bias_study_{model}"
+        model_dir = closure_dir / model
         bias_dirs[model] = model_dir
         print(f"\n[final model analysis] starting radius-bias study for {model}")
 
@@ -7247,7 +7649,7 @@ def run_final_model_selected_analysis(
     #endfor
 
     chosen_family, family_ranking = aggregate_model_bias_rankings(
-        bias_dirs, final_dir
+        bias_dirs, summary_dir
     )
 
     # Preserve the actual extrapolation-bias estimates for the selected family.
@@ -7260,7 +7662,7 @@ def run_final_model_selected_analysis(
         bias_rows.append({"model": model, "family": chosen_family, **bias})
     #endfor
     bias_table = pd.DataFrame(bias_rows)
-    bias_table.to_csv(final_dir / "chosen_family_bias_estimates.csv", index=False)
+    bias_table.to_csv(summary_dir / "chosen_family_bias_estimates.csv", index=False)
 
     conservative_bias = {
         "rE_bias_systematic_fm": float(
@@ -7291,7 +7693,7 @@ def run_final_model_selected_analysis(
         )
     #endfor
     fit_table = pd.DataFrame(fit_rows)
-    fit_table.to_csv(final_dir / "model_selected_05pct_fits.csv", index=False)
+    fit_table.to_csv(summary_dir / "model_selected_05pct_fits.csv", index=False)
 
     # Common-support diagnostic.  This is NOT a fourth purity prescription and
     # does not replace the model-specific fits.  It asks what the chosen Sachs
@@ -7314,7 +7716,7 @@ def run_final_model_selected_analysis(
         len(spec["data"]) for spec in intersection_specs
     ))
     pd.DataFrame([intersection_count_row]).to_csv(
-        final_dir / "all_model_intersection_05pct_counts.csv", index=False
+        diagnostics_dir / "all_model_intersection_05pct_counts.csv", index=False
     )
     if intersection_count_row["N_total"] > 0:
         intersection_fit = fit_sachs_family_multi_measurements(
@@ -7326,7 +7728,7 @@ def run_final_model_selected_analysis(
         intersection_fit["sample"] = "all_model_intersection"
         intersection_fit["threshold"] = 0.05
         pd.DataFrame([intersection_fit]).to_csv(
-            final_dir / "all_model_intersection_05pct_fit.csv", index=False
+            diagnostics_dir / "all_model_intersection_05pct_fit.csv", index=False
         )
         print(
             f"[final fit diagnostic] all-model 5% intersection {chosen_family}: "
@@ -7371,147 +7773,235 @@ def run_final_model_selected_analysis(
     #endfor
     threshold_table = pd.DataFrame(threshold_rows)
     threshold_table.to_csv(
-        final_dir / "chosen_family_threshold_scan_01_to_10pct.csv",
+        summary_dir / "chosen_family_threshold_scan_01_to_10pct.csv",
         index=False,
     )
 
-    # Final prescription: KM15 remains the nominal because it is the validated
-    # Moradi/Gepard baseline.  VGG99/GK16 are alternative purity prescriptions,
-    # not three statistically independent measurements to be averaged.
+    # Preliminary prescription:
+    #   * KM15 5% remains the nominal central fit.
+    #   * Model and threshold dependence are NOT treated as independent
+    #     systematics.  Both alter which measured points enter the fit, and the
+    #     smoke test showed strong correlation, especially for rM.
+    #   * Define one joint BH-selection systematic as the largest shift from
+    #     the nominal KM15 5% published-errors baseline over all three purity
+    #     models and thresholds 3--7%.
+    #   * Keep the complete 1--10% scan as a diagnostic.
     nominal = fit_table.loc[fit_table["model"] == FINAL_NOMINAL_MODEL].iloc[0]
-    alternatives = fit_table.loc[fit_table["model"] != FINAL_NOMINAL_MODEL]
 
-    model_sys_e = float(
-        np.max(np.abs(alternatives["rE_fm"].to_numpy(float) - nominal["rE_fm"]))
-    )
-    model_sys_m = float(
-        np.max(np.abs(alternatives["rM_fm"].to_numpy(float) - nominal["rM_fm"]))
-    )
-
-    nominal_scan = threshold_table.loc[
-        (threshold_table["model"] == FINAL_NOMINAL_MODEL)
-        & (threshold_table["error_mode"] == "published_errors")
+    published_scan = threshold_table.loc[
+        threshold_table["error_mode"].astype(str) == "published_errors"
     ].copy()
-    nominal_scan_05 = nominal_scan.loc[
-        np.isclose(nominal_scan["threshold"].to_numpy(float), 0.05)
+    nominal_scan_05 = published_scan.loc[
+        (published_scan["model"].astype(str) == FINAL_NOMINAL_MODEL)
+        & np.isclose(published_scan["threshold"].to_numpy(float), 0.05)
     ]
     if len(nominal_scan_05) != 1:
         raise RuntimeError(
-            "Could not identify unique KM15 5% published-errors threshold baseline"
+            "Could not identify unique KM15 5% published-errors baseline"
         )
     #endif
-    threshold_baseline_e = float(nominal_scan_05.iloc[0]["rE_fm"])
-    threshold_baseline_m = float(nominal_scan_05.iloc[0]["rM_fm"])
-    threshold_sys_e = float(
-        np.max(np.abs(
-            nominal_scan["rE_fm"].to_numpy(float) - threshold_baseline_e
-        ))
-    )
-    threshold_sys_m = float(
-        np.max(np.abs(
-            nominal_scan["rM_fm"].to_numpy(float) - threshold_baseline_m
-        ))
-    )
+    selection_baseline_e = float(nominal_scan_05.iloc[0]["rE_fm"])
+    selection_baseline_m = float(nominal_scan_05.iloc[0]["rM_fm"])
 
-    # Mean of the three model-selected fits is retained as a diagnostic only.
-    mean_e = float(fit_table["rE_fm"].mean())
-    mean_m = float(fit_table["rM_fm"].mean())
+    local_scan = published_scan.loc[
+        (published_scan["threshold"].to_numpy(float) >= 0.03)
+        & (published_scan["threshold"].to_numpy(float) <= 0.07)
+    ].copy()
+    joint_selection_sys_e = float(np.max(np.abs(
+        local_scan["rE_fm"].to_numpy(float) - selection_baseline_e
+    )))
+    joint_selection_sys_m = float(np.max(np.abs(
+        local_scan["rM_fm"].to_numpy(float) - selection_baseline_m
+    )))
+
+    # Retain fixed-cut and nominal-model threshold components only as
+    # diagnostics so it remains possible to understand the origin of the joint
+    # envelope without double counting them in the preliminary quoted error.
+    alternatives = fit_table.loc[fit_table["model"] != FINAL_NOMINAL_MODEL]
+    fixed5_model_sys_e = float(np.max(np.abs(
+        alternatives["rE_fm"].to_numpy(float) - nominal["rE_fm"]
+    )))
+    fixed5_model_sys_m = float(np.max(np.abs(
+        alternatives["rM_fm"].to_numpy(float) - nominal["rM_fm"]
+    )))
+
+    km15_scan = published_scan.loc[
+        published_scan["model"].astype(str) == FINAL_NOMINAL_MODEL
+    ].copy()
+    km15_1to10_sys_e = float(np.max(np.abs(
+        km15_scan["rE_fm"].to_numpy(float) - selection_baseline_e
+    )))
+    km15_1to10_sys_m = float(np.max(np.abs(
+        km15_scan["rM_fm"].to_numpy(float) - selection_baseline_m
+    )))
+
+    bias_sys_e = conservative_bias["rE_bias_systematic_fm"]
+    bias_sys_m = conservative_bias["rM_bias_systematic_fm"]
+    method_sys_e = float(np.hypot(joint_selection_sys_e, bias_sys_e))
+    method_sys_m = float(np.hypot(joint_selection_sys_m, bias_sys_m))
 
     summary = pd.DataFrame([{
+        "analysis_ensemble": "CLAS6 Jo 2015 + CLAS12 Lee 2026",
+        "excluded_default_datasets": (
+            "CLAS6 Saylor 2018; Hall A Defurne 2015"
+        ),
+        "status": "preliminary",
         "nominal_model": FINAL_NOMINAL_MODEL,
         "chosen_family": chosen_family,
         "nominal_threshold": 0.05,
+        "selection_systematic_window_min": 0.03,
+        "selection_systematic_window_max": 0.07,
         "rE_fm": float(nominal["rE_fm"]),
         "rE_fit_err_fm": float(nominal["rE_fit_err_fm"]),
-        "rE_bh_purity_model_sys_fm": model_sys_e,
-        "rE_bh_threshold_sys_fm": threshold_sys_e,
-        "rE_extrapolation_bias_sys_fm": conservative_bias["rE_bias_systematic_fm"],
+        "rE_joint_bh_selection_sys_fm": joint_selection_sys_e,
+        "rE_extrapolation_bias_sys_fm": bias_sys_e,
+        "rE_method_sys_fm": method_sys_e,
+        "rE_fixed5_model_spread_diagnostic_fm": fixed5_model_sys_e,
+        "rE_km15_1to10_threshold_envelope_diagnostic_fm": km15_1to10_sys_e,
         "rM_fm": float(nominal["rM_fm"]),
         "rM_fit_err_fm": float(nominal["rM_fit_err_fm"]),
-        "rM_bh_purity_model_sys_fm": model_sys_m,
-        "rM_bh_threshold_sys_fm": threshold_sys_m,
-        "rM_extrapolation_bias_sys_fm": conservative_bias["rM_bias_systematic_fm"],
-        "three_model_mean_rE_diagnostic_fm": mean_e,
-        "three_model_mean_rM_diagnostic_fm": mean_m,
+        "rM_joint_bh_selection_sys_fm": joint_selection_sys_m,
+        "rM_extrapolation_bias_sys_fm": bias_sys_m,
+        "rM_method_sys_fm": method_sys_m,
+        "rM_fixed5_model_spread_diagnostic_fm": fixed5_model_sys_m,
+        "rM_km15_1to10_threshold_envelope_diagnostic_fm": km15_1to10_sys_m,
         "threshold_systematic_error_mode": "published_errors",
-        "threshold_systematic_reference_threshold": 0.05,
         "note": (
-            "KM15 is nominal because it is the validated Moradi/Gepard baseline; "
-            "measured data/model agreement is diagnostic only and is not used "
-            "to choose or weight purity models. VGG99/GK16 define alternative "
-            "BH-purity prescriptions. Three-model mean is diagnostic, not the "
-            "quoted central value. Threshold systematic is the 1-10% envelope "
-            "from the published-errors scan relative to its own 5% baseline, "
-            "while the nominal 5% fit retains the Moradi BH-selection error. "
-            "Fit errors include the configured point-error prescription and "
-            "correlated normalization nuisances; systematic components are "
-            "kept separate and are not automatically quadrature-combined here."
+            "Preliminary CLAS-only result. KM15 5% is nominal. "
+            "The quoted method systematic combines in quadrature a JOINT "
+            "BH-selection envelope (KM15/VGG99/GK16 over 3--7%) and the "
+            "closure/extrapolation RMS-bias systematic. Fixed-5% model spread "
+            "and the KM15 1--10% threshold envelope are retained as diagnostics "
+            "but are not separately added, avoiding double counting of "
+            "correlated sample-selection migration. Fit uncertainty includes "
+            "the configured point-error prescription and correlated "
+            "normalization nuisances."
         ),
     }])
-    summary.to_csv(final_dir / "final_radius_prescription.csv", index=False)
 
-    print("\n[final model analysis] FINAL PRESCRIPTION")
+    # Deliberately small primary summary set.
+    summary.to_csv(summary_dir / "final_results.csv", index=False)
+    summary.to_csv(summary_dir / "final_radius_prescription.csv", index=False)
+    family_ranking.to_csv(summary_dir / "closure_summary.csv", index=False)
+
+    # One complete model x threshold table: selected counts and fitted radii in
+    # one place, instead of requiring the user to cross-reference CSVs.
+    threshold_summary = threshold_table.merge(
+        count_table,
+        on=["model", "threshold"],
+        how="left",
+        validate="many_to_one",
+    )
+    threshold_summary.to_csv(
+        summary_dir / "model_threshold_summary.csv", index=False
+    )
+
+    save_preliminary_radius_summary_figure(
+        fit_table, summary, figures_dir
+    )
+    save_final_threshold_stability_figure(
+        threshold_table, figures_dir
+    )
+    save_final_form_factor_comparison(
+        fit_rows, figures_dir
+    )
+    save_final_family_ranking_figure(
+        family_ranking, figures_dir
+    )
+    write_final_analysis_readme(
+        summary=summary,
+        fit_table=fit_table,
+        figures_dir=figures_dir,
+        summary_dir=summary_dir,
+        diagnostics_dir=diagnostics_dir,
+        output_path=final_dir / "README.txt",
+    )
+
+    print("\n[final model analysis] PRELIMINARY CLAS-ONLY PRESCRIPTION")
     print(
+        f"  ensemble            : CLAS6 Jo 2015 + CLAS12 Lee 2026\n"
         f"  common Sachs family : {chosen_family}\n"
         f"  nominal purity model: {FINAL_NOMINAL_MODEL}\n"
         f"  nominal BH cut      : 5%\n"
-        f"  rE = {float(nominal['rE_fm']):.5f} fm; "
-        f"fit err={float(nominal['rE_fit_err_fm']):.5f}, "
-        f"model sys={model_sys_e:.5f}, "
-        f"threshold sys={threshold_sys_e:.5f} [published-errors scan], "
-        f"bias sys={conservative_bias['rE_bias_systematic_fm']:.5f}\n"
-        f"  rM = {float(nominal['rM_fm']):.5f} fm; "
-        f"fit err={float(nominal['rM_fit_err_fm']):.5f}, "
-        f"model sys={model_sys_m:.5f}, "
-        f"threshold sys={threshold_sys_m:.5f} [published-errors scan], "
-        f"bias sys={conservative_bias['rM_bias_systematic_fm']:.5f}\n"
-        f"  outputs -> {final_dir}"
+        f"  selection sys window: 3--7%, all three purity models\n"
+        f"  rE = {float(nominal['rE_fm']):.5f} +/- "
+        f"{float(nominal['rE_fit_err_fm']):.5f} (fit) +/- "
+        f"{method_sys_e:.5f} (method) fm\n"
+        f"       joint selection={joint_selection_sys_e:.5f}, "
+        f"closure bias={bias_sys_e:.5f}\n"
+        f"  rM = {float(nominal['rM_fm']):.5f} +/- "
+        f"{float(nominal['rM_fit_err_fm']):.5f} (fit) +/- "
+        f"{method_sys_m:.5f} (method) fm\n"
+        f"       joint selection={joint_selection_sys_m:.5f}, "
+        f"closure bias={bias_sys_m:.5f}\n"
+        f"  summary -> {summary_dir / 'final_results.csv'}\n"
+        f"  figures -> {figures_dir}\n"
+        f"  diagnostics -> {diagnostics_dir}"
     )
+
 #enddef
 
 
 def run_published_default(args) -> int:
-    """Run all available published measurements and every nontrivial combination."""
+    """
+    Run the preliminary publication-facing CLAS-only workflow.
+
+    Default production ensemble:
+      * CLAS6 Jo 2015
+      * CLAS12 Lee 2026
+
+    Saylor 2018 and Hall A Defurne 2015 are intentionally opt-in while their
+    compatibility with the BH-purity extraction is discussed separately.
+    """
     print("\n" + "=" * 78)
-    print("[DEFAULT MODE] Published BH form-factor/radius study")
+    print("[DEFAULT MODE] Preliminary CLAS-only BH form-factor/radius study")
+    print("[ensemble] CLAS6 Jo 2015 + CLAS12 Lee 2026")
+    print("[excluded by default] CLAS6 Saylor 2018; Hall A Defurne 2015")
     print("=" * 78)
 
     jo = run_clas6_validation(args, return_results=True)
     pass1 = run_pass1_validation(args, return_results=True)
-    bundles = [jo]
+    bundles = [jo, pass1]
 
-    saylor_path = resolve_script_relative_path(args.saylor_file)
-    if args.download_saylor:
-        saylor_path = maybe_download_saylor_supplement(
-            saylor_path, force=args.force_saylor_download
-        )
-        args.saylor_file = str(saylor_path)
-    #endif
-
-    if not args.skip_saylor:
+    if getattr(args, "include_saylor", False):
+        saylor_path = resolve_script_relative_path(args.saylor_file)
+        if args.download_saylor:
+            saylor_path = maybe_download_saylor_supplement(
+                saylor_path, force=args.force_saylor_download
+            )
+            args.saylor_file = str(saylor_path)
+        #endif
         if not saylor_path.exists():
             raise FileNotFoundError(
-                "Saylor file missing. Use --skip-saylor only if intentional.\n"
+                "Saylor file missing although --include-saylor was requested.\n"
                 f"Resolved path: {saylor_path}"
             )
         #endif
         args.saylor_file = str(saylor_path)
-        bundles.append(run_saylor_validation(args, return_results=True))
+        bundles.insert(1, run_saylor_validation(args, return_results=True))
     #endif
 
-    if not args.skip_halla_defurne:
-        bundles.append(run_halla_defurne_validation(args, return_results=True))
+    if getattr(args, "include_halla_defurne", False):
+        bundles.insert(-1, run_halla_defurne_validation(args, return_results=True))
     #endif
-
-    bundles.append(pass1)
 
     root_outdir = Path(args.outdir).expanduser().resolve()
-    export_bh_model_selection_kinematics(bundles, root_outdir)
+
+    # The external purity evaluator only needs the datasets used by the final
+    # model-selected production analysis.  Keep optional diagnostic datasets
+    # out of this cache so the production point map is unambiguous.
+    final_bundles = [
+        b for b in bundles if str(b["key"]) in FINAL_PHYSICS_DATASETS
+    ]
+    export_bh_model_selection_kinematics(final_bundles, root_outdir)
 
     if args.run_final_model_analysis:
-        run_final_model_selected_analysis(bundles, args, root_outdir)
+        run_final_model_selected_analysis(final_bundles, args, root_outdir)
     #endif
 
+    # Legacy validation/combination products are still available for whichever
+    # datasets were explicitly enabled, but they are no longer mixed into the
+    # consolidated final-analysis directory.
     for bundle in bundles:
         audit_measurement_bundle_for_combination(bundle)
     #endfor
@@ -7524,31 +8014,48 @@ def run_published_default(args) -> int:
         #endfor
     #endfor
 
-    maximal = combos[-1]
-    save_bh_cut_plateau_study_multi(
-        bundles, maximal["outdir"], tag="all_available"
-    )
+    if combos:
+        maximal = combos[-1]
+        save_bh_cut_plateau_study_multi(
+            bundles, maximal["outdir"], tag="all_enabled"
+        )
 
-    if args.run_radius_bias_study:
-        bias_dir = maximal["outdir"] / "radius_bias_variance"
-        run_radius_bias_variance_study(bundles, args, bias_dir)
-        print(f"[radius-bias] outputs -> {bias_dir}")
+        # Do not rerun a second generic closure study when the final
+        # model-selected workflow already performs the three production closure
+        # studies.  Keep this legacy path only when final-model analysis is not
+        # requested.
+        if args.run_radius_bias_study and not args.run_final_model_analysis:
+            bias_dir = maximal["outdir"] / "radius_bias_variance"
+            run_radius_bias_variance_study(bundles, args, bias_dir)
+            print(f"[radius-bias] outputs -> {bias_dir}")
+        #endif
+
+        comparison_dir = (
+            Path(args.outdir).expanduser().resolve() / "legacy_comparisons"
+        )
+        comparison_bundles = bundles + combos
+        save_separate_vs_combined_radius_summary(
+            comparison_bundles, comparison_dir
+        )
+        save_separate_vs_combined_table(
+            comparison_bundles, comparison_dir
+        )
+        save_published_dataset_comparisons(
+            bundles + [maximal], comparison_dir
+        )
     #endif
-
-    comparison_dir = Path(args.outdir).expanduser().resolve() / "separate_vs_combined"
-    comparison_bundles = bundles + combos
-    save_separate_vs_combined_radius_summary(comparison_bundles, comparison_dir)
-    save_separate_vs_combined_table(comparison_bundles, comparison_dir)
-    save_published_dataset_comparisons(bundles + [maximal], comparison_dir)
 
     save_published_workflow_manifest(bundles, combos, root_outdir)
 
-    print(f"\n[summary] Separate-vs-combined results -> {comparison_dir}")
-    print(f"[summary] Workflow manifest -> {root_outdir / 'published_workflow_manifest.txt'}")
-    print("[summary] Published workflow completed successfully.")
+    if args.run_final_model_analysis:
+        print(
+            "\n[summary] Consolidated preliminary result -> "
+            f"{root_outdir / 'final_analysis'}"
+        )
+    #endif
+    print("[summary] Preliminary CLAS-only workflow completed successfully.")
     return 0
 #enddef
-
 
 
 def run_all_three(args) -> int:
@@ -8335,14 +8842,36 @@ def build_parser() -> argparse.ArgumentParser:
         help="Redownload the Saylor supplemental even if the local file exists",
     )
     p.add_argument(
+        "--include-saylor",
+        action="store_true",
+        help=(
+            "Opt in to CLAS6 Saylor 2018 diagnostics. It is excluded from the "
+            "preliminary Jo+Lee production ensemble by default."
+        ),
+    )
+    p.add_argument(
+        "--include-halla-defurne",
+        action="store_true",
+        help=(
+            "Opt in to Hall A Defurne 2015 diagnostics. It is excluded from "
+            "the preliminary Jo+Lee production ensemble by default."
+        ),
+    )
+    p.add_argument(
         "--skip-saylor",
         action="store_true",
-        help="Do not run Saylor 2018 even if its supplemental file is present",
+        help=(
+            "Deprecated compatibility flag; Saylor is already excluded by "
+            "default. Use --include-saylor to enable it."
+        ),
     )
     p.add_argument(
         "--skip-halla-defurne",
         action="store_true",
-        help="Do not run Hall A Defurne 2015 in the default workflow",
+        help=(
+            "Deprecated compatibility flag; Hall A is already excluded by "
+            "default. Use --include-halla-defurne to enable it."
+        ),
     )
     p.add_argument(
         "--run-final-model-analysis",
