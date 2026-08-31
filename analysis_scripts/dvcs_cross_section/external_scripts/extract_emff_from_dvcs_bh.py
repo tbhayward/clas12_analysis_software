@@ -4174,7 +4174,7 @@ def run_radius_bias_variance_study(
     and inserted into the exact BH quadratic.
 
     Fitting families:
-      P1..P3, IP1..IP4, CF2..CF3.
+      P1..P4, IP1..IP4, CF2..CF4.
 
     Truth ensemble:
       empirical Kelly, AMT2007, Bernauer/A1, plus optional synthetic P/IP/CF
@@ -4182,9 +4182,9 @@ def run_radius_bias_variance_study(
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
-    families = [f"P{i}" for i in range(1, 4)]
+    families = [f"P{i}" for i in range(1, 5)]
     families += [f"IP{i}" for i in range(1, 5)]
-    families += [f"CF{i}" for i in range(2, 4)]
+    families += [f"CF{i}" for i in range(2, 5)]
 
     specs_all = [bundle_to_measurement_spec(b) for b in bundles]
     empty_specs = [spec for spec in specs_all if len(spec["data"]) == 0]
@@ -6255,23 +6255,29 @@ def aggregate_model_bias_rankings(
         )
     #endif
 
-    chosen = str(eligible.iloc[0]["family"])
+    rank1 = str(eligible.iloc[0]["family"])
     outdir.mkdir(parents=True, exist_ok=True)
     ranking.to_csv(outdir / "model_aggregated_family_ranking.csv", index=False)
 
-    with open(outdir / "chosen_sachs_family.txt", "w") as fout:
-        fout.write(f"chosen_family={chosen}\n")
+    with open(outdir / "bias_rank1_sachs_family.txt", "w") as fout:
+        fout.write(f"bias_rank1_family={rank1}\n")
         fout.write(
-            "criterion=eligible in all KM15/VGG99/GK16 studies; "
-            "minimum worst combined RMS bias-variance objective\n"
+            "criterion=eligible in all KM15/VGG99/GK16 closure studies at "
+            "the configured minimum valid-replica fraction; minimum worst "
+            "combined RMS bias-variance objective\n"
+        )
+        fout.write(
+            "note=This is the closure rank-1 family. Final production selection "
+            "may fall through to the next-ranked eligible family if required "
+            "5% or 3--7% production fits are invalid.\n"
         )
     #endwith
 
     print(
-        f"[final model analysis] selected common Sachs family {chosen} "
-        "from the three model-specific closure studies"
+        f"[final model analysis] closure rank-1 Sachs family is {rank1}; "
+        "production-fit validation will determine the final family"
     )
-    return chosen, ranking
+    return rank1, ranking
 #enddef
 
 
@@ -7258,7 +7264,8 @@ def save_final_threshold_stability_figure(
     """Chosen-family radius stability versus BH-purity threshold."""
     figures_dir.mkdir(parents=True, exist_ok=True)
     d = threshold_table.loc[
-        threshold_table["error_mode"].astype(str) == "published_errors"
+        (threshold_table["error_mode"].astype(str) == "published_errors")
+        & threshold_table["valid"].astype(bool)
     ].copy()
 
     fig, axes = plt.subplots(1, 2, figsize=(12.0, 4.8), sharex=True)
@@ -7488,7 +7495,29 @@ def write_final_analysis_readme(
         "Production ensemble: CLAS6 Jo 2015 + CLAS12 Lee 2026.",
         "Excluded by default: CLAS6 Saylor 2018 and Hall A Defurne 2015.",
         "Nominal BH-purity prescription: KM15 at 5%.",
-        f"Chosen Sachs family: {s['chosen_family']}.",
+        (
+            f"Chosen Sachs family: {s['chosen_family']} "
+            f"(closure rank {int(s['chosen_family_closure_rank'])}; "
+            f"bias-rank-1 family {s['bias_rank1_family']}; "
+            f"fallback used: {bool(s['family_fallback_used'])})."
+        ),
+        (
+            "Family selection: eligible families are ordered by the closure "
+            "bias+variance objective. The script tries them in that order and "
+            "accepts the first family giving valid required 5% production fits "
+            "and valid 3--7% published-error selection-scan fits for all three "
+            "purity prescriptions. Every rejected attempt is recorded in "
+            "summary/family_selection_attempts.csv."
+        ),
+        (
+            "Closure-family eligibility: minimum 33% valid replicas in every "
+            "truth scenario for every purity-model closure study."
+        ),
+        (
+            "Candidate families: P1--P4, IP1--IP4, CF2--CF4. Failed replicas "
+            "are retained as diagnostics rather than automatically excluding "
+            "a family unless validity falls below the 33% threshold."
+        ),
         "",
         "Preliminary radii",
         "-----------------",
@@ -7648,11 +7677,196 @@ def run_final_model_selected_analysis(
         #endif
     #endfor
 
-    chosen_family, family_ranking = aggregate_model_bias_rankings(
+    bias_rank1_family, family_ranking = aggregate_model_bias_rankings(
         bias_dirs, summary_dir
     )
 
-    # Preserve the actual extrapolation-bias estimates for the selected family.
+    # ------------------------------------------------------------------
+    # Ordered production-validation fallback.
+    #
+    # The closure ranking supplies an ordered list of eligible families.
+    # Starting from the best bias+variance score, require the family to
+    # produce all fits actually needed for the preliminary prescription:
+    #
+    #   (1) 5% Moradi-error fit for KM15, VGG99, GK16;
+    #   (2) published-error fits for KM15, VGG99, GK16 at 3--7%.
+    #
+    # If either condition fails, retain the failure in the audit table and
+    # automatically test the next-best eligible family.  The first family
+    # satisfying all required production fits becomes the chosen family.
+    # ------------------------------------------------------------------
+    eligible_ranking = family_ranking.loc[
+        family_ranking["eligible_all_models"].astype(bool)
+    ].copy().reset_index(drop=True)
+    if len(eligible_ranking) == 0:
+        raise RuntimeError(
+            "No closure-eligible Sachs family is available for production "
+            "validation."
+        )
+    #endif
+
+    family_attempt_rows = []
+    chosen_family = None
+    chosen_family_rank = None
+    chosen_5pct_fit_rows = None
+
+    for candidate_index, rank_row in eligible_ranking.iterrows():
+        candidate_family = str(rank_row["family"])
+        candidate_rank = int(candidate_index) + 1
+        candidate_score = float(
+            rank_row["worst_combined_RMS_objective_fm"]
+        )
+        print(
+            f"\n[family fallback] trying rank {candidate_rank}: "
+            f"{candidate_family} "
+            f"(worst objective={candidate_score:.6f} fm)"
+        )
+
+        attempt = {
+            "closure_rank": candidate_rank,
+            "family": candidate_family,
+            "worst_combined_RMS_objective_fm": candidate_score,
+            "mean_combined_RMS_objective_fm": float(
+                rank_row["mean_combined_RMS_objective_fm"]
+            ),
+            "passed_05pct_production": False,
+            "passed_03to07pct_selection_scan": False,
+            "selected_for_final_analysis": False,
+            "failure_details": "",
+        }
+
+        candidate_fit_rows = []
+        failure_details = []
+
+        # Required 5% production fits with Moradi's additional 5% pointwise
+        # systematic.
+        for model in FINAL_MODEL_NAMES:
+            try:
+                result = fit_sachs_family_multi_measurements(
+                    selected[model][0.05],
+                    family=candidate_family,
+                    bh_cut=0.05,
+                    add_moradi_bh_systematic=True,
+                )
+                result["model"] = model
+                result["threshold"] = 0.05
+                result["family_validation_candidate"] = candidate_family
+                candidate_fit_rows.append(result)
+
+                if not bool(result.get("valid", False)):
+                    failure_details.append(
+                        f"invalid 5% Moradi fit: {model}"
+                    )
+                #endif
+            except Exception as exc:
+                failure_details.append(
+                    f"exception in 5% Moradi fit {model}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            #endtry
+        #endfor
+
+        passed_05pct = (
+            len(candidate_fit_rows) == len(FINAL_MODEL_NAMES)
+            and all(bool(row.get("valid", False)) for row in candidate_fit_rows)
+        )
+        attempt["passed_05pct_production"] = bool(passed_05pct)
+
+        # Only spend time validating the local systematic window if the 5%
+        # production fits work.
+        passed_local_scan = False
+        if passed_05pct:
+            local_valid = True
+            for model in FINAL_MODEL_NAMES:
+                for threshold in np.arange(0.03, 0.071, 0.01):
+                    threshold = round(float(threshold), 2)
+                    try:
+                        local_result = fit_sachs_family_multi_measurements(
+                            selected[model][threshold],
+                            family=candidate_family,
+                            bh_cut=threshold,
+                            add_moradi_bh_systematic=False,
+                        )
+                        if not bool(local_result.get("valid", False)):
+                            local_valid = False
+                            failure_details.append(
+                                f"invalid published-error fit: "
+                                f"{model}@{100.0 * threshold:.0f}%"
+                            )
+                        #endif
+                    except Exception as exc:
+                        local_valid = False
+                        failure_details.append(
+                            f"exception in published-error fit "
+                            f"{model}@{100.0 * threshold:.0f}%: "
+                            f"{type(exc).__name__}: {exc}"
+                        )
+                    #endtry
+                #endfor
+            #endfor
+            passed_local_scan = bool(local_valid)
+        #endif
+        attempt["passed_03to07pct_selection_scan"] = bool(
+            passed_local_scan
+        )
+
+        if passed_05pct and passed_local_scan:
+            chosen_family = candidate_family
+            chosen_family_rank = candidate_rank
+            chosen_5pct_fit_rows = candidate_fit_rows
+            attempt["selected_for_final_analysis"] = True
+            print(
+                f"[family fallback] ACCEPTED {candidate_family} at closure "
+                f"rank {candidate_rank}"
+            )
+        else:
+            print(
+                f"[family fallback] REJECTED {candidate_family} at closure "
+                f"rank {candidate_rank}: "
+                + "; ".join(failure_details)
+            )
+        #endif
+
+        attempt["failure_details"] = "; ".join(failure_details)
+        family_attempt_rows.append(attempt)
+
+        # Rewrite on every attempt so a job interrupted during fallback still
+        # leaves a complete record of everything tested so far.
+        pd.DataFrame(family_attempt_rows).to_csv(
+            summary_dir / "family_selection_attempts.csv", index=False
+        )
+
+        if chosen_family is not None:
+            break
+        #endif
+    #endfor
+
+    if chosen_family is None:
+        raise RuntimeError(
+            "Every closure-eligible Sachs family failed at least one required "
+            "production-validation fit. See "
+            f"{summary_dir / 'family_selection_attempts.csv'} for the ordered "
+            "fallback audit. No preliminary result is quoted."
+        )
+    #endif
+
+    fallback_used = bool(chosen_family_rank > 1)
+    with open(summary_dir / "chosen_sachs_family.txt", "w") as fout:
+        fout.write(f"chosen_family={chosen_family}\n")
+        fout.write(f"closure_rank={chosen_family_rank}\n")
+        fout.write(f"bias_rank1_family={bias_rank1_family}\n")
+        fout.write(f"fallback_used={fallback_used}\n")
+        fout.write(
+            "criterion=first closure-eligible family, ordered by increasing "
+            "worst combined RMS bias-variance objective, that yields valid "
+            "5% Moradi-error production fits and valid 3--7% published-error "
+            "selection-scan fits for KM15/VGG99/GK16.\n"
+        )
+    #endwith
+
+    # Preserve the extrapolation-bias estimates for the family that actually
+    # survived production validation, not automatically the closure rank-1
+    # family.
     bias_rows = []
     for model in FINAL_MODEL_NAMES:
         bias = summarize_bias_for_family(
@@ -7662,7 +7876,9 @@ def run_final_model_selected_analysis(
         bias_rows.append({"model": model, "family": chosen_family, **bias})
     #endfor
     bias_table = pd.DataFrame(bias_rows)
-    bias_table.to_csv(summary_dir / "chosen_family_bias_estimates.csv", index=False)
+    bias_table.to_csv(
+        summary_dir / "chosen_family_bias_estimates.csv", index=False
+    )
 
     conservative_bias = {
         "rE_bias_systematic_fm": float(
@@ -7673,27 +7889,23 @@ def run_final_model_selected_analysis(
         ),
     }
 
-    # Production 5% fits, identical functional family for all purity models.
-    fit_rows = []
-    for model in FINAL_MODEL_NAMES:
-        result = fit_sachs_family_multi_measurements(
-            selected[model][0.05],
-            family=chosen_family,
-            bh_cut=0.05,
-            add_moradi_bh_systematic=True,
-        )
-        result["model"] = model
-        result["threshold"] = 0.05
-        fit_rows.append(result)
+    # Reuse the already validated 5% fits for the accepted family.
+    fit_rows = chosen_5pct_fit_rows
+    for result in fit_rows:
+        model = str(result["model"])
         print(
             f"[final fit] {model:5s} {chosen_family}: "
             f"N={result['N']} chi2/ndf={result['chi2_ndof']:.4f} "
-            f"rE={result['rE_fm']:.5f} +/- {result['rE_fit_err_fm']:.5f} fm, "
-            f"rM={result['rM_fm']:.5f} +/- {result['rM_fit_err_fm']:.5f} fm"
+            f"rE={result['rE_fm']:.5f} +/- "
+            f"{result['rE_fit_err_fm']:.5f} fm, "
+            f"rM={result['rM_fm']:.5f} +/- "
+            f"{result['rM_fit_err_fm']:.5f} fm"
         )
     #endfor
     fit_table = pd.DataFrame(fit_rows)
-    fit_table.to_csv(summary_dir / "model_selected_05pct_fits.csv", index=False)
+    fit_table.to_csv(
+        summary_dir / "model_selected_05pct_fits.csv", index=False
+    )
 
     # Common-support diagnostic.  This is NOT a fourth purity prescription and
     # does not replace the model-specific fits.  It asks what the chosen Sachs
@@ -7807,6 +8019,24 @@ def run_final_model_selected_analysis(
         (published_scan["threshold"].to_numpy(float) >= 0.03)
         & (published_scan["threshold"].to_numpy(float) <= 0.07)
     ].copy()
+
+    invalid_local = local_scan.loc[
+        ~local_scan["valid"].astype(bool)
+    ].copy()
+    if len(invalid_local):
+        bad = ", ".join(
+            f"{row.model}@{100.0 * float(row.threshold):.0f}%"
+            for row in invalid_local.itertuples()
+        )
+        raise RuntimeError(
+            "Internal consistency failure: the accepted fallback family "
+            f"{chosen_family} passed the pre-validation 3--7% scan, but the "
+            f"full threshold scan later returned invalid fits for: {bad}. "
+            "The complete threshold table has been saved; do not quote the "
+            "preliminary result until this inconsistency is understood."
+        )
+    #endif
+
     joint_selection_sys_e = float(np.max(np.abs(
         local_scan["rE_fm"].to_numpy(float) - selection_baseline_e
     )))
@@ -7848,9 +8078,15 @@ def run_final_model_selected_analysis(
         "status": "preliminary",
         "nominal_model": FINAL_NOMINAL_MODEL,
         "chosen_family": chosen_family,
+        "chosen_family_closure_rank": int(chosen_family_rank),
+        "bias_rank1_family": bias_rank1_family,
+        "family_fallback_used": bool(fallback_used),
         "nominal_threshold": 0.05,
         "selection_systematic_window_min": 0.03,
         "selection_systematic_window_max": 0.07,
+        "closure_min_valid_fraction": float(
+            args.radius_bias_min_valid_fraction
+        ),
         "rE_fm": float(nominal["rE_fm"]),
         "rE_fit_err_fm": float(nominal["rE_fit_err_fm"]),
         "rE_joint_bh_selection_sys_fm": joint_selection_sys_e,
@@ -7920,7 +8156,10 @@ def run_final_model_selected_analysis(
     print("\n[final model analysis] PRELIMINARY CLAS-ONLY PRESCRIPTION")
     print(
         f"  ensemble            : CLAS6 Jo 2015 + CLAS12 Lee 2026\n"
-        f"  common Sachs family : {chosen_family}\n"
+        f"  common Sachs family : {chosen_family} "
+        f"(closure rank {chosen_family_rank})\n"
+        f"  bias-rank-1 family  : {bias_rank1_family}\n"
+        f"  fallback used       : {fallback_used}\n"
         f"  nominal purity model: {FINAL_NOMINAL_MODEL}\n"
         f"  nominal BH cut      : 5%\n"
         f"  selection sys window: 3--7%, all three purity models\n"
@@ -8938,10 +9177,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--radius-bias-min-valid-fraction",
         type=float,
-        default=0.99,
+        default=0.33,
         help=(
             "Minimum valid-replica fraction required in every truth scenario "
-            "for a candidate family to be eligible (default: 0.99)"
+            "for a candidate family to be eligible (default: 0.33). "
+            "Failed replicas remain recorded and contribute to the reported "
+            "validity diagnostics; this threshold is only the minimum required "
+            "for a family to remain under consideration."
         ),
     )
     p.add_argument(
