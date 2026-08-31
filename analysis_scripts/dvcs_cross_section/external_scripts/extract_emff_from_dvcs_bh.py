@@ -8843,6 +8843,13 @@ def make_pass2_diagnostic_bundle(args) -> Dict[str, object]:
     )
     df = df.loc[finite].copy().reset_index(drop=True)
 
+    # The pass-2 CSV stores the measured average kinematics but not the
+    # run-wide beam energy.  Add it explicitly so these points can be exported
+    # to the external KM15/VGG99/GK16 evaluator just like the other datasets.
+    if "ebeam" not in df.columns:
+        df["ebeam"] = float(args.ebeam)
+    #endif
+
     scale = pd.to_numeric(
         df.get("scale_sys_frac", pd.Series(dtype=float)),
         errors="coerce",
