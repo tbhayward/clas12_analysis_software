@@ -189,7 +189,7 @@ HALLA_DEFURNE_GLOBAL_SCALE_FRAC = 0.028
 SAYLOR_EBEAM = 5.88
 SAYLOR_GLOBAL_SCALE_FRAC = 0.05
 DEFAULT_SAYLOR_FILE = "import/saylor_CLAS6.txt"
-DEFAULT_GEORGES_FILE = "import/E12-06-114.xls"
+DEFAULT_GEORGES_FILE = "import/E12-06-114.xlsx"
 
 # Georges et al., PRL 128, 252002 (2022), Hall A E12-06-114.
 # Nominal (xB,Q2,Ebeam) settings from Table I.  The supplemental spreadsheet
@@ -867,15 +867,106 @@ def load_georges_supplement(path: str) -> pd.DataFrame:
         raise FileNotFoundError(f"Georges E12-06-114 spreadsheet not found: {path}")
     #endif
 
-    try:
-        raw = pd.read_excel(path, sheet_name=0)
-    except ImportError as exc:
-        raise ImportError(
-            "Reading the legacy .xls E12-06-114 supplement requires the Python "
-            "package 'xlrd'. Install it in the analysis environment, or save the "
-            "same spreadsheet as .xlsx and pass that filename with --georges-file."
-        ) from exc
-    #endtry
+    # The farm Python installation does not necessarily provide pandas' optional
+    # Excel engines (openpyxl/xlrd).  For the committed .xlsx supplement, read
+    # the first worksheet directly with the Python standard library so Georges
+    # has no optional package dependency.  Keep pandas Excel support as a
+    # fallback for a user-supplied legacy .xls file.
+    if path.suffix.lower() == ".xlsx":
+        import re
+        import zipfile
+        import xml.etree.ElementTree as ET
+
+        ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+
+        def _xlsx_col_index(cell_ref: str) -> int:
+            letters = re.match(r"[A-Za-z]+", str(cell_ref)).group(0).upper()
+            idx = 0
+            for ch in letters:
+                idx = 26 * idx + (ord(ch) - ord("A") + 1)
+            #endfor
+            return idx - 1
+        #enddef
+
+        with zipfile.ZipFile(path, "r") as zf:
+            shared = []
+            if "xl/sharedStrings.xml" in zf.namelist():
+                root = ET.fromstring(zf.read("xl/sharedStrings.xml"))
+                for si in root.findall("m:si", ns):
+                    shared.append("".join(t.text or "" for t in si.iterfind(".//m:t", ns)))
+                #endfor
+            #endif
+
+            # The official E12-06-114 workbook stores the published table in
+            # its first worksheet.  Resolve that sheet through workbook rels
+            # rather than assuming a particular sheet filename.
+            wb = ET.fromstring(zf.read("xl/workbook.xml"))
+            first_sheet = wb.find("m:sheets/m:sheet", ns)
+            if first_sheet is None:
+                raise RuntimeError(f"No worksheet found in Georges workbook: {path}")
+            #endif
+            rel_id = first_sheet.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+            rel_ns = {"r": "http://schemas.openxmlformats.org/package/2006/relationships"}
+            rels = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+            target = None
+            for rel in rels.findall("r:Relationship", rel_ns):
+                if rel.attrib.get("Id") == rel_id:
+                    target = rel.attrib.get("Target")
+                    break
+                #endif
+            #endfor
+            if target is None:
+                raise RuntimeError(f"Could not resolve first worksheet in Georges workbook: {path}")
+            #endif
+            target = target.lstrip("/")
+            if not target.startswith("xl/"):
+                target = "xl/" + target
+            #endif
+
+            sheet = ET.fromstring(zf.read(target))
+            rows = []
+            for row in sheet.findall(".//m:sheetData/m:row", ns):
+                values = {}
+                for cell in row.findall("m:c", ns):
+                    ref = cell.attrib.get("r", "A1")
+                    col = _xlsx_col_index(ref)
+                    typ = cell.attrib.get("t")
+                    if typ == "inlineStr":
+                        node = cell.find("m:is/m:t", ns)
+                        value = "" if node is None else (node.text or "")
+                    else:
+                        node = cell.find("m:v", ns)
+                        value = "" if node is None else (node.text or "")
+                        if typ == "s" and value != "":
+                            value = shared[int(value)]
+                        #endif
+                    #endif
+                    values[col] = value
+                #endfor
+                if values:
+                    width = max(values) + 1
+                    rows.append([values.get(i, "") for i in range(width)])
+                #endif
+            #endfor
+        #endwith
+
+        if len(rows) < 2:
+            raise RuntimeError(f"Unexpected empty Georges workbook: {path}")
+        #endif
+        ncol = max(len(r) for r in rows)
+        rows = [r + [""] * (ncol - len(r)) for r in rows]
+        raw = pd.DataFrame(rows[1:], columns=rows[0])
+    else:
+        try:
+            raw = pd.read_excel(path, sheet_name=0)
+        except ImportError as exc:
+            raise ImportError(
+                f"Reading Georges input {path.name} requires a pandas Excel engine. "
+                "Use the repository default import/E12-06-114.xlsx, which is read "
+                "without openpyxl/xlrd, or install the engine required for this file."
+            ) from exc
+        #endtry
+    #endif
 
     if raw.shape[1] < 8:
         raise RuntimeError(
@@ -9878,7 +9969,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--georges-file",
         default=DEFAULT_GEORGES_FILE,
-        help="Hall A Georges 2022 E12-06-114 supplemental .xls/.xlsx file",
+        help="Hall A Georges 2022 E12-06-114 supplemental file (default .xlsx is read without optional Excel packages)",
     )
     p.add_argument(
         "--download-saylor",
