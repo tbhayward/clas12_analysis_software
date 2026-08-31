@@ -1066,7 +1066,7 @@ def make_georges_diagnostic_bundle(args) -> Dict[str, object]:
         df,
         workers=args.workers,
         cache_dir=outdir,
-        force=args.force_model,
+        force=args.force_km15,
     )
     # Canonical aliases used by the shared selection/export machinery.
     df["rbh"] = df["R_BH"].to_numpy(float)
