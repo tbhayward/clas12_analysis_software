@@ -32,6 +32,12 @@ Workflow
    showing the measured cross-section points together with the fitted BH
    predictions. No pseudo "CLAS12 GE/GM data points" are constructed.
 
+10. For the final KM15/VGG99/GK16 purity-model study, retain Moradi's
+    observable-level BH criterion.  A point is legitimately BH-like when the
+    NET non-BH contribution sigma_DVCS + sigma_INT is small, including through
+    cancellation.  Model/data agreement is reported only as a diagnostic and
+    never feeds back into purity-model selection, avoiding circular logic.
+
 Fit implementation
 ------------------
 The paper uses iMinuit, the standard Hessian errors, and Delta chi^2 = 1
@@ -6206,7 +6212,14 @@ def aggregate_model_bias_rankings(
         objectives = []
         for model in FINAL_MODEL_NAMES:
             t = by_model[model]
-            eligible = bool(t.loc[family, "eligible"])
+            raw_eligible = t.loc[family, "eligible"]
+            if isinstance(raw_eligible, (bool, np.bool_)):
+                eligible = bool(raw_eligible)
+            else:
+                eligible = str(raw_eligible).strip().lower() in {
+                    "true", "1", "yes", "y"
+                }
+            #endif
             obj = float(t.loc[family, "combined_RMS_objective_fm"])
             row[f"{model}_eligible"] = eligible
             row[f"{model}_combined_RMS_objective_fm"] = obj
@@ -6249,6 +6262,704 @@ def aggregate_model_bias_rankings(
         "from the three model-specific closure studies"
     )
     return chosen, ranking
+#enddef
+
+
+
+MODEL_BH_COLUMN = {
+    "km15": "km15_bh",
+    "vgg99": "partons_bh_vgg99",
+    "gk16": "partons_bh_gv08",
+}
+MODEL_EP_COLUMN = {
+    "km15": "km15_ep",
+    "vgg99": "partons_ep_vgg99",
+    "gk16": "partons_ep_gk16",
+}
+MODEL_DISPLAY = {
+    "km15": "KM15 / Gepard",
+    "vgg99": "VGG99 / PARTONS",
+    "gk16": "GK16 / PARTONS",
+}
+
+
+def _external_table_with_measurements(
+        selection: pd.DataFrame,
+        physics_bundles: Sequence[Dict[str, object]]) -> pd.DataFrame:
+    """
+    Attach measured cross sections to the externally evaluated model table.
+
+    This table is diagnostic only.  Measured cross sections are NEVER used to
+    decide whether a model is accepted, to rank the purity models, or to alter
+    the BH-purity selections.  That separation is deliberate to avoid circular
+    logic in the extraction.
+    """
+    blocks = []
+    for bundle in physics_bundles:
+        key = str(bundle["key"])
+        label = str(bundle["label"])
+        data = bundle["all_data"].reset_index(drop=True)
+        ext = selection.loc[
+            selection["dataset"].astype(str) == key
+        ].copy().sort_values("source_row").reset_index(drop=True)
+
+        if len(ext) != len(data):
+            raise RuntimeError(
+                f"{label}: external diagnostic table has {len(ext)} points, "
+                f"but measurement bundle has {len(data)}"
+            )
+        #endif
+
+        if not np.array_equal(
+                ext["source_row"].to_numpy(int),
+                np.arange(len(data), dtype=int)):
+            raise RuntimeError(
+                f"{label}: source_row mismatch while building model diagnostics"
+            )
+        #endif
+
+        ext["dataset_label"] = label
+        if "xs" in data.columns:
+            ext["measured_xs"] = data["xs"].to_numpy(float)
+        #endif
+
+        # Preserve common measured kinematics even if an older evaluator table
+        # did not carry all of them.
+        for col in ["xB", "Q2", "t_abs", "phi_deg", "ebeam"]:
+            if col not in ext.columns and col in data.columns:
+                ext[col] = data[col].to_numpy(float)
+            #endif
+        #endfor
+
+        blocks.append(ext)
+    #endfor
+
+    if not blocks:
+        raise RuntimeError("No physics measurements available for model diagnostics")
+    #endif
+    return pd.concat(blocks, ignore_index=True)
+#enddef
+
+
+def _model_pass_mask(df: pd.DataFrame, model: str, threshold: float) -> np.ndarray:
+    return (
+        pd.to_numeric(df[f"delta_bh_{model}"], errors="coerce").to_numpy(float)
+        <= float(threshold)
+    )
+#enddef
+
+
+def select_bundle_from_external_intersection(
+        bundle: Dict[str, object],
+        selection_table: pd.DataFrame,
+        threshold: float,
+        models: Sequence[str] = FINAL_MODEL_NAMES) -> pd.DataFrame:
+    """Select points that satisfy the same BH-purity threshold in every model."""
+    key = str(bundle["key"])
+    all_data = bundle["all_data"].reset_index(drop=True)
+    ext = selection_table.loc[
+        selection_table["dataset"].astype(str) == key
+    ].copy().sort_values("source_row").reset_index(drop=True)
+
+    if len(ext) != len(all_data):
+        raise RuntimeError(
+            f"{bundle['label']}: cannot construct model intersection because "
+            "external/current point counts differ"
+        )
+    #endif
+
+    mask = np.ones(len(ext), dtype=bool)
+    for model in models:
+        mask &= _model_pass_mask(ext, model, threshold)
+    #endfor
+
+    selected = all_data.loc[mask].copy()
+    selected["external_bh_model"] = "intersection_" + "_".join(models)
+    selected["external_bh_threshold"] = float(threshold)
+    return selected
+#enddef
+
+
+def write_model_selection_diagnostics(
+        selection: pd.DataFrame,
+        physics_bundles: Sequence[Dict[str, object]],
+        final_dir: Path) -> None:
+    """
+    Write diagnostics for KM15/VGG99/GK16 BH-purity selections.
+
+    Nothing produced here changes the selected samples or favors a model based
+    on agreement with the measured cross section.  In particular, data/BH
+    ratios are diagnostic only.  The physics selection remains Moradi's
+        |1 - sigma_BH/sigma_EP| <= threshold,
+    so cancellation between DVCS and interference is allowed when their NET
+    contribution makes the observed unpolarized cross section BH-like.
+    """
+    ddir = final_dir / "model_selection_diagnostics"
+    ddir.mkdir(parents=True, exist_ok=True)
+
+    df = _external_table_with_measurements(selection, physics_bundles)
+
+    # Signed net non-BH contribution:
+    #   sigma_EP - sigma_BH = sigma_DVCS + sigma_INT.
+    # This is the quantity whose cancellation is physically relevant here.
+    for model in FINAL_MODEL_NAMES:
+        bh_col = MODEL_BH_COLUMN[model]
+        ep_col = MODEL_EP_COLUMN[model]
+        if bh_col in df.columns and ep_col in df.columns:
+            bh = pd.to_numeric(df[bh_col], errors="coerce").to_numpy(float)
+            ep = pd.to_numeric(df[ep_col], errors="coerce").to_numpy(float)
+            good = np.isfinite(bh) & np.isfinite(ep) & (bh != 0.0) & (ep != 0.0)
+
+            net_over_bh = np.full(len(df), np.nan, dtype=float)
+            net_over_ep = np.full(len(df), np.nan, dtype=float)
+            signed_delta = np.full(len(df), np.nan, dtype=float)
+            net_over_bh[good] = (ep[good] - bh[good]) / bh[good]
+            net_over_ep[good] = (ep[good] - bh[good]) / ep[good]
+            signed_delta[good] = 1.0 - bh[good] / ep[good]
+
+            df[f"net_nonbh_over_bh_{model}"] = net_over_bh
+            df[f"net_nonbh_over_ep_{model}"] = net_over_ep
+            df[f"signed_delta_bh_{model}"] = signed_delta
+        #endif
+    #endfor
+
+    # Cross-process BH comparisons.  These diagnose process/elastic-FF
+    # implementation differences independently of the GPD-dependent full EP.
+    if {
+        "km15_bh", "partons_bh_gv08", "partons_bh_vgg99"
+    }.issubset(df.columns):
+        km = pd.to_numeric(df["km15_bh"], errors="coerce").to_numpy(float)
+        gv = pd.to_numeric(df["partons_bh_gv08"], errors="coerce").to_numpy(float)
+        vg = pd.to_numeric(df["partons_bh_vgg99"], errors="coerce").to_numpy(float)
+        good = np.isfinite(km) & np.isfinite(gv) & np.isfinite(vg) & (km != 0.0) & (gv != 0.0)
+
+        r_gv_km = np.full(len(df), np.nan)
+        r_vg_km = np.full(len(df), np.nan)
+        r_vg_gv = np.full(len(df), np.nan)
+        r_gv_km[good] = gv[good] / km[good]
+        r_vg_km[good] = vg[good] / km[good]
+        r_vg_gv[good] = vg[good] / gv[good]
+        df["bh_gv08_over_gepard"] = r_gv_km
+        df["bh_vgg99_over_gepard"] = r_vg_km
+        df["bh_vgg99_over_gv08"] = r_vg_gv
+    #endif
+
+    # Diagnostic data/BH ratios.  These are deliberately never fed back into
+    # selection, model ranking, weighting, or the final systematic.
+    if "measured_xs" in df.columns:
+        y = pd.to_numeric(df["measured_xs"], errors="coerce").to_numpy(float)
+        for model in FINAL_MODEL_NAMES:
+            bh_col = MODEL_BH_COLUMN[model]
+            if bh_col in df.columns:
+                bh = pd.to_numeric(df[bh_col], errors="coerce").to_numpy(float)
+                ratio = np.full(len(df), np.nan)
+                good = np.isfinite(y) & np.isfinite(bh) & (bh != 0.0)
+                ratio[good] = y[good] / bh[good]
+                df[f"data_over_reference_bh_{model}"] = ratio
+            #endif
+        #endfor
+    #endif
+
+    # Point-level membership table at the nominal 5% cut.
+    membership_cols = [
+        c for c in [
+            "point_id", "dataset", "dataset_label", "source_row",
+            "xB", "Q2", "t_abs", "phi_deg", "ebeam",
+            "delta_bh_km15", "delta_bh_vgg99", "delta_bh_gk16",
+            "signed_delta_bh_km15", "signed_delta_bh_vgg99",
+            "signed_delta_bh_gk16",
+            "net_nonbh_over_bh_km15", "net_nonbh_over_bh_vgg99",
+            "net_nonbh_over_bh_gk16",
+            "km15_bh", "partons_bh_vgg99", "partons_bh_gv08",
+            "partons_ep_vgg99", "partons_ep_gk16",
+            "bh_gv08_over_gepard", "bh_vgg99_over_gepard",
+            "bh_vgg99_over_gv08",
+            "measured_xs",
+            "data_over_reference_bh_km15",
+            "data_over_reference_bh_vgg99",
+            "data_over_reference_bh_gk16",
+        ] if c in df.columns
+    ]
+    membership = df[membership_cols].copy()
+    for model in FINAL_MODEL_NAMES:
+        membership[f"pass_05pct_{model}"] = _model_pass_mask(df, model, 0.05)
+    #endfor
+    membership["pass_05pct_all_models"] = np.logical_and.reduce([
+        membership[f"pass_05pct_{model}"].to_numpy(bool)
+        for model in FINAL_MODEL_NAMES
+    ])
+    membership.to_csv(ddir / "model_selection_membership_05pct.csv", index=False)
+
+    # Per-dataset model counts/fractions at nominal threshold.
+    count_rows = []
+    status_rows = []
+    groups = list(df.groupby(["dataset", "dataset_label"], sort=False))
+    groups.append((("ALL", "All final measurements"), df))
+    for (dataset, label), d in groups:
+        row = {
+            "dataset": dataset,
+            "dataset_label": label,
+            "N_available": int(len(d)),
+        }
+        for model in FINAL_MODEL_NAMES:
+            n = int(_model_pass_mask(d, model, 0.05).sum())
+            row[f"N_{model}"] = n
+            row[f"fraction_{model}"] = float(n / len(d)) if len(d) else np.nan
+        #endfor
+        row["N_all_model_intersection"] = int(np.logical_and.reduce([
+            _model_pass_mask(d, model, 0.05)
+            for model in FINAL_MODEL_NAMES
+        ]).sum())
+        count_rows.append(row)
+
+        if dataset != "ALL":
+            zeros = [
+                model for model in FINAL_MODEL_NAMES
+                if row[f"N_{model}"] == 0
+            ]
+            status_rows.append({
+                "dataset": dataset,
+                "dataset_label": label,
+                "nominal_threshold": 0.05,
+                "status": "WARNING" if zeros else "OK",
+                "zero_selected_models": ",".join(zeros),
+                "message": (
+                    "One or more purity prescriptions select zero points at 5%; "
+                    "inspect purity distributions before interpreting model spread."
+                    if zeros else
+                    "All purity prescriptions retain at least one point at 5%."
+                ),
+            })
+        #endif
+    #endfor
+    count_table = pd.DataFrame(count_rows)
+    count_table.to_csv(ddir / "model_selection_counts_05pct.csv", index=False)
+    pd.DataFrame(status_rows).to_csv(
+        ddir / "model_selection_validation_status.csv", index=False
+    )
+
+    # Pairwise and three-way overlap versus threshold.  This directly tests
+    # whether models are making small boundary migrations or selecting
+    # qualitatively different regions.
+    pair_rows = []
+    triple_rows = []
+    thresholds = np.arange(0.01, 0.101, 0.01)
+    model_pairs = list(itertools.combinations(FINAL_MODEL_NAMES, 2))
+    for (dataset, label), d in groups:
+        for threshold in thresholds:
+            masks = {
+                model: _model_pass_mask(d, model, float(threshold))
+                for model in FINAL_MODEL_NAMES
+            }
+            for model_a, model_b in model_pairs:
+                ma = masks[model_a]
+                mb = masks[model_b]
+                na = int(ma.sum())
+                nb = int(mb.sum())
+                inter = int((ma & mb).sum())
+                union = int((ma | mb).sum())
+                pair_rows.append({
+                    "dataset": dataset,
+                    "dataset_label": label,
+                    "threshold": float(threshold),
+                    "threshold_percent": 100.0 * float(threshold),
+                    "model_a": model_a,
+                    "model_b": model_b,
+                    "N_a": na,
+                    "N_b": nb,
+                    "N_intersection": inter,
+                    "N_union": union,
+                    "jaccard": float(inter / union) if union else np.nan,
+                    "fraction_a_shared": float(inter / na) if na else np.nan,
+                    "fraction_b_shared": float(inter / nb) if nb else np.nan,
+                })
+            #endfor
+
+            mall = np.logical_and.reduce([
+                masks[model] for model in FINAL_MODEL_NAMES
+            ])
+            many = np.logical_or.reduce([
+                masks[model] for model in FINAL_MODEL_NAMES
+            ])
+            triple_rows.append({
+                "dataset": dataset,
+                "dataset_label": label,
+                "threshold": float(threshold),
+                "threshold_percent": 100.0 * float(threshold),
+                "N_km15": int(masks["km15"].sum()),
+                "N_vgg99": int(masks["vgg99"].sum()),
+                "N_gk16": int(masks["gk16"].sum()),
+                "N_all_model_intersection": int(mall.sum()),
+                "N_any_model_union": int(many.sum()),
+                "three_way_jaccard": (
+                    float(mall.sum() / many.sum()) if many.sum() else np.nan
+                ),
+            })
+        #endfor
+    #endfor
+    pd.DataFrame(pair_rows).to_csv(
+        ddir / "model_pairwise_overlap_threshold_scan.csv", index=False
+    )
+    pd.DataFrame(triple_rows).to_csv(
+        ddir / "model_three_way_overlap_threshold_scan.csv", index=False
+    )
+
+    # Purity-distribution summaries.
+    purity_rows = []
+    for (dataset, label), d in groups:
+        for model in FINAL_MODEL_NAMES:
+            vals = pd.to_numeric(
+                d[f"delta_bh_{model}"], errors="coerce"
+            ).to_numpy(float)
+            vals = vals[np.isfinite(vals)]
+            if len(vals) == 0:
+                continue
+            #endif
+            q = np.quantile(vals, [0.0, 0.10, 0.25, 0.50, 0.75, 0.90, 1.0])
+            purity_rows.append({
+                "dataset": dataset,
+                "dataset_label": label,
+                "model": model,
+                "N": int(len(vals)),
+                "delta_min": float(q[0]),
+                "delta_q10": float(q[1]),
+                "delta_q25": float(q[2]),
+                "delta_median": float(q[3]),
+                "delta_q75": float(q[4]),
+                "delta_q90": float(q[5]),
+                "delta_max": float(q[6]),
+                "N_le_05pct": int((vals <= 0.05).sum()),
+            })
+        #endfor
+    #endfor
+    pd.DataFrame(purity_rows).to_csv(
+        ddir / "model_purity_distribution_summary.csv", index=False
+    )
+
+    # Summaries of PARTONS-vs-Gepard BH process differences and signed net
+    # non-BH terms.  These are central diagnostics for understanding whether
+    # the large sample migration is GPD/CFF-driven or process/BH-driven.
+    diagnostic_rows = []
+    ratio_columns = [
+        "bh_gv08_over_gepard",
+        "bh_vgg99_over_gepard",
+        "bh_vgg99_over_gv08",
+    ]
+    signed_columns = [
+        f"net_nonbh_over_bh_{model}" for model in FINAL_MODEL_NAMES
+    ]
+    data_ratio_columns = [
+        f"data_over_reference_bh_{model}" for model in FINAL_MODEL_NAMES
+    ]
+    for (dataset, label), d in groups:
+        for col in ratio_columns + signed_columns + data_ratio_columns:
+            if col not in d.columns:
+                continue
+            #endif
+            vals = pd.to_numeric(d[col], errors="coerce").to_numpy(float)
+            vals = vals[np.isfinite(vals)]
+            if len(vals) == 0:
+                continue
+            #endif
+            diagnostic_rows.append({
+                "dataset": dataset,
+                "dataset_label": label,
+                "quantity": col,
+                "N": int(len(vals)),
+                "mean": float(np.mean(vals)),
+                "median": float(np.median(vals)),
+                "std": float(np.std(vals)),
+                "q05": float(np.quantile(vals, 0.05)),
+                "q25": float(np.quantile(vals, 0.25)),
+                "q75": float(np.quantile(vals, 0.75)),
+                "q95": float(np.quantile(vals, 0.95)),
+                "min": float(np.min(vals)),
+                "max": float(np.max(vals)),
+            })
+        #endfor
+    #endfor
+    pd.DataFrame(diagnostic_rows).to_csv(
+        ddir / "partons_gepard_process_diagnostic_summary.csv", index=False
+    )
+
+    # Selected-only data/reference-BH summaries.  Again, diagnostic only:
+    # observed agreement is not allowed to decide which purity model is used.
+    selected_data_rows = []
+    if "measured_xs" in df.columns:
+        for (dataset, label), d in groups:
+            for model in FINAL_MODEL_NAMES:
+                col = f"data_over_reference_bh_{model}"
+                if col not in d.columns:
+                    continue
+                #endif
+                mask = _model_pass_mask(d, model, 0.05)
+                vals = pd.to_numeric(
+                    d.loc[mask, col], errors="coerce"
+                ).to_numpy(float)
+                vals = vals[np.isfinite(vals)]
+                if len(vals) == 0:
+                    continue
+                #endif
+                selected_data_rows.append({
+                    "dataset": dataset,
+                    "dataset_label": label,
+                    "model": model,
+                    "threshold": 0.05,
+                    "N": int(len(vals)),
+                    "mean_data_over_reference_bh": float(np.mean(vals)),
+                    "median_data_over_reference_bh": float(np.median(vals)),
+                    "std_data_over_reference_bh": float(np.std(vals)),
+                    "q16": float(np.quantile(vals, 0.16)),
+                    "q84": float(np.quantile(vals, 0.84)),
+                })
+            #endfor
+        #endfor
+    #endif
+    pd.DataFrame(selected_data_rows).to_csv(
+        ddir / "selected_data_over_reference_bh_05pct.csv", index=False
+    )
+
+    # --------------------------------------------------------------
+    # Plots: one directory per experiment.  These are intentionally
+    # selection diagnostics, not fit-quality/model-ranking plots.
+    # --------------------------------------------------------------
+    for (dataset, label), d in df.groupby(
+            ["dataset", "dataset_label"], sort=False):
+        pdir = ddir / str(dataset)
+        pdir.mkdir(parents=True, exist_ok=True)
+
+        # Pairwise delta scatter.
+        fig, axes = plt.subplots(1, 3, figsize=(15.5, 4.8))
+        pairs = [
+            ("km15", "vgg99"),
+            ("km15", "gk16"),
+            ("vgg99", "gk16"),
+        ]
+        finite_all = np.concatenate([
+            pd.to_numeric(
+                d[f"delta_bh_{m}"], errors="coerce"
+            ).to_numpy(float)
+            for m in FINAL_MODEL_NAMES
+        ])
+        finite_all = finite_all[np.isfinite(finite_all)]
+        upper = (
+            max(0.10, float(np.quantile(finite_all, 0.98)))
+            if len(finite_all) else 0.10
+        )
+        for ax, (ma, mb) in zip(axes, pairs):
+            x = 100.0 * d[f"delta_bh_{ma}"].to_numpy(float)
+            y = 100.0 * d[f"delta_bh_{mb}"].to_numpy(float)
+            lim = 100.0 * upper
+            ax.scatter(x, y, s=10, alpha=0.55)
+            ax.plot([0.0, lim], [0.0, lim], linestyle="--", linewidth=1.0)
+            ax.axvline(5.0, linestyle=":", linewidth=1.0)
+            ax.axhline(5.0, linestyle=":", linewidth=1.0)
+            ax.set_xlim(0.0, lim)
+            ax.set_ylim(0.0, lim)
+            ax.set_xlabel(f"{MODEL_DISPLAY[ma]} deviation (%)")
+            ax.set_ylabel(f"{MODEL_DISPLAY[mb]} deviation (%)")
+            ax.grid(alpha=0.2)
+        #endfor
+        fig.suptitle(f"{label}: pairwise BH-purity comparison")
+        fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.94])
+        fig.savefig(pdir / "01_pairwise_delta_bh.png", dpi=180)
+        plt.close(fig)
+
+        # Purity distributions.
+        fig, ax = plt.subplots(figsize=(8.4, 5.6))
+        bins = np.linspace(0.0, 100.0 * upper, 70)
+        for model in FINAL_MODEL_NAMES:
+            ax.hist(
+                100.0 * d[f"delta_bh_{model}"].to_numpy(float),
+                bins=bins,
+                histtype="step",
+                linewidth=1.6,
+                label=MODEL_DISPLAY[model],
+            )
+        #endfor
+        ax.axvline(5.0, linestyle=":", linewidth=1.2)
+        ax.set_xlabel(r"$|1-\sigma_{\rm BH}/\sigma_{\rm EP}|$ (%)")
+        ax.set_ylabel("points")
+        ax.set_title(f"{label}: BH-purity distributions")
+        ax.legend()
+        ax.grid(alpha=0.2)
+        fig.tight_layout()
+        fig.savefig(pdir / "02_delta_bh_distributions.png", dpi=180)
+        plt.close(fig)
+
+        # Signed NET non-BH term.  Cancellation is allowed and physically
+        # relevant: zero means sigma_DVCS + sigma_INT = 0.
+        available_signed = [
+            model for model in FINAL_MODEL_NAMES
+            if f"net_nonbh_over_bh_{model}" in d.columns
+        ]
+        if available_signed:
+            fig, ax = plt.subplots(figsize=(8.4, 5.6))
+            vals_all = np.concatenate([
+                d[f"net_nonbh_over_bh_{model}"].to_numpy(float)
+                for model in available_signed
+            ])
+            vals_all = vals_all[np.isfinite(vals_all)]
+            if len(vals_all):
+                lo = float(np.quantile(vals_all, 0.02))
+                hi = float(np.quantile(vals_all, 0.98))
+                if not np.isfinite(lo) or not np.isfinite(hi) or lo == hi:
+                    lo, hi = -0.2, 0.2
+                #endif
+                bins_signed = np.linspace(lo, hi, 80)
+                for model in available_signed:
+                    ax.hist(
+                        d[f"net_nonbh_over_bh_{model}"].to_numpy(float),
+                        bins=bins_signed,
+                        histtype="step",
+                        linewidth=1.6,
+                        label=MODEL_DISPLAY[model],
+                    )
+                #endfor
+                ax.axvline(0.0, linestyle=":", linewidth=1.2)
+                ax.set_xlim(lo, hi)
+            #endif
+            ax.set_xlabel(
+                r"$(\sigma_{\rm EP}-\sigma_{\rm BH})/\sigma_{\rm BH}$"
+                r" $=(\sigma_{\rm DVCS}+\sigma_{\rm INT})/\sigma_{\rm BH}$"
+            )
+            ax.set_ylabel("points")
+            ax.set_title(f"{label}: signed net non-BH contribution")
+            ax.legend()
+            ax.grid(alpha=0.2)
+            fig.tight_layout()
+            fig.savefig(pdir / "03_signed_net_nonbh_over_bh.png", dpi=180)
+            plt.close(fig)
+        #endif
+
+        # PARTONS/Gepard BH process ratios versus kinematics.
+        if "bh_gv08_over_gepard" in d.columns:
+            kine = [
+                ("xB", r"$x_B$"),
+                ("Q2", r"$Q^2$ (GeV$^2$)"),
+                ("t_abs", r"$|t|$ (GeV$^2$)"),
+                ("phi_deg", r"$\phi$ (deg)"),
+            ]
+            kine = [(c, lab) for c, lab in kine if c in d.columns]
+            if kine:
+                fig, axes = plt.subplots(
+                    1, len(kine), figsize=(4.4 * len(kine), 4.5),
+                    squeeze=False
+                )
+                axes = axes[0]
+                for ax, (col, xlabel) in zip(axes, kine):
+                    ax.scatter(
+                        d[col], d["bh_gv08_over_gepard"],
+                        s=8, alpha=0.45, label="GV08 BH / Gepard BH"
+                    )
+                    if "bh_vgg99_over_gepard" in d.columns:
+                        ax.scatter(
+                            d[col], d["bh_vgg99_over_gepard"],
+                            s=8, alpha=0.45, label="VGG99 BH / Gepard BH"
+                        )
+                    #endif
+                    ax.axhline(1.0, linestyle=":", linewidth=1.0)
+                    ax.set_xlabel(xlabel)
+                    ax.set_ylabel("BH cross-section ratio")
+                    ax.grid(alpha=0.2)
+                #endfor
+                handles, labels = axes[0].get_legend_handles_labels()
+                fig.suptitle(f"{label}: process-level BH implementation comparison")
+                if handles:
+                    fig.legend(
+                        handles, labels, loc="upper center",
+                        bbox_to_anchor=(0.5, 0.94), ncol=2
+                    )
+                #endif
+                fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.86])
+                fig.savefig(
+                    pdir / "04_partons_over_gepard_bh_vs_kinematics.png",
+                    dpi=180,
+                )
+                plt.close(fig)
+            #endif
+        #endif
+
+        # For each model, show where the 5%-accepted points lie in the signed
+        # net non-BH variable.  This is especially useful for Hall A.
+        fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.7))
+        plotted = False
+        for ax, model in zip(axes, FINAL_MODEL_NAMES):
+            col = f"net_nonbh_over_bh_{model}"
+            if col not in d.columns:
+                ax.set_axis_off()
+                continue
+            #endif
+            mask = _model_pass_mask(d, model, 0.05)
+            allv = d[col].to_numpy(float)
+            sel = allv[mask]
+            finite = allv[np.isfinite(allv)]
+            if len(finite) == 0:
+                ax.set_axis_off()
+                continue
+            #endif
+            lo = float(np.quantile(finite, 0.02))
+            hi = float(np.quantile(finite, 0.98))
+            if lo == hi:
+                lo, hi = -0.2, 0.2
+            #endif
+            bins_local = np.linspace(lo, hi, 65)
+            ax.hist(
+                finite, bins=bins_local, histtype="step",
+                linewidth=1.2, label="all points"
+            )
+            if len(sel):
+                ax.hist(
+                    sel[np.isfinite(sel)], bins=bins_local, histtype="step",
+                    linewidth=1.8, label="5% selected"
+                )
+            #endif
+            ax.axvline(0.0, linestyle=":", linewidth=1.0)
+            ax.set_xlabel(r"$(\sigma_{\rm EP}-\sigma_{\rm BH})/\sigma_{\rm BH}$")
+            ax.set_ylabel("points")
+            ax.set_title(MODEL_DISPLAY[model])
+            ax.legend()
+            ax.grid(alpha=0.2)
+            plotted = True
+        #endfor
+        if plotted:
+            fig.suptitle(f"{label}: net non-BH term for nominal 5% selections")
+            fig.tight_layout(rect=[0.0, 0.0, 1.0, 0.93])
+            fig.savefig(pdir / "05_selected_net_nonbh_05pct.png", dpi=180)
+        #endif
+        plt.close(fig)
+    #endfor
+
+    # Human-readable statement of the non-circular diagnostic policy.
+    with open(ddir / "README.txt", "w") as fout:
+        fout.write(
+            "MODEL-SELECTION DIAGNOSTICS\n"
+            "===========================\n\n"
+            "The extraction selection remains Moradi's observable-level criterion:\n"
+            "  |1 - sigma_BH/sigma_EP| <= threshold.\n\n"
+            "Therefore a cancellation sigma_DVCS + sigma_INT ~= 0 is allowed and\n"
+            "is physically relevant: the total unpolarized observable is then\n"
+            "BH-like even if the two non-BH terms are individually nonzero.\n\n"
+            "Measured data/reference-BH ratios in this directory are diagnostics\n"
+            "ONLY. They do not choose, reject, rank, or weight KM15/VGG99/GK16.\n"
+            "This avoids circularly preferring the model that best describes the\n"
+            "same measured cross sections used in the form-factor extraction.\n\n"
+            "PARTONS/Gepard BH ratios diagnose process/elastic-form-factor\n"
+            "implementation differences separately from the GPD-dependent full\n"
+            "EP prediction. Large differences should be understood before the\n"
+            "cross-model radius envelope is interpreted as a final systematic.\n"
+        )
+    #endwith
+
+    print("\n[model diagnostics] nominal 5% selected counts")
+    print(count_table.to_string(index=False))
+    warning_table = pd.DataFrame(status_rows)
+    warnings = warning_table.loc[warning_table["status"] != "OK"]
+    if len(warnings):
+        print("\n[model diagnostics] WARNING: zero-coverage model/dataset combinations")
+        print(warnings.to_string(index=False))
+    #endif
+    print(f"[model diagnostics] outputs -> {ddir}")
 #enddef
 
 
@@ -6311,6 +7022,11 @@ def run_final_model_selected_analysis(
     pd.DataFrame(count_rows).to_csv(
         final_dir / "model_threshold_selected_counts.csv", index=False
     )
+
+    # Comprehensive purity/process diagnostics are written BEFORE any bias
+    # study or production fit.  They never feed measured-data agreement back
+    # into model selection, avoiding circular model preference.
+    write_model_selection_diagnostics(selection, physics_bundles, final_dir)
 
     # Run a closure/bias study for each 5% model-selected sample.  This is
     # intentionally three studies: the extrapolation family must be robust to
@@ -6390,19 +7106,80 @@ def run_final_model_selected_analysis(
     fit_table = pd.DataFrame(fit_rows)
     fit_table.to_csv(final_dir / "model_selected_05pct_fits.csv", index=False)
 
-    # Full 1--10% threshold scan for every purity model using the selected family.
+    # Common-support diagnostic.  This is NOT a fourth purity prescription and
+    # does not replace the model-specific fits.  It asks what the chosen Sachs
+    # family gives on exactly the points classified BH-like by all three models,
+    # helping distinguish sample-composition effects from the nominal result.
+    intersection_specs = []
+    intersection_count_row = {"threshold": 0.05}
+    for bundle in physics_bundles:
+        d_intersection = select_bundle_from_external_intersection(
+            bundle, selection, threshold=0.05
+        )
+        intersection_specs.append(
+            bundle_to_measurement_spec(bundle, d_intersection)
+        )
+        intersection_count_row["N_" + str(bundle["key"])] = int(
+            len(d_intersection)
+        )
+    #endfor
+    intersection_count_row["N_total"] = int(sum(
+        len(spec["data"]) for spec in intersection_specs
+    ))
+    pd.DataFrame([intersection_count_row]).to_csv(
+        final_dir / "all_model_intersection_05pct_counts.csv", index=False
+    )
+    if intersection_count_row["N_total"] > 0:
+        intersection_fit = fit_sachs_family_multi_measurements(
+            intersection_specs,
+            family=chosen_family,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+        )
+        intersection_fit["sample"] = "all_model_intersection"
+        intersection_fit["threshold"] = 0.05
+        pd.DataFrame([intersection_fit]).to_csv(
+            final_dir / "all_model_intersection_05pct_fit.csv", index=False
+        )
+        print(
+            f"[final fit diagnostic] all-model 5% intersection {chosen_family}: "
+            f"N={intersection_fit['N']} "
+            f"chi2/ndf={intersection_fit['chi2_ndof']:.4f} "
+            f"rE={intersection_fit['rE_fm']:.5f} fm, "
+            f"rM={intersection_fit['rM_fm']:.5f} fm"
+        )
+    else:
+        print(
+            "[final fit diagnostic] all-model 5% intersection is empty; "
+            "no common-support fit written"
+        )
+    #endif
+
+    # Full 1--10% threshold scan for every purity model in two error modes:
+    #   published_errors : no extra threshold*xsec uncertainty;
+    #   moradi_errors    : includes the Moradi c_BH*xsec term.
+    #
+    # The threshold systematic is derived from published_errors so changing the
+    # BH cut changes the selected sample but does not simultaneously and
+    # mechanically change every retained point's weight.
     threshold_rows = []
-    for model in FINAL_MODEL_NAMES:
-        for threshold in thresholds:
-            result = fit_sachs_family_multi_measurements(
-                selected[model][round(float(threshold), 2)],
-                family=chosen_family,
-                bh_cut=float(threshold),
-                add_moradi_bh_systematic=True,
-            )
-            result["model"] = model
-            result["threshold"] = float(threshold)
-            threshold_rows.append(result)
+    for error_mode, add_moradi in [
+        ("published_errors", False),
+        ("moradi_errors", True),
+    ]:
+        for model in FINAL_MODEL_NAMES:
+            for threshold in thresholds:
+                result = fit_sachs_family_multi_measurements(
+                    selected[model][round(float(threshold), 2)],
+                    family=chosen_family,
+                    bh_cut=float(threshold),
+                    add_moradi_bh_systematic=add_moradi,
+                )
+                result["model"] = model
+                result["threshold"] = float(threshold)
+                result["error_mode"] = error_mode
+                threshold_rows.append(result)
+            #endfor
         #endfor
     #endfor
     threshold_table = pd.DataFrame(threshold_rows)
@@ -6425,16 +7202,27 @@ def run_final_model_selected_analysis(
     )
 
     nominal_scan = threshold_table.loc[
-        threshold_table["model"] == FINAL_NOMINAL_MODEL
+        (threshold_table["model"] == FINAL_NOMINAL_MODEL)
+        & (threshold_table["error_mode"] == "published_errors")
+    ].copy()
+    nominal_scan_05 = nominal_scan.loc[
+        np.isclose(nominal_scan["threshold"].to_numpy(float), 0.05)
     ]
+    if len(nominal_scan_05) != 1:
+        raise RuntimeError(
+            "Could not identify unique KM15 5% published-errors threshold baseline"
+        )
+    #endif
+    threshold_baseline_e = float(nominal_scan_05.iloc[0]["rE_fm"])
+    threshold_baseline_m = float(nominal_scan_05.iloc[0]["rM_fm"])
     threshold_sys_e = float(
         np.max(np.abs(
-            nominal_scan["rE_fm"].to_numpy(float) - float(nominal["rE_fm"])
+            nominal_scan["rE_fm"].to_numpy(float) - threshold_baseline_e
         ))
     )
     threshold_sys_m = float(
         np.max(np.abs(
-            nominal_scan["rM_fm"].to_numpy(float) - float(nominal["rM_fm"])
+            nominal_scan["rM_fm"].to_numpy(float) - threshold_baseline_m
         ))
     )
 
@@ -6458,9 +7246,16 @@ def run_final_model_selected_analysis(
         "rM_extrapolation_bias_sys_fm": conservative_bias["rM_bias_systematic_fm"],
         "three_model_mean_rE_diagnostic_fm": mean_e,
         "three_model_mean_rM_diagnostic_fm": mean_m,
+        "threshold_systematic_error_mode": "published_errors",
+        "threshold_systematic_reference_threshold": 0.05,
         "note": (
-            "KM15 is nominal; VGG99/GK16 define BH-purity model dependence. "
-            "Three-model mean is diagnostic, not the quoted central value. "
+            "KM15 is nominal because it is the validated Moradi/Gepard baseline; "
+            "measured data/model agreement is diagnostic only and is not used "
+            "to choose or weight purity models. VGG99/GK16 define alternative "
+            "BH-purity prescriptions. Three-model mean is diagnostic, not the "
+            "quoted central value. Threshold systematic is the 1-10% envelope "
+            "from the published-errors scan relative to its own 5% baseline, "
+            "while the nominal 5% fit retains the Moradi BH-selection error. "
             "Fit errors include the configured point-error prescription and "
             "correlated normalization nuisances; systematic components are "
             "kept separate and are not automatically quadrature-combined here."
@@ -6475,11 +7270,13 @@ def run_final_model_selected_analysis(
         f"  nominal BH cut      : 5%\n"
         f"  rE = {float(nominal['rE_fm']):.5f} fm; "
         f"fit err={float(nominal['rE_fit_err_fm']):.5f}, "
-        f"model sys={model_sys_e:.5f}, threshold sys={threshold_sys_e:.5f}, "
+        f"model sys={model_sys_e:.5f}, "
+        f"threshold sys={threshold_sys_e:.5f} [published-errors scan], "
         f"bias sys={conservative_bias['rE_bias_systematic_fm']:.5f}\n"
         f"  rM = {float(nominal['rM_fm']):.5f} fm; "
         f"fit err={float(nominal['rM_fit_err_fm']):.5f}, "
-        f"model sys={model_sys_m:.5f}, threshold sys={threshold_sys_m:.5f}, "
+        f"model sys={model_sys_m:.5f}, "
+        f"threshold sys={threshold_sys_m:.5f} [published-errors scan], "
         f"bias sys={conservative_bias['rM_bias_systematic_fm']:.5f}\n"
         f"  outputs -> {final_dir}"
     )
