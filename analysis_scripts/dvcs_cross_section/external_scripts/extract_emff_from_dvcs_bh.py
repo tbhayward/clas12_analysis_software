@@ -856,8 +856,11 @@ def load_georges_supplement(path: str) -> pd.DataFrame:
     also contains the helicity-dependent cross section in columns 9--12; those
     values are deliberately ignored for the present unpolarized BH study.
 
-    The published t column is negative; the internal convention is t_abs=|t|.
-    The two asymmetric systematic columns are retained and a symmetric
+    IMPORTANT: although the spreadsheet header labels column 3 as t, the
+    E12-06-114 analysis bins this quantity as (t - t_min).  Therefore the
+    physical momentum transfer used by the BH/DVCS calculation is reconstructed
+    row-by-row as t = t_min(xB,Q2) + (t - t_min).  The internal convention is
+    then t_abs=|t|.  The two asymmetric systematic columns are retained and a symmetric
     pointwise diagnostic uncertainty is defined as their average magnitude.
     No separate correlated normalization nuisance is invented here because the
     spreadsheet does not decompose its systematic uncertainty that way.
@@ -988,7 +991,22 @@ def load_georges_supplement(path: str) -> pd.DataFrame:
     })
     finite = np.all(np.isfinite(out[["xB", "Q2", "t_raw", "phi_deg", "xs", "stat"]]), axis=1)
     out = out.loc[finite].copy().reset_index(drop=True)
-    out["t_abs"] = np.abs(out["t_raw"].to_numpy(float))
+
+    # E12-06-114 publishes its t binning in delta_t = t - t_min (negative).
+    # The spreadsheet header simply says t, which is easy to misread.  Rebuild
+    # the physical t before passing the points to Gepard/PARTONS.  Using the
+    # spreadsheet value directly would put many points at |t| < |t_min| and
+    # hence outside the physical DVCS phase space.
+    xb_arr = out["xB"].to_numpy(float)
+    q2_arr = out["Q2"].to_numpy(float)
+    eps2 = 4.0 * MP * MP * xb_arr * xb_arr / q2_arr
+    tmin = -q2_arr * (
+        2.0 * (1.0 - xb_arr) * (1.0 - np.sqrt(1.0 + eps2)) + eps2
+    ) / (4.0 * xb_arr * (1.0 - xb_arr) + eps2)
+    out["t_minus_tmin"] = out["t_raw"].to_numpy(float)
+    out["t_min"] = tmin
+    out["t_physical"] = tmin + out["t_minus_tmin"].to_numpy(float)
+    out["t_abs"] = np.abs(out["t_physical"].to_numpy(float))
     out["phi_deg"] = np.mod(out["phi_deg"].to_numpy(float), 360.0)
     out["stat"] = np.abs(out["stat"].to_numpy(float))
     out["sys_upper"] = np.abs(out["sys_upper"].to_numpy(float))
@@ -1017,7 +1035,8 @@ def load_georges_supplement(path: str) -> pd.DataFrame:
     print(f"[GEORGES] Loaded {len(out)} helicity-independent points from {path.name}.")
     print("[GEORGES] Setting counts: " + ", ".join(f"{k}={int(v)}" for k, v in counts.items()))
     print(
-        f"[GEORGES] |t| range={out['t_abs'].min():.4f}--{out['t_abs'].max():.4f} GeV^2; "
+        f"[GEORGES] Reconstructed physical |t| from published (t-t_min): "
+        f"{out['t_abs'].min():.4f}--{out['t_abs'].max():.4f} GeV^2; "
         f"Q2 range={out['Q2'].min():.2f}--{out['Q2'].max():.2f} GeV^2."
     )
     return out
