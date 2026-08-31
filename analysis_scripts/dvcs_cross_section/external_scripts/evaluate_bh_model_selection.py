@@ -18,6 +18,8 @@ GK16:
 
 VGG99:
     PARTONS GPDVGG99 + DVCSCFFStandard(LO) + DVCSProcessVGG99.
+    GPDVGG99 is configured explicitly with LHAPDF set MSTW2008nlo68cl,
+    member 0, matching the PDF set installed in the PARTONS 5.0 farm image.
 
 The purity ratios are kept internally self-consistent:
 
@@ -102,6 +104,12 @@ DEFAULT_PARTONS_SIF = "partons_v4.sif"
 DEFAULT_PARTONS_PROJECT = "/scratch/thayward/partons-example"
 DEFAULT_PARTONS_EXECUTABLE = "./bin/PARTONS_example"
 
+# GPDVGG99 requires an LHAPDF forward-PDF set.  The PARTONS 5.0 farm image
+# used here contains MSTW2008nlo68cl, and GPDVGG99 exposes the exact parameters
+# "setName" and "member".
+DEFAULT_VGG99_PDF_SET = "MSTW2008nlo68cl"
+DEFAULT_VGG99_PDF_MEMBER = 0
+
 PARTONS_RESULT_RE = re.compile(
     r"Result:\s*([+-]?(?:[\d,]+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*\[([^\]]+)\]"
 )
@@ -185,6 +193,15 @@ def locate_partons(sif: Path, project: Path, executable: str) -> None:
 
 def _process_module_xml(process: str, gpd: str) -> str:
     """Return the common PARTONS process-module block."""
+    if gpd == "GPDVGG99":
+        gpd_xml = f"""<module type="GPDModule" name="{gpd}">
+<param name="setName" value="{DEFAULT_VGG99_PDF_SET}" />
+<param name="member" value="{DEFAULT_VGG99_PDF_MEMBER}" />
+</module>"""
+    else:
+        gpd_xml = f'<module type="GPDModule" name="{gpd}"></module>'
+    #endif
+
     return f"""<module type="DVCSProcessModule" name="{process}">
 <module type="DVCSScalesModule" name="DVCSScalesQ2Multiplier">
 <param name="lambda" value="1." />
@@ -192,7 +209,7 @@ def _process_module_xml(process: str, gpd: str) -> str:
 <module type="DVCSXiConverterModule" name="DVCSXiConverterXBToXi"></module>
 <module type="DVCSConvolCoeffFunctionModule" name="DVCSCFFStandard">
 <param name="qcd_order_type" value="LO" />
-<module type="GPDModule" name="{gpd}"></module>
+{gpd_xml}
 </module>
 </module>"""
 #enddef
