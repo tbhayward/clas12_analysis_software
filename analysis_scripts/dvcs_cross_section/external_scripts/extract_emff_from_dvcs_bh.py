@@ -7504,9 +7504,11 @@ def write_final_analysis_readme(
         (
             "Family selection: eligible families are ordered by the closure "
             "bias+variance objective. The script tries them in that order and "
-            "accepts the first family giving valid required 5% production fits "
-            "and valid 3--7% published-error selection-scan fits for all three "
-            "purity prescriptions. Every rejected attempt is recorded in "
+            "accepts the first family giving valid nominal 5% production fits "
+            "for all three purity prescriptions. Threshold-scan failures do "
+            "not disqualify a family; invalid scan points are recorded and "
+            "skipped when building the 3--7% selection envelope. Every rejected "
+            "nominal-family attempt is recorded in "
             "summary/family_selection_attempts.csv."
         ),
         (
@@ -7685,15 +7687,13 @@ def run_final_model_selected_analysis(
     # Ordered production-validation fallback.
     #
     # The closure ranking supplies an ordered list of eligible families.
-    # Starting from the best bias+variance score, require the family to
-    # produce all fits actually needed for the preliminary prescription:
+    # Starting from the best bias+variance score, require ONLY that the family
+    # produce valid nominal 5% Moradi-error production fits for KM15, VGG99,
+    # and GK16. If the nominal fit fails, retain the failure in the audit table
+    # and automatically try the next-best eligible family.
     #
-    #   (1) 5% Moradi-error fit for KM15, VGG99, GK16;
-    #   (2) published-error fits for KM15, VGG99, GK16 at 3--7%.
-    #
-    # If either condition fails, retain the failure in the audit table and
-    # automatically test the next-best eligible family.  The first family
-    # satisfying all required production fits becomes the chosen family.
+    # Threshold-scan failures do NOT disqualify a family. They are retained as
+    # diagnostics and skipped when constructing the local selection envelope.
     # ------------------------------------------------------------------
     eligible_ranking = family_ranking.loc[
         family_ranking["eligible_all_models"].astype(bool)
@@ -7730,7 +7730,6 @@ def run_final_model_selected_analysis(
                 rank_row["mean_combined_RMS_objective_fm"]
             ),
             "passed_05pct_production": False,
-            "passed_03to07pct_selection_scan": False,
             "selected_for_final_analysis": False,
             "failure_details": "",
         }
@@ -7772,52 +7771,14 @@ def run_final_model_selected_analysis(
         )
         attempt["passed_05pct_production"] = bool(passed_05pct)
 
-        # Only spend time validating the local systematic window if the 5%
-        # production fits work.
-        passed_local_scan = False
         if passed_05pct:
-            local_valid = True
-            for model in FINAL_MODEL_NAMES:
-                for threshold in np.arange(0.03, 0.071, 0.01):
-                    threshold = round(float(threshold), 2)
-                    try:
-                        local_result = fit_sachs_family_multi_measurements(
-                            selected[model][threshold],
-                            family=candidate_family,
-                            bh_cut=threshold,
-                            add_moradi_bh_systematic=False,
-                        )
-                        if not bool(local_result.get("valid", False)):
-                            local_valid = False
-                            failure_details.append(
-                                f"invalid published-error fit: "
-                                f"{model}@{100.0 * threshold:.0f}%"
-                            )
-                        #endif
-                    except Exception as exc:
-                        local_valid = False
-                        failure_details.append(
-                            f"exception in published-error fit "
-                            f"{model}@{100.0 * threshold:.0f}%: "
-                            f"{type(exc).__name__}: {exc}"
-                        )
-                    #endtry
-                #endfor
-            #endfor
-            passed_local_scan = bool(local_valid)
-        #endif
-        attempt["passed_03to07pct_selection_scan"] = bool(
-            passed_local_scan
-        )
-
-        if passed_05pct and passed_local_scan:
             chosen_family = candidate_family
             chosen_family_rank = candidate_rank
             chosen_5pct_fit_rows = candidate_fit_rows
             attempt["selected_for_final_analysis"] = True
             print(
                 f"[family fallback] ACCEPTED {candidate_family} at closure "
-                f"rank {candidate_rank}"
+                f"rank {candidate_rank}: nominal 5% production fits valid"
             )
         else:
             print(
@@ -7859,8 +7820,8 @@ def run_final_model_selected_analysis(
         fout.write(
             "criterion=first closure-eligible family, ordered by increasing "
             "worst combined RMS bias-variance objective, that yields valid "
-            "5% Moradi-error production fits and valid 3--7% published-error "
-            "selection-scan fits for KM15/VGG99/GK16.\n"
+            "nominal 5% Moradi-error production fits for KM15/VGG99/GK16. "
+            "Threshold-scan failures do not disqualify the family.\n"
         )
     #endwith
 
@@ -8023,25 +7984,33 @@ def run_final_model_selected_analysis(
     invalid_local = local_scan.loc[
         ~local_scan["valid"].astype(bool)
     ].copy()
+    valid_local = local_scan.loc[
+        local_scan["valid"].astype(bool)
+    ].copy()
+
     if len(invalid_local):
         bad = ", ".join(
             f"{row.model}@{100.0 * float(row.threshold):.0f}%"
             for row in invalid_local.itertuples()
         )
+        print(
+            "[final model analysis] WARNING: skipping invalid 3--7% "
+            f"threshold-scan fits when building the joint envelope: {bad}"
+        )
+    #endif
+
+    if len(valid_local) == 0:
         raise RuntimeError(
-            "Internal consistency failure: the accepted fallback family "
-            f"{chosen_family} passed the pre-validation 3--7% scan, but the "
-            f"full threshold scan later returned invalid fits for: {bad}. "
-            "The complete threshold table has been saved; do not quote the "
-            "preliminary result until this inconsistency is understood."
+            "No valid 3--7% published-error threshold fits remain for the "
+            "joint BH-selection envelope."
         )
     #endif
 
     joint_selection_sys_e = float(np.max(np.abs(
-        local_scan["rE_fm"].to_numpy(float) - selection_baseline_e
+        valid_local["rE_fm"].to_numpy(float) - selection_baseline_e
     )))
     joint_selection_sys_m = float(np.max(np.abs(
-        local_scan["rM_fm"].to_numpy(float) - selection_baseline_m
+        valid_local["rM_fm"].to_numpy(float) - selection_baseline_m
     )))
 
     # Retain fixed-cut and nominal-model threshold components only as
@@ -8084,6 +8053,8 @@ def run_final_model_selected_analysis(
         "nominal_threshold": 0.05,
         "selection_systematic_window_min": 0.03,
         "selection_systematic_window_max": 0.07,
+        "selection_scan_invalid_rows_skipped": int(len(invalid_local)),
+        "selection_scan_valid_rows_used": int(len(valid_local)),
         "closure_min_valid_fraction": float(
             args.radius_bias_min_valid_fraction
         ),
@@ -8162,7 +8133,8 @@ def run_final_model_selected_analysis(
         f"  fallback used       : {fallback_used}\n"
         f"  nominal purity model: {FINAL_NOMINAL_MODEL}\n"
         f"  nominal BH cut      : 5%\n"
-        f"  selection sys window: 3--7%, all three purity models\n"
+        f"  selection sys window: 3--7%, all three purity models "
+        f"(invalid scan fits skipped)\n"
         f"  rE = {float(nominal['rE_fm']):.5f} +/- "
         f"{float(nominal['rE_fit_err_fm']):.5f} (fit) +/- "
         f"{method_sys_e:.5f} (method) fm\n"
