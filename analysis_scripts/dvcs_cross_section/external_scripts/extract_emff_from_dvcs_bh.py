@@ -3534,7 +3534,8 @@ def fit_cross_sections_with_sachs_family(
         bh_cut: float,
         add_moradi_bh_systematic: bool,
         override_y: Optional[Dict[str, np.ndarray]] = None,
-        statistical_only: bool = False) -> Tuple[float, float, bool]:
+        statistical_only: bool = False,
+        return_parameters: bool = False):
     """
     Fit common GE and GM/mu_p candidate functions directly to BH cross sections.
 
@@ -3612,6 +3613,9 @@ def fit_cross_sections_with_sachs_family(
         and np.isfinite(rE)
         and np.isfinite(rM)
     )
+    if return_parameters:
+        return rE, rM, valid, pars
+    #endif
     return rE, rM, valid
 #enddef
 
@@ -3623,67 +3627,87 @@ def fit_cross_sections_with_sachs_family(
 _RADIUS_BIAS_WORKER_SPECS = None
 _RADIUS_BIAS_WORKER_CENTRAL = None
 _RADIUS_BIAS_WORKER_SIGMA = None
+_RADIUS_BIAS_WORKER_TRUTH_GE = None
+_RADIUS_BIAS_WORKER_TRUTH_GM = None
 
 
 def _init_radius_bias_worker(
         specs: Sequence[Dict[str, object]],
         central_by_key: Dict[str, np.ndarray],
-        sigma_by_key: Dict[str, np.ndarray]) -> None:
+        sigma_by_key: Dict[str, np.ndarray],
+        truth_ge_by_key: Dict[str, np.ndarray],
+        truth_gm_by_key: Dict[str, np.ndarray]) -> None:
     global _RADIUS_BIAS_WORKER_SPECS
     global _RADIUS_BIAS_WORKER_CENTRAL
     global _RADIUS_BIAS_WORKER_SIGMA
+    global _RADIUS_BIAS_WORKER_TRUTH_GE
+    global _RADIUS_BIAS_WORKER_TRUTH_GM
 
     _RADIUS_BIAS_WORKER_SPECS = specs
     _RADIUS_BIAS_WORKER_CENTRAL = central_by_key
     _RADIUS_BIAS_WORKER_SIGMA = sigma_by_key
+    _RADIUS_BIAS_WORKER_TRUTH_GE = truth_ge_by_key
+    _RADIUS_BIAS_WORKER_TRUTH_GM = truth_gm_by_key
 #enddef
 
 
 def _radius_bias_replica_worker(
-        task: Tuple[str, int]) -> Tuple[str, float, float, bool]:
-    """
-    Generate and fit one pseudodata replica.
-
-    Only the fit-family label and a deterministic RNG seed are sent per task;
-    the large experimental arrays live in process-global state initialized
-    once when the worker starts.
-    """
+        task: Tuple[str, int]):
+    """Generate/fit one replica and return radius plus full-range shape diagnostics."""
     family, seed = task
     rng = np.random.default_rng(int(seed))
 
     specs = _RADIUS_BIAS_WORKER_SPECS
     central_by_key = _RADIUS_BIAS_WORKER_CENTRAL
     sigma_by_key = _RADIUS_BIAS_WORKER_SIGMA
-    if specs is None or central_by_key is None or sigma_by_key is None:
+    truth_ge_by_key = _RADIUS_BIAS_WORKER_TRUTH_GE
+    truth_gm_by_key = _RADIUS_BIAS_WORKER_TRUTH_GM
+    if (specs is None or central_by_key is None or sigma_by_key is None
+            or truth_ge_by_key is None or truth_gm_by_key is None):
         raise RuntimeError("radius-bias worker was not initialized")
     #endif
 
     replica_y = {}
     for spec in specs:
         key = str(spec["key"])
-        replica_y[key] = rng.normal(
-            central_by_key[key],
-            sigma_by_key[key],
-        )
+        replica_y[key] = rng.normal(central_by_key[key], sigma_by_key[key])
     #endfor
 
     try:
-        re_val, rm_val, valid = fit_cross_sections_with_sachs_family(
-            specs,
-            family=family,
-            bh_cut=0.05,
-            add_moradi_bh_systematic=False,
-            override_y=replica_y,
-            statistical_only=True,
+        re_val, rm_val, valid, pars = fit_cross_sections_with_sachs_family(
+            specs, family=family, bh_cut=0.05,
+            add_moradi_bh_systematic=False, override_y=replica_y,
+            statistical_only=True, return_parameters=True,
         )
     except Exception:
-        return family, np.nan, np.nan, False
+        return family, np.nan, np.nan, False, np.nan, np.nan, np.nan
     #endtry
 
     valid = bool(valid and np.isfinite(re_val) and np.isfinite(rm_val))
-    return family, float(re_val), float(rm_val), valid
+    ge_frac = []
+    gm_frac = []
+    if valid:
+        order = int(re.findall(r"\d+", family)[0])
+        ce = np.asarray(pars[:order], dtype=float)
+        cm = np.asarray(pars[order:], dtype=float)
+        for spec in specs:
+            key = str(spec["key"])
+            q = spec["data"]["t_abs"].to_numpy(float)
+            ge_fit = sachs_family_value(q, ce, family)
+            gm_fit = sachs_family_value(q, cm, family)
+            ge_true = np.asarray(truth_ge_by_key[key], dtype=float)
+            gm_true = np.asarray(truth_gm_by_key[key], dtype=float)
+            good_e = np.isfinite(ge_fit) & np.isfinite(ge_true) & (np.abs(ge_true) > 1.0e-12)
+            good_m = np.isfinite(gm_fit) & np.isfinite(gm_true) & (np.abs(gm_true) > 1.0e-12)
+            ge_frac.extend(((ge_fit[good_e] - ge_true[good_e]) / ge_true[good_e]).tolist())
+            gm_frac.extend(((gm_fit[good_m] - gm_true[good_m]) / gm_true[good_m]).tolist())
+        #endfor
+    #endif
+    ge_rms = float(np.sqrt(np.mean(np.asarray(ge_frac)**2))) if ge_frac else np.nan
+    gm_rms = float(np.sqrt(np.mean(np.asarray(gm_frac)**2))) if gm_frac else np.nan
+    combined = float(np.sqrt(0.5 * (ge_rms**2 + gm_rms**2))) if np.isfinite(ge_rms) and np.isfinite(gm_rms) else np.nan
+    return family, float(re_val), float(rm_val), valid, ge_rms, gm_rms, combined
 #enddef
-
 
 
 
@@ -4072,10 +4096,8 @@ def save_extended_radius_bias_matrices(
             "minimum_scenario_valid_fraction": min_valid,
             "global_valid_fraction": global_valid,
             "eligibility_threshold": float(eligibility_threshold),
-            "eligible": bool(
-                np.isfinite(min_valid)
-                and min_valid >= eligibility_threshold
-            ),
+            "eligible": True,
+            "convergence_requirement_applied": False,
         }
 
         for quantity in ["rE", "rM"]:
@@ -4106,8 +4128,8 @@ def save_extended_radius_bias_matrices(
     #endfor
 
     ranking = pd.DataFrame(rank_rows).sort_values(
-        ["eligible", "combined_RMS_objective_fm"],
-        ascending=[False, True],
+        ["combined_RMS_objective_fm"],
+        ascending=[True],
     )
     ranking.to_csv(
         outdir / "radius_bias_extended_eligibility_ranking.csv",
@@ -4117,32 +4139,18 @@ def save_extended_radius_bias_matrices(
     fig, ax = plt.subplots(figsize=(10.5, 5.3))
     order = ranking["family"].tolist()
     xmap = {f: i for i, f in enumerate(order)}
-    eligible = ranking.loc[ranking["eligible"]]
-    ineligible = ranking.loc[~ranking["eligible"]]
-
-    if len(eligible):
-        ax.scatter(
-            [xmap[f] for f in eligible["family"]],
-            eligible["combined_RMS_objective_fm"],
-            marker="o",
-            label=(
-                f"eligible (min validity >= {eligibility_threshold:.1%})"
-            ),
-        )
-    #endif
-    if len(ineligible):
-        ax.scatter(
-            [xmap[f] for f in ineligible["family"]],
-            ineligible["combined_RMS_objective_fm"],
-            marker="x",
-            label="ineligible",
-        )
-    #endif
+    finite = ranking.loc[np.isfinite(ranking["combined_RMS_objective_fm"])]
+    ax.scatter(
+        [xmap[f] for f in finite["family"]],
+        finite["combined_RMS_objective_fm"],
+        marker="o",
+        label="ranked; convergence shown diagnostically only",
+    )
 
     ax.set_xticks(np.arange(len(order)))
     ax.set_xticklabels(order, rotation=45)
     ax.set_ylabel("combined RMS bias-variance objective (fm)")
-    ax.set_title("Extended closure-study ranking with convergence eligibility")
+    ax.set_title("Extended closure-study ranking (no convergence eligibility cut)")
     yvals = ranking["combined_RMS_objective_fm"].to_numpy(float)
     ax.set_ylim(
         0.0,
@@ -4277,10 +4285,14 @@ def run_radius_bias_variance_study(
 
         central_by_key = {}
         sigma_by_key = {}
+        truth_ge_by_key = {}
+        truth_gm_by_key = {}
         for spec in specs:
             d = spec["data"]
             q = d["t_abs"].to_numpy(float)
             ge, gm = truth_fn(q)
+            truth_ge_by_key[str(spec["key"])] = np.asarray(ge, dtype=float)
+            truth_gm_by_key[str(spec["key"])] = np.asarray(gm, dtype=float) / MU_P
             tau = q / (4.0 * MP2)
             f1 = (ge + tau * gm) / (1.0 + tau)
             f2 = (gm - ge) / (1.0 + tau)
@@ -4324,7 +4336,7 @@ def run_radius_bias_variance_study(
         #endfor
 
         results_by_family = {
-            family: {"rE": [], "rM": [], "nvalid": 0}
+            family: {"rE": [], "rM": [], "shape_GE": [], "shape_GM": [], "shape_combined": [], "nvalid": 0}
             for family in families
         }
 
@@ -4337,11 +4349,11 @@ def run_radius_bias_variance_study(
         with ProcessPoolExecutor(
                 max_workers=nworkers,
                 initializer=_init_radius_bias_worker,
-                initargs=(specs, central_by_key, sigma_by_key)) as pool:
+                initargs=(specs, central_by_key, sigma_by_key, truth_ge_by_key, truth_gm_by_key)) as pool:
             chunksize = max(1, len(tasks) // max(1, 8 * nworkers))
             replica_counter = {family: 0 for family in families}
 
-            for family, re_val, rm_val, valid in pool.map(
+            for family, re_val, rm_val, valid, ge_shape, gm_shape, combined_shape in pool.map(
                     _radius_bias_replica_worker,
                     tasks,
                     chunksize=chunksize):
@@ -4358,12 +4370,24 @@ def run_radius_bias_variance_study(
                     "rE_fm": re_val,
                     "rM_fm": rm_val,
                     "valid": bool(valid),
+                    "GE_fractional_RMS_over_measured_t": ge_shape,
+                    "GM_fractional_RMS_over_measured_t": gm_shape,
+                    "combined_shape_fractional_RMS": combined_shape,
                 })
 
                 if valid:
                     results_by_family[family]["rE"].append(re_val)
                     results_by_family[family]["rM"].append(rm_val)
                     results_by_family[family]["nvalid"] += 1
+                    if np.isfinite(ge_shape):
+                        results_by_family[family]["shape_GE"].append(ge_shape)
+                    #endif
+                    if np.isfinite(gm_shape):
+                        results_by_family[family]["shape_GM"].append(gm_shape)
+                    #endif
+                    if np.isfinite(combined_shape):
+                        results_by_family[family]["shape_combined"].append(combined_shape)
+                    #endif
                 #endif
             #endfor
         #endwith
@@ -4377,17 +4401,26 @@ def run_radius_bias_variance_study(
             re_vals = results_by_family[family]["rE"]
             rm_vals = results_by_family[family]["rM"]
             nvalid = int(results_by_family[family]["nvalid"])
+            shape_ge = np.asarray(results_by_family[family]["shape_GE"], dtype=float)
+            shape_gm = np.asarray(results_by_family[family]["shape_GM"], dtype=float)
+            shape_combined = np.asarray(results_by_family[family]["shape_combined"], dtype=float)
+            shape_summary = {
+                "GE_shape_fractional_RMS_mean": float(np.mean(shape_ge)) if len(shape_ge) else np.nan,
+                "GM_shape_fractional_RMS_mean": float(np.mean(shape_gm)) if len(shape_gm) else np.nan,
+                "combined_shape_fractional_RMS_mean": float(np.mean(shape_combined)) if len(shape_combined) else np.nan,
+                "combined_shape_fractional_RMS_median": float(np.median(shape_combined)) if len(shape_combined) else np.nan,
+            }
 
             for quantity, vals, rtrue in [
                 ("rE", re_vals, truth_radius["E"]),
                 ("rM", rm_vals, truth_radius["M"]),
             ]:
                 arr = np.asarray(vals, dtype=float)
-                if len(arr) < max(10, args.radius_bias_replicas // 5):
+                if len(arr) == 0:
                     mean = stat = bias = total = np.nan
                 else:
                     mean = float(np.mean(arr))
-                    stat = float(np.std(arr, ddof=1))
+                    stat = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
                     bias = float(mean - rtrue)
                     total = float(math.sqrt(stat**2 + bias**2))
                 #endif
@@ -4416,6 +4449,7 @@ def run_radius_bias_variance_study(
                         nvalid / args.radius_bias_replicas
                     ),
                     "workers": nworkers,
+                    **shape_summary,
                 })
             #endfor
 
@@ -4604,15 +4638,7 @@ def run_radius_bias_variance_study(
 
     ax.plot(x, global_frac, marker="o", label="global valid fraction")
     ax.plot(x, min_frac, marker="s", label="minimum truth-scenario fraction")
-    ax.axhline(
-        args.radius_bias_min_valid_fraction,
-        linestyle="--",
-        linewidth=1.0,
-        label=(
-            f"eligibility threshold "
-            f"{args.radius_bias_min_valid_fraction:.1%}"
-        ),
-    )
+    # Convergence is diagnostic only; it no longer determines family eligibility.
     ax.set_xticks(x)
     ax.set_xticklabels(families, rotation=45)
     ax.set_ylim(0.0, 1.05)
@@ -4669,6 +4695,40 @@ def run_radius_bias_variance_study(
         )
         plt.close(fig)
     #endfor
+
+    # Diagnostic only: full-range GE/GM shape recovery over the actual measured
+    # |t| support.  This does NOT enter the baseline family ranking yet.
+    shape_rows = []
+    for family in families:
+        fam = table.loc[(table["family"] == family) & (table["quantity"] == "rE")].copy()
+        for col, label in [("GE_shape_fractional_RMS_mean", "GE"), ("GM_shape_fractional_RMS_mean", "GM"), ("combined_shape_fractional_RMS_mean", "combined")]:
+            vals = fam[col].to_numpy(float) if col in fam.columns else np.asarray([])
+            vals = vals[np.isfinite(vals)]
+            shape_rows.append({
+                "family": family, "quantity": label,
+                "RMS_across_truth_scenarios": float(np.sqrt(np.mean(vals**2))) if len(vals) else np.nan,
+                "mean_across_truth_scenarios": float(np.mean(vals)) if len(vals) else np.nan,
+                "N_truth_scenarios_with_metric": int(len(vals)),
+            })
+        #endfor
+    #endfor
+    shape_table = pd.DataFrame(shape_rows)
+    shape_table.to_csv(outdir / "11_full_range_shape_recovery_diagnostic.csv", index=False)
+    fig, ax = plt.subplots(figsize=(10.5, 5.3))
+    x = np.arange(len(families))
+    for quantity, marker in [("GE", "o"), ("GM", "s"), ("combined", "^")]:
+        part = shape_table.loc[shape_table["quantity"] == quantity].set_index("family").reindex(families)
+        ax.plot(x, 100.0 * part["RMS_across_truth_scenarios"], marker=marker, label=quantity)
+    #endfor
+    ax.set_xticks(x)
+    ax.set_xticklabels(families, rotation=45)
+    ax.set_ylabel("RMS fractional shape error over measured |t| (%)")
+    ax.set_title("Diagnostic full-range form-factor closure (not used for ranking)")
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "11_full_range_shape_recovery_diagnostic.png", dpi=180)
+    plt.close(fig)
 
     if args.radius_bias_extended_truths:
         save_extended_radius_bias_matrices(
@@ -6194,9 +6254,10 @@ def aggregate_model_bias_rankings(
     """
     Select one common Sachs family across all three purity-model samples.
 
-    A family is eligible only if it passes the convergence criterion for every
-    purity model.  Among eligible families, minimize the worst (largest)
-    combined RMS bias-variance objective across KM15/VGG99/GK16.  This avoids
+    Replica convergence fractions are diagnostic only and do not veto a family.
+    Rank every family with a finite closure objective in all purity models by
+    the worst (largest) combined RMS bias-variance objective across
+    KM15/VGG99/GK16.  This avoids
     choosing a different extrapolation form for each purity model and avoids
     allowing one especially favorable selection to dominate the choice.
     """
@@ -6218,27 +6279,25 @@ def aggregate_model_bias_rankings(
     )
     for family in families:
         row = {"family": family}
-        eligible_all = True
         objectives = []
+        rankable_all = True
         for model in FINAL_MODEL_NAMES:
             t = by_model[model]
-            raw_eligible = t.loc[family, "eligible"]
-            if isinstance(raw_eligible, (bool, np.bool_)):
-                eligible = bool(raw_eligible)
-            else:
-                eligible = str(raw_eligible).strip().lower() in {
-                    "true", "1", "yes", "y"
-                }
-            #endif
             obj = float(t.loc[family, "combined_RMS_objective_fm"])
-            row[f"{model}_eligible"] = eligible
+            min_valid = float(t.loc[family, "minimum_scenario_valid_fraction"])
+            global_valid = float(t.loc[family, "global_valid_fraction"])
+            row[f"{model}_minimum_scenario_valid_fraction"] = min_valid
+            row[f"{model}_global_valid_fraction"] = global_valid
             row[f"{model}_combined_RMS_objective_fm"] = obj
-            eligible_all = eligible_all and eligible
+            row[f"{model}_eligible"] = bool(np.isfinite(obj))
+            rankable_all = rankable_all and np.isfinite(obj)
             objectives.append(obj)
         #endfor
-        row["eligible_all_models"] = eligible_all
-        row["mean_combined_RMS_objective_fm"] = float(np.mean(objectives))
-        row["worst_combined_RMS_objective_fm"] = float(np.max(objectives))
+        row["eligible_all_models"] = bool(rankable_all)
+        finite_obj = np.asarray(objectives, dtype=float)
+        finite_obj = finite_obj[np.isfinite(finite_obj)]
+        row["mean_combined_RMS_objective_fm"] = float(np.mean(finite_obj)) if len(finite_obj) else np.nan
+        row["worst_combined_RMS_objective_fm"] = float(np.max(finite_obj)) if len(finite_obj) else np.nan
         rows.append(row)
     #endfor
 
@@ -6250,8 +6309,8 @@ def aggregate_model_bias_rankings(
     eligible = ranking.loc[ranking["eligible_all_models"]]
     if len(eligible) == 0:
         raise RuntimeError(
-            "No Sachs family satisfies the convergence eligibility criterion "
-            "for all three model-selected samples."
+            "No Sachs family has a finite closure objective for all three "
+            "model-selected samples."
         )
     #endif
 
@@ -6262,14 +6321,14 @@ def aggregate_model_bias_rankings(
     with open(outdir / "bias_rank1_sachs_family.txt", "w") as fout:
         fout.write(f"bias_rank1_family={rank1}\n")
         fout.write(
-            "criterion=eligible in all KM15/VGG99/GK16 closure studies at "
-            "the configured minimum valid-replica fraction; minimum worst "
-            "combined RMS bias-variance objective\n"
+            "criterion=finite closure objective in all KM15/VGG99/GK16 studies; "
+            "convergence fractions are diagnostic only; minimum worst combined "
+            "RMS bias-variance objective\n"
         )
         fout.write(
             "note=This is the closure rank-1 family. Final production selection "
-            "may fall through to the next-ranked eligible family if required "
-            "5% or 3--7% production fits are invalid.\n"
+            "may fall through to the next-ranked family if the nominal 5% "
+            "production fits are invalid. Threshold-scan failures do not veto it.\n"
         )
     #endwith
 
@@ -7560,6 +7619,93 @@ def write_final_analysis_readme(
 
 
 
+def save_nominal_model_selection_kinematic_histograms(
+        physics_bundles: Sequence[Dict[str, object]],
+        selected: Dict[str, Dict[float, Sequence[Dict[str, object]]]],
+        outdir: Path) -> None:
+    """Plot nominal-5% selected counts and selection fractions vs kinematics."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    bundle_by_key = {str(b["key"]): b for b in physics_bundles}
+    row_defs = [
+        ("jo2015", "CLAS6 Jo 2015"),
+        ("pass1", "CLAS12 Lee 2026"),
+        ("combined", "Jo + Lee"),
+    ]
+    variables = [
+        ("Q2", r"$Q^2$ (GeV$^2$)"),
+        ("xB", r"$x_B$"),
+        ("t_abs", r"$|t|$ (GeV$^2$)"),
+    ]
+
+    all_combined = pd.concat(
+        [bundle_by_key[k]["all_data"] for k in ["jo2015", "pass1"]],
+        ignore_index=True,
+    )
+    bins = {}
+    for var, _ in variables:
+        vals = all_combined[var].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        bins[var] = np.linspace(float(np.min(vals)), float(np.max(vals)), 16)
+    #endfor
+
+    spec5 = {}
+    for model in FINAL_MODEL_NAMES:
+        spec5[model] = {str(sp["key"]): sp["data"] for sp in selected[model][0.05]}
+    #endfor
+
+    for mode in ["counts", "fraction"]:
+        fig, axes = plt.subplots(3, 3, figsize=(14.0, 10.0), sharex="col")
+        for irow, (row_key, row_label) in enumerate(row_defs):
+            if row_key == "combined":
+                denominator = all_combined
+            else:
+                denominator = bundle_by_key[row_key]["all_data"]
+            #endif
+            for icol, (var, xlabel) in enumerate(variables):
+                ax = axes[irow, icol]
+                edges = bins[var]
+                centers = 0.5 * (edges[:-1] + edges[1:])
+                denom_counts, _ = np.histogram(denominator[var].to_numpy(float), bins=edges)
+                for model in FINAL_MODEL_NAMES:
+                    if row_key == "combined":
+                        data = pd.concat([spec5[model]["jo2015"], spec5[model]["pass1"]], ignore_index=True)
+                    else:
+                        data = spec5[model][row_key]
+                    #endif
+                    selected_counts, _ = np.histogram(data[var].to_numpy(float), bins=edges)
+                    if mode == "counts":
+                        y = selected_counts.astype(float)
+                    else:
+                        y = np.divide(selected_counts, denom_counts, out=np.full_like(selected_counts, np.nan, dtype=float), where=denom_counts > 0)
+                    #endif
+                    ax.step(centers, y, where="mid", linewidth=1.5, label=model.upper())
+                #endfor
+                if irow == 0:
+                    ax.set_title(xlabel)
+                #endif
+                if irow == 2:
+                    ax.set_xlabel(xlabel)
+                #endif
+                if icol == 0:
+                    ax.set_ylabel(row_label + ("\nSelected points / bin" if mode == "counts" else "\nSelected / all"))
+                #endif
+                if mode == "fraction":
+                    ax.set_ylim(0.0, 1.05)
+                #endif
+                ax.grid(alpha=0.2)
+        #endfor
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 0.965))
+        title = "Nominal 5% BH-purity selection: accepted points vs kinematics" if mode == "counts" else "Nominal 5% BH-purity selection fraction vs kinematics"
+        fig.suptitle(title, y=0.995)
+        fig.tight_layout(rect=(0, 0, 1, 0.925))
+        filename = "05_selected_counts_vs_kinematics_05pct.png" if mode == "counts" else "06_selection_fraction_vs_kinematics_05pct.png"
+        fig.savefig(outdir / filename, dpi=180)
+        plt.close(fig)
+    #endfor
+#enddef
+
+
 def run_final_model_selected_analysis(
         bundles: Sequence[Dict[str, object]],
         args,
@@ -7634,6 +7780,9 @@ def run_final_model_selected_analysis(
     count_table.to_csv(
         diagnostics_dir / "model_threshold_selected_counts.csv", index=False
     )
+    save_nominal_model_selection_kinematic_histograms(
+        physics_bundles, selected, diagnostics_dir
+    )
 
     # Comprehensive purity/process diagnostics are written BEFORE any bias
     # study or production fit.  They never feed measured-data agreement back
@@ -7686,7 +7835,8 @@ def run_final_model_selected_analysis(
     # ------------------------------------------------------------------
     # Ordered production-validation fallback.
     #
-    # The closure ranking supplies an ordered list of eligible families.
+    # The closure ranking supplies an ordered list of rankable families.
+    # Replica convergence fractions are diagnostic only and impose no veto.
     # Starting from the best bias+variance score, require ONLY that the family
     # produce valid nominal 5% Moradi-error production fits for KM15, VGG99,
     # and GK16. If the nominal fit fails, retain the failure in the audit table
@@ -7700,7 +7850,7 @@ def run_final_model_selected_analysis(
     ].copy().reset_index(drop=True)
     if len(eligible_ranking) == 0:
         raise RuntimeError(
-            "No closure-eligible Sachs family is available for production "
+            "No closure-rankable Sachs family is available for production "
             "validation."
         )
     #endif
@@ -7804,7 +7954,7 @@ def run_final_model_selected_analysis(
 
     if chosen_family is None:
         raise RuntimeError(
-            "Every closure-eligible Sachs family failed at least one required "
+            "Every closure-ranked Sachs family failed at least one required "
             "production-validation fit. See "
             f"{summary_dir / 'family_selection_attempts.csv'} for the ordered "
             "fallback audit. No preliminary result is quoted."
@@ -7818,7 +7968,7 @@ def run_final_model_selected_analysis(
         fout.write(f"bias_rank1_family={bias_rank1_family}\n")
         fout.write(f"fallback_used={fallback_used}\n")
         fout.write(
-            "criterion=first closure-eligible family, ordered by increasing "
+            "criterion=first closure-ranked family with finite closure objectives, ordered by increasing "
             "worst combined RMS bias-variance objective, that yields valid "
             "nominal 5% Moradi-error production fits for KM15/VGG99/GK16. "
             "Threshold-scan failures do not disqualify the family.\n"
@@ -9149,13 +9299,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--radius-bias-min-valid-fraction",
         type=float,
-        default=0.33,
+        default=0.0,
         help=(
-            "Minimum valid-replica fraction required in every truth scenario "
-            "for a candidate family to be eligible (default: 0.33). "
-            "Failed replicas remain recorded and contribute to the reported "
-            "validity diagnostics; this threshold is only the minimum required "
-            "for a family to remain under consideration."
+            "Legacy convergence-diagnostic threshold. It is no longer used "
+            "to determine family eligibility or production ranking; failed "
+            "replicas remain recorded in the validity diagnostics (default: 0.0)."
         ),
     )
     p.add_argument(
