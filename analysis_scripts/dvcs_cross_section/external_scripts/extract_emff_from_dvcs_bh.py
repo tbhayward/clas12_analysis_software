@@ -5828,6 +5828,637 @@ def export_bh_model_selection_kinematics(
 #enddef
 
 
+
+
+FINAL_MODEL_SELECTION_DEFAULT = (
+    "/work/clas12/thayward/CLAS12_exclusive/dvcs/model_predictions/"
+    "bh_model_selection_all_points.csv"
+)
+FINAL_MODEL_NAMES = ("km15", "vgg99", "gk16")
+FINAL_NOMINAL_MODEL = "km15"
+FINAL_PHYSICS_DATASETS = ("jo2015", "halla_defurne2015", "pass1")
+
+
+def load_external_bh_model_selection(path: Path) -> pd.DataFrame:
+    """Load and validate the completed KM15/VGG99/GK16 model-selection table."""
+    if not path.exists():
+        raise FileNotFoundError(
+            "Completed external BH-model selection table not found:\n"
+            f"  {path}\n"
+            "Run evaluate_bh_model_selection.py --run-partons first."
+        )
+    #endif
+
+    table = pd.read_csv(path)
+    required = {
+        "point_id", "dataset", "source_row",
+        "delta_bh_km15", "delta_bh_vgg99", "delta_bh_gk16",
+    }
+    missing = sorted(required.difference(table.columns))
+    if missing:
+        raise KeyError(
+            "External BH-model selection table is missing required columns: "
+            + ", ".join(missing)
+        )
+    #endif
+
+    if table["point_id"].duplicated().any():
+        raise RuntimeError("Duplicate point_id values in BH-model selection table")
+    #endif
+
+    for col in ["source_row", "delta_bh_km15", "delta_bh_vgg99", "delta_bh_gk16"]:
+        vals = pd.to_numeric(table[col], errors="coerce")
+        if not np.all(np.isfinite(vals.to_numpy(float))):
+            raise RuntimeError(f"Nonfinite values in external selection column {col}")
+        #endif
+        table[col] = vals
+    #endfor
+
+    table["source_row"] = table["source_row"].astype(int)
+    print(
+        f"[final model analysis] loaded {len(table)} externally evaluated points "
+        f"from {path}"
+    )
+    return table
+#enddef
+
+
+def select_bundle_from_external_model(
+        bundle: Dict[str, object],
+        selection_table: pd.DataFrame,
+        model: str,
+        threshold: float) -> pd.DataFrame:
+    """
+    Reconstruct one model-specific selected sample from deterministic source_row.
+
+    The external PARTONS stage never carries the measured cross section/error
+    columns.  Those remain authoritative in bundle["all_data"]; source_row maps
+    the external purity decision back onto that exact table.
+    """
+    if model not in FINAL_MODEL_NAMES:
+        raise ValueError(f"Unknown BH-purity model {model}")
+    #endif
+
+    key = str(bundle["key"])
+    all_data = bundle["all_data"].reset_index(drop=True)
+    ext = selection_table.loc[selection_table["dataset"].astype(str) == key].copy()
+
+    if len(ext) != len(all_data):
+        raise RuntimeError(
+            f"{bundle['label']}: external selection has {len(ext)} points but "
+            f"the current bundle has {len(all_data)}. Regenerate "
+            "bh_model_kinematics.csv and the PARTONS cache before fitting."
+        )
+    #endif
+
+    ext = ext.sort_values("source_row")
+    expected = np.arange(len(all_data), dtype=int)
+    got = ext["source_row"].to_numpy(int)
+    if not np.array_equal(got, expected):
+        raise RuntimeError(
+            f"{bundle['label']}: source_row mapping is not exactly 0..N-1"
+        )
+    #endif
+
+    # Strong kinematic audit when the external table carries these columns.
+    for col in ["xB", "Q2", "t_abs", "phi_deg", "ebeam"]:
+        if col in ext.columns and col in all_data.columns:
+            a = all_data[col].to_numpy(float)
+            b = ext[col].to_numpy(float)
+            scale = np.maximum(1.0, np.maximum(np.abs(a), np.abs(b)))
+            if np.any(np.abs(a - b) > 1.0e-10 * scale):
+                raise RuntimeError(
+                    f"{bundle['label']}: external/current kinematic mismatch in {col}"
+                )
+            #endif
+        #endif
+    #endfor
+
+    mask = ext[f"delta_bh_{model}"].to_numpy(float) <= float(threshold)
+    selected = all_data.loc[mask].copy()
+    selected["external_delta_bh"] = ext.loc[mask, f"delta_bh_{model}"].to_numpy(float)
+    selected["external_bh_model"] = model
+    selected["external_bh_threshold"] = float(threshold)
+    return selected
+#enddef
+
+
+def fit_sachs_family_multi_measurements(
+        datasets: Sequence[Dict[str, object]],
+        family: str,
+        bh_cut: float = 0.05,
+        add_moradi_bh_systematic: bool = True) -> Dict[str, object]:
+    """
+    Production fit of one Sachs family to multiple BH-selected measurements.
+
+    This is the production counterpart of fit_cross_sections_with_sachs_family:
+    GE and GM/mu_p are parameterized directly, converted point-by-point to
+    F1/F2, and evaluated with each point's exact BH quadratic.  Unlike the
+    replica fitter, this version retains each experiment's correlated
+    normalization nuisance and returns Hessian uncertainties.
+    """
+    order = int(re.findall(r"\d+", family)[0])
+    nshape = order
+    names_e = [f"e{i}" for i in range(1, nshape + 1)]
+    names_m = [f"m{i}" for i in range(1, nshape + 1)]
+    shape_names = names_e + names_m
+
+    p0 = np.zeros(2 * nshape, dtype=float)
+    first = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
+    p0[0] = first
+    p0[nshape] = first
+
+    nuisance_names = []
+    nuisance_fracs = {}
+    for spec in datasets:
+        frac = float(spec.get("norm_frac", 0.0))
+        if frac > 0.0:
+            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", str(spec["key"]))
+            nuisance_names.append(nname)
+            nuisance_fracs[nname] = frac
+        #endif
+    #endfor
+
+    fit_names = shape_names + nuisance_names
+    fit_p0 = np.concatenate([p0, np.zeros(len(nuisance_names), dtype=float)])
+    nuisance_index = {
+        name: len(shape_names) + i for i, name in enumerate(nuisance_names)
+    }
+
+    prepared = []
+    for spec in datasets:
+        d = spec["data"]
+        if len(d) == 0:
+            raise RuntimeError(f"{spec['label']}: no selected points")
+        #endif
+        err = dataset_point_errors(
+            d, str(spec["kind"]), float(bh_cut), add_moradi_bh_systematic
+        )
+        if (
+            len(err) != len(d)
+            or not np.all(np.isfinite(err))
+            or np.any(err <= 0.0)
+        ):
+            raise RuntimeError(f"{spec['label']}: invalid production point errors")
+        #endif
+        prepared.append({
+            "key": str(spec["key"]),
+            "norm_frac": float(spec.get("norm_frac", 0.0)),
+            "q": d["t_abs"].to_numpy(float),
+            "y": d["xs"].to_numpy(float),
+            "e": np.asarray(err, dtype=float),
+            "A": d["bh_A"].to_numpy(float),
+            "B": d["bh_B"].to_numpy(float),
+            "C": d["bh_C"].to_numpy(float),
+            "N": len(d),
+        })
+    #endfor
+
+    def chi2_minuit(*values):
+        p = np.asarray(values, dtype=float)
+        ce = p[:nshape]
+        cm = p[nshape:2 * nshape]
+        total = 0.0
+
+        for item in prepared:
+            q = item["q"]
+            ge = sachs_family_value(q, ce, family)
+            gm = MU_P * sachs_family_value(q, cm, family)
+            tau = q / (4.0 * MP2)
+            f1 = (ge + tau * gm) / (1.0 + tau)
+            f2 = (gm - ge) / (1.0 + tau)
+            pred = bh_from_f1f2(item["A"], item["B"], item["C"], f1, f2)
+
+            frac = item["norm_frac"]
+            if frac > 0.0:
+                nname = "beta_" + re.sub(
+                    r"[^A-Za-z0-9]+", "_", str(item["key"])
+                )
+                beta = p[nuisance_index[nname]]
+                pred = pred * (1.0 + frac * beta)
+            #endif
+
+            pull = (pred - item["y"]) / item["e"]
+            total += float(np.dot(pull, pull))
+        #endfor
+
+        for nname in nuisance_names:
+            total += float(p[nuisance_index[nname]] ** 2)
+        #endfor
+        return total
+    #enddef
+
+    m = Minuit(chi2_minuit, *fit_p0, name=tuple(fit_names))
+    m.errordef = Minuit.LEAST_SQUARES
+
+    # The sign of the first slope coefficient fixes a real positive radius.
+    for name in [names_e[0], names_m[0]]:
+        if family.startswith("P"):
+            m.limits[name] = (-100.0, -1.0e-10)
+        else:
+            m.limits[name] = (1.0e-10, 100.0)
+        #endif
+    #endfor
+    for nname in nuisance_names:
+        m.limits[nname] = (-10.0, 10.0)
+    #endfor
+
+    m.migrad()
+    m.hesse()
+
+    full = np.array([float(m.values[n]) for n in fit_names], dtype=float)
+    shape = full[:2 * nshape]
+    cov = np.full((2 * nshape, 2 * nshape), np.nan)
+    if m.covariance is not None:
+        for i, ni in enumerate(shape_names):
+            for j, nj in enumerate(shape_names):
+                cov[i, j] = float(m.covariance[ni, nj])
+            #endfor
+        #endfor
+    #endif
+
+    def radius_e(p):
+        return sachs_family_radius(np.asarray(p[:nshape]), family)
+    #enddef
+
+    def radius_m(p):
+        return sachs_family_radius(np.asarray(p[nshape:2 * nshape]), family)
+    #enddef
+
+    rE, rE_err = propagate_scalar(radius_e, shape, cov)
+    rM, rM_err = propagate_scalar(radius_m, shape, cov)
+
+    ndata = int(sum(item["N"] for item in prepared))
+    nfree = len(fit_names)
+    ndof = max(1, ndata - nfree)
+    result = {
+        "family": family,
+        "N": ndata,
+        "n_parameters": nfree,
+        "chi2": float(m.fval),
+        "ndof": int(ndof),
+        "chi2_ndof": float(m.fval / ndof),
+        "valid": bool(m.valid and np.isfinite(rE) and np.isfinite(rM)),
+        "accurate": bool(m.accurate),
+        "rE_fm": float(rE),
+        "rE_fit_err_fm": float(rE_err),
+        "rM_fm": float(rM),
+        "rM_fit_err_fm": float(rM_err),
+    }
+
+    for name in shape_names:
+        result[name] = float(m.values[name])
+        result[name + "_err"] = float(m.errors[name])
+    #endfor
+    for nname in nuisance_names:
+        result[nname] = float(m.values[nname])
+        result[nname + "_err"] = float(m.errors[nname])
+        result[nname + "_norm_fraction"] = float(nuisance_fracs[nname])
+    #endfor
+    return result
+#enddef
+
+
+def summarize_bias_for_family(
+        study_csv: Path,
+        family: str) -> Dict[str, float]:
+    """Preserve signed, RMS, and worst-case bias estimates for one family."""
+    table = pd.read_csv(study_csv)
+    fam = table.loc[table["family"].astype(str) == family].copy()
+    if len(fam) == 0:
+        raise RuntimeError(f"No {family} rows found in {study_csv}")
+    #endif
+
+    out = {}
+    for quantity in ["rE", "rM"]:
+        vals = fam.loc[
+            fam["quantity"].astype(str) == quantity, "bias_fm"
+        ].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        if len(vals) == 0:
+            raise RuntimeError(f"No finite {quantity} bias values for {family}")
+        #endif
+        out[f"{quantity}_mean_signed_bias_fm"] = float(np.mean(vals))
+        out[f"{quantity}_RMS_bias_fm"] = float(np.sqrt(np.mean(vals**2)))
+        out[f"{quantity}_max_abs_bias_fm"] = float(np.max(np.abs(vals)))
+    #endfor
+    return out
+#enddef
+
+
+def aggregate_model_bias_rankings(
+        bias_dirs: Dict[str, Path],
+        outdir: Path) -> Tuple[str, pd.DataFrame]:
+    """
+    Select one common Sachs family across all three purity-model samples.
+
+    A family is eligible only if it passes the convergence criterion for every
+    purity model.  Among eligible families, minimize the worst (largest)
+    combined RMS bias-variance objective across KM15/VGG99/GK16.  This avoids
+    choosing a different extrapolation form for each purity model and avoids
+    allowing one especially favorable selection to dominate the choice.
+    """
+    rows = []
+    by_model = {}
+    for model, bdir in bias_dirs.items():
+        path = bdir / "radius_bias_extended_eligibility_ranking.csv"
+        if not path.exists():
+            raise FileNotFoundError(f"Missing extended bias ranking: {path}")
+        #endif
+        table = pd.read_csv(path)
+        by_model[model] = table.set_index("family")
+    #endfor
+
+    families = sorted(
+        set.intersection(
+            *[set(t.index.astype(str)) for t in by_model.values()]
+        )
+    )
+    for family in families:
+        row = {"family": family}
+        eligible_all = True
+        objectives = []
+        for model in FINAL_MODEL_NAMES:
+            t = by_model[model]
+            eligible = bool(t.loc[family, "eligible"])
+            obj = float(t.loc[family, "combined_RMS_objective_fm"])
+            row[f"{model}_eligible"] = eligible
+            row[f"{model}_combined_RMS_objective_fm"] = obj
+            eligible_all = eligible_all and eligible
+            objectives.append(obj)
+        #endfor
+        row["eligible_all_models"] = eligible_all
+        row["mean_combined_RMS_objective_fm"] = float(np.mean(objectives))
+        row["worst_combined_RMS_objective_fm"] = float(np.max(objectives))
+        rows.append(row)
+    #endfor
+
+    ranking = pd.DataFrame(rows).sort_values(
+        ["eligible_all_models", "worst_combined_RMS_objective_fm",
+         "mean_combined_RMS_objective_fm"],
+        ascending=[False, True, True],
+    )
+    eligible = ranking.loc[ranking["eligible_all_models"]]
+    if len(eligible) == 0:
+        raise RuntimeError(
+            "No Sachs family satisfies the convergence eligibility criterion "
+            "for all three model-selected samples."
+        )
+    #endif
+
+    chosen = str(eligible.iloc[0]["family"])
+    outdir.mkdir(parents=True, exist_ok=True)
+    ranking.to_csv(outdir / "model_aggregated_family_ranking.csv", index=False)
+
+    with open(outdir / "chosen_sachs_family.txt", "w") as fout:
+        fout.write(f"chosen_family={chosen}\n")
+        fout.write(
+            "criterion=eligible in all KM15/VGG99/GK16 studies; "
+            "minimum worst combined RMS bias-variance objective\n"
+        )
+    #endwith
+
+    print(
+        f"[final model analysis] selected common Sachs family {chosen} "
+        "from the three model-specific closure studies"
+    )
+    return chosen, ranking
+#enddef
+
+
+def run_final_model_selected_analysis(
+        bundles: Sequence[Dict[str, object]],
+        args,
+        root_outdir: Path) -> None:
+    """
+    End-to-end final analysis after the external PARTONS model-selection stage.
+
+    The three BH-purity models define three alternative selected datasets.
+    They are *not* averaged at the event/point level.  A common Sachs family is
+    selected by model-specific closure studies, then fit independently to each
+    model-selected sample.  KM15 is retained as the nominal central
+    prescription; VGG99/GK16 shifts are reported as BH-purity model dependence.
+    """
+    selection_path = Path(args.bh_model_selection_results).expanduser().resolve()
+    selection = load_external_bh_model_selection(selection_path)
+
+    physics_bundles = [
+        b for b in bundles if str(b["key"]) in FINAL_PHYSICS_DATASETS
+    ]
+    found = {str(b["key"]) for b in physics_bundles}
+    missing = [key for key in FINAL_PHYSICS_DATASETS if key not in found]
+    if missing:
+        raise RuntimeError(
+            "Final model-selected analysis requires Jo + Hall A + CLAS12 pass1. "
+            "Missing: " + ", ".join(missing)
+        )
+    #endif
+
+    final_dir = root_outdir / "final_model_selected_analysis"
+    final_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build all model/threshold selections once and save the counts.
+    selected = {}
+    count_rows = []
+    thresholds = np.arange(0.01, 0.101, 0.01)
+    for model in FINAL_MODEL_NAMES:
+        selected[model] = {}
+        for threshold in thresholds:
+            specs = []
+            row = {
+                "model": model,
+                "threshold": float(threshold),
+                "threshold_percent": 100.0 * float(threshold),
+            }
+            for bundle in physics_bundles:
+                d = select_bundle_from_external_model(
+                    bundle, selection, model, float(threshold)
+                )
+                specs.append(bundle_to_measurement_spec(bundle, d))
+                row["N_" + str(bundle["key"])] = int(len(d))
+            #endfor
+            row["N_total"] = int(sum(len(spec["data"]) for spec in specs))
+            selected[model][round(float(threshold), 2)] = specs
+            count_rows.append(row)
+        #endfor
+    #endfor
+    pd.DataFrame(count_rows).to_csv(
+        final_dir / "model_threshold_selected_counts.csv", index=False
+    )
+
+    # Run a closure/bias study for each 5% model-selected sample.  This is
+    # intentionally three studies: the extrapolation family must be robust to
+    # the modestly different kinematic support induced by purity-model choice.
+    bias_dirs = {}
+    for model in FINAL_MODEL_NAMES:
+        model_dir = final_dir / f"bias_study_{model}"
+        bias_dirs[model] = model_dir
+
+        # Rebuild lightweight bundle copies whose set5 is the external 5% sample
+        # so the existing closure machinery can be reused unchanged.
+        model_bundles = []
+        specs5 = selected[model][0.05]
+        spec_by_key = {str(s["key"]): s for s in specs5}
+        for bundle in physics_bundles:
+            bcopy = dict(bundle)
+            bcopy["set5"] = spec_by_key[str(bundle["key"])]["data"].copy()
+            model_bundles.append(bcopy)
+        #endfor
+
+        if args.run_radius_bias_study:
+            run_radius_bias_variance_study(model_bundles, args, model_dir)
+        elif not (model_dir / "radius_bias_extended_eligibility_ranking.csv").exists():
+            raise RuntimeError(
+                f"Bias ranking missing for {model}: {model_dir}. "
+                "Run with --run-radius-bias-study "
+                "--radius-bias-extended-truths."
+            )
+        #endif
+    #endfor
+
+    chosen_family, family_ranking = aggregate_model_bias_rankings(
+        bias_dirs, final_dir
+    )
+
+    # Preserve the actual extrapolation-bias estimates for the selected family.
+    bias_rows = []
+    for model in FINAL_MODEL_NAMES:
+        bias = summarize_bias_for_family(
+            bias_dirs[model] / "radius_bias_variance_study.csv",
+            chosen_family,
+        )
+        bias_rows.append({"model": model, "family": chosen_family, **bias})
+    #endfor
+    bias_table = pd.DataFrame(bias_rows)
+    bias_table.to_csv(final_dir / "chosen_family_bias_estimates.csv", index=False)
+
+    conservative_bias = {
+        "rE_bias_systematic_fm": float(
+            bias_table["rE_RMS_bias_fm"].max()
+        ),
+        "rM_bias_systematic_fm": float(
+            bias_table["rM_RMS_bias_fm"].max()
+        ),
+    }
+
+    # Production 5% fits, identical functional family for all purity models.
+    fit_rows = []
+    for model in FINAL_MODEL_NAMES:
+        result = fit_sachs_family_multi_measurements(
+            selected[model][0.05],
+            family=chosen_family,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+        )
+        result["model"] = model
+        result["threshold"] = 0.05
+        fit_rows.append(result)
+        print(
+            f"[final fit] {model:5s} {chosen_family}: "
+            f"N={result['N']} chi2/ndf={result['chi2_ndof']:.4f} "
+            f"rE={result['rE_fm']:.5f} +/- {result['rE_fit_err_fm']:.5f} fm, "
+            f"rM={result['rM_fm']:.5f} +/- {result['rM_fit_err_fm']:.5f} fm"
+        )
+    #endfor
+    fit_table = pd.DataFrame(fit_rows)
+    fit_table.to_csv(final_dir / "model_selected_05pct_fits.csv", index=False)
+
+    # Full 1--10% threshold scan for every purity model using the selected family.
+    threshold_rows = []
+    for model in FINAL_MODEL_NAMES:
+        for threshold in thresholds:
+            result = fit_sachs_family_multi_measurements(
+                selected[model][round(float(threshold), 2)],
+                family=chosen_family,
+                bh_cut=float(threshold),
+                add_moradi_bh_systematic=True,
+            )
+            result["model"] = model
+            result["threshold"] = float(threshold)
+            threshold_rows.append(result)
+        #endfor
+    #endfor
+    threshold_table = pd.DataFrame(threshold_rows)
+    threshold_table.to_csv(
+        final_dir / "chosen_family_threshold_scan_01_to_10pct.csv",
+        index=False,
+    )
+
+    # Final prescription: KM15 remains the nominal because it is the validated
+    # Moradi/Gepard baseline.  VGG99/GK16 are alternative purity prescriptions,
+    # not three statistically independent measurements to be averaged.
+    nominal = fit_table.loc[fit_table["model"] == FINAL_NOMINAL_MODEL].iloc[0]
+    alternatives = fit_table.loc[fit_table["model"] != FINAL_NOMINAL_MODEL]
+
+    model_sys_e = float(
+        np.max(np.abs(alternatives["rE_fm"].to_numpy(float) - nominal["rE_fm"]))
+    )
+    model_sys_m = float(
+        np.max(np.abs(alternatives["rM_fm"].to_numpy(float) - nominal["rM_fm"]))
+    )
+
+    nominal_scan = threshold_table.loc[
+        threshold_table["model"] == FINAL_NOMINAL_MODEL
+    ]
+    threshold_sys_e = float(
+        np.max(np.abs(
+            nominal_scan["rE_fm"].to_numpy(float) - float(nominal["rE_fm"])
+        ))
+    )
+    threshold_sys_m = float(
+        np.max(np.abs(
+            nominal_scan["rM_fm"].to_numpy(float) - float(nominal["rM_fm"])
+        ))
+    )
+
+    # Mean of the three model-selected fits is retained as a diagnostic only.
+    mean_e = float(fit_table["rE_fm"].mean())
+    mean_m = float(fit_table["rM_fm"].mean())
+
+    summary = pd.DataFrame([{
+        "nominal_model": FINAL_NOMINAL_MODEL,
+        "chosen_family": chosen_family,
+        "nominal_threshold": 0.05,
+        "rE_fm": float(nominal["rE_fm"]),
+        "rE_fit_err_fm": float(nominal["rE_fit_err_fm"]),
+        "rE_bh_purity_model_sys_fm": model_sys_e,
+        "rE_bh_threshold_sys_fm": threshold_sys_e,
+        "rE_extrapolation_bias_sys_fm": conservative_bias["rE_bias_systematic_fm"],
+        "rM_fm": float(nominal["rM_fm"]),
+        "rM_fit_err_fm": float(nominal["rM_fit_err_fm"]),
+        "rM_bh_purity_model_sys_fm": model_sys_m,
+        "rM_bh_threshold_sys_fm": threshold_sys_m,
+        "rM_extrapolation_bias_sys_fm": conservative_bias["rM_bias_systematic_fm"],
+        "three_model_mean_rE_diagnostic_fm": mean_e,
+        "three_model_mean_rM_diagnostic_fm": mean_m,
+        "note": (
+            "KM15 is nominal; VGG99/GK16 define BH-purity model dependence. "
+            "Three-model mean is diagnostic, not the quoted central value. "
+            "Fit errors include the configured point-error prescription and "
+            "correlated normalization nuisances; systematic components are "
+            "kept separate and are not automatically quadrature-combined here."
+        ),
+    }])
+    summary.to_csv(final_dir / "final_radius_prescription.csv", index=False)
+
+    print("\n[final model analysis] FINAL PRESCRIPTION")
+    print(
+        f"  common Sachs family : {chosen_family}\n"
+        f"  nominal purity model: {FINAL_NOMINAL_MODEL}\n"
+        f"  nominal BH cut      : 5%\n"
+        f"  rE = {float(nominal['rE_fm']):.5f} fm; "
+        f"fit err={float(nominal['rE_fit_err_fm']):.5f}, "
+        f"model sys={model_sys_e:.5f}, threshold sys={threshold_sys_e:.5f}, "
+        f"bias sys={conservative_bias['rE_bias_systematic_fm']:.5f}\n"
+        f"  rM = {float(nominal['rM_fm']):.5f} fm; "
+        f"fit err={float(nominal['rM_fit_err_fm']):.5f}, "
+        f"model sys={model_sys_m:.5f}, threshold sys={threshold_sys_m:.5f}, "
+        f"bias sys={conservative_bias['rM_bias_systematic_fm']:.5f}\n"
+        f"  outputs -> {final_dir}"
+    )
+#enddef
+
+
 def run_published_default(args) -> int:
     """Run all available published measurements and every nontrivial combination."""
     print("\n" + "=" * 78)
@@ -5865,6 +6496,10 @@ def run_published_default(args) -> int:
 
     root_outdir = Path(args.outdir).expanduser().resolve()
     export_bh_model_selection_kinematics(bundles, root_outdir)
+
+    if args.run_final_model_analysis:
+        run_final_model_selected_analysis(bundles, args, root_outdir)
+    #endif
 
     for bundle in bundles:
         audit_measurement_bundle_for_combination(bundle)
@@ -6697,6 +7332,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--skip-halla-defurne",
         action="store_true",
         help="Do not run Hall A Defurne 2015 in the default workflow",
+    )
+    p.add_argument(
+        "--run-final-model-analysis",
+        action="store_true",
+        help=(
+            "Consume the completed KM15/VGG99/GK16 external purity table, "
+            "run model-specific 5% selections, closure-based Sachs-family "
+            "selection, production fits, and 1--10% threshold systematics"
+        ),
+    )
+    p.add_argument(
+        "--bh-model-selection-results",
+        default=FINAL_MODEL_SELECTION_DEFAULT,
+        help=(
+            "Completed evaluate_bh_model_selection.py all-point table; default: "
+            + FINAL_MODEL_SELECTION_DEFAULT
+        ),
     )
     p.add_argument(
         "--run-radius-bias-study",
