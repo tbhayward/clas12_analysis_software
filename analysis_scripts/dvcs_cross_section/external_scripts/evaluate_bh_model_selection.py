@@ -36,15 +36,19 @@ full cross section removes a needless process-implementation ambiguity.
 
 Azimuth convention
 ------------------
-A direct four-point BH closure test at fixed (xB,Q2,t) established that the
-Gepard/BMK angle used in the exported cache must be transformed before it is
-sent to PARTONS:
+The imported Gepard Jo/Hall-A datasets use the previously validated mapping
 
     phi_PARTONS = (180 deg - phi_Gepard) mod 360 deg.
 
-With this transformation, the tested PARTONS/Gepard BH ratios were essentially
-constant in phi (about 1.045), whereas using the untransformed angle produced a
-large shape mismatch.
+CLAS12/pass1 is NOT assumed to share that convention.  By default this script
+runs a small BH-only PARTONS/Gepard closure scan over four candidate mappings
+(identity, negative, 180-minus, 180-plus), using representative CLAS12 points.
+The winning mapping is chosen without measured cross sections and is then used
+for the full CLAS12 PARTONS calculation.
+
+Production PARTONS caches are namespaced by the active dataset-specific phi
+mappings so a cache generated with an obsolete convention cannot be silently
+reused after the convention changes.
 
 PARTONS execution
 -----------------
@@ -140,14 +144,79 @@ PARTONS_ERROR_TOKEN = "[ERROR]"
 PARTONS_INTEGRATOR_WARNING = "Cannot reach tolerances"
 
 
-def phi_gepard_to_partons(phi_deg: np.ndarray | Sequence[float] | float):
-    """Convert exported Gepard/BMK azimuth to the validated PARTONS convention."""
+PHI_MAPPING_MODES = (
+    "identity",
+    "negative",
+    "180-minus",
+    "180-plus",
+)
+DEFAULT_IMPORTED_PHI_MAPPING = "180-minus"
+DEFAULT_CLAS12_PHI_MAPPING = "auto"
+DEFAULT_CLAS12_SCAN_POINTS = 12
+
+
+def transform_phi_to_partons(
+        phi_deg: np.ndarray | Sequence[float] | float,
+        mode: str):
+    """Apply one explicit candidate azimuth transformation."""
     arr = np.asarray(phi_deg, dtype=float)
-    transformed = np.mod(180.0 - arr, 360.0)
+    if mode == "identity":
+        transformed = np.mod(arr, 360.0)
+    elif mode == "negative":
+        transformed = np.mod(-arr, 360.0)
+    elif mode == "180-minus":
+        transformed = np.mod(180.0 - arr, 360.0)
+    elif mode == "180-plus":
+        transformed = np.mod(180.0 + arr, 360.0)
+    else:
+        raise ValueError(
+            f"Unknown phi mapping {mode!r}; choose from {PHI_MAPPING_MODES}"
+        )
+    #endif
+
     if np.ndim(phi_deg) == 0:
         return float(transformed)
     #endif
     return transformed
+#enddef
+
+
+def apply_dataset_phi_mappings(
+        df: pd.DataFrame,
+        imported_mode: str = DEFAULT_IMPORTED_PHI_MAPPING,
+        clas12_mode: str = "180-minus") -> pd.DataFrame:
+    """
+    Attach phi_partons_deg with dataset-specific conventions.
+
+    The imported Gepard datasets (Jo and Hall A) retain the already validated
+    180-phi mapping.  CLAS12/pass1 is assigned independently because its phiavg
+    convention is not assumed to be the same as the imported Gepard tables.
+    """
+    out = df.copy()
+    out["phi_partons_deg"] = np.nan
+    out["phi_mapping_mode"] = ""
+
+    dataset = out["dataset"].astype(str).to_numpy()
+    pass1_mask = dataset == "pass1"
+    imported_mask = ~pass1_mask
+
+    if np.any(imported_mask):
+        out.loc[imported_mask, "phi_partons_deg"] = transform_phi_to_partons(
+            out.loc[imported_mask, "phi_deg"].to_numpy(float),
+            imported_mode,
+        )
+        out.loc[imported_mask, "phi_mapping_mode"] = imported_mode
+    #endif
+
+    if np.any(pass1_mask):
+        out.loc[pass1_mask, "phi_partons_deg"] = transform_phi_to_partons(
+            out.loc[pass1_mask, "phi_deg"].to_numpy(float),
+            clas12_mode,
+        )
+        out.loc[pass1_mask, "phi_mapping_mode"] = clas12_mode
+    #endif
+
+    return out
 #enddef
 
 
@@ -176,7 +245,8 @@ def load_points_from_cache(cache: Path) -> pd.DataFrame:
     #endfor
 
     df = df.copy()
-    df["phi_partons_deg"] = phi_gepard_to_partons(df["phi_deg"].to_numpy(float))
+    # phi_partons_deg is attached only after the CLAS12-specific convention has
+    # either been explicitly supplied or validated by the BH-only scan.
     df["delta_bh_km15"] = np.abs(
         1.0 - df["km15_bh"].to_numpy(float) / df["km15_ep"].to_numpy(float)
     )
@@ -335,7 +405,8 @@ def write_partons_xml_chunks(
         part[
             [
                 "point_id", "dataset", "source_row", "xB", "Q2",
-                "t_abs", "phi_deg", "phi_partons_deg", "ebeam",
+                "t_abs", "phi_deg", "phi_partons_deg", "phi_mapping_mode",
+                "ebeam",
             ]
         ].to_csv(map_path, index=False)
 
@@ -564,9 +635,17 @@ def run_partons_calculation(
         executable: str,
         workers: int,
         chunk_size: int,
-        force: bool) -> pd.DataFrame:
-    """Run, resume from retained chunk logs, or reuse one complete PARTONS cache."""
-    result_dir = outdir / "partons_results"
+        force: bool,
+        cache_tag: str = "default") -> pd.DataFrame:
+    """
+    Run, resume from retained chunk logs, or reuse one complete PARTONS cache.
+
+    cache_tag is part of the cache namespace.  This prevents calculations made
+    with one phi convention from being silently reused after the convention is
+    changed.
+    """
+    safe_tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(cache_tag))
+    result_dir = outdir / "partons_results" / safe_tag
     result_dir.mkdir(parents=True, exist_ok=True)
 
     result_path = result_dir / f"{calculation}_results.csv"
@@ -594,14 +673,15 @@ def run_partons_calculation(
         print(f"[PARTONS cache] {calculation}: cache incomplete; recalculating")
     #endif
 
+    namespaced_outdir = outdir / "partons_cache_namespaces" / safe_tag
     manifest = write_partons_xml_chunks(
         points=points,
         calculation=calculation,
-        outdir=outdir,
+        outdir=namespaced_outdir,
         chunk_size=chunk_size,
     )
 
-    log_dir = outdir / "partons_logs" / calculation
+    log_dir = outdir / "partons_logs" / safe_tag / calculation
     log_dir.mkdir(parents=True, exist_ok=True)
 
     jobs = []
@@ -755,6 +835,252 @@ def _attach_result(
     """Attach one complete PARTONS cache by point_id."""
     result = result[["point_id", "xs_nb"]].rename(columns={"xs_nb": output_column})
     return points.merge(result, on="point_id", how="left", validate="one_to_one")
+#enddef
+
+
+
+def choose_clas12_phi_scan_points(
+        points: pd.DataFrame,
+        n_points: int = DEFAULT_CLAS12_SCAN_POINTS) -> pd.DataFrame:
+    """
+    Choose a small deterministic CLAS12 sample spanning phi and kinematics.
+
+    Points are selected approximately uniformly in sorted phi, with duplicate
+    point_ids removed.  This is a convention test, not a physics selection.
+    """
+    d = points.loc[points["dataset"].astype(str) == "pass1"].copy()
+    if len(d) == 0:
+        raise RuntimeError(
+            "No dataset=='pass1' points are available for the CLAS12 phi scan"
+        )
+    #endif
+    n_points = max(4, min(int(n_points), len(d)))
+    d = d.sort_values(["phi_deg", "xB", "Q2", "t_abs"]).reset_index(drop=True)
+    indices = np.unique(
+        np.rint(np.linspace(0, len(d) - 1, n_points)).astype(int)
+    )
+    sample = d.iloc[indices].copy().reset_index(drop=True)
+    return sample
+#enddef
+
+
+def run_clas12_phi_mapping_scan(
+        points: pd.DataFrame,
+        outdir: Path,
+        sif: Path,
+        project: Path,
+        executable: str,
+        workers: int,
+        scan_points: int,
+        force: bool = False) -> tuple[str, pd.DataFrame]:
+    """
+    Determine the CLAS12 phi mapping using BH-only closure against Gepard.
+
+    Four plausible transformations are tested:
+      identity   : phi_P = phi_C
+      negative   : phi_P = -phi_C
+      180-minus  : phi_P = 180 - phi_C
+      180-plus   : phi_P = 180 + phi_C
+
+    Both PARTONS BH implementations (GV08 and VGG99) are compared against the
+    cached Gepard BH values.  No measured cross sections and no full EP/GPD
+    predictions enter the decision.
+
+    The selected mapping minimizes a combined score based on:
+      * log-ratio scatter across points (dominant term);
+      * median absolute log offset from unity (secondary term).
+    A mapping is accepted only when both PARTONS BH processes show a stable
+    point-by-point ratio: all finite/positive, >=90% within 0.5--2.0, and
+    log-ratio standard deviation <=0.15 for each process.
+    """
+    scan_root = outdir / "phi_mapping_validation" / "clas12"
+    scan_root.mkdir(parents=True, exist_ok=True)
+
+    base = choose_clas12_phi_scan_points(points, n_points=scan_points)
+    base[
+        [
+            "point_id", "dataset", "source_row", "xB", "Q2",
+            "t_abs", "phi_deg", "ebeam", "km15_bh",
+        ]
+    ].to_csv(scan_root / "scan_points.csv", index=False)
+
+    summary_rows = []
+    point_rows = []
+
+    for mode in PHI_MAPPING_MODES:
+        test = base.copy()
+        test["phi_partons_deg"] = transform_phi_to_partons(
+            test["phi_deg"].to_numpy(float), mode
+        )
+        test["phi_mapping_mode"] = mode
+
+        mode_out = scan_root / mode
+        mode_out.mkdir(parents=True, exist_ok=True)
+        results = {}
+
+        for calculation in ["bh_gv08", "bh_vgg99"]:
+            results[calculation] = run_partons_calculation(
+                points=test,
+                calculation=calculation,
+                outdir=mode_out,
+                sif=sif,
+                project=project,
+                executable=executable,
+                workers=min(max(1, workers), 2),
+                chunk_size=max(1, len(test)),
+                force=force,
+                cache_tag=f"clas12_phi_{mode}",
+            )
+        #endfor
+
+        merged = test[
+            [
+                "point_id", "source_row", "xB", "Q2", "t_abs",
+                "phi_deg", "phi_partons_deg", "km15_bh",
+            ]
+        ].copy()
+        merged = merged.merge(
+            results["bh_gv08"][["point_id", "xs_nb"]].rename(
+                columns={"xs_nb": "partons_bh_gv08"}
+            ),
+            on="point_id", how="left", validate="one_to_one",
+        )
+        merged = merged.merge(
+            results["bh_vgg99"][["point_id", "xs_nb"]].rename(
+                columns={"xs_nb": "partons_bh_vgg99"}
+            ),
+            on="point_id", how="left", validate="one_to_one",
+        )
+        merged["phi_mapping_mode"] = mode
+
+        process_metrics = {}
+        for process_name, col in [
+            ("gv08", "partons_bh_gv08"),
+            ("vgg99", "partons_bh_vgg99"),
+        ]:
+            gepard = merged["km15_bh"].to_numpy(float)
+            partons = merged[col].to_numpy(float)
+            valid = (
+                np.isfinite(gepard)
+                & np.isfinite(partons)
+                & (gepard > 0.0)
+                & (partons > 0.0)
+            )
+            ratio = np.full(len(merged), np.nan)
+            ratio[valid] = partons[valid] / gepard[valid]
+            merged[f"{process_name}_over_gepard"] = ratio
+
+            rv = ratio[np.isfinite(ratio) & (ratio > 0.0)]
+            if len(rv):
+                log_r = np.log(rv)
+                median = float(np.median(rv))
+                log_std = float(np.std(log_r))
+                median_abs_log_offset = float(abs(np.median(log_r)))
+                broad_fraction = float(np.mean((rv > 0.5) & (rv < 2.0)))
+                rmin = float(np.min(rv))
+                rmax = float(np.max(rv))
+            else:
+                median = np.nan
+                log_std = np.inf
+                median_abs_log_offset = np.inf
+                broad_fraction = 0.0
+                rmin = np.nan
+                rmax = np.nan
+            #endif
+
+            process_metrics[process_name] = {
+                "valid_fraction": float(valid.mean()),
+                "median": median,
+                "log_std": log_std,
+                "median_abs_log_offset": median_abs_log_offset,
+                "broad_fraction": broad_fraction,
+                "min": rmin,
+                "max": rmax,
+            }
+        #endfor
+
+        score = float(sum(
+            process_metrics[p]["log_std"]
+            + 0.25 * process_metrics[p]["median_abs_log_offset"]
+            for p in ["gv08", "vgg99"]
+        ))
+        accepted = all(
+            process_metrics[p]["valid_fraction"] == 1.0
+            and process_metrics[p]["broad_fraction"] >= 0.90
+            and process_metrics[p]["log_std"] <= 0.15
+            for p in ["gv08", "vgg99"]
+        )
+
+        summary_rows.append({
+            "mode": mode,
+            "N": int(len(merged)),
+            "score": score,
+            "accepted": bool(accepted),
+            "gv08_median_ratio": process_metrics["gv08"]["median"],
+            "gv08_log_ratio_std": process_metrics["gv08"]["log_std"],
+            "gv08_fraction_0p5_to_2": process_metrics["gv08"]["broad_fraction"],
+            "gv08_min_ratio": process_metrics["gv08"]["min"],
+            "gv08_max_ratio": process_metrics["gv08"]["max"],
+            "vgg99_median_ratio": process_metrics["vgg99"]["median"],
+            "vgg99_log_ratio_std": process_metrics["vgg99"]["log_std"],
+            "vgg99_fraction_0p5_to_2": process_metrics["vgg99"]["broad_fraction"],
+            "vgg99_min_ratio": process_metrics["vgg99"]["min"],
+            "vgg99_max_ratio": process_metrics["vgg99"]["max"],
+        })
+        point_rows.append(merged)
+    #endfor
+
+    summary = pd.DataFrame(summary_rows).sort_values(
+        ["accepted", "score"], ascending=[False, True]
+    ).reset_index(drop=True)
+    summary.to_csv(scan_root / "phi_mapping_summary.csv", index=False)
+    pd.concat(point_rows, ignore_index=True).to_csv(
+        scan_root / "phi_mapping_pointwise.csv", index=False
+    )
+
+    accepted = summary.loc[summary["accepted"].astype(bool)].copy()
+    if len(accepted) == 0:
+        print("\n[CLAS12 phi scan] no candidate mapping passed BH closure")
+        print(summary.to_string(index=False))
+        raise RuntimeError(
+            "No CLAS12 phi mapping passed the BH-only PARTONS/Gepard closure. "
+            f"Inspect {scan_root / 'phi_mapping_summary.csv'} and "
+            f"{scan_root / 'phi_mapping_pointwise.csv'}."
+        )
+    #endif
+
+    winner = str(accepted.iloc[0]["mode"])
+
+    # Require the winning score to be clearly preferred when more than one
+    # mapping passes.  Exact degeneracies can occur for symmetries; in that case
+    # we should not silently choose a convention.
+    if len(accepted) > 1:
+        best = float(accepted.iloc[0]["score"])
+        second = float(accepted.iloc[1]["score"])
+        if np.isfinite(best) and np.isfinite(second) and second <= 1.05 * best:
+            print("\n[CLAS12 phi scan] ambiguous accepted mappings")
+            print(accepted.to_string(index=False))
+            raise RuntimeError(
+                "CLAS12 BH-only phi scan is ambiguous: the two best mappings "
+                "have scores within 5%. Inspect the pointwise scan before "
+                "choosing a convention explicitly with --clas12-phi-mapping."
+            )
+        #endif
+    #endif
+
+    print("\n[CLAS12 phi scan] BH-only PARTONS/Gepard closure")
+    print(summary.to_string(index=False))
+    print(f"[CLAS12 phi scan] selected mapping: {winner}")
+    print(f"[CLAS12 phi scan] diagnostics -> {scan_root}")
+    return winner, summary
+#enddef
+
+
+def make_production_cache_tag(
+        imported_mode: str,
+        clas12_mode: str) -> str:
+    """Deterministic cache namespace for the active dataset-specific mappings."""
+    return f"imported-{imported_mode}_clas12-{clas12_mode}"
 #enddef
 
 
@@ -1167,6 +1493,42 @@ def build_parser() -> argparse.ArgumentParser:
         help="Ignore complete PARTONS result caches and rerun all calculations",
     )
     p.add_argument(
+        "--clas12-phi-mapping",
+        choices=("auto",) + PHI_MAPPING_MODES,
+        default=DEFAULT_CLAS12_PHI_MAPPING,
+        help=(
+            "CLAS12/pass1 phi mapping into PARTONS. Default 'auto' runs a "
+            "small BH-only PARTONS/Gepard closure scan over identity, negative, "
+            "180-minus, and 180-plus before production."
+        ),
+    )
+    p.add_argument(
+        "--imported-phi-mapping",
+        choices=PHI_MAPPING_MODES,
+        default=DEFAULT_IMPORTED_PHI_MAPPING,
+        help=(
+            "Phi mapping for imported Gepard Jo/Hall-A datasets. Default "
+            "'180-minus' is the previously validated convention."
+        ),
+    )
+    p.add_argument(
+        "--clas12-phi-scan-points",
+        type=int,
+        default=DEFAULT_CLAS12_SCAN_POINTS,
+        help=(
+            "Representative CLAS12 points used by the BH-only automatic phi "
+            f"scan; default {DEFAULT_CLAS12_SCAN_POINTS}."
+        ),
+    )
+    p.add_argument(
+        "--scan-clas12-phi-only",
+        action="store_true",
+        help=(
+            "Run the CLAS12 BH-only phi-mapping scan, print/write diagnostics, "
+            "and exit before the full model calculation."
+        ),
+    )
+    p.add_argument(
         "--thresholds",
         type=float,
         nargs="+",
@@ -1200,10 +1562,6 @@ def main(argv: List[str] | None = None) -> int:
     print(
         f"[kinematics] loaded {len(points)} exact experimental points from {cache}"
     )
-    print(
-        "[kinematics] applying validated azimuth mapping: "
-        "phi_PARTONS = (180 deg - phi_Gepard) mod 360 deg"
-    )
 
     thresholds = sorted(set(float(x) for x in args.thresholds))
     if 0.05 not in thresholds:
@@ -1214,12 +1572,66 @@ def main(argv: List[str] | None = None) -> int:
 
     calculations = ["bh_gv08", "gk16", "bh_vgg99", "vgg99"]
 
+    needs_partons_runtime = (
+        args.run_partons
+        or args.scan_clas12_phi_only
+        or args.clas12_phi_mapping == "auto"
+    )
+    if needs_partons_runtime:
+        sif = Path(args.partons_sif).expanduser().resolve()
+        project = Path(args.partons_project).expanduser().resolve()
+        locate_partons(sif, project, args.partons_executable)
+    else:
+        sif = Path(args.partons_sif).expanduser().resolve()
+        project = Path(args.partons_project).expanduser().resolve()
+    #endif
+
+    if args.clas12_phi_mapping == "auto":
+        clas12_phi_mapping, _ = run_clas12_phi_mapping_scan(
+            points=points,
+            outdir=outdir,
+            sif=sif,
+            project=project,
+            executable=args.partons_executable,
+            workers=args.workers,
+            scan_points=args.clas12_phi_scan_points,
+            force=args.force_partons,
+        )
+    else:
+        clas12_phi_mapping = str(args.clas12_phi_mapping)
+        print(
+            "[CLAS12 phi] using explicitly requested mapping: "
+            f"{clas12_phi_mapping}"
+        )
+    #endif
+
+    if args.scan_clas12_phi_only:
+        print("[done] CLAS12 BH-only phi-mapping scan complete")
+        return 0
+    #endif
+
+    points = apply_dataset_phi_mappings(
+        points,
+        imported_mode=args.imported_phi_mapping,
+        clas12_mode=clas12_phi_mapping,
+    )
+    production_cache_tag = make_production_cache_tag(
+        args.imported_phi_mapping, clas12_phi_mapping
+    )
+    print(
+        "[kinematics] PARTONS phi mappings: "
+        f"Jo/Hall-A={args.imported_phi_mapping}; "
+        f"CLAS12={clas12_phi_mapping}"
+    )
+    print(f"[PARTONS cache namespace] {production_cache_tag}")
+
     if args.make_partons_xml:
+        xml_preview_outdir = outdir / "xml_preview" / production_cache_tag
         for calculation in calculations:
             write_partons_xml_chunks(
                 points,
                 calculation,
-                outdir,
+                xml_preview_outdir,
                 args.chunk_size,
             )
         #endfor
@@ -1230,15 +1642,12 @@ def main(argv: List[str] | None = None) -> int:
 
     if not args.run_partons:
         print(
-            "Nothing to run. Use --run-partons for the full cached PARTONS "
-            "evaluation, or --make-partons-xml to inspect generated scenarios."
+            "Nothing to run after phi validation. Use --run-partons for the "
+            "full cached PARTONS evaluation, --scan-clas12-phi-only for the "
+            "BH-only convention test, or --make-partons-xml to inspect XML."
         )
         return 0
     #endif
-
-    sif = Path(args.partons_sif).expanduser().resolve()
-    project = Path(args.partons_project).expanduser().resolve()
-    locate_partons(sif, project, args.partons_executable)
 
     print(
         f"[PARTONS performance] workers={args.workers}, "
@@ -1262,8 +1671,21 @@ def main(argv: List[str] | None = None) -> int:
             workers=args.workers,
             chunk_size=args.chunk_size,
             force=args.force_partons,
+            cache_tag=production_cache_tag,
         )
     #endfor
+
+    mapping_record = pd.DataFrame([{
+        "imported_datasets_mapping": args.imported_phi_mapping,
+        "clas12_mapping": clas12_phi_mapping,
+        "production_cache_tag": production_cache_tag,
+        "clas12_mapping_source": (
+            "BH-only automatic scan"
+            if args.clas12_phi_mapping == "auto"
+            else "explicit CLI"
+        ),
+    }])
+    mapping_record.to_csv(outdir / "partons_phi_mapping_used.csv", index=False)
 
     merged = build_model_selection(
         points=points,
