@@ -889,6 +889,12 @@ def run_clas12_phi_mapping_scan(
     The selected mapping minimizes a combined score based on:
       * log-ratio scatter across points (dominant term);
       * median absolute log offset from unity (secondary term).
+
+    For unpolarized BH, phi and -phi are physically indistinguishable because
+    the observable is even in phi.  The scan therefore ranks the two BH
+    equivalence classes {identity, negative} and {180-minus, 180-plus}, then
+    uses identity or 180-minus as the canonical representative.
+
     A mapping is accepted only when both PARTONS BH processes show a stable
     point-by-point ratio: all finite/positive, >=90% within 0.5--2.0, and
     log-ratio standard deviation <=0.15 for each process.
@@ -1051,25 +1057,64 @@ def run_clas12_phi_mapping_scan(
 
     winner = str(accepted.iloc[0]["mode"])
 
-    # Require the winning score to be clearly preferred when more than one
-    # mapping passes.  Exact degeneracies can occur for symmetries; in that case
-    # we should not silently choose a convention.
-    if len(accepted) > 1:
-        best = float(accepted.iloc[0]["score"])
-        second = float(accepted.iloc[1]["score"])
+    # Unpolarized BH is even under phi -> -phi, so a BH-only scan cannot
+    # distinguish identity from negative.  Likewise, 180-minus and 180-plus
+    # form the same BH-equivalent class.  Treat these exact/near-exact
+    # degeneracies as physical symmetries rather than an ambiguity.
+    equivalence_class = {
+        "identity": "zero_shift_class",
+        "negative": "zero_shift_class",
+        "180-minus": "180_shift_class",
+        "180-plus": "180_shift_class",
+    }
+    canonical_mode = {
+        "zero_shift_class": "identity",
+        "180_shift_class": "180-minus",
+    }
+
+    accepted = accepted.copy()
+    accepted["bh_equivalence_class"] = accepted["mode"].map(equivalence_class)
+
+    # Rank equivalence classes by their best score.
+    class_best = (
+        accepted.groupby("bh_equivalence_class", as_index=False)["score"]
+        .min()
+        .sort_values("score")
+        .reset_index(drop=True)
+    )
+    winning_class = str(class_best.iloc[0]["bh_equivalence_class"])
+
+    # If two DIFFERENT BH-equivalence classes are comparably good, that is a
+    # genuine unresolved ambiguity and should still abort.
+    if len(class_best) > 1:
+        best = float(class_best.iloc[0]["score"])
+        second = float(class_best.iloc[1]["score"])
         if np.isfinite(best) and np.isfinite(second) and second <= 1.05 * best:
-            print("\n[CLAS12 phi scan] ambiguous accepted mappings")
+            print("\n[CLAS12 phi scan] ambiguous BH-equivalence classes")
             print(accepted.to_string(index=False))
             raise RuntimeError(
-                "CLAS12 BH-only phi scan is ambiguous: the two best mappings "
-                "have scores within 5%. Inspect the pointwise scan before "
-                "choosing a convention explicitly with --clas12-phi-mapping."
+                "CLAS12 BH-only phi scan cannot distinguish the zero-shift "
+                "class {phi,-phi} from the 180-degree-shift class "
+                "{180-phi,180+phi}. Inspect the pointwise scan before "
+                "continuing."
             )
         #endif
     #endif
 
+    winner = canonical_mode[winning_class]
+
     print("\n[CLAS12 phi scan] BH-only PARTONS/Gepard closure")
     print(summary.to_string(index=False))
+    same_class_modes = accepted.loc[
+        accepted["bh_equivalence_class"] == winning_class, "mode"
+    ].tolist()
+    if len(same_class_modes) > 1:
+        print(
+            "[CLAS12 phi scan] BH symmetry equivalence: "
+            + ", ".join(same_class_modes)
+            + f" are indistinguishable for XUU; using canonical '{winner}'."
+        )
+    #endif
     print(f"[CLAS12 phi scan] selected mapping: {winner}")
     print(f"[CLAS12 phi scan] diagnostics -> {scan_root}")
     return winner, summary
