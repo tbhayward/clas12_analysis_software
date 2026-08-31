@@ -8882,11 +8882,40 @@ def match_pass2_to_pass1_model_rows(
 
     kin_cols = ["xB", "Q2", "t_abs", "phi_deg", "ebeam"]
     missing_ext = [c for c in kin_cols if c not in pass1.columns]
+    if missing_ext:
+        raise KeyError(
+            "Pass-2/pass-1 model reuse requires the external pass-1 table to "
+            f"contain {kin_cols}; missing external={missing_ext}"
+        )
+    #endif
+
+    # The pass-2 analysis CSV does not need to carry Ebeam because the beam
+    # energy is a run-wide analysis setting.  Infer it from the already
+    # evaluated pass-1 rows, which use the identical CLAS12 kinematic grid.
+    pass2_data = pass2_data.copy()
+    if "ebeam" not in pass2_data.columns:
+        pass1_ebeams = np.unique(
+            np.round(pass1["ebeam"].to_numpy(float), 10)
+        )
+        pass1_ebeams = pass1_ebeams[np.isfinite(pass1_ebeams)]
+        if len(pass1_ebeams) != 1:
+            raise RuntimeError(
+                "Cannot infer a unique CLAS12 beam energy for pass-2 reuse; "
+                f"pass-1 external table contains {pass1_ebeams.tolist()}."
+            )
+        #endif
+        pass2_data["ebeam"] = float(pass1_ebeams[0])
+        print(
+            "[PASS2 model reuse] pass-2 CSV has no ebeam column; "
+            f"using pass-1 Ebeam={float(pass1_ebeams[0]):.6f} GeV."
+        )
+    #endif
+
     missing_data = [c for c in kin_cols if c not in pass2_data.columns]
-    if missing_ext or missing_data:
+    if missing_data:
         raise KeyError(
             "Pass-2/pass-1 model reuse requires kinematic columns "
-            f"{kin_cols}; missing external={missing_ext}, pass2={missing_data}"
+            f"{kin_cols}; missing pass2={missing_data}"
         )
     #endif
 
