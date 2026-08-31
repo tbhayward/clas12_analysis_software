@@ -4175,7 +4175,23 @@ def run_radius_bias_variance_study(
     families += [f"IP{i}" for i in range(1, 5)]
     families += [f"CF{i}" for i in range(2, 4)]
 
-    specs = [bundle_to_measurement_spec(b) for b in bundles]
+    specs_all = [bundle_to_measurement_spec(b) for b in bundles]
+    empty_specs = [spec for spec in specs_all if len(spec["data"]) == 0]
+    specs = [spec for spec in specs_all if len(spec["data"]) > 0]
+
+    for spec in empty_specs:
+        print(
+            f"[radius-bias] {spec['label']}: 0 selected points; "
+            "omitting this measurement from the closure study"
+        )
+    #endfor
+
+    if not specs:
+        raise RuntimeError(
+            "Radius-bias study has zero selected points across all measurements"
+        )
+    #endif
+
     qmax = max(
         float(np.nanmax(spec["data"]["t_abs"].to_numpy(float)))
         for spec in specs
@@ -5989,7 +6005,11 @@ def fit_sachs_family_multi_measurements(
     for spec in datasets:
         d = spec["data"]
         if len(d) == 0:
-            raise RuntimeError(f"{spec['label']}: no selected points")
+            print(
+                f"[final fit] {spec['label']}: 0 selected points; "
+                "omitting this measurement from this fit"
+            )
+            continue
         #endif
         err = dataset_point_errors(
             d, str(spec["kind"]), float(bh_cut), add_moradi_bh_systematic
@@ -6013,6 +6033,12 @@ def fit_sachs_family_multi_measurements(
             "N": len(d),
         })
     #endfor
+
+    if not prepared:
+        raise RuntimeError(
+            "Production Sachs fit has zero selected points across all measurements"
+        )
+    #endif
 
     def chi2_minuit(*values):
         p = np.asarray(values, dtype=float)
@@ -6293,6 +6319,7 @@ def run_final_model_selected_analysis(
     for model in FINAL_MODEL_NAMES:
         model_dir = final_dir / f"bias_study_{model}"
         bias_dirs[model] = model_dir
+        print(f"\n[final model analysis] starting radius-bias study for {model}")
 
         # Rebuild lightweight bundle copies whose set5 is the external 5% sample
         # so the existing closure machinery can be reused unchanged.
