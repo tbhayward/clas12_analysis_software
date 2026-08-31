@@ -40,7 +40,7 @@ The imported Gepard Jo/Hall-A datasets use the previously validated mapping
 
     phi_PARTONS = (180 deg - phi_Gepard) mod 360 deg.
 
-CLAS12/pass1 is NOT assumed to share that convention.  By default this script
+CLAS12/pass1 and CLAS12/pass2 are NOT assumed to share that convention.  By default this script
 runs a small BH-only PARTONS/Gepard closure scan over four candidate mappings
 (identity, negative, 180-minus, 180-plus), using representative CLAS12 points.
 The winning mapping is chosen without measured cross sections and is then used
@@ -189,7 +189,7 @@ def apply_dataset_phi_mappings(
     Attach phi_partons_deg with dataset-specific conventions.
 
     The imported Gepard datasets (Jo and Hall A) retain the already validated
-    180-phi mapping.  CLAS12/pass1 is assigned independently because its phiavg
+    180-phi mapping.  CLAS12/pass1 and pass2 are assigned independently because their phiavg
     convention is not assumed to be the same as the imported Gepard tables.
     """
     out = df.copy()
@@ -197,8 +197,11 @@ def apply_dataset_phi_mappings(
     out["phi_mapping_mode"] = ""
 
     dataset = out["dataset"].astype(str).to_numpy()
-    pass1_mask = dataset == "pass1"
-    imported_mask = ~pass1_mask
+
+    # Both CLAS12 analyses use the same phi convention.  Keep them together
+    # even though pass-2 is evaluated at its own measured average kinematics.
+    clas12_mask = np.isin(dataset, ["pass1", "pass2"])
+    imported_mask = ~clas12_mask
 
     if np.any(imported_mask):
         out.loc[imported_mask, "phi_partons_deg"] = transform_phi_to_partons(
@@ -208,12 +211,12 @@ def apply_dataset_phi_mappings(
         out.loc[imported_mask, "phi_mapping_mode"] = imported_mode
     #endif
 
-    if np.any(pass1_mask):
-        out.loc[pass1_mask, "phi_partons_deg"] = transform_phi_to_partons(
-            out.loc[pass1_mask, "phi_deg"].to_numpy(float),
+    if np.any(clas12_mask):
+        out.loc[clas12_mask, "phi_partons_deg"] = transform_phi_to_partons(
+            out.loc[clas12_mask, "phi_deg"].to_numpy(float),
             clas12_mode,
         )
-        out.loc[pass1_mask, "phi_mapping_mode"] = clas12_mode
+        out.loc[clas12_mask, "phi_mapping_mode"] = clas12_mode
     #endif
 
     return out
@@ -1542,7 +1545,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("auto",) + PHI_MAPPING_MODES,
         default=DEFAULT_CLAS12_PHI_MAPPING,
         help=(
-            "CLAS12/pass1 phi mapping into PARTONS. Default 'auto' runs a "
+            "CLAS12/pass1/pass2 phi mapping into PARTONS. Default 'auto' runs a "
             "small BH-only PARTONS/Gepard closure scan over identity, negative, "
             "180-minus, and 180-plus before production."
         ),
@@ -1666,7 +1669,7 @@ def main(argv: List[str] | None = None) -> int:
     print(
         "[kinematics] PARTONS phi mappings: "
         f"Jo/Hall-A={args.imported_phi_mapping}; "
-        f"CLAS12={clas12_phi_mapping}"
+        f"CLAS12 pass1/pass2={clas12_phi_mapping}"
     )
     print(f"[PARTONS cache namespace] {production_cache_tag}")
 

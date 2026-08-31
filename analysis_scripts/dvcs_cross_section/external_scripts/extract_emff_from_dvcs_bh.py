@@ -8824,11 +8824,24 @@ def make_pass2_diagnostic_bundle(args) -> Dict[str, object]:
     )
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Pass-2 deliberately does NOT call Gepard/PARTONS here.  It uses the
-    # exact same kinematic binning as the pass-1 Lee dataset, so the diagnostic
-    # model comparison reuses the already-computed pass-1 KM15/VGG99/GK16
-    # predictions after an explicit point-by-point kinematic match.
-    df = df.reset_index(drop=True)
+    # Pass-2 uses the same bin boundaries as pass-1, but its stored average
+    # kinematics can differ.  Evaluate KM15 at the actual pass-2 averages and
+    # export these points for independent VGG99/GK16 PARTONS evaluation.
+    df = evaluate_km15_dataframe(
+        df,
+        float(args.ebeam),
+        max(1, int(args.workers)),
+        outdir / "km15_bh_decomposition_pass2_diagnostic.csv",
+        bool(args.force_km15),
+    )
+    finite = (
+        np.isfinite(df["km15_ep"])
+        & np.isfinite(df["km15_bh"])
+        & np.isfinite(df["R_BH"])
+        & (df["km15_ep"] > 0.0)
+        & (df["km15_bh"] > 0.0)
+    )
+    df = df.loc[finite].copy().reset_index(drop=True)
 
     scale = pd.to_numeric(
         df.get("scale_sys_frac", pd.Series(dtype=float)),
@@ -8842,8 +8855,8 @@ def make_pass2_diagnostic_bundle(args) -> Dict[str, object]:
         f"representative correlated scale={100.0*norm_frac:.2f}%."
     )
     print(
-        "[PASS2 model reuse] No KM15/VGG99/GK16 reevaluation requested; "
-        "predictions will be inherited from kinematically identical pass-1 points."
+        "[PASS2 diagnostic] KM15 evaluated at pass-2 average kinematics; "
+        "VGG99/GK16 will use the exported pass-2 points."
     )
     return {
         "label": "CLAS12 pass-2",
@@ -9006,24 +9019,11 @@ def save_all_point_model_agreement_diagnostics(
     outdir.mkdir(parents=True, exist_ok=True)
     selection_datasets = set(selection["dataset"].astype(str))
     usable = [
-        b for b in bundles
-        if (
-            str(b["key"]) in selection_datasets
-            or (
-                str(b["key"]) == "pass2"
-                and "pass1" in selection_datasets
-            )
-        )
+        b for b in bundles if str(b["key"]) in selection_datasets
     ]
     missing = [
         str(b["key"]) for b in bundles
-        if not (
-            str(b["key"]) in selection_datasets
-            or (
-                str(b["key"]) == "pass2"
-                and "pass1" in selection_datasets
-            )
-        )
+        if str(b["key"]) not in selection_datasets
     ]
     if missing:
         print(
@@ -9052,13 +9052,9 @@ def save_all_point_model_agreement_diagnostics(
         label = str(bundle["label"])
         kind = str(bundle["kind"])
         data = bundle["all_data"].reset_index(drop=True)
-        if key == "pass2":
-            ext = match_pass2_to_pass1_model_rows(data, selection)
-        else:
-            ext = selection.loc[
-                selection["dataset"].astype(str) == key
-            ].copy().sort_values("source_row").reset_index(drop=True)
-        #endif
+        ext = selection.loc[
+            selection["dataset"].astype(str) == key
+        ].copy().sort_values("source_row").reset_index(drop=True)
         if len(ext) != len(data):
             print(
                 f"[model agreement diagnostic] {label}: external/current point "
@@ -9524,11 +9520,8 @@ def run_published_default(args) -> int:
         root_outdir / "final_analysis" / "diagnostics"
         / "all_point_model_agreement_input"
     )
-    diagnostic_export_bundles = [
-        b for b in diagnostic_bundles if str(b["key"]) != "pass2"
-    ]
     export_bh_model_selection_kinematics(
-        diagnostic_export_bundles, diagnostic_input_root
+        diagnostic_bundles, diagnostic_input_root
     )
 
     if getattr(args, "include_saylor", False):
