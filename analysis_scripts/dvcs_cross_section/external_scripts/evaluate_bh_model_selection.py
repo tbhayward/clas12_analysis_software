@@ -156,6 +156,32 @@ DEFAULT_CLAS12_PHI_MAPPING = "auto"
 DEFAULT_CLAS12_SCAN_POINTS = 12
 DEFAULT_IMPORTED_SCAN_POINTS = 16
 
+# phi_deg in the kinematic cache is not in one universal source convention.
+# Gepard-bundled datasets are stored in Gepard's BMK representation and need
+# the validated 180-degree shift before they are sent to PARTONS.  Direct
+# published tables/spreadsheets and CLAS12 tables retain their published
+# Trento-like azimuth and therefore use identity.
+#
+# Saylor is deliberately listed separately rather than being swept into a
+# generic "imported" category.  Its direct supplemental-table convention is
+# audited by --validate-phi-conventions before its model comparison is used
+# scientifically.
+FIXED_DATASET_PHI_MAPPINGS = {
+    "jo2015": "180-minus",
+    "halla_defurne2015": "180-minus",
+    "saylor2018": "identity",
+    "halla_georges2022": "identity",
+}
+
+FIXED_DATASET_PHI_SOURCES = {
+    "jo2015": "Gepard dataset 98 (BMK-stored)",
+    "halla_defurne2015": "Gepard datasets 107/108/112/113 (BMK-stored)",
+    "saylor2018": "published supplemental table (direct)",
+    "halla_georges2022": "published E12-06-114 spreadsheet (Trento)",
+    "pass1": "CLAS12 Lee table",
+    "pass2": "CLAS12 Hayward table",
+}
+
 
 def transform_phi_to_partons(
         phi_deg: np.ndarray | Sequence[float] | float,
@@ -186,44 +212,81 @@ def transform_phi_to_partons(
 def apply_dataset_phi_mappings(
         df: pd.DataFrame,
         imported_mode: str = DEFAULT_IMPORTED_PHI_MAPPING,
-        clas12_mode: str = "180-minus") -> pd.DataFrame:
+        clas12_mode: str = "identity") -> pd.DataFrame:
     """
-    Attach phi_partons_deg with dataset-specific conventions.
+    Attach phi_partons_deg using the convention of each dataset's source.
 
-    The imported Gepard datasets (Jo and Hall A) retain the already validated
-    180-phi mapping.  CLAS12/pass1 and pass2 are assigned independently because their phiavg
-    convention is not assumed to be the same as the imported Gepard tables.
+    `imported_mode` is retained only as a backwards-compatible override for
+    the Gepard-bundled Jo and Defurne datasets.  It is intentionally NOT
+    applied to Georges or Saylor, which come from direct publication tables.
+
+    CLAS12 pass1/pass2 share the independently BH-validated CLAS12 mapping.
     """
     out = df.copy()
     out["phi_partons_deg"] = np.nan
     out["phi_mapping_mode"] = ""
+    out["phi_source_representation"] = ""
 
-    dataset = out["dataset"].astype(str).to_numpy()
+    dataset = out["dataset"].astype(str)
 
-    # Both CLAS12 analyses use the same phi convention.  Keep them together
-    # even though pass-2 is evaluated at its own measured average kinematics.
-    clas12_mask = np.isin(dataset, ["pass1", "pass2"])
-    imported_mask = ~clas12_mask
+    # Gepard-bundled datasets: the cached phi is the Gepard/BMK representation.
+    for key in ["jo2015", "halla_defurne2015"]:
+        mask = dataset == key
+        if np.any(mask):
+            out.loc[mask, "phi_partons_deg"] = transform_phi_to_partons(
+                out.loc[mask, "phi_deg"].to_numpy(float),
+                imported_mode,
+            )
+            out.loc[mask, "phi_mapping_mode"] = imported_mode
+            out.loc[mask, "phi_source_representation"] = (
+                FIXED_DATASET_PHI_SOURCES[key]
+            )
+        #endif
+    #endfor
 
-    if np.any(imported_mask):
-        out.loc[imported_mask, "phi_partons_deg"] = transform_phi_to_partons(
-            out.loc[imported_mask, "phi_deg"].to_numpy(float),
-            imported_mode,
-        )
-        out.loc[imported_mask, "phi_mapping_mode"] = imported_mode
-    #endif
+    # Direct publication inputs must not inherit the Gepard/BMK mapping.
+    for key in ["saylor2018", "halla_georges2022"]:
+        mask = dataset == key
+        if np.any(mask):
+            mode = FIXED_DATASET_PHI_MAPPINGS[key]
+            out.loc[mask, "phi_partons_deg"] = transform_phi_to_partons(
+                out.loc[mask, "phi_deg"].to_numpy(float),
+                mode,
+            )
+            out.loc[mask, "phi_mapping_mode"] = mode
+            out.loc[mask, "phi_source_representation"] = (
+                FIXED_DATASET_PHI_SOURCES[key]
+            )
+        #endif
+    #endfor
 
+    # Both CLAS12 analyses use the same measured phi convention.
+    clas12_mask = dataset.isin(["pass1", "pass2"])
     if np.any(clas12_mask):
         out.loc[clas12_mask, "phi_partons_deg"] = transform_phi_to_partons(
             out.loc[clas12_mask, "phi_deg"].to_numpy(float),
             clas12_mode,
         )
         out.loc[clas12_mask, "phi_mapping_mode"] = clas12_mode
+        out.loc[clas12_mask, "phi_source_representation"] = dataset.loc[
+            clas12_mask
+        ].map(FIXED_DATASET_PHI_SOURCES).to_numpy()
+    #endif
+
+    # Fail loudly if a future dataset is added without an explicit convention.
+    unresolved = ~np.isfinite(
+        pd.to_numeric(out["phi_partons_deg"], errors="coerce").to_numpy(float)
+    )
+    if np.any(unresolved):
+        unknown = sorted(set(dataset.loc[unresolved].astype(str)))
+        raise RuntimeError(
+            "No explicit PARTONS phi convention is configured for dataset(s): "
+            + ", ".join(unknown)
+        )
     #endif
 
     return out
 #enddef
-
 
 def load_points_from_cache(cache: Path) -> pd.DataFrame:
     """Read and validate the exact experimental-point cache."""
@@ -1130,7 +1193,12 @@ def make_production_cache_tag(
         imported_mode: str,
         clas12_mode: str) -> str:
     """Deterministic cache namespace for the active dataset-specific mappings."""
-    return f"imported-{imported_mode}_clas12-{clas12_mode}"
+    return (
+        f"gepard-{imported_mode}"
+        f"_direct-identity"
+        f"_clas12-{clas12_mode}"
+        f"_phi-v2"
+    )
 #enddef
 
 
@@ -1564,22 +1632,28 @@ def run_imported_phi_convention_validation(
         scan_points: int,
         force: bool = False) -> pd.DataFrame:
     """
-    Validate the Hall-A/Trento-to-PARTONS azimuth mapping with BH-only closure.
+    Validate dataset-specific azimuth mappings with BH-only code closure.
 
     The test intentionally does not use measured electroproduction cross
-    sections or VGG/GK full-EP agreement.  For each of Defurne 2015 and
-    Georges 2022 it compares PARTONS BH against the cached Gepard/KM15 BH
-    calculation under all four plausible phi mappings.
+    sections or VGG/GK full-EP agreement.  Defurne (Gepard/BMK stored),
+    Saylor (direct supplemental table), and Georges (direct Trento spreadsheet)
+    are each tested under all four plausible phi mappings.
 
     Because unpolarized BH is even in phi, identity and negative form one
     equivalence class, while 180-minus and 180-plus form the other.  The
-    physically documented Trento->BMK candidate is 180-minus; the scan checks
-    that its BH-equivalence class is the one supported numerically.
+    expected class is therefore source-dependent rather than "imported"-data
+    dependent.
     """
     dataset_specs = [
         ("halla_defurne2015", "Hall A Defurne 2015"),
+        ("saylor2018", "CLAS6 Saylor 2018"),
         ("halla_georges2022", "Hall A Georges 2022"),
     ]
+    expected_class = {
+        "halla_defurne2015": "180_shift",
+        "saylor2018": "zero_shift",
+        "halla_georges2022": "zero_shift",
+    }
     root = outdir / "phi_convention_validation"
     root.mkdir(parents=True, exist_ok=True)
 
@@ -1746,7 +1820,7 @@ def run_imported_phi_convention_validation(
     #endfor
 
     fig.suptitle(
-        "Hall-A azimuth-convention validation using BH-only code closure",
+        "Dataset-specific azimuth-convention validation using BH-only code closure",
         y=0.995,
     )
     fig.subplots_adjust(
@@ -1764,7 +1838,7 @@ def run_imported_phi_convention_validation(
         "180-minus": "180_shift",
         "180-plus": "180_shift",
     }
-    print("\n[phi validation] Hall-A BH-only convention summary")
+    print("\n[phi validation] Dataset-specific BH-only convention summary")
     for dataset, label in present_specs:
         dsum = summary.loc[
             (summary["dataset"].astype(str) == dataset)
@@ -1780,13 +1854,21 @@ def run_imported_phi_convention_validation(
             .sort_values("score")
         )
         best_class = str(class_scores.iloc[0]["class"])
-        documented_supported = best_class == "180_shift"
-        m180 = dsum.loc[dsum["mapping"] == "180-minus"].iloc[0]
+        expected = expected_class[dataset]
+        expected_supported = best_class == expected
+        canonical_mode = (
+            "180-minus" if expected == "180_shift" else "identity"
+        )
+        canonical = dsum.loc[
+            dsum["mapping"].astype(str) == canonical_mode
+        ].iloc[0]
         print(
-            f"  {label}: best BH class={best_class}; "
-            f"180-minus GV08 median={float(m180['median_ratio']):.5f}, "
-            f"log-std={float(m180['log_ratio_std']):.5f}; "
-            f"documented 180-shift class supported={documented_supported}"
+            f"  {label}: source={FIXED_DATASET_PHI_SOURCES[dataset]}; "
+            f"best BH class={best_class}; expected={expected}; "
+            f"{canonical_mode} GV08 median="
+            f"{float(canonical['median_ratio']):.5f}, "
+            f"log-std={float(canonical['log_ratio_std']):.5f}; "
+            f"expected class supported={expected_supported}"
         )
     #endfor
     print(f"[phi validation] outputs -> {root}")
@@ -1858,8 +1940,9 @@ def build_parser() -> argparse.ArgumentParser:
         choices=PHI_MAPPING_MODES,
         default=DEFAULT_IMPORTED_PHI_MAPPING,
         help=(
-            "Phi mapping for imported Gepard Jo/Hall-A datasets. Default "
-            "'180-minus' is the previously validated convention."
+            "Backwards-compatible phi mapping override for Gepard-bundled "
+            "Jo 2015 and Defurne 2015 only. Georges and Saylor are direct "
+            "publication inputs and never inherit this option."
         ),
     )
     p.add_argument(
@@ -1883,8 +1966,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--validate-phi-conventions",
         action="store_true",
         help=(
-            "Run BH-only phi-convention validation for Hall A Defurne 2015 "
-            "and Georges 2022 under all four candidate mappings."
+            "Run BH-only phi-convention validation for Defurne 2015, "
+            "Saylor 2018, and Georges 2022 under all four candidate mappings."
         ),
     )
     p.add_argument(
@@ -1892,7 +1975,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=DEFAULT_IMPORTED_SCAN_POINTS,
         help=(
-            "Representative points per Hall-A dataset used by "
+            "Representative points per non-CLAS12 dataset used by "
             "--validate-phi-conventions; default "
             f"{DEFAULT_IMPORTED_SCAN_POINTS}."
         ),
@@ -1994,7 +2077,7 @@ def main(argv: List[str] | None = None) -> int:
     #endif
 
     if args.validate_phi_conventions and not args.run_partons:
-        print("[done] Hall-A phi-convention validation complete")
+        print("[done] dataset-specific phi-convention validation complete")
         return 0
     #endif
 
@@ -2006,11 +2089,13 @@ def main(argv: List[str] | None = None) -> int:
     production_cache_tag = make_production_cache_tag(
         args.imported_phi_mapping, clas12_phi_mapping
     )
-    print(
-        "[kinematics] PARTONS phi mappings: "
-        f"Jo/Hall-A={args.imported_phi_mapping}; "
-        f"CLAS12 pass1/pass2={clas12_phi_mapping}"
-    )
+    print("[kinematics] PARTONS phi mappings by source:")
+    for key in sorted(set(points["dataset"].astype(str))):
+        d = points.loc[points["dataset"].astype(str) == key]
+        mode = str(d.iloc[0]["phi_mapping_mode"])
+        source = str(d.iloc[0]["phi_source_representation"])
+        print(f"  {key:22s}: {mode:10s} <- {source}")
+    #endfor
     print(f"[PARTONS cache namespace] {production_cache_tag}")
 
     if args.make_partons_xml:
@@ -2033,7 +2118,7 @@ def main(argv: List[str] | None = None) -> int:
             "Nothing to run after phi validation. Use --run-partons for the "
             "full cached PARTONS evaluation, --scan-clas12-phi-only for the "
             "CLAS12 BH-only convention test, --validate-phi-conventions for "
-            "Defurne/Georges BH-only validation, or --make-partons-xml to inspect XML."
+            "Defurne/Saylor/Georges BH-only validation, or --make-partons-xml to inspect XML."
         )
         return 0
     #endif
@@ -2064,17 +2149,27 @@ def main(argv: List[str] | None = None) -> int:
         )
     #endfor
 
-    mapping_record = pd.DataFrame([{
-        "imported_datasets_mapping": args.imported_phi_mapping,
-        "clas12_mapping": clas12_phi_mapping,
-        "production_cache_tag": production_cache_tag,
-        "clas12_mapping_source": (
-            "BH-only automatic scan"
-            if args.clas12_phi_mapping == "auto"
-            else "explicit CLI"
-        ),
-    }])
-    mapping_record.to_csv(outdir / "partons_phi_mapping_used.csv", index=False)
+    mapping_rows = []
+    for key in sorted(set(points["dataset"].astype(str))):
+        d = points.loc[points["dataset"].astype(str) == key]
+        mapping_rows.append({
+            "dataset": key,
+            "phi_mapping_mode": str(d.iloc[0]["phi_mapping_mode"]),
+            "phi_source_representation": str(
+                d.iloc[0]["phi_source_representation"]
+            ),
+            "production_cache_tag": production_cache_tag,
+            "mapping_source": (
+                "BH-only automatic CLAS12 scan"
+                if key in {"pass1", "pass2"}
+                and args.clas12_phi_mapping == "auto"
+                else "dataset-specific source convention"
+            ),
+        })
+    #endfor
+    pd.DataFrame(mapping_rows).to_csv(
+        outdir / "partons_phi_mapping_used.csv", index=False
+    )
 
     merged = build_model_selection(
         points=points,

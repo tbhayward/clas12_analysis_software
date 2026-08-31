@@ -6152,6 +6152,34 @@ def save_published_workflow_manifest(
 
 
 
+BH_MODEL_PHI_SOURCE = {
+    "jo2015": (
+        "Gepard dataset 98 (BMK-stored)",
+        "180-minus",
+    ),
+    "halla_defurne2015": (
+        "Gepard datasets 107/108/112/113 (BMK-stored)",
+        "180-minus",
+    ),
+    "saylor2018": (
+        "published supplemental table (direct)",
+        "identity",
+    ),
+    "halla_georges2022": (
+        "published E12-06-114 spreadsheet (Trento)",
+        "identity",
+    ),
+    "pass1": (
+        "CLAS12 Lee table",
+        "identity",
+    ),
+    "pass2": (
+        "CLAS12 Hayward table",
+        "identity",
+    ),
+}
+
+
 def export_bh_model_selection_kinematics(
         bundles: Sequence[Dict[str, object]],
         root_outdir: Path) -> Path:
@@ -6168,6 +6196,13 @@ def export_bh_model_selection_kinematics(
         data = bundle.get("all_data", bundle["set5"]).copy()
         key = str(bundle["key"])
 
+        if key not in BH_MODEL_PHI_SOURCE:
+            raise RuntimeError(
+                f"{bundle['label']}: no explicit phi-source convention has "
+                "been configured for external PARTONS evaluation"
+            )
+        #endif
+
         required = ["xB", "Q2", "t_abs", "phi_deg", "ebeam"]
         missing = [col for col in required if col not in data.columns]
         if missing:
@@ -6178,6 +6213,9 @@ def export_bh_model_selection_kinematics(
         #endif
 
         for local_row, (_, row) in enumerate(data.iterrows()):
+            source_repr, expected_mapping = BH_MODEL_PHI_SOURCE.get(
+                key, ("UNCONFIGURED", "UNCONFIGURED")
+            )
             record = {
                 "point_id": f"{key}:{local_row}",
                 "dataset": key,
@@ -6187,6 +6225,8 @@ def export_bh_model_selection_kinematics(
                 "t_abs": float(row["t_abs"]),
                 "phi_deg": float(row["phi_deg"]),
                 "ebeam": float(row["ebeam"]),
+                "phi_source_representation": source_repr,
+                "phi_partons_expected_mapping": expected_mapping,
             }
             for col in [
                 "km15_ep", "km15_bh", "km15_dvcs", "km15_int",
