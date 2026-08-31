@@ -70,11 +70,29 @@ Important output files
     bh_model_selection_gk16_05pct.csv
     bh_model_selection_consensus_05pct.csv
 
-Raw PARTONS caches are written under:
+By default all generated PARTONS/model-prediction artifacts are written under:
+    /work/clas12/thayward/CLAS12_exclusive/dvcs/model_predictions/
+
+This includes:
     partons_results/
+    partons_logs/
+    partons_xml/
+    diagnostics and model-selection CSV/PNG products.
+
+The small input kinematic cache remains in the analysis output tree by default:
+    output/emff_from_bh_paper_method/bh_model_selection/bh_model_kinematics.csv
 
 Chunk XML, point maps, stdout/stderr, return codes, parsed-result counts, and
 warning/error counts are retained for reproducibility and failure recovery.
+
+Performance defaults
+--------------------
+The default production settings are 4 independent OS processes and 200
+sequential points per Apptainer invocation.  This reduces container/module
+startup count from 154 invocations per 3846-point calculation at chunk-size 25
+to only 20, while retaining enough chunks for four-way load balancing.
+Common numerical-library thread counts are constrained to one per PARTONS
+process to avoid nested oversubscription.
 
 PARTONS 5.0 behavior verified on the JLab farm:
   * generated XML directories must be explicitly bound into the container;
@@ -91,6 +109,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
@@ -98,11 +117,14 @@ from typing import Dict, Iterable, List, Sequence
 import numpy as np
 import pandas as pd
 
-DEFAULT_OUTDIR = "output/emff_from_bh_paper_method/bh_model_selection"
+DEFAULT_OUTDIR = "/work/clas12/thayward/CLAS12_exclusive/dvcs/model_predictions"
+DEFAULT_KINEMATICS_CACHE = "output/emff_from_bh_paper_method/bh_model_selection/bh_model_kinematics.csv"
 DEFAULT_THRESHOLDS = [0.01 * i for i in range(1, 11)]
 DEFAULT_PARTONS_SIF = "partons_v4.sif"
 DEFAULT_PARTONS_PROJECT = "/scratch/thayward/partons-example"
 DEFAULT_PARTONS_EXECUTABLE = "./bin/PARTONS_example"
+DEFAULT_PARTONS_WORKERS = 4
+DEFAULT_PARTONS_CHUNK_SIZE = 200
 
 # GPDVGG99 requires an LHAPDF forward-PDF set.  The PARTONS 5.0 farm image
 # used here contains MSTW2008nlo68cl, and GPDVGG99 exposes the exact parameters
@@ -405,6 +427,7 @@ def _parse_retained_partons_chunk(job: dict) -> dict | None:
         "xml": str(Path(job["xml"])),
         "point_map": str(point_map_path),
         "reused_log": True,
+        "elapsed_s": 0.0,
     }
 
     result_rows = []
@@ -460,13 +483,25 @@ def _run_partons_chunk(job: dict) -> dict:
         str(xml_path.resolve()),
     ]
 
+    run_env = os.environ.copy()
+    # We parallelize explicitly with independent PARTONS OS processes.  Keep
+    # common numerical backends single-threaded inside each process so four
+    # workers do not accidentally become 4 x N nested threads.
+    run_env.setdefault("OMP_NUM_THREADS", "1")
+    run_env.setdefault("OPENBLAS_NUM_THREADS", "1")
+    run_env.setdefault("MKL_NUM_THREADS", "1")
+    run_env.setdefault("NUMEXPR_NUM_THREADS", "1")
+
+    t0 = time.perf_counter()
     proc = subprocess.run(
         cmd,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
+        env=run_env,
     )
+    elapsed_s = time.perf_counter() - t0
 
     stdout_path.parent.mkdir(parents=True, exist_ok=True)
     stdout_path.write_text(proc.stdout)
@@ -499,6 +534,7 @@ def _run_partons_chunk(job: dict) -> dict:
         "xml": str(xml_path),
         "point_map": str(point_map_path),
         "reused_log": False,
+        "elapsed_s": float(elapsed_s),
     }
 
     result_rows = []
@@ -607,6 +643,7 @@ def run_partons_calculation(
                 f"parsed={payload['status']['n_parsed']}/{payload['status']['n_expected']} "
                 f"warnings={payload['status']['n_warnings']} "
                 f"errors={payload['status']['n_errors']} "
+                f"time={payload['status'].get('elapsed_s', 0.0):.1f}s "
                 f"{'[reused log]' if payload['status'].get('reused_log', False) else '[executed]'}"
             )
 
@@ -646,6 +683,7 @@ def run_partons_calculation(
                     f"parsed={payload['status']['n_parsed']}/{payload['status']['n_expected']} "
                     f"warnings={payload['status']['n_warnings']} "
                     f"errors={payload['status']['n_errors']} "
+                    f"time={payload['status'].get('elapsed_s', 0.0):.1f}s "
                     f"{'[reused log]' if payload['status'].get('reused_log', False) else '[executed]'}"
                 )
             #endfor
@@ -697,10 +735,13 @@ def run_partons_calculation(
 
     result_df.to_csv(result_path, index=False)
 
+    executed = status_df.loc[~status_df["reused_log"].astype(bool)]
+    worker_seconds = float(executed["elapsed_s"].sum()) if len(executed) else 0.0
     print(
         f"[PARTONS run] {calculation}: completed {len(result_df)} points; "
         f"warnings={int(status_df['n_warnings'].sum())}, "
-        f"integrator warnings={int(status_df['n_integrator_warnings'].sum())}"
+        f"integrator warnings={int(status_df['n_integrator_warnings'].sum())}, "
+        f"executed_chunks={len(executed)}, worker_seconds={worker_seconds:.1f}"
     )
     print(f"[PARTONS cache] {calculation} -> {result_path}")
     return result_df
@@ -1083,8 +1124,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--outdir", default=DEFAULT_OUTDIR)
     p.add_argument(
         "--kinematics-cache",
-        default=None,
-        help="Default: <outdir>/bh_model_kinematics.csv",
+        default=DEFAULT_KINEMATICS_CACHE,
+        help=(
+            "Exact experimental-point cache exported by extract_emff_from_dvcs_bh.py; "
+            f"default: {DEFAULT_KINEMATICS_CACHE}"
+        ),
     )
     p.add_argument(
         "--run-partons",
@@ -1102,14 +1146,20 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--workers",
         type=int,
-        default=1,
-        help="Independent Apptainer/PARTONS OS processes; default 1",
+        default=DEFAULT_PARTONS_WORKERS,
+        help=(
+            "Independent Apptainer/PARTONS OS processes; default "
+            f"{DEFAULT_PARTONS_WORKERS}"
+        ),
     )
     p.add_argument(
         "--chunk-size",
         type=int,
-        default=25,
-        help="Sequential points per PARTONS process invocation; default 25",
+        default=DEFAULT_PARTONS_CHUNK_SIZE,
+        help=(
+            "Sequential points per PARTONS process invocation; default "
+            f"{DEFAULT_PARTONS_CHUNK_SIZE}"
+        ),
     )
     p.add_argument(
         "--force-partons",
@@ -1131,11 +1181,10 @@ def main(argv: List[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     outdir = Path(args.outdir)
-    cache = (
-        Path(args.kinematics_cache)
-        if args.kinematics_cache
-        else outdir / "bh_model_kinematics.csv"
-    )
+    cache = Path(args.kinematics_cache)
+
+    print(f"[storage] PARTONS/model-prediction output root: {outdir}")
+    print(f"[storage] kinematic input cache: {cache}")
 
     if not cache.exists():
         print(
@@ -1190,6 +1239,12 @@ def main(argv: List[str] | None = None) -> int:
     sif = Path(args.partons_sif).expanduser().resolve()
     project = Path(args.partons_project).expanduser().resolve()
     locate_partons(sif, project, args.partons_executable)
+
+    print(
+        f"[PARTONS performance] workers={args.workers}, "
+        f"chunk_size={args.chunk_size}; "
+        "numerical-library threads constrained to 1 per worker"
+    )
 
     if args.workers < 1:
         raise ValueError("--workers must be >= 1")
