@@ -6865,11 +6865,11 @@ def fit_sachs_family_multi_measurements(
     #endif
 
     def radius_e(p):
-        return sachs_family_radius(np.asarray(p[:ne]), family)
+        return sachs_family_radius(np.asarray(p[:ne]), family_e)
     #enddef
 
     def radius_m(p):
-        return sachs_family_radius(np.asarray(p[nshape:2 * nshape]), family)
+        return sachs_family_radius(np.asarray(p[ne:ne + nm]), family_m)
     #enddef
 
     rE, rE_err = propagate_scalar(radius_e, shape, cov)
@@ -10435,12 +10435,13 @@ def save_lee_fit8_kelly_threshold_scan(
         0.15, 0.20, 0.30, 0.50, 0.75, 1.00,
     ]
     key = str(lee_bundle["key"])
+    # External model-selection schema uses dataset and delta_bh_km15.
     sel = selection.loc[
-        (selection["dataset_key"] == key)
-        & np.isfinite(selection["delta_km15"].to_numpy(float))
+        (selection["dataset"].astype(str) == key)
+        & np.isfinite(selection["delta_bh_km15"].to_numpy(float))
     ]
     if len(sel):
-        scan_thresholds.append(float(sel["delta_km15"].max()) * 1.001)
+        scan_thresholds.append(float(sel["delta_bh_km15"].max()) * 1.001)
     #endif
     scan_thresholds = sorted(set(float(x) for x in scan_thresholds))
 
@@ -10622,19 +10623,26 @@ def run_unified_km15_final_analysis(
             closure_bundles.append(bcopy)
         #endfor
 
-        if args.run_radius_bias_study:
-            print(
-                f"\n[ensemble closure] {label}: running independent "
-                "functional-form determination"
-            )
-            run_radius_bias_variance_study(
-                closure_bundles, args, closure_dir
-            )
-        #endif
-
         ranking_path = (
             closure_dir / "radius_bias_mixed_family_ranking.csv"
         )
+
+        if args.run_radius_bias_study:
+            if ranking_path.exists():
+                print(
+                    f"\n[ensemble closure] {label}: existing closure ranking "
+                    "found; reusing it instead of recomputing replicas"
+                )
+            else:
+                print(
+                    f"\n[ensemble closure] {label}: running independent "
+                    "functional-form determination"
+                )
+                run_radius_bias_variance_study(
+                    closure_bundles, args, closure_dir
+                )
+            #endif
+        #endif
         if not ranking_path.exists():
             raise RuntimeError(
                 f"Missing closure ranking for {label}: {ranking_path}. "
