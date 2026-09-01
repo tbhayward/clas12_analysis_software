@@ -53,6 +53,8 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
@@ -1193,6 +1195,7 @@ static std::string topo_dir(int detector1, int detector2) {
 // -----------------------------------------------------------------------------
 
 static std::mutex g_bind_mutex;
+static std::mutex g_progress_output_mutex;
 
 struct Branches {
     int runnum = 0; bool has_runnum = false;
@@ -5083,9 +5086,26 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
     const Long64_t N = tree->GetEntries();
     std::unordered_map<int, ResolvedRunInfo> run_info_cache;
     run_info_cache.reserve(256);
+    using ProgressClock = std::chrono::steady_clock;
+    const auto progress_t0 = ProgressClock::now();
+    const Long64_t progress_step = std::max<Long64_t>(250000, N / 10);
+    Long64_t next_progress = progress_step;
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+
+        if (i + 1 >= next_progress || i + 1 == N) {
+            const double sec = std::chrono::duration<double>(
+                ProgressClock::now() - progress_t0).count();
+            const double pct = N > 0 ? 100.0 * double(i + 1) / double(N) : 100.0;
+            std::lock_guard<std::mutex> progress_lock(g_progress_output_mutex);
+            std::cout << "[current_dependence] Photon-region DATA progress key="
+                      << key << " " << (i + 1) << "/" << N
+                      << " (" << std::fixed << std::setprecision(1) << pct
+                      << "%) elapsed=" << sec << " s"
+                      << std::defaultfloat << std::endl;
+            next_progress += progress_step;
+        }
 
         if (!passes_cone_cut(b)) {
             continue;
@@ -5137,7 +5157,7 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
     return out;
 }
 
-static PhotonRegionMcCountMap count_generated_tree_by_photon_region(TTree* tree) {
+static PhotonRegionMcCountMap count_generated_tree_by_photon_region(const std::string& key, TTree* tree) {
     PhotonRegionMcCountMap counts;
     for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
         counts[spec.key] = 0;
@@ -5155,8 +5175,27 @@ static PhotonRegionMcCountMap count_generated_tree_by_photon_region(TTree* tree)
     }
 
     const Long64_t N = tree->GetEntries();
+    using ProgressClock = std::chrono::steady_clock;
+    const auto progress_t0 = ProgressClock::now();
+    const Long64_t progress_step = std::max<Long64_t>(250000, N / 10);
+    Long64_t next_progress = progress_step;
+
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+
+        if (i + 1 >= next_progress || i + 1 == N) {
+            const double sec = std::chrono::duration<double>(
+                ProgressClock::now() - progress_t0).count();
+            const double pct = N > 0 ? 100.0 * double(i + 1) / double(N) : 100.0;
+            std::lock_guard<std::mutex> progress_lock(g_progress_output_mutex);
+            std::cout << "[current_dependence] Photon-region GEN progress key="
+                      << key << " " << (i + 1) << "/" << N
+                      << " (" << std::fixed << std::setprecision(1) << pct
+                      << "%) elapsed=" << sec << " s"
+                      << std::defaultfloat << std::endl;
+            next_progress += progress_step;
+        }
+
         std::string region_key;
         if (generated_photon_region(b, region_key)) {
             counts[region_key] += 1;
@@ -5186,8 +5225,26 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
     b.bind(tree);
 
     const Long64_t N = tree->GetEntries();
+    using ProgressClock = std::chrono::steady_clock;
+    const auto progress_t0 = ProgressClock::now();
+    const Long64_t progress_step = std::max<Long64_t>(250000, N / 10);
+    Long64_t next_progress = progress_step;
+
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+
+        if (i + 1 >= next_progress || i + 1 == N) {
+            const double sec = std::chrono::duration<double>(
+                ProgressClock::now() - progress_t0).count();
+            const double pct = N > 0 ? 100.0 * double(i + 1) / double(N) : 100.0;
+            std::lock_guard<std::mutex> progress_lock(g_progress_output_mutex);
+            std::cout << "[current_dependence] Photon-region REC progress key="
+                      << key << " " << (i + 1) << "/" << N
+                      << " (" << std::fixed << std::setprecision(1) << pct
+                      << "%) elapsed=" << sec << " s"
+                      << std::defaultfloat << std::endl;
+            next_progress += progress_step;
+        }
 
         if (!passes_cone_cut(b)) {
             continue;
@@ -5328,28 +5385,69 @@ static void run_region_theta_data_diagnostic(
         if (tags.display != "Fa18 Inb Supp") items.push_back(kv);
     }
     std::mutex merge_mutex;
+    std::mutex progress_mutex;
+    std::atomic<int> done{0};
     int nth = std::max(1, std::min(7, max_workers));
     nth = std::min(nth, std::max(1, (int)items.size()));
+    using Clock = std::chrono::steady_clock;
+    const auto phase_t0 = Clock::now();
+
+    std::cout << "[current_dependence] Region-theta DATA diagnostic for "
+              << cfg.csv_channel << ": " << items.size()
+              << " tree(s), " << nth << " worker(s), variables=e_theta,g_theta."
+              << std::endl;
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
 #endif
     for (int i = 0; i < (int)items.size(); ++i) {
         const PeriodTags tags = parse_period_from_key(items[i].first);
+        const auto tree_t0 = Clock::now();
+        const Long64_t nentries = items[i].second ? items[i].second->GetEntries() : 0;
+        {
+            std::lock_guard<std::mutex> lock(progress_mutex);
+            std::cout << "[current_dependence] Region-theta DATA start "
+                      << (i + 1) << "/" << items.size()
+                      << " key=" << items[i].first
+                      << " entries=" << nentries << std::endl;
+        }
+
         RegionThetaAggMap local = process_data_tree_region_theta(
             cfg, items[i].first, items[i].second, charge_map, data_cuts, vars,
             use_second_column_charge_for_all_unpolarized,
             use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
             columns_3_to_5_charge_sum_scale);
-        std::lock_guard<std::mutex> lock(merge_mutex);
-        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
-            for (const KinematicVarConfig& v : vars) {
-                auto& dst = merged[tags.display][spec.key][v.key];
-                const auto& src = local[spec.key][v.key];
-                for (size_t ib = 0; ib < dst.size() && ib < src.size(); ++ib) merge_data_agg(dst[ib], src[ib]);
+
+        {
+            std::lock_guard<std::mutex> lock(merge_mutex);
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                for (const KinematicVarConfig& v : vars) {
+                    auto& dst = merged[tags.display][spec.key][v.key];
+                    const auto& src = local[spec.key][v.key];
+                    for (size_t ib = 0; ib < dst.size() && ib < src.size(); ++ib) {
+                        merge_data_agg(dst[ib], src[ib]);
+                    }
+                }
             }
         }
+
+        const int finished = ++done;
+        {
+            std::lock_guard<std::mutex> lock(progress_mutex);
+            const double sec = std::chrono::duration<double>(Clock::now() - tree_t0).count();
+            std::cout << "[current_dependence] Region-theta DATA done "
+                      << finished << "/" << items.size()
+                      << " key=" << items[i].first
+                      << " elapsed=" << std::fixed << std::setprecision(1)
+                      << sec << " s" << std::defaultfloat << std::endl;
+        }
     }
+
+    std::cout << "[current_dependence] Region-theta DATA scan complete for "
+              << cfg.csv_channel << " in "
+              << std::fixed << std::setprecision(1)
+              << std::chrono::duration<double>(Clock::now() - phase_t0).count()
+              << " s." << std::defaultfloat << std::endl;
 
     const std::string odir = output_dir + "/" + cfg.output_token + "/sector_dependence_diagnostic/region_theta";
     mkdir_p(odir);
@@ -5743,10 +5841,28 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
     bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
     double columns_3_to_5_charge_sum_scale,
     bool use_fa18_inb_current_efficiency_for_sp19_inb,
+    bool process_mc,
     const std::vector<PeriodResult>& integrated_results) {
 
-    std::cout << "[current_dependence] Starting photon-region diagnostic: FT + FD sectors 1--6."
+    using Clock = std::chrono::steady_clock;
+    const auto diagnostic_t0 = Clock::now();
+    auto elapsed_s = [](const Clock::time_point& t0) {
+        return std::chrono::duration<double>(Clock::now() - t0).count();
+    };
+
+    std::cout << "[current_dependence] Starting photon-region diagnostic for "
+              << cfg.csv_channel << ": FT + FD sectors 1--6; "
+              << "regional MC scan=" << (process_mc ? "enabled" : "skipped")
+              << "." << std::endl;
+#ifdef _OPENMP
+    std::cout << "[current_dependence] Photon-region diagnostic OpenMP: enabled; requested worker cap="
+              << max_workers << ", runtime max threads=" << omp_get_max_threads() << "."
               << std::endl;
+#else
+    std::cout << "[current_dependence] WARNING: photon-region diagnostic was compiled WITHOUT OpenMP; "
+              << "all worker loops will execute serially despite max_workers="
+              << max_workers << "." << std::endl;
+#endif
 
     std::map<std::string, std::map<std::string, DataAgg>> data_aggs_by_region_period;
     std::vector<std::pair<std::string, TTree*>> data_items;
@@ -5759,14 +5875,30 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
     }
 
     std::mutex data_mutex;
+    std::mutex progress_mutex;
+    std::atomic<int> data_done{0};
     int nth = std::max(1, std::min(7, max_workers));
     nth = std::min(nth, std::max(1, (int)data_items.size()));
+
+    std::cout << "[current_dependence] Photon-region DATA: " << data_items.size()
+              << " tree(s), " << nth << " worker(s)." << std::endl;
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
 #endif
     for (int i = 0; i < (int)data_items.size(); ++i) {
         const auto& item = data_items[i];
+        const auto tree_t0 = Clock::now();
+        const Long64_t nentries = item.second ? item.second->GetEntries() : 0;
+
+        {
+            std::lock_guard<std::mutex> lock(progress_mutex);
+            std::cout << "[current_dependence] Photon-region DATA start "
+                      << (i + 1) << "/" << data_items.size()
+                      << " key=" << item.first
+                      << " entries=" << nentries << std::endl;
+        }
+
         const PhotonRegionDataAggMap local = process_data_tree_by_photon_region(
             cfg,
             item.first,
@@ -5777,67 +5909,181 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
             use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
             columns_3_to_5_charge_sum_scale);
 
-        std::lock_guard<std::mutex> lock(data_mutex);
-        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
-            auto it = local.find(spec.key);
-            if (it != local.end()) {
-                data_aggs_by_region_period[spec.key][it->second.period] = it->second;
+        {
+            std::lock_guard<std::mutex> lock(data_mutex);
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                auto it = local.find(spec.key);
+                if (it != local.end()) {
+                    data_aggs_by_region_period[spec.key][it->second.period] = it->second;
+                }
             }
         }
-    }
 
-    // MC counts are stored by region and by period/current.  Generated and
-    // reconstructed trees are looped independently, mirroring the integrated
-    // efficiency calculation.
-    std::map<std::string, std::map<std::string, McAgg>> mc_by_region_period_current;
-
-    for (const auto& kv : gen_trees) {
-        const PeriodTags tags = parse_period_from_key(kv.first);
-        if (tags.display == "Fa18 Inb Supp") continue;
-        const int current = parse_current_from_key(kv.first);
-        const PhotonRegionMcCountMap counts = count_generated_tree_by_photon_region(kv.second);
-
-        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
-            std::ostringstream k;
-            k << tags.display << "_" << current;
-            McAgg& agg = mc_by_region_period_current[spec.key][k.str()];
-            agg.period = tags.display;
-            agg.current_nA = current;
-            auto it = counts.find(spec.key);
-            if (it != counts.end()) agg.n_gen += it->second;
+        const int finished = ++data_done;
+        {
+            std::lock_guard<std::mutex> lock(progress_mutex);
+            std::cout << "[current_dependence] Photon-region DATA done "
+                      << finished << "/" << data_items.size()
+                      << " key=" << item.first
+                      << " entries=" << nentries
+                      << " elapsed=" << std::fixed << std::setprecision(1)
+                      << elapsed_s(tree_t0) << " s" << std::defaultfloat
+                      << std::endl;
         }
     }
 
-    std::vector<std::pair<std::string, TTree*>> rec_items;
-    for (const auto& kv : rec_trees) {
-        const PeriodTags tags = parse_period_from_key(kv.first);
-        if (tags.display != "Fa18 Inb Supp") rec_items.push_back(kv);
-    }
+    std::cout << "[current_dependence] Photon-region DATA phase complete in "
+              << std::fixed << std::setprecision(1) << elapsed_s(diagnostic_t0)
+              << " s." << std::defaultfloat << std::endl;
 
-    std::mutex rec_mutex;
-    nth = std::max(1, std::min(7, max_workers));
-    nth = std::min(nth, std::max(1, (int)rec_items.size()));
+    // MC counts are stored by region and by period/current.  For ep->eppi0
+    // this scan is intentionally skipped: the regional pi0 MC factors are
+    // constructed downstream from the measured pi0 DATA response and the
+    // DVCS regional MC/DATA ratio, so scanning pi0 generated/reconstructed MC
+    // here would be expensive work whose result is immediately overwritten.
+    std::map<std::string, std::map<std::string, McAgg>> mc_by_region_period_current;
+
+    if (!process_mc) {
+        std::cout << "[current_dependence] Photon-region " << cfg.csv_channel
+                  << " MC phase skipped by construction; regional MC factors "
+                  << "will be supplied by the downstream DVCS MC/DATA transfer."
+                  << std::endl;
+    } else {
+        std::vector<std::pair<std::string, TTree*>> gen_items;
+        gen_items.reserve(gen_trees.size());
+        for (const auto& kv : gen_trees) {
+            const PeriodTags tags = parse_period_from_key(kv.first);
+            if (tags.display != "Fa18 Inb Supp") gen_items.push_back(kv);
+        }
+
+        std::mutex mc_mutex;
+        std::atomic<int> gen_done{0};
+        nth = std::max(1, std::min(7, max_workers));
+        nth = std::min(nth, std::max(1, (int)gen_items.size()));
+
+        std::cout << "[current_dependence] Photon-region generated MC: "
+                  << gen_items.size() << " tree(s), " << nth
+                  << " worker(s)." << std::endl;
+        const auto gen_t0 = Clock::now();
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
 #endif
-    for (int i = 0; i < (int)rec_items.size(); ++i) {
-        const auto& item = rec_items[i];
-        const PeriodTags tags = parse_period_from_key(item.first);
-        const int current = parse_current_from_key(item.first);
-        const PhotonRegionMcCountMap counts = count_reconstructed_tree_by_photon_region(
-            cfg, item.first, item.second, mc_cuts);
+        for (int i = 0; i < (int)gen_items.size(); ++i) {
+            const auto& item = gen_items[i];
+            const PeriodTags tags = parse_period_from_key(item.first);
+            const int current = parse_current_from_key(item.first);
+            const auto tree_t0 = Clock::now();
+            const Long64_t nentries = item.second ? item.second->GetEntries() : 0;
 
-        std::lock_guard<std::mutex> lock(rec_mutex);
-        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
-            std::ostringstream k;
-            k << tags.display << "_" << current;
-            McAgg& agg = mc_by_region_period_current[spec.key][k.str()];
-            agg.period = tags.display;
-            agg.current_nA = current;
-            auto it = counts.find(spec.key);
-            if (it != counts.end()) agg.n_rec += it->second;
+            {
+                std::lock_guard<std::mutex> lock(progress_mutex);
+                std::cout << "[current_dependence] Photon-region GEN start "
+                          << (i + 1) << "/" << gen_items.size()
+                          << " key=" << item.first
+                          << " entries=" << nentries << std::endl;
+            }
+
+            const PhotonRegionMcCountMap counts =
+                count_generated_tree_by_photon_region(item.first, item.second);
+
+            {
+                std::lock_guard<std::mutex> lock(mc_mutex);
+                for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                    std::ostringstream k;
+                    k << tags.display << "_" << current;
+                    McAgg& agg = mc_by_region_period_current[spec.key][k.str()];
+                    agg.period = tags.display;
+                    agg.current_nA = current;
+                    auto it = counts.find(spec.key);
+                    if (it != counts.end()) agg.n_gen += it->second;
+                }
+            }
+
+            const int finished = ++gen_done;
+            {
+                std::lock_guard<std::mutex> lock(progress_mutex);
+                std::cout << "[current_dependence] Photon-region GEN done "
+                          << finished << "/" << gen_items.size()
+                          << " key=" << item.first
+                          << " entries=" << nentries
+                          << " elapsed=" << std::fixed << std::setprecision(1)
+                          << elapsed_s(tree_t0) << " s" << std::defaultfloat
+                          << std::endl;
+            }
         }
+
+        std::cout << "[current_dependence] Photon-region generated-MC phase complete in "
+                  << std::fixed << std::setprecision(1) << elapsed_s(gen_t0)
+                  << " s." << std::defaultfloat << std::endl;
+
+        std::vector<std::pair<std::string, TTree*>> rec_items;
+        rec_items.reserve(rec_trees.size());
+        for (const auto& kv : rec_trees) {
+            const PeriodTags tags = parse_period_from_key(kv.first);
+            if (tags.display != "Fa18 Inb Supp") rec_items.push_back(kv);
+        }
+
+        std::atomic<int> rec_done{0};
+        nth = std::max(1, std::min(7, max_workers));
+        nth = std::min(nth, std::max(1, (int)rec_items.size()));
+
+        std::cout << "[current_dependence] Photon-region reconstructed MC: "
+                  << rec_items.size() << " tree(s), " << nth
+                  << " worker(s)." << std::endl;
+        const auto rec_t0 = Clock::now();
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+        for (int i = 0; i < (int)rec_items.size(); ++i) {
+            const auto& item = rec_items[i];
+            const PeriodTags tags = parse_period_from_key(item.first);
+            const int current = parse_current_from_key(item.first);
+            const auto tree_t0 = Clock::now();
+            const Long64_t nentries = item.second ? item.second->GetEntries() : 0;
+
+            {
+                std::lock_guard<std::mutex> lock(progress_mutex);
+                std::cout << "[current_dependence] Photon-region REC start "
+                          << (i + 1) << "/" << rec_items.size()
+                          << " key=" << item.first
+                          << " entries=" << nentries << std::endl;
+            }
+
+            const PhotonRegionMcCountMap counts =
+                count_reconstructed_tree_by_photon_region(
+                    cfg, item.first, item.second, mc_cuts);
+
+            {
+                std::lock_guard<std::mutex> lock(mc_mutex);
+                for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                    std::ostringstream k;
+                    k << tags.display << "_" << current;
+                    McAgg& agg = mc_by_region_period_current[spec.key][k.str()];
+                    agg.period = tags.display;
+                    agg.current_nA = current;
+                    auto it = counts.find(spec.key);
+                    if (it != counts.end()) agg.n_rec += it->second;
+                }
+            }
+
+            const int finished = ++rec_done;
+            {
+                std::lock_guard<std::mutex> lock(progress_mutex);
+                std::cout << "[current_dependence] Photon-region REC done "
+                          << finished << "/" << rec_items.size()
+                          << " key=" << item.first
+                          << " entries=" << nentries
+                          << " elapsed=" << std::fixed << std::setprecision(1)
+                          << elapsed_s(tree_t0) << " s" << std::defaultfloat
+                          << std::endl;
+            }
+        }
+
+        std::cout << "[current_dependence] Photon-region reconstructed-MC phase complete in "
+                  << std::fixed << std::setprecision(1) << elapsed_s(rec_t0)
+                  << " s." << std::defaultfloat << std::endl;
     }
 
     PhotonRegionResults results;
@@ -5861,11 +6107,13 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
                 r.data_factor_err = weighted_data_rel_err(r.data_points, r.data_fit);
             }
 
-            r.mc_points = mc_points_from_aggs(mc_aggs, period);
-            r.mc_fit = fit_points(r.mc_points);
-            const int ref = reference_current_nA(period);
-            r.mc_factor = rel_at_current((double)ref, r.mc_fit);
-            r.mc_factor_err = rel_err_at_current((double)ref, r.mc_fit);
+            if (process_mc) {
+                r.mc_points = mc_points_from_aggs(mc_aggs, period);
+                r.mc_fit = fit_points(r.mc_points);
+                const int ref = reference_current_nA(period);
+                r.mc_factor = rel_at_current((double)ref, r.mc_fit);
+                r.mc_factor_err = rel_err_at_current((double)ref, r.mc_fit);
+            }
 
             region_rows.push_back(r);
         }
@@ -5893,11 +6141,13 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
         true,
         use_fa18_inb_current_efficiency_for_sp19_inb);
 
-    draw_photon_region_response_canvas(
-        odir + "/mc_current_dependence_by_photon_region.png",
-        results,
-        false,
-        use_fa18_inb_current_efficiency_for_sp19_inb);
+    if (process_mc) {
+        draw_photon_region_response_canvas(
+            odir + "/mc_current_dependence_by_photon_region.png",
+            results,
+            false,
+            use_fa18_inb_current_efficiency_for_sp19_inb);
+    }
 
     draw_photon_region_factor_canvas(
         odir + "/data_current_efficiency_factor_by_photon_region.png",
@@ -5906,12 +6156,14 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
         true,
         use_fa18_inb_current_efficiency_for_sp19_inb);
 
-    draw_photon_region_factor_canvas(
-        odir + "/mc_current_efficiency_factor_by_photon_region.png",
-        results,
-        integrated_results,
-        false,
-        use_fa18_inb_current_efficiency_for_sp19_inb);
+    if (process_mc) {
+        draw_photon_region_factor_canvas(
+            odir + "/mc_current_efficiency_factor_by_photon_region.png",
+            results,
+            integrated_results,
+            false,
+            use_fa18_inb_current_efficiency_for_sp19_inb);
+    }
 
     draw_photon_region_slope_canvas(
         odir + "/data_current_slope_by_photon_region.png",
@@ -5919,14 +6171,18 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
         true,
         use_fa18_inb_current_efficiency_for_sp19_inb);
 
-    draw_photon_region_slope_canvas(
-        odir + "/mc_current_slope_by_photon_region.png",
-        results,
-        false,
-        use_fa18_inb_current_efficiency_for_sp19_inb);
+    if (process_mc) {
+        draw_photon_region_slope_canvas(
+            odir + "/mc_current_slope_by_photon_region.png",
+            results,
+            false,
+            use_fa18_inb_current_efficiency_for_sp19_inb);
+    }
 
-    std::cout << "[current_dependence] Photon-region diagnostic complete. Outputs: "
-              << odir << std::endl;
+    std::cout << "[current_dependence] Photon-region diagnostic complete for "
+              << cfg.csv_channel << " in "
+              << std::fixed << std::setprecision(1) << elapsed_s(diagnostic_t0)
+              << " s. Outputs: " << odir << std::defaultfloat << std::endl;
 
     return results;
 }
@@ -6987,6 +7243,16 @@ bool update_current_dependence_factors_csv(
         TH1::AddDirectory(kFALSE);
         gStyle->SetOptStat(0);
 
+#ifdef _OPENMP
+        std::cout << "[current_dependence] OpenMP enabled: max_workers="
+                  << options.max_workers
+                  << ", omp_get_max_threads()=" << omp_get_max_threads()
+                  << "." << std::endl;
+#else
+        std::cout << "[current_dependence] WARNING: executable was built without OpenMP; "
+                  << "current-dependence tree loops will be serial." << std::endl;
+#endif
+
         CSV csv;
         load_csv_strict(csv_path, csv);
 
@@ -7133,6 +7399,7 @@ bool update_current_dependence_factors_csv(
                 options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                 options.columns_3_to_5_charge_sum_scale,
                 options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                true,
                 dvcs_results);
         }
 
@@ -7151,6 +7418,7 @@ bool update_current_dependence_factors_csv(
                 options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                 options.columns_3_to_5_charge_sum_scale,
                 options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                false,
                 eppi0_results);
         }
 
