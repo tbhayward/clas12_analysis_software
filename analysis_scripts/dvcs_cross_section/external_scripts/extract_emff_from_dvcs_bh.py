@@ -13317,6 +13317,576 @@ def fit_neutron_magnetic_only_bh(
 #enddef
 
 
+
+def fit_neutron_magnetic_family_bh(
+        data: pd.DataFrame,
+        family: str,
+        override_y: Optional[np.ndarray] = None,
+        statistical_only: bool = True,
+        bh_systematic_fraction: float = 0.05,
+        return_parameters: bool = False):
+    """
+    Fit one normalized neutron magnetic Sachs family through the exact BH
+    cross section while fixing GE_n to the central Atac et al. 2021 form.
+
+        GM_n(Q2) = mu_n * g_M(Q2),  g_M(0)=1.
+
+    This is the one-form-factor analogue of the proton Sachs-family fitter.
+    """
+    nshape = int(re.findall(r"\d+", family)[0])
+    names = [f"m{i}" for i in range(1, nshape + 1)]
+    p0 = np.zeros(nshape, dtype=float)
+    p0[0] = sachs_first_coefficient_from_radius(
+        SACHS_INITIAL_RADIUS_FM, family
+    )
+
+    q = data["t_abs"].to_numpy(float)
+    tau = q / (4.0 * MP2)
+    inv = 1.0 / (1.0 + tau)
+    ge = neutron_atac_ge(q, 0.505, 1.655, 0.909)
+    y = (
+        np.asarray(override_y, dtype=float)
+        if override_y is not None
+        else data["xs"].to_numpy(float)
+    )
+    if statistical_only:
+        err = data["stat"].to_numpy(float)
+    else:
+        err = np.sqrt(
+            data["stat"].to_numpy(float)**2
+            + data["sys"].to_numpy(float)**2
+            + (float(bh_systematic_fraction)
+               * data["xs"].to_numpy(float))**2
+        )
+    #endif
+    err = np.maximum(err, 1.0e-15)
+
+    A = data["bh_A"].to_numpy(float)
+    B = data["bh_B"].to_numpy(float)
+    C = data["bh_C"].to_numpy(float)
+    q_powers = np.vstack([q**i for i in range(1, nshape + 1)])
+
+    def chi2(*values):
+        coeffs = np.asarray(values, dtype=float)
+        gm = MU_N * sachs_family_value_precomputed(
+            q, coeffs, family, q_powers
+        )
+        f1 = (ge + tau * gm) * inv
+        f2 = (gm - ge) * inv
+        pred = bh_from_f1f2(A, B, C, f1, f2)
+        pull = (pred - y) / err
+        return float(np.dot(pull, pull))
+    #enddef
+
+    m = Minuit(chi2, *p0, name=tuple(names))
+    m.errordef = Minuit.LEAST_SQUARES
+    c_lo = sachs_first_coefficient_from_radius(
+        SACHS_MIN_RADIUS_FM, family
+    )
+    c_hi = sachs_first_coefficient_from_radius(
+        SACHS_MAX_RADIUS_FM, family
+    )
+    m.limits[names[0]] = (min(c_lo, c_hi), max(c_lo, c_hi))
+    m.migrad()
+
+    pars = np.asarray([float(m.values[n]) for n in names], dtype=float)
+    radius = sachs_family_radius(pars, family)
+    valid = bool(m.valid and np.isfinite(radius))
+
+    # Reject numerically converged but obviously pathological magnetic shapes
+    # over the measured neutron |t| interval.
+    shape = sachs_family_value(q, pars, family)
+    if (
+        np.any(~np.isfinite(shape))
+        or np.any(shape <= 0.0)
+        or np.any(shape > 1.15)
+    ):
+        valid = False
+    #endif
+
+    if return_parameters:
+        return radius, valid, pars, float(m.fval)
+    #endif
+    return radius, valid
+#enddef
+
+
+def run_neutron_magnetic_function_closure(
+        evaluated: pd.DataFrame,
+        args,
+        outdir: Path) -> Optional[str]:
+    """
+    Select the neutron GM_n functional family by the same closure principle
+    used for the proton analysis: generate pseudodata at the exact measured
+    kinematics, fit competing P/IP/CF families through the exact BH quadratic,
+    and rank by sqrt(variance^2 + bias^2) across a broad truth ensemble.
+
+    GE_n is fixed to Atac et al. 2021 in both generation and fitting, matching
+    the intended one-unknown production extraction.
+
+    --radius-bias-replicas is interpreted as SUCCESSFUL fits per
+    truth/family. Failed fits are retried with fresh seeds up to a finite cap.
+    """
+    closuredir = outdir / "magnetic_only" / "function_closure"
+    closuredir.mkdir(parents=True, exist_ok=True)
+
+    candidate_families = [
+        "P2", "P3",
+        "IP1", "IP2", "IP3",
+        "CF2", "CF3",
+    ]
+    truth_families = [f"P{i}" for i in range(1, 5)]
+    truth_families += [f"IP{i}" for i in range(1, 5)]
+    truth_families += [f"CF{i}" for i in range(2, 5)]
+
+    q = evaluated["t_abs"].to_numpy(float)
+    qmax = float(np.nanmax(q))
+    tau = q / (4.0 * MP2)
+    inv = 1.0 / (1.0 + tau)
+    ge_fixed = neutron_atac_ge(q, 0.505, 1.655, 0.909)
+    A = evaluated["bh_A"].to_numpy(float)
+    B = evaluated["bh_B"].to_numpy(float)
+    C = evaluated["bh_C"].to_numpy(float)
+    sigma = np.maximum(evaluated["stat"].to_numpy(float), 1.0e-15)
+
+    # Empirical Kelly neutron GM truth.
+    gm_kelly = (
+        evaluated["km15_F1"].to_numpy(float)
+        + evaluated["km15_F2"].to_numpy(float)
+    )
+    gm_kelly_norm = gm_kelly / MU_N
+
+    def kelly_norm_shape(qq):
+        qq = np.asarray(qq, dtype=float)
+        # Interpolate only for radius evaluation/template construction below;
+        # exact measured-point Kelly values are retained for pseudodata.
+        q_aug = np.concatenate([[0.0], q])
+        g_aug = np.concatenate([[1.0], gm_kelly_norm])
+        order = np.argsort(q_aug)
+        return np.interp(qq, q_aug[order], g_aug[order])
+    #enddef
+
+    # Estimate the Kelly truth radius from a very-low-Q2 finite difference of
+    # the script's native Kelly Sachs implementation when available.  This
+    # avoids inferring the Q2=0 slope from the neutron data range.
+    h = 1.0e-5
+    try:
+        _, gm0_pair = kelly_sachs(np.asarray([0.0, h], dtype=float))
+        kelly_rM = radius_from_shape(
+            lambda qq: kelly_sachs(np.asarray(qq, dtype=float))[1],
+            MU_P,
+        )
+        # kelly_sachs is proton-specific; do not use its radius for neutron.
+        # The branch above is intentionally discarded after confirming that
+        # this helper is not the neutron Kelly implementation.
+        _ = gm0_pair, kelly_rM
+        kelly_rM = np.nan
+    except Exception:
+        kelly_rM = np.nan
+    #endtry
+
+    # Fit a high-order smooth template directly to the measured neutron Kelly
+    # GM values plus the exact normalization point. Its slope supplies a
+    # reproducible empirical-Kelly reference radius for closure bookkeeping.
+    q_template_fit = np.concatenate([[0.0], q])
+    g_template_fit = np.concatenate([[1.0], gm_kelly_norm])
+    coeff_kelly = np.polyfit(q_template_fit, g_template_fit, deg=4)
+    deriv0 = float(np.polyder(coeff_kelly)(0.0))
+    if deriv0 < 0.0:
+        kelly_rM = HBARC * math.sqrt(-6.0 * deriv0)
+    #endif
+
+    scenarios = [{
+        "truth_model": "Kelly_neutron_measured_point_template",
+        "truth_group": "Kelly",
+        "truth_family": "empirical",
+        "truth_radius_fm": float(kelly_rM),
+        "truth_shape_measured": gm_kelly_norm.copy(),
+        "synthetic": False,
+    }]
+
+    # Broad synthetic truth ensemble.  As in the proton study, higher-order
+    # P4/IP4/CF4 shapes remain in truth generation even though they are not
+    # production candidates.
+    radius_values = parse_radius_bias_grid(args.radius_bias_radius_grid)
+    q_template = np.linspace(0.0, max(qmax, 0.05), 400)
+
+    # Use a smooth IP3 approximation to the measured Kelly neutron GM as the
+    # curvature template from which all generating families are constructed.
+    template_base = fit_sachs_family_shape_template(
+        "IP3",
+        q_template_fit,
+        g_template_fit,
+    )
+    smooth_kelly = sachs_family_value(q_template, template_base, "IP3")
+
+    templates = {}
+    for family in truth_families:
+        templates[family] = fit_sachs_family_shape_template(
+            family, q_template, smooth_kelly
+        )
+    #endfor
+
+    skipped = 0
+    for family in truth_families:
+        for radius in radius_values:
+            coeffs = sachs_family_coefficients_with_radius(
+                templates[family], family, radius
+            )
+            shape_grid = sachs_family_value(q_template, coeffs, family)
+            if (
+                np.any(~np.isfinite(shape_grid))
+                or np.any(shape_grid <= 0.0)
+                or np.any(shape_grid > 1.15)
+            ):
+                skipped += 1
+                continue
+            #endif
+            scenarios.append({
+                "truth_model": f"synthetic_{family}_rM{radius:.3f}",
+                "truth_group": family,
+                "truth_family": family,
+                "truth_radius_fm": float(radius),
+                "truth_shape_measured": sachs_family_value(
+                    q, coeffs, family
+                ),
+                "synthetic": True,
+            })
+        #endfor
+    #endfor
+
+    print(
+        f"[neutron-GM-closure] truths={len(scenarios)} "
+        f"({skipped} synthetic rejected), "
+        f"families={len(candidate_families)}, "
+        f"successful replicas/truth/family={args.radius_bias_replicas}"
+    )
+
+    target = max(1, int(args.radius_bias_replicas))
+    max_attempts = max(5 * target, target + 50)
+    rows = []
+    replica_rows = []
+
+    for itruth, scenario in enumerate(scenarios):
+        gm_truth = MU_N * np.asarray(
+            scenario["truth_shape_measured"], dtype=float
+        )
+        f1_truth = (ge_fixed + tau * gm_truth) * inv
+        f2_truth = (gm_truth - ge_fixed) * inv
+        central = bh_from_f1f2(A, B, C, f1_truth, f2_truth)
+        rtrue = float(scenario["truth_radius_fm"])
+
+        for ifam, family in enumerate(candidate_families):
+            successes = []
+            attempted = 0
+            seed_seq = np.random.SeedSequence([
+                int(args.radius_bias_seed), 918273, int(itruth), int(ifam)
+            ])
+            seeds = seed_seq.spawn(max_attempts)
+
+            while len(successes) < target and attempted < max_attempts:
+                rng = np.random.default_rng(
+                    int(seeds[attempted].generate_state(
+                        1, dtype=np.uint64
+                    )[0])
+                )
+                pseudo = central + rng.normal(0.0, sigma)
+                radius, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
+                    evaluated,
+                    family,
+                    override_y=pseudo,
+                    statistical_only=True,
+                    return_parameters=True,
+                )
+                accepted = bool(valid and len(successes) < target)
+                replica_rows.append({
+                    "truth_model": scenario["truth_model"],
+                    "truth_group": scenario["truth_group"],
+                    "truth_family": scenario["truth_family"],
+                    "synthetic_truth": bool(scenario["synthetic"]),
+                    "truth_rM_fm": rtrue,
+                    "family": family,
+                    "attempt": attempted,
+                    "accepted_replica": (
+                        len(successes) if accepted else np.nan
+                    ),
+                    "rM_fit_fm": radius,
+                    "chi2": chi2,
+                    "valid": bool(valid),
+                })
+                attempted += 1
+                if accepted:
+                    successes.append(radius)
+                #endif
+            #endwhile
+
+            arr = np.asarray(successes, dtype=float)
+            if len(arr):
+                mean = float(np.mean(arr))
+                stat = (
+                    float(np.std(arr, ddof=1))
+                    if len(arr) > 1 else 0.0
+                )
+                bias = float(mean - rtrue)
+                objective = float(math.sqrt(stat**2 + bias**2))
+            else:
+                mean = stat = bias = objective = np.nan
+            #endif
+
+            rows.append({
+                "truth_model": scenario["truth_model"],
+                "truth_group": scenario["truth_group"],
+                "truth_family": scenario["truth_family"],
+                "synthetic_truth": bool(scenario["synthetic"]),
+                "truth_rM_fm": rtrue,
+                "family": family,
+                "mean_extracted_rM_fm": mean,
+                "stat_RMS_fm": stat,
+                "bias_fm": bias,
+                "sqrt_stat2_plus_bias2_fm": objective,
+                "valid_replicas": int(len(arr)),
+                "requested_replicas": target,
+                "attempted_replicas": attempted,
+                "attempt_efficiency": (
+                    len(arr) / attempted if attempted else np.nan
+                ),
+                "target_reached": bool(len(arr) >= target),
+            })
+            print(
+                f"[neutron-GM-closure] "
+                f"truth={str(scenario['truth_model']):28s} "
+                f"family={family:3s} "
+                f"valid={len(arr)}/{target} attempted={attempted}"
+            )
+        #endfor
+    #endfor
+
+    table = pd.DataFrame(rows)
+    replicas = pd.DataFrame(replica_rows)
+    table.to_csv(
+        closuredir / "01_neutron_GM_closure_by_truth.csv", index=False
+    )
+    replicas.to_csv(
+        closuredir / "02_neutron_GM_closure_replicas.csv", index=False
+    )
+
+    ranking_rows = []
+    for family in candidate_families:
+        part = table.loc[table["family"] == family].copy()
+        obj = part["sqrt_stat2_plus_bias2_fm"].to_numpy(float)
+        finite = np.isfinite(obj)
+        target_fraction = float(np.mean(part["target_reached"].astype(float)))
+        ranking_rows.append({
+            "family": family,
+            "RMS_objective_across_truths_fm": (
+                float(np.sqrt(np.mean(obj[finite]**2)))
+                if np.any(finite) else np.nan
+            ),
+            "max_objective_across_truths_fm": (
+                float(np.max(obj[finite])) if np.any(finite) else np.nan
+            ),
+            "mean_abs_bias_fm": float(
+                np.nanmean(np.abs(part["bias_fm"].to_numpy(float)))
+            ),
+            "mean_stat_RMS_fm": float(
+                np.nanmean(part["stat_RMS_fm"].to_numpy(float))
+            ),
+            "truth_scenarios": int(len(part)),
+            "target_reached_fraction": target_fraction,
+            "mean_attempt_efficiency": float(
+                np.nanmean(part["attempt_efficiency"].to_numpy(float))
+            ),
+        })
+    #endfor
+
+    ranking = pd.DataFrame(ranking_rows)
+    eligible = ranking.loc[
+        ranking["target_reached_fraction"] >= 0.999999
+    ].copy()
+    if not len(eligible):
+        print(
+            "[neutron-GM-closure] WARNING: no family reached the requested "
+            "successful-replica target for every truth scenario"
+        )
+        chosen = None
+    else:
+        chosen = str(
+            eligible.sort_values(
+                ["RMS_objective_across_truths_fm",
+                 "max_objective_across_truths_fm"]
+            ).iloc[0]["family"]
+        )
+    #endif
+    ranking["selected"] = ranking["family"].eq(chosen)
+    ranking.to_csv(
+        closuredir / "03_neutron_GM_closure_ranking.csv", index=False
+    )
+
+    fig, ax = plt.subplots(figsize=(9.0, 5.4))
+    ordered = ranking.sort_values(
+        "RMS_objective_across_truths_fm"
+    ).reset_index(drop=True)
+    ax.plot(
+        np.arange(len(ordered)),
+        ordered["RMS_objective_across_truths_fm"],
+        marker="o", linestyle="none",
+    )
+    ax.set_xticks(np.arange(len(ordered)))
+    ax.set_xticklabels(ordered["family"])
+    ax.set_ylabel(
+        r"RMS across truths of $\sqrt{\sigma_{\rm stat}^2+b^2}$ [fm]"
+    )
+    ax.set_xlabel(r"$G_M^n/\mu_n$ fit family")
+    ax.set_title(
+        r"Neutron $G_M^n$ functional-form closure ranking"
+    )
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(
+        closuredir / "04_neutron_GM_closure_ranking.png", dpi=180
+    )
+    plt.close(fig)
+
+    # Bias and variance are shown separately so the closure objective is not
+    # mistaken for a systematic uncertainty.
+    fig, ax = plt.subplots(figsize=(9.0, 5.4))
+    x = np.arange(len(ordered))
+    ax.plot(
+        x, ordered["mean_abs_bias_fm"],
+        marker="o", linestyle="none", label="mean |bias|",
+    )
+    ax.plot(
+        x, ordered["mean_stat_RMS_fm"],
+        marker="s", linestyle="none", fillstyle="none",
+        label="mean replica RMS",
+    )
+    ax.set_xticks(x)
+    ax.set_xticklabels(ordered["family"])
+    ax.set_ylabel("Radius scale [fm]")
+    ax.set_xlabel(r"$G_M^n/\mu_n$ fit family")
+    ax.set_title(r"Neutron $r_{M,n}$ closure: bias and variance")
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(
+        closuredir / "05_neutron_GM_closure_bias_variance.png", dpi=180
+    )
+    plt.close(fig)
+
+    pd.DataFrame([{
+        "selected_family": chosen if chosen is not None else "UNRESOLVED",
+        "fixed_GE_model": "Atac2021 central",
+        "candidate_families": ",".join(candidate_families),
+        "truth_families": ",".join(truth_families),
+        "radius_grid_fm": str(args.radius_bias_radius_grid),
+        "successful_replicas_per_truth_family": target,
+    }]).to_csv(
+        closuredir / "06_neutron_GM_selected_family.csv", index=False
+    )
+
+    print(
+        f"[neutron-GM-closure] selected family = "
+        f"{chosen if chosen is not None else 'UNRESOLVED'}"
+    )
+    return chosen
+#enddef
+
+
+def save_neutron_magnetic_selected_family_study(
+        evaluated: pd.DataFrame,
+        family: Optional[str],
+        outdir: Path) -> None:
+    """Run the neutron magnetic-radius threshold scan with the closure-selected family."""
+    diagdir = outdir / "magnetic_only"
+    if family is None:
+        return
+    #endif
+
+    finite_delta = evaluated.loc[
+        np.isfinite(evaluated["bh_delta"]), "bh_delta"
+    ].to_numpy(float)
+    thresholds = [
+        0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.10,
+        0.15, 0.20, 0.30, 0.50, 0.75, 1.00,
+    ]
+    if len(finite_delta):
+        thresholds.append(float(np.max(finite_delta) * 1.001))
+    #endif
+    thresholds = sorted(set(thresholds))
+
+    rows = []
+    npars = int(re.findall(r"\d+", family)[0])
+    for threshold in thresholds:
+        selected = evaluated.loc[
+            np.isfinite(evaluated["bh_delta"])
+            & (evaluated["bh_delta"] <= float(threshold))
+        ].copy()
+        if len(selected) <= npars:
+            continue
+        #endif
+        radius, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
+            selected,
+            family,
+            statistical_only=False,
+            bh_systematic_fraction=0.05,
+            return_parameters=True,
+        )
+        ndof = max(1, len(selected) - npars)
+        row = {
+            "family": family,
+            "bh_threshold": float(threshold),
+            "bh_threshold_percent": 100.0 * float(threshold),
+            "N": int(len(selected)),
+            "n_parameters": npars,
+            "rM_fm": float(radius),
+            "chi2": float(chi2),
+            "ndof": int(ndof),
+            "chi2_ndof": float(chi2 / ndof),
+            "valid": bool(valid),
+        }
+        for i, value in enumerate(pars, start=1):
+            row[f"m{i}"] = float(value)
+        #endfor
+        rows.append(row)
+    #endfor
+
+    scan = pd.DataFrame(rows)
+    scan.to_csv(
+        diagdir / "05_neutron_selected_family_threshold_scan.csv",
+        index=False,
+    )
+    if not len(scan):
+        return
+    #endif
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.4))
+    ax.plot(
+        scan["bh_threshold_percent"],
+        scan["rM_fm"],
+        marker="o", linestyle="none",
+    )
+    ax.axhline(
+        0.864, linewidth=1.0, linestyle="--",
+        label=r"PDG $r_{M,n}=0.864$ fm",
+    )
+    ax.axvline(5.0, linewidth=0.8, linestyle=":")
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$|1-R_{\rm BH}^{\rm KM15}|$ threshold (%)")
+    ax.set_ylabel(r"$r_{M,n}$ [fm]")
+    ax.set_title(
+        rf"Neutron magnetic radius with closure-selected {family}"
+    )
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "05_neutron_selected_family_radius_threshold.png",
+        dpi=180,
+    )
+    plt.close(fig)
+#enddef
+
+
 def save_neutron_magnetic_only_study(
         evaluated: pd.DataFrame,
         outdir: Path) -> None:
@@ -13642,6 +14212,15 @@ def run_neutron_analysis(args) -> int:
     # Therefore also run the complementary one-unknown extraction in which
     # GE_n is supplied externally and only GM_n is fitted.
     save_neutron_magnetic_only_study(evaluated, outdir)
+
+    # Select the GM_n extrapolation family by pseudodata closure on this exact
+    # neutron phase space, then repeat the threshold scan with that family.
+    neutron_gm_family = run_neutron_magnetic_function_closure(
+        evaluated, args, outdir
+    )
+    save_neutron_magnetic_selected_family_study(
+        evaluated, neutron_gm_family, outdir
+    )
 
     print(
         "[neutron] preliminary CLAS12 nDVCS: "
