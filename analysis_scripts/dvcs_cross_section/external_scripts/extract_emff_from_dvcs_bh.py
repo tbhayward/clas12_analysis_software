@@ -8091,8 +8091,7 @@ def run_final_model_selected_analysis(
     """
     End-to-end final analysis after the external PARTONS model-selection stage.
 
-    Preliminary CLAS-only production analysis using CLAS6 Jo 2015 + CLAS12
-    Lee 2026.  Saylor 2018 and Hall A Defurne 2015 are intentionally excluded
+    Legacy three-model production analysis retained for backward compatibility.  Saylor 2018 and Hall A Defurne 2015 are intentionally excluded
     from the default/preliminary ensemble and remain opt-in diagnostics.
 
     The three BH-purity models define alternative selected samples.  They are
@@ -9963,79 +9962,288 @@ def run_saylor_recovery_study(
 #enddef
 
 
-def run_published_default(args) -> int:
-    """
-    Run the preliminary publication-facing CLAS-only workflow.
 
-    Default production ensemble:
-      * CLAS6 Jo 2015
-      * CLAS12 Lee 2026
-
-    Saylor 2018 and Hall A Defurne 2015 are intentionally opt-in while their
-    compatibility with the BH-purity extraction is discussed separately.
+def run_unified_km15_final_analysis(
+        jo_bundle: Dict[str, object],
+        defurne_bundle: Dict[str, object],
+        georges_bundle: Dict[str, object],
+        lee_bundle: Dict[str, object],
+        saylor_bundle: Dict[str, object],
+        args,
+        root_outdir: Path) -> str:
     """
+    Unified final workflow after the external model-evaluation stage.
+
+    KM15 is the sole BH-purity prescription.  The Sachs extrapolation family is
+    NOT fixed in advance: it is selected by the full extended closure study on
+    the largest intended production ensemble (Jo + Defurne + Georges + Lee).
+    The closure-ranked families are then tried in order until one gives valid
+    nominal 5% fits for all three requested result ensembles:
+
+      * CLAS12 Lee 2026 only;
+      * CLAS6 Jo 2015 + CLAS12 Lee 2026;
+      * Jo + Hall A Defurne + Hall A Georges + Lee.
+
+    Once the family is selected, the same family is used for all three ensemble
+    threshold scans and for the Saylor recoverability study.  Saylor remains a
+    diagnostic and is never silently promoted into the production ensemble.
+    """
+    final_dir = root_outdir / "final_analysis"
+    diagnostics_dir = final_dir / "diagnostics"
+    summary_dir = final_dir / "summary"
+    closure_dir = diagnostics_dir / "closure" / "km15_all_four"
+    for directory in [final_dir, diagnostics_dir, summary_dir, closure_dir]:
+        directory.mkdir(parents=True, exist_ok=True)
+    #endfor
+
+    selection = load_external_bh_model_selection(
+        Path(args.bh_model_selection_results).expanduser().resolve()
+    )
+
+    production_bundles = [
+        jo_bundle, defurne_bundle, georges_bundle, lee_bundle
+    ]
+    production_bundles = sort_bundles_chronologically(production_bundles)
+
+    # KM15-only selected-count audit for all four measurements.
+    count_rows = []
+    for threshold in np.arange(0.01, 0.101, 0.01):
+        row = {
+            "model": "km15",
+            "threshold": float(threshold),
+            "threshold_percent": 100.0 * float(threshold),
+        }
+        total = 0
+        for bundle in production_bundles:
+            selected = select_bundle_from_external_model(
+                bundle, selection, "km15", float(threshold)
+            )
+            row["N_" + str(bundle["key"])] = int(len(selected))
+            total += int(len(selected))
+        #endfor
+        row["N_total"] = total
+        count_rows.append(row)
+    #endfor
+    pd.DataFrame(count_rows).to_csv(
+        diagnostics_dir / "km15_threshold_selected_counts_all_four.csv",
+        index=False,
+    )
+
+    # Build the 5% all-four sample used to choose the extrapolation family.
+    closure_bundles = []
+    for bundle in production_bundles:
+        selected5 = select_bundle_from_external_model(
+            bundle, selection, "km15", 0.05
+        )
+        bcopy = dict(bundle)
+        bcopy["set5"] = selected5.copy()
+        closure_bundles.append(bcopy)
+    #endfor
+
     print("\n" + "=" * 78)
-    print("[DEFAULT MODE] Preliminary CLAS-only BH form-factor/radius study")
-    print("[ensemble] CLAS6 Jo 2015 + CLAS12 Lee 2026")
-    print("[excluded from production] CLAS6 Saylor 2018; Hall A Defurne 2015; Hall A Georges 2022")
+    print("[UNIFIED KM15 FINAL ANALYSIS]")
+    print("[BH-purity prescription] KM15 only")
+    print("[closure ensemble] Jo 2015 + Defurne 2015 + Georges 2022 + Lee 2026")
+    print("[requested result ensembles] Lee only; Jo+Lee; all four")
+    print("[Saylor] diagnostic recoverability study only")
     print("=" * 78)
 
-    jo = run_clas6_validation(args, return_results=True)
-    pass1 = run_pass1_validation(args, return_results=True)
-    bundles = [jo, pass1]
-
-    if getattr(args, "include_saylor", False):
-        saylor_path = resolve_script_relative_path(args.saylor_file)
-        if args.download_saylor:
-            saylor_path = maybe_download_saylor_supplement(
-                saylor_path, force=args.force_saylor_download
-            )
-            args.saylor_file = str(saylor_path)
-        #endif
-        if not saylor_path.exists():
-            raise FileNotFoundError(
-                "Saylor file missing although --include-saylor was requested.\n"
-                f"Resolved path: {saylor_path}"
-            )
-        #endif
-        args.saylor_file = str(saylor_path)
-        bundles.insert(1, run_saylor_validation(args, return_results=True))
-    #endif
-
-    if getattr(args, "include_halla_defurne", False):
-        bundles.insert(-1, run_halla_defurne_validation(args, return_results=True))
-    #endif
-
-    diagnostic_bundles = list(bundles)
-
-    # Always include the two additional cross-check measurements in the
-    # diagnostic model-agreement ensemble.  They remain excluded from the
-    # production Jo+Lee FF/radius extraction unless explicitly enabled there.
-    if not any(str(b["key"]) == "halla_defurne2015" for b in diagnostic_bundles):
-        diagnostic_bundles.append(
-            run_halla_defurne_validation(args, return_results=True)
+    if args.run_radius_bias_study:
+        print(
+            "\n[unified KM15] running extended radius-bias/closure study on "
+            "the all-four KM15 5% sample"
+        )
+        run_radius_bias_variance_study(closure_bundles, args, closure_dir)
+    elif not (closure_dir / "radius_bias_extended_eligibility_ranking.csv").exists():
+        raise RuntimeError(
+            "Unified KM15 closure ranking is missing: "
+            f"{closure_dir}. Run with --run-radius-bias-study "
+            "--radius-bias-extended-truths."
         )
     #endif
-    # Pass-2/Hayward is intentionally omitted from the publication-facing
-    # all-point model validation for now.  It remains available through the
-    # explicit pass-2 modes, but its run-period combination systematic needs a
-    # dedicated treatment before it is compared on equal footing here.
-    if getattr(args, "include_georges", False) or getattr(args, "run_km15_ensemble_rotation", False):
-        georges_bundle = make_georges_diagnostic_bundle(args)
-        diagnostic_bundles.append(georges_bundle)
-    else:
-        georges_bundle = None
+
+    ranking = pd.read_csv(
+        closure_dir / "radius_bias_extended_eligibility_ranking.csv"
+    )
+    ranking = ranking.loc[
+        np.isfinite(ranking["combined_RMS_objective_fm"].to_numpy(float))
+    ].copy()
+    ranking = ranking.sort_values(
+        "combined_RMS_objective_fm", ascending=True
+    ).reset_index(drop=True)
+    if len(ranking) == 0:
+        raise RuntimeError(
+            "No Sachs family has a finite all-four KM15 closure objective."
+        )
     #endif
 
-    diagnostic_bundles = sort_bundles_chronologically(diagnostic_bundles)
-    bundles = sort_bundles_chronologically(bundles)
+    # Production-validation fallback: do not enforce IP2 or any other family.
+    # Require a valid nominal 5% fit for every requested ensemble.
+    ensemble_defs = [
+        ("lee2026_only", [lee_bundle], "CLAS12 Lee 2026"),
+        (
+            "jo2015_plus_lee2026",
+            [jo_bundle, lee_bundle],
+            "CLAS6 Jo 2015 + CLAS12 Lee 2026",
+        ),
+        (
+            "all_four",
+            production_bundles,
+            "Jo 2015 + Defurne 2015 + Georges 2022 + Lee 2026",
+        ),
+    ]
+
+    attempt_rows = []
+    chosen_family = None
+    for irank, rank_row in ranking.iterrows():
+        family = str(rank_row["family"])
+        family_ok = True
+        row = {
+            "closure_rank": int(irank) + 1,
+            "family": family,
+            "combined_RMS_objective_fm": float(
+                rank_row["combined_RMS_objective_fm"]
+            ),
+        }
+
+        for tag, cfg_bundles, label in ensemble_defs:
+            specs, counts = _km15_selected_specs_for_bundles(
+                cfg_bundles, selection, 0.05
+            )
+            try:
+                fit = fit_sachs_family_multi_measurements(
+                    specs,
+                    family=family,
+                    bh_cut=0.05,
+                    add_moradi_bh_systematic=True,
+                )
+                valid = bool(fit.get("valid", False))
+                row[f"{tag}_valid"] = valid
+                row[f"{tag}_N"] = int(sum(counts.values()))
+                row[f"{tag}_chi2_ndof"] = float(fit.get("chi2_ndof", np.nan))
+                row[f"{tag}_rE_fm"] = float(fit.get("rE_fm", np.nan))
+                row[f"{tag}_rM_fm"] = float(fit.get("rM_fm", np.nan))
+                family_ok = family_ok and valid
+            except Exception as exc:
+                row[f"{tag}_valid"] = False
+                row[f"{tag}_failure"] = str(exc)
+                family_ok = False
+            #endtry
+        #endfor
+
+        row["accepted_for_production"] = bool(family_ok)
+        attempt_rows.append(row)
+        if family_ok:
+            chosen_family = family
+            break
+        #endif
+    #endfor
+
+    attempts = pd.DataFrame(attempt_rows)
+    attempts.to_csv(
+        summary_dir / "km15_all_four_family_selection_audit.csv",
+        index=False,
+    )
+    if chosen_family is None:
+        raise RuntimeError(
+            "No closure-ranked Sachs family produced valid nominal 5% fits "
+            "for all three requested KM15 ensembles."
+        )
+    #endif
+
+    with open(summary_dir / "chosen_sachs_family.txt", "w") as fout:
+        fout.write(f"chosen_family={chosen_family}\n")
+        fout.write(
+            "selection_basis=extended closure ranking on all-four KM15 5% "
+            "sample, followed by valid nominal-fit requirement for Lee-only, "
+            "Jo+Lee, and all-four ensembles\n"
+        )
+    #endwith
+
+    print(
+        f"\n[unified KM15] closure-selected production family = "
+        f"{chosen_family}"
+    )
+
+    # Produce all requested radius results and threshold scans with the
+    # automatically selected family.
+    run_km15_ensemble_rotation(
+        production_bundles,
+        args,
+        root_outdir,
+        family=chosen_family,
+    )
+
+    # Saylor is studied with the SAME automatically selected family.  This is
+    # diagnostic only and cannot alter the production family selection.
+    run_saylor_recovery_study(
+        saylor_bundle,
+        args,
+        root_outdir,
+        family=chosen_family,
+    )
+
+    return chosen_family
+#enddef
+
+
+def run_published_default(args) -> int:
+    """
+    Publication-facing workflow.
+
+    A normal --run-final-model-analysis invocation now assembles all material
+    needed for the current study automatically:
+      * Jo 2015, Defurne 2015, Georges 2022, Lee 2026 production candidates;
+      * Saylor 2018 diagnostic sample;
+      * five-dataset all-point model-agreement diagnostics;
+      * KM15-only all-four closure/radius-bias family selection;
+      * Lee-only, Jo+Lee, and all-four KM15 radius/threshold results;
+      * Saylor recoverability scans.
+
+    The replica count and worker count remain controlled only by the existing
+    --radius-bias-replicas and --radius-bias-workers options.
+    """
+    print("\n" + "=" * 78)
+    print("[DEFAULT MODE] Unified published BH form-factor/radius study")
+    print("[production candidates] Jo 2015; Defurne 2015; Georges 2022; Lee 2026")
+    print("[BH-purity prescription] KM15")
+    print("[Saylor 2018] diagnostic/recoverability study")
+    print("=" * 78)
 
     root_outdir = Path(args.outdir).expanduser().resolve()
 
-    # Always export a separate all-enabled diagnostic kinematic table.  This
-    # does not alter the Jo+Lee production cache.  If Saylor/Hall-A are enabled,
-    # this file can be passed through the external KM15/VGG99/GK16 evaluator to
-    # build full all-point model-agreement diagnostics.
+    jo = run_clas6_validation(args, return_results=True)
+    lee = run_pass1_validation(args, return_results=True)
+    defurne = run_halla_defurne_validation(args, return_results=True)
+    georges = make_georges_diagnostic_bundle(args)
+
+    # Saylor is always loaded for the unified diagnostic study.  No extra
+    # --include-saylor switch is required in the current final workflow.
+    saylor_path = resolve_script_relative_path(args.saylor_file)
+    if args.download_saylor:
+        saylor_path = maybe_download_saylor_supplement(
+            saylor_path, force=args.force_saylor_download
+        )
+        args.saylor_file = str(saylor_path)
+    #endif
+    if not saylor_path.exists():
+        raise FileNotFoundError(
+            "Unified final analysis requires the Saylor supplemental table "
+            "for its diagnostic/recoverability study.\n"
+            f"Resolved path: {saylor_path}"
+        )
+    #endif
+    args.saylor_file = str(saylor_path)
+    saylor = run_saylor_validation(args, return_results=True)
+
+    production_bundles = sort_bundles_chronologically(
+        [jo, defurne, georges, lee]
+    )
+    diagnostic_bundles = sort_bundles_chronologically(
+        [jo, defurne, saylor, georges, lee]
+    )
+
+    # Export the exact five-dataset table expected by the external evaluator.
     diagnostic_input_root = (
         root_outdir / "final_analysis" / "diagnostics"
         / "all_point_model_agreement_input"
@@ -10044,851 +10252,48 @@ def run_published_default(args) -> int:
         diagnostic_bundles, diagnostic_input_root
     )
 
-    if getattr(args, "include_saylor", False):
-        saylor_bundle = next(
-            b for b in bundles if str(b["key"]) == "saylor2018"
-        )
-        save_jo_saylor_direct_comparison(
-            jo,
-            saylor_bundle,
-            root_outdir / "final_analysis" / "diagnostics"
-            / "jo2015_vs_saylor2018",
-        )
-    #endif
+    # Also export the four production candidates to the standard selection
+    # input location.  The external result table may remain a superset.
+    export_bh_model_selection_kinematics(production_bundles, root_outdir)
 
-    # The external purity evaluator only needs the datasets used by the final
-    # model-selected production analysis.  Keep optional diagnostic datasets
-    # out of this cache so the production point map is unambiguous.
-    final_bundles = [
-        b for b in bundles if str(b["key"]) in FINAL_PHYSICS_DATASETS
-    ]
-    export_bh_model_selection_kinematics(final_bundles, root_outdir)
+    save_jo_saylor_direct_comparison(
+        jo,
+        saylor,
+        root_outdir / "final_analysis" / "diagnostics"
+        / "jo2015_vs_saylor2018",
+    )
 
     if args.run_final_model_analysis:
-        run_final_model_selected_analysis(final_bundles, args, root_outdir)
-
-        # Diagnostic-only comparison of every published point with each model's
-        # full electroproduction prediction.  If the current external table
-        # contains only Jo+Lee, optional Saylor/Hall-A bundles are skipped with
-        # an explicit message; evaluate the separately exported all-enabled
-        # kinematic table to add them.
-        diagnostic_selection = load_external_bh_model_selection(
+        selection = load_external_bh_model_selection(
             Path(args.bh_model_selection_results).expanduser().resolve()
         )
+
+        # Full five-dataset electroproduction model-agreement audit remains
+        # available even though KM15 alone defines the BH-purity selection.
         save_all_point_model_agreement_diagnostics(
-            diagnostic_selection,
+            selection,
             diagnostic_bundles,
             root_outdir / "final_analysis" / "diagnostics"
             / "all_point_model_agreement",
         )
-    #endif
 
-    if getattr(args, "run_km15_ensemble_rotation", False):
-        rotation_bundles = list(diagnostic_bundles)
-        run_km15_ensemble_rotation(
-            rotation_bundles,
+        run_unified_km15_final_analysis(
+            jo,
+            defurne,
+            georges,
+            lee,
+            saylor,
             args,
             root_outdir,
-            family=str(args.km15_ensemble_family),
         )
     #endif
 
-    if getattr(args, "run_saylor_recovery_study", False):
-        saylor_candidates = [
-            b for b in diagnostic_bundles if str(b["key"]) == "saylor2018"
-        ]
-        if not saylor_candidates:
-            raise RuntimeError(
-                "--run-saylor-recovery-study requires --include-saylor."
-            )
-        #endif
-        run_saylor_recovery_study(
-            saylor_candidates[0],
-            args,
-            root_outdir,
-            family=str(args.km15_ensemble_family),
-        )
-    #endif
-
-    # Legacy validation/combination products are still available for whichever
-    # datasets were explicitly enabled, but they are no longer mixed into the
-    # consolidated final-analysis directory.
-    for bundle in bundles:
-        audit_measurement_bundle_for_combination(bundle)
-    #endfor
-
-    combos = []
-    for r in range(2, len(bundles) + 1):
-        for subset in itertools.combinations(bundles, r):
-            tag = "_plus_".join(str(b["key"]) for b in subset)
-            combos.append(run_measurement_combination(subset, args, tag))
-        #endfor
-    #endfor
-
-    if combos:
-        maximal = combos[-1]
-        save_bh_cut_plateau_study_multi(
-            bundles, maximal["outdir"], tag="all_enabled"
-        )
-
-        # Do not rerun a second generic closure study when the final
-        # model-selected workflow already performs the three production closure
-        # studies.  Keep this legacy path only when final-model analysis is not
-        # requested.
-        if args.run_radius_bias_study and not args.run_final_model_analysis:
-            bias_dir = maximal["outdir"] / "radius_bias_variance"
-            run_radius_bias_variance_study(bundles, args, bias_dir)
-            print(f"[radius-bias] outputs -> {bias_dir}")
-        #endif
-
-        comparison_dir = (
-            Path(args.outdir).expanduser().resolve() / "legacy_comparisons"
-        )
-        comparison_bundles = bundles + combos
-        save_separate_vs_combined_radius_summary(
-            comparison_bundles, comparison_dir
-        )
-        save_separate_vs_combined_table(
-            comparison_bundles, comparison_dir
-        )
-        save_published_dataset_comparisons(
-            bundles + [maximal], comparison_dir
-        )
-    #endif
-
-    save_published_workflow_manifest(bundles, combos, root_outdir)
-
-    if args.run_final_model_analysis:
-        print(
-            "\n[summary] Consolidated preliminary result -> "
-            f"{root_outdir / 'final_analysis'}"
-        )
-    #endif
-    print("[summary] Preliminary CLAS-only workflow completed successfully.")
-    return 0
-#enddef
-
-
-def run_all_three(args) -> int:
-    print("\\n" + "=" * 78)
-    print("[DEFAULT MODE] Running pass 2, pass 1, and CLAS6")
-    print("=" * 78)
-
-    pass2 = run_pass2_analysis(args, return_results=True)
-    pass1 = run_pass1_validation(args, return_results=True)
-    clas6 = run_clas6_validation(args, return_results=True)
-
-    comparison_dir = Path(args.outdir).expanduser().resolve() / "comparisons"
-    comparison_dir.mkdir(parents=True, exist_ok=True)
-
-    bundles = [clas6, pass1, pass2]
-    save_cross_dataset_form_factor_comparison(
-        bundles, comparison_dir, "Fit 5"
-    )
-    save_cross_dataset_form_factor_comparison(
-        bundles, comparison_dir, "Fit 8"
-    )
-    save_cross_dataset_radius_comparison(bundles, comparison_dir)
-    save_cross_dataset_summary(bundles, comparison_dir)
-
-    print(f"\\n[comparison] Results written to {comparison_dir}")
-    return 0
-#enddef
-
-
-def run_pass1_validation(args, return_results: bool = False):
-    """
-    Run the same BH-dominance/form-factor diagnostic on the legacy CLAS12
-    pass-1 cross sections.
-
-    This mode bypasses the pass-2 CSV and uses:
-      * pass-1 stat uncertainty
-      * pass-1 per-point systematic uncertainty
-      * paper's 1--5% BH-selection uncertainty
-      * one correlated 31% overall normalization nuisance
-      * no pass-2 combination-systematic nuisance
-    """
-    csv_path = Path(args.pass1_csv).expanduser().resolve()
-    outdir = (
-        Path(args.outdir).expanduser().resolve()
-        / "clas12_lee2026"
-    )
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    print("=" * 78)
-    print("[CLAS12 PASS-1 VALIDATION MODE]")
-    print(f"[input]  {csv_path}")
-    print(f"[output] {outdir}")
-    print("=" * 78)
-
-    df = load_clas12_pass1_csv(csv_path)
-
-    cache = outdir / "km15_bh_decomposition_pass1.csv"
-    df = evaluate_km15_dataframe(
-        df,
-        10.604,
-        max(1, args.workers),
-        cache,
-        args.force_km15,
-    )
-
-    finite = (
-        np.isfinite(df["km15_ep"])
-        & np.isfinite(df["km15_bh"])
-        & np.isfinite(df["R_BH"])
-        & (df["km15_ep"] > 0.0)
-        & (df["km15_bh"] > 0.0)
-    )
-    df = df.loc[finite].copy().reset_index(drop=True)
-
-    max_ep_relerr = float(np.nanmax(df["km15_ep_decomp_relerr"]))
-    max_bh_relerr = float(np.nanmax(df["bh_quad_relerr"]))
-    print(
-        f"[check] max KM15 EP decomposition rel. error = {max_ep_relerr:.3e}"
-    )
-    print(
-        f"[check] max BH quadratic reconstruction rel. error = {max_bh_relerr:.3e}"
-    )
-
-    if max_ep_relerr > 1.0e-7 or max_bh_relerr > 1.0e-7:
-        raise RuntimeError(
-            "Pass-1 validation failed internal KM15 decomposition checks."
-        )
-    #endif
-
-    bh_cuts = [0.01, 0.02, 0.03, 0.04, 0.05]
-    selected_sets = {}
-    selection_rows = []
-
-    print("\n[PASS1 BH selections]")
-    for cut in bh_cuts:
-        selected = df.loc[df["bh_delta"] <= cut].copy()
-        selected_sets[cut] = selected
-        print(
-            f"  |1-R_BH| <= {100*cut:.0f}% : {len(selected)} points"
-        )
-        selection_rows.append({
-            "BH_cut": cut,
-            "Npts": len(selected),
-            "xB_min": selected["xB"].min() if len(selected) else np.nan,
-            "xB_max": selected["xB"].max() if len(selected) else np.nan,
-            "Q2_min": selected["Q2"].min() if len(selected) else np.nan,
-            "Q2_max": selected["Q2"].max() if len(selected) else np.nan,
-            "t_min": selected["t_abs"].min() if len(selected) else np.nan,
-            "t_max": selected["t_abs"].max() if len(selected) else np.nan,
-        })
-    #endfor
-
-    pd.DataFrame(selection_rows).to_csv(
-        outdir / "bh_selection_summary.csv",
-        index=False,
-    )
-
-    fit_results = []
-
-    for fit_index, cut in enumerate(bh_cuts, start=1):
-        data = selected_sets[cut]
-        fr = fit_paper_model(
-            data=data,
-            kind="dipole",
-            fit_name=f"Fit {fit_index}",
-            bh_cut=cut,
-            include_clas12_ptp_sys=True,
-            include_bh_sys=True,
-            include_combination_norm_sys=False,
-            include_global_norm_sys=True,
-            global_scale_frac=PASS1_GLOBAL_SCALE_FRAC,
-        )
-        fit_results.append(fr)
-
-        print(
-            f"[PASS1 fit] Fit {fit_index}: "
-            f"N={fr.npts:4d} "
-            f"chi2/dof={fr.chi2_ndof:.3f} "
-            f"aE={fr.params[0]:.4f} "
-            f"aM={fr.params[1]:.4f} "
-            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}"
-        )
-    #endfor
-
-    set5 = selected_sets[0.05].copy()
-    set5["fit_sigma_default"] = fit_sigma_errors(
-        set5,
-        0.05,
-        include_clas12_ptp_sys=True,
-        include_bh_sys=True,
-    )
-    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
-
-    for kind, fit_name in [
-        ("fit6_same_a", "Fit 6"),
-        ("fit7_same_p", "Fit 7"),
-        ("fit8_f2_kelly", "Fit 8"),
-    ]:
-        fr = fit_paper_model(
-            data=set5,
-            kind=kind,
-            fit_name=fit_name,
-            bh_cut=0.05,
-            include_clas12_ptp_sys=True,
-            include_bh_sys=True,
-            include_combination_norm_sys=False,
-            include_global_norm_sys=True,
-            global_scale_frac=PASS1_GLOBAL_SCALE_FRAC,
-        )
-        fit_results.append(fr)
-        print(
-            f"[PASS1 fit] {fit_name}: "
-            f"chi2/dof={fr.chi2_ndof:.3f} "
-            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}"
-        )
-    #endfor
-
-    pd.DataFrame(
-        [fitresult_to_record(fr) for fr in fit_results]
-    ).to_csv(outdir / "fit_results.csv", index=False)
-
-    fit5 = next(r for r in fit_results if r.name == "Fit 5")
-    fit8 = next(r for r in fit_results if r.name == "Fit 8")
-
-    save_fit1_to_fit5_plots(fit_results, set5, outdir)
-    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
-    save_radii_plot(fit_results, outdir)
-    save_low_q2_ratio_plots(fit_results, set5, outdir)
-    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
-    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
-    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
-    save_pass1_cross_section_diagnostics(set5, fit5, fit8, outdir)
-
-    print("\n[PASS1 radii]")
-    for fit_name in ["Fit 5", "Fit 6", "Fit 7", "Fit 8"]:
-        fr = next(r for r in fit_results if r.name == fit_name)
-        print(
-            f"  {fit_name}: "
-            f"rE={fr.rE_fm:.5f}+/-{fr.rE_err_fm:.5f} fm, "
-            f"rM={fr.rM_fm:.5f}+/-{fr.rM_err_fm:.5f} fm, "
-            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}, "
-            f"chi2/dof={fr.chi2_ndof:.3f}"
-        )
-    #endfor
-
-    print(f"\nDone. Pass-1 validation results are in {outdir}")
-    if return_results:
-        return {
-            "label": "CLAS12 Lee 2026",
-            "key": "pass1",
-            "kind": "pass1",
-            "norm_frac": PASS1_GLOBAL_SCALE_FRAC,
-            "results": fit_results,
-            "set5": set5,
-            "all_data": df.copy(),
-            "outdir": outdir,
-        }
-    #endif
+    print(f"\nDone. Unified results are in {root_outdir}")
     return 0
 #enddef
 
 
 
-def run_saylor_validation(args, return_results: bool = False):
-    """Standalone Saylor 2018 BH/form-factor analysis."""
-    outdir = (
-        Path(args.outdir).expanduser().resolve()
-        / "clas6_saylor2018"
-    )
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    saylor_path = resolve_script_relative_path(args.saylor_file)
-    if args.download_saylor:
-        saylor_path = maybe_download_saylor_supplement(
-            saylor_path, force=args.force_saylor_download
-        )
-    #endif
-
-    print("=" * 78)
-    print("[CLAS6 SAYLOR 2018 MODE]")
-    print(f"[input]  {saylor_path.resolve()}")
-    print(f"[output] {outdir}")
-    print("=" * 78)
-
-    df = load_saylor_supplement(str(saylor_path))
-    cache = outdir / "km15_bh_decomposition_saylor2018.csv"
-    df = evaluate_km15_saylor_dataframe(
-        df,
-        workers=args.workers,
-        cache_path=cache,
-        force=args.force_km15,
-    )
-
-    finite = (
-        np.isfinite(df["R_BH"])
-        & np.isfinite(df["bh_A"])
-        & np.isfinite(df["bh_B"])
-        & np.isfinite(df["bh_C"])
-    )
-    df = df.loc[finite].reset_index(drop=True)
-
-    fit_results = []
-    sets = {}
-    for i, cut in enumerate(args.bh_cuts, start=1):
-        selected = df.loc[df["bh_delta"] <= cut].copy()
-        sets[float(cut)] = selected
-        if len(selected) < 5:
-            continue
-        #endif
-        fr = fit_multi_measurements(
-            [measurement_spec(
-                "saylor2018", "CLAS6 Saylor 2018", "saylor2018",
-                selected, SAYLOR_GLOBAL_SCALE_FRAC
-            )],
-            kind="dipole",
-            fit_name=f"Fit {i}",
-            bh_cut=float(cut),
-            add_moradi_bh_systematic=True,
-        )
-        fit_results.append(fr)
-        print(
-            f"[SAYLOR fit] Fit {i}: N={fr.npts:4d} "
-            f"chi2/dof={fr.chi2_ndof:.3f}"
-        )
-    #endfor
-
-    set5 = sets.get(0.05)
-    if set5 is None or len(set5) < 5:
-        raise RuntimeError("Saylor 5% BH-selected sample has too few points.")
-    #endif
-
-    for kind, name in [
-        ("fit6_same_a", "Fit 6"),
-        ("fit7_same_p", "Fit 7"),
-        ("fit8_f2_kelly", "Fit 8"),
-    ]:
-        fit_results.append(
-            fit_multi_measurements(
-                [measurement_spec(
-                    "saylor2018", "CLAS6 Saylor 2018", "saylor2018",
-                    set5, SAYLOR_GLOBAL_SCALE_FRAC
-                )],
-                kind=kind,
-                fit_name=name,
-                bh_cut=0.05,
-                add_moradi_bh_systematic=True,
-            )
-        )
-    #endfor
-
-    pd.DataFrame(
-        [fitresult_to_record(fr) for fr in fit_results]
-    ).to_csv(outdir / "fit_results.csv", index=False)
-
-    save_fit1_to_fit5_plots(fit_results, set5, outdir)
-    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
-    save_radii_plot(fit_results, outdir)
-    save_low_q2_ratio_plots(fit_results, set5, outdir)
-    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
-    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
-    fit5 = next(r for r in fit_results if r.name == "Fit 5")
-    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
-    save_fit5_residual_chi2_diagnostics(
-        set5, fit5, "saylor2018", "saylor2018",
-        outdir / "12_fit5_residual_diagnostics", bh_cut=0.05,
-    )
-
-    bundle = {
-        "label": "CLAS6 Saylor 2018",
-        "key": "saylor2018",
-        "kind": "saylor2018",
-        "norm_frac": SAYLOR_GLOBAL_SCALE_FRAC,
-        "results": fit_results,
-        "set5": set5,
-        "all_data": df.copy(),
-        "outdir": outdir,
-    }
-    if return_results:
-        return bundle
-    #endif
-    return 0
-#enddef
-
-
-
-
-def run_halla_defurne_validation(args, return_results: bool = False):
-    """Standalone Hall A Defurne 2015 BH/form-factor analysis."""
-    outdir = Path(args.outdir).expanduser().resolve() / "halla_defurne2015"
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    print("=" * 78)
-    print("[HALL A DEFURNE 2015 MODE]")
-    print(f"[Gepard datasets] {HALLA_DEFURNE_GEPARD_DATASET_IDS}")
-    print(f"[output] {outdir}")
-    print("=" * 78)
-
-    df = load_halla_defurne_gepard_datasets()
-    df = evaluate_km15_halla_dataframe(
-        df,
-        workers=args.workers,
-        cache_path=outdir / "km15_bh_decomposition_halla_defurne2015.csv",
-        force=args.force_km15,
-    )
-
-    finite = (
-        np.isfinite(df["R_BH"])
-        & np.isfinite(df["bh_A"])
-        & np.isfinite(df["bh_B"])
-        & np.isfinite(df["bh_C"])
-    )
-    df = df.loc[finite].reset_index(drop=True)
-
-    fit_results = []
-    sets = {}
-    print("\n[HALLA BH selections]")
-    for i, cut in enumerate(args.bh_cuts, start=1):
-        selected = df.loc[df["bh_delta"] <= cut].copy()
-        sets[float(cut)] = selected
-        print(f"  |1-R_BH| <= {100*cut:.0f}% : {len(selected)} points")
-        if len(selected) < 5:
-            continue
-        #endif
-        fr = fit_multi_measurements(
-            [measurement_spec(
-                "halla_defurne2015", "Hall A Defurne 2015",
-                "halla_defurne2015", selected,
-                HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
-            )],
-            kind="dipole",
-            fit_name=f"Fit {i}",
-            bh_cut=float(cut),
-            add_moradi_bh_systematic=True,
-        )
-        fit_results.append(fr)
-        print(f"[HALLA fit] Fit {i}: N={fr.npts:4d} chi2/dof={fr.chi2_ndof:.3f}")
-    #endfor
-
-    set5 = sets.get(0.05)
-    if set5 is None or len(set5) < 5:
-        raise RuntimeError("Hall A Defurne 5% BH-selected sample has too few points.")
-    #endif
-
-    for kind, name in [
-        ("fit6_same_a", "Fit 6"),
-        ("fit7_same_p", "Fit 7"),
-        ("fit8_f2_kelly", "Fit 8"),
-    ]:
-        fit_results.append(
-            fit_multi_measurements(
-                [measurement_spec(
-                    "halla_defurne2015", "Hall A Defurne 2015",
-                    "halla_defurne2015", set5,
-                    HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
-                )],
-                kind=kind,
-                fit_name=name,
-                bh_cut=0.05,
-                add_moradi_bh_systematic=True,
-            )
-        )
-    #endfor
-
-    pd.DataFrame([fitresult_to_record(fr) for fr in fit_results]).to_csv(
-        outdir / "fit_results.csv", index=False
-    )
-    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
-
-    save_fit1_to_fit5_plots(fit_results, set5, outdir)
-    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
-    save_combination_f1_f2_fits_5_to_8(fit_results, set5, outdir)
-    save_radii_plot(fit_results, outdir)
-    save_low_q2_ratio_plots(fit_results, set5, outdir)
-    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
-    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
-    fit5 = next(r for r in fit_results if r.name == "Fit 5")
-    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
-    save_fit5_residual_chi2_diagnostics(
-        set5, fit5, "halla_defurne2015", "halla_defurne2015",
-        outdir / "12_fit5_residual_diagnostics", bh_cut=0.05,
-    )
-
-    bundle = {
-        "label": "Hall A Defurne 2015",
-        "key": "halla_defurne2015",
-        "kind": "halla_defurne2015",
-        "norm_frac": HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
-        "results": fit_results,
-        "set5": set5,
-        "all_data": df.copy(),
-        "outdir": outdir,
-    }
-    if return_results:
-        return bundle
-    #endif
-    return 0
-#enddef
-
-
-
-def run_clas6_validation(args, return_results: bool = False):
-    """
-    Reproduce the Moradi et al. CLAS6 analysis using Gepard's bundled
-    CLAS:2015uuo XUU data.
-
-    This is an override/validation mode:
-      * no CLAS12 CSV is read
-      * no CLAS12 point-to-point systematic is added
-      * no CLAS12 correlated normalization nuisances are used
-      * the published Gepard point.err is used as the experimental error
-      * only the paper's additional 1--5% BH-selection uncertainty is added
-
-    Expected paper benchmarks:
-      selection counts = 98, 212, 292, 404, 473
-      chi2/dof Fits 1--5 = 0.82, 0.75, 0.73, 0.68, 0.69
-    """
-    outdir = (
-        Path(args.outdir).expanduser().resolve()
-        / "clas6_jo2015"
-    )
-    outdir.mkdir(parents=True, exist_ok=True)
-
-    print("=" * 78)
-    print("[CLAS6 VALIDATION MODE]")
-    print(f"[output] {outdir}")
-    print(
-        f"[source] Gepard dataset {args.clas6_dataset_id} "
-        "(CLAS 2015 XUU, Jo et al.)"
-    )
-    print("=" * 78)
-
-    df = load_clas6_gepard_dataset(args.clas6_dataset_id)
-    if len(df) != 2640 and args.clas6_dataset_id == 98:
-        warnings.warn(
-            f"Expected 2640 points in Gepard dataset 98, found {len(df)}."
-        )
-    #endif
-
-    cache = outdir / "km15_bh_decomposition_clas6.csv"
-    df = evaluate_km15_clas6_dataframe(
-        df,
-        max(1, args.workers),
-        cache,
-        args.force_km15,
-    )
-
-    finite = (
-        np.isfinite(df["km15_ep"])
-        & np.isfinite(df["km15_bh"])
-        & np.isfinite(df["R_BH"])
-        & (df["km15_ep"] > 0.0)
-        & (df["km15_bh"] > 0.0)
-    )
-    df = df.loc[finite].copy().reset_index(drop=True)
-
-    max_ep_relerr = float(np.nanmax(df["km15_ep_decomp_relerr"]))
-    max_bh_relerr = float(np.nanmax(df["bh_quad_relerr"]))
-    print(
-        f"[check] max KM15 EP decomposition rel. error = {max_ep_relerr:.3e}"
-    )
-    print(
-        f"[check] max BH quadratic reconstruction rel. error = {max_bh_relerr:.3e}"
-    )
-
-    if max_ep_relerr > 1.0e-7 or max_bh_relerr > 1.0e-7:
-        raise RuntimeError(
-            "CLAS6 validation failed the internal Gepard decomposition checks."
-        )
-    #endif
-
-    bh_cuts = [0.01, 0.02, 0.03, 0.04, 0.05]
-    selected_sets = {}
-    selection_rows = []
-
-    print("\n[CLAS6 selection benchmark]")
-    for cut in bh_cuts:
-        selected = df.loc[df["bh_delta"] <= cut].copy()
-        selected_sets[cut] = selected
-
-        expected = PAPER_SELECTION_COUNTS[cut]
-        delta = len(selected) - expected
-        status = "PASS" if delta == 0 else "MISMATCH"
-
-        print(
-            f"  {100*cut:.0f}%: got {len(selected):4d}, "
-            f"paper {expected:4d}, delta={delta:+d}  [{status}]"
-        )
-
-        selection_rows.append({
-            "BH_cut": cut,
-            "our_Npts": len(selected),
-            "paper_Npts": expected,
-            "delta_Npts": delta,
-            "match": delta == 0,
-        })
-    #endfor
-
-    pd.DataFrame(selection_rows).to_csv(
-        outdir / "selection_count_validation.csv",
-        index=False,
-    )
-
-    # If these counts do not match, continuing the fit is still useful for
-    # diagnosis, but loudly flag that we have not reproduced the paper's
-    # selection/conventions yet.
-    counts_match = all(
-        len(selected_sets[c]) == PAPER_SELECTION_COUNTS[c]
-        for c in bh_cuts
-    )
-    if not counts_match:
-        warnings.warn(
-            "CLAS6 BH-selected counts do not exactly reproduce Table I. "
-            "Inspect phi/frame/observable conventions before interpreting "
-            "the chi2 validation."
-        )
-    #endif
-
-    fit_results = []
-
-    # Fits 1--5 exactly as the paper: published total experimental error +
-    # threshold-matched uncorrelated BH-selection systematic.
-    for fit_index, cut in enumerate(bh_cuts, start=1):
-        fr = fit_paper_model(
-            data=selected_sets[cut],
-            kind="dipole",
-            fit_name=f"Fit {fit_index}",
-            bh_cut=cut,
-            include_clas12_ptp_sys=False,
-            include_bh_sys=True,
-            include_combination_norm_sys=False,
-            include_global_norm_sys=False,
-        )
-        fit_results.append(fr)
-
-        paper_chi = PAPER_CHI2_NDOF[fit_index]
-        paper_aE, paper_daE, paper_aM, paper_daM = PAPER_DIPOLE_PARAMS[fit_index]
-
-        print(
-            f"[CLAS6 fit] Fit {fit_index}: "
-            f"chi2/dof={fr.chi2_ndof:.3f} "
-            f"(paper {paper_chi:.2f}); "
-            f"aE={fr.params[0]:.4f} (paper {paper_aE:.3f}); "
-            f"aM={fr.params[1]:.4f} (paper {paper_aM:.3f})"
-        )
-    #endfor
-
-    set5 = selected_sets[0.05].copy()
-    set5["fit_sigma_default"] = fit_sigma_errors(
-        set5,
-        0.05,
-        include_clas12_ptp_sys=False,
-        include_bh_sys=True,
-    )
-    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
-
-    for kind, fit_name, fit_index in [
-        ("fit6_same_a", "Fit 6", 6),
-        ("fit7_same_p", "Fit 7", 7),
-        ("fit8_f2_kelly", "Fit 8", 8),
-    ]:
-        fr = fit_paper_model(
-            data=set5,
-            kind=kind,
-            fit_name=fit_name,
-            bh_cut=0.05,
-            include_clas12_ptp_sys=False,
-            include_bh_sys=True,
-            include_combination_norm_sys=False,
-            include_global_norm_sys=False,
-        )
-        fit_results.append(fr)
-        print(
-            f"[CLAS6 fit] {fit_name}: "
-            f"chi2/dof={fr.chi2_ndof:.3f} "
-            f"(paper {PAPER_CHI2_NDOF[fit_index]:.2f})"
-        )
-    #endfor
-
-    # Direct comparison table to the published benchmarks.
-    rows = []
-    for fit_index in range(1, 9):
-        fr = next(r for r in fit_results if r.name == f"Fit {fit_index}")
-        row = {
-            "Fit": fit_index,
-            "our_chi2_ndof": fr.chi2_ndof,
-            "paper_chi2_ndof": PAPER_CHI2_NDOF[fit_index],
-            "delta_chi2_ndof": (
-                fr.chi2_ndof - PAPER_CHI2_NDOF[fit_index]
-            ),
-            "rE_fm": fr.rE_fm,
-            "rE_err_fm": fr.rE_err_fm,
-            "rM_fm": fr.rM_fm,
-            "rM_err_fm": fr.rM_err_fm,
-        }
-        if fit_index <= 5:
-            row["our_aE"] = fr.params[0]
-            row["our_aM"] = fr.params[1]
-            row["paper_aE"] = PAPER_DIPOLE_PARAMS[fit_index][0]
-            row["paper_aM"] = PAPER_DIPOLE_PARAMS[fit_index][2]
-        #endif
-        rows.append(row)
-    #endfor
-    comparison = pd.DataFrame(rows)
-    comparison.to_csv(outdir / "paper_benchmark_comparison.csv", index=False)
-
-    pd.DataFrame(
-        [fitresult_to_record(fr) for fr in fit_results]
-    ).to_csv(outdir / "fit_results.csv", index=False)
-
-    # Paper-style consolidated plots.
-    save_fit1_to_fit5_plots(fit_results, set5, outdir)
-    fit5 = next(r for r in fit_results if r.name == "Fit 5")
-    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
-    save_radii_plot(fit_results, outdir)
-    save_low_q2_ratio_plots(fit_results, set5, outdir)
-    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
-    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
-    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
-
-    # Validation plot: our chi2/dof against the paper values.
-    fig, ax = plt.subplots(figsize=(7.4, 5.0))
-    fit_numbers = np.arange(1, 9)
-    ours = [
-        next(r for r in fit_results if r.name == f"Fit {i}").chi2_ndof
-        for i in fit_numbers
-    ]
-    paper = [PAPER_CHI2_NDOF[i] for i in fit_numbers]
-    ax.plot(fit_numbers, ours, "o-", label="This script / Gepard data")
-    ax.plot(fit_numbers, paper, "s--", label="Moradi et al.")
-    ax.set_xlabel("Fit")
-    ax.set_ylabel(r"$\chi^2/\mathrm{dof}$")
-    ax.set_xticks(fit_numbers)
-    ax.grid(alpha=0.2)
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(outdir / "00_chi2_validation.png", dpi=180)
-    plt.close(fig)
-
-    print("\n[CLAS6 validation summary]")
-    print(comparison[[
-        "Fit", "our_chi2_ndof", "paper_chi2_ndof", "delta_chi2_ndof"
-    ]].to_string(index=False))
-    print(f"\nDone. CLAS6 validation results are in {outdir}")
-    if return_results:
-        return {
-            "label": "CLAS6 Jo 2015",
-            "key": "jo2015",
-            "kind": "jo2015",
-            "norm_frac": 0.0,
-            "results": fit_results,
-            "set5": set5,
-            "all_data": df.copy(),
-            "outdir": outdir,
-        }
-    #endif
-    return 0
-#enddef
-
-
-# -----------------------------------------------------------------------------
-# CLI / main
-# -----------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -11151,28 +10556,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional maximum |t|; normally leave unset",
     )
 
-    p.add_argument(
-        "--run-km15-ensemble-rotation",
-        action="store_true",
-        help=(
-            "Run KM15-only radius fits for Lee alone, Jo+Lee, and "
-            "Jo+Defurne+Georges+Lee."
-        ),
-    )
-    p.add_argument(
-        "--km15-ensemble-family",
-        default="IP2",
-        choices=["P1", "P2", "P3", "P4", "IP1", "IP2", "IP3", "IP4", "CF2", "CF3", "CF4"],
-        help="Sachs family used for the KM15 ensemble-rotation and Saylor recovery diagnostics.",
-    )
-    p.add_argument(
-        "--run-saylor-recovery-study",
-        action="store_true",
-        help=(
-            "Scan Saylor 2018 versus Q2 to test whether a broad, independently "
-            "definable region has acceptable KM15 full-EP and 5%-BH-fit behavior."
-        ),
-    )
 
     return p
 #enddef
