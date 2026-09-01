@@ -13491,7 +13491,7 @@ def run_neutron_magnetic_function_closure(
     q_template_fit = np.concatenate([[0.0], q])
     g_template_fit = np.concatenate([[1.0], gm_kelly_norm])
     coeff_kelly = np.polyfit(q_template_fit, g_template_fit, deg=4)
-    deriv0 = float(np.polyder(coeff_kelly)(0.0))
+    deriv0 = float(np.polyval(np.polyder(coeff_kelly), 0.0))
     if deriv0 < 0.0:
         kelly_rM = HBARC * math.sqrt(-6.0 * deriv0)
     #endif
