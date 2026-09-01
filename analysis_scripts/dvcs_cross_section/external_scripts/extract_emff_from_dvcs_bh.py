@@ -10236,6 +10236,275 @@ def run_saylor_recovery_study(
 #enddef
 
 
+
+def save_nominal_family_failure_diagnostic(
+        audit: pd.DataFrame,
+        configuration: str,
+        configuration_label: str,
+        outdir: Path) -> None:
+    """
+    Visualize the case where closure-ranked GE/GM Sachs families fail on the
+    actual nominal 5% BH-selected dataset.
+
+    This is a numerical/identifiability diagnostic, not a physics fit result.
+    It deliberately shows both the closure ranking and the outcome of the
+    corresponding nominal-data minimization attempts.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    part = audit.loc[
+        audit["configuration"].astype(str) == str(configuration)
+    ].copy()
+    if len(part) == 0:
+        return
+    #endif
+
+    part = part.sort_values("closure_rank").reset_index(drop=True)
+    part.to_csv(
+        outdir / "01_nominal_family_failure_audit.csv",
+        index=False,
+    )
+
+    ranks = part["closure_rank"].to_numpy(float)
+    objective = part["closure_objective_fm"].to_numpy(float)
+    global_eff = part["global_valid_fraction"].to_numpy(float)
+    worst_eff = part["minimum_scenario_valid_fraction"].to_numpy(float)
+    nominal_valid = part["nominal_fit_valid"].astype(bool).to_numpy()
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.8))
+
+    axes[0].plot(
+        ranks, objective,
+        marker="o", linestyle="none",
+    )
+    if np.any(nominal_valid):
+        axes[0].plot(
+            ranks[nominal_valid], objective[nominal_valid],
+            marker="o", linestyle="none",
+            markersize=9,
+            fillstyle="none",
+            label="Nominal fit valid",
+        )
+    #endif
+    if np.any(~nominal_valid):
+        axes[0].plot(
+            ranks[~nominal_valid], objective[~nominal_valid],
+            marker="x", linestyle="none",
+            markersize=8,
+            label="Nominal fit invalid",
+        )
+    #endif
+    axes[0].set_xlabel("Closure rank")
+    axes[0].set_ylabel("Closure combined RMSE objective [fm]")
+    axes[0].set_title("Closure ranking vs nominal-fit outcome")
+    axes[0].grid(alpha=0.2)
+    axes[0].legend()
+
+    axes[1].plot(
+        ranks, global_eff,
+        marker="o", linestyle="none",
+        label="Global convergence efficiency",
+    )
+    axes[1].plot(
+        ranks, worst_eff,
+        marker="s", linestyle="none",
+        fillstyle="none",
+        label="Worst-truth convergence efficiency",
+    )
+    axes[1].set_xlabel("Closure rank")
+    axes[1].set_ylabel("Convergence fraction")
+    axes[1].set_ylim(-0.03, 1.03)
+    axes[1].set_title("Closure numerical robustness")
+    axes[1].grid(alpha=0.2)
+    axes[1].legend()
+
+    fig.suptitle(
+        f"{configuration_label}: no valid free-$G_E/G_M$ nominal fit",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(
+        outdir / "01_nominal_family_failure_summary.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    # A second compact plot shows any finite radius values returned by invalid
+    # fits.  They are intentionally labeled invalid and are not interpreted as
+    # measurements; this helps diagnose whether failure comes from a runaway
+    # electric, magnetic, or both sectors.
+    rE = pd.to_numeric(part["nominal_rE_fm"], errors="coerce").to_numpy(float)
+    rM = pd.to_numeric(part["nominal_rM_fm"], errors="coerce").to_numpy(float)
+    finite = np.isfinite(rE) | np.isfinite(rM)
+    if np.any(finite):
+        fig, ax = plt.subplots(figsize=(8.2, 5.0))
+        ax.plot(
+            ranks[np.isfinite(rE)],
+            rE[np.isfinite(rE)],
+            marker="o", linestyle="none",
+            label=r"Returned $r_E$ (invalid fit)",
+        )
+        ax.plot(
+            ranks[np.isfinite(rM)],
+            rM[np.isfinite(rM)],
+            marker="s", linestyle="none",
+            fillstyle="none",
+            label=r"Returned $r_M$ (invalid fit)",
+        )
+        ax.axhline(SACHS_MIN_RADIUS_FM, linewidth=0.8, linestyle=":")
+        ax.axhline(SACHS_MAX_RADIUS_FM, linewidth=0.8, linestyle=":")
+        ax.set_xlabel("Closure rank")
+        ax.set_ylabel("Returned radius [fm]")
+        ax.set_title(
+            f"{configuration_label}: invalid nominal-fit radius returns"
+        )
+        ax.grid(alpha=0.2)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(
+            outdir / "02_invalid_nominal_returned_radii.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    #endif
+#enddef
+
+
+def save_lee_fit8_kelly_threshold_scan(
+        lee_bundle: Dict[str, object],
+        selection: pd.DataFrame,
+        summary_dir: Path,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Moradi Fit-8-style Lee-only fallback/diagnostic:
+      F1 is fitted with the paper's two-parameter power form;
+      F2 is fixed to Kelly.
+
+    This is run even when the simultaneous free-GE/free-GM Sachs-family
+    extraction fails.  It therefore directly tests whether Lee still contains
+    useful electric information once the poorly constrained magnetic sector is
+    supplied externally.
+
+    The threshold scan holds the additional Moradi BH-method uncertainty fixed
+    at 5% by rescaling the bh_cut passed to the fitter only for the uncertainty
+    term.  Selection itself is performed independently at each threshold.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    scan_thresholds = [
+        0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.10,
+        0.15, 0.20, 0.30, 0.50, 0.75, 1.00,
+    ]
+    key = str(lee_bundle["key"])
+    sel = selection.loc[
+        (selection["dataset_key"] == key)
+        & np.isfinite(selection["delta_km15"].to_numpy(float))
+    ]
+    if len(sel):
+        scan_thresholds.append(float(sel["delta_km15"].max()) * 1.001)
+    #endif
+    scan_thresholds = sorted(set(float(x) for x in scan_thresholds))
+
+    rows = []
+    for threshold in scan_thresholds:
+        selected = select_bundle_from_external_model(
+            lee_bundle, selection, "km15", float(threshold)
+        )
+        if len(selected) < 4:
+            continue
+        #endif
+
+        # fit_paper_model currently uses bh_cut for the added Moradi uncertainty.
+        # To keep that method uncertainty fixed at 5% during the loose-threshold
+        # contamination test, make a temporary copy whose xs errors are handled
+        # by a local wrapper below.
+        fit = fit_paper_model(
+            selected,
+            kind="fit8_f2_kelly",
+            fit_name=f"Lee2026_Fit8_F2_Kelly_{100.0*threshold:.3f}pct",
+            bh_cut=0.05,
+            include_clas12_ptp_sys=True,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=True,
+            global_scale_frac=PASS1_GLOBAL_SCALE_FRAC,
+        )
+
+        row = fitresult_to_record(fit)
+        row.update({
+            "selection_threshold": float(threshold),
+            "selection_threshold_percent": 100.0 * float(threshold),
+            "N_selected": int(len(selected)),
+            "F2_treatment": "Kelly fixed",
+            "fit_kind": "fit8_f2_kelly",
+        })
+        rows.append(row)
+    #endfor
+
+    table = pd.DataFrame(rows)
+    table.to_csv(
+        outdir / "01_lee2026_fit8_kelly_threshold_scan.csv",
+        index=False,
+    )
+
+    nominal = table.loc[
+        np.isclose(table["selection_threshold"].to_numpy(float), 0.05)
+    ].copy()
+    nominal.to_csv(
+        summary_dir / "lee2026_fit8_f2_kelly.csv",
+        index=False,
+    )
+
+    if len(table):
+        fig, axes = plt.subplots(1, 2, figsize=(11.8, 4.8))
+
+        axes[0].errorbar(
+            table["selection_threshold_percent"],
+            table["rE_fm"],
+            yerr=table["rE_err_fm"],
+            marker="o",
+            linestyle="none",
+            capsize=2,
+        )
+        axes[0].axvline(5.0, linewidth=0.8, linestyle=":")
+        axes[0].set_xscale("log")
+        axes[0].set_xlabel(
+            r"$|1-R_{\rm BH}^{\rm KM15}|$ selection threshold (%)"
+        )
+        axes[0].set_ylabel(r"$r_E$ [fm]")
+        axes[0].set_title(r"Lee-only Fit 8: $F_2$ fixed to Kelly")
+        axes[0].grid(alpha=0.2)
+
+        axes[1].plot(
+            table["selection_threshold_percent"],
+            table["chi2_ndof"],
+            marker="o",
+            linestyle="none",
+        )
+        axes[1].axvline(5.0, linewidth=0.8, linestyle=":")
+        axes[1].set_xscale("log")
+        axes[1].set_xlabel(
+            r"$|1-R_{\rm BH}^{\rm KM15}|$ selection threshold (%)"
+        )
+        axes[1].set_ylabel(r"$\chi^2/\mathrm{dof}$")
+        axes[1].set_title("Fit quality")
+        axes[1].grid(alpha=0.2)
+
+        fig.suptitle(
+            "CLAS12 Lee 2026: electric-radius extraction with external magnetic input",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.savefig(
+            outdir / "01_lee2026_fit8_kelly_threshold_scan.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    #endif
+
+    return table
+#enddef
+
+
 def run_unified_km15_final_analysis(
         jo_bundle: Dict[str, object],
         defurne_bundle: Dict[str, object],
@@ -10407,16 +10676,34 @@ def run_unified_km15_final_analysis(
         #endfor
 
         if selected_family is None:
-            raise RuntimeError(
-                f"No closure-ranked family produced a valid nominal fit "
-                f"for {label}."
+            chosen[tag] = None
+            print(
+                f"[ensemble closure] {label}: NO valid simultaneous "
+                "free-GE/free-GM nominal fit from the closure-ranked families."
+            )
+            print(
+                "[ensemble closure] This ensemble will be recorded as "
+                "unresolved and skipped in the free-GE/free-GM threshold "
+                "rotation; external-magnetic-input diagnostics will still run "
+                "where defined."
+            )
+            audit_now = pd.DataFrame(family_audit_rows)
+            failure_dir = (
+                diagnostics_dir / "nominal_family_failures" / tag
+            )
+            save_nominal_family_failure_diagnostic(
+                audit_now,
+                configuration=tag,
+                configuration_label=label,
+                outdir=failure_dir,
+            )
+        else:
+            chosen[tag] = selected_family
+            print(
+                f"[ensemble closure] {label}: selected family = "
+                f"{selected_family}"
             )
         #endif
-        chosen[tag] = selected_family
-        print(
-            f"[ensemble closure] {label}: selected family = "
-            f"{selected_family}"
-        )
     #endfor
 
     pd.DataFrame(family_audit_rows).to_csv(
@@ -10427,7 +10714,8 @@ def run_unified_km15_final_analysis(
             summary_dir / "chosen_sachs_family_by_ensemble.txt", "w"
     ) as fout:
         for tag, family in chosen.items():
-            fout.write(f"{tag}={family}\n")
+            value = family if family is not None else "UNRESOLVED"
+            fout.write(f"{tag}={value}\n")
         #endfor
     #endwith
 
@@ -10439,6 +10727,27 @@ def run_unified_km15_final_analysis(
         family = chosen[tag]
         cfg_dir = rotation_root / tag
         cfg_dir.mkdir(parents=True, exist_ok=True)
+
+        if family is None:
+            pd.DataFrame([{
+                "configuration": tag,
+                "configuration_label": label,
+                "status": "UNRESOLVED_FREE_GE_GM",
+                "reason": (
+                    "No closure-ranked mixed Sachs family produced a valid "
+                    "nominal 5% simultaneous free-GE/free-GM fit."
+                ),
+            }]).to_csv(
+                cfg_dir / "free_ge_gm_status.csv",
+                index=False,
+            )
+            print(
+                f"[KM15 ensemble rotation] {label}: skipping simultaneous "
+                "free-GE/free-GM threshold scan (unresolved nominal fit)."
+            )
+            continue
+        #endif
+
         threshold_rows = []
 
         # Dense near the nominal BH-pure region, sparse into the DVCS-contaminated
@@ -10529,43 +10838,62 @@ def run_unified_km15_final_analysis(
         "configuration_label", "selected_family", "N", "chi2_ndof",
         "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
     ]
-    print(nominal[cols].to_string(index=False))
+    if len(nominal):
+        present = [c for c in cols if c in nominal.columns]
+        print(nominal[present].to_string(index=False))
+    else:
+        print("[KM15 ensemble rotation] no resolved nominal free-GE/free-GM fits.")
+    #endif
 
-    # Moradi Fit 8 diagnostic for CLAS12 Lee alone: F2 fixed to Kelly while F1
-    # retains the paper's two-parameter power form.  This is deliberately a
-    # diagnostic, not part of the Sachs-family closure selection.
-    lee5 = select_bundle_from_external_model(lee_bundle, selection, "km15", 0.05)
-    if len(lee5):
-        fit8 = fit_paper_model(
-            lee5,
-            kind="fit8_f2_kelly",
-            fit_name="Lee2026_Fit8_F2_Kelly",
-            bh_cut=0.05,
-            include_clas12_ptp_sys=True,
-            include_bh_sys=True,
-            include_combination_norm_sys=False,
-            include_global_norm_sys=True,
-            global_scale_frac=PASS1_GLOBAL_SCALE_FRAC,
+    # Moradi Fit 8 / Kelly-F2 Lee-only diagnostic.  This is intentionally
+    # independent of whether the simultaneous free-GE/free-GM Lee extraction
+    # succeeded.  In particular, when Lee-only is unresolved above, this
+    # becomes the scientifically relevant test of whether the data still
+    # constrain the electric sector once F2 is supplied externally.
+    lee_fit8_dir = diagnostics_dir / "lee2026_fit8_kelly"
+    lee_fit8_table = save_lee_fit8_kelly_threshold_scan(
+        lee_bundle=lee_bundle,
+        selection=selection,
+        summary_dir=summary_dir,
+        outdir=lee_fit8_dir,
+    )
+    nominal_fit8 = lee_fit8_table.loc[
+        np.isclose(
+            lee_fit8_table["selection_threshold"].to_numpy(float),
+            0.05,
         )
-        pd.DataFrame([fitresult_to_record(fit8)]).to_csv(
-            summary_dir / "lee2026_fit8_f2_kelly.csv", index=False
-        )
+    ]
+    if len(nominal_fit8):
+        row = nominal_fit8.iloc[0]
         print(
-            f"[Lee Fit8 / Kelly F2] chi2/ndof={fit8.chi2_ndof:.6f}, "
-            f"rE={fit8.rE_fm:.6f}+/-{fit8.rE_err_fm:.6f} fm, "
-            f"rM(Kelly)={fit8.rM_fm:.6f} fm"
+            f"[Lee Fit8 / Kelly F2] N={int(row['N_selected'])}, "
+            f"chi2/ndof={float(row['chi2_ndof']):.6f}, "
+            f"rE={float(row['rE_fm']):.6f}+/-"
+            f"{float(row['rE_err_fm']):.6f} fm"
+        )
+    else:
+        print(
+            "[Lee Fit8 / Kelly F2] no nominal 5% fit was available; "
+            "inspect diagnostics/lee2026_fit8_kelly."
         )
     #endif
 
     # Saylor: keep both model-based and direct Jo-vs-Saylor diagnostics.
     # For the BH-fit portion use the all-four selected family only as a
     # diagnostic reference; it does not affect any production selection.
-    run_saylor_recovery_study(
-        saylor_bundle,
-        args,
-        root_outdir,
-        family=chosen["all_four"],
-    )
+    if chosen.get("all_four") is not None:
+        run_saylor_recovery_study(
+            saylor_bundle,
+            args,
+            root_outdir,
+            family=chosen["all_four"],
+        )
+    else:
+        print(
+            "[Saylor recovery] skipped family-referenced BH-fit diagnostic "
+            "because all-four free-GE/free-GM extraction was unresolved."
+        )
+    #endif
 
     return chosen
 #enddef
