@@ -224,7 +224,17 @@ PASS1_GLOBAL_SCALE_FRAC = 0.31
 # conservative for point errors and, critically, avoids double counting a
 # correlated contribution.  Keep this explicit until an authoritative
 # point-to-point/correlated decomposition is supplied.
+
 GEORGES_GLOBAL_SCALE_FRAC = 0.0
+
+# Sachs-fit optimizer controls.  Hayward & Griffioen emphasize that the chosen
+# fit must converge robustly over the full replica study.  Start all candidate
+# families at a conventional proton-radius scale rather than at an arbitrary
+# dipole coefficient, and impose only broad physical guards on the slope.
+SACHS_INITIAL_RADIUS_FM = 0.84
+SACHS_MIN_RADIUS_FM = 0.20
+SACHS_MAX_RADIUS_FM = 1.50
+
 PAPER_SELECTION_COUNTS = {0.01: 98, 0.02: 212, 0.03: 292, 0.04: 404, 0.05: 473}
 PAPER_CHI2_NDOF = {1: 0.82, 2: 0.75, 3: 0.73, 4: 0.68, 5: 0.69, 6: 0.67, 7: 0.67, 8: 0.68}
 PAPER_DIPOLE_PARAMS = {
@@ -3798,6 +3808,33 @@ def save_elastic_reference_comparison(
 
 
 
+
+def sachs_first_coefficient_from_radius(radius_fm: float, family: str) -> float:
+    """First normalized-shape coefficient corresponding to an RMS radius."""
+    slope = -(float(radius_fm) / HBARC)**2 / 6.0
+    if family.startswith("P"):
+        return float(slope)
+    #endif
+    # IP and CF both have dG/dQ2|0 = -a1.
+    return float(-slope)
+#enddef
+
+
+def apply_sachs_radius_limits(
+        minimizer,
+        names_e: Sequence[str],
+        names_m: Sequence[str],
+        family: str) -> None:
+    """Apply broad radius-equivalent limits to the first E/M slope terms."""
+    c_lo = sachs_first_coefficient_from_radius(SACHS_MIN_RADIUS_FM, family)
+    c_hi = sachs_first_coefficient_from_radius(SACHS_MAX_RADIUS_FM, family)
+    lo, hi = min(c_lo, c_hi), max(c_lo, c_hi)
+    for name in [names_e[0], names_m[0]]:
+        minimizer.limits[name] = (lo, hi)
+    #endfor
+#enddef
+
+
 def sachs_family_value(q: np.ndarray, coeffs: np.ndarray, family: str) -> np.ndarray:
     """Normalized G(Q2)/G(0) candidate used by the radius-bias study."""
     q = np.asarray(q, dtype=float)
@@ -3832,6 +3869,18 @@ def sachs_family_value(q: np.ndarray, coeffs: np.ndarray, family: str) -> np.nda
 #enddef
 
 
+def sachs_family_value_precomputed(q: np.ndarray, coeffs: np.ndarray, family: str,
+                                    q_powers: Optional[np.ndarray] = None) -> np.ndarray:
+    """Fast repeated P/IP evaluation using invariant precomputed q powers."""
+    c = np.asarray(coeffs, dtype=float)
+    if q_powers is not None and (family.startswith("P") or family.startswith("IP")):
+        poly = 1.0 + np.dot(c, q_powers[:len(c)])
+        return 1.0 / poly if family.startswith("IP") else poly
+    #endif
+    return sachs_family_value(q, c, family)
+#enddef
+
+
 def sachs_family_radius(coeffs: np.ndarray, family: str) -> float:
     """Radius from the Q2=0 slope of a normalized Sachs family."""
     def shape(q):
@@ -3859,11 +3908,34 @@ def fit_cross_sections_with_sachs_family(
     nshape = order
     names_e = [f"e{i}" for i in range(1, nshape + 1)]
     names_m = [f"m{i}" for i in range(1, nshape + 1)]
-    fit_names = names_e + names_m
+    shape_names = names_e + names_m
     p0 = np.zeros(2 * nshape, dtype=float)
-    # Give the first slope a reasonable dipole-like starting point.
-    p0[0] = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
-    p0[nshape] = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
+    p0[0] = sachs_first_coefficient_from_radius(
+        SACHS_INITIAL_RADIUS_FM, family
+    )
+    p0[nshape] = sachs_first_coefficient_from_radius(
+        SACHS_INITIAL_RADIUS_FM, family
+    )
+
+    nuisance_names = []
+    nuisance_fracs = {}
+    for spec in specs:
+        frac = float(spec.get("norm_frac", 0.0))
+        if frac > 0.0:
+            nname = "beta_" + re.sub(
+                r"[^A-Za-z0-9]+", "_", str(spec["key"])
+            )
+            nuisance_names.append(nname)
+            nuisance_fracs[nname] = frac
+        #endif
+    #endfor
+    fit_names = shape_names + nuisance_names
+    fit_p0 = np.concatenate([
+        p0, np.zeros(len(nuisance_names), dtype=float)
+    ])
+    nuisance_index = {
+        name: len(shape_names) + i for i, name in enumerate(nuisance_names)
+    }
 
     prepared = []
     for spec in specs:
@@ -3880,12 +3952,17 @@ def fit_cross_sections_with_sachs_family(
                 d, str(spec["kind"]), bh_cut, add_moradi_bh_systematic
             )
         #endif
+        q = d["t_abs"].to_numpy(float)
+        tau = q / (4.0 * MP2)
+        key = str(spec["key"])
+        frac = float(spec.get("norm_frac", 0.0))
         prepared.append({
-            "q": d["t_abs"].to_numpy(float),
-            "y": np.asarray(y, dtype=float),
-            "e": np.asarray(err, dtype=float),
-            "A": d["bh_A"].to_numpy(float),
-            "B": d["bh_B"].to_numpy(float),
+            "key": key, "norm_frac": frac,
+            "nuisance_name": ("beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key) if frac > 0.0 else None),
+            "q": q, "q_powers": np.vstack([q**i for i in range(1, nshape + 1)]),
+            "tau": tau, "inv_one_plus_tau": 1.0 / (1.0 + tau),
+            "y": np.asarray(y, dtype=float), "e": np.asarray(err, dtype=float),
+            "A": d["bh_A"].to_numpy(float), "B": d["bh_B"].to_numpy(float),
             "C": d["bh_C"].to_numpy(float),
         })
     #endfor
@@ -3897,25 +3974,38 @@ def fit_cross_sections_with_sachs_family(
         total = 0.0
         for item in prepared:
             q = item["q"]
-            ge = sachs_family_value(q, ce, family)
-            gm = MU_P * sachs_family_value(q, cm, family)
-            tau = q / (4.0 * MP2)
-            f1 = (ge + tau * gm) / (1.0 + tau)
-            f2 = (gm - ge) / (1.0 + tau)
+            ge = sachs_family_value_precomputed(q, ce, family, item["q_powers"])
+            gm = MU_P * sachs_family_value_precomputed(q, cm, family, item["q_powers"])
+            tau = item["tau"]; inv = item["inv_one_plus_tau"]
+            f1 = (ge + tau * gm) * inv
+            f2 = (gm - ge) * inv
             pred = bh_from_f1f2(item["A"], item["B"], item["C"], f1, f2)
+            frac = item["norm_frac"]
+            if frac > 0.0:
+                beta = p[nuisance_index[item["nuisance_name"]]]
+                pred = pred * (1.0 + frac * beta)
+            #endif
             pull = (pred - item["y"]) / item["e"]
             total += float(np.dot(pull, pull))
+        #endfor
+        for nname in nuisance_names:
+            total += float(p[nuisance_index[nname]] ** 2)
         #endfor
         return total
     #enddef
 
-    m = Minuit(chi2, *p0, name=tuple(fit_names))
+    m = Minuit(chi2, *fit_p0, name=tuple(fit_names))
     m.errordef = Minuit.LEAST_SQUARES
+    apply_sachs_radius_limits(m, names_e, names_m, family)
+    for nname in nuisance_names:
+        m.limits[nname] = (-10.0, 10.0)
+    #endfor
+    # Closure uses central radii only; per-replica HESSE is unnecessary.
     m.migrad()
-    m.hesse()
-    pars = np.array([float(m.values[n]) for n in fit_names])
+    full = np.array([float(m.values[n]) for n in fit_names])
+    pars = full[:2 * nshape]
     rE = sachs_family_radius(pars[:nshape], family)
-    rM = sachs_family_radius(pars[nshape:], family)
+    rM = sachs_family_radius(pars[nshape:2 * nshape], family)
 
     # A replica is accepted when Minuit reports a valid minimum and both
     # extracted radii are finite.  We intentionally do not require an
@@ -3983,7 +4073,11 @@ def _radius_bias_replica_worker(
     replica_y = {}
     for spec in specs:
         key = str(spec["key"])
-        replica_y[key] = rng.normal(central_by_key[key], sigma_by_key[key])
+        central = np.asarray(central_by_key[key], dtype=float)
+        frac = float(spec.get("norm_frac", 0.0))
+        beta_true = rng.normal(0.0, 1.0) if frac > 0.0 else 0.0
+        shifted_central = central * (1.0 + frac * beta_true)
+        replica_y[key] = rng.normal(shifted_central, sigma_by_key[key])
     #endfor
 
     try:
@@ -4409,8 +4503,11 @@ def save_extended_radius_bias_matrices(
             "minimum_scenario_valid_fraction": min_valid,
             "global_valid_fraction": global_valid,
             "eligibility_threshold": float(eligibility_threshold),
-            "eligible": True,
-            "convergence_requirement_applied": False,
+            "eligible": bool(
+                np.isfinite(min_valid)
+                and min_valid >= float(eligibility_threshold)
+            ),
+            "convergence_requirement_applied": True,
         }
 
         for quantity in ["rE", "rM"]:
@@ -4434,7 +4531,11 @@ def save_extended_radius_bias_matrices(
         m = row["rM_RMS_objective_all_truths_fm"]
         row["combined_RMS_objective_fm"] = (
             float(math.sqrt(0.5 * (e**2 + m**2)))
-            if np.isfinite(e) and np.isfinite(m)
+            if (
+                bool(row["eligible"])
+                and np.isfinite(e)
+                and np.isfinite(m)
+            )
             else np.nan
         )
         rank_rows.append(row)
@@ -4479,6 +4580,14 @@ def save_extended_radius_bias_matrices(
     fig.tight_layout()
     fig.savefig(outdir / "10_extended_eligibility_ranking.png", dpi=180)
     plt.close(fig)
+#enddef
+
+
+
+def _radius_bias_family_batch_worker(task: Tuple[str, Sequence[int]]):
+    """Run all replica seeds for one family in one multiprocessing dispatch."""
+    family, seeds = task
+    return family, [_radius_bias_replica_worker((family, int(seed))) for seed in seeds]
 #enddef
 
 
@@ -4634,74 +4743,57 @@ def run_radius_bias_variance_study(
             len(families) * args.radius_bias_replicas
         )
 
-        tasks = []
+        seeds_by_family = {}
         iseed = 0
         for family in families:
+            seeds = []
             for _ in range(args.radius_bias_replicas):
-                seed = int(
-                    child_seeds[iseed].generate_state(
-                        1, dtype=np.uint64
-                    )[0]
-                )
-                tasks.append((family, seed))
+                seeds.append(int(child_seeds[iseed].generate_state(1, dtype=np.uint64)[0]))
                 iseed += 1
             #endfor
+            seeds_by_family[family] = seeds
         #endfor
+        tasks = [(family, seeds_by_family[family]) for family in families]
 
         results_by_family = {
-            family: {"rE": [], "rM": [], "shape_GE": [], "shape_GM": [], "shape_combined": [], "nvalid": 0}
+            family: {"rE": [], "rM": [], "shape_GE": [], "shape_GM": [],
+                     "shape_combined": [], "nvalid": 0}
             for family in families
         }
 
         print(
             f"[radius-bias] truth={truth_name}: "
-            f"{len(tasks)} replica fits with {nworkers} worker(s)..."
+            f"{len(families) * args.radius_bias_replicas} replica fits "
+            f"in {len(tasks)} family batches with {nworkers} worker(s)..."
         )
         t0 = time.time()
 
         with ProcessPoolExecutor(
                 max_workers=nworkers,
                 initializer=_init_radius_bias_worker,
-                initargs=(specs, central_by_key, sigma_by_key, truth_ge_by_key, truth_gm_by_key)) as pool:
-            chunksize = max(1, len(tasks) // max(1, 8 * nworkers))
-            replica_counter = {family: 0 for family in families}
-
-            for family, re_val, rm_val, valid, ge_shape, gm_shape, combined_shape in pool.map(
-                    _radius_bias_replica_worker,
-                    tasks,
-                    chunksize=chunksize):
-                irep = replica_counter[family]
-                replica_counter[family] += 1
-
-                replica_rows.append({
-                    "truth_model": truth_name,
-                    "truth_group": truth_group,
-                    "truth_rE_fm": truth_radius["E"],
-                    "truth_rM_fm": truth_radius["M"],
-                    "family": family,
-                    "replica": irep,
-                    "rE_fm": re_val,
-                    "rM_fm": rm_val,
-                    "valid": bool(valid),
-                    "GE_fractional_RMS_over_measured_t": ge_shape,
-                    "GM_fractional_RMS_over_measured_t": gm_shape,
-                    "combined_shape_fractional_RMS": combined_shape,
-                })
-
-                if valid:
-                    results_by_family[family]["rE"].append(re_val)
-                    results_by_family[family]["rM"].append(rm_val)
-                    results_by_family[family]["nvalid"] += 1
-                    if np.isfinite(ge_shape):
+                initargs=(specs, central_by_key, sigma_by_key,
+                          truth_ge_by_key, truth_gm_by_key)) as pool:
+            for family, family_results in pool.map(
+                    _radius_bias_family_batch_worker, tasks, chunksize=1):
+                for irep, result in enumerate(family_results):
+                    _, re_val, rm_val, valid, ge_shape, gm_shape, combined_shape = result
+                    replica_rows.append({
+                        "truth_model": truth_name, "truth_group": truth_group,
+                        "truth_rE_fm": truth_radius["E"], "truth_rM_fm": truth_radius["M"],
+                        "family": family, "replica": irep,
+                        "rE_fit_fm": re_val, "rM_fit_fm": rm_val, "valid": valid,
+                        "GE_shape_frac_rms": ge_shape, "GM_shape_frac_rms": gm_shape,
+                        "combined_shape_frac_rms": combined_shape,
+                    })
+                    if valid:
+                        results_by_family[family]["rE"].append(re_val)
+                        results_by_family[family]["rM"].append(rm_val)
                         results_by_family[family]["shape_GE"].append(ge_shape)
-                    #endif
-                    if np.isfinite(gm_shape):
                         results_by_family[family]["shape_GM"].append(gm_shape)
-                    #endif
-                    if np.isfinite(combined_shape):
                         results_by_family[family]["shape_combined"].append(combined_shape)
+                        results_by_family[family]["nvalid"] += 1
                     #endif
-                #endif
+                #endfor
             #endfor
         #endwith
 
@@ -6429,9 +6521,12 @@ def fit_sachs_family_multi_measurements(
     shape_names = names_e + names_m
 
     p0 = np.zeros(2 * nshape, dtype=float)
-    first = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
-    p0[0] = first
-    p0[nshape] = first
+    p0[0] = sachs_first_coefficient_from_radius(
+        SACHS_INITIAL_RADIUS_FM, family
+    )
+    p0[nshape] = sachs_first_coefficient_from_radius(
+        SACHS_INITIAL_RADIUS_FM, family
+    )
 
     nuisance_names = []
     nuisance_fracs = {}
@@ -6470,16 +6565,17 @@ def fit_sachs_family_multi_measurements(
         ):
             raise RuntimeError(f"{spec['label']}: invalid production point errors")
         #endif
+        q = d["t_abs"].to_numpy(float)
+        tau = q / (4.0 * MP2)
+        key = str(spec["key"]); frac = float(spec.get("norm_frac", 0.0))
         prepared.append({
-            "key": str(spec["key"]),
-            "norm_frac": float(spec.get("norm_frac", 0.0)),
-            "q": d["t_abs"].to_numpy(float),
-            "y": d["xs"].to_numpy(float),
-            "e": np.asarray(err, dtype=float),
-            "A": d["bh_A"].to_numpy(float),
-            "B": d["bh_B"].to_numpy(float),
-            "C": d["bh_C"].to_numpy(float),
-            "N": len(d),
+            "key": key, "norm_frac": frac,
+            "nuisance_name": ("beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key) if frac > 0.0 else None),
+            "q": q, "q_powers": np.vstack([q**i for i in range(1, nshape + 1)]),
+            "tau": tau, "inv_one_plus_tau": 1.0 / (1.0 + tau),
+            "y": d["xs"].to_numpy(float), "e": np.asarray(err, dtype=float),
+            "A": d["bh_A"].to_numpy(float), "B": d["bh_B"].to_numpy(float),
+            "C": d["bh_C"].to_numpy(float), "N": len(d),
         })
     #endfor
 
@@ -6497,19 +6593,16 @@ def fit_sachs_family_multi_measurements(
 
         for item in prepared:
             q = item["q"]
-            ge = sachs_family_value(q, ce, family)
-            gm = MU_P * sachs_family_value(q, cm, family)
-            tau = q / (4.0 * MP2)
-            f1 = (ge + tau * gm) / (1.0 + tau)
-            f2 = (gm - ge) / (1.0 + tau)
+            ge = sachs_family_value_precomputed(q, ce, family, item["q_powers"])
+            gm = MU_P * sachs_family_value_precomputed(q, cm, family, item["q_powers"])
+            tau = item["tau"]; inv = item["inv_one_plus_tau"]
+            f1 = (ge + tau * gm) * inv
+            f2 = (gm - ge) * inv
             pred = bh_from_f1f2(item["A"], item["B"], item["C"], f1, f2)
 
             frac = item["norm_frac"]
             if frac > 0.0:
-                nname = "beta_" + re.sub(
-                    r"[^A-Za-z0-9]+", "_", str(item["key"])
-                )
-                beta = p[nuisance_index[nname]]
+                beta = p[nuisance_index[item["nuisance_name"]]]
                 pred = pred * (1.0 + frac * beta)
             #endif
 
@@ -6526,14 +6619,9 @@ def fit_sachs_family_multi_measurements(
     m = Minuit(chi2_minuit, *fit_p0, name=tuple(fit_names))
     m.errordef = Minuit.LEAST_SQUARES
 
-    # The sign of the first slope coefficient fixes a real positive radius.
-    for name in [names_e[0], names_m[0]]:
-        if family.startswith("P"):
-            m.limits[name] = (-100.0, -1.0e-10)
-        else:
-            m.limits[name] = (1.0e-10, 100.0)
-        #endif
-    #endfor
+    # Broad radius-equivalent slope guards suppress optimizer excursions to
+    # zero-radius or multi-fm solutions without choosing the physical answer.
+    apply_sachs_radius_limits(m, names_e, names_m, family)
     for nname in nuisance_names:
         m.limits[nname] = (-10.0, 10.0)
     #endfor
@@ -9970,29 +10058,21 @@ def run_unified_km15_final_analysis(
         lee_bundle: Dict[str, object],
         saylor_bundle: Dict[str, object],
         args,
-        root_outdir: Path) -> str:
+        root_outdir: Path) -> Dict[str, str]:
     """
-    Unified final workflow after the external model-evaluation stage.
+    Unified KM15 workflow with an INDEPENDENT functional-form determination for
+    every requested measurement ensemble.
 
-    KM15 is the sole BH-purity prescription.  The Sachs extrapolation family is
-    NOT fixed in advance: it is selected by the full extended closure study on
-    the largest intended production ensemble (Jo + Defurne + Georges + Lee).
-    The closure-ranked families are then tried in order until one gives valid
-    nominal 5% fits for all three requested result ensembles:
-
-      * CLAS12 Lee 2026 only;
-      * CLAS6 Jo 2015 + CLAS12 Lee 2026;
-      * Jo + Hall A Defurne + Hall A Georges + Lee.
-
-    Once the family is selected, the same family is used for all three ensemble
-    threshold scans and for the Saylor recoverability study.  Saylor remains a
-    diagnostic and is never silently promoted into the production ensemble.
+    This follows the Hayward/Griffioen bias-variance logic: the preferred
+    extrapolation form depends on the actual kinematic range and precision of
+    the data being fit, so Lee-only, Jo+Lee, and all-four do not inherit one
+    another's preferred family.
     """
     final_dir = root_outdir / "final_analysis"
     diagnostics_dir = final_dir / "diagnostics"
     summary_dir = final_dir / "summary"
-    closure_dir = diagnostics_dir / "closure" / "km15_all_four"
-    for directory in [final_dir, diagnostics_dir, summary_dir, closure_dir]:
+    closure_root = diagnostics_dir / "closure" / "km15_by_ensemble"
+    for directory in [final_dir, diagnostics_dir, summary_dir, closure_root]:
         directory.mkdir(parents=True, exist_ok=True)
     #endfor
 
@@ -10000,85 +10080,9 @@ def run_unified_km15_final_analysis(
         Path(args.bh_model_selection_results).expanduser().resolve()
     )
 
-    production_bundles = [
-        jo_bundle, defurne_bundle, georges_bundle, lee_bundle
-    ]
-    production_bundles = sort_bundles_chronologically(production_bundles)
-
-    # KM15-only selected-count audit for all four measurements.
-    count_rows = []
-    for threshold in np.arange(0.01, 0.101, 0.01):
-        row = {
-            "model": "km15",
-            "threshold": float(threshold),
-            "threshold_percent": 100.0 * float(threshold),
-        }
-        total = 0
-        for bundle in production_bundles:
-            selected = select_bundle_from_external_model(
-                bundle, selection, "km15", float(threshold)
-            )
-            row["N_" + str(bundle["key"])] = int(len(selected))
-            total += int(len(selected))
-        #endfor
-        row["N_total"] = total
-        count_rows.append(row)
-    #endfor
-    pd.DataFrame(count_rows).to_csv(
-        diagnostics_dir / "km15_threshold_selected_counts_all_four.csv",
-        index=False,
+    production_bundles = sort_bundles_chronologically(
+        [jo_bundle, defurne_bundle, georges_bundle, lee_bundle]
     )
-
-    # Build the 5% all-four sample used to choose the extrapolation family.
-    closure_bundles = []
-    for bundle in production_bundles:
-        selected5 = select_bundle_from_external_model(
-            bundle, selection, "km15", 0.05
-        )
-        bcopy = dict(bundle)
-        bcopy["set5"] = selected5.copy()
-        closure_bundles.append(bcopy)
-    #endfor
-
-    print("\n" + "=" * 78)
-    print("[UNIFIED KM15 FINAL ANALYSIS]")
-    print("[BH-purity prescription] KM15 only")
-    print("[closure ensemble] Jo 2015 + Defurne 2015 + Georges 2022 + Lee 2026")
-    print("[requested result ensembles] Lee only; Jo+Lee; all four")
-    print("[Saylor] diagnostic recoverability study only")
-    print("=" * 78)
-
-    if args.run_radius_bias_study:
-        print(
-            "\n[unified KM15] running extended radius-bias/closure study on "
-            "the all-four KM15 5% sample"
-        )
-        run_radius_bias_variance_study(closure_bundles, args, closure_dir)
-    elif not (closure_dir / "radius_bias_extended_eligibility_ranking.csv").exists():
-        raise RuntimeError(
-            "Unified KM15 closure ranking is missing: "
-            f"{closure_dir}. Run with --run-radius-bias-study "
-            "--radius-bias-extended-truths."
-        )
-    #endif
-
-    ranking = pd.read_csv(
-        closure_dir / "radius_bias_extended_eligibility_ranking.csv"
-    )
-    ranking = ranking.loc[
-        np.isfinite(ranking["combined_RMS_objective_fm"].to_numpy(float))
-    ].copy()
-    ranking = ranking.sort_values(
-        "combined_RMS_objective_fm", ascending=True
-    ).reset_index(drop=True)
-    if len(ranking) == 0:
-        raise RuntimeError(
-            "No Sachs family has a finite all-four KM15 closure objective."
-        )
-    #endif
-
-    # Production-validation fallback: do not enforce IP2 or any other family.
-    # Require a valid nominal 5% fit for every requested ensemble.
     ensemble_defs = [
         ("lee2026_only", [lee_bundle], "CLAS12 Lee 2026"),
         (
@@ -10093,20 +10097,77 @@ def run_unified_km15_final_analysis(
         ),
     ]
 
-    attempt_rows = []
-    chosen_family = None
-    for irank, rank_row in ranking.iterrows():
-        family = str(rank_row["family"])
-        family_ok = True
-        row = {
-            "closure_rank": int(irank) + 1,
-            "family": family,
-            "combined_RMS_objective_fm": float(
-                rank_row["combined_RMS_objective_fm"]
-            ),
-        }
+    print("\n" + "=" * 78)
+    print("[UNIFIED KM15 FINAL ANALYSIS]")
+    print("[BH-purity prescription] KM15 only")
+    print("[functional forms] independently closure-ranked for EACH ensemble")
+    print(
+        f"[optimizer] initial rE=rM={SACHS_INITIAL_RADIUS_FM:.2f} fm; "
+        f"broad slope-equivalent radius guards "
+        f"{SACHS_MIN_RADIUS_FM:.2f}--{SACHS_MAX_RADIUS_FM:.2f} fm"
+    )
+    print("[normalization] correlated scale nuisances included in data and closure")
+    print("[Saylor] KM15 diagnostic plus direct Jo comparison; not production")
+    print("=" * 78)
 
-        for tag, cfg_bundles, label in ensemble_defs:
+    chosen = {}
+    family_audit_rows = []
+
+    for tag, cfg_bundles, label in ensemble_defs:
+        closure_dir = closure_root / tag
+        closure_dir.mkdir(parents=True, exist_ok=True)
+
+        closure_bundles = []
+        for bundle in cfg_bundles:
+            selected5 = select_bundle_from_external_model(
+                bundle, selection, "km15", 0.05
+            )
+            bcopy = dict(bundle)
+            bcopy["set5"] = selected5.copy()
+            closure_bundles.append(bcopy)
+        #endfor
+
+        if args.run_radius_bias_study:
+            print(
+                f"\n[ensemble closure] {label}: running independent "
+                "functional-form determination"
+            )
+            run_radius_bias_variance_study(
+                closure_bundles, args, closure_dir
+            )
+        #endif
+
+        ranking_path = (
+            closure_dir / "radius_bias_extended_eligibility_ranking.csv"
+        )
+        if not ranking_path.exists():
+            raise RuntimeError(
+                f"Missing closure ranking for {label}: {ranking_path}. "
+                "Run with --run-radius-bias-study "
+                "--radius-bias-extended-truths."
+            )
+        #endif
+
+        ranking = pd.read_csv(ranking_path)
+        usable = ranking.loc[
+            ranking["eligible"].astype(bool)
+            & np.isfinite(
+                ranking["combined_RMS_objective_fm"].to_numpy(float)
+            )
+        ].copy()
+        usable = usable.sort_values(
+            "combined_RMS_objective_fm", ascending=True
+        ).reset_index(drop=True)
+        if len(usable) == 0:
+            raise RuntimeError(
+                f"No convergence-eligible Sachs family for {label}. "
+                "Inspect the ensemble closure before production fitting."
+            )
+        #endif
+
+        selected_family = None
+        for irank, rank_row in usable.iterrows():
+            family = str(rank_row["family"])
             specs, counts = _km15_selected_specs_for_bundles(
                 cfg_bundles, selection, 0.05
             )
@@ -10118,74 +10179,289 @@ def run_unified_km15_final_analysis(
                     add_moradi_bh_systematic=True,
                 )
                 valid = bool(fit.get("valid", False))
-                row[f"{tag}_valid"] = valid
-                row[f"{tag}_N"] = int(sum(counts.values()))
-                row[f"{tag}_chi2_ndof"] = float(fit.get("chi2_ndof", np.nan))
-                row[f"{tag}_rE_fm"] = float(fit.get("rE_fm", np.nan))
-                row[f"{tag}_rM_fm"] = float(fit.get("rM_fm", np.nan))
-                family_ok = family_ok and valid
             except Exception as exc:
-                row[f"{tag}_valid"] = False
-                row[f"{tag}_failure"] = str(exc)
-                family_ok = False
+                valid = False
+                fit = {"failure": str(exc)}
             #endtry
+
+            family_audit_rows.append({
+                "configuration": tag,
+                "configuration_label": label,
+                "closure_rank": int(irank) + 1,
+                "family": family,
+                "closure_objective_fm": float(
+                    rank_row["combined_RMS_objective_fm"]
+                ),
+                "minimum_scenario_valid_fraction": float(
+                    rank_row["minimum_scenario_valid_fraction"]
+                ),
+                "global_valid_fraction": float(
+                    rank_row["global_valid_fraction"]
+                ),
+                "nominal_fit_valid": valid,
+                "nominal_N": int(sum(counts.values())),
+                "nominal_chi2_ndof": float(
+                    fit.get("chi2_ndof", np.nan)
+                ),
+                "nominal_rE_fm": float(fit.get("rE_fm", np.nan)),
+                "nominal_rM_fm": float(fit.get("rM_fm", np.nan)),
+            })
+            if valid:
+                selected_family = family
+                break
+            #endif
         #endfor
 
-        row["accepted_for_production"] = bool(family_ok)
-        attempt_rows.append(row)
-        if family_ok:
-            chosen_family = family
-            break
+        if selected_family is None:
+            raise RuntimeError(
+                f"No closure-ranked family produced a valid nominal fit "
+                f"for {label}."
+            )
         #endif
+        chosen[tag] = selected_family
+        print(
+            f"[ensemble closure] {label}: selected family = "
+            f"{selected_family}"
+        )
     #endfor
 
-    attempts = pd.DataFrame(attempt_rows)
-    attempts.to_csv(
-        summary_dir / "km15_all_four_family_selection_audit.csv",
+    pd.DataFrame(family_audit_rows).to_csv(
+        summary_dir / "km15_family_selection_by_ensemble.csv",
         index=False,
     )
-    if chosen_family is None:
-        raise RuntimeError(
-            "No closure-ranked Sachs family produced valid nominal 5% fits "
-            "for all three requested KM15 ensembles."
-        )
-    #endif
-
-    with open(summary_dir / "chosen_sachs_family.txt", "w") as fout:
-        fout.write(f"chosen_family={chosen_family}\n")
-        fout.write(
-            "selection_basis=extended closure ranking on all-four KM15 5% "
-            "sample, followed by valid nominal-fit requirement for Lee-only, "
-            "Jo+Lee, and all-four ensembles\n"
-        )
+    with open(
+            summary_dir / "chosen_sachs_family_by_ensemble.txt", "w"
+    ) as fout:
+        for tag, family in chosen.items():
+            fout.write(f"{tag}={family}\n")
+        #endfor
     #endwith
 
-    print(
-        f"\n[unified KM15] closure-selected production family = "
-        f"{chosen_family}"
+    # Run each threshold scan with that ensemble's own selected family.
+    rotation_root = final_dir / "km15_ensemble_rotation"
+    rotation_root.mkdir(parents=True, exist_ok=True)
+    nominal_rows = []
+    for tag, cfg_bundles, label in ensemble_defs:
+        family = chosen[tag]
+        cfg_dir = rotation_root / tag
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        threshold_rows = []
+
+        for threshold in np.arange(0.01, 0.101, 0.01):
+            specs, counts = _km15_selected_specs_for_bundles(
+                cfg_bundles, selection, float(threshold)
+            )
+            fit = fit_sachs_family_multi_measurements(
+                specs,
+                family=family,
+                bh_cut=float(threshold),
+                add_moradi_bh_systematic=True,
+            )
+            row = {
+                "configuration": tag,
+                "configuration_label": label,
+                "selected_family": family,
+                "threshold": float(threshold),
+                "threshold_percent": 100.0 * float(threshold),
+                **counts,
+                **fit,
+            }
+            threshold_rows.append(row)
+            if abs(float(threshold) - 0.05) < 1.0e-12:
+                nominal_rows.append(row)
+            #endif
+        #endfor
+
+        table = pd.DataFrame(threshold_rows)
+        table.to_csv(cfg_dir / "km15_threshold_scan.csv", index=False)
+
+        fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.7))
+        axes[0].errorbar(
+            table["threshold_percent"], table["rE_fm"],
+            yerr=table["rE_fit_err_fm"], marker="o", linestyle="-",
+        )
+        axes[1].errorbar(
+            table["threshold_percent"], table["rM_fm"],
+            yerr=table["rM_fit_err_fm"], marker="o", linestyle="-",
+        )
+        axes[2].plot(
+            table["threshold_percent"], table["chi2_ndof"],
+            marker="o", linestyle="-",
+        )
+        axes[0].set_ylabel(r"$r_E$ (fm)")
+        axes[1].set_ylabel(r"$r_M$ (fm)")
+        axes[2].set_ylabel(r"$\chi^2/\mathrm{dof}$")
+        for ax in axes:
+            ax.set_xlabel(r"$|1-R_{\rm BH}^{\rm KM15}|$ threshold (%)")
+            ax.axvline(5.0, linewidth=0.8, linestyle=":")
+            ax.grid(alpha=0.2)
+        #endfor
+        fig.suptitle(
+            f"{label}: KM15 threshold stability; closure-selected {family}",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.savefig(cfg_dir / "01_km15_threshold_stability.png", dpi=180)
+        plt.close(fig)
+    #endfor
+
+    nominal = pd.DataFrame(nominal_rows)
+    nominal.to_csv(
+        rotation_root / "km15_5pct_ensemble_summary.csv", index=False
     )
 
-    # Produce all requested radius results and threshold scans with the
-    # automatically selected family.
-    run_km15_ensemble_rotation(
-        production_bundles,
-        args,
-        root_outdir,
-        family=chosen_family,
-    )
+    print("\n[KM15 ensemble rotation] independently selected families")
+    cols = [
+        "configuration_label", "selected_family", "N", "chi2_ndof",
+        "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+    ]
+    print(nominal[cols].to_string(index=False))
 
-    # Saylor is studied with the SAME automatically selected family.  This is
-    # diagnostic only and cannot alter the production family selection.
+    # Saylor: keep both model-based and direct Jo-vs-Saylor diagnostics.
+    # For the BH-fit portion use the all-four selected family only as a
+    # diagnostic reference; it does not affect any production selection.
     run_saylor_recovery_study(
         saylor_bundle,
         args,
         root_outdir,
-        family=chosen_family,
+        family=chosen["all_four"],
     )
 
-    return chosen_family
+    return chosen
 #enddef
 
+
+
+
+def save_jo_saylor_matched_kinematics(
+        jo_bundle: Dict[str, object],
+        saylor_bundle: Dict[str, object],
+        outdir: Path) -> None:
+    """
+    Direct Jo-vs-Saylor comparison in overlapping multidimensional kinematics.
+
+    For every Saylor point, find the nearest Jo point in standardized
+    (Q2, xB, |t|, phi) space.  Compare DATA/KM15 rather than raw cross sections,
+    so the known kinematic dependence is divided out before the two
+    measurements are compared.  This is diagnostic only.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    jo = jo_bundle["all_data"].copy()
+    sa = saylor_bundle["all_data"].copy()
+
+    cols = ["Q2", "xB", "t_abs", "phi_deg"]
+    for frame in [jo, sa]:
+        for col in cols + ["xs", "km15_ep"]:
+            frame[col] = pd.to_numeric(frame[col], errors="coerce")
+        #endfor
+    #endfor
+    jo = jo.dropna(subset=cols + ["xs", "km15_ep"]).copy()
+    sa = sa.dropna(subset=cols + ["xs", "km15_ep"]).copy()
+
+    # Circular phi distance is represented by sin/cos coordinates.
+    def features(frame):
+        phi = np.deg2rad(frame["phi_deg"].to_numpy(float))
+        return np.column_stack([
+            frame["Q2"].to_numpy(float),
+            frame["xB"].to_numpy(float),
+            frame["t_abs"].to_numpy(float),
+            np.sin(phi),
+            np.cos(phi),
+        ])
+    #enddef
+
+    combined = np.vstack([features(jo), features(sa)])
+    scale = np.nanstd(combined, axis=0)
+    scale[~np.isfinite(scale) | (scale <= 0.0)] = 1.0
+    fj = features(jo) / scale
+    fs = features(sa) / scale
+
+    rows = []
+    # Chunked brute-force matching avoids an optional scipy spatial dependency.
+    for i0 in range(0, len(sa), 250):
+        block = fs[i0:i0 + 250]
+        d2 = np.sum(
+            (block[:, None, :] - fj[None, :, :])**2, axis=2
+        )
+        jj = np.argmin(d2, axis=1)
+        dd = np.sqrt(d2[np.arange(len(jj)), jj])
+        for local, (j, dist) in enumerate(zip(jj, dd)):
+            si = i0 + local
+            srow = sa.iloc[si]
+            jrow = jo.iloc[int(j)]
+            rs = float(srow["xs"] / srow["km15_ep"])
+            rj = float(jrow["xs"] / jrow["km15_ep"])
+            rows.append({
+                "saylor_index": int(si),
+                "jo_index": int(j),
+                "match_distance": float(dist),
+                "saylor_Q2": float(srow["Q2"]),
+                "jo_Q2": float(jrow["Q2"]),
+                "saylor_xB": float(srow["xB"]),
+                "jo_xB": float(jrow["xB"]),
+                "saylor_t_abs": float(srow["t_abs"]),
+                "jo_t_abs": float(jrow["t_abs"]),
+                "saylor_phi_deg": float(srow["phi_deg"]),
+                "jo_phi_deg": float(jrow["phi_deg"]),
+                "saylor_data_over_km15": rs,
+                "jo_data_over_km15": rj,
+                "ratio_saylor_over_jo": rs / rj if rj != 0.0 else np.nan,
+            })
+        #endfor
+    #endfor
+
+    matches = pd.DataFrame(rows)
+    matches.to_csv(
+        outdir / "02_jo_saylor_matched_kinematics.csv", index=False
+    )
+
+    # Show increasingly strict overlap quality without choosing a posteriori
+    # kinematic cuts.
+    quantiles = [0.25, 0.50, 0.75, 1.00]
+    summary = []
+    for q in quantiles:
+        cut = float(matches["match_distance"].quantile(q))
+        part = matches.loc[matches["match_distance"] <= cut]
+        summary.append({
+            "match_distance_quantile": q,
+            "max_match_distance": cut,
+            "N": len(part),
+            "median_saylor_over_jo": float(
+                np.nanmedian(part["ratio_saylor_over_jo"])
+            ),
+            "rms_saylor_over_jo_minus_one": float(
+                np.sqrt(np.nanmean(
+                    (part["ratio_saylor_over_jo"] - 1.0)**2
+                ))
+            ),
+        })
+    #endfor
+    pd.DataFrame(summary).to_csv(
+        outdir / "03_jo_saylor_matched_overlap_summary.csv", index=False
+    )
+
+    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    ax.scatter(
+        matches["match_distance"],
+        matches["ratio_saylor_over_jo"],
+        s=10, alpha=0.35,
+    )
+    ax.axhline(1.0, linewidth=0.9, linestyle="--")
+    ax.set_xlabel(
+        r"nearest-Jo distance in standardized $(Q^2,x_B,|t|,\phi)$ space"
+    )
+    ax.set_ylabel(
+        r"$(\sigma_{\rm Saylor}/\sigma_{\rm KM15})/"
+        r"(\sigma_{\rm Jo}/\sigma_{\rm KM15})$"
+    )
+    ax.set_title("Direct Jo 2015 vs Saylor 2018 matched-kinematics diagnostic")
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(
+        outdir / "02_jo_saylor_matched_kinematics.png", dpi=180
+    )
+    plt.close(fig)
+#enddef
 
 
 def run_published_default(args) -> int:
@@ -10257,12 +10533,12 @@ def run_published_default(args) -> int:
     # input location.  The external result table may remain a superset.
     export_bh_model_selection_kinematics(production_bundles, root_outdir)
 
-    save_jo_saylor_direct_comparison(
-        jo,
-        saylor,
+    jo_saylor_dir = (
         root_outdir / "final_analysis" / "diagnostics"
-        / "jo2015_vs_saylor2018",
+        / "jo2015_vs_saylor2018"
     )
+    save_jo_saylor_direct_comparison(jo, saylor, jo_saylor_dir)
+    save_jo_saylor_matched_kinematics(jo, saylor, jo_saylor_dir)
 
     if args.run_final_model_analysis:
         selection = load_external_bh_model_selection(
