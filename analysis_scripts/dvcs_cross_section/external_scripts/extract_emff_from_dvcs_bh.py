@@ -13979,6 +13979,325 @@ def save_neutron_magnetic_selected_family_study(
 #enddef
 
 
+
+def save_neutron_empirical_bh_compatibility_study(
+        evaluated: pd.DataFrame,
+        family: Optional[str],
+        outdir: Path) -> None:
+    """
+    Diagnostic study of empirical compatibility with the reference BH
+    prediction.
+
+    This is deliberately NOT used to define the production sample because the
+    reference BH calculation contains an assumed neutron form factor.  It asks
+    whether the measured cross section itself looks BH-like and compares that
+    empirical statement with the KM15 model-purity classifier.
+
+    Two observed-compatibility variables are used:
+        delta_obs = |1 - sigma_BH_ref / sigma_data|
+        pull_BH   = (sigma_data - sigma_BH_ref) / sqrt(stat^2 + sys^2)
+
+    The closure-selected GM family is then refitted after progressively tighter
+    cuts on each observed variable.  Those radius scans are diagnostics of the
+    KM15 purity criterion, not alternate production extractions.
+    """
+    diagdir = outdir / "empirical_bh_compatibility"
+    diagdir.mkdir(parents=True, exist_ok=True)
+
+    work = evaluated.copy()
+    y = work["xs"].to_numpy(float)
+    bh = work["km15_bh"].to_numpy(float)
+    exp_err = np.sqrt(
+        work["stat"].to_numpy(float)**2
+        + work["sys"].to_numpy(float)**2
+    )
+    safe_y = np.maximum(np.abs(y), 1.0e-15)
+    safe_err = np.maximum(exp_err, 1.0e-15)
+
+    work["bh_signed_fractional_residual"] = (y - bh) / safe_y
+    work["bh_abs_fractional_residual"] = np.abs(
+        work["bh_signed_fractional_residual"].to_numpy(float)
+    )
+    work["bh_pull_exp"] = (y - bh) / safe_err
+    work["bh_abs_pull_exp"] = np.abs(work["bh_pull_exp"].to_numpy(float))
+    work["data_total_err"] = exp_err
+    work["km15_bh_purity_percent"] = 100.0 * work["bh_delta"]
+    work["observed_bh_difference_percent"] = (
+        100.0 * work["bh_abs_fractional_residual"]
+    )
+    work.to_csv(
+        diagdir / "01_neutron_empirical_bh_compatibility_points.csv",
+        index=False,
+    )
+
+    # Direct comparison between the model-predicted non-BH importance and what
+    # the data actually do relative to the reference BH calculation.
+    fig, ax = plt.subplots(figsize=(7.2, 5.6))
+    ax.scatter(
+        100.0 * work["bh_delta"],
+        100.0 * work["bh_abs_fractional_residual"],
+        s=30,
+    )
+    lim = max(
+        5.0,
+        float(np.nanmax(100.0 * work["bh_delta"])) * 1.08,
+        float(np.nanpercentile(
+            100.0 * work["bh_abs_fractional_residual"], 97
+        )) * 1.08,
+    )
+    ax.plot([0.0, lim], [0.0, lim], linewidth=0.9, linestyle="--")
+    ax.set_xlim(0.0, lim)
+    ax.set_ylim(0.0, lim)
+    ax.set_xlabel(
+        r"KM15 predicted $|1-\sigma_{\rm BH}/\sigma_{\rm EP}|$ (%)"
+    )
+    ax.set_ylabel(
+        r"Observed $|1-\sigma_{\rm BH}^{\rm ref}/\sigma_{\rm data}|$ (%)"
+    )
+    ax.set_title("Neutron: predicted non-BH importance vs observed BH difference")
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "02_neutron_observed_vs_km15_bh_difference.png", dpi=180
+    )
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(7.2, 5.6))
+    ax.scatter(
+        100.0 * work["bh_delta"],
+        work["bh_pull_exp"],
+        s=30,
+    )
+    for level in [-3.0, -2.0, -1.0, 1.0, 2.0, 3.0]:
+        ax.axhline(level, linewidth=0.7, linestyle=":")
+    #endfor
+    ax.axhline(0.0, linewidth=0.9)
+    ax.set_xlabel(
+        r"KM15 predicted $|1-\sigma_{\rm BH}/\sigma_{\rm EP}|$ (%)"
+    )
+    ax.set_ylabel(
+        r"BH pull $(\sigma_{\rm data}-\sigma_{\rm BH}^{\rm ref})/"
+        r"\sqrt{\delta_{\rm stat}^2+\delta_{\rm sys}^2}$"
+    )
+    ax.set_title("Neutron: empirical BH pull vs KM15 purity classifier")
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "03_neutron_bh_pull_vs_km15_purity.png", dpi=180
+    )
+    plt.close(fig)
+
+    # Summarize how often the two criteria agree/disagree.
+    model_thresholds = [0.05, 0.10, 0.20, 0.30, 0.50, 0.75]
+    observed_thresholds = [0.05, 0.10, 0.15, 0.20, 0.30, 0.50]
+    agreement_rows = []
+    for model_cut in model_thresholds:
+        for obs_cut in observed_thresholds:
+            model_bh = work["bh_delta"] <= model_cut
+            observed_bh = work["bh_abs_fractional_residual"] <= obs_cut
+            agreement_rows.append({
+                "km15_delta_cut": model_cut,
+                "km15_delta_cut_percent": 100.0 * model_cut,
+                "observed_delta_cut": obs_cut,
+                "observed_delta_cut_percent": 100.0 * obs_cut,
+                "N_both_BH_like": int(np.sum(model_bh & observed_bh)),
+                "N_KM15_only_BH_like": int(np.sum(model_bh & ~observed_bh)),
+                "N_observed_only_BH_like": int(np.sum(~model_bh & observed_bh)),
+                "N_neither_BH_like": int(np.sum(~model_bh & ~observed_bh)),
+            })
+        #endfor
+    #endfor
+    pd.DataFrame(agreement_rows).to_csv(
+        diagdir / "04_neutron_km15_vs_observed_bh_agreement.csv",
+        index=False,
+    )
+
+    if family is None:
+        print(
+            "[neutron-empirical-BH] no closure-selected GM family; "
+            "compatibility plots saved but radius diagnostics skipped"
+        )
+        return
+    #endif
+
+    npars = int(re.findall(r"\d+", family)[0])
+    scan_rows = []
+
+    # Fractional central-value compatibility scan. This is intentionally
+    # diagnostic because the reference BH contains an assumed neutron FF.
+    for cut in observed_thresholds:
+        selected = work.loc[
+            np.isfinite(work["bh_abs_fractional_residual"])
+            & (work["bh_abs_fractional_residual"] <= cut)
+        ].copy()
+        if len(selected) <= npars:
+            continue
+        #endif
+        radius, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
+            selected,
+            family,
+            statistical_only=False,
+            bh_systematic_fraction=0.05,
+            return_parameters=True,
+        )
+        ndof = max(1, len(selected) - npars)
+        row = {
+            "selection_type": "observed_fractional_BH_difference",
+            "selection_cut": float(cut),
+            "selection_cut_display": 100.0 * float(cut),
+            "selection_units": "percent",
+            "family": family,
+            "N": int(len(selected)),
+            "rM_fm": float(radius) if valid else np.nan,
+            "chi2": float(chi2),
+            "ndof": int(ndof),
+            "chi2_ndof": float(chi2 / ndof),
+            "valid": bool(valid),
+            "median_km15_bh_delta": float(np.nanmedian(selected["bh_delta"])),
+            "max_km15_bh_delta": float(np.nanmax(selected["bh_delta"])),
+        }
+        for i, value in enumerate(pars, start=1):
+            row[f"m{i}"] = float(value)
+        #endfor
+        scan_rows.append(row)
+    #endfor
+
+    # Statistical-compatibility scan. Unlike the fractional cut, this accounts
+    # for the fact that a large central-value difference may be insignificant
+    # for a low-precision point.
+    pull_thresholds = [0.5, 1.0, 1.5, 2.0, 3.0]
+    for cut in pull_thresholds:
+        selected = work.loc[
+            np.isfinite(work["bh_abs_pull_exp"])
+            & (work["bh_abs_pull_exp"] <= cut)
+        ].copy()
+        if len(selected) <= npars:
+            continue
+        #endif
+        radius, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
+            selected,
+            family,
+            statistical_only=False,
+            bh_systematic_fraction=0.05,
+            return_parameters=True,
+        )
+        ndof = max(1, len(selected) - npars)
+        row = {
+            "selection_type": "observed_BH_pull",
+            "selection_cut": float(cut),
+            "selection_cut_display": float(cut),
+            "selection_units": "sigma",
+            "family": family,
+            "N": int(len(selected)),
+            "rM_fm": float(radius) if valid else np.nan,
+            "chi2": float(chi2),
+            "ndof": int(ndof),
+            "chi2_ndof": float(chi2 / ndof),
+            "valid": bool(valid),
+            "median_km15_bh_delta": float(np.nanmedian(selected["bh_delta"])),
+            "max_km15_bh_delta": float(np.nanmax(selected["bh_delta"])),
+        }
+        for i, value in enumerate(pars, start=1):
+            row[f"m{i}"] = float(value)
+        #endfor
+        scan_rows.append(row)
+    #endfor
+
+    scan = pd.DataFrame(scan_rows)
+    scan.to_csv(
+        diagdir / "05_neutron_empirical_bh_radius_diagnostic.csv",
+        index=False,
+    )
+
+    # Radius vs observed fractional BH compatibility.
+    frac = scan.loc[
+        (scan["selection_type"] == "observed_fractional_BH_difference")
+        & scan["valid"]
+        & np.isfinite(scan["rM_fm"])
+    ].copy()
+    if len(frac):
+        fig, ax = plt.subplots(figsize=(7.2, 5.4))
+        ax.plot(
+            frac["selection_cut_display"],
+            frac["rM_fm"],
+            marker="o", linestyle="none",
+        )
+        ax.axhline(
+            0.864, linewidth=1.0, linestyle="--",
+            label=r"PDG $r_{M,n}=0.864$ fm",
+        )
+        for _, row in frac.iterrows():
+            ax.annotate(
+                f"N={int(row['N'])}",
+                (row["selection_cut_display"], row["rM_fm"]),
+                xytext=(4, 4), textcoords="offset points", fontsize=8,
+            )
+        #endfor
+        ax.set_xlabel(
+            r"Observed $|1-\sigma_{\rm BH}^{\rm ref}/\sigma_{\rm data}|$ "
+            r"cut (%)"
+        )
+        ax.set_ylabel(r"$r_{M,n}$ [fm]")
+        ax.set_title(
+            rf"Diagnostic BH-compatible selection, {family} $G_M^n$"
+        )
+        ax.grid(alpha=0.2)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(
+            diagdir / "06_neutron_radius_vs_observed_bh_difference.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    #endif
+
+    pullscan = scan.loc[
+        (scan["selection_type"] == "observed_BH_pull")
+        & scan["valid"]
+        & np.isfinite(scan["rM_fm"])
+    ].copy()
+    if len(pullscan):
+        fig, ax = plt.subplots(figsize=(7.2, 5.4))
+        ax.plot(
+            pullscan["selection_cut_display"],
+            pullscan["rM_fm"],
+            marker="o", linestyle="none",
+        )
+        ax.axhline(
+            0.864, linewidth=1.0, linestyle="--",
+            label=r"PDG $r_{M,n}=0.864$ fm",
+        )
+        for _, row in pullscan.iterrows():
+            ax.annotate(
+                f"N={int(row['N'])}",
+                (row["selection_cut_display"], row["rM_fm"]),
+                xytext=(4, 4), textcoords="offset points", fontsize=8,
+            )
+        #endfor
+        ax.set_xlabel(r"Observed BH compatibility cut, $|z_{\rm BH}|$")
+        ax.set_ylabel(r"$r_{M,n}$ [fm]")
+        ax.set_title(
+            rf"Diagnostic BH-pull selection, {family} $G_M^n$"
+        )
+        ax.grid(alpha=0.2)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(
+            diagdir / "07_neutron_radius_vs_bh_pull.png", dpi=180
+        )
+        plt.close(fig)
+    #endif
+
+    print(
+        "[neutron-empirical-BH] diagnostic only: observed BH compatibility "
+        "uses a reference-BH FF assumption and is not a production selection"
+    )
+    print(
+        f"[neutron-empirical-BH] outputs -> {diagdir}"
+    )
+#enddef
+
+
 def save_neutron_magnetic_only_study(
         evaluated: pd.DataFrame,
         outdir: Path) -> None:
@@ -14311,6 +14630,14 @@ def run_neutron_analysis(args) -> int:
         evaluated, args, outdir
     )
     save_neutron_magnetic_selected_family_study(
+        evaluated, neutron_gm_family, outdir
+    )
+
+    # Empirically test whether the data themselves are compatible with the
+    # reference BH prediction, and compare that with KM15's model-defined
+    # BH-purity ranking. These selections are diagnostics only because the
+    # reference BH contains an assumed neutron form factor.
+    save_neutron_empirical_bh_compatibility_study(
         evaluated, neutron_gm_family, outdir
     )
 
