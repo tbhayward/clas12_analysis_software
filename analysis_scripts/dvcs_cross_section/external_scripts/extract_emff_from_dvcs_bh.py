@@ -13988,6 +13988,252 @@ def save_neutron_magnetic_selected_family_study(
 
 
 
+def save_neutron_phi_shape_bh_compatibility_study(
+        evaluated: pd.DataFrame,
+        outdir: Path) -> None:
+    """
+    Test BH compatibility at the level of each complete eight-point phi
+    distribution rather than by selecting individual cross-section points.
+
+    In each (Q2,xB,t) bin, GE_n is fixed to the Atac et al. central form and a
+    single local magnetic amplitude gM_scale is fitted:
+        GM_n(Q2) = gM_scale * GM_n^Kelly(Q2).
+
+    The fit therefore lets the magnetic normalization appropriate to that
+    finite-|t| bin float while testing whether the measured phi dependence is
+    compatible with the exact BH angular structure.  With eight phi points and
+    one fitted amplitude, the shape test has seven degrees of freedom.
+
+    This is a diagnostic of non-BH azimuthal structure.  It does not use KM15
+    EP/BH purity to select points and it does not extrapolate to Q2=0.
+    """
+    diagdir = outdir / "phi_shape_bh_compatibility"
+    diagdir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    predictions = []
+
+    for kin_bin, part in evaluated.groupby("kin_bin", sort=True):
+        p = part.sort_values("phi_deg").copy()
+        q = p["t_abs"].to_numpy(float)
+        tau = q / (4.0 * MP2)
+        inv = 1.0 / (1.0 + tau)
+        ge = neutron_atac_ge(q, 0.505, 1.655, 0.909)
+        gm_ref = neutron_kelly_gm(q)
+        y = p["xs"].to_numpy(float)
+        err = np.sqrt(
+            p["stat"].to_numpy(float)**2 + p["sys"].to_numpy(float)**2
+        )
+        err = np.maximum(err, 1.0e-15)
+        A = p["bh_A"].to_numpy(float)
+        B = p["bh_B"].to_numpy(float)
+        C = p["bh_C"].to_numpy(float)
+
+        def chi2(gm_scale):
+            gm = float(gm_scale) * gm_ref
+            f1 = (ge + tau * gm) * inv
+            f2 = (gm - ge) * inv
+            pred = bh_from_f1f2(A, B, C, f1, f2)
+            pull = (pred - y) / err
+            return float(np.dot(pull, pull))
+        #enddef
+
+        m = Minuit(chi2, gm_scale=1.0)
+        m.errordef = Minuit.LEAST_SQUARES
+        m.limits["gm_scale"] = (0.20, 1.80)
+        m.migrad()
+
+        gm_scale = float(m.values["gm_scale"])
+        gm_scale_err = float(m.errors["gm_scale"])
+        chi2_min = float(m.fval)
+        ndof = max(1, len(p) - 1)
+        chi2_ndof = chi2_min / ndof
+
+        # Survival probability for integer ndof without introducing scipy:
+        # Q(nu/2, chi2/2).  Here nu=7 for the complete 8-point bins, but use
+        # mpmath only if it is already available would add a dependency.
+        # Store chi2/ndof as the primary compatibility statistic; the familiar
+        # 95% critical value is supplied below for the expected 7 dof.
+        chi2_95 = 14.067 if ndof == 7 else np.nan
+        compatible_95 = bool(
+            np.isfinite(chi2_95) and chi2_min <= chi2_95
+        )
+
+        gm = gm_scale * gm_ref
+        f1 = (ge + tau * gm) * inv
+        f2 = (gm - ge) * inv
+        pred = bh_from_f1f2(A, B, C, f1, f2)
+        pulls = (y - pred) / err
+
+        rows.append({
+            "kin_bin": int(kin_bin),
+            "N_phi": int(len(p)),
+            "Q2_mean_GeV2": float(np.nanmean(p["Q2"])),
+            "xB_mean": float(np.nanmean(p["xB"])),
+            "t_abs_mean_GeV2": float(np.nanmean(p["t_abs"])),
+            "gm_scale_vs_Kelly": gm_scale,
+            "gm_scale_err": gm_scale_err,
+            "chi2": chi2_min,
+            "ndof": int(ndof),
+            "chi2_ndof": chi2_ndof,
+            "chi2_95_critical": chi2_95,
+            "BH_shape_compatible_95pct": compatible_95,
+            "median_abs_pull": float(np.nanmedian(np.abs(pulls))),
+            "max_abs_pull": float(np.nanmax(np.abs(pulls))),
+            "median_km15_bh_delta": float(np.nanmedian(p["bh_delta"])),
+            "max_km15_bh_delta": float(np.nanmax(p["bh_delta"])),
+        })
+
+        for j, (_, point) in enumerate(p.iterrows()):
+            predictions.append({
+                "kin_bin": int(kin_bin),
+                "phi_deg": float(point["phi_deg"]),
+                "Q2_GeV2": float(point["Q2"]),
+                "xB": float(point["xB"]),
+                "t_abs_GeV2": float(point["t_abs"]),
+                "xs_data": float(point["xs"]),
+                "xs_err_total": float(err[j]),
+                "xs_BH_local_GM_fit": float(pred[j]),
+                "pull_BH_local_GM_fit": float(pulls[j]),
+                "gm_scale_vs_Kelly": gm_scale,
+                "km15_bh_delta": float(point["bh_delta"]),
+            })
+        #endfor
+    #endfor
+
+    summary = pd.DataFrame(rows).sort_values("kin_bin")
+    points = pd.DataFrame(predictions).sort_values(["kin_bin", "phi_deg"])
+    summary.to_csv(
+        diagdir / "01_neutron_phi_shape_BH_compatibility_by_bin.csv",
+        index=False,
+    )
+    points.to_csv(
+        diagdir / "02_neutron_phi_shape_BH_fit_points.csv",
+        index=False,
+    )
+
+    # Main 3x3 observable-space diagnostic: data versus the best local-GM BH
+    # shape in each independent kinematic bin.
+    fig, axes = plt.subplots(
+        3, 3, figsize=(15.0, 11.5), sharex=True
+    )
+    axes = np.asarray(axes).ravel()
+    for ax, (_, row) in zip(axes, summary.iterrows()):
+        kin_bin = int(row["kin_bin"])
+        pp = points.loc[points["kin_bin"] == kin_bin].sort_values("phi_deg")
+        ax.errorbar(
+            pp["phi_deg"], pp["xs_data"], yerr=pp["xs_err_total"],
+            fmt="o", linestyle="none", label="Data",
+        )
+        ax.plot(
+            pp["phi_deg"], pp["xs_BH_local_GM_fit"],
+            marker="s", fillstyle="none", linestyle="none",
+            label=r"BH, local $G_M^n$ fit",
+        )
+        verdict = "compatible" if row["BH_shape_compatible_95pct"] else "rejected"
+        ax.set_title(
+            rf"Bin {kin_bin}: $\chi^2/\nu={row['chi2_ndof']:.2f}$, "
+            rf"$\nu={int(row['ndof'])}$ ({verdict})"
+        )
+        ax.grid(alpha=0.2)
+    #endfor
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel(r"$d^4\sigma$")
+    #endfor
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels, loc="upper center", ncol=2,
+        bbox_to_anchor=(0.5, 0.965),
+    )
+    fig.suptitle(
+        r"Neutron BH $\phi$-shape compatibility with local $G_M^n$ floated",
+        y=0.995, fontsize=16,
+    )
+    fig.subplots_adjust(top=0.90, hspace=0.30, wspace=0.24)
+    fig.savefig(
+        diagdir / "03_neutron_phi_shape_BH_compatibility_3x3.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    # Per-bin pulls make coherent non-BH angular residuals much easier to see.
+    fig, axes = plt.subplots(
+        3, 3, figsize=(15.0, 11.5), sharex=True, sharey=True
+    )
+    axes = np.asarray(axes).ravel()
+    for ax, (_, row) in zip(axes, summary.iterrows()):
+        kin_bin = int(row["kin_bin"])
+        pp = points.loc[points["kin_bin"] == kin_bin].sort_values("phi_deg")
+        ax.axhline(0.0, linewidth=0.8)
+        ax.axhline(2.0, linewidth=0.6, linestyle=":")
+        ax.axhline(-2.0, linewidth=0.6, linestyle=":")
+        ax.plot(
+            pp["phi_deg"], pp["pull_BH_local_GM_fit"],
+            marker="o", linestyle="none",
+        )
+        ax.set_title(
+            rf"Bin {kin_bin}: max $|z|={row['max_abs_pull']:.2f}$"
+        )
+        ax.grid(alpha=0.2)
+    #endfor
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel("BH-fit pull")
+    #endfor
+    fig.suptitle(
+        r"Residual angular structure after local-$G_M^n$ BH fit",
+        y=0.995, fontsize=16,
+    )
+    fig.subplots_adjust(top=0.92, hspace=0.28, wspace=0.18)
+    fig.savefig(
+        diagdir / "04_neutron_phi_shape_BH_pull_3x3.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    # Compare whole-bin BH-shape compatibility with KM15's point-level purity
+    # expectation, without using either quantity to select the other.
+    fig, ax = plt.subplots(figsize=(7.2, 5.5))
+    ax.scatter(
+        100.0 * summary["median_km15_bh_delta"],
+        summary["chi2_ndof"],
+        s=42,
+    )
+    for _, row in summary.iterrows():
+        ax.annotate(
+            str(int(row["kin_bin"])),
+            (100.0 * row["median_km15_bh_delta"], row["chi2_ndof"]),
+            xytext=(4, 4), textcoords="offset points", fontsize=8,
+        )
+    #endfor
+    ax.axhline(14.067 / 7.0, linewidth=0.8, linestyle="--")
+    ax.set_xlabel(
+        r"Median KM15 $|1-\sigma_{\rm BH}/\sigma_{\rm EP}|$ in bin (%)"
+    )
+    ax.set_ylabel(r"Local-$G_M^n$ BH shape $\chi^2/\nu$")
+    ax.set_title("Whole-bin BH shape test vs KM15 purity expectation")
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "05_neutron_phi_shape_chi2_vs_km15_purity.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    n_ok = int(np.sum(summary["BH_shape_compatible_95pct"]))
+    print(
+        f"[neutron-phi-shape-BH] {n_ok}/{len(summary)} kinematic bins "
+        "compatible with a local-GM BH phi shape at the 95% level"
+    )
+    print(f"[neutron-phi-shape-BH] outputs -> {diagdir}")
+#enddef
+
+
 def save_neutron_empirical_bh_compatibility_study(
         evaluated: pd.DataFrame,
         family: Optional[str],
@@ -14647,6 +14893,12 @@ def run_neutron_analysis(args) -> int:
     # reference BH contains an assumed neutron form factor.
     save_neutron_empirical_bh_compatibility_study(
         evaluated, neutron_gm_family, outdir
+    )
+
+    # Whole-bin angular-shape test: float one finite-|t| GM amplitude in each
+    # kinematic bin and test the complete eight-point phi dependence against BH.
+    save_neutron_phi_shape_bh_compatibility_study(
+        evaluated, outdir
     )
 
     print(
