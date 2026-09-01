@@ -8091,7 +8091,8 @@ def run_final_model_selected_analysis(
     """
     End-to-end final analysis after the external PARTONS model-selection stage.
 
-    Legacy three-model production analysis retained for backward compatibility.  Saylor 2018 and Hall A Defurne 2015 are intentionally excluded
+    Preliminary CLAS-only production analysis using CLAS6 Jo 2015 + CLAS12
+    Lee 2026.  Saylor 2018 and Hall A Defurne 2015 are intentionally excluded
     from the default/preliminary ensemble and remain opt-in diagnostics.
 
     The three BH-purity models define alternative selected samples.  They are
@@ -9962,7 +9963,6 @@ def run_saylor_recovery_study(
 #enddef
 
 
-
 def run_unified_km15_final_analysis(
         jo_bundle: Dict[str, object],
         defurne_bundle: Dict[str, object],
@@ -10187,6 +10187,7 @@ def run_unified_km15_final_analysis(
 #enddef
 
 
+
 def run_published_default(args) -> int:
     """
     Publication-facing workflow.
@@ -10294,6 +10295,727 @@ def run_published_default(args) -> int:
 
 
 
+
+def run_all_three(args) -> int:
+    print("\\n" + "=" * 78)
+    print("[DEFAULT MODE] Running pass 2, pass 1, and CLAS6")
+    print("=" * 78)
+
+    pass2 = run_pass2_analysis(args, return_results=True)
+    pass1 = run_pass1_validation(args, return_results=True)
+    clas6 = run_clas6_validation(args, return_results=True)
+
+    comparison_dir = Path(args.outdir).expanduser().resolve() / "comparisons"
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+
+    bundles = [clas6, pass1, pass2]
+    save_cross_dataset_form_factor_comparison(
+        bundles, comparison_dir, "Fit 5"
+    )
+    save_cross_dataset_form_factor_comparison(
+        bundles, comparison_dir, "Fit 8"
+    )
+    save_cross_dataset_radius_comparison(bundles, comparison_dir)
+    save_cross_dataset_summary(bundles, comparison_dir)
+
+    print(f"\\n[comparison] Results written to {comparison_dir}")
+    return 0
+#enddef
+
+
+def run_pass1_validation(args, return_results: bool = False):
+    """
+    Run the same BH-dominance/form-factor diagnostic on the legacy CLAS12
+    pass-1 cross sections.
+
+    This mode bypasses the pass-2 CSV and uses:
+      * pass-1 stat uncertainty
+      * pass-1 per-point systematic uncertainty
+      * paper's 1--5% BH-selection uncertainty
+      * one correlated 31% overall normalization nuisance
+      * no pass-2 combination-systematic nuisance
+    """
+    csv_path = Path(args.pass1_csv).expanduser().resolve()
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        / "clas12_lee2026"
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 78)
+    print("[CLAS12 PASS-1 VALIDATION MODE]")
+    print(f"[input]  {csv_path}")
+    print(f"[output] {outdir}")
+    print("=" * 78)
+
+    df = load_clas12_pass1_csv(csv_path)
+
+    cache = outdir / "km15_bh_decomposition_pass1.csv"
+    df = evaluate_km15_dataframe(
+        df,
+        10.604,
+        max(1, args.workers),
+        cache,
+        args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["km15_ep"])
+        & np.isfinite(df["km15_bh"])
+        & np.isfinite(df["R_BH"])
+        & (df["km15_ep"] > 0.0)
+        & (df["km15_bh"] > 0.0)
+    )
+    df = df.loc[finite].copy().reset_index(drop=True)
+
+    max_ep_relerr = float(np.nanmax(df["km15_ep_decomp_relerr"]))
+    max_bh_relerr = float(np.nanmax(df["bh_quad_relerr"]))
+    print(
+        f"[check] max KM15 EP decomposition rel. error = {max_ep_relerr:.3e}"
+    )
+    print(
+        f"[check] max BH quadratic reconstruction rel. error = {max_bh_relerr:.3e}"
+    )
+
+    if max_ep_relerr > 1.0e-7 or max_bh_relerr > 1.0e-7:
+        raise RuntimeError(
+            "Pass-1 validation failed internal KM15 decomposition checks."
+        )
+    #endif
+
+    bh_cuts = [0.01, 0.02, 0.03, 0.04, 0.05]
+    selected_sets = {}
+    selection_rows = []
+
+    print("\n[PASS1 BH selections]")
+    for cut in bh_cuts:
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        selected_sets[cut] = selected
+        print(
+            f"  |1-R_BH| <= {100*cut:.0f}% : {len(selected)} points"
+        )
+        selection_rows.append({
+            "BH_cut": cut,
+            "Npts": len(selected),
+            "xB_min": selected["xB"].min() if len(selected) else np.nan,
+            "xB_max": selected["xB"].max() if len(selected) else np.nan,
+            "Q2_min": selected["Q2"].min() if len(selected) else np.nan,
+            "Q2_max": selected["Q2"].max() if len(selected) else np.nan,
+            "t_min": selected["t_abs"].min() if len(selected) else np.nan,
+            "t_max": selected["t_abs"].max() if len(selected) else np.nan,
+        })
+    #endfor
+
+    pd.DataFrame(selection_rows).to_csv(
+        outdir / "bh_selection_summary.csv",
+        index=False,
+    )
+
+    fit_results = []
+
+    for fit_index, cut in enumerate(bh_cuts, start=1):
+        data = selected_sets[cut]
+        fr = fit_paper_model(
+            data=data,
+            kind="dipole",
+            fit_name=f"Fit {fit_index}",
+            bh_cut=cut,
+            include_clas12_ptp_sys=True,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=True,
+            global_scale_frac=PASS1_GLOBAL_SCALE_FRAC,
+        )
+        fit_results.append(fr)
+
+        print(
+            f"[PASS1 fit] Fit {fit_index}: "
+            f"N={fr.npts:4d} "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"aE={fr.params[0]:.4f} "
+            f"aM={fr.params[1]:.4f} "
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}"
+        )
+    #endfor
+
+    set5 = selected_sets[0.05].copy()
+    set5["fit_sigma_default"] = fit_sigma_errors(
+        set5,
+        0.05,
+        include_clas12_ptp_sys=True,
+        include_bh_sys=True,
+    )
+    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
+
+    for kind, fit_name in [
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
+    ]:
+        fr = fit_paper_model(
+            data=set5,
+            kind=kind,
+            fit_name=fit_name,
+            bh_cut=0.05,
+            include_clas12_ptp_sys=True,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=True,
+            global_scale_frac=PASS1_GLOBAL_SCALE_FRAC,
+        )
+        fit_results.append(fr)
+        print(
+            f"[PASS1 fit] {fit_name}: "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}"
+        )
+    #endfor
+
+    pd.DataFrame(
+        [fitresult_to_record(fr) for fr in fit_results]
+    ).to_csv(outdir / "fit_results.csv", index=False)
+
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    fit8 = next(r for r in fit_results if r.name == "Fit 8")
+
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+    save_low_q2_ratio_plots(fit_results, set5, outdir)
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
+    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
+    save_pass1_cross_section_diagnostics(set5, fit5, fit8, outdir)
+
+    print("\n[PASS1 radii]")
+    for fit_name in ["Fit 5", "Fit 6", "Fit 7", "Fit 8"]:
+        fr = next(r for r in fit_results if r.name == fit_name)
+        print(
+            f"  {fit_name}: "
+            f"rE={fr.rE_fm:.5f}+/-{fr.rE_err_fm:.5f} fm, "
+            f"rM={fr.rM_fm:.5f}+/-{fr.rM_err_fm:.5f} fm, "
+            f"beta_global={fr.meta.get('beta_global', np.nan):+.3f}, "
+            f"chi2/dof={fr.chi2_ndof:.3f}"
+        )
+    #endfor
+
+    print(f"\nDone. Pass-1 validation results are in {outdir}")
+    if return_results:
+        return {
+            "label": "CLAS12 Lee 2026",
+            "key": "pass1",
+            "kind": "pass1",
+            "norm_frac": PASS1_GLOBAL_SCALE_FRAC,
+            "results": fit_results,
+            "set5": set5,
+            "all_data": df.copy(),
+            "outdir": outdir,
+        }
+    #endif
+    return 0
+#enddef
+
+
+
+def run_saylor_validation(args, return_results: bool = False):
+    """Standalone Saylor 2018 BH/form-factor analysis."""
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        / "clas6_saylor2018"
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    saylor_path = resolve_script_relative_path(args.saylor_file)
+    if args.download_saylor:
+        saylor_path = maybe_download_saylor_supplement(
+            saylor_path, force=args.force_saylor_download
+        )
+    #endif
+
+    print("=" * 78)
+    print("[CLAS6 SAYLOR 2018 MODE]")
+    print(f"[input]  {saylor_path.resolve()}")
+    print(f"[output] {outdir}")
+    print("=" * 78)
+
+    df = load_saylor_supplement(str(saylor_path))
+    cache = outdir / "km15_bh_decomposition_saylor2018.csv"
+    df = evaluate_km15_saylor_dataframe(
+        df,
+        workers=args.workers,
+        cache_path=cache,
+        force=args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["R_BH"])
+        & np.isfinite(df["bh_A"])
+        & np.isfinite(df["bh_B"])
+        & np.isfinite(df["bh_C"])
+    )
+    df = df.loc[finite].reset_index(drop=True)
+
+    fit_results = []
+    sets = {}
+    for i, cut in enumerate(args.bh_cuts, start=1):
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        sets[float(cut)] = selected
+        if len(selected) < 5:
+            continue
+        #endif
+        fr = fit_multi_measurements(
+            [measurement_spec(
+                "saylor2018", "CLAS6 Saylor 2018", "saylor2018",
+                selected, SAYLOR_GLOBAL_SCALE_FRAC
+            )],
+            kind="dipole",
+            fit_name=f"Fit {i}",
+            bh_cut=float(cut),
+            add_moradi_bh_systematic=True,
+        )
+        fit_results.append(fr)
+        print(
+            f"[SAYLOR fit] Fit {i}: N={fr.npts:4d} "
+            f"chi2/dof={fr.chi2_ndof:.3f}"
+        )
+    #endfor
+
+    set5 = sets.get(0.05)
+    if set5 is None or len(set5) < 5:
+        raise RuntimeError("Saylor 5% BH-selected sample has too few points.")
+    #endif
+
+    for kind, name in [
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
+    ]:
+        fit_results.append(
+            fit_multi_measurements(
+                [measurement_spec(
+                    "saylor2018", "CLAS6 Saylor 2018", "saylor2018",
+                    set5, SAYLOR_GLOBAL_SCALE_FRAC
+                )],
+                kind=kind,
+                fit_name=name,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+        )
+    #endfor
+
+    pd.DataFrame(
+        [fitresult_to_record(fr) for fr in fit_results]
+    ).to_csv(outdir / "fit_results.csv", index=False)
+
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+    save_low_q2_ratio_plots(fit_results, set5, outdir)
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
+    save_fit5_residual_chi2_diagnostics(
+        set5, fit5, "saylor2018", "saylor2018",
+        outdir / "12_fit5_residual_diagnostics", bh_cut=0.05,
+    )
+
+    bundle = {
+        "label": "CLAS6 Saylor 2018",
+        "key": "saylor2018",
+        "kind": "saylor2018",
+        "norm_frac": SAYLOR_GLOBAL_SCALE_FRAC,
+        "results": fit_results,
+        "set5": set5,
+        "all_data": df.copy(),
+        "outdir": outdir,
+    }
+    if return_results:
+        return bundle
+    #endif
+    return 0
+#enddef
+
+
+
+
+def run_halla_defurne_validation(args, return_results: bool = False):
+    """Standalone Hall A Defurne 2015 BH/form-factor analysis."""
+    outdir = Path(args.outdir).expanduser().resolve() / "halla_defurne2015"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 78)
+    print("[HALL A DEFURNE 2015 MODE]")
+    print(f"[Gepard datasets] {HALLA_DEFURNE_GEPARD_DATASET_IDS}")
+    print(f"[output] {outdir}")
+    print("=" * 78)
+
+    df = load_halla_defurne_gepard_datasets()
+    df = evaluate_km15_halla_dataframe(
+        df,
+        workers=args.workers,
+        cache_path=outdir / "km15_bh_decomposition_halla_defurne2015.csv",
+        force=args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["R_BH"])
+        & np.isfinite(df["bh_A"])
+        & np.isfinite(df["bh_B"])
+        & np.isfinite(df["bh_C"])
+    )
+    df = df.loc[finite].reset_index(drop=True)
+
+    fit_results = []
+    sets = {}
+    print("\n[HALLA BH selections]")
+    for i, cut in enumerate(args.bh_cuts, start=1):
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        sets[float(cut)] = selected
+        print(f"  |1-R_BH| <= {100*cut:.0f}% : {len(selected)} points")
+        if len(selected) < 5:
+            continue
+        #endif
+        fr = fit_multi_measurements(
+            [measurement_spec(
+                "halla_defurne2015", "Hall A Defurne 2015",
+                "halla_defurne2015", selected,
+                HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
+            )],
+            kind="dipole",
+            fit_name=f"Fit {i}",
+            bh_cut=float(cut),
+            add_moradi_bh_systematic=True,
+        )
+        fit_results.append(fr)
+        print(f"[HALLA fit] Fit {i}: N={fr.npts:4d} chi2/dof={fr.chi2_ndof:.3f}")
+    #endfor
+
+    set5 = sets.get(0.05)
+    if set5 is None or len(set5) < 5:
+        raise RuntimeError("Hall A Defurne 5% BH-selected sample has too few points.")
+    #endif
+
+    for kind, name in [
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
+    ]:
+        fit_results.append(
+            fit_multi_measurements(
+                [measurement_spec(
+                    "halla_defurne2015", "Hall A Defurne 2015",
+                    "halla_defurne2015", set5,
+                    HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
+                )],
+                kind=kind,
+                fit_name=name,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+        )
+    #endfor
+
+    pd.DataFrame([fitresult_to_record(fr) for fr in fit_results]).to_csv(
+        outdir / "fit_results.csv", index=False
+    )
+    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
+
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_combination_f1_f2_fits_5_to_8(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+    save_low_q2_ratio_plots(fit_results, set5, outdir)
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
+    save_fit5_residual_chi2_diagnostics(
+        set5, fit5, "halla_defurne2015", "halla_defurne2015",
+        outdir / "12_fit5_residual_diagnostics", bh_cut=0.05,
+    )
+
+    bundle = {
+        "label": "Hall A Defurne 2015",
+        "key": "halla_defurne2015",
+        "kind": "halla_defurne2015",
+        "norm_frac": HALLA_DEFURNE_GLOBAL_SCALE_FRAC,
+        "results": fit_results,
+        "set5": set5,
+        "all_data": df.copy(),
+        "outdir": outdir,
+    }
+    if return_results:
+        return bundle
+    #endif
+    return 0
+#enddef
+
+
+
+def run_clas6_validation(args, return_results: bool = False):
+    """
+    Reproduce the Moradi et al. CLAS6 analysis using Gepard's bundled
+    CLAS:2015uuo XUU data.
+
+    This is an override/validation mode:
+      * no CLAS12 CSV is read
+      * no CLAS12 point-to-point systematic is added
+      * no CLAS12 correlated normalization nuisances are used
+      * the published Gepard point.err is used as the experimental error
+      * only the paper's additional 1--5% BH-selection uncertainty is added
+
+    Expected paper benchmarks:
+      selection counts = 98, 212, 292, 404, 473
+      chi2/dof Fits 1--5 = 0.82, 0.75, 0.73, 0.68, 0.69
+    """
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        / "clas6_jo2015"
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 78)
+    print("[CLAS6 VALIDATION MODE]")
+    print(f"[output] {outdir}")
+    print(
+        f"[source] Gepard dataset {args.clas6_dataset_id} "
+        "(CLAS 2015 XUU, Jo et al.)"
+    )
+    print("=" * 78)
+
+    df = load_clas6_gepard_dataset(args.clas6_dataset_id)
+    if len(df) != 2640 and args.clas6_dataset_id == 98:
+        warnings.warn(
+            f"Expected 2640 points in Gepard dataset 98, found {len(df)}."
+        )
+    #endif
+
+    cache = outdir / "km15_bh_decomposition_clas6.csv"
+    df = evaluate_km15_clas6_dataframe(
+        df,
+        max(1, args.workers),
+        cache,
+        args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["km15_ep"])
+        & np.isfinite(df["km15_bh"])
+        & np.isfinite(df["R_BH"])
+        & (df["km15_ep"] > 0.0)
+        & (df["km15_bh"] > 0.0)
+    )
+    df = df.loc[finite].copy().reset_index(drop=True)
+
+    max_ep_relerr = float(np.nanmax(df["km15_ep_decomp_relerr"]))
+    max_bh_relerr = float(np.nanmax(df["bh_quad_relerr"]))
+    print(
+        f"[check] max KM15 EP decomposition rel. error = {max_ep_relerr:.3e}"
+    )
+    print(
+        f"[check] max BH quadratic reconstruction rel. error = {max_bh_relerr:.3e}"
+    )
+
+    if max_ep_relerr > 1.0e-7 or max_bh_relerr > 1.0e-7:
+        raise RuntimeError(
+            "CLAS6 validation failed the internal Gepard decomposition checks."
+        )
+    #endif
+
+    bh_cuts = [0.01, 0.02, 0.03, 0.04, 0.05]
+    selected_sets = {}
+    selection_rows = []
+
+    print("\n[CLAS6 selection benchmark]")
+    for cut in bh_cuts:
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        selected_sets[cut] = selected
+
+        expected = PAPER_SELECTION_COUNTS[cut]
+        delta = len(selected) - expected
+        status = "PASS" if delta == 0 else "MISMATCH"
+
+        print(
+            f"  {100*cut:.0f}%: got {len(selected):4d}, "
+            f"paper {expected:4d}, delta={delta:+d}  [{status}]"
+        )
+
+        selection_rows.append({
+            "BH_cut": cut,
+            "our_Npts": len(selected),
+            "paper_Npts": expected,
+            "delta_Npts": delta,
+            "match": delta == 0,
+        })
+    #endfor
+
+    pd.DataFrame(selection_rows).to_csv(
+        outdir / "selection_count_validation.csv",
+        index=False,
+    )
+
+    # If these counts do not match, continuing the fit is still useful for
+    # diagnosis, but loudly flag that we have not reproduced the paper's
+    # selection/conventions yet.
+    counts_match = all(
+        len(selected_sets[c]) == PAPER_SELECTION_COUNTS[c]
+        for c in bh_cuts
+    )
+    if not counts_match:
+        warnings.warn(
+            "CLAS6 BH-selected counts do not exactly reproduce Table I. "
+            "Inspect phi/frame/observable conventions before interpreting "
+            "the chi2 validation."
+        )
+    #endif
+
+    fit_results = []
+
+    # Fits 1--5 exactly as the paper: published total experimental error +
+    # threshold-matched uncorrelated BH-selection systematic.
+    for fit_index, cut in enumerate(bh_cuts, start=1):
+        fr = fit_paper_model(
+            data=selected_sets[cut],
+            kind="dipole",
+            fit_name=f"Fit {fit_index}",
+            bh_cut=cut,
+            include_clas12_ptp_sys=False,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=False,
+        )
+        fit_results.append(fr)
+
+        paper_chi = PAPER_CHI2_NDOF[fit_index]
+        paper_aE, paper_daE, paper_aM, paper_daM = PAPER_DIPOLE_PARAMS[fit_index]
+
+        print(
+            f"[CLAS6 fit] Fit {fit_index}: "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"(paper {paper_chi:.2f}); "
+            f"aE={fr.params[0]:.4f} (paper {paper_aE:.3f}); "
+            f"aM={fr.params[1]:.4f} (paper {paper_aM:.3f})"
+        )
+    #endfor
+
+    set5 = selected_sets[0.05].copy()
+    set5["fit_sigma_default"] = fit_sigma_errors(
+        set5,
+        0.05,
+        include_clas12_ptp_sys=False,
+        include_bh_sys=True,
+    )
+    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
+
+    for kind, fit_name, fit_index in [
+        ("fit6_same_a", "Fit 6", 6),
+        ("fit7_same_p", "Fit 7", 7),
+        ("fit8_f2_kelly", "Fit 8", 8),
+    ]:
+        fr = fit_paper_model(
+            data=set5,
+            kind=kind,
+            fit_name=fit_name,
+            bh_cut=0.05,
+            include_clas12_ptp_sys=False,
+            include_bh_sys=True,
+            include_combination_norm_sys=False,
+            include_global_norm_sys=False,
+        )
+        fit_results.append(fr)
+        print(
+            f"[CLAS6 fit] {fit_name}: "
+            f"chi2/dof={fr.chi2_ndof:.3f} "
+            f"(paper {PAPER_CHI2_NDOF[fit_index]:.2f})"
+        )
+    #endfor
+
+    # Direct comparison table to the published benchmarks.
+    rows = []
+    for fit_index in range(1, 9):
+        fr = next(r for r in fit_results if r.name == f"Fit {fit_index}")
+        row = {
+            "Fit": fit_index,
+            "our_chi2_ndof": fr.chi2_ndof,
+            "paper_chi2_ndof": PAPER_CHI2_NDOF[fit_index],
+            "delta_chi2_ndof": (
+                fr.chi2_ndof - PAPER_CHI2_NDOF[fit_index]
+            ),
+            "rE_fm": fr.rE_fm,
+            "rE_err_fm": fr.rE_err_fm,
+            "rM_fm": fr.rM_fm,
+            "rM_err_fm": fr.rM_err_fm,
+        }
+        if fit_index <= 5:
+            row["our_aE"] = fr.params[0]
+            row["our_aM"] = fr.params[1]
+            row["paper_aE"] = PAPER_DIPOLE_PARAMS[fit_index][0]
+            row["paper_aM"] = PAPER_DIPOLE_PARAMS[fit_index][2]
+        #endif
+        rows.append(row)
+    #endfor
+    comparison = pd.DataFrame(rows)
+    comparison.to_csv(outdir / "paper_benchmark_comparison.csv", index=False)
+
+    pd.DataFrame(
+        [fitresult_to_record(fr) for fr in fit_results]
+    ).to_csv(outdir / "fit_results.csv", index=False)
+
+    # Paper-style consolidated plots.
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+    save_low_q2_ratio_plots(fit_results, set5, outdir)
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 5")
+    save_elastic_reference_comparison(fit_results, set5, outdir, "Fit 8")
+    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
+
+    # Validation plot: our chi2/dof against the paper values.
+    fig, ax = plt.subplots(figsize=(7.4, 5.0))
+    fit_numbers = np.arange(1, 9)
+    ours = [
+        next(r for r in fit_results if r.name == f"Fit {i}").chi2_ndof
+        for i in fit_numbers
+    ]
+    paper = [PAPER_CHI2_NDOF[i] for i in fit_numbers]
+    ax.plot(fit_numbers, ours, "o-", label="This script / Gepard data")
+    ax.plot(fit_numbers, paper, "s--", label="Moradi et al.")
+    ax.set_xlabel("Fit")
+    ax.set_ylabel(r"$\chi^2/\mathrm{dof}$")
+    ax.set_xticks(fit_numbers)
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "00_chi2_validation.png", dpi=180)
+    plt.close(fig)
+
+    print("\n[CLAS6 validation summary]")
+    print(comparison[[
+        "Fit", "our_chi2_ndof", "paper_chi2_ndof", "delta_chi2_ndof"
+    ]].to_string(index=False))
+    print(f"\nDone. CLAS6 validation results are in {outdir}")
+    if return_results:
+        return {
+            "label": "CLAS6 Jo 2015",
+            "key": "jo2015",
+            "kind": "jo2015",
+            "norm_frac": 0.0,
+            "results": fit_results,
+            "set5": set5,
+            "all_data": df.copy(),
+            "outdir": outdir,
+        }
+    #endif
+    return 0
+#enddef
+
+
+# -----------------------------------------------------------------------------
+# CLI / main
+# -----------------------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
