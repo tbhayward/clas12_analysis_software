@@ -647,6 +647,29 @@ def pass2_total_scale_column(csv_period: str) -> str:
     return f"normed cross sections, ep->epg, exp, {csv_period}, unpol, total scale sys"
 
 
+def pass2_scale_systematic_period(csv_period: str) -> str:
+    """
+    Return the CSV group whose correlated scale systematic applies to a plotted
+    pass-2 series.
+
+    The production systematics schema intentionally stores correlated scale
+    uncertainties for the combined groups (10.6 GeV, Fa18, Sp18, Sp19 Inb),
+    not separately for Fa18 Inb/Out or Sp18 Inb/Out.  Individual-period
+    cross-check plots therefore use the corresponding run-group scale nuisance.
+    """
+    if csv_period in {"Fa18 Inb", "Fa18 Out"}:
+        return "Fa18"
+    # endif
+    if csv_period in {"Sp18 Inb", "Sp18 Out"}:
+        return "Sp18"
+    # endif
+    return csv_period
+
+
+def pass2_scale_systematic_column(csv_period: str) -> str:
+    return pass2_total_scale_column(pass2_scale_systematic_period(csv_period))
+
+
 def average_phi_column(csv_period: str) -> str:
     return f"phiavg, {csv_period}"
 
@@ -801,7 +824,7 @@ def pass2_points_for_period(
     for _, row in sorted_df.iterrows():
         sigma, stat, _ = parse_tuple3(row[xs_col])
         sys_csv = parse_scalar_from_cell(row.get(pass2_point_to_point_column(), math.nan))
-        scale_frac = parse_scalar_from_cell(row.get(pass2_total_scale_column(csv_period), math.nan))
+        scale_frac = parse_scalar_from_cell(row.get(pass2_scale_systematic_column(csv_period), math.nan))
 
         if not np.isfinite(sigma):
             continue
@@ -2093,10 +2116,10 @@ def main() -> None:
     ]
 
     pass2_required.append(pass2_point_to_point_column())
-    pass2_required += [
-        pass2_total_scale_column(csv_period)
+    pass2_required += sorted({
+        pass2_scale_systematic_column(csv_period)
         for csv_period in ALL_PASS2_CSV_PERIODS
-    ]
+    })
 
     for period in ["10.6 GeV", "Fa18 Inb", "Sp19 Inb"]:
         pass2_required += [
@@ -2107,8 +2130,17 @@ def main() -> None:
         ]
     # endfor
 
-    pass2_df = pd.read_csv(args.csv_file)
+    pass2_df = pd.read_csv(args.csv_file, low_memory=False)
     require_columns(pass2_df, pass2_required, context="pass-2")
+
+    print("Pass-2 correlated scale-systematic mapping:")
+    for csv_period in ALL_PASS2_CSV_PERIODS:
+        scale_period = pass2_scale_systematic_period(csv_period)
+        print(
+            f"  {csv_period:10s} -> {scale_period:10s}: "
+            f"{pass2_scale_systematic_column(csv_period)}"
+        )
+    # endfor
 
     pass2_selected = select_overlap_bin(
         df=pass2_df,

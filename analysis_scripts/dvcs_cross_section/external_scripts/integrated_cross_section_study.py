@@ -1203,7 +1203,12 @@ def direct_total_for_period(
     )
 
 
-def projected_total(points: Sequence[Point], projection: str, no_width_weighting: bool) -> float:
+def projected_total(
+    points: Sequence[Point],
+    projection: str,
+    no_width_weighting: bool,
+    phi_degrees: bool,
+) -> float:
     if no_width_weighting:
         return float(sum(p.y for p in points if np.isfinite(p.y)))
     # endif
@@ -1215,6 +1220,17 @@ def projected_total(points: Sequence[Point], projection: str, no_width_weighting
     total = 0.0
     for point in points:
         projected_width = point.key[1] - point.key[0]
+
+        # The phi bin edges stored in the CSV are degrees.  In the default
+        # analysis the differential projection is d sigma / d phi in pb/rad,
+        # because the hidden phi widths entering all other integrations are
+        # converted to radians.  Closure must therefore convert the displayed
+        # degree bin width back to radians before reintegration.  Only the
+        # explicit --phi-degrees mode should retain degree widths here.
+        if projection == "phi" and not phi_degrees:
+            projected_width = float(np.deg2rad(projected_width))
+        # endif
+
         if np.isfinite(point.y) and np.isfinite(projected_width) and projected_width > 0.0:
             total += point.y * projected_width
         # endif
@@ -1226,6 +1242,7 @@ def print_projection_closure_diagnostics(
     df: pd.DataFrame,
     periods: Sequence[str],
     no_width_weighting: bool,
+    phi_degrees: bool,
     additional_p2p_frac: float,
     tolerance: float,
     strict: bool,
@@ -1252,7 +1269,7 @@ def print_projection_closure_diagnostics(
                 no_width_weighting=no_width_weighting,
                 additional_p2p_frac=additional_p2p_frac,
             )
-            reconstructed = projected_total(points, projection, no_width_weighting)
+            reconstructed = projected_total(points, projection, no_width_weighting, phi_degrees)
             denom = max(abs(direct.y), 1.0e-300)
             rel = (reconstructed - direct.y) / denom
             print(
@@ -2112,6 +2129,7 @@ def main() -> None:
             df=df,
             periods=LEFT_SERIES,
             no_width_weighting=args.no_width_weighting,
+            phi_degrees=args.phi_degrees,
             additional_p2p_frac=args.bin_to_bin_sys_frac,
             tolerance=args.closure_tolerance,
             strict=args.strict_closure,
