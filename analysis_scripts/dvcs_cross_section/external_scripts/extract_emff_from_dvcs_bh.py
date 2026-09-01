@@ -2726,7 +2726,8 @@ def fit_multi_measurements(
         kind: str,
         fit_name: str,
         bh_cut: float = 0.05,
-        add_moradi_bh_systematic: bool = True) -> FitResult:
+        add_moradi_bh_systematic: bool = True,
+        unconstrained_norm_keys: Optional[Sequence[str]] = None) -> FitResult:
     """
     Simultaneous common-form-factor fit to any subset of Jo 2015,
     Saylor 2018, and CLAS12 Lee 2026.
@@ -2790,10 +2791,15 @@ def fit_multi_measurements(
             )
         #endif
 
+        key = str(spec["key"])
+        effective_norm_frac = (
+            1.0 if key in unconstrained_norm_keys
+            else float(spec.get("norm_frac", 0.0))
+        )
         prepared.append({
-            "key": spec["key"],
+            "key": key,
             "kind": spec["kind"],
-            "norm_frac": float(spec.get("norm_frac", 0.0)),
+            "norm_frac": effective_norm_frac,
             "q": d["t_abs"].to_numpy(float),
             "y": d["xs"].to_numpy(float),
             "e": point_errors,
@@ -2831,8 +2837,10 @@ def fit_multi_measurements(
         #endfor
 
         for nname in nuisance_names:
-            beta = p[nuisance_index[nname]]
-            total += float(beta**2)
+            if not nuisance_is_free.get(nname, False):
+                beta = p[nuisance_index[nname]]
+                total += float(beta**2)
+            #endif
         #endfor
         return total
     #enddef
@@ -2843,7 +2851,13 @@ def fit_multi_measurements(
         m.limits[name] = (1.0e-6, None)
     #endfor
     for nname in nuisance_names:
-        m.limits[nname] = (-10.0, 10.0)
+        if nuisance_is_free.get(nname, False):
+            # For an unconstrained diagnostic nuisance frac=1, so beta is
+            # directly the fractional normalization shift. Keep scale positive.
+            m.limits[nname] = (-0.50, 0.50)
+        else:
+            m.limits[nname] = (-10.0, 10.0)
+        #endif
     #endfor
 
     m.migrad()
@@ -7107,14 +7121,21 @@ def fit_sachs_family_multi_measurements(
     p0[0] = sachs_first_coefficient_from_radius(SACHS_INITIAL_RADIUS_FM, family_e)
     p0[ne] = sachs_first_coefficient_from_radius(SACHS_INITIAL_RADIUS_FM, family_m)
 
+    unconstrained_norm_keys = set(
+        str(k) for k in (unconstrained_norm_keys or [])
+    )
     nuisance_names = []
     nuisance_fracs = {}
+    nuisance_is_free = {}
     for spec in datasets:
-        frac = float(spec.get("norm_frac", 0.0))
+        key = str(spec["key"])
+        free_norm = key in unconstrained_norm_keys
+        frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
         if frac > 0.0:
-            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", str(spec["key"]))
+            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
             nuisance_names.append(nname)
             nuisance_fracs[nname] = frac
+            nuisance_is_free[nname] = bool(free_norm)
         #endif
     #endfor
 
