@@ -4151,6 +4151,40 @@ static TGraphErrors* make_kinematic_factor_graph(const std::vector<KinematicBinR
 }
 
 
+static TGraphErrors* make_region_theta_factor_graph(const std::vector<KinematicBinResult>& bins,
+                                                    int color) {
+    TGraphErrors* g = new TGraphErrors();
+    int ip = 0;
+
+    for (const KinematicBinResult& b : bins) {
+        // Keep every fitted bin in the diagnostic CSV, but only draw bins that
+        // have enough current settings to constrain a slope and a reasonably
+        // informative positive efficiency estimate. This prevents obviously
+        // underconstrained edge-bin fits from masquerading as calibration points.
+        const bool usable =
+            b.n_current_points >= 3 &&
+            b.total_counts >= 100.0 &&
+            std::isfinite(b.factor) &&
+            std::isfinite(b.factor_err) &&
+            b.factor > 0.0 &&
+            b.factor_err >= 0.0 &&
+            b.factor_err <= 0.50 * b.factor;
+        if (!usable) continue;
+
+        g->SetPoint(ip, b.x_center, b.factor);
+        g->SetPointError(ip, 0.0, b.factor_err);
+        ++ip;
+    }
+
+    g->SetMarkerStyle(20);
+    g->SetMarkerSize(1.05);
+    g->SetMarkerColor(color);
+    g->SetLineColor(color);
+    g->SetLineWidth(2);
+    return g;
+}
+
+
 struct LinearFitSummary {
     bool valid = false;
     double m = std::numeric_limits<double>::quiet_NaN();
@@ -5103,7 +5137,7 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
                       << key << " " << (i + 1) << "/" << N
                       << " (" << std::fixed << std::setprecision(1) << pct
                       << "%) elapsed=" << sec << " s"
-                      << std::defaultfloat << std::endl;
+                      << std::defaultfloat << std::setprecision(6) << std::endl;
             next_progress += progress_step;
         }
 
@@ -5192,7 +5226,7 @@ static PhotonRegionMcCountMap count_generated_tree_by_photon_region(const std::s
                       << key << " " << (i + 1) << "/" << N
                       << " (" << std::fixed << std::setprecision(1) << pct
                       << "%) elapsed=" << sec << " s"
-                      << std::defaultfloat << std::endl;
+                      << std::defaultfloat << std::setprecision(6) << std::endl;
             next_progress += progress_step;
         }
 
@@ -5242,7 +5276,7 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
                       << key << " " << (i + 1) << "/" << N
                       << " (" << std::fixed << std::setprecision(1) << pct
                       << "%) elapsed=" << sec << " s"
-                      << std::defaultfloat << std::endl;
+                      << std::defaultfloat << std::setprecision(6) << std::endl;
             next_progress += progress_step;
         }
 
@@ -5439,7 +5473,7 @@ static void run_region_theta_data_diagnostic(
                       << finished << "/" << items.size()
                       << " key=" << items[i].first
                       << " elapsed=" << std::fixed << std::setprecision(1)
-                      << sec << " s" << std::defaultfloat << std::endl;
+                      << sec << " s" << std::defaultfloat << std::setprecision(6) << std::endl;
         }
     }
 
@@ -5447,7 +5481,7 @@ static void run_region_theta_data_diagnostic(
               << cfg.csv_channel << " in "
               << std::fixed << std::setprecision(1)
               << std::chrono::duration<double>(Clock::now() - phase_t0).count()
-              << " s." << std::defaultfloat << std::endl;
+              << " s." << std::defaultfloat << std::setprecision(6) << std::endl;
 
     const std::string odir = output_dir + "/" + cfg.output_token + "/sector_dependence_diagnostic/region_theta";
     mkdir_p(odir);
@@ -5459,43 +5493,91 @@ static void run_region_theta_data_diagnostic(
         c.Divide(2, 2, 0.004, 0.004);
         const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
 
+        // ROOT pads keep pointers to primitives rather than taking safe C++
+        // ownership of stack/local objects. Keep every drawable alive until
+        // after SaveAs so divided canvases are not serialized as empty pads.
+        std::vector<std::unique_ptr<TObject>> owned;
+
         for (size_t ip = 0; ip < periods.size(); ++ip) {
             c.cd((int)ip + 1);
             gPad->SetLeftMargin(0.13); gPad->SetRightMargin(0.04);
             gPad->SetBottomMargin(0.13); gPad->SetTopMargin(0.10); gPad->SetGridy();
-            TH1D frame(("h_rt_" + cfg.output_token + v.key + std::to_string(ip)).c_str(),
-                       (periods[ip] + ";" + v.x_label + ";Current efficiency factor").c_str(),
-                       100, v.edges.front(), v.edges.back());
-            frame.SetMinimum(0.45); frame.SetMaximum(1.20); frame.Draw();
-            TLine unity(v.edges.front(), 1.0, v.edges.back(), 1.0); unity.SetLineStyle(2); unity.Draw("SAME");
-            TLegend leg(0.15, 0.70, 0.95, 0.88); leg.SetNColumns(4); leg.SetBorderSize(0); leg.SetFillStyle(0);
 
-            std::vector<std::unique_ptr<TGraphErrors>> graphs;
+            auto frame = std::make_unique<TH1D>(
+                ("h_rt_" + cfg.output_token + v.key + std::to_string(ip)).c_str(),
+                (periods[ip] + ";" + v.x_label + ";Current efficiency factor").c_str(),
+                100, v.edges.front(), v.edges.back());
+            frame->SetDirectory(nullptr);
+            frame->SetMinimum(0.45);
+            frame->SetMaximum(1.20);
+            frame->SetStats(0);
+            frame->Draw();
+            owned.emplace_back(std::move(frame));
+
+            auto unity = std::make_unique<TLine>(v.edges.front(), 1.0, v.edges.back(), 1.0);
+            unity->SetLineStyle(2);
+            unity->Draw("SAME");
+            owned.emplace_back(std::move(unity));
+
+            auto leg = std::make_unique<TLegend>(0.15, 0.70, 0.95, 0.88);
+            leg->SetNColumns(4);
+            leg->SetBorderSize(0);
+            leg->SetFillStyle(0);
+
             for (int ir = 0; ir < (int)PHOTON_REGION_ORDER.size(); ++ir) {
                 std::vector<KinematicBinResult> brs;
                 const auto& bins = merged[periods[ip]][PHOTON_REGION_ORDER[ir].key][v.key];
                 for (size_t ib = 0; ib < bins.size(); ++ib) {
-                    KinematicBinResult br = current_factor_for_kinematic_bin(bins[ib], v.edges[ib], v.edges[ib+1]);
+                    KinematicBinResult br = current_factor_for_kinematic_bin(
+                        bins[ib], v.edges[ib], v.edges[ib+1]);
                     brs.push_back(br);
-                    csv << periods[ip] << "," << PHOTON_REGION_ORDER[ir].key << "," << v.key << "," << ib << ","
-                        << br.x_low << "," << br.x_high << "," << br.x_center << "," << br.factor << "," << br.factor_err << ","
+                    csv << periods[ip] << "," << PHOTON_REGION_ORDER[ir].key << ","
+                        << v.key << "," << ib << ","
+                        << std::setprecision(12)
+                        << br.x_low << "," << br.x_high << "," << br.x_center << ","
+                        << br.factor << "," << br.factor_err << ","
                         << br.n_current_points << "," << br.total_counts << "\n";
                 }
-                graphs.emplace_back(make_kinematic_factor_graph(brs, photon_region_color(ir)));
-                graphs.back()->SetMarkerStyle(photon_region_marker(ir));
-                graphs.back()->Draw("P SAME");
-                leg.AddEntry(graphs.back().get(), PHOTON_REGION_ORDER[ir].label.c_str(), "p");
+
+                std::unique_ptr<TGraphErrors> graph(
+                    make_region_theta_factor_graph(brs, photon_region_color(ir)));
+                graph->SetMarkerStyle(photon_region_marker(ir));
+                graph->Draw("P SAME");
+                leg->AddEntry(graph.get(), PHOTON_REGION_ORDER[ir].label.c_str(), "p");
+                owned.emplace_back(std::move(graph));
             }
-            leg.Draw();
+
+            leg->Draw();
+            owned.emplace_back(std::move(leg));
+
+            auto note = std::make_unique<TLatex>();
+            note->SetNDC();
+            note->SetTextSize(0.026);
+            note->SetTextColor(kGray + 2);
+            note->DrawLatex(0.15, 0.655, "Plot requires #geq3 current points, N#geq100, and #sigma_{f}/f#leq50%; CSV retains all bins.");
+            owned.emplace_back(std::move(note));
         }
+
         c.cd(0);
-        TLatex title; title.SetNDC(); title.SetTextAlign(22); title.SetTextSize(0.030);
-        title.DrawLatex(0.5, 0.985, (cfg.title + ": current efficiency versus " + v.title + " within FT/FD sectors").c_str());
-        const std::string region_theta_path = odir + "/data_current_efficiency_by_region_vs_" + v.key + ".png";
+        auto title = std::make_unique<TLatex>();
+        title->SetNDC();
+        title->SetTextAlign(22);
+        title->SetTextSize(0.030);
+        title->DrawLatex(
+            0.5, 0.985,
+            (cfg.title + ": current efficiency versus " + v.title + " within FT/FD sectors").c_str());
+        owned.emplace_back(std::move(title));
+
+        c.Modified();
+        c.Update();
+        const std::string region_theta_path =
+            odir + "/data_current_efficiency_by_region_vs_" + v.key + ".png";
         c.SaveAs(region_theta_path.c_str());
+
         const std::string note_dir = output_dir + "/analysis_note";
         mkdir_p(note_dir);
-        const std::string note_path = note_dir + "/" + cfg.output_token + "_regional_current_efficiency_vs_" + v.key + ".png";
+        const std::string note_path =
+            note_dir + "/" + cfg.output_token + "_regional_current_efficiency_vs_" + v.key + ".png";
         gSystem->CopyFile(region_theta_path.c_str(), note_path.c_str(), true);
     }
 
@@ -5634,7 +5716,7 @@ static void draw_photon_region_response_canvas(const std::string& out_path,
             lat.SetNDC(true);
             lat.SetTextSize(0.028);
             lat.SetTextColor(kRed + 2);
-            lat.DrawLatex(0.13, 0.88, "Direct Sp19 scan shown; hypothetical factor copied from Fa18 Inb");
+            lat.DrawLatex(0.13, 0.88, "Direct Sp19 scan shown; nominal DATA response transferred from Fa18 Inb");
         }
     }
 
@@ -5673,9 +5755,9 @@ static void draw_photon_region_factor_canvas(const std::string& out_path,
             lat.SetTextSize(0.055);
             lat.DrawLatex(0.10, 0.84, data_sample ? "DATA factor" : "MC factor");
             lat.SetTextSize(0.045);
-            lat.DrawLatex(0.10, 0.72, "Points: hypothetical FT/S1...S6 factors");
+            lat.DrawLatex(0.10, 0.72, "Points: measured FT/S1...S6 current-response factors");
             lat.DrawLatex(0.10, 0.63, "Dashed line: existing integrated factor");
-            lat.DrawLatex(0.10, 0.51, "Diagnostic only - not applied downstream");
+            lat.DrawLatex(0.10, 0.51, "Nominal regional response is applied event-by-event downstream");
             continue;
         }
 
@@ -5934,7 +6016,7 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
 
     std::cout << "[current_dependence] Photon-region DATA phase complete in "
               << std::fixed << std::setprecision(1) << elapsed_s(diagnostic_t0)
-              << " s." << std::defaultfloat << std::endl;
+              << " s." << std::defaultfloat << std::setprecision(6) << std::endl;
 
     // MC counts are stored by region and by period/current.  For ep->eppi0
     // this scan is intentionally skipped: the regional pi0 MC factors are
@@ -6015,7 +6097,7 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
 
         std::cout << "[current_dependence] Photon-region generated-MC phase complete in "
                   << std::fixed << std::setprecision(1) << elapsed_s(gen_t0)
-                  << " s." << std::defaultfloat << std::endl;
+                  << " s." << std::defaultfloat << std::setprecision(6) << std::endl;
 
         std::vector<std::pair<std::string, TTree*>> rec_items;
         rec_items.reserve(rec_trees.size());
@@ -6083,7 +6165,7 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
 
         std::cout << "[current_dependence] Photon-region reconstructed-MC phase complete in "
                   << std::fixed << std::setprecision(1) << elapsed_s(rec_t0)
-                  << " s." << std::defaultfloat << std::endl;
+                  << " s." << std::defaultfloat << std::setprecision(6) << std::endl;
     }
 
     PhotonRegionResults results;
@@ -6182,7 +6264,7 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
     std::cout << "[current_dependence] Photon-region diagnostic complete for "
               << cfg.csv_channel << " in "
               << std::fixed << std::setprecision(1) << elapsed_s(diagnostic_t0)
-              << " s. Outputs: " << odir << std::defaultfloat << std::endl;
+              << " s. Outputs: " << odir << std::defaultfloat << std::setprecision(6) << std::endl;
 
     return results;
 }
@@ -6397,11 +6479,12 @@ static void draw_analysis_note_region_ratio_canvas(
     const PhotonRegionResults& results,
     const std::vector<PeriodResult>& integrated_results,
     const std::string& channel_title,
-    bool hide_sp19) {
+    bool /*hide_sp19*/) {
 
     const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
-    TCanvas c("c_note_region_ratio", "c_note_region_ratio", 1500, 1000);
+    TCanvas c(("c_note_region_ratio_" + channel_title).c_str(), "", 1500, 1000);
     c.Divide(2, 2, 0.005, 0.005);
+    std::vector<std::unique_ptr<TObject>> owned;
 
     for (size_t ip = 0; ip < periods.size(); ++ip) {
         c.cd((int)ip + 1);
@@ -6411,13 +6494,18 @@ static void draw_analysis_note_region_ratio_canvas(
         gPad->SetTopMargin(0.10);
         gPad->SetRightMargin(0.04);
 
-        TH1D frame(("h_note_region_" + std::to_string(ip)).c_str(),
-                   (periods[ip] + ";Photon region;C_{r}/C_{integrated}").c_str(),
-                   7, 0.5, 7.5);
-        for (int ir = 0; ir < 7; ++ir) frame.GetXaxis()->SetBinLabel(ir + 1, PHOTON_REGION_ORDER[ir].label.c_str());
-        frame.SetMinimum(0.65);
-        frame.SetMaximum(1.35);
-        frame.Draw();
+        auto frame = std::make_unique<TH1D>(
+            ("h_note_region_ratio_" + std::to_string(ip)).c_str(),
+            (periods[ip] + ";Photon region;C_{r}/C_{integrated}").c_str(),
+            7, 0.5, 7.5);
+        frame->SetDirectory(nullptr);
+        for (int ir = 0; ir < 7; ++ir)
+            frame->GetXaxis()->SetBinLabel(ir + 1, PHOTON_REGION_ORDER[ir].label.c_str());
+        frame->SetMinimum(0.65);
+        frame->SetMaximum(1.35);
+        frame->SetStats(0);
+        frame->Draw();
+        owned.emplace_back(std::move(frame));
 
         const PeriodResult* integ = find_period_result(integrated_results, periods[ip]);
         double cint = std::numeric_limits<double>::quiet_NaN();
@@ -6426,7 +6514,7 @@ static void draw_analysis_note_region_ratio_canvas(
             cint = integ->mc_factor / integ->data_factor;
         }
 
-        TGraphErrors g;
+        auto g = std::make_unique<TGraphErrors>();
         int n = 0;
         for (int ir = 0; ir < 7; ++ir) {
             auto it = results.find(PHOTON_REGION_ORDER[ir].key);
@@ -6435,31 +6523,133 @@ static void draw_analysis_note_region_ratio_canvas(
             if (!r || !std::isfinite(cint) || cint <= 0.0 ||
                 !(std::isfinite(r->data_factor) && r->data_factor > 0.0 &&
                   std::isfinite(r->mc_factor) && r->mc_factor > 0.0)) continue;
+
             const double cr = r->mc_factor / r->data_factor;
             const double y = cr / cint;
             const double rel2 = std::pow(r->mc_factor_err / r->mc_factor, 2) +
                                 std::pow(r->data_factor_err / r->data_factor, 2);
-            g.SetPoint(n, ir + 1, y);
-            g.SetPointError(n, 0.0, std::fabs(y) * std::sqrt(std::max(0.0, rel2)));
+            g->SetPoint(n, ir + 1, y);
+            g->SetPointError(n, 0.0, std::fabs(y) * std::sqrt(std::max(0.0, rel2)));
             ++n;
         }
-        g.SetMarkerStyle(20);
-        g.SetMarkerSize(1.15);
-        g.SetLineWidth(2);
-        g.Draw("P SAME");
+        g->SetMarkerStyle(20);
+        g->SetMarkerSize(1.15);
+        g->SetLineWidth(2);
+        g->Draw("P SAME");
+        owned.emplace_back(std::move(g));
 
-        TLine unity(0.5, 1.0, 7.5, 1.0);
-        unity.SetLineStyle(2);
-        unity.SetLineWidth(2);
-        unity.Draw("SAME");
+        auto unity = std::make_unique<TLine>(0.5, 1.0, 7.5, 1.0);
+        unity->SetLineStyle(2);
+        unity->SetLineWidth(2);
+        unity->Draw("SAME");
+        owned.emplace_back(std::move(unity));
     }
 
     c.cd(0);
-    TLatex title;
-    title.SetNDC();
-    title.SetTextAlign(22);
-    title.SetTextSize(0.030);
-    title.DrawLatex(0.5, 0.985, (channel_title + ": regional current correction relative to integrated treatment").c_str());
+    auto title = std::make_unique<TLatex>();
+    title->SetNDC();
+    title->SetTextAlign(22);
+    title->SetTextSize(0.030);
+    title->DrawLatex(
+        0.5, 0.985,
+        (channel_title + ": regional current correction relative to integrated treatment").c_str());
+    owned.emplace_back(std::move(title));
+
+    c.Modified();
+    c.Update();
+    c.SaveAs(out_path.c_str());
+}
+
+static void draw_analysis_note_region_absolute_canvas(
+    const std::string& out_path,
+    const PhotonRegionResults& results,
+    const std::string& channel_title) {
+
+    const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
+    TCanvas c(("c_note_region_absolute_" + channel_title).c_str(), "", 1500, 1000);
+    c.Divide(2, 2, 0.005, 0.005);
+    std::vector<std::unique_ptr<TObject>> owned;
+
+    double ymin = std::numeric_limits<double>::infinity();
+    double ymax = -std::numeric_limits<double>::infinity();
+    for (const std::string& period : periods) {
+        for (int ir = 0; ir < 7; ++ir) {
+            auto it = results.find(PHOTON_REGION_ORDER[ir].key);
+            if (it == results.end()) continue;
+            const PeriodResult* r = find_period_result(it->second, period);
+            if (!r || !(std::isfinite(r->data_factor) && r->data_factor > 0.0 &&
+                        std::isfinite(r->mc_factor) && r->mc_factor > 0.0)) continue;
+            const double cr = r->mc_factor / r->data_factor;
+            const double rel2 = std::pow(r->mc_factor_err / r->mc_factor, 2) +
+                                std::pow(r->data_factor_err / r->data_factor, 2);
+            const double err = std::fabs(cr) * std::sqrt(std::max(0.0, rel2));
+            ymin = std::min(ymin, cr - err);
+            ymax = std::max(ymax, cr + err);
+        }
+    }
+    if (!std::isfinite(ymin) || !std::isfinite(ymax)) {
+        ymin = 0.8;
+        ymax = 1.4;
+    }
+    const double span = std::max(0.10, ymax - ymin);
+    ymin = std::max(0.0, ymin - 0.15 * span);
+    ymax += 0.15 * span;
+
+    for (size_t ip = 0; ip < periods.size(); ++ip) {
+        c.cd((int)ip + 1);
+        gPad->SetGridy();
+        gPad->SetLeftMargin(0.13);
+        gPad->SetBottomMargin(0.14);
+        gPad->SetTopMargin(0.10);
+        gPad->SetRightMargin(0.04);
+
+        auto frame = std::make_unique<TH1D>(
+            ("h_note_region_absolute_" + std::to_string(ip)).c_str(),
+            (periods[ip] + ";Photon region;C_{r}=f^{MC}_{r}/f^{DATA}_{r}").c_str(),
+            7, 0.5, 7.5);
+        frame->SetDirectory(nullptr);
+        for (int ir = 0; ir < 7; ++ir)
+            frame->GetXaxis()->SetBinLabel(ir + 1, PHOTON_REGION_ORDER[ir].label.c_str());
+        frame->SetMinimum(ymin);
+        frame->SetMaximum(ymax);
+        frame->SetStats(0);
+        frame->Draw();
+        owned.emplace_back(std::move(frame));
+
+        auto g = std::make_unique<TGraphErrors>();
+        int n = 0;
+        for (int ir = 0; ir < 7; ++ir) {
+            auto it = results.find(PHOTON_REGION_ORDER[ir].key);
+            if (it == results.end()) continue;
+            const PeriodResult* r = find_period_result(it->second, periods[ip]);
+            if (!r || !(std::isfinite(r->data_factor) && r->data_factor > 0.0 &&
+                        std::isfinite(r->mc_factor) && r->mc_factor > 0.0)) continue;
+            const double cr = r->mc_factor / r->data_factor;
+            const double rel2 = std::pow(r->mc_factor_err / r->mc_factor, 2) +
+                                std::pow(r->data_factor_err / r->data_factor, 2);
+            g->SetPoint(n, ir + 1, cr);
+            g->SetPointError(n, 0.0, std::fabs(cr) * std::sqrt(std::max(0.0, rel2)));
+            ++n;
+        }
+        g->SetMarkerStyle(20);
+        g->SetMarkerSize(1.15);
+        g->SetLineWidth(2);
+        g->Draw("P SAME");
+        owned.emplace_back(std::move(g));
+    }
+
+    c.cd(0);
+    auto title = std::make_unique<TLatex>();
+    title->SetNDC();
+    title->SetTextAlign(22);
+    title->SetTextSize(0.030);
+    title->DrawLatex(
+        0.5, 0.985,
+        (channel_title + ": nominal regional DATA/MC current correction").c_str());
+    owned.emplace_back(std::move(title));
+
+    c.Modified();
+    c.Update();
     c.SaveAs(out_path.c_str());
 }
 
@@ -7597,6 +7787,12 @@ bool update_current_dependence_factors_csv(
                                                    eppi0_region_results, eppi0_results,
                                                    "ep #rightarrow ep#pi^{0}",
                                                    options.use_fa18_inb_current_efficiency_for_sp19_inb);
+            draw_analysis_note_region_absolute_canvas(
+                note_dir + "/epg_regional_current_correction_absolute.png",
+                dvcs_region_results, "ep #rightarrow ep#gamma");
+            draw_analysis_note_region_absolute_canvas(
+                note_dir + "/eppi0_regional_current_correction_absolute.png",
+                eppi0_region_results, "ep #rightarrow ep#pi^{0}");
         }
 
         std::vector<PeriodResult> dvcs_results_for_csv = dvcs_results;

@@ -1,6 +1,8 @@
 #include "systematics_runner.h"
 
 #include <cstdlib>
+#include <chrono>
+#include <iomanip>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -94,6 +96,7 @@ bool run_main_systematics(
 
     std::cout << "[systematics runner] Running main_systematics on the freshly generated CSV...\n";
     std::cout.flush();
+    const auto t0 = std::chrono::steady_clock::now();
 
     const int status = std::system(command.c_str());
     int exit_code = -1;
@@ -104,6 +107,10 @@ bool run_main_systematics(
         return false;
     }
 
-    std::cout << "[systematics runner] main_systematics finished successfully.\n";
+    const double elapsed_s = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - t0).count();
+    std::cout << "[systematics runner] main_systematics finished successfully in "
+              << std::fixed << std::setprecision(1) << elapsed_s
+              << " s." << std::defaultfloat << std::setprecision(6) << "\n";
     return true;
 }

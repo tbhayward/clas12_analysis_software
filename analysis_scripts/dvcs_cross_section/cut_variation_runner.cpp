@@ -15,6 +15,8 @@
 #include <cmath>
 #include <cctype>
 #include <filesystem>
+#include <chrono>
+#include <iomanip>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -360,6 +362,23 @@ bool produce_variation(
     bool use_nobkg_dvcs_mc_for_acceptance,
     bool use_epg_mc_current_factor_for_eppi0_bkg) {
 
+    using Clock = std::chrono::steady_clock;
+    const auto variation_t0 = Clock::now();
+    auto elapsed = [](const Clock::time_point& t0) {
+        return std::chrono::duration<double>(Clock::now() - t0).count();
+    };
+    auto stage_start = [&](const std::string& name) {
+        std::cout << "[cut-variation-runner]   [" << spec.name << "] "
+                  << name << " started." << std::endl;
+        return Clock::now();
+    };
+    auto stage_done = [&](const std::string& name, const Clock::time_point& t0) {
+        std::cout << "[cut-variation-runner]   [" << spec.name << "] "
+                  << name << " completed in " << std::fixed << std::setprecision(1)
+                  << elapsed(t0) << " s." << std::defaultfloat << std::setprecision(6)
+                  << std::endl;
+    };
+
     const fs::path base = fs::path(options.output_dir) / "variations" / spec.name;
     const fs::path json_dir = base / "jsons";
     const fs::path stage_out = base / "analysis_output";
@@ -374,17 +393,21 @@ bool produce_variation(
         varied_global_config(nominal_global_cuts,
                              spec.fiducial_direction);
 
+    const auto cuts_t0 = stage_start("exclusivity-cut preparation/refit");
     const std::string cuts_json =
         prepare_exclusivity_json(spec, options, cfg, base, json_dir);
+    stage_done("exclusivity-cut preparation/refit", cuts_t0);
     TotalCountsOptions count_opts;
     count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
     count_opts.make_plots = false;
     count_opts.make_note_outputs = false;
+    const auto counts_t0 = stage_start("total_counts");
     if (!update_total_counts_csv(csv_path.string(), dataTrees, eppi0DataTrees,
                                  genMcTrees, recMcTrees, eppi0GenMcTrees,
                                  eppi0RecMcTrees, eppi0BkgTrees, cuts_json,
                                  stage_out.string(), options.max_workers, count_opts,
                                  currentStudyGenMcTrees, currentStudyRecMcTrees)) return false;
+    stage_done("total_counts", counts_t0);
 
     // Current-corrected DATA and reconstructed-MC columns are now filled
     // event-by-event by total_counts.cpp for the varied selection itself.
@@ -393,25 +416,36 @@ bool produce_variation(
 
     Pi0ContaminationOptions pi0_opts;
     pi0_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
+    const auto pi0_t0 = stage_start("pi0 contamination");
     if (!compute_pi0_contamination_overall(dataTrees, eppi0DataTrees, eppi0RecMcTrees,
                                            eppi0BkgTrees, cuts_json, csv_path.string(),
                                            stage_out.string(), 1, pi0_opts)) return false;
     if (!update_pi0_corrected_counts_csv(csv_path.string(), stage_out.string())) return false;
+    stage_done("pi0 contamination", pi0_t0);
+    const auto acc_t0 = stage_start("acceptance");
     if (!update_acceptance_csv(csv_path.string(), genMcTrees, recMcTrees, cuts_json,
                                (json_dir / "global_cuts_config.json").string(),
                                stage_out.string())) return false;
+    stage_done("acceptance", acc_t0);
+
+    const auto unfold_t0 = stage_start("unfolding");
     if (!update_unfolded_yields_csv(csv_path.string(), stage_out.string())) return false;
+    stage_done("unfolding", unfold_t0);
 
     LumiBuildOptions lumi_opts;
     lumi_opts.use_second_column_charge_for_all_unpolarized = true;
     lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
     lumi_opts.columns_3_to_5_charge_sum_scale = 1.025;
     const LumiMap lumi = build_lumi_map(lumi_opts);
+    const auto xsec_t0 = stage_start("cross sections");
     if (!compute_cross_sections(csv_path.string(), lumi)) return false;
     if (!update_normed_cross_sections_csv(csv_path.string())) return false;
+    stage_done("cross sections", xsec_t0);
 
     std::cout << "[cut-variation-runner] Completed " << spec.name
-              << " -> " << csv_path.string() << std::endl;
+              << " in " << std::fixed << std::setprecision(1)
+              << elapsed(variation_t0) << " s -> " << csv_path.string()
+              << std::defaultfloat << std::setprecision(6) << std::endl;
     return true;
 }
 
@@ -472,7 +506,11 @@ bool run_automatic_cut_variation_systematics(
              ExclusivityCutMode::RefitNominal95}
         };
 
-        for (const auto& v : variations) {
+        for (size_t iv = 0; iv < variations.size(); ++iv) {
+            const auto& v = variations[iv];
+            std::cout << "[cut-variation-runner] Variation " << (iv + 1)
+                      << "/" << variations.size() << ": " << v.name
+                      << std::endl;
             if (!produce_variation(v, options, nominal_global_cuts,
                                    dataTrees, genMcTrees, recMcTrees,
                                    eppi0DataTrees, eppi0GenMcTrees,
@@ -506,7 +544,19 @@ bool run_automatic_cut_variation_systematics(
         syst.fiducial_loose_csv = (fs::path(options.output_dir) / "csv/fiducial_loose.csv").string();
         syst.fiducial_tight_csv = (fs::path(options.output_dir) / "csv/fiducial_tight.csv").string();
         syst.output_dir = options.output_dir;
-        return update_cut_variation_systematics(syst);
+        std::cout << "[cut-variation-runner] All " << variations.size()
+                  << " variation CSVs complete; building Barlow/systematic summary."
+                  << std::endl;
+        const auto syst_t0 = std::chrono::steady_clock::now();
+        const bool ok = update_cut_variation_systematics(syst);
+        const double syst_sec = std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - syst_t0).count();
+        std::cout << "[cut-variation-runner] Barlow/systematic summary "
+                  << (ok ? "completed" : "failed")
+                  << " in " << std::fixed << std::setprecision(1)
+                  << syst_sec << " s." << std::defaultfloat << std::setprecision(6)
+                  << std::endl;
+        return ok;
     } catch (const std::exception& e) {
         set_default_global_cuts(nominal_global_cuts);
         std::cerr << "[cut-variation-runner] ERROR: " << e.what() << std::endl;
