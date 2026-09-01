@@ -6953,89 +6953,79 @@ def aggregate_model_bias_rankings(
         bias_dirs: Dict[str, Path],
         outdir: Path) -> Tuple[str, pd.DataFrame]:
     """
-    Select one common Sachs family across all three purity-model samples.
+    Select the production Sachs family from the KM15 closure study only.
 
-    Replica convergence fractions are diagnostic only and do not veto a family.
-    Rank every family with a finite closure objective in all purity models by
-    the worst (largest) combined RMS bias-variance objective across
-    KM15/VGG99/GK16.  This avoids
-    choosing a different extrapolation form for each purity model and avoids
-    allowing one especially favorable selection to dominate the choice.
+    KM15 is the nominal/production BH-purity prescription. VGG99 and GK16 are
+    external diagnostics only and therefore do not enter closure ranking,
+    family vetoes, or the extrapolation-bias systematic.
     """
-    rows = []
-    by_model = {}
-    for model, bdir in bias_dirs.items():
-        path = bdir / "radius_bias_extended_eligibility_ranking.csv"
-        if not path.exists():
-            raise FileNotFoundError(f"Missing extended bias ranking: {path}")
-        #endif
-        table = pd.read_csv(path)
-        by_model[model] = table.set_index("family")
-    #endfor
+    if FINAL_NOMINAL_MODEL not in bias_dirs:
+        raise RuntimeError("KM15 closure directory is required for production ranking")
+    #endif
 
-    families = sorted(
-        set.intersection(
-            *[set(t.index.astype(str)) for t in by_model.values()]
-        )
+    path = (
+        bias_dirs[FINAL_NOMINAL_MODEL]
+        / "radius_bias_extended_eligibility_ranking.csv"
     )
-    for family in families:
-        row = {"family": family}
-        objectives = []
-        rankable_all = True
-        for model in FINAL_MODEL_NAMES:
-            t = by_model[model]
-            obj = float(t.loc[family, "combined_RMS_objective_fm"])
-            min_valid = float(t.loc[family, "minimum_scenario_valid_fraction"])
-            global_valid = float(t.loc[family, "global_valid_fraction"])
-            row[f"{model}_minimum_scenario_valid_fraction"] = min_valid
-            row[f"{model}_global_valid_fraction"] = global_valid
-            row[f"{model}_combined_RMS_objective_fm"] = obj
-            row[f"{model}_eligible"] = bool(np.isfinite(obj))
-            rankable_all = rankable_all and np.isfinite(obj)
-            objectives.append(obj)
-        #endfor
-        row["eligible_all_models"] = bool(rankable_all)
-        finite_obj = np.asarray(objectives, dtype=float)
-        finite_obj = finite_obj[np.isfinite(finite_obj)]
-        row["mean_combined_RMS_objective_fm"] = float(np.mean(finite_obj)) if len(finite_obj) else np.nan
-        row["worst_combined_RMS_objective_fm"] = float(np.max(finite_obj)) if len(finite_obj) else np.nan
-        rows.append(row)
-    #endfor
+    if not path.exists():
+        raise FileNotFoundError(f"Missing KM15 extended bias ranking: {path}")
+    #endif
 
-    ranking = pd.DataFrame(rows).sort_values(
-        ["eligible_all_models", "worst_combined_RMS_objective_fm",
-         "mean_combined_RMS_objective_fm"],
-        ascending=[False, True, True],
-    )
-    eligible = ranking.loc[ranking["eligible_all_models"]]
-    if len(eligible) == 0:
+    table = pd.read_csv(path).copy()
+    required = [
+        "family",
+        "combined_RMS_objective_fm",
+        "minimum_scenario_valid_fraction",
+        "global_valid_fraction",
+    ]
+    missing = [c for c in required if c not in table.columns]
+    if missing:
         raise RuntimeError(
-            "No Sachs family has a finite closure objective for all three "
-            "model-selected samples."
+            f"KM15 closure ranking is missing required columns: {missing}"
         )
+    #endif
+
+    ranking = table.copy()
+    ranking = ranking.rename(columns={
+        "combined_RMS_objective_fm": "km15_combined_RMS_objective_fm",
+        "minimum_scenario_valid_fraction":
+            "km15_minimum_scenario_valid_fraction",
+        "global_valid_fraction": "km15_global_valid_fraction",
+    })
+    ranking["production_eligible_km15"] = np.isfinite(
+        ranking["km15_combined_RMS_objective_fm"].to_numpy(float)
+    )
+    ranking = ranking.sort_values(
+        ["production_eligible_km15", "km15_combined_RMS_objective_fm"],
+        ascending=[False, True],
+    ).reset_index(drop=True)
+
+    eligible = ranking.loc[ranking["production_eligible_km15"]]
+    if len(eligible) == 0:
+        raise RuntimeError("No Sachs family has a finite KM15 closure objective.")
     #endif
 
     rank1 = str(eligible.iloc[0]["family"])
     outdir.mkdir(parents=True, exist_ok=True)
-    ranking.to_csv(outdir / "model_aggregated_family_ranking.csv", index=False)
+    ranking.to_csv(outdir / "km15_production_family_ranking.csv", index=False)
 
     with open(outdir / "bias_rank1_sachs_family.txt", "w") as fout:
         fout.write(f"bias_rank1_family={rank1}\n")
         fout.write(
-            "criterion=finite closure objective in all KM15/VGG99/GK16 studies; "
-            "convergence fractions are diagnostic only; minimum worst combined "
-            "RMS bias-variance objective\n"
+            "criterion=finite KM15 closure objective; VGG99/GK16 are external "
+            "diagnostics only; minimum KM15 combined RMS bias-variance objective\n"
         )
         fout.write(
-            "note=This is the closure rank-1 family. Final production selection "
-            "may fall through to the next-ranked family if the nominal 5% "
-            "production fits are invalid. Threshold-scan failures do not veto it.\n"
+            "note=This is the KM15 closure rank-1 family. Final production "
+            "selection may fall through to the next-ranked family if the "
+            "nominal KM15 5% production fit is invalid. Threshold-scan failures "
+            "do not veto it.\n"
         )
     #endwith
 
     print(
-        f"[final model analysis] closure rank-1 Sachs family is {rank1}; "
-        "production-fit validation will determine the final family"
+        f"[final model analysis] KM15 closure rank-1 Sachs family is {rank1}; "
+        "KM15 production-fit validation will determine the final family"
     )
     return rank1, ranking
 #enddef
@@ -8214,23 +8204,25 @@ def save_final_form_factor_comparison(
 def save_final_family_ranking_figure(
         ranking: pd.DataFrame,
         figures_dir: Path) -> None:
-    """Single consolidated closure-family ranking for the final-analysis folder."""
+    """KM15-only production closure-family ranking."""
     figures_dir.mkdir(parents=True, exist_ok=True)
-    d = ranking.copy().sort_values("worst_combined_RMS_objective_fm")
+    objective_col = "km15_combined_RMS_objective_fm"
+    d = ranking.copy().sort_values(objective_col)
     fig, ax = plt.subplots(figsize=(8.2, 5.0))
     y = np.arange(len(d))
-    ax.barh(y, d["worst_combined_RMS_objective_fm"].to_numpy(float))
+    ax.barh(y, d[objective_col].to_numpy(float))
     ax.set_yticks(y, d["family"].astype(str).tolist())
     ax.invert_yaxis()
-    ax.set_xlabel("Worst-model combined RMS bias-variance objective (fm)")
-    ax.set_title("Jo 2015 + Lee 2026 closure-family ranking")
+    ax.set_xlabel("KM15 combined RMS bias-variance objective (fm)")
+    ax.set_title("Jo 2015 + Lee 2026 KM15 closure-family ranking")
     ax.grid(axis="x", alpha=0.22)
     for i, (_, row) in enumerate(d.iterrows()):
-        if not bool(row["eligible_all_models"]):
-            ax.text(
-                float(row["worst_combined_RMS_objective_fm"]),
-                i, "  ineligible", va="center", fontsize=8,
-            )
+        if not bool(row["production_eligible_km15"]):
+            x = float(row[objective_col])
+            if not np.isfinite(x):
+                x = 0.0
+            #endif
+            ax.text(x, i, "  ineligible", va="center", fontsize=8)
         #endif
     #endfor
     fig.tight_layout()
@@ -8295,13 +8287,13 @@ def write_final_analysis_readme(
         ),
         "",
         (
-            "Method systematic = quadrature of the joint BH-selection "
-            "systematic and closure/extrapolation bias systematic."
+            "Method systematic = quadrature of the KM15 3--7% BH-selection "
+            "systematic and the KM15 closure/extrapolation bias systematic."
         ),
         (
-            "Joint BH-selection systematic = maximum shift from the nominal "
-            "KM15 5% published-errors result over KM15/VGG99/GK16 and the "
-            "3--7% BH-purity window."
+            "BH-selection systematic = maximum absolute shift from the nominal "
+            "KM15 5% published-errors result using KM15 only over the 3--7% "
+            "BH-purity window. VGG99/GK16 are external diagnostics only."
         ),
         "",
         "Primary files",
@@ -8498,36 +8490,31 @@ def run_final_model_selected_analysis(
         selection, physics_bundles, diagnostics_dir
     )
 
-    # Run a closure/bias study for each 5% model-selected sample.  This is
-    # intentionally three studies: the extrapolation family must be robust to
-    # the modestly different kinematic support induced by purity-model choice.
-    bias_dirs = {}
-    for model in FINAL_MODEL_NAMES:
-        model_dir = closure_dir / model
-        bias_dirs[model] = model_dir
-        print(f"\n[final model analysis] starting radius-bias study for {model}")
+    # Run the expensive production closure/bias study for KM15 only.
+    # VGG99/GK16 remain external selection diagnostics and do not consume
+    # replica statistics or influence the production family/bias systematic.
+    model = FINAL_NOMINAL_MODEL
+    model_dir = closure_dir / model
+    bias_dirs = {model: model_dir}
+    print(f"\n[final model analysis] starting production radius-bias study for {model}")
 
-        # Rebuild lightweight bundle copies whose set5 is the external 5% sample
-        # so the existing closure machinery can be reused unchanged.
-        model_bundles = []
-        specs5 = selected[model][0.05]
-        spec_by_key = {str(s["key"]): s for s in specs5}
-        for bundle in physics_bundles:
-            bcopy = dict(bundle)
-            bcopy["set5"] = spec_by_key[str(bundle["key"])]["data"].copy()
-            model_bundles.append(bcopy)
-        #endfor
-
-        if args.run_radius_bias_study:
-            run_radius_bias_variance_study(model_bundles, args, model_dir)
-        elif not (model_dir / "radius_bias_extended_eligibility_ranking.csv").exists():
-            raise RuntimeError(
-                f"Bias ranking missing for {model}: {model_dir}. "
-                "Run with --run-radius-bias-study "
-                "--radius-bias-extended-truths."
-            )
-        #endif
+    model_bundles = []
+    specs5 = selected[model][0.05]
+    spec_by_key = {str(spec["key"]): spec for spec in specs5}
+    for bundle in physics_bundles:
+        bcopy = dict(bundle)
+        bcopy["set5"] = spec_by_key[str(bundle["key"])]["data"].copy()
+        model_bundles.append(bcopy)
     #endfor
+
+    if args.run_radius_bias_study:
+        run_radius_bias_variance_study(model_bundles, args, model_dir)
+    elif not (model_dir / "radius_bias_extended_eligibility_ranking.csv").exists():
+        raise RuntimeError(
+            f"KM15 bias ranking missing: {model_dir}. Run with "
+            "--run-radius-bias-study --radius-bias-extended-truths."
+        )
+    #endif
 
     bias_rank1_family, family_ranking = aggregate_model_bias_rankings(
         bias_dirs, summary_dir
@@ -8539,15 +8526,16 @@ def run_final_model_selected_analysis(
     # The closure ranking supplies an ordered list of rankable families.
     # Replica convergence fractions are diagnostic only and impose no veto.
     # Starting from the best bias+variance score, require ONLY that the family
-    # produce valid nominal 5% Moradi-error production fits for KM15, VGG99,
-    # and GK16. If the nominal fit fails, retain the failure in the audit table
+    # produce a valid nominal 5% KM15 Moradi-error production fit. VGG99/GK16
+    # remain external diagnostics and cannot veto a family. If the nominal fit
+    # fails, retain the failure in the audit table
     # and automatically try the next-best eligible family.
     #
     # Threshold-scan failures do NOT disqualify a family. They are retained as
     # diagnostics and skipped when constructing the local selection envelope.
     # ------------------------------------------------------------------
     eligible_ranking = family_ranking.loc[
-        family_ranking["eligible_all_models"].astype(bool)
+        family_ranking["production_eligible_km15"].astype(bool)
     ].copy().reset_index(drop=True)
     if len(eligible_ranking) == 0:
         raise RuntimeError(
@@ -8565,7 +8553,7 @@ def run_final_model_selected_analysis(
         candidate_family = str(rank_row["family"])
         candidate_rank = int(candidate_index) + 1
         candidate_score = float(
-            rank_row["worst_combined_RMS_objective_fm"]
+            rank_row["km15_combined_RMS_objective_fm"]
         )
         print(
             f"\n[family fallback] trying rank {candidate_rank}: "
@@ -8576,10 +8564,7 @@ def run_final_model_selected_analysis(
         attempt = {
             "closure_rank": candidate_rank,
             "family": candidate_family,
-            "worst_combined_RMS_objective_fm": candidate_score,
-            "mean_combined_RMS_objective_fm": float(
-                rank_row["mean_combined_RMS_objective_fm"]
-            ),
+            "km15_combined_RMS_objective_fm": candidate_score,
             "passed_05pct_production": False,
             "selected_for_final_analysis": False,
             "failure_details": "",
@@ -8588,37 +8573,33 @@ def run_final_model_selected_analysis(
         candidate_fit_rows = []
         failure_details = []
 
-        # Required 5% production fits with Moradi's additional 5% pointwise
-        # systematic.
-        for model in FINAL_MODEL_NAMES:
-            try:
-                result = fit_sachs_family_multi_measurements(
-                    selected[model][0.05],
-                    family=candidate_family,
-                    bh_cut=0.05,
-                    add_moradi_bh_systematic=True,
-                )
-                result["model"] = model
-                result["threshold"] = 0.05
-                result["family_validation_candidate"] = candidate_family
-                candidate_fit_rows.append(result)
-
-                if not bool(result.get("valid", False)):
-                    failure_details.append(
-                        f"invalid 5% Moradi fit: {model}"
-                    )
-                #endif
-            except Exception as exc:
-                failure_details.append(
-                    f"exception in 5% Moradi fit {model}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-            #endtry
-        #endfor
+        # Required production validation is KM15 only. VGG99/GK16 are
+        # external diagnostics and cannot veto the production family.
+        model = FINAL_NOMINAL_MODEL
+        try:
+            result = fit_sachs_family_multi_measurements(
+                selected[model][0.05],
+                family=candidate_family,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+            result["model"] = model
+            result["threshold"] = 0.05
+            result["family_validation_candidate"] = candidate_family
+            candidate_fit_rows.append(result)
+            if not bool(result.get("valid", False)):
+                failure_details.append(f"invalid 5% Moradi fit: {model}")
+            #endif
+        except Exception as exc:
+            failure_details.append(
+                f"exception in 5% Moradi fit {model}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        #endtry
 
         passed_05pct = (
-            len(candidate_fit_rows) == len(FINAL_MODEL_NAMES)
-            and all(bool(row.get("valid", False)) for row in candidate_fit_rows)
+            len(candidate_fit_rows) == 1
+            and bool(candidate_fit_rows[0].get("valid", False))
         )
         attempt["passed_05pct_production"] = bool(passed_05pct)
 
@@ -8669,40 +8650,63 @@ def run_final_model_selected_analysis(
         fout.write(f"bias_rank1_family={bias_rank1_family}\n")
         fout.write(f"fallback_used={fallback_used}\n")
         fout.write(
-            "criterion=first closure-ranked family with finite closure objectives, ordered by increasing "
-            "worst combined RMS bias-variance objective, that yields valid "
-            "nominal 5% Moradi-error production fits for KM15/VGG99/GK16. "
-            "Threshold-scan failures do not disqualify the family.\n"
+            "criterion=first KM15-closure-ranked family, ordered by increasing "
+            "KM15 combined RMS bias-variance objective, that yields a valid "
+            "nominal 5% KM15 Moradi-error production fit. VGG99/GK16 are "
+            "external diagnostics only. Threshold-scan failures do not "
+            "disqualify the family.\n"
         )
     #endwith
 
     # Preserve the extrapolation-bias estimates for the family that actually
     # survived production validation, not automatically the closure rank-1
     # family.
-    bias_rows = []
-    for model in FINAL_MODEL_NAMES:
-        bias = summarize_bias_for_family(
-            bias_dirs[model] / "radius_bias_variance_study.csv",
-            chosen_family,
-        )
-        bias_rows.append({"model": model, "family": chosen_family, **bias})
-    #endfor
-    bias_table = pd.DataFrame(bias_rows)
+    bias = summarize_bias_for_family(
+        bias_dirs[FINAL_NOMINAL_MODEL] / "radius_bias_variance_study.csv",
+        chosen_family,
+    )
+    bias_table = pd.DataFrame([{
+        "model": FINAL_NOMINAL_MODEL,
+        "family": chosen_family,
+        **bias,
+    }])
     bias_table.to_csv(
         summary_dir / "chosen_family_bias_estimates.csv", index=False
     )
 
+    km15_bias_row = bias_table.loc[
+        bias_table["model"].astype(str) == FINAL_NOMINAL_MODEL
+    ]
+    if len(km15_bias_row) != 1:
+        raise RuntimeError("Could not identify unique KM15 bias row")
+    #endif
     conservative_bias = {
         "rE_bias_systematic_fm": float(
-            bias_table["rE_RMS_bias_fm"].max()
+            km15_bias_row.iloc[0]["rE_RMS_bias_fm"]
         ),
         "rM_bias_systematic_fm": float(
-            bias_table["rM_RMS_bias_fm"].max()
+            km15_bias_row.iloc[0]["rM_RMS_bias_fm"]
         ),
     }
 
-    # Reuse the already validated 5% fits for the accepted family.
-    fit_rows = chosen_5pct_fit_rows
+    # Production fit is the already validated KM15 5% fit. Add VGG99/GK16
+    # 5% fits only as external diagnostics for the comparison outputs.
+    fit_rows = list(chosen_5pct_fit_rows)
+    for model in FINAL_MODEL_NAMES:
+        if model == FINAL_NOMINAL_MODEL:
+            continue
+        #endif
+        result = fit_sachs_family_multi_measurements(
+            selected[model][0.05],
+            family=chosen_family,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+        )
+        result["model"] = model
+        result["threshold"] = 0.05
+        result["external_diagnostic_only"] = True
+        fit_rows.append(result)
+    #endfor
     for result in fit_rows:
         model = str(result["model"])
         print(
@@ -8801,15 +8805,13 @@ def run_final_model_selected_analysis(
         index=False,
     )
 
-    # Preliminary prescription:
-    #   * KM15 5% remains the nominal central fit.
-    #   * Model and threshold dependence are NOT treated as independent
-    #     systematics.  Both alter which measured points enter the fit, and the
-    #     smoke test showed strong correlation, especially for rM.
-    #   * Define one joint BH-selection systematic as the largest shift from
-    #     the nominal KM15 5% published-errors baseline over all three purity
-    #     models and thresholds 3--7%.
-    #   * Keep the complete 1--10% scan as a diagnostic.
+    # Production prescription:
+    #   * KM15 5% is the nominal central fit.
+    #   * The BH-selection systematic is the maximum absolute KM15-only
+    #     excursion from that 5% baseline over thresholds 3--7%.
+    #   * VGG99/GK16 are external diagnostics only and never enter the quoted
+    #     production uncertainty.
+    #   * Keep the complete 1--10% scans for all models as diagnostics.
     nominal = fit_table.loc[fit_table["model"] == FINAL_NOMINAL_MODEL].iloc[0]
 
     published_scan = threshold_table.loc[
@@ -8828,7 +8830,8 @@ def run_final_model_selected_analysis(
     selection_baseline_m = float(nominal_scan_05.iloc[0]["rM_fm"])
 
     local_scan = published_scan.loc[
-        (published_scan["threshold"].to_numpy(float) >= 0.03)
+        (published_scan["model"].astype(str) == FINAL_NOMINAL_MODEL)
+        & (published_scan["threshold"].to_numpy(float) >= 0.03)
         & (published_scan["threshold"].to_numpy(float) <= 0.07)
     ].copy()
 
@@ -8845,22 +8848,22 @@ def run_final_model_selected_analysis(
             for row in invalid_local.itertuples()
         )
         print(
-            "[final model analysis] WARNING: skipping invalid 3--7% "
-            f"threshold-scan fits when building the joint envelope: {bad}"
+            "[final model analysis] WARNING: skipping invalid KM15 3--7% "
+            f"threshold-scan fits when building the production envelope: {bad}"
         )
     #endif
 
     if len(valid_local) == 0:
         raise RuntimeError(
-            "No valid 3--7% published-error threshold fits remain for the "
-            "joint BH-selection envelope."
+            "No valid KM15 3--7% published-error threshold fits remain for "
+            "the production BH-selection envelope."
         )
     #endif
 
-    joint_selection_sys_e = float(np.max(np.abs(
+    km15_selection_sys_e = float(np.max(np.abs(
         valid_local["rE_fm"].to_numpy(float) - selection_baseline_e
     )))
-    joint_selection_sys_m = float(np.max(np.abs(
+    km15_selection_sys_m = float(np.max(np.abs(
         valid_local["rM_fm"].to_numpy(float) - selection_baseline_m
     )))
 
@@ -8887,8 +8890,8 @@ def run_final_model_selected_analysis(
 
     bias_sys_e = conservative_bias["rE_bias_systematic_fm"]
     bias_sys_m = conservative_bias["rM_bias_systematic_fm"]
-    method_sys_e = float(np.hypot(joint_selection_sys_e, bias_sys_e))
-    method_sys_m = float(np.hypot(joint_selection_sys_m, bias_sys_m))
+    method_sys_e = float(np.hypot(km15_selection_sys_e, bias_sys_e))
+    method_sys_m = float(np.hypot(km15_selection_sys_m, bias_sys_m))
 
     summary = pd.DataFrame([{
         "analysis_ensemble": "CLAS6 Jo 2015 + CLAS12 Lee 2026",
@@ -8911,14 +8914,14 @@ def run_final_model_selected_analysis(
         ),
         "rE_fm": float(nominal["rE_fm"]),
         "rE_fit_err_fm": float(nominal["rE_fit_err_fm"]),
-        "rE_joint_bh_selection_sys_fm": joint_selection_sys_e,
+        "rE_km15_3to7_bh_selection_sys_fm": km15_selection_sys_e,
         "rE_extrapolation_bias_sys_fm": bias_sys_e,
         "rE_method_sys_fm": method_sys_e,
         "rE_fixed5_model_spread_diagnostic_fm": fixed5_model_sys_e,
         "rE_km15_1to10_threshold_envelope_diagnostic_fm": km15_1to10_sys_e,
         "rM_fm": float(nominal["rM_fm"]),
         "rM_fit_err_fm": float(nominal["rM_fit_err_fm"]),
-        "rM_joint_bh_selection_sys_fm": joint_selection_sys_m,
+        "rM_km15_3to7_bh_selection_sys_fm": km15_selection_sys_m,
         "rM_extrapolation_bias_sys_fm": bias_sys_m,
         "rM_method_sys_fm": method_sys_m,
         "rM_fixed5_model_spread_diagnostic_fm": fixed5_model_sys_m,
@@ -8926,12 +8929,13 @@ def run_final_model_selected_analysis(
         "threshold_systematic_error_mode": "published_errors",
         "note": (
             "Preliminary CLAS-only result. KM15 5% is nominal. "
-            "The quoted method systematic combines in quadrature a JOINT "
-            "BH-selection envelope (KM15/VGG99/GK16 over 3--7%) and the "
-            "closure/extrapolation RMS-bias systematic. Fixed-5% model spread "
-            "and the KM15 1--10% threshold envelope are retained as diagnostics "
-            "but are not separately added, avoiding double counting of "
-            "correlated sample-selection migration. Fit uncertainty includes "
+            "The quoted method systematic combines in quadrature the KM15-only "
+            "3--7% maximum BH-selection excursion and the KM15 closure/"
+            "extrapolation RMS-bias systematic. VGG99/GK16 fixed-cut spreads "
+            "and their threshold scans are external diagnostics only and are "
+            "not included in the production uncertainty. The KM15 1--10% "
+            "threshold envelope is also retained as a diagnostic. Fit "
+            "uncertainty includes "
             "the configured point-error prescription and correlated "
             "normalization nuisances."
         ),
@@ -8984,17 +8988,17 @@ def run_final_model_selected_analysis(
         f"  fallback used       : {fallback_used}\n"
         f"  nominal purity model: {FINAL_NOMINAL_MODEL}\n"
         f"  nominal BH cut      : 5%\n"
-        f"  selection sys window: 3--7%, all three purity models "
+        f"  selection sys window: KM15 only, 3--7% maximum excursion "
         f"(invalid scan fits skipped)\n"
         f"  rE = {float(nominal['rE_fm']):.5f} +/- "
         f"{float(nominal['rE_fit_err_fm']):.5f} (fit) +/- "
         f"{method_sys_e:.5f} (method) fm\n"
-        f"       joint selection={joint_selection_sys_e:.5f}, "
+        f"       KM15 selection={km15_selection_sys_e:.5f}, "
         f"closure bias={bias_sys_e:.5f}\n"
         f"  rM = {float(nominal['rM_fm']):.5f} +/- "
         f"{float(nominal['rM_fit_err_fm']):.5f} (fit) +/- "
         f"{method_sys_m:.5f} (method) fm\n"
-        f"       joint selection={joint_selection_sys_m:.5f}, "
+        f"       KM15 selection={km15_selection_sys_m:.5f}, "
         f"closure bias={bias_sys_m:.5f}\n"
         f"  summary -> {summary_dir / 'final_results.csv'}\n"
         f"  figures -> {figures_dir}\n"
