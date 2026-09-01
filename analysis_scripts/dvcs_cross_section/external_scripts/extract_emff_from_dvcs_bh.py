@@ -14019,7 +14019,12 @@ def save_neutron_phi_shape_bh_compatibility_study(
         tau = q / (4.0 * MP2)
         inv = 1.0 / (1.0 + tau)
         ge = neutron_atac_ge(q, 0.505, 1.655, 0.909)
-        gm_ref = neutron_kelly_gm(q)
+        # Use the same pointwise neutron Kelly/Gepard Sachs GM already
+        # carried by the evaluated neutron table: GM = F1 + F2.
+        gm_ref = (
+            p["km15_F1"].to_numpy(float)
+            + p["km15_F2"].to_numpy(float)
+        )
         y = p["xs"].to_numpy(float)
         err = np.sqrt(
             p["stat"].to_numpy(float)**2 + p["sys"].to_numpy(float)**2
