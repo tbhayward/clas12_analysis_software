@@ -1424,7 +1424,7 @@ def _restore_eff(model, old_f1, old_f2) -> None:
 #enddef
 
 
-def evaluate_km15_point(args: Tuple[int, float, float, float, float, float]) -> Dict[str, float]:
+def evaluate_km15_point(args: Tuple[int, float, float, float, float, float, str]) -> Dict[str, float]:
     """
     Worker-safe KM15 evaluation for one point.
 
@@ -1739,8 +1739,19 @@ def evaluate_km15_dataframe(df: pd.DataFrame, ebeam: float, workers: int,
         #endif
     #endif
 
+    # Proton CLAS12 inputs use the native/identity phi convention.
+    # evaluate_km15_point() also serves phi-convention-aware bookkeeping and
+    # therefore expects the convention as the seventh task element.
     tasks = [
-        (int(i), float(r.xB), float(r.Q2), float(r.t_abs), float(r.phi_deg), float(ebeam))
+        (
+            int(i),
+            float(r.xB),
+            float(r.Q2),
+            float(r.t_abs),
+            float(r.phi_deg),
+            float(ebeam),
+            "identity",
+        )
         for i, r in df[["xB", "Q2", "t_abs", "phi_deg"]].iterrows()
     ]
 
