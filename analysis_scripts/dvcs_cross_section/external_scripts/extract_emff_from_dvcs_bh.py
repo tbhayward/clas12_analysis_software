@@ -108,7 +108,7 @@ The preliminary publication-facing default uses only the two CLAS
 measurements currently retained for the combined extraction:
 
   * CLAS6 Jo et al. 2015 (Gepard dataset 98)
-  * CLAS12 Lee 2026 (all_bin_v3.csv)
+  * CLAS12 Lee 2026 (authoritative CLAS Physics Database E214M1 release)
 
 CLAS6 Saylor 2018 and Hall A Defurne 2015 are excluded by default and can be
 enabled explicitly for diagnostic studies.  They do not enter the preliminary
@@ -194,6 +194,7 @@ CLAS6_GEPARD_DATASET_ID = 98
 # 107=Kin2, 108=Kin3, 112=KinX2, 113=KinX3.
 HALLA_DEFURNE_GEPARD_DATASET_IDS = (107, 108, 112, 113)
 HALLA_DEFURNE_GLOBAL_SCALE_FRAC = 0.028
+JO_GLOBAL_SCALE_FRAC = 0.05
 
 SAYLOR_EBEAM = 5.88
 SAYLOR_GLOBAL_SCALE_FRAC = 0.05
@@ -221,19 +222,18 @@ SAYLOR_SUPPLEMENT_URL = (
 )
 
 CLAS6_BEAM_ENERGY = 5.75
-DEFAULT_PASS1_CSV = "../imports/all_bin_v3.csv"
+DEFAULT_PASS1_CSV = "../imports/clasdb_E214M1.txt"
 PASS1_GLOBAL_SCALE_FRAC = 0.31
 
 # Georges 2022 supplemental tables provide statistical and TOTAL systematic
 # uncertainties, while the publication states that the latter contain both
 # point-to-point and correlated components.  The public table does not provide
 # a decomposition that can be reconstructed unambiguously here.  Therefore the
-# current combined-radius implementation treats the quoted total systematic as
-# pointwise and does NOT add a separate Georges normalization nuisance.  This is
-# conservative for point errors and, critically, avoids double counting a
-# correlated contribution.  Keep this explicit until an authoritative
-# point-to-point/correlated decomposition is supplied.
-
+# production fit keeps the quoted total systematic pointwise and does NOT invent
+# a Gaussian normalization prior.  Dedicated normalization-tension diagnostics
+# below additionally allow the Georges scale to float freely (diagnostic only)
+# so its preferred relative normalization can be measured without pretending
+# that an authoritative prior width is known.
 GEORGES_GLOBAL_SCALE_FRAC = 0.0
 
 # Sachs-fit optimizer controls.  Hayward & Griffioen emphasize that the chosen
@@ -383,19 +383,130 @@ def load_clas12_csv(path: Path) -> pd.DataFrame:
 
 def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
     """
-    Load the legacy/pass-1 CLAS12 DVCS cross-section table all_bin_v3.csv.
+    Load the authoritative CLAS Physics Database release of the CLAS12
+    RG-A DVCS cross sections (measurement E214M1).
 
-    Relevant columns in the attached file:
-      xBavg, Q2avg, t_abs_avg, phiavg
-      cross sections, ep->epg, exp
-      cross sections, ep->epg, exp, stat. unc.
-      cross sections, ep->epg, exp, syst. unc. (up/down)
-      valid bin
+    The production default is the tab-delimited CLAS database file
+    ``clasdb_E214M1.txt``.  For backward compatibility, a legacy preliminary
+    ``all_bin_v3.csv`` can still be supplied explicitly with --pass1-csv.
 
-    The pass-1 systematic column is treated as an absolute pointwise
-    systematic uncertainty. The large 31% overall scale uncertainty is kept
-    separate and represented by one correlated normalization nuisance.
+    Authoritative CLAS-database columns:
+      bin, x, Q^2, t_average, phi,
+      d4sigma/dQ2 dxb dt dphi, Stat. error, Syst. error
+
+    The published Lee et al. result states that the database systematic error
+    is the TOTAL systematic uncertainty, containing the 31% overall
+    normalization uncertainty in quadrature with the bin-dependent
+    systematic uncertainty.  The fit treats that 31% normalization as a
+    single correlated nuisance parameter, so for the authoritative database
+    table the pointwise component is reconstructed as
+
+        sqrt(max(total_syst^2 - (0.31 * sigma)^2, 0)).
+
+    This avoids double counting the published normalization uncertainty.
     """
+    csv_path = Path(csv_path)
+
+    if csv_path.suffix.lower() in {".txt", ".dat"}:
+        rows = []
+        with csv_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.rstrip("\n").split("\t")
+                if len(parts) < 8:
+                    continue
+                #endif
+                try:
+                    row = [
+                        int(parts[0]),
+                        float(parts[1]),
+                        float(parts[2]),
+                        float(parts[3]),
+                        float(parts[4]),
+                        float(parts[5]),
+                        float(parts[6]),
+                        float(parts[7]),
+                    ]
+                except (TypeError, ValueError):
+                    continue
+                #endtry
+                rows.append(row)
+            #endfor
+        #endwith
+
+        if not rows:
+            raise ValueError(
+                f"No CLAS E214M1 data rows could be parsed from {csv_path}"
+            )
+        #endif
+
+        raw = pd.DataFrame(
+            rows,
+            columns=[
+                "bin",
+                "xB",
+                "Q2",
+                "t_abs",
+                "phi_deg",
+                "xs",
+                "xs_stat",
+                "xs_sys_total",
+            ],
+        )
+
+        outdf = raw.copy()
+        outdf["_row"] = np.arange(len(outdf), dtype=int)
+
+        total_sys = outdf["xs_sys_total"].to_numpy(float)
+        xs = outdf["xs"].to_numpy(float)
+        norm_abs = PASS1_GLOBAL_SCALE_FRAC * xs
+        residual2 = total_sys * total_sys - norm_abs * norm_abs
+
+        # Three released points sit a few per mille below exactly 31% because
+        # of tabulated precision.  Clip only the tiny negative residual rather
+        # than creating an unphysical imaginary pointwise uncertainty.
+        outdf["ptp_sys_abs"] = np.sqrt(np.maximum(residual2, 0.0))
+        outdf["pass1_sys_up"] = outdf["xs_sys_total"]
+        outdf["pass1_sys_down"] = outdf["xs_sys_total"]
+
+        outdf["stat"] = outdf["xs_stat"]
+        outdf["ptp_sys"] = outdf["ptp_sys_abs"]
+        outdf["comb_sys_frac"] = 0.0
+        outdf["scale_sys_frac"] = PASS1_GLOBAL_SCALE_FRAC
+        outdf["ebeam"] = 10.604
+
+        finite = (
+            np.isfinite(outdf["xB"])
+            & np.isfinite(outdf["Q2"])
+            & np.isfinite(outdf["t_abs"])
+            & np.isfinite(outdf["phi_deg"])
+            & np.isfinite(outdf["xs"])
+            & np.isfinite(outdf["xs_stat"])
+            & np.isfinite(outdf["ptp_sys_abs"])
+            & (outdf["xs"] > 0.0)
+            & (outdf["xs_stat"] > 0.0)
+            & (outdf["t_abs"] > 0.0)
+        )
+        outdf = outdf.loc[finite].copy().reset_index(drop=True)
+
+        print(
+            f"[LEE2026] Loaded {len(outdf)} authoritative CLAS Physics "
+            f"Database E214M1 points from {csv_path}"
+        )
+        rel_stat = outdf["xs_stat"] / outdf["xs"]
+        rel_total_sys = outdf["xs_sys_total"] / outdf["xs"]
+        rel_ptp = outdf["ptp_sys_abs"] / outdf["xs"]
+        print(
+            f"[LEE2026] median stat/xs={100*np.nanmedian(rel_stat):.1f}%, "
+            f"median released total syst/xs="
+            f"{100*np.nanmedian(rel_total_sys):.1f}%, "
+            f"inferred pointwise syst/xs={100*np.nanmedian(rel_ptp):.1f}%, "
+            f"correlated scale={100*PASS1_GLOBAL_SCALE_FRAC:.1f}%"
+        )
+        return outdf
+    #endif
+
+    # Legacy preliminary CSV compatibility.  This branch is retained only so
+    # old validation runs can still be reproduced explicitly.
     raw = pd.read_csv(csv_path, low_memory=False)
 
     required = [
@@ -412,7 +523,7 @@ def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
     missing = [c for c in required if c not in raw.columns]
     if missing:
         raise KeyError(
-            "Pass-1 CSV is missing required columns: "
+            "Legacy CLAS12 CSV is missing required columns: "
             + ", ".join(missing)
         )
     #endif
@@ -443,24 +554,16 @@ def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
         ),
     })
 
-    # Use the mean absolute up/down uncertainty as the symmetric pointwise
-    # systematic entering chi2. In the attached CSV up and down are in fact
-    # equal for the inspected rows, but this remains robust if some bins differ.
     outdf["ptp_sys_abs"] = 0.5 * (
         np.abs(outdf["pass1_sys_up"].to_numpy(float))
         + np.abs(outdf["pass1_sys_down"].to_numpy(float))
     )
-
-    # Canonical aliases used only by generic diagnostics.  The authoritative
-    # pass-1 columns remain xs_stat and ptp_sys_abs.
     outdf["stat"] = outdf["xs_stat"]
     outdf["ptp_sys"] = outdf["ptp_sys_abs"]
-
     outdf["comb_sys_frac"] = 0.0
     outdf["scale_sys_frac"] = PASS1_GLOBAL_SCALE_FRAC
     outdf["ebeam"] = 10.604
 
-    # Carry bin-boundary columns through for grouped phi plots when available.
     passthrough = [
         "Bin Name",
         "xBmin", "xBmax",
@@ -491,15 +594,16 @@ def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
     outdf = outdf.loc[finite].copy().reset_index(drop=True)
 
     print(
-        f"[PASS1] Loaded {len(outdf)} valid pass-1 CLAS12 "
+        f"[LEE2026 legacy] Loaded {len(outdf)} preliminary CLAS12 "
         f"cross-section points from {csv_path}"
     )
-
     rel_stat = outdf["xs_stat"] / outdf["xs"]
     rel_sys = outdf["ptp_sys_abs"] / outdf["xs"]
     print(
-        f"[PASS1] median stat/xs={100*np.nanmedian(rel_stat):.1f}%, "
-        f"median pointwise syst/xs={100*np.nanmedian(rel_sys):.1f}%, "
+        f"[LEE2026 legacy] median stat/xs="
+        f"{100*np.nanmedian(rel_stat):.1f}%, "
+        f"median preliminary pointwise syst/xs="
+        f"{100*np.nanmedian(rel_sys):.1f}%, "
         f"global scale={100*PASS1_GLOBAL_SCALE_FRAC:.1f}%"
     )
     return outdf
@@ -1226,6 +1330,15 @@ def load_clas6_gepard_dataset(dataset_id: int = CLAS6_GEPARD_DATASET_ID) -> pd.D
             "clas6_err_total": err_total,
             "clas6_err_stat": err_stat,
             "clas6_err_syst": err_syst,
+            # Jo et al. quote a 5% uncertainty on the global elastic
+            # renormalization factor. Keep the original published total error
+            # untouched for the Moradi validation, but provide a second
+            # pointwise-only total for combined fits so the 5% contribution is
+            # not counted both diagonally and as a correlated nuisance.
+            "clas6_err_pointwise": math.sqrt(max(
+                err_total**2 - (JO_GLOBAL_SCALE_FRAC * abs(float(pt.val)))**2,
+                err_stat**2 if np.isfinite(err_stat) and err_stat > 0.0 else 0.0,
+            )),
             "ptp_sys_abs": 0.0,
             "comb_sys_frac": 0.0,
             "scale_sys_frac": 0.0,
@@ -2534,13 +2647,14 @@ def dataset_point_errors(
     y = data["xs"].to_numpy(float)
 
     if dataset_kind == "jo2015":
-        # Gepard pt.err is the published total point uncertainty used in the
-        # Moradi reproduction.  The Jo loader canonicalizes that quantity as
-        # ``clas6_err_total`` and also copies it to ``xs_stat`` for the
-        # standalone fit machinery.  Do not require a raw ``err`` column here:
-        # it is not present in the dataframe returned by
-        # load_clas6_gepard_dataset().
-        if "clas6_err_total" in data.columns:
+        # Combined/global fits treat the quoted 5% elastic-renormalization
+        # uncertainty as correlated.  Therefore use the Jo published total
+        # error with that contribution removed in quadrature.  The full
+        # ``clas6_err_total`` remains intact for the standalone Moradi
+        # reproduction, where the published total error is used directly.
+        if "clas6_err_pointwise" in data.columns:
+            base = data["clas6_err_pointwise"].to_numpy(float)
+        elif "clas6_err_total" in data.columns:
             base = data["clas6_err_total"].to_numpy(float)
         elif "xs_stat" in data.columns:
             base = data["xs_stat"].to_numpy(float)
@@ -2619,21 +2733,28 @@ def fit_multi_measurements(
 
     Each measurement has its own cross-section data and uncertainty model.
     Correlated normalization nuisances are independent between experiments:
-      Jo 2015: none, matching the Moradi/Gepard treatment;
+      Jo 2015: 5% global-renormalization nuisance in combined fits;
       Saylor 2018: 5% global-normalization nuisance;
       Hall A Defurne 2015: 2.8% global-normalization nuisance;
       CLAS12 Lee 2026: 31% conservative global normalization nuisance.
     """
     names, p0 = paper_model_setup(kind)
 
+    unconstrained_norm_keys = set(
+        str(k) for k in (unconstrained_norm_keys or [])
+    )
     nuisance_names = []
     nuisance_fracs = {}
+    nuisance_is_free = {}
     for spec in datasets:
-        frac = float(spec.get("norm_frac", 0.0))
+        key = str(spec["key"])
+        free_norm = key in unconstrained_norm_keys
+        frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
         if frac > 0.0:
-            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", str(spec["key"]))
+            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
             nuisance_names.append(nname)
             nuisance_fracs[nname] = frac
+            nuisance_is_free[nname] = bool(free_norm)
         #endif
     #endfor
 
@@ -6963,7 +7084,9 @@ def fit_sachs_family_multi_measurements(
         family: str,
         bh_cut: float = 0.05,
         add_moradi_bh_systematic: bool = True,
-        bh_systematic_fraction: Optional[float] = None) -> Dict[str, object]:
+        bh_systematic_fraction: Optional[float] = None,
+        unconstrained_norm_keys: Optional[Sequence[str]] = None
+        ) -> Dict[str, object]:
     """
     Production fit of one Sachs family to multiple BH-selected measurements.
 
@@ -7027,7 +7150,8 @@ def fit_sachs_family_multi_measurements(
         #endif
         q = d["t_abs"].to_numpy(float)
         tau = q / (4.0 * MP2)
-        key = str(spec["key"]); frac = float(spec.get("norm_frac", 0.0))
+        key = str(spec["key"])
+        frac = 1.0 if key in unconstrained_norm_keys else float(spec.get("norm_frac", 0.0))
         prepared.append({
             "key": key, "norm_frac": frac,
             "nuisance_name": ("beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key) if frac > 0.0 else None),
@@ -7071,7 +7195,9 @@ def fit_sachs_family_multi_measurements(
         #endfor
 
         for nname in nuisance_names:
-            total += float(p[nuisance_index[nname]] ** 2)
+            if not nuisance_is_free.get(nname, False):
+                total += float(p[nuisance_index[nname]] ** 2)
+            #endif
         #endfor
         return total
     #enddef
@@ -7088,7 +7214,13 @@ def fit_sachs_family_multi_measurements(
     m.limits[names_e[0]] = (min(ce_lo, ce_hi), max(ce_lo, ce_hi))
     m.limits[names_m[0]] = (min(cm_lo, cm_hi), max(cm_lo, cm_hi))
     for nname in nuisance_names:
-        m.limits[nname] = (-10.0, 10.0)
+        if nuisance_is_free.get(nname, False):
+            # beta is directly the fractional scale shift when frac=1.
+            # Keep the diagnostic physically positive and broad.
+            m.limits[nname] = (-0.50, 0.50)
+        else:
+            m.limits[nname] = (-10.0, 10.0)
+        #endif
     #endfor
 
     m.migrad()
@@ -7147,6 +7279,12 @@ def fit_sachs_family_multi_measurements(
         result[nname] = float(m.values[nname])
         result[nname + "_err"] = float(m.errors[nname])
         result[nname + "_norm_fraction"] = float(nuisance_fracs[nname])
+        result[nname + "_is_unconstrained"] = bool(
+            nuisance_is_free.get(nname, False)
+        )
+        result[nname + "_scale_factor"] = float(
+            1.0 + nuisance_fracs[nname] * float(m.values[nname])
+        )
     #endfor
     return result
 #enddef
@@ -10990,6 +11128,399 @@ def save_lee_fit8_kelly_threshold_scan(
 #enddef
 
 
+
+def save_selected_experiment_kinematic_coverage(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        outdir: Path,
+        threshold: float = 0.05) -> pd.DataFrame:
+    """Compare the KM15-selected kinematic support of the production datasets."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    selected_by_label = {}
+    summary_rows = []
+    for bundle in bundles:
+        d = select_bundle_from_external_model(
+            bundle, selection, "km15", float(threshold)
+        )
+        if len(d) == 0:
+            continue
+        #endif
+        label = str(bundle["label"])
+        selected_by_label[label] = d
+        stat = dataset_statistical_errors(d, str(bundle["kind"]))
+        point = dataset_point_errors(
+            d, str(bundle["kind"]), float(threshold), False
+        )
+        xs = np.abs(d["xs"].to_numpy(float))
+        rel_stat = np.divide(
+            stat, xs, out=np.full_like(stat, np.nan), where=xs > 0.0
+        )
+        rel_point = np.divide(
+            point, xs, out=np.full_like(point, np.nan), where=xs > 0.0
+        )
+        summary_rows.append({
+            "dataset": label,
+            "N_selected": int(len(d)),
+            "Q2_min": float(np.nanmin(d["Q2"])),
+            "Q2_median": float(np.nanmedian(d["Q2"])),
+            "Q2_max": float(np.nanmax(d["Q2"])),
+            "xB_min": float(np.nanmin(d["xB"])),
+            "xB_median": float(np.nanmedian(d["xB"])),
+            "xB_max": float(np.nanmax(d["xB"])),
+            "t_abs_min": float(np.nanmin(d["t_abs"])),
+            "t_abs_median": float(np.nanmedian(d["t_abs"])),
+            "t_abs_max": float(np.nanmax(d["t_abs"])),
+            "phi_deg_min": float(np.nanmin(d["phi_deg"])),
+            "phi_deg_median": float(np.nanmedian(d["phi_deg"])),
+            "phi_deg_max": float(np.nanmax(d["phi_deg"])),
+            "median_relative_stat_error": float(np.nanmedian(rel_stat)),
+            "median_relative_point_error": float(np.nanmedian(rel_point)),
+        })
+    #endfor
+
+    summary = pd.DataFrame(summary_rows)
+    summary.to_csv(outdir / "selected_kinematic_coverage_summary.csv", index=False)
+
+    if selected_by_label:
+        fig, axes = plt.subplots(2, 2, figsize=(12.5, 9.0))
+        variables = [
+            ("Q2", r"$Q^2$ [GeV$^2$]"),
+            ("xB", r"$x_B$"),
+            ("t_abs", r"$|t|$ [GeV$^2$]"),
+            ("phi_deg", r"$\phi$ [deg]"),
+        ]
+        for ax, (column, xlabel) in zip(axes.flat, variables):
+            all_values = np.concatenate([
+                d[column].to_numpy(float) for d in selected_by_label.values()
+            ])
+            finite = all_values[np.isfinite(all_values)]
+            if len(finite) == 0:
+                continue
+            #endif
+            edges = np.linspace(float(np.min(finite)), float(np.max(finite)), 31)
+            for label, d in selected_by_label.items():
+                values = d[column].to_numpy(float)
+                values = values[np.isfinite(values)]
+                ax.hist(
+                    values, bins=edges, histtype="step", density=True,
+                    linewidth=1.4, label=label,
+                )
+            #endfor
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("Normalized entries")
+            ax.grid(alpha=0.2)
+        #endfor
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        fig.legend(
+            handles, labels, loc="upper center", ncol=2,
+            bbox_to_anchor=(0.5, 0.955),
+        )
+        fig.suptitle(
+            f"KM15 {100.0*threshold:.0f}% selected points: experimental kinematic coverage",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.90))
+        fig.savefig(outdir / "selected_kinematic_coverage_4variables.png", dpi=180)
+        plt.close(fig)
+
+        fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.2))
+        for label, d in selected_by_label.items():
+            axes[0].scatter(
+                d["xB"], d["Q2"], s=10, alpha=0.55, label=label,
+            )
+            axes[1].scatter(
+                d["t_abs"], d["phi_deg"], s=10, alpha=0.55, label=label,
+            )
+        #endfor
+        axes[0].set_xlabel(r"$x_B$")
+        axes[0].set_ylabel(r"$Q^2$ [GeV$^2$]")
+        axes[1].set_xlabel(r"$|t|$ [GeV$^2$]")
+        axes[1].set_ylabel(r"$\phi$ [deg]")
+        for ax in axes:
+            ax.grid(alpha=0.2)
+        #endfor
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(
+            handles, labels, loc="upper center", ncol=2,
+            bbox_to_anchor=(0.5, 0.955),
+        )
+        fig.suptitle(
+            f"KM15 {100.0*threshold:.0f}% selected points: correlated kinematic support",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.90))
+        fig.savefig(outdir / "selected_kinematic_coverage_correlations.png", dpi=180)
+        plt.close(fig)
+    #endif
+    return summary
+#enddef
+
+
+def _copy_specs_with_norm_fraction(
+        specs: Sequence[Dict[str, object]],
+        norm_fraction_by_key: Dict[str, float]) -> List[Dict[str, object]]:
+    out = []
+    for spec in specs:
+        item = dict(spec)
+        key = str(item["key"])
+        if key in norm_fraction_by_key:
+            item["norm_frac"] = float(norm_fraction_by_key[key])
+        #endif
+        out.append(item)
+    #endfor
+    return out
+#enddef
+
+
+def run_normalization_tension_diagnostics(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        family: str,
+        outdir: Path) -> pd.DataFrame:
+    """Compare fixed, published-constrained, and freely floating normalizations."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    specs, counts = _km15_selected_specs_for_bundles(
+        bundles, selection, 0.05
+    )
+    keys = [str(spec["key"]) for spec in specs]
+
+    modes = []
+    # Production prescription: one independent Gaussian-constrained nuisance
+    # wherever a published global normalization uncertainty is known.
+    modes.append((
+        "published_constrained",
+        specs,
+        [],
+        "Independent Gaussian priors from published global-scale uncertainties; Georges fixed because no authoritative decomposition is supplied.",
+    ))
+    modes.append((
+        "all_fixed",
+        _copy_specs_with_norm_fraction(specs, {k: 0.0 for k in keys}),
+        [],
+        "All absolute normalizations fixed.",
+    ))
+    if "halla_georges2022" in keys:
+        georges_specs = _copy_specs_with_norm_fraction(
+            specs, {"halla_georges2022": 1.0}
+        )
+        modes.append((
+            "georges_free_diagnostic",
+            georges_specs,
+            ["halla_georges2022"],
+            "Published constraints retained for other datasets; Georges normalization unconstrained.",
+        ))
+    #endif
+    all_free_specs = _copy_specs_with_norm_fraction(
+        specs, {k: 1.0 for k in keys}
+    )
+    modes.append((
+        "all_free_diagnostic",
+        all_free_specs,
+        keys,
+        "Every dataset normalization unconstrained; diagnostic only.",
+    ))
+
+    rows = []
+    for mode, mode_specs, free_keys, note in modes:
+        fit = fit_sachs_family_multi_measurements(
+            mode_specs,
+            family=family,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+            bh_systematic_fraction=0.05,
+            unconstrained_norm_keys=free_keys,
+        )
+        row = {
+            "normalization_mode": mode,
+            "family": family,
+            "note": note,
+            **counts,
+            **fit,
+        }
+        rows.append(row)
+    #endfor
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "normalization_treatment_comparison.csv", index=False)
+
+    # A compact scale-factor table is easier to read than the wide fit table.
+    scale_rows = []
+    for _, row in table.iterrows():
+        for key in keys:
+            bname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
+            if bname in table.columns and np.isfinite(row.get(bname, np.nan)):
+                scale_rows.append({
+                    "normalization_mode": row["normalization_mode"],
+                    "dataset": key,
+                    "beta": float(row[bname]),
+                    "beta_err": float(row.get(bname + "_err", np.nan)),
+                    "prior_fraction": float(row.get(
+                        bname + "_norm_fraction", np.nan
+                    )),
+                    "scale_factor": float(row.get(
+                        bname + "_scale_factor", np.nan
+                    )),
+                    "unconstrained": bool(row.get(
+                        bname + "_is_unconstrained", False
+                    )),
+                })
+            else:
+                scale_rows.append({
+                    "normalization_mode": row["normalization_mode"],
+                    "dataset": key,
+                    "beta": np.nan,
+                    "beta_err": np.nan,
+                    "prior_fraction": 0.0,
+                    "scale_factor": 1.0,
+                    "unconstrained": False,
+                })
+            #endif
+        #endfor
+    #endfor
+    pd.DataFrame(scale_rows).to_csv(
+        outdir / "normalization_scale_factors.csv", index=False
+    )
+
+    print("\n[normalization tension] KM15 5% all-four comparison")
+    display_cols = [
+        "normalization_mode", "N", "chi2_ndof",
+        "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+    ]
+    print(table[display_cols].to_string(index=False))
+    return table
+#enddef
+
+
+def run_fixed_family_ensemble_decomposition(
+        jo_bundle: Dict[str, object],
+        defurne_bundle: Dict[str, object],
+        georges_bundle: Dict[str, object],
+        lee_bundle: Dict[str, object],
+        selection: pd.DataFrame,
+        family: str,
+        outdir: Path) -> pd.DataFrame:
+    """Diagnose which Hall-A dataset drives the all-four radius rotation."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    configurations = [
+        ("jo_plus_lee", [jo_bundle, lee_bundle], "Jo + Lee"),
+        (
+            "jo_plus_lee_plus_defurne",
+            [jo_bundle, lee_bundle, defurne_bundle],
+            "Jo + Lee + Defurne",
+        ),
+        (
+            "jo_plus_lee_plus_georges",
+            [jo_bundle, lee_bundle, georges_bundle],
+            "Jo + Lee + Georges",
+        ),
+        (
+            "all_four",
+            [jo_bundle, defurne_bundle, georges_bundle, lee_bundle],
+            "Jo + Defurne + Georges + Lee",
+        ),
+        (
+            "hall_a_only",
+            [defurne_bundle, georges_bundle],
+            "Defurne + Georges",
+        ),
+    ]
+    rows = []
+    for tag, bundles, label in configurations:
+        specs, counts = _km15_selected_specs_for_bundles(
+            bundles, selection, 0.05
+        )
+        fit = fit_sachs_family_multi_measurements(
+            specs, family=family, bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+            bh_systematic_fraction=0.05,
+        )
+        rows.append({
+            "configuration": tag,
+            "configuration_label": label,
+            "family": family,
+            **counts,
+            **fit,
+        })
+    #endfor
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "fixed_family_ensemble_decomposition.csv", index=False)
+
+    print(f"\n[Hall-A decomposition] fixed family {family}")
+    cols = [
+        "configuration_label", "N", "chi2_ndof",
+        "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+    ]
+    print(table[cols].to_string(index=False))
+    return table
+#enddef
+
+
+def run_data_driven_bh_deviance_for_ensemble(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        family: str,
+        label: str,
+        outdir: Path) -> pd.DataFrame:
+    """Run the Kelly-BH matched-statistics selector beside nominal KM15 5%."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    nominal_specs, _ = _km15_selected_specs_for_bundles(
+        bundles, selection, 0.05
+    )
+    nominal = fit_sachs_family_multi_measurements(
+        nominal_specs, family=family, bh_cut=0.05,
+        add_moradi_bh_systematic=True,
+        bh_systematic_fraction=0.05,
+    )
+    diag = build_data_driven_bh_selection_diagnostics(
+        physics_bundles=bundles,
+        nominal_specs=nominal_specs,
+        chosen_family=family,
+        diagnostics_dir=outdir,
+    )
+    rows = [{
+        "selector": "KM15_5pct",
+        "ensemble_label": label,
+        **nominal,
+    }]
+    for _, r in diag["fit_table"].iterrows():
+        d = r.to_dict()
+        d["ensemble_label"] = label
+        rows.append(d)
+    #endfor
+    table = pd.DataFrame(rows)
+    base_e = float(nominal["rE_fm"])
+    base_m = float(nominal["rM_fm"])
+    table["delta_rE_from_KM15_fm"] = table["rE_fm"].to_numpy(float) - base_e
+    table["delta_rM_from_KM15_fm"] = table["rM_fm"].to_numpy(float) - base_m
+    table.to_csv(outdir / "data_driven_bh_radius_comparison.csv", index=False)
+
+    fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.8))
+    x = np.arange(len(table))
+    axes[0].errorbar(
+        x, table["rE_fm"], yerr=table["rE_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3,
+    )
+    axes[1].errorbar(
+        x, table["rM_fm"], yerr=table["rM_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3,
+    )
+    labels = table["selector"].astype(str).tolist()
+    for ax, ylabel in zip(axes, [r"$r_E$ [fm]", r"$r_M$ [fm]"]):
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=18, ha="right")
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=0.2)
+    #endfor
+    fig.suptitle(
+        f"{label}: KM15 versus data-driven Kelly-BH selection ({family})",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(outdir / "data_driven_bh_radius_comparison.png", dpi=180)
+    plt.close(fig)
+    return table
+#enddef
+
+
 def run_unified_km15_final_analysis(
         jo_bundle: Dict[str, object],
         defurne_bundle: Dict[str, object],
@@ -11022,6 +11553,12 @@ def run_unified_km15_final_analysis(
     production_bundles = sort_bundles_chronologically(
         [jo_bundle, defurne_bundle, georges_bundle, lee_bundle]
     )
+    save_selected_experiment_kinematic_coverage(
+        production_bundles,
+        selection,
+        diagnostics_dir / "selected_experiment_kinematic_coverage",
+        threshold=0.05,
+    )
     ensemble_defs = [
         ("lee2026_only", [lee_bundle], "CLAS12 Lee 2026"),
         ("jo2015_only", [jo_bundle], "CLAS6 Jo 2015"),
@@ -11051,6 +11588,7 @@ def run_unified_km15_final_analysis(
     print("=" * 78)
 
     chosen = {}
+    closure_bias_by_tag = {}
     family_audit_rows = []
 
     for tag, cfg_bundles, label in ensemble_defs:
@@ -11191,9 +11729,16 @@ def run_unified_km15_final_analysis(
             )
         else:
             chosen[tag] = selected_family
+            bias_summary = summarize_bias_for_family(
+                closure_dir / "radius_bias_variance_study.csv",
+                selected_family,
+            )
+            closure_bias_by_tag[tag] = bias_summary
             print(
                 f"[ensemble closure] {label}: selected family = "
-                f"{selected_family}"
+                f"{selected_family}; "
+                f"closure bias sys rE={bias_summary['rE_RMS_bias_fm']:.5f} fm, "
+                f"rM={bias_summary['rM_RMS_bias_fm']:.5f} fm"
             )
         #endif
     #endfor
@@ -11245,8 +11790,8 @@ def run_unified_km15_final_analysis(
         # Dense near the nominal BH-pure region, sparse into the DVCS-contaminated
         # region.  The final point is chosen above the largest finite KM15 delta
         # so it includes essentially every point for which model selection exists.
-        scan_thresholds = [0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.10,
-                           0.15, 0.20, 0.30, 0.50, 0.75, 1.00]
+        scan_thresholds = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07,
+                           0.075, 0.10, 0.15, 0.20, 0.30, 0.50, 0.75, 1.00]
         finite_deltas = []
         for bundle in cfg_bundles:
             key = str(bundle["key"])
@@ -11272,12 +11817,19 @@ def run_unified_km15_final_analysis(
                 add_moradi_bh_systematic=True,
                 bh_systematic_fraction=0.05,
             )
+            bias_summary = closure_bias_by_tag.get(tag, {})
             row = {
                 "configuration": tag,
                 "configuration_label": label,
                 "selected_family": family,
                 "threshold": float(threshold),
                 "threshold_percent": 100.0 * float(threshold),
+                "rE_closure_bias_sys_fm": float(
+                    bias_summary.get("rE_RMS_bias_fm", np.nan)
+                ),
+                "rM_closure_bias_sys_fm": float(
+                    bias_summary.get("rM_RMS_bias_fm", np.nan)
+                ),
                 **counts,
                 **fit,
             }
@@ -11288,6 +11840,54 @@ def run_unified_km15_final_analysis(
         #endfor
 
         table = pd.DataFrame(threshold_rows)
+
+        # Quote the two immediately useful systematic scales alongside every
+        # ensemble result: closure/extrapolation bias and the KM15-only maximum
+        # threshold excursion over the explicit 3--7% scan.
+        nominal5 = table.loc[
+            np.isclose(table["threshold"].to_numpy(float), 0.05)
+            & table["valid"].astype(bool)
+        ]
+        local = table.loc[
+            (table["threshold"].to_numpy(float) >= 0.03)
+            & (table["threshold"].to_numpy(float) <= 0.07)
+            & table["valid"].astype(bool)
+        ]
+        if len(nominal5) == 1 and len(local):
+            base_e = float(nominal5.iloc[0]["rE_fm"])
+            base_m = float(nominal5.iloc[0]["rM_fm"])
+            sel_sys_e = float(np.max(np.abs(
+                local["rE_fm"].to_numpy(float) - base_e
+            )))
+            sel_sys_m = float(np.max(np.abs(
+                local["rM_fm"].to_numpy(float) - base_m
+            )))
+        else:
+            sel_sys_e = np.nan
+            sel_sys_m = np.nan
+        #endif
+        bias_summary = closure_bias_by_tag.get(tag, {})
+        bias_e = float(bias_summary.get("rE_RMS_bias_fm", np.nan))
+        bias_m = float(bias_summary.get("rM_RMS_bias_fm", np.nan))
+        table["rE_km15_3to7_selection_sys_fm"] = sel_sys_e
+        table["rM_km15_3to7_selection_sys_fm"] = sel_sys_m
+        table["rE_method_sys_fm"] = (
+            float(np.hypot(sel_sys_e, bias_e))
+            if np.isfinite(sel_sys_e) and np.isfinite(bias_e) else np.nan
+        )
+        table["rM_method_sys_fm"] = (
+            float(np.hypot(sel_sys_m, bias_m))
+            if np.isfinite(sel_sys_m) and np.isfinite(bias_m) else np.nan
+        )
+        for nrow in nominal_rows:
+            if str(nrow.get("configuration")) == tag:
+                nrow["rE_km15_3to7_selection_sys_fm"] = sel_sys_e
+                nrow["rM_km15_3to7_selection_sys_fm"] = sel_sys_m
+                nrow["rE_method_sys_fm"] = table["rE_method_sys_fm"].iloc[0]
+                nrow["rM_method_sys_fm"] = table["rM_method_sys_fm"].iloc[0]
+            #endif
+        #endfor
+
         table.to_csv(cfg_dir / "km15_threshold_scan.csv", index=False)
 
         fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.7))
@@ -11325,16 +11925,109 @@ def run_unified_km15_final_analysis(
         rotation_root / "km15_5pct_ensemble_summary.csv", index=False
     )
 
+    if len(nominal):
+        fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.2))
+        x = np.arange(len(nominal))
+        for ax, radius, fiterr, biaserr, ylabel in [
+            (
+                axes[0], "rE_fm", "rE_fit_err_fm",
+                "rE_closure_bias_sys_fm", r"$r_E$ [fm]",
+            ),
+            (
+                axes[1], "rM_fm", "rM_fit_err_fm",
+                "rM_closure_bias_sys_fm", r"$r_M$ [fm]",
+            ),
+        ]:
+            outer = np.hypot(
+                nominal[fiterr].to_numpy(float),
+                nominal[biaserr].to_numpy(float),
+            )
+            ax.errorbar(
+                x, nominal[radius], yerr=outer,
+                marker="o", linestyle="none", capsize=4,
+                label="fit + closure-bias (quadrature)",
+            )
+            ax.errorbar(
+                x, nominal[radius], yerr=nominal[fiterr],
+                marker="o", linestyle="none", capsize=2,
+                label="fit uncertainty",
+            )
+            ax.set_xticks(x)
+            ax.set_xticklabels(
+                nominal["configuration_label"].astype(str),
+                rotation=18, ha="right",
+            )
+            ax.set_ylabel(ylabel)
+            ax.grid(axis="y", alpha=0.2)
+        #endfor
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(
+            handles, labels, loc="upper center", ncol=2,
+            bbox_to_anchor=(0.5, 0.955),
+        )
+        fig.suptitle(
+            "KM15 5% ensemble radii: fit and closure-bias uncertainty scales",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.90))
+        fig.savefig(
+            rotation_root / "00_km15_5pct_ensemble_radii_with_bias.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    #endif
+
     print("\n[KM15 ensemble rotation] independently selected families")
     cols = [
         "configuration_label", "selected_family", "N", "chi2_ndof",
-        "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+        "rE_fm", "rE_fit_err_fm", "rE_closure_bias_sys_fm",
+        "rE_km15_3to7_selection_sys_fm", "rE_method_sys_fm",
+        "rM_fm", "rM_fit_err_fm", "rM_closure_bias_sys_fm",
+        "rM_km15_3to7_selection_sys_fm", "rM_method_sys_fm",
     ]
     if len(nominal):
         present = [c for c in cols if c in nominal.columns]
         print(nominal[present].to_string(index=False))
     else:
         print("[KM15 ensemble rotation] no resolved nominal free-GE/free-GM fits.")
+    #endif
+
+    # Diagnose the Hall-A-induced radius rotation with one common family so
+    # changes are attributable to the dataset ensemble rather than to a
+    # simultaneous change of extrapolation parameterization.
+    if chosen.get("all_four") is not None:
+        run_fixed_family_ensemble_decomposition(
+            jo_bundle=jo_bundle,
+            defurne_bundle=defurne_bundle,
+            georges_bundle=georges_bundle,
+            lee_bundle=lee_bundle,
+            selection=selection,
+            family=chosen["all_four"],
+            outdir=diagnostics_dir / "hall_a_ensemble_decomposition",
+        )
+        run_normalization_tension_diagnostics(
+            bundles=production_bundles,
+            selection=selection,
+            family=chosen["all_four"],
+            outdir=diagnostics_dir / "normalization_tension",
+        )
+        run_data_driven_bh_deviance_for_ensemble(
+            bundles=production_bundles,
+            selection=selection,
+            family=chosen["all_four"],
+            label="Jo + Defurne + Georges + Lee",
+            outdir=diagnostics_dir / "bh_deviance" / "all_four",
+        )
+    #endif
+
+    if chosen.get("jo2015_plus_lee2026") is not None:
+        run_data_driven_bh_deviance_for_ensemble(
+            bundles=[jo_bundle, lee_bundle],
+            selection=selection,
+            family=chosen["jo2015_plus_lee2026"],
+            label="Jo + Lee",
+            outdir=diagnostics_dir / "bh_deviance" / "jo_plus_lee",
+        )
     #endif
 
     # Moradi Fit 8 / Kelly-F2 Lee-only diagnostic.  This is intentionally
@@ -11664,9 +12357,9 @@ def run_pass1_validation(args, return_results: bool = False):
     Run the same BH-dominance/form-factor diagnostic on the legacy CLAS12
     pass-1 cross sections.
 
-    This mode bypasses the pass-2 CSV and uses:
-      * pass-1 stat uncertainty
-      * pass-1 per-point systematic uncertainty
+    This mode bypasses the pass-2 CSV and uses the authoritative CLAS Physics Database E214M1 release by default:
+      * released statistical uncertainty
+      * released total systematic uncertainty, decomposed into pointwise and 31% correlated normalization pieces
       * paper's 1--5% BH-selection uncertainty
       * one correlated 31% overall normalization nuisance
       * no pass-2 combination-systematic nuisance
@@ -11679,7 +12372,7 @@ def run_pass1_validation(args, return_results: bool = False):
     outdir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 78)
-    print("[CLAS12 PASS-1 VALIDATION MODE]")
+    print("[CLAS12 LEE 2026 VALIDATION MODE]")
     print(f"[input]  {csv_path}")
     print(f"[output] {outdir}")
     print("=" * 78)
@@ -12338,7 +13031,7 @@ def run_clas6_validation(args, return_results: bool = False):
             "label": "CLAS6 Jo 2015",
             "key": "jo2015",
             "kind": "jo2015",
-            "norm_frac": 0.0,
+            "norm_frac": JO_GLOBAL_SCALE_FRAC,
             "results": fit_results,
             "set5": set5,
             "all_data": df.copy(),
@@ -15581,7 +16274,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--pass1-csv",
         default=DEFAULT_PASS1_CSV,
-        help="Legacy CLAS12 Lee 2026 cross-section CSV",
+        help="CLAS12 Lee 2026 input table; default is authoritative CLAS Physics Database clasdb_E214M1.txt",
     )
     p.add_argument(
         "--saylor-file",
