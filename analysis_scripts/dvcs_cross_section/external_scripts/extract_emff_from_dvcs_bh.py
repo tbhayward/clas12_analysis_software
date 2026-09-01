@@ -69,7 +69,7 @@ with the per-point multiplicative scale factor
   S_i = (1 + beta_global * 0.0476)
         (1 + beta_comb * combination_sys_i).
 
-Thus the 4.76% target-thickness/absolute-charge uncertainty moves every
+Thus the 4.76%% target-thickness/absolute-charge uncertainty moves every
 point by the same fraction, while the combination systematic remains fully
 correlated but has the correct bin-dependent magnitude.
 
@@ -4752,6 +4752,220 @@ def save_mixed_family_closure_ranking(
 #enddef
 
 
+
+def pilot_prune_radius_bias_families(
+        specs: Sequence[Dict[str, object]],
+        scenarios: Sequence[Dict[str, object]],
+        families: Sequence[str],
+        args,
+        outdir: Path) -> List[str]:
+    """Cheap first-stage closure screen before the full high-statistics study.
+
+    The pilot uses a fixed number of ATTEMPTED replicas (no retry-to-success
+    loop) on one representative empirical truth (Kelly) plus a few
+    central-radius, high-curvature synthetic truths.  It is deliberately conservative: numerically unreliable
+    pairs are rejected, while all pairs close to the leader and a protected
+    minimum top cohort survive.  This prevents a 10-replica fluctuation from
+    prematurely eliminating near-degenerate forms such as IP2 and CF2.
+    """
+    npilot = max(0, int(getattr(args, "radius_bias_pilot_replicas", 10)))
+    if npilot <= 0 or int(args.radius_bias_replicas) <= npilot or len(families) <= 1:
+        return list(families)
+    #endif
+
+    # One empirical reference is sufficient for the cheap pilot.  Kelly,
+    # AMT2007, and Bernauer are deliberately all retained in the FULL closure
+    # truth ensemble below, but they are too similar to justify tripling the
+    # empirical component of this computational triage stage.
+    empirical = [
+        sc for sc in scenarios
+        if (not bool(sc.get("synthetic", False)))
+        and str(sc.get("truth_model", "")) == "Kelly"
+    ]
+    synthetic = [
+        sc for sc in scenarios
+        if bool(sc.get("synthetic", False))
+        and str(sc.get("truth_family", "")) in {"P4", "IP4", "CF4"}
+        and abs(float(sc.get("truth_rE_fm", np.nan)) - 0.85) < 1.0e-9
+        and abs(float(sc.get("truth_rM_fm", np.nan)) - 0.85) < 1.0e-9
+    ]
+    pilot_scenarios = empirical + synthetic
+    if not pilot_scenarios:
+        pilot_scenarios = list(scenarios[:min(3, len(scenarios))])
+    #endif
+
+    nworkers = getattr(args, "radius_bias_workers", None)
+    nworkers = int(nworkers if nworkers is not None else args.workers)
+    nworkers = max(1, nworkers)
+    records = []
+    print(
+        f"[radius-bias pilot] {len(families)} family pairs x "
+        f"{len(pilot_scenarios)} pilot truths x {npilot} attempted replicas; "
+        f"workers={nworkers}"
+    )
+
+    for truth_index, scenario in enumerate(pilot_scenarios):
+        truth_fn = scenario["truth_fn"]
+        if bool(scenario.get("synthetic", False)):
+            truth_re = float(scenario["truth_rE_fm"])
+            truth_rm = float(scenario["truth_rM_fm"])
+        else:
+            truth_re = radius_from_shape(
+                lambda qq: truth_fn(np.asarray(qq, dtype=float))[0], 1.0
+            )
+            truth_rm = radius_from_shape(
+                lambda qq: truth_fn(np.asarray(qq, dtype=float))[1], MU_P
+            )
+        #endif
+
+        central_by_key = {}
+        sigma_by_key = {}
+        truth_ge_by_key = {}
+        truth_gm_by_key = {}
+        for spec in specs:
+            d = spec["data"]
+            q = d["t_abs"].to_numpy(float)
+            ge, gm = truth_fn(q)
+            truth_ge_by_key[str(spec["key"])] = np.asarray(ge, dtype=float)
+            truth_gm_by_key[str(spec["key"])] = np.asarray(gm, dtype=float) / MU_P
+            tau = q / (4.0 * MP2)
+            f1 = (ge + tau * gm) / (1.0 + tau)
+            f2 = (gm - ge) / (1.0 + tau)
+            central_by_key[str(spec["key"])] = bh_from_f1f2(
+                d["bh_A"].to_numpy(float), d["bh_B"].to_numpy(float),
+                d["bh_C"].to_numpy(float), f1, f2,
+            )
+            sigma_by_key[str(spec["key"])] = dataset_statistical_errors(
+                d, str(spec["kind"])
+            )
+        #endfor
+
+        seed_root = np.random.SeedSequence(
+            [int(args.radius_bias_seed), 900000 + int(truth_index)]
+        )
+        family_roots = seed_root.spawn(len(families))
+        tasks = []
+        for ifam, family in enumerate(families):
+            seeds = [
+                int(ss.generate_state(1, dtype=np.uint64)[0])
+                for ss in family_roots[ifam].spawn(npilot)
+            ]
+            tasks.append((family, seeds))
+        #endfor
+
+        with ProcessPoolExecutor(
+                max_workers=nworkers,
+                initializer=_init_radius_bias_worker,
+                initargs=(specs, central_by_key, sigma_by_key,
+                          truth_ge_by_key, truth_gm_by_key)) as pool:
+            for family, family_results in pool.map(
+                    _radius_bias_family_batch_worker, tasks, chunksize=1):
+                good = [r for r in family_results if bool(r[3])]
+                re_vals = np.asarray([r[1] for r in good], dtype=float)
+                rm_vals = np.asarray([r[2] for r in good], dtype=float)
+                def one_obj(vals, truth):
+                    if len(vals) == 0:
+                        return np.nan, np.nan, np.nan
+                    #endif
+                    mean = float(np.mean(vals))
+                    rms = float(np.std(vals, ddof=1)) if len(vals) > 1 else 0.0
+                    bias = mean - float(truth)
+                    return bias, rms, float(np.hypot(bias, rms))
+                #enddef
+                be, se, oe = one_obj(re_vals, truth_re)
+                bm, sm, om = one_obj(rm_vals, truth_rm)
+                combo = float(np.sqrt(0.5 * (oe**2 + om**2))) if np.isfinite(oe) and np.isfinite(om) else np.nan
+                records.append({
+                    "truth_model": str(scenario["truth_model"]),
+                    "family": family,
+                    "attempted": npilot,
+                    "valid": len(good),
+                    "valid_fraction": len(good) / npilot,
+                    "rE_bias_fm": be, "rE_RMS_fm": se,
+                    "rM_bias_fm": bm, "rM_RMS_fm": sm,
+                    "combined_objective_fm": combo,
+                })
+            #endfor
+        #endwith
+    #endfor
+
+    detail = pd.DataFrame(records)
+    detail.to_csv(outdir / "radius_bias_pilot_detail.csv", index=False)
+    summary_rows = []
+    for family in families:
+        part = detail.loc[detail["family"] == family]
+        vf = float(part["valid"].sum() / part["attempted"].sum()) if len(part) else 0.0
+        objs = part["combined_objective_fm"].to_numpy(float)
+        finite = objs[np.isfinite(objs)]
+        score = float(np.sqrt(np.mean(finite**2))) if len(finite) else np.inf
+        worst = float(np.max(finite)) if len(finite) else np.inf
+        summary_rows.append({
+            "family": family, "pilot_valid_fraction": vf,
+            "pilot_RMS_objective_fm": score,
+            "pilot_max_objective_fm": worst,
+        })
+    #endfor
+    summary = pd.DataFrame(summary_rows).sort_values(
+        ["pilot_RMS_objective_fm", "pilot_max_objective_fm"]
+    ).reset_index(drop=True)
+
+    pilot_min_valid = float(
+        getattr(args, "radius_bias_pilot_min_valid_fraction", 0.50)
+    )
+    reliable = summary.loc[
+        np.isfinite(summary["pilot_RMS_objective_fm"])
+        & (summary["pilot_valid_fraction"] >= pilot_min_valid)
+    ].copy()
+    if len(reliable) == 0:
+        reliable = summary.loc[np.isfinite(summary["pilot_RMS_objective_fm"])].copy()
+    #endif
+    if len(reliable) == 0:
+        print("[radius-bias pilot] no finite pilot scores; disabling pruning")
+        summary["survives_pilot"] = True
+        summary.to_csv(outdir / "radius_bias_pilot_ranking.csv", index=False)
+        return list(families)
+    #endif
+
+    best = float(reliable.iloc[0]["pilot_RMS_objective_fm"])
+    reltol = max(0.0, float(getattr(args, "radius_bias_pilot_relative_tolerance", 0.35)))
+    abstol = max(0.0, float(getattr(args, "radius_bias_pilot_absolute_tolerance_fm", 0.020)))
+    cutoff = max(best * (1.0 + reltol), best + abstol)
+    min_keep = max(1, int(getattr(args, "radius_bias_pilot_min_keep", 10)))
+    max_keep = max(min_keep, int(getattr(args, "radius_bias_pilot_max_keep", 16)))
+
+    survivor_set = set(reliable.loc[
+        reliable["pilot_RMS_objective_fm"] <= cutoff, "family"
+    ].astype(str))
+    survivor_set.update(reliable.head(min(min_keep, len(reliable)))["family"].astype(str))
+    ordered_survivors = [f for f in reliable["family"].astype(str) if f in survivor_set]
+    if len(ordered_survivors) > max_keep:
+        ordered_survivors = ordered_survivors[:max_keep]
+    #endif
+    # Explicitly protect the common low-order IP2/CF2 neighborhood whenever
+    # those pairs are numerically reliable in the pilot.
+    protected = {
+        encode_sachs_family_pair(e, m)
+        for e in ("IP2", "CF2") for m in ("IP2", "CF2")
+    }
+    reliable_names = set(reliable["family"].astype(str))
+    for family in families:
+        if family in protected and family in reliable_names and family not in ordered_survivors:
+            ordered_survivors.append(family)
+        #endif
+    #endfor
+
+    summary["survives_pilot"] = summary["family"].astype(str).isin(ordered_survivors)
+    summary["pilot_cutoff_fm"] = cutoff
+    summary.to_csv(outdir / "radius_bias_pilot_ranking.csv", index=False)
+    print(
+        f"[radius-bias pilot] retained {len(ordered_survivors)}/{len(families)} "
+        f"family pairs for the full study; best={best:.5f} fm, cutoff={cutoff:.5f} fm"
+    )
+    print("[radius-bias pilot] survivors: " + ", ".join(ordered_survivors))
+    return ordered_survivors
+#enddef
+
+
 def run_radius_bias_variance_study(
         bundles: Sequence[Dict[str, object]],
         args,
@@ -4764,21 +4978,23 @@ def run_radius_bias_variance_study(
     pseudodata. At each measured point the trial GE/GM are converted to F1/F2
     and inserted into the exact BH quadratic.
 
-    Fitting families:
-      P1..P4, IP1..IP4, CF2..CF4.
+    Production fit candidates:
+      P2/P3, IP1/IP2/IP3, CF2/CF3, independently paired for GE and GM.
+      A 10-replica pilot prunes clearly noncompetitive pairs before the full
+      requested-statistics closure stage. Higher-order P4/IP4/CF4 forms remain
+      in the truth ensemble as curvature stress tests.
 
     Truth ensemble:
-      empirical Kelly, AMT2007, Bernauer/A1, plus optional synthetic P/IP/CF
+      one representative empirical truth (Kelly), plus optional synthetic P/IP/CF
       closure truths spanning a Cartesian rE x rM grid.
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
-    # Exploratory fit-candidate set.  P1 is omitted because a linear
-    # polynomial has not provided an adequate description in the studies so
-    # far.  Fourth-order P4/IP4/CF4 candidates are temporarily omitted to keep
-    # the independent GE x GM closure scan computationally manageable.  They
-    # remain in the synthetic truth ensemble below, so the retained candidates
-    # are still tested against higher-curvature underlying form factors.
+    # Exploratory fit-candidate set. P1 is omitted because a linear polynomial
+    # has not provided an adequate description. Fourth-order candidates remain
+    # truth generators rather than production fits. The 49 E x M pairs below
+    # first pass through a cheap pilot closure screen; only competitive,
+    # numerically reliable survivors enter the expensive full-replica study.
     candidate_families = [
         "P2", "P3",
         "IP1", "IP2", "IP3",
@@ -4852,6 +5068,11 @@ def run_radius_bias_variance_study(
         )
     #endif
 
+    families_full = list(families)
+    families = pilot_prune_radius_bias_families(
+        specs, scenarios, families_full, args, outdir
+    )
+
     print(
         f"[radius-bias] total truth scenarios={len(scenarios)}, "
         f"fit families={len(families)}, replicas/scenario/family="
@@ -4923,7 +5144,16 @@ def run_radius_bias_variance_study(
         # target is reached or a finite attempt budget is exhausted.  The
         # attempt efficiency remains an explicit numerical-robustness metric.
         target_valid = max(1, int(args.radius_bias_replicas))
-        max_attempts = max(5 * target_valid, target_valid + 50)
+        min_eff = max(0.50, min(0.99, float(
+            getattr(args, "radius_bias_min_scenario_valid_fraction", 0.80)
+        )))
+        # Do not spend up to 5x the target rescuing a pathological family. A
+        # family that cannot achieve the configured acceptable convergence
+        # fraction within a modest safety margin should fail the closure gate.
+        max_attempts = max(
+            target_valid + 10,
+            int(math.ceil(1.10 * target_valid / min_eff)),
+        )
         seed_root = np.random.SeedSequence(
             [int(args.radius_bias_seed), int(truth_index)]
         )
@@ -8399,6 +8629,137 @@ def save_nominal_model_selection_kinematic_histograms(
 #enddef
 
 
+
+def build_data_driven_bh_selection_diagnostics(
+        physics_bundles: Sequence[Dict[str, object]],
+        nominal_specs: Sequence[Dict[str, object]],
+        chosen_family: str,
+        diagnostics_dir: Path) -> Dict[str, object]:
+    """Compare nominal KM15 selection with data-driven pure-BH compatibility.
+
+    Kelly GE/GM are used only as a fixed external reference to construct the BH
+    prediction.  The measured cross section is never refit before selection.
+    Two matched-statistics selectors are formed independently in each dataset:
+    smallest absolute fractional BH deviation and smallest absolute standardized
+    BH pull.  The latter uses statistical + point-to-point errors but excludes
+    correlated normalization and the Moradi BH-purity term from the selector.
+    """
+    nominal_by_key = {str(spec["key"]): spec for spec in nominal_specs}
+    point_rows = []
+    alt_specs = {"kelly_fractional_matchedN": [], "kelly_pull_matchedN": []}
+    count_rows = []
+
+    for bundle in physics_bundles:
+        key = str(bundle["key"])
+        d = bundle.get("all_data", bundle.get("data", bundle.get("set5"))).copy()
+        if d is None or len(d) == 0:
+            continue
+        #endif
+        q = d["t_abs"].to_numpy(float)
+        ge, gm = kelly_sachs(q)
+        tau = q / (4.0 * MP2)
+        f1 = (ge + tau * gm) / (1.0 + tau)
+        f2 = (gm - ge) / (1.0 + tau)
+        bh = bh_from_f1f2(
+            d["bh_A"].to_numpy(float), d["bh_B"].to_numpy(float),
+            d["bh_C"].to_numpy(float), f1, f2,
+        )
+        xs = d["xs"].to_numpy(float)
+        point_err = dataset_point_errors(d, str(bundle["kind"]), 0.05, False)
+        frac = np.divide(xs - bh, bh, out=np.full_like(xs, np.nan), where=np.abs(bh) > 1.0e-15)
+        pull = np.divide(xs - bh, point_err, out=np.full_like(xs, np.nan), where=point_err > 0.0)
+        d["kelly_bh_xs"] = bh
+        d["kelly_bh_fractional_deviation"] = frac
+        d["kelly_bh_pull"] = pull
+
+        n_nom = int(len(nominal_by_key[key]["data"]))
+        finite_frac = np.flatnonzero(np.isfinite(frac))
+        finite_pull = np.flatnonzero(np.isfinite(pull))
+        idx_frac = finite_frac[np.argsort(np.abs(frac[finite_frac]))[:min(n_nom, len(finite_frac))]]
+        idx_pull = finite_pull[np.argsort(np.abs(pull[finite_pull]))[:min(n_nom, len(finite_pull))]]
+        sel_frac = d.iloc[np.sort(idx_frac)].copy()
+        sel_pull = d.iloc[np.sort(idx_pull)].copy()
+        alt_specs["kelly_fractional_matchedN"].append(bundle_to_measurement_spec(bundle, sel_frac))
+        alt_specs["kelly_pull_matchedN"].append(bundle_to_measurement_spec(bundle, sel_pull))
+
+        nominal_index = set(nominal_by_key[key]["data"].index.tolist())
+        frac_index = set(sel_frac.index.tolist())
+        pull_index = set(sel_pull.index.tolist())
+        def overlap(a, b):
+            union = a | b
+            return len(a & b), (len(a & b) / len(union) if union else np.nan)
+        #enddef
+        nf, jf = overlap(nominal_index, frac_index)
+        npull, jpull = overlap(nominal_index, pull_index)
+        count_rows.extend([
+            {"dataset": key, "selector": "KM15_5pct", "N": n_nom, "N_overlap_KM15": n_nom, "Jaccard_with_KM15": 1.0},
+            {"dataset": key, "selector": "kelly_fractional_matchedN", "N": len(sel_frac), "N_overlap_KM15": nf, "Jaccard_with_KM15": jf, "effective_abs_cut": float(np.nanmax(np.abs(sel_frac["kelly_bh_fractional_deviation"].to_numpy(float)))) if len(sel_frac) else np.nan},
+            {"dataset": key, "selector": "kelly_pull_matchedN", "N": len(sel_pull), "N_overlap_KM15": npull, "Jaccard_with_KM15": jpull, "effective_abs_cut": float(np.nanmax(np.abs(sel_pull["kelly_bh_pull"].to_numpy(float)))) if len(sel_pull) else np.nan},
+        ])
+        for irow, row in d.iterrows():
+            point_rows.append({
+                "dataset": key, "row_index": irow,
+                "t_abs": float(row["t_abs"]), "xs": float(row["xs"]),
+                "kelly_bh_xs": float(row["kelly_bh_xs"]),
+                "kelly_bh_fractional_deviation": float(row["kelly_bh_fractional_deviation"]),
+                "kelly_bh_pull": float(row["kelly_bh_pull"]),
+                "selected_KM15_5pct": irow in nominal_index,
+                "selected_kelly_fractional_matchedN": irow in frac_index,
+                "selected_kelly_pull_matchedN": irow in pull_index,
+            })
+        #endfor
+    #endfor
+
+    point_table = pd.DataFrame(point_rows)
+    count_table = pd.DataFrame(count_rows)
+    point_table.to_csv(diagnostics_dir / "data_driven_bh_deviance_points.csv", index=False)
+    count_table.to_csv(diagnostics_dir / "data_driven_bh_deviance_overlap.csv", index=False)
+
+    if len(point_table):
+        fig, axes = plt.subplots(1, 2, figsize=(12.0, 5.0))
+        for dataset, part in point_table.groupby("dataset"):
+            axes[0].hist(
+                part["kelly_bh_fractional_deviation"].to_numpy(float),
+                bins=60, histtype="step", density=True, label=str(dataset),
+            )
+            axes[1].hist(
+                part["kelly_bh_pull"].to_numpy(float),
+                bins=60, histtype="step", density=True, label=str(dataset),
+            )
+        #endfor
+        axes[0].set_xlabel(r"$(\sigma_{\rm data}-\sigma_{\rm BH}^{\rm Kelly})/\sigma_{\rm BH}^{\rm Kelly}$")
+        axes[1].set_xlabel(r"$(\sigma_{\rm data}-\sigma_{\rm BH}^{\rm Kelly})/\delta\sigma_{\rm ptp}$")
+        axes[0].set_ylabel("Normalized entries")
+        axes[0].set_title("Fractional deviation from fixed Kelly BH")
+        axes[1].set_title("Standardized deviation from fixed Kelly BH")
+        axes[0].legend()
+        axes[1].legend()
+        fig.suptitle("Data-driven pure-BH compatibility diagnostics")
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.savefig(diagnostics_dir / "data_driven_bh_deviance_distributions.png", dpi=180)
+        plt.close(fig)
+    #endif
+
+    fit_rows = []
+    for selector, specs in alt_specs.items():
+        result = fit_sachs_family_multi_measurements(
+            specs, family=chosen_family, bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+        )
+        result["selector"] = selector
+        fit_rows.append(result)
+        print(
+            f"[BH-deviance diagnostic] {selector}: N={result['N']} "
+            f"chi2/ndf={result['chi2_ndof']:.4f} "
+            f"rE={result['rE_fm']:.5f} fm rM={result['rM_fm']:.5f} fm"
+        )
+    #endfor
+    fit_table = pd.DataFrame(fit_rows)
+    fit_table.to_csv(diagnostics_dir / "data_driven_bh_deviance_fits.csv", index=False)
+    return {"fit_table": fit_table, "alternative_specs": alt_specs}
+#enddef
+
+
 def run_final_model_selected_analysis(
         bundles: Sequence[Dict[str, object]],
         args,
@@ -8723,6 +9084,15 @@ def run_final_model_selected_analysis(
         summary_dir / "model_selected_05pct_fits.csv", index=False
     )
 
+    # Independent data-driven selection robustness test. Kelly is used only as
+    # a fixed BH reference; matched-N selectors avoid conflating sample size
+    # with selection criterion. These shifts are diagnostics and are not folded
+    # into the quoted method systematic automatically.
+    bh_deviance = build_data_driven_bh_selection_diagnostics(
+        physics_bundles, selected[FINAL_NOMINAL_MODEL][0.05],
+        chosen_family, diagnostics_dir
+    )
+
     # Common-support diagnostic.  This is NOT a fourth purity prescription and
     # does not replace the model-specific fits.  It asks what the chosen Sachs
     # family gives on exactly the points classified BH-like by all three models,
@@ -8893,6 +9263,57 @@ def run_final_model_selected_analysis(
     method_sys_e = float(np.hypot(km15_selection_sys_e, bias_sys_e))
     method_sys_m = float(np.hypot(km15_selection_sys_m, bias_sys_m))
 
+    devfits = bh_deviance["fit_table"]
+    valid_devfits = devfits.loc[devfits["valid"].astype(bool)] if len(devfits) else devfits
+    data_selection_sys_e = float(np.max(np.abs(
+        valid_devfits["rE_fm"].to_numpy(float) - float(nominal["rE_fm"])
+    ))) if len(valid_devfits) else np.nan
+    data_selection_sys_m = float(np.max(np.abs(
+        valid_devfits["rM_fm"].to_numpy(float) - float(nominal["rM_fm"])
+    ))) if len(valid_devfits) else np.nan
+
+    # Compact radius-level comparison of the nominal model selector against
+    # the two matched-statistics, data-driven pure-BH selectors.
+    radius_compare_rows = [{
+        "selector": "KM15_5pct_nominal",
+        "rE_fm": float(nominal["rE_fm"]),
+        "rE_err_fm": float(nominal["rE_fit_err_fm"]),
+        "rM_fm": float(nominal["rM_fm"]),
+        "rM_err_fm": float(nominal["rM_fit_err_fm"]),
+    }]
+    for row in valid_devfits.itertuples():
+        radius_compare_rows.append({
+            "selector": str(row.selector),
+            "rE_fm": float(row.rE_fm),
+            "rE_err_fm": float(row.rE_fit_err_fm),
+            "rM_fm": float(row.rM_fm),
+            "rM_err_fm": float(row.rM_fit_err_fm),
+        })
+    #endfor
+    radius_compare = pd.DataFrame(radius_compare_rows)
+    radius_compare.to_csv(
+        diagnostics_dir / "data_driven_bh_deviance_radius_comparison.csv",
+        index=False,
+    )
+    fig, axes = plt.subplots(1, 2, figsize=(10.5, 4.8))
+    xx = np.arange(len(radius_compare))
+    axes[0].errorbar(xx, radius_compare["rE_fm"], yerr=radius_compare["rE_err_fm"], fmt="o")
+    axes[1].errorbar(xx, radius_compare["rM_fm"], yerr=radius_compare["rM_err_fm"], fmt="o")
+    labels = [str(x).replace("kelly_", "").replace("_matchedN", "") for x in radius_compare["selector"]]
+    for ax in axes:
+        ax.set_xticks(xx)
+        ax.set_xticklabels(labels, rotation=20, ha="right")
+        ax.grid(alpha=0.2)
+    #endfor
+    axes[0].set_ylabel(r"$r_E$ [fm]")
+    axes[1].set_ylabel(r"$r_M$ [fm]")
+    axes[0].set_title("Electric radius")
+    axes[1].set_title("Magnetic radius")
+    fig.suptitle("KM15 selection vs data-driven BH-compatible selections")
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(diagnostics_dir / "data_driven_bh_deviance_radius_comparison.png", dpi=180)
+    plt.close(fig)
+
     summary = pd.DataFrame([{
         "analysis_ensemble": "CLAS6 Jo 2015 + CLAS12 Lee 2026",
         "excluded_default_datasets": (
@@ -8909,8 +9330,11 @@ def run_final_model_selected_analysis(
         "selection_systematic_window_max": 0.07,
         "selection_scan_invalid_rows_skipped": int(len(invalid_local)),
         "selection_scan_valid_rows_used": int(len(valid_local)),
-        "closure_min_valid_fraction": float(
-            args.radius_bias_min_valid_fraction
+        "closure_min_global_valid_fraction": float(
+            args.radius_bias_min_global_valid_fraction
+        ),
+        "closure_min_scenario_valid_fraction": float(
+            args.radius_bias_min_scenario_valid_fraction
         ),
         "rE_fm": float(nominal["rE_fm"]),
         "rE_fit_err_fm": float(nominal["rE_fit_err_fm"]),
@@ -8919,6 +9343,7 @@ def run_final_model_selected_analysis(
         "rE_method_sys_fm": method_sys_e,
         "rE_fixed5_model_spread_diagnostic_fm": fixed5_model_sys_e,
         "rE_km15_1to10_threshold_envelope_diagnostic_fm": km15_1to10_sys_e,
+        "rE_data_driven_bh_selection_diagnostic_fm": data_selection_sys_e,
         "rM_fm": float(nominal["rM_fm"]),
         "rM_fit_err_fm": float(nominal["rM_fit_err_fm"]),
         "rM_km15_3to7_bh_selection_sys_fm": km15_selection_sys_m,
@@ -8926,6 +9351,7 @@ def run_final_model_selected_analysis(
         "rM_method_sys_fm": method_sys_m,
         "rM_fixed5_model_spread_diagnostic_fm": fixed5_model_sys_m,
         "rM_km15_1to10_threshold_envelope_diagnostic_fm": km15_1to10_sys_m,
+        "rM_data_driven_bh_selection_diagnostic_fm": data_selection_sys_m,
         "threshold_systematic_error_mode": "published_errors",
         "note": (
             "Preliminary CLAS-only result. KM15 5% is nominal. "
@@ -8933,8 +9359,11 @@ def run_final_model_selected_analysis(
             "3--7% maximum BH-selection excursion and the KM15 closure/"
             "extrapolation RMS-bias systematic. VGG99/GK16 fixed-cut spreads "
             "and their threshold scans are external diagnostics only and are "
-            "not included in the production uncertainty. The KM15 1--10% "
-            "threshold envelope is also retained as a diagnostic. Fit "
+            "not included in the production uncertainty. A matched-statistics "
+            "Kelly pure-BH fractional-deviation/pull selection is also retained "
+            "as an independent data-selection diagnostic and is not yet folded "
+            "into the quoted method uncertainty. The KM15 1--10% threshold "
+            "envelope is also retained as a diagnostic. Fit "
             "uncertainty includes "
             "the configured point-error prescription and correlated "
             "normalization nuisances."
@@ -13434,6 +13863,38 @@ def fit_neutron_magnetic_family_bh(
 #enddef
 
 
+
+def _neutron_closure_family_batch_worker(task):
+    """Fit one neutron GM family to a batch of pseudodata seeds."""
+    evaluated, family, central, sigma, seeds, target = task
+    successes = []
+    attempts = []
+    for attempted, seed in enumerate(seeds):
+        rng = np.random.default_rng(int(seed))
+        pseudo = np.asarray(central, dtype=float) + rng.normal(
+            0.0, np.asarray(sigma, dtype=float)
+        )
+        try:
+            radius, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
+                evaluated, family, override_y=pseudo,
+                statistical_only=True, return_parameters=True,
+            )
+        except Exception:
+            radius, valid, chi2 = np.nan, False, np.nan
+        #endtry
+        accepted = bool(valid and len(successes) < int(target))
+        attempts.append((attempted, float(radius), float(chi2), bool(valid), accepted))
+        if accepted:
+            successes.append(float(radius))
+        #endif
+        if len(successes) >= int(target):
+            break
+        #endif
+    #endfor
+    return family, successes, attempts
+#enddef
+
+
 def run_neutron_magnetic_function_closure(
         evaluated: pd.DataFrame,
         args,
@@ -13531,7 +13992,7 @@ def run_neutron_magnetic_function_closure(
     # Broad synthetic truth ensemble.  As in the proton study, higher-order
     # P4/IP4/CF4 shapes remain in truth generation even though they are not
     # production candidates.
-    radius_values = parse_radius_bias_grid(args.radius_bias_radius_grid)
+    radius_values = parse_radius_bias_grid(args.neutron_radius_bias_radius_grid)
     q_template = np.linspace(0.0, max(qmax, 0.05), 400)
 
     # Use a smooth IP3 approximation to the measured Kelly neutron GM as the
@@ -13586,103 +14047,99 @@ def run_neutron_magnetic_function_closure(
     )
 
     target = max(1, int(args.radius_bias_replicas))
-    max_attempts = max(5 * target, target + 50)
+    min_eff = max(0.50, min(0.99, float(
+        getattr(args, "radius_bias_min_scenario_valid_fraction", 0.80)
+    )))
+    max_attempts = max(target + 10, int(math.ceil(1.10 * target / min_eff)))
     rows = []
     replica_rows = []
 
-    for itruth, scenario in enumerate(scenarios):
-        gm_truth = MU_N * np.asarray(
-            scenario["truth_shape_measured"], dtype=float
-        )
-        f1_truth = (ge_fixed + tau * gm_truth) * inv
-        f2_truth = (gm_truth - ge_fixed) * inv
-        central = bh_from_f1f2(A, B, C, f1_truth, f2_truth)
-        rtrue = float(scenario["truth_radius_fm"])
+    nworkers = getattr(args, "radius_bias_workers", None)
+    nworkers = int(nworkers if nworkers is not None else args.workers)
+    nworkers = max(1, min(nworkers, len(candidate_families)))
 
-        for ifam, family in enumerate(candidate_families):
-            successes = []
-            attempted = 0
-            seed_seq = np.random.SeedSequence([
-                int(args.radius_bias_seed), 918273, int(itruth), int(ifam)
-            ])
-            seeds = seed_seq.spawn(max_attempts)
+    with ProcessPoolExecutor(max_workers=nworkers) as neutron_pool:
+        for itruth, scenario in enumerate(scenarios):
+            gm_truth = MU_N * np.asarray(
+                scenario["truth_shape_measured"], dtype=float
+            )
+            f1_truth = (ge_fixed + tau * gm_truth) * inv
+            f2_truth = (gm_truth - ge_fixed) * inv
+            central = bh_from_f1f2(A, B, C, f1_truth, f2_truth)
+            rtrue = float(scenario["truth_radius_fm"])
 
-            while len(successes) < target and attempted < max_attempts:
-                rng = np.random.default_rng(
-                    int(seeds[attempted].generate_state(
-                        1, dtype=np.uint64
-                    )[0])
-                )
-                pseudo = central + rng.normal(0.0, sigma)
-                radius, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
-                    evaluated,
-                    family,
-                    override_y=pseudo,
-                    statistical_only=True,
-                    return_parameters=True,
-                )
-                accepted = bool(valid and len(successes) < target)
-                replica_rows.append({
+            tasks = []
+            for ifam, family in enumerate(candidate_families):
+                seed_seq = np.random.SeedSequence([
+                    int(args.radius_bias_seed), 918273, int(itruth), int(ifam)
+                ])
+                seed_states = seed_seq.spawn(max_attempts)
+                seeds = [
+                    int(ss.generate_state(1, dtype=np.uint64)[0])
+                    for ss in seed_states
+                ]
+                tasks.append((evaluated, family, central, sigma, seeds, target))
+            #endfor
+
+            for family, successes, attempts in neutron_pool.map(
+                    _neutron_closure_family_batch_worker, tasks, chunksize=1):
+                for attempt_index, radius, chi2, valid, accepted in attempts:
+                    replica_rows.append({
+                        "truth_model": scenario["truth_model"],
+                        "truth_group": scenario["truth_group"],
+                        "truth_family": scenario["truth_family"],
+                        "synthetic_truth": bool(scenario["synthetic"]),
+                        "truth_rM_fm": rtrue,
+                        "family": family,
+                        "attempt": attempt_index,
+                        "accepted_replica": (
+                            sum(1 for a in attempts[:attempt_index + 1] if a[4]) - 1
+                            if accepted else np.nan
+                        ),
+                        "rM_fit_fm": radius,
+                        "chi2": chi2,
+                        "valid": bool(valid),
+                    })
+                #endfor
+
+                arr = np.asarray(successes, dtype=float)
+                if len(arr):
+                    mean = float(np.mean(arr))
+                    stat = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+                    bias = float(mean - rtrue)
+                    objective = float(math.sqrt(stat**2 + bias**2))
+                else:
+                    mean = stat = bias = objective = np.nan
+                #endif
+                attempted_count = len(attempts)
+                rows.append({
                     "truth_model": scenario["truth_model"],
                     "truth_group": scenario["truth_group"],
                     "truth_family": scenario["truth_family"],
                     "synthetic_truth": bool(scenario["synthetic"]),
                     "truth_rM_fm": rtrue,
                     "family": family,
-                    "attempt": attempted,
-                    "accepted_replica": (
-                        len(successes) if accepted else np.nan
+                    "mean_extracted_rM_fm": mean,
+                    "stat_RMS_fm": stat,
+                    "bias_fm": bias,
+                    "sqrt_stat2_plus_bias2_fm": objective,
+                    "valid_replicas": int(len(arr)),
+                    "requested_replicas": target,
+                    "attempted_replicas": attempted_count,
+                    "attempt_efficiency": (
+                        len(arr) / attempted_count if attempted_count else np.nan
                     ),
-                    "rM_fit_fm": radius,
-                    "chi2": chi2,
-                    "valid": bool(valid),
+                    "target_reached": bool(len(arr) >= target),
                 })
-                attempted += 1
-                if accepted:
-                    successes.append(radius)
-                #endif
-            #endwhile
-
-            arr = np.asarray(successes, dtype=float)
-            if len(arr):
-                mean = float(np.mean(arr))
-                stat = (
-                    float(np.std(arr, ddof=1))
-                    if len(arr) > 1 else 0.0
+                print(
+                    f"[neutron-GM-closure] "
+                    f"truth={str(scenario['truth_model']):28s} "
+                    f"family={family:3s} valid={len(arr)}/{target} "
+                    f"attempted={attempted_count}"
                 )
-                bias = float(mean - rtrue)
-                objective = float(math.sqrt(stat**2 + bias**2))
-            else:
-                mean = stat = bias = objective = np.nan
-            #endif
-
-            rows.append({
-                "truth_model": scenario["truth_model"],
-                "truth_group": scenario["truth_group"],
-                "truth_family": scenario["truth_family"],
-                "synthetic_truth": bool(scenario["synthetic"]),
-                "truth_rM_fm": rtrue,
-                "family": family,
-                "mean_extracted_rM_fm": mean,
-                "stat_RMS_fm": stat,
-                "bias_fm": bias,
-                "sqrt_stat2_plus_bias2_fm": objective,
-                "valid_replicas": int(len(arr)),
-                "requested_replicas": target,
-                "attempted_replicas": attempted,
-                "attempt_efficiency": (
-                    len(arr) / attempted if attempted else np.nan
-                ),
-                "target_reached": bool(len(arr) >= target),
-            })
-            print(
-                f"[neutron-GM-closure] "
-                f"truth={str(scenario['truth_model']):28s} "
-                f"family={family:3s} "
-                f"valid={len(arr)}/{target} attempted={attempted}"
-            )
+            #endfor
         #endfor
-    #endfor
+    #endwith
 
     table = pd.DataFrame(rows)
     replicas = pd.DataFrame(replica_rows)
@@ -13879,7 +14336,7 @@ def run_neutron_magnetic_function_closure(
         "fixed_GE_model": "Atac2021 central",
         "candidate_families": ",".join(candidate_families),
         "truth_families": ",".join(truth_families),
-        "radius_grid_fm": str(args.radius_bias_radius_grid),
+        "radius_grid_fm": str(args.neutron_radius_bias_radius_grid),
         "successful_replicas_per_truth_family": target,
     }]).to_csv(
         closuredir / "06_neutron_GM_selected_family.csv", index=False
@@ -15191,8 +15648,8 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help=(
             "Consume the completed KM15/VGG99/GK16 external purity table, "
-            "run model-specific 5% selections, closure-based Sachs-family "
-            "selection, production fits, and 1--10% threshold systematics"
+            "run model-specific 5%% selections, closure-based Sachs-family "
+            "selection, production fits, and 1--10%% threshold systematics"
         ),
     )
     p.add_argument(
@@ -15244,10 +15701,76 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--radius-bias-radius-grid",
-        default="0.75,0.80,0.85,0.90,0.92",
+        default="0.81,0.85,0.89",
         help=(
-            "Comma-separated synthetic truth radii in fm; the extended study "
+            "Comma-separated proton synthetic truth radii in fm; the extended study "
             "uses the Cartesian rE x rM grid for every generating family"
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-pilot-replicas",
+        type=int,
+        default=10,
+        help=(
+            "Fixed-attempt replicas per pilot truth/family pair used to prune "
+            "clearly noncompetitive Sachs-family pairs before the expensive "
+            "full closure pass (default: 10). Set to 0 to disable pruning."
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-pilot-min-keep",
+        type=int,
+        default=10,
+        help=(
+            "Minimum number of numerically reliable family pairs protected "
+            "through the full replica study after pilot pruning (default: 10)."
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-pilot-max-keep",
+        type=int,
+        default=16,
+        help=(
+            "Maximum family-pair cohort normally carried into the full replica "
+            "study after pilot pruning (default: 16)."
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-pilot-relative-tolerance",
+        type=float,
+        default=0.35,
+        help=(
+            "Retain pilot families whose objective is within this fractional "
+            "amount of the pilot leader, subject to the protected cohort "
+            "rules (default: 0.35)."
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-pilot-min-valid-fraction",
+        type=float,
+        default=0.50,
+        help=(
+            "Minimum valid-fit fraction required for a family pair to be treated "
+            "as numerically reliable in the cheap pilot stage (default: 0.50). "
+            "This does not weaken the stricter full-closure convergence gates."
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-pilot-absolute-tolerance-fm",
+        type=float,
+        default=0.020,
+        help=(
+            "Absolute objective tolerance in fm used together with the relative "
+            "pilot tolerance (default: 0.020 fm)."
+        ),
+    )
+    p.add_argument(
+        "--neutron-radius-bias-radius-grid",
+        default="0.82,0.86,0.90",
+        help=(
+            "Comma-separated neutron magnetic-radius truth grid in fm. The "
+            "default spans a representative range around the accepted neutron "
+            "magnetic radius without inheriting the proton grid."
         ),
     )
     p.add_argument(
@@ -15340,7 +15863,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         nargs="+",
         default=[0.01, 0.02, 0.03, 0.04, 0.05],
-        help="Nested |1-R_BH| thresholds; nominal paper values are 1-5%",
+        help="Nested |1-R_BH| thresholds; nominal paper values are 1-5%%",
     )
     p.add_argument(
         "--force-km15",
@@ -15367,14 +15890,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-global-normalization-systematic",
         action="store_true",
         help=(
-            "Disable the correlated 4.76% target-thickness/absolute-charge "
+            "Disable the correlated 4.76%% target-thickness/absolute-charge "
             "normalization nuisance. It is included by default."
         ),
     )
     p.add_argument(
         "--no-bh-selection-systematic",
         action="store_true",
-        help="Disable the paper's additional 1-5% uncorrelated uncertainty",
+        help="Disable the paper's additional 1-5%% uncorrelated uncertainty",
     )
     p.add_argument(
         "--tmin",
@@ -15486,7 +16009,7 @@ def run_pass2_analysis(args, return_results: bool = False):
     bh_cuts = sorted(float(cut) for cut in args.bh_cuts)
     if bh_cuts != [0.01, 0.02, 0.03, 0.04, 0.05]:
         warnings.warn(
-            "The paper defines Fits 1-5 with 1%,2%,3%,4%,5% cuts. "
+            "The paper defines Fits 1-5 with 1%%,2%%,3%%,4%%,5%% cuts. "
             "Nonstandard --bh-cuts change that correspondence."
         )
     #endif
@@ -15593,7 +16116,7 @@ def run_pass2_analysis(args, return_results: bool = False):
 
     if 0.05 not in selected_sets:
         raise RuntimeError(
-            "The exact paper-method Fit 6-8 stage requires the 5% Set 5."
+            "The exact paper-method Fit 6-8 stage requires the 5%% Set 5."
         )
     #endif
 
