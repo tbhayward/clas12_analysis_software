@@ -4645,7 +4645,7 @@ def save_mixed_family_closure_ranking(
         for quantity in ["rE", "rM"]:
             qpart = part.loc[part["quantity"] == quantity]
             bias = qpart["bias_fm"].to_numpy(float)
-            stat = qpart["replica_std_fm"].to_numpy(float)
+            stat = qpart["stat_RMS_fm"].to_numpy(float)
             obj = qpart["sqrt_stat2_plus_bias2_fm"].to_numpy(float)
             row[f"{quantity}_RMS_bias_fm"] = float(np.sqrt(np.nanmean(bias**2)))
             row[f"{quantity}_RMS_replica_std_fm"] = float(np.sqrt(np.nanmean(stat**2)))
