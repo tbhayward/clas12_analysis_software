@@ -12022,7 +12022,7 @@ def evaluate_km15_neutron_point(
     used here only as an exploratory BH-purity classifier; the neutron CFF
     content of KM15 was not fitted to these preliminary CLAS12 neutron data.
     """
-    idx, xB, Q2, t_abs, phi_deg, ebeam = args
+    idx, xB, Q2, t_abs, phi_deg, ebeam, phi_convention = args
     try:
         import gepard as g
         from gepard.fits import th_KM15
@@ -12084,6 +12084,8 @@ def evaluate_km15_neutron_point(
         "km15_F2": f2_nom,
         "km15_ep_predict": sigma_predict,
         "km15_ep_decomp_relerr": ep_relerr,
+        "phi_model_deg": float(np.degrees(float(pt.phi)) % 360.0),
+        "phi_convention": str(phi_convention),
     }
 #enddef
 
@@ -12101,6 +12103,7 @@ def evaluate_km15_neutron_dataframe(
         "R_BH", "bh_delta", "bh_A", "bh_B", "bh_C",
         "bh_quad_relerr", "km15_F1", "km15_F2",
         "km15_ep_predict", "km15_ep_decomp_relerr",
+        "phi_model_deg", "phi_convention",
     ]
     if cache_path.exists() and not force:
         cached = pd.read_csv(cache_path)
