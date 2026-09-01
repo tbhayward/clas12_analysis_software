@@ -194,7 +194,45 @@ int main(int argc, char* argv[]) {
     const bool use_nobkg_dvcs_mc_for_acceptance = false;
     const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
 
-    // --------- Raw yields/counts into CSV + plots ----------
+    // --------- Current-response calibration + diagnostics ----------
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+        CurrentDependenceOptions current_opts;
+        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        current_opts.output_dir = "output/dvcs_current_dependence";
+
+        current_opts.override_to_unity = false;
+        current_opts.use_second_column_charge_for_all_unpolarized = true;
+        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
+        current_opts.columns_3_to_5_charge_sum_scale = 1.025;
+        current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
+        current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+        current_opts.enable_photon_region_current_diagnostic = true;
+        current_opts.enable_eppi0_photon_region_current_diagnostic = true;
+        current_opts.enable_region_theta_current_diagnostic = true;
+        current_opts.use_e_theta_linear_data_current_efficiency = false;
+        current_opts.response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
+        current_opts.apply_legacy_binned_current_corrections = false;
+        current_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
+        current_opts.max_workers = 7;
+
+        if (!update_current_dependence_factors_csv(csv_main,
+                                                   dataTrees,
+                                                   eppi0DataTrees,
+                                                   currentStudyGenMcTrees,
+                                                   currentStudyRecMcTrees,
+                                                   eppi0GenMcTrees,
+                                                   eppi0RecMcTrees,
+                                                   current_opts)) {
+            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
+
+
+    // --------- Raw yields + event-level current-corrected yields ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
@@ -211,6 +249,9 @@ int main(int argc, char* argv[]) {
         TotalCountsOptions total_count_opts;
         total_count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
         total_count_opts.make_note_outputs = true;
+        total_count_opts.apply_event_level_current_correction = true;
+        total_count_opts.current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
+        total_count_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
 
         if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
             genMcTrees, recMcTrees,
@@ -223,38 +264,6 @@ int main(int argc, char* argv[]) {
             currentStudyGenMcTrees,
             currentStudyRecMcTrees)) {
             std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
-
-    // --------- Current-dependence correction factors ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-
-        CurrentDependenceOptions current_opts;
-        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-        current_opts.output_dir = "output/dvcs_current_dependence";
-
-        current_opts.override_to_unity = false;
-        current_opts.use_second_column_charge_for_all_unpolarized = true;
-        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
-        current_opts.columns_3_to_5_charge_sum_scale = 1.025;
-        current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
-        current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
-        current_opts.enable_photon_region_current_diagnostic = true;
-        current_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
-        current_opts.max_workers = 7;
-
-        if (!update_current_dependence_factors_csv(csv_main,
-                                                   dataTrees,
-                                                   eppi0DataTrees,
-                                                   currentStudyGenMcTrees,
-                                                   currentStudyRecMcTrees,
-                                                   eppi0GenMcTrees,
-                                                   eppi0RecMcTrees,
-                                                   current_opts)) {
-            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
     }
@@ -342,8 +351,8 @@ int main(int argc, char* argv[]) {
     // --------- Pi0-subtracted direct count-based beam-spin asymmetries ----------
     //
     // This stage must run after:
-    //   1. update_total_counts_csv(...),
-    //   2. update_current_dependence_factors_csv(...),
+    //   1. update_current_dependence_factors_csv(...),
+    //   2. update_total_counts_csv(...),
     //   3. compute_pi0_contamination_overall(...), and
     //   4. update_pi0_corrected_counts_csv(...).
     //

@@ -52,22 +52,18 @@ struct CurrentDependenceOptions {
     // New default behavior:
     //
     // If true:
-    //   The Sp19 Inb current-efficiency factors written to the CSV are copied
-    //   from Fa18 Inb instead of being taken from the Sp19 Inb luminosity scan.
+    //   The Sp19 Inb DATA current response is copied from Fa18 Inb instead of
+    //   being taken from the Sp19 Inb luminosity scan. The independently
+    //   determined Sp19 MC response is retained.
     //
     // Motivation:
     //   The only low-current Sp19 Inb scan point is run 6616 at 5 nA, whose
     //   Faraday Cup charge total is currently suspect. Therefore the Sp19 Inb
     //   fitted slope is not used by default.
     //
-    // This replacement is applied to:
-    //   current efficiency factor, ep->epg,   exp, Sp19 Inb
-    //   current efficiency factor, ep->epg,   mc,  Sp19 Inb
-    //   current efficiency factor, ep->eppi0, exp, Sp19 Inb
-    //   current efficiency factor, ep->eppi0, mc,  Sp19 Inb
-    //
-    // The raw Sp19 Inb scan is still processed and plotted for diagnostic
-    // purposes, but the saved CSV values used downstream are Fa18 Inb values.
+    // This DATA replacement is applied to ep->epg and ep->eppi0, including
+    // the regional FT/S1--S6 response used by the event-level model. The raw
+    // Sp19 Inb DATA scan is still processed and plotted diagnostically.
     bool use_fa18_inb_current_efficiency_for_sp19_inb = true;
 
     // Optional DVCS MC acceptance override.
@@ -94,21 +90,39 @@ struct CurrentDependenceOptions {
     // uses the theta_e-dependent factor. If a row has no finite theta_e value
     // or a valid fit cannot be built, the code falls back to the integrated
     // current-efficiency factor for that row.
-    bool use_e_theta_linear_data_current_efficiency = true;
+    bool use_e_theta_linear_data_current_efficiency = false;
 
     // Photon-region current-dependence diagnostic.
     //
     // If true, the ordinary ep->epgamma current-dependence study is repeated
-    // diagnostically after splitting the photon into seven mutually exclusive
-    // regions: FT and FD sectors 1--6.  The resulting factors are NOT written
-    // to the production analysis CSV and are NOT used by any downstream
-    // correction.  They are written only under
+    // after splitting the photon into seven mutually exclusive regions: FT and
+    // FD sectors 1--6. The regional calibration is saved outside the analysis
+    // CSV and is used to build the event-level response model consumed by
+    // total_counts.cpp. Diagnostic plots/tables are written under
     //
     //   output/dvcs_current_dependence/epg/sector_dependence_diagnostic/
     //
-    // so that a possible future sector-dependent current correction can be
-    // assessed before it is implemented.
+    // and can be inspected independently of the production CSV columns.
     bool enable_photon_region_current_diagnostic = true;
+
+    // Repeat the same FT/S1--S6 diagnostic for direct ep->eppi0 data.
+    bool enable_eppi0_photon_region_current_diagnostic = true;
+
+    // Within each neutral-particle region, repeat the current-efficiency study
+    // versus electron and neutral-particle polar angle. This is diagnostic only
+    // and is used to decide whether a residual theta dependence remains after
+    // regionization.
+    bool enable_region_theta_current_diagnostic = true;
+
+    // Calibration product consumed by total_counts.cpp. The file contains the
+    // regional DATA current-response slopes, regional reconstructed-MC factors,
+    // and run->current lookup used for event-level current correction.
+    std::string response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
+
+    // When false, this stage determines/writes the calibration and diagnostics
+    // but does not divide already-binned yields. Production now applies the
+    // response event-by-event inside total_counts.cpp.
+    bool apply_legacy_binned_current_corrections = false;
 
     // Current correction convention for the misidentified pi0 background MC
     // sample ep->eppi0->epg.
@@ -131,7 +145,7 @@ struct CurrentDependenceOptions {
  * For each channel and period, it determines:
  *
  *   DATA:
- *     weighted_data_rel = event-weighted fitted data response at the actual
+ *     weighted_data_rel = charge-weighted fitted data response at the actual
  *                         current mixture divided by fitted zero-current response
  *
  *   MC:
@@ -151,27 +165,16 @@ struct CurrentDependenceOptions {
  *   current efficiency factor, ep->eppi0, mc,  <period> = (mc_ref_rel,stat)
  *
  * If options.use_fa18_inb_current_efficiency_for_sp19_inb is true, the Sp19 Inb
- * factors written to the CSV are copied from Fa18 Inb. The raw Sp19 Inb fit is
- * still produced in the diagnostic output.
+ * DATA response is copied from Fa18 Inb while the Sp19 MC response is retained.
+ * The raw Sp19 DATA fit is still produced in the diagnostic output.
  *
- * It also applies the saved MC current-efficiency factors to the reconstructed
- * MC yield columns and writes the current-corrected reconstructed MC columns
- * needed by downstream eppi0 normalization, pi0-contamination, acceptance, and
- * unfolding modules:
+ * In the nominal workflow this stage writes a regional response-model JSON and
+ * does NOT modify already-binned yields. total_counts.cpp consumes that model
+ * and fills the normalized DATA and reconstructed-current-corrected MC columns
+ * event-by-event, while preserving the original unit-weight raw-yield columns.
  *
- *   reconstructed current corrected yield, ep->epg, mc, <period>
- *   reconstructed current corrected yield, ep->epg, <topology>, mc, <period>
- *   reconstructed current corrected yield, ep->eppi0, mc, <period>
- *   reconstructed current corrected yield, ep->eppi0, <topology>, mc, <period>
- *   reconstructed current corrected yield, ep->eppi0->epg, mc, <period>
- *   reconstructed current corrected yield, ep->eppi0->epg, <topology>, mc, <period>
- *
- * The correction applied is N_rec,current-corrected = N_rec / f_current^MC.
- *
- * If options.override_to_unity is true, no ROOT loops are performed, all
- * current-efficiency factors are written as (1,0), and the current-corrected MC
- * reconstructed-yield columns are copied from the uncorrected reconstructed-yield
- * columns.
+ * options.apply_legacy_binned_current_corrections=true restores the previous
+ * post-binning scalar correction behavior for compatibility tests only.
  */
 bool update_current_dependence_factors_csv(
     const std::string& csv_path,

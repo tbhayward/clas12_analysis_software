@@ -26,6 +26,16 @@ struct TotalCountsOptions {
     // totals by period/topology, xB projections, and machine-readable tables.
     // Automatic cut-variation jobs should disable these together with make_plots.
     bool make_note_outputs = true;
+
+    // Apply current-dependent reconstruction corrections event-by-event while
+    // preserving the original unit-weight raw totals. The response model is
+    // produced by current_dependence.cpp before this stage.
+    bool apply_event_level_current_correction = true;
+    std::string current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
+
+    // Misidentified ep->eppi0->epg reconstructed MC follows the ep->epg
+    // regional response because its reconstructed topology is epgamma.
+    bool use_epg_mc_current_factor_for_eppi0_bkg = true;
 };
 
 /**
@@ -49,10 +59,11 @@ struct TotalCountsOptions {
  *   reconstructed yield, ep->eppi0->epg, mc, <period>
  *   reconstructed yield, ep->eppi0->epg, <topo>, mc, <period>
  *
- * The corresponding "reconstructed current corrected yield" columns are
- * created by initialize_pass2_csv but intentionally not filled here. They should
- * be filled later after current-efficiency correction factors have been
- * determined.
+ * The nominal workflow also fills the normalized DATA and reconstructed-current-
+ * corrected MC columns event-by-event using the regional current-response model
+ * produced by current_dependence.cpp. The original raw/generated/reconstructed
+ * unit-weight columns remain unchanged and continue to feed the raw-yield note
+ * outputs.
  *
  * Return:
  *   true on success, false on fatal error.

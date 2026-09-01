@@ -10,11 +10,17 @@
 // Outputs by period and current:
 //
 //   1) DVCS normalized pi0-subtracted counts
-//      event weight = 1 / [current_eff(epg, exp, period) * R_pi0(region, p1_theta)]
+//      event weight = 1 / [R_current(epg, period, photon-region, I_run)
+//                          * R_pi0(region, p1_theta)]
 //      row weight   = event weight * [1 - contamination_ratio(row, period)]
 //
 //   2) eppi0 normalized counts
-//      event weight = 1 / [current_eff(eppi0, exp, period) * R_pi0(region, p1_theta)]
+//      event weight = 1 / [R_current(eppi0, period, photon-region, I_run)
+//                          * R_pi0(region, p1_theta)]
+//
+// R_current is read from the same regional response-model JSON used by
+// total_counts.cpp; this diagnostic therefore no longer applies the legacy
+// period-wide current-efficiency scalar.
 //
 // Cuts:
 //   - Global cuts via global_cuts.h.
@@ -582,6 +588,52 @@ static int clas12_sector_from_phi_deg(double phi_deg) {
     if (phi >= 270.0 && phi < 330.0) return 6;
 
     return 0;
+}
+
+static int photon_current_region_index(int detector2, double p2_phi_rad, bool has_p2_phi) {
+    if (detector2 == 0) return 0;
+    if (detector2 != 1 || !has_p2_phi || !std::isfinite(p2_phi_rad)) return -1;
+    const int sector = clas12_sector_from_phi_deg(p2_phi_rad * RAD2DEG);
+    return (sector >= 1 && sector <= 6) ? sector : -1;
+}
+
+static std::array<double, 7> load_data_current_response_slopes(
+    const std::string& channel,
+    const std::string& period) {
+
+    static const nlohmann::json response_model = []() {
+        const std::string path = "output/dvcs_current_dependence/calibration/current_response_model.json";
+        std::ifstream fin(path);
+        if (!fin.is_open()) fatal("cannot open regional current-response model: " + path);
+        nlohmann::json j;
+        fin >> j;
+        return j;
+    }();
+
+    const std::array<std::string, 7> names = {"FT", "S1", "S2", "S3", "S4", "S5", "S6"};
+    std::array<double, 7> slopes{};
+
+    if (!response_model.contains("data") ||
+        !response_model["data"].contains(channel) ||
+        !response_model["data"][channel].contains(period)) {
+        fatal("regional current-response model is missing DATA channel=" + channel +
+              " period=" + period);
+    }
+
+    const auto& block = response_model["data"][channel][period];
+    for (size_t i = 0; i < names.size(); ++i) {
+        if (!block.contains(names[i]) ||
+            !block[names[i]].contains("relative_slope_per_nA")) {
+            fatal("regional current-response model is missing " + channel + " " +
+                  period + " " + names[i]);
+        }
+        slopes[i] = block[names[i]]["relative_slope_per_nA"].get<double>();
+        if (!std::isfinite(slopes[i])) {
+            fatal("non-finite regional current-response slope for " + channel + " " +
+                  period + " " + names[i]);
+        }
+    }
+    return slopes;
 }
 
 // Region indices 0..5 are FD sectors 1..6; index 6 is CD.
@@ -1246,7 +1298,9 @@ static TreeTotals process_one_tree(const TreeTask& task,
     current_cache.reserve(256);
     std::set<int> unresolved_runs;
 
-    const double eff = is_eppi0 ? products.eppi0_current_eff : products.epg_current_eff;
+    const std::string current_channel = is_eppi0 ? "ep->eppi0" : "ep->epg";
+    const std::array<double, 7> current_slopes =
+        load_data_current_response_slopes(current_channel, result.tags.display);
 
     for (Long64_t i = 0; i < result.entries; ++i) {
         if (task.tree->GetEntry(i) <= 0) continue;
@@ -1273,26 +1327,46 @@ static TreeTotals process_one_tree(const TreeTask& task,
             fatal("non-positive regional eppi0 normalization cubic value for period " + result.tags.display);
         }
 
-        double final_weight = 1.0 / (eff * r_pi0);
-        if (!is_eppi0) {
-            final_weight *= (1.0 - contamination.at(static_cast<size_t>(row)));
-        }
-
         int current = 0;
         auto cached = current_cache.find(b.runnum);
         if (cached != current_cache.end()) {
             current = cached->second;
         } else if (unresolved_runs.find(b.runnum) != unresolved_runs.end()) {
-            result.uncategorized += final_weight;
+            double uncategorized_weight = 1.0 / r_pi0;
+            if (!is_eppi0) {
+                uncategorized_weight *= (1.0 - contamination.at(static_cast<size_t>(row)));
+            }
+            result.uncategorized += uncategorized_weight;
             result.uncategorized_runs.insert(b.runnum);
             continue;
         } else if (resolve_current(result.tags.internal, b.runnum, current)) {
             current_cache.emplace(b.runnum, current);
         } else {
             unresolved_runs.insert(b.runnum);
-            result.uncategorized += final_weight;
+            double uncategorized_weight = 1.0 / r_pi0;
+            if (!is_eppi0) {
+                uncategorized_weight *= (1.0 - contamination.at(static_cast<size_t>(row)));
+            }
+            result.uncategorized += uncategorized_weight;
             result.uncategorized_runs.insert(b.runnum);
             continue;
+        }
+
+        const int current_region = photon_current_region_index(
+            b.detector2, b.p2_phi, b.has_p2_phi);
+        if (current_region < 0 || current_region >= 7) {
+            fatal("cannot determine FT/FD photon region for current-binned yield diagnostic");
+        }
+        const double current_response =
+            1.0 + current_slopes[static_cast<size_t>(current_region)] * (double)current;
+        if (!(std::isfinite(current_response) && current_response > 0.0)) {
+            fatal("non-positive regional DATA current response for " + current_channel +
+                  " period=" + result.tags.display + " run=" + std::to_string(b.runnum));
+        }
+
+        double final_weight = 1.0 / (current_response * r_pi0);
+        if (!is_eppi0) {
+            final_weight *= (1.0 - contamination.at(static_cast<size_t>(row)));
         }
 
         result.categorized[current] += final_weight;

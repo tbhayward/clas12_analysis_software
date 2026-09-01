@@ -20,11 +20,13 @@
 //   reconstructed yield, ep->eppi0->epg, mc, <period>
 //   reconstructed yield, ep->eppi0->epg, <topo label>, mc, <period>
 //
-// Columns deliberately NOT filled here:
-//   reconstructed current corrected yield, ...
+// In addition to the untouched unit-weight columns above, the nominal workflow
+// also fills:
+//   normalized raw yield, ...                         (DATA)
+//   reconstructed current corrected yield, ...       (reconstructed MC)
 //
-// Those require current-efficiency factors and should be filled by a later
-// current-correction module.
+// Those are accumulated event-by-event with the regional current-response model
+// produced upstream by current_dependence.cpp. Raw totals remain unit-weighted.
 //
 // Speed/stability notes:
 //   - Parallelized over independent ROOT trees/work items.
@@ -152,6 +154,118 @@ struct WorkConfig {
     bool write_mc_reconstructed_columns = false;
     bool make_plots = false;
 };
+
+
+static inline void fatal(const std::string& msg);
+
+static constexpr int kCurrentRegionCount = 7;
+
+static const std::array<std::string, kCurrentRegionCount>& current_region_names() {
+    static const std::array<std::string, kCurrentRegionCount> names = {
+        "FT", "S1", "S2", "S3", "S4", "S5", "S6"
+    };
+    return names;
+}
+
+static int current_region_index(int detector2, double p2_phi_rad, bool has_p2_phi) {
+    if (detector2 == 0) return 0;
+    if (detector2 != 1 || !has_p2_phi || !std::isfinite(p2_phi_rad)) return -1;
+    double phi = std::fmod(p2_phi_rad * RAD2DEG, 360.0);
+    if (phi < 0.0) phi += 360.0;
+    int sector = 0;
+    if (phi >= 330.0 || phi < 30.0) sector = 1;
+    else if (phi < 90.0) sector = 2;
+    else if (phi < 150.0) sector = 3;
+    else if (phi < 210.0) sector = 4;
+    else if (phi < 270.0) sector = 5;
+    else if (phi < 330.0) sector = 6;
+    return (sector >= 1 && sector <= 6) ? sector : -1;
+}
+
+struct CurrentResponseEntry {
+    bool valid = false;
+    double parameter = std::numeric_limits<double>::quiet_NaN();
+    double parameter_stat = 0.0;
+};
+
+struct CurrentResponseModel {
+    bool valid = false;
+    std::map<std::string, std::map<std::string, std::array<CurrentResponseEntry, kCurrentRegionCount>>> data;
+    std::map<std::string, std::map<std::string, std::array<CurrentResponseEntry, kCurrentRegionCount>>> mc;
+    std::map<std::string, std::unordered_map<int, int>> run_current_nA;
+};
+
+static CurrentResponseModel load_current_response_model(const std::string& path) {
+    CurrentResponseModel model;
+    std::ifstream fin(path);
+    if (!fin.is_open()) {
+        fatal("[total_counts] FATAL: cannot open current-response model JSON: " + path);
+    }
+    nlohmann::json j;
+    fin >> j;
+
+    auto load_block = [&](const char* sample,
+                          std::map<std::string, std::map<std::string, std::array<CurrentResponseEntry, kCurrentRegionCount>>>& dst,
+                          const char* value_key,
+                          const char* stat_key) {
+        if (!j.contains(sample) || !j[sample].is_object()) return;
+        for (auto ch = j[sample].begin(); ch != j[sample].end(); ++ch) {
+            for (auto per = ch.value().begin(); per != ch.value().end(); ++per) {
+                std::array<CurrentResponseEntry, kCurrentRegionCount> arr{};
+                for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
+                    const std::string& rn = current_region_names()[ir];
+                    if (!per.value().contains(rn)) continue;
+                    const auto& e = per.value()[rn];
+                    if (!e.contains(value_key)) continue;
+                    const double v = e[value_key].get<double>();
+                    const double se = e.contains(stat_key) ? e[stat_key].get<double>() : 0.0;
+                    if (std::isfinite(v) && std::isfinite(se) && se >= 0.0) {
+                        arr[ir].valid = true;
+                        arr[ir].parameter = v;
+                        arr[ir].parameter_stat = se;
+                    }
+                }
+                dst[ch.key()][per.key()] = arr;
+            }
+        }
+    };
+
+    load_block("data", model.data, "relative_slope_per_nA", "relative_slope_stat");
+    load_block("mc", model.mc, "reference_factor", "reference_factor_stat");
+
+    if (j.contains("run_current_nA") && j["run_current_nA"].is_object()) {
+        for (auto per = j["run_current_nA"].begin(); per != j["run_current_nA"].end(); ++per) {
+            for (auto rr = per.value().begin(); rr != per.value().end(); ++rr) {
+                model.run_current_nA[per.key()][std::stoi(rr.key())] = rr.value().get<int>();
+            }
+        }
+    }
+
+    model.valid = !model.data.empty() && !model.mc.empty() && !model.run_current_nA.empty();
+    if (!model.valid) {
+        fatal("[total_counts] FATAL: current-response model is incomplete: " + path);
+    }
+    return model;
+}
+
+struct EventCurrentWeight {
+    double weight = 1.0;
+    double derivative = 0.0;  // derivative wrt the regional fitted parameter
+    double parameter_stat = 0.0;
+    int region = -1;
+};
+
+static const CurrentResponseEntry* find_current_response_entry(
+    const std::map<std::string, std::map<std::string, std::array<CurrentResponseEntry, kCurrentRegionCount>>>& table,
+    const std::string& channel,
+    const std::string& period,
+    int region) {
+    auto ic = table.find(channel);
+    if (ic == table.end()) return nullptr;
+    auto ip = ic->second.find(period);
+    if (ip == ic->second.end() || region < 0 || region >= kCurrentRegionCount) return nullptr;
+    return &ip->second[region];
+}
 
 static inline bool env_flag(const char* name) {
     return (std::getenv(name) != nullptr);
@@ -696,6 +810,27 @@ static inline std::string col_mc_reconstructed_topo(const ChannelConfig& channel
                                                     const std::string& topo_label,
                                                     const std::string& period_display) {
     return std::string("reconstructed yield, ") + channel_cfg.csv_channel + ", " +
+           topo_label + ", mc, " + period_display;
+}
+
+static inline std::string col_data_normalized_counts(const ChannelConfig& channel_cfg,
+                                                     const std::string& topo_label,
+                                                     const std::string& period_display,
+                                                     const std::string& helicity) {
+    return std::string("normalized raw yield, ") + channel_cfg.csv_channel + ", " +
+           topo_label + ", exp, " + period_display + ", " + helicity;
+}
+
+static inline std::string col_mc_current_corrected_total(const ChannelConfig& channel_cfg,
+                                                         const std::string& period_display) {
+    return std::string("reconstructed current corrected yield, ") + channel_cfg.csv_channel +
+           ", mc, " + period_display;
+}
+
+static inline std::string col_mc_current_corrected_topo(const ChannelConfig& channel_cfg,
+                                                        const std::string& topo_label,
+                                                        const std::string& period_display) {
+    return std::string("reconstructed current corrected yield, ") + channel_cfg.csv_channel + ", " +
            topo_label + ", mc, " + period_display;
 }
 
@@ -1260,6 +1395,15 @@ struct HelCounts {
 
 using RowCounts = std::unordered_map<int, HelCounts>;
 
+struct WeightedHelCounts {
+    HelCounts sumw;
+    HelCounts sumw2;
+    std::array<HelCounts, kCurrentRegionCount> derivative_by_region{};
+    std::array<double, kCurrentRegionCount> parameter_stat{};
+};
+
+using WeightedRowCounts = std::unordered_map<int, WeightedHelCounts>;
+
 struct CutFlowSummary {
     long long entries = 0;
     long long valid_topology = 0;
@@ -1285,6 +1429,8 @@ struct CutFlowSummary {
 struct WorkCounts {
     RowCounts total_counts;
     std::unordered_map<std::string, RowCounts> topo_counts;
+    WeightedRowCounts corrected_total_counts;
+    std::unordered_map<std::string, WeightedRowCounts> corrected_topo_counts;
     CutFlowSummary flow;
 };
 
@@ -1593,13 +1739,98 @@ static inline void add_count(HelCounts& h, bool split_helicity, int helicity) {
     }
 }
 
+
+static inline void add_weighted_count(WeightedHelCounts& h,
+                                      bool split_helicity,
+                                      int helicity,
+                                      const EventCurrentWeight& cw) {
+    if (cw.region < 0 || cw.region >= kCurrentRegionCount) return;
+    auto add_one = [&](double& sw, double& sw2, double& deriv) {
+        sw += cw.weight;
+        sw2 += cw.weight * cw.weight;
+        deriv += cw.derivative;
+    };
+    h.parameter_stat[cw.region] = cw.parameter_stat;
+    if (!split_helicity) {
+        add_one(h.sumw.unpol, h.sumw2.unpol, h.derivative_by_region[cw.region].unpol);
+    } else if (helicity > 0) {
+        add_one(h.sumw.pos, h.sumw2.pos, h.derivative_by_region[cw.region].pos);
+    } else if (helicity < 0) {
+        add_one(h.sumw.neg, h.sumw2.neg, h.derivative_by_region[cw.region].neg);
+    } else {
+        add_one(h.sumw.unpol, h.sumw2.unpol, h.derivative_by_region[cw.region].unpol);
+    }
+}
+
+static EventCurrentWeight event_current_weight(const CurrentResponseModel& model,
+                                               const WorkConfig& work_cfg,
+                                               const PeriodTags& tags,
+                                               const BranchBinder& b,
+                                               bool use_epg_mc_factor_for_eppi0_bkg) {
+    EventCurrentWeight out;
+    const int region = current_region_index(b.detector2, b.p2_phi, b.has_p2_phi);
+    if (region < 0) {
+        fatal("[total_counts] FATAL: cannot determine FT/FD sector for current correction in tree '" + tags.tree_key + "'.");
+    }
+    out.region = region;
+
+    if (work_cfg.sample_kind == SampleKind::DATA) {
+        const CurrentResponseEntry* e = find_current_response_entry(
+            model.data, work_cfg.channel_cfg.csv_channel, tags.period_display, region);
+        if (!e || !e->valid) {
+            fatal("[total_counts] FATAL: missing DATA regional current response for channel='" +
+                  work_cfg.channel_cfg.csv_channel + "' period='" + tags.period_display +
+                  "' region='" + current_region_names()[region] + "'.");
+        }
+        auto ip = model.run_current_nA.find(tags.period_display);
+        if (ip == model.run_current_nA.end()) {
+            fatal("[total_counts] FATAL: no run-current map for period '" + tags.period_display + "'.");
+        }
+        auto ir = ip->second.find(b.runnum);
+        if (ir == ip->second.end()) {
+            fatal("[total_counts] FATAL: run " + std::to_string(b.runnum) +
+                  " has no current assignment in response model for period '" + tags.period_display + "'.");
+        }
+        const double I = (double)ir->second;
+        const double R = 1.0 + e->parameter * I;
+        if (!(std::isfinite(R) && R > 0.0)) {
+            fatal("[total_counts] FATAL: non-positive DATA current response encountered.");
+        }
+        out.weight = 1.0 / R;
+        out.derivative = -I / (R * R);
+        out.parameter_stat = e->parameter_stat;
+        return out;
+    }
+
+    if (work_cfg.sample_kind == SampleKind::MC_REC) {
+        std::string response_channel = work_cfg.channel_cfg.csv_channel;
+        if (work_cfg.channel_cfg.channel == Channel::EPPI0_BKG_AS_DVCS) {
+            response_channel = use_epg_mc_factor_for_eppi0_bkg ? "ep->epg" : "ep->eppi0";
+        }
+        const CurrentResponseEntry* e = find_current_response_entry(
+            model.mc, response_channel, tags.period_display, region);
+        if (!e || !e->valid || !(e->parameter > 0.0)) {
+            fatal("[total_counts] FATAL: missing MC regional current response for channel='" +
+                  response_channel + "' period='" + tags.period_display +
+                  "' region='" + current_region_names()[region] + "'.");
+        }
+        const double f = e->parameter;
+        out.weight = 1.0 / f;
+        out.derivative = -1.0 / (f * f);
+        out.parameter_stat = e->parameter_stat;
+    }
+    return out;
+}
+
 static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                                              const PeriodTags& tags,
                                              TTree* tree,
                                              const std::vector<RowBin>& rows,
                                              const FastBinning& fast_bins,
                                              const TopoCutMap& sigma_cuts,
-                                             bool trace_matches) {
+                                             bool trace_matches,
+                                             const CurrentResponseModel* current_model,
+                                             bool use_epg_mc_current_factor_for_eppi0_bkg) {
     WorkCounts out;
 
     if (!tree) {
@@ -1642,9 +1873,14 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
     // unchanged.
     std::vector<HelCounts> total_dense(rows.size());
     std::array<std::vector<HelCounts>, 3> topo_dense;
+    std::vector<WeightedHelCounts> corrected_total_dense;
+    std::array<std::vector<WeightedHelCounts>, 3> corrected_topo_dense;
+    const bool apply_current_weights = (!is_gen && current_model != nullptr && tags.period_display != "Fa18 Inb Supp");
+    if (apply_current_weights) corrected_total_dense.resize(rows.size());
     if (!is_gen) {
-        for (auto& v : topo_dense) {
-            v.resize(rows.size());
+        for (auto& v : topo_dense) v.resize(rows.size());
+        if (apply_current_weights) {
+            for (auto& v : corrected_topo_dense) v.resize(rows.size());
         }
     }
 
@@ -1717,6 +1953,12 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
             ++out.flow.topology_sigma_pass[topoDir];
         }
 
+        EventCurrentWeight current_weight;
+        if (apply_current_weights) {
+            current_weight = event_current_weight(*current_model, work_cfg, tags, b,
+                                                  use_epg_mc_current_factor_for_eppi0_bkg);
+        }
+
         const double phi_deg = b.phi_deg();
         const double tabs = b.t_abs();
 
@@ -1750,6 +1992,10 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
 
             if (!is_gen) {
                 add_count(topo_dense[topo_idx][r], split_helicity, b.helicity);
+            }
+            if (apply_current_weights) {
+                add_weighted_count(corrected_total_dense[r], split_helicity, b.helicity, current_weight);
+                add_weighted_count(corrected_topo_dense[topo_idx][r], split_helicity, b.helicity, current_weight);
             }
 
             matched_any = true;
@@ -1808,6 +2054,15 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
         }
     }
 
+    if (apply_current_weights) {
+        for (int r = 0; r < (int)rows.size(); ++r) {
+            const WeightedHelCounts& h = corrected_total_dense[r];
+            if (h.sumw.unpol != 0.0 || h.sumw.pos != 0.0 || h.sumw.neg != 0.0) {
+                out.corrected_total_counts.emplace(r, h);
+            }
+        }
+    }
+
     if (!is_gen) {
         static const std::array<TopologyIndex, 3> kTopologies = {
             TopologyIndex::FD_FD,
@@ -1817,9 +2072,16 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
 
         for (int ti = 0; ti < 3; ++ti) {
             RowCounts dst;
+            WeightedRowCounts corrected_dst;
             for (int r = 0; r < (int)rows.size(); ++r) {
                 if (nonzero(topo_dense[ti][r])) {
                     dst.emplace(r, topo_dense[ti][r]);
+                }
+                if (apply_current_weights) {
+                    const WeightedHelCounts& wh = corrected_topo_dense[ti][r];
+                    if (wh.sumw.unpol != 0.0 || wh.sumw.pos != 0.0 || wh.sumw.neg != 0.0) {
+                        corrected_dst.emplace(r, wh);
+                    }
                 }
             }
 
@@ -1827,6 +2089,9 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
             // least one event matched a CSV row for that topology.
             if (!dst.empty()) {
                 out.topo_counts.emplace(topology_name(kTopologies[ti]), std::move(dst));
+            }
+            if (!corrected_dst.empty()) {
+                out.corrected_topo_counts.emplace(topology_name(kTopologies[ti]), std::move(corrected_dst));
             }
         }
     }
@@ -1883,6 +2148,67 @@ static RowCounts sum_row_counts(const RowCounts& a, const RowCounts& b) {
     return out;
 }
 
+
+static WeightedRowCounts sum_weighted_row_counts(const WeightedRowCounts& a,
+                                                 const WeightedRowCounts& b) {
+    WeightedRowCounts out = a;
+    auto add_hel = [](HelCounts& dst, const HelCounts& src) {
+        dst.unpol += src.unpol;
+        dst.pos += src.pos;
+        dst.neg += src.neg;
+    };
+    for (const auto& kv : b) {
+        WeightedHelCounts& o = out[kv.first];
+        const WeightedHelCounts& h = kv.second;
+        add_hel(o.sumw, h.sumw);
+        add_hel(o.sumw2, h.sumw2);
+        for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
+            add_hel(o.derivative_by_region[ir], h.derivative_by_region[ir]);
+            o.parameter_stat[ir] = std::max(o.parameter_stat[ir], h.parameter_stat[ir]);
+        }
+    }
+    return out;
+}
+
+static double weighted_stat_variance(const WeightedHelCounts& h,
+                                     char component) {
+    auto comp = [&](const HelCounts& x) -> double {
+        if (component == 'p') return x.pos;
+        if (component == 'n') return x.neg;
+        return x.unpol;
+    };
+    double var = comp(h.sumw2);
+    for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
+        const double d = comp(h.derivative_by_region[ir]);
+        const double s = h.parameter_stat[ir];
+        var += d * d * s * s;
+    }
+    return std::max(0.0, var);
+}
+
+static std::string fmt_weighted_triple(double value, double variance) {
+    if (!(std::isfinite(value) && value >= 0.0 && std::isfinite(variance) && variance >= 0.0)) return "";
+    std::ostringstream oss;
+    oss << std::setprecision(12) << "(" << value << "," << std::sqrt(variance) << ",0)";
+    return oss.str();
+}
+
+
+static double weighted_total_value(const WeightedHelCounts& h) {
+    return h.sumw.unpol + h.sumw.pos + h.sumw.neg;
+}
+
+static double weighted_total_variance(const WeightedHelCounts& h) {
+    double var = h.sumw2.unpol + h.sumw2.pos + h.sumw2.neg;
+    for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
+        const HelCounts& d = h.derivative_by_region[ir];
+        const double deriv = d.unpol + d.pos + d.neg;
+        const double ps = h.parameter_stat[ir];
+        var += deriv * deriv * ps * ps;
+    }
+    return std::max(0.0, var);
+}
+
 static void add_count_map(std::unordered_map<std::string, long long>& dst,
                           const std::unordered_map<std::string, long long>& src) {
     for (const auto& kv : src) {
@@ -1937,6 +2263,8 @@ struct CountCollection {
     WorkConfig work_cfg;
     std::unordered_map<std::string, RowCounts> total_by_period;
     std::unordered_map<std::string, std::unordered_map<std::string, RowCounts>> topo_by_period;
+    std::unordered_map<std::string, WeightedRowCounts> corrected_total_by_period;
+    std::unordered_map<std::string, std::unordered_map<std::string, WeightedRowCounts>> corrected_topo_by_period;
     std::unordered_map<std::string, CutFlowSummary> flow_by_period;
 };
 
@@ -2640,6 +2968,62 @@ static void write_collection_to_csv(CSV& csv,
                     }
 
                     csv.rows[r][c_topo] = fmt_count_triple(h.unpol + h.pos + h.neg);
+                }
+            }
+        }
+    }
+
+
+    // Event-level current-corrected outputs. Raw/unit-weight columns above are
+    // intentionally left unchanged so existing yield-total note material is
+    // exactly reproducible.
+    if (cfg.write_mc_reconstructed_columns) {
+        for (const auto& kvp : C.corrected_total_by_period) {
+            const std::string& period_display = kvp.first;
+            if (should_skip_csv_for_label(period_display)) continue;
+            const int c = col_strict(csv, col_mc_current_corrected_total(cfg.channel_cfg, period_display));
+            for (const auto& row_kv : kvp.second) {
+                const int r = row_kv.first;
+                const WeightedHelCounts& h = row_kv.second;
+                if (r < 0 || r >= (int)csv.rows.size()) fatal("[total_counts] FATAL: corrected MC row index out of range.");
+                csv.rows[r][c] = fmt_weighted_triple(weighted_total_value(h), weighted_total_variance(h));
+            }
+        }
+    }
+
+    for (const auto& kvp : C.corrected_topo_by_period) {
+        const std::string& period_display = kvp.first;
+        if (should_skip_csv_for_label(period_display)) continue;
+        const bool write_helicity_resolved = has_helicity_resolved_data_columns(period_display);
+
+        for (const auto& kt : kvp.second) {
+            const std::string topoLabel = topo_label_for_csv(kt.first);
+            if (topoLabel.empty()) fatal("[total_counts] FATAL: cannot map corrected topology to CSV label.");
+
+            if (cfg.write_data_raw_columns) {
+                const int c_unpol = col_strict(csv, col_data_normalized_counts(cfg.channel_cfg, topoLabel, period_display, "unpol"));
+                const int c_pos = write_helicity_resolved ? col_strict(csv, col_data_normalized_counts(cfg.channel_cfg, topoLabel, period_display, "pos")) : -1;
+                const int c_neg = write_helicity_resolved ? col_strict(csv, col_data_normalized_counts(cfg.channel_cfg, topoLabel, period_display, "neg")) : -1;
+
+                for (const auto& row_kv : kt.second) {
+                    const int r = row_kv.first;
+                    const WeightedHelCounts& h = row_kv.second;
+                    if (r < 0 || r >= (int)csv.rows.size()) fatal("[total_counts] FATAL: corrected DATA row index out of range.");
+                    csv.rows[r][c_unpol] = fmt_weighted_triple(weighted_total_value(h), weighted_total_variance(h));
+                    if (write_helicity_resolved) {
+                        csv.rows[r][c_pos] = fmt_weighted_triple(h.sumw.pos, weighted_stat_variance(h, 'p'));
+                        csv.rows[r][c_neg] = fmt_weighted_triple(h.sumw.neg, weighted_stat_variance(h, 'n'));
+                    }
+                }
+            }
+
+            if (cfg.write_mc_reconstructed_columns) {
+                const int c = col_strict(csv, col_mc_current_corrected_topo(cfg.channel_cfg, topoLabel, period_display));
+                for (const auto& row_kv : kt.second) {
+                    const int r = row_kv.first;
+                    const WeightedHelCounts& h = row_kv.second;
+                    if (r < 0 || r >= (int)csv.rows.size()) fatal("[total_counts] FATAL: corrected MC topology row index out of range.");
+                    csv.rows[r][c] = fmt_weighted_triple(weighted_total_value(h), weighted_total_variance(h));
                 }
             }
         }
@@ -3421,6 +3805,15 @@ bool update_total_counts_csv(const std::string& csv_path,
         const TopoCutMap sigma_cuts_data = load_combined_cuts(combined_cuts_json, "data");
         const TopoCutMap sigma_cuts_mc   = load_combined_cuts(combined_cuts_json, "mc");
 
+        CurrentResponseModel current_model;
+        const CurrentResponseModel* current_model_ptr = nullptr;
+        if (options.apply_event_level_current_correction) {
+            current_model = load_current_response_model(options.current_response_model_json);
+            current_model_ptr = &current_model;
+            std::cout << "[total_counts] Event-level regional current correction enabled from "
+                      << options.current_response_model_json << std::endl;
+        }
+
         WorkConfig dvcs_data;
         dvcs_data.channel_cfg = dvcs_config();
         dvcs_data.sample_kind = SampleKind::DATA;
@@ -3552,7 +3945,9 @@ bool update_total_counts_csv(const std::string& csv_path,
                                            rows,
                                            fast_bins,
                                            cuts,
-                                           trace_matches);
+                                           trace_matches,
+                                           current_model_ptr,
+                                           options.use_epg_mc_current_factor_for_eppi0_bkg);
 
             std::lock_guard<std::mutex> lock(merge_mutex);
 
@@ -3561,6 +3956,12 @@ bool update_total_counts_csv(const std::string& csv_path,
             C.total_by_period[w.tags.period_display] =
                 sum_row_counts(C.total_by_period[w.tags.period_display],
                                counts.total_counts);
+
+            if (!counts.corrected_total_counts.empty()) {
+                C.corrected_total_by_period[w.tags.period_display] =
+                    sum_weighted_row_counts(C.corrected_total_by_period[w.tags.period_display],
+                                            counts.corrected_total_counts);
+            }
 
             C.flow_by_period[w.tags.period_display] =
                 sum_cut_flow(C.flow_by_period[w.tags.period_display],
@@ -3573,6 +3974,13 @@ bool update_total_counts_csv(const std::string& csv_path,
                 C.topo_by_period[w.tags.period_display][topoDir] =
                     sum_row_counts(C.topo_by_period[w.tags.period_display][topoDir],
                                    rc);
+            }
+
+            for (const auto& kv : counts.corrected_topo_counts) {
+                const std::string& topoDir = kv.first;
+                const WeightedRowCounts& rc = kv.second;
+                C.corrected_topo_by_period[w.tags.period_display][topoDir] =
+                    sum_weighted_row_counts(C.corrected_topo_by_period[w.tags.period_display][topoDir], rc);
             }
         }
 

@@ -386,7 +386,10 @@ bool produce_variation(
                                  stage_out.string(), options.max_workers, count_opts,
                                  currentStudyGenMcTrees, currentStudyRecMcTrees)) return false;
 
-    reapply_nominal_fixed_corrections(options.nominal_csv, csv_path.string());
+    // Current-corrected DATA and reconstructed-MC columns are now filled
+    // event-by-event by total_counts.cpp for the varied selection itself.
+    // Do not rescale them from the nominal CSV; that would erase the regional
+    // composition change induced by the cut variation.
 
     Pi0ContaminationOptions pi0_opts;
     pi0_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;

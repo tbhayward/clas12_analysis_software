@@ -62,12 +62,14 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1817,43 +1819,42 @@ static FitResult fit_points(const std::vector<CurrentPoint>& points) {
     return weighted_linear_fit(x, y, sy);
 }
 
-static double weighted_data_rel(const std::vector<CurrentPoint>& points,
-                                const FitResult& fit) {
-    double total_counts = 0.0;
+static double charge_weighted_data_current(const std::vector<CurrentPoint>& points) {
+    // The scan ordinate is yield/charge, so the response appropriate to an
+    // integrated production sample must be averaged with accumulated charge,
+    // not with the already efficiency-biased reconstructed event counts.
+    double total_charge = 0.0;
     double weighted_current = 0.0;
 
     for (const CurrentPoint& p : points) {
-        total_counts += p.counts;
+        if (std::isfinite(p.charge) && p.charge > 0.0) {
+            total_charge += p.charge;
+            weighted_current += p.charge * (double)p.current_nA;
+        }
     }
 
-    if (!(total_counts > 0.0)) {
+    if (!(total_charge > 0.0)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
 
-    for (const CurrentPoint& p : points) {
-        weighted_current += (p.counts / total_counts) * (double)p.current_nA;
-    }
+    return weighted_current / total_charge;
+}
 
+static double weighted_data_rel(const std::vector<CurrentPoint>& points,
+                                const FitResult& fit) {
+    const double weighted_current = charge_weighted_data_current(points);
+    if (!std::isfinite(weighted_current)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
     return rel_at_current(weighted_current, fit);
 }
 
 static double weighted_data_rel_err(const std::vector<CurrentPoint>& points,
                                     const FitResult& fit) {
-    double total_counts = 0.0;
-    double weighted_current = 0.0;
-
-    for (const CurrentPoint& p : points) {
-        total_counts += p.counts;
-    }
-
-    if (!(total_counts > 0.0)) {
+    const double weighted_current = charge_weighted_data_current(points);
+    if (!std::isfinite(weighted_current)) {
         return std::numeric_limits<double>::quiet_NaN();
     }
-
-    for (const CurrentPoint& p : points) {
-        weighted_current += (p.counts / total_counts) * (double)p.current_nA;
-    }
-
     return rel_err_at_current(weighted_current, fit);
 }
 
@@ -3423,17 +3424,22 @@ static void write_summary_csv(const std::string& path,
 static void copy_period_result_values(PeriodResult& dst,
                                       const PeriodResult& src,
                                       const std::string& reason) {
+    // Sp19 lacks a usable DATA luminosity scan, so transfer only the DATA
+    // current response from Fa18 Inb.  Keep the independently determined Sp19
+    // MC response: its current-overlay reconstruction study is valid and need
+    // not inherit the DATA limitation.  Carry the DATA fit itself because the
+    // event-level correction needs its relative slope m/b.
     dst.data_factor = src.data_factor;
     dst.data_factor_err = src.data_factor_err;
-    dst.mc_factor = src.mc_factor;
-    dst.mc_factor_err = src.mc_factor_err;
+    dst.data_fit = src.data_fit;
 
     std::cout << "[current_dependence] " << reason
-              << ": copied current-efficiency factors from "
+              << ": copied DATA current response from "
               << src.period << " to " << dst.period
               << " data_factor=" << dst.data_factor
               << " +/- " << dst.data_factor_err
-              << " mc_factor=" << dst.mc_factor
+              << "; retained " << dst.period
+              << " MC factor=" << dst.mc_factor
               << " +/- " << dst.mc_factor_err
               << std::endl;
 }
@@ -3623,6 +3629,7 @@ static KinematicAggMap process_data_tree_for_kinematic_current_diagnostics(
         }
 
         auto cache_it = run_info_cache.find(b.runnum);
+        bool new_run = false;
         if (cache_it == run_info_cache.end()) {
             cache_it = run_info_cache.emplace(
                 b.runnum,
@@ -3631,11 +3638,22 @@ static KinematicAggMap process_data_tree_for_kinematic_current_diagnostics(
                     use_second_column_charge_for_all_unpolarized,
                     use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                     columns_3_to_5_charge_sum_scale)).first;
+            new_run = true;
         }
 
         const ResolvedRunInfo& run_info = cache_it->second;
         if (!run_info.valid) {
             continue;
+        }
+
+        if (new_run) {
+            for (const KinematicVarConfig& v : vars) {
+                for (DataAgg& agg : out[v.key]) {
+                    agg.counts_by_run[b.runnum] += 0;
+                    agg.current_by_run[b.runnum] = run_info.current;
+                    agg.charge_by_run[b.runnum] = run_info.charge;
+                }
+            }
         }
 
         if (!passes_global_dispatch(b, tags)) {
@@ -5074,6 +5092,7 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
         }
 
         auto cache_it = run_info_cache.find(b.runnum);
+        bool new_run = false;
         if (cache_it == run_info_cache.end()) {
             cache_it = run_info_cache.emplace(
                 b.runnum,
@@ -5082,11 +5101,21 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
                     use_second_column_charge_for_all_unpolarized,
                     use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                     columns_3_to_5_charge_sum_scale)).first;
+            new_run = true;
         }
 
         const ResolvedRunInfo& run_info = cache_it->second;
         if (!run_info.valid) {
             continue;
+        }
+
+        if (new_run) {
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                DataAgg& agg = out[spec.key];
+                agg.counts_by_run[b.runnum] += 0;
+                agg.current_by_run[b.runnum] = run_info.current;
+                agg.charge_by_run[b.runnum] = run_info.charge;
+            }
         }
 
         if (!passes_global_dispatch(b, tags)) {
@@ -5095,17 +5124,6 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
 
         if (!passes_sigma_dispatch(cfg, tags, data_cuts, b)) {
             continue;
-        }
-
-        // Every selected run contributes its full charge to every photon-region
-        // denominator, even if this particular run contains zero accepted events
-        // in one of the seven regions.  This prevents low-statistics regions from
-        // accidentally dropping run charge from the normalization.
-        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
-            DataAgg& agg = out[spec.key];
-            agg.counts_by_run[b.runnum] += 0;
-            agg.current_by_run[b.runnum] = run_info.current;
-            agg.charge_by_run[b.runnum] = run_info.charge;
         }
 
         std::string region_key;
@@ -5190,6 +5208,200 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
     }
 
     return counts;
+}
+
+
+using RegionThetaAggMap = std::map<std::string, std::map<std::string, std::vector<DataAgg>>>;
+using PeriodRegionThetaAggMap = std::map<std::string, RegionThetaAggMap>;
+
+static RegionThetaAggMap process_data_tree_region_theta(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    const std::vector<KinematicVarConfig>& vars,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale) {
+
+    RegionThetaAggMap out;
+    const PeriodTags tags = parse_period_from_key(key);
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        for (const KinematicVarConfig& v : vars) {
+            auto& bins = out[spec.key][v.key];
+            bins.resize(v.edges.size() - 1);
+            for (DataAgg& a : bins) a.period = tags.display;
+        }
+    }
+    if (!tree || tags.display == "Fa18 Inb Supp") return out;
+
+    Branches b;
+    b.bind(tree);
+    if (!b.has_runnum) fatal("[current_dependence] FATAL: region-theta DATA diagnostic tree missing runnum.");
+
+    std::unordered_map<int, ResolvedRunInfo> run_info_cache;
+    run_info_cache.reserve(256);
+    const Long64_t N = tree->GetEntries();
+
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+        if (!passes_cone_cut(b)) continue;
+
+        auto cache_it = run_info_cache.find(b.runnum);
+        bool new_run = false;
+        if (cache_it == run_info_cache.end()) {
+            cache_it = run_info_cache.emplace(
+                b.runnum,
+                resolve_run_info_cached(tags, b.runnum, charge_map,
+                    use_second_column_charge_for_all_unpolarized,
+                    use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    columns_3_to_5_charge_sum_scale)).first;
+            new_run = true;
+        }
+        const ResolvedRunInfo& run_info = cache_it->second;
+        if (!run_info.valid) continue;
+
+        if (new_run) {
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                for (const KinematicVarConfig& v : vars) {
+                    for (DataAgg& a : out[spec.key][v.key]) {
+                        a.counts_by_run[b.runnum] += 0;
+                        a.current_by_run[b.runnum] = run_info.current;
+                        a.charge_by_run[b.runnum] = run_info.charge;
+                    }
+                }
+            }
+        }
+
+        if (!passes_global_dispatch(b, tags)) continue;
+        if (!passes_sigma_dispatch(cfg, tags, data_cuts, b)) continue;
+
+        std::string region;
+        if (!reconstructed_photon_region(b, region)) continue;
+
+        for (const KinematicVarConfig& v : vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+            if (!kinematic_value_for_config(b, v, value)) continue;
+            const int ib = find_bin_index(v.edges, value);
+            if (ib < 0) continue;
+            DataAgg& a = out[region][v.key][ib];
+            a.counts_by_run[b.runnum] += 1;
+            a.kinematic_value_sum += value;
+            a.kinematic_value_count += 1;
+        }
+    }
+    return out;
+}
+
+static void run_region_theta_data_diagnostic(
+    const ChannelConfig& cfg,
+    const std::map<std::string, TTree*>& data_trees,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    const std::string& output_dir,
+    int max_workers,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale,
+    bool hide_sp19) {
+
+    std::vector<KinematicVarConfig> vars;
+    for (const KinematicVarConfig& v : kinematic_current_var_configs()) {
+        if (v.key == "e_theta" || v.key == "g_theta") vars.push_back(v);
+    }
+
+    PeriodRegionThetaAggMap merged;
+    for (const std::string& period : PERIOD_ORDER) {
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            for (const KinematicVarConfig& v : vars) {
+                auto& bins = merged[period][spec.key][v.key];
+                bins.resize(v.edges.size() - 1);
+                for (DataAgg& a : bins) a.period = period;
+            }
+        }
+    }
+
+    std::vector<std::pair<std::string, TTree*>> items;
+    for (const auto& kv : data_trees) {
+        const PeriodTags tags = parse_period_from_key(kv.first);
+        if (tags.display != "Fa18 Inb Supp") items.push_back(kv);
+    }
+    std::mutex merge_mutex;
+    int nth = std::max(1, std::min(7, max_workers));
+    nth = std::min(nth, std::max(1, (int)items.size()));
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int i = 0; i < (int)items.size(); ++i) {
+        const PeriodTags tags = parse_period_from_key(items[i].first);
+        RegionThetaAggMap local = process_data_tree_region_theta(
+            cfg, items[i].first, items[i].second, charge_map, data_cuts, vars,
+            use_second_column_charge_for_all_unpolarized,
+            use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+            columns_3_to_5_charge_sum_scale);
+        std::lock_guard<std::mutex> lock(merge_mutex);
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            for (const KinematicVarConfig& v : vars) {
+                auto& dst = merged[tags.display][spec.key][v.key];
+                const auto& src = local[spec.key][v.key];
+                for (size_t ib = 0; ib < dst.size() && ib < src.size(); ++ib) merge_data_agg(dst[ib], src[ib]);
+            }
+        }
+    }
+
+    const std::string odir = output_dir + "/" + cfg.output_token + "/sector_dependence_diagnostic/region_theta";
+    mkdir_p(odir);
+    std::ofstream csv(odir + "/data_current_efficiency_by_region_and_theta.csv");
+    csv << "period,region,variable,bin,x_low,x_high,x_center,factor,factor_stat,n_current_points,total_counts\n";
+
+    for (const KinematicVarConfig& v : vars) {
+        TCanvas c(("c_region_theta_" + cfg.output_token + "_" + v.key).c_str(), "", 1500, 1000);
+        c.Divide(2, 2, 0.004, 0.004);
+        const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
+
+        for (size_t ip = 0; ip < periods.size(); ++ip) {
+            c.cd((int)ip + 1);
+            gPad->SetLeftMargin(0.13); gPad->SetRightMargin(0.04);
+            gPad->SetBottomMargin(0.13); gPad->SetTopMargin(0.10); gPad->SetGridy();
+            TH1D frame(("h_rt_" + cfg.output_token + v.key + std::to_string(ip)).c_str(),
+                       (periods[ip] + ";" + v.x_label + ";Current efficiency factor").c_str(),
+                       100, v.edges.front(), v.edges.back());
+            frame.SetMinimum(0.45); frame.SetMaximum(1.20); frame.Draw();
+            TLine unity(v.edges.front(), 1.0, v.edges.back(), 1.0); unity.SetLineStyle(2); unity.Draw("SAME");
+            TLegend leg(0.15, 0.70, 0.95, 0.88); leg.SetNColumns(4); leg.SetBorderSize(0); leg.SetFillStyle(0);
+
+            std::vector<std::unique_ptr<TGraphErrors>> graphs;
+            for (int ir = 0; ir < (int)PHOTON_REGION_ORDER.size(); ++ir) {
+                std::vector<KinematicBinResult> brs;
+                const auto& bins = merged[periods[ip]][PHOTON_REGION_ORDER[ir].key][v.key];
+                for (size_t ib = 0; ib < bins.size(); ++ib) {
+                    KinematicBinResult br = current_factor_for_kinematic_bin(bins[ib], v.edges[ib], v.edges[ib+1]);
+                    brs.push_back(br);
+                    csv << periods[ip] << "," << PHOTON_REGION_ORDER[ir].key << "," << v.key << "," << ib << ","
+                        << br.x_low << "," << br.x_high << "," << br.x_center << "," << br.factor << "," << br.factor_err << ","
+                        << br.n_current_points << "," << br.total_counts << "\n";
+                }
+                graphs.emplace_back(make_kinematic_factor_graph(brs, photon_region_color(ir)));
+                graphs.back()->SetMarkerStyle(photon_region_marker(ir));
+                graphs.back()->Draw("P SAME");
+                leg.AddEntry(graphs.back().get(), PHOTON_REGION_ORDER[ir].label.c_str(), "p");
+            }
+            leg.Draw();
+        }
+        c.cd(0);
+        TLatex title; title.SetNDC(); title.SetTextAlign(22); title.SetTextSize(0.030);
+        title.DrawLatex(0.5, 0.985, (cfg.title + ": current efficiency versus " + v.title + " within FT/FD sectors").c_str());
+        const std::string region_theta_path = odir + "/data_current_efficiency_by_region_vs_" + v.key + ".png";
+        c.SaveAs(region_theta_path.c_str());
+        const std::string note_dir = output_dir + "/analysis_note";
+        mkdir_p(note_dir);
+        const std::string note_path = note_dir + "/" + cfg.output_token + "_regional_current_efficiency_vs_" + v.key + ".png";
+        gSystem->CopyFile(region_theta_path.c_str(), note_path.c_str(), true);
+    }
+
+    std::cout << "[current_dependence] Region-conditioned theta diagnostics written under " << odir << std::endl;
 }
 
 static void write_photon_region_summary_csv(const std::string& path,
@@ -5717,6 +5929,242 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
               << odir << std::endl;
 
     return results;
+}
+
+
+static double relative_slope_per_nA(const FitResult& f) {
+    if (!std::isfinite(f.m) || !std::isfinite(f.b) || f.b == 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    return f.m / f.b;
+}
+
+static double relative_slope_per_nA_err(const FitResult& f) {
+    if (!std::isfinite(f.m) || !std::isfinite(f.b) ||
+        !std::isfinite(f.sm) || !std::isfinite(f.sb) ||
+        !std::isfinite(f.cov_mb) || f.b == 0.0) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    const double dm = 1.0 / f.b;
+    const double db = -f.m / (f.b * f.b);
+    double var = dm * dm * f.sm * f.sm + db * db * f.sb * f.sb +
+                 2.0 * dm * db * f.cov_mb;
+    if (var < 0.0 && std::fabs(var) < 1.0e-15) var = 0.0;
+    return (var >= 0.0) ? std::sqrt(var) : std::numeric_limits<double>::quiet_NaN();
+}
+
+static void apply_eppi0_mc_factor_from_dvcs_ratio_regions(
+    PhotonRegionResults& eppi0_regions,
+    const PhotonRegionResults& dvcs_regions) {
+
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        auto ie = eppi0_regions.find(spec.key);
+        auto id = dvcs_regions.find(spec.key);
+        if (ie == eppi0_regions.end() || id == dvcs_regions.end()) continue;
+
+        for (PeriodResult& er : ie->second) {
+            const PeriodResult* dr = find_period_result(id->second, er.period);
+            if (!dr) continue;
+            if (!(std::isfinite(er.data_factor) && er.data_factor > 0.0 &&
+                  std::isfinite(dr->data_factor) && dr->data_factor > 0.0 &&
+                  std::isfinite(dr->mc_factor) && dr->mc_factor > 0.0)) {
+                continue;
+            }
+
+            er.mc_factor = er.data_factor * dr->mc_factor / dr->data_factor;
+
+            const double re = (std::isfinite(er.data_factor_err) && er.data_factor_err >= 0.0)
+                                ? er.data_factor_err / er.data_factor : 0.0;
+            const double rd = (std::isfinite(dr->data_factor_err) && dr->data_factor_err >= 0.0)
+                                ? dr->data_factor_err / dr->data_factor : 0.0;
+            const double rm = (std::isfinite(dr->mc_factor_err) && dr->mc_factor_err >= 0.0)
+                                ? dr->mc_factor_err / dr->mc_factor : 0.0;
+            er.mc_factor_err = er.mc_factor * std::sqrt(re * re + rd * rd + rm * rm);
+        }
+    }
+}
+
+static void collect_run_current_map_from_data_trees(
+    const std::map<std::string, TTree*>& trees,
+    nlohmann::json& run_map) {
+
+    for (const auto& kv : trees) {
+        if (!kv.second) continue;
+        const PeriodTags tags = parse_period_from_key(kv.first);
+        if (tags.display == "Fa18 Inb Supp") continue;
+
+        TTree* tree = kv.second;
+        int runnum = 0;
+        if (!tree->GetBranch("runnum")) continue;
+
+        {
+            std::lock_guard<std::mutex> lock(g_bind_mutex);
+            tree->SetBranchStatus("*", 0);
+            tree->SetBranchStatus("runnum", 1);
+            tree->SetBranchAddress("runnum", &runnum);
+        }
+
+        const Long64_t N = tree->GetEntries();
+        std::unordered_set<int> seen;
+        for (Long64_t i = 0; i < N; ++i) {
+            tree->GetEntry(i);
+            if (!seen.insert(runnum).second) continue;
+            int current = 0;
+            if (resolve_current(tags.internal, runnum, current)) {
+                run_map[tags.display][std::to_string(runnum)] = current;
+            }
+        }
+    }
+}
+
+static void write_current_response_model_json(
+    const std::string& path,
+    const PhotonRegionResults& dvcs_regions,
+    const PhotonRegionResults& eppi0_regions,
+    const std::vector<PeriodResult>& dvcs_integrated,
+    const std::vector<PeriodResult>& eppi0_integrated,
+    const std::map<std::string, TTree*>& dvcs_data_trees,
+    const std::map<std::string, TTree*>& eppi0_data_trees,
+    bool use_nobkg_dvcs_mc_counts) {
+
+    nlohmann::json j;
+    j["schema_version"] = 1;
+    j["description"] = "Regional beam-current reconstruction response used for event-level yield correction";
+    j["data_response_form"] = "R(I)=1+s_rel*I; event weight=1/R(I)";
+    j["mc_response_form"] = "reference_factor at production-current MC; event weight=1/reference_factor";
+    j["dvcs_nobkg_mc_forced_unity"] = use_nobkg_dvcs_mc_counts;
+
+    auto write_channel = [&](const std::string& channel,
+                             const PhotonRegionResults& results,
+                             const std::vector<PeriodResult>& integrated) {
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            auto ir = results.find(spec.key);
+            if (ir == results.end()) continue;
+            for (const PeriodResult& r : ir->second) {
+                const PeriodResult* ri = find_period_result(integrated, r.period);
+
+                double srel = relative_slope_per_nA(r.data_fit);
+                double srel_err = relative_slope_per_nA_err(r.data_fit);
+                std::string data_source = "regional";
+                if (!(std::isfinite(srel) && std::isfinite(srel_err) && srel_err >= 0.0) && ri) {
+                    srel = relative_slope_per_nA(ri->data_fit);
+                    srel_err = relative_slope_per_nA_err(ri->data_fit);
+                    data_source = "integrated_fallback";
+                }
+                if (!(std::isfinite(srel) && std::isfinite(srel_err) && srel_err >= 0.0)) {
+                    fatal("[current_dependence] FATAL: no valid DATA current response for " + channel + " " + r.period + " " + spec.key);
+                }
+
+                auto& d = j["data"][channel][r.period][spec.key];
+                d["relative_slope_per_nA"] = srel;
+                d["relative_slope_stat"] = srel_err;
+                d["source"] = data_source;
+                if (std::isfinite(r.data_factor)) d["integrated_factor"] = r.data_factor;
+                if (std::isfinite(r.data_factor_err)) d["integrated_factor_stat"] = r.data_factor_err;
+
+                double mf = r.mc_factor;
+                double me = r.mc_factor_err;
+                std::string mc_source = "regional";
+                if (channel == "ep->epg" && use_nobkg_dvcs_mc_counts) {
+                    mf = 1.0; me = 0.0; mc_source = "nobkg_unity";
+                } else if (!(std::isfinite(mf) && mf > 0.0 && std::isfinite(me) && me >= 0.0) && ri) {
+                    mf = ri->mc_factor; me = ri->mc_factor_err; mc_source = "integrated_fallback";
+                }
+                if (!(std::isfinite(mf) && mf > 0.0 && std::isfinite(me) && me >= 0.0)) {
+                    fatal("[current_dependence] FATAL: no valid MC current response for " + channel + " " + r.period + " " + spec.key);
+                }
+                auto& m = j["mc"][channel][r.period][spec.key];
+                m["reference_current_nA"] = reference_current_nA(r.period);
+                m["reference_factor"] = mf;
+                m["reference_factor_stat"] = me;
+                m["source"] = mc_source;
+            }
+        }
+    };
+
+    write_channel("ep->epg", dvcs_regions, dvcs_integrated);
+    write_channel("ep->eppi0", eppi0_regions, eppi0_integrated);
+
+    collect_run_current_map_from_data_trees(dvcs_data_trees, j["run_current_nA"]);
+    collect_run_current_map_from_data_trees(eppi0_data_trees, j["run_current_nA"]);
+
+    const size_t slash_pos = path.find_last_of('/');
+    if (slash_pos != std::string::npos) mkdir_p(path.substr(0, slash_pos));
+    std::ofstream fout(path);
+    if (!fout.is_open()) fatal("[current_dependence] FATAL: cannot write response model JSON: " + path);
+    fout << std::setw(2) << j << "\n";
+    std::cout << "[current_dependence] Wrote event-level current-response model: " << path << std::endl;
+}
+
+static void draw_analysis_note_region_ratio_canvas(
+    const std::string& out_path,
+    const PhotonRegionResults& results,
+    const std::vector<PeriodResult>& integrated_results,
+    const std::string& channel_title,
+    bool hide_sp19) {
+
+    const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
+    TCanvas c("c_note_region_ratio", "c_note_region_ratio", 1500, 1000);
+    c.Divide(2, 2, 0.005, 0.005);
+
+    for (size_t ip = 0; ip < periods.size(); ++ip) {
+        c.cd((int)ip + 1);
+        gPad->SetGridy();
+        gPad->SetLeftMargin(0.13);
+        gPad->SetBottomMargin(0.14);
+        gPad->SetTopMargin(0.10);
+        gPad->SetRightMargin(0.04);
+
+        TH1D frame(("h_note_region_" + std::to_string(ip)).c_str(),
+                   (periods[ip] + ";Photon region;C_{r}/C_{integrated}").c_str(),
+                   7, 0.5, 7.5);
+        for (int ir = 0; ir < 7; ++ir) frame.GetXaxis()->SetBinLabel(ir + 1, PHOTON_REGION_ORDER[ir].label.c_str());
+        frame.SetMinimum(0.65);
+        frame.SetMaximum(1.35);
+        frame.Draw();
+
+        const PeriodResult* integ = find_period_result(integrated_results, periods[ip]);
+        double cint = std::numeric_limits<double>::quiet_NaN();
+        if (integ && std::isfinite(integ->data_factor) && integ->data_factor > 0.0 &&
+            std::isfinite(integ->mc_factor) && integ->mc_factor > 0.0) {
+            cint = integ->mc_factor / integ->data_factor;
+        }
+
+        TGraphErrors g;
+        int n = 0;
+        for (int ir = 0; ir < 7; ++ir) {
+            auto it = results.find(PHOTON_REGION_ORDER[ir].key);
+            if (it == results.end()) continue;
+            const PeriodResult* r = find_period_result(it->second, periods[ip]);
+            if (!r || !std::isfinite(cint) || cint <= 0.0 ||
+                !(std::isfinite(r->data_factor) && r->data_factor > 0.0 &&
+                  std::isfinite(r->mc_factor) && r->mc_factor > 0.0)) continue;
+            const double cr = r->mc_factor / r->data_factor;
+            const double y = cr / cint;
+            const double rel2 = std::pow(r->mc_factor_err / r->mc_factor, 2) +
+                                std::pow(r->data_factor_err / r->data_factor, 2);
+            g.SetPoint(n, ir + 1, y);
+            g.SetPointError(n, 0.0, std::fabs(y) * std::sqrt(std::max(0.0, rel2)));
+            ++n;
+        }
+        g.SetMarkerStyle(20);
+        g.SetMarkerSize(1.15);
+        g.SetLineWidth(2);
+        g.Draw("P SAME");
+
+        TLine unity(0.5, 1.0, 7.5, 1.0);
+        unity.SetLineStyle(2);
+        unity.SetLineWidth(2);
+        unity.Draw("SAME");
+    }
+
+    c.cd(0);
+    TLatex title;
+    title.SetNDC();
+    title.SetTextAlign(22);
+    title.SetTextSize(0.030);
+    title.DrawLatex(0.5, 0.985, (channel_title + ": regional current correction relative to integrated treatment").c_str());
+    c.SaveAs(out_path.c_str());
 }
 
 static void apply_eppi0_mc_factor_from_dvcs_ratio(std::vector<PeriodResult>& eppi0_results,
@@ -6667,8 +7115,11 @@ bool update_current_dependence_factors_csv(
             replace_sp19_inb_factors_with_fa18_inb(dvcs_results, dvcs.csv_channel);
         }
 
+        PhotonRegionResults dvcs_region_results;
+        PhotonRegionResults eppi0_region_results;
+
         if (options.enable_photon_region_current_diagnostic) {
-            run_photon_region_current_diagnostic(
+            dvcs_region_results = run_photon_region_current_diagnostic(
                 dvcs,
                 dvcsDataTrees,
                 dvcsGenMcTrees,
@@ -6683,6 +7134,39 @@ bool update_current_dependence_factors_csv(
                 options.columns_3_to_5_charge_sum_scale,
                 options.use_fa18_inb_current_efficiency_for_sp19_inb,
                 dvcs_results);
+        }
+
+        if (options.enable_eppi0_photon_region_current_diagnostic) {
+            eppi0_region_results = run_photon_region_current_diagnostic(
+                eppi0,
+                eppi0DataTrees,
+                eppi0GenMcTrees,
+                eppi0RecMcTrees,
+                charge_map,
+                data_cuts,
+                mc_cuts,
+                options.output_dir,
+                options.max_workers,
+                options.use_second_column_charge_for_all_unpolarized,
+                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                options.columns_3_to_5_charge_sum_scale,
+                options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                eppi0_results);
+        }
+
+        if (options.enable_region_theta_current_diagnostic) {
+            run_region_theta_data_diagnostic(
+                dvcs, dvcsDataTrees, charge_map, data_cuts, options.output_dir, options.max_workers,
+                options.use_second_column_charge_for_all_unpolarized,
+                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                options.columns_3_to_5_charge_sum_scale,
+                options.use_fa18_inb_current_efficiency_for_sp19_inb);
+            run_region_theta_data_diagnostic(
+                eppi0, eppi0DataTrees, charge_map, data_cuts, options.output_dir, options.max_workers,
+                options.use_second_column_charge_for_all_unpolarized,
+                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                options.columns_3_to_5_charge_sum_scale,
+                options.use_fa18_inb_current_efficiency_for_sp19_inb);
         }
 
         dvcs_e_theta_data_fits =
@@ -6726,6 +7210,21 @@ bool update_current_dependence_factors_csv(
         // DVCS MC/data ratio because the eppi0 MC scan is intentionally skipped.
         apply_eppi0_mc_factor_from_dvcs_ratio(eppi0_results, dvcs_results);
 
+        if (!dvcs_region_results.empty() && !eppi0_region_results.empty()) {
+            apply_eppi0_mc_factor_from_dvcs_ratio_regions(eppi0_region_results, dvcs_region_results);
+
+            // The direct-pi0 MC scan has only the production-current sample, so
+            // overwrite its preliminary unity regional MC factors with the same
+            // DVCS MC/DATA transfer prescription used for the integrated pi0
+            // correction, now evaluated region by region.
+            const std::string eppi0_region_dir = options.output_dir + "/" + eppi0.output_token + "/sector_dependence_diagnostic";
+            write_photon_region_summary_csv(eppi0_region_dir + "/photon_region_current_dependence_summary.csv",
+                                            eppi0_region_results, eppi0_results);
+            draw_photon_region_factor_canvas(eppi0_region_dir + "/mc_current_efficiency_factor_by_photon_region.png",
+                                             eppi0_region_results, eppi0_results, false,
+                                             options.use_fa18_inb_current_efficiency_for_sp19_inb);
+        }
+
         if (options.use_fa18_inb_current_efficiency_for_sp19_inb) {
             replace_sp19_inb_factors_with_fa18_inb(eppi0_results, eppi0.csv_channel);
         }
@@ -6757,6 +7256,36 @@ bool update_current_dependence_factors_csv(
 
         write_summary_csv(options.output_dir + "/" + dvcs.output_token + "/period_summary.csv", dvcs_results);
         write_summary_csv(options.output_dir + "/" + eppi0.output_token + "/period_summary.csv", eppi0_results);
+
+        if (!dvcs_region_results.empty() && !eppi0_region_results.empty()) {
+            write_current_response_model_json(options.response_model_json,
+                                              dvcs_region_results,
+                                              eppi0_region_results,
+                                              dvcs_results,
+                                              eppi0_results,
+                                              dvcsDataTrees,
+                                              eppi0DataTrees,
+                                              options.use_nobkg_dvcs_mc_counts);
+
+            const std::string note_dir = options.output_dir + "/analysis_note";
+            mkdir_p(note_dir);
+            draw_all_period_data_mc_canvas(note_dir + "/epg_current_response_data_mc.png",
+                                           "ep #rightarrow ep#gamma current response",
+                                           dvcs_results,
+                                           options.use_fa18_inb_current_efficiency_for_sp19_inb);
+            draw_all_period_data_mc_canvas(note_dir + "/eppi0_current_response_data_mc.png",
+                                           "ep #rightarrow ep#pi^{0} current response",
+                                           eppi0_results,
+                                           options.use_fa18_inb_current_efficiency_for_sp19_inb);
+            draw_analysis_note_region_ratio_canvas(note_dir + "/epg_regional_current_correction.png",
+                                                   dvcs_region_results, dvcs_results,
+                                                   "ep #rightarrow ep#gamma",
+                                                   options.use_fa18_inb_current_efficiency_for_sp19_inb);
+            draw_analysis_note_region_ratio_canvas(note_dir + "/eppi0_regional_current_correction.png",
+                                                   eppi0_region_results, eppi0_results,
+                                                   "ep #rightarrow ep#pi^{0}",
+                                                   options.use_fa18_inb_current_efficiency_for_sp19_inb);
+        }
 
         std::vector<PeriodResult> dvcs_results_for_csv = dvcs_results;
 
@@ -6793,26 +7322,37 @@ bool update_current_dependence_factors_csv(
         //
         //   Var(Y/f) = Var(Y)/f^2 + Y^2 Var(f)/f^4.
         //
-        apply_all_data_current_corrections(csv,
-                                           dvcs,
-                                           eppi0,
-                                           dvcs_e_theta_data_fits,
-                                           eppi0_e_theta_data_fits,
-                                           options.use_e_theta_linear_data_current_efficiency);
+        if (options.apply_legacy_binned_current_corrections) {
+            apply_all_data_current_corrections(csv,
+                                               dvcs,
+                                               eppi0,
+                                               dvcs_e_theta_data_fits,
+                                               eppi0_e_theta_data_fits,
+                                               options.use_e_theta_linear_data_current_efficiency);
 
-        // 4. Apply MC current factors to reconstructed MC yields and fill
-        // reconstructed current-corrected yield columns.
-        apply_all_mc_current_corrections(csv,
-                                     dvcs,
-                                     eppi0,
-                                     options.use_epg_mc_current_factor_for_eppi0_bkg);
+            // Legacy compatibility mode only. Nominal production fills these
+            // corrected columns event-by-event in total_counts.cpp.
+            apply_all_mc_current_corrections(csv,
+                                         dvcs,
+                                         eppi0,
+                                         options.use_epg_mc_current_factor_for_eppi0_bkg);
+        } else {
+            std::cout << "[current_dependence] Legacy post-binning current correction disabled; "
+                      << "total_counts.cpp will fill corrected DATA/MC yields event-by-event from "
+                      << options.response_model_json << std::endl;
+        }
 
         write_csv_atomic(csv_path, csv);
 
-        std::cout << "[current_dependence] Updated current-efficiency factors, "
-                  << "unity eppi0 normalization fallback columns, "
-                  << "normalized raw DATA yields, and current-corrected MC yields in: "
-                  << csv_path << std::endl;
+        std::cout << "[current_dependence] Updated current-efficiency calibration columns and "
+                  << "unity eppi0 normalization fallback columns in: " << csv_path << std::endl;
+        if (options.apply_legacy_binned_current_corrections) {
+            std::cout << "[current_dependence] Legacy mode also filled normalized DATA and "
+                      << "current-corrected MC yield columns." << std::endl;
+        } else {
+            std::cout << "[current_dependence] Nominal corrected yield columns are deferred to "
+                      << "total_counts.cpp event-level accumulation." << std::endl;
+        }
 
         return true;
     } catch (const std::exception& e) {

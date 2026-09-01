@@ -445,80 +445,20 @@ static Triple sum_topology_mc_yield(const CSV& csv,
     return total;
 }
 
-static bool read_current_efficiency_factor(const CSV& csv,
-                                           const std::string& channel,
-                                           const std::string& period,
-                                           double& f,
-                                           double& f_stat) {
-    f = 0.0;
-    f_stat = 0.0;
-
-    const std::string colname = current_eff_col(channel, "mc", period);
-    const int c = col_strict(csv, colname);
-
-    if (csv.rows.empty() || c < 0 || c >= (int)csv.rows.front().size()) {
-        return false;
-    }
-
-    std::vector<double> vals;
-    if (!parse_tuple_numbers(csv.rows.front()[c], vals) || vals.size() < 2) {
-        return false;
-    }
-
-    f = vals[0];
-    f_stat = vals[1];
-    return std::isfinite(f) && std::isfinite(f_stat) && f > 0.0 && f_stat >= 0.0;
-}
-
-static Triple apply_current_factor_to_mc_yield(const Triple& raw,
-                                               double f,
-                                               double f_stat) {
-    Triple out;
-    out.v = 0.0;
-    out.stat = 0.0;
-    out.sys = 0.0;
-
-    if (!(std::isfinite(f) && f > 0.0)) {
-        return out;
-    }
-
-    out.v = raw.v / f;
-    out.stat = std::sqrt((raw.stat / f) * (raw.stat / f) +
-                         (raw.v * f_stat / (f * f)) * (raw.v * f_stat / (f * f)));
-    out.sys = raw.sys / f;
-    return out;
-}
-
 static Triple sum_topology_misid_mc_yield_with_current_mode(
     const CSV& csv,
     const std::vector<std::string>& row,
     const std::string& period,
     bool use_epg_mc_current_factor_for_eppi0_bkg) {
 
-    const std::string factor_channel =
-        use_epg_mc_current_factor_for_eppi0_bkg ? "ep->epg" : "ep->eppi0";
-
-    double f = 0.0;
-    double f_stat = 0.0;
-    if (!read_current_efficiency_factor(csv, factor_channel, period, f, f_stat)) {
-        fatal("[pi0_contamination] FATAL: cannot read MC current-efficiency factor for " +
-              factor_channel + " period=" + period +
-              " while correcting ep->eppi0->epg misidentified background.");
-    }
-
-    Triple total;
-    total.v = 0.0;
-    total.stat = 0.0;
-    total.sys = 0.0;
-
-    for (const std::string& topo : kTopologies) {
-        const std::string colname = rec_yield_col("ep->eppi0->epg", topo, period);
-        const int c = col_strict(csv, colname);
-        const Triple raw = parse_yield_or_zero(row[c], colname);
-        add_triple_in_quadrature(total, apply_current_factor_to_mc_yield(raw, f, f_stat));
-    }
-
-    return total;
+    // The current-response convention is now applied event-by-event in
+    // total_counts.cpp, before the reconstructed ep->eppi0->epg yield is
+    // collapsed into analysis bins.  In particular, total_counts chooses the
+    // ep->epg or ep->eppi0 response model for this misidentified sample
+    // according to use_epg_mc_current_factor_for_eppi0_bkg.  Do not apply a
+    // second period-wide scalar factor here.
+    (void)use_epg_mc_current_factor_for_eppi0_bkg;
+    return sum_topology_mc_yield(csv, row, "ep->eppi0->epg", period);
 }
 
 static Triple compute_contamination(const Triple& Nmis,
