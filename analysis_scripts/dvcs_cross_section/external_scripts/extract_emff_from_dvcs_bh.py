@@ -1591,6 +1591,8 @@ def evaluate_km15_point_bmk(args: Tuple[int, float, float, float, float, float])
         "km15_F2": f2_nom,
         "km15_ep_predict": sigma_predict,
         "km15_ep_decomp_relerr": ep_relerr,
+        "phi_model_deg": float(np.degrees(phi_bmk_rad) % 360.0),
+        "phi_convention": "Gepard BMK direct",
     }
 #enddef
 
@@ -1600,24 +1602,53 @@ def evaluate_km15_clas6_dataframe(df: pd.DataFrame,
                                   cache_path: Path,
                                   force: bool = False) -> pd.DataFrame:
     """Evaluate/cache KM15 at the exact Gepard CLAS6 BMK data points."""
-    cache_cols = [
+    core_cache_cols = [
         "_row", "km15_ep", "km15_bh", "km15_dvcs", "km15_int",
         "R_BH", "bh_delta", "bh_A", "bh_B", "bh_C",
         "bh_quad_relerr", "km15_F1", "km15_F2",
         "km15_ep_predict", "km15_ep_decomp_relerr",
-        "phi_model_deg", "phi_convention",
     ]
+    metadata_cache_cols = ["phi_model_deg", "phi_convention"]
+    cache_cols = core_cache_cols + metadata_cache_cols
 
     if cache_path.exists() and not force:
         cache = pd.read_csv(cache_path)
-        if len(cache) == len(df) and all(c in cache.columns for c in cache_cols):
+        core_cache_valid = (
+            len(cache) == len(df)
+            and all(c in cache.columns for c in core_cache_cols)
+        )
+        if core_cache_valid:
+            cache = cache.copy()
+            augmented_cache = False
+
+            if "phi_model_deg" not in cache.columns:
+                cache["phi_model_deg"] = (
+                    np.degrees(df["phi_bmk_rad"].to_numpy(float)) % 360.0
+                )
+                augmented_cache = True
+            #endif
+
+            if "phi_convention" not in cache.columns:
+                cache["phi_convention"] = "Gepard BMK direct"
+                augmented_cache = True
+            #endif
+
+            if augmented_cache:
+                cache.to_csv(cache_path, index=False)
+                print(
+                    "[CLAS6 KM15] Loaded legacy physics cache and "
+                    f"backfilled phi metadata without reevaluation: {cache_path}"
+                )
+            else:
+                print(f"[CLAS6 KM15] Loaded cache: {cache_path}")
+            #endif
+
             outdf = df.copy()
             for c in cache_cols:
                 if c != "_row":
                     outdf[c] = cache[c].to_numpy()
                 #endif
             #endfor
-            print(f"[CLAS6 KM15] Loaded cache: {cache_path}")
             return outdf
         #endif
     #endif
@@ -1660,6 +1691,15 @@ def evaluate_km15_clas6_dataframe(df: pd.DataFrame,
     #endif
 
     km = pd.DataFrame(rows).sort_values("_row").reset_index(drop=True)
+
+    missing = [c for c in cache_cols if c not in km.columns]
+    if missing:
+        raise RuntimeError(
+            "Internal CLAS6 KM15 evaluator/cache schema mismatch; "
+            f"missing columns: {missing}"
+        )
+    #endif
+
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     km.to_csv(cache_path, index=False)
 
