@@ -172,6 +172,15 @@ MP2 = MP * MP
 MU_P = 2.79284734463       # proton magnetic moment
 KAPPA_P = MU_P - 1.0
 
+# Neutron elastic constants.  The neutron electric "radius" is a mean-square
+# charge radius because GE_n(0)=0; it is therefore reported as <r_E,n^2> in
+# fm^2 rather than as a positive square-root radius.
+MU_N = -1.91304273
+KAPPA_N = MU_N
+DEFAULT_NDVCS_UNPOLARIZED = "import/ndvcs_clas12_preliminary_unpolarized.txt"
+DEFAULT_NDVCS_EBEAM = 10.45
+
+
 A1_BERNAUER_Q2_MIN = 3.0e-3
 PRAD_Q2_MIN = 2.0e-4
 GLOBAL_SCALE_FRAC = 0.0476
@@ -11462,6 +11471,549 @@ def run_clas6_validation(args, return_results: bool = False):
 # -----------------------------------------------------------------------------
 # CLI / main
 # -----------------------------------------------------------------------------
+
+def load_ndvcs_preliminary_unpolarized(path: Path) -> pd.DataFrame:
+    """
+    Load the 72 preliminary CLAS12 neutron-DVCS unpolarized points from
+    Tables A.1-A.9 of the analysis note.
+
+    The import file preserves the note's pb/GeV^4 values and also carries
+    convenience nb/GeV^4 columns.  Internally this script uses nb/GeV^4, as in
+    the existing Gepard-based proton workflow.
+    """
+    names = [
+        "kin_bin", "phi_deg", "Q2_GeV2", "xB", "t_abs_GeV2",
+        "xs_pb_GeV4", "stat_pb_GeV4", "sys_pb_GeV4",
+        "xs_nb_GeV4", "stat_nb_GeV4", "sys_nb_GeV4",
+    ]
+    data = pd.read_csv(
+        path,
+        sep=r"\s+",
+        comment="#",
+        names=names,
+        engine="python",
+    )
+    if len(data) != 72:
+        raise RuntimeError(
+            f"Expected 72 unpolarized neutron-DVCS points in {path}, "
+            f"found {len(data)}."
+        )
+    #endif
+
+    out = pd.DataFrame({
+        "kin_bin": data["kin_bin"].astype(int),
+        "phi": np.deg2rad(data["phi_deg"].to_numpy(float)),
+        "phi_deg": data["phi_deg"].to_numpy(float),
+        "Q2": data["Q2_GeV2"].to_numpy(float),
+        "xB": data["xB"].to_numpy(float),
+        "t_abs": data["t_abs_GeV2"].to_numpy(float),
+        "xs": data["xs_nb_GeV4"].to_numpy(float),
+        "stat": data["stat_nb_GeV4"].to_numpy(float),
+        "sys": data["sys_nb_GeV4"].to_numpy(float),
+    })
+    out["t"] = -out["t_abs"]
+    return out
+#enddef
+
+
+def make_gepard_neutron_point(g, xB: float, Q2: float, t_abs: float,
+                              phi_deg: float, ebeam: float):
+    """Construct a Trento-convention unpolarized e n -> e n gamma point."""
+    pt = g.DataPoint(
+        xB=float(xB),
+        t=-abs(float(t_abs)),
+        Q2=float(Q2),
+        phi=math.radians(float(phi_deg)),
+        observable="XS",
+        frame="trento",
+        process="en2engamma",
+        exptype="fixed target",
+        in1energy=float(ebeam),
+        in1charge=-1,
+        in1polarization=0,
+        in2particle="n",
+    )
+    pt.prepare()
+    return pt
+#enddef
+
+
+def evaluate_km15_neutron_point(
+        args: Tuple[int, float, float, float, float, float]) -> Dict[str, float]:
+    """
+    Evaluate KM15/Gepard for a neutron point and build the exact BH quadratic.
+
+    Gepard's KellyEFF provides neutron F1/F2 when in2particle == "n".  KM15 is
+    used here only as an exploratory BH-purity classifier; the neutron CFF
+    content of KM15 was not fitted to these preliminary CLAS12 neutron data.
+    """
+    idx, xB, Q2, t_abs, phi_deg, ebeam = args
+    try:
+        import gepard as g
+        from gepard.fits import th_KM15
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not import gepard/KM15. Activate the same Python "
+            "environment used for the proton analysis."
+        ) from exc
+    #endtry
+
+    th = th_KM15
+    pt = make_gepard_neutron_point(g, xB, Q2, t_abs, phi_deg, ebeam)
+
+    pref = float(th.PreFacSigma(pt))
+    sigma_bh = pref * float(th.TBH2unp(pt))
+    sigma_int = pref * float(th.TINTunp(pt))
+    sigma_dvcs = pref * float(th.TDVCS2unp(pt))
+    sigma_ep = sigma_bh + sigma_int + sigma_dvcs
+    sigma_predict = float(th.predict(pt))
+    ep_relerr = abs(sigma_ep - sigma_predict) / max(abs(sigma_predict), 1e-30)
+
+    model = th.m
+    try:
+        old_f1, old_f2 = _set_eff_basis(model, 1.0, 0.0)
+        A = pref * float(th.TBH2unp(pt))
+        model.F1 = lambda p: 0.0
+        model.F2 = lambda p: 1.0
+        C = pref * float(th.TBH2unp(pt))
+        model.F1 = lambda p: 1.0
+        model.F2 = lambda p: 1.0
+        one_one = pref * float(th.TBH2unp(pt))
+        B = one_one - A - C
+    finally:
+        _restore_eff(model, old_f1, old_f2)
+    #endtry
+
+    f1_nom = float(model.F1(pt))
+    f2_nom = float(model.F2(pt))
+    sigma_bh_reco = A * f1_nom**2 + B * f1_nom * f2_nom + C * f2_nom**2
+    quad_relerr = abs(sigma_bh_reco - sigma_bh) / max(abs(sigma_bh), 1e-30)
+
+    rbh = sigma_bh / sigma_ep if sigma_ep != 0.0 else np.nan
+    return {
+        "_row": int(idx),
+        "km15_ep": sigma_ep,
+        "km15_bh": sigma_bh,
+        "km15_dvcs": sigma_dvcs,
+        "km15_int": sigma_int,
+        "R_BH": rbh,
+        "bh_delta": abs(1.0 - rbh) if np.isfinite(rbh) else np.nan,
+        "bh_A": A,
+        "bh_B": B,
+        "bh_C": C,
+        "bh_quad_relerr": quad_relerr,
+        "km15_F1": f1_nom,
+        "km15_F2": f2_nom,
+        "km15_ep_predict": sigma_predict,
+        "km15_ep_decomp_relerr": ep_relerr,
+    }
+#enddef
+
+
+def evaluate_km15_neutron_dataframe(
+        df: pd.DataFrame,
+        ebeam: float,
+        workers: int,
+        cache_path: Path,
+        force: bool = False) -> pd.DataFrame:
+    """Evaluate/cache KM15 neutron EP and exact BH coefficients for all points."""
+    cache_cols = [
+        "_row", "km15_ep", "km15_bh", "km15_dvcs", "km15_int",
+        "R_BH", "bh_delta", "bh_A", "bh_B", "bh_C",
+        "bh_quad_relerr", "km15_F1", "km15_F2",
+        "km15_ep_predict", "km15_ep_decomp_relerr",
+    ]
+    if cache_path.exists() and not force:
+        cached = pd.read_csv(cache_path)
+        if len(cached) == len(df) and all(c in cached for c in cache_cols):
+            out = df.reset_index(drop=True).copy()
+            for col in cache_cols:
+                if col != "_row":
+                    out[col] = cached[col].to_numpy()
+                #endif
+            #endfor
+            return out
+        #endif
+    #endif
+
+    tasks = [
+        (
+            i,
+            float(row.xB),
+            float(row.Q2),
+            float(row.t_abs),
+            float(row.phi_deg),
+            float(ebeam),
+        )
+        for i, row in df.reset_index(drop=True).iterrows()
+    ]
+    if int(workers) <= 1:
+        rows = [evaluate_km15_neutron_point(task) for task in tasks]
+    else:
+        with ProcessPoolExecutor(max_workers=int(workers)) as ex:
+            rows = list(ex.map(evaluate_km15_neutron_point, tasks, chunksize=8))
+        #endwith
+    #endif
+
+    evaluated = pd.DataFrame(rows).sort_values("_row")
+    out = df.reset_index(drop=True).copy()
+    for col in cache_cols:
+        if col != "_row":
+            out[col] = evaluated[col].to_numpy()
+        #endif
+    #endfor
+
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    evaluated.to_csv(cache_path, index=False)
+    return out
+#enddef
+
+
+def neutron_atac_ge(q: np.ndarray, A: float, B: float, C: float) -> np.ndarray:
+    """
+    Atac et al. (Nature Communications 12, 1759 (2021)) neutron GE form:
+
+      GE_n(Q2) = (1 + Q2/A)^(-2) * B*tau/(1 + C*tau).
+
+    B controls the Q2->0 slope and therefore <r_E,n^2>.
+    """
+    q = np.asarray(q, dtype=float)
+    tau = q / (4.0 * MP2)
+    return (1.0 + q / float(A))**(-2) * (float(B) * tau) / (
+        1.0 + float(C) * tau
+    )
+#enddef
+
+
+def neutron_charge_radius_sq_from_atac_B(B: float) -> float:
+    """Return <r_E,n^2> in fm^2 from the Atac-form low-Q2 slope."""
+    slope_gev2 = float(B) / (4.0 * MP2)
+    return -6.0 * slope_gev2 * HBARC**2
+#enddef
+
+
+def fit_neutron_atac_bh(
+        data: pd.DataFrame,
+        magnetic_mode: str = "kelly",
+        bh_systematic_fraction: float = 0.05) -> Dict[str, object]:
+    """
+    Fit neutron BH-dominated cross sections with the Atac GE_n form.
+
+    magnetic_mode="kelly":
+      neutron GM is fixed to Gepard/Kelly.  This is analogous in spirit to the
+      proton Moradi Fit 8: use external magnetic information to isolate the
+      electric slope.
+
+    magnetic_mode="ip1":
+      GM_n/mu_n = 1/(1+m1*Q2) is fitted simultaneously, yielding an exploratory
+      neutron magnetic radius as well.
+    """
+    if magnetic_mode not in {"kelly", "ip1"}:
+        raise ValueError(f"unknown neutron magnetic_mode={magnetic_mode}")
+    #endif
+
+    q = data["t_abs"].to_numpy(float)
+    tau = q / (4.0 * MP2)
+    inv = 1.0 / (1.0 + tau)
+    y = data["xs"].to_numpy(float)
+    stat = data["stat"].to_numpy(float)
+    sys = data["sys"].to_numpy(float)
+    err = np.sqrt(stat**2 + sys**2 + (float(bh_systematic_fraction) * y)**2)
+
+    bh_A = data["bh_A"].to_numpy(float)
+    bh_B = data["bh_B"].to_numpy(float)
+    bh_C = data["bh_C"].to_numpy(float)
+
+    # Nominal Gepard neutron EFF is Kelly.  Recover Sachs GM from F1/F2.
+    f1_kelly = data["km15_F1"].to_numpy(float)
+    f2_kelly = data["km15_F2"].to_numpy(float)
+    gm_kelly = f1_kelly + f2_kelly
+
+    names = ["A_GE", "B_GE", "C_GE"]
+    p0 = [0.505, 1.655, 0.909]
+    if magnetic_mode == "ip1":
+        names.append("m1_GM")
+        p0.append(
+            sachs_first_coefficient_from_radius(
+                SACHS_INITIAL_RADIUS_FM, "IP1"
+            )
+        )
+    #endif
+
+    def chi2(*values):
+        A_GE = float(values[0])
+        B_GE = float(values[1])
+        C_GE = float(values[2])
+        ge = neutron_atac_ge(q, A_GE, B_GE, C_GE)
+
+        if magnetic_mode == "kelly":
+            gm = gm_kelly
+        else:
+            gm = MU_N * sachs_family_value(
+                q, np.asarray([values[3]], dtype=float), "IP1"
+            )
+        #endif
+
+        f1 = (ge + tau * gm) * inv
+        f2 = (gm - ge) * inv
+        pred = bh_from_f1f2(bh_A, bh_B, bh_C, f1, f2)
+        pull = (pred - y) / err
+        return float(np.dot(pull, pull))
+    #enddef
+
+    m = Minuit(chi2, *p0, name=tuple(names))
+    m.errordef = Minuit.LEAST_SQUARES
+
+    # Broad numerical guards.  The Nature fit is near A~0.5, B~1.7, C~0.9;
+    # these limits are intentionally much wider and are not physics priors.
+    m.limits["A_GE"] = (0.05, 10.0)
+    m.limits["B_GE"] = (-10.0, 10.0)
+    m.limits["C_GE"] = (-20.0, 30.0)
+    if magnetic_mode == "ip1":
+        lo = sachs_first_coefficient_from_radius(SACHS_MIN_RADIUS_FM, "IP1")
+        hi = sachs_first_coefficient_from_radius(SACHS_MAX_RADIUS_FM, "IP1")
+        m.limits["m1_GM"] = (min(lo, hi), max(lo, hi))
+    #endif
+
+    m.migrad()
+    m.hesse()
+
+    pars = np.asarray([float(m.values[n]) for n in names], dtype=float)
+    cov = np.full((len(names), len(names)), np.nan)
+    if m.covariance is not None:
+        for i, ni in enumerate(names):
+            for j, nj in enumerate(names):
+                cov[i, j] = float(m.covariance[ni, nj])
+            #endfor
+        #endfor
+    #endif
+
+    rn2 = neutron_charge_radius_sq_from_atac_B(pars[1])
+    rn2_err = np.nan
+    if np.isfinite(cov[1, 1]) and cov[1, 1] >= 0.0:
+        scale = 6.0 * HBARC**2 / (4.0 * MP2)
+        rn2_err = scale * math.sqrt(cov[1, 1])
+    #endif
+
+    rM = np.nan
+    rM_err = np.nan
+    if magnetic_mode == "ip1":
+        def rM_fun(p):
+            return sachs_family_radius(np.asarray([p[3]], dtype=float), "IP1")
+        #enddef
+        rM, rM_err = propagate_scalar(rM_fun, pars, cov)
+    #endif
+
+    ndof = max(1, len(data) - len(names))
+    return {
+        "magnetic_mode": magnetic_mode,
+        "N": int(len(data)),
+        "n_parameters": int(len(names)),
+        "chi2": float(m.fval),
+        "ndof": int(ndof),
+        "chi2_ndof": float(m.fval / ndof),
+        "valid": bool(m.valid and np.isfinite(rn2)),
+        "accurate": bool(m.accurate),
+        "rn2_fm2": float(rn2),
+        "rn2_fit_err_fm2": float(rn2_err),
+        "rM_fm": float(rM),
+        "rM_fit_err_fm": float(rM_err),
+        "A_GE_GeV2": float(pars[0]),
+        "B_GE": float(pars[1]),
+        "C_GE": float(pars[2]),
+        "m1_GM_GeVminus2": (
+            float(pars[3]) if magnetic_mode == "ip1" else np.nan
+        ),
+    }
+#enddef
+
+
+def run_neutron_analysis(args) -> int:
+    """
+    Exploratory neutron-radius extension.
+
+    This intentionally does not reuse the proton closure machinery verbatim:
+    GE_p(0)=1 whereas GE_n(0)=0, so the proton normalized-Sachs radius families
+    are mathematically inappropriate for the neutron electric radius.  The
+    neutron branch instead fits <r_E,n^2> through the low-Q2 slope of the Atac
+    GE_n functional form and optionally fits GM_n with a normalized IP1 shape.
+    """
+    input_path = Path(args.neutron_file)
+    outdir = Path(args.outdir) / "neutron_clas12_preliminary"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    data = load_ndvcs_preliminary_unpolarized(input_path)
+    evaluated = evaluate_km15_neutron_dataframe(
+        data,
+        ebeam=float(args.neutron_ebeam),
+        workers=int(args.workers),
+        cache_path=outdir / "km15_neutron_bh_decomposition.csv",
+        force=bool(args.force_km15),
+    )
+
+    # Save the full evaluated table in both the script's nb units and the
+    # original-note pb units for easy cross-checking.
+    evaluated["xs_pb_GeV4"] = 1000.0 * evaluated["xs"]
+    evaluated["stat_pb_GeV4"] = 1000.0 * evaluated["stat"]
+    evaluated["sys_pb_GeV4"] = 1000.0 * evaluated["sys"]
+    evaluated.to_csv(outdir / "neutron_evaluated_points.csv", index=False)
+
+    print(
+        "[neutron] preliminary CLAS12 nDVCS: "
+        f"N={len(evaluated)}, Ebeam={args.neutron_ebeam:.3f} GeV"
+    )
+    print(
+        "[neutron] KM15/Gepard decomposition checks: "
+        f"max EP relerr={np.nanmax(evaluated['km15_ep_decomp_relerr']):.3e}, "
+        f"max BH quadratic relerr={np.nanmax(evaluated['bh_quad_relerr']):.3e}"
+    )
+
+    finite_delta = evaluated.loc[
+        np.isfinite(evaluated["bh_delta"]), "bh_delta"
+    ].to_numpy(float)
+    thresholds = [
+        0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.10,
+        0.15, 0.20, 0.30, 0.50, 0.75, 1.00,
+    ]
+    if len(finite_delta):
+        thresholds.append(float(np.max(finite_delta) * 1.001))
+    #endif
+    thresholds = sorted(set(thresholds))
+
+    scan_rows = []
+    for threshold in thresholds:
+        selected = evaluated.loc[
+            np.isfinite(evaluated["bh_delta"])
+            & (evaluated["bh_delta"] <= float(threshold))
+        ].copy()
+        if len(selected) < 8:
+            continue
+        #endif
+
+        for mode in ["kelly", "ip1"]:
+            fit = fit_neutron_atac_bh(
+                selected,
+                magnetic_mode=mode,
+                # Keep the Moradi-style additional BH-method uncertainty fixed
+                # at 5% while the selection threshold is scanned.  Otherwise a
+                # 100% threshold would artificially give every point a 100%
+                # uncertainty and conceal DVCS-contamination effects.
+                bh_systematic_fraction=0.05,
+            )
+            fit["bh_threshold"] = float(threshold)
+            fit["bh_threshold_percent"] = 100.0 * float(threshold)
+            fit["max_selected_delta"] = float(
+                np.nanmax(selected["bh_delta"].to_numpy(float))
+            )
+            scan_rows.append(fit)
+            print(
+                f"[neutron] threshold={100.0*threshold:7.2f}% "
+                f"mode={mode:5s} N={fit['N']:2d} "
+                f"chi2/ndof={fit['chi2_ndof']:.3f} "
+                f"<rn^2>={fit['rn2_fm2']:+.4f}+/-"
+                f"{fit['rn2_fit_err_fm2']:.4f} fm^2 "
+                + (
+                    f"rM={fit['rM_fm']:.4f}+/-{fit['rM_fit_err_fm']:.4f} fm"
+                    if mode == "ip1" else
+                    "GM=Kelly"
+                )
+            )
+        #endfor
+    #endfor
+
+    scan = pd.DataFrame(scan_rows)
+    scan.to_csv(outdir / "neutron_radius_threshold_scan.csv", index=False)
+
+    # Nominal 5% summary.
+    nominal = scan.loc[np.isclose(scan["bh_threshold"], 0.05)].copy()
+    nominal.to_csv(outdir / "neutron_radius_nominal_5pct.csv", index=False)
+
+    # Reference from Atac et al. Nature Communications 12, 1759 (2021).
+    reference = pd.DataFrame([{
+        "source": "Atac et al., Nature Communications 12, 1759 (2021)",
+        "rn2_fm2": -0.110,
+        "rn2_err_fm2": 0.008,
+        "A_GeV2": 0.505,
+        "A_err_GeV2": 0.079,
+        "B": 1.655,
+        "B_err": 0.126,
+        "C": 0.909,
+        "C_err": 0.583,
+    }])
+    reference.to_csv(outdir / "neutron_charge_radius_reference_atac2021.csv", index=False)
+
+    if len(scan):
+        for mode, label in [
+            ("kelly", r"$G_M^n$ fixed to Kelly"),
+            ("ip1", r"$G_M^n$ fitted (IP1)"),
+        ]:
+            part = scan.loc[scan["magnetic_mode"] == mode].sort_values(
+                "bh_threshold_percent"
+            )
+            if not len(part):
+                continue
+            #endif
+            fig, ax = plt.subplots(figsize=(7.5, 5.0))
+            ax.errorbar(
+                part["bh_threshold_percent"],
+                part["rn2_fm2"],
+                yerr=part["rn2_fit_err_fm2"],
+                marker="o",
+                linestyle="none",
+                capsize=2,
+                label=label,
+            )
+            ax.axhline(-0.110, linewidth=1.0, linestyle="--",
+                       label=r"Atac et al. $-0.110$ fm$^2$")
+            ax.axvline(5.0, linewidth=0.8, linestyle=":")
+            ax.set_xscale("log")
+            ax.set_xlabel(r"$|1-R_{\rm BH}^{\rm KM15}|$ threshold (%)")
+            ax.set_ylabel(r"$\langle r_{E,n}^2\rangle$ [fm$^2$]")
+            ax.set_title("Preliminary CLAS12 neutron charge-radius threshold scan")
+            ax.grid(alpha=0.2)
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(
+                outdir / f"01_neutron_rn2_threshold_{mode}.png", dpi=180
+            )
+            plt.close(fig)
+        #endfor
+
+        ip1 = scan.loc[scan["magnetic_mode"] == "ip1"].sort_values(
+            "bh_threshold_percent"
+        )
+        if len(ip1):
+            fig, ax = plt.subplots(figsize=(7.5, 5.0))
+            ax.errorbar(
+                ip1["bh_threshold_percent"],
+                ip1["rM_fm"],
+                yerr=ip1["rM_fit_err_fm"],
+                marker="o",
+                linestyle="none",
+                capsize=2,
+            )
+            ax.axvline(5.0, linewidth=0.8, linestyle=":")
+            ax.set_xscale("log")
+            ax.set_xlabel(r"$|1-R_{\rm BH}^{\rm KM15}|$ threshold (%)")
+            ax.set_ylabel(r"$r_{M,n}$ [fm]")
+            ax.set_title("Exploratory CLAS12 neutron magnetic-radius threshold scan")
+            ax.grid(alpha=0.2)
+            fig.tight_layout()
+            fig.savefig(outdir / "02_neutron_rM_threshold_ip1.png", dpi=180)
+            plt.close(fig)
+        #endif
+    #endif
+
+    print(
+        "[neutron] NOTE: this is exploratory.  The preliminary analysis note "
+        "states that radiative corrections were not yet included, and its "
+        "bin-integral correction uses a BH calculation."
+    )
+    print(f"[neutron] outputs -> {outdir}")
+    return 0
+#enddef
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -11656,6 +12208,33 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=CLAS6_GEPARD_DATASET_ID,
         help="Gepard dataset ID for CLAS6 validation (paper data: 98)",
+    )
+    p.add_argument(
+        "--neutron",
+        action="store_true",
+        help=(
+            "Run the exploratory CLAS12 neutron-DVCS radius workflow instead "
+            "of the proton analysis.  This uses the preliminary unpolarized "
+            "Tables A.1-A.9 and neutron-specific GE_n/GM_n parameterizations."
+        ),
+    )
+    p.add_argument(
+        "--neutron-file",
+        default=DEFAULT_NDVCS_UNPOLARIZED,
+        help=(
+            "Machine-readable preliminary CLAS12 neutron-DVCS unpolarized "
+            "cross-section table; default: " + DEFAULT_NDVCS_UNPOLARIZED
+        ),
+    )
+    p.add_argument(
+        "--neutron-ebeam",
+        type=float,
+        default=DEFAULT_NDVCS_EBEAM,
+        help=(
+            "Effective beam energy in GeV for the combined preliminary "
+            "neutron table (default: 10.45 GeV, as quoted approximately in "
+            "the analysis note)."
+        ),
     )
     p.add_argument(
         "--csv",
@@ -12061,6 +12640,10 @@ def main() -> int:
         raise RuntimeError(
             "iminuit is required. Install it in the active Python environment."
         )
+    #endif
+
+    if args.neutron:
+        return run_neutron_analysis(args)
     #endif
 
     if args.only_pass2:
