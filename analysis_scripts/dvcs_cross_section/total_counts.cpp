@@ -3189,6 +3189,202 @@ static std::map<std::string, TTree*> filter_nobkg_tree_map(
     return out;
 }
 
+
+// -----------------------------------------------------------------------------
+// Compact analysis-note raw-yield summaries
+// -----------------------------------------------------------------------------
+
+static double sum_hel_counts(const HelCounts& h) {
+    return h.unpol + h.pos + h.neg;
+}
+
+static double sum_row_counts_all(const RowCounts& rc) {
+    double s = 0.0;
+    for (const auto& kv : rc) s += sum_hel_counts(kv.second);
+    return s;
+}
+
+static int populated_row_count(const RowCounts& rc) {
+    int n = 0;
+    for (const auto& kv : rc) if (sum_hel_counts(kv.second) > 0.0) ++n;
+    return n;
+}
+
+static const std::vector<std::string>& note_period_order() {
+    static const std::vector<std::string> p = {
+        "Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"
+    };
+    return p;
+}
+
+static const std::array<int,3>& note_topology_colors() {
+    static const std::array<int,3> c = {{kBlue+1, kRed+1, kGreen+2}};
+    return c;
+}
+
+static const std::array<int,5>& note_period_colors() {
+    static const std::array<int,5> c = {{kBlue+1, kRed+1, kGreen+2, kMagenta+1, kOrange+7}};
+    return c;
+}
+
+static std::string note_channel_token(const ChannelConfig& cfg) {
+    if (cfg.channel == Channel::DVCS) return "dvcs";
+    if (cfg.channel == Channel::EPPI0) return "eppi0";
+    return "other";
+}
+
+static std::string note_channel_axis_label(const ChannelConfig& cfg) {
+    if (cfg.channel == Channel::DVCS) return "e'p'#gamma candidate events";
+    if (cfg.channel == Channel::EPPI0) return "e'p'#pi^{0} events";
+    return "events";
+}
+
+static void write_note_yield_table(const CountCollection& C,
+                                   const std::string& outdir) {
+    gSystem->mkdir(outdir.c_str(), true);
+    const std::string token = note_channel_token(C.work_cfg.channel_cfg);
+    const std::string path = outdir + "/raw_yield_summary_" + token + ".csv";
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        std::cerr << "[total_counts] WARNING: cannot write analysis-note summary: " << path << std::endl;
+        return;
+    }
+    out << "period,topology,raw_count,period_fraction_percent,populated_4d_bins\n";
+    for (const std::string& period : note_period_order()) {
+        auto ip = C.topo_by_period.find(period);
+        if (ip == C.topo_by_period.end()) continue;
+        double total = 0.0;
+        for (const std::string& topo : diagnostic_topology_order()) {
+            auto it = ip->second.find(topo);
+            if (it != ip->second.end()) total += sum_row_counts_all(it->second);
+        }
+        for (const std::string& topo : diagnostic_topology_order()) {
+            auto it = ip->second.find(topo);
+            const double n = (it == ip->second.end()) ? 0.0 : sum_row_counts_all(it->second);
+            const int populated = (it == ip->second.end()) ? 0 : populated_row_count(it->second);
+            out << period << ',' << topo << ',' << std::fixed << std::setprecision(0) << n << ','
+                << std::setprecision(3) << (total > 0.0 ? 100.0*n/total : 0.0) << ',' << populated << '\n';
+        }
+        out << period << ",ALL," << std::fixed << std::setprecision(0) << total << ",100.000,";
+        auto ittot=C.total_by_period.find(period);
+        out << (ittot==C.total_by_period.end()?0:populated_row_count(ittot->second)) << '\n';
+    }
+    std::cout << "[total_counts] Analysis-note raw-yield table written to: " << path << std::endl;
+}
+
+static void make_note_yield_summary_plot(const CountCollection& C,
+                                         const std::vector<RowBin>& rows,
+                                         const std::string& outdir) {
+    const ChannelConfig& cfg = C.work_cfg.channel_cfg;
+    gSystem->mkdir(outdir.c_str(), true);
+    gStyle->SetOptStat(0);
+
+    // Unique xB bins in production order.
+    std::vector<AxisBin> xbins;
+    for (const RowBin& r : rows) {
+        if (!r.valid) continue;
+        AxisBin b{r.xBmin,r.xBmax};
+        auto it=std::find_if(xbins.begin(),xbins.end(),[&](const AxisBin& z){return z.min==b.min&&z.max==b.max;});
+        if(it==xbins.end()) xbins.push_back(b);
+    }
+    std::sort(xbins.begin(),xbins.end(),[](const AxisBin&a,const AxisBin&b){return a.min<b.min;});
+
+    TCanvas c(("c_note_yields_"+note_channel_token(cfg)).c_str(),"",1600,720);
+    c.Divide(2,1,0.015,0.015);
+
+    // Left: grouped topology totals for each period.
+    c.cd(1);
+    gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.18); gPad->SetTopMargin(0.08);
+    const int np = static_cast<int>(note_period_order().size());
+    double ymax=0.0;
+    std::array<std::vector<double>,3> topo_totals;
+    for (int it=0;it<3;++it) topo_totals[it].assign(np,0.0);
+    for(int iper=0;iper<np;++iper){
+        auto ip=C.topo_by_period.find(note_period_order()[iper]);
+        if(ip==C.topo_by_period.end()) continue;
+        for(int it=0;it<3;++it){
+            auto ir=ip->second.find(diagnostic_topology_order()[it]);
+            if(ir!=ip->second.end()) topo_totals[it][iper]=sum_row_counts_all(ir->second);
+            ymax=std::max(ymax,topo_totals[it][iper]);
+        }
+    }
+    TH1F frame("frame_note_period_totals","",np,0.5,np+0.5);
+    frame.SetMinimum(0.0); frame.SetMaximum(ymax>0?1.28*ymax:1.0);
+    frame.GetYaxis()->SetTitle(("raw " + note_channel_axis_label(cfg)).c_str());
+    frame.GetXaxis()->SetTitle("run period");
+    for(int i=0;i<np;++i) frame.GetXaxis()->SetBinLabel(i+1,note_period_order()[i].c_str());
+    frame.GetXaxis()->SetLabelSize(0.045); frame.GetYaxis()->SetLabelSize(0.042);
+    frame.GetXaxis()->SetTitleSize(0.050); frame.GetYaxis()->SetTitleSize(0.048);
+    frame.GetYaxis()->SetTitleOffset(1.45); frame.Draw("AXIS");
+    TLegend leg1(0.54,0.73,0.93,0.91); leg1.SetBorderSize(0); leg1.SetFillStyle(0); leg1.SetTextSize(0.040);
+    std::vector<TH1F*> bars;
+    for(int it=0;it<3;++it){
+        TH1F* h=new TH1F(("h_note_topo_"+std::to_string(it)).c_str(),"",np,0.5,np+0.5);
+        h->SetDirectory(nullptr); h->SetFillColor(note_topology_colors()[it]); h->SetLineColor(note_topology_colors()[it]);
+        h->SetBarWidth(0.24); h->SetBarOffset(0.12+0.27*it);
+        for(int iper=0;iper<np;++iper) h->SetBinContent(iper+1,topo_totals[it][iper]);
+        h->Draw("BAR SAME");
+        std::string lbl=topo_label_for_csv(diagnostic_topology_order()[it]);
+        leg1.AddEntry(h,lbl.c_str(),"f"); bars.push_back(h);
+    }
+    leg1.Draw();
+
+    // Right: raw yield projected onto xB, summed over Q2, -t, phi, and topology.
+    c.cd(2);
+    gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.13); gPad->SetTopMargin(0.08);
+    double yprojmax=0.0;
+    std::array<std::vector<double>,5> xs,ys;
+    for(int iper=0;iper<np;++iper){
+        xs[iper].resize(xbins.size()); ys[iper].assign(xbins.size(),0.0);
+        auto irc=C.total_by_period.find(note_period_order()[iper]);
+        for(size_t ix=0;ix<xbins.size();++ix) xs[iper][ix]=0.5*(xbins[ix].min+xbins[ix].max);
+        if(irc==C.total_by_period.end()) continue;
+        for(const auto& kv:irc->second){
+            const int r=kv.first; if(r<0||r>=static_cast<int>(rows.size())||!rows[r].valid) continue;
+            for(size_t ix=0;ix<xbins.size();++ix){
+                if(rows[r].xBmin==xbins[ix].min && rows[r].xBmax==xbins[ix].max){ ys[iper][ix]+=sum_hel_counts(kv.second); break; }
+            }
+        }
+        for(double v:ys[iper]) yprojmax=std::max(yprojmax,v);
+    }
+    const double xmin=xbins.empty()?0.0:xbins.front().min;
+    const double xmax=xbins.empty()?1.0:xbins.back().max;
+    TH1F frame2("frame_note_xb_projection","",100,xmin,xmax);
+    frame2.SetMinimum(0.0); frame2.SetMaximum(yprojmax>0?1.25*yprojmax:1.0);
+    frame2.GetXaxis()->SetTitle("x_{B}"); frame2.GetYaxis()->SetTitle(("raw " + note_channel_axis_label(cfg)).c_str());
+    frame2.GetXaxis()->SetTitleSize(0.050); frame2.GetYaxis()->SetTitleSize(0.048); frame2.GetYaxis()->SetTitleOffset(1.45);
+    frame2.GetXaxis()->SetLabelSize(0.042); frame2.GetYaxis()->SetLabelSize(0.042); frame2.Draw("AXIS");
+    TLegend leg2(0.58,0.67,0.93,0.91); leg2.SetBorderSize(0); leg2.SetFillStyle(0); leg2.SetTextSize(0.038);
+    std::vector<TGraphErrors*> graphs;
+    for(int iper=0;iper<np;++iper){
+        if(xs[iper].empty()) continue;
+        TGraphErrors* g=new TGraphErrors(static_cast<int>(xs[iper].size()));
+        for(int ix=0;ix<static_cast<int>(xs[iper].size());++ix){ g->SetPoint(ix,xs[iper][ix],ys[iper][ix]); g->SetPointError(ix,0.0,std::sqrt(std::max(0.0,ys[iper][ix]))); }
+        g->SetLineColor(note_period_colors()[iper]); g->SetMarkerColor(note_period_colors()[iper]); g->SetMarkerStyle(20+iper); g->SetMarkerSize(0.9); g->SetLineWidth(2);
+        g->Draw("LP SAME"); leg2.AddEntry(g,note_period_order()[iper].c_str(),"lp"); graphs.push_back(g);
+    }
+    leg2.Draw();
+
+    const std::string path=outdir+"/raw_yield_summary_"+note_channel_token(cfg)+".png";
+    c.SaveAs(path.c_str());
+    std::cout << "[total_counts] Analysis-note raw-yield plot written to: " << path << std::endl;
+    for(TH1F* h:bars) delete h;
+    for(TGraphErrors* g:graphs) delete g;
+}
+
+static void write_analysis_note_raw_yield_outputs(const std::map<std::string, CountCollection>& collections,
+                                                  const std::vector<RowBin>& rows,
+                                                  const std::string& out_root_dir) {
+    const std::string outdir=normalize_total_counts_root(out_root_dir)+"/analysis_note";
+    for(const auto& kv:collections){
+        const CountCollection& C=kv.second;
+        if(C.work_cfg.sample_kind!=SampleKind::DATA) continue;
+        if(C.work_cfg.channel_cfg.channel!=Channel::DVCS && C.work_cfg.channel_cfg.channel!=Channel::EPPI0) continue;
+        write_note_yield_table(C,outdir);
+        make_note_yield_summary_plot(C,rows,outdir);
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Public entry
 // -----------------------------------------------------------------------------
@@ -3391,6 +3587,10 @@ bool update_total_counts_csv(const std::string& csv_path,
 
         std::cout << "[total_counts] Updated data and MC count columns in: "
                   << csv_path << std::endl;
+
+        if (options.make_note_outputs) {
+            write_analysis_note_raw_yield_outputs(collections, rows, out_root_dir);
+        }
 
         for (const auto& kv : collections) {
             const CountCollection& C = kv.second;

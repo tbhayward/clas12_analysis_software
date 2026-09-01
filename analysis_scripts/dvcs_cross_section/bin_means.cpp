@@ -10,6 +10,14 @@
 
 #include <TTree.h>
 #include <TROOT.h>          // ROOT::EnableThreadSafety
+#include <TCanvas.h>
+#include <TGraph.h>
+#include <TH1D.h>
+#include <TLegend.h>
+#include <TLine.h>
+#include <TLatex.h>
+#include <TStyle.h>
+#include <TSystem.h>
 
 #include <nlohmann/json.hpp>
 
@@ -1059,9 +1067,165 @@ static void fill_combined_groups(CSV& csv,
                  " skipped=" + std::to_string(skip_106));
 }
 
+
+// ---------------- analysis-note diagnostics ----------------
+static inline bool finite_cell(const std::string& s, double& value) {
+    if (s.empty()) return false;
+    char* end = nullptr;
+    value = std::strtod(s.c_str(), &end);
+    return end != s.c_str() && std::isfinite(value);
+}
+
+static inline double interval_center_for_phi(double lo, double hi) {
+    if (hi > lo) return 0.5 * (lo + hi);
+    // Wrapped interval, e.g. 330--30 degrees.
+    double width = (360.0 - lo) + hi;
+    double c = lo + 0.5 * width;
+    if (c >= 360.0) c -= 360.0;
+    return c;
+}
+
+static void write_analysis_note_bin_means_csv(
+    const CSV& csv,
+    const BinLookup& lookup,
+    const std::unordered_map<std::string, std::unordered_map<int, Accum>>& per_period,
+    const std::string& outdir) {
+
+    gSystem->mkdir(outdir.c_str(), true);
+    const std::string path = outdir + "/kinematic_means_by_bin.csv";
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        std::cerr << "[bin_means] WARNING: cannot write analysis-note CSV: " << path << std::endl;
+        return;
+    }
+
+    const int cx106 = col(csv, col_xBavg("10.6 GeV"));
+    const int cq106 = col(csv, col_Q2avg("10.6 GeV"));
+    const int ct106 = col(csv, col_tavg("10.6 GeV"));
+    const int cp106 = col(csv, col_phiavg("10.6 GeV"));
+    const int ce106 = col(csv, col_e_theta("10.6 GeV"));
+    const int cpr106 = col(csv, col_p_theta("10.6 GeV"));
+    const int cg106 = col(csv, col_g_theta("10.6 GeV"));
+
+    const int cx19 = col(csv, col_xBavg("Sp19 Inb"));
+    const int cq19 = col(csv, col_Q2avg("Sp19 Inb"));
+    const int ct19 = col(csv, col_tavg("Sp19 Inb"));
+    const int cp19 = col(csv, col_phiavg("Sp19 Inb"));
+
+    out << "row,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax,"
+        << "xBavg_10p6,Q2avg_10p6,tavg_10p6,phiavg_10p6,e_theta_10p6,p_theta_10p6,g_theta_10p6,"
+        << "selected_events_10p6,xBavg_sp19,Q2avg_sp19,tavg_sp19,phiavg_sp19,selected_events_sp19\n";
+
+    auto n_for = [&](const std::string& period, int row)->long long {
+        auto ip = per_period.find(period);
+        if (ip == per_period.end()) return 0;
+        auto ir = ip->second.find(row);
+        return (ir == ip->second.end()) ? 0 : ir->second.n;
+    };
+
+    for (int r = 0; r < static_cast<int>(lookup.rows.size()); ++r) {
+        const RowWin& w = lookup.rows[static_cast<std::size_t>(r)];
+        if (!w.valid) continue;
+        const long long n106 = n_for("Fa18 Inb", r) + n_for("Fa18 Out", r) +
+                               n_for("Sp18 Inb", r) + n_for("Sp18 Out", r);
+        const long long n19 = n_for("Sp19 Inb", r);
+        out << r << ',' << w.xBmin << ',' << w.xBmax << ','
+            << w.Q2min << ',' << w.Q2max << ',' << w.tmin << ',' << w.tmax << ','
+            << w.pmin << ',' << w.pmax << ','
+            << csv.rows[r][cx106] << ',' << csv.rows[r][cq106] << ',' << csv.rows[r][ct106] << ',' << csv.rows[r][cp106] << ','
+            << csv.rows[r][ce106] << ',' << csv.rows[r][cpr106] << ',' << csv.rows[r][cg106] << ',' << n106 << ','
+            << csv.rows[r][cx19] << ',' << csv.rows[r][cq19] << ',' << csv.rows[r][ct19] << ',' << csv.rows[r][cp19] << ',' << n19 << '\n';
+    }
+    std::cout << "[bin_means] Analysis-note bin-mean table written to: " << path << std::endl;
+}
+
+static void make_analysis_note_mean_vs_center_plot(const CSV& csv,
+                                                    const BinLookup& lookup,
+                                                    const std::string& outdir) {
+    gSystem->mkdir(outdir.c_str(), true);
+    gStyle->SetOptStat(0);
+
+    const int c_x = col(csv, col_xBavg("10.6 GeV"));
+    const int c_q = col(csv, col_Q2avg("10.6 GeV"));
+    const int c_t = col(csv, col_tavg("10.6 GeV"));
+    const int c_p = col(csv, col_phiavg("10.6 GeV"));
+
+    std::array<std::vector<double>,4> centers, means;
+    for (int r = 0; r < static_cast<int>(lookup.rows.size()); ++r) {
+        const RowWin& w = lookup.rows[static_cast<std::size_t>(r)];
+        if (!w.valid) continue;
+        const std::array<double,4> xcenter = {
+            0.5*(w.xBmin+w.xBmax), 0.5*(w.Q2min+w.Q2max),
+            0.5*(w.tmin+w.tmax), interval_center_for_phi(w.pmin,w.pmax)
+        };
+        const std::array<int,4> cc = {c_x,c_q,c_t,c_p};
+        for (int k=0;k<4;++k) {
+            double m=0.0;
+            if (!finite_cell(csv.rows[r][cc[k]], m)) continue;
+            centers[k].push_back(xcenter[k]);
+            means[k].push_back(m);
+        }
+    }
+
+    TCanvas c("c_note_bin_means", "", 1500, 1200);
+    c.Divide(2,2,0.012,0.012);
+    const std::array<const char*,4> xt = {"bin center x_{B}", "bin center Q^{2} (GeV^{2})", "bin center -t (GeV^{2})", "bin center #phi (deg)"};
+    const std::array<const char*,4> yt = {"#LT x_{B} #GT", "#LT Q^{2} #GT (GeV^{2})", "#LT -t #GT (GeV^{2})", "#LT #phi #GT (deg)"};
+
+    for (int k=0;k<4;++k) {
+        c.cd(k+1);
+        gPad->SetLeftMargin(0.14); gPad->SetBottomMargin(0.13); gPad->SetRightMargin(0.04); gPad->SetTopMargin(0.08);
+        if (centers[k].empty()) continue;
+        double xmin=*std::min_element(centers[k].begin(),centers[k].end());
+        double xmax=*std::max_element(centers[k].begin(),centers[k].end());
+        double ymin=*std::min_element(means[k].begin(),means[k].end());
+        double ymax=*std::max_element(means[k].begin(),means[k].end());
+        double lo=std::min(xmin,ymin), hi=std::max(xmax,ymax), pad=0.06*(hi-lo>0?hi-lo:1.0);
+        TH1D frame((std::string("frame_means_")+std::to_string(k)).c_str(), "", 10, lo-pad, hi+pad);
+        frame.SetMinimum(lo-pad); frame.SetMaximum(hi+pad);
+        frame.GetXaxis()->SetTitle(xt[k]); frame.GetYaxis()->SetTitle(yt[k]);
+        frame.GetXaxis()->SetTitleSize(0.050); frame.GetYaxis()->SetTitleSize(0.050);
+        frame.GetXaxis()->SetLabelSize(0.043); frame.GetYaxis()->SetLabelSize(0.043);
+        frame.DrawCopy("AXIS");
+        TLine diag(lo-pad,lo-pad,hi+pad,hi+pad); diag.SetLineStyle(2); diag.SetLineWidth(2); diag.DrawClone("SAME");
+        TGraph gr(static_cast<int>(centers[k].size()), centers[k].data(), means[k].data());
+        gr.SetMarkerStyle(20); gr.SetMarkerSize(0.55); gr.DrawClone("P SAME");
+    }
+    c.cd(0);
+    const std::string path=outdir+"/kinematic_means_vs_bin_centers.png";
+    c.SaveAs(path.c_str());
+    std::cout << "[bin_means] Analysis-note mean-vs-center plot written to: " << path << std::endl;
+}
+
+static void make_analysis_note_kinematic_coverage_plot(const CSV& csv,
+                                                       const BinLookup& lookup,
+                                                       const std::string& outdir) {
+    gSystem->mkdir(outdir.c_str(), true);
+    const int cx=col(csv,col_xBavg("10.6 GeV"));
+    const int cq=col(csv,col_Q2avg("10.6 GeV"));
+    const int ct=col(csv,col_tavg("10.6 GeV"));
+    std::vector<double> x,q,t;
+    std::set<std::tuple<long long,long long,long long>> seen;
+    for (int r=0;r<static_cast<int>(lookup.rows.size());++r) {
+        const RowWin& w=lookup.rows[static_cast<std::size_t>(r)]; if(!w.valid) continue;
+        double xv,qv,tv; if(!finite_cell(csv.rows[r][cx],xv)||!finite_cell(csv.rows[r][cq],qv)||!finite_cell(csv.rows[r][ct],tv)) continue;
+        auto key=std::make_tuple((long long)std::llround(xv*1e5),(long long)std::llround(qv*1e5),(long long)std::llround(tv*1e5));
+        if(!seen.insert(key).second) continue;
+        x.push_back(xv); q.push_back(qv); t.push_back(tv);
+    }
+    TCanvas c("c_note_coverage","",1500,650); c.Divide(2,1,0.012,0.012);
+    c.cd(1); gPad->SetLeftMargin(0.14); gPad->SetBottomMargin(0.13); gPad->SetRightMargin(0.04); gPad->SetTopMargin(0.08);
+    if(!x.empty()) { TGraph g((int)x.size(),x.data(),q.data()); g.SetTitle(""); g.SetMarkerStyle(20); g.SetMarkerSize(0.65); g.GetXaxis()->SetTitle("#LT x_{B} #GT"); g.GetYaxis()->SetTitle("#LT Q^{2} #GT (GeV^{2})"); g.DrawClone("AP"); }
+    c.cd(2); gPad->SetLeftMargin(0.14); gPad->SetBottomMargin(0.13); gPad->SetRightMargin(0.04); gPad->SetTopMargin(0.08);
+    if(!x.empty()) { TGraph g((int)x.size(),x.data(),t.data()); g.SetTitle(""); g.SetMarkerStyle(20); g.SetMarkerSize(0.65); g.GetXaxis()->SetTitle("#LT x_{B} #GT"); g.GetYaxis()->SetTitle("#LT -t #GT (GeV^{2})"); g.DrawClone("AP"); }
+    const std::string path=outdir+"/kinematic_mean_coverage.png"; c.SaveAs(path.c_str());
+    std::cout << "[bin_means] Analysis-note kinematic-coverage plot written to: " << path << std::endl;
+}
+
 bool update_bin_means_csv(const std::string& csv_path,
                           const std::map<std::string, TTree*>& dataTrees,
-                          int max_workers) {
+                          int max_workers,
+                          const BinMeansOptions& options) {
     // Make ROOT set up its global mutexes.
     ROOT::EnableThreadSafety();
 
@@ -1204,6 +1368,12 @@ bool update_bin_means_csv(const std::string& csv_path,
     }
 
     fill_combined_groups(csv, per_period_rows);
+
+    if (options.make_note_outputs) {
+        write_analysis_note_bin_means_csv(csv, bin_lookup, per_period_rows, options.note_output_dir);
+        make_analysis_note_mean_vs_center_plot(csv, bin_lookup, options.note_output_dir);
+        make_analysis_note_kinematic_coverage_plot(csv, bin_lookup, options.note_output_dir);
+    }
 
     if (!write_csv(csv_path, csv)) return false;
     print_banner(std::string("Updated bin means in: ") + csv_path);

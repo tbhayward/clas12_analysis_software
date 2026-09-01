@@ -181,7 +181,11 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
         }
 
-        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/7)) {
+        BinMeansOptions bin_mean_opts;
+        bin_mean_opts.make_note_outputs = true;
+        bin_mean_opts.note_output_dir = "output/bin_means/analysis_note";
+
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/7, bin_mean_opts)) {
             std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
@@ -206,6 +210,7 @@ int main(int argc, char* argv[]) {
 
         TotalCountsOptions total_count_opts;
         total_count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+        total_count_opts.make_note_outputs = true;
 
         if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
             genMcTrees, recMcTrees,

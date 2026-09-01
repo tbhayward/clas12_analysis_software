@@ -379,6 +379,7 @@ bool produce_variation(
     TotalCountsOptions count_opts;
     count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
     count_opts.make_plots = false;
+    count_opts.make_note_outputs = false;
     if (!update_total_counts_csv(csv_path.string(), dataTrees, eppi0DataTrees,
                                  genMcTrees, recMcTrees, eppi0GenMcTrees,
                                  eppi0RecMcTrees, eppi0BkgTrees, cuts_json,

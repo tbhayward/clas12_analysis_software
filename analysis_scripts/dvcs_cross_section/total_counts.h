@@ -21,6 +21,11 @@ struct TotalCountsOptions {
     // for the nominal production workflow; automatic cut variations set this
     // false because only their numerical counts are needed.
     bool make_plots = true;
+
+    // Compact nominal-run summaries intended for the analysis note: raw-yield
+    // totals by period/topology, xB projections, and machine-readable tables.
+    // Automatic cut-variation jobs should disable these together with make_plots.
+    bool make_note_outputs = true;
 };
 
 /**
