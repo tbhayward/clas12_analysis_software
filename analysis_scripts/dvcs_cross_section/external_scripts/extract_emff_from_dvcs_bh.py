@@ -13223,6 +13223,345 @@ def save_neutron_bh_sensitivity_study(
 #enddef
 
 
+
+def fit_neutron_magnetic_only_bh(
+        data: pd.DataFrame,
+        ge_mode: str = "atac2021",
+        bh_systematic_fraction: float = 0.05) -> Dict[str, object]:
+    """
+    Exploratory one-unknown neutron BH fit.
+
+    GE_n is fixed externally and only GM_n is fitted:
+        GM_n(Q2) / mu_n = 1 / (1 + m1 Q2).
+
+    ge_mode="atac2021" fixes GE_n to the central Atac et al. 2021 form
+        A=0.505 GeV^2, B=1.655, C=0.909.
+    ge_mode="zero" sets GE_n identically to zero as a limiting diagnostic.
+
+    This is deliberately a cross-section-level fit rather than a point-by-point
+    inversion, so the measured uncertainties remain in their native space.
+    """
+    if ge_mode not in {"atac2021", "zero"}:
+        raise ValueError(f"unknown neutron magnetic-only ge_mode={ge_mode}")
+    #endif
+
+    q = data["t_abs"].to_numpy(float)
+    tau = q / (4.0 * MP2)
+    inv = 1.0 / (1.0 + tau)
+    y = data["xs"].to_numpy(float)
+    stat = data["stat"].to_numpy(float)
+    sys = data["sys"].to_numpy(float)
+    err = np.sqrt(
+        stat**2 + sys**2 + (float(bh_systematic_fraction) * y)**2
+    )
+
+    bh_A = data["bh_A"].to_numpy(float)
+    bh_B = data["bh_B"].to_numpy(float)
+    bh_C = data["bh_C"].to_numpy(float)
+
+    if ge_mode == "atac2021":
+        ge_fixed = neutron_atac_ge(q, 0.505, 1.655, 0.909)
+    else:
+        ge_fixed = np.zeros_like(q)
+    #endif
+
+    m1_initial = sachs_first_coefficient_from_radius(
+        SACHS_INITIAL_RADIUS_FM, "IP1"
+    )
+
+    def chi2(m1_GM):
+        gm = MU_N * sachs_family_value(
+            q, np.asarray([float(m1_GM)], dtype=float), "IP1"
+        )
+        f1 = (ge_fixed + tau * gm) * inv
+        f2 = (gm - ge_fixed) * inv
+        pred = bh_from_f1f2(bh_A, bh_B, bh_C, f1, f2)
+        pull = (pred - y) / err
+        return float(np.dot(pull, pull))
+    #enddef
+
+    m = Minuit(chi2, m1_GM=m1_initial)
+    m.errordef = Minuit.LEAST_SQUARES
+    lo = sachs_first_coefficient_from_radius(SACHS_MIN_RADIUS_FM, "IP1")
+    hi = sachs_first_coefficient_from_radius(SACHS_MAX_RADIUS_FM, "IP1")
+    m.limits["m1_GM"] = (min(lo, hi), max(lo, hi))
+    m.migrad()
+    m.hesse()
+
+    m1 = float(m.values["m1_GM"])
+    m1_err = float(m.errors["m1_GM"]) if np.isfinite(m.errors["m1_GM"]) else np.nan
+
+    pars = np.asarray([m1], dtype=float)
+    cov = np.asarray([[m1_err**2]], dtype=float)
+    def rM_fun(p):
+        return sachs_family_radius(np.asarray([p[0]], dtype=float), "IP1")
+    #enddef
+    rM, rM_err = propagate_scalar(rM_fun, pars, cov)
+
+    ndof = max(1, len(data) - 1)
+    return {
+        "ge_mode": ge_mode,
+        "gm_family": "IP1",
+        "N": int(len(data)),
+        "n_parameters": 1,
+        "chi2": float(m.fval),
+        "ndof": int(ndof),
+        "chi2_ndof": float(m.fval / ndof),
+        "valid": bool(m.valid and np.isfinite(rM)),
+        "accurate": bool(m.accurate),
+        "m1_GM_GeVminus2": m1,
+        "m1_GM_err_GeVminus2": m1_err,
+        "rM_fm": float(rM),
+        "rM_fit_err_fm": float(rM_err),
+    }
+#enddef
+
+
+def save_neutron_magnetic_only_study(
+        evaluated: pd.DataFrame,
+        outdir: Path) -> None:
+    """
+    Explore a neutron magnetic-radius extraction with GE_n fixed externally.
+
+    The primary result fixes GE_n to Atac et al. 2021.  GE_n=0 is retained only
+    as a limiting diagnostic of how much the small electric contribution moves
+    the extracted magnetic radius.
+
+    The BH-purity threshold is scanned while the added Moradi-style BH-method
+    uncertainty remains fixed at 5%.
+    """
+    diagdir = outdir / "magnetic_only"
+    diagdir.mkdir(parents=True, exist_ok=True)
+
+    finite_delta = evaluated.loc[
+        np.isfinite(evaluated["bh_delta"]), "bh_delta"
+    ].to_numpy(float)
+    thresholds = [
+        0.01, 0.02, 0.03, 0.04, 0.05, 0.075, 0.10,
+        0.15, 0.20, 0.30, 0.50, 0.75, 1.00,
+    ]
+    if len(finite_delta):
+        thresholds.append(float(np.max(finite_delta) * 1.001))
+    #endif
+    thresholds = sorted(set(thresholds))
+
+    rows = []
+    for threshold in thresholds:
+        selected = evaluated.loc[
+            np.isfinite(evaluated["bh_delta"])
+            & (evaluated["bh_delta"] <= float(threshold))
+        ].copy()
+        if len(selected) < 3:
+            continue
+        #endif
+
+        for ge_mode in ["atac2021", "zero"]:
+            fit = fit_neutron_magnetic_only_bh(
+                selected,
+                ge_mode=ge_mode,
+                bh_systematic_fraction=0.05,
+            )
+            fit["bh_threshold"] = float(threshold)
+            fit["bh_threshold_percent"] = 100.0 * float(threshold)
+            fit["max_selected_delta"] = float(
+                np.nanmax(selected["bh_delta"].to_numpy(float))
+            )
+            rows.append(fit)
+            print(
+                f"[neutron-GM-only] threshold={100.0*threshold:7.2f}% "
+                f"GE={ge_mode:8s} N={fit['N']:2d} "
+                f"chi2/ndof={fit['chi2_ndof']:.3f} "
+                f"rM={fit['rM_fm']:.4f}+/-{fit['rM_fit_err_fm']:.4f} fm"
+            )
+        #endfor
+    #endfor
+
+    scan = pd.DataFrame(rows)
+    scan.to_csv(
+        diagdir / "01_neutron_magnetic_only_threshold_scan.csv",
+        index=False,
+    )
+
+    if not len(scan):
+        print("[neutron-GM-only] no thresholds contained enough points")
+        return
+    #endif
+
+    # Direct comparison of the primary fixed-Atac result with the GE=0 limit.
+    fig, ax = plt.subplots(figsize=(8.0, 5.4))
+    for ge_mode, label in [
+        ("atac2021", r"$G_E^n$ fixed: Atac et al. 2021"),
+        ("zero", r"$G_E^n=0$ diagnostic"),
+    ]:
+        p = scan.loc[scan["ge_mode"] == ge_mode].sort_values(
+            "bh_threshold_percent"
+        )
+        ax.errorbar(
+            p["bh_threshold_percent"],
+            p["rM_fm"],
+            yerr=p["rM_fit_err_fm"],
+            marker="o" if ge_mode == "atac2021" else "s",
+            linestyle="none",
+            fillstyle="full" if ge_mode == "atac2021" else "none",
+            capsize=2,
+            label=label,
+        )
+    #endfor
+    ax.axvline(5.0, linewidth=0.8, linestyle=":")
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$|1-R_{\rm BH}^{\rm KM15}|$ threshold (%)")
+    ax.set_ylabel(r"$r_{M,n}$ [fm]")
+    ax.set_title(
+        r"Exploratory neutron magnetic-radius extraction: fixed $G_E^n$"
+    )
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "02_neutron_magnetic_radius_threshold_scan.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.4))
+    for ge_mode, label in [
+        ("atac2021", r"$G_E^n$ fixed: Atac et al. 2021"),
+        ("zero", r"$G_E^n=0$ diagnostic"),
+    ]:
+        p = scan.loc[scan["ge_mode"] == ge_mode].sort_values(
+            "bh_threshold_percent"
+        )
+        ax.plot(
+            p["bh_threshold_percent"],
+            p["chi2_ndof"],
+            marker="o" if ge_mode == "atac2021" else "s",
+            linestyle="none",
+            fillstyle="full" if ge_mode == "atac2021" else "none",
+            label=label,
+        )
+    #endfor
+    ax.axvline(5.0, linewidth=0.8, linestyle=":")
+    ax.set_xscale("log")
+    ax.set_xlabel(r"$|1-R_{\rm BH}^{\rm KM15}|$ threshold (%)")
+    ax.set_ylabel(r"$\chi^2/\mathrm{ndof}$")
+    ax.set_title("Neutron magnetic-only BH fit quality")
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "03_neutron_magnetic_only_chi2_threshold_scan.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    # At each of the nine fixed-|t| bins, extract a single GM_n value directly
+    # from all phi points with GE_n fixed to Atac.  This is not used to obtain
+    # the radius; it visualizes the actual finite-|t| magnetic information.
+    point_rows = []
+    for kin_bin, part in evaluated.groupby("kin_bin", sort=True):
+        qbar = float(np.nanmean(part["t_abs"]))
+        ge = float(neutron_atac_ge(
+            np.asarray([qbar]), 0.505, 1.655, 0.909
+        )[0])
+
+        q = part["t_abs"].to_numpy(float)
+        tau = q / (4.0 * MP2)
+        inv = 1.0 / (1.0 + tau)
+        y = part["xs"].to_numpy(float)
+        err = np.sqrt(
+            part["stat"].to_numpy(float)**2
+            + part["sys"].to_numpy(float)**2
+            + (0.05 * y)**2
+        )
+        A = part["bh_A"].to_numpy(float)
+        B = part["bh_B"].to_numpy(float)
+        C = part["bh_C"].to_numpy(float)
+        ge_arr = neutron_atac_ge(q, 0.505, 1.655, 0.909)
+
+        # One GM amplitude at this narrow-|t| bin; initialize from Kelly.
+        gm_kelly = (
+            part["km15_F1"].to_numpy(float)
+            + part["km15_F2"].to_numpy(float)
+        )
+        gm0 = float(np.nanmean(gm_kelly))
+
+        def chi2_bin(GM_n):
+            gm_arr = np.full_like(q, float(GM_n))
+            f1 = (ge_arr + tau * gm_arr) * inv
+            f2 = (gm_arr - ge_arr) * inv
+            pred = bh_from_f1f2(A, B, C, f1, f2)
+            pull = (pred - y) / err
+            return float(np.dot(pull, pull))
+        #enddef
+
+        m = Minuit(chi2_bin, GM_n=gm0)
+        m.errordef = Minuit.LEAST_SQUARES
+        # Neutron GM is known to be negative over this low-|t| region.  This
+        # guard prevents the mathematically equivalent positive square-root
+        # branch from being selected by the BH-only cross section.
+        m.limits["GM_n"] = (-3.0, -0.01)
+        m.migrad()
+        m.hesse()
+
+        gm_fit = float(m.values["GM_n"])
+        gm_err = float(m.errors["GM_n"])
+        point_rows.append({
+            "kin_bin": int(kin_bin),
+            "N_phi": int(len(part)),
+            "Q2_mean_GeV2": float(np.nanmean(part["Q2"])),
+            "xB_mean": float(np.nanmean(part["xB"])),
+            "t_abs_mean_GeV2": qbar,
+            "GE_n_fixed_Atac2021": ge,
+            "GM_n_fit": gm_fit,
+            "GM_n_fit_err": gm_err,
+            "GM_n_over_mu_n": gm_fit / MU_N,
+            "GM_n_Kelly_mean": gm0,
+            "chi2": float(m.fval),
+            "ndof": max(1, int(len(part) - 1)),
+            "chi2_ndof": float(m.fval / max(1, len(part) - 1)),
+            "valid": bool(m.valid),
+        })
+    #endfor
+
+    finite_gm = pd.DataFrame(point_rows)
+    finite_gm.to_csv(
+        diagdir / "04_neutron_finite_t_GM_extraction.csv",
+        index=False,
+    )
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.4))
+    ax.errorbar(
+        finite_gm["t_abs_mean_GeV2"],
+        finite_gm["GM_n_over_mu_n"],
+        yerr=finite_gm["GM_n_fit_err"] / abs(MU_N),
+        marker="o", linestyle="none", capsize=2,
+        label=r"BH extraction, $G_E^n$ fixed to Atac",
+    )
+    kelly_norm = finite_gm["GM_n_Kelly_mean"] / MU_N
+    ax.plot(
+        finite_gm["t_abs_mean_GeV2"],
+        kelly_norm,
+        marker="s", linestyle="none", fillstyle="none",
+        label="Kelly reference at measured bins",
+    )
+    ax.set_xlabel(r"$|t|$ [GeV$^2$]")
+    ax.set_ylabel(r"$G_M^n/\mu_n$")
+    ax.set_title(
+        r"Finite-$|t|$ neutron magnetic form factor from preliminary BH data"
+    )
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "04_neutron_finite_t_GM_extraction.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    print(f"[neutron-GM-only] diagnostics -> {diagdir}")
+#enddef
+
+
 def run_neutron_analysis(args) -> int:
     """
     Exploratory neutron-radius extension.
@@ -13297,6 +13636,12 @@ def run_neutron_analysis(args) -> int:
     # Before extrapolating to a neutron charge or magnetic radius, quantify the
     # actual finite-|t| GE_n/GM_n leverage of these measured BH cross sections.
     save_neutron_bh_sensitivity_study(evaluated, outdir)
+
+    # The sensitivity/Fisher study shows that these cross sections are
+    # overwhelmingly magnetic and nearly singular in simultaneous GE_n/GM_n.
+    # Therefore also run the complementary one-unknown extraction in which
+    # GE_n is supplied externally and only GM_n is fitted.
+    save_neutron_magnetic_only_study(evaluated, outdir)
 
     print(
         "[neutron] preliminary CLAS12 nDVCS: "
