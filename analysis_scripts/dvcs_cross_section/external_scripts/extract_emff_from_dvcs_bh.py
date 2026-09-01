@@ -214,6 +214,17 @@ SAYLOR_SUPPLEMENT_URL = (
 CLAS6_BEAM_ENERGY = 5.75
 DEFAULT_PASS1_CSV = "../imports/all_bin_v3.csv"
 PASS1_GLOBAL_SCALE_FRAC = 0.31
+
+# Georges 2022 supplemental tables provide statistical and TOTAL systematic
+# uncertainties, while the publication states that the latter contain both
+# point-to-point and correlated components.  The public table does not provide
+# a decomposition that can be reconstructed unambiguously here.  Therefore the
+# current combined-radius implementation treats the quoted total systematic as
+# pointwise and does NOT add a separate Georges normalization nuisance.  This is
+# conservative for point errors and, critically, avoids double counting a
+# correlated contribution.  Keep this explicit until an authoritative
+# point-to-point/correlated decomposition is supplied.
+GEORGES_GLOBAL_SCALE_FRAC = 0.0
 PAPER_SELECTION_COUNTS = {0.01: 98, 0.02: 212, 0.03: 292, 0.04: 404, 0.05: 473}
 PAPER_CHI2_NDOF = {1: 0.82, 2: 0.75, 3: 0.73, 4: 0.68, 5: 0.69, 6: 0.67, 7: 0.67, 8: 0.68}
 PAPER_DIPOLE_PARAMS = {
@@ -1077,7 +1088,7 @@ def evaluate_km15_georges_dataframe(
 
 
 def make_georges_diagnostic_bundle(args) -> Dict[str, object]:
-    """Build diagnostic-only Georges bundle; never enters production fits."""
+    """Build the Georges bundle for diagnostics and optional KM15 ensemble fits."""
     outdir = Path(args.outdir).expanduser().resolve() / "halla_georges2022"
     outdir.mkdir(parents=True, exist_ok=True)
     df = load_georges_supplement(str(resolve_script_relative_path(args.georges_file)))
@@ -1098,8 +1109,9 @@ def make_georges_diagnostic_bundle(args) -> Dict[str, object]:
         "label": "Hall A Georges 2022",
         "all_data": df.reset_index(drop=True),
         "set5": set5,
-        "norm_frac": 0.0,
-        "diagnostic_only": True,
+        "norm_frac": GEORGES_GLOBAL_SCALE_FRAC,
+        "georges_systematic_policy": "published total systematic used pointwise; no extra normalization nuisance",
+        "diagnostic_only": False,
     }
 #enddef
 
@@ -9604,6 +9616,353 @@ def save_all_point_model_agreement_diagnostics(
 
 
 
+
+def _km15_selected_specs_for_bundles(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        threshold: float) -> Tuple[List[Dict[str, object]], Dict[str, int]]:
+    """Build measurement specs for a source-defined KM15 BH-purity selection."""
+    specs = []
+    counts = {}
+    for bundle in bundles:
+        selected = select_bundle_from_external_model(
+            bundle, selection, "km15", float(threshold)
+        )
+        specs.append(bundle_to_measurement_spec(bundle, selected))
+        counts[str(bundle["key"])] = int(len(selected))
+    #endfor
+    return specs, counts
+#enddef
+
+
+def run_km15_ensemble_rotation(
+        bundles: Sequence[Dict[str, object]],
+        args,
+        root_outdir: Path,
+        family: str = "IP2") -> None:
+    """
+    Compare the requested KM15-only production ensembles.
+
+    The three primary configurations are:
+      1) CLAS12 Lee 2026 alone;
+      2) CLAS6 Jo 2015 + CLAS12 Lee 2026;
+      3) Jo + Hall A Defurne + Hall A Georges + Lee.
+
+    Each measurement retains its own published uncertainty treatment and its
+    own correlated normalization nuisance where an authoritative decomposition
+    is available.  Georges currently uses its published total systematic
+    pointwise and no additional normalization nuisance.
+    """
+    selection = load_external_bh_model_selection(
+        Path(args.bh_model_selection_results).expanduser().resolve()
+    )
+    by_key = {str(b["key"]): b for b in bundles}
+    required = ["jo2015", "halla_defurne2015", "halla_georges2022", "pass1"]
+    missing = [k for k in required if k not in by_key]
+    if missing:
+        raise RuntimeError(
+            "KM15 ensemble rotation requires Jo, Defurne, Georges, and Lee. "
+            "Missing: " + ", ".join(missing)
+        )
+    #endif
+
+    outdir = root_outdir / "final_analysis" / "km15_ensemble_rotation"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    configurations = [
+        ("lee2026_only", [by_key["pass1"]], "CLAS12 Lee 2026"),
+        (
+            "jo2015_plus_lee2026",
+            [by_key["jo2015"], by_key["pass1"]],
+            "CLAS6 Jo 2015 + CLAS12 Lee 2026",
+        ),
+        (
+            "all_four",
+            [
+                by_key["jo2015"],
+                by_key["halla_defurne2015"],
+                by_key["halla_georges2022"],
+                by_key["pass1"],
+            ],
+            "Jo 2015 + Defurne 2015 + Georges 2022 + Lee 2026",
+        ),
+    ]
+
+    rows = []
+    thresholds = np.arange(0.01, 0.101, 0.01)
+    for tag, cfg_bundles, label in configurations:
+        cfg_dir = outdir / tag
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        threshold_rows = []
+
+        for threshold in thresholds:
+            specs, counts = _km15_selected_specs_for_bundles(
+                cfg_bundles, selection, float(threshold)
+            )
+            fit = fit_sachs_family_multi_measurements(
+                specs,
+                family=family,
+                bh_cut=float(threshold),
+                add_moradi_bh_systematic=True,
+            )
+            row = {
+                "configuration": tag,
+                "configuration_label": label,
+                "family": family,
+                "threshold": float(threshold),
+                "threshold_percent": 100.0 * float(threshold),
+                **counts,
+                **fit,
+            }
+            threshold_rows.append(row)
+            if abs(float(threshold) - 0.05) < 1.0e-12:
+                rows.append(row)
+            #endif
+        #endfor
+
+        table = pd.DataFrame(threshold_rows)
+        table.to_csv(cfg_dir / "km15_threshold_scan.csv", index=False)
+
+        fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.7))
+        axes[0].errorbar(
+            table["threshold_percent"], table["rE_fm"],
+            yerr=table["rE_fit_err_fm"], marker="o", linestyle="-",
+        )
+        axes[1].errorbar(
+            table["threshold_percent"], table["rM_fm"],
+            yerr=table["rM_fit_err_fm"], marker="o", linestyle="-",
+        )
+        axes[2].plot(
+            table["threshold_percent"], table["chi2_ndof"],
+            marker="o", linestyle="-",
+        )
+        axes[0].set_ylabel(r"$r_E$ (fm)")
+        axes[1].set_ylabel(r"$r_M$ (fm)")
+        axes[2].set_ylabel(r"$\chi^2/\mathrm{dof}$")
+        for ax in axes:
+            ax.set_xlabel(r"$|1-R_{\rm BH}^{\rm KM15}|$ threshold (%)")
+            ax.axvline(5.0, linewidth=0.8, linestyle=":")
+            ax.grid(alpha=0.2)
+        #endfor
+        fig.suptitle(f"{label}: KM15-only threshold stability ({family})", y=0.995)
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.savefig(cfg_dir / "01_km15_threshold_stability.png", dpi=180)
+        plt.close(fig)
+    #endfor
+
+    nominal = pd.DataFrame(rows)
+    nominal.to_csv(outdir / "km15_5pct_ensemble_summary.csv", index=False)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0))
+    x = np.arange(len(nominal))
+    axes[0].errorbar(
+        x, nominal["rE_fm"], yerr=nominal["rE_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3,
+    )
+    axes[1].errorbar(
+        x, nominal["rM_fm"], yerr=nominal["rM_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3,
+    )
+    labels = nominal["configuration_label"].astype(str).tolist()
+    for ax, ylabel in zip(axes, [r"$r_E$ (fm)", r"$r_M$ (fm)"]):
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=18, ha="right")
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=0.2)
+    #endfor
+    fig.suptitle(f"KM15 5% BH-purity ensemble comparison ({family})", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(outdir / "00_km15_5pct_ensemble_radii.png", dpi=180)
+    plt.close(fig)
+
+    print("\n[KM15 ensemble rotation] nominal 5% results")
+    print(
+        nominal[[
+            "configuration_label", "N", "chi2_ndof",
+            "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+        ]].to_string(index=False)
+    )
+    print(f"[KM15 ensemble rotation] outputs -> {outdir}")
+#enddef
+
+
+def run_saylor_recovery_study(
+        saylor_bundle: Dict[str, object],
+        args,
+        root_outdir: Path,
+        family: str = "IP2") -> None:
+    """
+    Diagnose whether a restricted Saylor kinematic region is internally usable.
+
+    This is deliberately a diagnostic, NOT an automatic prescription for adding
+    Saylor to the final radius ensemble.  It scans Q2 in two complementary ways:
+      * fixed equal-population Q2 bins over all published points, testing the
+        full KM15 electroproduction prediction;
+      * sliding Q2 windows, testing both full-EP agreement and the quality of
+        the KM15-5%-selected BH form-factor fit.
+
+    A region should only be promoted to a production selection if its boundary
+    can be justified independently of obtaining a favorable radius/chi2.
+    """
+    outdir = root_outdir / "final_analysis" / "diagnostics" / "saylor_recovery"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    d = saylor_bundle["all_data"].copy()
+    finite = (
+        np.isfinite(d["Q2"])
+        & np.isfinite(d["xs"])
+        & np.isfinite(d["km15_ep"])
+        & (d["xs"] > 0.0)
+    )
+    d = d.loc[finite].copy().reset_index(drop=True)
+
+    stat = dataset_statistical_errors(d, "saylor2018")
+    ptp = d["ptp_sys"].to_numpy(float)
+    err = np.sqrt(stat**2 + ptp**2)
+    d["_ep_err"] = err
+
+    def score_region(region: pd.DataFrame) -> Dict[str, float]:
+        y = region["xs"].to_numpy(float)
+        m = region["km15_ep"].to_numpy(float)
+        e = region["_ep_err"].to_numpy(float)
+        beta, scale, chi2 = _profile_model_normalization(
+            y, m, e, SAYLOR_GLOBAL_SCALE_FRAC
+        )
+        pull = (scale * m - y) / e
+        return {
+            "N_all": int(len(region)),
+            "Q2_mean": float(np.mean(region["Q2"])),
+            "xB_mean": float(np.mean(region["xB"])),
+            "t_mean": float(np.mean(region["t_abs"])),
+            "ep_beta_norm": float(beta),
+            "ep_scale": float(scale),
+            "ep_chi2_per_point": float(chi2 / max(1, len(region))),
+            "ep_mean_pull": float(np.mean(pull)),
+            "ep_rms_pull": float(np.sqrt(np.mean(pull**2))),
+            "ep_median_abs_frac_residual": float(
+                np.median(np.abs(scale * m - y) / y)
+            ),
+        }
+    #enddef
+
+    # Equal-population Q2 bins: robust overview without hand-picked boundaries.
+    q = d["Q2"].to_numpy(float)
+    edges = np.unique(np.quantile(q, np.linspace(0.0, 1.0, 9)))
+    qbin_rows = []
+    for ibin, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
+        mask = (d["Q2"] >= lo) & (
+            (d["Q2"] < hi) if ibin < len(edges) - 2 else (d["Q2"] <= hi)
+        )
+        region = d.loc[mask].copy()
+        if len(region) == 0:
+            continue
+        #endif
+        row = {"bin": ibin, "Q2_low": float(lo), "Q2_high": float(hi)}
+        row.update(score_region(region))
+        qbin_rows.append(row)
+    #endfor
+    qbins = pd.DataFrame(qbin_rows)
+    qbins.to_csv(outdir / "01_saylor_km15_ep_equal_population_q2_bins.csv", index=False)
+
+    # Sliding windows.  Width is intentionally broad enough to retain useful
+    # statistics and stepped finely enough to reveal whether a central plateau
+    # exists rather than selecting one favorable bin.
+    qmin = float(np.nanmin(q))
+    qmax = float(np.nanmax(q))
+    width = 1.0
+    step = 0.25
+    starts = np.arange(qmin, max(qmin, qmax - width) + 0.5 * step, step)
+    sliding_rows = []
+    for lo in starts:
+        hi = min(float(lo + width), qmax + 1.0e-12)
+        region = d.loc[(d["Q2"] >= lo) & (d["Q2"] < hi)].copy()
+        if len(region) < 40:
+            continue
+        #endif
+        row = {"Q2_low": float(lo), "Q2_high": float(hi)}
+        row.update(score_region(region))
+
+        bh = region.loc[region["bh_delta"] <= 0.05].copy()
+        row["N_bh5"] = int(len(bh))
+        if len(bh) >= 20:
+            try:
+                spec = measurement_spec(
+                    key="saylor2018",
+                    label="CLAS6 Saylor 2018",
+                    kind="saylor2018",
+                    data=bh,
+                    norm_frac=SAYLOR_GLOBAL_SCALE_FRAC,
+                )
+                fit = fit_sachs_family_multi_measurements(
+                    [spec], family=family, bh_cut=0.05,
+                    add_moradi_bh_systematic=True,
+                )
+                row["bh5_valid"] = bool(fit["valid"])
+                row["bh5_chi2_ndof"] = float(fit["chi2_ndof"])
+                row["bh5_rE_fm"] = float(fit["rE_fm"])
+                row["bh5_rE_fit_err_fm"] = float(fit["rE_fit_err_fm"])
+                row["bh5_rM_fm"] = float(fit["rM_fm"])
+                row["bh5_rM_fit_err_fm"] = float(fit["rM_fit_err_fm"])
+            except Exception as exc:
+                row["bh5_valid"] = False
+                row["bh5_failure"] = str(exc)
+            #endtry
+        else:
+            row["bh5_valid"] = False
+            row["bh5_failure"] = "fewer than 20 KM15-5%-selected points"
+        #endif
+        sliding_rows.append(row)
+    #endfor
+    sliding = pd.DataFrame(sliding_rows)
+    sliding.to_csv(outdir / "02_saylor_q2_sliding_window_scan.csv", index=False)
+
+    # Overview plots.
+    if len(qbins):
+        centers = 0.5 * (qbins["Q2_low"] + qbins["Q2_high"])
+        fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.8))
+        axes[0].plot(centers, qbins["ep_chi2_per_point"], marker="o")
+        axes[1].plot(
+            centers, 100.0 * qbins["ep_median_abs_frac_residual"], marker="o"
+        )
+        axes[0].set_ylabel(r"KM15 full-EP profiled $\chi^2/N$")
+        axes[1].set_ylabel("Median absolute fractional residual (%)")
+        for ax in axes:
+            ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+            ax.grid(alpha=0.2)
+        #endfor
+        fig.suptitle("Saylor 2018: KM15 agreement versus Q2", y=0.995)
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.savefig(outdir / "01_saylor_km15_ep_vs_q2.png", dpi=180)
+        plt.close(fig)
+    #endif
+
+    if len(sliding):
+        centers = 0.5 * (sliding["Q2_low"] + sliding["Q2_high"])
+        fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.8))
+        axes[0].plot(centers, sliding["ep_chi2_per_point"], marker="o")
+        valid = sliding.get("bh5_valid", pd.Series(False, index=sliding.index)).astype(bool)
+        axes[1].plot(
+            centers[valid], sliding.loc[valid, "bh5_chi2_ndof"], marker="o"
+        )
+        axes[0].set_ylabel(r"Full-EP KM15 profiled $\chi^2/N$")
+        axes[1].set_ylabel(r"KM15 5% BH-fit $\chi^2/\mathrm{dof}$")
+        for ax in axes:
+            ax.set_xlabel(r"center of 1-GeV$^2$ $Q^2$ window")
+            ax.grid(alpha=0.2)
+        #endfor
+        fig.suptitle(
+            "Saylor 2018 recoverability scan: full electroproduction and BH extraction",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.savefig(outdir / "02_saylor_q2_recovery_scan.png", dpi=180)
+        plt.close(fig)
+    #endif
+
+    print(f"[Saylor recovery] outputs -> {outdir}")
+#enddef
+
+
 def run_published_default(args) -> int:
     """
     Run the preliminary publication-facing CLAS-only workflow.
@@ -9661,8 +10020,11 @@ def run_published_default(args) -> int:
     # all-point model validation for now.  It remains available through the
     # explicit pass-2 modes, but its run-period combination systematic needs a
     # dedicated treatment before it is compared on equal footing here.
-    if getattr(args, "include_georges", False):
-        diagnostic_bundles.append(make_georges_diagnostic_bundle(args))
+    if getattr(args, "include_georges", False) or getattr(args, "run_km15_ensemble_rotation", False):
+        georges_bundle = make_georges_diagnostic_bundle(args)
+        diagnostic_bundles.append(georges_bundle)
+    else:
+        georges_bundle = None
     #endif
 
     diagnostic_bundles = sort_bundles_chronologically(diagnostic_bundles)
@@ -9718,6 +10080,33 @@ def run_published_default(args) -> int:
             diagnostic_bundles,
             root_outdir / "final_analysis" / "diagnostics"
             / "all_point_model_agreement",
+        )
+    #endif
+
+    if getattr(args, "run_km15_ensemble_rotation", False):
+        rotation_bundles = list(diagnostic_bundles)
+        run_km15_ensemble_rotation(
+            rotation_bundles,
+            args,
+            root_outdir,
+            family=str(args.km15_ensemble_family),
+        )
+    #endif
+
+    if getattr(args, "run_saylor_recovery_study", False):
+        saylor_candidates = [
+            b for b in diagnostic_bundles if str(b["key"]) == "saylor2018"
+        ]
+        if not saylor_candidates:
+            raise RuntimeError(
+                "--run-saylor-recovery-study requires --include-saylor."
+            )
+        #endif
+        run_saylor_recovery_study(
+            saylor_candidates[0],
+            args,
+            root_outdir,
+            family=str(args.km15_ensemble_family),
         )
     #endif
 
@@ -10761,6 +11150,30 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional maximum |t|; normally leave unset",
     )
+
+    p.add_argument(
+        "--run-km15-ensemble-rotation",
+        action="store_true",
+        help=(
+            "Run KM15-only radius fits for Lee alone, Jo+Lee, and "
+            "Jo+Defurne+Georges+Lee."
+        ),
+    )
+    p.add_argument(
+        "--km15-ensemble-family",
+        default="IP2",
+        choices=["P1", "P2", "P3", "P4", "IP1", "IP2", "IP3", "IP4", "CF2", "CF3", "CF4"],
+        help="Sachs family used for the KM15 ensemble-rotation and Saylor recovery diagnostics.",
+    )
+    p.add_argument(
+        "--run-saylor-recovery-study",
+        action="store_true",
+        help=(
+            "Scan Saylor 2018 versus Q2 to test whether a broad, independently "
+            "definable region has acceptable KM15 full-EP and 5%-BH-fit behavior."
+        ),
+    )
+
     return p
 #enddef
 
