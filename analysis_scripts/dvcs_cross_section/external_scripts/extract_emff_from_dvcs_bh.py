@@ -11727,6 +11727,251 @@ def evaluate_km15_neutron_dataframe(
 #enddef
 
 
+
+def save_neutron_model_comparison_diagnostics(
+        evaluated: pd.DataFrame,
+        outdir: Path) -> None:
+    """
+    Compare the preliminary CLAS12 neutron cross sections directly with the
+    unfitted KM15 full-electroproduction and BH-only predictions.
+
+    All model markers are evaluated only at the measured kinematic points.
+    The lower panels show data/model ratios so an absolute-normalization
+    mismatch cannot be confused with R_BH = sigma_BH/sigma_EP being near one.
+    """
+    diagdir = outdir / "model_comparison"
+    diagdir.mkdir(parents=True, exist_ok=True)
+
+    work = evaluated.copy()
+    work["data_over_bh"] = work["xs"] / work["km15_bh"]
+    work["data_over_ep"] = work["xs"] / work["km15_ep"]
+    work["data_total_err"] = np.sqrt(work["stat"]**2 + work["sys"]**2)
+    work["data_over_bh_err"] = work["data_total_err"] / np.abs(work["km15_bh"])
+    work["data_over_ep_err"] = work["data_total_err"] / np.abs(work["km15_ep"])
+    work.to_csv(diagdir / "01_neutron_data_vs_km15_all_points.csv", index=False)
+
+    # Per-bin edge audit: use the lowest- and highest-phi measured point in
+    # each of the nine (Q2,xB,t) bins.
+    edge_rows = []
+    for kin_bin, part in work.groupby("kin_bin", sort=True):
+        p = part.sort_values("phi_deg").reset_index(drop=True)
+        for edge_name, row in [("low_phi", p.iloc[0]), ("high_phi", p.iloc[-1])]:
+            edge_rows.append({
+                "kin_bin": int(kin_bin),
+                "edge": edge_name,
+                "phi_deg": float(row["phi_deg"]),
+                "Q2_GeV2": float(row["Q2"]),
+                "xB": float(row["xB"]),
+                "t_abs_GeV2": float(row["t_abs"]),
+                "data_nb_GeV4": float(row["xs"]),
+                "km15_bh_nb_GeV4": float(row["km15_bh"]),
+                "km15_ep_nb_GeV4": float(row["km15_ep"]),
+                "data_over_bh": float(row["data_over_bh"]),
+                "data_over_ep": float(row["data_over_ep"]),
+                "R_BH": float(row["R_BH"]),
+                "bh_delta": float(row["bh_delta"]),
+            })
+        #endfor
+    #endfor
+    edge = pd.DataFrame(edge_rows)
+    edge.to_csv(diagdir / "02_neutron_edge_point_audit.csv", index=False)
+
+    print("[neutron-model] direct edge-point data/model audit:")
+    for _, row in edge.iterrows():
+        print(
+            f"[neutron-model] bin={int(row['kin_bin'])} "
+            f"{row['edge']:8s} phi={row['phi_deg']:6.1f} deg "
+            f"data/BH={row['data_over_bh']:.3f} "
+            f"data/EP={row['data_over_ep']:.3f} "
+            f"R_BH={row['R_BH']:.3f}"
+        )
+    #endfor
+
+    # Individual two-panel plots, one for each kinematic bin.
+    for kin_bin, part in work.groupby("kin_bin", sort=True):
+        p = part.sort_values("phi_deg")
+        phi = p["phi_deg"].to_numpy(float)
+        y = p["xs"].to_numpy(float)
+        yerr = p["data_total_err"].to_numpy(float)
+
+        fig, (ax_top, ax_ratio) = plt.subplots(
+            2, 1, figsize=(7.4, 6.6), sharex=True,
+            gridspec_kw={"height_ratios": [2.2, 1.0], "hspace": 0.05},
+        )
+
+        ax_top.errorbar(
+            phi, y, yerr=yerr,
+            marker="o", linestyle="none", capsize=2,
+            label="CLAS12 preliminary",
+        )
+        ax_top.plot(
+            phi, p["km15_bh"].to_numpy(float),
+            marker="s", linestyle="none", fillstyle="none",
+            label="KM15 BH only",
+        )
+        ax_top.plot(
+            phi, p["km15_ep"].to_numpy(float),
+            marker="^", linestyle="none", fillstyle="none",
+            label="KM15 full EP",
+        )
+        ax_top.set_ylabel(r"$d^4\sigma$ [nb/GeV$^4$]")
+        ax_top.set_title(
+            rf"Neutron bin {int(kin_bin)}: "
+            rf"$Q^2={p['Q2'].mean():.3f}$ GeV$^2$, "
+            rf"$x_B={p['xB'].mean():.3f}$, "
+            rf"$|t|={p['t_abs'].mean():.3f}$ GeV$^2$"
+        )
+        ax_top.grid(alpha=0.2)
+        ax_top.legend()
+
+        ax_ratio.errorbar(
+            phi,
+            p["data_over_bh"].to_numpy(float),
+            yerr=p["data_over_bh_err"].to_numpy(float),
+            marker="s", linestyle="none", capsize=2,
+            label="Data / BH",
+        )
+        ax_ratio.errorbar(
+            phi,
+            p["data_over_ep"].to_numpy(float),
+            yerr=p["data_over_ep_err"].to_numpy(float),
+            marker="^", linestyle="none", capsize=2,
+            label="Data / full EP",
+        )
+        ax_ratio.axhline(1.0, linewidth=0.9, linestyle="--")
+        ax_ratio.set_xlabel(r"$\phi$ [deg]")
+        ax_ratio.set_ylabel("Data / model")
+        ax_ratio.grid(alpha=0.2)
+        ax_ratio.legend(ncol=2, fontsize=9)
+
+        fig.subplots_adjust(top=0.90)
+        fig.savefig(
+            diagdir / f"03_bin_{int(kin_bin):02d}_data_vs_km15.png",
+            dpi=180,
+        )
+        plt.close(fig)
+    #endfor
+
+    # 3x3 cross-section summary matching the nine analysis-note kinematic bins.
+    fig, axes = plt.subplots(3, 3, figsize=(15.0, 11.5), sharex=True)
+    axes = np.asarray(axes).ravel()
+    for ax, (kin_bin, part) in zip(
+            axes, work.groupby("kin_bin", sort=True)):
+        p = part.sort_values("phi_deg")
+        phi = p["phi_deg"].to_numpy(float)
+        ax.errorbar(
+            phi, p["xs"].to_numpy(float),
+            yerr=p["data_total_err"].to_numpy(float),
+            marker="o", linestyle="none", capsize=2,
+            label="CLAS12 preliminary",
+        )
+        ax.plot(
+            phi, p["km15_bh"].to_numpy(float),
+            marker="s", linestyle="none", fillstyle="none",
+            label="KM15 BH",
+        )
+        ax.plot(
+            phi, p["km15_ep"].to_numpy(float),
+            marker="^", linestyle="none", fillstyle="none",
+            label="KM15 full EP",
+        )
+        ax.set_title(
+            rf"Bin {int(kin_bin)}: "
+            rf"$Q^2={p['Q2'].mean():.2f}$, "
+            rf"$x_B={p['xB'].mean():.3f}$, "
+            rf"$|t|={p['t_abs'].mean():.2f}$"
+        )
+        ax.grid(alpha=0.2)
+    #endfor
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel(r"$d^4\sigma$ [nb/GeV$^4$]")
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels, loc="upper center", ncol=3,
+        bbox_to_anchor=(0.5, 0.965),
+    )
+    fig.suptitle(
+        "Preliminary CLAS12 neutron cross sections vs unfitted KM15",
+        y=0.995,
+        fontsize=16,
+    )
+    fig.subplots_adjust(top=0.90, hspace=0.28, wspace=0.22)
+    fig.savefig(diagdir / "04_neutron_data_vs_km15_3x3.png", dpi=180)
+    plt.close(fig)
+
+    # Separate 3x3 ratio summary.  This is deliberately not folded into the
+    # cross-section canvas so the absolute scale and the ratio scale are both
+    # readable.
+    fig, axes = plt.subplots(3, 3, figsize=(15.0, 11.5), sharex=True)
+    axes = np.asarray(axes).ravel()
+    for ax, (kin_bin, part) in zip(
+            axes, work.groupby("kin_bin", sort=True)):
+        p = part.sort_values("phi_deg")
+        phi = p["phi_deg"].to_numpy(float)
+        ax.errorbar(
+            phi,
+            p["data_over_bh"].to_numpy(float),
+            yerr=p["data_over_bh_err"].to_numpy(float),
+            marker="s", linestyle="none", capsize=2,
+            label="Data / BH",
+        )
+        ax.errorbar(
+            phi,
+            p["data_over_ep"].to_numpy(float),
+            yerr=p["data_over_ep_err"].to_numpy(float),
+            marker="^", linestyle="none", capsize=2,
+            label="Data / full EP",
+        )
+        ax.axhline(1.0, linewidth=0.9, linestyle="--")
+        ax.set_title(f"Bin {int(kin_bin)}")
+        ax.grid(alpha=0.2)
+    #endfor
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel("Data / model")
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels, loc="upper center", ncol=2,
+        bbox_to_anchor=(0.5, 0.965),
+    )
+    fig.suptitle(
+        "Preliminary CLAS12 neutron data/KM15 ratios",
+        y=0.995,
+        fontsize=16,
+    )
+    fig.subplots_adjust(top=0.90, hspace=0.28, wspace=0.22)
+    fig.savefig(diagdir / "05_neutron_data_over_km15_3x3.png", dpi=180)
+    plt.close(fig)
+
+    # Compact numerical summary of the absolute normalization discrepancy.
+    summary_rows = []
+    for kin_bin, part in work.groupby("kin_bin", sort=True):
+        summary_rows.append({
+            "kin_bin": int(kin_bin),
+            "median_data_over_bh": float(np.nanmedian(part["data_over_bh"])),
+            "median_data_over_ep": float(np.nanmedian(part["data_over_ep"])),
+            "min_bh_delta": float(np.nanmin(part["bh_delta"])),
+            "max_bh_delta": float(np.nanmax(part["bh_delta"])),
+        })
+    #endfor
+    pd.DataFrame(summary_rows).to_csv(
+        diagdir / "06_neutron_model_ratio_summary_by_bin.csv",
+        index=False,
+    )
+
+    print(f"[neutron-model] diagnostics -> {diagdir}")
+#enddef
+
+
 def neutron_atac_ge(q: np.ndarray, A: float, B: float, C: float) -> np.ndarray:
     """
     Atac et al. (Nature Communications 12, 1759 (2021)) neutron GE form:
@@ -11915,6 +12160,12 @@ def run_neutron_analysis(args) -> int:
     evaluated["stat_pb_GeV4"] = 1000.0 * evaluated["stat"]
     evaluated["sys_pb_GeV4"] = 1000.0 * evaluated["sys"]
     evaluated.to_csv(outdir / "neutron_evaluated_points.csv", index=False)
+
+    # Compare the unfitted KM15 BH/full-EP predictions directly with the data
+    # before attempting any neutron-radius fit.  This is intentionally upstream
+    # of the radius machinery so pathological radius fits cannot obscure a
+    # convention or normalization mismatch.
+    save_neutron_model_comparison_diagnostics(evaluated, outdir)
 
     print(
         "[neutron] preliminary CLAS12 nDVCS: "
