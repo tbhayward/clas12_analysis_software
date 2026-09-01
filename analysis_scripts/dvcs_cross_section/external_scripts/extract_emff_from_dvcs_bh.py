@@ -1431,7 +1431,7 @@ def evaluate_km15_point(args: Tuple[int, float, float, float, float, float]) -> 
     Returns full EP, BH, DVCS^2, INT, R_BH, and the quadratic BH coefficients
     A/B/C such that sigma_BH=A*F1^2+B*F1*F2+C*F2^2.
     """
-    idx, xB, Q2, t_abs, phi_deg, ebeam = args
+    idx, xB, Q2, t_abs, phi_deg, ebeam, phi_convention = args
     try:
         import gepard as g
         from gepard.fits import th_KM15
@@ -1502,6 +1502,8 @@ def evaluate_km15_point(args: Tuple[int, float, float, float, float, float]) -> 
         "km15_F2": f2_nom,
         "km15_ep_predict": sigma_predict,
         "km15_ep_decomp_relerr": ep_relerr,
+        "phi_model_deg": transform_neutron_phi_deg(phi_deg, phi_convention),
+        "phi_convention": phi_convention,
     }
 #enddef
 
@@ -1603,6 +1605,7 @@ def evaluate_km15_clas6_dataframe(df: pd.DataFrame,
         "R_BH", "bh_delta", "bh_A", "bh_B", "bh_C",
         "bh_quad_relerr", "km15_F1", "km15_F2",
         "km15_ep_predict", "km15_ep_decomp_relerr",
+        "phi_model_deg", "phi_convention",
     ]
 
     if cache_path.exists() and not force:
@@ -11574,14 +11577,60 @@ def load_ndvcs_preliminary_unpolarized(path: Path) -> pd.DataFrame:
 #enddef
 
 
+
+NEUTRON_PHI_CONVENTIONS = (
+    "identity",
+    "180-minus",
+    "180-shift",
+)
+
+
+def transform_neutron_phi_deg(phi_deg: float, convention: str) -> float:
+    """
+    Transform the preliminary neutron-table phi value into the convention
+    passed to Gepard/PARTONS.
+
+    identity:
+        phi_model = phi_table
+
+    180-minus:
+        phi_model = (180 - phi_table) mod 360
+
+    180-shift:
+        phi_model = (180 + phi_table) mod 360
+
+    For an unpolarized cross section with the expected phi -> 360-phi symmetry,
+    the latter two can be numerically degenerate.  They are nevertheless kept
+    separate in the audit so the convention choice is explicit and documented.
+    """
+    phi = float(phi_deg) % 360.0
+    if convention == "identity":
+        return phi
+    elif convention == "180-minus":
+        return (180.0 - phi) % 360.0
+    elif convention == "180-shift":
+        return (180.0 + phi) % 360.0
+    #endif
+    raise ValueError(
+        f"Unknown neutron phi convention '{convention}'. "
+        f"Allowed: {NEUTRON_PHI_CONVENTIONS}"
+    )
+#enddef
+
+
 def make_gepard_neutron_point(g, xB: float, Q2: float, t_abs: float,
-                              phi_deg: float, ebeam: float):
-    """Construct a Trento-convention unpolarized e n -> e n gamma point."""
+                              phi_deg: float, ebeam: float,
+                              phi_convention: str = "identity"):
+    """
+    Construct an unpolarized e n -> e n gamma point after applying the chosen
+    neutron phi-convention transformation.
+    """
+    phi_model_deg = transform_neutron_phi_deg(phi_deg, phi_convention)
     pt = g.DataPoint(
         xB=float(xB),
         t=-abs(float(t_abs)),
         Q2=float(Q2),
-        phi=math.radians(float(phi_deg)),
+        phi=math.radians(float(phi_model_deg)),
         observable="XS",
         frame="trento",
         process="en2engamma",
@@ -11597,7 +11646,7 @@ def make_gepard_neutron_point(g, xB: float, Q2: float, t_abs: float,
 
 
 def evaluate_km15_neutron_point(
-        args: Tuple[int, float, float, float, float, float]) -> Dict[str, float]:
+        args: Tuple[int, float, float, float, float, float, str]) -> Dict[str, float]:
     """
     Evaluate KM15/Gepard for a neutron point and build the exact BH quadratic.
 
@@ -11617,7 +11666,10 @@ def evaluate_km15_neutron_point(
     #endtry
 
     th = th_KM15
-    pt = make_gepard_neutron_point(g, xB, Q2, t_abs, phi_deg, ebeam)
+    pt = make_gepard_neutron_point(
+        g, xB, Q2, t_abs, phi_deg, ebeam,
+        phi_convention=phi_convention,
+    )
 
     pref = float(th.PreFacSigma(pt))
     sigma_bh = pref * float(th.TBH2unp(pt))
@@ -11673,6 +11725,7 @@ def evaluate_km15_neutron_dataframe(
         ebeam: float,
         workers: int,
         cache_path: Path,
+        phi_convention: str = "identity",
         force: bool = False) -> pd.DataFrame:
     """Evaluate/cache KM15 neutron EP and exact BH coefficients for all points."""
     cache_cols = [
@@ -11683,7 +11736,16 @@ def evaluate_km15_neutron_dataframe(
     ]
     if cache_path.exists() and not force:
         cached = pd.read_csv(cache_path)
-        if len(cached) == len(df) and all(c in cached for c in cache_cols):
+        cache_matches_convention = (
+            "phi_convention" in cached
+            and len(cached) > 0
+            and str(cached["phi_convention"].iloc[0]) == str(phi_convention)
+        )
+        if (
+            len(cached) == len(df)
+            and all(c in cached for c in cache_cols)
+            and cache_matches_convention
+        ):
             out = df.reset_index(drop=True).copy()
             for col in cache_cols:
                 if col != "_row":
@@ -11702,6 +11764,7 @@ def evaluate_km15_neutron_dataframe(
             float(row.t_abs),
             float(row.phi_deg),
             float(ebeam),
+            str(phi_convention),
         )
         for i, row in df.reset_index(drop=True).iterrows()
     ]
@@ -11726,6 +11789,328 @@ def evaluate_km15_neutron_dataframe(
     return out
 #enddef
 
+
+
+
+def summarize_neutron_phi_convention_agreement(
+        evaluated: pd.DataFrame,
+        convention: str) -> Dict[str, float]:
+    """
+    Quantify absolute data/model agreement for one neutron phi convention.
+
+    This is intentionally based on the measured cross sections, not only on
+    R_BH = sigma_BH/sigma_EP.  The quoted systematic uncertainty is treated as
+    point-to-point here because the preliminary note does not provide a
+    covariance decomposition.
+    """
+    y = evaluated["xs"].to_numpy(float)
+    err = np.sqrt(
+        evaluated["stat"].to_numpy(float)**2
+        + evaluated["sys"].to_numpy(float)**2
+    )
+    bh = evaluated["km15_bh"].to_numpy(float)
+    ep = evaluated["km15_ep"].to_numpy(float)
+
+    finite_bh = np.isfinite(y) & np.isfinite(err) & np.isfinite(bh) & (err > 0)
+    finite_ep = np.isfinite(y) & np.isfinite(err) & np.isfinite(ep) & (err > 0)
+
+    chi2_bh = float(np.sum(((y[finite_bh] - bh[finite_bh]) / err[finite_bh])**2))
+    chi2_ep = float(np.sum(((y[finite_ep] - ep[finite_ep]) / err[finite_ep])**2))
+
+    ratio_bh = y / bh
+    ratio_ep = y / ep
+
+    return {
+        "phi_convention": convention,
+        "N": int(len(evaluated)),
+        "chi2_per_point_bh": chi2_bh / max(int(np.sum(finite_bh)), 1),
+        "chi2_per_point_ep": chi2_ep / max(int(np.sum(finite_ep)), 1),
+        "median_data_over_bh": float(np.nanmedian(ratio_bh)),
+        "median_data_over_ep": float(np.nanmedian(ratio_ep)),
+        "median_abs_frac_resid_bh": float(
+            np.nanmedian(np.abs((y - bh) / np.where(y != 0.0, y, np.nan)))
+        ),
+        "median_abs_frac_resid_ep": float(
+            np.nanmedian(np.abs((y - ep) / np.where(y != 0.0, y, np.nan)))
+        ),
+        "min_bh_delta": float(np.nanmin(evaluated["bh_delta"].to_numpy(float))),
+        "median_bh_delta": float(np.nanmedian(evaluated["bh_delta"].to_numpy(float))),
+    }
+#enddef
+
+
+def save_neutron_phi_convention_audit(
+        convention_tables: Dict[str, pd.DataFrame],
+        outdir: Path) -> str:
+    """
+    Compare identity, 180-minus, and 180-shift neutron phi mappings.
+
+    The preferred convention is selected by the full-electroproduction
+    chi2/point, with BH-only chi2/point used as a diagnostic.  This convention
+    is then propagated into the exact BH quadratic, R_BH selection, threshold
+    scan, and neutron-radius fits.
+    """
+    diagdir = outdir / "phi_convention_audit"
+    diagdir.mkdir(parents=True, exist_ok=True)
+
+    summary_rows = [
+        summarize_neutron_phi_convention_agreement(table, convention)
+        for convention, table in convention_tables.items()
+    ]
+    summary = pd.DataFrame(summary_rows).sort_values(
+        ["chi2_per_point_ep", "chi2_per_point_bh"]
+    ).reset_index(drop=True)
+    summary.to_csv(diagdir / "01_neutron_phi_convention_summary.csv", index=False)
+
+    preferred = str(summary.iloc[0]["phi_convention"])
+    print("[neutron-phi] convention audit:")
+    for _, row in summary.iterrows():
+        print(
+            f"[neutron-phi] {row['phi_convention']:10s} "
+            f"EP chi2/N={row['chi2_per_point_ep']:.3f} "
+            f"BH chi2/N={row['chi2_per_point_bh']:.3f} "
+            f"median data/EP={row['median_data_over_ep']:.3f} "
+            f"median data/BH={row['median_data_over_bh']:.3f} "
+            f"min |1-RBH|={100.0*row['min_bh_delta']:.2f}%"
+        )
+    #endfor
+    print(f"[neutron-phi] preferred convention = {preferred}")
+
+    # 3x3 visual audit: data are identical in all three conventions, while the
+    # model markers move according to the phi transformation.  Each panel
+    # contains all three full-EP predictions and BH predictions at measured
+    # phi_table locations so the angular reflection/shift is obvious.
+    reference = next(iter(convention_tables.values()))
+    fig, axes = plt.subplots(3, 3, figsize=(15.5, 11.8), sharex=True)
+    axes = np.asarray(axes).ravel()
+
+    for ax, kin_bin in zip(axes, sorted(reference["kin_bin"].unique())):
+        data_part = reference.loc[reference["kin_bin"] == kin_bin].sort_values("phi_deg")
+        phi = data_part["phi_deg"].to_numpy(float)
+        yerr = np.sqrt(
+            data_part["stat"].to_numpy(float)**2
+            + data_part["sys"].to_numpy(float)**2
+        )
+        ax.errorbar(
+            phi,
+            data_part["xs"].to_numpy(float),
+            yerr=yerr,
+            marker="o",
+            linestyle="none",
+            capsize=2,
+            label="CLAS12 preliminary",
+        )
+
+        marker_map = {
+            "identity": "s",
+            "180-minus": "^",
+            "180-shift": "D",
+        }
+        for convention in NEUTRON_PHI_CONVENTIONS:
+            p = convention_tables[convention]
+            p = p.loc[p["kin_bin"] == kin_bin].sort_values("phi_deg")
+            ax.plot(
+                p["phi_deg"],
+                p["km15_ep"],
+                marker=marker_map[convention],
+                linestyle="none",
+                fillstyle="none",
+                label=f"EP {convention}",
+            )
+        #endfor
+
+        ax.set_title(
+            rf"Bin {int(kin_bin)}: "
+            rf"$Q^2={data_part['Q2'].mean():.2f}$, "
+            rf"$x_B={data_part['xB'].mean():.3f}$, "
+            rf"$|t|={data_part['t_abs'].mean():.2f}$"
+        )
+        ax.grid(alpha=0.2)
+    #endfor
+
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi_{\rm table}$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel(r"$d^4\sigma$ [nb/GeV$^4$]")
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        loc="upper center",
+        ncol=4,
+        bbox_to_anchor=(0.5, 0.965),
+    )
+    fig.suptitle(
+        "Neutron phi-convention audit: full KM15 electroproduction",
+        y=0.995,
+        fontsize=16,
+    )
+    fig.subplots_adjust(top=0.90, hspace=0.28, wspace=0.22)
+    fig.savefig(diagdir / "02_neutron_phi_convention_ep_3x3.png", dpi=180)
+    plt.close(fig)
+
+    # Same audit for BH-only predictions.
+    fig, axes = plt.subplots(3, 3, figsize=(15.5, 11.8), sharex=True)
+    axes = np.asarray(axes).ravel()
+    for ax, kin_bin in zip(axes, sorted(reference["kin_bin"].unique())):
+        data_part = reference.loc[reference["kin_bin"] == kin_bin].sort_values("phi_deg")
+        phi = data_part["phi_deg"].to_numpy(float)
+        yerr = np.sqrt(
+            data_part["stat"].to_numpy(float)**2
+            + data_part["sys"].to_numpy(float)**2
+        )
+        ax.errorbar(
+            phi,
+            data_part["xs"].to_numpy(float),
+            yerr=yerr,
+            marker="o",
+            linestyle="none",
+            capsize=2,
+            label="CLAS12 preliminary",
+        )
+        marker_map = {
+            "identity": "s",
+            "180-minus": "^",
+            "180-shift": "D",
+        }
+        for convention in NEUTRON_PHI_CONVENTIONS:
+            p = convention_tables[convention]
+            p = p.loc[p["kin_bin"] == kin_bin].sort_values("phi_deg")
+            ax.plot(
+                p["phi_deg"],
+                p["km15_bh"],
+                marker=marker_map[convention],
+                linestyle="none",
+                fillstyle="none",
+                label=f"BH {convention}",
+            )
+        #endfor
+        ax.set_title(f"Bin {int(kin_bin)}")
+        ax.grid(alpha=0.2)
+    #endfor
+
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi_{\rm table}$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel(r"$d^4\sigma_{\rm BH}$ [nb/GeV$^4$]")
+    #endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        loc="upper center",
+        ncol=4,
+        bbox_to_anchor=(0.5, 0.965),
+    )
+    fig.suptitle(
+        "Neutron phi-convention audit: KM15 Bethe-Heitler",
+        y=0.995,
+        fontsize=16,
+    )
+    fig.subplots_adjust(top=0.90, hspace=0.28, wspace=0.22)
+    fig.savefig(diagdir / "03_neutron_phi_convention_bh_3x3.png", dpi=180)
+    plt.close(fig)
+
+    # Ratio audit for compact comparison.
+    fig, axes = plt.subplots(3, 3, figsize=(15.5, 11.8), sharex=True)
+    axes = np.asarray(axes).ravel()
+    for ax, kin_bin in zip(axes, sorted(reference["kin_bin"].unique())):
+        for convention in NEUTRON_PHI_CONVENTIONS:
+            p = convention_tables[convention]
+            p = p.loc[p["kin_bin"] == kin_bin].sort_values("phi_deg")
+            ratio = p["xs"].to_numpy(float) / p["km15_bh"].to_numpy(float)
+            ax.plot(
+                p["phi_deg"],
+                ratio,
+                marker={"identity":"s","180-minus":"^","180-shift":"D"}[convention],
+                linestyle="none",
+                fillstyle="none",
+                label=convention,
+            )
+        #endfor
+        ax.axhline(1.0, linewidth=0.9, linestyle="--")
+        ax.set_title(f"Bin {int(kin_bin)}")
+        ax.grid(alpha=0.2)
+    #endfor
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi_{\rm table}$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel("Data / BH")
+    #endfor
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels,
+        loc="upper center",
+        ncol=3,
+        bbox_to_anchor=(0.5, 0.965),
+    )
+    fig.suptitle(
+        "Neutron phi-convention audit: data/BH",
+        y=0.995,
+        fontsize=16,
+    )
+    fig.subplots_adjust(top=0.90, hspace=0.28, wspace=0.22)
+    fig.savefig(diagdir / "04_neutron_phi_convention_data_over_bh_3x3.png", dpi=180)
+    plt.close(fig)
+
+    # Save one all-point table with each convention side-by-side.
+    base_cols = ["kin_bin", "phi_deg", "Q2", "xB", "t_abs", "xs", "stat", "sys"]
+    merged = reference[base_cols].reset_index(drop=True).copy()
+    for convention in NEUTRON_PHI_CONVENTIONS:
+        p = convention_tables[convention].reset_index(drop=True)
+        suffix = convention.replace("-", "_")
+        merged[f"phi_model_deg_{suffix}"] = p["phi_model_deg"]
+        merged[f"km15_bh_{suffix}"] = p["km15_bh"]
+        merged[f"km15_ep_{suffix}"] = p["km15_ep"]
+        merged[f"R_BH_{suffix}"] = p["R_BH"]
+        merged[f"bh_delta_{suffix}"] = p["bh_delta"]
+        merged[f"data_over_bh_{suffix}"] = p["xs"] / p["km15_bh"]
+        merged[f"data_over_ep_{suffix}"] = p["xs"] / p["km15_ep"]
+    #endfor
+    merged.to_csv(diagdir / "05_neutron_phi_convention_all_points.csv", index=False)
+
+    # Explicitly document whether the two 180-degree mappings are degenerate
+    # for this unpolarized observable.
+    minus = convention_tables["180-minus"].sort_values(
+        ["kin_bin", "phi_deg"]
+    ).reset_index(drop=True)
+    shift = convention_tables["180-shift"].sort_values(
+        ["kin_bin", "phi_deg"]
+    ).reset_index(drop=True)
+    bh_rel = np.nanmax(
+        np.abs(minus["km15_bh"].to_numpy(float) - shift["km15_bh"].to_numpy(float))
+        / np.maximum(np.abs(minus["km15_bh"].to_numpy(float)), 1e-30)
+    )
+    ep_rel = np.nanmax(
+        np.abs(minus["km15_ep"].to_numpy(float) - shift["km15_ep"].to_numpy(float))
+        / np.maximum(np.abs(minus["km15_ep"].to_numpy(float)), 1e-30)
+    )
+    with (diagdir / "06_neutron_phi_convention_note.txt").open("w") as handle:
+        handle.write(f"Preferred convention: {preferred}\n")
+        handle.write(
+            "Maximum relative 180-minus vs 180-shift difference:\n"
+        )
+        handle.write(f"  BH: {bh_rel:.6e}\n")
+        handle.write(f"  EP: {ep_rel:.6e}\n")
+        if bh_rel < 1e-10 and ep_rel < 1e-10:
+            handle.write(
+                "The two 180-degree mappings are numerically degenerate for "
+                "these unpolarized points; XUU alone cannot distinguish them.\n"
+            )
+        #endif
+    #endwith
+
+    print(
+        "[neutron-phi] 180-minus vs 180-shift max relative difference: "
+        f"BH={bh_rel:.3e}, EP={ep_rel:.3e}"
+    )
+    print(f"[neutron-phi] diagnostics -> {diagdir}")
+    return preferred
+#enddef
 
 
 def save_neutron_model_comparison_diagnostics(
@@ -12146,13 +12531,50 @@ def run_neutron_analysis(args) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
 
     data = load_ndvcs_preliminary_unpolarized(input_path)
-    evaluated = evaluate_km15_neutron_dataframe(
-        data,
-        ebeam=float(args.neutron_ebeam),
-        workers=int(args.workers),
-        cache_path=outdir / "km15_neutron_bh_decomposition.csv",
-        force=bool(args.force_km15),
-    )
+
+    # Evaluate every plausible neutron phi mapping before doing any BH-purity
+    # selection or radius fit.  The audit is based on absolute data/model
+    # agreement, not merely on R_BH within the model.
+    convention_tables: Dict[str, pd.DataFrame] = {}
+    for convention in NEUTRON_PHI_CONVENTIONS:
+        cache_name = (
+            "km15_neutron_bh_decomposition_"
+            + convention.replace("-", "_")
+            + ".csv"
+        )
+        convention_tables[convention] = evaluate_km15_neutron_dataframe(
+            data,
+            ebeam=float(args.neutron_ebeam),
+            workers=int(args.workers),
+            cache_path=outdir / cache_name,
+            phi_convention=convention,
+            force=bool(args.force_km15),
+        )
+    #endfor
+
+    if args.neutron_phi_convention == "auto":
+        preferred_phi_convention = save_neutron_phi_convention_audit(
+            convention_tables, outdir
+        )
+    else:
+        # Still write the audit even when the user overrides the convention, so
+        # the consequence of the override remains visible and reproducible.
+        auto_preferred = save_neutron_phi_convention_audit(
+            convention_tables, outdir
+        )
+        preferred_phi_convention = str(args.neutron_phi_convention)
+        print(
+            "[neutron-phi] user override: "
+            f"{preferred_phi_convention} "
+            f"(automatic audit preferred {auto_preferred})"
+        )
+    #endif
+
+    evaluated = convention_tables[preferred_phi_convention].copy()
+
+    # Preserve the traditional cache/output filenames for downstream tools,
+    # but they now contain the explicitly selected phi convention.
+    evaluated.to_csv(outdir / "km15_neutron_bh_decomposition.csv", index=False)
 
     # Save the full evaluated table in both the script's nb units and the
     # original-note pb units for easy cross-checking.
@@ -12162,14 +12584,13 @@ def run_neutron_analysis(args) -> int:
     evaluated.to_csv(outdir / "neutron_evaluated_points.csv", index=False)
 
     # Compare the unfitted KM15 BH/full-EP predictions directly with the data
-    # before attempting any neutron-radius fit.  This is intentionally upstream
-    # of the radius machinery so pathological radius fits cannot obscure a
-    # convention or normalization mismatch.
+    # using the selected convention before attempting any neutron-radius fit.
     save_neutron_model_comparison_diagnostics(evaluated, outdir)
 
     print(
         "[neutron] preliminary CLAS12 nDVCS: "
-        f"N={len(evaluated)}, Ebeam={args.neutron_ebeam:.3f} GeV"
+        f"N={len(evaluated)}, Ebeam={args.neutron_ebeam:.3f} GeV, "
+        f"phi={preferred_phi_convention}"
     )
     print(
         "[neutron] KM15/Gepard decomposition checks: "
@@ -12545,6 +12966,17 @@ def build_parser() -> argparse.ArgumentParser:
             "Effective beam energy in GeV for the combined preliminary "
             "neutron table (default: 10.45 GeV, as quoted approximately in "
             "the analysis note)."
+        ),
+    )
+    p.add_argument(
+        "--neutron-phi-convention",
+        choices=("auto",) + NEUTRON_PHI_CONVENTIONS,
+        default="auto",
+        help=(
+            "Neutron table-to-Gepard phi mapping.  Default 'auto' evaluates "
+            "identity, 180-minus, and 180-shift and selects the convention "
+            "with the best full-KM15 absolute chi2/point.  An explicit choice "
+            "overrides the automatic selection but still writes the audit."
         ),
     )
     p.add_argument(
