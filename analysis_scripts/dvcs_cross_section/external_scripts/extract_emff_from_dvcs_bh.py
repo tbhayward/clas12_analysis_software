@@ -12887,6 +12887,342 @@ def fit_neutron_atac_bh(
 #enddef
 
 
+
+def save_neutron_bh_sensitivity_study(
+        evaluated: pd.DataFrame,
+        outdir: Path) -> None:
+    """
+    Diagnose what the measured neutron BH cross sections actually constrain.
+
+    The exact precomputed quadratic
+        sigma_BH = A F1^2 + B F1 F2 + C F2^2
+    is differentiated numerically with respect to Sachs GE_n and GM_n at each
+    measured point, using the nominal Kelly neutron elastic form factors as
+    the expansion point.
+
+    Two complementary sensitivities are saved:
+      1) logarithmic/fractional:
+           S_GE = d ln(sigma) / d ln(|GE|)
+           S_GM = d ln(sigma) / d ln(|GM|)
+         These answer how a fractional FF change modifies the cross section.
+      2) absolute:
+           D_GE = d sigma / d GE
+           D_GM = d sigma / d GM
+         These remain meaningful when GE_n is small and the logarithmic GE
+         sensitivity is correspondingly suppressed.
+
+    The local two-parameter Fisher matrix in each kinematic bin is also saved.
+    Its eigenvalues/condition number quantify the GE/GM degeneracy without
+    attempting a Q2->0 radius extrapolation.
+    """
+    diagdir = outdir / "bh_sensitivity"
+    diagdir.mkdir(parents=True, exist_ok=True)
+
+    work = evaluated.copy().reset_index(drop=True)
+    q = work["t_abs"].to_numpy(float)
+    tau = q / (4.0 * MP2)
+    inv = 1.0 / (1.0 + tau)
+
+    f1 = work["km15_F1"].to_numpy(float)
+    f2 = work["km15_F2"].to_numpy(float)
+    ge0 = f1 - tau * f2
+    gm0 = f1 + f2
+
+    A = work["bh_A"].to_numpy(float)
+    B = work["bh_B"].to_numpy(float)
+    C = work["bh_C"].to_numpy(float)
+
+    def sigma_from_sachs(ge, gm):
+        ff1 = (ge + tau * gm) * inv
+        ff2 = (gm - ge) * inv
+        return bh_from_f1f2(A, B, C, ff1, ff2)
+    #enddef
+
+    sigma0 = sigma_from_sachs(ge0, gm0)
+
+    # Central finite differences.  The step is relative to the natural neutron
+    # FF scale, with a floor so GE_n~0 does not lead to a vanishing step.
+    h_ge = 1.0e-5 * np.maximum(np.abs(ge0), 0.05)
+    h_gm = 1.0e-5 * np.maximum(np.abs(gm0), 0.20)
+
+    dsdge = (
+        sigma_from_sachs(ge0 + h_ge, gm0)
+        - sigma_from_sachs(ge0 - h_ge, gm0)
+    ) / (2.0 * h_ge)
+    dsdgm = (
+        sigma_from_sachs(ge0, gm0 + h_gm)
+        - sigma_from_sachs(ge0, gm0 - h_gm)
+    ) / (2.0 * h_gm)
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        s_ge = ge0 * dsdge / sigma0
+        s_gm = gm0 * dsdgm / sigma0
+        ratio_abs = np.abs(dsdge) / np.maximum(np.abs(dsdgm), 1.0e-30)
+        ratio_frac = np.abs(s_ge) / np.maximum(np.abs(s_gm), 1.0e-30)
+    #endwith
+
+    err = np.sqrt(
+        work["stat"].to_numpy(float)**2
+        + work["sys"].to_numpy(float)**2
+        + (0.05 * work["xs"].to_numpy(float))**2
+    )
+    info_ge = (dsdge / err)**2
+    info_gm = (dsdgm / err)**2
+    info_cross = dsdge * dsdgm / err**2
+
+    work["GE_n_Kelly"] = ge0
+    work["GM_n_Kelly"] = gm0
+    work["bh_sigma_Kelly"] = sigma0
+    work["dSigma_dGE"] = dsdge
+    work["dSigma_dGM"] = dsdgm
+    work["dlnSigma_dlnAbsGE"] = s_ge
+    work["dlnSigma_dlnAbsGM"] = s_gm
+    work["abs_derivative_ratio_GE_over_GM"] = ratio_abs
+    work["fractional_sensitivity_ratio_GE_over_GM"] = ratio_frac
+    work["point_error_for_sensitivity"] = err
+    work["fisher_GE_GE"] = info_ge
+    work["fisher_GE_GM"] = info_cross
+    work["fisher_GM_GM"] = info_gm
+    work.to_csv(diagdir / "01_neutron_bh_point_sensitivities.csv", index=False)
+
+    # Per-bin Fisher diagnostics.  This deliberately treats GE and GM as two
+    # local amplitudes within one (Q2,xB,t) bin, avoiding any radius model.
+    fisher_rows = []
+    for kin_bin, part in work.groupby("kin_bin", sort=True):
+        I = np.array([
+            [np.nansum(part["fisher_GE_GE"]),
+             np.nansum(part["fisher_GE_GM"])],
+            [np.nansum(part["fisher_GE_GM"]),
+             np.nansum(part["fisher_GM_GM"])],
+        ], dtype=float)
+        eig = np.linalg.eigvalsh(I)
+        eig = np.sort(eig)
+        condition = (
+            float(eig[-1] / eig[0])
+            if eig[0] > 0.0 and np.isfinite(eig[0])
+            else np.inf
+        )
+        covariance = np.full((2, 2), np.nan)
+        corr = np.nan
+        sigma_ge = np.nan
+        sigma_gm = np.nan
+        try:
+            covariance = np.linalg.inv(I)
+            sigma_ge = math.sqrt(max(0.0, covariance[0, 0]))
+            sigma_gm = math.sqrt(max(0.0, covariance[1, 1]))
+            denom = sigma_ge * sigma_gm
+            if denom > 0.0:
+                corr = float(covariance[0, 1] / denom)
+            #endif
+        except np.linalg.LinAlgError:
+            pass
+        #endtry
+
+        fisher_rows.append({
+            "kin_bin": int(kin_bin),
+            "N": int(len(part)),
+            "Q2_mean_GeV2": float(np.nanmean(part["Q2"])),
+            "xB_mean": float(np.nanmean(part["xB"])),
+            "t_abs_mean_GeV2": float(np.nanmean(part["t_abs"])),
+            "GE_n_Kelly_mean": float(np.nanmean(part["GE_n_Kelly"])),
+            "GM_n_Kelly_mean": float(np.nanmean(part["GM_n_Kelly"])),
+            "median_abs_dlnSigma_dlnAbsGE": float(
+                np.nanmedian(np.abs(part["dlnSigma_dlnAbsGE"]))
+            ),
+            "median_abs_dlnSigma_dlnAbsGM": float(
+                np.nanmedian(np.abs(part["dlnSigma_dlnAbsGM"]))
+            ),
+            "median_fractional_sensitivity_ratio_GE_over_GM": float(
+                np.nanmedian(part["fractional_sensitivity_ratio_GE_over_GM"])
+            ),
+            "fisher_eigenvalue_small": float(eig[0]),
+            "fisher_eigenvalue_large": float(eig[-1]),
+            "fisher_condition_number": condition,
+            "local_sigma_GE": sigma_ge,
+            "local_sigma_GM": sigma_gm,
+            "local_GE_GM_correlation": corr,
+        })
+    #endfor
+
+    fisher = pd.DataFrame(fisher_rows)
+    fisher.to_csv(diagdir / "02_neutron_bh_fisher_by_kinematic_bin.csv", index=False)
+
+    # 3x3 fractional-sensitivity canvas.  This is the most direct visualization
+    # of whether GE_n or GM_n controls each measured angular point.
+    fig, axes = plt.subplots(3, 3, figsize=(15.0, 11.5), sharex=True)
+    axes = np.asarray(axes).ravel()
+    for ax, (kin_bin, part) in zip(
+            axes, work.groupby("kin_bin", sort=True)):
+        p = part.sort_values("phi_deg")
+        phi = p["phi_deg"].to_numpy(float)
+        ax.plot(
+            phi,
+            np.abs(p["dlnSigma_dlnAbsGE"].to_numpy(float)),
+            marker="o", linestyle="none",
+            label=r"$|\partial\ln\sigma/\partial\ln|G_E^n||$",
+        )
+        ax.plot(
+            phi,
+            np.abs(p["dlnSigma_dlnAbsGM"].to_numpy(float)),
+            marker="s", linestyle="none", fillstyle="none",
+            label=r"$|\partial\ln\sigma/\partial\ln|G_M^n||$",
+        )
+        ax.set_title(
+            rf"Bin {int(kin_bin)}: "
+            rf"$|t|={p['t_abs'].mean():.3f}$ GeV$^2$"
+        )
+        ax.grid(alpha=0.2)
+    #endfor
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel("Absolute fractional sensitivity")
+    #endfor
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels, loc="upper center", ncol=2,
+        bbox_to_anchor=(0.5, 0.965),
+    )
+    fig.suptitle(
+        r"Neutron BH local sensitivity to $G_E^n$ and $G_M^n$",
+        y=0.995, fontsize=16,
+    )
+    fig.subplots_adjust(top=0.90, hspace=0.28, wspace=0.22)
+    fig.savefig(
+        diagdir / "03_neutron_bh_fractional_sensitivity_3x3.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    # Absolute derivative canvas is essential because GE_n is small: a small
+    # logarithmic GE sensitivity can arise simply from the GE prefactor.
+    fig, axes = plt.subplots(3, 3, figsize=(15.0, 11.5), sharex=True)
+    axes = np.asarray(axes).ravel()
+    for ax, (kin_bin, part) in zip(
+            axes, work.groupby("kin_bin", sort=True)):
+        p = part.sort_values("phi_deg")
+        phi = p["phi_deg"].to_numpy(float)
+        ax.plot(
+            phi, np.abs(p["dSigma_dGE"].to_numpy(float)),
+            marker="o", linestyle="none",
+            label=r"$|\partial\sigma/\partial G_E^n|$",
+        )
+        ax.plot(
+            phi, np.abs(p["dSigma_dGM"].to_numpy(float)),
+            marker="s", linestyle="none", fillstyle="none",
+            label=r"$|\partial\sigma/\partial G_M^n|$",
+        )
+        ax.set_title(f"Bin {int(kin_bin)}")
+        ax.grid(alpha=0.2)
+    #endfor
+    for ax in axes[6:]:
+        ax.set_xlabel(r"$\phi$ [deg]")
+    #endfor
+    for ax in axes[::3]:
+        ax.set_ylabel(r"Absolute derivative [cross section / FF]")
+    #endfor
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labels, loc="upper center", ncol=2,
+        bbox_to_anchor=(0.5, 0.965),
+    )
+    fig.suptitle(
+        r"Neutron BH absolute $G_E^n/G_M^n$ leverage",
+        y=0.995, fontsize=16,
+    )
+    fig.subplots_adjust(top=0.90, hspace=0.28, wspace=0.22)
+    fig.savefig(
+        diagdir / "04_neutron_bh_absolute_sensitivity_3x3.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    # Fisher condition number and GE-GM correlation summarize how nearly
+    # singular a two-amplitude extraction is in each kinematic bin.
+    fig, ax = plt.subplots(figsize=(8.0, 5.2))
+    ax.plot(
+        fisher["kin_bin"],
+        fisher["fisher_condition_number"],
+        marker="o", linestyle="none",
+    )
+    ax.set_yscale("log")
+    ax.set_xlabel("Kinematic bin")
+    ax.set_ylabel("Fisher condition number")
+    ax.set_title(r"Local neutron $G_E^n/G_M^n$ identifiability")
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "05_neutron_bh_fisher_condition_by_bin.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.2))
+    ax.plot(
+        fisher["kin_bin"],
+        fisher["local_GE_GM_correlation"],
+        marker="o", linestyle="none",
+    )
+    ax.axhline(0.0, linewidth=0.8, linestyle=":")
+    ax.set_ylim(-1.05, 1.05)
+    ax.set_xlabel("Kinematic bin")
+    ax.set_ylabel(r"Local $G_E^n$-$G_M^n$ correlation")
+    ax.set_title("Two-amplitude Fisher correlation")
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(
+        diagdir / "06_neutron_bh_GE_GM_correlation_by_bin.png",
+        dpi=180,
+    )
+    plt.close(fig)
+
+    # Compact threshold summary: how the sensitivity composition changes under
+    # the same KM15 BH-purity cuts used by the exploratory radius scan.
+    thresholds = [
+        0.05, 0.075, 0.10, 0.15, 0.20, 0.30, 0.50, 0.75, 1.00
+    ]
+    finite_delta = work.loc[
+        np.isfinite(work["bh_delta"]), "bh_delta"
+    ].to_numpy(float)
+    if len(finite_delta):
+        thresholds.append(float(np.max(finite_delta) * 1.001))
+    #endif
+    threshold_rows = []
+    for threshold in sorted(set(thresholds)):
+        p = work.loc[
+            np.isfinite(work["bh_delta"])
+            & (work["bh_delta"] <= float(threshold))
+        ]
+        if not len(p):
+            continue
+        #endif
+        threshold_rows.append({
+            "bh_threshold": float(threshold),
+            "bh_threshold_percent": 100.0 * float(threshold),
+            "N": int(len(p)),
+            "median_abs_fractional_GE_sensitivity": float(
+                np.nanmedian(np.abs(p["dlnSigma_dlnAbsGE"]))
+            ),
+            "median_abs_fractional_GM_sensitivity": float(
+                np.nanmedian(np.abs(p["dlnSigma_dlnAbsGM"]))
+            ),
+            "median_fractional_GE_over_GM": float(
+                np.nanmedian(p["fractional_sensitivity_ratio_GE_over_GM"])
+            ),
+            "sum_fisher_GE_GE": float(np.nansum(p["fisher_GE_GE"])),
+            "sum_fisher_GM_GM": float(np.nansum(p["fisher_GM_GM"])),
+        })
+    #endfor
+    pd.DataFrame(threshold_rows).to_csv(
+        diagdir / "07_neutron_bh_sensitivity_by_threshold.csv",
+        index=False,
+    )
+
+    print(f"[neutron-sensitivity] diagnostics -> {diagdir}")
+#enddef
+
+
 def run_neutron_analysis(args) -> int:
     """
     Exploratory neutron-radius extension.
@@ -12957,6 +13293,10 @@ def run_neutron_analysis(args) -> int:
     # Compare the unfitted KM15 BH/full-EP predictions directly with the data
     # using the selected convention before attempting any neutron-radius fit.
     save_neutron_model_comparison_diagnostics(evaluated, outdir)
+
+    # Before extrapolating to a neutron charge or magnetic radius, quantify the
+    # actual finite-|t| GE_n/GM_n leverage of these measured BH cross sections.
+    save_neutron_bh_sensitivity_study(evaluated, outdir)
 
     print(
         "[neutron] preliminary CLAS12 nDVCS: "
