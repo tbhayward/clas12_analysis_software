@@ -4630,16 +4630,19 @@ def save_mixed_family_closure_ranking(
     rows = []
     for pair in candidate_pairs:
         part = table.loc[table["family"] == pair]
-        valid_frac = (
-            part["valid_replicas"].to_numpy(float)
-            / part["requested_replicas"].to_numpy(float)
+        attempted = part["attempted_replicas"].to_numpy(float)
+        valid = part["valid_replicas"].to_numpy(float)
+        valid_frac = np.divide(
+            valid, attempted, out=np.zeros_like(valid), where=attempted > 0.0
         )
         global_valid = float(
-            part["valid_replicas"].sum() / part["requested_replicas"].sum()
-        )
+            part["valid_replicas"].sum() / part["attempted_replicas"].sum()
+        ) if float(part["attempted_replicas"].sum()) > 0.0 else np.nan
         min_valid = float(np.nanmin(valid_frac)) if len(valid_frac) else np.nan
+        all_targets_reached = bool(part["target_reached"].astype(bool).all())
         eligible = bool(
-            np.isfinite(global_valid) and np.isfinite(min_valid)
+            all_targets_reached
+            and np.isfinite(global_valid) and np.isfinite(min_valid)
             and global_valid >= minimum_global_valid_fraction
             and min_valid >= minimum_scenario_valid_fraction
         )
@@ -4649,6 +4652,7 @@ def save_mixed_family_closure_ranking(
             "family_M": decode_sachs_family_pair(pair)[1],
             "global_valid_fraction": global_valid,
             "minimum_scenario_valid_fraction": min_valid,
+            "all_targets_reached": all_targets_reached,
             "eligible": eligible,
         }
         for quantity in ["rE", "rM"]:
@@ -4859,66 +4863,105 @@ def run_radius_bias_variance_study(
         )
         nworkers = max(1, int(nworkers))
 
+        # Treat --radius-bias-replicas as the requested number of SUCCESSFUL
+        # replica fits, rather than the number merely attempted.  Failed fits
+        # are replaced by fresh statistically independent replicas until the
+        # target is reached or a finite attempt budget is exhausted.  The
+        # attempt efficiency remains an explicit numerical-robustness metric.
+        target_valid = max(1, int(args.radius_bias_replicas))
+        max_attempts = max(5 * target_valid, target_valid + 50)
         seed_root = np.random.SeedSequence(
             [int(args.radius_bias_seed), int(truth_index)]
         )
-        child_seeds = seed_root.spawn(
-            len(families) * args.radius_bias_replicas
-        )
-
-        seeds_by_family = {}
-        iseed = 0
-        for family in families:
-            seeds = []
-            for _ in range(args.radius_bias_replicas):
-                seeds.append(int(child_seeds[iseed].generate_state(1, dtype=np.uint64)[0]))
-                iseed += 1
-            #endfor
-            seeds_by_family[family] = seeds
-        #endfor
-        tasks = [(family, seeds_by_family[family]) for family in families]
+        family_seed_roots = seed_root.spawn(len(families))
+        seed_queues = {
+            family: list(family_seed_roots[ifam].spawn(max_attempts))
+            for ifam, family in enumerate(families)
+        }
 
         results_by_family = {
             family: {"rE": [], "rM": [], "shape_GE": [], "shape_GM": [],
-                     "shape_combined": [], "nvalid": 0}
+                     "shape_combined": [], "nvalid": 0, "nattempted": 0,
+                     "target_reached": False}
             for family in families
         }
 
         print(
-            f"[radius-bias] truth={truth_name}: "
-            f"{len(families) * args.radius_bias_replicas} replica fits "
-            f"in {len(tasks)} family batches with {nworkers} worker(s)..."
+            f"[radius-bias] truth={truth_name}: target={target_valid} valid "
+            f"replicas/family, max_attempts={max_attempts}, "
+            f"{len(families)} family batches with {nworkers} worker(s)..."
         )
         t0 = time.time()
 
+        # Dispatch one retry round at a time.  Each family receives only as
+        # many new replicas as it still needs, capped by its remaining attempt
+        # budget.  This preserves family-level batching while avoiding wasted
+        # fits after a family has already accumulated the requested successes.
         with ProcessPoolExecutor(
                 max_workers=nworkers,
                 initializer=_init_radius_bias_worker,
                 initargs=(specs, central_by_key, sigma_by_key,
                           truth_ge_by_key, truth_gm_by_key)) as pool:
-            for family, family_results in pool.map(
-                    _radius_bias_family_batch_worker, tasks, chunksize=1):
-                for irep, result in enumerate(family_results):
-                    _, re_val, rm_val, valid, ge_shape, gm_shape, combined_shape = result
-                    replica_rows.append({
-                        "truth_model": truth_name, "truth_group": truth_group,
-                        "truth_rE_fm": truth_radius["E"], "truth_rM_fm": truth_radius["M"],
-                        "family": family, "replica": irep,
-                        "rE_fit_fm": re_val, "rM_fit_fm": rm_val, "valid": valid,
-                        "GE_shape_frac_rms": ge_shape, "GM_shape_frac_rms": gm_shape,
-                        "combined_shape_frac_rms": combined_shape,
-                    })
-                    if valid:
-                        results_by_family[family]["rE"].append(re_val)
-                        results_by_family[family]["rM"].append(rm_val)
-                        results_by_family[family]["shape_GE"].append(ge_shape)
-                        results_by_family[family]["shape_GM"].append(gm_shape)
-                        results_by_family[family]["shape_combined"].append(combined_shape)
-                        results_by_family[family]["nvalid"] += 1
+            while True:
+                tasks = []
+                task_attempt_starts = {}
+                for family in families:
+                    state = results_by_family[family]
+                    need = target_valid - int(state["nvalid"])
+                    remaining = max_attempts - int(state["nattempted"])
+                    if need <= 0 or remaining <= 0:
+                        continue
                     #endif
+                    nsubmit = min(need, remaining)
+                    i0 = int(state["nattempted"])
+                    seeds = [
+                        int(ss.generate_state(1, dtype=np.uint64)[0])
+                        for ss in seed_queues[family][i0:i0 + nsubmit]
+                    ]
+                    tasks.append((family, seeds))
+                    task_attempt_starts[family] = i0
                 #endfor
-            #endfor
+
+                if not tasks:
+                    break
+                #endif
+
+                for family, family_results in pool.map(
+                        _radius_bias_family_batch_worker, tasks, chunksize=1):
+                    state = results_by_family[family]
+                    attempt_start = task_attempt_starts[family]
+                    for ilocal, result in enumerate(family_results):
+                        _, re_val, rm_val, valid, ge_shape, gm_shape, combined_shape = result
+                        attempt_index = attempt_start + ilocal
+                        state["nattempted"] += 1
+                        accepted = bool(valid and int(state["nvalid"]) < target_valid)
+                        replica_rows.append({
+                            "truth_model": truth_name, "truth_group": truth_group,
+                            "truth_rE_fm": truth_radius["E"], "truth_rM_fm": truth_radius["M"],
+                            "family": family, "attempt": attempt_index,
+                            "accepted_replica": int(state["nvalid"]) if accepted else np.nan,
+                            "rE_fit_fm": re_val, "rM_fit_fm": rm_val, "valid": valid,
+                            "GE_shape_frac_rms": ge_shape, "GM_shape_frac_rms": gm_shape,
+                            "combined_shape_frac_rms": combined_shape,
+                        })
+                        if accepted:
+                            state["rE"].append(re_val)
+                            state["rM"].append(rm_val)
+                            state["shape_GE"].append(ge_shape)
+                            state["shape_GM"].append(gm_shape)
+                            state["shape_combined"].append(combined_shape)
+                            state["nvalid"] += 1
+                        #endif
+                    #endfor
+                #endfor
+            #endwhile
         #endwith
+
+        for family in families:
+            results_by_family[family]["target_reached"] = bool(
+                int(results_by_family[family]["nvalid"]) >= target_valid
+            )
+        #endfor
 
         print(
             f"[radius-bias] truth={truth_name}: finished in "
@@ -4972,18 +5015,25 @@ def run_radius_bias_variance_study(
                     "bias_fm": bias,
                     "sqrt_stat2_plus_bias2_fm": total,
                     "valid_replicas": nvalid,
-                    "requested_replicas": args.radius_bias_replicas,
-                    "valid_fraction": (
-                        nvalid / args.radius_bias_replicas
+                    "requested_replicas": target_valid,
+                    "attempted_replicas": int(results_by_family[family]["nattempted"]),
+                    "attempt_efficiency": (
+                        nvalid / int(results_by_family[family]["nattempted"])
+                        if int(results_by_family[family]["nattempted"]) > 0 else np.nan
                     ),
+                    "target_reached": bool(results_by_family[family]["target_reached"]),
+                    "valid_fraction": (nvalid / target_valid),
+                    "max_attempts": max_attempts,
                     "workers": nworkers,
                     **shape_summary,
                 })
             #endfor
 
             print(
-                f"[radius-bias] truth={truth_name:42s} family={family:3s} "
-                f"valid={nvalid}/{args.radius_bias_replicas}"
+                f"[radius-bias] truth={truth_name:42s} family={family:15s} "
+                f"valid={nvalid}/{target_valid} "
+                f"attempted={int(results_by_family[family]['nattempted'])} "
+                f"eff={nvalid / max(1, int(results_by_family[family]['nattempted'])):.3f}"
             )
         #endfor
     #endfor
@@ -5151,31 +5201,31 @@ def run_radius_bias_variance_study(
             (table["family"] == family)
             & (table["quantity"] == "rE")
         ]
-        fractions = (
-            part["valid_replicas"].to_numpy(float)
-            / part["requested_replicas"].to_numpy(float)
+        attempted = part["attempted_replicas"].to_numpy(float)
+        valid = part["valid_replicas"].to_numpy(float)
+        fractions = np.divide(
+            valid, attempted, out=np.zeros_like(valid), where=attempted > 0.0
         )
         min_frac.append(float(np.nanmin(fractions)))
         global_frac.append(
-            float(
-                np.nansum(part["valid_replicas"])
-                / np.nansum(part["requested_replicas"])
-            )
+            float(np.nansum(valid) / np.nansum(attempted))
+            if np.nansum(attempted) > 0.0 else np.nan
         )
     #endfor
 
-    ax.plot(x, global_frac, marker="o", label="global valid fraction")
-    ax.plot(x, min_frac, marker="s", label="minimum truth-scenario fraction")
-    # Convergence is diagnostic only; it no longer determines family eligibility.
+    ax.plot(x, global_frac, marker="o", label="global attempt efficiency")
+    ax.plot(x, min_frac, marker="s", label="minimum truth-scenario efficiency")
+    # Attempt efficiency is the numerical-robustness gate; closure bias and
+    # replica variance determine the ranking among families that pass it.
     ax.set_xticks(x)
     ax.set_xticklabels(families, rotation=45)
     ax.set_ylim(0.0, 1.05)
-    ax.set_ylabel("valid replica fraction")
-    ax.set_title("Replica-fit convergence by candidate family")
+    ax.set_ylabel("successful fits / attempted fits")
+    ax.set_title("Replica-fit attempt efficiency by candidate family")
     ax.grid(alpha=0.2)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(outdir / "04_valid_replica_fraction.png", dpi=180)
+    fig.savefig(outdir / "04_replica_attempt_efficiency.png", dpi=180)
     plt.close(fig)
 
     for quantity in ["rE", "rM"]:
@@ -10338,7 +10388,15 @@ def run_unified_km15_final_analysis(
                 ),
                 "nominal_rE_fm": float(fit.get("rE_fm", np.nan)),
                 "nominal_rM_fm": float(fit.get("rM_fm", np.nan)),
+                "nominal_failure": str(fit.get("failure", "")),
             })
+            # Persist the audit after every attempted production family so a
+            # later fatal exception never hides which closure-ranked fits were
+            # tried or why they failed.
+            pd.DataFrame(family_audit_rows).to_csv(
+                summary_dir / "km15_family_selection_by_ensemble.csv",
+                index=False,
+            )
             if valid:
                 selected_family = family
                 break
@@ -12151,7 +12209,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--radius-bias-replicas",
         type=int,
         default=300,
-        help="Gaussian pseudodata replicas per truth model and fit family",
+        help=("Target number of SUCCESSFUL Gaussian pseudodata replica fits per "
+              "truth model and fit family; failed fits are retried up to a "
+              "finite automatic attempt cap"),
     )
     p.add_argument(
         "--radius-bias-workers",
