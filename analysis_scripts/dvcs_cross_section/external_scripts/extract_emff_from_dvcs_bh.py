@@ -13708,15 +13708,89 @@ def run_neutron_magnetic_function_closure(
             "[neutron-GM-closure] WARNING: no family reached the requested "
             "successful-replica target for every truth scenario"
         )
-        chosen = None
-    else:
-        chosen = str(
-            eligible.sort_values(
-                ["RMS_objective_across_truths_fm",
-                 "max_objective_across_truths_fm"]
-            ).iloc[0]["family"]
-        )
     #endif
+
+    # Second gate: a closure-eligible family must also give a physically valid
+    # fit to the actual neutron data.  Audit every candidate on all evaluated
+    # points so a good synthetic-closure score cannot hide a pathological
+    # nominal-data extrapolation.
+    nominal_rows = []
+    for family in candidate_families:
+        npars = int(re.findall(r"\d+", family)[0])
+        radius, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
+            evaluated,
+            family,
+            statistical_only=False,
+            bh_systematic_fraction=0.05,
+            return_parameters=True,
+        )
+        ndof = max(1, len(evaluated) - npars)
+        rank_row = ranking.loc[ranking["family"] == family].iloc[0]
+        closure_eligible = bool(
+            float(rank_row["target_reached_fraction"]) >= 0.999999
+        )
+        row = {
+            "family": family,
+            "closure_eligible": closure_eligible,
+            "closure_RMS_objective_fm": float(
+                rank_row["RMS_objective_across_truths_fm"]
+            ),
+            "closure_max_objective_fm": float(
+                rank_row["max_objective_across_truths_fm"]
+            ),
+            "nominal_valid": bool(valid),
+            "nominal_rM_fm": float(radius) if valid else np.nan,
+            "nominal_chi2": float(chi2),
+            "nominal_ndof": int(ndof),
+            "nominal_chi2_ndof": float(chi2 / ndof),
+        }
+        for i, value in enumerate(pars, start=1):
+            row[f"m{i}"] = float(value)
+        #endfor
+        nominal_rows.append(row)
+        print(
+            f"[neutron-GM-nominal-audit] family={family:3s} "
+            f"closure={'PASS' if closure_eligible else 'FAIL'} "
+            f"nominal={'PASS' if valid else 'FAIL'} "
+            f"chi2/ndof={chi2/ndof:.3f} "
+            + (
+                f"rM={radius:.4f} fm"
+                if valid else
+                "rM=UNRESOLVED"
+            )
+        )
+    #endfor
+
+    nominal_audit = pd.DataFrame(nominal_rows)
+    nominal_audit.to_csv(
+        closuredir / "03b_neutron_GM_nominal_family_audit.csv",
+        index=False,
+    )
+
+    # Select in closure-rank order, but only among families passing both gates.
+    ranked_eligible = nominal_audit.loc[
+        nominal_audit["closure_eligible"]
+        & nominal_audit["nominal_valid"]
+    ].sort_values(
+        ["closure_RMS_objective_fm", "closure_max_objective_fm"]
+    )
+    if not len(ranked_eligible):
+        chosen = None
+        print(
+            "[neutron-GM-closure] WARNING: no family passes both closure "
+            "completion and nominal-data physical-validity gates"
+        )
+    else:
+        chosen = str(ranked_eligible.iloc[0]["family"])
+    #endif
+
+    ranking["nominal_valid"] = ranking["family"].map(
+        nominal_audit.set_index("family")["nominal_valid"]
+    )
+    ranking["passes_both_gates"] = (
+        (ranking["target_reached_fraction"] >= 0.999999)
+        & ranking["nominal_valid"].fillna(False)
+    )
     ranking["selected"] = ranking["family"].eq(chosen)
     ranking.to_csv(
         closuredir / "03_neutron_GM_closure_ranking.csv", index=False
@@ -13775,6 +13849,10 @@ def run_neutron_magnetic_function_closure(
 
     pd.DataFrame([{
         "selected_family": chosen if chosen is not None else "UNRESOLVED",
+        "selection_rule": (
+            "best closure-ranked family passing both successful-replica "
+            "completion and nominal-data physical-validity gates"
+        ),
         "fixed_GE_model": "Atac2021 central",
         "candidate_families": ",".join(candidate_families),
         "truth_families": ",".join(truth_families),
@@ -13838,7 +13916,10 @@ def save_neutron_magnetic_selected_family_study(
             "bh_threshold_percent": 100.0 * float(threshold),
             "N": int(len(selected)),
             "n_parameters": npars,
-            "rM_fm": float(radius),
+            # Never expose a radius from a fit that failed the physical-shape
+            # validity gate. Keep the raw fit coefficients/chi2 below for
+            # diagnosis, but mark the radius unresolved.
+            "rM_fm": float(radius) if valid else np.nan,
             "chi2": float(chi2),
             "ndof": int(ndof),
             "chi2_ndof": float(chi2 / ndof),
@@ -13859,10 +13940,21 @@ def save_neutron_magnetic_selected_family_study(
         return
     #endif
 
+    valid_scan = scan.loc[
+        scan["valid"] & np.isfinite(scan["rM_fm"])
+    ].copy()
+    if not len(valid_scan):
+        print(
+            f"[neutron-GM-selected] family={family}: no BH-threshold fit "
+            "passed the physical-validity gate; radius plot suppressed"
+        )
+        return
+    #endif
+
     fig, ax = plt.subplots(figsize=(8.0, 5.4))
     ax.plot(
-        scan["bh_threshold_percent"],
-        scan["rM_fm"],
+        valid_scan["bh_threshold_percent"],
+        valid_scan["rM_fm"],
         marker="o", linestyle="none",
     )
     ax.axhline(
