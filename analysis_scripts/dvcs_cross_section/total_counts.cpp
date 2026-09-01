@@ -76,6 +76,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -193,6 +194,7 @@ struct CurrentResponseModel {
     std::map<std::string, std::map<std::string, std::array<CurrentResponseEntry, kCurrentRegionCount>>> data;
     std::map<std::string, std::map<std::string, std::array<CurrentResponseEntry, kCurrentRegionCount>>> mc;
     std::map<std::string, std::unordered_map<int, int>> run_current_nA;
+    std::map<std::string, std::unordered_set<int>> excluded_data_runs;
 };
 
 static CurrentResponseModel load_current_response_model(const std::string& path) {
@@ -241,6 +243,15 @@ static CurrentResponseModel load_current_response_model(const std::string& path)
         }
     }
 
+    if (j.contains("excluded_data_runs") && j["excluded_data_runs"].is_object()) {
+        for (auto per = j["excluded_data_runs"].begin(); per != j["excluded_data_runs"].end(); ++per) {
+            if (!per.value().is_object()) continue;
+            for (auto rr = per.value().begin(); rr != per.value().end(); ++rr) {
+                model.excluded_data_runs[per.key()].insert(std::stoi(rr.key()));
+            }
+        }
+    }
+
     model.valid = !model.data.empty() && !model.mc.empty() && !model.run_current_nA.empty();
     if (!model.valid) {
         fatal("[total_counts] FATAL: current-response model is incomplete: " + path);
@@ -253,6 +264,7 @@ struct EventCurrentWeight {
     double derivative = 0.0;  // derivative wrt the regional fitted parameter
     double parameter_stat = 0.0;
     int region = -1;
+    bool skip_corrected = false;
 };
 
 static const CurrentResponseEntry* find_current_response_entry(
@@ -1788,8 +1800,19 @@ static EventCurrentWeight event_current_weight(const CurrentResponseModel& model
         }
         auto ir = ip->second.find(b.runnum);
         if (ir == ip->second.end()) {
+            const auto iex = model.excluded_data_runs.find(tags.period_display);
+            const bool explicitly_excluded =
+                (iex != model.excluded_data_runs.end() && iex->second.count(b.runnum) != 0);
+            if (explicitly_excluded) {
+                out.skip_corrected = true;
+                out.weight = 0.0;
+                out.derivative = 0.0;
+                out.parameter_stat = 0.0;
+                return out;
+            }
             fatal("[total_counts] FATAL: run " + std::to_string(b.runnum) +
-                  " has no current assignment in response model for period '" + tags.period_display + "'.");
+                  " has no current assignment in response model for period '" + tags.period_display +
+                  "' and is not explicitly marked as an unusable/zero-charge run.");
         }
         const double I = (double)ir->second;
         const double R = 1.0 + e->parameter * I;
@@ -1902,6 +1925,8 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
     long long n_global_pass = 0;
     long long n_sigma_pass  = 0;
     long long n_used        = 0;
+    long long n_current_excluded = 0;
+    std::unordered_set<int> current_excluded_runs_seen;
 
     out.flow.entries = (long long)N;
 
@@ -1957,6 +1982,10 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
         if (apply_current_weights) {
             current_weight = event_current_weight(*current_model, work_cfg, tags, b,
                                                   use_epg_mc_current_factor_for_eppi0_bkg);
+            if (current_weight.skip_corrected) {
+                ++n_current_excluded;
+                current_excluded_runs_seen.insert(b.runnum);
+            }
         }
 
         const double phi_deg = b.phi_deg();
@@ -1993,7 +2022,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
             if (!is_gen) {
                 add_count(topo_dense[topo_idx][r], split_helicity, b.helicity);
             }
-            if (apply_current_weights) {
+            if (apply_current_weights && !current_weight.skip_corrected) {
                 add_weighted_count(corrected_total_dense[r], split_helicity, b.helicity, current_weight);
                 add_weighted_count(corrected_topo_dense[topo_idx][r], split_helicity, b.helicity, current_weight);
             }
@@ -2103,7 +2132,21 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
               << " global_pass=" << n_global_pass
               << " sig_pass=" << n_sigma_pass
               << " matched=" << n_used
+              << " current_excluded=" << n_current_excluded
               << std::endl;
+
+    if (!current_excluded_runs_seen.empty()) {
+        std::ostringstream ss;
+        bool first = true;
+        for (int run : current_excluded_runs_seen) {
+            if (!first) ss << ",";
+            ss << run;
+            first = false;
+        }
+        std::cout << "[total_counts] Skipped from current-corrected accumulator only: "
+                  << n_current_excluded << " accepted event(s) from explicitly unusable/zero-charge run(s): "
+                  << ss.str() << ". Raw yield-total bookkeeping is unchanged." << std::endl;
+    }
 
     return out;
 }

@@ -6242,7 +6242,12 @@ static void apply_eppi0_mc_factor_from_dvcs_ratio_regions(
 
 static void collect_run_current_map_from_data_trees(
     const std::map<std::string, TTree*>& trees,
-    nlohmann::json& run_map) {
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale,
+    nlohmann::json& run_map,
+    nlohmann::json& excluded_run_map) {
 
     for (const auto& kv : trees) {
         if (!kv.second) continue;
@@ -6265,6 +6270,27 @@ static void collect_run_current_map_from_data_trees(
         for (Long64_t i = 0; i < N; ++i) {
             tree->GetEntry(i);
             if (!seen.insert(runnum).second) continue;
+
+            // Runs with an explicitly present but unusable normalization
+            // charge (most commonly a QADB-rejected/zero-charge run) must not
+            // be current-corrected. Record them explicitly so downstream
+            // event-level accumulation can skip them without conflating them
+            // with a genuinely missing current assignment for a valid run.
+            const auto charge_it = charge_map.find(runnum);
+            if (charge_it != charge_map.end()) {
+                double selected_charge = std::numeric_limits<double>::quiet_NaN();
+                const bool charge_ok = select_unpolarized_charge_for_period(
+                    tags, runnum, charge_it->second,
+                    use_second_column_charge_for_all_unpolarized,
+                    use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    columns_3_to_5_charge_sum_scale, selected_charge);
+                if (!charge_ok || !(std::isfinite(selected_charge) && selected_charge > 0.0)) {
+                    excluded_run_map[tags.display][std::to_string(runnum)] =
+                        "nonpositive_or_unusable_charge";
+                    continue;
+                }
+            }
+
             int current = 0;
             if (resolve_current(tags.internal, runnum, current)) {
                 run_map[tags.display][std::to_string(runnum)] = current;
@@ -6281,6 +6307,10 @@ static void write_current_response_model_json(
     const std::vector<PeriodResult>& eppi0_integrated,
     const std::map<std::string, TTree*>& dvcs_data_trees,
     const std::map<std::string, TTree*>& eppi0_data_trees,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale,
     bool use_nobkg_dvcs_mc_counts) {
 
     nlohmann::json j;
@@ -6341,8 +6371,18 @@ static void write_current_response_model_json(
     write_channel("ep->epg", dvcs_regions, dvcs_integrated);
     write_channel("ep->eppi0", eppi0_regions, eppi0_integrated);
 
-    collect_run_current_map_from_data_trees(dvcs_data_trees, j["run_current_nA"]);
-    collect_run_current_map_from_data_trees(eppi0_data_trees, j["run_current_nA"]);
+    collect_run_current_map_from_data_trees(
+        dvcs_data_trees, charge_map,
+        use_second_column_charge_for_all_unpolarized,
+        use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+        columns_3_to_5_charge_sum_scale,
+        j["run_current_nA"], j["excluded_data_runs"]);
+    collect_run_current_map_from_data_trees(
+        eppi0_data_trees, charge_map,
+        use_second_column_charge_for_all_unpolarized,
+        use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+        columns_3_to_5_charge_sum_scale,
+        j["run_current_nA"], j["excluded_data_runs"]);
 
     const size_t slash_pos = path.find_last_of('/');
     if (slash_pos != std::string::npos) mkdir_p(path.substr(0, slash_pos));
@@ -7533,6 +7573,10 @@ bool update_current_dependence_factors_csv(
                                               eppi0_results,
                                               dvcsDataTrees,
                                               eppi0DataTrees,
+                                              charge_map,
+                                              options.use_second_column_charge_for_all_unpolarized,
+                                              options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                                              options.columns_3_to_5_charge_sum_scale,
                                               options.use_nobkg_dvcs_mc_counts);
 
             const std::string note_dir = options.output_dir + "/analysis_note";
