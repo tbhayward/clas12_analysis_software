@@ -3970,7 +3970,7 @@ def fit_cross_sections_with_sachs_family(
     def chi2(*values):
         p = np.asarray(values, dtype=float)
         ce = p[:nshape]
-        cm = p[nshape:]
+        cm = p[nshape:2 * nshape]
         total = 0.0
         for item in prepared:
             q = item["q"]
@@ -4076,6 +4076,12 @@ def _radius_bias_replica_worker(
         central = np.asarray(central_by_key[key], dtype=float)
         frac = float(spec.get("norm_frac", 0.0))
         beta_true = rng.normal(0.0, 1.0) if frac > 0.0 else 0.0
+        # The quoted experimental normalization is a cross-section scale.
+        # Apply it to sigma_BH, not separately to GE or GM.  Because the BH
+        # cross section is homogeneous quadratic in F1/F2, a common form-factor
+        # amplitude c0 would correspond to sigma -> c0^2 sigma; using the
+        # measured cross-section nuisance directly avoids an artificial
+        # GE/GM normalization ambiguity.
         shifted_central = central * (1.0 + frac * beta_true)
         replica_y[key] = rng.normal(shifted_central, sigma_by_key[key])
     #endfor
@@ -4369,8 +4375,15 @@ def save_extended_radius_bias_matrices(
         table: pd.DataFrame,
         families: Sequence[str],
         outdir: Path,
-        eligibility_threshold: float) -> None:
-    """Make cross-family closure matrices and an eligibility-aware ranking."""
+        minimum_global_valid_fraction: float,
+        minimum_scenario_valid_fraction: float) -> None:
+    """
+    Make cross-family closure matrices and an eligibility-aware ranking.
+
+    Eligibility requires both strong aggregate convergence and no catastrophic
+    truth-scenario failure.  Convergence is a gate only; eligible families are
+    still ranked purely by the bias-variance objective.
+    """
     groups = list(dict.fromkeys(table["truth_group"].astype(str).tolist()))
     matrix_rows = []
 
@@ -4502,10 +4515,17 @@ def save_extended_radius_bias_matrices(
             "family": family,
             "minimum_scenario_valid_fraction": min_valid,
             "global_valid_fraction": global_valid,
-            "eligibility_threshold": float(eligibility_threshold),
+            "minimum_global_valid_fraction_required": float(
+                minimum_global_valid_fraction
+            ),
+            "minimum_scenario_valid_fraction_required": float(
+                minimum_scenario_valid_fraction
+            ),
             "eligible": bool(
-                np.isfinite(min_valid)
-                and min_valid >= float(eligibility_threshold)
+                np.isfinite(global_valid)
+                and np.isfinite(min_valid)
+                and global_valid >= float(minimum_global_valid_fraction)
+                and min_valid >= float(minimum_scenario_valid_fraction)
             ),
             "convergence_requirement_applied": True,
         }
@@ -4558,13 +4578,13 @@ def save_extended_radius_bias_matrices(
         [xmap[f] for f in finite["family"]],
         finite["combined_RMS_objective_fm"],
         marker="o",
-        label="ranked; convergence shown diagnostically only",
+        label="eligible families; ranked by closure objective",
     )
 
     ax.set_xticks(np.arange(len(order)))
     ax.set_xticklabels(order, rotation=45)
     ax.set_ylabel("combined RMS bias-variance objective (fm)")
-    ax.set_title("Extended closure-study ranking (no convergence eligibility cut)")
+    ax.set_title("Extended closure-study ranking after convergence eligibility")
     yvals = ranking["combined_RMS_objective_fm"].to_numpy(float)
     ax.set_ylim(
         0.0,
@@ -5140,7 +5160,12 @@ def run_radius_bias_variance_study(
             table=table,
             families=families,
             outdir=outdir,
-            eligibility_threshold=args.radius_bias_min_valid_fraction,
+            minimum_global_valid_fraction=(
+                args.radius_bias_min_global_valid_fraction
+            ),
+            minimum_scenario_valid_fraction=(
+                args.radius_bias_min_scenario_valid_fraction
+            ),
         )
     #endif
 
@@ -11463,13 +11488,22 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
-        "--radius-bias-min-valid-fraction",
+        "--radius-bias-min-global-valid-fraction",
         type=float,
-        default=0.0,
+        default=0.95,
         help=(
-            "Legacy convergence-diagnostic threshold. It is no longer used "
-            "to determine family eligibility or production ranking; failed "
-            "replicas remain recorded in the validity diagnostics (default: 0.0)."
+            "Minimum aggregate valid-replica fraction required for a Sachs "
+            "family to enter the closure ranking (default: 0.95)."
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-min-scenario-valid-fraction",
+        type=float,
+        default=0.80,
+        help=(
+            "Minimum valid-replica fraction in every individual truth scenario "
+            "required for a Sachs family to enter the closure ranking "
+            "(default: 0.80)."
         ),
     )
     p.add_argument(
