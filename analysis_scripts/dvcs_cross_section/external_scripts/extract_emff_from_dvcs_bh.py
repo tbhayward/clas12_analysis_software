@@ -13591,6 +13591,33 @@ def run_unified_km15_final_analysis(
 
         table.to_csv(cfg_dir / "km15_threshold_scan.csv", index=False)
 
+        # Compare the fitted finite-|t| Sachs form factors themselves across
+        # the 1--7% KM15 selections.  This is deliberately attached to the
+        # ACTIVE independently closure-selected ensemble workflow (rather than
+        # the legacy fixed-family rotation helper) so the analysis-note
+        # Hessian-band products are always produced alongside the radius scan.
+        band_dir = cfg_dir / "form_factor_band_stability"
+        band_metrics = save_threshold_form_factor_band_study(
+            bundles=cfg_bundles,
+            selection=selection,
+            family=family,
+            threshold_table=table,
+            label=label,
+            outdir=band_dir,
+        )
+        if len(band_metrics):
+            print(
+                f"[KM15 form-factor stability] {label}: "
+                f"{len(band_metrics)} overlap rows -> {band_dir}"
+            )
+        else:
+            print(
+                f"[KM15 form-factor stability] WARNING: {label}: "
+                "no threshold-band products were generated; inspect the "
+                "1--7% valid-fit rows and selected-data support."
+            )
+        #endif
+
         fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.7))
         axes[0].errorbar(
             table["threshold_percent"], table["rE_fm"],
@@ -13617,7 +13644,7 @@ def run_unified_km15_final_analysis(
             y=0.995,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.94))
-        fig.savefig(cfg_dir / "01_km15_threshold_stability.png", dpi=180)
+        fig.savefig(cfg_dir / "01_km15_threshold_stability.png", dpi=260)
         plt.close(fig)
     #endfor
 
@@ -13729,12 +13756,58 @@ def run_unified_km15_final_analysis(
             family=chosen["all_four"],
             outdir=diagnostics_dir / "hall_a_ensemble_decomposition",
         )
-        run_normalization_tension_diagnostics(
+        norm_tension = run_normalization_tension_diagnostics(
             bundles=production_bundles,
             selection=selection,
             family=chosen["all_four"],
             outdir=diagnostics_dir / "normalization_tension",
         )
+
+        # Current-status headline: use the completely free Georges scale.
+        # This does NOT alter the closure ranking or erase the fixed/constrained
+        # normalization diagnostics; it simply records the user's preferred
+        # provisional all-four result in a dedicated, unambiguous artifact.
+        # The free scale is especially useful for the status note because the
+        # fit itself determines whether Georges wants a pathological rescaling.
+        try:
+            if isinstance(norm_tension, pd.DataFrame):
+                nt = norm_tension
+            elif isinstance(norm_tension, dict) and "fit_table" in norm_tension:
+                nt = norm_tension["fit_table"]
+            else:
+                nt = pd.DataFrame()
+            #endif
+            free_row = nt.loc[
+                nt.get("normalization_mode", pd.Series(dtype=str)).astype(str)
+                == "georges_free_diagnostic"
+            ].copy()
+            if len(free_row) == 1:
+                status_dir = diagnostics_dir / "preferred_current_status"
+                status_dir.mkdir(parents=True, exist_ok=True)
+                free_row = free_row.copy()
+                free_row["status_role"] = "preferred_provisional_all_four"
+                free_row["georges_normalization_treatment"] = "unconstrained"
+                free_row["note"] = (
+                    "Preferred current-status result: Georges normalization "
+                    "floats freely. Closure ranking remains the independently "
+                    "selected Sachs-family result and normalization alternatives "
+                    "remain available as diagnostics."
+                )
+                free_row.to_csv(
+                    status_dir / "preferred_all_four_georges_free.csv",
+                    index=False,
+                )
+                print(
+                    "[preferred current status] all-four with Georges free -> "
+                    f"{status_dir / 'preferred_all_four_georges_free.csv'}"
+                )
+            #endif
+        except Exception as exc:
+            print(
+                "[preferred current status] WARNING: could not write "
+                f"free-Georges status artifact: {type(exc).__name__}: {exc}"
+            )
+        #endtry
 
         # Exact BH electromagnetic decomposition and derivative sensitivities.
         all4_specs, _ = _km15_selected_specs_for_bundles(
