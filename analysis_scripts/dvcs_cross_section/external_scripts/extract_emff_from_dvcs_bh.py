@@ -2786,6 +2786,12 @@ def fit_multi_measurements(
     unconstrained_norm_keys = set(
         str(k) for k in (unconstrained_norm_keys or [])
     )
+    # Measurement specs can carry the production normalization prescription
+    # directly. Explicit function arguments are unioned with those flags.
+    unconstrained_norm_keys.update(
+        str(spec["key"]) for spec in datasets
+        if bool(spec.get("unconstrained_norm", False))
+    )
     nuisance_names = []
     nuisance_fracs = {}
     nuisance_is_free = {}
@@ -4052,6 +4058,10 @@ def save_elastic_reference_comparison(
 def sachs_first_coefficient_from_radius(radius_fm: float, family: str) -> float:
     """First normalized-shape coefficient corresponding to an RMS radius."""
     slope = -(float(radius_fm) / HBARC)**2 / 6.0
+    if family.startswith("D"):
+        # Regular dipole: G/G(0) = (1 + a Q2)^(-2), hence slope = -2 a.
+        return float(-0.5 * slope)
+    #endif
     if family.startswith("P"):
         return float(slope)
     #endif
@@ -4079,6 +4089,14 @@ def sachs_family_value(q: np.ndarray, coeffs: np.ndarray, family: str) -> np.nda
     """Normalized G(Q2)/G(0) candidate used by the radius-bias study."""
     q = np.asarray(q, dtype=float)
     c = np.asarray(coeffs, dtype=float)
+
+    if family.startswith("D"):
+        # One-parameter regular dipole.  D1 is deliberately kept distinct from
+        # IP1: the latter is monopole-like, whereas the dipole has a squared
+        # denominator and therefore a fixed relation between slope and curvature.
+        a = float(c[0])
+        return 1.0 / (1.0 + a * q)**2
+    #endif
 
     if family.startswith("P"):
         out = np.ones_like(q)
@@ -4168,12 +4186,17 @@ def fit_cross_sections_with_sachs_family(
     p0[ne] = sachs_first_coefficient_from_radius(SACHS_INITIAL_RADIUS_FM, family_m)
 
     nuisance_names = []
+    nuisance_is_free = {}
+    nuisance_fracs = {}
     for spec in specs:
-        frac = float(spec.get("norm_frac", 0.0))
+        key = str(spec["key"])
+        free_norm = bool(spec.get("unconstrained_norm", False))
+        frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
         if frac > 0.0:
-            nuisance_names.append(
-                "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", str(spec["key"]))
-            )
+            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
+            nuisance_names.append(nname)
+            nuisance_is_free[nname] = free_norm
+            nuisance_fracs[nname] = frac
         #endif
     #endfor
     fit_names = shape_names + nuisance_names
@@ -4195,9 +4218,10 @@ def fit_cross_sections_with_sachs_family(
         q = d["t_abs"].to_numpy(float)
         tau = q / (4.0 * MP2)
         key = str(spec["key"])
-        frac = float(spec.get("norm_frac", 0.0))
+        free_norm = bool(spec.get("unconstrained_norm", False))
+        frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
         prepared.append({
-            "key": key, "norm_frac": frac,
+            "key": key, "norm_frac": frac, "unconstrained_norm": free_norm,
             "nuisance_name": ("beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key) if frac > 0.0 else None),
             "q": q, "q_powers": np.vstack([q**i for i in range(1, max_order + 1)]),
             "tau": tau, "inv_one_plus_tau": 1.0 / (1.0 + tau),
@@ -4229,7 +4253,9 @@ def fit_cross_sections_with_sachs_family(
             total += float(np.dot(pull, pull))
         #endfor
         for nname in nuisance_names:
-            total += float(p[nuisance_index[nname]]**2)
+            if not nuisance_is_free.get(nname, False):
+                total += float(p[nuisance_index[nname]]**2)
+            #endif
         #endfor
         return total
     #enddef
@@ -4245,7 +4271,10 @@ def fit_cross_sections_with_sachs_family(
     m.limits[names_e[0]] = (min(ce_lo, ce_hi), max(ce_lo, ce_hi))
     m.limits[names_m[0]] = (min(cm_lo, cm_hi), max(cm_lo, cm_hi))
     for nname in nuisance_names:
-        m.limits[nname] = (-10.0, 10.0)
+        m.limits[nname] = (
+            (-0.50, 0.50) if nuisance_is_free.get(nname, False)
+            else (-10.0, 10.0)
+        )
     #endfor
     m.migrad()
 
@@ -4311,8 +4340,12 @@ def _radius_bias_replica_worker(
     for spec in specs:
         key = str(spec["key"])
         central = np.asarray(central_by_key[key], dtype=float)
+        free_norm = bool(spec.get("unconstrained_norm", False))
         frac = float(spec.get("norm_frac", 0.0))
-        beta_true = rng.normal(0.0, 1.0) if frac > 0.0 else 0.0
+        beta_true = (
+            rng.normal(0.0, 1.0)
+            if (frac > 0.0 and not free_norm) else 0.0
+        )
         # The quoted experimental normalization is a cross-section scale.
         # Apply it to sigma_BH, not separately to GE or GM.  Because the BH
         # cross section is homogeneous quadratic in F1/F2, a common form-factor
@@ -4376,12 +4409,14 @@ def sachs_family_coefficients_with_radius(
     """
     Copy a shape template but force its Q2=0 slope to the requested radius.
 
-    For Pn, slope=c1. For IPn and CFn, slope=-c1. Higher-order coefficients
-    retain the template curvature.
+    For D1, slope=-2*c1. For Pn, slope=c1. For IPn and CFn, slope=-c1.
+    Higher-order coefficients retain the template curvature.
     """
     out = np.asarray(template_coeffs, dtype=float).copy()
     slope = radius_to_normalized_slope(radius_fm)
-    if family.startswith("P"):
+    if family.startswith("D"):
+        out[0] = -0.5 * slope
+    elif family.startswith("P"):
         out[0] = slope
     elif family.startswith("IP") or family.startswith("CF"):
         out[0] = -slope
@@ -4396,14 +4431,18 @@ def fit_sachs_family_shape_template(
         family: str,
         target_q: np.ndarray,
         target_shape: np.ndarray) -> np.ndarray:
-    """Fit a normalized P/IP/CF family to a smooth reference shape."""
+    """Fit a normalized D/P/IP/CF family to a smooth reference shape."""
     q = np.asarray(target_q, dtype=float)
     y = np.asarray(target_shape, dtype=float)
     order = int(re.findall(r"\d+", family)[0])
     names = tuple(f"c{i}" for i in range(1, order + 1))
 
     p0 = np.zeros(order, dtype=float)
-    p0[0] = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
+    if family.startswith("D"):
+        p0[0] = 1.0 / 0.71
+    else:
+        p0[0] = -2.0 / 0.71 if family.startswith("P") else 2.0 / 0.71
+    #endif
 
     def objective(*values):
         pred = sachs_family_value(q, np.asarray(values, dtype=float), family)
@@ -5156,23 +5195,24 @@ def run_radius_bias_variance_study(
     and inserted into the exact BH quadratic.
 
     Production fit candidates:
-      P2/P3, IP1/IP2/IP3, CF2/CF3, independently paired for GE and GM.
+      P2/P3, ID1/P2/P3/IP1/IP2/IP3/CF2/CF3, independently paired for GE and GM.
       A 10-replica pilot prunes clearly noncompetitive pairs before the full
       requested-statistics closure stage. Higher-order P4/IP4/CF4 forms remain
       in the truth ensemble as curvature stress tests.
 
     Truth ensemble:
-      one representative empirical truth (Kelly), plus optional synthetic P/IP/CF
+      one representative empirical truth (Kelly), plus optional synthetic dipole/P/IP/CF
       closure truths spanning a Cartesian rE x rM grid.
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
     # Exploratory fit-candidate set. P1 is omitted because a linear polynomial
     # has not provided an adequate description. Fourth-order candidates remain
-    # truth generators rather than production fits. The 49 E x M pairs below
+    # truth generators rather than production fits. The 64 E x M pairs below
     # first pass through a cheap pilot closure screen; only competitive,
     # numerically reliable survivors enter the expensive full-replica study.
     candidate_families = [
+        "D1",
         "P2", "P3",
         "IP1", "IP2", "IP3",
         "CF2", "CF3",
@@ -5184,9 +5224,10 @@ def run_radius_bias_variance_study(
 
     # Keep the broader generating-family set for closure stress tests.  Truth
     # generation is cheap compared with fitting every candidate to every
-    # replica, and retaining P4/IP4/CF4 here tests whether the reduced
+    # replica, and retaining D1 and P4/IP4/CF4 here tests whether the reduced
     # candidate set remains robust against more complicated underlying shapes.
-    truth_families = [f"P{i}" for i in range(1, 5)]
+    truth_families = ["D1"]
+    truth_families += [f"P{i}" for i in range(1, 5)]
     truth_families += [f"IP{i}" for i in range(1, 5)]
     truth_families += [f"CF{i}" for i in range(2, 5)]
 
@@ -6442,13 +6483,19 @@ def bundle_to_measurement_spec(
         data: Optional[pd.DataFrame] = None) -> Dict[str, object]:
     """Convert a result bundle into the generic multi-measurement fit spec."""
     selected = bundle["set5"] if data is None else data
-    return measurement_spec(
+    spec = measurement_spec(
         key=str(bundle["key"]),
         label=str(bundle["label"]),
         kind=str(bundle["kind"]),
         data=selected,
         norm_frac=float(bundle.get("norm_frac", 0.0)),
     )
+    # A dataset may deliberately carry an unconstrained overall cross-section
+    # scale.  This is distinct from setting an arbitrarily large Gaussian prior:
+    # the nuisance is fitted directly as a fractional scale and receives no
+    # beta^2 penalty.  The all-four status baseline uses this for Georges.
+    spec["unconstrained_norm"] = bool(bundle.get("unconstrained_norm", False))
+    return spec
 #enddef
 
 
@@ -7165,6 +7212,10 @@ def fit_sachs_family_multi_measurements(
 
     unconstrained_norm_keys = set(
         str(k) for k in (unconstrained_norm_keys or [])
+    )
+    unconstrained_norm_keys.update(
+        str(spec["key"]) for spec in datasets
+        if bool(spec.get("unconstrained_norm", False))
     )
     nuisance_names = []
     nuisance_fracs = {}
@@ -10291,6 +10342,39 @@ def save_all_point_model_agreement_diagnostics(
 
     scores = pd.DataFrame(score_rows)
     scores.to_csv(outdir / "all_point_model_agreement_scores.csv", index=False)
+
+    # Compact note-ready model comparison.  Keep both profiled chi2/point and
+    # the fitted scale factor so a reader can distinguish shape disagreement
+    # from a simple overall normalization shift.
+    if len(scores):
+        note_rows = []
+        for dataset_label in list(dict.fromkeys(scores["dataset_label"].astype(str))):
+            row = {"dataset": dataset_label}
+            ds = scores.loc[scores["dataset_label"].astype(str) == dataset_label]
+            if len(ds):
+                row["N"] = int(ds.iloc[0]["N_all"])
+                row["median_pointwise_uncertainty_pct"] = (
+                    100.0 * float(ds.iloc[0]["median_pointwise_total_fraction"])
+                )
+            #endif
+            for model in FINAL_MODEL_NAMES:
+                mr = ds.loc[ds["model"].astype(str) == model]
+                prefix = re.sub(r"[^A-Za-z0-9]+", "_", MODEL_DISPLAY[model]).strip("_")
+                if len(mr):
+                    row[prefix + "_chi2_per_point"] = float(mr.iloc[0]["profiled_chi2_per_point"])
+                    row[prefix + "_scale"] = float(mr.iloc[0]["profiled_scale"])
+                    row[prefix + "_median_abs_residual_pct"] = (
+                        100.0 * float(mr.iloc[0]["median_abs_fractional_model_residual"])
+                    )
+                #endif
+            #endfor
+            note_rows.append(row)
+        #endfor
+        pd.DataFrame(note_rows).to_csv(
+            outdir / "all_point_model_agreement_note_table.csv", index=False
+        )
+    #endif
+
     pd.DataFrame(binned_rows).to_csv(
         outdir / "all_point_model_agreement_binned_pulls.csv",
         index=False,
@@ -10385,7 +10469,7 @@ def save_all_point_model_agreement_diagnostics(
             loc="upper center", ncol=3, bbox_to_anchor=(0.5, 1.20)
         )
         ax_chi2.set_title(
-            "Full electroproduction model agreement (diagnostic only)"
+            "Full electroproduction model agreement with published data"
         )
 
         ax_frac.set_ylabel("Median absolute fractional model residual (%)")
@@ -10399,7 +10483,7 @@ def save_all_point_model_agreement_diagnostics(
         fig.subplots_adjust(
             top=0.88, bottom=0.16, left=0.09, right=0.98, hspace=0.28
         )
-        fig.savefig(outdir / "07_all_point_model_agreement_chi2.png", dpi=180)
+        fig.savefig(outdir / "07_all_point_model_agreement_chi2.png", dpi=300)
         plt.close(fig)
 
         # Compact dataset-level table combining experimental precision with
@@ -11358,35 +11442,52 @@ def run_normalization_tension_diagnostics(
     )
     keys = [str(spec["key"]) for spec in specs]
 
+    def clear_free_flags(input_specs):
+        out = [dict(spec) for spec in input_specs]
+        for spec in out:
+            spec["unconstrained_norm"] = False
+        #endfor
+        return out
+    #enddef
+
     modes = []
-    # Production prescription: one independent Gaussian-constrained nuisance
-    # wherever a published global normalization uncertainty is known.
+    constrained_specs = clear_free_flags(specs)
     modes.append((
-        "published_constrained",
-        specs,
+        "published_constrained_georges_fixed",
+        constrained_specs,
         [],
-        "Independent Gaussian priors from published global-scale uncertainties; Georges fixed because no authoritative decomposition is supplied.",
+        "Published Gaussian priors where known; Georges fixed only as a comparison diagnostic.",
     ))
     modes.append((
         "all_fixed",
-        _copy_specs_with_norm_fraction(specs, {k: 0.0 for k in keys}),
+        _copy_specs_with_norm_fraction(
+            clear_free_flags(specs), {k: 0.0 for k in keys}
+        ),
         [],
-        "All absolute normalizations fixed.",
+        "All absolute normalizations fixed; comparison diagnostic.",
     ))
     if "halla_georges2022" in keys:
         georges_specs = _copy_specs_with_norm_fraction(
-            specs, {"halla_georges2022": 1.0}
+            clear_free_flags(specs), {"halla_georges2022": 1.0}
         )
+        for spec in georges_specs:
+            if str(spec["key"]) == "halla_georges2022":
+                spec["unconstrained_norm"] = True
+            #endif
+        #endfor
         modes.append((
-            "georges_free_diagnostic",
+            "georges_free_baseline",
             georges_specs,
             ["halla_georges2022"],
-            "Published constraints retained for other datasets; Georges normalization unconstrained.",
+            "Current baseline: published constraints retained for other datasets; Georges normalization unconstrained.",
         ))
     #endif
     all_free_specs = _copy_specs_with_norm_fraction(
-        specs, {k: 1.0 for k in keys}
+        clear_free_flags(specs), {k: 1.0 for k in keys}
     )
+    for spec in all_free_specs:
+        spec["unconstrained_norm"] = True
+    #endfor
     modes.append((
         "all_free_diagnostic",
         all_free_specs,
@@ -12694,13 +12795,7 @@ def save_competitive_family_form_factor_bands(
         label: str,
         selected_specs: Sequence[Dict[str, object]],
         outdir: Path) -> pd.DataFrame:
-    """
-    Compare real-data GE/GM curves for closure-competitive families.
-
-    This distinguishes alarming radius spread caused by different Q2->0 slopes
-    from genuine disagreement over the finite-|t| region actually constrained
-    by the selected data.
-    """
+    """Compare closure-competitive real-data GE/GM curves and their ratios."""
     outdir.mkdir(parents=True, exist_ok=True)
     qvals = []
     for spec in selected_specs:
@@ -12723,31 +12818,48 @@ def save_competitive_family_form_factor_bands(
         return pd.DataFrame()
     #endif
     chosen = dict(chosen_rows.iloc[0])
+    chosen_curves = {}
+    for which in ["GE", "GM"]:
+        c0, s0 = _sachs_band_from_result(chosen, chosen_family, q, which)
+        scale = MU_P if which == "GM" else 1.0
+        chosen_curves[which] = (c0 / scale, s0 / scale)
+    #endfor
 
-    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.3))
+    # Top row: absolute normalized Sachs functions with 68% Hessian bands.
+    # Bottom row: central-function ratio to the closure-selected family.  This
+    # exposes small shape differences that are visually hidden in the top row.
+    fig, axes = plt.subplots(
+        2, 2, figsize=(13.4, 8.3), sharex="col",
+        gridspec_kw={"height_ratios": [1.55, 0.85]},
+    )
     metric_rows = []
+    ratio_extrema = {"GE": [], "GM": []}
+    handles = []
+    labs = []
     for _, rr in valid.iterrows():
         family = str(rr["family"])
         fit = dict(rr)
-        for ax, which in zip(axes, ["GE", "GM"]):
-            c, s = _sachs_band_from_result(fit, family, q, which)
-            c0, s0 = _sachs_band_from_result(chosen, chosen_family, q, which)
+        for j, which in enumerate(["GE", "GM"]):
+            c, serr = _sachs_band_from_result(fit, family, q, which)
+            c0, s0 = chosen_curves[which]
             scale = MU_P if which == "GM" else 1.0
-            c = c / scale; s = s / scale
-            c0 = c0 / scale; s0 = s0 / scale
-            lw = 2.2 if family == chosen_family else 1.10
+            c = c / scale; serr = serr / scale
+            lw = 2.4 if family == chosen_family else 1.15
             alpha = 0.16 if family == chosen_family else 0.045
-            line, = ax.plot(
+            line, = axes[0, j].plot(
                 q, c, linewidth=lw,
-                label=(
-                    f"{family} (chosen)"
-                    if family == chosen_family else family
-                ),
+                label=(f"{family} (chosen)" if family == chosen_family else family),
             )
-            ax.fill_between(
-                q, c - s, c + s, alpha=alpha,
+            axes[0, j].fill_between(
+                q, c - serr, c + serr, alpha=alpha,
                 color=line.get_color(), linewidth=0.0,
             )
+            ratio = c / np.maximum(np.abs(c0), 1.0e-30)
+            axes[1, j].plot(q, ratio, linewidth=lw, color=line.get_color())
+            ratio_extrema[which].extend(ratio[np.isfinite(ratio)].tolist())
+            if j == 0:
+                handles.append(line); labs.append(line.get_label())
+            #endif
             for region, mask in [
                 ("selected_data_support", support),
                 ("extrapolation_to_zero", extrap),
@@ -12760,7 +12872,7 @@ def save_competitive_family_form_factor_bands(
                         "form_factor": which,
                         "region": region,
                         **_band_overlap_metrics(
-                            c[mask], s[mask], c0[mask], s0[mask]
+                            c[mask], serr[mask], c0[mask], s0[mask]
                         ),
                     })
                 #endif
@@ -12768,26 +12880,44 @@ def save_competitive_family_form_factor_bands(
         #endfor
     #endfor
 
-    for ax in axes:
-        ax.axvspan(qmin, qmax, alpha=0.08)
-        ax.axvline(qmin, linewidth=0.8, linestyle=":")
-        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
-        ax.grid(alpha=0.2)
+    axes[0, 0].set_ylabel(r"$G_E$")
+    axes[0, 1].set_ylabel(r"$G_M/\mu_p$")
+    axes[1, 0].set_ylabel(r"$G_E/G_E^{\rm chosen}$")
+    axes[1, 1].set_ylabel(r"$G_M/G_M^{\rm chosen}$")
+    for j, which in enumerate(["GE", "GM"]):
+        for ax in axes[:, j]:
+            ax.axvspan(qmin, qmax, alpha=0.07)
+            ax.axvline(qmin, linewidth=0.8, linestyle=":")
+            ax.grid(alpha=0.2)
+        #endfor
+        axes[1, j].axhline(1.0, linewidth=0.8, linestyle="--")
+        axes[1, j].set_xlabel(r"$|t|$ (GeV$^2$)")
+        vals = np.asarray(ratio_extrema[which], dtype=float)
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            dev = max(0.025, float(np.nanmax(np.abs(vals - 1.0))) * 1.12)
+            axes[1, j].set_ylim(max(0.0, 1.0 - dev), 1.0 + dev)
+        #endif
     #endfor
-    axes[0].set_ylabel(r"$G_E$")
-    axes[1].set_ylabel(r"$G_M/\mu_p$")
-    handles, labs = axes[0].get_legend_handles_labels()
+
+    fig.suptitle(
+        f"{label}: closure-competitive Sachs functions",
+        y=0.985, fontsize=15,
+    )
     fig.legend(
         handles, labs, loc="upper center", ncol=4,
-        bbox_to_anchor=(0.5, 0.965), frameon=True,
+        bbox_to_anchor=(0.5, 0.945), frameon=True, fontsize=9,
     )
-    fig.suptitle(
-        f"{label}: closure-competitive families on the real KM15 5% sample\n"
-        "68% Hessian bands; shaded vertical region is selected-data support",
-        y=0.995,
+    fig.text(
+        0.5, 0.905,
+        "68% Hessian bands; shaded region shows the selected-data |t| support",
+        ha="center", va="center", fontsize=10,
     )
-    fig.tight_layout(rect=(0, 0, 1, 0.86))
-    fig.savefig(outdir / "02_competitive_family_GE_GM_hessian_bands.png", dpi=260)
+    fig.subplots_adjust(
+        top=0.84, bottom=0.09, left=0.08, right=0.985,
+        hspace=0.08, wspace=0.16,
+    )
+    fig.savefig(outdir / "02_competitive_family_GE_GM_hessian_bands.png", dpi=300)
     plt.close(fig)
 
     metrics = pd.DataFrame(metric_rows)
@@ -12797,7 +12927,6 @@ def save_competitive_family_form_factor_bands(
     )
     return metrics
 #enddef
-
 
 def save_f1_f2_bh_sensitivity_diagnostics(
         bundles: Sequence[Dict[str, object]],
@@ -12971,11 +13100,101 @@ def save_f1_f2_bh_sensitivity_diagnostics(
     ax.grid(axis="y", alpha=0.2)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(outdir / "03_F1_F2_sensitivity_medians.png", dpi=260)
+    fig.savefig(outdir / "03_F1_F2_sensitivity_medians.png", dpi=300)
+    plt.close(fig)
+
+    # Intuitive Moradi-style turn-off demonstration.  Because the BH quadratic
+    # contains an F1*F2 interference term these are not additive fractions; the
+    # ratios answer the simpler question: how much BH cross section remains if
+    # one electromagnetic form factor is set to zero point-by-point?
+    fig, axes = plt.subplots(2, 3, figsize=(14.5, 8.8), sharex=False)
+    for ax, (key, label) in zip(axes.flat, panel_defs):
+        d = pts if key == "ALL" else pts.loc[pts["dataset"] == key]
+        ax.scatter(
+            d["t_abs"], d["sigma_F2_zero_over_full"],
+            s=15, alpha=0.50, label=r"$F_2=0$ (only $F_1$ term)",
+        )
+        ax.scatter(
+            d["t_abs"], d["sigma_F1_zero_over_full"],
+            s=15, alpha=0.50, label=r"$F_1=0$ (only $F_2$ term)",
+        )
+        ax.axhline(1.0, linewidth=0.8, linestyle="--")
+        ax.set_title(label)
+        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        ax.set_ylabel(r"$\sigma_{\mathrm{BH}}(F_i=0)/\sigma_{\mathrm{BH}}^{\mathrm{full}}$")
+        ax.set_ylim(bottom=0.0)
+        ax.grid(alpha=0.18)
+    #endfor
+    if len(panel_defs) < len(axes.flat):
+        axes.flat[-1].axis("off")
+    #endif
+    handles, labs = axes.flat[0].get_legend_handles_labels()
+    fig.legend(handles, labs, loc="upper center", ncol=2,
+               bbox_to_anchor=(0.5, 0.955))
+    fig.suptitle(
+        r"BH cross-section leverage from turning off $F_1$ or $F_2$",
+        y=0.995,
+    )
+    fig.subplots_adjust(
+        top=0.90, bottom=0.08, left=0.07, right=0.985,
+        hspace=0.30, wspace=0.24,
+    )
+    fig.savefig(outdir / "04_F1_F2_turnoff_cross_section_ratios.png", dpi=300)
     plt.close(fig)
     return summary
 #enddef
 
+
+
+def save_preferred_sachs_vs_elastic_data(
+        fit: Dict[str, object],
+        family: str,
+        selected_specs: Sequence[Dict[str, object]],
+        outdir: Path) -> None:
+    """Plot the preferred BH-extracted Sachs functions against elastic data."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    qdata = np.concatenate([
+        spec["data"]["t_abs"].to_numpy(float)
+        for spec in selected_specs if len(spec["data"])
+    ])
+    qmax = min(1.0, max(0.60, 1.03 * float(np.nanmax(qdata))))
+    q = np.linspace(0.0, qmax, 600)
+    ge, ge_err = _sachs_band_from_result(fit, family, q, "GE")
+    gm, gm_err = _sachs_band_from_result(fit, family, q, "GM")
+    a1 = bernauer_rosenbluth_data()
+    a1 = a1.loc[a1["Q2"] <= qmax].copy()
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.2), sharex=True)
+    for ax, central, sigma, col, errcol, ylabel in [
+        (axes[0], ge, ge_err, "GE", "GE_err", r"$G_E^p$"),
+        (axes[1], gm, gm_err, "GM", "GM_err", r"$G_M^p$"),
+    ]:
+        line, = ax.plot(q, central, linewidth=2.0, label="BH extraction")
+        ax.fill_between(
+            q, central - sigma, central + sigma,
+            color=line.get_color(), alpha=0.18, linewidth=0.0,
+            label="68% Hessian band",
+        )
+        ax.errorbar(
+            a1["Q2"], a1[col], yerr=a1[errcol],
+            fmt="o", fillstyle="none", markersize=4.0,
+            capsize=2, linewidth=0.9, label="A1/Bernauer Rosenbluth",
+        )
+        ax.axvspan(float(np.nanmin(qdata)), float(np.nanmax(qdata)), alpha=0.06)
+        ax.set_xlim(0.0, qmax)
+        ax.set_xlabel(r"$Q^2=|t|$ (GeV$^2$)")
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.2)
+    #endfor
+    axes[0].legend(fontsize=9)
+    fig.suptitle(
+        f"Preferred all-four BH extraction vs direct elastic form factors ({family})",
+        y=0.985,
+    )
+    fig.subplots_adjust(top=0.90, bottom=0.12, left=0.08, right=0.985, wspace=0.18)
+    fig.savefig(outdir / "01_preferred_GE_GM_vs_A1_Bernauer.png", dpi=300)
+    plt.close(fig)
+#enddef
 
 def run_georges_normalization_prior_scan(
         bundles: Sequence[Dict[str, object]],
@@ -12984,12 +13203,12 @@ def run_georges_normalization_prior_scan(
         family: str,
         outdir: Path) -> pd.DataFrame:
     """
-    Scan plausible correlated Georges normalization priors.
+    Scan Georges normalization assumptions around the production baseline.
 
-    Zero remains the publication-conservative fixed treatment; 3--5% priors
-    are motivated diagnostics for the E12-06-114 normalization studies, and
-    the unconstrained point shows what scale the cross-section ensemble itself
-    prefers.  No scan point is silently promoted to production.
+    The production/status baseline leaves the common Georges scale
+    unconstrained.  Fixed and 3--5% Gaussian-prior cases are retained only as
+    diagnostics showing how the radii evolve as external normalization
+    information is imposed.
     """
     outdir.mkdir(parents=True, exist_ok=True)
     base_specs, counts = _km15_selected_specs_for_bundles(
@@ -13009,6 +13228,7 @@ def run_georges_normalization_prior_scan(
         for spec in specs:
             if str(spec["key"]) == str(georges_key):
                 spec["norm_frac"] = float(frac)
+                spec["unconstrained_norm"] = bool(free)
             #endif
         #endfor
         fit = fit_sachs_family_multi_measurements(
@@ -13248,8 +13468,14 @@ def run_unified_km15_final_analysis(
         Path(args.bh_model_selection_results).expanduser().resolve()
     )
 
+    # Current-status baseline: Georges carries an unconstrained overall
+    # cross-section normalization.  A 3% fitted shift is physically modest,
+    # while fixing this dataset to exactly unit normalization is not defensible
+    # without a published decomposition of its common scale uncertainty.
+    georges_baseline = dict(georges_bundle)
+    georges_baseline["unconstrained_norm"] = True
     production_bundles = sort_bundles_chronologically(
-        [jo_bundle, defurne_bundle, georges_bundle, lee_bundle]
+        [jo_bundle, defurne_bundle, georges_baseline, lee_bundle]
     )
     save_selected_experiment_kinematic_coverage(
         production_bundles,
@@ -13281,10 +13507,10 @@ def run_unified_km15_final_analysis(
         f"broad slope-equivalent radius guards "
         f"{SACHS_MIN_RADIUS_FM:.2f}--{SACHS_MAX_RADIUS_FM:.2f} fm"
     )
-    print("[normalization] correlated scale nuisances included in data and closure")
+    print("[normalization] Georges free overall scale in all-four baseline; published nuisances retained for Jo/Defurne/Lee")
     print("[benchmarks] Moradi Fit 5 and Fit 8 run across production ensembles")
     print("[family robustness] top closure-qualified families refit to real 5% data")
-    print("[alternate BH selection] model-only Kelly/KM15EP diagnostic + observed-data diagnostic")
+    print("[alternate BH selection] Kelly consistency plus AMT/Bernauer elastic-input diagnostics")
     print("[Saylor] KM15 diagnostic plus direct Jo comparison; not production")
     print("=" * 78)
 
@@ -13653,6 +13879,26 @@ def run_unified_km15_final_analysis(
         rotation_root / "km15_5pct_ensemble_summary.csv", index=False
     )
 
+    # The all-four row is now the actual free-Georges production/status
+    # baseline.  Save a narrow artifact that carries central values, fit
+    # uncertainties, closure bias, 3--7% selection terms, and their current
+    # quadrature method combination under one self-consistent prescription.
+    if len(nominal):
+        preferred = nominal.loc[
+            nominal["configuration"].astype(str) == "all_four"
+        ].copy()
+        if len(preferred) == 1:
+            status_dir = diagnostics_dir / "preferred_current_status"
+            status_dir.mkdir(parents=True, exist_ok=True)
+            preferred["georges_normalization_treatment"] = "unconstrained"
+            preferred["status_role"] = "preferred_provisional_all_four"
+            preferred.to_csv(
+                status_dir / "preferred_all_four_georges_free_with_method_systematics.csv",
+                index=False,
+            )
+        #endif
+    #endif
+
     if len(nominal):
         fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.2))
         x = np.arange(len(nominal))
@@ -13737,7 +13983,7 @@ def run_unified_km15_final_analysis(
     run_moradi_fit5_fit8_ensemble_benchmarks(
         jo_bundle=jo_bundle,
         defurne_bundle=defurne_bundle,
-        georges_bundle=georges_bundle,
+        georges_bundle=georges_baseline,
         lee_bundle=lee_bundle,
         selection=selection,
         outdir=diagnostics_dir / "moradi_fit5_fit8_ensembles",
@@ -13750,7 +13996,7 @@ def run_unified_km15_final_analysis(
         run_fixed_family_ensemble_decomposition(
             jo_bundle=jo_bundle,
             defurne_bundle=defurne_bundle,
-            georges_bundle=georges_bundle,
+            georges_bundle=georges_baseline,
             lee_bundle=lee_bundle,
             selection=selection,
             family=chosen["all_four"],
@@ -13779,7 +14025,7 @@ def run_unified_km15_final_analysis(
             #endif
             free_row = nt.loc[
                 nt.get("normalization_mode", pd.Series(dtype=str)).astype(str)
-                == "georges_free_diagnostic"
+                == "georges_free_baseline"
             ].copy()
             if len(free_row) == 1:
                 status_dir = diagnostics_dir / "preferred_current_status"
@@ -13789,9 +14035,8 @@ def run_unified_km15_final_analysis(
                 free_row["georges_normalization_treatment"] = "unconstrained"
                 free_row["note"] = (
                     "Preferred current-status result: Georges normalization "
-                    "floats freely. Closure ranking remains the independently "
-                    "selected Sachs-family result and normalization alternatives "
-                    "remain available as diagnostics."
+                    "floats freely. Fixed and finite-prior Georges treatments "
+                    "remain available only as normalization diagnostics."
                 )
                 free_row.to_csv(
                     status_dir / "preferred_all_four_georges_free.csv",
@@ -13826,6 +14071,14 @@ def run_unified_km15_final_analysis(
             fit=all4_fit,
             family=chosen["all_four"],
             outdir=diagnostics_dir / "f1_f2_sensitivity",
+        )
+        all4_specs, _ = _km15_selected_specs_for_bundles(
+            production_bundles, selection, 0.05
+        )
+        save_preferred_sachs_vs_elastic_data(
+            fit=all4_fit, family=chosen["all_four"],
+            selected_specs=all4_specs,
+            outdir=diagnostics_dir / "preferred_form_factors_vs_elastic",
         )
 
         # E12-06-114 / Georges normalization study: fixed, plausible few-percent
@@ -16333,7 +16586,8 @@ def fit_neutron_magnetic_family_bh(
         override_y: Optional[np.ndarray] = None,
         statistical_only: bool = True,
         bh_systematic_fraction: float = 0.05,
-        return_parameters: bool = False):
+        return_parameters: bool = False,
+        return_uncertainty: bool = False):
     """
     Fit one normalized neutron magnetic Sachs family through the exact BH
     cross section while fixing GE_n to the central Atac et al. 2021 form.
@@ -16397,9 +16651,36 @@ def fit_neutron_magnetic_family_bh(
     )
     m.limits[names[0]] = (min(c_lo, c_hi), max(c_lo, c_hi))
     m.migrad()
+    try:
+        m.hesse()
+    except Exception:
+        pass
+    #endtry
 
     pars = np.asarray([float(m.values[n]) for n in names], dtype=float)
     radius = sachs_family_radius(pars, family)
+    radius_err = np.nan
+    if return_uncertainty and m.valid:
+        try:
+            cov = np.asarray(m.covariance, dtype=float)
+            grad = np.zeros(nshape, dtype=float)
+            for ip in range(nshape):
+                step = max(1.0e-6, 1.0e-5 * max(1.0, abs(pars[ip])))
+                pp = pars.copy(); pm = pars.copy()
+                pp[ip] += step; pm[ip] -= step
+                grad[ip] = (
+                    sachs_family_radius(pp, family)
+                    - sachs_family_radius(pm, family)
+                ) / (2.0 * step)
+            #endfor
+            var_r = float(grad @ cov @ grad)
+            if np.isfinite(var_r) and var_r >= 0.0:
+                radius_err = math.sqrt(var_r)
+            #endif
+        except Exception:
+            radius_err = np.nan
+        #endtry
+    #endif
     valid = bool(m.valid and np.isfinite(radius))
 
     # Reject numerically converged but obviously pathological magnetic shapes
@@ -16413,8 +16694,14 @@ def fit_neutron_magnetic_family_bh(
         valid = False
     #endif
 
+    if return_parameters and return_uncertainty:
+        return radius, radius_err, valid, pars, float(m.fval)
+    #endif
     if return_parameters:
         return radius, valid, pars, float(m.fval)
+    #endif
+    if return_uncertainty:
+        return radius, radius_err, valid
     #endif
     return radius, valid
 #enddef
@@ -16471,12 +16758,31 @@ def run_neutron_magnetic_function_closure(
     closuredir = outdir / "magnetic_only" / "function_closure"
     closuredir.mkdir(parents=True, exist_ok=True)
 
+    # The neutron closure is expensive and unchanged by plotting-only updates.
+    # Reuse a completed ranking when available; delete this file explicitly if
+    # a fresh closure calculation is desired.
+    cached_ranking_path = closuredir / "03_neutron_GM_closure_ranking.csv"
+    if cached_ranking_path.exists():
+        cached = pd.read_csv(cached_ranking_path)
+        picked = cached.loc[cached.get("selected", False).astype(bool)]
+        if len(picked) == 1:
+            chosen = str(picked.iloc[0]["family"])
+            print(
+                f"[neutron-GM-closure] reusing existing completed ranking; "
+                f"selected family={chosen}"
+            )
+            return chosen
+        #endif
+    #endif
+
     candidate_families = [
+        "D1",
         "P2", "P3",
         "IP1", "IP2", "IP3",
         "CF2", "CF3",
     ]
-    truth_families = [f"P{i}" for i in range(1, 5)]
+    truth_families = ["D1"]
+    truth_families += [f"P{i}" for i in range(1, 5)]
     truth_families += [f"IP{i}" for i in range(1, 5)]
     truth_families += [f"CF{i}" for i in range(2, 5)]
 
@@ -16939,12 +17245,13 @@ def save_neutron_magnetic_selected_family_study(
         if len(selected) <= npars:
             continue
         #endif
-        radius, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
+        radius, radius_err, valid, pars, chi2 = fit_neutron_magnetic_family_bh(
             selected,
             family,
             statistical_only=False,
             bh_systematic_fraction=0.05,
             return_parameters=True,
+            return_uncertainty=True,
         )
         ndof = max(1, len(selected) - npars)
         row = {
@@ -16957,6 +17264,7 @@ def save_neutron_magnetic_selected_family_study(
             # validity gate. Keep the raw fit coefficients/chi2 below for
             # diagnosis, but mark the radius unresolved.
             "rM_fm": float(radius) if valid else np.nan,
+            "rM_fit_err_fm": float(radius_err) if valid else np.nan,
             "chi2": float(chi2),
             "ndof": int(ndof),
             "chi2_ndof": float(chi2 / ndof),
@@ -16988,11 +17296,12 @@ def save_neutron_magnetic_selected_family_study(
         return
     #endif
 
-    fig, ax = plt.subplots(figsize=(8.0, 5.4))
-    ax.plot(
+    fig, ax = plt.subplots(figsize=(8.4, 5.6))
+    ax.errorbar(
         valid_scan["bh_threshold_percent"],
         valid_scan["rM_fm"],
-        marker="o", linestyle="none",
+        yerr=valid_scan["rM_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3, linewidth=1.0,
     )
     ax.axhline(
         0.864, linewidth=1.0, linestyle="--",
@@ -17002,6 +17311,7 @@ def save_neutron_magnetic_selected_family_study(
     ax.set_xscale("log")
     ax.set_xlabel(r"$|1-R_{\rm BH}^{\rm KM15}|$ threshold (%)")
     ax.set_ylabel(r"$r_{M,n}$ [fm]")
+    ax.set_ylim(0.70, 1.00)
     ax.set_title(
         rf"Neutron magnetic radius with closure-selected {family}"
     )
@@ -17010,7 +17320,7 @@ def save_neutron_magnetic_selected_family_study(
     fig.tight_layout()
     fig.savefig(
         diagdir / "05_neutron_selected_family_radius_threshold.png",
-        dpi=180,
+        dpi=300,
     )
     plt.close(fig)
 #enddef
