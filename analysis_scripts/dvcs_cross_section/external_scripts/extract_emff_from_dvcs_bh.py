@@ -13110,44 +13110,159 @@ def save_f1_f2_bh_sensitivity_diagnostics(
     fig.savefig(outdir / "03_F1_F2_sensitivity_medians.png", dpi=300)
     plt.close(fig)
 
-    # Intuitive Moradi-style turn-off demonstration.  Because the BH quadratic
-    # contains an F1*F2 interference term these are not additive fractions; the
-    # ratios answer the simpler question: how much BH cross section remains if
-    # one electromagnetic form factor is set to zero point-by-point?
-    fig, axes = plt.subplots(2, 3, figsize=(14.5, 8.8), sharex=False)
-    for ax, (key, label) in zip(axes.flat, panel_defs):
-        d = pts if key == "ALL" else pts.loc[pts["dataset"] == key]
-        ax.scatter(
-            d["t_abs"], d["sigma_F2_zero_over_full"],
-            s=15, alpha=0.50, label=r"$F_2=0$ (only $F_1$ term)",
+    # Intuitive Moradi-style turn-off demonstration.
+    #
+    # For every selected point we have the exact quadratic BH decomposition
+    #
+    #   sigma_BH = A F1^2 + B F1 F2 + C F2^2.
+    #
+    # Setting F1=0 leaves C F2^2; setting F2=0 leaves A F1^2.  These are not
+    # additive "fractions" because the full cross section also contains the
+    # interference term B F1 F2.  The upper panel shows the actual cross-section
+    # scale of the three cases across the measured |t| support.  The lower panel
+    # shows the ratio of the F2-only to F1-only cases, which is a compact visual
+    # measure of relative electromagnetic leverage.
+    #
+    # Because xB, Q2 and phi are not fixed as |t| changes across a dataset,
+    # individual points are shown explicitly.  A running median in |t| bins is
+    # overlaid only as a visual guide; it is not a model curve.
+    def _turnoff_plot_for_points(d: pd.DataFrame, label: str, stem: str) -> None:
+        if len(d) == 0:
+            return
+        #endif
+
+        work = d.sort_values("t_abs").copy()
+        t = work["t_abs"].to_numpy(float)
+        full = work["sigma_full_bh"].to_numpy(float)
+        f1zero = work["sigma_F1_zero_over_full"].to_numpy(float) * full
+        f2zero = work["sigma_F2_zero_over_full"].to_numpy(float) * full
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            leverage_ratio = np.divide(
+                f1zero,
+                f2zero,
+                out=np.full_like(f1zero, np.nan, dtype=float),
+                where=np.abs(f2zero) > 1.0e-30,
+            )
+        #endwith
+
+        fig, axes = plt.subplots(
+            2, 1,
+            figsize=(9.2, 7.8),
+            sharex=True,
+            gridspec_kw={"height_ratios": [2.1, 1.0]},
         )
-        ax.scatter(
-            d["t_abs"], d["sigma_F1_zero_over_full"],
-            s=15, alpha=0.50, label=r"$F_1=0$ (only $F_2$ term)",
+        ax, rax = axes
+
+        # Measured-point values.
+        ax.scatter(t, full, s=15, alpha=0.30, label="Full BH")
+        ax.scatter(t, f1zero, s=15, alpha=0.30, marker="s",
+                   label=r"$F_1=0$ ($F_2$ only)")
+        ax.scatter(t, f2zero, s=15, alpha=0.30, marker="^",
+                   label=r"$F_2=0$ ($F_1$ only)")
+        rax.scatter(t, leverage_ratio, s=15, alpha=0.35)
+
+        # Running medians in equal-population |t| bins.  This keeps the display
+        # readable without pretending the data constitute a fixed-kinematics
+        # continuous trajectory in t.
+        nbin = min(14, max(4, int(round(math.sqrt(len(work))))))
+        try:
+            groups = pd.qcut(
+                work["t_abs"],
+                q=nbin,
+                duplicates="drop",
+            )
+            tmp = pd.DataFrame({
+                "t": t,
+                "full": full,
+                "f1zero": f1zero,
+                "f2zero": f2zero,
+                "ratio": leverage_ratio,
+                "_grp": groups,
+            })
+            med = tmp.groupby("_grp", observed=True).median(numeric_only=True)
+            med = med.sort_values("t")
+            ax.plot(med["t"], med["full"], linewidth=2.0)
+            ax.plot(med["t"], med["f1zero"], linewidth=2.0, linestyle="--")
+            ax.plot(med["t"], med["f2zero"], linewidth=2.0, linestyle=":")
+            rax.plot(med["t"], med["ratio"], linewidth=2.0)
+        except Exception:
+            pass
+        #endtry
+
+        ax.set_ylabel(r"BH cross section")
+        ax.set_title(
+            f"{label}: electromagnetic leverage across the selected $|t|$ range"
         )
-        ax.axhline(1.0, linewidth=0.8, linestyle="--")
-        ax.set_title(label)
-        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
-        ax.set_ylabel(r"$\sigma_{\mathrm{BH}}(F_i=0)/\sigma_{\mathrm{BH}}^{\mathrm{full}}$")
-        ax.set_ylim(bottom=0.0)
         ax.grid(alpha=0.18)
+        ax.legend(fontsize=9, loc="best")
+
+        rax.axhline(1.0, linewidth=0.8, linestyle="--")
+        rax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        rax.set_ylabel(
+            r"$\sigma_{\rm BH}(F_1=0)\,/\,\sigma_{\rm BH}(F_2=0)$"
+        )
+        rax.grid(alpha=0.18)
+
+        fig.subplots_adjust(
+            top=0.93, bottom=0.10, left=0.10, right=0.985,
+            hspace=0.08,
+        )
+        fig.savefig(
+            outdir / f"04_F1_F2_turnoff_{stem}.png",
+            dpi=300,
+        )
+        plt.close(fig)
+    #enddef
+
+    for key, label in panel_defs[:-1]:
+        _turnoff_plot_for_points(
+            pts.loc[pts["dataset"] == key].copy(),
+            label,
+            str(key),
+        )
     #endfor
-    if len(panel_defs) < len(axes.flat):
-        axes.flat[-1].axis("off")
-    #endif
-    handles, labs = axes.flat[0].get_legend_handles_labels()
-    fig.legend(handles, labs, loc="upper center", ncol=2,
-               bbox_to_anchor=(0.5, 0.955))
-    fig.suptitle(
-        r"BH cross-section leverage from turning off $F_1$ or $F_2$",
-        y=0.995,
+    _turnoff_plot_for_points(
+        pts.copy(),
+        "All four combined",
+        "all_four_combined",
     )
-    fig.subplots_adjust(
-        top=0.90, bottom=0.08, left=0.07, right=0.985,
-        hspace=0.30, wspace=0.24,
+
+    # Keep one compact all-dataset summary of the *relative* turn-off leverage.
+    # This is useful for a slide where five separate absolute-cross-section
+    # panels would be too dense.
+    fig, ax = plt.subplots(figsize=(9.4, 6.0))
+    for key, label in panel_defs[:-1]:
+        d = pts.loc[pts["dataset"] == key].copy()
+        denom = d["sigma_F2_zero_over_full"].to_numpy(float)
+        numer = d["sigma_F1_zero_over_full"].to_numpy(float)
+        ratio = np.divide(
+            numer, denom,
+            out=np.full(len(d), np.nan, dtype=float),
+            where=np.abs(denom) > 1.0e-30,
+        )
+        ax.scatter(
+            d["t_abs"], ratio,
+            s=16, alpha=0.45, label=label,
+        )
+    #endfor
+    ax.axhline(1.0, linewidth=0.8, linestyle="--")
+    ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+    ax.set_ylabel(
+        r"$\sigma_{\rm BH}(F_1=0)\,/\,\sigma_{\rm BH}(F_2=0)$"
     )
-    fig.savefig(outdir / "04_F1_F2_turnoff_cross_section_ratios.png", dpi=300)
+    ax.set_title(
+        r"Relative $F_2$-only versus $F_1$-only BH leverage at KM15 5%"
+    )
+    ax.grid(alpha=0.18)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(
+        outdir / "05_F1_F2_turnoff_leverage_ratio_all_datasets.png",
+        dpi=300,
+    )
     plt.close(fig)
+
     return summary
 #enddef
 
@@ -13270,7 +13385,7 @@ def save_preferred_sachs_vs_elastic_data(
 
         ax.set_xlim(0.0, qmax)
         rax.set_xlim(0.0, qmax)
-        rax.set_ylim(0.70, 1.30)
+        rax.set_ylim(0.90, 1.10)
 
         ax.set_ylabel(ylabel)
         rax.set_ylabel(
@@ -16388,6 +16503,95 @@ def save_neutron_bh_sensitivity_study(
     work["fisher_GE_GM"] = info_cross
     work["fisher_GM_GM"] = info_gm
     work.to_csv(diagdir / "01_neutron_bh_point_sensitivities.csv", index=False)
+
+    # Moradi-style neutron F1/F2 turn-off demonstration over the full measured
+    # neutron sample.  Here the nominal Kelly neutron F1/F2 values are used only
+    # as the electromagnetic expansion point for visualizing BH leverage.
+    t11_n = A * f1**2
+    t12_n = B * f1 * f2
+    t22_n = C * f2**2
+    full_n = t11_n + t12_n + t22_n
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        f2only_over_f1only_n = np.divide(
+            t22_n,
+            t11_n,
+            out=np.full_like(t22_n, np.nan, dtype=float),
+            where=np.abs(t11_n) > 1.0e-30,
+        )
+    #endwith
+
+    fig, axes = plt.subplots(
+        2, 1,
+        figsize=(9.2, 7.8),
+        sharex=True,
+        gridspec_kw={"height_ratios": [2.1, 1.0]},
+    )
+    ax, rax = axes
+
+    ax.scatter(q, full_n, s=22, alpha=0.45, label="Full BH")
+    ax.scatter(q, t22_n, s=22, alpha=0.45, marker="s",
+               label=r"$F_1^n=0$ ($F_2^n$ only)")
+    ax.scatter(q, t11_n, s=22, alpha=0.45, marker="^",
+               label=r"$F_2^n=0$ ($F_1^n$ only)")
+
+    rax.scatter(q, f2only_over_f1only_n, s=22, alpha=0.50)
+
+    # The neutron table consists of repeated phi measurements in a small number
+    # of (Q2,xB,t) bins.  Plot the per-bin medians as connected guides.
+    nplot = pd.DataFrame({
+        "kin_bin": work["kin_bin"].to_numpy(int),
+        "t": q,
+        "full": full_n,
+        "f2only": t22_n,
+        "f1only": t11_n,
+        "ratio": f2only_over_f1only_n,
+    })
+    nmed = (
+        nplot.groupby("kin_bin", sort=True)
+        .median(numeric_only=True)
+        .sort_values("t")
+    )
+    ax.plot(nmed["t"], nmed["full"], linewidth=2.0)
+    ax.plot(nmed["t"], nmed["f2only"], linewidth=2.0, linestyle="--")
+    ax.plot(nmed["t"], nmed["f1only"], linewidth=2.0, linestyle=":")
+    rax.plot(nmed["t"], nmed["ratio"], linewidth=2.0)
+
+    ax.set_ylabel(r"BH cross section")
+    ax.set_title(
+        r"Neutron electromagnetic leverage across the measured $|t|$ range"
+    )
+    ax.grid(alpha=0.18)
+    ax.legend(fontsize=9, loc="best")
+
+    rax.axhline(1.0, linewidth=0.8, linestyle="--")
+    rax.set_xlabel(r"$|t|$ (GeV$^2$)")
+    rax.set_ylabel(
+        r"$\sigma_{\rm BH}(F_1^n=0)\,/\,\sigma_{\rm BH}(F_2^n=0)$"
+    )
+    rax.grid(alpha=0.18)
+
+    fig.subplots_adjust(
+        top=0.93, bottom=0.10, left=0.10, right=0.985,
+        hspace=0.08,
+    )
+    fig.savefig(
+        diagdir / "03_neutron_F1_F2_turnoff_vs_t.png",
+        dpi=300,
+    )
+    plt.close(fig)
+
+    pd.DataFrame({
+        "kin_bin": work["kin_bin"].to_numpy(int),
+        "t_abs": q,
+        "sigma_full_bh": full_n,
+        "sigma_F1_zero_F2_only": t22_n,
+        "sigma_F2_zero_F1_only": t11_n,
+        "sigma_F2only_over_F1only": f2only_over_f1only_n,
+    }).to_csv(
+        diagdir / "03_neutron_F1_F2_turnoff_vs_t.csv",
+        index=False,
+    )
 
     # Per-bin Fisher diagnostics.  This deliberately treats GE and GM as two
     # local amplitudes within one (Q2,xB,t) bin, avoiding any radius model.
