@@ -4904,6 +4904,7 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
                 }
             }
 
+            const auto it_var_results = results_by_var_period.find(v.key);
             for (const std::string& period : PERIOD_ORDER) {
                 if (hide_sp19_inb_from_replacement_plots(
                         hide_sp19_inb_from_all_period_plots, period)) continue;
@@ -6233,6 +6234,10 @@ static std::vector<RelativeSlopePoint> relative_slope_points_from_mc_theta_bins(
     }
     return out;
 }
+
+static double ratio_with_error(double a, double sa,
+                               double b, double sb,
+                               double& sout);
 
 static PeriodPooledAngleFitMap run_region_theta_data_diagnostic(
     const ChannelConfig& cfg,
