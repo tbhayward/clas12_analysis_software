@@ -461,9 +461,51 @@ def load_clas12_pass1_csv(csv_path: Path) -> pd.DataFrame:
         norm_abs = PASS1_GLOBAL_SCALE_FRAC * xs
         residual2 = total_sys * total_sys - norm_abs * norm_abs
 
-        # Three released points sit a few per mille below exactly 31% because
-        # of tabulated precision.  Clip only the tiny negative residual rather
-        # than creating an unphysical imaginary pointwise uncertainty.
+        # Consistency audit: if the released systematic column is truly the
+        # quadrature sum of a 31% correlated scale uncertainty and nonnegative
+        # point-to-point terms, it cannot be smaller than 0.31*xs.  The current
+        # E214M1 table contains a small number of exceptions.  Do not silently
+        # explain these as rounding: flag them prominently for the Lee-analysis
+        # authors while clipping the negative residual variance to zero so the
+        # present diagnostic extraction can continue reproducibly.
+        bad_norm = np.isfinite(residual2) & (residual2 < 0.0)
+        outdf["released_syst_fraction"] = total_sys / xs
+        outdf["released_syst_below_nominal_scale"] = bad_norm
+        outdf["released_syst_minus_nominal_scale_abs"] = total_sys - norm_abs
+        if np.any(bad_norm):
+            bad = outdf.loc[
+                bad_norm,
+                [
+                    "bin", "xB", "Q2", "t_abs", "phi_deg", "xs",
+                    "xs_stat", "xs_sys_total", "released_syst_fraction",
+                    "released_syst_minus_nominal_scale_abs",
+                ],
+            ].copy()
+            detail = "\n".join(
+                "  "
+                + ", ".join([
+                    f"bin={int(r.bin)}",
+                    f"xB={r.xB:.6g}",
+                    f"Q2={r.Q2:.6g}",
+                    f"|t|={r.t_abs:.6g}",
+                    f"phi={r.phi_deg:.6g}",
+                    f"xs={r.xs:.7g}",
+                    f"syst={r.xs_sys_total:.7g}",
+                    f"syst/xs={100.0*r.released_syst_fraction:.4f}%",
+                ])
+                for r in bad.itertuples(index=False)
+            )
+            warnings.warn(
+                "LEE2026 released-systematic consistency warning: "
+                f"{int(np.sum(bad_norm))} point(s) have total systematic "
+                f"below the nominal {100*PASS1_GLOBAL_SCALE_FRAC:.1f}% "
+                "correlated normalization contribution. This cannot follow "
+                "from a nonnegative quadrature decomposition at exactly 31%. "
+                "The pointwise residual is clipped to zero for the current "
+                "analysis; inspect the release/source calculation before a "
+                "final publication result.\n" + detail
+            )
+        #endif
         outdf["ptp_sys_abs"] = np.sqrt(np.maximum(residual2, 0.0))
         outdf["pass1_sys_up"] = outdf["xs_sys_total"]
         outdf["pass1_sys_down"] = outdf["xs_sys_total"]
@@ -11471,6 +11513,63 @@ def run_fixed_family_ensemble_decomposition(
         "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
     ]
     print(table[cols].to_string(index=False))
+
+    # Publication/meeting-facing visualization of the fixed-family ensemble
+    # decomposition.  The same Sachs family is held fixed in every row, so the
+    # movement isolates dataset leverage rather than a simultaneous family
+    # change.
+    fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.2))
+    xx = np.arange(len(table))
+    axes[0].errorbar(
+        xx, table["rE_fm"], yerr=table["rE_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3,
+    )
+    axes[1].errorbar(
+        xx, table["rM_fm"], yerr=table["rM_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3,
+    )
+    labels = table["configuration_label"].astype(str).tolist()
+    for ax, ylabel in zip(axes, [r"$r_E$ [fm]", r"$r_M$ [fm]"]):
+        ax.set_xticks(xx)
+        ax.set_xticklabels(labels, rotation=20, ha="right")
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=0.2)
+    #endfor
+    fig.suptitle(
+        f"Hall-A ensemble decomposition at KM15 5% (fixed {family})",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(outdir / "01_fixed_family_ensemble_decomposition.png", dpi=180)
+    plt.close(fig)
+
+    # Normalization-scale companion plot for configurations in which a
+    # published correlated nuisance exists. Georges remains at unity in the
+    # production prescription because no authoritative prior decomposition is
+    # supplied.
+    scale_rows = []
+    for _, row in table.iterrows():
+        for key, short in [
+            ("jo2015", "Jo"),
+            ("halla_defurne2015", "Defurne"),
+            ("halla_georges2022", "Georges"),
+            ("pass1", "Lee"),
+        ]:
+            bname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
+            scale = row.get(bname + "_scale_factor", np.nan)
+            if not np.isfinite(scale):
+                scale = 1.0
+            #endif
+            scale_rows.append({
+                "configuration_label": row["configuration_label"],
+                "dataset": short,
+                "scale_factor": float(scale),
+            })
+        #endfor
+    #endfor
+    pd.DataFrame(scale_rows).to_csv(
+        outdir / "fixed_family_ensemble_normalization_scales.csv", index=False
+    )
     return table
 #enddef
 
@@ -11481,7 +11580,15 @@ def run_data_driven_bh_deviance_for_ensemble(
         family: str,
         label: str,
         outdir: Path) -> pd.DataFrame:
-    """Run the Kelly-BH matched-statistics selector beside nominal KM15 5%."""
+    """
+    Run the observed-data/Kelly-BH matched-statistics selector beside KM15 5%.
+
+    WARNING: these selectors rank points using the same measured cross section
+    that is subsequently fit.  They therefore condition on the dependent
+    variable and can produce artificially small chi2 values.  They are retained
+    only as overlap/selection-geometry diagnostics and MUST NOT be interpreted
+    as an independent BH-selection systematic.
+    """
     outdir.mkdir(parents=True, exist_ok=True)
     nominal_specs, _ = _km15_selected_specs_for_bundles(
         bundles, selection, 0.05
@@ -11512,6 +11619,21 @@ def run_data_driven_bh_deviance_for_ensemble(
     base_m = float(nominal["rM_fm"])
     table["delta_rE_from_KM15_fm"] = table["rE_fm"].to_numpy(float) - base_e
     table["delta_rM_from_KM15_fm"] = table["rM_fm"].to_numpy(float) - base_m
+    table["selection_uses_observed_xs"] = (
+        table["selector"].astype(str) != "KM15_5pct"
+    )
+    table["production_systematic_eligible"] = (
+        table["selector"].astype(str) == "KM15_5pct"
+    )
+    table["methodological_note"] = np.where(
+        table["selection_uses_observed_xs"].to_numpy(bool),
+        (
+            "Diagnostic only: selector conditions on measured cross section, "
+            "so fitted chi2 and radius shifts are not an independent "
+            "BH-selection systematic."
+        ),
+        "Nominal production selector.",
+    )
     table.to_csv(outdir / "data_driven_bh_radius_comparison.csv", index=False)
 
     fig, axes = plt.subplots(1, 2, figsize=(11.5, 4.8))
@@ -11539,6 +11661,623 @@ def run_data_driven_bh_deviance_for_ensemble(
     fig.savefig(outdir / "data_driven_bh_radius_comparison.png", dpi=180)
     plt.close(fig)
     return table
+#enddef
+
+
+
+def run_moradi_fit5_fit8_ensemble_benchmarks(
+        jo_bundle: Dict[str, object],
+        defurne_bundle: Dict[str, object],
+        georges_bundle: Dict[str, object],
+        lee_bundle: Dict[str, object],
+        selection: pd.DataFrame,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Run the original Moradi Fit-5 and Fit-8 F1/F2 parameterizations on the same
+    KM15-selected production ensembles used by the Sachs-family analysis.
+
+    These are benchmark/interpretation fits, not substitutes for the
+    closure-ranked production family.  Fit 5 has independent dipole F1/F2
+    scales.  Fit 8 fits the F1 power form while fixing F2 to Kelly.  The latter
+    therefore reports an electric-radius constraint with the magnetic sector
+    externally supplied.
+
+    Every experiment keeps its own point-error prescription and independent
+    correlated normalization nuisance.  The added Moradi BH-method uncertainty
+    is held at 5% while the selection threshold is scanned, matching the
+    threshold-stability convention used elsewhere in this script.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    configurations = [
+        ("jo_only", [jo_bundle], "Jo 2015"),
+        ("defurne_only", [defurne_bundle], "Defurne 2015"),
+        ("georges_only", [georges_bundle], "Georges 2022"),
+        ("lee_only", [lee_bundle], "Lee 2026"),
+        ("jo_plus_lee", [jo_bundle, lee_bundle], "Jo + Lee"),
+        (
+            "jo_plus_lee_plus_defurne",
+            [jo_bundle, lee_bundle, defurne_bundle],
+            "Jo + Lee + Defurne",
+        ),
+        (
+            "jo_plus_lee_plus_georges",
+            [jo_bundle, lee_bundle, georges_bundle],
+            "Jo + Lee + Georges",
+        ),
+        (
+            "hall_a_only",
+            [defurne_bundle, georges_bundle],
+            "Defurne + Georges",
+        ),
+        (
+            "all_four",
+            [jo_bundle, defurne_bundle, georges_bundle, lee_bundle],
+            "Jo + Defurne + Georges + Lee",
+        ),
+    ]
+
+    model_defs = [
+        ("Fit 5", "dipole"),
+        ("Fit 8", "fit8_f2_kelly"),
+    ]
+    scan_thresholds = [
+        0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.075,
+        0.10, 0.15, 0.20,
+    ]
+
+    all_rows = []
+    nominal_rows = []
+
+    for tag, bundles, label in configurations:
+        cfg_dir = outdir / tag
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        rows = []
+
+        for threshold in scan_thresholds:
+            specs, counts = _km15_selected_specs_for_bundles(
+                bundles, selection, float(threshold)
+            )
+            if sum(counts.values()) < 4:
+                continue
+            #endif
+
+            for fit_label, kind in model_defs:
+                try:
+                    fit = fit_multi_measurements(
+                        specs,
+                        kind=kind,
+                        fit_name=fit_label,
+                        bh_cut=0.05,
+                        add_moradi_bh_systematic=True,
+                    )
+                    row = {
+                        "configuration": tag,
+                        "configuration_label": label,
+                        "fit_label": fit_label,
+                        "model_kind": kind,
+                        "selection_threshold": float(threshold),
+                        "selection_threshold_percent": 100.0 * float(threshold),
+                        "bh_method_uncertainty_fraction": 0.05,
+                        "fit8_F2_fixed_to_Kelly": bool(
+                            kind == "fit8_f2_kelly"
+                        ),
+                        **counts,
+                        "N": int(fit.npts),
+                        "chi2": float(fit.chi2),
+                        "ndof": int(fit.ndof),
+                        "chi2_ndof": float(fit.chi2_ndof),
+                        "success": bool(fit.success),
+                        "rE_fm": float(fit.rE_fm),
+                        "rE_fit_err_fm": float(fit.rE_err_fm),
+                        "rM_fm": float(fit.rM_fm),
+                        "rM_fit_err_fm": float(fit.rM_err_fm),
+                        **dict(fit.meta),
+                    }
+                except Exception as exc:
+                    row = {
+                        "configuration": tag,
+                        "configuration_label": label,
+                        "fit_label": fit_label,
+                        "model_kind": kind,
+                        "selection_threshold": float(threshold),
+                        "selection_threshold_percent": 100.0 * float(threshold),
+                        "bh_method_uncertainty_fraction": 0.05,
+                        "fit8_F2_fixed_to_Kelly": bool(
+                            kind == "fit8_f2_kelly"
+                        ),
+                        **counts,
+                        "N": int(sum(counts.values())),
+                        "success": False,
+                        "failure": str(exc),
+                        "chi2_ndof": np.nan,
+                        "rE_fm": np.nan,
+                        "rE_fit_err_fm": np.nan,
+                        "rM_fm": np.nan,
+                        "rM_fit_err_fm": np.nan,
+                    }
+                #endtry
+                rows.append(row)
+                all_rows.append(row)
+                if abs(float(threshold) - 0.05) < 1.0e-12:
+                    nominal_rows.append(row)
+                #endif
+            #endfor
+        #endfor
+
+        table = pd.DataFrame(rows)
+        table.to_csv(cfg_dir / "moradi_fit5_fit8_threshold_scan.csv", index=False)
+
+        if len(table):
+            fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.8))
+            for fit_label, marker in [("Fit 5", "o"), ("Fit 8", "s")]:
+                part = table.loc[
+                    (table["fit_label"] == fit_label)
+                    & table["success"].astype(bool)
+                ]
+                if len(part) == 0:
+                    continue
+                #endif
+                axes[0].errorbar(
+                    part["selection_threshold_percent"],
+                    part["rE_fm"],
+                    yerr=part["rE_fit_err_fm"],
+                    marker=marker, linestyle="-", capsize=2,
+                    label=fit_label,
+                )
+                axes[1].errorbar(
+                    part["selection_threshold_percent"],
+                    part["rM_fm"],
+                    yerr=part["rM_fit_err_fm"],
+                    marker=marker, linestyle="-", capsize=2,
+                    label=(
+                        fit_label if fit_label == "Fit 5"
+                        else "Fit 8 (F2 fixed Kelly)"
+                    ),
+                )
+                axes[2].plot(
+                    part["selection_threshold_percent"],
+                    part["chi2_ndof"],
+                    marker=marker, linestyle="-",
+                    label=fit_label,
+                )
+            #endfor
+            axes[0].set_ylabel(r"$r_E$ [fm]")
+            axes[1].set_ylabel(r"$r_M$ [fm]")
+            axes[2].set_ylabel(r"$\chi^2/\mathrm{dof}$")
+            for ax in axes:
+                ax.set_xlabel(r"KM15 BH-purity threshold (%)")
+                ax.axvline(5.0, linewidth=0.8, linestyle=":")
+                ax.grid(alpha=0.2)
+            #endfor
+            handles, labels = axes[0].get_legend_handles_labels()
+            if handles:
+                fig.legend(
+                    handles, labels, loc="upper center", ncol=2,
+                    bbox_to_anchor=(0.5, 0.955),
+                )
+            #endif
+            fig.suptitle(
+                f"{label}: Moradi Fit 5 / Fit 8 benchmarks",
+                y=0.995,
+            )
+            fig.tight_layout(rect=(0, 0, 1, 0.90))
+            fig.savefig(cfg_dir / "01_moradi_fit5_fit8_threshold_scan.png", dpi=180)
+            plt.close(fig)
+        #endif
+    #endfor
+
+    all_table = pd.DataFrame(all_rows)
+    all_table.to_csv(outdir / "moradi_fit5_fit8_all_thresholds.csv", index=False)
+
+    nominal = pd.DataFrame(nominal_rows)
+    nominal.to_csv(outdir / "moradi_fit5_fit8_5pct_summary.csv", index=False)
+
+    if len(nominal):
+        labels_order = [x[2] for x in configurations]
+        fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.4))
+        x = np.arange(len(labels_order), dtype=float)
+        offsets = {"Fit 5": -0.12, "Fit 8": +0.12}
+        for fit_label in ["Fit 5", "Fit 8"]:
+            part = nominal.loc[
+                (nominal["fit_label"] == fit_label)
+                & nominal["success"].astype(bool)
+            ].copy()
+            part = part.set_index("configuration_label").reindex(labels_order)
+            ok = np.isfinite(part["rE_fm"].to_numpy(float))
+            axes[0].errorbar(
+                x[ok] + offsets[fit_label],
+                part.loc[np.asarray(labels_order)[ok], "rE_fm"],
+                yerr=part.loc[np.asarray(labels_order)[ok], "rE_fit_err_fm"],
+                marker="o" if fit_label == "Fit 5" else "s",
+                linestyle="none", capsize=3,
+                label=fit_label,
+            )
+            okm = np.isfinite(part["rM_fm"].to_numpy(float))
+            axes[1].errorbar(
+                x[okm] + offsets[fit_label],
+                part.loc[np.asarray(labels_order)[okm], "rM_fm"],
+                yerr=part.loc[np.asarray(labels_order)[okm], "rM_fit_err_fm"],
+                marker="o" if fit_label == "Fit 5" else "s",
+                linestyle="none", capsize=3,
+                label=(
+                    fit_label if fit_label == "Fit 5"
+                    else "Fit 8 (F2 fixed Kelly)"
+                ),
+            )
+        #endfor
+        axes[0].set_ylabel(r"$r_E$ [fm]")
+        axes[1].set_ylabel(r"$r_M$ [fm]")
+        for ax in axes:
+            ax.set_xticks(x)
+            ax.set_xticklabels(labels_order, rotation=23, ha="right")
+            ax.grid(axis="y", alpha=0.2)
+        #endfor
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(
+            handles, labels, loc="upper center", ncol=2,
+            bbox_to_anchor=(0.5, 0.955),
+        )
+        fig.suptitle("KM15 5% Moradi Fit 5 / Fit 8 ensemble benchmarks", y=0.995)
+        fig.tight_layout(rect=(0, 0, 1, 0.90))
+        fig.savefig(outdir / "00_moradi_fit5_fit8_5pct_ensemble_summary.png", dpi=180)
+        plt.close(fig)
+
+        print("\n[Moradi ensemble benchmarks] KM15 5%")
+        show = [
+            "configuration_label", "fit_label", "N", "chi2_ndof",
+            "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+        ]
+        print(nominal[show].to_string(index=False))
+    #endif
+    return nominal
+#enddef
+
+
+def run_competitive_family_real_data_diagnostics(
+        ensemble_defs: Sequence[Tuple[str, Sequence[Dict[str, object]], str]],
+        chosen: Dict[str, Optional[str]],
+        closure_root: Path,
+        selection: pd.DataFrame,
+        outdir: Path,
+        max_families: int = 8) -> pd.DataFrame:
+    """
+    Fit the real KM15-5% data with the leading closure-qualified Sachs families.
+
+    This measures the discrete real-data spread among families that closure
+    regards as competitive.  It is intentionally diagnostic: the spread is
+    saved and printed but is NOT folded into the production method uncertainty.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    all_rows = []
+    spread_rows = []
+
+    for tag, bundles, label in ensemble_defs:
+        chosen_family = chosen.get(tag)
+        ranking_path = (
+            closure_root / tag / "radius_bias_mixed_family_ranking.csv"
+        )
+        if chosen_family is None or not ranking_path.exists():
+            continue
+        #endif
+        ranking = pd.read_csv(ranking_path)
+        usable = ranking.loc[
+            ranking["eligible"].astype(bool)
+            & np.isfinite(
+                ranking["combined_RMS_objective_fm"].to_numpy(float)
+            )
+        ].copy()
+        usable = usable.sort_values(
+            "combined_RMS_objective_fm", ascending=True
+        ).head(int(max_families)).reset_index(drop=True)
+        specs, counts = _km15_selected_specs_for_bundles(
+            bundles, selection, 0.05
+        )
+
+        rows = []
+        for irank, rr in usable.iterrows():
+            family = str(rr["family"])
+            try:
+                fit = fit_sachs_family_multi_measurements(
+                    specs,
+                    family=family,
+                    bh_cut=0.05,
+                    add_moradi_bh_systematic=True,
+                    bh_systematic_fraction=0.05,
+                )
+                row = {
+                    "configuration": tag,
+                    "configuration_label": label,
+                    "closure_rank": int(irank) + 1,
+                    "family": family,
+                    "chosen_family": chosen_family,
+                    "is_chosen_family": bool(family == chosen_family),
+                    "closure_objective_fm": float(
+                        rr["combined_RMS_objective_fm"]
+                    ),
+                    **counts,
+                    **fit,
+                }
+            except Exception as exc:
+                row = {
+                    "configuration": tag,
+                    "configuration_label": label,
+                    "closure_rank": int(irank) + 1,
+                    "family": family,
+                    "chosen_family": chosen_family,
+                    "is_chosen_family": bool(family == chosen_family),
+                    "closure_objective_fm": float(
+                        rr["combined_RMS_objective_fm"]
+                    ),
+                    **counts,
+                    "valid": False,
+                    "failure": str(exc),
+                    "rE_fm": np.nan,
+                    "rE_fit_err_fm": np.nan,
+                    "rM_fm": np.nan,
+                    "rM_fit_err_fm": np.nan,
+                    "chi2_ndof": np.nan,
+                }
+            #endtry
+            rows.append(row)
+            all_rows.append(row)
+        #endfor
+
+        table = pd.DataFrame(rows)
+        valid = table.loc[
+            table.get("valid", pd.Series(False, index=table.index)).astype(bool)
+            & np.isfinite(table["rE_fm"].to_numpy(float))
+            & np.isfinite(table["rM_fm"].to_numpy(float))
+        ].copy()
+        chosen_row = valid.loc[valid["family"] == chosen_family]
+        if len(chosen_row) == 1:
+            base_e = float(chosen_row.iloc[0]["rE_fm"])
+            base_m = float(chosen_row.iloc[0]["rM_fm"])
+            valid["delta_rE_from_chosen_fm"] = (
+                valid["rE_fm"].to_numpy(float) - base_e
+            )
+            valid["delta_rM_from_chosen_fm"] = (
+                valid["rM_fm"].to_numpy(float) - base_m
+            )
+            spread_rows.append({
+                "configuration": tag,
+                "configuration_label": label,
+                "chosen_family": chosen_family,
+                "N_competitive_valid": int(len(valid)),
+                "max_abs_delta_rE_fm": float(np.max(np.abs(
+                    valid["delta_rE_from_chosen_fm"].to_numpy(float)
+                ))),
+                "max_abs_delta_rM_fm": float(np.max(np.abs(
+                    valid["delta_rM_from_chosen_fm"].to_numpy(float)
+                ))),
+                "rE_min_fm": float(valid["rE_fm"].min()),
+                "rE_max_fm": float(valid["rE_fm"].max()),
+                "rM_min_fm": float(valid["rM_fm"].min()),
+                "rM_max_fm": float(valid["rM_fm"].max()),
+                "production_systematic_eligible": False,
+                "note": (
+                    "Diagnostic spread among top closure-qualified families; "
+                    "not folded into quoted method uncertainty."
+                ),
+            })
+        #endif
+
+        cfg_dir = outdir / tag
+        cfg_dir.mkdir(parents=True, exist_ok=True)
+        table.to_csv(cfg_dir / "competitive_family_real_data_fits.csv", index=False)
+        if len(valid):
+            fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0))
+            xx = np.arange(len(valid))
+            axes[0].errorbar(
+                xx, valid["rE_fm"], yerr=valid["rE_fit_err_fm"],
+                marker="o", linestyle="none", capsize=3,
+            )
+            axes[1].errorbar(
+                xx, valid["rM_fm"], yerr=valid["rM_fit_err_fm"],
+                marker="o", linestyle="none", capsize=3,
+            )
+            labs = [
+                f"{f}\n(rank {r})"
+                for f, r in zip(valid["family"], valid["closure_rank"])
+            ]
+            for ax, ylabel in zip(axes, [r"$r_E$ [fm]", r"$r_M$ [fm]"]):
+                ax.set_xticks(xx)
+                ax.set_xticklabels(labs, rotation=18, ha="right")
+                ax.set_ylabel(ylabel)
+                ax.grid(axis="y", alpha=0.2)
+            #endfor
+            fig.suptitle(
+                f"{label}: real-data spread among top closure-qualified families",
+                y=0.995,
+            )
+            fig.tight_layout(rect=(0, 0, 1, 0.94))
+            fig.savefig(cfg_dir / "01_competitive_family_real_data_radii.png", dpi=180)
+            plt.close(fig)
+        #endif
+    #endfor
+
+    all_table = pd.DataFrame(all_rows)
+    all_table.to_csv(outdir / "competitive_family_real_data_fits_all.csv", index=False)
+    spread = pd.DataFrame(spread_rows)
+    spread.to_csv(outdir / "competitive_family_spread_summary.csv", index=False)
+    if len(spread):
+        print("\n[competitive-family real-data diagnostic]")
+        print(spread[[
+            "configuration_label", "chosen_family",
+            "max_abs_delta_rE_fm", "max_abs_delta_rM_fm",
+        ]].to_string(index=False))
+    #endif
+    return spread
+#enddef
+
+
+def run_model_only_kelly_bh_selector_diagnostic(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        family: str,
+        label: str,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Data-independent alternate BH-selection diagnostic.
+
+    For each measured point construct a fixed Kelly pure-BH cross section from
+    the exact BH quadratic coefficients, then rank points by
+
+      | sigma_EP^KM15 - sigma_BH^Kelly | / | sigma_BH^Kelly |.
+
+    The number of retained points is matched separately for each experiment to
+    its nominal KM15-5% count.  Unlike the older observed-data/Kelly residual
+    selector, this score never uses the measured cross section and therefore
+    does not condition the subsequent radius fit on the dependent variable.
+
+    It remains a diagnostic because it mixes the KM15 electroproduction model
+    with an external Kelly elastic reference; it is not automatically promoted
+    to the production BH-selection systematic.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    nominal_specs, nominal_counts = _km15_selected_specs_for_bundles(
+        bundles, selection, 0.05
+    )
+    nominal_fit = fit_sachs_family_multi_measurements(
+        nominal_specs,
+        family=family,
+        bh_cut=0.05,
+        add_moradi_bh_systematic=True,
+        bh_systematic_fraction=0.05,
+    )
+
+    alt_specs = []
+    overlap_rows = []
+    point_rows = []
+    for bundle in bundles:
+        key = str(bundle["key"])
+        data = bundle["all_data"].copy()
+        required = ["t_abs", "bh_A", "bh_B", "bh_C", "km15_ep"]
+        missing = [c for c in required if c not in data.columns]
+        if missing:
+            raise KeyError(
+                f"{bundle['label']} missing model-only selector columns: {missing}"
+            )
+        #endif
+        q = data["t_abs"].to_numpy(float)
+        f1k, f2k = kelly_f1_f2(q)
+        bhk = bh_from_f1f2(
+            data["bh_A"].to_numpy(float),
+            data["bh_B"].to_numpy(float),
+            data["bh_C"].to_numpy(float),
+            f1k, f2k,
+        )
+        km15ep = data["km15_ep"].to_numpy(float)
+        score = np.abs(km15ep - bhk) / np.maximum(np.abs(bhk), 1.0e-30)
+        data["model_only_kelly_vs_km15ep_score"] = score
+        data["kelly_bh_reference"] = bhk
+
+        n_target = int(nominal_counts[key])
+        finite = np.isfinite(score)
+        ranked = data.loc[finite].sort_values(
+            "model_only_kelly_vs_km15ep_score"
+        )
+        selected_alt = ranked.head(n_target).copy()
+        alt_specs.append(bundle_to_measurement_spec(bundle, selected_alt))
+
+        nominal_selected = select_bundle_from_external_model(
+            bundle, selection, "km15", 0.05
+        )
+        nominal_ids = set(nominal_selected["_row"].astype(int).tolist())
+        alt_ids = set(selected_alt["_row"].astype(int).tolist())
+        overlap = len(nominal_ids.intersection(alt_ids))
+        union = len(nominal_ids.union(alt_ids))
+        overlap_rows.append({
+            "dataset": key,
+            "dataset_label": str(bundle["label"]),
+            "N_nominal_KM15_5pct": len(nominal_ids),
+            "N_model_only_matched": len(alt_ids),
+            "N_overlap": int(overlap),
+            "fraction_nominal_recovered": (
+                float(overlap / len(nominal_ids))
+                if nominal_ids else np.nan
+            ),
+            "jaccard": float(overlap / union) if union else np.nan,
+        })
+        keep = data[[
+            "_row", "t_abs", "Q2", "xB", "phi_deg",
+            "model_only_kelly_vs_km15ep_score",
+            "kelly_bh_reference", "km15_ep",
+        ]].copy()
+        keep["dataset"] = key
+        keep["selected_model_only_matchedN"] = keep["_row"].astype(int).isin(alt_ids)
+        keep["selected_KM15_5pct"] = keep["_row"].astype(int).isin(nominal_ids)
+        point_rows.append(keep)
+    #endfor
+
+    alt_fit = fit_sachs_family_multi_measurements(
+        alt_specs,
+        family=family,
+        bh_cut=0.05,
+        add_moradi_bh_systematic=True,
+        bh_systematic_fraction=0.05,
+    )
+    comparison = pd.DataFrame([
+        {
+            "selector": "KM15_5pct",
+            "selection_uses_observed_xs": False,
+            "production_systematic_eligible": True,
+            **nominal_fit,
+        },
+        {
+            "selector": "KellyBH_vs_KM15EP_model_only_matchedN",
+            "selection_uses_observed_xs": False,
+            "production_systematic_eligible": False,
+            "note": (
+                "Data-independent alternate selector; diagnostic only because "
+                "it mixes KM15 full-EP with a Kelly pure-BH reference."
+            ),
+            **alt_fit,
+        },
+    ])
+    base_e = float(nominal_fit["rE_fm"])
+    base_m = float(nominal_fit["rM_fm"])
+    comparison["delta_rE_from_KM15_fm"] = (
+        comparison["rE_fm"].to_numpy(float) - base_e
+    )
+    comparison["delta_rM_from_KM15_fm"] = (
+        comparison["rM_fm"].to_numpy(float) - base_m
+    )
+    comparison.to_csv(outdir / "model_only_bh_radius_comparison.csv", index=False)
+    pd.DataFrame(overlap_rows).to_csv(
+        outdir / "model_only_bh_selection_overlap.csv", index=False
+    )
+    if point_rows:
+        pd.concat(point_rows, ignore_index=True).to_csv(
+            outdir / "model_only_bh_selection_points.csv", index=False
+        )
+    #endif
+
+    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.8))
+    xx = np.arange(len(comparison))
+    axes[0].errorbar(
+        xx, comparison["rE_fm"], yerr=comparison["rE_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3,
+    )
+    axes[1].errorbar(
+        xx, comparison["rM_fm"], yerr=comparison["rM_fit_err_fm"],
+        marker="o", linestyle="none", capsize=3,
+    )
+    labels = ["KM15 5%", "model-only KellyBH/KM15EP\nmatched N"]
+    for ax, ylabel in zip(axes, [r"$r_E$ [fm]", r"$r_M$ [fm]"]):
+        ax.set_xticks(xx)
+        ax.set_xticklabels(labels)
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=0.2)
+    #endfor
+    fig.suptitle(
+        f"{label}: data-independent alternate BH-selection diagnostic",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(outdir / "model_only_bh_radius_comparison.png", dpi=180)
+    plt.close(fig)
+    return comparison
 #enddef
 
 
@@ -11605,6 +12344,9 @@ def run_unified_km15_final_analysis(
         f"{SACHS_MIN_RADIUS_FM:.2f}--{SACHS_MAX_RADIUS_FM:.2f} fm"
     )
     print("[normalization] correlated scale nuisances included in data and closure")
+    print("[benchmarks] Moradi Fit 5 and Fit 8 run across production ensembles")
+    print("[family robustness] top closure-qualified families refit to real 5% data")
+    print("[alternate BH selection] model-only Kelly/KM15EP diagnostic + observed-data diagnostic")
     print("[Saylor] KM15 diagnostic plus direct Jo comparison; not production")
     print("=" * 78)
 
@@ -12013,6 +12755,29 @@ def run_unified_km15_final_analysis(
         print("[KM15 ensemble rotation] no resolved nominal free-GE/free-GM fits.")
     #endif
 
+    # Compare the leading closure-qualified families directly on the real
+    # nominal data. This is a discrete-family robustness diagnostic only and is
+    # deliberately not folded into the production method uncertainty.
+    run_competitive_family_real_data_diagnostics(
+        ensemble_defs=ensemble_defs,
+        chosen=chosen,
+        closure_root=closure_root,
+        selection=selection,
+        outdir=diagnostics_dir / "competitive_family_real_data",
+        max_families=8,
+    )
+
+    # Preserve the original Moradi Fit-5 and Fit-8 parameterizations as a
+    # common benchmark across every relevant single/combined ensemble.
+    run_moradi_fit5_fit8_ensemble_benchmarks(
+        jo_bundle=jo_bundle,
+        defurne_bundle=defurne_bundle,
+        georges_bundle=georges_bundle,
+        lee_bundle=lee_bundle,
+        selection=selection,
+        outdir=diagnostics_dir / "moradi_fit5_fit8_ensembles",
+    )
+
     # Diagnose the Hall-A-induced radius rotation with one common family so
     # changes are attributable to the dataset ensemble rather than to a
     # simultaneous change of extrapolation parameterization.
@@ -12032,6 +12797,13 @@ def run_unified_km15_final_analysis(
             family=chosen["all_four"],
             outdir=diagnostics_dir / "normalization_tension",
         )
+        run_model_only_kelly_bh_selector_diagnostic(
+            bundles=production_bundles,
+            selection=selection,
+            family=chosen["all_four"],
+            label="Jo + Defurne + Georges + Lee",
+            outdir=diagnostics_dir / "bh_model_only_alternate" / "all_four",
+        )
         run_data_driven_bh_deviance_for_ensemble(
             bundles=production_bundles,
             selection=selection,
@@ -12042,6 +12814,13 @@ def run_unified_km15_final_analysis(
     #endif
 
     if chosen.get("jo2015_plus_lee2026") is not None:
+        run_model_only_kelly_bh_selector_diagnostic(
+            bundles=[jo_bundle, lee_bundle],
+            selection=selection,
+            family=chosen["jo2015_plus_lee2026"],
+            label="Jo + Lee",
+            outdir=diagnostics_dir / "bh_model_only_alternate" / "jo_plus_lee",
+        )
         run_data_driven_bh_deviance_for_ensemble(
             bundles=[jo_bundle, lee_bundle],
             selection=selection,
