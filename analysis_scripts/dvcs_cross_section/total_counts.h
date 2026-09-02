@@ -29,7 +29,11 @@ struct TotalCountsOptions {
 
     // Apply current-dependent reconstruction corrections event-by-event while
     // preserving the original unit-weight raw totals. The response model is
-    // produced by current_dependence.cpp before this stage.
+    // produced by current_dependence.cpp before this stage.  Regional DATA
+    // responses are used by default; when the calibration JSON contains an
+    // optional centered polar-angle term (nominally Sp18 Out ep->epgamma
+    // versus theta_e), it is evaluated for each event and its common-gradient
+    // calibration uncertainty is propagated as a correlated nuisance.
     bool apply_event_level_current_correction = true;
     std::string current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
 

@@ -114,6 +114,29 @@ struct CurrentDependenceOptions {
     // regionization.
     bool enable_region_theta_current_diagnostic = true;
 
+    // Production DATA response prescription.  When enabled, only Sp18 Out
+    // ep->epgamma uses the region-conditioned common linear electron-angle
+    // response established by the diagnostics:
+    //
+    //   s_r(theta_e) = s_r^(0) + a*(theta_e - theta_bar_r).
+    //
+    // All other DATA periods/channels remain regional-only.  This is an
+    // explicit analysis choice; the code does not automatically promote the
+    // variable with the best BIC.
+    bool use_sp18_out_e_theta_response_model = true;
+
+    // Diagnostic proxy for relative photon-efficiency modeling.  It compares
+    // CD_FT to CD_FD using the double ratio
+    //
+    //   (DATA/MC)_CD,FT / (DATA/MC)_CD,FD
+    //
+    // after matching electron and proton polar-angle phase space and applying
+    // the same current-response corrections used in production.  Because the
+    // proton is CD on both sides, charged-particle acceptance effects largely
+    // cancel and the remaining ratio primarily tests relative FT/FD photon
+    // reconstruction modeling.
+    bool enable_relative_ft_fd_photon_efficiency_diagnostic = true;
+
     // Calibration product consumed by total_counts.cpp. The file contains the
     // regional DATA current-response slopes, regional reconstructed-MC factors,
     // and run->current lookup used for event-level current correction.

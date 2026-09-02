@@ -187,6 +187,17 @@ struct CurrentResponseEntry {
     bool valid = false;
     double parameter = std::numeric_limits<double>::quiet_NaN();
     double parameter_stat = 0.0;
+
+    // Optional centered polar-angle term for DATA:
+    //   s(theta) = parameter + angular_gradient*(theta-angular_center).
+    // The fitted centering makes the regional baseline and common gradient
+    // effectively orthogonal, so their calibration uncertainties can be
+    // propagated as separate correlated nuisances.
+    bool has_angular_model = false;
+    std::string angular_variable;
+    double angular_center = 0.0;
+    double angular_gradient = 0.0;
+    double angular_gradient_stat = 0.0;
 };
 
 struct CurrentResponseModel {
@@ -225,6 +236,35 @@ static CurrentResponseModel load_current_response_model(const std::string& path)
                         arr[ir].valid = true;
                         arr[ir].parameter = v;
                         arr[ir].parameter_stat = se;
+
+                        if (std::string(sample) == "data" &&
+                            e.contains("angular_model") &&
+                            e["angular_model"].is_object()) {
+                            const auto& a = e["angular_model"];
+                            const std::string variable =
+                                a.value("variable", std::string());
+                            const double center =
+                                a.value("center", std::numeric_limits<double>::quiet_NaN());
+                            const double gradient =
+                                a.value("gradient_per_nA_per_deg",
+                                        std::numeric_limits<double>::quiet_NaN());
+                            const double gradient_stat =
+                                a.value("gradient_stat",
+                                        std::numeric_limits<double>::quiet_NaN());
+                            if (variable == "e_theta" &&
+                                std::isfinite(center) &&
+                                std::isfinite(gradient) &&
+                                std::isfinite(gradient_stat) &&
+                                gradient_stat >= 0.0) {
+                                arr[ir].has_angular_model = true;
+                                arr[ir].angular_variable = variable;
+                                arr[ir].angular_center = center;
+                                arr[ir].angular_gradient = gradient;
+                                arr[ir].angular_gradient_stat = gradient_stat;
+                            } else {
+                                fatal("[total_counts] FATAL: malformed DATA angular current-response model in " + path);
+                            }
+                        }
                     }
                 }
                 dst[ch.key()][per.key()] = arr;
@@ -261,8 +301,10 @@ static CurrentResponseModel load_current_response_model(const std::string& path)
 
 struct EventCurrentWeight {
     double weight = 1.0;
-    double derivative = 0.0;  // derivative wrt the regional fitted parameter
+    double derivative = 0.0;  // derivative wrt the regional baseline parameter
     double parameter_stat = 0.0;
+    double angular_derivative = 0.0; // derivative wrt common angular gradient
+    double angular_parameter_stat = 0.0;
     int region = -1;
     bool skip_corrected = false;
 };
@@ -1264,6 +1306,10 @@ struct BranchBinder {
             ena("detector1");
             ena("detector2");
 
+            // Needed by the optional Sp18-Out centered theta_e current
+            // response, independent of whether other global cuts require it.
+            ena("e_theta");
+
             if (is_data) {
                 ena("helicity");
             }
@@ -1412,6 +1458,8 @@ struct WeightedHelCounts {
     HelCounts sumw2;
     std::array<HelCounts, kCurrentRegionCount> derivative_by_region{};
     std::array<double, kCurrentRegionCount> parameter_stat{};
+    HelCounts angular_derivative;
+    double angular_parameter_stat = 0.0;
 };
 
 using WeightedRowCounts = std::unordered_map<int, WeightedHelCounts>;
@@ -1757,20 +1805,31 @@ static inline void add_weighted_count(WeightedHelCounts& h,
                                       int helicity,
                                       const EventCurrentWeight& cw) {
     if (cw.region < 0 || cw.region >= kCurrentRegionCount) return;
-    auto add_one = [&](double& sw, double& sw2, double& deriv) {
+    auto add_one = [&](double& sw, double& sw2, double& deriv, double& aderiv) {
         sw += cw.weight;
         sw2 += cw.weight * cw.weight;
         deriv += cw.derivative;
+        aderiv += cw.angular_derivative;
     };
     h.parameter_stat[cw.region] = cw.parameter_stat;
+    h.angular_parameter_stat =
+        std::max(h.angular_parameter_stat, cw.angular_parameter_stat);
     if (!split_helicity) {
-        add_one(h.sumw.unpol, h.sumw2.unpol, h.derivative_by_region[cw.region].unpol);
+        add_one(h.sumw.unpol, h.sumw2.unpol,
+                h.derivative_by_region[cw.region].unpol,
+                h.angular_derivative.unpol);
     } else if (helicity > 0) {
-        add_one(h.sumw.pos, h.sumw2.pos, h.derivative_by_region[cw.region].pos);
+        add_one(h.sumw.pos, h.sumw2.pos,
+                h.derivative_by_region[cw.region].pos,
+                h.angular_derivative.pos);
     } else if (helicity < 0) {
-        add_one(h.sumw.neg, h.sumw2.neg, h.derivative_by_region[cw.region].neg);
+        add_one(h.sumw.neg, h.sumw2.neg,
+                h.derivative_by_region[cw.region].neg,
+                h.angular_derivative.neg);
     } else {
-        add_one(h.sumw.unpol, h.sumw2.unpol, h.derivative_by_region[cw.region].unpol);
+        add_one(h.sumw.unpol, h.sumw2.unpol,
+                h.derivative_by_region[cw.region].unpol,
+                h.angular_derivative.unpol);
     }
 }
 
@@ -1815,13 +1874,29 @@ static EventCurrentWeight event_current_weight(const CurrentResponseModel& model
                   "' and is not explicitly marked as an unusable/zero-charge run.");
         }
         const double I = (double)ir->second;
-        const double R = 1.0 + e->parameter * I;
+        double effective_slope = e->parameter;
+        double angular_offset = 0.0;
+        if (e->has_angular_model) {
+            if (e->angular_variable != "e_theta" || !b.has_e_theta ||
+                !std::isfinite(b.e_theta)) {
+                fatal("[total_counts] FATAL: DATA angular current response requires a finite e_theta branch.");
+            }
+            const double theta_deg = b.e_theta * RAD2DEG;
+            angular_offset = theta_deg - e->angular_center;
+            effective_slope += e->angular_gradient * angular_offset;
+        }
+
+        const double R = 1.0 + effective_slope * I;
         if (!(std::isfinite(R) && R > 0.0)) {
             fatal("[total_counts] FATAL: non-positive DATA current response encountered.");
         }
         out.weight = 1.0 / R;
         out.derivative = -I / (R * R);
         out.parameter_stat = e->parameter_stat;
+        if (e->has_angular_model) {
+            out.angular_derivative = -I * angular_offset / (R * R);
+            out.angular_parameter_stat = e->angular_gradient_stat;
+        }
         return out;
     }
 
@@ -2209,6 +2284,9 @@ static WeightedRowCounts sum_weighted_row_counts(const WeightedRowCounts& a,
             add_hel(o.derivative_by_region[ir], h.derivative_by_region[ir]);
             o.parameter_stat[ir] = std::max(o.parameter_stat[ir], h.parameter_stat[ir]);
         }
+        add_hel(o.angular_derivative, h.angular_derivative);
+        o.angular_parameter_stat =
+            std::max(o.angular_parameter_stat, h.angular_parameter_stat);
     }
     return out;
 }
@@ -2226,6 +2304,8 @@ static double weighted_stat_variance(const WeightedHelCounts& h,
         const double s = h.parameter_stat[ir];
         var += d * d * s * s;
     }
+    const double da = comp(h.angular_derivative);
+    var += da * da * h.angular_parameter_stat * h.angular_parameter_stat;
     return std::max(0.0, var);
 }
 
@@ -2249,6 +2329,11 @@ static double weighted_total_variance(const WeightedHelCounts& h) {
         const double ps = h.parameter_stat[ir];
         var += deriv * deriv * ps * ps;
     }
+    const double aderiv = h.angular_derivative.unpol +
+                          h.angular_derivative.pos +
+                          h.angular_derivative.neg;
+    var += aderiv * aderiv *
+           h.angular_parameter_stat * h.angular_parameter_stat;
     return std::max(0.0, var);
 }
 
