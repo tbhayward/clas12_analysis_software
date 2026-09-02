@@ -53,6 +53,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -4157,18 +4158,17 @@ static TGraphErrors* make_region_theta_factor_graph(const std::vector<KinematicB
     int ip = 0;
 
     for (const KinematicBinResult& b : bins) {
-        // Keep every fitted bin in the diagnostic CSV, but only draw bins that
-        // have enough current settings to constrain a slope and a reasonably
-        // informative positive efficiency estimate. This prevents obviously
-        // underconstrained edge-bin fits from masquerading as calibration points.
+        // Diagnostic plotting policy: do not impose an arbitrary minimum number
+        // of current settings, event count, relative uncertainty, or slope sign.
+        // Two-current-point fits are therefore shown.  The only plotting sanity
+        // requirement is that the fitted efficiency itself be finite and
+        // physically positive with a finite non-negative uncertainty.  Every
+        // fitted bin, including pathological/non-positive fits, remains in CSV.
         const bool usable =
-            b.n_current_points >= 3 &&
-            b.total_counts >= 100.0 &&
             std::isfinite(b.factor) &&
             std::isfinite(b.factor_err) &&
             b.factor > 0.0 &&
-            b.factor_err >= 0.0 &&
-            b.factor_err <= 0.50 * b.factor;
+            b.factor_err >= 0.0;
         if (!usable) continue;
 
         g->SetPoint(ip, b.x_center, b.factor);
@@ -4182,6 +4182,45 @@ static TGraphErrors* make_region_theta_factor_graph(const std::vector<KinematicB
     g->SetLineColor(color);
     g->SetLineWidth(2);
     return g;
+}
+
+
+static std::vector<KinematicBinResult> make_data_over_mc_kinematic_bins(
+    const std::vector<KinematicBinResult>& data_bins,
+    const std::vector<KinematicBinResult>& mc_bins) {
+
+    std::vector<KinematicBinResult> out;
+    const size_t n = std::min(data_bins.size(), mc_bins.size());
+    out.reserve(n);
+
+    for (size_t i = 0; i < n; ++i) {
+        const KinematicBinResult& d = data_bins[i];
+        const KinematicBinResult& m = mc_bins[i];
+
+        KinematicBinResult r;
+        r.x_low = d.x_low;
+        r.x_high = d.x_high;
+        r.x_center = std::isfinite(d.x_center) ? d.x_center : m.x_center;
+        r.x_err = d.x_err;
+        r.n_current_points = std::min(d.n_current_points, m.n_current_points);
+        r.total_counts = std::min(d.total_counts, m.total_counts);
+
+        if (std::isfinite(d.factor) && d.factor > 0.0 &&
+            std::isfinite(m.factor) && m.factor > 0.0 &&
+            std::isfinite(d.factor_err) && d.factor_err >= 0.0 &&
+            std::isfinite(m.factor_err) && m.factor_err >= 0.0) {
+
+            r.factor = d.factor / m.factor;
+            const double rel2 =
+                std::pow(d.factor_err / d.factor, 2) +
+                std::pow(m.factor_err / m.factor, 2);
+            r.factor_err = std::fabs(r.factor) * std::sqrt(std::max(0.0, rel2));
+        }
+
+        out.push_back(r);
+    }
+
+    return out;
 }
 
 
@@ -4637,7 +4676,8 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
                                const VarPeriodResults& results_by_var_period,
                                const std::map<std::string, std::map<std::string, LinearFitSummary>>& fits_by_var_period,
                                const std::map<std::string, double>& integrated,
-                               bool fit_version) {
+                               bool fit_version,
+                               const std::string& y_label) {
         TCanvas c(canvas_name.c_str(), canvas_name.c_str(), 2200, 1100);
         c.Divide(4, 2, 0.001, 0.001);
 
@@ -4656,7 +4696,7 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
             TH1F* frame = gPad->DrawFrame(xmin, 0.00, xmax, 1.40);
             frame->SetTitle((v.title + " dependence").c_str());
             frame->GetXaxis()->SetTitle(v.x_label.c_str());
-            frame->GetYaxis()->SetTitle("Current-efficiency factor");
+            frame->GetYaxis()->SetTitle(y_label.c_str());
             frame->GetXaxis()->CenterTitle(true);
             frame->GetYaxis()->CenterTitle(true);
             frame->GetYaxis()->SetTitleOffset(1.35);
@@ -4737,7 +4777,8 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
                     data_results_by_var_period,
                     data_fits_by_var_period,
                     integrated_data,
-                    false);
+                    false,
+                    "Current-efficiency factor");
 
     draw_one_canvas("c_kinematic_current_efficiency_data_linear_fits",
                     "current_efficiency_vs_kinematics_linear_fits.png",
@@ -4745,7 +4786,8 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
                     data_results_by_var_period,
                     data_fits_by_var_period,
                     integrated_data,
-                    true);
+                    true,
+                    "Current-efficiency factor");
 
     draw_one_canvas("c_kinematic_current_efficiency_mc",
                     "current_efficiency_vs_kinematics_mc.png",
@@ -4753,7 +4795,8 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
                     mc_results_by_var_period,
                     mc_fits_by_var_period,
                     integrated_mc,
-                    false);
+                    false,
+                    "Current-efficiency factor");
 
     draw_one_canvas("c_kinematic_current_efficiency_mc_linear_fits",
                     "current_efficiency_vs_kinematics_mc_linear_fits.png",
@@ -4761,7 +4804,91 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
                     mc_results_by_var_period,
                     mc_fits_by_var_period,
                     integrated_mc,
-                    true);
+                    true,
+                    "Current-efficiency factor");
+
+    // Direct DATA/MC current-efficiency diagnostic.  This is the quantity
+    // relevant to the cross-section acceptance correction and keeps the
+    // presentation convention consistently DATA/MC.
+    VarPeriodResults ratio_results_by_var_period;
+    std::map<std::string, std::map<std::string, LinearFitSummary>> ratio_fits_by_var_period;
+    std::map<std::string, double> integrated_ratio;
+
+    for (const std::string& period : PERIOD_ORDER) {
+        auto id = integrated_data.find(period);
+        auto im = integrated_mc.find(period);
+        if (id != integrated_data.end() && im != integrated_mc.end() &&
+            std::isfinite(id->second) && id->second > 0.0 &&
+            std::isfinite(im->second) && im->second > 0.0) {
+            integrated_ratio[period] = id->second / im->second;
+        }
+    }
+
+    std::ofstream ratio_csv(odir + "/current_efficiency_vs_kinematics_data_over_mc.csv");
+    ratio_csv << "sample,period,variable,bin,x_low,x_high,x_center,data_over_mc,data_over_mc_stat,integrated_data_over_mc,n_data_current_points,n_mc_current_points,data_total_counts,mc_total_counts\n";
+
+    std::ofstream ratio_fit_csv(odir + "/current_efficiency_vs_kinematics_data_over_mc_linear_fits.csv");
+    ratio_fit_csv << "sample,period,variable,slope,intercept,slope_stat,intercept_stat,cov_slope_intercept,chi2,ndf,npoints\n";
+
+    for (const KinematicVarConfig& v : vars) {
+        for (const std::string& period : PERIOD_ORDER) {
+            if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) {
+                continue;
+            }
+
+            auto idv = data_results_by_var_period.find(v.key);
+            auto imv = mc_results_by_var_period.find(v.key);
+            if (idv == data_results_by_var_period.end() ||
+                imv == mc_results_by_var_period.end()) continue;
+
+            auto idp = idv->second.find(period);
+            auto imp = imv->second.find(period);
+            if (idp == idv->second.end() || imp == imv->second.end()) continue;
+
+            std::vector<KinematicBinResult> rb =
+                make_data_over_mc_kinematic_bins(idp->second, imp->second);
+            ratio_results_by_var_period[v.key][period] = rb;
+
+            const LinearFitSummary fit = fit_kinematic_factor_linear(rb);
+            ratio_fits_by_var_period[v.key][period] = fit;
+            ratio_fit_csv << "data_over_mc," << period << "," << v.key << ","
+                          << fit.m << "," << fit.b << "," << fit.m_err << "," << fit.b_err << ","
+                          << fit.cov_mb << "," << fit.chi2 << "," << fit.ndf << "," << fit.npoints << "\n";
+
+            const size_t nb = std::min(idp->second.size(), imp->second.size());
+            for (size_t ib = 0; ib < nb && ib < rb.size(); ++ib) {
+                const KinematicBinResult& r = rb[ib];
+                const KinematicBinResult& d = idp->second[ib];
+                const KinematicBinResult& m = imp->second[ib];
+                const double iratio = integrated_ratio.count(period)
+                    ? integrated_ratio[period]
+                    : std::numeric_limits<double>::quiet_NaN();
+                ratio_csv << "data_over_mc," << period << "," << v.key << "," << ib << ","
+                          << r.x_low << "," << r.x_high << "," << r.x_center << ","
+                          << r.factor << "," << r.factor_err << "," << iratio << ","
+                          << d.n_current_points << "," << m.n_current_points << ","
+                          << d.total_counts << "," << m.total_counts << "\n";
+            }
+        }
+    }
+
+    draw_one_canvas("c_kinematic_current_efficiency_data_over_mc",
+                    "current_efficiency_vs_kinematics_data_over_mc.png",
+                    "DATA/MC",
+                    ratio_results_by_var_period,
+                    ratio_fits_by_var_period,
+                    integrated_ratio,
+                    false,
+                    "DATA/MC current-efficiency ratio");
+
+    draw_one_canvas("c_kinematic_current_efficiency_data_over_mc_linear_fits",
+                    "current_efficiency_vs_kinematics_data_over_mc_linear_fits.png",
+                    "DATA/MC",
+                    ratio_results_by_var_period,
+                    ratio_fits_by_var_period,
+                    integrated_ratio,
+                    true,
+                    "DATA/MC current-efficiency ratio");
 
     std::map<std::string, LinearFitSummary> e_theta_fits;
     auto it_e_theta = data_fits_by_var_period.find("e_theta");
@@ -4986,9 +5113,10 @@ static std::vector<PeriodResult> run_channel_study(
 // Photon-region current-dependence diagnostic (FT + six FD sectors)
 // -----------------------------------------------------------------------------
 //
-// This diagnostic deliberately does not alter any production current factor.
-// It repeats the ep->epgamma current-dependence extraction in seven mutually
-// exclusive photon regions and writes only plots/CSV diagnostics under
+// This study repeats the ep->epgamma current-dependence extraction in seven
+// mutually exclusive photon regions.  These regional fits define the nominal
+// event-level response model; the additional kinematic/theta studies remain
+// diagnostic until explicitly promoted after validation.
 //
 //   <output_dir>/epg/sector_dependence_diagnostic/
 //
@@ -5385,18 +5513,339 @@ static RegionThetaAggMap process_data_tree_region_theta(
     return out;
 }
 
+
+using RegionThetaMcAggMap = std::map<std::string, KinematicMcAggMap>;
+using PeriodRegionThetaMcAggMap = std::map<std::string, RegionThetaMcAggMap>;
+
+static RegionThetaMcAggMap process_generated_tree_region_theta(
+    const std::string& key,
+    TTree* tree,
+    const std::vector<KinematicVarConfig>& vars) {
+
+    RegionThetaMcAggMap out;
+    const PeriodTags tags = parse_period_from_key(key);
+    const int current = parse_current_from_key(key);
+
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        for (const KinematicVarConfig& v : vars) {
+            auto& bins = out[spec.key][v.key];
+            bins.resize(v.edges.size() - 1);
+            for (McKinematicBinAgg& a : bins) a.period = tags.display;
+        }
+    }
+
+    if (!tree || tags.display == "Fa18 Inb Supp") return out;
+
+    Branches b;
+    b.bind(tree);
+    const Long64_t N = tree->GetEntries();
+
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+
+        std::string region;
+        if (!generated_photon_region(b, region)) continue;
+
+        for (const KinematicVarConfig& v : vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+            if (!kinematic_value_for_config(b, v, value)) continue;
+            const int ib = find_bin_index(v.edges, value);
+            if (ib < 0) continue;
+
+            McKinematicBinAgg& bin = out[region][v.key][ib];
+            McAgg& a = bin.by_current[current];
+            a.period = tags.display;
+            a.current_nA = current;
+            a.n_gen += 1;
+            bin.generated_kinematic_value_sum += value;
+            bin.generated_kinematic_value_count += 1;
+        }
+    }
+    return out;
+}
+
+static RegionThetaMcAggMap process_reconstructed_tree_region_theta(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const TopoCutMap& mc_cuts,
+    const std::vector<KinematicVarConfig>& vars) {
+
+    RegionThetaMcAggMap out;
+    const PeriodTags tags = parse_period_from_key(key);
+    const int current = parse_current_from_key(key);
+
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        for (const KinematicVarConfig& v : vars) {
+            auto& bins = out[spec.key][v.key];
+            bins.resize(v.edges.size() - 1);
+            for (McKinematicBinAgg& a : bins) a.period = tags.display;
+        }
+    }
+
+    if (!tree || tags.display == "Fa18 Inb Supp") return out;
+
+    Branches b;
+    b.bind(tree);
+    const Long64_t N = tree->GetEntries();
+
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+        if (!passes_cone_cut(b)) continue;
+        if (!passes_global_dispatch(b, tags)) continue;
+        if (!passes_sigma_dispatch(cfg, tags, mc_cuts, b)) continue;
+
+        std::string region;
+        if (!reconstructed_photon_region(b, region)) continue;
+
+        for (const KinematicVarConfig& v : vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+            if (!kinematic_value_for_config(b, v, value)) continue;
+            const int ib = find_bin_index(v.edges, value);
+            if (ib < 0) continue;
+
+            McKinematicBinAgg& bin = out[region][v.key][ib];
+            McAgg& a = bin.by_current[current];
+            a.period = tags.display;
+            a.current_nA = current;
+            a.n_rec += 1;
+            bin.reconstructed_kinematic_value_sum += value;
+            bin.reconstructed_kinematic_value_count += 1;
+        }
+    }
+    return out;
+}
+
+static void merge_region_theta_mc(PeriodRegionThetaMcAggMap& merged,
+                                  const std::string& period,
+                                  const RegionThetaMcAggMap& one,
+                                  const std::vector<KinematicVarConfig>& vars) {
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        auto ir = one.find(spec.key);
+        if (ir == one.end()) continue;
+        for (const KinematicVarConfig& v : vars) {
+            auto iv = ir->second.find(v.key);
+            if (iv == ir->second.end()) continue;
+            auto& dst = merged[period][spec.key][v.key];
+            const auto& src = iv->second;
+            const size_t n = std::min(dst.size(), src.size());
+            for (size_t ib = 0; ib < n; ++ib) merge_mc_kinematic_bin(dst[ib], src[ib]);
+        }
+    }
+}
+
+struct RelativeSlopePoint {
+    int region_index = -1;
+    double x = std::numeric_limits<double>::quiet_NaN();
+    double slope = std::numeric_limits<double>::quiet_NaN();
+    double slope_err = std::numeric_limits<double>::quiet_NaN();
+    int n_current_points = 0;
+};
+
+struct PooledRegionThetaSlopeFit {
+    bool valid = false;
+    std::array<double, 7> region_intercepts{};
+    std::array<double, 7> region_intercept_err{};
+    std::array<double, 7> region_centers{};
+    double theta_gradient = std::numeric_limits<double>::quiet_NaN();
+    double theta_gradient_err = std::numeric_limits<double>::quiet_NaN();
+    double chi2 = std::numeric_limits<double>::quiet_NaN();
+    int ndf = 0;
+    int npoints = 0;
+};
+
+static bool invert_small_matrix(std::vector<std::vector<double>> a,
+                                std::vector<std::vector<double>>& inv) {
+    const int n = (int)a.size();
+    inv.assign(n, std::vector<double>(n, 0.0));
+    for (int i = 0; i < n; ++i) inv[i][i] = 1.0;
+
+    for (int col = 0; col < n; ++col) {
+        int pivot = col;
+        for (int r = col + 1; r < n; ++r)
+            if (std::fabs(a[r][col]) > std::fabs(a[pivot][col])) pivot = r;
+        if (!(std::fabs(a[pivot][col]) > 1e-18) || !std::isfinite(a[pivot][col])) return false;
+        if (pivot != col) {
+            std::swap(a[pivot], a[col]);
+            std::swap(inv[pivot], inv[col]);
+        }
+
+        const double p = a[col][col];
+        for (int j = 0; j < n; ++j) {
+            a[col][j] /= p;
+            inv[col][j] /= p;
+        }
+        for (int r = 0; r < n; ++r) {
+            if (r == col) continue;
+            const double f = a[r][col];
+            for (int j = 0; j < n; ++j) {
+                a[r][j] -= f * a[col][j];
+                inv[r][j] -= f * inv[col][j];
+            }
+        }
+    }
+    return true;
+}
+
+static PooledRegionThetaSlopeFit fit_pooled_region_theta_relative_slopes(
+    const std::vector<RelativeSlopePoint>& pts) {
+
+    PooledRegionThetaSlopeFit out;
+    constexpr int NP = 8; // seven region intercepts + one common theta gradient
+
+    std::array<double, 7> sw{};
+    std::array<double, 7> swx{};
+    for (const RelativeSlopePoint& p : pts) {
+        if (p.region_index < 0 || p.region_index >= 7 ||
+            !std::isfinite(p.x) || !std::isfinite(p.slope) ||
+            !std::isfinite(p.slope_err) || !(p.slope_err > 0.0)) continue;
+        const double w = 1.0 / (p.slope_err * p.slope_err);
+        sw[p.region_index] += w;
+        swx[p.region_index] += w * p.x;
+    }
+    for (int r = 0; r < 7; ++r) {
+        out.region_centers[r] = (sw[r] > 0.0) ? swx[r] / sw[r] : 0.0;
+    }
+
+    std::vector<std::vector<double>> normal(NP, std::vector<double>(NP, 0.0));
+    std::vector<double> rhs(NP, 0.0);
+    std::vector<RelativeSlopePoint> used;
+
+    for (const RelativeSlopePoint& p : pts) {
+        if (p.region_index < 0 || p.region_index >= 7 ||
+            !std::isfinite(p.x) || !std::isfinite(p.slope) ||
+            !std::isfinite(p.slope_err) || !(p.slope_err > 0.0)) continue;
+
+        const double w = 1.0 / (p.slope_err * p.slope_err);
+        std::array<double, NP> row{};
+        row[p.region_index] = 1.0;
+        row[7] = p.x - out.region_centers[p.region_index];
+
+        for (int i = 0; i < NP; ++i) {
+            rhs[i] += w * row[i] * p.slope;
+            for (int j = 0; j < NP; ++j) normal[i][j] += w * row[i] * row[j];
+        }
+        used.push_back(p);
+    }
+
+    out.npoints = (int)used.size();
+    if (out.npoints <= NP) return out;
+    for (int r = 0; r < 7; ++r) if (!(sw[r] > 0.0)) return out;
+
+    std::vector<std::vector<double>> cov;
+    if (!invert_small_matrix(normal, cov)) return out;
+
+    std::vector<double> beta(NP, 0.0);
+    for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+            beta[i] += cov[i][j] * rhs[j];
+
+    for (int r = 0; r < 7; ++r) {
+        out.region_intercepts[r] = beta[r];
+        out.region_intercept_err[r] = std::sqrt(std::max(0.0, cov[r][r]));
+    }
+    out.theta_gradient = beta[7];
+    out.theta_gradient_err = std::sqrt(std::max(0.0, cov[7][7]));
+
+    double chi2 = 0.0;
+    for (const RelativeSlopePoint& p : used) {
+        const double pred =
+            out.region_intercepts[p.region_index] +
+            out.theta_gradient * (p.x - out.region_centers[p.region_index]);
+        const double pull = (p.slope - pred) / p.slope_err;
+        chi2 += pull * pull;
+    }
+    out.chi2 = chi2;
+    out.ndf = out.npoints - NP;
+    out.valid = std::isfinite(out.theta_gradient) &&
+                std::isfinite(out.theta_gradient_err) &&
+                out.theta_gradient_err >= 0.0;
+    return out;
+}
+
+static std::vector<RelativeSlopePoint> relative_slope_points_from_data_theta_bins(
+    const std::map<std::string, std::vector<DataAgg>>& by_region,
+    const KinematicVarConfig& theta_var) {
+
+    std::vector<RelativeSlopePoint> out;
+    for (int ir = 0; ir < 7; ++ir) {
+        auto it = by_region.find(PHOTON_REGION_ORDER[ir].key);
+        if (it == by_region.end()) continue;
+        const auto& bins = it->second;
+        for (size_t ib = 0; ib < bins.size() && ib + 1 < theta_var.edges.size(); ++ib) {
+            const auto pts = data_points_from_agg(bins[ib]);
+            if (pts.size() < 2) continue;
+            const FitResult fit = fit_points(pts);
+            const double s = relative_slope_per_nA(fit);
+            const double se = relative_slope_per_nA_err(fit);
+            if (!std::isfinite(s) || !std::isfinite(se) || !(se > 0.0)) continue;
+
+            RelativeSlopePoint p;
+            p.region_index = ir;
+            p.x = mean_or_bin_center(theta_var.edges[ib], theta_var.edges[ib+1],
+                                     bins[ib].kinematic_value_sum,
+                                     bins[ib].kinematic_value_count);
+            p.slope = s;
+            p.slope_err = se;
+            p.n_current_points = (int)pts.size();
+            out.push_back(p);
+        }
+    }
+    return out;
+}
+
+static std::vector<RelativeSlopePoint> relative_slope_points_from_mc_theta_bins(
+    const std::map<std::string, std::vector<McKinematicBinAgg>>& by_region,
+    const KinematicVarConfig& theta_var) {
+
+    std::vector<RelativeSlopePoint> out;
+    for (int ir = 0; ir < 7; ++ir) {
+        auto it = by_region.find(PHOTON_REGION_ORDER[ir].key);
+        if (it == by_region.end()) continue;
+        const auto& bins = it->second;
+        for (size_t ib = 0; ib < bins.size() && ib + 1 < theta_var.edges.size(); ++ib) {
+            std::vector<McAgg> aggs;
+            for (const auto& kv : bins[ib].by_current) aggs.push_back(kv.second);
+            const auto pts = mc_points_from_aggs(aggs, bins[ib].period);
+            if (pts.size() < 2) continue;
+            const FitResult fit = fit_points(pts);
+            const double s = relative_slope_per_nA(fit);
+            const double se = relative_slope_per_nA_err(fit);
+            if (!std::isfinite(s) || !std::isfinite(se) || !(se > 0.0)) continue;
+
+            RelativeSlopePoint p;
+            p.region_index = ir;
+            p.x = bins[ib].generated_kinematic_value_count > 0
+                ? bins[ib].generated_kinematic_value_sum / double(bins[ib].generated_kinematic_value_count)
+                : mean_or_bin_center(theta_var.edges[ib], theta_var.edges[ib+1],
+                                     bins[ib].reconstructed_kinematic_value_sum,
+                                     bins[ib].reconstructed_kinematic_value_count);
+            p.slope = s;
+            p.slope_err = se;
+            p.n_current_points = (int)pts.size();
+            out.push_back(p);
+        }
+    }
+    return out;
+}
+
 static void run_region_theta_data_diagnostic(
     const ChannelConfig& cfg,
     const std::map<std::string, TTree*>& data_trees,
+    const std::map<std::string, TTree*>& gen_trees,
+    const std::map<std::string, TTree*>& rec_trees,
     const std::unordered_map<int, ChargeEntry>& charge_map,
     const TopoCutMap& data_cuts,
+    const TopoCutMap& mc_cuts,
     const std::string& output_dir,
     int max_workers,
     bool use_second_column_charge_for_all_unpolarized,
     bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
     double columns_3_to_5_charge_sum_scale,
-    bool hide_sp19) {
+    bool hide_sp19,
+    bool process_mc) {
 
+    (void)hide_sp19;
     std::vector<KinematicVarConfig> vars;
     for (const KinematicVarConfig& v : kinematic_current_var_configs()) {
         if (v.key == "e_theta" || v.key == "g_theta") vars.push_back(v);
@@ -5483,19 +5932,94 @@ static void run_region_theta_data_diagnostic(
               << std::chrono::duration<double>(Clock::now() - phase_t0).count()
               << " s." << std::defaultfloat << std::setprecision(6) << std::endl;
 
+    PeriodRegionThetaMcAggMap merged_mc;
+    if (process_mc) {
+        for (const std::string& period : PERIOD_ORDER) {
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                for (const KinematicVarConfig& v : vars) {
+                    auto& bins = merged_mc[period][spec.key][v.key];
+                    bins.resize(v.edges.size() - 1);
+                    for (McKinematicBinAgg& a : bins) a.period = period;
+                }
+            }
+        }
+
+        std::mutex mc_merge_mutex;
+
+        std::vector<std::pair<std::string, TTree*>> gen_items;
+        for (const auto& kv : gen_trees) {
+            const PeriodTags tags = parse_period_from_key(kv.first);
+            if (tags.display != "Fa18 Inb Supp") gen_items.push_back(kv);
+        }
+        int mc_nth = std::max(1, std::min(7, max_workers));
+        mc_nth = std::min(mc_nth, std::max(1, (int)gen_items.size()));
+        std::cout << "[current_dependence] Region-theta generated-MC diagnostic for "
+                  << cfg.csv_channel << ": " << gen_items.size()
+                  << " tree(s), " << mc_nth << " worker(s)." << std::endl;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(mc_nth)
+#endif
+        for (int i = 0; i < (int)gen_items.size(); ++i) {
+            const PeriodTags tags = parse_period_from_key(gen_items[i].first);
+            RegionThetaMcAggMap one =
+                process_generated_tree_region_theta(gen_items[i].first, gen_items[i].second, vars);
+            std::lock_guard<std::mutex> lock(mc_merge_mutex);
+            merge_region_theta_mc(merged_mc, tags.display, one, vars);
+        }
+
+        std::vector<std::pair<std::string, TTree*>> rec_items;
+        for (const auto& kv : rec_trees) {
+            const PeriodTags tags = parse_period_from_key(kv.first);
+            if (tags.display != "Fa18 Inb Supp") rec_items.push_back(kv);
+        }
+        mc_nth = std::max(1, std::min(7, max_workers));
+        mc_nth = std::min(mc_nth, std::max(1, (int)rec_items.size()));
+        std::cout << "[current_dependence] Region-theta reconstructed-MC diagnostic for "
+                  << cfg.csv_channel << ": " << rec_items.size()
+                  << " tree(s), " << mc_nth << " worker(s)." << std::endl;
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(mc_nth)
+#endif
+        for (int i = 0; i < (int)rec_items.size(); ++i) {
+            const PeriodTags tags = parse_period_from_key(rec_items[i].first);
+            RegionThetaMcAggMap one =
+                process_reconstructed_tree_region_theta(
+                    cfg, rec_items[i].first, rec_items[i].second, mc_cuts, vars);
+            std::lock_guard<std::mutex> lock(mc_merge_mutex);
+            merge_region_theta_mc(merged_mc, tags.display, one, vars);
+        }
+    }
+
     const std::string odir = output_dir + "/" + cfg.output_token + "/sector_dependence_diagnostic/region_theta";
     mkdir_p(odir);
-    std::ofstream csv(odir + "/data_current_efficiency_by_region_and_theta.csv");
-    csv << "period,region,variable,bin,x_low,x_high,x_center,factor,factor_stat,n_current_points,total_counts\n";
 
-    for (const KinematicVarConfig& v : vars) {
-        TCanvas c(("c_region_theta_" + cfg.output_token + "_" + v.key).c_str(), "", 1500, 1000);
+    std::ofstream data_csv(odir + "/data_current_efficiency_by_region_and_theta.csv");
+    data_csv << "period,region,variable,bin,x_low,x_high,x_center,factor,factor_stat,n_current_points,total_counts\n";
+
+    std::ofstream mc_csv;
+    std::ofstream ratio_csv;
+    if (process_mc) {
+        mc_csv.open(odir + "/mc_current_efficiency_by_region_and_theta.csv");
+        mc_csv << "period,region,variable,bin,x_low,x_high,x_center,factor,factor_stat,n_current_points,total_counts\n";
+        ratio_csv.open(odir + "/data_over_mc_current_efficiency_by_region_and_theta.csv");
+        ratio_csv << "period,region,variable,bin,x_low,x_high,x_center,data_factor,data_factor_stat,mc_factor,mc_factor_stat,data_over_mc,data_over_mc_stat,data_n_current_points,mc_n_current_points\n";
+    }
+
+    const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
+    const std::string note_dir = output_dir + "/analysis_note";
+    mkdir_p(note_dir);
+
+    auto draw_region_theta_canvas =
+        [&](const KinematicVarConfig& v,
+            const std::string& sample_token,
+            const std::string& y_title,
+            const std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>>& results,
+            double ymin,
+            double ymax) {
+
+        TCanvas c(("c_region_theta_" + cfg.output_token + "_" + sample_token + "_" + v.key).c_str(),
+                  "", 1500, 1000);
         c.Divide(2, 2, 0.004, 0.004);
-        const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
-
-        // ROOT pads keep pointers to primitives rather than taking safe C++
-        // ownership of stack/local objects. Keep every drawable alive until
-        // after SaveAs so divided canvases are not serialized as empty pads.
         std::vector<std::unique_ptr<TObject>> owned;
 
         for (size_t ip = 0; ip < periods.size(); ++ip) {
@@ -5504,12 +6028,12 @@ static void run_region_theta_data_diagnostic(
             gPad->SetBottomMargin(0.13); gPad->SetTopMargin(0.10); gPad->SetGridy();
 
             auto frame = std::make_unique<TH1D>(
-                ("h_rt_" + cfg.output_token + v.key + std::to_string(ip)).c_str(),
-                (periods[ip] + ";" + v.x_label + ";Current efficiency factor").c_str(),
+                ("h_rt_" + cfg.output_token + sample_token + v.key + std::to_string(ip)).c_str(),
+                (periods[ip] + ";" + v.x_label + ";" + y_title).c_str(),
                 100, v.edges.front(), v.edges.back());
             frame->SetDirectory(nullptr);
-            frame->SetMinimum(0.45);
-            frame->SetMaximum(1.20);
+            frame->SetMinimum(ymin);
+            frame->SetMaximum(ymax);
             frame->SetStats(0);
             frame->Draw();
             owned.emplace_back(std::move(frame));
@@ -5524,27 +6048,18 @@ static void run_region_theta_data_diagnostic(
             leg->SetBorderSize(0);
             leg->SetFillStyle(0);
 
-            for (int ir = 0; ir < (int)PHOTON_REGION_ORDER.size(); ++ir) {
-                std::vector<KinematicBinResult> brs;
-                const auto& bins = merged[periods[ip]][PHOTON_REGION_ORDER[ir].key][v.key];
-                for (size_t ib = 0; ib < bins.size(); ++ib) {
-                    KinematicBinResult br = current_factor_for_kinematic_bin(
-                        bins[ib], v.edges[ib], v.edges[ib+1]);
-                    brs.push_back(br);
-                    csv << periods[ip] << "," << PHOTON_REGION_ORDER[ir].key << ","
-                        << v.key << "," << ib << ","
-                        << std::setprecision(12)
-                        << br.x_low << "," << br.x_high << "," << br.x_center << ","
-                        << br.factor << "," << br.factor_err << ","
-                        << br.n_current_points << "," << br.total_counts << "\n";
+            auto iper = results.find(periods[ip]);
+            if (iper != results.end()) {
+                for (int ir = 0; ir < 7; ++ir) {
+                    auto ireg = iper->second.find(PHOTON_REGION_ORDER[ir].key);
+                    if (ireg == iper->second.end()) continue;
+                    std::unique_ptr<TGraphErrors> graph(
+                        make_region_theta_factor_graph(ireg->second, photon_region_color(ir)));
+                    graph->SetMarkerStyle(photon_region_marker(ir));
+                    graph->Draw("P SAME");
+                    leg->AddEntry(graph.get(), PHOTON_REGION_ORDER[ir].label.c_str(), "p");
+                    owned.emplace_back(std::move(graph));
                 }
-
-                std::unique_ptr<TGraphErrors> graph(
-                    make_region_theta_factor_graph(brs, photon_region_color(ir)));
-                graph->SetMarkerStyle(photon_region_marker(ir));
-                graph->Draw("P SAME");
-                leg->AddEntry(graph.get(), PHOTON_REGION_ORDER[ir].label.c_str(), "p");
-                owned.emplace_back(std::move(graph));
             }
 
             leg->Draw();
@@ -5552,9 +6067,10 @@ static void run_region_theta_data_diagnostic(
 
             auto note = std::make_unique<TLatex>();
             note->SetNDC();
-            note->SetTextSize(0.026);
+            note->SetTextSize(0.025);
             note->SetTextColor(kGray + 2);
-            note->DrawLatex(0.15, 0.655, "Plot requires #geq3 current points, N#geq100, and #sigma_{f}/f#leq50%; CSV retains all bins.");
+            note->DrawLatex(0.15, 0.655,
+                            "All finite positive fitted factors are shown; 2-current-point fits are retained.");
             owned.emplace_back(std::move(note));
         }
 
@@ -5565,23 +6081,264 @@ static void run_region_theta_data_diagnostic(
         title->SetTextSize(0.030);
         title->DrawLatex(
             0.5, 0.985,
-            (cfg.title + ": current efficiency versus " + v.title + " within FT/FD sectors").c_str());
+            (cfg.title + ": " + sample_token + " current efficiency versus " +
+             v.title + " within photon regions").c_str());
         owned.emplace_back(std::move(title));
 
         c.Modified();
         c.Update();
-        const std::string region_theta_path =
-            odir + "/data_current_efficiency_by_region_vs_" + v.key + ".png";
-        c.SaveAs(region_theta_path.c_str());
+        const std::string path =
+            odir + "/" + sample_token + "_current_efficiency_by_region_vs_" + v.key + ".png";
+        c.SaveAs(path.c_str());
 
-        const std::string note_dir = output_dir + "/analysis_note";
-        mkdir_p(note_dir);
         const std::string note_path =
-            note_dir + "/" + cfg.output_token + "_regional_current_efficiency_vs_" + v.key + ".png";
-        gSystem->CopyFile(region_theta_path.c_str(), note_path.c_str(), true);
+            note_dir + "/" + cfg.output_token + "_regional_" + sample_token +
+            "_current_efficiency_vs_" + v.key + ".png";
+        gSystem->CopyFile(path.c_str(), note_path.c_str(), true);
+    };
+
+    for (const KinematicVarConfig& v : vars) {
+        std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>> data_results;
+        std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>> mc_results;
+        std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>> ratio_results;
+
+        for (const std::string& period : periods) {
+            for (int ir = 0; ir < 7; ++ir) {
+                const std::string& rkey = PHOTON_REGION_ORDER[ir].key;
+                const auto& dbins = merged[period][rkey][v.key];
+                std::vector<KinematicBinResult> dres;
+                for (size_t ib = 0; ib < dbins.size(); ++ib) {
+                    KinematicBinResult br =
+                        current_factor_for_kinematic_bin(dbins[ib], v.edges[ib], v.edges[ib+1]);
+                    dres.push_back(br);
+                    data_csv << period << "," << rkey << "," << v.key << "," << ib << ","
+                             << std::setprecision(12)
+                             << br.x_low << "," << br.x_high << "," << br.x_center << ","
+                             << br.factor << "," << br.factor_err << ","
+                             << br.n_current_points << "," << br.total_counts << "\n";
+                }
+                data_results[period][rkey] = dres;
+
+                if (process_mc) {
+                    const auto& mbins = merged_mc[period][rkey][v.key];
+                    std::vector<KinematicBinResult> mres;
+                    for (size_t ib = 0; ib < mbins.size(); ++ib) {
+                        KinematicBinResult br =
+                            current_factor_for_kinematic_mc_bin(mbins[ib], v.edges[ib], v.edges[ib+1]);
+                        mres.push_back(br);
+                        mc_csv << period << "," << rkey << "," << v.key << "," << ib << ","
+                               << std::setprecision(12)
+                               << br.x_low << "," << br.x_high << "," << br.x_center << ","
+                               << br.factor << "," << br.factor_err << ","
+                               << br.n_current_points << "," << br.total_counts << "\n";
+                    }
+                    mc_results[period][rkey] = mres;
+
+                    const auto rres = make_data_over_mc_kinematic_bins(dres, mres);
+                    ratio_results[period][rkey] = rres;
+                    const size_t nb = std::min({dres.size(), mres.size(), rres.size()});
+                    for (size_t ib = 0; ib < nb; ++ib) {
+                        ratio_csv << period << "," << rkey << "," << v.key << "," << ib << ","
+                                  << std::setprecision(12)
+                                  << rres[ib].x_low << "," << rres[ib].x_high << "," << rres[ib].x_center << ","
+                                  << dres[ib].factor << "," << dres[ib].factor_err << ","
+                                  << mres[ib].factor << "," << mres[ib].factor_err << ","
+                                  << rres[ib].factor << "," << rres[ib].factor_err << ","
+                                  << dres[ib].n_current_points << "," << mres[ib].n_current_points << "\n";
+                    }
+                }
+            }
+        }
+
+        draw_region_theta_canvas(v, "data", "Current-efficiency factor", data_results, 0.35, 1.45);
+        if (process_mc) {
+            draw_region_theta_canvas(v, "mc", "Current-efficiency factor", mc_results, 0.35, 1.45);
+            draw_region_theta_canvas(v, "data_over_mc", "DATA/MC current-efficiency ratio",
+                                     ratio_results, 0.50, 1.50);
+        }
+
+        // Quantitative pooled test for e_theta:
+        // relative current slope = one intercept per photon region +
+        // one common theta_e gradient for the period.
+        if (v.key == "e_theta") {
+            std::ofstream pooled_csv(odir + "/pooled_e_theta_relative_slope_model.csv");
+            pooled_csv << "sample,period,theta_gradient_per_nA_per_deg,theta_gradient_stat,theta_gradient_percent_per_nA_per_deg,theta_gradient_percent_stat,chi2,ndf,npoints";
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                pooled_csv << "," << spec.key << "_theta_center_deg"
+                           << "," << spec.key << "_relative_slope_per_nA"
+                           << "," << spec.key << "_relative_slope_stat";
+            }
+            pooled_csv << "\n";
+
+            std::vector<double> data_grad(periods.size(), std::numeric_limits<double>::quiet_NaN());
+            std::vector<double> data_grad_err(periods.size(), std::numeric_limits<double>::quiet_NaN());
+            std::vector<double> mc_grad(periods.size(), std::numeric_limits<double>::quiet_NaN());
+            std::vector<double> mc_grad_err(periods.size(), std::numeric_limits<double>::quiet_NaN());
+
+            for (size_t ip = 0; ip < periods.size(); ++ip) {
+                const std::string& period = periods[ip];
+                std::map<std::string, std::vector<DataAgg>> dmap;
+                for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER)
+                    dmap[spec.key] = merged[period][spec.key][v.key];
+
+                const auto dpts = relative_slope_points_from_data_theta_bins(dmap, v);
+                const auto dfit = fit_pooled_region_theta_relative_slopes(dpts);
+                if (dfit.valid) {
+                    data_grad[ip] = 100.0 * dfit.theta_gradient;
+                    data_grad_err[ip] = 100.0 * dfit.theta_gradient_err;
+                }
+                pooled_csv << "data," << period << ","
+                           << dfit.theta_gradient << "," << dfit.theta_gradient_err << ","
+                           << (100.0 * dfit.theta_gradient) << ","
+                           << (100.0 * dfit.theta_gradient_err) << ","
+                           << dfit.chi2 << "," << dfit.ndf << "," << dfit.npoints;
+                for (int ir = 0; ir < 7; ++ir) {
+                    pooled_csv << "," << dfit.region_centers[ir]
+                               << "," << dfit.region_intercepts[ir]
+                               << "," << dfit.region_intercept_err[ir];
+                }
+                pooled_csv << "\n";
+
+                std::cout << "[current_dependence] pooled e_theta DATA relative-slope model "
+                          << cfg.csv_channel << " " << period
+                          << ": d(s_rel)/dtheta_e="
+                          << 100.0 * dfit.theta_gradient << " +/- "
+                          << 100.0 * dfit.theta_gradient_err
+                          << " %/(nA deg), chi2/ndf="
+                          << dfit.chi2 << "/" << dfit.ndf
+                          << ", npoints=" << dfit.npoints << std::endl;
+
+                if (process_mc) {
+                    std::map<std::string, std::vector<McKinematicBinAgg>> mmap;
+                    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER)
+                        mmap[spec.key] = merged_mc[period][spec.key][v.key];
+
+                    const auto mpts = relative_slope_points_from_mc_theta_bins(mmap, v);
+                    const auto mfit = fit_pooled_region_theta_relative_slopes(mpts);
+                    if (mfit.valid) {
+                        mc_grad[ip] = 100.0 * mfit.theta_gradient;
+                        mc_grad_err[ip] = 100.0 * mfit.theta_gradient_err;
+                    }
+                    pooled_csv << "mc," << period << ","
+                               << mfit.theta_gradient << "," << mfit.theta_gradient_err << ","
+                               << (100.0 * mfit.theta_gradient) << ","
+                               << (100.0 * mfit.theta_gradient_err) << ","
+                               << mfit.chi2 << "," << mfit.ndf << "," << mfit.npoints;
+                    for (int ir = 0; ir < 7; ++ir) {
+                        pooled_csv << "," << mfit.region_centers[ir]
+                                   << "," << mfit.region_intercepts[ir]
+                                   << "," << mfit.region_intercept_err[ir];
+                    }
+                    pooled_csv << "\n";
+
+                    const double diff = dfit.theta_gradient - mfit.theta_gradient;
+                    const double diff_err = std::sqrt(
+                        dfit.theta_gradient_err * dfit.theta_gradient_err +
+                        mfit.theta_gradient_err * mfit.theta_gradient_err);
+                    pooled_csv << "data_minus_mc," << period << ","
+                               << diff << "," << diff_err << ","
+                               << 100.0 * diff << "," << 100.0 * diff_err
+                               << ",nan,0,0";
+                    for (int ir = 0; ir < 7; ++ir) pooled_csv << ",nan,nan,nan";
+                    pooled_csv << "\n";
+
+                    std::cout << "[current_dependence] pooled e_theta DATA-MC gradient difference "
+                              << cfg.csv_channel << " " << period
+                              << ": " << 100.0 * diff << " +/- "
+                              << 100.0 * diff_err << " %/(nA deg)" << std::endl;
+                }
+            }
+
+            // Compact analysis-note summary of the pooled common theta_e
+            // gradient. Units are percent change in the relative current slope
+            // per nA per degree.
+            TCanvas cg(("c_pooled_e_theta_gradient_" + cfg.output_token).c_str(), "", 1100, 750);
+            cg.SetGridy();
+            cg.SetLeftMargin(0.14);
+            cg.SetBottomMargin(0.16);
+            auto frame = std::make_unique<TH1D>(
+                ("h_pooled_e_theta_gradient_" + cfg.output_token).c_str(),
+                ";Run period;d s_{rel}/d#theta_{e}  (%/(nA deg))",
+                (int)periods.size(), 0.5, periods.size() + 0.5);
+            frame->SetDirectory(nullptr);
+            for (size_t ip = 0; ip < periods.size(); ++ip)
+                frame->GetXaxis()->SetBinLabel((int)ip + 1, periods[ip].c_str());
+
+            double gymin = 0.0, gymax = 0.0;
+            bool have_g = false;
+            for (size_t ip = 0; ip < periods.size(); ++ip) {
+                if (std::isfinite(data_grad[ip]) && std::isfinite(data_grad_err[ip])) {
+                    gymin = have_g ? std::min(gymin, data_grad[ip] - data_grad_err[ip])
+                                   : data_grad[ip] - data_grad_err[ip];
+                    gymax = have_g ? std::max(gymax, data_grad[ip] + data_grad_err[ip])
+                                   : data_grad[ip] + data_grad_err[ip];
+                    have_g = true;
+                }
+                if (process_mc && std::isfinite(mc_grad[ip]) && std::isfinite(mc_grad_err[ip])) {
+                    gymin = have_g ? std::min(gymin, mc_grad[ip] - mc_grad_err[ip])
+                                   : mc_grad[ip] - mc_grad_err[ip];
+                    gymax = have_g ? std::max(gymax, mc_grad[ip] + mc_grad_err[ip])
+                                   : mc_grad[ip] + mc_grad_err[ip];
+                    have_g = true;
+                }
+            }
+            if (!have_g) { gymin = -0.05; gymax = 0.05; }
+            const double gspan = std::max(0.02, gymax - gymin);
+            frame->SetMinimum(gymin - 0.20 * gspan);
+            frame->SetMaximum(gymax + 0.20 * gspan);
+            frame->SetStats(0);
+            frame->Draw();
+
+            auto zero = std::make_unique<TLine>(0.5, 0.0, periods.size() + 0.5, 0.0);
+            zero->SetLineStyle(2);
+            zero->Draw("SAME");
+
+            auto gd = std::make_unique<TGraphErrors>();
+            auto gm = std::make_unique<TGraphErrors>();
+            int nd = 0, nm = 0;
+            for (size_t ip = 0; ip < periods.size(); ++ip) {
+                if (std::isfinite(data_grad[ip]) && std::isfinite(data_grad_err[ip])) {
+                    gd->SetPoint(nd, (double)ip + 1.0 - 0.08, data_grad[ip]);
+                    gd->SetPointError(nd, 0.0, data_grad_err[ip]);
+                    ++nd;
+                }
+                if (process_mc && std::isfinite(mc_grad[ip]) && std::isfinite(mc_grad_err[ip])) {
+                    gm->SetPoint(nm, (double)ip + 1.0 + 0.08, mc_grad[ip]);
+                    gm->SetPointError(nm, 0.0, mc_grad_err[ip]);
+                    ++nm;
+                }
+            }
+            gd->SetMarkerStyle(20);
+            gd->SetMarkerSize(1.2);
+            gd->SetLineWidth(2);
+            gd->Draw("P SAME");
+            if (process_mc) {
+                gm->SetMarkerStyle(24);
+                gm->SetMarkerSize(1.2);
+                gm->SetLineWidth(2);
+                gm->Draw("P SAME");
+            }
+
+            auto leg = std::make_unique<TLegend>(0.16, 0.78, 0.43, 0.90);
+            leg->SetBorderSize(0);
+            leg->SetFillStyle(0);
+            leg->AddEntry(gd.get(), "DATA", "pe");
+            if (process_mc) leg->AddEntry(gm.get(), "MC", "pe");
+            leg->Draw();
+
+            cg.Modified();
+            cg.Update();
+            const std::string grad_path = odir + "/pooled_e_theta_gradient_data_mc.png";
+            cg.SaveAs(grad_path.c_str());
+            gSystem->CopyFile(
+                grad_path.c_str(),
+                (note_dir + "/" + cfg.output_token + "_pooled_e_theta_gradient_data_mc.png").c_str(),
+                true);
+        }
     }
 
-    std::cout << "[current_dependence] Region-conditioned theta diagnostics written under " << odir << std::endl;
+    std::cout << "[current_dependence] Region-conditioned theta diagnostics written under "
+              << odir << std::endl;
 }
 
 static void write_photon_region_summary_csv(const std::string& path,
@@ -5598,9 +6355,11 @@ static void write_photon_region_summary_csv(const std::string& path,
     }
 
     fout << "period,photon_region,data_factor,data_factor_stat,mc_factor,mc_factor_stat,"
+         << "data_over_mc,data_over_mc_stat,"
+         << "data_over_mc_relative_to_integrated,data_over_mc_relative_to_integrated_stat,"
          << "data_slope_percent_per_nA,data_slope_percent_per_nA_stat,"
          << "mc_slope_percent_per_nA,mc_slope_percent_per_nA_stat,"
-         << "integrated_data_factor,integrated_mc_factor\n";
+         << "integrated_data_factor,integrated_mc_factor,integrated_data_over_mc\n";
 
     for (const std::string& period : PERIOD_ORDER) {
         const PeriodResult* integrated = find_period_result(integrated_results, period);
@@ -5615,17 +6374,55 @@ static void write_photon_region_summary_csv(const std::string& path,
                 continue;
             }
 
+            double data_over_mc = std::numeric_limits<double>::quiet_NaN();
+            double data_over_mc_err = std::numeric_limits<double>::quiet_NaN();
+            double int_data_over_mc = std::numeric_limits<double>::quiet_NaN();
+            double relative_ratio = std::numeric_limits<double>::quiet_NaN();
+            double relative_ratio_err = std::numeric_limits<double>::quiet_NaN();
+
+            if (std::isfinite(r->data_factor) && r->data_factor > 0.0 &&
+                std::isfinite(r->mc_factor) && r->mc_factor > 0.0) {
+                data_over_mc = r->data_factor / r->mc_factor;
+                const double rel2 =
+                    std::pow(r->data_factor_err / r->data_factor, 2) +
+                    std::pow(r->mc_factor_err / r->mc_factor, 2);
+                data_over_mc_err = std::fabs(data_over_mc) *
+                                   std::sqrt(std::max(0.0, rel2));
+            }
+
+            if (integrated &&
+                std::isfinite(integrated->data_factor) && integrated->data_factor > 0.0 &&
+                std::isfinite(integrated->mc_factor) && integrated->mc_factor > 0.0) {
+                int_data_over_mc = integrated->data_factor / integrated->mc_factor;
+                if (std::isfinite(data_over_mc) && int_data_over_mc > 0.0) {
+                    relative_ratio = data_over_mc / int_data_over_mc;
+                    const double int_rel2 =
+                        std::pow(integrated->data_factor_err / integrated->data_factor, 2) +
+                        std::pow(integrated->mc_factor_err / integrated->mc_factor, 2);
+                    const double reg_rel2 =
+                        std::pow(r->data_factor_err / r->data_factor, 2) +
+                        std::pow(r->mc_factor_err / r->mc_factor, 2);
+                    relative_ratio_err = std::fabs(relative_ratio) *
+                        std::sqrt(std::max(0.0, reg_rel2 + int_rel2));
+                }
+            }
+
             fout << period << "," << spec.label << ","
                  << std::setprecision(12) << r->data_factor << ","
                  << std::setprecision(12) << r->data_factor_err << ","
                  << std::setprecision(12) << r->mc_factor << ","
                  << std::setprecision(12) << r->mc_factor_err << ","
+                 << std::setprecision(12) << data_over_mc << ","
+                 << std::setprecision(12) << data_over_mc_err << ","
+                 << std::setprecision(12) << relative_ratio << ","
+                 << std::setprecision(12) << relative_ratio_err << ","
                  << std::setprecision(12) << fit_percent_slope(r->data_fit) << ","
                  << std::setprecision(12) << fit_percent_slope_err(r->data_fit) << ","
                  << std::setprecision(12) << fit_percent_slope(r->mc_fit) << ","
                  << std::setprecision(12) << fit_percent_slope_err(r->mc_fit) << ","
                  << std::setprecision(12) << (integrated ? integrated->data_factor : std::numeric_limits<double>::quiet_NaN()) << ","
-                 << std::setprecision(12) << (integrated ? integrated->mc_factor : std::numeric_limits<double>::quiet_NaN()) << "\n";
+                 << std::setprecision(12) << (integrated ? integrated->mc_factor : std::numeric_limits<double>::quiet_NaN()) << ","
+                 << std::setprecision(12) << int_data_over_mc << "\n";
         }
     }
 }
@@ -6021,14 +6818,14 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
     // MC counts are stored by region and by period/current.  For ep->eppi0
     // this scan is intentionally skipped: the regional pi0 MC factors are
     // constructed downstream from the measured pi0 DATA response and the
-    // DVCS regional MC/DATA ratio, so scanning pi0 generated/reconstructed MC
+    // DVCS regional DATA/MC ratio, so scanning pi0 generated/reconstructed MC
     // here would be expensive work whose result is immediately overwritten.
     std::map<std::string, std::map<std::string, McAgg>> mc_by_region_period_current;
 
     if (!process_mc) {
         std::cout << "[current_dependence] Photon-region " << cfg.csv_channel
                   << " MC phase skipped by construction; regional MC factors "
-                  << "will be supplied by the downstream DVCS MC/DATA transfer."
+                  << "will be supplied by the downstream DVCS DATA/MC transfer."
                   << std::endl;
     } else {
         std::vector<std::pair<std::string, TTree*>> gen_items;
@@ -6309,7 +7106,8 @@ static void apply_eppi0_mc_factor_from_dvcs_ratio_regions(
                 continue;
             }
 
-            er.mc_factor = er.data_factor * dr->mc_factor / dr->data_factor;
+            const double dvcs_data_over_mc = dr->data_factor / dr->mc_factor;
+            er.mc_factor = er.data_factor / dvcs_data_over_mc;
 
             const double re = (std::isfinite(er.data_factor_err) && er.data_factor_err >= 0.0)
                                 ? er.data_factor_err / er.data_factor : 0.0;
@@ -6496,7 +7294,7 @@ static void draw_analysis_note_region_ratio_canvas(
 
         auto frame = std::make_unique<TH1D>(
             ("h_note_region_ratio_" + std::to_string(ip)).c_str(),
-            (periods[ip] + ";Photon region;C_{r}/C_{integrated}").c_str(),
+            (periods[ip] + ";Photon region;(f^{DATA}_{r}/f^{MC}_{r})/(f^{DATA}_{int}/f^{MC}_{int})").c_str(),
             7, 0.5, 7.5);
         frame->SetDirectory(nullptr);
         for (int ir = 0; ir < 7; ++ir)
@@ -6511,7 +7309,7 @@ static void draw_analysis_note_region_ratio_canvas(
         double cint = std::numeric_limits<double>::quiet_NaN();
         if (integ && std::isfinite(integ->data_factor) && integ->data_factor > 0.0 &&
             std::isfinite(integ->mc_factor) && integ->mc_factor > 0.0) {
-            cint = integ->mc_factor / integ->data_factor;
+            cint = integ->data_factor / integ->mc_factor;
         }
 
         auto g = std::make_unique<TGraphErrors>();
@@ -6524,7 +7322,7 @@ static void draw_analysis_note_region_ratio_canvas(
                 !(std::isfinite(r->data_factor) && r->data_factor > 0.0 &&
                   std::isfinite(r->mc_factor) && r->mc_factor > 0.0)) continue;
 
-            const double cr = r->mc_factor / r->data_factor;
+            const double cr = r->data_factor / r->mc_factor;
             const double y = cr / cint;
             const double rel2 = std::pow(r->mc_factor_err / r->mc_factor, 2) +
                                 std::pow(r->data_factor_err / r->data_factor, 2);
@@ -6552,7 +7350,7 @@ static void draw_analysis_note_region_ratio_canvas(
     title->SetTextSize(0.030);
     title->DrawLatex(
         0.5, 0.985,
-        (channel_title + ": regional current correction relative to integrated treatment").c_str());
+        (channel_title + ": regional DATA/MC current-efficiency ratio relative to integrated treatment").c_str());
     owned.emplace_back(std::move(title));
 
     c.Modified();
@@ -6579,7 +7377,7 @@ static void draw_analysis_note_region_absolute_canvas(
             const PeriodResult* r = find_period_result(it->second, period);
             if (!r || !(std::isfinite(r->data_factor) && r->data_factor > 0.0 &&
                         std::isfinite(r->mc_factor) && r->mc_factor > 0.0)) continue;
-            const double cr = r->mc_factor / r->data_factor;
+            const double cr = r->data_factor / r->mc_factor;
             const double rel2 = std::pow(r->mc_factor_err / r->mc_factor, 2) +
                                 std::pow(r->data_factor_err / r->data_factor, 2);
             const double err = std::fabs(cr) * std::sqrt(std::max(0.0, rel2));
@@ -6605,7 +7403,7 @@ static void draw_analysis_note_region_absolute_canvas(
 
         auto frame = std::make_unique<TH1D>(
             ("h_note_region_absolute_" + std::to_string(ip)).c_str(),
-            (periods[ip] + ";Photon region;C_{r}=f^{MC}_{r}/f^{DATA}_{r}").c_str(),
+            (periods[ip] + ";Photon region;f^{DATA}_{r}/f^{MC}_{r}").c_str(),
             7, 0.5, 7.5);
         frame->SetDirectory(nullptr);
         for (int ir = 0; ir < 7; ++ir)
@@ -6624,7 +7422,7 @@ static void draw_analysis_note_region_absolute_canvas(
             const PeriodResult* r = find_period_result(it->second, periods[ip]);
             if (!r || !(std::isfinite(r->data_factor) && r->data_factor > 0.0 &&
                         std::isfinite(r->mc_factor) && r->mc_factor > 0.0)) continue;
-            const double cr = r->mc_factor / r->data_factor;
+            const double cr = r->data_factor / r->mc_factor;
             const double rel2 = std::pow(r->mc_factor_err / r->mc_factor, 2) +
                                 std::pow(r->data_factor_err / r->data_factor, 2);
             g->SetPoint(n, ir + 1, cr);
@@ -6645,7 +7443,7 @@ static void draw_analysis_note_region_absolute_canvas(
     title->SetTextSize(0.030);
     title->DrawLatex(
         0.5, 0.985,
-        (channel_title + ": nominal regional DATA/MC current correction").c_str());
+        (channel_title + ": nominal regional DATA/MC current-efficiency ratio").c_str());
     owned.emplace_back(std::move(title));
 
     c.Modified();
@@ -6705,8 +7503,8 @@ static void apply_eppi0_mc_factor_from_dvcs_ratio(std::vector<PeriodResult>& epp
         require_finite_nonnegative(dvcs.mc_factor_err, "DVCS MC factor uncertainty", eppi0.period);
         require_finite_nonnegative(dvcs.data_factor_err, "DVCS data factor uncertainty", eppi0.period);
 
-        const double scale = dvcs.mc_factor / dvcs.data_factor;
-        const double corrected = eppi0.data_factor * scale;
+        const double dvcs_data_over_mc = dvcs.data_factor / dvcs.mc_factor;
+        const double corrected = eppi0.data_factor / dvcs_data_over_mc;
 
         const double rel_var =
             std::pow(eppi0.data_factor_err / eppi0.data_factor, 2.0) +
@@ -6720,7 +7518,7 @@ static void apply_eppi0_mc_factor_from_dvcs_ratio(std::vector<PeriodResult>& epp
 
         std::cout << "[current_dependence] Built eppi0 MC current factor for "
                   << eppi0.period
-                  << " using eppi0_data * (dvcs_mc / dvcs_data): "
+                  << " using eppi0_data / (dvcs_data / dvcs_mc): "
                   << "eppi0_data=" << eppi0.data_factor
                   << " +/- " << eppi0.data_factor_err
                   << " dvcs_mc=" << dvcs.mc_factor
@@ -7654,17 +8452,21 @@ bool update_current_dependence_factors_csv(
 
         if (options.enable_region_theta_current_diagnostic) {
             run_region_theta_data_diagnostic(
-                dvcs, dvcsDataTrees, charge_map, data_cuts, options.output_dir, options.max_workers,
+                dvcs, dvcsDataTrees, dvcsGenMcTrees, dvcsRecMcTrees,
+                charge_map, data_cuts, mc_cuts, options.output_dir, options.max_workers,
                 options.use_second_column_charge_for_all_unpolarized,
                 options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                 options.columns_3_to_5_charge_sum_scale,
-                options.use_fa18_inb_current_efficiency_for_sp19_inb);
+                options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                true);
             run_region_theta_data_diagnostic(
-                eppi0, eppi0DataTrees, charge_map, data_cuts, options.output_dir, options.max_workers,
+                eppi0, eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
+                charge_map, data_cuts, mc_cuts, options.output_dir, options.max_workers,
                 options.use_second_column_charge_for_all_unpolarized,
                 options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
                 options.columns_3_to_5_charge_sum_scale,
-                options.use_fa18_inb_current_efficiency_for_sp19_inb);
+                options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                false);
         }
 
         dvcs_e_theta_data_fits =
@@ -7713,7 +8515,7 @@ bool update_current_dependence_factors_csv(
 
             // The direct-pi0 MC scan has only the production-current sample, so
             // overwrite its preliminary unity regional MC factors with the same
-            // DVCS MC/DATA transfer prescription used for the integrated pi0
+            // DVCS DATA/MC transfer prescription used for the integrated pi0
             // correction, now evaluated region by region.
             const std::string eppi0_region_dir = options.output_dir + "/" + eppi0.output_token + "/sector_dependence_diagnostic";
             write_photon_region_summary_csv(eppi0_region_dir + "/photon_region_current_dependence_summary.csv",
