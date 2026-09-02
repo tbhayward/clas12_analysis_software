@@ -62,6 +62,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -6256,12 +6257,16 @@ static PeriodPooledAngleFitMap run_region_theta_data_diagnostic(
     bool process_mc) {
 
     (void)hide_sp19;
-    // Use the same complete kinematic set as the inclusive current-dependence
-    // diagnostic.  The region-conditioned scan is used for model selection:
-    // it tests whether a residual dependence remains after the photon-region
-    // response is accounted for, without assuming in advance that theta_e or
-    // theta_gamma is the relevant coordinate.
-    const std::vector<KinematicVarConfig> vars = kinematic_current_var_configs();
+    // Final model selection is deliberately restricted to detector-direct
+    // polar angles.  Q2, xB, |t| and phi were useful exploratory correlation
+    // checks, but they are not admissible production response coordinates and
+    // needlessly enlarge both CPU work and output.
+    std::vector<KinematicVarConfig> vars;
+    for (const KinematicVarConfig& v : kinematic_current_var_configs()) {
+        if (is_polar_angle_model_variable(v.key)) {
+            vars.push_back(v);
+        }
+    }
     PeriodPooledAngleFitMap production_e_theta_models;
 
     PeriodRegionThetaAggMap merged;
@@ -6290,7 +6295,7 @@ static PeriodPooledAngleFitMap run_region_theta_data_diagnostic(
 
     std::cout << "[current_dependence] Region-theta DATA diagnostic for "
               << cfg.csv_channel << ": " << items.size()
-              << " tree(s), " << nth << " worker(s), variables=Q2,xB,t,phi,e_theta,p_theta,g_theta."
+              << " tree(s), " << nth << " worker(s), variables=e_theta,p_theta,g_theta."
               << std::endl;
 
 #ifdef _OPENMP
@@ -9957,6 +9962,16 @@ static void write_current_response_model_json(
     j["data_response_form"] = "R(I,theta)=1+I*[s_region + a*(theta-theta_center)] when angular_model is present; otherwise R(I)=1+s_region*I; event weight=1/R";
     j["mc_response_form"] = "reference_factor at production-current MC; event weight=1/reference_factor";
     j["dvcs_nobkg_mc_forced_unity"] = use_nobkg_dvcs_mc_counts;
+    j["production_prescription"]["data"]["ep->epg"]["Sp18 Out"] =
+        use_sp18_out_e_theta_response_model
+            ? "regional_ft_s1_s6_plus_common_centered_linear_e_theta"
+            : "regional_ft_s1_s6";
+    j["production_prescription"]["data"]["other_periods_and_channels"] =
+        "regional_ft_s1_s6_only";
+    j["production_prescription"]["mc"] =
+        "regional_ft_s1_s6_reference_factor_only";
+    j["production_prescription"]["Sp19 Inb DATA"] =
+        "copied_from_Fa18_Inb_when_enabled";
 
     auto write_channel = [&](const std::string& channel,
                              const PhotonRegionResults& results,
@@ -11029,6 +11044,92 @@ static void apply_all_mc_current_corrections(CSV& csv,
 
 } // namespace
 
+
+static void finalize_current_dependence_output_package(
+    const CurrentDependenceOptions& options) {
+
+    if (!options.finalized_production_mode) return;
+
+    namespace fs = std::filesystem;
+    const fs::path root(options.output_dir);
+    const fs::path note = root / "analysis_note";
+    const fs::path tables = note / "tables";
+    std::error_code ec;
+    fs::create_directories(tables, ec);
+    if (ec) {
+        fatal("[current_dependence] FATAL: cannot create finalized analysis-note table directory: " +
+              ec.message());
+    }
+
+    auto copy_table = [&](const fs::path& src, const std::string& dst_name) {
+        std::error_code e;
+        if (!fs::exists(src, e) || e) return;
+        fs::copy_file(src, tables / dst_name,
+                      fs::copy_options::overwrite_existing, e);
+        if (e) {
+            fatal("[current_dependence] FATAL: cannot copy finalized diagnostic table '" +
+                  src.string() + "': " + e.message());
+        }
+    };
+
+    copy_table(root / "epg/sector_dependence_diagnostic/photon_region_current_dependence_summary.csv",
+               "epg_photon_region_current_dependence_summary.csv");
+    copy_table(root / "eppi0/sector_dependence_diagnostic/photon_region_current_dependence_summary.csv",
+               "eppi0_photon_region_current_dependence_summary.csv");
+    copy_table(root / "epg/sector_dependence_diagnostic/region_theta/polar_angle_model_ranking.csv",
+               "epg_polar_angle_model_ranking.csv");
+    copy_table(root / "epg/sector_dependence_diagnostic/region_theta/polar_angle_model_influence.csv",
+               "epg_polar_angle_model_influence.csv");
+    copy_table(root / "epg/sector_dependence_diagnostic/region_theta/fa18_out_theta_p_low_edge_stress_test.csv",
+               "epg_fa18_out_theta_p_low_edge_stress_test.csv");
+    copy_table(root / "epg/sector_dependence_diagnostic/region_theta/pooled_e_theta_relative_slope_model.csv",
+               "epg_pooled_e_theta_relative_slope_model.csv");
+    copy_table(root / "epg/period_summary.csv",
+               "epg_period_summary.csv");
+    copy_table(root / "eppi0/period_summary.csv",
+               "eppi0_period_summary.csv");
+
+    const std::set<std::string> keep_note_png = {
+        "epg_current_response_data_mc.png",
+        "eppi0_current_response_data_mc.png",
+        "epg_regional_current_correction.png",
+        "eppi0_regional_current_correction.png",
+        "epg_pooled_e_theta_gradient_data_mc.png",
+        "epg_polar_angle_model_selection_delta_bic.png",
+        "epg_sp18_out_theta_e_current_response.png",
+        "epg_sp18_out_theta_e_model_closure.png",
+        "epg_fa18_out_theta_p_low_edge_stress_test.png"
+    };
+
+    if (fs::exists(note)) {
+        for (const auto& entry : fs::directory_iterator(note)) {
+            if (entry.path().filename() == "tables") continue;
+            if (entry.is_regular_file() &&
+                keep_note_png.find(entry.path().filename().string()) == keep_note_png.end()) {
+                std::error_code e;
+                fs::remove(entry.path(), e);
+            }
+        }
+    }
+
+    // Keep only the curated note package and the machine-readable calibration.
+    for (const auto& entry : fs::directory_iterator(root)) {
+        const std::string name = entry.path().filename().string();
+        if (name == "analysis_note" || name == "calibration") continue;
+        std::error_code e;
+        fs::remove_all(entry.path(), e);
+        if (e) {
+            fatal("[current_dependence] FATAL: cannot prune finalized output path '" +
+                  entry.path().string() + "': " + e.message());
+        }
+    }
+
+    std::cout << "[current_dependence] Finalized output package retained under "
+              << note.string()
+              << " plus calibration/current_response_model.json." << std::endl;
+}
+
+
 bool update_current_dependence_factors_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
@@ -11102,6 +11203,14 @@ bool update_current_dependence_factors_csv(
             return true;
         }
 
+        if (options.clean_output_dir_before_run) {
+            std::error_code ec;
+            std::filesystem::remove_all(options.output_dir, ec);
+            if (ec) {
+                fatal("[current_dependence] FATAL: could not clean output directory '" +
+                      options.output_dir + "': " + ec.message());
+            }
+        }
         mkdir_p(options.output_dir);
 
         const std::unordered_map<int, ChargeEntry> charge_map =
@@ -11233,32 +11342,43 @@ bool update_current_dependence_factors_csv(
                 options.columns_3_to_5_charge_sum_scale,
                 options.use_fa18_inb_current_efficiency_for_sp19_inb,
                 true);
-            (void)run_region_theta_data_diagnostic(
-                eppi0, eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
-                charge_map, data_cuts, mc_cuts, options.output_dir, options.max_workers,
-                options.use_second_column_charge_for_all_unpolarized,
-                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-                options.columns_3_to_5_charge_sum_scale,
-                options.use_fa18_inb_current_efficiency_for_sp19_inb,
-                false);
+            if (options.enable_eppi0_region_theta_current_diagnostic) {
+                (void)run_region_theta_data_diagnostic(
+                    eppi0, eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
+                    charge_map, data_cuts, mc_cuts, options.output_dir, options.max_workers,
+                    options.use_second_column_charge_for_all_unpolarized,
+                    options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    options.columns_3_to_5_charge_sum_scale,
+                    options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                    false);
+            } else {
+                std::cout << "[current_dependence] Finalized production: skipping the "
+                          << "direct-pi0 region-theta model-selection scan." << std::endl;
+            }
         }
 
-        dvcs_e_theta_data_fits =
-            draw_kinematic_current_efficiency_diagnostics(
-                dvcs,
-                dvcsDataTrees,
-                dvcsGenMcTrees,
-                dvcsRecMcTrees,
-                charge_map,
-                data_cuts,
-                mc_cuts,
-                dvcs_results,
-                options.output_dir,
-                options.use_second_column_charge_for_all_unpolarized,
-                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
-                options.columns_3_to_5_charge_sum_scale,
-                options.use_fa18_inb_current_efficiency_for_sp19_inb,
-                options.max_workers);
+        if (options.enable_exploratory_kinematic_current_diagnostic ||
+            options.use_e_theta_linear_data_current_efficiency) {
+            dvcs_e_theta_data_fits =
+                draw_kinematic_current_efficiency_diagnostics(
+                    dvcs,
+                    dvcsDataTrees,
+                    dvcsGenMcTrees,
+                    dvcsRecMcTrees,
+                    charge_map,
+                    data_cuts,
+                    mc_cuts,
+                    dvcs_results,
+                    options.output_dir,
+                    options.use_second_column_charge_for_all_unpolarized,
+                    options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    options.columns_3_to_5_charge_sum_scale,
+                    options.use_fa18_inb_current_efficiency_for_sp19_inb,
+                    options.max_workers);
+        } else {
+            std::cout << "[current_dependence] Finalized production: skipping the old "
+                      << "inclusive seven-variable kinematic current diagnostic." << std::endl;
+        }
 
         if (options.use_e_theta_linear_data_current_efficiency) {
             std::cout << "[current_dependence] Building ep->eppi0 DATA e_theta current-efficiency fits "
@@ -11441,6 +11561,8 @@ bool update_current_dependence_factors_csv(
         }
 
         write_csv_atomic(csv_path, csv);
+
+        finalize_current_dependence_output_package(options);
 
         std::cout << "[current_dependence] Updated current-efficiency calibration columns and "
                   << "unity eppi0 normalization fallback columns in: " << csv_path << std::endl;

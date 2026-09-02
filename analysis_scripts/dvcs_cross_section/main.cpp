@@ -212,6 +212,18 @@ int main(int argc, char* argv[]) {
         current_opts.enable_photon_region_current_diagnostic = true;
         current_opts.enable_eppi0_photon_region_current_diagnostic = true;
         current_opts.enable_region_theta_current_diagnostic = true;
+        current_opts.enable_eppi0_region_theta_current_diagnostic = false;
+        current_opts.enable_exploratory_kinematic_current_diagnostic = false;
+        current_opts.enable_relative_ft_fd_photon_efficiency_diagnostic = false;
+        current_opts.finalized_production_mode = true;
+        current_opts.clean_output_dir_before_run = true;
+
+        // Final production current-response prescription:
+        //   - regional FT/S1--S6 DATA response for every period/channel,
+        //   - plus one common centered linear electron-angle term for
+        //     Sp18 Out ep->epg only,
+        //   - no legacy post-binning current correction.
+        current_opts.use_sp18_out_e_theta_response_model = true;
         current_opts.use_e_theta_linear_data_current_efficiency = false;
         current_opts.response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
         current_opts.apply_legacy_binned_current_corrections = false;
@@ -248,9 +260,14 @@ int main(int argc, char* argv[]) {
 
         TotalCountsOptions total_count_opts;
         total_count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+        // The large per-period/topology diagnostic canvases are redundant with
+        // the compact analysis-note yield summaries and cost substantial ROOT
+        // drawing/output time in every production run.
+        total_count_opts.make_plots = false;
         total_count_opts.make_note_outputs = true;
         total_count_opts.apply_event_level_current_correction = true;
         total_count_opts.current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
+        total_count_opts.require_sp18_out_epg_e_theta_current_model = true;
         total_count_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
 
         if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
@@ -760,6 +777,8 @@ int main(int argc, char* argv[]) {
         ExternalScriptOptions external_opts;
         external_opts.scripts_directory = "external_scripts";
         external_opts.python_executable = "python";
+        external_opts.published_pass1_cross_section_table =
+            "imports/clasdb_E214M1.txt";
         external_opts.include_bin_to_bin_systematics = true;
         external_opts.use_simple_clas6_cross_check = true;
 

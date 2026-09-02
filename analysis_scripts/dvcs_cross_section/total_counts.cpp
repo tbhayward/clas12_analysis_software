@@ -299,6 +299,38 @@ static CurrentResponseModel load_current_response_model(const std::string& path)
     return model;
 }
 
+static void validate_final_current_response_prescription(
+    const CurrentResponseModel& model,
+    bool require_sp18_out_epg_e_theta_current_model) {
+
+    if (!require_sp18_out_epg_e_theta_current_model) return;
+
+    const auto ic = model.data.find("ep->epg");
+    if (ic == model.data.end()) {
+        fatal("[total_counts] FATAL: final current-response prescription requires ep->epg DATA calibration.");
+    }
+    const auto ip = ic->second.find("Sp18 Out");
+    if (ip == ic->second.end()) {
+        fatal("[total_counts] FATAL: final current-response prescription requires Sp18 Out ep->epg DATA calibration.");
+    }
+
+    for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
+        const CurrentResponseEntry& e = ip->second[ir];
+        if (!e.valid || !e.has_angular_model ||
+            e.angular_variable != "e_theta" ||
+            !std::isfinite(e.angular_center) ||
+            !std::isfinite(e.angular_gradient) ||
+            !std::isfinite(e.angular_gradient_stat)) {
+            fatal("[total_counts] FATAL: final current-response prescription requires a valid centered linear e_theta model for Sp18 Out ep->epg region '" +
+                  current_region_names()[ir] + "'. Regenerate current_response_model.json with use_sp18_out_e_theta_response_model=true.");
+        }
+    }
+
+    std::cout << "[total_counts] Final current-response prescription validated: "
+              << "Sp18 Out ep->epg uses regional + centered linear e_theta DATA response; "
+              << "all other angular extensions remain disabled." << std::endl;
+}
+
 struct EventCurrentWeight {
     double weight = 1.0;
     double derivative = 0.0;  // derivative wrt the regional baseline parameter
@@ -3937,6 +3969,9 @@ bool update_total_counts_csv(const std::string& csv_path,
         const CurrentResponseModel* current_model_ptr = nullptr;
         if (options.apply_event_level_current_correction) {
             current_model = load_current_response_model(options.current_response_model_json);
+            validate_final_current_response_prescription(
+                current_model,
+                options.require_sp18_out_epg_e_theta_current_model);
             current_model_ptr = &current_model;
             std::cout << "[total_counts] Event-level regional current correction enabled from "
                       << options.current_response_model_json << std::endl;

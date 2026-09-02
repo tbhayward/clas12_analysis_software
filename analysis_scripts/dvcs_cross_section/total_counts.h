@@ -17,10 +17,11 @@ struct TotalCountsOptions {
     // and ep->eppi0->epg background MC are unchanged.
     bool use_nobkg_dvcs_mc_counts = false;
 
-    // Controls the large per-period/topology total-count canvases. Keep true
-    // for the nominal production workflow; automatic cut variations set this
-    // false because only their numerical counts are needed.
-    bool make_plots = true;
+    // Controls the large per-period/topology total-count canvases. The compact
+    // analysis-note summaries contain the production information we retain, so
+    // these verbose canvases are disabled by default. They can still be enabled
+    // for a dedicated debugging run.
+    bool make_plots = false;
 
     // Compact nominal-run summaries intended for the analysis note: raw-yield
     // totals by period/topology, xB projections, and machine-readable tables.
@@ -36,6 +37,12 @@ struct TotalCountsOptions {
     // calibration uncertainty is propagated as a correlated nuisance.
     bool apply_event_level_current_correction = true;
     std::string current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
+
+    // Final-production guard: the reviewed current-dependence study requires
+    // the centered linear e_theta term for Sp18 Out ep->epg DATA. When true,
+    // total_counts fails rather than silently reverting to regional-only if
+    // that angular model is absent or malformed in the calibration JSON.
+    bool require_sp18_out_epg_e_theta_current_model = true;
 
     // Misidentified ep->eppi0->epg reconstructed MC follows the ep->epg
     // regional response because its reconstructed topology is epgamma.

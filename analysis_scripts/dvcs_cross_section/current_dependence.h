@@ -114,6 +114,35 @@ struct CurrentDependenceOptions {
     // regionization.
     bool enable_region_theta_current_diagnostic = true;
 
+    // Finalized production mode.
+    //
+    // true:
+    //   - retain the regional FT/S1--S6 calibration needed by production,
+    //   - retain the DVCS polar-angle diagnostics needed to justify the
+    //     Sp18-Out theta_e term,
+    //   - skip exploratory scans that do not feed the final response model,
+    //   - prune output/dvcs_current_dependence after a successful run to the
+    //     analysis-note figures/tables plus the calibration JSON.
+    //
+    // false restores the broader exploratory diagnostic output.
+    bool finalized_production_mode = true;
+
+    // The original inclusive seven-variable (Q2,xB,t,phi,theta_e,theta_p,
+    // theta_gamma) current-efficiency diagnostic predates the final regional
+    // response model. It requires additional complete DATA/MC tree passes and
+    // is not needed by nominal production.
+    bool enable_exploratory_kinematic_current_diagnostic = false;
+
+    // The direct-pi0 angular model-selection scan was used to establish that no
+    // angular extension is required for the final eppi0 response. It is kept
+    // available for dedicated validation jobs, but is not rerun in production.
+    bool enable_eppi0_region_theta_current_diagnostic = false;
+
+    // Remove stale current-dependence output before starting a nominal run.
+    // This prevents plots from an older exploratory configuration from being
+    // mistaken for products of the current calibration.
+    bool clean_output_dir_before_run = true;
+
     // Production DATA response prescription.  When enabled, only Sp18 Out
     // ep->epgamma uses the region-conditioned common linear electron-angle
     // response established by the diagnostics:
@@ -135,7 +164,7 @@ struct CurrentDependenceOptions {
     // proton is CD on both sides, charged-particle acceptance effects largely
     // cancel and the remaining ratio primarily tests relative FT/FD photon
     // reconstruction modeling.
-    bool enable_relative_ft_fd_photon_efficiency_diagnostic = true;
+    bool enable_relative_ft_fd_photon_efficiency_diagnostic = false;
 
     // Calibration product consumed by total_counts.cpp. The file contains the
     // regional DATA current-response slopes, regional reconstructed-MC factors,
