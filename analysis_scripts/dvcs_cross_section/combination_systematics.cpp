@@ -1140,11 +1140,16 @@ static bool has_complete_valid_fit_inputs(const CombinationCase& c,
     }
 
     for (const auto& v : input_values) {
+        // A measured cross section with central value exactly zero and a
+        // finite positive statistical uncertainty is still a valid
+        // measurement.  The global combination-systematic calculation already
+        // treats it that way.  Do not apply a stricter convention only to the
+        // kinematic-dependence diagnostic; the ratio v/ref is well-defined as
+        // long as the common reference is nonzero.
         if (!v.ok ||
             !std::isfinite(v.value) ||
             !std::isfinite(v.stat) ||
-            v.stat <= 0.0 ||
-            std::abs(v.value) <= 0.0) {
+            v.stat <= 0.0) {
             return false;
         }
     }
@@ -3725,6 +3730,21 @@ static std::vector<ScaleReferencePoint> make_kinematic_fit_plots(const std::vect
 
     std::cout << "[combination-systematics] Kinematic-dependence fit tasks: "
               << tasks.size() << "\n";
+    std::cout << "[combination-systematics] Complete-case ratio points retained for "
+              << "kinematic fits: " << all_ratio_points.size() << "\n";
+
+    // Empty diagnostic support must never abort the production systematic
+    // calculation.  The scalar 10.6-GeV s_comb has already been evaluated and
+    // fill_final_cross_section_combination_systematics_from_ptheta_reference()
+    // deliberately retains that scalar value when this function returns an
+    // empty theta_p reference.
+    if (tasks.empty()) {
+        std::cout << "[combination-systematics] WARNING: no kinematic-dependence "
+                  << "fit tasks could be built. The variable-dependent diagnostic "
+                  << "will be skipped and the scalar cross-section combination "
+                  << "systematic will be retained.\n";
+        return {};
+    }
 
     std::vector<FitTaskResult> fit_results = run_fit_tasks_parallel(tasks);
 
@@ -3747,35 +3767,53 @@ static std::vector<ScaleReferencePoint> make_kinematic_fit_plots(const std::vect
             continue;
         }
 
-        const std::map<std::string, FitResultSummary> fits =
-            extract_final_variable_all_mean_fits(fit_results, variable.key);
+        try {
+            const std::map<std::string, FitResultSummary> fits =
+                extract_final_variable_all_mean_fits(fit_results, variable.key);
 
-        const std::vector<ScaleReferencePoint> reference_points =
-            compute_scale_systematic_reference(fits, variable);
+            const std::vector<ScaleReferencePoint> reference_points =
+                compute_scale_systematic_reference(fits, variable);
 
-        const fs::path scale_path =
-            fit_root / (sanitize_for_path(variable.key) + "_scale_systematic_reference.csv");
+            const fs::path scale_path =
+                fit_root / (sanitize_for_path(variable.key) + "_scale_systematic_reference.csv");
 
-        write_scale_reference_csv(scale_path,
-                                  variable,
-                                  fits,
-                                  reference_points);
-
-        print_scale_reference_summary(variable,
+            write_scale_reference_csv(scale_path,
+                                      variable,
+                                      fits,
                                       reference_points);
 
-        draw_s_obs_canvas_for_variable(fit_root,
-                                       variable,
-                                       reference_points);
+            print_scale_reference_summary(variable,
+                                          reference_points);
 
-        if (variable.key == "p_theta") {
-            inclusive_ptheta_reference_points = reference_points;
+            draw_s_obs_canvas_for_variable(fit_root,
+                                           variable,
+                                           reference_points);
+
+            if (variable.key == "p_theta") {
+                inclusive_ptheta_reference_points = reference_points;
+            }
+        } catch (const std::exception& e) {
+            // xB, Q2, t, e_theta and g_theta are supporting diagnostics.
+            // Failure of one of them must not kill the production workflow.
+            // p_theta is the only variable used to make the row-dependent
+            // combination-systematic fill; if it fails, leaving its reference
+            // empty activates the existing scalar fallback downstream.
+            std::cout << "[combination-systematics] WARNING: skipping "
+                      << variable.key << " scale-reference diagnostic: "
+                      << e.what() << "\n";
         }
     }
 
-    make_gamma_binned_ptheta_scale_reference(all_ratio_points,
-                                             fit_root,
-                                             inclusive_ptheta_reference_points);
+    if (!inclusive_ptheta_reference_points.empty()) {
+        make_gamma_binned_ptheta_scale_reference(all_ratio_points,
+                                                 fit_root,
+                                                 inclusive_ptheta_reference_points);
+    } else {
+        std::cout << "[combination-systematics] WARNING: no accepted inclusive "
+                  << "p_theta scale-reference curve is available; skipping the "
+                  << "gamma-sliced p_theta diagnostic and retaining the scalar "
+                  << "cross-section combination-systematic fill.\n";
+    }
 
     std::cout << "[combination-systematics] Wrote kinematic fit summary CSV: "
               << summary_path.string() << "\n";

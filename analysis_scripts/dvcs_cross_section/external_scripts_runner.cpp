@@ -120,15 +120,27 @@ bool run_external_cross_section_scripts(
         return false;
     }
 
+    ec.clear();
+    const fs::path pass1_absolute =
+        fs::absolute(options.published_pass1_cross_section_table, ec);
+    if (ec || !fs::is_regular_file(pass1_absolute)) {
+        std::cerr << "[external scripts] ERROR: published pass-1 cross-section "
+                  << "table does not exist: "
+                  << options.published_pass1_cross_section_table << '\n';
+        return false;
+    }
+
+    const std::string pass1_argument =
+        "--pass1-csv " + shell_quote(pass1_absolute.string());
+
     const std::string integrated_arguments =
         options.include_bin_to_bin_systematics
             ? "--include-bin-to-bin-sys"
             : "";
 
     const std::string clas6_arguments =
-        options.use_simple_clas6_cross_check
-            ? "--simple"
-            : "";
+        (options.use_simple_clas6_cross_check ? "--simple " : "") +
+        pass1_argument;
 
     if (!run_one_script(
             scripts_absolute,
@@ -153,7 +165,7 @@ bool run_external_cross_section_scripts(
             csv_absolute,
             options.python_executable,
             "hall_a_cross_check.py",
-            "")) {
+            pass1_argument)) {
         return false;
     }
 
