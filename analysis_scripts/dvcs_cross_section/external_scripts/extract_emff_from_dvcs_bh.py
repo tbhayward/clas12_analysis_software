@@ -12809,7 +12809,12 @@ def save_competitive_family_form_factor_bands(
         return pd.DataFrame()
     #endif
     qmin = float(np.min(qvals)); qmax = float(np.max(qvals))
-    q = np.linspace(0.0, 1.03 * qmax, 500)
+    # Extend the displayed form-factor curves beyond the selected-data support
+    # to make the extrapolation behavior of closure-competitive families visible.
+    # The current proton samples end below |t|=1.2 GeV^2, so use a common
+    # 0--1.2 GeV^2 presentation range for both GE and GM panels.
+    q_plot_max = 1.20
+    q = np.linspace(0.0, q_plot_max, 600)
     support = (q >= qmin) & (q <= qmax)
     extrap = q < qmin
 
@@ -12892,29 +12897,31 @@ def save_competitive_family_form_factor_bands(
         #endfor
         axes[1, j].axhline(1.0, linewidth=0.8, linestyle="--")
         axes[1, j].set_xlabel(r"$|t|$ (GeV$^2$)")
-        vals = np.asarray(ratio_extrema[which], dtype=float)
-        vals = vals[np.isfinite(vals)]
-        if len(vals):
-            dev = max(0.025, float(np.nanmax(np.abs(vals - 1.0))) * 1.12)
-            axes[1, j].set_ylim(max(0.0, 1.0 - dev), 1.0 + dev)
-        #endif
+        # Use identical ratio scales so GE and GM family differences can be
+        # compared directly by eye.
+        axes[1, j].set_ylim(0.70, 1.30)
+        axes[0, j].set_xlim(0.0, q_plot_max)
+        axes[1, j].set_xlim(0.0, q_plot_max)
     #endfor
 
+    # Reserve a dedicated header region.  The legend spans two rows and is kept
+    # well separated from both the title and the explanatory line.
     fig.suptitle(
         f"{label}: closure-competitive Sachs functions",
-        y=0.985, fontsize=15,
+        y=0.992, fontsize=15,
     )
     fig.legend(
         handles, labs, loc="upper center", ncol=4,
-        bbox_to_anchor=(0.5, 0.945), frameon=True, fontsize=9,
+        bbox_to_anchor=(0.5, 0.952), frameon=True, fontsize=9,
+        borderaxespad=0.0,
     )
     fig.text(
-        0.5, 0.905,
-        "68% Hessian bands; shaded region shows the selected-data |t| support",
-        ha="center", va="center", fontsize=10,
+        0.5, 0.865,
+        "Lines: central fits; bands: 68% Hessian uncertainty; shaded region: selected-data |t| support",
+        ha="center", va="center", fontsize=9.5,
     )
     fig.subplots_adjust(
-        top=0.84, bottom=0.09, left=0.08, right=0.985,
+        top=0.80, bottom=0.09, left=0.08, right=0.985,
         hspace=0.08, wspace=0.16,
     )
     fig.savefig(outdir / "02_competitive_family_GE_GM_hessian_bands.png", dpi=300)
