@@ -10680,6 +10680,17 @@ def run_km15_ensemble_rotation(
         table = pd.DataFrame(threshold_rows)
         table.to_csv(cfg_dir / "km15_threshold_scan.csv", index=False)
 
+        # Distinguish finite-|t| form-factor stability from the amplified
+        # derivative-at-zero radius sensitivity.
+        save_threshold_form_factor_band_study(
+            bundles=cfg_bundles,
+            selection=selection,
+            family=family,
+            threshold_table=table,
+            label=label,
+            outdir=cfg_dir / "form_factor_band_stability",
+        )
+
         fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.7))
         axes[0].errorbar(
             table["threshold_percent"], table["rE_fm"],
@@ -10704,7 +10715,7 @@ def run_km15_ensemble_rotation(
         #endfor
         fig.suptitle(f"{label}: KM15-only threshold stability ({family})", y=0.995)
         fig.tight_layout(rect=(0, 0, 1, 0.94))
-        fig.savefig(cfg_dir / "01_km15_threshold_stability.png", dpi=180)
+        fig.savefig(cfg_dir / "01_km15_threshold_stability.png", dpi=260)
         plt.close(fig)
     #endfor
 
@@ -12091,8 +12102,18 @@ def run_competitive_family_real_data_diagnostics(
                 y=0.995,
             )
             fig.tight_layout(rect=(0, 0, 1, 0.94))
-            fig.savefig(cfg_dir / "01_competitive_family_real_data_radii.png", dpi=180)
+            fig.savefig(cfg_dir / "01_competitive_family_real_data_radii.png", dpi=260)
             plt.close(fig)
+
+            # Radius spread can be much larger than finite-|t| disagreement.
+            # Quantify that distinction with full Hessian GE/GM bands.
+            save_competitive_family_form_factor_bands(
+                valid=valid,
+                chosen_family=chosen_family,
+                label=label,
+                selected_specs=specs,
+                outdir=cfg_dir,
+            )
         #endif
     #endfor
 
@@ -12118,21 +12139,23 @@ def run_model_only_kelly_bh_selector_diagnostic(
         label: str,
         outdir: Path) -> pd.DataFrame:
     """
-    Data-independent alternate BH-selection diagnostic.
+    Data-independent elastic-input BH-selection diagnostics.
 
-    For each measured point construct a fixed Kelly pure-BH cross section from
-    the exact BH quadratic coefficients, then rank points by
+    KM15 in Gepard inherits KellyEFF.  Therefore the historical
+    Kelly-BH/KM15-EP matched-N selector is *not* an independent model test:
+    apart from the EP-vs-BH denominator convention, it reuses the same elastic
+    F1/F2 input as the nominal KM15 BH numerator.  It is retained as an
+    algebraic/cache-consistency check.
 
-      | sigma_EP^KM15 - sigma_BH^Kelly | / | sigma_BH^Kelly |.
+    Genuine elastic-input variations are added with AMT 2007 and the
+    A1/Bernauer polynomial-times-dipole reference.  For each reference,
 
-    The number of retained points is matched separately for each experiment to
-    its nominal KM15-5% count.  Unlike the older observed-data/Kelly residual
-    selector, this score never uses the measured cross section and therefore
-    does not condition the subsequent radius fit on the dependent variable.
+      score = |sigma_EP^KM15 - sigma_BH^reference| / |sigma_BH^reference|,
 
-    It remains a diagnostic because it mixes the KM15 electroproduction model
-    with an external Kelly elastic reference; it is not automatically promoted
-    to the production BH-selection systematic.
+    and the number of retained points is matched separately for each
+    experiment to its nominal KM15-5% count.  No measured cross section enters
+    selection, so these avoid the dependent-variable conditioning of the older
+    observed-data residual/pull selectors.
     """
     outdir.mkdir(parents=True, exist_ok=True)
     nominal_specs, nominal_counts = _km15_selected_specs_for_bundles(
@@ -12146,108 +12169,159 @@ def run_model_only_kelly_bh_selector_diagnostic(
         bh_systematic_fraction=0.05,
     )
 
-    alt_specs = []
+    reference_defs = [
+        ("Kelly2004", "Kelly 2004", False),
+        ("AMT2007", "AMT 2007", True),
+        (
+            "BernauerA1",
+            "A1/Bernauer order-8 poly×dipole",
+            True,
+        ),
+    ]
+
+    comparison_rows = [{
+        "selector": "KM15_5pct",
+        "elastic_reference": "KM15/Gepard KellyEFF",
+        "selection_uses_observed_xs": False,
+        "independent_elastic_input_from_KM15": False,
+        "production_systematic_eligible": True,
+        "note": "Nominal production selector.",
+        **nominal_fit,
+    }]
     overlap_rows = []
     point_rows = []
-    for bundle in bundles:
-        key = str(bundle["key"])
-        # Use the deterministic row position in bundle["all_data"] as the
-        # cross-stage point identifier.  Not every production loader carries
-        # the legacy private ``_row`` column (notably some Hall-A bundles),
-        # whereas select_bundle_from_external_model() is explicitly defined
-        # in terms of source_row == 0..N-1.  Materialize that same identifier
-        # locally so this diagnostic works uniformly for every experiment.
-        data = bundle["all_data"].copy().reset_index(drop=True)
-        data["source_row"] = np.arange(len(data), dtype=int)
-        required = ["t_abs", "bh_A", "bh_B", "bh_C", "km15_ep"]
-        missing = [c for c in required if c not in data.columns]
-        if missing:
-            raise KeyError(
-                f"{bundle['label']} missing model-only selector columns: {missing}"
+
+    for ref_tag, ref_label, independent in reference_defs:
+        alt_specs = []
+        for bundle in bundles:
+            key = str(bundle["key"])
+            data = bundle["all_data"].copy().reset_index(drop=True)
+            data["source_row"] = np.arange(len(data), dtype=int)
+            required = ["t_abs", "bh_A", "bh_B", "bh_C", "km15_ep"]
+            missing = [c for c in required if c not in data.columns]
+            if missing:
+                raise KeyError(
+                    f"{bundle['label']} missing model-only selector columns: "
+                    f"{missing}"
+                )
+            #endif
+
+            q = data["t_abs"].to_numpy(float)
+            refs = elastic_reference_curves(q)
+            if ref_label not in refs:
+                raise KeyError(
+                    f"Elastic reference {ref_label!r} is unavailable."
+                )
+            #endif
+            ge_ref, gm_ref = refs[ref_label]
+            f1_ref, f2_ref = sachs_to_f1f2(q, ge_ref, gm_ref)
+            bh_ref = bh_from_f1f2(
+                data["bh_A"].to_numpy(float),
+                data["bh_B"].to_numpy(float),
+                data["bh_C"].to_numpy(float),
+                f1_ref, f2_ref,
             )
-        #endif
-        q = data["t_abs"].to_numpy(float)
-        f1k, f2k = kelly_f1_f2(q)
-        bhk = bh_from_f1f2(
-            data["bh_A"].to_numpy(float),
-            data["bh_B"].to_numpy(float),
-            data["bh_C"].to_numpy(float),
-            f1k, f2k,
-        )
-        km15ep = data["km15_ep"].to_numpy(float)
-        score = np.abs(km15ep - bhk) / np.maximum(np.abs(bhk), 1.0e-30)
-        data["model_only_kelly_vs_km15ep_score"] = score
-        data["kelly_bh_reference"] = bhk
+            km15ep = data["km15_ep"].to_numpy(float)
+            score = (
+                np.abs(km15ep - bh_ref)
+                / np.maximum(np.abs(bh_ref), 1.0e-30)
+            )
+            score_col = f"model_only_{ref_tag}_vs_km15ep_score"
+            data[score_col] = score
+            data[f"{ref_tag}_bh_reference"] = bh_ref
 
-        n_target = int(nominal_counts[key])
-        finite = np.isfinite(score)
-        ranked = data.loc[finite].sort_values(
-            "model_only_kelly_vs_km15ep_score"
-        )
-        selected_alt = ranked.head(n_target).copy()
-        alt_specs.append(bundle_to_measurement_spec(bundle, selected_alt))
+            n_target = int(nominal_counts[key])
+            finite = np.isfinite(score)
+            ranked = data.loc[finite].sort_values(
+                score_col, ascending=True
+            )
+            selected_alt = ranked.head(n_target).copy()
+            if len(selected_alt) != n_target:
+                raise RuntimeError(
+                    f"{bundle['label']}: only {len(selected_alt)} finite "
+                    f"{ref_label} model-only scores for matched N={n_target}"
+                )
+            #endif
 
-        nominal_selected = select_bundle_from_external_model(
-            bundle, selection, "km15", 0.05
-        )
-        # select_bundle_from_external_model() preserves the reset all_data
-        # index, so its DataFrame index is exactly the external source_row.
-        nominal_ids = set(nominal_selected.index.astype(int).tolist())
-        alt_ids = set(selected_alt["source_row"].astype(int).tolist())
-        overlap = len(nominal_ids.intersection(alt_ids))
-        union = len(nominal_ids.union(alt_ids))
-        overlap_rows.append({
-            "dataset": key,
-            "dataset_label": str(bundle["label"]),
-            "N_nominal_KM15_5pct": len(nominal_ids),
-            "N_model_only_matched": len(alt_ids),
-            "N_overlap": int(overlap),
-            "fraction_nominal_recovered": (
-                float(overlap / len(nominal_ids))
-                if nominal_ids else np.nan
-            ),
-            "jaccard": float(overlap / union) if union else np.nan,
-        })
-        keep = data[[
-            "source_row", "t_abs", "Q2", "xB", "phi_deg",
-            "model_only_kelly_vs_km15ep_score",
-            "kelly_bh_reference", "km15_ep",
-        ]].copy()
-        keep["dataset"] = key
-        keep["selected_model_only_matchedN"] = (
-            keep["source_row"].astype(int).isin(alt_ids)
-        )
-        keep["selected_KM15_5pct"] = (
-            keep["source_row"].astype(int).isin(nominal_ids)
-        )
-        point_rows.append(keep)
-    #endfor
+            nominal_selected = select_bundle_from_external_model(
+                bundle, selection, model="km15", threshold=0.05
+            ).reset_index(drop=True)
+            # Nominal point IDs use deterministic source-row positions.
+            nominal_ids = set(
+                selection.loc[
+                    (selection["dataset"].astype(str) == key)
+                    & (
+                        selection["delta_bh_km15"].to_numpy(float) <= 0.05
+                    ),
+                    "source_row",
+                ].astype(int).tolist()
+            )
+            alt_ids = set(selected_alt["source_row"].astype(int).tolist())
+            inter = nominal_ids & alt_ids
+            union = nominal_ids | alt_ids
+            overlap_rows.append({
+                "elastic_reference": ref_label,
+                "independent_elastic_input_from_KM15": bool(independent),
+                "dataset": key,
+                "dataset_label": str(bundle["label"]),
+                "N_nominal": int(len(nominal_ids)),
+                "N_alternate": int(len(alt_ids)),
+                "N_overlap": int(len(inter)),
+                "nominal_recovered_fraction": (
+                    float(len(inter) / len(nominal_ids))
+                    if nominal_ids else np.nan
+                ),
+                "jaccard": (
+                    float(len(inter) / len(union)) if union else np.nan
+                ),
+            })
 
-    alt_fit = fit_sachs_family_multi_measurements(
-        alt_specs,
-        family=family,
-        bh_cut=0.05,
-        add_moradi_bh_systematic=True,
-        bh_systematic_fraction=0.05,
-    )
-    comparison = pd.DataFrame([
-        {
-            "selector": "KM15_5pct",
+            alt_specs.append({
+                "key": key,
+                "label": str(bundle["label"]),
+                "kind": str(bundle["kind"]),
+                "norm_frac": float(bundle.get("norm_frac", 0.0)),
+                "data": selected_alt,
+            })
+
+            keep = selected_alt[[
+                "source_row", "Q2", "xB", "t_abs", "phi_deg",
+                "xs", score_col, f"{ref_tag}_bh_reference", "km15_ep",
+            ]].copy()
+            keep.insert(0, "dataset", key)
+            keep.insert(1, "dataset_label", str(bundle["label"]))
+            keep.insert(2, "elastic_reference", ref_label)
+            keep["selected_by_nominal_km15_5pct"] = (
+                keep["source_row"].astype(int).isin(nominal_ids)
+            )
+            point_rows.append(keep)
+        #endfor
+
+        alt_fit = fit_sachs_family_multi_measurements(
+            alt_specs,
+            family=family,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+            bh_systematic_fraction=0.05,
+        )
+        comparison_rows.append({
+            "selector": f"{ref_tag}BH_vs_KM15EP_model_only_matchedN",
+            "elastic_reference": ref_label,
             "selection_uses_observed_xs": False,
-            "production_systematic_eligible": True,
-            **nominal_fit,
-        },
-        {
-            "selector": "KellyBH_vs_KM15EP_model_only_matchedN",
-            "selection_uses_observed_xs": False,
+            "independent_elastic_input_from_KM15": bool(independent),
             "production_systematic_eligible": False,
             "note": (
-                "Data-independent alternate selector; diagnostic only because "
-                "it mixes KM15 full-EP with a Kelly pure-BH reference."
+                "Kelly is an algebraic/cache consistency check because "
+                "Gepard KM15 inherits KellyEFF."
+                if not independent else
+                "Data-independent elastic-input variation; diagnostic pending "
+                "systematic prescription."
             ),
             **alt_fit,
-        },
-    ])
+        })
+    #endfor
+
+    comparison = pd.DataFrame(comparison_rows)
     base_e = float(nominal_fit["rE_fm"])
     base_m = float(nominal_fit["rM_fm"])
     comparison["delta_rE_from_KM15_fm"] = (
@@ -12256,7 +12330,9 @@ def run_model_only_kelly_bh_selector_diagnostic(
     comparison["delta_rM_from_KM15_fm"] = (
         comparison["rM_fm"].to_numpy(float) - base_m
     )
-    comparison.to_csv(outdir / "model_only_bh_radius_comparison.csv", index=False)
+    comparison.to_csv(
+        outdir / "model_only_bh_radius_comparison.csv", index=False
+    )
     pd.DataFrame(overlap_rows).to_csv(
         outdir / "model_only_bh_selection_overlap.csv", index=False
     )
@@ -12266,7 +12342,7 @@ def run_model_only_kelly_bh_selector_diagnostic(
         )
     #endif
 
-    fig, axes = plt.subplots(1, 2, figsize=(10.8, 4.8))
+    fig, axes = plt.subplots(1, 2, figsize=(12.2, 5.1))
     xx = np.arange(len(comparison))
     axes[0].errorbar(
         xx, comparison["rE_fm"], yerr=comparison["rE_fit_err_fm"],
@@ -12276,7 +12352,12 @@ def run_model_only_kelly_bh_selector_diagnostic(
         xx, comparison["rM_fm"], yerr=comparison["rM_fit_err_fm"],
         marker="o", linestyle="none", capsize=3,
     )
-    labels = ["KM15 5%", "model-only KellyBH/KM15EP\nmatched N"]
+    labels = [
+        "KM15 5%",
+        "Kelly\n(same KM15 EFF)",
+        "AMT 2007",
+        "A1/Bernauer",
+    ]
     for ax, ylabel in zip(axes, [r"$r_E$ [fm]", r"$r_M$ [fm]"]):
         ax.set_xticks(xx)
         ax.set_xticklabels(labels)
@@ -12284,13 +12365,857 @@ def run_model_only_kelly_bh_selector_diagnostic(
         ax.grid(axis="y", alpha=0.2)
     #endfor
     fig.suptitle(
-        f"{label}: data-independent alternate BH-selection diagnostic",
+        f"{label}: data-independent elastic-input BH-selection diagnostics\n"
+        "matched N per experiment; Kelly is not independent of KM15",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.90))
+    fig.savefig(outdir / "model_only_bh_radius_comparison.png", dpi=260)
+    plt.close(fig)
+    return comparison
+#enddef
+
+
+
+def _shape_parameters_and_covariance_from_result(
+        fit: Dict[str, object],
+        family: str) -> Tuple[np.ndarray, np.ndarray, int, int, str, str]:
+    """Reconstruct Sachs shape parameters/covariance from a saved fit dict."""
+    family_e, family_m = decode_sachs_family_pair(family)
+    ne = int(re.findall(r"\d+", family_e)[0])
+    nm = int(re.findall(r"\d+", family_m)[0])
+    names = (
+        [f"e{i}" for i in range(1, ne + 1)]
+        + [f"m{i}" for i in range(1, nm + 1)]
+    )
+    params = np.asarray([float(fit[n]) for n in names], dtype=float)
+    raw_cov = fit.get("shape_covariance_json", "")
+    try:
+        cov = np.asarray(json.loads(str(raw_cov)), dtype=float)
+    except Exception:
+        cov = np.full((ne + nm, ne + nm), np.nan, dtype=float)
+    #endtry
+    if cov.shape != (ne + nm, ne + nm):
+        cov = np.full((ne + nm, ne + nm), np.nan, dtype=float)
+    #endif
+    return params, cov, ne, nm, family_e, family_m
+#enddef
+
+
+def _sachs_band_from_result(
+        fit: Dict[str, object],
+        family: str,
+        q: np.ndarray,
+        which: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Evaluate GE or GM and its full Hessian covariance band."""
+    q = np.asarray(q, dtype=float)
+    params, cov, ne, nm, family_e, family_m = (
+        _shape_parameters_and_covariance_from_result(fit, family)
+    )
+
+    def evaluate(p):
+        ce = np.asarray(p[:ne], dtype=float)
+        cm = np.asarray(p[ne:ne + nm], dtype=float)
+        ge = sachs_family_value(q, ce, family_e)
+        gm = MU_P * sachs_family_value(q, cm, family_m)
+        return ge if which == "GE" else gm
+    #enddef
+
+    central = np.asarray(evaluate(params), dtype=float)
+    sigma = np.full_like(central, np.nan)
+    if not np.all(np.isfinite(cov)):
+        return central, sigma
+    #endif
+
+    for iq in range(len(q)):
+        def scalar(p):
+            return float(evaluate(np.asarray(p, dtype=float))[iq])
+        #enddef
+        grad = numerical_gradient(scalar, params)
+        var = float(grad @ cov @ grad)
+        if np.isfinite(var):
+            sigma[iq] = math.sqrt(max(var, 0.0))
+        #endif
+    #endfor
+    return central, sigma
+#enddef
+
+
+def _band_overlap_metrics(
+        ca: np.ndarray,
+        sa: np.ndarray,
+        cb: np.ndarray,
+        sb: np.ndarray) -> Dict[str, float]:
+    """Pointwise 68% band-overlap and standardized-separation diagnostics."""
+    ca = np.asarray(ca, dtype=float)
+    sa = np.asarray(sa, dtype=float)
+    cb = np.asarray(cb, dtype=float)
+    sb = np.asarray(sb, dtype=float)
+    finite = (
+        np.isfinite(ca) & np.isfinite(sa)
+        & np.isfinite(cb) & np.isfinite(sb)
+        & (sa >= 0.0) & (sb >= 0.0)
+    )
+    if not np.any(finite):
+        return {
+            "band_overlap_fraction": np.nan,
+            "central_a_inside_band_b_fraction": np.nan,
+            "central_b_inside_band_a_fraction": np.nan,
+            "median_standardized_curve_separation": np.nan,
+            "max_standardized_curve_separation": np.nan,
+            "median_absolute_fractional_curve_difference": np.nan,
+            "max_absolute_fractional_curve_difference": np.nan,
+        }
+    #endif
+    ca = ca[finite]; sa = sa[finite]; cb = cb[finite]; sb = sb[finite]
+    overlap = np.maximum(ca - sa, cb - sb) <= np.minimum(ca + sa, cb + sb)
+    a_in_b = (ca >= cb - sb) & (ca <= cb + sb)
+    b_in_a = (cb >= ca - sa) & (cb <= ca + sa)
+    denom = np.sqrt(sa**2 + sb**2)
+    d = np.abs(ca - cb) / np.maximum(denom, 1.0e-30)
+    frac = np.abs(ca - cb) / np.maximum(0.5 * (np.abs(ca) + np.abs(cb)), 1.0e-30)
+    return {
+        "band_overlap_fraction": float(np.mean(overlap)),
+        "central_a_inside_band_b_fraction": float(np.mean(a_in_b)),
+        "central_b_inside_band_a_fraction": float(np.mean(b_in_a)),
+        "median_standardized_curve_separation": float(np.median(d)),
+        "max_standardized_curve_separation": float(np.max(d)),
+        "median_absolute_fractional_curve_difference": float(np.median(frac)),
+        "max_absolute_fractional_curve_difference": float(np.max(frac)),
+    }
+#enddef
+
+
+def save_threshold_form_factor_band_study(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        family: str,
+        threshold_table: pd.DataFrame,
+        label: str,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Compare finite-|t| GE/GM shapes across the 1--7% KM15 selections.
+
+    Radius changes can strongly amplify small differences in the extrapolated
+    Q2->0 slope.  This diagnostic therefore compares the fitted form-factor
+    curves themselves, with full Hessian covariance bands, over both the
+    extrapolation region and the common data-supported |t| interval.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    wanted = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07]
+    rows_by_thr = {}
+    supports = {}
+    for thr in wanted:
+        part = threshold_table.loc[
+            np.isclose(threshold_table["threshold"].to_numpy(float), thr)
+            & threshold_table["valid"].astype(bool)
+        ]
+        if len(part) != 1:
+            continue
+        #endif
+        rows_by_thr[thr] = dict(part.iloc[0])
+        specs, _ = _km15_selected_specs_for_bundles(bundles, selection, thr)
+        vals = []
+        for spec in specs:
+            if len(spec["data"]):
+                vals.extend(spec["data"]["t_abs"].to_numpy(float).tolist())
+            #endif
+        #endfor
+        vals = np.asarray(vals, dtype=float)
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            supports[thr] = (float(np.min(vals)), float(np.max(vals)))
+        #endif
+    #endfor
+
+    if 0.05 not in rows_by_thr or not supports:
+        return pd.DataFrame()
+    #endif
+
+    qmax = max(v[1] for v in supports.values())
+    q = np.linspace(0.0, max(0.05, 1.03 * qmax), 500)
+    common_min = max(v[0] for v in supports.values())
+    common_max = min(v[1] for v in supports.values())
+    if common_max <= common_min:
+        common_min = supports[0.05][0]
+        common_max = supports[0.05][1]
+    #endif
+    common_mask = (q >= common_min) & (q <= common_max)
+    extrap_mask = (q >= 0.0) & (q < common_min)
+
+    # High-information figure: central curves plus 68% Hessian bands.
+    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.3))
+    for thr in sorted(rows_by_thr):
+        fit = rows_by_thr[thr]
+        for ax, which in zip(axes, ["GE", "GM"]):
+            c, s = _sachs_band_from_result(fit, family, q, which)
+            if which == "GM":
+                c = c / MU_P
+                s = s / MU_P
+            #endif
+            lw = 2.2 if abs(thr - 0.05) < 1.0e-12 else 1.15
+            alpha = 0.16 if abs(thr - 0.05) < 1.0e-12 else 0.055
+            line, = ax.plot(
+                q, c, linewidth=lw,
+                label=f"{100.0*thr:.0f}% selection",
+            )
+            ax.fill_between(
+                q, c - s, c + s,
+                alpha=alpha, color=line.get_color(), linewidth=0.0,
+            )
+        #endfor
+    #endfor
+    for ax in axes:
+        ax.axvspan(
+            common_min, common_max, alpha=0.08,
+            label="common selected-data |t| support" if ax is axes[0] else None,
+        )
+        ax.axvline(common_min, linewidth=0.8, linestyle=":")
+        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        ax.grid(alpha=0.20)
+    #endfor
+    axes[0].set_ylabel(r"$G_E$")
+    axes[1].set_ylabel(r"$G_M/\mu_p$")
+    handles, labs = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labs, loc="upper center", ncol=4,
+        bbox_to_anchor=(0.5, 0.965), frameon=True,
+    )
+    fig.suptitle(
+        f"{label}: finite-$|t|$ stability across KM15 BH-purity selections\n"
+        f"closure-selected {family}; shaded curves are 68% Hessian bands",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.86))
+    fig.savefig(outdir / "01_GE_GM_hessian_bands_thresholds_1to7.png", dpi=260)
+    plt.close(fig)
+
+    base = rows_by_thr[0.05]
+    metric_rows = []
+    curve_rows = []
+    for thr in sorted(rows_by_thr):
+        fit = rows_by_thr[thr]
+        for which in ["GE", "GM"]:
+            c, s = _sachs_band_from_result(fit, family, q, which)
+            c5, s5 = _sachs_band_from_result(base, family, q, which)
+            scale = MU_P if which == "GM" else 1.0
+            c = c / scale; s = s / scale
+            c5 = c5 / scale; s5 = s5 / scale
+
+            for region, mask in [
+                ("common_data_support", common_mask),
+                ("extrapolation_to_zero", extrap_mask),
+                ("zero_to_common_max", q <= common_max),
+            ]:
+                if not np.any(mask):
+                    continue
+                #endif
+                metrics = _band_overlap_metrics(
+                    c[mask], s[mask], c5[mask], s5[mask]
+                )
+                metric_rows.append({
+                    "configuration_label": label,
+                    "family": family,
+                    "form_factor": which,
+                    "threshold": thr,
+                    "threshold_percent": 100.0 * thr,
+                    "reference_threshold": 0.05,
+                    "region": region,
+                    "region_qmin": float(np.min(q[mask])),
+                    "region_qmax": float(np.max(q[mask])),
+                    **metrics,
+                })
+            #endfor
+
+            for iq in range(len(q)):
+                curve_rows.append({
+                    "form_factor": which,
+                    "threshold": thr,
+                    "threshold_percent": 100.0 * thr,
+                    "q": float(q[iq]),
+                    "central": float(c[iq]),
+                    "hessian_sigma": float(s[iq]),
+                    "common_data_support": bool(common_mask[iq]),
+                    "extrapolation_to_zero": bool(extrap_mask[iq]),
+                })
+            #endfor
+        #endfor
+    #endfor
+
+    metrics = pd.DataFrame(metric_rows)
+    metrics.to_csv(outdir / "GE_GM_threshold_band_overlap_metrics.csv", index=False)
+    pd.DataFrame(curve_rows).to_csv(
+        outdir / "GE_GM_threshold_hessian_band_curves.csv", index=False
+    )
+
+    # Compact summary of how radius excursions compare with finite-t curve motion.
+    finite_part = metrics.loc[
+        (metrics["region"] == "common_data_support")
+        & (metrics["threshold"] != 0.05)
+    ].copy()
+    if len(finite_part):
+        fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.8))
+        for ax, which in zip(axes, ["GE", "GM"]):
+            p = finite_part.loc[finite_part["form_factor"] == which]
+            ax.plot(
+                p["threshold_percent"],
+                100.0 * p["band_overlap_fraction"],
+                marker="o", label="68% band overlap",
+            )
+            ax.plot(
+                p["threshold_percent"],
+                100.0 * p["central_a_inside_band_b_fraction"],
+                marker="s", label="alternate central inside 5% band",
+            )
+            ax.set_ylim(0.0, 105.0)
+            ax.set_xlabel("KM15 BH-purity threshold (%)")
+            ax.set_ylabel("common-support overlap (%)")
+            ax.set_title(which)
+            ax.grid(alpha=0.2)
+        #endfor
+        handles, labs = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labs, loc="upper center", ncol=2,
+                   bbox_to_anchor=(0.5, 0.96))
+        fig.suptitle(
+            f"{label}: are threshold-dependent radius shifts visible at finite $|t|$?",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.88))
+        fig.savefig(outdir / "02_GE_GM_common_support_band_overlap.png", dpi=260)
+        plt.close(fig)
+    #endif
+    return metrics
+#enddef
+
+
+def save_competitive_family_form_factor_bands(
+        valid: pd.DataFrame,
+        chosen_family: str,
+        label: str,
+        selected_specs: Sequence[Dict[str, object]],
+        outdir: Path) -> pd.DataFrame:
+    """
+    Compare real-data GE/GM curves for closure-competitive families.
+
+    This distinguishes alarming radius spread caused by different Q2->0 slopes
+    from genuine disagreement over the finite-|t| region actually constrained
+    by the selected data.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    qvals = []
+    for spec in selected_specs:
+        if len(spec["data"]):
+            qvals.extend(spec["data"]["t_abs"].to_numpy(float).tolist())
+        #endif
+    #endfor
+    qvals = np.asarray(qvals, dtype=float)
+    qvals = qvals[np.isfinite(qvals)]
+    if len(qvals) == 0:
+        return pd.DataFrame()
+    #endif
+    qmin = float(np.min(qvals)); qmax = float(np.max(qvals))
+    q = np.linspace(0.0, 1.03 * qmax, 500)
+    support = (q >= qmin) & (q <= qmax)
+    extrap = q < qmin
+
+    chosen_rows = valid.loc[valid["family"].astype(str) == chosen_family]
+    if len(chosen_rows) != 1:
+        return pd.DataFrame()
+    #endif
+    chosen = dict(chosen_rows.iloc[0])
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.3))
+    metric_rows = []
+    for _, rr in valid.iterrows():
+        family = str(rr["family"])
+        fit = dict(rr)
+        for ax, which in zip(axes, ["GE", "GM"]):
+            c, s = _sachs_band_from_result(fit, family, q, which)
+            c0, s0 = _sachs_band_from_result(chosen, chosen_family, q, which)
+            scale = MU_P if which == "GM" else 1.0
+            c = c / scale; s = s / scale
+            c0 = c0 / scale; s0 = s0 / scale
+            lw = 2.2 if family == chosen_family else 1.10
+            alpha = 0.16 if family == chosen_family else 0.045
+            line, = ax.plot(
+                q, c, linewidth=lw,
+                label=(
+                    f"{family} (chosen)"
+                    if family == chosen_family else family
+                ),
+            )
+            ax.fill_between(
+                q, c - s, c + s, alpha=alpha,
+                color=line.get_color(), linewidth=0.0,
+            )
+            for region, mask in [
+                ("selected_data_support", support),
+                ("extrapolation_to_zero", extrap),
+            ]:
+                if np.any(mask):
+                    metric_rows.append({
+                        "configuration_label": label,
+                        "family": family,
+                        "chosen_family": chosen_family,
+                        "form_factor": which,
+                        "region": region,
+                        **_band_overlap_metrics(
+                            c[mask], s[mask], c0[mask], s0[mask]
+                        ),
+                    })
+                #endif
+            #endfor
+        #endfor
+    #endfor
+
+    for ax in axes:
+        ax.axvspan(qmin, qmax, alpha=0.08)
+        ax.axvline(qmin, linewidth=0.8, linestyle=":")
+        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        ax.grid(alpha=0.2)
+    #endfor
+    axes[0].set_ylabel(r"$G_E$")
+    axes[1].set_ylabel(r"$G_M/\mu_p$")
+    handles, labs = axes[0].get_legend_handles_labels()
+    fig.legend(
+        handles, labs, loc="upper center", ncol=4,
+        bbox_to_anchor=(0.5, 0.965), frameon=True,
+    )
+    fig.suptitle(
+        f"{label}: closure-competitive families on the real KM15 5% sample\n"
+        "68% Hessian bands; shaded vertical region is selected-data support",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.86))
+    fig.savefig(outdir / "02_competitive_family_GE_GM_hessian_bands.png", dpi=260)
+    plt.close(fig)
+
+    metrics = pd.DataFrame(metric_rows)
+    metrics.to_csv(
+        outdir / "competitive_family_GE_GM_band_overlap_metrics.csv",
+        index=False,
+    )
+    return metrics
+#enddef
+
+
+def save_f1_f2_bh_sensitivity_diagnostics(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        fit: Dict[str, object],
+        family: str,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Exact quadratic BH decomposition and logarithmic F1/F2 sensitivities.
+
+    sigma_BH = A F1^2 + B F1 F2 + C F2^2
+    S_F1 = d ln sigma / d ln F1
+    S_F2 = d ln sigma / d ln F2
+
+    The exact term fractions avoid the ambiguity of calling F1=0/F2=0 curves
+    "additive contributions", while those turn-off ratios are also tabulated
+    for intuitive comparison with the original Moradi-style visualization.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    params, _, ne, nm, family_e, family_m = (
+        _shape_parameters_and_covariance_from_result(fit, family)
+    )
+    ce = params[:ne]; cm = params[ne:ne + nm]
+
+    point_rows = []
+    for bundle in bundles:
+        specs, _ = _km15_selected_specs_for_bundles(
+            [bundle], selection, 0.05
+        )
+        if not specs or len(specs[0]["data"]) == 0:
+            continue
+        #endif
+        d = specs[0]["data"].copy()
+        q = d["t_abs"].to_numpy(float)
+        ge = sachs_family_value(q, ce, family_e)
+        gm = MU_P * sachs_family_value(q, cm, family_m)
+        tau = q / (4.0 * MP2)
+        f1 = (ge + tau * gm) / (1.0 + tau)
+        f2 = (gm - ge) / (1.0 + tau)
+        A = d["bh_A"].to_numpy(float)
+        B = d["bh_B"].to_numpy(float)
+        C = d["bh_C"].to_numpy(float)
+        t11 = A * f1**2
+        t12 = B * f1 * f2
+        t22 = C * f2**2
+        full = t11 + t12 + t22
+        sf1 = (2.0 * t11 + t12) / np.maximum(np.abs(full), 1.0e-30)
+        sf2 = (t12 + 2.0 * t22) / np.maximum(np.abs(full), 1.0e-30)
+        f1_only = t11
+        f2_only = t22
+        for irow in range(len(d)):
+            point_rows.append({
+                "dataset": str(bundle["key"]),
+                "dataset_label": str(bundle["label"]),
+                "t_abs": float(q[irow]),
+                "F1": float(f1[irow]),
+                "F2": float(f2[irow]),
+                "sigma_full_bh": float(full[irow]),
+                "fraction_F1sq": float(t11[irow] / full[irow]),
+                "fraction_F1F2": float(t12[irow] / full[irow]),
+                "fraction_F2sq": float(t22[irow] / full[irow]),
+                "S_F1": float(sf1[irow]),
+                "S_F2": float(sf2[irow]),
+                "abs_SF2_over_abs_SF1": float(
+                    abs(sf2[irow]) / max(abs(sf1[irow]), 1.0e-30)
+                ),
+                "sigma_F2_zero_over_full": float(f1_only[irow] / full[irow]),
+                "sigma_F1_zero_over_full": float(f2_only[irow] / full[irow]),
+            })
+        #endfor
+    #endfor
+
+    pts = pd.DataFrame(point_rows)
+    pts.to_csv(outdir / "f1_f2_bh_sensitivity_points.csv", index=False)
+    if len(pts) == 0:
+        return pts
+    #endif
+
+    summary_rows = []
+    for key, d in list(pts.groupby("dataset", sort=False)) + [("ALL", pts)]:
+        label = "All four combined" if key == "ALL" else str(d.iloc[0]["dataset_label"])
+        summary_rows.append({
+            "dataset": key,
+            "dataset_label": label,
+            "N": int(len(d)),
+            "median_S_F1": float(np.median(d["S_F1"])),
+            "median_S_F2": float(np.median(d["S_F2"])),
+            "median_abs_S_F1": float(np.median(np.abs(d["S_F1"]))),
+            "median_abs_S_F2": float(np.median(np.abs(d["S_F2"]))),
+            "median_abs_SF2_over_abs_SF1": float(
+                np.median(d["abs_SF2_over_abs_SF1"])
+            ),
+            "median_fraction_F1sq": float(np.median(d["fraction_F1sq"])),
+            "median_fraction_F1F2": float(np.median(d["fraction_F1F2"])),
+            "median_fraction_F2sq": float(np.median(d["fraction_F2sq"])),
+        })
+    #endfor
+    summary = pd.DataFrame(summary_rows)
+    summary.to_csv(outdir / "f1_f2_bh_sensitivity_summary.csv", index=False)
+
+    # Five panels: one per experiment plus the combined ensemble.
+    panel_defs = [
+        (str(b["key"]), str(b["label"])) for b in bundles
+    ] + [("ALL", "All four combined")]
+    fig, axes = plt.subplots(2, 3, figsize=(14.5, 8.8), sharex=False)
+    for ax, (key, label) in zip(axes.flat, panel_defs):
+        d = pts if key == "ALL" else pts.loc[pts["dataset"] == key]
+        ax.scatter(
+            d["t_abs"], d["fraction_F1sq"],
+            s=13, alpha=0.50, label=r"$A F_1^2/\sigma_{\rm BH}$",
+        )
+        ax.scatter(
+            d["t_abs"], d["fraction_F1F2"],
+            s=13, alpha=0.50, label=r"$B F_1F_2/\sigma_{\rm BH}$",
+        )
+        ax.scatter(
+            d["t_abs"], d["fraction_F2sq"],
+            s=13, alpha=0.50, label=r"$C F_2^2/\sigma_{\rm BH}$",
+        )
+        ax.axhline(0.0, linewidth=0.7)
+        ax.set_title(label)
+        ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+        ax.set_ylabel("exact BH term / total BH")
+        ax.grid(alpha=0.18)
+    #endfor
+    if len(panel_defs) < len(axes.flat):
+        axes.flat[-1].axis("off")
+    #endif
+    handles, labs = axes.flat[0].get_legend_handles_labels()
+    fig.legend(handles, labs, loc="upper center", ncol=3,
+               bbox_to_anchor=(0.5, 0.965))
+    fig.suptitle(
+        f"BH electromagnetic decomposition at KM15 5% selection ({family})",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.91))
+    fig.savefig(outdir / "01_F1_F2_exact_BH_term_fractions.png", dpi=260)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(8.2, 6.8))
+    for key, label in panel_defs[:-1]:
+        d = pts.loc[pts["dataset"] == key]
+        ax.scatter(
+            d["S_F1"], d["S_F2"], s=18, alpha=0.55, label=label
+        )
+    #endfor
+    ax.axhline(0.0, linewidth=0.7)
+    ax.axvline(0.0, linewidth=0.7)
+    ax.set_xlabel(r"$S_{F_1}=\partial\ln\sigma_{\rm BH}/\partial\ln F_1$")
+    ax.set_ylabel(r"$S_{F_2}=\partial\ln\sigma_{\rm BH}/\partial\ln F_2$")
+    ax.set_title(
+        "Complementary electromagnetic sensitivity of the four proton datasets"
+    )
+    ax.grid(alpha=0.2)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(outdir / "02_F1_F2_log_sensitivity_plane.png", dpi=260)
+    plt.close(fig)
+
+    # Compact note/slide-ready medians.
+    fig, ax = plt.subplots(figsize=(9.2, 5.4))
+    ss = summary.loc[summary["dataset"] != "ALL"].copy()
+    x = np.arange(len(ss))
+    width = 0.36
+    ax.bar(x - width/2, ss["median_abs_S_F1"], width, label=r"median $|S_{F_1}|$")
+    ax.bar(x + width/2, ss["median_abs_S_F2"], width, label=r"median $|S_{F_2}|$")
+    ax.set_xticks(x)
+    ax.set_xticklabels(ss["dataset_label"], rotation=18, ha="right")
+    ax.set_ylabel("median absolute logarithmic sensitivity")
+    ax.set_title("Why adding Hall A improves simultaneous $F_1/F_2$ leverage")
+    ax.grid(axis="y", alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "03_F1_F2_sensitivity_medians.png", dpi=260)
+    plt.close(fig)
+    return summary
+#enddef
+
+
+def run_georges_normalization_prior_scan(
+        bundles: Sequence[Dict[str, object]],
+        georges_key: str,
+        selection: pd.DataFrame,
+        family: str,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Scan plausible correlated Georges normalization priors.
+
+    Zero remains the publication-conservative fixed treatment; 3--5% priors
+    are motivated diagnostics for the E12-06-114 normalization studies, and
+    the unconstrained point shows what scale the cross-section ensemble itself
+    prefers.  No scan point is silently promoted to production.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    base_specs, counts = _km15_selected_specs_for_bundles(
+        bundles, selection, 0.05
+    )
+    scan = [
+        ("fixed", 0.0, False),
+        ("3pct", 0.030, False),
+        ("3p5pct", 0.035, False),
+        ("4pct", 0.040, False),
+        ("5pct", 0.050, False),
+        ("free", 1.0, True),
+    ]
+    rows = []
+    for tag, frac, free in scan:
+        specs = [dict(s) for s in base_specs]
+        for spec in specs:
+            if str(spec["key"]) == str(georges_key):
+                spec["norm_frac"] = float(frac)
+            #endif
+        #endfor
+        fit = fit_sachs_family_multi_measurements(
+            specs,
+            family=family,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+            bh_systematic_fraction=0.05,
+            unconstrained_norm_keys=[georges_key] if free else None,
+        )
+        nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", str(georges_key))
+        rows.append({
+            "mode": tag,
+            "georges_prior_fraction": np.nan if free else float(frac),
+            "georges_unconstrained": bool(free),
+            **counts,
+            **fit,
+            "georges_scale_factor": float(
+                fit.get(nname + "_scale_factor", 1.0)
+            ),
+            "georges_beta": float(fit.get(nname, 0.0)),
+        })
+    #endfor
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "georges_normalization_prior_scan.csv", index=False)
+
+    fig, axes = plt.subplots(1, 3, figsize=(14.2, 4.8))
+    labels = table["mode"].astype(str).tolist()
+    x = np.arange(len(table))
+    axes[0].errorbar(
+        x, table["rE_fm"], yerr=table["rE_fit_err_fm"],
+        marker="o", linestyle="-", capsize=3,
+    )
+    axes[1].errorbar(
+        x, table["rM_fm"], yerr=table["rM_fit_err_fm"],
+        marker="o", linestyle="-", capsize=3,
+    )
+    axes[2].plot(x, table["georges_scale_factor"], marker="o")
+    for ax in axes:
+        ax.set_xticks(x)
+        ax.set_xticklabels(labels, rotation=20, ha="right")
+        ax.grid(alpha=0.2)
+    #endfor
+    axes[0].set_ylabel(r"$r_E$ [fm]")
+    axes[1].set_ylabel(r"$r_M$ [fm]")
+    axes[2].set_ylabel(r"$N_{\rm Georges}$")
+    axes[2].axhline(1.0, linewidth=0.8, linestyle=":")
+    fig.suptitle(
+        f"All-four KM15 5% fit: Georges normalization-prior scan ({family})",
         y=0.995,
     )
     fig.tight_layout(rect=(0, 0, 1, 0.94))
-    fig.savefig(outdir / "model_only_bh_radius_comparison.png", dpi=180)
+    fig.savefig(outdir / "01_georges_normalization_prior_scan.png", dpi=260)
     plt.close(fig)
-    return comparison
+    return table
+#enddef
+
+
+def run_normalization_shape_degeneracy_matrix(
+        configurations: Sequence[
+            Tuple[str, Sequence[Dict[str, object]], str]
+        ],
+        selection: pd.DataFrame,
+        family: str,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Controlled normalization x form-factor-model matrix.
+
+    Each ensemble is fit with the same Sachs family plus Moradi Fit 5 and Fit 8
+    under fixed, published-constrained, and fully free experiment scales.
+    This explicitly diagnoses when a surprising standalone radius is a
+    normalization/G_E/G_M degeneracy rather than a robust slope measurement.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    rows = []
+    for tag, bundles, label in configurations:
+        specs0, counts = _km15_selected_specs_for_bundles(
+            bundles, selection, 0.05
+        )
+        keys = [str(b["key"]) for b in bundles]
+        for norm_mode in ["fixed", "published_constrained", "free"]:
+            specs = [dict(s) for s in specs0]
+            free_keys = None
+            if norm_mode == "fixed":
+                for spec in specs:
+                    spec["norm_frac"] = 0.0
+                #endfor
+            elif norm_mode == "free":
+                free_keys = keys
+            #endif
+
+            # Closure-family Sachs fit.
+            try:
+                fit = fit_sachs_family_multi_measurements(
+                    specs, family=family, bh_cut=0.05,
+                    add_moradi_bh_systematic=True,
+                    bh_systematic_fraction=0.05,
+                    unconstrained_norm_keys=free_keys,
+                )
+                rows.append({
+                    "configuration": tag,
+                    "configuration_label": label,
+                    "normalization_mode": norm_mode,
+                    "fit_model": f"Sachs {family}",
+                    **counts, **fit,
+                })
+            except Exception as exc:
+                rows.append({
+                    "configuration": tag,
+                    "configuration_label": label,
+                    "normalization_mode": norm_mode,
+                    "fit_model": f"Sachs {family}",
+                    **counts, "valid": False, "failure": str(exc),
+                })
+            #endtry
+
+            # Moradi Fit 5 and Fit 8 benchmarks under the same norm treatment.
+            for fit_label, kind in [("Moradi Fit 5", "dipole"),
+                                    ("Moradi Fit 8", "fit8_f2_kelly")]:
+                try:
+                    fr = fit_multi_measurements(
+                        specs, kind=kind, fit_name=fit_label,
+                        bh_cut=0.05, add_moradi_bh_systematic=True,
+                        unconstrained_norm_keys=free_keys,
+                    )
+                    rows.append({
+                        "configuration": tag,
+                        "configuration_label": label,
+                        "normalization_mode": norm_mode,
+                        "fit_model": fit_label,
+                        **counts,
+                        "valid": bool(fr.success),
+                        "N": int(fr.npts),
+                        "chi2": float(fr.chi2),
+                        "ndof": int(fr.ndof),
+                        "chi2_ndof": float(fr.chi2_ndof),
+                        "rE_fm": float(fr.rE_fm),
+                        "rE_fit_err_fm": float(fr.rE_err_fm),
+                        "rM_fm": float(fr.rM_fm),
+                        "rM_fit_err_fm": float(fr.rM_err_fm),
+                        **dict(fr.meta),
+                    })
+                except Exception as exc:
+                    rows.append({
+                        "configuration": tag,
+                        "configuration_label": label,
+                        "normalization_mode": norm_mode,
+                        "fit_model": fit_label,
+                        **counts, "valid": False, "failure": str(exc),
+                    })
+                #endtry
+            #endfor
+        #endfor
+    #endfor
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "normalization_shape_degeneracy_matrix.csv", index=False)
+
+    # One concise figure per configuration.
+    for tag, _, label in configurations:
+        p = table.loc[
+            (table["configuration"] == tag)
+            & table.get("valid", pd.Series(False, index=table.index)).fillna(False).astype(bool)
+        ].copy()
+        if len(p) == 0:
+            continue
+        #endif
+        modes = ["fixed", "published_constrained", "free"]
+        models = [f"Sachs {family}", "Moradi Fit 5", "Moradi Fit 8"]
+        fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.0))
+        x = np.arange(len(modes))
+        offsets = np.linspace(-0.20, 0.20, len(models))
+        for off, model in zip(offsets, models):
+            pm = p.loc[p["fit_model"] == model].set_index("normalization_mode")
+            vals = pm.reindex(modes)
+            ok = np.isfinite(pd.to_numeric(vals["rE_fm"], errors="coerce"))
+            axes[0].errorbar(
+                x[ok] + off, vals.loc[np.asarray(modes)[ok], "rE_fm"],
+                yerr=vals.loc[np.asarray(modes)[ok], "rE_fit_err_fm"],
+                marker="o", linestyle="none", capsize=3, label=model,
+            )
+            okm = np.isfinite(pd.to_numeric(vals["rM_fm"], errors="coerce"))
+            axes[1].errorbar(
+                x[okm] + off, vals.loc[np.asarray(modes)[okm], "rM_fm"],
+                yerr=vals.loc[np.asarray(modes)[okm], "rM_fit_err_fm"],
+                marker="o", linestyle="none", capsize=3, label=model,
+            )
+        #endfor
+        for ax, ylabel in zip(axes, [r"$r_E$ [fm]", r"$r_M$ [fm]"]):
+            ax.set_xticks(x)
+            ax.set_xticklabels(["all fixed", "published priors", "all free"])
+            ax.set_ylabel(ylabel)
+            ax.grid(axis="y", alpha=0.2)
+        #endfor
+        handles, labs = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labs, loc="upper center", ncol=3,
+                   bbox_to_anchor=(0.5, 0.96))
+        fig.suptitle(
+            f"{label}: normalization--shape degeneracy at KM15 5%",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.88))
+        fig.savefig(
+            outdir / f"{tag}_normalization_shape_degeneracy.png", dpi=260
+        )
+        plt.close(fig)
+    #endfor
+    return table
 #enddef
 
 
@@ -12810,6 +13735,59 @@ def run_unified_km15_final_analysis(
             family=chosen["all_four"],
             outdir=diagnostics_dir / "normalization_tension",
         )
+
+        # Exact BH electromagnetic decomposition and derivative sensitivities.
+        all4_specs, _ = _km15_selected_specs_for_bundles(
+            production_bundles, selection, 0.05
+        )
+        all4_fit = fit_sachs_family_multi_measurements(
+            all4_specs,
+            family=chosen["all_four"],
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+            bh_systematic_fraction=0.05,
+        )
+        save_f1_f2_bh_sensitivity_diagnostics(
+            bundles=production_bundles,
+            selection=selection,
+            fit=all4_fit,
+            family=chosen["all_four"],
+            outdir=diagnostics_dir / "f1_f2_sensitivity",
+        )
+
+        # E12-06-114 / Georges normalization study: fixed, plausible few-percent
+        # Gaussian priors, and an unconstrained diagnostic endpoint.
+        run_georges_normalization_prior_scan(
+            bundles=production_bundles,
+            georges_key=str(georges_bundle["key"]),
+            selection=selection,
+            family=chosen["all_four"],
+            outdir=diagnostics_dir / "georges_normalization_prior_scan",
+        )
+
+        # Explicitly expose the normalization--GE/GM--shape degeneracy that can
+        # produce very small standalone radii.  Use one common Sachs family so
+        # changes are not confounded by simultaneous family rotation.
+        run_normalization_shape_degeneracy_matrix(
+            configurations=[
+                ("jo_only", [jo_bundle], "Jo 2015"),
+                ("jo_plus_lee", [jo_bundle, lee_bundle], "Jo + Lee"),
+                (
+                    "hall_a_only",
+                    [defurne_bundle, georges_bundle],
+                    "Defurne + Georges",
+                ),
+                (
+                    "all_four",
+                    production_bundles,
+                    "Jo + Defurne + Georges + Lee",
+                ),
+            ],
+            selection=selection,
+            family=chosen["all_four"],
+            outdir=diagnostics_dir / "normalization_shape_degeneracy",
+        )
+
         run_model_only_kelly_bh_selector_diagnostic(
             bundles=production_bundles,
             selection=selection,

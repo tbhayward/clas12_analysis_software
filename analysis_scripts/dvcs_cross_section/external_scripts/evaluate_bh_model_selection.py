@@ -1384,6 +1384,143 @@ def _robust_upper(values: np.ndarray, minimum: float = 10.0) -> float:
 #enddef
 
 
+
+def save_all_point_bh_cross_implementation_audit(
+        df: pd.DataFrame,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Audit PARTONS pure-BH against Gepard/KM15 pure-BH over every production point.
+
+    This is deliberately separated from the full electroproduction comparison.
+    If these ratios are stable near unity, the dataset-specific phi/unit
+    convention is under control and any remaining VGG99/GK16 full-EP failure
+    cannot be attributed to the pure-BH interface alone.
+    """
+    import matplotlib.pyplot as plt
+
+    root = outdir / "bh_cross_implementation_audit"
+    root.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for dataset, d in df.groupby("dataset", sort=False):
+        for process, col in [
+            ("GV08 BH / Gepard BH", "partons_gv08_over_gepard_bh"),
+            ("VGG99 BH / Gepard BH", "partons_vgg99_over_gepard_bh"),
+        ]:
+            vals = pd.to_numeric(d[col], errors="coerce").to_numpy(float)
+            vals = vals[np.isfinite(vals) & (vals > 0.0)]
+            if len(vals) == 0:
+                continue
+            #endif
+            logv = np.log(vals)
+            rows.append({
+                "dataset": str(dataset),
+                "process": process,
+                "N": int(len(vals)),
+                "median_ratio": float(np.median(vals)),
+                "mean_ratio": float(np.mean(vals)),
+                "log_ratio_std": float(np.std(logv)),
+                "median_abs_log_offset": float(np.median(np.abs(logv))),
+                "fraction_0p5_to_2": float(np.mean((vals >= 0.5) & (vals <= 2.0))),
+                "fraction_0p9_to_1p1": float(np.mean((vals >= 0.9) & (vals <= 1.1))),
+                "ratio_p01": float(np.quantile(vals, 0.01)),
+                "ratio_p05": float(np.quantile(vals, 0.05)),
+                "ratio_p50": float(np.quantile(vals, 0.50)),
+                "ratio_p95": float(np.quantile(vals, 0.95)),
+                "ratio_p99": float(np.quantile(vals, 0.99)),
+                "ratio_min": float(np.min(vals)),
+                "ratio_max": float(np.max(vals)),
+            })
+        #endfor
+    #endfor
+    summary = pd.DataFrame(rows)
+    summary.to_csv(root / "all_point_bh_cross_implementation_summary.csv", index=False)
+
+    # Publication-quality per-dataset ratio distributions.
+    datasets = list(df["dataset"].astype(str).drop_duplicates())
+    n = len(datasets)
+    ncols = 2
+    nrows = int(np.ceil(n / ncols))
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(12.5, 3.9 * nrows), squeeze=False
+    )
+    for ax, dataset in zip(axes.flat, datasets):
+        d = df.loc[df["dataset"].astype(str) == dataset]
+        for label, col in [
+            ("GV08 BH / Gepard BH", "partons_gv08_over_gepard_bh"),
+            ("VGG99 BH / Gepard BH", "partons_vgg99_over_gepard_bh"),
+        ]:
+            vals = pd.to_numeric(d[col], errors="coerce").to_numpy(float)
+            vals = vals[np.isfinite(vals) & (vals > 0.0)]
+            if len(vals):
+                ax.hist(
+                    vals, bins=45, histtype="step", linewidth=1.5,
+                    label=f"{label}; med={np.median(vals):.3f}",
+                )
+            #endif
+        #endfor
+        ax.axvline(1.0, linewidth=0.9, linestyle="--")
+        ax.set_xlabel("PARTONS pure BH / Gepard pure BH")
+        ax.set_ylabel("points")
+        ax.set_title(dataset)
+        ax.grid(alpha=0.18)
+        ax.legend(fontsize=8)
+    #endfor
+    for ax in axes.flat[n:]:
+        ax.axis("off")
+    #endfor
+    fig.suptitle(
+        "Pure-BH cross-implementation closure after dataset-specific "
+        r"$\phi$ mapping",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.965))
+    fig.savefig(root / "01_all_point_bh_ratio_distributions.png", dpi=260)
+    plt.close(fig)
+
+    # Pointwise ratio versus phi catches a convention failure immediately.
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(12.5, 4.0 * nrows), squeeze=False
+    )
+    for ax, dataset in zip(axes.flat, datasets):
+        d = df.loc[df["dataset"].astype(str) == dataset]
+        ax.scatter(
+            d["phi_deg"], d["partons_gv08_over_gepard_bh"],
+            s=10, alpha=0.45, label="GV08 BH / Gepard BH",
+        )
+        ax.scatter(
+            d["phi_deg"], d["partons_vgg99_over_gepard_bh"],
+            s=10, alpha=0.45, label="VGG99 BH / Gepard BH",
+        )
+        ax.axhline(1.0, linewidth=0.9, linestyle="--")
+        ax.set_xlabel(r"source $\phi$ (deg)")
+        ax.set_ylabel("pure-BH ratio")
+        ax.set_title(dataset)
+        ax.grid(alpha=0.18)
+        ax.legend(fontsize=8)
+    #endfor
+    for ax in axes.flat[n:]:
+        ax.axis("off")
+    #endfor
+    fig.suptitle(
+        r"Pure-BH closure versus $\phi$: convention/interface audit",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.965))
+    fig.savefig(root / "02_all_point_bh_ratio_vs_phi.png", dpi=260)
+    plt.close(fig)
+
+    print("\n[BH cross-implementation audit]")
+    if len(summary):
+        print(summary[[
+            "dataset", "process", "N", "median_ratio", "log_ratio_std",
+            "fraction_0p9_to_1p1", "ratio_min", "ratio_max",
+        ]].to_string(index=False))
+    #endif
+    return summary
+#enddef
+
+
 def save_diagnostic_plots(df: pd.DataFrame, outdir: Path) -> None:
     """Write per-dataset model-selection and BH-closure diagnostics."""
     import matplotlib.pyplot as plt
@@ -2180,6 +2317,7 @@ def main(argv: List[str] | None = None) -> int:
         outdir=outdir,
         thresholds=thresholds,
     )
+    save_all_point_bh_cross_implementation_audit(merged, outdir)
     save_diagnostic_plots(merged, outdir)
 
     print("[done] BH-purity model-selection evaluation complete")
