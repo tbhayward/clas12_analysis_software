@@ -5763,6 +5763,112 @@ static PooledRegionThetaSlopeFit fit_pooled_region_theta_relative_slopes(
     return out;
 }
 
+
+struct RelativeSlopeModelComparison {
+    bool valid = false;
+    double chi2_m0 = std::numeric_limits<double>::quiet_NaN();
+    int ndf_m0 = 0;
+    double aic_m0 = std::numeric_limits<double>::quiet_NaN();
+    double bic_m0 = std::numeric_limits<double>::quiet_NaN();
+
+    double chi2_m1 = std::numeric_limits<double>::quiet_NaN();
+    int ndf_m1 = 0;
+    double aic_m1 = std::numeric_limits<double>::quiet_NaN();
+    double bic_m1 = std::numeric_limits<double>::quiet_NaN();
+
+    double chi2_m2 = std::numeric_limits<double>::quiet_NaN();
+    int ndf_m2 = 0;
+    double aic_m2 = std::numeric_limits<double>::quiet_NaN();
+    double bic_m2 = std::numeric_limits<double>::quiet_NaN();
+
+    double gradient = std::numeric_limits<double>::quiet_NaN();
+    double gradient_err = std::numeric_limits<double>::quiet_NaN();
+    double gradient_significance = std::numeric_limits<double>::quiet_NaN();
+    int npoints = 0;
+};
+
+static RelativeSlopeModelComparison compare_relative_slope_models(
+    const std::vector<RelativeSlopePoint>& pts) {
+
+    RelativeSlopeModelComparison out;
+    std::vector<RelativeSlopePoint> used;
+    used.reserve(pts.size());
+    for (const RelativeSlopePoint& p : pts) {
+        if (p.region_index < 0 || p.region_index >= 7 ||
+            !std::isfinite(p.x) || !std::isfinite(p.slope) ||
+            !std::isfinite(p.slope_err) || !(p.slope_err > 0.0)) continue;
+        used.push_back(p);
+    }
+    out.npoints = (int)used.size();
+    if (out.npoints <= 8) return out;
+
+    auto info_criteria = [&](double chi2, int k, double& aic, double& bic) {
+        aic = chi2 + 2.0 * double(k);
+        bic = chi2 + double(k) * std::log(double(out.npoints));
+    };
+
+    // M0: one common relative current slope for the entire period.
+    double sw = 0.0;
+    double swy = 0.0;
+    for (const RelativeSlopePoint& p : used) {
+        const double w = 1.0 / (p.slope_err * p.slope_err);
+        sw += w;
+        swy += w * p.slope;
+    }
+    if (!(sw > 0.0)) return out;
+    const double common = swy / sw;
+    out.chi2_m0 = 0.0;
+    for (const RelativeSlopePoint& p : used) {
+        const double pull = (p.slope - common) / p.slope_err;
+        out.chi2_m0 += pull * pull;
+    }
+    out.ndf_m0 = out.npoints - 1;
+    info_criteria(out.chi2_m0, 1, out.aic_m0, out.bic_m0);
+
+    // M1: one constant relative current slope for each photon region.
+    std::array<double, 7> region_sw{};
+    std::array<double, 7> region_swy{};
+    for (const RelativeSlopePoint& p : used) {
+        const double w = 1.0 / (p.slope_err * p.slope_err);
+        region_sw[p.region_index] += w;
+        region_swy[p.region_index] += w * p.slope;
+    }
+    int populated_regions = 0;
+    std::array<double, 7> region_mean{};
+    for (int ir = 0; ir < 7; ++ir) {
+        if (region_sw[ir] > 0.0) {
+            region_mean[ir] = region_swy[ir] / region_sw[ir];
+            ++populated_regions;
+        }
+    }
+    if (populated_regions != 7) return out;
+
+    out.chi2_m1 = 0.0;
+    for (const RelativeSlopePoint& p : used) {
+        const double pull = (p.slope - region_mean[p.region_index]) / p.slope_err;
+        out.chi2_m1 += pull * pull;
+    }
+    out.ndf_m1 = out.npoints - 7;
+    info_criteria(out.chi2_m1, 7, out.aic_m1, out.bic_m1);
+
+    // M2: seven regional baselines plus one common linear dependence on x.
+    const PooledRegionThetaSlopeFit pooled =
+        fit_pooled_region_theta_relative_slopes(used);
+    if (!pooled.valid) return out;
+
+    out.chi2_m2 = pooled.chi2;
+    out.ndf_m2 = pooled.ndf;
+    info_criteria(out.chi2_m2, 8, out.aic_m2, out.bic_m2);
+    out.gradient = pooled.theta_gradient;
+    out.gradient_err = pooled.theta_gradient_err;
+    if (std::isfinite(out.gradient) && std::isfinite(out.gradient_err) &&
+        out.gradient_err > 0.0) {
+        out.gradient_significance = out.gradient / out.gradient_err;
+    }
+    out.valid = true;
+    return out;
+}
+
 static std::vector<RelativeSlopePoint> relative_slope_points_from_data_theta_bins(
     const std::map<std::string, std::vector<DataAgg>>& by_region,
     const KinematicVarConfig& theta_var) {
@@ -5846,10 +5952,12 @@ static void run_region_theta_data_diagnostic(
     bool process_mc) {
 
     (void)hide_sp19;
-    std::vector<KinematicVarConfig> vars;
-    for (const KinematicVarConfig& v : kinematic_current_var_configs()) {
-        if (v.key == "e_theta" || v.key == "g_theta") vars.push_back(v);
-    }
+    // Use the same complete kinematic set as the inclusive current-dependence
+    // diagnostic.  The region-conditioned scan is used for model selection:
+    // it tests whether a residual dependence remains after the photon-region
+    // response is accounted for, without assuming in advance that theta_e or
+    // theta_gamma is the relevant coordinate.
+    const std::vector<KinematicVarConfig> vars = kinematic_current_var_configs();
 
     PeriodRegionThetaAggMap merged;
     for (const std::string& period : PERIOD_ORDER) {
@@ -5877,7 +5985,7 @@ static void run_region_theta_data_diagnostic(
 
     std::cout << "[current_dependence] Region-theta DATA diagnostic for "
               << cfg.csv_channel << ": " << items.size()
-              << " tree(s), " << nth << " worker(s), variables=e_theta,g_theta."
+              << " tree(s), " << nth << " worker(s), variables=Q2,xB,t,phi,e_theta,p_theta,g_theta."
               << std::endl;
 
 #ifdef _OPENMP
@@ -6065,12 +6173,20 @@ static void run_region_theta_data_diagnostic(
             leg->Draw();
             owned.emplace_back(std::move(leg));
 
+            auto period_label = std::make_unique<TLatex>();
+            period_label->SetNDC();
+            period_label->SetTextAlign(33);
+            period_label->SetTextFont(62);
+            period_label->SetTextSize(0.042);
+            period_label->DrawLatex(0.94, 0.94, periods[ip].c_str());
+            owned.emplace_back(std::move(period_label));
+
             auto note = std::make_unique<TLatex>();
             note->SetNDC();
-            note->SetTextSize(0.025);
+            note->SetTextSize(0.022);
             note->SetTextColor(kGray + 2);
-            note->DrawLatex(0.15, 0.655,
-                            "All finite positive fitted factors are shown; 2-current-point fits are retained.");
+            note->DrawLatex(0.15, 0.675,
+                            "Finite positive factors shown; 2-point current fits retained.");
             owned.emplace_back(std::move(note));
         }
 
@@ -6096,6 +6212,23 @@ static void run_region_theta_data_diagnostic(
             "_current_efficiency_vs_" + v.key + ".png";
         gSystem->CopyFile(path.c_str(), note_path.c_str(), true);
     };
+
+    std::ofstream model_csv(odir + "/regional_kinematic_model_comparison.csv");
+    model_csv
+        << "sample,period,variable,npoints,"
+        << "m0_chi2,m0_ndf,m0_aic,m0_bic,"
+        << "m1_chi2,m1_ndf,m1_aic,m1_bic,"
+        << "m2_chi2,m2_ndf,m2_aic,m2_bic,"
+        << "gradient,gradient_stat,gradient_significance,"
+        << "delta_chi2_m1_to_m2,delta_aic_m1_to_m2,delta_bic_m1_to_m2\n";
+
+    struct CandidateModelRow {
+        std::string sample;
+        std::string period;
+        std::string variable;
+        RelativeSlopeModelComparison cmp;
+    };
+    std::vector<CandidateModelRow> model_rows;
 
     for (const KinematicVarConfig& v : vars) {
         std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>> data_results;
@@ -6157,9 +6290,66 @@ static void run_region_theta_data_diagnostic(
                                      ratio_results, 0.50, 1.50);
         }
 
-        // Quantitative pooled test for e_theta:
-        // relative current slope = one intercept per photon region +
-        // one common theta_e gradient for the period.
+        // Model-selection/closure comparison on the relative current slopes.
+        // M0 = one period-wide slope.
+        // M1 = one independent baseline slope per photon region.
+        // M2 = M1 plus one common linear dependence on this kinematic variable.
+        for (const std::string& period : periods) {
+            std::map<std::string, std::vector<DataAgg>> dmap;
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER)
+                dmap[spec.key] = merged[period][spec.key][v.key];
+
+            const auto dpts =
+                relative_slope_points_from_data_theta_bins(dmap, v);
+            const RelativeSlopeModelComparison dcmp =
+                compare_relative_slope_models(dpts);
+            if (dcmp.valid) {
+                model_rows.push_back({"data", period, v.key, dcmp});
+                model_csv << "data," << period << "," << v.key << ","
+                          << dcmp.npoints << ","
+                          << dcmp.chi2_m0 << "," << dcmp.ndf_m0 << ","
+                          << dcmp.aic_m0 << "," << dcmp.bic_m0 << ","
+                          << dcmp.chi2_m1 << "," << dcmp.ndf_m1 << ","
+                          << dcmp.aic_m1 << "," << dcmp.bic_m1 << ","
+                          << dcmp.chi2_m2 << "," << dcmp.ndf_m2 << ","
+                          << dcmp.aic_m2 << "," << dcmp.bic_m2 << ","
+                          << dcmp.gradient << "," << dcmp.gradient_err << ","
+                          << dcmp.gradient_significance << ","
+                          << (dcmp.chi2_m1 - dcmp.chi2_m2) << ","
+                          << (dcmp.aic_m1 - dcmp.aic_m2) << ","
+                          << (dcmp.bic_m1 - dcmp.bic_m2) << "\n";
+            }
+
+            if (process_mc) {
+                std::map<std::string, std::vector<McKinematicBinAgg>> mmap;
+                for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER)
+                    mmap[spec.key] = merged_mc[period][spec.key][v.key];
+
+                const auto mpts =
+                    relative_slope_points_from_mc_theta_bins(mmap, v);
+                const RelativeSlopeModelComparison mcmp =
+                    compare_relative_slope_models(mpts);
+                if (mcmp.valid) {
+                    model_rows.push_back({"mc", period, v.key, mcmp});
+                    model_csv << "mc," << period << "," << v.key << ","
+                              << mcmp.npoints << ","
+                              << mcmp.chi2_m0 << "," << mcmp.ndf_m0 << ","
+                              << mcmp.aic_m0 << "," << mcmp.bic_m0 << ","
+                              << mcmp.chi2_m1 << "," << mcmp.ndf_m1 << ","
+                              << mcmp.aic_m1 << "," << mcmp.bic_m1 << ","
+                              << mcmp.chi2_m2 << "," << mcmp.ndf_m2 << ","
+                              << mcmp.aic_m2 << "," << mcmp.bic_m2 << ","
+                              << mcmp.gradient << "," << mcmp.gradient_err << ","
+                              << mcmp.gradient_significance << ","
+                              << (mcmp.chi2_m1 - mcmp.chi2_m2) << ","
+                              << (mcmp.aic_m1 - mcmp.aic_m2) << ","
+                              << (mcmp.bic_m1 - mcmp.bic_m2) << "\n";
+                }
+            }
+        }
+
+        // Retain the dedicated e_theta pooled summary because it is especially
+        // useful for the old Sp18-Out tracking-angle observation.
         if (v.key == "e_theta") {
             std::ofstream pooled_csv(odir + "/pooled_e_theta_relative_slope_model.csv");
             pooled_csv << "sample,period,theta_gradient_per_nA_per_deg,theta_gradient_stat,theta_gradient_percent_per_nA_per_deg,theta_gradient_percent_stat,chi2,ndf,npoints";
@@ -6337,7 +6527,150 @@ static void run_region_theta_data_diagnostic(
         }
     }
 
-    std::cout << "[current_dependence] Region-conditioned theta diagnostics written under "
+    // Rank candidate kinematic variables by the improvement of M2 over the
+    // region-only model M1.  Positive DeltaBIC means the additional linear
+    // dependence is preferred after the parameter penalty.
+    std::ofstream ranking_csv(odir + "/regional_kinematic_model_ranking.csv");
+    ranking_csv
+        << "sample,period,rank,variable,delta_bic_m1_to_m2,"
+        << "delta_aic_m1_to_m2,delta_chi2_m1_to_m2,"
+        << "gradient,gradient_stat,gradient_significance,m2_chi2,m2_ndf\n";
+
+    for (const std::string& sample : {std::string("data"), std::string("mc")}) {
+        if (sample == "mc" && !process_mc) continue;
+        for (const std::string& period : periods) {
+            std::vector<CandidateModelRow> rows;
+            for (const CandidateModelRow& row : model_rows) {
+                if (row.sample == sample && row.period == period && row.cmp.valid)
+                    rows.push_back(row);
+            }
+            std::sort(rows.begin(), rows.end(),
+                      [](const CandidateModelRow& a, const CandidateModelRow& b) {
+                          return (a.cmp.bic_m1 - a.cmp.bic_m2) >
+                                 (b.cmp.bic_m1 - b.cmp.bic_m2);
+                      });
+            for (size_t irank = 0; irank < rows.size(); ++irank) {
+                const auto& row = rows[irank];
+                ranking_csv << sample << "," << period << "," << (irank + 1) << ","
+                            << row.variable << ","
+                            << (row.cmp.bic_m1 - row.cmp.bic_m2) << ","
+                            << (row.cmp.aic_m1 - row.cmp.aic_m2) << ","
+                            << (row.cmp.chi2_m1 - row.cmp.chi2_m2) << ","
+                            << row.cmp.gradient << "," << row.cmp.gradient_err << ","
+                            << row.cmp.gradient_significance << ","
+                            << row.cmp.chi2_m2 << "," << row.cmp.ndf_m2 << "\n";
+            }
+
+            if (!rows.empty()) {
+                std::cout << "[current_dependence] model selection " << cfg.csv_channel
+                          << " " << sample << " " << period
+                          << ": best residual variable=" << rows.front().variable
+                          << ", DeltaBIC(M1-M2)="
+                          << (rows.front().cmp.bic_m1 - rows.front().cmp.bic_m2)
+                          << ", gradient significance="
+                          << rows.front().cmp.gradient_significance << " sigma"
+                          << std::endl;
+            }
+        }
+    }
+
+    // Four-panel DATA ranking plot. Each panel is explicitly labeled with its
+    // run period; larger positive DeltaBIC favors regional+variable over the
+    // region-only model.
+    TCanvas csel(("c_region_model_selection_" + cfg.output_token).c_str(), "", 1500, 1000);
+    csel.Divide(2, 2, 0.005, 0.005);
+    std::vector<std::unique_ptr<TObject>> selection_owned;
+
+    for (size_t ip = 0; ip < periods.size(); ++ip) {
+        csel.cd((int)ip + 1);
+        gPad->SetGridy();
+        gPad->SetLeftMargin(0.13);
+        gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.18);
+        gPad->SetTopMargin(0.10);
+
+        std::vector<CandidateModelRow> rows;
+        for (const CandidateModelRow& row : model_rows) {
+            if (row.sample == "data" && row.period == periods[ip] && row.cmp.valid)
+                rows.push_back(row);
+        }
+
+        auto frame = std::make_unique<TH1D>(
+            ("h_model_selection_" + cfg.output_token + "_" + std::to_string(ip)).c_str(),
+            ";Candidate residual variable;#DeltaBIC = BIC(M1)-BIC(M2)",
+            (int)vars.size(), 0.5, vars.size() + 0.5);
+        frame->SetDirectory(nullptr);
+        frame->SetStats(0);
+        for (size_t iv = 0; iv < vars.size(); ++iv)
+            frame->GetXaxis()->SetBinLabel((int)iv + 1, vars[iv].key.c_str());
+
+        double ymin = 0.0;
+        double ymax = 0.0;
+        bool have = false;
+        for (const CandidateModelRow& row : rows) {
+            const double d = row.cmp.bic_m1 - row.cmp.bic_m2;
+            if (!std::isfinite(d)) continue;
+            ymin = have ? std::min(ymin, d) : d;
+            ymax = have ? std::max(ymax, d) : d;
+            have = true;
+        }
+        if (!have) { ymin = -5.0; ymax = 5.0; }
+        const double span = std::max(5.0, ymax - ymin);
+        frame->SetMinimum(std::min(-1.0, ymin - 0.15 * span));
+        frame->SetMaximum(std::max(1.0, ymax + 0.15 * span));
+        frame->Draw();
+        selection_owned.emplace_back(std::move(frame));
+
+        auto zero = std::make_unique<TLine>(0.5, 0.0, vars.size() + 0.5, 0.0);
+        zero->SetLineStyle(2);
+        zero->Draw("SAME");
+        selection_owned.emplace_back(std::move(zero));
+
+        auto graph = std::make_unique<TGraph>();
+        int ng = 0;
+        for (size_t iv = 0; iv < vars.size(); ++iv) {
+            for (const CandidateModelRow& row : rows) {
+                if (row.variable != vars[iv].key) continue;
+                const double d = row.cmp.bic_m1 - row.cmp.bic_m2;
+                if (!std::isfinite(d)) continue;
+                graph->SetPoint(ng++, (double)iv + 1.0, d);
+            }
+        }
+        graph->SetMarkerStyle(20);
+        graph->SetMarkerSize(1.25);
+        graph->Draw("P SAME");
+        selection_owned.emplace_back(std::move(graph));
+
+        auto label = std::make_unique<TLatex>();
+        label->SetNDC();
+        label->SetTextAlign(33);
+        label->SetTextFont(62);
+        label->SetTextSize(0.045);
+        label->DrawLatex(0.94, 0.94, periods[ip].c_str());
+        selection_owned.emplace_back(std::move(label));
+    }
+
+    csel.cd(0);
+    auto stitle = std::make_unique<TLatex>();
+    stitle->SetNDC();
+    stitle->SetTextAlign(22);
+    stitle->SetTextSize(0.030);
+    stitle->DrawLatex(
+        0.5, 0.985,
+        (cfg.title + ": residual current-response model selection after photon-region correction").c_str());
+    selection_owned.emplace_back(std::move(stitle));
+    csel.Modified();
+    csel.Update();
+
+    const std::string selection_path =
+        odir + "/regional_kinematic_model_selection_delta_bic.png";
+    csel.SaveAs(selection_path.c_str());
+    gSystem->CopyFile(
+        selection_path.c_str(),
+        (note_dir + "/" + cfg.output_token + "_regional_kinematic_model_selection_delta_bic.png").c_str(),
+        true);
+
+    std::cout << "[current_dependence] Region-conditioned kinematic diagnostics written under "
               << odir << std::endl;
 }
 
@@ -6508,6 +6841,14 @@ static void draw_photon_region_response_canvas(const std::string& out_path,
             }
         }
 
+        TLatex* period_label = new TLatex();
+        period_label->SetNDC(true);
+        period_label->SetTextAlign(33);
+        period_label->SetTextFont(62);
+        period_label->SetTextSize(0.040);
+        period_label->DrawLatex(0.94, 0.94, period.c_str());
+        owned.push_back(period_label);
+
         if (period == "Sp19 Inb" && hide_sp19_inb_from_all_period_plots) {
             TLatex lat;
             lat.SetNDC(true);
@@ -6604,6 +6945,14 @@ static void draw_photon_region_factor_canvas(const std::string& out_path,
             }
         }
 
+        TLatex* period_label = new TLatex();
+        period_label->SetNDC(true);
+        period_label->SetTextAlign(33);
+        period_label->SetTextFont(62);
+        period_label->SetTextSize(0.040);
+        period_label->DrawLatex(0.94, 0.94, period.c_str());
+        owned.push_back(period_label);
+
         if (period == "Sp19 Inb" && hide_sp19_inb_from_all_period_plots) {
             TLatex lat;
             lat.SetNDC(true);
@@ -6690,6 +7039,14 @@ static void draw_photon_region_slope_canvas(const std::string& out_path,
         graph->SetLineWidth(2);
         graph->Draw("PE SAME");
         owned.push_back(graph);
+
+        TLatex* period_label = new TLatex();
+        period_label->SetNDC(true);
+        period_label->SetTextAlign(33);
+        period_label->SetTextFont(62);
+        period_label->SetTextSize(0.040);
+        period_label->DrawLatex(0.94, 0.94, period.c_str());
+        owned.push_back(period_label);
 
         if (period == "Sp19 Inb" && hide_sp19_inb_from_all_period_plots) {
             TLatex lat;
@@ -7336,6 +7693,14 @@ static void draw_analysis_note_region_ratio_canvas(
         g->Draw("P SAME");
         owned.emplace_back(std::move(g));
 
+        auto period_label = std::make_unique<TLatex>();
+        period_label->SetNDC();
+        period_label->SetTextAlign(33);
+        period_label->SetTextFont(62);
+        period_label->SetTextSize(0.045);
+        period_label->DrawLatex(0.94, 0.92, periods[ip].c_str());
+        owned.emplace_back(std::move(period_label));
+
         auto unity = std::make_unique<TLine>(0.5, 1.0, 7.5, 1.0);
         unity->SetLineStyle(2);
         unity->SetLineWidth(2);
@@ -7434,6 +7799,14 @@ static void draw_analysis_note_region_absolute_canvas(
         g->SetLineWidth(2);
         g->Draw("P SAME");
         owned.emplace_back(std::move(g));
+
+        auto period_label = std::make_unique<TLatex>();
+        period_label->SetNDC();
+        period_label->SetTextAlign(33);
+        period_label->SetTextFont(62);
+        period_label->SetTextSize(0.045);
+        period_label->DrawLatex(0.94, 0.92, periods[ip].c_str());
+        owned.emplace_back(std::move(period_label));
     }
 
     c.cd(0);
