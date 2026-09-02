@@ -49,6 +49,7 @@
 #include <TStyle.h>
 #include <TGraph.h>
 #include <TLine.h>
+#include <TPad.h>
 
 #include <nlohmann/json.hpp>
 
@@ -173,6 +174,66 @@ static void warning_once(const std::string& key,
     if (issued_warnings.insert(key).second) {
         std::cout << message << std::endl;
     }
+}
+
+
+static void configure_production_pad(TPad* pad,
+                                     double left = 0.14,
+                                     double right = 0.035,
+                                     double bottom = 0.14,
+                                     double top = 0.075) {
+    if (!pad) return;
+    pad->SetLeftMargin(left);
+    pad->SetRightMargin(right);
+    pad->SetBottomMargin(bottom);
+    pad->SetTopMargin(top);
+    pad->SetTicks(1, 1);
+    pad->SetGrid(0, 0);
+}
+
+static void style_production_frame(TH1* h,
+                                   double x_title_size = 0.050,
+                                   double y_title_size = 0.050,
+                                   double label_size = 0.040) {
+    if (!h) return;
+    h->SetStats(0);
+    h->SetLineColor(kBlack);
+    h->SetLineWidth(1);
+    h->GetXaxis()->SetTitleFont(42);
+    h->GetYaxis()->SetTitleFont(42);
+    h->GetXaxis()->SetLabelFont(42);
+    h->GetYaxis()->SetLabelFont(42);
+    h->GetXaxis()->SetTitleSize(x_title_size);
+    h->GetYaxis()->SetTitleSize(y_title_size);
+    h->GetXaxis()->SetLabelSize(label_size);
+    h->GetYaxis()->SetLabelSize(label_size);
+    h->GetXaxis()->SetTitleOffset(1.10);
+    h->GetYaxis()->SetTitleOffset(1.28);
+}
+
+static std::unique_ptr<TLatex> make_period_label(const std::string& period,
+                                                 double x = 0.94,
+                                                 double y = 0.93,
+                                                 int align = 33,
+                                                 double size = 0.050) {
+    auto label = std::make_unique<TLatex>();
+    label->SetNDC();
+    label->SetTextAlign(align);
+    label->SetTextFont(62);
+    label->SetTextSize(size);
+    label->DrawLatex(x, y, period.c_str());
+    return label;
+}
+
+static std::string pretty_kinematic_key(const std::string& key) {
+    if (key == "Q2") return "Q^{2}";
+    if (key == "xB") return "x_{B}";
+    if (key == "t") return "|t|";
+    if (key == "phi") return "#phi";
+    if (key == "e_theta") return "#theta_{e}";
+    if (key == "p_theta") return "#theta_{p}";
+    if (key == "g_theta") return "#theta_{#gamma}";
+    return key;
 }
 
 static std::string lower_ascii(std::string s) {
@@ -4648,26 +4709,47 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
         }
     }
 
-    auto draw_info_panel = [](const std::string& sample_label, bool fit_version) {
-        gPad->SetLeftMargin(0.05);
-        gPad->SetRightMargin(0.05);
-        gPad->SetBottomMargin(0.05);
-        gPad->SetTopMargin(0.05);
-        gPad->DrawFrame(0.0, 0.0, 1.0, 1.0);
+    auto draw_info_panel =
+        [&](const std::string& sample_label, bool fit_version) {
+        configure_production_pad((TPad*)gPad, 0.08, 0.05, 0.08, 0.08);
+        TH1F* info_frame = gPad->DrawFrame(0.0, 0.0, 1.0, 1.0);
+        info_frame->SetStats(0);
+        info_frame->GetXaxis()->SetLabelSize(0.0);
+        info_frame->GetYaxis()->SetLabelSize(0.0);
+        info_frame->GetXaxis()->SetTickLength(0.0);
+        info_frame->GetYaxis()->SetTickLength(0.0);
+
         TLatex lat;
         lat.SetNDC(true);
-        lat.SetTextSize(0.043);
-        lat.DrawLatex(0.12, 0.72, ("DVCS " + sample_label + " current-efficiency diagnostics").c_str());
-        lat.SetTextSize(0.030);
-        lat.DrawLatex(0.12, 0.60, "Points: per-bin current-efficiency factor");
-        if (fit_version) {
-            lat.DrawLatex(0.12, 0.52, "Lines: weighted linear fits, y = mx + b");
-            lat.DrawLatex(0.12, 0.44, "Bands: one-standard-deviation fit uncertainty");
-            lat.DrawLatex(0.12, 0.36, "Legend: #chi^{2}/ndf for each period");
-        } else {
-            lat.DrawLatex(0.12, 0.52, "Legend: integrated factor currently written to CSV");
+        lat.SetTextFont(62);
+        lat.SetTextSize(0.050);
+        lat.DrawLatex(0.10, 0.89,
+                      (cfg.title + " " + sample_label).c_str());
+
+        lat.SetTextFont(42);
+        lat.SetTextSize(0.034);
+        lat.DrawLatex(0.10, 0.81, "Current-efficiency dependence");
+
+        double y = 0.69;
+        for (const std::string& period : PERIOD_ORDER) {
+            if (hide_sp19_inb_from_replacement_plots(
+                    hide_sp19_inb_from_all_period_plots, period)) continue;
+            lat.SetTextColor(period_color(period));
+            lat.SetTextFont(62);
+            lat.SetTextSize(0.035);
+            lat.DrawLatex(0.13, y, period.c_str());
+            y -= 0.075;
         }
-        lat.DrawLatex(0.12, 0.28, "Selection: global + topology-dependent exclusivity cuts");
+        lat.SetTextColor(kBlack);
+        lat.SetTextFont(42);
+        lat.SetTextSize(0.029);
+        if (fit_version) {
+            lat.DrawLatex(0.10, 0.28, "Curves: weighted linear fits");
+            lat.DrawLatex(0.10, 0.22, "Bands: 1#sigma fit uncertainty");
+        } else {
+            lat.DrawLatex(0.10, 0.25, "Points: current-efficiency factors");
+        }
+        lat.DrawLatex(0.10, 0.14, "Same event selection in all panels");
     };
 
     auto draw_one_canvas = [&](const std::string& canvas_name,
@@ -4678,96 +4760,139 @@ static std::map<std::string, LinearFitSummary> draw_kinematic_current_efficiency
                                const std::map<std::string, double>& integrated,
                                bool fit_version,
                                const std::string& y_label) {
-        TCanvas c(canvas_name.c_str(), canvas_name.c_str(), 2200, 1100);
-        c.Divide(4, 2, 0.001, 0.001);
+        (void)integrated;
+        TCanvas c(canvas_name.c_str(), canvas_name.c_str(), 2400, 1200);
+        c.Divide(4, 2, 0.002, 0.002);
+
+        std::vector<std::unique_ptr<TObject>> owned;
 
         for (size_t iv = 0; iv < vars.size(); ++iv) {
             const KinematicVarConfig& v = vars[iv];
             c.cd((int)iv + 1);
-            gPad->SetGrid(1, 1);
-            gPad->SetTicks(1, 1);
-            gPad->SetLeftMargin(0.13);
-            gPad->SetRightMargin(0.04);
-            gPad->SetBottomMargin(0.13);
-            gPad->SetTopMargin(0.09);
+            configure_production_pad((TPad*)gPad, 0.16, 0.035, 0.16, 0.08);
 
             const double xmin = v.edges.front();
             const double xmax = v.edges.back();
-            TH1F* frame = gPad->DrawFrame(xmin, 0.00, xmax, 1.40);
-            frame->SetTitle((v.title + " dependence").c_str());
-            frame->GetXaxis()->SetTitle(v.x_label.c_str());
-            frame->GetYaxis()->SetTitle(y_label.c_str());
-            frame->GetXaxis()->CenterTitle(true);
-            frame->GetYaxis()->CenterTitle(true);
-            frame->GetYaxis()->SetTitleOffset(1.35);
 
-            TLegend* leg = make_kinematic_compact_legend(fit_version);
+            double ymin = std::numeric_limits<double>::infinity();
+            double ymax = -std::numeric_limits<double>::infinity();
+            auto it_var_results = results_by_var_period.find(v.key);
+            if (it_var_results != results_by_var_period.end()) {
+                for (const std::string& period : PERIOD_ORDER) {
+                    if (hide_sp19_inb_from_replacement_plots(
+                            hide_sp19_inb_from_all_period_plots, period)) continue;
+                    auto itp = it_var_results->second.find(period);
+                    if (itp == it_var_results->second.end()) continue;
+                    for (const KinematicBinResult& b : itp->second) {
+                        if (!std::isfinite(b.factor) || !std::isfinite(b.factor_err) ||
+                            !(b.factor > 0.0) || b.factor_err < 0.0) continue;
+                        ymin = std::min(ymin, b.factor - b.factor_err);
+                        ymax = std::max(ymax, b.factor + b.factor_err);
+                    }
+                }
+            }
+            // DATA/MC canvases need unity visible.  For DATA and MC the typical
+            // current factors are also naturally close enough that showing
+            // unity remains a useful visual reference.
+            ymin = std::min(ymin, 1.0);
+            ymax = std::max(ymax, 1.0);
+            if (!std::isfinite(ymin) || !std::isfinite(ymax) || !(ymax > ymin)) {
+                ymin = 0.6;
+                ymax = 1.1;
+            }
+            const double yspan = std::max(0.10, ymax - ymin);
+            ymin = std::max(0.0, ymin - 0.10 * yspan);
+            ymax += 0.12 * yspan;
+
+            auto frame = std::make_unique<TH1D>(
+                ("h_kinematic_prod_" + canvas_name + "_" + std::to_string(iv)).c_str(),
+                (";" + v.x_label + ";" + y_label).c_str(),
+                100, xmin, xmax);
+            frame->SetDirectory(nullptr);
+            frame->SetMinimum(ymin);
+            frame->SetMaximum(ymax);
+            style_production_frame(frame.get(), 0.055, 0.055, 0.043);
+            frame->Draw();
+            owned.emplace_back(std::move(frame));
+
+            auto unity = std::make_unique<TLine>(xmin, 1.0, xmax, 1.0);
+            unity->SetLineStyle(2);
+            unity->SetLineWidth(1);
+            unity->SetLineColor(kGray + 1);
+            unity->Draw("SAME");
+            owned.emplace_back(std::move(unity));
 
             // Draw shaded fit bands first, then fit lines, then points.
             if (fit_version) {
                 for (const std::string& period : PERIOD_ORDER) {
-                    if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) continue;
+                    if (hide_sp19_inb_from_replacement_plots(
+                            hide_sp19_inb_from_all_period_plots, period)) continue;
                     const auto it_var = fits_by_var_period.find(v.key);
                     if (it_var == fits_by_var_period.end()) continue;
                     const auto it_fit = it_var->second.find(period);
                     if (it_fit == it_var->second.end() || !it_fit->second.valid) continue;
-                    TGraph* band = make_linear_fit_band_graph(it_fit->second, xmin, xmax, period_color(period));
+                    TGraph* band =
+                        make_linear_fit_band_graph(
+                            it_fit->second, xmin, xmax, period_color(period));
                     band->Draw("F SAME");
                 }
 
                 for (const std::string& period : PERIOD_ORDER) {
-                    if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) continue;
+                    if (hide_sp19_inb_from_replacement_plots(
+                            hide_sp19_inb_from_all_period_plots, period)) continue;
                     const auto it_var = fits_by_var_period.find(v.key);
                     if (it_var == fits_by_var_period.end()) continue;
                     const auto it_fit = it_var->second.find(period);
                     if (it_fit == it_var->second.end() || !it_fit->second.valid) continue;
-                    TGraph* line = make_linear_fit_line_graph(it_fit->second, xmin, xmax, period_color(period));
+                    TGraph* line =
+                        make_linear_fit_line_graph(
+                            it_fit->second, xmin, xmax, period_color(period));
+                    line->SetLineWidth(2);
                     line->Draw("L SAME");
                 }
             }
 
             for (const std::string& period : PERIOD_ORDER) {
-                if (hide_sp19_inb_from_replacement_plots(hide_sp19_inb_from_all_period_plots, period)) {
-                    continue;
-                }
+                if (hide_sp19_inb_from_replacement_plots(
+                        hide_sp19_inb_from_all_period_plots, period)) continue;
+                if (it_var_results == results_by_var_period.end()) continue;
+                const auto it_period = it_var_results->second.find(period);
+                if (it_period == it_var_results->second.end()) continue;
 
-                const auto it_var = results_by_var_period.find(v.key);
-                if (it_var == results_by_var_period.end()) continue;
-                const auto it_period = it_var->second.find(period);
-                if (it_period == it_var->second.end()) continue;
-
-                TGraphErrors* g = make_kinematic_factor_graph(it_period->second, period_color(period));
+                TGraphErrors* g =
+                    make_kinematic_factor_graph(
+                        it_period->second, period_color(period));
+                g->SetMarkerSize(1.05);
+                g->SetLineWidth(2);
                 g->Draw("P SAME");
-
-                std::ostringstream lab;
-                lab << period;
-
-                if (fit_version) {
-                    const auto it_fit_var = fits_by_var_period.find(v.key);
-                    if (it_fit_var != fits_by_var_period.end()) {
-                        const auto it_fit = it_fit_var->second.find(period);
-                        if (it_fit != it_fit_var->second.end() && it_fit->second.valid && it_fit->second.ndf > 0) {
-                            lab << " #chi^{2}/ndf=" << std::fixed << std::setprecision(1)
-                                << (it_fit->second.chi2 / double(it_fit->second.ndf));
-                        } else {
-                            lab << " #chi^{2}/ndf=n/a";
-                        }
-                    }
-                } else {
-                    auto it_int = integrated.find(period);
-                    if (it_int != integrated.end() && std::isfinite(it_int->second)) {
-                        lab << " int=" << std::fixed << std::setprecision(3) << it_int->second;
-                    }
-                }
-
-                leg->AddEntry(g, lab.str().c_str(), "pe");
             }
 
-            leg->Draw();
+            auto variable_label = std::make_unique<TLatex>();
+            variable_label->SetNDC();
+            variable_label->SetTextAlign(33);
+            variable_label->SetTextFont(62);
+            variable_label->SetTextSize(0.050);
+            variable_label->DrawLatex(0.94, 0.93, v.title.c_str());
+            owned.emplace_back(std::move(variable_label));
         }
 
         c.cd(8);
         draw_info_panel(sample_label, fit_version);
+
+        c.cd(0);
+        auto title = std::make_unique<TLatex>();
+        title->SetNDC();
+        title->SetTextAlign(22);
+        title->SetTextFont(62);
+        title->SetTextSize(0.028);
+        title->DrawLatex(
+            0.5, 0.990,
+            (cfg.title + ": " + sample_label +
+             " current-efficiency dependence on reconstructed kinematics").c_str());
+        owned.emplace_back(std::move(title));
+
+        c.Modified();
+        c.Update();
         c.SaveAs((odir + "/" + output_name).c_str());
     };
 
@@ -5764,6 +5889,120 @@ static PooledRegionThetaSlopeFit fit_pooled_region_theta_relative_slopes(
 }
 
 
+struct PooledRegionQuadraticFit {
+    bool valid = false;
+    std::array<double, 7> region_intercepts{};
+    std::array<double, 7> region_centers{};
+    std::array<double, 7> region_second_moments{};
+    double linear = std::numeric_limits<double>::quiet_NaN();
+    double linear_err = std::numeric_limits<double>::quiet_NaN();
+    double quadratic = std::numeric_limits<double>::quiet_NaN();
+    double quadratic_err = std::numeric_limits<double>::quiet_NaN();
+    double chi2 = std::numeric_limits<double>::quiet_NaN();
+    int ndf = 0;
+    int npoints = 0;
+    double aic = std::numeric_limits<double>::quiet_NaN();
+    double bic = std::numeric_limits<double>::quiet_NaN();
+};
+
+static PooledRegionQuadraticFit fit_pooled_region_quadratic_relative_slopes(
+    const std::vector<RelativeSlopePoint>& pts) {
+
+    PooledRegionQuadraticFit out;
+    constexpr int NP = 9; // seven regional baselines + common linear + common quadratic
+
+    std::array<double, 7> sw{};
+    std::array<double, 7> swx{};
+    std::vector<RelativeSlopePoint> used;
+    used.reserve(pts.size());
+
+    for (const RelativeSlopePoint& p : pts) {
+        if (p.region_index < 0 || p.region_index >= 7 ||
+            !std::isfinite(p.x) || !std::isfinite(p.slope) ||
+            !std::isfinite(p.slope_err) || !(p.slope_err > 0.0)) continue;
+        const double w = 1.0 / (p.slope_err * p.slope_err);
+        sw[p.region_index] += w;
+        swx[p.region_index] += w * p.x;
+        used.push_back(p);
+    }
+
+    out.npoints = (int)used.size();
+    if (out.npoints <= NP) return out;
+    for (int r = 0; r < 7; ++r) {
+        if (!(sw[r] > 0.0)) return out;
+        out.region_centers[r] = swx[r] / sw[r];
+    }
+
+    // Center both the linear and quadratic basis within each photon region.
+    // This keeps the regional intercept equal to the weighted regional mean
+    // response while the added terms describe only residual kinematic shape.
+    std::array<double, 7> swz2{};
+    for (const RelativeSlopePoint& p : used) {
+        const double w = 1.0 / (p.slope_err * p.slope_err);
+        const double z = p.x - out.region_centers[p.region_index];
+        swz2[p.region_index] += w * z * z;
+    }
+    for (int r = 0; r < 7; ++r)
+        out.region_second_moments[r] = swz2[r] / sw[r];
+
+    std::vector<std::vector<double>> normal(NP, std::vector<double>(NP, 0.0));
+    std::vector<double> rhs(NP, 0.0);
+
+    for (const RelativeSlopePoint& p : used) {
+        const double w = 1.0 / (p.slope_err * p.slope_err);
+        const int r = p.region_index;
+        const double z = p.x - out.region_centers[r];
+        const double q = z * z - out.region_second_moments[r];
+
+        std::array<double, NP> row{};
+        row[r] = 1.0;
+        row[7] = z;
+        row[8] = q;
+
+        for (int i = 0; i < NP; ++i) {
+            rhs[i] += w * row[i] * p.slope;
+            for (int j = 0; j < NP; ++j)
+                normal[i][j] += w * row[i] * row[j];
+        }
+    }
+
+    std::vector<std::vector<double>> cov;
+    if (!invert_small_matrix(normal, cov)) return out;
+
+    std::vector<double> beta(NP, 0.0);
+    for (int i = 0; i < NP; ++i)
+        for (int j = 0; j < NP; ++j)
+            beta[i] += cov[i][j] * rhs[j];
+
+    for (int r = 0; r < 7; ++r)
+        out.region_intercepts[r] = beta[r];
+    out.linear = beta[7];
+    out.linear_err = std::sqrt(std::max(0.0, cov[7][7]));
+    out.quadratic = beta[8];
+    out.quadratic_err = std::sqrt(std::max(0.0, cov[8][8]));
+
+    out.chi2 = 0.0;
+    for (const RelativeSlopePoint& p : used) {
+        const int r = p.region_index;
+        const double z = p.x - out.region_centers[r];
+        const double q = z * z - out.region_second_moments[r];
+        const double pred =
+            out.region_intercepts[r] + out.linear * z + out.quadratic * q;
+        const double pull = (p.slope - pred) / p.slope_err;
+        out.chi2 += pull * pull;
+    }
+
+    out.ndf = out.npoints - NP;
+    out.aic = out.chi2 + 2.0 * NP;
+    out.bic = out.chi2 + double(NP) * std::log(double(out.npoints));
+    out.valid = std::isfinite(out.chi2) &&
+                std::isfinite(out.linear) &&
+                std::isfinite(out.quadratic);
+    return out;
+}
+
+
+
 struct RelativeSlopeModelComparison {
     bool valid = false;
     double chi2_m0 = std::numeric_limits<double>::quiet_NaN();
@@ -6122,41 +6361,67 @@ static void run_region_theta_data_diagnostic(
             const std::string& sample_token,
             const std::string& y_title,
             const std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>>& results,
-            double ymin,
-            double ymax) {
+            double fallback_ymin,
+            double fallback_ymax) {
+
+        // Use one common y scale across the four run-period panels, chosen from
+        // the actual finite points.  This preserves direct visual comparison
+        // without wasting most of the canvas on an unnecessarily broad range.
+        double data_ymin = std::numeric_limits<double>::infinity();
+        double data_ymax = -std::numeric_limits<double>::infinity();
+        for (const std::string& period : periods) {
+            auto iper = results.find(period);
+            if (iper == results.end()) continue;
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                auto ireg = iper->second.find(spec.key);
+                if (ireg == iper->second.end()) continue;
+                for (const KinematicBinResult& b : ireg->second) {
+                    if (!std::isfinite(b.factor) || !std::isfinite(b.factor_err) ||
+                        !(b.factor > 0.0) || b.factor_err < 0.0) continue;
+                    data_ymin = std::min(data_ymin, b.factor - b.factor_err);
+                    data_ymax = std::max(data_ymax, b.factor + b.factor_err);
+                }
+            }
+        }
+        data_ymin = std::min(data_ymin, 1.0);
+        data_ymax = std::max(data_ymax, 1.0);
+        double ymin = fallback_ymin;
+        double ymax = fallback_ymax;
+        if (std::isfinite(data_ymin) && std::isfinite(data_ymax) && data_ymax > data_ymin) {
+            const double span = std::max(0.08, data_ymax - data_ymin);
+            ymin = std::max(0.0, data_ymin - 0.12 * span);
+            ymax = data_ymax + 0.12 * span;
+        }
 
         TCanvas c(("c_region_theta_" + cfg.output_token + "_" + sample_token + "_" + v.key).c_str(),
-                  "", 1500, 1000);
-        c.Divide(2, 2, 0.004, 0.004);
+                  "", 1800, 1200);
+        c.Divide(2, 2, 0.002, 0.002);
         std::vector<std::unique_ptr<TObject>> owned;
 
         for (size_t ip = 0; ip < periods.size(); ++ip) {
             c.cd((int)ip + 1);
-            gPad->SetLeftMargin(0.13); gPad->SetRightMargin(0.04);
-            gPad->SetBottomMargin(0.13); gPad->SetTopMargin(0.10); gPad->SetGridy();
+            configure_production_pad((TPad*)gPad, 0.145, 0.035, 0.145, 0.075);
 
             auto frame = std::make_unique<TH1D>(
                 ("h_rt_" + cfg.output_token + sample_token + v.key + std::to_string(ip)).c_str(),
-                (periods[ip] + ";" + v.x_label + ";" + y_title).c_str(),
+                (";" + v.x_label + ";" + y_title).c_str(),
                 100, v.edges.front(), v.edges.back());
             frame->SetDirectory(nullptr);
             frame->SetMinimum(ymin);
             frame->SetMaximum(ymax);
-            frame->SetStats(0);
+            style_production_frame(frame.get(), 0.050, 0.050, 0.041);
             frame->Draw();
             owned.emplace_back(std::move(frame));
 
             auto unity = std::make_unique<TLine>(v.edges.front(), 1.0, v.edges.back(), 1.0);
             unity->SetLineStyle(2);
+            unity->SetLineWidth(2);
+            unity->SetLineColor(kGray + 1);
             unity->Draw("SAME");
             owned.emplace_back(std::move(unity));
 
-            auto leg = std::make_unique<TLegend>(0.15, 0.70, 0.95, 0.88);
-            leg->SetNColumns(4);
-            leg->SetBorderSize(0);
-            leg->SetFillStyle(0);
-
             auto iper = results.find(periods[ip]);
+            std::vector<TGraphErrors*> legend_graphs;
             if (iper != results.end()) {
                 for (int ir = 0; ir < 7; ++ir) {
                     auto ireg = iper->second.find(PHOTON_REGION_ORDER[ir].key);
@@ -6164,40 +6429,45 @@ static void run_region_theta_data_diagnostic(
                     std::unique_ptr<TGraphErrors> graph(
                         make_region_theta_factor_graph(ireg->second, photon_region_color(ir)));
                     graph->SetMarkerStyle(photon_region_marker(ir));
+                    graph->SetMarkerSize(1.15);
+                    graph->SetLineWidth(2);
                     graph->Draw("P SAME");
-                    leg->AddEntry(graph.get(), PHOTON_REGION_ORDER[ir].label.c_str(), "p");
+                    if (ip == 0) legend_graphs.push_back(graph.get());
                     owned.emplace_back(std::move(graph));
                 }
             }
 
-            leg->Draw();
-            owned.emplace_back(std::move(leg));
+            // One shared mapping legend is sufficient because marker/color
+            // conventions are identical in all four panels.
+            if (ip == 0) {
+                auto leg = std::make_unique<TLegend>(0.17, 0.73, 0.78, 0.89);
+                leg->SetNColumns(4);
+                leg->SetBorderSize(0);
+                leg->SetFillStyle(0);
+                leg->SetTextFont(42);
+                leg->SetTextSize(0.032);
+                for (size_t ir = 0; ir < legend_graphs.size() && ir < PHOTON_REGION_ORDER.size(); ++ir)
+                    leg->AddEntry(legend_graphs[ir], PHOTON_REGION_ORDER[ir].label.c_str(), "pe");
+                leg->Draw();
+                owned.emplace_back(std::move(leg));
+            }
 
-            auto period_label = std::make_unique<TLatex>();
-            period_label->SetNDC();
-            period_label->SetTextAlign(33);
-            period_label->SetTextFont(62);
-            period_label->SetTextSize(0.042);
-            period_label->DrawLatex(0.94, 0.94, periods[ip].c_str());
-            owned.emplace_back(std::move(period_label));
-
-            auto note = std::make_unique<TLatex>();
-            note->SetNDC();
-            note->SetTextSize(0.022);
-            note->SetTextColor(kGray + 2);
-            note->DrawLatex(0.15, 0.675,
-                            "Finite positive factors shown; 2-point current fits retained.");
-            owned.emplace_back(std::move(note));
+            owned.emplace_back(make_period_label(periods[ip], 0.94, 0.93, 33, 0.052));
         }
 
         c.cd(0);
         auto title = std::make_unique<TLatex>();
         title->SetNDC();
         title->SetTextAlign(22);
+        title->SetTextFont(62);
         title->SetTextSize(0.030);
+        std::string sample_title = sample_token;
+        if (sample_token == "data") sample_title = "DATA";
+        else if (sample_token == "mc") sample_title = "MC";
+        else if (sample_token == "data_over_mc") sample_title = "DATA/MC";
         title->DrawLatex(
-            0.5, 0.985,
-            (cfg.title + ": " + sample_token + " current efficiency versus " +
+            0.5, 0.988,
+            (cfg.title + ": " + sample_title + " current efficiency vs. " +
              v.title + " within photon regions").c_str());
         owned.emplace_back(std::move(title));
 
@@ -6229,6 +6499,12 @@ static void run_region_theta_data_diagnostic(
         RelativeSlopeModelComparison cmp;
     };
     std::vector<CandidateModelRow> model_rows;
+
+    using PeriodRegionResultMap =
+        std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>>;
+    std::map<std::string, PeriodRegionResultMap> stored_data_results;
+    std::map<std::string, PeriodRegionResultMap> stored_mc_results;
+    std::map<std::string, PeriodRegionResultMap> stored_ratio_results;
 
     for (const KinematicVarConfig& v : vars) {
         std::map<std::string, std::map<std::string, std::vector<KinematicBinResult>>> data_results;
@@ -6281,6 +6557,12 @@ static void run_region_theta_data_diagnostic(
                     }
                 }
             }
+        }
+
+        stored_data_results[v.key] = data_results;
+        if (process_mc) {
+            stored_mc_results[v.key] = mc_results;
+            stored_ratio_results[v.key] = ratio_results;
         }
 
         draw_region_theta_canvas(v, "data", "Current-efficiency factor", data_results, 0.35, 1.45);
@@ -6527,6 +6809,616 @@ static void run_region_theta_data_diagnostic(
         }
     }
 
+
+    // ---------------------------------------------------------------------
+    // Compact model decision table.
+    //
+    // Keep the model space deliberately small:
+    //   M1               : regional-only response
+    //   theta_e linear   : M1 + one common linear theta_e gradient
+    //   theta_e quadratic: M1 + common centered linear and quadratic theta_e terms
+    //   best linear      : best one-variable linear extension among the seven
+    //                      diagnostic coordinates
+    //
+    // This is intended to answer whether modest added complexity actually buys
+    // useful closure, not to turn the current-response fit into a large
+    // multidimensional regression.
+    // ---------------------------------------------------------------------
+    std::ofstream compact_csv(odir + "/compact_current_response_model_comparison.csv");
+    compact_csv
+        << "sample,period,regional_chi2,regional_ndf,regional_bic,"
+        << "theta_e_linear_chi2,theta_e_linear_ndf,theta_e_linear_bic,theta_e_linear_delta_bic,"
+        << "theta_e_quadratic_chi2,theta_e_quadratic_ndf,theta_e_quadratic_bic,theta_e_quadratic_delta_bic,"
+        << "theta_e_quadratic_linear,theta_e_quadratic_linear_stat,"
+        << "theta_e_quadratic_coefficient,theta_e_quadratic_coefficient_stat,"
+        << "best_linear_variable,best_linear_chi2,best_linear_ndf,best_linear_bic,best_linear_delta_bic\n";
+
+    auto find_var_config = [&](const std::string& key) -> const KinematicVarConfig* {
+        for (const KinematicVarConfig& v : vars)
+            if (v.key == key) return &v;
+        return nullptr;
+    };
+
+    auto find_model_row =
+        [&](const std::string& sample,
+            const std::string& period,
+            const std::string& variable) -> const CandidateModelRow* {
+        for (const CandidateModelRow& row : model_rows) {
+            if (row.sample == sample && row.period == period &&
+                row.variable == variable && row.cmp.valid) return &row;
+        }
+        return nullptr;
+    };
+
+    auto best_linear_row =
+        [&](const std::string& sample,
+            const std::string& period) -> const CandidateModelRow* {
+        const CandidateModelRow* best = nullptr;
+        double best_delta_bic = -std::numeric_limits<double>::infinity();
+        for (const CandidateModelRow& row : model_rows) {
+            if (row.sample != sample || row.period != period || !row.cmp.valid) continue;
+            const double dbic = row.cmp.bic_m1 - row.cmp.bic_m2;
+            if (!best || dbic > best_delta_bic) {
+                best = &row;
+                best_delta_bic = dbic;
+            }
+        }
+        return best;
+    };
+
+    const KinematicVarConfig* theta_e_cfg = find_var_config("e_theta");
+
+    struct CompactDecisionRow {
+        std::string sample;
+        std::string period;
+        double regional_bic = std::numeric_limits<double>::quiet_NaN();
+        double theta_linear_bic = std::numeric_limits<double>::quiet_NaN();
+        double theta_quadratic_bic = std::numeric_limits<double>::quiet_NaN();
+        std::string best_linear_variable;
+        double best_linear_bic = std::numeric_limits<double>::quiet_NaN();
+    };
+    std::vector<CompactDecisionRow> compact_rows;
+
+    auto write_compact_row =
+        [&](const std::string& sample,
+            const std::string& period) {
+
+        const CandidateModelRow* theta_linear =
+            find_model_row(sample, period, "e_theta");
+        const CandidateModelRow* best =
+            best_linear_row(sample, period);
+
+        PooledRegionQuadraticFit theta_quad;
+        if (theta_e_cfg) {
+            if (sample == "data") {
+                std::map<std::string, std::vector<DataAgg>> dmap;
+                for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER)
+                    dmap[spec.key] = merged[period][spec.key][theta_e_cfg->key];
+                theta_quad = fit_pooled_region_quadratic_relative_slopes(
+                    relative_slope_points_from_data_theta_bins(dmap, *theta_e_cfg));
+            } else if (sample == "mc" && process_mc) {
+                std::map<std::string, std::vector<McKinematicBinAgg>> mmap;
+                for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER)
+                    mmap[spec.key] = merged_mc[period][spec.key][theta_e_cfg->key];
+                theta_quad = fit_pooled_region_quadratic_relative_slopes(
+                    relative_slope_points_from_mc_theta_bins(mmap, *theta_e_cfg));
+            }
+        }
+
+        const double m1_chi2 = theta_linear ? theta_linear->cmp.chi2_m1
+                                            : std::numeric_limits<double>::quiet_NaN();
+        const int m1_ndf = theta_linear ? theta_linear->cmp.ndf_m1 : 0;
+        const double m1_bic = theta_linear ? theta_linear->cmp.bic_m1
+                                           : std::numeric_limits<double>::quiet_NaN();
+
+        CompactDecisionRow compact_row;
+        compact_row.sample = sample;
+        compact_row.period = period;
+        compact_row.regional_bic = m1_bic;
+        compact_row.theta_linear_bic =
+            theta_linear ? theta_linear->cmp.bic_m2
+                         : std::numeric_limits<double>::quiet_NaN();
+        compact_row.theta_quadratic_bic =
+            theta_quad.valid ? theta_quad.bic
+                             : std::numeric_limits<double>::quiet_NaN();
+        compact_row.best_linear_variable = best ? best->variable : "";
+        compact_row.best_linear_bic =
+            best ? best->cmp.bic_m2
+                 : std::numeric_limits<double>::quiet_NaN();
+        compact_rows.push_back(compact_row);
+
+        if (sample == "data") {
+            std::cout << "[current_dependence] compact model comparison "
+                      << cfg.csv_channel << " " << period
+                      << ": regional chi2/ndf=" << m1_chi2 << "/" << m1_ndf
+                      << ", theta_e linear DeltaBIC="
+                      << (theta_linear
+                              ? theta_linear->cmp.bic_m1 - theta_linear->cmp.bic_m2
+                              : std::numeric_limits<double>::quiet_NaN())
+                      << ", theta_e quadratic DeltaBIC="
+                      << ((theta_quad.valid && std::isfinite(m1_bic))
+                              ? m1_bic - theta_quad.bic
+                              : std::numeric_limits<double>::quiet_NaN())
+                      << ", best linear="
+                      << (best ? best->variable : std::string("n/a"))
+                      << " (DeltaBIC="
+                      << (best ? best->cmp.bic_m1 - best->cmp.bic_m2
+                               : std::numeric_limits<double>::quiet_NaN())
+                      << ")"
+                      << std::endl;
+        }
+
+        compact_csv << sample << "," << period << ","
+                    << m1_chi2 << "," << m1_ndf << "," << m1_bic << ","
+                    << (theta_linear ? theta_linear->cmp.chi2_m2 : std::numeric_limits<double>::quiet_NaN()) << ","
+                    << (theta_linear ? theta_linear->cmp.ndf_m2 : 0) << ","
+                    << (theta_linear ? theta_linear->cmp.bic_m2 : std::numeric_limits<double>::quiet_NaN()) << ","
+                    << (theta_linear ? theta_linear->cmp.bic_m1 - theta_linear->cmp.bic_m2
+                                     : std::numeric_limits<double>::quiet_NaN()) << ","
+                    << theta_quad.chi2 << "," << theta_quad.ndf << "," << theta_quad.bic << ","
+                    << ((theta_quad.valid && std::isfinite(m1_bic)) ? m1_bic - theta_quad.bic
+                                                                  : std::numeric_limits<double>::quiet_NaN()) << ","
+                    << theta_quad.linear << "," << theta_quad.linear_err << ","
+                    << theta_quad.quadratic << "," << theta_quad.quadratic_err << ","
+                    << (best ? best->variable : "") << ","
+                    << (best ? best->cmp.chi2_m2 : std::numeric_limits<double>::quiet_NaN()) << ","
+                    << (best ? best->cmp.ndf_m2 : 0) << ","
+                    << (best ? best->cmp.bic_m2 : std::numeric_limits<double>::quiet_NaN()) << ","
+                    << (best ? best->cmp.bic_m1 - best->cmp.bic_m2
+                             : std::numeric_limits<double>::quiet_NaN())
+                    << "\n";
+    };
+
+    for (const std::string& period : periods) {
+        write_compact_row("data", period);
+        if (process_mc) write_compact_row("mc", period);
+    }
+
+    // Compact production-quality model decision plot for DATA.  Values are
+    // DeltaBIC relative to the regional-only model; larger positive values
+    // indicate that the modest extension is preferred.
+    TCanvas ccompact(("c_compact_model_choice_" + cfg.output_token).c_str(),
+                     "", 1800, 1200);
+    ccompact.Divide(2, 2, 0.002, 0.002);
+    std::vector<std::unique_ptr<TObject>> compact_owned;
+
+    for (size_t ip = 0; ip < periods.size(); ++ip) {
+        ccompact.cd((int)ip + 1);
+        configure_production_pad((TPad*)gPad, 0.145, 0.035, 0.17, 0.075);
+
+        const CompactDecisionRow* row = nullptr;
+        for (const CompactDecisionRow& r : compact_rows) {
+            if (r.sample == "data" && r.period == periods[ip]) {
+                row = &r;
+                break;
+            }
+        }
+
+        std::vector<std::string> labels = {
+            "#theta_{e} linear",
+            "#theta_{e} quadratic",
+            row && !row->best_linear_variable.empty()
+                ? ("best linear: " + pretty_kinematic_key(row->best_linear_variable))
+                : "best linear"
+        };
+        std::vector<double> values(3, std::numeric_limits<double>::quiet_NaN());
+        if (row && std::isfinite(row->regional_bic)) {
+            if (std::isfinite(row->theta_linear_bic))
+                values[0] = row->regional_bic - row->theta_linear_bic;
+            if (std::isfinite(row->theta_quadratic_bic))
+                values[1] = row->regional_bic - row->theta_quadratic_bic;
+            if (std::isfinite(row->best_linear_bic))
+                values[2] = row->regional_bic - row->best_linear_bic;
+        }
+
+        double ymin = -5.0;
+        double ymax = 5.0;
+        for (double v : values) {
+            if (!std::isfinite(v)) continue;
+            ymin = std::min(ymin, v);
+            ymax = std::max(ymax, v);
+        }
+        const double span = std::max(5.0, ymax - ymin);
+
+        auto frame = std::make_unique<TH1D>(
+            ("h_compact_model_choice_" + cfg.output_token + "_" + std::to_string(ip)).c_str(),
+            ";Candidate model;#DeltaBIC relative to regional-only",
+            3, 0.5, 3.5);
+        frame->SetDirectory(nullptr);
+        for (int ib = 0; ib < 3; ++ib)
+            frame->GetXaxis()->SetBinLabel(ib + 1, labels[ib].c_str());
+        frame->SetMinimum(std::min(-5.0, ymin - 0.12 * span));
+        frame->SetMaximum(std::max(5.0, ymax + 0.15 * span));
+        style_production_frame(frame.get(), 0.050, 0.050, 0.039);
+        frame->GetXaxis()->SetLabelSize(0.035);
+        frame->Draw();
+        compact_owned.emplace_back(std::move(frame));
+
+        auto zero = std::make_unique<TLine>(0.5, 0.0, 3.5, 0.0);
+        zero->SetLineStyle(2);
+        zero->SetLineWidth(2);
+        zero->SetLineColor(kGray + 1);
+        zero->Draw("SAME");
+        compact_owned.emplace_back(std::move(zero));
+
+        auto graph = std::make_unique<TGraph>();
+        int ng = 0;
+        for (int iv = 0; iv < 3; ++iv) {
+            if (std::isfinite(values[iv]))
+                graph->SetPoint(ng++, iv + 1.0, values[iv]);
+        }
+        graph->SetMarkerStyle(20);
+        graph->SetMarkerSize(1.4);
+        graph->SetLineWidth(2);
+        graph->Draw("P SAME");
+        compact_owned.emplace_back(std::move(graph));
+
+        compact_owned.emplace_back(
+            make_period_label(periods[ip], 0.94, 0.93, 33, 0.052));
+    }
+
+    ccompact.cd(0);
+    auto compact_title = std::make_unique<TLatex>();
+    compact_title->SetNDC();
+    compact_title->SetTextAlign(22);
+    compact_title->SetTextFont(62);
+    compact_title->SetTextSize(0.030);
+    compact_title->DrawLatex(
+        0.5, 0.988,
+        (cfg.title + ": compact current-response model comparison").c_str());
+    compact_owned.emplace_back(std::move(compact_title));
+
+    ccompact.Modified();
+    ccompact.Update();
+    const std::string compact_plot =
+        odir + "/compact_current_response_model_comparison.png";
+    ccompact.SaveAs(compact_plot.c_str());
+    gSystem->CopyFile(
+        compact_plot.c_str(),
+        (note_dir + "/" + cfg.output_token +
+         "_compact_current_response_model_comparison.png").c_str(),
+        true);
+
+    // ---------------------------------------------------------------------
+    // Targeted production-quality evidence canvases.
+    // These put DATA, reconstructed MC, and DATA/MC next to one another for the
+    // two effects that presently matter most:
+    //   Sp18 Out : theta_e
+    //   Fa18 Out : theta_p
+    // ---------------------------------------------------------------------
+    auto draw_targeted_evidence =
+        [&](const std::string& period,
+            const std::string& variable,
+            const std::string& output_token,
+            const std::string& headline) {
+
+        auto idv = stored_data_results.find(variable);
+        auto imv = stored_mc_results.find(variable);
+        auto irv = stored_ratio_results.find(variable);
+        const KinematicVarConfig* vcfg = find_var_config(variable);
+        if (!vcfg || idv == stored_data_results.end() ||
+            imv == stored_mc_results.end() || irv == stored_ratio_results.end()) return;
+
+        auto idp = idv->second.find(period);
+        auto imp = imv->second.find(period);
+        auto irp = irv->second.find(period);
+        if (idp == idv->second.end() || imp == imv->second.end() || irp == irv->second.end()) return;
+
+        struct PanelSpec {
+            std::string label;
+            const std::map<std::string, std::vector<KinematicBinResult>>* results = nullptr;
+            bool unity = false;
+        };
+        std::vector<PanelSpec> panels = {
+            {"DATA", &idp->second, false},
+            {"MC", &imp->second, false},
+            {"DATA/MC", &irp->second, true}
+        };
+
+        TCanvas c(("c_targeted_" + cfg.output_token + "_" + output_token).c_str(),
+                  "", 2100, 720);
+        c.Divide(3, 1, 0.002, 0.002);
+        std::vector<std::unique_ptr<TObject>> owned;
+
+        for (int ipanel = 0; ipanel < 3; ++ipanel) {
+            c.cd(ipanel + 1);
+            configure_production_pad((TPad*)gPad, 0.15, 0.035, 0.15, 0.085);
+
+            double lo = std::numeric_limits<double>::infinity();
+            double hi = -std::numeric_limits<double>::infinity();
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                auto it = panels[ipanel].results->find(spec.key);
+                if (it == panels[ipanel].results->end()) continue;
+                for (const KinematicBinResult& b : it->second) {
+                    if (!std::isfinite(b.factor) || !std::isfinite(b.factor_err) ||
+                        !(b.factor > 0.0) || b.factor_err < 0.0) continue;
+                    lo = std::min(lo, b.factor - b.factor_err);
+                    hi = std::max(hi, b.factor + b.factor_err);
+                }
+            }
+            if (panels[ipanel].unity) {
+                lo = std::min(lo, 1.0);
+                hi = std::max(hi, 1.0);
+            }
+            if (!std::isfinite(lo) || !std::isfinite(hi) || !(hi > lo)) {
+                lo = panels[ipanel].unity ? 0.7 : 0.5;
+                hi = panels[ipanel].unity ? 1.3 : 1.1;
+            }
+            const double span = std::max(0.08, hi - lo);
+            lo = std::max(0.0, lo - 0.12 * span);
+            hi += 0.12 * span;
+
+            auto frame = std::make_unique<TH1D>(
+                ("h_targeted_" + cfg.output_token + "_" + output_token + "_" +
+                 std::to_string(ipanel)).c_str(),
+                (";" + vcfg->x_label + ";" +
+                 (panels[ipanel].unity ? "DATA/MC current-efficiency ratio"
+                                      : "Current-efficiency factor")).c_str(),
+                100, vcfg->edges.front(), vcfg->edges.back());
+            frame->SetDirectory(nullptr);
+            frame->SetMinimum(lo);
+            frame->SetMaximum(hi);
+            style_production_frame(frame.get(), 0.050, 0.050, 0.041);
+            frame->Draw();
+            owned.emplace_back(std::move(frame));
+
+            if (panels[ipanel].unity) {
+                auto line = std::make_unique<TLine>(
+                    vcfg->edges.front(), 1.0, vcfg->edges.back(), 1.0);
+                line->SetLineStyle(2);
+                line->SetLineWidth(2);
+                line->SetLineColor(kGray + 1);
+                line->Draw("SAME");
+                owned.emplace_back(std::move(line));
+            }
+
+            std::vector<TGraphErrors*> legend_graphs;
+            for (int ir = 0; ir < 7; ++ir) {
+                auto it = panels[ipanel].results->find(PHOTON_REGION_ORDER[ir].key);
+                if (it == panels[ipanel].results->end()) continue;
+                auto graph = std::unique_ptr<TGraphErrors>(
+                    make_region_theta_factor_graph(it->second, photon_region_color(ir)));
+                graph->SetMarkerStyle(photon_region_marker(ir));
+                graph->SetMarkerSize(1.15);
+                graph->SetLineWidth(2);
+                graph->Draw("P SAME");
+                if (ipanel == 0) legend_graphs.push_back(graph.get());
+                owned.emplace_back(std::move(graph));
+            }
+
+            auto panel_label = std::make_unique<TLatex>();
+            panel_label->SetNDC();
+            panel_label->SetTextFont(62);
+            panel_label->SetTextSize(0.052);
+            panel_label->DrawLatex(0.17, 0.91, panels[ipanel].label.c_str());
+            owned.emplace_back(std::move(panel_label));
+
+            if (ipanel == 0) {
+                auto leg = std::make_unique<TLegend>(0.17, 0.71, 0.80, 0.87);
+                leg->SetNColumns(4);
+                leg->SetBorderSize(0);
+                leg->SetFillStyle(0);
+                leg->SetTextFont(42);
+                leg->SetTextSize(0.033);
+                for (size_t ir = 0; ir < legend_graphs.size() && ir < PHOTON_REGION_ORDER.size(); ++ir)
+                    leg->AddEntry(legend_graphs[ir], PHOTON_REGION_ORDER[ir].label.c_str(), "pe");
+                leg->Draw();
+                owned.emplace_back(std::move(leg));
+            }
+        }
+
+        c.cd(0);
+        auto title = std::make_unique<TLatex>();
+        title->SetNDC();
+        title->SetTextAlign(22);
+        title->SetTextFont(62);
+        title->SetTextSize(0.033);
+        title->DrawLatex(0.5, 0.988, (period + ": " + headline).c_str());
+        owned.emplace_back(std::move(title));
+
+        c.Modified();
+        c.Update();
+        const std::string path = odir + "/" + output_token + ".png";
+        c.SaveAs(path.c_str());
+        gSystem->CopyFile(
+            path.c_str(),
+            (note_dir + "/" + cfg.output_token + "_" + output_token + ".png").c_str(),
+            true);
+    };
+
+    if (process_mc && cfg.channel == Channel::DVCS) {
+        draw_targeted_evidence(
+            "Sp18 Out", "e_theta",
+            "sp18_out_theta_e_current_response",
+            "residual current response versus electron polar angle");
+        draw_targeted_evidence(
+            "Fa18 Out", "p_theta",
+            "fa18_out_theta_p_current_response",
+            "residual current response versus proton polar angle");
+    }
+
+    // ---------------------------------------------------------------------
+    // Closure pulls for the two leading outbending effects.
+    // Left: regional-only model (M1).
+    // Right: regional + one common linear dependence (M2).
+    // This makes it immediately visible whether the extra term removes a
+    // coherent residual trend rather than merely winning an information
+    // criterion numerically.
+    // ---------------------------------------------------------------------
+    std::ofstream closure_csv(odir + "/targeted_model_closure_pulls.csv");
+    closure_csv
+        << "period,variable,region,x,relative_slope,relative_slope_stat,"
+        << "regional_prediction,linear_prediction,regional_pull,linear_pull\n";
+
+    auto draw_model_closure =
+        [&](const std::string& period,
+            const std::string& variable,
+            const std::string& output_token) {
+
+        const KinematicVarConfig* vcfg = find_var_config(variable);
+        if (!vcfg) return;
+
+        std::map<std::string, std::vector<DataAgg>> dmap;
+        for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER)
+            dmap[spec.key] = merged[period][spec.key][variable];
+
+        const std::vector<RelativeSlopePoint> pts =
+            relative_slope_points_from_data_theta_bins(dmap, *vcfg);
+        const PooledRegionThetaSlopeFit linear =
+            fit_pooled_region_theta_relative_slopes(pts);
+        if (!linear.valid) return;
+
+        std::array<double, 7> sw{};
+        std::array<double, 7> swy{};
+        for (const RelativeSlopePoint& pt : pts) {
+            if (pt.region_index < 0 || pt.region_index >= 7 ||
+                !std::isfinite(pt.slope) || !std::isfinite(pt.slope_err) ||
+                !(pt.slope_err > 0.0)) continue;
+            const double w = 1.0 / (pt.slope_err * pt.slope_err);
+            sw[pt.region_index] += w;
+            swy[pt.region_index] += w * pt.slope;
+        }
+        std::array<double, 7> regional_mean{};
+        for (int ir = 0; ir < 7; ++ir)
+            regional_mean[ir] = sw[ir] > 0.0 ? swy[ir] / sw[ir] : 0.0;
+
+        TCanvas c(("c_closure_" + cfg.output_token + "_" + output_token).c_str(),
+                  "", 1500, 720);
+        c.Divide(2, 1, 0.002, 0.002);
+        std::vector<std::unique_ptr<TObject>> owned;
+
+        double max_abs_pull = 3.0;
+        for (const RelativeSlopePoint& pt : pts) {
+            if (pt.region_index < 0 || pt.region_index >= 7 ||
+                !std::isfinite(pt.slope_err) || !(pt.slope_err > 0.0)) continue;
+            const double p1 = (pt.slope - regional_mean[pt.region_index]) / pt.slope_err;
+            const double pred2 =
+                linear.region_intercepts[pt.region_index] +
+                linear.theta_gradient * (pt.x - linear.region_centers[pt.region_index]);
+            const double p2 = (pt.slope - pred2) / pt.slope_err;
+            max_abs_pull = std::max(max_abs_pull, std::fabs(p1));
+            max_abs_pull = std::max(max_abs_pull, std::fabs(p2));
+
+            closure_csv << period << "," << variable << ","
+                        << PHOTON_REGION_ORDER[pt.region_index].key << ","
+                        << pt.x << "," << pt.slope << "," << pt.slope_err << ","
+                        << regional_mean[pt.region_index] << "," << pred2 << ","
+                        << p1 << "," << p2 << "\n";
+        }
+        const double pull_lim = std::min(10.0, std::ceil(max_abs_pull + 0.5));
+
+        for (int imod = 0; imod < 2; ++imod) {
+            c.cd(imod + 1);
+            configure_production_pad((TPad*)gPad, 0.14, 0.035, 0.15, 0.085);
+
+            auto frame = std::make_unique<TH1D>(
+                ("h_closure_" + cfg.output_token + "_" + output_token + "_" +
+                 std::to_string(imod)).c_str(),
+                (";" + vcfg->x_label + ";Residual pull").c_str(),
+                100, vcfg->edges.front(), vcfg->edges.back());
+            frame->SetDirectory(nullptr);
+            frame->SetMinimum(-pull_lim);
+            frame->SetMaximum(pull_lim);
+            style_production_frame(frame.get(), 0.050, 0.050, 0.041);
+            frame->Draw();
+            owned.emplace_back(std::move(frame));
+
+            auto zero = std::make_unique<TLine>(
+                vcfg->edges.front(), 0.0, vcfg->edges.back(), 0.0);
+            zero->SetLineStyle(2);
+            zero->SetLineWidth(2);
+            zero->SetLineColor(kGray + 1);
+            zero->Draw("SAME");
+            owned.emplace_back(std::move(zero));
+
+            std::array<std::unique_ptr<TGraph>, 7> graphs;
+            for (int ir = 0; ir < 7; ++ir) {
+                graphs[ir] = std::make_unique<TGraph>();
+                graphs[ir]->SetMarkerStyle(photon_region_marker(ir));
+                graphs[ir]->SetMarkerColor(photon_region_color(ir));
+                graphs[ir]->SetLineColor(photon_region_color(ir));
+                graphs[ir]->SetMarkerSize(1.15);
+            }
+
+            std::array<int, 7> ngraph{};
+            for (const RelativeSlopePoint& pt : pts) {
+                if (pt.region_index < 0 || pt.region_index >= 7 ||
+                    !std::isfinite(pt.slope_err) || !(pt.slope_err > 0.0)) continue;
+                double pull = 0.0;
+                if (imod == 0) {
+                    pull = (pt.slope - regional_mean[pt.region_index]) / pt.slope_err;
+                } else {
+                    const double pred =
+                        linear.region_intercepts[pt.region_index] +
+                        linear.theta_gradient *
+                        (pt.x - linear.region_centers[pt.region_index]);
+                    pull = (pt.slope - pred) / pt.slope_err;
+                }
+                graphs[pt.region_index]->SetPoint(
+                    ngraph[pt.region_index]++, pt.x, pull);
+            }
+
+            std::vector<TGraph*> legend_graphs;
+            for (int ir = 0; ir < 7; ++ir) {
+                graphs[ir]->Draw("P SAME");
+                if (imod == 0) legend_graphs.push_back(graphs[ir].get());
+                owned.emplace_back(std::move(graphs[ir]));
+            }
+
+            auto model_label = std::make_unique<TLatex>();
+            model_label->SetNDC();
+            model_label->SetTextFont(62);
+            model_label->SetTextSize(0.050);
+            model_label->DrawLatex(
+                0.17, 0.91,
+                imod == 0 ? "Regional only (M1)" : "Regional + linear term (M2)");
+            owned.emplace_back(std::move(model_label));
+
+            if (imod == 0) {
+                auto leg = std::make_unique<TLegend>(0.17, 0.73, 0.80, 0.87);
+                leg->SetNColumns(4);
+                leg->SetBorderSize(0);
+                leg->SetFillStyle(0);
+                leg->SetTextFont(42);
+                leg->SetTextSize(0.032);
+                for (size_t ir = 0; ir < legend_graphs.size(); ++ir)
+                    leg->AddEntry(legend_graphs[ir], PHOTON_REGION_ORDER[ir].label.c_str(), "p");
+                leg->Draw();
+                owned.emplace_back(std::move(leg));
+            }
+        }
+
+        c.cd(0);
+        auto title = std::make_unique<TLatex>();
+        title->SetNDC();
+        title->SetTextAlign(22);
+        title->SetTextFont(62);
+        title->SetTextSize(0.033);
+        title->DrawLatex(
+            0.5, 0.988,
+            (period + ": current-response closure versus " +
+             pretty_kinematic_key(variable)).c_str());
+        owned.emplace_back(std::move(title));
+
+        c.Modified();
+        c.Update();
+        const std::string path = odir + "/" + output_token + ".png";
+        c.SaveAs(path.c_str());
+        gSystem->CopyFile(
+            path.c_str(),
+            (note_dir + "/" + cfg.output_token + "_" + output_token + ".png").c_str(),
+            true);
+    };
+
+    if (cfg.channel == Channel::DVCS) {
+        draw_model_closure(
+            "Sp18 Out", "e_theta",
+            "sp18_out_theta_e_model_closure");
+        draw_model_closure(
+            "Fa18 Out", "p_theta",
+            "fa18_out_theta_p_model_closure");
+    }
+
     // Rank candidate kinematic variables by the improvement of M2 over the
     // region-only model M1.  Positive DeltaBIC means the additional linear
     // dependence is preferred after the parameter penalty.
@@ -6574,20 +7466,16 @@ static void run_region_theta_data_diagnostic(
         }
     }
 
-    // Four-panel DATA ranking plot. Each panel is explicitly labeled with its
-    // run period; larger positive DeltaBIC favors regional+variable over the
-    // region-only model.
-    TCanvas csel(("c_region_model_selection_" + cfg.output_token).c_str(), "", 1500, 1000);
-    csel.Divide(2, 2, 0.005, 0.005);
+    // Production-quality four-panel DATA ranking plot.  Each panel is
+    // explicitly labeled with its run period.  Larger positive DeltaBIC favors
+    // regional + variable over the region-only model.
+    TCanvas csel(("c_region_model_selection_" + cfg.output_token).c_str(), "", 1800, 1200);
+    csel.Divide(2, 2, 0.002, 0.002);
     std::vector<std::unique_ptr<TObject>> selection_owned;
 
     for (size_t ip = 0; ip < periods.size(); ++ip) {
         csel.cd((int)ip + 1);
-        gPad->SetGridy();
-        gPad->SetLeftMargin(0.13);
-        gPad->SetRightMargin(0.04);
-        gPad->SetBottomMargin(0.18);
-        gPad->SetTopMargin(0.10);
+        configure_production_pad((TPad*)gPad, 0.145, 0.035, 0.18, 0.075);
 
         std::vector<CandidateModelRow> rows;
         for (const CandidateModelRow& row : model_rows) {
@@ -6597,12 +7485,12 @@ static void run_region_theta_data_diagnostic(
 
         auto frame = std::make_unique<TH1D>(
             ("h_model_selection_" + cfg.output_token + "_" + std::to_string(ip)).c_str(),
-            ";Candidate residual variable;#DeltaBIC = BIC(M1)-BIC(M2)",
+            ";Candidate residual variable;#DeltaBIC = BIC_{regional}-BIC_{regional+var}",
             (int)vars.size(), 0.5, vars.size() + 0.5);
         frame->SetDirectory(nullptr);
-        frame->SetStats(0);
         for (size_t iv = 0; iv < vars.size(); ++iv)
-            frame->GetXaxis()->SetBinLabel((int)iv + 1, vars[iv].key.c_str());
+            frame->GetXaxis()->SetBinLabel(
+                (int)iv + 1, pretty_kinematic_key(vars[iv].key).c_str());
 
         double ymin = 0.0;
         double ymax = 0.0;
@@ -6616,15 +7504,30 @@ static void run_region_theta_data_diagnostic(
         }
         if (!have) { ymin = -5.0; ymax = 5.0; }
         const double span = std::max(5.0, ymax - ymin);
-        frame->SetMinimum(std::min(-1.0, ymin - 0.15 * span));
-        frame->SetMaximum(std::max(1.0, ymax + 0.15 * span));
+        frame->SetMinimum(std::min(-5.0, ymin - 0.12 * span));
+        frame->SetMaximum(std::max(5.0, ymax + 0.15 * span));
+        style_production_frame(frame.get(), 0.050, 0.050, 0.041);
+        frame->GetXaxis()->LabelsOption("h");
         frame->Draw();
         selection_owned.emplace_back(std::move(frame));
 
         auto zero = std::make_unique<TLine>(0.5, 0.0, vars.size() + 0.5, 0.0);
         zero->SetLineStyle(2);
+        zero->SetLineWidth(2);
+        zero->SetLineColor(kGray + 1);
         zero->Draw("SAME");
         selection_owned.emplace_back(std::move(zero));
+
+        // Conventional BIC evidence guides: +6 strong, +10 very strong.
+        for (double threshold : {6.0, 10.0}) {
+            auto guide = std::make_unique<TLine>(
+                0.5, threshold, vars.size() + 0.5, threshold);
+            guide->SetLineStyle(threshold == 6.0 ? 3 : 7);
+            guide->SetLineWidth(1);
+            guide->SetLineColor(kGray + 1);
+            guide->Draw("SAME");
+            selection_owned.emplace_back(std::move(guide));
+        }
 
         auto graph = std::make_unique<TGraph>();
         int ng = 0;
@@ -6637,26 +7540,22 @@ static void run_region_theta_data_diagnostic(
             }
         }
         graph->SetMarkerStyle(20);
-        graph->SetMarkerSize(1.25);
+        graph->SetMarkerSize(1.35);
+        graph->SetLineWidth(2);
         graph->Draw("P SAME");
         selection_owned.emplace_back(std::move(graph));
 
-        auto label = std::make_unique<TLatex>();
-        label->SetNDC();
-        label->SetTextAlign(33);
-        label->SetTextFont(62);
-        label->SetTextSize(0.045);
-        label->DrawLatex(0.94, 0.94, periods[ip].c_str());
-        selection_owned.emplace_back(std::move(label));
+        selection_owned.emplace_back(make_period_label(periods[ip], 0.94, 0.93, 33, 0.052));
     }
 
     csel.cd(0);
     auto stitle = std::make_unique<TLatex>();
     stitle->SetNDC();
     stitle->SetTextAlign(22);
+    stitle->SetTextFont(62);
     stitle->SetTextSize(0.030);
     stitle->DrawLatex(
-        0.5, 0.985,
+        0.5, 0.988,
         (cfg.title + ": residual current-response model selection after photon-region correction").c_str());
     selection_owned.emplace_back(std::move(stitle));
     csel.Modified();
@@ -7637,28 +8536,24 @@ static void draw_analysis_note_region_ratio_canvas(
     bool /*hide_sp19*/) {
 
     const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
-    TCanvas c(("c_note_region_ratio_" + channel_title).c_str(), "", 1500, 1000);
-    c.Divide(2, 2, 0.005, 0.005);
+    TCanvas c(("c_note_region_ratio_" + channel_title).c_str(), "", 1800, 1200);
+    c.Divide(2, 2, 0.002, 0.002);
     std::vector<std::unique_ptr<TObject>> owned;
 
     for (size_t ip = 0; ip < periods.size(); ++ip) {
         c.cd((int)ip + 1);
-        gPad->SetGridy();
-        gPad->SetLeftMargin(0.13);
-        gPad->SetBottomMargin(0.14);
-        gPad->SetTopMargin(0.10);
-        gPad->SetRightMargin(0.04);
+        configure_production_pad((TPad*)gPad, 0.145, 0.035, 0.145, 0.075);
 
         auto frame = std::make_unique<TH1D>(
             ("h_note_region_ratio_" + std::to_string(ip)).c_str(),
-            (periods[ip] + ";Photon region;(f^{DATA}_{r}/f^{MC}_{r})/(f^{DATA}_{int}/f^{MC}_{int})").c_str(),
+            ";Photon region;(f^{DATA}_{r}/f^{MC}_{r})/(f^{DATA}_{int}/f^{MC}_{int})",
             7, 0.5, 7.5);
         frame->SetDirectory(nullptr);
         for (int ir = 0; ir < 7; ++ir)
             frame->GetXaxis()->SetBinLabel(ir + 1, PHOTON_REGION_ORDER[ir].label.c_str());
         frame->SetMinimum(0.65);
         frame->SetMaximum(1.35);
-        frame->SetStats(0);
+        style_production_frame(frame.get(), 0.050, 0.050, 0.041);
         frame->Draw();
         owned.emplace_back(std::move(frame));
 
@@ -7693,13 +8588,7 @@ static void draw_analysis_note_region_ratio_canvas(
         g->Draw("P SAME");
         owned.emplace_back(std::move(g));
 
-        auto period_label = std::make_unique<TLatex>();
-        period_label->SetNDC();
-        period_label->SetTextAlign(33);
-        period_label->SetTextFont(62);
-        period_label->SetTextSize(0.045);
-        period_label->DrawLatex(0.94, 0.92, periods[ip].c_str());
-        owned.emplace_back(std::move(period_label));
+        owned.emplace_back(make_period_label(periods[ip], 0.94, 0.93, 33, 0.052));
 
         auto unity = std::make_unique<TLine>(0.5, 1.0, 7.5, 1.0);
         unity->SetLineStyle(2);
@@ -7729,8 +8618,8 @@ static void draw_analysis_note_region_absolute_canvas(
     const std::string& channel_title) {
 
     const std::vector<std::string> periods = {"Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out"};
-    TCanvas c(("c_note_region_absolute_" + channel_title).c_str(), "", 1500, 1000);
-    c.Divide(2, 2, 0.005, 0.005);
+    TCanvas c(("c_note_region_absolute_" + channel_title).c_str(), "", 1800, 1200);
+    c.Divide(2, 2, 0.002, 0.002);
     std::vector<std::unique_ptr<TObject>> owned;
 
     double ymin = std::numeric_limits<double>::infinity();
@@ -7760,22 +8649,18 @@ static void draw_analysis_note_region_absolute_canvas(
 
     for (size_t ip = 0; ip < periods.size(); ++ip) {
         c.cd((int)ip + 1);
-        gPad->SetGridy();
-        gPad->SetLeftMargin(0.13);
-        gPad->SetBottomMargin(0.14);
-        gPad->SetTopMargin(0.10);
-        gPad->SetRightMargin(0.04);
+        configure_production_pad((TPad*)gPad, 0.145, 0.035, 0.145, 0.075);
 
         auto frame = std::make_unique<TH1D>(
             ("h_note_region_absolute_" + std::to_string(ip)).c_str(),
-            (periods[ip] + ";Photon region;f^{DATA}_{r}/f^{MC}_{r}").c_str(),
+            ";Photon region;f^{DATA}_{r}/f^{MC}_{r}",
             7, 0.5, 7.5);
         frame->SetDirectory(nullptr);
         for (int ir = 0; ir < 7; ++ir)
             frame->GetXaxis()->SetBinLabel(ir + 1, PHOTON_REGION_ORDER[ir].label.c_str());
         frame->SetMinimum(ymin);
         frame->SetMaximum(ymax);
-        frame->SetStats(0);
+        style_production_frame(frame.get(), 0.050, 0.050, 0.041);
         frame->Draw();
         owned.emplace_back(std::move(frame));
 
@@ -7800,13 +8685,7 @@ static void draw_analysis_note_region_absolute_canvas(
         g->Draw("P SAME");
         owned.emplace_back(std::move(g));
 
-        auto period_label = std::make_unique<TLatex>();
-        period_label->SetNDC();
-        period_label->SetTextAlign(33);
-        period_label->SetTextFont(62);
-        period_label->SetTextSize(0.045);
-        period_label->DrawLatex(0.94, 0.92, periods[ip].c_str());
-        owned.emplace_back(std::move(period_label));
+        owned.emplace_back(make_period_label(periods[ip], 0.94, 0.93, 33, 0.052));
     }
 
     c.cd(0);
