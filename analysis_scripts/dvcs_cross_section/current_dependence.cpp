@@ -5776,8 +5776,8 @@ static std::vector<RelativeSlopePoint> relative_slope_points_from_data_theta_bin
             const auto pts = data_points_from_agg(bins[ib]);
             if (pts.size() < 2) continue;
             const FitResult fit = fit_points(pts);
-            const double s = relative_slope_per_nA(fit);
-            const double se = relative_slope_per_nA_err(fit);
+            const double s = fit_percent_slope(fit) / 100.0;
+            const double se = fit_percent_slope_err(fit) / 100.0;
             if (!std::isfinite(s) || !std::isfinite(se) || !(se > 0.0)) continue;
 
             RelativeSlopePoint p;
@@ -5809,8 +5809,8 @@ static std::vector<RelativeSlopePoint> relative_slope_points_from_mc_theta_bins(
             const auto pts = mc_points_from_aggs(aggs, bins[ib].period);
             if (pts.size() < 2) continue;
             const FitResult fit = fit_points(pts);
-            const double s = relative_slope_per_nA(fit);
-            const double se = relative_slope_per_nA_err(fit);
+            const double s = fit_percent_slope(fit) / 100.0;
+            const double se = fit_percent_slope_err(fit) / 100.0;
             if (!std::isfinite(s) || !std::isfinite(se) || !(se > 0.0)) continue;
 
             RelativeSlopePoint p;
