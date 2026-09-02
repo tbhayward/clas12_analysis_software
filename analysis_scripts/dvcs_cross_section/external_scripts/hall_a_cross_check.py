@@ -200,6 +200,13 @@ PASS2_COMBINED_CSV_PERIOD = "10.6 GeV"
 
 PASS1_DISPLAY_LABEL = "pass-1 Fa18"
 
+# Series shown in the primary Hall A comparison panel.  Keep this definition
+# separate from the dedicated Fa18-vs-Sp19 comparison below.
+TOP_COMPARISON_SERIES = [
+    PASS2_COMBINED_DISPLAY_LABEL,
+    PASS1_DISPLAY_LABEL,
+]
+
 FA18_INB_DISPLAY_LABEL = "Fa18 Inb"
 SP19_INB_DISPLAY_LABEL = "Sp19 Inb"
 SP19_KM15_DISPLAY_LABEL = "Sp19 Inb -> 10.604 GeV, KM15"
