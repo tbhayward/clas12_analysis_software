@@ -13158,7 +13158,14 @@ def save_preferred_sachs_vs_elastic_data(
         family: str,
         selected_specs: Sequence[Dict[str, object]],
         outdir: Path) -> None:
-    """Plot the preferred BH-extracted Sachs functions against elastic data."""
+    """
+    Compare the preferred BH-extracted Sachs functions with A1/Bernauer data.
+
+    The upper row shows the absolute GE and GM extractions with propagated
+    Hessian bands.  The lower row shows the direct elastic data divided by the
+    BH extraction at the same Q2 values.  The BH Hessian uncertainty is shown
+    as a band around unity, making percent-level finite-Q2 differences visible.
+    """
     outdir.mkdir(parents=True, exist_ok=True)
     qdata = np.concatenate([
         spec["data"]["t_abs"].to_numpy(float)
@@ -13166,42 +13173,170 @@ def save_preferred_sachs_vs_elastic_data(
     ])
     qmax = min(1.0, max(0.60, 1.03 * float(np.nanmax(qdata))))
     q = np.linspace(0.0, qmax, 600)
+
     ge, ge_err = _sachs_band_from_result(fit, family, q, "GE")
     gm, gm_err = _sachs_band_from_result(fit, family, q, "GM")
+
     a1 = bernauer_rosenbluth_data()
     a1 = a1.loc[a1["Q2"] <= qmax].copy()
 
-    fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.2), sharex=True)
-    for ax, central, sigma, col, errcol, ylabel in [
-        (axes[0], ge, ge_err, "GE", "GE_err", r"$G_E^p$"),
-        (axes[1], gm, gm_err, "GM", "GM_err", r"$G_M^p$"),
-    ]:
-        line, = ax.plot(q, central, linewidth=2.0, label="BH extraction")
+    fig, axes = plt.subplots(
+        2, 2,
+        figsize=(13.2, 8.2),
+        sharex="col",
+        gridspec_kw={"height_ratios": [2.15, 1.0]},
+    )
+
+    for j, (central, sigma, col, errcol, ylabel) in enumerate([
+        (ge, ge_err, "GE", "GE_err", r"$G_E^p$"),
+        (gm, gm_err, "GM", "GM_err", r"$G_M^p$"),
+    ]):
+        ax = axes[0, j]
+        rax = axes[1, j]
+
+        # Absolute form factors.
+        line, = ax.plot(
+            q, central,
+            linewidth=2.0,
+            label="BH extraction",
+        )
         ax.fill_between(
-            q, central - sigma, central + sigma,
-            color=line.get_color(), alpha=0.18, linewidth=0.0,
+            q,
+            central - sigma,
+            central + sigma,
+            color=line.get_color(),
+            alpha=0.18,
+            linewidth=0.0,
             label="68% Hessian band",
         )
         ax.errorbar(
-            a1["Q2"], a1[col], yerr=a1[errcol],
-            fmt="o", fillstyle="none", markersize=4.0,
-            capsize=2, linewidth=0.9, label="A1/Bernauer Rosenbluth",
+            a1["Q2"],
+            a1[col],
+            yerr=a1[errcol],
+            fmt="o",
+            fillstyle="none",
+            markersize=4.0,
+            capsize=2,
+            linewidth=0.9,
+            label="A1/Bernauer Rosenbluth",
         )
-        ax.axvspan(float(np.nanmin(qdata)), float(np.nanmax(qdata)), alpha=0.06)
+
+        # Ratio at the exact A1 kinematics.
+        qpts = a1["Q2"].to_numpy(float)
+        bh_pts, bh_pts_err = _sachs_band_from_result(
+            fit, family, qpts, "GE" if col == "GE" else "GM"
+        )
+        data_vals = a1[col].to_numpy(float)
+        data_errs = a1[errcol].to_numpy(float)
+
+        ratio = data_vals / bh_pts
+        ratio_err = data_errs / bh_pts
+
+        rax.errorbar(
+            qpts,
+            ratio,
+            yerr=ratio_err,
+            fmt="o",
+            fillstyle="none",
+            markersize=4.0,
+            capsize=2,
+            linewidth=0.9,
+            label="A1 / BH extraction",
+        )
+
+        # Express the BH Hessian uncertainty as a relative band around unity.
+        rel_bh = np.divide(
+            sigma,
+            central,
+            out=np.full_like(sigma, np.nan, dtype=float),
+            where=np.abs(central) > 1.0e-12,
+        )
+        rax.fill_between(
+            q,
+            1.0 - rel_bh,
+            1.0 + rel_bh,
+            color=line.get_color(),
+            alpha=0.18,
+            linewidth=0.0,
+            label="BH 68% Hessian band",
+        )
+        rax.axhline(1.0, linewidth=0.9, linestyle="--")
+
+        # Selected-data support is shown in both rows.
+        qlo = float(np.nanmin(qdata))
+        qhi = float(np.nanmax(qdata))
+        ax.axvspan(qlo, qhi, alpha=0.06)
+        rax.axvspan(qlo, qhi, alpha=0.06)
+
         ax.set_xlim(0.0, qmax)
-        ax.set_xlabel(r"$Q^2=|t|$ (GeV$^2$)")
+        rax.set_xlim(0.0, qmax)
+        rax.set_ylim(0.70, 1.30)
+
         ax.set_ylabel(ylabel)
+        rax.set_ylabel(
+            r"$G_E^{\rm A1}/G_E^{\rm BH}$"
+            if col == "GE"
+            else r"$G_M^{\rm A1}/G_M^{\rm BH}$"
+        )
+        rax.set_xlabel(r"$Q^2=|t|$ (GeV$^2$)")
+
         ax.grid(alpha=0.2)
+        rax.grid(alpha=0.2)
     #endfor
-    axes[0].legend(fontsize=9)
+
+    # One compact legend for the absolute panels; the lower-row meaning is
+    # sufficiently explicit from the axis labels and matching markers/bands.
+    axes[0, 0].legend(fontsize=9, loc="best")
+
     fig.suptitle(
         f"Preferred all-four BH extraction vs direct elastic form factors ({family})",
         y=0.985,
     )
-    fig.subplots_adjust(top=0.90, bottom=0.12, left=0.08, right=0.985, wspace=0.18)
-    fig.savefig(outdir / "01_preferred_GE_GM_vs_A1_Bernauer.png", dpi=300)
+    fig.subplots_adjust(
+        top=0.92,
+        bottom=0.09,
+        left=0.075,
+        right=0.985,
+        hspace=0.08,
+        wspace=0.18,
+    )
+    fig.savefig(
+        outdir / "01_preferred_GE_GM_vs_A1_Bernauer.png",
+        dpi=300,
+    )
     plt.close(fig)
+
+    # Save the ratio values used in the lower panels.
+    rows = []
+    for which, col, errcol in [
+        ("GE", "GE", "GE_err"),
+        ("GM", "GM", "GM_err"),
+    ]:
+        qpts = a1["Q2"].to_numpy(float)
+        bh_pts, bh_pts_err = _sachs_band_from_result(
+            fit, family, qpts, which
+        )
+        for i in range(len(a1)):
+            rows.append({
+                "form_factor": col,
+                "Q2": float(qpts[i]),
+                "A1_value": float(a1.iloc[i][col]),
+                "A1_error": float(a1.iloc[i][errcol]),
+                "BH_value": float(bh_pts[i]),
+                "BH_hessian_error": float(bh_pts_err[i]),
+                "A1_over_BH": float(a1.iloc[i][col] / bh_pts[i]),
+                "A1_over_BH_error": float(
+                    a1.iloc[i][errcol] / bh_pts[i]
+                ),
+            })
+        #endfor
+    #endfor
+    pd.DataFrame(rows).to_csv(
+        outdir / "preferred_GE_GM_vs_A1_Bernauer_ratios.csv",
+        index=False,
+    )
 #enddef
+
 
 def run_georges_normalization_prior_scan(
         bundles: Sequence[Dict[str, object]],
