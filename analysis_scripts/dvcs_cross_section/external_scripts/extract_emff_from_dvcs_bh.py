@@ -12151,7 +12151,14 @@ def run_model_only_kelly_bh_selector_diagnostic(
     point_rows = []
     for bundle in bundles:
         key = str(bundle["key"])
-        data = bundle["all_data"].copy()
+        # Use the deterministic row position in bundle["all_data"] as the
+        # cross-stage point identifier.  Not every production loader carries
+        # the legacy private ``_row`` column (notably some Hall-A bundles),
+        # whereas select_bundle_from_external_model() is explicitly defined
+        # in terms of source_row == 0..N-1.  Materialize that same identifier
+        # locally so this diagnostic works uniformly for every experiment.
+        data = bundle["all_data"].copy().reset_index(drop=True)
+        data["source_row"] = np.arange(len(data), dtype=int)
         required = ["t_abs", "bh_A", "bh_B", "bh_C", "km15_ep"]
         missing = [c for c in required if c not in data.columns]
         if missing:
@@ -12183,8 +12190,10 @@ def run_model_only_kelly_bh_selector_diagnostic(
         nominal_selected = select_bundle_from_external_model(
             bundle, selection, "km15", 0.05
         )
-        nominal_ids = set(nominal_selected["_row"].astype(int).tolist())
-        alt_ids = set(selected_alt["_row"].astype(int).tolist())
+        # select_bundle_from_external_model() preserves the reset all_data
+        # index, so its DataFrame index is exactly the external source_row.
+        nominal_ids = set(nominal_selected.index.astype(int).tolist())
+        alt_ids = set(selected_alt["source_row"].astype(int).tolist())
         overlap = len(nominal_ids.intersection(alt_ids))
         union = len(nominal_ids.union(alt_ids))
         overlap_rows.append({
@@ -12200,13 +12209,17 @@ def run_model_only_kelly_bh_selector_diagnostic(
             "jaccard": float(overlap / union) if union else np.nan,
         })
         keep = data[[
-            "_row", "t_abs", "Q2", "xB", "phi_deg",
+            "source_row", "t_abs", "Q2", "xB", "phi_deg",
             "model_only_kelly_vs_km15ep_score",
             "kelly_bh_reference", "km15_ep",
         ]].copy()
         keep["dataset"] = key
-        keep["selected_model_only_matchedN"] = keep["_row"].astype(int).isin(alt_ids)
-        keep["selected_KM15_5pct"] = keep["_row"].astype(int).isin(nominal_ids)
+        keep["selected_model_only_matchedN"] = (
+            keep["source_row"].astype(int).isin(alt_ids)
+        )
+        keep["selected_KM15_5pct"] = (
+            keep["source_row"].astype(int).isin(nominal_ids)
+        )
         point_rows.append(keep)
     #endfor
 

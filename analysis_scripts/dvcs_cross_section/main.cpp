@@ -126,10 +126,10 @@ int main(int argc, char* argv[]) {
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
 
-    // if (!run_python_exclusivity_analysis(exclusivity_opts)) {
-    //     std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
-    //     return 1;
-    // }
+    if (!run_python_exclusivity_analysis(exclusivity_opts)) {
+        std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
+        return 1;
+    }
 
     std::cout << "[main] Python exclusivity-cut stage finished. "
               << "Using nominal cuts from output/jsons/combined_cuts.json.\n";
@@ -168,28 +168,28 @@ int main(int argc, char* argv[]) {
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
 
-    // // --------- Global bin-averaged kinematics (CSV update) ----------
-    // {
-    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // --------- Global bin-averaged kinematics (CSV update) ----------
+    {
+        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-    //     try {
-    //         std::filesystem::copy_file(csv_main, csv_backup,
-    //                                    std::filesystem::copy_options::overwrite_existing);
-    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-    //     } catch (const std::exception& e) {
-    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-    //     }
+        try {
+            std::filesystem::copy_file(csv_main, csv_backup,
+                                       std::filesystem::copy_options::overwrite_existing);
+            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+        }
 
-    //     BinMeansOptions bin_mean_opts;
-    //     bin_mean_opts.make_note_outputs = true;
-    //     bin_mean_opts.note_output_dir = "output/bin_means/analysis_note";
+        BinMeansOptions bin_mean_opts;
+        bin_mean_opts.make_note_outputs = true;
+        bin_mean_opts.note_output_dir = "output/bin_means/analysis_note";
 
-    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/7, bin_mean_opts)) {
-    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/7, bin_mean_opts)) {
+            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+    }
 
     const bool use_nobkg_dvcs_mc_for_acceptance = false;
     const bool use_epg_mc_current_factor_for_eppi0_bkg = true;

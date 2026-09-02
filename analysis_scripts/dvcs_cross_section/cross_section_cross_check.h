@@ -26,7 +26,7 @@
  *   cross_section_counts_xB_<ix>.png
  *   cross_section_ratio_xB_<ix>.png
  *
- * @param lee_csv_path      Path to Lee's pass-1 CSV (e.g. imports/all_bin_v3.csv)
+ * @param lee_csv_path      Path to published pass-1 compatibility CSV generated from imports/clasdb_E214M1.txt
  * @param hayward_csv_path  Path to Hayward's pass-2 CSV (e.g. output/csvs/dvcs_pass2_analysis.csv)
  * @param output_base_dir   Directory for output plots (e.g. output/cross_check/lee/cross_sections)
  * @param theory_json_root  Root directory containing theory JSONs, e.g. output/jsons/cross_sections

@@ -132,6 +132,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from pass1_published_loader import load_published_pass1_dataframe
 
 
 # -----------------------------------------------------------------------------
@@ -156,7 +157,7 @@ TARGET_T_ABS_MAX = 0.60
 
 DEFAULT_PASS1_CSV = (
     "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
-    "dvcs_cross_section/imports/all_bin_v3.csv"
+    "dvcs_cross_section/imports/clasdb_E214M1.txt"
 )
 
 DEFAULT_OUTPUT_DIR = "output/hall_a_cross_check"
@@ -942,7 +943,7 @@ def pass1_points(
     pass1_norm_sys_frac: float,
 ) -> List[DataPoint]:
     """
-    Extract pass-1 Fa18 points from all_bin_v3.csv.
+    Extract published pass-1 Fa18 points; legacy CSV supplies bin boundaries only.
 
     Required pass-1 columns:
       cross sections, ep->epg, exp
@@ -2181,7 +2182,10 @@ def main() -> None:
                 "cross sections, ep->epg, exp, syst. unc. (down)",
             ]
 
-            pass1_df = pd.read_csv(args.pass1_csv)
+            if str(args.pass1_csv).lower().endswith((".txt", ".dat")):
+                pass1_df = load_published_pass1_dataframe(args.pass1_csv)
+            else:
+                pass1_df = pd.read_csv(args.pass1_csv, low_memory=False)
             require_columns(pass1_df, pass1_required, context="pass-1")
 
             pass1_selected = select_overlap_bin(

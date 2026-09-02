@@ -1,3 +1,4 @@
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
@@ -33,7 +34,13 @@ int main() {
     std::cout << "[lee] cross_check_lee starting...\n";
 
     // Hard-coded CSV locations
-    const std::string lee_csv     = "imports/all_bin_v3.csv";
+    // The preliminary CSV remains the source for non-cross-section diagnostic
+    // quantities and the original bin boundaries.  Published pass-1 cross
+    // sections themselves come from CLAS Physics Database E214M1.
+    const std::string lee_csv = "imports/all_bin_v3.csv";
+    const std::string lee_published_txt = "imports/clasdb_E214M1.txt";
+    const std::string lee_published_compatible_csv =
+        "output/cross_check/lee/published_pass1_E214M1_compatible.csv";
     const std::string hayward_csv = "output/csvs/dvcs_pass2_analysis.csv";
     // const std::string hayward_csv = "output/csvs/dvcs_pass2_analysis_2.csv";
 
@@ -88,9 +95,19 @@ int main() {
         "output/cross_check/lee/bin_volume"
     );
 
-    // Cross section cross-check
+    // Cross-section cross-check: export the authoritative E214M1 values into
+    // the legacy column layout.  all_bin_v3.csv contributes bin boundaries
+    // only; its preliminary cross-section values are not used here.
+    const std::string export_cmd =
+        "python external_scripts/export_published_pass1_compatible_csv.py " +
+        lee_published_txt + " " + lee_published_compatible_csv +
+        " --legacy-boundaries " + lee_csv;
+    if (std::system(export_cmd.c_str()) != 0) {
+        std::cerr << "[lee] ERROR: failed to prepare published pass-1 E214M1 cross sections.\n";
+        return 1;
+    }
     plot_cross_section_cross_checks(
-        lee_csv,
+        lee_published_compatible_csv,
         hayward_csv,
         "output/cross_check/lee/cross_sections"
     );

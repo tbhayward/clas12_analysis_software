@@ -2760,7 +2760,7 @@ def build_jobs(panels: Sequence[PanelData], panels_dir: Path, pass2_label: str, 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Focused pass-2 vs pass-1 DVCS comparison plotter.")
     parser.add_argument("pass2_csv", type=Path, help="Pass-2 CSV. Must be first positional input.")
-    parser.add_argument("pass1_csv", type=Path, help="Pass-1 / Lee CSV. Must be second positional input.")
+    parser.add_argument("pass1_csv", type=Path, nargs="?", default=Path("../imports/clasdb_E214M1.txt"), help="Published pass-1 E214M1 table (default: ../imports/clasdb_E214M1.txt).")
 
     parser.add_argument("--output-dir", type=Path, default=Path("output/pass2_vs_pass1_model_comparison"))
     parser.add_argument("--pass2-xs-column", default=None, help="Override pass-2 central cross-section column.")
@@ -2888,8 +2888,13 @@ def main() -> int:
         no_point_to_point_systematics=args.no_point_to_point_systematics,
         print_columns=args.print_columns,
     )
+    pass1_input_for_loader = args.pass1_csv
+    if args.pass1_csv.suffix.lower() in {".txt", ".dat"}:
+        published_compatible = load_published_pass1_dataframe(args.pass1_csv)
+        pass1_input_for_loader = diagnostics_dir / "_published_pass1_compatible.csv"
+        published_compatible.to_csv(pass1_input_for_loader, index=False)
     pass1 = load_pass1_csv(
-        path=args.pass1_csv,
+        path=pass1_input_for_loader,
         no_point_to_point_systematics=args.no_point_to_point_systematics,
         print_columns=args.print_columns,
     )

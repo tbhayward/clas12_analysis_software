@@ -2111,7 +2111,7 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument("pass2_csv", type=Path, help="Pass-2 CSV.")
-    parser.add_argument("pass1_csv", type=Path, help="Pass-1 / Lee CSV.")
+    parser.add_argument("pass1_csv", type=Path, nargs="?", default=Path("../imports/clasdb_E214M1.txt"), help="Published pass-1 E214M1 table (default: ../imports/clasdb_E214M1.txt).")
     parser.add_argument("--output-dir", type=Path, default=Path("output/pass2_vs_pass1_diagnostics"))
     parser.add_argument("--pass2-xs-column", default=None, help="Override pass-2 central cross-section column.")
     parser.add_argument("--print-columns", action="store_true")
@@ -2206,8 +2206,13 @@ def main() -> int:
         print_columns=args.print_columns,
     )
 
+    pass1_input_for_loader = args.pass1_csv
+    if args.pass1_csv.suffix.lower() in {".txt", ".dat"}:
+        published_compatible = load_published_pass1_dataframe(args.pass1_csv)
+        pass1_input_for_loader = args.output_dir / "_published_pass1_compatible.csv"
+        published_compatible.to_csv(pass1_input_for_loader, index=False)
     pass1_points = load_pass1_points(
-        path=args.pass1_csv,
+        path=pass1_input_for_loader,
         print_columns=args.print_columns,
     )
 

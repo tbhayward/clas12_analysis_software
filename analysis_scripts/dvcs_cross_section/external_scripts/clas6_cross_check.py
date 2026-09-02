@@ -128,6 +128,7 @@ from typing import Dict, Iterable, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
+from pass1_published_loader import load_published_pass1_dataframe
 import matplotlib.pyplot as plt
 
 
@@ -158,7 +159,7 @@ CLAS6_TARGETS = [
 
 DEFAULT_PASS1_CSV = (
     "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
-    "dvcs_cross_section/imports/all_bin_v3.csv"
+    "dvcs_cross_section/imports/clasdb_E214M1.txt"
 )
 
 
@@ -2063,7 +2064,10 @@ def main() -> None:
                 "cross sections, ep->epg, exp, syst. unc. (down)",
             ]
 
-            pass1_df = pd.read_csv(args.pass1_csv)
+            if str(args.pass1_csv).lower().endswith((".txt", ".dat")):
+                pass1_df = load_published_pass1_dataframe(args.pass1_csv)
+            else:
+                pass1_df = pd.read_csv(args.pass1_csv, low_memory=False)
             require_columns(pass1_df, pass1_required, context="pass-1")
         # endif
     # endif
