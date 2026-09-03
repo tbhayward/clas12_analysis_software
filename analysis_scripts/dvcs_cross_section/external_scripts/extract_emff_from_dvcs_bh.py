@@ -4715,20 +4715,43 @@ def parse_radius_bias_grid(value: str) -> List[float]:
 def make_synthetic_sachs_truth_scenarios(
         families: Sequence[str],
         radius_values: Sequence[float],
-        qmax: float) -> List[Dict[str, object]]:
+        qmax: float,
+        curvature_stress: str = "sectoral") -> List[Dict[str, object]]:
     """
-    Build cross-family closure truths spanning a Cartesian rE x rM grid.
+    Build synthetic closure truths with independently controlled slope and curvature.
 
-    Each family first approximates Kelly over the measured Q2 range to obtain
-    a smooth higher-order curvature template. Then c1 is replaced so the
-    requested radius is exact. This varies slope and functional family
-    independently while retaining smooth proton-like curvature.
+    Baseline grid:
+      For every generating family, retain the Cartesian rE x rM grid used
+      previously.  Its higher-order coefficients are obtained by fitting the
+      normalized Kelly GE and GM shapes, after which c1 is replaced so the
+      requested radius is exact.
+
+    Curvature stress tests:
+      At the central radius-grid value only, add four sector-isolated
+      Hayward--Griffioen-style curvature challenges:
+        * exponential-like GE, Kelly-like GM
+        * dipole-like GE,      Kelly-like GM
+        * Kelly-like GE,       exponential-like GM
+        * Kelly-like GE,       dipole-like GM
+
+      Thus the true radius is held fixed while the finite-Q2 curvature is
+      changed independently in the electric or magnetic sector.  Restricting
+      these extra shapes to the central radius avoids a full
+      radius x curvature Cartesian explosion: for the default three-point
+      radius grid this adds only four truths per generating family (13 rather
+      than 9), a 44% increase rather than a factor of 5 or more.
+
+    All scenarios from a given generating family retain one common truth_group,
+    so adding curvature stress realizations does not give that family extra
+    conceptual weight in the equal-truth-group closure objective.
     """
     q_template = np.linspace(0.0, max(float(qmax), 0.05), 400)
     k_ge, k_gm = kelly_sachs(q_template)
-    k_ge = k_ge / k_ge[0]
-    k_gm = k_gm / k_gm[0]
+    k_ge = np.asarray(k_ge, dtype=float) / float(k_ge[0])
+    k_gm = np.asarray(k_gm, dtype=float) / float(k_gm[0])
 
+    # Fit each generating representation once to the baseline Kelly shapes.
+    # These fits are cached and reused for all radius points.
     templates = {}
     for family in families:
         templates[family] = {
@@ -4739,6 +4762,37 @@ def make_synthetic_sachs_truth_scenarios(
 
     scenarios = []
     skipped = 0
+
+    def append_scenario(family, rE, rM, ce, cm, curvature_mode):
+        nonlocal skipped
+        if not synthetic_truth_is_physical(qmax, family, ce, cm):
+            skipped += 1
+            return
+        #endif
+
+        def truth_fn(q, fam=family, e=ce.copy(), m=cm.copy()):
+            q = np.asarray(q, dtype=float)
+            ge = sachs_family_value(q, e, fam)
+            gm = MU_P * sachs_family_value(q, m, fam)
+            return ge, gm
+        #enddef
+
+        suffix = "" if curvature_mode == "kelly_template" else f"_{curvature_mode}"
+        scenarios.append({
+            "truth_model": (
+                f"synthetic_{family}_rE{rE:.3f}_rM{rM:.3f}{suffix}"
+            ),
+            "truth_group": family,
+            "truth_family": family,
+            "truth_rE_fm": float(rE),
+            "truth_rM_fm": float(rM),
+            "truth_curvature_mode": curvature_mode,
+            "truth_fn": truth_fn,
+            "synthetic": True,
+        })
+    #enddef
+
+    # Existing radius grid with Kelly-derived higher-order curvature.
     for family in families:
         for rE in radius_values:
             for rM in radius_values:
@@ -4748,37 +4802,94 @@ def make_synthetic_sachs_truth_scenarios(
                 cm = sachs_family_coefficients_with_radius(
                     templates[family]["M"], family, rM
                 )
-                if not synthetic_truth_is_physical(qmax, family, ce, cm):
-                    skipped += 1
-                    continue
-                #endif
-
-                def truth_fn(q, fam=family, e=ce.copy(), m=cm.copy()):
-                    q = np.asarray(q, dtype=float)
-                    ge = sachs_family_value(q, e, fam)
-                    gm = MU_P * sachs_family_value(q, m, fam)
-                    return ge, gm
-                #enddef
-
-                scenarios.append({
-                    "truth_model": (
-                        f"synthetic_{family}_rE{rE:.3f}_rM{rM:.3f}"
-                    ),
-                    "truth_group": family,
-                    "truth_family": family,
-                    "truth_rE_fm": float(rE),
-                    "truth_rM_fm": float(rM),
-                    "truth_fn": truth_fn,
-                    "synthetic": True,
-                })
+                append_scenario(
+                    family, rE, rM, ce, cm, "kelly_template"
+                )
             #endfor
         #endfor
     #endfor
 
+    # Add independent curvature challenges without forming a large Cartesian
+    # product.  The median grid radius is used so slope is fixed at a central,
+    # physically relevant value while curvature alone is changed.
+    curvature_added = 0
+    if str(curvature_stress).lower() == "sectoral":
+        radius_sorted = sorted(float(x) for x in radius_values)
+        r0 = float(radius_sorted[len(radius_sorted) // 2])
+        slope0 = radius_to_normalized_slope(r0)
+
+        # Complete normalized reference shapes with the same exact slope/radius.
+        # These are the two generators used in the Hayward--Griffioen spirit:
+        # exponential and dipole differ in Q4,Q6,... while sharing G(0) and G'(0).
+        exp_shape = np.exp(slope0 * q_template)
+        dip_scale = -(2.0 / slope0) if slope0 < 0.0 else np.inf
+        dip_shape = (1.0 + q_template / dip_scale) ** -2
+
+        for family in families:
+            try:
+                exp_template = fit_sachs_family_shape_template(
+                    family, q_template, exp_shape
+                )
+                dip_template = fit_sachs_family_shape_template(
+                    family, q_template, dip_shape
+                )
+            except Exception as exc:
+                print(
+                    f"[radius-bias] curvature template warning: {family}: "
+                    f"{type(exc).__name__}: {exc}; skipping sectoral curvature "
+                    "stress truths for this generating family"
+                )
+                continue
+            #endtry
+
+            # Re-impose the radius analytically after the template fit.  This
+            # guarantees that any closure difference is driven by higher-order
+            # shape rather than a small slope mismatch from the template fit.
+            e_k = sachs_family_coefficients_with_radius(
+                templates[family]["E"], family, r0
+            )
+            m_k = sachs_family_coefficients_with_radius(
+                templates[family]["M"], family, r0
+            )
+            e_exp = sachs_family_coefficients_with_radius(
+                exp_template, family, r0
+            )
+            e_dip = sachs_family_coefficients_with_radius(
+                dip_template, family, r0
+            )
+            m_exp = sachs_family_coefficients_with_radius(
+                exp_template, family, r0
+            )
+            m_dip = sachs_family_coefficients_with_radius(
+                dip_template, family, r0
+            )
+
+            before = len(scenarios)
+            append_scenario(
+                family, r0, r0, e_exp, m_k, "E_exponential_M_kelly"
+            )
+            append_scenario(
+                family, r0, r0, e_dip, m_k, "E_dipole_M_kelly"
+            )
+            append_scenario(
+                family, r0, r0, e_k, m_exp, "E_kelly_M_exponential"
+            )
+            append_scenario(
+                family, r0, r0, e_k, m_dip, "E_kelly_M_dipole"
+            )
+            curvature_added += len(scenarios) - before
+        #endfor
+    elif str(curvature_stress).lower() != "none":
+        raise ValueError(
+            f"unknown radius-bias curvature stress mode: {curvature_stress}"
+        )
+    #endif
+
     print(
         f"[radius-bias] synthetic truth ensemble: {len(scenarios)} accepted "
         f"scenario(s), {skipped} rejected by physical-shape screen; "
-        f"radii={list(radius_values)}"
+        f"radii={list(radius_values)}; curvature_stress={curvature_stress}; "
+        f"sectoral_curvature_truths_added={curvature_added}"
     )
     return scenarios
 #enddef
@@ -5632,8 +5743,11 @@ def run_radius_bias_variance_study(
       in the truth ensemble as curvature stress tests.
 
     Truth ensemble:
-      empirical Kelly/AMT/Bernauer truths plus optional synthetic dipole/P/IP/CF
-      closure truths spanning a Cartesian rE x rM grid.  Kelly, AMT2007, and
+      empirical Kelly/AMT/Bernauer truths plus optional synthetic D/P/IP/CF
+      closure truths spanning a Cartesian rE x rM grid.  The extended ensemble
+      also varies exponential/dipole-like higher-order curvature independently
+      in GE and GM at fixed central radius, without a costly full Cartesian
+      radius x curvature expansion.  Kelly, AMT2007, and
       Bernauer are treated as three realizations of ONE empirical-elastic
       truth_group rather than three independent conceptual votes. Production
       closure aggregation is hierarchical: every truth_group receives equal
@@ -5718,6 +5832,7 @@ def run_radius_bias_variance_study(
             families=truth_families,
             radius_values=radius_values,
             qmax=qmax,
+            curvature_stress=args.radius_bias_curvature_stress,
         )
     #endif
 
@@ -22102,6 +22217,18 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Comma-separated proton synthetic truth radii in fm; the extended study "
             "uses the Cartesian rE x rM grid for every generating family"
+        ),
+    )
+    p.add_argument(
+        "--radius-bias-curvature-stress",
+        choices=("sectoral", "none"),
+        default="sectoral",
+        help=(
+            "Independent higher-order curvature stress truths for the proton "
+            "closure ensemble. 'sectoral' (default) adds exponential- and "
+            "dipole-like curvature in GE or GM separately at the central "
+            "radius-grid point, while preserving the requested radius. "
+            "'none' reproduces the older Kelly-template-only synthetic grid."
         ),
     )
     p.add_argument(
