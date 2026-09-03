@@ -2055,6 +2055,13 @@ static void write_note_summary_tables(const CSV& csv, const std::vector<RowBin>&
     }
 }
 
+static int note_period_color(int ip) {
+    // Stable run-period palette for analysis-note summary figures:
+    // Fa18 Inb, Fa18 Out, Sp19 Inb, Sp18 Inb, Sp18 Out.
+    const int colors[5] = {kBlue+1, kRed+1, kGreen+2, kMagenta+1, kOrange+7};
+    return colors[ip];
+}
+
 static void draw_note_period_topology_summary(const CSV& csv, const std::vector<RowBin>& bins,
                                               const std::vector<NotePeriodSummary>& summaries,
                                               const std::string& note_dir) {
@@ -2070,9 +2077,18 @@ static void draw_note_period_topology_summary(const CSV& csv, const std::vector<
     frame.Draw();
 
     const int markers[4] = {20,24,25,26};
+    const int colors[4] = {kBlack, kBlue+1, kRed+1, kGreen+2};
     const char* labels[4] = {"Production (topology summed)","FD-FD diagnostic","CD-FD diagnostic","CD-FT diagnostic"};
     std::vector<TGraphErrors*> gs;
-    for (int j=0;j<4;++j) { auto* g=new TGraphErrors(); g->SetMarkerStyle(markers[j]); g->SetMarkerSize(1.25); g->SetLineWidth(2); gs.push_back(g); }
+    for (int j=0;j<4;++j) {
+        auto* g=new TGraphErrors();
+        g->SetMarkerStyle(markers[j]);
+        g->SetMarkerSize(1.25);
+        g->SetMarkerColor(colors[j]);
+        g->SetLineColor(colors[j]);
+        g->SetLineWidth(2);
+        gs.push_back(g);
+    }
     for (int ip=0;ip<5;++ip) {
         gs[0]->SetPoint(ip,ip+1,summaries[ip].integrated.v); gs[0]->SetPointError(ip,0,summaries[ip].integrated.stat);
         for (int it=0;it<3;++it) {
@@ -2089,7 +2105,7 @@ static void draw_note_period_topology_summary(const CSV& csv, const std::vector<
         }
     }
     for(auto* g:gs) g->Draw("PE SAME");
-    TLegend leg(0.15,0.68,0.55,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.036);
+    TLegend leg(0.15,0.54,0.51,0.74); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.034);
     for(int j=0;j<4;++j) leg.AddEntry(gs[j],labels[j],"pe"); leg.Draw();
     TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048); t.DrawLatex(0.11,0.93,"#pi^{0} background normalization by run period and topology");
     c.SaveAs(join_path(note_dir,"pi0_contamination_period_topology_summary.png").c_str());
@@ -2108,13 +2124,19 @@ static void draw_note_distribution(const CSV& csv, const std::vector<RowBin>& bi
         const int cc=col_strict(csv,contamination_col(kPeriods[ip]));
         for(std::size_t r=0;r<csv.rows.size();++r){ if(!bins[r].valid) continue; const Triple q=parse_yield_or_zero(csv.rows[r][cc],contamination_col(kPeriods[ip])); if(q.v>0.0 && q.v<0.60) h->Fill(q.v); }
         if(h->Integral()>0) h->Scale(1.0/h->Integral());
-        h->SetMarkerStyle(markers[ip]); h->SetMarkerSize(0.9); h->SetLineWidth(2); h->GetXaxis()->SetTitle("#pi^{0} contamination"); h->GetYaxis()->SetTitle("Fraction of populated analysis bins");
+        h->SetMarkerStyle(markers[ip]);
+        h->SetMarkerSize(0.9);
+        h->SetMarkerColor(note_period_color(ip));
+        h->SetLineColor(note_period_color(ip));
+        h->SetLineWidth(2);
+        h->GetXaxis()->SetTitle("#pi^{0} contamination");
+        h->GetYaxis()->SetTitle("Fraction of populated analysis bins");
         ymax=std::max(ymax,h->GetMaximum()); hs.push_back(h);
     }
     if(!hs.empty()){ hs[0]->SetMaximum(1.30*ymax); hs[0]->SetMinimum(0.0); hs[0]->GetXaxis()->SetTitleSize(0.050); hs[0]->GetYaxis()->SetTitleSize(0.050); hs[0]->GetYaxis()->SetTitleOffset(1.15); hs[0]->Draw("HIST P"); for(std::size_t i=1;i<hs.size();++i) hs[i]->Draw("HIST P SAME"); }
     TLegend leg(0.69,0.60,0.94,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.038); for(int ip=0;ip<5;++ip) leg.AddEntry(hs[ip],kPeriods[ip].c_str(),"lp"); leg.Draw();
     TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048); t.DrawLatex(0.11,0.93,"Distribution of bin-by-bin #pi^{0} contamination");
-    TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.032); n.DrawLatex(0.12,0.84,"Displayed range: 0 < c_{#pi^{0}} < 0.60; overflow is retained in the summary table");
+    TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.030); n.DrawLatex(0.12,0.84,"Shown: 0 < c_{#pi^{0}} < 0.60; higher values are retained in the summary table");
     c.SaveAs(join_path(note_dir,"pi0_contamination_distribution_by_period.png").c_str());
     for(auto* h:hs) delete h;
 }
@@ -2125,14 +2147,44 @@ static void draw_note_xb_summary(const CSV& csv, const std::vector<RowBin>& bins
     for(const auto& b:bins){ if(!b.valid) continue; std::pair<double,double> e{b.xBmin,b.xBmax}; if(std::find(xedges.begin(),xedges.end(),e)==xedges.end()) xedges.push_back(e); }
     std::sort(xedges.begin(),xedges.end());
     TCanvas c("c_note_pi0_xb", "", 1100, 720); c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.12); c.SetTopMargin(0.10); c.SetGridy(); c.SetTicks(1,1);
-    TH1F frame("h_note_pi0_xb","",100,0.05,0.60); frame.SetMinimum(0); frame.SetMaximum(0.45); frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Median #pi^{0} contamination"); frame.GetYaxis()->SetTitleOffset(1.15); frame.GetXaxis()->SetTitleSize(0.050); frame.GetYaxis()->SetTitleSize(0.050); frame.Draw();
-    const int markers[5]={20,21,22,23,33}; std::vector<TGraphErrors*> gs;
-    for(int ip=0;ip<5;++ip){ auto* g=new TGraphErrors(); g->SetMarkerStyle(markers[ip]); g->SetMarkerSize(1.1); g->SetLineWidth(2); const int cc=col_strict(csv,contamination_col(kPeriods[ip])); int n=0;
-        for(const auto& xe:xedges){ std::vector<double> v; for(std::size_t r=0;r<bins.size();++r){ if(!bins[r].valid || bins[r].xBmin!=xe.first || bins[r].xBmax!=xe.second) continue; const Triple q=parse_yield_or_zero(csv.rows[r][cc],contamination_col(kPeriods[ip])); if(q.v>0 && std::isfinite(q.v)) v.push_back(q.v); } if(v.empty()) continue; std::sort(v.begin(),v.end()); const double med=quantile_sorted(v,.5), lo=quantile_sorted(v,.16), hi=quantile_sorted(v,.84); g->SetPoint(n,0.5*(xe.first+xe.second),med); g->SetPointError(n,0,0.5*(hi-lo)); ++n; }
-        g->Draw("PE SAME"); gs.push_back(g); }
-    TLegend leg(0.69,0.60,0.94,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.038); for(int ip=0;ip<5;++ip) leg.AddEntry(gs[ip],kPeriods[ip].c_str(),"pe"); leg.Draw();
+    TH1F frame("h_note_pi0_xb","",100,0.05,0.60); frame.SetMinimum(0); frame.SetMaximum(0.55); frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Median #pi^{0} contamination"); frame.GetYaxis()->SetTitleOffset(1.15); frame.GetXaxis()->SetTitleSize(0.050); frame.GetYaxis()->SetTitleSize(0.050); frame.Draw();
+    const int markers[5]={20,21,22,23,33};
+    // Display-only horizontal offsets keep the five periods visually separable.
+    // The underlying x_B bin centers and all numerical results are unchanged.
+    const double x_offsets[5]={-0.006,-0.003,0.0,0.003,0.006};
+    std::vector<TGraphErrors*> gs;
+    for(int ip=0;ip<5;++ip){
+        auto* g=new TGraphErrors();
+        g->SetMarkerStyle(markers[ip]);
+        g->SetMarkerSize(1.1);
+        g->SetMarkerColor(note_period_color(ip));
+        g->SetLineColor(note_period_color(ip));
+        g->SetLineWidth(2);
+        const int cc=col_strict(csv,contamination_col(kPeriods[ip]));
+        int n=0;
+        for(const auto& xe:xedges){
+            std::vector<double> v;
+            for(std::size_t r=0;r<bins.size();++r){
+                if(!bins[r].valid || bins[r].xBmin!=xe.first || bins[r].xBmax!=xe.second) continue;
+                const Triple q=parse_yield_or_zero(csv.rows[r][cc],contamination_col(kPeriods[ip]));
+                if(q.v>0 && std::isfinite(q.v)) v.push_back(q.v);
+            }
+            if(v.empty()) continue;
+            std::sort(v.begin(),v.end());
+            const double med=quantile_sorted(v,.5);
+            const double lo=quantile_sorted(v,.16);
+            const double hi=quantile_sorted(v,.84);
+            const double x_center=0.5*(xe.first+xe.second);
+            g->SetPoint(n,x_center+x_offsets[ip],med);
+            g->SetPointError(n,0,0.5*(hi-lo));
+            ++n;
+        }
+        g->Draw("PE SAME");
+        gs.push_back(g);
+    }
+    TLegend leg(0.70,0.57,0.94,0.79); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.036); for(int ip=0;ip<5;++ip) leg.AddEntry(gs[ip],kPeriods[ip].c_str(),"pe"); leg.Draw();
     TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048); t.DrawLatex(0.11,0.93,"Kinematic dependence of the #pi^{0} contamination");
-    TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.032); n.DrawLatex(0.12,0.84,"Points: median over populated (Q^{2}, |t|, #phi) bins; bars: central 68% interval");
+    TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.030); n.DrawLatex(0.12,0.84,"Points: median over populated (Q^{2}, |t|, #phi) bins; bars: central 68% interval");
     c.SaveAs(join_path(note_dir,"pi0_contamination_vs_xB_summary.png").c_str()); for(auto* g:gs) delete g;
 }
 

@@ -126,15 +126,15 @@ int main(int argc, char* argv[]) {
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
 
-    if (!run_python_exclusivity_analysis(exclusivity_opts)) {
-        std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
-        return 1;
-    }
+    // if (!run_python_exclusivity_analysis(exclusivity_opts)) {
+    //     std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
+    //     return 1;
+    // }
 
-    std::cout << "[main] Python exclusivity-cut stage finished. "
-              << "Using nominal cuts from output/jsons/combined_cuts.json.\n";
+    // std::cout << "[main] Python exclusivity-cut stage finished. "
+    //           << "Using nominal cuts from output/jsons/combined_cuts.json.\n";
 
-    initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
+    // initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
@@ -168,122 +168,122 @@ int main(int argc, char* argv[]) {
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
 
-    // --------- Global bin-averaged kinematics (CSV update) ----------
-    {
-        const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
+    // // --------- Global bin-averaged kinematics (CSV update) ----------
+    // {
+    //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_bin_means.csv";
 
-        try {
-            std::filesystem::copy_file(csv_main, csv_backup,
-                                       std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
-        }
+    //     try {
+    //         std::filesystem::copy_file(csv_main, csv_backup,
+    //                                    std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to " << csv_backup << "\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: Backup failed (" << e.what() << "). Continuing anyway.\n";
+    //     }
 
-        BinMeansOptions bin_mean_opts;
-        bin_mean_opts.make_note_outputs = true;
-        bin_mean_opts.note_output_dir = "output/bin_means/analysis_note";
+    //     BinMeansOptions bin_mean_opts;
+    //     bin_mean_opts.make_note_outputs = true;
+    //     bin_mean_opts.note_output_dir = "output/bin_means/analysis_note";
 
-        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/7, bin_mean_opts)) {
-            std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/7, bin_mean_opts)) {
+    //         std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
-    const bool use_nobkg_dvcs_mc_for_acceptance = false;
-    const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
+    // const bool use_nobkg_dvcs_mc_for_acceptance = false;
+    // const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
 
-    // --------- Current-response calibration + diagnostics ----------
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+    // // --------- Current-response calibration + diagnostics ----------
+    // {
+    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
-        CurrentDependenceOptions current_opts;
-        current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-        current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-        current_opts.output_dir = "output/dvcs_current_dependence";
+    //     CurrentDependenceOptions current_opts;
+    //     current_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+    //     current_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+    //     current_opts.output_dir = "output/dvcs_current_dependence";
 
-        current_opts.override_to_unity = false;
-        current_opts.use_second_column_charge_for_all_unpolarized = true;
-        current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
-        current_opts.columns_3_to_5_charge_sum_scale = 1.025;
-        current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
-        current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
-        current_opts.enable_photon_region_current_diagnostic = true;
-        current_opts.enable_eppi0_photon_region_current_diagnostic = true;
-        current_opts.enable_region_theta_current_diagnostic = true;
-        current_opts.enable_eppi0_region_theta_current_diagnostic = false;
-        current_opts.enable_exploratory_kinematic_current_diagnostic = false;
-        current_opts.enable_relative_ft_fd_photon_efficiency_diagnostic = false;
-        current_opts.finalized_production_mode = true;
-        current_opts.clean_output_dir_before_run = true;
+    //     current_opts.override_to_unity = false;
+    //     current_opts.use_second_column_charge_for_all_unpolarized = true;
+    //     current_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
+    //     current_opts.columns_3_to_5_charge_sum_scale = 1.025;
+    //     current_opts.use_fa18_inb_current_efficiency_for_sp19_inb = true;
+    //     current_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+    //     current_opts.enable_photon_region_current_diagnostic = true;
+    //     current_opts.enable_eppi0_photon_region_current_diagnostic = true;
+    //     current_opts.enable_region_theta_current_diagnostic = true;
+    //     current_opts.enable_eppi0_region_theta_current_diagnostic = false;
+    //     current_opts.enable_exploratory_kinematic_current_diagnostic = false;
+    //     current_opts.enable_relative_ft_fd_photon_efficiency_diagnostic = false;
+    //     current_opts.finalized_production_mode = true;
+    //     current_opts.clean_output_dir_before_run = true;
 
-        // Final production current-response prescription:
-        //   - regional FT/S1--S6 DATA response for every period/channel,
-        //   - plus one common centered linear electron-angle term for
-        //     Sp18 Out ep->epg only,
-        //   - no legacy post-binning current correction.
-        current_opts.use_sp18_out_e_theta_response_model = true;
-        current_opts.use_e_theta_linear_data_current_efficiency = false;
-        current_opts.response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
-        current_opts.apply_legacy_binned_current_corrections = false;
-        current_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
-        current_opts.max_workers = 7;
+    //     // Final production current-response prescription:
+    //     //   - regional FT/S1--S6 DATA response for every period/channel,
+    //     //   - plus one common centered linear electron-angle term for
+    //     //     Sp18 Out ep->epg only,
+    //     //   - no legacy post-binning current correction.
+    //     current_opts.use_sp18_out_e_theta_response_model = true;
+    //     current_opts.use_e_theta_linear_data_current_efficiency = false;
+    //     current_opts.response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
+    //     current_opts.apply_legacy_binned_current_corrections = false;
+    //     current_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
+    //     current_opts.max_workers = 7;
 
-        if (!update_current_dependence_factors_csv(csv_main,
-                                                   dataTrees,
-                                                   eppi0DataTrees,
-                                                   currentStudyGenMcTrees,
-                                                   currentStudyRecMcTrees,
-                                                   eppi0GenMcTrees,
-                                                   eppi0RecMcTrees,
-                                                   current_opts)) {
-            std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_current_dependence_factors_csv(csv_main,
+    //                                                dataTrees,
+    //                                                eppi0DataTrees,
+    //                                                currentStudyGenMcTrees,
+    //                                                currentStudyRecMcTrees,
+    //                                                eppi0GenMcTrees,
+    //                                                eppi0RecMcTrees,
+    //                                                current_opts)) {
+    //         std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
 
-    // --------- Raw yields + event-level current-corrected yields ----------
-    {
-        const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string cuts_json = "output/jsons/combined_cuts.json";
+    // // --------- Raw yields + event-level current-corrected yields ----------
+    // {
+    //     const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
+    //     const std::string cuts_json = "output/jsons/combined_cuts.json";
 
-        try {
-            std::filesystem::copy_file(csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
-                std::filesystem::copy_options::overwrite_existing);
-            std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
-        } catch (const std::exception& e) {
-            std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
-        }
+    //     try {
+    //         std::filesystem::copy_file(csv_main,
+    //             "output/csvs/dvcs_pass2_analysis_backup_total_counts.csv",
+    //             std::filesystem::copy_options::overwrite_existing);
+    //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_total_counts.csv\n";
+    //     } catch (const std::exception& e) {
+    //         std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
+    //     }
 
-        TotalCountsOptions total_count_opts;
-        total_count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
-        // The large per-period/topology diagnostic canvases are redundant with
-        // the compact analysis-note yield summaries and cost substantial ROOT
-        // drawing/output time in every production run.
-        total_count_opts.make_plots = false;
-        total_count_opts.make_note_outputs = true;
-        total_count_opts.apply_event_level_current_correction = true;
-        total_count_opts.current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
-        total_count_opts.require_sp18_out_epg_e_theta_current_model = true;
-        total_count_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
+    //     TotalCountsOptions total_count_opts;
+    //     total_count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+    //     // The large per-period/topology diagnostic canvases are redundant with
+    //     // the compact analysis-note yield summaries and cost substantial ROOT
+    //     // drawing/output time in every production run.
+    //     total_count_opts.make_plots = false;
+    //     total_count_opts.make_note_outputs = true;
+    //     total_count_opts.apply_event_level_current_correction = true;
+    //     total_count_opts.current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
+    //     total_count_opts.require_sp18_out_epg_e_theta_current_model = true;
+    //     total_count_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
 
-        if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
-            genMcTrees, recMcTrees,
-            eppi0GenMcTrees, eppi0RecMcTrees,
-            eppi0BkgTrees,
-            cuts_json,
-            output_root,
-            /*max_workers=*/7,
-            total_count_opts,
-            currentStudyGenMcTrees,
-            currentStudyRecMcTrees)) {
-            std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-    }
+    //     if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
+    //         genMcTrees, recMcTrees,
+    //         eppi0GenMcTrees, eppi0RecMcTrees,
+    //         eppi0BkgTrees,
+    //         cuts_json,
+    //         output_root,
+    //         /*max_workers=*/7,
+    //         total_count_opts,
+    //         currentStudyGenMcTrees,
+    //         currentStudyRecMcTrees)) {
+    //         std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
+    //         std::exit(EXIT_FAILURE);
+    //     }
+    // }
 
     // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
     // {
