@@ -209,6 +209,7 @@ JO_GLOBAL_SCALE_FRAC = 0.05
 SAYLOR_EBEAM = 5.88
 SAYLOR_GLOBAL_SCALE_FRAC = 0.04
 DEFAULT_SAYLOR_FILE = "import/saylor_CLAS6.txt"
+DEFAULT_PRAD_FILE = "import/prad_normalized_ge.csv"
 DEFAULT_GEORGES_FILE = "import/E12-06-114.xlsx"
 
 # Georges et al., PRL 128, 252002 (2022), Hall A E12-06-114.
@@ -2306,6 +2307,65 @@ def bernauer_rosenbluth_data() -> pd.DataFrame:
 #enddef
 
 
+def load_prad_normalized_ge(
+        path: str | Path = DEFAULT_PRAD_FILE) -> pd.DataFrame:
+    """
+    Load the published PRad normalized proton electric form-factor points.
+
+    The authoritative numerical values are from the Jefferson Lab PRad public
+    data release, readme.pdf pp. 4--5:
+      https://www.jlab.org/prad/data/readme.pdf
+
+    These are G_E^p(Q2)=f(Q2)/n, i.e. with the fitted beam-energy-dependent
+    floating normalizations removed.  The public release quotes
+      n = 1.0002 for 1.101 GeV,
+      n = 0.9983 for 2.143 GeV.
+
+    Statistical and systematic uncertainties are retained separately.  The
+    plotting comparison uses their quadrature sum for a compact visual
+    uncertainty; the source columns remain available in the import CSV.
+    """
+    p = Path(path).expanduser()
+    if not p.exists():
+        raise FileNotFoundError(
+            f"PRad normalized-GE table not found: {p}. "
+            "Place prad_normalized_ge.csv in external_scripts/import/."
+        )
+    #endif
+
+    df = pd.read_csv(p)
+    required = {
+        "beam_energy_MeV", "theta_deg", "Q2_GeV2",
+        "GE", "GE_stat", "GE_syst",
+    }
+    missing = required.difference(df.columns)
+    if missing:
+        raise ValueError(
+            "PRad table is missing required columns: "
+            + ", ".join(sorted(missing))
+        )
+    #endif
+
+    for col in required:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    #endfor
+    df = df.loc[
+        np.isfinite(df["Q2_GeV2"])
+        & np.isfinite(df["GE"])
+        & np.isfinite(df["GE_stat"])
+        & np.isfinite(df["GE_syst"])
+    ].copy()
+    df["GE_total"] = np.hypot(
+        df["GE_stat"].to_numpy(float),
+        df["GE_syst"].to_numpy(float),
+    )
+    df["beam_energy_GeV"] = df["beam_energy_MeV"] / 1000.0
+    return df.sort_values(
+        ["beam_energy_MeV", "Q2_GeV2"]
+    ).reset_index(drop=True)
+#enddef
+
+
 def elastic_reference_curves(q: np.ndarray) -> Dict[str, Tuple[np.ndarray, np.ndarray]]:
     """Named direct-elastic reference curves used consistently in all plots."""
     return {
@@ -3148,13 +3208,22 @@ def measurement_spec(
         label: str,
         kind: str,
         data: pd.DataFrame,
-        norm_frac: float = 0.0) -> Dict[str, object]:
+        norm_frac: float = 0.0,
+        unconstrained_norm: bool = False) -> Dict[str, object]:
+    """
+    Canonical measurement specification used by combined/global fits.
+
+    ``unconstrained_norm`` is optional for backward compatibility.  When True,
+    the corresponding fit machinery treats the dataset scale as a free
+    normalization rather than assigning a Gaussian normalization penalty.
+    """
     return {
         "key": key,
         "label": label,
         "kind": kind,
         "data": data,
         "norm_frac": float(norm_frac),
+        "unconstrained_norm": bool(unconstrained_norm),
     }
 #enddef
 
@@ -4957,12 +5026,18 @@ def save_extended_radius_bias_matrices(
             biases = part["bias_fm"].to_numpy(float)
             biases = biases[np.isfinite(biases)]
             row[f"{quantity}_RMS_objective_all_truths_fm"] = (
-                float(np.sqrt(np.mean(vals**2))) if len(vals) else np.nan
+                equal_truth_group_rms(part, "sqrt_stat2_plus_bias2_fm")
             )
             row[f"{quantity}_max_objective_all_truths_fm"] = (
                 float(np.max(vals)) if len(vals) else np.nan
             )
             row[f"{quantity}_RMS_bias_all_truths_fm"] = (
+                equal_truth_group_rms(part, "bias_fm")
+            )
+            row[f"{quantity}_scenario_weighted_RMS_objective_fm"] = (
+                float(np.sqrt(np.mean(vals**2))) if len(vals) else np.nan
+            )
+            row[f"{quantity}_scenario_weighted_RMS_bias_fm"] = (
                 float(np.sqrt(np.mean(biases**2))) if len(biases) else np.nan
             )
         #endfor
@@ -5032,6 +5107,34 @@ def _radius_bias_family_batch_worker(task: Tuple[str, Sequence[int]]):
 
 
 
+
+def equal_truth_group_rms(
+        table: pd.DataFrame,
+        value_column: str) -> float:
+    """
+    Hierarchical RMS with equal weight for each truth group.
+
+    First compute mean(value^2) within each truth_group, then average those
+    group-level mean-squares with equal group weight.  Thus a 3x3 synthetic
+    radius grid contributes the same total weight as a singleton empirical
+    truth group, independent of arbitrary grid density.
+    """
+    group_ms = []
+    for _, group in table.groupby("truth_group", sort=False):
+        vals = group[value_column].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            group_ms.append(float(np.mean(vals**2)))
+        #endif
+    #endfor
+    if not group_ms:
+        return np.nan
+    #endif
+    return float(np.sqrt(np.mean(group_ms)))
+#enddef
+
+
+
 def save_mixed_family_closure_ranking(
         table: pd.DataFrame,
         candidate_pairs: Sequence[str],
@@ -5069,12 +5172,32 @@ def save_mixed_family_closure_ranking(
         }
         for quantity in ["rE", "rM"]:
             qpart = part.loc[part["quantity"] == quantity]
+
+            # Production definition: each conceptual truth_group gets one
+            # equal vote, regardless of whether it contains 1 or 9 scenarios.
+            row[f"{quantity}_RMS_bias_fm"] = equal_truth_group_rms(
+                qpart, "bias_fm"
+            )
+            row[f"{quantity}_RMS_replica_std_fm"] = equal_truth_group_rms(
+                qpart, "stat_RMS_fm"
+            )
+            row[f"{quantity}_RMS_RMSE_fm"] = equal_truth_group_rms(
+                qpart, "sqrt_stat2_plus_bias2_fm"
+            )
+
+            # Preserve the previous scenario-weighted quantities for auditing.
             bias = qpart["bias_fm"].to_numpy(float)
             stat = qpart["stat_RMS_fm"].to_numpy(float)
             obj = qpart["sqrt_stat2_plus_bias2_fm"].to_numpy(float)
-            row[f"{quantity}_RMS_bias_fm"] = float(np.sqrt(np.nanmean(bias**2)))
-            row[f"{quantity}_RMS_replica_std_fm"] = float(np.sqrt(np.nanmean(stat**2)))
-            row[f"{quantity}_RMS_RMSE_fm"] = float(np.sqrt(np.nanmean(obj**2)))
+            row[f"{quantity}_scenario_weighted_RMS_bias_fm"] = (
+                float(np.sqrt(np.nanmean(bias**2))) if len(bias) else np.nan
+            )
+            row[f"{quantity}_scenario_weighted_RMS_replica_std_fm"] = (
+                float(np.sqrt(np.nanmean(stat**2))) if len(stat) else np.nan
+            )
+            row[f"{quantity}_scenario_weighted_RMS_RMSE_fm"] = (
+                float(np.sqrt(np.nanmean(obj**2))) if len(obj) else np.nan
+            )
         #endfor
         row["combined_RMS_objective_fm"] = (
             float(np.sqrt(0.5 * (
@@ -5343,8 +5466,10 @@ def run_radius_bias_variance_study(
       in the truth ensemble as curvature stress tests.
 
     Truth ensemble:
-      one representative empirical truth (Kelly), plus optional synthetic dipole/P/IP/CF
-      closure truths spanning a Cartesian rE x rM grid.
+      empirical Kelly/AMT/Bernauer truths plus optional synthetic dipole/P/IP/CF
+      closure truths spanning a Cartesian rE x rM grid.  Production closure
+      aggregation is hierarchical: every truth_group receives equal total
+      weight, independent of the number of radius-grid scenarios in that group.
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -7554,7 +7679,13 @@ def fit_sachs_family_multi_measurements(
 def summarize_bias_for_family(
         study_csv: Path,
         family: str) -> Dict[str, float]:
-    """Preserve signed, RMS, and worst-case bias estimates for one family."""
+    """
+    Bias estimates for one fitted family using equal truth-group weighting.
+
+    The production RMS first averages bias^2 within each truth_group and then
+    gives every truth_group equal weight.  Raw scenario-weighted RMS values are
+    retained in parallel for audit/backward comparison.
+    """
     table = pd.read_csv(study_csv)
     fam = table.loc[table["family"].astype(str) == family].copy()
     if len(fam) == 0:
@@ -7563,16 +7694,37 @@ def summarize_bias_for_family(
 
     out = {}
     for quantity in ["rE", "rM"]:
-        vals = fam.loc[
-            fam["quantity"].astype(str) == quantity, "bias_fm"
-        ].to_numpy(float)
+        qpart = fam.loc[fam["quantity"].astype(str) == quantity].copy()
+        vals = qpart["bias_fm"].to_numpy(float)
         vals = vals[np.isfinite(vals)]
         if len(vals) == 0:
             raise RuntimeError(f"No finite {quantity} bias values for {family}")
         #endif
-        out[f"{quantity}_mean_signed_bias_fm"] = float(np.mean(vals))
-        out[f"{quantity}_RMS_bias_fm"] = float(np.sqrt(np.mean(vals**2)))
+
+        # Signed mean is also made hierarchical so dense synthetic grids do not
+        # dominate its interpretation.
+        group_means = []
+        for _, group in qpart.groupby("truth_group", sort=False):
+            gv = group["bias_fm"].to_numpy(float)
+            gv = gv[np.isfinite(gv)]
+            if len(gv):
+                group_means.append(float(np.mean(gv)))
+            #endif
+        #endfor
+
+        out[f"{quantity}_mean_signed_bias_fm"] = (
+            float(np.mean(group_means)) if group_means else np.nan
+        )
+        out[f"{quantity}_RMS_bias_fm"] = equal_truth_group_rms(
+            qpart, "bias_fm"
+        )
+        out[f"{quantity}_scenario_weighted_RMS_bias_fm"] = float(
+            np.sqrt(np.mean(vals**2))
+        )
         out[f"{quantity}_max_abs_bias_fm"] = float(np.max(np.abs(vals)))
+        out[f"{quantity}_truth_group_count"] = int(
+            qpart["truth_group"].astype(str).nunique()
+        )
     #endfor
     return out
 #enddef
@@ -13724,12 +13876,17 @@ def save_preferred_sachs_vs_elastic_data(
         selected_specs: Sequence[Dict[str, object]],
         outdir: Path) -> None:
     """
-    Compare the preferred BH-extracted Sachs functions with A1/Bernauer data.
+    Compare the preferred BH-extracted Sachs functions with A1 and PRad data.
 
-    The upper row shows the absolute GE and GM extractions with propagated
-    Hessian bands.  The lower row shows the direct elastic data divided by the
-    BH extraction at the same Q2 values.  The BH Hessian uncertainty is shown
-    as a band around unity, making percent-level finite-Q2 differences visible.
+    Layout:
+      top row    : absolute GE and GM; A1 on both, PRad on GE;
+      middle row : A1/BH ratios for GE and GM;
+      bottom row : PRad GE/BH ratio spanning the full figure width.
+
+    PRad measured GE only, so no artificial PRad GM panel is constructed.
+    The bottom PRad panel uses the actual PRad low-Q2 support rather than the
+    full BH-extraction x range, making the percent-level shape comparison
+    visible.
     """
     outdir.mkdir(parents=True, exist_ok=True)
     qdata = np.concatenate([
@@ -13737,142 +13894,210 @@ def save_preferred_sachs_vs_elastic_data(
         for spec in selected_specs if len(spec["data"])
     ])
     qmax = min(1.0, max(0.60, 1.03 * float(np.nanmax(qdata))))
-    q = np.linspace(0.0, qmax, 600)
+    q = np.linspace(0.0, qmax, 700)
 
     ge, ge_err = _sachs_band_from_result(fit, family, q, "GE")
     gm, gm_err = _sachs_band_from_result(fit, family, q, "GM")
 
     a1 = bernauer_rosenbluth_data()
     a1 = a1.loc[a1["Q2"] <= qmax].copy()
+    prad = load_prad_normalized_ge()
+    prad = prad.loc[prad["Q2_GeV2"] <= qmax].copy()
 
-    fig, axes = plt.subplots(
-        2, 2,
-        figsize=(13.2, 8.2),
-        sharex="col",
-        gridspec_kw={"height_ratios": [2.15, 1.0]},
+    fig = plt.figure(figsize=(13.2, 11.2))
+    gs = fig.add_gridspec(
+        3, 2,
+        height_ratios=[2.15, 1.0, 1.15],
+        hspace=0.10,
+        wspace=0.18,
     )
+    ax_ge = fig.add_subplot(gs[0, 0])
+    ax_gm = fig.add_subplot(gs[0, 1])
+    ax_a1_ge = fig.add_subplot(gs[1, 0], sharex=ax_ge)
+    ax_a1_gm = fig.add_subplot(gs[1, 1], sharex=ax_gm)
+    ax_prad = fig.add_subplot(gs[2, :])
 
-    for j, (central, sigma, col, errcol, ylabel) in enumerate([
-        (ge, ge_err, "GE", "GE_err", r"$G_E^p$"),
-        (gm, gm_err, "GM", "GM_err", r"$G_M^p$"),
-    ]):
-        ax = axes[0, j]
-        rax = axes[1, j]
+    qlo = float(np.nanmin(qdata))
+    qhi = float(np.nanmax(qdata))
 
-        # Absolute form factors.
-        line, = ax.plot(
-            q, central,
-            linewidth=2.0,
-            label="BH extraction",
-        )
-        ax.fill_between(
-            q,
-            central - sigma,
-            central + sigma,
-            color=line.get_color(),
-            alpha=0.18,
-            linewidth=0.0,
-            label="68% Hessian band",
-        )
-        ax.errorbar(
-            a1["Q2"],
-            a1[col],
-            yerr=a1[errcol],
-            fmt="o",
-            fillstyle="none",
-            markersize=4.0,
-            capsize=2,
+    # --------------------------
+    # Absolute GE
+    # --------------------------
+    line_ge, = ax_ge.plot(
+        q, ge, linewidth=2.0, label="BH extraction"
+    )
+    ax_ge.fill_between(
+        q, ge - ge_err, ge + ge_err,
+        alpha=0.18, linewidth=0.0,
+        label="68% Hessian band",
+    )
+    ax_ge.errorbar(
+        a1["Q2"], a1["GE"], yerr=a1["GE_err"],
+        fmt="o", fillstyle="none", markersize=4.0, capsize=2,
+        linewidth=0.9, label="A1/Bernauer Rosenbluth",
+    )
+    for ebeam, group in prad.groupby("beam_energy_MeV", sort=True):
+        ax_ge.errorbar(
+            group["Q2_GeV2"], group["GE"], yerr=group["GE_total"],
+            fmt="o", fillstyle="none", markersize=4.2, capsize=2,
             linewidth=0.9,
-            label="A1/Bernauer Rosenbluth",
+            label=f"PRad {float(ebeam)/1000.0:.3g} GeV",
         )
+    #endfor
+    ax_ge.axvspan(qlo, qhi, alpha=0.06)
+    ax_ge.set_xlim(0.0, qmax)
+    ax_ge.set_ylabel(r"$G_E^p$")
+    ax_ge.grid(alpha=0.2)
+    ax_ge.legend(fontsize=8.5, loc="best")
 
-        # Ratio at the exact A1 kinematics.
+    # --------------------------
+    # Absolute GM
+    # --------------------------
+    ax_gm.plot(q, gm, linewidth=2.0, label="BH extraction")
+    ax_gm.fill_between(
+        q, gm - gm_err, gm + gm_err,
+        alpha=0.18, linewidth=0.0,
+        label="68% Hessian band",
+    )
+    ax_gm.errorbar(
+        a1["Q2"], a1["GM"], yerr=a1["GM_err"],
+        fmt="o", fillstyle="none", markersize=4.0, capsize=2,
+        linewidth=0.9, label="A1/Bernauer Rosenbluth",
+    )
+    ax_gm.axvspan(qlo, qhi, alpha=0.06)
+    ax_gm.set_xlim(0.0, qmax)
+    ax_gm.set_ylabel(r"$G_M^p$")
+    ax_gm.grid(alpha=0.2)
+
+    # --------------------------
+    # A1/BH ratios
+    # --------------------------
+    for which, col, errcol, rax in [
+        ("GE", "GE", "GE_err", ax_a1_ge),
+        ("GM", "GM", "GM_err", ax_a1_gm),
+    ]:
         qpts = a1["Q2"].to_numpy(float)
-        bh_pts, bh_pts_err = _sachs_band_from_result(
-            fit, family, qpts, "GE" if col == "GE" else "GM"
+        bh_pts, _ = _sachs_band_from_result(
+            fit, family, qpts, which
         )
-        data_vals = a1[col].to_numpy(float)
-        data_errs = a1[errcol].to_numpy(float)
-
-        ratio = data_vals / bh_pts
-        ratio_err = data_errs / bh_pts
-
+        ratio = a1[col].to_numpy(float) / bh_pts
+        ratio_err = a1[errcol].to_numpy(float) / bh_pts
         rax.errorbar(
-            qpts,
-            ratio,
-            yerr=ratio_err,
-            fmt="o",
-            fillstyle="none",
-            markersize=4.0,
-            capsize=2,
-            linewidth=0.9,
-            label="A1 / BH extraction",
+            qpts, ratio, yerr=ratio_err,
+            fmt="o", fillstyle="none", markersize=4.0,
+            capsize=2, linewidth=0.9,
         )
 
-        # Express the BH Hessian uncertainty as a relative band around unity.
+        central = ge if which == "GE" else gm
+        sigma = ge_err if which == "GE" else gm_err
         rel_bh = np.divide(
-            sigma,
-            central,
+            sigma, central,
             out=np.full_like(sigma, np.nan, dtype=float),
             where=np.abs(central) > 1.0e-12,
         )
         rax.fill_between(
-            q,
-            1.0 - rel_bh,
-            1.0 + rel_bh,
-            color=line.get_color(),
-            alpha=0.18,
-            linewidth=0.0,
-            label="BH 68% Hessian band",
+            q, 1.0 - rel_bh, 1.0 + rel_bh,
+            alpha=0.18, linewidth=0.0,
         )
         rax.axhline(1.0, linewidth=0.9, linestyle="--")
-
-        # Selected-data support is shown in both rows.
-        qlo = float(np.nanmin(qdata))
-        qhi = float(np.nanmax(qdata))
-        ax.axvspan(qlo, qhi, alpha=0.06)
         rax.axvspan(qlo, qhi, alpha=0.06)
-
-        ax.set_xlim(0.0, qmax)
         rax.set_xlim(0.0, qmax)
         rax.set_ylim(0.90, 1.10)
-
-        ax.set_ylabel(ylabel)
-        rax.set_ylabel(
-            r"$G_E^{\rm A1}/G_E^{\rm BH}$"
-            if col == "GE"
-            else r"$G_M^{\rm A1}/G_M^{\rm BH}$"
-        )
-        rax.set_xlabel(r"$Q^2=|t|$ (GeV$^2$)")
-
-        ax.grid(alpha=0.2)
         rax.grid(alpha=0.2)
+        rax.set_xlabel(r"$Q^2=|t|$ (GeV$^2$)")
+    #endfor
+    ax_a1_ge.set_ylabel(r"$G_E^{\rm A1}/G_E^{\rm BH}$")
+    ax_a1_gm.set_ylabel(r"$G_M^{\rm A1}/G_M^{\rm BH}$")
+
+    # --------------------------
+    # PRad/BH electric ratio, full-width low-Q2 panel
+    # --------------------------
+    q_prad_max = max(
+        0.062,
+        1.06 * float(prad["Q2_GeV2"].max()),
+    )
+    q_prad_band = np.linspace(0.0, q_prad_max, 500)
+    bh_prad_band, bh_prad_band_err = _sachs_band_from_result(
+        fit, family, q_prad_band, "GE"
+    )
+    rel_prad_band = np.divide(
+        bh_prad_band_err,
+        bh_prad_band,
+        out=np.full_like(bh_prad_band_err, np.nan, dtype=float),
+        where=np.abs(bh_prad_band) > 1.0e-12,
+    )
+    ax_prad.fill_between(
+        q_prad_band,
+        1.0 - rel_prad_band,
+        1.0 + rel_prad_band,
+        alpha=0.18,
+        linewidth=0.0,
+        label="BH 68% Hessian band",
+    )
+
+    prad_ratio_rows = []
+    for ebeam, group in prad.groupby("beam_energy_MeV", sort=True):
+        qpts = group["Q2_GeV2"].to_numpy(float)
+        bh_pts, bh_pts_err = _sachs_band_from_result(
+            fit, family, qpts, "GE"
+        )
+        ratio = group["GE"].to_numpy(float) / bh_pts
+        ratio_stat = group["GE_stat"].to_numpy(float) / bh_pts
+        ratio_syst = group["GE_syst"].to_numpy(float) / bh_pts
+        ratio_total = np.hypot(ratio_stat, ratio_syst)
+
+        ax_prad.errorbar(
+            qpts, ratio, yerr=ratio_total,
+            fmt="o", fillstyle="none", markersize=4.3,
+            capsize=2, linewidth=0.9,
+            label=f"PRad {float(ebeam)/1000.0:.3g} GeV / BH",
+        )
+
+        for i in range(len(group)):
+            prad_ratio_rows.append({
+                "beam_energy_MeV": int(ebeam),
+                "Q2_GeV2": float(qpts[i]),
+                "PRad_GE": float(group.iloc[i]["GE"]),
+                "PRad_GE_stat": float(group.iloc[i]["GE_stat"]),
+                "PRad_GE_syst": float(group.iloc[i]["GE_syst"]),
+                "PRad_GE_total": float(group.iloc[i]["GE_total"]),
+                "BH_GE": float(bh_pts[i]),
+                "BH_GE_hessian_error": float(bh_pts_err[i]),
+                "PRad_over_BH": float(ratio[i]),
+                "PRad_over_BH_stat": float(ratio_stat[i]),
+                "PRad_over_BH_syst": float(ratio_syst[i]),
+                "PRad_over_BH_total": float(ratio_total[i]),
+            })
+        #endfor
     #endfor
 
-    # One compact legend for the absolute panels; the lower-row meaning is
-    # sufficiently explicit from the axis labels and matching markers/bands.
-    axes[0, 0].legend(fontsize=9, loc="best")
+    ax_prad.axhline(1.0, linewidth=0.9, linestyle="--")
+    ax_prad.set_xlim(0.0, q_prad_max)
+    ax_prad.set_ylabel(r"$G_E^{\rm PRad}/G_E^{\rm BH}$")
+    ax_prad.set_xlabel(r"$Q^2$ (GeV$^2$)")
+    ax_prad.grid(alpha=0.2)
+    ax_prad.legend(fontsize=8.5, ncol=3, loc="best")
 
+    family_label = str(family)
     fig.suptitle(
-        f"Preferred all-four BH extraction vs direct elastic form factors ({family})",
-        y=0.985,
+        f"Preferred BH extraction vs A1 and PRad elastic form factors "
+        f"({family_label})",
+        y=0.992,
     )
     fig.subplots_adjust(
-        top=0.92,
-        bottom=0.09,
+        top=0.94,
+        bottom=0.07,
         left=0.075,
         right=0.985,
-        hspace=0.08,
-        wspace=0.18,
     )
     fig.savefig(
-        outdir / "01_preferred_GE_GM_vs_A1_Bernauer.png",
+        outdir / "01_preferred_GE_GM_vs_A1_PRad.png",
         dpi=300,
     )
     plt.close(fig)
 
-    # Save the ratio values used in the lower panels.
-    rows = []
+    # Save A1 ratios used in the middle panels.
+    a1_rows = []
     for which, col, errcol in [
         ("GE", "GE", "GE_err"),
         ("GM", "GM", "GM_err"),
@@ -13882,7 +14107,7 @@ def save_preferred_sachs_vs_elastic_data(
             fit, family, qpts, which
         )
         for i in range(len(a1)):
-            rows.append({
+            a1_rows.append({
                 "form_factor": col,
                 "Q2": float(qpts[i]),
                 "A1_value": float(a1.iloc[i][col]),
@@ -13896,11 +14121,16 @@ def save_preferred_sachs_vs_elastic_data(
             })
         #endfor
     #endfor
-    pd.DataFrame(rows).to_csv(
+    pd.DataFrame(a1_rows).to_csv(
         outdir / "preferred_GE_GM_vs_A1_Bernauer_ratios.csv",
         index=False,
     )
+    pd.DataFrame(prad_ratio_rows).to_csv(
+        outdir / "preferred_GE_vs_PRad_ratios.csv",
+        index=False,
+    )
 #enddef
+
 
 
 def run_georges_normalization_prior_scan(
@@ -14906,11 +15136,19 @@ def run_unified_km15_final_analysis(
         all5_specs, _ = _km15_selected_specs_for_bundles(
             production_bundles, selection, 0.05
         )
-        save_preferred_sachs_vs_elastic_data(
-            fit=all5_fit, family=chosen["all_five"],
-            selected_specs=all5_specs,
-            outdir=diagnostics_dir / "preferred_form_factors_vs_elastic",
-        )
+        try:
+            save_preferred_sachs_vs_elastic_data(
+                fit=all5_fit, family=chosen["all_five"],
+                selected_specs=all5_specs,
+                outdir=diagnostics_dir / "preferred_form_factors_vs_elastic",
+            )
+        except Exception as exc:
+            print(
+                "[preferred elastic comparison] WARNING: diagnostic failed; "
+                "continuing without aborting the completed production fit: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        #endtry
 
         # E12-06-114 / Georges normalization study: fixed, plausible few-percent
         # Gaussian priors, and an unconstrained diagnostic endpoint.
@@ -15015,13 +15253,21 @@ def run_unified_km15_final_analysis(
     # of arXiv:2607.04481 but adding Georges 2022 and Lee 2026 and using the
     # closure-selected production Sachs family.
     if chosen.get("all_five") is not None:
-        run_global_saylor_tmin_scan(
-            production_bundles,
-            saylor_bundle,
-            selection,
-            chosen["all_five"],
-            root_outdir,
-        )
+        try:
+            run_global_saylor_tmin_scan(
+                production_bundles,
+                saylor_bundle,
+                selection,
+                chosen["all_five"],
+                root_outdir,
+            )
+        except Exception as exc:
+            print(
+                "[global Saylor |t|min scan] WARNING: diagnostic failed; "
+                "continuing without aborting the completed production fit: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        #endtry
     #endif
 
     # Saylor: keep both model-based and direct Jo-vs-Saylor diagnostics.
