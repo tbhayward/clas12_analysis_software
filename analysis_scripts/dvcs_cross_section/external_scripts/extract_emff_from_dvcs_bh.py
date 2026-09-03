@@ -194,6 +194,16 @@ CLAS6_GEPARD_DATASET_ID = 98
 # 107=Kin2, 108=Kin3, 112=KinX2, 113=KinX3.
 HALLA_DEFURNE_GEPARD_DATASET_IDS = (107, 108, 112, 113)
 HALLA_DEFURNE_GLOBAL_SCALE_FRAC = 0.028
+
+# Hall A E07-007 / Defurne et al., Nature Communications 8, 1408 (2017),
+# arXiv:1703.09442.  Gepard IDs 129--134 are the 450 beam-spin-sum
+# (helicity-independent / XUU-equivalent) phi-dependent cross-section points.
+# The paper quotes 3.2% point-to-point systematics and correlated components
+# 1.0% HRS acceptance, 2.0% luminosity+DAQ dead time, 0.5% trigger efficiency.
+HALLA_DEFURNE2017_GEPARD_DATASET_IDS = (129, 130, 131, 132, 133, 134)
+HALLA_DEFURNE2017_POINT_TO_POINT_FRAC = 0.032
+HALLA_DEFURNE2017_GLOBAL_SCALE_FRAC = math.sqrt(0.010**2 + 0.020**2 + 0.005**2)
+
 JO_GLOBAL_SCALE_FRAC = 0.05
 
 SAYLOR_EBEAM = 5.88
@@ -1512,6 +1522,137 @@ def load_halla_defurne_gepard_datasets(
 #enddef
 
 
+
+def load_halla_defurne2017_gepard_datasets(
+        dataset_ids: Sequence[int] = HALLA_DEFURNE2017_GEPARD_DATASET_IDS
+        ) -> pd.DataFrame:
+    """
+    Load Hall A E07-007 / Defurne et al. 2017 unpolarized cross sections.
+
+    Gepard labels the original beam-spin-sum datasets 129--134 as ``BSS``.
+    The Gepard dataset documentation identifies these six sets as the 450 XUU
+    measurements at Ebeam = 3.355, 4.455, and 5.55 GeV.
+
+    Error treatment follows the publication rather than double-counting its
+    total systematic uncertainty:
+      * statistical uncertainty: Gepard errstat;
+      * point-to-point systematic: 3.2% of the measured cross section;
+      * correlated normalization nuisance:
+            sqrt(1.0%^2 + 2.0%^2 + 0.5%^2) = 2.291...%.
+    The latter combines HRS acceptance, luminosity/dead-time, and trigger.
+    """
+    try:
+        import gepard as g
+    except Exception as exc:
+        raise RuntimeError(
+            "Could not import gepard. Hall A Defurne 2017 requires the same "
+            "Gepard installation used by the Jo/KM15 analysis."
+        ) from exc
+    #endtry
+
+    rows = []
+    for dataset_id in dataset_ids:
+        if dataset_id not in g.dset:
+            raise RuntimeError(
+                f"Gepard Defurne-2017 dataset {dataset_id} is unavailable. "
+                "Update/check the Gepard installation; expected IDs are "
+                f"{tuple(dataset_ids)}."
+            )
+        #endif
+
+        for i, pt in enumerate(g.dset[dataset_id]):
+            observable = str(getattr(pt, "observable", "")).upper()
+            # The shipped E07-007 originals are BSS.  Accept XUU as a
+            # defensive compatibility alias in case a Gepard release renames
+            # the observable while retaining the same dataset IDs.
+            if observable not in ("BSS", "XUU"):
+                continue
+            #endif
+
+            xs = float(getattr(pt, "val", np.nan))
+            err_stat = float(getattr(pt, "errstat", np.nan))
+            err_total_gepard = float(getattr(pt, "err", np.nan))
+            err_syst_gepard = float(getattr(pt, "errsyst", np.nan))
+
+            beam_energy = float(getattr(pt, "in1energy", np.nan))
+            if not np.isfinite(beam_energy) or beam_energy <= 0.0:
+                raise ValueError(
+                    f"Hall A Defurne 2017 dataset {dataset_id}, point {i}: "
+                    "missing beam energy."
+                )
+            #endif
+
+            point_sys = (
+                HALLA_DEFURNE2017_POINT_TO_POINT_FRAC * abs(xs)
+                if np.isfinite(xs) else np.nan
+            )
+
+            rows.append({
+                "_row": len(rows),
+                "xB": float(pt.xB),
+                "Q2": float(pt.Q2),
+                "t_abs": abs(float(pt.t)),
+                "phi_bmk_rad": float(pt.phi),
+                "phi_deg": math.degrees(float(pt.phi)),
+                "xs": xs,
+                "xs_stat": err_stat,
+                "halla_err_stat": err_stat,
+                "halla_err_syst": point_sys,
+                "halla_err_total": math.hypot(err_stat, point_sys),
+                "gepard_err_total_original": err_total_gepard,
+                "gepard_err_syst_original": err_syst_gepard,
+                "ptp_sys_abs": point_sys,
+                "comb_sys_frac": 0.0,
+                "scale_sys_frac": HALLA_DEFURNE2017_GLOBAL_SCALE_FRAC,
+                "ebeam": beam_energy,
+                "gepard_dataset_id": int(dataset_id),
+                "observable": observable,
+                "source": "Hall A Defurne 2017 (E07-007)",
+            })
+        #endfor
+    #endfor
+
+    df = pd.DataFrame(rows)
+    if len(df) == 0:
+        raise RuntimeError(
+            "No Defurne 2017 BSS/XUU points were loaded from Gepard IDs "
+            f"{tuple(dataset_ids)}."
+        )
+    #endif
+
+    good = (
+        np.isfinite(df["xB"])
+        & np.isfinite(df["Q2"])
+        & np.isfinite(df["t_abs"])
+        & np.isfinite(df["phi_bmk_rad"])
+        & np.isfinite(df["xs"])
+        & np.isfinite(df["halla_err_stat"])
+        & (df["xs"] > 0.0)
+        & (df["halla_err_stat"] > 0.0)
+        & (df["t_abs"] > 0.0)
+    )
+    df = df.loc[good].copy().reset_index(drop=True)
+    df["_row"] = np.arange(len(df), dtype=int)
+
+    counts = df.groupby("gepard_dataset_id").size().to_dict()
+    print(
+        f"[HALLA 2017] Loaded {len(df)} unpolarized E07-007 points from "
+        f"Gepard datasets {tuple(dataset_ids)}; per-dataset counts={counts}."
+    )
+    print(
+        f"[HALLA 2017] uncertainty prescription: "
+        f"{100*HALLA_DEFURNE2017_POINT_TO_POINT_FRAC:.1f}% point-to-point + "
+        f"{100*HALLA_DEFURNE2017_GLOBAL_SCALE_FRAC:.3f}% correlated scale "
+        "(1.0% HRS acceptance, 2.0% luminosity/dead time, 0.5% trigger)."
+    )
+    print(
+        f"[HALLA 2017] median stat/xs="
+        f"{100*np.nanmedian(df['halla_err_stat']/df['xs']):.1f}%."
+    )
+    return df
+#enddef
+
+
 def evaluate_km15_halla_dataframe(
         df: pd.DataFrame,
         workers: int,
@@ -2652,7 +2793,7 @@ def dataset_statistical_errors(
             raise KeyError("Hall A Georges dataframe is missing 'stat'.")
         #endif
         return data["stat"].to_numpy(float)
-    elif dataset_kind == "halla_defurne2015":
+    elif dataset_kind in ("halla_defurne2015", "halla_defurne2017"):
         if "halla_err_stat" in data.columns:
             return data["halla_err_stat"].to_numpy(float)
         elif "xs_stat" in data.columns:
@@ -2726,7 +2867,7 @@ def dataset_point_errors(
         #endif
         ptp = data["ptp_sys_abs"].to_numpy(float)
         base = np.sqrt(stat**2 + ptp**2)
-    elif dataset_kind == "halla_defurne2015":
+    elif dataset_kind in ("halla_defurne2015", "halla_defurne2017"):
         stat = dataset_statistical_errors(data, dataset_kind)
         if "halla_err_syst" in data.columns:
             ptp = data["halla_err_syst"].to_numpy(float)
@@ -2779,6 +2920,7 @@ def fit_multi_measurements(
       Jo 2015: 5% global-renormalization nuisance in combined fits;
       Saylor 2018: 5% global-normalization nuisance;
       Hall A Defurne 2015: 2.8% global-normalization nuisance;
+      Hall A Defurne 2017: 2.291% correlated normalization nuisance;
       CLAS12 Lee 2026: 31% conservative global normalization nuisance.
     """
     names, p0 = paper_model_setup(kind)
@@ -6947,6 +7089,10 @@ BH_MODEL_PHI_SOURCE = {
         "Gepard datasets 107/108/112/113 (BMK-stored)",
         "180-minus",
     ),
+    "halla_defurne2017": (
+        "Gepard datasets 129/130/131/132/133/134 (BMK-stored)",
+        "180-minus",
+    ),
     "saylor2018": (
         "published supplemental table (direct)",
         "identity",
@@ -7057,10 +7203,11 @@ FINAL_PHYSICS_DATASETS = ("jo2015", "pass1")
 DATASET_CHRONOLOGY = {
     "jo2015": 0,
     "halla_defurne2015": 1,
-    "saylor2018": 2,
-    "halla_georges2022": 3,
-    "pass1": 4,
-    "pass2": 5,
+    "halla_defurne2017": 2,
+    "saylor2018": 3,
+    "halla_georges2022": 4,
+    "pass1": 5,
+    "pass2": 6,
 }
 
 
@@ -13782,6 +13929,7 @@ def run_normalization_shape_degeneracy_matrix(
 def run_unified_km15_final_analysis(
         jo_bundle: Dict[str, object],
         defurne_bundle: Dict[str, object],
+        defurne2017_bundle: Dict[str, object],
         georges_bundle: Dict[str, object],
         lee_bundle: Dict[str, object],
         saylor_bundle: Dict[str, object],
@@ -13793,7 +13941,7 @@ def run_unified_km15_final_analysis(
 
     This follows the Hayward/Griffioen bias-variance logic: the preferred
     extrapolation form depends on the actual kinematic range and precision of
-    the data being fit, so Lee-only, Jo+Lee, and all-four do not inherit one
+    the data being fit, so Lee-only, Jo+Lee, and all-five do not inherit one
     another's preferred family.
     """
     final_dir = root_outdir / "final_analysis"
@@ -13814,8 +13962,14 @@ def run_unified_km15_final_analysis(
     # without a published decomposition of its common scale uncertainty.
     georges_baseline = dict(georges_bundle)
     georges_baseline["unconstrained_norm"] = True
+    pre12_bundles = sort_bundles_chronologically(
+        [jo_bundle, defurne_bundle, defurne2017_bundle]
+    )
+    pre_lee_bundles = sort_bundles_chronologically(
+        [jo_bundle, defurne_bundle, defurne2017_bundle, georges_baseline]
+    )
     production_bundles = sort_bundles_chronologically(
-        [jo_bundle, defurne_bundle, georges_baseline, lee_bundle]
+        [jo_bundle, defurne_bundle, defurne2017_bundle, georges_baseline, lee_bundle]
     )
     save_selected_experiment_kinematic_coverage(
         production_bundles,
@@ -13827,14 +13981,29 @@ def run_unified_km15_final_analysis(
         ("lee2026_only", [lee_bundle], "CLAS12 Lee 2026"),
         ("jo2015_only", [jo_bundle], "CLAS6 Jo 2015"),
         (
+            "jo2015_plus_defurne2015",
+            [jo_bundle, defurne_bundle],
+            "Jo 2015 + Defurne 2015",
+        ),
+        (
+            "complete_6gev_pre_saylor",
+            pre12_bundles,
+            "Jo 2015 + Defurne 2015 + Defurne 2017",
+        ),
+        (
+            "pre_lee_with_georges",
+            pre_lee_bundles,
+            "Jo 2015 + Defurne 2015 + Defurne 2017 + Georges 2022",
+        ),
+        (
             "jo2015_plus_lee2026",
             [jo_bundle, lee_bundle],
             "CLAS6 Jo 2015 + CLAS12 Lee 2026",
         ),
         (
-            "all_four",
+            "all_five",
             production_bundles,
-            "Jo 2015 + Defurne 2015 + Georges 2022 + Lee 2026",
+            "Jo 2015 + Defurne 2015 + Defurne 2017 + Georges 2022 + Lee 2026",
         ),
     ]
 
@@ -13847,7 +14016,7 @@ def run_unified_km15_final_analysis(
         f"broad slope-equivalent radius guards "
         f"{SACHS_MIN_RADIUS_FM:.2f}--{SACHS_MAX_RADIUS_FM:.2f} fm"
     )
-    print("[normalization] Georges free overall scale in all-four baseline; published nuisances retained for Jo/Defurne/Lee")
+    print("[normalization] Georges free overall scale in all-five baseline; published nuisances retained for Jo/Defurne15/Defurne17/Lee")
     print("[benchmarks] Moradi Fit 5 and Fit 8 run across production ensembles")
     print("[family robustness] top closure-qualified families refit to real 5% data")
     print("[alternate BH selection] Kelly consistency plus AMT/Bernauer elastic-input diagnostics")
@@ -14219,13 +14388,53 @@ def run_unified_km15_final_analysis(
         rotation_root / "km15_5pct_ensemble_summary.csv", index=False
     )
 
-    # The all-four row is now the actual free-Georges production/status
+    if len(nominal):
+        incremental_order = [
+            "jo2015_plus_defurne2015",
+            "complete_6gev_pre_saylor",
+            "pre_lee_with_georges",
+            "all_five",
+        ]
+        inc = nominal.loc[
+            nominal["configuration"].astype(str).isin(incremental_order)
+        ].copy()
+        inc["_order"] = inc["configuration"].map(
+            {k: i for i, k in enumerate(incremental_order)}
+        )
+        inc = inc.sort_values("_order").drop(columns=["_order"])
+        if len(inc):
+            inc["delta_rE_from_previous_fm"] = inc["rE_fm"].diff()
+            inc["delta_rM_from_previous_fm"] = inc["rM_fm"].diff()
+            inc["rE_fit_error_ratio_to_previous"] = (
+                inc["rE_fit_err_fm"] / inc["rE_fit_err_fm"].shift(1)
+            )
+            inc["rM_fit_error_ratio_to_previous"] = (
+                inc["rM_fit_err_fm"] / inc["rM_fit_err_fm"].shift(1)
+            )
+            inc.to_csv(
+                summary_dir / "incremental_dataset_radius_impact.csv",
+                index=False,
+            )
+            print("\n[incremental dataset impact at KM15 5%]")
+            show = [
+                "configuration_label", "selected_family", "N",
+                "rE_fm", "rE_fit_err_fm",
+                "rM_fm", "rM_fit_err_fm",
+                "delta_rE_from_previous_fm",
+                "delta_rM_from_previous_fm",
+            ]
+            show = [c for c in show if c in inc.columns]
+            print(inc[show].to_string(index=False))
+        #endif
+    #endif
+
+    # The all-five row is now the actual free-Georges production/status
     # baseline.  Save a narrow artifact that carries central values, fit
     # uncertainties, closure bias, 3--7% selection terms, and their current
     # quadrature method combination under one self-consistent prescription.
     if len(nominal):
         preferred = nominal.loc[
-            nominal["configuration"].astype(str) == "all_four"
+            nominal["configuration"].astype(str) == "all_five"
         ].copy()
         if len(preferred) == 1:
             status_dir = diagnostics_dir / "preferred_current_status"
@@ -14332,27 +14541,27 @@ def run_unified_km15_final_analysis(
     # Diagnose the Hall-A-induced radius rotation with one common family so
     # changes are attributable to the dataset ensemble rather than to a
     # simultaneous change of extrapolation parameterization.
-    if chosen.get("all_four") is not None:
+    if chosen.get("all_five") is not None:
         run_fixed_family_ensemble_decomposition(
             jo_bundle=jo_bundle,
             defurne_bundle=defurne_bundle,
             georges_bundle=georges_baseline,
             lee_bundle=lee_bundle,
             selection=selection,
-            family=chosen["all_four"],
+            family=chosen["all_five"],
             outdir=diagnostics_dir / "hall_a_ensemble_decomposition",
         )
         norm_tension = run_normalization_tension_diagnostics(
             bundles=production_bundles,
             selection=selection,
-            family=chosen["all_four"],
+            family=chosen["all_five"],
             outdir=diagnostics_dir / "normalization_tension",
         )
 
         # Current-status headline: use the completely free Georges scale.
         # This does NOT alter the closure ranking or erase the fixed/constrained
         # normalization diagnostics; it simply records the user's preferred
-        # provisional all-four result in a dedicated, unambiguous artifact.
+        # provisional all-five result in a dedicated, unambiguous artifact.
         # The free scale is especially useful for the status note because the
         # fit itself determines whether Georges wants a pathological rescaling.
         try:
@@ -14383,7 +14592,7 @@ def run_unified_km15_final_analysis(
                     index=False,
                 )
                 print(
-                    "[preferred current status] all-four with Georges free -> "
+                    "[preferred current status] all-five with Georges free -> "
                     f"{status_dir / 'preferred_all_four_georges_free.csv'}"
                 )
             #endif
@@ -14395,12 +14604,12 @@ def run_unified_km15_final_analysis(
         #endtry
 
         # Exact BH electromagnetic decomposition and derivative sensitivities.
-        all4_specs, _ = _km15_selected_specs_for_bundles(
+        all5_specs, _ = _km15_selected_specs_for_bundles(
             production_bundles, selection, 0.05
         )
-        all4_fit = fit_sachs_family_multi_measurements(
-            all4_specs,
-            family=chosen["all_four"],
+        all5_fit = fit_sachs_family_multi_measurements(
+            all5_specs,
+            family=chosen["all_five"],
             bh_cut=0.05,
             add_moradi_bh_systematic=True,
             bh_systematic_fraction=0.05,
@@ -14408,16 +14617,16 @@ def run_unified_km15_final_analysis(
         save_f1_f2_bh_sensitivity_diagnostics(
             bundles=production_bundles,
             selection=selection,
-            fit=all4_fit,
-            family=chosen["all_four"],
+            fit=all5_fit,
+            family=chosen["all_five"],
             outdir=diagnostics_dir / "f1_f2_sensitivity",
         )
-        all4_specs, _ = _km15_selected_specs_for_bundles(
+        all5_specs, _ = _km15_selected_specs_for_bundles(
             production_bundles, selection, 0.05
         )
         save_preferred_sachs_vs_elastic_data(
-            fit=all4_fit, family=chosen["all_four"],
-            selected_specs=all4_specs,
+            fit=all5_fit, family=chosen["all_five"],
+            selected_specs=all5_specs,
             outdir=diagnostics_dir / "preferred_form_factors_vs_elastic",
         )
 
@@ -14427,7 +14636,7 @@ def run_unified_km15_final_analysis(
             bundles=production_bundles,
             georges_key=str(georges_bundle["key"]),
             selection=selection,
-            family=chosen["all_four"],
+            family=chosen["all_five"],
             outdir=diagnostics_dir / "georges_normalization_prior_scan",
         )
 
@@ -14440,33 +14649,33 @@ def run_unified_km15_final_analysis(
                 ("jo_plus_lee", [jo_bundle, lee_bundle], "Jo + Lee"),
                 (
                     "hall_a_only",
-                    [defurne_bundle, georges_bundle],
-                    "Defurne + Georges",
+                    [defurne_bundle, defurne2017_bundle, georges_bundle],
+                    "Defurne 2015 + Defurne 2017 + Georges",
                 ),
                 (
-                    "all_four",
+                    "all_five",
                     production_bundles,
-                    "Jo + Defurne + Georges + Lee",
+                    "Jo + Defurne15 + Defurne17 + Georges + Lee",
                 ),
             ],
             selection=selection,
-            family=chosen["all_four"],
+            family=chosen["all_five"],
             outdir=diagnostics_dir / "normalization_shape_degeneracy",
         )
 
         run_model_only_kelly_bh_selector_diagnostic(
             bundles=production_bundles,
             selection=selection,
-            family=chosen["all_four"],
-            label="Jo + Defurne + Georges + Lee",
-            outdir=diagnostics_dir / "bh_model_only_alternate" / "all_four",
+            family=chosen["all_five"],
+            label="Jo + Defurne15 + Defurne17 + Georges + Lee",
+            outdir=diagnostics_dir / "bh_model_only_alternate" / "all_five",
         )
         run_data_driven_bh_deviance_for_ensemble(
             bundles=production_bundles,
             selection=selection,
-            family=chosen["all_four"],
-            label="Jo + Defurne + Georges + Lee",
-            outdir=diagnostics_dir / "bh_deviance" / "all_four",
+            family=chosen["all_five"],
+            label="Jo + Defurne15 + Defurne17 + Georges + Lee",
+            outdir=diagnostics_dir / "bh_deviance" / "all_five",
         )
     #endif
 
@@ -14521,19 +14730,19 @@ def run_unified_km15_final_analysis(
     #endif
 
     # Saylor: keep both model-based and direct Jo-vs-Saylor diagnostics.
-    # For the BH-fit portion use the all-four selected family only as a
+    # For the BH-fit portion use the all-five selected family only as a
     # diagnostic reference; it does not affect any production selection.
-    if chosen.get("all_four") is not None:
+    if chosen.get("all_five") is not None:
         run_saylor_recovery_study(
             saylor_bundle,
             args,
             root_outdir,
-            family=chosen["all_four"],
+            family=chosen["all_five"],
         )
     else:
         print(
             "[Saylor recovery] skipped family-referenced BH-fit diagnostic "
-            "because all-four free-GE/free-GM extraction was unresolved."
+            "because all-five free-GE/free-GM extraction was unresolved."
         )
     #endif
 
@@ -15388,7 +15597,7 @@ def run_published_default(args) -> int:
     """
     print("\n" + "=" * 78)
     print("[DEFAULT MODE] Unified published BH form-factor/radius study")
-    print("[production candidates] Jo 2015; Defurne 2015; Georges 2022; Lee 2026")
+    print("[production candidates] Jo 2015; Defurne 2015; Defurne 2017; Georges 2022; Lee 2026")
     print("[BH-purity prescription] KM15")
     print("[Saylor 2018] diagnostic/recoverability study")
     print("=" * 78)
@@ -15398,6 +15607,7 @@ def run_published_default(args) -> int:
     jo = run_clas6_validation(args, return_results=True)
     lee = run_pass1_validation(args, return_results=True)
     defurne = run_halla_defurne_validation(args, return_results=True)
+    defurne2017 = run_halla_defurne2017_validation(args, return_results=True)
     georges = make_georges_diagnostic_bundle(args)
 
     # Saylor is always loaded for the unified diagnostic study.  No extra
@@ -15420,10 +15630,10 @@ def run_published_default(args) -> int:
     saylor = run_saylor_validation(args, return_results=True)
 
     production_bundles = sort_bundles_chronologically(
-        [jo, defurne, georges, lee]
+        [jo, defurne, defurne2017, georges, lee]
     )
     diagnostic_bundles = sort_bundles_chronologically(
-        [jo, defurne, saylor, georges, lee]
+        [jo, defurne, defurne2017, saylor, georges, lee]
     )
 
     # Export the exact five-dataset table expected by the external evaluator.
@@ -15472,6 +15682,7 @@ def run_published_default(args) -> int:
         run_unified_km15_final_analysis(
             jo,
             defurne,
+            defurne2017,
             georges,
             lee,
             saylor,
@@ -15943,6 +16154,127 @@ def run_halla_defurne_validation(args, return_results: bool = False):
     return 0
 #enddef
 
+
+
+
+def run_halla_defurne2017_validation(args, return_results: bool = False):
+    """Standalone Hall A E07-007 / Defurne 2017 BH/form-factor analysis."""
+    outdir = Path(args.outdir).expanduser().resolve() / "halla_defurne2017"
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    print("=" * 78)
+    print("[HALL A DEFURNE 2017 / E07-007 MODE]")
+    print(f"[Gepard datasets] {HALLA_DEFURNE2017_GEPARD_DATASET_IDS}")
+    print(
+        "[systematics] 3.2% point-to-point; "
+        f"{100*HALLA_DEFURNE2017_GLOBAL_SCALE_FRAC:.3f}% correlated scale"
+    )
+    print(f"[output] {outdir}")
+    print("=" * 78)
+
+    df = load_halla_defurne2017_gepard_datasets()
+    df = evaluate_km15_halla_dataframe(
+        df,
+        workers=args.workers,
+        cache_path=outdir / "km15_bh_decomposition_halla_defurne2017.csv",
+        force=args.force_km15,
+    )
+
+    finite = (
+        np.isfinite(df["R_BH"])
+        & np.isfinite(df["bh_A"])
+        & np.isfinite(df["bh_B"])
+        & np.isfinite(df["bh_C"])
+    )
+    df = df.loc[finite].reset_index(drop=True)
+
+    fit_results = []
+    sets = {}
+    print("\n[HALLA 2017 BH selections]")
+    for i, cut in enumerate(args.bh_cuts, start=1):
+        selected = df.loc[df["bh_delta"] <= cut].copy()
+        sets[float(cut)] = selected
+        print(f"  |1-R_BH| <= {100*cut:.0f}% : {len(selected)} points")
+        if len(selected) < 5:
+            continue
+        #endif
+        fr = fit_multi_measurements(
+            [measurement_spec(
+                "halla_defurne2017", "Hall A Defurne 2017",
+                "halla_defurne2017", selected,
+                HALLA_DEFURNE2017_GLOBAL_SCALE_FRAC,
+            )],
+            kind="dipole",
+            fit_name=f"Fit {i}",
+            bh_cut=float(cut),
+            add_moradi_bh_systematic=True,
+        )
+        fit_results.append(fr)
+        print(
+            f"[HALLA 2017 fit] Fit {i}: N={fr.npts:4d} "
+            f"chi2/dof={fr.chi2_ndof:.3f}"
+        )
+    #endfor
+
+    set5 = sets.get(0.05)
+    if set5 is None or len(set5) < 5:
+        raise RuntimeError(
+            "Hall A Defurne 2017 5% BH-selected sample has too few points."
+        )
+    #endif
+
+    for kind, name in [
+        ("fit6_same_a", "Fit 6"),
+        ("fit7_same_p", "Fit 7"),
+        ("fit8_f2_kelly", "Fit 8"),
+    ]:
+        fit_results.append(
+            fit_multi_measurements(
+                [measurement_spec(
+                    "halla_defurne2017", "Hall A Defurne 2017",
+                    "halla_defurne2017", set5,
+                    HALLA_DEFURNE2017_GLOBAL_SCALE_FRAC,
+                )],
+                kind=kind,
+                fit_name=name,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+        )
+    #endfor
+
+    pd.DataFrame([fitresult_to_record(fr) for fr in fit_results]).to_csv(
+        outdir / "fit_results.csv", index=False
+    )
+    set5.to_csv(outdir / "set5_selected_points.csv", index=False)
+
+    save_fit1_to_fit5_plots(fit_results, set5, outdir)
+    save_fit5_to_fit8_sachs_plot(fit_results, set5, outdir)
+    save_combination_f1_f2_fits_5_to_8(fit_results, set5, outdir)
+    save_radii_plot(fit_results, outdir)
+    save_low_q2_ratio_plots(fit_results, set5, outdir)
+    fit5 = next(r for r in fit_results if r.name == "Fit 5")
+    save_bh_local_f1_f2_sensitivity(outdir, set5, fit5)
+    save_fit5_residual_chi2_diagnostics(
+        set5, fit5, "halla_defurne2017", "halla_defurne2017",
+        outdir / "12_fit5_residual_diagnostics", bh_cut=0.05,
+    )
+
+    bundle = {
+        "label": "Hall A Defurne 2017",
+        "key": "halla_defurne2017",
+        "kind": "halla_defurne2017",
+        "norm_frac": HALLA_DEFURNE2017_GLOBAL_SCALE_FRAC,
+        "results": fit_results,
+        "set5": set5,
+        "all_data": df.copy(),
+        "outdir": outdir,
+    }
+    if return_results:
+        return bundle
+    #endif
+    return 0
+#enddef
 
 
 def run_clas6_validation(args, return_results: bool = False):

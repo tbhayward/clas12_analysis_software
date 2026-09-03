@@ -169,6 +169,7 @@ DEFAULT_IMPORTED_SCAN_POINTS = 16
 FIXED_DATASET_PHI_MAPPINGS = {
     "jo2015": "180-minus",
     "halla_defurne2015": "180-minus",
+    "halla_defurne2017": "180-minus",
     "saylor2018": "identity",
     "halla_georges2022": "identity",
 }
@@ -176,6 +177,7 @@ FIXED_DATASET_PHI_MAPPINGS = {
 FIXED_DATASET_PHI_SOURCES = {
     "jo2015": "Gepard dataset 98 (BMK-stored)",
     "halla_defurne2015": "Gepard datasets 107/108/112/113 (BMK-stored)",
+    "halla_defurne2017": "Gepard datasets 129/130/131/132/133/134 (BMK-stored)",
     "saylor2018": "published supplemental table (direct)",
     "halla_georges2022": "published E12-06-114 spreadsheet (Trento)",
     "pass1": "CLAS12 Lee table",
