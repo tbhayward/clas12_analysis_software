@@ -11308,15 +11308,193 @@ def run_global_saylor_tmin_scan(
     table = pd.DataFrame(rows)
     table.to_csv(outdir / "global_six_dataset_saylor_tmin_scan.csv", index=False)
 
+    def scan_saylor_lower_tail(
+            column: str,
+            output_stem: str,
+            display_label: str) -> pd.DataFrame:
+        """Remove progressively larger lower tails of one Saylor variable."""
+        vals = np.sort(np.unique(np.round(
+            pd.to_numeric(saylor5[column], errors="coerce").to_numpy(float),
+            6,
+        )))
+        vals = vals[np.isfinite(vals)]
+        if len(vals) == 0:
+            return pd.DataFrame()
+        #endif
+
+        scan_rows = []
+        baseline = float(vals[0]) - 1.0e-9
+        for cut in np.concatenate(([baseline], vals)):
+            kept = saylor5.loc[
+                pd.to_numeric(
+                    saylor5[column], errors="coerce"
+                ).to_numpy(float) >= float(cut) - 1.0e-10
+            ].copy()
+            if len(kept) < 5:
+                continue
+            #endif
+
+            specs = list(base_specs)
+            specs.append(measurement_spec(
+                str(saylor_bundle["key"]),
+                str(saylor_bundle["label"]),
+                str(saylor_bundle["kind"]),
+                kept,
+                SAYLOR_GLOBAL_SCALE_FRAC,
+            ))
+            fit = fit_sachs_family_multi_measurements(
+                specs,
+                family=family,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+            beta_key = "beta_" + re.sub(
+                r"[^A-Za-z0-9]+", "_", str(saylor_bundle["key"])
+            )
+            scan_rows.append({
+                "cut_value": float(cut),
+                "saylor_N": int(len(kept)),
+                "saylor_N_removed": int(len(saylor5) - len(kept)),
+                "global_N": int(fit["N"]),
+                "family": str(family),
+                "valid": bool(fit["valid"]),
+                "chi2": float(fit["chi2"]),
+                "ndof": int(fit["ndof"]),
+                "chi2_ndof": float(fit["chi2_ndof"]),
+                "rE_fm": float(fit["rE_fm"]),
+                "rE_fit_err_fm": float(fit["rE_fit_err_fm"]),
+                "rM_fm": float(fit["rM_fm"]),
+                "rM_fit_err_fm": float(fit["rM_fit_err_fm"]),
+                "saylor_beta_norm": float(fit.get(beta_key, np.nan)),
+                "saylor_scale_factor": float(
+                    fit.get(beta_key + "_scale_factor", np.nan)
+                ),
+            })
+        #endfor
+
+        scan_rows.append({
+            "cut_value": np.nan,
+            "saylor_N": 0,
+            "saylor_N_removed": int(len(saylor5)),
+            "global_N": int(fit_exc["N"]),
+            "family": str(family),
+            "valid": bool(fit_exc["valid"]),
+            "chi2": float(fit_exc["chi2"]),
+            "ndof": int(fit_exc["ndof"]),
+            "chi2_ndof": float(fit_exc["chi2_ndof"]),
+            "rE_fm": float(fit_exc["rE_fm"]),
+            "rE_fit_err_fm": float(fit_exc["rE_fit_err_fm"]),
+            "rM_fm": float(fit_exc["rM_fm"]),
+            "rM_fit_err_fm": float(fit_exc["rM_fit_err_fm"]),
+            "saylor_beta_norm": np.nan,
+            "saylor_scale_factor": np.nan,
+        })
+        scan_table = pd.DataFrame(scan_rows)
+        scan_table.to_csv(
+            outdir / f"global_six_dataset_saylor_{output_stem}_scan.csv",
+            index=False,
+        )
+
+        finite = scan_table.loc[
+            scan_table["cut_value"].notna()
+        ].copy()
+        excluded_row = scan_table.loc[
+            scan_table["cut_value"].isna()
+        ].iloc[0]
+
+        # Use approximately a dozen equal-retained-fraction points for the
+        # displayed figure. Full bin-boundary resolution stays in the CSV.
+        if len(finite) > 12:
+            target_n = np.linspace(
+                float(finite["saylor_N"].max()),
+                float(finite["saylor_N"].min()),
+                12,
+            )
+            take = []
+            narr = finite["saylor_N"].to_numpy(float)
+            for nt in target_n:
+                take.append(int(np.argmin(np.abs(narr - nt))))
+            #endfor
+            shown = finite.iloc[sorted(set(take))].copy()
+        else:
+            shown = finite.copy()
+        #endif
+
+        fig, axes = plt.subplots(3, 1, figsize=(8.4, 9.8), sharex=True)
+        axes[0].plot(
+            shown["cut_value"], shown["chi2_ndof"], "o-", lw=1.4, ms=4
+        )
+        axes[0].axhline(
+            float(excluded_row["chi2_ndof"]), ls="--", lw=1.0
+        )
+        axes[0].set_ylabel(r"Global $\chi^2/\mathrm{d.o.f.}$")
+
+        axes[1].errorbar(
+            shown["cut_value"], shown["rE_fm"],
+            yerr=shown["rE_fit_err_fm"],
+            fmt="o-", lw=1.2, ms=4, capsize=2,
+        )
+        axes[1].axhline(float(excluded_row["rE_fm"]), ls="--", lw=1.0)
+        axes[1].set_ylabel(r"$r_E$ [fm]")
+
+        axes[2].errorbar(
+            shown["cut_value"], shown["rM_fm"],
+            yerr=shown["rM_fit_err_fm"],
+            fmt="o-", lw=1.2, ms=4, capsize=2,
+        )
+        axes[2].axhline(float(excluded_row["rM_fm"]), ls="--", lw=1.0)
+        axes[2].set_ylabel(r"$r_M$ [fm]")
+        axes[2].set_xlabel(display_label)
+
+        for ax in axes:
+            ax.grid(alpha=0.2)
+        #endfor
+        fig.suptitle(
+            f"Global Saylor lower-tail removal scan: {display_label} ({family})",
+            y=0.992,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.965))
+        fig.savefig(
+            outdir / f"03_global_chi2_and_radii_vs_saylor_{output_stem}.png",
+            dpi=270,
+        )
+        plt.close(fig)
+        return scan_table
+    #enddef
+
     finite_cut = table["saylor_tmin_GeV2"].notna()
     scan = table.loc[finite_cut].copy()
     excluded = table.loc[~finite_cut].iloc[0]
 
-    # Main publication/note diagnostic: global fit quality and both radii.
+    # Main publication/note diagnostic: preserve every threshold in the CSV,
+    # but display a compact representative subset.  Explicitly retain the two
+    # literature-motivated Saylor cuts used in arXiv:2607.04481 when a nearby
+    # actual bin boundary exists.
+    if len(scan) > 14:
+        target_n = np.linspace(
+            float(scan["saylor_N"].max()),
+            float(scan["saylor_N"].min()),
+            12,
+        )
+        idx = []
+        narr = scan["saylor_N"].to_numpy(float)
+        for nt in target_n:
+            idx.append(int(np.argmin(np.abs(narr - nt))))
+        #endfor
+        tarr = scan["saylor_tmin_GeV2"].to_numpy(float)
+        for target_t in [0.265, 0.343]:
+            idx.append(int(np.argmin(np.abs(tarr - target_t))))
+        #endfor
+        shown_scan = scan.iloc[sorted(set(idx))].copy()
+    else:
+        shown_scan = scan.copy()
+    #endif
+
     fig, axes = plt.subplots(3, 1, figsize=(8.2, 10.0), sharex=True)
 
     axes[0].plot(
-        scan["saylor_tmin_GeV2"], scan["chi2_ndof"], "o-", lw=1.5, ms=4
+        shown_scan["saylor_tmin_GeV2"], shown_scan["chi2_ndof"],
+        "o-", lw=1.5, ms=4
     )
     axes[0].axhline(
         float(excluded["chi2_ndof"]), ls="--", lw=1.2,
@@ -11326,15 +11504,15 @@ def run_global_saylor_tmin_scan(
     axes[0].legend(frameon=False)
 
     axes[1].errorbar(
-        scan["saylor_tmin_GeV2"], scan["rE_fm"],
-        yerr=scan["rE_fit_err_fm"], fmt="o-", lw=1.3, ms=4, capsize=2
+        shown_scan["saylor_tmin_GeV2"], shown_scan["rE_fm"],
+        yerr=shown_scan["rE_fit_err_fm"], fmt="o-", lw=1.3, ms=4, capsize=2
     )
     axes[1].axhline(float(excluded["rE_fm"]), ls="--", lw=1.2)
     axes[1].set_ylabel(r"$r_E$ [fm]")
 
     axes[2].errorbar(
-        scan["saylor_tmin_GeV2"], scan["rM_fm"],
-        yerr=scan["rM_fit_err_fm"], fmt="o-", lw=1.3, ms=4, capsize=2
+        shown_scan["saylor_tmin_GeV2"], shown_scan["rM_fm"],
+        yerr=shown_scan["rM_fit_err_fm"], fmt="o-", lw=1.3, ms=4, capsize=2
     )
     axes[2].axhline(float(excluded["rM_fm"]), ls="--", lw=1.2)
     axes[2].set_ylabel(r"$r_M$ [fm]")
@@ -11368,6 +11546,13 @@ def run_global_saylor_tmin_scan(
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(outdir / "02_saylor_retention_and_normalization.png", dpi=260)
     plt.close(fig)
+
+    q2_scan = scan_saylor_lower_tail(
+        "Q2", "q2min", r"Minimum retained Saylor $Q^2$ [GeV$^2$]"
+    )
+    xb_scan = scan_saylor_lower_tail(
+        "xB", "xbmin", r"Minimum retained Saylor $x_B$"
+    )
 
     print("\n[global Saylor |t|min scan]")
     print(
@@ -12641,6 +12826,16 @@ def run_competitive_family_real_data_diagnostics(
                     add_moradi_bh_systematic=True,
                     bh_systematic_fraction=0.05,
                 )
+                nobs = int(fit["N"])
+                kpar = int(fit["n_parameters"])
+                chi2 = float(fit["chi2"])
+                aic = chi2 + 2.0 * kpar
+                aicc = (
+                    aic
+                    + 2.0 * kpar * (kpar + 1.0)
+                    / max(1.0, nobs - kpar - 1.0)
+                )
+                bic = chi2 + kpar * math.log(max(1, nobs))
                 row = {
                     "configuration": tag,
                     "configuration_label": label,
@@ -12651,6 +12846,9 @@ def run_competitive_family_real_data_diagnostics(
                     "closure_objective_fm": float(
                         rr["combined_RMS_objective_fm"]
                     ),
+                    "AIC": float(aic),
+                    "AICc": float(aicc),
+                    "BIC": float(bic),
                     **counts,
                     **fit,
                 }
@@ -12721,7 +12919,64 @@ def run_competitive_family_real_data_diagnostics(
         cfg_dir = outdir / tag
         cfg_dir.mkdir(parents=True, exist_ok=True)
         table.to_csv(cfg_dir / "competitive_family_real_data_fits.csv", index=False)
+
         if len(valid):
+            fit_quality = valid[[
+                "family", "closure_rank", "closure_objective_fm",
+                "N", "n_parameters", "chi2", "ndof", "chi2_ndof",
+                "AIC", "AICc", "BIC",
+                "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+            ]].copy()
+            for metric in ["AIC", "AICc", "BIC"]:
+                fit_quality["delta_" + metric] = (
+                    fit_quality[metric].to_numpy(float)
+                    - float(fit_quality[metric].min())
+                )
+            #endfor
+            fit_quality.to_csv(
+                cfg_dir / "competitive_family_fit_quality.csv",
+                index=False,
+            )
+
+            fig, axes = plt.subplots(1, 2, figsize=(12.6, 5.0))
+            xxq = np.arange(len(fit_quality))
+            axes[0].plot(
+                xxq, fit_quality["chi2_ndof"],
+                marker="o", linestyle="none",
+            )
+            axes[0].set_ylabel(r"$\chi^2/\mathrm{d.o.f.}$")
+            axes[1].plot(
+                xxq, fit_quality["delta_AICc"],
+                marker="o", linestyle="none", label=r"$\Delta$AICc",
+            )
+            axes[1].plot(
+                xxq, fit_quality["delta_BIC"],
+                marker="s", linestyle="none", label=r"$\Delta$BIC",
+            )
+            axes[1].axhline(0.0, linewidth=0.8, linestyle="--")
+            axes[1].set_ylabel("Information-criterion difference")
+            axes[1].legend(frameon=False)
+            qlabs = [
+                f"{f}\nclosure rank {r}"
+                for f, r in zip(
+                    fit_quality["family"], fit_quality["closure_rank"]
+                )
+            ]
+            for ax in axes:
+                ax.set_xticks(xxq)
+                ax.set_xticklabels(qlabs, rotation=18, ha="right")
+                ax.grid(axis="y", alpha=0.2)
+            #endfor
+            fig.suptitle(
+                f"{label}: closure ranking vs real-data fit quality",
+                y=0.995,
+            )
+            fig.tight_layout(rect=(0, 0, 1, 0.94))
+            fig.savefig(
+                cfg_dir / "03_competitive_family_fit_quality.png",
+                dpi=280,
+            )
+            plt.close(fig)
             fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.0))
             xx = np.arange(len(valid))
             axes[0].errorbar(
@@ -12775,6 +13030,342 @@ def run_competitive_family_real_data_diagnostics(
     #endif
     return spread
 #enddef
+
+
+
+def fit_sachs_ge_family_fixed_kelly_f2_multi_measurements(
+        datasets: Sequence[Dict[str, object]],
+        ge_family: str,
+        bh_cut: float = 0.05,
+        add_moradi_bh_systematic: bool = True
+        ) -> Dict[str, object]:
+    """
+    Global BH fit with a flexible GE family while the Pauli form factor F2 is
+    fixed point-by-point to Kelly 2004.
+
+    This is the direct multi-dataset analogue of the Moradi Fit-8 idea, but it
+    keeps the same GE family used in the closure machinery.  It isolates how
+    much of the radius instability comes from simultaneous F1/F2 (GE/GM)
+    freedom rather than from GE extrapolation itself.
+    """
+    ge_family = str(ge_family)
+    ne = int(re.findall(r"\d+", ge_family)[0])
+    names_e = [f"e{i}" for i in range(1, ne + 1)]
+    p0 = np.zeros(ne, dtype=float)
+    p0[0] = sachs_first_coefficient_from_radius(
+        SACHS_INITIAL_RADIUS_FM, ge_family
+    )
+
+    nuisance_names = []
+    nuisance_fracs = {}
+    nuisance_is_free = {}
+    for spec in datasets:
+        key = str(spec["key"])
+        free_norm = bool(spec.get("unconstrained_norm", False))
+        frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
+        if frac > 0.0:
+            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
+            nuisance_names.append(nname)
+            nuisance_fracs[nname] = frac
+            nuisance_is_free[nname] = free_norm
+        #endif
+    #endfor
+
+    fit_names = names_e + nuisance_names
+    fit_p0 = np.concatenate([p0, np.zeros(len(nuisance_names))])
+    nuisance_index = {
+        n: ne + i for i, n in enumerate(nuisance_names)
+    }
+
+    prepared = []
+    for spec in datasets:
+        d = spec["data"]
+        if len(d) == 0:
+            continue
+        #endif
+        err = dataset_point_errors(
+            d, str(spec["kind"]), bh_cut, add_moradi_bh_systematic
+        )
+        q = d["t_abs"].to_numpy(float)
+        tau = q / (4.0 * MP2)
+        _, f2_kelly = kelly_f1_f2(q)
+        key = str(spec["key"])
+        free_norm = bool(spec.get("unconstrained_norm", False))
+        frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
+        prepared.append({
+            "key": key,
+            "q": q,
+            "q_powers": np.vstack([q**i for i in range(1, ne + 1)]),
+            "tau": tau,
+            "f2_kelly": np.asarray(f2_kelly, dtype=float),
+            "y": d["xs"].to_numpy(float),
+            "e": np.asarray(err, dtype=float),
+            "A": d["bh_A"].to_numpy(float),
+            "B": d["bh_B"].to_numpy(float),
+            "C": d["bh_C"].to_numpy(float),
+            "N": int(len(d)),
+            "norm_frac": frac,
+            "nuisance_name": (
+                "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
+                if frac > 0.0 else None
+            ),
+        })
+    #endfor
+    if not prepared:
+        raise RuntimeError("Kelly-F2 global fit has zero selected points.")
+    #endif
+
+    def chi2_minuit(*values):
+        p = np.asarray(values, dtype=float)
+        ce = p[:ne]
+        total = 0.0
+        for item in prepared:
+            ge = sachs_family_value_precomputed(
+                item["q"], ce, ge_family, item["q_powers"]
+            )
+            f2 = item["f2_kelly"]
+            f1 = ge + item["tau"] * f2
+            pred = bh_from_f1f2(
+                item["A"], item["B"], item["C"], f1, f2
+            )
+            if item["norm_frac"] > 0.0:
+                beta = p[nuisance_index[item["nuisance_name"]]]
+                pred *= 1.0 + item["norm_frac"] * beta
+            #endif
+            pull = (pred - item["y"]) / item["e"]
+            total += float(np.dot(pull, pull))
+        #endfor
+        for nname in nuisance_names:
+            if not nuisance_is_free.get(nname, False):
+                total += float(p[nuisance_index[nname]]**2)
+            #endif
+        #endfor
+        return total
+    #enddef
+
+    mn = Minuit(chi2_minuit, *fit_p0, name=tuple(fit_names))
+    mn.errordef = Minuit.LEAST_SQUARES
+    ce_lo = sachs_first_coefficient_from_radius(
+        SACHS_MIN_RADIUS_FM, ge_family
+    )
+    ce_hi = sachs_first_coefficient_from_radius(
+        SACHS_MAX_RADIUS_FM, ge_family
+    )
+    mn.limits[names_e[0]] = (min(ce_lo, ce_hi), max(ce_lo, ce_hi))
+    for nname in nuisance_names:
+        mn.limits[nname] = (
+            (-0.50, 0.50)
+            if nuisance_is_free.get(nname, False)
+            else (-10.0, 10.0)
+        )
+    #endfor
+    mn.migrad()
+    mn.hesse()
+
+    shape = np.array([float(mn.values[n]) for n in names_e])
+    cov = np.full((ne, ne), np.nan)
+    if mn.covariance is not None:
+        for i, ni in enumerate(names_e):
+            for j, nj in enumerate(names_e):
+                cov[i, j] = float(mn.covariance[ni, nj])
+            #endfor
+        #endfor
+    #endif
+
+    def radius_e(pars):
+        return sachs_family_radius(np.asarray(pars), ge_family)
+    #enddef
+
+    def radius_m_derived(pars):
+        pars = np.asarray(pars, dtype=float)
+        def gm_shape(q):
+            q = np.asarray(q, dtype=float)
+            ge = sachs_family_value(q, pars, ge_family)
+            _, f2 = kelly_f1_f2(q)
+            tau = q / (4.0 * MP2)
+            return ge + (1.0 + tau) * f2
+        #enddef
+        return radius_from_shape(gm_shape, MU_P)
+    #enddef
+
+    rE, rEerr = propagate_scalar(radius_e, shape, cov)
+    rM, rMerr = propagate_scalar(radius_m_derived, shape, cov)
+
+    ndata = int(sum(item["N"] for item in prepared))
+    nfree = int(len(fit_names))
+    ndof = max(1, ndata - nfree)
+    result = {
+        "model": f"GE:{ge_family}|F2:Kelly2004",
+        "GE_family": ge_family,
+        "F2_treatment": "Kelly 2004 fixed",
+        "N": ndata,
+        "n_parameters": nfree,
+        "chi2": float(mn.fval),
+        "ndof": int(ndof),
+        "chi2_ndof": float(mn.fval / ndof),
+        "valid": bool(
+            mn.valid and np.isfinite(rE) and np.isfinite(rM)
+        ),
+        "rE_fm": float(rE),
+        "rE_fit_err_fm": float(rEerr),
+        "rM_fm": float(rM),
+        "rM_fit_err_fm": float(rMerr),
+        "shape_covariance_json": json.dumps(cov.tolist()),
+    }
+    for name in names_e:
+        result[name] = float(mn.values[name])
+        result[name + "_err"] = float(mn.errors[name])
+    #endfor
+    for nname in nuisance_names:
+        result[nname] = float(mn.values[nname])
+        result[nname + "_scale_factor"] = float(
+            1.0 + nuisance_fracs[nname] * float(mn.values[nname])
+        )
+    #endfor
+    return result
+#enddef
+
+
+def run_all_dataset_subset_and_kelly_f2_diagnostic(
+        production_bundles: Sequence[Dict[str, object]],
+        saylor_bundle: Dict[str, object],
+        selection: pd.DataFrame,
+        family: str,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Fit every non-empty subset of the six experiments at KM15 5%.
+
+    For every subset, run:
+      (1) the closure-selected free-GE/free-GM family;
+      (2) the same GE family with F2 fixed to Kelly.
+
+    This is diagnostic bookkeeping intended to expose exactly which dataset
+    combinations determine the electric/magnetic solution.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    selected_bundles = []
+    for bundle in production_bundles:
+        selected = select_bundle_from_external_model(
+            bundle, selection, "km15", 0.05
+        )
+        selected_bundles.append((
+            str(bundle["key"]),
+            str(bundle["label"]),
+            measurement_spec(
+                str(bundle["key"]),
+                str(bundle["label"]),
+                str(bundle["kind"]),
+                selected,
+                float(bundle.get("norm_frac", 0.0)),
+                unconstrained_norm=bool(
+                    bundle.get("unconstrained_norm", False)
+                ),
+            ),
+        ))
+    #endfor
+
+    saylor_all = saylor_bundle["all_data"].copy()
+    delta_col = "bh_delta" if "bh_delta" in saylor_all.columns else "delta_bh"
+    saylor5 = saylor_all.loc[
+        pd.to_numeric(
+            saylor_all[delta_col], errors="coerce"
+        ).to_numpy(float) <= 0.05
+    ].copy()
+    selected_bundles.append((
+        str(saylor_bundle["key"]),
+        str(saylor_bundle["label"]),
+        measurement_spec(
+            str(saylor_bundle["key"]),
+            str(saylor_bundle["label"]),
+            str(saylor_bundle["kind"]),
+            saylor5,
+            SAYLOR_GLOBAL_SCALE_FRAC,
+        ),
+    ))
+
+    ge_family, _ = decode_sachs_family_pair(family)
+    rows = []
+    nset = len(selected_bundles)
+    for mask in range(1, 1 << nset):
+        picked = [
+            selected_bundles[i]
+            for i in range(nset) if mask & (1 << i)
+        ]
+        specs = [x[2] for x in picked]
+        keys = [x[0] for x in picked]
+        labels = [x[1] for x in picked]
+        configuration = " + ".join(labels)
+
+        for mode in ["free_GE_GM", "kelly_F2_fixed"]:
+            try:
+                if mode == "free_GE_GM":
+                    fit = fit_sachs_family_multi_measurements(
+                        specs,
+                        family=family,
+                        bh_cut=0.05,
+                        add_moradi_bh_systematic=True,
+                    )
+                else:
+                    fit = fit_sachs_ge_family_fixed_kelly_f2_multi_measurements(
+                        specs,
+                        ge_family=ge_family,
+                        bh_cut=0.05,
+                        add_moradi_bh_systematic=True,
+                    )
+                #endif
+                rows.append({
+                    "subset_mask": int(mask),
+                    "dataset_count": int(len(specs)),
+                    "dataset_keys": "|".join(keys),
+                    "configuration_label": configuration,
+                    "fit_mode": mode,
+                    "production_family": family,
+                    **fit,
+                })
+            except Exception as exc:
+                rows.append({
+                    "subset_mask": int(mask),
+                    "dataset_count": int(len(specs)),
+                    "dataset_keys": "|".join(keys),
+                    "configuration_label": configuration,
+                    "fit_mode": mode,
+                    "production_family": family,
+                    "valid": False,
+                    "failure": str(exc),
+                })
+            #endtry
+        #endfor
+    #endfor
+
+    table = pd.DataFrame(rows)
+    table.to_csv(
+        outdir / "all_six_dataset_subsets_free_vs_kellyF2.csv",
+        index=False,
+    )
+
+    # Canonical all-five/all-six comparison for immediate inspection.
+    canonical = table.loc[
+        table["dataset_keys"].astype(str).isin([
+            "|".join(x[0] for x in selected_bundles[:5]),
+            "|".join(x[0] for x in selected_bundles),
+        ])
+    ].copy()
+    canonical.to_csv(
+        outdir / "canonical_allfive_allsix_free_vs_kellyF2.csv",
+        index=False,
+    )
+    if len(canonical):
+        print("\\n[all-subset free-vs-Kelly-F2 diagnostic: canonical]")
+        show = [
+            "configuration_label", "fit_mode", "N", "chi2_ndof",
+            "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+        ]
+        print(canonical[[c for c in show if c in canonical.columns]].to_string(index=False))
+    #endif
+    return table
+#enddef
+
 
 
 def run_model_only_kelly_bh_selector_diagnostic(
@@ -14038,10 +14629,10 @@ def save_preferred_sachs_vs_elastic_data(
     # PRad/BH electric ratio, full-width low-Q2 panel
     # --------------------------
     q_prad_max = max(
-        0.062,
-        1.06 * float(prad["Q2_GeV2"].max()),
+        0.12,
+        2.0 * float(prad["Q2_GeV2"].max()),
     )
-    q_prad_min = 0.95 * float(prad["Q2_GeV2"].min())
+    q_prad_min = 2.0e-5
     q_prad_band = np.geomspace(q_prad_min, q_prad_max, 500)
     bh_prad_band, bh_prad_band_err = _sachs_band_from_result(
         fit, family, q_prad_band, "GE"
@@ -15297,6 +15888,21 @@ def run_unified_km15_final_analysis(
             )
         #endtry
     #endif
+
+    try:
+        run_all_dataset_subset_and_kelly_f2_diagnostic(
+            production_bundles=production_bundles,
+            saylor_bundle=saylor_bundle,
+            selection=selection,
+            family=chosen["all_five"],
+            outdir=diagnostics_dir / "all_dataset_subsets_free_vs_kellyF2",
+        )
+    except Exception as exc:
+        print(
+            "[all-subset free-vs-Kelly-F2] WARNING: diagnostic failed; "
+            f"continuing: {type(exc).__name__}: {exc}"
+        )
+    #endtry
 
     # Saylor: keep both model-based and direct Jo-vs-Saylor diagnostics.
     # For the BH-fit portion use the all-five selected family only as a
