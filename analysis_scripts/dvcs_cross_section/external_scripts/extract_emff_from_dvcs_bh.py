@@ -12214,7 +12214,7 @@ def run_competitive_family_real_data_diagnostics(
     for tag, bundles, label in ensemble_defs:
         chosen_family = chosen.get(tag)
         ranking_path = (
-            closure_root / tag / "radius_bias_mixed_family_ranking.csv"
+            closure_root / "all_five" / "radius_bias_mixed_family_ranking.csv"
         )
         if chosen_family is None or not ranking_path.exists():
             continue
@@ -13939,10 +13939,11 @@ def run_unified_km15_final_analysis(
     Unified KM15 workflow with an INDEPENDENT functional-form determination for
     every requested measurement ensemble.
 
-    This follows the Hayward/Griffioen bias-variance logic: the preferred
-    extrapolation form depends on the actual kinematic range and precision of
-    the data being fit, so Lee-only, Jo+Lee, and all-five do not inherit one
-    another's preferred family.
+    The expensive Hayward/Griffioen closure study is performed ONLY for the
+    complete all-five production ensemble.  The resulting production family is
+    then held fixed for the reduced-dataset ablation fits.  This makes changes
+    in radii/Hessian information interpretable as DATASET effects rather than
+    a mixture of dataset changes and independently re-selected fit families.
     """
     final_dir = root_outdir / "final_analysis"
     diagnostics_dir = final_dir / "diagnostics"
@@ -14010,7 +14011,7 @@ def run_unified_km15_final_analysis(
     print("\n" + "=" * 78)
     print("[UNIFIED KM15 FINAL ANALYSIS]")
     print("[BH-purity prescription] KM15 only")
-    print("[functional forms] independently closure-ranked for EACH ensemble")
+    print("[functional forms] closure-ranked ONCE on all-five; fixed for ablation ensembles")
     print(
         f"[optimizer] initial rE=rM={SACHS_INITIAL_RADIUS_FM:.2f} fm; "
         f"broad slope-equivalent radius guards "
@@ -14027,156 +14028,214 @@ def run_unified_km15_final_analysis(
     closure_bias_by_tag = {}
     family_audit_rows = []
 
-    for tag, cfg_bundles, label in ensemble_defs:
-        closure_dir = closure_root / tag
-        closure_dir.mkdir(parents=True, exist_ok=True)
+    # ------------------------------------------------------------------
+    # EXPENSIVE STEP: perform closure exactly once, on the complete
+    # production ensemble.  Reduced ensembles below are ablation studies
+    # and deliberately inherit this same production family.
+    # ------------------------------------------------------------------
+    production_tag = "all_five"
+    production_label = next(
+        label for tag, _, label in ensemble_defs if tag == production_tag
+    )
+    production_cfg_bundles = next(
+        bundles for tag, bundles, _ in ensemble_defs if tag == production_tag
+    )
+    production_closure_dir = closure_root / production_tag
+    production_closure_dir.mkdir(parents=True, exist_ok=True)
 
-        closure_bundles = []
-        for bundle in cfg_bundles:
-            selected5 = select_bundle_from_external_model(
-                bundle, selection, "km15", 0.05
-            )
-            bcopy = dict(bundle)
-            bcopy["set5"] = selected5.copy()
-            closure_bundles.append(bcopy)
-        #endfor
-
-        ranking_path = (
-            closure_dir / "radius_bias_mixed_family_ranking.csv"
+    production_closure_bundles = []
+    for bundle in production_cfg_bundles:
+        selected5 = select_bundle_from_external_model(
+            bundle, selection, "km15", 0.05
         )
+        bcopy = dict(bundle)
+        bcopy["set5"] = selected5.copy()
+        production_closure_bundles.append(bcopy)
+    #endfor
 
-        if args.run_radius_bias_study:
-            if ranking_path.exists():
-                print(
-                    f"\n[ensemble closure] {label}: existing closure ranking "
-                    "found; reusing it instead of recomputing replicas"
-                )
-            else:
-                print(
-                    f"\n[ensemble closure] {label}: running independent "
-                    "functional-form determination"
-                )
-                run_radius_bias_variance_study(
-                    closure_bundles, args, closure_dir
-                )
-            #endif
-        #endif
-        if not ranking_path.exists():
-            raise RuntimeError(
-                f"Missing closure ranking for {label}: {ranking_path}. "
-                "Run with --run-radius-bias-study "
-                "--radius-bias-extended-truths."
-            )
-        #endif
+    production_ranking_path = (
+        production_closure_dir / "radius_bias_mixed_family_ranking.csv"
+    )
 
-        ranking = pd.read_csv(ranking_path)
-        usable = ranking.loc[
-            ranking["eligible"].astype(bool)
-            & np.isfinite(
-                ranking["combined_RMS_objective_fm"].to_numpy(float)
-            )
-        ].copy()
-        usable = usable.sort_values(
-            "combined_RMS_objective_fm", ascending=True
-        ).reset_index(drop=True)
-        if len(usable) == 0:
-            raise RuntimeError(
-                f"No convergence-eligible Sachs family for {label}. "
-                "Inspect the ensemble closure before production fitting."
-            )
-        #endif
-
-        selected_family = None
-        for irank, rank_row in usable.iterrows():
-            family = str(rank_row["family"])
-            specs, counts = _km15_selected_specs_for_bundles(
-                cfg_bundles, selection, 0.05
-            )
-            try:
-                fit = fit_sachs_family_multi_measurements(
-                    specs,
-                    family=family,
-                    bh_cut=0.05,
-                    add_moradi_bh_systematic=True,
-                )
-                valid = bool(fit.get("valid", False))
-            except Exception as exc:
-                valid = False
-                fit = {"failure": str(exc)}
-            #endtry
-
-            family_audit_rows.append({
-                "configuration": tag,
-                "configuration_label": label,
-                "closure_rank": int(irank) + 1,
-                "family": family,
-                "closure_objective_fm": float(
-                    rank_row["combined_RMS_objective_fm"]
-                ),
-                "minimum_scenario_valid_fraction": float(
-                    rank_row["minimum_scenario_valid_fraction"]
-                ),
-                "global_valid_fraction": float(
-                    rank_row["global_valid_fraction"]
-                ),
-                "nominal_fit_valid": valid,
-                "nominal_N": int(sum(counts.values())),
-                "nominal_chi2_ndof": float(
-                    fit.get("chi2_ndof", np.nan)
-                ),
-                "nominal_rE_fm": float(fit.get("rE_fm", np.nan)),
-                "nominal_rM_fm": float(fit.get("rM_fm", np.nan)),
-                "nominal_failure": str(fit.get("failure", "")),
-            })
-            # Persist the audit after every attempted production family so a
-            # later fatal exception never hides which closure-ranked fits were
-            # tried or why they failed.
-            pd.DataFrame(family_audit_rows).to_csv(
-                summary_dir / "km15_family_selection_by_ensemble.csv",
-                index=False,
-            )
-            if valid:
-                selected_family = family
-                break
-            #endif
-        #endfor
-
-        if selected_family is None:
-            chosen[tag] = None
+    if args.run_radius_bias_study:
+        if production_ranking_path.exists():
             print(
-                f"[ensemble closure] {label}: NO valid simultaneous "
-                "free-GE/free-GM nominal fit from the closure-ranked families."
-            )
-            print(
-                "[ensemble closure] This ensemble will be recorded as "
-                "unresolved and skipped in the free-GE/free-GM threshold "
-                "rotation; external-magnetic-input diagnostics will still run "
-                "where defined."
-            )
-            audit_now = pd.DataFrame(family_audit_rows)
-            failure_dir = (
-                diagnostics_dir / "nominal_family_failures" / tag
-            )
-            save_nominal_family_failure_diagnostic(
-                audit_now,
-                configuration=tag,
-                configuration_label=label,
-                outdir=failure_dir,
+                f"\n[production closure] {production_label}: existing closure "
+                "ranking found; reusing it instead of recomputing replicas"
             )
         else:
-            chosen[tag] = selected_family
-            bias_summary = summarize_bias_for_family(
-                closure_dir / "radius_bias_variance_study.csv",
-                selected_family,
-            )
-            closure_bias_by_tag[tag] = bias_summary
             print(
-                f"[ensemble closure] {label}: selected family = "
-                f"{selected_family}; "
-                f"closure bias sys rE={bias_summary['rE_RMS_bias_fm']:.5f} fm, "
-                f"rM={bias_summary['rM_RMS_bias_fm']:.5f} fm"
+                f"\n[production closure] {production_label}: running the ONE "
+                "full bias/variance functional-form determination"
+            )
+            run_radius_bias_variance_study(
+                production_closure_bundles, args, production_closure_dir
             )
         #endif
+    #endif
+
+    if not production_ranking_path.exists():
+        raise RuntimeError(
+            f"Missing production closure ranking: {production_ranking_path}. "
+            "Run with --run-radius-bias-study "
+            "--radius-bias-extended-truths."
+        )
+    #endif
+
+    production_ranking = pd.read_csv(production_ranking_path)
+    production_usable = production_ranking.loc[
+        production_ranking["eligible"].astype(bool)
+        & np.isfinite(
+            production_ranking["combined_RMS_objective_fm"].to_numpy(float)
+        )
+    ].copy()
+    production_usable = production_usable.sort_values(
+        "combined_RMS_objective_fm", ascending=True
+    ).reset_index(drop=True)
+    if len(production_usable) == 0:
+        raise RuntimeError(
+            "No convergence-eligible Sachs family in the all-five production "
+            "closure ranking."
+        )
+    #endif
+
+    production_family = None
+    for irank, rank_row in production_usable.iterrows():
+        family = str(rank_row["family"])
+        specs, counts = _km15_selected_specs_for_bundles(
+            production_cfg_bundles, selection, 0.05
+        )
+        try:
+            fit = fit_sachs_family_multi_measurements(
+                specs,
+                family=family,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+            valid = bool(fit.get("valid", False))
+        except Exception as exc:
+            valid = False
+            fit = {"failure": str(exc)}
+        #endtry
+
+        family_audit_rows.append({
+            "configuration": production_tag,
+            "configuration_label": production_label,
+            "closure_rank": int(irank) + 1,
+            "family": family,
+            "closure_objective_fm": float(
+                rank_row["combined_RMS_objective_fm"]
+            ),
+            "minimum_scenario_valid_fraction": float(
+                rank_row["minimum_scenario_valid_fraction"]
+            ),
+            "global_valid_fraction": float(
+                rank_row["global_valid_fraction"]
+            ),
+            "nominal_fit_valid": valid,
+            "nominal_N": int(sum(counts.values())),
+            "nominal_chi2_ndof": float(
+                fit.get("chi2_ndof", np.nan)
+            ),
+            "nominal_rE_fm": float(fit.get("rE_fm", np.nan)),
+            "nominal_rM_fm": float(fit.get("rM_fm", np.nan)),
+            "nominal_failure": str(fit.get("failure", "")),
+            "family_source": "all_five_production_closure",
+        })
+        if valid:
+            production_family = family
+            break
+        #endif
+    #endfor
+
+    if production_family is None:
+        raise RuntimeError(
+            "No closure-ranked all-five family produced a valid nominal "
+            "simultaneous free-GE/free-GM fit."
+        )
+    #endif
+
+    production_bias_summary = summarize_bias_for_family(
+        production_closure_dir / "radius_bias_variance_study.csv",
+        production_family,
+    )
+    print(
+        f"[production closure] selected family = {production_family}; "
+        f"closure bias sys rE="
+        f"{production_bias_summary['rE_RMS_bias_fm']:.5f} fm, "
+        f"rM={production_bias_summary['rM_RMS_bias_fm']:.5f} fm"
+    )
+
+    # ------------------------------------------------------------------
+    # CHEAP STEP: hold the production family fixed and refit each dataset
+    # combination.  These are controlled ablations, not independent
+    # functional-form determinations.
+    # ------------------------------------------------------------------
+    for tag, cfg_bundles, label in ensemble_defs:
+        chosen[tag] = production_family
+
+        # Use the all-five closure bias only for the actual production result.
+        # For reduced ensembles it would not be an independently established
+        # method uncertainty, so leave it undefined rather than mislabel it.
+        if tag == production_tag:
+            closure_bias_by_tag[tag] = dict(production_bias_summary)
+        else:
+            closure_bias_by_tag[tag] = {
+                "rE_RMS_bias_fm": np.nan,
+                "rM_RMS_bias_fm": np.nan,
+            }
+        #endif
+
+        specs, counts = _km15_selected_specs_for_bundles(
+            cfg_bundles, selection, 0.05
+        )
+        try:
+            fit = fit_sachs_family_multi_measurements(
+                specs,
+                family=production_family,
+                bh_cut=0.05,
+                add_moradi_bh_systematic=True,
+            )
+            valid = bool(fit.get("valid", False))
+        except Exception as exc:
+            valid = False
+            fit = {"failure": str(exc)}
+        #endtry
+
+        family_audit_rows.append({
+            "configuration": tag,
+            "configuration_label": label,
+            "closure_rank": 1,
+            "family": production_family,
+            "closure_objective_fm": float(
+                production_usable.iloc[0]["combined_RMS_objective_fm"]
+            ),
+            "minimum_scenario_valid_fraction": float(
+                production_usable.iloc[0]["minimum_scenario_valid_fraction"]
+            ),
+            "global_valid_fraction": float(
+                production_usable.iloc[0]["global_valid_fraction"]
+            ),
+            "nominal_fit_valid": valid,
+            "nominal_N": int(sum(counts.values())),
+            "nominal_chi2_ndof": float(fit.get("chi2_ndof", np.nan)),
+            "nominal_rE_fm": float(fit.get("rE_fm", np.nan)),
+            "nominal_rM_fm": float(fit.get("rM_fm", np.nan)),
+            "nominal_failure": str(fit.get("failure", "")),
+            "family_source": (
+                "all_five_production_closure"
+                if tag == production_tag
+                else "fixed_from_all_five_for_ablation"
+            ),
+        })
+
+        print(
+            f"[fixed-family ablation] {label}: family={production_family}, "
+            f"N={int(sum(counts.values()))}, valid={valid}, "
+            f"chi2/dof={float(fit.get('chi2_ndof', np.nan)):.3f}, "
+            f"rE={float(fit.get('rE_fm', np.nan)):.5f}, "
+            f"rM={float(fit.get('rM_fm', np.nan)):.5f}"
+        )
     #endfor
 
     pd.DataFrame(family_audit_rows).to_csv(
@@ -14192,7 +14251,7 @@ def run_unified_km15_final_analysis(
         #endfor
     #endwith
 
-    # Run each threshold scan with that ensemble's own selected family.
+    # Run each threshold scan with the common all-five production family.
     rotation_root = final_dir / "km15_ensemble_rotation"
     rotation_root.mkdir(parents=True, exist_ok=True)
     nominal_rows = []
@@ -14403,6 +14462,9 @@ def run_unified_km15_final_analysis(
         )
         inc = inc.sort_values("_order").drop(columns=["_order"])
         if len(inc):
+            inc["family_policy"] = (
+                "fixed to all-five closure-selected production family"
+            )
             inc["delta_rE_from_previous_fm"] = inc["rE_fm"].diff()
             inc["delta_rM_from_previous_fm"] = inc["rM_fm"].diff()
             inc["rE_fit_error_ratio_to_previous"] = (
@@ -14440,9 +14502,9 @@ def run_unified_km15_final_analysis(
             status_dir = diagnostics_dir / "preferred_current_status"
             status_dir.mkdir(parents=True, exist_ok=True)
             preferred["georges_normalization_treatment"] = "unconstrained"
-            preferred["status_role"] = "preferred_provisional_all_four"
+            preferred["status_role"] = "preferred_provisional_all_five"
             preferred.to_csv(
-                status_dir / "preferred_all_four_georges_free_with_method_systematics.csv",
+                status_dir / "preferred_all_five_georges_free_with_method_systematics.csv",
                 index=False,
             )
         #endif
@@ -14489,7 +14551,7 @@ def run_unified_km15_final_analysis(
             bbox_to_anchor=(0.5, 0.955),
         )
         fig.suptitle(
-            "KM15 5% ensemble radii: fit and closure-bias uncertainty scales",
+            "KM15 5% ensemble radii: common all-five family",
             y=0.995,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.90))
@@ -14500,7 +14562,7 @@ def run_unified_km15_final_analysis(
         plt.close(fig)
     #endif
 
-    print("\n[KM15 ensemble rotation] independently selected families")
+    print("\n[KM15 ensemble rotation] common all-five production family")
     cols = [
         "configuration_label", "selected_family", "N", "chi2_ndof",
         "rE_fm", "rE_fit_err_fm", "rE_closure_bias_sys_fm",
@@ -14580,7 +14642,7 @@ def run_unified_km15_final_analysis(
                 status_dir = diagnostics_dir / "preferred_current_status"
                 status_dir.mkdir(parents=True, exist_ok=True)
                 free_row = free_row.copy()
-                free_row["status_role"] = "preferred_provisional_all_four"
+                free_row["status_role"] = "preferred_provisional_all_five"
                 free_row["georges_normalization_treatment"] = "unconstrained"
                 free_row["note"] = (
                     "Preferred current-status result: Georges normalization "
