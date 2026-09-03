@@ -12831,13 +12831,33 @@ def save_competitive_family_form_factor_bands(
     #endfor
 
     # Top row: absolute normalized Sachs functions with 68% Hessian bands.
-    # Bottom row: central-function ratio to the closure-selected family.  This
-    # exposes small shape differences that are visually hidden in the top row.
+    # Bottom row: central-function ratio to the closure-selected family.  To
+    # avoid overloading the ratio panels, show propagated Hessian ratio bands
+    # only for the two non-chosen families whose closure objective is closest
+    # to that of the chosen family.  The inter-family covariance is not
+    # available from separate Hessian fits, so those ratio bands use the
+    # conservative independence approximation.
+    chosen_objective = float(chosen.get("closure_objective_fm", np.nan))
+    ratio_band_families = []
+    if np.isfinite(chosen_objective) and "closure_objective_fm" in valid.columns:
+        nearest = valid.loc[
+            valid["family"].astype(str) != chosen_family
+        ].copy()
+        nearest["_objective_distance"] = np.abs(
+            nearest["closure_objective_fm"].to_numpy(float) - chosen_objective
+        )
+        nearest = nearest.loc[
+            np.isfinite(nearest["_objective_distance"].to_numpy(float))
+        ].sort_values("_objective_distance", ascending=True)
+        ratio_band_families = nearest["family"].astype(str).head(2).tolist()
+    #endif
+
     fig, axes = plt.subplots(
         2, 2, figsize=(13.4, 8.3), sharex="col",
         gridspec_kw={"height_ratios": [1.55, 0.85]},
     )
     metric_rows = []
+    ratio_band_rows = []
     ratio_extrema = {"GE": [], "GM": []}
     handles = []
     labs = []
@@ -12859,8 +12879,51 @@ def save_competitive_family_form_factor_bands(
                 q, c - serr, c + serr, alpha=alpha,
                 color=line.get_color(), linewidth=0.0,
             )
-            ratio = c / np.maximum(np.abs(c0), 1.0e-30)
+            denom = np.maximum(np.abs(c0), 1.0e-30)
+            ratio = c / denom
             axes[1, j].plot(q, ratio, linewidth=lw, color=line.get_color())
+
+            # For the two closure-nearest alternative families, propagate both
+            # Hessian bands into the ratio.  With no cross-family covariance
+            # matrix available, use
+            #   Var(c/c0) = (serr/c0)^2 + (c*s0/c0^2)^2.
+            # Do not draw a band for chosen/chosen: that ratio is identically 1
+            # for the same realization and therefore has exactly zero width.
+            if family in ratio_band_families:
+                ratio_sigma = np.sqrt(
+                    (serr / denom) ** 2
+                    + ((c * s0) / (denom ** 2)) ** 2
+                )
+                good_ratio_band = (
+                    np.isfinite(ratio)
+                    & np.isfinite(ratio_sigma)
+                    & (ratio_sigma >= 0.0)
+                )
+                axes[1, j].fill_between(
+                    q,
+                    np.where(good_ratio_band, ratio - ratio_sigma, np.nan),
+                    np.where(good_ratio_band, ratio + ratio_sigma, np.nan),
+                    alpha=0.12,
+                    color=line.get_color(),
+                    linewidth=0.0,
+                )
+                for iq in np.flatnonzero(good_ratio_band):
+                    ratio_band_rows.append({
+                        "configuration_label": label,
+                        "family": family,
+                        "chosen_family": chosen_family,
+                        "form_factor": which,
+                        "t_abs_GeV2": float(q[iq]),
+                        "ratio": float(ratio[iq]),
+                        "ratio_hessian_sigma_independent": float(ratio_sigma[iq]),
+                        "closure_objective_fm": float(
+                            fit.get("closure_objective_fm", np.nan)
+                        ),
+                        "chosen_closure_objective_fm": float(chosen_objective),
+                        "inter_family_covariance_included": False,
+                    })
+                #endfor
+            #endif
             ratio_extrema[which].extend(ratio[np.isfinite(ratio)].tolist())
             if j == 0:
                 handles.append(line); labs.append(line.get_label())
@@ -12915,10 +12978,18 @@ def save_competitive_family_form_factor_bands(
         bbox_to_anchor=(0.5, 0.952), frameon=True, fontsize=9,
         borderaxespad=0.0,
     )
+    ratio_band_text = (
+        ", ".join(ratio_band_families) if len(ratio_band_families)
+        else "none"
+    )
     fig.text(
         0.5, 0.865,
-        "Lines: central fits; bands: 68% Hessian uncertainty; shaded region: selected-data |t| support",
-        ha="center", va="center", fontsize=9.5,
+        (
+            "Top bands: 68% Hessian uncertainty; bottom ratio bands: "
+            f"{ratio_band_text} only (inter-family covariance neglected); "
+            "shaded region: selected-data |t| support"
+        ),
+        ha="center", va="center", fontsize=9.2,
     )
     fig.subplots_adjust(
         top=0.80, bottom=0.09, left=0.08, right=0.985,
@@ -12932,6 +13003,18 @@ def save_competitive_family_form_factor_bands(
         outdir / "competitive_family_GE_GM_band_overlap_metrics.csv",
         index=False,
     )
+    pd.DataFrame(ratio_band_rows).to_csv(
+        outdir / "competitive_family_GE_GM_ratio_hessian_bands.csv",
+        index=False,
+    )
+    if len(ratio_band_families):
+        print(
+            f"[competitive-family ratio bands] {label}: "
+            f"{', '.join(ratio_band_families)} "
+            "(two closest closure objectives to chosen; "
+            "inter-family covariance neglected)"
+        )
+    #endif
     return metrics
 #enddef
 
