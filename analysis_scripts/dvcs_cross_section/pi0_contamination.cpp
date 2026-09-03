@@ -25,6 +25,7 @@
 
 #include <TCanvas.h>
 #include <TGraphErrors.h>
+#include <TGraphAsymmErrors.h>
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TStyle.h>
