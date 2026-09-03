@@ -191,8 +191,8 @@ int main(int argc, char* argv[]) {
     //     }
     // }
 
-    // const bool use_nobkg_dvcs_mc_for_acceptance = false;
-    // const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
+    const bool use_nobkg_dvcs_mc_for_acceptance = false;
+    const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
 
     // // --------- Current-response calibration + diagnostics ----------
     // {
