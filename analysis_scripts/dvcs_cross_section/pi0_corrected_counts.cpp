@@ -1037,6 +1037,51 @@ static void draw_signal_yield_canvases(const std::string& period_label,
     }
 }
 
+
+static void write_analysis_note_subtraction_outputs(const CsvDoc& csv,
+                                                    const SignalCache& signal_cache,
+                                                    const std::string& out_root_dir) {
+    namespace fs = std::filesystem;
+    const fs::path note_dir = fs::path(out_root_dir) / "pi0_contamination_plots" / "analysis_note";
+    std::error_code ec;
+    fs::create_directories(note_dir, ec);
+
+    struct S { std::string period; double raw=0, raw_var=0, sig=0, sig_var=0; };
+    std::vector<S> sums;
+    for (const auto& per : kPeriods) {
+        S z; z.period=per;
+        std::vector<int> raw_cols;
+        for (const auto& topo : kTopos) {
+            const std::string nm="normalized raw yield, ep->epg, "+topo+", exp, "+per+", unpol";
+            const int idx=csv.col_index(nm); if(idx>=0) raw_cols.push_back(idx);
+        }
+        const auto it=signal_cache.find(signal_cache_key(per,"unpol"));
+        for (int r=0;r<csv.nrows();++r) {
+            for (int idx:raw_cols) {
+                double v=0,st=0,sy=0; if(parse_tuple3(csv.rows[r][idx],v,st,sy)){ z.raw+=v; z.raw_var+=st*st; }
+            }
+            if(it!=signal_cache.end() && r<(int)it->second.size()) { z.sig+=it->second[r].value; z.sig_var+=it->second[r].stat*it->second[r].stat; }
+        }
+        sums.push_back(z);
+    }
+
+    std::ofstream f((note_dir/"pi0_subtraction_yield_summary.csv").string());
+    f << "period,normalized_epg_before,stat_before,signal_after,stat_after,removed_fraction\n" << std::setprecision(10);
+    for(const auto& z:sums) f << z.period << ',' << z.raw << ',' << std::sqrt(z.raw_var) << ',' << z.sig << ',' << std::sqrt(z.sig_var) << ',' << (z.raw>0 ? 1.0-z.sig/z.raw : 0.0) << '\n';
+
+    TCanvas c("c_note_pi0_subtraction_impact","",1100,700);
+    c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.16); c.SetTopMargin(0.10); c.SetGridy(); c.SetTicks(1,1);
+    TGraphErrors gb,ga;
+    double ymax=0;
+    for(int i=0;i<(int)sums.size();++i){ gb.SetPoint(i,i+1,sums[i].raw); gb.SetPointError(i,0,std::sqrt(sums[i].raw_var)); ga.SetPoint(i,i+1.10,sums[i].sig); ga.SetPointError(i,0,std::sqrt(sums[i].sig_var)); ymax=std::max(ymax,sums[i].raw); }
+    TH1F frame("h_note_pi0_subtraction_impact","",5,0.5,5.7); frame.SetMinimum(0); frame.SetMaximum(1.18*ymax); frame.GetYaxis()->SetTitle("Charge-normalized yield (summed analysis bins)"); frame.GetYaxis()->SetTitleOffset(1.25); frame.GetYaxis()->SetTitleSize(0.048); frame.GetXaxis()->SetLabelSize(0.045); for(int i=0;i<5;++i) frame.GetXaxis()->SetBinLabel(i+1,kPeriods[i].c_str()); frame.Draw();
+    gb.SetMarkerStyle(24); gb.SetMarkerSize(1.25); gb.SetLineWidth(2); ga.SetMarkerStyle(20); ga.SetMarkerSize(1.25); ga.SetLineWidth(2); gb.Draw("PE SAME"); ga.Draw("PE SAME");
+    TLegend leg(0.64,0.72,0.94,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.038); leg.AddEntry(&gb,"Before #pi^{0} subtraction","pe"); leg.AddEntry(&ga,"After #pi^{0} subtraction","pe"); leg.Draw();
+    TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048); t.DrawLatex(0.11,0.93,"Effect of the #pi^{0} background subtraction on the DVCS yield");
+    c.SaveAs((note_dir/"pi0_subtraction_yield_impact.png").string().c_str());
+    std::cout << "[pi0_corrected] Analysis-note subtraction outputs written under: " << note_dir << "\n";
+}
+
 } // end anonymous namespace
 
 bool update_pi0_corrected_counts_csv(const std::string& csv_path,
@@ -1076,6 +1121,8 @@ bool update_pi0_corrected_counts_csv(const std::string& csv_path,
 
     std::cout << "[pi0_corrected] Updated CSV: " << csv_abs
               << " (size " << size_before << " -> " << size_after << ")\n";
+
+    write_analysis_note_subtraction_outputs(csv, signal_cache, out_root_dir);
 
     for (const auto& per : kPeriods) {
         draw_signal_yield_canvases(per, csv, signal_cache, out_root_dir);
