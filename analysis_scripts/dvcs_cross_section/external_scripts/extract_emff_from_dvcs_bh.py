@@ -207,7 +207,7 @@ HALLA_DEFURNE2017_GLOBAL_SCALE_FRAC = math.sqrt(0.010**2 + 0.020**2 + 0.005**2)
 JO_GLOBAL_SCALE_FRAC = 0.05
 
 SAYLOR_EBEAM = 5.88
-SAYLOR_GLOBAL_SCALE_FRAC = 0.05
+SAYLOR_GLOBAL_SCALE_FRAC = 0.04
 DEFAULT_SAYLOR_FILE = "import/saylor_CLAS6.txt"
 DEFAULT_GEORGES_FILE = "import/E12-06-114.xlsx"
 
@@ -10986,6 +10986,226 @@ def run_km15_ensemble_rotation(
 #enddef
 
 
+
+def run_global_saylor_tmin_scan(
+        production_bundles: Sequence[Dict[str, object]],
+        saylor_bundle: Dict[str, object],
+        selection: pd.DataFrame,
+        family: str,
+        root_outdir: Path) -> pd.DataFrame:
+    """
+    Global six-dataset analogue of the Goharipour/Moradi/Azizi CLAS-2018
+    low-|t| removal study.
+
+    All five production datasets remain fixed at the nominal KM15 5% BH-purity
+    selection.  Saylor 2018 is also first restricted to its KM15 5% sample,
+    after which progressively larger LOW-|t| portions of Saylor alone are
+    removed.  For each threshold t_cut, Saylor points satisfy |t| >= t_cut.
+
+    The Sachs family is held fixed to the family selected by the all-five
+    bias/variance closure machinery.  This is deliberate: otherwise changes in
+    chi2 and radii would conflate Saylor-data removal with changing functional
+    form.
+
+    Saylor's published cross sections already include the experiment's elastic
+    normalization correction.  The paper quotes a 4.0% uncertainty on that
+    correction, which is treated here as one correlated Gaussian normalization
+    nuisance; it is removed in quadrature from the tabulated total systematic
+    uncertainty by load_saylor_supplement().
+    """
+    outdir = (
+        root_outdir / "final_analysis" / "diagnostics"
+        / "saylor_global_tmin_scan"
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # Nominal 5% samples for the five production datasets.
+    base_specs = []
+    base_counts = {}
+    for bundle in production_bundles:
+        selected = select_bundle_from_external_model(
+            bundle, selection, "km15", 0.05
+        )
+        base_counts[str(bundle["key"])] = int(len(selected))
+        base_specs.append(measurement_spec(
+            str(bundle["key"]),
+            str(bundle["label"]),
+            str(bundle["kind"]),
+            selected,
+            float(bundle.get("norm_frac", 0.0)),
+            unconstrained_norm=bool(bundle.get("unconstrained_norm", False)),
+        ))
+    #endfor
+
+    saylor5 = select_bundle_from_external_model(
+        saylor_bundle, selection, "km15", 0.05
+    ).copy()
+    if len(saylor5) == 0:
+        raise RuntimeError("Saylor has zero points in the KM15 5% sample.")
+    #endif
+
+    # Scan actual Saylor |t| bin boundaries, matching the logic of Ref.
+    # arXiv:2607.04481: points below the threshold are removed.
+    tvals = np.sort(np.unique(np.round(
+        saylor5["t_abs"].to_numpy(float), 6
+    )))
+    # Baseline t_cut=0 keeps the complete 5%-selected Saylor sample.
+    cuts = np.concatenate(([0.0], tvals))
+    rows = []
+
+    for tcut in cuts:
+        kept = saylor5.loc[
+            saylor5["t_abs"].to_numpy(float) >= float(tcut) - 1.0e-10
+        ].copy()
+        if len(kept) < 5:
+            continue
+        #endif
+
+        specs = list(base_specs)
+        specs.append(measurement_spec(
+            str(saylor_bundle["key"]),
+            str(saylor_bundle["label"]),
+            str(saylor_bundle["kind"]),
+            kept,
+            SAYLOR_GLOBAL_SCALE_FRAC,
+        ))
+
+        fit = fit_sachs_family_multi_measurements(
+            specs,
+            family=family,
+            bh_cut=0.05,
+            add_moradi_bh_systematic=True,
+        )
+
+        beta_key = "beta_" + re.sub(
+            r"[^A-Za-z0-9]+", "_", str(saylor_bundle["key"])
+        )
+        rows.append({
+            "saylor_tmin_GeV2": float(tcut),
+            "saylor_N": int(len(kept)),
+            "saylor_N_removed": int(len(saylor5) - len(kept)),
+            "global_N": int(fit["N"]),
+            "family": str(family),
+            "valid": bool(fit["valid"]),
+            "chi2": float(fit["chi2"]),
+            "ndof": int(fit["ndof"]),
+            "chi2_ndof": float(fit["chi2_ndof"]),
+            "rE_fm": float(fit["rE_fm"]),
+            "rE_fit_err_fm": float(fit["rE_fit_err_fm"]),
+            "rM_fm": float(fit["rM_fm"]),
+            "rM_fit_err_fm": float(fit["rM_fit_err_fm"]),
+            "saylor_beta_norm": float(fit.get(beta_key, np.nan)),
+            "saylor_scale_factor": float(
+                fit.get(beta_key + "_scale_factor", np.nan)
+            ),
+            "saylor_norm_prior_fraction": SAYLOR_GLOBAL_SCALE_FRAC,
+        })
+    #endfor
+
+    # Add the Saylor-excluded all-five endpoint explicitly.
+    fit_exc = fit_sachs_family_multi_measurements(
+        base_specs,
+        family=family,
+        bh_cut=0.05,
+        add_moradi_bh_systematic=True,
+    )
+    rows.append({
+        "saylor_tmin_GeV2": np.nan,
+        "saylor_N": 0,
+        "saylor_N_removed": int(len(saylor5)),
+        "global_N": int(fit_exc["N"]),
+        "family": str(family),
+        "valid": bool(fit_exc["valid"]),
+        "chi2": float(fit_exc["chi2"]),
+        "ndof": int(fit_exc["ndof"]),
+        "chi2_ndof": float(fit_exc["chi2_ndof"]),
+        "rE_fm": float(fit_exc["rE_fm"]),
+        "rE_fit_err_fm": float(fit_exc["rE_fit_err_fm"]),
+        "rM_fm": float(fit_exc["rM_fm"]),
+        "rM_fit_err_fm": float(fit_exc["rM_fit_err_fm"]),
+        "saylor_beta_norm": np.nan,
+        "saylor_scale_factor": np.nan,
+        "saylor_norm_prior_fraction": SAYLOR_GLOBAL_SCALE_FRAC,
+    })
+
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "global_six_dataset_saylor_tmin_scan.csv", index=False)
+
+    finite_cut = table["saylor_tmin_GeV2"].notna()
+    scan = table.loc[finite_cut].copy()
+    excluded = table.loc[~finite_cut].iloc[0]
+
+    # Main publication/note diagnostic: global fit quality and both radii.
+    fig, axes = plt.subplots(3, 1, figsize=(8.2, 10.0), sharex=True)
+
+    axes[0].plot(
+        scan["saylor_tmin_GeV2"], scan["chi2_ndof"], "o-", lw=1.5, ms=4
+    )
+    axes[0].axhline(
+        float(excluded["chi2_ndof"]), ls="--", lw=1.2,
+        label=f"Saylor excluded: {float(excluded['chi2_ndof']):.3f}"
+    )
+    axes[0].set_ylabel(r"Global $\chi^2/\mathrm{d.o.f.}$")
+    axes[0].legend(frameon=False)
+
+    axes[1].errorbar(
+        scan["saylor_tmin_GeV2"], scan["rE_fm"],
+        yerr=scan["rE_fit_err_fm"], fmt="o-", lw=1.3, ms=4, capsize=2
+    )
+    axes[1].axhline(float(excluded["rE_fm"]), ls="--", lw=1.2)
+    axes[1].set_ylabel(r"$r_E$ [fm]")
+
+    axes[2].errorbar(
+        scan["saylor_tmin_GeV2"], scan["rM_fm"],
+        yerr=scan["rM_fit_err_fm"], fmt="o-", lw=1.3, ms=4, capsize=2
+    )
+    axes[2].axhline(float(excluded["rM_fm"]), ls="--", lw=1.2)
+    axes[2].set_ylabel(r"$r_M$ [fm]")
+    axes[2].set_xlabel(
+        r"Minimum retained Saylor $|t|$ [GeV$^2$]"
+    )
+
+    fig.suptitle(
+        f"Global six-dataset Saylor low-$|t|$ removal scan ({family})"
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.965))
+    fig.savefig(outdir / "01_global_chi2_and_radii_vs_saylor_tmin.png", dpi=260)
+    plt.close(fig)
+
+    # A second diagnostic shows exactly how much Saylor is retained and whether
+    # its correlated normalization nuisance attempts to absorb the discrepancy.
+    fig, ax1 = plt.subplots(figsize=(8.2, 5.4))
+    ax1.plot(
+        scan["saylor_tmin_GeV2"], scan["saylor_N"], "o-", lw=1.5, ms=4
+    )
+    ax1.set_xlabel(r"Minimum retained Saylor $|t|$ [GeV$^2$]")
+    ax1.set_ylabel("Retained Saylor points")
+    ax2 = ax1.twinx()
+    ax2.plot(
+        scan["saylor_tmin_GeV2"], scan["saylor_scale_factor"],
+        "s--", lw=1.3, ms=4
+    )
+    ax2.axhline(1.0, ls=":", lw=1.0)
+    ax2.set_ylabel("Fitted Saylor normalization scale")
+    fig.suptitle("Saylor retention and correlated normalization")
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(outdir / "02_saylor_retention_and_normalization.png", dpi=260)
+    plt.close(fig)
+
+    print("\n[global Saylor |t|min scan]")
+    print(
+        table[[
+            "saylor_tmin_GeV2", "saylor_N", "global_N", "chi2_ndof",
+            "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
+            "saylor_scale_factor",
+        ]].to_string(index=False)
+    )
+    print(f"[global Saylor |t|min scan] outputs -> {outdir}")
+    return table
+#enddef
+
+
+
 def run_saylor_recovery_study(
         saylor_bundle: Dict[str, object],
         args,
@@ -14788,6 +15008,19 @@ def run_unified_km15_final_analysis(
         print(
             "[Lee Fit8 / Kelly F2] no nominal 5% fit was available; "
             "inspect diagnostics/lee2026_fit8_kelly."
+        )
+    #endif
+
+    # Global six-dataset Saylor low-|t| removal study, following the logic
+    # of arXiv:2607.04481 but adding Georges 2022 and Lee 2026 and using the
+    # closure-selected production Sachs family.
+    if chosen.get("all_five") is not None:
+        run_global_saylor_tmin_scan(
+            production_bundles,
+            saylor_bundle,
+            selection,
+            chosen["all_five"],
+            root_outdir,
         )
     #endif
 
