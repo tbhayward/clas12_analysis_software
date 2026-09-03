@@ -14551,13 +14551,29 @@ def save_jo_saylor_matched_kinematics(
     Direct Jo-vs-Saylor comparison in overlapping multidimensional kinematics.
 
     For every Saylor point, find the nearest Jo point in standardized
-    (Q2, xB, |t|, phi) space.  Compare DATA/KM15 rather than raw cross sections,
-    so the known kinematic dependence is divided out before the two
-    measurements are compared.  This is diagnostic only.
+    (Q2, xB, |t|, phi) space.  Two ratios are retained:
+
+      raw ratio
+          sigma_Saylor / sigma_Jo
+
+      locally transported ratio
+          [sigma_Saylor * KM15(Jo kinematics) / KM15(Saylor kinematics)]
+          / sigma_Jo
+
+    The second quantity uses KM15 only as a local interpolation/transport
+    between nearby measured kinematic points.  It does NOT use KM15 to decide
+    which dataset is correct.  Point-to-point experimental uncertainties from
+    both measurements are propagated to the transported ratio and to the
+    normalized Jo-Saylor difference.
+
+    The presentation-facing plots emphasize the best-overlap 50% of matches,
+    while CSV tables retain the full sample and fixed 25/50/75/100% overlap
+    quantiles.  This makes the central tendency near unity and the substantial
+    point-to-point spread visually explicit without hiding matching quality.
     """
     outdir.mkdir(parents=True, exist_ok=True)
-    jo = jo_bundle["all_data"].copy()
-    sa = saylor_bundle["all_data"].copy()
+    jo = jo_bundle["all_data"].copy().reset_index(drop=True)
+    sa = saylor_bundle["all_data"].copy().reset_index(drop=True)
 
     cols = ["Q2", "xB", "t_abs", "phi_deg"]
     for frame in [jo, sa]:
@@ -14565,8 +14581,24 @@ def save_jo_saylor_matched_kinematics(
             frame[col] = pd.to_numeric(frame[col], errors="coerce")
         #endfor
     #endfor
-    jo = jo.dropna(subset=cols + ["xs", "km15_ep"]).copy()
-    sa = sa.dropna(subset=cols + ["xs", "km15_ep"]).copy()
+
+    # Canonical point-to-point errors; correlated overall normalization
+    # uncertainties are intentionally not folded into this point-pair diagnostic.
+    jo["_point_err"] = dataset_point_errors(
+        jo, str(jo_bundle["kind"]), 0.0, False
+    )
+    sa["_point_err"] = dataset_point_errors(
+        sa, str(saylor_bundle["kind"]), 0.0, False
+    )
+
+    jo = jo.dropna(subset=cols + ["xs", "km15_ep", "_point_err"]).copy()
+    sa = sa.dropna(subset=cols + ["xs", "km15_ep", "_point_err"]).copy()
+    jo = jo.loc[
+        (jo["xs"] > 0.0) & (jo["km15_ep"] > 0.0) & (jo["_point_err"] > 0.0)
+    ].reset_index(drop=True)
+    sa = sa.loc[
+        (sa["xs"] > 0.0) & (sa["km15_ep"] > 0.0) & (sa["_point_err"] > 0.0)
+    ].reset_index(drop=True)
 
     # Circular phi distance is represented by sin/cos coordinates.
     def features(frame):
@@ -14578,6 +14610,10 @@ def save_jo_saylor_matched_kinematics(
             np.sin(phi),
             np.cos(phi),
         ])
+    #enddef
+
+    def circular_phi_delta_deg(a, b):
+        return np.abs((float(a) - float(b) + 180.0) % 360.0 - 180.0)
     #enddef
 
     combined = np.vstack([features(jo), features(sa)])
@@ -14595,27 +14631,85 @@ def save_jo_saylor_matched_kinematics(
         )
         jj = np.argmin(d2, axis=1)
         dd = np.sqrt(d2[np.arange(len(jj)), jj])
+
         for local, (j, dist) in enumerate(zip(jj, dd)):
             si = i0 + local
             srow = sa.iloc[si]
             jrow = jo.iloc[int(j)]
-            rs = float(srow["xs"] / srow["km15_ep"])
-            rj = float(jrow["xs"] / jrow["km15_ep"])
+
+            s_xs = float(srow["xs"])
+            j_xs = float(jrow["xs"])
+            s_err = float(srow["_point_err"])
+            j_err = float(jrow["_point_err"])
+            s_model = float(srow["km15_ep"])
+            j_model = float(jrow["km15_ep"])
+
+            raw_ratio = s_xs / j_xs if j_xs != 0.0 else np.nan
+
+            transport_factor = (
+                j_model / s_model
+                if np.isfinite(j_model) and np.isfinite(s_model) and s_model > 0.0
+                else np.nan
+            )
+            s_trans = s_xs * transport_factor
+            s_trans_err = s_err * abs(transport_factor)
+
+            transported_ratio = (
+                s_trans / j_xs if np.isfinite(s_trans) and j_xs != 0.0 else np.nan
+            )
+            transported_ratio_err = (
+                abs(transported_ratio)
+                * np.sqrt((s_err / s_xs)**2 + (j_err / j_xs)**2)
+                if (
+                    np.isfinite(transported_ratio)
+                    and s_xs > 0.0 and j_xs > 0.0
+                    and s_err > 0.0 and j_err > 0.0
+                )
+                else np.nan
+            )
+            denom = np.sqrt(s_trans_err**2 + j_err**2)
+            normalized_difference = (
+                (s_trans - j_xs) / denom
+                if np.isfinite(denom) and denom > 0.0
+                else np.nan
+            )
+
+            rs = s_xs / s_model
+            rj = j_xs / j_model
+
             rows.append({
                 "saylor_index": int(si),
                 "jo_index": int(j),
                 "match_distance": float(dist),
                 "saylor_Q2": float(srow["Q2"]),
                 "jo_Q2": float(jrow["Q2"]),
+                "delta_Q2_abs": abs(float(srow["Q2"]) - float(jrow["Q2"])),
                 "saylor_xB": float(srow["xB"]),
                 "jo_xB": float(jrow["xB"]),
+                "delta_xB_abs": abs(float(srow["xB"]) - float(jrow["xB"])),
                 "saylor_t_abs": float(srow["t_abs"]),
                 "jo_t_abs": float(jrow["t_abs"]),
+                "delta_t_abs": abs(float(srow["t_abs"]) - float(jrow["t_abs"])),
                 "saylor_phi_deg": float(srow["phi_deg"]),
                 "jo_phi_deg": float(jrow["phi_deg"]),
+                "delta_phi_deg_abs": circular_phi_delta_deg(
+                    srow["phi_deg"], jrow["phi_deg"]
+                ),
+                "saylor_xs": s_xs,
+                "jo_xs": j_xs,
+                "saylor_point_err": s_err,
+                "jo_point_err": j_err,
+                "saylor_km15_ep": s_model,
+                "jo_km15_ep": j_model,
                 "saylor_data_over_km15": rs,
                 "jo_data_over_km15": rj,
-                "ratio_saylor_over_jo": rs / rj if rj != 0.0 else np.nan,
+                "raw_ratio_saylor_over_jo": raw_ratio,
+                "km15_transport_factor_saylor_to_jo": transport_factor,
+                "saylor_xs_transported_to_jo": s_trans,
+                "saylor_transported_point_err": s_trans_err,
+                "ratio_saylor_over_jo": transported_ratio,
+                "ratio_saylor_over_jo_err": transported_ratio_err,
+                "normalized_difference_transported": normalized_difference,
             })
         #endfor
     #endfor
@@ -14625,52 +14719,559 @@ def save_jo_saylor_matched_kinematics(
         outdir / "02_jo_saylor_matched_kinematics.csv", index=False
     )
 
-    # Show increasingly strict overlap quality without choosing a posteriori
-    # kinematic cuts.
+    if len(matches) == 0:
+        print("[Jo/Saylor matched diagnostic] no valid matches")
+        return
+    #endif
+
+    # Fixed overlap quantiles.  These are defined solely by matching distance,
+    # not by the observed Jo/Saylor cross-section agreement.
     quantiles = [0.25, 0.50, 0.75, 1.00]
     summary = []
     for q in quantiles:
         cut = float(matches["match_distance"].quantile(q))
-        part = matches.loc[matches["match_distance"] <= cut]
+        part = matches.loc[matches["match_distance"] <= cut].copy()
+        rr = part["ratio_saylor_over_jo"].to_numpy(float)
+        raw = part["raw_ratio_saylor_over_jo"].to_numpy(float)
+        z = part["normalized_difference_transported"].to_numpy(float)
+        rr = rr[np.isfinite(rr)]
+        raw = raw[np.isfinite(raw)]
+        z = z[np.isfinite(z)]
+
+        if len(rr):
+            p16, p50, p84 = np.percentile(rr, [16.0, 50.0, 84.0])
+        else:
+            p16 = p50 = p84 = np.nan
+        #endif
+
         summary.append({
             "match_distance_quantile": q,
             "max_match_distance": cut,
             "N": len(part),
-            "median_saylor_over_jo": float(
-                np.nanmedian(part["ratio_saylor_over_jo"])
+            "median_raw_saylor_over_jo": (
+                float(np.nanmedian(raw)) if len(raw) else np.nan
             ),
-            "rms_saylor_over_jo_minus_one": float(
-                np.sqrt(np.nanmean(
-                    (part["ratio_saylor_over_jo"] - 1.0)**2
-                ))
+            "median_transported_saylor_over_jo": float(p50),
+            "transported_ratio_p16": float(p16),
+            "transported_ratio_p84": float(p84),
+            "transported_ratio_half_68_width": (
+                float(0.5 * (p84 - p16))
+                if np.isfinite(p16) and np.isfinite(p84) else np.nan
+            ),
+            "rms_transported_ratio_minus_one": (
+                float(np.sqrt(np.nanmean((rr - 1.0)**2))) if len(rr) else np.nan
+            ),
+            "fraction_transported_within_10pct": (
+                float(np.mean(np.abs(rr - 1.0) <= 0.10)) if len(rr) else np.nan
+            ),
+            "fraction_transported_within_20pct": (
+                float(np.mean(np.abs(rr - 1.0) <= 0.20)) if len(rr) else np.nan
+            ),
+            "mean_normalized_difference": (
+                float(np.mean(z)) if len(z) else np.nan
+            ),
+            "rms_normalized_difference": (
+                float(np.sqrt(np.mean(z**2))) if len(z) else np.nan
+            ),
+            "fraction_abs_normalized_difference_gt_2": (
+                float(np.mean(np.abs(z) > 2.0)) if len(z) else np.nan
+            ),
+            "fraction_abs_normalized_difference_gt_3": (
+                float(np.mean(np.abs(z) > 3.0)) if len(z) else np.nan
+            ),
+            "median_abs_delta_Q2": float(np.nanmedian(part["delta_Q2_abs"])),
+            "median_abs_delta_xB": float(np.nanmedian(part["delta_xB_abs"])),
+            "median_abs_delta_t": float(np.nanmedian(part["delta_t_abs"])),
+            "median_abs_delta_phi_deg": float(
+                np.nanmedian(part["delta_phi_deg_abs"])
             ),
         })
     #endfor
-    pd.DataFrame(summary).to_csv(
+    summary_df = pd.DataFrame(summary)
+    summary_df.to_csv(
         outdir / "03_jo_saylor_matched_overlap_summary.csv", index=False
     )
 
-    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    # Presentation-facing subset: best-overlap half, selected only by geometry.
+    q50_cut = float(matches["match_distance"].quantile(0.50))
+    tight = matches.loc[matches["match_distance"] <= q50_cut].copy()
+    ratio = tight["ratio_saylor_over_jo"].to_numpy(float)
+    finite_ratio = ratio[np.isfinite(ratio)]
+    if len(finite_ratio):
+        rp16, rmed, rp84 = np.percentile(finite_ratio, [16.0, 50.0, 84.0])
+    else:
+        rp16 = rmed = rp84 = np.nan
+    #endif
+
+    def add_equal_population_summary(ax, x, y, nbins=8):
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        good = np.isfinite(x) & np.isfinite(y)
+        x = x[good]
+        y = y[good]
+        if len(x) < max(8, nbins):
+            return
+        #endif
+        order = np.argsort(x)
+        groups = np.array_split(order, nbins)
+        xc, ym, ylo, yhi = [], [], [], []
+        for g in groups:
+            if len(g) == 0:
+                continue
+            #endif
+            xx = x[g]
+            yy = y[g]
+            q16, q50, q84 = np.percentile(yy, [16.0, 50.0, 84.0])
+            xc.append(float(np.median(xx)))
+            ym.append(float(q50))
+            ylo.append(float(q50 - q16))
+            yhi.append(float(q84 - q50))
+        #endfor
+        ax.errorbar(
+            xc, ym, yerr=np.vstack([ylo, yhi]),
+            fmt="o-", linewidth=1.5, markersize=4.5, capsize=2.5,
+            label="equal-population median and 16--84%",
+        )
+    #enddef
+
+    # ------------------------------------------------------------------
+    # Figure 02: the main direct-comparison figure.
+    # ------------------------------------------------------------------
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 9.4))
+    ax = axes[0, 0]
     ax.scatter(
-        matches["match_distance"],
-        matches["ratio_saylor_over_jo"],
-        s=10, alpha=0.35,
+        tight["jo_t_abs"], tight["ratio_saylor_over_jo"],
+        s=11, alpha=0.22, label="matched points",
     )
-    ax.axhline(1.0, linewidth=0.9, linestyle="--")
-    ax.set_xlabel(
-        r"nearest-Jo distance in standardized $(Q^2,x_B,|t|,\phi)$ space"
+    add_equal_population_summary(
+        ax, tight["jo_t_abs"], tight["ratio_saylor_over_jo"]
     )
-    ax.set_ylabel(
-        r"$(\sigma_{\rm Saylor}/\sigma_{\rm KM15})/"
-        r"(\sigma_{\rm Jo}/\sigma_{\rm KM15})$"
-    )
-    ax.set_title("Direct Jo 2015 vs Saylor 2018 matched-kinematics diagnostic")
+    ax.axhline(1.0, linewidth=1.0, linestyle="--")
+    ax.set_xlabel(r"Jo matched $|t|$ (GeV$^2$)")
+    ax.set_ylabel(r"transported $\sigma_{\rm Saylor}/\sigma_{\rm Jo}$")
+    ax.set_title(r"Ratio versus $|t|$")
     ax.grid(alpha=0.2)
-    fig.tight_layout()
+    ax.legend(fontsize=8)
+
+    ax = axes[0, 1]
+    ax.scatter(
+        tight["jo_phi_deg"], tight["ratio_saylor_over_jo"],
+        s=11, alpha=0.22,
+    )
+    add_equal_population_summary(
+        ax, tight["jo_phi_deg"], tight["ratio_saylor_over_jo"]
+    )
+    ax.axhline(1.0, linewidth=1.0, linestyle="--")
+    ax.set_xlabel(r"Jo matched $\phi$ (deg)")
+    ax.set_ylabel(r"transported $\sigma_{\rm Saylor}/\sigma_{\rm Jo}$")
+    ax.set_title(r"Ratio versus $\phi$")
+    ax.grid(alpha=0.2)
+
+    ax = axes[1, 0]
+    z = tight["normalized_difference_transported"].to_numpy(float)
+    ax.scatter(tight["jo_t_abs"], z, s=11, alpha=0.24)
+    ax.axhline(0.0, linewidth=1.0)
+    ax.axhline(+2.0, linewidth=0.9, linestyle="--")
+    ax.axhline(-2.0, linewidth=0.9, linestyle="--")
+    ax.axhline(+3.0, linewidth=0.8, linestyle=":")
+    ax.axhline(-3.0, linewidth=0.8, linestyle=":")
+    ax.set_xlabel(r"Jo matched $|t|$ (GeV$^2$)")
+    ax.set_ylabel(
+        r"$(\sigma_{\rm S}^{\rm tr}-\sigma_{\rm J})/"
+        r"\sqrt{\delta_{\rm S,tr}^2+\delta_{\rm J}^2}$"
+    )
+    ax.set_title("Normalized point-pair difference")
+    ax.grid(alpha=0.2)
+
+    ax = axes[1, 1]
+    goodr = finite_ratio
+    if len(goodr):
+        lo = max(0.0, float(np.percentile(goodr, 1.0)))
+        hi = float(np.percentile(goodr, 99.0))
+        if not np.isfinite(hi) or hi <= lo:
+            hi = float(np.nanmax(goodr))
+        #endif
+        shown = goodr[(goodr >= lo) & (goodr <= hi)]
+        ax.hist(shown, bins=35, histtype="step", linewidth=1.5)
+        ax.axvline(1.0, linewidth=1.0, linestyle="--", label="unity")
+        ax.axvline(rmed, linewidth=1.3, label=f"median = {rmed:.3f}")
+        ax.axvspan(rp16, rp84, alpha=0.12, label="16--84% interval")
+        ax.set_xlim(lo, hi)
+    #endif
+    ax.set_xlabel(r"transported $\sigma_{\rm Saylor}/\sigma_{\rm Jo}$")
+    ax.set_ylabel("Matched pairs")
+    ax.set_title("Ratio distribution (central 98% shown)")
+    ax.grid(alpha=0.2)
+    ax.legend(fontsize=8)
+
+    fig.suptitle(
+        "Jo 2015 vs Saylor 2018: direct best-overlap matched-kinematics comparison",
+        y=0.992,
+    )
+    subtitle = (
+        f"best-overlap 50% selected only by kinematic distance: N={len(tight)}; "
+        f"median ratio={rmed:.3f}, 16--84%=[{rp16:.3f}, {rp84:.3f}]"
+    )
+    fig.text(0.5, 0.953, subtitle, ha="center", va="top", fontsize=10)
+    fig.text(
+        0.5, 0.928,
+        "Saylor cross sections are locally transported to the matched Jo "
+        "kinematics using only the KM15 point-to-point kinematic dependence.",
+        ha="center", va="top", fontsize=9,
+    )
+    fig.tight_layout(rect=(0.02, 0.02, 0.99, 0.90))
     fig.savefig(
-        outdir / "02_jo_saylor_matched_kinematics.png", dpi=180
+        outdir / "02_jo_saylor_matched_kinematics.png", dpi=220
     )
     plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Figure 03: make explicit what the local transport changes.
+    # ------------------------------------------------------------------
+    raw_all = tight["raw_ratio_saylor_over_jo"].to_numpy(float)
+    tr_all = tight["ratio_saylor_over_jo"].to_numpy(float)
+    finite_both = np.isfinite(raw_all) & np.isfinite(tr_all)
+    raw_all = raw_all[finite_both]
+    tr_all = tr_all[finite_both]
+    dist_all = tight["match_distance"].to_numpy(float)[finite_both]
+
+    combined_ratio = np.concatenate([raw_all, tr_all]) if len(raw_all) else np.array([])
+    if len(combined_ratio):
+        ylo = max(0.0, float(np.percentile(combined_ratio, 1.0)))
+        yhi = float(np.percentile(combined_ratio, 99.0))
+    else:
+        ylo, yhi = 0.0, 2.0
+    #endif
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.1), sharey=True)
+    axes[0].scatter(dist_all, raw_all, s=11, alpha=0.25)
+    axes[0].axhline(1.0, linewidth=1.0, linestyle="--")
+    axes[0].set_xlabel("standardized nearest-Jo distance")
+    axes[0].set_ylabel(r"$\sigma_{\rm Saylor}/\sigma_{\rm Jo}$")
+    axes[0].set_title(
+        f"Raw cross-section ratio\nmedian={np.nanmedian(raw_all):.3f}"
+        if len(raw_all) else "Raw cross-section ratio"
+    )
+    axes[0].grid(alpha=0.2)
+
+    axes[1].scatter(dist_all, tr_all, s=11, alpha=0.25)
+    axes[1].axhline(1.0, linewidth=1.0, linestyle="--")
+    axes[1].set_xlabel("standardized nearest-Jo distance")
+    axes[1].set_title(
+        f"After local KM15 transport\nmedian={np.nanmedian(tr_all):.3f}"
+        if len(tr_all) else "After local KM15 transport"
+    )
+    axes[1].grid(alpha=0.2)
+    if np.isfinite(ylo) and np.isfinite(yhi) and yhi > ylo:
+        axes[0].set_ylim(ylo, yhi)
+    #endif
+    fig.suptitle(
+        "Jo 2015 vs Saylor 2018: raw and locally kinematic-transported ratios",
+        y=0.985,
+    )
+    fig.tight_layout(rect=(0.02, 0.02, 0.99, 0.92))
+    fig.savefig(
+        outdir / "03_jo_saylor_raw_vs_transport_ratio.png", dpi=220
+    )
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Figure 04: matching quality itself, so the reader can judge overlap.
+    # ------------------------------------------------------------------
+    quality_vars = [
+        ("delta_Q2_abs", r"$|\Delta Q^2|$ (GeV$^2$)"),
+        ("delta_xB_abs", r"$|\Delta x_B|$"),
+        ("delta_t_abs", r"$|\Delta |t||$ (GeV$^2$)"),
+        ("delta_phi_deg_abs", r"$|\Delta\phi|$ (deg)"),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(11.5, 8.4))
+    for ax, (col, xlabel) in zip(axes.flat, quality_vars):
+        vals = tight[col].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        ax.hist(vals, bins=30, histtype="step", linewidth=1.5)
+        if len(vals):
+            med = float(np.median(vals))
+            p84 = float(np.percentile(vals, 84.0))
+            ax.axvline(med, linewidth=1.1, linestyle="--")
+            ax.text(
+                0.97, 0.94,
+                f"median={med:.4g}\n84%<{p84:.4g}",
+                transform=ax.transAxes, ha="right", va="top", fontsize=9,
+            )
+        #endif
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("Matched pairs")
+        ax.grid(alpha=0.2)
+    #endfor
+    fig.suptitle(
+        "Jo 2015 vs Saylor 2018: kinematic quality of the best-overlap 50%",
+        y=0.985,
+    )
+    fig.tight_layout(rect=(0.02, 0.02, 0.99, 0.94))
+    fig.savefig(
+        outdir / "04_jo_saylor_matching_quality.png", dpi=220
+    )
+    plt.close(fig)
+
+    # Compact presentation/note table for the best-overlap half.
+    zgood = z[np.isfinite(z)]
+    note_summary = pd.DataFrame([{
+        "subset": "best_overlap_50pct",
+        "N": int(len(tight)),
+        "max_standardized_match_distance": q50_cut,
+        "median_transported_ratio": float(rmed),
+        "ratio_p16": float(rp16),
+        "ratio_p84": float(rp84),
+        "rms_ratio_minus_one": float(
+            np.sqrt(np.nanmean((finite_ratio - 1.0)**2))
+        ) if len(finite_ratio) else np.nan,
+        "fraction_ratio_within_10pct": float(
+            np.mean(np.abs(finite_ratio - 1.0) <= 0.10)
+        ) if len(finite_ratio) else np.nan,
+        "fraction_ratio_within_20pct": float(
+            np.mean(np.abs(finite_ratio - 1.0) <= 0.20)
+        ) if len(finite_ratio) else np.nan,
+        "mean_normalized_difference": float(np.mean(zgood)) if len(zgood) else np.nan,
+        "rms_normalized_difference": float(
+            np.sqrt(np.mean(zgood**2))
+        ) if len(zgood) else np.nan,
+        "fraction_abs_normalized_difference_gt_2": float(
+            np.mean(np.abs(zgood) > 2.0)
+        ) if len(zgood) else np.nan,
+        "fraction_abs_normalized_difference_gt_3": float(
+            np.mean(np.abs(zgood) > 3.0)
+        ) if len(zgood) else np.nan,
+    }])
+    note_summary.to_csv(
+        outdir / "04_jo_saylor_best_overlap_note_summary.csv", index=False
+    )
+
+    print(
+        "[Jo/Saylor matched diagnostic] "
+        f"best-overlap 50%: N={len(tight)}, median transported ratio="
+        f"{rmed:.4f}, 16--84%=[{rp16:.4f},{rp84:.4f}]"
+    )
+#enddef
+
+
+def save_five_dataset_bh_selected_consistency(
+        bundles: Sequence[Dict[str, object]],
+        outdir: Path,
+        threshold: float = 0.05) -> None:
+    """
+    Five-dataset context table/figure for the nominal KM15 BH-like region.
+
+    This diagnostic answers a different question from the full-EP model audit:
+    once the same |1-BH/EP| <= threshold condition used by the radius analysis
+    is imposed, how broad are the residuals of each published dataset relative
+    to KM15 full electroproduction?
+
+    Overall normalization is profiled using each dataset's published correlated
+    normalization prior when one is available.  The table reports both raw and
+    profiled scores.  This remains diagnostic and is never fed back into the
+    production selection or functional-form ranking.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    rows = []
+    pull_store = {}
+
+    for bundle in sort_bundles_chronologically(list(bundles)):
+        data = bundle["all_data"].copy().reset_index(drop=True)
+        kind = str(bundle["kind"])
+        key = str(bundle["key"])
+        label = str(bundle["label"])
+
+        needed = ["xs", "km15_bh", "km15_ep"]
+        if any(c not in data.columns for c in needed):
+            print(
+                f"[five-dataset BH consistency] {label}: missing KM15 columns; skipped"
+            )
+            continue
+        #endif
+
+        y = pd.to_numeric(data["xs"], errors="coerce").to_numpy(float)
+        bh = pd.to_numeric(data["km15_bh"], errors="coerce").to_numpy(float)
+        ep = pd.to_numeric(data["km15_ep"], errors="coerce").to_numpy(float)
+        err = dataset_point_errors(data, kind, 0.0, False)
+
+        finite = (
+            np.isfinite(y) & (y > 0.0)
+            & np.isfinite(bh) & (bh > 0.0)
+            & np.isfinite(ep) & (ep > 0.0)
+            & np.isfinite(err) & (err > 0.0)
+        )
+        purity = np.full(len(data), np.nan)
+        purity[finite] = np.abs(1.0 - bh[finite] / ep[finite])
+        selected = finite & (purity <= float(threshold))
+        if not np.any(selected):
+            continue
+        #endif
+
+        yy = y[selected]
+        mm = ep[selected]
+        ee = err[selected]
+        raw_pull = (mm - yy) / ee
+        raw_chi2 = float(np.sum(raw_pull**2))
+
+        # Dataset normalization priors are diagnostic here.  A bundle with
+        # norm_frac <= 0 remains fixed to unity.
+        norm_frac = float(bundle.get("norm_frac", 0.0))
+        beta, scale, prof_chi2 = _profile_model_normalization(
+            yy, mm, ee, norm_frac
+        )
+        prof_pull = (scale * mm - yy) / ee
+        ratio = yy / mm
+
+        pull_store[label] = prof_pull.copy()
+        rows.append({
+            "dataset": key,
+            "dataset_label": label,
+            "N_5pct": int(np.sum(selected)),
+            "normalization_prior_fraction": norm_frac,
+            "profiled_beta": float(beta),
+            "profiled_scale": float(scale),
+            "raw_chi2_per_point": float(raw_chi2 / np.sum(selected)),
+            "profiled_chi2_per_point": float(prof_chi2 / np.sum(selected)),
+            "mean_profiled_pull": float(np.mean(prof_pull)),
+            "rms_profiled_pull": float(np.sqrt(np.mean(prof_pull**2))),
+            "median_data_over_km15_ep": float(np.median(ratio)),
+            "fraction_abs_profiled_pull_gt_2": float(
+                np.mean(np.abs(prof_pull) > 2.0)
+            ),
+            "fraction_abs_profiled_pull_gt_3": float(
+                np.mean(np.abs(prof_pull) > 3.0)
+            ),
+        })
+    #endfor
+
+    table = pd.DataFrame(rows)
+    table.to_csv(
+        outdir / "05_five_dataset_km15_5pct_consistency_summary.csv",
+        index=False,
+    )
+    if table.empty:
+        return
+    #endif
+
+    # Human-readable LaTeX fragment for direct inclusion in the note.
+    tex_cols = [
+        "dataset_label", "N_5pct", "profiled_chi2_per_point",
+        "rms_profiled_pull", "fraction_abs_profiled_pull_gt_2",
+        "fraction_abs_profiled_pull_gt_3",
+    ]
+    latex_table = table[tex_cols].copy()
+    latex_table.columns = [
+        "Dataset", "$N_{5\\%}$", "$\\chi^2/N$",
+        "pull RMS", "$f(|p|>2)$", "$f(|p|>3)$",
+    ]
+    latex_table["$\\chi^2/N$"] = latex_table["$\\chi^2/N$"].map(
+        lambda x: f"{x:.2f}"
+    )
+    latex_table["pull RMS"] = latex_table["pull RMS"].map(
+        lambda x: f"{x:.2f}"
+    )
+    latex_table["$f(|p|>2)$"] = latex_table["$f(|p|>2)$"].map(
+        lambda x: f"{100.0*x:.1f}\\%"
+    )
+    latex_table["$f(|p|>3)$"] = latex_table["$f(|p|>3)$"].map(
+        lambda x: f"{100.0*x:.1f}\\%"
+    )
+    with open(
+        outdir / "05_five_dataset_km15_5pct_consistency_table.tex",
+        "w",
+        encoding="utf-8",
+    ) as fout:
+        fout.write(
+            latex_table.to_latex(
+                index=False,
+                escape=False,
+                caption=(
+                    "Consistency of the five proton cross-section products "
+                    "with KM15 full electroproduction within the common "
+                    "$5\\%$ BH-like selection. Overall normalization is "
+                    "profiled using each dataset's published correlated "
+                    "normalization prior where available."
+                ),
+                label="tab:five_dataset_km15_bh_consistency",
+                float_format="%.3f",
+            )
+        )
+    #endwith
+
+    # One compact context figure: profiled pull distributions with identical
+    # binning, so Saylor can be judged against all other datasets immediately.
+    finite_pulls = np.concatenate([
+        p[np.isfinite(p)] for p in pull_store.values() if np.any(np.isfinite(p))
+    ])
+    if len(finite_pulls):
+        lim = max(4.0, float(np.percentile(np.abs(finite_pulls), 99.0)))
+        lim = min(lim, 8.0)
+    else:
+        lim = 5.0
+    #endif
+    bins = np.linspace(-lim, lim, 51)
+
+    fig, ax = plt.subplots(figsize=(10.5, 6.4))
+    for label, pull in pull_store.items():
+        pp = pull[np.isfinite(pull)]
+        pp = pp[(pp >= -lim) & (pp <= lim)]
+        ax.hist(
+            pp, bins=bins, histtype="step", linewidth=1.4,
+            density=True, label=label,
+        )
+    #endfor
+    xx = np.linspace(-lim, lim, 400)
+    ax.plot(
+        xx, np.exp(-0.5 * xx**2) / np.sqrt(2.0 * np.pi),
+        linestyle="--", linewidth=1.2, label="unit Gaussian",
+    )
+    ax.axvline(0.0, linewidth=0.9)
+    ax.set_xlabel("profiled KM15 residual pull")
+    ax.set_ylabel("normalized density")
+    ax.set_title(
+        "Five proton datasets in the common KM15 5% BH-like region"
+    )
+    ax.grid(alpha=0.2)
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    fig.savefig(
+        outdir / "05_five_dataset_km15_5pct_pull_distributions.png", dpi=220
+    )
+    plt.close(fig)
+
+    # Ranked summary plot makes the relative anomaly visually immediate.
+    plot_table = table.sort_values("rms_profiled_pull", ascending=True).copy()
+    ypos = np.arange(len(plot_table))
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 5.4))
+    axes[0].barh(ypos, plot_table["rms_profiled_pull"])
+    axes[0].axvline(1.0, linewidth=1.0, linestyle="--")
+    axes[0].set_yticks(ypos)
+    axes[0].set_yticklabels(plot_table["dataset_label"])
+    axes[0].set_xlabel("profiled pull RMS")
+    axes[0].grid(axis="x", alpha=0.2)
+
+    axes[1].barh(
+        ypos, 100.0 * plot_table["fraction_abs_profiled_pull_gt_2"]
+    )
+    axes[1].set_yticks(ypos)
+    axes[1].set_yticklabels([])
+    axes[1].set_xlabel(r"fraction with $|p|>2$ (\%)")
+    axes[1].grid(axis="x", alpha=0.2)
+
+    fig.suptitle(
+        "Common 5% BH-like selection: cross-dataset KM15 residual comparison",
+        y=0.985,
+    )
+    fig.tight_layout(rect=(0.02, 0.02, 0.99, 0.93))
+    fig.savefig(
+        outdir / "06_five_dataset_km15_5pct_residual_summary.png", dpi=220
+    )
+    plt.close(fig)
+
+    print(
+        "[five-dataset BH consistency] outputs -> "
+        f"{outdir}"
+    )
 #enddef
 
 
@@ -14762,6 +15363,15 @@ def run_published_default(args) -> int:
             diagnostic_bundles,
             root_outdir / "final_analysis" / "diagnostics"
             / "all_point_model_agreement",
+        )
+
+        # Dedicated context for the Saylor decision: compare all five proton
+        # products under the SAME nominal KM15 5% BH-like criterion.
+        save_five_dataset_bh_selected_consistency(
+            diagnostic_bundles,
+            root_outdir / "final_analysis" / "diagnostics"
+            / "jo2015_vs_saylor2018",
+            threshold=0.05,
         )
 
         run_unified_km15_final_analysis(
