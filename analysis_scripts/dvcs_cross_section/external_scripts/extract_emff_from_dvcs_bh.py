@@ -14847,6 +14847,15 @@ def save_jo_saylor_matched_kinematics(
         ax, tight["jo_t_abs"], tight["ratio_saylor_over_jo"]
     )
     ax.axhline(1.0, linewidth=1.0, linestyle="--")
+    ax.set_ylim(0.0, 2.5)
+    ratio_t = tight["ratio_saylor_over_jo"].to_numpy(float)
+    n_ratio_t_out = int(np.sum(np.isfinite(ratio_t) & ((ratio_t < 0.0) | (ratio_t > 2.5))))
+    if n_ratio_t_out > 0:
+        ax.text(
+            0.98, 0.96, f"{n_ratio_t_out} points outside displayed y range",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8,
+        )
+    #endif
     ax.set_xlabel(r"Jo matched $|t|$ (GeV$^2$)")
     ax.set_ylabel(r"transported $\sigma_{\rm Saylor}/\sigma_{\rm Jo}$")
     ax.set_title(r"Ratio versus $|t|$")
@@ -14862,6 +14871,15 @@ def save_jo_saylor_matched_kinematics(
         ax, tight["jo_phi_deg"], tight["ratio_saylor_over_jo"]
     )
     ax.axhline(1.0, linewidth=1.0, linestyle="--")
+    ax.set_ylim(0.0, 2.5)
+    ratio_phi = tight["ratio_saylor_over_jo"].to_numpy(float)
+    n_ratio_phi_out = int(np.sum(np.isfinite(ratio_phi) & ((ratio_phi < 0.0) | (ratio_phi > 2.5))))
+    if n_ratio_phi_out > 0:
+        ax.text(
+            0.98, 0.96, f"{n_ratio_phi_out} points outside displayed y range",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8,
+        )
+    #endif
     ax.set_xlabel(r"Jo matched $\phi$ (deg)")
     ax.set_ylabel(r"transported $\sigma_{\rm Saylor}/\sigma_{\rm Jo}$")
     ax.set_title(r"Ratio versus $\phi$")
@@ -14875,6 +14893,14 @@ def save_jo_saylor_matched_kinematics(
     ax.axhline(-2.0, linewidth=0.9, linestyle="--")
     ax.axhline(+3.0, linewidth=0.8, linestyle=":")
     ax.axhline(-3.0, linewidth=0.8, linestyle=":")
+    ax.set_ylim(-5.0, 5.0)
+    n_pull_out = int(np.sum(np.isfinite(z) & ((z < -5.0) | (z > 5.0))))
+    if n_pull_out > 0:
+        ax.text(
+            0.98, 0.96, f"{n_pull_out} points outside displayed y range",
+            transform=ax.transAxes, ha="right", va="top", fontsize=8,
+        )
+    #endif
     ax.set_xlabel(r"Jo matched $|t|$ (GeV$^2$)")
     ax.set_ylabel(
         r"$(\sigma_{\rm S}^{\rm tr}-\sigma_{\rm J})/"
@@ -14962,8 +14988,22 @@ def save_jo_saylor_matched_kinematics(
         if len(tr_all) else "After local KM15 transport"
     )
     axes[1].grid(alpha=0.2)
-    if np.isfinite(ylo) and np.isfinite(yhi) and yhi > ylo:
-        axes[0].set_ylim(ylo, yhi)
+    # Fixed display range chosen to resolve the bulk ratio distribution.
+    # The numerical analysis and CSV retain every point.
+    axes[0].set_ylim(0.0, 2.5)
+    n_raw_out = int(np.sum(np.isfinite(raw_all) & ((raw_all < 0.0) | (raw_all > 2.5))))
+    n_tr_out = int(np.sum(np.isfinite(tr_all) & ((tr_all < 0.0) | (tr_all > 2.5))))
+    if n_raw_out > 0:
+        axes[0].text(
+            0.98, 0.96, f"{n_raw_out} outside y range",
+            transform=axes[0].transAxes, ha="right", va="top", fontsize=8,
+        )
+    #endif
+    if n_tr_out > 0:
+        axes[1].text(
+            0.98, 0.96, f"{n_tr_out} outside y range",
+            transform=axes[1].transAxes, ha="right", va="top", fontsize=8,
+        )
     #endif
     fig.suptitle(
         "Jo 2015 vs Saylor 2018: raw and locally kinematic-transported ratios",
