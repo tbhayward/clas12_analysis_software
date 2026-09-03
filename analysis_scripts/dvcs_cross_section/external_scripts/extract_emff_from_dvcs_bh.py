@@ -11189,12 +11189,37 @@ def run_global_saylor_tmin_scan(
         ))
     #endfor
 
-    saylor5 = select_bundle_from_external_model(
-        saylor_bundle, selection, "km15", 0.05
-    ).copy()
-    if len(saylor5) == 0:
-        raise RuntimeError("Saylor has zero points in the KM15 5% sample.")
+    # Saylor is diagnostic-only and is intentionally absent from the standard
+    # five-dataset external PARTONS selection table.  Its KM15 decomposition,
+    # however, is already evaluated directly by run_saylor_validation() and
+    # stored in saylor_bundle["all_data"].  The present scan is KM15-only, so
+    # selecting Saylor from that authoritative in-memory decomposition avoids
+    # any unnecessary PARTONS regeneration and keeps the production external
+    # table five-dataset by construction.
+    saylor_all = saylor_bundle["all_data"].copy().reset_index(drop=True)
+    if "bh_delta" in saylor_all.columns:
+        saylor5 = saylor_all.loc[
+            pd.to_numeric(saylor_all["bh_delta"], errors="coerce") <= 0.05
+        ].copy()
+    elif "delta_bh" in saylor_all.columns:
+        saylor5 = saylor_all.loc[
+            pd.to_numeric(saylor_all["delta_bh"], errors="coerce") <= 0.05
+        ].copy()
+    else:
+        raise RuntimeError(
+            "Saylor bundle has no KM15 BH-purity column (expected bh_delta "
+            "or delta_bh). Rebuild the Saylor KM15 decomposition cache."
+        )
     #endif
+    saylor5 = saylor5.reset_index(drop=True)
+    if len(saylor5) == 0:
+        raise RuntimeError("Saylor has zero points in the direct KM15 5% sample.")
+    #endif
+    print(
+        f"[global Saylor |t|min scan] direct KM15 selection: "
+        f"{len(saylor5)}/{len(saylor_all)} Saylor points at 5%; "
+        "no external PARTONS table required for Saylor"
+    )
 
     # Scan actual Saylor |t| bin boundaries, matching the logic of Ref.
     # arXiv:2607.04481: points below the threshold are removed.
@@ -14016,7 +14041,8 @@ def save_preferred_sachs_vs_elastic_data(
         0.062,
         1.06 * float(prad["Q2_GeV2"].max()),
     )
-    q_prad_band = np.linspace(0.0, q_prad_max, 500)
+    q_prad_min = 0.95 * float(prad["Q2_GeV2"].min())
+    q_prad_band = np.geomspace(q_prad_min, q_prad_max, 500)
     bh_prad_band, bh_prad_band_err = _sachs_band_from_result(
         fit, family, q_prad_band, "GE"
     )
@@ -14072,10 +14098,12 @@ def save_preferred_sachs_vs_elastic_data(
     #endfor
 
     ax_prad.axhline(1.0, linewidth=0.9, linestyle="--")
-    ax_prad.set_xlim(0.0, q_prad_max)
+    ax_prad.set_xscale("log")
+    ax_prad.set_xlim(q_prad_min, q_prad_max)
+    ax_prad.set_ylim(0.99, 1.025)
     ax_prad.set_ylabel(r"$G_E^{\rm PRad}/G_E^{\rm BH}$")
     ax_prad.set_xlabel(r"$Q^2$ (GeV$^2$)")
-    ax_prad.grid(alpha=0.2)
+    ax_prad.grid(alpha=0.2, which="both")
     ax_prad.legend(fontsize=8.5, ncol=3, loc="best")
 
     family_label = str(family)
