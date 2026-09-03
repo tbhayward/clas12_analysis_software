@@ -2069,7 +2069,7 @@ static void draw_note_period_topology_summary(const CSV& csv, const std::vector<
     c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.16); c.SetTopMargin(0.10);
     c.SetGridy(); c.SetTicks(1,1);
     TH1F frame("h_note_pi0_period_topology", "", 5, 0.5, 5.5);
-    frame.SetMinimum(0.0); frame.SetMaximum(0.40);
+    frame.SetMinimum(0.0); frame.SetMaximum(0.50);
     frame.GetYaxis()->SetTitle("Integrated #pi^{0} contamination");
     frame.GetYaxis()->SetTitleOffset(1.25); frame.GetYaxis()->SetTitleSize(0.050); frame.GetYaxis()->SetLabelSize(0.043);
     frame.GetXaxis()->SetLabelSize(0.045);
@@ -2144,22 +2144,41 @@ static void draw_note_distribution(const CSV& csv, const std::vector<RowBin>& bi
 static void draw_note_xb_summary(const CSV& csv, const std::vector<RowBin>& bins,
                                  const std::string& note_dir) {
     std::vector<std::pair<double,double>> xedges;
-    for(const auto& b:bins){ if(!b.valid) continue; std::pair<double,double> e{b.xBmin,b.xBmax}; if(std::find(xedges.begin(),xedges.end(),e)==xedges.end()) xedges.push_back(e); }
+    for(const auto& b:bins){
+        if(!b.valid) continue;
+        std::pair<double,double> e{b.xBmin,b.xBmax};
+        if(std::find(xedges.begin(),xedges.end(),e)==xedges.end()) xedges.push_back(e);
+    }
     std::sort(xedges.begin(),xedges.end());
-    TCanvas c("c_note_pi0_xb", "", 1100, 720); c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.12); c.SetTopMargin(0.10); c.SetGridy(); c.SetTicks(1,1);
-    TH1F frame("h_note_pi0_xb","",100,0.05,0.60); frame.SetMinimum(0); frame.SetMaximum(0.55); frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Median #pi^{0} contamination"); frame.GetYaxis()->SetTitleOffset(1.15); frame.GetXaxis()->SetTitleSize(0.050); frame.GetYaxis()->SetTitleSize(0.050); frame.Draw();
+
+    TCanvas c("c_note_pi0_xb", "", 1100, 720);
+    c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.12); c.SetTopMargin(0.10);
+    c.SetGridy(); c.SetTicks(1,1);
+
+    TH1F frame("h_note_pi0_xb","",100,0.05,0.60);
+    frame.SetMinimum(0);
+    frame.SetMaximum(0.55);
+    frame.GetXaxis()->SetTitle("x_{B}");
+    frame.GetYaxis()->SetTitle("Median #pi^{0} contamination");
+    frame.GetYaxis()->SetTitleOffset(1.15);
+    frame.GetXaxis()->SetTitleSize(0.050);
+    frame.GetYaxis()->SetTitleSize(0.050);
+    frame.Draw();
+
     const int markers[5]={20,21,22,23,33};
     // Display-only horizontal offsets keep the five periods visually separable.
     // The underlying x_B bin centers and all numerical results are unchanged.
     const double x_offsets[5]={-0.006,-0.003,0.0,0.003,0.006};
-    std::vector<TGraphErrors*> gs;
+
+    std::vector<TGraphAsymmErrors*> gs;
     for(int ip=0;ip<5;++ip){
-        auto* g=new TGraphErrors();
+        auto* g=new TGraphAsymmErrors();
         g->SetMarkerStyle(markers[ip]);
         g->SetMarkerSize(1.1);
         g->SetMarkerColor(note_period_color(ip));
         g->SetLineColor(note_period_color(ip));
         g->SetLineWidth(2);
+
         const int cc=col_strict(csv,contamination_col(kPeriods[ip]));
         int n=0;
         for(const auto& xe:xedges){
@@ -2170,23 +2189,189 @@ static void draw_note_xb_summary(const CSV& csv, const std::vector<RowBin>& bins
                 if(q.v>0 && std::isfinite(q.v)) v.push_back(q.v);
             }
             if(v.empty()) continue;
+
             std::sort(v.begin(),v.end());
-            const double med=quantile_sorted(v,.5);
-            const double lo=quantile_sorted(v,.16);
-            const double hi=quantile_sorted(v,.84);
+            const double med=quantile_sorted(v,.50);
+            const double lo =quantile_sorted(v,.16);
+            const double hi =quantile_sorted(v,.84);
             const double x_center=0.5*(xe.first+xe.second);
+
             g->SetPoint(n,x_center+x_offsets[ip],med);
-            g->SetPointError(n,0,0.5*(hi-lo));
+            g->SetPointError(n,0,0,med-lo,hi-med);
             ++n;
         }
         g->Draw("PE SAME");
         gs.push_back(g);
     }
-    TLegend leg(0.70,0.57,0.94,0.79); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.036); for(int ip=0;ip<5;++ip) leg.AddEntry(gs[ip],kPeriods[ip].c_str(),"pe"); leg.Draw();
-    TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048); t.DrawLatex(0.11,0.93,"Kinematic dependence of the #pi^{0} contamination");
-    TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.030); n.DrawLatex(0.12,0.84,"Points: median over populated (Q^{2}, |t|, #phi) bins; bars: central 68% interval");
-    c.SaveAs(join_path(note_dir,"pi0_contamination_vs_xB_summary.png").c_str()); for(auto* g:gs) delete g;
+
+    TLegend leg(0.70,0.57,0.94,0.79);
+    leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.036);
+    for(int ip=0;ip<5;++ip) leg.AddEntry(gs[ip],kPeriods[ip].c_str(),"pe");
+    leg.Draw();
+
+    TLatex t;
+    t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048);
+    t.DrawLatex(0.11,0.93,"Kinematic dependence of the #pi^{0} contamination");
+
+    TLatex n;
+    n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.029);
+    n.DrawLatex(0.12,0.84,
+                "Points: median over populated (Q^{2}, |t|, #phi) bins; bars: 16th--84th percentile bin-to-bin range");
+
+    c.SaveAs(join_path(note_dir,"pi0_contamination_vs_xB_summary.png").c_str());
+    for(auto* g:gs) delete g;
 }
+
+
+struct NotePhiCellKey {
+    double xmin=0, xmax=0, qmin=0, qmax=0, tmin=0, tmax=0;
+};
+
+static bool same_note_phi_cell(const RowBin& b, const NotePhiCellKey& k) {
+    const double eps=1e-10;
+    return std::fabs(b.xBmin-k.xmin)<eps && std::fabs(b.xBmax-k.xmax)<eps &&
+           std::fabs(b.Q2min-k.qmin)<eps && std::fabs(b.Q2max-k.qmax)<eps &&
+           std::fabs(b.tmin-k.tmin)<eps && std::fabs(b.tmax-k.tmax)<eps;
+}
+
+static void draw_note_phi_example(const CSV& csv, const std::vector<RowBin>& bins,
+                                  const std::string& note_dir) {
+    // Prefer the central x_B interval 0.204--0.268, then choose the (Q2,|t|)
+    // cell with the largest minimum number of populated phi bins across periods.
+    // This makes the example deterministic while avoiding a hand-picked phi shape.
+    const double target_xmin=0.204;
+    const double target_xmax=0.268;
+
+    std::vector<NotePhiCellKey> keys;
+    for(const auto& b:bins){
+        if(!b.valid) continue;
+        if(std::fabs(b.xBmin-target_xmin)>1e-10 || std::fabs(b.xBmax-target_xmax)>1e-10) continue;
+        NotePhiCellKey k{b.xBmin,b.xBmax,b.Q2min,b.Q2max,b.tmin,b.tmax};
+        bool seen=false;
+        for(const auto& x:keys){
+            if(std::fabs(x.qmin-k.qmin)<1e-10 && std::fabs(x.qmax-k.qmax)<1e-10 &&
+               std::fabs(x.tmin-k.tmin)<1e-10 && std::fabs(x.tmax-k.tmax)<1e-10){
+                seen=true; break;
+            }
+        }
+        if(!seen) keys.push_back(k);
+    }
+    if(keys.empty()) return;
+
+    int best_score=-1;
+    int best_total=-1;
+    NotePhiCellKey best=keys.front();
+
+    for(const auto& k:keys){
+        int min_positive=1000000;
+        int total_positive=0;
+        for(int ip=0;ip<5;++ip){
+            const int cc=col_strict(csv,contamination_col(kPeriods[ip]));
+            int npos=0;
+            for(std::size_t r=0;r<bins.size();++r){
+                if(!bins[r].valid || !same_note_phi_cell(bins[r],k)) continue;
+                const Triple q=parse_yield_or_zero(csv.rows[r][cc],contamination_col(kPeriods[ip]));
+                if(q.v>0 && std::isfinite(q.v)) ++npos;
+            }
+            min_positive=std::min(min_positive,npos);
+            total_positive+=npos;
+        }
+        if(min_positive>best_score || (min_positive==best_score && total_positive>best_total)){
+            best_score=min_positive;
+            best_total=total_positive;
+            best=k;
+        }
+    }
+
+    std::ofstream fout(join_path(note_dir,"pi0_contamination_phi_example.csv"));
+    fout << "period,xBmin,xBmax,Q2min,Q2max,tmin,tmax,phimin,phimax,phi_center,contamination,stat\n";
+    fout << std::setprecision(10);
+
+    TCanvas c("c_note_pi0_phi_example","",1100,720);
+    c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.12); c.SetTopMargin(0.10);
+    c.SetGridy(); c.SetTicks(1,1);
+
+    double ymax=0.0;
+    for(int ip=0;ip<5;++ip){
+        const int cc=col_strict(csv,contamination_col(kPeriods[ip]));
+        for(std::size_t r=0;r<bins.size();++r){
+            if(!bins[r].valid || !same_note_phi_cell(bins[r],best)) continue;
+            const Triple q=parse_yield_or_zero(csv.rows[r][cc],contamination_col(kPeriods[ip]));
+            if(q.v>0 && std::isfinite(q.v))
+                ymax=std::max(ymax,q.v+q.stat);
+        }
+    }
+    const double plot_ymax=std::max(0.20,std::min(0.80,1.18*ymax));
+
+    TH1F frame("h_note_pi0_phi_example","",100,0.0,360.0);
+    frame.SetMinimum(0.0);
+    frame.SetMaximum(plot_ymax);
+    frame.GetXaxis()->SetTitle("#phi (deg)");
+    frame.GetYaxis()->SetTitle("#pi^{0} contamination");
+    frame.GetYaxis()->SetTitleOffset(1.15);
+    frame.GetXaxis()->SetTitleSize(0.050);
+    frame.GetYaxis()->SetTitleSize(0.050);
+    frame.Draw();
+
+    const int markers[5]={20,21,22,23,33};
+    const double phi_offsets[5]={-2.0,-1.0,0.0,1.0,2.0};
+    std::vector<TGraphErrors*> gs;
+
+    for(int ip=0;ip<5;++ip){
+        auto* g=new TGraphErrors();
+        g->SetMarkerStyle(markers[ip]);
+        g->SetMarkerSize(1.05);
+        g->SetMarkerColor(note_period_color(ip));
+        g->SetLineColor(note_period_color(ip));
+        g->SetLineWidth(2);
+
+        const int cc=col_strict(csv,contamination_col(kPeriods[ip]));
+        int n=0;
+        for(std::size_t r=0;r<bins.size();++r){
+            if(!bins[r].valid || !same_note_phi_cell(bins[r],best)) continue;
+            const Triple q=parse_yield_or_zero(csv.rows[r][cc],contamination_col(kPeriods[ip]));
+            if(!(q.v>0) || !std::isfinite(q.v)) continue;
+
+            const double pc=0.5*(bins[r].phimin+bins[r].phimax);
+            g->SetPoint(n,pc+phi_offsets[ip],q.v);
+            g->SetPointError(n,0,q.stat);
+
+            fout << kPeriods[ip] << ',' << best.xmin << ',' << best.xmax << ','
+                 << best.qmin << ',' << best.qmax << ',' << best.tmin << ',' << best.tmax << ','
+                 << bins[r].phimin << ',' << bins[r].phimax << ',' << pc << ','
+                 << q.v << ',' << q.stat << '\n';
+            ++n;
+        }
+        g->Draw("PE SAME");
+        gs.push_back(g);
+    }
+
+    TLegend leg(0.70,0.60,0.94,0.86);
+    leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.036);
+    for(int ip=0;ip<5;++ip) leg.AddEntry(gs[ip],kPeriods[ip].c_str(),"pe");
+    leg.Draw();
+
+    TLatex title;
+    title.SetNDC(); title.SetTextFont(42); title.SetTextSize(0.048);
+    title.DrawLatex(0.11,0.93,"Representative #phi dependence of the #pi^{0} contamination");
+
+    std::ostringstream kin;
+    kin << std::fixed << std::setprecision(3)
+        << best.xmin << " < x_{B} < " << best.xmax
+        << ",  " << best.qmin << " < Q^{2} < " << best.qmax << " GeV^{2}"
+        << ",  " << best.tmin << " < |t| < " << best.tmax << " GeV^{2}";
+    TLatex lab;
+    lab.SetNDC(); lab.SetTextFont(42); lab.SetTextSize(0.028);
+    lab.DrawLatex(0.12,0.84,kin.str().c_str());
+
+    TLatex note;
+    note.SetNDC(); note.SetTextFont(42); note.SetTextSize(0.027);
+    note.DrawLatex(0.12,0.795,"Error bars: propagated statistical uncertainty on c_{#pi^{0}} in each analysis bin");
+
+    c.SaveAs(join_path(note_dir,"pi0_contamination_phi_example.png").c_str());
+    for(auto* g:gs) delete g;
+}
+
 
 static void write_analysis_note_outputs(const CSV& csv, const std::vector<RowBin>& bins,
                                         const std::string& output_root_dir) {
@@ -2197,6 +2382,7 @@ static void write_analysis_note_outputs(const CSV& csv, const std::vector<RowBin
     draw_note_period_topology_summary(csv,bins,summaries,note_dir);
     draw_note_distribution(csv,bins,note_dir);
     draw_note_xb_summary(csv,bins,note_dir);
+    draw_note_phi_example(csv,bins,note_dir);
     std::cout << "[pi0_contamination] Analysis-note outputs written under: " << note_dir << std::endl;
 }
 
