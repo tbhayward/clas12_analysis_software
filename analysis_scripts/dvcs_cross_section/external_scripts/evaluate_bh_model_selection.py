@@ -106,6 +106,7 @@ PARTONS 5.0 behavior verified on the JLab farm:
 
 from __future__ import annotations
 
+import hashlib
 import argparse
 import math
 import os
@@ -980,6 +981,26 @@ def run_clas12_phi_mapping_scan(
         ]
     ].to_csv(scan_root / "scan_points.csv", index=False)
 
+    # Namespace the tiny phi-validation cache by the exact validation
+    # kinematics.  Previously the cache key contained only the mapping name,
+    # so an old 12-point PARTONS result could be silently reused after the
+    # selected CLAS12 validation points changed while retaining the same
+    # point_id values.  A short deterministic fingerprint fixes that without
+    # invalidating any of the expensive production PARTONS caches.
+    fingerprint_cols = [
+        "point_id", "xB", "Q2", "t_abs", "phi_deg", "ebeam", "km15_bh"
+    ]
+    fingerprint_payload = (
+        base[fingerprint_cols]
+        .to_csv(index=False, float_format="%.17g")
+        .encode("utf-8")
+    )
+    scan_fingerprint = hashlib.sha256(fingerprint_payload).hexdigest()[:12]
+    print(
+        f"[CLAS12 phi scan] exact-kinematics cache fingerprint: "
+        f"{scan_fingerprint}"
+    )
+
     summary_rows = []
     point_rows = []
 
@@ -1005,7 +1026,7 @@ def run_clas12_phi_mapping_scan(
                 workers=min(max(1, workers), 2),
                 chunk_size=max(1, len(test)),
                 force=force,
-                cache_tag=f"clas12_phi_{mode}",
+                cache_tag=f"clas12_phi_{mode}_{scan_fingerprint}",
             )
         #endfor
 
