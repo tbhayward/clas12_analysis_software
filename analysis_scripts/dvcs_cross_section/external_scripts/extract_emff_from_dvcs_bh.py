@@ -3381,7 +3381,7 @@ def save_bh_selection_plots(df: pd.DataFrame,
     ax.set_xlabel(r"$R_{\rm BH}=\sigma_{\rm BH}/\sigma_{\rm EP}^{\rm KM15}$")
     ax.set_ylabel("CLAS12 cross-section points")
     ax.set_title("KM15 BH-dominance selection")
-    ax.legend(fontsize=8, ncol=2)
+    ax.legend(fontsize=7.8, ncol=2)
     fig.tight_layout()
     fig.savefig(outdir / "01_bh_fraction_distribution.png")
     plt.close(fig)
@@ -15162,6 +15162,20 @@ def save_five_dataset_bh_selected_consistency(
         prof_pull = (scale * mm - yy) / ee
         ratio = yy / mm
 
+        # Unbinned Gaussian maximum-likelihood estimates.  For a normal
+        # distribution these are simply the sample mean and the MLE width
+        # (ddof=0).  Fit the FULL finite pull sample; do not let the plotting
+        # range or histogram binning bias mu or sigma.
+        prof_pull_finite = prof_pull[np.isfinite(prof_pull)]
+        gaussian_mu = (
+            float(np.mean(prof_pull_finite))
+            if len(prof_pull_finite) else np.nan
+        )
+        gaussian_sigma = (
+            float(np.std(prof_pull_finite, ddof=0))
+            if len(prof_pull_finite) else np.nan
+        )
+
         pull_store[label] = prof_pull.copy()
         rows.append({
             "dataset": key,
@@ -15174,6 +15188,8 @@ def save_five_dataset_bh_selected_consistency(
             "profiled_chi2_per_point": float(prof_chi2 / np.sum(selected)),
             "mean_profiled_pull": float(np.mean(prof_pull)),
             "rms_profiled_pull": float(np.sqrt(np.mean(prof_pull**2))),
+            "gaussian_fit_mu": gaussian_mu,
+            "gaussian_fit_sigma": gaussian_sigma,
             "median_data_over_km15_ep": float(np.median(ratio)),
             "fraction_abs_profiled_pull_gt_2": float(
                 np.mean(np.abs(prof_pull) > 2.0)
@@ -15252,18 +15268,57 @@ def save_five_dataset_bh_selected_consistency(
     bins = np.linspace(-lim, lim, 51)
 
     fig, ax = plt.subplots(figsize=(10.5, 6.4))
+    xx = np.linspace(-lim, lim, 600)
+
     for label, pull in pull_store.items():
-        pp = pull[np.isfinite(pull)]
-        pp = pp[(pp >= -lim) & (pp <= lim)]
-        ax.hist(
-            pp, bins=bins, histtype="step", linewidth=1.4,
-            density=True, label=label,
+        pp_full = pull[np.isfinite(pull)]
+        pp_plot = pp_full[(pp_full >= -lim) & (pp_full <= lim)]
+
+        # Draw the histogram first and retain its automatically assigned color
+        # so the corresponding Gaussian fit uses exactly the same color.
+        hist_out = ax.hist(
+            pp_plot, bins=bins, histtype="step", linewidth=1.4,
+            density=True,
+            label="_nolegend_",
         )
+        hist_color = hist_out[2][0].get_edgecolor()
+
+        if len(pp_full):
+            mu_fit = float(np.mean(pp_full))
+            sigma_fit = float(np.std(pp_full, ddof=0))
+        else:
+            mu_fit = np.nan
+            sigma_fit = np.nan
+        #endif
+
+        # The fit is unbinned and uses all finite pulls, including any tails
+        # outside the displayed x range.  Only the visualization is clipped.
+        if np.isfinite(mu_fit) and np.isfinite(sigma_fit) and sigma_fit > 0.0:
+            yy_fit = (
+                np.exp(-0.5 * ((xx - mu_fit) / sigma_fit)**2)
+                / (sigma_fit * np.sqrt(2.0 * np.pi))
+            )
+            ax.plot(
+                xx, yy_fit,
+                color=hist_color,
+                linewidth=1.15,
+                alpha=0.85,
+                label=(
+                    f"{label}: "
+                    rf"$\mu={mu_fit:+.2f},\ \sigma={sigma_fit:.2f}$"
+                ),
+            )
+        else:
+            ax.plot(
+                [], [], color=hist_color, linewidth=1.4,
+                label=f"{label}: Gaussian fit unavailable",
+            )
+        #endif
     #endfor
-    xx = np.linspace(-lim, lim, 400)
+
     ax.plot(
         xx, np.exp(-0.5 * xx**2) / np.sqrt(2.0 * np.pi),
-        linestyle="--", linewidth=1.2, label="unit Gaussian",
+        linestyle="--", linewidth=1.2, label=r"unit Gaussian: $\mu=0,\ \sigma=1$",
     )
     ax.axvline(0.0, linewidth=0.9)
     ax.set_xlabel("profiled KM15 residual pull")
