@@ -233,7 +233,7 @@ def apply_dataset_phi_mappings(
     dataset = out["dataset"].astype(str)
 
     # Gepard-bundled datasets: the cached phi is the Gepard/BMK representation.
-    for key in ["jo2015", "halla_defurne2015"]:
+    for key in ["jo2015", "halla_defurne2015", "halla_defurne2017"]:
         mask = dataset == key
         if np.any(mask):
             out.loc[mask, "phi_partons_deg"] = transform_phi_to_partons(
@@ -1806,11 +1806,13 @@ def run_imported_phi_convention_validation(
     """
     dataset_specs = [
         ("halla_defurne2015", "Hall A Defurne 2015"),
+        ("halla_defurne2017", "Hall A Defurne 2017"),
         ("saylor2018", "CLAS6 Saylor 2018"),
         ("halla_georges2022", "Hall A Georges 2022"),
     ]
     expected_class = {
         "halla_defurne2015": "180_shift",
+        "halla_defurne2017": "180_shift",
         "saylor2018": "zero_shift",
         "halla_georges2022": "zero_shift",
     }
