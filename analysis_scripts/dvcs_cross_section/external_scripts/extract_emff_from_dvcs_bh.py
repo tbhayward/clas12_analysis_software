@@ -5135,6 +5135,52 @@ def equal_truth_group_rms(
 
 
 
+
+def equal_truth_group_mean(
+        table: pd.DataFrame,
+        value_column: str) -> float:
+    """
+    Hierarchical SIGNED mean with equal total weight per conceptual truth group.
+
+    This is complementary to equal_truth_group_rms().  It preserves the
+    direction of a systematic bias.  A positive value means the fitted radius
+    tends to lie above the generated truth and therefore a first-order
+    bias-corrected real-data radius would subtract this value.
+    """
+    group_means = []
+    for _, group in table.groupby("truth_group", sort=False):
+        vals = group[value_column].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            group_means.append(float(np.mean(vals)))
+        #endif
+    #endfor
+    if not group_means:
+        return np.nan
+    #endif
+    return float(np.mean(group_means))
+#enddef
+
+
+def equal_truth_group_positive_fraction(
+        table: pd.DataFrame,
+        value_column: str) -> float:
+    """Equal-truth-group fraction of scenarios whose signed value is positive."""
+    group_fracs = []
+    for _, group in table.groupby("truth_group", sort=False):
+        vals = group[value_column].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        if len(vals):
+            group_fracs.append(float(np.mean(vals > 0.0)))
+        #endif
+    #endfor
+    if not group_fracs:
+        return np.nan
+    #endif
+    return float(np.mean(group_fracs))
+#enddef
+
+
 def save_mixed_family_closure_ranking(
         table: pd.DataFrame,
         candidate_pairs: Sequence[str],
@@ -5184,6 +5230,18 @@ def save_mixed_family_closure_ranking(
             row[f"{quantity}_RMS_RMSE_fm"] = equal_truth_group_rms(
                 qpart, "sqrt_stat2_plus_bias2_fm"
             )
+            row[f"{quantity}_mean_signed_bias_fm"] = equal_truth_group_mean(
+                qpart, "bias_fm"
+            )
+            row[f"{quantity}_positive_bias_fraction"] = (
+                equal_truth_group_positive_fraction(qpart, "bias_fm")
+            )
+            signed = float(row[f"{quantity}_mean_signed_bias_fm"])
+            rms_bias = float(row[f"{quantity}_RMS_bias_fm"])
+            row[f"{quantity}_residual_bias_RMS_after_mean_correction_fm"] = (
+                float(np.sqrt(max(0.0, rms_bias**2 - signed**2)))
+                if np.isfinite(signed) and np.isfinite(rms_bias) else np.nan
+            )
 
             # Preserve the previous scenario-weighted quantities for auditing.
             bias = qpart["bias_fm"].to_numpy(float)
@@ -5229,9 +5287,117 @@ def save_mixed_family_closure_ranking(
         fig.tight_layout()
         fig.savefig(outdir / "11_mixed_family_bias_vs_variance.png", dpi=180)
         plt.close(fig)
+
+        fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.3))
+        for ax, quantity, ylabel in [
+            (axes[0], "rE", r"Signed $r_E$ bias [fm]"),
+            (axes[1], "rM", r"Signed $r_M$ bias [fm]"),
+        ]:
+            vals = eligible[f"{quantity}_mean_signed_bias_fm"].to_numpy(float)
+            rms = eligible[f"{quantity}_RMS_bias_fm"].to_numpy(float)
+            ax.axhline(0.0, linewidth=0.9, linestyle="--")
+            ax.errorbar(
+                x, vals, yerr=rms, marker="o", linestyle="none", capsize=3,
+                label="equal-truth-group signed mean ± RMS magnitude",
+            )
+            ax.set_xticks(x)
+            ax.set_xticklabels(eligible["family"], rotation=60, ha="right")
+            ax.set_ylabel(ylabel)
+            ax.grid(axis="y", alpha=0.2)
+        #endfor
+        fig.suptitle(
+            "Closure bias direction for the leading mixed Sachs families",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0, 0, 1, 0.95))
+        fig.savefig(outdir / "12_mixed_family_signed_bias.png", dpi=220)
+        plt.close(fig)
     #endif
 #enddef
 
+
+
+
+def save_empirical_truth_similarity_diagnostics(
+        qmax: float,
+        outdir: Path) -> pd.DataFrame:
+    """
+    Quantify how similar the three empirical elastic truth parameterizations are.
+
+    This makes the truth-weighting choice auditable.  The three curves remain
+    distinct stress tests, but collectively receive one conceptual
+    empirical-elastic truth-group vote in closure aggregation.
+    """
+    qhi = min(1.0, max(0.05, float(qmax)))
+    q = np.linspace(0.0, qhi, 800)
+    models = {
+        "Kelly": kelly_sachs,
+        "AMT2007": amt2007_sachs,
+        "Bernauer": bernauer_polyxdipole_sachs,
+    }
+    values = {}
+    for name, fn in models.items():
+        ge, gm = fn(q)
+        values[name] = (
+            np.asarray(ge, dtype=float),
+            np.asarray(gm, dtype=float) / MU_P,
+        )
+    #endfor
+
+    rows = []
+    names = list(models)
+    for i, left in enumerate(names):
+        for right in names[i + 1:]:
+            for quantity, iq in [("GE", 0), ("GM_over_mu", 1)]:
+                a = values[left][iq]
+                b = values[right][iq]
+                scale = np.maximum(1.0e-12, 0.5 * (np.abs(a) + np.abs(b)))
+                frac = (a - b) / scale
+                rows.append({
+                    "model_a": left,
+                    "model_b": right,
+                    "quantity": quantity,
+                    "Q2_max_GeV2": qhi,
+                    "fractional_RMS_difference": float(
+                        np.sqrt(np.mean(frac**2))
+                    ),
+                    "maximum_absolute_fractional_difference": float(
+                        np.max(np.abs(frac))
+                    ),
+                })
+            #endfor
+        #endfor
+    #endfor
+    table = pd.DataFrame(rows)
+    table.to_csv(outdir / "empirical_truth_pairwise_similarity.csv", index=False)
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.9))
+    kge, kgm = values["Kelly"]
+    for name in names:
+        ge, gm = values[name]
+        axes[0].plot(q, ge / kge, label=name)
+        axes[1].plot(q, gm / kgm, label=name)
+    #endfor
+    for ax, ylabel in zip(
+            axes,
+            [r"$G_E/G_E^{\rm Kelly}$",
+             r"$(G_M/\mu_p)/(G_M/\mu_p)^{\rm Kelly}$"]):
+        ax.axhline(1.0, linewidth=0.8, linestyle="--")
+        ax.set_xlim(0.0, 1.0)
+        ax.set_xlabel(r"$Q^2$ [GeV$^2$]")
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.2)
+    #endfor
+    axes[0].legend(frameon=False)
+    fig.suptitle(
+        "Empirical elastic truth similarity (one conceptual truth group)",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(outdir / "00_empirical_truth_similarity.png", dpi=240)
+    plt.close(fig)
+    return table
+#enddef
 
 
 def pilot_prune_radius_bias_families(
@@ -5467,9 +5633,11 @@ def run_radius_bias_variance_study(
 
     Truth ensemble:
       empirical Kelly/AMT/Bernauer truths plus optional synthetic dipole/P/IP/CF
-      closure truths spanning a Cartesian rE x rM grid.  Production closure
-      aggregation is hierarchical: every truth_group receives equal total
-      weight, independent of the number of radius-grid scenarios in that group.
+      closure truths spanning a Cartesian rE x rM grid.  Kelly, AMT2007, and
+      Bernauer are treated as three realizations of ONE empirical-elastic
+      truth_group rather than three independent conceptual votes. Production
+      closure aggregation is hierarchical: every truth_group receives equal
+      total weight, independent of the number of scenarios in that group.
     """
     outdir.mkdir(parents=True, exist_ok=True)
 
@@ -5523,22 +5691,22 @@ def run_radius_bias_variance_study(
     scenarios = [
         {
             "truth_model": "Kelly",
-            "truth_group": "Kelly",
-            "truth_family": "empirical",
+            "truth_group": "empirical_elastic",
+            "truth_family": "Kelly",
             "truth_fn": kelly_sachs,
             "synthetic": False,
         },
         {
             "truth_model": "AMT2007",
-            "truth_group": "AMT2007",
-            "truth_family": "empirical",
+            "truth_group": "empirical_elastic",
+            "truth_family": "AMT2007",
             "truth_fn": amt2007_sachs,
             "synthetic": False,
         },
         {
             "truth_model": "Bernauer_order8_polyxdipole",
-            "truth_group": "Bernauer",
-            "truth_family": "empirical",
+            "truth_group": "empirical_elastic",
+            "truth_family": "Bernauer",
             "truth_fn": bernauer_polyxdipole_sachs,
             "synthetic": False,
         },
@@ -5552,6 +5720,8 @@ def run_radius_bias_variance_study(
             qmax=qmax,
         )
     #endif
+
+    save_empirical_truth_similarity_diagnostics(qmax, outdir)
 
     families_full = list(families)
     families = pilot_prune_radius_bias_families(
@@ -7412,6 +7582,50 @@ def select_bundle_from_external_model(
 
     key = str(bundle["key"])
     all_data = bundle["all_data"].reset_index(drop=True)
+
+    # Saylor is evaluated directly with the same Gepard/KM15 decomposition
+    # already constructed by run_saylor_validation().  It is not present in
+    # the external five-dataset PARTONS selection table.  A bundle may also
+    # carry a fixed lower-|t| requirement, used for the nominal surviving
+    # Saylor sample motivated independently by arXiv:2607.04481.
+    if bool(bundle.get("direct_km15_selection", False)):
+        if str(model) != "km15":
+            raise ValueError(
+                f"{bundle['label']}: direct selection is KM15-only"
+            )
+        #endif
+        delta_col = str(bundle.get("direct_km15_delta_column", "bh_delta"))
+        if delta_col not in all_data.columns and delta_col == "bh_delta":
+            delta_col = "delta_bh"
+        #endif
+        if delta_col not in all_data.columns:
+            raise KeyError(
+                f"{bundle['label']}: no direct KM15 delta column "
+                f"'{delta_col}'"
+            )
+        #endif
+        delta = pd.to_numeric(
+            all_data[delta_col], errors="coerce"
+        ).to_numpy(float)
+        mask = np.isfinite(delta) & (delta <= float(threshold))
+        tmin = bundle.get("fixed_t_abs_min_GeV2", None)
+        if tmin is not None:
+            mask &= (
+                pd.to_numeric(
+                    all_data["t_abs"], errors="coerce"
+                ).to_numpy(float) >= float(tmin) - 1.0e-12
+            )
+        #endif
+        selected = all_data.loc[mask].copy()
+        selected["external_delta_bh"] = delta[mask]
+        selected["external_bh_model"] = "km15_direct"
+        selected["external_bh_threshold"] = float(threshold)
+        if tmin is not None:
+            selected["fixed_t_abs_min_GeV2"] = float(tmin)
+        #endif
+        return selected
+    #endif
+
     ext = selection_table.loc[selection_table["dataset"].astype(str) == key].copy()
 
     if len(ext) != len(all_data):
@@ -12795,8 +13009,15 @@ def run_competitive_family_real_data_diagnostics(
 
     for tag, bundles, label in ensemble_defs:
         chosen_family = chosen.get(tag)
-        ranking_path = (
-            closure_root / "all_five" / "radius_bias_mixed_family_ranking.csv"
+        ranking_candidates = [
+            closure_root / "all_six_saylor_t343"
+            / "radius_bias_mixed_family_ranking.csv",
+            closure_root / "all_five"
+            / "radius_bias_mixed_family_ranking.csv",
+        ]
+        ranking_path = next(
+            (p for p in ranking_candidates if p.exists()),
+            ranking_candidates[0],
         )
         if chosen_family is None or not ranking_path.exists():
             continue
@@ -13031,6 +13252,404 @@ def run_competitive_family_real_data_diagnostics(
     return spread
 #enddef
 
+
+
+
+def _closure_bootstrap_win_probabilities(
+        closure_table: pd.DataFrame,
+        families: Sequence[str],
+        n_bootstrap: int = 20000,
+        seed: int = 20260903) -> pd.DataFrame:
+    """
+    Bootstrap conceptual truth groups and within-group truth realizations.
+
+    For every bootstrap draw, determine which candidate family minimizes the
+    same combined E/M closure RMSE objective.  The resulting win fractions are
+    a direct measure of how stable the discrete family ranking is to the finite
+    truth ensemble, rather than interpreting tiny objective differences as
+    deterministic.
+    """
+    fams = [str(f) for f in families]
+    part = closure_table.loc[
+        closure_table["family"].astype(str).isin(fams)
+    ].copy()
+    groups = list(dict.fromkeys(part["truth_group"].astype(str).tolist()))
+    rng = np.random.default_rng(int(seed))
+
+    cache = {}
+    for fam in fams:
+        cache[fam] = {}
+        fp = part.loc[part["family"].astype(str) == fam]
+        for group in groups:
+            gp = fp.loc[fp["truth_group"].astype(str) == group]
+            truths = list(dict.fromkeys(gp["truth_model"].astype(str).tolist()))
+            vals = []
+            for truth in truths:
+                tp = gp.loc[gp["truth_model"].astype(str) == truth]
+                erow = tp.loc[tp["quantity"].astype(str) == "rE"]
+                mrow = tp.loc[tp["quantity"].astype(str) == "rM"]
+                if len(erow) == 1 and len(mrow) == 1:
+                    vals.append((
+                        float(erow.iloc[0]["sqrt_stat2_plus_bias2_fm"]),
+                        float(mrow.iloc[0]["sqrt_stat2_plus_bias2_fm"]),
+                    ))
+                #endif
+            #endfor
+            cache[fam][group] = vals
+        #endfor
+    #endfor
+
+    wins = {fam: 0 for fam in fams}
+    score_sum = {fam: 0.0 for fam in fams}
+    score_sq = {fam: 0.0 for fam in fams}
+    valid_draws = 0
+
+    for _ in range(max(1, int(n_bootstrap))):
+        drawn_groups = rng.choice(groups, size=len(groups), replace=True)
+        scores = {}
+        for fam in fams:
+            e2 = []
+            m2 = []
+            okay = True
+            for group in drawn_groups:
+                vals = cache[fam].get(str(group), [])
+                if not vals:
+                    okay = False
+                    break
+                #endif
+                e, m = vals[int(rng.integers(0, len(vals)))]
+                if not np.isfinite(e) or not np.isfinite(m):
+                    okay = False
+                    break
+                #endif
+                e2.append(e * e)
+                m2.append(m * m)
+            #endfor
+            if okay and e2 and m2:
+                scores[fam] = float(np.sqrt(
+                    0.5 * (float(np.mean(e2)) + float(np.mean(m2)))
+                ))
+            #endif
+        #endfor
+
+        if not scores:
+            continue
+        #endif
+        valid_draws += 1
+        winner = min(scores, key=scores.get)
+        wins[winner] += 1
+        for fam, score in scores.items():
+            score_sum[fam] += score
+            score_sq[fam] += score * score
+        #endfor
+    #endfor
+
+    rows = []
+    for fam in fams:
+        mean = (
+            score_sum[fam] / valid_draws if valid_draws > 0 else np.nan
+        )
+        var = (
+            score_sq[fam] / valid_draws - mean**2
+            if valid_draws > 0 and np.isfinite(mean) else np.nan
+        )
+        rows.append({
+            "family": fam,
+            "closure_bootstrap_wins": int(wins[fam]),
+            "closure_bootstrap_valid_draws": int(valid_draws),
+            "closure_bootstrap_win_fraction": (
+                wins[fam] / valid_draws if valid_draws > 0 else np.nan
+            ),
+            "closure_bootstrap_mean_objective_fm": mean,
+            "closure_bootstrap_std_objective_fm": (
+                float(np.sqrt(max(0.0, var)))
+                if np.isfinite(var) else np.nan
+            ),
+        })
+    #endfor
+    return pd.DataFrame(rows).sort_values(
+        "closure_bootstrap_win_fraction", ascending=False
+    ).reset_index(drop=True)
+#enddef
+
+
+def _mixture_density_and_interval(
+        centers: np.ndarray,
+        sigmas: np.ndarray,
+        weights: np.ndarray,
+        lo: float,
+        hi: float,
+        ngrid: int = 5000) -> Tuple[np.ndarray, np.ndarray, Dict[str, float]]:
+    """Normalized Gaussian-mixture density plus central 68.3% interval."""
+    x = np.linspace(float(lo), float(hi), int(ngrid))
+    p = np.zeros_like(x)
+    for mu, sig, w in zip(centers, sigmas, weights):
+        sig = max(float(sig), 1.0e-4)
+        p += float(w) * np.exp(-0.5 * ((x - float(mu)) / sig)**2) / (
+            np.sqrt(2.0 * np.pi) * sig
+        )
+    #endfor
+    norm = float(np.trapz(p, x))
+    if norm > 0.0:
+        p /= norm
+    #endif
+    dx = x[1] - x[0]
+    cdf = np.cumsum(p) * dx
+    cdf = np.clip(cdf, 0.0, 1.0)
+    qlo = float(np.interp(0.1585, cdf, x))
+    qmed = float(np.interp(0.5000, cdf, x))
+    qhi = float(np.interp(0.8415, cdf, x))
+    mean = float(np.trapz(x * p, x))
+    mode = float(x[int(np.argmax(p))])
+    return x, p, {
+        "mean_fm": mean,
+        "median_fm": qmed,
+        "mode_fm": mode,
+        "central68_low_fm": qlo,
+        "central68_high_fm": qhi,
+        "central68_minus_fm": qmed - qlo,
+        "central68_plus_fm": qhi - qmed,
+    }
+#enddef
+
+
+def save_hayward_griffioen_model_averaging_diagnostics(
+        closure_table_path: Path,
+        closure_ranking_path: Path,
+        competitive_fit_path: Path,
+        selected_specs: Sequence[Dict[str, object]],
+        outdir: Path,
+        max_families: int = 8,
+        n_bootstrap: int = 20000) -> pd.DataFrame:
+    """
+    Modernized Hayward-Griffioen-style P(r) construction.
+
+    1. Closure determines the admissible leading model set.
+    2. Truth-group bootstrap win fractions quantify ranking stability.
+    3. Real-data AICc enters only AFTER closure as an empirical-adequacy weight.
+    4. Each model Gaussian is centered at r_fit - <signed closure bias>.
+    5. Its width combines Hessian fit uncertainty with the residual closure
+       bias RMS after removal of the signed mean bias.
+    6. Both closure-only and closure×AICc mixtures are saved, so the impact of
+       incorporating real-data goodness-of-fit is explicit rather than hidden
+       in a single arbitrary scalar objective.
+
+    This follows the spirit of Eq. (33) of Hayward & Griffioen (2018), while
+    making the closure and empirical-fit contributions separately auditable.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    closure = pd.read_csv(closure_table_path)
+    ranking = pd.read_csv(closure_ranking_path)
+    fits = pd.read_csv(competitive_fit_path)
+
+    usable = ranking.loc[
+        ranking["eligible"].astype(bool)
+        & np.isfinite(ranking["combined_RMS_objective_fm"].to_numpy(float))
+    ].sort_values("combined_RMS_objective_fm").head(int(max_families)).copy()
+
+    fams = usable["family"].astype(str).tolist()
+    fits = fits.loc[
+        fits["family"].astype(str).isin(fams)
+        & fits["valid"].astype(bool)
+    ].copy()
+    fams = [f for f in fams if f in set(fits["family"].astype(str))]
+    usable = usable.loc[usable["family"].astype(str).isin(fams)].copy()
+    if not fams:
+        return pd.DataFrame()
+    #endif
+
+    boot = _closure_bootstrap_win_probabilities(
+        closure, fams, n_bootstrap=n_bootstrap
+    )
+    model = fits.merge(
+        usable[[
+            "family", "combined_RMS_objective_fm",
+            "rE_RMS_bias_fm", "rM_RMS_bias_fm",
+            "rE_mean_signed_bias_fm", "rM_mean_signed_bias_fm",
+            "rE_residual_bias_RMS_after_mean_correction_fm",
+            "rM_residual_bias_RMS_after_mean_correction_fm",
+        ]],
+        on="family", how="inner",
+    ).merge(boot, on="family", how="left")
+
+    nobs = model["N"].to_numpy(float)
+    kpar = model["n_parameters"].to_numpy(float)
+    chi2 = model["chi2"].to_numpy(float)
+    model["AICc"] = (
+        chi2 + 2.0 * kpar
+        + 2.0 * kpar * (kpar + 1.0)
+        / np.maximum(1.0, nobs - kpar - 1.0)
+    )
+    delta_aicc = model["AICc"].to_numpy(float) - float(model["AICc"].min())
+    model["akaike_relative_support"] = np.exp(-0.5 * delta_aicc)
+
+    closure_w = model["closure_bootstrap_win_fraction"].to_numpy(float)
+    # A model may never be the strict winner while remaining essentially tied.
+    # Add a tiny floor only to keep diagnostic mixture components visible.
+    closure_w = np.maximum(closure_w, 1.0e-6)
+    closure_w /= np.sum(closure_w)
+    model["weight_closure_only"] = closure_w
+
+    combined_w = closure_w * model["akaike_relative_support"].to_numpy(float)
+    if np.sum(combined_w) <= 0.0:
+        combined_w = closure_w.copy()
+    #endif
+    combined_w /= np.sum(combined_w)
+    model["weight_closure_times_AICc"] = combined_w
+
+    for quantity in ["rE", "rM"]:
+        signed = model[f"{quantity}_mean_signed_bias_fm"].to_numpy(float)
+        model[f"{quantity}_bias_corrected_center_fm"] = (
+            model[f"{quantity}_fm"].to_numpy(float) - signed
+        )
+        residual = model[
+            f"{quantity}_residual_bias_RMS_after_mean_correction_fm"
+        ].to_numpy(float)
+        model[f"{quantity}_mixture_sigma_fm"] = np.hypot(
+            model[f"{quantity}_fit_err_fm"].to_numpy(float),
+            np.nan_to_num(residual, nan=0.0),
+        )
+    #endfor
+
+    model.to_csv(outdir / "radius_model_components_and_weights.csv", index=False)
+    boot.to_csv(outdir / "closure_bootstrap_family_win_probabilities.csv", index=False)
+
+    summary_rows = []
+    fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.1))
+    for ax, quantity, label in [
+        (axes[0], "rE", r"$r_E$ [fm]"),
+        (axes[1], "rM", r"$r_M$ [fm]"),
+    ]:
+        centers = model[f"{quantity}_bias_corrected_center_fm"].to_numpy(float)
+        sigmas = model[f"{quantity}_mixture_sigma_fm"].to_numpy(float)
+        lo = max(0.20, float(np.nanmin(centers - 5.0 * sigmas)) - 0.02)
+        hi = min(1.50, float(np.nanmax(centers + 5.0 * sigmas)) + 0.02)
+
+        for weight_col, tag, linestyle in [
+            ("weight_closure_only", "closure bootstrap only", "--"),
+            ("weight_closure_times_AICc", "closure × AICc", "-"),
+        ]:
+            x, p, stats = _mixture_density_and_interval(
+                centers, sigmas, model[weight_col].to_numpy(float), lo, hi
+            )
+            ax.plot(x, p / np.max(p), linestyle=linestyle, label=tag)
+            for key, val in stats.items():
+                summary_rows.append({
+                    "quantity": quantity,
+                    "mixture": tag,
+                    "statistic": key,
+                    "value_fm": val,
+                })
+            #endfor
+            pd.DataFrame({
+                "radius_fm": x,
+                "density": p,
+                "mixture": tag,
+                "quantity": quantity,
+            }).to_csv(
+                outdir / f"P_{quantity}_{weight_col}.csv",
+                index=False,
+            )
+        #endfor
+        ax.set_xlabel(label)
+        ax.set_ylabel(r"$P(r)$ (normalized to peak)")
+        ax.grid(alpha=0.2)
+        ax.legend(frameon=False)
+    #endfor
+    fig.suptitle(
+        "Model-averaged radius distributions: closure stability + fit adequacy",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(outdir / "01_model_averaged_radius_probabilities.png", dpi=280)
+    plt.close(fig)
+
+    # Primary interpolation result: model-average GE and GM over 0 <= Q2 <= 1.
+    q = np.linspace(0.0, 1.0, 900)
+    qdata = np.concatenate([
+        spec["data"]["t_abs"].to_numpy(float)
+        for spec in selected_specs if len(spec["data"])
+    ])
+    qlo = float(np.nanmin(qdata))
+    qhi = float(np.nanmax(qdata))
+    interpolation_rows = []
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.1))
+    for ax, which, ylabel in [
+        (axes[0], "GE", r"$G_E^p$"),
+        (axes[1], "GM", r"$G_M^p$"),
+    ]:
+        curves = []
+        variances = []
+        weights = model["weight_closure_times_AICc"].to_numpy(float)
+        for _, row in model.iterrows():
+            fam = str(row["family"])
+            result = row.to_dict()
+            central, err = _sachs_band_from_result(result, fam, q, which)
+            curves.append(np.asarray(central, dtype=float))
+            variances.append(np.asarray(err, dtype=float)**2)
+        #endfor
+        curves = np.asarray(curves)
+        variances = np.asarray(variances)
+        mean_curve = np.sum(weights[:, None] * curves, axis=0)
+        within = np.sum(weights[:, None] * variances, axis=0)
+        between = np.sum(
+            weights[:, None] * (curves - mean_curve[None, :])**2,
+            axis=0,
+        )
+        total = np.sqrt(np.maximum(0.0, within + between))
+        ax.plot(q, mean_curve, linewidth=2.0, label="model-averaged BH extraction")
+        ax.fill_between(
+            q, mean_curve - total, mean_curve + total,
+            alpha=0.20, linewidth=0.0,
+            label="within + between-model 68% band",
+        )
+        ax.axvspan(qlo, qhi, alpha=0.07, label="selected-data support")
+        ax.set_xlim(0.0, 1.0)
+        ax.set_xlabel(r"$Q^2=|t|$ [GeV$^2$]")
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.2)
+        ax.legend(fontsize=8.5, frameon=False)
+        for iq, qq in enumerate(q):
+            interpolation_rows.append({
+                "form_factor": which,
+                "Q2_GeV2": float(qq),
+                "model_average": float(mean_curve[iq]),
+                "within_model_sigma": float(np.sqrt(max(0.0, within[iq]))),
+                "between_model_sigma": float(np.sqrt(max(0.0, between[iq]))),
+                "total_model_averaged_sigma": float(total[iq]),
+                "inside_selected_data_support": bool(qlo <= qq <= qhi),
+            })
+        #endfor
+    #endfor
+    fig.suptitle(
+        "Primary finite-$Q^2$ result: closure/AICc model-averaged form factors",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(outdir / "02_model_averaged_GE_GM_interpolation.png", dpi=280)
+    plt.close(fig)
+    pd.DataFrame(interpolation_rows).to_csv(
+        outdir / "model_averaged_GE_GM_interpolation.csv", index=False
+    )
+    pd.DataFrame(summary_rows).to_csv(
+        outdir / "radius_probability_summary.csv", index=False
+    )
+
+    print("\n[Hayward-Griffioen-style model averaging]")
+    print(model[[
+        "family", "combined_RMS_objective_fm",
+        "closure_bootstrap_win_fraction", "AICc",
+        "weight_closure_only", "weight_closure_times_AICc",
+        "rE_fm", "rE_mean_signed_bias_fm",
+        "rE_bias_corrected_center_fm",
+        "rM_fm", "rM_mean_signed_bias_fm",
+        "rM_bias_corrected_center_fm",
+    ]].sort_values(
+        "weight_closure_times_AICc", ascending=False
+    ).to_string(index=False))
+    return model
+#enddef
 
 
 def fit_sachs_ge_family_fixed_kelly_f2_multi_measurements(
@@ -14509,8 +15128,8 @@ def save_preferred_sachs_vs_elastic_data(
         spec["data"]["t_abs"].to_numpy(float)
         for spec in selected_specs if len(spec["data"])
     ])
-    qmax = min(1.0, max(0.60, 1.03 * float(np.nanmax(qdata))))
-    q = np.linspace(0.0, qmax, 700)
+    qmax = 1.0
+    q = np.linspace(0.0, qmax, 900)
 
     ge, ge_err = _sachs_band_from_result(fit, family, q, "GE")
     gm, gm_err = _sachs_band_from_result(fit, family, q, "GM")
@@ -14628,11 +15247,8 @@ def save_preferred_sachs_vs_elastic_data(
     # --------------------------
     # PRad/BH electric ratio, full-width low-Q2 panel
     # --------------------------
-    q_prad_max = max(
-        0.12,
-        2.0 * float(prad["Q2_GeV2"].max()),
-    )
-    q_prad_min = 2.0e-5
+    q_prad_max = 1.0
+    q_prad_min = 1.0e-4
     q_prad_band = np.geomspace(q_prad_min, q_prad_max, 500)
     bh_prad_band, bh_prad_band_err = _sachs_band_from_result(
         fit, family, q_prad_band, "GE"
@@ -14691,7 +15307,7 @@ def save_preferred_sachs_vs_elastic_data(
     ax_prad.axhline(1.0, linewidth=0.9, linestyle="--")
     ax_prad.set_xscale("log")
     ax_prad.set_xlim(q_prad_min, q_prad_max)
-    ax_prad.set_ylim(0.99, 1.025)
+    ax_prad.set_ylim(0.985, 1.040)
     ax_prad.set_ylabel(r"$G_E^{\rm PRad}/G_E^{\rm BH}$")
     ax_prad.set_xlabel(r"$Q^2$ (GeV$^2$)")
     ax_prad.grid(alpha=0.2, which="both")
@@ -14995,6 +15611,191 @@ def run_normalization_shape_degeneracy_matrix(
 #enddef
 
 
+
+def run_paired_nested_threshold_correlation_study(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        family: str,
+        outdir: Path,
+        nreplicas: int = 200,
+        seed: int = 20260904) -> pd.DataFrame:
+    """
+    Quantify statistical covariance among the nested 3--7% BH-purity samples.
+
+    A single fluctuated realization of every underlying cross-section point is
+    generated per replica.  The SAME point fluctuation is reused at every
+    threshold in which that point appears.  This preserves the strong
+    correlations implied by 3% subset 4% subset ... subset 7%.
+
+    The central threshold excursion remains a methodological stability
+    variation.  This study answers the separate question: how statistically
+    significant is each excursion once the nesting covariance is respected?
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    thresholds = np.asarray([0.03, 0.04, 0.05, 0.06, 0.07], dtype=float)
+    rng = np.random.default_rng(int(seed))
+
+    selected_by_t = {}
+    experimental_sigma = {}
+    master_z_size = {}
+    for bundle in bundles:
+        key = str(bundle["key"])
+        master_z_size[key] = len(bundle["all_data"])
+        experimental_sigma[key] = {}
+        for t in thresholds:
+            d = select_bundle_from_external_model(
+                bundle, selection, "km15", float(t)
+            )
+            selected_by_t[(key, float(t))] = d
+            experimental_sigma[key][float(t)] = dataset_point_errors(
+                d, str(bundle["kind"]), 0.0, False
+            )
+        #endfor
+    #endfor
+
+    # Observed central fits.
+    central = {}
+    for t in thresholds:
+        specs, _ = _km15_selected_specs_for_bundles(
+            bundles, selection, float(t)
+        )
+        central[float(t)] = fit_sachs_family_multi_measurements(
+            specs, family=family, bh_cut=float(t),
+            add_moradi_bh_systematic=True,
+            bh_systematic_fraction=0.05,
+        )
+    #endfor
+
+    rows = []
+    for irep in range(max(1, int(nreplicas))):
+        z_by_key = {
+            key: rng.normal(size=n)
+            for key, n in master_z_size.items()
+        }
+        for t in thresholds:
+            specs = []
+            for bundle in bundles:
+                key = str(bundle["key"])
+                d0 = selected_by_t[(key, float(t))]
+                d = d0.copy()
+                # selected frames preserve source-row indices from all_data.
+                idx = d.index.to_numpy(int)
+                sigma = experimental_sigma[key][float(t)]
+                d["xs"] = (
+                    d0["xs"].to_numpy(float)
+                    + sigma * z_by_key[key][idx]
+                )
+                specs.append(bundle_to_measurement_spec(bundle, d))
+            #endfor
+            try:
+                fit = fit_sachs_family_multi_measurements(
+                    specs, family=family, bh_cut=float(t),
+                    add_moradi_bh_systematic=True,
+                    bh_systematic_fraction=0.05,
+                )
+                rows.append({
+                    "replica": int(irep),
+                    "threshold": float(t),
+                    "threshold_percent": 100.0 * float(t),
+                    "valid": bool(fit.get("valid", False)),
+                    "rE_fm": float(fit.get("rE_fm", np.nan)),
+                    "rM_fm": float(fit.get("rM_fm", np.nan)),
+                })
+            except Exception:
+                rows.append({
+                    "replica": int(irep),
+                    "threshold": float(t),
+                    "threshold_percent": 100.0 * float(t),
+                    "valid": False,
+                    "rE_fm": np.nan,
+                    "rM_fm": np.nan,
+                })
+            #endtry
+        #endfor
+    #endfor
+
+    rep = pd.DataFrame(rows)
+    rep.to_csv(outdir / "paired_nested_threshold_replicas.csv", index=False)
+
+    summary_rows = []
+    for quantity in ["rE", "rM"]:
+        piv = rep.loc[rep["valid"].astype(bool)].pivot(
+            index="replica", columns="threshold", values=f"{quantity}_fm"
+        ).reindex(columns=thresholds)
+        corr = piv.corr()
+        cov = piv.cov()
+        corr.to_csv(outdir / f"{quantity}_threshold_correlation_matrix.csv")
+        cov.to_csv(outdir / f"{quantity}_threshold_covariance_matrix_fm2.csv")
+
+        nominal = 0.05
+        for t in thresholds:
+            paired = piv[[nominal, float(t)]].dropna()
+            delta_rep = (
+                paired[float(t)].to_numpy(float)
+                - paired[nominal].to_numpy(float)
+            )
+            observed_delta = (
+                float(central[float(t)][f"{quantity}_fm"])
+                - float(central[nominal][f"{quantity}_fm"])
+            )
+            sigma_delta = (
+                float(np.std(delta_rep, ddof=1))
+                if len(delta_rep) > 1 else np.nan
+            )
+            summary_rows.append({
+                "quantity": quantity,
+                "threshold": float(t),
+                "threshold_percent": 100.0 * float(t),
+                "N_paired_replicas": int(len(paired)),
+                "observed_delta_from_5pct_fm": observed_delta,
+                "paired_stat_sigma_of_delta_fm": sigma_delta,
+                "observed_delta_over_paired_stat_sigma": (
+                    observed_delta / sigma_delta
+                    if np.isfinite(sigma_delta) and sigma_delta > 0 else np.nan
+                ),
+                "correlation_with_5pct": (
+                    float(corr.loc[float(t), nominal])
+                    if float(t) in corr.index and nominal in corr.columns
+                    else np.nan
+                ),
+            })
+        #endfor
+    #endfor
+
+    summary = pd.DataFrame(summary_rows)
+    summary.to_csv(
+        outdir / "paired_nested_threshold_difference_significance.csv",
+        index=False,
+    )
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.9))
+    for ax, quantity, ylabel in [
+        (axes[0], "rE", r"$\Delta r_E$ from 5% [fm]"),
+        (axes[1], "rM", r"$\Delta r_M$ from 5% [fm]"),
+    ]:
+        s = summary.loc[summary["quantity"] == quantity]
+        ax.errorbar(
+            s["threshold_percent"],
+            s["observed_delta_from_5pct_fm"],
+            yerr=s["paired_stat_sigma_of_delta_fm"],
+            marker="o", linestyle="-", capsize=3,
+        )
+        ax.axhline(0.0, linewidth=0.8, linestyle="--")
+        ax.set_xlabel("BH-purity threshold [%]")
+        ax.set_ylabel(ylabel)
+        ax.grid(alpha=0.2)
+    #endfor
+    fig.suptitle(
+        "Nested BH-threshold shifts with paired statistical covariance",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(outdir / "01_paired_threshold_shift_covariance.png", dpi=260)
+    plt.close(fig)
+    return summary
+#enddef
+
+
 def run_unified_km15_final_analysis(
         jo_bundle: Dict[str, object],
         defurne_bundle: Dict[str, object],
@@ -15009,7 +15810,7 @@ def run_unified_km15_final_analysis(
     every requested measurement ensemble.
 
     The expensive Hayward/Griffioen closure study is performed ONLY for the
-    complete all-five production ensemble.  The resulting production family is
+    complete nominal all-six production ensemble.  The resulting production family is
     then held fixed for the reduced-dataset ablation fits.  This makes changes
     in radii/Hessian information interpretable as DATASET effects rather than
     a mixture of dataset changes and independently re-selected fit families.
@@ -15032,14 +15833,31 @@ def run_unified_km15_final_analysis(
     # without a published decomposition of its common scale uncertainty.
     georges_baseline = dict(georges_bundle)
     georges_baseline["unconstrained_norm"] = True
+    saylor_nominal = dict(saylor_bundle)
+    saylor_nominal["direct_km15_selection"] = True
+    saylor_nominal["direct_km15_delta_column"] = "bh_delta"
+    saylor_nominal["fixed_t_abs_min_GeV2"] = 0.343
+    saylor_nominal["label"] = (
+        str(saylor_bundle["label"]) + r" ($|t|\geq0.343$ GeV$^2$)"
+    )
+
     pre12_bundles = sort_bundles_chronologically(
         [jo_bundle, defurne_bundle, defurne2017_bundle]
     )
+    pre12_with_saylor = sort_bundles_chronologically(
+        [jo_bundle, defurne_bundle, defurne2017_bundle, saylor_nominal]
+    )
     pre_lee_bundles = sort_bundles_chronologically(
-        [jo_bundle, defurne_bundle, defurne2017_bundle, georges_baseline]
+        [jo_bundle, defurne_bundle, defurne2017_bundle,
+         saylor_nominal, georges_baseline]
+    )
+    five_bundles = sort_bundles_chronologically(
+        [jo_bundle, defurne_bundle, defurne2017_bundle,
+         georges_baseline, lee_bundle]
     )
     production_bundles = sort_bundles_chronologically(
-        [jo_bundle, defurne_bundle, defurne2017_bundle, georges_baseline, lee_bundle]
+        [jo_bundle, defurne_bundle, defurne2017_bundle, saylor_nominal,
+         georges_baseline, lee_bundle]
     )
     save_selected_experiment_kinematic_coverage(
         production_bundles,
@@ -15061,9 +15879,14 @@ def run_unified_km15_final_analysis(
             "Jo 2015 + Defurne 2015 + Defurne 2017",
         ),
         (
+            "complete_6gev_with_saylor_t343",
+            pre12_with_saylor,
+            r"Jo + Defurne15 + Defurne17 + Saylor ($|t|\geq0.343$)",
+        ),
+        (
             "pre_lee_with_georges",
             pre_lee_bundles,
-            "Jo 2015 + Defurne 2015 + Defurne 2017 + Georges 2022",
+            r"6-GeV ensemble + Saylor ($|t|\geq0.343$) + Georges 2022",
         ),
         (
             "jo2015_plus_lee2026",
@@ -15072,15 +15895,20 @@ def run_unified_km15_final_analysis(
         ),
         (
             "all_five",
-            production_bundles,
+            five_bundles,
             "Jo 2015 + Defurne 2015 + Defurne 2017 + Georges 2022 + Lee 2026",
+        ),
+        (
+            "all_six_saylor_t343",
+            production_bundles,
+            r"All six: Saylor restricted to $|t|\geq0.343$ GeV$^2$",
         ),
     ]
 
     print("\n" + "=" * 78)
     print("[UNIFIED KM15 FINAL ANALYSIS]")
     print("[BH-purity prescription] KM15 only")
-    print("[functional forms] closure-ranked ONCE on all-five; fixed for ablation ensembles")
+    print("[functional forms] closure-ranked ONCE on nominal all-six (Saylor |t|>=0.343); fixed for ablations")
     print(
         f"[optimizer] initial rE=rM={SACHS_INITIAL_RADIUS_FM:.2f} fm; "
         f"broad slope-equivalent radius guards "
@@ -15090,7 +15918,7 @@ def run_unified_km15_final_analysis(
     print("[benchmarks] Moradi Fit 5 and Fit 8 run across production ensembles")
     print("[family robustness] top closure-qualified families refit to real 5% data")
     print("[alternate BH selection] Kelly consistency plus AMT/Bernauer elastic-input diagnostics")
-    print("[Saylor] KM15 diagnostic plus direct Jo comparison; not production")
+    print("[Saylor] nominal surviving sample uses KM15 5% and |t|>=0.343 GeV^2; full-sample scans retained as diagnostics")
     print("=" * 78)
 
     chosen = {}
@@ -15102,7 +15930,7 @@ def run_unified_km15_final_analysis(
     # production ensemble.  Reduced ensembles below are ablation studies
     # and deliberately inherit this same production family.
     # ------------------------------------------------------------------
-    production_tag = "all_five"
+    production_tag = "all_six_saylor_t343"
     production_label = next(
         label for tag, _, label in ensemble_defs if tag == production_tag
     )
@@ -15520,8 +16348,9 @@ def run_unified_km15_final_analysis(
         incremental_order = [
             "jo2015_plus_defurne2015",
             "complete_6gev_pre_saylor",
+            "complete_6gev_with_saylor_t343",
             "pre_lee_with_georges",
-            "all_five",
+            "all_six_saylor_t343",
         ]
         inc = nominal.loc[
             nominal["configuration"].astype(str).isin(incremental_order)
@@ -15532,7 +16361,7 @@ def run_unified_km15_final_analysis(
         inc = inc.sort_values("_order").drop(columns=["_order"])
         if len(inc):
             inc["family_policy"] = (
-                "fixed to all-five closure-selected production family"
+                "fixed to nominal all-six closure-selected production family"
             )
             inc["delta_rE_from_previous_fm"] = inc["rE_fm"].diff()
             inc["delta_rM_from_previous_fm"] = inc["rM_fm"].diff()
@@ -15565,15 +16394,15 @@ def run_unified_km15_final_analysis(
     # quadrature method combination under one self-consistent prescription.
     if len(nominal):
         preferred = nominal.loc[
-            nominal["configuration"].astype(str) == "all_five"
+            nominal["configuration"].astype(str) == "all_six_saylor_t343"
         ].copy()
         if len(preferred) == 1:
             status_dir = diagnostics_dir / "preferred_current_status"
             status_dir.mkdir(parents=True, exist_ok=True)
             preferred["georges_normalization_treatment"] = "unconstrained"
-            preferred["status_role"] = "preferred_provisional_all_five"
+            preferred["status_role"] = "preferred_nominal_all_six_saylor_t343"
             preferred.to_csv(
-                status_dir / "preferred_all_five_georges_free_with_method_systematics.csv",
+                status_dir / "preferred_all_six_saylor_t343_georges_free_with_method_systematics.csv",
                 index=False,
             )
         #endif
@@ -15620,7 +16449,7 @@ def run_unified_km15_final_analysis(
             bbox_to_anchor=(0.5, 0.955),
         )
         fig.suptitle(
-            "KM15 5% ensemble radii: common all-five family",
+            "KM15 5% ensemble radii: common nominal all-six family",
             y=0.995,
         )
         fig.tight_layout(rect=(0, 0, 1, 0.90))
@@ -15631,7 +16460,7 @@ def run_unified_km15_final_analysis(
         plt.close(fig)
     #endif
 
-    print("\n[KM15 ensemble rotation] common all-five production family")
+    print("\n[KM15 ensemble rotation] common nominal all-six production family")
     cols = [
         "configuration_label", "selected_family", "N", "chi2_ndof",
         "rE_fm", "rE_fit_err_fm", "rE_closure_bias_sys_fm",
@@ -15658,6 +16487,56 @@ def run_unified_km15_final_analysis(
         max_families=8,
     )
 
+    if chosen.get("all_six_saylor_t343") is not None:
+        production_specs, _ = _km15_selected_specs_for_bundles(
+            production_bundles, selection, 0.05
+        )
+        try:
+            save_hayward_griffioen_model_averaging_diagnostics(
+                closure_table_path=(
+                    closure_root / "all_six_saylor_t343"
+                    / "radius_bias_variance_study.csv"
+                ),
+                closure_ranking_path=(
+                    closure_root / "all_six_saylor_t343"
+                    / "radius_bias_mixed_family_ranking.csv"
+                ),
+                competitive_fit_path=(
+                    diagnostics_dir / "competitive_family_real_data"
+                    / "all_six_saylor_t343"
+                    / "competitive_family_real_data_fits.csv"
+                ),
+                selected_specs=production_specs,
+                outdir=diagnostics_dir / "radius_model_averaging",
+                max_families=8,
+                n_bootstrap=20000,
+            )
+        except Exception as exc:
+            print(
+                "[radius model averaging] WARNING: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        #endtry
+
+        try:
+            run_paired_nested_threshold_correlation_study(
+                bundles=production_bundles,
+                selection=selection,
+                family=chosen["all_six_saylor_t343"],
+                outdir=diagnostics_dir / "paired_threshold_covariance",
+                nreplicas=int(
+                    getattr(args, "threshold_correlation_replicas", 200)
+                ),
+                seed=int(args.radius_bias_seed) + 707,
+            )
+        except Exception as exc:
+            print(
+                "[paired threshold covariance] WARNING: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        #endtry
+    #endif
+
     # Preserve the original Moradi Fit-5 and Fit-8 parameterizations as a
     # common benchmark across every relevant single/combined ensemble.
     run_moradi_fit5_fit8_ensemble_benchmarks(
@@ -15672,20 +16551,20 @@ def run_unified_km15_final_analysis(
     # Diagnose the Hall-A-induced radius rotation with one common family so
     # changes are attributable to the dataset ensemble rather than to a
     # simultaneous change of extrapolation parameterization.
-    if chosen.get("all_five") is not None:
+    if chosen.get("all_six_saylor_t343") is not None:
         run_fixed_family_ensemble_decomposition(
             jo_bundle=jo_bundle,
             defurne_bundle=defurne_bundle,
             georges_bundle=georges_baseline,
             lee_bundle=lee_bundle,
             selection=selection,
-            family=chosen["all_five"],
+            family=chosen["all_six_saylor_t343"],
             outdir=diagnostics_dir / "hall_a_ensemble_decomposition",
         )
         norm_tension = run_normalization_tension_diagnostics(
             bundles=production_bundles,
             selection=selection,
-            family=chosen["all_five"],
+            family=chosen["all_six_saylor_t343"],
             outdir=diagnostics_dir / "normalization_tension",
         )
 
@@ -15740,7 +16619,7 @@ def run_unified_km15_final_analysis(
         )
         all5_fit = fit_sachs_family_multi_measurements(
             all5_specs,
-            family=chosen["all_five"],
+            family=chosen["all_six_saylor_t343"],
             bh_cut=0.05,
             add_moradi_bh_systematic=True,
             bh_systematic_fraction=0.05,
@@ -15749,7 +16628,7 @@ def run_unified_km15_final_analysis(
             bundles=production_bundles,
             selection=selection,
             fit=all5_fit,
-            family=chosen["all_five"],
+            family=chosen["all_six_saylor_t343"],
             outdir=diagnostics_dir / "f1_f2_sensitivity",
         )
         all5_specs, _ = _km15_selected_specs_for_bundles(
@@ -15757,7 +16636,7 @@ def run_unified_km15_final_analysis(
         )
         try:
             save_preferred_sachs_vs_elastic_data(
-                fit=all5_fit, family=chosen["all_five"],
+                fit=all5_fit, family=chosen["all_six_saylor_t343"],
                 selected_specs=all5_specs,
                 outdir=diagnostics_dir / "preferred_form_factors_vs_elastic",
             )
@@ -15775,7 +16654,7 @@ def run_unified_km15_final_analysis(
             bundles=production_bundles,
             georges_key=str(georges_bundle["key"]),
             selection=selection,
-            family=chosen["all_five"],
+            family=chosen["all_six_saylor_t343"],
             outdir=diagnostics_dir / "georges_normalization_prior_scan",
         )
 
@@ -15794,26 +16673,26 @@ def run_unified_km15_final_analysis(
                 (
                     "all_five",
                     production_bundles,
-                    "Jo + Defurne15 + Defurne17 + Georges + Lee",
+                    "All six; Saylor |t|>=0.343",
                 ),
             ],
             selection=selection,
-            family=chosen["all_five"],
+            family=chosen["all_six_saylor_t343"],
             outdir=diagnostics_dir / "normalization_shape_degeneracy",
         )
 
         run_model_only_kelly_bh_selector_diagnostic(
             bundles=production_bundles,
             selection=selection,
-            family=chosen["all_five"],
-            label="Jo + Defurne15 + Defurne17 + Georges + Lee",
+            family=chosen["all_six_saylor_t343"],
+            label="All six; Saylor |t|>=0.343",
             outdir=diagnostics_dir / "bh_model_only_alternate" / "all_five",
         )
         run_data_driven_bh_deviance_for_ensemble(
             bundles=production_bundles,
             selection=selection,
-            family=chosen["all_five"],
-            label="Jo + Defurne15 + Defurne17 + Georges + Lee",
+            family=chosen["all_six_saylor_t343"],
+            label="All six; Saylor |t|>=0.343",
             outdir=diagnostics_dir / "bh_deviance" / "all_five",
         )
     #endif
@@ -15871,13 +16750,13 @@ def run_unified_km15_final_analysis(
     # Global six-dataset Saylor low-|t| removal study, following the logic
     # of arXiv:2607.04481 but adding Georges 2022 and Lee 2026 and using the
     # closure-selected production Sachs family.
-    if chosen.get("all_five") is not None:
+    if chosen.get("all_six_saylor_t343") is not None:
         try:
             run_global_saylor_tmin_scan(
-                production_bundles,
+                five_bundles,
                 saylor_bundle,
                 selection,
-                chosen["all_five"],
+                chosen["all_six_saylor_t343"],
                 root_outdir,
             )
         except Exception as exc:
@@ -15891,10 +16770,10 @@ def run_unified_km15_final_analysis(
 
     try:
         run_all_dataset_subset_and_kelly_f2_diagnostic(
-            production_bundles=production_bundles,
+            production_bundles=five_bundles,
             saylor_bundle=saylor_bundle,
             selection=selection,
-            family=chosen["all_five"],
+            family=chosen["all_six_saylor_t343"],
             outdir=diagnostics_dir / "all_dataset_subsets_free_vs_kellyF2",
         )
     except Exception as exc:
@@ -15907,12 +16786,12 @@ def run_unified_km15_final_analysis(
     # Saylor: keep both model-based and direct Jo-vs-Saylor diagnostics.
     # For the BH-fit portion use the all-five selected family only as a
     # diagnostic reference; it does not affect any production selection.
-    if chosen.get("all_five") is not None:
+    if chosen.get("all_six_saylor_t343") is not None:
         run_saylor_recovery_study(
             saylor_bundle,
             args,
             root_outdir,
-            family=chosen["all_five"],
+            family=chosen["all_six_saylor_t343"],
         )
     else:
         print(
@@ -21183,6 +22062,16 @@ def build_parser() -> argparse.ArgumentParser:
         help=("Target number of SUCCESSFUL Gaussian pseudodata replica fits per "
               "truth model and fit family; failed fits are retried up to a "
               "finite automatic attempt cap"),
+    )
+    p.add_argument(
+        "--threshold-correlation-replicas",
+        type=int,
+        default=200,
+        help=(
+            "Paired replicas used to estimate covariance among nested 3--7%% "
+            "BH-purity threshold fits (default: 200). The same fluctuation of "
+            "a shared event is reused at every threshold."
+        ),
     )
     p.add_argument(
         "--radius-bias-workers",
