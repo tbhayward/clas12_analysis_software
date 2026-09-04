@@ -4971,6 +4971,104 @@ def robust_radius_limits(
 #enddef
 
 
+
+EMPIRICAL_VALIDATION_TRUTH_GROUP = "empirical_elastic"
+
+
+def production_closure_truth_rows(table: pd.DataFrame) -> pd.DataFrame:
+    """Return only controlled synthetic truths used for production closure."""
+    if "truth_group" not in table.columns:
+        return table.copy()
+    #endif
+    return table.loc[
+        table["truth_group"].astype(str)
+        != EMPIRICAL_VALIDATION_TRUTH_GROUP
+    ].copy()
+#enddef
+
+
+def empirical_validation_truth_rows(table: pd.DataFrame) -> pd.DataFrame:
+    """Return only Kelly/AMT/Bernauer validation rows."""
+    if "truth_group" not in table.columns:
+        return table.iloc[0:0].copy()
+    #endif
+    return table.loc[
+        table["truth_group"].astype(str)
+        == EMPIRICAL_VALIDATION_TRUTH_GROUP
+    ].copy()
+#enddef
+
+
+def save_empirical_closure_validation_summary(
+        table: pd.DataFrame,
+        outdir: Path) -> pd.DataFrame:
+    """Save Kelly/AMT/Bernauer recovery as validation, never as production votes."""
+    empirical = empirical_validation_truth_rows(table)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    if len(empirical) == 0:
+        empty = pd.DataFrame()
+        empty.to_csv(outdir / "empirical_truth_validation_summary.csv", index=False)
+        return empty
+    #endif
+
+    detail_cols = [
+        c for c in [
+            "truth_model", "truth_family", "family", "quantity",
+            "truth_radius_fm", "fit_mean_radius_fm", "bias_fm",
+            "stat_RMS_fm", "sqrt_stat2_plus_bias2_fm",
+            "valid_replicas", "requested_replicas",
+            "attempted_replicas", "attempt_efficiency", "target_reached",
+        ] if c in empirical.columns
+    ]
+    empirical[detail_cols].copy().to_csv(
+        outdir / "empirical_truth_validation_detail.csv", index=False
+    )
+
+    rows = []
+    for family, fam in empirical.groupby("family", sort=False):
+        row = {"family": str(family)}
+        for quantity in ["rE", "rM"]:
+            qpart = fam.loc[fam["quantity"].astype(str) == quantity]
+            b = qpart["bias_fm"].to_numpy(float)
+            b = b[np.isfinite(b)]
+            rmse = qpart["sqrt_stat2_plus_bias2_fm"].to_numpy(float)
+            rmse = rmse[np.isfinite(rmse)]
+            row[f"{quantity}_empirical_validation_RMS_bias_fm"] = (
+                float(np.sqrt(np.mean(b**2))) if len(b) else np.nan
+            )
+            row[f"{quantity}_empirical_validation_RMS_RMSE_fm"] = (
+                float(np.sqrt(np.mean(rmse**2))) if len(rmse) else np.nan
+            )
+            row[f"{quantity}_N_empirical_truths"] = int(len(qpart))
+        #endfor
+        rows.append(row)
+    #endfor
+
+    summary = pd.DataFrame(rows)
+    if len(summary):
+        summary["combined_empirical_validation_RMSE_fm"] = np.sqrt(
+            0.5 * (
+                summary["rE_empirical_validation_RMS_RMSE_fm"]**2
+                + summary["rM_empirical_validation_RMS_RMSE_fm"]**2
+            )
+        )
+        summary = summary.sort_values(
+            "combined_empirical_validation_RMSE_fm"
+        ).reset_index(drop=True)
+    #endif
+    summary.to_csv(
+        outdir / "empirical_truth_validation_summary.csv", index=False
+    )
+
+    print(
+        "[radius-bias] Kelly/AMT/Bernauer retained as validation only; "
+        "zero production weight"
+    )
+    return summary
+#enddef
+
+
 def save_extended_radius_bias_matrices(
         table: pd.DataFrame,
         families: Sequence[str],
@@ -4978,12 +5076,14 @@ def save_extended_radius_bias_matrices(
         minimum_global_valid_fraction: float,
         minimum_scenario_valid_fraction: float) -> None:
     """
-    Make cross-family closure matrices and an eligibility-aware ranking.
+    Make production closure matrices/rankings from controlled synthetic truths.
 
-    Eligibility requires both strong aggregate convergence and no catastrophic
-    truth-scenario failure.  Convergence is a gate only; eligible families are
-    still ranked purely by the bias-variance objective.
+    Kelly/AMT/Bernauer are validation-only and cannot favor or veto a family.
     """
+    table = production_closure_truth_rows(table)
+    if len(table) == 0:
+        raise RuntimeError("Production closure has zero synthetic truth rows.")
+    #endif
     groups = list(dict.fromkeys(table["truth_group"].astype(str).tolist()))
     matrix_rows = []
 
@@ -5226,9 +5326,9 @@ def equal_truth_group_rms(
     Hierarchical RMS with equal weight for each truth group.
 
     First compute mean(value^2) within each truth_group, then average those
-    group-level mean-squares with equal group weight.  Thus a 3x3 synthetic
-    radius grid contributes the same total weight as a singleton empirical
-    truth group, independent of arbitrary grid density.
+    group-level mean-squares with equal group weight. Production callers
+    remove empirical validation rows first, so equal weighting applies only
+    among controlled synthetic truth groups.
     """
     group_ms = []
     for _, group in table.groupby("truth_group", sort=False):
@@ -5298,7 +5398,11 @@ def save_mixed_family_closure_ranking(
         outdir: Path,
         minimum_global_valid_fraction: float,
         minimum_scenario_valid_fraction: float) -> None:
-    """Rank E/M family pairs and retain bias and replica variance separately."""
+    """Rank E/M families using controlled synthetic truths only."""
+    table = production_closure_truth_rows(table)
+    if len(table) == 0:
+        raise RuntimeError("Mixed-family ranking has zero synthetic truth rows.")
+    #endif
     rows = []
     for pair in candidate_pairs:
         part = table.loc[table["family"] == pair]
@@ -5435,9 +5539,9 @@ def save_empirical_truth_similarity_diagnostics(
     """
     Quantify how similar the three empirical elastic truth parameterizations are.
 
-    This makes the truth-weighting choice auditable.  The three curves remain
-    distinct stress tests, but collectively receive one conceptual
-    empirical-elastic truth-group vote in closure aggregation.
+    This makes the empirical validation ensemble auditable. The three
+    curves are external known-answer checks only and receive zero production
+    closure/model-selection weight.
     """
     qhi = min(1.0, max(0.05, float(qmax)))
     q = np.linspace(0.0, qhi, 800)
@@ -5531,15 +5635,8 @@ def pilot_prune_radius_bias_families(
         return list(families)
     #endif
 
-    # One empirical reference is sufficient for the cheap pilot.  Kelly,
-    # AMT2007, and Bernauer are deliberately all retained in the FULL closure
-    # truth ensemble below, but they are too similar to justify tripling the
-    # empirical component of this computational triage stage.
-    empirical = [
-        sc for sc in scenarios
-        if (not bool(sc.get("synthetic", False)))
-        and str(sc.get("truth_model", "")) == "Kelly"
-    ]
+    # Pilot pruning is based only on controlled synthetic truths.
+    # Empirical Kelly/AMT/Bernauer cases are validation-only.
     synthetic = [
         sc for sc in scenarios
         if bool(sc.get("synthetic", False))
@@ -5547,9 +5644,11 @@ def pilot_prune_radius_bias_families(
         and abs(float(sc.get("truth_rE_fm", np.nan)) - 0.85) < 1.0e-9
         and abs(float(sc.get("truth_rM_fm", np.nan)) - 0.85) < 1.0e-9
     ]
-    pilot_scenarios = empirical + synthetic
+    pilot_scenarios = synthetic
     if not pilot_scenarios:
-        pilot_scenarios = list(scenarios[:min(3, len(scenarios))])
+        pilot_scenarios = [
+            sc for sc in scenarios if bool(sc.get("synthetic", False))
+        ][:min(3, len(scenarios))]
     #endif
 
     nworkers = getattr(args, "radius_bias_workers", None)
@@ -5805,21 +5904,21 @@ def run_radius_bias_variance_study(
     scenarios = [
         {
             "truth_model": "Kelly",
-            "truth_group": "empirical_elastic",
+            "truth_group": EMPIRICAL_VALIDATION_TRUTH_GROUP,
             "truth_family": "Kelly",
             "truth_fn": kelly_sachs,
             "synthetic": False,
         },
         {
             "truth_model": "AMT2007",
-            "truth_group": "empirical_elastic",
+            "truth_group": EMPIRICAL_VALIDATION_TRUTH_GROUP,
             "truth_family": "AMT2007",
             "truth_fn": amt2007_sachs,
             "synthetic": False,
         },
         {
             "truth_model": "Bernauer_order8_polyxdipole",
-            "truth_group": "empirical_elastic",
+            "truth_group": EMPIRICAL_VALIDATION_TRUTH_GROUP,
             "truth_family": "Bernauer",
             "truth_fn": bernauer_polyxdipole_sachs,
             "synthetic": False,
@@ -5843,10 +5942,22 @@ def run_radius_bias_variance_study(
         specs, scenarios, families_full, args, outdir
     )
 
+    n_empirical_validation = sum(
+        str(sc.get("truth_group", ""))
+        == EMPIRICAL_VALIDATION_TRUTH_GROUP
+        for sc in scenarios
+    )
+    n_production_truths = len(scenarios) - int(n_empirical_validation)
     print(
-        f"[radius-bias] total truth scenarios={len(scenarios)}, "
+        f"[radius-bias] total truth scenarios={len(scenarios)} "
+        f"({n_production_truths} controlled synthetic production truths + "
+        f"{n_empirical_validation} empirical validation truths); "
         f"fit families={len(families)}, replicas/scenario/family="
         f"{args.radius_bias_replicas}"
+    )
+    print(
+        "[radius-bias] Kelly/AMT/Bernauer are validation only: "
+        "zero weight in ranking, production bias, or P(r) model weights"
     )
 
     rows = []
@@ -6095,6 +6206,8 @@ def run_radius_bias_variance_study(
     table = pd.DataFrame(rows)
     table.to_csv(outdir / "radius_bias_variance_study.csv", index=False)
 
+    save_empirical_closure_validation_summary(table, outdir)
+
     replica_table = pd.DataFrame(replica_rows)
     replica_table.to_csv(
         outdir / "radius_bias_replica_results.csv",
@@ -6104,10 +6217,10 @@ def run_radius_bias_variance_study(
     agg_rows = []
     for family in families:
         for quantity in ["rE", "rM"]:
-            part = table.loc[
+            part = production_closure_truth_rows(table.loc[
                 (table["family"] == family)
                 & (table["quantity"] == quantity)
-            ]
+            ])
             vals = part["sqrt_stat2_plus_bias2_fm"].to_numpy(float)
             vals = vals[np.isfinite(vals)]
             agg_rows.append({
@@ -8016,6 +8129,7 @@ def summarize_bias_for_family(
     retained in parallel for audit/backward comparison.
     """
     table = pd.read_csv(study_csv)
+    table = production_closure_truth_rows(table)
     fam = table.loc[table["family"].astype(str) == family].copy()
     if len(fam) == 0:
         raise RuntimeError(f"No {family} rows found in {study_csv}")
@@ -13388,7 +13502,13 @@ def _closure_bootstrap_win_probabilities(
     part = closure_table.loc[
         closure_table["family"].astype(str).isin(fams)
     ].copy()
+    part = production_closure_truth_rows(part)
     groups = list(dict.fromkeys(part["truth_group"].astype(str).tolist()))
+    if not groups:
+        raise RuntimeError(
+            "Truth-menu resampling has zero controlled synthetic groups."
+        )
+    #endif
     rng = np.random.default_rng(int(seed))
 
     cache = {}
