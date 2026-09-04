@@ -13548,6 +13548,9 @@ def save_hayward_griffioen_model_averaging_diagnostics(
     6. Both closure-only and closure×AICc mixtures are saved, so the impact of
        incorporating real-data goodness-of-fit is explicit rather than hidden
        in a single arbitrary scalar objective.
+    7. A companion 2x2 diagnostic plots every candidate family's weighted
+       contribution underneath the summed P(r), separately for rE/rM and for
+       the closure-only versus closure×AICc weighting prescriptions.
 
     This follows the spirit of Eq. (33) of Hayward & Griffioen (2018), while
     making the closure and empirical-fit contributions separately auditable.
@@ -13678,6 +13681,191 @@ def save_hayward_griffioen_model_averaging_diagnostics(
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(outdir / "01_model_averaged_radius_probabilities.png", dpi=280)
     plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Component-resolved P(r) diagnostic.
+    #
+    # The main 01 plot intentionally shows only the two final mixtures.  This
+    # companion figure exposes exactly how those smooth distributions are
+    # assembled from the individual candidate-family contributions.
+    #
+    # Each thin curve below is WEIGHTED before plotting:
+    #
+    #     contribution_i(r) = w_i * Gaussian_i(r)
+    #
+    # so its visible area reflects the actual weight carried by that family.
+    # The thick curve is the sum of those weighted components.  All curves in
+    # each panel are divided by the peak of the summed distribution, preserving
+    # the relative importance of the components while keeping a common vertical
+    # scale.
+    # ------------------------------------------------------------------
+    fig_components, axes_components = plt.subplots(
+        2, 2, figsize=(14.2, 10.0), sharey=False
+    )
+    component_rows = []
+
+    weight_specs = [
+        (
+            "weight_closure_only",
+            "Known-answer tests only",
+            "closure bootstrap only",
+        ),
+        (
+            "weight_closure_times_AICc",
+            "Known-answer tests + real-data AICc",
+            "closure × AICc",
+        ),
+    ]
+
+    for irow, (weight_col, row_title, mixture_tag) in enumerate(weight_specs):
+        for icol, (quantity, xlabel) in enumerate([
+            ("rE", r"$r_E$ [fm]"),
+            ("rM", r"$r_M$ [fm]"),
+        ]):
+            ax = axes_components[irow, icol]
+            centers = model[
+                f"{quantity}_bias_corrected_center_fm"
+            ].to_numpy(float)
+            sigmas = model[
+                f"{quantity}_mixture_sigma_fm"
+            ].to_numpy(float)
+            weights = model[weight_col].to_numpy(float)
+
+            lo = max(
+                0.20,
+                float(np.nanmin(centers - 5.0 * sigmas)) - 0.02,
+            )
+            hi = min(
+                1.50,
+                float(np.nanmax(centers + 5.0 * sigmas)) + 0.02,
+            )
+            x = np.linspace(lo, hi, 5000)
+
+            weighted_components = []
+            for (_, row), mu, sig, weight in zip(
+                    model.iterrows(), centers, sigmas, weights):
+                sig = max(float(sig), 1.0e-4)
+                weight = float(weight)
+                component = (
+                    weight
+                    * np.exp(-0.5 * ((x - float(mu)) / sig)**2)
+                    / (np.sqrt(2.0 * np.pi) * sig)
+                )
+                weighted_components.append(component)
+            #endfor
+
+            weighted_components = np.asarray(weighted_components)
+            total = np.sum(weighted_components, axis=0)
+            peak = float(np.nanmax(total))
+            if not np.isfinite(peak) or peak <= 0.0:
+                peak = 1.0
+            #endif
+
+            # Plot individual weighted family contributions in decreasing
+            # weight order so the legend is immediately interpretable.
+            order = np.argsort(weights)[::-1]
+            for idx in order:
+                family = str(model.iloc[int(idx)]["family"])
+                weight = float(weights[int(idx)])
+                contribution = weighted_components[int(idx)] / peak
+                ax.plot(
+                    x,
+                    contribution,
+                    linewidth=1.15,
+                    alpha=0.72,
+                    label=f"{family}  ({100.0 * weight:.1f}%)",
+                )
+
+                for xx, yy in zip(x, contribution):
+                    component_rows.append({
+                        "quantity": quantity,
+                        "mixture": mixture_tag,
+                        "family": family,
+                        "family_weight": weight,
+                        "radius_fm": float(xx),
+                        "weighted_component_normalized_to_total_peak": float(yy),
+                    })
+                #endfor
+            #endfor
+
+            total_norm = total / peak
+            ax.plot(
+                x,
+                total_norm,
+                linewidth=2.8,
+                label="summed $P(r)$",
+            )
+            for xx, yy in zip(x, total_norm):
+                component_rows.append({
+                    "quantity": quantity,
+                    "mixture": mixture_tag,
+                    "family": "__SUM__",
+                    "family_weight": 1.0,
+                    "radius_fm": float(xx),
+                    "weighted_component_normalized_to_total_peak": float(yy),
+                })
+            #endfor
+
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel(r"Contribution to $P(r)$ (sum peak = 1)")
+            ax.set_title(
+                f"{row_title}: "
+                + (r"$r_E$" if quantity == "rE" else r"$r_M$")
+            )
+            ax.grid(alpha=0.20)
+            ax.legend(
+                fontsize=8.0,
+                frameon=False,
+                ncol=1,
+                loc="upper right",
+            )
+        #endfor
+    #endfor
+
+    fig_components.suptitle(
+        "Radius-probability decomposition by candidate fit family",
+        y=0.995,
+    )
+    fig_components.tight_layout(rect=(0, 0, 1, 0.965))
+    fig_components.savefig(
+        outdir / "03_radius_probability_family_components.png",
+        dpi=300,
+    )
+    plt.close(fig_components)
+
+    pd.DataFrame(component_rows).to_csv(
+        outdir / "radius_probability_family_component_curves.csv",
+        index=False,
+    )
+
+    # Compact table containing exactly the numbers needed to interpret the
+    # component plot without inspecting the full competitive-fit table.
+    component_summary = model[[
+        "family",
+        "combined_RMS_objective_fm",
+        "closure_bootstrap_win_fraction",
+        "AICc",
+        "akaike_relative_support",
+        "weight_closure_only",
+        "weight_closure_times_AICc",
+        "rE_fm",
+        "rE_fit_err_fm",
+        "rE_mean_signed_bias_fm",
+        "rE_bias_corrected_center_fm",
+        "rE_mixture_sigma_fm",
+        "rM_fm",
+        "rM_fit_err_fm",
+        "rM_mean_signed_bias_fm",
+        "rM_bias_corrected_center_fm",
+        "rM_mixture_sigma_fm",
+    ]].copy()
+    component_summary = component_summary.sort_values(
+        "weight_closure_only", ascending=False
+    )
+    component_summary.to_csv(
+        outdir / "radius_probability_family_component_summary.csv",
+        index=False,
+    )
 
     # Primary interpolation result: model-average GE and GM over 0 <= Q2 <= 1.
     q = np.linspace(0.0, 1.0, 900)
