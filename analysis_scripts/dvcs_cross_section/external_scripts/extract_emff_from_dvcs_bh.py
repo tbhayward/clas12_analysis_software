@@ -13943,9 +13943,6 @@ def save_hayward_griffioen_model_averaging_diagnostics(
     # the relative importance of the components while keeping a common vertical
     # scale.
     # ------------------------------------------------------------------
-    fig_components, axes_components = plt.subplots(
-        2, 2, figsize=(14.2, 10.0), sharey=False
-    )
     component_rows = []
 
     weight_specs = [
@@ -13953,20 +13950,26 @@ def save_hayward_griffioen_model_averaging_diagnostics(
             "weight_closure_only",
             "Known-answer tests only",
             "closure bootstrap only",
+            "03a_radius_probability_family_components_known_answer_only.png",
         ),
         (
             "weight_closure_times_AICc",
             "Known-answer tests + real-data AICc",
             "closure × AICc",
+            "03b_radius_probability_family_components_known_answer_plus_AICc.png",
         ),
     ]
 
-    for irow, (weight_col, row_title, mixture_tag) in enumerate(weight_specs):
+    for weight_col, row_title, mixture_tag, output_name in weight_specs:
+        fig_components, axes_components = plt.subplots(
+            1, 2, figsize=(14.2, 5.4), sharey=False
+        )
+
         for icol, (quantity, xlabel) in enumerate([
             ("rE", r"$r_E$ (fm)"),
             ("rM", r"$r_M$ (fm)"),
         ]):
-            ax = axes_components[irow, icol]
+            ax = axes_components[icol]
             centers = model[
                 f"{quantity}_bias_corrected_center_fm"
             ].to_numpy(float)
@@ -14005,8 +14008,6 @@ def save_hayward_griffioen_model_averaging_diagnostics(
                 peak = 1.0
             #endif
 
-            # Plot individual weighted family contributions in decreasing
-            # weight order so the legend is immediately interpretable.
             order = np.argsort(weights)[::-1]
             for idx in order:
                 family = str(model.iloc[int(idx)]["family"])
@@ -14054,8 +14055,7 @@ def save_hayward_griffioen_model_averaging_diagnostics(
             ax.set_ylabel(r"Contribution to $P(r)$ (sum peak = 1)")
             ax.set_xlim(0.70, 1.00)
             ax.set_title(
-                f"{row_title}: "
-                + (r"$r_E$" if quantity == "rE" else r"$r_M$")
+                r"$r_E$" if quantity == "rE" else r"$r_M$"
             )
             ax.grid(alpha=0.20)
             ax.legend(
@@ -14065,18 +14065,18 @@ def save_hayward_griffioen_model_averaging_diagnostics(
                 loc="upper right",
             )
         #endfor
-    #endfor
 
-    fig_components.suptitle(
-        "Radius-probability decomposition by candidate fit family",
-        y=0.995,
-    )
-    fig_components.tight_layout(rect=(0, 0, 1, 0.965))
-    fig_components.savefig(
-        outdir / "03_radius_probability_family_components.png",
-        dpi=300,
-    )
-    plt.close(fig_components)
+        fig_components.suptitle(
+            f"Radius-probability decomposition by candidate fit family: {row_title}",
+            y=0.995,
+        )
+        fig_components.tight_layout(rect=(0, 0, 1, 0.94))
+        fig_components.savefig(
+            outdir / output_name,
+            dpi=300,
+        )
+        plt.close(fig_components)
+    #endfor
 
     pd.DataFrame(component_rows).to_csv(
         outdir / "radius_probability_family_component_curves.csv",
