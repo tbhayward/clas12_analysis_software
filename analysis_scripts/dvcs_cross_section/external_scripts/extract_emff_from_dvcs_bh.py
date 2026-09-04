@@ -1,3 +1,4 @@
+# BUILD_MARKER: VERIFIED_EXTERNAL_F2_20260904_163217
 #!/usr/bin/env python3
 """
 CLAS12 reproduction of the analysis in
