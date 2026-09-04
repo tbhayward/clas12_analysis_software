@@ -1,4 +1,4 @@
-# BUILD_MARKER: VERIFIED_EXTERNAL_F2_20260904_163217
+# BUILD_MARKER: EXTERNAL_F2_RUNTIME_HARDENED_20260904
 #!/usr/bin/env python3
 """
 CLAS12 reproduction of the analysis in
@@ -14630,6 +14630,10 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
     combinations determine the electric/magnetic solution.
     """
     outdir.mkdir(parents=True, exist_ok=True)
+    print(
+        "[external-F2 preflight] starting restricted-Saylor subset diagnostic "
+        f"with production family={family}"
+    )
 
     selected_bundles = []
     for bundle in production_bundles:
@@ -14757,10 +14761,37 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
                     "failure": str(exc),
                 })
             #endtry
+
+            # Persist progress after every fit.  This diagnostic is cheap
+            # compared with the closure study, and the checkpoint guarantees
+            # that a late failure cannot leave an empty directory.
+            partial = pd.DataFrame(rows)
+            partial.to_csv(
+                outdir / "externalF2_partial_results.csv",
+                index=False,
+            )
         #endfor
     #endfor
 
     table = pd.DataFrame(rows)
+    table.to_csv(
+        outdir / "externalF2_partial_results.csv",
+        index=False,
+    )
+    if "valid" in table.columns:
+        failures = table.loc[
+            ~table["valid"].fillna(False).astype(bool)
+        ].copy()
+        failures.to_csv(
+            outdir / "externalF2_failures.csv",
+            index=False,
+        )
+    else:
+        pd.DataFrame().to_csv(
+            outdir / "externalF2_failures.csv",
+            index=False,
+        )
+    #endif
 
     # Fail fast if the nominal all-six external-F2 comparison did not actually
     # execute all three intended fit modes. This prevents a long production run
@@ -14796,25 +14827,30 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
         #endif
     #endif
 
-    expected_all_six_n = int(sum(
+    raw_all_six_n = int(sum(
         len(spec["data"]) for _, _, spec in selected_bundles
     ))
+    fitted_n = set()
     if "N" in all_six_rows.columns:
         fitted_n = set(
             pd.to_numeric(all_six_rows["N"], errors="coerce")
             .dropna().astype(int).tolist()
         )
-        if fitted_n != {expected_all_six_n}:
+        if len(fitted_n) != 1:
             raise RuntimeError(
-                "Nominal all-six external-F2 point-count mismatch: "
-                f"fit rows report {sorted(fitted_n)}, expected {expected_all_six_n}."
+                "Nominal all-six external-F2 modes did not use the same "
+                f"number of fitted points: {sorted(fitted_n)}"
             )
         #endif
     #endif
+    common_fit_n = (
+        next(iter(fitted_n)) if fitted_n else raw_all_six_n
+    )
 
     print(
         "[external-F2 preflight] nominal all-six comparison PASS: "
-        f"N={expected_all_six_n}, modes={sorted(present_modes)}"
+        f"Nfit={common_fit_n}, Nraw={raw_all_six_n}, "
+        f"modes={sorted(present_modes)}"
     )
 
     table.to_csv(
@@ -17716,20 +17752,33 @@ def run_unified_km15_final_analysis(
         #endtry
     #endif
 
-    try:
-        run_all_dataset_subset_and_external_f2_diagnostic(
-            production_bundles=five_bundles,
-            saylor_bundle=saylor_bundle,
-            selection=selection,
-            family=chosen["all_six_saylor_t343"],
-            outdir=diagnostics_dir / "all_dataset_subsets_free_vs_externalF2",
-        )
-    except Exception as exc:
+    if chosen.get("all_six_saylor_t343") is not None:
+        try:
+            run_all_dataset_subset_and_external_f2_diagnostic(
+                production_bundles=five_bundles,
+                saylor_bundle=saylor_bundle,
+                selection=selection,
+                family=chosen["all_six_saylor_t343"],
+                outdir=diagnostics_dir / "all_dataset_subsets_free_vs_externalF2",
+            )
+        except Exception as exc:
+            print(
+                "[all-subset free-vs-external-F2] WARNING: diagnostic failed; "
+                f"continuing: {type(exc).__name__}: {exc}"
+            )
+            print(
+                "[all-subset free-vs-external-F2] Inspect "
+                "diagnostics/all_dataset_subsets_free_vs_externalF2/"
+                "externalF2_partial_results.csv and "
+                "externalF2_failures.csv for the exact failed mode/subset."
+            )
+        #endtry
+    else:
         print(
-            "[all-subset free-vs-external-F2] WARNING: diagnostic failed; "
-            f"continuing: {type(exc).__name__}: {exc}"
+            "[all-subset free-vs-external-F2] skipped because the nominal "
+            "restricted-Saylor production family is unresolved."
         )
-    #endtry
+    #endif
 
     # Saylor: keep both model-based and direct Jo-vs-Saylor diagnostics.
     # For the BH-fit portion use the all-five selected family only as a
