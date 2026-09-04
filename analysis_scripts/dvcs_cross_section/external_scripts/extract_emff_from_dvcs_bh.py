@@ -14473,7 +14473,7 @@ def fit_sachs_ge_family_fixed_yahl18_f2_multi_measurements(
         )
         q = d["t_abs"].to_numpy(float)
         tau = q / (4.0 * MP2)
-        _, f2_kelly = yahl18_f1_f2(q)
+        _, f2_yahl18 = yahl18_f1_f2(q)
         key = str(spec["key"])
         free_norm = bool(spec.get("unconstrained_norm", False))
         frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
@@ -14482,7 +14482,7 @@ def fit_sachs_ge_family_fixed_yahl18_f2_multi_measurements(
             "q": q,
             "q_powers": np.vstack([q**i for i in range(1, ne + 1)]),
             "tau": tau,
-            "f2_yahl18": np.asarray(f2_kelly, dtype=float),
+            "f2_yahl18": np.asarray(f2_yahl18, dtype=float),
             "y": d["xs"].to_numpy(float),
             "e": np.asarray(err, dtype=float),
             "A": d["bh_A"].to_numpy(float),
@@ -14611,7 +14611,7 @@ def fit_sachs_ge_family_fixed_yahl18_f2_multi_measurements(
 #enddef
 
 
-def run_all_dataset_subset_and_kelly_f2_diagnostic(
+def run_all_dataset_subset_and_external_f2_diagnostic(
         production_bundles: Sequence[Dict[str, object]],
         saylor_bundle: Dict[str, object],
         selection: pd.DataFrame,
@@ -14664,6 +14664,24 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
         )
         & (t_abs >= 0.343)
     ].copy()
+
+    if len(saylor5) == 0:
+        raise RuntimeError(
+            "Nominal restricted-Saylor fixed-F2 diagnostic selected zero points."
+        )
+    #endif
+    if np.nanmin(np.abs(pd.to_numeric(
+            saylor5["t"], errors="coerce"
+        ).to_numpy(float))) < 0.343 - 1.0e-12:
+        raise RuntimeError(
+            "Restricted-Saylor preflight failed: a selected point has |t| < 0.343 GeV^2."
+        )
+    #endif
+    print(
+        "[external-F2 preflight] restricted Saylor: "
+        f"N={len(saylor5)}, min|t|="
+        f"{np.nanmin(np.abs(pd.to_numeric(saylor5['t'], errors='coerce').to_numpy(float))):.6f} GeV^2"
+    )
     selected_bundles.append((
         str(saylor_bundle["key"]),
         str(saylor_bundle["label"]),
@@ -14742,6 +14760,62 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
     #endfor
 
     table = pd.DataFrame(rows)
+
+    # Fail fast if the nominal all-six external-F2 comparison did not actually
+    # execute all three intended fit modes. This prevents a long production run
+    # from silently falling back to the old Kelly-only bookkeeping.
+    all_six_keys = "|".join(x[0] for x in selected_bundles)
+    all_six_rows = table.loc[
+        table["dataset_keys"].astype(str) == all_six_keys
+    ].copy()
+    expected_modes = {
+        "free_GE_GM",
+        "kelly_F2_fixed",
+        "yahl18_F2_fixed",
+    }
+    present_modes = set(all_six_rows["fit_mode"].astype(str).tolist())
+    if present_modes != expected_modes:
+        raise RuntimeError(
+            "Nominal all-six external-F2 diagnostic did not produce all three "
+            f"fit modes. Present={sorted(present_modes)}, "
+            f"expected={sorted(expected_modes)}"
+        )
+    #endif
+
+    if "valid" in all_six_rows.columns:
+        bad = all_six_rows.loc[
+            ~all_six_rows["valid"].fillna(False).astype(bool)
+        ]
+        if len(bad):
+            cols = [c for c in ["fit_mode", "failure"] if c in bad.columns]
+            raise RuntimeError(
+                "Nominal all-six external-F2 diagnostic contains failed fits:\n"
+                + bad[cols].to_string(index=False)
+            )
+        #endif
+    #endif
+
+    expected_all_six_n = int(sum(
+        len(spec["data"]) for _, _, spec in selected_bundles
+    ))
+    if "N" in all_six_rows.columns:
+        fitted_n = set(
+            pd.to_numeric(all_six_rows["N"], errors="coerce")
+            .dropna().astype(int).tolist()
+        )
+        if fitted_n != {expected_all_six_n}:
+            raise RuntimeError(
+                "Nominal all-six external-F2 point-count mismatch: "
+                f"fit rows report {sorted(fitted_n)}, expected {expected_all_six_n}."
+            )
+        #endif
+    #endif
+
+    print(
+        "[external-F2 preflight] nominal all-six comparison PASS: "
+        f"N={expected_all_six_n}, modes={sorted(present_modes)}"
+    )
+
     table.to_csv(
         outdir / "all_six_dataset_subsets_restricted_saylor_free_vs_externalF2.csv",
         index=False,
@@ -14751,7 +14825,7 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
     canonical = table.loc[
         table["dataset_keys"].astype(str).isin([
             "|".join(x[0] for x in selected_bundles[:5]),
-            "|".join(x[0] for x in selected_bundles),
+            all_six_keys,
         ])
     ].copy()
     canonical.to_csv(
@@ -17642,16 +17716,16 @@ def run_unified_km15_final_analysis(
     #endif
 
     try:
-        run_all_dataset_subset_and_kelly_f2_diagnostic(
+        run_all_dataset_subset_and_external_f2_diagnostic(
             production_bundles=five_bundles,
             saylor_bundle=saylor_bundle,
             selection=selection,
             family=chosen["all_six_saylor_t343"],
-            outdir=diagnostics_dir / "all_dataset_subsets_free_vs_kellyF2",
+            outdir=diagnostics_dir / "all_dataset_subsets_free_vs_externalF2",
         )
     except Exception as exc:
         print(
-            "[all-subset free-vs-Kelly-F2] WARNING: diagnostic failed; "
+            "[all-subset free-vs-external-F2] WARNING: diagnostic failed; "
             f"continuing: {type(exc).__name__}: {exc}"
         )
     #endtry
