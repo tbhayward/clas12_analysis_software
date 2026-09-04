@@ -1,4 +1,4 @@
-# BUILD_MARKER: EXTERNAL_F2_RUNTIME_HARDENED_20260904
+# BUILD_MARKER: EXTERNAL_F2_NOMINAL_SPECS_20260904
 #!/usr/bin/env python3
 """
 CLAS12 reproduction of the analysis in
@@ -14613,93 +14613,195 @@ def fit_sachs_ge_family_fixed_yahl18_f2_multi_measurements(
 
 
 def run_all_dataset_subset_and_external_f2_diagnostic(
-        production_bundles: Sequence[Dict[str, object]],
-        saylor_bundle: Dict[str, object],
-        selection: pd.DataFrame,
+        nominal_selected_bundles: Sequence[Dict[str, object]],
         family: str,
         outdir: Path) -> pd.DataFrame:
     """
-    Fit every non-empty subset of the six experiments at KM15 5%, using the nominal restricted Saylor sample.
+    Compare free GE/GM, Kelly-fixed F2, and YAHL18-fixed F2 for every
+    non-empty subset of the EXACT nominal production sample.
 
-    For every subset, run:
-      (1) the closure-selected free-GE/free-GM family;
-      (2) the same GE family with F2 fixed to Kelly 2004;
-      (3) the same GE family with F2 fixed to YAHL18.
+    IMPORTANT:
+      * This function does NOT reconstruct the KM15 selection.
+      * It consumes the already-validated `set5` DataFrames that were built
+        for the nominal all-six closure/production ensemble.
+      * The Saylor bundle in that ensemble is already the nominal
+        |t| >= 0.343 GeV^2 version.
 
-    This is diagnostic bookkeeping intended to expose exactly which dataset
-    combinations determine the electric/magnetic solution.
+    This guarantees that the external-F2 diagnostic uses exactly the same
+    selected events as the nominal production fit.
     """
     outdir.mkdir(parents=True, exist_ok=True)
     print(
-        "[external-F2 preflight] starting restricted-Saylor subset diagnostic "
-        f"with production family={family}"
+        "[external-F2 preflight] starting from already-selected nominal "
+        f"production sample; family={family}"
     )
 
+    # ------------------------------------------------------------------
+    # Build measurement specs ONLY from the already-selected set5 samples.
+    # Write setup diagnostics before the first fit so a setup failure can no
+    # longer leave an empty directory.
+    # ------------------------------------------------------------------
     selected_bundles = []
-    for bundle in production_bundles:
-        selected = select_bundle_from_external_model(
-            bundle, selection, "km15", 0.05
+    setup_rows = []
+
+    for ib, bundle in enumerate(nominal_selected_bundles):
+        key = str(bundle.get("key", ""))
+        label = str(bundle.get("label", key))
+        kind = str(bundle.get("kind", ""))
+
+        if "set5" not in bundle:
+            setup_rows.append({
+                "bundle_index": int(ib),
+                "key": key,
+                "label": label,
+                "status": "FAIL",
+                "failure": "missing validated set5 sample",
+            })
+            pd.DataFrame(setup_rows).to_csv(
+                outdir / "externalF2_setup_preflight.csv", index=False
+            )
+            raise RuntimeError(
+                f"{label}: nominal external-F2 input is missing bundle['set5']."
+            )
+        #endif
+
+        selected = bundle["set5"].copy()
+        if len(selected) == 0:
+            setup_rows.append({
+                "bundle_index": int(ib),
+                "key": key,
+                "label": label,
+                "status": "FAIL",
+                "failure": "validated set5 sample is empty",
+            })
+            pd.DataFrame(setup_rows).to_csv(
+                outdir / "externalF2_setup_preflight.csv", index=False
+            )
+            raise RuntimeError(
+                f"{label}: nominal external-F2 set5 sample is empty."
+            )
+        #endif
+
+        # Saylor must already be restricted in the production bundle. Verify
+        # rather than reconstructing or re-cutting it here.
+        is_saylor = (
+            "saylor" in key.lower()
+            or "saylor" in label.lower()
         )
-        selected_bundles.append((
-            str(bundle["key"]),
-            str(bundle["label"]),
-            measurement_spec(
-                str(bundle["key"]),
-                str(bundle["label"]),
-                str(bundle["kind"]),
-                selected,
-                float(bundle.get("norm_frac", 0.0)),
-                unconstrained_norm=bool(
-                    bundle.get("unconstrained_norm", False)
+        min_t_abs = np.nan
+        max_t_abs = np.nan
+        if "t" in selected.columns:
+            tabs = np.abs(pd.to_numeric(
+                selected["t"], errors="coerce"
+            ).to_numpy(float))
+            if np.any(np.isfinite(tabs)):
+                min_t_abs = float(np.nanmin(tabs))
+                max_t_abs = float(np.nanmax(tabs))
+            #endif
+        elif "t_abs" in selected.columns:
+            tabs = pd.to_numeric(
+                selected["t_abs"], errors="coerce"
+            ).to_numpy(float)
+            if np.any(np.isfinite(tabs)):
+                min_t_abs = float(np.nanmin(tabs))
+                max_t_abs = float(np.nanmax(tabs))
+            #endif
+        #endif
+
+        if is_saylor and (
+                not np.isfinite(min_t_abs)
+                or min_t_abs < 0.343 - 1.0e-12):
+            setup_rows.append({
+                "bundle_index": int(ib),
+                "key": key,
+                "label": label,
+                "N_selected": int(len(selected)),
+                "min_t_abs_GeV2": min_t_abs,
+                "max_t_abs_GeV2": max_t_abs,
+                "status": "FAIL",
+                "failure": (
+                    "nominal Saylor set5 is not restricted to |t| >= 0.343"
                 ),
+            })
+            pd.DataFrame(setup_rows).to_csv(
+                outdir / "externalF2_setup_preflight.csv", index=False
+            )
+            raise RuntimeError(
+                f"{label}: nominal set5 contains |t| < 0.343 GeV^2."
+            )
+        #endif
+
+        spec = bundle_to_measurement_spec(bundle, selected)
+        selected_bundles.append((key, label, spec))
+
+        setup_rows.append({
+            "bundle_index": int(ib),
+            "key": key,
+            "label": label,
+            "kind": kind,
+            "N_selected": int(len(selected)),
+            "min_t_abs_GeV2": min_t_abs,
+            "max_t_abs_GeV2": max_t_abs,
+            "is_saylor": bool(is_saylor),
+            "norm_frac": float(bundle.get("norm_frac", 0.0)),
+            "unconstrained_norm": bool(
+                bundle.get("unconstrained_norm", False)
             ),
-        ))
+            "status": "PASS",
+            "failure": "",
+        })
+        pd.DataFrame(setup_rows).to_csv(
+            outdir / "externalF2_setup_preflight.csv", index=False
+        )
     #endfor
 
-    saylor_all = saylor_bundle["all_data"].copy()
-    delta_col = "bh_delta" if "bh_delta" in saylor_all.columns else "delta_bh"
-    t_abs = np.abs(pd.to_numeric(
-        saylor_all["t"], errors="coerce"
-    ).to_numpy(float))
-    saylor5 = saylor_all.loc[
-        (
-            pd.to_numeric(
-                saylor_all[delta_col], errors="coerce"
-            ).to_numpy(float) <= 0.05
+    if len(selected_bundles) != 6:
+        raise RuntimeError(
+            "Nominal external-F2 diagnostic expected exactly six production "
+            f"datasets, received {len(selected_bundles)}."
         )
-        & (t_abs >= 0.343)
-    ].copy()
+    #endif
 
-    if len(saylor5) == 0:
+    saylor_entries = [
+        row for row in setup_rows if bool(row.get("is_saylor", False))
+    ]
+    if len(saylor_entries) != 1:
         raise RuntimeError(
-            "Nominal restricted-Saylor fixed-F2 diagnostic selected zero points."
+            "Nominal external-F2 diagnostic expected exactly one Saylor "
+            f"dataset, found {len(saylor_entries)}."
         )
     #endif
-    if np.nanmin(np.abs(pd.to_numeric(
-            saylor5["t"], errors="coerce"
-        ).to_numpy(float))) < 0.343 - 1.0e-12:
-        raise RuntimeError(
-            "Restricted-Saylor preflight failed: a selected point has |t| < 0.343 GeV^2."
-        )
-    #endif
+
     print(
-        "[external-F2 preflight] restricted Saylor: "
-        f"N={len(saylor5)}, min|t|="
-        f"{np.nanmin(np.abs(pd.to_numeric(saylor5['t'], errors='coerce').to_numpy(float))):.6f} GeV^2"
+        "[external-F2 preflight] nominal selected samples PASS: "
+        + ", ".join(
+            f"{x[0]} N={len(x[2]['data'])}" for x in selected_bundles
+        )
     )
-    selected_bundles.append((
-        str(saylor_bundle["key"]),
-        str(saylor_bundle["label"]),
-        measurement_spec(
-            str(saylor_bundle["key"]),
-            str(saylor_bundle["label"]),
-            str(saylor_bundle["kind"]),
-            saylor5,
-            SAYLOR_GLOBAL_SCALE_FRAC,
-        ),
-    ))
+    print(
+        "[external-F2 preflight] restricted Saylor already inherited from "
+        f"production: N={int(saylor_entries[0]['N_selected'])}, "
+        f"min|t|={float(saylor_entries[0]['min_t_abs_GeV2']):.6f} GeV^2"
+    )
 
     ge_family, _ = decode_sachs_family_pair(family)
+
+    # Write an empty-but-schema-bearing checkpoint before the first fit.
+    checkpoint_columns = [
+        "subset_mask", "dataset_count", "dataset_keys",
+        "configuration_label", "fit_mode", "production_family",
+        "valid", "failure",
+    ]
+    pd.DataFrame(columns=checkpoint_columns).to_csv(
+        outdir / "externalF2_partial_results.csv", index=False
+    )
+    pd.DataFrame(columns=checkpoint_columns).to_csv(
+        outdir / "externalF2_failures.csv", index=False
+    )
+
+    # ------------------------------------------------------------------
+    # Fit all 2^6-1 dataset subsets in the three requested modes.
+    # ------------------------------------------------------------------
     rows = []
     nset = len(selected_bundles)
     for mask in range(1, 1 << nset):
@@ -14740,6 +14842,7 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
                         add_moradi_bh_systematic=True,
                     )
                 #endif
+
                 rows.append({
                     "subset_mask": int(mask),
                     "dataset_count": int(len(specs)),
@@ -14758,48 +14861,37 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
                     "fit_mode": mode,
                     "production_family": family,
                     "valid": False,
-                    "failure": str(exc),
+                    "failure": f"{type(exc).__name__}: {exc}",
                 })
             #endtry
 
-            # Persist progress after every fit.  This diagnostic is cheap
-            # compared with the closure study, and the checkpoint guarantees
-            # that a late failure cannot leave an empty directory.
             partial = pd.DataFrame(rows)
             partial.to_csv(
-                outdir / "externalF2_partial_results.csv",
-                index=False,
+                outdir / "externalF2_partial_results.csv", index=False
             )
+            if "valid" in partial.columns:
+                partial.loc[
+                    ~partial["valid"].fillna(False).astype(bool)
+                ].to_csv(
+                    outdir / "externalF2_failures.csv", index=False
+                )
+            #endif
         #endfor
     #endfor
 
     table = pd.DataFrame(rows)
     table.to_csv(
-        outdir / "externalF2_partial_results.csv",
-        index=False,
+        outdir / "externalF2_partial_results.csv", index=False
     )
-    if "valid" in table.columns:
-        failures = table.loc[
-            ~table["valid"].fillna(False).astype(bool)
-        ].copy()
-        failures.to_csv(
-            outdir / "externalF2_failures.csv",
-            index=False,
-        )
-    else:
-        pd.DataFrame().to_csv(
-            outdir / "externalF2_failures.csv",
-            index=False,
-        )
-    #endif
 
-    # Fail fast if the nominal all-six external-F2 comparison did not actually
-    # execute all three intended fit modes. This prevents a long production run
-    # from silently falling back to the old Kelly-only bookkeeping.
+    # ------------------------------------------------------------------
+    # Fail-fast validation of the nominal all-six result.
+    # ------------------------------------------------------------------
     all_six_keys = "|".join(x[0] for x in selected_bundles)
     all_six_rows = table.loc[
         table["dataset_keys"].astype(str) == all_six_keys
     ].copy()
+
     expected_modes = {
         "free_GE_GM",
         "kelly_F2_fixed",
@@ -14808,9 +14900,9 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
     present_modes = set(all_six_rows["fit_mode"].astype(str).tolist())
     if present_modes != expected_modes:
         raise RuntimeError(
-            "Nominal all-six external-F2 diagnostic did not produce all three "
-            f"fit modes. Present={sorted(present_modes)}, "
-            f"expected={sorted(expected_modes)}"
+            "Nominal all-six external-F2 diagnostic did not produce all "
+            f"three modes. Present={sorted(present_modes)}, "
+            f"expected={sorted(expected_modes)}."
         )
     #endif
 
@@ -14819,7 +14911,9 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
             ~all_six_rows["valid"].fillna(False).astype(bool)
         ]
         if len(bad):
-            cols = [c for c in ["fit_mode", "failure"] if c in bad.columns]
+            cols = [
+                c for c in ["fit_mode", "failure"] if c in bad.columns
+            ]
             raise RuntimeError(
                 "Nominal all-six external-F2 diagnostic contains failed fits:\n"
                 + bad[cols].to_string(index=False)
@@ -14827,24 +14921,28 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
         #endif
     #endif
 
-    raw_all_six_n = int(sum(
-        len(spec["data"]) for _, _, spec in selected_bundles
-    ))
     fitted_n = set()
     if "N" in all_six_rows.columns:
         fitted_n = set(
-            pd.to_numeric(all_six_rows["N"], errors="coerce")
-            .dropna().astype(int).tolist()
+            pd.to_numeric(
+                all_six_rows["N"], errors="coerce"
+            ).dropna().astype(int).tolist()
         )
         if len(fitted_n) != 1:
             raise RuntimeError(
-                "Nominal all-six external-F2 modes did not use the same "
-                f"number of fitted points: {sorted(fitted_n)}"
+                "Nominal all-six external-F2 modes used different fitted "
+                f"point counts: {sorted(fitted_n)}."
             )
         #endif
     #endif
+
     common_fit_n = (
-        next(iter(fitted_n)) if fitted_n else raw_all_six_n
+        next(iter(fitted_n))
+        if fitted_n
+        else int(sum(len(x[2]["data"]) for x in selected_bundles))
+    )
+    raw_all_six_n = int(
+        sum(len(x[2]["data"]) for x in selected_bundles)
     )
 
     print(
@@ -14854,29 +14952,44 @@ def run_all_dataset_subset_and_external_f2_diagnostic(
     )
 
     table.to_csv(
-        outdir / "all_six_dataset_subsets_restricted_saylor_free_vs_externalF2.csv",
+        outdir
+        / "all_six_dataset_subsets_restricted_saylor_free_vs_externalF2.csv",
         index=False,
     )
 
-    # Canonical all-five/all-six comparison for immediate inspection.
+    # Canonical comparison:
+    #   * all five non-Saylor datasets;
+    #   * nominal all-six restricted-Saylor ensemble.
+    no_saylor_keys = "|".join(
+        x[0] for x in selected_bundles
+        if "saylor" not in x[0].lower()
+        and "saylor" not in x[1].lower()
+    )
     canonical = table.loc[
         table["dataset_keys"].astype(str).isin([
-            "|".join(x[0] for x in selected_bundles[:5]),
+            no_saylor_keys,
             all_six_keys,
         ])
     ].copy()
     canonical.to_csv(
-        outdir / "canonical_allfive_allsix_restricted_saylor_free_vs_externalF2.csv",
+        outdir
+        / "canonical_allfive_allsix_restricted_saylor_free_vs_externalF2.csv",
         index=False,
     )
+
     if len(canonical):
-        print("\\n[all-subset free-vs-external-F2 diagnostic: canonical]")
+        print("\n[all-subset free-vs-external-F2 diagnostic: canonical]")
         show = [
             "configuration_label", "fit_mode", "N", "chi2_ndof",
             "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
         ]
-        print(canonical[[c for c in show if c in canonical.columns]].to_string(index=False))
+        print(
+            canonical[
+                [c for c in show if c in canonical.columns]
+            ].to_string(index=False)
+        )
     #endif
+
     return table
 #enddef
 
@@ -17755,11 +17868,10 @@ def run_unified_km15_final_analysis(
     if chosen.get("all_six_saylor_t343") is not None:
         try:
             run_all_dataset_subset_and_external_f2_diagnostic(
-                production_bundles=five_bundles,
-                saylor_bundle=saylor_bundle,
-                selection=selection,
+                nominal_selected_bundles=production_closure_bundles,
                 family=chosen["all_six_saylor_t343"],
-                outdir=diagnostics_dir / "all_dataset_subsets_free_vs_externalF2",
+                outdir=diagnostics_dir
+                / "all_dataset_subsets_free_vs_externalF2",
             )
         except Exception as exc:
             print(
@@ -17769,8 +17881,9 @@ def run_unified_km15_final_analysis(
             print(
                 "[all-subset free-vs-external-F2] Inspect "
                 "diagnostics/all_dataset_subsets_free_vs_externalF2/"
-                "externalF2_partial_results.csv and "
-                "externalF2_failures.csv for the exact failed mode/subset."
+                "externalF2_setup_preflight.csv, "
+                "externalF2_partial_results.csv, and externalF2_failures.csv "
+                "for the exact setup/mode/subset failure."
             )
         #endtry
     else:
