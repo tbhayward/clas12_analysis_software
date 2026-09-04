@@ -2203,6 +2203,95 @@ def bernauer_polyxdipole_sachs(q: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
 #enddef
 
 
+
+# YAHL18: Ye, Arrington, Hill, Lee, Phys. Lett. B 777 (2018) 8--15.
+# Central proton Sachs form factors in the published bounded z expansion:
+# G(Q^2)=sum_{k=0}^{12} a_k z^k, t_cut=4 m_pi^2, t0=-0.7 GeV^2.
+YAHL18_MPI_GEV = 0.13957039
+YAHL18_TCUT_GEV2 = 4.0 * YAHL18_MPI_GEV**2
+YAHL18_T0_GEV2 = -0.7
+
+YAHL18_GE_COEFFS = np.array([
+    +0.23916, -1.10986, +1.44438, +0.47957, -2.28689,
+    +1.12663, +1.25062, -3.63102, +4.08222, +0.50410,
+    -5.08512, +3.96774, -0.98153,
+], dtype=float)
+
+YAHL18_GM_OVER_MU_COEFFS = np.array([
+    +0.26414, -1.09531, +1.21855, +0.66114, -1.40568,
+    -1.35642, +1.44703, +4.23567, -5.33405, -2.91630,
+    +8.70740, -5.70700, +1.28081,
+], dtype=float)
+
+
+def yahl18_z(q: np.ndarray) -> np.ndarray:
+    """YAHL18 conformal variable for spacelike Q^2=q>=0."""
+    q = np.asarray(q, dtype=float)
+    a = np.sqrt(YAHL18_TCUT_GEV2 + q)
+    b = math.sqrt(YAHL18_TCUT_GEV2 - YAHL18_T0_GEV2)
+    return (a - b) / (a + b)
+#enddef
+
+
+def _yahl18_eval(coeffs: np.ndarray, q: np.ndarray) -> np.ndarray:
+    """Evaluate a YAHL18 central-value z polynomial via Horner's method."""
+    z = yahl18_z(q)
+    out = np.zeros_like(z, dtype=float)
+    for coeff in coeffs[::-1]:
+        out = out * z + float(coeff)
+    #endfor
+    return out
+#enddef
+
+
+def yahl18_sachs(q: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """YAHL18 proton GE and physical GM (GM(0)=mu_p)."""
+    q = np.asarray(q, dtype=float)
+    ge = _yahl18_eval(YAHL18_GE_COEFFS, q)
+    gm_over_mu = _yahl18_eval(YAHL18_GM_OVER_MU_COEFFS, q)
+    return ge, MU_P * gm_over_mu
+#enddef
+
+
+def yahl18_f1_f2(q: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """YAHL18 proton Dirac and Pauli form factors."""
+    ge, gm = yahl18_sachs(q)
+    return sachs_to_f1f2(np.asarray(q, dtype=float), ge, gm)
+#enddef
+
+
+def validate_yahl18_implementation() -> Dict[str, float]:
+    """Validate normalization and the radii imposed in the YAHL18 central fit."""
+    ge0, gm0 = yahl18_sachs(np.array([0.0], dtype=float))
+    rE = radius_from_shape(
+        lambda qq: yahl18_sachs(np.asarray(qq, dtype=float))[0], 1.0
+    )
+    rM = radius_from_shape(
+        lambda qq: yahl18_sachs(np.asarray(qq, dtype=float))[1], MU_P
+    )
+    if abs(float(ge0[0]) - 1.0) > 2.0e-5:
+        raise RuntimeError(f"YAHL18 GE(0) check failed: {ge0[0]}")
+    #endif
+    if abs(float(gm0[0]) / MU_P - 1.0) > 2.0e-5:
+        raise RuntimeError(
+            f"YAHL18 GM(0)/mu_p check failed: {gm0[0]/MU_P}"
+        )
+    #endif
+    if abs(float(rE) - 0.879) > 3.0e-4:
+        raise RuntimeError(f"YAHL18 rE check failed: {rE:.6f} fm")
+    #endif
+    if abs(float(rM) - 0.851) > 3.0e-4:
+        raise RuntimeError(f"YAHL18 rM check failed: {rM:.6f} fm")
+    #endif
+    return {
+        "GE0": float(ge0[0]),
+        "GM0_over_mu": float(gm0[0] / MU_P),
+        "rE_fm": float(rE),
+        "rM_fm": float(rM),
+    }
+#enddef
+
+
 def bernauer_rosenbluth_data() -> pd.DataFrame:
     """
     Free-GM Rosenbluth-separated A1/Bernauer proton form factors.
@@ -2371,6 +2460,7 @@ def elastic_reference_curves(q: np.ndarray) -> Dict[str, Tuple[np.ndarray, np.nd
     return {
         "Kelly 2004": kelly_sachs(q),
         "AMT 2007": amt2007_sachs(q),
+        "YAHL18": yahl18_sachs(q),
         "A1/Bernauer order-8 poly×dipole": bernauer_polyxdipole_sachs(q),
     }
 #enddef
@@ -13635,7 +13725,35 @@ def _mixture_density_and_interval(
     qmed = float(np.interp(0.5000, cdf, x))
     qhi = float(np.interp(0.8415, cdf, x))
     mean = float(np.trapezoid(x * p, x))
-    mode = float(x[int(np.argmax(p))])
+    mode_index = int(np.argmax(p))
+    mode = float(x[mode_index])
+
+    target = 0.683
+    best_lo = 0
+    best_hi = len(x) - 1
+    best_width = np.inf
+    j = 0
+    for i in range(len(x)):
+        if j < i:
+            j = i
+        #endif
+        cdf_before = cdf[i - 1] if i > 0 else 0.0
+        while j < len(x) - 1 and (cdf[j] - cdf_before) < target:
+            j += 1
+        #endwhile
+        mass = cdf[j] - cdf_before
+        if mass >= target and i <= mode_index <= j:
+            width = x[j] - x[i]
+            if width < best_width:
+                best_width = width
+                best_lo = i
+                best_hi = j
+            #endif
+        #endif
+    #endfor
+    hdi_lo = float(x[best_lo])
+    hdi_hi = float(x[best_hi])
+
     return x, p, {
         "mean_fm": mean,
         "median_fm": qmed,
@@ -13644,6 +13762,10 @@ def _mixture_density_and_interval(
         "central68_high_fm": qhi,
         "central68_minus_fm": qmed - qlo,
         "central68_plus_fm": qhi - qmed,
+        "mode_HDI68_low_fm": hdi_lo,
+        "mode_HDI68_high_fm": hdi_hi,
+        "mode_HDI68_minus_fm": mode - hdi_lo,
+        "mode_HDI68_plus_fm": hdi_hi - mode,
     }
 #enddef
 
@@ -13755,8 +13877,8 @@ def save_hayward_griffioen_model_averaging_diagnostics(
     summary_rows = []
     fig, axes = plt.subplots(1, 2, figsize=(12.8, 5.1))
     for ax, quantity, label in [
-        (axes[0], "rE", r"$r_E$ [fm]"),
-        (axes[1], "rM", r"$r_M$ [fm]"),
+        (axes[0], "rE", r"$r_E$ (fm)"),
+        (axes[1], "rM", r"$r_M$ (fm)"),
     ]:
         centers = model[f"{quantity}_bias_corrected_center_fm"].to_numpy(float)
         sigmas = model[f"{quantity}_mixture_sigma_fm"].to_numpy(float)
@@ -13791,6 +13913,7 @@ def save_hayward_griffioen_model_averaging_diagnostics(
         #endfor
         ax.set_xlabel(label)
         ax.set_ylabel(r"$P(r)$ (normalized to peak)")
+        ax.set_xlim(0.70, 1.00)
         ax.grid(alpha=0.2)
         ax.legend(frameon=False)
     #endfor
@@ -13839,8 +13962,8 @@ def save_hayward_griffioen_model_averaging_diagnostics(
 
     for irow, (weight_col, row_title, mixture_tag) in enumerate(weight_specs):
         for icol, (quantity, xlabel) in enumerate([
-            ("rE", r"$r_E$ [fm]"),
-            ("rM", r"$r_M$ [fm]"),
+            ("rE", r"$r_E$ (fm)"),
+            ("rM", r"$r_M$ (fm)"),
         ]):
             ax = axes_components[irow, icol]
             centers = model[
@@ -13928,6 +14051,7 @@ def save_hayward_griffioen_model_averaging_diagnostics(
 
             ax.set_xlabel(xlabel)
             ax.set_ylabel(r"Contribution to $P(r)$ (sum peak = 1)")
+            ax.set_xlim(0.70, 1.00)
             ax.set_title(
                 f"{row_title}: "
                 + (r"$r_E$" if quantity == "rE" else r"$r_M$")
@@ -14055,8 +14179,35 @@ def save_hayward_griffioen_model_averaging_diagnostics(
     pd.DataFrame(interpolation_rows).to_csv(
         outdir / "model_averaged_GE_GM_interpolation.csv", index=False
     )
-    pd.DataFrame(summary_rows).to_csv(
+    radius_summary = pd.DataFrame(summary_rows)
+    radius_summary.to_csv(
         outdir / "radius_probability_summary.csv", index=False
+    )
+
+    preferred_rows = []
+    for quantity in ["rE", "rM"]:
+        s = radius_summary.loc[
+            (radius_summary["quantity"] == quantity)
+            & (radius_summary["mixture"] == "closure bootstrap only")
+        ].set_index("statistic")["value_fm"]
+        preferred_rows.append({
+            "quantity": quantity,
+            "preferred_prescription": "known_answer_tests_only",
+            "central_estimator": "mode",
+            "radius_fm": float(s.get("mode_fm", np.nan)),
+            "minus_68p3_fm": float(s.get("mode_HDI68_minus_fm", np.nan)),
+            "plus_68p3_fm": float(s.get("mode_HDI68_plus_fm", np.nan)),
+            "interval_low_fm": float(s.get("mode_HDI68_low_fm", np.nan)),
+            "interval_high_fm": float(s.get("mode_HDI68_high_fm", np.nan)),
+            "interval_definition": (
+                "shortest contiguous 68.3% probability interval containing "
+                "the mode; candidate-family centers are signed-bias corrected"
+            ),
+        })
+    #endfor
+    pd.DataFrame(preferred_rows).to_csv(
+        outdir / "preferred_known_answer_model_averaged_radii.csv",
+        index=False,
     )
 
     print("\n[Hayward-Griffioen-style model averaging]")
@@ -14267,6 +14418,198 @@ def fit_sachs_ge_family_fixed_kelly_f2_multi_measurements(
     return result
 #enddef
 
+def fit_sachs_ge_family_fixed_yahl18_f2_multi_measurements(
+        datasets: Sequence[Dict[str, object]],
+        ge_family: str,
+        bh_cut: float = 0.05,
+        add_moradi_bh_systematic: bool = True
+        ) -> Dict[str, object]:
+    """
+    Global BH fit with a flexible GE family while the Pauli form factor F2 is
+    fixed point-by-point to YAHL18.
+
+    This is the direct multi-dataset analogue of the Moradi Fit-8 idea, but it
+    keeps the same GE family used in the closure machinery.  It isolates how
+    much of the radius instability comes from simultaneous F1/F2 (GE/GM)
+    freedom rather than from GE extrapolation itself.
+    """
+    ge_family = str(ge_family)
+    ne = int(re.findall(r"\d+", ge_family)[0])
+    names_e = [f"e{i}" for i in range(1, ne + 1)]
+    p0 = np.zeros(ne, dtype=float)
+    p0[0] = sachs_first_coefficient_from_radius(
+        SACHS_INITIAL_RADIUS_FM, ge_family
+    )
+
+    nuisance_names = []
+    nuisance_fracs = {}
+    nuisance_is_free = {}
+    for spec in datasets:
+        key = str(spec["key"])
+        free_norm = bool(spec.get("unconstrained_norm", False))
+        frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
+        if frac > 0.0:
+            nname = "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
+            nuisance_names.append(nname)
+            nuisance_fracs[nname] = frac
+            nuisance_is_free[nname] = free_norm
+        #endif
+    #endfor
+
+    fit_names = names_e + nuisance_names
+    fit_p0 = np.concatenate([p0, np.zeros(len(nuisance_names))])
+    nuisance_index = {
+        n: ne + i for i, n in enumerate(nuisance_names)
+    }
+
+    prepared = []
+    for spec in datasets:
+        d = spec["data"]
+        if len(d) == 0:
+            continue
+        #endif
+        err = dataset_point_errors(
+            d, str(spec["kind"]), bh_cut, add_moradi_bh_systematic
+        )
+        q = d["t_abs"].to_numpy(float)
+        tau = q / (4.0 * MP2)
+        _, f2_kelly = yahl18_f1_f2(q)
+        key = str(spec["key"])
+        free_norm = bool(spec.get("unconstrained_norm", False))
+        frac = 1.0 if free_norm else float(spec.get("norm_frac", 0.0))
+        prepared.append({
+            "key": key,
+            "q": q,
+            "q_powers": np.vstack([q**i for i in range(1, ne + 1)]),
+            "tau": tau,
+            "f2_yahl18": np.asarray(f2_kelly, dtype=float),
+            "y": d["xs"].to_numpy(float),
+            "e": np.asarray(err, dtype=float),
+            "A": d["bh_A"].to_numpy(float),
+            "B": d["bh_B"].to_numpy(float),
+            "C": d["bh_C"].to_numpy(float),
+            "N": int(len(d)),
+            "norm_frac": frac,
+            "nuisance_name": (
+                "beta_" + re.sub(r"[^A-Za-z0-9]+", "_", key)
+                if frac > 0.0 else None
+            ),
+        })
+    #endfor
+    if not prepared:
+        raise RuntimeError("YAHL18-F2 global fit has zero selected points.")
+    #endif
+
+    def chi2_minuit(*values):
+        p = np.asarray(values, dtype=float)
+        ce = p[:ne]
+        total = 0.0
+        for item in prepared:
+            ge = sachs_family_value_precomputed(
+                item["q"], ce, ge_family, item["q_powers"]
+            )
+            f2 = item["f2_yahl18"]
+            f1 = ge + item["tau"] * f2
+            pred = bh_from_f1f2(
+                item["A"], item["B"], item["C"], f1, f2
+            )
+            if item["norm_frac"] > 0.0:
+                beta = p[nuisance_index[item["nuisance_name"]]]
+                pred *= 1.0 + item["norm_frac"] * beta
+            #endif
+            pull = (pred - item["y"]) / item["e"]
+            total += float(np.dot(pull, pull))
+        #endfor
+        for nname in nuisance_names:
+            if not nuisance_is_free.get(nname, False):
+                total += float(p[nuisance_index[nname]]**2)
+            #endif
+        #endfor
+        return total
+    #enddef
+
+    mn = Minuit(chi2_minuit, *fit_p0, name=tuple(fit_names))
+    mn.errordef = Minuit.LEAST_SQUARES
+    ce_lo = sachs_first_coefficient_from_radius(
+        SACHS_MIN_RADIUS_FM, ge_family
+    )
+    ce_hi = sachs_first_coefficient_from_radius(
+        SACHS_MAX_RADIUS_FM, ge_family
+    )
+    mn.limits[names_e[0]] = (min(ce_lo, ce_hi), max(ce_lo, ce_hi))
+    for nname in nuisance_names:
+        mn.limits[nname] = (
+            (-0.50, 0.50)
+            if nuisance_is_free.get(nname, False)
+            else (-10.0, 10.0)
+        )
+    #endfor
+    mn.migrad()
+    mn.hesse()
+
+    shape = np.array([float(mn.values[n]) for n in names_e])
+    cov = np.full((ne, ne), np.nan)
+    if mn.covariance is not None:
+        for i, ni in enumerate(names_e):
+            for j, nj in enumerate(names_e):
+                cov[i, j] = float(mn.covariance[ni, nj])
+            #endfor
+        #endfor
+    #endif
+
+    def radius_e(pars):
+        return sachs_family_radius(np.asarray(pars), ge_family)
+    #enddef
+
+    def radius_m_derived(pars):
+        pars = np.asarray(pars, dtype=float)
+        def gm_shape(q):
+            q = np.asarray(q, dtype=float)
+            ge = sachs_family_value(q, pars, ge_family)
+            _, f2 = yahl18_f1_f2(q)
+            tau = q / (4.0 * MP2)
+            return ge + (1.0 + tau) * f2
+        #enddef
+        return radius_from_shape(gm_shape, MU_P)
+    #enddef
+
+    rE, rEerr = propagate_scalar(radius_e, shape, cov)
+    rM, rMerr = propagate_scalar(radius_m_derived, shape, cov)
+
+    ndata = int(sum(item["N"] for item in prepared))
+    nfree = int(len(fit_names))
+    ndof = max(1, ndata - nfree)
+    result = {
+        "model": f"GE:{ge_family}|F2:YAHL18",
+        "GE_family": ge_family,
+        "F2_treatment": "YAHL18 fixed",
+        "N": ndata,
+        "n_parameters": nfree,
+        "chi2": float(mn.fval),
+        "ndof": int(ndof),
+        "chi2_ndof": float(mn.fval / ndof),
+        "valid": bool(
+            mn.valid and np.isfinite(rE) and np.isfinite(rM)
+        ),
+        "rE_fm": float(rE),
+        "rE_fit_err_fm": float(rEerr),
+        "rM_fm": float(rM),
+        "rM_fit_err_fm": float(rMerr),
+        "shape_covariance_json": json.dumps(cov.tolist()),
+    }
+    for name in names_e:
+        result[name] = float(mn.values[name])
+        result[name + "_err"] = float(mn.errors[name])
+    #endfor
+    for nname in nuisance_names:
+        result[nname] = float(mn.values[nname])
+        result[nname + "_scale_factor"] = float(
+            1.0 + nuisance_fracs[nname] * float(mn.values[nname])
+        )
+    #endfor
+    return result
+#enddef
+
 
 def run_all_dataset_subset_and_kelly_f2_diagnostic(
         production_bundles: Sequence[Dict[str, object]],
@@ -14275,11 +14618,12 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
         family: str,
         outdir: Path) -> pd.DataFrame:
     """
-    Fit every non-empty subset of the six experiments at KM15 5%.
+    Fit every non-empty subset of the six experiments at KM15 5%, using the nominal restricted Saylor sample.
 
     For every subset, run:
       (1) the closure-selected free-GE/free-GM family;
-      (2) the same GE family with F2 fixed to Kelly.
+      (2) the same GE family with F2 fixed to Kelly 2004;
+      (3) the same GE family with F2 fixed to YAHL18.
 
     This is diagnostic bookkeeping intended to expose exactly which dataset
     combinations determine the electric/magnetic solution.
@@ -14309,10 +14653,16 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
 
     saylor_all = saylor_bundle["all_data"].copy()
     delta_col = "bh_delta" if "bh_delta" in saylor_all.columns else "delta_bh"
+    t_abs = np.abs(pd.to_numeric(
+        saylor_all["t"], errors="coerce"
+    ).to_numpy(float))
     saylor5 = saylor_all.loc[
-        pd.to_numeric(
-            saylor_all[delta_col], errors="coerce"
-        ).to_numpy(float) <= 0.05
+        (
+            pd.to_numeric(
+                saylor_all[delta_col], errors="coerce"
+            ).to_numpy(float) <= 0.05
+        )
+        & (t_abs >= 0.343)
     ].copy()
     selected_bundles.append((
         str(saylor_bundle["key"]),
@@ -14339,7 +14689,11 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
         labels = [x[1] for x in picked]
         configuration = " + ".join(labels)
 
-        for mode in ["free_GE_GM", "kelly_F2_fixed"]:
+        for mode in [
+            "free_GE_GM",
+            "kelly_F2_fixed",
+            "yahl18_F2_fixed",
+        ]:
             try:
                 if mode == "free_GE_GM":
                     fit = fit_sachs_family_multi_measurements(
@@ -14348,8 +14702,15 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
                         bh_cut=0.05,
                         add_moradi_bh_systematic=True,
                     )
-                else:
+                elif mode == "kelly_F2_fixed":
                     fit = fit_sachs_ge_family_fixed_kelly_f2_multi_measurements(
+                        specs,
+                        ge_family=ge_family,
+                        bh_cut=0.05,
+                        add_moradi_bh_systematic=True,
+                    )
+                else:
+                    fit = fit_sachs_ge_family_fixed_yahl18_f2_multi_measurements(
                         specs,
                         ge_family=ge_family,
                         bh_cut=0.05,
@@ -14382,7 +14743,7 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
 
     table = pd.DataFrame(rows)
     table.to_csv(
-        outdir / "all_six_dataset_subsets_free_vs_kellyF2.csv",
+        outdir / "all_six_dataset_subsets_restricted_saylor_free_vs_externalF2.csv",
         index=False,
     )
 
@@ -14394,11 +14755,11 @@ def run_all_dataset_subset_and_kelly_f2_diagnostic(
         ])
     ].copy()
     canonical.to_csv(
-        outdir / "canonical_allfive_allsix_free_vs_kellyF2.csv",
+        outdir / "canonical_allfive_allsix_restricted_saylor_free_vs_externalF2.csv",
         index=False,
     )
     if len(canonical):
-        print("\\n[all-subset free-vs-Kelly-F2 diagnostic: canonical]")
+        print("\\n[all-subset free-vs-external-F2 diagnostic: canonical]")
         show = [
             "configuration_label", "fit_mode", "N", "chi2_ndof",
             "rE_fm", "rE_fit_err_fm", "rM_fm", "rM_fit_err_fm",
@@ -14450,6 +14811,7 @@ def run_model_only_kelly_bh_selector_diagnostic(
     reference_defs = [
         ("Kelly2004", "Kelly 2004", False),
         ("AMT2007", "AMT 2007", True),
+        ("YAHL18", "YAHL18", True),
         (
             "BernauerA1",
             "A1/Bernauer order-8 poly×dipole",
@@ -14634,6 +14996,7 @@ def run_model_only_kelly_bh_selector_diagnostic(
         "KM15 5%",
         "Kelly\n(same KM15 EFF)",
         "AMT 2007",
+        "YAHL18",
         "A1/Bernauer",
     ]
     for ax, ylabel in zip(axes, [r"$r_E$ [fm]", r"$r_M$ [fm]"]):
@@ -15556,6 +15919,7 @@ def save_preferred_sachs_vs_elastic_data(
 
     ge, ge_err = _sachs_band_from_result(fit, family, q, "GE")
     gm, gm_err = _sachs_band_from_result(fit, family, q, "GM")
+    yahl_ge, yahl_gm = yahl18_sachs(q)
 
     a1 = bernauer_rosenbluth_data()
     a1 = a1.loc[a1["Q2"] <= qmax].copy()
@@ -15589,6 +15953,9 @@ def save_preferred_sachs_vs_elastic_data(
         alpha=0.18, linewidth=0.0,
         label="68% Hessian band",
     )
+    ax_ge.plot(
+        q, yahl_ge, linewidth=1.5, linestyle="--", label="YAHL18"
+    )
     ax_ge.errorbar(
         a1["Q2"], a1["GE"], yerr=a1["GE_err"],
         fmt="o", fillstyle="none", markersize=4.0, capsize=2,
@@ -15617,6 +15984,9 @@ def save_preferred_sachs_vs_elastic_data(
         alpha=0.18, linewidth=0.0,
         label="68% Hessian band",
     )
+    ax_gm.plot(
+        q, yahl_gm, linewidth=1.5, linestyle="--", label="YAHL18"
+    )
     ax_gm.errorbar(
         a1["Q2"], a1["GM"], yerr=a1["GM_err"],
         fmt="o", fillstyle="none", markersize=4.0, capsize=2,
@@ -15643,7 +16013,13 @@ def save_preferred_sachs_vs_elastic_data(
         rax.errorbar(
             qpts, ratio, yerr=ratio_err,
             fmt="o", fillstyle="none", markersize=4.0,
-            capsize=2, linewidth=0.9,
+            capsize=2, linewidth=0.9, label="A1/BH",
+        )
+        yahl_curve = yahl_ge if which == "GE" else yahl_gm
+        bh_curve = ge if which == "GE" else gm
+        rax.plot(
+            q, yahl_curve / bh_curve,
+            linewidth=1.5, linestyle="--", label="YAHL18/BH",
         )
 
         central = ge if which == "GE" else gm
@@ -15664,8 +16040,10 @@ def save_preferred_sachs_vs_elastic_data(
         rax.grid(alpha=0.2)
         rax.set_xlabel(r"$Q^2=|t|$ (GeV$^2$)")
     #endfor
-    ax_a1_ge.set_ylabel(r"$G_E^{\rm A1}/G_E^{\rm BH}$")
-    ax_a1_gm.set_ylabel(r"$G_M^{\rm A1}/G_M^{\rm BH}$")
+    ax_a1_ge.set_ylabel(r"$G_E^{\rm elastic}/G_E^{\rm BH}$")
+    ax_a1_ge.legend(fontsize=8.0, loc="best")
+    ax_a1_gm.set_ylabel(r"$G_M^{\rm elastic}/G_M^{\rm BH}$")
+    ax_a1_gm.legend(fontsize=8.0, loc="best")
 
     # --------------------------
     # PRad/BH electric ratio, full-width low-Q2 panel
@@ -15738,7 +16116,7 @@ def save_preferred_sachs_vs_elastic_data(
 
     family_label = str(family)
     fig.suptitle(
-        f"Preferred BH extraction vs A1 and PRad elastic form factors "
+        f"Preferred BH extraction vs YAHL18, A1 and PRad elastic form factors "
         f"({family_label})",
         y=0.992,
     )
@@ -15749,7 +16127,7 @@ def save_preferred_sachs_vs_elastic_data(
         right=0.985,
     )
     fig.savefig(
-        outdir / "01_preferred_GE_GM_vs_A1_PRad.png",
+        outdir / "01_preferred_GE_GM_vs_YAHL18_A1_PRad.png",
         dpi=300,
     )
     plt.close(fig)
@@ -15785,6 +16163,27 @@ def save_preferred_sachs_vs_elastic_data(
     )
     pd.DataFrame(prad_ratio_rows).to_csv(
         outdir / "preferred_GE_vs_PRad_ratios.csv",
+        index=False,
+    )
+
+    yahl_rows = []
+    for which, yahl_curve, bh_curve, bh_err in [
+        ("GE", yahl_ge, ge, ge_err),
+        ("GM", yahl_gm, gm, gm_err),
+    ]:
+        for i in range(len(q)):
+            yahl_rows.append({
+                "form_factor": which,
+                "Q2": float(q[i]),
+                "YAHL18_value": float(yahl_curve[i]),
+                "BH_value": float(bh_curve[i]),
+                "BH_hessian_error": float(bh_err[i]),
+                "YAHL18_over_BH": float(yahl_curve[i] / bh_curve[i]),
+            })
+        #endfor
+    #endfor
+    pd.DataFrame(yahl_rows).to_csv(
+        outdir / "preferred_GE_GM_vs_YAHL18_ratios.csv",
         index=False,
     )
 #enddef
@@ -16172,6 +16571,17 @@ def run_paired_nested_threshold_correlation_study(
                 "N_paired_replicas": int(len(paired)),
                 "observed_delta_from_5pct_fm": observed_delta,
                 "paired_stat_sigma_of_delta_fm": sigma_delta,
+                "quadrature_excess_shift_fm": (
+                    math.copysign(
+                        math.sqrt(max(0.0, observed_delta**2 - sigma_delta**2)),
+                        observed_delta,
+                    )
+                    if np.isfinite(sigma_delta) else np.nan
+                ),
+                "abs_quadrature_excess_shift_fm": (
+                    math.sqrt(max(0.0, observed_delta**2 - sigma_delta**2))
+                    if np.isfinite(sigma_delta) else np.nan
+                ),
                 "observed_delta_over_paired_stat_sigma": (
                     observed_delta / sigma_delta
                     if np.isfinite(sigma_delta) and sigma_delta > 0 else np.nan
@@ -16191,10 +16601,42 @@ def run_paired_nested_threshold_correlation_study(
         index=False,
     )
 
+    residual_rows = []
+    for quantity in ["rE", "rM"]:
+        q = summary.loc[
+            (summary["quantity"] == quantity)
+            & summary["threshold"].between(0.03, 0.07)
+            & ~np.isclose(summary["threshold"].to_numpy(float), 0.05)
+        ].copy()
+        residual_rows.append({
+            "quantity": quantity,
+            "conservative_raw_envelope_fm": (
+                float(np.nanmax(np.abs(
+                    q["observed_delta_from_5pct_fm"].to_numpy(float)
+                ))) if len(q) else np.nan
+            ),
+            "covariance_aware_quadrature_excess_envelope_fm": (
+                float(np.nanmax(
+                    q["abs_quadrature_excess_shift_fm"].to_numpy(float)
+                )) if len(q) else np.nan
+            ),
+            "prescription_note": (
+                "Diagnostic only: at each nested threshold use "
+                "sqrt(max(observed_shift^2 - paired_stat_sigma^2, 0)), then "
+                "take the 3--7% envelope. The raw envelope remains production "
+                "default until the prescription is finalized."
+            ),
+        })
+    #endfor
+    pd.DataFrame(residual_rows).to_csv(
+        outdir / "threshold_systematic_raw_vs_covariance_aware.csv",
+        index=False,
+    )
+
     fig, axes = plt.subplots(1, 2, figsize=(12.5, 4.9))
     for ax, quantity, ylabel in [
-        (axes[0], "rE", r"$\Delta r_E$ from 5% [fm]"),
-        (axes[1], "rM", r"$\Delta r_M$ from 5% [fm]"),
+        (axes[0], "rE", r"$\Delta r_E$ from 5% (fm)"),
+        (axes[1], "rM", r"$\Delta r_M$ from 5% (fm)"),
     ]:
         s = summary.loc[summary["quantity"] == quantity]
         ax.errorbar(
@@ -16204,7 +16646,7 @@ def run_paired_nested_threshold_correlation_study(
             marker="o", linestyle="-", capsize=3,
         )
         ax.axhline(0.0, linewidth=0.8, linestyle="--")
-        ax.set_xlabel("BH-purity threshold [%]")
+        ax.set_xlabel("BH-purity threshold (%)")
         ax.set_ylabel(ylabel)
         ax.grid(alpha=0.2)
     #endfor
@@ -16228,6 +16670,14 @@ def run_unified_km15_final_analysis(
         saylor_bundle: Dict[str, object],
         args,
         root_outdir: Path) -> Dict[str, str]:
+    yahl_check = validate_yahl18_implementation()
+    print(
+        "[YAHL18 validation] "
+        f"GE(0)={yahl_check['GE0']:.8f}, "
+        f"GM(0)/mu_p={yahl_check['GM0_over_mu']:.8f}, "
+        f"rE={yahl_check['rE_fm']:.6f} fm, "
+        f"rM={yahl_check['rM_fm']:.6f} fm"
+    )
     """
     Unified KM15 workflow with an INDEPENDENT functional-form determination for
     every requested measurement ensemble.
