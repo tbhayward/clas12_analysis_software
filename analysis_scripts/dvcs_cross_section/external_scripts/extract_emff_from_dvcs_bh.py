@@ -13504,7 +13504,7 @@ def _mixture_density_and_interval(
             np.sqrt(2.0 * np.pi) * sig
         )
     #endfor
-    norm = float(np.trapz(p, x))
+    norm = float(np.trapezoid(p, x))
     if norm > 0.0:
         p /= norm
     #endif
@@ -13514,7 +13514,7 @@ def _mixture_density_and_interval(
     qlo = float(np.interp(0.1585, cdf, x))
     qmed = float(np.interp(0.5000, cdf, x))
     qhi = float(np.interp(0.8415, cdf, x))
-    mean = float(np.trapz(x * p, x))
+    mean = float(np.trapezoid(x * p, x))
     mode = float(x[int(np.argmax(p))])
     return x, p, {
         "mean_fm": mean,
