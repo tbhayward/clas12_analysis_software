@@ -39,6 +39,9 @@
 #include <TTree.h>
 #include <TCanvas.h>
 #include <TGraphErrors.h>
+#include <TGraphAsymmErrors.h>
+#include <TLegend.h>
+#include <TH1D.h>
 #include <TLatex.h>
 #include <TPad.h>
 #include <TH1.h>
@@ -979,6 +982,234 @@ static void plot_acceptance_for_period(const CSV& csv,
     }
 }
 
+
+// -----------------------------------------------------------------------------
+// Analysis-note summary outputs
+// -----------------------------------------------------------------------------
+
+static int note_period_color(int ip) {
+    const int colors[5] = {kBlue+1, kRed+1, kGreen+2, kMagenta+1, kOrange+7};
+    return colors[ip];
+}
+
+static double note_quantile_sorted(const std::vector<double>& v, double q) {
+    if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+    if (q <= 0.0) return v.front();
+    if (q >= 1.0) return v.back();
+    const double x = q * (double)(v.size() - 1);
+    const size_t i0 = (size_t)std::floor(x);
+    const size_t i1 = std::min(i0 + 1, v.size() - 1);
+    const double f = x - (double)i0;
+    return v[i0] * (1.0 - f) + v[i1] * f;
+}
+
+static std::vector<double> note_acceptance_values(const std::vector<RowBin>& rows,
+                                                   const std::vector<AcceptancePoint>& acc) {
+    std::vector<double> v;
+    for (size_t i=0;i<rows.size() && i<acc.size();++i) {
+        if (!rows[i].valid) continue;
+        if (std::isfinite(acc[i].value) && acc[i].value > 0.0) v.push_back(acc[i].value);
+    }
+    std::sort(v.begin(), v.end());
+    return v;
+}
+
+static void write_acceptance_note_summary(const std::vector<RowBin>& rows,
+                                          const std::map<std::string,std::vector<AcceptancePoint>>& by_period,
+                                          const std::string& note_dir) {
+    std::ofstream f(note_dir + "/acceptance_summary.csv");
+    f << "period,n_populated,mean,median,p16,p84,p05,p95,median_relative_stat,p84_relative_stat\n";
+    f << std::setprecision(10);
+    for (const auto& per : periods()) {
+        const auto& a = by_period.at(per);
+        std::vector<double> v = note_acceptance_values(rows,a);
+        std::vector<double> rel;
+        double sum=0.0;
+        for (size_t i=0;i<rows.size() && i<a.size();++i) {
+            if (!rows[i].valid || !(a[i].value>0.0) || !std::isfinite(a[i].value)) continue;
+            sum += a[i].value;
+            if (std::isfinite(a[i].stat) && a[i].stat>=0.0) rel.push_back(a[i].stat/a[i].value);
+        }
+        std::sort(rel.begin(),rel.end());
+        const double mean = v.empty()?0.0:sum/(double)v.size();
+        f << per << ',' << v.size() << ',' << mean << ','
+          << note_quantile_sorted(v,.50) << ',' << note_quantile_sorted(v,.16) << ','
+          << note_quantile_sorted(v,.84) << ',' << note_quantile_sorted(v,.05) << ','
+          << note_quantile_sorted(v,.95) << ',' << note_quantile_sorted(rel,.50) << ','
+          << note_quantile_sorted(rel,.84) << '\n';
+    }
+}
+
+static void draw_acceptance_note_period_summary(
+    const std::vector<RowBin>& rows,
+    const std::map<std::string,std::vector<AcceptancePoint>>& by_period,
+    const std::string& note_dir) {
+
+    TCanvas c("c_note_acc_period","",1100,700);
+    c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.16); c.SetTopMargin(0.10);
+    c.SetGridy(); c.SetTicks(1,1);
+
+    TH1F frame("h_note_acc_period","",5,0.5,5.5);
+    frame.SetMinimum(0.0); frame.SetMaximum(0.30);
+    frame.GetYaxis()->SetTitle("Acceptance");
+    frame.GetYaxis()->SetTitleOffset(1.10);
+    frame.GetYaxis()->SetTitleSize(0.050);
+    frame.GetXaxis()->SetLabelSize(0.043);
+    for (int ip=0;ip<5;++ip) frame.GetXaxis()->SetBinLabel(ip+1,periods()[ip].c_str());
+    frame.Draw();
+
+    std::vector<TGraphAsymmErrors*> gs;
+    for (int ip=0;ip<5;++ip) {
+        std::vector<double> v=note_acceptance_values(rows,by_period.at(periods()[ip]));
+        if (v.empty()) { gs.push_back(nullptr); continue; }
+        const double med=note_quantile_sorted(v,.50), lo=note_quantile_sorted(v,.16), hi=note_quantile_sorted(v,.84);
+        auto* g=new TGraphAsymmErrors(1);
+        g->SetPoint(0,ip+1,med);
+        g->SetPointError(0,0,0,med-lo,hi-med);
+        g->SetMarkerStyle(20); g->SetMarkerSize(1.35);
+        g->SetMarkerColor(note_period_color(ip)); g->SetLineColor(note_period_color(ip)); g->SetLineWidth(2);
+        g->Draw("PE SAME");
+        gs.push_back(g);
+    }
+
+    TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048);
+    t.DrawLatex(0.11,0.93,"Acceptance by run period");
+    TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.030);
+    n.DrawLatex(0.12,0.84,"Points: median over populated analysis bins; bars: 16th--84th percentile bin-to-bin range");
+    c.SaveAs((note_dir+"/acceptance_period_summary.png").c_str());
+    for(auto* g:gs) delete g;
+}
+
+static void draw_acceptance_note_distribution(
+    const std::vector<RowBin>& rows,
+    const std::map<std::string,std::vector<AcceptancePoint>>& by_period,
+    const std::string& note_dir) {
+
+    TCanvas c("c_note_acc_dist","",1100,700);
+    c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.12); c.SetTopMargin(0.10);
+    c.SetTicks(1,1);
+    std::vector<TH1D*> hs;
+    double ymax=0.0;
+    for (int ip=0;ip<5;++ip) {
+        auto* h=new TH1D(Form("h_note_acc_dist_%d",ip),"",50,0.0,0.50);
+        for (double x:note_acceptance_values(rows,by_period.at(periods()[ip]))) if (x<0.50) h->Fill(x);
+        if (h->Integral()>0) h->Scale(1.0/h->Integral());
+        h->SetLineColor(note_period_color(ip)); h->SetMarkerColor(note_period_color(ip));
+        h->SetMarkerStyle(20+ip); h->SetMarkerSize(0.75); h->SetLineWidth(2);
+        ymax=std::max(ymax,h->GetMaximum()); hs.push_back(h);
+    }
+    TH1F frame("h_note_acc_dist_frame","",100,0.0,0.50);
+    frame.SetMinimum(0.0); frame.SetMaximum(1.20*ymax);
+    frame.GetXaxis()->SetTitle("Acceptance");
+    frame.GetYaxis()->SetTitle("Fraction of populated analysis bins");
+    frame.GetYaxis()->SetTitleOffset(1.15); frame.Draw();
+    for(auto* h:hs) h->Draw("PE SAME");
+    TLegend leg(0.72,0.60,0.94,0.86); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.036);
+    for(int ip=0;ip<5;++ip) leg.AddEntry(hs[ip],periods()[ip].c_str(),"pe"); leg.Draw();
+    TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048);
+    t.DrawLatex(0.11,0.93,"Distribution of bin-by-bin acceptance");
+    TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.030);
+    n.DrawLatex(0.12,0.84,"Shown: 0 < A < 0.50; all finite positive values are retained in the numerical summary");
+    c.SaveAs((note_dir+"/acceptance_distribution_by_period.png").c_str());
+    for(auto* h:hs) delete h;
+}
+
+static void draw_acceptance_note_xb_summary(
+    const std::vector<RowBin>& rows,
+    const std::map<std::string,std::vector<AcceptancePoint>>& by_period,
+    const std::string& note_dir) {
+
+    const std::vector<Edge> xbs=unique_xB_edges(rows);
+    TCanvas c("c_note_acc_xb","",1100,720);
+    c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.12); c.SetTopMargin(0.10);
+    c.SetGridy(); c.SetTicks(1,1);
+    TH1F frame("h_note_acc_xb","",100,0.05,0.60);
+    frame.SetMinimum(0.0); frame.SetMaximum(0.30);
+    frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Median acceptance");
+    frame.GetYaxis()->SetTitleOffset(1.15); frame.Draw();
+    const double offsets[5]={-0.006,-0.003,0.0,0.003,0.006};
+    std::vector<TGraphAsymmErrors*> gs;
+    for(int ip=0;ip<5;++ip){
+        auto* g=new TGraphAsymmErrors(); int n=0;
+        const auto& av=by_period.at(periods()[ip]);
+        for(const auto& xb:xbs){
+            std::vector<double> v;
+            for(size_t r=0;r<rows.size() && r<av.size();++r){
+                if(!rows[r].valid || rows[r].xBmin!=xb.a || rows[r].xBmax!=xb.b) continue;
+                if(std::isfinite(av[r].value) && av[r].value>0.0) v.push_back(av[r].value);
+            }
+            if(v.empty()) continue; std::sort(v.begin(),v.end());
+            const double med=note_quantile_sorted(v,.50), lo=note_quantile_sorted(v,.16), hi=note_quantile_sorted(v,.84);
+            g->SetPoint(n,0.5*(xb.a+xb.b)+offsets[ip],med);
+            g->SetPointError(n,0,0,med-lo,hi-med); ++n;
+        }
+        g->SetMarkerStyle(20+ip); g->SetMarkerSize(1.05); g->SetLineWidth(2);
+        g->SetMarkerColor(note_period_color(ip)); g->SetLineColor(note_period_color(ip));
+        g->Draw("PE SAME"); gs.push_back(g);
+    }
+    TLegend leg(0.71,0.60,0.94,0.86); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.036);
+    for(int ip=0;ip<5;++ip) leg.AddEntry(gs[ip],periods()[ip].c_str(),"pe"); leg.Draw();
+    TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.048);
+    t.DrawLatex(0.11,0.93,"Kinematic dependence of the DVCS acceptance");
+    TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(0.029);
+    n.DrawLatex(0.12,0.84,"Points: median over populated (Q^{2}, |t|, #phi) bins; bars: 16th--84th percentile bin-to-bin range");
+    c.SaveAs((note_dir+"/acceptance_vs_xB_summary.png").c_str());
+    for(auto* g:gs) delete g;
+}
+
+static void draw_acceptance_note_phi_example(
+    const CSV& csv,
+    const std::vector<RowBin>& rows,
+    const std::map<std::string,std::vector<AcceptancePoint>>& by_period,
+    const std::string& note_dir) {
+
+    const double tx0=0.204, tx1=0.268;
+    struct Key{double q0,q1,t0,t1;}; std::vector<Key> keys;
+    for(const auto& b:rows){
+        if(!b.valid || b.xBmin!=tx0 || b.xBmax!=tx1) continue;
+        bool seen=false; for(const auto& k:keys) if(k.q0==b.Q2min&&k.q1==b.Q2max&&k.t0==b.tmin&&k.t1==b.tmax){seen=true;break;}
+        if(!seen) keys.push_back(Key{b.Q2min,b.Q2max,b.tmin,b.tmax});
+    }
+    if(keys.empty()) return;
+    int best=-1,totalbest=-1; Key sel=keys.front();
+    for(const auto& k:keys){
+        int mn=100000,total=0;
+        for(int ip=0;ip<5;++ip){ int n=0; const auto& a=by_period.at(periods()[ip]);
+            for(size_t r=0;r<rows.size();++r) if(rows[r].valid&&rows[r].xBmin==tx0&&rows[r].xBmax==tx1&&rows[r].Q2min==k.q0&&rows[r].Q2max==k.q1&&rows[r].tmin==k.t0&&rows[r].tmax==k.t1&&a[r].value>0) ++n;
+            mn=std::min(mn,n); total+=n;
+        }
+        if(mn>best || (mn==best&&total>totalbest)){best=mn;totalbest=total;sel=k;}
+    }
+    std::ofstream fout(note_dir+"/acceptance_phi_example.csv");
+    fout<<"period,xBmin,xBmax,Q2min,Q2max,tmin,tmax,phimin,phimax,phi,acceptance,stat\n"<<std::setprecision(10);
+    TCanvas c("c_note_acc_phi","",1100,720); c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.12); c.SetTopMargin(0.10); c.SetGridy(); c.SetTicks(1,1);
+    double ymax=0.0; for(int ip=0;ip<5;++ip){ const auto& a=by_period.at(periods()[ip]); for(size_t r=0;r<rows.size();++r) if(rows[r].valid&&rows[r].xBmin==tx0&&rows[r].xBmax==tx1&&rows[r].Q2min==sel.q0&&rows[r].Q2max==sel.q1&&rows[r].tmin==sel.t0&&rows[r].tmax==sel.t1) ymax=std::max(ymax,a[r].value+a[r].stat); }
+    TH1F frame("h_note_acc_phi","",100,0,360); frame.SetMinimum(0); frame.SetMaximum(std::max(0.12,1.22*ymax)); frame.GetXaxis()->SetTitle("#phi (deg)"); frame.GetYaxis()->SetTitle("Acceptance"); frame.GetYaxis()->SetTitleOffset(1.15); frame.Draw();
+    const double off[5]={-2,-1,0,1,2}; std::vector<TGraphErrors*> gs;
+    for(int ip=0;ip<5;++ip){ auto* g=new TGraphErrors(); int n=0; const auto& a=by_period.at(periods()[ip]); int cp=csv.index.count(col_phiavg(periods()[ip]))?csv.index.at(col_phiavg(periods()[ip])):-1;
+        for(size_t r=0;r<rows.size();++r){ const auto& b=rows[r]; if(!b.valid||b.xBmin!=tx0||b.xBmax!=tx1||b.Q2min!=sel.q0||b.Q2max!=sel.q1||b.tmin!=sel.t0||b.tmax!=sel.t1||!(a[r].value>0)) continue; double phi=phi_x_value(csv,b,(int)r,cp); g->SetPoint(n,phi+off[ip],a[r].value); g->SetPointError(n,0,a[r].stat); fout<<periods()[ip]<<','<<tx0<<','<<tx1<<','<<sel.q0<<','<<sel.q1<<','<<sel.t0<<','<<sel.t1<<','<<b.phimin<<','<<b.phimax<<','<<phi<<','<<a[r].value<<','<<a[r].stat<<'\n'; ++n; }
+        g->SetMarkerStyle(20+ip);g->SetMarkerSize(1.05);g->SetLineWidth(2);g->SetMarkerColor(note_period_color(ip));g->SetLineColor(note_period_color(ip));g->Draw("PE SAME");gs.push_back(g);
+    }
+    TLegend leg(0.70,0.60,0.94,0.86);leg.SetBorderSize(0);leg.SetFillStyle(0);leg.SetTextSize(0.036);for(int ip=0;ip<5;++ip)leg.AddEntry(gs[ip],periods()[ip].c_str(),"pe");leg.Draw();
+    TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextSize(0.048);t.DrawLatex(0.11,0.93,"Representative #phi dependence of the DVCS acceptance");
+    std::ostringstream kin;kin<<std::fixed<<std::setprecision(3)<<tx0<<" < x_{B} < "<<tx1<<",  "<<sel.q0<<" < Q^{2} < "<<sel.q1<<" GeV^{2},  "<<sel.t0<<" < |t| < "<<sel.t1<<" GeV^{2}";
+    TLatex lab;lab.SetNDC();lab.SetTextFont(42);lab.SetTextSize(0.028);lab.DrawLatex(0.12,0.84,kin.str().c_str());
+    c.SaveAs((note_dir+"/acceptance_phi_example.png").c_str()); for(auto* g:gs)delete g;
+}
+
+static void write_acceptance_analysis_note_outputs(
+    const CSV& csv,
+    const std::vector<RowBin>& rows,
+    const std::map<std::string,std::vector<AcceptancePoint>>& by_period,
+    const std::string& out_root_dir) {
+    const std::string note_dir=out_root_dir+"/acceptance/analysis_note"; mkdir_p(note_dir);
+    write_acceptance_note_summary(rows,by_period,note_dir);
+    draw_acceptance_note_period_summary(rows,by_period,note_dir);
+    draw_acceptance_note_distribution(rows,by_period,note_dir);
+    draw_acceptance_note_xb_summary(rows,by_period,note_dir);
+    draw_acceptance_note_phi_example(csv,rows,by_period,note_dir);
+}
+
 } // namespace
 
 bool update_acceptance_csv(const std::string& csv_path,
@@ -1030,6 +1261,10 @@ bool update_acceptance_csv(const std::string& csv_path,
 
         std::cout << "[acceptance] Acceptance plots written under: "
                   << out_root_dir << "/acceptance" << std::endl;
+
+        write_acceptance_analysis_note_outputs(csv, rows, acc_by_period, out_root_dir);
+        std::cout << "[acceptance] Analysis-note summary outputs written under: "
+                  << out_root_dir << "/acceptance/analysis_note" << std::endl;
 
         return true;
     } catch (const std::exception& e) {

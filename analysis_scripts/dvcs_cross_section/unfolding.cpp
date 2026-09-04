@@ -24,6 +24,7 @@
 #include <TLatex.h>
 #include <TPad.h>
 #include <TH1.h>
+#include <TH1D.h>
 #include <TLegend.h>
 #include <TROOT.h>
 #include <TStyle.h>
@@ -1011,6 +1012,138 @@ static void draw_unfolded_canvases(
     }
 }
 
+
+// -----------------------------------------------------------------------------
+// Analysis-note summary outputs for the acceptance correction.
+//
+// The production calculation in this file is a bin-by-bin correction U=S/A.
+// These plots intentionally use the phrase "acceptance-corrected yield" rather
+// than implying a response-matrix unfolding that is not performed here.
+// -----------------------------------------------------------------------------
+
+static int note_period_color_unf(int ip) {
+    const int colors[5] = {kBlue+1, kRed+1, kGreen+2, kMagenta+1, kOrange+7};
+    return colors[ip];
+}
+
+static double note_quantile_sorted_unf(const std::vector<double>& v, double q) {
+    if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+    if (q <= 0.0) return v.front();
+    if (q >= 1.0) return v.back();
+    const double x=q*(double)(v.size()-1);
+    const size_t i0=(size_t)std::floor(x), i1=std::min(i0+1,v.size()-1);
+    const double f=x-(double)i0;
+    return v[i0]*(1.0-f)+v[i1]*f;
+}
+
+static bool note_parse_triple_cell(const CsvDoc& csv, int row, int col,
+                                   double& v, double& s, double& y) {
+    if (row<0 || row>=csv.nrows() || col<0 || col>=(int)csv.header.size()) return false;
+    const std::string& cell=csv.rows[row][col];
+    if (cell.empty()) return false;
+    return parse_triple(cell,v,s,y);
+}
+
+static void write_unfolding_note_summary(
+    const CsvDoc& csv,
+    const std::map<std::string,std::map<std::string,std::vector<double>>>& unfolded_val,
+    const std::map<std::string,std::map<std::string,std::vector<double>>>& unfolded_stat,
+    const std::string& note_dir) {
+
+    std::ofstream f((std::filesystem::path(note_dir)/"acceptance_correction_summary.csv").string());
+    f << "period,n_bins,median_inverse_acceptance,p16_inverse_acceptance,p84_inverse_acceptance,median_signal_relative_stat,median_acceptance_relative_stat,median_corrected_relative_stat\n";
+    f << std::setprecision(10);
+
+    for (const auto& per:kPeriods) {
+        const int ca=csv.col_index("acceptance, "+per);
+        const int cs=csv.col_index("signal yield, ep->epg, exp, "+per+", unpol");
+        std::vector<double> inva, rsig, racc, rout;
+        for (int r=0;r<csv.nrows();++r) {
+            double A=0,As=0,Ay=0,S=0,Ss=0,Sy=0;
+            if (!note_parse_triple_cell(csv,r,ca,A,As,Ay) || !(A>0)) continue;
+            inva.push_back(1.0/A);
+            if (std::isfinite(As) && As>=0) racc.push_back(As/A);
+            if (note_parse_triple_cell(csv,r,cs,S,Ss,Sy) && S!=0.0) rsig.push_back(std::fabs(Ss/S));
+            const double U=unfolded_val.at(per).at("unpol")[r];
+            const double Us=unfolded_stat.at(per).at("unpol")[r];
+            if (std::isfinite(U) && U!=0.0 && std::isfinite(Us)) rout.push_back(std::fabs(Us/U));
+        }
+        std::sort(inva.begin(),inva.end()); std::sort(rsig.begin(),rsig.end());
+        std::sort(racc.begin(),racc.end()); std::sort(rout.begin(),rout.end());
+        f << per << ',' << inva.size() << ','
+          << note_quantile_sorted_unf(inva,.50) << ',' << note_quantile_sorted_unf(inva,.16) << ',' << note_quantile_sorted_unf(inva,.84) << ','
+          << note_quantile_sorted_unf(rsig,.50) << ',' << note_quantile_sorted_unf(racc,.50) << ',' << note_quantile_sorted_unf(rout,.50) << '\n';
+    }
+}
+
+static void draw_unfolding_note_factor_distribution(const CsvDoc& csv,
+                                                    const std::string& note_dir) {
+    TCanvas c("c_note_accfac_dist","",1100,700);
+    c.SetLeftMargin(0.11); c.SetRightMargin(0.035); c.SetBottomMargin(0.12); c.SetTopMargin(0.10); c.SetTicks(1,1);
+    std::vector<TH1D*> hs; double ymax=0.0;
+    for(int ip=0;ip<5;++ip){
+        auto* h=new TH1D(Form("h_note_accfac_%d",ip),"",50,0,100);
+        int ca=csv.col_index("acceptance, "+kPeriods[ip]);
+        for(int r=0;r<csv.nrows();++r){double A=0,s=0,y=0;if(note_parse_triple_cell(csv,r,ca,A,s,y)&&A>0){double f=1.0/A;if(f<100.0)h->Fill(f);}}
+        if(h->Integral()>0)h->Scale(1.0/h->Integral());
+        h->SetLineColor(note_period_color_unf(ip));h->SetMarkerColor(note_period_color_unf(ip));h->SetMarkerStyle(20+ip);h->SetMarkerSize(.75);h->SetLineWidth(2);
+        ymax=std::max(ymax,h->GetMaximum());hs.push_back(h);
+    }
+    TH1F frame("h_note_accfac_frame","",100,0,100);frame.SetMinimum(0);frame.SetMaximum(1.2*ymax);frame.GetXaxis()->SetTitle("Acceptance correction factor 1/A");frame.GetYaxis()->SetTitle("Fraction of populated analysis bins");frame.GetYaxis()->SetTitleOffset(1.15);frame.Draw();
+    for(auto* h:hs)h->Draw("PE SAME");
+    TLegend leg(0.72,0.60,0.94,0.86);leg.SetBorderSize(0);leg.SetFillStyle(0);leg.SetTextSize(.036);for(int ip=0;ip<5;++ip)leg.AddEntry(hs[ip],kPeriods[ip].c_str(),"pe");leg.Draw();
+    TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextSize(.048);t.DrawLatex(.11,.93,"Distribution of the acceptance correction factor");
+    TLatex n;n.SetNDC();n.SetTextFont(42);n.SetTextSize(.030);n.DrawLatex(.12,.84,"Shown: 1/A < 100; the low-acceptance tail is retained in the numerical summary");
+    c.SaveAs((std::filesystem::path(note_dir)/"acceptance_correction_factor_distribution.png").string().c_str());
+    for(auto* h:hs)delete h;
+}
+
+static void draw_unfolding_note_uncertainty_summary(const CsvDoc& csv,
+                                                    const std::string& note_dir) {
+    TCanvas c("c_note_acc_unc","",1100,700);c.SetLeftMargin(.11);c.SetRightMargin(.035);c.SetBottomMargin(.16);c.SetTopMargin(.10);c.SetGridy();c.SetTicks(1,1);
+    TH1F frame("h_note_acc_unc","",5,.5,5.5);frame.SetMinimum(0);frame.SetMaximum(.20);frame.GetYaxis()->SetTitle("Median fractional statistical uncertainty");frame.GetYaxis()->SetTitleOffset(1.10);frame.GetXaxis()->SetLabelSize(.043);for(int ip=0;ip<5;++ip)frame.GetXaxis()->SetBinLabel(ip+1,kPeriods[ip].c_str());frame.Draw();
+    TGraphErrors gs,ga; gs.SetMarkerStyle(24);gs.SetMarkerSize(1.25);gs.SetMarkerColor(kGray+2);gs.SetLineColor(kGray+2); ga.SetMarkerStyle(20);ga.SetMarkerSize(1.25);ga.SetMarkerColor(kBlue+1);ga.SetLineColor(kBlue+1);
+    for(int ip=0;ip<5;++ip){std::vector<double> rs,ra;int cs=csv.col_index("signal yield, ep->epg, exp, "+kPeriods[ip]+", unpol"),ca=csv.col_index("acceptance, "+kPeriods[ip]);for(int r=0;r<csv.nrows();++r){double S=0,Ss=0,Sy=0,A=0,As=0,Ay=0;if(note_parse_triple_cell(csv,r,cs,S,Ss,Sy)&&S!=0)rs.push_back(std::fabs(Ss/S));if(note_parse_triple_cell(csv,r,ca,A,As,Ay)&&A>0)ra.push_back(As/A);}std::sort(rs.begin(),rs.end());std::sort(ra.begin(),ra.end());gs.SetPoint(ip,ip+1-.08,note_quantile_sorted_unf(rs,.50));ga.SetPoint(ip,ip+1+.08,note_quantile_sorted_unf(ra,.50));}
+    gs.Draw("P SAME");ga.Draw("P SAME");TLegend leg(.66,.68,.94,.84);leg.SetBorderSize(0);leg.SetFillStyle(0);leg.SetTextSize(.036);leg.AddEntry(&gs,"Signal yield","p");leg.AddEntry(&ga,"Acceptance","p");leg.Draw();
+    TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextSize(.048);t.DrawLatex(.11,.93,"Statistical precision entering the acceptance correction");
+    c.SaveAs((std::filesystem::path(note_dir)/"acceptance_correction_uncertainty_summary.png").string().c_str());
+}
+
+static void draw_unfolding_note_phi_example(
+    const CsvDoc& csv,
+    const std::map<std::string,std::map<std::string,std::vector<double>>>& unfolded_val,
+    const std::map<std::string,std::map<std::string,std::vector<double>>>& unfolded_stat,
+    const std::string& note_dir) {
+
+    const int cx0=csv.col_index("xBmin"),cx1=csv.col_index("xBmax"),cq0=csv.col_index("Q2min"),cq1=csv.col_index("Q2max"),ct0=csv.col_index("t_abs_min"),ct1=csv.col_index("t_abs_max"),cp0=csv.col_index("phimin"),cp1=csv.col_index("phimax");
+    const double tx0=.204,tx1=.268;
+    struct Key{double q0,q1,t0,t1;};std::vector<Key> keys;
+    for(int r=0;r<csv.nrows();++r){if(csv.as_double(r,cx0)!=tx0||csv.as_double(r,cx1)!=tx1)continue;Key k{csv.as_double(r,cq0),csv.as_double(r,cq1),csv.as_double(r,ct0),csv.as_double(r,ct1)};bool seen=false;for(const auto& z:keys)if(z.q0==k.q0&&z.q1==k.q1&&z.t0==k.t0&&z.t1==k.t1){seen=true;break;}if(!seen)keys.push_back(k);}
+    if(keys.empty())return;
+    int best=-1,totalbest=-1;Key sel=keys.front();
+    for(const auto& k:keys){int mn=100000,total=0;for(int ip=0;ip<5;++ip){int cs=csv.col_index("signal yield, ep->epg, exp, "+kPeriods[ip]+", unpol");int n=0;for(int r=0;r<csv.nrows();++r){if(csv.as_double(r,cx0)!=tx0||csv.as_double(r,cx1)!=tx1||csv.as_double(r,cq0)!=k.q0||csv.as_double(r,cq1)!=k.q1||csv.as_double(r,ct0)!=k.t0||csv.as_double(r,ct1)!=k.t1)continue;double S=0,Ss=0,Sy=0;if(note_parse_triple_cell(csv,r,cs,S,Ss,Sy)&&S>0&&std::isfinite(unfolded_val.at(kPeriods[ip]).at("unpol")[r])&&unfolded_val.at(kPeriods[ip]).at("unpol")[r]>0)++n;}mn=std::min(mn,n);total+=n;}if(mn>best||(mn==best&&total>totalbest)){best=mn;totalbest=total;sel=k;}}
+
+    TCanvas c("c_note_acc_corr_phi","",1200,760);c.Divide(3,2,.001,.001);
+    for(int ip=0;ip<5;++ip){c.cd(ip+1);gPad->SetLeftMargin(.15);gPad->SetRightMargin(.04);gPad->SetBottomMargin(.14);gPad->SetTopMargin(.16);gPad->SetGridy();gPad->SetTicks(1,1);gPad->SetLogy();int cs=csv.col_index("signal yield, ep->epg, exp, "+kPeriods[ip]+", unpol");int cpa=csv.col_index("phiavg, "+kPeriods[ip]);std::vector<double>x,ys,yu,es,eu;double ymin=1e300,ymax=0;
+        for(int r=0;r<csv.nrows();++r){if(csv.as_double(r,cx0)!=tx0||csv.as_double(r,cx1)!=tx1||csv.as_double(r,cq0)!=sel.q0||csv.as_double(r,cq1)!=sel.q1||csv.as_double(r,ct0)!=sel.t0||csv.as_double(r,ct1)!=sel.t1)continue;double S=0,Ss=0,Sy=0;if(!note_parse_triple_cell(csv,r,cs,S,Ss,Sy)||!(S>0))continue;double U=unfolded_val.at(kPeriods[ip]).at("unpol")[r],Us=unfolded_stat.at(kPeriods[ip]).at("unpol")[r];if(!(U>0)||!std::isfinite(Us))continue;double phi=.5*(csv.as_double(r,cp0)+csv.as_double(r,cp1));if(cpa>=0){double z=csv.as_double(r,cpa);if(std::isfinite(z)&&z>0&&z<360)phi=z;}x.push_back(phi);ys.push_back(S);es.push_back(Ss);yu.push_back(U);eu.push_back(Us);ymin=std::min(ymin,std::min(S,U));ymax=std::max(ymax,std::max(S+Ss,U+Us));}
+        if(!(ymin>0)||!(ymax>0))continue;TH1* frame=gPad->DrawFrame(0,std::max(1e-3,.55*ymin),360,1.35*ymax);frame->GetXaxis()->SetTitle("#phi (deg)");frame->GetYaxis()->SetTitle("Yield");frame->GetYaxis()->SetTitleOffset(1.25);frame->GetXaxis()->SetTitleSize(.055);frame->GetYaxis()->SetTitleSize(.055);frame->GetXaxis()->SetLabelSize(.045);frame->GetYaxis()->SetLabelSize(.045);std::vector<double>ex(x.size(),0.0);auto* gs=new TGraphErrors((int)x.size(),x.data(),ys.data(),ex.data(),es.data());auto* gu=new TGraphErrors((int)x.size(),x.data(),yu.data(),ex.data(),eu.data());gs->SetMarkerStyle(24);gs->SetMarkerColor(kGray+2);gs->SetLineColor(kGray+2);gu->SetMarkerStyle(20);gu->SetMarkerColor(note_period_color_unf(ip));gu->SetLineColor(note_period_color_unf(ip));gs->Draw("PE SAME");gu->Draw("PE SAME");auto* leg=new TLegend(.54,.67,.94,.84);leg->SetBorderSize(0);leg->SetFillStyle(0);leg->SetTextSize(.038);leg->AddEntry(gs,"Signal yield","pe");leg->AddEntry(gu,"Acceptance corrected","pe");leg->Draw();TLatex lab;lab.SetNDC();lab.SetTextFont(42);lab.SetTextSize(.050);lab.DrawLatex(.15,.91,kPeriods[ip].c_str());}
+    c.cd(6);gPad->SetFillStyle(0);TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextSize(.065);t.DrawLatex(.08,.84,"Representative acceptance correction");std::ostringstream kin;kin<<std::fixed<<std::setprecision(3)<<tx0<<" < x_{B} < "<<tx1<<"\\n"<<sel.q0<<" < Q^{2} < "<<sel.q1<<" GeV^{2}\\n"<<sel.t0<<" < |t| < "<<sel.t1<<" GeV^{2}";TLatex l;l.SetNDC();l.SetTextFont(42);l.SetTextSize(.050);l.DrawLatex(.08,.66,Form("%.3f < x_{B} < %.3f",tx0,tx1));l.DrawLatex(.08,.53,Form("%.3f < Q^{2} < %.3f GeV^{2}",sel.q0,sel.q1));l.DrawLatex(.08,.40,Form("%.3f < |t| < %.3f GeV^{2}",sel.t0,sel.t1));l.SetTextSize(.042);l.DrawLatex(.08,.22,"U=S/A; error bars are statistical");
+    c.SaveAs((std::filesystem::path(note_dir)/"acceptance_corrected_yield_phi_example.png").string().c_str());
+}
+
+static void write_unfolding_analysis_note_outputs(
+    const CsvDoc& csv,
+    const std::map<std::string,std::map<std::string,std::vector<double>>>& unfolded_val,
+    const std::map<std::string,std::map<std::string,std::vector<double>>>& unfolded_stat,
+    const std::string& out_root_dir) {
+    const std::string note_dir=(std::filesystem::path(out_root_dir)/"unfolded_yields"/"analysis_note").string();
+    ensure_dir(note_dir);
+    write_unfolding_note_summary(csv,unfolded_val,unfolded_stat,note_dir);
+    draw_unfolding_note_factor_distribution(csv,note_dir);
+    draw_unfolding_note_uncertainty_summary(csv,note_dir);
+    draw_unfolding_note_phi_example(csv,unfolded_val,unfolded_stat,note_dir);
+}
+
 } // end anonymous namespace
 
 bool update_unfolded_yields_csv(const std::string& csv_path,
@@ -1070,6 +1203,10 @@ bool update_unfolded_yields_csv(const std::string& csv_path,
                                unfolded_stat.at(lab),
                                out_root_dir);
     }
+
+    write_unfolding_analysis_note_outputs(csv, unfolded_val, unfolded_stat, out_root_dir);
+    std::cout << "[unfolding] Analysis-note summary outputs written under: "
+              << out_root_dir << "/unfolded_yields/analysis_note\n";
 
     std::cout << "[unfolding] Unfolded-yield plotting finished.\n";
     return true;
