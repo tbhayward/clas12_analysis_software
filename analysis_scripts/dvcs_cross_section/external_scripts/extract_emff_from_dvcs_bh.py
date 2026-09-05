@@ -11173,6 +11173,115 @@ def save_all_point_model_agreement_diagnostics(
         plt.close(fig)
     #endfor
 
+    # Add one explicit Saylor category using the production low-|t| cut.
+    # This is intentionally an *extra* bar/category rather than a replacement
+    # for the full published Saylor sample, so the reader can see directly how
+    # much of the model disagreement is localized below |t|=0.343 GeV^2.
+    for bundle in usable:
+        if str(bundle.get("kind", "")) != "saylor2018":
+            continue
+        #endif
+        key = str(bundle["key"])
+        base_label = str(bundle["label"])
+        data_all = bundle["all_data"].reset_index(drop=True)
+        ext_all = selection.loc[
+            selection["dataset"].astype(str) == key
+        ].copy().sort_values("source_row").reset_index(drop=True)
+        if len(ext_all) != len(data_all):
+            continue
+        #endif
+        keep = data_all["t_abs"].to_numpy(float) >= 0.343
+        if np.sum(keep) == 0:
+            continue
+        #endif
+        data = data_all.loc[keep].reset_index(drop=True)
+        ext = ext_all.loc[keep].reset_index(drop=True)
+        label = base_label + r" ($|t|\geq0.343$ GeV$^2$)"
+        y = data["xs"].to_numpy(float)
+        stat_err = dataset_statistical_errors(data, "saylor2018")
+        err = dataset_point_errors(data, "saylor2018", 0.0, False)
+        norm_frac = float(bundle.get("norm_frac", 0.0))
+
+        precision_finite = (
+            np.isfinite(y) & (y > 0.0)
+            & np.isfinite(stat_err) & (stat_err > 0.0)
+            & np.isfinite(err) & (err > 0.0)
+        )
+        stat_frac = np.full(len(data), np.nan)
+        total_frac = np.full(len(data), np.nan)
+        stat_frac[precision_finite] = stat_err[precision_finite] / y[precision_finite]
+        total_frac[precision_finite] = err[precision_finite] / y[precision_finite]
+        stat16, stat50, stat84 = _pct_summary(stat_frac)
+        total16, total50, total84 = _pct_summary(total_frac)
+
+        for model in FINAL_MODEL_NAMES:
+            ep_col = MODEL_EP_COLUMN[model]
+            if ep_col not in ext.columns:
+                continue
+            #endif
+            pred = pd.to_numeric(ext[ep_col], errors="coerce").to_numpy(float)
+            finite = (
+                np.isfinite(y) & np.isfinite(err) & (err > 0.0)
+                & np.isfinite(pred) & (pred > 0.0)
+            )
+            if not np.any(finite):
+                continue
+            #endif
+            raw_pull = (pred[finite] - y[finite]) / err[finite]
+            raw_chi2 = float(np.dot(raw_pull, raw_pull))
+            beta, scale, prof_chi2 = _profile_model_normalization(
+                y[finite], pred[finite], err[finite], norm_frac
+            )
+            prof_pull = (scale * pred[finite] - y[finite]) / err[finite]
+            ratio = y[finite] / pred[finite]
+            frac_residual = (scale * pred[finite] - y[finite]) / y[finite]
+            phi = np.mod(data["phi_deg"].to_numpy(float), 360.0)
+            central_all = (
+                np.abs(((phi - 180.0 + 180.0) % 360.0) - 180.0) <= 60.0
+            )
+            central = central_all[finite]
+            central_chi2 = (
+                float(np.sum(prof_pull[central] ** 2))
+                if np.any(central) else np.nan
+            )
+            score_rows.append({
+                "dataset": key + "_t343",
+                "dataset_label": label,
+                "model": model,
+                "model_display": MODEL_DISPLAY[model],
+                "N_all": int(np.sum(finite)),
+                "raw_chi2": raw_chi2,
+                "raw_chi2_per_point": float(raw_chi2 / np.sum(finite)),
+                "profiled_beta": float(beta),
+                "profiled_scale": float(scale),
+                "profiled_chi2": float(prof_chi2),
+                "profiled_chi2_per_point": float(prof_chi2 / np.sum(finite)),
+                "rms_profiled_pull": float(np.sqrt(np.mean(prof_pull**2))),
+                "median_data_over_model": float(np.nanmedian(ratio)),
+                "median_abs_fractional_model_residual": float(
+                    np.nanmedian(np.abs(frac_residual))
+                ),
+                "rms_fractional_model_residual": float(
+                    np.sqrt(np.nanmean(frac_residual**2))
+                ),
+                "median_stat_fraction": stat50,
+                "stat_fraction_p16": stat16,
+                "stat_fraction_p84": stat84,
+                "median_pointwise_total_fraction": total50,
+                "pointwise_total_fraction_p16": total16,
+                "pointwise_total_fraction_p84": total84,
+                "N_central_phi_pm60": int(np.sum(central)),
+                "central_phi_chi2_per_point": (
+                    float(central_chi2 / np.sum(central))
+                    if np.any(central) else np.nan
+                ),
+                "normalization_fraction": norm_frac,
+                "diagnostic_subset": "Saylor |t|>=0.343 GeV2",
+            })
+        #endfor
+        break
+    #endfor
+
     scores = pd.DataFrame(score_rows)
     scores.to_csv(outdir / "all_point_model_agreement_scores.csv", index=False)
 
@@ -11218,11 +11327,25 @@ def save_all_point_model_agreement_diagnostics(
         label_to_key = {
             str(b["label"]): str(b["key"]) for b in usable
         }
+        saylor_base_label = next(
+            (str(b["label"]) for b in usable
+             if str(b.get("kind", "")) == "saylor2018"),
+            None,
+        )
+        def _model_agreement_order(label):
+            label = str(label)
+            base_key = label_to_key.get(label, "")
+            base = float(DATASET_CHRONOLOGY.get(base_key, 10_000))
+            if saylor_base_label is not None and label.startswith(
+                    saylor_base_label + " ("):
+                skey = label_to_key.get(saylor_base_label, "")
+                return float(DATASET_CHRONOLOGY.get(skey, 10_000)) + 0.1
+            #endif
+            return base
+        #enddef
         datasets = sorted(
             list(dict.fromkeys(scores["dataset_label"].astype(str))),
-            key=lambda label: DATASET_CHRONOLOGY.get(
-                label_to_key.get(str(label), ""), 10_000
-            ),
+            key=_model_agreement_order,
         )
         x = np.arange(len(datasets), dtype=float)
         width = 0.24
@@ -11372,9 +11495,7 @@ def save_all_point_model_agreement_diagnostics(
         summary = pd.DataFrame(summary_rows)
         if len(summary):
             summary["_chronology"] = summary["dataset"].map(
-                lambda label: DATASET_CHRONOLOGY.get(
-                    label_to_key.get(str(label), ""), 10_000
-                )
+                _model_agreement_order
             )
             summary = (
                 summary.sort_values("_chronology")
@@ -15861,7 +15982,7 @@ def save_f1_f2_bh_sensitivity_diagnostics(
 
     summary_rows = []
     for key, d in list(pts.groupby("dataset", sort=False)) + [("ALL", pts)]:
-        label = "All four combined" if key == "ALL" else str(d.iloc[0]["dataset_label"])
+        label = f"All {len(bundles)} combined" if key == "ALL" else str(d.iloc[0]["dataset_label"])
         summary_rows.append({
             "dataset": key,
             "dataset_label": label,
@@ -15884,7 +16005,7 @@ def save_f1_f2_bh_sensitivity_diagnostics(
     # Five panels: one per experiment plus the combined ensemble.
     panel_defs = [
         (str(b["key"]), str(b["label"])) for b in bundles
-    ] + [("ALL", "All four combined")]
+    ] + [("ALL", f"All {len(bundles)} combined")]
     fig, axes = plt.subplots(2, 3, figsize=(14.5, 8.8), sharex=False)
     for ax, (key, label) in zip(axes.flat, panel_defs):
         d = pts if key == "ALL" else pts.loc[pts["dataset"] == key]
@@ -15932,7 +16053,7 @@ def save_f1_f2_bh_sensitivity_diagnostics(
     ax.set_xlabel(r"$S_{F_1}=\partial\ln\sigma_{\rm BH}/\partial\ln F_1$")
     ax.set_ylabel(r"$S_{F_2}=\partial\ln\sigma_{\rm BH}/\partial\ln F_2$")
     ax.set_title(
-        "Complementary electromagnetic sensitivity of the four proton datasets"
+        f"Complementary electromagnetic sensitivity of the {len(bundles)} proton datasets"
     )
     ax.grid(alpha=0.2)
     ax.legend(fontsize=8)
@@ -16071,8 +16192,8 @@ def save_f1_f2_bh_sensitivity_diagnostics(
     #endfor
     _turnoff_plot_for_points(
         pts.copy(),
-        "All four combined",
-        "all_four_combined",
+        f"All {len(bundles)} combined",
+        "all_combined",
     )
 
     # Keep one compact all-dataset summary of the *relative* turn-off leverage.
@@ -16113,6 +16234,658 @@ def save_f1_f2_bh_sensitivity_diagnostics(
     return summary
 #enddef
 
+
+
+
+def save_extended_emff_sensitivity_diagnostics(
+        bundles: Sequence[Dict[str, object]],
+        selection: pd.DataFrame,
+        fit: Dict[str, object],
+        family: str,
+        outdir: Path,
+        radius_step_fm: float = 0.01,
+        ff_fractional_step: float = 0.01) -> pd.DataFrame:
+    """
+    Extended, physics-facing sensitivity study for the selected BH-like points.
+
+    The construction is deliberately simple and finite-difference based:
+
+      * Change rE by +/- ``radius_step_fm`` while holding the higher-order GE
+        curvature coefficients fixed, and record the change in each BH cross
+        section in units of that point's uncorrelated experimental error.
+      * Repeat for rM.
+      * Separately ask how each point responds to a 1% common change of F1 or
+        F2.  The exact quadratic BH decomposition makes these derivatives
+        analytic.
+      * At dataset level, combine those point responses and then allow that
+        dataset's published correlated normalization nuisance to move.  This
+        separates genuine kinematic/shape leverage from a nearly uniform
+        cross-section rescaling.
+      * Compare the preferred BH-extracted form factors with Kelly directly in
+        cross-section space.  This quantifies where fixing Kelly would change
+        the known BH baseline by an experimentally relevant amount.
+
+    No CFF fit is performed here.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    maps_dir = outdir / "radius_response_maps"
+    maps_dir.mkdir(parents=True, exist_ok=True)
+
+    params, _, ne, nm, family_e, family_m = (
+        _shape_parameters_and_covariance_from_result(fit, family)
+    )
+    ce = np.asarray(params[:ne], dtype=float)
+    cm = np.asarray(params[ne:ne + nm], dtype=float)
+    rE0 = float(sachs_family_radius(ce, family_e))
+    rM0 = float(sachs_family_radius(cm, family_m))
+
+    ce_p = sachs_family_coefficients_with_radius(
+        ce, family_e, rE0 + float(radius_step_fm)
+    )
+    ce_m = sachs_family_coefficients_with_radius(
+        ce, family_e, max(1.0e-6, rE0 - float(radius_step_fm))
+    )
+    cm_p = sachs_family_coefficients_with_radius(
+        cm, family_m, rM0 + float(radius_step_fm)
+    )
+    cm_m = sachs_family_coefficients_with_radius(
+        cm, family_m, max(1.0e-6, rM0 - float(radius_step_fm))
+    )
+
+    point_frames = []
+    matrix_rows = []
+    dataset_matrices = {}
+
+    def _bh_from_ge_gm(q, A, B, C, ge, gm):
+        tau = q / (4.0 * MP2)
+        f1 = (ge + tau * gm) / (1.0 + tau)
+        f2 = (gm - ge) / (1.0 + tau)
+        sigma = A * f1**2 + B * f1 * f2 + C * f2**2
+        return f1, f2, sigma
+    #enddef
+
+    def _remove_norm_direction(Mraw, j1, j2, full_over_err, bundle):
+        """Allow one correlated overall normalization parameter to move."""
+        norm_frac = float(bundle.get("norm_frac", 0.0) or 0.0)
+        unconstrained = bool(bundle.get("unconstrained_norm", False))
+        if unconstrained:
+            n = np.asarray(full_over_err, dtype=float)
+            prior_precision = 0.0
+        elif norm_frac > 0.0:
+            # beta is a one-standard-deviation normalization nuisance, so the
+            # cross-section derivative is norm_frac*sigma and beta has unit
+            # Gaussian penalty.
+            n = norm_frac * np.asarray(full_over_err, dtype=float)
+            prior_precision = 1.0
+        else:
+            return np.asarray(Mraw, dtype=float).copy()
+        #endif
+        nn = float(np.dot(n, n) + prior_precision)
+        if not np.isfinite(nn) or nn <= 0.0:
+            return np.asarray(Mraw, dtype=float).copy()
+        #endif
+        c = np.array([np.dot(j1, n), np.dot(j2, n)], dtype=float)
+        return np.asarray(Mraw, dtype=float) - np.outer(c, c) / nn
+    #enddef
+
+    def _matrix_metrics(M):
+        M = np.asarray(M, dtype=float)
+        M = 0.5 * (M + M.T)
+        vals, vecs = np.linalg.eigh(M)
+        order = np.argsort(vals)[::-1]
+        vals = vals[order]
+        vecs = vecs[:, order]
+        v = vecs[:, 0].copy()
+        # Eigenvectors have arbitrary sign.  Force the electric component
+        # positive so angles are comparable between datasets.
+        if v[0] < 0.0:
+            v *= -1.0
+        #endif
+        angle = float(np.degrees(np.arctan2(v[1], v[0])))
+        try:
+            cov = np.linalg.inv(M)
+            err_e = float(np.sqrt(max(cov[0, 0], 0.0)))
+            err_m = float(np.sqrt(max(cov[1, 1], 0.0)))
+            corr = float(cov[0, 1] / max(
+                np.sqrt(abs(cov[0, 0] * cov[1, 1])), 1.0e-30
+            ))
+        except np.linalg.LinAlgError:
+            err_e = np.nan
+            err_m = np.nan
+            corr = np.nan
+        #endtry
+        condition = (
+            float(vals[0] / vals[1])
+            if len(vals) > 1 and vals[1] > 1.0e-15 else np.inf
+        )
+        return vals, v, angle, err_e, err_m, corr, condition
+    #enddef
+
+    for bundle in bundles:
+        specs, _ = _km15_selected_specs_for_bundles(
+            [bundle], selection, 0.05
+        )
+        if not specs or len(specs[0]["data"]) == 0:
+            continue
+        #endif
+        d = specs[0]["data"].copy().reset_index(drop=True)
+        key = str(bundle["key"])
+        label = str(bundle["label"])
+        kind = str(bundle["kind"])
+        q = d["t_abs"].to_numpy(float)
+        A = d["bh_A"].to_numpy(float)
+        B = d["bh_B"].to_numpy(float)
+        C = d["bh_C"].to_numpy(float)
+
+        ge = sachs_family_value(q, ce, family_e)
+        gm = MU_P * sachs_family_value(q, cm, family_m)
+        f1, f2, full = _bh_from_ge_gm(q, A, B, C, ge, gm)
+
+        ge_ep = sachs_family_value(q, ce_p, family_e)
+        ge_em = sachs_family_value(q, ce_m, family_e)
+        gm_mp = MU_P * sachs_family_value(q, cm_p, family_m)
+        gm_mm = MU_P * sachs_family_value(q, cm_m, family_m)
+        _, _, sig_ep = _bh_from_ge_gm(q, A, B, C, ge_ep, gm)
+        _, _, sig_em = _bh_from_ge_gm(q, A, B, C, ge_em, gm)
+        _, _, sig_mp = _bh_from_ge_gm(q, A, B, C, ge, gm_mp)
+        _, _, sig_mm = _bh_from_ge_gm(q, A, B, C, ge, gm_mm)
+        dsig_drE = (sig_ep - sig_em) / (2.0 * float(radius_step_fm))
+        dsig_drM = (sig_mp - sig_mm) / (2.0 * float(radius_step_fm))
+
+        # Same uncorrelated error definition as the production fit.  The
+        # correlated normalization is handled separately below rather than
+        # being folded point-by-point into this denominator.
+        err = dataset_point_errors(
+            d, kind, 0.05, True
+        )
+        err = np.asarray(err, dtype=float)
+        good = (
+            np.isfinite(full) & np.isfinite(err) & (err > 0.0)
+            & np.isfinite(dsig_drE) & np.isfinite(dsig_drM)
+        )
+        if not np.any(good):
+            continue
+        #endif
+
+        # Exact derivatives for common fractional F1/F2 changes.
+        t11 = A * f1**2
+        t12 = B * f1 * f2
+        t22 = C * f2**2
+        dsig_dlnF1 = 2.0 * t11 + t12
+        dsig_dlnF2 = t12 + 2.0 * t22
+
+        jE = np.zeros(len(d), dtype=float)
+        jM = np.zeros(len(d), dtype=float)
+        jF1 = np.zeros(len(d), dtype=float)
+        jF2 = np.zeros(len(d), dtype=float)
+        jE[good] = dsig_drE[good] / err[good]
+        jM[good] = dsig_drM[good] / err[good]
+        jF1[good] = dsig_dlnF1[good] / err[good]
+        jF2[good] = dsig_dlnF2[good] / err[good]
+        full_over_err = np.zeros(len(d), dtype=float)
+        full_over_err[good] = full[good] / err[good]
+
+        JE = jE[good]; JM = jM[good]
+        J1 = jF1[good]; J2 = jF2[good]
+        FE = full_over_err[good]
+        M_radius_raw = np.array([
+            [np.dot(JE, JE), np.dot(JE, JM)],
+            [np.dot(JE, JM), np.dot(JM, JM)],
+        ])
+        M_ff_raw = np.array([
+            [np.dot(J1, J1), np.dot(J1, J2)],
+            [np.dot(J1, J2), np.dot(J2, J2)],
+        ])
+        M_radius = _remove_norm_direction(
+            M_radius_raw, JE, JM, FE, bundle
+        )
+        M_ff = _remove_norm_direction(
+            M_ff_raw, J1, J2, FE, bundle
+        )
+        dataset_matrices[key] = {
+            "label": label,
+            "radius_raw": M_radius_raw,
+            "radius": M_radius,
+            "ff_raw": M_ff_raw,
+            "ff": M_ff,
+        }
+
+        rvals, rv, rangle, rerrE, rerrM, rcorr, rcond = _matrix_metrics(M_radius)
+        fvals, fv, fangle, ferr1, ferr2, fcorr, fcond = _matrix_metrics(M_ff)
+        radius_survival = float(
+            np.trace(M_radius) / max(np.trace(M_radius_raw), 1.0e-30)
+        )
+        ff_survival = float(
+            np.trace(M_ff) / max(np.trace(M_ff_raw), 1.0e-30)
+        )
+
+        # Preferred-vs-Kelly BH baseline at the same points.
+        kf1, kf2 = kelly_f1_f2(q)
+        sigma_kelly = A * kf1**2 + B * kf1 * kf2 + C * kf2**2
+        with np.errstate(divide="ignore", invalid="ignore"):
+            kelly_frac_shift = (full - sigma_kelly) / sigma_kelly
+            kelly_shift_sigma = (full - sigma_kelly) / err
+        #endwith
+
+        pf = d.copy()
+        pf["dataset"] = key
+        pf["dataset_label"] = label
+        pf["fit_error_uncorrelated"] = err
+        pf["F1_preferred"] = f1
+        pf["F2_preferred"] = f2
+        pf["sigma_bh_preferred"] = full
+        pf["sigma_bh_kelly"] = sigma_kelly
+        pf["preferred_minus_kelly_fraction_of_kelly"] = kelly_frac_shift
+        pf["preferred_minus_kelly_in_point_errors"] = kelly_shift_sigma
+        pf["d_sigma_drE"] = dsig_drE
+        pf["d_sigma_drM"] = dsig_drM
+        pf[f"rE_{radius_step_fm:.3f}fm_shift_in_point_errors"] = (
+            float(radius_step_fm) * dsig_drE / err
+        )
+        pf[f"rM_{radius_step_fm:.3f}fm_shift_in_point_errors"] = (
+            float(radius_step_fm) * dsig_drM / err
+        )
+        pf["d_sigma_dlnF1"] = dsig_dlnF1
+        pf["d_sigma_dlnF2"] = dsig_dlnF2
+        pf[f"F1_{100*ff_fractional_step:.1f}pct_shift_in_point_errors"] = (
+            float(ff_fractional_step) * dsig_dlnF1 / err
+        )
+        pf[f"F2_{100*ff_fractional_step:.1f}pct_shift_in_point_errors"] = (
+            float(ff_fractional_step) * dsig_dlnF2 / err
+        )
+        point_frames.append(pf)
+
+        matrix_rows.append({
+            "dataset": key,
+            "dataset_label": label,
+            "N": int(np.sum(good)),
+            "nominal_rE_fm": rE0,
+            "nominal_rM_fm": rM0,
+            "radius_step_fm": float(radius_step_fm),
+            "F1F2_fractional_step": float(ff_fractional_step),
+            "radius_EE_before_norm": float(M_radius_raw[0, 0]),
+            "radius_EM_before_norm": float(M_radius_raw[0, 1]),
+            "radius_MM_before_norm": float(M_radius_raw[1, 1]),
+            "radius_EE_after_norm": float(M_radius[0, 0]),
+            "radius_EM_after_norm": float(M_radius[0, 1]),
+            "radius_MM_after_norm": float(M_radius[1, 1]),
+            "radius_sensitivity_retained_after_norm": radius_survival,
+            "linearized_rE_uncertainty_both_free_fm": rerrE,
+            "linearized_rM_uncertainty_both_free_fm": rerrM,
+            "linearized_rE_rM_correlation": rcorr,
+            "best_constrained_radius_mixture_angle_deg": rangle,
+            "radius_direction_strength_ratio": rcond,
+            "ff_F1F1_before_norm": float(M_ff_raw[0, 0]),
+            "ff_F1F2_before_norm": float(M_ff_raw[0, 1]),
+            "ff_F2F2_before_norm": float(M_ff_raw[1, 1]),
+            "ff_F1F1_after_norm": float(M_ff[0, 0]),
+            "ff_F1F2_after_norm": float(M_ff[0, 1]),
+            "ff_F2F2_after_norm": float(M_ff[1, 1]),
+            "F1F2_sensitivity_retained_after_norm": ff_survival,
+            "best_constrained_F1F2_mixture_angle_deg": fangle,
+            "F1F2_direction_strength_ratio": fcond,
+            "median_abs_rE_step_response_in_errors": float(np.nanmedian(
+                np.abs(float(radius_step_fm) * dsig_drE[good] / err[good])
+            )),
+            "median_abs_rM_step_response_in_errors": float(np.nanmedian(
+                np.abs(float(radius_step_fm) * dsig_drM[good] / err[good])
+            )),
+            "median_abs_F1_step_response_in_errors": float(np.nanmedian(
+                np.abs(float(ff_fractional_step) * dsig_dlnF1[good] / err[good])
+            )),
+            "median_abs_F2_step_response_in_errors": float(np.nanmedian(
+                np.abs(float(ff_fractional_step) * dsig_dlnF2[good] / err[good])
+            )),
+            "median_abs_preferred_vs_kelly_fraction": float(
+                np.nanmedian(np.abs(kelly_frac_shift[good]))
+            ),
+            "median_abs_preferred_vs_kelly_in_point_errors": float(
+                np.nanmedian(np.abs(kelly_shift_sigma[good]))
+            ),
+        })
+
+        # Per-dataset map: how much a 0.01-fm radius change moves each point,
+        # shown directly in units of that point's error bar.
+        variables = [
+            ("Q2", r"$Q^2$ (GeV$^2$)"),
+            ("xB", r"$x_B$"),
+            ("t_abs", r"$|t|$ (GeV$^2$)"),
+            ("phi_deg", r"$\phi$ (deg)"),
+        ]
+        fig, axes = plt.subplots(2, 2, figsize=(12.8, 9.2))
+        respE = float(radius_step_fm) * dsig_drE / err
+        respM = float(radius_step_fm) * dsig_drM / err
+        for ax, (var, xlabel) in zip(axes.flat, variables):
+            if var not in d.columns:
+                ax.axis("off")
+                continue
+            #endif
+            xx = d[var].to_numpy(float)
+            ax.scatter(xx, np.abs(respE), s=15, alpha=0.45,
+                       label=rf"$r_E+{radius_step_fm:.2f}$ fm response")
+            ax.scatter(xx, np.abs(respM), s=15, alpha=0.45,
+                       label=rf"$r_M+{radius_step_fm:.2f}$ fm response")
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("absolute cross-section shift / point error")
+            ax.grid(alpha=0.18)
+        #endfor
+        handles, labs = axes[0, 0].get_legend_handles_labels()
+        fig.legend(handles, labs, loc="upper center", ncol=2,
+                   bbox_to_anchor=(0.5, 0.955))
+        fig.suptitle(
+            f"{label}: where the selected points are sensitive to the radii",
+            y=0.995,
+        )
+        fig.subplots_adjust(
+            top=0.90, bottom=0.08, left=0.08, right=0.98,
+            hspace=0.28, wspace=0.23,
+        )
+        safe = re.sub(r"[^A-Za-z0-9]+", "_", key).strip("_")
+        fig.savefig(
+            maps_dir / f"{safe}_radius_response_vs_kinematics.png", dpi=240
+        )
+        plt.close(fig)
+    #endfor
+
+    if not point_frames:
+        return pd.DataFrame()
+    #endif
+
+    points = pd.concat(point_frames, ignore_index=True, sort=False)
+    points.to_csv(outdir / "extended_emff_sensitivity_points.csv", index=False)
+    summary = pd.DataFrame(matrix_rows)
+
+    # Combined ensemble: each dataset retains its own normalization nuisance,
+    # so the already-reduced per-dataset matrices can simply be added.
+    if dataset_matrices:
+        Mr_raw = sum(v["radius_raw"] for v in dataset_matrices.values())
+        Mr = sum(v["radius"] for v in dataset_matrices.values())
+        Mf_raw = sum(v["ff_raw"] for v in dataset_matrices.values())
+        Mf = sum(v["ff"] for v in dataset_matrices.values())
+        rvls, rv, rang, re, rm, rc, rcond = _matrix_metrics(Mr)
+        fvls, fv, fang, f1e, f2e, fc, fcond = _matrix_metrics(Mf)
+        summary = pd.concat([summary, pd.DataFrame([{
+            "dataset": "ALL",
+            "dataset_label": "All six combined",
+            "N": int(len(points)),
+            "nominal_rE_fm": rE0,
+            "nominal_rM_fm": rM0,
+            "radius_step_fm": float(radius_step_fm),
+            "F1F2_fractional_step": float(ff_fractional_step),
+            "radius_EE_before_norm": float(Mr_raw[0, 0]),
+            "radius_EM_before_norm": float(Mr_raw[0, 1]),
+            "radius_MM_before_norm": float(Mr_raw[1, 1]),
+            "radius_EE_after_norm": float(Mr[0, 0]),
+            "radius_EM_after_norm": float(Mr[0, 1]),
+            "radius_MM_after_norm": float(Mr[1, 1]),
+            "radius_sensitivity_retained_after_norm": float(
+                np.trace(Mr) / max(np.trace(Mr_raw), 1.0e-30)
+            ),
+            "linearized_rE_uncertainty_both_free_fm": re,
+            "linearized_rM_uncertainty_both_free_fm": rm,
+            "linearized_rE_rM_correlation": rc,
+            "best_constrained_radius_mixture_angle_deg": rang,
+            "radius_direction_strength_ratio": rcond,
+            "ff_F1F1_before_norm": float(Mf_raw[0, 0]),
+            "ff_F1F2_before_norm": float(Mf_raw[0, 1]),
+            "ff_F2F2_before_norm": float(Mf_raw[1, 1]),
+            "ff_F1F1_after_norm": float(Mf[0, 0]),
+            "ff_F1F2_after_norm": float(Mf[0, 1]),
+            "ff_F2F2_after_norm": float(Mf[1, 1]),
+            "F1F2_sensitivity_retained_after_norm": float(
+                np.trace(Mf) / max(np.trace(Mf_raw), 1.0e-30)
+            ),
+            "best_constrained_F1F2_mixture_angle_deg": fang,
+            "F1F2_direction_strength_ratio": fcond,
+        }])], ignore_index=True, sort=False)
+    #endif
+    summary.to_csv(outdir / "extended_emff_sensitivity_summary.csv", index=False)
+
+    ds = summary.loc[summary["dataset"] != "ALL"].copy()
+    if len(ds) == 0:
+        return summary
+    #endif
+
+    # ------------------------------------------------------------------
+    # Radius-response summary.
+    # ------------------------------------------------------------------
+    x = np.arange(len(ds), dtype=float)
+    width = 0.36
+    fig, ax = plt.subplots(figsize=(11.6, 6.2))
+    ax.bar(x - width/2, ds["median_abs_rE_step_response_in_errors"],
+           width, label=rf"$r_E$ shifted by {radius_step_fm:.2f} fm")
+    ax.bar(x + width/2, ds["median_abs_rM_step_response_in_errors"],
+           width, label=rf"$r_M$ shifted by {radius_step_fm:.2f} fm")
+    ax.set_xticks(x)
+    ax.set_xticklabels(ds["dataset_label"], rotation=20, ha="right")
+    ax.set_ylabel("median absolute cross-section shift / point error")
+    ax.set_title("Per-point radius sensitivity in the selected BH-like samples")
+    ax.grid(axis="y", alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "01_radius_step_response_by_dataset.png", dpi=280)
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # Orientation of the radius combination each dataset measures best.
+    # ------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(8.2, 8.0))
+    for _, row in ds.iterrows():
+        key = str(row["dataset"])
+        M = dataset_matrices[key]["radius"]
+        _, v, angle, _, _, _, _ = _matrix_metrics(M)
+        ax.arrow(0.0, 0.0, v[0], v[1], length_includes_head=True,
+                 head_width=0.025, head_length=0.045, linewidth=1.6,
+                 alpha=0.8)
+        ax.text(1.06*v[0], 1.06*v[1], str(row["dataset_label"]),
+                fontsize=8.5, ha="center", va="center")
+    #endfor
+    ax.axhline(0.0, linewidth=0.8)
+    ax.axvline(0.0, linewidth=0.8)
+    ax.set_xlim(-0.15, 1.25)
+    ax.set_ylim(-1.15, 1.15)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel(r"$r_E$ component of best-measured radius combination")
+    ax.set_ylabel(r"$r_M$ component of best-measured radius combination")
+    ax.set_title(
+        "Different experiments constrain different mixtures of $r_E$ and $r_M$"
+    )
+    ax.grid(alpha=0.18)
+    fig.tight_layout()
+    fig.savefig(outdir / "02_radius_sensitivity_orientation.png", dpi=300)
+    plt.close(fig)
+
+    # Pairwise complementarity.  0 means parallel sensitivity directions;
+    # 1 means orthogonal directions.
+    keys = ds["dataset"].astype(str).tolist()
+    labels = ds["dataset_label"].astype(str).tolist()
+    comp = np.zeros((len(keys), len(keys)), dtype=float)
+    angle_rows = []
+    rvecs = {}
+    fvecs = {}
+    for key in keys:
+        _, rv, _, _, _, _, _ = _matrix_metrics(dataset_matrices[key]["radius"])
+        _, fv, _, _, _, _, _ = _matrix_metrics(dataset_matrices[key]["ff"])
+        rvecs[key] = rv
+        fvecs[key] = fv
+    #endfor
+    for i, ka in enumerate(keys):
+        for j, kb in enumerate(keys):
+            dot = float(np.clip(abs(np.dot(rvecs[ka], rvecs[kb])), 0.0, 1.0))
+            angle = float(np.degrees(np.arccos(dot)))
+            comp[i, j] = float(np.sin(np.radians(angle)))
+            if j > i:
+                fdot = float(np.clip(abs(np.dot(fvecs[ka], fvecs[kb])), 0.0, 1.0))
+                fangle = float(np.degrees(np.arccos(fdot)))
+                angle_rows.append({
+                    "dataset_A": ka,
+                    "dataset_B": kb,
+                    "radius_direction_angle_difference_deg": angle,
+                    "radius_complementarity_0_parallel_1_orthogonal": comp[i, j],
+                    "F1F2_direction_angle_difference_deg": fangle,
+                    "F1F2_complementarity_0_parallel_1_orthogonal": float(
+                        np.sin(np.radians(fangle))
+                    ),
+                })
+            #endif
+        #endfor
+    #endfor
+    pd.DataFrame(angle_rows).to_csv(
+        outdir / "dataset_pairwise_complementarity.csv", index=False
+    )
+
+    fig, ax = plt.subplots(figsize=(9.2, 7.8))
+    im = ax.imshow(comp, vmin=0.0, vmax=1.0, aspect="auto")
+    ax.set_xticks(np.arange(len(labels)))
+    ax.set_yticks(np.arange(len(labels)))
+    ax.set_xticklabels(labels, rotation=35, ha="right")
+    ax.set_yticklabels(labels)
+    for i in range(len(labels)):
+        for j in range(len(labels)):
+            ax.text(j, i, f"{comp[i,j]:.2f}", ha="center", va="center",
+                    fontsize=8)
+        #endfor
+    #endfor
+    fig.colorbar(im, ax=ax, label="complementarity: 0=parallel, 1=orthogonal")
+    ax.set_title("Pairwise complementarity of radius sensitivity directions")
+    fig.tight_layout()
+    fig.savefig(outdir / "03_radius_dataset_complementarity.png", dpi=280)
+    plt.close(fig)
+
+    # How much radius/F1F2 leverage survives after a correlated normalization
+    # parameter is allowed to move within its published constraint.
+    fig, ax = plt.subplots(figsize=(11.2, 6.0))
+    ax.bar(x - width/2,
+           100.0 * ds["radius_sensitivity_retained_after_norm"],
+           width, label=r"$r_E/r_M$ sensitivity")
+    ax.bar(x + width/2,
+           100.0 * ds["F1F2_sensitivity_retained_after_norm"],
+           width, label=r"$F_1/F_2$ sensitivity")
+    ax.set_xticks(x)
+    ax.set_xticklabels(ds["dataset_label"], rotation=20, ha="right")
+    ax.set_ylabel("sensitivity retained after normalization can move (%)")
+    ax.set_ylim(0.0, 105.0)
+    ax.set_title("Shape information that cannot be absorbed by overall normalization")
+    ax.grid(axis="y", alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "04_sensitivity_retained_after_normalization.png", dpi=300)
+    plt.close(fig)
+
+    # Cumulative t location of the radius sensitivity.  This answers where in
+    # the measured |t| range the available radius leverage accumulates.
+    fig, axes = plt.subplots(1, 2, figsize=(13.0, 5.7))
+    respE_col = f"rE_{radius_step_fm:.3f}fm_shift_in_point_errors"
+    respM_col = f"rM_{radius_step_fm:.3f}fm_shift_in_point_errors"
+    for key, label in zip(keys, labels):
+        p = points.loc[points["dataset"].astype(str) == key].copy()
+        p = p.sort_values("t_abs")
+        tt = p["t_abs"].to_numpy(float)
+        for ax, col in zip(axes, [respE_col, respM_col]):
+            vv = np.nan_to_num(p[col].to_numpy(float), nan=0.0)**2
+            cs = np.cumsum(vv)
+            if len(cs) and cs[-1] > 0.0:
+                cs = cs / cs[-1]
+            #endif
+            ax.plot(tt, cs, linewidth=1.5, label=label)
+        #endfor
+    #endfor
+    axes[0].set_title(r"Cumulative $r_E$ sensitivity")
+    axes[1].set_title(r"Cumulative $r_M$ sensitivity")
+    for ax in axes:
+        ax.set_xlabel(r"maximum included $|t|$ (GeV$^2$)")
+        ax.set_ylabel("fraction of squared point response accumulated")
+        ax.set_ylim(0.0, 1.02)
+        ax.grid(alpha=0.2)
+    #endfor
+    handles, labs = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labs, loc="upper center", ncol=3,
+               bbox_to_anchor=(0.5, 0.99), fontsize=8.5)
+    fig.subplots_adjust(top=0.82, bottom=0.12, left=0.08, right=0.98, wspace=0.18)
+    fig.savefig(outdir / "05_cumulative_radius_sensitivity_vs_t.png", dpi=300)
+    plt.close(fig)
+
+    # F1/F2 1%-change response by dataset.
+    fig, ax = plt.subplots(figsize=(11.6, 6.2))
+    ax.bar(x - width/2, ds["median_abs_F1_step_response_in_errors"],
+           width, label=rf"common $F_1$ shift of {100*ff_fractional_step:.0f}%")
+    ax.bar(x + width/2, ds["median_abs_F2_step_response_in_errors"],
+           width, label=rf"common $F_2$ shift of {100*ff_fractional_step:.0f}%")
+    ax.set_xticks(x)
+    ax.set_xticklabels(ds["dataset_label"], rotation=20, ha="right")
+    ax.set_ylabel("median absolute cross-section shift / point error")
+    ax.set_title("Direct BH sensitivity to $F_1$ and $F_2$ by experiment")
+    ax.grid(axis="y", alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "06_F1_F2_one_percent_response_by_dataset.png", dpi=300)
+    plt.close(fig)
+
+    # F1/F2 direction plot, analogous to the radius-orientation plot.
+    fig, ax = plt.subplots(figsize=(8.2, 8.0))
+    for _, row in ds.iterrows():
+        key = str(row["dataset"])
+        _, v, _, _, _, _, _ = _matrix_metrics(dataset_matrices[key]["ff"])
+        ax.arrow(0.0, 0.0, v[0], v[1], length_includes_head=True,
+                 head_width=0.025, head_length=0.045, linewidth=1.6,
+                 alpha=0.8)
+        ax.text(1.06*v[0], 1.06*v[1], str(row["dataset_label"]),
+                fontsize=8.5, ha="center", va="center")
+    #endfor
+    ax.axhline(0.0, linewidth=0.8)
+    ax.axvline(0.0, linewidth=0.8)
+    ax.set_xlim(-0.15, 1.25)
+    ax.set_ylim(-1.15, 1.15)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel(r"$F_1$ component of best-measured common FF change")
+    ax.set_ylabel(r"$F_2$ component of best-measured common FF change")
+    ax.set_title("Different experiments provide different $F_1/F_2$ leverage")
+    ax.grid(alpha=0.18)
+    fig.tight_layout()
+    fig.savefig(outdir / "07_F1_F2_sensitivity_orientation.png", dpi=300)
+    plt.close(fig)
+
+    # Preferred extraction versus Kelly translated into the actual BH cross
+    # section.  The right panel expresses the difference in units of each
+    # experimental point's uncertainty, directly showing where an externally
+    # fixed Kelly input would be consequential.
+    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.8))
+    for key, label in zip(keys, labels):
+        p = points.loc[points["dataset"].astype(str) == key]
+        axes[0].scatter(
+            p["t_abs"], 100.0*p["preferred_minus_kelly_fraction_of_kelly"],
+            s=14, alpha=0.40, label=label,
+        )
+        axes[1].scatter(
+            p["t_abs"], p["preferred_minus_kelly_in_point_errors"],
+            s=14, alpha=0.40, label=label,
+        )
+    #endfor
+    axes[0].axhline(0.0, linewidth=0.8)
+    axes[1].axhline(0.0, linewidth=0.8)
+    axes[0].set_xlabel(r"$|t|$ (GeV$^2$)")
+    axes[1].set_xlabel(r"$|t|$ (GeV$^2$)")
+    axes[0].set_ylabel(r"$(\sigma_{\rm BH}^{\rm preferred}-\sigma_{\rm BH}^{\rm Kelly})/\sigma_{\rm BH}^{\rm Kelly}$ (%)")
+    axes[1].set_ylabel("preferred - Kelly BH prediction / point error")
+    axes[0].set_title("Fractional change in the BH baseline")
+    axes[1].set_title("Experimental significance of that change")
+    for ax in axes:
+        ax.grid(alpha=0.18)
+    #endfor
+    handles, labs = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labs, loc="upper center", ncol=3,
+               bbox_to_anchor=(0.5, 0.99), fontsize=8.3)
+    fig.suptitle(
+        "What changes if Kelly is fixed instead of the BH-extracted form factors?",
+        y=1.04,
+    )
+    fig.subplots_adjust(top=0.80, bottom=0.13, left=0.08, right=0.985, wspace=0.20)
+    fig.savefig(outdir / "08_preferred_vs_kelly_BH_impact.png", dpi=300)
+    plt.close(fig)
+
+    print(f"[extended EMFF sensitivity] diagnostics -> {outdir}")
+    return summary
+#enddef
 
 
 def save_preferred_sachs_vs_elastic_data(
@@ -17727,6 +18500,15 @@ def run_unified_km15_final_analysis(
             fit=all5_fit,
             family=chosen["all_six_saylor_t343"],
             outdir=diagnostics_dir / "f1_f2_sensitivity",
+        )
+        save_extended_emff_sensitivity_diagnostics(
+            bundles=production_bundles,
+            selection=selection,
+            fit=all5_fit,
+            family=chosen["all_six_saylor_t343"],
+            outdir=diagnostics_dir / "extended_emff_sensitivity",
+            radius_step_fm=0.01,
+            ff_fractional_step=0.01,
         )
         all5_specs, _ = _km15_selected_specs_for_bundles(
             production_bundles, selection, 0.05
