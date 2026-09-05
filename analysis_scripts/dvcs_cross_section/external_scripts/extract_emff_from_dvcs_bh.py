@@ -16602,7 +16602,7 @@ def save_extended_emff_sensitivity_diagnostics(
         Mr = sum(v["radius"] for v in dataset_matrices.values())
         Mf_raw = sum(v["ff_raw"] for v in dataset_matrices.values())
         Mf = sum(v["ff"] for v in dataset_matrices.values())
-        rvls, rv, rang, re, rm, rc, rcond = _matrix_metrics(Mr)
+        rvls, rv, rang, rE_err, rM_err, rc, rcond = _matrix_metrics(Mr)
         fvls, fv, fang, f1e, f2e, fc, fcond = _matrix_metrics(Mf)
         summary = pd.concat([summary, pd.DataFrame([{
             "dataset": "ALL",
@@ -16621,8 +16621,8 @@ def save_extended_emff_sensitivity_diagnostics(
             "radius_sensitivity_retained_after_norm": float(
                 np.trace(Mr) / max(np.trace(Mr_raw), 1.0e-30)
             ),
-            "linearized_rE_uncertainty_both_free_fm": re,
-            "linearized_rM_uncertainty_both_free_fm": rm,
+            "linearized_rE_uncertainty_both_free_fm": rE_err,
+            "linearized_rM_uncertainty_both_free_fm": rM_err,
             "linearized_rE_rM_correlation": rc,
             "best_constrained_radius_mixture_angle_deg": rang,
             "radius_direction_strength_ratio": rcond,
