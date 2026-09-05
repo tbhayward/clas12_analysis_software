@@ -19254,7 +19254,7 @@ def save_five_dataset_bh_selected_consistency(
         outdir: Path,
         threshold: float = 0.05) -> None:
     """
-    Five-dataset context table/figure for the nominal KM15 BH-like region.
+    Dataset context table/figure for the nominal KM15 BH-like region.
 
     This diagnostic answers a different question from the full-EP model audit:
     once the same |1-BH/EP| <= threshold condition used by the radius analysis
@@ -19355,6 +19355,94 @@ def save_five_dataset_bh_selected_consistency(
         })
     #endfor
 
+    # Add a second Saylor row using the production low-|t| restriction while
+    # keeping the full Saylor sample above.  This lets the horizontal KM15
+    # consistency plots show directly how the settled |t|>=0.343 GeV^2 cut
+    # changes the residual quality.
+    for bundle in sort_bundles_chronologically(list(bundles)):
+        if str(bundle.get("kind", "")) != "saylor2018":
+            continue
+        #endif
+        data = bundle["all_data"].copy().reset_index(drop=True)
+        needed = ["xs", "km15_bh", "km15_ep", "t_abs"]
+        if any(c not in data.columns for c in needed):
+            continue
+        #endif
+
+        y = pd.to_numeric(data["xs"], errors="coerce").to_numpy(float)
+        bh = pd.to_numeric(data["km15_bh"], errors="coerce").to_numpy(float)
+        ep = pd.to_numeric(data["km15_ep"], errors="coerce").to_numpy(float)
+        t_abs = pd.to_numeric(data["t_abs"], errors="coerce").to_numpy(float)
+        err = dataset_point_errors(data, "saylor2018", 0.0, False)
+
+        finite = (
+            np.isfinite(y) & (y > 0.0)
+            & np.isfinite(bh) & (bh > 0.0)
+            & np.isfinite(ep) & (ep > 0.0)
+            & np.isfinite(t_abs)
+            & np.isfinite(err) & (err > 0.0)
+        )
+        purity = np.full(len(data), np.nan)
+        purity[finite] = np.abs(1.0 - bh[finite] / ep[finite])
+        selected = (
+            finite
+            & (purity <= float(threshold))
+            & (t_abs >= 0.343)
+        )
+        if not np.any(selected):
+            continue
+        #endif
+
+        yy = y[selected]
+        mm = ep[selected]
+        ee = err[selected]
+        raw_pull = (mm - yy) / ee
+        raw_chi2 = float(np.sum(raw_pull**2))
+        norm_frac = float(bundle.get("norm_frac", 0.0))
+        beta, scale, prof_chi2 = _profile_model_normalization(
+            yy, mm, ee, norm_frac
+        )
+        prof_pull = (scale * mm - yy) / ee
+        ratio = yy / mm
+        prof_pull_finite = prof_pull[np.isfinite(prof_pull)]
+        gaussian_mu = (
+            float(np.mean(prof_pull_finite))
+            if len(prof_pull_finite) else np.nan
+        )
+        gaussian_sigma = (
+            float(np.std(prof_pull_finite, ddof=0))
+            if len(prof_pull_finite) else np.nan
+        )
+
+        restricted_label = (
+            str(bundle["label"]) + r" ($|t|\geq0.343$ GeV$^2$)"
+        )
+        pull_store[restricted_label] = prof_pull.copy()
+        rows.append({
+            "dataset": str(bundle["key"]) + "_t343",
+            "dataset_label": restricted_label,
+            "N_5pct": int(np.sum(selected)),
+            "normalization_prior_fraction": norm_frac,
+            "profiled_beta": float(beta),
+            "profiled_scale": float(scale),
+            "raw_chi2_per_point": float(raw_chi2 / np.sum(selected)),
+            "profiled_chi2_per_point": float(prof_chi2 / np.sum(selected)),
+            "mean_profiled_pull": float(np.mean(prof_pull)),
+            "rms_profiled_pull": float(np.sqrt(np.mean(prof_pull**2))),
+            "gaussian_fit_mu": gaussian_mu,
+            "gaussian_fit_sigma": gaussian_sigma,
+            "median_data_over_km15_ep": float(np.median(ratio)),
+            "fraction_abs_profiled_pull_gt_2": float(
+                np.mean(np.abs(prof_pull) > 2.0)
+            ),
+            "fraction_abs_profiled_pull_gt_3": float(
+                np.mean(np.abs(prof_pull) > 3.0)
+            ),
+            "diagnostic_subset": "Saylor |t|>=0.343 GeV2",
+        })
+        break
+    #endfor
+
     table = pd.DataFrame(rows)
     table.to_csv(
         outdir / "05_five_dataset_km15_5pct_consistency_summary.csv",
@@ -19363,6 +19451,63 @@ def save_five_dataset_bh_selected_consistency(
     if table.empty:
         return
     #endif
+
+    # Horizontal KM15 consistency plot.  This restores the compact presentation
+    # used earlier in the analysis and, importantly, keeps BOTH the full Saylor
+    # sample and the production |t|>=0.343 GeV^2 Saylor subset.
+    plot_chi2 = table.copy()
+    # Preserve chronological order while placing restricted Saylor immediately
+    # after the full Saylor row.
+    chronology_rank = {
+        "jo2015": 0.0,
+        "defurne2015": 1.0,
+        "defurne2017": 2.0,
+        "saylor2018": 3.0,
+        "saylor2018_t343": 3.1,
+        "georges2022": 4.0,
+        "pass1": 5.0,
+    }
+    plot_chi2["_order"] = plot_chi2["dataset"].map(
+        lambda x: chronology_rank.get(str(x), 100.0)
+    )
+    plot_chi2 = plot_chi2.sort_values("_order").reset_index(drop=True)
+
+    fig_h = max(4.8, 0.62 * len(plot_chi2) + 1.8)
+    fig, ax = plt.subplots(figsize=(10.6, fig_h))
+    ypos = np.arange(len(plot_chi2))
+    vals = plot_chi2["profiled_chi2_per_point"].to_numpy(float)
+    ax.barh(ypos, vals)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels(plot_chi2["dataset_label"])
+    ax.invert_yaxis()
+    ax.axvline(1.0, linewidth=1.0, linestyle="--")
+    ax.set_xlabel(r"Profiled KM15 $\chi^2/N$")
+    ax.set_title(
+        "KM15 agreement in the common 5% BH-like region"
+    )
+    ax.grid(axis="x", alpha=0.2)
+
+    finite_vals = vals[np.isfinite(vals)]
+    if len(finite_vals):
+        xmax = max(1.15, 1.12 * float(np.max(finite_vals)))
+        ax.set_xlim(0.0, xmax)
+        for iy, val in enumerate(vals):
+            if np.isfinite(val):
+                ax.text(
+                    val + 0.015 * xmax, iy, f"{val:.2f}",
+                    va="center", ha="left", fontsize=9,
+                )
+            #endif
+        #endfor
+    #endif
+
+    fig.tight_layout()
+    fig.savefig(
+        outdir / "06a_km15_5pct_profiled_chi2_by_dataset.png",
+        dpi=260,
+        bbox_inches="tight",
+    )
+    plt.close(fig)
 
     # Human-readable LaTeX fragment for direct inclusion in the note.
     tex_cols = [
@@ -19479,7 +19624,7 @@ def save_five_dataset_bh_selected_consistency(
     ax.set_xlabel("profiled KM15 residual pull")
     ax.set_ylabel("normalized density")
     ax.set_title(
-        "Five proton datasets in the common KM15 5% BH-like region"
+        "Proton datasets in the common KM15 5% BH-like region"
     )
     ax.grid(alpha=0.2)
     ax.legend(fontsize=8, ncol=2)
