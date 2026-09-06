@@ -34,9 +34,13 @@
 #include <TGaxis.h>
 #include <TLatex.h>
 #include <TLegend.h>
+#include <TLine.h>
+#include <TMarker.h>
 #include <TStyle.h>
 #include <TPad.h>
 #include <TH1.h>
+#include <TH1D.h>
+#include <TH2D.h>
 #include <TAxis.h>
 #include <TROOT.h>
 #include <TError.h>
@@ -51,6 +55,7 @@
 #include <iostream>
 #include <limits>
 #include <map>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <string>
@@ -888,6 +893,363 @@ static void draw_bin_volume_canvases(const VolumeGroup& G,
     }
 }
 
+// -----------------------------------------------------------------------------
+// Analysis-note diagnostics
+// -----------------------------------------------------------------------------
+
+static double note_quantile(std::vector<double> v, double q)
+{
+    if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+    std::sort(v.begin(), v.end());
+    if (v.size() == 1) return v[0];
+    const double x = q * double(v.size() - 1);
+    const std::size_t i = static_cast<std::size_t>(std::floor(x));
+    const std::size_t j = std::min(i + 1, v.size() - 1);
+    const double f = x - double(i);
+    return v[i] * (1.0 - f) + v[j] * f;
+}
+
+static bool note_same_edge(double a, double b)
+{
+    return std::fabs(a - b) < 1e-10;
+}
+
+struct NoteVolumePoint {
+    double xbmin=0, xbmax=0;
+    double q2min=0, q2max=0;
+    double tmin=0, tmax=0;
+    double phimin=0, phimax=0;
+    double allowed=0;
+    double cubic=0;
+    double fraction=0;
+};
+
+static std::vector<NoteVolumePoint>
+collect_note_volume_points(const CsvDoc& csv, const VolumeGroup& G)
+{
+    const int c_x0=csv.col_index("xBmin");
+    const int c_x1=csv.col_index("xBmax");
+    const int c_q0=csv.col_index("Q2min");
+    const int c_q1=csv.col_index("Q2max");
+    const int c_t0=csv.col_index("t_abs_min");
+    const int c_t1=csv.col_index("t_abs_max");
+    const int c_p0=csv.col_index("phimin");
+    const int c_p1=csv.col_index("phimax");
+    const int c_v =csv.col_index(G.binvol_col);
+    const int c_c =csv.col_index(G.cubic_binvol_col);
+
+    std::vector<NoteVolumePoint> out;
+    if(c_x0<0||c_x1<0||c_q0<0||c_q1<0||c_t0<0||c_t1<0||
+       c_p0<0||c_p1<0||c_v<0||c_c<0) return out;
+
+    for(int r=0;r<csv.nrows();++r){
+        const double p0=csv.as_double(r,c_p0);
+        const double p1=csv.as_double(r,c_p1);
+        if(!std::isfinite(p0)||!std::isfinite(p1)) continue;
+        if(std::fabs(p1-p0) > 100.0) continue; // skip phi-integrated rows
+
+        double v=0,vs=0,vy=0,c=0,cs=0,cy=0;
+        if(!parse_triple(csv.rows[r][c_v],v,vs,vy)){
+            v=CsvDoc::to_double(csv.rows[r][c_v]);
+        }
+        if(!parse_triple(csv.rows[r][c_c],c,cs,cy)){
+            c=CsvDoc::to_double(csv.rows[r][c_c]);
+        }
+        if(!std::isfinite(v)||!std::isfinite(c)||c<=0||v<0) continue;
+
+        NoteVolumePoint p;
+        p.xbmin=csv.as_double(r,c_x0); p.xbmax=csv.as_double(r,c_x1);
+        p.q2min=csv.as_double(r,c_q0); p.q2max=csv.as_double(r,c_q1);
+        p.tmin=csv.as_double(r,c_t0); p.tmax=csv.as_double(r,c_t1);
+        p.phimin=p0; p.phimax=p1;
+        p.allowed=v; p.cubic=c;
+        p.fraction=std::max(0.0,std::min(1.0,v/c));
+        if(std::isfinite(p.xbmin)&&std::isfinite(p.xbmax)&&
+           std::isfinite(p.q2min)&&std::isfinite(p.q2max)&&
+           std::isfinite(p.tmin)&&std::isfinite(p.tmax)) out.push_back(p);
+    }
+    return out;
+}
+
+static void write_bin_volume_analysis_note_outputs(
+    const CsvDoc& csv,
+    const VolumeGroup& g10p6,
+    const VolumeGroup& g10p2,
+    const std::string& out_root_dir)
+{
+    namespace fs=std::filesystem;
+    const fs::path note_dir=fs::path(out_root_dir)/"bin_volume"/"analysis_note";
+    std::error_code ec;
+    fs::create_directories(note_dir,ec);
+    if(ec){
+        std::cerr<<"[binvol-note] WARNING: cannot create "<<note_dir
+                 <<": "<<ec.message()<<"\n";
+        return;
+    }
+
+    const std::vector<NoteVolumePoint> p106=collect_note_volume_points(csv,g10p6);
+    const std::vector<NoteVolumePoint> p102=collect_note_volume_points(csv,g10p2);
+    if(p106.empty()||p102.empty()){
+        std::cerr<<"[binvol-note] WARNING: no populated bin-volume points found.\n";
+        return;
+    }
+
+    auto unique_bulk=[](const std::vector<NoteVolumePoint>& pts){
+        std::vector<NoteVolumePoint> out;
+        std::set<std::tuple<double,double,double,double,double,double>> seen;
+        for(const auto&p:pts){
+            auto key=std::make_tuple(p.xbmin,p.xbmax,p.q2min,p.q2max,p.tmin,p.tmax);
+            if(seen.insert(key).second) out.push_back(p);
+        }
+        return out;
+    };
+
+    // Since the phase-space fraction does not depend on phi, summarize one
+    // entry per (xB,Q2,|t|) cell rather than counting each phi bin 24 times.
+    const std::vector<NoteVolumePoint> bulk106=unique_bulk(p106);
+    const std::vector<NoteVolumePoint> bulk102=unique_bulk(p102);
+
+    auto fractions=[](const std::vector<NoteVolumePoint>& pts){
+        std::vector<double> v;
+        for(const auto&p:pts) if(std::isfinite(p.fraction)) v.push_back(p.fraction);
+        return v;
+    };
+    const std::vector<double> f106=fractions(bulk106);
+    const std::vector<double> f102=fractions(bulk102);
+
+    // Machine-readable global summary.
+    {
+        std::ofstream o((note_dir/"bin_volume_summary.csv").string());
+        o<<"beam_energy_GeV,bulk_cells,p16_phase_space_fraction,median_phase_space_fraction,p84_phase_space_fraction,min_phase_space_fraction,max_phase_space_fraction\n";
+        auto row=[&](double E,const std::vector<double>& v){
+            o<<std::fixed<<std::setprecision(6)
+             <<E<<","<<v.size()<<","
+             <<note_quantile(v,.16)<<","<<note_quantile(v,.50)<<","<<note_quantile(v,.84)<<","
+             <<*std::min_element(v.begin(),v.end())<<","<<*std::max_element(v.begin(),v.end())<<"\n";
+        };
+        row(g10p6.Ebeam,f106);
+        row(g10p2.Ebeam,f102);
+    }
+
+    // xB-resolved summary CSV.
+    std::vector<std::pair<double,double>> xedges;
+    for(const auto&p:bulk106){
+        std::pair<double,double> e(p.xbmin,p.xbmax);
+        if(std::find(xedges.begin(),xedges.end(),e)==xedges.end()) xedges.push_back(e);
+    }
+    std::sort(xedges.begin(),xedges.end());
+
+    {
+        std::ofstream o((note_dir/"bin_volume_xB_summary.csv").string());
+        o<<"beam_energy_GeV,xBmin,xBmax,cells,p16_phase_space_fraction,median_phase_space_fraction,p84_phase_space_fraction\n";
+        auto write_energy=[&](const VolumeGroup&G,const std::vector<NoteVolumePoint>& pts){
+            for(const auto&e:xedges){
+                std::vector<double> v;
+                for(const auto&p:pts){
+                    if(note_same_edge(p.xbmin,e.first)&&note_same_edge(p.xbmax,e.second)) v.push_back(p.fraction);
+                }
+                if(v.empty()) continue;
+                o<<std::fixed<<std::setprecision(6)
+                 <<G.Ebeam<<","<<e.first<<","<<e.second<<","<<v.size()<<","
+                 <<note_quantile(v,.16)<<","<<note_quantile(v,.50)<<","<<note_quantile(v,.84)<<"\n";
+            }
+        };
+        write_energy(g10p6,bulk106);
+        write_energy(g10p2,bulk102);
+    }
+
+    gStyle->SetOptStat(0);
+    gStyle->SetPadTickX(1);
+    gStyle->SetPadTickY(1);
+
+    // 1) Distribution of the physically allowed fraction.
+    {
+        TCanvas c("c_note_binvol_fraction_dist","",1150,720);
+        c.SetLeftMargin(.135); c.SetRightMargin(.035);
+        c.SetBottomMargin(.14); c.SetTopMargin(.095);
+        c.SetTicks(1,1);
+
+        TH1D h106("h_note_binvol_fraction_106","",40,0,1.0);
+        TH1D h102("h_note_binvol_fraction_102","",40,0,1.0);
+        for(double v:f106) h106.Fill(v);
+        for(double v:f102) h102.Fill(v);
+        if(h106.Integral()>0) h106.Scale(1.0/h106.Integral());
+        if(h102.Integral()>0) h102.Scale(1.0/h102.Integral());
+
+        h106.SetLineColor(kBlue+1); h106.SetLineWidth(3);
+        h106.SetFillColorAlpha(kBlue+1,.14);
+        h102.SetLineColor(kRed+1); h102.SetLineWidth(3);
+        h102.SetFillStyle(0);
+
+        const double ymax=1.20*std::max(h106.GetMaximum(),h102.GetMaximum());
+        h106.SetMaximum(ymax);
+        h106.GetXaxis()->SetTitle("Physically allowed fraction, V_{bin}/V_{cubic}");
+        h106.GetYaxis()->SetTitle("Fraction of kinematic cells");
+        h106.GetXaxis()->SetTitleSize(.050); h106.GetYaxis()->SetTitleSize(.050);
+        h106.GetXaxis()->SetLabelSize(.041); h106.GetYaxis()->SetLabelSize(.041);
+        h106.GetYaxis()->SetTitleOffset(1.30);
+        h106.Draw("HIST");
+        h102.Draw("HIST SAME");
+
+        TLine one(1.0,0.0,1.0,.97*ymax);
+        one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
+
+        TLatex title;
+        title.SetNDC(); title.SetTextFont(42); title.SetTextSize(.047);
+        title.DrawLatex(.135,.925,"Fraction of each nominal bin inside the allowed phase space");
+
+        TLegend leg(.18,.70,.43,.84);
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.034);
+        leg.AddEntry(&h106,"10.6 GeV","lf");
+        leg.AddEntry(&h102,"10.2 GeV","l");
+        leg.Draw();
+
+        c.SaveAs((note_dir/"bin_volume_phase_space_fraction_distribution.png").string().c_str());
+    }
+
+    // 2) Median allowed fraction versus xB for the two beam energies.
+    {
+        TCanvas c("c_note_binvol_fraction_xb","",1150,720);
+        c.SetLeftMargin(.135); c.SetRightMargin(.035);
+        c.SetBottomMargin(.14); c.SetTopMargin(.095);
+        c.SetGridy(); c.SetTicks(1,1);
+
+        TH1F frame("h_note_binvol_fraction_xb","",100,.05,.60);
+        frame.SetMinimum(0.0); frame.SetMaximum(1.08);
+        frame.GetXaxis()->SetTitle("x_{B}");
+        frame.GetYaxis()->SetTitle("Physically allowed fraction, V_{bin}/V_{cubic}");
+        frame.GetXaxis()->SetTitleSize(.050); frame.GetYaxis()->SetTitleSize(.050);
+        frame.GetXaxis()->SetLabelSize(.041); frame.GetYaxis()->SetLabelSize(.041);
+        frame.GetYaxis()->SetTitleOffset(1.30);
+        frame.Draw();
+
+        TGraphAsymmErrors g106,g102;
+        g106.SetMarkerStyle(20); g106.SetMarkerSize(1.25);
+        g106.SetMarkerColor(kBlue+1); g106.SetLineColor(kBlue+1); g106.SetLineWidth(2);
+        g102.SetMarkerStyle(21); g102.SetMarkerSize(1.20);
+        g102.SetMarkerColor(kRed+1); g102.SetLineColor(kRed+1); g102.SetLineWidth(2);
+
+        auto fill_graph=[&](TGraphAsymmErrors&g,const std::vector<NoteVolumePoint>&pts,double xoff){
+            int n=0;
+            for(const auto&e:xedges){
+                std::vector<double> v;
+                for(const auto&p:pts){
+                    if(note_same_edge(p.xbmin,e.first)&&note_same_edge(p.xbmax,e.second)) v.push_back(p.fraction);
+                }
+                if(v.empty()) continue;
+                const double m=note_quantile(v,.50),lo=note_quantile(v,.16),hi=note_quantile(v,.84);
+                const double x=.5*(e.first+e.second)+xoff;
+                g.SetPoint(n,x,m);
+                g.SetPointError(n,0,0,m-lo,hi-m);
+                ++n;
+            }
+        };
+        fill_graph(g106,bulk106,-.0025);
+        fill_graph(g102,bulk102,+.0025);
+
+        g106.Draw("PE SAME");
+        g102.Draw("PE SAME");
+
+        TLine one(.05,1.0,.60,1.0);
+        one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
+
+        TLatex title;
+        title.SetNDC(); title.SetTextFont(42); title.SetTextSize(.047);
+        title.DrawLatex(.135,.925,"Kinematic dependence of the bin phase-space volume");
+
+        TLatex note;
+        note.SetNDC(); note.SetTextFont(42); note.SetTextSize(.027);
+        note.DrawLatex(.145,.845,"Median over (Q^{2}, |t|) cells; bars show the 16th--84th percentile range");
+
+        TLegend leg(.72,.69,.93,.82);
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.034);
+        leg.AddEntry(&g106,"10.6 GeV","pe");
+        leg.AddEntry(&g102,"10.2 GeV","pe");
+        leg.Draw();
+
+        c.SaveAs((note_dir/"bin_volume_phase_space_fraction_vs_xB.png").string().c_str());
+    }
+
+    // 3) Representative xB-Q2 map for a fixed |t| interval.  Choose the
+    // interval with the largest number of common cells in the 10.6 GeV table.
+    std::map<std::pair<double,double>,int> tcounts;
+    for(const auto&p:bulk106) ++tcounts[{p.tmin,p.tmax}];
+    std::pair<double,double> best_t=tcounts.begin()->first;
+    int best_n=-1;
+    for(const auto&kv:tcounts){
+        if(kv.second>best_n){best_n=kv.second; best_t=kv.first;}
+    }
+
+    auto make_map=[&](const std::vector<NoteVolumePoint>&pts,
+                      const std::string& hname,
+                      const std::string& title_text,
+                      const std::string& outname)
+    {
+        std::vector<double> xbounds,qbounds;
+        for(const auto&p:pts){
+            if(!note_same_edge(p.tmin,best_t.first)||!note_same_edge(p.tmax,best_t.second)) continue;
+            xbounds.push_back(p.xbmin); xbounds.push_back(p.xbmax);
+            qbounds.push_back(p.q2min); qbounds.push_back(p.q2max);
+        }
+        std::sort(xbounds.begin(),xbounds.end());
+        xbounds.erase(std::unique(xbounds.begin(),xbounds.end(),
+                     [](double a,double b){return note_same_edge(a,b);}),xbounds.end());
+        std::sort(qbounds.begin(),qbounds.end());
+        qbounds.erase(std::unique(qbounds.begin(),qbounds.end(),
+                     [](double a,double b){return note_same_edge(a,b);}),qbounds.end());
+        if(xbounds.size()<2||qbounds.size()<2) return;
+
+        TH2D h(hname.c_str(),"",
+               int(xbounds.size()-1),xbounds.data(),
+               int(qbounds.size()-1),qbounds.data());
+
+        for(const auto&p:pts){
+            if(!note_same_edge(p.tmin,best_t.first)||!note_same_edge(p.tmax,best_t.second)) continue;
+            const double xc=.5*(p.xbmin+p.xbmax);
+            const double qc=.5*(p.q2min+p.q2max);
+            h.SetBinContent(h.FindBin(xc,qc),p.fraction);
+        }
+
+        TCanvas c((hname+"_canvas").c_str(),"",1050,760);
+        c.SetLeftMargin(.13); c.SetRightMargin(.14);
+        c.SetBottomMargin(.13); c.SetTopMargin(.10);
+        c.SetTicks(1,1);
+
+        h.SetMinimum(0.0); h.SetMaximum(1.0);
+        h.GetXaxis()->SetTitle("x_{B}");
+        h.GetYaxis()->SetTitle("Q^{2} (GeV^{2})");
+        h.GetZaxis()->SetTitle("V_{bin}/V_{cubic}");
+        h.GetXaxis()->SetTitleSize(.048); h.GetYaxis()->SetTitleSize(.048);
+        h.GetZaxis()->SetTitleSize(.043);
+        h.GetXaxis()->SetLabelSize(.039); h.GetYaxis()->SetLabelSize(.039);
+        h.GetZaxis()->SetLabelSize(.036);
+        h.GetYaxis()->SetTitleOffset(1.15);
+        h.GetZaxis()->SetTitleOffset(1.20);
+        h.Draw("COLZ TEXT");
+
+        TLatex title;
+        title.SetNDC(); title.SetTextFont(42); title.SetTextSize(.045);
+        title.DrawLatex(.13,.935,title_text.c_str());
+
+        TLatex note;
+        note.SetNDC(); note.SetTextFont(42); note.SetTextSize(.030);
+        note.DrawLatex(.14,.865,
+            Form("%.3f < |t| < %.3f GeV^{2}",best_t.first,best_t.second));
+
+        c.SaveAs((note_dir/outname).string().c_str());
+    };
+
+    make_map(bulk106,"h_note_binvol_map_106",
+             "Physical phase-space coverage of the nominal bins at 10.6 GeV",
+             "bin_volume_phase_space_map_10p6.png");
+    make_map(bulk102,"h_note_binvol_map_102",
+             "Physical phase-space coverage of the nominal bins at 10.2 GeV",
+             "bin_volume_phase_space_map_10p2.png");
+
+    std::cout<<"[binvol-note] Wrote analysis-note outputs to "<<note_dir<<"\n";
+}
+
+
 } // end anonymous namespace
 
 // =====================================================================
@@ -952,6 +1314,9 @@ bool update_bin_volume_csv(const std::string& csv_path,
     // Draw canvases (sequential, no threads).
     draw_bin_volume_canvases(g10p6, csv, row_has_data_10p6, out_root_dir);
     draw_bin_volume_canvases(g10p2, csv, row_has_data_10p2, out_root_dir);
+
+    // Compact, note-quality diagnostics.
+    write_bin_volume_analysis_note_outputs(csv, g10p6, g10p2, out_root_dir);
 
     if (!csv.save_atomic(csv_path)) {
         std::cerr << "[binvol] ERROR: failed to save updated CSV.\n";
