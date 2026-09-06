@@ -1626,7 +1626,6 @@ bool write_radiative_corrections_analysis_note_outputs(
         std::ostringstream med_label; med_label<<"Median = "<<std::fixed<<std::setprecision(3)<<median_value;
         leg.AddEntry(&median_line,med_label.str().c_str(),"l");
         leg.Draw();
-        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.030); n.DrawLatex(.13,.84,"Pass-1 model factors reused unchanged for production");
         c.SaveAs((note/"radiative_correction_distribution.png").string().c_str());
     }
 
