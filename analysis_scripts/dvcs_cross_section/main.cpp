@@ -499,28 +499,18 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // // // --------- Radiative corrections (Frad factors) ----------
-    // // {
-    // //     const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
-    // //     const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_radcorr.csv";
-    //
-    // //     try {
-    // //         std::filesystem::copy_file(
-    // //             csv_main,
-    // //             csv_backup,
-    // //             std::filesystem::copy_options::overwrite_existing
-    // //         );
-    // //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_radcorr.csv\n";
-    // //     } catch (const std::exception& e) {
-    // //         std::cerr << "[main] WARNING: backup for radiative corrections failed ("
-    // //                   << e.what() << "). Continuing.\n";
-    // //     }
-    //
-    // //     if (!update_radiative_corrections_csv(csv_main, genMcTrees, radGenMcTrees, output_root)) {
-    // //         std::cerr << "[main] ERROR: update_radiative_corrections_csv failed.\n";
-    // //         std::exit(EXIT_FAILURE);
-    // //     }
-    // // }
+    // --------- Radiative-correction analysis-note outputs ----------
+    // Frad is model-only and unchanged from pass-1.  Production values are
+    // taken from imports/all_bin_v3.csv; the old MC recalculation remains
+    // available as a cross-check but is not run in the standard pass-2 chain.
+    {
+        if (!write_radiative_corrections_analysis_note_outputs(
+                "imports/all_bin_v3.csv",
+                "output/radiative_corrections")) {
+            std::cerr << "[main] ERROR: radiative-correction analysis-note outputs failed.\n";
+            return 1;
+        }
+    }
 
     // --------- Kinematic bin volumes into CSV + plots ----------
     {
@@ -544,7 +534,18 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // // // --------- Bin-centering corrections (Fbin) into CSV + debug plots ----------
+    // --------- Bin-centering analysis-note outputs ----------
+    // Fbin is likewise model-only and unchanged from pass-1.  Produce the
+    // note diagnostics from the same published factors used in production.
+    {
+        if (!write_bin_centering_analysis_note_outputs(
+                "imports/all_bin_v3.csv",
+                "output/bin_centering_plots")) {
+            std::cerr << "[main] ERROR: bin-centering analysis-note outputs failed.\n";
+            return 1;
+        }
+    }
+
     // // {
     // //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
     //

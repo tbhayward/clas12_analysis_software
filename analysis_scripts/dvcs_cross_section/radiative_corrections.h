@@ -35,4 +35,10 @@ bool update_radiative_corrections_csv(
     const std::map<std::string, TTree*>& radGenMcTrees,
     const std::string& out_root_dir);
 
+
+// Read-only analysis-note diagnostics from the pass-1 Frad values reused in pass-2.
+bool write_radiative_corrections_analysis_note_outputs(
+    const std::string& lee_csv_path,
+    const std::string& out_root_dir);
+
 #endif // RADIATIVE_CORRECTIONS_H

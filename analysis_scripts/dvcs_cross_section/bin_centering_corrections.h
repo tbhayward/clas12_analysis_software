@@ -45,4 +45,10 @@ void plot_bin_centering_fbin_vs_phi(
     const std::string& csv_path,
     const std::string& out_root_dir);
 
+
+// Read-only analysis-note diagnostics from the pass-1 Fbin values reused in pass-2.
+bool write_bin_centering_analysis_note_outputs(
+    const std::string& lee_csv_path,
+    const std::string& out_root_dir);
+
 #endif // BIN_CENTERING_CORRECTIONS_H

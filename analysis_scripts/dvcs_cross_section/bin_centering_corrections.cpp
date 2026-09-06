@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <numeric>
 #include <set>
 #include <sstream>
 #include <string>
@@ -24,6 +25,7 @@
 // ROOT plotting includes for debug plots
 #include <TCanvas.h>
 #include <TGraphAsymmErrors.h>
+#include <TGraph.h>
 #include <TLatex.h>
 #include <TLegend.h>
 #include <TStyle.h>
@@ -31,6 +33,7 @@
 #include <TH1.h>
 #include <TGaxis.h>
 #include <TLine.h>
+#include <TString.h>
 
 namespace {
 
@@ -1175,4 +1178,205 @@ void plot_bin_centering_fbin_vs_phi(
     std::cout << "[bincenter-plot] Finished Fbin vs phi debug plots into "
               << out_root_dir << "/10.60 and /10.2\n";
     std::cout << "============================================================\n";
+}
+
+// -----------------------------------------------------------------------------
+// Analysis-note diagnostics from the published pass-1 Fbin table.
+// -----------------------------------------------------------------------------
+bool write_bin_centering_analysis_note_outputs(
+    const std::string& lee_csv_path,
+    const std::string& out_root_dir)
+{
+    CsvDoc csv;
+    if(!csv.load(lee_csv_path)) return false;
+
+    const int cv=csv.col_index("valid bin"), cx0=csv.col_index("xBmin"),
+              cx1=csv.col_index("xBmax"), cq0=csv.col_index("Q2min"),
+              cq1=csv.col_index("Q2max"), ct0=csv.col_index("t_abs_min"),
+              ct1=csv.col_index("t_abs_max"), cp=csv.col_index("phiavg"),
+              cr=csv.col_index("Frad"), cb=csv.col_index("Fbin");
+    if(cx0<0||cx1<0||cq0<0||cq1<0||ct0<0||ct1<0||cp<0||cr<0||cb<0){
+        std::cerr<<"[bincenter-note] ERROR: required pass-1 columns are missing.\n"; return false;
+    }
+    auto valid=[&](int r){ return cv<0||(std::isfinite(csv.as_double(r,cv))&&csv.as_double(r,cv)>0.5); };
+    auto quantile=[](std::vector<double> v,double q){
+        if(v.empty()) return std::numeric_limits<double>::quiet_NaN();
+        std::sort(v.begin(),v.end()); if(v.size()==1) return v[0];
+        double x=q*double(v.size()-1); std::size_t i=(std::size_t)std::floor(x),j=std::min(i+1,v.size()-1);
+        double a=x-double(i); return v[i]*(1-a)+v[j]*a;
+    };
+
+    fs::path note=fs::path(out_root_dir)/"analysis_note"; std::error_code ec; fs::create_directories(note,ec);
+    if(ec){ std::cerr<<"[bincenter-note] ERROR creating "<<note<<": "<<ec.message()<<"\n"; return false; }
+
+    std::vector<double> vals,prod; std::vector<std::pair<double,double>> xedges;
+    for(int r=0;r<csv.nrows();++r){
+        if(!valid(r)) continue; double b=csv.as_double(r,cb),a=csv.as_double(r,cr);
+        if(std::isfinite(b)&&b>0) vals.push_back(b);
+        if(std::isfinite(a)&&a>0&&std::isfinite(b)&&b>0) prod.push_back(a*b);
+        std::pair<double,double> e(csv.as_double(r,cx0),csv.as_double(r,cx1));
+        if(std::isfinite(e.first)&&std::isfinite(e.second)&&std::find(xedges.begin(),xedges.end(),e)==xedges.end()) xedges.push_back(e);
+    }
+    std::sort(xedges.begin(),xedges.end()); if(vals.empty()) return false;
+
+    {
+        std::ofstream o((note/"bin_centering_summary.csv").string()); o<<"quantity,value\n"<<std::setprecision(10);
+        o<<"source,"<<lee_csv_path<<"\n"<<"populated_bins,"<<vals.size()<<"\n";
+        o<<"Fbin_mean,"<<std::accumulate(vals.begin(),vals.end(),0.0)/vals.size()<<"\n";
+        o<<"Fbin_p16,"<<quantile(vals,.16)<<"\nFbin_median,"<<quantile(vals,.5)<<"\nFbin_p84,"<<quantile(vals,.84)<<"\n";
+        o<<"Fbin_min,"<<*std::min_element(vals.begin(),vals.end())<<"\nFbin_max,"<<*std::max_element(vals.begin(),vals.end())<<"\n";
+        o<<"FradFbin_p16,"<<quantile(prod,.16)<<"\nFradFbin_median,"<<quantile(prod,.5)<<"\nFradFbin_p84,"<<quantile(prod,.84)<<"\n";
+    }
+
+    gStyle->SetOptStat(0); gStyle->SetPadTickX(1); gStyle->SetPadTickY(1);
+
+    {
+        TCanvas c("c_note_fbin_dist","",1100,700);
+        c.SetLeftMargin(.12); c.SetRightMargin(.035); c.SetBottomMargin(.13); c.SetTopMargin(.10); c.SetTicks(1,1);
+        TH1D h("h_note_fbin_dist","",50,.68,1.15); for(double v:vals) if(v>=.68&&v<=1.15) h.Fill(v);
+        if(h.Integral()>0) h.Scale(1.0/h.Integral());
+        h.SetLineColor(kRed+1); h.SetFillColorAlpha(kRed+1,.20); h.SetLineWidth(2);
+        h.GetXaxis()->SetTitle("Bin-centering correction factor F_{bin}"); h.GetYaxis()->SetTitle("Fraction of populated analysis bins");
+        h.GetYaxis()->SetTitleOffset(1.25); h.Draw("HIST");
+        TLine one(1,0,1,1.03*h.GetMaximum()); one.SetLineStyle(2); one.SetLineColor(kGray+2); one.Draw();
+        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.048); t.DrawLatex(.12,.93,"Distribution of bin-centering correction factors");
+        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.030); n.DrawLatex(.13,.84,"Pass-1 model factors reused unchanged for pass-2");
+        c.SaveAs((note/"bin_centering_correction_distribution.png").string().c_str());
+    }
+
+    {
+        TCanvas c("c_note_fbin_xb","",1100,700);
+        c.SetLeftMargin(.12); c.SetRightMargin(.035); c.SetBottomMargin(.13); c.SetTopMargin(.10); c.SetGridy(); c.SetTicks(1,1);
+        TH1F frame("h_note_fbin_xb","",100,.05,.60); frame.SetMinimum(.78); frame.SetMaximum(1.08);
+        frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Bin-centering correction factor F_{bin}");
+        frame.GetYaxis()->SetTitleOffset(1.25); frame.Draw();
+        TGraphAsymmErrors g; g.SetMarkerStyle(20); g.SetMarkerSize(1.15); g.SetMarkerColor(kRed+1); g.SetLineColor(kRed+1); g.SetLineWidth(2);
+        int npt=0;
+        for(const auto&e:xedges){
+            std::vector<double> v;
+            for(int r=0;r<csv.nrows();++r){ if(!valid(r)) continue;
+                if(std::fabs(csv.as_double(r,cx0)-e.first)>1e-10||std::fabs(csv.as_double(r,cx1)-e.second)>1e-10) continue;
+                double q=csv.as_double(r,cb); if(std::isfinite(q)&&q>0) v.push_back(q);
+            }
+            if(v.empty()) continue; double m=quantile(v,.5),lo=quantile(v,.16),hi=quantile(v,.84),x=.5*(e.first+e.second);
+            g.SetPoint(npt,x,m); g.SetPointError(npt,0,0,m-lo,hi-m); ++npt;
+        }
+        g.Draw("PE SAME"); TLine one(.05,1,.60,1); one.SetLineStyle(2); one.SetLineColor(kGray+2); one.Draw();
+        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.048); t.DrawLatex(.12,.93,"Kinematic dependence of the bin-centering correction");
+        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.029); n.DrawLatex(.13,.84,"Points: median over (Q^{2}, |t|, #phi) bins; bars: 16th--84th percentile range");
+        c.SaveAs((note/"bin_centering_correction_vs_xB_summary.png").string().c_str());
+    }
+
+
+    // Standalone representative Fbin(phi) figure for the bin-centering
+    // subsection of the analysis note.
+    {
+        const double x0=.204,x1=.268,q0=1.912,q1=2.510,t0=.250,t1=.400;
+        TGraph g;
+        g.SetMarkerStyle(20);
+        g.SetMarkerSize(1.15);
+        g.SetMarkerColor(kRed+1);
+        g.SetLineColor(kRed+1);
+        g.SetLineWidth(2);
+
+        std::ofstream o((note/"bin_centering_correction_phi_example.csv").string());
+        o<<"phi,Fbin\n";
+
+        int npt=0;
+        double ymin=9.0,ymax=-9.0;
+        for(int r=0;r<csv.nrows();++r){
+            if(!valid(r)) continue;
+            if(std::fabs(csv.as_double(r,cx0)-x0)>1e-10||
+               std::fabs(csv.as_double(r,cx1)-x1)>1e-10||
+               std::fabs(csv.as_double(r,cq0)-q0)>1e-10||
+               std::fabs(csv.as_double(r,cq1)-q1)>1e-10||
+               std::fabs(csv.as_double(r,ct0)-t0)>1e-10||
+               std::fabs(csv.as_double(r,ct1)-t1)>1e-10) continue;
+
+            const double phi=csv.as_double(r,cp);
+            const double fbin=csv.as_double(r,cb);
+            if(!std::isfinite(phi)||!std::isfinite(fbin)||fbin<=0) continue;
+
+            g.SetPoint(npt++,phi,fbin);
+            ymin=std::min(ymin,fbin);
+            ymax=std::max(ymax,fbin);
+            o<<phi<<","<<fbin<<"\n";
+        }
+
+        if(npt>0){
+            TCanvas c("c_note_fbin_phi","",1100,700);
+            c.SetLeftMargin(.12);
+            c.SetRightMargin(.035);
+            c.SetBottomMargin(.13);
+            c.SetTopMargin(.10);
+            c.SetGridy();
+            c.SetTicks(1,1);
+
+            TH1F frame("h_note_fbin_phi","",100,0,360);
+            frame.SetMinimum(std::min(.90,ymin-.03));
+            frame.SetMaximum(std::max(1.06,ymax+.03));
+            frame.GetXaxis()->SetTitle("#phi (deg)");
+            frame.GetYaxis()->SetTitle("F_{bin}");
+            frame.GetYaxis()->SetTitleOffset(1.15);
+            frame.Draw();
+
+            g.Draw("PL SAME");
+
+            TLine one(0,1,360,1);
+            one.SetLineStyle(2);
+            one.SetLineColor(kGray+2);
+            one.Draw();
+
+            TLatex t;
+            t.SetNDC();
+            t.SetTextFont(42);
+            t.SetTextSize(.048);
+            t.DrawLatex(.12,.93,"Representative #phi dependence of F_{bin}");
+
+            TLatex n;
+            n.SetNDC();
+            n.SetTextFont(42);
+            n.SetTextSize(.029);
+            n.DrawLatex(.13,.84,
+                "0.204 < x_{B} < 0.268, 1.912 < Q^{2} < 2.510 GeV^{2}, 0.250 < |t| < 0.400 GeV^{2}");
+
+            c.SaveAs((note/"bin_centering_correction_phi_example.png").string().c_str());
+        }
+    }
+
+    {
+        const double x0=.204,x1=.268,q0=1.912,q1=2.510,t0=.250,t1=.400;
+        TGraph gr,gb,gp; gr.SetMarkerStyle(20); gb.SetMarkerStyle(21); gp.SetMarkerStyle(20);
+        gr.SetMarkerColor(kBlue+1); gr.SetLineColor(kBlue+1); gb.SetMarkerColor(kRed+1); gb.SetLineColor(kRed+1);
+        gp.SetMarkerColor(kBlack); gp.SetLineColor(kBlack); gr.SetLineWidth(2); gb.SetLineWidth(2); gp.SetLineWidth(2);
+        std::ofstream o((note/"model_corrections_phi_example.csv").string()); o<<"phi,Frad,Fbin,Frad_times_Fbin\n";
+        int npt=0; double ymin=9,ymax=-9;
+        for(int r=0;r<csv.nrows();++r){
+            if(!valid(r)) continue;
+            if(std::fabs(csv.as_double(r,cx0)-x0)>1e-10||std::fabs(csv.as_double(r,cx1)-x1)>1e-10||
+               std::fabs(csv.as_double(r,cq0)-q0)>1e-10||std::fabs(csv.as_double(r,cq1)-q1)>1e-10||
+               std::fabs(csv.as_double(r,ct0)-t0)>1e-10||std::fabs(csv.as_double(r,ct1)-t1)>1e-10) continue;
+            double p=csv.as_double(r,cp),a=csv.as_double(r,cr),b=csv.as_double(r,cb);
+            if(!std::isfinite(p)||!std::isfinite(a)||!std::isfinite(b)||a<=0||b<=0) continue;
+            gr.SetPoint(npt,p,a); gb.SetPoint(npt,p,b); gp.SetPoint(npt,p,a*b);
+            ymin=std::min(ymin,std::min(a,std::min(b,a*b))); ymax=std::max(ymax,std::max(a,std::max(b,a*b)));
+            o<<p<<","<<a<<","<<b<<","<<a*b<<"\n"; ++npt;
+        }
+        if(npt>0){
+            TCanvas c("c_note_model_corr_phi","",1500,560); c.Divide(3,1,.002,.002);
+            TGraph* gs[3]={&gr,&gb,&gp}; const char* yl[3]={"F_{rad}","F_{bin}","F_{rad} F_{bin}"};
+            double lo=std::min(.94,ymin-.02),hi=std::max(1.08,ymax+.02);
+            for(int i=0;i<3;++i){ c.cd(i+1); gPad->SetLeftMargin(i==0?.16:.12); gPad->SetRightMargin(.03); gPad->SetBottomMargin(.16); gPad->SetTopMargin(.18); gPad->SetGridy(); gPad->SetTicks(1,1);
+                TH1F* fr=new TH1F(Form("h_note_corr_%d",i),"",100,0,360); fr->SetMinimum(lo); fr->SetMaximum(hi);
+                fr->GetXaxis()->SetTitle("#phi (deg)"); fr->GetYaxis()->SetTitle(yl[i]); fr->GetYaxis()->SetTitleOffset(i==0?1.35:1.10); fr->Draw(); gs[i]->Draw("PL SAME");
+                TLine* one=new TLine(0,1,360,1); one->SetLineStyle(2); one->SetLineColor(kGray+2); one->Draw();
+                TLatex l; l.SetNDC(); l.SetTextFont(42); l.SetTextSize(.050);
+                if(i==0) l.DrawLatex(.17,.90,"Radiative"); if(i==1) l.DrawLatex(.13,.90,"Bin centering"); if(i==2) l.DrawLatex(.13,.90,"Combined");
+            }
+            c.cd(0); TLatex title; title.SetNDC(); title.SetTextFont(42); title.SetTextSize(.030);
+            title.DrawLatex(.06,.975,"Representative model corrections: 0.204 < x_{B} < 0.268, 1.912 < Q^{2} < 2.510 GeV^{2}, 0.250 < |t| < 0.400 GeV^{2}");
+            c.SaveAs((note/"model_corrections_phi_example.png").string().c_str());
+        }
+    }
+    std::cout<<"[bincenter-note] Wrote analysis-note outputs to "<<note<<"\n"; return true;
 }
