@@ -1547,7 +1547,7 @@ bool update_radiative_corrections_csv(const std::string& csv_path,
 }
 
 // -----------------------------------------------------------------------------
-// Analysis-note diagnostics from the published pass-1 Frad table.
+// Analysis-note diagnostics from the stored Frad table.
 // -----------------------------------------------------------------------------
 bool write_radiative_corrections_analysis_note_outputs(
     const std::string& lee_csv_path,
@@ -1562,7 +1562,7 @@ bool write_radiative_corrections_analysis_note_outputs(
               ct1=csv.col_index("t_abs_max"), cp=csv.col_index("phiavg"),
               cf=csv.col_index("Frad");
     if(cx0<0||cx1<0||cq0<0||cq1<0||ct0<0||ct1<0||cp<0||cf<0){
-        std::cerr<<"[radcorr-note] ERROR: required pass-1 columns are missing.\n";
+        std::cerr<<"[radcorr-note] ERROR: required source columns are missing.\n";
         return false;
     }
 
@@ -1594,7 +1594,6 @@ bool write_radiative_corrections_analysis_note_outputs(
     {
         std::ofstream o((note/"radiative_correction_summary.csv").string());
         o<<"quantity,value\n"<<std::setprecision(10);
-        o<<"source,"<<lee_csv_path<<"\n";
         o<<"populated_bins,"<<vals.size()<<"\n";
         o<<"mean,"<<std::accumulate(vals.begin(),vals.end(),0.0)/vals.size()<<"\n";
         o<<"p16,"<<quantile(vals,.16)<<"\nmedian,"<<quantile(vals,.50)<<"\np84,"<<quantile(vals,.84)<<"\n";
@@ -1604,27 +1603,39 @@ bool write_radiative_corrections_analysis_note_outputs(
     gStyle->SetOptStat(0); gStyle->SetPadTickX(1); gStyle->SetPadTickY(1);
 
     {
-        TCanvas c("c_note_frad_dist","",1100,700);
-        c.SetLeftMargin(.12); c.SetRightMargin(.035); c.SetBottomMargin(.13); c.SetTopMargin(.10); c.SetTicks(1,1);
+        TCanvas c("c_note_frad_dist","",1150,720);
+        c.SetLeftMargin(.135); c.SetRightMargin(.035); c.SetBottomMargin(.14); c.SetTopMargin(.095); c.SetTicks(1,1);
         TH1D h("h_note_frad_dist","",50,.90,1.35);
         for(double v:vals) if(v>=.90&&v<=1.35) h.Fill(v);
         if(h.Integral()>0) h.Scale(1.0/h.Integral());
-        h.SetLineColor(kBlue+1); h.SetFillColorAlpha(kBlue+1,.22); h.SetLineWidth(2);
-        h.GetXaxis()->SetTitle("Radiative correction factor F_{rad}");
+        h.SetLineColor(kBlue+1); h.SetFillColorAlpha(kBlue+1,.20); h.SetLineWidth(3);
+        h.GetXaxis()->SetTitle("Radiative correction factor, F_{rad}");
         h.GetYaxis()->SetTitle("Fraction of populated analysis bins");
-        h.GetYaxis()->SetTitleOffset(1.25); h.Draw("HIST");
-        TLine one(1,0,1,1.03*h.GetMaximum()); one.SetLineStyle(2); one.SetLineColor(kGray+2); one.Draw();
-        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.048); t.DrawLatex(.12,.93,"Distribution of radiative correction factors");
-        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.030); n.DrawLatex(.13,.84,"Pass-1 model factors reused unchanged for pass-2");
+        h.GetXaxis()->SetTitleSize(.050); h.GetYaxis()->SetTitleSize(.050); h.GetXaxis()->SetLabelSize(.041); h.GetYaxis()->SetLabelSize(.041); h.GetYaxis()->SetTitleOffset(1.30); h.SetMaximum(1.16*h.GetMaximum()); h.Draw("HIST");
+        TLine one(1,0,1,1.03*h.GetMaximum()); one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
+        const double median_value=quantile(vals,.50);
+        TLine median_line(median_value,0.0,median_value,1.03*h.GetMaximum());
+        median_line.SetLineStyle(7);
+        median_line.SetLineWidth(2);
+        median_line.SetLineColor(kBlue+2);
+        median_line.Draw();
+        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.047); t.DrawLatex(.135,.925,"Distribution of radiative correction factors");
+        TLegend leg(.68,.75,.92,.87);
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.032);
+        leg.AddEntry(&one,"No correction","l");
+        std::ostringstream med_label; med_label<<"Median = "<<std::fixed<<std::setprecision(3)<<median_value;
+        leg.AddEntry(&median_line,med_label.str().c_str(),"l");
+        leg.Draw();
+        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.030); n.DrawLatex(.13,.84,"Pass-1 model factors reused unchanged for production");
         c.SaveAs((note/"radiative_correction_distribution.png").string().c_str());
     }
 
     {
-        TCanvas c("c_note_frad_xb","",1100,700);
-        c.SetLeftMargin(.12); c.SetRightMargin(.035); c.SetBottomMargin(.13); c.SetTopMargin(.10); c.SetGridy(); c.SetTicks(1,1);
+        TCanvas c("c_note_frad_xb","",1150,720);
+        c.SetLeftMargin(.135); c.SetRightMargin(.035); c.SetBottomMargin(.14); c.SetTopMargin(.095); c.SetGridy(); c.SetTicks(1,1);
         TH1F frame("h_note_frad_xb","",100,.05,.60); frame.SetMinimum(.90); frame.SetMaximum(1.22);
-        frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Radiative correction factor F_{rad}");
-        frame.GetYaxis()->SetTitleOffset(1.25); frame.Draw();
+        frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Radiative correction factor, F_{rad}");
+        frame.GetXaxis()->SetTitleSize(.050); frame.GetYaxis()->SetTitleSize(.050); frame.GetXaxis()->SetLabelSize(.041); frame.GetYaxis()->SetLabelSize(.041); frame.GetYaxis()->SetTitleOffset(1.30); frame.Draw();
         TGraphAsymmErrors g; g.SetMarkerStyle(20); g.SetMarkerSize(1.15); g.SetMarkerColor(kBlue+1); g.SetLineColor(kBlue+1); g.SetLineWidth(2);
         int npt=0;
         for(const auto&e:xedges){
@@ -1639,9 +1650,9 @@ bool write_radiative_corrections_analysis_note_outputs(
             g.SetPoint(npt,x,m); g.SetPointError(npt,0,0,m-lo,hi-m); ++npt;
         }
         g.Draw("PE SAME");
-        TLine one(.05,1,.60,1); one.SetLineStyle(2); one.SetLineColor(kGray+2); one.Draw();
-        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.048); t.DrawLatex(.12,.93,"Kinematic dependence of the radiative correction");
-        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.029); n.DrawLatex(.13,.84,"Points: median over (Q^{2}, |t|, #phi) bins; bars: 16th--84th percentile range");
+        TLine one(.05,1,.60,1); one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
+        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.047); t.DrawLatex(.135,.925,"Kinematic dependence of the radiative correction");
+        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.027); n.DrawLatex(.145,.845,"Median in each x_{B} interval; bars show the 16th--84th percentile range");
         c.SaveAs((note/"radiative_correction_vs_xB_summary.png").string().c_str());
     }
 
@@ -1659,13 +1670,13 @@ bool write_radiative_corrections_analysis_note_outputs(
             g.SetPoint(npt++,p,f); ymin=std::min(ymin,f); ymax=std::max(ymax,f); o<<p<<","<<f<<"\n";
         }
         if(npt>0){
-            TCanvas c("c_note_frad_phi","",1100,700);
-            c.SetLeftMargin(.12); c.SetRightMargin(.035); c.SetBottomMargin(.13); c.SetTopMargin(.10); c.SetGridy(); c.SetTicks(1,1);
+            TCanvas c("c_note_frad_phi","",1150,720);
+            c.SetLeftMargin(.135); c.SetRightMargin(.035); c.SetBottomMargin(.14); c.SetTopMargin(.095); c.SetGridy(); c.SetTicks(1,1);
             TH1F frame("h_note_frad_phi","",100,0,360); frame.SetMinimum(std::min(.95,ymin-.02)); frame.SetMaximum(std::max(1.08,ymax+.02));
-            frame.GetXaxis()->SetTitle("#phi (deg)"); frame.GetYaxis()->SetTitle("F_{rad}"); frame.Draw(); g.Draw("PL SAME");
-            TLine one(0,1,360,1); one.SetLineStyle(2); one.SetLineColor(kGray+2); one.Draw();
-            TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.048); t.DrawLatex(.12,.93,"Representative #phi dependence of F_{rad}");
-            TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.029); n.DrawLatex(.13,.84,"0.204 < x_{B} < 0.268, 1.912 < Q^{2} < 2.510 GeV^{2}, 0.250 < |t| < 0.400 GeV^{2}");
+            frame.GetXaxis()->SetTitle("#phi (deg)"); frame.GetYaxis()->SetTitle("Radiative correction factor, F_{rad}"); frame.GetXaxis()->SetTitleSize(.050); frame.GetYaxis()->SetTitleSize(.050); frame.GetXaxis()->SetLabelSize(.041); frame.GetYaxis()->SetLabelSize(.041); frame.GetYaxis()->SetTitleOffset(1.30); frame.Draw(); g.SetMarkerSize(1.30); g.Draw("PL SAME");
+            TLine one(0,1,360,1); one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
+            TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.047); t.DrawLatex(.135,.925,"Representative #phi dependence of the radiative correction");
+            TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.027); n.DrawLatex(.145,.845,"0.204 < x_{B} < 0.268, 1.912 < Q^{2} < 2.510 GeV^{2}, 0.250 < |t| < 0.400 GeV^{2}");
             c.SaveAs((note/"radiative_correction_phi_example.png").string().c_str());
         }
     }

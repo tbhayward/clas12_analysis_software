@@ -1181,7 +1181,7 @@ void plot_bin_centering_fbin_vs_phi(
 }
 
 // -----------------------------------------------------------------------------
-// Analysis-note diagnostics from the published pass-1 Fbin table.
+// Analysis-note diagnostics from the stored Fbin table.
 // -----------------------------------------------------------------------------
 bool write_bin_centering_analysis_note_outputs(
     const std::string& lee_csv_path,
@@ -1196,7 +1196,7 @@ bool write_bin_centering_analysis_note_outputs(
               ct1=csv.col_index("t_abs_max"), cp=csv.col_index("phiavg"),
               cr=csv.col_index("Frad"), cb=csv.col_index("Fbin");
     if(cx0<0||cx1<0||cq0<0||cq1<0||ct0<0||ct1<0||cp<0||cr<0||cb<0){
-        std::cerr<<"[bincenter-note] ERROR: required pass-1 columns are missing.\n"; return false;
+        std::cerr<<"[bincenter-note] ERROR: required source columns are missing.\n"; return false;
     }
     auto valid=[&](int r){ return cv<0||(std::isfinite(csv.as_double(r,cv))&&csv.as_double(r,cv)>0.5); };
     auto quantile=[](std::vector<double> v,double q){
@@ -1221,7 +1221,7 @@ bool write_bin_centering_analysis_note_outputs(
 
     {
         std::ofstream o((note/"bin_centering_summary.csv").string()); o<<"quantity,value\n"<<std::setprecision(10);
-        o<<"source,"<<lee_csv_path<<"\n"<<"populated_bins,"<<vals.size()<<"\n";
+        o<<"populated_bins,"<<vals.size()<<"\n";
         o<<"Fbin_mean,"<<std::accumulate(vals.begin(),vals.end(),0.0)/vals.size()<<"\n";
         o<<"Fbin_p16,"<<quantile(vals,.16)<<"\nFbin_median,"<<quantile(vals,.5)<<"\nFbin_p84,"<<quantile(vals,.84)<<"\n";
         o<<"Fbin_min,"<<*std::min_element(vals.begin(),vals.end())<<"\nFbin_max,"<<*std::max_element(vals.begin(),vals.end())<<"\n";
@@ -1231,25 +1231,37 @@ bool write_bin_centering_analysis_note_outputs(
     gStyle->SetOptStat(0); gStyle->SetPadTickX(1); gStyle->SetPadTickY(1);
 
     {
-        TCanvas c("c_note_fbin_dist","",1100,700);
-        c.SetLeftMargin(.12); c.SetRightMargin(.035); c.SetBottomMargin(.13); c.SetTopMargin(.10); c.SetTicks(1,1);
+        TCanvas c("c_note_fbin_dist","",1150,720);
+        c.SetLeftMargin(.135); c.SetRightMargin(.035); c.SetBottomMargin(.14); c.SetTopMargin(.095); c.SetTicks(1,1);
         TH1D h("h_note_fbin_dist","",50,.68,1.15); for(double v:vals) if(v>=.68&&v<=1.15) h.Fill(v);
         if(h.Integral()>0) h.Scale(1.0/h.Integral());
-        h.SetLineColor(kRed+1); h.SetFillColorAlpha(kRed+1,.20); h.SetLineWidth(2);
-        h.GetXaxis()->SetTitle("Bin-centering correction factor F_{bin}"); h.GetYaxis()->SetTitle("Fraction of populated analysis bins");
-        h.GetYaxis()->SetTitleOffset(1.25); h.Draw("HIST");
-        TLine one(1,0,1,1.03*h.GetMaximum()); one.SetLineStyle(2); one.SetLineColor(kGray+2); one.Draw();
-        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.048); t.DrawLatex(.12,.93,"Distribution of bin-centering correction factors");
-        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.030); n.DrawLatex(.13,.84,"Pass-1 model factors reused unchanged for pass-2");
+        h.SetLineColor(kRed+1); h.SetFillColorAlpha(kRed+1,.18); h.SetLineWidth(3);
+        h.GetXaxis()->SetTitle("Bin-centering correction factor, F_{bin}"); h.GetYaxis()->SetTitle("Fraction of populated analysis bins");
+        h.GetXaxis()->SetTitleSize(.050); h.GetYaxis()->SetTitleSize(.050); h.GetXaxis()->SetLabelSize(.041); h.GetYaxis()->SetLabelSize(.041); h.GetYaxis()->SetTitleOffset(1.30); h.SetMaximum(1.16*h.GetMaximum()); h.Draw("HIST");
+        TLine one(1,0,1,1.03*h.GetMaximum()); one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
+        const double median_value=quantile(vals,.50);
+        TLine median_line(median_value,0.0,median_value,1.03*h.GetMaximum());
+        median_line.SetLineStyle(7);
+        median_line.SetLineWidth(2);
+        median_line.SetLineColor(kRed+2);
+        median_line.Draw();
+        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.047); t.DrawLatex(.135,.925,"Distribution of bin-centering correction factors");
+        TLegend leg(.68,.75,.92,.87);
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.032);
+        leg.AddEntry(&one,"No correction","l");
+        std::ostringstream med_label; med_label<<"Median = "<<std::fixed<<std::setprecision(3)<<median_value;
+        leg.AddEntry(&median_line,med_label.str().c_str(),"l");
+        leg.Draw();
+        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.030); n.DrawLatex(.13,.84,"Pass-1 model factors reused unchanged for production");
         c.SaveAs((note/"bin_centering_correction_distribution.png").string().c_str());
     }
 
     {
-        TCanvas c("c_note_fbin_xb","",1100,700);
-        c.SetLeftMargin(.12); c.SetRightMargin(.035); c.SetBottomMargin(.13); c.SetTopMargin(.10); c.SetGridy(); c.SetTicks(1,1);
+        TCanvas c("c_note_fbin_xb","",1150,720);
+        c.SetLeftMargin(.135); c.SetRightMargin(.035); c.SetBottomMargin(.14); c.SetTopMargin(.095); c.SetGridy(); c.SetTicks(1,1);
         TH1F frame("h_note_fbin_xb","",100,.05,.60); frame.SetMinimum(.78); frame.SetMaximum(1.08);
-        frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Bin-centering correction factor F_{bin}");
-        frame.GetYaxis()->SetTitleOffset(1.25); frame.Draw();
+        frame.GetXaxis()->SetTitle("x_{B}"); frame.GetYaxis()->SetTitle("Bin-centering correction factor, F_{bin}");
+        frame.GetXaxis()->SetTitleSize(.050); frame.GetYaxis()->SetTitleSize(.050); frame.GetXaxis()->SetLabelSize(.041); frame.GetYaxis()->SetLabelSize(.041); frame.GetYaxis()->SetTitleOffset(1.30); frame.Draw();
         TGraphAsymmErrors g; g.SetMarkerStyle(20); g.SetMarkerSize(1.15); g.SetMarkerColor(kRed+1); g.SetLineColor(kRed+1); g.SetLineWidth(2);
         int npt=0;
         for(const auto&e:xedges){
@@ -1261,9 +1273,9 @@ bool write_bin_centering_analysis_note_outputs(
             if(v.empty()) continue; double m=quantile(v,.5),lo=quantile(v,.16),hi=quantile(v,.84),x=.5*(e.first+e.second);
             g.SetPoint(npt,x,m); g.SetPointError(npt,0,0,m-lo,hi-m); ++npt;
         }
-        g.Draw("PE SAME"); TLine one(.05,1,.60,1); one.SetLineStyle(2); one.SetLineColor(kGray+2); one.Draw();
-        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.048); t.DrawLatex(.12,.93,"Kinematic dependence of the bin-centering correction");
-        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.029); n.DrawLatex(.13,.84,"Points: median over (Q^{2}, |t|, #phi) bins; bars: 16th--84th percentile range");
+        g.Draw("PE SAME"); TLine one(.05,1,.60,1); one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
+        TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(.047); t.DrawLatex(.135,.925,"Kinematic dependence of the bin-centering correction");
+        TLatex n; n.SetNDC(); n.SetTextFont(42); n.SetTextSize(.027); n.DrawLatex(.145,.845,"Median in each x_{B} interval; bars show the 16th--84th percentile range");
         c.SaveAs((note/"bin_centering_correction_vs_xB_summary.png").string().c_str());
     }
 
@@ -1304,7 +1316,7 @@ bool write_bin_centering_analysis_note_outputs(
         }
 
         if(npt>0){
-            TCanvas c("c_note_fbin_phi","",1100,700);
+            TCanvas c("c_note_fbin_phi","",1150,720);
             c.SetLeftMargin(.12);
             c.SetRightMargin(.035);
             c.SetBottomMargin(.13);
@@ -1316,10 +1328,15 @@ bool write_bin_centering_analysis_note_outputs(
             frame.SetMinimum(std::min(.90,ymin-.03));
             frame.SetMaximum(std::max(1.06,ymax+.03));
             frame.GetXaxis()->SetTitle("#phi (deg)");
-            frame.GetYaxis()->SetTitle("F_{bin}");
-            frame.GetYaxis()->SetTitleOffset(1.15);
+            frame.GetYaxis()->SetTitle("Bin-centering correction factor, F_{bin}");
+            frame.GetXaxis()->SetTitleSize(.050);
+            frame.GetYaxis()->SetTitleSize(.050);
+            frame.GetXaxis()->SetLabelSize(.041);
+            frame.GetYaxis()->SetLabelSize(.041);
+            frame.GetYaxis()->SetTitleOffset(1.30);
             frame.Draw();
 
+            g.SetMarkerSize(1.30);
             g.Draw("PL SAME");
 
             TLine one(0,1,360,1);
@@ -1331,7 +1348,7 @@ bool write_bin_centering_analysis_note_outputs(
             t.SetNDC();
             t.SetTextFont(42);
             t.SetTextSize(.048);
-            t.DrawLatex(.12,.93,"Representative #phi dependence of F_{bin}");
+            t.DrawLatex(.12,.93,"Representative #phi dependence of the bin-centering correction");
 
             TLatex n;
             n.SetNDC();
