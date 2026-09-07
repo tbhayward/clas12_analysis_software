@@ -1969,10 +1969,23 @@ bool write_cross_section_analysis_note_outputs(
     }
 
     // ---------------------------------------------------------------------
-    // Build period-level raw-count inputs needed for the first stage of the
-    // illustrative correction chain.  The combined 10.6-GeV raw count in a
-    // row uses the same member-period validity mask as the combined
-    // acceptance-corrected yield.
+    // Analysis-note correction-chain illustration.
+    //
+    // Use one representative 10.6-GeV cell: the kinematic cell that was the
+    // upper-right panel of the earlier 2x2 summary.  The figure follows the
+    // actual production order:
+    //
+    //   current-corrected selected counts
+    //      -> pi0 background subtraction
+    //      -> acceptance correction
+    //      -> radiative correction
+    //      -> bin-centering correction
+    //      -> bin-volume normalization
+    //      -> luminosity normalization
+    //
+    // Each populated panel compares one stage only with the immediately
+    // preceding stage.  Six transitions are therefore shown on a 3x3 canvas;
+    // the final row is used for a compact workflow/kinematics summary.
     // ---------------------------------------------------------------------
     const std::vector<std::string> periods_10p6 = {
         "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"
@@ -1982,7 +1995,8 @@ bool write_cross_section_analysis_note_outputs(
     };
 
     std::map<std::string,int> c_period_acceptance;
-    std::map<std::string,std::vector<int>> c_period_raw;
+    std::map<std::string,int> c_period_signal;
+    std::map<std::string,std::vector<int>> c_period_current_corrected;
 
     for(const auto &period:periods_10p6){
         c_period_acceptance[period] =
@@ -1992,32 +2006,48 @@ bool write_cross_section_analysis_note_outputs(
                 + period + ", unpol"
             );
 
-        std::vector<int> cols;
+        c_period_signal[period] =
+            find_col_optional(
+                header,
+                "signal yield, ep->epg, exp, "
+                + period + ", unpol"
+            );
+
+        std::vector<int> corrected_cols;
         for(const auto &topology:topologies){
-            cols.push_back(
+            corrected_cols.push_back(
                 find_col_optional(
                     header,
-                    "raw yield, ep->epg, "
+                    "normalized raw yield, ep->epg, "
                     + topology + ", exp, "
                     + period + ", unpol"
                 )
             );
         }
-        c_period_raw[period]=cols;
+        c_period_current_corrected[period] = corrected_cols;
     }
 
     for(const auto &period:periods_10p6){
-        if(c_period_acceptance[period]<0){
+        if(c_period_acceptance[period] < 0){
             std::cerr
                 << "[cross_sections] ERROR: missing period acceptance column for "
                 << period << " in analysis-note correction-chain output.\n";
             return false;
         }
-        for(int idx:c_period_raw[period]){
-            if(idx<0){
+
+        if(c_period_signal[period] < 0){
+            std::cerr
+                << "[cross_sections] ERROR: missing pi0-subtracted signal-yield column for "
+                << period << " in analysis-note correction-chain output.\n";
+            return false;
+        }
+
+        for(int idx:c_period_current_corrected[period]){
+            if(idx < 0){
                 std::cerr
-                    << "[cross_sections] ERROR: missing raw-yield topology column for "
-                    << period << " in analysis-note correction-chain output.\n";
+                    << "[cross_sections] ERROR: missing current-corrected selected-yield "
+                    << "topology column for " << period
+                    << " in analysis-note correction-chain output.\n";
                 return false;
             }
         }
@@ -2026,187 +2056,324 @@ bool write_cross_section_analysis_note_outputs(
     struct GroupCandidate {
         KinKey key;
         std::vector<ExampleRow> rows;
-        double xb=0.0, q2=0.0, tt=0.0;
+        double xb=0.0;
+        double q2=0.0;
+        double tt=0.0;
     };
 
     std::vector<GroupCandidate> candidates;
     candidates.reserve(groups.size());
 
-    double xb_lo=std::numeric_limits<double>::infinity();
-    double xb_hi=-std::numeric_limits<double>::infinity();
-    double q2_lo=std::numeric_limits<double>::infinity();
-    double q2_hi=-std::numeric_limits<double>::infinity();
-    double t_lo=std::numeric_limits<double>::infinity();
-    double t_hi=-std::numeric_limits<double>::infinity();
-
-    std::size_t max_phi_points=0;
-
     for(const auto &kv:groups){
         GroupCandidate cnd;
-        cnd.key=kv.first;
-        cnd.rows=kv.second;
-        cnd.xb=0.5*(std::get<0>(kv.first)+std::get<1>(kv.first));
-        cnd.q2=0.5*(std::get<2>(kv.first)+std::get<3>(kv.first));
-        cnd.tt=0.5*(std::get<4>(kv.first)+std::get<5>(kv.first));
+        cnd.key = kv.first;
+        cnd.rows = kv.second;
+        cnd.xb = 0.5*(std::get<0>(kv.first)+std::get<1>(kv.first));
+        cnd.q2 = 0.5*(std::get<2>(kv.first)+std::get<3>(kv.first));
+        cnd.tt = 0.5*(std::get<4>(kv.first)+std::get<5>(kv.first));
 
         std::sort(
-            cnd.rows.begin(),cnd.rows.end(),
-            [](const ExampleRow&a,const ExampleRow&b){return a.phi<b.phi;}
+            cnd.rows.begin(), cnd.rows.end(),
+            [](const ExampleRow &a,const ExampleRow &b){
+                return a.phi < b.phi;
+            }
         );
-
-        max_phi_points=std::max(max_phi_points,cnd.rows.size());
-        xb_lo=std::min(xb_lo,cnd.xb);
-        xb_hi=std::max(xb_hi,cnd.xb);
-        q2_lo=std::min(q2_lo,cnd.q2);
-        q2_hi=std::max(q2_hi,cnd.q2);
-        t_lo=std::min(t_lo,cnd.tt);
-        t_hi=std::max(t_hi,cnd.tt);
 
         candidates.push_back(std::move(cnd));
     }
 
-    auto unit=[](double x,double lo,double hi){
-        return (hi>lo)?(x-lo)/(hi-lo):0.5;
+    if(candidates.empty()){
+        std::cerr
+            << "[cross_sections] WARNING: no representative kinematic group "
+            << "available for the analysis-note correction chain.\n";
+        return true;
+    }
+
+    // Target the previous upper-right representative bin:
+    // 0.155 < xB < 0.204, 2.510 < Q2 < 3.295 GeV^2,
+    // 0.250 < |t| < 0.400 GeV^2.
+    const double target_xb = 0.5*(0.155 + 0.204);
+    const double target_q2 = 0.5*(2.510 + 3.295);
+    const double target_t  = 0.5*(0.250 + 0.400);
+
+    auto candidate_distance = [&](const GroupCandidate &cnd){
+        const double dx = (cnd.xb-target_xb)/0.10;
+        const double dq = (cnd.q2-target_q2)/1.00;
+        const double dt = (cnd.tt-target_t)/0.20;
+
+        // Favor broad phi coverage in the unlikely event of nearly degenerate
+        // kinematic candidates.
+        const double coverage_penalty =
+            cnd.rows.empty() ? 10.0 : 0.02/static_cast<double>(cnd.rows.size());
+
+        return dx*dx + dq*dq + dt*dt + coverage_penalty;
     };
 
-    // Four deliberately separated locations in the occupied 10.6-GeV phase
-    // space.  The nearest available cell is used, with strong preference for
-    // complete/broad phi coverage.
-    const std::array<std::array<double,3>,4> targets = {{
-        {{0.12,0.12,0.15}},
-        {{0.36,0.34,0.32}},
-        {{0.62,0.62,0.58}},
-        {{0.88,0.88,0.82}}
-    }};
+    auto best_it = candidates.begin();
+    double best_distance = candidate_distance(*best_it);
 
-    std::vector<GroupCandidate> examples;
-    std::set<KinKey> used_keys;
-
-    for(const auto &target:targets){
-        bool have=false;
-        double best_score=std::numeric_limits<double>::infinity();
-        GroupCandidate best_candidate;
-
-        for(const auto &cnd:candidates){
-            if(used_keys.count(cnd.key)) continue;
-
-            const double ux=unit(cnd.xb,xb_lo,xb_hi);
-            const double uq=unit(cnd.q2,q2_lo,q2_hi);
-            const double ut=unit(cnd.tt,t_lo,t_hi);
-
-            const double distance =
-                std::pow(ux-target[0],2)
-                +std::pow(uq-target[1],2)
-                +std::pow(ut-target[2],2);
-
-            const double coverage_penalty =
-                (max_phi_points>0)
-                ? 2.0*(1.0-static_cast<double>(cnd.rows.size())
-                            /static_cast<double>(max_phi_points))
-                : 0.0;
-
-            const double score=distance+coverage_penalty;
-
-            if(score<best_score){
-                best_score=score;
-                best_candidate=cnd;
-                have=true;
-            }
-        }
-
-        if(have){
-            used_keys.insert(best_candidate.key);
-            examples.push_back(std::move(best_candidate));
+    for(auto it = std::next(candidates.begin()); it != candidates.end(); ++it){
+        const double d = candidate_distance(*it);
+        if(d < best_distance){
+            best_distance = d;
+            best_it = it;
         }
     }
 
-    if(examples.size()<4){
-        std::sort(
-            candidates.begin(),candidates.end(),
-            [](const GroupCandidate&a,const GroupCandidate&b){
-                return a.rows.size()>b.rows.size();
-            }
-        );
-
-        for(const auto &cnd:candidates){
-            if(examples.size()>=4) break;
-            if(used_keys.count(cnd.key)) continue;
-            used_keys.insert(cnd.key);
-            examples.push_back(cnd);
-        }
-    }
+    const GroupCandidate example = *best_it;
 
     // ---------------------------------------------------------------------
-    // Re-read the CSV into a row lookup so the raw selected counts can be
-    // reconstructed for the same rows used by the representative examples.
+    // Re-read the CSV to construct the first two stages for exactly the same
+    // rows used by the combined 10.6-GeV acceptance-corrected yield.
     // ---------------------------------------------------------------------
-    struct RawStageRow {
-        double phi=0.0;
-        double raw_total=0.0;
-        double raw_stat=0.0;
+    struct PreAcceptanceStage {
+        double phi = 0.0;
+
+        double current_corrected = 0.0;
+        double current_corrected_stat = 0.0;
+
+        double signal = 0.0;
+        double signal_stat = 0.0;
     };
 
-    std::map<std::tuple<double,double,double,double,double,double,double,double>,
-             RawStageRow> raw_stage_lookup;
+    using RowKey =
+        std::tuple<double,double,double,double,double,double,double,double>;
 
-    for(size_t i=1;i<lines.size();++i){
+    std::map<RowKey,PreAcceptanceStage> pre_acceptance_lookup;
+
+    for(size_t i=1; i<lines.size(); ++i){
         if(lines[i].empty()) continue;
 
-        const std::vector<std::string> f=split_csv_line(lines[i]);
-        if(f.size()!=header.size()) continue;
+        const std::vector<std::string> f = split_csv_line(lines[i]);
+        if(f.size() != header.size()) continue;
 
-        const double xbmin=read_required_scalar_or_tuple_value(f,c_xbmin);
-        const double xbmax=read_required_scalar_or_tuple_value(f,c_xbmax);
-        const double q2min=read_required_scalar_or_tuple_value(f,c_q2min);
-        const double q2max=read_required_scalar_or_tuple_value(f,c_q2max);
-        const double ttmin=read_required_scalar_or_tuple_value(f,c_tmin);
-        const double ttmax=read_required_scalar_or_tuple_value(f,c_tmax);
-        const double phimin=read_required_scalar_or_tuple_value(f,c_phimin);
-        const double phimax=read_required_scalar_or_tuple_value(f,c_phimax);
+        const double xbmin =
+            read_required_scalar_or_tuple_value(f,c_xbmin);
+        const double xbmax =
+            read_required_scalar_or_tuple_value(f,c_xbmax);
+        const double q2min =
+            read_required_scalar_or_tuple_value(f,c_q2min);
+        const double q2max =
+            read_required_scalar_or_tuple_value(f,c_q2max);
+        const double ttmin =
+            read_required_scalar_or_tuple_value(f,c_tmin);
+        const double ttmax =
+            read_required_scalar_or_tuple_value(f,c_tmax);
+        const double phimin =
+            read_required_scalar_or_tuple_value(f,c_phimin);
+        const double phimax =
+            read_required_scalar_or_tuple_value(f,c_phimax);
 
-        double raw_total=0.0;
-        double raw_var=0.0;
+        double current_total = 0.0;
+        double current_var = 0.0;
+
+        double signal_total = 0.0;
+        double signal_var = 0.0;
 
         for(const auto &period:periods_10p6){
             const Triple period_acceptance =
                 parse_tuple3(f[c_period_acceptance[period]]);
 
-            // Match the combined-yield validity rule: only member periods that
-            // contributed a valid acceptance-corrected yield contribute their
-            // raw selected counts here.
-            if(!(period_acceptance.value>0.0)) continue;
+            // Preserve the production combined-period validity mask.
+            if(!(period_acceptance.value > 0.0)) continue;
 
-            for(int col:c_period_raw[period]){
-                const Triple raw_count = parse_tuple3(f[col]);
+            for(int col:c_period_current_corrected[period]){
+                const Triple current_count = parse_tuple3(f[col]);
 
-                if(std::isfinite(raw_count.value) && raw_count.value>=0.0){
-                    raw_total += raw_count.value;
+                if(std::isfinite(current_count.value) &&
+                   current_count.value >= 0.0){
 
-                    if(std::isfinite(raw_count.stat) && raw_count.stat>=0.0){
-                        raw_var += raw_count.stat * raw_count.stat;
+                    current_total += current_count.value;
+
+                    if(std::isfinite(current_count.stat) &&
+                       current_count.stat >= 0.0){
+
+                        current_var +=
+                            current_count.stat * current_count.stat;
                     }
+                }
+            }
+
+            const Triple signal_count =
+                parse_tuple3(f[c_period_signal[period]]);
+
+            if(std::isfinite(signal_count.value) &&
+               signal_count.value >= 0.0){
+
+                signal_total += signal_count.value;
+
+                if(std::isfinite(signal_count.stat) &&
+                   signal_count.stat >= 0.0){
+
+                    signal_var +=
+                        signal_count.stat * signal_count.stat;
                 }
             }
         }
 
-        RawStageRow rr;
-        rr.phi=(c_phimean>=0)
+        PreAcceptanceStage s;
+        s.phi = (c_phimean >= 0)
             ? read_required_scalar_or_tuple_value(f,c_phimean)
             : 0.5*(phimin+phimax);
-        rr.raw_total=raw_total;
-        rr.raw_stat=std::sqrt(std::max(0.0,raw_var));
 
-        raw_stage_lookup[
+        s.current_corrected = current_total;
+        s.current_corrected_stat =
+            std::sqrt(std::max(0.0,current_var));
+
+        s.signal = signal_total;
+        s.signal_stat =
+            std::sqrt(std::max(0.0,signal_var));
+
+        pre_acceptance_lookup[
             std::make_tuple(
                 xbmin,xbmax,q2min,q2max,ttmin,ttmax,phimin,phimax
             )
-        ]=rr;
+        ] = s;
     }
 
+    struct StagePoint {
+        double phi = 0.0;
+
+        double current_corrected = 0.0;
+        double current_corrected_err = 0.0;
+
+        double signal = 0.0;
+        double signal_err = 0.0;
+
+        double acceptance = 0.0;
+        double acceptance_err = 0.0;
+
+        double after_frad = 0.0;
+        double after_frad_err = 0.0;
+
+        double after_fbin = 0.0;
+        double after_fbin_err = 0.0;
+
+        double after_volume = 0.0;
+        double after_volume_err = 0.0;
+
+        double final = 0.0;
+        double final_err = 0.0;
+
+        double volume = 0.0;
+        double lint = 0.0;
+        double frad = 0.0;
+        double fbin = 0.0;
+    };
+
+    std::vector<StagePoint> stage_points;
+
+    for(const auto &r:example.rows){
+        const RowKey key =
+            std::make_tuple(
+                r.xbmin,r.xbmax,r.q2min,r.q2max,
+                r.tmin,r.tmax,r.phimin,r.phimax
+            );
+
+        const auto it_pre = pre_acceptance_lookup.find(key);
+        if(it_pre == pre_acceptance_lookup.end()) continue;
+
+        if(!(r.vbin.value > 0.0) ||
+           !(r.lumi_charge.value > 0.0) ||
+           !(r.frad.value > 0.0) ||
+           !(r.fbin.value > 0.0) ||
+           !(r.yield.value > 0.0) ||
+           !(r.xs.value > 0.0)){
+            continue;
+        }
+
+        StagePoint p;
+        p.phi = r.phi;
+
+        p.current_corrected =
+            it_pre->second.current_corrected;
+        p.current_corrected_err =
+            it_pre->second.current_corrected_stat;
+
+        p.signal =
+            it_pre->second.signal;
+        p.signal_err =
+            it_pre->second.signal_stat;
+
+        p.acceptance = r.yield.value;
+        p.acceptance_err = r.yield.stat;
+
+        const double rel_acc =
+            (r.yield.value > 0.0)
+            ? r.yield.stat/r.yield.value : 0.0;
+
+        const double rel_rad =
+            (r.frad.value > 0.0)
+            ? r.frad.stat/r.frad.value : 0.0;
+
+        const double rel_bin =
+            (r.fbin.value > 0.0)
+            ? r.fbin.stat/r.fbin.value : 0.0;
+
+        const double rel_vol =
+            (r.vbin.value > 0.0)
+            ? r.vbin.stat/r.vbin.value : 0.0;
+
+        p.after_frad =
+            p.acceptance * r.frad.value;
+        p.after_frad_err =
+            p.after_frad *
+            std::sqrt(rel_acc*rel_acc + rel_rad*rel_rad);
+
+        p.after_fbin =
+            p.after_frad * r.fbin.value;
+        p.after_fbin_err =
+            p.after_fbin *
+            std::sqrt(
+                rel_acc*rel_acc +
+                rel_rad*rel_rad +
+                rel_bin*rel_bin
+            );
+
+        p.after_volume =
+            p.after_fbin / r.vbin.value;
+        p.after_volume_err =
+            p.after_volume *
+            std::sqrt(
+                rel_acc*rel_acc +
+                rel_rad*rel_rad +
+                rel_bin*rel_bin +
+                rel_vol*rel_vol
+            );
+
+        p.lint =
+            integrated_luminosity_nb_inv(
+                r.lumi_charge.value
+            );
+
+        p.final =
+            p.after_volume / p.lint;
+        p.final_err =
+            r.xs.stat;
+
+        p.volume = r.vbin.value;
+        p.frad = r.frad.value;
+        p.fbin = r.fbin.value;
+
+        stage_points.push_back(p);
+    }
+
+    if(stage_points.empty()){
+        std::cerr
+            << "[cross_sections] WARNING: representative correction-chain "
+            << "stage list is empty.\n";
+        return true;
+    }
+
+    std::sort(
+        stage_points.begin(),stage_points.end(),
+        [](const StagePoint &a,const StagePoint &b){
+            return a.phi < b.phi;
+        }
+    );
+
     // ---------------------------------------------------------------------
-    // Numerical table for all five displayed stages.
-    // Every stage is expressed in cross-section units using the same
-    // L_int*V_bin denominator.  This makes the log-scale overlay meaningful.
+    // Machine-readable numerical assembly table for the displayed example.
     // ---------------------------------------------------------------------
     {
         std::ofstream o(
@@ -2214,441 +2381,517 @@ bool write_cross_section_analysis_note_outputs(
         );
         if(!o) return false;
 
-        o<<"example,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
-           "phi_min,phi_max,phi_mean,"
-           "total_selected_counts,total_selected_counts_stat,"
-           "acceptance_corrected_yield,acceptance_corrected_yield_stat,"
-           "charge_10p6_nC,Lint_10p6_nb^-1,V_bin,F_rad,F_bin,"
-           "stage_total_counts_nb_per_GeV4_deg,"
-           "stage_acceptance_corrected_nb_per_GeV4_deg,"
-           "stage_after_Frad_nb_per_GeV4_deg,"
-           "stage_after_Fbin_nb_per_GeV4_deg,"
-           "final_stored_sigma_nb_per_GeV4_deg,final_stored_sigma_stat\n";
+        o
+        << "xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
+        << "phi_mean,"
+        << "current_corrected_selected_counts,"
+        << "current_corrected_selected_counts_stat,"
+        << "pi0_subtracted_signal_yield,"
+        << "pi0_subtracted_signal_yield_stat,"
+        << "acceptance_corrected_yield,"
+        << "acceptance_corrected_yield_stat,"
+        << "F_rad,F_bin,V_bin,Lint_nb_inv,"
+        << "after_Frad,"
+        << "after_Fbin,"
+        << "after_volume_correction,"
+        << "after_luminosity_correction_final_sigma,"
+        << "final_stored_sigma\n";
 
-        o<<std::setprecision(12);
+        o << std::setprecision(12);
 
-        for(std::size_t iex=0;iex<examples.size();++iex){
-            const char example_label=static_cast<char>('A'+iex);
+        const KinKey &k = example.key;
 
-            for(const auto&r:examples[iex].rows){
-                const auto raw_key=
-                    std::make_tuple(
-                        r.xbmin,r.xbmax,r.q2min,r.q2max,r.tmin,r.tmax,
-                        r.phimin,r.phimax
-                    );
-
-                const auto it_raw=raw_stage_lookup.find(raw_key);
-                if(it_raw==raw_stage_lookup.end()) continue;
-
-                const double lint=
-                    integrated_luminosity_nb_inv(r.lumi_charge.value);
-                const double denom=lint*r.vbin.value;
-
-                if(!(denom>0.0)) continue;
-
-                const double stage_raw=
-                    it_raw->second.raw_total/denom;
-                const double stage_acceptance=
-                    r.yield.value/denom;
-                const double stage_rad=
-                    stage_acceptance*r.frad.value;
-                const double stage_bin=
-                    stage_rad*r.fbin.value;
-
-                o<<example_label<<","
-                 <<r.xbmin<<","<<r.xbmax<<","
-                 <<r.q2min<<","<<r.q2max<<","
-                 <<r.tmin<<","<<r.tmax<<","
-                 <<r.phimin<<","<<r.phimax<<","<<r.phi<<","
-                 <<it_raw->second.raw_total<<","
-                 <<it_raw->second.raw_stat<<","
-                 <<r.yield.value<<","<<r.yield.stat<<","
-                 <<r.lumi_charge.value<<","<<lint<<","
-                 <<r.vbin.value<<","<<r.frad.value<<","<<r.fbin.value<<","
-                 <<stage_raw<<","
-                 <<stage_acceptance<<","
-                 <<stage_rad<<","
-                 <<stage_bin<<","
-                 <<r.xs.value<<","<<r.xs.stat<<"\n";
-            }
+        for(const auto &p:stage_points){
+            o
+            << std::get<0>(k) << ","
+            << std::get<1>(k) << ","
+            << std::get<2>(k) << ","
+            << std::get<3>(k) << ","
+            << std::get<4>(k) << ","
+            << std::get<5>(k) << ","
+            << p.phi << ","
+            << p.current_corrected << ","
+            << p.current_corrected_err << ","
+            << p.signal << ","
+            << p.signal_err << ","
+            << p.acceptance << ","
+            << p.acceptance_err << ","
+            << p.frad << ","
+            << p.fbin << ","
+            << p.volume << ","
+            << p.lint << ","
+            << p.after_frad << ","
+            << p.after_fbin << ","
+            << p.after_volume << ","
+            << p.final << ","
+            << p.final
+            << "\n";
         }
     }
 
     // ---------------------------------------------------------------------
-    // Two step-by-step 2x2 canvases.  These use the kinematic cells that were
-    // the upper-left and upper-right panels of the previous four-bin summary.
-    //
-    // Each panel compares one correction stage only with the immediately
-    // preceding stage:
-    //   (a) total selected counts -> acceptance corrected
-    //   (b) acceptance corrected -> F_rad
-    //   (c) F_rad -> F_bin
-    //   (d) F_bin -> final stored cross section
-    //
-    // Only panel (a) is logarithmic because the acceptance correction is much
-    // larger than the later multiplicative corrections.
+    // Single 3x3 canvas.  Six populated panels show the six transitions in
+    // physical production order.  The bottom row is reserved for a compact
+    // workflow/kinematics summary so the canvas remains visually balanced.
     // ---------------------------------------------------------------------
     {
-        const std::size_t n_canvases = std::min<std::size_t>(2, examples.size());
+        TCanvas c(
+            "c_cross_section_full_chain_note","",
+            1500,1350
+        );
+        c.Divide(3,3,0.002,0.002);
 
-        for(std::size_t iex=0; iex<n_canvases; ++iex){
-            const std::string canvas_name =
-                "c_cross_section_steps_note_" + std::to_string(iex);
+        struct PanelSpec {
+            std::string title;
+            std::string before_label;
+            std::string after_label;
+            int before_color;
+            int after_color;
+            int before_marker;
+            int after_marker;
+        };
 
-            TCanvas c(canvas_name.c_str(), "", 1500, 1100);
-            c.Divide(2,2,0.002,0.002);
-
-            struct StagePoint {
-                double phi=0.0;
-
-                double raw=0.0;
-                double raw_err=0.0;
-
-                double acc=0.0;
-                double acc_err=0.0;
-
-                double rad=0.0;
-                double rad_err=0.0;
-
-                double bin=0.0;
-                double bin_err=0.0;
-
-                double final=0.0;
-                double final_err=0.0;
-            };
-
-            std::vector<StagePoint> stage_points;
-
-            for(const auto &r:examples[iex].rows){
-                const auto raw_key =
-                    std::make_tuple(
-                        r.xbmin,r.xbmax,r.q2min,r.q2max,r.tmin,r.tmax,
-                        r.phimin,r.phimax
-                    );
-
-                const auto it_raw = raw_stage_lookup.find(raw_key);
-                if(it_raw == raw_stage_lookup.end()) continue;
-
-                const double lint =
-                    integrated_luminosity_nb_inv(r.lumi_charge.value);
-                const double denom = lint * r.vbin.value;
-                if(!(denom > 0.0)) continue;
-
-                StagePoint p;
-                p.phi = r.phi;
-
-                p.raw = it_raw->second.raw_total / denom;
-                p.raw_err = it_raw->second.raw_stat / denom;
-
-                p.acc = r.yield.value / denom;
-
-                const double rel_y =
-                    (r.yield.value > 0.0)
-                    ? r.yield.stat / r.yield.value : 0.0;
-
-                const double rel_v =
-                    (r.vbin.value > 0.0)
-                    ? r.vbin.stat / r.vbin.value : 0.0;
-
-                p.acc_err =
-                    p.acc * std::sqrt(rel_y*rel_y + rel_v*rel_v);
-
-                const double rel_r =
-                    (r.frad.value > 0.0)
-                    ? r.frad.stat / r.frad.value : 0.0;
-
-                p.rad = p.acc * r.frad.value;
-                p.rad_err =
-                    p.rad * std::sqrt(
-                        rel_y*rel_y + rel_v*rel_v + rel_r*rel_r
-                    );
-
-                const double rel_b =
-                    (r.fbin.value > 0.0)
-                    ? r.fbin.stat / r.fbin.value : 0.0;
-
-                p.bin = p.rad * r.fbin.value;
-                p.bin_err =
-                    p.bin * std::sqrt(
-                        rel_y*rel_y + rel_v*rel_v
-                        + rel_r*rel_r + rel_b*rel_b
-                    );
-
-                p.final = r.xs.value;
-                p.final_err = r.xs.stat;
-
-                stage_points.push_back(p);
+        const std::array<PanelSpec,6> specs = {{
+            {
+                "#pi^{0} background subtraction",
+                "current-corrected selected counts",
+                "after #pi^{0} subtraction",
+                kGray+2,kBlack,24,20
+            },
+            {
+                "Acceptance correction",
+                "after #pi^{0} subtraction",
+                "acceptance corrected",
+                kBlack,kBlue+1,24,20
+            },
+            {
+                "Radiative correction",
+                "acceptance corrected",
+                "after F_{rad}",
+                kBlue+1,kGreen+2,24,20
+            },
+            {
+                "Bin-centering correction",
+                "after F_{rad}",
+                "after F_{bin}",
+                kGreen+2,kMagenta+1,24,20
+            },
+            {
+                "Bin-volume normalization",
+                "after F_{bin}",
+                "after / V_{bin}",
+                kMagenta+1,kOrange+7,24,20
+            },
+            {
+                "Luminosity normalization",
+                "after / V_{bin}",
+                "final cross section",
+                kOrange+7,kRed+1,24,20
             }
+        }};
 
-            if(stage_points.empty()) continue;
+        auto get_stage = [](const StagePoint &p,int stage){
+            switch(stage){
+                case 0: return std::make_pair(
+                    p.current_corrected,
+                    p.current_corrected_err
+                );
+                case 1: return std::make_pair(
+                    p.signal,
+                    p.signal_err
+                );
+                case 2: return std::make_pair(
+                    p.acceptance,
+                    p.acceptance_err
+                );
+                case 3: return std::make_pair(
+                    p.after_frad,
+                    p.after_frad_err
+                );
+                case 4: return std::make_pair(
+                    p.after_fbin,
+                    p.after_fbin_err
+                );
+                case 5: return std::make_pair(
+                    p.after_volume,
+                    p.after_volume_err
+                );
+                default: return std::make_pair(
+                    p.final,
+                    p.final_err
+                );
+            }
+        };
 
-            const KinKey &k = examples[iex].key;
+        for(int ipad=0; ipad<6; ++ipad){
+            c.cd(ipad+1);
 
-            std::ostringstream kin;
-            kin << std::fixed << std::setprecision(3)
-                << std::get<0>(k) << " < x_{B} < " << std::get<1>(k)
-                << ",  " << std::get<2>(k) << " < Q^{2} < "
-                << std::get<3>(k) << " GeV^{2}"
-                << ",  " << std::get<4>(k) << " < |t| < "
-                << std::get<5>(k) << " GeV^{2}";
+            gPad->SetLeftMargin((ipad%3==0) ? 0.145 : 0.115);
+            gPad->SetRightMargin(0.035);
+            gPad->SetBottomMargin(0.14);
+            gPad->SetTopMargin(0.16);
+            gPad->SetTicks(1,1);
 
-            auto configure_graph = [](
-                TGraphErrors &g,
-                int marker_style,
-                int marker_color,
-                double marker_size=0.90) {
+            TGraphErrors g_before;
+            TGraphErrors g_after;
 
-                g.SetMarkerStyle(marker_style);
-                g.SetMarkerSize(marker_size);
-                g.SetLineWidth(2);
-                g.SetMarkerColor(marker_color);
-                g.SetLineColor(marker_color);
-            };
+            double ymin =
+                std::numeric_limits<double>::infinity();
+            double ymax =
+                -std::numeric_limits<double>::infinity();
 
-            for(int ipad=0; ipad<4; ++ipad){
-                c.cd(ipad+1);
+            double min_positive =
+                std::numeric_limits<double>::infinity();
+            double max_positive = 0.0;
 
-                gPad->SetLeftMargin((ipad%2==0) ? 0.145 : 0.115);
-                gPad->SetRightMargin(0.035);
-                gPad->SetBottomMargin((ipad>=2) ? 0.145 : 0.115);
-                gPad->SetTopMargin(0.155);
-                gPad->SetTicks(1,1);
+            int ip=0;
 
-                if(ipad==0) gPad->SetLogy();
-                else        gPad->SetLogy(0);
+            for(const auto &p:stage_points){
+                const auto before =
+                    get_stage(p,ipad);
+                const auto after =
+                    get_stage(p,ipad+1);
 
-                TGraphErrors g_before;
-                TGraphErrors g_after;
+                g_before.SetPoint(
+                    ip,p.phi,before.first
+                );
+                g_before.SetPointError(
+                    ip,0.0,before.second
+                );
 
-                std::string before_label;
-                std::string after_label;
-                std::string panel_title;
+                g_after.SetPoint(
+                    ip,p.phi,after.first
+                );
+                g_after.SetPointError(
+                    ip,0.0,after.second
+                );
 
-                int before_marker = 24;
-                int before_color = kGray+2;
-                int after_marker = 20;
-                int after_color = kBlack;
+                const std::array<std::pair<double,double>,2> vals = {{
+                    before,after
+                }};
 
-                double ymin = std::numeric_limits<double>::infinity();
-                double ymax = -std::numeric_limits<double>::infinity();
+                for(const auto &v:vals){
+                    if(!std::isfinite(v.first)) continue;
 
-                auto update_range = [&](double y, double ey){
-                    if(!std::isfinite(y) || y<=0.0) return;
+                    const double low =
+                        std::max(0.0,v.first-v.second);
+                    const double high =
+                        v.first+v.second;
 
-                    const double low = std::max(0.0, y-ey);
-                    const double high = y+ey;
-
-                    if(ipad==0){
-                        if(low>0.0) ymin = std::min(ymin,low);
-                        else        ymin = std::min(ymin,y);
-                    } else {
-                        ymin = std::min(ymin,low);
-                    }
-
+                    ymin = std::min(ymin,low);
                     ymax = std::max(ymax,high);
-                };
 
-                int ip=0;
-
-                for(const auto &p:stage_points){
-                    double y_before=0.0;
-                    double e_before=0.0;
-                    double y_after=0.0;
-                    double e_after=0.0;
-
-                    if(ipad==0){
-                        y_before=p.raw;
-                        e_before=p.raw_err;
-                        y_after=p.acc;
-                        e_after=p.acc_err;
-
-                        before_label="total selected counts / (L_{int} V_{bin})";
-                        after_label="acceptance corrected / (L_{int} V_{bin})";
-                        panel_title="Acceptance correction";
-
-                        before_marker=24;
-                        before_color=kGray+2;
-                        after_marker=20;
-                        after_color=kBlack;
-                    } else if(ipad==1){
-                        y_before=p.acc;
-                        e_before=p.acc_err;
-                        y_after=p.rad;
-                        e_after=p.rad_err;
-
-                        before_label="acceptance corrected / (L_{int} V_{bin})";
-                        after_label="after F_{rad}";
-                        panel_title="Radiative correction";
-
-                        before_marker=24;
-                        before_color=kBlack;
-                        after_marker=20;
-                        after_color=kBlue+1;
-                    } else if(ipad==2){
-                        y_before=p.rad;
-                        e_before=p.rad_err;
-                        y_after=p.bin;
-                        e_after=p.bin_err;
-
-                        before_label="after F_{rad}";
-                        after_label="after F_{bin}";
-                        panel_title="Bin-centering correction";
-
-                        before_marker=24;
-                        before_color=kBlue+1;
-                        after_marker=20;
-                        after_color=kMagenta+1;
-                    } else {
-                        y_before=p.bin;
-                        e_before=p.bin_err;
-                        y_after=p.final;
-                        e_after=p.final_err;
-
-                        before_label="after F_{bin}";
-                        after_label="final stored cross section";
-                        panel_title="Final assembly closure";
-
-                        before_marker=24;
-                        before_color=kMagenta+1;
-                        after_marker=20;
-                        after_color=kRed+1;
-                    }
-
-                    g_before.SetPoint(ip,p.phi,y_before);
-                    g_before.SetPointError(ip,0.0,e_before);
-
-                    g_after.SetPoint(ip,p.phi,y_after);
-                    g_after.SetPointError(ip,0.0,e_after);
-
-                    update_range(y_before,e_before);
-                    update_range(y_after,e_after);
-
-                    ++ip;
-                }
-
-                if(!std::isfinite(ymin) || !std::isfinite(ymax) || ymax<=0.0){
-                    ymin=1.0e-4;
-                    ymax=1.0;
-                }
-
-                double frame_min=0.0;
-                double frame_max=1.0;
-
-                if(ipad==0){
-                    if(!(ymin>0.0)) ymin=1.0e-4;
-
-                    const double log_lo =
-                        std::floor(std::log10(ymin))-0.10;
-                    const double log_hi =
-                        std::ceil(std::log10(ymax))+0.10;
-
-                    frame_min=std::pow(10.0,log_lo);
-                    frame_max=std::pow(10.0,log_hi);
-                } else {
-                    double span = ymax-ymin;
-
-                    if(!(span>0.0)){
-                        span = std::max(1.0e-12,0.10*std::fabs(ymax));
-                    }
-
-                    // For the small Frad/Fbin/final changes, use a tight
-                    // linear range so the correction is actually visible.
-                    const double pad =
-                        std::max(
-                            0.18*span,
-                            0.035*std::max(std::fabs(ymax),std::fabs(ymin))
-                        );
-
-                    frame_min=std::max(0.0,ymin-pad);
-                    frame_max=ymax+pad;
-
-                    if(!(frame_max>frame_min)){
-                        frame_min=0.8*ymax;
-                        frame_max=1.2*ymax;
+                    if(v.first>0.0){
+                        min_positive =
+                            std::min(min_positive,v.first);
+                        max_positive =
+                            std::max(max_positive,v.first);
                     }
                 }
 
-                const std::string frame_name =
-                    "h_cross_section_steps_note_"
-                    + std::to_string(iex) + "_"
-                    + std::to_string(ipad);
-
-                TH1F frame(frame_name.c_str(),"",100,0.0,360.0);
-                frame.SetMinimum(frame_min);
-                frame.SetMaximum(frame_max);
-                frame.GetXaxis()->SetTitle("#phi (deg)");
-                frame.GetYaxis()->SetTitle(
-                    "cross-section-equivalent value  [nb/(GeV^{4} deg)]"
-                );
-                frame.GetXaxis()->SetTitleSize(0.052);
-                frame.GetYaxis()->SetTitleSize(0.044);
-                frame.GetXaxis()->SetLabelSize(0.043);
-                frame.GetYaxis()->SetLabelSize(0.043);
-                frame.GetYaxis()->SetTitleOffset(
-                    (ipad%2==0) ? 1.50 : 1.18
-                );
-                frame.DrawCopy();
-
-                configure_graph(
-                    g_before,before_marker,before_color,0.90
-                );
-                configure_graph(
-                    g_after,after_marker,after_color,0.82
-                );
-
-                g_before.DrawClone("PE SAME");
-                g_after.DrawClone("PE SAME");
-
-                TLatex latex;
-                latex.SetNDC();
-                latex.SetTextFont(42);
-
-                latex.SetTextSize(0.035);
-                const std::string panel_label =
-                    std::string("(")
-                    + static_cast<char>('a'+ipad) + ")";
-                latex.DrawLatex(0.15,0.925,panel_label.c_str());
-
-                latex.SetTextSize(0.031);
-                latex.DrawLatex(0.23,0.925,panel_title.c_str());
-
-                TLegend leg(0.47,0.72,0.94,0.855);
-                leg.SetBorderSize(0);
-                leg.SetFillStyle(0);
-                leg.SetTextSize(0.027);
-                leg.AddEntry(&g_before,before_label.c_str(),"pe");
-                leg.AddEntry(&g_after,after_label.c_str(),"pe");
-                leg.DrawClone();
+                ++ip;
             }
 
-            c.cd(0);
+            // Use logarithmic scale only when the two adjacent stages differ
+            // by more than roughly one order of magnitude.  This keeps the
+            // small pi0, Frad, and Fbin effects visible while still handling
+            // the large acceptance/volume/luminosity normalizations cleanly.
+            bool use_log = false;
 
-            TLatex title;
-            title.SetNDC();
-            title.SetTextFont(42);
-            title.SetTextAlign(22);
+            if(std::isfinite(min_positive) &&
+               min_positive>0.0 &&
+               max_positive/min_positive > 8.0){
+                use_log = true;
+            }
 
-            title.SetTextSize(0.027);
-            title.DrawLatex(
-                0.50,0.988,
-                "Step-by-step construction of the 10.6 GeV unpolarized DVCS cross section"
+            gPad->SetLogy(use_log ? 1 : 0);
+
+            double frame_min=0.0;
+            double frame_max=1.0;
+
+            if(use_log){
+                const double log_lo =
+                    std::floor(
+                        std::log10(min_positive)
+                    ) - 0.10;
+
+                const double log_hi =
+                    std::ceil(
+                        std::log10(max_positive)
+                    ) + 0.10;
+
+                frame_min =
+                    std::pow(10.0,log_lo);
+                frame_max =
+                    std::pow(10.0,log_hi);
+            } else {
+                if(!std::isfinite(ymin) ||
+                   !std::isfinite(ymax) ||
+                   !(ymax>ymin)){
+
+                    ymin = 0.0;
+                    ymax = 1.0;
+                }
+
+                double span = ymax-ymin;
+
+                if(!(span>0.0)){
+                    span =
+                        std::max(
+                            1.0e-12,
+                            0.10*std::fabs(ymax)
+                        );
+                }
+
+                const double pad =
+                    std::max(
+                        0.18*span,
+                        0.03*std::max(
+                            std::fabs(ymax),
+                            std::fabs(ymin)
+                        )
+                    );
+
+                frame_min =
+                    std::max(0.0,ymin-pad);
+                frame_max =
+                    ymax+pad;
+            }
+
+            const std::string frame_name =
+                "h_cross_section_full_chain_"
+                + std::to_string(ipad);
+
+            TH1F frame(
+                frame_name.c_str(),"",
+                100,0.0,360.0
             );
 
-            title.SetTextSize(0.021);
-            title.DrawLatex(
-                0.50,0.958,
-                kin.str().c_str()
+            frame.SetMinimum(frame_min);
+            frame.SetMaximum(frame_max);
+
+            frame.GetXaxis()->SetTitle(
+                "#phi (deg)"
             );
 
-            const std::string output_name =
-                (iex==0)
-                ? "cross_section_correction_steps_example_a.png"
-                : "cross_section_correction_steps_example_b.png";
+            // Native stage units are intentionally retained.  The first four
+            // panels are yield-like quantities, the fifth introduces the
+            // four-dimensional bin-volume normalization, and the sixth
+            // introduces the integrated-luminosity normalization.
+            if(ipad<=3){
+                frame.GetYaxis()->SetTitle(
+                    "corrected yield"
+                );
+            } else if(ipad==4){
+                frame.GetYaxis()->SetTitle(
+                    "stage value"
+                );
+            } else {
+                frame.GetYaxis()->SetTitle(
+                    "stage value"
+                );
+            }
 
-            c.SaveAs(
-                (fs::path(out_dir)/output_name).string().c_str()
+            frame.GetXaxis()->SetTitleSize(0.050);
+            frame.GetYaxis()->SetTitleSize(0.047);
+            frame.GetXaxis()->SetLabelSize(0.041);
+            frame.GetYaxis()->SetLabelSize(0.041);
+            frame.GetYaxis()->SetTitleOffset(
+                (ipad%3==0) ? 1.42 : 1.15
             );
+
+            frame.DrawCopy();
+
+            g_before.SetMarkerStyle(
+                specs[ipad].before_marker
+            );
+            g_before.SetMarkerSize(0.85);
+            g_before.SetLineWidth(2);
+            g_before.SetMarkerColor(
+                specs[ipad].before_color
+            );
+            g_before.SetLineColor(
+                specs[ipad].before_color
+            );
+
+            g_after.SetMarkerStyle(
+                specs[ipad].after_marker
+            );
+            g_after.SetMarkerSize(0.78);
+            g_after.SetLineWidth(2);
+            g_after.SetMarkerColor(
+                specs[ipad].after_color
+            );
+            g_after.SetLineColor(
+                specs[ipad].after_color
+            );
+
+            g_before.DrawClone("PE SAME");
+            g_after.DrawClone("PE SAME");
+
+            TLatex latex;
+            latex.SetNDC();
+            latex.SetTextFont(42);
+
+            latex.SetTextSize(0.033);
+            const std::string panel_label =
+                std::string("(")
+                + static_cast<char>('a'+ipad)
+                + ")";
+
+            latex.DrawLatex(
+                0.15,0.925,
+                panel_label.c_str()
+            );
+
+            latex.SetTextSize(0.029);
+            latex.DrawLatex(
+                0.23,0.925,
+                specs[ipad].title.c_str()
+            );
+
+            TLegend leg(
+                0.42,0.72,0.94,0.855
+            );
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.SetTextSize(0.026);
+
+            leg.AddEntry(
+                &g_before,
+                specs[ipad].before_label.c_str(),
+                "pe"
+            );
+
+            leg.AddEntry(
+                &g_after,
+                specs[ipad].after_label.c_str(),
+                "pe"
+            );
+
+            leg.DrawClone();
         }
+
+        const KinKey &k = example.key;
+
+        std::ostringstream kin;
+        kin << std::fixed << std::setprecision(3)
+            << std::get<0>(k)
+            << " < x_{B} < "
+            << std::get<1>(k)
+            << ",  "
+            << std::get<2>(k)
+            << " < Q^{2} < "
+            << std::get<3>(k)
+            << " GeV^{2},  "
+            << std::get<4>(k)
+            << " < |t| < "
+            << std::get<5>(k)
+            << " GeV^{2}";
+
+        // Bottom-left: ordered workflow.
+        c.cd(7);
+        gPad->SetFillStyle(0);
+        gPad->SetFrameFillStyle(0);
+
+        TLatex flow;
+        flow.SetNDC();
+        flow.SetTextFont(42);
+        flow.SetTextSize(0.044);
+
+        flow.DrawLatex(
+            0.08,0.82,
+            "Correction order"
+        );
+
+        flow.SetTextSize(0.036);
+        flow.DrawLatex(
+            0.08,0.66,
+            "current corrected #rightarrow #pi^{0} subtraction"
+        );
+        flow.DrawLatex(
+            0.08,0.52,
+            "#rightarrow acceptance #rightarrow F_{rad}"
+        );
+        flow.DrawLatex(
+            0.08,0.38,
+            "#rightarrow F_{bin} #rightarrow V_{bin}"
+        );
+        flow.DrawLatex(
+            0.08,0.24,
+            "#rightarrow L_{int} #rightarrow final #sigma"
+        );
+
+        // Bottom-middle: selected kinematics.
+        c.cd(8);
+        gPad->SetFillStyle(0);
+        gPad->SetFrameFillStyle(0);
+
+        TLatex ktext;
+        ktext.SetNDC();
+        ktext.SetTextFont(42);
+        ktext.SetTextSize(0.044);
+
+        ktext.DrawLatex(
+            0.08,0.82,
+            "Representative bin"
+        );
+
+        ktext.SetTextSize(0.034);
+        ktext.DrawLatex(
+            0.08,0.62,
+            kin.str().c_str()
+        );
+
+        ktext.DrawLatex(
+            0.08,0.42,
+            "10.6 GeV combined RGA data"
+        );
+
+        // Bottom-right: final production equation.
+        c.cd(9);
+        gPad->SetFillStyle(0);
+        gPad->SetFrameFillStyle(0);
+
+        TLatex eq;
+        eq.SetNDC();
+        eq.SetTextFont(42);
+        eq.SetTextSize(0.044);
+
+        eq.DrawLatex(
+            0.08,0.82,
+            "Final production form"
+        );
+
+        eq.SetTextSize(0.034);
+        eq.DrawLatex(
+            0.08,0.58,
+            "#sigma = N_{acc} F_{rad} F_{bin}"
+        );
+        eq.DrawLatex(
+            0.08,0.43,
+            "/ (L_{int} V_{bin})"
+        );
+
+        c.cd(0);
+
+        TLatex title;
+        title.SetNDC();
+        title.SetTextFont(42);
+        title.SetTextAlign(22);
+        title.SetTextSize(0.026);
+
+        title.DrawLatex(
+            0.50,0.992,
+            "Step-by-step construction of the 10.6 GeV unpolarized DVCS cross section"
+        );
+
+        c.SaveAs(
+            (
+                fs::path(out_dir)
+                /"cross_section_correction_chain_stepwise.png"
+            ).string().c_str()
+        );
     }
 
     std::cout<<"[cross_sections] Wrote analysis-note outputs to "<<out_dir<<"\n";
