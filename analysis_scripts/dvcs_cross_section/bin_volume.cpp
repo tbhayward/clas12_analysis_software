@@ -31,6 +31,7 @@
 
 #include <TCanvas.h>
 #include <TGraphAsymmErrors.h>
+#include <TGraph.h>
 #include <TGaxis.h>
 #include <TLatex.h>
 #include <TLegend.h>
@@ -1064,12 +1065,10 @@ static void write_bin_volume_analysis_note_outputs(
 
     // 1) Representative xB slices at fixed (Q2,|t|).
     //
-    // A phi scan is not informative for this correction: at fixed
-    // (xB,Q2,|t|), the physical mask is independent of phi and the ordinary
-    // analysis phi bins have the same geometric width.  Instead, show the
-    // physically allowed fraction while moving across xB at fixed Q2 and |t|.
-    // This directly illustrates how the y, W, and t_min boundaries clip a row
-    // of nominal analysis bins.
+    // These slices show how the y, W, and t_min boundaries clip a row of
+    // neighboring xB bins.  The allowed fraction is independent of phi for a
+    // fixed (xB,Q2,|t|) cell because the same Delta-phi multiplies the nominal
+    // and physically allowed four-dimensional volumes.
     {
         struct SliceKey {
             double q0=0,q1=0,t0=0,t1=0;
@@ -1219,6 +1218,219 @@ static void write_bin_volume_analysis_note_outputs(
             title.DrawLatex(.50,.975,"Representative phase-space clipping across rows of x_{B} bins");
 
             c.SaveAs((note_dir/"bin_volume_representative_xB_slices.png").string().c_str());
+        }
+    }
+
+
+    // 2) Representative phi dependence of the raw four-dimensional volume.
+    //
+    // The physical mask itself depends only on (xB,Q2,|t|), but the analysis
+    // uses unequal phi-bin widths.  Therefore both the nominal rectangular
+    // volume and the physically allowed volume vary with phi through Delta-phi.
+    // Their ratio remains constant for a fixed (xB,Q2,|t|) cell.
+    {
+        struct PhiCell {
+            double x0=0,x1=0,q0=0,q1=0,t0=0,t1=0;
+        };
+
+        auto same_cell=[](const NoteVolumePoint&p,const PhiCell&c){
+            return note_same_edge(p.xbmin,c.x0)&&note_same_edge(p.xbmax,c.x1)&&
+                   note_same_edge(p.q2min,c.q0)&&note_same_edge(p.q2max,c.q1)&&
+                   note_same_edge(p.tmin,c.t0)&&note_same_edge(p.tmax,c.t1);
+        };
+
+        std::vector<PhiCell> cells;
+        for(const auto&p:p106){
+            PhiCell c{p.xbmin,p.xbmax,p.q2min,p.q2max,p.tmin,p.tmax};
+            bool seen=false;
+            for(const auto&x:cells){
+                if(note_same_edge(c.x0,x.x0)&&note_same_edge(c.x1,x.x1)&&
+                   note_same_edge(c.q0,x.q0)&&note_same_edge(c.q1,x.q1)&&
+                   note_same_edge(c.t0,x.t0)&&note_same_edge(c.t1,x.t1)){
+                    seen=true; break;
+                }
+            }
+            if(!seen) cells.push_back(c);
+        }
+
+        // Prefer a common cell with full phi coverage and moderate clipping.
+        // A target allowed fraction near 0.7 makes the nominal and allowed
+        // curves visibly distinct without choosing an extreme corner bin.
+        const double target_fraction=0.70;
+        int best_common_phi=-1;
+        double best_score=1e9;
+        PhiCell best;
+        bool have_best=false;
+
+        for(const auto&c:cells){
+            std::vector<double> f106_cell,f102_cell;
+            std::set<std::pair<double,double>> phi106,phi102;
+
+            for(const auto&p:p106){
+                if(!same_cell(p,c) || !std::isfinite(p.fraction)) continue;
+                f106_cell.push_back(p.fraction);
+                phi106.insert({p.phimin,p.phimax});
+            }
+            for(const auto&p:p102){
+                if(!same_cell(p,c) || !std::isfinite(p.fraction)) continue;
+                f102_cell.push_back(p.fraction);
+                phi102.insert({p.phimin,p.phimax});
+            }
+            if(f106_cell.empty()||f102_cell.empty()) continue;
+
+            int common_phi=0;
+            for(const auto&e:phi106) if(phi102.count(e)) ++common_phi;
+            if(common_phi<4) continue;
+
+            const double med106=note_quantile(f106_cell,.50);
+            const double med102=note_quantile(f102_cell,.50);
+            const double score=std::fabs(.5*(med106+med102)-target_fraction);
+
+            if(common_phi>best_common_phi ||
+               (common_phi==best_common_phi && score<best_score)){
+                best_common_phi=common_phi;
+                best_score=score;
+                best=c;
+                have_best=true;
+            }
+        }
+
+        if(have_best){
+            struct PhiPoint {
+                double phi=0, cubic=0, allowed106=0, allowed102=0;
+                double frac106=0, frac102=0;
+            };
+            std::vector<PhiPoint> pts;
+
+            for(const auto&p:p106){
+                if(!same_cell(p,best) || p.cubic<=0 || p.allowed<=0) continue;
+
+                const NoteVolumePoint* match102=nullptr;
+                for(const auto&q:p102){
+                    if(!same_cell(q,best)) continue;
+                    if(note_same_edge(q.phimin,p.phimin)&&note_same_edge(q.phimax,p.phimax)){
+                        match102=&q; break;
+                    }
+                }
+                if(!match102 || match102->allowed<=0) continue;
+
+                PhiPoint x;
+                x.phi=.5*(p.phimin+p.phimax);
+                x.cubic=p.cubic;
+                x.allowed106=p.allowed;
+                x.allowed102=match102->allowed;
+                x.frac106=p.allowed/p.cubic;
+                x.frac102=match102->allowed/match102->cubic;
+                pts.push_back(x);
+            }
+
+            std::sort(pts.begin(),pts.end(),[](const PhiPoint&a,const PhiPoint&b){
+                return a.phi<b.phi;
+            });
+
+            if(!pts.empty()){
+                double vmax=0.0;
+                for(const auto&p:pts) vmax=std::max(vmax,p.cubic);
+
+                // Choose a display scale automatically so the ordinate is O(1).
+                double scale=1.0;
+                int exponent=0;
+                if(vmax>0){
+                    exponent=(int)std::floor(std::log10(vmax));
+                    scale=std::pow(10.0,-exponent);
+                }
+
+                TCanvas c("c_note_binvol_phi","",1150,720);
+                c.SetLeftMargin(.135);
+                c.SetRightMargin(.035);
+                c.SetBottomMargin(.14);
+                c.SetTopMargin(.095);
+                c.SetGridy();
+                c.SetTicks(1,1);
+
+                TH1F frame("h_note_binvol_phi","",100,0,360);
+                frame.SetMinimum(0.0);
+                frame.SetMaximum(1.18*vmax*scale);
+                frame.GetXaxis()->SetTitle("#phi (deg)");
+
+                std::ostringstream ytitle;
+                ytitle<<"Four-dimensional bin volume";
+                if(exponent!=0) ytitle<<" (#times10^{"<<exponent<<"})";
+                frame.GetYaxis()->SetTitle(ytitle.str().c_str());
+                frame.GetXaxis()->SetTitleSize(.050);
+                frame.GetYaxis()->SetTitleSize(.050);
+                frame.GetXaxis()->SetLabelSize(.041);
+                frame.GetYaxis()->SetLabelSize(.041);
+                frame.GetYaxis()->SetTitleOffset(1.30);
+                frame.Draw();
+
+                TGraph gcubic,g106,g102;
+                gcubic.SetMarkerStyle(24);
+                gcubic.SetMarkerSize(1.20);
+                gcubic.SetMarkerColor(kGray+2);
+                gcubic.SetLineColor(kGray+2);
+                gcubic.SetLineWidth(2);
+
+                g106.SetMarkerStyle(20);
+                g106.SetMarkerSize(1.20);
+                g106.SetMarkerColor(kBlue+1);
+                g106.SetLineColor(kBlue+1);
+                g106.SetLineWidth(2);
+
+                g102.SetMarkerStyle(21);
+                g102.SetMarkerSize(1.10);
+                g102.SetMarkerColor(kRed+1);
+                g102.SetLineColor(kRed+1);
+                g102.SetLineWidth(2);
+
+                for(std::size_t i=0;i<pts.size();++i){
+                    gcubic.SetPoint((int)i,pts[i].phi,pts[i].cubic*scale);
+                    g106.SetPoint((int)i,pts[i].phi,pts[i].allowed106*scale);
+                    g102.SetPoint((int)i,pts[i].phi,pts[i].allowed102*scale);
+                }
+
+                gcubic.Draw("PL SAME");
+                g106.Draw("PL SAME");
+                g102.Draw("PL SAME");
+
+                TLegend leg(.62,.69,.93,.86);
+                leg.SetBorderSize(0);
+                leg.SetFillStyle(0);
+                leg.SetTextSize(.033);
+                leg.AddEntry(&gcubic,"Nominal rectangular volume","pl");
+                leg.AddEntry(&g106,"Allowed volume, 10.6 GeV","pl");
+                leg.AddEntry(&g102,"Allowed volume, 10.2 GeV","pl");
+                leg.Draw();
+
+                TLatex title;
+                title.SetNDC();
+                title.SetTextFont(42);
+                title.SetTextSize(.047);
+                title.DrawLatex(.135,.925,
+                    "Representative #phi dependence of the four-dimensional bin volume");
+
+                TLatex note;
+                note.SetNDC();
+                note.SetTextFont(42);
+                note.SetTextSize(.027);
+                note.DrawLatex(.145,.845,
+                    Form("%.3f < x_{B} < %.3f,  %.3f < Q^{2} < %.3f GeV^{2},  %.3f < |t| < %.3f GeV^{2}",
+                         best.x0,best.x1,best.q0,best.q1,best.t0,best.t1));
+
+                std::ofstream o((note_dir/"bin_volume_phi_example.csv").string());
+                o<<"xBmin,xBmax,Q2min,Q2max,tmin,tmax,phi,cubic_volume,allowed_volume_10p6,allowed_fraction_10p6,allowed_volume_10p2,allowed_fraction_10p2\n";
+                o<<std::setprecision(10);
+                for(const auto&p:pts){
+                    o<<best.x0<<","<<best.x1<<","
+                     <<best.q0<<","<<best.q1<<","
+                     <<best.t0<<","<<best.t1<<","
+                     <<p.phi<<","<<p.cubic<<","
+                     <<p.allowed106<<","<<p.frac106<<","
+                     <<p.allowed102<<","<<p.frac102<<"\n";
+                }
+
+                c.SaveAs((note_dir/"bin_volume_phi_example.png").string().c_str());
+            }
         }
     }
 
