@@ -2437,7 +2437,7 @@ bool write_cross_section_analysis_note_outputs(
     {
         TCanvas c(
             "c_cross_section_full_chain_note","",
-            1500,1350
+            1500,900
         );
         c.Divide(3,3,0.002,0.002);
 
@@ -2529,7 +2529,7 @@ bool write_cross_section_analysis_note_outputs(
             gPad->SetLeftMargin((ipad%3==0) ? 0.145 : 0.115);
             gPad->SetRightMargin(0.035);
             gPad->SetBottomMargin(0.14);
-            gPad->SetTopMargin(0.16);
+            gPad->SetTopMargin(0.135);
             gPad->SetTicks(1,1);
 
             TGraphErrors g_before;
@@ -2733,21 +2733,18 @@ bool write_cross_section_analysis_note_outputs(
             latex.SetNDC();
             latex.SetTextFont(42);
 
-            latex.SetTextSize(0.033);
-            const std::string panel_label =
+            // Use one consistent text size for the panel label and title.
+            latex.SetTextSize(0.029);
+
+            const std::string panel_heading =
                 std::string("(")
                 + static_cast<char>('a'+ipad)
-                + ")";
+                + ")  "
+                + specs[ipad].title;
 
             latex.DrawLatex(
                 0.15,0.925,
-                panel_label.c_str()
-            );
-
-            latex.SetTextSize(0.029);
-            latex.DrawLatex(
-                0.23,0.925,
-                specs[ipad].title.c_str()
+                panel_heading.c_str()
             );
 
             TLegend leg(
@@ -2789,89 +2786,38 @@ bool write_cross_section_analysis_note_outputs(
             << std::get<5>(k)
             << " GeV^{2}";
 
-        // Bottom-left: ordered workflow.
+        // Bottom row: use only one compact annotation identifying the
+        // representative kinematic bin.  The three pads are intentionally
+        // left otherwise empty to avoid repeating workflow/equation text that
+        // is already given in the analysis-note caption and surrounding prose.
         c.cd(7);
         gPad->SetFillStyle(0);
         gPad->SetFrameFillStyle(0);
 
-        TLatex flow;
-        flow.SetNDC();
-        flow.SetTextFont(42);
-        flow.SetTextSize(0.044);
+        TLatex bin_text;
+        bin_text.SetNDC();
+        bin_text.SetTextFont(42);
+        bin_text.SetTextSize(0.043);
+        bin_text.SetTextAlign(13);
 
-        flow.DrawLatex(
-            0.08,0.82,
-            "Correction order"
-        );
-
-        flow.SetTextSize(0.036);
-        flow.DrawLatex(
-            0.08,0.66,
-            "current corrected #rightarrow #pi^{0} subtraction"
-        );
-        flow.DrawLatex(
-            0.08,0.52,
-            "#rightarrow acceptance #rightarrow F_{rad}"
-        );
-        flow.DrawLatex(
-            0.08,0.38,
-            "#rightarrow F_{bin} #rightarrow V_{bin}"
-        );
-        flow.DrawLatex(
-            0.08,0.24,
-            "#rightarrow L_{int} #rightarrow final #sigma"
+        bin_text.DrawLatex(
+            0.08,0.70,
+            "Representative bin:"
         );
 
-        // Bottom-middle: selected kinematics.
+        bin_text.SetTextSize(0.038);
+        bin_text.DrawLatex(
+            0.08,0.48,
+            kin.str().c_str()
+        );
+
         c.cd(8);
         gPad->SetFillStyle(0);
         gPad->SetFrameFillStyle(0);
 
-        TLatex ktext;
-        ktext.SetNDC();
-        ktext.SetTextFont(42);
-        ktext.SetTextSize(0.044);
-
-        ktext.DrawLatex(
-            0.08,0.82,
-            "Representative bin"
-        );
-
-        ktext.SetTextSize(0.034);
-        ktext.DrawLatex(
-            0.08,0.62,
-            kin.str().c_str()
-        );
-
-        ktext.DrawLatex(
-            0.08,0.42,
-            "10.6 GeV combined RGA data"
-        );
-
-        // Bottom-right: final production equation.
         c.cd(9);
         gPad->SetFillStyle(0);
         gPad->SetFrameFillStyle(0);
-
-        TLatex eq;
-        eq.SetNDC();
-        eq.SetTextFont(42);
-        eq.SetTextSize(0.044);
-
-        eq.DrawLatex(
-            0.08,0.82,
-            "Final production form"
-        );
-
-        eq.SetTextSize(0.034);
-        eq.DrawLatex(
-            0.08,0.58,
-            "#sigma = N_{acc} F_{rad} F_{bin}"
-        );
-        eq.DrawLatex(
-            0.08,0.43,
-            "/ (L_{int} V_{bin})"
-        );
 
         c.cd(0);
 
@@ -2879,7 +2825,7 @@ bool write_cross_section_analysis_note_outputs(
         title.SetNDC();
         title.SetTextFont(42);
         title.SetTextAlign(22);
-        title.SetTextSize(0.026);
+        title.SetTextSize(0.022);
 
         title.DrawLatex(
             0.50,0.992,
