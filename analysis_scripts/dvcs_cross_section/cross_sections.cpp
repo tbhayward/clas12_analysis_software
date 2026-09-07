@@ -1968,138 +1968,576 @@ bool write_cross_section_analysis_note_outputs(
         return true;
     }
 
-    auto score_group = [](const auto &kv) {
-        const auto &k=kv.first;
-        const auto &rows=kv.second;
-        const double xb=0.5*(std::get<0>(k)+std::get<1>(k));
-        const double q2=0.5*(std::get<2>(k)+std::get<3>(k));
-        const double tt=0.5*(std::get<4>(k)+std::get<5>(k));
-        const double d=std::pow((xb-0.25)/0.12,2)
-                      +std::pow((q2-2.2)/1.0,2)
-                      +std::pow((tt-0.32)/0.20,2);
-        return 100.0*rows.size()-d;
+    // ---------------------------------------------------------------------
+    // Build period-level raw-count inputs needed for the first stage of the
+    // illustrative correction chain.  The combined 10.6-GeV raw count in a
+    // row uses the same member-period validity mask as the combined
+    // acceptance-corrected yield.
+    // ---------------------------------------------------------------------
+    const std::vector<std::string> periods_10p6 = {
+        "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"
+    };
+    const std::vector<std::string> topologies = {
+        "(FD, FD)", "(CD, FD)", "(CD, FT)"
     };
 
-    auto best=groups.begin();
-    double best_score=score_group(*best);
-    for (auto it=std::next(groups.begin()); it!=groups.end(); ++it) {
-        const double s=score_group(*it);
-        if (s>best_score) { best=it; best_score=s; }
+    std::map<std::string,int> c_period_acceptance;
+    std::map<std::string,std::vector<int>> c_period_raw;
+
+    for(const auto &period:periods_10p6){
+        c_period_acceptance[period] =
+            find_col_optional(
+                header,
+                "acceptance corrected yield, ep->epg, exp, "
+                + period + ", unpol"
+            );
+
+        std::vector<int> cols;
+        for(const auto &topology:topologies){
+            cols.push_back(
+                find_col_optional(
+                    header,
+                    "raw yield, ep->epg, "
+                    + topology + ", exp, "
+                    + period + ", unpol"
+                )
+            );
+        }
+        c_period_raw[period]=cols;
     }
 
-    std::vector<ExampleRow> rows=best->second;
-    std::sort(rows.begin(),rows.end(),
-        [](const ExampleRow&a,const ExampleRow&b){return a.phi<b.phi;});
+    for(const auto &period:periods_10p6){
+        if(c_period_acceptance[period]<0){
+            std::cerr
+                << "[cross_sections] ERROR: missing period acceptance column for "
+                << period << " in analysis-note correction-chain output.\n";
+            return false;
+        }
+        for(int idx:c_period_raw[period]){
+            if(idx<0){
+                std::cerr
+                    << "[cross_sections] ERROR: missing raw-yield topology column for "
+                    << period << " in analysis-note correction-chain output.\n";
+                return false;
+            }
+        }
+    }
 
+    struct GroupCandidate {
+        KinKey key;
+        std::vector<ExampleRow> rows;
+        double xb=0.0, q2=0.0, tt=0.0;
+    };
+
+    std::vector<GroupCandidate> candidates;
+    candidates.reserve(groups.size());
+
+    double xb_lo=std::numeric_limits<double>::infinity();
+    double xb_hi=-std::numeric_limits<double>::infinity();
+    double q2_lo=std::numeric_limits<double>::infinity();
+    double q2_hi=-std::numeric_limits<double>::infinity();
+    double t_lo=std::numeric_limits<double>::infinity();
+    double t_hi=-std::numeric_limits<double>::infinity();
+
+    std::size_t max_phi_points=0;
+
+    for(const auto &kv:groups){
+        GroupCandidate cnd;
+        cnd.key=kv.first;
+        cnd.rows=kv.second;
+        cnd.xb=0.5*(std::get<0>(kv.first)+std::get<1>(kv.first));
+        cnd.q2=0.5*(std::get<2>(kv.first)+std::get<3>(kv.first));
+        cnd.tt=0.5*(std::get<4>(kv.first)+std::get<5>(kv.first));
+
+        std::sort(
+            cnd.rows.begin(),cnd.rows.end(),
+            [](const ExampleRow&a,const ExampleRow&b){return a.phi<b.phi;}
+        );
+
+        max_phi_points=std::max(max_phi_points,cnd.rows.size());
+        xb_lo=std::min(xb_lo,cnd.xb);
+        xb_hi=std::max(xb_hi,cnd.xb);
+        q2_lo=std::min(q2_lo,cnd.q2);
+        q2_hi=std::max(q2_hi,cnd.q2);
+        t_lo=std::min(t_lo,cnd.tt);
+        t_hi=std::max(t_hi,cnd.tt);
+
+        candidates.push_back(std::move(cnd));
+    }
+
+    auto unit=[](double x,double lo,double hi){
+        return (hi>lo)?(x-lo)/(hi-lo):0.5;
+    };
+
+    // Four deliberately separated locations in the occupied 10.6-GeV phase
+    // space.  The nearest available cell is used, with strong preference for
+    // complete/broad phi coverage.
+    const std::array<std::array<double,3>,4> targets = {{
+        {{0.12,0.12,0.15}},
+        {{0.36,0.34,0.32}},
+        {{0.62,0.62,0.58}},
+        {{0.88,0.88,0.82}}
+    }};
+
+    std::vector<GroupCandidate> examples;
+    std::set<KinKey> used_keys;
+
+    for(const auto &target:targets){
+        bool have=false;
+        double best_score=std::numeric_limits<double>::infinity();
+        GroupCandidate best_candidate;
+
+        for(const auto &cnd:candidates){
+            if(used_keys.count(cnd.key)) continue;
+
+            const double ux=unit(cnd.xb,xb_lo,xb_hi);
+            const double uq=unit(cnd.q2,q2_lo,q2_hi);
+            const double ut=unit(cnd.tt,t_lo,t_hi);
+
+            const double distance =
+                std::pow(ux-target[0],2)
+                +std::pow(uq-target[1],2)
+                +std::pow(ut-target[2],2);
+
+            const double coverage_penalty =
+                (max_phi_points>0)
+                ? 2.0*(1.0-static_cast<double>(cnd.rows.size())
+                            /static_cast<double>(max_phi_points))
+                : 0.0;
+
+            const double score=distance+coverage_penalty;
+
+            if(score<best_score){
+                best_score=score;
+                best_candidate=cnd;
+                have=true;
+            }
+        }
+
+        if(have){
+            used_keys.insert(best_candidate.key);
+            examples.push_back(std::move(best_candidate));
+        }
+    }
+
+    if(examples.size()<4){
+        std::sort(
+            candidates.begin(),candidates.end(),
+            [](const GroupCandidate&a,const GroupCandidate&b){
+                return a.rows.size()>b.rows.size();
+            }
+        );
+
+        for(const auto &cnd:candidates){
+            if(examples.size()>=4) break;
+            if(used_keys.count(cnd.key)) continue;
+            used_keys.insert(cnd.key);
+            examples.push_back(cnd);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Re-read the CSV into a row lookup so the raw selected counts can be
+    // reconstructed for the same rows used by the representative examples.
+    // ---------------------------------------------------------------------
+    struct RawStageRow {
+        double phi=0.0;
+        double raw_total=0.0;
+        double raw_stat=0.0;
+    };
+
+    std::map<std::tuple<double,double,double,double,double,double,double,double>,
+             RawStageRow> raw_stage_lookup;
+
+    for(size_t i=1;i<lines.size();++i){
+        if(lines[i].empty()) continue;
+
+        const std::vector<std::string> f=split_csv_line(lines[i]);
+        if(f.size()!=header.size()) continue;
+
+        const double xbmin=read_required_scalar_or_tuple_value(f,c_xbmin);
+        const double xbmax=read_required_scalar_or_tuple_value(f,c_xbmax);
+        const double q2min=read_required_scalar_or_tuple_value(f,c_q2min);
+        const double q2max=read_required_scalar_or_tuple_value(f,c_q2max);
+        const double ttmin=read_required_scalar_or_tuple_value(f,c_tmin);
+        const double ttmax=read_required_scalar_or_tuple_value(f,c_tmax);
+        const double phimin=read_required_scalar_or_tuple_value(f,c_phimin);
+        const double phimax=read_required_scalar_or_tuple_value(f,c_phimax);
+
+        double raw_total=0.0;
+        double raw_var=0.0;
+
+        for(const auto &period:periods_10p6){
+            const Triple period_acceptance =
+                parse_tuple3(f[c_period_acceptance[period]]);
+
+            // Match the combined-yield validity rule: only member periods that
+            // contributed a valid acceptance-corrected yield contribute their
+            // raw selected counts here.
+            if(!(period_acceptance.value>0.0)) continue;
+
+            for(int col:c_period_raw[period]){
+                const double n=
+                    read_required_scalar_or_tuple_value(f,col);
+
+                if(std::isfinite(n) && n>=0.0){
+                    raw_total+=n;
+                    // Raw selected-event counts are Poisson at this stage.
+                    raw_var+=n;
+                }
+            }
+        }
+
+        RawStageRow rr;
+        rr.phi=(c_phimean>=0)
+            ? read_required_scalar_or_tuple_value(f,c_phimean)
+            : 0.5*(phimin+phimax);
+        rr.raw_total=raw_total;
+        rr.raw_stat=std::sqrt(std::max(0.0,raw_var));
+
+        raw_stage_lookup[
+            std::make_tuple(
+                xbmin,xbmax,q2min,q2max,ttmin,ttmax,phimin,phimax
+            )
+        ]=rr;
+    }
+
+    // ---------------------------------------------------------------------
+    // Numerical table for all five displayed stages.
+    // Every stage is expressed in cross-section units using the same
+    // L_int*V_bin denominator.  This makes the log-scale overlay meaningful.
+    // ---------------------------------------------------------------------
     {
-        std::ofstream o(fs::path(out_dir)/"cross_section_assembly_example.csv");
-        if (!o) return false;
+        std::ofstream o(
+            fs::path(out_dir)/"cross_section_assembly_example.csv"
+        );
+        if(!o) return false;
 
-        o<<"xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
-           "phi_min,phi_max,phi_mean,N_corr,N_corr_stat,"
+        o<<"example,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
+           "phi_min,phi_max,phi_mean,"
+           "total_selected_counts,total_selected_counts_stat,"
+           "acceptance_corrected_yield,acceptance_corrected_yield_stat,"
            "charge_10p6_nC,Lint_10p6_nb^-1,V_bin,F_rad,F_bin,"
-           "sigma_before_Frad_Fbin_nb_per_GeV4_deg,"
-           "sigma_after_Frad_nb_per_GeV4_deg,"
-           "sigma_final_nb_per_GeV4_deg,sigma_final_stat\n";
+           "stage_total_counts_nb_per_GeV4_deg,"
+           "stage_acceptance_corrected_nb_per_GeV4_deg,"
+           "stage_after_Frad_nb_per_GeV4_deg,"
+           "stage_after_Fbin_nb_per_GeV4_deg,"
+           "final_stored_sigma_nb_per_GeV4_deg,final_stored_sigma_stat\n";
+
         o<<std::setprecision(12);
 
-        for(const auto&r:rows){
-            const double lint=integrated_luminosity_nb_inv(r.lumi_charge.value);
-            const double base=r.yield.value/(lint*r.vbin.value);
-            const double after_rad=base*r.frad.value;
-            o<<r.xbmin<<","<<r.xbmax<<","<<r.q2min<<","<<r.q2max<<","
-             <<r.tmin<<","<<r.tmax<<","<<r.phimin<<","<<r.phimax<<","<<r.phi<<","
-             <<r.yield.value<<","<<r.yield.stat<<","
-             <<r.lumi_charge.value<<","<<lint<<","<<r.vbin.value<<","
-             <<r.frad.value<<","<<r.fbin.value<<","
-             <<base<<","<<after_rad<<","<<r.xs.value<<","<<r.xs.stat<<"\n";
+        for(std::size_t iex=0;iex<examples.size();++iex){
+            const char example_label=static_cast<char>('A'+iex);
+
+            for(const auto&r:examples[iex].rows){
+                const auto raw_key=
+                    std::make_tuple(
+                        r.xbmin,r.xbmax,r.q2min,r.q2max,r.tmin,r.tmax,
+                        r.phimin,r.phimax
+                    );
+
+                const auto it_raw=raw_stage_lookup.find(raw_key);
+                if(it_raw==raw_stage_lookup.end()) continue;
+
+                const double lint=
+                    integrated_luminosity_nb_inv(r.lumi_charge.value);
+                const double denom=lint*r.vbin.value;
+
+                if(!(denom>0.0)) continue;
+
+                const double stage_raw=
+                    it_raw->second.raw_total/denom;
+                const double stage_acceptance=
+                    r.yield.value/denom;
+                const double stage_rad=
+                    stage_acceptance*r.frad.value;
+                const double stage_bin=
+                    stage_rad*r.fbin.value;
+
+                o<<example_label<<","
+                 <<r.xbmin<<","<<r.xbmax<<","
+                 <<r.q2min<<","<<r.q2max<<","
+                 <<r.tmin<<","<<r.tmax<<","
+                 <<r.phimin<<","<<r.phimax<<","<<r.phi<<","
+                 <<it_raw->second.raw_total<<","
+                 <<it_raw->second.raw_stat<<","
+                 <<r.yield.value<<","<<r.yield.stat<<","
+                 <<r.lumi_charge.value<<","<<lint<<","
+                 <<r.vbin.value<<","<<r.frad.value<<","<<r.fbin.value<<","
+                 <<stage_raw<<","
+                 <<stage_acceptance<<","
+                 <<stage_rad<<","
+                 <<stage_bin<<","
+                 <<r.xs.value<<","<<r.xs.stat<<"\n";
+            }
         }
     }
 
+    // ---------------------------------------------------------------------
+    // 2x2 log-scale illustration of the full extraction chain.
+    // ---------------------------------------------------------------------
     {
-        TCanvas c("c_cross_section_chain_note","",1100,760);
-        c.SetLeftMargin(0.14);
-        c.SetRightMargin(0.035);
-        c.SetBottomMargin(0.13);
-        c.SetTopMargin(0.13);
-        c.SetTicks(1,1);
+        TCanvas c(
+            "c_cross_section_chain_note","",
+            1500,1100
+        );
+        c.Divide(2,2,0.002,0.002);
 
-        TGraphErrors g_base,g_rad,g_final;
-        double ymin=std::numeric_limits<double>::infinity(), ymax=0.0;
-        int ip=0;
+        for(std::size_t iex=0;iex<examples.size() && iex<4;++iex){
+            c.cd(static_cast<int>(iex)+1);
 
-        for(const auto&r:rows){
-            const double lint=integrated_luminosity_nb_inv(r.lumi_charge.value);
-            const double base=r.yield.value/(lint*r.vbin.value);
-            const double after_rad=base*r.frad.value;
-            const double final=r.xs.value;
+            gPad->SetLeftMargin((iex%2==0)?0.145:0.115);
+            gPad->SetRightMargin(0.035);
+            gPad->SetBottomMargin((iex>=2)?0.145:0.115);
+            gPad->SetTopMargin(0.14);
+            gPad->SetTicks(1,1);
+            gPad->SetLogy();
 
-            const double rel_y=(r.yield.value>0.0)?r.yield.stat/r.yield.value:0.0;
-            const double rel_v=(r.vbin.value>0.0)?r.vbin.stat/r.vbin.value:0.0;
-            const double base_err=base*std::sqrt(rel_y*rel_y+rel_v*rel_v);
-            const double rel_r=(r.frad.value>0.0)?r.frad.stat/r.frad.value:0.0;
-            const double rad_err=after_rad*std::sqrt(rel_y*rel_y+rel_v*rel_v+rel_r*rel_r);
+            TGraphErrors g_raw;
+            TGraphErrors g_acc;
+            TGraphErrors g_rad;
+            TGraphErrors g_bin;
+            TGraphErrors g_final;
 
-            g_base.SetPoint(ip,r.phi,base);
-            g_base.SetPointError(ip,0.0,base_err);
-            g_rad.SetPoint(ip,r.phi,after_rad);
-            g_rad.SetPointError(ip,0.0,rad_err);
-            g_final.SetPoint(ip,r.phi,final);
-            g_final.SetPointError(ip,0.0,r.xs.stat);
+            double ymin=std::numeric_limits<double>::infinity();
+            double ymax=0.0;
+            int ip=0;
 
-            ymin=std::min(ymin,std::min(base,std::min(after_rad,final)));
-            ymax=std::max(ymax,std::max(base,std::max(after_rad,final)));
-            ++ip;
+            for(const auto&r:examples[iex].rows){
+                const auto raw_key=
+                    std::make_tuple(
+                        r.xbmin,r.xbmax,r.q2min,r.q2max,r.tmin,r.tmax,
+                        r.phimin,r.phimax
+                    );
+
+                const auto it_raw=raw_stage_lookup.find(raw_key);
+                if(it_raw==raw_stage_lookup.end()) continue;
+
+                const double lint=
+                    integrated_luminosity_nb_inv(r.lumi_charge.value);
+                const double denom=lint*r.vbin.value;
+                if(!(denom>0.0)) continue;
+
+                const double raw=
+                    it_raw->second.raw_total/denom;
+                const double acc=
+                    r.yield.value/denom;
+                const double after_rad=
+                    acc*r.frad.value;
+                const double after_bin=
+                    after_rad*r.fbin.value;
+                const double final=
+                    r.xs.value;
+
+                const double raw_err=
+                    it_raw->second.raw_stat/denom;
+
+                const double rel_y=
+                    (r.yield.value>0.0)
+                    ? r.yield.stat/r.yield.value : 0.0;
+                const double rel_v=
+                    (r.vbin.value>0.0)
+                    ? r.vbin.stat/r.vbin.value : 0.0;
+
+                const double acc_err=
+                    acc*std::sqrt(
+                        rel_y*rel_y+rel_v*rel_v
+                    );
+
+                const double rel_r=
+                    (r.frad.value>0.0)
+                    ? r.frad.stat/r.frad.value : 0.0;
+                const double rad_err=
+                    after_rad*std::sqrt(
+                        rel_y*rel_y+rel_v*rel_v+rel_r*rel_r
+                    );
+
+                const double rel_b=
+                    (r.fbin.value>0.0)
+                    ? r.fbin.stat/r.fbin.value : 0.0;
+                const double bin_err=
+                    after_bin*std::sqrt(
+                        rel_y*rel_y+rel_v*rel_v
+                        +rel_r*rel_r+rel_b*rel_b
+                    );
+
+                g_raw.SetPoint(ip,r.phi,raw);
+                g_raw.SetPointError(ip,0.0,raw_err);
+
+                g_acc.SetPoint(ip,r.phi,acc);
+                g_acc.SetPointError(ip,0.0,acc_err);
+
+                g_rad.SetPoint(ip,r.phi,after_rad);
+                g_rad.SetPointError(ip,0.0,rad_err);
+
+                g_bin.SetPoint(ip,r.phi,after_bin);
+                g_bin.SetPointError(ip,0.0,bin_err);
+
+                g_final.SetPoint(ip,r.phi,final);
+                g_final.SetPointError(ip,0.0,r.xs.stat);
+
+                for(double v:{raw,acc,after_rad,after_bin,final}){
+                    if(v>0.0 && std::isfinite(v)){
+                        ymin=std::min(ymin,v);
+                        ymax=std::max(ymax,v);
+                    }
+                }
+
+                ++ip;
+            }
+
+            if(!(ymin>0.0) || !(ymax>ymin)){
+                ymin=1.0e-4;
+                ymax=1.0;
+            }
+
+            const double log_lo=
+                std::floor(std::log10(ymin))-0.15;
+            const double log_hi=
+                std::ceil(std::log10(ymax))+0.15;
+
+            const std::string frame_name=
+                "h_cross_section_chain_note_"
+                +std::to_string(iex);
+
+            TH1F frame(
+                frame_name.c_str(),"",
+                100,0.0,360.0
+            );
+            frame.SetMinimum(std::pow(10.0,log_lo));
+            frame.SetMaximum(std::pow(10.0,log_hi));
+            frame.GetXaxis()->SetTitle("#phi (deg)");
+            frame.GetYaxis()->SetTitle(
+                "cross-section-equivalent value  [nb/(GeV^{4} deg)]"
+            );
+            frame.GetXaxis()->SetTitleSize(0.052);
+            frame.GetYaxis()->SetTitleSize(0.045);
+            frame.GetXaxis()->SetLabelSize(0.043);
+            frame.GetYaxis()->SetLabelSize(0.043);
+            frame.GetYaxis()->SetTitleOffset(
+                (iex%2==0)?1.50:1.18
+            );
+            frame.Draw();
+
+            g_raw.SetMarkerStyle(24);
+            g_raw.SetMarkerSize(0.88);
+            g_raw.SetLineWidth(2);
+            g_raw.SetMarkerColor(kGray+2);
+            g_raw.SetLineColor(kGray+2);
+
+            g_acc.SetMarkerStyle(25);
+            g_acc.SetMarkerSize(0.88);
+            g_acc.SetLineWidth(2);
+            g_acc.SetMarkerColor(kBlack);
+            g_acc.SetLineColor(kBlack);
+
+            g_rad.SetMarkerStyle(26);
+            g_rad.SetMarkerSize(0.88);
+            g_rad.SetLineWidth(2);
+            g_rad.SetMarkerColor(kBlue+1);
+            g_rad.SetLineColor(kBlue+1);
+
+            g_bin.SetMarkerStyle(32);
+            g_bin.SetMarkerSize(0.92);
+            g_bin.SetLineWidth(2);
+            g_bin.SetMarkerColor(kMagenta+1);
+            g_bin.SetLineColor(kMagenta+1);
+
+            g_final.SetMarkerStyle(20);
+            g_final.SetMarkerSize(0.78);
+            g_final.SetLineWidth(2);
+            g_final.SetMarkerColor(kRed+1);
+            g_final.SetLineColor(kRed+1);
+
+            g_raw.Draw("PE SAME");
+            g_acc.Draw("PE SAME");
+            g_rad.Draw("PE SAME");
+            g_bin.Draw("PE SAME");
+            g_final.Draw("PE SAME");
+
+            const KinKey&k=examples[iex].key;
+            std::ostringstream kin;
+            kin<<std::fixed<<std::setprecision(3)
+               <<std::get<0>(k)<<" < x_{B} < "<<std::get<1>(k)
+               <<",  "<<std::get<2>(k)<<" < Q^{2} < "
+               <<std::get<3>(k)<<" GeV^{2}"
+               <<",  "<<std::get<4>(k)<<" < |t| < "
+               <<std::get<5>(k)<<" GeV^{2}";
+
+            TLatex latex;
+            latex.SetNDC();
+            latex.SetTextFont(42);
+            latex.SetTextSize(0.036);
+
+            const std::string panel_label=
+                std::string("(")
+                +static_cast<char>('a'+iex)+")";
+
+            latex.DrawLatex(
+                0.15,0.925,
+                panel_label.c_str()
+            );
+
+            latex.SetTextSize(0.027);
+            latex.DrawLatex(
+                0.15,0.875,
+                kin.str().c_str()
+            );
+
+            if(iex==0){
+                TLegend leg(
+                    0.48,0.54,0.94,0.82
+                );
+                leg.SetBorderSize(0);
+                leg.SetFillStyle(0);
+                leg.SetTextSize(0.028);
+                leg.AddEntry(
+                    &g_raw,
+                    "total selected counts / (L_{int} V_{bin})",
+                    "pe"
+                );
+                leg.AddEntry(
+                    &g_acc,
+                    "acceptance corrected / (L_{int} V_{bin})",
+                    "pe"
+                );
+                leg.AddEntry(
+                    &g_rad,
+                    "after F_{rad}",
+                    "pe"
+                );
+                leg.AddEntry(
+                    &g_bin,
+                    "after F_{bin}",
+                    "pe"
+                );
+                leg.AddEntry(
+                    &g_final,
+                    "final stored cross section",
+                    "pe"
+                );
+                leg.Draw();
+            }
         }
 
-        if(!(ymin>0.0)||!(ymax>ymin)){ymin=0.0;ymax=1.0;}
+        c.cd(0);
 
-        TH1F frame("h_cross_section_chain_note","",100,0.0,360.0);
-        frame.SetMinimum(std::max(0.0,0.75*ymin));
-        frame.SetMaximum(1.25*ymax);
-        frame.GetXaxis()->SetTitle("#phi (deg)");
-        frame.GetYaxis()->SetTitle(
-            "d^{4}#sigma/(dx_{B}dQ^{2}d|t|d#phi)  [nb/(GeV^{4} deg)]");
-        frame.GetXaxis()->SetTitleSize(0.047);
-        frame.GetYaxis()->SetTitleSize(0.043);
-        frame.GetXaxis()->SetLabelSize(0.040);
-        frame.GetYaxis()->SetLabelSize(0.040);
-        frame.GetYaxis()->SetTitleOffset(1.55);
-        frame.Draw();
+        TLatex title;
+        title.SetNDC();
+        title.SetTextFont(42);
+        title.SetTextAlign(22);
+        title.SetTextSize(0.027);
+        title.DrawLatex(
+            0.50,0.988,
+            "Representative construction of the 10.6 GeV unpolarized DVCS cross section"
+        );
 
-        g_base.SetMarkerStyle(24); g_base.SetMarkerSize(1.0); g_base.SetLineWidth(2);
-        g_base.SetMarkerColor(kGray+2); g_base.SetLineColor(kGray+2);
-        g_rad.SetMarkerStyle(25); g_rad.SetMarkerSize(1.0); g_rad.SetLineWidth(2);
-        g_rad.SetMarkerColor(kBlue+1); g_rad.SetLineColor(kBlue+1);
-        g_final.SetMarkerStyle(20); g_final.SetMarkerSize(1.0); g_final.SetLineWidth(2);
-        g_final.SetMarkerColor(kRed+1); g_final.SetLineColor(kRed+1);
-
-        g_base.Draw("PE SAME");
-        g_rad.Draw("PE SAME");
-        g_final.Draw("PE SAME");
-
-        TLegend leg(0.56,0.69,0.94,0.86);
-        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.033);
-        leg.AddEntry(&g_base,"N_{corr}/(#mathcal{L}_{int} V_{bin})","pe");
-        leg.AddEntry(&g_rad,"after F_{rad}","pe");
-        leg.AddEntry(&g_final,"after F_{rad} and F_{bin}","pe");
-        leg.Draw();
-
-        const KinKey&k=best->first;
-        std::ostringstream kin;
-        kin<<std::fixed<<std::setprecision(3)
-           <<std::get<0>(k)<<" < x_{B} < "<<std::get<1>(k)
-           <<",  "<<std::get<2>(k)<<" < Q^{2} < "<<std::get<3>(k)<<" GeV^{2}"
-           <<",  "<<std::get<4>(k)<<" < |t| < "<<std::get<5>(k)<<" GeV^{2}";
-
-        TLatex latex;
-        latex.SetNDC(); latex.SetTextFont(42); latex.SetTextSize(0.031);
-        latex.DrawLatex(0.14,0.94,
-            "Representative construction of the 10.6 GeV unpolarized DVCS cross section");
-        latex.SetTextSize(0.027);
-        latex.DrawLatex(0.14,0.895,kin.str().c_str());
-
-        c.SaveAs((fs::path(out_dir)/"cross_section_correction_chain_example.png").string().c_str());
+        c.SaveAs(
+            (
+                fs::path(out_dir)
+                /"cross_section_correction_chain_example.png"
+            ).string().c_str()
+        );
     }
 
     std::cout<<"[cross_sections] Wrote analysis-note outputs to "<<out_dir<<"\n";
