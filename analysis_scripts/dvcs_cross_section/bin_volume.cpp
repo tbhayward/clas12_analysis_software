@@ -1017,7 +1017,7 @@ static void write_bin_volume_analysis_note_outputs(
     const std::vector<double> f106=fractions(bulk106);
     const std::vector<double> f102=fractions(bulk102);
 
-    // Machine-readable global summary.
+    // Machine-readable global summary (for tables and QA).
     {
         std::ofstream o((note_dir/"bin_volume_summary.csv").string());
         o<<"beam_energy_GeV,bulk_cells,p16_phase_space_fraction,median_phase_space_fraction,p84_phase_space_fraction,min_phase_space_fraction,max_phase_space_fraction\n";
@@ -1031,7 +1031,7 @@ static void write_bin_volume_analysis_note_outputs(
         row(g10p2.Ebeam,f102);
     }
 
-    // xB-resolved summary CSV.
+    // xB-resolved summary CSV (for tables and QA).
     std::vector<std::pair<double,double>> xedges;
     for(const auto&p:bulk106){
         std::pair<double,double> e(p.xbmin,p.xbmax);
@@ -1062,112 +1062,164 @@ static void write_bin_volume_analysis_note_outputs(
     gStyle->SetPadTickX(1);
     gStyle->SetPadTickY(1);
 
-    // 1) Distribution of the physically allowed fraction.
+    // 1) Representative xB slices at fixed (Q2,|t|).
+    //
+    // A phi scan is not informative for this correction: at fixed
+    // (xB,Q2,|t|), the physical mask is independent of phi and the ordinary
+    // analysis phi bins have the same geometric width.  Instead, show the
+    // physically allowed fraction while moving across xB at fixed Q2 and |t|.
+    // This directly illustrates how the y, W, and t_min boundaries clip a row
+    // of nominal analysis bins.
     {
-        TCanvas c("c_note_binvol_fraction_dist","",1150,720);
-        c.SetLeftMargin(.135); c.SetRightMargin(.035);
-        c.SetBottomMargin(.14); c.SetTopMargin(.095);
-        c.SetTicks(1,1);
-
-        TH1D h106("h_note_binvol_fraction_106","",40,0,1.0);
-        TH1D h102("h_note_binvol_fraction_102","",40,0,1.0);
-        for(double v:f106) h106.Fill(v);
-        for(double v:f102) h102.Fill(v);
-        if(h106.Integral()>0) h106.Scale(1.0/h106.Integral());
-        if(h102.Integral()>0) h102.Scale(1.0/h102.Integral());
-
-        h106.SetLineColor(kBlue+1); h106.SetLineWidth(3);
-        h106.SetFillColorAlpha(kBlue+1,.14);
-        h102.SetLineColor(kRed+1); h102.SetLineWidth(3);
-        h102.SetFillStyle(0);
-
-        const double ymax=1.20*std::max(h106.GetMaximum(),h102.GetMaximum());
-        h106.SetMaximum(ymax);
-        h106.GetXaxis()->SetTitle("Physically allowed fraction, V_{bin}/V_{cubic}");
-        h106.GetYaxis()->SetTitle("Fraction of kinematic cells");
-        h106.GetXaxis()->SetTitleSize(.050); h106.GetYaxis()->SetTitleSize(.050);
-        h106.GetXaxis()->SetLabelSize(.041); h106.GetYaxis()->SetLabelSize(.041);
-        h106.GetYaxis()->SetTitleOffset(1.30);
-        h106.Draw("HIST");
-        h102.Draw("HIST SAME");
-
-        TLine one(1.0,0.0,1.0,.97*ymax);
-        one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
-
-        TLatex title;
-        title.SetNDC(); title.SetTextFont(42); title.SetTextSize(.047);
-        title.DrawLatex(.135,.925,"Fraction of each nominal bin inside the allowed phase space");
-
-        TLegend leg(.18,.70,.43,.84);
-        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.034);
-        leg.AddEntry(&h106,"10.6 GeV","lf");
-        leg.AddEntry(&h102,"10.2 GeV","l");
-        leg.Draw();
-
-        c.SaveAs((note_dir/"bin_volume_phase_space_fraction_distribution.png").string().c_str());
-    }
-
-    // 2) Median allowed fraction versus xB for the two beam energies.
-    {
-        TCanvas c("c_note_binvol_fraction_xb","",1150,720);
-        c.SetLeftMargin(.135); c.SetRightMargin(.035);
-        c.SetBottomMargin(.14); c.SetTopMargin(.095);
-        c.SetGridy(); c.SetTicks(1,1);
-
-        TH1F frame("h_note_binvol_fraction_xb","",100,.05,.60);
-        frame.SetMinimum(0.0); frame.SetMaximum(1.08);
-        frame.GetXaxis()->SetTitle("x_{B}");
-        frame.GetYaxis()->SetTitle("Physically allowed fraction, V_{bin}/V_{cubic}");
-        frame.GetXaxis()->SetTitleSize(.050); frame.GetYaxis()->SetTitleSize(.050);
-        frame.GetXaxis()->SetLabelSize(.041); frame.GetYaxis()->SetLabelSize(.041);
-        frame.GetYaxis()->SetTitleOffset(1.30);
-        frame.Draw();
-
-        TGraphAsymmErrors g106,g102;
-        g106.SetMarkerStyle(20); g106.SetMarkerSize(1.25);
-        g106.SetMarkerColor(kBlue+1); g106.SetLineColor(kBlue+1); g106.SetLineWidth(2);
-        g102.SetMarkerStyle(21); g102.SetMarkerSize(1.20);
-        g102.SetMarkerColor(kRed+1); g102.SetLineColor(kRed+1); g102.SetLineWidth(2);
-
-        auto fill_graph=[&](TGraphAsymmErrors&g,const std::vector<NoteVolumePoint>&pts,double xoff){
-            int n=0;
-            for(const auto&e:xedges){
-                std::vector<double> v;
-                for(const auto&p:pts){
-                    if(note_same_edge(p.xbmin,e.first)&&note_same_edge(p.xbmax,e.second)) v.push_back(p.fraction);
-                }
-                if(v.empty()) continue;
-                const double m=note_quantile(v,.50),lo=note_quantile(v,.16),hi=note_quantile(v,.84);
-                const double x=.5*(e.first+e.second)+xoff;
-                g.SetPoint(n,x,m);
-                g.SetPointError(n,0,0,m-lo,hi-m);
-                ++n;
-            }
+        struct SliceKey {
+            double q0=0,q1=0,t0=0,t1=0;
         };
-        fill_graph(g106,bulk106,-.0025);
-        fill_graph(g102,bulk102,+.0025);
 
-        g106.Draw("PE SAME");
-        g102.Draw("PE SAME");
+        auto same_slice=[](const SliceKey&a,const SliceKey&b){
+            return note_same_edge(a.q0,b.q0)&&note_same_edge(a.q1,b.q1)&&
+                   note_same_edge(a.t0,b.t0)&&note_same_edge(a.t1,b.t1);
+        };
 
-        TLine one(.05,1.0,.60,1.0);
-        one.SetLineStyle(2); one.SetLineWidth(2); one.SetLineColor(kGray+2); one.Draw();
+        std::vector<SliceKey> keys;
+        for(const auto&p:bulk106){
+            SliceKey k{p.q2min,p.q2max,p.tmin,p.tmax};
+            bool seen=false;
+            for(const auto&x:keys){ if(same_slice(k,x)){seen=true;break;} }
+            if(!seen) keys.push_back(k);
+        }
 
-        TLatex title;
-        title.SetNDC(); title.SetTextFont(42); title.SetTextSize(.047);
-        title.DrawLatex(.135,.925,"Kinematic dependence of the bin phase-space volume");
+        auto xbins_for=[&](const std::vector<NoteVolumePoint>&pts,const SliceKey&k){
+            std::vector<std::pair<double,double>> xs;
+            for(const auto&p:pts){
+                if(!note_same_edge(p.q2min,k.q0)||!note_same_edge(p.q2max,k.q1)||
+                   !note_same_edge(p.tmin,k.t0)||!note_same_edge(p.tmax,k.t1)) continue;
+                std::pair<double,double> e(p.xbmin,p.xbmax);
+                if(std::find(xs.begin(),xs.end(),e)==xs.end()) xs.push_back(e);
+            }
+            std::sort(xs.begin(),xs.end());
+            return xs;
+        };
 
-        TLatex note;
-        note.SetNDC(); note.SetTextFont(42); note.SetTextSize(.027);
-        note.DrawLatex(.145,.845,"Median over (Q^{2}, |t|) cells; bars show the 16th--84th percentile range");
+        // For each Q2 interval, retain the |t| row with the largest common xB
+        // coverage between the two beam energies.  Then select low-, mid-, and
+        // high-Q2 examples.  This keeps the figure deterministic and avoids
+        // hand-picking an unusually dramatic row.
+        std::map<std::pair<double,double>,std::pair<SliceKey,int>> best_by_q;
+        for(const auto&k:keys){
+            const auto x106=xbins_for(bulk106,k);
+            const auto x102=xbins_for(bulk102,k);
+            int common=0;
+            for(const auto&e:x106) if(std::find(x102.begin(),x102.end(),e)!=x102.end()) ++common;
+            auto q=std::make_pair(k.q0,k.q1);
+            auto it=best_by_q.find(q);
+            if(it==best_by_q.end()||common>it->second.second) best_by_q[q]={k,common};
+        }
 
-        TLegend leg(.72,.69,.93,.82);
-        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.034);
-        leg.AddEntry(&g106,"10.6 GeV","pe");
-        leg.AddEntry(&g102,"10.2 GeV","pe");
-        leg.Draw();
+        std::vector<SliceKey> candidates;
+        for(const auto&kv:best_by_q) if(kv.second.second>=3) candidates.push_back(kv.second.first);
+        std::sort(candidates.begin(),candidates.end(),[](const SliceKey&a,const SliceKey&b){
+            return .5*(a.q0+a.q1)<.5*(b.q0+b.q1);
+        });
 
-        c.SaveAs((note_dir/"bin_volume_phase_space_fraction_vs_xB.png").string().c_str());
+        std::vector<SliceKey> chosen;
+        if(candidates.size()>=3){
+            chosen.push_back(candidates.front());
+            chosen.push_back(candidates[candidates.size()/2]);
+            chosen.push_back(candidates.back());
+        } else {
+            chosen=candidates;
+        }
+
+        if(!chosen.empty()){
+            std::ofstream o((note_dir/"bin_volume_representative_xB_slices.csv").string());
+            o<<"panel,beam_energy_GeV,Q2min,Q2max,tmin,tmax,xBmin,xBmax,xBcenter,phase_space_fraction\n";
+            o<<std::setprecision(10);
+
+            TCanvas c("c_note_binvol_xb_slices","",1500,590);
+            c.Divide((int)chosen.size(),1,.002,.002);
+
+            for(std::size_t ip=0;ip<chosen.size();++ip){
+                c.cd((int)ip+1);
+                gPad->SetLeftMargin(ip==0?.16:.12);
+                gPad->SetRightMargin(.035);
+                gPad->SetBottomMargin(.16);
+                gPad->SetTopMargin(.20);
+                gPad->SetGridy();
+                gPad->SetTicks(1,1);
+
+                TH1F* frame=new TH1F(Form("h_note_binvol_slice_%zu",ip),"",100,.05,.60);
+                frame->SetMinimum(0.0);
+                frame->SetMaximum(1.08);
+                frame->GetXaxis()->SetTitle("x_{B}");
+                frame->GetYaxis()->SetTitle(ip==0?"Physically allowed fraction, V_{bin}/V_{cubic}":"");
+                frame->GetXaxis()->SetTitleSize(.055);
+                frame->GetYaxis()->SetTitleSize(.050);
+                frame->GetXaxis()->SetLabelSize(.045);
+                frame->GetYaxis()->SetLabelSize(.043);
+                frame->GetYaxis()->SetTitleOffset(ip==0?1.45:1.10);
+                frame->Draw();
+
+                TGraphAsymmErrors* g106=new TGraphAsymmErrors();
+                TGraphAsymmErrors* g102=new TGraphAsymmErrors();
+                g106->SetMarkerStyle(20); g106->SetMarkerSize(1.25);
+                g106->SetMarkerColor(kBlue+1); g106->SetLineColor(kBlue+1); g106->SetLineWidth(2);
+                g102->SetMarkerStyle(21); g102->SetMarkerSize(1.15);
+                g102->SetMarkerColor(kRed+1); g102->SetLineColor(kRed+1); g102->SetLineWidth(2);
+
+                auto fill=[&](TGraphAsymmErrors* g,const std::vector<NoteVolumePoint>&pts,
+                              double E,double xoff){
+                    std::vector<NoteVolumePoint> row;
+                    for(const auto&p:pts){
+                        if(!note_same_edge(p.q2min,chosen[ip].q0)||!note_same_edge(p.q2max,chosen[ip].q1)||
+                           !note_same_edge(p.tmin,chosen[ip].t0)||!note_same_edge(p.tmax,chosen[ip].t1)) continue;
+                        row.push_back(p);
+                    }
+                    std::sort(row.begin(),row.end(),[](const NoteVolumePoint&a,const NoteVolumePoint&b){
+                        return a.xbmin<b.xbmin;
+                    });
+                    int n=0;
+                    for(const auto&p:row){
+                        const double xc=.5*(p.xbmin+p.xbmax);
+                        const double exl=xc-p.xbmin;
+                        const double exh=p.xbmax-xc;
+                        g->SetPoint(n,xc+xoff,p.fraction);
+                        g->SetPointError(n,exl,exh,0,0);
+                        o<<(ip+1)<<","<<E<<","<<chosen[ip].q0<<","<<chosen[ip].q1<<","<<chosen[ip].t0<<","<<chosen[ip].t1<<","<<p.xbmin<<","<<p.xbmax<<","<<xc<<","<<p.fraction<<"\n";
+                        ++n;
+                    }
+                };
+
+                fill(g106,bulk106,g10p6.Ebeam,-.0015);
+                fill(g102,bulk102,g10p2.Ebeam,+.0015);
+                g106->Draw("PL SAME");
+                g102->Draw("PL SAME");
+
+                TLine* one=new TLine(.05,1.0,.60,1.0);
+                one->SetLineStyle(2); one->SetLineWidth(2); one->SetLineColor(kGray+2); one->Draw();
+
+                TLatex lab;
+                lab.SetNDC(); lab.SetTextFont(42); lab.SetTextSize(.038);
+                lab.DrawLatex(ip==0?.17:.13,.88,
+                    Form("%.3f < Q^{2} < %.3f GeV^{2}",chosen[ip].q0,chosen[ip].q1));
+                lab.DrawLatex(ip==0?.17:.13,.82,
+                    Form("%.3f < |t| < %.3f GeV^{2}",chosen[ip].t0,chosen[ip].t1));
+
+                if(ip==chosen.size()-1){
+                    TLegend* leg=new TLegend(.55,.61,.92,.76);
+                    leg->SetBorderSize(0); leg->SetFillStyle(0); leg->SetTextSize(.037);
+                    leg->AddEntry(g106,"10.6 GeV","pl");
+                    leg->AddEntry(g102,"10.2 GeV","pl");
+                    leg->Draw();
+                }
+            }
+
+            c.cd(0);
+            TLatex title;
+            title.SetNDC(); title.SetTextFont(42); title.SetTextAlign(22); title.SetTextSize(.034);
+            title.DrawLatex(.50,.975,"Representative phase-space clipping across rows of x_{B} bins");
+
+            c.SaveAs((note_dir/"bin_volume_representative_xB_slices.png").string().c_str());
+        }
     }
 
     // 3) Representative xB-Q2 map for a fixed |t| interval.  Choose the
