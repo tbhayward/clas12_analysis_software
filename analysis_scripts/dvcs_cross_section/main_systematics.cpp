@@ -38,6 +38,7 @@
 #include "sp19_inb_energy_scaling_systematics.h"
 #include "run_period_consistency_systematics.h"
 #include "systematic_projection_plots.h"
+#include "radiative_systematic_plots.h"
 
 namespace fs = std::filesystem;
 
@@ -397,6 +398,14 @@ int main(int argc, char* argv[]) {
 
         if (!combination_systematics(csv_main, "output/systematics")) {
             std::cerr << "[systematics] FATAL: combination_systematics failed.\n";
+            return 1;
+        }
+
+        if (!make_radiative_systematic_analysis_note_plots(
+                csv_main,
+                "output/systematics/analysis_note/radiative_corrections")) {
+            std::cerr << "[systematics] FATAL: "
+                      << "make_radiative_systematic_analysis_note_plots failed.\n";
             return 1;
         }
 

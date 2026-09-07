@@ -259,6 +259,67 @@ static std::string format_double(double value) {
     return oss.str();
 }
 
+
+static bool parse_tuple_first(const std::string& raw, double& value) {
+    std::string s = trim(raw);
+
+    while (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+        s = trim(s.substr(1, s.size() - 2));
+    }
+
+    if (s.empty()) return false;
+
+    if (s.front() != '(') {
+        value = to_double(s);
+        return std::isfinite(value);
+    }
+
+    if (s.back() != ')') return false;
+
+    s = s.substr(1, s.size() - 2);
+    const size_t comma = s.find(',');
+    const std::string first =
+        (comma == std::string::npos) ? s : s.substr(0, comma);
+
+    value = to_double(first);
+    return std::isfinite(value);
+}
+
+static int ensure_column(CsvTable& table,
+                         const std::string& name,
+                         const std::string& initial_value = "") {
+    const auto it = table.index.find(name);
+    if (it != table.index.end()) return it->second;
+
+    const int idx = static_cast<int>(table.header.size());
+    table.header.push_back(name);
+    table.index[name] = idx;
+
+    for (auto& row : table.rows) row.push_back(initial_value);
+
+    return idx;
+}
+
+static constexpr double kSp19RadiativeSystematicScale = 1.05;
+
+static const std::string& sp19_radiative_systematic_column() {
+    static const std::string col =
+        "Syst.err (Frad), Sp19 Inb (10.2 GeV)";
+    return col;
+}
+
+static const std::string& ten6_normed_cross_section_column() {
+    static const std::string col =
+        "normed cross sections, ep->epg, exp, 10.6 GeV, unpol";
+    return col;
+}
+
+static const std::string& sp19_normed_cross_section_column() {
+    static const std::string col =
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol";
+    return col;
+}
+
 static const std::vector<std::string>& pass1_systematic_component_columns() {
     static const std::vector<std::string> cols = {
         "Syst. err (pi0 subtraction)",
@@ -567,6 +628,14 @@ static void validate_schema(const CsvTable& pass2,
     column_or_throw(pass2,
                     pass1_systematic_total_column(),
                     "pass-2 point-to-point total destination");
+
+    column_or_throw(pass2,
+                    ten6_normed_cross_section_column(),
+                    "10.6-GeV radiative systematic scaling reference");
+
+    column_or_throw(pass2,
+                    sp19_normed_cross_section_column(),
+                    "Sp19 radiative systematic scaling destination");
 }
 
 } // namespace
@@ -578,6 +647,9 @@ bool import_pass1_systematics(const std::string& csv_path,
         const CsvTable pass1 = read_csv_or_throw(pass1_summary_path);
 
         validate_schema(pass2, pass1);
+
+        const int sp19_frad_col =
+            ensure_column(pass2, sp19_radiative_systematic_column());
 
         std::map<int, Pass1SystValues> by_bin_index;
         std::map<std::string, Pass1SystValues> by_boundary_key;
@@ -681,6 +753,67 @@ bool import_pass1_systematics(const std::string& csv_path,
                 row[(size_t)j] = (it_value == values->values.end()) ? std::string() : it_value->second;
             }
 
+            // Sp19 Inb was taken at 10.2 GeV, while the inherited pass-1
+            // radiative-systematic study is a 10.6-GeV result. The dominant
+            // electron-radiation enhancement is governed by logarithms such
+            // as ln(Q^2/m_e^2), so the modest beam-energy change is not
+            // expected to produce a large new radiative uncertainty.
+            //
+            // Conservatively inflate the inherited fractional uncertainty:
+            //
+            //   [delta sigma / |sigma|]_rad^10.2
+            //     = 1.05 [delta sigma / |sigma|]_rad^10.6 .
+            //
+            // Keep Syst.err (Frad) as the 10.6-GeV result and store the
+            // 10.2-GeV Sp19 absolute uncertainty in its own CSV column.
+            {
+                const int frad_col =
+                    column_or_throw(pass2,
+                                    "Syst.err (Frad)",
+                                    "10.6-GeV radiative systematic");
+
+                const int xs10_col =
+                    column_or_throw(pass2,
+                                    ten6_normed_cross_section_column(),
+                                    "10.6-GeV cross section for radiative systematic");
+
+                const int xs19_col =
+                    column_or_throw(pass2,
+                                    sp19_normed_cross_section_column(),
+                                    "Sp19 cross section for radiative systematic");
+
+                const double frad_abs_10p6 =
+                    to_double(row[(size_t)frad_col]);
+
+                double xs10 = std::numeric_limits<double>::quiet_NaN();
+                double xs19 = std::numeric_limits<double>::quiet_NaN();
+
+                const bool ok10 =
+                    parse_tuple_first(row[(size_t)xs10_col], xs10);
+                const bool ok19 =
+                    parse_tuple_first(row[(size_t)xs19_col], xs19);
+
+                if (std::isfinite(frad_abs_10p6) &&
+                    frad_abs_10p6 >= 0.0 &&
+                    ok10 && ok19 &&
+                    std::fabs(xs10) > 0.0 &&
+                    std::fabs(xs19) > 0.0) {
+
+                    const double frac10 =
+                        frad_abs_10p6 / std::fabs(xs10);
+
+                    const double frad_abs_sp19 =
+                        kSp19RadiativeSystematicScale *
+                        frac10 *
+                        std::fabs(xs19);
+
+                    row[(size_t)sp19_frad_col] =
+                        format_double(frad_abs_sp19);
+                } else {
+                    row[(size_t)sp19_frad_col].clear();
+                }
+            }
+
             const double full_total = full_point_to_point_total_from_row(pass2, row);
             const int total_col = column_or_throw(
                 pass2,
@@ -707,6 +840,11 @@ bool import_pass1_systematics(const std::string& csv_path,
             std::cout << "\n  - " << col;
         }
         std::cout << "\n[pass1-systematics] Recomputed full point-to-point total from all six components, including exclusivity and fiducial cuts.\n";
+        std::cout << "[pass1-systematics] Sp19 radiative systematic: "
+                  << sp19_radiative_systematic_column()
+                  << " = " << kSp19RadiativeSystematicScale
+                  << " x the inherited 10.6-GeV fractional Frad uncertainty.\n";
+        std::cout << "[pass1-systematics] The original Syst.err (Frad) column remains the inherited 10.6-GeV value.\n";
 
         return true;
     } catch (const std::exception& e) {
