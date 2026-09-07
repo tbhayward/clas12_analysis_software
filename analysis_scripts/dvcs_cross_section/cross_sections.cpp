@@ -2177,13 +2177,14 @@ bool write_cross_section_analysis_note_outputs(
             if(!(period_acceptance.value>0.0)) continue;
 
             for(int col:c_period_raw[period]){
-                const double n=
-                    read_required_scalar_or_tuple_value(f,col);
+                const Triple raw_count = parse_tuple3(f[col]);
 
-                if(std::isfinite(n) && n>=0.0){
-                    raw_total+=n;
-                    // Raw selected-event counts are Poisson at this stage.
-                    raw_var+=n;
+                if(std::isfinite(raw_count.value) && raw_count.value>=0.0){
+                    raw_total += raw_count.value;
+
+                    if(std::isfinite(raw_count.stat) && raw_count.stat>=0.0){
+                        raw_var += raw_count.stat * raw_count.stat;
+                    }
                 }
             }
         }
@@ -2417,7 +2418,7 @@ bool write_cross_section_analysis_note_outputs(
             frame.GetYaxis()->SetTitleOffset(
                 (iex%2==0)?1.50:1.18
             );
-            frame.Draw();
+            frame.DrawCopy();
 
             g_raw.SetMarkerStyle(24);
             g_raw.SetMarkerSize(0.88);
@@ -2449,11 +2450,11 @@ bool write_cross_section_analysis_note_outputs(
             g_final.SetMarkerColor(kRed+1);
             g_final.SetLineColor(kRed+1);
 
-            g_raw.Draw("PE SAME");
-            g_acc.Draw("PE SAME");
-            g_rad.Draw("PE SAME");
-            g_bin.Draw("PE SAME");
-            g_final.Draw("PE SAME");
+            g_raw.DrawClone("PE SAME");
+            g_acc.DrawClone("PE SAME");
+            g_rad.DrawClone("PE SAME");
+            g_bin.DrawClone("PE SAME");
+            g_final.DrawClone("PE SAME");
 
             const KinKey&k=examples[iex].key;
             std::ostringstream kin;
@@ -2516,7 +2517,7 @@ bool write_cross_section_analysis_note_outputs(
                     "final stored cross section",
                     "pe"
                 );
-                leg.Draw();
+                leg.DrawClone();
             }
         }
 
