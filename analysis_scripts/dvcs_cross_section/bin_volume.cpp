@@ -20,6 +20,10 @@
 // Volumes are computed via a deterministic 3D grid in (xB, Q2, t) and
 // scaled by the geometric extent in phi.
 //
+// The analysis-note output also contains a read-only diagnostic comparing the
+// current t boundary against the standard DVCS t_min expression.  This
+// diagnostic does NOT alter the production bin-volume calculation.
+//
 // Also produces bin-volume vs phi canvases per beam energy and xB bin under
 //   output/bin_volume/10.60
 //   output/bin_volume/10.2
@@ -349,6 +353,109 @@ static double calculate_phase_space_allowed_fraction(double xB_min, double xB_ma
             for (int k = 0; k < n_steps; ++k) {
                 const double t = t_phys_min + (k + 0.5) * dt;
                 if (t > t_min_val) {
+                    ++valid_count;
+                }
+            }
+        }
+    }
+
+    return static_cast<double>(valid_count) /
+           static_cast<double>(n_steps * n_steps * n_steps);
+}
+
+
+// -----------------------------------------------------------------------------
+// Diagnostic comparison of the currently implemented t boundary with the
+// standard DVCS t_min expression.  These helpers are deliberately separate from
+// the production volume calculation so this study cannot alter the CSV values.
+// -----------------------------------------------------------------------------
+
+static double binvol_current_t_boundary(double xB, double Q2)
+{
+    constexpr double Mp = 0.938272;
+    const double sqrt_term =
+        std::sqrt(1.0 + (4.0 * Mp * Mp * xB * xB) / Q2);
+
+    return -Q2 * (1.0 - xB) * (1.0 - xB) /
+           (xB * (1.0 + sqrt_term));
+}
+
+static double binvol_standard_dvcs_tmin(double xB, double Q2)
+{
+    constexpr double Mp = 0.938272;
+
+    const double eps2 = 4.0 * Mp * Mp * xB * xB / Q2;
+    const double root = std::sqrt(1.0 + eps2);
+
+    const double minus_tmin =
+        Q2 *
+        (2.0 * (1.0 - xB) * (1.0 - root) + eps2) /
+        (4.0 * xB * (1.0 - xB) + eps2);
+
+    return -minus_tmin;
+}
+
+enum class BinvolTBoundaryMode {
+    CurrentImplementation,
+    StandardDVCS
+};
+
+static double calculate_phase_space_allowed_fraction_t_diagnostic(
+    double xB_min, double xB_max,
+    double Q2_min, double Q2_max,
+    double t_abs_min, double t_abs_max,
+    double E_beam,
+    BinvolTBoundaryMode mode)
+{
+    constexpr int n_steps = 10;
+    constexpr double Mp = 0.938272;
+
+    int valid_count = 0;
+
+    const double t_phys_min = -t_abs_max;
+    const double t_phys_max = -t_abs_min;
+
+    const double dxB = (xB_max - xB_min) / n_steps;
+    const double dQ2 = (Q2_max - Q2_min) / n_steps;
+    const double dt  = (t_phys_max - t_phys_min) / n_steps;
+
+    for (int i = 0; i < n_steps; ++i) {
+        const double xB = xB_min + (i + 0.5) * dxB;
+
+        for (int j = 0; j < n_steps; ++j) {
+            const double Q2 = Q2_min + (j + 0.5) * dQ2;
+
+            // Keep every non-t cut exactly the same as the production
+            // bin-volume calculation.  The only changed ingredient in this
+            // diagnostic is the t-boundary definition/inequality.
+            const double y  = Q2 / (2.0 * Mp * xB * E_beam);
+            const double W2 = Mp * Mp + Q2 * (1.0 / xB - 1.0);
+            const double W  = (W2 > 0.0) ? std::sqrt(W2) : 0.0;
+
+            if (!(y > 0.19 && y < 0.8113919276 && W > 2.0)) {
+                continue;
+            }
+
+            const double boundary =
+                (mode == BinvolTBoundaryMode::CurrentImplementation)
+                    ? binvol_current_t_boundary(xB, Q2)
+                    : binvol_standard_dvcs_tmin(xB, Q2);
+
+            for (int k = 0; k < n_steps; ++k) {
+                const double t = t_phys_min + (k + 0.5) * dt;
+
+                bool accepted = false;
+
+                if (mode == BinvolTBoundaryMode::CurrentImplementation) {
+                    // Exactly the condition used by the current production code.
+                    accepted = (t > boundary);
+                } else {
+                    // Standard DVCS physical condition:
+                    // |t| >= |t_min|  <=>  t <= t_min for negative t.
+                    accepted = (t <= boundary);
+                }
+
+                if (accepted) {
                     ++valid_count;
                 }
             }
@@ -1009,6 +1116,327 @@ static void write_bin_volume_analysis_note_outputs(
     // entry per (xB,Q2,|t|) cell rather than counting each phi bin 24 times.
     const std::vector<NoteVolumePoint> bulk106=unique_bulk(p106);
     const std::vector<NoteVolumePoint> bulk102=unique_bulk(p102);
+
+
+    // ---------------------------------------------------------------------
+    // t-boundary diagnostic.
+    //
+    // This does not feed back into the production volume calculation.  It
+    // compares the current t_min_val implementation with the standard DVCS
+    // t_min expression while holding the y and W selections fixed.
+    // ---------------------------------------------------------------------
+    {
+        struct TDiagPoint {
+            double xb=0.0;
+            double q2=0.0;
+            double current_t=0.0;
+            double standard_t=0.0;
+            double frac_current_106=0.0;
+            double frac_standard_106=0.0;
+            double frac_current_102=0.0;
+            double frac_standard_102=0.0;
+        };
+
+        std::vector<TDiagPoint> diag;
+        diag.reserve(bulk106.size());
+
+        for (const auto& p : bulk106) {
+            const double xb = 0.5 * (p.xbmin + p.xbmax);
+            const double q2 = 0.5 * (p.q2min + p.q2max);
+
+            TDiagPoint d;
+            d.xb = xb;
+            d.q2 = q2;
+            d.current_t = binvol_current_t_boundary(xb, q2);
+            d.standard_t = binvol_standard_dvcs_tmin(xb, q2);
+
+            d.frac_current_106 =
+                calculate_phase_space_allowed_fraction_t_diagnostic(
+                    p.xbmin,p.xbmax,p.q2min,p.q2max,p.tmin,p.tmax,
+                    g10p6.Ebeam,
+                    BinvolTBoundaryMode::CurrentImplementation);
+
+            d.frac_standard_106 =
+                calculate_phase_space_allowed_fraction_t_diagnostic(
+                    p.xbmin,p.xbmax,p.q2min,p.q2max,p.tmin,p.tmax,
+                    g10p6.Ebeam,
+                    BinvolTBoundaryMode::StandardDVCS);
+
+            d.frac_current_102 =
+                calculate_phase_space_allowed_fraction_t_diagnostic(
+                    p.xbmin,p.xbmax,p.q2min,p.q2max,p.tmin,p.tmax,
+                    g10p2.Ebeam,
+                    BinvolTBoundaryMode::CurrentImplementation);
+
+            d.frac_standard_102 =
+                calculate_phase_space_allowed_fraction_t_diagnostic(
+                    p.xbmin,p.xbmax,p.q2min,p.q2max,p.tmin,p.tmax,
+                    g10p2.Ebeam,
+                    BinvolTBoundaryMode::StandardDVCS);
+
+            diag.push_back(d);
+        }
+
+        if (!diag.empty()) {
+            // Full machine-readable diagnostic.
+            {
+                std::ofstream o((note_dir/"tmin_diagnostic_bins.csv").string());
+                o<<"xB_center,Q2_center,current_t_boundary,standard_dvcs_tmin,"
+                    "allowed_fraction_current_10p6,allowed_fraction_standard_10p6,"
+                    "allowed_fraction_current_10p2,allowed_fraction_standard_10p2\n";
+                o<<std::setprecision(10);
+                for(const auto&d:diag){
+                    o<<d.xb<<","<<d.q2<<","
+                     <<d.current_t<<","<<d.standard_t<<","
+                     <<d.frac_current_106<<","<<d.frac_standard_106<<","
+                     <<d.frac_current_102<<","<<d.frac_standard_102<<"\n";
+                }
+            }
+
+            // Compact numerical summary of the impact on the allowed fraction.
+            std::vector<double> delta106,delta102,ratio_t;
+            int same106=0,same102=0;
+            int diff_gt_001_106=0,diff_gt_001_102=0;
+            int diff_gt_005_106=0,diff_gt_005_102=0;
+
+            for(const auto&d:diag){
+                const double a106=std::fabs(d.frac_current_106-d.frac_standard_106);
+                const double a102=std::fabs(d.frac_current_102-d.frac_standard_102);
+
+                delta106.push_back(a106);
+                delta102.push_back(a102);
+
+                if(a106<1e-12) ++same106;
+                if(a102<1e-12) ++same102;
+                if(a106>0.01) ++diff_gt_001_106;
+                if(a102>0.01) ++diff_gt_001_102;
+                if(a106>0.05) ++diff_gt_005_106;
+                if(a102>0.05) ++diff_gt_005_102;
+
+                if(std::fabs(d.standard_t)>0.0){
+                    ratio_t.push_back(std::fabs(d.current_t/d.standard_t));
+                }
+            }
+
+            {
+                std::ofstream o((note_dir/"tmin_diagnostic_summary.csv").string());
+                o<<"quantity,value\n";
+                o<<std::setprecision(10);
+                o<<"cells,"<<diag.size()<<"\n";
+                o<<"median_abs_current_over_standard_t_boundary,"
+                 <<note_quantile(ratio_t,.50)<<"\n";
+                o<<"p16_abs_current_over_standard_t_boundary,"
+                 <<note_quantile(ratio_t,.16)<<"\n";
+                o<<"p84_abs_current_over_standard_t_boundary,"
+                 <<note_quantile(ratio_t,.84)<<"\n";
+
+                o<<"median_abs_allowed_fraction_difference_10p6,"
+                 <<note_quantile(delta106,.50)<<"\n";
+                o<<"p84_abs_allowed_fraction_difference_10p6,"
+                 <<note_quantile(delta106,.84)<<"\n";
+                o<<"max_abs_allowed_fraction_difference_10p6,"
+                 <<*std::max_element(delta106.begin(),delta106.end())<<"\n";
+                o<<"identical_fraction_cells_10p6,"<<same106<<"\n";
+                o<<"cells_difference_gt_0p01_10p6,"<<diff_gt_001_106<<"\n";
+                o<<"cells_difference_gt_0p05_10p6,"<<diff_gt_005_106<<"\n";
+
+                o<<"median_abs_allowed_fraction_difference_10p2,"
+                 <<note_quantile(delta102,.50)<<"\n";
+                o<<"p84_abs_allowed_fraction_difference_10p2,"
+                 <<note_quantile(delta102,.84)<<"\n";
+                o<<"max_abs_allowed_fraction_difference_10p2,"
+                 <<*std::max_element(delta102.begin(),delta102.end())<<"\n";
+                o<<"identical_fraction_cells_10p2,"<<same102<<"\n";
+                o<<"cells_difference_gt_0p01_10p2,"<<diff_gt_001_102<<"\n";
+                o<<"cells_difference_gt_0p05_10p2,"<<diff_gt_005_102<<"\n";
+            }
+
+            // Choose three actual Q2-bin centers spanning the available range.
+            std::vector<double> q2vals;
+            for(const auto&d:diag){
+                bool seen=false;
+                for(double q:q2vals){
+                    if(std::fabs(q-d.q2)<1e-10){ seen=true; break; }
+                }
+                if(!seen) q2vals.push_back(d.q2);
+            }
+            std::sort(q2vals.begin(),q2vals.end());
+
+            std::vector<double> chosen_q2;
+            if(!q2vals.empty()){
+                chosen_q2.push_back(q2vals.front());
+                if(q2vals.size()>2) chosen_q2.push_back(q2vals[q2vals.size()/2]);
+                if(q2vals.size()>1) chosen_q2.push_back(q2vals.back());
+            }
+
+            TCanvas c("c_tmin_diag","",1500,650);
+            c.Divide(2,1,0.004,0.004);
+
+            // Left panel: directly compare the two boundary expressions.
+            c.cd(1);
+            gPad->SetLeftMargin(.15);
+            gPad->SetRightMargin(.035);
+            gPad->SetBottomMargin(.14);
+            gPad->SetTopMargin(.12);
+            gPad->SetGridy();
+            gPad->SetTicks(1,1);
+
+            double max_abs_boundary=0.0;
+            for(const auto&d:diag){
+                max_abs_boundary=std::max(max_abs_boundary,std::fabs(d.current_t));
+                max_abs_boundary=std::max(max_abs_boundary,std::fabs(d.standard_t));
+            }
+            if(max_abs_boundary<=0) max_abs_boundary=1.0;
+
+            TH1F f1("h_tmin_diag_formula","",100,.05,.60);
+            f1.SetMinimum(0.0);
+            f1.SetMaximum(1.08*max_abs_boundary);
+            f1.GetXaxis()->SetTitle("x_{B}");
+            f1.GetYaxis()->SetTitle("|t boundary| (GeV^{2})");
+            f1.GetXaxis()->SetTitleSize(.050);
+            f1.GetYaxis()->SetTitleSize(.050);
+            f1.GetXaxis()->SetLabelSize(.041);
+            f1.GetYaxis()->SetLabelSize(.041);
+            f1.GetYaxis()->SetTitleOffset(1.35);
+            f1.Draw();
+
+            std::vector<TGraph*> current_graphs;
+            std::vector<TGraph*> standard_graphs;
+            const int cols[3]={kBlue+1,kGreen+2,kMagenta+1};
+
+            for(std::size_t iq=0;iq<chosen_q2.size() && iq<3;++iq){
+                auto* gc=new TGraph();
+                auto* gs=new TGraph();
+                int nc=0,ns=0;
+
+                std::vector<TDiagPoint> linepts;
+                for(const auto&d:diag){
+                    if(std::fabs(d.q2-chosen_q2[iq])<1e-10) linepts.push_back(d);
+                }
+                std::sort(linepts.begin(),linepts.end(),
+                    [](const TDiagPoint&a,const TDiagPoint&b){ return a.xb<b.xb; });
+
+                for(const auto&d:linepts){
+                    gc->SetPoint(nc++,d.xb,std::fabs(d.current_t));
+                    gs->SetPoint(ns++,d.xb,std::fabs(d.standard_t));
+                }
+
+                gc->SetMarkerStyle(24);
+                gc->SetMarkerSize(1.0);
+                gc->SetLineStyle(2);
+                gc->SetLineWidth(2);
+                gc->SetMarkerColor(cols[iq]);
+                gc->SetLineColor(cols[iq]);
+
+                gs->SetMarkerStyle(20);
+                gs->SetMarkerSize(1.0);
+                gs->SetLineStyle(1);
+                gs->SetLineWidth(2);
+                gs->SetMarkerColor(cols[iq]);
+                gs->SetLineColor(cols[iq]);
+
+                gc->Draw("PL SAME");
+                gs->Draw("PL SAME");
+
+                current_graphs.push_back(gc);
+                standard_graphs.push_back(gs);
+            }
+
+            TLegend leg1(.52,.57,.93,.86);
+            leg1.SetBorderSize(0);
+            leg1.SetFillStyle(0);
+            leg1.SetTextSize(.030);
+            for(std::size_t iq=0;iq<chosen_q2.size() && iq<3;++iq){
+                std::ostringstream s1,s2;
+                s1<<std::fixed<<std::setprecision(2)
+                  <<"Current, Q^{2}="<<chosen_q2[iq];
+                s2<<std::fixed<<std::setprecision(2)
+                  <<"Standard, Q^{2}="<<chosen_q2[iq];
+                leg1.AddEntry(current_graphs[iq],s1.str().c_str(),"pl");
+                leg1.AddEntry(standard_graphs[iq],s2.str().c_str(),"pl");
+            }
+            leg1.Draw();
+
+            TLatex l1;
+            l1.SetNDC(); l1.SetTextFont(42); l1.SetTextSize(.043);
+            l1.DrawLatex(.15,.93,"Boundary expressions at representative Q^{2}");
+
+            // Right panel: the actual quantity that matters for this analysis,
+            // the resulting phase-space fraction in every populated cell.
+            c.cd(2);
+            gPad->SetLeftMargin(.14);
+            gPad->SetRightMargin(.04);
+            gPad->SetBottomMargin(.14);
+            gPad->SetTopMargin(.12);
+            gPad->SetGrid();
+            gPad->SetTicks(1,1);
+
+            TH1F f2("h_tmin_diag_fraction","",100,0.0,1.02);
+            f2.SetMinimum(0.0);
+            f2.SetMaximum(1.02);
+            f2.GetXaxis()->SetTitle("Allowed fraction: current implementation");
+            f2.GetYaxis()->SetTitle("Allowed fraction: standard DVCS t_{min}");
+            f2.GetXaxis()->SetTitleSize(.047);
+            f2.GetYaxis()->SetTitleSize(.047);
+            f2.GetXaxis()->SetLabelSize(.041);
+            f2.GetYaxis()->SetLabelSize(.041);
+            f2.GetYaxis()->SetTitleOffset(1.25);
+            f2.Draw();
+
+            TLine diagline(0.0,0.0,1.0,1.0);
+            diagline.SetLineStyle(2);
+            diagline.SetLineWidth(2);
+            diagline.SetLineColor(kGray+2);
+            diagline.Draw();
+
+            TGraph g106,g102;
+            int n106=0,n102=0;
+            for(const auto&d:diag){
+                g106.SetPoint(n106++,d.frac_current_106,d.frac_standard_106);
+                g102.SetPoint(n102++,d.frac_current_102,d.frac_standard_102);
+            }
+
+            g106.SetMarkerStyle(20);
+            g106.SetMarkerSize(.80);
+            g106.SetMarkerColor(kBlue+1);
+            g106.SetLineColor(kBlue+1);
+
+            g102.SetMarkerStyle(24);
+            g102.SetMarkerSize(.80);
+            g102.SetMarkerColor(kRed+1);
+            g102.SetLineColor(kRed+1);
+
+            g106.Draw("P SAME");
+            g102.Draw("P SAME");
+
+            TLegend leg2(.63,.18,.92,.29);
+            leg2.SetBorderSize(0);
+            leg2.SetFillStyle(0);
+            leg2.SetTextSize(.033);
+            leg2.AddEntry(&g106,"10.6 GeV","p");
+            leg2.AddEntry(&g102,"10.2 GeV","p");
+            leg2.Draw();
+
+            TLatex l2;
+            l2.SetNDC(); l2.SetTextFont(42); l2.SetTextSize(.043);
+            l2.DrawLatex(.14,.93,"Impact on the calculated bin-volume fraction");
+
+            c.cd(0);
+            TLatex title;
+            title.SetNDC();
+            title.SetTextFont(42);
+            title.SetTextAlign(22);
+            title.SetTextSize(.032);
+            title.DrawLatex(.50,.985,
+                "Diagnostic comparison of the current t boundary and standard DVCS t_{min}");
+
+            c.SaveAs((note_dir/"tmin_diagnostic_comparison.png").string().c_str());
+
+            for(auto*g:current_graphs) delete g;
+            for(auto*g:standard_graphs) delete g;
+        }
+    }
+
 
     auto fractions=[](const std::vector<NoteVolumePoint>& pts){
         std::vector<double> v;
