@@ -21,47 +21,14 @@ struct Triple {
 //   sys   = - helicity accumulated charge
 using LumiMap = std::map<std::string, Triple>;
 
-// Options controlling how the luminosity map is built from the RGA
-// integrated-luminosity text files.
+// Options controlling the single authoritative charge input.
 struct LumiBuildOptions {
-    // If true:
-    //   Use column 2 of the integrated-luminosity import files for the
-    //   unpolarized accumulated charge for all run periods.
-    //
-    // If false:
-    //   Preserve the older mixed convention:
-    //     Sp18 Inb / Sp18 Out             -> column 2
-    //     Fa18 Inb / Fa18 Out / Sp19 Inb -> column 3 + column 4
-    //
-    // In both modes, the helicity-resolved luminosities are still read as:
-    //   stat = column 3 = + helicity accumulated charge
-    //   sys  = column 4 = - helicity accumulated charge
-    //
-    // Spring 2018 is always forced to use column 2 for the unpolarized total.
-    // This option is ignored for Fa18/Sp19 if the scaled columns-3-to-5 mode below is enabled.
-    bool use_second_column_charge_for_all_unpolarized = true;
-
-    // Optional Fa18/Sp19 unpolarized luminosity mode:
-    //
-    //   true:
-    //     For Fa18 Inb, Fa18 Out, and Sp19 Inb only, use
-    //
-    //       L_unpol = columns_3_to_5_charge_sum_scale
-    //                 * (column 3 + column 4 + column 5)
-    //
-    //     Spring 2018 still uses column 2.
-    //
-    //   false:
-    //     fall back to use_second_column_charge_for_all_unpolarized / legacy mode.
-    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
-
-    // Scale applied in the optional Fa18/Sp19 columns-3-to-5 mode.
-    double columns_3_to_5_charge_sum_scale = 1.025;
+    std::string charge_csv_path =
+        "imports/integrated_luminosity/global.csv";
 };
 
-// Build luminosity map from RGA text files in imports/integrated_luminosity/.
-// Default behavior is the new convention:
-//   all unpolarized cross sections use column 2 totals.
+// Build the luminosity/charge map from the single authoritative global.csv,
+// summing column 2 over the exact final Pass-2 selected run lists.
 LumiMap build_lumi_map();
 
 // Build luminosity map with explicit charge-column convention control.
@@ -89,6 +56,13 @@ bool compute_cross_sections(const std::string &csv_main,
 bool compute_cross_sections(const std::string &csv_main,
                             const LumiMap &lumi_map,
                             const std::string &lee_csv_path);
+
+// Produce compact analysis-note support material for the cross-section
+// determination section. No model comparisons or validation plots are made.
+bool write_cross_section_analysis_note_outputs(
+    const std::string &csv_main,
+    const LumiMap &lumi_map,
+    const std::string &out_dir = "output/cross_sections/analysis_note");
 
 // Plot cross sections vs phi for a given label:
 //   - Reads cross section columns for that label from csv_main.

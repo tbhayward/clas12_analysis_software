@@ -634,15 +634,15 @@ int main(int argc, char* argv[]) {
         // }
 
         LumiBuildOptions lumi_opts;
-
-        lumi_opts.use_second_column_charge_for_all_unpolarized = true;
-        lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
-        lumi_opts.columns_3_to_5_charge_sum_scale = 1.025;
+        lumi_opts.charge_csv_path =
+            "imports/integrated_luminosity/global.csv";
 
         LumiMap lumi_map = build_lumi_map(lumi_opts);
 
         if (!compute_cross_sections(csv_main, lumi_map)) {
             std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
+        } else if (!write_cross_section_analysis_note_outputs(csv_main, lumi_map)) {
+            std::cerr << "[main] WARNING: cross-section analysis-note output generation failed.\n";
         }
 
         const std::vector<std::string> labels_to_plot = {

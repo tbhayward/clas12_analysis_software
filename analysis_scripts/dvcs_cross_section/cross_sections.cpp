@@ -31,8 +31,9 @@
 //       Fbin, <energy>
 //       bin_volume, <energy>
 //
-//   - It computes:
-//       sigma = Y_unfolded * Frad * Fbin / (L * bin_volume)
+//   - It computes the physical four-fold cross section in nb/(GeV^4 deg):
+//       L_int[nb^-1] = Q[nC] * 1.316875 nb^-1/nC
+//       sigma = Y_unfolded * Frad * Fbin / (L_int * bin_volume)
 //
 //   - It writes:
 //       acceptance corrected yield, ep->epg, exp, <combined label>, <helicity>
@@ -398,230 +399,283 @@ static Triple add_triples_quadrature_errors(const std::vector<Triple> &terms) {
 // Luminosity helpers
 // -----------------------------------------------------------------------------
 
-static Triple load_rga_lumi_file(const std::string &path,
-                                 bool unpolarized_total_from_pos_plus_neg,
-                                 bool use_scaled_columns_3_to_5_for_unpolarized,
-                                 double columns_3_to_5_charge_sum_scale) {
-    std::ifstream ifs(path);
+// -----------------------------------------------------------------------------
+// RGA charge / luminosity inputs
+// -----------------------------------------------------------------------------
+//
+// The single authoritative charge source for the production analysis is
+//
+//     imports/integrated_luminosity/global.csv
+//
+// Column convention:
+//   column 1 = run number
+//   column 2 = QADB-filtered RUN::Scaler accumulated charge [nC]
+//   column 3 = positive-helicity accumulated charge [nC]
+//   column 4 = negative-helicity accumulated charge [nC]
+//
+// The exact final Pass-2 run selections below are the same selections used by
+// the run-selection/current-dependence analysis and documented in the Pass-2
+// analysis note. Low-current Sp19 runs 6616 and 6618 are not included.
+//
+// LumiMap keeps the historical in-memory convention:
+//   value = selected unpolarized accumulated charge [nC]
+//   stat  = selected positive-helicity accumulated charge [nC]
+//   sys   = selected negative-helicity accumulated charge [nC]
+//
+// Physical integrated luminosity is formed when the cross section is evaluated.
+// For the 5-cm liquid-hydrogen target:
+//
+//   L_int = Q[nC] * 1.316875 nb^{-1}/nC
+//
+// equivalent to 1316.875 pb^{-1}/mC.
+// -----------------------------------------------------------------------------
 
+static constexpr double RGA_LUMINOSITY_NB_INV_PER_NC = 1.316875;
+static constexpr double RGA_LUMINOSITY_PB_INV_PER_MC = 1316.875;
+
+struct GlobalChargeRow {
+    double total_nC = 0.0;
+    double pos_nC = 0.0;
+    double neg_nC = 0.0;
+};
+
+static const std::map<std::string, std::vector<int>>& final_pass2_run_selection() {
+    static const std::map<std::string, std::vector<int>> runs = {
+        {"Sp18 Inb", {
+            3306, 3307, 3315, 3333, 3353, 3359, 3361, 3363, 3378, 3379, 3384, 3389,
+            3390, 3403, 3405, 3406, 3407, 3409, 3411, 3421, 3422, 3429, 3431, 3432,
+            3433, 3434, 3435, 3436, 3441, 3442, 3459, 3460, 3461, 3462, 3463, 3464,
+            3465, 3466, 3467, 3469, 3480, 3482, 3484, 3485, 3488, 3492, 3493, 3501,
+            3506, 3507, 3512, 3513, 3517, 3518, 3519, 3520, 3521, 3522, 3542, 3699,
+            3700, 3702, 3705, 3708, 3711, 3719, 3720, 3722, 3738, 3739, 3741, 3748,
+            3750, 3752, 3771, 3789, 3790, 3791, 3795, 3796, 3797, 3798, 3799, 3803,
+            3804, 3806, 3816, 4003, 4013, 4014, 4015, 4016, 4017, 4021, 4022, 4025,
+            4026, 4028, 4030, 4032, 4033, 4037, 4038, 4039, 4041, 4044, 4045, 4050,
+            4053, 4054, 4055, 4058, 4060, 4061, 4067, 4068, 4069, 4070, 4071, 4073,
+            4075, 4078, 4080, 4081, 4082, 4083, 4085, 4089, 4090, 4091, 4092, 4093,
+            4094, 4095, 4096, 4097, 4099, 4100, 4103, 4104, 4110, 4112, 4113, 4114,
+            4115, 4139, 4143, 4144, 4147, 4148, 4151, 4152, 4154, 4155, 4156, 4157,
+            4158, 4161, 4164, 4165, 4166, 4167, 4169, 4174, 4180, 4181, 4182, 4184,
+            4189, 4190, 4192, 4193, 4194, 4201, 4202, 4203, 4204, 4206, 4208, 4211,
+            4213, 4218, 4219, 4220, 4221, 4223, 4224, 4226, 4229, 4243, 4244, 4245,
+            4247, 4248, 4250, 4253, 4254, 4256, 4262, 4263, 4264, 4309, 4311, 4312,
+            4313, 4314, 4315, 4316, 4320, 4321, 4322, 4323, 4324
+        }},
+        {"Sp18 Out", {
+            3261, 3262, 3266, 3269, 3270, 3282, 3288, 3874, 3875, 3878, 3880, 3881,
+            3883, 3884, 3885, 3888, 3889, 3891, 3893, 3898, 3903, 3905, 3907, 3908,
+            3910, 3911, 3912, 3913, 3915, 3916, 3917, 3919, 3920, 3921, 3924, 3926,
+            3928, 3930, 3932, 3933, 3934, 3936, 3938, 3939, 3940, 3941, 3943, 3944,
+            3945, 3946, 3948, 3949, 3950, 3954, 3959, 3963, 3964, 3969, 3970, 3973,
+            3975, 3982, 3985, 3986, 3987
+        }},
+        {"Fa18 Inb", {
+            5335, 5339, 5340, 5341, 5342, 5343, 5344, 5032, 5036, 5038, 5039, 5040,
+            5041, 5043, 5045, 5046, 5047, 5051, 5052, 5053, 5116, 5117, 5119, 5120,
+            5124, 5125, 5126, 5127, 5128, 5129, 5130, 5139, 5153, 5158, 5159, 5160,
+            5162, 5163, 5164, 5165, 5166, 5167, 5168, 5169, 5180, 5181, 5182, 5183,
+            5190, 5191, 5193, 5195, 5196, 5197, 5198, 5199, 5200, 5201, 5202, 5203,
+            5204, 5205, 5206, 5208, 5211, 5212, 5215, 5216, 5219, 5220, 5221, 5222,
+            5223, 5230, 5231, 5232, 5233, 5234, 5235, 5237, 5238, 5239, 5248, 5249,
+            5252, 5253, 5257, 5258, 5259, 5261, 5262, 5303, 5304, 5305, 5306, 5307,
+            5310, 5311, 5315, 5317, 5318, 5319, 5320, 5323, 5324, 5333, 5334, 5336,
+            5346, 5347, 5349, 5351, 5354, 5355, 5367, 5356, 5357, 5358, 5359, 5360,
+            5361, 5362, 5366, 5368, 5369, 5372, 5373, 5374, 5375, 5376, 5377, 5378,
+            5379, 5380, 5381, 5382, 5383, 5386, 5390, 5391, 5392, 5393, 5398, 5400,
+            5401, 5403, 5404, 5406, 5407
+        }},
+        {"Fa18 Out", {
+            5444, 5423, 5424, 5425, 5426, 5428, 5429, 5430, 5432, 5434, 5435, 5436,
+            5437, 5438, 5440, 5441, 5442, 5445, 5447, 5448, 5449, 5450, 5451, 5452,
+            5453, 5454, 5455, 5460, 5464, 5465, 5466, 5467, 5468, 5469, 5470, 5471,
+            5472, 5473, 5474, 5475, 5476, 5478, 5479, 5480, 5481, 5482, 5483, 5485,
+            5486, 5487, 5495, 5496, 5497, 5498, 5499, 5500, 5504, 5505, 5507, 5516,
+            5517, 5518, 5519, 5520, 5521, 5522, 5523, 5524, 5525, 5526, 5527, 5528,
+            5530, 5532, 5533, 5534, 5535, 5536, 5537, 5538, 5540, 5541, 5543, 5544,
+            5545, 5546, 5547, 5548, 5549, 5550, 5551, 5552, 5555, 5556, 5557, 5558,
+            5559, 5562, 5567, 5569, 5570, 5571, 5572, 5573, 5574, 5577, 5578, 5591,
+            5592, 5594, 5597, 5598, 5600, 5601, 5602, 5603, 5604, 5606, 5607, 5611,
+            5612, 5613, 5614, 5615, 5616, 5617, 5618, 5619, 5621, 5623, 5624, 5625,
+            5626, 5627, 5628, 5629, 5630, 5631, 5632, 5633, 5635, 5637, 5638, 5639,
+            5641, 5643, 5644, 5645, 5646, 5647, 5648, 5649, 5650, 5651, 5652, 5654,
+            5655, 5656, 5662, 5663, 5664, 5665, 5666
+        }},
+        {"Sp19 Inb", {
+            6619, 6620, 6636, 6637, 6638, 6639, 6640, 6642, 6645, 6647, 6648, 6650,
+            6651, 6652, 6654, 6655, 6656, 6657, 6658, 6660, 6661, 6662, 6663, 6664,
+            6665, 6666, 6667, 6668, 6669, 6670, 6672, 6673, 6675, 6676, 6677, 6678,
+            6680, 6682, 6683, 6684, 6685, 6687, 6688, 6689, 6691, 6692, 6693, 6694,
+            6695, 6696, 6697, 6698, 6699, 6704, 6705, 6706, 6707, 6708, 6709, 6710,
+            6711, 6712, 6713, 6714, 6715, 6716, 6717, 6718, 6719, 6729, 6730, 6731,
+            6732, 6733, 6736, 6737, 6738, 6739, 6740, 6741, 6742, 6743, 6744, 6746,
+            6747, 6748, 6749, 6750, 6753, 6754, 6755, 6756, 6757, 6759, 6760, 6762,
+            6763, 6764, 6765, 6767, 6768, 6769, 6779, 6780, 6781, 6783
+        }}
+    };
+    return runs;
+}
+
+static std::map<int, GlobalChargeRow> load_global_charge_csv(const std::string &path) {
+    std::ifstream ifs(path);
     if (!ifs) {
-        std::cerr << "[cross_sections] FATAL: cannot open lumi file: "
-                  << path << "\n";
-        throw std::runtime_error("cannot open lumi file");
+        throw std::runtime_error(
+            "[cross_sections] cannot open authoritative charge CSV: " + path
+        );
     }
 
-    double sum_total_col = 0.0;
-    double sum_pos       = 0.0;
-    double sum_neg       = 0.0;
-    double sum_col5      = 0.0;
-
+    std::map<int, GlobalChargeRow> out;
     std::string line;
-    size_t n_lines = 0;
+    int line_number = 0;
 
     while (std::getline(ifs, line)) {
-        std::string s = trim(line);
+        ++line_number;
+        const std::string s = trim(line);
+        if (s.empty() || s[0] == '#') continue;
 
-        if (s.empty()) continue;
-        if (!s.empty() && s[0] == '#') continue;
-
-        std::vector<std::string> fields;
-        std::string field;
-        std::istringstream iss(s);
-
-        while (std::getline(iss, field, ',')) {
-            fields.push_back(trim(field));
-        }
-
+        const std::vector<std::string> fields = split_csv_line(s);
         if (fields.size() < 4) {
-            std::cerr << "[cross_sections] WARNING: lumi file " << path
-                      << " has a line with fewer than 4 columns, skipping: "
-                      << s << "\n";
-            continue;
+            std::ostringstream ss;
+            ss << "[cross_sections] malformed charge row at " << path
+               << ":" << line_number << " (need at least 4 columns)";
+            throw std::runtime_error(ss.str());
         }
 
-        if (use_scaled_columns_3_to_5_for_unpolarized && fields.size() < 5) {
-            std::cerr << "[cross_sections] WARNING: lumi file " << path
-                      << " has a line with fewer than 5 columns in scaled columns-3-to-5 mode, skipping: "
-                      << s << "\n";
-            continue;
+        int run = 0;
+        double total = 0.0;
+        double pos = 0.0;
+        double neg = 0.0;
+
+        try {
+            run   = std::stoi(trim(unquote(fields[0])));
+            total = std::stod(trim(unquote(fields[1])));
+            pos   = std::stod(trim(unquote(fields[2])));
+            neg   = std::stod(trim(unquote(fields[3])));
+        } catch (const std::exception &) {
+            std::ostringstream ss;
+            ss << "[cross_sections] invalid numeric value at " << path
+               << ":" << line_number;
+            throw std::runtime_error(ss.str());
         }
 
-        const double total_col = std::atof(fields[1].c_str());
-        const double pos       = std::atof(fields[2].c_str());
-        const double neg       = std::atof(fields[3].c_str());
-        const double col5      = (fields.size() >= 5) ? std::atof(fields[4].c_str()) : 0.0;
+        if (out.count(run)) {
+            std::ostringstream ss;
+            ss << "[cross_sections] duplicate run " << run << " in " << path;
+            throw std::runtime_error(ss.str());
+        }
 
-        sum_total_col += total_col;
-        sum_pos       += pos;
-        sum_neg       += neg;
-        sum_col5      += col5;
-        ++n_lines;
+        out[run] = GlobalChargeRow{total, pos, neg};
     }
 
-    double final_total = sum_total_col;
-    std::string source = "column 2";
-
-    if (use_scaled_columns_3_to_5_for_unpolarized) {
-        final_total = columns_3_to_5_charge_sum_scale * (sum_pos + sum_neg + sum_col5);
-        source = "scaled columns 3+4+5";
-    } else if (unpolarized_total_from_pos_plus_neg) {
-        final_total = sum_pos + sum_neg;
-        source = "pos+neg columns";
+    if (out.empty()) {
+        throw std::runtime_error(
+            "[cross_sections] no charge records loaded from " + path
+        );
     }
 
-    std::cout << "[cross_sections] Loaded lumi from " << path
-              << " over " << n_lines << " runs: "
-              << "unpolarized_total=" << final_total
-              << " total_col=" << sum_total_col
-              << " pos=" << sum_pos
-              << " neg=" << sum_neg
-              << " col5=" << sum_col5
-              << "  [unpolarized source: " << source;
-
-    if (use_scaled_columns_3_to_5_for_unpolarized) {
-        std::cout << ", scale=" << columns_3_to_5_charge_sum_scale;
-    }
-
-    std::cout << "]\n";
-
-    Triple out;
-    out.value = final_total;
-    out.stat  = sum_pos;
-    out.sys   = sum_neg;
     return out;
 }
 
+static Triple sum_selected_charge_for_period(
+    const std::string &period,
+    const std::map<int, GlobalChargeRow> &charge_rows) {
+
+    const auto &selection = final_pass2_run_selection();
+    const auto it_sel = selection.find(period);
+
+    if (it_sel == selection.end()) {
+        throw std::runtime_error(
+            "[cross_sections] no final Pass-2 run selection defined for " + period
+        );
+    }
+
+    Triple out{0.0, 0.0, 0.0};
+
+    for (const int run : it_sel->second) {
+        const auto it = charge_rows.find(run);
+        if (it == charge_rows.end()) {
+            std::ostringstream ss;
+            ss << "[cross_sections] selected run " << run
+               << " (" << period << ") is missing from global.csv";
+            throw std::runtime_error(ss.str());
+        }
+
+        out.value += it->second.total_nC;
+        out.stat  += it->second.pos_nC;
+        out.sys   += it->second.neg_nC;
+    }
+
+    return out;
+}
+
+static double integrated_luminosity_nb_inv(double charge_nC) {
+    return charge_nC * RGA_LUMINOSITY_NB_INV_PER_NC;
+}
+
+static double integrated_luminosity_pb_inv(double charge_nC) {
+    return charge_nC * 1.0e-6 * RGA_LUMINOSITY_PB_INV_PER_MC;
+}
 
 LumiMap build_lumi_map() {
     LumiBuildOptions options;
-    options.use_second_column_charge_for_all_unpolarized = true;
     return build_lumi_map(options);
 }
 
 LumiMap build_lumi_map(const LumiBuildOptions &options) {
+    const std::string charge_csv = options.charge_csv_path;
+
+    std::cout << "[cross_sections] Charge source: " << charge_csv << "\n"
+              << "[cross_sections] Unpolarized normalization: column 2 "
+              << "(QADB-filtered RUN::Scaler charge) over the final Pass-2 run selection.\n";
+
     LumiMap m;
-    const std::string base = "imports/integrated_luminosity";
-
-    const bool use_col2_for_all =
-        options.use_second_column_charge_for_all_unpolarized;
-
-    const bool use_scaled_fa18_sp19 =
-        options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized;
-
-    std::cout << "[cross_sections] build_lumi_map charge convention: ";
-
-    if (use_scaled_fa18_sp19) {
-        std::cout << "Fa18/Sp19 use scale * (columns 3+4+5), scale="
-                  << options.columns_3_to_5_charge_sum_scale
-                  << "; Sp18 uses column 2.\n";
-    } else if (use_col2_for_all) {
-        std::cout << "using column 2 for unpolarized accumulated charge for all periods.\n";
-    } else {
-        std::cout << "legacy mixed mode: Sp18 uses column 2; Fa18 and Sp19 use columns 3+4.\n";
-    }
-
-    // These settings control only Triple.value, i.e. the unpolarized luminosity.
-    // Triple.stat and Triple.sys are always filled from columns 3 and 4,
-    // respectively, so polarized cross sections remain normalized with the
-    // helicity-specific accumulated charges.
-    // Spring 2018 is always forced to column 2 for unpolarized normalization.
-    const bool fa18_unpol_from_pos_neg = (!use_col2_for_all && !use_scaled_fa18_sp19);
-    const bool sp19_unpol_from_pos_neg = (!use_col2_for_all && !use_scaled_fa18_sp19);
-    const bool sp18_unpol_from_pos_neg = false;
-
-    const bool fa18_use_scaled_cols_3_to_5 = use_scaled_fa18_sp19;
-    const bool sp19_use_scaled_cols_3_to_5 = use_scaled_fa18_sp19;
-    const bool sp18_use_scaled_cols_3_to_5 = false;
 
     try {
-        m["Fa18 Inb"]      = load_rga_lumi_file(base + "/rga_fa18_inb.txt",
-                                                fa18_unpol_from_pos_neg,
-                                                fa18_use_scaled_cols_3_to_5,
-                                                options.columns_3_to_5_charge_sum_scale);
+        const std::map<int, GlobalChargeRow> rows =
+            load_global_charge_csv(charge_csv);
 
-        m["Fa18 Out"]      = load_rga_lumi_file(base + "/rga_fa18_out.txt",
-                                                fa18_unpol_from_pos_neg,
-                                                fa18_use_scaled_cols_3_to_5,
-                                                options.columns_3_to_5_charge_sum_scale);
-
-        m["Fa18 Inb Supp"] = Triple{0.0, 0.0, 0.0};
-
-        m["Sp18 Inb"]      = load_rga_lumi_file(base + "/rga_sp18_inb.txt",
-                                                sp18_unpol_from_pos_neg,
-                                                sp18_use_scaled_cols_3_to_5,
-                                                options.columns_3_to_5_charge_sum_scale);
-
-        m["Sp18 Out"]      = load_rga_lumi_file(base + "/rga_sp18_out.txt",
-                                                sp18_unpol_from_pos_neg,
-                                                sp18_use_scaled_cols_3_to_5,
-                                                options.columns_3_to_5_charge_sum_scale);
-
-        m["Sp19 Inb"]      = load_rga_lumi_file(base + "/rga_sp19_inb.txt",
-                                                sp19_unpol_from_pos_neg,
-                                                sp19_use_scaled_cols_3_to_5,
-                                                options.columns_3_to_5_charge_sum_scale);
+        for (const auto &period : std::vector<std::string>{
+                 "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb"}) {
+            m[period] = sum_selected_charge_for_period(period, rows);
+        }
     } catch (const std::exception &e) {
         std::cerr << "[cross_sections] FATAL in build_lumi_map: "
                   << e.what() << "\n";
         throw;
     }
 
-    auto sum_labels = [&](const std::vector<std::string> &keys) -> Triple {
-        Triple r{0.0, 0.0, 0.0};
+    m["Fa18 Inb Supp"] = Triple{0.0, 0.0, 0.0};
 
-        for (const auto &k : keys) {
-            auto it = m.find(k);
-
-            if (it == m.end()) {
-                std::cerr << "[cross_sections] ERROR: missing lumi for \""
-                          << k << "\" while building combined groups.\n";
-                continue;
-            }
-
-            r.value += it->second.value;
-            r.stat  += it->second.stat;
-            r.sys   += it->second.sys;
+    auto sum_labels = [&](const std::vector<std::string> &labels) {
+        Triple out{0.0, 0.0, 0.0};
+        for (const auto &label : labels) {
+            auto it = m.find(label);
+            if (it == m.end()) continue;
+            out.value += it->second.value;
+            out.stat  += it->second.stat;
+            out.sys   += it->second.sys;
         }
-
-        return r;
+        return out;
     };
 
-    // Supplemental is intentionally not included in the combined groups used for
-    // the production cross-section normalization.
     m["Fa18"]     = sum_labels({"Fa18 Inb", "Fa18 Out"});
     m["Sp18"]     = sum_labels({"Sp18 Inb", "Sp18 Out"});
     m["10.6 GeV"] = sum_labels({"Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"});
     m["10.2 GeV"] = sum_labels({"Sp19 Inb"});
 
-    std::cout << "[cross_sections] build_lumi_map summary:\n"
-              << "  Fa18 Inb  value=" << m["Fa18 Inb"].value
-              << " pos=" << m["Fa18 Inb"].stat
-              << " neg=" << m["Fa18 Inb"].sys << "\n"
-              << "  Fa18 Out  value=" << m["Fa18 Out"].value
-              << " pos=" << m["Fa18 Out"].stat
-              << " neg=" << m["Fa18 Out"].sys << "\n"
-              << "  Sp18 Inb  value=" << m["Sp18 Inb"].value
-              << " pos=" << m["Sp18 Inb"].stat
-              << " neg=" << m["Sp18 Inb"].sys << "\n"
-              << "  Sp18 Out  value=" << m["Sp18 Out"].value
-              << " pos=" << m["Sp18 Out"].stat
-              << " neg=" << m["Sp18 Out"].sys << "\n"
-              << "  Sp19 Inb  value=" << m["Sp19 Inb"].value
-              << " pos=" << m["Sp19 Inb"].stat
-              << " neg=" << m["Sp19 Inb"].sys << "\n"
-              << "  Fa18      value=" << m["Fa18"].value
-              << " pos=" << m["Fa18"].stat
-              << " neg=" << m["Fa18"].sys << "\n"
-              << "  Sp18      value=" << m["Sp18"].value
-              << " pos=" << m["Sp18"].stat
-              << " neg=" << m["Sp18"].sys << "\n"
-              << "  10.6 GeV  value=" << m["10.6 GeV"].value
-              << " pos=" << m["10.6 GeV"].stat
-              << " neg=" << m["10.6 GeV"].sys << "\n"
-              << "  10.2 GeV  value=" << m["10.2 GeV"].value
-              << " pos=" << m["10.2 GeV"].stat
-              << " neg=" << m["10.2 GeV"].sys << "\n";
+    std::cout << std::fixed << std::setprecision(6)
+              << "[cross_sections] Selected accumulated charge from global.csv:\n";
 
+    for (const auto &period : std::vector<std::string>{
+             "Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"}) {
+        const Triple &q = m.at(period);
+        std::cout << "  " << std::setw(9) << std::left << period
+                  << "  Q=" << std::setw(10) << std::right
+                  << q.value / 1.0e6 << " mC"
+                  << "  L_int=" << integrated_luminosity_pb_inv(q.value) / 1000.0
+                  << " fb^-1\n";
+    }
+
+    std::cout << std::defaultfloat << std::setprecision(6);
     return m;
 }
 
@@ -1488,6 +1542,10 @@ bool compute_cross_sections(const std::string &csv_main,
     std::cout << "[cross_sections] NOTE: no imports/efficiency.json correction is applied here. "
               << "Current-efficiency and eppi0 normalization corrections are already upstream.\n";
 
+    std::cout << "[cross_sections] NOTE: accumulated charge is converted to physical integrated "
+              << "luminosity with 1.316875 nb^-1/nC before the cross section is formed; "
+              << "cross sections are in nb/(GeV^4 deg).\n";
+
     std::cout << "[cross_sections] NOTE: combined-label luminosities are row-dependent and "
               << "now gated by the same positive-yield validity mask used for the combined-yield numerator.\n";
 
@@ -1633,7 +1691,9 @@ bool compute_cross_sections(const std::string &csv_main,
 
                 if (lumi_val <= 0.0 || !std::isfinite(lumi_val)) continue;
 
-                const double denom = lumi_val * Vbin.value;
+                const double luminosity_nb_inv =
+                    integrated_luminosity_nb_inv(lumi_val);
+                const double denom = luminosity_nb_inv * Vbin.value;
 
                 if (denom <= 0.0 || !std::isfinite(denom)) continue;
 
@@ -1709,6 +1769,329 @@ bool compute_cross_sections(const std::string &csv_main,
     std::cout << "[cross_sections] Updated CSV with luminosities and cross sections: "
               << csv_main << "\n";
 
+    return true;
+}
+
+
+// -----------------------------------------------------------------------------
+// Analysis-note outputs for the cross-section construction
+// -----------------------------------------------------------------------------
+
+static double read_required_scalar_or_tuple_value(
+    const std::vector<std::string> &fields,
+    int idx) {
+
+    if (idx < 0 || idx >= (int)fields.size()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const std::string cell = trim(unquote(fields[idx]));
+    if (cell.empty()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    if (cell.front() == '(') {
+        return parse_tuple3(fields[idx]).value;
+    }
+
+    return std::atof(cell.c_str());
+}
+
+bool write_cross_section_analysis_note_outputs(
+    const std::string &csv_main,
+    const LumiMap &lumi_map,
+    const std::string &out_dir) {
+
+    std::error_code ec;
+    fs::create_directories(out_dir, ec);
+
+    if (ec) {
+        std::cerr << "[cross_sections] ERROR: cannot create analysis-note directory "
+                  << out_dir << ": " << ec.message() << "\n";
+        return false;
+    }
+
+    {
+        std::ofstream o(fs::path(out_dir) / "cross_section_luminosity_summary.csv");
+        if (!o) return false;
+
+        o << "run period,beam energy (GeV),selected runs,"
+             "accumulated charge (mC),integrated luminosity (pb^-1),"
+             "integrated luminosity (fb^-1)\n";
+
+        const std::map<std::string, double> energy = {
+            {"Sp18 Inb", 10.594}, {"Sp18 Out", 10.594},
+            {"Fa18 Inb", 10.604}, {"Fa18 Out", 10.604},
+            {"Sp19 Inb", 10.200}
+        };
+
+        const auto &selection = final_pass2_run_selection();
+
+        for (const auto &period : std::vector<std::string>{
+                 "Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"}) {
+
+            const auto itL = lumi_map.find(period);
+            const auto itR = selection.find(period);
+            if (itL == lumi_map.end() || itR == selection.end()) continue;
+
+            const double charge_mC = itL->second.value / 1.0e6;
+            const double lint_pb = integrated_luminosity_pb_inv(itL->second.value);
+
+            o << period << ","
+              << std::fixed << std::setprecision(3) << energy.at(period) << ","
+              << itR->second.size() << ","
+              << std::setprecision(6) << charge_mC << ","
+              << std::setprecision(6) << lint_pb << ","
+              << std::setprecision(6) << lint_pb / 1000.0 << "\n";
+        }
+    }
+
+    {
+        std::ofstream o(fs::path(out_dir) / "cross_section_input_summary.csv");
+        if (!o) return false;
+
+        o << "symbol,quantity,production source or definition\n";
+        o << "N_corr,acceptance/unfolding-corrected DVCS yield,"
+             "acceptance corrected yield ep->epg exp <label> unpol\n";
+        o << "Q,selected accumulated Faraday-cup charge,"
+             "imports/integrated_luminosity/global.csv column 2 summed over final Pass-2 runs\n";
+        o << "L_int,integrated luminosity,Q[nC] * 1.316875 nb^-1/nC\n";
+        o << "V_bin,physical four-dimensional bin volume,"
+             "bin_volume <beam energy> from bin_volume.cpp\n";
+        o << "F_rad,radiative correction factor,"
+             "Frad imported by bin index from imports/all_bin_v3.csv\n";
+        o << "F_bin,bin-centering correction factor,"
+             "Fbin imported by bin index from imports/all_bin_v3.csv\n";
+        o << "sigma,final four-fold cross section,"
+             "N_corr * F_rad * F_bin / (L_int * V_bin)\n";
+    }
+
+    std::ifstream ifs(csv_main);
+    if (!ifs) return false;
+
+    std::vector<std::string> lines;
+    std::string line;
+    while (std::getline(ifs, line)) lines.push_back(line);
+    if (lines.size() < 2) return false;
+
+    const std::vector<std::string> header = split_csv_line(lines[0]);
+
+    const int c_xbmin = find_col_optional(header, "xBmin");
+    const int c_xbmax = find_col_optional(header, "xBmax");
+    const int c_q2min = find_col_optional(header, "Q2min");
+    const int c_q2max = find_col_optional(header, "Q2max");
+    const int c_tmin  = find_col_optional(header, "t_abs_min");
+    const int c_tmax  = find_col_optional(header, "t_abs_max");
+    const int c_phimin = find_col_optional(header, "phimin");
+    const int c_phimax = find_col_optional(header, "phimax");
+    const int c_phimean = find_col_optional(header, "phi_mean");
+
+    const int c_yield = find_col_optional(
+        header, "acceptance corrected yield, ep->epg, exp, 10.6 GeV, unpol");
+    const int c_xs = find_col_optional(
+        header, "cross sections, ep->epg, exp, 10.6 GeV, unpol");
+    const int c_vbin = find_col_optional(header, "bin_volume, 10.6 GeV");
+    const int c_frad = find_col_optional(header, "Frad, 10.6 GeV");
+    const int c_fbin = find_col_optional(header, "Fbin, 10.6 GeV");
+    const int c_lumi = find_col_optional(
+        header, "integrated luminosity, 10.6 GeV (nC)");
+
+    const std::vector<int> required = {
+        c_xbmin,c_xbmax,c_q2min,c_q2max,c_tmin,c_tmax,
+        c_phimin,c_phimax,c_yield,c_xs,c_vbin,c_frad,c_fbin,c_lumi
+    };
+    for (int idx : required) {
+        if (idx < 0) {
+            std::cerr << "[cross_sections] ERROR: missing required column for "
+                         "cross-section analysis-note example.\n";
+            return false;
+        }
+    }
+
+    struct ExampleRow {
+        double xbmin=0, xbmax=0, q2min=0, q2max=0, tmin=0, tmax=0;
+        double phimin=0, phimax=0, phi=0;
+        Triple yield{0,0,0}, vbin{0,0,0}, frad{0,0,0}, fbin{0,0,0};
+        Triple lumi_charge{0,0,0}, xs{0,0,0};
+    };
+
+    using KinKey = std::tuple<double,double,double,double,double,double>;
+    std::map<KinKey, std::vector<ExampleRow>> groups;
+
+    for (size_t i = 1; i < lines.size(); ++i) {
+        if (lines[i].empty()) continue;
+        const std::vector<std::string> f = split_csv_line(lines[i]);
+        if (f.size() != header.size()) continue;
+
+        const Triple Y = parse_tuple3(f[c_yield]);
+        const Triple V = parse_tuple3(f[c_vbin]);
+        const Triple R = parse_tuple3(f[c_frad]);
+        const Triple B = parse_tuple3(f[c_fbin]);
+        const Triple L = parse_tuple3(f[c_lumi]);
+        const Triple X = parse_tuple3(f[c_xs]);
+
+        if (!(Y.value > 0.0) || !(V.value > 0.0) ||
+            !(R.value > 0.0) || !(B.value > 0.0) ||
+            !(L.value > 0.0) || !(X.value > 0.0)) continue;
+
+        ExampleRow r;
+        r.xbmin = read_required_scalar_or_tuple_value(f,c_xbmin);
+        r.xbmax = read_required_scalar_or_tuple_value(f,c_xbmax);
+        r.q2min = read_required_scalar_or_tuple_value(f,c_q2min);
+        r.q2max = read_required_scalar_or_tuple_value(f,c_q2max);
+        r.tmin = read_required_scalar_or_tuple_value(f,c_tmin);
+        r.tmax = read_required_scalar_or_tuple_value(f,c_tmax);
+        r.phimin = read_required_scalar_or_tuple_value(f,c_phimin);
+        r.phimax = read_required_scalar_or_tuple_value(f,c_phimax);
+        r.phi = (c_phimean >= 0)
+            ? read_required_scalar_or_tuple_value(f,c_phimean)
+            : 0.5*(r.phimin+r.phimax);
+        r.yield=Y; r.vbin=V; r.frad=R; r.fbin=B; r.lumi_charge=L; r.xs=X;
+
+        groups[KinKey{r.xbmin,r.xbmax,r.q2min,r.q2max,r.tmin,r.tmax}].push_back(r);
+    }
+
+    if (groups.empty()) {
+        std::cerr << "[cross_sections] WARNING: no complete 10.6-GeV group found "
+                     "for analysis-note example.\n";
+        return true;
+    }
+
+    auto score_group = [](const auto &kv) {
+        const auto &k=kv.first;
+        const auto &rows=kv.second;
+        const double xb=0.5*(std::get<0>(k)+std::get<1>(k));
+        const double q2=0.5*(std::get<2>(k)+std::get<3>(k));
+        const double tt=0.5*(std::get<4>(k)+std::get<5>(k));
+        const double d=std::pow((xb-0.25)/0.12,2)
+                      +std::pow((q2-2.2)/1.0,2)
+                      +std::pow((tt-0.32)/0.20,2);
+        return 100.0*rows.size()-d;
+    };
+
+    auto best=groups.begin();
+    double best_score=score_group(*best);
+    for (auto it=std::next(groups.begin()); it!=groups.end(); ++it) {
+        const double s=score_group(*it);
+        if (s>best_score) { best=it; best_score=s; }
+    }
+
+    std::vector<ExampleRow> rows=best->second;
+    std::sort(rows.begin(),rows.end(),
+        [](const ExampleRow&a,const ExampleRow&b){return a.phi<b.phi;});
+
+    {
+        std::ofstream o(fs::path(out_dir)/"cross_section_assembly_example.csv");
+        if (!o) return false;
+
+        o<<"xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,"
+           "phi_min,phi_max,phi_mean,N_corr,N_corr_stat,"
+           "charge_10p6_nC,Lint_10p6_nb^-1,V_bin,F_rad,F_bin,"
+           "sigma_before_Frad_Fbin_nb_per_GeV4_deg,"
+           "sigma_after_Frad_nb_per_GeV4_deg,"
+           "sigma_final_nb_per_GeV4_deg,sigma_final_stat\n";
+        o<<std::setprecision(12);
+
+        for(const auto&r:rows){
+            const double lint=integrated_luminosity_nb_inv(r.lumi_charge.value);
+            const double base=r.yield.value/(lint*r.vbin.value);
+            const double after_rad=base*r.frad.value;
+            o<<r.xbmin<<","<<r.xbmax<<","<<r.q2min<<","<<r.q2max<<","
+             <<r.tmin<<","<<r.tmax<<","<<r.phimin<<","<<r.phimax<<","<<r.phi<<","
+             <<r.yield.value<<","<<r.yield.stat<<","
+             <<r.lumi_charge.value<<","<<lint<<","<<r.vbin.value<<","
+             <<r.frad.value<<","<<r.fbin.value<<","
+             <<base<<","<<after_rad<<","<<r.xs.value<<","<<r.xs.stat<<"\n";
+        }
+    }
+
+    {
+        TCanvas c("c_cross_section_chain_note","",1100,760);
+        c.SetLeftMargin(0.14);
+        c.SetRightMargin(0.035);
+        c.SetBottomMargin(0.13);
+        c.SetTopMargin(0.13);
+        c.SetTicks(1,1);
+
+        TGraphErrors g_base,g_rad,g_final;
+        double ymin=std::numeric_limits<double>::infinity(), ymax=0.0;
+        int ip=0;
+
+        for(const auto&r:rows){
+            const double lint=integrated_luminosity_nb_inv(r.lumi_charge.value);
+            const double base=r.yield.value/(lint*r.vbin.value);
+            const double after_rad=base*r.frad.value;
+            const double final=r.xs.value;
+
+            const double rel_y=(r.yield.value>0.0)?r.yield.stat/r.yield.value:0.0;
+            const double rel_v=(r.vbin.value>0.0)?r.vbin.stat/r.vbin.value:0.0;
+            const double base_err=base*std::sqrt(rel_y*rel_y+rel_v*rel_v);
+            const double rel_r=(r.frad.value>0.0)?r.frad.stat/r.frad.value:0.0;
+            const double rad_err=after_rad*std::sqrt(rel_y*rel_y+rel_v*rel_v+rel_r*rel_r);
+
+            g_base.SetPoint(ip,r.phi,base);
+            g_base.SetPointError(ip,0.0,base_err);
+            g_rad.SetPoint(ip,r.phi,after_rad);
+            g_rad.SetPointError(ip,0.0,rad_err);
+            g_final.SetPoint(ip,r.phi,final);
+            g_final.SetPointError(ip,0.0,r.xs.stat);
+
+            ymin=std::min(ymin,std::min(base,std::min(after_rad,final)));
+            ymax=std::max(ymax,std::max(base,std::max(after_rad,final)));
+            ++ip;
+        }
+
+        if(!(ymin>0.0)||!(ymax>ymin)){ymin=0.0;ymax=1.0;}
+
+        TH1F frame("h_cross_section_chain_note","",100,0.0,360.0);
+        frame.SetMinimum(std::max(0.0,0.75*ymin));
+        frame.SetMaximum(1.25*ymax);
+        frame.GetXaxis()->SetTitle("#phi (deg)");
+        frame.GetYaxis()->SetTitle(
+            "d^{4}#sigma/(dx_{B}dQ^{2}d|t|d#phi)  [nb/(GeV^{4} deg)]");
+        frame.GetXaxis()->SetTitleSize(0.047);
+        frame.GetYaxis()->SetTitleSize(0.043);
+        frame.GetXaxis()->SetLabelSize(0.040);
+        frame.GetYaxis()->SetLabelSize(0.040);
+        frame.GetYaxis()->SetTitleOffset(1.55);
+        frame.Draw();
+
+        g_base.SetMarkerStyle(24); g_base.SetMarkerSize(1.0); g_base.SetLineWidth(2);
+        g_base.SetMarkerColor(kGray+2); g_base.SetLineColor(kGray+2);
+        g_rad.SetMarkerStyle(25); g_rad.SetMarkerSize(1.0); g_rad.SetLineWidth(2);
+        g_rad.SetMarkerColor(kBlue+1); g_rad.SetLineColor(kBlue+1);
+        g_final.SetMarkerStyle(20); g_final.SetMarkerSize(1.0); g_final.SetLineWidth(2);
+        g_final.SetMarkerColor(kRed+1); g_final.SetLineColor(kRed+1);
+
+        g_base.Draw("PE SAME");
+        g_rad.Draw("PE SAME");
+        g_final.Draw("PE SAME");
+
+        TLegend leg(0.56,0.69,0.94,0.86);
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.033);
+        leg.AddEntry(&g_base,"N_{corr}/(#mathcal{L}_{int} V_{bin})","pe");
+        leg.AddEntry(&g_rad,"after F_{rad}","pe");
+        leg.AddEntry(&g_final,"after F_{rad} and F_{bin}","pe");
+        leg.Draw();
+
+        const KinKey&k=best->first;
+        std::ostringstream kin;
+        kin<<std::fixed<<std::setprecision(3)
+           <<std::get<0>(k)<<" < x_{B} < "<<std::get<1>(k)
+           <<",  "<<std::get<2>(k)<<" < Q^{2} < "<<std::get<3>(k)<<" GeV^{2}"
+           <<",  "<<std::get<4>(k)<<" < |t| < "<<std::get<5>(k)<<" GeV^{2}";
+
+        TLatex latex;
+        latex.SetNDC(); latex.SetTextFont(42); latex.SetTextSize(0.031);
+        latex.DrawLatex(0.14,0.94,
+            "Representative construction of the 10.6 GeV unpolarized DVCS cross section");
+        latex.SetTextSize(0.027);
+        latex.DrawLatex(0.14,0.895,kin.str().c_str());
+
+        c.SaveAs((fs::path(out_dir)/"cross_section_correction_chain_example.png").string().c_str());
+    }
+
+    std::cout<<"[cross_sections] Wrote analysis-note outputs to "<<out_dir<<"\n";
     return true;
 }
 

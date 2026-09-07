@@ -433,9 +433,8 @@ bool produce_variation(
     stage_done("unfolding", unfold_t0);
 
     LumiBuildOptions lumi_opts;
-    lumi_opts.use_second_column_charge_for_all_unpolarized = true;
-    lumi_opts.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized = false;
-    lumi_opts.columns_3_to_5_charge_sum_scale = 1.025;
+    lumi_opts.charge_csv_path =
+        "imports/integrated_luminosity/global.csv";
     const LumiMap lumi = build_lumi_map(lumi_opts);
     const auto xsec_t0 = stage_start("cross sections");
     if (!compute_cross_sections(csv_path.string(), lumi)) return false;
