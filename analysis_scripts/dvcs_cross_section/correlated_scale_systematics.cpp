@@ -215,6 +215,12 @@ static std::string current_col(const std::string& period) {
 struct RatioPoint {
     std::string period;
     double theta=0.0;
+    double xB=std::numeric_limits<double>::quiet_NaN();
+    double Q2=std::numeric_limits<double>::quiet_NaN();
+    double t_abs=std::numeric_limits<double>::quiet_NaN();
+    double phi=std::numeric_limits<double>::quiet_NaN();
+    double e_theta=std::numeric_limits<double>::quiet_NaN();
+    double g_theta=std::numeric_limits<double>::quiet_NaN();
     double ratio=0.0;
     double ratio_stat=0.0;
     double current_frac=0.0;
@@ -261,6 +267,13 @@ static std::vector<RatioPoint> build_ratio_points(const Csv& c) {
     if(it_theta==c.index.end())
         throw std::runtime_error("missing p_theta, 10.6 GeV");
 
+    const auto ixB=c.index.find("xBavg, 10.6 GeV");
+    const auto iQ2=c.index.find("Q2avg, 10.6 GeV");
+    const auto itabs=c.index.find("t_abs_avg, 10.6 GeV");
+    const auto iphi=c.index.find("phiavg, 10.6 GeV");
+    const auto ieth=c.index.find("e_theta, 10.6 GeV");
+    const auto igth=c.index.find("g_theta, 10.6 GeV");
+
     std::vector<RatioPoint> out;
 
     for(const auto&row:c.rows){
@@ -282,6 +295,18 @@ static std::vector<RatioPoint> build_ratio_points(const Csv& c) {
             RatioPoint rp;
             rp.period=p;
             rp.theta=theta;
+            rp.xB=(ixB==c.index.end()) ? std::numeric_limits<double>::quiet_NaN()
+                                       : num(row[(size_t)ixB->second]);
+            rp.Q2=(iQ2==c.index.end()) ? std::numeric_limits<double>::quiet_NaN()
+                                       : num(row[(size_t)iQ2->second]);
+            rp.t_abs=(itabs==c.index.end()) ? std::numeric_limits<double>::quiet_NaN()
+                                            : num(row[(size_t)itabs->second]);
+            rp.phi=(iphi==c.index.end()) ? std::numeric_limits<double>::quiet_NaN()
+                                         : num(row[(size_t)iphi->second]);
+            rp.e_theta=(ieth==c.index.end()) ? std::numeric_limits<double>::quiet_NaN()
+                                             : num(row[(size_t)ieth->second]);
+            rp.g_theta=(igth==c.index.end()) ? std::numeric_limits<double>::quiet_NaN()
+                                             : num(row[(size_t)igth->second]);
             rp.ratio=v.value/ref;
             rp.ratio_stat=std::fabs(v.stat/ref);
             rp.current_frac=cf;
@@ -392,6 +417,253 @@ static std::vector<ThetaResult> build_theta_reference(
     }
 
     return out;
+}
+
+
+enum class DiagnosticVariable {
+    XB,
+    Q2,
+    TABS,
+    PHI,
+    ETHETA,
+    PTHETA,
+    GTHETA
+};
+
+static double diagnostic_value(
+    const RatioPoint& p,
+    DiagnosticVariable variable) {
+
+    switch(variable) {
+        case DiagnosticVariable::XB:     return p.xB;
+        case DiagnosticVariable::Q2:     return p.Q2;
+        case DiagnosticVariable::TABS:   return p.t_abs;
+        case DiagnosticVariable::PHI:    return p.phi;
+        case DiagnosticVariable::ETHETA: return p.e_theta;
+        case DiagnosticVariable::PTHETA: return p.theta;
+        case DiagnosticVariable::GTHETA: return p.g_theta;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+static PeriodMean weighted_period_mean_variable(
+    const std::vector<RatioPoint>& points,
+    const std::string& period,
+    DiagnosticVariable variable,
+    double lo,
+    double hi) {
+
+    double sw=0.0,swr=0.0,swf2=0.0;
+    int n=0;
+
+    for(const auto& p:points) {
+        if(p.period!=period) continue;
+        const double x=diagnostic_value(p,variable);
+        if(!std::isfinite(x) || !(x>=lo && x<hi)) continue;
+
+        const double w=1.0/(p.ratio_stat*p.ratio_stat);
+        sw+=w;
+        swr+=w*p.ratio;
+        // Current-response uncertainties are correlated calibration effects.
+        // Use the weighted RMS magnitude rather than allowing them to shrink as
+        // 1/sqrt(N) when forming this diagnostic interval.
+        swf2+=w*p.current_frac*p.current_frac;
+        ++n;
+    }
+
+    PeriodMean out;
+    out.n=n;
+    if(!(sw>0.0)||n==0) return out;
+
+    out.ratio=swr/sw;
+    out.stat=1.0/std::sqrt(sw);
+    out.current_frac=std::sqrt(std::max(0.0,swf2/sw));
+    out.ok=std::isfinite(out.ratio)&&std::isfinite(out.stat)&&
+           std::isfinite(out.current_frac);
+    return out;
+}
+
+static std::vector<ThetaResult> build_variable_reference(
+    const std::vector<RatioPoint>& points,
+    DiagnosticVariable variable,
+    double start,
+    double stop,
+    double width,
+    int min_points) {
+
+    std::vector<ThetaResult> out;
+
+    for(double lo=start;lo<stop;lo+=width) {
+        ThetaResult r;
+        r.lo=lo;
+        r.hi=std::min(stop,lo+width);
+        r.center=0.5*(r.lo+r.hi);
+
+        bool usable=true;
+        for(size_t ip=0;ip<ten6_periods().size();++ip) {
+            r.period[ip]=weighted_period_mean_variable(
+                points,ten6_periods()[ip],variable,r.lo,r.hi);
+            if(!r.period[ip].ok || r.period[ip].n<min_points) usable=false;
+        }
+        if(!usable) continue;
+
+        for(const auto& p:r.period) r.mean_scale+=p.ratio;
+        r.mean_scale/=4.0;
+        if(!std::isfinite(r.mean_scale)||std::fabs(r.mean_scale)<=0.0) continue;
+
+        double obs2=0.0;
+        double stat_var_sum=0.0;
+        double current_var_sum=0.0;
+
+        for(const auto& p:r.period) {
+            const double rel=p.ratio/r.mean_scale-1.0;
+            obs2+=rel*rel;
+            stat_var_sum+=(p.stat/r.mean_scale)*(p.stat/r.mean_scale);
+            current_var_sum+=p.current_frac*p.current_frac;
+        }
+
+        r.s_obs=std::sqrt(obs2/4.0);
+
+        constexpr double kScatterFactor=3.0/16.0;
+        r.s_stat=std::sqrt(std::max(0.0,kScatterFactor*stat_var_sum));
+        r.s_current=std::sqrt(std::max(0.0,kScatterFactor*current_var_sum));
+
+        const double residual2=
+            r.s_obs*r.s_obs-
+            r.s_stat*r.s_stat-
+            r.s_current*r.s_current;
+
+        r.s_resid=std::sqrt(std::max(0.0,residual2));
+        out.push_back(r);
+    }
+
+    return out;
+}
+
+static void draw_residual_all_variables(
+    const fs::path& path,
+    const std::vector<RatioPoint>& points,
+    int min_points) {
+
+    struct Spec {
+        DiagnosticVariable variable;
+        const char* title;
+        double start;
+        double stop;
+        double width;
+    };
+
+    // These are diagnostic display intervals only.  They do not alter the
+    // production theta_p parameterization or any analysis binning.
+    const std::array<Spec,7> specs={{
+        {DiagnosticVariable::XB,     "x_{B}",                 0.06, 0.60, 0.06},
+        {DiagnosticVariable::Q2,     "Q^{2} (GeV^{2})",       1.0,  8.2,  0.8},
+        {DiagnosticVariable::TABS,   "|t| (GeV^{2})",         0.0,  1.20, 0.15},
+        {DiagnosticVariable::PHI,    "#phi (deg)",            0.0,  360., 30.0},
+        {DiagnosticVariable::ETHETA, "#theta_{e} (deg)",      8.0,  26.0, 2.0},
+        {DiagnosticVariable::PTHETA, "#theta_{p} (deg)",      20.0, 66.0, 4.0},
+        {DiagnosticVariable::GTHETA, "#theta_{#gamma} (deg)", 2.0,  40.0, 4.0}
+    }};
+
+    TCanvas cv("c_residual_all_variables","",1500,900);
+    cv.Divide(4,2,0.002,0.002);
+
+    for(int is=0;is<7;++is) {
+        const auto ref=build_variable_reference(
+            points,
+            specs[is].variable,
+            specs[is].start,
+            specs[is].stop,
+            specs[is].width,
+            min_points);
+
+        cv.cd(is+1);
+        gPad->SetLeftMargin((is%4==0)?0.16:0.13);
+        gPad->SetRightMargin(0.035);
+        gPad->SetBottomMargin((is>=4)?0.17:0.13);
+        gPad->SetTopMargin(0.13);
+        gPad->SetTicks(1,1);
+
+        double ymax=0.0;
+        for(const auto& r:ref) ymax=std::max(ymax,r.s_resid);
+        ymax=std::max(0.03,1.25*ymax);
+
+        TH1D frame(
+            ("h_residual_diag_"+std::to_string(is)).c_str(),
+            "",
+            100,
+            specs[is].start,
+            specs[is].stop
+        );
+        frame.SetMinimum(0.0);
+        frame.SetMaximum(100.0*ymax);
+        frame.GetXaxis()->SetTitle(specs[is].title);
+        frame.GetYaxis()->SetTitle("Residual period systematic (%)");
+        frame.GetXaxis()->SetTitleSize(0.050);
+        frame.GetYaxis()->SetTitleSize(0.046);
+        frame.GetXaxis()->SetLabelSize(0.042);
+        frame.GetYaxis()->SetLabelSize(0.039);
+        frame.GetYaxis()->SetTitleOffset((is%4==0)?1.45:1.22);
+        frame.DrawCopy();
+
+        TGraph g((int)ref.size());
+        for(int i=0;i<(int)ref.size();++i) {
+            g.SetPoint(i,ref[(size_t)i].center,100.0*ref[(size_t)i].s_resid);
+        }
+        g.SetMarkerStyle(20);
+        g.SetMarkerSize(0.9);
+        g.SetMarkerColor(kBlue+1);
+        g.SetLineColor(kBlue+1);
+        g.SetLineWidth(2);
+        if(!ref.empty()) g.DrawClone("PL SAME");
+
+        TLatex lab;
+        lab.SetNDC();
+        lab.SetTextFont(42);
+        lab.SetTextSize(0.035);
+        const std::string panel=std::string("(")+char('a'+is)+")";
+        lab.DrawLatex(0.18,0.84,panel.c_str());
+    }
+
+    // Use the final empty pad for a compact statement of what the plot tests.
+    cv.cd(8);
+    gPad->SetLeftMargin(0.10);
+    gPad->SetRightMargin(0.05);
+    gPad->SetTopMargin(0.10);
+    gPad->SetBottomMargin(0.10);
+
+    TLatex info;
+    info.SetNDC();
+    info.SetTextFont(42);
+    info.SetTextSize(0.050);
+    info.DrawLatex(0.08,0.82,"Diagnostic only");
+    info.SetTextSize(0.037);
+    info.DrawLatex(0.08,0.67,"s_{resid} = #sqrt{max(0,");
+    info.DrawLatex(0.11,0.59,"s_{obs}^{2}-s_{stat}^{2}-s_{current}^{2})}");
+    info.SetTextSize(0.033);
+    info.DrawLatex(0.08,0.42,"Production assignment:");
+    info.DrawLatex(0.08,0.34,"4^{#circ} #theta_{p} intervals");
+    info.DrawLatex(0.08,0.22,"Other panels test whether");
+    info.DrawLatex(0.08,0.14,"a qualitatively different");
+    info.DrawLatex(0.08,0.06,"dependence is being missed.");
+
+    cv.cd(0);
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextAlign(22);
+    title.SetTextSize(0.021);
+    title.DrawLatex(
+        0.50,0.975,
+        "Residual run-period consistency systematic versus analysis variables"
+    );
+    title.SetTextSize(0.0155);
+    title.DrawLatex(
+        0.50,0.949,
+        "Four 10.6 GeV periods; statistical and current-calibration contributions removed"
+    );
+
+    cv.SaveAs(path.string().c_str());
 }
 
 static double interpolate_residual(
@@ -621,6 +893,153 @@ static void draw_final_kinematic_summary(
     cv.SaveAs(path.string().c_str());
 }
 
+
+static void draw_systematic_category_summary(
+    const fs::path& path,
+    const Csv& c,
+    const std::vector<double>& corr10,
+    const std::vector<double>& corrsp,
+    double norm_frac) {
+
+    struct Summary {
+        double ptp=0.0;
+        double current=0.0;
+        double residual=0.0;
+        double correlated=0.0;
+    };
+
+    auto summarize=[&](
+        const std::string& sample,
+        const std::vector<double>& corr,
+        const std::string& xscol,
+        const std::string& currentcol)->Summary {
+
+        std::vector<double> ptp,current,residual,corrv;
+        const auto ix=c.index.find(xscol);
+        const auto iptp=c.index.find("Syst. err (point-to-point total)");
+        const auto icur=c.index.find(currentcol);
+        const auto ires=c.index.find("run period residual sys frac, "+sample);
+
+        for(size_t i=0;i<c.rows.size();++i) {
+            if(i<corr.size()&&std::isfinite(corr[i]))corrv.push_back(100.0*corr[i]);
+
+            if(ix!=c.index.end()&&iptp!=c.index.end()) {
+                const TupleValue x=tuple_value(c.rows[i][ix->second]);
+                const double e=num(c.rows[i][iptp->second]);
+                if(x.ok&&std::isfinite(e)&&std::fabs(x.value)>0.0)
+                    ptp.push_back(100.0*std::fabs(e/x.value));
+            }
+
+            if(icur!=c.index.end()) {
+                const double v=num(c.rows[i][icur->second]);
+                if(std::isfinite(v))current.push_back(100.0*v);
+            }
+
+            if(ires!=c.index.end()) {
+                const double v=num(c.rows[i][ires->second]);
+                if(std::isfinite(v))residual.push_back(100.0*v);
+            }
+        }
+
+        Summary out;
+        out.ptp=quantile(ptp,.5);
+        out.current=quantile(current,.5);
+        out.residual=quantile(residual,.5);
+        out.correlated=quantile(corrv,.5);
+        return out;
+    };
+
+    const Summary a=summarize(
+        "10.6 GeV",
+        corr10,
+        "normed cross sections, ep->epg, exp, 10.6 GeV, unpol",
+        "current dependence sys frac, 10.6 GeV"
+    );
+
+    const Summary b=summarize(
+        "Sp19 Inb",
+        corrsp,
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol",
+        "current dependence sys frac, Sp19 Inb"
+    );
+
+    const std::array<std::string,5> labels={{
+        "Point-to-point",
+        "Overall norm.",
+        "Current",
+        "Period residual",
+        "Final corr. scale"
+    }};
+
+    const std::array<double,5> va={{
+        a.ptp,100.0*norm_frac,a.current,a.residual,a.correlated
+    }};
+    const std::array<double,5> vb={{
+        b.ptp,100.0*norm_frac,b.current,b.residual,b.correlated
+    }};
+
+    TCanvas cv("c_systematic_category_summary","",1100,760);
+    cv.SetLeftMargin(0.13);
+    cv.SetRightMargin(0.04);
+    cv.SetBottomMargin(0.18);
+    cv.SetTopMargin(0.15);
+    cv.SetTicks(1,1);
+
+    const double ymax=1.30*std::max(
+        *std::max_element(va.begin(),va.end()),
+        *std::max_element(vb.begin(),vb.end())
+    );
+
+    TH1D frame("h_systematic_category_summary","",5,0.5,5.5);
+    frame.SetMinimum(0.0);
+    frame.SetMaximum(std::max(5.5,ymax));
+    frame.GetYaxis()->SetTitle("Median relative uncertainty (%)");
+    frame.GetYaxis()->SetTitleSize(0.045);
+    frame.GetYaxis()->SetLabelSize(0.039);
+    frame.GetYaxis()->SetTitleOffset(1.25);
+    frame.GetXaxis()->SetLabelSize(0.038);
+    for(int i=1;i<=5;++i)
+        frame.GetXaxis()->SetBinLabel(i,labels[(size_t)i-1].c_str());
+    frame.Draw();
+
+    TGraph ga(5),gb(5);
+    for(int i=0;i<5;++i) {
+        ga.SetPoint(i,i+1-0.08,va[(size_t)i]);
+        gb.SetPoint(i,i+1+0.08,vb[(size_t)i]);
+    }
+
+    ga.SetMarkerStyle(20);
+    ga.SetMarkerSize(1.25);
+    ga.SetMarkerColor(kBlue+1);
+    gb.SetMarkerStyle(24);
+    gb.SetMarkerSize(1.25);
+    gb.SetMarkerColor(kRed+1);
+    ga.Draw("P SAME");
+    gb.Draw("P SAME");
+
+    TLegend leg(0.62,0.73,0.92,0.84);
+    leg.SetBorderSize(0);
+    leg.SetFillStyle(0);
+    leg.SetTextFont(42);
+    leg.SetTextSize(0.029);
+    leg.AddEntry(&ga,"Combined 10.6 GeV","p");
+    leg.AddEntry(&gb,"Sp19 Inb","p");
+    leg.Draw();
+
+    TLatex t;
+    t.SetNDC();
+    t.SetTextFont(42);
+    t.SetTextSize(0.031);
+    t.DrawLatex(0.13,0.955,"Summary of systematic-uncertainty categories");
+    t.SetTextSize(0.020);
+    t.DrawLatex(
+        0.13,0.915,
+        "Overall normalization is shown separately and is not included in the correlated scale"
+    );
+
+    cv.SaveAs(path.string().c_str());
+}
+
 static void write_high_level_summary(
     const fs::path& path,
     const Csv& c,
@@ -807,6 +1226,17 @@ bool correlated_scale_systematics(
         draw_final_kinematic_summary(
             cfinal,corr10,corrsp,
             fs::path(options.output_dir)/"correlated_scale_kinematic_summary.png");
+
+        draw_residual_all_variables(
+            fs::path(options.output_dir)/
+                "run_period_residual_all_variables_diagnostic.png",
+            ratio_points,
+            options.min_ratio_points_per_period);
+
+        draw_systematic_category_summary(
+            fs::path(options.output_dir)/"systematic_category_summary.png",
+            cfinal,corr10,corrsp,
+            options.uncorrelated_normalization_fraction);
 
         write_high_level_summary(
             fs::path(options.output_dir)/"systematic_category_summary.csv",
