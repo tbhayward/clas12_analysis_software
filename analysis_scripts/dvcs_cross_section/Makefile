@@ -9,7 +9,7 @@ LDFLAGS  = $(shell root-config --libs) -lMinuit2 -pthread -fopenmp
 DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp \
            python_exclusivity_runner.cpp exclusivity_cuts.cpp \
            global_cuts.cpp load_binning_scheme.cpp \
-           bin_means.cpp total_counts.cpp current_dependence.cpp current_systematics.cpp correlated_scale_systematics.cpp eppi0_normalization.cpp yield_totals.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
+           bin_means.cpp total_counts.cpp current_dependence.cpp current_systematics.cpp eppi0_normalization.cpp yield_totals.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
            bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp \
            cross_sections.cpp model_predictions.cpp overall_normalization_study.cpp \
            bin_centering_corrections.cpp models_vs_data_plots.cpp propagator_study.cpp \
@@ -35,7 +35,7 @@ NORM_SCENARIO_OBJ = $(NORM_SCENARIO_SRC:.cpp=.o)
 NORM_SCENARIO_BIN = norm_scenario_comparison
 
 # ---------- main_systematics ----------
-SYSTEMATICS_SRC = main_systematics.cpp pass1_systematics_import.cpp run_period_consistency_systematics.cpp combination_systematics.cpp sp19_inb_energy_scaling_systematics.cpp combination_point_to_point_systematics.cpp systematic_projection_plots.cpp radiative_systematic_plots.cpp bin_centering_systematic_plots.cpp model_predictions.cpp
+SYSTEMATICS_SRC = main_systematics.cpp pass1_systematics_import.cpp run_period_consistency_systematics.cpp combination_systematics.cpp correlated_scale_systematics.cpp sp19_inb_energy_scaling_systematics.cpp combination_point_to_point_systematics.cpp systematic_projection_plots.cpp radiative_systematic_plots.cpp bin_centering_systematic_plots.cpp model_predictions.cpp
 SYSTEMATICS_OBJ = $(SYSTEMATICS_SRC:.cpp=.o)
 SYSTEMATICS_BIN = main_systematics
 
