@@ -395,6 +395,11 @@ static double full_point_to_point_total_from_row(const CsvTable& table,
 struct Pass1SystValues {
     bool used = false;
     std::map<std::string, std::string> values;
+    // Fractional model-dependent uncertainties are retained separately.
+    // Frad and Fbin uncertainties are properties of the correction factors,
+    // so when they are transferred to the new cross section they must be
+    // applied fractionally rather than copied as absolute cross-section errors.
+    std::map<std::string, double> relative_values;
 };
 
 struct KinematicPoint {
@@ -478,6 +483,16 @@ static bool average_neighbor_values(const Pass1SourceRow& below,
             return false;
         }
         out.values[col] = format_double(0.5 * (lo + hi));
+    }
+    for (const auto& col : std::vector<std::string>{"Syst.err (Frad)", "Syst.err (Fbin)"}) {
+        const auto ilo = below.values.relative_values.find(col);
+        const auto ihi = above.values.relative_values.find(col);
+        if (ilo == below.values.relative_values.end() ||
+            ihi == above.values.relative_values.end() ||
+            !std::isfinite(ilo->second) || !std::isfinite(ihi->second)) {
+            return false;
+        }
+        out.relative_values[col] = 0.5 * (ilo->second + ihi->second);
     }
     out.values[pass1_systematic_total_column()] =
         format_double(quadrature_total_from_components(out.values));
@@ -618,6 +633,7 @@ static void validate_schema(const CsvTable& pass2,
     column_or_throw(pass1, "tmax", "pass-1 systematic import");
     column_or_throw(pass1, "phimin", "pass-1 systematic import");
     column_or_throw(pass1, "phimax", "pass-1 systematic import");
+    column_or_throw(pass1, "val", "pass-1 cross section used to form fractional model systematics");
 
     for (const auto& col : pass1_systematic_component_columns()) {
         column_or_throw(pass1, col, "pass-1 systematic source");
@@ -659,6 +675,15 @@ bool import_pass1_systematics(const std::string& csv_path,
             Pass1SystValues values;
             for (const auto& col : pass1_systematic_component_columns()) {
                 values.values[col] = get_cell(row, pass1, col);
+            }
+            const double pass1_xs = to_double(get_cell(row, pass1, "val"));
+            if (std::isfinite(pass1_xs) && std::fabs(pass1_xs) > 0.0) {
+                for (const auto& col : std::vector<std::string>{"Syst.err (Frad)", "Syst.err (Fbin)"}) {
+                    const double abs_unc = to_double(values.values[col]);
+                    if (std::isfinite(abs_unc) && abs_unc >= 0.0) {
+                        values.relative_values[col] = abs_unc / std::fabs(pass1_xs);
+                    }
+                }
             }
             values.values[pass1_systematic_total_column()] =
                 format_double(quadrature_total_from_components(values.values));
@@ -747,10 +772,28 @@ bool import_pass1_systematics(const std::string& csv_path,
                 }
             }
 
+            // Background and acceptance components retain their inherited absolute
+            // values here.  Frad and Fbin are model-dependent correction-factor
+            // uncertainties, so preserve the fractional uncertainty established in
+            // the model study and apply it to the present 10.6-GeV cross section.
+            double xs10_for_model_systematics = std::numeric_limits<double>::quiet_NaN();
+            {
+                const int xs10_col = column_or_throw(pass2, ten6_normed_cross_section_column(),
+                                                     "10.6-GeV cross section for model systematics");
+                parse_tuple_first(row[(size_t)xs10_col], xs10_for_model_systematics);
+            }
             for (const auto& col : pass1_systematic_destination_columns()) {
                 const int j = column_or_throw(pass2, col, "pass-2 systematic destination");
-                const auto it_value = values->values.find(col);
-                row[(size_t)j] = (it_value == values->values.end()) ? std::string() : it_value->second;
+                if ((col == "Syst.err (Frad)" || col == "Syst.err (Fbin)") &&
+                    std::isfinite(xs10_for_model_systematics) && std::fabs(xs10_for_model_systematics) > 0.0) {
+                    const auto ir = values->relative_values.find(col);
+                    row[(size_t)j] = (ir != values->relative_values.end() && std::isfinite(ir->second))
+                        ? format_double(ir->second * std::fabs(xs10_for_model_systematics))
+                        : std::string();
+                } else {
+                    const auto it_value = values->values.find(col);
+                    row[(size_t)j] = (it_value == values->values.end()) ? std::string() : it_value->second;
+                }
             }
 
             // Sp19 Inb was taken at 10.2 GeV, while the inherited pass-1
@@ -799,8 +842,11 @@ bool import_pass1_systematics(const std::string& csv_path,
                     std::fabs(xs10) > 0.0 &&
                     std::fabs(xs19) > 0.0) {
 
+                    const auto irad = values->relative_values.find("Syst.err (Frad)");
                     const double frac10 =
-                        frad_abs_10p6 / std::fabs(xs10);
+                        (irad != values->relative_values.end() && std::isfinite(irad->second))
+                        ? irad->second
+                        : frad_abs_10p6 / std::fabs(xs10);
 
                     const double frad_abs_sp19 =
                         kSp19RadiativeSystematicScale *

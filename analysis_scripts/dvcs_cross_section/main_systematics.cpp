@@ -39,6 +39,7 @@
 #include "run_period_consistency_systematics.h"
 #include "systematic_projection_plots.h"
 #include "radiative_systematic_plots.h"
+#include "bin_centering_systematic_plots.h"
 
 namespace fs = std::filesystem;
 
@@ -406,6 +407,15 @@ int main(int argc, char* argv[]) {
                 "output/systematics/analysis_note/radiative_corrections")) {
             std::cerr << "[systematics] FATAL: "
                       << "make_radiative_systematic_analysis_note_plots failed.\n";
+            return 1;
+        }
+
+        if (!make_bin_centering_systematic_analysis_note_plots(
+                pass1_systematics_path,
+                "imports/all_bin_v3.csv",
+                "output/systematics/analysis_note/bin_centering")) {
+            std::cerr << "[systematics] FATAL: "
+                      << "make_bin_centering_systematic_analysis_note_plots failed.\n";
             return 1;
         }
 
