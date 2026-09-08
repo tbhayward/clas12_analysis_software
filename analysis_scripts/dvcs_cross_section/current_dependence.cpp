@@ -11497,21 +11497,25 @@ static void write_fa18_sp19_transfer_shape_diagnostic(
         TLatex tx;
         tx.SetNDC();
         tx.SetTextFont(42);
-        tx.SetTextSize(0.040);
+        tx.SetTextSize(0.034);
         std::ostringstream ds;
         ds << "D = " << std::fixed << std::setprecision(3)
            << distances[ip];
-        tx.DrawLatex(0.18, 0.86, ds.str().c_str());
+        // Keep the distance annotation comfortably below the upper frame.
+        tx.DrawLatex(0.18, 0.79, ds.str().c_str());
 
         if (ip == 0) {
-            TLegend leg(0.50, 0.70, 0.92, 0.84);
+            TLegend leg(0.48, 0.61, 0.88, 0.76);
             leg.SetBorderSize(0);
             leg.SetFillStyle(0);
             leg.SetTextFont(42);
-            leg.SetTextSize(0.032);
+            leg.SetTextSize(0.028);
+            leg.SetMargin(0.16);
             leg.AddEntry(a, "Fa18 Inb, 50 nA", "l");
             leg.AddEntry(b, "Sp19 Inb, 50 nA", "l");
-            leg.Draw();
+            // The canvas is saved after the loop; clone the legend into the
+            // pad so it survives the local-object lifetime.
+            leg.DrawClone();
         }
     }
 
