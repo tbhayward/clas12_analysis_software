@@ -3082,9 +3082,9 @@ static void write_current_nuisance_response_csv(
     const std::string& path,
     bool use_epg_mc_current_factor_for_eppi0_bkg) {
 
-    const fs::path out_path(path);
+    const std::filesystem::path out_path(path);
     if (out_path.has_parent_path()) {
-        fs::create_directories(out_path.parent_path());
+        std::filesystem::create_directories(out_path.parent_path());
     }
 
     std::ofstream out(path);
