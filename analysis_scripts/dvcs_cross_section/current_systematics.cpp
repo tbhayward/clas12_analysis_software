@@ -724,12 +724,219 @@ bool evaluate_current_dependence_systematics(
             }
         }
 
-        // Visualize how each named correlated nuisance decomposes into a\n        // scale-like mean response and a residual kinematic-shape response.\n        // This is a diagnostic representation only; the production covariance\n        // continues to use the complete signed response vector bin-by-bin.\n        {\n            struct Point {\n                std::string nuisance;\n                double scale=0.0;\n                double shape=0.0;\n                double total=0.0;\n            };\n\n            const std::array<std::pair<std::string,const std::vector<BinResult>*>,3> targets={{\n                {"Combined 10.6 GeV",&r10},{"Fa18 Inb",&rfa},{"Sp19 Inb",&rsp}\n            }};\n\n            TCanvas cv("c_current_scale_shape","",1450,500);\n            cv.Divide(3,1,0.002,0.002);\n\n            for(int ip=0; ip<3; ++ip){\n                std::map<std::string,std::vector<double>> by;\n                for(const auto&r:*targets[ip].second){\n                    if(!r.valid) continue;\n                    for(const auto&kv:r.signed_response)\n                        by[kv.first].push_back(100.0*kv.second);\n                }\n\n                std::vector<Point> points;\n                for(const auto&kv:by){\n                    if(kv.second.empty()) continue;\n                    const double mu=std::accumulate(kv.second.begin(),kv.second.end(),0.0)/kv.second.size();\n                    double ss=0.0,tt=0.0;\n                    for(double x:kv.second){\n                        ss+=(x-mu)*(x-mu);\n                        tt+=x*x;\n                    }\n                    Point p;\n                    p.nuisance=kv.first;\n                    p.scale=std::fabs(mu);\n                    p.shape=std::sqrt(ss/kv.second.size());\n                    p.total=std::sqrt(tt/kv.second.size());\n                    points.push_back(p);\n                }\n\n                cv.cd(ip+1);\n                gPad->SetLeftMargin(.15);gPad->SetRightMargin(.045);\n                // Reserve an explicit title band above the frame.  Keep
-                // period labels in that band rather than sitting on the
-                // upper frame line.
-                gPad->SetBottomMargin(.16);
-                gPad->SetTopMargin(.19);
-                gPad->SetTicks(1,1);\n\n                double xmax=0.0,ymax=0.0;\n                for(const auto&p:points){xmax=std::max(xmax,p.scale);ymax=std::max(ymax,p.shape);}\n                xmax=std::max(0.5,1.25*xmax);\n                ymax=std::max(0.5,1.25*ymax);\n\n                TH1D frame(("h_current_scale_shape_"+std::to_string(ip)).c_str(),"",100,0,xmax);\n                frame.SetMinimum(0.0);frame.SetMaximum(ymax);\n                frame.GetXaxis()->SetTitle("Scale-like response |mean| (%)");\n                frame.GetYaxis()->SetTitle("Residual shape RMS (%)");\n                frame.GetXaxis()->SetTitleSize(.046);frame.GetYaxis()->SetTitleSize(.044);\n                frame.GetXaxis()->SetLabelSize(.040);frame.GetYaxis()->SetLabelSize(.039);\n                frame.GetYaxis()->SetTitleOffset(1.30);\n                frame.DrawCopy();\n\n                TGraph gd,gm,gt;\n                int nd=0,nm=0,nt=0;\n                for(const auto&p:points){\n                    if(p.nuisance.rfind("data:Sp19 transfer",0)==0){\n                        gt.SetPoint(nt++,p.scale,p.shape);\n                    } else if(p.nuisance.rfind("data:",0)==0){\n                        gd.SetPoint(nd++,p.scale,p.shape);\n                    } else if(p.nuisance.rfind("mc:",0)==0){\n                        gm.SetPoint(nm++,p.scale,p.shape);\n                    }\n                }\n                gd.SetMarkerStyle(20);gd.SetMarkerSize(1.0);gd.SetMarkerColor(kBlue+1);\n                gm.SetMarkerStyle(22);gm.SetMarkerSize(1.0);gm.SetMarkerColor(kGreen+2);\n                gt.SetMarkerStyle(24);gt.SetMarkerSize(1.2);gt.SetMarkerColor(kRed+1);\n                if(nd)gd.DrawClone("P SAME");\n                if(nm)gm.DrawClone("P SAME");\n                if(nt)gt.DrawClone("P SAME");\n\n                TLatex lab;lab.SetNDC();lab.SetTextFont(42);lab.SetTextSize(.037);\n                lab.DrawLatex(.18,.85,targets[ip].first.c_str());\n\n                if(ip==0){\n                    TLegend l(.48,.60,.91,.79);\n                    l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.026);\n                    l.AddEntry(&gd,"DATA calibration nuisances","p");\n                    l.AddEntry(&gm,"MC calibration nuisances","p");\n                    l.DrawClone();\n                }\n                if(ip==2 && nt){\n                    TLegend l(.43,.54,.91,.79);\n                    l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.025);\n                    l.AddEntry(&gd,"DATA calibration nuisances","p");\n                    l.AddEntry(&gm,"MC calibration nuisances","p");\n                    l.AddEntry(&gt,"Sp19 transfer nuisance","p");\n                    l.DrawClone();\n                }\n\n                // Label only the three largest nuisance directions to keep the\n                // plot readable.  Use a compact detector-region suffix.\n                std::sort(points.begin(),points.end(),[](const Point&a,const Point&b){return a.total>b.total;});\n                const int nlabel=std::min<int>(3,points.size());\n                for(int il=0;il<nlabel;++il){\n                    std::string name=points[il].nuisance;\n                    const auto pos=name.find_last_of(':');\n                    if(pos!=std::string::npos) name=name.substr(pos+1);\n                    TLatex tx;tx.SetTextFont(42);tx.SetTextSize(.025);\n                    tx.DrawLatex(points[il].scale+0.015*xmax,\n                                 points[il].shape+0.020*ymax,\n                                 name.c_str());\n                }\n            }\n\n            cv.cd(0);\n            TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextAlign(22);t.SetTextSize(.021);\n            t.DrawLatex(.50,.976,"Scale-like and kinematic-shape content of current-response nuisances");\n            cv.SaveAs((fs::path(options.output_dir)/"current_nuisance_scale_shape.png").string().c_str());\n        }\n\n        // Show the DATA-calibration, MC-calibration, and Sp19 transfer pieces
+        // Visualize how each named correlated nuisance decomposes into a
+        // scale-like mean response and a residual kinematic-shape response.
+        // This is a diagnostic representation only; the production covariance
+        // continues to use the complete signed response vector bin-by-bin.
+        {
+            struct Point {
+                std::string nuisance;
+                double scale = 0.0;
+                double shape = 0.0;
+                double total = 0.0;
+            };
+
+            const std::array<
+                std::pair<std::string, const std::vector<BinResult>*>, 3
+            > targets = {{
+                {"Combined 10.6 GeV", &r10},
+                {"Fa18 Inb", &rfa},
+                {"Sp19 Inb", &rsp}
+            }};
+
+            TCanvas cv("c_current_scale_shape", "", 1450, 500);
+            cv.Divide(3, 1, 0.002, 0.002);
+
+            for (int ip = 0; ip < 3; ++ip) {
+                std::map<std::string, std::vector<double>> by;
+
+                for (const auto& r : *targets[ip].second) {
+                    if (!r.valid) continue;
+                    for (const auto& kv : r.signed_response) {
+                        by[kv.first].push_back(100.0 * kv.second);
+                    }
+                }
+
+                std::vector<Point> points;
+                for (const auto& kv : by) {
+                    if (kv.second.empty()) continue;
+
+                    const double mu =
+                        std::accumulate(
+                            kv.second.begin(),
+                            kv.second.end(),
+                            0.0
+                        ) / kv.second.size();
+
+                    double ss = 0.0;
+                    double tt = 0.0;
+                    for (double x : kv.second) {
+                        ss += (x - mu) * (x - mu);
+                        tt += x * x;
+                    }
+
+                    Point p;
+                    p.nuisance = kv.first;
+                    p.scale = std::fabs(mu);
+                    p.shape = std::sqrt(ss / kv.second.size());
+                    p.total = std::sqrt(tt / kv.second.size());
+                    points.push_back(p);
+                }
+
+                cv.cd(ip + 1);
+                gPad->SetLeftMargin(0.15);
+                gPad->SetRightMargin(0.045);
+                gPad->SetBottomMargin(0.16);
+                // Keep an explicit top band for the period label so text never
+                // touches or clips against the upper frame.
+                gPad->SetTopMargin(0.19);
+                gPad->SetTicks(1, 1);
+
+                double xmax = 0.0;
+                double ymax = 0.0;
+                for (const auto& p : points) {
+                    xmax = std::max(xmax, p.scale);
+                    ymax = std::max(ymax, p.shape);
+                }
+                xmax = std::max(0.5, 1.25 * xmax);
+                ymax = std::max(0.5, 1.25 * ymax);
+
+                TH1D frame(
+                    ("h_current_scale_shape_" + std::to_string(ip)).c_str(),
+                    "",
+                    100,
+                    0.0,
+                    xmax
+                );
+                frame.SetMinimum(0.0);
+                frame.SetMaximum(ymax);
+                frame.GetXaxis()->SetTitle("Scale-like response |mean| (%)");
+                frame.GetYaxis()->SetTitle("Residual shape RMS (%)");
+                frame.GetXaxis()->SetTitleSize(0.046);
+                frame.GetYaxis()->SetTitleSize(0.044);
+                frame.GetXaxis()->SetLabelSize(0.040);
+                frame.GetYaxis()->SetLabelSize(0.039);
+                frame.GetYaxis()->SetTitleOffset(1.30);
+                frame.DrawCopy();
+
+                TGraph gd;
+                TGraph gm;
+                TGraph gt;
+                int nd = 0;
+                int nm = 0;
+                int nt = 0;
+
+                for (const auto& p : points) {
+                    if (p.nuisance.rfind("data:Sp19 transfer", 0) == 0) {
+                        gt.SetPoint(nt++, p.scale, p.shape);
+                    } else if (p.nuisance.rfind("data:", 0) == 0) {
+                        gd.SetPoint(nd++, p.scale, p.shape);
+                    } else if (p.nuisance.rfind("mc:", 0) == 0) {
+                        gm.SetPoint(nm++, p.scale, p.shape);
+                    }
+                }
+
+                gd.SetMarkerStyle(20);
+                gd.SetMarkerSize(1.0);
+                gd.SetMarkerColor(kBlue + 1);
+
+                gm.SetMarkerStyle(22);
+                gm.SetMarkerSize(1.0);
+                gm.SetMarkerColor(kGreen + 2);
+
+                gt.SetMarkerStyle(24);
+                gt.SetMarkerSize(1.2);
+                gt.SetMarkerColor(kRed + 1);
+
+                if (nd) gd.DrawClone("P SAME");
+                if (nm) gm.DrawClone("P SAME");
+                if (nt) gt.DrawClone("P SAME");
+
+                TLatex lab;
+                lab.SetNDC();
+                lab.SetTextFont(42);
+                lab.SetTextSize(0.035);
+                lab.DrawLatex(0.18, 0.865, targets[ip].first.c_str());
+
+                if (ip == 0) {
+                    TLegend l(0.48, 0.60, 0.91, 0.79);
+                    l.SetBorderSize(0);
+                    l.SetFillStyle(0);
+                    l.SetTextFont(42);
+                    l.SetTextSize(0.026);
+                    l.AddEntry(&gd, "DATA calibration nuisances", "p");
+                    l.AddEntry(&gm, "MC calibration nuisances", "p");
+                    l.DrawClone();
+                }
+
+                if (ip == 2 && nt) {
+                    TLegend l(0.43, 0.54, 0.91, 0.79);
+                    l.SetBorderSize(0);
+                    l.SetFillStyle(0);
+                    l.SetTextFont(42);
+                    l.SetTextSize(0.025);
+                    l.AddEntry(&gd, "DATA calibration nuisances", "p");
+                    l.AddEntry(&gm, "MC calibration nuisances", "p");
+                    l.AddEntry(&gt, "Sp19 transfer nuisance", "p");
+                    l.DrawClone();
+                }
+
+                // Label only the three largest nuisance directions so the
+                // diagnostic remains readable.
+                std::sort(
+                    points.begin(),
+                    points.end(),
+                    [](const Point& a, const Point& b) {
+                        return a.total > b.total;
+                    }
+                );
+
+                const int nlabel =
+                    std::min<int>(3, static_cast<int>(points.size()));
+
+                for (int il = 0; il < nlabel; ++il) {
+                    std::string name = points[il].nuisance;
+                    const auto pos = name.find_last_of(':');
+                    if (pos != std::string::npos) {
+                        name = name.substr(pos + 1);
+                    }
+
+                    TLatex tx;
+                    tx.SetTextFont(42);
+                    tx.SetTextSize(0.025);
+                    tx.DrawLatex(
+                        points[il].scale + 0.015 * xmax,
+                        points[il].shape + 0.020 * ymax,
+                        name.c_str()
+                    );
+                }
+            }
+
+            cv.cd(0);
+            TLatex t;
+            t.SetNDC();
+            t.SetTextFont(42);
+            t.SetTextAlign(22);
+            t.SetTextSize(0.020);
+            t.DrawLatex(
+                0.50,
+                0.965,
+                "Scale-like and kinematic-shape content of current-response nuisances"
+            );
+
+            const std::string scale_shape_path =
+                (fs::path(options.output_dir) /
+                 "current_nuisance_scale_shape.png").string();
+
+            cv.SaveAs(scale_shape_path.c_str());
+
+            std::cout
+                << "[current-systematics] Wrote nuisance scale/shape diagnostic: "
+                << scale_shape_path
+                << std::endl;
+        }
+
+        // Show the DATA-calibration, MC-calibration, and Sp19 transfer pieces
         // separately.  The scalar total shown elsewhere is their quadrature.
         {
             TCanvas cv("c_current_components","",1450,470);
