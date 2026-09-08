@@ -13,7 +13,7 @@
 // versus the average proton polar angle.  The same residual detector-performance
 // envelope is applied to Sp19 at its own average proton angle.
 //
-// IMPORTANT: the 4.76% target-thickness/charge normalization is written as a
+// IMPORTANT: the 2.16% charge/target-thickness normalization is written as a
 // separate, uncorrelated normalization category.  It is NOT folded into the
 // correlated-scale nuisance.
 //
@@ -1034,7 +1034,7 @@ static void draw_systematic_category_summary(
     t.SetTextSize(0.020);
     t.DrawLatex(
         0.13,0.915,
-        "Overall normalization is shown separately and is not included in the correlated scale"
+        "Overall normalization (2.16%) is shown separately and is not included in the correlated scale"
     );
 
     cv.SaveAs(path.string().c_str());

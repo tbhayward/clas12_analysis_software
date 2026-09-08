@@ -405,12 +405,12 @@ int main(int argc, char* argv[]) {
 
         // Build the authoritative final correlated-scale category only after
         // the current-systematic columns and the legacy run-period diagnostics
-        // are available.  The 4.76% target-thickness/charge normalization is
+        // are available.  The charge/target-thickness normalization is
         // kept separate and is not folded into this nuisance.
         CorrelatedScaleSystematicsOptions correlated_opts;
         correlated_opts.theta_bin_width_deg = 4.0;
         correlated_opts.min_ratio_points_per_period = 25;
-        correlated_opts.uncorrelated_normalization_fraction = 0.0476;
+        correlated_opts.uncorrelated_normalization_fraction = 0.021633307652784; // sqrt(0.012^2 + 0.018^2) = 2.16%
         correlated_opts.output_dir =
             "output/systematics/correlated_scale";
 

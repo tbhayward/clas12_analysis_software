@@ -1372,7 +1372,7 @@ static void fill_output_column(CsvTable& table,
 }
 
 static void fill_scale_systematic_columns(CsvTable& table) {
-    static constexpr double kCrossSectionTargetChargeFraction = 0.0476;
+    static constexpr double kCrossSectionTargetChargeFraction = 0.021633307652784; // 1.2% charge ⊕ 1.8% target thickness
     static constexpr double kBsaBeamPolarizationFraction = 0.0400;
 
     const std::vector<std::pair<std::string, std::string> > xs_targets = {
@@ -4107,7 +4107,7 @@ bool combination_systematics(const std::string& csv_path,
         // Legacy diagnostic bookkeeping.  These historical "total scale sys"
         // columns are retained for backward compatibility only.  The
         // authoritative pass-2 scale categories are constructed afterward by
-        // correlated_scale_systematics.cpp, which keeps the 4.76% normalization
+        // correlated_scale_systematics.cpp, which keeps the 2.16% normalization
         // separate from the current+run-period correlated nuisance.
         fill_scale_systematic_columns(table);
 

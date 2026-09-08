@@ -6,7 +6,7 @@
 struct CorrelatedScaleSystematicsOptions {
     double theta_bin_width_deg = 4.0;
     int min_ratio_points_per_period = 25;
-    double uncorrelated_normalization_fraction = 0.0476;
+    double uncorrelated_normalization_fraction = 0.021633307652784; // 1.2% charge ⊕ 1.8% target thickness
     std::string output_dir =
         "output/systematics/correlated_scale";
 };
