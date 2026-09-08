@@ -33,8 +33,9 @@ struct TotalCountsOptions {
     // produced by current_dependence.cpp before this stage.  Regional DATA
     // responses are used by default; when the calibration JSON contains an
     // optional centered polar-angle term (nominally Sp18 Out ep->epgamma
-    // versus theta_e), it is evaluated for each event and its common-gradient
-    // calibration uncertainty is propagated as a correlated nuisance.
+    // versus theta_e), it is evaluated for each event.  The ordinary event
+    // counting uncertainty contains only sum(w^2); fitted response-parameter
+    // uncertainties are written separately as correlated calibration nuisances.
     bool apply_event_level_current_correction = true;
     std::string current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
 
@@ -47,6 +48,14 @@ struct TotalCountsOptions {
     // Misidentified ep->eppi0->epg reconstructed MC follows the ep->epg
     // regional response because its reconstructed topology is epgamma.
     bool use_epg_mc_current_factor_for_eppi0_bkg = true;
+
+    // Write the signed one-standard-deviation response of each current-corrected
+    // yield to every fitted current-response calibration parameter.  These
+    // responses are consumed by current_systematics.cpp and preserve the
+    // correlated nuisance structure across physics bins.
+    bool write_current_nuisance_responses = true;
+    std::string current_nuisance_response_csv =
+        "output/current_systematics/current_yield_nuisance_responses.csv";
 };
 
 /**

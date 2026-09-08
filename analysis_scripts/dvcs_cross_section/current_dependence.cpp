@@ -11130,6 +11130,286 @@ static void finalize_current_dependence_output_package(
 }
 
 
+
+struct TransferShapeSet {
+    TH1D photon_region;
+    TH1D electron_theta;
+    TH1D photon_theta;
+    long long accepted = 0;
+
+    explicit TransferShapeSet(const std::string& tag)
+        : photon_region(("h_transfer_region_"+tag).c_str(), "", 7, -0.5, 6.5),
+          electron_theta(("h_transfer_eth_"+tag).c_str(), "", 17, 8.0, 25.0),
+          photon_theta(("h_transfer_gth_"+tag).c_str(), "", 19, 2.0, 40.0) {
+        photon_region.SetDirectory(nullptr);
+        electron_theta.SetDirectory(nullptr);
+        photon_theta.SetDirectory(nullptr);
+    }
+};
+
+static double normalized_total_variation_distance(
+    const TH1D& a,
+    const TH1D& b) {
+
+    const double ia = a.Integral();
+    const double ib = b.Integral();
+    if (!(ia > 0.0) || !(ib > 0.0) ||
+        a.GetNbinsX() != b.GetNbinsX()) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+
+    double sum = 0.0;
+    for (int i = 1; i <= a.GetNbinsX(); ++i) {
+        const double pa = a.GetBinContent(i) / ia;
+        const double pb = b.GetBinContent(i) / ib;
+        sum += std::fabs(pa - pb);
+    }
+    return 0.5 * sum;
+}
+
+static void normalize_histogram_to_unity(TH1D& h) {
+    const double integral = h.Integral();
+    if (integral > 0.0) h.Scale(1.0 / integral);
+}
+
+static bool fill_transfer_shape_set(
+    const ChannelConfig& cfg,
+    const std::map<std::string, TTree*>& trees,
+    const TopoCutMap& data_cuts,
+    const std::string& wanted_period,
+    double photon_energy_max_GeV,
+    TransferShapeSet& out) {
+
+    bool found_period = false;
+
+    for (const auto& kv : trees) {
+        const PeriodTags tags = parse_period_from_key(kv.first);
+        if (tags.display != wanted_period || kv.second == nullptr) continue;
+        found_period = true;
+
+        TTree* tree = kv.second;
+        Branches b;
+        b.bind(tree);
+
+        const Long64_t n = tree->GetEntries();
+        for (Long64_t i = 0; i < n; ++i) {
+            tree->GetEntry(i);
+
+            if (!b.has_runnum) continue;
+
+            int current_nA = 0;
+            if (!resolve_current(tags.internal, b.runnum, current_nA)) continue;
+            if (current_nA != 50) continue;
+
+            if (!passes_cone_cut(b)) continue;
+            if (!passes_global_dispatch(b, tags)) continue;
+            if (!passes_sigma_dispatch(cfg, tags, data_cuts, b)) continue;
+
+            // Compare only phase space that is kinematically available to the
+            // lower-energy Sp19 sample.
+            if (b.has_p2_p &&
+                std::isfinite(b.p2_p) &&
+                b.p2_p > photon_energy_max_GeV) {
+                continue;
+            }
+
+            if (!(b.has_detector2 && b.has_p2_phi)) continue;
+            const int region =
+                current_region_index(b.detector2, b.p2_phi, b.has_p2_phi);
+            if (region < 0 || region >= 7) continue;
+
+            out.photon_region.Fill((double)region);
+
+            if (b.has_e_theta && std::isfinite(b.e_theta)) {
+                out.electron_theta.Fill(b.e_theta * RAD2DEG);
+            }
+
+            if (b.has_p2_theta && std::isfinite(b.p2_theta)) {
+                out.photon_theta.Fill(b.p2_theta * RAD2DEG);
+            }
+
+            ++out.accepted;
+        }
+    }
+
+    return found_period && out.accepted > 0;
+}
+
+static void write_fa18_sp19_transfer_shape_diagnostic(
+    const ChannelConfig& dvcs,
+    const std::map<std::string, TTree*>& dvcsDataTrees,
+    const TopoCutMap& data_cuts,
+    const CurrentDependenceOptions& options) {
+
+    const std::string out_dir =
+        options.output_dir + "/analysis_note/current_systematics";
+    mkdir_p(out_dir);
+
+    TransferShapeSet fa18("fa18");
+    TransferShapeSet sp19("sp19");
+
+    const bool ok_fa18 = fill_transfer_shape_set(
+        dvcs, dvcsDataTrees, data_cuts, "Fa18 Inb",
+        options.sp19_transfer_photon_energy_max_GeV, fa18);
+
+    const bool ok_sp19 = fill_transfer_shape_set(
+        dvcs, dvcsDataTrees, data_cuts, "Sp19 Inb",
+        options.sp19_transfer_photon_energy_max_GeV, sp19);
+
+    if (!ok_fa18 || !ok_sp19) {
+        std::cerr
+            << "[current_dependence] WARNING: could not build Fa18/Sp19 "
+            << "50 nA transfer-shape comparison." << std::endl;
+        return;
+    }
+
+    const double d_region =
+        normalized_total_variation_distance(
+            fa18.photon_region, sp19.photon_region);
+    const double d_e_theta =
+        normalized_total_variation_distance(
+            fa18.electron_theta, sp19.electron_theta);
+    const double d_g_theta =
+        normalized_total_variation_distance(
+            fa18.photon_theta, sp19.photon_theta);
+
+    const double dmax =
+        std::max({d_region, d_e_theta, d_g_theta});
+
+    {
+        std::ofstream out(
+            out_dir + "/fa18_sp19_50nA_shape_distance.csv");
+        out << "variable,total_variation_distance\n";
+        out << "photon region," << d_region << "\n";
+        out << "electron theta," << d_e_theta << "\n";
+        out << "photon theta," << d_g_theta << "\n";
+        out << "Dmax," << dmax << "\n";
+        out << "Fa18 accepted events," << fa18.accepted << "\n";
+        out << "Sp19 accepted events," << sp19.accepted << "\n";
+        out << "photon-energy ceiling (GeV),"
+            << options.sp19_transfer_photon_energy_max_GeV << "\n";
+    }
+
+    normalize_histogram_to_unity(fa18.photon_region);
+    normalize_histogram_to_unity(sp19.photon_region);
+    normalize_histogram_to_unity(fa18.electron_theta);
+    normalize_histogram_to_unity(sp19.electron_theta);
+    normalize_histogram_to_unity(fa18.photon_theta);
+    normalize_histogram_to_unity(sp19.photon_theta);
+
+    TCanvas c("c_fa18_sp19_transfer_shape", "", 1500, 500);
+    c.Divide(3, 1, 0.002, 0.002);
+
+    std::array<TH1D*,3> hfa = {
+        &fa18.photon_region,
+        &fa18.electron_theta,
+        &fa18.photon_theta
+    };
+    std::array<TH1D*,3> hsp = {
+        &sp19.photon_region,
+        &sp19.electron_theta,
+        &sp19.photon_theta
+    };
+    std::array<std::string,3> xtitles = {
+        "Photon region",
+        "#theta_{e} (deg)",
+        "#theta_{#gamma} (deg)"
+    };
+    std::array<double,3> distances = {
+        d_region, d_e_theta, d_g_theta
+    };
+
+    for (int ip = 0; ip < 3; ++ip) {
+        c.cd(ip + 1);
+        gPad->SetLeftMargin(0.15);
+        gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.15);
+        gPad->SetTopMargin(0.13);
+        gPad->SetTicks(1,1);
+
+        TH1D* a = hfa[ip];
+        TH1D* b = hsp[ip];
+
+        const double ymax =
+            1.28 * std::max(a->GetMaximum(), b->GetMaximum());
+
+        a->SetMinimum(0.0);
+        a->SetMaximum(ymax);
+        a->SetLineColor(kBlue + 1);
+        a->SetLineWidth(3);
+        a->SetMarkerColor(kBlue + 1);
+        a->SetMarkerStyle(20);
+        a->SetMarkerSize(0.8);
+
+        b->SetLineColor(kRed + 1);
+        b->SetLineWidth(3);
+        b->SetMarkerColor(kRed + 1);
+        b->SetMarkerStyle(24);
+        b->SetMarkerSize(0.8);
+
+        a->GetXaxis()->SetTitle(xtitles[ip].c_str());
+        a->GetYaxis()->SetTitle("Normalized event fraction");
+        a->GetXaxis()->SetTitleSize(0.050);
+        a->GetYaxis()->SetTitleSize(0.048);
+        a->GetXaxis()->SetLabelSize(0.043);
+        a->GetYaxis()->SetLabelSize(0.041);
+        a->GetYaxis()->SetTitleOffset(1.35);
+
+        if (ip == 0) {
+            for (int ib = 1; ib <= 7; ++ib) {
+                a->GetXaxis()->SetBinLabel(
+                    ib, current_region_names()[ib-1].c_str());
+            }
+        }
+
+        a->Draw("HIST");
+        b->Draw("HIST SAME");
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.040);
+        std::ostringstream ds;
+        ds << "D = " << std::fixed << std::setprecision(3)
+           << distances[ip];
+        tx.DrawLatex(0.18, 0.86, ds.str().c_str());
+
+        if (ip == 0) {
+            TLegend leg(0.50, 0.70, 0.92, 0.84);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.SetTextFont(42);
+            leg.SetTextSize(0.032);
+            leg.AddEntry(a, "Fa18 Inb, 50 nA", "l");
+            leg.AddEntry(b, "Sp19 Inb, 50 nA", "l");
+            leg.Draw();
+        }
+    }
+
+    c.cd(0);
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextAlign(22);
+    title.SetTextSize(0.028);
+    title.DrawLatex(
+        0.50, 0.995,
+        "Fa18 Inb and Sp19 Inb production-current shape comparison");
+    title.SetTextSize(0.020);
+    std::ostringstream sub;
+    sub << "Normalized 50 nA data; common selection and p_{#gamma} #leq "
+        << std::fixed << std::setprecision(1)
+        << options.sp19_transfer_photon_energy_max_GeV << " GeV";
+    title.DrawLatex(0.50, 0.955, sub.str().c_str());
+
+    c.SaveAs(
+        (out_dir + "/fa18_sp19_50nA_shape_comparison.png").c_str());
+
+    std::cout
+        << "[current_dependence] Fa18->Sp19 transfer-shape Dmax = "
+        << dmax << std::endl;
+}
+
 bool update_current_dependence_factors_csv(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,
@@ -11505,6 +11785,15 @@ bool update_current_dependence_factors_csv(
                 eppi0_region_results, "ep #rightarrow ep#pi^{0}");
         }
 
+        if (options.enable_fa18_sp19_transfer_shape_diagnostic &&
+            options.use_fa18_inb_current_efficiency_for_sp19_inb) {
+            write_fa18_sp19_transfer_shape_diagnostic(
+                dvcs,
+                dvcsDataTrees,
+                data_cuts,
+                options);
+        }
+
         std::vector<PeriodResult> dvcs_results_for_csv = dvcs_results;
 
         if (options.use_nobkg_dvcs_mc_counts) {
@@ -11536,10 +11825,9 @@ bool update_current_dependence_factors_csv(
         // yield columns. This replaces the old eppi0_normalization.cpp role
         // when that stage was run with override_to_unity=true.
         //
-        // The current-factor uncertainty is propagated as statistical:
-        //
-        //   Var(Y/f) = Var(Y)/f^2 + Y^2 Var(f)/f^4.
-        //
+        // Legacy compatibility mode only.  In nominal production the
+        // response-parameter fit uncertainty is treated as a correlated
+        // calibration systematic, not as event-counting statistics.
         if (options.apply_legacy_binned_current_corrections) {
             apply_all_data_current_corrections(csv,
                                                dvcs,

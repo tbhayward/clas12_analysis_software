@@ -2330,15 +2330,12 @@ static double weighted_stat_variance(const WeightedHelCounts& h,
         if (component == 'n') return x.neg;
         return x.unpol;
     };
-    double var = comp(h.sumw2);
-    for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
-        const double d = comp(h.derivative_by_region[ir]);
-        const double s = h.parameter_stat[ir];
-        var += d * d * s * s;
-    }
-    const double da = comp(h.angular_derivative);
-    var += da * da * h.angular_parameter_stat * h.angular_parameter_stat;
-    return std::max(0.0, var);
+
+    // Event-counting statistics only.  The fitted current-response parameters
+    // are calibration quantities shared by many events and many analysis bins;
+    // their uncertainties are therefore correlated systematics, not additional
+    // Poisson/statistical variance.
+    return std::max(0.0, comp(h.sumw2));
 }
 
 static std::string fmt_weighted_triple(double value, double variance) {
@@ -2354,19 +2351,12 @@ static double weighted_total_value(const WeightedHelCounts& h) {
 }
 
 static double weighted_total_variance(const WeightedHelCounts& h) {
-    double var = h.sumw2.unpol + h.sumw2.pos + h.sumw2.neg;
-    for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
-        const HelCounts& d = h.derivative_by_region[ir];
-        const double deriv = d.unpol + d.pos + d.neg;
-        const double ps = h.parameter_stat[ir];
-        var += deriv * deriv * ps * ps;
-    }
-    const double aderiv = h.angular_derivative.unpol +
-                          h.angular_derivative.pos +
-                          h.angular_derivative.neg;
-    var += aderiv * aderiv *
-           h.angular_parameter_stat * h.angular_parameter_stat;
-    return std::max(0.0, var);
+    // Event-counting statistics only.  Current-response fit uncertainties are
+    // exported separately by write_current_nuisance_response_csv().
+    return std::max(
+        0.0,
+        h.sumw2.unpol + h.sumw2.pos + h.sumw2.neg
+    );
 }
 
 static void add_count_map(std::unordered_map<std::string, long long>& dst,
@@ -3021,6 +3011,200 @@ static void print_reconstructed_mc_survival_summary(
     }
 
     std::cout << "[total_counts][REC-MC-SURVIVAL] =====================================================\n" << std::endl;
+}
+
+
+
+static std::string csv_escape(const std::string& value) {
+    if (value.find_first_of(",\"\n\\r") == std::string::npos) {
+        return value;
+    }
+    std::string out = "\"";
+    for (char c : value) {
+        if (c == '"') out += "\"\"";
+        else out.push_back(c);
+    }
+    out += "\"";
+    return out;
+}
+
+static std::string current_nuisance_source_period(
+    const CountCollection& C,
+    const std::string& period) {
+
+    // Sp19 DATA uses the Fa18 Inb response calibration.  Give the transferred
+    // parameter the same nuisance key so its correlation with the Fa18
+    // calibration is retained explicitly.
+    if (C.work_cfg.sample_kind == SampleKind::DATA &&
+        period == "Sp19 Inb") {
+        return "Fa18 Inb";
+    }
+
+    return period;
+}
+
+static std::string current_nuisance_response_channel(
+    const CountCollection& C,
+    bool use_epg_mc_current_factor_for_eppi0_bkg) {
+
+    if (C.work_cfg.sample_kind == SampleKind::MC_REC &&
+        C.work_cfg.channel_cfg.channel == Channel::EPPI0_BKG_AS_DVCS &&
+        use_epg_mc_current_factor_for_eppi0_bkg) {
+        return "ep->epg";
+    }
+
+    return C.work_cfg.channel_cfg.csv_channel;
+}
+
+static std::string current_sample_token(const CountCollection& C) {
+    const std::string channel = C.work_cfg.channel_cfg.csv_channel;
+
+    if (C.work_cfg.sample_kind == SampleKind::DATA) {
+        if (channel == "ep->epg") return "epg_data";
+        if (channel == "ep->eppi0") return "eppi0_data";
+        return channel + "_data";
+    }
+
+    if (C.work_cfg.sample_kind == SampleKind::MC_GEN) {
+        if (channel == "ep->epg") return "epg_gen";
+        if (channel == "ep->eppi0") return "eppi0_gen";
+        return channel + "_gen";
+    }
+
+    if (channel == "ep->epg") return "epg_rec";
+    if (channel == "ep->eppi0") return "eppi0_rec";
+    if (channel == "ep->eppi0->epg") return "misid_rec";
+    return channel + "_rec";
+}
+
+static void write_current_nuisance_response_csv(
+    const std::map<std::string, CountCollection>& collections,
+    const std::string& path,
+    bool use_epg_mc_current_factor_for_eppi0_bkg) {
+
+    const fs::path out_path(path);
+    if (out_path.has_parent_path()) {
+        fs::create_directories(out_path.parent_path());
+    }
+
+    std::ofstream out(path);
+    if (!out.is_open()) {
+        fatal("[total_counts] FATAL: cannot write current nuisance response CSV: " + path);
+    }
+
+    out << "row,period,sample,nuisance,nominal_yield,delta_yield_1sigma\n";
+    out << std::setprecision(14);
+
+    for (const auto& collection_kv : collections) {
+        const CountCollection& C = collection_kv.second;
+        const std::string sample = current_sample_token(C);
+
+        // Generated MC has no current-response nuisance, but its nominal yield
+        // is needed downstream to reconstruct S/A for the systematic study.
+        if (C.work_cfg.sample_kind == SampleKind::MC_GEN) {
+            for (const auto& per_kv : C.total_by_period) {
+                const std::string& period = per_kv.first;
+                if (should_skip_csv_for_label(period)) continue;
+
+                for (const auto& row_kv : per_kv.second) {
+                    const HelCounts& h = row_kv.second;
+                    const double nominal = h.unpol + h.pos + h.neg;
+                    out << row_kv.first << ','
+                        << csv_escape(period) << ','
+                        << csv_escape(sample) << ','
+                        << csv_escape("NOMINAL") << ','
+                        << nominal << ",0\n";
+                }
+            }
+            continue;
+        }
+
+        for (const auto& per_kv : C.corrected_total_by_period) {
+            const std::string& period = per_kv.first;
+            if (should_skip_csv_for_label(period)) continue;
+
+            const std::string source_period =
+                current_nuisance_source_period(C, period);
+
+            const std::string response_channel =
+                current_nuisance_response_channel(
+                    C,
+                    use_epg_mc_current_factor_for_eppi0_bkg);
+
+            const std::string sample_kind =
+                C.work_cfg.sample_kind == SampleKind::DATA ? "data" : "mc";
+
+            for (const auto& row_kv : per_kv.second) {
+                const int row = row_kv.first;
+                const WeightedHelCounts& h = row_kv.second;
+                const double nominal = weighted_total_value(h);
+
+                // Always write one nominal record.
+                out << row << ','
+                    << csv_escape(period) << ','
+                    << csv_escape(sample) << ','
+                    << csv_escape("NOMINAL") << ','
+                    << nominal << ",0\n";
+
+                for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
+                    const HelCounts& d = h.derivative_by_region[ir];
+                    const double deriv = d.unpol + d.pos + d.neg;
+                    const double sigma_parameter = h.parameter_stat[ir];
+
+                    if (!(std::isfinite(deriv) &&
+                          std::isfinite(sigma_parameter) &&
+                          sigma_parameter > 0.0)) {
+                        continue;
+                    }
+
+                    const double delta = deriv * sigma_parameter;
+                    if (delta == 0.0) continue;
+
+                    std::ostringstream nuisance;
+                    nuisance << sample_kind << ':'
+                             << response_channel << ':'
+                             << source_period << ':'
+                             << current_region_names()[ir];
+
+                    out << row << ','
+                        << csv_escape(period) << ','
+                        << csv_escape(sample) << ','
+                        << csv_escape(nuisance.str()) << ','
+                        << nominal << ','
+                        << delta << '\n';
+                }
+
+                const double angular_derivative =
+                    h.angular_derivative.unpol +
+                    h.angular_derivative.pos +
+                    h.angular_derivative.neg;
+
+                if (C.work_cfg.sample_kind == SampleKind::DATA &&
+                    std::isfinite(angular_derivative) &&
+                    std::isfinite(h.angular_parameter_stat) &&
+                    h.angular_parameter_stat > 0.0 &&
+                    angular_derivative != 0.0) {
+
+                    const double delta =
+                        angular_derivative * h.angular_parameter_stat;
+
+                    std::ostringstream nuisance;
+                    nuisance << "data:" << response_channel << ':'
+                             << source_period << ":theta_e_gradient";
+
+                    out << row << ','
+                        << csv_escape(period) << ','
+                        << csv_escape(sample) << ','
+                        << csv_escape(nuisance.str()) << ','
+                        << nominal << ','
+                        << delta << '\n';
+                }
+            }
+        }
+    }
+
+    std::cout << "[total_counts] Wrote correlated current-response nuisance "
+              << "yield responses to " << path << std::endl;
 }
 
 static void write_collection_to_csv(CSV& csv,
@@ -4149,6 +4333,13 @@ bool update_total_counts_csv(const std::string& csv_path,
 
         print_reconstructed_mc_survival_summary(collections);
         write_reconstructed_mc_survival_csv(collections, out_root_dir);
+
+        if (options.write_current_nuisance_responses) {
+            write_current_nuisance_response_csv(
+                collections,
+                options.current_nuisance_response_csv,
+                options.use_epg_mc_current_factor_for_eppi0_bkg);
+        }
 
         for (const auto& kv : collections) {
             write_collection_to_csv(csv, kv.second);

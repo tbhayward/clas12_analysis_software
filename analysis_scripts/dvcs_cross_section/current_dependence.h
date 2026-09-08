@@ -166,6 +166,15 @@ struct CurrentDependenceOptions {
     // reconstruction modeling.
     bool enable_relative_ft_fd_photon_efficiency_diagnostic = false;
 
+    // Fa18 Inb -> Sp19 Inb transfer validation.  Only nominally selected,
+    // production-current (50 nA) ep->epgamma data are compared.  Events with a
+    // photon momentum above the Sp19 beam-energy ceiling are removed from both
+    // periods before normalized-shape comparison.  The largest total-variation
+    // distance among the detector-sensitive shapes is later used to set the
+    // conservative transfer inflation of the Sp19 DATA current uncertainty.
+    bool enable_fa18_sp19_transfer_shape_diagnostic = true;
+    double sp19_transfer_photon_energy_max_GeV = 10.2;
+
     // Calibration product consumed by total_counts.cpp. The file contains the
     // regional DATA current-response slopes, regional reconstructed-MC factors,
     // and run->current lookup used for event-level current correction.

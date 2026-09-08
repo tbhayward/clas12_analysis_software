@@ -8,15 +8,19 @@
 #include "bin_means.h"
 #include "total_counts.h"
 #include "current_dependence.h"
+#include "current_systematics.h"
 #include "eppi0_normalization.h"
 #include "pi0_contamination.h"
 #include "pi0_corrected_counts.h"
 #include "bsa.h"
 #include "radiative_corrections.h"
 #include <filesystem>
+#include <algorithm>
 #include <iostream>
 #include <map>
+#include <set>
 #include <string>
+#include <sstream>
 #include <vector>
 #include "acceptance.h"
 #include "unfolding.h"
@@ -36,8 +40,118 @@
 #include "systematics_runner.h"
 #include "cut_variation_runner.h"
 
+
+namespace {
+
+struct SystematicRunSelection {
+    bool cuts = true;
+    bool current = true;
+    bool csv_only = true;
+    bool external_studies = true;
+};
+
+static std::vector<std::string> split_tokens(const std::string& value) {
+    std::vector<std::string> out;
+    std::stringstream ss(value);
+    std::string token;
+    while(std::getline(ss,token,',')){
+        token.erase(
+            std::remove_if(token.begin(),token.end(),
+                           [](unsigned char c){return std::isspace(c);}),
+            token.end());
+        if(!token.empty()) out.push_back(token);
+    }
+    return out;
+}
+
+static SystematicRunSelection parse_systematic_selection(
+    int argc,char* argv[]) {
+
+    SystematicRunSelection sel;
+    bool explicitly_set=false;
+
+    for(int i=1;i<argc;++i){
+        const std::string arg=argv[i];
+
+        if(arg=="--skip-systematics"){
+            sel.cuts=false;
+            sel.current=false;
+            sel.csv_only=false;
+            sel.external_studies=false;
+            explicitly_set=true;
+            continue;
+        }
+
+        if(arg=="--systematics"){
+            if(i+1>=argc){
+                throw std::runtime_error(
+                    "--systematics requires a comma-separated value");
+            }
+
+            sel.cuts=false;
+            sel.current=false;
+            sel.csv_only=false;
+            sel.external_studies=false;
+            explicitly_set=true;
+
+            for(const std::string& token:split_tokens(argv[++i])){
+                if(token=="all"){
+                    sel.cuts=sel.current=sel.csv_only=sel.external_studies=true;
+                } else if(token=="none"){
+                    sel.cuts=sel.current=sel.csv_only=sel.external_studies=false;
+                } else if(token=="cuts" ||
+                          token=="exclusivity" ||
+                          token=="fiducial"){
+                    // The automatic cut runner produces exclusivity and
+                    // fiducial variations together because they share the
+                    // same cut-dependent extraction machinery.
+                    sel.cuts=true;
+                } else if(token=="current"){
+                    sel.current=true;
+                } else if(token=="csv" || token=="post"){
+                    sel.csv_only=true;
+                } else if(token=="external"){
+                    sel.external_studies=true;
+                } else {
+                    throw std::runtime_error(
+                        "unknown --systematics token: "+token);
+                }
+            }
+        }
+    }
+
+    if(!explicitly_set){
+        // Preserve the historical/default behavior: run everything.
+        sel=SystematicRunSelection{};
+    }
+
+    return sel;
+}
+
+} // namespace
+
 int main(int argc, char* argv[]) {
+    SystematicRunSelection systematic_selection;
+    try {
+        systematic_selection = parse_systematic_selection(argc, argv);
+    } catch (const std::exception& e) {
+        std::cerr << "[main] FATAL: " << e.what() << "\n";
+        std::cerr << "Usage examples:\n"
+                  << "  ./dvcs_analysis\n"
+                  << "  ./dvcs_analysis --systematics current\n"
+                  << "  ./dvcs_analysis --systematics cuts,current\n"
+                  << "  ./dvcs_analysis --systematics csv\n"
+                  << "  ./dvcs_analysis --skip-systematics\n";
+        return 1;
+    }
+
     std::cout << "Starting DVCS analysis..." << std::endl;
+    std::cout << "[main] Systematics selection:"
+              << " cuts=" << systematic_selection.cuts
+              << " current=" << systematic_selection.current
+              << " csv=" << systematic_selection.csv_only
+              << " external=" << systematic_selection.external_studies
+              << std::endl;
 
     // Create necessary output directories
     makeOutputDirs();
@@ -215,6 +329,8 @@ int main(int argc, char* argv[]) {
         current_opts.enable_eppi0_region_theta_current_diagnostic = false;
         current_opts.enable_exploratory_kinematic_current_diagnostic = false;
         current_opts.enable_relative_ft_fd_photon_efficiency_diagnostic = false;
+        current_opts.enable_fa18_sp19_transfer_shape_diagnostic = true;
+        current_opts.sp19_transfer_photon_energy_max_GeV = 10.2;
         current_opts.finalized_production_mode = true;
         current_opts.clean_output_dir_before_run = true;
 
@@ -268,7 +384,11 @@ int main(int argc, char* argv[]) {
         total_count_opts.apply_event_level_current_correction = true;
         total_count_opts.current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
         total_count_opts.require_sp18_out_epg_e_theta_current_model = true;
-        total_count_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
+        total_count_opts.use_epg_mc_current_factor_for_eppi0_bkg =
+            use_epg_mc_current_factor_for_eppi0_bkg;
+        total_count_opts.write_current_nuisance_responses = true;
+        total_count_opts.current_nuisance_response_csv =
+            "output/current_systematics/current_yield_nuisance_responses.csv";
 
         if (!update_total_counts_csv(csv_main, dataTrees, eppi0DataTrees,
             genMcTrees, recMcTrees,
@@ -723,12 +843,40 @@ int main(int argc, char* argv[]) {
         }
     }
 
+
+    // --------- Current-dependent efficiency systematic ----------
+    //
+    // Fast post-processing of the signed calibration-nuisance responses written
+    // by total_counts.cpp.  This does not rerun event loops.
+    if (systematic_selection.current) {
+        CurrentSystematicsOptions current_syst_opts;
+        current_syst_opts.nuisance_response_csv =
+            "output/current_systematics/current_yield_nuisance_responses.csv";
+        current_syst_opts.transfer_shape_csv =
+            "output/dvcs_current_dependence/analysis_note/current_systematics/"
+            "fa18_sp19_50nA_shape_distance.csv";
+        current_syst_opts.output_dir =
+            "output/current_systematics/analysis_note";
+        current_syst_opts.write_csv_columns = true;
+
+        if (!evaluate_current_dependence_systematics(
+                "output/csvs/dvcs_pass2_analysis.csv",
+                current_syst_opts)) {
+            std::cerr
+                << "[main] ERROR: current-dependence systematic failed.\n";
+            return 1;
+        }
+    } else {
+        std::cout
+            << "[main] Skipping current-dependence systematic by request.\n";
+    }
+
     // --------- Automatic exclusivity/fiducial cut point-to-point systematics ----------
     // One top-level switch controls all four nonnominal selections. The runner
     // clones the completed nominal CSV, recomputes only the cut-dependent chain,
     // applies Barlow B >= 1, writes raw/final absolute uncertainties in nb/GeV^4,
     // and produces bin-by-bin diagnostic canvases.
-    {
+    if (systematic_selection.cuts) {
         AutomaticCutVariationOptions cut_variation_opts;
         cut_variation_opts.enabled = true;
         cut_variation_opts.make_exclusivity_extraction_plots = false;
@@ -752,12 +900,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    else {
+        std::cout
+            << "[main] Skipping automatic exclusivity/fiducial variations by request.\n";
+    }
+
     // --------- CSV-only systematic uncertainties ----------
     // Run this after all nominal and cut-variation columns have been written,
     // but before any external study reads the analysis CSV. This guarantees
     // that the legacy/integrated scripts use systematics produced from the
     // current analysis configuration rather than columns left by an older run.
-    {
+    if (systematic_selection.csv_only) {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
         SystematicsRunnerOptions systematics_opts;
@@ -771,8 +924,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    else {
+        std::cout
+            << "[main] Skipping CSV-only systematics by request.\n";
+    }
+
     // --------- External integrated and legacy cross-section studies ----------
-    {
+    if (systematic_selection.external_studies) {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
         ExternalScriptOptions external_opts;
@@ -787,6 +945,11 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] FATAL: external cross-section scripts failed.\n";
             return 1;
         }
+    }
+
+    else {
+        std::cout
+            << "[main] Skipping external integrated studies by request.\n";
     }
 
     std::cout << "All done." << std::endl;
