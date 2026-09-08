@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "combination_systematics.h"
+#include "correlated_scale_systematics.h"
 #include "pass1_systematics_import.h"
 #include "combination_point_to_point_systematics.h"
 #include "sp19_inb_energy_scaling_systematics.h"
@@ -399,6 +400,23 @@ int main(int argc, char* argv[]) {
 
         if (!combination_systematics(csv_main, "output/systematics")) {
             std::cerr << "[systematics] FATAL: combination_systematics failed.\n";
+            return 1;
+        }
+
+        // Build the authoritative final correlated-scale category only after
+        // the current-systematic columns and the legacy run-period diagnostics
+        // are available.  The 4.76% target-thickness/charge normalization is
+        // kept separate and is not folded into this nuisance.
+        CorrelatedScaleSystematicsOptions correlated_opts;
+        correlated_opts.theta_bin_width_deg = 4.0;
+        correlated_opts.min_ratio_points_per_period = 25;
+        correlated_opts.uncorrelated_normalization_fraction = 0.0476;
+        correlated_opts.output_dir =
+            "output/systematics/correlated_scale";
+
+        if (!correlated_scale_systematics(csv_main, correlated_opts)) {
+            std::cerr
+                << "[systematics] FATAL: correlated_scale_systematics failed.\n";
             return 1;
         }
 

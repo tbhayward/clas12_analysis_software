@@ -4104,9 +4104,11 @@ bool combination_systematics(const std::string& csv_path,
         make_fa18_inb_sp19_inb_direct_diagnostic(table,
                                                  out_dir);
 
-        // Populate the independent normalization-scale components and the final
-        // scale totals only after the theta_p-dependent combination columns have
-        // received their final row-by-row values.
+        // Legacy diagnostic bookkeeping.  These historical "total scale sys"
+        // columns are retained for backward compatibility only.  The
+        // authoritative pass-2 scale categories are constructed afterward by
+        // correlated_scale_systematics.cpp, which keeps the 4.76% normalization
+        // separate from the current+run-period correlated nuisance.
         fill_scale_systematic_columns(table);
 
         write_csv_or_throw(csv_path, table);
@@ -4115,6 +4117,10 @@ bool combination_systematics(const std::string& csv_path,
                   << summary_csv << "\n";
         std::cout << "[combination-systematics] Updated CSV: "
                   << csv_path << "\n";
+        std::cout
+            << "[combination-systematics] NOTE: legacy 'combination sys' and "
+            << "'total scale sys' columns are diagnostics; final correlated "
+            << "scale columns are written by correlated_scale_systematics.\n";
 
         return true;
     } catch (const std::exception& e) {
