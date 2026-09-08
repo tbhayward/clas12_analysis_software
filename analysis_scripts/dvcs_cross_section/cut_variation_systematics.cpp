@@ -12,6 +12,7 @@
 #include <TAxis.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -53,6 +54,8 @@ struct DiagnosticRow {
     double q2_max = 0.0;
     double t_min = 0.0;
     double t_max = 0.0;
+    double phi_min = 0.0;
+    double phi_max = 0.0;
     double phi = 0.0;
 
     Triple nominal;
@@ -744,11 +747,11 @@ void make_analysis_note_plots(const std::vector<DiagnosticRow>& rows,
             g_loose.Draw("PZ SAME");
             g_tight.Draw("PZ SAME");
 
-            TLegend leg(0.56, 0.69, 0.94, 0.84);
+            TLegend leg(0.53, 0.64, 0.92, 0.81);
             leg.SetBorderSize(0);
             leg.SetFillStyle(0);
             leg.SetTextFont(42);
-            leg.SetTextSize(0.028);
+            leg.SetTextSize(0.026);
             leg.AddEntry(&g_nom,
                          "Nominal selection (95% containment)", "pe");
             leg.AddEntry(&g_loose,
@@ -862,6 +865,147 @@ void make_analysis_note_plots(const std::vector<DiagnosticRow>& rows,
 
     std::cout << "[cut-systematics] Wrote exclusivity analysis-note outputs to "
               << outdir << '\n';
+}
+
+
+void make_cut_kinematic_summary(const std::vector<DiagnosticRow>& rows,
+                                const std::string& outdir,
+                                bool fiducial) {
+    struct AxisSpec {
+        const char* title;
+        double DiagnosticRow::*lo;
+        double DiagnosticRow::*hi;
+    };
+    const std::array<AxisSpec,4> specs = {{
+        {"x_{B}", &DiagnosticRow::xb_min, &DiagnosticRow::xb_max},
+        {"Q^{2} (GeV^{2})", &DiagnosticRow::q2_min, &DiagnosticRow::q2_max},
+        {"|t| (GeV^{2})", &DiagnosticRow::t_min, &DiagnosticRow::t_max},
+        {"#phi (deg)", &DiagnosticRow::phi_min, &DiagnosticRow::phi_max}
+    }};
+
+    const std::string stem = fiducial ? "fiducial" : "exclusivity";
+    const std::string what = fiducial ? "fiducial-selection" : "exclusivity-selection";
+
+    TCanvas c(("c_" + stem + "_kinematic_summary").c_str(), "", 1450, 1050);
+    c.Divide(2,2,0.002,0.002);
+
+    for (int ia=0; ia<4; ++ia) {
+        c.cd(ia+1);
+        gPad->SetLeftMargin((ia%2==0) ? 0.14 : 0.12);
+        gPad->SetRightMargin(0.035);
+        gPad->SetBottomMargin((ia>=2) ? 0.15 : 0.12);
+        gPad->SetTopMargin(0.10);
+        gPad->SetTicks(1,1);
+
+        struct Bucket { double lo=0, hi=0; std::vector<double> values; };
+        std::map<std::pair<double,double>,Bucket> buckets;
+
+        for (const auto& r : rows) {
+            if (!r.nominal.ok || std::fabs(r.nominal.value)<=1e-30) continue;
+            const double lo = r.*(specs[ia].lo);
+            const double hi = r.*(specs[ia].hi);
+            if (!std::isfinite(lo) || !std::isfinite(hi) || !(hi>lo)) continue;
+            auto& b = buckets[{lo,hi}]; b.lo=lo; b.hi=hi;
+            const double u = fiducial ? r.fid_final_abs : r.excl_final_abs;
+            b.values.push_back(100.0*u/std::fabs(r.nominal.value));
+        }
+
+        TGraphAsymmErrors g;
+        int ip=0; double xmin=INFINITY, xmax=-INFINITY, ymax=0;
+        for (const auto& kv : buckets) {
+            const auto& b=kv.second; if (b.values.empty()) continue;
+            const double x=.5*(b.lo+b.hi), ex=.5*(b.hi-b.lo);
+            const double med=quantile(b.values,.50), p16=quantile(b.values,.16), p84=quantile(b.values,.84);
+            g.SetPoint(ip,x,med); g.SetPointError(ip,ex,ex,med-p16,p84-med); ++ip;
+            xmin=std::min(xmin,b.lo); xmax=std::max(xmax,b.hi); ymax=std::max(ymax,p84);
+        }
+        if (!(xmax>xmin)) { xmin=0; xmax=1; }
+
+        TH1D frame(("h_"+stem+"_kinematic_"+std::to_string(ia)).c_str(),"",100,xmin,xmax);
+        frame.SetMinimum(0); frame.SetMaximum(std::max(3.0,1.18*ymax));
+        frame.GetXaxis()->SetTitle(specs[ia].title);
+        frame.GetYaxis()->SetTitle("Systematic uncertainty (%)");
+        frame.GetXaxis()->SetTitleSize(.050); frame.GetYaxis()->SetTitleSize(.048);
+        frame.GetXaxis()->SetLabelSize(.043); frame.GetYaxis()->SetLabelSize(.042);
+        frame.GetXaxis()->SetTitleOffset(1.08); frame.GetYaxis()->SetTitleOffset(1.16);
+        frame.Draw();
+
+        g.SetMarkerStyle(20); g.SetMarkerSize(.95); g.SetMarkerColor(kBlue+1); g.SetLineColor(kBlue+1); g.SetLineWidth(2);
+        g.Draw("PZ SAME");
+
+        TLatex p; p.SetNDC(); p.SetTextFont(42); p.SetTextSize(.042);
+        const std::string lab=std::string("(")+char('a'+ia)+")"; p.DrawLatex(.16,.92,lab.c_str());
+    }
+
+    c.cd(0);
+    TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextAlign(22); t.SetTextSize(.024);
+    const std::string title="Kinematic dependence of the "+what+" systematic";
+    t.DrawLatex(.50,.992,title.c_str());
+    t.SetTextSize(.018);
+    t.DrawLatex(.50,.965,"Points: median in each kinematic interval; bars: central 68% bin-to-bin range");
+    c.SaveAs((fs::path(outdir)/(stem+"_systematic_kinematic_summary.png")).string().c_str());
+}
+
+void make_fiducial_analysis_note_plots(const std::vector<DiagnosticRow>& rows,
+                                       const std::string& outdir) {
+    fs::create_directories(outdir);
+    std::vector<double> raw, fin;
+    for (const auto& r:rows) {
+        if (!r.nominal.ok || std::fabs(r.nominal.value)<=1e-30) continue;
+        raw.push_back(100.0*r.fid_raw_abs/std::fabs(r.nominal.value));
+        fin.push_back(100.0*r.fid_final_abs/std::fabs(r.nominal.value));
+    }
+    if (fin.empty()) return;
+
+    { // summary CSV
+        std::ofstream o(fs::path(outdir)/"fiducial_systematic_summary.csv");
+        o<<"quantity,value\n";
+        o<<"populated bins,"<<fin.size()<<"\n";
+        o<<"mean final relative systematic (%),"<<mean_value(fin)<<"\n";
+        o<<"median final relative systematic (%),"<<quantile(fin,.50)<<"\n";
+        o<<"16th percentile final relative systematic (%),"<<quantile(fin,.16)<<"\n";
+        o<<"84th percentile final relative systematic (%),"<<quantile(fin,.84)<<"\n";
+        o<<"95th percentile final relative systematic (%),"<<quantile(fin,.95)<<"\n";
+    }
+
+    { // distribution
+        const double xmax=std::max(5.0,std::min(100.0,std::ceil(std::max(quantile(raw,.99),quantile(fin,.99))+2.0)));
+        TH1D hr("h_fid_note_raw","",40,0,xmax), hf("h_fid_note_final","",40,0,xmax);
+        for(double v:raw) if(v>=0&&v<xmax) hr.Fill(v);
+        for(double v:fin) if(v>=0&&v<xmax) hf.Fill(v);
+        if(hr.Integral()>0)hr.Scale(1/hr.Integral()); if(hf.Integral()>0)hf.Scale(1/hf.Integral());
+        TCanvas c("c_fid_note_dist","",1080,760); style_note_canvas(c,.13);
+        hr.SetLineColor(kGray+2);hr.SetLineWidth(2);hr.SetLineStyle(2);hr.SetFillStyle(0);
+        hf.SetLineColor(kBlue+1);hf.SetLineWidth(3);hf.SetFillStyle(0);hf.SetMaximum(1.25*std::max(hr.GetMaximum(),hf.GetMaximum()));
+        hf.GetXaxis()->SetTitle("Relative fiducial-selection systematic (%)"); hf.GetYaxis()->SetTitle("Fraction of populated bins");
+        style_note_axes(hf.GetXaxis(),hf.GetYaxis()); hf.Draw("HIST"); hr.Draw("HIST SAME");
+        TLegend l(.55,.72,.94,.86);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.028);
+        l.AddEntry(&hr,"Before statistical-consistency filtering","l");l.AddEntry(&hf,"Final assigned uncertainty","l");l.Draw();
+        draw_note_title("Distribution of the fiducial-selection systematic");
+        c.SaveAs((fs::path(outdir)/"fiducial_systematic_distribution.png").string().c_str());
+    }
+
+    make_cut_kinematic_summary(rows,outdir,true);
+
+    { // representative cross sections vs phi
+        struct Key{double x0,x1,q0,q1,t0,t1;bool operator<(const Key&o)const{return std::tie(x0,x1,q0,q1,t0,t1)<std::tie(o.x0,o.x1,o.q0,o.q1,o.t0,o.t1);}};
+        std::map<Key,std::vector<const DiagnosticRow*>> cells;
+        for(const auto&r:rows)if(r.nominal.ok&&r.fid_loose.ok&&r.fid_tight.ok)cells[{r.xb_min,r.xb_max,r.q2_min,r.q2_max,r.t_min,r.t_max}].push_back(&r);
+        const double tx=.5*(.204+.268),tq=.5*(2.510+3.295),tt=.5*(.250+.400);
+        auto best=cells.end();double bs=INFINITY;
+        for(auto it=cells.begin();it!=cells.end();++it){if(it->second.size()<6)continue;const auto&k=it->first;double s=pow((.5*(k.x0+k.x1)-tx)/.08,2)+pow((.5*(k.q0+k.q1)-tq)/1.0,2)+pow((.5*(k.t0+k.t1)-tt)/.25,2);if(s<bs){bs=s;best=it;}}
+        if(best!=cells.end()){
+            auto v=best->second;std::sort(v.begin(),v.end(),[](auto*a,auto*b){return a->phi<b->phi;});
+            TGraphErrors gn,gl,gt;double ymin=INFINITY,ymax=-INFINITY;int i=0;
+            for(auto*r:v){gn.SetPoint(i,r->phi,r->nominal.value);gn.SetPointError(i,0,r->nominal.stat);gl.SetPoint(i,r->phi,r->fid_loose.value);gl.SetPointError(i,0,r->fid_loose.stat);gt.SetPoint(i,r->phi,r->fid_tight.value);gt.SetPointError(i,0,r->fid_tight.stat);ymin=std::min({ymin,r->nominal.value,r->fid_loose.value,r->fid_tight.value});ymax=std::max({ymax,r->nominal.value,r->fid_loose.value,r->fid_tight.value});++i;}
+            const double span=std::max(1e-12,ymax-ymin);TCanvas c("c_fid_note_phi","",1080,800);style_note_canvas(c,.20);
+            TH1D fr("h_fid_note_phi_frame","",100,0,360);fr.SetMinimum(std::max(0.0,ymin-.15*span));fr.SetMaximum(ymax+.34*span);fr.GetXaxis()->SetTitle("#phi (deg)");fr.GetYaxis()->SetTitle("Cross section [nb/(GeV^{4} deg)]");style_note_axes(fr.GetXaxis(),fr.GetYaxis());fr.Draw();
+            gn.SetMarkerStyle(20);gn.SetMarkerColor(kBlack);gn.SetLineColor(kBlack);gl.SetMarkerStyle(24);gl.SetMarkerColor(kBlue+1);gl.SetLineColor(kBlue+1);gt.SetMarkerStyle(25);gt.SetMarkerColor(kRed+1);gt.SetLineColor(kRed+1);gn.Draw("PZ SAME");gl.Draw("PZ SAME");gt.Draw("PZ SAME");
+            TLegend l(.53,.66,.92,.82);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.026);l.AddEntry(&gn,"Nominal fiducial selection","pe");l.AddEntry(&gl,"Loose variation (#pm2^{#circ} outward)","pe");l.AddEntry(&gt,"Tight variation (#pm2^{#circ} inward)","pe");l.Draw();
+            const auto&k=best->first;const std::string sub=kinematic_subtitle(k.x0,k.x1,k.q0,k.q1,k.t0,k.t1);draw_note_title("Representative effect of the fiducial-selection variation",sub.c_str());
+            c.SaveAs((fs::path(outdir)/"fiducial_variation_phi_example.png").string().c_str());
+        }
+    }
 }
 
 void write_diagnostics(const std::vector<DiagnosticRow>& rows, const std::string& path) {
@@ -1087,7 +1231,10 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
         const int c_qhi = col_optional("Q2max");
         const int c_tlo = col_optional("t_abs_min");
         const int c_thi = col_optional("t_abs_max");
-        const int c_phi = col_optional("phiavg");
+        const int c_plo = col_optional("phimin");
+        const int c_phi_hi = col_optional("phimax");
+        int c_phi = col_optional("phiavg, 10.6 GeV");
+        if (c_phi < 0) c_phi = col_optional("phiavg");
 
         std::vector<DiagnosticRow> diagnostics;
         diagnostics.reserve(nominal.rows.size());
@@ -1109,7 +1256,10 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
             r.q2_max = c_qhi >= 0 ? to_double(row[c_qhi]) : 0.0;
             r.t_min = c_tlo >= 0 ? to_double(row[c_tlo]) : 0.0;
             r.t_max = c_thi >= 0 ? to_double(row[c_thi]) : 0.0;
-            r.phi = c_phi >= 0 ? to_double(row[c_phi]) : 0.0;
+            r.phi_min = c_plo >= 0 ? to_double(row[c_plo]) : 0.0;
+            r.phi_max = c_phi_hi >= 0 ? to_double(row[c_phi_hi]) : 0.0;
+            r.phi = c_phi >= 0 ? to_double(row[c_phi]) : 0.5*(r.phi_min+r.phi_max);
+            if (!std::isfinite(r.phi)) r.phi = 0.5*(r.phi_min+r.phi_max);
 
             r.nominal = parse_triple(row[c_nom]);
             r.excl_loose = parse_triple(ex_loose.rows[a->second][c_exl]);
@@ -1187,10 +1337,14 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
             make_plots(diagnostics, (fs::path(options.output_dir)/"plots").string());
         }
         if (options.make_analysis_note_plots) {
-            make_analysis_note_plots(
-                diagnostics,
-                (fs::path(options.output_dir) /
-                 "analysis_note/exclusivity_selection").string());
+            const std::string excl_note_dir =
+                (fs::path(options.output_dir) / "analysis_note/exclusivity_selection").string();
+            const std::string fid_note_dir =
+                (fs::path(options.output_dir) / "analysis_note/fiducial_selection").string();
+
+            make_analysis_note_plots(diagnostics, excl_note_dir);
+            make_cut_kinematic_summary(diagnostics, excl_note_dir, false);
+            make_fiducial_analysis_note_plots(diagnostics, fid_note_dir);
         }
 
         const auto excl_loose_only_count = std::count_if(

@@ -10,6 +10,7 @@
 #include <TLatex.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cctype>
 #include <cstdlib>
@@ -501,6 +502,69 @@ bool make_radiative_systematic_analysis_note_plots(
             );
         }
 
+        // -------------------------------------------------------------
+        // 2x2 kinematic summary for the analysis note. The existing xB-only
+        // figure is retained so the current document continues to compile.
+        // -------------------------------------------------------------
+        {
+            struct AxisSpec { std::string lo, hi, title; };
+            const std::array<AxisSpec,4> specs = {{
+                {"xBmin","xBmax","x_{B}"},
+                {"Q2min","Q2max","Q^{2} (GeV^{2})"},
+                {"t_abs_min","t_abs_max","|t| (GeV^{2})"},
+                {"phimin","phimax","#phi (deg)"}
+            }};
+
+            TCanvas c("c_rad_sys_kinematic_summary","",1450,1050);
+            c.Divide(2,2,0.002,0.002);
+
+            for(int ia=0; ia<4; ++ia){
+                c.cd(ia+1);
+                gPad->SetLeftMargin((ia%2==0) ? 0.14 : 0.12);
+                gPad->SetRightMargin(0.035);
+                gPad->SetBottomMargin((ia>=2) ? 0.15 : 0.12);
+                gPad->SetTopMargin(0.10);
+                gPad->SetTicks(1,1);
+
+                struct Bucket { double lo=0, hi=0; std::vector<double> ten6, sp19; };
+                std::map<std::pair<double,double>,Bucket> buckets;
+                for(const auto& row:t.rows){
+                    const double lo=cell_number(t,row,specs[ia].lo);
+                    const double hi=cell_number(t,row,specs[ia].hi);
+                    if(!std::isfinite(lo)||!std::isfinite(hi)||!(hi>lo)) continue;
+                    auto& b=buckets[{lo,hi}]; b.lo=lo; b.hi=hi;
+                    const RelPair r=relative_uncertainties(t,row);
+                    if(std::isfinite(r.ten6)) b.ten6.push_back(r.ten6);
+                    if(std::isfinite(r.sp19)) b.sp19.push_back(r.sp19);
+                }
+
+                TGraphAsymmErrors g10,g19; int i10=0,i19=0;
+                double xmin=INFINITY,xmax=-INFINITY,ymax=0;
+                for(const auto& kv:buckets){
+                    const auto& b=kv.second; const double x=.5*(b.lo+b.hi),ex=.5*(b.hi-b.lo);
+                    xmin=std::min(xmin,b.lo);xmax=std::max(xmax,b.hi);
+                    if(!b.ten6.empty()){
+                        const double m=quantile(b.ten6,.5),l=quantile(b.ten6,.16),h=quantile(b.ten6,.84);
+                        g10.SetPoint(i10,x,m);g10.SetPointError(i10,ex,ex,m-l,h-m);++i10;ymax=std::max(ymax,h);
+                    }
+                    if(!b.sp19.empty()){
+                        const double m=quantile(b.sp19,.5),l=quantile(b.sp19,.16),h=quantile(b.sp19,.84);
+                        g19.SetPoint(i19,x,m);g19.SetPointError(i19,ex,ex,m-l,h-m);++i19;ymax=std::max(ymax,h);
+                    }
+                }
+                if(!(xmax>xmin)){xmin=0;xmax=1;}
+                TH1D frame(("h_rad_sys_kinematic_"+std::to_string(ia)).c_str(),"",100,xmin,xmax);
+                frame.SetMinimum(0);frame.SetMaximum(std::max(5.0,1.18*ymax));
+                frame.GetXaxis()->SetTitle(specs[ia].title.c_str());frame.GetYaxis()->SetTitle("Radiative systematic (%)");
+                frame.GetXaxis()->SetTitleSize(.050);frame.GetYaxis()->SetTitleSize(.048);frame.GetXaxis()->SetLabelSize(.043);frame.GetYaxis()->SetLabelSize(.042);frame.GetXaxis()->SetTitleOffset(1.08);frame.GetYaxis()->SetTitleOffset(1.16);frame.Draw();
+                g10.SetMarkerStyle(20);g10.SetMarkerSize(.95);g10.SetMarkerColor(kBlue+1);g10.SetLineColor(kBlue+1);g10.SetLineWidth(2);g10.Draw("PZ SAME");
+                g19.SetMarkerStyle(24);g19.SetMarkerSize(.95);g19.SetMarkerColor(kRed+1);g19.SetLineColor(kRed+1);g19.SetLineWidth(2);if(i19>0)g19.Draw("PZ SAME");
+                TLatex p;p.SetNDC();p.SetTextFont(42);p.SetTextSize(.042);const std::string lab=std::string("(")+char('a'+ia)+")";p.DrawLatex(.16,.92,lab.c_str());
+                if(ia==0){TLegend l(.55,.69,.93,.84);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextSize(.026);l.AddEntry(&g10,"10.6 GeV","pe");if(i19>0)l.AddEntry(&g19,"Sp19 10.2 GeV","pe");l.DrawClone();}
+            }
+            c.cd(0);TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextAlign(22);t.SetTextSize(.024);t.DrawLatex(.50,.992,"Kinematic dependence of the radiative systematic");t.SetTextSize(.018);t.DrawLatex(.50,.965,"Points: median in each kinematic interval; bars: central 68% bin-to-bin range");
+            c.SaveAs((fs::path(output_dir)/"radiative_systematic_kinematic_summary.png").string().c_str());
+        }
         {
             struct P {
                 double phi=0.0;
