@@ -11131,6 +11131,42 @@ static void finalize_current_dependence_output_package(
 
 
 
+
+static const std::array<std::string, 7>& transfer_current_region_names() {
+    static const std::array<std::string, 7> names = {
+        "FT", "S1", "S2", "S3", "S4", "S5", "S6"
+    };
+    return names;
+}
+
+static int transfer_current_region_index(
+    int detector2,
+    double photon_phi_rad,
+    bool has_photon_phi) {
+
+    // FT photons form their own region.
+    if (detector2 == 0) return 0;
+
+    // Forward-detector photons are divided into the six CLAS12 sectors.
+    if (detector2 != 1 || !has_photon_phi ||
+        !std::isfinite(photon_phi_rad)) {
+        return -1;
+    }
+
+    double phi_deg = photon_phi_rad * RAD2DEG;
+    while (phi_deg < 0.0) phi_deg += 360.0;
+    while (phi_deg >= 360.0) phi_deg -= 360.0;
+
+    if (phi_deg >= 330.0 || phi_deg < 30.0) return 1;
+    if (phi_deg < 90.0)  return 2;
+    if (phi_deg < 150.0) return 3;
+    if (phi_deg < 210.0) return 4;
+    if (phi_deg < 270.0) return 5;
+    if (phi_deg < 330.0) return 6;
+
+    return -1;
+}
+
 struct TransferShapeSet {
     TH1D photon_region;
     TH1D electron_theta;
@@ -11215,7 +11251,7 @@ static bool fill_transfer_shape_set(
 
             if (!(b.has_detector2 && b.has_p2_phi)) continue;
             const int region =
-                current_region_index(b.detector2, b.p2_phi, b.has_p2_phi);
+                transfer_current_region_index(b.detector2, b.p2_phi, b.has_p2_phi);
             if (region < 0 || region >= 7) continue;
 
             out.photon_region.Fill((double)region);
@@ -11358,7 +11394,7 @@ static void write_fa18_sp19_transfer_shape_diagnostic(
         if (ip == 0) {
             for (int ib = 1; ib <= 7; ++ib) {
                 a->GetXaxis()->SetBinLabel(
-                    ib, current_region_names()[ib-1].c_str());
+                    ib, transfer_current_region_names()[ib-1].c_str());
             }
         }
 
