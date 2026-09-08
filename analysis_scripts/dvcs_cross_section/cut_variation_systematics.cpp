@@ -3,7 +3,9 @@
 #include <TCanvas.h>
 #include <TGraph.h>
 #include <TGraphErrors.h>
+#include <TGraphAsymmErrors.h>
 #include <TLegend.h>
+#include <TH1D.h>
 #include <TLatex.h>
 #include <TLine.h>
 #include <TStyle.h>
@@ -20,6 +22,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -340,6 +343,525 @@ std::string xbin_label(double lo, double hi) {
     std::ostringstream ss;
     ss << std::fixed << std::setprecision(2) << lo << " < x_{B} < " << hi;
     return ss.str();
+}
+
+
+double quantile(std::vector<double> values, double q) {
+    if (values.empty()) return std::numeric_limits<double>::quiet_NaN();
+    std::sort(values.begin(), values.end());
+    if (q <= 0.0) return values.front();
+    if (q >= 1.0) return values.back();
+
+    const double p = q * static_cast<double>(values.size() - 1);
+    const size_t i = static_cast<size_t>(std::floor(p));
+    const size_t j = static_cast<size_t>(std::ceil(p));
+    const double f = p - static_cast<double>(i);
+    return values[i] * (1.0 - f) + values[j] * f;
+}
+
+double mean_value(const std::vector<double>& values) {
+    if (values.empty()) return std::numeric_limits<double>::quiet_NaN();
+    double sum = 0.0;
+    for (double v : values) sum += v;
+    return sum / static_cast<double>(values.size());
+}
+
+void style_note_canvas(TCanvas& c, double top_margin = 0.14) {
+    c.SetLeftMargin(0.13);
+    c.SetRightMargin(0.035);
+    c.SetBottomMargin(0.13);
+    c.SetTopMargin(top_margin);
+    c.SetTicks(1, 1);
+}
+
+void style_note_axes(TAxis* x, TAxis* y) {
+    if (x) {
+        x->SetTitleFont(42);
+        x->SetLabelFont(42);
+        x->SetTitleSize(0.043);
+        x->SetLabelSize(0.037);
+        x->SetTitleOffset(1.12);
+    }
+    if (y) {
+        y->SetTitleFont(42);
+        y->SetLabelFont(42);
+        y->SetTitleSize(0.043);
+        y->SetLabelSize(0.037);
+        y->SetTitleOffset(1.24);
+    }
+}
+
+void draw_note_title(const char* title, const char* subtitle = nullptr) {
+    TLatex text;
+    text.SetNDC();
+    text.SetTextFont(42);
+    text.SetTextAlign(13);
+
+    text.SetTextSize(0.031);
+    text.DrawLatex(0.13, 0.965, title);
+
+    if (subtitle && *subtitle) {
+        text.SetTextSize(0.024);
+        text.DrawLatex(0.13, 0.925, subtitle);
+    }
+}
+
+std::string kinematic_subtitle(double xb0, double xb1,
+                               double q0, double q1,
+                               double t0, double t1) {
+    std::ostringstream ss;
+    ss << std::fixed << std::setprecision(3)
+       << xb0 << " < x_{B} < " << xb1
+       << ",  " << q0 << " < Q^{2} < " << q1 << " GeV^{2}"
+       << ",  " << t0 << " < |t| < " << t1 << " GeV^{2}";
+    return ss.str();
+}
+
+void make_analysis_note_plots(const std::vector<DiagnosticRow>& rows,
+                              const std::string& outdir) {
+    fs::create_directories(outdir);
+    gStyle->SetOptStat(0);
+
+    std::vector<double> raw_relative;
+    std::vector<double> final_relative;
+
+    for (const auto& r : rows) {
+        if (!r.nominal.ok || std::fabs(r.nominal.value) <= 1e-30) continue;
+        const double denom = std::fabs(r.nominal.value);
+        raw_relative.push_back(100.0 * r.excl_raw_abs / denom);
+        final_relative.push_back(100.0 * r.excl_final_abs / denom);
+    }
+
+    if (final_relative.empty()) {
+        std::cerr << "[cut-systematics] WARNING: no populated bins for "
+                  << "analysis-note exclusivity plots.\n";
+        return;
+    }
+
+    // ------------------------------------------------------------------
+    // Compact numerical summary used later when writing the note.
+    // ------------------------------------------------------------------
+    {
+        const std::string summary_path =
+            (fs::path(outdir) / "exclusivity_systematic_summary.csv").string();
+        std::ofstream out(summary_path);
+        if (!out) {
+            throw std::runtime_error(
+                "Could not write analysis-note summary: " + summary_path);
+        }
+
+        const auto loose_retained = std::count_if(
+            rows.begin(), rows.end(),
+            [](const DiagnosticRow& r) {
+                return r.nominal.ok && r.excl_keep_loose;
+            });
+        const auto tight_retained = std::count_if(
+            rows.begin(), rows.end(),
+            [](const DiagnosticRow& r) {
+                return r.nominal.ok && r.excl_keep_tight;
+            });
+        const auto loose_only = std::count_if(
+            rows.begin(), rows.end(),
+            [](const DiagnosticRow& r) {
+                return r.nominal.ok && r.excl_use_loose_only;
+            });
+        const auto populated = std::count_if(
+            rows.begin(), rows.end(),
+            [](const DiagnosticRow& r) { return r.nominal.ok; });
+
+        out << "quantity,value\n";
+        out << "populated bins," << populated << "\n";
+        out << "mean final relative systematic (%),"
+            << mean_value(final_relative) << "\n";
+        out << "median final relative systematic (%),"
+            << quantile(final_relative, 0.50) << "\n";
+        out << "16th percentile final relative systematic (%),"
+            << quantile(final_relative, 0.16) << "\n";
+        out << "84th percentile final relative systematic (%),"
+            << quantile(final_relative, 0.84) << "\n";
+        out << "95th percentile final relative systematic (%),"
+            << quantile(final_relative, 0.95) << "\n";
+        out << "mean raw relative systematic (%),"
+            << mean_value(raw_relative) << "\n";
+        out << "loose variation retained by Barlow," << loose_retained << "\n";
+        out << "tight variation retained by Barlow," << tight_retained << "\n";
+        out << "tight-instability loose-only bins," << loose_only << "\n";
+        out << "Barlow threshold,1.0\n";
+        out << "tight-instability threshold,0.50\n";
+        out << "nominal containment,0.95\n";
+        out << "loose containment,0.98\n";
+        out << "tight containment,0.90\n";
+    }
+
+    // ------------------------------------------------------------------
+    // 1) Distribution of relative uncertainty.
+    //    The x range is based on the populated-bin distribution so a few
+    //    exceptional tails do not compress the informative region.
+    // ------------------------------------------------------------------
+    {
+        const double x99 = std::max(
+            quantile(raw_relative, 0.99),
+            quantile(final_relative, 0.99));
+        const double xmax = std::max(5.0, std::min(100.0, std::ceil(x99 + 2.0)));
+
+        TH1D h_raw("h_excl_note_raw", "", 40, 0.0, xmax);
+        TH1D h_final("h_excl_note_final", "", 40, 0.0, xmax);
+
+        for (double v : raw_relative) {
+            if (v >= 0.0 && v < xmax) h_raw.Fill(v);
+        }
+        for (double v : final_relative) {
+            if (v >= 0.0 && v < xmax) h_final.Fill(v);
+        }
+
+        if (h_raw.Integral() > 0.0) h_raw.Scale(1.0 / h_raw.Integral());
+        if (h_final.Integral() > 0.0) h_final.Scale(1.0 / h_final.Integral());
+
+        TCanvas c("c_excl_note_distribution", "", 1080, 760);
+        style_note_canvas(c, 0.13);
+
+        h_raw.SetLineColor(kGray + 2);
+        h_raw.SetLineWidth(2);
+        h_raw.SetLineStyle(2);
+        h_raw.SetFillStyle(0);
+
+        h_final.SetLineColor(kBlue + 1);
+        h_final.SetLineWidth(3);
+        h_final.SetFillStyle(0);
+
+        h_final.SetMaximum(
+            1.25 * std::max(h_raw.GetMaximum(), h_final.GetMaximum()));
+        h_final.GetXaxis()->SetTitle("Relative exclusivity-selection systematic (%)");
+        h_final.GetYaxis()->SetTitle("Fraction of populated bins");
+        style_note_axes(h_final.GetXaxis(), h_final.GetYaxis());
+
+        h_final.Draw("HIST");
+        h_raw.Draw("HIST SAME");
+
+        TLegend leg(0.57, 0.72, 0.94, 0.86);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
+        leg.SetTextFont(42);
+        leg.SetTextSize(0.029);
+        leg.AddEntry(&h_raw,
+                     "Before statistical-consistency filtering", "l");
+        leg.AddEntry(&h_final,
+                     "Final assigned uncertainty", "l");
+        leg.Draw();
+
+        draw_note_title("Distribution of the exclusivity-selection systematic");
+
+        c.SaveAs(
+            (fs::path(outdir) /
+             "exclusivity_systematic_distribution.png").string().c_str());
+    }
+
+    // ------------------------------------------------------------------
+    // 2) xB dependence: median and central 68% spread across Q2, |t|, phi.
+    // ------------------------------------------------------------------
+    {
+        struct Bucket {
+            double lo = 0.0;
+            double hi = 0.0;
+            std::vector<double> values;
+        };
+
+        std::map<std::pair<double,double>, Bucket> buckets;
+
+        for (const auto& r : rows) {
+            if (!r.nominal.ok || std::fabs(r.nominal.value) <= 1e-30) continue;
+            auto& b = buckets[{r.xb_min, r.xb_max}];
+            b.lo = r.xb_min;
+            b.hi = r.xb_max;
+            b.values.push_back(
+                100.0 * r.excl_final_abs / std::fabs(r.nominal.value));
+        }
+
+        TGraphAsymmErrors g;
+        int ip = 0;
+        double ymax = 0.0;
+
+        for (const auto& kv : buckets) {
+            const Bucket& b = kv.second;
+            if (b.values.empty()) continue;
+
+            const double x = 0.5 * (b.lo + b.hi);
+            const double ex = 0.5 * (b.hi - b.lo);
+            const double med = quantile(b.values, 0.50);
+            const double p16 = quantile(b.values, 0.16);
+            const double p84 = quantile(b.values, 0.84);
+
+            g.SetPoint(ip, x, med);
+            g.SetPointError(ip, ex, ex, med - p16, p84 - med);
+            ymax = std::max(ymax, p84);
+            ++ip;
+        }
+
+        TCanvas c("c_excl_note_xb", "", 1080, 760);
+        style_note_canvas(c, 0.17);
+
+        TH1D frame("h_excl_note_xb_frame", "", 100, 0.04, 0.62);
+        frame.SetMinimum(0.0);
+        frame.SetMaximum(std::max(5.0, 1.20 * ymax));
+        frame.GetXaxis()->SetTitle("x_{B}");
+        frame.GetYaxis()->SetTitle("Exclusivity-selection systematic (%)");
+        style_note_axes(frame.GetXaxis(), frame.GetYaxis());
+        frame.Draw();
+
+        g.SetMarkerStyle(20);
+        g.SetMarkerSize(1.05);
+        g.SetMarkerColor(kBlue + 1);
+        g.SetLineColor(kBlue + 1);
+        g.SetLineWidth(2);
+        g.Draw("PZ SAME");
+
+        draw_note_title(
+            "Kinematic dependence of the exclusivity-selection systematic",
+            "Points: median over populated (Q^{2}, |t|, #phi) bins; bars: central 68% interval");
+
+        c.SaveAs(
+            (fs::path(outdir) /
+             "exclusivity_systematic_vs_xB.png").string().c_str());
+    }
+
+    // ------------------------------------------------------------------
+    // 3) Representative phi dependence of the final cross section under
+    //    loose / nominal / tight exclusivity selections.
+    //
+    //    Prefer the representative cell used elsewhere in the note. If it
+    //    is unavailable, choose the populated cell closest to its center.
+    // ------------------------------------------------------------------
+    {
+        struct CellKey {
+            double xb0, xb1, q0, q1, t0, t1;
+            bool operator<(const CellKey& o) const {
+                return std::tie(xb0, xb1, q0, q1, t0, t1) <
+                       std::tie(o.xb0, o.xb1, o.q0, o.q1, o.t0, o.t1);
+            }
+        };
+
+        std::map<CellKey, std::vector<const DiagnosticRow*>> cells;
+        for (const auto& r : rows) {
+            if (!r.nominal.ok || !r.excl_loose.ok || !r.excl_tight.ok) continue;
+            cells[{r.xb_min, r.xb_max, r.q2_min, r.q2_max,
+                   r.t_min, r.t_max}].push_back(&r);
+        }
+
+        const double target_x = 0.5 * (0.204 + 0.268);
+        const double target_q = 0.5 * (2.510 + 3.295);
+        const double target_t = 0.5 * (0.250 + 0.400);
+
+        auto best = cells.end();
+        double best_score = std::numeric_limits<double>::infinity();
+
+        for (auto it = cells.begin(); it != cells.end(); ++it) {
+            if (it->second.size() < 6) continue;
+            const CellKey& k = it->first;
+            const double xc = 0.5 * (k.xb0 + k.xb1);
+            const double qc = 0.5 * (k.q0 + k.q1);
+            const double tc = 0.5 * (k.t0 + k.t1);
+
+            const double score =
+                std::pow((xc - target_x) / 0.08, 2) +
+                std::pow((qc - target_q) / 1.0, 2) +
+                std::pow((tc - target_t) / 0.25, 2);
+
+            if (score < best_score) {
+                best_score = score;
+                best = it;
+            }
+        }
+
+        if (best != cells.end()) {
+            auto selected = best->second;
+            std::sort(selected.begin(), selected.end(),
+                      [](const DiagnosticRow* a, const DiagnosticRow* b) {
+                          return a->phi < b->phi;
+                      });
+
+            TGraphErrors g_nom;
+            TGraphErrors g_loose;
+            TGraphErrors g_tight;
+
+            double ymin = std::numeric_limits<double>::infinity();
+            double ymax = -std::numeric_limits<double>::infinity();
+
+            for (int i = 0; i < static_cast<int>(selected.size()); ++i) {
+                const auto* r = selected[i];
+                g_nom.SetPoint(i, r->phi, r->nominal.value);
+                g_nom.SetPointError(i, 0.0, r->nominal.stat);
+
+                g_loose.SetPoint(i, r->phi, r->excl_loose.value);
+                g_loose.SetPointError(i, 0.0, r->excl_loose.stat);
+
+                g_tight.SetPoint(i, r->phi, r->excl_tight.value);
+                g_tight.SetPointError(i, 0.0, r->excl_tight.stat);
+
+                ymin = std::min(
+                    ymin,
+                    std::min(r->nominal.value,
+                             std::min(r->excl_loose.value, r->excl_tight.value)));
+                ymax = std::max(
+                    ymax,
+                    std::max(r->nominal.value,
+                             std::max(r->excl_loose.value, r->excl_tight.value)));
+            }
+
+            const double span = std::max(1e-12, ymax - ymin);
+            const double ylo = std::max(0.0, ymin - 0.15 * span);
+            const double yhi = ymax + 0.28 * span;
+
+            TCanvas c("c_excl_note_phi", "", 1080, 780);
+            style_note_canvas(c, 0.18);
+
+            TH1D frame("h_excl_note_phi_frame", "", 100, 0.0, 360.0);
+            frame.SetMinimum(ylo);
+            frame.SetMaximum(yhi);
+            frame.GetXaxis()->SetTitle("#phi (deg)");
+            frame.GetYaxis()->SetTitle("Cross section [nb/(GeV^{4} deg)]");
+            style_note_axes(frame.GetXaxis(), frame.GetYaxis());
+            frame.Draw();
+
+            g_nom.SetMarkerStyle(20);
+            g_nom.SetMarkerSize(0.95);
+            g_nom.SetMarkerColor(kBlack);
+            g_nom.SetLineColor(kBlack);
+            g_nom.SetLineWidth(2);
+
+            g_loose.SetMarkerStyle(24);
+            g_loose.SetMarkerSize(0.95);
+            g_loose.SetMarkerColor(kBlue + 1);
+            g_loose.SetLineColor(kBlue + 1);
+            g_loose.SetLineWidth(2);
+
+            g_tight.SetMarkerStyle(25);
+            g_tight.SetMarkerSize(0.95);
+            g_tight.SetMarkerColor(kRed + 1);
+            g_tight.SetLineColor(kRed + 1);
+            g_tight.SetLineWidth(2);
+
+            g_nom.Draw("PZ SAME");
+            g_loose.Draw("PZ SAME");
+            g_tight.Draw("PZ SAME");
+
+            TLegend leg(0.56, 0.69, 0.94, 0.84);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.SetTextFont(42);
+            leg.SetTextSize(0.028);
+            leg.AddEntry(&g_nom,
+                         "Nominal selection (95% containment)", "pe");
+            leg.AddEntry(&g_loose,
+                         "Loose selection (98% containment)", "pe");
+            leg.AddEntry(&g_tight,
+                         "Tight selection (90% containment)", "pe");
+            leg.Draw();
+
+            const CellKey& k = best->first;
+            const std::string subtitle =
+                kinematic_subtitle(k.xb0, k.xb1, k.q0, k.q1, k.t0, k.t1);
+            draw_note_title(
+                "Representative effect of the exclusivity-selection variation",
+                subtitle.c_str());
+
+            c.SaveAs(
+                (fs::path(outdir) /
+                 "exclusivity_variation_phi_example.png").string().c_str());
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 4) Fraction of loose/tight variations that survive Barlow B >= 1.
+    //    This is a diagnostic figure; it is useful for documenting how much
+    //    of the observed cut dependence exceeds the statistical expectation.
+    // ------------------------------------------------------------------
+    {
+        struct Counts {
+            double lo = 0.0;
+            double hi = 0.0;
+            int total = 0;
+            int loose = 0;
+            int tight = 0;
+        };
+
+        std::map<std::pair<double,double>, Counts> buckets;
+
+        for (const auto& r : rows) {
+            if (!r.nominal.ok) continue;
+            auto& b = buckets[{r.xb_min, r.xb_max}];
+            b.lo = r.xb_min;
+            b.hi = r.xb_max;
+            ++b.total;
+            if (r.excl_keep_loose) ++b.loose;
+            if (r.excl_keep_tight) ++b.tight;
+        }
+
+        TGraphErrors g_loose;
+        TGraphErrors g_tight;
+        int ip = 0;
+
+        for (const auto& kv : buckets) {
+            const Counts& b = kv.second;
+            if (b.total <= 0) continue;
+
+            const double x = 0.5 * (b.lo + b.hi);
+            const double ex = 0.5 * (b.hi - b.lo);
+            const double fl = static_cast<double>(b.loose) / b.total;
+            const double ft = static_cast<double>(b.tight) / b.total;
+
+            g_loose.SetPoint(ip, x, fl);
+            g_loose.SetPointError(ip, ex, 0.0);
+            g_tight.SetPoint(ip, x, ft);
+            g_tight.SetPointError(ip, ex, 0.0);
+            ++ip;
+        }
+
+        TCanvas c("c_excl_note_barlow", "", 1080, 760);
+        style_note_canvas(c, 0.16);
+
+        TH1D frame("h_excl_note_barlow_frame", "", 100, 0.04, 0.62);
+        frame.SetMinimum(0.0);
+        frame.SetMaximum(1.08);
+        frame.GetXaxis()->SetTitle("x_{B}");
+        frame.GetYaxis()->SetTitle("Fraction of variations retained");
+        style_note_axes(frame.GetXaxis(), frame.GetYaxis());
+        frame.Draw();
+
+        g_loose.SetMarkerStyle(24);
+        g_loose.SetMarkerSize(1.0);
+        g_loose.SetMarkerColor(kBlue + 1);
+        g_loose.SetLineColor(kBlue + 1);
+        g_loose.SetLineWidth(2);
+
+        g_tight.SetMarkerStyle(25);
+        g_tight.SetMarkerSize(1.0);
+        g_tight.SetMarkerColor(kRed + 1);
+        g_tight.SetLineColor(kRed + 1);
+        g_tight.SetLineWidth(2);
+
+        g_loose.Draw("PZ SAME");
+        g_tight.Draw("PZ SAME");
+
+        TLegend leg(0.59, 0.72, 0.94, 0.85);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
+        leg.SetTextFont(42);
+        leg.SetTextSize(0.029);
+        leg.AddEntry(&g_loose, "Loose selection (98%)", "pe");
+        leg.AddEntry(&g_tight, "Tight selection (90%)", "pe");
+        leg.Draw();
+
+        draw_note_title(
+            "Statistical-consistency filtering of the cut variations",
+            "A variation is retained when B #geq 1");
+
+        c.SaveAs(
+            (fs::path(outdir) /
+             "exclusivity_barlow_retention_vs_xB.png").string().c_str());
+    }
+
+    std::cout << "[cut-systematics] Wrote exclusivity analysis-note outputs to "
+              << outdir << '\n';
 }
 
 void write_diagnostics(const std::vector<DiagnosticRow>& rows, const std::string& path) {
@@ -663,6 +1185,12 @@ bool update_cut_variation_systematics(const CutVariationSystematicsOptions& opti
         }
         if (options.make_plots) {
             make_plots(diagnostics, (fs::path(options.output_dir)/"plots").string());
+        }
+        if (options.make_analysis_note_plots) {
+            make_analysis_note_plots(
+                diagnostics,
+                (fs::path(options.output_dir) /
+                 "analysis_note/exclusivity_selection").string());
         }
 
         const auto excl_loose_only_count = std::count_if(

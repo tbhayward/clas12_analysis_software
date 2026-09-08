@@ -16,6 +16,7 @@ struct CutVariationSystematicsOptions {
     bool use_pass1_tight_instability_rule = true;
     double tight_relative_difference_threshold = 0.50;
     bool make_plots = true;
+    bool make_analysis_note_plots = true;
     bool write_diagnostic_csv = true;
 
     std::string nominal_csv = "output/csvs/dvcs_pass2_analysis.csv";
@@ -36,10 +37,11 @@ struct CutVariationSystematicsOptions {
 // Barlow filtering is applied to the individual deviations before evaluating
 // the final value; the unfiltered prescription is retained in the raw column.
 // Cross-section cells are expected to be tuples: (value, statistical, systematic).
-// The two varied exclusivity CSVs correspond to 95% and 99.99% upper-tail
-// quantiles for one-sided cuts, together with the collaboration-approved loose
-// and tight settings for all symmetric cuts.  The fiducial CSVs correspond to
-// coherent loose and tight +/-2 degree angular-boundary variations.
+// The two exclusivity variations correspond to the production 98% (loose)
+// and 90% (tight) containment selections around the nominal 95% selection.
+// The complete cut-dependent analysis chain is recomputed for each variation.
+// The fiducial CSVs correspond to coherent loose and tight +/-2 degree
+// angular-boundary variations.
 bool update_cut_variation_systematics(const CutVariationSystematicsOptions& options);
 
 #endif

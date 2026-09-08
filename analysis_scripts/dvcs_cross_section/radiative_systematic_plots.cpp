@@ -1,6 +1,7 @@
 #include "radiative_systematic_plots.h"
 
 #include <TCanvas.h>
+#include <TAxis.h>
 #include <TGraphAsymmErrors.h>
 #include <TGraphErrors.h>
 #include <TH1D.h>
@@ -212,24 +213,32 @@ static RelPair relative_uncertainties(
 }
 
 static void style_canvas(TCanvas& c) {
-    c.SetLeftMargin(0.12);
+    // Conservative margins and text sizes for analysis-note figures.  The
+    // long systematic-uncertainty labels need more left-side room than the
+    // nominal correction-factor plots, while the title/subtitle lines need a
+    // dedicated band above the frame.
+    c.SetLeftMargin(0.145);
     c.SetRightMargin(0.035);
-    c.SetBottomMargin(0.13);
-
-    // Reserve a little more space above the frame for the analysis-note
-    // title and, where applicable, a second line describing the selected
-    // kinematic bin.  With the previous 0.11 top margin those annotation
-    // lines overlapped the upper axis/ticks in the x_B and phi summaries.
-    c.SetTopMargin(0.16);
+    c.SetBottomMargin(0.135);
+    c.SetTopMargin(0.165);
     c.SetTicks(1,1);
+}
+
+static void style_axes(TAxis* x, TAxis* y) {
+    x->SetTitleSize(0.040);
+    y->SetTitleSize(0.040);
+    x->SetLabelSize(0.035);
+    y->SetLabelSize(0.035);
+    x->SetTitleOffset(1.08);
+    y->SetTitleOffset(1.45);
 }
 
 static void note_label(const char* text) {
     TLatex l;
     l.SetNDC();
     l.SetTextFont(42);
-    l.SetTextSize(0.028);
-    l.DrawLatex(0.13,0.955,text);
+    l.SetTextSize(0.032);
+    l.DrawLatex(0.145,0.952,text);
 }
 
 } // namespace
@@ -330,11 +339,7 @@ bool make_radiative_systematic_analysis_note_plots(
             h10.SetMaximum(ymax>0.0 ? ymax : 1.0);
             h10.GetXaxis()->SetTitle("Relative radiative systematic (%)");
             h10.GetYaxis()->SetTitle("Fraction of populated analysis bins");
-            h10.GetXaxis()->SetTitleSize(0.045);
-            h10.GetYaxis()->SetTitleSize(0.045);
-            h10.GetXaxis()->SetLabelSize(0.039);
-            h10.GetYaxis()->SetLabelSize(0.039);
-            h10.GetYaxis()->SetTitleOffset(1.25);
+            style_axes(h10.GetXaxis(), h10.GetYaxis());
 
             h10.Draw("HIST");
             if(!all19.empty()) h19.Draw("HIST SAME");
@@ -447,12 +452,8 @@ bool make_radiative_systematic_analysis_note_plots(
             frame.SetMinimum(0.0);
             frame.SetMaximum(std::max(5.0,1.18*ymax));
             frame.GetXaxis()->SetTitle("x_{B}");
-            frame.GetYaxis()->SetTitle("Median radiative systematic (%)");
-            frame.GetXaxis()->SetTitleSize(0.045);
-            frame.GetYaxis()->SetTitleSize(0.045);
-            frame.GetXaxis()->SetLabelSize(0.039);
-            frame.GetYaxis()->SetLabelSize(0.039);
-            frame.GetYaxis()->SetTitleOffset(1.22);
+            frame.GetYaxis()->SetTitle("Radiative systematic uncertainty (%)");
+            style_axes(frame.GetXaxis(), frame.GetYaxis());
             frame.Draw();
 
             g10.SetMarkerStyle(20);
@@ -488,7 +489,7 @@ bool make_radiative_systematic_analysis_note_plots(
             TLatex note;
             note.SetNDC();
             note.SetTextFont(42);
-            note.SetTextSize(0.025);
+            note.SetTextSize(0.023);
             note.DrawLatex(
                 0.13,0.900,
                 "Points: median over populated (Q^{2}, |t|, #phi) bins; bars: central 68% interval"
@@ -578,12 +579,8 @@ bool make_radiative_systematic_analysis_note_plots(
                 frame.SetMinimum(std::max(0.0,ymin-0.25*span));
                 frame.SetMaximum(ymax+0.35*span);
                 frame.GetXaxis()->SetTitle("#phi (deg)");
-                frame.GetYaxis()->SetTitle("Radiative systematic (%)");
-                frame.GetXaxis()->SetTitleSize(0.045);
-                frame.GetYaxis()->SetTitleSize(0.045);
-                frame.GetXaxis()->SetLabelSize(0.039);
-                frame.GetYaxis()->SetLabelSize(0.039);
-                frame.GetYaxis()->SetTitleOffset(1.20);
+                frame.GetYaxis()->SetTitle("Radiative systematic uncertainty (%)");
+                style_axes(frame.GetXaxis(), frame.GetYaxis());
                 frame.Draw();
 
                 g10.SetMarkerStyle(20);
@@ -621,7 +618,7 @@ bool make_radiative_systematic_analysis_note_plots(
                 TLatex kin;
                 kin.SetNDC();
                 kin.SetTextFont(42);
-                kin.SetTextSize(0.025);
+                kin.SetTextSize(0.022);
                 kin.DrawLatex(
                     0.13,0.900,
                     "0.204 < x_{B} < 0.268, 1.912 < Q^{2} < 2.510 GeV^{2}, 0.250 < |t| < 0.400 GeV^{2}"
