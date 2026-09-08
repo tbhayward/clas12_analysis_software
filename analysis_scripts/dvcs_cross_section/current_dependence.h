@@ -168,8 +168,8 @@ struct CurrentDependenceOptions {
 
     // Fa18 Inb -> Sp19 Inb transfer validation.  Only nominally selected,
     // production-current (50 nA) ep->epgamma data are compared.  Events with a
-    // photon momentum above the Sp19 beam-energy ceiling are removed from both
-    // periods before normalized-shape comparison.  The largest total-variation
+    // periods are compared with the same nominal event selection.  The small
+    // beam-energy difference is left in the normalized-shape comparison.  The largest total-variation
     // distance among the detector-sensitive shapes is later used to set the
     // conservative transfer inflation of the Sp19 DATA current uncertainty.
     bool enable_fa18_sp19_transfer_shape_diagnostic = true;

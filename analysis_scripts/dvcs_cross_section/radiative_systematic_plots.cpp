@@ -523,15 +523,16 @@ bool make_radiative_systematic_analysis_note_plots(
                 gPad->SetLeftMargin((ia%2==0) ? 0.14 : 0.12);
                 gPad->SetRightMargin(0.035);
                 gPad->SetBottomMargin((ia>=2) ? 0.15 : 0.12);
-                gPad->SetTopMargin(0.10);
+                gPad->SetTopMargin((ia<2)?0.16:0.10);
                 gPad->SetTicks(1,1);
 
                 struct Bucket { double lo=0, hi=0; std::vector<double> ten6, sp19; };
                 std::map<std::pair<double,double>,Bucket> buckets;
                 for(const auto& row:t.rows){
-                    const double lo=cell_number(t,row,specs[ia].lo);
-                    const double hi=cell_number(t,row,specs[ia].hi);
+                    double lo=cell_number(t,row,specs[ia].lo);
+                    double hi=cell_number(t,row,specs[ia].hi);
                     if(!std::isfinite(lo)||!std::isfinite(hi)||!(hi>lo)) continue;
+                    if(ia==3){double phi=.5*(lo+hi);while(phi<0)phi+=360;while(phi>=360)phi-=360;const int ib=std::min(11,std::max(0,int(phi/30.0)));lo=30.0*ib;hi=lo+30.0;}
                     auto& b=buckets[{lo,hi}]; b.lo=lo; b.hi=hi;
                     const RelPair r=relative_uncertainties(t,row);
                     if(std::isfinite(r.ten6)) b.ten6.push_back(r.ten6);
@@ -556,10 +557,10 @@ bool make_radiative_systematic_analysis_note_plots(
                 TH1D frame(("h_rad_sys_kinematic_"+std::to_string(ia)).c_str(),"",100,xmin,xmax);
                 frame.SetMinimum(0);frame.SetMaximum(std::max(5.0,1.18*ymax));
                 frame.GetXaxis()->SetTitle(specs[ia].title.c_str());frame.GetYaxis()->SetTitle("Radiative systematic (%)");
-                frame.GetXaxis()->SetTitleSize(.050);frame.GetYaxis()->SetTitleSize(.048);frame.GetXaxis()->SetLabelSize(.043);frame.GetYaxis()->SetLabelSize(.042);frame.GetXaxis()->SetTitleOffset(1.08);frame.GetYaxis()->SetTitleOffset(1.16);frame.Draw();
-                g10.SetMarkerStyle(20);g10.SetMarkerSize(.95);g10.SetMarkerColor(kBlue+1);g10.SetLineColor(kBlue+1);g10.SetLineWidth(2);g10.Draw("PZ SAME");
-                g19.SetMarkerStyle(24);g19.SetMarkerSize(.95);g19.SetMarkerColor(kRed+1);g19.SetLineColor(kRed+1);g19.SetLineWidth(2);if(i19>0)g19.Draw("PZ SAME");
-                TLatex p;p.SetNDC();p.SetTextFont(42);p.SetTextSize(.042);const std::string lab=std::string("(")+char('a'+ia)+")";p.DrawLatex(.16,.92,lab.c_str());
+                frame.GetXaxis()->SetTitleSize(.050);frame.GetYaxis()->SetTitleSize(.048);frame.GetXaxis()->SetLabelSize(.043);frame.GetYaxis()->SetLabelSize(.042);frame.GetXaxis()->SetTitleOffset(1.08);frame.GetYaxis()->SetTitleOffset(1.16);frame.DrawCopy();
+                g10.SetMarkerStyle(20);g10.SetMarkerSize(.95);g10.SetMarkerColor(kBlue+1);g10.SetLineColor(kBlue+1);g10.SetLineWidth(2);g10.DrawClone("PZ SAME");
+                g19.SetMarkerStyle(24);g19.SetMarkerSize(.95);g19.SetMarkerColor(kRed+1);g19.SetLineColor(kRed+1);g19.SetLineWidth(2);if(i19>0)g19.DrawClone("PZ SAME");
+                TLatex p;p.SetNDC();p.SetTextFont(42);p.SetTextSize(.042);const std::string lab=std::string("(")+char('a'+ia)+")";p.DrawLatex(.18,.80,lab.c_str());
                 if(ia==0){
                     TLatex key;
                     key.SetNDC();
@@ -578,11 +579,11 @@ bool make_radiative_systematic_analysis_note_plots(
             t.SetNDC();
             t.SetTextFont(42);
             t.SetTextAlign(22);
-            t.SetTextSize(.022);
-            t.DrawLatex(.50,.994,"Kinematic dependence of the radiative systematic");
-            t.SetTextSize(.016);
-            t.DrawLatex(.50,.973,
-                        "Points: median in each interval; bars: central 68% bin-to-bin range");
+            t.SetTextSize(.021);
+            t.DrawLatex(.50,.975,"Kinematic dependence of the radiative systematic");
+            t.SetTextSize(.015);
+            t.DrawLatex(.50,.946,
+                        "Median and central 68% range; #phi projection grouped in 30^{#circ} intervals");
             c.SaveAs((fs::path(output_dir)/"radiative_systematic_kinematic_summary.png").string().c_str());
         }
         {

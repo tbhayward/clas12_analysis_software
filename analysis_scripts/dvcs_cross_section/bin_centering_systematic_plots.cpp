@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <numeric>
 #include <sstream>
 #include <stdexcept>
@@ -58,10 +59,11 @@ bool make_bin_centering_systematic_analysis_note_plots(const std::string& sys_cs
    const std::array<AxisSpec,4> specs={{{sx0,sx1,"x_{B}"},{sq0,sq1,"Q^{2} (GeV^{2})"},{st0,st1,"|t| (GeV^{2})"},{sp0,sp1,"#phi (deg)"}}};
    TCanvas cv("c_fbin_sys_kinematic","",1450,1050);cv.Divide(2,2,.002,.002);
    for(int ia=0;ia<4;++ia){
-    cv.cd(ia+1);gPad->SetLeftMargin((ia%2==0)?.14:.12);gPad->SetRightMargin(.035);gPad->SetBottomMargin((ia>=2)?.15:.12);gPad->SetTopMargin(.10);gPad->SetTicks(1,1);
-    std::vector<std::pair<double,double>> edges;for(auto&r:s.r){double a=num(r[specs[ia].lo]),b=num(r[specs[ia].hi]);if(std::isfinite(a)&&std::isfinite(b)&&b>a&&std::find(edges.begin(),edges.end(),std::make_pair(a,b))==edges.end())edges.push_back({a,b});}std::sort(edges.begin(),edges.end());
+    cv.cd(ia+1);gPad->SetLeftMargin((ia%2==0)?.14:.12);gPad->SetRightMargin(.035);gPad->SetBottomMargin((ia>=2)?.15:.12);gPad->SetTopMargin((ia<2)?.16:.10);gPad->SetTicks(1,1);
+    struct Bucket{double lo=0,hi=0;std::vector<double>v;};std::map<std::pair<double,double>,Bucket>buckets;
+    for(auto&r:s.r){double a=num(r[specs[ia].lo]),b=num(r[specs[ia].hi]);if(!std::isfinite(a)||!std::isfinite(b)||!(b>a))continue;if(ia==3){double phi=.5*(a+b);while(phi<0)phi+=360;while(phi>=360)phi-=360;int ib=std::min(11,std::max(0,int(phi/30.0)));a=30.0*ib;b=a+30.0;}double xs=num(r[sval]),u=num(r[sf]);if(!std::isfinite(xs)||fabs(xs)<=0||!std::isfinite(u))continue;auto&bk=buckets[{a,b}];bk.lo=a;bk.hi=b;bk.v.push_back(100*u/fabs(xs));}
     TGraphAsymmErrors g;g.SetMarkerStyle(20);g.SetMarkerSize(.95);g.SetMarkerColor(kMagenta+2);g.SetLineColor(kMagenta+2);g.SetLineWidth(2);double xmin=INFINITY,xmax=-INFINITY,ymax=0;int n=0;
-    for(auto&e:edges){std::vector<double>v;for(auto&r:s.r)if(fabs(num(r[specs[ia].lo])-e.first)<1e-8&&fabs(num(r[specs[ia].hi])-e.second)<1e-8){double xs=num(r[sval]),u=num(r[sf]);if(std::isfinite(xs)&&fabs(xs)>0&&std::isfinite(u))v.push_back(100*u/fabs(xs));}if(v.empty())continue;double md=qtile(v,.5),lo=qtile(v,.16),hi=qtile(v,.84),x=.5*(e.first+e.second),ex=.5*(e.second-e.first);g.SetPoint(n,x,md);g.SetPointError(n,ex,ex,md-lo,hi-md);++n;xmin=std::min(xmin,e.first);xmax=std::max(xmax,e.second);ymax=std::max(ymax,hi);}
+    for(const auto&kv:buckets){const auto&bk=kv.second;if(bk.v.empty())continue;double md=qtile(bk.v,.5),lo=qtile(bk.v,.16),hi=qtile(bk.v,.84),x=.5*(bk.lo+bk.hi),ex=.5*(bk.hi-bk.lo);g.SetPoint(n,x,md);g.SetPointError(n,ex,ex,md-lo,hi-md);++n;xmin=std::min(xmin,bk.lo);xmax=std::max(xmax,bk.hi);ymax=std::max(ymax,hi);}
     if(!(xmax>xmin)){xmin=0;xmax=1;}
     TH1F fr(("h_fbin_sys_kinematic_"+std::to_string(ia)).c_str(),"",100,xmin,xmax);
     fr.SetMinimum(0);
@@ -82,18 +84,18 @@ bool make_bin_centering_systematic_analysis_note_plots(const std::string& sys_cs
     p.SetTextFont(42);
     p.SetTextSize(.036);
     std::string lab=std::string("(")+char('a'+ia)+")";
-    p.DrawLatex(.18,.84,lab.c_str());
+    p.DrawLatex(.18,.80,lab.c_str());
    }
    cv.cd(0);
    TLatex tt;
    tt.SetNDC();
    tt.SetTextFont(42);
    tt.SetTextAlign(22);
-   tt.SetTextSize(.022);
-   tt.DrawLatex(.50,.994,"Kinematic dependence of the bin-centering model uncertainty");
-   tt.SetTextSize(.016);
-   tt.DrawLatex(.50,.973,
-                "Points: median in each interval; bars: central 68% bin-to-bin range");cv.SaveAs((fs::path(out)/"bin_centering_systematic_kinematic_summary.png").string().c_str());
+   tt.SetTextSize(.021);
+   tt.DrawLatex(.50,.975,"Kinematic dependence of the bin-centering model uncertainty");
+   tt.SetTextSize(.015);
+   tt.DrawLatex(.50,.946,
+                "Median and central 68% range; #phi projection grouped in 30^{#circ} intervals");cv.SaveAs((fs::path(out)/"bin_centering_systematic_kinematic_summary.png").string().c_str());
   }
   // Representative phi dependence: central Fbin from correction table with uncertainty inferred from the model spread.
   int cb=col(c,"Fbin"),cx0=col(c,"xBmin"),cx1=col(c,"xBmax"),cq0=col(c,"Q2min"),cq1=col(c,"Q2max"),ct0=col(c,"t_abs_min"),ct1=col(c,"t_abs_max"),cp=col(c,"phiavg");

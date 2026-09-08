@@ -5718,9 +5718,24 @@ static RegionThetaMcAggMap process_generated_tree_region_theta(
     Branches b;
     b.bind(tree);
     const Long64_t N = tree->GetEntries();
+    const Long64_t progress_step = std::max<Long64_t>(1000000, N / 10);
+    const auto progress_t0 = std::chrono::steady_clock::now();
+    static std::mutex generated_region_theta_progress_mutex;
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+
+        if (i > 0 && (i % progress_step) == 0) {
+            std::lock_guard<std::mutex> lock(generated_region_theta_progress_mutex);
+            const double sec = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - progress_t0).count();
+            std::cout << "[current_dependence] Region-theta GEN progress key="
+                      << key << " " << i << "/" << N << " ("
+                      << std::fixed << std::setprecision(1)
+                      << (100.0 * double(i) / double(std::max<Long64_t>(1, N)))
+                      << "%) elapsed=" << sec << " s"
+                      << std::defaultfloat << std::setprecision(6) << std::endl;
+        }
 
         std::string region;
         if (!generated_photon_region(b, region)) continue;
@@ -5767,9 +5782,23 @@ static RegionThetaMcAggMap process_reconstructed_tree_region_theta(
     Branches b;
     b.bind(tree);
     const Long64_t N = tree->GetEntries();
+    const Long64_t progress_step = std::max<Long64_t>(1000000, N / 10);
+    const auto progress_t0 = std::chrono::steady_clock::now();
+    static std::mutex reconstructed_region_theta_progress_mutex;
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+        if (i > 0 && (i % progress_step) == 0) {
+            std::lock_guard<std::mutex> lock(reconstructed_region_theta_progress_mutex);
+            const double sec = std::chrono::duration<double>(
+                std::chrono::steady_clock::now() - progress_t0).count();
+            std::cout << "[current_dependence] Region-theta REC progress key="
+                      << key << " " << i << "/" << N << " ("
+                      << std::fixed << std::setprecision(1)
+                      << (100.0 * double(i) / double(std::max<Long64_t>(1, N)))
+                      << "%) elapsed=" << sec << " s"
+                      << std::defaultfloat << std::setprecision(6) << std::endl;
+        }
         if (!passes_cone_cut(b)) continue;
         if (!passes_global_dispatch(b, tags)) continue;
         if (!passes_sigma_dispatch(cfg, tags, mc_cuts, b)) continue;
@@ -6374,16 +6403,45 @@ static PeriodPooledAngleFitMap run_region_theta_data_diagnostic(
         std::cout << "[current_dependence] Region-theta generated-MC diagnostic for "
                   << cfg.csv_channel << ": " << gen_items.size()
                   << " tree(s), " << mc_nth << " worker(s)." << std::endl;
+        std::mutex mc_progress_mutex;
+        std::atomic<int> gen_done{0};
+        const auto gen_phase_t0 = Clock::now();
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(mc_nth)
 #endif
         for (int i = 0; i < (int)gen_items.size(); ++i) {
             const PeriodTags tags = parse_period_from_key(gen_items[i].first);
+            const Long64_t nentries = gen_items[i].second ? gen_items[i].second->GetEntries() : 0;
+            const auto tree_t0 = Clock::now();
+            {
+                std::lock_guard<std::mutex> lock(mc_progress_mutex);
+                std::cout << "[current_dependence] Region-theta GEN start "
+                          << (i + 1) << "/" << gen_items.size()
+                          << " key=" << gen_items[i].first
+                          << " entries=" << nentries << std::endl;
+            }
             RegionThetaMcAggMap one =
                 process_generated_tree_region_theta(gen_items[i].first, gen_items[i].second, vars);
-            std::lock_guard<std::mutex> lock(mc_merge_mutex);
-            merge_region_theta_mc(merged_mc, tags.display, one, vars);
+            {
+                std::lock_guard<std::mutex> lock(mc_merge_mutex);
+                merge_region_theta_mc(merged_mc, tags.display, one, vars);
+            }
+            const int finished = ++gen_done;
+            {
+                std::lock_guard<std::mutex> lock(mc_progress_mutex);
+                const double sec = std::chrono::duration<double>(Clock::now() - tree_t0).count();
+                std::cout << "[current_dependence] Region-theta GEN done "
+                          << finished << "/" << gen_items.size()
+                          << " key=" << gen_items[i].first
+                          << " elapsed=" << std::fixed << std::setprecision(1)
+                          << sec << " s" << std::defaultfloat << std::setprecision(6)
+                          << std::endl;
+            }
         }
+        std::cout << "[current_dependence] Region-theta generated-MC phase complete for "
+                  << cfg.csv_channel << " in " << std::fixed << std::setprecision(1)
+                  << std::chrono::duration<double>(Clock::now() - gen_phase_t0).count()
+                  << " s." << std::defaultfloat << std::setprecision(6) << std::endl;
 
         std::vector<std::pair<std::string, TTree*>> rec_items;
         for (const auto& kv : rec_trees) {
@@ -6395,17 +6453,45 @@ static PeriodPooledAngleFitMap run_region_theta_data_diagnostic(
         std::cout << "[current_dependence] Region-theta reconstructed-MC diagnostic for "
                   << cfg.csv_channel << ": " << rec_items.size()
                   << " tree(s), " << mc_nth << " worker(s)." << std::endl;
+        std::atomic<int> rec_done{0};
+        const auto rec_phase_t0 = Clock::now();
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(mc_nth)
 #endif
         for (int i = 0; i < (int)rec_items.size(); ++i) {
             const PeriodTags tags = parse_period_from_key(rec_items[i].first);
+            const Long64_t nentries = rec_items[i].second ? rec_items[i].second->GetEntries() : 0;
+            const auto tree_t0 = Clock::now();
+            {
+                std::lock_guard<std::mutex> lock(mc_progress_mutex);
+                std::cout << "[current_dependence] Region-theta REC start "
+                          << (i + 1) << "/" << rec_items.size()
+                          << " key=" << rec_items[i].first
+                          << " entries=" << nentries << std::endl;
+            }
             RegionThetaMcAggMap one =
                 process_reconstructed_tree_region_theta(
                     cfg, rec_items[i].first, rec_items[i].second, mc_cuts, vars);
-            std::lock_guard<std::mutex> lock(mc_merge_mutex);
-            merge_region_theta_mc(merged_mc, tags.display, one, vars);
+            {
+                std::lock_guard<std::mutex> lock(mc_merge_mutex);
+                merge_region_theta_mc(merged_mc, tags.display, one, vars);
+            }
+            const int finished = ++rec_done;
+            {
+                std::lock_guard<std::mutex> lock(mc_progress_mutex);
+                const double sec = std::chrono::duration<double>(Clock::now() - tree_t0).count();
+                std::cout << "[current_dependence] Region-theta REC done "
+                          << finished << "/" << rec_items.size()
+                          << " key=" << rec_items[i].first
+                          << " elapsed=" << std::fixed << std::setprecision(1)
+                          << sec << " s" << std::defaultfloat << std::setprecision(6)
+                          << std::endl;
+            }
         }
+        std::cout << "[current_dependence] Region-theta reconstructed-MC phase complete for "
+                  << cfg.csv_channel << " in " << std::fixed << std::setprecision(1)
+                  << std::chrono::duration<double>(Clock::now() - rec_phase_t0).count()
+                  << " s." << std::defaultfloat << std::setprecision(6) << std::endl;
     }
 
     const std::string odir = output_dir + "/" + cfg.output_token + "/sector_dependence_diagnostic/region_theta";
@@ -11170,15 +11256,18 @@ static int transfer_current_region_index(
 struct TransferShapeSet {
     TH1D photon_region;
     TH1D electron_theta;
+    TH1D proton_theta;
     TH1D photon_theta;
     long long accepted = 0;
 
     explicit TransferShapeSet(const std::string& tag)
         : photon_region(("h_transfer_region_"+tag).c_str(), "", 7, -0.5, 6.5),
           electron_theta(("h_transfer_eth_"+tag).c_str(), "", 17, 8.0, 25.0),
+          proton_theta(("h_transfer_pth_"+tag).c_str(), "", 32, 8.0, 72.0),
           photon_theta(("h_transfer_gth_"+tag).c_str(), "", 19, 2.0, 40.0) {
         photon_region.SetDirectory(nullptr);
         electron_theta.SetDirectory(nullptr);
+        proton_theta.SetDirectory(nullptr);
         photon_theta.SetDirectory(nullptr);
     }
 };
@@ -11216,6 +11305,7 @@ static bool fill_transfer_shape_set(
     double photon_energy_max_GeV,
     TransferShapeSet& out) {
 
+    (void)photon_energy_max_GeV;
     bool found_period = false;
 
     for (const auto& kv : trees) {
@@ -11241,14 +11331,6 @@ static bool fill_transfer_shape_set(
             if (!passes_global_dispatch(b, tags)) continue;
             if (!passes_sigma_dispatch(cfg, tags, data_cuts, b)) continue;
 
-            // Compare only phase space that is kinematically available to the
-            // lower-energy Sp19 sample.
-            if (b.has_p2_p &&
-                std::isfinite(b.p2_p) &&
-                b.p2_p > photon_energy_max_GeV) {
-                continue;
-            }
-
             if (!(b.has_detector2 && b.has_p2_phi)) continue;
             const int region =
                 transfer_current_region_index(b.detector2, b.p2_phi, b.has_p2_phi);
@@ -11258,6 +11340,10 @@ static bool fill_transfer_shape_set(
 
             if (b.has_e_theta && std::isfinite(b.e_theta)) {
                 out.electron_theta.Fill(b.e_theta * RAD2DEG);
+            }
+
+            if (b.has_p1_theta && std::isfinite(b.p1_theta)) {
+                out.proton_theta.Fill(b.p1_theta * RAD2DEG);
             }
 
             if (b.has_p2_theta && std::isfinite(b.p2_theta)) {
@@ -11305,12 +11391,15 @@ static void write_fa18_sp19_transfer_shape_diagnostic(
     const double d_e_theta =
         normalized_total_variation_distance(
             fa18.electron_theta, sp19.electron_theta);
+    const double d_p_theta =
+        normalized_total_variation_distance(
+            fa18.proton_theta, sp19.proton_theta);
     const double d_g_theta =
         normalized_total_variation_distance(
             fa18.photon_theta, sp19.photon_theta);
 
     const double dmax =
-        std::max({d_region, d_e_theta, d_g_theta});
+        std::max({d_region, d_e_theta, d_p_theta, d_g_theta});
 
     {
         std::ofstream out(
@@ -11318,44 +11407,48 @@ static void write_fa18_sp19_transfer_shape_diagnostic(
         out << "variable,total_variation_distance\n";
         out << "photon region," << d_region << "\n";
         out << "electron theta," << d_e_theta << "\n";
+        out << "proton theta," << d_p_theta << "\n";
         out << "photon theta," << d_g_theta << "\n";
         out << "Dmax," << dmax << "\n";
         out << "Fa18 accepted events," << fa18.accepted << "\n";
         out << "Sp19 accepted events," << sp19.accepted << "\n";
-        out << "photon-energy ceiling (GeV),"
-            << options.sp19_transfer_photon_energy_max_GeV << "\n";
     }
 
     normalize_histogram_to_unity(fa18.photon_region);
     normalize_histogram_to_unity(sp19.photon_region);
     normalize_histogram_to_unity(fa18.electron_theta);
     normalize_histogram_to_unity(sp19.electron_theta);
+    normalize_histogram_to_unity(fa18.proton_theta);
+    normalize_histogram_to_unity(sp19.proton_theta);
     normalize_histogram_to_unity(fa18.photon_theta);
     normalize_histogram_to_unity(sp19.photon_theta);
 
-    TCanvas c("c_fa18_sp19_transfer_shape", "", 1500, 500);
-    c.Divide(3, 1, 0.002, 0.002);
+    TCanvas c("c_fa18_sp19_transfer_shape", "", 1250, 920);
+    c.Divide(2, 2, 0.002, 0.002);
 
-    std::array<TH1D*,3> hfa = {
+    std::array<TH1D*,4> hfa = {
         &fa18.photon_region,
         &fa18.electron_theta,
+        &fa18.proton_theta,
         &fa18.photon_theta
     };
-    std::array<TH1D*,3> hsp = {
+    std::array<TH1D*,4> hsp = {
         &sp19.photon_region,
         &sp19.electron_theta,
+        &sp19.proton_theta,
         &sp19.photon_theta
     };
-    std::array<std::string,3> xtitles = {
+    std::array<std::string,4> xtitles = {
         "Photon region",
         "#theta_{e} (deg)",
+        "#theta_{p} (deg)",
         "#theta_{#gamma} (deg)"
     };
-    std::array<double,3> distances = {
-        d_region, d_e_theta, d_g_theta
+    std::array<double,4> distances = {
+        d_region, d_e_theta, d_p_theta, d_g_theta
     };
 
-    for (int ip = 0; ip < 3; ++ip) {
+    for (int ip = 0; ip < 4; ++ip) {
         c.cd(ip + 1);
         gPad->SetLeftMargin(0.15);
         gPad->SetRightMargin(0.04);
@@ -11427,19 +11520,34 @@ static void write_fa18_sp19_transfer_shape_diagnostic(
     title.SetNDC();
     title.SetTextFont(42);
     title.SetTextAlign(22);
-    title.SetTextSize(0.028);
+    title.SetTextSize(0.026);
     title.DrawLatex(
-        0.50, 0.995,
+        0.50, 0.978,
         "Fa18 Inb and Sp19 Inb production-current shape comparison");
-    title.SetTextSize(0.020);
-    std::ostringstream sub;
-    sub << "Normalized 50 nA data; common selection and p_{#gamma} #leq "
-        << std::fixed << std::setprecision(1)
-        << options.sp19_transfer_photon_energy_max_GeV << " GeV";
-    title.DrawLatex(0.50, 0.955, sub.str().c_str());
+    title.SetTextSize(0.018);
+    title.DrawLatex(0.50, 0.948,
+                    "Normalized good 50 nA data with the nominal event selection");
 
     c.SaveAs(
         (out_dir + "/fa18_sp19_50nA_shape_comparison.png").c_str());
+
+    const std::string current_syst_transfer_dir =
+        "output/current_systematics/analysis_note/transfer_validation";
+    mkdir_p(current_syst_transfer_dir);
+    c.SaveAs((current_syst_transfer_dir +
+              "/fa18_sp19_50nA_shape_comparison.png").c_str());
+    {
+        std::ofstream out(current_syst_transfer_dir +
+                          "/fa18_sp19_50nA_shape_distance.csv");
+        out << "variable,total_variation_distance\n";
+        out << "photon region," << d_region << "\n";
+        out << "electron theta," << d_e_theta << "\n";
+        out << "proton theta," << d_p_theta << "\n";
+        out << "photon theta," << d_g_theta << "\n";
+        out << "Dmax," << dmax << "\n";
+        out << "Fa18 accepted events," << fa18.accepted << "\n";
+        out << "Sp19 accepted events," << sp19.accepted << "\n";
+    }
 
     std::cout
         << "[current_dependence] Fa18->Sp19 transfer-shape Dmax = "

@@ -314,17 +314,16 @@ static BinResult period_result(
     out.mc_scalar=std::sqrt(std::max(0.0,mc2));
 
     if(period=="Sp19 Inb" && sp19_dmax>0.0){
-        // Inflate only the transferred DATA calibration component by
-        // F = 1 + Dmax.  Preserve the original Fa18-shared nuisance vectors
-        // and represent the additional transfer allowance as a distinct
-        // Sp19-only correlated nuisance.
-        const double F=1.0+sp19_dmax;
-        out.transfer_scalar=
-            out.data_scalar*std::sqrt(std::max(0.0,F*F-1.0));
-        if(out.transfer_scalar>0.0){
-            out.signed_response["data:Sp19 transfer allowance:Dmax"]=
-                out.transfer_scalar;
-        }
+        // The Fa18->Sp19 transfer has no trustworthy low-current Sp19 scan
+        // from which to derive an independent calibration.  Use the largest
+        // normalized 50-nA shape disparity directly as a conservative Sp19-
+        // only correlated scale allowance.  This is deliberately simple:
+        // Dmax=0.025 corresponds to a 2.5% transfer uncertainty on every Sp19
+        // cross-section bin.  The shared Fa18 calibration nuisance vectors
+        // remain separate and keep their genuine Fa18<->Sp19 correlation.
+        out.transfer_scalar=sp19_dmax;
+        out.signed_response["data:Sp19 transfer allowance:Dmax"]=
+            out.transfer_scalar;
     }
 
     out.scalar=std::sqrt(
@@ -427,7 +426,7 @@ static void make_kinematic_summary(
         gPad->SetLeftMargin((ia%2==0)?0.14:0.12);
         gPad->SetRightMargin(0.035);
         gPad->SetBottomMargin((ia>=2)?0.15:0.12);
-        gPad->SetTopMargin(0.10);
+        gPad->SetTopMargin((ia<2)?0.16:0.10);
         gPad->SetTicks(1,1);
 
         auto ilo=c.index.find(specs[ia].lo),ihi=c.index.find(specs[ia].hi);
@@ -438,9 +437,16 @@ static void make_kinematic_summary(
 
         for(size_t r=0;r<c.rows.size() && r<results.size();++r){
             if(!results[r].valid) continue;
-            const double lo=num(c.rows[r][ilo->second]);
-            const double hi=num(c.rows[r][ihi->second]);
+            double lo=num(c.rows[r][ilo->second]);
+            double hi=num(c.rows[r][ihi->second]);
             if(!std::isfinite(lo)||!std::isfinite(hi)||!(hi>lo)) continue;
+            if(ia==3){
+                double phi=0.5*(lo+hi);
+                while(phi<0.0)phi+=360.0;
+                while(phi>=360.0)phi-=360.0;
+                const int ib=std::min(11,std::max(0,int(phi/30.0)));
+                lo=30.0*ib; hi=lo+30.0;
+            }
             auto&b=buckets[{lo,hi}];b.lo=lo;b.hi=hi;
             b.v.push_back(100.0*results[r].scalar);
         }
@@ -482,18 +488,18 @@ static void make_kinematic_summary(
         TLatex p;
         p.SetNDC();p.SetTextFont(42);p.SetTextSize(.036);
         const std::string lab=std::string("(")+char('a'+ia)+")";
-        p.DrawLatex(.18,.84,lab.c_str());
+        p.DrawLatex(.18,.80,lab.c_str());
     }
 
     cv.cd(0);
     TLatex t;
     t.SetNDC();t.SetTextFont(42);t.SetTextAlign(22);
-    t.SetTextSize(.022);
+    t.SetTextSize(.021);
     const std::string title="Current-dependent efficiency systematic: "+label;
-    t.DrawLatex(.50,.994,title.c_str());
-    t.SetTextSize(.016);
-    t.DrawLatex(.50,.973,
-                "Points: median in each interval; bars: central 68% bin-to-bin range");
+    t.DrawLatex(.50,.975,title.c_str());
+    t.SetTextSize(.015);
+    t.DrawLatex(.50,.946,
+                "Median and central 68% range; #phi projection grouped in 30^{#circ} intervals");
 
     cv.SaveAs(
         (fs::path(outdir)/("current_systematic_"+token+"_kinematic_summary.png"))
@@ -672,6 +678,69 @@ bool evaluate_current_dependence_systematics(
             cv.SaveAs(
                 (fs::path(options.output_dir)/"current_systematic_distribution.png")
                     .string().c_str());
+        }
+
+        // Diagnose whether each named correlated nuisance acts mostly as a
+        // scale shift or changes the kinematic shape.  This does not replace
+        // the full signed response vectors used to reconstruct the covariance.
+        {
+            std::ofstream out(fs::path(options.output_dir)/"current_nuisance_scale_shape_summary.csv");
+            out<<"target,nuisance,n_bins,mean_signed_percent,rms_shape_percent,rms_total_percent\n";
+            const std::array<std::pair<std::string,const std::vector<BinResult>*>,3> targets={{
+                {"10.6 GeV",&r10},{"Fa18 Inb",&rfa},{"Sp19 Inb",&rsp}
+            }};
+            for(const auto&t:targets){
+                std::map<std::string,std::vector<double>> by;
+                for(const auto&r:*t.second){
+                    if(!r.valid)continue;
+                    for(const auto&kv:r.signed_response)by[kv.first].push_back(100.0*kv.second);
+                }
+                for(const auto&kv:by){
+                    if(kv.second.empty())continue;
+                    const double mu=std::accumulate(kv.second.begin(),kv.second.end(),0.0)/kv.second.size();
+                    double ss=0.0,tt=0.0;
+                    for(double x:kv.second){ss+=(x-mu)*(x-mu);tt+=x*x;}
+                    out<<escape_csv(t.first)<<','<<escape_csv(kv.first)<<','<<kv.second.size()<<','
+                       <<mu<<','<<std::sqrt(ss/kv.second.size())<<','<<std::sqrt(tt/kv.second.size())<<'\n';
+                }
+            }
+        }
+
+        // Show the DATA-calibration, MC-calibration, and Sp19 transfer pieces
+        // separately.  The scalar total shown elsewhere is their quadrature.
+        {
+            TCanvas cv("c_current_components","",1450,470);
+            cv.Divide(3,1,0.002,0.002);
+            const std::array<std::pair<std::string,const std::vector<BinResult>*>,3> targets={{
+                {"Combined 10.6 GeV",&r10},{"Fa18 Inb",&rfa},{"Sp19 Inb",&rsp}
+            }};
+            for(int ip=0;ip<3;++ip){
+                cv.cd(ip+1);
+                gPad->SetLeftMargin(.16);gPad->SetRightMargin(.035);gPad->SetBottomMargin(.16);gPad->SetTopMargin(.15);gPad->SetTicks(1,1);
+                std::vector<double>d,m,tr;
+                for(const auto&r:*targets[ip].second){
+                    if(!r.valid)continue;
+                    d.push_back(100*r.data_scalar);m.push_back(100*r.mc_scalar);
+                    if(r.transfer_scalar>0)tr.push_back(100*r.transfer_scalar);
+                }
+                std::vector<double> all=d;all.insert(all.end(),m.begin(),m.end());all.insert(all.end(),tr.begin(),tr.end());
+                const double xmax=all.empty()?5.0:std::max(2.0,std::min(20.0,std::ceil(quantile(all,.99)+.5)));
+                TH1D hd(("h_cur_comp_d_"+std::to_string(ip)).c_str(),"",36,0,xmax);
+                TH1D hm(("h_cur_comp_m_"+std::to_string(ip)).c_str(),"",36,0,xmax);
+                TH1D ht(("h_cur_comp_t_"+std::to_string(ip)).c_str(),"",36,0,xmax);
+                for(double x:d)if(x<xmax)hd.Fill(x);for(double x:m)if(x<xmax)hm.Fill(x);for(double x:tr)if(x<xmax)ht.Fill(x);
+                for(TH1D*h:{&hd,&hm,&ht})if(h->Integral()>0)h->Scale(1.0/h->Integral());
+                hd.SetLineColor(kBlue+1);hd.SetLineWidth(3);hm.SetLineColor(kGreen+2);hm.SetLineWidth(3);ht.SetLineColor(kRed+1);ht.SetLineWidth(3);ht.SetLineStyle(2);
+                hd.SetMaximum(1.25*std::max({hd.GetMaximum(),hm.GetMaximum(),ht.GetMaximum(),0.01}));
+                hd.GetXaxis()->SetTitle("Relative component uncertainty (%)");hd.GetYaxis()->SetTitle("Fraction of bins");
+                hd.GetXaxis()->SetTitleSize(.050);hd.GetYaxis()->SetTitleSize(.047);hd.GetXaxis()->SetLabelSize(.043);hd.GetYaxis()->SetLabelSize(.041);hd.GetYaxis()->SetTitleOffset(1.35);
+                hd.Draw("HIST");hm.Draw("HIST SAME");if(ht.Integral()>0)ht.Draw("HIST SAME");
+                TLatex lab;lab.SetNDC();lab.SetTextFont(42);lab.SetTextSize(.040);lab.DrawLatex(.18,.84,targets[ip].first.c_str());
+                if(ip==0){TLegend l(.53,.62,.92,.80);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.029);l.AddEntry(&hd,"DATA response calibration","l");l.AddEntry(&hm,"MC response calibration","l");l.Draw();}
+                if(ip==2){TLegend l(.53,.56,.92,.80);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.029);l.AddEntry(&hd,"DATA response calibration","l");l.AddEntry(&hm,"MC response calibration","l");l.AddEntry(&ht,"Fa18 #rightarrow Sp19 transfer","l");l.Draw();}
+            }
+            cv.cd(0);TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextAlign(22);t.SetTextSize(.021);t.DrawLatex(.50,.975,"Components of the current-dependent efficiency systematic");
+            cv.SaveAs((fs::path(options.output_dir)/"current_systematic_component_distributions.png").string().c_str());
         }
 
         make_kinematic_summary(csv,r10,"combined 10.6 GeV","10p6",options.output_dir);

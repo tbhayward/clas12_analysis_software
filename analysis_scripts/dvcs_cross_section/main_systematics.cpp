@@ -410,6 +410,13 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
+        // Duplicate the radiative-systematic figures into the familiar
+        // radiative-corrections analysis-note directory as well as the
+        // canonical output/systematics tree.
+        make_radiative_systematic_analysis_note_plots(
+            csv_main,
+            "output/radiative_corrections/analysis_note");
+
         if (!make_bin_centering_systematic_analysis_note_plots(
                 pass1_systematics_path,
                 "imports/all_bin_v3.csv",
@@ -418,6 +425,13 @@ int main(int argc, char* argv[]) {
                       << "make_bin_centering_systematic_analysis_note_plots failed.\n";
             return 1;
         }
+
+        // Likewise keep the bin-centering systematic figures beside the
+        // bin-centering correction figures for analysis-note packaging.
+        make_bin_centering_systematic_analysis_note_plots(
+            pass1_systematics_path,
+            "imports/all_bin_v3.csv",
+            "output/bin_centering_plots/analysis_note");
 
         if (!sp19_inb_energy_scaling_systematics(csv_main, "output/systematics")) {
             std::cerr << "[systematics] FATAL: sp19_inb_energy_scaling_systematics failed.\n";

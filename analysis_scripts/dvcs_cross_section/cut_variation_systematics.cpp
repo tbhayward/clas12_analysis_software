@@ -895,7 +895,7 @@ void make_cut_kinematic_summary(const std::vector<DiagnosticRow>& rows,
         gPad->SetLeftMargin((ia%2==0) ? 0.14 : 0.12);
         gPad->SetRightMargin(0.035);
         gPad->SetBottomMargin((ia>=2) ? 0.15 : 0.12);
-        gPad->SetTopMargin(0.10);
+        gPad->SetTopMargin((ia<2) ? 0.16 : 0.10);
         gPad->SetTicks(1,1);
 
         struct Bucket { double lo=0, hi=0; std::vector<double> values; };
@@ -903,9 +903,17 @@ void make_cut_kinematic_summary(const std::vector<DiagnosticRow>& rows,
 
         for (const auto& r : rows) {
             if (!r.nominal.ok || std::fabs(r.nominal.value)<=1e-30) continue;
-            const double lo = r.*(specs[ia].lo);
-            const double hi = r.*(specs[ia].hi);
+            double lo = r.*(specs[ia].lo);
+            double hi = r.*(specs[ia].hi);
             if (!std::isfinite(lo) || !std::isfinite(hi) || !(hi>lo)) continue;
+            if (ia == 3) {
+                double phi = std::isfinite(r.phi) ? r.phi : 0.5*(lo+hi);
+                while (phi < 0.0) phi += 360.0;
+                while (phi >= 360.0) phi -= 360.0;
+                const int ib = std::min(11, std::max(0, int(phi / 30.0)));
+                lo = 30.0 * ib;
+                hi = lo + 30.0;
+            }
             auto& b = buckets[{lo,hi}]; b.lo=lo; b.hi=hi;
             const double u = fiducial ? r.fid_final_abs : r.excl_final_abs;
             b.values.push_back(100.0*u/std::fabs(r.nominal.value));
@@ -948,7 +956,7 @@ void make_cut_kinematic_summary(const std::vector<DiagnosticRow>& rows,
         p.SetTextFont(42);
         p.SetTextSize(.036);
         const std::string lab=std::string("(")+char('a'+ia)+")";
-        p.DrawLatex(.18,.84,lab.c_str());
+        p.DrawLatex(.18,.80,lab.c_str());
     }
 
     c.cd(0);
@@ -956,12 +964,12 @@ void make_cut_kinematic_summary(const std::vector<DiagnosticRow>& rows,
     t.SetNDC();
     t.SetTextFont(42);
     t.SetTextAlign(22);
-    t.SetTextSize(.022);
+    t.SetTextSize(.021);
     const std::string title="Kinematic dependence of the "+what+" systematic";
-    t.DrawLatex(.50,.994,title.c_str());
-    t.SetTextSize(.016);
-    t.DrawLatex(.50,.973,
-                "Points: median in each interval; bars: central 68% bin-to-bin range");
+    t.DrawLatex(.50,.975,title.c_str());
+    t.SetTextSize(.015);
+    t.DrawLatex(.50,.946,
+                "Median and central 68% range; #phi projection grouped in 30^{#circ} intervals");
     c.SaveAs((fs::path(outdir)/(stem+"_systematic_kinematic_summary.png")).string().c_str());
 }
 
