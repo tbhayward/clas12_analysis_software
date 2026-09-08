@@ -747,11 +747,12 @@ void make_analysis_note_plots(const std::vector<DiagnosticRow>& rows,
             g_loose.Draw("PZ SAME");
             g_tight.Draw("PZ SAME");
 
-            TLegend leg(0.53, 0.64, 0.92, 0.81);
+            TLegend leg(0.43, 0.54, 0.82, 0.73);
             leg.SetBorderSize(0);
             leg.SetFillStyle(0);
             leg.SetTextFont(42);
-            leg.SetTextSize(0.026);
+            leg.SetTextSize(0.0225);
+            leg.SetMargin(0.15);
             leg.AddEntry(&g_nom,
                          "Nominal selection (95% containment)", "pe");
             leg.AddEntry(&g_loose,
@@ -928,21 +929,39 @@ void make_cut_kinematic_summary(const std::vector<DiagnosticRow>& rows,
         frame.GetXaxis()->SetTitleSize(.050); frame.GetYaxis()->SetTitleSize(.048);
         frame.GetXaxis()->SetLabelSize(.043); frame.GetYaxis()->SetLabelSize(.042);
         frame.GetXaxis()->SetTitleOffset(1.08); frame.GetYaxis()->SetTitleOffset(1.16);
-        frame.Draw();
+        // Draw pad-owned copies.  `frame` and `g` are local to this loop
+        // iteration, while the canvas is saved only after all four pads have
+        // been filled.  Drawing the original stack objects leaves dangling
+        // primitive pointers after the iteration ends and produces blank pads.
+        frame.DrawCopy();
 
-        g.SetMarkerStyle(20); g.SetMarkerSize(.95); g.SetMarkerColor(kBlue+1); g.SetLineColor(kBlue+1); g.SetLineWidth(2);
-        g.Draw("PZ SAME");
+        g.SetMarkerStyle(20);
+        g.SetMarkerSize(.95);
+        g.SetMarkerColor(kBlue+1);
+        g.SetLineColor(kBlue+1);
+        g.SetLineWidth(2);
+        g.DrawClone("PZ SAME");
 
-        TLatex p; p.SetNDC(); p.SetTextFont(42); p.SetTextSize(.042);
-        const std::string lab=std::string("(")+char('a'+ia)+")"; p.DrawLatex(.16,.92,lab.c_str());
+        // Keep panel labels inside the pad, clear of the canvas-level title.
+        TLatex p;
+        p.SetNDC();
+        p.SetTextFont(42);
+        p.SetTextSize(.036);
+        const std::string lab=std::string("(")+char('a'+ia)+")";
+        p.DrawLatex(.18,.84,lab.c_str());
     }
 
     c.cd(0);
-    TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextAlign(22); t.SetTextSize(.024);
+    TLatex t;
+    t.SetNDC();
+    t.SetTextFont(42);
+    t.SetTextAlign(22);
+    t.SetTextSize(.022);
     const std::string title="Kinematic dependence of the "+what+" systematic";
-    t.DrawLatex(.50,.992,title.c_str());
-    t.SetTextSize(.018);
-    t.DrawLatex(.50,.965,"Points: median in each kinematic interval; bars: central 68% bin-to-bin range");
+    t.DrawLatex(.50,.994,title.c_str());
+    t.SetTextSize(.016);
+    t.DrawLatex(.50,.973,
+                "Points: median in each interval; bars: central 68% bin-to-bin range");
     c.SaveAs((fs::path(outdir)/(stem+"_systematic_kinematic_summary.png")).string().c_str());
 }
 
@@ -1001,7 +1020,16 @@ void make_fiducial_analysis_note_plots(const std::vector<DiagnosticRow>& rows,
             const double span=std::max(1e-12,ymax-ymin);TCanvas c("c_fid_note_phi","",1080,800);style_note_canvas(c,.20);
             TH1D fr("h_fid_note_phi_frame","",100,0,360);fr.SetMinimum(std::max(0.0,ymin-.15*span));fr.SetMaximum(ymax+.34*span);fr.GetXaxis()->SetTitle("#phi (deg)");fr.GetYaxis()->SetTitle("Cross section [nb/(GeV^{4} deg)]");style_note_axes(fr.GetXaxis(),fr.GetYaxis());fr.Draw();
             gn.SetMarkerStyle(20);gn.SetMarkerColor(kBlack);gn.SetLineColor(kBlack);gl.SetMarkerStyle(24);gl.SetMarkerColor(kBlue+1);gl.SetLineColor(kBlue+1);gt.SetMarkerStyle(25);gt.SetMarkerColor(kRed+1);gt.SetLineColor(kRed+1);gn.Draw("PZ SAME");gl.Draw("PZ SAME");gt.Draw("PZ SAME");
-            TLegend l(.53,.66,.92,.82);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.026);l.AddEntry(&gn,"Nominal fiducial selection","pe");l.AddEntry(&gl,"Loose variation (#pm2^{#circ} outward)","pe");l.AddEntry(&gt,"Tight variation (#pm2^{#circ} inward)","pe");l.Draw();
+            TLegend l(.42,.54,.82,.73);
+            l.SetBorderSize(0);
+            l.SetFillStyle(0);
+            l.SetTextFont(42);
+            l.SetTextSize(.022);
+            l.SetMargin(.15);
+            l.AddEntry(&gn,"Nominal fiducial selection","pe");
+            l.AddEntry(&gl,"Loose variation (#pm 2^{#circ} outward)","pe");
+            l.AddEntry(&gt,"Tight variation (#pm 2^{#circ} inward)","pe");
+            l.Draw();
             const auto&k=best->first;const std::string sub=kinematic_subtitle(k.x0,k.x1,k.q0,k.q1,k.t0,k.t1);draw_note_title("Representative effect of the fiducial-selection variation",sub.c_str());
             c.SaveAs((fs::path(outdir)/"fiducial_variation_phi_example.png").string().c_str());
         }

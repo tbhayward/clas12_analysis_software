@@ -62,9 +62,38 @@ bool make_bin_centering_systematic_analysis_note_plots(const std::string& sys_cs
     std::vector<std::pair<double,double>> edges;for(auto&r:s.r){double a=num(r[specs[ia].lo]),b=num(r[specs[ia].hi]);if(std::isfinite(a)&&std::isfinite(b)&&b>a&&std::find(edges.begin(),edges.end(),std::make_pair(a,b))==edges.end())edges.push_back({a,b});}std::sort(edges.begin(),edges.end());
     TGraphAsymmErrors g;g.SetMarkerStyle(20);g.SetMarkerSize(.95);g.SetMarkerColor(kMagenta+2);g.SetLineColor(kMagenta+2);g.SetLineWidth(2);double xmin=INFINITY,xmax=-INFINITY,ymax=0;int n=0;
     for(auto&e:edges){std::vector<double>v;for(auto&r:s.r)if(fabs(num(r[specs[ia].lo])-e.first)<1e-8&&fabs(num(r[specs[ia].hi])-e.second)<1e-8){double xs=num(r[sval]),u=num(r[sf]);if(std::isfinite(xs)&&fabs(xs)>0&&std::isfinite(u))v.push_back(100*u/fabs(xs));}if(v.empty())continue;double md=qtile(v,.5),lo=qtile(v,.16),hi=qtile(v,.84),x=.5*(e.first+e.second),ex=.5*(e.second-e.first);g.SetPoint(n,x,md);g.SetPointError(n,ex,ex,md-lo,hi-md);++n;xmin=std::min(xmin,e.first);xmax=std::max(xmax,e.second);ymax=std::max(ymax,hi);}
-    if(!(xmax>xmin)){xmin=0;xmax=1;}TH1F fr(("h_fbin_sys_kinematic_"+std::to_string(ia)).c_str(),"",100,xmin,xmax);fr.SetMinimum(0);fr.SetMaximum(std::max(2.5,1.18*ymax));fr.GetXaxis()->SetTitle(specs[ia].title);fr.GetYaxis()->SetTitle("Bin-centering systematic (%)");fr.GetXaxis()->SetTitleSize(.050);fr.GetYaxis()->SetTitleSize(.048);fr.GetXaxis()->SetLabelSize(.043);fr.GetYaxis()->SetLabelSize(.042);fr.GetXaxis()->SetTitleOffset(1.08);fr.GetYaxis()->SetTitleOffset(1.16);fr.Draw();g.Draw("PZ SAME");TLatex p;p.SetNDC();p.SetTextFont(42);p.SetTextSize(.042);std::string lab=std::string("(")+char('a'+ia)+")";p.DrawLatex(.16,.92,lab.c_str());
+    if(!(xmax>xmin)){xmin=0;xmax=1;}
+    TH1F fr(("h_fbin_sys_kinematic_"+std::to_string(ia)).c_str(),"",100,xmin,xmax);
+    fr.SetMinimum(0);
+    fr.SetMaximum(std::max(2.5,1.18*ymax));
+    fr.GetXaxis()->SetTitle(specs[ia].title);
+    fr.GetYaxis()->SetTitle("Bin-centering systematic (%)");
+    fr.GetXaxis()->SetTitleSize(.050);
+    fr.GetYaxis()->SetTitleSize(.048);
+    fr.GetXaxis()->SetLabelSize(.043);
+    fr.GetYaxis()->SetLabelSize(.042);
+    fr.GetXaxis()->SetTitleOffset(1.08);
+    fr.GetYaxis()->SetTitleOffset(1.16);
+    fr.DrawCopy();
+    g.DrawClone("PZ SAME");
+
+    TLatex p;
+    p.SetNDC();
+    p.SetTextFont(42);
+    p.SetTextSize(.036);
+    std::string lab=std::string("(")+char('a'+ia)+")";
+    p.DrawLatex(.18,.84,lab.c_str());
    }
-   cv.cd(0);TLatex tt;tt.SetNDC();tt.SetTextFont(42);tt.SetTextAlign(22);tt.SetTextSize(.024);tt.DrawLatex(.50,.992,"Kinematic dependence of the bin-centering model uncertainty");tt.SetTextSize(.018);tt.DrawLatex(.50,.965,"Points: median in each kinematic interval; bars: central 68% bin-to-bin range");cv.SaveAs((fs::path(out)/"bin_centering_systematic_kinematic_summary.png").string().c_str());
+   cv.cd(0);
+   TLatex tt;
+   tt.SetNDC();
+   tt.SetTextFont(42);
+   tt.SetTextAlign(22);
+   tt.SetTextSize(.022);
+   tt.DrawLatex(.50,.994,"Kinematic dependence of the bin-centering model uncertainty");
+   tt.SetTextSize(.016);
+   tt.DrawLatex(.50,.973,
+                "Points: median in each interval; bars: central 68% bin-to-bin range");cv.SaveAs((fs::path(out)/"bin_centering_systematic_kinematic_summary.png").string().c_str());
   }
   // Representative phi dependence: central Fbin from correction table with uncertainty inferred from the model spread.
   int cb=col(c,"Fbin"),cx0=col(c,"xBmin"),cx1=col(c,"xBmax"),cq0=col(c,"Q2min"),cq1=col(c,"Q2max"),ct0=col(c,"t_abs_min"),ct1=col(c,"t_abs_max"),cp=col(c,"phiavg");

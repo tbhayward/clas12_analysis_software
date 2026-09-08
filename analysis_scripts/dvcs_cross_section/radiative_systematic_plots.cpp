@@ -560,9 +560,29 @@ bool make_radiative_systematic_analysis_note_plots(
                 g10.SetMarkerStyle(20);g10.SetMarkerSize(.95);g10.SetMarkerColor(kBlue+1);g10.SetLineColor(kBlue+1);g10.SetLineWidth(2);g10.Draw("PZ SAME");
                 g19.SetMarkerStyle(24);g19.SetMarkerSize(.95);g19.SetMarkerColor(kRed+1);g19.SetLineColor(kRed+1);g19.SetLineWidth(2);if(i19>0)g19.Draw("PZ SAME");
                 TLatex p;p.SetNDC();p.SetTextFont(42);p.SetTextSize(.042);const std::string lab=std::string("(")+char('a'+ia)+")";p.DrawLatex(.16,.92,lab.c_str());
-                if(ia==0){TLegend l(.55,.69,.93,.84);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextSize(.026);l.AddEntry(&g10,"10.6 GeV","pe");if(i19>0)l.AddEntry(&g19,"Sp19 10.2 GeV","pe");l.DrawClone();}
+                if(ia==0){
+                    TLatex key;
+                    key.SetNDC();
+                    key.SetTextFont(42);
+                    key.SetTextSize(.026);
+                    key.SetTextColor(kBlue+1);
+                    key.DrawLatex(.56,.78,"#bullet  10.6 GeV");
+                    if(i19>0){
+                        key.SetTextColor(kRed+1);
+                        key.DrawLatex(.56,.71,"#circ  Sp19 10.2 GeV");
+                    }
+                }
             }
-            c.cd(0);TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextAlign(22);t.SetTextSize(.024);t.DrawLatex(.50,.992,"Kinematic dependence of the radiative systematic");t.SetTextSize(.018);t.DrawLatex(.50,.965,"Points: median in each kinematic interval; bars: central 68% bin-to-bin range");
+            c.cd(0);
+            TLatex t;
+            t.SetNDC();
+            t.SetTextFont(42);
+            t.SetTextAlign(22);
+            t.SetTextSize(.022);
+            t.DrawLatex(.50,.994,"Kinematic dependence of the radiative systematic");
+            t.SetTextSize(.016);
+            t.DrawLatex(.50,.973,
+                        "Points: median in each interval; bars: central 68% bin-to-bin range");
             c.SaveAs((fs::path(output_dir)/"radiative_systematic_kinematic_summary.png").string().c_str());
         }
         {
