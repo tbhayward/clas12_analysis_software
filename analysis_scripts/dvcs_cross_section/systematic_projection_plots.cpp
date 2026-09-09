@@ -113,24 +113,27 @@ static CsvTable read_csv(const std::string& path) {
 }
 
 static double number(const std::string& s) {
-    // Be tolerant of both ordinary CSV quoting (removed by split_csv_line) and
-    // legacy literal quote wrappers that can survive one or more CSV rewrite
-    // stages, e.g. "0.123" or ""0.123"".  Several systematics stages
-    // intentionally preserve tuple/string-valued cells, so the projection
-    // reader must not reject otherwise valid scalar bin boundaries or
-    // systematic columns merely because they carry an extra wrapper.
+    // Systematics modules rewrite the same CSV several times.  Be deliberately
+    // tolerant of harmless wrapper characters that can remain around scalar
+    // cells after those passes, while still requiring one unambiguous number.
     std::string x = trim(s);
-    while (x.size() >= 2 && x.front() == '"' && x.back() == '"')
-        x = trim(x.substr(1, x.size() - 2));
+    while (!x.empty() &&
+           (x.front() == '"' || x.front() == '\'' ||
+            x.front() == '(' || x.front() == '[' || x.front() == '{')) {
+        x = trim(x.substr(1));
+    }
+    while (!x.empty() &&
+           (x.back() == '"' || x.back() == '\'' ||
+            x.back() == ')' || x.back() == ']' || x.back() == '}')) {
+        x = trim(x.substr(0, x.size() - 1));
+    }
 
     if (x.empty()) return std::numeric_limits<double>::quiet_NaN();
+
     char* end = nullptr;
     const double v = std::strtod(x.c_str(), &end);
     if (end == x.c_str()) return std::numeric_limits<double>::quiet_NaN();
 
-    // Permit only trailing whitespace after the numeric token.  This keeps
-    // malformed tuple/string cells from being silently interpreted as scalar
-    // values while accepting clean numbers robustly.
     while (*end != '\0' && std::isspace((unsigned char)*end)) ++end;
     return *end == '\0' ? v : std::numeric_limits<double>::quiet_NaN();
 }
@@ -144,12 +147,18 @@ static std::string cell(const CsvTable& t,
 }
 
 static bool parse_tuple_first(const std::string& raw, double& value) {
+    // Accept the normal "(value,stat,sys)" representation as well as harmless
+    // quote nesting left by repeated CSV read/write stages.  We only need the
+    // first field here.
     std::string s = trim(raw);
-    while (s.size() >= 2 && s.front() == '"' && s.back() == '"')
-        s = trim(s.substr(1, s.size() - 2));
+    while (!s.empty() && (s.front() == '"' || s.front() == '\''))
+        s = trim(s.substr(1));
+    while (!s.empty() && (s.back() == '"' || s.back() == '\''))
+        s = trim(s.substr(0, s.size() - 1));
 
-    if (s.size() < 3 || s.front() != '(' || s.back() != ')') return false;
-    s = s.substr(1, s.size() - 2);
+    if (!s.empty() && s.front() == '(') s = trim(s.substr(1));
+    if (!s.empty() && s.back() == ')')  s = trim(s.substr(0, s.size() - 1));
+
     const size_t comma = s.find(',');
     value = number(comma == std::string::npos ? s : s.substr(0, comma));
     return std::isfinite(value);
@@ -248,6 +257,23 @@ static std::vector<double> row_component_fractions(
         f[4] = frac_from_abs_10p6("Syst. err (exclusivity cuts)");
         f[5] = frac_from_abs_10p6("Syst. err (fiducial cuts)");
         f[6] = frac_from_abs_10p6("Syst. err (point-to-point total)");
+
+        // The displayed total is mathematically just the quadrature sum of
+        // these six components.  Reconstruct it if a downstream CSV rewrite
+        // left the stored total temporarily unreadable; this keeps plotting
+        // independent of CSV serialization details without changing physics.
+        if (!finite_fraction(f[6])) {
+            double sum2 = 0.0;
+            bool complete = true;
+            for (int j = 0; j < 6; ++j) {
+                if (!finite_fraction(f[(size_t)j])) {
+                    complete = false;
+                    break;
+                }
+                sum2 += f[(size_t)j] * f[(size_t)j];
+            }
+            if (complete) f[6] = std::sqrt(sum2);
+        }
         return f;
     }
 
@@ -305,16 +331,26 @@ static std::vector<ProjectionPoint> build_projection(
 
     const auto comps = components();
     std::map<std::string,BinAccumulator> bins;
+    size_t n_bad_total = 0;
+    size_t n_bad_x = 0;
+    size_t n_used = 0;
 
     for (const auto& row : table.rows) {
         const auto fractions = row_component_fractions(table,row,sp19);
 
         // Require a valid total for this energy before using the row.
-        if (!finite_fraction(fractions[6])) continue;
+        if (!finite_fraction(fractions[6])) {
+            ++n_bad_total;
+            continue;
+        }
 
         double x = 0.0;
         std::string key;
-        if (!row_x(table,row,var,x,key)) continue;
+        if (!row_x(table,row,var,x,key)) {
+            ++n_bad_x;
+            continue;
+        }
+        ++n_used;
 
         auto& b = bins[key];
         if (b.relative_values.empty())
@@ -348,6 +384,15 @@ static std::vector<ProjectionPoint> build_projection(
               [](const ProjectionPoint& a,const ProjectionPoint& b){
                   return a.x<b.x;
               });
+
+    std::cout << "[systematic-projections] "
+              << (sp19 ? "10.2 GeV" : "10.6 GeV")
+              << " " << var.name
+              << ": rows used=" << n_used
+              << ", invalid total/xs=" << n_bad_total
+              << ", invalid x-bin=" << n_bad_x
+              << ", projected bins=" << out.size() << "\n";
+
     return out;
 }
 
