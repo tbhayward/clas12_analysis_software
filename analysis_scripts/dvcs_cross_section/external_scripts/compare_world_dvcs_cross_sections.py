@@ -146,7 +146,7 @@ DATASET_LABELS = {
     "saylor2018": "CLAS6 Saylor 2018",
     "georges2022": "Hall A Georges 2022",
     "lee2026": "CLAS12 Lee 2026",
-    "pass2": "CLAS12 Hayward 2026",
+    "pass2": "CLAS12 pass-2 Hayward",
 }
 
 
@@ -505,7 +505,7 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
     n_missing_norm = int(out["norm_frac"].isna().sum())
     if n_missing_norm:
         print(
-            f"[HAYWARD2026] filling {n_missing_norm} blank per-row normalization field(s) "
+            f"[PASS2 HAYWARD] filling {n_missing_norm} blank per-row normalization field(s) "
             f"with finalized global value {100.0*PASS2_OVERALL_NORM_FRAC:.3f}%",
             flush=True,
         )
@@ -523,7 +523,7 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
             ["published_bin", "xB", "Q2", "t_abs", "phi_deg", "xs"],
         ]
         print(
-            f"[HAYWARD2026] WARNING: {len(bad_rows)} physical point(s) have no finalized "
+            f"[PASS2 HAYWARD] WARNING: {len(bad_rows)} physical point(s) have no finalized "
             "correlated-scale response; retained for raw/norm-only comparisons "
             "and excluded only from full correlated-scale nuisance fits.",
             flush=True,
@@ -567,13 +567,13 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
     n_corr_valid = int(np.isfinite(out["corr_scale_frac"]).sum())
     n_3d_bins = int(out["published_bin"].nunique())
     print(
-        f"[HAYWARD2026] loaded {len(out):,} physical 10.6-GeV points "
+        f"[PASS2 HAYWARD] loaded {len(out):,} physical 10.6-GeV points "
         f"across {n_3d_bins} three-dimensional (xB,Q2,t) bins from {path}; "
         f"{n_corr_valid:,} points have finalized correlated-scale responses",
         flush=True,
     )
     print(
-        f"[HAYWARD2026] median stat={100*np.nanmedian(out['stat_frac']):.2f}%, "
+        f"[PASS2 HAYWARD] median stat={100*np.nanmedian(out['stat_frac']):.2f}%, "
         f"ptp syst={100*np.nanmedian(out['ptp_sys_frac']):.2f}%, "
         f"overall norm={100*np.nanmedian(out['norm_frac']):.2f}%, "
         f"correlated scale={100*np.nanmedian(out['corr_scale_frac']):.2f}%",
@@ -3545,7 +3545,18 @@ def plot_pass2_anchor_world_panels(
     outdir.mkdir(parents=True, exist_ok=True)
     npages = int(math.ceil(len(selected) / PANEL_PER_PAGE))
 
+    scenario_label = "raw" if scenario is None else str(scenario)
+    print(
+        f"[PLOTS PASS2] {scenario_label}: {len(selected)} panels "
+        f"across {npages} page(s)",
+        flush=True,
+    )
+
     for ipage in range(npages):
+        print(
+            f"[PLOTS PASS2] {scenario_label}: page {ipage + 1}/{npages}",
+            flush=True,
+        )
         page = selected.iloc[ipage*PANEL_PER_PAGE:(ipage+1)*PANEL_PER_PAGE]
         fig, axes = plt.subplots(PANEL_NROWS, PANEL_NCOLS, figsize=(15.8, 10.8), squeeze=False)
 
@@ -3676,14 +3687,14 @@ def plot_pass2_anchor_world_panels(
         )
 
         if scenario is None:
-            title = "Published world data compared at CLAS12 Hayward 2026 kinematics"
+            title = "Published world data compared at CLAS12 pass-2 Hayward kinematics"
             subtitle = (
-                "External measurements are transported point-by-point to Hayward 2026 "
+                "External measurements are transported point-by-point to pass-2 Hayward "
                 "kinematics with KM15; pass-2 is shown raw. "
                 r"Error bars = stat $\oplus$ point-to-point syst."
             )
         else:
-            title = f"Systematic-nuisance-adjusted world data at Hayward 2026 kinematics — {scenario}"
+            title = f"Systematic-nuisance-adjusted world data at pass-2 Hayward kinematics — {scenario}"
             metric_text = ""
             if metrics:
                 metric_text = (
@@ -4191,7 +4202,7 @@ def save_outputs(
 
     n_pass2_matches = int(np.sum(matches["dataset_b"].astype(str) == "pass2")) if not matches.empty else 0
     print(
-        f"[HAYWARD2026 PANELS] external->Hayward matched points={n_pass2_matches:,}; "
+        f"[PASS2 HAYWARD PANELS] external->Hayward matched points={n_pass2_matches:,}; "
         f"qualifying 3D phi-distribution panels={len(pass2_anchor_summary):,}",
         flush=True,
     )
@@ -4332,6 +4343,110 @@ def save_outputs(
             saylor_tmin=saylor_tmin,
         )
     #endfor
+
+    # ------------------------------------------------------------------
+    # Dedicated CLAS12 pass-2 Hayward anchor canvases.
+    #
+    # Earlier versions built the pass-2 panel summary and precomputed the
+    # corresponding BH/KM15 curves, but omitted these final drawing calls.
+    # ------------------------------------------------------------------
+    pass2_root = (
+        figures
+        / "cross_section_overlays"
+        / "pass2_anchor"
+    )
+
+    print(
+        f"[PLOTS PASS2] generating dedicated CLAS12 pass-2 Hayward canvases "
+        f"from {len(pass2_anchor_summary):,} qualifying 3D bins",
+        flush=True,
+    )
+
+    # Raw comparison.
+    plot_pass2_anchor_world_panels(
+        matches,
+        pass2_anchor_summary,
+        pass2_root / "raw",
+        emff,
+        model_curve_cache,
+    )
+
+    # Nuisance-adjusted comparison variants.
+    pass2_plot_specs = [
+        (
+            "norm_only_nominal",
+            (),
+            None,
+            "norm_only_nominal",
+        ),
+        (
+            "full_corr_nominal",
+            (),
+            None,
+            "full_corr_nominal",
+        ),
+        (
+            "full_corr_saylor_tmin_0p343",
+            (),
+            SAYLOR_TMIN_DIAGNOSTIC_GEV2,
+            "full_corr_saylor_tmin_0p343",
+        ),
+        (
+            "full_corr_without_saylor",
+            ("saylor2018",),
+            None,
+            "full_corr_without_saylor",
+        ),
+    ]
+
+    for iscenario, (
+            scenario,
+            omitted_datasets,
+            saylor_tmin,
+            dirname) in enumerate(pass2_plot_specs, start=1):
+
+        print(
+            f"[PLOTS PASS2] scenario {iscenario}/{len(pass2_plot_specs)}: "
+            f"{scenario}",
+            flush=True,
+        )
+
+        dataset_fit = p2_ds.loc[
+            p2_ds["scenario"] == scenario
+        ].copy()
+
+        point_fit = p2_pts.loc[
+            p2_pts["scenario"] == scenario
+        ].copy()
+
+        metric_rows = p2_metrics.loc[
+            p2_metrics["scenario"] == scenario
+        ]
+        metrics = (
+            metric_rows.iloc[0].to_dict()
+            if not metric_rows.empty
+            else {}
+        )
+
+        plot_pass2_anchor_world_panels(
+            matches,
+            pass2_anchor_summary,
+            pass2_root / dirname,
+            emff,
+            model_curve_cache,
+            dataset_fit_table=dataset_fit,
+            point_fit_table=point_fit,
+            metrics=metrics,
+            scenario=scenario,
+            omit_datasets=omitted_datasets,
+            saylor_tmin=saylor_tmin,
+        )
+    #endfor
+
+    print(
+        f"[PLOTS PASS2] complete -> {pass2_root}",
+        flush=True,
+    )
 
     return norm_dataset, norm_metrics
 #enddef
