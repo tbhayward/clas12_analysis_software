@@ -131,6 +131,12 @@ static SystematicRunSelection parse_systematic_selection(
 } // namespace
 
 int main(int argc, char* argv[]) {
+    bool acceptance_reweighting_only = false;
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == "--acceptance-reweighting-only") {
+            acceptance_reweighting_only = true;
+        }
+    }
     SystematicRunSelection systematic_selection;
     try {
         systematic_selection = parse_systematic_selection(argc, argv);
@@ -141,7 +147,8 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --systematics current\n"
                   << "  ./dvcs_analysis --systematics cuts,current\n"
                   << "  ./dvcs_analysis --systematics csv\n"
-                  << "  ./dvcs_analysis --skip-systematics\n";
+                  << "  ./dvcs_analysis --skip-systematics\n"
+                  << "  ./dvcs_analysis --acceptance-reweighting-only\n";
         return 1;
     }
 
@@ -240,15 +247,21 @@ int main(int argc, char* argv[]) {
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
 
-    if (!run_python_exclusivity_analysis(exclusivity_opts)) {
-        std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
-        return 1;
+    if (!acceptance_reweighting_only) {
+        if (!run_python_exclusivity_analysis(exclusivity_opts)) {
+            std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
+            return 1;
+        }
+
+        std::cout << "[main] Python exclusivity-cut stage finished. "
+                  << "Using nominal cuts from output/jsons/combined_cuts.json.\n";
+
+        initialize_pass2_csv("imports/all_bin_v3.csv",
+                             "output/csvs/dvcs_pass2_analysis.csv");
+    } else {
+        std::cout << "[main] Acceptance-reweighting-only mode: reusing existing "
+                  << "combined cuts, current calibration, and analysis CSV.\n";
     }
-
-    std::cout << "[main] Python exclusivity-cut stage finished. "
-              << "Using nominal cuts from output/jsons/combined_cuts.json.\n";
-
-    initialize_pass2_csv("imports/all_bin_v3.csv", "output/csvs/dvcs_pass2_analysis.csv");
 
     // Root of output tree (used by several stages)
     const std::string output_root = "output";
@@ -281,6 +294,27 @@ int main(int argc, char* argv[]) {
               << currentStudyGenMcTrees.size() << std::endl;
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
+
+    if (acceptance_reweighting_only) {
+        AcceptanceReweightingOptions arw;
+        arw.combined_cuts_json = "output/jsons/combined_cuts.json";
+        arw.current_response_model_json =
+            "output/dvcs_current_dependence/calibration/current_response_model.json";
+        arw.output_dir = "output/systematics/acceptance_reweighting";
+        arw.enable_bh_reweighting = true;
+        arw.build_bh_grid_if_missing = true;
+        arw.install_candidate_as_production_systematic = false;
+
+        if (!run_acceptance_reweighting_study(
+                "output/csvs/dvcs_pass2_analysis.csv",
+                dataTrees, genMcTrees, recMcTrees, arw)) {
+            std::cerr << "[main] FATAL: acceptance reweighting study failed.\n";
+            return 1;
+        }
+        std::cout << "[main] Acceptance reweighting study finished. "
+                  << "No production systematic was replaced.\n";
+        return 0;
+    }
 
     // --------- Global bin-averaged kinematics (CSV update) ----------
     {

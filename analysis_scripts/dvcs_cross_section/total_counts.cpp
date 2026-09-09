@@ -46,6 +46,9 @@
 #include <TCanvas.h>
 #include <TPad.h>
 #include <TGraphErrors.h>
+#include <TGraph.h>
+#include <TLine.h>
+#include <TH1D.h>
 #include <TLegend.h>
 #include <TLatex.h>
 #include <TStyle.h>
@@ -66,6 +69,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -4388,6 +4392,965 @@ bool update_total_counts_csv(const std::string& csv_path,
         return true;
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
+        return false;
+    }
+}
+
+// =============================================================================
+// Pass-2 acceptance model-dependence study by iterative reweighting
+// =============================================================================
+
+namespace {
+
+struct ARWEvent {
+    double x = 0.0;
+    double q2 = 0.0;
+    double tabs = 0.0;
+    double phi = 0.0;
+    double base_weight = 1.0;
+    int row = -1;
+    int subcell = -1;
+};
+
+struct ARWFineAxis {
+    std::vector<double> edges;
+    bool periodic = false;
+
+    int bin(double value) const {
+        if (edges.size() < 2 || !std::isfinite(value)) return -1;
+        double v = value;
+        if (periodic) {
+            v = std::fmod(v, 360.0);
+            if (v < 0.0) v += 360.0;
+        }
+        if (v < edges.front() || v > edges.back()) return -1;
+        if (v == edges.back()) return (int)edges.size()-2;
+        auto it = std::upper_bound(edges.begin(),edges.end(),v);
+        const int ib = (int)std::distance(edges.begin(),it)-1;
+        return (ib>=0 && ib<(int)edges.size()-1) ? ib : -1;
+    }
+
+    double center(int ib) const {
+        return 0.5*(edges[(size_t)ib]+edges[(size_t)ib+1]);
+    }
+
+    int nbins() const { return std::max(0,(int)edges.size()-1); }
+};
+
+struct ARWWeightModel {
+    std::array<ARWFineAxis,4> axes;
+    std::array<std::vector<double>,4> factors;
+
+    double value(const ARWEvent& e) const {
+        const std::array<double,4> v={{e.x,e.q2,e.tabs,e.phi}};
+        double w=1.0;
+        for(int iv=0;iv<4;++iv){
+            const int ib=axes[(size_t)iv].bin(v[(size_t)iv]);
+            if(ib<0 || ib>=(int)factors[(size_t)iv].size()) continue;
+            w*=factors[(size_t)iv][(size_t)ib];
+        }
+        return w;
+    }
+};
+
+static double arw_tuple_first(const std::string& raw) {
+    std::string s=raw;
+    s.erase(std::remove_if(s.begin(),s.end(),
+                           [](unsigned char c){return std::isspace(c);}),
+            s.end());
+    if(s.empty()) return std::numeric_limits<double>::quiet_NaN();
+    if(s.front()=='('){
+        const size_t comma=s.find(',');
+        const std::string token=s.substr(1,comma==std::string::npos
+                                            ? std::string::npos
+                                            : comma-1);
+        char* end=nullptr;
+        const double v=std::strtod(token.c_str(),&end);
+        return end==token.c_str()
+            ? std::numeric_limits<double>::quiet_NaN() : v;
+    }
+    char* end=nullptr;
+    const double v=std::strtod(s.c_str(),&end);
+    return end==s.c_str()
+        ? std::numeric_limits<double>::quiet_NaN() : v;
+}
+
+static int arw_find_row(const BranchBinder& b,
+                        const std::vector<RowBin>& rows,
+                        const FastBinning& fast_bins) {
+    const int ix=find_axis_bin_index(fast_bins.xbins,b.x);
+    const int iq=find_axis_bin_index(fast_bins.qbins,b.Q2);
+    const int it=find_axis_bin_index(fast_bins.tbins,b.t_abs());
+    if(ix<0||iq<0||it<0) return -1;
+    const double phi=b.phi_deg();
+    for(int r:fast_bins.rows_by_xqt[ix][iq][it]){
+        if(!rows[(size_t)r].valid) continue;
+        if(row_accepts_phi(phi,rows[(size_t)r].pmin,rows[(size_t)r].pmax))
+            return r;
+    }
+    return -1;
+}
+
+static int arw_subcell(const ARWEvent& e,const RowBin& r) {
+    const double xm=0.5*(r.xBmin+r.xBmax);
+    const double qm=0.5*(r.Q2min+r.Q2max);
+    const double tm=0.5*(r.tmin+r.tmax);
+    const double pm=0.5*(r.pmin+r.pmax);
+    const int ix=e.x>=xm;
+    const int iq=e.q2>=qm;
+    const int it=e.tabs>=tm;
+    const int ip=e.phi>=pm;
+    return (((ix*2)+iq)*2+it)*2+ip;
+}
+
+static std::array<ARWFineAxis,4> arw_build_axes(
+    const std::vector<RowBin>& rows) {
+
+    std::array<std::vector<double>,4> raw;
+    for(const auto& r:rows){
+        if(!r.valid) continue;
+        const std::array<std::pair<double,double>,4> ranges={{
+            {r.xBmin,r.xBmax},{r.Q2min,r.Q2max},
+            {r.tmin,r.tmax},{r.pmin,r.pmax}
+        }};
+        for(int iv=0;iv<4;++iv){
+            const double a=ranges[(size_t)iv].first;
+            const double b=ranges[(size_t)iv].second;
+            raw[(size_t)iv].push_back(a);
+            raw[(size_t)iv].push_back(0.5*(a+b));
+            raw[(size_t)iv].push_back(b);
+        }
+    }
+
+    std::array<ARWFineAxis,4> out;
+    for(int iv=0;iv<4;++iv){
+        auto& v=raw[(size_t)iv];
+        std::sort(v.begin(),v.end());
+        std::vector<double> u;
+        for(double x:v){
+            if(u.empty() || std::fabs(x-u.back())>1e-10) u.push_back(x);
+        }
+        out[(size_t)iv].edges=u;
+        out[(size_t)iv].periodic=(iv==3);
+    }
+    return out;
+}
+
+static TTree* arw_tree_for_period(
+    const std::map<std::string,TTree*>& trees,
+    const std::string& period) {
+    for(const auto& kv:trees){
+        if(!kv.second) continue;
+        try{
+            if(parse_period_tags_from_tree_key(kv.first).period_display==period)
+                return kv.second;
+        }catch(...){}
+    }
+    return nullptr;
+}
+
+static std::vector<ARWEvent> arw_collect(
+    TTree* tree,
+    const WorkConfig& work_cfg,
+    const PeriodTags& tags,
+    const std::vector<RowBin>& rows,
+    const FastBinning& fast_bins,
+    const TopoCutMap& sigma_cuts,
+    const CurrentResponseModel* current_model,
+    const CSV& csv,
+    const AcceptanceReweightingOptions& options,
+    bool is_generated) {
+
+    std::vector<ARWEvent> out;
+    if(!tree) return out;
+
+    BranchBinder b;
+    b.bind(tree,work_cfg);
+
+    std::array<std::string,3> sigma_keys;
+    std::array<CompiledSigmaPlan,3> sigma_plans;
+    std::array<bool,3> sigma_ready{{false,false,false}};
+    if(!is_generated){
+        sigma_keys[0]=combined_cuts_key(
+            work_cfg.channel_cfg,tags,topology_name(TopologyIndex::FD_FD));
+        sigma_keys[1]=combined_cuts_key(
+            work_cfg.channel_cfg,tags,topology_name(TopologyIndex::CD_FD));
+        sigma_keys[2]=combined_cuts_key(
+            work_cfg.channel_cfg,tags,topology_name(TopologyIndex::CD_FT));
+    }
+
+    DenseSigmaDiagnostics dummy_diag;
+
+    int c_cont=-1;
+    if(work_cfg.sample_kind==SampleKind::DATA &&
+       options.apply_pi0_signal_fraction_to_data){
+        const std::string col="contamination ratio, "+tags.period_display;
+        auto it=csv.index.find(col);
+        if(it!=csv.index.end()) c_cont=it->second;
+    }
+
+    const Long64_t N=tree->GetEntries();
+    out.reserve((size_t)std::min<Long64_t>(N,3000000));
+
+    for(Long64_t i=0;i<N;++i){
+        tree->GetEntry(i);
+
+        if(!is_generated){
+            const TopologyIndex topo=topology_index(b.detector1,b.detector2);
+            if(topo==TopologyIndex::INVALID) continue;
+            const int ti=(int)topo;
+
+            if(!passes_global_cuts_dispatch(b,tags.period_label)) continue;
+
+            if(!sigma_ready[(size_t)ti]){
+                sigma_plans[(size_t)ti]=compile_sigma_plan(
+                    work_cfg.channel_cfg,sigma_cuts,sigma_keys[(size_t)ti]);
+                sigma_ready[(size_t)ti]=true;
+            }
+            if(!fill_sigma_cut_diagnostics_compiled(
+                    sigma_plans[(size_t)ti],b,ti,dummy_diag)) continue;
+        }
+
+        const int row=arw_find_row(b,rows,fast_bins);
+        if(row<0) continue;
+
+        ARWEvent e;
+        e.x=b.x;
+        e.q2=b.Q2;
+        e.tabs=b.t_abs();
+        e.phi=b.phi_deg();
+        e.row=row;
+        e.base_weight=1.0;
+
+        if(!is_generated && options.apply_current_correction &&
+           current_model!=nullptr){
+            const EventCurrentWeight cw=event_current_weight(
+                *current_model,work_cfg,tags,b,true);
+            if(cw.skip_corrected) continue;
+            e.base_weight*=cw.weight;
+        }
+
+        if(work_cfg.sample_kind==SampleKind::DATA && c_cont>=0){
+            const double c=arw_tuple_first(
+                csv.rows[(size_t)row][(size_t)c_cont]);
+            if(std::isfinite(c))
+                e.base_weight*=std::max(0.0,std::min(1.0,1.0-c));
+        }
+
+        e.subcell=arw_subcell(e,rows[(size_t)row]);
+        out.push_back(e);
+    }
+
+    return out;
+}
+
+static std::vector<double> arw_hist(
+    const std::vector<ARWEvent>& ev,
+    const ARWWeightModel& model,
+    int iv,
+    bool apply_model) {
+
+    const int n=model.axes[(size_t)iv].nbins();
+    std::vector<double> h((size_t)n,0.0);
+    for(const auto& e:ev){
+        const std::array<double,4> v={{e.x,e.q2,e.tabs,e.phi}};
+        const int ib=model.axes[(size_t)iv].bin(v[(size_t)iv]);
+        if(ib<0) continue;
+        double w=e.base_weight;
+        if(apply_model) w*=model.value(e);
+        h[(size_t)ib]+=w;
+    }
+    double sum=0.0;
+    for(double x:h) sum+=x;
+    if(sum>0.0) for(double& x:h) x/=sum;
+    return h;
+}
+
+static double arw_shape_distance(const std::vector<double>& a,
+                                 const std::vector<double>& b) {
+    if(a.size()!=b.size()) return 1.0;
+    double d=0.0;
+    for(size_t i=0;i<a.size();++i) d+=std::fabs(a[i]-b[i]);
+    return 0.5*d;
+}
+
+static std::vector<double> arw_smoothed_ratio(
+    const std::vector<double>& data,
+    const std::vector<double>& mc,
+    bool periodic,
+    int min_entries_proxy,
+    const std::vector<double>& data_raw,
+    const std::vector<double>& mc_raw,
+    const AcceptanceReweightingOptions& options) {
+
+    const int n=(int)data.size();
+    std::vector<double> r((size_t)n,1.0);
+
+    for(int i=0;i<n;++i){
+        if(i>=(int)data_raw.size()||i>=(int)mc_raw.size()) continue;
+        if(data_raw[(size_t)i]<min_entries_proxy ||
+           mc_raw[(size_t)i]<min_entries_proxy) continue;
+        if(mc[(size_t)i]<=0.0 || data[(size_t)i]<=0.0) continue;
+        r[(size_t)i]=data[(size_t)i]/mc[(size_t)i];
+    }
+
+    std::vector<double> s=r;
+    for(int i=0;i<n;++i){
+        int im=i-1,ip=i+1;
+        if(periodic){
+            if(im<0) im=n-1;
+            if(ip>=n) ip=0;
+        }
+        double num=2.0*r[(size_t)i],den=2.0;
+        if(im>=0){num+=r[(size_t)im];den+=1.0;}
+        if(ip<n){num+=r[(size_t)ip];den+=1.0;}
+        s[(size_t)i]=num/den;
+    }
+
+    for(double& x:s){
+        x=std::pow(std::max(1e-6,x),options.damping_power);
+        x=std::max(options.per_iteration_weight_min,
+                   std::min(options.per_iteration_weight_max,x));
+    }
+    return s;
+}
+
+static std::vector<double> arw_raw_counts(
+    const std::vector<ARWEvent>& ev,
+    const ARWWeightModel& model,
+    int iv,
+    bool apply_model) {
+    const int n=model.axes[(size_t)iv].nbins();
+    std::vector<double> h((size_t)n,0.0);
+    for(const auto& e:ev){
+        const std::array<double,4> v={{e.x,e.q2,e.tabs,e.phi}};
+        const int ib=model.axes[(size_t)iv].bin(v[(size_t)iv]);
+        if(ib<0) continue;
+        double w=e.base_weight;
+        if(apply_model) w*=model.value(e);
+        h[(size_t)ib]+=w;
+    }
+    return h;
+}
+
+struct ARWFitResult {
+    ARWWeightModel model;
+    std::array<double,4> before_distance{{0,0,0,0}};
+    std::array<double,4> after_distance{{0,0,0,0}};
+    int iterations=0;
+};
+
+static ARWFitResult arw_fit(
+    const std::vector<ARWEvent>& data,
+    const std::vector<ARWEvent>& rec,
+    const std::array<ARWFineAxis,4>& axes,
+    const AcceptanceReweightingOptions& options) {
+
+    ARWFitResult result;
+    result.model.axes=axes;
+    for(int iv=0;iv<4;++iv)
+        result.model.factors[(size_t)iv].assign(
+            (size_t)axes[(size_t)iv].nbins(),1.0);
+
+    for(int iv=0;iv<4;++iv){
+        result.before_distance[(size_t)iv]=arw_shape_distance(
+            arw_hist(data,result.model,iv,false),
+            arw_hist(rec,result.model,iv,false));
+    }
+
+    double previous=std::numeric_limits<double>::infinity();
+
+    for(int iter=0;iter<options.max_iterations;++iter){
+        for(int iv=0;iv<4;++iv){
+            const auto dh=arw_hist(data,result.model,iv,false);
+            const auto mh=arw_hist(rec,result.model,iv,true);
+            const auto dr=arw_raw_counts(data,result.model,iv,false);
+            const auto mr=arw_raw_counts(rec,result.model,iv,true);
+            const auto update=arw_smoothed_ratio(
+                dh,mh,axes[(size_t)iv].periodic,
+                options.minimum_entries_per_fine_bin,dr,mr,options);
+
+            auto& f=result.model.factors[(size_t)iv];
+            for(size_t ib=0;ib<f.size();++ib){
+                f[ib]*=update[ib];
+                f[ib]=std::max(options.cumulative_weight_min,
+                               std::min(options.cumulative_weight_max,f[ib]));
+            }
+        }
+
+        double maxd=0.0;
+        for(int iv=0;iv<4;++iv){
+            const double d=arw_shape_distance(
+                arw_hist(data,result.model,iv,false),
+                arw_hist(rec,result.model,iv,true));
+            maxd=std::max(maxd,d);
+        }
+
+        result.iterations=iter+1;
+        if(maxd<options.convergence_shape_distance ||
+           previous-maxd<options.convergence_improvement)
+            break;
+        previous=maxd;
+    }
+
+    for(int iv=0;iv<4;++iv){
+        result.after_distance[(size_t)iv]=arw_shape_distance(
+            arw_hist(data,result.model,iv,false),
+            arw_hist(rec,result.model,iv,true));
+    }
+    return result;
+}
+
+static std::vector<double> arw_acceptance(
+    const std::vector<ARWEvent>& gen,
+    const std::vector<ARWEvent>& rec,
+    const ARWWeightModel* model,
+    size_t nrows) {
+
+    std::vector<double> ng(nrows,0.0),nr(nrows,0.0);
+    for(const auto& e:gen){
+        double w=e.base_weight;
+        if(model) w*=model->value(e);
+        if(e.row>=0 && (size_t)e.row<nrows) ng[(size_t)e.row]+=w;
+    }
+    for(const auto& e:rec){
+        double w=e.base_weight;
+        if(model) w*=model->value(e);
+        if(e.row>=0 && (size_t)e.row<nrows) nr[(size_t)e.row]+=w;
+    }
+
+    std::vector<double> a(nrows,std::numeric_limits<double>::quiet_NaN());
+    for(size_t r=0;r<nrows;++r)
+        if(ng[r]>0.0) a[r]=nr[r]/ng[r];
+    return a;
+}
+
+struct ARWBHCell {
+    bool valid=false;
+    double target_mass=0.0;
+};
+
+static std::map<std::pair<int,int>,ARWBHCell> arw_load_bh_grid(
+    const std::string& path,const std::string& energy_tag) {
+
+    std::map<std::pair<int,int>,ARWBHCell> out;
+    std::ifstream in(path);
+    if(!in.is_open()) return out;
+
+    std::string line;
+    if(!std::getline(in,line)) return out;
+    const auto head=split_csv_line(line);
+    std::unordered_map<std::string,int> idx;
+    for(int i=0;i<(int)head.size();++i) idx[head[(size_t)i]]=i;
+
+    auto col=[&](const char* n)->int{
+        auto it=idx.find(n);
+        return it==idx.end()?-1:it->second;
+    };
+    const int ce=col("energy_tag"),cr=col("row"),cs=col("subcell");
+    const int cb=col("bh_xs"),cv=col("volume");
+    if(ce<0||cr<0||cs<0||cb<0||cv<0) return out;
+
+    while(std::getline(in,line)){
+        if(line.empty()) continue;
+        const auto v=split_csv_line(line);
+        if((int)v.size()<=std::max({ce,cr,cs,cb,cv})) continue;
+        if(v[(size_t)ce]!=energy_tag) continue;
+        const int r=std::atoi(v[(size_t)cr].c_str());
+        const int s=std::atoi(v[(size_t)cs].c_str());
+        const double bh=std::atof(v[(size_t)cb].c_str());
+        const double vol=std::atof(v[(size_t)cv].c_str());
+        if(!(std::isfinite(bh)&&bh>0.0&&std::isfinite(vol)&&vol>0.0))
+            continue;
+        out[{r,s}]={true,bh*vol};
+    }
+    return out;
+}
+
+static std::vector<double> arw_bh_event_weights(
+    const std::vector<ARWEvent>& gen,
+    const std::map<std::pair<int,int>,ARWBHCell>& grid) {
+
+    std::map<std::pair<int,int>,double> counts;
+    for(const auto& e:gen) counts[{e.row,e.subcell}]+=e.base_weight;
+
+    std::vector<double> weights(gen.size(),1.0);
+    std::map<std::pair<int,int>,double> raw;
+    for(const auto& kv:grid){
+        const double n=counts[kv.first];
+        if(n>0.0 && kv.second.valid)
+            raw[kv.first]=kv.second.target_mass/n;
+    }
+
+    // Normalize the average generated-event weight to one.
+    double sw=0.0,sn=0.0;
+    for(const auto& e:gen){
+        auto it=raw.find({e.row,e.subcell});
+        if(it==raw.end()) continue;
+        sw+=e.base_weight*it->second;
+        sn+=e.base_weight;
+    }
+    const double norm=(sw>0.0&&sn>0.0)?sn/sw:1.0;
+    for(auto& kv:raw) kv.second*=norm;
+
+    for(size_t i=0;i<gen.size();++i){
+        auto it=raw.find({gen[i].row,gen[i].subcell});
+        if(it!=raw.end()) weights[i]=it->second;
+    }
+    return weights;
+}
+
+static std::vector<double> arw_acceptance_bh(
+    const std::vector<ARWEvent>& gen,
+    const std::vector<ARWEvent>& rec,
+    const std::map<std::pair<int,int>,ARWBHCell>& grid,
+    size_t nrows) {
+
+    std::map<std::pair<int,int>,double> gen_count;
+    for(const auto& e:gen)
+        gen_count[{e.row,e.subcell}]+=e.base_weight;
+
+    std::map<std::pair<int,int>,double> cell_weight;
+    for(const auto& kv:grid){
+        const double n=gen_count[kv.first];
+        if(n>0.0 && kv.second.valid)
+            cell_weight[kv.first]=kv.second.target_mass/n;
+    }
+
+    double sw=0.0,sn=0.0;
+    for(const auto& e:gen){
+        auto it=cell_weight.find({e.row,e.subcell});
+        if(it==cell_weight.end()) continue;
+        sw+=e.base_weight*it->second;
+        sn+=e.base_weight;
+    }
+    const double norm=(sw>0.0&&sn>0.0)?sn/sw:1.0;
+    for(auto& kv:cell_weight) kv.second*=norm;
+
+    std::vector<double> ng(nrows,0.0),nr(nrows,0.0);
+    for(const auto& e:gen){
+        double w=e.base_weight;
+        auto it=cell_weight.find({e.row,e.subcell});
+        if(it!=cell_weight.end()) w*=it->second;
+        if(e.row>=0&&(size_t)e.row<nrows) ng[(size_t)e.row]+=w;
+    }
+    for(const auto& e:rec){
+        double w=e.base_weight;
+        auto it=cell_weight.find({e.row,e.subcell});
+        if(it!=cell_weight.end()) w*=it->second;
+        if(e.row>=0&&(size_t)e.row<nrows) nr[(size_t)e.row]+=w;
+    }
+
+    std::vector<double> a(nrows,std::numeric_limits<double>::quiet_NaN());
+    for(size_t r=0;r<nrows;++r)
+        if(ng[r]>0.0) a[r]=nr[r]/ng[r];
+    return a;
+}
+
+static double arw_population_stddev(const std::vector<double>& values) {
+    std::vector<double> v;
+    for(double x:values) if(std::isfinite(x)) v.push_back(x);
+    if(v.size()<2) return std::numeric_limits<double>::quiet_NaN();
+    double m=0.0;
+    for(double x:v) m+=x;
+    m/=v.size();
+    double s=0.0;
+    for(double x:v) s+=(x-m)*(x-m);
+    return std::sqrt(s/v.size());
+}
+
+static int arw_ensure_column(CSV& csv,const std::string& name) {
+    auto it=csv.index.find(name);
+    if(it!=csv.index.end()) return it->second;
+    const int idx=(int)csv.header.size();
+    csv.header.push_back(name);
+    csv.index[name]=idx;
+    for(auto& row:csv.rows) row.push_back("");
+    return idx;
+}
+
+static void arw_write_closure_canvas(
+    const std::string& path,
+    const std::string& period,
+    const std::vector<ARWEvent>& data,
+    const std::vector<ARWEvent>& rec,
+    const ARWFitResult& fit) {
+
+    TCanvas c(("c_arw_"+period).c_str(),"",1200,900);
+    c.Divide(2,2,0.002,0.002);
+    const std::array<std::string,4> xt={{
+        "x_{B}","Q^{2} (GeV^{2})","|t| (GeV^{2})","#phi (deg)"
+    }};
+
+    for(int iv=0;iv<4;++iv){
+        c.cd(iv+1);
+        gPad->SetLeftMargin(.14);
+        gPad->SetRightMargin(.04);
+        gPad->SetBottomMargin(.14);
+        gPad->SetTopMargin(.16);
+        gPad->SetTicks(1,1);
+
+        const auto dh=arw_hist(data,fit.model,iv,false);
+        const ARWWeightModel unit=[&](){
+            ARWWeightModel u=fit.model;
+            for(auto& f:u.factors) std::fill(f.begin(),f.end(),1.0);
+            return u;
+        }();
+        const auto mb=arw_hist(rec,unit,iv,false);
+        const auto ma=arw_hist(rec,fit.model,iv,true);
+
+        const auto& ax=fit.model.axes[(size_t)iv];
+        TH1D frame(("h_arw_frame_"+std::to_string(iv)).c_str(),"",
+                   std::max(1,ax.nbins()),
+                   ax.edges.front(),ax.edges.back());
+        frame.SetStats(0);
+        double ymax=.0;
+        for(double y:dh) ymax=std::max(ymax,y);
+        for(double y:mb) ymax=std::max(ymax,y);
+        for(double y:ma) ymax=std::max(ymax,y);
+        frame.SetMinimum(0.0);
+        frame.SetMaximum(std::max(0.02,1.25*ymax));
+        frame.GetXaxis()->SetTitle(xt[(size_t)iv].c_str());
+        frame.GetYaxis()->SetTitle("Normalized event fraction");
+        frame.GetXaxis()->SetTitleSize(.046);
+        frame.GetYaxis()->SetTitleSize(.043);
+        frame.GetXaxis()->SetLabelSize(.038);
+        frame.GetYaxis()->SetLabelSize(.036);
+        frame.GetYaxis()->SetTitleOffset(1.35);
+        frame.DrawCopy();
+
+        TGraph gd,gb,ga;
+        for(int ib=0;ib<ax.nbins();++ib){
+            const double x=ax.center(ib);
+            gd.SetPoint(ib,x,dh[(size_t)ib]);
+            gb.SetPoint(ib,x,mb[(size_t)ib]);
+            ga.SetPoint(ib,x,ma[(size_t)ib]);
+        }
+        gd.SetMarkerStyle(20); gd.SetMarkerColor(kBlack);
+        gd.SetLineColor(kBlack); gd.SetLineWidth(2);
+        gb.SetMarkerStyle(24); gb.SetMarkerColor(kRed+1);
+        gb.SetLineColor(kRed+1); gb.SetLineWidth(2);
+        ga.SetMarkerStyle(25); ga.SetMarkerColor(kBlue+1);
+        ga.SetLineColor(kBlue+1); ga.SetLineWidth(2);
+        gd.DrawClone("LP SAME");
+        gb.DrawClone("LP SAME");
+        ga.DrawClone("LP SAME");
+
+        TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextSize(.030);
+        std::ostringstream ss;
+        ss<<"D: "<<std::fixed<<std::setprecision(3)
+          <<fit.before_distance[(size_t)iv]<<" #rightarrow "
+          <<fit.after_distance[(size_t)iv];
+        t.DrawLatex(.18,.84,ss.str().c_str());
+
+        if(iv==0){
+            TLegend l(.43,.65,.93,.82);
+            l.SetBorderSize(0);l.SetFillStyle(0);
+            l.SetTextFont(42);l.SetTextSize(.026);
+            l.AddEntry(&gd,"DATA signal estimate","lp");
+            l.AddEntry(&gb,"nominal reconstructed MC","lp");
+            l.AddEntry(&ga,"iteratively reweighted MC","lp");
+            l.DrawClone();
+        }
+    }
+
+    c.cd(0);
+    TLatex title;title.SetNDC();title.SetTextAlign(22);
+    title.SetTextFont(42);title.SetTextSize(.022);
+    title.DrawLatex(.50,.978,
+        ("Iterative acceptance reweighting closure: "+period).c_str());
+    title.SetTextSize(.0155);
+    std::ostringstream ss;
+    ss<<"Normalized shapes after nominal selection; "
+      <<fit.iterations<<" iteration(s)";
+    title.DrawLatex(.50,.952,ss.str().c_str());
+    c.SaveAs(path.c_str());
+}
+
+} // namespace
+
+bool run_acceptance_reweighting_study(
+    const std::string& csv_path,
+    const std::map<std::string,TTree*>& dvcsDataTrees,
+    const std::map<std::string,TTree*>& dvcsGenMcTrees,
+    const std::map<std::string,TTree*>& dvcsRecMcTrees,
+    const AcceptanceReweightingOptions& options) {
+
+    try{
+        ROOT::EnableThreadSafety();
+        TH1::AddDirectory(kFALSE);
+        gStyle->SetOptStat(0);
+        std::filesystem::create_directories(options.output_dir);
+
+        CSV csv;
+        load_csv(csv_path,csv);
+        const auto rows=load_row_bins_from_csv(csv);
+        const auto fast_bins=build_fast_binning(rows);
+        const auto axes=arw_build_axes(rows);
+        const TopoCutMap cuts_data=
+            load_combined_cuts(options.combined_cuts_json,"data");
+        const TopoCutMap cuts_mc=
+            load_combined_cuts(options.combined_cuts_json,"mc");
+
+        CurrentResponseModel current_model;
+        const CurrentResponseModel* current_ptr=nullptr;
+        if(options.apply_current_correction){
+            current_model=load_current_response_model(
+                options.current_response_model_json);
+            current_ptr=&current_model;
+        }
+
+        if(options.enable_bh_reweighting &&
+           options.build_bh_grid_if_missing &&
+           !std::filesystem::exists(options.bh_grid_csv)){
+            std::ostringstream cmd;
+            cmd<<"python3 "<<options.bh_grid_script
+               <<" --analysis-csv "<<csv_path
+               <<" --output "<<options.bh_grid_csv
+               <<" --workers "<<options.bh_grid_workers
+               <<" --subdivisions 2";
+            std::cout<<"[acceptance-reweighting] Building pure-BH subcell grid.\n";
+            const int rc=std::system(cmd.str().c_str());
+            if(rc!=0)
+                std::cerr<<"[acceptance-reweighting] WARNING: BH-grid helper "
+                         <<"returned "<<rc<<"; continuing data-driven only.\n";
+        }
+
+        WorkConfig data_cfg; data_cfg.channel_cfg=dvcs_config();
+        data_cfg.sample_kind=SampleKind::DATA;
+        WorkConfig gen_cfg; gen_cfg.channel_cfg=dvcs_config();
+        gen_cfg.sample_kind=SampleKind::MC_GEN;
+        WorkConfig rec_cfg; rec_cfg.channel_cfg=dvcs_config();
+        rec_cfg.sample_kind=SampleKind::MC_REC;
+
+        const std::array<std::string,5> periods={{
+            "Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out","Sp19 Inb"
+        }};
+
+        const int c_candidate_106=arw_ensure_column(
+            csv,"acceptance reweighting candidate sys frac, 10.6 GeV");
+        const int c_candidate_102=arw_ensure_column(
+            csv,"acceptance reweighting candidate sys frac, Sp19 Inb");
+        const int c_data_106=arw_ensure_column(
+            csv,"acceptance reweighting data-driven sys frac, 10.6 GeV");
+        const int c_bh_106=arw_ensure_column(
+            csv,"acceptance reweighting BH sys frac, 10.6 GeV");
+        const int c_data_102=arw_ensure_column(
+            csv,"acceptance reweighting data-driven sys frac, Sp19 Inb");
+        const int c_bh_102=arw_ensure_column(
+            csv,"acceptance reweighting BH sys frac, Sp19 Inb");
+
+        struct PeriodResult {
+            std::vector<double> nominal,data_rw,bh,candidate;
+            bool bh_valid=false;
+        };
+        std::map<std::string,PeriodResult> results;
+
+        std::ofstream summary(
+            std::filesystem::path(options.output_dir)/
+            "acceptance_reweighting_per_period_summary.csv");
+        summary<<"period,row,acceptance_nominal,acceptance_data_reweighted,"
+               <<"acceptance_bh_reweighted,data_relative_shift,"
+               <<"bh_relative_shift,candidate_fraction\n";
+
+        for(const auto& period:periods){
+            TTree* dt=arw_tree_for_period(dvcsDataTrees,period);
+            TTree* gt=arw_tree_for_period(dvcsGenMcTrees,period);
+            TTree* rt=arw_tree_for_period(dvcsRecMcTrees,period);
+            if(!dt||!gt||!rt){
+                std::cerr<<"[acceptance-reweighting] WARNING: missing tree(s) "
+                         <<"for "<<period<<".\n";
+                continue;
+            }
+
+            const PeriodTags dtag=parse_period_tags_from_tree_key(
+                [&](){
+                    for(const auto& kv:dvcsDataTrees)
+                        if(kv.second==dt) return kv.first;
+                    return std::string();
+                }());
+            const PeriodTags gtag=parse_period_tags_from_tree_key(
+                [&](){
+                    for(const auto& kv:dvcsGenMcTrees)
+                        if(kv.second==gt) return kv.first;
+                    return std::string();
+                }());
+            const PeriodTags rtag=parse_period_tags_from_tree_key(
+                [&](){
+                    for(const auto& kv:dvcsRecMcTrees)
+                        if(kv.second==rt) return kv.first;
+                    return std::string();
+                }());
+
+            std::cout<<"[acceptance-reweighting] Collecting nominal selected "
+                     <<"events for "<<period<<"...\n";
+            const auto data=arw_collect(
+                dt,data_cfg,dtag,rows,fast_bins,cuts_data,current_ptr,
+                csv,options,false);
+            const auto rec=arw_collect(
+                rt,rec_cfg,rtag,rows,fast_bins,cuts_mc,current_ptr,
+                csv,options,false);
+            const auto gen=arw_collect(
+                gt,gen_cfg,gtag,rows,fast_bins,cuts_mc,nullptr,
+                csv,options,true);
+
+            std::cout<<"[acceptance-reweighting] "<<period
+                     <<" selected: data="<<data.size()
+                     <<" recMC="<<rec.size()
+                     <<" genMC="<<gen.size()<<"\n";
+
+            const ARWFitResult fit=arw_fit(data,rec,axes,options);
+            arw_write_closure_canvas(
+                (std::filesystem::path(options.output_dir)/
+                 ("shape_closure_"+dtag.period_code+".png")).string(),
+                period,data,rec,fit);
+
+            PeriodResult pr;
+            pr.nominal=arw_acceptance(
+                gen,rec,nullptr,csv.rows.size());
+            pr.data_rw=arw_acceptance(
+                gen,rec,&fit.model,csv.rows.size());
+
+            const std::string energy_tag=
+                period=="Sp19 Inb" ? "10.2" : "10.6";
+            const auto bhgrid=arw_load_bh_grid(
+                options.bh_grid_csv,energy_tag);
+            pr.bh_valid=!bhgrid.empty();
+            if(pr.bh_valid)
+                pr.bh=arw_acceptance_bh(
+                    gen,rec,bhgrid,csv.rows.size());
+            else
+                pr.bh.assign(csv.rows.size(),
+                    std::numeric_limits<double>::quiet_NaN());
+
+            pr.candidate.assign(csv.rows.size(),
+                std::numeric_limits<double>::quiet_NaN());
+
+            for(size_t r=0;r<csv.rows.size();++r){
+                const double a0=pr.nominal[r];
+                const double ad=pr.data_rw[r];
+                const double ab=pr.bh[r];
+                if(!(std::isfinite(a0)&&a0>0.0)) continue;
+
+                const double rd=std::isfinite(ad)
+                    ? std::fabs(ad-a0)/a0
+                    : std::numeric_limits<double>::quiet_NaN();
+                const double rb=std::isfinite(ab)
+                    ? std::fabs(ab-a0)/a0
+                    : std::numeric_limits<double>::quiet_NaN();
+
+                const double sd=arw_population_stddev({a0,ad,ab});
+                const double cand=std::isfinite(sd)
+                    ? sd/a0
+                    : rd;
+                pr.candidate[r]=cand;
+
+                summary<<period<<','<<r<<','<<a0<<','<<ad<<','
+                       <<ab<<','<<rd<<','<<rb<<','<<cand<<'\n';
+            }
+
+            results[period]=std::move(pr);
+        }
+
+        // Effective 10.6-GeV candidate: weight period-level acceptance shifts by
+        // the nominal acceptance-corrected unpolarized yield contribution.
+        for(size_t r=0;r<csv.rows.size();++r){
+            double ytot=0.0;
+            double delta_data=0.0,delta_bh=0.0;
+            std::vector<double> alt_combined;
+            double nominal_combined=0.0;
+            bool have_any=false;
+
+            for(const std::string period:
+                {"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"}){
+                auto ir=results.find(period);
+                if(ir==results.end()) continue;
+
+                const std::string ycol=
+                    "acceptance corrected yield, ep->epg, exp, "+
+                    period+", unpol";
+                auto iy=csv.index.find(ycol);
+                if(iy==csv.index.end()) continue;
+                const double y=arw_tuple_first(
+                    csv.rows[r][(size_t)iy->second]);
+                if(!(std::isfinite(y)&&y>=0.0)) continue;
+
+                const double a0=ir->second.nominal[r];
+                const double ad=ir->second.data_rw[r];
+                const double ab=ir->second.bh[r];
+                if(!(std::isfinite(a0)&&a0>0.0&&std::isfinite(ad)&&ad>0.0))
+                    continue;
+
+                ytot+=y;
+                nominal_combined+=y;
+                delta_data+=y*(a0/ad);
+                if(std::isfinite(ab)&&ab>0.0)
+                    delta_bh+=y*(a0/ab);
+                else
+                    delta_bh+=y;
+                have_any=true;
+            }
+
+            if(have_any && ytot>0.0){
+                const double rd=std::fabs(delta_data-nominal_combined)/ytot;
+                const double rb=std::fabs(delta_bh-nominal_combined)/ytot;
+                const double cand=arw_population_stddev(
+                    {1.0,delta_data/ytot,delta_bh/ytot});
+                csv.rows[r][(size_t)c_data_106]=std::to_string(rd);
+                csv.rows[r][(size_t)c_bh_106]=std::to_string(rb);
+                csv.rows[r][(size_t)c_candidate_106]=
+                    std::to_string(std::isfinite(cand)?cand:rd);
+            }
+
+            auto sp=results.find("Sp19 Inb");
+            if(sp!=results.end()){
+                const double a0=sp->second.nominal[r];
+                const double ad=sp->second.data_rw[r];
+                const double ab=sp->second.bh[r];
+                if(std::isfinite(a0)&&a0>0.0&&std::isfinite(ad)&&ad>0.0){
+                    const double rd=std::fabs(ad-a0)/a0;
+                    const double rb=(std::isfinite(ab)&&ab>0.0)
+                        ?std::fabs(ab-a0)/a0
+                        :std::numeric_limits<double>::quiet_NaN();
+                    const double cand=arw_population_stddev({a0,ad,ab});
+                    csv.rows[r][(size_t)c_data_102]=std::to_string(rd);
+                    if(std::isfinite(rb))
+                        csv.rows[r][(size_t)c_bh_102]=std::to_string(rb);
+                    csv.rows[r][(size_t)c_candidate_102]=
+                        std::to_string(std::isfinite(cand)?cand/a0:rd);
+                }
+            }
+        }
+
+        if(options.install_candidate_as_production_systematic){
+            auto ia=csv.index.find("Syst. err (Acceptance)");
+            auto ix=csv.index.find(
+                "normed cross sections, ep->epg, exp, 10.6 GeV, unpol");
+            if(ia==csv.index.end()||ix==csv.index.end())
+                throw std::runtime_error(
+                    "Cannot install acceptance candidate: required columns missing.");
+            for(size_t r=0;r<csv.rows.size();++r){
+                const double frac=arw_tuple_first(
+                    csv.rows[r][(size_t)c_candidate_106]);
+                const double xs=arw_tuple_first(
+                    csv.rows[r][(size_t)ix->second]);
+                if(std::isfinite(frac)&&std::isfinite(xs))
+                    csv.rows[r][(size_t)ia->second]=std::to_string(
+                        std::fabs(xs)*frac);
+            }
+        }
+
+        write_csv_atomic(csv_path,csv);
+
+        std::cout<<"[acceptance-reweighting] Study complete. Candidate columns "
+                 <<"were written to "<<csv_path<<".\n";
+        std::cout<<"[acceptance-reweighting] Production acceptance systematic "
+                 <<(options.install_candidate_as_production_systematic
+                    ?"WAS":"was NOT")
+                 <<" replaced.\n";
+        return true;
+    }catch(const std::exception& e){
+        std::cerr<<"[acceptance-reweighting] ERROR: "<<e.what()<<"\n";
         return false;
     }
 }

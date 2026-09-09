@@ -103,4 +103,77 @@ bool update_total_counts_csv(const std::string& csv_path,
                              const std::map<std::string, TTree*>& dvcsNoBkgGenMcTrees = std::map<std::string, TTree*>(),
                              const std::map<std::string, TTree*>& dvcsNoBkgRecMcTrees = std::map<std::string, TTree*>());
 
+
+struct AcceptanceReweightingOptions {
+    // Input/output locations.
+    std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+    std::string current_response_model_json =
+        "output/dvcs_current_dependence/calibration/current_response_model.json";
+    std::string output_dir = "output/systematics/acceptance_reweighting";
+
+    // Iterative data-driven reweighting controls.
+    int max_iterations = 5;
+    double damping_power = 0.50;
+    double per_iteration_weight_min = 0.50;
+    double per_iteration_weight_max = 2.00;
+    double cumulative_weight_min = 0.05;
+    double cumulative_weight_max = 20.0;
+    double convergence_shape_distance = 0.010;
+    double convergence_improvement = 0.001;
+    int minimum_entries_per_fine_bin = 50;
+
+    // The fine 1D axes are constructed by splitting every nominal analysis
+    // interval in half.  This is intentionally finer than the production bins:
+    // a weight that is constant across one production bin would cancel exactly
+    // in N_rec/N_gen and could not test acceptance-model dependence.
+    int subdivisions_per_nominal_interval = 2;
+
+    // Approximate background subtraction when deriving the DATA target shape:
+    // each selected DATA event is multiplied by (1-c_pi0) for its production
+    // four-dimensional bin.  The pass-2 contamination column is already
+    // available in the nominal CSV.
+    bool apply_pi0_signal_fraction_to_data = true;
+
+    // Apply the already-finalized event-level current correction to DATA and
+    // reconstructed MC before fitting the shape weights.
+    bool apply_current_correction = true;
+
+    // Optional pure-BH comparison.  The Python helper evaluates only the fast
+    // Gepard/KM15 BH term on a 2x2x2x2 sub-grid inside each production bin.
+    // No VGG evaluation is performed.
+    bool enable_bh_reweighting = true;
+    bool build_bh_grid_if_missing = true;
+    std::string bh_grid_script =
+        "external_scripts/build_acceptance_bh_reweight_grid.py";
+    std::string bh_grid_csv =
+        "output/systematics/acceptance_reweighting/bh_subcell_grid.csv";
+    int bh_grid_workers = 7;
+
+    // First-pass safety: write the candidate pass-2 acceptance systematic and
+    // all diagnostics, but do not overwrite Syst. err (Acceptance) until the
+    // diagnostic result has been reviewed.
+    bool install_candidate_as_production_systematic = false;
+};
+
+// Re-evaluate the acceptance model dependence using the existing pass-2
+// dvcsgen generated/reconstructed MC and nominal DATA trees.
+//
+// The study constructs:
+//   (1) nominal acceptance,
+//   (2) acceptance after iterative DATA-driven shape reweighting,
+//   (3) acceptance after a pure-BH reweighting, when the BH grid is available.
+//
+// The candidate model uncertainty is the population standard deviation of the
+// available acceptance values, mirroring the pass-1 use of the standard
+// deviation across alternative model acceptances.  The candidate is written to
+// dedicated CSV columns and is NOT installed into Syst. err (Acceptance) unless
+// explicitly requested in AcceptanceReweightingOptions.
+bool run_acceptance_reweighting_study(
+    const std::string& csv_path,
+    const std::map<std::string, TTree*>& dvcsDataTrees,
+    const std::map<std::string, TTree*>& dvcsGenMcTrees,
+    const std::map<std::string, TTree*>& dvcsRecMcTrees,
+    const AcceptanceReweightingOptions& options =
+        AcceptanceReweightingOptions());
+
 #endif // TOTAL_COUNTS_H
