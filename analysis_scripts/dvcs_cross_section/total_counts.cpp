@@ -69,6 +69,7 @@
 #include <cstdlib>
 #include <cstdio>
 #include <fstream>
+#include <future>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
@@ -5473,6 +5474,13 @@ bool run_acceptance_reweighting_study(
         struct PeriodResult {
             std::vector<double> nominal,data_rw,candidate;
         };
+        struct PeriodWorkResult {
+            std::string period;
+            bool valid=false;
+            PeriodResult result;
+            std::vector<ARWSyntheticPoint> synthetic;
+            std::vector<std::string> summary_lines;
+        };
         std::map<std::string,PeriodResult> results;
 
         std::ofstream summary(
@@ -5483,92 +5491,119 @@ bool run_acceptance_reweighting_study(
 
         std::vector<ARWSyntheticPoint> synthetic_points;
 
+        // The five run periods are independent until their period-level results
+        // are combined below.  Run the expensive event collection, iterative
+        // fit, acceptance evaluation, and synthetic closure concurrently.
+        // ROOT graphics are serialized explicitly because TCanvas/gPad/gStyle
+        // are process-global even with ROOT thread safety enabled.
+        std::mutex plot_mutex;
+        std::vector<std::future<PeriodWorkResult>> period_jobs;
+        period_jobs.reserve(periods.size());
+
         for(const auto& period:periods){
-            TTree* dt=arw_tree_for_period(dvcsDataTrees,period);
-            TTree* gt=arw_tree_for_period(dvcsGenMcTrees,period);
-            TTree* rt=arw_tree_for_period(dvcsRecMcTrees,period);
-            if(!dt||!gt||!rt){
-                std::cerr<<"[acceptance-reweighting] WARNING: missing tree(s) "
-                         <<"for "<<period<<".\n";
-                continue;
-            }
+            period_jobs.emplace_back(std::async(std::launch::async,
+                [&,period]()->PeriodWorkResult {
+                    PeriodWorkResult out;
+                    out.period=period;
 
-            const PeriodTags dtag=parse_period_tags_from_tree_key(
-                [&](){
-                    for(const auto& kv:dvcsDataTrees)
-                        if(kv.second==dt) return kv.first;
-                    return std::string();
-                }());
-            const PeriodTags gtag=parse_period_tags_from_tree_key(
-                [&](){
-                    for(const auto& kv:dvcsGenMcTrees)
-                        if(kv.second==gt) return kv.first;
-                    return std::string();
-                }());
-            const PeriodTags rtag=parse_period_tags_from_tree_key(
-                [&](){
-                    for(const auto& kv:dvcsRecMcTrees)
-                        if(kv.second==rt) return kv.first;
-                    return std::string();
-                }());
+                    TTree* dt=arw_tree_for_period(dvcsDataTrees,period);
+                    TTree* gt=arw_tree_for_period(dvcsGenMcTrees,period);
+                    TTree* rt=arw_tree_for_period(dvcsRecMcTrees,period);
+                    if(!dt||!gt||!rt){
+                        std::cerr<<"[acceptance-reweighting] WARNING: missing tree(s) "
+                                 <<"for "<<period<<".\n";
+                        return out;
+                    }
 
-            std::cout<<"[acceptance-reweighting] Collecting nominal selected "
-                     <<"events for "<<period<<"...\n";
-            const auto data=arw_collect(
-                dt,data_cfg,dtag,rows,fast_bins,cuts_data,current_ptr,
-                csv,options,false);
-            const auto rec=arw_collect(
-                rt,rec_cfg,rtag,rows,fast_bins,cuts_mc,current_ptr,
-                csv,options,false);
-            const auto gen=arw_collect(
-                gt,gen_cfg,gtag,rows,fast_bins,cuts_mc,nullptr,
-                csv,options,true);
+                    const PeriodTags dtag=parse_period_tags_from_tree_key(
+                        [&](){
+                            for(const auto& kv:dvcsDataTrees)
+                                if(kv.second==dt) return kv.first;
+                            return std::string();
+                        }());
+                    const PeriodTags gtag=parse_period_tags_from_tree_key(
+                        [&](){
+                            for(const auto& kv:dvcsGenMcTrees)
+                                if(kv.second==gt) return kv.first;
+                            return std::string();
+                        }());
+                    const PeriodTags rtag=parse_period_tags_from_tree_key(
+                        [&](){
+                            for(const auto& kv:dvcsRecMcTrees)
+                                if(kv.second==rt) return kv.first;
+                            return std::string();
+                        }());
 
-            std::cout<<"[acceptance-reweighting] "<<period
-                     <<" selected: data="<<data.size()
-                     <<" recMC="<<rec.size()
-                     <<" genMC="<<gen.size()<<"\n";
+                    std::cout<<"[acceptance-reweighting] Collecting nominal selected "
+                             <<"events for "<<period<<"...\n";
+                    const auto data=arw_collect(
+                        dt,data_cfg,dtag,rows,fast_bins,cuts_data,current_ptr,
+                        csv,options,false);
+                    const auto rec=arw_collect(
+                        rt,rec_cfg,rtag,rows,fast_bins,cuts_mc,current_ptr,
+                        csv,options,false);
+                    const auto gen=arw_collect(
+                        gt,gen_cfg,gtag,rows,fast_bins,cuts_mc,nullptr,
+                        csv,options,true);
 
-            const ARWFitResult fit=arw_fit(data,rec,axes,options);
-            arw_write_closure_canvas(
-                (std::filesystem::path(options.output_dir)/
-                 ("shape_closure_"+dtag.period_code+".png")).string(),
-                period,data,rec,fit);
+                    std::cout<<"[acceptance-reweighting] "<<period
+                             <<" selected: data="<<data.size()
+                             <<" recMC="<<rec.size()
+                             <<" genMC="<<gen.size()<<"\n";
 
-            PeriodResult pr;
-            pr.nominal=arw_acceptance(
-                gen,rec,nullptr,csv.rows.size());
-            pr.data_rw=arw_acceptance(
-                gen,rec,&fit.model,csv.rows.size());
+                    const ARWFitResult fit=arw_fit(data,rec,axes,options);
+                    {
+                        std::lock_guard<std::mutex> lock(plot_mutex);
+                        arw_write_closure_canvas(
+                            (std::filesystem::path(options.output_dir)/
+                             ("shape_closure_"+dtag.period_code+".png")).string(),
+                            period,data,rec,fit);
+                    }
 
-            pr.candidate.assign(csv.rows.size(),
-                std::numeric_limits<double>::quiet_NaN());
+                    PeriodResult pr;
+                    pr.nominal=arw_acceptance(
+                        gen,rec,nullptr,csv.rows.size());
+                    pr.data_rw=arw_acceptance(
+                        gen,rec,&fit.model,csv.rows.size());
+                    pr.candidate.assign(csv.rows.size(),
+                        std::numeric_limits<double>::quiet_NaN());
 
-            for(size_t r=0;r<csv.rows.size();++r){
-                const double a0=pr.nominal[r];
-                const double ad=pr.data_rw[r];
-                if(!(std::isfinite(a0)&&a0>0.0&&std::isfinite(ad)&&ad>0.0))
-                    continue;
+                    out.summary_lines.reserve(csv.rows.size());
+                    for(size_t r=0;r<csv.rows.size();++r){
+                        const double a0=pr.nominal[r];
+                        const double ad=pr.data_rw[r];
+                        if(!(std::isfinite(a0)&&a0>0.0&&std::isfinite(ad)&&ad>0.0))
+                            continue;
 
-                // Final candidate definition under study: full DATA-reweighting
-                // excursion relative to the nominal acceptance.  Pure BH is not
-                // included because it is a stress-test shape, not our estimate
-                // of the physical DVCS+BH event distribution.
-                const double rd_acceptance=std::fabs(ad-a0)/a0;
-                const double rd_cross_section=std::fabs(a0/ad-1.0);
-                pr.candidate[r]=rd_cross_section;
+                        const double rd_acceptance=std::fabs(ad-a0)/a0;
+                        const double rd_cross_section=std::fabs(a0/ad-1.0);
+                        pr.candidate[r]=rd_cross_section;
 
-                summary<<period<<','<<r<<','<<a0<<','<<ad<<','
-                       <<rd_acceptance<<','<<rd_cross_section<<'\n';
-            }
+                        std::ostringstream line;
+                        line<<period<<','<<r<<','<<a0<<','<<ad<<','
+                            <<rd_acceptance<<','<<rd_cross_section;
+                        out.summary_lines.push_back(line.str());
+                    }
 
-            std::cout<<"[acceptance-reweighting] Running synthetic transfer "
-                     <<"closure for "<<period<<"...\n";
-            const auto syn=arw_run_synthetic_closure(
-                period,gen,rec,axes,options,csv.rows.size());
-            synthetic_points.insert(synthetic_points.end(),syn.begin(),syn.end());
+                    std::cout<<"[acceptance-reweighting] Running synthetic transfer "
+                             <<"closure for "<<period<<"...\n";
+                    out.synthetic=arw_run_synthetic_closure(
+                        period,gen,rec,axes,options,csv.rows.size());
+                    out.result=std::move(pr);
+                    out.valid=true;
+                    std::cout<<"[acceptance-reweighting] Finished period "
+                             <<period<<".\n";
+                    return out;
+                }));
+        }
 
-            results[period]=std::move(pr);
+        for(auto& job:period_jobs){
+            PeriodWorkResult out=job.get();
+            if(!out.valid) continue;
+            for(const auto& line:out.summary_lines) summary<<line<<'\n';
+            synthetic_points.insert(synthetic_points.end(),
+                                    out.synthetic.begin(),out.synthetic.end());
+            results[out.period]=std::move(out.result);
         }
 
         // Build a row-by-row transfer-closure envelope from the amplitude scan.
