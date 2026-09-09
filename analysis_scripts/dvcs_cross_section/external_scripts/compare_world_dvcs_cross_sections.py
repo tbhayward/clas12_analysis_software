@@ -850,40 +850,109 @@ def greedy_one_to_one_matches(candidates: pd.DataFrame) -> pd.DataFrame:
 #enddef
 
 
-def fit_pair_normalizations(
+def fit_pair_relative_normalization(
         a_value: np.ndarray,
         b_value: np.ndarray,
-        sigma: np.ndarray,
+        sigma_a: np.ndarray,
+        sigma_b: np.ndarray,
+        transport_unc: np.ndarray,
         norm_a: float,
-        norm_b: float) -> Tuple[float, float, float]:
+        norm_b: float) -> Dict[str, float]:
     """
-    Simultaneously fit one correlated scale nuisance for A and one for B.
+    Fit the *relative* normalization of two matched datasets in log-ratio space.
 
-    For matched points the residual is
-        A*(1+nA*betaA) - B*(1+nB*betaB),
-    with betaA^2 + betaB^2 penalties.
+    Only the relative normalization between two independent experiments is
+    identifiable from an A-vs-B comparison.  Fitting independent absolute
+    scales for A and B while keeping their point uncertainties fixed creates an
+    unphysical common-mode direction in which both datasets can be scaled
+    toward zero.  This routine removes that degeneracy.
+
+    For each matched point, define
+
+        z_i = ln(A_i / B_i)
+
+    with approximate point uncertainty
+
+        s_i^2 = (sigma_A/A)^2 + (sigma_B/B)^2
+                + (sigma_transport/A)^2.
+
+    A relative multiplicative shift exp(eta) is applied to A, so the residual
+    becomes z_i + eta.  The independent quoted normalization uncertainties are
+    combined in quadrature in log space and used as the prior width on eta.
+
+    The returned scale_a_to_b = exp(eta) is therefore the factor multiplying
+    dataset A (after local kinematic transport) to align it with dataset B.
     """
     A = np.asarray(a_value, dtype=float)
     B = np.asarray(b_value, dtype=float)
-    S = np.asarray(sigma, dtype=float)
-    good = np.isfinite(A) & np.isfinite(B) & np.isfinite(S) & (S > 0.0)
-    A, B, S = A[good], B[good], S[good]
+    SA = np.asarray(sigma_a, dtype=float)
+    SB = np.asarray(sigma_b, dtype=float)
+    ST = np.asarray(transport_unc, dtype=float)
+
+    good = (
+        np.isfinite(A) & np.isfinite(B) & np.isfinite(SA) & np.isfinite(SB)
+        & np.isfinite(ST) & (A > 0.0) & (B > 0.0)
+        & (SA >= 0.0) & (SB >= 0.0) & (ST >= 0.0)
+    )
+    A, B, SA, SB, ST = A[good], B[good], SA[good], SB[good], ST[good]
     if len(A) == 0:
-        return np.nan, np.nan, np.nan
+        return {
+            "N": 0,
+            "eta": np.nan,
+            "beta_relative": np.nan,
+            "scale_a_to_b": np.nan,
+            "relative_norm_frac": np.nan,
+            "chi2": np.nan,
+            "chi2_per_point": np.nan,
+        }
     #endif
 
-    r0 = A - B
-    X = np.column_stack([norm_a * A, -norm_b * B])
-    w = 1.0 / (S * S)
-    lhs = X.T @ (w[:, None] * X) + np.eye(2)
-    rhs = -(X.T @ (w * r0))
-    beta = np.linalg.solve(lhs, rhs)
+    z = np.log(A / B)
+    sfrac = np.sqrt((SA / A)**2 + (SB / B)**2 + (ST / A)**2)
+    finite = np.isfinite(z) & np.isfinite(sfrac) & (sfrac > 0.0)
+    z, sfrac = z[finite], sfrac[finite]
+    if len(z) == 0:
+        return {
+            "N": 0,
+            "eta": np.nan,
+            "beta_relative": np.nan,
+            "scale_a_to_b": np.nan,
+            "relative_norm_frac": np.nan,
+            "chi2": np.nan,
+            "chi2_per_point": np.nan,
+        }
+    #endif
 
-    residual = r0 + X @ beta
-    chi2 = np.sum((residual / S)**2) + np.sum(beta**2)
-    return float(beta[0]), float(beta[1]), float(chi2)
+    # Independent multiplicative normalization uncertainties combine in
+    # quadrature.  log1p maps the quoted fractional scale width onto the same
+    # additive variable eta used by ln(A/B).
+    sigma_eta_a = math.log1p(max(float(norm_a), 0.0))
+    sigma_eta_b = math.log1p(max(float(norm_b), 0.0))
+    sigma_eta = math.sqrt(sigma_eta_a**2 + sigma_eta_b**2)
+
+    w = 1.0 / (sfrac * sfrac)
+    if sigma_eta > 0.0:
+        eta = -float(np.sum(w * z)) / float(np.sum(w) + 1.0 / sigma_eta**2)
+        penalty = (eta / sigma_eta)**2
+        beta_relative = eta / sigma_eta
+    else:
+        eta = 0.0
+        penalty = 0.0
+        beta_relative = 0.0
+    #endif
+
+    pulls = (z + eta) / sfrac
+    chi2 = float(np.sum(pulls**2) + penalty)
+    return {
+        "N": int(len(z)),
+        "eta": float(eta),
+        "beta_relative": float(beta_relative),
+        "scale_a_to_b": float(math.exp(eta)),
+        "relative_norm_frac": float(math.sqrt(norm_a**2 + norm_b**2)),
+        "chi2": chi2,
+        "chi2_per_point": float(chi2 / len(z)),
+    }
 #enddef
-
 
 def build_pairwise_comparisons(
         world: pd.DataFrame,
@@ -981,34 +1050,45 @@ def build_pairwise_comparisons(
             #endfor
 
             pair = pd.DataFrame(rows)
-            beta_a, beta_b, chi2 = fit_pair_normalizations(
+            relfit = fit_pair_relative_normalization(
                 pair["xs_a_to_b_km15"].to_numpy(float),
                 pair["xs_b"].to_numpy(float),
-                pair["comparison_unc_abs"].to_numpy(float),
+                pair["point_unc_a_to_b_km15"].to_numpy(float),
+                pair["point_unc_b"].to_numpy(float),
+                pair["transport_model_unc_abs"].to_numpy(float),
                 float(pair["norm_frac_a"].iloc[0]),
                 float(pair["norm_frac_b"].iloc[0]),
             )
-            pair["beta_a"] = beta_a
-            pair["beta_b"] = beta_b
-            pair["scale_a"] = 1.0 + beta_a * pair["norm_frac_a"]
-            pair["scale_b"] = 1.0 + beta_b * pair["norm_frac_b"]
+            relative_scale = float(relfit["scale_a_to_b"])
+            pair["relative_norm_beta"] = float(relfit["beta_relative"])
+            pair["relative_scale_a_to_b"] = relative_scale
+            pair["relative_norm_frac"] = float(relfit["relative_norm_frac"])
+
+            pair["raw_log_pull"] = np.log(pair["xs_a_to_b_km15"] / pair["xs_b"]) / np.sqrt(
+                (pair["point_unc_a_to_b_km15"] / pair["xs_a_to_b_km15"])**2
+                + (pair["point_unc_b"] / pair["xs_b"])**2
+                + (pair["transport_model_unc_abs"] / pair["xs_a_to_b_km15"])**2
+            )
             pair["profiled_pull"] = (
-                pair["scale_a"] * pair["xs_a_to_b_km15"]
-                - pair["scale_b"] * pair["xs_b"]
-            ) / pair["comparison_unc_abs"]
+                np.log(pair["xs_a_to_b_km15"] / pair["xs_b"]) + math.log(relative_scale)
+            ) / np.sqrt(
+                (pair["point_unc_a_to_b_km15"] / pair["xs_a_to_b_km15"])**2
+                + (pair["point_unc_b"] / pair["xs_b"])**2
+                + (pair["transport_model_unc_abs"] / pair["xs_a_to_b_km15"])**2
+            )
 
             summaries.append({
                 "dataset_a": key_a,
                 "dataset_b": key_b,
                 "N_candidates": len(candidates),
                 "N_matches": len(pair),
-                "beta_a": beta_a,
-                "beta_b": beta_b,
-                "scale_a": float(pair["scale_a"].iloc[0]),
-                "scale_b": float(pair["scale_b"].iloc[0]),
-                "chi2_with_norm_penalties": chi2,
-                "chi2_per_match": chi2 / len(pair),
+                "relative_norm_beta": float(relfit["beta_relative"]),
+                "relative_scale_a_to_b": relative_scale,
+                "relative_norm_pct": 100.0 * float(relfit["relative_norm_frac"]),
+                "chi2_with_norm_penalty": float(relfit["chi2"]),
+                "chi2_per_match": float(relfit["chi2_per_point"]),
                 "raw_pull_rms": float(np.sqrt(np.nanmean(pair["raw_pull"]**2))),
+                "raw_log_pull_rms": float(np.sqrt(np.nanmean(pair["raw_log_pull"]**2))),
                 "profiled_pull_rms": float(np.sqrt(np.nanmean(pair["profiled_pull"]**2))),
                 "median_abs_profiled_pull": float(np.nanmedian(np.abs(pair["profiled_pull"]))),
                 "median_transport_model_unc_pct": (
