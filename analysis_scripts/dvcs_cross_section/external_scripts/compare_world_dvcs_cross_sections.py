@@ -165,7 +165,7 @@ MODEL_STYLES = {
 # Dense model curves for presentation.  The data-model calculations used in
 # fits remain evaluated at the exact measured points; this grid is only for
 # drawing smooth BH/KM15 curves.  It explicitly includes both 0 and 360 deg.
-MODEL_CURVE_PHI_STEP_DEG = 2.0
+MODEL_CURVE_PHI_STEP_DEG = 15.0
 
 # In the global Lee-anchor normalization study Georges is intentionally left
 # unconstrained, as requested.  All other experiments receive Gaussian
@@ -2819,6 +2819,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lee-file", default=str(here / "import" / "clasdb_E214M1.txt"))
     p.add_argument("--target-ebeam", type=float, default=TARGET_EBEAM_GEV)
     p.add_argument("--workers", type=int, default=1, help="Reserved for future KM15 multiprocessing; current first pass evaluates serially for model safety")
+    p.add_argument(
+        "--model-phi-step-deg",
+        type=float,
+        default=15.0,
+        help=(
+            "Phi spacing in degrees for BH/KM15 presentation curves "
+            "(default: 15 deg). Curves always include exactly 0 and 360 deg."
+        ),
+    )
     p.add_argument("--force-km15", action="store_true")
 
     p.add_argument("--match-dxb", type=float, default=DEFAULT_MATCH_DXB)
@@ -2831,6 +2840,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
+
+    global MODEL_CURVE_PHI_STEP_DEG
+    MODEL_CURVE_PHI_STEP_DEG = float(args.model_phi_step_deg)
+    if (
+        not np.isfinite(MODEL_CURVE_PHI_STEP_DEG)
+        or MODEL_CURVE_PHI_STEP_DEG <= 0.0
+        or MODEL_CURVE_PHI_STEP_DEG > 90.0
+    ):
+        raise ValueError(
+            "--model-phi-step-deg must be finite and in the interval (0, 90]."
+        )
+    #endif
+    print(
+        f"[PLOTS] BH/KM15 model-curve phi step = "
+        f"{MODEL_CURVE_PHI_STEP_DEG:g} deg (0--360 deg inclusive)"
+    )
     args.script_dir = Path(__file__).resolve().parent
 
     outdir = Path(args.outdir).expanduser()
