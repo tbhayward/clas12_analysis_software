@@ -338,6 +338,23 @@ static bool ensure_systematics_output_columns(const std::string& csv_path) {
         add_if_missing(col);
     }
 
+    // Acceptance-reweighting outputs are produced by the expensive tree-based
+    // study, but CSV-only recovery/finalization must also be able to recreate
+    // them from the saved diagnostic CSVs after a later nominal/current run has
+    // rewritten the main CSV.  Ensure the complete schema exists before any
+    // recovery code accesses it.
+    for (const auto& col : std::vector<std::string>{
+            "acceptance reweighting candidate sys frac, 10.6 GeV",
+            "acceptance reweighting candidate sys frac, Sp19 Inb",
+            "acceptance reweighting data-driven sys frac, 10.6 GeV",
+            "acceptance reweighting data-driven sys frac, Sp19 Inb",
+            "acceptance reweighting transfer closure sys frac, 10.6 GeV",
+            "acceptance reweighting transfer closure sys frac, Sp19 Inb",
+            "acceptance reweighting conservative sys frac, 10.6 GeV",
+            "acceptance reweighting conservative sys frac, Sp19 Inb"}) {
+        add_if_missing(col);
+    }
+
     if (n_added > 0) {
         write_csv_or_throw(csv_path, table);
         std::cout << "[systematics] Added " << n_added
@@ -457,8 +474,12 @@ static bool recover_acceptance_reweighting_from_diagnostics(CsvTable& t) {
     const int c_transfer10 = t.index.at("acceptance reweighting transfer closure sys frac, 10.6 GeV");
     const int c_cons10 = t.index.at("acceptance reweighting conservative sys frac, 10.6 GeV");
     const int c_cand10 = t.index.at("acceptance reweighting candidate sys frac, 10.6 GeV");
+    const int c_datasp = t.index.at("acceptance reweighting data-driven sys frac, Sp19 Inb");
+    const int c_transfersp = t.index.at("acceptance reweighting transfer closure sys frac, Sp19 Inb");
+    const int c_conssp = t.index.at("acceptance reweighting conservative sys frac, Sp19 Inb");
+    const int c_candsp = t.index.at("acceptance reweighting candidate sys frac, Sp19 Inb");
 
-    size_t n=0;
+    size_t n=0, nsp=0;
     for (size_t i=0;i<t.rows.size();++i) {
         // Preserve a valid value from the tree-based stage.
         if (std::isfinite(scalar_value(t.rows[i][(size_t)c_cons10]))) continue;
@@ -494,11 +515,39 @@ static bool recover_acceptance_reweighting_from_diagnostics(CsvTable& t) {
         t.rows[i][(size_t)c_cand10]=format_scalar(cons);
         ++n;
     }
-    if (n>0)
+
+    // Recover the dedicated Sp19 candidate as well.  Unlike the 10.6-GeV
+    // result, there is no period combination: use the Sp19 nominal/reweighted
+    // acceptance ratio directly and its row-wise 95th-percentile closure term.
+    const std::string sp19 = "Sp19 Inb";
+    for (size_t i=0;i<t.rows.size();++i) {
+        if (std::isfinite(scalar_value(t.rows[i][(size_t)c_conssp]))) continue;
+        auto ia=acc[sp19].find(i);
+        if (ia==acc[sp19].end()) continue;
+        const double ddata=std::fabs(ia->second.a0/ia->second.ad - 1.0);
+        double tr=0.0;
+        auto ibp=biases.find(sp19);
+        if (ibp!=biases.end()) {
+            auto ib=ibp->second.find(i);
+            if (ib!=ibp->second.end() && !ib->second.empty()) {
+                const double q=quantile_copy(ib->second,0.95);
+                if (std::isfinite(q)) tr=q;
+            }
+        }
+        const double cons=std::hypot(ddata,tr);
+        t.rows[i][(size_t)c_datasp]=format_scalar(ddata);
+        t.rows[i][(size_t)c_transfersp]=format_scalar(tr);
+        t.rows[i][(size_t)c_conssp]=format_scalar(cons);
+        t.rows[i][(size_t)c_candsp]=format_scalar(cons);
+        ++nsp;
+    }
+
+    if (n>0 || nsp>0)
         std::cout << "[acceptance-systematics] Recovered " << n
-                  << " combined 10.6-GeV acceptance candidates from the completed "
-                  << "acceptance diagnostic files; no event-loop rerun was required.\n";
-    return n>0;
+                  << " combined 10.6-GeV and " << nsp
+                  << " Sp19 acceptance candidates from the completed acceptance "
+                  << "diagnostic files; no event-loop rerun was required.\n";
+    return n>0 || nsp>0;
 }
 
 // Promote the reviewed acceptance-reweighting candidate to the production
