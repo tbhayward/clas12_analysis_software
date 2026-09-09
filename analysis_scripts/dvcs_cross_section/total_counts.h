@@ -164,9 +164,13 @@ struct AcceptanceReweightingOptions {
 //
 // The candidate model uncertainty is |Adata-A0|/A0.  A pure-BH stress test may
 // still be enabled explicitly, but it is not used in the candidate systematic.
-// The study also performs synthetic-MC closure tests with known smooth weights
-// to validate transferring a weight learned at reconstructed level to the
-// generated denominator.  The candidate is NOT installed into
+// The study also performs synthetic-MC transfer-closure tests with known smooth
+// weights over several distortion amplitudes.  These quantify the residual from
+// learning a weight at reconstructed level and applying it to the generated
+// denominator.  Because the present trees do not provide a generated->reconstructed
+// event map, this is explicitly NOT claimed as a full detector-response closure.
+// The conservative candidate combines the DATA-driven excursion with the
+// row-level transfer-closure residual.  It is NOT installed into
 // Syst. err (Acceptance) unless explicitly requested.
 bool run_acceptance_reweighting_study(
     const std::string& csv_path,

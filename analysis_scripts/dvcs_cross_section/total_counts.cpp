@@ -5071,7 +5071,7 @@ static void arw_write_closure_canvas(
 // Synthetic-MC closure validation for reconstructed -> generated weight transfer
 // -----------------------------------------------------------------------------
 
-static double arw_test_weight(const ARWEvent& e,int test_id) {
+static double arw_test_weight(const ARWEvent& e,int test_id,double amplitude=1.0) {
     const double zx=std::max(-1.5,std::min(1.5,(e.x-0.30)/0.22));
     const double zq=std::max(-1.5,std::min(1.5,(e.q2-3.0)/2.0));
     const double zt=std::max(-1.5,std::min(1.5,(e.tabs-0.45)/0.38));
@@ -5088,7 +5088,11 @@ static double arw_test_weight(const ARWEvent& e,int test_id) {
                 +0.24*std::cos(ph)+0.08*std::cos(2.0*ph);
             break;
     }
-    return std::max(0.45,std::min(2.20,std::exp(logw)));
+    // Scale the imposed distortion so closure can be tested from mild to
+    // deliberately stronger-than-data shape differences.  The broad cap only
+    // prevents pathological numerical weights in the stress scan.
+    logw *= amplitude;
+    return std::max(0.25,std::min(4.00,std::exp(logw)));
 }
 
 static const std::array<std::string,5>& arw_test_names() {
@@ -5099,9 +5103,9 @@ static const std::array<std::string,5>& arw_test_names() {
 }
 
 static std::vector<ARWEvent> arw_make_pseudodata(
-    const std::vector<ARWEvent>& rec,int test_id) {
+    const std::vector<ARWEvent>& rec,int test_id,double amplitude) {
     std::vector<ARWEvent> out=rec;
-    for(auto& e:out) e.base_weight*=arw_test_weight(e,test_id);
+    for(auto& e:out) e.base_weight*=arw_test_weight(e,test_id,amplitude);
     return out;
 }
 
@@ -5109,16 +5113,17 @@ static std::vector<double> arw_acceptance_known_weight(
     const std::vector<ARWEvent>& gen,
     const std::vector<ARWEvent>& rec,
     int test_id,
+    double amplitude,
     size_t nrows) {
 
     std::vector<double> ng(nrows,0.0),nr(nrows,0.0);
     for(const auto& e:gen){
         if(e.row<0||(size_t)e.row>=nrows) continue;
-        ng[(size_t)e.row]+=e.base_weight*arw_test_weight(e,test_id);
+        ng[(size_t)e.row]+=e.base_weight*arw_test_weight(e,test_id,amplitude);
     }
     for(const auto& e:rec){
         if(e.row<0||(size_t)e.row>=nrows) continue;
-        nr[(size_t)e.row]+=e.base_weight*arw_test_weight(e,test_id);
+        nr[(size_t)e.row]+=e.base_weight*arw_test_weight(e,test_id,amplitude);
     }
     std::vector<double> a(nrows,std::numeric_limits<double>::quiet_NaN());
     for(size_t r=0;r<nrows;++r)
@@ -5129,6 +5134,7 @@ static std::vector<double> arw_acceptance_known_weight(
 struct ARWSyntheticPoint {
     std::string period;
     std::string test;
+    double amplitude=1.0;
     int row=-1;
     double nominal=std::numeric_limits<double>::quiet_NaN();
     double exact=std::numeric_limits<double>::quiet_NaN();
@@ -5149,27 +5155,40 @@ static std::vector<ARWSyntheticPoint> arw_run_synthetic_closure(
     std::vector<ARWSyntheticPoint> out;
     const auto nominal=arw_acceptance(gen,rec,nullptr,nrows);
 
-    for(int itest=0;itest<5;++itest){
-        const auto pseudo=arw_make_pseudodata(rec,itest);
-        const ARWFitResult fit=arw_fit(pseudo,rec,axes,options);
-        const auto exact=arw_acceptance_known_weight(gen,rec,itest,nrows);
-        const auto recovered=arw_acceptance(gen,rec,&fit.model,nrows);
+    // The amplitude scan is the practical closure envelope available without
+    // generated<->reconstructed event matching.  It checks whether the
+    // reconstructed-level iterative fit remains reliable as the true smooth
+    // shape distortion is made weaker or stronger than the observed DATA/MC
+    // discrepancy.  This is deliberately described as a transfer closure, not
+    // as a full detector-response closure.
+    const std::array<double,4> amplitudes={{0.50,1.00,1.50,2.00}};
 
-        for(size_t r=0;r<nrows;++r){
+    for(int itest=0;itest<5;++itest){
+        for(double amplitude:amplitudes){
+            const auto pseudo=arw_make_pseudodata(rec,itest,amplitude);
+            const ARWFitResult fit=arw_fit(pseudo,rec,axes,options);
+            const auto exact=arw_acceptance_known_weight(
+                gen,rec,itest,amplitude,nrows);
+            const auto recovered=arw_acceptance(
+                gen,rec,&fit.model,nrows);
+
+            for(size_t r=0;r<nrows;++r){
             const double a0=nominal[r],ae=exact[r],ar=recovered[r];
             if(!(std::isfinite(a0)&&a0>0.0&&std::isfinite(ae)&&ae>0.0&&
                  std::isfinite(ar)&&ar>0.0)) continue;
             ARWSyntheticPoint p;
             p.period=period;
-            p.test=arw_test_names()[(size_t)itest];
-            p.row=(int)r;
+                p.test=arw_test_names()[(size_t)itest];
+                p.amplitude=amplitude;
+                p.row=(int)r;
             p.nominal=a0;
             p.exact=ae;
             p.recovered=ar;
             p.exact_shift=std::fabs(ae-a0)/a0;
             p.recovered_shift=std::fabs(ar-a0)/a0;
             p.closure_bias=std::fabs(ar-ae)/a0;
-            out.push_back(std::move(p));
+                out.push_back(std::move(p));
+            }
         }
     }
     return out;
@@ -5179,14 +5198,14 @@ static void arw_write_synthetic_csv(
     const std::string& path,
     const std::vector<ARWSyntheticPoint>& points) {
     std::ofstream out(path);
-    out<<"period,test,row,acceptance_nominal,acceptance_exact,"
+    out<<"period,test,amplitude,row,acceptance_nominal,acceptance_exact,"
           "acceptance_recovered,exact_shift_frac,recovered_shift_frac,"
-          "closure_bias_frac\\n";
+          "closure_bias_frac\n";
     for(const auto& p:points)
-        out<<p.period<<','<<p.test<<','<<p.row<<','
+        out<<p.period<<','<<p.test<<','<<p.amplitude<<','<<p.row<<','
            <<p.nominal<<','<<p.exact<<','<<p.recovered<<','
            <<p.exact_shift<<','<<p.recovered_shift<<','
-           <<p.closure_bias<<'\\n';
+           <<p.closure_bias<<'\n';
 }
 
 static double arw_quantile(std::vector<double> v,double q) {
@@ -5442,6 +5461,14 @@ bool run_acceptance_reweighting_study(
             csv,"acceptance reweighting data-driven sys frac, 10.6 GeV");
         const int c_data_102=arw_ensure_column(
             csv,"acceptance reweighting data-driven sys frac, Sp19 Inb");
+        const int c_transfer_106=arw_ensure_column(
+            csv,"acceptance reweighting transfer closure sys frac, 10.6 GeV");
+        const int c_transfer_102=arw_ensure_column(
+            csv,"acceptance reweighting transfer closure sys frac, Sp19 Inb");
+        const int c_conservative_106=arw_ensure_column(
+            csv,"acceptance reweighting conservative sys frac, 10.6 GeV");
+        const int c_conservative_102=arw_ensure_column(
+            csv,"acceptance reweighting conservative sys frac, Sp19 Inb");
 
         struct PeriodResult {
             std::vector<double> nominal,data_rw,candidate;
@@ -5544,12 +5571,40 @@ bool run_acceptance_reweighting_study(
             results[period]=std::move(pr);
         }
 
+        // Build a row-by-row transfer-closure envelope from the amplitude scan.
+        // We use the 95th percentile over the 20 smooth stress shapes
+        // (5 shape families x 4 amplitudes) for each period and analysis bin.
+        // This residual is carried separately because, without event matching,
+        // the study cannot be promoted to a full truth->reconstruction response
+        // closure.
+        std::map<std::string,std::vector<double>> transfer_p95;
+        for(const auto& period:periods)
+            transfer_p95[period].assign(
+                csv.rows.size(),std::numeric_limits<double>::quiet_NaN());
+        for(const auto& period:periods){
+            for(size_t r=0;r<csv.rows.size();++r){
+                std::vector<double> v;
+                for(const auto& p:synthetic_points)
+                    if(p.period==period && p.row==(int)r &&
+                       std::isfinite(p.closure_bias))
+                        v.push_back(p.closure_bias);
+                if(!v.empty()) transfer_p95[period][r]=arw_quantile(v,.95);
+            }
+        }
+
         // Effective 10.6-GeV candidate: weight period-level acceptance shifts by
         // the nominal acceptance-corrected unpolarized yield contribution.
+        // The conservative candidate adds the transfer-closure residual in
+        // quadrature.  For the four-period 10.6-GeV combination we take the
+        // largest contributing period's row-level closure residual rather than
+        // averaging it down, because this is a method limitation, not a
+        // statistical fluctuation.
         for(size_t r=0;r<csv.rows.size();++r){
             double ytot=0.0;
             double delta_data=0.0;
             double nominal_combined=0.0;
+            double transfer_max=0.0;
+            bool have_transfer=false;
             bool have_any=false;
 
             for(const std::string period:
@@ -5574,13 +5629,24 @@ bool run_acceptance_reweighting_study(
                 ytot+=y;
                 nominal_combined+=y;
                 delta_data+=y*(a0/ad);
+                const double tr=transfer_p95[period][r];
+                if(std::isfinite(tr)){
+                    transfer_max=std::max(transfer_max,tr);
+                    have_transfer=true;
+                }
                 have_any=true;
             }
 
             if(have_any && ytot>0.0){
                 const double rd=std::fabs(delta_data-nominal_combined)/ytot;
+                const double tr=have_transfer?transfer_max:0.0;
+                const double conservative=std::hypot(rd,tr);
                 csv.rows[r][(size_t)c_data_106]=std::to_string(rd);
-                csv.rows[r][(size_t)c_candidate_106]=std::to_string(rd);
+                csv.rows[r][(size_t)c_transfer_106]=std::to_string(tr);
+                csv.rows[r][(size_t)c_conservative_106]=
+                    std::to_string(conservative);
+                csv.rows[r][(size_t)c_candidate_106]=
+                    std::to_string(conservative);
             }
 
             auto sp=results.find("Sp19 Inb");
@@ -5589,8 +5655,15 @@ bool run_acceptance_reweighting_study(
                 const double ad=sp->second.data_rw[r];
                 if(std::isfinite(a0)&&a0>0.0&&std::isfinite(ad)&&ad>0.0){
                     const double rd=std::fabs(a0/ad-1.0);
+                    double tr=transfer_p95["Sp19 Inb"][r];
+                    if(!std::isfinite(tr)) tr=0.0;
+                    const double conservative=std::hypot(rd,tr);
                     csv.rows[r][(size_t)c_data_102]=std::to_string(rd);
-                    csv.rows[r][(size_t)c_candidate_102]=std::to_string(rd);
+                    csv.rows[r][(size_t)c_transfer_102]=std::to_string(tr);
+                    csv.rows[r][(size_t)c_conservative_102]=
+                        std::to_string(conservative);
+                    csv.rows[r][(size_t)c_candidate_102]=
+                        std::to_string(conservative);
                 }
             }
         }
