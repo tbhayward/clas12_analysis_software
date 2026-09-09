@@ -1109,6 +1109,35 @@ def build_pairwise_comparisons(
 # =============================================================================
 
 
+# Fixed display windows keep a handful of pathological/very-low-weight points
+# from determining the visual scale of summary figures.  The underlying points
+# remain in all tables and quantitative calculations; matplotlib simply clips
+# markers/error bars outside these display ranges.
+NATIVE_RATIO_YLIMS = {
+    "KM15": (0.0, 3.0),
+    "GK16": (0.0, 3.0),
+    "BH": (0.0, 10.0),
+}
+PAIRWISE_PULL_YLIM = (-5.5, 5.5)
+
+
+def _annotate_clipped_y(ax, values: pd.Series, ylow: float, yhigh: float) -> None:
+    arr = pd.to_numeric(values, errors="coerce").to_numpy(float)
+    finite = np.isfinite(arr)
+    nlow = int(np.sum(finite & (arr < ylow)))
+    nhigh = int(np.sum(finite & (arr > yhigh)))
+    nclip = nlow + nhigh
+    if nclip <= 0:
+        return
+    #endif
+    ax.text(
+        0.012, 0.018,
+        f"{nclip} central point(s) outside display range; all retained in analysis",
+        transform=ax.transAxes, ha="left", va="bottom", fontsize=7.5, alpha=0.75,
+    )
+#enddef
+
+
 def plot_native_model_ratios(world: pd.DataFrame, outdir: Path, have_gk16: bool) -> None:
     outdir.mkdir(parents=True, exist_ok=True)
     variables = [
@@ -1143,6 +1172,9 @@ def plot_native_model_ratios(world: pd.DataFrame, outdir: Path, have_gk16: bool)
                 )
             #endfor
             ax.axhline(1.0, lw=1.1, linestyle="--")
+            ylow, yhigh = NATIVE_RATIO_YLIMS[model_label]
+            ax.set_ylim(ylow, yhigh)
+            _annotate_clipped_y(ax, world[ratio_col], ylow, yhigh)
             ax.set_xlabel(xlabel)
             ax.set_ylabel(rf"$\sigma_{{\rm data}}/\sigma_{{\rm {model_label}}}$")
             ax.set_title(f"Published world data / {model_label} at native kinematics")
@@ -1257,6 +1289,10 @@ def plot_pairwise_pulls(matches: pd.DataFrame, outdir: Path) -> None:
         ax.axhline(0.0, lw=1.0)
         ax.axhline(+1.0, lw=0.8, linestyle="--")
         ax.axhline(-1.0, lw=0.8, linestyle="--")
+        ax.set_ylim(*PAIRWISE_PULL_YLIM)
+        _annotate_clipped_y(
+            ax, matches["profiled_pull"], PAIRWISE_PULL_YLIM[0], PAIRWISE_PULL_YLIM[1]
+        )
         ax.set_xlabel(xlabel)
         ax.set_ylabel("Matched-data residual / pointwise uncertainty")
         ax.set_title("Pairwise matched world-data residuals")
