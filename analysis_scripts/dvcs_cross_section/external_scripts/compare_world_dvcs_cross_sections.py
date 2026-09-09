@@ -778,16 +778,16 @@ def candidate_matches(a: pd.DataFrame, b: pd.DataFrame, cfg: MatchConfig) -> pd.
     # The datasets are only a few thousand points; grouping by coarse xB first
     # avoids a full O(N^2) Cartesian product while retaining transparent cuts.
     for ia, ra in a.iterrows():
-        xbmask = np.abs(b["xB"].to_numpy(float) - float(ra.xB)) <= cfg.dxb
+        xbmask = np.abs(b["xB"].to_numpy(float) - float(ra["xB"])) <= cfg.dxb
         if not np.any(xbmask):
             continue
         #endif
 
         sub = b.loc[xbmask]
-        dx = np.abs(sub["xB"].to_numpy(float) - float(ra.xB))
-        dq = np.abs(sub["Q2"].to_numpy(float) - float(ra.Q2))
-        dt = np.abs(sub["t_abs"].to_numpy(float) - float(ra.t_abs))
-        dp = circular_phi_difference_deg(sub["phi_deg"].to_numpy(float), float(ra.phi_deg))
+        dx = np.abs(sub["xB"].to_numpy(float) - float(ra["xB"]))
+        dq = np.abs(sub["Q2"].to_numpy(float) - float(ra["Q2"]))
+        dt = np.abs(sub["t_abs"].to_numpy(float) - float(ra["t_abs"]))
+        dp = circular_phi_difference_deg(sub["phi_deg"].to_numpy(float), float(ra["phi_deg"]))
 
         keep = (dq <= cfg.dq2) & (dt <= cfg.dt) & (dp <= cfg.dphi)
         if not np.any(keep):
@@ -811,8 +811,8 @@ def candidate_matches(a: pd.DataFrame, b: pd.DataFrame, cfg: MatchConfig) -> pd.
             rows.append({
                 "ia": int(ia),
                 "ib": int(ib),
-                "point_id_a": str(ra.point_id),
-                "point_id_b": str(rb.point_id),
+                "point_id_a": str(ra["point_id"]),
+                "point_id_b": str(rb["point_id"]),
                 "dxB": float(dx[j]),
                 "dQ2": float(dq[j]),
                 "dt_abs": float(dt[j]),
@@ -924,47 +924,47 @@ def build_pairwise_comparisons(
                 ra = a.iloc[int(m.ia)]
                 rb = b.iloc[int(m.ib)]
 
-                c_km15 = float(rb.km15_native / ra.km15_native)
-                a_to_b_km15 = float(ra.xs * c_km15)
-                a_stat = float(ra.stat_abs * abs(c_km15))
-                a_sys = float(ra.ptp_sys_abs * abs(c_km15))
-                a_point = float(ra.point_unc_abs * abs(c_km15))
+                c_km15 = float(rb["km15_native"] / ra["km15_native"])
+                a_to_b_km15 = float(ra["xs"] * c_km15)
+                a_stat = float(ra["stat_abs"] * abs(c_km15))
+                a_sys = float(ra["ptp_sys_abs"] * abs(c_km15))
+                a_point = float(ra["point_unc_abs"] * abs(c_km15))
 
                 c_gk16 = np.nan
                 a_to_b_gk16 = np.nan
                 transport_unc = 0.0
-                if have_gk16 and np.isfinite(ra.gk16_native) and np.isfinite(rb.gk16_native):
-                    c_gk16 = float(rb.gk16_native / ra.gk16_native)
-                    a_to_b_gk16 = float(ra.xs * c_gk16)
+                if have_gk16 and np.isfinite(ra["gk16_native"]) and np.isfinite(rb["gk16_native"]):
+                    c_gk16 = float(rb["gk16_native"] / ra["gk16_native"])
+                    a_to_b_gk16 = float(ra["xs"] * c_gk16)
                     transport_unc = abs(a_to_b_gk16 - a_to_b_km15)
                 #endif
 
                 sigma_compare = math.sqrt(
-                    a_point**2 + float(rb.point_unc_abs)**2 + transport_unc**2
+                    a_point**2 + float(rb["point_unc_abs"])**2 + transport_unc**2
                 )
                 raw_pull = (
-                    (a_to_b_km15 - float(rb.xs)) / sigma_compare
+                    (a_to_b_km15 - float(rb["xs"])) / sigma_compare
                     if sigma_compare > 0.0 else np.nan
                 )
 
                 rows.append({
                     "dataset_a": key_a,
                     "dataset_b": key_b,
-                    "point_id_a": str(ra.point_id),
-                    "point_id_b": str(rb.point_id),
+                    "point_id_a": str(ra["point_id"]),
+                    "point_id_b": str(rb["point_id"]),
                     "match_score": float(m.match_score),
                     "dxB": float(m.dxB),
                     "dQ2": float(m.dQ2),
                     "dt_abs": float(m.dt_abs),
                     "dphi_deg": float(m.dphi_deg),
-                    "xB_a": float(ra.xB), "xB_b": float(rb.xB),
-                    "Q2_a": float(ra.Q2), "Q2_b": float(rb.Q2),
-                    "t_abs_a": float(ra.t_abs), "t_abs_b": float(rb.t_abs),
-                    "phi_a": float(ra.phi_deg), "phi_b": float(rb.phi_deg),
-                    "ebeam_a": float(ra.ebeam), "ebeam_b": float(rb.ebeam),
-                    "xs_a": float(ra.xs), "xs_b": float(rb.xs),
-                    "point_unc_a": float(ra.point_unc_abs),
-                    "point_unc_b": float(rb.point_unc_abs),
+                    "xB_a": float(ra["xB"]), "xB_b": float(rb["xB"]),
+                    "Q2_a": float(ra["Q2"]), "Q2_b": float(rb["Q2"]),
+                    "t_abs_a": float(ra["t_abs"]), "t_abs_b": float(rb["t_abs"]),
+                    "phi_a": float(ra["phi_deg"]), "phi_b": float(rb["phi_deg"]),
+                    "ebeam_a": float(ra["ebeam"]), "ebeam_b": float(rb["ebeam"]),
+                    "xs_a": float(ra["xs"]), "xs_b": float(rb["xs"]),
+                    "point_unc_a": float(ra["point_unc_abs"]),
+                    "point_unc_b": float(rb["point_unc_abs"]),
                     "km15_local_transport_factor": c_km15,
                     "xs_a_to_b_km15": a_to_b_km15,
                     "stat_a_to_b_km15": a_stat,
@@ -975,8 +975,8 @@ def build_pairwise_comparisons(
                     "transport_model_unc_abs": transport_unc,
                     "comparison_unc_abs": sigma_compare,
                     "raw_pull": raw_pull,
-                    "norm_frac_a": float(ra.norm_frac),
-                    "norm_frac_b": float(rb.norm_frac),
+                    "norm_frac_a": float(ra["norm_frac"]),
+                    "norm_frac_b": float(rb["norm_frac"]),
                 })
             #endfor
 
