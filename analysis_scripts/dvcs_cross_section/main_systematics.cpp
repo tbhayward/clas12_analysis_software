@@ -373,11 +373,24 @@ static std::string trim_copy(const std::string& s) {
 }
 
 static double scalar_value(const std::string& raw) {
-    const std::string s = trim_copy(raw);
+    std::string s = trim_copy(raw);
+
+    // The pass-2 CSV is rewritten by several independent modules.  Be tolerant
+    // of harmless literal quote wrappers that may survive one of those passes.
+    while (s.size() >= 2 &&
+           ((s.front() == '"'  && s.back() == '"') ||
+            (s.front() == '\'' && s.back() == '\''))) {
+        s = trim_copy(s.substr(1, s.size() - 2));
+    }
+
     if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+
     char* end = nullptr;
     const double v = std::strtod(s.c_str(), &end);
-    return (end == s.c_str()) ? std::numeric_limits<double>::quiet_NaN() : v;
+    if (end == s.c_str()) return std::numeric_limits<double>::quiet_NaN();
+
+    while (*end != '\0' && std::isspace((unsigned char)*end)) ++end;
+    return (*end == '\0') ? v : std::numeric_limits<double>::quiet_NaN();
 }
 
 static double tuple_first_value(const std::string& raw) {
@@ -691,6 +704,130 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
     return true;
 }
 
+
+static bool validate_final_point_to_point_systematics(const std::string& csv_path) {
+    const CsvTable t = read_csv_or_throw(csv_path);
+
+    require_columns(
+        t,
+        {
+            "normed cross sections, ep->epg, exp, 10.6 GeV, unpol",
+            "normed cross sections, ep->epg, exp, Sp19 Inb, unpol",
+            "pi0 subtraction sys frac, 10.6 GeV",
+            "pi0 subtraction sys frac, Sp19 Inb (10.2 GeV)",
+            "Syst. err (Acceptance)",
+            "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)",
+            "Syst. err (point-to-point total)",
+            "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)"
+        },
+        "final point-to-point systematic validation");
+
+    const int i_xs10 = t.index.at(
+        "normed cross sections, ep->epg, exp, 10.6 GeV, unpol");
+    const int i_xssp = t.index.at(
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol");
+
+    const int i_pi010 = t.index.at("pi0 subtraction sys frac, 10.6 GeV");
+    const int i_pi0sp = t.index.at(
+        "pi0 subtraction sys frac, Sp19 Inb (10.2 GeV)");
+    const int i_acc10 = t.index.at("Syst. err (Acceptance)");
+    const int i_accsp = t.index.at(
+        "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
+    const int i_ptp10 = t.index.at("Syst. err (point-to-point total)");
+    const int i_ptpsp = t.index.at(
+        "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
+
+    size_t n_xs10 = 0, n_xssp = 0;
+    size_t n_pi010 = 0, n_pi0sp = 0;
+    size_t n_acc10 = 0, n_accsp = 0;
+    size_t n_ptp10 = 0, n_ptpsp = 0;
+
+    for (const auto& row : t.rows) {
+        const bool has10 =
+            std::isfinite(tuple_first_value(row[(size_t)i_xs10]));
+        const bool hassp =
+            std::isfinite(tuple_first_value(row[(size_t)i_xssp]));
+
+        if (has10) {
+            ++n_xs10;
+            if (std::isfinite(scalar_value(row[(size_t)i_pi010]))) ++n_pi010;
+            if (std::isfinite(scalar_value(row[(size_t)i_acc10]))) ++n_acc10;
+            if (std::isfinite(scalar_value(row[(size_t)i_ptp10]))) ++n_ptp10;
+        }
+
+        if (hassp) {
+            ++n_xssp;
+            if (std::isfinite(scalar_value(row[(size_t)i_pi0sp]))) ++n_pi0sp;
+            if (std::isfinite(scalar_value(row[(size_t)i_accsp]))) ++n_accsp;
+            if (std::isfinite(scalar_value(row[(size_t)i_ptpsp]))) ++n_ptpsp;
+        }
+    }
+
+    std::cout
+        << "[final-ptp] 10.6 GeV coverage: xs=" << n_xs10
+        << ", pi0=" << n_pi010
+        << ", acceptance=" << n_acc10
+        << ", total=" << n_ptp10 << "\n";
+    std::cout
+        << "[final-ptp] Sp19 coverage: xs=" << n_xssp
+        << ", pi0=" << n_pi0sp
+        << ", acceptance=" << n_accsp
+        << ", total=" << n_ptpsp << "\n";
+
+    const bool ok10 =
+        n_xs10 > 0 &&
+        n_pi010 == n_xs10 &&
+        n_acc10 == n_xs10 &&
+        n_ptp10 == n_xs10;
+
+    const bool oksp =
+        n_xssp > 0 &&
+        n_pi0sp == n_xssp &&
+        n_accsp == n_xssp &&
+        n_ptpsp == n_xssp;
+
+    if (!ok10 || !oksp) {
+        std::cerr
+            << "[final-ptp] ERROR: final point-to-point columns are incomplete. "
+            << "Projection/summary stages will not be run with a partially "
+            << "materialized CSV.\n";
+        return false;
+    }
+
+    return true;
+}
+
+
+// The pi0 and acceptance assignments are the authoritative final production
+// point-to-point components.  Several downstream diagnostics also rewrite the
+// shared CSV to append their own columns.  Re-materialize the final point-to-
+// point quantities after the LAST such writer, then validate their coverage.
+// This makes ownership/order explicit and prevents a later CSV rewrite from
+// leaving the production columns blank while diagnostic columns remain valid.
+static bool materialize_final_point_to_point_systematics(
+    const std::string& csv_path,
+    const std::string& pass1_systematics_path) {
+
+    if (!pi0_systematics(
+            csv_path,
+            pass1_systematics_path,
+            "imports/all_bin_v3.csv",
+            "output/systematics/pi0_systematics")) {
+        std::cerr << "[final-ptp] ERROR: pi0_systematics failed during final materialization.\n";
+        return false;
+    }
+
+    if (!install_acceptance_reweighting_systematic(csv_path)) {
+        std::cerr
+            << "[final-ptp] ERROR: acceptance systematic installation failed "
+            << "during final materialization.\n";
+        return false;
+    }
+
+    return validate_final_point_to_point_systematics(csv_path);
+}
+
+
 static void make_output_dirs() {
     fs::create_directories("output");
     fs::create_directories("output/csvs");
@@ -724,6 +861,16 @@ int main(int argc, char* argv[]) {
     const std::string csv_main =
         (argc >= 2) ? std::string(argv[1]) : std::string("output/csvs/dvcs_pass2_analysis.csv");
 
+    const std::string pass1_systematics_path =
+        (argc >= 3) ? std::string(argv[2]) : std::string("imports/pass1_systematic_summary.csv");
+
+    bool finalize_only = false;
+    for (int i = 3; i < argc; ++i) {
+        if (std::string(argv[i]) == "--finalize-only") {
+            finalize_only = true;
+        }
+    }
+
     try {
         make_output_dirs();
 
@@ -740,8 +887,30 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        const std::string pass1_systematics_path =
-            (argc >= 3) ? std::string(argv[2]) : std::string("imports/pass1_systematic_summary.csv");
+        if (finalize_only) {
+            std::cout
+                << "[systematics] --finalize-only: preserving completed expensive "
+                << "systematic studies and rebuilding only the authoritative final "
+                << "point-to-point columns and projection plots.\n";
+
+            if (!materialize_final_point_to_point_systematics(
+                    csv_main, pass1_systematics_path)) {
+                std::cerr
+                    << "[systematics] FATAL: final point-to-point materialization failed.\n";
+                return 1;
+            }
+
+            if (!make_systematic_projection_plots(
+                    csv_main,
+                    "output/systematics/point_to_point_projections")) {
+                std::cerr
+                    << "[systematics] FATAL: make_systematic_projection_plots failed.\n";
+                return 1;
+            }
+
+            std::cout << "[systematics] main_systematics finalize-only complete.\n";
+            return 0;
+        }
 
         if (!import_pass1_systematics(csv_main, pass1_systematics_path)) {
             std::cerr << "[systematics] FATAL: import_pass1_systematics failed.\n";
@@ -822,6 +991,19 @@ int main(int argc, char* argv[]) {
 
         if (!sp19_inb_energy_scaling_systematics(csv_main, "output/systematics")) {
             std::cerr << "[systematics] FATAL: sp19_inb_energy_scaling_systematics failed.\n";
+            return 1;
+        }
+
+        // IMPORTANT: sp19_inb_energy_scaling_systematics is the last stage in
+        // this workflow that rewrites the shared production CSV.  The final
+        // pass-2 pi0, acceptance and point-to-point totals are therefore
+        // materialized *after* it.  This removes the ordering ambiguity that
+        // previously allowed the projection stage to see blank production
+        // systematic columns even though the individual studies had completed.
+        if (!materialize_final_point_to_point_systematics(
+                csv_main, pass1_systematics_path)) {
+            std::cerr
+                << "[systematics] FATAL: final point-to-point materialization failed.\n";
             return 1;
         }
 
