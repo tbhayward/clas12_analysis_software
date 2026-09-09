@@ -111,6 +111,14 @@ from matplotlib.lines import Line2D
 
 TARGET_EBEAM_GEV = 10.6
 
+PASS2_OVERALL_NORM_FRAC = 0.021633307652784
+PASS2_XS_COL = "normed cross sections, ep->epg, exp, 10.6 GeV, unpol"
+PASS2_PTP_COL = "Syst. err (point-to-point total)"
+PASS2_CURRENT_FRAC_COL = "current dependence sys frac, 10.6 GeV"
+PASS2_PERIOD_FRAC_COL = "run period residual sys frac, 10.6 GeV"
+PASS2_CORR_FRAC_COL = "correlated scale sys frac, 10.6 GeV"
+PASS2_NORM_FRAC_COL = "uncorrelated normalization sys frac, 10.6 GeV"
+
 # Georges is intentionally different from the production EMFF extraction:
 # for this external-data comparison we allow the ~5% normalization freedom
 # indicated by the recent world-data EMFF fits.
@@ -130,6 +138,7 @@ DATASET_ORDER = [
     "saylor2018",
     "georges2022",
     "lee2026",
+    "pass2",
 ]
 
 DATASET_LABELS = {
@@ -139,6 +148,7 @@ DATASET_LABELS = {
     "saylor2018": "CLAS6 Saylor 2018",
     "georges2022": "Hall A Georges 2022",
     "lee2026": "CLAS12 Lee 2026",
+    "pass2": "CLAS12 Pass-2",
 }
 
 
@@ -156,6 +166,7 @@ DATASET_STYLES = {
     "saylor2018":   {"color": "#bcbd22", "marker": "D"},  # olive
     "georges2022":  {"color": "#17becf", "marker": "P"},  # cyan
     "lee2026":      {"color": "#2ca02c", "marker": "s"},  # green
+    "pass2":          {"color": "#d62728", "marker": "o"},  # red
 }
 
 MODEL_STYLES = {
@@ -193,7 +204,7 @@ SAYLOR_TMIN_DIAGNOSTIC_GEV2 = 0.343
 # Source convention needed for KM15 evaluation and for the existing PARTONS
 # phi-mapping logic.
 GEPARD_BMK_DATASETS = {"jo2015", "defurne2015", "defurne2017"}
-DIRECT_PHI_DATASETS = {"saylor2018", "georges2022", "lee2026"}
+DIRECT_PHI_DATASETS = {"saylor2018", "georges2022", "lee2026", "pass2"}
 
 # evaluate_bh_model_selection.py expects the dataset keys used by the EMFF
 # suite.  Keep this translation in exactly one place.
@@ -372,6 +383,143 @@ def canonicalize_lee(df: pd.DataFrame, emff) -> pd.DataFrame:
 #enddef
 
 
+
+def _parse_cross_section_tuple(raw) -> Tuple[float, float]:
+    """
+    Parse the pass-2 CSV tuple '(value, stat, ...)' and return (value, stat).
+    """
+    if raw is None or (isinstance(raw, float) and not np.isfinite(raw)):
+        return np.nan, np.nan
+    #endif
+    s = str(raw).strip()
+    if not (s.startswith("(") and s.endswith(")")):
+        return np.nan, np.nan
+    #endif
+    fields = [x.strip() for x in s[1:-1].split(",")]
+    if len(fields) < 2:
+        return np.nan, np.nan
+    #endif
+    try:
+        return float(fields[0]), float(fields[1])
+    except Exception:
+        return np.nan, np.nan
+    #endtry
+#enddef
+
+
+def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
+    """
+    Load the final combined 10.6-GeV pass-2 cross section with the authoritative
+    three-class systematic decomposition:
+
+      * point-to-point uncertainty;
+      * 2.16% common overall normalization;
+      * correlated kinematic scale, decomposed into current-dependent and
+        residual run-period components.
+
+    The correlated-scale components are retained separately because the final
+    pass-2 nuisance fit treats them as independent Gaussian nuisance directions.
+    """
+    raw = pd.read_csv(path, low_memory=False)
+
+    required = [
+        "bin index",
+        "xBavg, 10.6 GeV",
+        "Q2avg, 10.6 GeV",
+        "t_abs_avg, 10.6 GeV",
+        "phiavg, 10.6 GeV",
+        PASS2_XS_COL,
+        PASS2_PTP_COL,
+        PASS2_CURRENT_FRAC_COL,
+        PASS2_PERIOD_FRAC_COL,
+        PASS2_CORR_FRAC_COL,
+        PASS2_NORM_FRAC_COL,
+    ]
+    missing = [c for c in required if c not in raw.columns]
+    if missing:
+        raise RuntimeError(
+            "Pass-2 CSV is missing authoritative final-systematics column(s): "
+            + "; ".join(missing)
+            + ". Re-run main_systematics on the finalized pass-2 CSV before "
+              "running the world-data comparison."
+        )
+    #endif
+
+    xs_vals = []
+    stat_vals = []
+    for v in raw[PASS2_XS_COL]:
+        xs, stat = _parse_cross_section_tuple(v)
+        xs_vals.append(xs)
+        stat_vals.append(stat)
+    #endfor
+
+    out = pd.DataFrame({
+        "dataset": "pass2",
+        "dataset_label": DATASET_LABELS["pass2"],
+        "source_row": np.arange(len(raw), dtype=int),
+        "published_bin": pd.to_numeric(raw["bin index"], errors="coerce"),
+        "xB": pd.to_numeric(raw["xBavg, 10.6 GeV"], errors="coerce"),
+        "Q2": pd.to_numeric(raw["Q2avg, 10.6 GeV"], errors="coerce"),
+        "t_abs": pd.to_numeric(raw["t_abs_avg, 10.6 GeV"], errors="coerce"),
+        "phi_deg": np.mod(pd.to_numeric(raw["phiavg, 10.6 GeV"], errors="coerce"), 360.0),
+        "ebeam": float(TARGET_EBEAM_GEV),
+        "xs": np.asarray(xs_vals, dtype=float),
+        "stat_abs": np.asarray(stat_vals, dtype=float),
+        "ptp_sys_abs": pd.to_numeric(raw[PASS2_PTP_COL], errors="coerce"),
+        "norm_frac": pd.to_numeric(raw[PASS2_NORM_FRAC_COL], errors="coerce"),
+        "current_scale_frac": pd.to_numeric(raw[PASS2_CURRENT_FRAC_COL], errors="coerce"),
+        "period_scale_frac": pd.to_numeric(raw[PASS2_PERIOD_FRAC_COL], errors="coerce"),
+        "corr_scale_frac": pd.to_numeric(raw[PASS2_CORR_FRAC_COL], errors="coerce"),
+    })
+
+    # Useful detector variable for diagnostics.
+    if "p_theta, 10.6 GeV" in raw.columns:
+        out["p_theta"] = pd.to_numeric(raw["p_theta, 10.6 GeV"], errors="coerce")
+    #endif
+
+    # Enforce the finalized point uncertainty definition.
+    out["point_unc_abs"] = np.hypot(out["stat_abs"], out["ptp_sys_abs"])
+
+    # A finalized CSV should contain the same 2.16% normalization in every
+    # populated row.  Keep the row value but verify consistency.
+    finite_norm = out["norm_frac"].to_numpy(float)
+    finite_norm = finite_norm[np.isfinite(finite_norm)]
+    if finite_norm.size == 0:
+        raise RuntimeError("Pass-2 normalization column contains no finite values")
+    #endif
+    med_norm = float(np.nanmedian(finite_norm))
+    if abs(med_norm - PASS2_OVERALL_NORM_FRAC) > 5e-4:
+        warnings.warn(
+            f"Pass-2 median overall normalization is {100*med_norm:.3f}% "
+            f"instead of expected {100*PASS2_OVERALL_NORM_FRAC:.3f}%"
+        )
+    #endif
+
+    out = clean_canonical(out)
+
+    # Keep a deterministic point ID tied to the pass-2 4D bin index.
+    out["point_id"] = [
+        f"pass2:{int(round(v))}"
+        for v in out["published_bin"].to_numpy(float)
+    ]
+
+    print(
+        f"[PASS2] loaded {len(out):,} finalized 10.6-GeV points from {path}",
+        flush=True,
+    )
+    print(
+        f"[PASS2] median stat={100*np.nanmedian(out['stat_frac']):.2f}%, "
+        f"ptp syst={100*np.nanmedian(out['ptp_sys_frac']):.2f}%, "
+        f"overall norm={100*np.nanmedian(out['norm_frac']):.2f}%, "
+        f"current scale={100*np.nanmedian(out['current_scale_frac']):.2f}%, "
+        f"period scale={100*np.nanmedian(out['period_scale_frac']):.2f}%, "
+        f"combined corr scale={100*np.nanmedian(out['corr_scale_frac']):.2f}%",
+        flush=True,
+    )
+    return out
+#enddef
+
+
 def clean_canonical(df: pd.DataFrame) -> pd.DataFrame:
     required = [
         "xB", "Q2", "t_abs", "phi_deg", "ebeam", "xs",
@@ -400,14 +548,22 @@ def clean_canonical(df: pd.DataFrame) -> pd.DataFrame:
     out["stat_frac"] = out["stat_abs"] / out["xs"]
     out["ptp_sys_frac"] = out["ptp_sys_abs"] / out["xs"]
     out["point_unc_frac"] = out["point_unc_abs"] / out["xs"]
+
+    for col in ["current_scale_frac", "period_scale_frac", "corr_scale_frac"]:
+        if col not in out.columns:
+            out[col] = 0.0
+        #endif
+        out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0)
+    #endfor
+
     return out
 #enddef
 
 
 def load_world_data(args, emff) -> pd.DataFrame:
-    """Load all six published datasets through the validated EMFF loaders."""
+    """Load the six published datasets plus the finalized pass-2 measurement."""
     print("\n" + "=" * 80)
-    print("LOADING PUBLISHED WORLD DATA")
+    print("LOADING PUBLISHED WORLD DATA + PASS-2")
     print("=" * 80)
 
     jo = canonicalize_jo(emff.load_clas6_gepard_dataset(), emff)
@@ -435,7 +591,19 @@ def load_world_data(args, emff) -> pd.DataFrame:
     )
     lee = canonicalize_lee(emff.load_clas12_pass1_csv(lee_path), emff)
 
-    world = pd.concat([jo, d15, d17, saylor, georges, lee], ignore_index=True, sort=False)
+    pass2_path = resolve_existing(
+        Path(args.pass2_file),
+        [
+            args.script_dir.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv",
+        ],
+    )
+    pass2 = canonicalize_pass2_csv(pass2_path)
+
+    world = pd.concat(
+        [jo, d15, d17, saylor, georges, lee, pass2],
+        ignore_index=True,
+        sort=False,
+    )
     world["dataset"] = pd.Categorical(world["dataset"], DATASET_ORDER, ordered=True)
     world = world.sort_values(["dataset", "source_row"]).reset_index(drop=True)
     world["dataset"] = world["dataset"].astype(str)
@@ -444,7 +612,7 @@ def load_world_data(args, emff) -> pd.DataFrame:
         raise RuntimeError("Canonical point_id collision detected")
     #endif
 
-    print(f"[WORLD] canonicalized {len(world):,} points across 6 measurements")
+    print(f"[WORLD] canonicalized {len(world):,} points across 7 measurements")
     return world
 #enddef
 
@@ -644,10 +812,10 @@ def evaluate_km15_world(
         target_ebeam: float,
         force: bool = False) -> pd.DataFrame:
     """
-    Evaluate KM15 total and pure BH at native E and at target E for every point.
+    Evaluate KM15 total and pure BH at native E and target E.
 
-    The calculation is intentionally cached because it is deterministic and the
-    full world dataset contains several thousand points.
+    The cache is incremental: existing external-world entries are reused and
+    only missing point IDs (normally the new pass-2 points) are evaluated.
     """
     expected_cols = [
         "point_id",
@@ -655,53 +823,79 @@ def evaluate_km15_world(
         "km15_target", "bh_target",
     ]
 
+    cache = pd.DataFrame(columns=expected_cols)
     if cache_path.exists() and not force:
-        cache = pd.read_csv(cache_path)
-        if (
-            len(cache) == len(world)
-            and set(expected_cols).issubset(cache.columns)
-            and cache["point_id"].astype(str).tolist() == world["point_id"].astype(str).tolist()
-        ):
-            print(f"[KM15] reusing cache: {cache_path}")
-            out = world.copy()
-            for col in expected_cols[1:]:
-                out[col] = pd.to_numeric(cache[col], errors="coerce").to_numpy(float)
-            #endfor
-            return finalize_km15_columns(out)
-        #endif
+        try:
+            old = pd.read_csv(cache_path)
+            if set(expected_cols).issubset(old.columns):
+                cache = old[expected_cols].copy()
+                cache["point_id"] = cache["point_id"].astype(str)
+                cache = cache.drop_duplicates("point_id", keep="last")
+                print(
+                    f"[KM15] loaded incremental cache with {len(cache):,} points: "
+                    f"{cache_path}",
+                    flush=True,
+                )
+            #endif
+        except Exception as exc:
+            warnings.warn(f"Could not reuse KM15 cache: {exc}")
+        #endtry
     #endif
 
-    rows = []
-    total = len(world)
-    print(f"[KM15] evaluating native + E={target_ebeam:.3f} GeV for {total:,} points")
+    cache_map = set(cache["point_id"].astype(str))
+    missing = world.loc[~world["point_id"].astype(str).isin(cache_map)].copy()
 
-    for i, row in enumerate(world.itertuples(index=False), start=1):
-        native = evaluate_one_km15(emff, row, float(row.ebeam))
-        target = evaluate_one_km15(emff, row, float(target_ebeam))
-        rows.append({
-            "point_id": str(row.point_id),
-            "km15_native": float(native["km15_ep"]),
-            "bh_native": float(native["km15_bh"]),
-            "km15_target": float(target["km15_ep"]),
-            "bh_target": float(target["km15_bh"]),
-        })
-        if i % 250 == 0 or i == total:
-            print(f"[KM15] {i:5d}/{total}")
-        #endif
-    #endfor
+    if force:
+        cache = pd.DataFrame(columns=expected_cols)
+        missing = world.copy()
+    #endif
 
-    cache = pd.DataFrame(rows)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-    cache.to_csv(cache_path, index=False)
-    print(f"[KM15] cache -> {cache_path}")
+    if not missing.empty:
+        rows = []
+        total = len(missing)
+        print(
+            f"[KM15] evaluating {total:,} missing point(s) "
+            f"(native + E={target_ebeam:.3f} GeV)",
+            flush=True,
+        )
+        for i, row in enumerate(missing.itertuples(index=False), start=1):
+            native = evaluate_one_km15(emff, row, float(row.ebeam))
+            target = evaluate_one_km15(emff, row, float(target_ebeam))
+            rows.append({
+                "point_id": str(row.point_id),
+                "km15_native": float(native["km15_ep"]),
+                "bh_native": float(native["km15_bh"]),
+                "km15_target": float(target["km15_ep"]),
+                "bh_target": float(target["km15_bh"]),
+            })
+            if i % 100 == 0 or i == total:
+                print(
+                    f"[KM15] missing-point evaluation {i}/{total} "
+                    f"({100.0*i/total:5.1f}%)",
+                    flush=True,
+                )
+            #endif
+        #endfor
+        cache = pd.concat([cache, pd.DataFrame(rows)], ignore_index=True)
+        cache = cache.drop_duplicates("point_id", keep="last")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache.to_csv(cache_path, index=False)
+        print(f"[KM15] updated cache -> {cache_path}", flush=True)
+    else:
+        print("[KM15] all requested points found in cache", flush=True)
+    #endif
 
-    out = world.copy()
-    for col in expected_cols[1:]:
-        out[col] = cache[col].to_numpy(float)
-    #endfor
-    return finalize_km15_columns(out)
+    merged = world.merge(cache, on="point_id", how="left", validate="one_to_one")
+    if merged[expected_cols[1:]].isna().any(axis=None):
+        bad = merged.loc[merged[expected_cols[1:]].isna().any(axis=1), "point_id"].head(10)
+        raise RuntimeError(
+            "KM15 cache merge left missing predictions for: "
+            + ", ".join(bad.astype(str))
+        )
+    #endif
+
+    return finalize_km15_columns(merged)
 #enddef
-
 
 def finalize_km15_columns(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
@@ -1129,6 +1323,12 @@ def build_pairwise_comparisons(
                     "raw_pull": raw_pull,
                     "norm_frac_a": float(ra["norm_frac"]),
                     "norm_frac_b": float(rb["norm_frac"]),
+                    "current_scale_frac_a": float(ra.get("current_scale_frac", 0.0)),
+                    "current_scale_frac_b": float(rb.get("current_scale_frac", 0.0)),
+                    "period_scale_frac_a": float(ra.get("period_scale_frac", 0.0)),
+                    "period_scale_frac_b": float(rb.get("period_scale_frac", 0.0)),
+                    "corr_scale_frac_a": float(ra.get("corr_scale_frac", 0.0)),
+                    "corr_scale_frac_b": float(rb.get("corr_scale_frac", 0.0)),
                 })
             #endfor
 
@@ -1953,6 +2153,34 @@ def collect_presentation_model_curve_specs(
         #endif
     #endif
 
+    # Pass-2 anchor panels.  Fitted variants reuse the same model curves.
+    p2_summary = make_pass2_anchor_panel_summary(matches)
+    if not p2_summary.empty:
+        p2 = matches.loc[matches["dataset_b"] == "pass2"].copy()
+        p2["anchor_group"] = [
+            f"bin_{int(round(v))}" for v in p2["published_bin_b"].to_numpy(float)
+        ]
+        for r in p2_summary.itertuples(index=False):
+            d = p2.loc[p2["anchor_group"] == str(r.anchor_group)]
+            if d.empty:
+                continue
+            #endif
+            p2pts = d.drop_duplicates("point_id_b")
+            spec = {
+                "dataset_key": "pass2",
+                "ebeam": float(np.median(p2pts["ebeam_b"])),
+                "xB": float(np.median(p2pts["xB_b"])),
+                "Q2": float(np.median(p2pts["Q2_b"])),
+                "t_abs": float(np.median(p2pts["t_abs_b"])),
+                "source": f"pass2:{r.anchor_group}",
+            }
+            key = _model_curve_cache_key(
+                spec["dataset_key"], spec["ebeam"], spec["xB"], spec["Q2"], spec["t_abs"]
+            )
+            specs_by_key.setdefault(key, spec)
+        #endfor
+    #endif
+
     return list(specs_by_key.values())
 #enddef
 
@@ -2099,7 +2327,7 @@ def plot_pairwise_cross_section_panels(
                 #endif
                 if col == 0:
                     ax.set_ylabel(
-                        r"$d^4\sigma/(dQ^2\,dx_B\,d|t|\,d\phi)$ (pb/GeV$^4$)",
+                        r"$d^4\sigma/(dQ^2\,dx_B\,d|t|\,d\phi)$ (nb/GeV$^4$)",
                         fontsize=8.5,
                     )
                 #endif
@@ -2567,6 +2795,722 @@ def run_global_lee_anchor_normalization_scenarios(
 #enddef
 
 
+
+def make_pass2_anchor_panel_summary(matches: pd.DataFrame) -> pd.DataFrame:
+    """Summarize external measurements transported to exact pass-2 kinematics."""
+    p2 = matches.loc[matches["dataset_b"] == "pass2"].copy()
+    if p2.empty:
+        return pd.DataFrame()
+    #endif
+
+    p2["anchor_group"] = [
+        (
+            f"bin_{int(round(v))}"
+            if np.isfinite(v) else f"point_{pid}"
+        )
+        for v, pid in zip(
+            p2["published_bin_b"].to_numpy(float),
+            p2["point_id_b"].astype(str),
+        )
+    ]
+
+    rows = []
+    for group, d in p2.groupby("anchor_group", sort=False):
+        unique_p2 = d.drop_duplicates("point_id_b")
+        phi = np.sort(np.mod(unique_p2["phi_b"].to_numpy(float), 360.0))
+        if len(phi) < PANEL_MIN_MATCHES:
+            continue
+        #endif
+        gaps = np.diff(np.r_[phi, phi[0] + 360.0])
+        coverage = 360.0 - float(np.max(gaps)) if len(phi) >= 2 else 0.0
+
+        rows.append({
+            "anchor_group": group,
+            "published_bin": float(np.nanmedian(d["published_bin_b"])),
+            "N_external_datasets": int(d["dataset_a"].nunique()),
+            "N_external_matches": int(len(d)),
+            "N_pass2_points": int(len(unique_p2)),
+            "xB_ref": float(np.median(d["xB_b"])),
+            "Q2_ref": float(np.median(d["Q2_b"])),
+            "t_abs_ref": float(np.median(d["t_abs_b"])),
+            "phi_coverage_deg": coverage,
+            "datasets": ",".join(sorted(d["dataset_a"].unique())),
+            "panel_rank_score": float(
+                3.0 * d["dataset_a"].nunique() + len(unique_p2) + coverage / 360.0
+            ),
+        })
+    #endfor
+    return pd.DataFrame(rows)
+#enddef
+
+
+def _build_pass2_anchor_observations(matches: pd.DataFrame) -> pd.DataFrame:
+    """
+    Build the observation table for pass-2-centered global consistency fits.
+
+    External points are already transported to exact pass-2 kinematics by KM15.
+    Pass-2 points are included once per anchor and retain their correlated-scale
+    response magnitudes.
+    """
+    p2 = matches.loc[matches["dataset_b"] == "pass2"].copy()
+    if p2.empty:
+        return pd.DataFrame()
+    #endif
+
+    rows = []
+    p2_unique = p2.sort_values("point_id_b").drop_duplicates("point_id_b")
+    for r in p2_unique.itertuples(index=False):
+        rows.append({
+            "anchor_id": str(r.point_id_b),
+            "dataset": "pass2",
+            "point_id": str(r.point_id_b),
+            "published_bin": float(r.published_bin_b),
+            "phi_deg": float(r.phi_b),
+            "t_abs": float(r.t_abs_b),
+            "value": float(r.xs_b),
+            "unc": float(r.point_unc_b),
+            "norm_frac": float(r.norm_frac_b),
+            "current_scale_frac": float(r.current_scale_frac_b),
+            "period_scale_frac": float(r.period_scale_frac_b),
+            "corr_scale_frac": float(r.corr_scale_frac_b),
+        })
+    #endfor
+
+    for r in p2.itertuples(index=False):
+        rows.append({
+            "anchor_id": str(r.point_id_b),
+            "dataset": str(r.dataset_a),
+            "point_id": str(r.point_id_a),
+            "published_bin": float(r.published_bin_b),
+            "phi_deg": float(r.phi_b),
+            "t_abs": float(r.t_abs_a),
+            "value": float(r.xs_a_to_b_km15),
+            "unc": float(r.point_unc_a_to_b_km15),
+            "norm_frac": float(r.norm_frac_a),
+            "current_scale_frac": 0.0,
+            "period_scale_frac": 0.0,
+            "corr_scale_frac": 0.0,
+        })
+    #endfor
+
+    out = pd.DataFrame(rows)
+    good = (
+        np.isfinite(out["value"].to_numpy(float))
+        & np.isfinite(out["unc"].to_numpy(float))
+        & (out["value"].to_numpy(float) > 0.0)
+        & (out["unc"].to_numpy(float) > 0.0)
+    )
+    return out.loc[good].reset_index(drop=True)
+#enddef
+
+
+def fit_pass2_anchor_nuisances(
+        matches: pd.DataFrame,
+        *,
+        scenario: str,
+        include_pass2_correlated_scale: bool,
+        exclude_datasets: Sequence[str] = (),
+        saylor_tmin: Optional[float] = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, float]]:
+    """
+    Global pass-2-centered consistency fit.
+
+    Every exact pass-2 anchor j has a free common cross section mu_j.  Each
+    experiment has one experiment-wide multiplicative normalization eta_d.
+
+    For pass-2, the full fit adds TWO additional independent Gaussian nuisance
+    directions:
+      beta_current * f_current,i
+      beta_period  * f_period,i
+
+    where f_current,i and f_period,i are the finalized bin-dependent fractional
+    responses.  This is more faithful than a single nuisance multiplying
+    sqrt(f_current^2+f_period^2), because those two uncertainty sources were
+    constructed independently and combined in quadrature in the systematic
+    chapter.
+
+    The underlying current-efficiency scalar is itself the quadrature of many
+    calibration parameters, so this aggregate treatment is conservative and
+    practical for the external-data comparison.  The full signed per-parameter
+    response CSV could be substituted later if publication-level covariance
+    detail is desired.
+    """
+    obs = _build_pass2_anchor_observations(matches)
+    if obs.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}
+    #endif
+
+    exclude_set = {str(x) for x in exclude_datasets}
+    if exclude_set:
+        obs = obs.loc[~obs["dataset"].isin(exclude_set)].copy()
+    #endif
+
+    if saylor_tmin is not None:
+        keep = (
+            (obs["dataset"].astype(str) != "saylor2018")
+            | (obs["t_abs"].to_numpy(float) >= float(saylor_tmin))
+        )
+        obs = obs.loc[keep].copy()
+    #endif
+
+    counts = obs.groupby("anchor_id")["dataset"].nunique()
+    anchors = sorted(counts.loc[counts >= 2].index.astype(str))
+    obs = obs.loc[obs["anchor_id"].astype(str).isin(anchors)].copy().reset_index(drop=True)
+    if obs.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}
+    #endif
+
+    datasets = [k for k in DATASET_ORDER if k in set(obs["dataset"].astype(str))]
+    n_anchor = len(anchors)
+
+    param_names = [f"mu::{a}" for a in anchors] + [f"eta::{d}" for d in datasets]
+    if include_pass2_correlated_scale:
+        param_names += ["beta::pass2_current", "beta::pass2_period"]
+    #endif
+    pindex = {name: i for i, name in enumerate(param_names)}
+
+    Arows = []
+    brows = []
+    meta = []
+
+    for r in obs.itertuples(index=False):
+        frac = float(r.unc) / float(r.value)
+        if not np.isfinite(frac) or frac <= 0.0:
+            continue
+        #endif
+        w = 1.0 / frac
+        row = np.zeros(len(param_names), dtype=float)
+        row[pindex[f"mu::{r.anchor_id}"]] = w
+        row[pindex[f"eta::{r.dataset}"]] = w
+
+        if include_pass2_correlated_scale and str(r.dataset) == "pass2":
+            row[pindex["beta::pass2_current"]] = w * float(r.current_scale_frac)
+            row[pindex["beta::pass2_period"]] = w * float(r.period_scale_frac)
+        #endif
+
+        Arows.append(row)
+        brows.append(math.log(float(r.value)) * w)
+        meta.append(r._asdict())
+    #endfor
+
+    n_data = len(Arows)
+    n_prior = 0
+    prior_labels = []
+
+    # Dataset-wide normalization priors.
+    for d in datasets:
+        if d in GLOBAL_NORM_FREE_DATASETS:
+            continue
+        #endif
+        vals = obs.loc[obs["dataset"] == d, "norm_frac"].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        if vals.size == 0:
+            continue
+        #endif
+        sigma = math.log1p(float(np.nanmedian(vals)))
+        if sigma <= 0.0:
+            continue
+        #endif
+        row = np.zeros(len(param_names), dtype=float)
+        row[pindex[f"eta::{d}"]] = 1.0 / sigma
+        Arows.append(row)
+        brows.append(0.0)
+        n_prior += 1
+        prior_labels.append(f"norm::{d}")
+    #endfor
+
+    if include_pass2_correlated_scale:
+        for pname in ["beta::pass2_current", "beta::pass2_period"]:
+            row = np.zeros(len(param_names), dtype=float)
+            row[pindex[pname]] = 1.0
+            Arows.append(row)
+            brows.append(0.0)
+            n_prior += 1
+            prior_labels.append(pname)
+        #endfor
+    #endif
+
+    A = np.asarray(Arows, dtype=float)
+    b = np.asarray(brows, dtype=float)
+    sol, _, rank, _ = np.linalg.lstsq(A, b, rcond=None)
+    residual = A @ sol - b
+    data_resid = residual[:n_data]
+    prior_resid = residual[n_data:]
+
+    chi2_data = float(np.sum(data_resid**2))
+    chi2_prior = float(np.sum(prior_resid**2))
+    chi2_total = chi2_data + chi2_prior
+    ndf = int(n_data + n_prior - len(param_names))
+
+    eta_by_dataset = {d: float(sol[pindex[f"eta::{d}"]]) for d in datasets}
+    beta_cur = (
+        float(sol[pindex["beta::pass2_current"]])
+        if include_pass2_correlated_scale else 0.0
+    )
+    beta_per = (
+        float(sol[pindex["beta::pass2_period"]])
+        if include_pass2_correlated_scale else 0.0
+    )
+
+    point_rows = []
+    for m, pull in zip(meta, data_resid):
+        d = str(m["dataset"])
+        eta = eta_by_dataset[d]
+        shape = 0.0
+        if d == "pass2" and include_pass2_correlated_scale:
+            shape = (
+                beta_cur * float(m["current_scale_frac"])
+                + beta_per * float(m["period_scale_frac"])
+            )
+        #endif
+        correction = math.exp(-(eta + shape))
+        point_rows.append({
+            **m,
+            "scenario": scenario,
+            "normalization_eta": eta,
+            "pass2_shape_log_shift": shape,
+            "data_correction_scale": correction,
+            "data_correction_pct": 100.0 * (correction - 1.0),
+            "adjusted_value": correction * float(m["value"]),
+            "adjusted_unc": correction * float(m["unc"]),
+            "fit_pull_log": float(pull),
+        })
+    #endfor
+    point_table = pd.DataFrame(point_rows)
+
+    dataset_rows = []
+    for d in datasets:
+        eta = eta_by_dataset[d]
+        vals = obs.loc[obs["dataset"] == d, "norm_frac"].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        nfrac = float(np.nanmedian(vals)) if vals.size else np.nan
+        sigma = math.log1p(nfrac) if np.isfinite(nfrac) and nfrac >= 0.0 else np.nan
+        beta_norm = (
+            eta / sigma
+            if d not in GLOBAL_NORM_FREE_DATASETS and np.isfinite(sigma) and sigma > 0.0
+            else np.nan
+        )
+        dataset_rows.append({
+            "scenario": scenario,
+            "dataset": d,
+            "dataset_label": DATASET_LABELS[d],
+            "N_points": int(np.sum(point_table["dataset"] == d)),
+            "quoted_norm_pct": 100.0 * nfrac if np.isfinite(nfrac) else np.nan,
+            "normalization_constraint": (
+                "free" if d in GLOBAL_NORM_FREE_DATASETS else "Gaussian"
+            ),
+            "normalization_eta": eta,
+            "beta_norm": beta_norm,
+            "global_normalization_correction": math.exp(-eta),
+            "global_normalization_correction_pct": 100.0 * (math.exp(-eta) - 1.0),
+        })
+    #endfor
+    dataset_table = pd.DataFrame(dataset_rows)
+
+    nuisance_table = pd.DataFrame([
+        {
+            "scenario": scenario,
+            "nuisance": "pass2_current_scale",
+            "beta_sigma": beta_cur,
+            "enabled": bool(include_pass2_correlated_scale),
+        },
+        {
+            "scenario": scenario,
+            "nuisance": "pass2_run_period_scale",
+            "beta_sigma": beta_per,
+            "enabled": bool(include_pass2_correlated_scale),
+        },
+    ])
+
+    metrics = {
+        "scenario": scenario,
+        "include_pass2_correlated_scale": bool(include_pass2_correlated_scale),
+        "N_data": int(n_data),
+        "N_anchors": int(n_anchor),
+        "N_datasets": int(len(datasets)),
+        "N_priors": int(n_prior),
+        "matrix_rank": int(rank),
+        "chi2_data": chi2_data,
+        "chi2_prior": chi2_prior,
+        "chi2_total": chi2_total,
+        "ndf": ndf,
+        "chi2_per_ndf": chi2_total / ndf if ndf > 0 else np.nan,
+        "beta_pass2_current": beta_cur,
+        "beta_pass2_period": beta_per,
+    }
+    return dataset_table, nuisance_table, point_table, metrics
+#enddef
+
+
+def run_pass2_anchor_nuisance_scenarios(matches: pd.DataFrame):
+    """Run the pass-2 comparison scenarios requested for the analysis note."""
+    specs = [
+        ("norm_only_nominal", False, (), None),
+        ("full_corr_nominal", True, (), None),
+        ("full_corr_saylor_tmin_0p343", True, (), SAYLOR_TMIN_DIAGNOSTIC_GEV2),
+        ("full_corr_without_saylor", True, ("saylor2018",), None),
+    ]
+
+    ds_all, nui_all, pt_all, met_all = [], [], [], []
+    for i, (scenario, full_corr, excluded, tmin) in enumerate(specs, start=1):
+        print(
+            f"[PASS2 FIT] scenario {i}/{len(specs)}: {scenario}",
+            flush=True,
+        )
+        ds, nui, pt, met = fit_pass2_anchor_nuisances(
+            matches,
+            scenario=scenario,
+            include_pass2_correlated_scale=full_corr,
+            exclude_datasets=excluded,
+            saylor_tmin=tmin,
+        )
+        if not ds.empty:
+            ds_all.append(ds)
+        #endif
+        if not nui.empty:
+            nui_all.append(nui)
+        #endif
+        if not pt.empty:
+            pt_all.append(pt)
+        #endif
+        if met:
+            met["excluded_datasets"] = ",".join(excluded)
+            met["saylor_tmin_GeV2"] = float(tmin) if tmin is not None else np.nan
+            met_all.append(met)
+            print(
+                f"[PASS2 FIT] {scenario}: chi2/ndf={met['chi2_per_ndf']:.4f}, "
+                f"beta_current={met['beta_pass2_current']:+.3f}, "
+                f"beta_period={met['beta_pass2_period']:+.3f}",
+                flush=True,
+            )
+        #endif
+    #endfor
+
+    return (
+        pd.concat(ds_all, ignore_index=True) if ds_all else pd.DataFrame(),
+        pd.concat(nui_all, ignore_index=True) if nui_all else pd.DataFrame(),
+        pd.concat(pt_all, ignore_index=True) if pt_all else pd.DataFrame(),
+        pd.DataFrame(met_all),
+    )
+#enddef
+
+
+def build_complete_pass2_anchor_legend(
+        matches: pd.DataFrame,
+        dataset_fit_table: Optional[pd.DataFrame] = None,
+        scenario: Optional[str] = None,
+        omit_datasets: Sequence[str] = ()) -> Tuple[List[Line2D], List[str]]:
+    """Fixed legend for pass-2-centered canvases."""
+    omit = {str(x) for x in omit_datasets}
+    corr = {k: 1.0 for k in DATASET_ORDER}
+    if dataset_fit_table is not None and not dataset_fit_table.empty:
+        for r in dataset_fit_table.itertuples(index=False):
+            corr[str(r.dataset)] = float(r.global_normalization_correction)
+        #endfor
+    #endif
+
+    handles, labels = [], []
+    for key in DATASET_ORDER:
+        style = DATASET_STYLES[key]
+        handles.append(Line2D(
+            [0], [0],
+            linestyle="none",
+            marker=style["marker"],
+            markersize=5.5,
+            markerfacecolor=style["color"],
+            markeredgecolor=style["color"],
+            color=style["color"],
+        ))
+        if key in omit:
+            label = f"{DATASET_LABELS[key]} (excluded)"
+        elif scenario is None:
+            # Quote the known overall normalization if available.
+            if key == "pass2":
+                label = f"{DATASET_LABELS[key]} (2.16% norm + kin. corr.)"
+            else:
+                vals = matches.loc[
+                    (matches["dataset_a"] == key) | (matches["dataset_b"] == key),
+                    ["norm_frac_a", "norm_frac_b"],
+                ].to_numpy(float).ravel()
+                vals = vals[np.isfinite(vals) & (vals > 0)]
+                label = (
+                    f"{DATASET_LABELS[key]} ({100*np.nanmedian(vals):.1f}% norm)"
+                    if vals.size else DATASET_LABELS[key]
+                )
+            #endif
+        else:
+            label = f"{DATASET_LABELS[key]} ({100*(corr.get(key,1.0)-1):+.1f}% norm)"
+        #endif
+        labels.append(label)
+    #endfor
+
+    for mk, mlab in [("bh", "BH"), ("km15", "KM15")]:
+        s = MODEL_STYLES[mk]
+        handles.append(Line2D(
+            [0], [0],
+            color=s["color"],
+            linestyle=s["linestyle"],
+            linewidth=s["linewidth"],
+        ))
+        labels.append(mlab)
+    #endfor
+    return handles, labels
+#enddef
+
+
+def plot_pass2_anchor_world_panels(
+        matches: pd.DataFrame,
+        panel_summary: pd.DataFrame,
+        outdir: Path,
+        emff,
+        model_curve_cache: Dict[Tuple, pd.DataFrame],
+        *,
+        dataset_fit_table: Optional[pd.DataFrame] = None,
+        point_fit_table: Optional[pd.DataFrame] = None,
+        metrics: Optional[Dict[str, float]] = None,
+        scenario: Optional[str] = None,
+        omit_datasets: Sequence[str] = (),
+        saylor_tmin: Optional[float] = None) -> None:
+    """
+    Pass-2-centered 3x4 canvases.
+
+    Raw version: no systematic rescaling.
+    Fitted version: external/global normalization shifts plus the pass-2
+    bin-dependent correction implied by its current and run-period nuisances.
+    """
+    p2 = matches.loc[matches["dataset_b"] == "pass2"].copy()
+    if p2.empty or panel_summary.empty:
+        return
+    #endif
+
+    omit = {str(x) for x in omit_datasets}
+    if omit:
+        p2 = p2.loc[~p2["dataset_a"].isin(omit)].copy()
+    #endif
+    if saylor_tmin is not None:
+        p2 = p2.loc[
+            (p2["dataset_a"] != "saylor2018")
+            | (p2["t_abs_a"] >= float(saylor_tmin))
+        ].copy()
+    #endif
+
+    p2["anchor_group"] = [
+        f"bin_{int(round(v))}"
+        for v in p2["published_bin_b"].to_numpy(float)
+    ]
+
+    selected = panel_summary.loc[
+        panel_summary["anchor_group"].isin(set(p2["anchor_group"]))
+    ].copy()
+    selected = selected.sort_values(
+        ["published_bin", "xB_ref", "Q2_ref", "t_abs_ref"]
+    ).reset_index(drop=True)
+    if selected.empty:
+        return
+    #endif
+
+    global_corr = {k: 1.0 for k in DATASET_ORDER}
+    if dataset_fit_table is not None and not dataset_fit_table.empty:
+        for r in dataset_fit_table.itertuples(index=False):
+            global_corr[str(r.dataset)] = float(r.global_normalization_correction)
+        #endfor
+    #endif
+
+    pass2_point_corr = {}
+    if point_fit_table is not None and not point_fit_table.empty:
+        pp = point_fit_table.loc[point_fit_table["dataset"] == "pass2"]
+        pass2_point_corr = dict(zip(
+            pp["point_id"].astype(str),
+            pp["data_correction_scale"].to_numpy(float),
+        ))
+    #endif
+
+    offsets = {
+        "jo2015": -5.0,
+        "defurne2015": -3.5,
+        "defurne2017": -2.0,
+        "saylor2018": -0.7,
+        "georges2022": +0.7,
+        "lee2026": +2.0,
+    }
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    npages = int(math.ceil(len(selected) / PANEL_PER_PAGE))
+
+    for ipage in range(npages):
+        page = selected.iloc[ipage*PANEL_PER_PAGE:(ipage+1)*PANEL_PER_PAGE]
+        fig, axes = plt.subplots(PANEL_NROWS, PANEL_NCOLS, figsize=(15.8, 10.8), squeeze=False)
+
+        for iax, ax in enumerate(axes.ravel()):
+            if iax >= len(page):
+                ax.axis("off")
+                continue
+            #endif
+
+            group = str(page.iloc[iax]["anchor_group"])
+            d = p2.loc[p2["anchor_group"] == group].copy()
+            if d.empty:
+                ax.axis("off")
+                continue
+            #endif
+
+            p2pts = d.sort_values("phi_b").drop_duplicates("point_id_b")
+            raw_y = p2pts["xs_b"].to_numpy(float)
+            raw_e = p2pts["point_unc_b"].to_numpy(float)
+
+            if scenario is None:
+                p2scale = np.ones(len(p2pts))
+            else:
+                p2scale = np.asarray([
+                    pass2_point_corr.get(str(pid), global_corr.get("pass2", 1.0))
+                    for pid in p2pts["point_id_b"].astype(str)
+                ], dtype=float)
+            #endif
+
+            _draw_measurement_series(
+                ax,
+                p2pts["phi_b"].to_numpy(float),
+                p2scale * raw_y,
+                np.abs(p2scale) * raw_e,
+                label="_nolegend_",
+                dataset_key="pass2",
+                xoffset=+4.0,
+                markersize=4.4,
+            )
+
+            for ka in DATASET_ORDER:
+                if ka in ("pass2",) or ka in omit:
+                    continue
+                #endif
+                da = d.loc[d["dataset_a"] == ka].sort_values("phi_b")
+                if da.empty:
+                    continue
+                #endif
+                scale = global_corr.get(ka, 1.0) if scenario is not None else 1.0
+                _draw_measurement_series(
+                    ax,
+                    da["phi_b"].to_numpy(float),
+                    scale * da["xs_a_to_b_km15"].to_numpy(float),
+                    abs(scale) * da["point_unc_a_to_b_km15"].to_numpy(float),
+                    label="_nolegend_",
+                    dataset_key=ka,
+                    xoffset=offsets.get(ka, 0.0),
+                    markersize=3.7,
+                    alpha=0.84,
+                )
+            #endfor
+
+            xb = float(np.median(p2pts["xB_b"]))
+            q2 = float(np.median(p2pts["Q2_b"]))
+            tt = float(np.median(p2pts["t_abs_b"]))
+            ebeam = float(np.median(p2pts["ebeam_b"]))
+            model = get_dense_model_curve(
+                emff,
+                model_curve_cache,
+                dataset_key="pass2",
+                ebeam=ebeam,
+                xB=xb,
+                Q2=q2,
+                t_abs=tt,
+            )
+
+            for mk in ["bh", "km15"]:
+                s = MODEL_STYLES[mk]
+                ax.plot(
+                    model["phi_deg"], model[mk],
+                    color=s["color"], linestyle=s["linestyle"], lw=s["linewidth"],
+                )
+            #endfor
+
+            yarrays = [
+                p2scale * raw_y,
+                model["bh"].to_numpy(float),
+                model["km15"].to_numpy(float),
+            ]
+            for ka, da in d.groupby("dataset_a"):
+                if ka in omit:
+                    continue
+                #endif
+                sc = global_corr.get(str(ka), 1.0) if scenario is not None else 1.0
+                yarrays.append(sc * da["xs_a_to_b_km15"].to_numpy(float))
+            #endfor
+
+            ylo, yhi = _robust_positive_log_limits(yarrays)
+            ax.set_yscale("log")
+            ax.set_ylim(ylo, yhi)
+            ax.set_xlim(0, 360)
+            ax.set_xticks([0, 90, 180, 270, 360])
+            ax.grid(alpha=0.18)
+            ax.set_title(
+                f"bin {int(round(page.iloc[iax]['published_bin']))}: "
+                + rf"$x_B={xb:.3f}$, $Q^2={q2:.2f}$, $|t|={tt:.3f}$",
+                fontsize=8.7,
+            )
+
+            row = iax // PANEL_NCOLS
+            col = iax % PANEL_NCOLS
+            if row == PANEL_NROWS - 1:
+                ax.set_xlabel(r"$\phi$ (deg)")
+            #endif
+            if col == 0:
+                ax.set_ylabel(
+                    r"$d^4\sigma/(dQ^2\,dx_B\,d|t|\,d\phi)$ (nb/GeV$^4$)",
+                    fontsize=8.3,
+                )
+            #endif
+        #endfor
+
+        handles, labels = build_complete_pass2_anchor_legend(
+            matches,
+            dataset_fit_table=dataset_fit_table,
+            scenario=scenario,
+            omit_datasets=omit_datasets,
+        )
+
+        if scenario is None:
+            title = "Published world data compared at CLAS12 pass-2 kinematics"
+            subtitle = (
+                "External measurements are transported point-by-point to pass-2 "
+                "kinematics with KM15; pass-2 is shown raw. "
+                r"Error bars = stat $\oplus$ point-to-point syst."
+            )
+        else:
+            title = f"Systematic-nuisance-adjusted world data at pass-2 kinematics — {scenario}"
+            metric_text = ""
+            if metrics:
+                metric_text = (
+                    rf"  Global $\chi^2/\mathrm{{ndf}}="
+                    f"{metrics.get('chi2_per_ndf', np.nan):.2f}$; "
+                    rf"$\beta_{{current}}={metrics.get('beta_pass2_current',0):+.2f}$, "
+                    rf"$\beta_{{period}}={metrics.get('beta_pass2_period',0):+.2f}$."
+                )
+            #endif
+            subtitle = (
+                "Experiment-wide normalization nuisances are fitted globally; "
+                "full-correlation scenarios also fit independent pass-2 current "
+                "and run-period kinematic scale nuisances."
+                + metric_text
+            )
+        #endif
+
+        fig.suptitle(title, y=0.994, fontsize=13.5)
+        fig.legend(
+            handles, labels,
+            loc="upper center",
+            bbox_to_anchor=(0.5, 0.958),
+            ncol=5,
+            frameon=False,
+            fontsize=7.1,
+        )
+        fig.text(0.5, 0.900, subtitle, ha="center", va="top", fontsize=7.7)
+        fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.865])
+
+        prefix = "pass2_world_raw" if scenario is None else f"pass2_world_{scenario}"
+        fig.savefig(outdir / f"{prefix}_page{ipage+1:02d}.png", dpi=220)
+        plt.close(fig)
+    #endfor
+#enddef
+
+
 def build_complete_lee_anchor_legend(
         matches: pd.DataFrame,
         *,
@@ -2929,7 +3873,7 @@ def plot_lee_anchor_world_panels(
             #endif
             if col == 0:
                 ax.set_ylabel(
-                    r"$d^4\sigma/(dQ^2\,dx_B\,d|t|\,d\phi)$ (pb/GeV$^4$)",
+                    r"$d^4\sigma/(dQ^2\,dx_B\,d|t|\,d\phi)$ (nb/GeV$^4$)",
                     fontsize=8.5,
                 )
             #endif
@@ -3035,8 +3979,10 @@ def save_outputs(
 
     pair_panel_summary = make_pairwise_panel_summary(matches)
     lee_anchor_summary = make_lee_anchor_panel_summary(matches)
+    pass2_anchor_summary = make_pass2_anchor_panel_summary(matches)
     pair_panel_summary.to_csv(tables / "pairwise_cross_section_panel_summary.csv", index=False)
     lee_anchor_summary.to_csv(tables / "lee_anchor_panel_summary.csv", index=False)
+    pass2_anchor_summary.to_csv(tables / "pass2_anchor_panel_summary.csv", index=False)
 
     transport_cols = [
         "point_id", "dataset", "dataset_label",
@@ -3063,6 +4009,13 @@ def save_outputs(
         tables / "lee_anchor_global_normalization_offsets.csv",
         index=False,
     )
+
+    # Pass-2-specific nuisance treatment.
+    p2_ds, p2_nui, p2_pts, p2_metrics = run_pass2_anchor_nuisance_scenarios(matches)
+    p2_ds.to_csv(tables / "pass2_global_normalization_offsets.csv", index=False)
+    p2_nui.to_csv(tables / "pass2_correlated_scale_nuisances.csv", index=False)
+    p2_pts.to_csv(tables / "pass2_global_nuisance_point_residuals.csv", index=False)
+    p2_metrics.to_csv(tables / "pass2_global_nuisance_summary.csv", index=False)
     norm_points.to_csv(
         tables / "lee_anchor_global_normalization_point_residuals.csv",
         index=False,
@@ -3237,6 +4190,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--saylor-file", default=str(here / "import" / "saylor_CLAS6.txt"))
     p.add_argument("--georges-file", default=str(here / "import" / "E12-06-114.xlsx"))
     p.add_argument("--lee-file", default=str(here / "import" / "clasdb_E214M1.txt"))
+    p.add_argument(
+        "--pass2-file",
+        default=str(here.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv"),
+        help="Final pass-2 analysis CSV after main_systematics has materialized authoritative systematics.",
+    )
     p.add_argument("--target-ebeam", type=float, default=TARGET_EBEAM_GEV)
     p.add_argument("--workers", type=int, default=1, help="Reserved for future KM15 multiprocessing; current first pass evaluates serially for model safety")
     p.add_argument(
