@@ -308,6 +308,12 @@ static const std::string& sp19_radiative_systematic_column() {
     return col;
 }
 
+static const std::string& sp19_bin_centering_systematic_column() {
+    static const std::string col =
+        "Syst.err (Fbin), Sp19 Inb (10.2 GeV)";
+    return col;
+}
+
 static const std::string& ten6_normed_cross_section_column() {
     static const std::string col =
         "normed cross sections, ep->epg, exp, 10.6 GeV, unpol";
@@ -665,6 +671,8 @@ bool import_pass1_systematics(const std::string& csv_path,
 
         const int sp19_frad_col =
             ensure_column(pass2, sp19_radiative_systematic_column());
+        const int sp19_fbin_col =
+            ensure_column(pass2, sp19_bin_centering_systematic_column());
 
         std::map<int, Pass1SystValues> by_bin_index;
         std::map<std::string, Pass1SystValues> by_boundary_key;
@@ -835,27 +843,51 @@ bool import_pass1_systematics(const std::string& csv_path,
                 const bool ok19 =
                     parse_tuple_first(row[(size_t)xs19_col], xs19);
 
-                if (std::isfinite(frad_abs_10p6) &&
-                    frad_abs_10p6 >= 0.0 &&
-                    ok10 && ok19 &&
-                    std::fabs(xs10) > 0.0 &&
-                    std::fabs(xs19) > 0.0) {
+                // The inherited Frad/Fbin studies define *fractional*
+                // model uncertainties.  Therefore Sp19 can be assigned directly
+                // from the matched pass-1 fractional values even in a kinematic
+                // bin where the combined 10.6-GeV cross section is absent.
+                //
+                // This matters for one real pass-2 bin (bin index 2136): Sp19
+                // has a valid cross section there while the 10.6-GeV combined
+                // cross section is empty.  Requiring xs10 caused the dedicated
+                // Sp19 point-to-point total to be blank in exactly that bin.
+                const auto irad =
+                    values->relative_values.find("Syst.err (Frad)");
+                const auto ibin =
+                    values->relative_values.find("Syst.err (Fbin)");
 
-                    const auto irad = values->relative_values.find("Syst.err (Frad)");
-                    const double frac10 =
-                        (irad != values->relative_values.end() && std::isfinite(irad->second))
-                        ? irad->second
-                        : frad_abs_10p6 / std::fabs(xs10);
+                const bool have_rad_frac =
+                    irad != values->relative_values.end() &&
+                    std::isfinite(irad->second) && irad->second >= 0.0;
+                const bool have_bin_frac =
+                    ibin != values->relative_values.end() &&
+                    std::isfinite(ibin->second) && ibin->second >= 0.0;
 
-                    const double frad_abs_sp19 =
-                        kSp19RadiativeSystematicScale *
-                        frac10 *
-                        std::fabs(xs19);
-
+                if (ok19 && std::fabs(xs19) > 0.0 && have_rad_frac) {
                     row[(size_t)sp19_frad_col] =
-                        format_double(frad_abs_sp19);
+                        format_double(kSp19RadiativeSystematicScale *
+                                      irad->second * std::fabs(xs19));
+                } else if (std::isfinite(frad_abs_10p6) &&
+                           frad_abs_10p6 >= 0.0 &&
+                           ok10 && ok19 &&
+                           std::fabs(xs10) > 0.0 &&
+                           std::fabs(xs19) > 0.0) {
+                    // Backward-safe fallback if a legacy source row somehow
+                    // lacks the stored fractional value.
+                    row[(size_t)sp19_frad_col] =
+                        format_double(kSp19RadiativeSystematicScale *
+                                      (frad_abs_10p6/std::fabs(xs10)) *
+                                      std::fabs(xs19));
                 } else {
                     row[(size_t)sp19_frad_col].clear();
+                }
+
+                if (ok19 && std::fabs(xs19) > 0.0 && have_bin_frac) {
+                    row[(size_t)sp19_fbin_col] =
+                        format_double(ibin->second * std::fabs(xs19));
+                } else {
+                    row[(size_t)sp19_fbin_col].clear();
                 }
             }
 

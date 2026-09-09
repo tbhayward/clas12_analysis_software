@@ -591,7 +591,8 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
                        "Syst. err (fiducial cuts)",
                        "Syst. err (point-to-point total)",
                        "Syst. err (pi0 subtraction), Sp19 Inb (10.2 GeV)",
-                       "Syst.err (Frad), Sp19 Inb (10.2 GeV)"},
+                       "Syst.err (Frad), Sp19 Inb (10.2 GeV)",
+                       "Syst.err (Fbin), Sp19 Inb (10.2 GeV)"},
                     "acceptance-reweighting production assignment");
 
     ensure_column(t, "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
@@ -653,34 +654,55 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
         }
         row[(size_t)i_ptp10] = ok10 ? format_scalar(std::sqrt(sum10)) : std::string();
 
-        // Sp19 has dedicated pi0, acceptance and radiative terms.  Fbin,
-        // exclusivity and fiducial are transferred using their 10.6-GeV
-        // bin-wise fractions, matching the existing pass-2 prescription.
-        bool oksp = std::isfinite(xssp) && std::isfinite(xs10) && std::fabs(xs10) > 0.0;
+        // Sp19 has dedicated pi0, acceptance, radiative, and bin-centering
+        // terms.  The dedicated Fbin value is important for Sp19-only bins:
+        // transferring Fbin through xs10 fails when no combined 10.6-GeV
+        // cross section exists in that otherwise valid Sp19 bin.
+        bool oksp = std::isfinite(xssp) && std::fabs(xssp) > 0.0;
         double sumsp = 0.0;
         if (oksp) {
             for (const auto& col : std::vector<std::string>{
                     "Syst. err (pi0 subtraction), Sp19 Inb (10.2 GeV)",
                     "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)",
-                    "Syst.err (Frad), Sp19 Inb (10.2 GeV)"}) {
+                    "Syst.err (Frad), Sp19 Inb (10.2 GeV)",
+                    "Syst.err (Fbin), Sp19 Inb (10.2 GeV)"}) {
                 const double e = scalar_value(row[(size_t)t.index.at(col)]);
                 if (!std::isfinite(e) || e < 0.0) { oksp = false; break; }
                 sumsp += e * e;
             }
         }
+
+        // Exclusivity and fiducial remain the established fractional transfer
+        // from the corresponding 10.6-GeV result.  For an Sp19-only row where
+        // xs10 is absent, an exactly-zero source uncertainty remains exactly
+        // zero and does not require a denominator.  A nonzero source term with
+        // no xs10 is left invalid rather than silently inventing a fraction.
         if (oksp) {
             for (const auto& col : std::vector<std::string>{
-                    "Syst.err (Fbin)",
                     "Syst. err (exclusivity cuts)",
                     "Syst. err (fiducial cuts)"}) {
                 const double e10 = scalar_value(row[(size_t)t.index.at(col)]);
-                if (!std::isfinite(e10) || e10 < 0.0) { oksp = false; break; }
+                if (!std::isfinite(e10) || e10 < 0.0) {
+                    oksp = false;
+                    break;
+                }
+
+                if (e10 == 0.0) {
+                    continue;
+                }
+
+                if (!std::isfinite(xs10) || std::fabs(xs10) <= 0.0) {
+                    oksp = false;
+                    break;
+                }
+
                 const double frac = std::fabs(e10 / xs10);
                 const double esp = std::fabs(xssp) * frac;
                 sumsp += esp * esp;
             }
         }
-        row[(size_t)i_ptpsp] = oksp ? format_scalar(std::sqrt(sumsp)) : std::string();
+        row[(size_t)i_ptpsp] =
+            oksp ? format_scalar(std::sqrt(sumsp)) : std::string();
     }
 
     write_csv_or_throw(csv_path, t);
@@ -890,8 +912,20 @@ int main(int argc, char* argv[]) {
         if (finalize_only) {
             std::cout
                 << "[systematics] --finalize-only: preserving completed expensive "
-                << "systematic studies and rebuilding only the authoritative final "
-                << "point-to-point columns and projection plots.\n";
+                << "systematic studies and rebuilding only the inherited model "
+                << "components, authoritative final point-to-point columns, and "
+                << "projection plots.\n";
+
+            // Re-importing the inexpensive pass-1 model components is required
+            // here because the corrected Sp19 Frad/Fbin construction now
+            // materializes dedicated 10.2-GeV values even for an Sp19-only bin
+            // with no combined 10.6-GeV cross section.
+            if (!import_pass1_systematics(csv_main, pass1_systematics_path)) {
+                std::cerr
+                    << "[systematics] FATAL: import_pass1_systematics failed in "
+                    << "--finalize-only mode.\n";
+                return 1;
+            }
 
             if (!materialize_final_point_to_point_systematics(
                     csv_main, pass1_systematics_path)) {

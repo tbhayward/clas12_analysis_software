@@ -292,9 +292,24 @@ static std::vector<double> row_component_fractions(
     // corresponding 10.6-GeV bins.
     f[1] = number(cell(
         table,row,"acceptance reweighting conservative sys frac, Sp19 Inb"));
-    f[3] = frac_from_abs_10p6("Syst.err (Fbin)");
-    f[4] = frac_from_abs_10p6("Syst. err (exclusivity cuts)");
-    f[5] = frac_from_abs_10p6("Syst. err (fiducial cuts)");
+    const double fbin_sp_abs = number(cell(
+        table,row,"Syst.err (Fbin), Sp19 Inb (10.2 GeV)"));
+    if (std::isfinite(fbin_sp_abs))
+        f[3] = std::fabs(fbin_sp_abs/xs19);
+
+    // Exclusivity/fiducial retain the 10.6-GeV fractional transfer.  If the
+    // source term is exactly zero, its Sp19 contribution is also exactly zero
+    // even when that row has no combined 10.6-GeV cross section.
+    const auto transferred_or_zero = [&](const std::string& col)->double {
+        const double a = number(cell(table,row,col));
+        if (!std::isfinite(a))
+            return std::numeric_limits<double>::quiet_NaN();
+        if (a == 0.0)
+            return 0.0;
+        return frac_from_abs_10p6(col);
+    };
+    f[4] = transferred_or_zero("Syst. err (exclusivity cuts)");
+    f[5] = transferred_or_zero("Syst. err (fiducial cuts)");
 
     // Prefer the dedicated production Sp19 total written by main_systematics.
     // Reconstruct it from the six displayed fractions only as a backward-safe
