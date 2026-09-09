@@ -3436,10 +3436,21 @@ def build_complete_pass2_anchor_legend(
             if key == "pass2":
                 label = f"{DATASET_LABELS[key]} (2.16% norm + kin. corr.)"
             else:
-                vals = matches.loc[
-                    (matches["dataset_a"] == key) | (matches["dataset_b"] == key),
-                    ["norm_frac_a", "norm_frac_b"],
-                ].to_numpy(float).ravel()
+                # Collect ONLY the normalization values belonging to this
+                # dataset itself.  The previous implementation flattened both
+                # norm_frac_a and norm_frac_b from every matched row involving
+                # the dataset, which mixed in the partner experiment's
+                # normalization and produced nonsense labels (e.g. ~18% for
+                # Lee instead of the correct 31%).
+                vals_a = matches.loc[
+                    matches["dataset_a"] == key,
+                    "norm_frac_a",
+                ].to_numpy(float)
+                vals_b = matches.loc[
+                    matches["dataset_b"] == key,
+                    "norm_frac_b",
+                ].to_numpy(float)
+                vals = np.concatenate([vals_a, vals_b])
                 vals = vals[np.isfinite(vals) & (vals > 0)]
                 label = (
                     f"{DATASET_LABELS[key]} ({100*np.nanmedian(vals):.1f}% norm)"
@@ -3754,17 +3765,15 @@ def build_complete_lee_anchor_legend(
     # than from whichever particular canvas is being drawn.
     norm_frac: Dict[str, float] = {}
     for key in DATASET_ORDER:
-        if key == "lee2026":
-            vals = matches.loc[
-                matches["dataset_b"] == "lee2026",
-                "norm_frac_b",
-            ].to_numpy(float)
-        else:
-            vals = matches.loc[
-                matches["dataset_a"] == key,
-                "norm_frac_a",
-            ].to_numpy(float)
-        #endif
+        vals_a = matches.loc[
+            matches["dataset_a"] == key,
+            "norm_frac_a",
+        ].to_numpy(float)
+        vals_b = matches.loc[
+            matches["dataset_b"] == key,
+            "norm_frac_b",
+        ].to_numpy(float)
+        vals = np.concatenate([vals_a, vals_b])
         vals = vals[np.isfinite(vals)]
         norm_frac[key] = float(np.nanmedian(vals)) if vals.size else np.nan
     #endfor
