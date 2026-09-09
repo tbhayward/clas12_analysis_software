@@ -35,6 +35,7 @@
 #include "combination_systematics.h"
 #include "correlated_scale_systematics.h"
 #include "pass1_systematics_import.h"
+#include "pi0_systematics.h"
 #include "combination_point_to_point_systematics.h"
 #include "sp19_inb_energy_scaling_systematics.h"
 #include "run_period_consistency_systematics.h"
@@ -395,6 +396,19 @@ int main(int argc, char* argv[]) {
 
         if (!import_pass1_systematics(csv_main, pass1_systematics_path)) {
             std::cerr << "[systematics] FATAL: import_pass1_systematics failed.\n";
+            return 1;
+        }
+
+        // Recalculate the pi0-subtraction systematic from the pass-2
+        // contamination itself.  The 7.2% relative uncertainty on the
+        // acceptance-corrected background is inherited from the dedicated
+        // pass-1 variation study, while the actual background fraction is
+        // determined from the present pass-2 yields.
+        if (!pi0_systematics(
+                csv_main,
+                pass1_systematics_path,
+                "output/systematics/pi0_systematics")) {
+            std::cerr << "[systematics] FATAL: pi0_systematics failed.\n";
             return 1;
         }
 

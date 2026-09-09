@@ -322,7 +322,6 @@ static const std::string& sp19_normed_cross_section_column() {
 
 static const std::vector<std::string>& pass1_systematic_component_columns() {
     static const std::vector<std::string> cols = {
-        "Syst. err (pi0 subtraction)",
         "Syst. err (Acceptance)",
         "Syst.err (Frad)",
         "Syst.err (Fbin)"
@@ -336,11 +335,11 @@ static const std::string& pass1_systematic_total_column() {
 }
 
 static const std::vector<std::string>& pass1_systematic_destination_columns() {
-    // Only the four legacy component columns are imported from pass 1.
-    // The total must be recomputed from all available pass-2 components,
-    // including exclusivity-cut and fiducial-cut systematics.
+    // Only the legacy components that are not regenerated in pass 2 are
+    // imported here.  The pi0-subtraction systematic is now recalculated from
+    // the pass-2 contamination and acceptance-corrected yields by
+    // pi0_systematics.cpp.
     static const std::vector<std::string> cols = {
-        "Syst. err (pi0 subtraction)",
         "Syst. err (Acceptance)",
         "Syst.err (Frad)",
         "Syst.err (Fbin)"
@@ -860,15 +859,11 @@ bool import_pass1_systematics(const std::string& csv_path,
                 }
             }
 
-            const double full_total = full_point_to_point_total_from_row(pass2, row);
-            const int total_col = column_or_throw(
-                pass2,
-                pass1_systematic_total_column(),
-                "pass-2 point-to-point total destination");
-            row[(size_t)total_col] = format_double(full_total);
-
+            // The final point-to-point total is recomputed after the pass-2
+            // pi0-subtraction systematic has been assigned.  Do not form a
+            // transient total here with an empty pi0 component.
             if (&interpolated_values == values) {
-                audit << ',' << format_double(full_total) << '\n';
+                audit << ',' << "" << '\n';
             }
         }
 
@@ -885,7 +880,8 @@ bool import_pass1_systematics(const std::string& csv_path,
         for (const auto& col : pass1_systematic_destination_columns()) {
             std::cout << "\n  - " << col;
         }
-        std::cout << "\n[pass1-systematics] Recomputed full point-to-point total from all six components, including exclusivity and fiducial cuts.\n";
+        std::cout << "\n[pass1-systematics] Imported legacy pass-1 components that are not regenerated in pass 2.\n";
+        std::cout << "[pass1-systematics] The pi0-subtraction component is filled subsequently from the pass-2 contamination by pi0_systematics.\n";
         std::cout << "[pass1-systematics] Sp19 radiative systematic: "
                   << sp19_radiative_systematic_column()
                   << " = " << kSp19RadiativeSystematicScale
