@@ -407,6 +407,7 @@ int main(int argc, char* argv[]) {
         if (!pi0_systematics(
                 csv_main,
                 pass1_systematics_path,
+                "imports/all_bin_v3.csv",
                 "output/systematics/pi0_systematics")) {
             std::cerr << "[systematics] FATAL: pi0_systematics failed.\n";
             return 1;

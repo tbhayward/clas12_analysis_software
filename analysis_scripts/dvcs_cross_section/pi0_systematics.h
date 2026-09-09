@@ -15,6 +15,7 @@
 bool pi0_systematics(
     const std::string& csv_path,
     const std::string& pass1_summary_path,
+    const std::string& preliminary_pass1_csv_path,
     const std::string& output_dir);
 
 #endif

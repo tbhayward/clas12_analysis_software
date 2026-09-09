@@ -300,7 +300,8 @@ static void draw_distribution_comparison(
     cv.SetLeftMargin(.14);
     cv.SetRightMargin(.04);
     cv.SetBottomMargin(.14);
-    cv.SetTopMargin(.16);
+    // Reserve a dedicated title/subtitle band above the frame.
+    cv.SetTopMargin(.18);
     cv.SetTicks(1,1);
 
     TH1D h1("h_pi0_pass1","",50,0,xmax);
@@ -323,18 +324,21 @@ static void draw_distribution_comparison(
     frame.GetXaxis()->SetLabelSize(.040);
     frame.GetYaxis()->SetLabelSize(.040);
     frame.GetYaxis()->SetTitleOffset(1.35);
-    frame.Draw();
-    h1.Draw("HIST SAME");
-    h2.Draw("HIST SAME");
+    frame.SetStats(0);
+    h1.SetStats(0);
+    h2.SetStats(0);
+    frame.DrawCopy();
+    h1.DrawClone("HIST SAME");
+    h2.DrawClone("HIST SAME");
 
-    TLegend leg(.59,.67,.93,.82);
+    TLegend leg(.60,.69,.92,.82);
     leg.SetBorderSize(0);
     leg.SetFillStyle(0);
     leg.SetTextFont(42);
-    leg.SetTextSize(.031);
-    leg.AddEntry(&h1,"Pass-1 assigned systematic","l");
-    leg.AddEntry(&h2,"Pass-2 from 7.2% background variation","l");
-    leg.Draw();
+    leg.SetTextSize(.029);
+    leg.AddEntry(&h1,"Pass-1","l");
+    leg.AddEntry(&h2,"Pass-2 (7.2% background uncertainty)","l");
+    leg.DrawClone();
 
     TLatex t;
     t.SetNDC();
@@ -414,15 +418,16 @@ static void draw_kinematic_comparison(
         frame.GetXaxis()->SetLabelSize(.040);
         frame.GetYaxis()->SetLabelSize(.038);
         frame.GetYaxis()->SetTitleOffset(1.38);
-        frame.Draw();
+        frame.SetStats(0);
+        frame.DrawCopy();
 
         TGraph g1((int)a.size()),g2((int)b.size());
         for(int i=0;i<(int)a.size();++i) g1.SetPoint(i,a[(size_t)i].first,a[(size_t)i].second);
         for(int i=0;i<(int)b.size();++i) g2.SetPoint(i,b[(size_t)i].first,b[(size_t)i].second);
         g1.SetMarkerStyle(24); g1.SetMarkerSize(.9); g1.SetMarkerColor(kGray+2); g1.SetLineColor(kGray+2); g1.SetLineStyle(2);
         g2.SetMarkerStyle(20); g2.SetMarkerSize(.9); g2.SetMarkerColor(kBlue+1); g2.SetLineColor(kBlue+1);
-        if(!a.empty()) g1.Draw("PL SAME");
-        if(!b.empty()) g2.Draw("PL SAME");
+        if(!a.empty()) g1.DrawClone("PL SAME");
+        if(!b.empty()) g2.DrawClone("PL SAME");
 
         TLatex lab;
         lab.SetNDC();
@@ -439,7 +444,7 @@ static void draw_kinematic_comparison(
             leg.SetTextSize(.027);
             leg.AddEntry(&g1,"Pass-1","pl");
             leg.AddEntry(&g2,"Pass-2","pl");
-            leg.Draw();
+            leg.DrawClone();
         }
     }
 
@@ -465,7 +470,8 @@ static void draw_background_fraction_comparison(
     cv.SetLeftMargin(.14);
     cv.SetRightMargin(.04);
     cv.SetBottomMargin(.14);
-    cv.SetTopMargin(.16);
+    // Reserve a dedicated title/subtitle band above the frame.
+    cv.SetTopMargin(.18);
     cv.SetTicks(1,1);
 
     TH1D h1("h_pi0_c1","",50,0,0.45);
@@ -487,18 +493,21 @@ static void draw_background_fraction_comparison(
     frame.GetXaxis()->SetLabelSize(.040);
     frame.GetYaxis()->SetLabelSize(.040);
     frame.GetYaxis()->SetTitleOffset(1.35);
-    frame.Draw();
-    h1.Draw("HIST SAME");
-    h2.Draw("HIST SAME");
+    frame.SetStats(0);
+    h1.SetStats(0);
+    h2.SetStats(0);
+    frame.DrawCopy();
+    h1.DrawClone("HIST SAME");
+    h2.DrawClone("HIST SAME");
 
     TLegend leg(.59,.67,.93,.82);
     leg.SetBorderSize(0);
     leg.SetFillStyle(0);
     leg.SetTextFont(42);
-    leg.SetTextSize(.031);
-    leg.AddEntry(&h1,"Pass-1 inferred from assigned systematic","l");
-    leg.AddEntry(&h2,"Pass-2 directly calculated","l");
-    leg.Draw();
+    leg.SetTextSize(.029);
+    leg.AddEntry(&h1,"Pass-1 inferred","l");
+    leg.AddEntry(&h2,"Pass-2 calculated","l");
+    leg.DrawClone();
 
     TLatex t;
     t.SetNDC();
@@ -514,11 +523,284 @@ static void draw_background_fraction_comparison(
     cv.SaveAs(path.string().c_str());
 }
 
+struct BinEdges {
+    double xb0=0.0, xb1=0.0;
+    double q20=0.0, q21=0.0;
+    double t0=0.0, t1=0.0;
+    double ph0=0.0, ph1=0.0;
+};
+
+static long long edge_code(double x) {
+    return std::llround(1000000.0*x);
+}
+
+static std::string bin_key(const BinEdges& b) {
+    std::ostringstream ss;
+    ss<<edge_code(b.xb0)<<':'
+      <<edge_code(b.xb1)<<':'
+      <<edge_code(b.q20)<<':'
+      <<edge_code(b.q21)<<':'
+      <<edge_code(b.t0)<<':'
+      <<edge_code(b.t1)<<':'
+      <<edge_code(b.ph0)<<':'
+      <<edge_code(b.ph1);
+    return ss.str();
+}
+
+static BinEdges edges_from_row(
+    const Csv& c,
+    const std::vector<std::string>& row) {
+
+    BinEdges b;
+    b.xb0=number(row[(size_t)require_column(c,"xBmin")]);
+    b.xb1=number(row[(size_t)require_column(c,"xBmax")]);
+    b.q20=number(row[(size_t)require_column(c,"Q2min")]);
+    b.q21=number(row[(size_t)require_column(c,"Q2max")]);
+    b.t0=number(row[(size_t)require_column(c,"t_abs_min")]);
+    b.t1=number(row[(size_t)require_column(c,"t_abs_max")]);
+    b.ph0=number(row[(size_t)require_column(c,"phimin")]);
+    b.ph1=number(row[(size_t)require_column(c,"phimax")]);
+    return b;
+}
+
+struct MatchedPi0Point {
+    BinEdges edges;
+    std::string period;
+    double pass1=std::numeric_limits<double>::quiet_NaN();
+    double pass2=std::numeric_limits<double>::quiet_NaN();
+    double ratio=std::numeric_limits<double>::quiet_NaN();
+};
+
+static void write_matched_pi0_csv(
+    const fs::path& path,
+    const std::vector<MatchedPi0Point>& pts) {
+
+    std::ofstream out(path);
+    out<<"period,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax,"
+          "pass1_contamination,pass2_contamination,pass2_over_pass1\n";
+    for(const auto& p:pts) {
+        out<<csv_escape(p.period)<<','
+           <<p.edges.xb0<<','<<p.edges.xb1<<','
+           <<p.edges.q20<<','<<p.edges.q21<<','
+           <<p.edges.t0<<','<<p.edges.t1<<','
+           <<p.edges.ph0<<','<<p.edges.ph1<<','
+           <<p.pass1<<','<<p.pass2<<','<<p.ratio<<'\n';
+    }
+}
+
+static void draw_matched_ratio_distributions(
+    const fs::path& path,
+    const std::vector<MatchedPi0Point>& pts) {
+
+    const std::array<std::string,4> periods={{
+        "Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"
+    }};
+
+    TCanvas cv("c_pi0_matched_pass1_ratio","",1300,900);
+    cv.Divide(2,2,.003,.003);
+
+    for(int ip=0;ip<4;++ip) {
+        std::vector<double> ratios;
+        for(const auto& p:pts) {
+            if(p.period==periods[(size_t)ip] &&
+               std::isfinite(p.ratio) && p.ratio>0.0 &&
+               p.ratio<8.0) {
+                ratios.push_back(p.ratio);
+            }
+        }
+
+        cv.cd(ip+1);
+        gPad->SetLeftMargin(.14);
+        gPad->SetRightMargin(.04);
+        gPad->SetBottomMargin(.15);
+        gPad->SetTopMargin(.17);
+        gPad->SetTicks(1,1);
+
+        TH1D h(("h_pi0_matched_ratio_"+std::to_string(ip)).c_str(),"",60,0.0,4.0);
+        h.SetStats(0);
+        for(double r:ratios) h.Fill(r);
+        normalize_hist(h);
+        h.SetLineWidth(3);
+        h.SetLineColor(kBlue+1);
+
+        TH1D frame(("h_pi0_matched_ratio_frame_"+std::to_string(ip)).c_str(),"",60,0.0,4.0);
+        frame.SetStats(0);
+        frame.SetMinimum(0.0);
+        frame.SetMaximum(std::max(0.05,1.25*h.GetMaximum()));
+        frame.GetXaxis()->SetTitle("Pass-2 / pass-1 contamination");
+        frame.GetYaxis()->SetTitle("Fraction of matched bins");
+        frame.GetXaxis()->SetTitleSize(.047);
+        frame.GetYaxis()->SetTitleSize(.044);
+        frame.GetXaxis()->SetLabelSize(.040);
+        frame.GetYaxis()->SetLabelSize(.038);
+        frame.GetYaxis()->SetTitleOffset(1.35);
+        frame.DrawCopy();
+        h.DrawClone("HIST SAME");
+
+        TLine one(1.0,0.0,1.0,frame.GetMaximum());
+        one.SetLineStyle(2);
+        one.SetLineWidth(2);
+        one.SetLineColor(kGray+2);
+        one.DrawClone();
+
+        TLatex lab;
+        lab.SetNDC();
+        lab.SetTextFont(42);
+        lab.SetTextSize(.034);
+        lab.DrawLatex(.18,.87,periods[(size_t)ip].c_str());
+
+        if(!ratios.empty()) {
+            const Summary sr=summarize(ratios);
+            std::ostringstream ss;
+            ss<<std::fixed<<std::setprecision(2)
+              <<"median ratio = "<<sr.median
+              <<", N = "<<sr.n;
+            lab.SetTextSize(.026);
+            lab.DrawLatex(.18,.81,ss.str().c_str());
+        }
+    }
+
+    cv.cd(0);
+    TLatex title;
+    title.SetNDC();
+    title.SetTextAlign(22);
+    title.SetTextFont(42);
+    title.SetTextSize(.021);
+    title.DrawLatex(.50,.975,
+        "Matched-bin comparison of pass-2 and preliminary pass-1 #pi^{0} contamination");
+    title.SetTextSize(.0155);
+    title.DrawLatex(.50,.949,
+        "Pass-1 inbending/outbending contamination is compared with the corresponding pass-2 polarity");
+
+    cv.SaveAs(path.string().c_str());
+}
+
+static void write_high_contamination_bins(
+    const fs::path& path,
+    const Csv& c) {
+
+    const int iceff=require_column(c,"pi0 effective contamination, 10.6 GeV");
+    const int ispeff=require_column(c,"pi0 effective contamination, Sp19 Inb (10.2 GeV)");
+
+    const std::array<std::string,8> edge_names={{
+        "xBmin","xBmax","Q2min","Q2max",
+        "t_abs_min","t_abs_max","phimin","phimax"
+    }};
+    std::array<int,8> eidx;
+    for(int i=0;i<8;++i) eidx[(size_t)i]=require_column(c,edge_names[(size_t)i]);
+
+    std::ofstream out(path);
+    out<<"sample,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax,"
+          "effective_contamination\n";
+
+    for(const auto& row:c.rows) {
+        const std::array<std::pair<std::string,int>,2> samples={{
+            {"10.6 GeV",iceff},
+            {"Sp19 Inb",ispeff}
+        }};
+        for(const auto& s:samples) {
+            const double ceff=number(row[(size_t)s.second]);
+            if(!std::isfinite(ceff)||ceff<=0.50) continue;
+            out<<csv_escape(s.first);
+            for(int j=0;j<8;++j) out<<','<<row[(size_t)eidx[(size_t)j]];
+            out<<','<<ceff<<'\n';
+        }
+    }
+}
+
+static void draw_high_contamination_kinematics(
+    const fs::path& path,
+    const Csv& c) {
+
+    const int iceff=require_column(c,"pi0 effective contamination, 10.6 GeV");
+    const std::array<std::string,4> mean_names={{
+        "xBavg, 10.6 GeV",
+        "Q2avg, 10.6 GeV",
+        "t_abs_avg, 10.6 GeV",
+        "phiavg, 10.6 GeV"
+    }};
+    std::array<int,4> midx;
+    for(int i=0;i<4;++i) midx[(size_t)i]=require_column(c,mean_names[(size_t)i]);
+
+    struct Spec { const char* title; double lo,hi; };
+    const std::array<Spec,4> specs={{
+        {"x_{B}",0.05,0.60},
+        {"Q^{2} (GeV^{2})",1.0,8.0},
+        {"|t| (GeV^{2})",0.0,1.05},
+        {"#phi (deg)",0.0,360.0}
+    }};
+
+    TCanvas cv("c_pi0_high_contamination","",1250,850);
+    cv.Divide(2,2,.003,.003);
+
+    for(int iv=0;iv<4;++iv) {
+        std::vector<std::pair<double,double>> pts;
+        for(const auto& row:c.rows) {
+            const double ceff=number(row[(size_t)iceff]);
+            const double x=number(row[(size_t)midx[(size_t)iv]]);
+            if(std::isfinite(ceff)&&std::isfinite(x)&&ceff>0.50)
+                pts.push_back({x,ceff});
+        }
+
+        cv.cd(iv+1);
+        gPad->SetLeftMargin(.14);
+        gPad->SetRightMargin(.04);
+        gPad->SetBottomMargin(.15);
+        gPad->SetTopMargin(.15);
+        gPad->SetTicks(1,1);
+
+        TH1D frame(("h_pi0_high_frame_"+std::to_string(iv)).c_str(),"",100,
+                   specs[(size_t)iv].lo,specs[(size_t)iv].hi);
+        frame.SetStats(0);
+        frame.SetMinimum(.48);
+        frame.SetMaximum(1.02);
+        frame.GetXaxis()->SetTitle(specs[(size_t)iv].title);
+        frame.GetYaxis()->SetTitle("Effective #pi^{0} contamination");
+        frame.GetXaxis()->SetTitleSize(.048);
+        frame.GetYaxis()->SetTitleSize(.044);
+        frame.GetXaxis()->SetLabelSize(.040);
+        frame.GetYaxis()->SetLabelSize(.038);
+        frame.GetYaxis()->SetTitleOffset(1.35);
+        frame.DrawCopy();
+
+        TGraph g((int)pts.size());
+        for(int i=0;i<(int)pts.size();++i)
+            g.SetPoint(i,pts[(size_t)i].first,pts[(size_t)i].second);
+        g.SetMarkerStyle(20);
+        g.SetMarkerSize(.8);
+        g.SetMarkerColor(kRed+1);
+        if(!pts.empty()) g.DrawClone("P SAME");
+
+        TLatex lab;
+        lab.SetNDC();
+        lab.SetTextFont(42);
+        lab.SetTextSize(.034);
+        const std::string panel=std::string("(")+char('a'+iv)+")";
+        lab.DrawLatex(.18,.85,panel.c_str());
+    }
+
+    cv.cd(0);
+    TLatex title;
+    title.SetNDC();
+    title.SetTextAlign(22);
+    title.SetTextFont(42);
+    title.SetTextSize(.021);
+    title.DrawLatex(.50,.975,
+        "Kinematics of the rare high-#pi^{0}-contamination bins");
+    title.SetTextSize(.0155);
+    title.DrawLatex(.50,.949,
+        "Combined 10.6 GeV bins with effective contamination greater than 0.50");
+
+    cv.SaveAs(path.string().c_str());
+}
+
+
 } // namespace
 
 bool pi0_systematics(
     const std::string& csv_path,
     const std::string& pass1_summary_path,
+    const std::string& preliminary_pass1_csv_path,
     const std::string& output_dir) {
 
     try {
@@ -526,6 +808,7 @@ bool pi0_systematics(
 
         Csv c=read_csv(csv_path);
         const Csv p1=read_csv(pass1_summary_path);
+        const Csv p1_prelim=read_csv(preliminary_pass1_csv_path);
 
         const int c_pi0_abs=ensure_column(c,"Syst. err (pi0 subtraction)");
         const int c_pi0_frac=ensure_column(c,"pi0 subtraction sys frac, 10.6 GeV");
@@ -657,6 +940,67 @@ bool pi0_systematics(
         const Summary c2=summarize(pass2_ceff);
         const Summary csp=summarize(sp_ceff);
 
+        // Direct matched-bin comparison to the preliminary Sangbaek/pass-1 CSV.
+        // That CSV stores one inbending and one outbending contamination value
+        // per nominal kinematic bin.  We compare each pass-2 period to the
+        // pass-1 value with the same torus polarity.
+        const int ppre_valid=require_column(p1_prelim,"valid bin");
+        const int ppre_cin=require_column(p1_prelim,"contamination ratio, inbending");
+        const int ppre_cout=require_column(p1_prelim,"contamination ratio, outbending");
+
+        std::unordered_map<std::string,std::pair<double,double>> preliminary_by_bin;
+        for(const auto& row:p1_prelim.rows) {
+            const std::string valid=row[(size_t)ppre_valid];
+            if(!(valid=="True"||valid=="true"||valid=="1"||valid=="TRUE")) continue;
+
+            BinEdges b;
+            b.xb0=number(row[(size_t)require_column(p1_prelim,"xBmin")]);
+            b.xb1=number(row[(size_t)require_column(p1_prelim,"xBmax")]);
+            b.q20=number(row[(size_t)require_column(p1_prelim,"Q2min")]);
+            b.q21=number(row[(size_t)require_column(p1_prelim,"Q2max")]);
+            b.t0=number(row[(size_t)require_column(p1_prelim,"t_abs_min")]);
+            b.t1=number(row[(size_t)require_column(p1_prelim,"t_abs_max")]);
+            b.ph0=number(row[(size_t)require_column(p1_prelim,"phimin")]);
+            b.ph1=number(row[(size_t)require_column(p1_prelim,"phimax")]);
+
+            const double cin=number(row[(size_t)ppre_cin]);
+            const double cout=number(row[(size_t)ppre_cout]);
+            preliminary_by_bin[bin_key(b)]={cin,cout};
+        }
+
+        std::vector<MatchedPi0Point> matched_points;
+        const std::array<std::pair<std::string,bool>,4> matched_periods={{
+            {"Fa18 Inb",true},
+            {"Fa18 Out",false},
+            {"Sp18 Inb",true},
+            {"Sp18 Out",false}
+        }};
+
+        for(const auto& row:c.rows) {
+            const BinEdges b=edges_from_row(c,row);
+            const auto it=preliminary_by_bin.find(bin_key(b));
+            if(it==preliminary_by_bin.end()) continue;
+
+            for(const auto& per:matched_periods) {
+                const auto ic=c.index.find("contamination ratio, "+per.first);
+                if(ic==c.index.end()) continue;
+
+                const Triple tr=parse_triple(row[(size_t)ic->second]);
+                if(!tr.ok||!std::isfinite(tr.value)||tr.value<0.0) continue;
+
+                const double oldc=per.second ? it->second.first : it->second.second;
+                if(!std::isfinite(oldc)||oldc<=0.0) continue;
+
+                MatchedPi0Point mp;
+                mp.edges=b;
+                mp.period=per.first;
+                mp.pass1=oldc;
+                mp.pass2=tr.value;
+                mp.ratio=tr.value/oldc;
+                matched_points.push_back(mp);
+            }
+        }
+
         write_csv_atomic(csv_path,c);
 
         {
@@ -682,6 +1026,24 @@ bool pi0_systematics(
             fs::path(output_dir)/"pi0_systematic_kinematic_pass1_comparison.png",
             p1k,p2k);
 
+        write_matched_pi0_csv(
+            fs::path(output_dir)/"pi0_matched_pass1_pass2_contamination.csv",
+            matched_points);
+
+        draw_matched_ratio_distributions(
+            fs::path(output_dir)/"pi0_matched_pass1_pass2_ratio_distributions.png",
+            matched_points);
+
+        write_high_contamination_bins(
+            fs::path(output_dir)/"pi0_high_contamination_bins.csv",
+            c);
+
+        draw_high_contamination_kinematics(
+            fs::path(output_dir)/"pi0_high_contamination_kinematics.png",
+            c);
+
+        std::cout<<"[pi0-systematics] Matched preliminary pass-1/pass-2 contamination points: "
+                 <<matched_points.size()<<".\n";
         std::cout<<"[pi0-systematics] Assigned "<<100.0*kPi0BackgroundRelativeUncertainty
                  <<"% relative uncertainty to the acceptance-corrected pi0 background.\n";
         std::cout<<"[pi0-systematics] Combined 10.6 GeV bins: "<<n10
