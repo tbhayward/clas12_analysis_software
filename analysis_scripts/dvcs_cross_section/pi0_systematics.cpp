@@ -6,6 +6,7 @@
 #include <TH1D.h>
 #include <TLatex.h>
 #include <TLegend.h>
+#include <TStyle.h>
 #include <TLine.h>
 
 #include <algorithm>
@@ -32,7 +33,8 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr double kPi0BackgroundRelativeUncertainty = 0.072;
+constexpr double kPi0BackgroundRelativeUncertainty = 0.10;
+constexpr double kPass1Pi0BackgroundRelativeUncertainty = 0.072;
 
 struct Csv {
     std::vector<std::string> header;
@@ -301,7 +303,7 @@ static void draw_distribution_comparison(
     cv.SetRightMargin(.04);
     cv.SetBottomMargin(.14);
     // Reserve a dedicated title/subtitle band above the frame.
-    cv.SetTopMargin(.18);
+    cv.SetTopMargin(.20);
     cv.SetTicks(1,1);
 
     TH1D h1("h_pi0_pass1","",50,0,xmax);
@@ -337,13 +339,13 @@ static void draw_distribution_comparison(
     leg.SetTextFont(42);
     leg.SetTextSize(.029);
     leg.AddEntry(&h1,"Pass-1","l");
-    leg.AddEntry(&h2,"Pass-2 (7.2% background uncertainty)","l");
+    leg.AddEntry(&h2,"Pass-2 (10% background uncertainty)","l");
     leg.DrawClone();
 
     TLatex t;
     t.SetNDC();
     t.SetTextFont(42);
-    t.SetTextSize(.037);
+    t.SetTextSize(.034);
     t.DrawLatex(.14,.945,"#pi^{0}-background systematic: pass-1 / pass-2 comparison");
     t.SetTextSize(.026);
     std::ostringstream ss;
@@ -471,7 +473,7 @@ static void draw_background_fraction_comparison(
     cv.SetRightMargin(.04);
     cv.SetBottomMargin(.14);
     // Reserve a dedicated title/subtitle band above the frame.
-    cv.SetTopMargin(.18);
+    cv.SetTopMargin(.20);
     cv.SetTicks(1,1);
 
     TH1D h1("h_pi0_c1","",50,0,0.45);
@@ -512,7 +514,7 @@ static void draw_background_fraction_comparison(
     TLatex t;
     t.SetNDC();
     t.SetTextFont(42);
-    t.SetTextSize(.037);
+    t.SetTextSize(.034);
     t.DrawLatex(.14,.945,"Effective #pi^{0} contamination: pass-1 / pass-2 consistency");
     t.SetTextSize(.025);
     std::ostringstream ss;
@@ -613,7 +615,7 @@ static void draw_matched_ratio_distributions(
         gPad->SetLeftMargin(.14);
         gPad->SetRightMargin(.04);
         gPad->SetBottomMargin(.15);
-        gPad->SetTopMargin(.17);
+        gPad->SetTopMargin(.18);
         gPad->SetTicks(1,1);
 
         TH1D h(("h_pi0_matched_ratio_"+std::to_string(ip)).c_str(),"",60,0.0,4.0);
@@ -802,6 +804,8 @@ bool pi0_systematics(
     const std::string& pass1_summary_path,
     const std::string& preliminary_pass1_csv_path,
     const std::string& output_dir) {
+    gStyle->SetOptStat(0);
+
 
     try {
         fs::create_directories(output_dir);
@@ -896,12 +900,17 @@ bool pi0_systematics(
             row[(size_t)c_total]=fmt(total);
         }
 
-        // Pass-1 validation inputs.  Since pass 1 used the same 7.2% relative
-        // background uncertainty, its assigned cross-section systematic can be
-        // inverted to an effective acceptance-corrected contamination:
+        // Pass-1 validation inputs.  The pass-1 cross-section analysis used a
+        // 7.2% relative uncertainty on the acceptance-corrected pi0 background.
+        // Its assigned cross-section systematic can therefore be inverted to an
+        // effective acceptance-corrected contamination using that ORIGINAL
+        // pass-1 value:
         //
-        //   f_pi0 = 0.072 B/S,
+        //   f_pi0(pass1) = 0.072 B/S,
         //   c_eff = B/(S+B) = f_pi0/(0.072+f_pi0).
+        //
+        // The pass-2 production systematic below deliberately uses the more
+        // conservative 10% value adopted in the pass-1 BSA analysis.
         const int p1_val=require_column(p1,"val");
         const int p1_pi0=require_column(p1,"Syst. err (pi0 subtraction)");
         const std::array<int,8> p1_edge_idx={{
@@ -919,7 +928,7 @@ bool pi0_systematics(
             const double e=number(row[(size_t)p1_pi0]);
             if(!std::isfinite(xs)||!std::isfinite(e)||std::fabs(xs)<=0.0||e<0.0) continue;
             const double frac=e/std::fabs(xs);
-            const double ceff=frac/(kPi0BackgroundRelativeUncertainty+frac);
+            const double ceff=frac/(kPass1Pi0BackgroundRelativeUncertainty+frac);
             pass1_frac.push_back(frac);
             pass1_ceff.push_back(ceff);
 
