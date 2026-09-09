@@ -46,6 +46,7 @@ namespace {
 struct SystematicRunSelection {
     bool cuts = true;
     bool current = true;
+    bool acceptance = true;
     bool csv_only = true;
     bool external_studies = true;
 };
@@ -76,6 +77,7 @@ static SystematicRunSelection parse_systematic_selection(
         if(arg=="--skip-systematics"){
             sel.cuts=false;
             sel.current=false;
+            sel.acceptance=false;
             sel.csv_only=false;
             sel.external_studies=false;
             explicitly_set=true;
@@ -90,15 +92,16 @@ static SystematicRunSelection parse_systematic_selection(
 
             sel.cuts=false;
             sel.current=false;
+            sel.acceptance=false;
             sel.csv_only=false;
             sel.external_studies=false;
             explicitly_set=true;
 
             for(const std::string& token:split_tokens(argv[++i])){
                 if(token=="all"){
-                    sel.cuts=sel.current=sel.csv_only=sel.external_studies=true;
+                    sel.cuts=sel.current=sel.acceptance=sel.csv_only=sel.external_studies=true;
                 } else if(token=="none"){
-                    sel.cuts=sel.current=sel.csv_only=sel.external_studies=false;
+                    sel.cuts=sel.current=sel.acceptance=sel.csv_only=sel.external_studies=false;
                 } else if(token=="cuts" ||
                           token=="exclusivity" ||
                           token=="fiducial"){
@@ -108,6 +111,8 @@ static SystematicRunSelection parse_systematic_selection(
                     sel.cuts=true;
                 } else if(token=="current"){
                     sel.current=true;
+                } else if(token=="acceptance" || token=="acceptance-reweighting"){
+                    sel.acceptance=true;
                 } else if(token=="csv" || token=="post"){
                     sel.csv_only=true;
                 } else if(token=="external"){
@@ -145,7 +150,8 @@ int main(int argc, char* argv[]) {
         std::cerr << "Usage examples:\n"
                   << "  ./dvcs_analysis\n"
                   << "  ./dvcs_analysis --systematics current\n"
-                  << "  ./dvcs_analysis --systematics cuts,current\n"
+                  << "  ./dvcs_analysis --systematics cuts,current,acceptance\n"
+                  << "  ./dvcs_analysis --systematics acceptance,csv\n"
                   << "  ./dvcs_analysis --systematics csv\n"
                   << "  ./dvcs_analysis --skip-systematics\n"
                   << "  ./dvcs_analysis --acceptance-reweighting-only\n";
@@ -156,6 +162,7 @@ int main(int argc, char* argv[]) {
     std::cout << "[main] Systematics selection:"
               << " cuts=" << systematic_selection.cuts
               << " current=" << systematic_selection.current
+              << " acceptance=" << systematic_selection.acceptance
               << " csv=" << systematic_selection.csv_only
               << " external=" << systematic_selection.external_studies
               << std::endl;
@@ -937,6 +944,34 @@ int main(int argc, char* argv[]) {
     else {
         std::cout
             << "[main] Skipping automatic exclusivity/fiducial variations by request.\n";
+    }
+
+    // --------- Acceptance model-dependence systematic ----------
+    // Derive the pass-2 acceptance-model uncertainty from the nominal ->
+    // DATA-reweighted acceptance excursion and the synthetic transfer-closure
+    // envelope.  This tree-based stage writes fractional candidate columns;
+    // main_systematics subsequently converts them to the absolute production
+    // acceptance uncertainties and recomputes the point-to-point totals.
+    if (systematic_selection.acceptance) {
+        AcceptanceReweightingOptions arw;
+        arw.combined_cuts_json = "output/jsons/combined_cuts.json";
+        arw.current_response_model_json =
+            "output/dvcs_current_dependence/calibration/current_response_model.json";
+        arw.output_dir = "output/systematics/acceptance_reweighting";
+        arw.enable_bh_reweighting = false;
+        arw.build_bh_grid_if_missing = false;
+        arw.install_candidate_as_production_systematic = false;
+
+        if (!run_acceptance_reweighting_study(
+                "output/csvs/dvcs_pass2_analysis.csv",
+                dataTrees, genMcTrees, recMcTrees, arw)) {
+            std::cerr << "[main] FATAL: acceptance reweighting study failed.\n";
+            return 1;
+        }
+        std::cout << "[main] Acceptance reweighting candidate written; "
+                  << "production assignment will be finalized by main_systematics.\n";
+    } else {
+        std::cout << "[main] Skipping acceptance-reweighting systematic by request.\n";
     }
 
     // --------- CSV-only systematic uncertainties ----------

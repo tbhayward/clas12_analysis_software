@@ -139,8 +139,9 @@ struct AcceptanceReweightingOptions {
     bool apply_current_correction = true;
 
     // Optional pure-BH stress test.  It is disabled by default and is NOT used
-    // in the candidate acceptance systematic.  The production candidate is
-    // determined solely from the nominal -> DATA-reweighted acceptance change.
+    // in the candidate acceptance systematic.  The production candidate combines
+    // the nominal -> DATA-reweighted acceptance change with the row-level
+    // synthetic transfer-closure residual.
     bool enable_bh_reweighting = false;
     bool build_bh_grid_if_missing = false;
     std::string bh_grid_script =
@@ -149,9 +150,10 @@ struct AcceptanceReweightingOptions {
         "output/systematics/acceptance_reweighting/bh_subcell_grid.csv";
     int bh_grid_workers = 7;
 
-    // First-pass safety: write the candidate pass-2 acceptance systematic and
-    // all diagnostics, but do not overwrite Syst. err (Acceptance) until the
-    // diagnostic result has been reviewed.
+    // The tree-based study writes the candidate pass-2 acceptance systematic and
+    // all diagnostics.  The default full workflow leaves direct installation off:
+    // main_systematics performs the reviewed production assignment after the
+    // pass-2 pi0 and inherited correction-factor components are in place.
     bool install_candidate_as_production_systematic = false;
 };
 

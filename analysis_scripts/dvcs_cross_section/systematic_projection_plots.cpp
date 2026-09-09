@@ -245,24 +245,35 @@ static std::vector<double> row_component_fractions(
     if (std::isfinite(frad_abs))
         f[2] = std::fabs(frad_abs/xs19);
 
-    // Acceptance, Fbin, exclusivity and fiducial use the same assigned
-    // bin-wise fractional prescription as the corresponding 10.6-GeV bins.
-    f[1] = frac_from_abs_10p6("Syst. err (Acceptance)");
+    // Acceptance now has a dedicated Sp19 result from the pass-2
+    // DATA-reweighting + transfer-closure study.  Fbin, exclusivity and
+    // fiducial retain the established bin-wise fractional transfer from the
+    // corresponding 10.6-GeV bins.
+    f[1] = number(cell(
+        table,row,"acceptance reweighting conservative sys frac, Sp19 Inb"));
     f[3] = frac_from_abs_10p6("Syst.err (Fbin)");
     f[4] = frac_from_abs_10p6("Syst. err (exclusivity cuts)");
     f[5] = frac_from_abs_10p6("Syst. err (fiducial cuts)");
 
-    // Recompute the Sp19 point-to-point total from the six displayed terms.
-    double sum2 = 0.0;
-    bool complete = true;
-    for (int j=0;j<6;++j) {
-        if (!finite_fraction(f[(size_t)j])) {
-            complete = false;
-            break;
+    // Prefer the dedicated production Sp19 total written by main_systematics.
+    // Reconstruct it from the six displayed fractions only as a backward-safe
+    // fallback for older CSVs.
+    const double ptp_sp_abs = number(cell(
+        table,row,"Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)"));
+    if (std::isfinite(ptp_sp_abs)) {
+        f[6] = std::fabs(ptp_sp_abs/xs19);
+    } else {
+        double sum2 = 0.0;
+        bool complete = true;
+        for (int j=0;j<6;++j) {
+            if (!finite_fraction(f[(size_t)j])) {
+                complete = false;
+                break;
+            }
+            sum2 += f[(size_t)j]*f[(size_t)j];
         }
-        sum2 += f[(size_t)j]*f[(size_t)j];
+        if (complete) f[6] = std::sqrt(sum2);
     }
-    if (complete) f[6] = std::sqrt(sum2);
 
     return f;
 }

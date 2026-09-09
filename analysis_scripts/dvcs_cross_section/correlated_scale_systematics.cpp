@@ -916,7 +916,10 @@ static void draw_systematic_category_summary(
 
         std::vector<double> ptp,current,residual,corrv;
         const auto ix=c.index.find(xscol);
-        const auto iptp=c.index.find("Syst. err (point-to-point total)");
+        const std::string ptp_col = (sample == "Sp19 Inb")
+            ? "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)"
+            : "Syst. err (point-to-point total)";
+        const auto iptp=c.index.find(ptp_col);
         const auto icur=c.index.find(currentcol);
         const auto ires=c.index.find("run period residual sys frac, "+sample);
 
@@ -1053,7 +1056,10 @@ static void write_high_level_summary(
                        const std::string& currentcol) {
         std::vector<double> cvals,ptp,current,resid;
         const auto ix=c.index.find(xscol);
-        const auto iptp=c.index.find("Syst. err (point-to-point total)");
+        const std::string ptp_col = (sample == "Sp19 Inb")
+            ? "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)"
+            : "Syst. err (point-to-point total)";
+        const auto iptp=c.index.find(ptp_col);
         const auto icur=c.index.find(currentcol);
         const auto ires=c.index.find("run period residual sys frac, "+sample);
 

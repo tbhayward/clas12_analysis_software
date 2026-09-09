@@ -5031,8 +5031,8 @@ static void arw_write_closure_canvas(
         gd.SetLineColor(kBlack); gd.SetLineWidth(2);
         gb.SetMarkerStyle(24); gb.SetMarkerColor(kRed+1);
         gb.SetLineColor(kRed+1); gb.SetLineWidth(2);
-        ga.SetMarkerStyle(25); ga.SetMarkerColor(kMagenta+2);
-        ga.SetLineColor(kMagenta+2); ga.SetLineWidth(3);
+        ga.SetMarkerStyle(25); ga.SetMarkerColor(kAzure+6);
+        ga.SetLineColor(kAzure+6); ga.SetLineWidth(3);
         gd.DrawClone("LP SAME");
         gb.DrawClone("LP SAME");
         ga.DrawClone("LP SAME");
@@ -5314,7 +5314,7 @@ static void arw_write_candidate_distribution(
     if(h1.Integral()>0)h1.Scale(1.0/h1.Integral());if(h2.Integral()>0)h2.Scale(1.0/h2.Integral());
     double ymax=1.2*std::max(h1.GetMaximum(),h2.GetMaximum());
     TH1D fr("h_arw_cand_frame","",60,0,xmax);fr.SetStats(0);fr.SetMinimum(0);fr.SetMaximum(ymax);
-    fr.GetXaxis()->SetTitle("DATA-reweighting acceptance systematic (%)");
+    fr.GetXaxis()->SetTitle("Conservative acceptance systematic (%)");
     fr.GetYaxis()->SetTitle("Fraction of populated bins");fr.GetYaxis()->SetTitleOffset(1.25);fr.DrawCopy();
     h1.SetLineColor(kBlue+1);h1.SetLineWidth(3);h2.SetLineColor(kRed+1);h2.SetLineWidth(3);h2.SetLineStyle(2);
     h1.DrawClone("HIST SAME");h2.DrawClone("HIST SAME");
@@ -5324,7 +5324,7 @@ static void arw_write_candidate_distribution(
     std::ostringstream ss;ss<<"median: "<<std::fixed<<std::setprecision(2)<<100*arw_quantile(f106,.50)
                             <<"% (10.6), "<<100*arw_quantile(f102,.50)<<"% (10.2)";
     t.DrawLatex(.16,.86,ss.str().c_str());
-    t.SetTextAlign(22);t.SetTextSize(.022);t.DrawLatex(.50,.965,"Pass-2 DATA-driven acceptance model uncertainty");
+    t.SetTextAlign(22);t.SetTextSize(.022);t.DrawLatex(.50,.965,"Pass-2 conservative acceptance model uncertainty");
     c.SaveAs(path.c_str());
 }
 
@@ -5388,8 +5388,8 @@ static void arw_write_candidate_kinematic_summary(
         if(iv==0){TLegend l(.53,.65,.92,.80);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.027);l.AddEntry(&g1,"10.6 GeV combined","lp");l.AddEntry(&g2,"10.2 GeV Sp19 Inb","lp");l.DrawClone();}
     }
     c.cd(0);TLatex t;t.SetNDC();t.SetTextAlign(22);t.SetTextFont(42);t.SetTextSize(.022);
-    t.DrawLatex(.50,.978,"Kinematic dependence of DATA-reweighted acceptance systematic");
-    t.SetTextSize(.0155);t.DrawLatex(.50,.952,"Full nominal-to-reweighted acceptance excursion; medians in each kinematic interval");
+    t.DrawLatex(.50,.978,"Kinematic dependence of conservative acceptance systematic");
+    t.SetTextSize(.0155);t.DrawLatex(.50,.952,"DATA-driven acceptance excursion #oplus 95th-percentile transfer closure; medians in each kinematic interval");
     c.SaveAs(path.c_str());
 }
 

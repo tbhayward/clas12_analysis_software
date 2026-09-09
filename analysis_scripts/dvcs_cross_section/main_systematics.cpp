@@ -20,10 +20,13 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iomanip>
+#include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -342,6 +345,179 @@ static bool ensure_systematics_output_columns(const std::string& csv_path) {
     return n_added > 0;
 }
 
+static std::string trim_copy(const std::string& s) {
+    size_t b = 0;
+    while (b < s.size() && std::isspace((unsigned char)s[b])) ++b;
+    size_t e = s.size();
+    while (e > b && std::isspace((unsigned char)s[e - 1])) --e;
+    return s.substr(b, e - b);
+}
+
+static double scalar_value(const std::string& raw) {
+    const std::string s = trim_copy(raw);
+    if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+    char* end = nullptr;
+    const double v = std::strtod(s.c_str(), &end);
+    return (end == s.c_str()) ? std::numeric_limits<double>::quiet_NaN() : v;
+}
+
+static double tuple_first_value(const std::string& raw) {
+    std::string s = trim_copy(raw);
+    while (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+        s = trim_copy(s.substr(1, s.size() - 2));
+    if (s.size() < 3 || s.front() != '(' || s.back() != ')')
+        return std::numeric_limits<double>::quiet_NaN();
+    s = s.substr(1, s.size() - 2);
+    const size_t comma = s.find(',');
+    return scalar_value(comma == std::string::npos ? s : s.substr(0, comma));
+}
+
+static std::string format_scalar(double v) {
+    if (!std::isfinite(v)) return std::string();
+    std::ostringstream ss;
+    ss << std::setprecision(12) << v;
+    return ss.str();
+}
+
+// Promote the reviewed acceptance-reweighting candidate to the production
+// point-to-point systematic.  The tree-based study writes fractional
+// uncertainties for 10.6 GeV and Sp19 separately.  Here we convert those
+// fractions to absolute cross-section uncertainties and rebuild the total
+// point-to-point uncertainty with the final pass-2 components.
+static bool install_acceptance_reweighting_systematic(const std::string& csv_path) {
+    CsvTable t = read_csv_or_throw(csv_path);
+
+    const std::string c_frac10 =
+        "acceptance reweighting conservative sys frac, 10.6 GeV";
+    const std::string c_fracsp =
+        "acceptance reweighting conservative sys frac, Sp19 Inb";
+    const std::string c_xs10 =
+        "normed cross sections, ep->epg, exp, 10.6 GeV, unpol";
+    const std::string c_xssp =
+        "normed cross sections, ep->epg, exp, Sp19 Inb, unpol";
+
+    require_columns(t, {c_frac10, c_fracsp, c_xs10, c_xssp,
+                       "Syst. err (pi0 subtraction)",
+                       "Syst. err (Acceptance)",
+                       "Syst.err (Frad)",
+                       "Syst.err (Fbin)",
+                       "Syst. err (exclusivity cuts)",
+                       "Syst. err (fiducial cuts)",
+                       "Syst. err (point-to-point total)",
+                       "Syst. err (pi0 subtraction), Sp19 Inb (10.2 GeV)",
+                       "Syst.err (Frad), Sp19 Inb (10.2 GeV)"},
+                    "acceptance-reweighting production assignment");
+
+    ensure_column(t, "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
+    ensure_column(t, "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
+
+    const int i_frac10 = t.index.at(c_frac10);
+    const int i_fracsp = t.index.at(c_fracsp);
+    const int i_xs10 = t.index.at(c_xs10);
+    const int i_xssp = t.index.at(c_xssp);
+    const int i_acc10 = t.index.at("Syst. err (Acceptance)");
+    const int i_accsp = t.index.at("Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
+    const int i_ptp10 = t.index.at("Syst. err (point-to-point total)");
+    const int i_ptpsp = t.index.at("Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
+
+    const std::vector<std::string> components10 = {
+        "Syst. err (pi0 subtraction)",
+        "Syst. err (Acceptance)",
+        "Syst.err (Frad)",
+        "Syst.err (Fbin)",
+        "Syst. err (exclusivity cuts)",
+        "Syst. err (fiducial cuts)"
+    };
+
+    size_t n10 = 0, nsp = 0;
+    std::vector<double> frac10_values, fracsp_values;
+
+    for (auto& row : t.rows) {
+        const double xs10 = tuple_first_value(row[(size_t)i_xs10]);
+        const double xssp = tuple_first_value(row[(size_t)i_xssp]);
+        const double f10 = scalar_value(row[(size_t)i_frac10]);
+        const double fsp = scalar_value(row[(size_t)i_fracsp]);
+
+        if (std::isfinite(xs10) && std::isfinite(f10) && f10 >= 0.0) {
+            row[(size_t)i_acc10] = format_scalar(std::fabs(xs10) * f10);
+            frac10_values.push_back(f10);
+            ++n10;
+        } else {
+            row[(size_t)i_acc10].clear();
+        }
+
+        if (std::isfinite(xssp) && std::isfinite(fsp) && fsp >= 0.0) {
+            row[(size_t)i_accsp] = format_scalar(std::fabs(xssp) * fsp);
+            fracsp_values.push_back(fsp);
+            ++nsp;
+        } else {
+            row[(size_t)i_accsp].clear();
+        }
+
+        // Final 10.6-GeV point-to-point total from the six production terms.
+        double sum10 = 0.0;
+        bool ok10 = true;
+        for (const auto& col : components10) {
+            const double e = scalar_value(row[(size_t)t.index.at(col)]);
+            if (!std::isfinite(e) || e < 0.0) {
+                ok10 = false;
+                break;
+            }
+            sum10 += e * e;
+        }
+        row[(size_t)i_ptp10] = ok10 ? format_scalar(std::sqrt(sum10)) : std::string();
+
+        // Sp19 has dedicated pi0, acceptance and radiative terms.  Fbin,
+        // exclusivity and fiducial are transferred using their 10.6-GeV
+        // bin-wise fractions, matching the existing pass-2 prescription.
+        bool oksp = std::isfinite(xssp) && std::isfinite(xs10) && std::fabs(xs10) > 0.0;
+        double sumsp = 0.0;
+        if (oksp) {
+            for (const auto& col : std::vector<std::string>{
+                    "Syst. err (pi0 subtraction), Sp19 Inb (10.2 GeV)",
+                    "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)",
+                    "Syst.err (Frad), Sp19 Inb (10.2 GeV)"}) {
+                const double e = scalar_value(row[(size_t)t.index.at(col)]);
+                if (!std::isfinite(e) || e < 0.0) { oksp = false; break; }
+                sumsp += e * e;
+            }
+        }
+        if (oksp) {
+            for (const auto& col : std::vector<std::string>{
+                    "Syst.err (Fbin)",
+                    "Syst. err (exclusivity cuts)",
+                    "Syst. err (fiducial cuts)"}) {
+                const double e10 = scalar_value(row[(size_t)t.index.at(col)]);
+                if (!std::isfinite(e10) || e10 < 0.0) { oksp = false; break; }
+                const double frac = std::fabs(e10 / xs10);
+                const double esp = std::fabs(xssp) * frac;
+                sumsp += esp * esp;
+            }
+        }
+        row[(size_t)i_ptpsp] = oksp ? format_scalar(std::sqrt(sumsp)) : std::string();
+    }
+
+    write_csv_or_throw(csv_path, t);
+
+    auto median_fraction = [](std::vector<double> v) {
+        v.erase(std::remove_if(v.begin(), v.end(),
+                               [](double x){ return !std::isfinite(x); }), v.end());
+        if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+        std::sort(v.begin(), v.end());
+        const size_t n = v.size();
+        return n % 2 ? v[n/2] : 0.5*(v[n/2 - 1] + v[n/2]);
+    };
+
+    std::cout << "[acceptance-systematics] Installed conservative pass-2 acceptance "
+              << "uncertainty in " << n10 << " 10.6-GeV bins and " << nsp
+              << " Sp19 bins. Median fractions: "
+              << 100.0*median_fraction(frac10_values) << "% (10.6), "
+              << 100.0*median_fraction(fracsp_values) << "% (Sp19).\n";
+    std::cout << "[acceptance-systematics] Recomputed dedicated 10.6-GeV and Sp19 "
+              << "point-to-point totals.\n";
+    return true;
+}
+
 static void make_output_dirs() {
     fs::create_directories("output");
     fs::create_directories("output/csvs");
@@ -410,6 +586,11 @@ int main(int argc, char* argv[]) {
                 "imports/all_bin_v3.csv",
                 "output/systematics/pi0_systematics")) {
             std::cerr << "[systematics] FATAL: pi0_systematics failed.\n";
+            return 1;
+        }
+
+        if (!install_acceptance_reweighting_systematic(csv_main)) {
+            std::cerr << "[systematics] FATAL: install_acceptance_reweighting_systematic failed.\n";
             return 1;
         }
 
