@@ -154,7 +154,30 @@ static int require_column(const Csv& c,const std::string& name) {
     return it->second;
 }
 
-static double number(const std::string& s) {
+
+static std::string strip_wrapper_quotes(std::string s) {
+    auto trim_local=[](const std::string& x){
+        size_t a=0,b=x.size();
+        while(a<b && std::isspace((unsigned char)x[a])) ++a;
+        while(b>a && std::isspace((unsigned char)x[b-1])) --b;
+        return x.substr(a,b-a);
+    };
+    s=trim_local(s);
+    while(s.size()>=2 && s.front()=='"' && s.back()=='"') {
+        s=s.substr(1,s.size()-2);
+        std::string u;
+        u.reserve(s.size());
+        for(size_t i=0;i<s.size();++i) {
+            if(s[i]=='"' && i+1<s.size() && s[i+1]=='"') { u.push_back('"'); ++i; }
+            else u.push_back(s[i]);
+        }
+        s=trim_local(u);
+    }
+    return s;
+}
+
+static double number(const std::string& raw) {
+    const std::string s=strip_wrapper_quotes(raw);
     if(s.empty()) return std::numeric_limits<double>::quiet_NaN();
     char* end=nullptr;
     const double v=std::strtod(s.c_str(),&end);
@@ -164,7 +187,7 @@ static double number(const std::string& s) {
 
 static Triple parse_triple(const std::string& s) {
     Triple out;
-    std::string x=s;
+    std::string x=strip_wrapper_quotes(s);
     x.erase(std::remove_if(x.begin(),x.end(),[](unsigned char c){return std::isspace(c);}),x.end());
     if(x.empty()) return out;
     if(x.front()=='(' && x.back()==')') x=x.substr(1,x.size()-2);

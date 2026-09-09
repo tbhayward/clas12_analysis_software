@@ -888,8 +888,10 @@ int main(int argc, char* argv[]) {
     // --------- Current-dependent efficiency systematic ----------
     //
     // Fast post-processing of the signed calibration-nuisance responses written
-    // by total_counts.cpp.  This does not rerun event loops.
-    if (systematic_selection.current) {
+    // by total_counts.cpp.  This does not rerun event loops.  CSV-only finalization
+    // depends on these columns, so regenerate them automatically whenever csv_only
+    // is requested, even if the user did not explicitly select current.
+    if (systematic_selection.current || systematic_selection.csv_only) {
         CurrentSystematicsOptions current_syst_opts;
         current_syst_opts.nuisance_response_csv =
             "output/current_systematics/current_yield_nuisance_responses.csv";

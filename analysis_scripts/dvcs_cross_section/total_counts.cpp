@@ -4459,6 +4459,18 @@ static double arw_tuple_first(const std::string& raw) {
     s.erase(std::remove_if(s.begin(),s.end(),
                            [](unsigned char c){return std::isspace(c);}),
             s.end());
+    // Be tolerant of legacy CSV rewrites that left one or more literal quote
+    // wrappers around tuple-valued cells, e.g. "(x,err,sys)".
+    while(s.size()>=2 && s.front()=='"' && s.back()=='"') {
+        s=s.substr(1,s.size()-2);
+        std::string u;
+        u.reserve(s.size());
+        for(size_t i=0;i<s.size();++i) {
+            if(s[i]=='"' && i+1<s.size() && s[i+1]=='"') { u.push_back('"'); ++i; }
+            else u.push_back(s[i]);
+        }
+        s.swap(u);
+    }
     if(s.empty()) return std::numeric_limits<double>::quiet_NaN();
     if(s.front()=='('){
         const size_t comma=s.find(',');

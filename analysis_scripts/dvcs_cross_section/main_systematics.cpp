@@ -19,6 +19,7 @@
 // -----------------------------------------------------------------------------
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
@@ -27,6 +28,7 @@
 #include <iostream>
 #include <iomanip>
 #include <limits>
+#include <map>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -379,6 +381,126 @@ static std::string format_scalar(double v) {
     return ss.str();
 }
 
+
+static double quantile_copy(std::vector<double> v, double q) {
+    v.erase(std::remove_if(v.begin(), v.end(),
+                           [](double x){ return !std::isfinite(x); }), v.end());
+    if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+    std::sort(v.begin(), v.end());
+    if (q <= 0.0) return v.front();
+    if (q >= 1.0) return v.back();
+    const double pos = q * (double)(v.size() - 1);
+    const size_t lo = (size_t)std::floor(pos);
+    const size_t hi = (size_t)std::ceil(pos);
+    const double f = pos - (double)lo;
+    return (1.0 - f) * v[lo] + f * v[hi];
+}
+
+// Recover the combined 10.6-GeV acceptance candidate from the already-written
+// acceptance-reweighting diagnostics.  This is intentionally CSV-only: if an
+// expensive acceptance run finished but its final 10.6-GeV columns were left
+// blank (for example because an older CSV contained an extra wrapper-quote
+// layer around tuple-valued yield cells), we can reconstruct exactly the same
+// combination without rerunning any ROOT event loops.
+static bool recover_acceptance_reweighting_from_diagnostics(CsvTable& t) {
+    const std::string summary_path =
+        "output/systematics/acceptance_reweighting/acceptance_reweighting_per_period_summary.csv";
+    const std::string closure_path =
+        "output/systematics/acceptance_reweighting/synthetic_reweighting_closure.csv";
+
+    if (!fs::exists(summary_path) || !fs::exists(closure_path)) return false;
+
+    const CsvTable ps = read_csv_or_throw(summary_path);
+    const CsvTable sc = read_csv_or_throw(closure_path);
+
+    require_columns(ps, {"period","row","acceptance_nominal","acceptance_data_reweighted"},
+                    "acceptance-reweighting period summary recovery");
+    require_columns(sc, {"period","row","closure_bias_frac"},
+                    "acceptance-reweighting closure recovery");
+
+    const std::array<std::string,4> p10 = {{
+        "Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"
+    }};
+
+    struct Pair { double a0=std::numeric_limits<double>::quiet_NaN();
+                  double ad=std::numeric_limits<double>::quiet_NaN(); };
+    std::map<std::string,std::unordered_map<size_t,Pair>> acc;
+    std::map<std::string,std::unordered_map<size_t,std::vector<double>>> biases;
+
+    const int ips_per=ps.index.at("period");
+    const int ips_row=ps.index.at("row");
+    const int ips_a0=ps.index.at("acceptance_nominal");
+    const int ips_ad=ps.index.at("acceptance_data_reweighted");
+    for (const auto& r: ps.rows) {
+        const std::string per=trim_copy(r[(size_t)ips_per]);
+        const double rr=scalar_value(r[(size_t)ips_row]);
+        if (!std::isfinite(rr) || rr < 0.0) continue;
+        Pair x;
+        x.a0=scalar_value(r[(size_t)ips_a0]);
+        x.ad=scalar_value(r[(size_t)ips_ad]);
+        if (std::isfinite(x.a0) && x.a0>0.0 && std::isfinite(x.ad) && x.ad>0.0)
+            acc[per][(size_t)std::llround(rr)]=x;
+    }
+
+    const int isc_per=sc.index.at("period");
+    const int isc_row=sc.index.at("row");
+    const int isc_b=sc.index.at("closure_bias_frac");
+    for (const auto& r: sc.rows) {
+        const std::string per=trim_copy(r[(size_t)isc_per]);
+        const double rr=scalar_value(r[(size_t)isc_row]);
+        const double b=scalar_value(r[(size_t)isc_b]);
+        if (!std::isfinite(rr) || rr<0.0 || !std::isfinite(b)) continue;
+        biases[per][(size_t)std::llround(rr)].push_back(b);
+    }
+
+    const int c_data10 = t.index.at("acceptance reweighting data-driven sys frac, 10.6 GeV");
+    const int c_transfer10 = t.index.at("acceptance reweighting transfer closure sys frac, 10.6 GeV");
+    const int c_cons10 = t.index.at("acceptance reweighting conservative sys frac, 10.6 GeV");
+    const int c_cand10 = t.index.at("acceptance reweighting candidate sys frac, 10.6 GeV");
+
+    size_t n=0;
+    for (size_t i=0;i<t.rows.size();++i) {
+        // Preserve a valid value from the tree-based stage.
+        if (std::isfinite(scalar_value(t.rows[i][(size_t)c_cons10]))) continue;
+
+        double ytot=0.0, weighted_ratio=0.0, trmax=0.0;
+        bool have_transfer=false;
+        for (const auto& per:p10) {
+            auto ia=acc[per].find(i);
+            if (ia==acc[per].end()) continue;
+            const std::string yc="acceptance corrected yield, ep->epg, exp, "+per+", unpol";
+            auto iy=t.index.find(yc);
+            if (iy==t.index.end()) continue;
+            const double y=tuple_first_value(t.rows[i][(size_t)iy->second]);
+            if (!std::isfinite(y) || y<0.0) continue;
+            ytot += y;
+            weighted_ratio += y*(ia->second.a0/ia->second.ad);
+            auto ibp=biases.find(per);
+            if (ibp!=biases.end()) {
+                auto ib=ibp->second.find(i);
+                if (ib!=ibp->second.end() && !ib->second.empty()) {
+                    const double tr=quantile_copy(ib->second,0.95);
+                    if (std::isfinite(tr)) { trmax=std::max(trmax,tr); have_transfer=true; }
+                }
+            }
+        }
+        if (ytot<=0.0) continue;
+        const double ddata=std::fabs(weighted_ratio/ytot - 1.0);
+        const double tr=have_transfer ? trmax : 0.0;
+        const double cons=std::hypot(ddata,tr);
+        t.rows[i][(size_t)c_data10]=format_scalar(ddata);
+        t.rows[i][(size_t)c_transfer10]=format_scalar(tr);
+        t.rows[i][(size_t)c_cons10]=format_scalar(cons);
+        t.rows[i][(size_t)c_cand10]=format_scalar(cons);
+        ++n;
+    }
+    if (n>0)
+        std::cout << "[acceptance-systematics] Recovered " << n
+                  << " combined 10.6-GeV acceptance candidates from the completed "
+                  << "acceptance diagnostic files; no event-loop rerun was required.\n";
+    return n>0;
+}
+
 // Promote the reviewed acceptance-reweighting candidate to the production
 // point-to-point systematic.  The tree-based study writes fractional
 // uncertainties for 10.6 GeV and Sp19 separately.  Here we convert those
@@ -386,6 +508,8 @@ static std::string format_scalar(double v) {
 // point-to-point uncertainty with the final pass-2 components.
 static bool install_acceptance_reweighting_systematic(const std::string& csv_path) {
     CsvTable t = read_csv_or_throw(csv_path);
+
+    recover_acceptance_reweighting_from_diagnostics(t);
 
     const std::string c_frac10 =
         "acceptance reweighting conservative sys frac, 10.6 GeV";

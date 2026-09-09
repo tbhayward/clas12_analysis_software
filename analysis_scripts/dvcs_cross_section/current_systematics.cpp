@@ -64,6 +64,21 @@ static std::string trim(const std::string& s) {
     return s.substr(a,b-a);
 }
 
+static std::string normalize_csv_field(std::string field) {
+    field=trim(field);
+    while(field.size()>=2 && field.front()=='"' && field.back()=='"') {
+        field=field.substr(1,field.size()-2);
+        std::string u;
+        u.reserve(field.size());
+        for(size_t i=0;i<field.size();++i) {
+            if(field[i]=='"' && i+1<field.size() && field[i+1]=='"') { u.push_back('"'); ++i; }
+            else u.push_back(field[i]);
+        }
+        field=trim(u);
+    }
+    return field;
+}
+
 static std::vector<std::string> split_csv(const std::string& line) {
     std::vector<std::string> out;
     std::string cur;
@@ -75,10 +90,10 @@ static std::vector<std::string> split_csv(const std::string& line) {
                 cur.push_back('"'); ++i;
             } else q=!q;
         } else if(c==',' && !q){
-            out.push_back(cur); cur.clear();
+            out.push_back(normalize_csv_field(cur)); cur.clear();
         } else cur.push_back(c);
     }
-    out.push_back(cur);
+    out.push_back(normalize_csv_field(cur));
     return out;
 }
 
