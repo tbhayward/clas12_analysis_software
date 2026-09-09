@@ -1,16 +1,17 @@
 #include "systematic_projection_plots.h"
 
 #include <TCanvas.h>
-#include <TGraphErrors.h>
+#include <TGraph.h>
 #include <TLegend.h>
 #include <TLatex.h>
-#include <TLine.h>
 #include <TROOT.h>
 #include <TStyle.h>
 #include <TAxis.h>
 #include <TPad.h>
+#include <TH1D.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cctype>
 #include <cstdlib>
@@ -39,18 +40,23 @@ struct CsvTable {
 };
 
 struct Component {
-    std::string column;
     std::string label;
     int marker = 20;
     int color = 1;
     int line_style = 1;
 };
 
+struct VariableSpec {
+    std::string name;
+    std::string x_title;
+    std::string min_col;
+    std::string max_col;
+};
+
 struct BinAccumulator {
     double x_sum = 0.0;
     int x_count = 0;
-    std::vector<std::vector<double> > abs_values;
-    std::vector<std::vector<double> > rel_values;
+    std::vector<std::vector<double> > relative_values;
 };
 
 static std::string trim(const std::string& s) {
@@ -88,11 +94,15 @@ static std::vector<std::string> split_csv_line(const std::string& line) {
 static CsvTable read_csv(const std::string& path) {
     std::ifstream fin(path);
     if (!fin.is_open()) throw std::runtime_error("Could not open CSV: " + path);
+
     CsvTable t;
     std::string line;
     if (!std::getline(fin, line)) throw std::runtime_error("Empty CSV: " + path);
+
     t.header = split_csv_line(line);
-    for (int i = 0; i < (int)t.header.size(); ++i) t.index[t.header[(size_t)i]] = i;
+    for (int i = 0; i < (int)t.header.size(); ++i)
+        t.index[t.header[(size_t)i]] = i;
+
     while (std::getline(fin, line)) {
         if (line.empty()) continue;
         auto row = split_csv_line(line);
@@ -110,306 +120,415 @@ static double number(const std::string& s) {
     return end == x.c_str() ? std::numeric_limits<double>::quiet_NaN() : v;
 }
 
-static std::string cell(const CsvTable& t, const std::vector<std::string>& row,
+static std::string cell(const CsvTable& t,
+                        const std::vector<std::string>& row,
                         const std::string& col) {
-    auto it = t.index.find(col);
+    const auto it = t.index.find(col);
     if (it == t.index.end()) return "";
     return row[(size_t)it->second];
 }
 
 static bool parse_tuple_first(const std::string& raw, double& value) {
     std::string s = trim(raw);
-    while (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+    while (s.size() >= 2 && s.front() == '"' && s.back() == '"')
         s = trim(s.substr(1, s.size() - 2));
-    }
+
     if (s.size() < 3 || s.front() != '(' || s.back() != ')') return false;
     s = s.substr(1, s.size() - 2);
     const size_t comma = s.find(',');
-    const std::string first = comma == std::string::npos ? s : s.substr(0, comma);
-    value = number(first);
+    value = number(comma == std::string::npos ? s : s.substr(0, comma));
     return std::isfinite(value);
+}
+
+static double median(std::vector<double> values) {
+    values.erase(
+        std::remove_if(values.begin(), values.end(),
+                       [](double x){ return !std::isfinite(x); }),
+        values.end());
+    if (values.empty()) return std::numeric_limits<double>::quiet_NaN();
+
+    std::sort(values.begin(), values.end());
+    const size_t n = values.size();
+    if (n % 2U) return values[n / 2U];
+    return 0.5 * (values[n/2U - 1U] + values[n/2U]);
 }
 
 static std::vector<Component> components() {
     return {
-        {"Syst. err (pi0 subtraction)", "#pi^{0} subtraction", 20, kBlue + 1, 1},
-        {"Syst. err (Acceptance)", "Acceptance", 21, kRed + 1, 1},
-        {"Syst.err (Frad)", "F_{rad}", 22, kGreen + 2, 1},
-        {"Syst.err (Fbin)", "F_{bin}", 23, kMagenta + 1, 1},
-        {"Syst. err (exclusivity cuts)", "Exclusivity cuts", 24, kOrange + 7, 1},
-        {"Syst. err (fiducial cuts)", "Fiducial cuts", 25, kCyan + 2, 1},
-        {"Syst. err (point-to-point total)", "Total", 29, kBlack, 1}
+        {"#pi^{0} subtraction", 20, kBlue + 1, 1},
+        {"Acceptance",          21, kRed + 1, 1},
+        {"F_{rad}",             22, kGreen + 2, 1},
+        {"F_{bin}",             23, kMagenta + 1, 1},
+        {"Exclusivity",         24, kOrange + 7, 1},
+        {"Fiducial",            25, kCyan + 2, 1},
+        {"Point-to-point total",29, kBlack, 1}
     };
 }
-
-struct VariableSpec {
-    std::string name;
-    std::string x_title;
-    std::string min_col;
-    std::string max_col;
-    std::string mean_col;
-    double grouping_width = 0.0;
-};
 
 static std::vector<VariableSpec> variables() {
     return {
-        {"xB", "x_{B}", "xBmin", "xBmax", "", 0.0},
-        {"Q2", "Q^{2} (GeV^{2})", "Q2min", "Q2max", "", 0.0},
-        {"t", "|t| (GeV^{2})", "t_abs_min", "t_abs_max", "", 0.0},
-        {"phi", "#phi (deg)", "phimin", "phimax", "", 0.0},
-        {"e_theta", "#theta_{e} (deg)", "", "", "e_theta, 10.6 GeV", 1.0},
-        {"p_theta", "#theta_{p} (deg)", "", "", "p_theta, 10.6 GeV", 1.0},
-        {"g_theta", "#theta_{#gamma} (deg)", "", "", "g_theta, 10.6 GeV", 1.0}
+        {"xB",  "x_{B}",           "xBmin",      "xBmax"},
+        {"Q2",  "Q^{2} (GeV^{2})", "Q2min",      "Q2max"},
+        {"t",   "|t| (GeV^{2})",   "t_abs_min",  "t_abs_max"},
+        {"phi", "#phi (deg)",      "phimin",     "phimax"}
     };
 }
 
-static bool row_x(const CsvTable& t, const std::vector<std::string>& row,
-                  const VariableSpec& v, double& x, std::string& key) {
-    if (!v.mean_col.empty()) {
-        x = number(cell(t, row, v.mean_col));
-        if (!std::isfinite(x)) return false;
-        const double center = v.grouping_width > 0.0
-            ? std::floor(x / v.grouping_width) * v.grouping_width + 0.5 * v.grouping_width
-            : x;
-        std::ostringstream ss;
-        ss << std::fixed << std::setprecision(6) << center;
-        key = ss.str();
-        x = center;
-        return true;
-    }
-    const double lo = number(cell(t, row, v.min_col));
-    const double hi = number(cell(t, row, v.max_col));
+static bool row_x(const CsvTable& table,
+                  const std::vector<std::string>& row,
+                  const VariableSpec& var,
+                  double& x,
+                  std::string& key) {
+    const double lo = number(cell(table, row, var.min_col));
+    const double hi = number(cell(table, row, var.max_col));
     if (!std::isfinite(lo) || !std::isfinite(hi)) return false;
+
     x = 0.5 * (lo + hi);
     std::ostringstream ss;
-    ss << std::fixed << std::setprecision(6) << lo << '|' << hi;
+    ss << std::fixed << std::setprecision(8) << lo << '|' << hi;
     key = ss.str();
     return true;
 }
 
-static void style_pad(TPad* p) {
-    p->SetLeftMargin(0.105);
-    p->SetRightMargin(0.025);
-    p->SetBottomMargin(0.135);
-    p->SetTopMargin(0.155);
-    p->SetGridx(false);
-    p->SetGridy(true);
-    p->SetTicks(1, 1);
-    p->SetLogy(true);
+static bool finite_fraction(double x) {
+    return std::isfinite(x) && x >= 0.0;
 }
 
-static double log_upper_bound(double maximum, double fallback) {
-    if (!(maximum > 0.0) || !std::isfinite(maximum)) return fallback;
-    return std::pow(10.0, std::ceil(std::log10(maximum * 1.35)));
+// Return the seven point-to-point fractional uncertainties for one CSV row.
+// Values are returned as fractions, not percentages.
+static std::vector<double> row_component_fractions(
+    const CsvTable& table,
+    const std::vector<std::string>& row,
+    bool sp19) {
+
+    double xs10 = std::numeric_limits<double>::quiet_NaN();
+    double xs19 = std::numeric_limits<double>::quiet_NaN();
+
+    parse_tuple_first(
+        cell(table,row,"normed cross sections, ep->epg, exp, 10.6 GeV, unpol"),
+        xs10);
+    parse_tuple_first(
+        cell(table,row,"normed cross sections, ep->epg, exp, Sp19 Inb, unpol"),
+        xs19);
+
+    const double xs = sp19 ? xs19 : xs10;
+    if (!std::isfinite(xs) || xs == 0.0)
+        return std::vector<double>(7,std::numeric_limits<double>::quiet_NaN());
+
+    auto frac_from_abs_10p6 = [&](const std::string& col)->double {
+        if (!std::isfinite(xs10) || xs10 == 0.0)
+            return std::numeric_limits<double>::quiet_NaN();
+        const double a = number(cell(table,row,col));
+        return std::isfinite(a) ? std::fabs(a/xs10)
+                                : std::numeric_limits<double>::quiet_NaN();
+    };
+
+    std::vector<double> f(7,std::numeric_limits<double>::quiet_NaN());
+
+    if (!sp19) {
+        f[0] = number(cell(table,row,"pi0 subtraction sys frac, 10.6 GeV"));
+        f[1] = frac_from_abs_10p6("Syst. err (Acceptance)");
+        f[2] = frac_from_abs_10p6("Syst.err (Frad)");
+        f[3] = frac_from_abs_10p6("Syst.err (Fbin)");
+        f[4] = frac_from_abs_10p6("Syst. err (exclusivity cuts)");
+        f[5] = frac_from_abs_10p6("Syst. err (fiducial cuts)");
+        f[6] = frac_from_abs_10p6("Syst. err (point-to-point total)");
+        return f;
+    }
+
+    // Dedicated Sp19 quantities are used where available.
+    f[0] = number(cell(
+        table,row,"pi0 subtraction sys frac, Sp19 Inb (10.2 GeV)"));
+
+    const double frad_abs = number(cell(
+        table,row,"Syst.err (Frad), Sp19 Inb (10.2 GeV)"));
+    if (std::isfinite(frad_abs))
+        f[2] = std::fabs(frad_abs/xs19);
+
+    // Acceptance, Fbin, exclusivity and fiducial use the same assigned
+    // bin-wise fractional prescription as the corresponding 10.6-GeV bins.
+    f[1] = frac_from_abs_10p6("Syst. err (Acceptance)");
+    f[3] = frac_from_abs_10p6("Syst.err (Fbin)");
+    f[4] = frac_from_abs_10p6("Syst. err (exclusivity cuts)");
+    f[5] = frac_from_abs_10p6("Syst. err (fiducial cuts)");
+
+    // Recompute the Sp19 point-to-point total from the six displayed terms.
+    double sum2 = 0.0;
+    bool complete = true;
+    for (int j=0;j<6;++j) {
+        if (!finite_fraction(f[(size_t)j])) {
+            complete = false;
+            break;
+        }
+        sum2 += f[(size_t)j]*f[(size_t)j];
+    }
+    if (complete) f[6] = std::sqrt(sum2);
+
+    return f;
 }
 
-static double median(std::vector<double> values) {
-    if (values.empty()) return std::numeric_limits<double>::quiet_NaN();
-    std::sort(values.begin(), values.end());
-    const size_t n = values.size();
-    if ((n % 2U) == 1U) return values[n / 2U];
-    return 0.5 * (values[n / 2U - 1U] + values[n / 2U]);
-}
+struct ProjectionPoint {
+    double x = std::numeric_limits<double>::quiet_NaN();
+    std::vector<double> medians;
+};
 
-static bool make_one(const CsvTable& table, const VariableSpec& var,
-                     const std::string& output_dir) {
+static std::vector<ProjectionPoint> build_projection(
+    const CsvTable& table,
+    const VariableSpec& var,
+    bool sp19) {
+
     const auto comps = components();
-    std::map<std::string, BinAccumulator> bins;
-
-    const std::string xs_col =
-        "normed cross sections, ep->epg, exp, 10.6 GeV, unpol";
+    std::map<std::string,BinAccumulator> bins;
 
     for (const auto& row : table.rows) {
-        double xs = std::numeric_limits<double>::quiet_NaN();
-        if (!parse_tuple_first(cell(table, row, xs_col), xs) || xs == 0.0) continue;
+        const auto fractions = row_component_fractions(table,row,sp19);
+
+        // Require a valid total for this energy before using the row.
+        if (!finite_fraction(fractions[6])) continue;
 
         double x = 0.0;
         std::string key;
-        if (!row_x(table, row, var, x, key)) continue;
+        if (!row_x(table,row,var,x,key)) continue;
 
         auto& b = bins[key];
-        if (b.abs_values.empty()) {
-            b.abs_values.resize(comps.size());
-            b.rel_values.resize(comps.size());
-        }
+        if (b.relative_values.empty())
+            b.relative_values.resize(comps.size());
+
         b.x_sum += x;
         ++b.x_count;
 
-        for (size_t j = 0; j < comps.size(); ++j) {
-            const double s = number(cell(table, row, comps[j].column));
-            if (!std::isfinite(s) || s < 0.0) continue;
-            b.abs_values[j].push_back(s);
-            b.rel_values[j].push_back(100.0 * s / std::fabs(xs));
+        for (size_t j=0;j<comps.size();++j) {
+            if (finite_fraction(fractions[j]))
+                b.relative_values[j].push_back(100.0*fractions[j]);
         }
     }
 
-    struct Point { double x; std::vector<double> a, r; };
-    std::vector<Point> points;
-    for (const auto& kv : bins) {
-        const auto& b = kv.second;
-        if (b.x_count <= 0) continue;
-        Point p;
-        p.x = b.x_sum / b.x_count;
-        p.a.resize(comps.size(), std::numeric_limits<double>::quiet_NaN());
-        p.r.resize(comps.size(), std::numeric_limits<double>::quiet_NaN());
-        for (size_t j = 0; j < comps.size(); ++j) {
-            p.a[j] = median(b.abs_values[j]);
-            p.r[j] = median(b.rel_values[j]);
-        }
-        points.push_back(std::move(p));
+    std::vector<ProjectionPoint> out;
+    for (const auto& kv:bins) {
+        const auto& b=kv.second;
+        if (b.x_count<=0) continue;
+
+        ProjectionPoint p;
+        p.x=b.x_sum/b.x_count;
+        p.medians.resize(comps.size(),
+                         std::numeric_limits<double>::quiet_NaN());
+        for (size_t j=0;j<comps.size();++j)
+            p.medians[j]=median(b.relative_values[j]);
+
+        out.push_back(std::move(p));
     }
-    std::sort(points.begin(), points.end(), [](const Point& a, const Point& b) { return a.x < b.x; });
-    if (points.empty()) return false;
 
-    TCanvas c(("c_syst_" + var.name).c_str(), "", 1500, 1100);
-    c.Divide(1, 2, 0.0, 0.015);
-    std::vector<std::unique_ptr<TGraphErrors> > graphs_abs;
-    std::vector<std::unique_ptr<TGraphErrors> > graphs_rel;
+    std::sort(out.begin(),out.end(),
+              [](const ProjectionPoint& a,const ProjectionPoint& b){
+                  return a.x<b.x;
+              });
+    return out;
+}
 
-    auto draw_panel = [&](int pad_index, bool relative) {
-        TPad* pad = static_cast<TPad*>(c.cd(pad_index));
-        style_pad(pad);
+static double panel_ymax(const std::vector<ProjectionPoint>& points) {
+    double ymax=0.0;
+    for (const auto& p:points)
+        for (double y:p.medians)
+            if (std::isfinite(y)) ymax=std::max(ymax,y);
 
-        const double ymin = relative ? 1.0e-2 : 1.0e-5;
-        double observed_max = 0.0;
-        for (const auto& p : points) {
-            const auto& values = relative ? p.r : p.a;
-            for (double y : values) {
-                if (std::isfinite(y) && y > 0.0) observed_max = std::max(observed_max, y);
-            }
+    // Linear scale with enough room for data and a legend above the frame.
+    if (!(ymax>0.0)) return 10.0;
+    return std::max(5.0,1.18*ymax);
+}
+
+static void style_pad(TPad* pad,bool left) {
+    pad->SetLeftMargin(left ? 0.13 : 0.105);
+    pad->SetRightMargin(0.03);
+    pad->SetBottomMargin(0.14);
+    pad->SetTopMargin(0.20);
+    pad->SetGridx(false);
+    pad->SetGridy(true);
+    pad->SetTicks(1,1);
+    pad->SetLogy(false);
+}
+
+static void draw_energy_panel(
+    TPad* pad,
+    const std::vector<ProjectionPoint>& points,
+    const VariableSpec& var,
+    const std::string& energy_label,
+    bool draw_y_title,
+    bool draw_legend) {
+
+    style_pad(pad,draw_y_title);
+
+    const auto comps=components();
+    if (points.empty()) return;
+
+    double xmin=points.front().x;
+    double xmax=points.back().x;
+    if (!(xmax>xmin)) {
+        xmin-=0.5;
+        xmax+=0.5;
+    } else {
+        const double dx=0.04*(xmax-xmin);
+        xmin-=dx;
+        xmax+=dx;
+    }
+
+    TH1D frame(
+        ("h_syst_projection_"+var.name+"_"+energy_label).c_str(),
+        "",
+        100,xmin,xmax);
+    frame.SetStats(0);
+    frame.SetMinimum(0.0);
+    frame.SetMaximum(panel_ymax(points));
+    frame.GetXaxis()->SetTitle(var.x_title.c_str());
+    frame.GetYaxis()->SetTitle(
+        draw_y_title ? "Median relative systematic uncertainty (%)" : "");
+    frame.GetXaxis()->SetTitleFont(42);
+    frame.GetYaxis()->SetTitleFont(42);
+    frame.GetXaxis()->SetLabelFont(42);
+    frame.GetYaxis()->SetLabelFont(42);
+    frame.GetXaxis()->SetTitleSize(0.049);
+    frame.GetYaxis()->SetTitleSize(0.045);
+    frame.GetXaxis()->SetLabelSize(0.040);
+    frame.GetYaxis()->SetLabelSize(0.038);
+    frame.GetXaxis()->SetTitleOffset(1.04);
+    frame.GetYaxis()->SetTitleOffset(draw_y_title ? 1.35 : 1.0);
+    frame.DrawCopy();
+
+    std::vector<std::unique_ptr<TGraph> > graphs;
+    graphs.reserve(comps.size());
+
+    for (size_t j=0;j<comps.size();++j) {
+        std::vector<double> x,y;
+        for (const auto& p:points) {
+            const double yy=p.medians[j];
+            if (!std::isfinite(yy)) continue;
+            x.push_back(p.x);
+            y.push_back(yy);
         }
+        if (x.empty()) continue;
 
-        // The relative panel is intentionally capped at 100% so a handful of
-        // pathological low-cross-section bins do not destroy the useful scale.
-        const double ymax = relative ? 100.0 : log_upper_bound(observed_max, 1.0);
+        auto g=std::make_unique<TGraph>(
+            static_cast<int>(x.size()),x.data(),y.data());
+        g->SetMarkerStyle(comps[j].marker);
+        g->SetMarkerColor(comps[j].color);
+        g->SetLineColor(comps[j].color);
+        g->SetLineStyle(comps[j].line_style);
+        g->SetMarkerSize(j==6 ? 1.15 : 0.85);
+        g->SetLineWidth(j==6 ? 4 : 2);
+        g->DrawClone("LP SAME");
+        graphs.push_back(std::move(g));
+    }
 
-        TLegend* leg = new TLegend(0.12, 0.835, 0.88, 0.955);
-        leg->SetBorderSize(1);
-        leg->SetLineColor(kGray + 1);
-        leg->SetFillColor(kWhite);
-        leg->SetFillStyle(1001);
-        leg->SetTextFont(42);
-        leg->SetTextSize(0.031);
-        leg->SetNColumns(4);
-        leg->SetMargin(0.18);
-        leg->SetColumnSeparation(0.08);
+    TLatex lab;
+    lab.SetNDC();
+    lab.SetTextFont(42);
+    lab.SetTextSize(0.035);
+    lab.DrawLatex(0.16,0.845,energy_label.c_str());
 
-        bool first = true;
-        for (size_t j = 0; j < comps.size(); ++j) {
-            std::vector<double> x, y, ex, ey;
-            for (const auto& p : points) {
-                const double yy = relative ? p.r[j] : p.a[j];
-                if (!std::isfinite(yy) || yy <= 0.0) continue;
-                x.push_back(p.x);
-                y.push_back(yy);
-                ex.push_back(0.0);
-                ey.push_back(0.0);
-            }
-            if (x.empty()) continue;
+    if (draw_legend) {
+        // The legend sits in the reserved top band and therefore never covers data.
+        TLegend leg(0.11,0.875,0.97,0.985);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
+        leg.SetTextFont(42);
+        leg.SetTextSize(0.025);
+        leg.SetNColumns(4);
+        leg.SetMargin(0.16);
 
-            auto g = std::make_unique<TGraphErrors>(
-                static_cast<int>(x.size()), x.data(), y.data(), ex.data(), ey.data());
-            g->SetMarkerStyle(comps[j].marker);
-            g->SetMarkerColor(comps[j].color);
-            g->SetLineColor(comps[j].color);
-            g->SetLineStyle(comps[j].line_style);
-            g->SetMarkerSize(comps[j].label == "Total" ? 1.15 : 0.90);
-            g->SetLineWidth(comps[j].label == "Total" ? 4 : 2);
-            g->SetTitle("");
-
-            if (first) {
-                g->GetXaxis()->SetTitle(var.x_title.c_str());
-                g->GetYaxis()->SetTitle(relative
-                    ? "Median point-to-point systematic / |#sigma| (%)"
-                    : "Median point-to-point systematic (nb/GeV^{4})");
-                g->GetXaxis()->SetTitleFont(42);
-                g->GetYaxis()->SetTitleFont(42);
-                g->GetXaxis()->SetLabelFont(42);
-                g->GetYaxis()->SetLabelFont(42);
-                g->GetXaxis()->SetTitleSize(0.047);
-                g->GetYaxis()->SetTitleSize(0.047);
-                g->GetXaxis()->SetLabelSize(0.039);
-                g->GetYaxis()->SetLabelSize(0.039);
-                g->GetYaxis()->SetTitleOffset(1.02);
-                g->GetXaxis()->SetTitleOffset(1.08);
-                g->GetYaxis()->SetRangeUser(ymin, ymax);
-                g->GetYaxis()->SetMoreLogLabels(false);
-                g->GetYaxis()->SetNoExponent(false);
-                g->Draw("ALP");
-                first = false;
-            } else {
-                g->Draw("LP SAME");
-            }
-
-            leg->AddEntry(g.get(), comps[j].label.c_str(), "lp");
-            if (relative) graphs_rel.push_back(std::move(g));
-            else graphs_abs.push_back(std::move(g));
+        // Add entries using temporary style-holder graphs.
+        std::vector<std::unique_ptr<TGraph> > holders;
+        for (size_t j=0;j<comps.size();++j) {
+            auto h=std::make_unique<TGraph>();
+            h->SetMarkerStyle(comps[j].marker);
+            h->SetMarkerColor(comps[j].color);
+            h->SetLineColor(comps[j].color);
+            h->SetLineWidth(j==6 ? 4 : 2);
+            leg.AddEntry(h.get(),comps[j].label.c_str(),"lp");
+            holders.push_back(std::move(h));
         }
+        leg.DrawClone();
+    }
 
-        leg->Draw();
+    pad->RedrawAxis();
+}
 
-        TLatex latex;
-        latex.SetNDC();
-        latex.SetTextFont(42);
-        latex.SetTextSize(0.038);
-        latex.SetTextAlign(31);
-        latex.DrawLatex(0.975, 0.975,
-            relative ? "Relative median systematic size" : "Absolute median systematic size");
+static bool make_one(const CsvTable& table,
+                     const VariableSpec& var,
+                     const std::string& output_dir) {
 
-        if (relative) {
-            latex.SetTextAlign(11);
-            latex.SetTextSize(0.027);
-            latex.SetTextColor(kGray + 2);
-            latex.DrawLatex(0.115, 0.785, "Values above 100% are clipped by the display range");
-            latex.SetTextColor(kBlack);
+    const auto p10=build_projection(table,var,false);
+    const auto p19=build_projection(table,var,true);
+    if (p10.empty() && p19.empty()) return false;
+
+    TCanvas c(("c_point_to_point_"+var.name).c_str(),"",1500,720);
+    c.Divide(2,1,0.002,0.0);
+
+    draw_energy_panel(
+        static_cast<TPad*>(c.cd(1)),p10,var,"10.6 GeV combined",true,true);
+    draw_energy_panel(
+        static_cast<TPad*>(c.cd(2)),p19,var,"10.2 GeV Sp19 Inb",false,false);
+
+    c.cd(0);
+    TLatex title;
+    title.SetNDC();
+    title.SetTextFont(42);
+    title.SetTextAlign(22);
+    title.SetTextSize(0.023);
+    const std::string main_title=
+        "Kinematic dependence of point-to-point systematic uncertainties";
+    title.DrawLatex(0.50,0.985,main_title.c_str());
+
+    const std::string png=
+        output_dir+"/point_to_point_systematics_vs_"+var.name+".png";
+    c.SaveAs(png.c_str());
+
+    // Machine-readable medians for the note and later cross checks.
+    const std::string csv=
+        output_dir+"/point_to_point_systematics_vs_"+var.name+".csv";
+    std::ofstream out(csv);
+    out<<"energy,x";
+    for (const auto& comp:components())
+        out<<','<<comp.label<<"_relative_percent_median";
+    out<<'\n';
+
+    auto write_points=[&](const std::string& e,
+                          const std::vector<ProjectionPoint>& points) {
+        for (const auto& p:points) {
+            out<<e<<','<<std::setprecision(12)<<p.x;
+            for (double y:p.medians) out<<','<<y;
+            out<<'\n';
         }
-
-        pad->RedrawAxis();
     };
+    write_points("10.6 GeV",p10);
+    write_points("10.2 GeV",p19);
 
-    draw_panel(1, false);
-    draw_panel(2, true);
-    c.SaveAs((output_dir + "/point_to_point_systematics_vs_" + var.name + ".png").c_str());
-
-    std::ofstream out(output_dir + "/point_to_point_systematics_vs_" + var.name + ".csv");
-    out << "x";
-    for (const auto& comp : comps) {
-        out << ',' << comp.label << "_absolute_median," << comp.label << "_relative_percent_median";
-    }
-    out << '\n';
-    for (const auto& p : points) {
-        out << std::setprecision(12) << p.x;
-        for (size_t j = 0; j < comps.size(); ++j) out << ',' << p.a[j] << ',' << p.r[j];
-        out << '\n';
-    }
     return true;
 }
 
 } // namespace
 
-bool make_systematic_projection_plots(const std::string& csv_path,
-                                      const std::string& output_dir) {
+bool make_systematic_projection_plots(
+    const std::string& csv_path,
+    const std::string& output_dir) {
+
     try {
         gROOT->SetBatch(kTRUE);
         gStyle->SetOptStat(0);
         fs::create_directories(output_dir);
-        const CsvTable table = read_csv(csv_path);
 
-        for (const auto& comp : components()) {
-            if (table.index.find(comp.column) == table.index.end()) {
-                throw std::runtime_error("Missing systematic column: " + comp.column);
-            }
+        const CsvTable table=read_csv(csv_path);
+
+        int made=0;
+        for (const auto& var:variables()) {
+            if (make_one(table,var,output_dir)) ++made;
         }
 
-        int made = 0;
-        for (const auto& var : variables()) {
-            if (make_one(table, var, output_dir)) ++made;
-        }
-        std::cout << "[systematic-projections] Made " << made
-                  << " projection canvases in " << output_dir << "\n";
-        return made == (int)variables().size();
+        std::cout<<"[systematic-projections] Made "<<made
+                 <<" note-quality point-to-point projection canvases in "
+                 <<output_dir<<"\n";
+
+        return made==(int)variables().size();
     } catch (const std::exception& e) {
-        std::cerr << "[systematic-projections] ERROR: " << e.what() << "\n";
+        std::cerr<<"[systematic-projections] ERROR: "<<e.what()<<"\n";
         return false;
     }
 }
