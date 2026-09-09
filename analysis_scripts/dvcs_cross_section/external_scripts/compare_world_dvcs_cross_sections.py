@@ -146,7 +146,7 @@ DATASET_LABELS = {
     "saylor2018": "CLAS6 Saylor 2018",
     "georges2022": "Hall A Georges 2022",
     "lee2026": "CLAS12 Lee 2026",
-    "pass2": "CLAS12 Pass-2",
+    "pass2": "CLAS12 Hayward 2026",
 }
 
 
@@ -428,6 +428,7 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
 
     required = [
         "bin index",
+        "Bin Name",
         "xBavg, 10.6 GeV",
         "Q2avg, 10.6 GeV",
         "t_abs_avg, 10.6 GeV",
@@ -459,7 +460,16 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
         "dataset": "pass2",
         "dataset_label": DATASET_LABELS["pass2"],
         "source_row": np.arange(len(raw), dtype=int),
-        "published_bin": pd.to_numeric(raw["bin index"], errors="coerce"),
+
+        # IMPORTANT:
+        #   Bin Name  = the 3D (xB,Q2,t) bin shared by the phi distribution.
+        #   bin index = the unique 4D (xB,Q2,t,phi) point identifier.
+        #
+        # Presentation canvases must group by Bin Name, while matching and
+        # nuisance fits need a unique point_id built from bin index.
+        "published_bin": pd.to_numeric(raw["Bin Name"], errors="coerce"),
+        "four_d_bin_index": pd.to_numeric(raw["bin index"], errors="coerce"),
+
         "xB": pd.to_numeric(raw["xBavg, 10.6 GeV"], errors="coerce"),
         "Q2": pd.to_numeric(raw["Q2avg, 10.6 GeV"], errors="coerce"),
         "t_abs": pd.to_numeric(raw["t_abs_avg, 10.6 GeV"], errors="coerce"),
@@ -495,7 +505,7 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
     n_missing_norm = int(out["norm_frac"].isna().sum())
     if n_missing_norm:
         print(
-            f"[PASS2] filling {n_missing_norm} blank per-row normalization field(s) "
+            f"[HAYWARD2026] filling {n_missing_norm} blank per-row normalization field(s) "
             f"with finalized global value {100.0*PASS2_OVERALL_NORM_FRAC:.3f}%",
             flush=True,
         )
@@ -513,7 +523,7 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
             ["published_bin", "xB", "Q2", "t_abs", "phi_deg", "xs"],
         ]
         print(
-            f"[PASS2] WARNING: {len(bad_rows)} physical point(s) have no finalized "
+            f"[HAYWARD2026] WARNING: {len(bad_rows)} physical point(s) have no finalized "
             "correlated-scale response; retained for raw/norm-only comparisons "
             "and excluded only from full correlated-scale nuisance fits.",
             flush=True,
@@ -551,17 +561,19 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
 
     out["point_id"] = [
         f"pass2:{int(round(v))}"
-        for v in out["published_bin"].to_numpy(float)
+        for v in out["four_d_bin_index"].to_numpy(float)
     ]
 
     n_corr_valid = int(np.isfinite(out["corr_scale_frac"]).sum())
+    n_3d_bins = int(out["published_bin"].nunique())
     print(
-        f"[PASS2] loaded {len(out):,} physical 10.6-GeV points from {path}; "
-        f"{n_corr_valid:,} have finalized correlated-scale responses",
+        f"[HAYWARD2026] loaded {len(out):,} physical 10.6-GeV points "
+        f"across {n_3d_bins} three-dimensional (xB,Q2,t) bins from {path}; "
+        f"{n_corr_valid:,} points have finalized correlated-scale responses",
         flush=True,
     )
     print(
-        f"[PASS2] median stat={100*np.nanmedian(out['stat_frac']):.2f}%, "
+        f"[HAYWARD2026] median stat={100*np.nanmedian(out['stat_frac']):.2f}%, "
         f"ptp syst={100*np.nanmedian(out['ptp_sys_frac']):.2f}%, "
         f"overall norm={100*np.nanmedian(out['norm_frac']):.2f}%, "
         f"correlated scale={100*np.nanmedian(out['corr_scale_frac']):.2f}%",
@@ -3664,14 +3676,14 @@ def plot_pass2_anchor_world_panels(
         )
 
         if scenario is None:
-            title = "Published world data compared at CLAS12 pass-2 kinematics"
+            title = "Published world data compared at CLAS12 Hayward 2026 kinematics"
             subtitle = (
-                "External measurements are transported point-by-point to pass-2 "
+                "External measurements are transported point-by-point to Hayward 2026 "
                 "kinematics with KM15; pass-2 is shown raw. "
                 r"Error bars = stat $\oplus$ point-to-point syst."
             )
         else:
-            title = f"Systematic-nuisance-adjusted world data at pass-2 kinematics — {scenario}"
+            title = f"Systematic-nuisance-adjusted world data at Hayward 2026 kinematics — {scenario}"
             metric_text = ""
             if metrics:
                 metric_text = (
@@ -4176,6 +4188,20 @@ def save_outputs(
     pair_panel_summary = make_pairwise_panel_summary(matches)
     lee_anchor_summary = make_lee_anchor_panel_summary(matches)
     pass2_anchor_summary = make_pass2_anchor_panel_summary(matches)
+
+    n_pass2_matches = int(np.sum(matches["dataset_b"].astype(str) == "pass2")) if not matches.empty else 0
+    print(
+        f"[HAYWARD2026 PANELS] external->Hayward matched points={n_pass2_matches:,}; "
+        f"qualifying 3D phi-distribution panels={len(pass2_anchor_summary):,}",
+        flush=True,
+    )
+    if n_pass2_matches > 0 and pass2_anchor_summary.empty:
+        raise RuntimeError(
+            "Hayward matched points exist but no 3D panel groups were formed. "
+            "Check the pass-2 Bin Name / 4D bin-index mapping."
+        )
+    #endif
+
     pair_panel_summary.to_csv(tables / "pairwise_cross_section_panel_summary.csv", index=False)
     lee_anchor_summary.to_csv(tables / "lee_anchor_panel_summary.csv", index=False)
     pass2_anchor_summary.to_csv(tables / "pass2_anchor_panel_summary.csv", index=False)
